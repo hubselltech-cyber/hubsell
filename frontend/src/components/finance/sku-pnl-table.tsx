@@ -6,11 +6,10 @@ import {
   Crown,
   ImageIcon,
   PackageSearch,
-  ShieldCheck,
   TrendingDown,
 } from "lucide-react";
 
-import { HintIcon } from "@/components/finance/hint-icon";
+import { HintText } from "@/components/finance/hint-icon";
 
 import {
   Card,
@@ -96,47 +95,15 @@ export function SkuPnlTable() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  {/* Hàng gộp nhóm cột */}
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead colSpan={8} />
-                    <TableHead
-                      colSpan={3}
-                      className="border-l bg-teal-50/70 text-center text-teal-800"
-                    >
-                      <span className="inline-flex items-center gap-1.5 font-semibold">
-                        <ShieldCheck className="size-4" />
-                        Ngưỡng hoà vốn an toàn
-                      </span>
-                    </TableHead>
-                  </TableRow>
                   <TableRow>
                     <TableHead>Sản phẩm</TableHead>
-                    <TableHead className="text-center">Đã bán</TableHead>
+                    <TableHead className="text-right">Đã bán</TableHead>
                     <TableHead className="text-right">Doanh thu thuần</TableHead>
                     <TableHead className="text-right">Giá vốn</TableHead>
                     <TableHead className="text-right">Phí sàn &amp; ship</TableHead>
                     <TableHead className="text-right">Chi phí marketing</TableHead>
                     <TableHead className="text-right">Lợi nhuận</TableHead>
                     <TableHead className="text-right">Biên LN</TableHead>
-
-                    <TableHead className="border-l bg-teal-50/40 text-right whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        Giá bán hoà vốn
-                        <HintIcon hint="Giá vốn + phí sàn & ship trung bình cho mỗi sản phẩm. Bán dưới mức này là chắc chắn âm tiền túi." />
-                      </span>
-                    </TableHead>
-                    <TableHead className="bg-teal-50/40 text-right whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        Giảm tối đa
-                        <HintIcon hint="Lợi nhuận gộp (trước marketing) ÷ doanh thu. Cho biết được phép chạy Flash Sale giảm tối đa bao nhiêu % mà đơn vẫn hoà vốn trở lên." />
-                      </span>
-                    </TableHead>
-                    <TableHead className="bg-teal-50/40 text-right whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        Ads tối đa/đơn
-                        <HintIcon hint="Trần chi phí quảng cáo cho mỗi đơn = lợi nhuận gộp trước marketing ÷ số lượng đã bán. Chi vượt mức này thì SKU bắt đầu lỗ." />
-                      </span>
-                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -182,11 +149,38 @@ export function SkuPnlTable() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center font-medium">
+                        <TableCell className="text-right font-medium">
                           {formatNumber(row.quantitySold)}
                         </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatVND(row.revenue)}
+
+                        {/* Doanh thu thuần + dòng phụ: giá hoà vốn mỗi sản phẩm */}
+                        <TableCell className="text-right">
+                          <span className="block font-semibold">
+                            {formatVND(row.revenue)}
+                          </span>
+                          {be && (
+                            <HintText
+                              className={cn(
+                                "mt-0.5",
+                                belowFloor
+                                  ? "font-medium text-rose-600"
+                                  : "text-muted-foreground"
+                              )}
+                              hint={
+                                <>
+                                  <b>Giá bán hoà vốn</b> = giá vốn/sp + phí sàn &amp;
+                                  ship trung bình/sp. Bán dưới mức này là chắc chắn âm
+                                  tiền túi.
+                                  <br />
+                                  Giá bán trung bình hiện tại:{" "}
+                                  {formatVND(be.avgSellingPrice)}/sp.
+                                </>
+                              }
+                            >
+                              {belowFloor && "⚠️ "}
+                              Hoà vốn/sp: {formatVND(be.floorPrice)}
+                            </HintText>
+                          )}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {row.cogs > 0 ? `− ${formatVND(row.cogs)}` : "—"}
@@ -196,10 +190,44 @@ export function SkuPnlTable() {
                             ? `− ${formatVND(row.allocatedFee)}`
                             : "—"}
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {row.marketingCost > 0
-                            ? `− ${formatVND(row.marketingCost)}`
-                            : "—"}
+                        {/* Chi phí marketing + dòng phụ: trần Ads cho mỗi đơn */}
+                        <TableCell className="text-right">
+                          <span
+                            className={cn(
+                              "block",
+                              be?.isOverspending
+                                ? "font-semibold text-rose-600"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            {row.marketingCost > 0
+                              ? `− ${formatVND(row.marketingCost)}`
+                              : "—"}
+                          </span>
+                          {be && (
+                            <HintText
+                              className={cn(
+                                "mt-0.5",
+                                be.isOverspending
+                                  ? "font-medium text-rose-600"
+                                  : "text-muted-foreground"
+                              )}
+                              hint={
+                                <>
+                                  <b>Trần Ads</b> = chi phí marketing tối đa trên mỗi
+                                  đơn hàng để SKU này không bị lỗ tiền túi.
+                                  <br />
+                                  Đang tiêu thực tế:{" "}
+                                  {formatVND(be.actualCpa)}/đơn.
+                                  {be.isOverspending &&
+                                    " → Vượt ngưỡng, nên tắt hoặc tối ưu lại chiến dịch."}
+                                </>
+                              }
+                            >
+                              {be.isOverspending && "🚨 "}
+                              Trần Ads: {formatVND(be.targetCpa)}
+                            </HintText>
+                          )}
                         </TableCell>
                         <TableCell
                           className={cn(
@@ -209,90 +237,41 @@ export function SkuPnlTable() {
                         >
                           {formatVND(row.profit)}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-semibold",
-                            profitable ? "text-emerald-700" : "text-rose-600"
-                          )}
-                        >
-                          <span className="inline-flex items-center gap-1">
+                        {/* Biên LN + dòng phụ: mức giảm giá tối đa còn hoà vốn */}
+                        <TableCell className="text-right">
+                          <span
+                            className={cn(
+                              "flex items-center justify-end gap-1 font-semibold",
+                              profitable ? "text-emerald-700" : "text-rose-600"
+                            )}
+                          >
                             {!profitable && <TrendingDown className="size-3.5" />}
                             {row.margin}%
                           </span>
+                          {be && (
+                            <HintText
+                              className={cn(
+                                "mt-0.5",
+                                be.maxDiscountPercent > 0
+                                  ? "text-muted-foreground"
+                                  : "font-medium text-rose-600"
+                              )}
+                              hint={
+                                <>
+                                  <b>Mức giảm tối đa</b> = lợi nhuận gộp (trước
+                                  marketing) ÷ doanh thu. Cho biết được phép chạy Flash
+                                  Sale giảm tối đa bao nhiêu % mà đơn vẫn hoà vốn trở
+                                  lên.
+                                </>
+                              }
+                            >
+                              {be.maxDiscountPercent > 0
+                                ? `Giảm tối đa: ${be.maxDiscountPercent}%`
+                                : "Không thể giảm giá"}
+                            </HintText>
+                          )}
                         </TableCell>
 
-                        {/* ===== NGƯỠNG HOÀ VỐN AN TOÀN ===== */}
-                        {be ? (
-                          <>
-                            {/* Giá bán hoà vốn */}
-                            <TableCell className="border-l bg-teal-50/40 text-right">
-                              <span
-                                className={cn(
-                                  "font-semibold",
-                                  belowFloor ? "text-rose-600" : "text-teal-800"
-                                )}
-                              >
-                                {formatVND(be.floorPrice)}
-                              </span>
-                              {belowFloor && (
-                                <span className="mt-0.5 flex items-center justify-end gap-1 text-xs font-medium text-rose-600">
-                                  <AlertTriangle className="size-3" />
-                                  Đang bán dưới giá hoà vốn
-                                </span>
-                              )}
-                            </TableCell>
-
-                            {/* Mức giảm giá tối đa */}
-                            <TableCell className="bg-teal-50/40 text-right">
-                              <span
-                                className={cn(
-                                  "font-semibold",
-                                  be.maxDiscountPercent > 0
-                                    ? "text-teal-800"
-                                    : "text-rose-600"
-                                )}
-                              >
-                                {be.maxDiscountPercent > 0
-                                  ? `${be.maxDiscountPercent}%`
-                                  : "Không thể giảm"}
-                              </span>
-                            </TableCell>
-
-                            {/* Trần chi phí Ads mỗi đơn */}
-                            <TableCell className="bg-teal-50/40 text-right">
-                              <span
-                                className={cn(
-                                  "font-semibold",
-                                  be.isOverspending
-                                    ? "text-rose-600"
-                                    : be.targetCpa > 0
-                                      ? "text-teal-800"
-                                      : "text-muted-foreground"
-                                )}
-                              >
-                                {be.targetCpa > 0 ? formatVND(be.targetCpa) : "0 ₫"}
-                              </span>
-                              {be.isOverspending ? (
-                                <span className="mt-0.5 flex items-center justify-end gap-1 text-xs font-medium text-rose-600">
-                                  🚨 Đang tiêu {formatVND(be.actualCpa)}/đơn
-                                </span>
-                              ) : (
-                                be.actualCpa > 0 && (
-                                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                                    Đang tiêu {formatVND(be.actualCpa)}/đơn
-                                  </span>
-                                )
-                              )}
-                            </TableCell>
-                          </>
-                        ) : (
-                          <TableCell
-                            colSpan={3}
-                            className="border-l bg-teal-50/40 text-center text-xs text-muted-foreground"
-                          >
-                            Cần nhập giá vốn &amp; có đơn bán để tính
-                          </TableCell>
-                        )}
                       </TableRow>
                     );
                   })}

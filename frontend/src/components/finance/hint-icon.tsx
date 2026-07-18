@@ -39,3 +39,37 @@ export function HintIcon({
     </Tooltip>
   );
 }
+
+/// Dòng chữ nhỏ có tooltip — hover vào là hiện giải thích công thức.
+/// Dùng cho các dòng phụ (sub-info) lồng dưới số liệu chính trong bảng.
+export function HintText({
+  children,
+  hint,
+  className,
+}: {
+  children: React.ReactNode;
+  hint: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            // Trông như chữ thường nhưng vẫn focus được bằng bàn phím
+            className={cn(
+              "cursor-help text-xs leading-tight underline decoration-dotted underline-offset-2 transition-colors",
+              className
+            )}
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72 text-xs leading-relaxed">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
