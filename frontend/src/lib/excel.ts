@@ -2,8 +2,10 @@ import * as XLSX from "xlsx";
 import {
   fetchOrders,
   fetchProducts,
+  fetchShippingDiscrepancies,
   type Order,
   type Product,
+  type ShippingDiscrepancy,
 } from "@/lib/api";
 
 // Chuyển "yyyy-...T..." → "hh:mm dd/mm/yyyy" cho dễ đọc trong Excel
@@ -136,6 +138,45 @@ export function exportOrdersToExcel(orders: Order[]) {
     "Don hang",
     `hubsell_don_hang_${fileStamp()}.xlsx`
   );
+}
+
+// ---------- XUẤT FILE KHIẾU NẠI PHÍ SHIP ----------
+
+export function exportShippingDisputesToExcel(items: ShippingDiscrepancy[]) {
+  const rows = items.map((o) => ({
+    "Mã đơn hàng": o.orderCode,
+    Sàn: CHANNEL_LABEL[o.channelName] ?? o.channelName,
+    "Phí ship sàn báo": o.shippingFeeQuoted,
+    "Phí ship thực tế bị trừ": o.shippingFeeActual,
+    "Số tiền chênh lệch": o.discrepancy, // âm = số tiền cần đòi lại
+  }));
+  downloadSheet(
+    rows,
+    [24, 12, 18, 22, 20],
+    "Khieu nai phi ship",
+    `hubsell_khieu_nai_phi_ship_${fileStamp()}.xlsx`
+  );
+}
+
+/// Gom TẤT CẢ đơn "Chờ khiếu nại" theo bộ lọc hiện tại rồi xuất file gửi sàn
+export async function exportShippingDisputes(filter: {
+  channel?: string;
+}): Promise<number> {
+  const all: ShippingDiscrepancy[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await fetchShippingDiscrepancies({
+      ...filter,
+      status: "CHO_KHIEU_NAI", // chỉ xuất đơn chưa gửi khiếu nại
+      page,
+      pageSize: 100,
+    });
+    all.push(...res.items);
+    if (page >= res.pageCount || res.pageCount === 0) break;
+    page++;
+  }
+  if (all.length > 0) exportShippingDisputesToExcel(all);
+  return all.length;
 }
 
 // Lấy TẤT CẢ đơn hàng theo bộ lọc hiện tại (gom mọi trang) rồi xuất

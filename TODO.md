@@ -1,8 +1,8 @@
 # 📋 Nhật ký tiến độ & Việc cần làm — Hubsell
 
 > Cập nhật lần cuối: **18/07/2026** — kết thúc phiên làm việc Module Tài chính.
-> Điểm lưu Git gần nhất: `db7454f` — **hubsell-v1.0-mvp-completed**
-> ⚠️ **36 file thay đổi sau v1.0 hiện CHƯA được commit** (xem mục "Việc cần làm ngay").
+> Điểm lưu Git gần nhất: `f85af22` — **hubsell-v1.1-finance-module** (46 file)
+> ✅ Toàn bộ code đã được lưu an toàn vào Git.
 
 ---
 
@@ -130,14 +130,41 @@ Dành cho shop có hàng trăm/hàng nghìn SKU:
 
 ---
 
-## 🔜 VIỆC CẦN LÀM NGAY (đầu phiên sau)
+## 🔜 KẾ HOẠCH NGÀY MAI
 
-### 1. ⚠️ "Lưu game" — commit toàn bộ công việc sau v1.0
-Hiện có **36 file thay đổi chưa commit**, gồm 4 migration database và nhiều tính năng lớn.
-Nếu máy gặp sự cố sẽ mất hết → **nên commit ngay đầu buổi sau**.
-Gợi ý tên commit: `hubsell-v1.1-finance-module`
+### ✅ 1. TRANG "ĐỐI SOÁT CHÊNH LỆCH PHÍ SHIP" — ĐÃ HOÀN THÀNH 18/07/2026
+Đã làm xong: enum `ShippingDisputeStatus`, 2 trường `shippingFeeQuoted`/`shippingFeeActual`,
+API `GET|PATCH /api/finance/shipping-discrepancies`, trang `/finance/shipping-alerts`
+(2 thẻ chỉ số + bảng + badge trạng thái + nút đổi trạng thái nhanh + xuất Excel 5 cột khiếu nại).
 
-### 2. 🎯 Kiểm tra luồng vận hành real-time (kế hoạch chính ngày mai)
+<details><summary>Kế hoạch gốc (đã thực hiện)</summary>
+Mục tiêu: gom các đơn bị sàn trừ nhầm/trừ thêm tiền ship, giúp chủ shop **bấm nút xuất danh sách đi khiếu nại sàn**.
+
+**Dữ liệu đã có sẵn** (không cần migration mới):
+- `Order.shippingFeeDiff` — khoản sàn trừ thêm ngoài phí ship đã thu của khách
+- `Order.isSettled` / `settledAt` — chỉ đơn đã quyết toán mới có số liệu này
+- `Order.orderCode`, `customerName`, `totalAmount`, `channel.channelName`, `createdAt`
+
+**Việc cần làm — Backend:**
+- [ ] API `GET /api/finance/shipping-disputes` — lọc đơn có `shippingFeeDiff > 0`
+  - Hỗ trợ lọc theo kênh + khoảng thời gian
+  - Trả tổng số tiền bị trừ, số đơn, và chi tiết từng đơn
+  - Cân nhắc thêm trạng thái khiếu nại (chưa khiếu nại / đã gửi / đã hoàn tiền)
+    → nếu cần thì thêm cột `disputeStatus` vào Order (migration nhỏ)
+
+**Việc cần làm — Frontend:**
+- [ ] Thêm mục con thứ 5 vào menu "Quản lý Tài chính": **"Đối soát phí ship"** (`/finance/shipping-disputes`)
+- [ ] Bảng danh sách: Mã đơn · Khách hàng · Kênh · Ngày · Phí ship bị trừ · Trạng thái khiếu nại
+- [ ] Thẻ tổng: "Tổng tiền bị trừ nhầm" + số đơn (màu cảnh báo)
+- [ ] Nút **"Xuất Excel khiếu nại"** — dùng lại `src/lib/excel.ts` đã có sẵn
+  - File xuất nên có đủ cột sàn yêu cầu khi khiếu nại (mã đơn, ngày, số tiền, lý do)
+- [ ] (Tuỳ chọn) Nút đánh dấu "Đã gửi khiếu nại" cho từng đơn
+
+**Lưu ý:** dữ liệu `shippingFeeDiff` hiện do `mockSettlement()` sinh ra (đơn có `hash % 7 == 0` → bị trừ 5.000–15.000đ). Hiện tại có **1 đơn** đang bị trừ 15.000đ. Nếu cần thêm dữ liệu test, tạo vài đơn mới rồi chuyển sang "Đã giao".
+
+</details>
+
+### 2. 🔍 Kiểm tra luồng vận hành real-time (việc tiếp theo)
 Chạy thử toàn bộ chuỗi nghiệp vụ từ đầu đến cuối:
 - [ ] Đơn từ sàn đổ về (webhook) → tự trừ kho → ghi `OrderItem` kèm giá vốn
 - [ ] Cập nhật trạng thái đơn → giao hàng → vào báo cáo tài chính

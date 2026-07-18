@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { ChannelName, ExpenseCategory, ExpenseType, Prisma } from "@prisma/client";
+import {
+  ChannelName,
+  ExpenseCategory,
+  ExpenseType,
+  Prisma,
+  ShippingDisputeStatus,
+} from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
@@ -258,12 +264,6 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
     const raw = typeof req.query.channel === "string" ? req.query.channel : "all";
     const channel = raw.toLowerCase();
 
-    const CHANNEL_BY_KEY: Record<string, ChannelName> = {
-      shopee: ChannelName.SHOPEE,
-      tiktok: ChannelName.TIKTOK,
-      lazada: ChannelName.LAZADA,
-    };
-
     const rows: {
       skuId: string; // id dùng để cập nhật giá vốn (mapping id hoặc product id)
       productId: string;
@@ -282,7 +282,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
         where: {
           channel: {
             userId: req.ownerId!,
-            ...(CHANNEL_BY_KEY[channel]
+            ...(channel !== "all" && CHANNEL_BY_KEY[channel]
               ? { channelName: CHANNEL_BY_KEY[channel] }
               : { channelName: { not: ChannelName.OFFLINE } }),
           },
@@ -340,6 +340,137 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+// ============================================================
+// ĐỐI SOÁT & KHIẾU NẠI CHÊNH LỆCH PHÍ VẬN CHUYỂN
+// Gom các đơn bị sàn trừ phí ship cao hơn mức đã báo, để chủ shop
+// xuất danh sách gửi khiếu nại đòi lại tiền.
+// LƯU Ý QUY ƯỚC: DB lưu shippingFeeDiff DƯƠNG = số tiền bị trừ thêm.
+// API trả `discrepancy` ÂM (góc nhìn shop bị mất tiền) cho khớp giao diện.
+// ============================================================
+
+const DISPUTE_STATUSES: ShippingDisputeStatus[] = [
+  ShippingDisputeStatus.CHO_KHIEU_NAI,
+  ShippingDisputeStatus.DANG_KHIEU_NAI,
+  ShippingDisputeStatus.DA_DOI_SOAT,
+];
+
+const CHANNEL_BY_KEY: Record<string, ChannelName> = {
+  shopee: ChannelName.SHOPEE,
+  tiktok: ChannelName.TIKTOK,
+  lazada: ChannelName.LAZADA,
+  offline: ChannelName.OFFLINE,
+};
+
+// GET /api/finance/shipping-discrepancies?page&pageSize&channel&status
+router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+    const channelKey =
+      typeof req.query.channel === "string" ? req.query.channel.toLowerCase() : "all";
+    const statusKey =
+      typeof req.query.status === "string" ? req.query.status.toUpperCase() : "";
+
+    const where: Prisma.OrderWhereInput = {
+      channel: {
+        userId: req.ownerId!,
+        ...(CHANNEL_BY_KEY[channelKey]
+          ? { channelName: CHANNEL_BY_KEY[channelKey] }
+          : {}),
+      },
+      shippingFeeDiff: { gt: 0 }, // chỉ đơn bị trừ thêm
+      ...(DISPUTE_STATUSES.includes(statusKey as ShippingDisputeStatus)
+        ? { shippingDisputeStatus: statusKey as ShippingDisputeStatus }
+        : {}),
+    };
+
+    const [total, rows, allMatching] = await Promise.all([
+      prisma.order.count({ where }),
+      prisma.order.findMany({
+        where,
+        orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { channel: { select: { channelName: true } } },
+      }),
+      // Toàn bộ đơn khớp bộ lọc (không phân trang) để tính tổng tiền cần đòi
+      prisma.order.findMany({
+        where,
+        select: { shippingFeeDiff: true, shippingDisputeStatus: true },
+      }),
+    ]);
+
+    const totalDiscrepancy = allMatching.reduce(
+      (s, o) => s + Number(o.shippingFeeDiff),
+      0
+    );
+    const pendingCount = allMatching.filter(
+      (o) => o.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
+    ).length;
+
+    res.json({
+      summary: {
+        totalOrders: total, // tổng số đơn lệch (theo bộ lọc)
+        totalDiscrepancy: -totalDiscrepancy, // ÂM: số tiền cần đòi lại
+        pendingCount, // số đơn chưa gửi khiếu nại
+      },
+      page,
+      pageSize,
+      pageCount: Math.ceil(total / pageSize),
+      items: rows.map((o) => ({
+        id: o.id,
+        orderCode: o.orderCode,
+        channelName: o.channel.channelName,
+        settledAt: o.settledAt,
+        createdAt: o.createdAt,
+        shippingFeeQuoted: Number(o.shippingFeeQuoted), // phí sàn báo
+        shippingFeeActual: Number(o.shippingFeeActual), // phí thực tế bị trừ
+        discrepancy: -Number(o.shippingFeeDiff), // ÂM = shop bị mất tiền
+        status: o.shippingDisputeStatus,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/finance/shipping-discrepancies/:id/status — đổi trạng thái khiếu nại
+router.patch(
+  "/shipping-discrepancies/:id/status",
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { status } = req.body ?? {};
+      if (!DISPUTE_STATUSES.includes(status)) {
+        res.status(400).json({
+          error: `Trạng thái không hợp lệ. Chọn: ${DISPUTE_STATUSES.join(", ")}`,
+        });
+        return;
+      }
+
+      const order = await prisma.order.findFirst({
+        where: { id: req.params.id, channel: { userId: req.ownerId! } },
+      });
+      if (!order) {
+        res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+        return;
+      }
+
+      const updated = await prisma.order.update({
+        where: { id: order.id },
+        data: { shippingDisputeStatus: status as ShippingDisputeStatus },
+      });
+
+      res.json({
+        id: updated.id,
+        orderCode: updated.orderCode,
+        status: updated.shippingDisputeStatus,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // POST /api/finance/sync-products — QUÉT SẢN PHẨM TỪ CÁC SÀN ĐÃ KẾT NỐI.
 // Lấy danh mục sản phẩm (mã SKU, tên/biến thể, giá bán, ảnh) từ từng gian hàng

@@ -95,7 +95,9 @@ export interface SettlementDetail {
   paymentFee: number; // phí thanh toán
   affiliateFee: number; // phí tiếp thị liên kết (Affiliate)
   sellerVoucher: number; // voucher trợ giá do SHOP tự chịu
-  shippingFeeDiff: number; // chênh lệch phí vận chuyển bị sàn trừ âm thầm
+  shippingFeeQuoted: number; // phí ship SÀN BÁO lúc đặt đơn
+  shippingFeeActual: number; // phí ship THỰC TẾ sàn trừ khi quyết toán
+  shippingFeeDiff: number; // chênh lệch = thực tế − sàn báo (dương = bị trừ thêm)
   platformSubsidy: number; // trợ giá từ SÀN (giảm chi phí cho shop)
   totalFee: number; // tổng khấu trừ thực tế
   actualPayout: number; // tiền thực nhận về ví = doanh thu − totalFee
@@ -125,6 +127,8 @@ export function mockSettlement(
       paymentFee: 0,
       affiliateFee: 0,
       sellerVoucher: 0,
+      shippingFeeQuoted: 0,
+      shippingFeeActual: 0,
       shippingFeeDiff: 0,
       platformSubsidy: 0,
       totalFee: 0,
@@ -145,8 +149,14 @@ export function mockSettlement(
   const affiliateFee = h % 4 === 0 ? Math.round(totalAmount * 0.03) : 0;
   // Shop tự bỏ tiền chạy voucher giảm giá
   const sellerVoucher = h % 5 === 0 ? Math.round(totalAmount * 0.04) : 0;
-  // Sàn trừ thêm chênh lệch phí vận chuyển (thường không báo trước)
-  const shippingFeeDiff = h % 7 === 0 ? 5000 + (h % 3) * 5000 : 0;
+  // Phí vận chuyển: sàn báo một đằng, lúc quyết toán trừ một nẻo.
+  // Khoảng 1/3 số đơn bị trừ thêm — đây chính là khoản shop cần khiếu nại đòi lại.
+  const shippingFeeQuoted = 16500 + (h % 4) * 1500; // phí sàn báo lúc đặt đơn
+  const overcharged = h % 3 === 1;
+  const shippingFeeActual = overcharged
+    ? shippingFeeQuoted + 5000 + (h % 3) * 5000 // bị trừ thêm
+    : shippingFeeQuoted;
+  const shippingFeeDiff = shippingFeeActual - shippingFeeQuoted;
   // Khoảng 1/3 số đơn được sàn trợ giá một phần (khoản này GIẢM chi phí)
   const platformSubsidy = h % 3 === 0 ? Math.round(totalAmount * 0.02) : 0;
 
@@ -165,6 +175,8 @@ export function mockSettlement(
     paymentFee,
     affiliateFee,
     sellerVoucher,
+    shippingFeeQuoted,
+    shippingFeeActual,
     shippingFeeDiff,
     platformSubsidy,
     totalFee,

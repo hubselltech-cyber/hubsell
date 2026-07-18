@@ -110,6 +110,8 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
           paymentFee: s.paymentFee,
           affiliateFee: s.affiliateFee,
           sellerVoucher: s.sellerVoucher,
+          shippingFeeQuoted: s.shippingFeeQuoted,
+          shippingFeeActual: s.shippingFeeActual,
           shippingFeeDiff: s.shippingFeeDiff,
           platformSubsidy: s.platformSubsidy,
           actualPayout: s.actualPayout,

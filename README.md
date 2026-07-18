@@ -124,6 +124,19 @@ hubsell/
 | GET | `/api/finance/sku-products?channel=` | Danh sách SKU theo sàn (all/shopee/tiktok/lazada/offline) để nhập giá vốn | 🔒 Chỉ Admin |
 | PATCH | `/api/finance/update-cost` | Cập nhật giá vốn theo `sku_id` + `cost_price` | 🔒 Chỉ Admin |
 | POST | `/api/finance/sync-products` | **Quét sản phẩm từ các sàn đã kết nối** → upsert vào Product + ProductMapping | 🔒 Chỉ Admin |
+| GET | `/api/finance/shipping-discrepancies` | Đơn bị sàn trừ thừa phí ship (phân trang, lọc sàn + trạng thái khiếu nại) | 🔒 Chỉ Admin |
+| PATCH | `/api/finance/shipping-discrepancies/:id/status` | Đổi trạng thái khiếu nại | 🔒 Chỉ Admin |
+
+### 🚚 Đối soát & Khiếu nại chênh lệch phí vận chuyển (`/finance/shipping-alerts`)
+
+Gom các đơn bị sàn trừ phí ship **cao hơn mức đã báo** để chủ shop đòi lại tiền.
+
+- Lưu `shippingFeeQuoted` (sàn báo) · `shippingFeeActual` (thực tế bị trừ) · `shippingFeeDiff` (chênh lệch)
+- Vòng đời khiếu nại `shippingDisputeStatus`: **CHO_KHIEU_NAI → DANG_KHIEU_NAI → DA_DOI_SOAT** (nút "Đổi trạng thái nhanh" chuyển sang bước kế tiếp)
+- 2 thẻ chỉ số: *Tổng số đơn lệch* · *Tổng số tiền cần đòi lại*
+- Nút **"Xuất file khiếu nại sàn"**: gom các đơn `CHO_KHIEU_NAI` theo bộ lọc, xuất Excel 5 cột — [Mã đơn hàng] [Sàn] [Phí ship sàn báo] [Phí ship thực tế bị trừ] [Số tiền chênh lệch]
+
+> ⚠️ **Quy ước dấu:** database lưu `shippingFeeDiff` **dương** (số tiền bị trừ thêm — đồng bộ với các trường phí khác), còn API/giao diện trả **số âm màu đỏ** theo góc nhìn "shop bị mất tiền".
 
 ## 💰 Hubsell Finance — Module tài chính chuyên sâu
 

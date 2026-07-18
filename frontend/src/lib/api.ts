@@ -445,6 +445,63 @@ export interface FinanceAnalytics {
   series: { date: string; label: string; revenue: number; cost: number }[];
 }
 
+// ----- Đối soát & khiếu nại chênh lệch phí vận chuyển -----
+
+export type ShippingDisputeStatus =
+  | "CHO_KHIEU_NAI"
+  | "DANG_KHIEU_NAI"
+  | "DA_DOI_SOAT";
+
+export interface ShippingDiscrepancy {
+  id: string;
+  orderCode: string;
+  channelName: ChannelName;
+  settledAt: string | null;
+  createdAt: string;
+  shippingFeeQuoted: number; // phí sàn báo
+  shippingFeeActual: number; // phí thực tế bị trừ
+  discrepancy: number; // ÂM = số tiền shop bị mất
+  status: ShippingDisputeStatus;
+}
+
+export interface ShippingDiscrepancyResponse {
+  summary: {
+    totalOrders: number;
+    totalDiscrepancy: number; // âm
+    pendingCount: number;
+  };
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  items: ShippingDiscrepancy[];
+}
+
+export function fetchShippingDiscrepancies(params: {
+  page?: number;
+  pageSize?: number;
+  channel?: string;
+  status?: string;
+}) {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params.channel && params.channel !== "all") qs.set("channel", params.channel);
+  if (params.status) qs.set("status", params.status);
+  return apiFetch<ShippingDiscrepancyResponse>(
+    `/api/finance/shipping-discrepancies?${qs.toString()}`
+  );
+}
+
+export function updateShippingDisputeStatus(
+  orderId: string,
+  status: ShippingDisputeStatus
+) {
+  return apiFetch<{ id: string; orderCode: string; status: ShippingDisputeStatus }>(
+    `/api/finance/shipping-discrepancies/${orderId}/status`,
+    { method: "PATCH", body: JSON.stringify({ status }) }
+  );
+}
+
 // ----- Cấu hình giá vốn theo SKU -----
 
 export type SkuChannelFilter = "all" | "shopee" | "tiktok" | "lazada" | "offline";

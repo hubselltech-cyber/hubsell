@@ -38,6 +38,13 @@ enum ExpenseType {
   VARIABLE // Chi phí biến đổi (quảng cáo, đóng gói...)
 }
 
+/// Trạng thái khiếu nại chênh lệch phí vận chuyển với sàn
+enum ShippingDisputeStatus {
+  CHO_KHIEU_NAI  // phát hiện lệch, chưa gửi khiếu nại
+  DANG_KHIEU_NAI // đã gửi khiếu nại, đang chờ sàn xử lý
+  DA_DOI_SOAT    // sàn đã đối soát/hoàn tiền xong
+}
+
 // ---------- BẢNG ----------
 
 /// Người dùng của hệ thống (chủ shop / nhân viên)
@@ -142,7 +149,12 @@ model Order {
   paymentFee      Decimal   @default(0) @db.Decimal(12, 2) // phí thanh toán
   affiliateFee    Decimal   @default(0) @db.Decimal(12, 2) // phí tiếp thị liên kết (Affiliate)
   sellerVoucher   Decimal   @default(0) @db.Decimal(12, 2) // voucher trợ giá do SHOP tự chịu
-  shippingFeeDiff Decimal   @default(0) @db.Decimal(12, 2) // chênh lệch phí vận chuyển bị sàn trừ
+  // --- Phí vận chuyển & đối soát khiếu nại ---
+  shippingFeeQuoted Decimal @default(0) @db.Decimal(12, 2) // phí ship SÀN BÁO lúc đặt đơn
+  shippingFeeActual Decimal @default(0) @db.Decimal(12, 2) // phí ship THỰC TẾ sàn trừ khi quyết toán
+  // Chênh lệch = thực tế − sàn báo. LƯU DƯƠNG = số tiền shop bị trừ thêm (cần đòi lại).
+  shippingFeeDiff   Decimal @default(0) @db.Decimal(12, 2)
+  shippingDisputeStatus ShippingDisputeStatus @default(CHO_KHIEU_NAI)
   platformSubsidy Decimal   @default(0) @db.Decimal(12, 2) // trợ giá từ SÀN (giảm chi phí cho shop)
   actualPayout    Decimal   @default(0) @db.Decimal(12, 2) // tiền thực nhận về ví
 

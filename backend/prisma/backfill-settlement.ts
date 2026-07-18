@@ -51,6 +51,8 @@ async function main() {
         paymentFee: s.paymentFee,
         affiliateFee: s.affiliateFee,
         sellerVoucher: s.sellerVoucher,
+        shippingFeeQuoted: s.shippingFeeQuoted,
+        shippingFeeActual: s.shippingFeeActual,
         shippingFeeDiff: s.shippingFeeDiff,
         platformSubsidy: s.platformSubsidy,
         actualPayout: s.actualPayout,
