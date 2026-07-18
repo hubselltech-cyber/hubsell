@@ -252,13 +252,10 @@ export default function DashboardPage() {
             label="Tổng Giá vốn"
             value={analytics ? formatVND(analytics.totalCost) : "—"}
             icon={Coins}
-            tone="warning"
+            tone="negative"
             colorValue
-            progress={cogsRatio}
-            progressLabel={
-              cogsRatio !== undefined
-                ? `Chiếm ${cogsRatio}% doanh thu`
-                : undefined
+            subtitle={
+              cogsRatio !== undefined ? `${cogsRatio}% doanh thu` : undefined
             }
           />
           <StatCard
@@ -267,8 +264,7 @@ export default function DashboardPage() {
             icon={PiggyBank}
             tone={analytics ? toneBySign(analytics.grossProfit) : "neutral"}
             colorValue
-            progress={grossMargin}
-            progressLabel={
+            subtitle={
               grossMargin !== undefined
                 ? `Biên lợi nhuận gộp ${grossMargin}%`
                 : undefined
@@ -284,21 +280,15 @@ export default function DashboardPage() {
             icon={Receipt}
             tone="negative"
             colorValue
-            progress={opexRatio}
-            progressLabel={
-              opexRatio !== undefined
-                ? `Ngốn ${opexRatio}% doanh thu`
-                : undefined
+            subtitle={
+              opexRatio !== undefined ? `${opexRatio}% doanh thu` : undefined
             }
           />
 
-          {/* Lợi nhuận thuần — Card Ngôi Sao của trang Tổng quan */}
+          {/* Lợi nhuận thuần — khối cảnh báo tối cao, được phủ nền theo lãi/lỗ */}
           {(() => {
             const net = analytics?.netProfit ?? 0;
-            const revenue = analytics?.totalRevenue ?? 0;
-            // Biên lợi nhuận thuần: net chiếm bao nhiêu % doanh thu
-            const margin =
-              revenue > 0 ? Math.round((net / revenue) * 1000) / 10 : undefined;
+            const margin = ratioOfRevenue(net);
             return (
               <StatCard
                 label="Lợi nhuận thuần (Net Profit)"
@@ -306,13 +296,9 @@ export default function DashboardPage() {
                 icon={Scale}
                 tone={toneBySign(net)}
                 featured
-                subtitle="= Lợi nhuận gộp − Chi phí hoạt động"
-                progress={margin}
-                progressLabel={
-                  margin !== undefined
-                    ? `Biên lợi nhuận thuần ${margin}% doanh thu`
-                    : undefined
-                }
+                subtitle={`= Lợi nhuận gộp − Chi phí hoạt động${
+                  margin !== undefined ? ` · biên ${margin}% doanh thu` : ""
+                }`}
               />
             );
           })()}

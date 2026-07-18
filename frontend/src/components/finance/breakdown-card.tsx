@@ -73,9 +73,10 @@ export function BreakdownCard({
       value: `${itemsAreDeductions ? (isCredit ? "+ " : "− ") : ""}${formatVND(
         Math.abs(item.amount)
       )}`,
-      percent: item.percent,
-      note:
-        item.count !== undefined ? `· ${formatNumber(item.count)} đơn` : undefined,
+      // Tỷ lệ hiển thị bằng text thuần, không vẽ thanh đồ hoạ
+      note: `${item.percent}%${
+        item.count !== undefined ? ` · ${formatNumber(item.count)} đơn` : ""
+      }`,
       tone: rowTone,
     };
   });

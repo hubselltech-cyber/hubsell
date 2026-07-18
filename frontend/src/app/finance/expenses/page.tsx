@@ -404,14 +404,14 @@ export default function FinanceExpensesPage() {
           <AddExpenseDialog onAdded={load} />
         </div>
 
-        {/* Tổng quan nhanh — Tổng chi phí là chỉ số cốt lõi của trang này */}
+        {/* Tổng quan nhanh */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <DashboardCard
             title="Tổng chi phí"
             value={formatVND(total)}
             icon={Wallet}
             tone="negative"
-            featured
+            colorValue
             subtitle={`${expenses.length} khoản chi trong kỳ`}
           />
           <DashboardCard
@@ -419,11 +419,9 @@ export default function FinanceExpensesPage() {
             value={formatVND(fixed)}
             icon={Building2}
             tone="info"
-            colorValue
-            progress={pctFixed}
-            progressLabel={
+            subtitle={
               pctFixed !== undefined
-                ? `Chiếm ${pctFixed}% tổng chi phí · trừ vào lợi nhuận toàn shop`
+                ? `${pctFixed}% tổng chi phí · trừ vào lợi nhuận toàn shop`
                 : "Mặt bằng, lương, phần mềm…"
             }
           />
@@ -432,11 +430,9 @@ export default function FinanceExpensesPage() {
             value={formatVND(variable)}
             icon={Megaphone}
             tone="warning"
-            colorValue
-            progress={pctVariable}
-            progressLabel={
+            subtitle={
               pctVariable !== undefined
-                ? `Chiếm ${pctVariable}% tổng chi phí · bóc tách về từng SKU`
+                ? `${pctVariable}% tổng chi phí · bóc tách về từng SKU`
                 : "Quảng cáo, đóng gói…"
             }
           />

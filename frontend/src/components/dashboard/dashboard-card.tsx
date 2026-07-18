@@ -17,17 +17,21 @@ import { cn } from "@/lib/utils";
  * hành, Cảnh báo đơn lỗ, Đối soát ship…) đều dùng component này, để giao diện
  * luôn nhất quán và chỉ cần sửa 1 chỗ khi muốn đổi phong cách.
  *
- * Ba quy tắc thị giác:
- *  1. ĐIỂM NEO — mỗi lưới thẻ nên có đúng MỘT thẻ `featured` (Card Ngôi Sao)
- *     cho chỉ số cốt lõi của trang. Thẻ này có nền màu nhạt + viền màu + đổ
- *     bóng, hút mắt ngay khi mở trang.
- *  2. ICON CÓ KHỐI NỀN — icon nằm trong ô bo góc nền màu đặc, không thả trôi
- *     nhạt nhoà, giúp phân biệt loại chỉ số chỉ bằng liếc mắt.
- *  3. SỐ BIẾT NÓI — mọi dòng có % đều kèm thanh tiến trình mảnh, để đọc tỷ
- *     trọng bằng hình ảnh thay vì phải nhẩm số.
+ * ─── TRIẾT LÝ: SẠCH SẼ TRƯỚC, TRANG TRÍ SAU ───
+ * Đây là màn hình tài chính, không phải trang marketing. Chủ shop nhìn vào để
+ * ra quyết định, nên ưu tiên khoảng trống và con số rõ ràng.
+ *
+ *  ❌ KHÔNG dùng thanh ngang (progress bar) ở các dòng chỉ số chi tiết. Đã thử
+ *     và loại bỏ: một rừng vạch màu dưới mỗi dòng làm mắt bị nhiễu, hạ thấp
+ *     tính chuyên nghiệp của ERP. Tỷ lệ % hiển thị bằng TEXT là đủ.
+ *
+ *  ✅ Phân cấp CHỈ bằng 3 công cụ:
+ *     1. Màu chữ của số — xem VALUE_COLOR bên dưới, đúng 3 trạng thái.
+ *     2. Khối nền của icon — cho phép nhiều màu, giúp nhận diện loại chỉ số.
+ *     3. Nền + viền của cả thẻ — chỉ dành cho thẻ cảnh báo/lợi nhuận cốt lõi.
  */
 
-/** Sắc thái ngữ nghĩa của một chỉ số — quyết định toàn bộ bảng màu của thẻ. */
+/** Sắc thái ngữ nghĩa của một chỉ số. */
 export type CardTone =
   | "neutral" // trung tính (số lượng, thông tin)
   | "info" // dữ liệu tham chiếu (xanh dương)
@@ -36,55 +40,35 @@ export type CardTone =
   | "warning" // cần chú ý (hổ phách)
   | "accent"; // nhấn phụ (tím)
 
-interface ToneStyle {
-  /** Ô nền chứa icon */
-  icon: string;
-  /** Màu số tổng khi muốn tô theo sắc thái */
-  value: string;
-  /** Màu thanh tiến trình */
-  bar: string;
-  /** Nền + viền khi thẻ ở chế độ Ngôi Sao */
-  featured: string;
-}
+/** Khối nền của icon — được phép nhiều màu để phân biệt loại chỉ số. */
+const ICON_BOX: Record<CardTone, string> = {
+  neutral: "bg-slate-100 text-slate-700",
+  info: "bg-sky-100 text-sky-700",
+  positive: "bg-emerald-100 text-emerald-700",
+  negative: "bg-rose-100 text-rose-700",
+  warning: "bg-amber-100 text-amber-700",
+  accent: "bg-violet-100 text-violet-700",
+};
 
-const TONES: Record<CardTone, ToneStyle> = {
-  neutral: {
-    icon: "bg-slate-100 text-slate-700",
-    value: "text-foreground",
-    bar: "bg-slate-400",
-    featured: "bg-slate-50/60 ring-slate-300/70",
-  },
-  info: {
-    icon: "bg-sky-100 text-sky-700",
-    value: "text-sky-700",
-    bar: "bg-sky-500",
-    featured: "bg-sky-50/50 ring-sky-300/70",
-  },
-  positive: {
-    icon: "bg-emerald-100 text-emerald-700",
-    value: "text-emerald-700",
-    bar: "bg-emerald-500",
-    featured: "bg-emerald-50/40 ring-emerald-300/70",
-  },
-  negative: {
-    icon: "bg-rose-100 text-rose-700",
-    // Đỏ tươi (600) chứ không phải đỏ sẫm (700/800): số lỗ phải đập vào mắt
-    value: "text-rose-600",
-    bar: "bg-rose-500",
-    featured: "bg-rose-50/40 ring-rose-300/70",
-  },
-  warning: {
-    icon: "bg-amber-100 text-amber-700",
-    value: "text-amber-700",
-    bar: "bg-amber-500",
-    featured: "bg-amber-50/50 ring-amber-300/70",
-  },
-  accent: {
-    icon: "bg-violet-100 text-violet-700",
-    value: "text-violet-700",
-    bar: "bg-violet-500",
-    featured: "bg-violet-50/50 ring-violet-300/70",
-  },
+/**
+ * Màu chữ của SỐ LIỆU — nghiêm ngặt 3 trạng thái, không tô màu trang trí:
+ *   tiền vào / lãi  → xanh lá
+ *   tiền ra / lỗ    → đỏ sắc nét (600, không dùng 700 sẫm xỉn)
+ *   còn lại         → đen/xám mặc định
+ */
+const VALUE_COLOR: Record<CardTone, string> = {
+  neutral: "text-foreground",
+  info: "text-foreground",
+  warning: "text-foreground",
+  accent: "text-foreground",
+  positive: "text-emerald-600",
+  negative: "text-rose-600",
+};
+
+/** Nền + viền khi thẻ ở chế độ nổi bật. Chỉ có 2 sắc thái được phép. */
+const FEATURED_BG: Partial<Record<CardTone, string>> = {
+  positive: "bg-emerald-50/40 ring-emerald-200",
+  negative: "bg-rose-50/40 ring-rose-200",
 };
 
 /** Dương → xanh, âm → đỏ. Dùng cho các chỉ số có thể lãi hoặc lỗ. */
@@ -98,12 +82,8 @@ export interface DashboardCardItem {
   label: React.ReactNode;
   /** Giá trị đã format sẵn (chuỗi tiền tệ, số đơn…) */
   value: React.ReactNode;
-  /** Màu riêng cho giá trị — mặc định theo tone của dòng */
-  valueClass?: string;
-  /** Tỷ trọng 0–100. Có giá trị → tự vẽ thanh tiến trình bên dưới. */
-  percent?: number;
-  /** Ghi chú nhỏ nằm cạnh % (ví dụ "· 12 đơn") */
-  note?: string;
+  /** Dòng chú thích nhỏ bên dưới giá trị — thường là "12.5% · 8 đơn" */
+  note?: React.ReactNode;
   /** Sắc thái của riêng dòng này — mặc định kế thừa tone của thẻ */
   tone?: CardTone;
 }
@@ -115,51 +95,18 @@ export interface DashboardCardProps {
   icon: LucideIcon;
   tone?: CardTone;
   /**
-   * Card Ngôi Sao — nền màu nhạt, viền màu, bóng đổ.
-   * Mỗi lưới thẻ chỉ nên bật cho đúng một thẻ quan trọng nhất.
+   * Phủ nền + viền màu cho cả thẻ. CHỈ dùng cho khối Lợi nhuận và các thẻ
+   * cảnh báo tiền bạc cốt lõi (tổng tiền lỗ, tiền cần đòi lại) — dùng tràn
+   * lan sẽ mất tác dụng cảnh báo. Chỉ có hiệu lực với tone positive/negative.
    */
   featured?: boolean;
-  /** Tô màu số tổng theo tone (mặc định thẻ featured luôn tô) */
+  /** Tô màu số tổng theo tone (thẻ featured mặc định đã tô) */
   colorValue?: boolean;
   subtitle?: React.ReactNode;
-  /** Thanh tiến trình lớn ngay dưới số tổng (0–100) */
-  progress?: number;
-  /** Nhãn mô tả thanh tiến trình lớn */
-  progressLabel?: React.ReactNode;
   /** Danh sách dòng chi tiết bên dưới */
   items?: DashboardCardItem[];
   footer?: React.ReactNode;
   className?: string;
-}
-
-/** Thanh tiến trình siêu mảnh — đọc tỷ trọng bằng mắt, không cần nhẩm số. */
-export function MiniProgress({
-  percent,
-  tone = "neutral",
-  className,
-}: {
-  percent: number;
-  tone?: CardTone;
-  className?: string;
-}) {
-  // Kẹp về 0–100: % có thể âm (khoản được cộng lại) hoặc vọt trên 100 khi lỗ
-  const width = Math.min(100, Math.abs(percent));
-  return (
-    <div
-      className={cn(
-        "mt-1.5 h-1 overflow-hidden rounded-full bg-foreground/10 2xl:h-1.5",
-        className
-      )}
-    >
-      <div
-        className={cn(
-          "h-full rounded-full transition-[width] duration-700 ease-out",
-          TONES[tone].bar
-        )}
-        style={{ width: `${width}%` }}
-      />
-    </div>
-  );
 }
 
 export function DashboardCard({
@@ -170,31 +117,23 @@ export function DashboardCard({
   featured = false,
   colorValue,
   subtitle,
-  progress,
-  progressLabel,
   items,
   footer,
   className,
 }: DashboardCardProps) {
-  const t = TONES[tone];
-  // Thẻ Ngôi Sao luôn tô màu số tổng, trừ khi bị ép tắt
-  const tinted = colorValue ?? featured;
+  const highlight = featured ? FEATURED_BG[tone] : undefined;
+  // Thẻ được phủ nền thì luôn tô màu số tổng, trừ khi bị ép tắt
+  const tinted = colorValue ?? Boolean(highlight);
 
   return (
-    <Card
-      className={cn(
-        "h-full transition-shadow",
-        featured && cn("shadow-md ring-2", t.featured),
-        className
-      )}
-    >
-      <CardContent className="flex h-full flex-col gap-4 p-5">
+    <Card className={cn("h-full", highlight && cn("shadow-sm ring-1", highlight), className)}>
+      <CardContent className="flex h-full flex-col gap-5 p-5">
         {/* ── Đầu thẻ: icon có khối nền + tiêu đề + số tổng ── */}
         <div className="flex items-start gap-3.5">
           <div
             className={cn(
               "flex size-11 shrink-0 items-center justify-center rounded-xl 2xl:size-12",
-              t.icon
+              ICON_BOX[tone]
             )}
           >
             <Icon className="size-5.5 2xl:size-6" strokeWidth={2.25} />
@@ -205,64 +144,47 @@ export function DashboardCard({
             <p
               className={cn(
                 TEXT_HERO_NUMBER,
-                "mt-0.5 leading-tight break-words",
-                tinted && t.value
+                "mt-1 leading-tight break-words",
+                tinted && VALUE_COLOR[tone]
               )}
             >
               {value}
             </p>
-            {subtitle && <p className={cn(TEXT_SUB, "mt-1")}>{subtitle}</p>}
+            {subtitle && <p className={cn(TEXT_SUB, "mt-1.5")}>{subtitle}</p>}
           </div>
         </div>
 
-        {/* ── Thanh tiến trình tổng ── */}
-        {progress !== undefined && (
-          <div>
-            <MiniProgress percent={progress} tone={tone} className="mt-0" />
-            {progressLabel && (
-              <p className={cn(TEXT_SUB, "mt-1.5")}>{progressLabel}</p>
-            )}
-          </div>
-        )}
-
-        {/* ── Các dòng chi tiết, mỗi dòng có % thì kèm thanh tỷ trọng ── */}
+        {/* ── Các dòng chi tiết: chỉ số tiền + % dạng text, không đồ hoạ ── */}
         {items && items.length > 0 && (
-          <div className="flex-1 space-y-3 border-t pt-3">
-            {items.map((item) => {
-              const itemTone = item.tone ?? tone;
-              return (
-                <div key={item.key}>
-                  <div className="flex items-start justify-between gap-2">
-                    <span
-                      className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}
-                    >
-                      {item.label}
-                    </span>
-                    <span
-                      className={cn(
-                        "shrink-0 text-right text-sm font-semibold 2xl:text-base",
-                        item.valueClass ?? TONES[itemTone].value
-                      )}
-                    >
-                      {item.value}
-                    </span>
-                  </div>
-                  {item.percent !== undefined && (
-                    <>
-                      <MiniProgress percent={item.percent} tone={itemTone} />
-                      <p className={cn(TEXT_SUB, "mt-1 text-right")}>
-                        {item.percent}%{item.note ? ` ${item.note}` : ""}
-                      </p>
-                    </>
+          <div className="flex-1 space-y-3 border-t pt-4">
+            {items.map((item) => (
+              <div
+                key={item.key}
+                className="flex items-start justify-between gap-3"
+              >
+                <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}>
+                  {item.label}
+                </span>
+                <span className="shrink-0 text-right">
+                  <span
+                    className={cn(
+                      "block text-sm font-semibold 2xl:text-base",
+                      VALUE_COLOR[item.tone ?? tone]
+                    )}
+                  >
+                    {item.value}
+                  </span>
+                  {item.note && (
+                    <span className={cn(TEXT_SUB, "block")}>{item.note}</span>
                   )}
-                </div>
-              );
-            })}
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
         {footer && (
-          <div className={cn(TEXT_SUB, "mt-auto border-t pt-3")}>{footer}</div>
+          <div className={cn(TEXT_SUB, "mt-auto border-t pt-4")}>{footer}</div>
         )}
       </CardContent>
     </Card>

@@ -225,9 +225,7 @@ export default function ShippingAlertsPage() {
             value={formatNumber(summary.totalOrders)}
             icon={Truck}
             tone="info"
-            subtitle="Đơn có phí ship thực tế cao hơn mức sàn báo trước"
-            progress={pendingRatio}
-            progressLabel={`${formatNumber(summary.pendingCount)} đơn chờ khiếu nại${
+            subtitle={`${formatNumber(summary.pendingCount)} đơn chờ khiếu nại${
               pendingRatio !== undefined ? ` (${pendingRatio}%)` : ""
             }`}
           />

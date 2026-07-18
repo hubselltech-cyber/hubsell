@@ -13,20 +13,17 @@ interface StatCardProps {
   icon: LucideIcon;
   /** Sắc thái màu của chỉ số — xem CardTone trong dashboard-card.tsx */
   tone?: CardTone;
-  /** Bật cho đúng MỘT thẻ quan trọng nhất trong lưới (Card Ngôi Sao) */
+  /** Phủ nền cảnh báo — chỉ dùng cho khối Lợi nhuận / cảnh báo tiền bạc */
   featured?: boolean;
-  /** Tô màu số tổng theo tone (thẻ Ngôi Sao mặc định đã tô) */
+  /** Tô màu số tổng theo tone (thẻ featured mặc định đã tô) */
   colorValue?: boolean;
   subtitle?: React.ReactNode;
-  /** Tỷ trọng 0–100 → hiện thanh tiến trình mảnh dưới số tổng */
-  progress?: number;
-  progressLabel?: React.ReactNode;
 }
 
 /**
  * Thẻ chỉ số đơn giản (chỉ có tiêu đề + số tổng), là lớp mỏng bọc quanh
- * DashboardCard để các trang cũ gọi cho ngắn gọn. Cần thêm dòng chi tiết,
- * thanh tỷ trọng hay footer thì dùng thẳng <DashboardCard>.
+ * DashboardCard để các trang gọi cho ngắn gọn. Cần thêm dòng chi tiết hay
+ * footer thì dùng thẳng <DashboardCard>.
  */
 export function StatCard({
   label,
@@ -36,8 +33,6 @@ export function StatCard({
   featured,
   colorValue,
   subtitle,
-  progress,
-  progressLabel,
 }: StatCardProps) {
   return (
     <DashboardCard
@@ -48,8 +43,6 @@ export function StatCard({
       featured={featured}
       colorValue={colorValue}
       subtitle={subtitle}
-      progress={progress}
-      progressLabel={progressLabel}
     />
   );
 }
