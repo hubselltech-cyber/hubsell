@@ -30,6 +30,13 @@ import { fetchSkuPnl, type SkuPnlResponse } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+// Khoảng đệm chung cho mọi ô — rộng rãi hơn mặc định để số liệu dễ đọc
+const CELL_PAD = "px-3 py-4";
+
+// Cột "Sản phẩm" ghim cố định mép trái khi cuộn ngang xem các chỉ số tài chính
+const STICKY_COL =
+  "sticky left-0 z-10 bg-card shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
+
 /// Bảng phân tích hiệu quả kinh doanh từng mã SKU:
 /// SKU nào là "gà đẻ trứng vàng", SKU nào đang gánh lỗ.
 export function SkuPnlTable() {
@@ -92,18 +99,28 @@ export function SkuPnlTable() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <Table>
+            <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Sản phẩm</TableHead>
-                    <TableHead className="text-right">Đã bán</TableHead>
-                    <TableHead className="text-right">Doanh thu thuần</TableHead>
-                    <TableHead className="text-right">Giá vốn</TableHead>
-                    <TableHead className="text-right">Phí sàn &amp; ship</TableHead>
-                    <TableHead className="text-right">Chi phí marketing</TableHead>
-                    <TableHead className="text-right">Lợi nhuận</TableHead>
-                    <TableHead className="text-right">Biên LN</TableHead>
+                    {/* Cột sản phẩm ghim trái — luôn thấy được khi cuộn ngang */}
+                    <TableHead className={cn(STICKY_COL, "px-3 py-4")}>
+                      Sản phẩm
+                    </TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>Đã bán</TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>
+                      Doanh thu thuần
+                    </TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>Giá vốn</TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>
+                      Phí sàn &amp; ship
+                    </TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>
+                      Chi phí marketing
+                    </TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>
+                      Lợi nhuận
+                    </TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-right")}>Biên LN</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -116,7 +133,7 @@ export function SkuPnlTable() {
                     const belowFloor = be ? be.avgSellingPrice < be.floorPrice : false;
                     return (
                       <TableRow key={row.sku}>
-                        <TableCell>
+                        <TableCell className={cn(STICKY_COL, "px-3 py-4")}>
                           <div className="flex items-center gap-3">
                             {row.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -149,12 +166,12 @@ export function SkuPnlTable() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className={cn(CELL_PAD, "text-right font-medium")}>
                           {formatNumber(row.quantitySold)}
                         </TableCell>
 
                         {/* Doanh thu thuần + dòng phụ: giá hoà vốn mỗi sản phẩm */}
-                        <TableCell className="text-right">
+                        <TableCell className={cn(CELL_PAD, "text-right")}>
                           <span className="block font-semibold">
                             {formatVND(row.revenue)}
                           </span>
@@ -182,16 +199,20 @@ export function SkuPnlTable() {
                             </HintText>
                           )}
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
+                        <TableCell
+                          className={cn(CELL_PAD, "text-right text-muted-foreground")}
+                        >
                           {row.cogs > 0 ? `− ${formatVND(row.cogs)}` : "—"}
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
+                        <TableCell
+                          className={cn(CELL_PAD, "text-right text-muted-foreground")}
+                        >
                           {row.allocatedFee > 0
                             ? `− ${formatVND(row.allocatedFee)}`
                             : "—"}
                         </TableCell>
                         {/* Chi phí marketing + dòng phụ: trần Ads cho mỗi đơn */}
-                        <TableCell className="text-right">
+                        <TableCell className={cn(CELL_PAD, "text-right")}>
                           <span
                             className={cn(
                               "block",
@@ -231,6 +252,7 @@ export function SkuPnlTable() {
                         </TableCell>
                         <TableCell
                           className={cn(
+                            CELL_PAD,
                             "text-right text-base font-bold",
                             profitable ? "text-emerald-700" : "text-rose-600"
                           )}
@@ -238,7 +260,7 @@ export function SkuPnlTable() {
                           {formatVND(row.profit)}
                         </TableCell>
                         {/* Biên LN + dòng phụ: mức giảm giá tối đa còn hoà vốn */}
-                        <TableCell className="text-right">
+                        <TableCell className={cn(CELL_PAD, "text-right")}>
                           <span
                             className={cn(
                               "flex items-center justify-end gap-1 font-semibold",
@@ -276,8 +298,7 @@ export function SkuPnlTable() {
                     );
                   })}
                 </TableBody>
-              </Table>
-            </div>
+            </Table>
 
             {/* Đối chiếu về lợi nhuận cuối cùng của shop */}
             {data && (

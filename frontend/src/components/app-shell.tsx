@@ -290,9 +290,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6 lg:px-8">
-          {children}
-        </main>
+        {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
+            tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}
+        <main className="w-full flex-1 px-6 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );
