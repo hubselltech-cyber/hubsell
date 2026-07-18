@@ -233,21 +233,32 @@ Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): 
 
 Mọi khối số liệu trên mọi trang đều dùng chung **`frontend/src/components/dashboard/dashboard-card.tsx`**. Không viết thẻ số liệu bằng tay nữa.
 
-**Ba quy tắc thị giác:**
+### ⚠️ Triết lý: sạch sẽ trước, trang trí sau
 
-1. **Điểm neo** — mỗi lưới thẻ bật `featured` cho **đúng một** thẻ quan trọng nhất ("Card Ngôi Sao"): nền màu nhạt + viền 2px + bóng đổ. Lãi → xanh ngọc; lỗ → nền hồng cam, số đỏ tươi `rose-600` (không dùng đỏ sẫm — số lỗ phải đập vào mắt).
-2. **Icon có khối nền** — icon nằm trong ô bo góc nền màu đặc 44px→48px, phân biệt loại chỉ số chỉ bằng liếc mắt.
-3. **Số biết nói** — mọi dòng có `%` tự động kèm thanh tiến trình mảnh 4px→6px, đọc tỷ trọng bằng hình ảnh thay vì nhẩm số.
+Đây là màn hình tài chính, không phải trang marketing. Chủ shop nhìn vào để ra quyết định, nên **ưu tiên khoảng trống và con số rõ ràng**.
 
-**Sắc thái (`tone`) thay cho màu tự do** — `neutral` · `info` (xanh dương) · `positive` (xanh ngọc) · `negative` (đỏ hồng) · `warning` (hổ phách) · `accent` (tím). Mỗi tone tự quyết định màu icon, màu số, màu thanh tỷ trọng và nền khi nổi bật. Dùng `toneBySign(value)` cho chỉ số có thể lãi hoặc lỗ.
+> **KHÔNG dùng thanh ngang (progress bar) ở các dòng chỉ số.** Đã thử và loại bỏ: một rừng vạch màu dưới mỗi dòng làm mắt bị nhiễu và hạ thấp tính chuyên nghiệp của ERP. Tỷ lệ % hiển thị bằng **text thuần** là đủ. Component không còn prop nào để chèn thanh ngang vào thẻ.
 
-| Trang | Card Ngôi Sao |
+**Phân cấp chỉ bằng 3 công cụ:**
+
+1. **Màu chữ của số** — nghiêm ngặt 3 trạng thái, không tô màu trang trí:
+   | Loại số liệu | Màu |
+   |---|---|
+   | Tiền vào / lãi | xanh lá `emerald-600` |
+   | Tiền ra / chi phí / lỗ | đỏ sắc nét `rose-600` (không dùng 700 sẫm xỉn) |
+   | Trung tính (số lượng, tham chiếu) | đen/xám mặc định |
+2. **Khối nền của icon** — được phép nhiều màu (44px→48px, bo góc, nền đặc) để nhận diện loại chỉ số bằng liếc mắt.
+3. **Nền + viền của cả thẻ** (`featured`) — **chỉ** cho khối Lợi nhuận và thẻ cảnh báo tiền bạc cốt lõi. Lãi → `bg-emerald-50/40`; lỗ → `bg-rose-50/40` + viền đỏ nhạt. Dùng tràn lan sẽ mất tác dụng cảnh báo, nên component chặn sẵn: chỉ tone `positive`/`negative` mới phủ được nền.
+
+| Trang | Thẻ được phủ nền |
 |---|---|
 | Tổng quan | Lợi nhuận thuần |
 | Báo cáo dòng tiền | Lợi nhuận |
-| Chi phí vận hành | Tổng chi phí |
 | Cảnh báo đơn lỗ | Tổng tiền lỗ |
 | Đối soát phí ship | Tổng tiền cần đòi lại |
+| Chi phí vận hành | *(không có — không phải khối lợi nhuận)* |
+
+**Sắc thái (`tone`) thay cho màu tự do** — `neutral` · `info` · `positive` · `negative` · `warning` · `accent`. Dùng `toneBySign(value)` cho chỉ số có thể lãi hoặc lỗ.
 
 Số tổng dùng `TEXT_HERO_NUMBER` (24px→30px, extrabold). Các lớp bọc tiện dụng: `<StatCard>` cho thẻ chỉ có tiêu đề + số; `<BreakdownCard>` cho thẻ có bóc tách chi tiết từ API.
 
