@@ -1,0 +1,133 @@
+// Prisma schema — định nghĩa cấu trúc database cho Hubsell
+// Tài liệu: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- ENUM ----------
+
+enum ChannelName {
+  SHOPEE
+  LAZADA
+  TIKTOK
+  OFFLINE
+}
+
+enum InventoryLogType {
+  IMPORT // Nhập kho
+  EXPORT // Xuất kho
+  SYNC   // Đồng bộ với sàn
+}
+
+// ---------- BẢNG ----------
+
+/// Người dùng của hệ thống (chủ shop / nhân viên)
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         String   @default("STAFF") // ADMIN (chủ shop) hoặc STAFF (nhân viên)
+  createdAt    DateTime @default(now())
+
+  // Nhân viên thuộc về một chủ shop → dùng chung dữ liệu của shop đó.
+  // ownerId = null nghĩa là chính user này là chủ shop.
+  ownerId String?
+  owner   User?   @relation("ShopStaff", fields: [ownerId], references: [id], onDelete: Cascade)
+  staff   User[]  @relation("ShopStaff")
+
+  channels Channel[]
+  products Product[]
+}
+
+/// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
+model Channel {
+  id          String      @id @default(cuid())
+  userId      String
+  channelName ChannelName
+  apiToken    String?
+  status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
+  createdAt   DateTime    @default(now())
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  mappings ProductMapping[]
+
+  @@index([userId])
+}
+
+/// Sản phẩm trong kho
+model Product {
+  id              String   @id @default(cuid())
+  userId          String
+  skuCode         String
+  productName     String
+  costPrice       Decimal  @default(0) @db.Decimal(12, 2) // giá vốn
+  sellingPrice    Decimal  @default(0) @db.Decimal(12, 2) // giá bán
+  quantityInStock Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inventoryLogs InventoryLog[]
+  mappings      ProductMapping[]
+
+  @@unique([userId, skuCode]) // mỗi user không trùng mã SKU
+  @@index([userId])
+}
+
+/// Đơn hàng thuộc về một kênh bán
+model Order {
+  id             String   @id @default(cuid())
+  channelId      String
+  orderCode      String
+  customerName   String
+  totalAmount    Decimal  @default(0) @db.Decimal(12, 2)
+  paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
+  shippingStatus String   @default("PENDING") // ví dụ: PENDING, SHIPPING, DELIVERED
+  createdAt      DateTime @default(now())
+
+  channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
+
+  @@index([channelId])
+}
+
+/// Liên kết (mapping): một Sản phẩm kho gốc ↔ nhiều SKU trên các sàn.
+/// Ví dụ: "Quần jean nữ ống rộng" (SP002) ↔ Shopee "SH-QUAN-DEN-M" và TikTok "TT-QUAN-JEAN".
+model ProductMapping {
+  id                 String   @id @default(cuid())
+  productId          String // sản phẩm kho gốc
+  channelId          String // gian hàng trên sàn
+  channelSku         String // mã SKU của sản phẩm trên sàn
+  channelProductName String? // tên hiển thị trên sàn (để dễ nhận diện)
+  createdAt          DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, channelSku]) // 1 SKU sàn chỉ nối vào 1 sản phẩm gốc
+  @@index([productId])
+}
+
+/// Nhật ký biến động tồn kho
+model InventoryLog {
+  id             String           @id @default(cuid())
+  productId      String
+  changeQuantity Int
+  type           InventoryLogType
+  reason         String?
+  orderId        String? // đơn hàng gây ra biến động này (nếu có) — dùng để hoàn kho khi huỷ đơn & tính giá vốn
+  createdAt      DateTime         @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([orderId])
+}

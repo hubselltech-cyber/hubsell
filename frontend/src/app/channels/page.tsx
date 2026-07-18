@@ -1,0 +1,527 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { toast } from "sonner";
+import {
+  KeyRound,
+  Link2,
+  Loader2,
+  PlugZap,
+  Plus,
+  ShoppingCart,
+  Unplug,
+  Zap,
+} from "lucide-react";
+
+import { AccessDenied } from "@/components/access-denied";
+import { AppShell } from "@/components/app-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
+import {
+  ApiError,
+  connectChannel,
+  disconnectChannel,
+  fetchChannelProducts,
+  fetchChannels,
+  getStoredUser,
+  getToken,
+  sendMockOrder,
+  type Channel,
+  type ChannelName,
+  type ChannelProductItem,
+} from "@/lib/api";
+import { CHANNEL_META } from "@/lib/channel-meta";
+import { formatVND } from "@/lib/format";
+
+const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
+
+// Che bớt token cho gọn mắt: shp_41ef08…
+function maskToken(token: string | null): string {
+  if (!token) return "(chưa có — hãy Kết nối lại)";
+  return token.slice(0, 10) + "…" + token.slice(-4);
+}
+
+// ---------- Dialog: Kết nối gian hàng ----------
+
+function ConnectDialog({
+  open,
+  onOpenChange,
+  existing,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  existing: Channel[];
+  onDone: () => void;
+}) {
+  const activeNames = new Set(
+    existing.filter((c) => c.status === "ACTIVE").map((c) => c.channelName)
+  );
+  const available = CONNECTABLE.filter((n) => !activeNames.has(n));
+  const [channelName, setChannelName] = useState<ChannelName | "">("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) setChannelName(available[0] ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  async function handleConnect(e: React.FormEvent) {
+    e.preventDefault();
+    if (!channelName) return;
+    setSubmitting(true);
+    try {
+      const c = await connectChannel(channelName);
+      toast.success(
+        `Đã kết nối gian hàng ${CHANNEL_META[c.channelName].label} thành công!`
+      );
+      onOpenChange(false);
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Kết nối gian hàng</DialogTitle>
+          <DialogDescription>
+            Chọn sàn để liên kết tài khoản. (Giai đoạn này là kết nối giả lập —
+            hệ thống sẽ cấp API Token ảo, sau này thay bằng đăng nhập sàn thật.)
+          </DialogDescription>
+        </DialogHeader>
+        {available.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Bạn đã kết nối tất cả các sàn hỗ trợ.
+          </p>
+        ) : (
+          <form onSubmit={handleConnect} className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="channel-select">Chọn sàn</Label>
+              <NativeSelect
+                id="channel-select"
+                value={channelName}
+                onChange={(e) => setChannelName(e.target.value as ChannelName)}
+              >
+                {available.map((n) => (
+                  <option key={n} value={n}>
+                    {CHANNEL_META[n].label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={submitting}
+              >
+                Huỷ
+              </Button>
+              <Button type="submit" disabled={submitting || !channelName}>
+                {submitting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <PlugZap className="size-4" />
+                )}
+                Kết nối
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Dialog: Giả lập đơn hàng từ sàn ----------
+
+function MockOrderDialog({
+  channel,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  channel: Channel;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [items, setItems] = useState<ChannelProductItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [channelSku, setChannelSku] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [customerName, setCustomerName] = useState("Khách thử nghiệm");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetchChannelProducts(channel.id)
+      .then((res) => {
+        const mapped = res.items.filter((i) => i.mapping);
+        setItems(mapped);
+        setChannelSku(mapped[0]?.channelSku ?? "");
+      })
+      .catch(() => toast.error("Không tải được danh mục sàn"))
+      .finally(() => setLoading(false));
+  }, [open, channel.id]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const qty = Number(quantity);
+    if (!channelSku || !Number.isInteger(qty) || qty <= 0) {
+      toast.error("Chọn sản phẩm và nhập số lượng nguyên dương");
+      return;
+    }
+    if (!channel.apiToken) {
+      toast.error("Kênh chưa có token. Hãy Ngắt kết nối rồi Kết nối lại.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await sendMockOrder({
+        channelId: channel.id,
+        webhookToken: channel.apiToken,
+        customerName: customerName.trim() || undefined,
+        items: [{ channelSku, quantity: qty }],
+      });
+      const adj = res.adjustments[0];
+      toast.success(
+        `${res.message} ${adj ? `"${adj.productName}" −${adj.deducted} → còn ${adj.newQuantity}.` : ""}`,
+        { duration: 6000 }
+      );
+      onOpenChange(false);
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ", {
+        duration: 6000,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const meta = CHANNEL_META[channel.channelName];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Zap className="size-5 text-amber-500" />
+            Giả lập đơn hàng từ {meta.label}
+          </DialogTitle>
+          <DialogDescription>
+            Mô phỏng sàn gửi webhook về Hubsell: hệ thống sẽ tra mapping, tạo đơn
+            và tự động trừ tồn kho sản phẩm gốc.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Đang tải danh mục sàn…
+          </p>
+        ) : items.length === 0 ? (
+          <div className="space-y-3 py-2 text-sm">
+            <p className="text-muted-foreground">
+              Sàn này chưa có sản phẩm nào được liên kết với kho gốc, nên chưa thể
+              nhận đơn.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              onClick={() => onOpenChange(false)}
+              render={<Link href="/mappings" />}
+            >
+              <Link2 className="size-4" />
+              Đi liên kết sản phẩm
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="mock-sku">Sản phẩm trên sàn (đã liên kết)</Label>
+              <NativeSelect
+                id="mock-sku"
+                value={channelSku}
+                onChange={(e) => setChannelSku(e.target.value)}
+              >
+                {items.map((i) => (
+                  <option key={i.channelSku} value={i.channelSku}>
+                    {i.channelSku} — {i.name} ({formatVND(i.price)})
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="mock-qty">Số lượng</Label>
+                <Input
+                  id="mock-qty"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="mock-customer">Tên khách</Label>
+                <Input
+                  id="mock-customer"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={submitting}
+              >
+                Huỷ
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ShoppingCart className="size-4" />
+                )}
+                Gửi đơn về Hubsell
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Trang chính ----------
+
+export default function ChannelsPage() {
+  const router = useRouter();
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [mockFor, setMockFor] = useState<Channel | null>(null);
+  const [denied, setDenied] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setChannels(await fetchChannels());
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      toast.error("Không tải được danh sách kênh");
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    // Trang cấu hình kênh chỉ dành cho Chủ shop (Admin)
+    if (getStoredUser()?.role === "STAFF") {
+      setDenied(true);
+      setLoading(false);
+      return;
+    }
+    load();
+  }, [load, router]);
+
+  if (denied) {
+    return (
+      <AppShell>
+        <AccessDenied />
+      </AppShell>
+    );
+  }
+
+  async function handleDisconnect(c: Channel) {
+    try {
+      await disconnectChannel(c.id);
+      toast.success(`Đã ngắt kết nối ${CHANNEL_META[c.channelName].label}`);
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    }
+  }
+
+  async function handleReconnect(c: Channel) {
+    try {
+      await connectChannel(c.channelName);
+      toast.success(
+        `Đã kết nối lại ${CHANNEL_META[c.channelName].label} (token mới được cấp)`
+      );
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    }
+  }
+
+  return (
+    <AppShell>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <p className="text-muted-foreground">
+            Kết nối gian hàng trên các sàn để đồng bộ đơn hàng về Hubsell.
+          </p>
+          <Button onClick={() => setConnectOpen(true)}>
+            <Plus className="size-4" />
+            Kết nối gian hàng
+          </Button>
+        </div>
+
+        {loading ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            Đang tải…
+          </p>
+        ) : channels.length === 0 ? (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              Chưa kết nối gian hàng nào. Bấm “Kết nối gian hàng” để bắt đầu.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {channels.map((c) => {
+              const meta = CHANNEL_META[c.channelName];
+              const active = c.status === "ACTIVE";
+              return (
+                <Card key={c.id} className={active ? "" : "opacity-70"}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center justify-between text-base">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${meta.className}`}
+                      >
+                        {meta.label}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 text-xs font-medium ${
+                          active ? "text-emerald-600" : "text-zinc-400"
+                        }`}
+                      >
+                        <span
+                          className={`size-2 rounded-full ${
+                            active ? "bg-emerald-500" : "bg-zinc-300"
+                          }`}
+                        />
+                        {active ? "Đang hoạt động" : "Đã ngắt kết nối"}
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <p className="flex items-center gap-2 text-muted-foreground">
+                      <KeyRound className="size-4 shrink-0" />
+                      <span className="truncate font-mono text-xs">
+                        {maskToken(c.apiToken)}
+                      </span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      {c._count?.orders ?? 0} đơn hàng ·{" "}
+                      {c._count?.mappings ?? 0} sản phẩm đã liên kết
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {active ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-amber-700"
+                            disabled={!c.apiToken || c.channelName === "OFFLINE"}
+                            onClick={() => setMockFor(c)}
+                          >
+                            <Zap className="size-4" />
+                            Giả lập đơn hàng
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-rose-700"
+                            onClick={() => handleDisconnect(c)}
+                          >
+                            <Unplug className="size-4" />
+                            Ngắt kết nối
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleReconnect(c)}
+                        >
+                          <PlugZap className="size-4" />
+                          Kết nối lại
+                        </Button>
+                      )}
+                    </div>
+                    {active && !c.apiToken && (
+                      <p className="text-xs text-amber-600">
+                        Kênh cũ chưa có API Token — hãy “Ngắt kết nối” rồi “Kết nối
+                        lại” để được cấp token.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="text-center text-xs text-muted-foreground">
+          Hubsell · Giai đoạn 3 — Đồng bộ đơn hàng đa kênh
+        </p>
+      </div>
+
+      <ConnectDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        existing={channels}
+        onDone={load}
+      />
+      {mockFor && (
+        <MockOrderDialog
+          channel={mockFor}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setMockFor(null);
+          }}
+          onDone={load}
+        />
+      )}
+    </AppShell>
+  );
+}
