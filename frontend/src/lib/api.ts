@@ -152,10 +152,41 @@ export interface OperatingExpense {
   name: string;
   category: ExpenseCategory;
   type: ExpenseType;
+  appliedSku: string | null; // SKU được gắn (chỉ với chi phí VARIABLE)
   amount: string | number;
   note: string | null;
   expenseDate: string;
   createdAt: string;
+}
+
+// ----- Báo cáo Lời/Lỗ theo SKU -----
+
+export interface SkuPnlRow {
+  sku: string;
+  productName: string;
+  imageUrl: string | null;
+  quantitySold: number;
+  revenue: number;
+  cogs: number;
+  allocatedFee: number; // phí sàn + ship phân bổ cho SKU
+  marketingCost: number; // chi phí biến đổi gắn riêng SKU
+  profit: number;
+  margin: number;
+  missingCost: boolean; // đã bán nhưng chưa nhập giá vốn
+}
+
+export interface SkuPnlResponse {
+  items: SkuPnlRow[];
+  summary: {
+    skuCount: number;
+    skuProfitTotal: number;
+    fixedExpense: number;
+    shopProfit: number;
+  };
+}
+
+export function fetchSkuPnl() {
+  return apiFetch<SkuPnlResponse>("/api/finance/sku-pnl");
 }
 
 export interface AnalyticsResponse {
@@ -570,6 +601,7 @@ export function createFinanceExpense(data: {
   type: ExpenseType;
   amount: number;
   category?: ExpenseCategory;
+  appliedSku?: string; // chỉ dùng khi type = VARIABLE
   note?: string;
   expenseDate?: string;
 }) {

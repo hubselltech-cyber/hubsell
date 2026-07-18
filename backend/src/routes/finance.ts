@@ -134,8 +134,16 @@ function toDateKey(d: Date): string {
 // Body: { description (hoặc name), type: FIXED|VARIABLE, amount, category?, note?, expenseDate? }
 router.post("/expenses", async (req: AuthRequest, res, next) => {
   try {
-    const { description, name, type, category, amount, note, expenseDate } =
-      req.body ?? {};
+    const {
+      description,
+      name,
+      type,
+      category,
+      amount,
+      note,
+      expenseDate,
+      appliedSku,
+    } = req.body ?? {};
 
     const finalName = typeof description === "string" && description.trim()
       ? description.trim()
@@ -167,12 +175,28 @@ router.post("/expenses", async (req: AuthRequest, res, next) => {
       date = d;
     }
 
+    // Chi phí BIẾN ĐỔI có thể gắn vào 1 SKU cụ thể; chi phí CỐ ĐỊNH thì không.
+    let finalSku: string | null = null;
+    if (type === ExpenseType.VARIABLE && typeof appliedSku === "string" && appliedSku.trim()) {
+      const sku = appliedSku.trim().toUpperCase();
+      const product = await prisma.product.findUnique({
+        where: { userId_skuCode: { userId: req.ownerId!, skuCode: sku } },
+        select: { skuCode: true },
+      });
+      if (!product) {
+        res.status(404).json({ error: `Không tìm thấy sản phẩm có mã SKU "${sku}"` });
+        return;
+      }
+      finalSku = product.skuCode;
+    }
+
     const expense = await prisma.operatingExpense.create({
       data: {
         userId: req.ownerId!,
         name: finalName,
         type: type as ExpenseType,
         category: finalCategory,
+        appliedSku: finalSku,
         amount: amt,
         note: typeof note === "string" && note.trim() ? note.trim() : null,
         ...(date ? { expenseDate: date } : {}),
@@ -335,6 +359,157 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       total: rows.length,
       missingCostCount: rows.filter((r) => Number(r.costPrice) <= 0).length,
       items: rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// BÁO CÁO LỜI/LỖ THEO SẢN PHẨM (SKU P&L)
+//
+// Nguyên tắc phân bổ:
+//  - Doanh thu & giá vốn: lấy trực tiếp từ OrderItem (đã snapshot giá vốn lúc bán)
+//  - Phí sàn & phí ship của đơn: PHÂN BỔ cho từng SKU theo TỶ TRỌNG doanh thu
+//    của dòng hàng đó trong đơn (đơn nhiều SKU thì chia theo tỷ lệ)
+//  - Chi phí VARIABLE có appliedSku: cộng thẳng vào đúng SKU đó
+//  - Chi phí FIXED: KHÔNG phân bổ vào SKU (trừ vào tổng lợi nhuận toàn shop)
+//
+// Phạm vi: đơn ĐÃ GIAO có dữ liệu dòng hàng (OrderItem).
+// ============================================================
+router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+
+    const [orders, variableExpenses] = await Promise.all([
+      prisma.order.findMany({
+        where: {
+          channel: { userId: ownerId },
+          shippingStatus: "DELIVERED",
+          items: { some: {} }, // chỉ đơn có chi tiết dòng hàng
+        },
+        include: {
+          items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
+        },
+      }),
+      prisma.operatingExpense.findMany({
+        where: {
+          userId: ownerId,
+          type: ExpenseType.VARIABLE,
+          appliedSku: { not: null },
+        },
+        select: { appliedSku: true, amount: true },
+      }),
+    ]);
+
+    interface SkuRow {
+      sku: string;
+      productName: string;
+      imageUrl: string | null;
+      quantitySold: number;
+      revenue: number;
+      cogs: number;
+      allocatedFee: number; // phí sàn + phí ship phân bổ
+      marketingCost: number; // chi phí biến đổi gắn riêng SKU
+    }
+    const bySku = new Map<string, SkuRow>();
+
+    for (const order of orders) {
+      const { fee: orderFee } = orderPlatformFee(order);
+
+      // Tổng doanh thu các dòng hàng trong đơn → dùng làm mẫu số phân bổ phí
+      const orderLineRevenue = order.items.reduce(
+        (s, it) => s + Number(it.price) * it.quantity,
+        0
+      );
+
+      for (const item of order.items) {
+        const sku = item.product?.skuCode ?? item.channelSku;
+        const lineRevenue = Number(item.price) * item.quantity;
+        const lineCogs = Number(item.costPriceAtSale) * item.quantity;
+        // Phân bổ phí theo tỷ trọng doanh thu dòng hàng
+        const share = orderLineRevenue > 0 ? lineRevenue / orderLineRevenue : 0;
+
+        const row = bySku.get(sku) ?? {
+          sku,
+          productName: item.productName,
+          imageUrl: item.product?.imageUrl ?? null,
+          quantitySold: 0,
+          revenue: 0,
+          cogs: 0,
+          allocatedFee: 0,
+          marketingCost: 0,
+        };
+        row.quantitySold += item.quantity;
+        row.revenue += lineRevenue;
+        row.cogs += lineCogs;
+        row.allocatedFee += orderFee * share;
+        if (!row.imageUrl && item.product?.imageUrl) row.imageUrl = item.product.imageUrl;
+        bySku.set(sku, row);
+      }
+    }
+
+    // Cộng chi phí biến đổi (Ads/KOC) vào đúng SKU được gắn
+    for (const e of variableExpenses) {
+      const sku = (e.appliedSku ?? "").toUpperCase();
+      if (!sku) continue;
+      const row = bySku.get(sku);
+      if (row) {
+        row.marketingCost += Number(e.amount);
+      } else {
+        // SKU chưa phát sinh đơn nào nhưng đã tốn tiền quảng cáo → vẫn hiện để thấy đang lỗ
+        bySku.set(sku, {
+          sku,
+          productName: sku,
+          imageUrl: null,
+          quantitySold: 0,
+          revenue: 0,
+          cogs: 0,
+          allocatedFee: 0,
+          marketingCost: Number(e.amount),
+        });
+      }
+    }
+
+    const items = Array.from(bySku.values())
+      .map((r) => {
+        const allocatedFee = Math.round(r.allocatedFee);
+        const profit = r.revenue - r.cogs - allocatedFee - r.marketingCost;
+        return {
+          sku: r.sku,
+          productName: r.productName,
+          imageUrl: r.imageUrl,
+          quantitySold: r.quantitySold,
+          revenue: r.revenue,
+          cogs: r.cogs,
+          allocatedFee,
+          marketingCost: r.marketingCost,
+          profit,
+          // Biên lợi nhuận trên doanh thu của chính SKU đó
+          margin: pct(profit, r.revenue),
+          // Đã bán nhưng giá vốn = 0 ⇒ số liệu lời/lỗ chưa đáng tin
+          missingCost: r.quantitySold > 0 && r.cogs <= 0,
+        };
+      })
+      // "Gà đẻ trứng vàng" lên đầu, mã gánh lỗ xuống cuối
+      .sort((a, b) => b.profit - a.profit);
+
+    // Chi phí cố định KHÔNG phân bổ vào SKU — trừ vào tổng lợi nhuận toàn shop
+    const fixedTotal = await prisma.operatingExpense.aggregate({
+      where: { userId: ownerId, type: ExpenseType.FIXED },
+      _sum: { amount: true },
+    });
+    const fixedExpense = Number(fixedTotal._sum.amount ?? 0);
+    const skuProfitTotal = items.reduce((s, r) => s + r.profit, 0);
+
+    res.json({
+      items,
+      summary: {
+        skuCount: items.length,
+        skuProfitTotal, // tổng lợi nhuận cộng dồn từ các SKU
+        fixedExpense, // chi phí cố định toàn shop
+        shopProfit: skuProfitTotal - fixedExpense, // lợi nhuận cuối cùng
+      },
     });
   } catch (err) {
     next(err);
@@ -784,13 +959,14 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
 
     // --- CỘT 3: CHI PHÍ (giá vốn + chi phí vận hành ngoài sàn) ---
     const cogsAll = delivered.reduce((s, o) => s + orderCost(o).cost, 0) + pendingCogs;
-    const adsExpense = expenses
-      .filter((e) => e.category === ExpenseCategory.ADS)
+    // Bóc tách theo MÔ HÌNH CHI PHÍ: biến đổi (gắn được vào SKU) vs cố định (toàn shop)
+    const variableExpenseTotal = expenses
+      .filter((e) => e.type === ExpenseType.VARIABLE)
       .reduce((s, e) => s + Number(e.amount), 0);
-    const otherExpense = expenses
-      .filter((e) => e.category !== ExpenseCategory.ADS)
+    const fixedExpenseTotal = expenses
+      .filter((e) => e.type === ExpenseType.FIXED)
       .reduce((s, e) => s + Number(e.amount), 0);
-    const totalCostColumn = cogsAll + adsExpense + otherExpense;
+    const totalCostColumn = cogsAll + variableExpenseTotal + fixedExpenseTotal;
 
     // --- CỘT 4: LỢI NHUẬN ---
     // Lợi nhuận thực tế: từ đơn ĐÃ HOÀN THÀNH (đã quyết toán xong)
@@ -798,8 +974,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const actualProfit = settledPayout - settledCogs;
     // Lợi nhuận dự kiến: từ đơn ĐANG CHỜ (số tạm tính)
     const expectedProfit = pendingPayout - pendingCogs;
-    // Tổng lợi nhuận = (thực tế + dự kiến) − chi phí vận hành ngoài sàn
-    const totalProfit = actualProfit + expectedProfit - adsExpense - otherExpense;
+    // Tổng lợi nhuận = (thực tế + dự kiến) − chi phí biến đổi − chi phí cố định
+    const totalProfit =
+      actualProfit + expectedProfit - variableExpenseTotal - fixedExpenseTotal;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao)
     let totalRevenue = 0;
@@ -955,18 +1132,18 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: pct(cogsAll, totalCostColumn),
             },
             {
-              key: "ads",
-              label: "Chi phí quảng cáo",
-              hint: "Tiền chạy quảng cáo trên sàn (nhóm chi phí Quảng cáo)",
-              amount: adsExpense,
-              percent: pct(adsExpense, totalCostColumn),
+              key: "variable",
+              label: "Chi phí biến đổi",
+              hint: "Ads, book KOC, đóng gói… — khoản nào gắn SKU sẽ được tính vào lời/lỗ của chính SKU đó",
+              amount: variableExpenseTotal,
+              percent: pct(variableExpenseTotal, totalCostColumn),
             },
             {
-              key: "other",
-              label: "Chi phí vận hành khác",
-              hint: "Mặt bằng, lương nhân viên, đóng gói… (các nhóm chi phí còn lại)",
-              amount: otherExpense,
-              percent: pct(otherExpense, totalCostColumn),
+              key: "fixed",
+              label: "Chi phí cố định",
+              hint: "Mặt bằng, lương nhân sự… — không gắn vào SKU nào, trừ thẳng vào lợi nhuận toàn shop",
+              amount: fixedExpenseTotal,
+              percent: pct(fixedExpenseTotal, totalCostColumn),
             },
           ],
         },

@@ -124,6 +124,7 @@ hubsell/
 | GET | `/api/finance/sku-products?channel=` | Danh sách SKU theo sàn (all/shopee/tiktok/lazada/offline) để nhập giá vốn | 🔒 Chỉ Admin |
 | PATCH | `/api/finance/update-cost` | Cập nhật giá vốn theo `sku_id` + `cost_price` | 🔒 Chỉ Admin |
 | POST | `/api/finance/sync-products` | **Quét sản phẩm từ các sàn đã kết nối** → upsert vào Product + ProductMapping | 🔒 Chỉ Admin |
+| GET | `/api/finance/sku-pnl` | Báo cáo Lời/Lỗ theo từng SKU (sắp xếp lợi nhuận giảm dần) | 🔒 Chỉ Admin |
 | GET | `/api/finance/shipping-discrepancies` | Đơn bị sàn trừ thừa phí ship (phân trang, lọc sàn + trạng thái khiếu nại) | 🔒 Chỉ Admin |
 | PATCH | `/api/finance/shipping-discrepancies/:id/status` | Đổi trạng thái khiếu nại | 🔒 Chỉ Admin |
 
@@ -188,7 +189,23 @@ Kiểm chứng: Cột 1 − Tổng khấu trừ = Cột 2 (số liệu khớp tu
 
 Nhờ vậy chủ shop vừa đăng sản phẩm mới lên sàn là bấm quét về nhập giá vốn ngay, không cần chờ phát sinh đơn hàng.
 
-**Chi phí vận hành** phân loại 2 chiều: `type` (FIXED cố định / VARIABLE biến đổi) và `category` (Mặt bằng, Nhân viên, Đóng gói, Quảng cáo, Khác).
+**Chi phí vận hành** phân loại 2 chiều: `type` (FIXED cố định / VARIABLE biến đổi) và `category` (Mặt bằng, Nhân viên, Đóng gói, Quảng cáo, Khác). Chi phí **VARIABLE** còn có thể gắn vào 1 mã SKU cụ thể qua `appliedSku` (tiền Ads, book KOC…) — khi thêm chi phí chọn "Biến đổi" thì giao diện hiện thêm ô chọn SKU.
+
+### 📦 Báo cáo Lời/Lỗ theo sản phẩm (SKU P&L)
+
+Bảng nằm dưới lưới 4 cột ở `/finance/analytics`, cho biết mã nào là "gà đẻ trứng vàng", mã nào đang gánh lỗ.
+
+Cột: Ảnh + Tên SKU · Đã bán · Doanh thu thuần · Giá vốn · **Phí sàn & ship** · **Chi phí marketing** · Lợi nhuận · Biên LN %. Sắp xếp **lợi nhuận giảm dần**, mã lãi cao nhất gắn 👑.
+
+**Nguyên tắc phân bổ chi phí:**
+| Loại chi phí | Cách xử lý |
+|---|---|
+| Giá vốn | Lấy trực tiếp từ `OrderItem.costPriceAtSale` (snapshot lúc bán) |
+| Phí sàn & ship của đơn | **Phân bổ** cho từng SKU theo tỷ trọng doanh thu dòng hàng trong đơn |
+| Chi phí **VARIABLE** có `appliedSku` | Cộng thẳng vào đúng SKU đó |
+| Chi phí **FIXED** | **Không** phân bổ vào SKU — trừ vào lợi nhuận cuối cùng toàn shop |
+
+Cuối bảng có phần đối chiếu: *Tổng LN các SKU − Chi phí cố định = Lợi nhuận cuối cùng của shop*. SKU đã bán mà chưa nhập giá vốn được gắn nhãn vàng cảnh báo (số liệu chưa đáng tin).
 
 **Onboarding Guard:** mọi API dữ liệu (products, orders, dashboard, analytics, expenses, inventory, mappings) đi qua middleware `requireChannel` — nếu shop **chưa kết nối gian hàng nào** → trả `409 { code: "NO_CHANNEL" }`. Frontend bắt mã này để hiện màn hình Onboarding chặn toàn bộ cho đến khi kết nối ít nhất 1 kênh. `GET /api/auth/me` trả kèm `hasChannels`.
 | POST | `/api/auth/staff` | Chủ shop tạo tài khoản Nhân viên (dùng chung dữ liệu shop) | 🔒 Chỉ Admin |

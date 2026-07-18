@@ -226,6 +226,9 @@ model OperatingExpense {
   name        String // tên/mô tả khoản chi, ví dụ "Thuê mặt bằng tháng 7"
   category    ExpenseCategory @default(OTHER)
   type        ExpenseType     @default(VARIABLE) // FIXED (cố định) | VARIABLE (biến đổi)
+  // Chi phí VARIABLE có thể gắn trực tiếp vào 1 mã SKU (tiền Ads, book KOC...)
+  // để tính Lời/Lỗ riêng cho sản phẩm đó. FIXED thì để trống (trừ vào tổng shop).
+  appliedSku  String?
   amount      Decimal         @db.Decimal(12, 2)
   note        String?
   expenseDate DateTime        @default(now()) // ngày phát sinh chi phí

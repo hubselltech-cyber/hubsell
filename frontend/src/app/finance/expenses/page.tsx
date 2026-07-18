@@ -23,6 +23,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -43,11 +44,13 @@ import {
   createFinanceExpense,
   deleteExpense,
   fetchExpenses,
+  fetchProducts,
   getStoredUser,
   getToken,
   type ExpenseCategory,
   type ExpenseType,
   type OperatingExpense,
+  type Product,
 } from "@/lib/api";
 import { formatVND, formatDateTime } from "@/lib/format";
 
@@ -76,6 +79,7 @@ const expenseSchema = z.object({
   description: z.string().trim().min(1, "Vui lòng nhập mô tả khoản chi"),
   type: z.enum(["FIXED", "VARIABLE"]),
   category: z.enum(["RENT", "SALARY", "PACKAGING", "ADS", "OTHER"]),
+  appliedSku: z.string().optional(),
   amount: z
     .string()
     .trim()
@@ -89,17 +93,42 @@ type ExpenseFormValues = z.infer<typeof expenseSchema>;
 function AddExpenseDialog({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [skus, setSkus] = useState<Product[]>([]);
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       description: "",
       type: "FIXED",
       category: "RENT",
+      appliedSku: "",
       amount: "",
       expenseDate: "",
       note: "",
     },
   });
+
+  // Theo dõi loại chi phí để hiện/ẩn ô chọn SKU
+  const expenseType = form.watch("type");
+
+  // Nạp danh sách SKU khi mở hộp thoại (để gắn chi phí biến đổi vào sản phẩm)
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const all: Product[] = [];
+      let page = 1;
+      try {
+        for (;;) {
+          const res = await fetchProducts({ page, pageSize: 50 });
+          all.push(...res.items);
+          if (page >= res.pageCount || res.pageCount === 0) break;
+          page++;
+        }
+        setSkus(all);
+      } catch {
+        // không tải được thì để trống, người dùng vẫn lưu được chi phí cố định
+      }
+    })();
+  }, [open]);
 
   async function onSubmit(values: ExpenseFormValues) {
     setSubmitting(true);
@@ -108,6 +137,11 @@ function AddExpenseDialog({ onAdded }: { onAdded: () => void }) {
         description: values.description,
         type: values.type,
         category: values.category,
+        // Chỉ gắn SKU khi là chi phí biến đổi
+        appliedSku:
+          values.type === "VARIABLE" && values.appliedSku
+            ? values.appliedSku
+            : undefined,
         amount: Number(values.amount),
         expenseDate: values.expenseDate || undefined,
         note: values.note?.trim() || undefined,
@@ -190,6 +224,34 @@ function AddExpenseDialog({ onAdded }: { onAdded: () => void }) {
                 )}
               />
             </div>
+            {/* Chi phí biến đổi → cho phép gắn vào 1 mã SKU cụ thể */}
+            {expenseType === "VARIABLE" && (
+              <FormField
+                control={form.control}
+                name="appliedSku"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Gắn vào sản phẩm (SKU)</FormLabel>
+                    <FormControl>
+                      <NativeSelect {...field}>
+                        <option value="">— Không gắn SKU nào —</option>
+                        {skus.map((p) => (
+                          <option key={p.id} value={p.skuCode}>
+                            {p.skuCode} — {p.productName}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </FormControl>
+                    <FormDescription>
+                      Chọn SKU để khoản chi này được tính vào lời/lỗ riêng của sản
+                      phẩm đó (bảng SKU P&amp;L).
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -396,6 +458,11 @@ export default function FinanceExpensesPage() {
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {CATEGORY_LABEL[e.category]}
+                          {e.appliedSku && (
+                            <span className="mt-0.5 block font-mono text-xs text-primary">
+                              → {e.appliedSku}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-semibold text-rose-600">
                           − {formatVND(e.amount)}
