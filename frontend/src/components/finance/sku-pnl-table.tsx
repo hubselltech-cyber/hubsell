@@ -6,8 +6,11 @@ import {
   Crown,
   ImageIcon,
   PackageSearch,
+  ShieldCheck,
   TrendingDown,
 } from "lucide-react";
+
+import { HintIcon } from "@/components/finance/hint-icon";
 
 import {
   Card,
@@ -73,9 +76,39 @@ export function SkuPnlTable() {
           </div>
         ) : (
           <>
+            {/* Cảnh báo tổng: có SKU đang đốt tiền quảng cáo vượt ngưỡng */}
+            {(data?.summary.overspendingCount ?? 0) > 0 && (
+              <div className="mx-4 mb-3 flex items-start gap-3 rounded-lg border border-rose-300 bg-rose-50 p-3">
+                <span className="text-lg leading-none">🚨</span>
+                <div className="text-sm">
+                  <p className="font-medium text-rose-800">
+                    {formatNumber(data!.summary.overspendingCount)} sản phẩm đang chi
+                    quảng cáo vượt ngưỡng an toàn
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Chi phí marketing mỗi đơn đã vượt trần cho phép — nên tắt hoặc tối
+                    ưu lại chiến dịch để không bị lỗ thêm.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
+                  {/* Hàng gộp nhóm cột */}
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead colSpan={8} />
+                    <TableHead
+                      colSpan={3}
+                      className="border-l bg-teal-50/70 text-center text-teal-800"
+                    >
+                      <span className="inline-flex items-center gap-1.5 font-semibold">
+                        <ShieldCheck className="size-4" />
+                        Ngưỡng hoà vốn an toàn
+                      </span>
+                    </TableHead>
+                  </TableRow>
                   <TableRow>
                     <TableHead>Sản phẩm</TableHead>
                     <TableHead className="text-center">Đã bán</TableHead>
@@ -85,6 +118,25 @@ export function SkuPnlTable() {
                     <TableHead className="text-right">Chi phí marketing</TableHead>
                     <TableHead className="text-right">Lợi nhuận</TableHead>
                     <TableHead className="text-right">Biên LN</TableHead>
+
+                    <TableHead className="border-l bg-teal-50/40 text-right whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        Giá bán hoà vốn
+                        <HintIcon hint="Giá vốn + phí sàn & ship trung bình cho mỗi sản phẩm. Bán dưới mức này là chắc chắn âm tiền túi." />
+                      </span>
+                    </TableHead>
+                    <TableHead className="bg-teal-50/40 text-right whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        Giảm tối đa
+                        <HintIcon hint="Lợi nhuận gộp (trước marketing) ÷ doanh thu. Cho biết được phép chạy Flash Sale giảm tối đa bao nhiêu % mà đơn vẫn hoà vốn trở lên." />
+                      </span>
+                    </TableHead>
+                    <TableHead className="bg-teal-50/40 text-right whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        Ads tối đa/đơn
+                        <HintIcon hint="Trần chi phí quảng cáo cho mỗi đơn = lợi nhuận gộp trước marketing ÷ số lượng đã bán. Chi vượt mức này thì SKU bắt đầu lỗ." />
+                      </span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -92,6 +144,9 @@ export function SkuPnlTable() {
                     const profitable = row.profit > 0;
                     // Mã lãi cao nhất được gắn vương miện
                     const isTop = index === 0 && profitable;
+                    const be = row.breakEven;
+                    // Giá bán thực tế đang thấp hơn giá hoà vốn ⇒ mỗi đơn bán ra là mỗi lần lỗ
+                    const belowFloor = be ? be.avgSellingPrice < be.floorPrice : false;
                     return (
                       <TableRow key={row.sku}>
                         <TableCell>
@@ -165,6 +220,79 @@ export function SkuPnlTable() {
                             {row.margin}%
                           </span>
                         </TableCell>
+
+                        {/* ===== NGƯỠNG HOÀ VỐN AN TOÀN ===== */}
+                        {be ? (
+                          <>
+                            {/* Giá bán hoà vốn */}
+                            <TableCell className="border-l bg-teal-50/40 text-right">
+                              <span
+                                className={cn(
+                                  "font-semibold",
+                                  belowFloor ? "text-rose-600" : "text-teal-800"
+                                )}
+                              >
+                                {formatVND(be.floorPrice)}
+                              </span>
+                              {belowFloor && (
+                                <span className="mt-0.5 flex items-center justify-end gap-1 text-xs font-medium text-rose-600">
+                                  <AlertTriangle className="size-3" />
+                                  Đang bán dưới giá hoà vốn
+                                </span>
+                              )}
+                            </TableCell>
+
+                            {/* Mức giảm giá tối đa */}
+                            <TableCell className="bg-teal-50/40 text-right">
+                              <span
+                                className={cn(
+                                  "font-semibold",
+                                  be.maxDiscountPercent > 0
+                                    ? "text-teal-800"
+                                    : "text-rose-600"
+                                )}
+                              >
+                                {be.maxDiscountPercent > 0
+                                  ? `${be.maxDiscountPercent}%`
+                                  : "Không thể giảm"}
+                              </span>
+                            </TableCell>
+
+                            {/* Trần chi phí Ads mỗi đơn */}
+                            <TableCell className="bg-teal-50/40 text-right">
+                              <span
+                                className={cn(
+                                  "font-semibold",
+                                  be.isOverspending
+                                    ? "text-rose-600"
+                                    : be.targetCpa > 0
+                                      ? "text-teal-800"
+                                      : "text-muted-foreground"
+                                )}
+                              >
+                                {be.targetCpa > 0 ? formatVND(be.targetCpa) : "0 ₫"}
+                              </span>
+                              {be.isOverspending ? (
+                                <span className="mt-0.5 flex items-center justify-end gap-1 text-xs font-medium text-rose-600">
+                                  🚨 Đang tiêu {formatVND(be.actualCpa)}/đơn
+                                </span>
+                              ) : (
+                                be.actualCpa > 0 && (
+                                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                                    Đang tiêu {formatVND(be.actualCpa)}/đơn
+                                  </span>
+                                )
+                              )}
+                            </TableCell>
+                          </>
+                        ) : (
+                          <TableCell
+                            colSpan={3}
+                            className="border-l bg-teal-50/40 text-center text-xs text-muted-foreground"
+                          >
+                            Cần nhập giá vốn &amp; có đơn bán để tính
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}

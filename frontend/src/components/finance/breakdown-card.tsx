@@ -1,14 +1,9 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { HelpCircle } from "lucide-react";
 
+import { HintIcon } from "@/components/finance/hint-icon";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { BreakdownItem } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,28 +21,6 @@ interface BreakdownCardProps {
   /** Tô màu số theo dấu (dương xanh / âm đỏ) — dùng cho cột Lợi nhuận */
   colorBySign?: boolean;
   footer?: React.ReactNode;
-}
-
-// Icon dấu hỏi + tooltip giải thích công thức
-function HintIcon({ hint }: { hint: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label="Giải thích"
-            className="text-muted-foreground/60 transition-colors hover:text-foreground"
-          />
-        }
-      >
-        <HelpCircle className="size-3.5" />
-      </TooltipTrigger>
-      <TooltipContent className="max-w-64 text-xs leading-relaxed">
-        {hint}
-      </TooltipContent>
-    </Tooltip>
-  );
 }
 
 export function BreakdownCard({

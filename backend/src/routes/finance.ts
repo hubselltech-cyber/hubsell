@@ -475,6 +475,42 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
       .map((r) => {
         const allocatedFee = Math.round(r.allocatedFee);
         const profit = r.revenue - r.cogs - allocatedFee - r.marketingCost;
+
+        // ===== PHÂN TÍCH ĐIỂM HÒA VỐN (Break-Even Analysis) =====
+        // Chỉ tính khi SKU đã cấu hình giá vốn (> 0) và đã bán được hàng,
+        // vì mọi chỉ số đều quy về "trên một sản phẩm".
+        const canAnalyze = r.cogs > 0 && r.quantitySold > 0 && r.revenue > 0;
+
+        // Lợi nhuận gộp GỐC — trước khi trừ chi phí marketing
+        const grossBeforeMarketing = r.revenue - r.cogs - allocatedFee;
+
+        const breakEven = canAnalyze
+          ? (() => {
+              const unitCogs = r.cogs / r.quantitySold; // giá vốn / sp
+              const unitFee = allocatedFee / r.quantitySold; // phí sàn+ship / sp
+              const avgSellingPrice = r.revenue / r.quantitySold;
+              // 1. Giá bán hòa vốn: bán dưới mức này là chắc chắn âm tiền túi
+              const floorPrice = Math.round(unitCogs + unitFee);
+              // 2. Mức giảm giá tối đa còn hòa vốn (% trên giá bán hiện tại)
+              const maxDiscountPercent = pct(grossBeforeMarketing, r.revenue);
+              // 3. Trần chi phí quảng cáo cho mỗi đơn (Target CPA)
+              const targetCpa = Math.round(grossBeforeMarketing / r.quantitySold);
+              // Chi phí marketing THỰC TẾ đang tiêu cho mỗi đơn
+              const actualCpa = Math.round(r.marketingCost / r.quantitySold);
+              return {
+                unitCogs: Math.round(unitCogs),
+                unitFee: Math.round(unitFee),
+                avgSellingPrice: Math.round(avgSellingPrice),
+                floorPrice,
+                maxDiscountPercent,
+                targetCpa,
+                actualCpa,
+                // Đang đốt tiền quảng cáo vượt ngưỡng cho phép ⇒ cần tắt/tối ưu ngay
+                isOverspending: r.marketingCost > 0 && actualCpa > targetCpa,
+              };
+            })()
+          : null;
+
         return {
           sku: r.sku,
           productName: r.productName,
@@ -484,11 +520,13 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
           cogs: r.cogs,
           allocatedFee,
           marketingCost: r.marketingCost,
+          grossBeforeMarketing,
           profit,
           // Biên lợi nhuận trên doanh thu của chính SKU đó
           margin: pct(profit, r.revenue),
           // Đã bán nhưng giá vốn = 0 ⇒ số liệu lời/lỗ chưa đáng tin
           missingCost: r.quantitySold > 0 && r.cogs <= 0,
+          breakEven,
         };
       })
       // "Gà đẻ trứng vàng" lên đầu, mã gánh lỗ xuống cuối
@@ -509,6 +547,8 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
         skuProfitTotal, // tổng lợi nhuận cộng dồn từ các SKU
         fixedExpense, // chi phí cố định toàn shop
         shopProfit: skuProfitTotal - fixedExpense, // lợi nhuận cuối cùng
+        // Số SKU đang chi quảng cáo vượt ngưỡng an toàn ⇒ cần xử lý ngay
+        overspendingCount: items.filter((i) => i.breakEven?.isOverspending).length,
       },
     });
   } catch (err) {

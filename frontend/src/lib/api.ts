@@ -161,6 +161,18 @@ export interface OperatingExpense {
 
 // ----- Báo cáo Lời/Lỗ theo SKU -----
 
+/// Ngưỡng hòa vốn an toàn của một SKU (null nếu chưa đủ dữ liệu để tính)
+export interface SkuBreakEven {
+  unitCogs: number; // giá vốn / sản phẩm
+  unitFee: number; // phí sàn & ship / sản phẩm
+  avgSellingPrice: number; // giá bán trung bình thực tế
+  floorPrice: number; // GIÁ BÁN HÒA VỐN — dưới mức này là lỗ
+  maxDiscountPercent: number; // được phép giảm giá tối đa bao nhiêu %
+  targetCpa: number; // trần chi phí quảng cáo cho mỗi đơn
+  actualCpa: number; // chi phí marketing thực tế đang tiêu mỗi đơn
+  isOverspending: boolean; // đang chi Ads vượt ngưỡng ⇒ cảnh báo đỏ
+}
+
 export interface SkuPnlRow {
   sku: string;
   productName: string;
@@ -170,9 +182,11 @@ export interface SkuPnlRow {
   cogs: number;
   allocatedFee: number; // phí sàn + ship phân bổ cho SKU
   marketingCost: number; // chi phí biến đổi gắn riêng SKU
+  grossBeforeMarketing: number; // lợi nhuận gộp trước khi trừ marketing
   profit: number;
   margin: number;
   missingCost: boolean; // đã bán nhưng chưa nhập giá vốn
+  breakEven: SkuBreakEven | null;
 }
 
 export interface SkuPnlResponse {
@@ -182,6 +196,7 @@ export interface SkuPnlResponse {
     skuProfitTotal: number;
     fixedExpense: number;
     shopProfit: number;
+    overspendingCount: number; // số SKU đang chi Ads vượt ngưỡng
   };
 }
 
