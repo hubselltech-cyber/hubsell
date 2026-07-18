@@ -29,6 +29,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { SkuCombobox } from "@/components/finance/sku-combobox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
@@ -233,18 +234,15 @@ function AddExpenseDialog({ onAdded }: { onAdded: () => void }) {
                   <FormItem>
                     <FormLabel>Gắn vào sản phẩm (SKU)</FormLabel>
                     <FormControl>
-                      <NativeSelect {...field}>
-                        <option value="">— Không gắn SKU nào —</option>
-                        {skus.map((p) => (
-                          <option key={p.id} value={p.skuCode}>
-                            {p.skuCode} — {p.productName}
-                          </option>
-                        ))}
-                      </NativeSelect>
+                      <SkuCombobox
+                        products={skus}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                      />
                     </FormControl>
                     <FormDescription>
-                      Chọn SKU để khoản chi này được tính vào lời/lỗ riêng của sản
-                      phẩm đó (bảng SKU P&amp;L).
+                      Gõ mã SKU hoặc tên sản phẩm để tìm nhanh. Khoản chi sẽ được
+                      tính vào lời/lỗ riêng của sản phẩm đó (bảng SKU P&amp;L).
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

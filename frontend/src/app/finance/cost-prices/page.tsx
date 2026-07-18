@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber } from "@/lib/format";
+import { normalizeText } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 // Trạng thái giá vốn để lọc
@@ -53,15 +54,6 @@ const STATUS_OPTIONS: { value: CostStatusFilter; label: string }[] = [
   { value: "missing", label: "Chưa nhập giá vốn" },
   { value: "filled", label: "Đã nhập giá vốn" },
 ];
-
-// Bỏ dấu tiếng Việt + chữ thường, để gõ "ao thun" vẫn tìm ra "Áo thun"
-function normalizeText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // bỏ dấu thanh (huyền, sắc, hỏi, ngã, nặng…)
-    .replace(/đ/g, "d");
-}
 
 // Các tab lọc theo sàn
 const TABS: { key: SkuChannelFilter; label: string }[] = [
