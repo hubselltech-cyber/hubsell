@@ -1,20 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  ChevronDown,
   Home,
   Link2,
+  Loader2,
   LogOut,
   Package,
   ShoppingCart,
   Store,
+  Users,
   UserRound,
+  Wallet,
+  type LucideIcon,
 } from "lucide-react";
 
+import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { Button } from "@/components/ui/button";
 import {
+  ApiError,
   clearToken,
   fetchMe,
   getStoredUser,
@@ -23,12 +30,36 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+interface NavChild {
+  href: string;
+  label: string;
+}
+interface NavItem {
+  href?: string;
+  label: string;
+  icon: LucideIcon;
+  adminOnly: boolean;
+  children?: NavChild[];
+}
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Tổng quan", icon: Home, adminOnly: true },
   { href: "/orders", label: "Đơn hàng", icon: ShoppingCart, adminOnly: false },
+  {
+    label: "Quản lý Tài chính",
+    icon: Wallet,
+    adminOnly: true,
+    children: [
+      { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
+      { href: "/finance/expenses", label: "Chi phí vận hành" },
+      { href: "/finance/loss-orders", label: "Cảnh báo đơn lỗ" },
+      { href: "/finance/cost-prices", label: "Cấu hình Giá vốn" },
+    ],
+  },
   { href: "/products", label: "Sản phẩm", icon: Package, adminOnly: false },
   { href: "/channels", label: "Kênh bán", icon: Store, adminOnly: true },
   { href: "/mappings", label: "Liên kết SP", icon: Link2, adminOnly: true },
+  { href: "/staff", label: "Nhân viên", icon: Users, adminOnly: true },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
@@ -37,6 +68,11 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/products", title: "Quản lý sản phẩm" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Liên kết sản phẩm" },
+  { prefix: "/staff", title: "Quản lý nhân viên" },
+  { prefix: "/finance/analytics", title: "Báo cáo dòng tiền" },
+  { prefix: "/finance/expenses", title: "Chi phí vận hành" },
+  { prefix: "/finance/loss-orders", title: "Cảnh báo đơn lỗ" },
+  { prefix: "/finance/cost-prices", title: "Cấu hình Giá vốn" },
 ];
 
 function getPageTitle(pathname: string): string {
@@ -44,28 +80,47 @@ function getPageTitle(pathname: string): string {
   return found?.title ?? "Tổng quan";
 }
 
-// Bố cục chuẩn SaaS: Sidebar dọc bên trái + Header mỏng phía trên + nội dung chính
+// Bố cục chuẩn SaaS: Sidebar dọc + Header mỏng + nội dung chính.
+// Kèm Onboarding guard: chưa kết nối gian hàng nào → hiện màn hình chặn.
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+  const [hasChannels, setHasChannels] = useState<boolean | null>(null);
+  // Menu con nào đang mở (theo label). Tự mở nhóm Tài chính khi đang ở /finance/*
+  const [openMenus, setOpenMenus] = useState<Set<string>>(
+    () => new Set(pathname.startsWith("/finance") ? ["Quản lý Tài chính"] : [])
+  );
+
+  function toggleMenu(label: string) {
+    setOpenMenus((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const res = await fetchMe();
+      setStoredUser(res.user);
+      setUser(res.user);
+      setHasChannels(res.hasChannels);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      // Lỗi khác (máy chủ tắt): coi như đã có kênh để không chặn nhầm,
+      // các trang sẽ tự hiển thị lỗi kết nối máy chủ.
+      setHasChannels(true);
+    }
+  }, [router]);
 
   useEffect(() => {
-    const stored = getStoredUser();
-    if (stored) {
-      setUser(stored);
-      return;
-    }
-    // Phiên cũ chưa lưu user → hỏi máy chủ
-    fetchMe()
-      .then((res) => {
-        setStoredUser(res.user);
-        setUser(res.user);
-      })
-      .catch(() => {
-        // các trang tự xử lý chuyển hướng khi 401
-      });
-  }, []);
+    checkStatus();
+  }, [checkStatus]);
 
   const isStaff = user?.role === "STAFF";
   const items = NAV_ITEMS.filter((i) => !(isStaff && i.adminOnly));
@@ -75,11 +130,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   }
 
+  // Đang kiểm tra trạng thái — hiện spinner nhẹ để tránh nháy nội dung
+  if (hasChannels === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/40">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Chưa kết nối gian hàng → chặn toàn bộ, hiện màn hình onboarding
+  if (!hasChannels) {
+    return (
+      <OnboardingOverlay
+        isAdmin={user?.role === "ADMIN"}
+        onConnected={checkStatus}
+        onLogout={() => router.replace("/login")}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/40">
       {/* ===== SIDEBAR DỌC BÊN TRÁI ===== */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r bg-background md:flex">
-        {/* Logo + tên thương hiệu */}
         <Link
           href={isStaff ? "/orders" : "/"}
           className="flex items-center gap-3 border-b px-5 py-4"
@@ -97,17 +171,69 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </Link>
 
-        {/* Menu điều hướng xếp dọc */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {items.map((item) => {
+            // ----- Mục có MENU CON (ví dụ: Quản lý Tài chính) -----
+            if (item.children) {
+              const groupActive = item.children.some((c) =>
+                pathname.startsWith(c.href)
+              );
+              const open = openMenus.has(item.label) || groupActive;
+              return (
+                <div key={item.label}>
+                  <button
+                    type="button"
+                    onClick={() => toggleMenu(item.label)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      groupActive
+                        ? "text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="size-4.5 shrink-0" />
+                    {item.label}
+                    <ChevronDown
+                      className={cn(
+                        "ml-auto size-4 transition-transform",
+                        open && "rotate-180"
+                      )}
+                    />
+                  </button>
+                  {open && (
+                    <div className="mt-1 space-y-1 border-l pl-4 ml-5">
+                      {item.children.map((child) => {
+                        const childActive = pathname.startsWith(child.href);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={cn(
+                              "block rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                              childActive
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            )}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // ----- Mục thường -----
             const active =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname.startsWith(item.href!);
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={item.href!}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   active
@@ -122,7 +248,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* Chân sidebar */}
         <div className="border-t p-4">
           <p className="text-center text-xs text-muted-foreground">
             Hubsell © 2026
@@ -132,14 +257,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ===== KHU VỰC BÊN PHẢI: HEADER + NỘI DUNG ===== */}
       <div className="flex min-h-screen flex-col md:pl-60">
-        {/* Header mỏng */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          {/* Trái: tên trang hiện tại */}
           <h1 className="text-lg font-semibold tracking-tight">
             {getPageTitle(pathname)}
           </h1>
 
-          {/* Phải: thông tin người dùng + đăng xuất */}
           <div className="flex items-center gap-3">
             {user && (
               <div className="hidden items-center gap-2 sm:flex">
@@ -166,7 +288,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Nội dung chính */}
         <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-6 lg:px-8">
           {children}
         </main>

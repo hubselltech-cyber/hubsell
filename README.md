@@ -8,6 +8,8 @@ Nền tảng quản lý bán hàng đa kênh (Shopee, Lazada, TikTok, Offline) �
 >
 > Toàn bộ mã nguồn đã được kiểm thử end-to-end trên trình duyệt và đóng gói tại commit `hubsell-v1.0-mvp-completed`.
 
+> 📋 **Xem [TODO.md](TODO.md)** để biết nhật ký tiến độ chi tiết, việc đang làm dở và kế hoạch tiếp theo.
+
 ## Tiến độ các giai đoạn — ✅ HOÀN THÀNH 4/4
 
 | Giai đoạn | Nội dung | Trạng thái |
@@ -17,11 +19,17 @@ Nền tảng quản lý bán hàng đa kênh (Shopee, Lazada, TikTok, Offline) �
 | 3 | Đồng bộ đơn hàng đa kênh & Mapping sản phẩm (webhook giả lập tự trừ kho) | ✅ Xong |
 | 4 | Quản lý đơn hàng tập trung, Báo cáo tài chính (Recharts), Phân quyền Admin/Staff | ✅ Xong |
 | ✨ | Tái cấu trúc giao diện chuẩn SaaS (Sidebar dọc + Header mỏng + Card đổ bóng) | ✅ Xong |
+| ✨ | Nhập/Xuất Excel: import sản phẩm (upsert) + export Sản phẩm & Đơn hàng (SheetJS/xlsx) | ✅ Xong |
+| ✨ | Chi phí hoạt động (OperatingExpense) + Lợi nhuận thuần (Net Profit) trên Dashboard | ✅ Xong |
+| ✨ | Onboarding Guard (bắt buộc kết nối gian hàng) + Phân quyền nhân viên theo Gian hàng (Multi-store) | ✅ Xong |
+| ✨ | **Hubsell Finance** — Module tài chính chuyên sâu: Báo cáo dòng tiền, Chi phí vận hành (FIXED/VARIABLE), Cảnh báo đơn lỗ | ✅ Xong |
 
 ## Công nghệ
 
-- **Frontend:** Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind CSS v4 · shadcn/ui (style base-nova / Base UI) · TanStack React Table · react-hook-form + zod · sonner (toast) · Recharts (biểu đồ)
-- **Backend:** Node.js · Express 4 · TypeScript (tsx watch) · Prisma ORM 6 · JWT (jsonwebtoken) · bcryptjs
+- **Frontend:** Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind CSS v4 · shadcn/ui (style base-nova / Base UI) · TanStack React Table · react-hook-form + zod · sonner (toast) · Recharts (biểu đồ) · xlsx / SheetJS (Excel)
+- **Backend:** Node.js · Express 4 · TypeScript (tsx watch) · Prisma ORM 6 · JWT (jsonwebtoken) · bcryptjs · multer + xlsx (đọc Excel upload)
+
+> ℹ️ Thư viện `xlsx` được cài từ **CDN chính thức của SheetJS** (`cdn.sheetjs.com/xlsx-0.20.3`) — bản đã vá lỗ hổng bảo mật, vì bản trên npm đã ngừng cập nhật.
 - **Database:** PostgreSQL 17 (cài native trên Windows, service `postgresql-x64-17`)
 
 ## Cấu trúc dự án (Monorepo)
@@ -34,9 +42,15 @@ hubsell/
 │       │   ├── page.tsx            # Tổng quan + Báo cáo tài chính (biểu đồ) — chỉ Admin
 │       │   ├── login/page.tsx      # Đăng nhập / Đăng ký
 │       │   ├── orders/page.tsx     # Quản lý đơn hàng tập trung (lọc, đổi trạng thái, hủy hoàn kho)
-│       │   ├── products/page.tsx   # Quản lý sản phẩm & kho
+│       │   ├── products/page.tsx   # Quản lý sản phẩm & kho + Nhập/Xuất Excel
 │       │   ├── channels/page.tsx   # Cấu hình kết nối gian hàng + giả lập đơn — chỉ Admin
-│       │   └── mappings/page.tsx   # Liên kết sản phẩm sàn ↔ kho gốc — chỉ Admin
+│       │   ├── mappings/page.tsx   # Liên kết sản phẩm sàn ↔ kho gốc — chỉ Admin
+│       │   ├── staff/page.tsx      # Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
+│       │   └── finance/            # 💰 Hubsell Finance — chỉ Admin
+│       │       ├── analytics/      #   Báo cáo dòng tiền (Area Chart doanh thu vs chi phí)
+│       │       ├── expenses/       #   Chi phí vận hành (bảng + modal thêm nhanh)
+│       │       ├── loss-orders/    #   Cảnh báo đơn lỗ (đối soát đơn bán lỗ)
+│       │       └── cost-prices/    #   Cấu hình Giá vốn (lọc theo sàn, nhập onBlur tự lưu)
 │       ├── components/
 │       │   ├── app-shell.tsx       # Khung chung: header + menu + đăng xuất
 │       │   ├── dashboard/          # Thẻ thống kê
@@ -44,11 +58,12 @@ hubsell/
 │       │   └── ui/                 # Component shadcn/ui
 │       └── lib/
 │           ├── api.ts              # Lớp gọi API + quản lý token đăng nhập
+│           ├── excel.ts            # Xuất Excel (SP, đơn hàng) + tạo file mẫu (client-side)
 │           └── format.ts           # Định dạng tiền VND, số, ngày giờ
 │
 ├── backend/                        # Máy chủ API — cổng 4000
 │   ├── prisma/
-│   │   ├── schema.prisma           # 6 bảng: User (role + ownerId), Channel, Product, Order, InventoryLog (orderId), ProductMapping
+│   │   ├── schema.prisma           # 9 bảng: User, Channel, Product, Order, OrderItem, InventoryLog, ProductMapping, OperatingExpense, StaffChannel
 │   │   ├── migrations/             # Lịch sử thay đổi cấu trúc DB
 │   │   └── seed.ts                 # Dữ liệu mẫu (admin@hubsell.vn / hubsell123)
 │   └── src/
@@ -63,6 +78,7 @@ hubsell/
 │           ├── inventory.ts        # /api/inventory: adjust (transaction), logs
 │           ├── orders.ts           # /api/orders: lọc, phân trang, đổi trạng thái, hủy → hoàn kho
 │           ├── analytics.ts        # /api/analytics: doanh thu, giá vốn, lợi nhuận, biểu đồ — chỉ Admin
+│           ├── finance.ts          # /api/finance: analytics, orders-analysis (đơn lỗ), expenses — chỉ Admin
 │           ├── channels.ts         # /api/channels: kết nối, ngắt, danh mục sàn
 │           ├── mappings.ts         # /api/mappings: nối SKU sàn ↔ SP gốc
 │           └── webhooks.ts         # /api/webhooks/mock-order: nhận đơn từ sàn
@@ -85,6 +101,7 @@ hubsell/
 | GET | `/api/products` | Danh sách SP (phân trang, tìm SKU/tên) | 🔒 JWT |
 | POST | `/api/products` | Thêm SP + tồn kho ban đầu (transaction) | 🔒 JWT |
 | PATCH | `/api/products/:id` | Sửa thông tin SP | 🔒 JWT |
+| POST | `/api/products/import` | Nhập SP hàng loạt từ file Excel (validate + upsert trong 1 transaction) | 🔒 JWT |
 | POST | `/api/inventory/adjust` | Nhập/xuất kho (transaction + khoá dòng) | 🔒 JWT |
 | GET | `/api/inventory/logs` | Lịch sử xuất nhập kho | 🔒 JWT |
 | GET | `/api/orders` | Danh sách đơn hàng | 🔒 JWT |
@@ -97,7 +114,70 @@ hubsell/
 | DELETE | `/api/mappings/:id` | Gỡ liên kết | 🔒 JWT |
 | POST | `/api/webhooks/mock-order` | Webhook giả lập nhận đơn từ sàn: tra mapping → tạo Order + trừ kho + log SYNC (transaction) | 🔑 Token kênh |
 | PATCH | `/api/orders/:id/status` | Đổi trạng thái vận chuyển; CANCELLED → tự hoàn kho + ghi log (transaction) | 🔒 JWT |
-| GET | `/api/analytics` | Doanh thu / Giá vốn / Lợi nhuận gộp (đơn Đã giao), doanh thu theo ngày, tỷ lệ đơn theo kênh | 🔒 Chỉ Admin |
+| GET | `/api/analytics` | Doanh thu / Giá vốn / Lợi nhuận gộp / **Chi phí HĐ / Lợi nhuận thuần**, biểu đồ | 🔒 Chỉ Admin |
+| GET/POST/DELETE | `/api/expenses` | Quản lý chi phí hoạt động (mặt bằng, lương, đóng gói, quảng cáo) | 🔒 Chỉ Admin |
+| GET/POST/DELETE | `/api/staff` | Quản lý nhân viên (danh sách, tạo, xoá) | 🔒 Chỉ Admin |
+| PUT | `/api/staff/:id/channels` | Gán các gian hàng nhân viên được xử lý (rỗng = tất cả) | 🔒 Chỉ Admin |
+| GET/POST | `/api/finance/expenses` | Danh sách & thêm chi phí vận hành (`type`: FIXED / VARIABLE) | 🔒 Chỉ Admin |
+| GET | `/api/finance/orders-analysis` | Quét đơn Đã giao → **đơn bán lỗ** (Doanh thu − Phí sàn − Giá vốn ≤ 0) + cảnh báo thiếu giá vốn | 🔒 Chỉ Admin |
+| GET | `/api/finance/analytics` | Tổng doanh thu / Lợi nhuận gộp / Lợi nhuận thuần + chuỗi 14 ngày (số đầy đủ) | 🔒 Chỉ Admin |
+| GET | `/api/finance/sku-products?channel=` | Danh sách SKU theo sàn (all/shopee/tiktok/lazada/offline) để nhập giá vốn | 🔒 Chỉ Admin |
+| PATCH | `/api/finance/update-cost` | Cập nhật giá vốn theo `sku_id` + `cost_price` | 🔒 Chỉ Admin |
+| POST | `/api/finance/sync-products` | **Quét sản phẩm từ các sàn đã kết nối** → upsert vào Product + ProductMapping | 🔒 Chỉ Admin |
+
+## 💰 Hubsell Finance — Module tài chính chuyên sâu
+
+**Giá vốn chuẩn kế toán:** bảng `OrderItem` lưu `costPriceAtSale` — **snapshot giá vốn tại đúng thời điểm phát sinh đơn**. Sau này chủ shop đổi giá vốn sản phẩm, báo cáo lãi/lỗ của đơn cũ vẫn chính xác tuyệt đối. (Đơn phát sinh trước khi có bảng này sẽ fallback qua `InventoryLog` × giá vốn hiện tại.)
+
+### Phí sàn 2 giai đoạn (Tạm tính → Quyết toán)
+
+Giải quyết bài toán "chi phí ẩn": sàn liên tục đổi biểu phí nên số tạm tính luôn lệch số thực nhận.
+
+| Giai đoạn | Khi nào | Số liệu dùng |
+|---|---|---|
+| **1. Tạm tính** | Đơn Chờ xử lý / Đang giao | `platformFee` = Doanh thu × `Channel.feeRate` (mặc định Shopee 12% · TikTok 11% · Lazada 10% · Offline 0%) |
+| **2. Quyết toán** | Đơn chuyển sang **Đã giao** | Bóc tách số **thực tế** sàn trả về: `fixedFee` (phí cố định) + `serviceFee` (phí dịch vụ) + `paymentFee` (phí thanh toán) − `platformSubsidy` (trợ giá) → ghi `actualPayout` (tiền thực nhận) |
+
+Báo cáo dòng tiền **luôn ưu tiên số quyết toán**; đơn chưa quyết toán mới dùng số tạm tính. Hàm `mockSettlement()` trong `mockMarketplace.ts` mô phỏng dữ liệu đối soát — khi tích hợp API thật chỉ cần thay hàm này.
+
+**Công thức:**
+- Lợi nhuận gộp = Tổng doanh thu (đơn Đã giao) − Tổng giá vốn
+- **Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Tổng chi phí vận hành**
+- Đơn lỗ = đơn Đã giao có (Doanh thu đơn − **Phí sàn** − Giá vốn đơn) ≤ 0
+- Đơn chứa SKU chưa nhập giá vốn → gắn `warning: "Chưa nhập giá vốn"` (số liệu chưa đáng tin)
+
+### Bóc tách dòng tiền 4 cột (trang Báo cáo dòng tiền)
+
+Khu vực chỉ số đầu trang được cấu trúc thành 4 thẻ lớn, mỗi thẻ có danh sách chi tiết kèm % và **tooltip giải thích công thức** (hover vào icon ❓):
+
+| Cột | Số lớn | Chi tiết bên dưới |
+|---|---|---|
+| **1. Tổng giá trị sản phẩm** | Doanh số gốc (chưa trừ gì) | Phí nền tảng · Phí tiếp thị liên kết · Voucher trợ giá của shop · Chênh lệch phí vận chuyển · Trợ giá từ sàn (khoản cộng lại) |
+| **2. Doanh thu** | Sau khi trừ khoản sàn giữ lại | Hoàn thành (đã giải ngân) · Chờ xử lý (tạm tính) · Đã hủy (kèm % tỷ lệ hủy đơn) |
+| **3. Chi phí** | Giá vốn + chi phí ngoài sàn | Giá vốn sản phẩm · Chi phí quảng cáo · Chi phí vận hành khác |
+| **4. Lợi nhuận** | Đã trừ toàn bộ chi phí | Lợi nhuận thực tế (đơn đã quyết toán) · Lợi nhuận dự kiến (đơn đang chờ) — % là **biên lợi nhuận** |
+
+Phạm vi tính: đơn Đã giao + Đang giao (không tính đơn đã hủy). Đơn đã quyết toán dùng phí **thực tế**, đơn đang đi đường dùng phí **tạm tính**.
+Kiểm chứng: Cột 1 − Tổng khấu trừ = Cột 2 (số liệu khớp tuyệt đối).
+
+**Bóc tách lý do đơn lỗ** (trang Cảnh báo đơn lỗ): mỗi đơn âm tiền có nhãn rõ nguyên nhân
+- 🔴 **Lỗ do Giá vốn** — bán dưới giá vốn (sai từ khâu nhập hàng/định giá)
+- 🟠 **Lỗ do Chi phí sàn** — bán trên giá vốn nhưng phí sàn/voucher ăn hết lãi
+
+**Cấu hình Giá vốn** (`/finance/cost-prices`): lọc SKU theo sàn (Tất cả / Shopee / TikTok / Lazada / Offline), nhập giá vốn vào ô input — **tự động lưu khi rời ô (onBlur)** kèm toast xác nhận. SKU sàn lấy từ bảng liên kết `ProductMapping`; sản phẩm chưa liên kết sàn nào được xếp vào nhóm Offline.
+
+**Bộ lọc nâng cao** (dành cho shop hàng nghìn SKU): ô tìm kiếm real-time theo tên sản phẩm / mã SKU / tên phân loại — **bỏ dấu tiếng Việt** (gõ "ao thun" ra "Áo thun") kèm nút ✕ xoá nhanh; dropdown lọc trạng thái giá vốn (Tất cả / Chưa nhập / Đã nhập); bộ đếm "Hiển thị X/Y SKU". Lọc chạy client-side nên kết quả hiện ngay khi đang gõ. Khi lọc "Chưa nhập giá vốn" mà không còn SKU nào thiếu → hiện màn hình chúc mừng thay cho bảng.
+
+**Đồng bộ sản phẩm từ sàn:** nút **"Đồng bộ từ sàn"** (góc phải thanh lọc) gọi `POST /api/finance/sync-products` để quét danh mục sản phẩm (SKU, tên biến thể, giá bán, ảnh) từ mọi gian hàng đang ACTIVE rồi **upsert**:
+- SKU sàn chưa có → tạo Product mới (giá vốn = 0 để chờ nhập) + tạo liên kết
+- SKU sàn đã có → cập nhật tên hiển thị / ảnh
+- **Không bao giờ ghi đè `costPrice`** (dữ liệu chủ shop tự nhập). Chạy lại nhiều lần không tạo bản ghi trùng.
+
+Nhờ vậy chủ shop vừa đăng sản phẩm mới lên sàn là bấm quét về nhập giá vốn ngay, không cần chờ phát sinh đơn hàng.
+
+**Chi phí vận hành** phân loại 2 chiều: `type` (FIXED cố định / VARIABLE biến đổi) và `category` (Mặt bằng, Nhân viên, Đóng gói, Quảng cáo, Khác).
+
+**Onboarding Guard:** mọi API dữ liệu (products, orders, dashboard, analytics, expenses, inventory, mappings) đi qua middleware `requireChannel` — nếu shop **chưa kết nối gian hàng nào** → trả `409 { code: "NO_CHANNEL" }`. Frontend bắt mã này để hiện màn hình Onboarding chặn toàn bộ cho đến khi kết nối ít nhất 1 kênh. `GET /api/auth/me` trả kèm `hasChannels`.
 | POST | `/api/auth/staff` | Chủ shop tạo tài khoản Nhân viên (dùng chung dữ liệu shop) | 🔒 Chỉ Admin |
 
 ## Phân quyền (RBAC)
@@ -105,7 +185,9 @@ hubsell/
 | Vai trò | Được phép | Bị chặn |
 |---|---|---|
 | **ADMIN** (Chủ shop) | Toàn quyền tất cả tính năng | — |
-| **STAFF** (Nhân viên) | Đơn hàng, Sản phẩm & Kho, xem danh sách kênh (không thấy token) | Tổng quan/Báo cáo tài chính, Cấu hình kênh, Mapping — hiện "Bạn không có quyền truy cập" (chặn cả UI lẫn API 403) |
+| **STAFF** (Nhân viên) | Đơn hàng, Sản phẩm & Kho, xem danh sách kênh (không thấy token) | Tổng quan/Báo cáo tài chính, Cấu hình kênh, Mapping, Nhân viên — hiện "Bạn không có quyền truy cập" (chặn cả UI lẫn API 403) |
+
+**Phân quyền theo Gian hàng (Multi-store):** Admin có thể giới hạn mỗi STAFF chỉ được xem & xử lý đơn của một số kênh nhất định (bảng `StaffChannel`). Không gán kênh nào = xem tất cả (mặc định). Nhân viên bị giới hạn: danh sách kênh + đơn hàng chỉ hiện kênh được gán; sửa đơn của kênh ngoài phạm vi → `403`.
 
 Đăng ký tài khoản mới = ADMIN của shop riêng. Admin tạo nhân viên qua `POST /api/auth/staff`.
 

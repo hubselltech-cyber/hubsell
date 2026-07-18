@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Download,
   Loader2,
   PackageOpen,
   Pencil,
@@ -42,6 +43,7 @@ import {
   type Channel,
   type Order,
 } from "@/lib/api";
+import { exportAllOrders } from "@/lib/excel";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 
@@ -213,6 +215,7 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
 
   const load = useCallback(async () => {
@@ -232,6 +235,7 @@ export default function OrdersPage() {
         router.replace("/login");
         return;
       }
+      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
       toast.error("Không tải được danh sách đơn hàng");
     } finally {
       setLoading(false);
@@ -252,12 +256,41 @@ export default function OrdersPage() {
     load();
   }, [load]);
 
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const count = await exportAllOrders({
+        shippingStatus: statusFilter || undefined,
+        channelId: channelFilter || undefined,
+      });
+      if (count === 0) {
+        toast.info("Không có đơn hàng nào (theo bộ lọc) để xuất");
+      } else {
+        toast.success(`Đã xuất ${count} đơn hàng ra file Excel`);
+      }
+    } catch {
+      toast.error("Không xuất được file Excel");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <AppShell>
       <div className="space-y-6">
-        <p className="text-muted-foreground">
-          Toàn bộ đơn hàng gom về từ tất cả các kênh ({formatNumber(total)} đơn).
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <p className="text-muted-foreground">
+            Toàn bộ đơn hàng gom về từ tất cả các kênh ({formatNumber(total)} đơn).
+          </p>
+          <Button variant="outline" onClick={handleExport} disabled={exporting}>
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            Xuất Excel Đơn Hàng
+          </Button>
+        </div>
 
         {/* Bộ lọc */}
         <div className="flex flex-wrap items-end gap-4">

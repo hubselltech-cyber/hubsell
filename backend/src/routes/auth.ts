@@ -143,18 +143,22 @@ router.post(
   }
 );
 
-// GET /api/auth/me — Lấy thông tin người đang đăng nhập
+// GET /api/auth/me — Lấy thông tin người đang đăng nhập.
+// Kèm hasChannels: shop đã kết nối gian hàng nào chưa (cho Onboarding overlay).
 router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.userId! },
-      select: { id: true, email: true, fullName: true, role: true, createdAt: true },
-    });
+    const [user, channelCount] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: req.userId! },
+        select: { id: true, email: true, fullName: true, role: true, createdAt: true },
+      }),
+      prisma.channel.count({ where: { userId: req.ownerId! } }),
+    ]);
     if (!user) {
       res.status(401).json({ error: "Tài khoản không tồn tại" });
       return;
     }
-    res.json({ user });
+    res.json({ user, hasChannels: channelCount > 0 });
   } catch (err) {
     next(err);
   }

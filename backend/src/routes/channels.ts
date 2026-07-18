@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
 import { requireAdmin, type AuthRequest } from "../auth";
-import { MOCK_CATALOG, TOKEN_PREFIX } from "../mockMarketplace";
+import { MOCK_CATALOG, PLATFORM_FEE_RATE, TOKEN_PREFIX } from "../mockMarketplace";
 
 const router = Router();
 
@@ -19,7 +19,11 @@ const CONNECTABLE: ChannelName[] = [
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const channels = await prisma.channel.findMany({
-      where: { userId: req.ownerId! },
+      where: {
+        userId: req.ownerId!,
+        // Nhân viên bị giới hạn kênh chỉ thấy các kênh được gán
+        ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { orders: true, mappings: true } } },
     });
@@ -61,14 +65,20 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       // Đã từng ngắt kết nối → kết nối lại với token mới
       const reconnected = await prisma.channel.update({
         where: { id: existing.id },
-        data: { status: "ACTIVE", apiToken },
+        data: { status: "ACTIVE", apiToken, feeRate: PLATFORM_FEE_RATE[name] },
       });
       res.json(reconnected);
       return;
     }
 
     const channel = await prisma.channel.create({
-      data: { userId: req.ownerId!, channelName: name, apiToken, status: "ACTIVE" },
+      data: {
+        userId: req.ownerId!,
+        channelName: name,
+        apiToken,
+        status: "ACTIVE",
+        feeRate: PLATFORM_FEE_RATE[name], // % phí sàn mặc định để tạm tính
+      },
     });
     res.status(201).json(channel);
   } catch (err) {

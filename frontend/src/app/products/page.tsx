@@ -13,12 +13,16 @@ import {
   ArrowUpFromLine,
   ChevronLeft,
   ChevronRight,
+  Download,
+  Loader2,
   Search,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
+import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,6 +40,7 @@ import {
   ApiError,
   type Product,
 } from "@/lib/api";
+import { exportAllProducts } from "@/lib/excel";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +60,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Hộp thoại nhập/xuất kho đang mở cho sản phẩm nào
   const [adjusting, setAdjusting] = useState<{
@@ -75,6 +81,7 @@ export default function ProductsPage() {
         router.replace("/login");
         return;
       }
+      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
       setError(
         err instanceof ApiError
           ? err.message
@@ -97,6 +104,22 @@ export default function ProductsPage() {
     e.preventDefault();
     setPage(1);
     setSearch(searchInput.trim());
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const count = await exportAllProducts();
+      if (count === 0) {
+        toast.info("Chưa có sản phẩm nào để xuất");
+      } else {
+        toast.success(`Đã xuất ${count} sản phẩm ra file Excel`);
+      }
+    } catch {
+      toast.error("Không xuất được file Excel");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const columns = useMemo(
@@ -205,7 +228,18 @@ export default function ProductsPage() {
           <p className="text-muted-foreground">
             Quản lý sản phẩm gốc và tồn kho ({formatNumber(total)} sản phẩm).
           </p>
-          <ProductFormDialog onCreated={load} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ImportExcelDialog onImported={load} />
+            <Button variant="outline" onClick={handleExport} disabled={exporting}>
+              {exporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Xuất Excel
+            </Button>
+            <ProductFormDialog onCreated={load} />
+          </div>
         </div>
 
         {/* Thanh tìm kiếm */}

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { InventoryLogType, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import { mockSettlement } from "../mockMarketplace";
 
 const router = Router();
 
@@ -19,10 +20,21 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const channelId =
       typeof req.query.channelId === "string" ? req.query.channelId : "";
 
+    // Phân quyền multi-store: nhân viên bị giới hạn kênh thì chỉ thấy đơn của kênh được gán.
+    // Nếu lọc theo 1 kênh cụ thể mà kênh đó không nằm trong phạm vi → không trả gì.
+    const channelWhere: Prisma.ChannelWhereInput = { userId: req.ownerId! };
+    if (req.allowedChannelIds) {
+      const allowed = req.allowedChannelIds;
+      channelWhere.id = channelId
+        ? { in: allowed.filter((id) => id === channelId) }
+        : { in: allowed };
+    } else if (channelId) {
+      channelWhere.id = channelId;
+    }
+
     const where: Prisma.OrderWhereInput = {
-      channel: { userId: req.ownerId! },
+      channel: channelWhere,
       ...(shippingStatus ? { shippingStatus } : {}),
-      ...(channelId ? { channelId } : {}),
     };
 
     const [total, items] = await Promise.all([
@@ -58,9 +70,15 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, channel: { userId: req.ownerId! } },
+      include: { channel: { select: { channelName: true } } },
     });
     if (!order) {
       res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+      return;
+    }
+    // Nhân viên bị giới hạn kênh không được xử lý đơn của kênh ngoài phạm vi
+    if (req.allowedChannelIds && !req.allowedChannelIds.includes(order.channelId)) {
+      res.status(403).json({ error: "Bạn không có quyền xử lý đơn của kênh này" });
       return;
     }
     if (order.shippingStatus === "CANCELLED") {
@@ -74,9 +92,33 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
     // Trường hợp thường: chỉ đổi trạng thái
     if (newStatus !== "CANCELLED") {
+      // GĐ2 — QUYẾT TOÁN: đơn chuyển sang "Đã giao" ⇒ bóc tách số liệu tài chính
+      // THỰC TẾ do sàn trả về (phí cố định, phí dịch vụ, phí thanh toán, trợ giá)
+      // và ghi đè số tạm tính. Báo cáo dòng tiền dùng số này.
+      let settlementData: Prisma.OrderUpdateInput = {};
+      if (newStatus === "DELIVERED" && !order.isSettled) {
+        const s = mockSettlement(
+          order.channel.channelName,
+          Number(order.totalAmount),
+          order.orderCode
+        );
+        settlementData = {
+          isSettled: true,
+          settledAt: new Date(),
+          fixedFee: s.fixedFee,
+          serviceFee: s.serviceFee,
+          paymentFee: s.paymentFee,
+          affiliateFee: s.affiliateFee,
+          sellerVoucher: s.sellerVoucher,
+          shippingFeeDiff: s.shippingFeeDiff,
+          platformSubsidy: s.platformSubsidy,
+          actualPayout: s.actualPayout,
+        };
+      }
+
       const updated = await prisma.order.update({
         where: { id: order.id },
-        data: { shippingStatus: newStatus },
+        data: { shippingStatus: newStatus, ...settlementData },
         include: { channel: { select: { channelName: true } } },
       });
       res.json({ order: updated, restored: [] });

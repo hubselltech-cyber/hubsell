@@ -50,6 +50,29 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     const grossProfit = totalRevenue - totalCost;
 
+    // 2b) Chi phí hoạt động: tổng + phân bổ theo loại
+    const expenses = await prisma.operatingExpense.findMany({
+      where: { userId: ownerId },
+      select: { category: true, amount: true },
+    });
+    const totalOperatingExpense = expenses.reduce(
+      (sum, e) => sum + Number(e.amount),
+      0
+    );
+    const expenseByCategoryMap = new Map<string, number>();
+    for (const e of expenses) {
+      expenseByCategoryMap.set(
+        e.category,
+        (expenseByCategoryMap.get(e.category) ?? 0) + Number(e.amount)
+      );
+    }
+    const expensesByCategory = Array.from(expenseByCategoryMap.entries())
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount);
+
+    // Lợi nhuận thuần = Lợi nhuận gộp − Tổng chi phí hoạt động
+    const netProfit = grossProfit - totalOperatingExpense;
+
     // 3) Doanh thu theo ngày — 14 ngày gần nhất (kể cả ngày không có đơn)
     const days = 14;
     const today = new Date();
@@ -96,6 +119,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       totalRevenue,
       totalCost,
       grossProfit,
+      totalOperatingExpense,
+      netProfit,
+      expensesByCategory,
       revenueByDay,
       ordersByChannel,
     });

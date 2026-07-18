@@ -1,9 +1,24 @@
 import { Router } from "express";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import { Prisma, InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 
 const router = Router();
+
+// Nhận file Excel vào bộ nhớ (không lưu ra đĩa), giới hạn 5MB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(xlsx|xls)$/i.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Chỉ chấp nhận file Excel (.xlsx hoặc .xls)"));
+    }
+  },
+});
 
 // Kiểm tra một giá trị có phải số tiền hợp lệ (>= 0) không
 function parseMoney(value: unknown): number | null {
@@ -11,6 +26,28 @@ function parseMoney(value: unknown): number | null {
   if (typeof n !== "number" || Number.isNaN(n) || n < 0) return null;
   return n;
 }
+
+// Lấy giá trị của một cột trong hàng Excel, thử nhiều tên cột có thể (không phân biệt hoa/thường)
+function pickColumn(row: Record<string, unknown>, aliases: string[]): unknown {
+  const normalized: Record<string, unknown> = {};
+  for (const key of Object.keys(row)) {
+    normalized[key.trim().toLowerCase()] = row[key];
+  }
+  for (const a of aliases) {
+    const v = normalized[a.trim().toLowerCase()];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  }
+  return undefined;
+}
+
+// Tên cột chấp nhận cho từng trường (khớp với file mẫu tải về)
+const COLS = {
+  sku: ["Mã SKU", "SKU", "Ma SKU", "skuCode", "Mã sản phẩm"],
+  name: ["Tên sản phẩm", "Tên SP", "productName", "Ten san pham"],
+  cost: ["Giá vốn", "costPrice", "Gia von"],
+  selling: ["Giá bán", "sellingPrice", "Gia ban"],
+  quantity: ["Tồn kho", "Số lượng", "quantityInStock", "Ton kho", "So luong"],
+};
 
 // GET /api/products?page=1&pageSize=10&search=...
 // Danh sách sản phẩm của user đang đăng nhập, có phân trang + tìm theo SKU/Tên.
@@ -177,6 +214,201 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
     const updated = await prisma.product.update({ where: { id }, data });
     res.json(updated);
   } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/products/import — Nhập sản phẩm hàng loạt từ file Excel.
+// Cột chuẩn: [Mã SKU, Tên sản phẩm, Giá vốn, Giá bán, Tồn kho].
+// - Thiếu SKU hoặc Tên → bỏ qua dòng đó, báo lỗi rõ ràng.
+// - SKU đã tồn tại → CẬP NHẬT giá & tồn kho (upsert), ghi log chênh lệch kho.
+// - SKU mới → tạo mới + ghi log nhập kho ban đầu.
+// Tất cả chạy trong MỘT transaction (thành công/thất bại trọn gói).
+router.post("/import", upload.single("file"), async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "Chưa chọn file Excel để tải lên" });
+      return;
+    }
+
+    // Đọc workbook từ buffer, lấy sheet đầu tiên
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) {
+      res.status(400).json({ error: "File Excel không có sheet nào" });
+      return;
+    }
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      workbook.Sheets[firstSheetName],
+      { defval: "" }
+    );
+
+    if (rows.length === 0) {
+      res.status(400).json({ error: "File Excel không có dòng dữ liệu nào" });
+      return;
+    }
+
+    // Bước 1: validate toàn bộ, gom dòng hợp lệ + danh sách lỗi
+    type ValidRow = {
+      skuCode: string;
+      productName: string;
+      costPrice: number;
+      sellingPrice: number;
+      quantityInStock: number;
+    };
+    const valid: ValidRow[] = [];
+    const errors: { row: number; message: string }[] = [];
+    const seenSku = new Set<string>();
+
+    rows.forEach((row, idx) => {
+      const excelRow = idx + 2; // +1 do header, +1 do đếm từ 1
+
+      const rawSku = pickColumn(row, COLS.sku);
+      const rawName = pickColumn(row, COLS.name);
+
+      if (rawSku === undefined) {
+        errors.push({ row: excelRow, message: "Thiếu Mã SKU — đã bỏ qua" });
+        return;
+      }
+      if (rawName === undefined) {
+        errors.push({ row: excelRow, message: "Thiếu Tên sản phẩm — đã bỏ qua" });
+        return;
+      }
+
+      const skuCode = String(rawSku).trim().toUpperCase();
+      const productName = String(rawName).trim();
+
+      if (seenSku.has(skuCode)) {
+        errors.push({
+          row: excelRow,
+          message: `Mã SKU "${skuCode}" bị lặp lại trong file — đã bỏ qua dòng sau`,
+        });
+        return;
+      }
+
+      const cost = parseMoney(pickColumn(row, COLS.cost) ?? 0);
+      const selling = parseMoney(pickColumn(row, COLS.selling) ?? 0);
+      if (cost === null || selling === null) {
+        errors.push({
+          row: excelRow,
+          message: `SKU "${skuCode}": Giá vốn/Giá bán không hợp lệ — đã bỏ qua`,
+        });
+        return;
+      }
+
+      const qtyRaw = pickColumn(row, COLS.quantity) ?? 0;
+      const qty = Number(qtyRaw);
+      if (!Number.isInteger(qty) || qty < 0) {
+        errors.push({
+          row: excelRow,
+          message: `SKU "${skuCode}": Tồn kho phải là số nguyên ≥ 0 — đã bỏ qua`,
+        });
+        return;
+      }
+
+      seenSku.add(skuCode);
+      valid.push({
+        skuCode,
+        productName,
+        costPrice: cost,
+        sellingPrice: selling,
+        quantityInStock: qty,
+      });
+    });
+
+    if (valid.length === 0) {
+      res.status(400).json({
+        error: "Không có dòng hợp lệ nào trong file",
+        created: 0,
+        updated: 0,
+        errors,
+      });
+      return;
+    }
+
+    // Bước 2: upsert hàng loạt trong MỘT transaction
+    const ownerId = req.ownerId!;
+    const result = await prisma.$transaction(async (tx) => {
+      let created = 0;
+      let updated = 0;
+
+      // Lấy trước các sản phẩm đã tồn tại theo SKU để biết create hay update
+      const existing = await tx.product.findMany({
+        where: { userId: ownerId, skuCode: { in: valid.map((v) => v.skuCode) } },
+      });
+      const existingBySku = new Map(existing.map((p) => [p.skuCode, p]));
+
+      for (const v of valid) {
+        const found = existingBySku.get(v.skuCode);
+        if (found) {
+          // Cập nhật giá + tồn kho; ghi log phần chênh lệch tồn (nếu có)
+          const delta = v.quantityInStock - found.quantityInStock;
+          await tx.product.update({
+            where: { id: found.id },
+            data: {
+              productName: v.productName,
+              costPrice: v.costPrice,
+              sellingPrice: v.sellingPrice,
+              quantityInStock: v.quantityInStock,
+            },
+          });
+          if (delta !== 0) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: found.id,
+                changeQuantity: delta,
+                type: InventoryLogType.SYNC,
+                reason: "Điều chỉnh tồn kho khi nhập Excel",
+              },
+            });
+          }
+          updated++;
+        } else {
+          const createdProduct = await tx.product.create({
+            data: {
+              userId: ownerId,
+              skuCode: v.skuCode,
+              productName: v.productName,
+              costPrice: v.costPrice,
+              sellingPrice: v.sellingPrice,
+              quantityInStock: v.quantityInStock,
+            },
+          });
+          if (v.quantityInStock > 0) {
+            await tx.inventoryLog.create({
+              data: {
+                productId: createdProduct.id,
+                changeQuantity: v.quantityInStock,
+                type: InventoryLogType.IMPORT,
+                reason: "Nhập kho ban đầu từ file Excel",
+              },
+            });
+          }
+          created++;
+        }
+      }
+
+      return { created, updated };
+    });
+
+    res.json({
+      created: result.created,
+      updated: result.updated,
+      totalImported: result.created + result.updated,
+      skipped: errors.length,
+      errors,
+    });
+  } catch (err) {
+    // Lỗi từ multer (sai định dạng, quá dung lượng)
+    const e = err as Error & { code?: string };
+    if (e.code === "LIMIT_FILE_SIZE") {
+      res.status(400).json({ error: "File quá lớn (tối đa 5MB)" });
+      return;
+    }
+    if (e.message?.includes("Excel")) {
+      res.status(400).json({ error: e.message });
+      return;
+    }
     next(err);
   }
 });

@@ -12,6 +12,8 @@ import {
   TrendingUp,
   Coins,
   PiggyBank,
+  Receipt,
+  Scale,
 } from "lucide-react";
 import {
   Bar,
@@ -30,6 +32,7 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { ExpensesSection } from "@/components/dashboard/expenses-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -124,6 +127,7 @@ export default function DashboardPage() {
         setDenied(true);
         return;
       }
+      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
       setError(
         "Chưa kết nối được máy chủ (backend). Hãy chắc chắn backend đang chạy ở cổng 4000."
       );
@@ -243,6 +247,61 @@ export default function DashboardPage() {
             accentClass="bg-violet-100 text-violet-700"
           />
         </div>
+
+        {/* Chi phí hoạt động + Lợi nhuận thuần */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StatCard
+            label="Tổng Chi phí hoạt động"
+            value={analytics ? formatVND(analytics.totalOperatingExpense) : "—"}
+            icon={Receipt}
+            accentClass="bg-rose-100 text-rose-700"
+          />
+
+          {/* Lợi nhuận thuần — nổi bật, đổi màu theo lãi/lỗ */}
+          {(() => {
+            const net = analytics?.netProfit ?? 0;
+            const positive = net >= 0;
+            return (
+              <Card
+                className={
+                  positive
+                    ? "border-emerald-300 bg-emerald-50/60"
+                    : "border-rose-300 bg-rose-50/60"
+                }
+              >
+                <CardContent className="flex items-center gap-4 p-5">
+                  <div
+                    className={`flex size-12 shrink-0 items-center justify-center rounded-xl ${
+                      positive
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    <Scale className="size-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Lợi nhuận thuần (Net Profit)
+                    </p>
+                    <p
+                      className={`truncate text-2xl font-bold tracking-tight ${
+                        positive ? "text-emerald-700" : "text-rose-700"
+                      }`}
+                    >
+                      {analytics ? formatVND(net) : "—"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      = Lợi nhuận gộp − Chi phí hoạt động
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+        </div>
+
+        {/* Quản lý chi phí hoạt động */}
+        <ExpensesSection onChanged={load} />
 
         {/* 2 biểu đồ */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">

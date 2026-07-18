@@ -1,4 +1,9 @@
-import { PrismaClient, ChannelName, InventoryLogType } from "@prisma/client";
+import {
+  PrismaClient,
+  ChannelName,
+  InventoryLogType,
+  ExpenseCategory,
+} from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -7,7 +12,9 @@ async function main() {
   console.log("🌱 Bắt đầu tạo dữ liệu mẫu...");
 
   // Xoá dữ liệu cũ (theo đúng thứ tự phụ thuộc)
+  await prisma.operatingExpense.deleteMany();
   await prisma.productMapping.deleteMany();
+  await prisma.orderItem.deleteMany();
   await prisma.inventoryLog.deleteMany();
   await prisma.order.deleteMany();
   await prisma.product.deleteMany();
@@ -79,11 +86,23 @@ async function main() {
     await prisma.order.create({ data: o });
   }
 
+  // 6) Chi phí hoạt động mẫu
+  const expensesData = [
+    { name: "Thuê mặt bằng tháng này", category: ExpenseCategory.RENT, type: "FIXED" as const, amount: 8000000, note: "Cửa hàng + kho" },
+    { name: "Lương nhân viên", category: ExpenseCategory.SALARY, type: "FIXED" as const, amount: 6000000, note: "1 nhân viên kho" },
+    { name: "Vật tư đóng gói", category: ExpenseCategory.PACKAGING, type: "VARIABLE" as const, amount: 500000, note: "Băng keo, hộp, túi" },
+    { name: "Quảng cáo Shopee/TikTok", category: ExpenseCategory.ADS, type: "VARIABLE" as const, amount: 2500000, note: "Đẩy sản phẩm hot" },
+  ];
+  for (const e of expensesData) {
+    await prisma.operatingExpense.create({ data: { ...e, userId: user.id } });
+  }
+
   console.log("✅ Đã tạo xong dữ liệu mẫu:");
   console.log(`   - ${1} người dùng`);
   console.log(`   - ${3} kênh bán`);
   console.log(`   - ${products.length} sản phẩm`);
   console.log(`   - ${ordersData.length} đơn hàng`);
+  console.log(`   - ${expensesData.length} khoản chi phí hoạt động`);
 }
 
 main()

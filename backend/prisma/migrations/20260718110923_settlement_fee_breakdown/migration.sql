@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN     "affiliateFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "sellerVoucher" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "shippingFeeDiff" DECIMAL(12,2) NOT NULL DEFAULT 0;

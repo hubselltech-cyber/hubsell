@@ -25,6 +25,19 @@ enum InventoryLogType {
   SYNC   // Đồng bộ với sàn
 }
 
+enum ExpenseCategory {
+  RENT      // Tiền mặt bằng
+  SALARY    // Tiền nhân viên
+  PACKAGING // Tiền đóng gói
+  ADS       // Tiền quảng cáo sàn
+  OTHER     // Chi phí khác
+}
+
+enum ExpenseType {
+  FIXED    // Chi phí cố định (mặt bằng, lương...)
+  VARIABLE // Chi phí biến đổi (quảng cáo, đóng gói...)
+}
+
 // ---------- BẢNG ----------
 
 /// Người dùng của hệ thống (chủ shop / nhân viên)
@@ -42,8 +55,13 @@ model User {
   owner   User?   @relation("ShopStaff", fields: [ownerId], references: [id], onDelete: Cascade)
   staff   User[]  @relation("ShopStaff")
 
-  channels Channel[]
-  products Product[]
+  channels          Channel[]
+  products          Product[]
+  operatingExpenses OperatingExpense[]
+
+  // Phân quyền theo gian hàng: nhân viên (STAFF) chỉ được xử lý đơn của các kênh
+  // được gán ở đây. KHÔNG có bản ghi nào = được xem TẤT CẢ kênh (mặc định).
+  staffChannels StaffChannel[] @relation("StaffChannels")
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
@@ -53,13 +71,30 @@ model Channel {
   channelName ChannelName
   apiToken    String?
   status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
+  // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
+  // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.
+  feeRate     Decimal     @default(0) @db.Decimal(5, 4)
   createdAt   DateTime    @default(now())
 
-  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders   Order[]
-  mappings ProductMapping[]
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders      Order[]
+  mappings    ProductMapping[]
+  staffAccess StaffChannel[]
 
   @@index([userId])
+}
+
+/// Phân quyền gian hàng cho nhân viên: nhân viên (staffId) được phép xử lý kênh (channelId).
+model StaffChannel {
+  id        String @id @default(cuid())
+  staffId   String
+  channelId String
+
+  staff   User    @relation("StaffChannels", fields: [staffId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, channelId])
+  @@index([staffId])
 }
 
 /// Sản phẩm trong kho
@@ -68,14 +103,16 @@ model Product {
   userId          String
   skuCode         String
   productName     String
-  costPrice       Decimal  @default(0) @db.Decimal(12, 2) // giá vốn
+  costPrice       Decimal  @default(0) @db.Decimal(12, 2) // giá vốn (cấu hình ở trang Cấu hình Giá vốn)
   sellingPrice    Decimal  @default(0) @db.Decimal(12, 2) // giá bán
   quantityInStock Int      @default(0)
+  imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
   createdAt       DateTime @default(now())
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[]
   mappings      ProductMapping[]
+  orderItems    OrderItem[]
 
   @@unique([userId, skuCode]) // mỗi user không trùng mã SKU
   @@index([userId])
@@ -92,10 +129,47 @@ model Order {
   shippingStatus String   @default("PENDING") // ví dụ: PENDING, SHIPPING, DELIVERED
   createdAt      DateTime @default(now())
 
+  // ===== PHÍ SÀN 2 GIAI ĐOẠN =====
+  // GĐ1 — TẠM TÍNH: khi đơn mới về, lấy % mặc định của kênh để ước tính.
+  platformFee Decimal @default(0) @db.Decimal(12, 2) // phí sàn TẠM TÍNH
+
+  // GĐ2 — QUYẾT TOÁN: khi đơn hoàn tất, sàn trả về số liệu tài chính THỰC TẾ.
+  // Các trường này ghi đè số tạm tính khi lên báo cáo dòng tiền.
+  isSettled       Boolean   @default(false) // đã được sàn quyết toán/giải ngân chưa
+  settledAt       DateTime? // thời điểm quyết toán
+  fixedFee        Decimal   @default(0) @db.Decimal(12, 2) // phí cố định
+  serviceFee      Decimal   @default(0) @db.Decimal(12, 2) // phí dịch vụ
+  paymentFee      Decimal   @default(0) @db.Decimal(12, 2) // phí thanh toán
+  affiliateFee    Decimal   @default(0) @db.Decimal(12, 2) // phí tiếp thị liên kết (Affiliate)
+  sellerVoucher   Decimal   @default(0) @db.Decimal(12, 2) // voucher trợ giá do SHOP tự chịu
+  shippingFeeDiff Decimal   @default(0) @db.Decimal(12, 2) // chênh lệch phí vận chuyển bị sàn trừ
+  platformSubsidy Decimal   @default(0) @db.Decimal(12, 2) // trợ giá từ SÀN (giảm chi phí cho shop)
+  actualPayout    Decimal   @default(0) @db.Decimal(12, 2) // tiền thực nhận về ví
+
   channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
+  items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
 
   @@index([channelId])
+}
+
+/// Chi tiết dòng sản phẩm của một đơn hàng.
+/// costPriceAtSale = GIÁ VỐN GỐC tại thời điểm phát sinh đơn (snapshot) —
+/// dù sau này giá vốn sản phẩm thay đổi, báo cáo lãi/lỗ của đơn cũ vẫn chính xác.
+model OrderItem {
+  id              String  @id @default(cuid())
+  orderId         String
+  productId       String? // sản phẩm gốc (SetNull nếu sản phẩm bị xoá)
+  channelSku      String // SKU trên sàn
+  productName     String // tên sản phẩm tại thời điểm bán
+  quantity        Int
+  price           Decimal @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
+  costPriceAtSale Decimal @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
 }
 
 /// Liên kết (mapping): một Sản phẩm kho gốc ↔ nhiều SKU trên các sàn.
@@ -130,4 +204,22 @@ model InventoryLog {
 
   @@index([productId])
   @@index([orderId])
+}
+
+/// Chi phí hoạt động của shop (cố định/biến đổi): mặt bằng, lương, đóng gói, quảng cáo sàn...
+/// Dùng để tính Lợi nhuận thuần = Lợi nhuận gộp − Tổng chi phí hoạt động.
+model OperatingExpense {
+  id          String          @id @default(cuid())
+  userId      String // thuộc về chủ shop
+  name        String // tên/mô tả khoản chi, ví dụ "Thuê mặt bằng tháng 7"
+  category    ExpenseCategory @default(OTHER)
+  type        ExpenseType     @default(VARIABLE) // FIXED (cố định) | VARIABLE (biến đổi)
+  amount      Decimal         @db.Decimal(12, 2)
+  note        String?
+  expenseDate DateTime        @default(now()) // ngày phát sinh chi phí
+  createdAt   DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

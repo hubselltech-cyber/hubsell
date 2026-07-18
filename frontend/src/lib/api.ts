@@ -37,12 +37,15 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-// Lỗi API có kèm mã HTTP để giao diện xử lý (ví dụ 401 → chuyển về trang đăng nhập)
+// Lỗi API có kèm mã HTTP + mã lỗi để giao diện xử lý
+// (ví dụ 401 → chuyển về trang đăng nhập; code NO_CHANNEL → hiện màn hình onboarding)
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -61,17 +64,22 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (!res.ok) {
     let message = `Máy chủ trả về lỗi ${res.status}`;
+    let code: string | undefined;
     try {
       const body = await res.json();
       if (body?.error) message = body.error;
+      if (body?.code) code = body.code;
     } catch {
       // giữ thông báo mặc định
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code);
   }
 
   return res.json();
 }
+
+// Mã lỗi khi shop chưa kết nối gian hàng nào (Onboarding guard)
+export const NO_CHANNEL_CODE = "NO_CHANNEL";
 
 // ----- Kiểu dữ liệu -----
 
@@ -136,11 +144,28 @@ export interface OrderListResponse {
   pageCount: number;
 }
 
+export type ExpenseCategory = "RENT" | "SALARY" | "PACKAGING" | "ADS" | "OTHER";
+export type ExpenseType = "FIXED" | "VARIABLE";
+
+export interface OperatingExpense {
+  id: string;
+  name: string;
+  category: ExpenseCategory;
+  type: ExpenseType;
+  amount: string | number;
+  note: string | null;
+  expenseDate: string;
+  createdAt: string;
+}
+
 export interface AnalyticsResponse {
   deliveredOrderCount: number;
   totalRevenue: number;
   totalCost: number;
   grossProfit: number;
+  totalOperatingExpense: number;
+  netProfit: number;
+  expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
   revenueByDay: { date: string; label: string; revenue: number }[];
   ordersByChannel: { channelName: ChannelName | string; count: number }[];
 }
@@ -181,7 +206,48 @@ export function register(email: string, password: string, fullName: string) {
 }
 
 export function fetchMe() {
-  return apiFetch<{ user: AuthUser & { createdAt: string } }>("/api/auth/me");
+  return apiFetch<{
+    user: AuthUser & { createdAt: string };
+    hasChannels: boolean;
+  }>("/api/auth/me");
+}
+
+// ----- Quản lý nhân viên (chỉ Admin) -----
+
+export interface StaffMember {
+  id: string;
+  email: string;
+  fullName: string;
+  createdAt: string;
+  allowedChannelIds: string[]; // rỗng = xem tất cả kênh
+}
+
+export function fetchStaff() {
+  return apiFetch<StaffMember[]>("/api/staff");
+}
+
+export function createStaff(data: {
+  email: string;
+  password: string;
+  fullName: string;
+}) {
+  return apiFetch<StaffMember>("/api/staff", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function setStaffChannels(staffId: string, channelIds: string[]) {
+  return apiFetch<{ id: string; allowedChannelIds: string[] }>(
+    `/api/staff/${staffId}/channels`,
+    { method: "PUT", body: JSON.stringify({ channelIds }) }
+  );
+}
+
+export function deleteStaff(staffId: string) {
+  return apiFetch<{ ok: boolean }>(`/api/staff/${staffId}`, {
+    method: "DELETE",
+  });
 }
 
 // ----- Dashboard -----
@@ -215,6 +281,40 @@ export function createProduct(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+export interface ImportResult {
+  created: number;
+  updated: number;
+  totalImported: number;
+  skipped: number;
+  errors: { row: number; message: string }[];
+}
+
+// Nhập sản phẩm từ file Excel (multipart/form-data — không dùng apiFetch vì
+// apiFetch luôn gắn Content-Type: application/json).
+export async function importProductsExcel(file: File): Promise<ImportResult> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_URL}/api/products/import`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json();
 }
 
 export function updateProduct(
@@ -262,6 +362,164 @@ export function updateOrderStatus(id: string, shippingStatus: string) {
 
 export function fetchAnalytics() {
   return apiFetch<AnalyticsResponse>("/api/analytics");
+}
+
+// ----- Chi phí hoạt động (chỉ Admin) -----
+
+export function fetchExpenses() {
+  return apiFetch<OperatingExpense[]>("/api/expenses");
+}
+
+export function createExpense(data: {
+  name: string;
+  category: ExpenseCategory;
+  amount: number;
+  note?: string;
+  expenseDate?: string;
+}) {
+  return apiFetch<OperatingExpense>("/api/expenses", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteExpense(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/expenses/${id}`, { method: "DELETE" });
+}
+
+// ----- Module Tài chính chuyên sâu /api/finance (chỉ Admin) -----
+
+export interface LossOrder {
+  id: string;
+  orderCode: string;
+  customerName: string;
+  channelName: ChannelName | string;
+  createdAt: string;
+  revenue: number;
+  platformFee: number;
+  isSettled: boolean; // phí đã quyết toán hay còn tạm tính
+  cost: number;
+  profit: number; // ≤ 0 = lỗ
+  isLoss: boolean;
+  lossReason: "COST" | "FEE" | null; // COST = lỗ do giá vốn, FEE = lỗ do chi phí sàn
+  warning?: string; // "Chưa nhập giá vốn"
+}
+
+// Một dòng chi tiết trong thẻ bóc tách dòng tiền
+export interface BreakdownItem {
+  key: string;
+  label: string;
+  hint: string; // nội dung tooltip giải thích công thức
+  amount: number;
+  percent: number;
+  count?: number; // số đơn (nếu có)
+}
+
+export interface FinanceBreakdown {
+  gross: {
+    total: number;
+    orderCount: number;
+    items: BreakdownItem[];
+    totalDeduction: number;
+  };
+  revenue: { total: number; items: BreakdownItem[] };
+  costs: { total: number; items: BreakdownItem[] };
+  profit: { total: number; items: BreakdownItem[] };
+}
+
+export interface FinanceAnalytics {
+  deliveredOrderCount: number;
+  totalRevenue: number;
+  totalCost: number;
+  totalPlatformFee: number;
+  pendingPayout: number; // tiền chờ về (dự kiến)
+  settledPayout: number; // tiền thực tế đã quyết toán
+  pendingOrderCount: number;
+  settledOrderCount: number;
+  breakdown: FinanceBreakdown;
+  grossProfit: number;
+  totalOperatingExpense: number;
+  fixedExpense: number;
+  variableExpense: number;
+  netProfit: number;
+  series: { date: string; label: string; revenue: number; cost: number }[];
+}
+
+// ----- Cấu hình giá vốn theo SKU -----
+
+export type SkuChannelFilter = "all" | "shopee" | "tiktok" | "lazada" | "offline";
+
+export interface SkuProduct {
+  skuId: string; // id dùng để cập nhật giá vốn
+  productId: string;
+  sku: string;
+  productName: string;
+  variantName: string | null; // phân loại (màu/size) theo tên trên sàn
+  channelName: ChannelName;
+  imageUrl: string | null;
+  sellingPrice: string;
+  costPrice: string;
+}
+
+export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
+  return apiFetch<{
+    channel: string;
+    total: number;
+    missingCostCount: number;
+    items: SkuProduct[];
+  }>(`/api/finance/sku-products?channel=${channel}`);
+}
+
+// Chủ động quét sản phẩm từ các sàn đã kết nối về hệ thống (upsert)
+export function syncProductsFromChannels() {
+  return apiFetch<{
+    message: string;
+    created: number;
+    updated: number;
+    unchanged: number;
+    missingCostCount: number;
+    perChannel: { channelName: ChannelName; scanned: number; created: number }[];
+  }>("/api/finance/sync-products", { method: "POST" });
+}
+
+export function updateSkuCostPrice(skuId: string, costPrice: number) {
+  return apiFetch<{
+    skuId: string;
+    productId: string;
+    productName: string;
+    costPrice: string;
+  }>("/api/finance/update-cost", {
+    method: "PATCH",
+    body: JSON.stringify({ sku_id: skuId, cost_price: costPrice }),
+  });
+}
+
+export function fetchFinanceAnalytics() {
+  return apiFetch<FinanceAnalytics>("/api/finance/analytics");
+}
+
+export function fetchLossOrders() {
+  return apiFetch<{
+    analyzedCount: number;
+    lossCount: number;
+    warningCount: number;
+    orders: LossOrder[];
+    lossOrders: LossOrder[];
+  }>("/api/finance/orders-analysis");
+}
+
+export function createFinanceExpense(data: {
+  description: string;
+  type: ExpenseType;
+  amount: number;
+  category?: ExpenseCategory;
+  note?: string;
+  expenseDate?: string;
+}) {
+  return apiFetch<OperatingExpense>("/api/finance/expenses", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 // ----- Kênh bán & Mapping -----

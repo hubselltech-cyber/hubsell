@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
-import { findMarketplaceProduct } from "../mockMarketplace";
+import { findMarketplaceProduct, PLATFORM_FEE_RATE } from "../mockMarketplace";
 
 const router = Router();
 
@@ -92,6 +92,14 @@ router.post("/mock-order", async (req, res, next) => {
 
     // 3) Transaction: tạo đơn + trừ kho + ghi log — tất cả hoặc không gì cả
     const result = await prisma.$transaction(async (tx) => {
+      // GĐ1 — TẠM TÍNH: dùng % phí cấu hình của kênh (rơi về mặc định nếu chưa có).
+      // Số này sẽ được thay bằng số quyết toán thực tế khi đơn hoàn tất.
+      const feeRate =
+        Number(channel.feeRate) > 0
+          ? Number(channel.feeRate)
+          : PLATFORM_FEE_RATE[channel.channelName];
+      const platformFee = Math.round(totalAmount * feeRate);
+
       const order = await tx.order.create({
         data: {
           channelId: channel.id,
@@ -101,6 +109,7 @@ router.post("/mock-order", async (req, res, next) => {
               ? customerName.trim()
               : "Khách từ sàn",
           totalAmount,
+          platformFee,
           paymentStatus: "PAID", // đơn sàn giả lập coi như đã thanh toán
           shippingStatus: "PENDING",
         },
@@ -117,10 +126,15 @@ router.post("/mock-order", async (req, res, next) => {
         const mapping = mapBySku.get(it.channelSku)!;
 
         // Khoá dòng sản phẩm trong transaction để tránh trừ kho sai khi
-        // nhiều đơn đổ về cùng lúc
+        // nhiều đơn đổ về cùng lúc (lấy kèm costPrice để snapshot giá vốn)
         const rows = await tx.$queryRaw<
-          { id: string; productName: string; quantityInStock: number }[]
-        >`SELECT "id", "productName", "quantityInStock" FROM "Product" WHERE "id" = ${mapping.productId} FOR UPDATE`;
+          {
+            id: string;
+            productName: string;
+            quantityInStock: number;
+            costPrice: unknown;
+          }[]
+        >`SELECT "id", "productName", "quantityInStock", "costPrice" FROM "Product" WHERE "id" = ${mapping.productId} FOR UPDATE`;
         const product = rows[0];
         if (!product) {
           throw Object.assign(new Error("Sản phẩm gốc trong mapping không còn tồn tại"), {
@@ -150,6 +164,20 @@ router.post("/mock-order", async (req, res, next) => {
             type: InventoryLogType.SYNC,
             reason: `Trừ kho tự động — đơn ${finalOrderCode} từ ${channel.channelName} (SKU sàn: ${it.channelSku})`,
             orderId: order.id, // gắn với đơn để có thể hoàn kho khi hủy & tính giá vốn
+          },
+        });
+
+        // Ghi chi tiết dòng sản phẩm + SNAPSHOT giá vốn tại thời điểm bán
+        const mp = findMarketplaceProduct(channel.channelName, it.channelSku);
+        await tx.orderItem.create({
+          data: {
+            orderId: order.id,
+            productId: product.id,
+            channelSku: it.channelSku,
+            productName: product.productName,
+            quantity: it.quantity,
+            price: mp?.price ?? 0,
+            costPriceAtSale: String(product.costPrice ?? 0),
           },
         });
 

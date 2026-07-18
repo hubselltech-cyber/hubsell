@@ -65,6 +65,7 @@ export default function MappingsPage() {
         router.replace("/login");
         return;
       }
+      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
       toast.error("Không tải được dữ liệu");
     } finally {
       setLoading(false);

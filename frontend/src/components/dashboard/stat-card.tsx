@@ -24,7 +24,8 @@ export function StatCard({
         </div>
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="truncate text-2xl font-semibold tracking-tight">
+          {/* break-words thay vì truncate để số tiền dài không bị cắt mất chữ số */}
+          <p className="text-xl font-semibold leading-tight tracking-tight break-words">
             {value}
           </p>
         </div>
