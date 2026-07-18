@@ -229,6 +229,28 @@ Toàn bộ cỡ chữ của Hubsell được khai báo tập trung tại **`fron
 
 Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): laptop phổ biến 1366–1440px đã vượt `md` từ lâu, nếu dùng `md` thì laptop sẽ nhảy lên 16px và mất đi độ gọn gàng mong muốn.
 
+## 🎴 Quy chuẩn giao diện — Thẻ chỉ số `<DashboardCard>`
+
+Mọi khối số liệu trên mọi trang đều dùng chung **`frontend/src/components/dashboard/dashboard-card.tsx`**. Không viết thẻ số liệu bằng tay nữa.
+
+**Ba quy tắc thị giác:**
+
+1. **Điểm neo** — mỗi lưới thẻ bật `featured` cho **đúng một** thẻ quan trọng nhất ("Card Ngôi Sao"): nền màu nhạt + viền 2px + bóng đổ. Lãi → xanh ngọc; lỗ → nền hồng cam, số đỏ tươi `rose-600` (không dùng đỏ sẫm — số lỗ phải đập vào mắt).
+2. **Icon có khối nền** — icon nằm trong ô bo góc nền màu đặc 44px→48px, phân biệt loại chỉ số chỉ bằng liếc mắt.
+3. **Số biết nói** — mọi dòng có `%` tự động kèm thanh tiến trình mảnh 4px→6px, đọc tỷ trọng bằng hình ảnh thay vì nhẩm số.
+
+**Sắc thái (`tone`) thay cho màu tự do** — `neutral` · `info` (xanh dương) · `positive` (xanh ngọc) · `negative` (đỏ hồng) · `warning` (hổ phách) · `accent` (tím). Mỗi tone tự quyết định màu icon, màu số, màu thanh tỷ trọng và nền khi nổi bật. Dùng `toneBySign(value)` cho chỉ số có thể lãi hoặc lỗ.
+
+| Trang | Card Ngôi Sao |
+|---|---|
+| Tổng quan | Lợi nhuận thuần |
+| Báo cáo dòng tiền | Lợi nhuận |
+| Chi phí vận hành | Tổng chi phí |
+| Cảnh báo đơn lỗ | Tổng tiền lỗ |
+| Đối soát phí ship | Tổng tiền cần đòi lại |
+
+Số tổng dùng `TEXT_HERO_NUMBER` (24px→30px, extrabold). Các lớp bọc tiện dụng: `<StatCard>` cho thẻ chỉ có tiêu đề + số; `<BreakdownCard>` cho thẻ có bóc tách chi tiết từ API.
+
 ## Phân quyền (RBAC)
 
 | Vai trò | Được phép | Bị chặn |
