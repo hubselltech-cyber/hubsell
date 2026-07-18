@@ -109,7 +109,7 @@ export default function FinanceAnalyticsPage() {
               subtitle={`${formatNumber(data.breakdown.gross.orderCount)} đơn (chưa trừ chi phí)`}
               total={data.breakdown.gross.total}
               icon={ShoppingBag}
-              accentClass="bg-sky-100 text-sky-700"
+              tone="info"
               items={data.breakdown.gross.items}
               itemsAreDeductions
               footer={
@@ -127,8 +127,8 @@ export default function FinanceAnalyticsPage() {
               subtitle="Sau khi trừ các khoản sàn giữ lại"
               total={data.breakdown.revenue.total}
               icon={Wallet}
-              accentClass="bg-emerald-100 text-emerald-700"
-              valueClass="text-emerald-700"
+              tone="positive"
+              colorValue
               items={data.breakdown.revenue.items}
             />
 
@@ -137,8 +137,8 @@ export default function FinanceAnalyticsPage() {
               subtitle="Giá vốn + chi phí vận hành ngoài sàn"
               total={data.breakdown.costs.total}
               icon={Receipt}
-              accentClass="bg-rose-100 text-rose-700"
-              valueClass="text-rose-700"
+              tone="negative"
+              colorValue
               items={data.breakdown.costs.items}
             />
 
@@ -147,13 +147,9 @@ export default function FinanceAnalyticsPage() {
               subtitle="Đã trừ toàn bộ chi phí vận hành"
               total={data.breakdown.profit.total}
               icon={Scale}
-              accentClass={
-                data.breakdown.profit.total >= 0
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-rose-100 text-rose-700"
-              }
               items={data.breakdown.profit.items}
               colorBySign
+              featured /* ← Card Ngôi Sao: chỉ số cốt lõi của trang này */
               footer={<span>% là biên lợi nhuận trên doanh thu tương ứng</span>}
             />
           </div>

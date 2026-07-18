@@ -17,6 +17,7 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
+import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -183,6 +184,12 @@ export default function ShippingAlertsPage() {
     );
   }
 
+  // Bao nhiêu % số đơn lệch vẫn đang chờ khiếu nại
+  const pendingRatio =
+    summary.totalOrders > 0
+      ? Math.round((summary.pendingCount / summary.totalOrders) * 1000) / 10
+      : undefined;
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -213,41 +220,26 @@ export default function ShippingAlertsPage() {
 
         {/* 2 thẻ chỉ số */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Card>
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                <Truck className="size-6" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm text-muted-foreground">Tổng số đơn lệch</p>
-                <p className="text-2xl font-bold tracking-tight">
-                  {formatNumber(summary.totalOrders)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatNumber(summary.pendingCount)} đơn chờ khiếu nại
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <DashboardCard
+            title="Tổng số đơn lệch"
+            value={formatNumber(summary.totalOrders)}
+            icon={Truck}
+            tone="info"
+            subtitle="Đơn có phí ship thực tế cao hơn mức sàn báo trước"
+            progress={pendingRatio}
+            progressLabel={`${formatNumber(summary.pendingCount)} đơn chờ khiếu nại${
+              pendingRatio !== undefined ? ` (${pendingRatio}%)` : ""
+            }`}
+          />
 
-          <Card className="border-rose-300 bg-rose-50/60">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-                <PackageCheck className="size-6" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-rose-800">
-                  Tổng số tiền cần đòi lại
-                </p>
-                <p className="text-2xl font-bold leading-tight tracking-tight text-rose-700 break-words">
-                  {formatVND(summary.totalDiscrepancy)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Số tiền sàn đã trừ vượt mức báo trước
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <DashboardCard
+            title="Tổng số tiền cần đòi lại"
+            value={formatVND(summary.totalDiscrepancy)}
+            icon={PackageCheck}
+            tone="negative"
+            featured /* ← chỉ số cốt lõi của trang đối soát ship */
+            subtitle="Số tiền sàn đã trừ vượt mức báo trước"
+          />
         </div>
 
         {/* Bộ lọc */}

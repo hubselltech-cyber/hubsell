@@ -31,5 +31,13 @@ export const TEXT_CARD_TITLE =
 export const TEXT_BIG_NUMBER =
   "text-xl 2xl:text-2xl font-bold tracking-tight text-foreground";
 
+/**
+ * Số TỔNG trên thẻ chỉ số — 24px → 30px, đậm hơn một bậc.
+ * Đây là điểm neo thị giác (visual anchor) của mỗi khối: mắt phải bắt được
+ * con số này trước tiên, nên nó to & đậm hơn hẳn TEXT_BIG_NUMBER.
+ */
+export const TEXT_HERO_NUMBER =
+  "text-2xl 2xl:text-3xl font-extrabold tracking-tight text-foreground";
+
 /** Khoảng đệm ô trong bảng — luôn có khoảng thở khi chữ nở to */
 export const CELL_PADDING = "px-3 py-3 2xl:py-4";

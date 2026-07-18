@@ -16,6 +16,7 @@ import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -111,48 +112,35 @@ export default function LossOrdersPage() {
         {!loading && (lossCount > 0 || warningCount > 0) && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {lossCount > 0 && (
-              <Card className="border-rose-300 bg-rose-50/60">
-                <CardContent className="flex items-center gap-4 p-5">
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-                    <TrendingDown className="size-6" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-rose-800">
-                      Phát hiện {formatNumber(lossCount)} đơn hàng bán lỗ
-                    </p>
-                    <p className="text-xl font-bold leading-tight text-rose-700 break-words">
-                      {formatVND(totalLoss)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Tổng số tiền lỗ từ các đơn này.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              <DashboardCard
+                title="Tổng tiền lỗ"
+                value={formatVND(totalLoss)}
+                icon={TrendingDown}
+                tone="negative"
+                featured /* ← chỉ số cốt lõi: chủ shop phải thấy ngay */
+                subtitle={`Phát hiện ${formatNumber(lossCount)} đơn hàng đang bán lỗ`}
+              />
             )}
             {warningCount > 0 && (
-              <Card className="border-amber-300 bg-amber-50/70">
-                <CardContent className="flex items-center gap-4 p-5">
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                    <AlertTriangle className="size-6" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-amber-800">
-                      {formatNumber(warningCount)} đơn chưa cấu hình giá vốn
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Số liệu lãi/lỗ của các đơn này chưa chính xác. Vào{" "}
-                      <Link
-                        href="/finance/cost-prices"
-                        className="font-medium text-primary hover:underline"
-                      >
-                        Cấu hình Giá vốn
-                      </Link>{" "}
-                      để nhập.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              <DashboardCard
+                title="Đơn chưa có giá vốn"
+                value={`${formatNumber(warningCount)} đơn`}
+                icon={AlertTriangle}
+                tone="warning"
+                colorValue
+                subtitle={
+                  <>
+                    Số liệu lãi/lỗ của các đơn này chưa chính xác. Vào{" "}
+                    <Link
+                      href="/finance/cost-prices"
+                      className="font-medium text-primary hover:underline"
+                    >
+                      Cấu hình Giá vốn
+                    </Link>{" "}
+                    để nhập.
+                  </>
+                }
+              />
             )}
           </div>
         )}

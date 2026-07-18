@@ -6,10 +6,19 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Plus, Receipt, Trash2 } from "lucide-react";
+import {
+  Building2,
+  Loader2,
+  Megaphone,
+  Plus,
+  Receipt,
+  Trash2,
+  Wallet,
+} from "lucide-react";
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -379,6 +388,12 @@ export default function FinanceExpensesPage() {
     .reduce((s, e) => s + Number(e.amount), 0);
   const variable = total - fixed;
 
+  // Tỷ trọng từng loại chi phí — vẽ thanh tiến trình cho dễ đọc bằng mắt
+  const pct = (part: number) =>
+    total > 0 ? Math.round((part / total) * 1000) / 10 : undefined;
+  const pctFixed = pct(fixed);
+  const pctVariable = pct(variable);
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -389,28 +404,42 @@ export default function FinanceExpensesPage() {
           <AddExpenseDialog onAdded={load} />
         </div>
 
-        {/* Tổng quan nhanh */}
+        {/* Tổng quan nhanh — Tổng chi phí là chỉ số cốt lõi của trang này */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Card>
-            <CardContent className="p-5">
-              <p className="text-sm text-muted-foreground">Tổng chi phí</p>
-              <p className="text-2xl font-bold text-rose-600">{formatVND(total)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-5">
-              <p className="text-sm text-muted-foreground">Chi phí cố định</p>
-              <p className="text-2xl font-bold text-blue-700">{formatVND(fixed)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-5">
-              <p className="text-sm text-muted-foreground">Chi phí biến đổi</p>
-              <p className="text-2xl font-bold text-amber-700">
-                {formatVND(variable)}
-              </p>
-            </CardContent>
-          </Card>
+          <DashboardCard
+            title="Tổng chi phí"
+            value={formatVND(total)}
+            icon={Wallet}
+            tone="negative"
+            featured
+            subtitle={`${expenses.length} khoản chi trong kỳ`}
+          />
+          <DashboardCard
+            title="Chi phí cố định"
+            value={formatVND(fixed)}
+            icon={Building2}
+            tone="info"
+            colorValue
+            progress={pctFixed}
+            progressLabel={
+              pctFixed !== undefined
+                ? `Chiếm ${pctFixed}% tổng chi phí · trừ vào lợi nhuận toàn shop`
+                : "Mặt bằng, lương, phần mềm…"
+            }
+          />
+          <DashboardCard
+            title="Chi phí biến đổi"
+            value={formatVND(variable)}
+            icon={Megaphone}
+            tone="warning"
+            colorValue
+            progress={pctVariable}
+            progressLabel={
+              pctVariable !== undefined
+                ? `Chiếm ${pctVariable}% tổng chi phí · bóc tách về từng SKU`
+                : "Quảng cáo, đóng gói…"
+            }
+          />
         </div>
 
         <Card>

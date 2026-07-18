@@ -32,6 +32,7 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { toneBySign } from "@/components/dashboard/dashboard-card";
 import { ExpensesSection } from "@/components/dashboard/expenses-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -158,6 +159,17 @@ export default function DashboardPage() {
     );
   }
 
+  // Tỷ trọng so với doanh thu — dùng vẽ thanh tiến trình trên các thẻ chỉ số.
+  // undefined khi chưa có doanh thu để không vẽ thanh rỗng gây hiểu nhầm.
+  const ratioOfRevenue = (part: number | undefined) =>
+    analytics && analytics.totalRevenue > 0 && part !== undefined
+      ? Math.round((part / analytics.totalRevenue) * 1000) / 10
+      : undefined;
+
+  const cogsRatio = ratioOfRevenue(analytics?.totalCost);
+  const grossMargin = ratioOfRevenue(analytics?.grossProfit);
+  const opexRatio = ratioOfRevenue(analytics?.totalOperatingExpense);
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -194,25 +206,26 @@ export default function DashboardPage() {
             label="Doanh thu (đã thanh toán)"
             value={data ? formatVND(data.totalRevenue) : "—"}
             icon={Wallet}
-            accentClass="bg-emerald-100 text-emerald-700"
+            tone="positive"
+            colorValue
           />
           <StatCard
             label="Tổng đơn hàng"
             value={data ? formatNumber(data.orderCount) : "—"}
             icon={ShoppingCart}
-            accentClass="bg-sky-100 text-sky-700"
+            tone="info"
           />
           <StatCard
             label="Sản phẩm"
             value={data ? formatNumber(data.productCount) : "—"}
             icon={Package}
-            accentClass="bg-violet-100 text-violet-700"
+            tone="accent"
           />
           <StatCard
             label="Kênh bán"
             value={data ? formatNumber(data.channelCount) : "—"}
             icon={Store}
-            accentClass="bg-orange-100 text-orange-700"
+            tone="neutral"
           />
         </div>
 
@@ -232,19 +245,34 @@ export default function DashboardPage() {
             label="Tổng Doanh thu"
             value={analytics ? formatVND(analytics.totalRevenue) : "—"}
             icon={TrendingUp}
-            accentClass="bg-emerald-100 text-emerald-700"
+            tone="positive"
+            colorValue
           />
           <StatCard
             label="Tổng Giá vốn"
             value={analytics ? formatVND(analytics.totalCost) : "—"}
             icon={Coins}
-            accentClass="bg-amber-100 text-amber-700"
+            tone="warning"
+            colorValue
+            progress={cogsRatio}
+            progressLabel={
+              cogsRatio !== undefined
+                ? `Chiếm ${cogsRatio}% doanh thu`
+                : undefined
+            }
           />
           <StatCard
             label="Lợi nhuận gộp"
             value={analytics ? formatVND(analytics.grossProfit) : "—"}
             icon={PiggyBank}
-            accentClass="bg-violet-100 text-violet-700"
+            tone={analytics ? toneBySign(analytics.grossProfit) : "neutral"}
+            colorValue
+            progress={grossMargin}
+            progressLabel={
+              grossMargin !== undefined
+                ? `Biên lợi nhuận gộp ${grossMargin}%`
+                : undefined
+            }
           />
         </div>
 
@@ -254,48 +282,38 @@ export default function DashboardPage() {
             label="Tổng Chi phí hoạt động"
             value={analytics ? formatVND(analytics.totalOperatingExpense) : "—"}
             icon={Receipt}
-            accentClass="bg-rose-100 text-rose-700"
+            tone="negative"
+            colorValue
+            progress={opexRatio}
+            progressLabel={
+              opexRatio !== undefined
+                ? `Ngốn ${opexRatio}% doanh thu`
+                : undefined
+            }
           />
 
-          {/* Lợi nhuận thuần — nổi bật, đổi màu theo lãi/lỗ */}
+          {/* Lợi nhuận thuần — Card Ngôi Sao của trang Tổng quan */}
           {(() => {
             const net = analytics?.netProfit ?? 0;
-            const positive = net >= 0;
+            const revenue = analytics?.totalRevenue ?? 0;
+            // Biên lợi nhuận thuần: net chiếm bao nhiêu % doanh thu
+            const margin =
+              revenue > 0 ? Math.round((net / revenue) * 1000) / 10 : undefined;
             return (
-              <Card
-                className={
-                  positive
-                    ? "border-emerald-300 bg-emerald-50/60"
-                    : "border-rose-300 bg-rose-50/60"
+              <StatCard
+                label="Lợi nhuận thuần (Net Profit)"
+                value={analytics ? formatVND(net) : "—"}
+                icon={Scale}
+                tone={toneBySign(net)}
+                featured
+                subtitle="= Lợi nhuận gộp − Chi phí hoạt động"
+                progress={margin}
+                progressLabel={
+                  margin !== undefined
+                    ? `Biên lợi nhuận thuần ${margin}% doanh thu`
+                    : undefined
                 }
-              >
-                <CardContent className="flex items-center gap-4 p-5">
-                  <div
-                    className={`flex size-12 shrink-0 items-center justify-center rounded-xl ${
-                      positive
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-rose-100 text-rose-700"
-                    }`}
-                  >
-                    <Scale className="size-6" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Lợi nhuận thuần (Net Profit)
-                    </p>
-                    <p
-                      className={`truncate text-2xl font-bold tracking-tight ${
-                        positive ? "text-emerald-700" : "text-rose-700"
-                      }`}
-                    >
-                      {analytics ? formatVND(net) : "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      = Lợi nhuận gộp − Chi phí hoạt động
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              />
             );
           })()}
         </div>

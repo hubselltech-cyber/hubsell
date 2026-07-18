@@ -2,116 +2,95 @@
 
 import type { LucideIcon } from "lucide-react";
 
+import {
+  DashboardCard,
+  toneBySign,
+  type CardTone,
+  type DashboardCardItem,
+} from "@/components/dashboard/dashboard-card";
 import { HintIcon } from "@/components/finance/hint-icon";
-import { Card, CardContent } from "@/components/ui/card";
 import type { BreakdownItem } from "@/lib/api";
-import { TEXT_BIG_NUMBER, TEXT_CARD_TITLE, TEXT_SUB } from "@/lib/typography";
 import { formatVND, formatNumber } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 interface BreakdownCardProps {
   title: string;
   subtitle?: string;
   total: number;
   icon: LucideIcon;
-  accentClass: string; // màu ô icon
-  valueClass?: string; // màu số lớn
+  tone?: CardTone;
+  /** Card Ngôi Sao — dành cho chỉ số cốt lõi của trang */
+  featured?: boolean;
+  /** Tô màu số tổng theo tone (thẻ Ngôi Sao mặc định đã tô) */
+  colorValue?: boolean;
   items: BreakdownItem[];
   /** Số tiền trong danh sách là khoản BỊ TRỪ → hiển thị dấu trừ, màu đỏ */
   itemsAreDeductions?: boolean;
-  /** Tô màu số theo dấu (dương xanh / âm đỏ) — dùng cho cột Lợi nhuận */
+  /** Tô màu số theo dấu (dương xanh / âm đỏ) — dùng cho khối Lợi nhuận */
   colorBySign?: boolean;
   footer?: React.ReactNode;
 }
 
+/**
+ * Thẻ số liệu có bóc tách chi tiết (dùng ở Báo cáo dòng tiền).
+ * Là lớp adapter dịch BreakdownItem của API sang định dạng DashboardCard,
+ * nên tự động thừa hưởng toàn bộ quy chuẩn giao diện chung.
+ */
 export function BreakdownCard({
   title,
   subtitle,
   total,
-  icon: Icon,
-  accentClass,
-  valueClass,
+  icon,
+  tone = "neutral",
+  featured,
+  colorValue,
   items,
   itemsAreDeductions = false,
   colorBySign = false,
   footer,
 }: BreakdownCardProps) {
+  const cardTone = colorBySign ? toneBySign(total) : tone;
+
+  const rows: DashboardCardItem[] = items.map((item) => {
+    // Khoản trợ giá (amount âm trong nhóm khấu trừ) là khoản được CỘNG lại
+    const isCredit = itemsAreDeductions && item.amount < 0;
+
+    const rowTone: CardTone = itemsAreDeductions
+      ? isCredit
+        ? "positive"
+        : "negative"
+      : colorBySign
+        ? toneBySign(item.amount)
+        : tone;
+
+    return {
+      key: item.key,
+      label: (
+        <>
+          <span className="truncate">{item.label}</span>
+          <HintIcon hint={item.hint} />
+        </>
+      ),
+      value: `${itemsAreDeductions ? (isCredit ? "+ " : "− ") : ""}${formatVND(
+        Math.abs(item.amount)
+      )}`,
+      percent: item.percent,
+      note:
+        item.count !== undefined ? `· ${formatNumber(item.count)} đơn` : undefined,
+      tone: rowTone,
+    };
+  });
+
   return (
-    <Card className="h-full">
-      <CardContent className="flex h-full flex-col gap-4 p-5">
-        {/* Tiêu đề + số lớn */}
-        <div className="flex items-start gap-3">
-          <div
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center rounded-xl",
-              accentClass
-            )}
-          >
-            <Icon className="size-5" />
-          </div>
-          <div className="min-w-0">
-            <p className={TEXT_CARD_TITLE}>{title}</p>
-            <p
-              className={cn(
-                TEXT_BIG_NUMBER,
-                "leading-tight break-words",
-                valueClass,
-                colorBySign &&
-                  (total >= 0 ? "text-emerald-700" : "text-rose-700")
-              )}
-            >
-              {formatVND(total)}
-            </p>
-            {subtitle && <p className={TEXT_SUB}>{subtitle}</p>}
-          </div>
-        </div>
-
-        {/* Danh sách chi tiết */}
-        <div className="flex-1 space-y-2 border-t pt-3">
-          {items.map((item) => {
-            // Khoản trợ giá (amount âm trong nhóm khấu trừ) là khoản được CỘNG lại
-            const isCredit = itemsAreDeductions && item.amount < 0;
-            const display = Math.abs(item.amount);
-            return (
-              <div key={item.key} className="flex items-start justify-between gap-2">
-                <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}>
-                  <span className="truncate">{item.label}</span>
-                  <HintIcon hint={item.hint} />
-                </span>
-                <span className="shrink-0 text-right">
-                  <span
-                    className={cn(
-                      "block text-sm font-semibold 2xl:text-base",
-                      itemsAreDeductions
-                        ? isCredit
-                          ? "text-emerald-600"
-                          : "text-rose-600"
-                        : colorBySign
-                          ? item.amount >= 0
-                            ? "text-emerald-700"
-                            : "text-rose-700"
-                          : "text-foreground"
-                    )}
-                  >
-                    {itemsAreDeductions && (isCredit ? "+ " : "− ")}
-                    {formatVND(display)}
-                  </span>
-                  <span className={cn(TEXT_SUB, "block")}>
-                    {item.percent}%
-                    {item.count !== undefined
-                      ? ` · ${formatNumber(item.count)} đơn`
-                      : ""}
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {footer && (
-          <div className={cn(TEXT_SUB, "border-t pt-3")}>{footer}</div>
-        )}
-      </CardContent>
-    </Card>
+    <DashboardCard
+      title={title}
+      value={formatVND(total)}
+      icon={icon}
+      tone={cardTone}
+      featured={featured}
+      colorValue={colorBySign || colorValue}
+      subtitle={subtitle}
+      items={rows}
+      footer={footer}
+    />
   );
 }
