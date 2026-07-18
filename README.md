@@ -210,6 +210,25 @@ Cuối bảng có phần đối chiếu: *Tổng LN các SKU − Chi phí cố �
 **Onboarding Guard:** mọi API dữ liệu (products, orders, dashboard, analytics, expenses, inventory, mappings) đi qua middleware `requireChannel` — nếu shop **chưa kết nối gian hàng nào** → trả `409 { code: "NO_CHANNEL" }`. Frontend bắt mã này để hiện màn hình Onboarding chặn toàn bộ cho đến khi kết nối ít nhất 1 kênh. `GET /api/auth/me` trả kèm `hasChannels`.
 | POST | `/api/auth/staff` | Chủ shop tạo tài khoản Nhân viên (dùng chung dữ liệu shop) | 🔒 Chỉ Admin |
 
+## 🔠 Quy chuẩn giao diện — Responsive Typography
+
+Toàn bộ cỡ chữ của Hubsell được khai báo tập trung tại **`frontend/src/lib/typography.ts`**. Sửa 1 file này = đổi cỡ chữ toàn hệ thống.
+
+| Hằng số | Dùng cho | Laptop | PC lớn (≥1536px) |
+|---|---|---|---|
+| `TEXT_BODY` | Số liệu / nội dung trong bảng | 14px | 16px |
+| `TEXT_SUB` | Dòng phụ xếp chồng dưới số liệu | 11px | 13px |
+| `TEXT_TABLE_HEAD` | Tiêu đề cột (semibold, giãn chữ) | 12px | 14px |
+| `TEXT_CARD_TITLE` | Tiêu đề thẻ chỉ số (IN HOA) | 12px | 14px |
+| `TEXT_BIG_NUMBER` | Số lớn trên dashboard (bold) | 20px | 24px |
+| `CELL_PADDING` | Khoảng đệm ô bảng | `py-3` | `py-4` |
+
+**Cách áp dụng — ở tầng component gốc, không rải class khắp nơi.** `ui/table.tsx` đã gắn sẵn `TEXT_TABLE_HEAD`/`TEXT_BODY`/`CELL_PADDING` vào `TableHead` và `TableCell`, nên **mọi bảng trong app tự động ăn theo**: Đơn hàng, Sản phẩm, Kênh bán, Nhân viên, Mapping, Chi phí vận hành, Cấu hình giá vốn, Đơn lỗ, Chênh lệch ship, SKU P&L. Tương tự với `ui/input.tsx`, `ui/native-select.tsx` (form + ô tìm SKU), `dashboard/stat-card.tsx`, `finance/breakdown-card.tsx`, `finance/hint-icon.tsx`, `finance/sku-combobox.tsx`.
+
+⚠️ **Khi viết bảng mới: đừng đặt `text-sm`/`text-base` vào `TableCell`/`TableHead`** — class đặt tại chỗ sẽ lấn át quy chuẩn và làm bảng đó lệch cỡ so với phần còn lại.
+
+Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): laptop phổ biến 1366–1440px đã vượt `md` từ lâu, nếu dùng `md` thì laptop sẽ nhảy lên 16px và mất đi độ gọn gàng mong muốn.
+
 ## Phân quyền (RBAC)
 
 | Vai trò | Được phép | Bị chặn |
