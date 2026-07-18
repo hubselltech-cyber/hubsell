@@ -386,7 +386,7 @@ export default function OrdersPage() {
                       <TableCell className="text-right font-medium">
                         {formatVND(o.totalAmount)}
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
+                      <TableCell className="text-right text-muted-foreground">
                         {formatDateTime(o.createdAt)}
                       </TableCell>
                       <TableCell className="text-center">

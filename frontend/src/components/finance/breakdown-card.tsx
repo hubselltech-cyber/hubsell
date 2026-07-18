@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { HintIcon } from "@/components/finance/hint-icon";
 import { Card, CardContent } from "@/components/ui/card";
 import type { BreakdownItem } from "@/lib/api";
+import { TEXT_BIG_NUMBER, TEXT_CARD_TITLE, TEXT_SUB } from "@/lib/typography";
 import { formatVND, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -49,12 +50,11 @@ export function BreakdownCard({
             <Icon className="size-5" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {title}
-            </p>
+            <p className={TEXT_CARD_TITLE}>{title}</p>
             <p
               className={cn(
-                "text-xl font-bold leading-tight tracking-tight break-words",
+                TEXT_BIG_NUMBER,
+                "leading-tight break-words",
                 valueClass,
                 colorBySign &&
                   (total >= 0 ? "text-emerald-700" : "text-rose-700")
@@ -62,9 +62,7 @@ export function BreakdownCard({
             >
               {formatVND(total)}
             </p>
-            {subtitle && (
-              <p className="text-xs text-muted-foreground">{subtitle}</p>
-            )}
+            {subtitle && <p className={TEXT_SUB}>{subtitle}</p>}
           </div>
         </div>
 
@@ -76,14 +74,14 @@ export function BreakdownCard({
             const display = Math.abs(item.amount);
             return (
               <div key={item.key} className="flex items-start justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}>
                   <span className="truncate">{item.label}</span>
                   <HintIcon hint={item.hint} />
                 </span>
                 <span className="shrink-0 text-right">
                   <span
                     className={cn(
-                      "block text-sm font-semibold",
+                      "block text-sm font-semibold 2xl:text-base",
                       itemsAreDeductions
                         ? isCredit
                           ? "text-emerald-600"
@@ -98,7 +96,7 @@ export function BreakdownCard({
                     {itemsAreDeductions && (isCredit ? "+ " : "− ")}
                     {formatVND(display)}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span className={cn(TEXT_SUB, "block")}>
                     {item.percent}%
                     {item.count !== undefined
                       ? ` · ${formatNumber(item.count)} đơn`
@@ -111,9 +109,7 @@ export function BreakdownCard({
         </div>
 
         {footer && (
-          <div className="border-t pt-3 text-xs text-muted-foreground">
-            {footer}
-          </div>
+          <div className={cn(TEXT_SUB, "border-t pt-3")}>{footer}</div>
         )}
       </CardContent>
     </Card>

@@ -220,7 +220,7 @@ export default function MappingsPage() {
                     <TableBody>
                       {items.map((item) => (
                         <TableRow key={item.channelSku}>
-                          <TableCell className="font-mono text-sm font-medium">
+                          <TableCell className="font-mono font-medium">
                             {item.channelSku}
                           </TableCell>
                           <TableCell>{item.name}</TableCell>

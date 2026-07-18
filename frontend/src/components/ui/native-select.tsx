@@ -13,7 +13,9 @@ export function NativeSelect({
     <div className={cn("relative", className)}>
       <select
         className={cn(
-          "h-9 w-full appearance-none rounded-lg border border-input bg-background py-1 pl-3 pr-8 text-sm shadow-xs transition-colors outline-none",
+          // Đồng bộ cỡ chữ với ô Input theo quy chuẩn hệ thống
+          "text-base md:text-sm 2xl:text-base",
+          "h-9 w-full appearance-none rounded-lg border border-input bg-background py-1 pl-3 pr-8 shadow-xs transition-colors outline-none",
           "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50",
           "disabled:cursor-not-allowed disabled:opacity-50"
         )}

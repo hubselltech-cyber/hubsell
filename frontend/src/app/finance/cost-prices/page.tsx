@@ -373,10 +373,10 @@ export default function CostPricesPage() {
                         <TableCell className="font-medium">
                           {item.productName}
                         </TableCell>
-                        <TableCell className="max-w-52 text-sm text-muted-foreground">
+                        <TableCell className="max-w-52 text-muted-foreground">
                           {item.variantName ?? "—"}
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{item.sku}</TableCell>
+                        <TableCell className="font-mono">{item.sku}</TableCell>
                         <TableCell>
                           <span
                             className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}

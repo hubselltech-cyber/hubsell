@@ -250,7 +250,7 @@ export default function LossOrdersPage() {
                         >
                           {formatVND(o.profit)}
                         </TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
+                        <TableCell className="text-right text-muted-foreground">
                           {formatDateTime(o.createdAt)}
                         </TableCell>
                       </TableRow>

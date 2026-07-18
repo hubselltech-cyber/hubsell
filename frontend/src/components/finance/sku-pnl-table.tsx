@@ -28,10 +28,12 @@ import {
 } from "@/components/ui/table";
 import { fetchSkuPnl, type SkuPnlResponse } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
+import { CELL_PADDING } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-// Khoảng đệm chung cho mọi ô — rộng rãi hơn mặc định để số liệu dễ đọc
-const CELL_PAD = "px-3 py-4";
+// Khoảng đệm ô lấy từ quy chuẩn hệ thống (lib/typography.ts) để co giãn
+// đồng bộ với cỡ chữ trên màn hình lớn
+const CELL_PAD = CELL_PADDING;
 
 // Cột "Sản phẩm" ghim cố định mép trái khi cuộn ngang xem các chỉ số tài chính
 const STICKY_COL =
@@ -103,7 +105,7 @@ export function SkuPnlTable() {
                 <TableHeader>
                   <TableRow>
                     {/* Cột sản phẩm ghim trái — luôn thấy được khi cuộn ngang */}
-                    <TableHead className={cn(STICKY_COL, "px-3 py-4")}>
+                    <TableHead className={cn(STICKY_COL, CELL_PADDING)}>
                       Sản phẩm
                     </TableHead>
                     <TableHead className={cn(CELL_PAD, "text-right")}>Đã bán</TableHead>
@@ -133,7 +135,7 @@ export function SkuPnlTable() {
                     const belowFloor = be ? be.avgSellingPrice < be.floorPrice : false;
                     return (
                       <TableRow key={row.sku}>
-                        <TableCell className={cn(STICKY_COL, "px-3 py-4")}>
+                        <TableCell className={cn(STICKY_COL, CELL_PADDING)}>
                           <div className="flex items-center gap-3">
                             {row.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element

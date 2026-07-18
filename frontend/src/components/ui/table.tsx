@@ -3,6 +3,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { CELL_PADDING, TEXT_BODY, TEXT_TABLE_HEAD } from "@/lib/typography"
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
@@ -70,7 +71,10 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        // Cỡ chữ & khoảng đệm lấy từ quy chuẩn hệ thống (lib/typography.ts)
+        TEXT_TABLE_HEAD,
+        CELL_PADDING,
+        "text-left align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -83,7 +87,9 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        TEXT_BODY,
+        CELL_PADDING,
+        "align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}

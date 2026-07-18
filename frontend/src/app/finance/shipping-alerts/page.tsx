@@ -339,7 +339,7 @@ export default function ShippingAlertsPage() {
                             {meta.label}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
+                        <TableCell className="text-right text-muted-foreground">
                           {o.settledAt ? formatDateTime(o.settledAt) : "—"}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
@@ -348,7 +348,7 @@ export default function ShippingAlertsPage() {
                         <TableCell className="text-right font-medium">
                           {formatVND(o.shippingFeeActual)}
                         </TableCell>
-                        <TableCell className="text-right text-base font-bold text-rose-600">
+                        <TableCell className="text-right font-bold text-rose-600">
                           {formatVND(o.discrepancy)}
                         </TableCell>
                         <TableCell>

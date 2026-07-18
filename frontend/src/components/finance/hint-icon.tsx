@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /// Icon dấu hỏi nhỏ — hover vào để xem giải thích công thức/ý nghĩa chỉ số.
@@ -59,7 +60,9 @@ export function HintText({
             type="button"
             // Trông như chữ thường nhưng vẫn focus được bằng bàn phím
             className={cn(
-              "cursor-help text-xs leading-tight underline decoration-dotted underline-offset-2 transition-colors",
+              // Cỡ chữ dòng phụ theo quy chuẩn hệ thống
+              TEXT_SUB,
+              "cursor-help leading-tight underline decoration-dotted underline-offset-2 transition-colors",
               className
             )}
           />

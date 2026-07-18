@@ -6,6 +6,7 @@ import { Check, ChevronDown, PackageSearch, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { Product } from "@/lib/api";
 import { matchesKeyword } from "@/lib/text";
+import { TEXT_BODY, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 interface SkuComboboxProps {
@@ -200,10 +201,10 @@ export function SkuCombobox({
                     )}
                   />
                   <span className="min-w-0">
-                    <span className="block font-mono text-xs text-muted-foreground">
+                    <span className={cn(TEXT_SUB, "block font-mono")}>
                       {p.skuCode}
                     </span>
-                    <span className="block truncate text-sm font-medium">
+                    <span className={cn(TEXT_BODY, "block truncate font-medium")}>
                       {p.productName}
                     </span>
                   </span>

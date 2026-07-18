@@ -1,5 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { TEXT_BIG_NUMBER, TEXT_CARD_TITLE } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 interface StatCardProps {
   label: string;
@@ -23,9 +25,9 @@ export function StatCard({
           <Icon className="size-6" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className={TEXT_CARD_TITLE}>{label}</p>
           {/* break-words thay vì truncate để số tiền dài không bị cắt mất chữ số */}
-          <p className="text-xl font-semibold leading-tight tracking-tight break-words">
+          <p className={cn(TEXT_BIG_NUMBER, "leading-tight break-words")}>
             {value}
           </p>
         </div>

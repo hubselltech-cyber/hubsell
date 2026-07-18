@@ -454,7 +454,7 @@ export default function FinanceExpensesPage() {
                             {meta.label}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-muted-foreground">
                           {CATEGORY_LABEL[e.category]}
                           {e.appliedSku && (
                             <span className="mt-0.5 block font-mono text-xs text-primary">
@@ -465,7 +465,7 @@ export default function FinanceExpensesPage() {
                         <TableCell className="text-right font-semibold text-rose-600">
                           − {formatVND(e.amount)}
                         </TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
+                        <TableCell className="text-right text-muted-foreground">
                           {formatDateTime(e.expenseDate)}
                         </TableCell>
                         <TableCell className="text-center">
