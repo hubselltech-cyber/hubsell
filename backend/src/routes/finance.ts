@@ -14,6 +14,11 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
 import { parseDateRange, type DateRangeFilter } from "../date-range";
+import {
+  channelScope,
+  hasChannelFilter,
+  type ChannelScope,
+} from "../channel-filter";
 
 const router = Router();
 
@@ -51,7 +56,7 @@ const VALID_CATEGORIES: ExpenseCategory[] = [
 // Kiểu đơn đã kèm dữ liệu tính giá vốn
 type DeliveredOrder = Prisma.OrderGetPayload<{
   include: {
-    channel: { select: { channelName: true } };
+    channel: { select: { channelName: true; shopName: true } };
     items: true;
     inventoryLogs: {
       include: { product: { select: { costPrice: true } } };
@@ -126,17 +131,17 @@ function pct(amount: number, total: number): number {
   return Math.round((amount / total) * 10000) / 100;
 }
 
-// Lấy toàn bộ đơn Đã giao của shop kèm dữ liệu giá vốn
-function fetchDeliveredOrders(ownerId: string, range?: DateRangeFilter) {
+// Lấy đơn Đã giao trong phạm vi kênh đang xem, kèm dữ liệu giá vốn
+function fetchDeliveredOrders(scope: ChannelScope, range?: DateRangeFilter) {
   return prisma.order.findMany({
     where: {
-      channel: { userId: ownerId },
+      channel: scope,
       shippingStatus: "DELIVERED",
       createdAt: range,
     },
     orderBy: { createdAt: "desc" },
     include: {
-      channel: { select: { channelName: true } },
+      channel: { select: { channelName: true, shopName: true } },
       items: true,
       inventoryLogs: {
         where: { changeQuantity: { lt: 0 } },
@@ -236,7 +241,7 @@ router.post("/expenses", async (req: AuthRequest, res, next) => {
 router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   try {
     const delivered = await fetchDeliveredOrders(
-      req.ownerId!,
+      channelScope(req),
       parseDateRange(req.query)
     );
 
@@ -260,6 +265,7 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
         orderCode: o.orderCode,
         customerName: o.customerName,
         channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
         createdAt: o.createdAt,
         revenue,
         platformFee,
@@ -305,9 +311,11 @@ router.get("/expenses", async (req: AuthRequest, res, next) => {
 
 // GET /api/finance/sku-products?channel=all|shopee|tiktok|lazada|offline
 // Danh sách SKU (đã đồng bộ từ sàn) để chủ shop nhập giá vốn.
-// - Kênh cụ thể  → các SKU sàn đã liên kết của kênh đó
-// - offline      → sản phẩm kho chưa liên kết sàn nào (bán tại quầy)
-// - all          → cả hai
+// Lọc theo SÀN chứ không theo gian hàng: giá vốn là thuộc tính của sản phẩm gốc
+// trong kho, một SKU bán ở hai gian vẫn chung một giá nhập.
+// - Sàn cụ thể  → các SKU sàn đã liên kết của mọi gian trên sàn đó
+// - offline     → sản phẩm kho chưa liên kết sàn nào (bán tại quầy)
+// - all         → cả hai
 router.get("/sku-products", async (req: AuthRequest, res, next) => {
   try {
     const raw = typeof req.query.channel === "string" ? req.query.channel : "all";
@@ -616,18 +624,11 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
-    const channelKey =
-      typeof req.query.channel === "string" ? req.query.channel.toLowerCase() : "all";
     const statusKey =
       typeof req.query.status === "string" ? req.query.status.toUpperCase() : "";
 
     const where: Prisma.OrderWhereInput = {
-      channel: {
-        userId: req.ownerId!,
-        ...(CHANNEL_BY_KEY[channelKey]
-          ? { channelName: CHANNEL_BY_KEY[channelKey] }
-          : {}),
-      },
+      channel: channelScope(req),
       shippingFeeDiff: { gt: 0 }, // chỉ đơn bị trừ thêm
       createdAt: parseDateRange(req.query),
       ...(DISPUTE_STATUSES.includes(statusKey as ShippingDisputeStatus)
@@ -642,7 +643,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         orderBy: [{ settledAt: "desc" }, { createdAt: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { channel: { select: { channelName: true } } },
+        include: { channel: { select: { channelName: true, shopName: true } } },
       }),
       // Toàn bộ đơn khớp bộ lọc (không phân trang) để tính tổng tiền cần đòi
       prisma.order.findMany({
@@ -672,6 +673,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
         id: o.id,
         orderCode: o.orderCode,
         channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
         settledAt: o.settledAt,
         createdAt: o.createdAt,
         shippingFeeQuoted: Number(o.shippingFeeQuoted), // phí sàn báo
@@ -1116,9 +1118,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const ownerId = req.ownerId!;
 
     const range = parseDateRange(req.query);
+    const scope = channelScope(req);
 
     const [delivered, expenses, inFlight, cancelled] = await Promise.all([
-      fetchDeliveredOrders(ownerId, range),
+      fetchDeliveredOrders(scope, range),
       prisma.operatingExpense.findMany({
         where: { userId: ownerId, expenseDate: range },
         select: {
@@ -1133,7 +1136,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       // SHIPPING — bỏ sót nó là cả nhóm đơn này biến mất khỏi "Tiền chờ về".
       prisma.order.findMany({
         where: {
-          channel: { userId: ownerId },
+          channel: scope,
           shippingStatus: {
             in: [
               ShippingStatus.PENDING,
@@ -1149,13 +1152,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             where: { changeQuantity: { lt: 0 } },
             include: { product: { select: { costPrice: true } } },
           },
-          channel: { select: { channelName: true } },
+          channel: { select: { channelName: true, shopName: true } },
         },
       }),
       // Đơn bị hủy/bom hàng → phục vụ quản trị rủi ro
       prisma.order.findMany({
         where: {
-          channel: { userId: ownerId },
+          channel: scope,
           shippingStatus: "CANCELLED",
           createdAt: range,
         },
@@ -1452,6 +1455,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       variableExpense,
       netProfit,
       series,
+      // Chi phí vận hành ghi ở cấp toàn shop, không gắn gian hàng nào. Khi đang
+      // lọc một gian, con số này vẫn là của cả shop — frontend cần nói rõ để
+      // chủ shop không đọc nhầm Lợi nhuận thuần thành lãi riêng của gian đó.
+      operatingExpenseIsShopWide: hasChannelFilter(req),
     });
   } catch (err) {
     next(err);

@@ -56,8 +56,18 @@ export class ApiError extends Error {
  * Gắn ?from=&to= vào endpoint báo cáo. Không truyền range thì giữ nguyên URL
  * (backend hiểu là xem toàn bộ lịch sử).
  */
-function withRange(path: string, range?: DateRange): string {
-  const qs = new URLSearchParams(rangeToQuery(range)).toString();
+/**
+ * Gắn bộ lọc báo cáo vào URL: khoảng thời gian và GIAN HÀNG.
+ * channelId rỗng nghĩa là xem toàn bộ gian hàng của shop.
+ */
+function withRange(
+  path: string,
+  range?: DateRange,
+  channelId?: string
+): string {
+  const params = new URLSearchParams(rangeToQuery(range));
+  if (channelId) params.set("channelId", channelId);
+  const qs = params.toString();
   if (!qs) return path;
   return `${path}${path.includes("?") ? "&" : "?"}${qs}`;
 }
@@ -200,7 +210,7 @@ export interface Order {
   /** Mốc đã cộng lại tồn kho — có giá trị nghĩa là không cộng thêm lần nữa */
   stockRestoredAt: string | null;
   createdAt: string;
-  channel: { channelName: ChannelName };
+  channel: { channelName: ChannelName; shopName: string };
   items?: OrderItemLine[];
 }
 
@@ -283,7 +293,15 @@ export interface AnalyticsResponse {
   netProfit: number;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
   revenueByDay: { date: string; label: string; revenue: number }[];
-  ordersByChannel: { channelName: ChannelName | string; count: number }[];
+  ordersByChannel: {
+    channelId: string;
+    channelName: ChannelName | string;
+    shopName: string;
+    count: number;
+    revenue: number;
+  }[];
+  /** Đang lọc 1 gian hàng ⇒ chi phí vận hành vẫn là của TOÀN SHOP. */
+  operatingExpenseIsShopWide: boolean;
 }
 
 export interface RecentOrder {
@@ -294,6 +312,7 @@ export interface RecentOrder {
   paymentStatus: string;
   shippingStatus: string;
   channelName: ChannelName;
+  shopName: string;
   createdAt: string;
 }
 
@@ -624,8 +643,10 @@ export function updateOrderStatus(id: string, shippingStatus: string) {
 
 // ----- Báo cáo tài chính (chỉ Admin) -----
 
-export function fetchAnalytics(range?: DateRange) {
-  return apiFetch<AnalyticsResponse>(withRange("/api/analytics", range));
+export function fetchAnalytics(range?: DateRange, channelId?: string) {
+  return apiFetch<AnalyticsResponse>(
+    withRange("/api/analytics", range, channelId)
+  );
 }
 
 // ----- Chi phí hoạt động (chỉ Admin) -----
@@ -658,6 +679,7 @@ export interface LossOrder {
   orderCode: string;
   customerName: string;
   channelName: ChannelName | string;
+  shopName: string;
   createdAt: string;
   revenue: number;
   platformFee: number;
@@ -707,6 +729,8 @@ export interface FinanceAnalytics {
   variableExpense: number;
   netProfit: number;
   series: { date: string; label: string; revenue: number; cost: number }[];
+  /** Đang lọc 1 gian hàng ⇒ chi phí vận hành vẫn là của TOÀN SHOP. */
+  operatingExpenseIsShopWide: boolean;
 }
 
 // ----- Đối soát & khiếu nại chênh lệch phí vận chuyển -----
@@ -720,6 +744,7 @@ export interface ShippingDiscrepancy {
   id: string;
   orderCode: string;
   channelName: ChannelName;
+  shopName: string;
   settledAt: string | null;
   createdAt: string;
   shippingFeeQuoted: number; // phí sàn báo
@@ -743,14 +768,14 @@ export interface ShippingDiscrepancyResponse {
 export function fetchShippingDiscrepancies(params: {
   page?: number;
   pageSize?: number;
-  channel?: string;
+  channelId?: string;
   status?: string;
   range?: DateRange;
 }) {
   const qs = new URLSearchParams(rangeToQuery(params.range));
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
-  if (params.channel && params.channel !== "all") qs.set("channel", params.channel);
+  if (params.channelId) qs.set("channelId", params.channelId);
   if (params.status) qs.set("status", params.status);
   return apiFetch<ShippingDiscrepancyResponse>(
     `/api/finance/shipping-discrepancies?${qs.toString()}`
@@ -870,18 +895,20 @@ export function updateSkuCostPrice(skuId: string, costPrice: number) {
   });
 }
 
-export function fetchFinanceAnalytics(range?: DateRange) {
-  return apiFetch<FinanceAnalytics>(withRange("/api/finance/analytics", range));
+export function fetchFinanceAnalytics(range?: DateRange, channelId?: string) {
+  return apiFetch<FinanceAnalytics>(
+    withRange("/api/finance/analytics", range, channelId)
+  );
 }
 
-export function fetchLossOrders(range?: DateRange) {
+export function fetchLossOrders(range?: DateRange, channelId?: string) {
   return apiFetch<{
     analyzedCount: number;
     lossCount: number;
     warningCount: number;
     orders: LossOrder[];
     lossOrders: LossOrder[];
-  }>(withRange("/api/finance/orders-analysis", range));
+  }>(withRange("/api/finance/orders-analysis", range, channelId));
 }
 
 export function createFinanceExpense(data: {

@@ -45,17 +45,16 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
-  fetchChannels,
   fetchOrders,
   getToken,
   updateOrderStatus,
-  type Channel,
   type Order,
   type ReturnStatus,
 } from "@/lib/api";
 import { exportAllOrders } from "@/lib/excel";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -277,7 +276,6 @@ export default function OrdersPage() {
   const router = useRouter();
 
   const [items, setItems] = useState<Order[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(0);
@@ -363,9 +361,6 @@ export default function OrdersPage() {
       router.replace("/login");
       return;
     }
-    fetchChannels()
-      .then(setChannels)
-      .catch(() => {});
   }, [router]);
 
   useEffect(() => {
@@ -620,22 +615,14 @@ export default function OrdersPage() {
             )}
           </div>
 
-          <NativeSelect
-            className="w-44"
-            aria-label="Lọc theo sàn thương mại"
+          <ShopFilter
+            className="w-52"
             value={channelFilter}
-            onChange={(e) => {
+            onChange={(id) => {
               setPage(1);
-              setChannelFilter(e.target.value);
+              setChannelFilter(id);
             }}
-          >
-            <option value="">Tất cả sàn</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {CHANNEL_META[c.channelName].label}
-              </option>
-            ))}
-          </NativeSelect>
+          />
 
           <NativeSelect
             className="w-52"
@@ -762,6 +749,18 @@ export default function OrdersPage() {
                             </div>
                             <p className={cn(TEXT_SUB, "mt-1")}>
                               {formatDateTime(o.createdAt)}
+                              {shopOnlyName(
+                                o.channel.channelName,
+                                o.channel.shopName
+                              ) && (
+                                <>
+                                  {" · "}
+                                  {shopOnlyName(
+                                    o.channel.channelName,
+                                    o.channel.shopName
+                                  )}
+                                </>
+                              )}
                             </p>
                           </TableCell>
 

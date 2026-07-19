@@ -40,18 +40,17 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
-  fetchChannels,
   fetchWarehouseReturns,
   getStoredUser,
   getToken,
   syncWarehouseReturns,
-  type Channel,
   type ChannelName,
   type Order,
   type ReturnRow,
 } from "@/lib/api";
 import { carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
 import { formatDateTime, formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -113,7 +112,6 @@ export default function WarehouseReturnsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("");
   const [channelFilter, setChannelFilter] = useState("");
-  const [channels, setChannels] = useState<Channel[]>([]);
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -168,9 +166,6 @@ export default function WarehouseReturnsPage() {
       return;
     }
     load();
-    fetchChannels()
-      .then(setChannels)
-      .catch(() => {});
   }, [load, router]);
 
   async function handleSync() {
@@ -329,22 +324,14 @@ export default function WarehouseReturnsPage() {
             );
           })}
 
-          <NativeSelect
-            className="ml-auto w-44"
-            aria-label="Lọc theo sàn thương mại"
+          <ShopFilter
+            className="ml-auto w-52"
             value={channelFilter}
-            onChange={(e) => {
-              setChannelFilter(e.target.value);
+            onChange={(id) => {
+              setChannelFilter(id);
               setPage(1);
             }}
-          >
-            <option value="">Tất cả sàn</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {CHANNEL_META[c.channelName].label}
-              </option>
-            ))}
-          </NativeSelect>
+          />
 
           <div className="relative min-w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -420,6 +407,17 @@ export default function WarehouseReturnsPage() {
                               <span className="font-semibold tracking-tight">
                                 {o.orderCode}
                               </span>
+                              {shopOnlyName(
+                                o.channel.channelName as ChannelName,
+                                o.channel.shopName
+                              ) && (
+                                <span className={TEXT_SUB}>
+                                  {shopOnlyName(
+                                    o.channel.channelName as ChannelName,
+                                    o.channel.shopName
+                                  )}
+                                </span>
+                              )}
                             </div>
                             <p className={cn(TEXT_SUB, "mt-1")}>
                               {o.returnRequestedAt

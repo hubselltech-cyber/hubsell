@@ -147,13 +147,14 @@ export function exportShippingDisputesToExcel(items: ShippingDiscrepancy[]) {
   const rows = items.map((o) => ({
     "Mã đơn hàng": o.orderCode,
     Sàn: CHANNEL_LABEL[o.channelName] ?? o.channelName,
+    "Gian hàng": o.shopName,
     "Phí ship sàn báo": o.shippingFeeQuoted,
     "Phí ship thực tế bị trừ": o.shippingFeeActual,
     "Số tiền chênh lệch": o.discrepancy, // âm = số tiền cần đòi lại
   }));
   downloadSheet(
     rows,
-    [24, 12, 18, 22, 20],
+    [24, 12, 22, 18, 22, 20],
     "Khieu nai phi ship",
     `hubsell_khieu_nai_phi_ship_${fileStamp()}.xlsx`
   );
@@ -161,7 +162,7 @@ export function exportShippingDisputesToExcel(items: ShippingDiscrepancy[]) {
 
 /// Gom TẤT CẢ đơn "Chờ khiếu nại" theo bộ lọc hiện tại rồi xuất file gửi sàn
 export async function exportShippingDisputes(filter: {
-  channel?: string;
+  channelId?: string;
 }): Promise<number> {
   const all: ShippingDiscrepancy[] = [];
   let page = 1;

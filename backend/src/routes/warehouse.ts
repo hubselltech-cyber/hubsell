@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import { channelScope } from "../channel-filter";
 
 const router = Router();
 
@@ -56,16 +57,9 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     const statusQ = typeof req.query.status === "string" ? req.query.status : "";
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
-    // Lọc theo gian hàng: shop đối soát với bưu cục của từng sàn riêng
-    const channelId =
-      typeof req.query.channelId === "string" ? req.query.channelId : "";
-
+    // Lọc theo gian hàng: shop đối soát với bưu cục của từng gian riêng
     const scope: Prisma.OrderWhereInput = {
-      channel: { userId: req.ownerId! },
-      ...(req.allowedChannelIds
-        ? { channelId: { in: req.allowedChannelIds } }
-        : {}),
-      ...(channelId ? { channelId } : {}),
+      channel: channelScope(req),
       // Chỉ những đơn thật sự có phát sinh hoàn
       returnStatus: { not: ReturnStatus.NONE },
     };
@@ -87,7 +81,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     };
 
     const include = {
-      channel: { select: { channelName: true } },
+      channel: { select: { channelName: true, shopName: true } },
       items: {
         select: {
           id: true,
@@ -303,7 +297,7 @@ router.post("/returns/:id/claim", async (req: AuthRequest, res, next) => {
             ? [order.returnNote, note.trim()].filter(Boolean).join(" · ")
             : order.returnNote,
       },
-      include: { channel: { select: { channelName: true } } },
+      include: { channel: { select: { channelName: true, shopName: true } } },
     });
 
     res.json({ order: updated });

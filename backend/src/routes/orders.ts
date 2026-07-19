@@ -9,6 +9,7 @@ import {
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
+import { channelScope } from "../channel-filter";
 
 const router = Router();
 
@@ -34,8 +35,6 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const shippingStatus =
       typeof req.query.shippingStatus === "string" ? req.query.shippingStatus : "";
-    const channelId =
-      typeof req.query.channelId === "string" ? req.query.channelId : "";
     const carrier =
       typeof req.query.carrier === "string" ? req.query.carrier : "";
     const search =
@@ -50,20 +49,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const returnStatusQ =
       typeof req.query.returnStatus === "string" ? req.query.returnStatus : "";
 
-    // Phân quyền multi-store: nhân viên bị giới hạn kênh thì chỉ thấy đơn của kênh được gán.
-    // Nếu lọc theo 1 kênh cụ thể mà kênh đó không nằm trong phạm vi → không trả gì.
-    const channelWhere: Prisma.ChannelWhereInput = { userId: req.ownerId! };
-    if (req.allowedChannelIds) {
-      const allowed = req.allowedChannelIds;
-      channelWhere.id = channelId
-        ? { in: allowed.filter((id) => id === channelId) }
-        : { in: allowed };
-    } else if (channelId) {
-      channelWhere.id = channelId;
-    }
-
     const where: Prisma.OrderWhereInput = {
-      channel: channelWhere,
+      channel: channelScope(req),
       ...(isStatus(shippingStatus) ? { shippingStatus } : {}),
       ...(isCarrier(carrier) ? { carrier } : {}),
       ...(printed === "yes"
@@ -105,7 +92,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          channel: { select: { channelName: true } },
+          channel: { select: { channelName: true, shopName: true } },
           // Kèm dòng hàng để bảng hiện được tên + SKU + số lượng sản phẩm
           items: {
             select: {
@@ -183,7 +170,7 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, channel: { userId: req.ownerId! } },
-      include: { channel: { select: { channelName: true } } },
+      include: { channel: { select: { channelName: true, shopName: true } } },
     });
     if (!order) {
       res.status(404).json({ error: "Không tìm thấy đơn hàng" });
@@ -234,7 +221,7 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
       const updated = await prisma.order.update({
         where: { id: order.id },
         data: { shippingStatus: newStatus, ...settlementData },
-        include: { channel: { select: { channelName: true } } },
+        include: { channel: { select: { channelName: true, shopName: true } } },
       });
       res.json({ order: updated, restored: [] });
       return;
@@ -295,7 +282,7 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
                 returnRequestedAt: new Date(),
               }),
         },
-        include: { channel: { select: { channelName: true } } },
+        include: { channel: { select: { channelName: true, shopName: true } } },
       });
 
       return { order: updatedOrder, restored };
@@ -497,7 +484,7 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       },
       orderBy: { createdAt: "desc" },
       include: {
-        channel: { select: { channelName: true } },
+        channel: { select: { channelName: true, shopName: true } },
         items: {
           select: { productName: true, channelSku: true, quantity: true },
         },
@@ -585,7 +572,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
         : {}),
     };
     const include = {
-      channel: { select: { channelName: true } },
+      channel: { select: { channelName: true, shopName: true } },
       items: {
         select: {
           id: true,
@@ -748,7 +735,7 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
           shippingStatus: ShippingStatus.CANCELLED,
           ...(restored.length > 0 ? { stockRestoredAt: new Date() } : {}),
         },
-        include: { channel: { select: { channelName: true } } },
+        include: { channel: { select: { channelName: true, shopName: true } } },
       });
 
       return { order: updatedOrder, restored, shouldRestore };

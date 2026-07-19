@@ -23,7 +23,7 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
           where: { channel: { userId } },
           take: 5,
           orderBy: { createdAt: "desc" },
-          include: { channel: { select: { channelName: true } } },
+          include: { channel: { select: { channelName: true, shopName: true } } },
         }),
       ]);
 
@@ -40,6 +40,7 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
         paymentStatus: o.paymentStatus,
         shippingStatus: o.shippingStatus,
         channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
         createdAt: o.createdAt,
       })),
     });

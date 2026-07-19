@@ -14,6 +14,7 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
@@ -49,6 +50,7 @@ export default function LossOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
+  const [channelId, setChannelId] = useState("");
   // Phân biệt lần tải đầu (hiện chữ "đang quét") với các lần đổi bộ lọc
   // sau đó (giữ nguyên bảng cũ, chỉ làm mờ) để giao diện không nhấp nháy
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -56,7 +58,7 @@ export default function LossOrdersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchLossOrders(range);
+      const res = await fetchLossOrders(range, channelId);
       setOrders(res.orders);
       setAnalyzedCount(res.analyzedCount);
       setLossCount(res.lossCount);
@@ -75,7 +77,7 @@ export default function LossOrdersPage() {
       setLoading(false);
       setLoadedOnce(true);
     }
-  }, [router, range]);
+  }, [router, range, channelId]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -111,6 +113,7 @@ export default function LossOrdersPage() {
             Doanh thu ≤ Giá vốn để chủ shop đối soát.
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            <ShopFilter value={channelId} onChange={setChannelId} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
@@ -232,6 +235,11 @@ export default function LossOrdersPage() {
                             </span>
                           ) : (
                             <Badge variant="outline">{o.channelName}</Badge>
+                          )}
+                          {shopOnlyName(o.channelName as ChannelName, o.shopName) && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {shopOnlyName(o.channelName as ChannelName, o.shopName)}
+                            </p>
                           )}
                         </TableCell>
                         <TableCell className="text-right">

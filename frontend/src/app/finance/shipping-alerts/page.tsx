@@ -43,6 +43,7 @@ import {
   type ShippingDisputeStatus,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
 import { exportShippingDisputes } from "@/lib/excel";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 
@@ -74,13 +75,6 @@ const NEXT_STATUS: Record<ShippingDisputeStatus, ShippingDisputeStatus> = {
   DA_DOI_SOAT: "CHO_KHIEU_NAI",
 };
 
-const CHANNEL_OPTIONS = [
-  { value: "all", label: "Tất cả sàn" },
-  { value: "shopee", label: "Shopee" },
-  { value: "tiktok", label: "TikTok Shop" },
-  { value: "lazada", label: "Lazada" },
-];
-
 const STATUS_OPTIONS = [
   { value: "", label: "Tất cả trạng thái" },
   { value: "CHO_KHIEU_NAI", label: "Chờ khiếu nại" },
@@ -99,7 +93,7 @@ export default function ShippingAlertsPage() {
   });
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(0);
-  const [channel, setChannel] = useState("all");
+  const [channelId, setChannelId] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -113,7 +107,7 @@ export default function ShippingAlertsPage() {
       const res = await fetchShippingDiscrepancies({
         page,
         pageSize: PAGE_SIZE,
-        channel,
+        channelId,
         status: status || undefined,
         range,
       });
@@ -133,7 +127,7 @@ export default function ShippingAlertsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, channel, status, router, range]);
+  }, [page, channelId, status, router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -168,7 +162,7 @@ export default function ShippingAlertsPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      const count = await exportShippingDisputes({ channel });
+      const count = await exportShippingDisputes({ channelId });
       if (count === 0) {
         toast.info("Không có đơn nào ở trạng thái “Chờ khiếu nại” để xuất");
       } else {
@@ -248,24 +242,16 @@ export default function ShippingAlertsPage() {
 
         {/* Bộ lọc */}
         <div className="flex flex-wrap items-end gap-4">
-          <div className="grid w-44 gap-1.5">
-            <Label htmlFor="filter-channel" className="text-xs text-muted-foreground">
-              Sàn
-            </Label>
-            <NativeSelect
-              id="filter-channel"
-              value={channel}
-              onChange={(e) => {
+          <div className="grid w-56 gap-1.5">
+            <Label className="text-xs text-muted-foreground">Gian hàng</Label>
+            <ShopFilter
+              className="w-56"
+              value={channelId}
+              onChange={(id) => {
                 setPage(1);
-                setChannel(e.target.value);
+                setChannelId(id);
               }}
-            >
-              {CHANNEL_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </NativeSelect>
+            />
           </div>
           <div className="grid w-48 gap-1.5">
             <Label htmlFor="filter-status" className="text-xs text-muted-foreground">
@@ -334,6 +320,11 @@ export default function ShippingAlertsPage() {
                           >
                             {meta.label}
                           </span>
+                          {shopOnlyName(o.channelName as ChannelName, o.shopName) && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {shopOnlyName(o.channelName as ChannelName, o.shopName)}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {o.settledAt ? formatDateTime(o.settledAt) : "—"}

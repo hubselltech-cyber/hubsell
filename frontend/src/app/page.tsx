@@ -65,18 +65,49 @@ import {
   getToken,
   ApiError,
   type AnalyticsResponse,
+  type ChannelName,
   type DashboardSummary,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { ShopFilter, shopLabel } from "@/components/shop-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 
-// Màu biểu đồ tròn cho từng kênh
+// Màu nền của từng sàn trên biểu đồ tròn
 const CHANNEL_COLORS: Record<string, string> = {
   SHOPEE: "#f97316",
   TIKTOK: "#18181b",
   LAZADA: "#3b82f6",
   OFFLINE: "#a1a1aa",
 };
+
+// Pha màu với trắng theo tỷ lệ 0..1 (0 = giữ nguyên, 1 = trắng hoàn toàn)
+function lighten(hex: string, ratio: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * ratio);
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+/**
+ * Màu cho từng GIAN HÀNG: giữ tông của sàn để nhìn là biết thuộc sàn nào, gian
+ * thứ hai trở đi trên cùng sàn thì nhạt dần — nếu để cùng một màu thì hai gian
+ * Shopee sẽ là hai lát bánh không phân biệt được.
+ */
+function shopColors(
+  rows: { channelId: string; channelName: string }[]
+): Record<string, string> {
+  const seen: Record<string, number> = {};
+  const colors: Record<string, string> = {};
+  for (const r of rows) {
+    const index = seen[r.channelName] ?? 0;
+    seen[r.channelName] = index + 1;
+    const base = CHANNEL_COLORS[r.channelName] ?? "#8b5cf6";
+    colors[r.channelId] = index === 0 ? base : lighten(base, Math.min(index * 0.22, 0.66));
+  }
+  return colors;
+}
 
 const PAYMENT_META: Record<string, { label: string; className: string }> = {
   PAID: { label: "Đã thanh toán", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
@@ -116,6 +147,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
+  const [channelId, setChannelId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,7 +155,7 @@ export default function DashboardPage() {
     try {
       const [summary, stats] = await Promise.all([
         fetchDashboardSummary(),
-        fetchAnalytics(range),
+        fetchAnalytics(range, channelId),
       ]);
       setData(summary);
       setAnalytics(stats);
@@ -143,7 +175,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [router, range]);
+  }, [router, range, channelId]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -186,6 +218,7 @@ export default function DashboardPage() {
             Bảng điều khiển tổng quan hoạt động kinh doanh của bạn.
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            <ShopFilter value={channelId} onChange={setChannelId} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
@@ -294,6 +327,15 @@ export default function DashboardPage() {
         </Refreshing>
 
         {/* Chi phí hoạt động + Lợi nhuận thuần */}
+        {analytics?.operatingExpenseIsShopWide && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Đang lọc theo một gian hàng. Chi phí hoạt động (mặt bằng, lương,
+            marketing…) được ghi nhận ở cấp toàn shop nên vẫn là con số của cả
+            shop — Lợi nhuận thuần bên dưới{" "}
+            <strong>chưa phải lãi riêng của gian hàng này</strong>. Doanh thu,
+            giá vốn và lợi nhuận gộp thì đã lọc đúng theo gian.
+          </p>
+        )}
         <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <StatCard
             label="Tổng Chi phí hoạt động"
@@ -372,9 +414,9 @@ export default function DashboardPage() {
 
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle>Tỷ lệ đơn theo kênh</CardTitle>
+              <CardTitle>Tỷ lệ đơn theo gian hàng</CardTitle>
               <CardDescription>
-                Đóng góp đơn hàng giữa các kênh (không tính đơn hủy).
+                Đóng góp đơn hàng của từng gian hàng (không tính đơn hủy).
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -384,11 +426,12 @@ export default function DashboardPage() {
                     <PieChart>
                       <Pie
                         data={analytics.ordersByChannel.map((c) => ({
-                          name:
-                            CHANNEL_META[c.channelName as keyof typeof CHANNEL_META]
-                              ?.label ?? c.channelName,
+                          name: shopLabel(
+                            c.channelName as ChannelName,
+                            c.shopName
+                          ),
                           value: c.count,
-                          channelName: c.channelName,
+                          channelId: c.channelId,
                         }))}
                         dataKey="value"
                         nameKey="name"
@@ -398,8 +441,8 @@ export default function DashboardPage() {
                       >
                         {analytics.ordersByChannel.map((c) => (
                           <Cell
-                            key={c.channelName}
-                            fill={CHANNEL_COLORS[c.channelName] ?? "#8b5cf6"}
+                            key={c.channelId}
+                            fill={shopColors(analytics.ordersByChannel)[c.channelId]}
                           />
                         ))}
                       </Pie>

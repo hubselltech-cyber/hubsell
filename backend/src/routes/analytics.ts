@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { parseDateRange } from "../date-range";
+import { channelScope, hasChannelFilter } from "../channel-filter";
 
 const router = Router();
 
@@ -14,6 +15,7 @@ function toDateKey(d: Date): string {
 }
 
 // GET /api/analytics — Báo cáo tài chính (CHỈ ADMIN).
+// Lọc theo ?from=&to=&channelId= — channelId là GIAN HÀNG cụ thể, không phải sàn.
 // Các chỉ số tính trên đơn có trạng thái DELIVERED (Đã giao):
 //   - Tổng Doanh thu  = tổng totalAmount
 //   - Tổng Giá vốn    = Σ (số lượng đã bán × costPrice sản phẩm gốc)
@@ -24,11 +26,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const ownerId = req.ownerId!;
     // Bộ lọc khoảng thời gian (?from=&to=) — undefined nghĩa là xem toàn bộ
     const range = parseDateRange(req.query);
+    const scope = channelScope(req);
+    const filteredByChannel = hasChannelFilter(req);
 
-    // 1) Toàn bộ đơn ĐÃ GIAO của shop
+    // 1) Toàn bộ đơn ĐÃ GIAO trong phạm vi đang xem
     const delivered = await prisma.order.findMany({
       where: {
-        channel: { userId: ownerId },
+        channel: scope,
         shippingStatus: "DELIVERED",
         createdAt: range,
       },
@@ -121,26 +125,36 @@ router.get("/", async (req: AuthRequest, res, next) => {
       });
     }
 
-    // 4) Tỷ lệ đóng góp đơn hàng giữa các kênh (không tính đơn đã hủy)
+    // 4) Đóng góp của TỪNG GIAN HÀNG (không tính đơn đã hủy).
+    //    Gom theo channelId chứ không theo tên sàn: hai gian cùng nằm trên
+    //    Shopee phải là hai dòng riêng thì chủ shop mới biết gian nào đang gánh
+    //    doanh thu, gian nào đang lỗ.
     const byChannel = await prisma.order.groupBy({
       by: ["channelId"],
       _count: { _all: true },
+      _sum: { totalAmount: true },
       where: {
-        channel: { userId: ownerId },
+        channel: scope,
         shippingStatus: { not: "CANCELLED" },
         createdAt: range,
       },
     });
     const channels = await prisma.channel.findMany({
       where: { userId: ownerId },
-      select: { id: true, channelName: true },
+      select: { id: true, channelName: true, shopName: true },
     });
-    const channelNameById = new Map(channels.map((c) => [c.id, c.channelName]));
+    const channelById = new Map(channels.map((c) => [c.id, c]));
     const ordersByChannel = byChannel
-      .map((g) => ({
-        channelName: channelNameById.get(g.channelId) ?? "KHÁC",
-        count: g._count._all,
-      }))
+      .map((g) => {
+        const c = channelById.get(g.channelId);
+        return {
+          channelId: g.channelId,
+          channelName: c?.channelName ?? "KHÁC",
+          shopName: c?.shopName ?? "Gian hàng đã xoá",
+          count: g._count._all,
+          revenue: Number(g._sum.totalAmount ?? 0),
+        };
+      })
       .sort((a, b) => b.count - a.count);
 
     res.json({
@@ -153,6 +167,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
       expensesByCategory,
       revenueByDay,
       ordersByChannel,
+      // Chi phí vận hành (mặt bằng, lương, marketing…) ghi ở cấp TOÀN SHOP, không
+      // gắn với gian hàng nào. Khi đang lọc một gian, con số này vẫn là của cả
+      // shop nên Lợi nhuận thuần không phải lãi riêng của gian đó — frontend
+      // dựa vào cờ này để cảnh báo, tránh chủ shop đọc nhầm.
+      operatingExpenseIsShopWide: filteredByChannel,
     });
   } catch (err) {
     next(err);

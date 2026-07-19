@@ -22,6 +22,7 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { ShopFilter } from "@/components/shop-filter";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
@@ -50,11 +51,12 @@ export default function FinanceAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
+  const [channelId, setChannelId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchFinanceAnalytics(range));
+      setData(await fetchFinanceAnalytics(range, channelId));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -68,7 +70,7 @@ export default function FinanceAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [router, range]);
+  }, [router, range, channelId]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -100,6 +102,7 @@ export default function FinanceAnalyticsPage() {
             {data ? formatNumber(data.deliveredOrderCount) : "—"}).
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            <ShopFilter value={channelId} onChange={setChannelId} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
