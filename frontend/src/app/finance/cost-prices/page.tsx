@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Download,
   PackageSearch,
-  RefreshCw,
   Search,
   SearchX,
   X,
@@ -21,6 +20,7 @@ import {
   type ProductGroup,
 } from "@/components/finance/cost-price-table";
 import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
+import { SyncProductsButton } from "@/components/products/sync-products-button";
 import { Refreshing } from "@/components/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,7 +31,6 @@ import {
   fetchSkuProducts,
   getStoredUser,
   getToken,
-  syncProductsFromChannels,
   updateSkuCostPrice,
   type SkuChannelFilter,
   type SkuProduct,
@@ -73,7 +72,6 @@ export default function CostPricesPage() {
   // skuId đang lưu / vừa lưu xong (để hiện spinner & dấu tick)
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
 
   // ----- Bộ lọc nâng cao -----
   const [search, setSearch] = useState("");
@@ -168,29 +166,6 @@ export default function CostPricesPage() {
     }
     load();
   }, [load, router]);
-
-  // Chủ động quét sản phẩm mới từ các sàn về hệ thống
-  async function handleSync() {
-    setSyncing(true);
-    toast.info(
-      "Đang tiến hành đồng bộ sản phẩm từ các sàn, vui lòng đợi trong giây lát...",
-      { duration: 4000 }
-    );
-    try {
-      const res = await syncProductsFromChannels();
-      await load(); // tải lại danh sách mới nhất
-      toast.success(
-        `Đồng bộ sản phẩm thành công! Thêm mới ${res.created} SKU, cập nhật ${res.updated} SKU.`,
-        { duration: 6000 }
-      );
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Không đồng bộ được sản phẩm"
-      );
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   // Tự động lưu khi người dùng nhập xong và click ra ngoài ô input
   async function handleBlur(item: SkuProduct) {
@@ -294,14 +269,9 @@ export default function CostPricesPage() {
 
             <ImportCostDialog onImported={load} />
 
-            <Button
-              onClick={handleSync}
-              disabled={syncing}
-              className="bg-teal-600 text-white hover:bg-teal-700"
-            >
-              <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-              {syncing ? "Đang đồng bộ…" : "Đồng bộ từ sàn"}
-            </Button>
+            {/* Giữ nút ở đây để đang duyệt tài chính mà thiếu SKU thì đồng
+                bộ tại chỗ. Dùng chung component với trang Sản phẩm. */}
+            <SyncProductsButton onSynced={load} />
           </div>
         </div>
 
