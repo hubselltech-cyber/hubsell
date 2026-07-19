@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { InventoryLogType, Prisma } from "@prisma/client";
+import { Carrier, InventoryLogType, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
@@ -8,6 +8,11 @@ const router = Router();
 
 const VALID_STATUSES = ["PENDING", "SHIPPING", "DELIVERED", "CANCELLED"] as const;
 type ShippingStatus = (typeof VALID_STATUSES)[number];
+
+/** Giá trị query có phải một hãng vận chuyển hợp lệ không (chặn lọc bừa). */
+function isCarrier(value: string): value is Carrier {
+  return (Object.values(Carrier) as string[]).includes(value);
+}
 
 // GET /api/orders?page=1&pageSize=20&shippingStatus=PENDING&channelId=...
 // Danh sách đơn hàng gom về từ TẤT CẢ các kênh, có bộ lọc + phân trang.
@@ -19,6 +24,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       typeof req.query.shippingStatus === "string" ? req.query.shippingStatus : "";
     const channelId =
       typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const carrier =
+      typeof req.query.carrier === "string" ? req.query.carrier : "";
+    const search =
+      typeof req.query.search === "string" ? req.query.search.trim() : "";
 
     // Phân quyền multi-store: nhân viên bị giới hạn kênh thì chỉ thấy đơn của kênh được gán.
     // Nếu lọc theo 1 kênh cụ thể mà kênh đó không nằm trong phạm vi → không trả gì.
@@ -35,20 +44,67 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const where: Prisma.OrderWhereInput = {
       channel: channelWhere,
       ...(shippingStatus ? { shippingStatus } : {}),
+      ...(isCarrier(carrier) ? { carrier } : {}),
+      // Ô tìm kiếm đa năng: gõ gì cũng ra — mã đơn, tên khách, số điện thoại
+      // hoặc mã vận đơn. Bỏ dấu cách và gạch trong SĐT để "0901 234 567" vẫn
+      // khớp với "0901234567" đang lưu.
+      ...(search
+        ? {
+            OR: [
+              { orderCode: { contains: search, mode: "insensitive" as const } },
+              { customerName: { contains: search, mode: "insensitive" as const } },
+              { customerPhone: { contains: search.replace(/[\s.-]/g, "") } },
+              { trackingCode: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
     };
 
-    const [total, items] = await Promise.all([
+    const [total, items, statusCounts] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { channel: { select: { channelName: true } } },
+        include: {
+          channel: { select: { channelName: true } },
+          // Kèm dòng hàng để bảng hiện được tên + SKU + số lượng sản phẩm
+          items: {
+            select: {
+              id: true,
+              productName: true,
+              channelSku: true,
+              quantity: true,
+              price: true,
+            },
+          },
+        },
+      }),
+      // Đếm số đơn theo từng trạng thái để hiện badge trên tab.
+      // Cố ý BỎ shippingStatus khỏi điều kiện đếm — nếu không thì tab đang mở
+      // sẽ là tab duy nhất có số, các tab khác luôn bằng 0.
+      prisma.order.groupBy({
+        by: ["shippingStatus"],
+        _count: { _all: true },
+        where: { ...where, shippingStatus: undefined },
       }),
     ]);
 
-    res.json({ items, total, page, pageSize, pageCount: Math.ceil(total / pageSize) });
+    const counts: Record<string, number> = { ALL: 0 };
+    for (const g of statusCounts) {
+      counts[g.shippingStatus] = g._count._all;
+      counts.ALL += g._count._all;
+    }
+
+    res.json({
+      items,
+      total,
+      page,
+      pageSize,
+      pageCount: Math.ceil(total / pageSize),
+      counts,
+    });
   } catch (err) {
     next(err);
   }
@@ -173,6 +229,134 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
     });
 
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/bulk/confirm — "Xác nhận chuẩn bị hàng" cho nhiều đơn.
+ * Body: { orderIds: string[] }
+ *
+ * Ở bản có tích hợp thật, đây là chỗ gọi API sàn để báo "đã đóng gói xong,
+ * mời shipper tới lấy". Hubsell hiện dùng sàn giả lập nên bước này chỉ ghi mốc
+ * `packedAt` và đẩy đơn từ Chờ xử lý → Đang giao. Khi nối API thật, thêm lời
+ * gọi ra sàn ngay trước transaction; phần còn lại giữ nguyên.
+ *
+ * Bỏ qua có chọn lọc thay vì fail cả mẻ: chọn 50 đơn mà 1 đơn đã hủy thì báo
+ * riêng đơn đó, 49 đơn còn lại vẫn phải chạy — bắt làm lại từ đầu là hành
+ * người dùng.
+ */
+router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
+  try {
+    const { orderIds } = req.body ?? {};
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
+      return;
+    }
+    if (!orderIds.every((id) => typeof id === "string" && id)) {
+      res.status(400).json({ error: "orderIds phải là mảng chuỗi" });
+      return;
+    }
+    if (orderIds.length > 200) {
+      res.status(400).json({ error: "Tối đa 200 đơn mỗi lần xử lý" });
+      return;
+    }
+
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: orderIds },
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      select: { id: true, orderCode: true, shippingStatus: true },
+    });
+
+    const found = new Set(orders.map((o) => o.id));
+    const skipped: { orderCode: string; reason: string }[] = [];
+    const ready: string[] = [];
+
+    for (const o of orders) {
+      if (o.shippingStatus === "PENDING") ready.push(o.id);
+      else if (o.shippingStatus === "CANCELLED")
+        skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
+      else
+        skipped.push({
+          orderCode: o.orderCode,
+          reason: "Đơn đã rời trạng thái Chờ xử lý",
+        });
+    }
+    // Id không tra ra đơn nào = không thuộc shop hoặc ngoài phạm vi kênh
+    const missing = orderIds.filter((id: string) => !found.has(id));
+    for (const id of missing) {
+      skipped.push({ orderCode: id, reason: "Không tìm thấy hoặc ngoài quyền" });
+    }
+
+    if (ready.length === 0) {
+      res.status(409).json({
+        error: "Không có đơn nào ở trạng thái Chờ xử lý để xác nhận",
+        confirmed: 0,
+        skipped,
+      });
+      return;
+    }
+
+    await prisma.order.updateMany({
+      where: { id: { in: ready } },
+      data: { shippingStatus: "SHIPPING", packedAt: new Date() },
+    });
+
+    res.json({ confirmed: ready.length, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/bulk/labels — lấy dữ liệu in phiếu giao hàng cho nhiều đơn.
+ * Body: { orderIds: string[] }
+ *
+ * ⚠️ Đây là phiếu giao hàng do HUBSELL tự dựng từ dữ liệu đơn, KHÔNG phải file
+ * vận đơn PDF chính thức của sàn. Muốn lấy phiếu chính chủ của Shopee/TikTok
+ * thì phải có tích hợp API thật với quyền in vận đơn — chưa làm được ở bản này.
+ */
+router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
+  try {
+    const { orderIds } = req.body ?? {};
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
+      return;
+    }
+    if (orderIds.length > 200) {
+      res.status(400).json({ error: "Tối đa 200 phiếu mỗi lần in" });
+      return;
+    }
+
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: orderIds },
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        channel: { select: { channelName: true } },
+        items: {
+          select: { productName: true, channelSku: true, quantity: true },
+        },
+      },
+    });
+
+    if (orders.length === 0) {
+      res.status(404).json({ error: "Không tìm thấy đơn hàng nào" });
+      return;
+    }
+
+    res.json({ labels: orders });
   } catch (err) {
     next(err);
   }

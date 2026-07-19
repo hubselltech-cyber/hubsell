@@ -2,6 +2,11 @@ import { Router } from "express";
 import { InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
 import { findMarketplaceProduct, PLATFORM_FEE_RATE } from "../mockMarketplace";
+import {
+  randomCarrierFor,
+  randomPhone,
+  randomTrackingCode,
+} from "../shipping";
 
 const router = Router();
 
@@ -29,8 +34,14 @@ interface MockOrderItem {
 //    sản phẩm gốc (khoá dòng), ghi InventoryLog loại SYNC.
 router.post("/mock-order", async (req, res, next) => {
   try {
-    const { channelId, webhookToken, customerName, orderCode, items } =
-      req.body ?? {};
+    const {
+      channelId,
+      webhookToken,
+      customerName,
+      customerPhone,
+      orderCode,
+      items,
+    } = req.body ?? {};
 
     if (typeof channelId !== "string" || typeof webhookToken !== "string") {
       res.status(400).json({ error: "Thiếu channelId hoặc webhookToken" });
@@ -108,10 +119,18 @@ router.post("/mock-order", async (req, res, next) => {
             typeof customerName === "string" && customerName.trim()
               ? customerName.trim()
               : "Khách từ sàn",
+          customerPhone:
+            typeof customerPhone === "string" && customerPhone.trim()
+              ? customerPhone.trim()
+              : randomPhone(),
           totalAmount,
           platformFee,
           paymentStatus: "PAID", // đơn sàn giả lập coi như đã thanh toán
           shippingStatus: "PENDING",
+          // Sàn thật gán hãng vận chuyển khi đơn được xác nhận; bản giả lập
+          // bốc ngẫu nhiên trong nhóm hãng mà sàn đó hay dùng.
+          carrier: randomCarrierFor(channel.channelName),
+          trackingCode: randomTrackingCode(),
         },
       });
 

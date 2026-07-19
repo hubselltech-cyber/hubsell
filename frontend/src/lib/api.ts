@@ -136,20 +136,46 @@ export interface InventoryLog {
   createdAt: string;
 }
 
+/** Đơn vị vận chuyển — khớp enum Carrier ở backend */
+export type Carrier =
+  | "SPX"
+  | "GHTK"
+  | "GHN"
+  | "JT"
+  | "VIETTEL_POST"
+  | "NINJA_VAN"
+  | "BEST"
+  | "KHAC";
+
+export interface OrderItemLine {
+  id: string;
+  productName: string;
+  channelSku: string;
+  quantity: number;
+  price: string | number;
+}
+
 export interface Order {
   id: string;
   channelId: string;
   orderCode: string;
   customerName: string;
+  customerPhone: string | null;
   totalAmount: string | number;
   paymentStatus: string;
   shippingStatus: string;
+  carrier: Carrier | null;
+  trackingCode: string | null;
+  packedAt: string | null;
   createdAt: string;
   channel: { channelName: ChannelName };
+  items?: OrderItemLine[];
 }
 
 export interface OrderListResponse {
   items: Order[];
+  /** Số đơn theo từng trạng thái, để hiện badge trên tab */
+  counts: Record<string, number>;
   total: number;
   page: number;
   pageSize: number;
@@ -397,13 +423,36 @@ export function fetchOrders(params: {
   pageSize?: number;
   shippingStatus?: string;
   channelId?: string;
+  carrier?: string;
+  search?: string;
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.shippingStatus) qs.set("shippingStatus", params.shippingStatus);
   if (params.channelId) qs.set("channelId", params.channelId);
+  if (params.carrier) qs.set("carrier", params.carrier);
+  if (params.search?.trim()) qs.set("search", params.search.trim());
   return apiFetch<OrderListResponse>(`/api/orders?${qs.toString()}`);
+}
+
+/** Xác nhận chuẩn bị hàng cho nhiều đơn cùng lúc (Chờ xử lý → Đang giao). */
+export function bulkConfirmOrders(orderIds: string[]) {
+  return apiFetch<{
+    confirmed: number;
+    skipped: { orderCode: string; reason: string }[];
+  }>("/api/orders/bulk/confirm", {
+    method: "POST",
+    body: JSON.stringify({ orderIds }),
+  });
+}
+
+/** Lấy dữ liệu dựng phiếu giao hàng cho nhiều đơn để in một lượt. */
+export function fetchOrderLabels(orderIds: string[]) {
+  return apiFetch<{ labels: Order[] }>("/api/orders/bulk/labels", {
+    method: "POST",
+    body: JSON.stringify({ orderIds }),
+  });
 }
 
 export function updateOrderStatus(id: string, shippingStatus: string) {

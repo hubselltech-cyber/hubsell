@@ -19,6 +19,19 @@ enum ChannelName {
   OFFLINE
 }
 
+/// Đơn vị vận chuyển. Mỗi sàn thường dùng vài hãng, shop cần lọc theo hãng để
+/// gom đơn giao cho đúng shipper khi họ đến lấy hàng.
+enum Carrier {
+  SPX // Shopee Express
+  GHTK // Giao Hàng Tiết Kiệm
+  GHN // Giao Hàng Nhanh
+  JT // J&T Express
+  VIETTEL_POST
+  NINJA_VAN
+  BEST // BEST Express
+  KHAC // hãng khác / shop tự giao
+}
+
 enum InventoryLogType {
   IMPORT // Nhập kho
   EXPORT // Xuất kho
@@ -131,7 +144,19 @@ model Order {
   channelId      String
   orderCode      String
   customerName   String
+  // Số điện thoại khách — dùng để tra cứu nhanh khi khách gọi hỏi đơn.
+  // Cho phép trống vì đơn cũ đồng bộ về trước đây không có trường này.
+  customerPhone  String?
   totalAmount    Decimal  @default(0) @db.Decimal(12, 2)
+
+  // ===== VẬN CHUYỂN =====
+  // Đơn vị vận chuyển (SPX, GHTK, J&T…) và mã vận đơn để in phiếu giao hàng.
+  // Trống = sàn chưa gán đơn vị vận chuyển cho đơn này.
+  carrier      Carrier?
+  trackingCode String?
+  // Đã bấm "Xác nhận chuẩn bị hàng" chưa — mốc giữa lúc đơn về và lúc bàn giao
+  // cho shipper, để chủ shop biết đơn nào đã đóng gói xong mà chưa ai đến lấy.
+  packedAt DateTime?
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus String   @default("PENDING") // ví dụ: PENDING, SHIPPING, DELIVERED
   createdAt      DateTime @default(now())

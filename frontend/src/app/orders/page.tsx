@@ -11,9 +11,13 @@ import {
   Loader2,
   PackageOpen,
   Pencil,
+  Search,
+  X,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { BulkActionBar } from "@/components/orders/bulk-action-bar";
+import { Refreshing } from "@/components/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
@@ -44,8 +49,11 @@ import {
   type Order,
 } from "@/lib/api";
 import { exportAllOrders } from "@/lib/excel";
+import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { TEXT_SUB } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
 
@@ -204,19 +212,57 @@ function UpdateStatusDialog({
 
 // ---------- Trang chính ----------
 
+/** Các tab theo vòng đời đơn hàng TMĐT. `status` rỗng = tab Tất cả. */
+const TABS: { key: string; label: string; status: string; countKey: string }[] = [
+  { key: "all", label: "Tất cả", status: "", countKey: "ALL" },
+  { key: "pending", label: "Chờ xử lý", status: "PENDING", countKey: "PENDING" },
+  { key: "shipping", label: "Đang giao", status: "SHIPPING", countKey: "SHIPPING" },
+  {
+    key: "delivered",
+    label: "Đã giao thành công",
+    status: "DELIVERED",
+    countKey: "DELIVERED",
+  },
+  {
+    key: "cancelled",
+    label: "Đơn hủy / Hoàn trả",
+    status: "CANCELLED",
+    countKey: "CANCELLED",
+  },
+];
+
 export default function OrdersPage() {
   const router = useRouter();
 
   const [items, setItems] = useState<Order[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [tab, setTab] = useState("all");
   const [channelFilter, setChannelFilter] = useState("");
+  const [carrierFilter, setCarrierFilter] = useState("");
+  const [search, setSearch] = useState("");
+  // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
+  // không bắn một request lên máy chủ.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
+  // Id các đơn đang tích chọn. Dùng Set để tích/bỏ tích không phải quét mảng.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const statusFilter = TABS.find((t) => t.key === tab)?.status ?? "";
+
+  // Chờ 350ms sau phím cuối mới gọi API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -226,8 +272,11 @@ export default function OrdersPage() {
         pageSize: PAGE_SIZE,
         shippingStatus: statusFilter || undefined,
         channelId: channelFilter || undefined,
+        carrier: carrierFilter || undefined,
+        search: debouncedSearch || undefined,
       });
       setItems(res.items);
+      setCounts(res.counts ?? {});
       setTotal(res.total);
       setPageCount(res.pageCount);
     } catch (err) {
@@ -240,7 +289,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, channelFilter, router]);
+  }, [page, statusFilter, channelFilter, carrierFilter, debouncedSearch, router]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -255,6 +304,42 @@ export default function OrdersPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Chỉ coi là "đang chọn" những đơn CÒN NHÌN THẤY trên bảng. Nhờ vậy đổi tab
+  // hay đổi bộ lọc là các lựa chọn cũ tự rơi ra, không thể lỡ tay bấm "xác nhận
+  // hàng loạt" lên đơn không còn hiện — mà không cần effect xoá thủ công.
+  const selectedOrders = items.filter((o) => selectedIds.has(o.id));
+  const allOnPageSelected =
+    items.length > 0 && items.every((o) => selectedIds.has(o.id));
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllOnPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) items.forEach((o) => next.delete(o.id));
+      else items.forEach((o) => next.add(o.id));
+      return next;
+    });
+  }
+
+  function resetFilters() {
+    setTab("all");
+    setChannelFilter("");
+    setCarrierFilter("");
+    setSearch("");
+    setPage(1);
+  }
+
+  const isFiltering =
+    Boolean(channelFilter) || Boolean(carrierFilter) || Boolean(search.trim());
 
   async function handleExport() {
     setExporting(true);
@@ -277,10 +362,12 @@ export default function OrdersPage() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      {/* Chừa chỗ dưới đáy để thanh xử lý hàng loạt không che mất dòng cuối bảng */}
+      <div className="space-y-5 pb-28">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Toàn bộ đơn hàng gom về từ tất cả các kênh ({formatNumber(total)} đơn).
+            Gom đơn từ tất cả các sàn về một chỗ để lọc, duyệt và in phiếu hàng
+            loạt.
           </p>
           <Button variant="outline" onClick={handleExport} disabled={exporting}>
             {exporting ? (
@@ -292,118 +379,264 @@ export default function OrdersPage() {
           </Button>
         </div>
 
-        {/* Bộ lọc */}
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="grid w-44 gap-1.5">
-            <Label htmlFor="filter-status" className="text-xs text-muted-foreground">
-              Trạng thái vận chuyển
-            </Label>
-            <NativeSelect
-              id="filter-status"
-              value={statusFilter}
-              onChange={(e) => {
-                setPage(1);
-                setStatusFilter(e.target.value);
-              }}
-            >
-              <option value="">Tất cả trạng thái</option>
-              <option value="PENDING">Chờ xử lý</option>
-              <option value="SHIPPING">Đang giao</option>
-              <option value="DELIVERED">Đã giao</option>
-              <option value="CANCELLED">Đã hủy</option>
-            </NativeSelect>
+        {/* ===== TAB THEO VÒNG ĐỜI ĐƠN ===== */}
+        <div
+          role="tablist"
+          aria-label="Lọc theo trạng thái đơn hàng"
+          className="flex flex-wrap gap-1 border-b"
+        >
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            const count = counts[t.countKey];
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  setTab(t.key);
+                  setPage(1);
+                }}
+                className={cn(
+                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                )}
+              >
+                {t.label}
+                {count !== undefined && count > 0 && (
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+                      active
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {formatNumber(count)}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ===== TÌM KIẾM + BỘ LỌC ===== */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-72 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9 pr-9"
+              placeholder="Tìm mã đơn, tên khách, số điện thoại hoặc mã vận đơn…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Xoá từ khoá"
+                className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            )}
           </div>
-          <div className="grid w-44 gap-1.5">
-            <Label htmlFor="filter-channel" className="text-xs text-muted-foreground">
-              Kênh bán hàng
-            </Label>
-            <NativeSelect
-              id="filter-channel"
-              value={channelFilter}
-              onChange={(e) => {
-                setPage(1);
-                setChannelFilter(e.target.value);
-              }}
-            >
-              <option value="">Tất cả kênh</option>
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {CHANNEL_META[c.channelName].label}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
+
+          <NativeSelect
+            className="w-44"
+            aria-label="Lọc theo sàn thương mại"
+            value={channelFilter}
+            onChange={(e) => {
+              setPage(1);
+              setChannelFilter(e.target.value);
+            }}
+          >
+            <option value="">Tất cả sàn</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {CHANNEL_META[c.channelName].label}
+              </option>
+            ))}
+          </NativeSelect>
+
+          <NativeSelect
+            className="w-52"
+            aria-label="Lọc theo đơn vị vận chuyển"
+            value={carrierFilter}
+            onChange={(e) => {
+              setPage(1);
+              setCarrierFilter(e.target.value);
+            }}
+          >
+            <option value="">Tất cả đơn vị vận chuyển</option>
+            {CARRIER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </NativeSelect>
+
+          {isFiltering && (
+            <Button variant="ghost" size="sm" onClick={resetFilters}>
+              <X className="size-4" />
+              Xoá bộ lọc
+            </Button>
+          )}
+
+          <p className="text-sm text-muted-foreground">
+            {formatNumber(total)} đơn
+          </p>
         </div>
 
         <Card>
           <CardContent className="p-0">
-            {loading ? (
+            {/* Lần đầu mới hiện chữ "đang tải"; đổi tab/lọc thì giữ bảng và làm mờ */}
+            {loading && items.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
                 Đang tải dữ liệu…
               </p>
             ) : items.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
+              <div className="py-12 text-center text-sm text-muted-foreground">
                 <PackageOpen className="mx-auto mb-2 size-8" />
-                Không có đơn hàng nào khớp bộ lọc.
+                {isFiltering
+                  ? "Không có đơn hàng nào khớp bộ lọc."
+                  : "Chưa có đơn hàng nào ở trạng thái này."}
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Mã đơn</TableHead>
-                    <TableHead>Khách hàng</TableHead>
-                    <TableHead>Kênh</TableHead>
-                    <TableHead>Thanh toán</TableHead>
-                    <TableHead>Vận chuyển</TableHead>
-                    <TableHead className="text-right">Tổng tiền</TableHead>
-                    <TableHead className="text-right">Thời gian</TableHead>
-                    <TableHead className="text-center">Thao tác</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((o) => (
-                    <TableRow key={o.id}>
-                      <TableCell className="font-medium">{o.orderCode}</TableCell>
-                      <TableCell>{o.customerName}</TableCell>
-                      <TableCell>
-                        <MetaBadge
-                          meta={CHANNEL_META[o.channel.channelName]}
-                          fallback={o.channel.channelName}
+              <Refreshing active={loading}>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <input
+                          type="checkbox"
+                          aria-label="Chọn tất cả đơn trên trang này"
+                          checked={allOnPageSelected}
+                          onChange={toggleAllOnPage}
+                          className="size-4 cursor-pointer accent-primary"
                         />
-                      </TableCell>
-                      <TableCell>
-                        <MetaBadge
-                          meta={PAYMENT_META[o.paymentStatus]}
-                          fallback={o.paymentStatus}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <MetaBadge
-                          meta={STATUS_META[o.shippingStatus]}
-                          fallback={o.shippingStatus}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatVND(o.totalAmount)}
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatDateTime(o.createdAt)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={o.shippingStatus === "CANCELLED"}
-                          onClick={() => setEditing(o)}
-                        >
-                          <Pencil className="size-3.5" />
-                          Cập nhật trạng thái
-                        </Button>
-                      </TableCell>
+                      </TableHead>
+                      <TableHead>Mã đơn</TableHead>
+                      <TableHead>Khách hàng</TableHead>
+                      <TableHead>Sản phẩm</TableHead>
+                      <TableHead>Vận chuyển</TableHead>
+                      <TableHead className="text-right">Tổng tiền</TableHead>
+                      <TableHead>Trạng thái</TableHead>
+                      <TableHead className="text-center">Thao tác</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((o) => {
+                      const checked = selectedIds.has(o.id);
+                      const lines = o.items ?? [];
+                      return (
+                        <TableRow
+                          key={o.id}
+                          className={cn(checked && "bg-primary/5")}
+                        >
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              aria-label={`Chọn đơn ${o.orderCode}`}
+                              checked={checked}
+                              onChange={() => toggleOne(o.id)}
+                              className="size-4 cursor-pointer accent-primary"
+                            />
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <MetaBadge
+                                meta={CHANNEL_META[o.channel.channelName]}
+                                fallback={o.channel.channelName}
+                              />
+                              <span className="font-medium">{o.orderCode}</span>
+                            </div>
+                            <p className={cn(TEXT_SUB, "mt-1")}>
+                              {formatDateTime(o.createdAt)}
+                            </p>
+                          </TableCell>
+
+                          <TableCell>
+                            <p className="font-medium">{o.customerName}</p>
+                            <p className={cn(TEXT_SUB, "font-mono")}>
+                              {o.customerPhone ?? "—"}
+                            </p>
+                          </TableCell>
+
+                          {/* Đơn nhiều dòng hàng: hiện 2 dòng đầu rồi gộp phần
+                              còn lại, tránh một đơn chiếm nửa màn hình */}
+                          <TableCell className="max-w-72 whitespace-normal">
+                            {lines.length === 0 ? (
+                              <span className={TEXT_SUB}>—</span>
+                            ) : (
+                              <>
+                                {lines.slice(0, 2).map((l) => (
+                                  <p key={l.id} className="truncate">
+                                    {l.productName}
+                                    <span className="font-medium">
+                                      {" "}
+                                      ×{l.quantity}
+                                    </span>
+                                    <span
+                                      className={cn(TEXT_SUB, "block font-mono")}
+                                    >
+                                      {l.channelSku}
+                                    </span>
+                                  </p>
+                                ))}
+                                {lines.length > 2 && (
+                                  <p className={TEXT_SUB}>
+                                    + {lines.length - 2} sản phẩm khác
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </TableCell>
+
+                          <TableCell>
+                            <p className="font-medium">
+                              {carrierShort(o.carrier)}
+                            </p>
+                            <p className={cn(TEXT_SUB, "font-mono")}>
+                              {o.trackingCode ?? "—"}
+                            </p>
+                          </TableCell>
+
+                          <TableCell className="text-right font-medium">
+                            {formatVND(o.totalAmount)}
+                            <span className={cn(TEXT_SUB, "block")}>
+                              {PAYMENT_META[o.paymentStatus]?.label ??
+                                o.paymentStatus}
+                            </span>
+                          </TableCell>
+
+                          <TableCell>
+                            <MetaBadge
+                              meta={STATUS_META[o.shippingStatus]}
+                              fallback={o.shippingStatus}
+                            />
+                          </TableCell>
+
+                          <TableCell className="text-center">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={o.shippingStatus === "CANCELLED"}
+                              onClick={() => setEditing(o)}
+                            >
+                              <Pencil className="size-3.5" />
+                              Cập nhật
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </Refreshing>
             )}
           </CardContent>
         </Card>
@@ -438,9 +671,15 @@ export default function OrdersPage() {
         )}
 
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell · Giai đoạn 4 — Quản lý đơn hàng tập trung
+          Hubsell · Trung tâm Xử lý Đơn hàng Tập trung
         </p>
       </div>
+
+      <BulkActionBar
+        selected={selectedOrders}
+        onClear={() => setSelectedIds(new Set())}
+        onDone={load}
+      />
 
       {editing && (
         <UpdateStatusDialog
