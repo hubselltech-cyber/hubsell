@@ -179,6 +179,8 @@ export interface Order {
   packedAt: string | null;
   /** Mốc đã in phiếu giao hàng — null nghĩa là chưa in lần nào */
   labelPrintedAt: string | null;
+  /** Số dòng hàng của đơn (0 với đơn cũ chưa ghi chi tiết) */
+  itemCount: number;
   createdAt: string;
   channel: { channelName: ChannelName };
   items?: OrderItemLine[];
@@ -439,6 +441,8 @@ export function fetchOrders(params: {
   search?: string;
   /** Bộ lọc con của tab "Đã xử lý": "yes" đã in phiếu, "no" chưa in */
   printed?: "yes" | "no";
+  /** Loại đơn theo độ khó đóng gói: 1 dòng hàng hay nhiều dòng */
+  orderType?: "single" | "multi";
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -448,6 +452,7 @@ export function fetchOrders(params: {
   if (params.carrier) qs.set("carrier", params.carrier);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.printed) qs.set("printed", params.printed);
+  if (params.orderType) qs.set("orderType", params.orderType);
   return apiFetch<OrderListResponse>(`/api/orders?${qs.toString()}`);
 }
 
@@ -474,7 +479,19 @@ export function bulkHandoverOrders(orderIds: string[]) {
 
 /** Lấy dữ liệu dựng phiếu giao hàng cho nhiều đơn để in một lượt. */
 export function fetchOrderLabels(orderIds: string[]) {
-  return apiFetch<{ labels: Order[]; markedPrinted: number }>("/api/orders/bulk/labels", {
+  return apiFetch<{ labels: Order[] }>("/api/orders/bulk/labels", {
+    method: "POST",
+    body: JSON.stringify({ orderIds }),
+  });
+}
+
+/**
+ * Đánh dấu đã in phiếu. Gọi SAU khi cửa sổ in mở thành công — nếu đánh dấu
+ * ngay lúc lấy dữ liệu, trình duyệt chặn pop-up là đơn bị ghi "đã in" trong
+ * khi chưa có tờ phiếu nào ra giấy.
+ */
+export function markOrdersPrinted(orderIds: string[]) {
+  return apiFetch<{ markedPrinted: number }>("/api/orders/bulk/mark-printed", {
     method: "POST",
     body: JSON.stringify({ orderIds }),
   });

@@ -131,6 +131,10 @@ router.post("/mock-order", async (req, res, next) => {
           // bốc ngẫu nhiên trong nhóm hãng mà sàn đó hay dùng.
           carrier: randomCarrierFor(channel.channelName),
           trackingCode: randomTrackingCode(),
+          // Số dòng hàng, lưu sẵn để kho lọc đơn dễ đóng / khó đóng.
+          // Vòng lặp bên dưới tạo đúng một OrderItem cho mỗi phần tử của items,
+          // nên con số này luôn khớp với số bản ghi con thực tế.
+          itemCount: (items as MockOrderItem[]).length,
         },
       });
 

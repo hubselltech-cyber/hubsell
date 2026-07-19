@@ -10,6 +10,7 @@ import {
   bulkConfirmOrders,
   bulkHandoverOrders,
   fetchOrderLabels,
+  markOrdersPrinted,
   type Order,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
@@ -77,24 +78,35 @@ export function BulkActionBar({
 
   async function handlePrint() {
     setBusy("print");
+    const ids = selected.map((o) => o.id);
     try {
+      // Bước 1 — LẤY dữ liệu (chỉ đọc, chưa đánh dấu gì).
       // Lấy lại từ máy chủ thay vì dùng dữ liệu đang có trên bảng: đảm bảo phiếu
       // in ra là số liệu mới nhất và có đủ chi tiết dòng hàng.
-      const res = await fetchOrderLabels(selected.map((o) => o.id));
+      const res = await fetchOrderLabels(ids);
+
+      // Bước 2 — MỞ cửa sổ in.
       const opened = printOrderLabels(res.labels);
       if (!opened) {
         toast.error(
           "Trình duyệt đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi bấm lại."
         );
-        return;
+        return; // chưa in được thì KHÔNG đánh dấu, đơn vẫn nằm ở nhóm "Chưa in"
       }
+
+      // Bước 3 — chỉ khi in thành công mới đánh dấu ĐÃ IN.
+      // Thứ tự này là chủ đích: đánh dấu sớm hơn thì lúc pop-up bị chặn, đơn
+      // rơi khỏi nhóm "Chưa in" mà chẳng có tờ phiếu nào — kho sẽ bỏ sót đúng
+      // những đơn đó.
+      const marked = await markOrdersPrinted(ids);
       toast.success(
         `Đã mở ${formatNumber(res.labels.length)} phiếu để in` +
-          (res.markedPrinted > 0
-            ? ` · đánh dấu ĐÃ IN cho ${res.markedPrinted} đơn`
+          (marked.markedPrinted > 0
+            ? ` · đánh dấu ĐÃ IN cho ${marked.markedPrinted} đơn`
             : ""),
         { duration: 6000 }
       );
+      onClear();
       onDone(); // tải lại để nhãn "Đã in" hiện ngay
     } catch (err) {
       toast.error(

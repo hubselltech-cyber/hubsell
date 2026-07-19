@@ -265,6 +265,8 @@ export default function OrdersPage() {
   const [printedFilter, setPrintedFilter] = useState<"" | "no" | "yes">("");
   const [channelFilter, setChannelFilter] = useState("");
   const [carrierFilter, setCarrierFilter] = useState("");
+  // Lọc theo độ khó đóng gói: kho ưu tiên gói đơn 1 sản phẩm trước cho nhanh
+  const [orderTypeFilter, setOrderTypeFilter] = useState<"" | "single" | "multi">("");
   const [search, setSearch] = useState("");
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
@@ -299,6 +301,7 @@ export default function OrdersPage() {
         // Chỉ gửi bộ lọc in khi đang ở tab Đã xử lý — các tab khác không có
         // khái niệm "chưa in / đã in"
         printed: tab === "processed" && printedFilter ? printedFilter : undefined,
+        orderType: orderTypeFilter || undefined,
       });
       setItems(res.items);
       setCounts(res.counts ?? {});
@@ -320,6 +323,7 @@ export default function OrdersPage() {
     statusFilter,
     channelFilter,
     carrierFilter,
+    orderTypeFilter,
     debouncedSearch,
     tab,
     printedFilter,
@@ -370,12 +374,16 @@ export default function OrdersPage() {
     setPrintedFilter("");
     setChannelFilter("");
     setCarrierFilter("");
+    setOrderTypeFilter("");
     setSearch("");
     setPage(1);
   }
 
   const isFiltering =
-    Boolean(channelFilter) || Boolean(carrierFilter) || Boolean(search.trim());
+    Boolean(channelFilter) ||
+    Boolean(carrierFilter) ||
+    Boolean(orderTypeFilter) ||
+    Boolean(search.trim());
 
   async function handleExport() {
     setExporting(true);
@@ -554,6 +562,20 @@ export default function OrdersPage() {
                 {o.label}
               </option>
             ))}
+          </NativeSelect>
+
+          <NativeSelect
+            className="w-48"
+            aria-label="Lọc theo loại đơn hàng"
+            value={orderTypeFilter}
+            onChange={(e) => {
+              setPage(1);
+              setOrderTypeFilter(e.target.value as "" | "single" | "multi");
+            }}
+          >
+            <option value="">Mọi loại đơn</option>
+            <option value="single">Đơn 1 sản phẩm</option>
+            <option value="multi">Đơn nhiều sản phẩm</option>
           </NativeSelect>
 
           {isFiltering && (

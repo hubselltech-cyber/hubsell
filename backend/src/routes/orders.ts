@@ -42,6 +42,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // Bộ lọc con của tab "Đã xử lý": "yes" = đã in phiếu, "no" = chưa in.
     // Giá trị khác thì bỏ qua, coi như không lọc.
     const printed = typeof req.query.printed === "string" ? req.query.printed : "";
+    // Loại đơn theo độ khó đóng gói: "single" = 1 dòng hàng (đóng nhanh),
+    // "multi" = từ 2 dòng trở lên (phải soát kỹ hơn).
+    const orderType =
+      typeof req.query.orderType === "string" ? req.query.orderType : "";
 
     // Phân quyền multi-store: nhân viên bị giới hạn kênh thì chỉ thấy đơn của kênh được gán.
     // Nếu lọc theo 1 kênh cụ thể mà kênh đó không nằm trong phạm vi → không trả gì.
@@ -63,6 +67,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ? { labelPrintedAt: { not: null } }
         : printed === "no"
           ? { labelPrintedAt: null }
+          : {}),
+      // Đơn cũ chưa ghi chi tiết dòng hàng có itemCount = 0, cố ý KHÔNG rơi vào
+      // nhóm nào — không biết đơn gồm mấy mặt hàng thì đừng đoán bừa cho kho.
+      ...(orderType === "single"
+        ? { itemCount: 1 }
+        : orderType === "multi"
+          ? { itemCount: { gt: 1 } }
           : {}),
       // Ô tìm kiếm đa năng: gõ gì cũng ra — mã đơn, tên khách, số điện thoại
       // hoặc mã vận đơn. Bỏ dấu cách và gạch trong SĐT để "0901 234 567" vẫn
@@ -476,18 +487,51 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    // Đánh dấu ĐÃ IN để người khác không in trùng. Chỉ ghi cho đơn chưa từng
-    // in — in lại lần hai vẫn được nhưng giữ nguyên mốc lần đầu, vì cái shop
-    // cần biết là "phiếu này đã ra giấy từ lúc nào", không phải lần in gần nhất.
-    const firstTime = orders.filter((o) => o.labelPrintedAt === null);
-    if (firstTime.length > 0) {
-      await prisma.order.updateMany({
-        where: { id: { in: firstTime.map((o) => o.id) } },
-        data: { labelPrintedAt: new Date() },
-      });
+    // CỐ Ý KHÔNG đánh dấu đã in ở đây. Endpoint này chỉ ĐỌC.
+    // Việc đánh dấu nằm ở /bulk/mark-printed, do frontend gọi SAU khi cửa sổ in
+    // đã mở thành công. Nếu đánh dấu ngay tại đây, trình duyệt chặn pop-up là
+    // đơn bị ghi "đã in" trong khi chẳng có tờ phiếu nào ra giấy — kho sẽ bỏ
+    // sót đúng những đơn đó vì chúng đã rơi khỏi nhóm "Chưa in".
+    res.json({ labels: orders });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/bulk/mark-printed — đánh dấu đã in phiếu.
+ * Body: { orderIds: string[] }
+ *
+ * Gọi SAU khi hộp thoại in đã mở thành công (xem chú thích ở /bulk/labels).
+ * Chỉ ghi cho đơn chưa từng in: in lại lần hai vẫn được nhưng GIỮ NGUYÊN mốc
+ * lần đầu, vì cái shop cần biết là "phiếu này đã ra giấy từ lúc nào", không
+ * phải lần in gần nhất.
+ */
+router.post("/bulk/mark-printed", async (req: AuthRequest, res, next) => {
+  try {
+    const { orderIds } = req.body ?? {};
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
+      return;
+    }
+    if (orderIds.length > 200) {
+      res.status(400).json({ error: "Tối đa 200 đơn mỗi lần" });
+      return;
     }
 
-    res.json({ labels: orders, markedPrinted: firstTime.length });
+    const result = await prisma.order.updateMany({
+      where: {
+        id: { in: orderIds },
+        labelPrintedAt: null, // chỉ đơn chưa từng in
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      data: { labelPrintedAt: new Date() },
+    });
+
+    res.json({ markedPrinted: result.count });
   } catch (err) {
     next(err);
   }

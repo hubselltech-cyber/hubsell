@@ -175,6 +175,13 @@ model Order {
   // cùng soát đơn thì người sau nhìn vào biết ngay phiếu đã được in, khỏi in
   // lại và gói lại đơn người khác đang làm.
   labelPrintedAt DateTime?
+
+  // Số DÒNG HÀNG của đơn (đếm OrderItem, không phải tổng số lượng).
+  // Lưu sẵn ở đây thay vì đếm quan hệ mỗi lần truy vấn, vì Prisma không lọc
+  // được theo số lượng bản ghi con — mà kho cần lọc "đơn 1 sản phẩm" (dễ đóng,
+  // làm trước) tách khỏi "đơn nhiều sản phẩm" (khó đóng, làm sau).
+  // An toàn để lưu trùng: đơn ở Hubsell không sửa được dòng hàng sau khi tạo.
+  itemCount Int @default(0)
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus ShippingStatus @default(PENDING)
   createdAt      DateTime @default(now())
