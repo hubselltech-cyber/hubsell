@@ -19,6 +19,20 @@ enum ChannelName {
   OFFLINE
 }
 
+/// Vòng đời đơn hàng TMĐT.
+///
+/// PROCESSED là mốc chống in trùng và đóng gói lặp: đơn đã được xác nhận và
+/// chuẩn bị xong nhưng CHƯA bàn giao cho shipper. Thiếu mốc này thì đơn vừa
+/// xác nhận đã nhảy thẳng sang "Đang giao", nhân viên khác nhìn vào tưởng hàng
+/// đã đi rồi, hoặc ngược lại vào in lại phiếu của đơn người kia đang gói.
+enum ShippingStatus {
+  PENDING // Chờ xử lý — đơn mới đồng bộ từ sàn về
+  PROCESSED // Đã xử lý — đã xác nhận, đang/đã đóng gói, chờ bàn giao
+  SHIPPING // Đang giao — đã bàn giao cho đơn vị vận chuyển
+  DELIVERED // Đã giao thành công
+  CANCELLED // Hủy / hoàn trả
+}
+
 /// Đơn vị vận chuyển. Mỗi sàn thường dùng vài hãng, shop cần lọc theo hãng để
 /// gom đơn giao cho đúng shipper khi họ đến lấy hàng.
 enum Carrier {
@@ -157,8 +171,12 @@ model Order {
   // Đã bấm "Xác nhận chuẩn bị hàng" chưa — mốc giữa lúc đơn về và lúc bàn giao
   // cho shipper, để chủ shop biết đơn nào đã đóng gói xong mà chưa ai đến lấy.
   packedAt DateTime?
+  // Đã in phiếu giao hàng chưa. Đây là chốt chặn IN TRÙNG: nhiều nhân viên
+  // cùng soát đơn thì người sau nhìn vào biết ngay phiếu đã được in, khỏi in
+  // lại và gói lại đơn người khác đang làm.
+  labelPrintedAt DateTime?
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
-  shippingStatus String   @default("PENDING") // ví dụ: PENDING, SHIPPING, DELIVERED
+  shippingStatus ShippingStatus @default(PENDING)
   createdAt      DateTime @default(now())
 
   // ===== PHÍ SÀN 2 GIAI ĐOẠN =====

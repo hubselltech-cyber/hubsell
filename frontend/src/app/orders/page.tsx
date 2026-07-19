@@ -11,6 +11,7 @@ import {
   Loader2,
   PackageOpen,
   Pencil,
+  Printer,
   Search,
   X,
 } from "lucide-react";
@@ -61,6 +62,10 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
   PENDING: { label: "Chờ xử lý", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
+  PROCESSED: {
+    label: "Đã xử lý",
+    className: "bg-violet-100 text-violet-700 border-violet-200",
+  },
   SHIPPING: { label: "Đang giao", className: "bg-sky-100 text-sky-700 border-sky-200" },
   DELIVERED: { label: "Đã giao", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   CANCELLED: { label: "Đã hủy", className: "bg-rose-100 text-rose-700 border-rose-200" },
@@ -106,7 +111,13 @@ function UpdateStatusDialog({
   const [submitting, setSubmitting] = useState(false);
 
   // Các trạng thái có thể chuyển tới (trừ trạng thái hiện tại)
-  const options = ["PENDING", "SHIPPING", "DELIVERED", "CANCELLED"].filter(
+  const options = [
+    "PENDING",
+    "PROCESSED",
+    "SHIPPING",
+    "DELIVERED",
+    "CANCELLED",
+  ].filter(
     (s) => s !== order.shippingStatus
   );
 
@@ -218,6 +229,12 @@ function UpdateStatusDialog({
 const TABS: { key: string; label: string; status: string; countKey: string }[] = [
   { key: "all", label: "Tất cả", status: "", countKey: "ALL" },
   { key: "pending", label: "Chờ xử lý", status: "PENDING", countKey: "PENDING" },
+  {
+    key: "processed",
+    label: "Đã xử lý",
+    status: "PROCESSED",
+    countKey: "PROCESSED",
+  },
   { key: "shipping", label: "Đang giao", status: "SHIPPING", countKey: "SHIPPING" },
   {
     key: "delivered",
@@ -244,6 +261,8 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("all");
+  // Bộ lọc con chỉ dùng trong tab "Đã xử lý": "" = tất cả, "no" = chưa in phiếu
+  const [printedFilter, setPrintedFilter] = useState<"" | "no" | "yes">("");
   const [channelFilter, setChannelFilter] = useState("");
   const [carrierFilter, setCarrierFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -277,6 +296,9 @@ export default function OrdersPage() {
         channelId: channelFilter || undefined,
         carrier: carrierFilter || undefined,
         search: debouncedSearch || undefined,
+        // Chỉ gửi bộ lọc in khi đang ở tab Đã xử lý — các tab khác không có
+        // khái niệm "chưa in / đã in"
+        printed: tab === "processed" && printedFilter ? printedFilter : undefined,
       });
       setItems(res.items);
       setCounts(res.counts ?? {});
@@ -292,7 +314,17 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, statusFilter, channelFilter, carrierFilter, debouncedSearch, router]);
+  }, [
+    page,
+    pageSize,
+    statusFilter,
+    channelFilter,
+    carrierFilter,
+    debouncedSearch,
+    tab,
+    printedFilter,
+    router,
+  ]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -335,6 +367,7 @@ export default function OrdersPage() {
 
   function resetFilters() {
     setTab("all");
+    setPrintedFilter("");
     setChannelFilter("");
     setCarrierFilter("");
     setSearch("");
@@ -398,6 +431,7 @@ export default function OrdersPage() {
                 aria-selected={active}
                 onClick={() => {
                   setTab(t.key);
+                  setPrintedFilter(""); // rời tab Đã xử lý thì bỏ lọc con
                   setPage(1);
                 }}
                 className={cn(
@@ -424,6 +458,46 @@ export default function OrdersPage() {
             );
           })}
         </div>
+
+        {/* ===== BỘ LỌC CON — chỉ có nghĩa trong tab "Đã xử lý" =====
+            Đây là chốt chặn in trùng: nhân viên lọc "Chưa in" để gom in một
+            lượt, đơn nào đã in tự rơi sang nhóm kia nên người sau không in lại. */}
+        {tab === "processed" && (
+          <div className="flex flex-wrap items-center gap-2">
+            {(
+              [
+                { key: "", label: "Tất cả đã xử lý", countKey: null },
+                { key: "no", label: "Chưa in phiếu", countKey: "PROCESSED_NOT_PRINTED" },
+                { key: "yes", label: "Đã in phiếu", countKey: "PROCESSED_PRINTED" },
+              ] as const
+            ).map((f) => {
+              const active = printedFilter === f.key;
+              const count = f.countKey ? counts[f.countKey] : counts.PROCESSED;
+              return (
+                <button
+                  key={f.key || "all"}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setPrintedFilter(f.key);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  {f.label}
+                  {count !== undefined && (
+                    <span className="tabular-nums opacity-70">{formatNumber(count)}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ===== TÌM KIẾM + BỘ LỌC (khối riêng, tách lớp với bảng) ===== */}
         <Card className="shadow-sm">
@@ -612,6 +686,20 @@ export default function OrdersPage() {
                               meta={STATUS_META[o.shippingStatus]}
                               fallback={o.shippingStatus}
                             />
+                            {/* Nhãn đã in phiếu — nhìn là biết đơn nào người
+                                khác đang gói, khỏi in trùng */}
+                            {o.labelPrintedAt && (
+                              <span
+                                className={cn(
+                                  TEXT_SUB,
+                                  "mt-1 flex items-center gap-1 text-emerald-700"
+                                )}
+                                title={`Đã in phiếu lúc ${formatDateTime(o.labelPrintedAt)}`}
+                              >
+                                <Printer className="size-3 shrink-0" />
+                                Đã in phiếu
+                              </span>
+                            )}
                           </TableCell>
 
                           <TableCell className="text-center">

@@ -7,6 +7,7 @@ import {
   ExpenseType,
   Prisma,
   ShippingDisputeStatus,
+  ShippingStatus,
 } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
@@ -1145,11 +1146,19 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           expenseDate: true,
         },
       }),
-      // Đơn đang trên đường / chờ đối soát → tiền chưa về ví
+      // Đơn chưa giao xong → tiền chưa về ví.
+      // PROCESSED (đã đóng gói, chờ shipper) cũng là tiền treo y như PENDING và
+      // SHIPPING — bỏ sót nó là cả nhóm đơn này biến mất khỏi "Tiền chờ về".
       prisma.order.findMany({
         where: {
           channel: { userId: ownerId },
-          shippingStatus: { in: ["PENDING", "SHIPPING"] },
+          shippingStatus: {
+            in: [
+              ShippingStatus.PENDING,
+              ShippingStatus.PROCESSED,
+              ShippingStatus.SHIPPING,
+            ],
+          },
           createdAt: range,
         },
         include: {

@@ -1,13 +1,22 @@
 import { Router } from "express";
-import { Carrier, InventoryLogType, Prisma } from "@prisma/client";
+import {
+  Carrier,
+  InventoryLogType,
+  Prisma,
+  ShippingStatus,
+} from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
 
 const router = Router();
 
-const VALID_STATUSES = ["PENDING", "SHIPPING", "DELIVERED", "CANCELLED"] as const;
-type ShippingStatus = (typeof VALID_STATUSES)[number];
+const VALID_STATUSES = Object.values(ShippingStatus);
+
+/** Giá trị có phải trạng thái vận chuyển hợp lệ không. */
+function isStatus(value: unknown): value is ShippingStatus {
+  return (VALID_STATUSES as string[]).includes(value as string);
+}
 
 /** Giá trị query có phải một hãng vận chuyển hợp lệ không (chặn lọc bừa). */
 function isCarrier(value: string): value is Carrier {
@@ -30,6 +39,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       typeof req.query.carrier === "string" ? req.query.carrier : "";
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
+    // Bộ lọc con của tab "Đã xử lý": "yes" = đã in phiếu, "no" = chưa in.
+    // Giá trị khác thì bỏ qua, coi như không lọc.
+    const printed = typeof req.query.printed === "string" ? req.query.printed : "";
 
     // Phân quyền multi-store: nhân viên bị giới hạn kênh thì chỉ thấy đơn của kênh được gán.
     // Nếu lọc theo 1 kênh cụ thể mà kênh đó không nằm trong phạm vi → không trả gì.
@@ -45,8 +57,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     const where: Prisma.OrderWhereInput = {
       channel: channelWhere,
-      ...(shippingStatus ? { shippingStatus } : {}),
+      ...(isStatus(shippingStatus) ? { shippingStatus } : {}),
       ...(isCarrier(carrier) ? { carrier } : {}),
+      ...(printed === "yes"
+        ? { labelPrintedAt: { not: null } }
+        : printed === "no"
+          ? { labelPrintedAt: null }
+          : {}),
       // Ô tìm kiếm đa năng: gõ gì cũng ra — mã đơn, tên khách, số điện thoại
       // hoặc mã vận đơn. Bỏ dấu cách và gạch trong SĐT để "0901 234 567" vẫn
       // khớp với "0901234567" đang lưu.
@@ -62,7 +79,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
         : {}),
     };
 
-    const [total, items, statusCounts] = await Promise.all([
+    const [total, items, statusCounts, notPrinted, alreadyPrinted] =
+      await Promise.all([
       prisma.order.count({ where }),
       prisma.order.findMany({
         where,
@@ -87,12 +105,27 @@ router.get("/", async (req: AuthRequest, res, next) => {
         },
       }),
       // Đếm số đơn theo từng trạng thái để hiện badge trên tab.
-      // Cố ý BỎ shippingStatus khỏi điều kiện đếm — nếu không thì tab đang mở
-      // sẽ là tab duy nhất có số, các tab khác luôn bằng 0.
+      // Cố ý BỎ shippingStatus VÀ printed khỏi điều kiện đếm — nếu không thì
+      // tab/bộ lọc con đang mở sẽ là chỗ duy nhất có số, các tab khác luôn 0.
       prisma.order.groupBy({
         by: ["shippingStatus"],
         _count: { _all: true },
-        where: { ...where, shippingStatus: undefined },
+        where: { ...where, shippingStatus: undefined, labelPrintedAt: undefined },
+      }),
+      // Riêng nhóm "Đã xử lý" cần tách thêm chưa in / đã in cho 2 bộ lọc con
+      prisma.order.count({
+        where: {
+          ...where,
+          shippingStatus: ShippingStatus.PROCESSED,
+          labelPrintedAt: null,
+        },
+      }),
+      prisma.order.count({
+        where: {
+          ...where,
+          shippingStatus: ShippingStatus.PROCESSED,
+          labelPrintedAt: { not: null },
+        },
       }),
     ]);
 
@@ -101,6 +134,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
       counts[g.shippingStatus] = g._count._all;
       counts.ALL += g._count._all;
     }
+    counts.PROCESSED_NOT_PRINTED = notPrinted;
+    counts.PROCESSED_PRINTED = alreadyPrinted;
 
     res.json({
       items,
@@ -121,13 +156,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
 router.patch("/:id/status", async (req: AuthRequest, res, next) => {
   try {
     const { shippingStatus } = req.body ?? {};
-    if (!VALID_STATUSES.includes(shippingStatus)) {
+    if (!isStatus(shippingStatus)) {
       res.status(400).json({
         error: `Trạng thái không hợp lệ. Chọn một trong: ${VALID_STATUSES.join(", ")}`,
       });
       return;
     }
-    const newStatus = shippingStatus as ShippingStatus;
+    const newStatus = shippingStatus;
 
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, channel: { userId: req.ownerId! } },
@@ -240,13 +275,18 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 });
 
 /**
- * POST /api/orders/bulk/confirm — "Xác nhận chuẩn bị hàng" cho nhiều đơn.
+ * POST /api/orders/bulk/confirm — "Xác nhận & chuẩn bị hàng" cho nhiều đơn.
  * Body: { orderIds: string[] }
  *
+ * Chờ xử lý → ĐÃ XỬ LÝ (không nhảy thẳng sang Đang giao).
+ * Đây là mốc chống đóng gói lặp: đơn đã xác nhận nằm riêng một nhóm, nhân viên
+ * khác nhìn vào biết ngay đơn nào đang được gói, đơn nào chưa ai đụng tới.
+ * Việc bàn giao cho shipper là bước RIÊNG (bulk/handover) vì hai việc này cách
+ * nhau vài tiếng trong thực tế.
+ *
  * Ở bản có tích hợp thật, đây là chỗ gọi API sàn để báo "đã đóng gói xong,
- * mời shipper tới lấy". Hubsell hiện dùng sàn giả lập nên bước này chỉ ghi mốc
- * `packedAt` và đẩy đơn từ Chờ xử lý → Đang giao. Khi nối API thật, thêm lời
- * gọi ra sàn ngay trước transaction; phần còn lại giữ nguyên.
+ * mời shipper tới lấy". Khi nối API thật, thêm lời gọi ra sàn ngay trước
+ * transaction; phần còn lại giữ nguyên.
  *
  * Bỏ qua có chọn lọc thay vì fail cả mẻ: chọn 50 đơn mà 1 đơn đã hủy thì báo
  * riêng đơn đó, 49 đơn còn lại vẫn phải chạy — bắt làm lại từ đầu là hành
@@ -284,8 +324,8 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
     const ready: string[] = [];
 
     for (const o of orders) {
-      if (o.shippingStatus === "PENDING") ready.push(o.id);
-      else if (o.shippingStatus === "CANCELLED")
+      if (o.shippingStatus === ShippingStatus.PENDING) ready.push(o.id);
+      else if (o.shippingStatus === ShippingStatus.CANCELLED)
         skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
       else
         skipped.push({
@@ -310,7 +350,82 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
 
     await prisma.order.updateMany({
       where: { id: { in: ready } },
-      data: { shippingStatus: "SHIPPING", packedAt: new Date() },
+      data: { shippingStatus: ShippingStatus.PROCESSED, packedAt: new Date() },
+    });
+
+    res.json({ confirmed: ready.length, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/bulk/handover — "Bàn giao vận chuyển" cho nhiều đơn.
+ * Body: { orderIds: string[] }
+ *
+ * Đã xử lý → ĐANG GIAO. Tách riêng khỏi bước xác nhận vì trong thực tế shop
+ * gói hàng buổi sáng nhưng shipper chiều mới tới lấy; gộp hai bước làm một thì
+ * đơn nằm trong kho vẫn bị hiển thị là đang trên đường giao.
+ */
+router.post("/bulk/handover", async (req: AuthRequest, res, next) => {
+  try {
+    const { orderIds } = req.body ?? {};
+    if (!Array.isArray(orderIds) || orderIds.length === 0) {
+      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
+      return;
+    }
+    if (!orderIds.every((id) => typeof id === "string" && id)) {
+      res.status(400).json({ error: "orderIds phải là mảng chuỗi" });
+      return;
+    }
+    if (orderIds.length > 200) {
+      res.status(400).json({ error: "Tối đa 200 đơn mỗi lần xử lý" });
+      return;
+    }
+
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: orderIds },
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      select: { id: true, orderCode: true, shippingStatus: true },
+    });
+
+    const found = new Set(orders.map((o) => o.id));
+    const skipped: { orderCode: string; reason: string }[] = [];
+    const ready: string[] = [];
+
+    for (const o of orders) {
+      if (o.shippingStatus === ShippingStatus.PROCESSED) ready.push(o.id);
+      else if (o.shippingStatus === ShippingStatus.PENDING)
+        skipped.push({
+          orderCode: o.orderCode,
+          reason: "Chưa xác nhận chuẩn bị hàng",
+        });
+      else if (o.shippingStatus === ShippingStatus.CANCELLED)
+        skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
+      else
+        skipped.push({ orderCode: o.orderCode, reason: "Đơn đã bàn giao rồi" });
+    }
+    for (const id of orderIds.filter((x: string) => !found.has(x))) {
+      skipped.push({ orderCode: id, reason: "Không tìm thấy hoặc ngoài quyền" });
+    }
+
+    if (ready.length === 0) {
+      res.status(409).json({
+        error: "Không có đơn nào ở trạng thái Đã xử lý để bàn giao",
+        confirmed: 0,
+        skipped,
+      });
+      return;
+    }
+
+    await prisma.order.updateMany({
+      where: { id: { in: ready } },
+      data: { shippingStatus: ShippingStatus.SHIPPING },
     });
 
     res.json({ confirmed: ready.length, skipped });
@@ -361,7 +476,18 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    res.json({ labels: orders });
+    // Đánh dấu ĐÃ IN để người khác không in trùng. Chỉ ghi cho đơn chưa từng
+    // in — in lại lần hai vẫn được nhưng giữ nguyên mốc lần đầu, vì cái shop
+    // cần biết là "phiếu này đã ra giấy từ lúc nào", không phải lần in gần nhất.
+    const firstTime = orders.filter((o) => o.labelPrintedAt === null);
+    if (firstTime.length > 0) {
+      await prisma.order.updateMany({
+        where: { id: { in: firstTime.map((o) => o.id) } },
+        data: { labelPrintedAt: new Date() },
+      });
+    }
+
+    res.json({ labels: orders, markedPrinted: firstTime.length });
   } catch (err) {
     next(err);
   }

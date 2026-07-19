@@ -136,6 +136,14 @@ export interface InventoryLog {
   createdAt: string;
 }
 
+/** Vòng đời đơn hàng — khớp enum ShippingStatus ở backend */
+export type ShippingStatus =
+  | "PENDING"
+  | "PROCESSED"
+  | "SHIPPING"
+  | "DELIVERED"
+  | "CANCELLED";
+
 /** Đơn vị vận chuyển — khớp enum Carrier ở backend */
 export type Carrier =
   | "SPX"
@@ -165,10 +173,12 @@ export interface Order {
   customerPhone: string | null;
   totalAmount: string | number;
   paymentStatus: string;
-  shippingStatus: string;
+  shippingStatus: ShippingStatus;
   carrier: Carrier | null;
   trackingCode: string | null;
   packedAt: string | null;
+  /** Mốc đã in phiếu giao hàng — null nghĩa là chưa in lần nào */
+  labelPrintedAt: string | null;
   createdAt: string;
   channel: { channelName: ChannelName };
   items?: OrderItemLine[];
@@ -427,6 +437,8 @@ export function fetchOrders(params: {
   channelId?: string;
   carrier?: string;
   search?: string;
+  /** Bộ lọc con của tab "Đã xử lý": "yes" đã in phiếu, "no" chưa in */
+  printed?: "yes" | "no";
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -435,15 +447,26 @@ export function fetchOrders(params: {
   if (params.channelId) qs.set("channelId", params.channelId);
   if (params.carrier) qs.set("carrier", params.carrier);
   if (params.search?.trim()) qs.set("search", params.search.trim());
+  if (params.printed) qs.set("printed", params.printed);
   return apiFetch<OrderListResponse>(`/api/orders?${qs.toString()}`);
 }
 
-/** Xác nhận chuẩn bị hàng cho nhiều đơn cùng lúc (Chờ xử lý → Đang giao). */
+interface BulkResult {
+  confirmed: number;
+  skipped: { orderCode: string; reason: string }[];
+}
+
+/** Xác nhận & chuẩn bị hàng cho nhiều đơn (Chờ xử lý → Đã xử lý). */
 export function bulkConfirmOrders(orderIds: string[]) {
-  return apiFetch<{
-    confirmed: number;
-    skipped: { orderCode: string; reason: string }[];
-  }>("/api/orders/bulk/confirm", {
+  return apiFetch<BulkResult>("/api/orders/bulk/confirm", {
+    method: "POST",
+    body: JSON.stringify({ orderIds }),
+  });
+}
+
+/** Bàn giao cho đơn vị vận chuyển (Đã xử lý → Đang giao). */
+export function bulkHandoverOrders(orderIds: string[]) {
+  return apiFetch<BulkResult>("/api/orders/bulk/handover", {
     method: "POST",
     body: JSON.stringify({ orderIds }),
   });
@@ -451,7 +474,7 @@ export function bulkConfirmOrders(orderIds: string[]) {
 
 /** Lấy dữ liệu dựng phiếu giao hàng cho nhiều đơn để in một lượt. */
 export function fetchOrderLabels(orderIds: string[]) {
-  return apiFetch<{ labels: Order[] }>("/api/orders/bulk/labels", {
+  return apiFetch<{ labels: Order[]; markedPrinted: number }>("/api/orders/bulk/labels", {
     method: "POST",
     body: JSON.stringify({ orderIds }),
   });
