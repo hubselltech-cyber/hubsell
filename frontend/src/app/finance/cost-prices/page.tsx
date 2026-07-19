@@ -5,11 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  Check,
   CheckCircle2,
   Download,
-  ImageIcon,
-  Loader2,
   PackageSearch,
   RefreshCw,
   Search,
@@ -19,21 +16,16 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
-import { BulkApplyCost } from "@/components/finance/bulk-apply-cost";
+import {
+  CostPriceTable,
+  type ProductGroup,
+} from "@/components/finance/cost-price-table";
 import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
+import { Refreshing } from "@/components/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   ApiError,
   fetchSkuProducts,
@@ -41,16 +33,14 @@ import {
   getToken,
   syncProductsFromChannels,
   updateSkuCostPrice,
-  type ChannelName,
   type SkuChannelFilter,
   type SkuProduct,
 } from "@/lib/api";
-import { CHANNEL_META } from "@/lib/channel-meta";
 import { exportCostPricesToExcel } from "@/lib/excel";
 import { formatVND, formatNumber } from "@/lib/format";
 import { normalizeText } from "@/lib/text";
 import { cn } from "@/lib/utils";
-import { groupVariants, variantGroupKey } from "@/lib/variant-group";
+import { baseProductName, variantGroupKey } from "@/lib/variant-group";
 
 // Trạng thái giá vốn để lọc
 type CostStatusFilter = "all" | "missing" | "filled";
@@ -111,40 +101,30 @@ export default function CostPricesPage() {
   const isFiltering = search.trim() !== "" || statusFilter !== "all";
 
   /**
-   * Gom các dòng cùng một mẫu hàng (size M/L/XL của cùng cái áo) để biết dòng
-   * nào có "anh em" mà hiện nút áp dụng hàng loạt.
-   * Cố ý gom trên TOÀN BỘ items chứ không phải filteredItems: đang lọc "chưa
-   * nhập giá vốn" thì các phân loại đã có giá bị ẩn khỏi bảng, nhưng chúng vẫn
-   * là anh em và vẫn phải nằm trong danh sách xác nhận.
+   * Gom dòng đã lọc thành cây Sản phẩm cha → Biến thể con để đưa vào bảng.
+   * Giữ nguyên thứ tự xuất hiện đầu tiên của mỗi mẫu, không sắp xếp lại, để
+   * người dùng đổi bộ lọc mà các dòng không nhảy lung tung.
    */
-  const variantGroups = useMemo(
-    () => groupVariants(items, (i) => i.productName),
-    [items]
-  );
-
-  /**
-   * Các phân loại khác của cùng mẫu hàng mà việc áp giá HÀNG LOẠT thật sự có
-   * tác dụng.
-   *
-   * Loại bỏ những dòng cùng productId với chính nó: giá vốn được lưu trên sản
-   * phẩm gốc, nên nhiều SKU sàn trỏ về cùng một sản phẩm vốn đã dùng chung một
-   * giá — sửa dòng này là dòng kia tự đổi theo. Hiện nút cho những dòng đó chỉ
-   * khiến người dùng bấm rồi thấy "đã cập nhật 1 phân loại" mà chẳng có gì đổi.
-   */
-  const bulkTargetsOf = useCallback(
-    (item: SkuProduct): SkuProduct[] => {
-      const group = variantGroups.get(variantGroupKey(item.productName)) ?? [];
-      // Mỗi sản phẩm gốc chỉ cần một dòng đại diện: nhiều SKU sàn cùng trỏ về
-      // một product thì cũng chỉ ghi được một giá vốn.
-      const byProduct = new Map<string, SkuProduct>();
-      for (const row of group) {
-        if (!byProduct.has(row.productId)) byProduct.set(row.productId, row);
+  const groups = useMemo<ProductGroup[]>(() => {
+    const map = new Map<string, ProductGroup>();
+    for (const item of filteredItems) {
+      const key = variantGroupKey(item.productName);
+      const existing = map.get(key);
+      if (existing) {
+        existing.variants.push(item);
+        // Mẫu lấy ảnh của phân loại đầu tiên có ảnh
+        if (!existing.imageUrl) existing.imageUrl = item.imageUrl;
+      } else {
+        map.set(key, {
+          key,
+          name: baseProductName(item.productName),
+          imageUrl: item.imageUrl,
+          variants: [item],
+        });
       }
-      byProduct.set(item.productId, item); // luôn gồm chính dòng đang gõ
-      return [...byProduct.values()];
-    },
-    [variantGroups]
-  );
+    }
+    return [...map.values()];
+  }, [filteredItems]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -390,7 +370,11 @@ export default function CostPricesPage() {
 
         <Card>
           <CardContent className="p-0">
-            {loading ? (
+            {/* Chỉ thay bảng bằng chữ "đang tải" ở LẦN ĐẦU. Mỗi lần lưu giá vốn
+                đều gọi load() lại; nếu tháo bảng ra thì component mất trạng thái
+                và mọi nhóm đang xổ sẽ tự thu lại — xổ nhóm, gõ giá, vừa rời ô là
+                nhóm sập xuống, không thao tác tiếp được. */}
+            {loading && items.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
                 Đang tải danh sách SKU…
               </p>
@@ -423,97 +407,19 @@ export default function CostPricesPage() {
                 </p>
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">Ảnh</TableHead>
-                    <TableHead>Tên sản phẩm</TableHead>
-                    <TableHead>Phân loại</TableHead>
-                    <TableHead>Mã SKU</TableHead>
-                    <TableHead>Kênh bán</TableHead>
-                    <TableHead className="text-right">Giá bán</TableHead>
-                    <TableHead className="w-52 text-right">Giá vốn (VNĐ)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.map((item) => {
-                    const meta = CHANNEL_META[item.channelName as ChannelName];
-                    const missing = Number(item.costPrice) <= 0;
-                    // Chỉ có ý nghĩa khi mẫu hàng trải trên từ 2 sản phẩm gốc
-                    // trở lên — cùng một product thì giá vốn vốn đã dùng chung.
-                    const bulkTargets = bulkTargetsOf(item);
-                    return (
-                      <TableRow key={item.skuId}>
-                        <TableCell>
-                          {item.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={item.imageUrl}
-                              alt={item.productName}
-                              className="size-10 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                              <ImageIcon className="size-4" />
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {item.productName}
-                        </TableCell>
-                        <TableCell className="max-w-52 text-muted-foreground">
-                          {item.variantName ?? "—"}
-                        </TableCell>
-                        <TableCell className="font-mono">{item.sku}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
-                          >
-                            {meta.label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatVND(item.sellingPrice)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <CurrencyInput
-                              className={cn(
-                                "w-32 text-right tabular-nums",
-                                missing && "border-amber-400 bg-amber-50"
-                              )}
-                              placeholder="Nhập giá vốn"
-                              aria-label={`Giá vốn của ${item.sku}`}
-                              value={drafts[item.skuId] ?? ""}
-                              onValueChange={(digits) =>
-                                setDrafts((d) => ({ ...d, [item.skuId]: digits }))
-                              }
-                              onBlur={() => handleBlur(item)}
-                            />
-
-                            {/* Chỉ hiện khi mẫu hàng này thật sự có phân loại khác */}
-                            {bulkTargets.length > 1 && (
-                              <BulkApplyCost
-                                targets={bulkTargets}
-                                costDigits={drafts[item.skuId] ?? ""}
-                                onApplied={load}
-                              />
-                            )}
-
-                            {savingId === item.skuId ? (
-                              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                            ) : savedId === item.skuId ? (
-                              <Check className="size-4 text-emerald-600" />
-                            ) : (
-                              <span className="size-4" />
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <Refreshing active={loading}>
+                <CostPriceTable
+                  groups={groups}
+                  drafts={drafts}
+                  onDraftChange={(skuId, digits) =>
+                    setDrafts((d) => ({ ...d, [skuId]: digits }))
+                  }
+                  onVariantBlur={handleBlur}
+                  savingId={savingId}
+                  savedId={savedId}
+                  onBulkApplied={load}
+                />
+              </Refreshing>
             )}
           </CardContent>
         </Card>

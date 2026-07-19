@@ -37,6 +37,21 @@ export function baseProductName(name: string): string {
   return base;
 }
 
+/**
+ * Phần đuôi phân biệt biến thể, lấy được bằng cách trừ tên mẫu khỏi tên đầy đủ.
+ * "Áo thun cotton premium size M" → "size M".
+ * Không tách được (tên trùng khít tên mẫu) thì trả về null để nơi gọi tự chọn
+ * cách hiển thị khác, ví dụ dùng mã SKU.
+ */
+export function variantLabel(fullName: string): string | null {
+  const base = baseProductName(fullName);
+  if (base === fullName.trim()) return null;
+  const rest = fullName.trim().slice(base.length).trim();
+  // Bỏ các ký tự ngăn cách còn sót ở đầu: "- size M" → "size M"
+  const cleaned = rest.replace(/^[\s\-–—|,([]+/, "").replace(/[)\]]+$/, "").trim();
+  return cleaned || null;
+}
+
 /** Khoá gom nhóm — bỏ dấu, thường hoá để "Áo Thun" và "ao thun" về chung một mẫu. */
 export function variantGroupKey(name: string): string {
   return normalizeText(baseProductName(name));
