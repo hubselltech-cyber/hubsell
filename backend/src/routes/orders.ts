@@ -19,7 +19,9 @@ function isCarrier(value: string): value is Carrier {
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
+    // Trần 100: cho phép chủ shop mở rộng 20 → 50 → 100 đơn/trang khi soát
+    // đơn hàng loạt, nhưng không để gõ tay ?pageSize=100000 làm nghẽn truy vấn.
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const shippingStatus =
       typeof req.query.shippingStatus === "string" ? req.query.shippingStatus : "";
     const channelId =
@@ -77,6 +79,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
               channelSku: true,
               quantity: true,
               price: true,
+              // Ảnh lấy từ sản phẩm gốc để bảng hiện thumbnail; sản phẩm đã bị
+              // xoá thì productId là null nên phải cho phép thiếu.
+              product: { select: { imageUrl: true } },
             },
           },
         },

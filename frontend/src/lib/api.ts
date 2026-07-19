@@ -153,6 +153,8 @@ export interface OrderItemLine {
   channelSku: string;
   quantity: number;
   price: string | number;
+  /** Ảnh sản phẩm gốc — null khi sản phẩm đã bị xoá hoặc chưa có ảnh */
+  product?: { imageUrl: string | null } | null;
 }
 
 export interface Order {

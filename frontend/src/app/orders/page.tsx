@@ -17,6 +17,7 @@ import {
 
 import { AppShell } from "@/components/app-shell";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
+import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { Refreshing } from "@/components/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,8 @@ import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 20;
+/** Các mức số đơn hiển thị mỗi trang. Backend chặn trần ở 100. */
+const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
   PENDING: { label: "Chờ xử lý", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
@@ -240,6 +242,7 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("all");
   const [channelFilter, setChannelFilter] = useState("");
   const [carrierFilter, setCarrierFilter] = useState("");
@@ -269,7 +272,7 @@ export default function OrdersPage() {
     try {
       const res = await fetchOrders({
         page,
-        pageSize: PAGE_SIZE,
+        pageSize,
         shippingStatus: statusFilter || undefined,
         channelId: channelFilter || undefined,
         carrier: carrierFilter || undefined,
@@ -289,7 +292,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, channelFilter, carrierFilter, debouncedSearch, router]);
+  }, [page, pageSize, statusFilter, channelFilter, carrierFilter, debouncedSearch, router]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -422,8 +425,9 @@ export default function OrdersPage() {
           })}
         </div>
 
-        {/* ===== TÌM KIẾM + BỘ LỌC ===== */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* ===== TÌM KIẾM + BỘ LỌC (khối riêng, tách lớp với bảng) ===== */}
+        <Card className="shadow-sm">
+          <CardContent className="flex flex-wrap items-center gap-3 py-1">
           <div className="relative min-w-72 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -485,12 +489,13 @@ export default function OrdersPage() {
             </Button>
           )}
 
-          <p className="text-sm text-muted-foreground">
-            {formatNumber(total)} đơn
-          </p>
-        </div>
+            <p className="text-sm text-muted-foreground">
+              {formatNumber(total)} đơn
+            </p>
+          </CardContent>
+        </Card>
 
-        <Card>
+        <Card className="shadow-sm">
           <CardContent className="p-0">
             {/* Lần đầu mới hiện chữ "đang tải"; đổi tab/lọc thì giữ bảng và làm mờ */}
             {loading && items.length === 0 ? (
@@ -528,13 +533,26 @@ export default function OrdersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((o) => {
+                    {items.map((o, index) => {
                       const checked = selectedIds.has(o.id);
                       const lines = o.items ?? [];
                       return (
                         <TableRow
                           key={o.id}
-                          className={cn(checked && "bg-primary/5")}
+                          className={cn(
+                            "transition-colors",
+                            // Sọc ngựa vằn: dòng chẵn nền nhạt để mắt bám đúng
+                            // hàng khi rê ngang qua nhiều cột
+                            index % 2 === 1 && "bg-muted/40",
+                            // Hover phải ĐẬM HƠN HẲN sọc, nếu không rê chuột
+                            // chẳng thấy gì. Không dùng bg-accent vì token accent
+                            // của theme này trùng đúng giá trị với muted.
+                            "hover:bg-primary/10",
+                            // Dòng đang tích chọn: đậm hơn nữa + vạch màu bên
+                            // trái, để phân biệt với hover bằng cả HÌNH lẫn màu
+                            checked &&
+                              "bg-primary/15 hover:bg-primary/20 shadow-[inset_3px_0_0_0_var(--color-primary)]"
+                          )}
                         >
                           <TableCell>
                             <input
@@ -552,7 +570,9 @@ export default function OrdersPage() {
                                 meta={CHANNEL_META[o.channel.channelName]}
                                 fallback={o.channel.channelName}
                               />
-                              <span className="font-medium">{o.orderCode}</span>
+                              <span className="font-semibold tracking-tight">
+                                {o.orderCode}
+                              </span>
                             </div>
                             <p className={cn(TEXT_SUB, "mt-1")}>
                               {formatDateTime(o.createdAt)}
@@ -566,34 +586,8 @@ export default function OrdersPage() {
                             </p>
                           </TableCell>
 
-                          {/* Đơn nhiều dòng hàng: hiện 2 dòng đầu rồi gộp phần
-                              còn lại, tránh một đơn chiếm nửa màn hình */}
-                          <TableCell className="max-w-72 whitespace-normal">
-                            {lines.length === 0 ? (
-                              <span className={TEXT_SUB}>—</span>
-                            ) : (
-                              <>
-                                {lines.slice(0, 2).map((l) => (
-                                  <p key={l.id} className="truncate">
-                                    {l.productName}
-                                    <span className="font-medium">
-                                      {" "}
-                                      ×{l.quantity}
-                                    </span>
-                                    <span
-                                      className={cn(TEXT_SUB, "block font-mono")}
-                                    >
-                                      {l.channelSku}
-                                    </span>
-                                  </p>
-                                ))}
-                                {lines.length > 2 && (
-                                  <p className={TEXT_SUB}>
-                                    + {lines.length - 2} sản phẩm khác
-                                  </p>
-                                )}
-                              </>
-                            )}
+                          <TableCell className="w-72 max-w-72 whitespace-normal">
+                            <OrderProductsCell lines={lines} />
                           </TableCell>
 
                           <TableCell>
@@ -641,12 +635,31 @@ export default function OrdersPage() {
           </CardContent>
         </Card>
 
-        {/* Phân trang */}
-        {pageCount > 1 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Trang {page} / {pageCount}
-            </p>
+        {/* Phân trang — luôn hiện để chủ shop đổi được số đơn/trang kể cả khi
+            đang chỉ có một trang dữ liệu */}
+        {items.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Hiển thị</span>
+              <NativeSelect
+                className="w-20"
+                aria-label="Số đơn mỗi trang"
+                value={String(pageSize)}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1); // đổi cỡ trang thì về trang 1, tránh rơi vào trang trống
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </NativeSelect>
+              <span className="text-sm text-muted-foreground">
+                đơn/trang · trang {page}/{Math.max(1, pageCount)}
+              </span>
+            </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
