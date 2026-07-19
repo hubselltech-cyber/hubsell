@@ -229,6 +229,19 @@ Toàn bộ cỡ chữ của Hubsell được khai báo tập trung tại **`fron
 
 Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): laptop phổ biến 1366–1440px đã vượt `md` từ lâu, nếu dùng `md` thì laptop sẽ nhảy lên 16px và mất đi độ gọn gàng mong muốn.
 
+## 💵 Nhập giá vốn hàng loạt (`/finance/cost-prices`)
+
+| Tính năng | Cách dùng |
+|---|---|
+| **Tự định dạng số** | Gõ `52000` hiện ngay `52.000`. Dùng `<CurrencyInput>` — **đừng dùng `<input type="number">` cho tiền**: không hiện được dấu phân tách, lại dính lỗi lăn chuột làm đổi giá trị rồi tự lưu. |
+| **Xuất Excel** | Xuất đúng những dòng **đang lọc**. Mẹo: lọc "Chưa nhập giá vốn" rồi xuất → file chỉ chứa mã còn thiếu. |
+| **Nhập Excel** | Đọc 2 cột `Mã SKU` + `Giá vốn`. Khớp mã nội bộ trước, mã sàn sau. Tự bỏ dấu chấm người dùng gõ (`1.234.000` → `1234000`). Dòng lỗi báo rõ số dòng, không chặn dòng hợp lệ. |
+| **Áp cho mọi phân loại** | Gõ 1 lần rồi bấm nút cạnh ô nhập để áp cho cả size M/L/XL. Luôn có hộp xác nhận liệt kê mã sắp đổi. |
+
+⚠️ **Giá vốn lưu trên `Product.costPrice`, không phải trên mapping.** Nhiều SKU sàn cùng trỏ về một sản phẩm gốc thì đã dùng chung một giá vốn — sửa dòng này là dòng kia đổi theo. Nút "áp cho mọi phân loại" vì thế chỉ hiện khi mẫu hàng trải trên **từ 2 sản phẩm gốc trở lên**.
+
+⚠️ **Không có trường "mẫu gốc" trong CSDL.** Size M/L/XL là các sản phẩm riêng biệt, phân loại nằm trong *tên*. `lib/variant-group.ts` suy ra mẫu gốc bằng cách cắt đuôi tên (`"Áo thun nam size M"` → `"Áo thun nam"`). Đây là **suy đoán**, nên nó chỉ dùng để gợi ý và luôn bắt xác nhận trước khi ghi — đoán sai thì cùng lắm nút không hiện, không bao giờ âm thầm sửa nhầm.
+
 ## 📅 Bộ lọc khoảng thời gian `<DateRangePicker>`
 
 Mọi trang báo cáo đều có bộ chọn ngày ở góc phải trên, cạnh nút Làm mới. Dùng chung một component và một quy ước query param, nên module đối soát mới sau này chỉ cần cắm vào là chạy.
