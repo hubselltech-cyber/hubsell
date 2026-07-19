@@ -245,6 +245,14 @@ Gom đơn từ mọi sàn về một màn hình để lọc, duyệt và in phi�
 - Phiếu giao hàng là **do Hubsell tự dựng**, không phải vận đơn chính thức của Shopee/TikTok. Muốn phiếu chính chủ phải có API thật kèm quyền in vận đơn.
 - "Xác nhận chuẩn bị" mới chỉ đổi trạng thái trong Hubsell, **chưa gọi ngược lên sàn**. Chỗ nối API thật đã đánh dấu sẵn trong `POST /api/orders/bulk/confirm`.
 
+**Bảng đơn — 4 lớp nền phân biệt:** trắng → sọc `muted/40` → rê chuột `primary/10` → đang chọn `primary/15` + vạch màu 3px bên trái.
+
+⚠️ **Đừng dùng `bg-accent` làm màu hover** trong dự án này: token `accent` trùng đúng giá trị với `muted` (cùng `oklch 0.97`), nên hover sẽ gần như vô hình trên dòng sọc.
+
+**Phân trang:** dropdown 20 / 50 / 100 đơn/trang ở chân bảng (trần backend 100). Khối phân trang luôn hiện kể cả khi chỉ có một trang, nếu không thì không có chỗ nào đổi cỡ trang.
+
+**Cụm sản phẩm:** đơn nhiều SKU chỉ hiện dòng đầu kèm thumbnail, phần còn lại gấp sau nút "+N sản phẩm khác" để chiều cao các dòng gần bằng nhau.
+
 ⚠️ **Chưa có lọc theo Kho hàng** — Hubsell chưa có khái niệm kho (mỗi sản phẩm một con số tồn duy nhất). Sẽ làm thành module đa kho riêng để không chồng chéo logic tồn kho.
 
 ## 💵 Nhập giá vốn hàng loạt (`/finance/cost-prices`)
