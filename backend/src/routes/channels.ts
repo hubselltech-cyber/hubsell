@@ -109,6 +109,84 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * PATCH /api/channels/:id — sửa thông tin một gian hàng.
+ * Body: { shopName?: string, feeRate?: number }
+ *
+ * feeRate nhận dạng THẬP PHÂN (0.12 = 12%), không phải phần trăm. Mỗi gian
+ * hàng thương lượng được mức phí khác nhau nên để chỉnh riêng từng gian.
+ */
+router.patch("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const { shopName, feeRate } = req.body ?? {};
+
+    const channel = await prisma.channel.findFirst({
+      where: { id: req.params.id, userId: req.ownerId! },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+
+    const data: { shopName?: string; feeRate?: number } = {};
+
+    if (shopName !== undefined) {
+      if (typeof shopName !== "string" || !shopName.trim()) {
+        res.status(400).json({ error: "Tên gian hàng không được để trống" });
+        return;
+      }
+      const name = shopName.trim();
+      if (name.length > 60) {
+        res.status(400).json({ error: "Tên gian hàng tối đa 60 ký tự" });
+        return;
+      }
+      // Trùng tên trong cùng sàn thì không phân biệt được trên giao diện.
+      // Loại chính nó ra để đổi tên thành chính nó vẫn hợp lệ.
+      const duplicated = await prisma.channel.findFirst({
+        where: {
+          userId: req.ownerId!,
+          channelName: channel.channelName,
+          shopName: name,
+          id: { not: channel.id },
+        },
+        select: { id: true },
+      });
+      if (duplicated) {
+        res.status(409).json({
+          error: `Đã có gian hàng tên "${name}" trên ${CHANNEL_LABEL[channel.channelName]}`,
+        });
+        return;
+      }
+      data.shopName = name;
+    }
+
+    if (feeRate !== undefined) {
+      const rate = typeof feeRate === "string" ? Number(feeRate) : feeRate;
+      if (typeof rate !== "number" || Number.isNaN(rate) || rate < 0 || rate > 1) {
+        res.status(400).json({
+          error: "Phí sàn phải nằm trong khoảng 0% đến 100%",
+        });
+        return;
+      }
+      data.feeRate = rate;
+    }
+
+    if (Object.keys(data).length === 0) {
+      res.status(400).json({ error: "Không có thông tin nào để cập nhật" });
+      return;
+    }
+
+    const updated = await prisma.channel.update({
+      where: { id: channel.id },
+      data,
+      include: { _count: { select: { orders: true, channelProducts: true } } },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/channels/:id/disconnect — ngắt kết nối gian hàng
 router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next) => {
   try {

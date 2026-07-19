@@ -957,6 +957,17 @@ export function connectChannel(channelName: ChannelName, shopName?: string) {
   });
 }
 
+/** Sửa tên gian hàng và/hoặc % phí sàn. feeRate ở dạng thập phân (0.12 = 12%). */
+export function updateChannel(
+  id: string,
+  data: { shopName?: string; feeRate?: number }
+) {
+  return apiFetch<Channel>(`/api/channels/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export function disconnectChannel(id: string) {
   return apiFetch<Channel>(`/api/channels/${id}/disconnect`, { method: "POST" });
 }

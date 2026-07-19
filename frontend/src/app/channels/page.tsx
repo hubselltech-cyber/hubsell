@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -8,9 +8,11 @@ import {
   KeyRound,
   Link2,
   Loader2,
+  Pencil,
   PlugZap,
   Plus,
   ShoppingCart,
+  Store,
   Unplug,
   Zap,
 } from "lucide-react";
@@ -43,6 +45,7 @@ import {
   getStoredUser,
   getToken,
   sendMockOrder,
+  updateChannel,
   type Channel,
   type ChannelName,
   type ChannelProduct,
@@ -50,6 +53,7 @@ import {
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
@@ -356,13 +360,153 @@ function MockOrderDialog({
 
 // ---------- Trang chính ----------
 
+// ---------- Dialog: Cập nhật gian hàng ----------
+
+function UpdateShopDialog({
+  channel,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  channel: Channel;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onDone: () => void;
+}) {
+  const [shopName, setShopName] = useState(channel.shopName);
+  // Người dùng nghĩ theo phần trăm (12%), cơ sở dữ liệu lưu thập phân (0.12).
+  const [feePercent, setFeePercent] = useState(
+    (Number(channel.feeRate) * 100).toString()
+  );
+  const [submitting, setSubmitting] = useState(false);
+
+  const trimmed = shopName.trim();
+  const percent = Number(feePercent);
+  const feeInvalid =
+    feePercent.trim() === "" ||
+    Number.isNaN(percent) ||
+    percent < 0 ||
+    percent > 100;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!trimmed || feeInvalid) return;
+    setSubmitting(true);
+    try {
+      await updateChannel(channel.id, {
+        shopName: trimmed,
+        feeRate: percent / 100,
+      });
+      toast.success(`Đã cập nhật gian hàng "${trimmed}"`);
+      onOpenChange(false);
+      onDone();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Không kết nối được máy chủ"
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Cập nhật gian hàng</DialogTitle>
+          <DialogDescription>
+            Gian hàng trên {CHANNEL_META[channel.channelName].label}. Đổi tên
+            không ảnh hưởng tới đơn hàng và sản phẩm đã đồng bộ.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="edit-shop-name">Tên gian hàng</Label>
+            <Input
+              id="edit-shop-name"
+              value={shopName}
+              onChange={(e) => setShopName(e.target.value)}
+              maxLength={60}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="edit-fee">Phí sàn (%)</Label>
+            <Input
+              id="edit-fee"
+              type="number"
+              step="0.1"
+              min="0"
+              max="100"
+              value={feePercent}
+              onChange={(e) => setFeePercent(e.target.value)}
+            />
+            {feeInvalid ? (
+              <p className="text-sm text-rose-600">
+                Phí sàn phải từ 0 đến 100%.
+              </p>
+            ) : (
+              <p className={TEXT_SUB}>
+                Dùng để tạm tính doanh thu thực nhận của gian hàng này.
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Huỷ
+            </Button>
+            <Button type="submit" disabled={submitting || !trimmed || feeInvalid}>
+              {submitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Pencil className="size-4" />
+              )}
+              Lưu thay đổi
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ChannelsPage() {
   const router = useRouter();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectOpen, setConnectOpen] = useState(false);
   const [mockFor, setMockFor] = useState<Channel | null>(null);
+  const [editing, setEditing] = useState<Channel | null>(null);
   const [denied, setDenied] = useState(false);
+
+  /**
+   * Gom gian hàng theo SÀN. Giữ thứ tự sàn cố định theo CONNECTABLE thay vì
+   * theo thứ tự dữ liệu trả về, để vị trí các khối không nhảy mỗi lần tải lại.
+   * Trong mỗi sàn, gian đang hoạt động lên trước rồi mới tới gian đã ngắt.
+   */
+  const grouped = useMemo(
+    () =>
+      CONNECTABLE.map((platform) => ({
+        platform,
+        shops: channels
+          .filter((c) => c.channelName === platform)
+          .sort((a, b) => {
+            const byStatus =
+              Number(b.status === "ACTIVE") - Number(a.status === "ACTIVE");
+            return byStatus !== 0
+              ? byStatus
+              : a.shopName.localeCompare(b.shopName, "vi");
+          }),
+      })).filter((g) => g.shops.length > 0),
+    [channels]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -447,91 +591,141 @@ export default function ChannelsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {channels.map((c) => {
-              const meta = CHANNEL_META[c.channelName];
-              const active = c.status === "ACTIVE";
+          <div className="space-y-5">
+            {grouped.map(({ platform, shops }) => {
+              const meta = CHANNEL_META[platform];
+              const activeCount = shops.filter(
+                (c) => c.status === "ACTIVE"
+              ).length;
               return (
-                <Card key={c.id} className={active ? "" : "opacity-70"}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-start justify-between gap-2 text-base">
-                      {/* TÊN GIAN HÀNG là thông tin chính, badge sàn chỉ là phụ
-                          đề — hai shop cùng sàn phải phân biệt được bằng mắt */}
-                      <span className="min-w-0">
-                        <span className="block truncate font-semibold">
-                          {c.shopName}
-                        </span>
-                        <span
-                          className={`mt-1 inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
-                        >
-                          {meta.label}
-                        </span>
-                      </span>
+                <Card key={platform} className="shadow-sm">
+                  {/* ĐẦU KHỐI SÀN — logo, tên sàn, số gian hàng đang kết nối */}
+                  <CardHeader className="border-b pb-3">
+                    <CardTitle className="flex flex-wrap items-center gap-3 text-base">
                       <span
-                        className={`inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
-                          active ? "text-emerald-600" : "text-zinc-400"
-                        }`}
+                        className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-sm font-semibold ${meta.className}`}
                       >
-                        <span
-                          className={`size-2 rounded-full ${
-                            active ? "bg-emerald-500" : "bg-zinc-300"
-                          }`}
-                        />
-                        {active ? "Đang hoạt động" : "Đã ngắt kết nối"}
+                        {meta.label}
                       </span>
+                      <span className="font-semibold">
+                        {formatNumber(shops.length)} kết nối
+                      </span>
+                      {activeCount < shops.length && (
+                        <span className={TEXT_SUB}>
+                          ({formatNumber(activeCount)} đang hoạt động)
+                        </span>
+                      )}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 text-sm">
-                    <p className="flex items-center gap-2 text-muted-foreground">
-                      <KeyRound className="size-4 shrink-0" />
-                      <span className="truncate font-mono text-xs">
-                        {maskToken(c.apiToken)}
-                      </span>
-                    </p>
-                    <p className="text-muted-foreground">
-                      {formatNumber(c._count?.orders ?? 0)} đơn hàng ·{" "}
-                      {formatNumber(c._count?.channelProducts ?? 0)} sản phẩm sàn
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {active ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-amber-700"
-                            disabled={!c.apiToken || c.channelName === "OFFLINE"}
-                            onClick={() => setMockFor(c)}
-                          >
-                            <Zap className="size-4" />
-                            Giả lập đơn hàng
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-rose-700"
-                            onClick={() => handleDisconnect(c)}
-                          >
-                            <Unplug className="size-4" />
-                            Ngắt kết nối
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleReconnect(c)}
+
+                  <CardContent className="divide-y p-0">
+                    {shops.map((c) => {
+                      const active = c.status === "ACTIVE";
+                      return (
+                        <div
+                          key={c.id}
+                          className={cn(
+                            "flex flex-wrap items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/40",
+                            !active && "opacity-70"
+                          )}
                         >
-                          <PlugZap className="size-4" />
-                          Kết nối lại
-                        </Button>
-                      )}
-                    </div>
-                    {active && !c.apiToken && (
-                      <p className="text-xs text-amber-600">
-                        Kênh cũ chưa có API Token — hãy “Ngắt kết nối” rồi “Kết nối
-                        lại” để được cấp token.
-                      </p>
-                    )}
+                          {/* TÊN GIAN HÀNG là tiêu đề chính của dòng */}
+                          <div className="min-w-56 flex-1">
+                            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <Store className="size-4 shrink-0 text-muted-foreground" />
+                                <span className="truncate">{c.shopName}</span>
+                              </span>
+                              <span
+                                className={cn(
+                                  "inline-flex shrink-0 items-center gap-1.5 text-xs font-medium",
+                                  active ? "text-emerald-600" : "text-zinc-400"
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "size-2 rounded-full",
+                                    active ? "bg-emerald-500" : "bg-zinc-300"
+                                  )}
+                                />
+                                {active ? "Đang hoạt động" : "Đã ngắt kết nối"}
+                              </span>
+                            </p>
+                            <p
+                              className={cn(
+                                TEXT_SUB,
+                                "mt-1 flex items-center gap-1.5 font-mono"
+                              )}
+                            >
+                              <KeyRound className="size-3 shrink-0" />
+                              {maskToken(c.apiToken)}
+                            </p>
+                          </div>
+
+                          <div className="min-w-40">
+                            <p className={TEXT_SUB}>
+                              {formatNumber(c._count?.orders ?? 0)} đơn hàng ·{" "}
+                              {formatNumber(c._count?.channelProducts ?? 0)} SP sàn
+                            </p>
+                            <p className={TEXT_SUB}>
+                              Phí sàn {(Number(c.feeRate) * 100).toFixed(1)}%
+                            </p>
+                          </div>
+
+                          <div className="ml-auto flex flex-wrap gap-2">
+                            {active ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setEditing(c)}
+                                >
+                                  <Pencil className="size-3.5" />
+                                  Cập nhật
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-amber-700"
+                                  disabled={
+                                    !c.apiToken || c.channelName === "OFFLINE"
+                                  }
+                                  onClick={() => setMockFor(c)}
+                                >
+                                  <Zap className="size-3.5" />
+                                  Giả lập đơn
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-rose-700"
+                                  onClick={() => handleDisconnect(c)}
+                                >
+                                  <Unplug className="size-3.5" />
+                                  Ngắt kết nối
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleReconnect(c)}
+                              >
+                                <PlugZap className="size-3.5" />
+                                Kết nối lại
+                              </Button>
+                            )}
+                          </div>
+
+                          {active && !c.apiToken && (
+                            <p className="w-full text-xs text-amber-600">
+                              Gian hàng cũ chưa có API Token — hãy “Ngắt kết nối”
+                              rồi “Kết nối lại” để được cấp token.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </CardContent>
                 </Card>
               );
@@ -556,6 +750,17 @@ export default function ChannelsPage() {
           open={true}
           onOpenChange={(o) => {
             if (!o) setMockFor(null);
+          }}
+          onDone={load}
+        />
+      )}
+
+      {editing && (
+        <UpdateShopDialog
+          channel={editing}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setEditing(null);
           }}
           onDone={load}
         />
