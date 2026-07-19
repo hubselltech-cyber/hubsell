@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { AccessDenied } from "@/components/access-denied";
+import { canAccessFinance } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
 import {
   CostPriceTable,
@@ -159,7 +160,8 @@ export default function CostPricesPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    // Giá vốn là số liệu nhạy cảm: chỉ Chủ shop
+    if (!canAccessFinance(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;

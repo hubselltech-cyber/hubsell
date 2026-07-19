@@ -26,7 +26,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { createProduct, ApiError } from "@/lib/api";
+import { createProduct, getStoredUser, ApiError } from "@/lib/api";
+import { canSeeFinancials } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 // Ô nhập là chuỗi; kiểm tra rồi mới chuyển sang số khi gửi đi
 const numberString = (message: string) =>
@@ -52,13 +54,16 @@ type ProductFormValues = z.infer<typeof productSchema>;
 export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const seesCost = canSeeFinancials(getStoredUser()?.role);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues: {
       skuCode: "",
       productName: "",
-      costPrice: "",
+      // Ô giá vốn bị ẩn với nhân viên nên phải có sẵn giá trị hợp lệ, nếu không
+      // biểu mẫu sẽ báo lỗi ở một ô mà họ không nhìn thấy để sửa.
+      costPrice: seesCost ? "" : "0",
       sellingPrice: "",
       initialQuantity: "0",
     },
@@ -75,7 +80,7 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
         initialQuantity: Number(values.initialQuantity),
       });
       toast.success(`Đã thêm sản phẩm "${created.productName}"`);
-      form.reset();
+      form.reset({ costPrice: seesCost ? "" : "0" });
       setOpen(false);
       onCreated();
     } catch (err) {
@@ -128,20 +133,24 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="costPrice"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Giá vốn (₫)</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="0" placeholder="65000" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* Nhân viên không đặt giá vốn — chủ shop vào cấu hình sau ở trang
+                Cấu hình Giá vốn. Máy chủ cũng bỏ qua trường này nếu nhân viên gửi lên. */}
+            <div className={cn("grid gap-4", seesCost && "grid-cols-2")}>
+              {seesCost && (
+                <FormField
+                  control={form.control}
+                  name="costPrice"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Giá vốn (₫)</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="0" placeholder="65000" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="sellingPrice"

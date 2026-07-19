@@ -107,11 +107,45 @@ export const NO_CHANNEL_CODE = "NO_CHANNEL";
 
 export type ChannelName = "SHOPEE" | "LAZADA" | "TIKTOK" | "OFFLINE";
 
+/**
+ * Vai trò tài khoản.
+ * - ADMIN     : chủ shop, toàn quyền
+ * - SALES     : nhân viên vận hành — chỉ gian hàng được phân công, không thấy giá vốn/lợi nhuận
+ * - WAREHOUSE : nhân viên kho — đơn của mọi gian, nhưng không vào được mục Tài chính
+ */
+export type Role = "ADMIN" | "SALES" | "WAREHOUSE";
+
+/** Vai trò chủ shop có thể gán cho nhân viên. */
+export const ASSIGNABLE_ROLES: Role[] = ["SALES", "WAREHOUSE"];
+
+export const ROLE_META: Record<
+  Role,
+  { label: string; description: string; className: string }
+> = {
+  ADMIN: {
+    label: "Chủ shop",
+    description: "Toàn quyền: mọi gian hàng, mọi báo cáo tài chính.",
+    className: "bg-violet-100 text-violet-700 border-violet-200",
+  },
+  SALES: {
+    label: "Nhân viên vận hành",
+    description:
+      "Chỉ xử lý đơn và xem doanh thu của những gian hàng được phân công. Không thấy giá vốn, lợi nhuận hay chi phí.",
+    className: "bg-sky-100 text-sky-700 border-sky-200",
+  },
+  WAREHOUSE: {
+    label: "Nhân viên kho",
+    description:
+      "Thấy đơn của TẤT CẢ gian hàng để nhặt và đóng gói. Không vào được mục Tài chính và không thấy giá vốn.",
+    className: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+};
+
 export interface AuthUser {
   id: string;
   email: string;
   fullName: string;
-  role: string;
+  role: Role;
 }
 
 export interface AuthResponse {
@@ -123,7 +157,8 @@ export interface Product {
   id: string;
   skuCode: string;
   productName: string;
-  costPrice: string | number;
+  /** Vắng mặt khi người đang xem không được phép biết giá vốn (SALES/WAREHOUSE). */
+  costPrice?: string | number;
   sellingPrice: string | number;
   quantityInStock: number;
   createdAt: string;
@@ -353,8 +388,10 @@ export interface StaffMember {
   id: string;
   email: string;
   fullName: string;
+  role: Role;
   createdAt: string;
-  allowedChannelIds: string[]; // rỗng = xem tất cả kênh
+  /** Gian hàng được phân công. CHỈ có ý nghĩa với SALES; rỗng = chưa thấy đơn nào. */
+  allowedChannelIds: string[];
 }
 
 export function fetchStaff() {
@@ -365,6 +402,8 @@ export function createStaff(data: {
   email: string;
   password: string;
   fullName: string;
+  role: Role;
+  channelIds?: string[];
 }) {
   return apiFetch<StaffMember>("/api/staff", {
     method: "POST",
@@ -376,6 +415,22 @@ export function setStaffChannels(staffId: string, channelIds: string[]) {
   return apiFetch<{ id: string; allowedChannelIds: string[] }>(
     `/api/staff/${staffId}/channels`,
     { method: "PUT", body: JSON.stringify({ channelIds }) }
+  );
+}
+
+/** Đổi vai trò của một nhân viên. */
+export function updateStaffRole(staffId: string, role: Role) {
+  return apiFetch<StaffMember>(`/api/staff/${staffId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+/** Phân quyền từ phía gian hàng: chọn những SALES nào phụ trách gian này. */
+export function setChannelStaff(channelId: string, staffIds: string[]) {
+  return apiFetch<{ channelId: string; staffIds: string[] }>(
+    `/api/staff/by-channel/${channelId}`,
+    { method: "PUT", body: JSON.stringify({ staffIds }) }
   );
 }
 

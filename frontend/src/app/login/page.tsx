@@ -33,6 +33,7 @@ import {
   ApiError,
   type AuthUser,
 } from "@/lib/api";
+import { homePathFor } from "@/lib/permissions";
 
 // ----- Validation bằng zod -----
 
@@ -218,8 +219,8 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
 
   function goToDashboard(user: AuthUser) {
-    // Nhân viên không được vào Dashboard tài chính → đưa thẳng tới Đơn hàng
-    router.replace(user.role === "STAFF" ? "/orders" : "/");
+    // Nhân viên kho không vào được Tổng quan → đưa thẳng tới Đơn hàng
+    router.replace(homePathFor(user.role));
   }
 
   return (

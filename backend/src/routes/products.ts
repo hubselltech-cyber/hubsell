@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { Prisma, InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { canSeeFinancials, type AuthRequest } from "../auth";
 
 const router = Router();
 
@@ -19,6 +19,19 @@ const upload = multer({
     }
   },
 });
+
+/**
+ * Bỏ trường giá vốn khỏi dữ liệu trả về cho người không được xem tài chính.
+ * Giấu cột trên giao diện là chưa đủ — mở tab Network vẫn đọc được nguyên số.
+ */
+function hideCost<T extends { costPrice: unknown }>(
+  product: T,
+  seesFinancials: boolean
+): T | Omit<T, "costPrice"> {
+  if (seesFinancials) return product;
+  const { costPrice: _costPrice, ...rest } = product;
+  return rest;
+}
 
 // Kiểm tra một giá trị có phải số tiền hợp lệ (>= 0) không
 function parseMoney(value: unknown): number | null {
@@ -79,7 +92,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
       }),
     ]);
 
-    res.json({ items, total, page, pageSize, pageCount: Math.ceil(total / pageSize) });
+    const seesFinancials = canSeeFinancials(req.userRole);
+    res.json({
+      items: items.map((p) => hideCost(p, seesFinancials)),
+      total,
+      page,
+      pageSize,
+      pageCount: Math.ceil(total / pageSize),
+      costPriceHidden: !seesFinancials,
+    });
   } catch (err) {
     next(err);
   }
@@ -100,7 +121,10 @@ router.post("/", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Vui lòng nhập tên sản phẩm" });
       return;
     }
-    const cost = parseMoney(costPrice);
+    // Nhân viên vẫn được thêm sản phẩm mới (kho nhập hàng là việc của họ) nhưng
+    // giá vốn thì để 0 cho chủ shop vào cấu hình sau, không nhận từ nhân viên.
+    const seesFinancials = canSeeFinancials(req.userRole);
+    const cost = seesFinancials ? parseMoney(costPrice) : 0;
     const selling = parseMoney(sellingPrice);
     if (cost === null || selling === null) {
       res.status(400).json({ error: "Giá vốn / giá bán phải là số không âm" });
@@ -195,6 +219,12 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       data.productName = productName.trim();
     }
     if (costPrice !== undefined) {
+      if (!canSeeFinancials(req.userRole)) {
+        res.status(403).json({
+          error: "Chỉ chủ shop mới được sửa giá vốn",
+        });
+        return;
+      }
       const cost = parseMoney(costPrice);
       if (cost === null) {
         res.status(400).json({ error: "Giá vốn phải là số không âm" });
@@ -286,7 +316,11 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
         return;
       }
 
-      const cost = parseMoney(pickColumn(row, COLS.cost) ?? 0);
+      // Nhân viên nhập file có cột Giá vốn thì cột đó bị bỏ qua, không phải
+      // báo lỗi cả dòng — hàng vẫn vào kho, chủ shop vào đặt giá vốn sau.
+      const cost = canSeeFinancials(req.userRole)
+        ? parseMoney(pickColumn(row, COLS.cost) ?? 0)
+        : 0;
       const selling = parseMoney(pickColumn(row, COLS.selling) ?? 0);
       if (cost === null || selling === null) {
         errors.push({

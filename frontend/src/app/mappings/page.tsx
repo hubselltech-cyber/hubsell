@@ -45,6 +45,7 @@ import {
   type ChannelProduct,
   type Product,
 } from "@/lib/api";
+import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
@@ -127,7 +128,8 @@ export default function MappingsPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    // Liên kết sản phẩm là việc cấu hình của Chủ shop
+    if (!canManageShop(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;

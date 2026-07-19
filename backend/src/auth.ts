@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import { Role } from "@prisma/client";
 import { prisma } from "./prisma";
 
 // Khóa bí mật để ký token. Ở môi trường thật PHẢI đặt trong biến môi trường.
@@ -11,10 +12,18 @@ export interface AuthRequest extends Request {
   userId?: string; // id của chính người đang đăng nhập
   ownerId?: string; // id CHỦ SHOP — mọi dữ liệu đều thuộc về chủ shop.
   // Với Admin: ownerId = userId. Với Staff: ownerId = id của chủ shop.
-  userRole?: string; // ADMIN | STAFF
-  // Phạm vi kênh của nhân viên: null = xem tất cả kênh; mảng = chỉ các kênh này.
-  // Admin luôn = null (toàn quyền).
+  userRole?: Role;
+  // Phạm vi gian hàng: null = xem TẤT CẢ; mảng = chỉ các gian này (kể cả mảng rỗng).
+  // ADMIN và WAREHOUSE luôn null; SALES luôn là mảng.
   allowedChannelIds?: string[] | null;
+}
+
+/**
+ * Vai trò nào được xem số liệu tài chính (giá vốn, lợi nhuận, chi phí vận hành).
+ * Chỉ chủ shop. SALES thấy doanh thu nhưng không thấy lãi; WAREHOUSE không thấy gì.
+ */
+export function canSeeFinancials(role?: Role): boolean {
+  return role === Role.ADMIN;
 }
 
 // Tạo token đăng nhập cho một user
@@ -48,19 +57,23 @@ export async function requireAuth(
     }
 
     req.userId = user.id;
-    req.ownerId = user.ownerId ?? user.id; // Staff dùng chung dữ liệu của chủ shop
+    req.ownerId = user.ownerId ?? user.id; // Nhân viên dùng chung dữ liệu của chủ shop
     req.userRole = user.role;
 
-    // Nạp phạm vi kênh cho nhân viên (multi-store permission)
-    if (user.role === "STAFF") {
+    // PHẠM VI GIAN HÀNG THEO VAI TRÒ:
+    // - ADMIN     : toàn bộ gian hàng của shop
+    // - WAREHOUSE : cũng toàn bộ — kho phải nhặt hàng cho đơn của mọi gian
+    // - SALES     : đúng những gian được phân công. Chưa phân công gian nào thì
+    //   chưa thấy đơn nào; mở sẵn toàn shop cho một tài khoản chưa cấu hình là
+    //   mặc định nguy hiểm, thà để trống rồi báo chủ shop đi phân công.
+    if (user.role === Role.SALES) {
       const perms = await prisma.staffChannel.findMany({
         where: { staffId: user.id },
         select: { channelId: true },
       });
-      // Không gán kênh nào = xem tất cả (null); có gán = chỉ các kênh đó
-      req.allowedChannelIds = perms.length > 0 ? perms.map((p) => p.channelId) : null;
+      req.allowedChannelIds = perms.map((p) => p.channelId);
     } else {
-      req.allowedChannelIds = null; // Admin: toàn quyền
+      req.allowedChannelIds = null;
     }
 
     next();
@@ -94,9 +107,24 @@ export function requireAdmin(
   res: Response,
   next: NextFunction
 ) {
-  if (req.userRole !== "ADMIN") {
+  if (req.userRole !== Role.ADMIN) {
     res.status(403).json({ error: "Bạn không có quyền truy cập" });
     return;
   }
   next();
+}
+
+/**
+ * Middleware: chỉ cho phép các vai trò được liệt kê đi tiếp.
+ * Dùng để chặn nguyên một nhóm API theo vai trò ngay từ tầng định tuyến, thay vì
+ * rải câu lệnh kiểm tra vai trò trong từng controller rồi bỏ sót một chỗ.
+ */
+export function requireRole(...roles: Role[]) {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.userRole || !roles.includes(req.userRole)) {
+      res.status(403).json({ error: "Bạn không có quyền truy cập" });
+      return;
+    }
+    next();
+  };
 }

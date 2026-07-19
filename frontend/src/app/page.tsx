@@ -68,9 +68,11 @@ import {
   type ChannelName,
   type DashboardSummary,
 } from "@/lib/api";
+import { canAccessDashboard, canSeeFinancials } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { ShopFilter, shopLabel } from "@/components/shop-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 // Màu nền của từng sàn trên biểu đồ tròn
 const CHANNEL_COLORS: Record<string, string> = {
@@ -148,6 +150,9 @@ export default function DashboardPage() {
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [channelId, setChannelId] = useState("");
+  // SALES xem được doanh thu và sản lượng, nhưng không được biết giá vốn hay lãi.
+  // Backend đã cắt các trường đó khỏi phản hồi; ở đây bỏ luôn thẻ để không hiện "—".
+  const seesFinancials = canSeeFinancials(getStoredUser()?.role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -182,8 +187,8 @@ export default function DashboardPage() {
       router.replace("/login");
       return;
     }
-    // Nhân viên không được xem Dashboard tài chính
-    if (getStoredUser()?.role === "STAFF") {
+    // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
+    if (!canAccessDashboard(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;
@@ -285,7 +290,7 @@ export default function DashboardPage() {
         {/* ===== BÁO CÁO TÀI CHÍNH (đơn Đã giao) ===== */}
         <div>
           <h2 className="text-lg font-semibold tracking-tight">
-            Báo cáo tài chính
+            {seesFinancials ? "Báo cáo tài chính" : "Báo cáo bán hàng"}
           </h2>
           <p className="text-sm text-muted-foreground">
             Tính trên {analytics ? formatNumber(analytics.deliveredOrderCount) : "—"}{" "}
@@ -294,7 +299,13 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Refreshing
+          active={loading}
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            seesFinancials && "sm:grid-cols-3"
+          )}
+        >
           <StatCard
             label="Tổng Doanh thu"
             value={analytics ? formatVND(analytics.totalRevenue) : "—"}
@@ -302,32 +313,36 @@ export default function DashboardPage() {
             tone="positive"
             colorValue
           />
-          <StatCard
-            label="Tổng Giá vốn"
-            value={analytics ? formatVND(analytics.totalCost) : "—"}
-            icon={Coins}
-            tone="negative"
-            colorValue
-            subtitle={
-              cogsRatio !== undefined ? `${cogsRatio}% doanh thu` : undefined
-            }
-          />
-          <StatCard
-            label="Lợi nhuận gộp"
-            value={analytics ? formatVND(analytics.grossProfit) : "—"}
-            icon={PiggyBank}
-            tone={analytics ? toneBySign(analytics.grossProfit) : "neutral"}
-            colorValue
-            subtitle={
-              grossMargin !== undefined
-                ? `Biên lợi nhuận gộp ${grossMargin}%`
-                : undefined
-            }
-          />
+          {seesFinancials && (
+            <>
+              <StatCard
+                label="Tổng Giá vốn"
+                value={analytics ? formatVND(analytics.totalCost) : "—"}
+                icon={Coins}
+                tone="negative"
+                colorValue
+                subtitle={
+                  cogsRatio !== undefined ? `${cogsRatio}% doanh thu` : undefined
+                }
+              />
+              <StatCard
+                label="Lợi nhuận gộp"
+                value={analytics ? formatVND(analytics.grossProfit) : "—"}
+                icon={PiggyBank}
+                tone={analytics ? toneBySign(analytics.grossProfit) : "neutral"}
+                colorValue
+                subtitle={
+                  grossMargin !== undefined
+                    ? `Biên lợi nhuận gộp ${grossMargin}%`
+                    : undefined
+                }
+              />
+            </>
+          )}
         </Refreshing>
 
-        {/* Chi phí hoạt động + Lợi nhuận thuần */}
-        {analytics?.operatingExpenseIsShopWide && (
+        {/* Chi phí hoạt động + Lợi nhuận thuần — chỉ chủ shop */}
+        {seesFinancials && analytics?.operatingExpenseIsShopWide && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Đang lọc theo một gian hàng. Chi phí hoạt động (mặt bằng, lương,
             marketing…) được ghi nhận ở cấp toàn shop nên vẫn là con số của cả
@@ -336,6 +351,7 @@ export default function DashboardPage() {
             giá vốn và lợi nhuận gộp thì đã lọc đúng theo gian.
           </p>
         )}
+        {seesFinancials && (
         <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <StatCard
             label="Tổng Chi phí hoạt động"
@@ -366,9 +382,10 @@ export default function DashboardPage() {
             );
           })()}
         </Refreshing>
+        )}
 
-        {/* Quản lý chi phí hoạt động */}
-        <ExpensesSection onChanged={load} />
+        {/* Quản lý chi phí hoạt động — chỉ chủ shop */}
+        {seesFinancials && <ExpensesSection onChanged={load} />}
 
         {/* 2 biểu đồ */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -466,7 +483,12 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Đơn hàng gần đây</CardTitle>
-            <CardDescription>5 đơn hàng mới nhất từ tất cả các kênh.</CardDescription>
+            <CardDescription>
+              5 đơn hàng mới nhất
+              {seesFinancials
+                ? " từ tất cả các gian hàng."
+                : " từ gian hàng bạn phụ trách."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (

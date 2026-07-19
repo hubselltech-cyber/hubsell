@@ -42,6 +42,7 @@ import {
   type ShippingDiscrepancy,
   type ShippingDisputeStatus,
 } from "@/lib/api";
+import { canAccessFinance } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
 import { exportShippingDisputes } from "@/lib/excel";
@@ -134,7 +135,8 @@ export default function ShippingAlertsPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    // Đối soát tiền với sàn: chỉ Chủ shop
+    if (!canAccessFinance(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;

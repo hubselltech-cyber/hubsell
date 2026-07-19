@@ -38,6 +38,7 @@ import {
   type ChannelName,
   type LossOrder,
 } from "@/lib/api";
+import { canAccessFinance } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 
@@ -84,7 +85,8 @@ export default function LossOrdersPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    // Cảnh báo đơn lỗ dựa trên giá vốn: chỉ Chủ shop
+    if (!canAccessFinance(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;

@@ -36,12 +36,14 @@ import {
 } from "@/components/ui/table";
 import {
   fetchProducts,
+  getStoredUser,
   getToken,
   ApiError,
   type Product,
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { canSeeFinancials } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
@@ -109,7 +111,7 @@ export default function ProductsPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      const count = await exportAllProducts();
+      const count = await exportAllProducts(seesCost);
       if (count === 0) {
         toast.info("Chưa có sản phẩm nào để xuất");
       } else {
@@ -121,6 +123,10 @@ export default function ProductsPage() {
       setExporting(false);
     }
   }
+
+  // Nhân viên (SALES/WAREHOUSE) không được biết giá vốn — backend đã cắt hẳn
+  // trường này khỏi dữ liệu trả về, ở đây bỏ luôn cột để bảng không có ô trống.
+  const seesCost = canSeeFinancials(getStoredUser()?.role);
 
   const columns = useMemo(
     () => [
@@ -134,14 +140,18 @@ export default function ProductsPage() {
         header: "Tên sản phẩm",
         cell: (info) => <span className="font-medium">{info.getValue()}</span>,
       }),
-      columnHelper.accessor("costPrice", {
-        header: () => <div className="text-right">Giá vốn</div>,
-        cell: (info) => (
-          <div className="text-right text-muted-foreground">
-            {formatVND(info.getValue())}
-          </div>
-        ),
-      }),
+      ...(seesCost
+        ? [
+            columnHelper.accessor("costPrice", {
+              header: () => <div className="text-right">Giá vốn</div>,
+              cell: (info) => (
+                <div className="text-right text-muted-foreground">
+                  {formatVND(info.getValue() ?? 0)}
+                </div>
+              ),
+            }),
+          ]
+        : []),
       columnHelper.accessor("sellingPrice", {
         header: () => <div className="text-right">Giá bán</div>,
         cell: (info) => (
@@ -210,7 +220,7 @@ export default function ProductsPage() {
         ),
       }),
     ],
-    []
+    [seesCost]
   );
 
   const table = useReactTable({
@@ -226,8 +236,9 @@ export default function ProductsPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Kho vật lý — SKU nội bộ, tồn kho và giá vốn ({formatNumber(total)}{" "}
-            sản phẩm). Sản phẩm từ sàn được nối về đây tại trang Liên kết SP.
+            Kho vật lý — SKU nội bộ, tồn kho
+            {seesCost ? " và giá vốn" : ""} ({formatNumber(total)} sản phẩm).
+            Sản phẩm từ sàn được nối về đây tại trang Liên kết SP.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <ImportExcelDialog onImported={load} />

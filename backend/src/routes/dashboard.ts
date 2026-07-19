@@ -1,26 +1,38 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { canSeeFinancials, type AuthRequest } from "../auth";
+import { channelScope } from "../channel-filter";
 
 const router = Router();
 
 // GET /api/dashboard/summary
-// Số liệu tổng quan — chỉ tính dữ liệu của user đang đăng nhập.
+// Số liệu tổng quan. SALES chỉ thấy phần thuộc gian hàng mình phụ trách.
 router.get("/summary", async (req: AuthRequest, res, next) => {
   try {
     const userId = req.ownerId!;
+    const scope = channelScope(req);
 
     const [productCount, orderCount, channelCount, revenueAgg, recentOrders] =
       await Promise.all([
         prisma.product.count({ where: { userId } }),
-        prisma.order.count({ where: { channel: { userId } } }),
-        prisma.channel.count({ where: { userId } }),
+        prisma.order.count({ where: { channel: scope } }),
+        // Đếm đúng số gian trong tầm nhìn của người đang xem: SALES phụ trách 1
+        // gian mà thẻ báo "5 kênh bán" thì con số đó chẳng nói lên điều gì về
+        // công việc của họ.
+        prisma.channel.count({
+          where: {
+            userId,
+            ...(req.allowedChannelIds
+              ? { id: { in: req.allowedChannelIds } }
+              : {}),
+          },
+        }),
         prisma.order.aggregate({
           _sum: { totalAmount: true },
-          where: { paymentStatus: "PAID", channel: { userId } },
+          where: { paymentStatus: "PAID", channel: scope },
         }),
         prisma.order.findMany({
-          where: { channel: { userId } },
+          where: { channel: scope },
           take: 5,
           orderBy: { createdAt: "desc" },
           include: { channel: { select: { channelName: true, shopName: true } } },
@@ -43,6 +55,7 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
         shopName: o.channel.shopName,
         createdAt: o.createdAt,
       })),
+      financialsHidden: !canSeeFinancials(req.userRole),
     });
   } catch (err) {
     next(err);

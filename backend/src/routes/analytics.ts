@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { canSeeFinancials, type AuthRequest } from "../auth";
 import { parseDateRange } from "../date-range";
 import { channelScope, hasChannelFilter } from "../channel-filter";
 
@@ -14,13 +14,13 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// GET /api/analytics — Báo cáo tài chính (CHỈ ADMIN).
+// GET /api/analytics — Báo cáo kinh doanh. ADMIN và SALES vào được, WAREHOUSE thì không.
 // Lọc theo ?from=&to=&channelId= — channelId là GIAN HÀNG cụ thể, không phải sàn.
 // Các chỉ số tính trên đơn có trạng thái DELIVERED (Đã giao):
-//   - Tổng Doanh thu  = tổng totalAmount
-//   - Tổng Giá vốn    = Σ (số lượng đã bán × costPrice sản phẩm gốc)
+//   - Tổng Doanh thu  = tổng totalAmount                    (ADMIN + SALES)
+//   - Tổng Giá vốn    = Σ (số lượng đã bán × costPrice)      (chỉ ADMIN)
 //     (dựa vào InventoryLog trừ kho gắn với đơn — đơn cũ không có log thì giá vốn = 0)
-//   - Lợi nhuận gộp   = Doanh thu − Giá vốn
+//   - Lợi nhuận gộp   = Doanh thu − Giá vốn                  (chỉ ADMIN)
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
@@ -28,6 +28,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
     const filteredByChannel = hasChannelFilter(req);
+    const seesFinancials = canSeeFinancials(req.userRole);
 
     // 1) Toàn bộ đơn ĐÃ GIAO trong phạm vi đang xem
     const delivered = await prisma.order.findMany({
@@ -44,9 +45,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
       0
     );
 
-    // 2) Giá vốn: các log TRỪ kho thuộc những đơn đã giao
+    // 2) Giá vốn: các log TRỪ kho thuộc những đơn đã giao.
+    // Người không được xem tài chính thì bỏ hẳn truy vấn này — vừa khỏi tốn công
+    // vừa chắc chắn không có đường nào rò con số ra ngoài.
     const deliveredIds = delivered.map((o) => o.id);
-    const deductionLogs = deliveredIds.length
+    const deductionLogs = seesFinancials && deliveredIds.length
       ? await prisma.inventoryLog.findMany({
           where: { orderId: { in: deliveredIds }, changeQuantity: { lt: 0 } },
           include: { product: { select: { costPrice: true } } },
@@ -62,10 +65,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const grossProfit = totalRevenue - totalCost;
 
     // 2b) Chi phí hoạt động: tổng + phân bổ theo loại
-    const expenses = await prisma.operatingExpense.findMany({
-      where: { userId: ownerId, expenseDate: range },
-      select: { category: true, amount: true },
-    });
+    const expenses = seesFinancials
+      ? await prisma.operatingExpense.findMany({
+          where: { userId: ownerId, expenseDate: range },
+          select: { category: true, amount: true },
+        })
+      : [];
     const totalOperatingExpense = expenses.reduce(
       (sum, e) => sum + Number(e.amount),
       0
@@ -157,6 +162,21 @@ router.get("/", async (req: AuthRequest, res, next) => {
       })
       .sort((a, b) => b.count - a.count);
 
+    // SALES được xem doanh thu và sản lượng của gian mình phụ trách, nhưng
+    // KHÔNG được biết giá vốn, lợi nhuận hay chi phí vận hành của shop. Cắt các
+    // trường đó ngay ở đây thay vì chỉ ẩn trên giao diện — ẩn ở giao diện thì mở
+    // tab Network là đọc được nguyên số liệu.
+    if (!seesFinancials) {
+      res.json({
+        deliveredOrderCount: delivered.length,
+        totalRevenue,
+        revenueByDay,
+        ordersByChannel,
+        financialsHidden: true,
+      });
+      return;
+    }
+
     res.json({
       deliveredOrderCount: delivered.length,
       totalRevenue,
@@ -167,6 +187,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       expensesByCategory,
       revenueByDay,
       ordersByChannel,
+      financialsHidden: false,
       // Chi phí vận hành (mặt bằng, lương, marketing…) ghi ở cấp TOÀN SHOP, không
       // gắn với gian hàng nào. Khi đang lọc một gian, con số này vẫn là của cả
       // shop nên Lợi nhuận thuần không phải lãi riêng của gian đó — frontend

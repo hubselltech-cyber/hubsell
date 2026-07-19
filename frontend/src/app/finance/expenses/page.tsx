@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { AccessDenied } from "@/components/access-denied";
+import { canAccessFinance } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DateRangePicker } from "@/components/date-range-picker";
@@ -357,7 +358,8 @@ export default function FinanceExpensesPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    // Chi phí vận hành: chỉ Chủ shop
+    if (!canAccessFinance(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;

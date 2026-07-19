@@ -1,7 +1,8 @@
 import express from "express";
 import cors from "cors";
 
-import { requireAdmin, requireAuth, requireChannel } from "./auth";
+import { Role } from "@prisma/client";
+import { requireAuth, requireChannel, requireRole } from "./auth";
 import authRouter from "./routes/auth";
 import analyticsRouter from "./routes/analytics";
 import expensesRouter from "./routes/expenses";
@@ -33,22 +34,40 @@ export function createApp() {
   // Webhook từ sàn (công khai — sàn xác thực bằng token của kênh, không dùng JWT)
   app.use("/api/webhooks", webhooksRouter);
 
-  // Các API dữ liệu — BẮT BUỘC đăng nhập + BẮT BUỘC đã kết nối ít nhất 1 gian hàng.
-  // requireChannel = Onboarding guard: chưa có kênh nào → trả 409 code NO_CHANNEL.
-  // Staff (nhân viên) chỉ được: Sản phẩm, Kho, Đơn hàng, xem danh sách kênh.
-  // Admin (chủ shop) mới được: Dashboard tài chính, Analytics, cấu hình kênh, mapping, nhân viên.
-  app.use("/api/dashboard", requireAuth, requireAdmin, requireChannel, dashboardRouter);
-  app.use("/api/analytics", requireAuth, requireAdmin, requireChannel, analyticsRouter);
-  app.use("/api/expenses", requireAuth, requireAdmin, requireChannel, expensesRouter);
-  app.use("/api/finance", requireAuth, requireAdmin, requireChannel, financeRouter);
-  app.use("/api/products", requireAuth, requireChannel, productsRouter);
-  app.use("/api/orders", requireAuth, requireChannel, ordersRouter);
-  app.use("/api/inventory", requireAuth, requireChannel, inventoryRouter);
-  app.use("/api/warehouse", requireAuth, requireChannel, warehouseRouter);
-  app.use("/api/mappings", requireAuth, requireAdmin, requireChannel, mappingsRouter);
+  // ============================================================
+  // PHÂN QUYỀN 2 LỚP
+  //
+  // Lớp 1 — VAI TRÒ quyết định vào được API nào (chặn ngay tại đây):
+  //   ADMIN     : toàn bộ
+  //   SALES     : đơn hàng, kho, sản phẩm, và Tổng quan (doanh thu, số đơn)
+  //   WAREHOUSE : đơn hàng, kho, sản phẩm — KHÔNG một API tài chính nào
+  //
+  // Lớp 2 — PHẠM VI GIAN HÀNG quyết định thấy bao nhiêu dữ liệu trong API đó.
+  //   Nạp ở requireAuth (req.allowedChannelIds), áp bởi channelScope() ở từng
+  //   truy vấn. SALES bị bó theo gian được phân công; ADMIN và WAREHOUSE thấy hết.
+  //
+  // Chỉ số nhạy cảm (giá vốn, lợi nhuận, chi phí) còn bị lọc thêm một lớp nữa
+  // ngay trong controller bằng canSeeFinancials() — SALES vào được /analytics
+  // nhưng không nhận được các trường đó.
+  //
+  // requireChannel = Onboarding guard: shop chưa có gian nào → 409 NO_CHANNEL.
+  // ============================================================
+  const adminOnly = requireRole(Role.ADMIN);
+  const notWarehouse = requireRole(Role.ADMIN, Role.SALES);
+  const anyRole = requireRole(Role.ADMIN, Role.SALES, Role.WAREHOUSE);
+
+  app.use("/api/dashboard", requireAuth, notWarehouse, requireChannel, dashboardRouter);
+  app.use("/api/analytics", requireAuth, notWarehouse, requireChannel, analyticsRouter);
+  app.use("/api/expenses", requireAuth, adminOnly, requireChannel, expensesRouter);
+  app.use("/api/finance", requireAuth, adminOnly, requireChannel, financeRouter);
+  app.use("/api/products", requireAuth, anyRole, requireChannel, productsRouter);
+  app.use("/api/orders", requireAuth, anyRole, requireChannel, ordersRouter);
+  app.use("/api/inventory", requireAuth, anyRole, requireChannel, inventoryRouter);
+  app.use("/api/warehouse", requireAuth, anyRole, requireChannel, warehouseRouter);
+  app.use("/api/mappings", requireAuth, adminOnly, requireChannel, mappingsRouter);
 
   // Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
-  app.use("/api/staff", requireAuth, requireAdmin, staffRouter);
+  app.use("/api/staff", requireAuth, adminOnly, staffRouter);
 
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).

@@ -8,7 +8,6 @@ import { z } from "zod";
 import { toast } from "sonner";
 import {
   Loader2,
-  Plus,
   ShieldCheck,
   Store,
   Trash2,
@@ -39,18 +38,28 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   ApiError,
+  ASSIGNABLE_ROLES,
   createStaff,
   deleteStaff,
   fetchChannels,
   fetchStaff,
   getStoredUser,
   getToken,
+  ROLE_META,
   setStaffChannels,
+  updateStaffRole,
   type Channel,
+  type Role,
   type StaffMember,
 } from "@/lib/api";
+import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { shopLabel } from "@/components/shop-filter";
 import { formatDateTime } from "@/lib/format";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Label } from "@/components/ui/label";
+import { TEXT_SUB } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 // ---------- Dialog: Thêm nhân viên ----------
 
@@ -61,20 +70,45 @@ const staffSchema = z.object({
 });
 type StaffFormValues = z.infer<typeof staffSchema>;
 
-function AddStaffDialog({ onAdded }: { onAdded: () => void }) {
+function AddStaffDialog({
+  channels,
+  onAdded,
+}: {
+  channels: Channel[];
+  onAdded: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [role, setRole] = useState<Role>("SALES");
+  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set());
   const form = useForm<StaffFormValues>({
     resolver: zodResolver(staffSchema),
     defaultValues: { fullName: "", email: "", password: "" },
   });
 
+  function toggleChannel(id: string) {
+    setSelectedChannels((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function onSubmit(values: StaffFormValues) {
     setSubmitting(true);
     try {
-      await createStaff(values);
-      toast.success(`Đã tạo tài khoản nhân viên "${values.fullName}"`);
+      await createStaff({
+        ...values,
+        role,
+        channelIds: role === "SALES" ? Array.from(selectedChannels) : [],
+      });
+      toast.success(
+        `Đã tạo tài khoản ${ROLE_META[role].label.toLowerCase()} "${values.fullName}"`
+      );
       form.reset();
+      setRole("SALES");
+      setSelectedChannels(new Set());
       setOpen(false);
       onAdded();
     } catch (err) {
@@ -94,8 +128,8 @@ function AddStaffDialog({ onAdded }: { onAdded: () => void }) {
         <DialogHeader>
           <DialogTitle>Thêm nhân viên mới</DialogTitle>
           <DialogDescription>
-            Tài khoản nhân viên dùng chung dữ liệu của shop. Mặc định xem tất cả
-            kênh — bạn có thể giới hạn quyền theo từng gian hàng sau khi tạo.
+            Tài khoản nhân viên dùng chung dữ liệu của shop. Vai trò quyết định
+            họ vào được mục nào và thấy bao nhiêu gian hàng.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -139,6 +173,57 @@ function AddStaffDialog({ onAdded }: { onAdded: () => void }) {
                 </FormItem>
               )}
             />
+            {/* VAI TRÒ — quyết định vào được mục nào */}
+            <div className="grid gap-2">
+              <Label htmlFor="staff-role">Vai trò</Label>
+              <NativeSelect
+                id="staff-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value as Role)}
+              >
+                {ASSIGNABLE_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_META[r].label}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className={TEXT_SUB}>{ROLE_META[role].description}</p>
+            </div>
+
+            {/* Gian hàng phụ trách — chỉ SALES mới cần */}
+            {role === "SALES" && (
+              <div className="grid gap-2">
+                <Label>Gian hàng phụ trách</Label>
+                {channels.length === 0 ? (
+                  <p className={TEXT_SUB}>Shop chưa có gian hàng nào.</p>
+                ) : (
+                  <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-lg border p-2">
+                    {channels.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60"
+                      >
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-primary"
+                          checked={selectedChannels.has(c.id)}
+                          onChange={() => toggleChannel(c.id)}
+                        />
+                        <Store className="size-3.5 shrink-0 text-muted-foreground" />
+                        {shopLabel(c.channelName, c.shopName)}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {selectedChannels.size === 0 && (
+                  <p className="text-sm text-amber-600">
+                    Chưa chọn gian nào — tài khoản này sẽ chưa thấy đơn hàng nào
+                    cho tới khi anh phân công.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-1">
               <Button
                 type="button"
@@ -214,8 +299,8 @@ function PermissionDialog({
             Phân quyền gian hàng
           </DialogTitle>
           <DialogDescription>
-            Chọn các kênh mà <b>{staff.fullName}</b> được phép xem & xử lý đơn.
-            Không chọn kênh nào = cho phép xem <b>tất cả</b> kênh.
+            Chọn các gian hàng mà <b>{staff.fullName}</b> được phép xem và xử lý
+            đơn. Không chọn gian nào thì tài khoản này chưa thấy đơn hàng nào.
           </DialogDescription>
         </DialogHeader>
 
@@ -239,13 +324,16 @@ function PermissionDialog({
                     checked={checked}
                     onChange={() => toggle(c.id)}
                   />
-                  <Store className="size-4 text-muted-foreground" />
+                  <Store className="size-4 shrink-0 text-muted-foreground" />
                   <span
-                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
+                    className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
                   >
                     {meta.label}
                   </span>
-                  <span className="ml-auto text-xs text-muted-foreground">
+                  <span className="min-w-0 truncate text-sm font-medium">
+                    {c.shopName}
+                  </span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                     {c._count?.orders ?? 0} đơn
                   </span>
                 </label>
@@ -254,10 +342,15 @@ function PermissionDialog({
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground">
+        <p
+          className={cn(
+            "text-xs",
+            selected.size === 0 ? "text-amber-600" : "text-muted-foreground"
+          )}
+        >
           {selected.size === 0
-            ? "→ Nhân viên sẽ xem được TẤT CẢ kênh."
-            : `→ Nhân viên chỉ xem được ${selected.size} kênh đã chọn.`}
+            ? "→ Nhân viên này sẽ KHÔNG thấy đơn hàng nào."
+            : `→ Nhân viên chỉ xem được ${selected.size} gian hàng đã chọn.`}
         </p>
 
         <div className="flex justify-end gap-2">
@@ -315,7 +408,7 @@ export default function StaffPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    if (!canManageShop(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;
@@ -338,7 +431,19 @@ export default function StaffPage() {
 
   function channelLabel(id: string): string | null {
     const c = channels.find((x) => x.id === id);
-    return c ? CHANNEL_META[c.channelName].label : null;
+    return c ? shopLabel(c.channelName, c.shopName) : null;
+  }
+
+  async function handleRoleChange(s: StaffMember, role: Role) {
+    try {
+      await updateStaffRole(s.id, role);
+      toast.success(
+        `${s.fullName} giờ là ${ROLE_META[role].label.toLowerCase()}`
+      );
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không đổi được vai trò");
+    }
   }
 
   if (denied) {
@@ -356,7 +461,7 @@ export default function StaffPage() {
           <p className="text-muted-foreground">
             Tạo tài khoản nhân viên và phân quyền gian hàng họ được xử lý.
           </p>
-          <AddStaffDialog onAdded={load} />
+          <AddStaffDialog channels={channels} onAdded={load} />
         </div>
 
         {loading ? (
@@ -379,18 +484,33 @@ export default function StaffPage() {
                     <UserRound className="size-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{s.fullName}</p>
+                    <p className="flex flex-wrap items-center gap-2 font-medium">
+                      {s.fullName}
+                      <span
+                        className={cn(
+                          "rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                          ROLE_META[s.role].className
+                        )}
+                      >
+                        {ROLE_META[s.role].label}
+                      </span>
+                    </p>
                     <p className="truncate text-sm text-muted-foreground">
                       {s.email} · tạo {formatDateTime(s.createdAt)}
                     </p>
                   </div>
 
-                  {/* Phạm vi kênh */}
+                  {/* Phạm vi gian hàng — kho vốn thấy hết nên không liệt kê */}
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {s.allowedChannelIds.length === 0 ? (
+                    {s.role === "WAREHOUSE" ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
                         <ShieldCheck className="size-3" />
-                        Tất cả kênh
+                        Tất cả gian hàng
+                      </span>
+                    ) : s.allowedChannelIds.length === 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                        <ShieldCheck className="size-3" />
+                        Chưa phân công gian nào
                       </span>
                     ) : (
                       s.allowedChannelIds.map((id) => {
@@ -407,10 +527,30 @@ export default function StaffPage() {
                     )}
                   </div>
 
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
+                    <NativeSelect
+                      className="w-44"
+                      aria-label={`Vai trò của ${s.fullName}`}
+                      value={s.role}
+                      onChange={(e) =>
+                        handleRoleChange(s, e.target.value as Role)
+                      }
+                    >
+                      {ASSIGNABLE_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_META[r].label}
+                        </option>
+                      ))}
+                    </NativeSelect>
                     <Button
                       variant="outline"
                       size="sm"
+                      disabled={s.role !== "SALES"}
+                      title={
+                        s.role === "SALES"
+                          ? undefined
+                          : "Nhân viên kho vốn xử lý đơn của mọi gian hàng"
+                      }
                       onClick={() => setPermFor(s)}
                     >
                       <ShieldCheck className="size-4" />

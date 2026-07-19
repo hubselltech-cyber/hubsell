@@ -18,7 +18,6 @@ import {
   X,
 } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
@@ -41,7 +40,6 @@ import {
 import {
   ApiError,
   fetchWarehouseReturns,
-  getStoredUser,
   getToken,
   syncWarehouseReturns,
   type ChannelName,
@@ -117,7 +115,6 @@ export default function WarehouseReturnsPage() {
   const [debounced, setDebounced] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [denied, setDenied] = useState(false);
   const [processing, setProcessing] = useState<Order | null>(null);
 
   useEffect(() => {
@@ -160,11 +157,6 @@ export default function WarehouseReturnsPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
-      setDenied(true);
-      setLoading(false);
-      return;
-    }
     load();
   }, [load, router]);
 
@@ -201,14 +193,6 @@ export default function WarehouseReturnsPage() {
     if (isFiltering) return "Không có đơn hoàn nào khớp bộ lọc.";
     return "Chưa có đơn hoàn nào. Bấm “Đồng bộ từ sàn” để kéo về danh sách sàn báo hoàn.";
   }, [isFiltering]);
-
-  if (denied) {
-    return (
-      <AppShell>
-        <AccessDenied />
-      </AppShell>
-    );
-  }
 
   return (
     <AppShell>

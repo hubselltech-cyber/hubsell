@@ -25,9 +25,12 @@ import {
   clearToken,
   fetchMe,
   getStoredUser,
+  ROLE_META,
   setStoredUser,
   type AuthUser,
+  type Role,
 } from "@/lib/api";
+import { homePathFor } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 interface NavChild {
@@ -38,17 +41,21 @@ interface NavItem {
   href?: string;
   label: string;
   icon: LucideIcon;
-  adminOnly: boolean;
+  /** Vai trò nào nhìn thấy mục này. Không có tên trong đây thì mục bị ẩn hẳn. */
+  roles: Role[];
   children?: NavChild[];
 }
 
+const ALL_ROLES: Role[] = ["ADMIN", "SALES", "WAREHOUSE"];
+
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Tổng quan", icon: Home, adminOnly: true },
-  { href: "/orders", label: "Đơn hàng", icon: ShoppingCart, adminOnly: false },
+  // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
+  { href: "/", label: "Tổng quan", icon: Home, roles: ["ADMIN", "SALES"] },
+  { href: "/orders", label: "Đơn hàng", icon: ShoppingCart, roles: ALL_ROLES },
   {
     label: "Quản lý Tài chính",
     icon: Wallet,
-    adminOnly: true,
+    roles: ["ADMIN"],
     children: [
       { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
       { href: "/finance/expenses", label: "Chi phí vận hành" },
@@ -62,7 +69,7 @@ const NAV_ITEMS: NavItem[] = [
     // hàng hoàn đều là việc của kho.
     label: "Quản lý Kho",
     icon: Package,
-    adminOnly: false,
+    roles: ALL_ROLES,
     children: [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
@@ -70,9 +77,9 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
     ],
   },
-  { href: "/channels", label: "Kênh bán", icon: Store, adminOnly: true },
-  { href: "/mappings", label: "Liên kết SP", icon: Link2, adminOnly: true },
-  { href: "/staff", label: "Nhân viên", icon: Users, adminOnly: true },
+  { href: "/channels", label: "Kênh bán", icon: Store, roles: ["ADMIN"] },
+  { href: "/mappings", label: "Liên kết SP", icon: Link2, roles: ["ADMIN"] },
+  { href: "/staff", label: "Nhân viên", icon: Users, roles: ["ADMIN"] },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
@@ -141,8 +148,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     checkStatus();
   }, [checkStatus]);
 
-  const isStaff = user?.role === "STAFF";
-  const items = NAV_ITEMS.filter((i) => !(isStaff && i.adminOnly));
+  const items = user
+    ? NAV_ITEMS.filter((i) => i.roles.includes(user.role))
+    : [];
 
   function handleLogout() {
     clearToken();
@@ -174,7 +182,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ===== SIDEBAR DỌC BÊN TRÁI ===== */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r bg-background md:flex">
         <Link
-          href={isStaff ? "/orders" : "/"}
+          href={homePathFor(user?.role)}
           className="flex items-center gap-3 border-b px-5 py-4"
         >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 text-lg font-bold text-primary-foreground shadow-sm">
@@ -291,12 +299,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span
                   className={cn(
                     "rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                    user.role === "ADMIN"
-                      ? "border-violet-200 bg-violet-100 text-violet-700"
-                      : "border-sky-200 bg-sky-100 text-sky-700"
+                    ROLE_META[user.role].className
                   )}
                 >
-                  {user.role === "ADMIN" ? "Chủ shop" : "Nhân viên"}
+                  {ROLE_META[user.role].label}
                 </span>
               </div>
             )}

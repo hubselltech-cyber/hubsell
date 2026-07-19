@@ -86,6 +86,13 @@ enum ShippingDisputeStatus {
   DA_DOI_SOAT    // sàn đã đối soát/hoàn tiền xong
 }
 
+/// Vai trò tài khoản — quyết định thấy gì và làm được gì.
+enum Role {
+  ADMIN     // Chủ shop: toàn quyền, thấy mọi gian hàng và mọi chỉ số tài chính
+  SALES     // Nhân viên vận hành: CHỈ các gian hàng được phân công, không thấy giá vốn/lợi nhuận
+  WAREHOUSE // Nhân viên kho: thấy đơn của MỌI gian hàng để nhặt/đóng, không thấy tài chính
+}
+
 // ---------- BẢNG ----------
 
 /// Người dùng của hệ thống (chủ shop / nhân viên)
@@ -94,7 +101,7 @@ model User {
   email        String   @unique
   passwordHash String
   fullName     String
-  role         String   @default("STAFF") // ADMIN (chủ shop) hoặc STAFF (nhân viên)
+  role         Role     @default(SALES)
   createdAt    DateTime @default(now())
 
   // Nhân viên thuộc về một chủ shop → dùng chung dữ liệu của shop đó.
@@ -107,8 +114,9 @@ model User {
   products          Product[]
   operatingExpenses OperatingExpense[]
 
-  // Phân quyền theo gian hàng: nhân viên (STAFF) chỉ được xử lý đơn của các kênh
-  // được gán ở đây. KHÔNG có bản ghi nào = được xem TẤT CẢ kênh (mặc định).
+  // Phân quyền theo gian hàng — CHỈ có ý nghĩa với vai trò SALES.
+  // Không gán gian nào = SALES đó chưa xem được đơn nào (mặc định đóng, an toàn
+  // hơn là mở toàn bộ); ADMIN và WAREHOUSE vốn đã thấy mọi gian nên bỏ qua bảng này.
   staffChannels StaffChannel[] @relation("StaffChannels")
 }
 

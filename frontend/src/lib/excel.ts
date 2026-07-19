@@ -89,25 +89,33 @@ export function downloadProductTemplate() {
 
 // ---------- XUẤT SẢN PHẨM ----------
 
-export function exportProductsToExcel(products: Product[]) {
+/**
+ * Xuất danh sách sản phẩm ra Excel.
+ * `includeCost = false` (nhân viên) thì bỏ hẳn cột Giá vốn — chặn ở giao diện mà
+ * để file tải về vẫn có giá vốn thì coi như không chặn gì.
+ */
+export function exportProductsToExcel(
+  products: Product[],
+  includeCost: boolean
+) {
   const rows = products.map((p) => ({
     "Mã SKU": p.skuCode,
     "Tên sản phẩm": p.productName,
-    "Giá vốn": Number(p.costPrice),
+    ...(includeCost ? { "Giá vốn": Number(p.costPrice ?? 0) } : {}),
     "Giá bán": Number(p.sellingPrice),
     "Tồn kho": p.quantityInStock,
     "Ngày tạo": toDateTimeText(p.createdAt),
   }));
   downloadSheet(
     rows,
-    [16, 42, 14, 14, 10, 20],
+    includeCost ? [16, 42, 14, 14, 10, 20] : [16, 42, 14, 10, 20],
     "San pham",
     `hubsell_san_pham_${fileStamp()}.xlsx`
   );
 }
 
 // Lấy TẤT CẢ sản phẩm (gom mọi trang) rồi xuất
-export async function exportAllProducts() {
+export async function exportAllProducts(includeCost: boolean) {
   const all: Product[] = [];
   let page = 1;
   // trang tối đa 50/lần theo backend
@@ -117,7 +125,7 @@ export async function exportAllProducts() {
     if (page >= res.pageCount || res.pageCount === 0) break;
     page++;
   }
-  exportProductsToExcel(all);
+  exportProductsToExcel(all, includeCost);
   return all.length;
 }
 

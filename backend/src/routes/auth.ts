@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../prisma";
-import { requireAdmin, requireAuth, signToken, type AuthRequest } from "../auth";
+import { requireAuth, signToken, type AuthRequest } from "../auth";
 
 const router = Router();
 
@@ -86,62 +86,6 @@ router.post("/login", async (req, res, next) => {
     next(err);
   }
 });
-
-// POST /api/auth/staff — CHỦ SHOP tạo tài khoản NHÂN VIÊN (role STAFF).
-// Nhân viên dùng chung dữ liệu (kho, đơn hàng) của shop.
-router.post(
-  "/staff",
-  requireAuth,
-  requireAdmin,
-  async (req: AuthRequest, res, next) => {
-    try {
-      const { email, password, fullName } = req.body ?? {};
-
-      if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
-        res.status(400).json({ error: "Email không hợp lệ" });
-        return;
-      }
-      if (typeof password !== "string" || password.length < 6) {
-        res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
-        return;
-      }
-      if (typeof fullName !== "string" || fullName.trim().length < 2) {
-        res.status(400).json({ error: "Vui lòng nhập họ tên" });
-        return;
-      }
-
-      const normalizedEmail = email.trim().toLowerCase();
-      const existing = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-      });
-      if (existing) {
-        res.status(409).json({ error: "Email này đã được đăng ký" });
-        return;
-      }
-
-      const staff = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash: await bcrypt.hash(password, 10),
-          fullName: fullName.trim(),
-          role: "STAFF",
-          ownerId: req.ownerId!, // thuộc về shop của admin đang đăng nhập
-        },
-      });
-
-      res.status(201).json({
-        user: {
-          id: staff.id,
-          email: staff.email,
-          fullName: staff.fullName,
-          role: staff.role,
-        },
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
 
 // GET /api/auth/me — Lấy thông tin người đang đăng nhập.
 // Kèm hasChannels: shop đã kết nối gian hàng nào chưa (cho Onboarding overlay).

@@ -21,6 +21,7 @@ import {
 } from "recharts";
 
 import { AccessDenied } from "@/components/access-denied";
+import { canAccessFinance } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
 import { ShopFilter } from "@/components/shop-filter";
 import { DateRangePicker } from "@/components/date-range-picker";
@@ -77,7 +78,8 @@ export default function FinanceAnalyticsPage() {
       router.replace("/login");
       return;
     }
-    if (getStoredUser()?.role === "STAFF") {
+    // Báo cáo tài chính: chỉ Chủ shop
+    if (!canAccessFinance(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
       return;
