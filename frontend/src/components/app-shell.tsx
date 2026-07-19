@@ -57,7 +57,19 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/finance/cost-prices", label: "Cấu hình Giá vốn" },
     ],
   },
-  { href: "/products", label: "Sản phẩm", icon: Package, adminOnly: false },
+  {
+    // Nghiệp vụ kho gom về một nhóm: nhập hàng, quản lý sản phẩm và đối soát
+    // hàng hoàn đều là việc của kho.
+    label: "Quản lý Kho",
+    icon: Package,
+    adminOnly: false,
+    children: [
+      // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
+      // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
+      { href: "/products", label: "Sản phẩm" },
+      { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
+    ],
+  },
   { href: "/channels", label: "Kênh bán", icon: Store, adminOnly: true },
   { href: "/mappings", label: "Liên kết SP", icon: Link2, adminOnly: true },
   { href: "/staff", label: "Nhân viên", icon: Users, adminOnly: true },
@@ -67,6 +79,7 @@ const NAV_ITEMS: NavItem[] = [
 const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   { prefix: "/products", title: "Quản lý sản phẩm" },
+  { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Liên kết sản phẩm" },
   { prefix: "/staff", title: "Quản lý nhân viên" },
@@ -90,9 +103,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [hasChannels, setHasChannels] = useState<boolean | null>(null);
   // Menu con nào đang mở (theo label). Tự mở nhóm Tài chính khi đang ở /finance/*
-  const [openMenus, setOpenMenus] = useState<Set<string>>(
-    () => new Set(pathname.startsWith("/finance") ? ["Quản lý Tài chính"] : [])
-  );
+  const [openMenus, setOpenMenus] = useState<Set<string>>(() => {
+    const open = new Set<string>();
+    if (pathname.startsWith("/finance")) open.add("Quản lý Tài chính");
+    if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
+      open.add("Quản lý Kho");
+    return open;
+  });
 
   function toggleMenu(label: string) {
     setOpenMenus((prev) => {
