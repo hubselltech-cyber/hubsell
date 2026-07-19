@@ -291,6 +291,8 @@ AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng l�
 ```
 ⚠️ **CLAIM_SETTLED và WRITTEN_OFF đều KHÔNG cộng tồn kho.** Hàng hỏng/mất được đền bằng **tiền**, không quay lại kệ — cộng kho ở đây là tạo hàng ma.
 
+**Tiền đền bù:** `Order.compensationAmount` — chỉ > 0 khi `CLAIM_SETTLED`, `WRITTEN_OFF` luôn 0. Backend **chặn** chốt "đã được đền bù" mà không nhập số tiền: một đơn thắng kiện mang 0 đồng nhìn như đòi được nhưng tiền về bằng không, module Tài chính đọc vào sẽ hiểu sai. `GET /returns` trả kèm `totalCompensated` để Tài chính hạch toán sau.
+
 **Lọc & phân trang:** dropdown lọc theo sàn (để xuất danh sách đối soát riêng với bưu cục từng sàn) + phân trang 20/50/100 đồng bộ với module Đơn hàng.
 
 ⚠️ **Badge tab "Tất cả" cộng dồn từ `Object.keys(STATUS_META)`, đừng liệt kê tay.** Đã dính lỗi này: thêm trạng thái Hao hụt mà quên cộng vào tổng, tab hiện 13 trong khi bảng có 14 dòng — lệch âm thầm, không có lỗi nào báo.
