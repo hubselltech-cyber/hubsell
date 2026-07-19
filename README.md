@@ -229,6 +229,29 @@ Toàn bộ cỡ chữ của Hubsell được khai báo tập trung tại **`fron
 
 Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): laptop phổ biến 1366–1440px đã vượt `md` từ lâu, nếu dùng `md` thì laptop sẽ nhảy lên 16px và mất đi độ gọn gàng mong muốn.
 
+## 📅 Bộ lọc khoảng thời gian `<DateRangePicker>`
+
+Mọi trang báo cáo đều có bộ chọn ngày ở góc phải trên, cạnh nút Làm mới. Dùng chung một component và một quy ước query param, nên module đối soát mới sau này chỉ cần cắm vào là chạy.
+
+**Quy ước API:** mọi endpoint báo cáo nhận `?from=yyyy-mm-dd&to=yyyy-mm-dd`. Backend dùng `parseDateRange(req.query)` (`backend/src/date-range.ts`) — trả `undefined` khi không lọc, truyền thẳng vào Prisma `where: { createdAt: range }`. Đơn hàng lọc theo `createdAt`, chi phí theo `expenseDate`.
+
+**Ba cái bẫy đã xử lý sẵn** (đừng tự viết lại logic ngày):
+- `to` phải lấy đến **23:59:59.999**, cắt ở 00:00 là mất trọn ngày cuối.
+- Frontend dùng `toDateKey()` theo lịch địa phương, **không dùng `toISOString()`** — ở múi giờ Việt Nam (UTC+7) sẽ lùi mất một ngày.
+- Ngày không tồn tại (`2026-02-31`) bị chặn, vì JS tự nhảy sang tháng sau thay vì báo lỗi.
+
+**Thêm bộ lọc cho trang mới:**
+```tsx
+const [range, setRange] = useState<DateRange>(defaultRange);   // mặc định 30 ngày qua
+<DateRangePicker value={range} onChange={setRange} disabled={loading} />
+<Refreshing active={loading}>…khối số liệu…</Refreshing>
+```
+Nhớ thêm `range` vào mảng phụ thuộc của `useCallback` để đổi ngày là tự tải lại.
+
+`<Refreshing>` làm mờ vùng số liệu trong lúc tính lại, nhưng **chỉ khi tải quá 150ms** — máy chủ nội bộ trả lời ~100ms, mờ ngay lập tức sẽ thành cái nháy khó chịu. Giữ số cũ mờ đi thay vì dựng khung xương (skeleton) để mắt không mất điểm bám.
+
+⚠️ Khối **"Hiện trạng shop"** trên trang Tổng quan cố ý **không** theo bộ lọc — "Sản phẩm: 17" hay "Kênh bán: 4" là trạng thái hiện tại, cắt theo khoảng thời gian sẽ vô nghĩa. Giao diện có ghi rõ điều này để không gây hiểu nhầm.
+
 ## 🎴 Quy chuẩn giao diện — Thẻ chỉ số `<DashboardCard>`
 
 Mọi khối số liệu trên mọi trang đều dùng chung **`frontend/src/components/dashboard/dashboard-card.tsx`**. Không viết thẻ số liệu bằng tay nữa.
