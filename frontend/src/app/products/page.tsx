@@ -23,7 +23,6 @@ import { AppShell } from "@/components/app-shell";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
-import { SyncProductsButton } from "@/components/products/sync-products-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -227,12 +226,10 @@ export default function ProductsPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Quản lý sản phẩm gốc và tồn kho ({formatNumber(total)} sản phẩm).
+            Kho vật lý — SKU nội bộ, tồn kho và giá vốn ({formatNumber(total)}{" "}
+            sản phẩm). Sản phẩm từ sàn được nối về đây tại trang Liên kết SP.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Đồng bộ đứng đầu vì đây là bước NẠP hàng từ sàn về kho — làm
-                trước rồi mới tới nhập/xuất Excel và thêm tay */}
-            <SyncProductsButton onSynced={load} />
             <ImportExcelDialog onImported={load} />
             <Button variant="outline" onClick={handleExport} disabled={exporting}>
               {exporting ? (

@@ -113,10 +113,18 @@ model User {
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
+/// TẦNG 1 — GIAN HÀNG đã kết nối.
+/// Một chủ shop có thể có NHIỀU gian hàng trên CÙNG một sàn (Shopee - Shop A,
+/// Shopee - Shop B). `channelName` là SÀN, `shopName` mới là gian hàng.
 model Channel {
   id          String      @id @default(cuid())
   userId      String
-  channelName ChannelName
+  channelName ChannelName // sàn: SHOPEE / LAZADA / TIKTOK / OFFLINE
+  /// Tên gian hàng do chủ shop đặt — thứ phân biệt hai shop trên cùng một sàn.
+  /// Mọi báo cáo phải hiển thị tên này, đừng gom theo channelName không thôi.
+  shopName    String
+  /// Id gian hàng bên phía sàn, để dành cho khi có tích hợp API thật
+  externalShopId String?
   apiToken    String?
   status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
@@ -124,11 +132,12 @@ model Channel {
   feeRate     Decimal     @default(0) @db.Decimal(5, 4)
   createdAt   DateTime    @default(now())
 
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders      Order[]
-  mappings    ProductMapping[]
-  staffAccess StaffChannel[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders          Order[]
+  channelProducts ChannelProduct[]
+  staffAccess     StaffChannel[]
 
+  @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   @@index([userId])
 }
 
@@ -159,7 +168,7 @@ model Product {
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[]
-  mappings      ProductMapping[]
+  channelProducts ChannelProduct[]
   orderItems    OrderItem[]
 
   @@unique([userId, skuCode]) // mỗi user không trùng mã SKU
@@ -281,19 +290,43 @@ model OrderItem {
 
 /// Liên kết (mapping): một Sản phẩm kho gốc ↔ nhiều SKU trên các sàn.
 /// Ví dụ: "Quần jean nữ ống rộng" (SP002) ↔ Shopee "SH-QUAN-DEN-M" và TikTok "TT-QUAN-JEAN".
-model ProductMapping {
-  id                 String   @id @default(cuid())
-  productId          String // sản phẩm kho gốc
-  channelId          String // gian hàng trên sàn
-  channelSku         String // mã SKU của sản phẩm trên sàn
-  channelProductName String? // tên hiển thị trên sàn (để dễ nhận diện)
-  createdAt          DateTime @default(now())
+/// TẦNG 2 — SẢN PHẨM SÀN (bảng đệm).
+///
+/// Hứng nguyên trạng danh mục kéo từ từng gian hàng về. Đồng bộ KHÔNG được tạo
+/// thẳng Product: tên và mã trên các shop sàn thường lệch nhau, đẩy thẳng vào
+/// kho vật lý là sinh rác không dọn nổi.
+///
+/// `productId = NULL` nghĩa là sản phẩm sàn này CHƯA được liên kết về kho gốc.
+/// Nhiều dòng ở đây có thể cùng trỏ về một Product — đó chính là cách 3 gian
+/// hàng khác tên map chung một mã gốc.
+model ChannelProduct {
+  id          String   @id @default(cuid())
+  channelId   String // thuộc gian hàng nào
+  channelSku  String // mã SKU trên sàn
+  productName String // tên hiển thị trên sàn
+  variantName String? // phân loại trên sàn (size/màu)
+  price       Decimal  @default(0) @db.Decimal(12, 2) // giá niêm yết trên sàn
+  imageUrl    String?
+  externalId  String? // id sản phẩm bên phía sàn
+  status      ChannelProductStatus @default(ACTIVE)
+  lastSyncedAt DateTime? // lần cuối kéo về từ sàn
+  createdAt   DateTime @default(now())
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  /// NULL = chưa liên kết về kho gốc. Đây là cốt lõi của tầng đệm.
+  productId String?
 
-  @@unique([channelId, channelSku]) // 1 SKU sàn chỉ nối vào 1 sản phẩm gốc
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  channel Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, channelSku]) // 1 SKU sàn chỉ nối vào tối đa 1 sản phẩm gốc
   @@index([productId])
+  @@index([channelId])
+}
+
+/// Sản phẩm còn bán trên sàn hay đã bị gỡ niêm yết.
+enum ChannelProductStatus {
+  ACTIVE
+  DELISTED
 }
 
 /// Nhật ký biến động tồn kho

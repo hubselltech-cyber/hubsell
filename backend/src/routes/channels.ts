@@ -3,7 +3,11 @@ import crypto from "crypto";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
 import { requireAdmin, type AuthRequest } from "../auth";
-import { MOCK_CATALOG, PLATFORM_FEE_RATE, TOKEN_PREFIX } from "../mockMarketplace";
+import {
+  CHANNEL_LABEL,
+  PLATFORM_FEE_RATE,
+  TOKEN_PREFIX,
+} from "../mockMarketplace";
 
 const router = Router();
 
@@ -25,7 +29,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
       },
       orderBy: { createdAt: "desc" },
-      include: { _count: { select: { orders: true, mappings: true } } },
+      include: { _count: { select: { orders: true, channelProducts: true } } },
     });
     const isAdmin = req.userRole === "ADMIN";
     res.json(
@@ -41,7 +45,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
 // Shopee/TikTok rồi nhận access token. Ở đây ta sinh token giả lập ngay.
 router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
-    const { channelName } = req.body ?? {};
+    const { channelName, shopName } = req.body ?? {};
     if (!CONNECTABLE.includes(channelName)) {
       res.status(400).json({
         error: "Kênh không hợp lệ. Chọn một trong: SHOPEE, LAZADA, TIKTOK, OFFLINE",
@@ -50,16 +54,34 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
     }
     const name = channelName as ChannelName;
 
-    // Mỗi user chỉ kết nối 1 gian hàng cho mỗi sàn (bản đầu tiên)
+    // Tên gian hàng là thứ phân biệt hai shop trên cùng một sàn. Không có tên
+    // thì lấy tên sàn làm mặc định (trường hợp shop chỉ có một gian).
+    const finalShopName =
+      typeof shopName === "string" && shopName.trim()
+        ? shopName.trim()
+        : CHANNEL_LABEL[name];
+    if (finalShopName.length > 60) {
+      res.status(400).json({ error: "Tên gian hàng tối đa 60 ký tự" });
+      return;
+    }
+
+    // MỘT SÀN CÓ THỂ CÓ NHIỀU GIAN HÀNG — chỉ chặn khi TRÙNG TÊN trong cùng
+    // sàn, vì lúc đó chủ shop không phân biệt được hai gian trên giao diện.
     const existing = await prisma.channel.findFirst({
-      where: { userId: req.ownerId!, channelName: name },
+      where: {
+        userId: req.ownerId!,
+        channelName: name,
+        shopName: finalShopName,
+      },
     });
 
     const apiToken = `${TOKEN_PREFIX[name]}_${crypto.randomBytes(20).toString("hex")}`;
 
     if (existing) {
       if (existing.status === "ACTIVE") {
-        res.status(409).json({ error: `Bạn đã kết nối ${name} rồi` });
+        res.status(409).json({
+          error: `Đã có gian hàng "${finalShopName}" trên ${CHANNEL_LABEL[name]}. Đặt tên khác để kết nối thêm gian.`,
+        });
         return;
       }
       // Đã từng ngắt kết nối → kết nối lại với token mới
@@ -75,6 +97,7 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       data: {
         userId: req.ownerId!,
         channelName: name,
+        shopName: finalShopName,
         apiToken,
         status: "ACTIVE",
         feeRate: PLATFORM_FEE_RATE[name], // % phí sàn mặc định để tạm tính
@@ -106,56 +129,5 @@ router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next)
   }
 });
 
-// GET /api/channels/:id/products — danh mục sản phẩm trên sàn (giả lập),
-// kèm thông tin đã liên kết với sản phẩm gốc nào trong kho.
-router.get("/:id/products", requireAdmin, async (req: AuthRequest, res, next) => {
-  try {
-    const channel = await prisma.channel.findFirst({
-      where: { id: req.params.id, userId: req.ownerId! },
-    });
-    if (!channel) {
-      res.status(404).json({ error: "Không tìm thấy kênh" });
-      return;
-    }
-
-    const catalog = MOCK_CATALOG[channel.channelName];
-    const mappings = await prisma.productMapping.findMany({
-      where: { channelId: channel.id },
-      include: {
-        product: {
-          select: { id: true, skuCode: true, productName: true, quantityInStock: true },
-        },
-      },
-    });
-    const bySku = new Map(mappings.map((m) => [m.channelSku, m]));
-
-    res.json({
-      channel: {
-        id: channel.id,
-        channelName: channel.channelName,
-        status: channel.status,
-      },
-      items: catalog.map((p) => {
-        const m = bySku.get(p.channelSku);
-        return {
-          channelSku: p.channelSku,
-          name: p.name,
-          price: p.price,
-          mapping: m
-            ? {
-                id: m.id,
-                productId: m.product.id,
-                productSku: m.product.skuCode,
-                productName: m.product.productName,
-                quantityInStock: m.product.quantityInStock,
-              }
-            : null,
-        };
-      }),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
 
 export default router;

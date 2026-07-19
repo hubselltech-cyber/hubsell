@@ -29,7 +29,7 @@ interface MockOrderItem {
 //
 // Luồng xử lý:
 // 1. Xác thực kênh + token.
-// 2. Với từng SKU sàn → tra bảng ProductMapping tìm sản phẩm gốc.
+// 2. Với từng SKU sàn → tra bảng đệm ChannelProduct tìm sản phẩm gốc.
 // 3. Nếu đủ mapping: trong MỘT transaction — tạo Order, trừ tồn kho
 //    sản phẩm gốc (khoá dòng), ghi InventoryLog loại SYNC.
 router.post("/mock-order", async (req, res, next) => {
@@ -73,12 +73,18 @@ router.post("/mock-order", async (req, res, next) => {
       return;
     }
 
-    // 2) Tra mapping cho toàn bộ SKU trong đơn
+    // 2) Tra tầng đệm: SKU sàn → sản phẩm gốc.
+    // Sản phẩm sàn có trong bảng đệm nhưng productId = null là CHƯA LIÊN KẾT —
+    // phải xử lý y như chưa có bản ghi, nếu không sẽ trừ kho vào null.
     const skus = (items as MockOrderItem[]).map((i) => i.channelSku);
-    const mappings = await prisma.productMapping.findMany({
-      where: { channelId: channel.id, channelSku: { in: skus } },
+    const channelProducts = await prisma.channelProduct.findMany({
+      where: {
+        channelId: channel.id,
+        channelSku: { in: skus },
+        productId: { not: null },
+      },
     });
-    const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
+    const mapBySku = new Map(channelProducts.map((m) => [m.channelSku, m]));
 
     const unmapped = skus.filter((sku) => !mapBySku.has(sku));
     if (unmapped.length > 0) {
@@ -146,7 +152,7 @@ router.post("/mock-order", async (req, res, next) => {
       }[] = [];
 
       for (const it of items as MockOrderItem[]) {
-        const mapping = mapBySku.get(it.channelSku)!;
+        const mapping = mapBySku.get(it.channelSku)!; // đã lọc productId != null ở trên
 
         // Khoá dòng sản phẩm trong transaction để tránh trừ kho sai khi
         // nhiều đơn đổ về cùng lúc (lấy kèm costPrice để snapshot giá vốn)
@@ -157,7 +163,7 @@ router.post("/mock-order", async (req, res, next) => {
             quantityInStock: number;
             costPrice: unknown;
           }[]
-        >`SELECT "id", "productName", "quantityInStock", "costPrice" FROM "Product" WHERE "id" = ${mapping.productId} FOR UPDATE`;
+        >`SELECT "id", "productName", "quantityInStock", "costPrice" FROM "Product" WHERE "id" = ${mapping.productId!} FOR UPDATE`;
         const product = rows[0];
         if (!product) {
           throw Object.assign(new Error("Sản phẩm gốc trong mapping không còn tồn tại"), {

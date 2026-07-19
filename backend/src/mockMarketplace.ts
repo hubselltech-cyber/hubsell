@@ -185,6 +185,15 @@ export function mockSettlement(
 }
 
 // Tiền tố token giả lập cho từng sàn
+/// Tên hiển thị của từng sàn — dùng làm tên gian hàng mặc định khi chủ shop
+/// không đặt tên riêng.
+export const CHANNEL_LABEL: Record<ChannelName, string> = {
+  [ChannelName.SHOPEE]: "Shopee",
+  [ChannelName.TIKTOK]: "TikTok Shop",
+  [ChannelName.LAZADA]: "Lazada",
+  [ChannelName.OFFLINE]: "Offline",
+};
+
 export const TOKEN_PREFIX: Record<ChannelName, string> = {
   [ChannelName.SHOPEE]: "shp",
   [ChannelName.TIKTOK]: "tik",

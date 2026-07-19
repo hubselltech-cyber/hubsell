@@ -20,7 +20,7 @@ import {
   type ProductGroup,
 } from "@/components/finance/cost-price-table";
 import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
-import { SyncProductsButton } from "@/components/products/sync-products-button";
+import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { Refreshing } from "@/components/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -271,7 +271,7 @@ export default function CostPricesPage() {
 
             {/* Giữ nút ở đây để đang duyệt tài chính mà thiếu SKU thì đồng
                 bộ tại chỗ. Dùng chung component với trang Sản phẩm. */}
-            <SyncProductsButton onSynced={load} />
+            <SyncChannelProductsButton onSynced={load} />
           </div>
         </div>
 

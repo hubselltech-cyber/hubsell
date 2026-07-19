@@ -45,10 +45,11 @@ import {
   sendMockOrder,
   type Channel,
   type ChannelName,
-  type ChannelProductItem,
+  type ChannelProduct,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { formatVND } from "@/lib/format";
+import { formatNumber, formatVND } from "@/lib/format";
+import { TEXT_SUB } from "@/lib/typography";
 
 const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
@@ -71,26 +72,35 @@ function ConnectDialog({
   existing: Channel[];
   onDone: () => void;
 }) {
-  const activeNames = new Set(
-    existing.filter((c) => c.status === "ACTIVE").map((c) => c.channelName)
-  );
-  const available = CONNECTABLE.filter((n) => !activeNames.has(n));
-  const [channelName, setChannelName] = useState<ChannelName | "">("");
+  const [channelName, setChannelName] = useState<ChannelName>(CONNECTABLE[0]);
+  const [shopName, setShopName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) setChannelName(available[0] ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) {
+      setChannelName(CONNECTABLE[0]);
+      setShopName("");
+    }
   }, [open]);
+
+  // Tên đã dùng trên chính sàn đang chọn. Chặn ngay trên giao diện thay vì để
+  // người dùng điền xong bấm Kết nối rồi mới nhận lỗi từ máy chủ.
+  const usedNames = new Set(
+    existing
+      .filter((c) => c.channelName === channelName && c.status === "ACTIVE")
+      .map((c) => c.shopName.trim().toLowerCase())
+  );
+  const trimmed = shopName.trim();
+  const duplicated = trimmed !== "" && usedNames.has(trimmed.toLowerCase());
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
-    if (!channelName) return;
+    if (duplicated) return;
     setSubmitting(true);
     try {
-      const c = await connectChannel(channelName);
+      const c = await connectChannel(channelName, trimmed || undefined);
       toast.success(
-        `Đã kết nối gian hàng ${CHANNEL_META[c.channelName].label} thành công!`
+        `Đã kết nối gian hàng "${c.shopName}" trên ${CHANNEL_META[c.channelName].label}`
       );
       onOpenChange(false);
       onDone();
@@ -103,54 +113,74 @@ function ConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Kết nối gian hàng</DialogTitle>
           <DialogDescription>
-            Chọn sàn để liên kết tài khoản. (Giai đoạn này là kết nối giả lập —
-            hệ thống sẽ cấp API Token ảo, sau này thay bằng đăng nhập sàn thật.)
+            Một sàn có thể kết nối nhiều gian hàng. Đặt tên để phân biệt chúng
+            trên báo cáo. (Kết nối giả lập — hệ thống cấp API Token ảo.)
           </DialogDescription>
         </DialogHeader>
-        {available.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Bạn đã kết nối tất cả các sàn hỗ trợ.
-          </p>
-        ) : (
-          <form onSubmit={handleConnect} className="space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="channel-select">Chọn sàn</Label>
-              <NativeSelect
-                id="channel-select"
-                value={channelName}
-                onChange={(e) => setChannelName(e.target.value as ChannelName)}
-              >
-                {available.map((n) => (
-                  <option key={n} value={n}>
-                    {CHANNEL_META[n].label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={submitting}
-              >
-                Huỷ
-              </Button>
-              <Button type="submit" disabled={submitting || !channelName}>
-                {submitting ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <PlugZap className="size-4" />
-                )}
-                Kết nối
-              </Button>
-            </div>
-          </form>
-        )}
+
+        <form onSubmit={handleConnect} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="channel-select">Sàn thương mại</Label>
+            <NativeSelect
+              id="channel-select"
+              value={channelName}
+              onChange={(e) => setChannelName(e.target.value as ChannelName)}
+            >
+              {CONNECTABLE.map((n) => (
+                <option key={n} value={n}>
+                  {CHANNEL_META[n].label}
+                </option>
+              ))}
+            </NativeSelect>
+            {usedNames.size > 0 && (
+              <p className={TEXT_SUB}>
+                Đang có {formatNumber(usedNames.size)} gian hàng trên sàn này.
+              </p>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="shop-name">Tên gian hàng</Label>
+            <Input
+              id="shop-name"
+              placeholder={`VD: ${CHANNEL_META[channelName].label} - Shop Chính`}
+              value={shopName}
+              onChange={(e) => setShopName(e.target.value)}
+              maxLength={60}
+            />
+            {duplicated ? (
+              <p className="text-sm text-rose-600">
+                Đã có gian hàng tên này trên {CHANNEL_META[channelName].label}.
+                Đặt tên khác để phân biệt.
+              </p>
+            ) : (
+              <p className={TEXT_SUB}>Bỏ trống thì lấy tên sàn làm mặc định.</p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Huỷ
+            </Button>
+            <Button type="submit" disabled={submitting || duplicated}>
+              {submitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <PlugZap className="size-4" />
+              )}
+              Kết nối
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -169,7 +199,7 @@ function MockOrderDialog({
   onOpenChange: (o: boolean) => void;
   onDone: () => void;
 }) {
-  const [items, setItems] = useState<ChannelProductItem[]>([]);
+  const [items, setItems] = useState<ChannelProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [channelSku, setChannelSku] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -179,11 +209,12 @@ function MockOrderDialog({
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetchChannelProducts(channel.id)
+    // Chỉ lấy sản phẩm sàn ĐÃ liên kết về kho gốc — đơn của sản phẩm chưa liên
+    // kết sẽ bị webhook từ chối vì không biết trừ kho nào.
+    fetchChannelProducts({ channelId: channel.id, linked: "yes", pageSize: 100 })
       .then((res) => {
-        const mapped = res.items.filter((i) => i.mapping);
-        setItems(mapped);
-        setChannelSku(mapped[0]?.channelSku ?? "");
+        setItems(res.items);
+        setChannelSku(res.items[0]?.channelSku ?? "");
       })
       .catch(() => toast.error("Không tải được danh mục sàn"))
       .finally(() => setLoading(false));
@@ -272,7 +303,7 @@ function MockOrderDialog({
               >
                 {items.map((i) => (
                   <option key={i.channelSku} value={i.channelSku}>
-                    {i.channelSku} — {i.name} ({formatVND(i.price)})
+                    {i.channelSku} — {i.productName} ({formatVND(i.price)})
                   </option>
                 ))}
               </NativeSelect>
@@ -423,14 +454,21 @@ export default function ChannelsPage() {
               return (
                 <Card key={c.id} className={active ? "" : "opacity-70"}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center justify-between text-base">
-                      <span
-                        className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${meta.className}`}
-                      >
-                        {meta.label}
+                    <CardTitle className="flex items-start justify-between gap-2 text-base">
+                      {/* TÊN GIAN HÀNG là thông tin chính, badge sàn chỉ là phụ
+                          đề — hai shop cùng sàn phải phân biệt được bằng mắt */}
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold">
+                          {c.shopName}
+                        </span>
+                        <span
+                          className={`mt-1 inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
+                        >
+                          {meta.label}
+                        </span>
                       </span>
                       <span
-                        className={`inline-flex items-center gap-1 text-xs font-medium ${
+                        className={`inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
                           active ? "text-emerald-600" : "text-zinc-400"
                         }`}
                       >
@@ -451,8 +489,8 @@ export default function ChannelsPage() {
                       </span>
                     </p>
                     <p className="text-muted-foreground">
-                      {c._count?.orders ?? 0} đơn hàng ·{" "}
-                      {c._count?.mappings ?? 0} sản phẩm đã liên kết
+                      {formatNumber(c._count?.orders ?? 0)} đơn hàng ·{" "}
+                      {formatNumber(c._count?.channelProducts ?? 0)} sản phẩm sàn
                     </p>
                     <div className="flex flex-wrap gap-2 pt-1">
                       {active ? (

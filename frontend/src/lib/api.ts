@@ -793,15 +793,25 @@ export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
 }
 
 // Chủ động quét sản phẩm từ các sàn đã kết nối về hệ thống (upsert)
-export function syncProductsFromChannels() {
+/**
+ * Kéo danh mục từ sàn về TẦNG ĐỆM. Bỏ trống channelId để quét mọi gian hàng.
+ * KHÔNG tạo sản phẩm gốc — việc đó do người dùng làm ở trang Sản phẩm.
+ */
+export function syncProductsFromChannels(channelId?: string) {
   return apiFetch<{
-    message: string;
     created: number;
     updated: number;
-    unchanged: number;
-    missingCostCount: number;
-    perChannel: { channelName: ChannelName; scanned: number; created: number }[];
-  }>("/api/finance/sync-products", { method: "POST" });
+    perChannel: {
+      channelId: string;
+      channelName: ChannelName;
+      shopName: string;
+      scanned: number;
+      created: number;
+    }[];
+  }>("/api/finance/sync-products", {
+    method: "POST",
+    body: JSON.stringify({ channelId }),
+  });
 }
 
 export interface CostImportResult {
@@ -891,41 +901,59 @@ export function createFinanceExpense(data: {
 
 // ----- Kênh bán & Mapping -----
 
+/** TẦNG 1 — một GIAN HÀNG cụ thể. Một sàn có thể có nhiều gian hàng. */
 export interface Channel {
   id: string;
-  channelName: ChannelName;
+  channelName: ChannelName; // sàn: SHOPEE / LAZADA / TIKTOK / OFFLINE
+  shopName: string; // tên gian hàng — thứ phân biệt 2 shop cùng sàn
+  externalShopId: string | null;
   apiToken: string | null;
   status: string;
+  feeRate: string | number;
   createdAt: string;
-  _count?: { orders: number; mappings: number };
+  _count?: { orders: number; channelProducts: number };
 }
 
-export interface ChannelProductItem {
+/** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */
+export interface ChannelProduct {
+  id: string;
   channelSku: string;
-  name: string;
-  price: number;
-  mapping: {
+  productName: string; // tên trên sàn
+  variantName: string | null;
+  price: string | number;
+  imageUrl: string | null;
+  status: "ACTIVE" | "DELISTED";
+  lastSyncedAt: string | null;
+  createdAt: string;
+  /** null = CHƯA liên kết về kho gốc */
+  productId: string | null;
+  channel: { id: string; channelName: ChannelName; shopName: string };
+  product: {
     id: string;
-    productId: string;
-    productSku: string;
+    skuCode: string;
     productName: string;
     quantityInStock: number;
   } | null;
 }
 
-export interface ChannelProductsResponse {
-  channel: { id: string; channelName: ChannelName; status: string };
-  items: ChannelProductItem[];
+export interface ChannelProductListResponse {
+  items: ChannelProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  counts: { all: number; linked: number; unlinked: number };
 }
 
 export function fetchChannels() {
   return apiFetch<Channel[]>("/api/channels");
 }
 
-export function connectChannel(channelName: ChannelName) {
+/** Kết nối thêm một gian hàng. Cùng một sàn có thể kết nối nhiều gian. */
+export function connectChannel(channelName: ChannelName, shopName?: string) {
   return apiFetch<Channel>("/api/channels", {
     method: "POST",
-    body: JSON.stringify({ channelName }),
+    body: JSON.stringify({ channelName, shopName }),
   });
 }
 
@@ -933,23 +961,40 @@ export function disconnectChannel(id: string) {
   return apiFetch<Channel>(`/api/channels/${id}/disconnect`, { method: "POST" });
 }
 
-export function fetchChannelProducts(channelId: string) {
-  return apiFetch<ChannelProductsResponse>(`/api/channels/${channelId}/products`);
+/** Danh sách sản phẩm sàn ở tầng đệm, kèm trạng thái liên kết. */
+export function fetchChannelProducts(params: {
+  channelId?: string;
+  linked?: "yes" | "no";
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params.channelId) qs.set("channelId", params.channelId);
+  if (params.linked) qs.set("linked", params.linked);
+  if (params.search?.trim()) qs.set("search", params.search.trim());
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  return apiFetch<ChannelProductListResponse>(`/api/mappings?${qs.toString()}`);
 }
 
-export function createMapping(data: {
-  productId: string;
-  channelId: string;
-  channelSku: string;
-}) {
-  return apiFetch<{ id: string }>("/api/mappings", {
+/** Nối nhiều sản phẩm sàn về CÙNG một SKU gốc. */
+export function linkChannelProducts(channelProductIds: string[], productId: string) {
+  return apiFetch<{
+    linked: number;
+    product: { id: string; skuCode: string; productName: string };
+  }>("/api/mappings/link", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({ channelProductIds, productId }),
   });
 }
 
-export function deleteMapping(id: string) {
-  return apiFetch<{ ok: boolean }>(`/api/mappings/${id}`, { method: "DELETE" });
+/** Gỡ liên kết — sản phẩm sàn vẫn còn ở tầng đệm, chỉ bỏ nối về kho gốc. */
+export function unlinkChannelProducts(channelProductIds: string[]) {
+  return apiFetch<{ unlinked: number }>("/api/mappings/unlink", {
+    method: "POST",
+    body: JSON.stringify({ channelProductIds }),
+  });
 }
 
 // Giả lập một đơn hàng từ sàn gửi về (gọi webhook công khai)
