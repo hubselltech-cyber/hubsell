@@ -282,6 +282,19 @@ Tách đôi vì thực tế shop gói hàng buổi sáng nhưng shipper chiều 
 
 ⚠️ **`routes/warehouse.ts` KHÔNG có endpoint cộng kho** và không được thêm. Nhận hàng vẫn gọi `POST /api/orders/:id/return`.
 
+**Vòng đời một đơn hoàn:**
+```
+AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng lại tồn kho)
+    └────quét, hàng hỏng/mất──────▶ DAMAGED
+                                      ├─khiếu nại thắng─▶ CLAIM_SETTLED (Đã đền bù)
+                                      └─khiếu nại thua──▶ WRITTEN_OFF   (Hao hụt)
+```
+⚠️ **CLAIM_SETTLED và WRITTEN_OFF đều KHÔNG cộng tồn kho.** Hàng hỏng/mất được đền bằng **tiền**, không quay lại kệ — cộng kho ở đây là tạo hàng ma.
+
+**Lọc & phân trang:** dropdown lọc theo sàn (để xuất danh sách đối soát riêng với bưu cục từng sàn) + phân trang 20/50/100 đồng bộ với module Đơn hàng.
+
+⚠️ **Badge tab "Tất cả" cộng dồn từ `Object.keys(STATUS_META)`, đừng liệt kê tay.** Đã dính lỗi này: thêm trạng thái Hao hụt mà quên cộng vào tổng, tab hiện 13 trong khi bảng có 14 dòng — lệch âm thầm, không có lỗi nào báo.
+
 **Đồng bộ từ sàn:** `POST /api/warehouse/returns/sync` hiện là **bản giả lập** (chưa có API sàn thật) — bốc vài đơn đang giao và rải mốc 2/9/17 ngày. Khi có tích hợp thật chỉ cần thay ruột hàm.
 
 #### Chi tiết thao tác
