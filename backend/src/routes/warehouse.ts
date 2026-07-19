@@ -114,6 +114,8 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       prisma.order.groupBy({
         by: ["returnStatus"],
         _count: { _all: true },
+        // Tổng tiền đền bù để module Tài chính hạch toán dòng tiền thu về
+        _sum: { compensationAmount: true },
         where: { ...where, returnStatus: { not: ReturnStatus.NONE } },
       }),
       // Riêng nhóm chờ nhận: cần biết bao nhiêu đơn đã quá hạn
@@ -122,6 +124,11 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
         select: { returnRequestedAt: true },
       }),
     ]);
+
+    const totalCompensated = byStatus.reduce(
+      (sum, g) => sum + Number(g._sum?.compensationAmount ?? 0),
+      0
+    );
 
     const summary: Record<string, number> = {
       AWAITING: 0,
@@ -148,6 +155,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       pageSize,
       pageCount: Math.ceil(total / pageSize),
       summary,
+      totalCompensated,
       thresholds: {
         warningDays: RETURN_WARNING_DAYS,
         overdueDays: RETURN_OVERDUE_DAYS,
@@ -214,7 +222,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
 
 /**
  * POST /api/warehouse/returns/:id/claim — chốt kết quả khiếu nại.
- * Body: { outcome: "COMPENSATED" | "REJECTED", note?: string }
+ * Body: { outcome: "COMPENSATED" | "REJECTED", amount?: number, note?: string }
  *
  *   COMPENSATED → CLAIM_SETTLED (bưu cục/sàn đã đền)
  *   REJECTED    → WRITTEN_OFF   (shop chịu hao hụt, tính vào lỗ)
@@ -225,7 +233,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
  */
 router.post("/returns/:id/claim", async (req: AuthRequest, res, next) => {
   try {
-    const { outcome, note } = req.body ?? {};
+    const { outcome, amount, note } = req.body ?? {};
     if (outcome !== "COMPENSATED" && outcome !== "REJECTED") {
       res.status(400).json({
         error:
@@ -238,6 +246,20 @@ router.post("/returns/:id/claim", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Thua kiện thì không có tiền về, luôn ghi 0 — kể cả client có gửi số khác.
+    let compensation = 0;
+    if (outcome === "COMPENSATED") {
+      const value = typeof amount === "string" ? Number(amount) : amount;
+      if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+        res.status(400).json({
+          error:
+            "Đã được đền bù thì phải nhập số tiền lớn hơn 0. Nếu bưu cục không đền đồng nào, chọn “Không được đền bù”.",
+        });
+        return;
+      }
+      compensation = Math.round(value);
+    }
+
     const order = await prisma.order.findFirst({
       where: {
         id: req.params.id,
@@ -246,7 +268,13 @@ router.post("/returns/:id/claim", async (req: AuthRequest, res, next) => {
           ? { channelId: { in: req.allowedChannelIds } }
           : {}),
       },
-      select: { id: true, orderCode: true, returnStatus: true, returnNote: true },
+      select: {
+        id: true,
+        orderCode: true,
+        returnStatus: true,
+        returnNote: true,
+        totalAmount: true,
+      },
     });
     if (!order) {
       res.status(404).json({ error: "Không tìm thấy đơn hàng" });
@@ -267,6 +295,7 @@ router.post("/returns/:id/claim", async (req: AuthRequest, res, next) => {
           outcome === "COMPENSATED"
             ? ReturnStatus.CLAIM_SETTLED
             : ReturnStatus.WRITTEN_OFF,
+        compensationAmount: compensation,
         // Nối ghi chú mới vào ghi chú cũ để giữ lại lý do hư hỏng ban đầu —
         // đó là bằng chứng, ghi đè đi là mất căn cứ đối soát sau này.
         returnNote:

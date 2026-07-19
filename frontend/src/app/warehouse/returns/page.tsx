@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Gavel,
+  HandCoins,
   PackageCheck,
   PackageSearch,
   PackageX,
@@ -51,7 +52,7 @@ import {
 } from "@/lib/api";
 import { carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { formatDateTime, formatNumber } from "@/lib/format";
+import { formatDateTime, formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -476,6 +477,19 @@ export default function WarehouseReturnsPage() {
                               >
                                 {meta.label}
                               </span>
+                            )}
+                            {/* Tiền đòi được — nhìn phát biết đơn này thu về
+                                bao nhiêu từ bưu cục */}
+                            {Number(o.compensationAmount) > 0 && (
+                              <p className="mt-1 flex items-center gap-1 text-sm font-semibold text-emerald-700">
+                                <HandCoins className="size-3.5 shrink-0" />
+                                {formatVND(o.compensationAmount)}
+                              </p>
+                            )}
+                            {o.returnStatus === "WRITTEN_OFF" && (
+                              <p className={cn(TEXT_SUB, "mt-1 text-zinc-600")}>
+                                Không đòi được đồng nào
+                              </p>
                             )}
                             {o.returnNote && (
                               <p className={cn(TEXT_SUB, "mt-1 max-w-48")}>

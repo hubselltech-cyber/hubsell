@@ -195,6 +195,8 @@ export interface Order {
   returnedAt: string | null;
   /** Mốc sàn báo đơn bắt đầu hoàn — null khi chưa rõ */
   returnRequestedAt: string | null;
+  /** Tiền bưu cục/sàn đã đền (chỉ > 0 khi khiếu nại thắng) */
+  compensationAmount: string | number;
   /** Mốc đã cộng lại tồn kho — có giá trị nghĩa là không cộng thêm lần nữa */
   stockRestoredAt: string | null;
   createdAt: string;
@@ -529,6 +531,8 @@ export interface WarehouseReturnsResponse {
   pageSize: number;
   pageCount: number;
   summary: Record<string, number>;
+  /** Tổng tiền đã đòi được — dành cho module Tài chính hạch toán sau */
+  totalCompensated: number;
   thresholds: { warningDays: number; overdueDays: number };
 }
 
@@ -566,11 +570,13 @@ export function syncWarehouseReturns() {
 export function updateReturnClaim(
   orderId: string,
   outcome: "COMPENSATED" | "REJECTED",
+  /** Bắt buộc > 0 khi được đền bù; bỏ qua khi không được đền */
+  amount?: number,
   note?: string
 ) {
   return apiFetch<{ order: Order }>(
     `/api/warehouse/returns/${orderId}/claim`,
-    { method: "POST", body: JSON.stringify({ outcome, note }) }
+    { method: "POST", body: JSON.stringify({ outcome, amount, note }) }
   );
 }
 
