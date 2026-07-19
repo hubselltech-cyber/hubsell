@@ -268,7 +268,23 @@ Tách đôi vì thực tế shop gói hàng buổi sáng nhưng shipper chiều 
 
 **Cụm sản phẩm:** đơn nhiều SKU chỉ hiện dòng đầu kèm thumbnail, phần còn lại gấp sau nút "+N sản phẩm khác" để chiều cao các dòng gần bằng nhau.
 
-### 🔄 Hàng hoàn về kho (RTS) — tab "Hủy / Hoàn"
+### 🔄 Hàng hoàn về kho (RTS)
+
+**Phân vai giữa hai trang — đừng làm lẫn:**
+| Trang | Vai trò |
+|---|---|
+| `/warehouse/returns` (Quản lý Kho) | **Mọi hành động vật lý**: quét mã, xác nhận nhận hàng, cộng kho, đối soát quá hạn |
+| `/orders` → tab Hủy/Hoàn | **Chỉ theo dõi**: badge trạng thái + bộ lọc, không thao tác |
+
+**Đối soát quá hạn:** đếm ngày từ `Order.returnRequestedAt` (mốc sàn báo hoàn). Dưới 7 ngày = bình thường · 7–13 ngày = cảnh báo · **từ 14 ngày = "Chưa về tay"**, dòng nhuộm nền hồng, làm căn cứ khiếu nại bưu cục.
+
+⚠️ **Đơn không có `returnRequestedAt` hiển thị "Chưa rõ", không bị tính quá hạn.** Cố ý không lấy `createdAt` lấp chỗ trống — số ngày chờ là căn cứ đòi tiền bưu cục, bịa mốc ra là đi khiếu nại bằng số liệu sai.
+
+⚠️ **`routes/warehouse.ts` KHÔNG có endpoint cộng kho** và không được thêm. Nhận hàng vẫn gọi `POST /api/orders/:id/return`.
+
+**Đồng bộ từ sàn:** `POST /api/warehouse/returns/sync` hiện là **bản giả lập** (chưa có API sàn thật) — bốc vài đơn đang giao và rải mốc 2/9/17 ngày. Khi có tích hợp thật chỉ cần thay ruột hàm.
+
+#### Chi tiết thao tác
 
 **Quét mã nhận hoàn:** ô nhập tự lấy tiêu điểm, bắn máy quét barcode/2D vào là tra ngay. Máy quét hoạt động như bàn phím (gõ chuỗi + Enter) nên **một ô input xử lý được cả mã sọc lẫn mã QR**, không cần thư viện. Nút *Bật camera quét mã* dùng `html5-qrcode` (import động, chỉ tải khi bấm) cho webcam/điện thoại — cần **HTTPS hoặc localhost**, mở qua IP nội bộ bằng http:// sẽ bị trình duyệt chặn.
 
