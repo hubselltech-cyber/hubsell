@@ -43,7 +43,8 @@ enum ReturnStatus {
   AWAITING // đang chờ hàng quay về kho
   RECEIVED_INTACT // đã nhận, hàng nguyên vẹn — ĐÃ cộng lại tồn kho
   DAMAGED // hư hỏng / mất / tráo hàng — KHÔNG cộng kho, chờ khiếu nại
-  CLAIM_SETTLED // sàn/vận chuyển đã đền xong
+  CLAIM_SETTLED // khiếu nại THẮNG — sàn/bưu cục đã đền bù
+  WRITTEN_OFF // khiếu nại THUA — shop chịu hao hụt, tính vào lỗ
 }
 
 /// Đơn vị vận chuyển. Mỗi sàn thường dùng vài hãng, shop cần lọc theo hãng để

@@ -142,7 +142,8 @@ export type ReturnStatus =
   | "AWAITING"
   | "RECEIVED_INTACT"
   | "DAMAGED"
-  | "CLAIM_SETTLED";
+  | "CLAIM_SETTLED"
+  | "WRITTEN_OFF";
 
 /** Vòng đời đơn hàng — khớp enum ShippingStatus ở backend */
 export type ShippingStatus =
@@ -535,12 +536,14 @@ export interface WarehouseReturnsResponse {
 export function fetchWarehouseReturns(params: {
   status?: string;
   search?: string;
+  channelId?: string;
   page?: number;
   pageSize?: number;
 }) {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
   if (params.search?.trim()) qs.set("search", params.search.trim());
+  if (params.channelId) qs.set("channelId", params.channelId);
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   return apiFetch<WarehouseReturnsResponse>(
@@ -553,6 +556,21 @@ export function syncWarehouseReturns() {
   return apiFetch<{ synced: number; orderCodes: string[] }>(
     "/api/warehouse/returns/sync",
     { method: "POST" }
+  );
+}
+
+/**
+ * Chốt kết quả khiếu nại cho đơn hư hỏng/mất.
+ * CẢ HAI kết quả đều KHÔNG cộng lại tồn kho — hàng được đền bằng tiền.
+ */
+export function updateReturnClaim(
+  orderId: string,
+  outcome: "COMPENSATED" | "REJECTED",
+  note?: string
+) {
+  return apiFetch<{ order: Order }>(
+    `/api/warehouse/returns/${orderId}/claim`,
+    { method: "POST", body: JSON.stringify({ outcome, note }) }
   );
 }
 

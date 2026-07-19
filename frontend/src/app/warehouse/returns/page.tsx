@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Gavel,
   PackageCheck,
   PackageSearch,
   PackageX,
@@ -23,9 +24,11 @@ import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { Refreshing } from "@/components/refreshing";
+import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Table,
   TableBody,
@@ -36,10 +39,12 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  fetchChannels,
   fetchWarehouseReturns,
   getStoredUser,
   getToken,
   syncWarehouseReturns,
+  type Channel,
   type ChannelName,
   type Order,
   type ReturnRow,
@@ -50,7 +55,8 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 20;
+/** Các mức số dòng mỗi trang — đồng bộ với module Đơn hàng */
+const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 /** Nhãn tình trạng hàng hoàn */
 const STATUS_META: Record<string, { label: string; className: string }> = {
@@ -67,8 +73,12 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
     className: "bg-rose-100 text-rose-700 border-rose-200",
   },
   CLAIM_SETTLED: {
-    label: "Đã được đền",
+    label: "Đã đền bù",
     className: "bg-sky-100 text-sky-700 border-sky-200",
+  },
+  WRITTEN_OFF: {
+    label: "Hao hụt / Thất thoát",
+    className: "bg-zinc-200 text-zinc-700 border-zinc-300",
   },
 };
 
@@ -77,6 +87,8 @@ const TABS: { key: string; label: string; countKey: string }[] = [
   { key: "AWAITING", label: "Chờ về tay", countKey: "AWAITING" },
   { key: "RECEIVED_INTACT", label: "Hoàn thành công", countKey: "RECEIVED_INTACT" },
   { key: "DAMAGED", label: "Chờ khiếu nại", countKey: "DAMAGED" },
+  { key: "CLAIM_SETTLED", label: "Đã đền bù", countKey: "CLAIM_SETTLED" },
+  { key: "WRITTEN_OFF", label: "Hao hụt", countKey: "WRITTEN_OFF" },
 ];
 
 /**
@@ -97,7 +109,11 @@ export default function WarehouseReturnsPage() {
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [loading, setLoading] = useState(true);
@@ -119,8 +135,9 @@ export default function WarehouseReturnsPage() {
       const res = await fetchWarehouseReturns({
         status: tab || undefined,
         search: debounced || undefined,
+        channelId: channelFilter || undefined,
         page,
-        pageSize: PAGE_SIZE,
+        pageSize,
       });
       setRows(res.items);
       setSummary(res.summary);
@@ -137,7 +154,7 @@ export default function WarehouseReturnsPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, debounced, page, router]);
+  }, [tab, debounced, channelFilter, page, pageSize, router]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -150,6 +167,9 @@ export default function WarehouseReturnsPage() {
       return;
     }
     load();
+    fetchChannels()
+      .then(setChannels)
+      .catch(() => {});
   }, [load, router]);
 
   async function handleSync() {
@@ -178,7 +198,8 @@ export default function WarehouseReturnsPage() {
   const overdue = summary.overdue ?? 0;
   const warning = summary.warning ?? 0;
 
-  const isFiltering = Boolean(tab) || Boolean(search.trim());
+  const isFiltering =
+    Boolean(tab) || Boolean(search.trim()) || Boolean(channelFilter);
 
   const emptyMessage = useMemo(() => {
     if (isFiltering) return "Không có đơn hoàn nào khớp bộ lọc.";
@@ -272,14 +293,15 @@ export default function WarehouseReturnsPage() {
         <div className="flex flex-wrap items-center gap-2">
           {TABS.map((t) => {
             const active = tab === t.key;
+            // Tab "Tất cả" cộng dồn TỪ DANH SÁCH TRẠNG THÁI, không liệt kê tay
+            // — thêm trạng thái mới mà quên cộng vào đây là con số lệch âm thầm
+            // (đã dính đúng lỗi này khi thêm Hao hụt).
             const count = t.countKey
               ? summary[t.countKey]
-              : Object.values(STATUS_META).length > 0
-                ? (summary.AWAITING ?? 0) +
-                  (summary.RECEIVED_INTACT ?? 0) +
-                  (summary.DAMAGED ?? 0) +
-                  (summary.CLAIM_SETTLED ?? 0)
-                : undefined;
+              : Object.keys(STATUS_META).reduce(
+                  (sum, k) => sum + (summary[k] ?? 0),
+                  0
+                );
             return (
               <button
                 key={t.key || "all"}
@@ -306,7 +328,24 @@ export default function WarehouseReturnsPage() {
             );
           })}
 
-          <div className="relative ml-auto min-w-64">
+          <NativeSelect
+            className="ml-auto w-44"
+            aria-label="Lọc theo sàn thương mại"
+            value={channelFilter}
+            onChange={(e) => {
+              setChannelFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Tất cả sàn</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {CHANNEL_META[c.channelName].label}
+              </option>
+            ))}
+          </NativeSelect>
+
+          <div className="relative min-w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9 pr-9"
@@ -455,6 +494,15 @@ export default function WarehouseReturnsPage() {
                                 <PackageCheck className="size-3.5" />
                                 Nhận hàng
                               </Button>
+                            ) : o.returnStatus === "DAMAGED" ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setClaiming(o)}
+                              >
+                                <Gavel className="size-3.5" />
+                                Cập nhật khiếu nại
+                              </Button>
                             ) : (
                               <span className={TEXT_SUB}>
                                 {o.returnedAt ? formatDateTime(o.returnedAt) : "—"}
@@ -471,11 +519,30 @@ export default function WarehouseReturnsPage() {
           </CardContent>
         </Card>
 
-        {pageCount > 1 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Trang {page} / {pageCount} · {formatNumber(total)} đơn
-            </p>
+        {rows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Hiển thị</span>
+              <NativeSelect
+                className="w-20"
+                aria-label="Số đơn mỗi trang"
+                value={String(pageSize)}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1); // đổi cỡ trang thì về trang 1, tránh trang trống
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </NativeSelect>
+              <span className="text-sm text-muted-foreground">
+                đơn/trang · trang {page}/{Math.max(1, pageCount)} ·{" "}
+                {formatNumber(total)} đơn
+              </span>
+            </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -503,6 +570,15 @@ export default function WarehouseReturnsPage() {
           Hubsell · Quản lý Kho — Đối soát đơn hoàn
         </p>
       </div>
+
+      <ClaimDialog
+        order={claiming}
+        open={claiming !== null}
+        onOpenChange={(o) => {
+          if (!o) setClaiming(null);
+        }}
+        onDone={load}
+      />
 
       <ReturnDialog
         order={processing}

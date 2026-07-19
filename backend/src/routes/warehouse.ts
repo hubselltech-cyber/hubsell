@@ -56,12 +56,16 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     const statusQ = typeof req.query.status === "string" ? req.query.status : "";
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
+    // Lọc theo gian hàng: shop đối soát với bưu cục của từng sàn riêng
+    const channelId =
+      typeof req.query.channelId === "string" ? req.query.channelId : "";
 
     const scope: Prisma.OrderWhereInput = {
       channel: { userId: req.ownerId! },
       ...(req.allowedChannelIds
         ? { channelId: { in: req.allowedChannelIds } }
         : {}),
+      ...(channelId ? { channelId } : {}),
       // Chỉ những đơn thật sự có phát sinh hoàn
       returnStatus: { not: ReturnStatus.NONE },
     };
@@ -124,6 +128,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       RECEIVED_INTACT: 0,
       DAMAGED: 0,
       CLAIM_SETTLED: 0,
+      WRITTEN_OFF: 0,
       warning: 0,
       overdue: 0,
       unknown: 0,
@@ -202,6 +207,77 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
       synced: candidates.length,
       orderCodes: candidates.map((o) => o.orderCode),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/warehouse/returns/:id/claim — chốt kết quả khiếu nại.
+ * Body: { outcome: "COMPENSATED" | "REJECTED", note?: string }
+ *
+ *   COMPENSATED → CLAIM_SETTLED (bưu cục/sàn đã đền)
+ *   REJECTED    → WRITTEN_OFF   (shop chịu hao hụt, tính vào lỗ)
+ *
+ * ⚠️ CẢ HAI NHÁNH ĐỀU KHÔNG ĐỘNG VÀO TỒN KHO. Hàng đã hỏng hoặc mất thật —
+ * được đền bằng TIỀN chứ hàng không quay lại kệ. Cộng kho ở đây là tạo hàng ma:
+ * bán ra rồi mới biết không có gì để giao. Endpoint này chỉ đổi trạng thái.
+ */
+router.post("/returns/:id/claim", async (req: AuthRequest, res, next) => {
+  try {
+    const { outcome, note } = req.body ?? {};
+    if (outcome !== "COMPENSATED" && outcome !== "REJECTED") {
+      res.status(400).json({
+        error:
+          "outcome phải là COMPENSATED (được đền bù) hoặc REJECTED (không được đền)",
+      });
+      return;
+    }
+    if (note !== undefined && typeof note !== "string") {
+      res.status(400).json({ error: "Ghi chú phải là chuỗi" });
+      return;
+    }
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id: req.params.id,
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      select: { id: true, orderCode: true, returnStatus: true, returnNote: true },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+      return;
+    }
+    // Chỉ chốt được kết quả cho đơn ĐANG đi khiếu nại
+    if (order.returnStatus !== ReturnStatus.DAMAGED) {
+      res.status(409).json({
+        error: `Đơn ${order.orderCode} không ở trạng thái chờ khiếu nại`,
+      });
+      return;
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        returnStatus:
+          outcome === "COMPENSATED"
+            ? ReturnStatus.CLAIM_SETTLED
+            : ReturnStatus.WRITTEN_OFF,
+        // Nối ghi chú mới vào ghi chú cũ để giữ lại lý do hư hỏng ban đầu —
+        // đó là bằng chứng, ghi đè đi là mất căn cứ đối soát sau này.
+        returnNote:
+          typeof note === "string" && note.trim()
+            ? [order.returnNote, note.trim()].filter(Boolean).join(" · ")
+            : order.returnNote,
+      },
+      include: { channel: { select: { channelName: true } } },
+    });
+
+    res.json({ order: updated });
   } catch (err) {
     next(err);
   }
