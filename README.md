@@ -229,6 +229,20 @@ Toàn bộ cỡ chữ của Hubsell được khai báo tập trung tại **`fron
 
 Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): laptop phổ biến 1366–1440px đã vượt `md` từ lâu, nếu dùng `md` thì laptop sẽ nhảy lên 16px và mất đi độ gọn gàng mong muốn.
 
+## 🏭 Phân hệ Quản lý Kho
+
+Menu nhóm gồm **Sản phẩm** (`/products`) và **Đối soát đơn hoàn** (`/warehouse/returns`). Đường dẫn `/products` giữ nguyên — nhóm chỉ là gom ở tầng menu.
+
+**Luồng nạp hàng từ sàn về kho:**
+```
+Kênh bán        → kết nối gian hàng, lấy token
+Sản phẩm        → "Đồng bộ từ sàn": quét danh mục sàn, TỰ TẠO sản phẩm gốc + mapping
+Liên kết SP     → nối tay SKU sàn ↔ sản phẩm gốc khi đồng bộ chưa khớp
+Cấu hình Giá vốn→ nhập giá vốn (cũng có nút Đồng bộ để dùng tại chỗ)
+```
+
+Nút "Đồng bộ từ sàn" dùng chung `components/products/sync-products-button.tsx`, xuất hiện ở **cả hai** trang Sản phẩm và Cấu hình Giá vốn. Sửa hành vi thì sửa một chỗ.
+
 ## 📦 Trung tâm Xử lý Đơn hàng (`/orders`)
 
 Gom đơn từ mọi sàn về một màn hình để lọc, duyệt và in phiếu hàng loạt.
