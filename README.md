@@ -242,6 +242,10 @@ PENDING --[Xác nhận & chuẩn bị]--> PROCESSED --[Bàn giao]--> SHIPPING --
 ```
 Tách đôi vì thực tế shop gói hàng buổi sáng nhưng shipper chiều mới tới lấy — gộp một bước thì hàng còn trong kho đã bị hiển thị là đang trên đường giao.
 
+**Lọc theo loại đơn** — *Đơn 1 sản phẩm* / *Đơn nhiều sản phẩm*, để kho gói đơn dễ trước, đơn khó sau. Dựa trên cột `Order.itemCount` lưu sẵn (Prisma không lọc được theo số lượng bản ghi con). Đơn cũ chưa ghi chi tiết dòng hàng có `itemCount = 0` nên **cố ý không rơi vào nhóm nào**.
+
+⚠️ **In phiếu phải đánh dấu SAU khi cửa sổ in mở thành công.** `/bulk/labels` chỉ đọc, `/bulk/mark-printed` mới ghi. Gộp hai việc vào một endpoint là lúc trình duyệt chặn pop-up, đơn bị ghi "đã in" mà chẳng có tờ phiếu nào ra giấy — đơn rơi khỏi nhóm "Chưa in" nên kho bỏ sót, không có dấu hiệu nào để phát hiện ngoài việc thiếu hàng lúc giao.
+
 **Chống in trùng & đóng gói lặp:** trong tab "Đã xử lý" có 3 bộ lọc con kèm số đếm — *Tất cả / Chưa in phiếu / Đã in phiếu*. In phiếu xong đơn tự rơi sang nhóm "Đã in" và bảng gắn nhãn kèm giờ in, nên người sau không in lại đơn người trước đang gói. In lại vẫn được nhưng **giữ nguyên mốc lần đầu** — cái shop cần biết là phiếu đã ra giấy từ lúc nào, không phải lần in gần nhất.
 
 ⚠️ **Thêm trạng thái mới phải rà lại `finance.ts`** — "Tiền chờ về" lọc theo `shippingStatus in [PENDING, PROCESSED, SHIPPING]`. Bỏ sót một trạng thái là cả nhóm đơn đó biến mất khỏi báo cáo dòng tiền mà không có dấu hiệu gì.
