@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -10,9 +11,9 @@ import {
   Download,
   Loader2,
   PackageOpen,
-  PackageCheck,
   Pencil,
   Printer,
+  ScanLine,
   Search,
   X,
 } from "lucide-react";
@@ -20,8 +21,6 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
-import { ReturnDialog } from "@/components/orders/return-dialog";
-import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { Refreshing } from "@/components/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -293,7 +292,6 @@ export default function OrdersPage() {
   const [orderTypeFilter, setOrderTypeFilter] = useState<"" | "single" | "multi">("");
   // Bộ lọc con của tab "Hủy / Hoàn" + đơn vừa quét ra để xử lý
   const [returnFilter, setReturnFilter] = useState<ReturnStatus | "">("");
-  const [scanned, setScanned] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
@@ -544,7 +542,25 @@ export default function OrdersPage() {
         {tab === "cancelled" && (
           <Card className="shadow-sm">
             <CardContent className="space-y-4 py-1">
-              <ScanReturnBox onFound={setScanned} />
+              {/* Hành động vật lý (quét mã, nhận hàng, cộng kho) đã dồn hết về
+                  phân hệ Kho để nhân viên chỉ thao tác một nơi. Ở đây chỉ theo
+                  dõi luồng đi của đơn. */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">Cần nhận hàng hoàn về kho?</p>
+                  <p className={cn(TEXT_SUB, "mt-0.5")}>
+                    Việc quét mã và cộng lại tồn kho nằm ở trang Đối soát đơn
+                    hoàn thuộc phân hệ Quản lý Kho.
+                  </p>
+                </div>
+                <Link
+                  href="/warehouse/returns"
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                >
+                  <ScanLine className="size-4" />
+                  Mở trang Đối soát đơn hoàn
+                </Link>
+              </div>
 
               <div className="flex flex-wrap items-center gap-2 border-t pt-3">
                 {(
@@ -812,26 +828,15 @@ export default function OrdersPage() {
                           </TableCell>
 
                           <TableCell className="text-center">
-                            {o.returnStatus === "AWAITING" ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setScanned(o)}
-                              >
-                                <PackageCheck className="size-3.5" />
-                                Nhận hoàn
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={o.shippingStatus === "CANCELLED"}
-                                onClick={() => setEditing(o)}
-                              >
-                                <Pencil className="size-3.5" />
-                                Cập nhật
-                              </Button>
-                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={o.shippingStatus === "CANCELLED"}
+                              onClick={() => setEditing(o)}
+                            >
+                              <Pencil className="size-3.5" />
+                              Cập nhật
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
@@ -895,15 +900,6 @@ export default function OrdersPage() {
           Hubsell · Trung tâm Xử lý Đơn hàng Tập trung
         </p>
       </div>
-
-      <ReturnDialog
-        order={scanned}
-        open={scanned !== null}
-        onOpenChange={(o) => {
-          if (!o) setScanned(null);
-        }}
-        onDone={load}
-      />
 
       <BulkActionBar
         selected={selectedOrders}

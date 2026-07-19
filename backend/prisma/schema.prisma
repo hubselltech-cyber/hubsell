@@ -201,6 +201,15 @@ model Order {
   returnNote   String? // ghi chú tình trạng kiện hàng khi nhận (vỡ, thiếu, bị tráo…)
   returnedAt   DateTime? // thời điểm kho xác nhận đã cầm hàng trên tay
 
+  /// Thời điểm SÀN báo đơn bắt đầu hoàn. Đây là mốc đếm ngược để đối soát:
+  /// quá 7 ngày chưa quét trúng thì cảnh báo, quá 14 ngày thì coi như chưa về
+  /// tay và làm căn cứ khiếu nại bưu cục.
+  ///
+  /// Để null khi KHÔNG BIẾT mốc này (đơn hoàn có từ trước khi hệ thống ghi
+  /// nhận). Cố ý không lấy tạm createdAt để lấp chỗ trống: số ngày chờ là căn
+  /// cứ đòi tiền bưu cục, bịa mốc ra là đi khiếu nại bằng số liệu sai.
+  returnRequestedAt DateTime?
+
   /// CHỐT CHẶN CỘNG KHO TRÙNG.
   ///
   /// Tồn kho của một đơn chỉ được cộng lại ĐÚNG MỘT LẦN, dù đi qua đường nào:

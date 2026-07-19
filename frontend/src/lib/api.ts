@@ -192,6 +192,8 @@ export interface Order {
   returnStatus: ReturnStatus;
   returnNote: string | null;
   returnedAt: string | null;
+  /** Mốc sàn báo đơn bắt đầu hoàn — null khi chưa rõ */
+  returnRequestedAt: string | null;
   /** Mốc đã cộng lại tồn kho — có giá trị nghĩa là không cộng thêm lần nữa */
   stockRestoredAt: string | null;
   createdAt: string;
@@ -508,6 +510,49 @@ export function fetchOrderLabels(orderIds: string[]) {
 export function lookupOrderByCode(code: string) {
   return apiFetch<{ order: Order }>(
     `/api/orders/lookup?code=${encodeURIComponent(code)}`
+  );
+}
+
+export type ReturnAging = "unknown" | "ok" | "warning" | "overdue";
+
+export interface ReturnRow extends Order {
+  /** Số ngày kể từ lúc sàn báo hoàn — null khi chưa rõ mốc bắt đầu */
+  daysWaiting: number | null;
+  agingLevel: ReturnAging;
+}
+
+export interface WarehouseReturnsResponse {
+  items: ReturnRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  summary: Record<string, number>;
+  thresholds: { warningDays: number; overdueDays: number };
+}
+
+/** Danh sách đối soát đơn hoàn của kho, kèm số ngày chờ và mức cảnh báo. */
+export function fetchWarehouseReturns(params: {
+  status?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.search?.trim()) qs.set("search", params.search.trim());
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  return apiFetch<WarehouseReturnsResponse>(
+    `/api/warehouse/returns?${qs.toString()}`
+  );
+}
+
+/** Kéo về các đơn sàn báo đang hoàn (bản giả lập — chưa có API sàn thật). */
+export function syncWarehouseReturns() {
+  return apiFetch<{ synced: number; orderCodes: string[] }>(
+    "/api/warehouse/returns/sync",
+    { method: "POST" }
   );
 }
 

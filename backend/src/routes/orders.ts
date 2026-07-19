@@ -289,7 +289,11 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
                 returnStatus: ReturnStatus.RECEIVED_INTACT,
                 returnedAt: new Date(),
               }
-            : { returnStatus: ReturnStatus.AWAITING }),
+            : {
+                returnStatus: ReturnStatus.AWAITING,
+                // Mốc đếm ngày đối soát bắt đầu từ đây
+                returnRequestedAt: new Date(),
+              }),
         },
         include: { channel: { select: { channelName: true } } },
       });

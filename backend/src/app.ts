@@ -8,6 +8,7 @@ import expensesRouter from "./routes/expenses";
 import dashboardRouter from "./routes/dashboard";
 import productsRouter from "./routes/products";
 import ordersRouter from "./routes/orders";
+import warehouseRouter from "./routes/warehouse";
 import channelsRouter from "./routes/channels";
 import inventoryRouter from "./routes/inventory";
 import mappingsRouter from "./routes/mappings";
@@ -43,6 +44,7 @@ export function createApp() {
   app.use("/api/products", requireAuth, requireChannel, productsRouter);
   app.use("/api/orders", requireAuth, requireChannel, ordersRouter);
   app.use("/api/inventory", requireAuth, requireChannel, inventoryRouter);
+  app.use("/api/warehouse", requireAuth, requireChannel, warehouseRouter);
   app.use("/api/mappings", requireAuth, requireAdmin, requireChannel, mappingsRouter);
 
   // Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
