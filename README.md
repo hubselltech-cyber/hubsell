@@ -268,6 +268,20 @@ Tách đôi vì thực tế shop gói hàng buổi sáng nhưng shipper chiều 
 
 **Cụm sản phẩm:** đơn nhiều SKU chỉ hiện dòng đầu kèm thumbnail, phần còn lại gấp sau nút "+N sản phẩm khác" để chiều cao các dòng gần bằng nhau.
 
+### 🔄 Hàng hoàn về kho (RTS) — tab "Hủy / Hoàn"
+
+**Quét mã nhận hoàn:** ô nhập tự lấy tiêu điểm, bắn máy quét barcode/2D vào là tra ngay. Máy quét hoạt động như bàn phím (gõ chuỗi + Enter) nên **một ô input xử lý được cả mã sọc lẫn mã QR**, không cần thư viện. Nút *Bật camera quét mã* dùng `html5-qrcode` (import động, chỉ tải khi bấm) cho webcam/điện thoại — cần **HTTPS hoặc localhost**, mở qua IP nội bộ bằng http:// sẽ bị trình duyệt chặn.
+
+**Hai nhánh xử lý:**
+| Chọn | Tồn kho | Trạng thái |
+|---|---|---|
+| Hàng nguyên vẹn | **Cộng ngược** từng SKU + ghi InventoryLog | `RECEIVED_INTACT` |
+| Hư hỏng / Mất / Tráo | **Không cộng** | `DAMAGED` → badge "Chờ khiếu nại sàn" |
+
+⚠️⚠️ **`Order.stockRestoredAt` là chốt chặn cộng kho trùng — đừng bỏ qua khi viết luồng mới đụng tới tồn kho.** Huỷ đơn đã cộng kho sẵn; nếu luồng nhận hoàn cộng thêm lần nữa thì kho phình ảo, shop bán ra hàng không có thật. Mọi đường cộng kho phải kiểm tra mốc này trước.
+
+⚠️ **`lookup` không đoán bừa:** mã khớp nhiều đơn thì trả `409` kèm danh sách, không tự lấy đơn đầu tiên — quét nhầm là cộng kho nhầm sản phẩm.
+
 ⚠️ **Chưa có lọc theo Kho hàng** — Hubsell chưa có khái niệm kho (mỗi sản phẩm một con số tồn duy nhất). Sẽ làm thành module đa kho riêng để không chồng chéo logic tồn kho.
 
 ## 💵 Nhập giá vốn hàng loạt (`/finance/cost-prices`)
