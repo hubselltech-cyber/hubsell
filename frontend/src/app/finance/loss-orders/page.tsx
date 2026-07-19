@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
+import { SkuPnlTable } from "@/components/finance/sku-pnl-table";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -90,7 +91,7 @@ export default function LossOrdersPage() {
       router.replace("/login");
       return;
     }
-    // Cảnh báo đơn lỗ dựa trên giá vốn: chỉ Chủ shop
+    // Trang này phơi bày giá vốn và lợi nhuận từng mã: chỉ Chủ shop
     if (!canAccessFinance(getStoredUser()?.role)) {
       setDenied(true);
       setLoading(false);
@@ -116,8 +117,8 @@ export default function LossOrdersPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Quét {formatNumber(analyzedCount)} đơn <b>Đã giao</b> — phát hiện đơn có
-            Doanh thu ≤ Giá vốn để chủ shop đối soát.
+            Soát hiệu quả từng mã hàng và từng đơn trên {formatNumber(analyzedCount)}{" "}
+            đơn <b>Đã giao</b> để biết mã nào đang gánh lỗ và vì sao.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <ChannelFilter value={channel} onChange={setChannel} />
@@ -127,6 +128,21 @@ export default function LossOrdersPage() {
               Quét lại
             </Button>
           </div>
+        </div>
+
+        {/* KHỐI CHÍNH — hiệu quả theo từng mã hàng */}
+        <SkuPnlTable range={range} channel={channel} />
+
+        {/* KHỐI PHỤ — soi xuống từng đơn cụ thể.
+            Bảng SKU trả lời "mã nào lỗ", bảng này trả lời "đơn nào lỗ" — hai câu
+            hỏi khác nhau nên giữ cả hai, xếp dưới vì ít dùng hơn. */}
+        <div className="border-t pt-6">
+          <h2 className="text-lg font-semibold tracking-tight">
+            Chi tiết đơn hàng lỗ
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Từng đơn có Doanh thu ≤ Giá vốn + Phí sàn, để đối soát lại với sàn.
+          </p>
         </div>
 
         {/* Thẻ cảnh báo tổng */}
@@ -282,8 +298,8 @@ export default function LossOrdersPage() {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell Finance · Cảnh báo đơn lỗ — giá vốn lấy theo snapshot tại thời
-          điểm bán (costPriceAtSale)
+          Hubsell Finance · Cảnh báo &amp; P&amp;L Sản phẩm — giá vốn của đơn lấy
+          theo snapshot tại thời điểm bán (costPriceAtSale)
         </p>
       </div>
     </AppShell>

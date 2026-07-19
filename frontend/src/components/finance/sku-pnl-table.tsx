@@ -1,15 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Crown,
   ImageIcon,
+  Loader2,
+  Megaphone,
   PackageSearch,
+  PackageX,
+  Pencil,
   TrendingDown,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { HintText } from "@/components/finance/hint-icon";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 import {
   Card,
@@ -26,11 +41,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fetchSkuPnl, type SkuPnlResponse } from "@/lib/api";
+import {
+  ApiError,
+  fetchSkuPnl,
+  updateCostPriceBySku,
+  type ChannelFilterQuery,
+  type SkuPnlResponse,
+  type SkuPnlRow,
+} from "@/lib/api";
 import { Refreshing } from "@/components/refreshing";
 import type { DateRange } from "@/lib/date-range";
 import { formatVND, formatNumber } from "@/lib/format";
-import { CELL_PADDING } from "@/lib/typography";
+import { CELL_PADDING, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 // Khoảng đệm ô lấy từ quy chuẩn hệ thống (lib/typography.ts) để co giãn
@@ -41,28 +63,175 @@ const CELL_PAD = CELL_PADDING;
 const STICKY_COL =
   "sticky left-0 z-10 bg-card shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
 
+/** Ba tab lọc nhanh. Thứ tự đi từ rộng đến hẹp dần theo mức độ cần xử lý. */
+type PnlTab = "all" | "urgent" | "missing-cost";
+
+const TABS: { key: PnlTab; label: string }[] = [
+  { key: "all", label: "Tất cả sản phẩm" },
+  { key: "urgent", label: "🚨 Cần xử lý ngay" },
+  { key: "missing-cost", label: "⚠️ Chưa nhập giá vốn" },
+];
+
+/** Một mã có thuộc tab đang chọn hay không. */
+function matchTab(row: SkuPnlRow, tab: PnlTab): boolean {
+  if (tab === "urgent") {
+    return row.lossReason !== null || Boolean(row.breakEven?.isOverspending);
+  }
+  if (tab === "missing-cost") return row.missingCost;
+  return true;
+}
+
+// ---------- Popup nhập nhanh giá vốn ----------
+
+/**
+ * Nhập giá vốn ngay trên dòng đang xem. Trước đây chủ shop phải rời trang sang
+ * Cấu hình Giá vốn rồi tìm lại đúng mã — mất mạch khi đang soát một danh sách dài.
+ */
+function QuickCostDialog({
+  row,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  row: SkuPnlRow;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSaved: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const cost = Number(value);
+  const invalid = value.trim() === "" || Number.isNaN(cost) || cost < 0;
+
+  // Giá vốn phải thấp hơn giá bán trung bình, nếu không thì bán ra là lỗ ngay.
+  const avgPrice = row.quantitySold > 0 ? row.revenue / row.quantitySold : 0;
+  const aboveSellingPrice = !invalid && avgPrice > 0 && cost >= avgPrice;
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (invalid) return;
+    setSubmitting(true);
+    try {
+      const res = await updateCostPriceBySku(row.sku, cost);
+      toast.success(
+        `Đã đặt giá vốn ${formatVND(cost)} cho ${row.sku}` +
+          (res.backfilledOrderLines > 0
+            ? ` · tính lại lãi/lỗ cho ${formatNumber(res.backfilledOrderLines)} dòng hàng đã bán`
+            : "")
+      );
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được giá vốn");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Nhập nhanh giá vốn</DialogTitle>
+          <DialogDescription>
+            {row.productName} · <span className="font-mono">{row.sku}</span>
+            {avgPrice > 0 && (
+              <>
+                <br />
+                Giá bán trung bình đang là {formatVND(Math.round(avgPrice))}/sp.
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="quick-cost">Giá vốn cho một sản phẩm (₫)</Label>
+            <Input
+              id="quick-cost"
+              type="number"
+              min="0"
+              autoFocus
+              placeholder="VD: 65000"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+            {aboveSellingPrice ? (
+              <p className="text-sm text-amber-600">
+                Giá vốn đang cao hơn hoặc bằng giá bán trung bình — mã này sẽ lỗ ở
+                mọi đơn. Vẫn lưu được nếu anh chắc chắn.
+              </p>
+            ) : (
+              <p className={TEXT_SUB}>
+                Áp cho sản phẩm gốc trong kho, mọi gian hàng dùng chung một giá
+                vốn. Các đơn đã bán mà lúc bán chưa có giá vốn cũng được tính lại
+                theo mức này.
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Huỷ
+            </Button>
+            <Button type="submit" disabled={submitting || invalid}>
+              {submitting && <Loader2 className="size-4 animate-spin" />}
+              Lưu giá vốn
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /// Bảng phân tích hiệu quả kinh doanh từng mã SKU:
 /// SKU nào là "gà đẻ trứng vàng", SKU nào đang gánh lỗ.
-export function SkuPnlTable({ range }: { range?: DateRange }) {
+export function SkuPnlTable({
+  range,
+  channel,
+}: {
+  range?: DateRange;
+  channel?: ChannelFilterQuery;
+}) {
   const [data, setData] = useState<SkuPnlResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<PnlTab>("all");
+  const [editingCost, setEditingCost] = useState<SkuPnlRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchSkuPnl(range));
+      setData(await fetchSkuPnl(range, channel));
     } catch {
       // Trang cha đã xử lý 401/403/409
     } finally {
       setLoading(false);
     }
-  }, [range]);
+  }, [range, channel]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const items = data?.items ?? [];
+  const allItems = useMemo(() => data?.items ?? [], [data]);
+  const items = useMemo(
+    () => allItems.filter((r) => matchTab(r, tab)),
+    [allItems, tab]
+  );
+
+  // Số đếm trên tab lấy từ máy chủ để phản ánh đúng toàn bộ tập dữ liệu
+  const tabCount: Record<PnlTab, number> = {
+    all: data?.summary.skuCount ?? 0,
+    urgent: data?.summary.urgentCount ?? 0,
+    "missing-cost": data?.summary.missingCostCount ?? 0,
+  };
 
   return (
     <Card>
@@ -73,6 +242,33 @@ export function SkuPnlTable({ range }: { range?: DateRange }) {
           bổ theo tỷ trọng doanh thu; chi phí biến đổi tính vào đúng SKU được gắn.
           Chi phí cố định không phân bổ — trừ vào lợi nhuận chung của shop.
         </CardDescription>
+
+        {/* Tab lọc nhanh — đi thẳng vào nhóm cần xử lý thay vì đọc hết bảng */}
+        <div className="flex flex-wrap gap-2 pt-3">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={cn(
+                "rounded-lg border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                tab === t.key
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                  : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              {t.label}
+              <span
+                className={cn(
+                  "ml-2 rounded-full px-1.5 py-0.5 text-xs",
+                  tab === t.key ? "bg-white/20" : "bg-muted"
+                )}
+              >
+                {formatNumber(tabCount[t.key])}
+              </span>
+            </button>
+          ))}
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {/* Chỉ hiện chữ "đang tính" ở lần tải đầu; đổi bộ lọc thì giữ bảng cũ
@@ -84,7 +280,16 @@ export function SkuPnlTable({ range }: { range?: DateRange }) {
         ) : items.length === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground">
             <PackageSearch className="mx-auto mb-2 size-8" />
-            Chưa có dữ liệu. Cần ít nhất một đơn <b>Đã giao</b> có chi tiết sản phẩm.
+            {allItems.length === 0 ? (
+              <>
+                Chưa có dữ liệu. Cần ít nhất một đơn <b>Đã giao</b> có chi tiết sản
+                phẩm.
+              </>
+            ) : tab === "urgent" ? (
+              <>Không có mã nào đang lỗ hay vượt trần quảng cáo.</>
+            ) : (
+              <>Mọi mã đã bán đều đã có giá vốn.</>
+            )}
           </div>
         ) : (
           <Refreshing active={loading}>
@@ -127,6 +332,9 @@ export function SkuPnlTable({ range }: { range?: DateRange }) {
                       Lợi nhuận
                     </TableHead>
                     <TableHead className={cn(CELL_PAD, "text-right")}>Biên LN</TableHead>
+                    <TableHead className={cn(CELL_PAD, "text-center")}>
+                      Thao tác
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -167,6 +375,19 @@ export function SkuPnlTable({ range }: { range?: DateRange }) {
                                 <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                                   <AlertTriangle className="size-3" />
                                   Chưa nhập giá vốn
+                                </span>
+                              )}
+                              {/* LÝ DO LỖ — hai loại cần hai cách chữa khác nhau */}
+                              {row.lossReason === "ADS" && (
+                                <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-orange-300 bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+                                  <Megaphone className="size-3" />
+                                  Lỗ do Ads
+                                </span>
+                              )}
+                              {row.lossReason === "COST" && (
+                                <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+                                  <PackageX className="size-3" />
+                                  Lỗ do Giá vốn / Phí sàn
                                 </span>
                               )}
                             </div>
@@ -300,6 +521,16 @@ export function SkuPnlTable({ range }: { range?: DateRange }) {
                           )}
                         </TableCell>
 
+                        <TableCell className={cn(CELL_PAD, "text-center")}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingCost(row)}
+                          >
+                            <Pencil className="size-3.5" />
+                            {row.missingCost ? "Nhập giá vốn" : "Sửa giá vốn"}
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -350,6 +581,17 @@ export function SkuPnlTable({ range }: { range?: DateRange }) {
           </Refreshing>
         )}
       </CardContent>
+
+      {editingCost && (
+        <QuickCostDialog
+          row={editingCost}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setEditingCost(null);
+          }}
+          onSaved={load}
+        />
+      )}
     </Card>
   );
 }

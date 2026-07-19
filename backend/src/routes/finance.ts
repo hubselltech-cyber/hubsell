@@ -424,7 +424,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
     const [orders, variableExpenses] = await Promise.all([
       prisma.order.findMany({
         where: {
-          channel: { userId: ownerId },
+          channel: channelScope(req),
           shippingStatus: "DELIVERED",
           items: { some: {} }, // chỉ đơn có chi tiết dòng hàng
           createdAt: range,
@@ -553,6 +553,18 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
             })()
           : null;
 
+        // BÓC TÁCH LÝ DO LỖ — hai loại lỗ này cần hai cách chữa khác hẳn nhau:
+        //   ADS  : bản thân mặt hàng vẫn có lãi, tiền quảng cáo ăn hết phần lãi đó
+        //          → tắt/tối ưu chiến dịch là hết lỗ, không phải đụng vào giá.
+        //   COST : lỗ ngay từ trước khi tiêu một đồng quảng cáo nào
+        //          → phải sửa giá nhập hoặc giá bán, tắt Ads cũng vẫn lỗ.
+        // Mã chưa nhập giá vốn thì chưa kết luận được, để null.
+        const missingCost = r.quantitySold > 0 && r.cogs <= 0;
+        let lossReason: "ADS" | "COST" | null = null;
+        if (profit <= 0 && !missingCost) {
+          lossReason = grossBeforeMarketing > 0 ? "ADS" : "COST";
+        }
+
         return {
           sku: r.sku,
           productName: r.productName,
@@ -567,7 +579,8 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
           // Biên lợi nhuận trên doanh thu của chính SKU đó
           margin: pct(profit, r.revenue),
           // Đã bán nhưng giá vốn = 0 ⇒ số liệu lời/lỗ chưa đáng tin
-          missingCost: r.quantitySold > 0 && r.cogs <= 0,
+          missingCost,
+          lossReason,
           breakEven,
         };
       })
@@ -591,6 +604,12 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
         shopProfit: skuProfitTotal - fixedExpense, // lợi nhuận cuối cùng
         // Số SKU đang chi quảng cáo vượt ngưỡng an toàn ⇒ cần xử lý ngay
         overspendingCount: items.filter((i) => i.breakEven?.isOverspending).length,
+        // Số liệu cho các tab lọc nhanh trên giao diện. Tính ở đây để tab đếm
+        // đúng toàn bộ tập dữ liệu, không phụ thuộc trang đang hiển thị.
+        urgentCount: items.filter(
+          (i) => i.lossReason !== null || i.breakEven?.isOverspending
+        ).length,
+        missingCostCount: items.filter((i) => i.missingCost).length,
       },
     });
   } catch (err) {
@@ -841,15 +860,57 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * Đặt giá vốn cho các sản phẩm gốc, ĐỒNG THỜI vá lại các dòng hàng đã bán mà
+ * lúc bán chưa biết giá vốn.
+ *
+ * OrderItem.costPriceAtSale là ảnh chụp giá vốn tại thời điểm bán — cố ý đóng
+ * băng để giá nhập đổi về sau không làm sai lệch báo cáo cũ. Nhưng giá trị 0
+ * KHÔNG phải một ảnh chụp hợp lệ, nó nghĩa là "lúc đó chưa ai nhập giá vốn".
+ * Để nguyên thì mã đó mãi mãi bị đánh dấu "chưa nhập giá vốn" trong P&L dù chủ
+ * shop vừa nhập xong, và lãi/lỗ của nó vẫn sai.
+ *
+ * Nên chỉ vá đúng những dòng đang là 0. Dòng đã có số thật thì tuyệt đối không
+ * đụng vào — đó mới là lịch sử cần giữ.
+ */
+async function applyCostPrice(
+  productIds: string[],
+  cost: number,
+  ownerId: string
+): Promise<{ products: number; backfilledOrderLines: number }> {
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.product.updateMany({
+      where: { id: { in: productIds }, userId: ownerId },
+      data: { costPrice: cost },
+    });
+
+    const backfilled = await tx.orderItem.updateMany({
+      where: {
+        productId: { in: productIds },
+        costPriceAtSale: 0,
+        order: { channel: { userId: ownerId } },
+      },
+      data: { costPriceAtSale: cost },
+    });
+
+    return { products: updated.count, backfilledOrderLines: backfilled.count };
+  });
+}
+
 // PATCH /api/finance/update-cost — cập nhật giá vốn cho một SKU.
-// Body: { sku_id, cost_price }. sku_id có thể là id ChannelProduct hoặc id Product.
+// Body: { sku_id, cost_price } — sku_id là id ChannelProduct hoặc id Product.
+// Hoặc:  { sku_code, cost_price } — dùng cho popup nhập nhanh ở bảng SKU P&L,
+// nơi mỗi dòng chỉ có mã SKU (chuỗi) chứ không mang theo id sản phẩm gốc.
 router.patch("/update-cost", async (req: AuthRequest, res, next) => {
   try {
     const skuId = req.body?.sku_id ?? req.body?.skuId ?? req.body?.variant_id;
     const rawCost = req.body?.cost_price ?? req.body?.costPrice;
+    const skuCodeRaw = req.body?.sku_code ?? req.body?.skuCode;
+    const skuCode =
+      typeof skuCodeRaw === "string" ? skuCodeRaw.trim().toUpperCase() : "";
 
-    if (typeof skuId !== "string" || !skuId) {
-      res.status(400).json({ error: "Thiếu sku_id" });
+    if ((typeof skuId !== "string" || !skuId) && !skuCode) {
+      res.status(400).json({ error: "Thiếu sku_id hoặc sku_code" });
       return;
     }
     const cost = typeof rawCost === "string" ? Number(rawCost) : rawCost;
@@ -858,30 +919,47 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    // Tìm sản phẩm gốc: thử theo mapping trước, sau đó theo product id
+    // Tìm sản phẩm gốc: theo mã SKU nếu có, không thì thử id mapping rồi id sản phẩm
     let productId: string | null = null;
-    const channelProduct = await prisma.channelProduct.findFirst({
-      where: { id: skuId, channel: { userId: req.ownerId! } },
-      select: { productId: true },
-    });
-    if (channelProduct?.productId) {
-      productId = channelProduct.productId;
-    } else {
-      const product = await prisma.product.findFirst({
-        where: { id: skuId, userId: req.ownerId! },
+    if (skuCode) {
+      const product = await prisma.product.findUnique({
+        where: { userId_skuCode: { userId: req.ownerId!, skuCode } },
         select: { id: true },
       });
       productId = product?.id ?? null;
+    } else {
+      const channelProduct = await prisma.channelProduct.findFirst({
+        where: { id: skuId, channel: { userId: req.ownerId! } },
+        select: { productId: true },
+      });
+      if (channelProduct?.productId) {
+        productId = channelProduct.productId;
+      } else {
+        const product = await prisma.product.findFirst({
+          where: { id: skuId, userId: req.ownerId! },
+          select: { id: true },
+        });
+        productId = product?.id ?? null;
+      }
     }
 
     if (!productId) {
-      res.status(404).json({ error: "Không tìm thấy SKU / sản phẩm" });
+      res.status(404).json({
+        error: skuCode
+          ? `Không tìm thấy sản phẩm có mã SKU "${skuCode}" trong kho. Mã này có thể chỉ tồn tại trên sàn mà chưa liên kết về kho.`
+          : "Không tìm thấy SKU / sản phẩm",
+      });
       return;
     }
 
-    const updated = await prisma.product.update({
+    const { backfilledOrderLines } = await applyCostPrice(
+      [productId],
+      cost,
+      req.ownerId!
+    );
+    const updated = await prisma.product.findUniqueOrThrow({
       where: { id: productId },
-      data: { costPrice: cost },
+      select: { id: true, productName: true, costPrice: true },
     });
 
     res.json({
@@ -889,6 +967,9 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       productId: updated.id,
       productName: updated.productName,
       costPrice: String(updated.costPrice),
+      // Số dòng hàng đã bán được vá lại giá vốn — để giao diện nói rõ với chủ
+      // shop rằng báo cáo của các đơn cũ vừa được tính lại.
+      backfilledOrderLines,
     });
   } catch (err) {
     next(err);
@@ -958,12 +1039,17 @@ router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
     }
 
     // Cùng một transaction: hoặc đổi hết, hoặc không đổi gì
-    await prisma.product.updateMany({
-      where: { id: { in: [...productIds] }, userId: req.ownerId! },
-      data: { costPrice: cost },
-    });
+    const { backfilledOrderLines } = await applyCostPrice(
+      [...productIds],
+      cost,
+      req.ownerId!
+    );
 
-    res.json({ updated: productIds.size, costPrice: String(cost) });
+    res.json({
+      updated: productIds.size,
+      costPrice: String(cost),
+      backfilledOrderLines,
+    });
   } catch (err) {
     next(err);
   }
@@ -1091,20 +1177,37 @@ router.post(
         return;
       }
 
-      // Trọn gói: hoặc cập nhật hết, hoặc không đổi gì
-      const updated = await prisma.$transaction(async (tx) => {
+      // Trọn gói: hoặc cập nhật hết, hoặc không đổi gì.
+      // Vá luôn giá vốn của các dòng hàng đã bán mà lúc bán chưa biết giá vốn,
+      // giống hệt đường nhập tay — xem chú thích ở applyCostPrice.
+      const result = await prisma.$transaction(async (tx) => {
         const touched = new Set<string>();
+        let backfilled = 0;
         for (const [cost, ids] of byCost) {
           await tx.product.updateMany({
             where: { id: { in: ids }, userId: ownerId },
             data: { costPrice: cost },
           });
+          const patched = await tx.orderItem.updateMany({
+            where: {
+              productId: { in: ids },
+              costPriceAtSale: 0,
+              order: { channel: { userId: ownerId } },
+            },
+            data: { costPriceAtSale: cost },
+          });
+          backfilled += patched.count;
           for (const id of ids) touched.add(id);
         }
-        return touched.size;
+        return { updated: touched.size, backfilled };
       });
 
-      res.json({ updated, totalRows: rows.length, errors });
+      res.json({
+        updated: result.updated,
+        backfilledOrderLines: result.backfilled,
+        totalRows: rows.length,
+        errors,
+      });
     } catch (err) {
       next(err);
     }

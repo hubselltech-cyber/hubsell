@@ -32,7 +32,6 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
-import { SkuPnlTable } from "@/components/finance/sku-pnl-table";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -182,9 +181,6 @@ export default function FinanceAnalyticsPage() {
             <b> thực tế</b> sàn trả về; đơn đang đi đường dùng số <b>tạm tính</b>.
           </p>
         )}
-
-        {/* Bảng Lời/Lỗ theo từng SKU */}
-        <SkuPnlTable range={range} />
 
         {/* Biểu đồ vùng: Doanh thu vs Tổng chi phí */}
         <Card>

@@ -322,6 +322,13 @@ export interface SkuPnlRow {
   profit: number;
   margin: number;
   missingCost: boolean; // đã bán nhưng chưa nhập giá vốn
+  /**
+   * Vì sao mã này lỗ — hai loại cần hai cách chữa khác nhau:
+   * ADS  = mặt hàng vẫn có lãi, tiền quảng cáo ăn hết → tắt/tối ưu chiến dịch
+   * COST = lỗ ngay trước khi tiêu đồng quảng cáo nào → phải sửa giá nhập/giá bán
+   * null = đang có lãi, hoặc chưa nhập giá vốn nên chưa kết luận được
+   */
+  lossReason: "ADS" | "COST" | null;
   breakEven: SkuBreakEven | null;
 }
 
@@ -333,11 +340,15 @@ export interface SkuPnlResponse {
     fixedExpense: number;
     shopProfit: number;
     overspendingCount: number; // số SKU đang chi Ads vượt ngưỡng
+    urgentCount: number; // số SKU đang lỗ hoặc vượt trần Ads
+    missingCostCount: number; // số SKU đã bán nhưng chưa nhập giá vốn
   };
 }
 
-export function fetchSkuPnl(range?: DateRange) {
-  return apiFetch<SkuPnlResponse>(withRange("/api/finance/sku-pnl", range));
+export function fetchSkuPnl(range?: DateRange, channel?: ChannelFilterQuery) {
+  return apiFetch<SkuPnlResponse>(
+    withRange("/api/finance/sku-pnl", range, channel)
+  );
 }
 
 export interface AnalyticsResponse {
@@ -959,15 +970,34 @@ export async function importCostPricesExcel(
   return res.json();
 }
 
+interface UpdateCostResult {
+  skuId: string;
+  productId: string;
+  productName: string;
+  costPrice: string;
+  /**
+   * Số dòng hàng ĐÃ BÁN được vá lại giá vốn. Đơn bán ra khi chưa nhập giá vốn
+   * lưu ảnh chụp = 0; đặt giá vốn xong thì các dòng đó được tính lại để báo cáo
+   * lãi/lỗ cũ hết sai.
+   */
+  backfilledOrderLines: number;
+}
+
 export function updateSkuCostPrice(skuId: string, costPrice: number) {
-  return apiFetch<{
-    skuId: string;
-    productId: string;
-    productName: string;
-    costPrice: string;
-  }>("/api/finance/update-cost", {
+  return apiFetch<UpdateCostResult>("/api/finance/update-cost", {
     method: "PATCH",
     body: JSON.stringify({ sku_id: skuId, cost_price: costPrice }),
+  });
+}
+
+/**
+ * Đặt giá vốn theo MÃ SKU. Bảng SKU P&L gom số liệu theo mã chứ không mang theo
+ * id sản phẩm gốc, nên popup nhập nhanh trên bảng đó dùng hàm này.
+ */
+export function updateCostPriceBySku(skuCode: string, costPrice: number) {
+  return apiFetch<UpdateCostResult>("/api/finance/update-cost", {
+    method: "PATCH",
+    body: JSON.stringify({ sku_code: skuCode, cost_price: costPrice }),
   });
 }
 
