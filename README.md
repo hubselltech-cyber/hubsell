@@ -229,6 +229,24 @@ Toàn bộ cỡ chữ của Hubsell được khai báo tập trung tại **`fron
 
 Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): laptop phổ biến 1366–1440px đã vượt `md` từ lâu, nếu dùng `md` thì laptop sẽ nhảy lên 16px và mất đi độ gọn gàng mong muốn.
 
+## 📦 Trung tâm Xử lý Đơn hàng (`/orders`)
+
+Gom đơn từ mọi sàn về một màn hình để lọc, duyệt và in phiếu hàng loạt.
+
+**5 tab theo vòng đời đơn** — Tất cả · Chờ xử lý · Đang giao · Đã giao thành công · Đơn hủy/Hoàn trả, mỗi tab kèm badge số lượng.
+
+**Tìm kiếm & lọc** — ô tìm đa năng (mã đơn, tên khách, SĐT, mã vận đơn; SĐT tự bỏ dấu cách nên `0901 234 567` khớp `0901234567`) + lọc theo **Sàn** và **Đơn vị vận chuyển**.
+
+**Xử lý hàng loạt** — tích chọn đơn → thanh nổi ở đáy màn hình:
+- *Xác nhận chuẩn bị hàng loạt*: Chờ xử lý → Đang giao, ghi `packedAt`. Bỏ qua có chọn lọc kèm lý do từng đơn, không fail cả mẻ.
+- *In phiếu giao hàng*: dựng phiếu A5, mỗi đơn một trang, bấm một lần in cả xấp (hoặc lưu PDF).
+
+⚠️ **Hai giới hạn do chưa có tích hợp sàn thật:**
+- Phiếu giao hàng là **do Hubsell tự dựng**, không phải vận đơn chính thức của Shopee/TikTok. Muốn phiếu chính chủ phải có API thật kèm quyền in vận đơn.
+- "Xác nhận chuẩn bị" mới chỉ đổi trạng thái trong Hubsell, **chưa gọi ngược lên sàn**. Chỗ nối API thật đã đánh dấu sẵn trong `POST /api/orders/bulk/confirm`.
+
+⚠️ **Chưa có lọc theo Kho hàng** — Hubsell chưa có khái niệm kho (mỗi sản phẩm một con số tồn duy nhất). Sẽ làm thành module đa kho riêng để không chồng chéo logic tồn kho.
+
 ## 💵 Nhập giá vốn hàng loạt (`/finance/cost-prices`)
 
 | Tính năng | Cách dùng |
