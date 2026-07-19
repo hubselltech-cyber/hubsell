@@ -22,6 +22,9 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { Refreshing } from "@/components/refreshing";
+import { defaultRange, type DateRange } from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { SkuPnlTable } from "@/components/finance/sku-pnl-table";
 import { Button } from "@/components/ui/button";
@@ -46,11 +49,12 @@ export default function FinanceAnalyticsPage() {
   const [data, setData] = useState<FinanceAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [range, setRange] = useState<DateRange>(defaultRange);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchFinanceAnalytics());
+      setData(await fetchFinanceAnalytics(range));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -64,7 +68,7 @@ export default function FinanceAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -95,15 +99,21 @@ export default function FinanceAnalyticsPage() {
             Dòng tiền của shop — doanh thu, chi phí và lợi nhuận (đơn Đã giao:{" "}
             {data ? formatNumber(data.deliveredOrderCount) : "—"}).
           </p>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
-            Làm mới
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} disabled={loading} />
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+              Làm mới
+            </Button>
+          </div>
         </div>
 
         {/* ===== BÓC TÁCH DÒNG TIỀN 4 CỘT ===== */}
         {data && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Refreshing
+            active={loading}
+            className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
+          >
             <BreakdownCard
               title="Tổng giá trị sản phẩm"
               subtitle={`${formatNumber(data.breakdown.gross.orderCount)} đơn (chưa trừ chi phí)`}
@@ -152,7 +162,7 @@ export default function FinanceAnalyticsPage() {
               featured /* ← Card Ngôi Sao: chỉ số cốt lõi của trang này */
               footer={<span>% là biên lợi nhuận trên doanh thu tương ứng</span>}
             />
-          </div>
+          </Refreshing>
         )}
 
         {/* Ghi chú cách đọc số liệu */}
@@ -165,7 +175,7 @@ export default function FinanceAnalyticsPage() {
         )}
 
         {/* Bảng Lời/Lỗ theo từng SKU */}
-        <SkuPnlTable />
+        <SkuPnlTable range={range} />
 
         {/* Biểu đồ vùng: Doanh thu vs Tổng chi phí */}
         <Card>

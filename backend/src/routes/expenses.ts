@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ExpenseCategory } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import { parseDateRange } from "../date-range";
 
 const router = Router();
 
@@ -17,7 +18,7 @@ const VALID_CATEGORIES: ExpenseCategory[] = [
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const expenses = await prisma.operatingExpense.findMany({
-      where: { userId: req.ownerId! },
+      where: { userId: req.ownerId!, expenseDate: parseDateRange(req.query) },
       orderBy: { expenseDate: "desc" },
     });
     res.json(expenses);

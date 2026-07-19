@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import { parseDateRange } from "../date-range";
 
 const router = Router();
 
@@ -21,10 +22,16 @@ function toDateKey(d: Date): string {
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
+    // Bộ lọc khoảng thời gian (?from=&to=) — undefined nghĩa là xem toàn bộ
+    const range = parseDateRange(req.query);
 
     // 1) Toàn bộ đơn ĐÃ GIAO của shop
     const delivered = await prisma.order.findMany({
-      where: { channel: { userId: ownerId }, shippingStatus: "DELIVERED" },
+      where: {
+        channel: { userId: ownerId },
+        shippingStatus: "DELIVERED",
+        createdAt: range,
+      },
       select: { id: true, totalAmount: true, createdAt: true },
     });
 
@@ -52,7 +59,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     // 2b) Chi phí hoạt động: tổng + phân bổ theo loại
     const expenses = await prisma.operatingExpense.findMany({
-      where: { userId: ownerId },
+      where: { userId: ownerId, expenseDate: range },
       select: { category: true, amount: true },
     });
     const totalOperatingExpense = expenses.reduce(
@@ -73,18 +80,39 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // Lợi nhuận thuần = Lợi nhuận gộp − Tổng chi phí hoạt động
     const netProfit = grossProfit - totalOperatingExpense;
 
-    // 3) Doanh thu theo ngày — 14 ngày gần nhất (kể cả ngày không có đơn)
-    const days = 14;
-    const today = new Date();
+    // 3) Doanh thu theo ngày (kể cả ngày không có đơn để đường biểu đồ liền mạch)
+    //    Khung thời gian bám đúng bộ lọc người dùng chọn; không lọc thì lấy 14
+    //    ngày gần nhất. Trần 90 điểm để khoảng dài (cả năm) không làm vỡ trục X.
+    const MAX_POINTS = 90;
     const revenueMap = new Map<string, number>();
     for (const o of delivered) {
       const key = toDateKey(o.createdAt);
       revenueMap.set(key, (revenueMap.get(key) ?? 0) + Number(o.totalAmount));
     }
+
+    const chartEnd = range ? new Date(range.lte) : new Date();
+    chartEnd.setHours(0, 0, 0, 0);
+    let chartStart: Date;
+    if (range) {
+      chartStart = new Date(range.gte);
+      chartStart.setHours(0, 0, 0, 0);
+    } else {
+      chartStart = new Date(chartEnd);
+      chartStart.setDate(chartEnd.getDate() - 13);
+    }
+    const spanDays =
+      Math.round((chartEnd.getTime() - chartStart.getTime()) / 86_400_000) + 1;
+    if (spanDays > MAX_POINTS) {
+      chartStart = new Date(chartEnd);
+      chartStart.setDate(chartEnd.getDate() - (MAX_POINTS - 1));
+    }
+
     const revenueByDay: { date: string; label: string; revenue: number }[] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+    for (
+      const d = new Date(chartStart);
+      d <= chartEnd;
+      d.setDate(d.getDate() + 1)
+    ) {
       const key = toDateKey(d);
       revenueByDay.push({
         date: key,
@@ -100,6 +128,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       where: {
         channel: { userId: ownerId },
         shippingStatus: { not: "CANCELLED" },
+        createdAt: range,
       },
     });
     const channels = await prisma.channel.findMany({

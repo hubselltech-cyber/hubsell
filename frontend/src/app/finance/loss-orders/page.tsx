@@ -17,6 +17,9 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { Refreshing } from "@/components/refreshing";
+import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -45,11 +48,15 @@ export default function LossOrdersPage() {
   const [warningCount, setWarningCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [range, setRange] = useState<DateRange>(defaultRange);
+  // Phân biệt lần tải đầu (hiện chữ "đang quét") với các lần đổi bộ lọc
+  // sau đó (giữ nguyên bảng cũ, chỉ làm mờ) để giao diện không nhấp nháy
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchLossOrders();
+      const res = await fetchLossOrders(range);
       setOrders(res.orders);
       setAnalyzedCount(res.analyzedCount);
       setLossCount(res.lossCount);
@@ -66,8 +73,9 @@ export default function LossOrdersPage() {
       // 409 (chưa có kênh) — AppShell overlay xử lý
     } finally {
       setLoading(false);
+      setLoadedOnce(true);
     }
-  }, [router]);
+  }, [router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -102,15 +110,21 @@ export default function LossOrdersPage() {
             Quét {formatNumber(analyzedCount)} đơn <b>Đã giao</b> — phát hiện đơn có
             Doanh thu ≤ Giá vốn để chủ shop đối soát.
           </p>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
-            Quét lại
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} disabled={loading} />
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+              Quét lại
+            </Button>
+          </div>
         </div>
 
         {/* Thẻ cảnh báo tổng */}
-        {!loading && (lossCount > 0 || warningCount > 0) && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {loadedOnce && (lossCount > 0 || warningCount > 0) && (
+          <Refreshing
+            active={loading}
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+          >
             {lossCount > 0 && (
               <DashboardCard
                 title="Tổng tiền lỗ"
@@ -142,12 +156,12 @@ export default function LossOrdersPage() {
                 }
               />
             )}
-          </div>
+          </Refreshing>
         )}
 
         <Card>
           <CardContent className="p-0">
-            {loading ? (
+            {loading && !loadedOnce ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
                 Đang quét đơn hàng…
               </p>
@@ -162,7 +176,8 @@ export default function LossOrdersPage() {
                 </p>
               </div>
             ) : (
-              <Table>
+              <Refreshing active={loading}>
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Mã đơn</TableHead>
@@ -245,7 +260,8 @@ export default function LossOrdersPage() {
                     );
                   })}
                 </TableBody>
-              </Table>
+                </Table>
+              </Refreshing>
             )}
           </CardContent>
         </Card>

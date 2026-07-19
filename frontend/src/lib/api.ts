@@ -1,5 +1,7 @@
 // Lớp gọi API tới backend Hubsell (kèm token đăng nhập).
 
+import { rangeToQuery, type DateRange } from "./date-range";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const TOKEN_KEY = "hubsell_token";
 const USER_KEY = "hubsell_user";
@@ -50,6 +52,16 @@ export class ApiError extends Error {
 }
 
 // Hàm gọi API dùng chung: tự gắn token, tự đọc thông báo lỗi tiếng Việt từ backend
+/**
+ * Gắn ?from=&to= vào endpoint báo cáo. Không truyền range thì giữ nguyên URL
+ * (backend hiểu là xem toàn bộ lịch sử).
+ */
+function withRange(path: string, range?: DateRange): string {
+  const qs = new URLSearchParams(rangeToQuery(range)).toString();
+  if (!qs) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}${qs}`;
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API_URL}${path}`, {
@@ -200,8 +212,8 @@ export interface SkuPnlResponse {
   };
 }
 
-export function fetchSkuPnl() {
-  return apiFetch<SkuPnlResponse>("/api/finance/sku-pnl");
+export function fetchSkuPnl(range?: DateRange) {
+  return apiFetch<SkuPnlResponse>(withRange("/api/finance/sku-pnl", range));
 }
 
 export interface AnalyticsResponse {
@@ -406,14 +418,14 @@ export function updateOrderStatus(id: string, shippingStatus: string) {
 
 // ----- Báo cáo tài chính (chỉ Admin) -----
 
-export function fetchAnalytics() {
-  return apiFetch<AnalyticsResponse>("/api/analytics");
+export function fetchAnalytics(range?: DateRange) {
+  return apiFetch<AnalyticsResponse>(withRange("/api/analytics", range));
 }
 
 // ----- Chi phí hoạt động (chỉ Admin) -----
 
-export function fetchExpenses() {
-  return apiFetch<OperatingExpense[]>("/api/expenses");
+export function fetchExpenses(range?: DateRange) {
+  return apiFetch<OperatingExpense[]>(withRange("/api/expenses", range));
 }
 
 export function createExpense(data: {
@@ -527,8 +539,9 @@ export function fetchShippingDiscrepancies(params: {
   pageSize?: number;
   channel?: string;
   status?: string;
+  range?: DateRange;
 }) {
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams(rangeToQuery(params.range));
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.channel && params.channel !== "all") qs.set("channel", params.channel);
@@ -597,18 +610,18 @@ export function updateSkuCostPrice(skuId: string, costPrice: number) {
   });
 }
 
-export function fetchFinanceAnalytics() {
-  return apiFetch<FinanceAnalytics>("/api/finance/analytics");
+export function fetchFinanceAnalytics(range?: DateRange) {
+  return apiFetch<FinanceAnalytics>(withRange("/api/finance/analytics", range));
 }
 
-export function fetchLossOrders() {
+export function fetchLossOrders(range?: DateRange) {
   return apiFetch<{
     analyzedCount: number;
     lossCount: number;
     warningCount: number;
     orders: LossOrder[];
     lossOrders: LossOrder[];
-  }>("/api/finance/orders-analysis");
+  }>(withRange("/api/finance/orders-analysis", range));
 }
 
 export function createFinanceExpense(data: {

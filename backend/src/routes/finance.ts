@@ -9,6 +9,7 @@ import {
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
+import { parseDateRange, type DateRangeFilter } from "../date-range";
 
 const router = Router();
 
@@ -109,9 +110,13 @@ function pct(amount: number, total: number): number {
 }
 
 // Lấy toàn bộ đơn Đã giao của shop kèm dữ liệu giá vốn
-function fetchDeliveredOrders(ownerId: string) {
+function fetchDeliveredOrders(ownerId: string, range?: DateRangeFilter) {
   return prisma.order.findMany({
-    where: { channel: { userId: ownerId }, shippingStatus: "DELIVERED" },
+    where: {
+      channel: { userId: ownerId },
+      shippingStatus: "DELIVERED",
+      createdAt: range,
+    },
     orderBy: { createdAt: "desc" },
     include: {
       channel: { select: { channelName: true } },
@@ -213,7 +218,10 @@ router.post("/expenses", async (req: AuthRequest, res, next) => {
 // Đơn chứa SKU chưa cấu hình giá vốn ⇒ kèm warning để chủ shop đi nhập giá vốn.
 router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   try {
-    const delivered = await fetchDeliveredOrders(req.ownerId!);
+    const delivered = await fetchDeliveredOrders(
+      req.ownerId!,
+      parseDateRange(req.query)
+    );
 
     const analyzed = delivered.map((o) => {
       const revenue = Number(o.totalAmount);
@@ -269,7 +277,7 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
 router.get("/expenses", async (req: AuthRequest, res, next) => {
   try {
     const expenses = await prisma.operatingExpense.findMany({
-      where: { userId: req.ownerId! },
+      where: { userId: req.ownerId!, expenseDate: parseDateRange(req.query) },
       orderBy: { expenseDate: "desc" },
     });
     res.json(expenses);
@@ -380,6 +388,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
 router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
+    const range = parseDateRange(req.query);
 
     const [orders, variableExpenses] = await Promise.all([
       prisma.order.findMany({
@@ -387,6 +396,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
           channel: { userId: ownerId },
           shippingStatus: "DELIVERED",
           items: { some: {} }, // chỉ đơn có chi tiết dòng hàng
+          createdAt: range,
         },
         include: {
           items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
@@ -397,6 +407,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
           userId: ownerId,
           type: ExpenseType.VARIABLE,
           appliedSku: { not: null },
+          expenseDate: range,
         },
         select: { appliedSku: true, amount: true },
       }),
@@ -595,6 +606,7 @@ router.get("/shipping-discrepancies", async (req: AuthRequest, res, next) => {
           : {}),
       },
       shippingFeeDiff: { gt: 0 }, // chỉ đơn bị trừ thêm
+      createdAt: parseDateRange(req.query),
       ...(DISPUTE_STATUSES.includes(statusKey as ShippingDisputeStatus)
         ? { shippingDisputeStatus: statusKey as ShippingDisputeStatus }
         : {}),
@@ -893,10 +905,12 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
 
+    const range = parseDateRange(req.query);
+
     const [delivered, expenses, inFlight, cancelled] = await Promise.all([
-      fetchDeliveredOrders(ownerId),
+      fetchDeliveredOrders(ownerId, range),
       prisma.operatingExpense.findMany({
-        where: { userId: ownerId },
+        where: { userId: ownerId, expenseDate: range },
         select: {
           amount: true,
           type: true,
@@ -909,6 +923,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         where: {
           channel: { userId: ownerId },
           shippingStatus: { in: ["PENDING", "SHIPPING"] },
+          createdAt: range,
         },
         include: {
           items: true,
@@ -924,6 +939,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         where: {
           channel: { userId: ownerId },
           shippingStatus: "CANCELLED",
+          createdAt: range,
         },
         select: { totalAmount: true },
       }),

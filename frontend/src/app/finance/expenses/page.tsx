@@ -19,6 +19,9 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { Refreshing } from "@/components/refreshing";
+import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -328,11 +331,12 @@ export default function FinanceExpensesPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [range, setRange] = useState<DateRange>(defaultRange);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setExpenses(await fetchExpenses());
+      setExpenses(await fetchExpenses(range));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -346,7 +350,7 @@ export default function FinanceExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -401,11 +405,14 @@ export default function FinanceExpensesPage() {
           <p className="text-muted-foreground">
             Danh sách chi phí vận hành của shop ({expenses.length} khoản).
           </p>
-          <AddExpenseDialog onAdded={load} />
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} disabled={loading} />
+            <AddExpenseDialog onAdded={load} />
+          </div>
         </div>
 
         {/* Tổng quan nhanh */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <DashboardCard
             title="Tổng chi phí"
             value={formatVND(total)}
@@ -436,7 +443,7 @@ export default function FinanceExpensesPage() {
                 : "Quảng cáo, đóng gói…"
             }
           />
-        </div>
+        </Refreshing>
 
         <Card>
           <CardContent className="p-0">

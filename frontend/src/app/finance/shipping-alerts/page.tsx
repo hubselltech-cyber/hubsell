@@ -18,6 +18,9 @@ import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { Refreshing } from "@/components/refreshing";
+import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -100,6 +103,7 @@ export default function ShippingAlertsPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [range, setRange] = useState<DateRange>(defaultRange);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -111,6 +115,7 @@ export default function ShippingAlertsPage() {
         pageSize: PAGE_SIZE,
         channel,
         status: status || undefined,
+        range,
       });
       setItems(res.items);
       setSummary(res.summary);
@@ -128,7 +133,7 @@ export default function ShippingAlertsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, channel, status, router]);
+  }, [page, channel, status, router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -199,6 +204,7 @@ export default function ShippingAlertsPage() {
             khiếu nại đòi lại tiền.
           </p>
           <div className="flex flex-wrap gap-2">
+            <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
               Quét lại
@@ -219,7 +225,7 @@ export default function ShippingAlertsPage() {
         </div>
 
         {/* 2 thẻ chỉ số */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <DashboardCard
             title="Tổng số đơn lệch"
             value={formatNumber(summary.totalOrders)}
@@ -238,7 +244,7 @@ export default function ShippingAlertsPage() {
             featured /* ← chỉ số cốt lõi của trang đối soát ship */
             subtitle="Số tiền sàn đã trừ vượt mức báo trước"
           />
-        </div>
+        </Refreshing>
 
         {/* Bộ lọc */}
         <div className="flex flex-wrap items-end gap-4">

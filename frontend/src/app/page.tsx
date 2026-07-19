@@ -32,6 +32,13 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { Refreshing } from "@/components/refreshing";
+import {
+  defaultRange,
+  formatRangeLabel,
+  type DateRange,
+} from "@/lib/date-range";
 import { toneBySign } from "@/components/dashboard/dashboard-card";
 import { ExpensesSection } from "@/components/dashboard/expenses-section";
 import { Badge } from "@/components/ui/badge";
@@ -108,6 +115,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
+  const [range, setRange] = useState<DateRange>(defaultRange);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,7 +123,7 @@ export default function DashboardPage() {
     try {
       const [summary, stats] = await Promise.all([
         fetchDashboardSummary(),
-        fetchAnalytics(),
+        fetchAnalytics(range),
       ]);
       setData(summary);
       setAnalytics(stats);
@@ -135,7 +143,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -177,10 +185,13 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">
             Bảng điều khiển tổng quan hoạt động kinh doanh của bạn.
           </p>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
-            Làm mới
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker value={range} onChange={setRange} disabled={loading} />
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+              Làm mới
+            </Button>
+          </div>
         </div>
 
         {/* Trạng thái lỗi kết nối */}
@@ -200,7 +211,16 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {/* Thẻ thống kê chung */}
+        {/* Thẻ thống kê chung — số liệu tích luỹ, cố ý KHÔNG theo bộ lọc ngày:
+            "Sản phẩm: 17" hay "Kênh bán: 4" là trạng thái hiện tại của shop,
+            cắt theo khoảng thời gian sẽ thành vô nghĩa. */}
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Hiện trạng shop</h2>
+          <p className="text-sm text-muted-foreground">
+            Số liệu tích luỹ toàn thời gian — không đổi theo bộ lọc ngày.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Doanh thu (đã thanh toán)"
@@ -236,11 +256,12 @@ export default function DashboardPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Tính trên {analytics ? formatNumber(analytics.deliveredOrderCount) : "—"}{" "}
-            đơn hàng có trạng thái <b>Đã giao</b>.
+            đơn hàng có trạng thái <b>Đã giao</b> trong khoảng{" "}
+            <b>{formatRangeLabel(range).toLowerCase()}</b>.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard
             label="Tổng Doanh thu"
             value={analytics ? formatVND(analytics.totalRevenue) : "—"}
@@ -270,10 +291,10 @@ export default function DashboardPage() {
                 : undefined
             }
           />
-        </div>
+        </Refreshing>
 
         {/* Chi phí hoạt động + Lợi nhuận thuần */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <StatCard
             label="Tổng Chi phí hoạt động"
             value={analytics ? formatVND(analytics.totalOperatingExpense) : "—"}
@@ -302,7 +323,7 @@ export default function DashboardPage() {
               />
             );
           })()}
-        </div>
+        </Refreshing>
 
         {/* Quản lý chi phí hoạt động */}
         <ExpensesSection onChanged={load} />

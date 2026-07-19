@@ -27,6 +27,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fetchSkuPnl, type SkuPnlResponse } from "@/lib/api";
+import { Refreshing } from "@/components/refreshing";
+import type { DateRange } from "@/lib/date-range";
 import { formatVND, formatNumber } from "@/lib/format";
 import { CELL_PADDING } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -41,20 +43,20 @@ const STICKY_COL =
 
 /// Bảng phân tích hiệu quả kinh doanh từng mã SKU:
 /// SKU nào là "gà đẻ trứng vàng", SKU nào đang gánh lỗ.
-export function SkuPnlTable() {
+export function SkuPnlTable({ range }: { range?: DateRange }) {
   const [data, setData] = useState<SkuPnlResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchSkuPnl());
+      setData(await fetchSkuPnl(range));
     } catch {
       // Trang cha đã xử lý 401/403/409
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [range]);
 
   useEffect(() => {
     load();
@@ -73,7 +75,9 @@ export function SkuPnlTable() {
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
-        {loading ? (
+        {/* Chỉ hiện chữ "đang tính" ở lần tải đầu; đổi bộ lọc thì giữ bảng cũ
+            và làm mờ đi để mắt không bị giật khi bảng biến mất rồi hiện lại */}
+        {loading && !data ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             Đang tính toán hiệu quả từng SKU…
           </p>
@@ -83,7 +87,7 @@ export function SkuPnlTable() {
             Chưa có dữ liệu. Cần ít nhất một đơn <b>Đã giao</b> có chi tiết sản phẩm.
           </div>
         ) : (
-          <>
+          <Refreshing active={loading}>
             {/* Cảnh báo tổng: có SKU đang đốt tiền quảng cáo vượt ngưỡng */}
             {(data?.summary.overspendingCount ?? 0) > 0 && (
               <div className="mx-4 mb-3 flex items-start gap-3 rounded-lg border border-rose-300 bg-rose-50 p-3">
@@ -343,7 +347,7 @@ export function SkuPnlTable() {
                 </div>
               </div>
             )}
-          </>
+          </Refreshing>
         )}
       </CardContent>
     </Card>
