@@ -3,6 +3,7 @@ import {
   fetchOrders,
   fetchProducts,
   fetchShippingDiscrepancies,
+  type ChannelFilterQuery,
   type Order,
   type Product,
   type ShippingDiscrepancy,
@@ -170,7 +171,7 @@ export function exportShippingDisputesToExcel(items: ShippingDiscrepancy[]) {
 
 /// Gom TẤT CẢ đơn "Chờ khiếu nại" theo bộ lọc hiện tại rồi xuất file gửi sàn
 export async function exportShippingDisputes(filter: {
-  channelId?: string;
+  channel?: ChannelFilterQuery;
 }): Promise<number> {
   const all: ShippingDiscrepancy[] = [];
   let page = 1;
@@ -192,7 +193,7 @@ export async function exportShippingDisputes(filter: {
 // Lấy TẤT CẢ đơn hàng theo bộ lọc hiện tại (gom mọi trang) rồi xuất
 export async function exportAllOrders(filter: {
   shippingStatus?: string;
-  channelId?: string;
+  channel?: ChannelFilterQuery;
 }) {
   const all: Order[] = [];
   let page = 1;

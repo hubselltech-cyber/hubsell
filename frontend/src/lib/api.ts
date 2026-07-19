@@ -57,16 +57,37 @@ export class ApiError extends Error {
  * (backend hiểu là xem toàn bộ lịch sử).
  */
 /**
- * Gắn bộ lọc báo cáo vào URL: khoảng thời gian và GIAN HÀNG.
- * channelId rỗng nghĩa là xem toàn bộ gian hàng của shop.
+ * Bộ lọc phân tầng của các trang báo cáo, khớp với component ChannelFilter.
+ * Cả hai trường rỗng = xem toàn bộ gian hàng trong quyền của mình.
+ */
+export interface ChannelFilterQuery {
+  channelName?: ChannelName | "";
+  channelId?: string;
+}
+
+/** Đổi bộ lọc phân tầng thành query param cho backend. */
+export function channelFilterToQuery(
+  filter?: ChannelFilterQuery
+): Record<string, string> {
+  if (!filter) return {};
+  const q: Record<string, string> = {};
+  if (filter.channelName) q.channelName = filter.channelName;
+  if (filter.channelId) q.channelId = filter.channelId;
+  return q;
+}
+
+/**
+ * Gắn bộ lọc báo cáo vào URL: khoảng thời gian và phạm vi gian hàng.
  */
 function withRange(
   path: string,
   range?: DateRange,
-  channelId?: string
+  channel?: ChannelFilterQuery
 ): string {
-  const params = new URLSearchParams(rangeToQuery(range));
-  if (channelId) params.set("channelId", channelId);
+  const params = new URLSearchParams({
+    ...rangeToQuery(range),
+    ...channelFilterToQuery(channel),
+  });
   const qs = params.toString();
   if (!qs) return path;
   return `${path}${path.includes("?") ? "&" : "?"}${qs}`;
@@ -528,7 +549,7 @@ export function fetchOrders(params: {
   page?: number;
   pageSize?: number;
   shippingStatus?: string;
-  channelId?: string;
+  channel?: ChannelFilterQuery;
   carrier?: string;
   search?: string;
   /** Bộ lọc con của tab "Đã xử lý": "yes" đã in phiếu, "no" chưa in */
@@ -538,11 +559,10 @@ export function fetchOrders(params: {
   /** Lọc theo tình trạng hàng hoàn (dùng trong tab Hủy / Hoàn) */
   returnStatus?: ReturnStatus;
 }) {
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams(channelFilterToQuery(params.channel));
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.shippingStatus) qs.set("shippingStatus", params.shippingStatus);
-  if (params.channelId) qs.set("channelId", params.channelId);
   if (params.carrier) qs.set("carrier", params.carrier);
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.printed) qs.set("printed", params.printed);
@@ -614,14 +634,13 @@ export interface WarehouseReturnsResponse {
 export function fetchWarehouseReturns(params: {
   status?: string;
   search?: string;
-  channelId?: string;
+  channel?: ChannelFilterQuery;
   page?: number;
   pageSize?: number;
 }) {
-  const qs = new URLSearchParams();
+  const qs = new URLSearchParams(channelFilterToQuery(params.channel));
   if (params.status) qs.set("status", params.status);
   if (params.search?.trim()) qs.set("search", params.search.trim());
-  if (params.channelId) qs.set("channelId", params.channelId);
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   return apiFetch<WarehouseReturnsResponse>(
@@ -698,9 +717,9 @@ export function updateOrderStatus(id: string, shippingStatus: string) {
 
 // ----- Báo cáo tài chính (chỉ Admin) -----
 
-export function fetchAnalytics(range?: DateRange, channelId?: string) {
+export function fetchAnalytics(range?: DateRange, channel?: ChannelFilterQuery) {
   return apiFetch<AnalyticsResponse>(
-    withRange("/api/analytics", range, channelId)
+    withRange("/api/analytics", range, channel)
   );
 }
 
@@ -823,14 +842,16 @@ export interface ShippingDiscrepancyResponse {
 export function fetchShippingDiscrepancies(params: {
   page?: number;
   pageSize?: number;
-  channelId?: string;
+  channel?: ChannelFilterQuery;
   status?: string;
   range?: DateRange;
 }) {
-  const qs = new URLSearchParams(rangeToQuery(params.range));
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params.range),
+    ...channelFilterToQuery(params.channel),
+  });
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
-  if (params.channelId) qs.set("channelId", params.channelId);
   if (params.status) qs.set("status", params.status);
   return apiFetch<ShippingDiscrepancyResponse>(
     `/api/finance/shipping-discrepancies?${qs.toString()}`
@@ -950,20 +971,20 @@ export function updateSkuCostPrice(skuId: string, costPrice: number) {
   });
 }
 
-export function fetchFinanceAnalytics(range?: DateRange, channelId?: string) {
+export function fetchFinanceAnalytics(range?: DateRange, channel?: ChannelFilterQuery) {
   return apiFetch<FinanceAnalytics>(
-    withRange("/api/finance/analytics", range, channelId)
+    withRange("/api/finance/analytics", range, channel)
   );
 }
 
-export function fetchLossOrders(range?: DateRange, channelId?: string) {
+export function fetchLossOrders(range?: DateRange, channel?: ChannelFilterQuery) {
   return apiFetch<{
     analyzedCount: number;
     lossCount: number;
     warningCount: number;
     orders: LossOrder[];
     lossOrders: LossOrder[];
-  }>(withRange("/api/finance/orders-analysis", range, channelId));
+  }>(withRange("/api/finance/orders-analysis", range, channel));
 }
 
 export function createFinanceExpense(data: {

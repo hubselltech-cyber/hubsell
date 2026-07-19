@@ -70,7 +70,12 @@ import {
 } from "@/lib/api";
 import { canAccessDashboard, canSeeFinancials } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { ShopFilter, shopLabel } from "@/components/shop-filter";
+import {
+  ALL_CHANNELS,
+  ChannelFilter,
+  shopLabel,
+  type ChannelFilterValue,
+} from "@/components/channel-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -149,7 +154,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
-  const [channelId, setChannelId] = useState("");
+  const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
   // SALES xem được doanh thu và sản lượng, nhưng không được biết giá vốn hay lãi.
   // Backend đã cắt các trường đó khỏi phản hồi; ở đây bỏ luôn thẻ để không hiện "—".
   const seesFinancials = canSeeFinancials(getStoredUser()?.role);
@@ -160,7 +165,7 @@ export default function DashboardPage() {
     try {
       const [summary, stats] = await Promise.all([
         fetchDashboardSummary(),
-        fetchAnalytics(range, channelId),
+        fetchAnalytics(range, channel),
       ]);
       setData(summary);
       setAnalytics(stats);
@@ -180,7 +185,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [router, range, channelId]);
+  }, [router, range, channel]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -223,7 +228,7 @@ export default function DashboardPage() {
             Bảng điều khiển tổng quan hoạt động kinh doanh của bạn.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <ShopFilter value={channelId} onChange={setChannelId} />
+            <ChannelFilter value={channel} onChange={setChannel} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />

@@ -14,7 +14,12 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
-import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
+import {
+  ALL_CHANNELS,
+  ChannelFilter,
+  shopOnlyName,
+  type ChannelFilterValue,
+} from "@/components/channel-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
@@ -51,7 +56,7 @@ export default function LossOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
-  const [channelId, setChannelId] = useState("");
+  const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
   // Phân biệt lần tải đầu (hiện chữ "đang quét") với các lần đổi bộ lọc
   // sau đó (giữ nguyên bảng cũ, chỉ làm mờ) để giao diện không nhấp nháy
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -59,7 +64,7 @@ export default function LossOrdersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchLossOrders(range, channelId);
+      const res = await fetchLossOrders(range, channel);
       setOrders(res.orders);
       setAnalyzedCount(res.analyzedCount);
       setLossCount(res.lossCount);
@@ -78,7 +83,7 @@ export default function LossOrdersPage() {
       setLoading(false);
       setLoadedOnce(true);
     }
-  }, [router, range, channelId]);
+  }, [router, range, channel]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -115,7 +120,7 @@ export default function LossOrdersPage() {
             Doanh thu ≤ Giá vốn để chủ shop đối soát.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <ShopFilter value={channelId} onChange={setChannelId} />
+            <ChannelFilter value={channel} onChange={setChannel} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />

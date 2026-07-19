@@ -18,15 +18,9 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
         prisma.order.count({ where: { channel: scope } }),
         // Đếm đúng số gian trong tầm nhìn của người đang xem: SALES phụ trách 1
         // gian mà thẻ báo "5 kênh bán" thì con số đó chẳng nói lên điều gì về
-        // công việc của họ.
-        prisma.channel.count({
-          where: {
-            userId,
-            ...(req.allowedChannelIds
-              ? { id: { in: req.allowedChannelIds } }
-              : {}),
-          },
-        }),
+        // công việc của họ. channelScope() vốn đã là điều kiện lọc của bảng
+        // Channel nên dùng lại được nguyên vẹn.
+        prisma.channel.count({ where: scope }),
         prisma.order.aggregate({
           _sum: { totalAmount: true },
           where: { paymentStatus: "PAID", channel: scope },

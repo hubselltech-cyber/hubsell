@@ -23,7 +23,11 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { canAccessFinance } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
-import { ShopFilter } from "@/components/shop-filter";
+import {
+  ALL_CHANNELS,
+  ChannelFilter,
+  type ChannelFilterValue,
+} from "@/components/channel-filter";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
@@ -52,12 +56,12 @@ export default function FinanceAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
-  const [channelId, setChannelId] = useState("");
+  const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchFinanceAnalytics(range, channelId));
+      setData(await fetchFinanceAnalytics(range, channel));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -71,7 +75,7 @@ export default function FinanceAnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [router, range, channelId]);
+  }, [router, range, channel]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -104,7 +108,7 @@ export default function FinanceAnalyticsPage() {
             {data ? formatNumber(data.deliveredOrderCount) : "—"}).
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <ShopFilter value={channelId} onChange={setChannelId} />
+            <ChannelFilter value={channel} onChange={setChannel} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />

@@ -44,7 +44,12 @@ import {
 } from "@/lib/api";
 import { canAccessFinance } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
+import {
+  ALL_CHANNELS,
+  ChannelFilter,
+  shopOnlyName,
+  type ChannelFilterValue,
+} from "@/components/channel-filter";
 import { exportShippingDisputes } from "@/lib/excel";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 
@@ -94,7 +99,7 @@ export default function ShippingAlertsPage() {
   });
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(0);
-  const [channelId, setChannelId] = useState("");
+  const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -108,7 +113,7 @@ export default function ShippingAlertsPage() {
       const res = await fetchShippingDiscrepancies({
         page,
         pageSize: PAGE_SIZE,
-        channelId,
+        channel,
         status: status || undefined,
         range,
       });
@@ -128,7 +133,7 @@ export default function ShippingAlertsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, channelId, status, router, range]);
+  }, [page, channel, status, router, range]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -164,7 +169,7 @@ export default function ShippingAlertsPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      const count = await exportShippingDisputes({ channelId });
+      const count = await exportShippingDisputes({ channel });
       if (count === 0) {
         toast.info("Không có đơn nào ở trạng thái “Chờ khiếu nại” để xuất");
       } else {
@@ -246,12 +251,11 @@ export default function ShippingAlertsPage() {
         <div className="flex flex-wrap items-end gap-4">
           <div className="grid w-56 gap-1.5">
             <Label className="text-xs text-muted-foreground">Gian hàng</Label>
-            <ShopFilter
-              className="w-56"
-              value={channelId}
-              onChange={(id) => {
+            <ChannelFilter
+              value={channel}
+              onChange={(v) => {
                 setPage(1);
-                setChannelId(id);
+                setChannel(v);
               }}
             />
           </div>

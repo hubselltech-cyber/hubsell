@@ -54,7 +54,7 @@ import {
 } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { shopLabel } from "@/components/shop-filter";
+import { shopLabel } from "@/components/channel-filter";
 import { formatDateTime } from "@/lib/format";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Label } from "@/components/ui/label";

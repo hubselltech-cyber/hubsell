@@ -54,7 +54,12 @@ import {
 import { exportAllOrders } from "@/lib/excel";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
+import {
+  ALL_CHANNELS,
+  ChannelFilter,
+  shopOnlyName,
+  type ChannelFilterValue,
+} from "@/components/channel-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -284,7 +289,8 @@ export default function OrdersPage() {
   const [tab, setTab] = useState("all");
   // Bộ lọc con chỉ dùng trong tab "Đã xử lý": "" = tất cả, "no" = chưa in phiếu
   const [printedFilter, setPrintedFilter] = useState<"" | "no" | "yes">("");
-  const [channelFilter, setChannelFilter] = useState("");
+  const [channelFilter, setChannelFilter] =
+    useState<ChannelFilterValue>(ALL_CHANNELS);
   const [carrierFilter, setCarrierFilter] = useState("");
   // Lọc theo độ khó đóng gói: kho ưu tiên gói đơn 1 sản phẩm trước cho nhanh
   const [orderTypeFilter, setOrderTypeFilter] = useState<"" | "single" | "multi">("");
@@ -318,7 +324,7 @@ export default function OrdersPage() {
         page,
         pageSize,
         shippingStatus: statusFilter || undefined,
-        channelId: channelFilter || undefined,
+        channel: channelFilter,
         carrier: carrierFilter || undefined,
         search: debouncedSearch || undefined,
         // Chỉ gửi bộ lọc in khi đang ở tab Đã xử lý — các tab khác không có
@@ -396,7 +402,7 @@ export default function OrdersPage() {
     setTab("all");
     setPrintedFilter("");
     setReturnFilter("");
-    setChannelFilter("");
+    setChannelFilter(ALL_CHANNELS);
     setCarrierFilter("");
     setOrderTypeFilter("");
     setSearch("");
@@ -404,7 +410,7 @@ export default function OrdersPage() {
   }
 
   const isFiltering =
-    Boolean(channelFilter) ||
+    Boolean(channelFilter.channelName) ||
     Boolean(carrierFilter) ||
     Boolean(orderTypeFilter) ||
     Boolean(search.trim());
@@ -414,7 +420,7 @@ export default function OrdersPage() {
     try {
       const count = await exportAllOrders({
         shippingStatus: statusFilter || undefined,
-        channelId: channelFilter || undefined,
+        channel: channelFilter,
       });
       if (count === 0) {
         toast.info("Không có đơn hàng nào (theo bộ lọc) để xuất");
@@ -615,12 +621,11 @@ export default function OrdersPage() {
             )}
           </div>
 
-          <ShopFilter
-            className="w-52"
+          <ChannelFilter
             value={channelFilter}
-            onChange={(id) => {
+            onChange={(v) => {
               setPage(1);
-              setChannelFilter(id);
+              setChannelFilter(v);
             }}
           />
 

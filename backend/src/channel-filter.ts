@@ -1,32 +1,57 @@
 /**
  * BỘ LỌC GIAN HÀNG DÙNG CHUNG
  *
- * Mọi API báo cáo đều nhận cùng một query param `?channelId=<id>` — tức là lọc
- * theo GIAN HÀNG cụ thể, không phải theo sàn. Một sàn có thể có nhiều gian
- * ("Shop Phụ Kiện B" và "Shopee" đều nằm trên Shopee), nên gom theo tên sàn sẽ
- * cộng dồn doanh thu của hai gian làm một và chủ shop không biết gian nào lãi.
+ * Mọi API báo cáo nhận cùng một cặp query param, tương ứng với bộ lọc phân tầng
+ * hai cấp trên giao diện:
+ *
+ *   (không có gì)        → toàn bộ gian hàng trong tầm nhìn của người đang xem
+ *   ?channelName=SHOPEE  → mọi gian hàng trên sàn Shopee
+ *   ?channelId=<id>      → đúng một gian hàng
+ *
+ * channelId khi có mặt thì thắng channelName: nó cụ thể hơn, và nếu hai tham số
+ * mâu thuẫn (id thuộc sàn khác) thì phép giao bên dưới tự cho ra kết quả rỗng —
+ * đúng hơn là đoán xem người dùng muốn gì.
  *
  * Hàm trả về mảnh `where` cho quan hệ `channel` của Order, đã bao gồm cả giới
- * hạn kênh của nhân viên — nơi gọi chỉ việc trải vào:
+ * hạn gian hàng của nhân viên — nơi gọi chỉ việc trải vào:
  *   where: { channel: channelScope(req), ... }
  */
 
+import { ChannelName } from "@prisma/client";
 import type { AuthRequest } from "./auth";
 
 export interface ChannelScope {
   userId: string;
   id?: string | { in: string[] };
+  channelName?: ChannelName;
+}
+
+/** Đọc ?channelName= và chỉ nhận giá trị có thật trong enum, tránh lọc bừa. */
+function readChannelName(req: AuthRequest): ChannelName | undefined {
+  const raw =
+    typeof req.query.channelName === "string"
+      ? req.query.channelName.trim().toUpperCase()
+      : "";
+  return raw in ChannelName ? (raw as ChannelName) : undefined;
+}
+
+function readChannelId(req: AuthRequest): string {
+  return typeof req.query.channelId === "string"
+    ? req.query.channelId.trim()
+    : "";
 }
 
 /**
- * Phạm vi kênh mà request này được phép xem, sau khi áp bộ lọc `?channelId=`.
+ * Phạm vi gian hàng mà request này được phép xem, sau khi áp bộ lọc.
  *
- * Nhân viên bị giới hạn kênh: nếu họ lọc một gian không nằm trong danh sách
- * được gán thì kết quả phải RỖNG, chứ không được âm thầm mở rộng ra toàn shop.
+ * Nhân viên bị giới hạn gian: nếu họ lọc một gian không nằm trong danh sách được
+ * phân công thì kết quả phải RỖNG, chứ không được âm thầm mở rộng ra toàn shop.
+ * Lọc theo sàn cũng vậy — điều kiện channelName chỉ THU HẸP thêm danh sách được
+ * phép, không bao giờ nới nó ra.
  */
 export function channelScope(req: AuthRequest): ChannelScope {
-  const channelId =
-    typeof req.query.channelId === "string" ? req.query.channelId.trim() : "";
+  const channelId = readChannelId(req);
+  const channelName = readChannelName(req);
   const scope: ChannelScope = { userId: req.ownerId! };
 
   if (req.allowedChannelIds) {
@@ -37,10 +62,18 @@ export function channelScope(req: AuthRequest): ChannelScope {
     scope.id = channelId;
   }
 
+  // Lọc theo sàn đứng cạnh giới hạn gian hàng: Prisma nối hai điều kiện bằng AND
+  // nên nhân viên chọn "tất cả gian Shopee" vẫn chỉ ra được các gian Shopee mà
+  // họ được phân công.
+  if (channelName) scope.channelName = channelName;
+
   return scope;
 }
 
-/** Có đang lọc về một gian hàng cụ thể hay không (để chú thích trên báo cáo). */
+/**
+ * Có đang thu hẹp về một phần gian hàng hay không (để chú thích trên báo cáo).
+ * Lọc theo sàn cũng tính: chi phí vận hành vẫn là của toàn shop trong cả hai trường hợp.
+ */
 export function hasChannelFilter(req: AuthRequest): boolean {
-  return typeof req.query.channelId === "string" && req.query.channelId.trim() !== "";
+  return readChannelId(req) !== "" || readChannelName(req) !== undefined;
 }

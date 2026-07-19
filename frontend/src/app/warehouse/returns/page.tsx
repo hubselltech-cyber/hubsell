@@ -48,7 +48,12 @@ import {
 } from "@/lib/api";
 import { carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { ShopFilter, shopOnlyName } from "@/components/shop-filter";
+import {
+  ALL_CHANNELS,
+  ChannelFilter,
+  shopOnlyName,
+  type ChannelFilterValue,
+} from "@/components/channel-filter";
 import { formatDateTime, formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -109,7 +114,8 @@ export default function WarehouseReturnsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("");
-  const [channelFilter, setChannelFilter] = useState("");
+  const [channelFilter, setChannelFilter] =
+    useState<ChannelFilterValue>(ALL_CHANNELS);
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -131,7 +137,7 @@ export default function WarehouseReturnsPage() {
       const res = await fetchWarehouseReturns({
         status: tab || undefined,
         search: debounced || undefined,
-        channelId: channelFilter || undefined,
+        channel: channelFilter,
         page,
         pageSize,
       });
@@ -187,7 +193,7 @@ export default function WarehouseReturnsPage() {
   const warning = summary.warning ?? 0;
 
   const isFiltering =
-    Boolean(tab) || Boolean(search.trim()) || Boolean(channelFilter);
+    Boolean(tab) || Boolean(search.trim()) || Boolean(channelFilter.channelName);
 
   const emptyMessage = useMemo(() => {
     if (isFiltering) return "Không có đơn hoàn nào khớp bộ lọc.";
@@ -308,14 +314,15 @@ export default function WarehouseReturnsPage() {
             );
           })}
 
-          <ShopFilter
-            className="ml-auto w-52"
-            value={channelFilter}
-            onChange={(id) => {
-              setChannelFilter(id);
-              setPage(1);
-            }}
-          />
+          <div className="ml-auto">
+            <ChannelFilter
+              value={channelFilter}
+              onChange={(v) => {
+                setChannelFilter(v);
+                setPage(1);
+              }}
+            />
+          </div>
 
           <div className="relative min-w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
