@@ -136,6 +136,14 @@ export interface InventoryLog {
   createdAt: string;
 }
 
+/** Tình trạng hàng hoàn về kho — khớp enum ReturnStatus ở backend */
+export type ReturnStatus =
+  | "NONE"
+  | "AWAITING"
+  | "RECEIVED_INTACT"
+  | "DAMAGED"
+  | "CLAIM_SETTLED";
+
 /** Vòng đời đơn hàng — khớp enum ShippingStatus ở backend */
 export type ShippingStatus =
   | "PENDING"
@@ -181,6 +189,11 @@ export interface Order {
   labelPrintedAt: string | null;
   /** Số dòng hàng của đơn (0 với đơn cũ chưa ghi chi tiết) */
   itemCount: number;
+  returnStatus: ReturnStatus;
+  returnNote: string | null;
+  returnedAt: string | null;
+  /** Mốc đã cộng lại tồn kho — có giá trị nghĩa là không cộng thêm lần nữa */
+  stockRestoredAt: string | null;
   createdAt: string;
   channel: { channelName: ChannelName };
   items?: OrderItemLine[];
@@ -443,6 +456,8 @@ export function fetchOrders(params: {
   printed?: "yes" | "no";
   /** Loại đơn theo độ khó đóng gói: 1 dòng hàng hay nhiều dòng */
   orderType?: "single" | "multi";
+  /** Lọc theo tình trạng hàng hoàn (dùng trong tab Hủy / Hoàn) */
+  returnStatus?: ReturnStatus;
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -453,6 +468,7 @@ export function fetchOrders(params: {
   if (params.search?.trim()) qs.set("search", params.search.trim());
   if (params.printed) qs.set("printed", params.printed);
   if (params.orderType) qs.set("orderType", params.orderType);
+  if (params.returnStatus) qs.set("returnStatus", params.returnStatus);
   return apiFetch<OrderListResponse>(`/api/orders?${qs.toString()}`);
 }
 
@@ -482,6 +498,36 @@ export function fetchOrderLabels(orderIds: string[]) {
   return apiFetch<{ labels: Order[] }>("/api/orders/bulk/labels", {
     method: "POST",
     body: JSON.stringify({ orderIds }),
+  });
+}
+
+/**
+ * Tra một đơn theo mã quét được từ máy quét barcode/QR hoặc camera.
+ * Trả 409 kèm danh sách gợi ý nếu mã khớp nhiều đơn.
+ */
+export function lookupOrderByCode(code: string) {
+  return apiFetch<{ order: Order }>(
+    `/api/orders/lookup?code=${encodeURIComponent(code)}`
+  );
+}
+
+/** Kho xác nhận đã nhận kiện hàng hoàn. INTACT thì cộng ngược tồn kho. */
+export function processOrderReturn(
+  orderId: string,
+  condition: "INTACT" | "DAMAGED",
+  note?: string
+) {
+  return apiFetch<{
+    order: Order;
+    restored: {
+      productName: string;
+      restoredQuantity: number;
+      newQuantity: number;
+    }[];
+    stockSkippedReason: string | null;
+  }>(`/api/orders/${orderId}/return`, {
+    method: "POST",
+    body: JSON.stringify({ condition, note }),
   });
 }
 

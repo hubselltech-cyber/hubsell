@@ -33,6 +33,19 @@ enum ShippingStatus {
   CANCELLED // Hủy / hoàn trả
 }
 
+/// Tình trạng hàng hoàn về kho (RTS — Return To Seller).
+///
+/// Tách khỏi shippingStatus vì đây là hai trục khác nhau: đơn có thể đã HỦY từ
+/// lâu (trục vận chuyển) nhưng kiện hàng vẫn đang trên đường quay về (trục
+/// hoàn). Gộp chung thì không biết đơn nào đã thực sự cầm được hàng trong tay.
+enum ReturnStatus {
+  NONE // không phải đơn hoàn
+  AWAITING // đang chờ hàng quay về kho
+  RECEIVED_INTACT // đã nhận, hàng nguyên vẹn — ĐÃ cộng lại tồn kho
+  DAMAGED // hư hỏng / mất / tráo hàng — KHÔNG cộng kho, chờ khiếu nại
+  CLAIM_SETTLED // sàn/vận chuyển đã đền xong
+}
+
 /// Đơn vị vận chuyển. Mỗi sàn thường dùng vài hãng, shop cần lọc theo hãng để
 /// gom đơn giao cho đúng shipper khi họ đến lấy hàng.
 enum Carrier {
@@ -182,6 +195,19 @@ model Order {
   // làm trước) tách khỏi "đơn nhiều sản phẩm" (khó đóng, làm sau).
   // An toàn để lưu trùng: đơn ở Hubsell không sửa được dòng hàng sau khi tạo.
   itemCount Int @default(0)
+
+  // ===== HÀNG HOÀN VỀ KHO (RTS) =====
+  returnStatus ReturnStatus @default(NONE)
+  returnNote   String? // ghi chú tình trạng kiện hàng khi nhận (vỡ, thiếu, bị tráo…)
+  returnedAt   DateTime? // thời điểm kho xác nhận đã cầm hàng trên tay
+
+  /// CHỐT CHẶN CỘNG KHO TRÙNG.
+  ///
+  /// Tồn kho của một đơn chỉ được cộng lại ĐÚNG MỘT LẦN, dù đi qua đường nào:
+  /// hủy đơn trước khi giao, hay nhận hàng hoàn về sau khi giao. Không có mốc
+  /// này thì đơn bị hủy (đã cộng kho) mà nhân viên còn quét nhận hoàn nữa là
+  /// kho phình ảo — bán ra hàng không có thật, đúng kiểu mất tiền âm thầm.
+  stockRestoredAt DateTime?
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus ShippingStatus @default(PENDING)
   createdAt      DateTime @default(now())

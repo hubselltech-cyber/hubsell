@@ -10,6 +10,7 @@ import {
   Download,
   Loader2,
   PackageOpen,
+  PackageCheck,
   Pencil,
   Printer,
   Search,
@@ -19,6 +20,8 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
+import { ReturnDialog } from "@/components/orders/return-dialog";
+import { ScanReturnBox } from "@/components/orders/scan-return-box";
 import { Refreshing } from "@/components/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +52,7 @@ import {
   updateOrderStatus,
   type Channel,
   type Order,
+  type ReturnStatus,
 } from "@/lib/api";
 import { exportAllOrders } from "@/lib/excel";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
@@ -69,6 +73,26 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   SHIPPING: { label: "Đang giao", className: "bg-sky-100 text-sky-700 border-sky-200" },
   DELIVERED: { label: "Đã giao", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   CANCELLED: { label: "Đã hủy", className: "bg-rose-100 text-rose-700 border-rose-200" },
+};
+
+/** Nhãn tình trạng hàng hoàn — chỉ hiện với đơn thực sự có hoàn (khác NONE) */
+const RETURN_META: Record<string, { label: string; className: string }> = {
+  AWAITING: {
+    label: "Chờ nhận hàng hoàn",
+    className: "bg-amber-100 text-amber-800 border-amber-200",
+  },
+  RECEIVED_INTACT: {
+    label: "Đã nhận · nguyên vẹn",
+    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  },
+  DAMAGED: {
+    label: "Chờ khiếu nại sàn",
+    className: "bg-rose-100 text-rose-700 border-rose-200",
+  },
+  CLAIM_SETTLED: {
+    label: "Đã được đền",
+    className: "bg-sky-100 text-sky-700 border-sky-200",
+  },
 };
 
 const PAYMENT_META: Record<string, { label: string; className: string }> = {
@@ -267,6 +291,9 @@ export default function OrdersPage() {
   const [carrierFilter, setCarrierFilter] = useState("");
   // Lọc theo độ khó đóng gói: kho ưu tiên gói đơn 1 sản phẩm trước cho nhanh
   const [orderTypeFilter, setOrderTypeFilter] = useState<"" | "single" | "multi">("");
+  // Bộ lọc con của tab "Hủy / Hoàn" + đơn vừa quét ra để xử lý
+  const [returnFilter, setReturnFilter] = useState<ReturnStatus | "">("");
+  const [scanned, setScanned] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
@@ -302,6 +329,8 @@ export default function OrdersPage() {
         // khái niệm "chưa in / đã in"
         printed: tab === "processed" && printedFilter ? printedFilter : undefined,
         orderType: orderTypeFilter || undefined,
+        returnStatus:
+          tab === "cancelled" && returnFilter ? returnFilter : undefined,
       });
       setItems(res.items);
       setCounts(res.counts ?? {});
@@ -327,6 +356,7 @@ export default function OrdersPage() {
     debouncedSearch,
     tab,
     printedFilter,
+    returnFilter,
     router,
   ]);
 
@@ -372,6 +402,7 @@ export default function OrdersPage() {
   function resetFilters() {
     setTab("all");
     setPrintedFilter("");
+    setReturnFilter("");
     setChannelFilter("");
     setCarrierFilter("");
     setOrderTypeFilter("");
@@ -439,7 +470,9 @@ export default function OrdersPage() {
                 aria-selected={active}
                 onClick={() => {
                   setTab(t.key);
-                  setPrintedFilter(""); // rời tab Đã xử lý thì bỏ lọc con
+                  setPrintedFilter("");
+    setReturnFilter(""); // rời tab Đã xử lý thì bỏ lọc con
+                  setReturnFilter("");
                   setPage(1);
                 }}
                 className={cn(
@@ -505,6 +538,47 @@ export default function OrdersPage() {
               );
             })}
           </div>
+        )}
+
+        {/* ===== TAB HỦY / HOÀN: quét mã nhận hàng hoàn về kho ===== */}
+        {tab === "cancelled" && (
+          <Card className="shadow-sm">
+            <CardContent className="space-y-4 py-1">
+              <ScanReturnBox onFound={setScanned} />
+
+              <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                {(
+                  [
+                    { key: "", label: "Tất cả đơn hủy/hoàn" },
+                    { key: "AWAITING", label: "Chờ nhận hàng hoàn" },
+                    { key: "RECEIVED_INTACT", label: "Đã nhận · nguyên vẹn" },
+                    { key: "DAMAGED", label: "Chờ khiếu nại sàn" },
+                  ] as const
+                ).map((f) => {
+                  const active = returnFilter === f.key;
+                  return (
+                    <button
+                      key={f.key || "all"}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setReturnFilter(f.key as ReturnStatus | "");
+                        setPage(1);
+                      }}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* ===== TÌM KIẾM + BỘ LỌC (khối riêng, tách lớp với bảng) ===== */}
@@ -722,18 +796,42 @@ export default function OrdersPage() {
                                 Đã in phiếu
                               </span>
                             )}
+                            {/* Tình trạng hàng hoàn — chỉ hiện khi đơn có hoàn */}
+                            {o.returnStatus !== "NONE" &&
+                              RETURN_META[o.returnStatus] && (
+                                <span
+                                  className={cn(
+                                    "mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+                                    RETURN_META[o.returnStatus].className
+                                  )}
+                                  title={o.returnNote ?? undefined}
+                                >
+                                  {RETURN_META[o.returnStatus].label}
+                                </span>
+                              )}
                           </TableCell>
 
                           <TableCell className="text-center">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={o.shippingStatus === "CANCELLED"}
-                              onClick={() => setEditing(o)}
-                            >
-                              <Pencil className="size-3.5" />
-                              Cập nhật
-                            </Button>
+                            {o.returnStatus === "AWAITING" ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setScanned(o)}
+                              >
+                                <PackageCheck className="size-3.5" />
+                                Nhận hoàn
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={o.shippingStatus === "CANCELLED"}
+                                onClick={() => setEditing(o)}
+                              >
+                                <Pencil className="size-3.5" />
+                                Cập nhật
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -797,6 +895,15 @@ export default function OrdersPage() {
           Hubsell · Trung tâm Xử lý Đơn hàng Tập trung
         </p>
       </div>
+
+      <ReturnDialog
+        order={scanned}
+        open={scanned !== null}
+        onOpenChange={(o) => {
+          if (!o) setScanned(null);
+        }}
+        onDone={load}
+      />
 
       <BulkActionBar
         selected={selectedOrders}

@@ -3,6 +3,7 @@ import {
   Carrier,
   InventoryLogType,
   Prisma,
+  ReturnStatus,
   ShippingStatus,
 } from "@prisma/client";
 import { prisma } from "../prisma";
@@ -46,6 +47,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // "multi" = từ 2 dòng trở lên (phải soát kỹ hơn).
     const orderType =
       typeof req.query.orderType === "string" ? req.query.orderType : "";
+    const returnStatusQ =
+      typeof req.query.returnStatus === "string" ? req.query.returnStatus : "";
 
     // Phân quyền multi-store: nhân viên bị giới hạn kênh thì chỉ thấy đơn của kênh được gán.
     // Nếu lọc theo 1 kênh cụ thể mà kênh đó không nằm trong phạm vi → không trả gì.
@@ -75,6 +78,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
         : orderType === "multi"
           ? { itemCount: { gt: 1 } }
           : {}),
+      ...((Object.values(ReturnStatus) as string[]).includes(returnStatusQ)
+        ? { returnStatus: returnStatusQ as ReturnStatus }
+        : {}),
       // Ô tìm kiếm đa năng: gõ gì cũng ra — mã đơn, tên khách, số điện thoại
       // hoặc mã vận đơn. Bỏ dấu cách và gạch trong SĐT để "0901 234 567" vẫn
       // khớp với "0901234567" đang lưu.
@@ -272,7 +278,19 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
       const updatedOrder = await tx.order.update({
         where: { id: order.id },
-        data: { shippingStatus: "CANCELLED" },
+        data: {
+          shippingStatus: ShippingStatus.CANCELLED,
+          // Ghi mốc đã cộng kho để luồng quét hàng hoàn không cộng lần nữa.
+          // Chỉ ghi khi thật sự có bút toán hoàn — đơn không có log trừ kho thì
+          // chưa từng trừ, nên cũng chưa cộng gì.
+          ...(restored.length > 0
+            ? {
+                stockRestoredAt: new Date(),
+                returnStatus: ReturnStatus.RECEIVED_INTACT,
+                returnedAt: new Date(),
+              }
+            : { returnStatus: ReturnStatus.AWAITING }),
+        },
         include: { channel: { select: { channelName: true } } },
       });
 
@@ -532,6 +550,217 @@ router.post("/bulk/mark-printed", async (req: AuthRequest, res, next) => {
     });
 
     res.json({ markedPrinted: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/orders/lookup?code=... — tra một đơn theo mã quét được.
+ *
+ * Máy quét bắn ra chuỗi gì thì tra chuỗi đó: tem vận đơn Shopee/TikTok in cả
+ * mã vận đơn lẫn mã đơn, và mã QR thường chứa thêm ký tự thừa. Nên thử lần
+ * lượt: khớp chính xác mã vận đơn → mã đơn → cuối cùng mới khớp lỏng (chứa).
+ * Khớp lỏng để cuối vì nó dễ ra nhiều kết quả; ra nhiều thì báo rõ chứ không
+ * đoán bừa lấy đơn đầu tiên — quét nhầm đơn là cộng kho nhầm sản phẩm.
+ */
+router.get("/lookup", async (req: AuthRequest, res, next) => {
+  try {
+    const raw = typeof req.query.code === "string" ? req.query.code.trim() : "";
+    if (!raw) {
+      res.status(400).json({ error: "Chưa có mã để tra cứu" });
+      return;
+    }
+    // Máy quét hay kèm khoảng trắng/xuống dòng ở cuối; mã QR có thể là URL
+    const code = raw.replace(/\s+/g, "");
+
+    const scope: Prisma.OrderWhereInput = {
+      channel: { userId: req.ownerId! },
+      ...(req.allowedChannelIds
+        ? { channelId: { in: req.allowedChannelIds } }
+        : {}),
+    };
+    const include = {
+      channel: { select: { channelName: true } },
+      items: {
+        select: {
+          id: true,
+          productName: true,
+          channelSku: true,
+          quantity: true,
+          price: true,
+          product: { select: { imageUrl: true } },
+        },
+      },
+    };
+
+    // 1) Khớp chính xác
+    let order = await prisma.order.findFirst({
+      where: { ...scope, OR: [{ trackingCode: code }, { orderCode: code }] },
+      include,
+    });
+
+    // 2) Khớp lỏng — dành cho mã QR chứa URL hoặc tiền tố của sàn
+    if (!order && code.length >= 6) {
+      const loose = await prisma.order.findMany({
+        where: {
+          ...scope,
+          OR: [
+            { trackingCode: { contains: code, mode: "insensitive" } },
+            { orderCode: { contains: code, mode: "insensitive" } },
+          ],
+        },
+        include,
+        take: 5,
+      });
+      if (loose.length > 1) {
+        res.status(409).json({
+          error: `Mã "${raw}" khớp với ${loose.length} đơn — quét lại hoặc nhập chính xác mã vận đơn`,
+          candidates: loose.map((o) => ({
+            orderCode: o.orderCode,
+            trackingCode: o.trackingCode,
+          })),
+        });
+        return;
+      }
+      order = loose[0] ?? null;
+    }
+
+    if (!order) {
+      res.status(404).json({ error: `Không tìm thấy đơn nào có mã "${raw}"` });
+      return;
+    }
+
+    res.json({ order });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/:id/return — kho xác nhận đã nhận kiện hàng hoàn.
+ * Body: { condition: "INTACT" | "DAMAGED", note?: string }
+ *
+ * INTACT  → cộng NGƯỢC tồn kho cho từng SKU trong đơn, ghi InventoryLog.
+ * DAMAGED → KHÔNG cộng kho, gắn cờ chờ khiếu nại sàn/đơn vị vận chuyển.
+ *
+ * Cộng kho chỉ xảy ra ĐÚNG MỘT LẦN nhờ mốc stockRestoredAt: đơn hủy trước khi
+ * giao đã được cộng kho ngay lúc hủy, nếu nhân viên còn quét nhận hoàn nữa thì
+ * chỉ đổi trạng thái chứ không cộng thêm.
+ */
+router.post("/:id/return", async (req: AuthRequest, res, next) => {
+  try {
+    const { condition, note } = req.body ?? {};
+    if (condition !== "INTACT" && condition !== "DAMAGED") {
+      res.status(400).json({
+        error: "condition phải là INTACT (nguyên vẹn) hoặc DAMAGED (hư hỏng/mất)",
+      });
+      return;
+    }
+    if (note !== undefined && typeof note !== "string") {
+      res.status(400).json({ error: "Ghi chú phải là chuỗi" });
+      return;
+    }
+
+    const order = await prisma.order.findFirst({
+      where: {
+        id: req.params.id,
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      select: {
+        id: true,
+        orderCode: true,
+        shippingStatus: true,
+        returnStatus: true,
+        stockRestoredAt: true,
+      },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+      return;
+    }
+    if (
+      order.returnStatus === ReturnStatus.RECEIVED_INTACT ||
+      order.returnStatus === ReturnStatus.DAMAGED
+    ) {
+      res.status(409).json({
+        error: `Đơn ${order.orderCode} đã được xử lý hoàn trước đó rồi`,
+      });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const restored: {
+        productName: string;
+        restoredQuantity: number;
+        newQuantity: number;
+      }[] = [];
+
+      // Chỉ cộng kho khi hàng nguyên vẹn VÀ đơn này chưa từng được cộng
+      const shouldRestore =
+        condition === "INTACT" && order.stockRestoredAt === null;
+
+      if (shouldRestore) {
+        const deductions = await tx.inventoryLog.findMany({
+          where: { orderId: order.id, changeQuantity: { lt: 0 } },
+          include: { product: { select: { id: true, productName: true } } },
+        });
+        for (const log of deductions) {
+          const qty = Math.abs(log.changeQuantity);
+          const updated = await tx.product.update({
+            where: { id: log.productId },
+            data: { quantityInStock: { increment: qty } },
+          });
+          await tx.inventoryLog.create({
+            data: {
+              productId: log.productId,
+              changeQuantity: qty,
+              type: InventoryLogType.SYNC,
+              reason: `Nhận hàng hoàn nguyên vẹn — đơn ${order.orderCode}`,
+              orderId: order.id,
+            },
+          });
+          restored.push({
+            productName: log.product.productName,
+            restoredQuantity: qty,
+            newQuantity: updated.quantityInStock,
+          });
+        }
+      }
+
+      const updatedOrder = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          returnStatus:
+            condition === "INTACT"
+              ? ReturnStatus.RECEIVED_INTACT
+              : ReturnStatus.DAMAGED,
+          returnNote: typeof note === "string" && note.trim() ? note.trim() : null,
+          returnedAt: new Date(),
+          // Đơn hoàn về thì coi như đã kết thúc vòng đời giao hàng
+          shippingStatus: ShippingStatus.CANCELLED,
+          ...(restored.length > 0 ? { stockRestoredAt: new Date() } : {}),
+        },
+        include: { channel: { select: { channelName: true } } },
+      });
+
+      return { order: updatedOrder, restored, shouldRestore };
+    });
+
+    res.json({
+      order: result.order,
+      restored: result.restored,
+      // Nói rõ vì sao không cộng kho, để giao diện hiển thị đúng lý do
+      stockSkippedReason:
+        condition === "DAMAGED"
+          ? "Hàng hư hỏng/mất — không cộng lại tồn kho, đã gắn cờ chờ khiếu nại"
+          : order.stockRestoredAt !== null
+            ? "Đơn này đã được cộng lại tồn kho từ trước (lúc hủy đơn) — không cộng thêm lần nữa"
+            : null,
+    });
   } catch (err) {
     next(err);
   }
