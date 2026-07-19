@@ -233,7 +233,18 @@ Breakpoint dùng là **`2xl` (≥1536px)** chứ không phải `md` (≥768px): 
 
 Gom đơn từ mọi sàn về một màn hình để lọc, duyệt và in phiếu hàng loạt.
 
-**5 tab theo vòng đời đơn** — Tất cả · Chờ xử lý · Đang giao · Đã giao thành công · Đơn hủy/Hoàn trả, mỗi tab kèm badge số lượng.
+**6 tab theo vòng đời đơn** — Tất cả · Chờ xử lý · **Đã xử lý** · Đang giao · Đã giao thành công · Đơn hủy/Hoàn trả, mỗi tab kèm badge số lượng.
+
+**Quy trình kho tách làm 2 bước** (enum `ShippingStatus`):
+```
+PENDING --[Xác nhận & chuẩn bị]--> PROCESSED --[Bàn giao]--> SHIPPING --> DELIVERED
+                                       ↑ in phiếu ở bước này
+```
+Tách đôi vì thực tế shop gói hàng buổi sáng nhưng shipper chiều mới tới lấy — gộp một bước thì hàng còn trong kho đã bị hiển thị là đang trên đường giao.
+
+**Chống in trùng & đóng gói lặp:** trong tab "Đã xử lý" có 3 bộ lọc con kèm số đếm — *Tất cả / Chưa in phiếu / Đã in phiếu*. In phiếu xong đơn tự rơi sang nhóm "Đã in" và bảng gắn nhãn kèm giờ in, nên người sau không in lại đơn người trước đang gói. In lại vẫn được nhưng **giữ nguyên mốc lần đầu** — cái shop cần biết là phiếu đã ra giấy từ lúc nào, không phải lần in gần nhất.
+
+⚠️ **Thêm trạng thái mới phải rà lại `finance.ts`** — "Tiền chờ về" lọc theo `shippingStatus in [PENDING, PROCESSED, SHIPPING]`. Bỏ sót một trạng thái là cả nhóm đơn đó biến mất khỏi báo cáo dòng tiền mà không có dấu hiệu gì.
 
 **Tìm kiếm & lọc** — ô tìm đa năng (mã đơn, tên khách, SĐT, mã vận đơn; SĐT tự bỏ dấu cách nên `0901 234 567` khớp `0901234567`) + lọc theo **Sàn** và **Đơn vị vận chuyển**.
 
