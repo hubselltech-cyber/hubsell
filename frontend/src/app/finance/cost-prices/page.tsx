@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  Download,
   ImageIcon,
   Loader2,
   PackageSearch,
@@ -18,8 +19,11 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { BulkApplyCost } from "@/components/finance/bulk-apply-cost";
+import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
@@ -42,9 +46,11 @@ import {
   type SkuProduct,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { exportCostPricesToExcel } from "@/lib/excel";
 import { formatVND, formatNumber } from "@/lib/format";
 import { normalizeText } from "@/lib/text";
 import { cn } from "@/lib/utils";
+import { groupVariants, variantGroupKey } from "@/lib/variant-group";
 
 // Trạng thái giá vốn để lọc
 type CostStatusFilter = "all" | "missing" | "filled";
@@ -104,15 +110,56 @@ export default function CostPricesPage() {
 
   const isFiltering = search.trim() !== "" || statusFilter !== "all";
 
+  /**
+   * Gom các dòng cùng một mẫu hàng (size M/L/XL của cùng cái áo) để biết dòng
+   * nào có "anh em" mà hiện nút áp dụng hàng loạt.
+   * Cố ý gom trên TOÀN BỘ items chứ không phải filteredItems: đang lọc "chưa
+   * nhập giá vốn" thì các phân loại đã có giá bị ẩn khỏi bảng, nhưng chúng vẫn
+   * là anh em và vẫn phải nằm trong danh sách xác nhận.
+   */
+  const variantGroups = useMemo(
+    () => groupVariants(items, (i) => i.productName),
+    [items]
+  );
+
+  /**
+   * Các phân loại khác của cùng mẫu hàng mà việc áp giá HÀNG LOẠT thật sự có
+   * tác dụng.
+   *
+   * Loại bỏ những dòng cùng productId với chính nó: giá vốn được lưu trên sản
+   * phẩm gốc, nên nhiều SKU sàn trỏ về cùng một sản phẩm vốn đã dùng chung một
+   * giá — sửa dòng này là dòng kia tự đổi theo. Hiện nút cho những dòng đó chỉ
+   * khiến người dùng bấm rồi thấy "đã cập nhật 1 phân loại" mà chẳng có gì đổi.
+   */
+  const bulkTargetsOf = useCallback(
+    (item: SkuProduct): SkuProduct[] => {
+      const group = variantGroups.get(variantGroupKey(item.productName)) ?? [];
+      // Mỗi sản phẩm gốc chỉ cần một dòng đại diện: nhiều SKU sàn cùng trỏ về
+      // một product thì cũng chỉ ghi được một giá vốn.
+      const byProduct = new Map<string, SkuProduct>();
+      for (const row of group) {
+        if (!byProduct.has(row.productId)) byProduct.set(row.productId, row);
+      }
+      byProduct.set(item.productId, item); // luôn gồm chính dòng đang gõ
+      return [...byProduct.values()];
+    },
+    [variantGroups]
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetchSkuProducts(channel);
       setItems(res.items);
       setMissingCount(res.missingCostCount);
-      // Nạp giá vốn hiện tại vào ô nhập
+      // Nạp giá vốn hiện tại vào ô nhập. Chưa có giá thì để TRỐNG chứ không
+      // điền số 0 — để placeholder "Nhập giá vốn" hiện ra, nhìn là biết còn
+      // thiếu, thay vì tưởng đã nhập giá vốn bằng 0.
       const next: Record<string, string> = {};
-      for (const i of res.items) next[i.skuId] = String(Number(i.costPrice));
+      for (const i of res.items) {
+        const cost = Number(i.costPrice);
+        next[i.skuId] = cost > 0 ? String(cost) : "";
+      }
       setDrafts(next);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -170,10 +217,24 @@ export default function CostPricesPage() {
     const raw = (drafts[item.skuId] ?? "").trim();
     const value = Number(raw);
     const current = Number(item.costPrice);
+    const restore = () =>
+      setDrafts((d) => ({
+        ...d,
+        [item.skuId]: current > 0 ? String(current) : "",
+      }));
 
-    if (raw === "" || Number.isNaN(value) || value < 0) {
+    if (raw === "") {
+      // Ô trống là trạng thái hợp lệ của SKU chưa nhập giá — chỉ báo lỗi khi
+      // người dùng xoá mất một giá vốn ĐÃ CÓ (nhiều khả năng là lỡ tay).
+      if (current > 0) {
+        toast.error("Giá vốn không được để trống");
+        restore();
+      }
+      return;
+    }
+    if (Number.isNaN(value) || value < 0) {
       toast.error("Giá vốn phải là số không âm");
-      setDrafts((d) => ({ ...d, [item.skuId]: String(current) }));
+      restore();
       return;
     }
     if (value === current) return; // không đổi thì không gọi API
@@ -188,10 +249,21 @@ export default function CostPricesPage() {
       load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không lưu được giá vốn");
-      setDrafts((d) => ({ ...d, [item.skuId]: String(current) }));
+      restore();
     } finally {
       setSavingId(null);
     }
+  }
+
+  // Xuất đúng những dòng đang hiển thị theo bộ lọc — lọc "chưa nhập giá vốn"
+  // rồi xuất ra là có ngay file chỉ chứa các mã còn thiếu để điền hàng loạt.
+  function handleExport() {
+    if (filteredItems.length === 0) {
+      toast.error("Không có SKU nào để xuất");
+      return;
+    }
+    exportCostPricesToExcel(filteredItems);
+    toast.success(`Đã xuất ${formatNumber(filteredItems.length)} SKU ra Excel`);
   }
 
   if (denied) {
@@ -230,14 +302,27 @@ export default function CostPricesPage() {
             ))}
           </div>
 
-          <Button
-            onClick={handleSync}
-            disabled={syncing}
-            className="bg-teal-600 text-white hover:bg-teal-700"
-          >
-            <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-            {syncing ? "Đang đồng bộ…" : "Đồng bộ từ sàn"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={loading || filteredItems.length === 0}
+            >
+              <Download className="size-4" />
+              Xuất file Excel
+            </Button>
+
+            <ImportCostDialog onImported={load} />
+
+            <Button
+              onClick={handleSync}
+              disabled={syncing}
+              className="bg-teal-600 text-white hover:bg-teal-700"
+            >
+              <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
+              {syncing ? "Đang đồng bộ…" : "Đồng bộ từ sàn"}
+            </Button>
+          </div>
         </div>
 
         {/* Cảnh báo còn SKU chưa nhập giá vốn */}
@@ -354,6 +439,9 @@ export default function CostPricesPage() {
                   {filteredItems.map((item) => {
                     const meta = CHANNEL_META[item.channelName as ChannelName];
                     const missing = Number(item.costPrice) <= 0;
+                    // Chỉ có ý nghĩa khi mẫu hàng trải trên từ 2 sản phẩm gốc
+                    // trở lên — cùng một product thì giá vốn vốn đã dùng chung.
+                    const bulkTargets = bulkTargetsOf(item);
                     return (
                       <TableRow key={item.skuId}>
                         <TableCell>
@@ -388,28 +476,30 @@ export default function CostPricesPage() {
                           {formatVND(item.sellingPrice)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center justify-end gap-2">
-                            <Input
-                              type="number"
-                              min="0"
+                          <div className="flex items-center justify-end gap-1.5">
+                            <CurrencyInput
                               className={cn(
-                                "w-36 text-right",
+                                "w-32 text-right tabular-nums",
                                 missing && "border-amber-400 bg-amber-50"
                               )}
                               placeholder="Nhập giá vốn"
+                              aria-label={`Giá vốn của ${item.sku}`}
                               value={drafts[item.skuId] ?? ""}
-                              onChange={(e) =>
-                                setDrafts((d) => ({
-                                  ...d,
-                                  [item.skuId]: e.target.value,
-                                }))
+                              onValueChange={(digits) =>
+                                setDrafts((d) => ({ ...d, [item.skuId]: digits }))
                               }
                               onBlur={() => handleBlur(item)}
-                              // Chặn lăn chuột làm thay đổi giá trị ngoài ý muốn:
-                              // ô số đang focus mà cuộn trang sẽ tự tăng/giảm rồi
-                              // bị lưu tự động — rất nguy hiểm với giá vốn.
-                              onWheel={(e) => e.currentTarget.blur()}
                             />
+
+                            {/* Chỉ hiện khi mẫu hàng này thật sự có phân loại khác */}
+                            {bulkTargets.length > 1 && (
+                              <BulkApplyCost
+                                targets={bulkTargets}
+                                costDigits={drafts[item.skuId] ?? ""}
+                                onApplied={load}
+                              />
+                            )}
+
                             {savingId === item.skuId ? (
                               <Loader2 className="size-4 animate-spin text-muted-foreground" />
                             ) : savedId === item.skuId ? (

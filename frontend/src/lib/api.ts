@@ -598,6 +598,50 @@ export function syncProductsFromChannels() {
   }>("/api/finance/sync-products", { method: "POST" });
 }
 
+export interface CostImportResult {
+  updated: number;
+  totalRows: number;
+  errors: { row: number; message: string }[];
+}
+
+/** Áp một giá vốn cho nhiều SKU cùng lúc (nút "áp dụng cho mọi phân loại"). */
+export function updateSkuCostPriceBulk(skuIds: string[], costPrice: number) {
+  return apiFetch<{ updated: number; costPrice: string }>(
+    "/api/finance/update-cost-bulk",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ sku_ids: skuIds, cost_price: costPrice }),
+    }
+  );
+}
+
+/** Nhập giá vốn hàng loạt từ file Excel (cột: Mã SKU, Giá vốn). */
+export async function importCostPricesExcel(
+  file: File
+): Promise<CostImportResult> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_URL}/api/finance/cost-prices/import`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json();
+}
+
 export function updateSkuCostPrice(skuId: string, costPrice: number) {
   return apiFetch<{
     skuId: string;

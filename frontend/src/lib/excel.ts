@@ -6,6 +6,7 @@ import {
   type Order,
   type Product,
   type ShippingDiscrepancy,
+  type SkuProduct,
 } from "@/lib/api";
 
 // Chuyển "yyyy-...T..." → "hh:mm dd/mm/yyyy" cho dễ đọc trong Excel
@@ -194,4 +195,42 @@ export async function exportAllOrders(filter: {
   }
   exportOrdersToExcel(all);
   return all.length;
+}
+
+// ---------- GIÁ VỐN THEO SKU ----------
+
+/**
+ * Xuất danh sách SKU kèm giá vốn hiện tại. File này chính là mẫu để sửa hàng
+ * loạt rồi nhập ngược lại: chỉ cột "Mã SKU" và "Giá vốn" được đọc khi nhập,
+ * các cột còn lại để người dùng biết mình đang sửa cái gì.
+ */
+export function exportCostPricesToExcel(items: SkuProduct[]) {
+  const rows = items.map((i) => ({
+    "Mã SKU": i.sku,
+    "Tên sản phẩm": i.productName,
+    "Phân loại": i.variantName ?? "",
+    "Kênh bán": CHANNEL_LABEL[i.channelName] ?? i.channelName,
+    "Giá bán": Number(i.sellingPrice),
+    "Giá vốn": Number(i.costPrice),
+  }));
+  downloadSheet(
+    rows,
+    [18, 40, 26, 12, 14, 14],
+    "Gia von",
+    `hubsell_gia_von_${fileStamp()}.xlsx`
+  );
+}
+
+/** File mẫu trống cho người chưa có dữ liệu, kèm 2 dòng ví dụ. */
+export function downloadCostPriceTemplate() {
+  const rows = [
+    { "Mã SKU": "SH-AO-THUN-M", "Giá vốn": 74000 },
+    { "Mã SKU": "SH-AO-THUN-L", "Giá vốn": 76000 },
+  ];
+  downloadSheet(
+    rows,
+    [22, 16],
+    "Mau gia von",
+    "hubsell_mau_nhap_gia_von.xlsx"
+  );
 }

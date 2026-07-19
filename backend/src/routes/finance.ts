@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import {
   ChannelName,
   ExpenseCategory,
@@ -12,6 +14,19 @@ import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
 import { parseDateRange, type DateRangeFilter } from "../date-range";
 
 const router = Router();
+
+// Nhận file Excel vào bộ nhớ (không lưu ra đĩa), giới hạn 5MB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(xlsx|xls)$/i.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Chỉ chấp nhận file Excel (.xlsx hoặc .xls)"));
+    }
+  },
+});
 
 // ============================================================
 // MODULE TÀI CHÍNH CHUYÊN SÂU (Hubsell Finance)
@@ -898,6 +913,218 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+/**
+ * Đổi danh sách sku_id (id ProductMapping HOẶC id Product) thành danh sách
+ * productId thật, đã lọc theo chủ sở hữu. Giá vốn lưu trên Product nên nhiều
+ * sku_id có thể quy về cùng một productId — trả về Set để không update trùng.
+ */
+async function resolveProductIds(
+  skuIds: string[],
+  ownerId: string
+): Promise<Set<string>> {
+  const [mappings, products] = await Promise.all([
+    prisma.productMapping.findMany({
+      where: { id: { in: skuIds }, channel: { userId: ownerId } },
+      select: { productId: true },
+    }),
+    prisma.product.findMany({
+      where: { id: { in: skuIds }, userId: ownerId },
+      select: { id: true },
+    }),
+  ]);
+  return new Set([
+    ...mappings.map((m) => m.productId),
+    ...products.map((p) => p.id),
+  ]);
+}
+
+// PATCH /api/finance/update-cost-bulk — áp một giá vốn cho NHIỀU SKU cùng lúc.
+// Dùng cho nút "Áp dụng cho tất cả phân loại" (size M/L/XL của cùng một mẫu).
+// Body: { sku_ids: string[], cost_price: number }
+router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
+  try {
+    const skuIds = req.body?.sku_ids ?? req.body?.skuIds;
+    const rawCost = req.body?.cost_price ?? req.body?.costPrice;
+
+    if (!Array.isArray(skuIds) || skuIds.length === 0) {
+      res.status(400).json({ error: "Thiếu danh sách sku_ids" });
+      return;
+    }
+    if (!skuIds.every((s) => typeof s === "string" && s)) {
+      res.status(400).json({ error: "sku_ids phải là mảng chuỗi" });
+      return;
+    }
+    // Chặn payload khổng lồ làm treo transaction
+    if (skuIds.length > 500) {
+      res.status(400).json({ error: "Tối đa 500 SKU mỗi lần áp dụng" });
+      return;
+    }
+    const cost = typeof rawCost === "string" ? Number(rawCost) : rawCost;
+    if (typeof cost !== "number" || Number.isNaN(cost) || cost < 0) {
+      res.status(400).json({ error: "Giá vốn phải là số không âm" });
+      return;
+    }
+
+    const productIds = await resolveProductIds(skuIds, req.ownerId!);
+    if (productIds.size === 0) {
+      res.status(404).json({ error: "Không tìm thấy SKU / sản phẩm nào" });
+      return;
+    }
+
+    // Cùng một transaction: hoặc đổi hết, hoặc không đổi gì
+    await prisma.product.updateMany({
+      where: { id: { in: [...productIds] }, userId: req.ownerId! },
+      data: { costPrice: cost },
+    });
+
+    res.json({ updated: productIds.size, costPrice: String(cost) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/finance/cost-prices/import — nhập giá vốn hàng loạt từ Excel.
+// Cột chuẩn: [Mã SKU, Giá vốn]. Khớp theo Product.skuCode hoặc
+// ProductMapping.channelSku. SKU không tìm thấy → báo lỗi theo dòng, không chặn
+// các dòng hợp lệ còn lại.
+router.post(
+  "/cost-prices/import",
+  upload.single("file"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: "Chưa chọn file Excel để tải lên" });
+        return;
+      }
+
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        res.status(400).json({ error: "File Excel không có sheet nào" });
+        return;
+      }
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+        workbook.Sheets[sheetName],
+        { defval: "" }
+      );
+      if (rows.length === 0) {
+        res.status(400).json({ error: "File Excel không có dòng dữ liệu nào" });
+        return;
+      }
+
+      const ownerId = req.ownerId!;
+      const errors: { row: number; message: string }[] = [];
+      // sku (đã chuẩn hoá) → giá vốn. Dòng sau ghi đè dòng trước nếu trùng SKU.
+      const wanted = new Map<string, { cost: number; row: number }>();
+
+      rows.forEach((row, idx) => {
+        const excelRow = idx + 2; // +1 header, +1 đếm từ 1
+        const pick = (...keys: string[]) => {
+          for (const k of keys) {
+            const found = Object.keys(row).find(
+              (rk) => rk.trim().toLowerCase() === k.toLowerCase()
+            );
+            if (found && String(row[found]).trim() !== "") return String(row[found]).trim();
+          }
+          return "";
+        };
+
+        const sku = pick("Mã SKU", "MaSKU", "SKU", "sku_code", "skuCode");
+        const rawCost = pick("Giá vốn", "GiaVon", "cost_price", "costPrice");
+
+        if (!sku) {
+          errors.push({ row: excelRow, message: "Thiếu Mã SKU" });
+          return;
+        }
+        // Bỏ dấu phân tách hàng nghìn người dùng gõ trong Excel (52.000 / 52,000)
+        const cost = Number(rawCost.replace(/[.,\s]/g, ""));
+        if (rawCost === "" || Number.isNaN(cost) || cost < 0) {
+          errors.push({
+            row: excelRow,
+            message: `Giá vốn không hợp lệ ("${rawCost}")`,
+          });
+          return;
+        }
+        wanted.set(sku.toLowerCase(), { cost, row: excelRow });
+      });
+
+      if (wanted.size === 0) {
+        res.status(400).json({
+          error: "Không có dòng nào hợp lệ trong file",
+          errors,
+        });
+        return;
+      }
+
+      const skuList = [...wanted.keys()];
+
+      // Tìm sản phẩm gốc theo cả mã nội bộ lẫn mã trên sàn
+      const [products, mappings] = await Promise.all([
+        prisma.product.findMany({
+          where: { userId: ownerId },
+          select: { id: true, skuCode: true },
+        }),
+        prisma.productMapping.findMany({
+          where: { channel: { userId: ownerId } },
+          select: { productId: true, channelSku: true },
+        }),
+      ]);
+
+      const productIdBySku = new Map<string, string>();
+      for (const p of products) productIdBySku.set(p.skuCode.toLowerCase(), p.id);
+      // Mã sàn chỉ dùng khi mã nội bộ không khớp, tránh ghi đè nhầm
+      for (const m of mappings) {
+        const key = m.channelSku.toLowerCase();
+        if (!productIdBySku.has(key)) productIdBySku.set(key, m.productId);
+      }
+
+      // Gom theo giá vốn để mỗi giá chỉ cần một lệnh updateMany
+      const byCost = new Map<number, string[]>();
+      let matched = 0;
+      for (const sku of skuList) {
+        const entry = wanted.get(sku)!;
+        const productId = productIdBySku.get(sku);
+        if (!productId) {
+          errors.push({
+            row: entry.row,
+            message: `Không tìm thấy SKU "${sku}" trong hệ thống`,
+          });
+          continue;
+        }
+        matched++;
+        const list = byCost.get(entry.cost) ?? [];
+        list.push(productId);
+        byCost.set(entry.cost, list);
+      }
+
+      if (matched === 0) {
+        res.status(400).json({
+          error: "Không có SKU nào trong file khớp với sản phẩm trong hệ thống",
+          errors,
+        });
+        return;
+      }
+
+      // Trọn gói: hoặc cập nhật hết, hoặc không đổi gì
+      const updated = await prisma.$transaction(async (tx) => {
+        const touched = new Set<string>();
+        for (const [cost, ids] of byCost) {
+          await tx.product.updateMany({
+            where: { id: { in: ids }, userId: ownerId },
+            data: { costPrice: cost },
+          });
+          for (const id of ids) touched.add(id);
+        }
+        return touched.size;
+      });
+
+      res.json({ updated, totalRows: rows.length, errors });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // GET /api/finance/analytics — 3 chỉ số chính + chuỗi Doanh thu vs Tổng chi phí theo ngày.
 // Mọi số tiền trả về là SỐ ĐẦY ĐỦ (không viết tắt).
