@@ -24,6 +24,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
+import { Money } from "@/components/ui/money";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -417,7 +418,7 @@ export default function FinanceExpensesPage() {
         <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <DashboardCard
             title="Tổng chi phí"
-            value={formatVND(total)}
+            value={<Money value={total} />}
             icon={Wallet}
             tone="negative"
             colorValue
@@ -425,7 +426,7 @@ export default function FinanceExpensesPage() {
           />
           <DashboardCard
             title="Chi phí cố định"
-            value={formatVND(fixed)}
+            value={<Money value={fixed} />}
             icon={Building2}
             tone="info"
             subtitle={
@@ -436,7 +437,7 @@ export default function FinanceExpensesPage() {
           />
           <DashboardCard
             title="Chi phí biến đổi"
-            value={formatVND(variable)}
+            value={<Money value={variable} />}
             icon={Megaphone}
             tone="warning"
             subtitle={

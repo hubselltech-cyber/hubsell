@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Money } from "@/components/ui/money";
 import { Label } from "@/components/ui/label";
 
 import {
@@ -52,7 +53,13 @@ import {
 import { Refreshing } from "@/components/refreshing";
 import type { DateRange } from "@/lib/date-range";
 import { formatVND, formatNumber } from "@/lib/format";
-import { CELL_PADDING, TEXT_SUB } from "@/lib/typography";
+import {
+  CELL_PADDING,
+  MONEY_NEGATIVE,
+  MONEY_POSITIVE,
+  TEXT_NUMBER_MUTED,
+  TEXT_SUB,
+} from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 // Khoảng đệm ô lấy từ quy chuẩn hệ thống (lib/typography.ts) để co giãn
@@ -399,9 +406,7 @@ export function SkuPnlTable({
 
                         {/* Doanh thu thuần + dòng phụ: giá hoà vốn mỗi sản phẩm */}
                         <TableCell className={cn(CELL_PAD, "text-right")}>
-                          <span className="block font-semibold">
-                            {formatVND(row.revenue)}
-                          </span>
+                          <Money value={row.revenue} className="block text-slate-900" />
                           {be && (
                             <HintText
                               className={cn(
@@ -426,32 +431,44 @@ export function SkuPnlTable({
                             </HintText>
                           )}
                         </TableCell>
-                        <TableCell
-                          className={cn(CELL_PAD, "text-right font-semibold text-muted-foreground")}
-                        >
-                          {row.cogs > 0 ? `− ${formatVND(row.cogs)}` : "—"}
+                        <TableCell className={cn(CELL_PAD, "text-right")}>
+                          {row.cogs > 0 ? (
+                            <Money
+                              value={row.cogs}
+                              negative
+                              className={TEXT_NUMBER_MUTED}
+                            />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </TableCell>
-                        <TableCell
-                          className={cn(CELL_PAD, "text-right font-semibold text-muted-foreground")}
-                        >
-                          {row.allocatedFee > 0
-                            ? `− ${formatVND(row.allocatedFee)}`
-                            : "—"}
+                        <TableCell className={cn(CELL_PAD, "text-right")}>
+                          {row.allocatedFee > 0 ? (
+                            <Money
+                              value={row.allocatedFee}
+                              negative
+                              className={TEXT_NUMBER_MUTED}
+                            />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </TableCell>
                         {/* Chi phí marketing + dòng phụ: trần Ads cho mỗi đơn */}
                         <TableCell className={cn(CELL_PAD, "text-right")}>
-                          <span
-                            className={cn(
-                              "block font-semibold",
-                              be?.isOverspending
-                                ? "font-semibold text-rose-600"
-                                : "text-muted-foreground"
-                            )}
-                          >
-                            {row.marketingCost > 0
-                              ? `− ${formatVND(row.marketingCost)}`
-                              : "—"}
-                          </span>
+                          {row.marketingCost > 0 ? (
+                            <Money
+                              value={row.marketingCost}
+                              negative
+                              className={cn(
+                                "block",
+                                be?.isOverspending
+                                  ? cn("font-semibold", MONEY_NEGATIVE)
+                                  : TEXT_NUMBER_MUTED
+                              )}
+                            />
+                          ) : (
+                            <span className="block text-slate-400">—</span>
+                          )}
                           {be && (
                             <HintText
                               className={cn(
@@ -480,11 +497,11 @@ export function SkuPnlTable({
                         <TableCell
                           className={cn(
                             CELL_PAD,
-                            "text-right text-base font-bold",
-                            profitable ? "text-emerald-600" : "text-rose-600"
+                            "text-right font-semibold",
+                            profitable ? MONEY_POSITIVE : MONEY_NEGATIVE
                           )}
                         >
-                          {formatVND(row.profit)}
+                          <Money value={row.profit} />
                         </TableCell>
                         {/* Biên LN + dòng phụ: mức giảm giá tối đa còn hoà vốn */}
                         <TableCell className={cn(CELL_PAD, "text-right")}>

@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
+import { Money } from "@/components/ui/money";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
@@ -42,8 +43,9 @@ import {
   type Product,
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
-import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { formatNumber, formatDateTime } from "@/lib/format";
 import { canSeeFinancials } from "@/lib/permissions";
+import { TEXT_NUMBER_MUTED } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
@@ -145,8 +147,11 @@ export default function ProductsPage() {
             columnHelper.accessor("costPrice", {
               header: () => <div className="text-right">Giá vốn</div>,
               cell: (info) => (
-                <div className="text-right font-semibold text-muted-foreground">
-                  {formatVND(info.getValue() ?? 0)}
+                <div className="text-right">
+                  <Money
+                    value={info.getValue() ?? 0}
+                    className={TEXT_NUMBER_MUTED}
+                  />
                 </div>
               ),
             }),
@@ -155,7 +160,12 @@ export default function ProductsPage() {
       columnHelper.accessor("sellingPrice", {
         header: () => <div className="text-right">Giá bán</div>,
         cell: (info) => (
-          <div className="text-right font-semibold">{formatVND(info.getValue())}</div>
+          <div className="text-right">
+            <Money
+              value={info.getValue()}
+              className="font-medium text-slate-900"
+            />
+          </div>
         ),
       }),
       columnHelper.accessor("quantityInStock", {

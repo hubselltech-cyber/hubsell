@@ -31,6 +31,7 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { Money } from "@/components/ui/money";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
@@ -267,10 +268,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             label="Doanh thu (đã thanh toán)"
-            value={data ? formatVND(data.totalRevenue) : "—"}
+            value={data ? <Money value={data.totalRevenue} /> : "—"}
             icon={Wallet}
-            tone="positive"
-            colorValue
           />
           <StatCard
             label="Tổng đơn hàng"
@@ -313,26 +312,22 @@ export default function DashboardPage() {
         >
           <StatCard
             label="Tổng Doanh thu"
-            value={analytics ? formatVND(analytics.totalRevenue) : "—"}
+            value={analytics ? <Money value={analytics.totalRevenue} /> : "—"}
             icon={TrendingUp}
-            tone="positive"
-            colorValue
           />
           {seesFinancials && (
             <>
               <StatCard
                 label="Tổng Giá vốn"
-                value={analytics ? formatVND(analytics.totalCost) : "—"}
+                value={analytics ? <Money value={analytics.totalCost} /> : "—"}
                 icon={Coins}
-                tone="negative"
-                colorValue
                 subtitle={
                   cogsRatio !== undefined ? `${cogsRatio}% doanh thu` : undefined
                 }
               />
               <StatCard
                 label="Lợi nhuận gộp"
-                value={analytics ? formatVND(analytics.grossProfit) : "—"}
+                value={analytics ? <Money value={analytics.grossProfit} /> : "—"}
                 icon={PiggyBank}
                 tone={analytics ? toneBySign(analytics.grossProfit) : "neutral"}
                 colorValue
@@ -360,10 +355,8 @@ export default function DashboardPage() {
         <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <StatCard
             label="Tổng Chi phí hoạt động"
-            value={analytics ? formatVND(analytics.totalOperatingExpense) : "—"}
+            value={analytics ? <Money value={analytics.totalOperatingExpense} /> : "—"}
             icon={Receipt}
-            tone="negative"
-            colorValue
             subtitle={
               opexRatio !== undefined ? `${opexRatio}% doanh thu` : undefined
             }
@@ -376,7 +369,7 @@ export default function DashboardPage() {
             return (
               <StatCard
                 label="Lợi nhuận thuần (Net Profit)"
-                value={analytics ? formatVND(net) : "—"}
+                value={analytics ? <Money value={net} /> : "—"}
                 icon={Scale}
                 tone={toneBySign(net)}
                 featured
@@ -540,8 +533,11 @@ export default function DashboardPage() {
                           fallback={o.shippingStatus}
                         />
                       </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {formatVND(o.totalAmount)}
+                      <TableCell className="text-right">
+                        <Money
+                          value={o.totalAmount}
+                          className="font-medium text-slate-900"
+                        />
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {formatDateTime(o.createdAt)}

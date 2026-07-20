@@ -60,9 +60,11 @@ export function HintText({
             type="button"
             // Trông như chữ thường nhưng vẫn focus được bằng bàn phím
             className={cn(
-              // Cỡ chữ dòng phụ theo quy chuẩn hệ thống
+              // Cỡ chữ dòng phụ theo quy chuẩn hệ thống.
+              // KHÔNG gạch chân: một rừng gạch chấm dưới mỗi con số làm bảng
+              // trông bẩn. Con trỏ đổi thành dấu hỏi là đủ báo "hover được".
               TEXT_SUB,
-              "cursor-help leading-tight underline decoration-dotted underline-offset-2 transition-colors",
+              "cursor-help text-left leading-tight transition-colors hover:text-slate-900",
               className
             )}
           />

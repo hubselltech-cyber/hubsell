@@ -9,7 +9,8 @@ import {
 
 interface StatCardProps {
   label: string;
-  value: string;
+  /** Số đã format sẵn — thường là <Money value={…} /> */
+  value: React.ReactNode;
   icon: LucideIcon;
   /** Sắc thái màu của chỉ số — xem CardTone trong dashboard-card.tsx */
   tone?: CardTone;

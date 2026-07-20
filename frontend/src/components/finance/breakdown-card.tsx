@@ -9,8 +9,9 @@ import {
   type DashboardCardItem,
 } from "@/components/dashboard/dashboard-card";
 import { HintIcon } from "@/components/finance/hint-icon";
+import { Money } from "@/components/ui/money";
 import type { BreakdownItem } from "@/lib/api";
-import { formatVND, formatNumber } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 
 interface BreakdownCardProps {
   title: string;
@@ -54,13 +55,15 @@ export function BreakdownCard({
     // Khoản trợ giá (amount âm trong nhóm khấu trừ) là khoản được CỘNG lại
     const isCredit = itemsAreDeductions && item.amount < 0;
 
-    const rowTone: CardTone = itemsAreDeductions
-      ? isCredit
-        ? "positive"
-        : "negative"
-      : colorBySign
-        ? toneBySign(item.amount)
-        : tone;
+    /*
+     * MÀU CHỈ DÀNH CHO KẾT LUẬN LÃI–LỖ.
+     *
+     * Các dòng khấu trừ (phí sàn, voucher, phí ship…) là số đối chiếu, không
+     * phải phán quyết lãi hay lỗ — dấu "−" phía trước đã nói rõ tiền đang đi ra.
+     * Tô đỏ hết thì cả thẻ đỏ rực và mắt không phân biệt được đâu mới là khoản
+     * đáng lo. Chỉ nhóm có colorBySign (cột Lợi nhuận) mới được tô màu.
+     */
+    const rowTone: CardTone = colorBySign ? toneBySign(item.amount) : "neutral";
 
     return {
       key: item.key,
@@ -70,9 +73,12 @@ export function BreakdownCard({
           <HintIcon hint={item.hint} />
         </>
       ),
-      value: `${itemsAreDeductions ? (isCredit ? "+ " : "− ") : ""}${formatVND(
-        Math.abs(item.amount)
-      )}`,
+      value: (
+        <>
+          {itemsAreDeductions ? (isCredit ? "+ " : "− ") : ""}
+          <Money value={Math.abs(item.amount)} />
+        </>
+      ),
       // Tỷ lệ hiển thị bằng text thuần, không vẽ thanh đồ hoạ
       note: `${item.percent}%${
         item.count !== undefined ? ` · ${formatNumber(item.count)} đơn` : ""
@@ -84,7 +90,7 @@ export function BreakdownCard({
   return (
     <DashboardCard
       title={title}
-      value={formatVND(total)}
+      value={<Money value={total} />}
       icon={icon}
       tone={cardTone}
       featured={featured}

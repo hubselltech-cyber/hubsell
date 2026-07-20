@@ -3,6 +3,8 @@
 import type { LucideIcon } from "lucide-react";
 
 import {
+  MONEY_NEGATIVE,
+  MONEY_POSITIVE,
   TEXT_CARD_TITLE,
   TEXT_HERO_NUMBER,
   TEXT_SUB,
@@ -61,14 +63,14 @@ const VALUE_COLOR: Record<CardTone, string> = {
   info: "text-foreground",
   warning: "text-foreground",
   accent: "text-foreground",
-  positive: "text-emerald-600",
-  negative: "text-rose-600",
+  positive: MONEY_POSITIVE,
+  negative: MONEY_NEGATIVE,
 };
 
 /** Nền + viền khi thẻ ở chế độ nổi bật. Chỉ có 2 sắc thái được phép. */
 const FEATURED_BG: Partial<Record<CardTone, string>> = {
-  positive: "bg-emerald-50/40 ring-emerald-200",
-  negative: "bg-rose-50/40 ring-rose-200",
+  positive: "border-emerald-200/80 bg-emerald-50/30",
+  negative: "border-rose-200/80 bg-rose-50/30",
 };
 
 /** Dương → xanh, âm → đỏ. Dùng cho các chỉ số có thể lãi hoặc lỗ. */
@@ -126,17 +128,17 @@ export function DashboardCard({
   const tinted = colorValue ?? Boolean(highlight);
 
   return (
-    <Card className={cn("h-full", highlight && cn("shadow-sm ring-1", highlight), className)}>
-      <CardContent className="flex h-full flex-col gap-5 p-5">
+    <Card className={cn("h-full", highlight, className)}>
+      <CardContent className="flex h-full flex-col gap-4 p-5">
         {/* ── Đầu thẻ: icon có khối nền + tiêu đề + số tổng ── */}
-        <div className="flex items-start gap-3.5">
+        <div className="flex items-start gap-3">
           <div
             className={cn(
-              "flex size-11 shrink-0 items-center justify-center rounded-xl 2xl:size-12",
-              ICON_BOX[tone]
+              "flex size-9 shrink-0 items-center justify-center rounded-lg",
+              ICON_BOX
             )}
           >
-            <Icon className="size-5.5 2xl:size-6" strokeWidth={2.25} />
+            <Icon className="size-5" strokeWidth={2} />
           </div>
           <div className="min-w-0 flex-1">
             <p className={TEXT_CARD_TITLE}>{title}</p>
@@ -168,8 +170,12 @@ export function DashboardCard({
                 <span className="shrink-0 text-right">
                   <span
                     className={cn(
-                      "block text-sm font-semibold 2xl:text-base",
-                      VALUE_COLOR[item.tone ?? tone]
+                      "block text-sm",
+                      // Dòng mang sắc thái lãi–lỗ mới được tô màu và in đậm;
+                      // còn lại là số đối chiếu, để chữ thường xám đen
+                      VALUE_COLOR[item.tone ?? tone] === "text-foreground"
+                        ? "text-slate-900"
+                        : cn("font-semibold", VALUE_COLOR[item.tone ?? tone])
                     )}
                   >
                     {item.value}

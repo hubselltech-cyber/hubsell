@@ -1,56 +1,73 @@
 /**
- * QUY CHUẨN FONT CHỮ HỆ THỐNG (Responsive Typography)
+ * QUY CHUẨN CHỮ & MÀU CHỮ CỦA HUBSELL (Design System)
  *
- * Nguồn chân lý duy nhất cho cỡ chữ toàn Hubsell. Các component nền
- * (Table, Input, StatCard, BreakdownCard…) đều ăn theo file này, nên muốn
- * chỉnh cỡ chữ toàn hệ thống chỉ cần sửa ở đây.
+ * Nguồn chân lý duy nhất cho cỡ chữ và sắc độ chữ toàn hệ thống. Các component
+ * nền (Table, Card, DashboardCard, Money…) đều ăn theo file này, nên đổi phong
+ * cách toàn hệ thống chỉ cần sửa ở đây.
  *
- * ─── Triết lý cỡ chữ ───
- * Dễ đọc ở MỌI kích cỡ màn hình, không có cỡ nào dưới 12px. Phiên bản trước
- * để laptop dùng cỡ nhỏ (11–12px) rồi chỉ nở to trên màn ≥1536px — kết quả là
- * đa số người dùng (laptop 13–15 inch) phải đọc chữ nhi nhí cả ngày. Nay:
- *   - Cỡ chuẩn đã thoải mái ngay trên laptop (nội dung bảng 15px).
- *   - Màn PC lớn (`2xl` ≥1536px) nở thêm một nấc cho nét căng.
+ * ─── NGUYÊN TẮC: TIẾT CHẾ ───
+ * Đây là màn hình tài chính. Nếu chữ nào cũng đậm và ô nào cũng có màu thì mắt
+ * không biết bám vào đâu — cái gì cũng nổi nghĩa là không gì nổi cả.
+ *
+ *   Sắc độ chữ chỉ có 3 bậc:
+ *     slate-900  số liệu & tiêu đề    (thông tin chính)
+ *     slate-600  số liệu phụ trợ      (giá vốn, phí — đọc khi cần)
+ *     slate-500  nhãn & chú thích     (biết là gì, không cần đọc kỹ)
+ *
+ *   MÀU (emerald/rose) chỉ dành cho LÃI–LỖ và CẢNH BÁO. Không tô trang trí.
+ *   ĐẬM (semibold) chỉ dành cho cột Lợi nhuận và số Hero. Không đậm tràn lan.
  */
 
-/** Tiêu đề trang trên thanh header — 24px, đậm */
+/** Tiêu đề trang trên thanh header — 20px */
 export const TEXT_PAGE_TITLE =
-  "text-2xl font-bold tracking-tight text-foreground";
+  "text-xl font-semibold tracking-tight text-slate-900";
 
-/** Nội dung chính / số liệu trong bảng — 15px → 16px */
-export const TEXT_BODY = "text-[15px] 2xl:text-base text-foreground";
-
-/** Dòng phụ (sub-info) xếp chồng dưới số liệu — 13px → 14px */
-export const TEXT_SUB = "text-[13px] 2xl:text-sm text-muted-foreground";
-
-/** Tiêu đề cột của bảng — 14px → 15px */
-export const TEXT_TABLE_HEAD =
-  "text-sm 2xl:text-[15px] font-semibold tracking-wide text-muted-foreground";
-
-/** Tiêu đề khối / thẻ số liệu — 13px → 14px, in hoa */
-export const TEXT_CARD_TITLE =
-  "text-[13px] 2xl:text-sm font-medium uppercase tracking-wide text-muted-foreground";
-
-/** Số lớn trên dashboard — 24px → 26px */
-export const TEXT_BIG_NUMBER =
-  "text-2xl 2xl:text-[26px] font-bold tracking-tight text-foreground";
+/** Nội dung chính / số liệu trong bảng — 14px, xám đen sắc nét */
+export const TEXT_BODY = "text-sm text-slate-900";
 
 /**
- * Số TỔNG trên thẻ chỉ số — 28px → 32px.
- * Đây là điểm neo thị giác (visual anchor) của mỗi khối: mắt phải bắt được
- * con số này trước tiên, nên nó to & đậm hơn hẳn TEXT_BIG_NUMBER.
+ * Số liệu PHỤ TRỢ trong bảng: giá vốn, phí sàn, chi phí Ads.
+ * Cố ý KHÔNG đậm — đây là số để đối chiếu, không phải kết luận.
+ */
+export const TEXT_NUMBER_MUTED = "text-sm font-normal text-slate-600";
+
+/**
+ * Số liệu KẾT LUẬN: cột Lợi nhuận cuối bảng.
+ * Chỗ duy nhất trong bảng được in đậm, để mắt lướt dọc là thấy ngay.
+ */
+export const TEXT_NUMBER_STRONG = "text-sm font-semibold";
+
+/** Dòng phụ (sub-info) xếp chồng dưới số liệu — 12px */
+export const TEXT_SUB = "text-xs text-slate-500";
+
+/** Tiêu đề cột của bảng — 12px in hoa, xám vừa */
+export const TEXT_TABLE_HEAD =
+  "text-xs font-medium uppercase tracking-wide text-slate-500";
+
+/** Nhãn của thẻ chỉ số — 12px in hoa, cùng cấp với tiêu đề cột bảng */
+export const TEXT_CARD_TITLE =
+  "text-xs font-medium uppercase tracking-wide text-slate-500";
+
+/** Số lớn trong thẻ phụ — 18px */
+export const TEXT_BIG_NUMBER =
+  "text-lg font-semibold tracking-tight text-slate-900";
+
+/**
+ * Số HERO trên thẻ chỉ số — 24px.
+ * Cố định một cỡ ở mọi màn hình: to hơn nữa thì thẻ trông "chềnh ềnh" và số
+ * tiền dài bị vỡ dòng ở khung hẹp.
  */
 export const TEXT_HERO_NUMBER =
-  "text-[26px] leading-tight xl:text-[28px] 2xl:text-[32px] font-bold tracking-tight text-foreground";
+  "text-2xl font-bold tracking-tight text-slate-900";
 
-/**
- * Khoảng đệm ô trong bảng — dòng một tầng nội dung cao ≈58px cho mắt có chỗ
- * nghỉ giữa các dòng, theo chuẩn bảng dữ liệu SaaS (Shopify/Stripe)
- */
-export const CELL_PADDING = "px-4 py-[17px]";
+/** Khoảng đệm ô trong bảng — dòng một tầng nội dung cao ≈56px */
+export const CELL_PADDING = "px-4 py-4";
 
-/**
- * Số TIỀN trong bảng — mọi con số tài chính phải IN ĐẬM để nổi khỏi chữ
- * thường; cột tiền luôn đi kèm text-right ở phía gọi.
- */
-export const TEXT_MONEY = "font-semibold";
+/** Màu chữ cho số dương/âm — dùng chung ở bảng và thẻ. */
+export const MONEY_POSITIVE = "text-emerald-600";
+export const MONEY_NEGATIVE = "text-rose-600";
+
+/** Dương → xanh ngọc, âm → đỏ đô. Trả về class màu cho số tiền. */
+export function moneyTone(value: number): string {
+  return value >= 0 ? MONEY_POSITIVE : MONEY_NEGATIVE;
+}

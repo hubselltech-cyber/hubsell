@@ -17,6 +17,7 @@ import {
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { Money } from "@/components/ui/money";
 import { Refreshing } from "@/components/refreshing";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { SkuCombobox } from "@/components/finance/sku-combobox";
@@ -47,7 +48,7 @@ import {
 } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { formatNumber, formatVND } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -415,8 +416,8 @@ export default function MappingsPage() {
                             </p>
                           </TableCell>
 
-                          <TableCell className="text-right font-semibold">
-                            {formatVND(r.price)}
+                          <TableCell className="text-right">
+                            <Money value={r.price} className="text-slate-900" />
                           </TableCell>
 
                           <TableCell>

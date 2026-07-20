@@ -24,7 +24,8 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      // Dải nền nhạt tách phần đầu bảng khỏi dữ liệu mà không cần kẻ đậm
+      className={cn("bg-slate-50/60 [&_tr]:border-b", className)}
       {...props}
     />
   )
@@ -58,7 +59,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "border-b border-slate-200/70 transition-colors hover:bg-slate-50/80 has-aria-expanded:bg-slate-50/80 data-[state=selected]:bg-slate-100",
         className
       )}
       {...props}

@@ -22,6 +22,14 @@ import {
 } from "@/components/channel-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Money } from "@/components/ui/money";
+import {
+  MONEY_NEGATIVE,
+  MONEY_POSITIVE,
+  TEXT_NUMBER_MUTED,
+  TEXT_SUB,
+} from "@/lib/typography";
+import { cn } from "@/lib/utils";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
@@ -46,7 +54,7 @@ import {
 } from "@/lib/api";
 import { canAccessFinance } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { formatNumber, formatDateTime } from "@/lib/format";
 
 export default function LossOrdersPage() {
   const router = useRouter();
@@ -154,7 +162,7 @@ export default function LossOrdersPage() {
             {lossCount > 0 && (
               <DashboardCard
                 title="Tổng tiền lỗ"
-                value={formatVND(totalLoss)}
+                value={<Money value={totalLoss} />}
                 icon={TrendingDown}
                 tone="negative"
                 featured /* ← chỉ số cốt lõi: chủ shop phải thấy ngay */
@@ -265,24 +273,33 @@ export default function LossOrdersPage() {
                             </p>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatVND(o.revenue)}
+                        <TableCell className="text-right">
+                          <Money value={o.revenue} className="text-slate-900" />
                         </TableCell>
-                        <TableCell className="text-right font-semibold text-muted-foreground">
-                          {o.platformFee > 0 ? `− ${formatVND(o.platformFee)}` : "—"}
-                          <span className="block text-xs">
-                            {o.isSettled ? "(quyết toán)" : "(tạm tính)"}
+                        <TableCell className="text-right">
+                          {o.platformFee > 0 ? (
+                            <Money
+                              value={o.platformFee}
+                              negative
+                              className={TEXT_NUMBER_MUTED}
+                            />
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                          <span className={cn(TEXT_SUB, "block")}>
+                            {o.isSettled ? "quyết toán" : "tạm tính"}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right font-semibold text-muted-foreground">
-                          {formatVND(o.cost)}
+                        <TableCell className="text-right">
+                          <Money value={o.cost} className={TEXT_NUMBER_MUTED} />
                         </TableCell>
                         <TableCell
-                          className={`text-right text-base font-bold ${
-                            o.isLoss ? "text-rose-600" : "text-emerald-600"
-                          }`}
+                          className={cn(
+                            "text-right font-semibold",
+                            o.isLoss ? MONEY_NEGATIVE : MONEY_POSITIVE
+                          )}
                         >
-                          {formatVND(o.profit)}
+                          <Money value={o.profit} />
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {formatDateTime(o.createdAt)}

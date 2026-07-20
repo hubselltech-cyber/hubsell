@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { Money } from "@/components/ui/money";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { Refreshing } from "@/components/refreshing";
@@ -60,7 +61,7 @@ import {
   shopOnlyName,
   type ChannelFilterValue,
 } from "@/components/channel-filter";
-import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { formatNumber, formatDateTime } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -789,8 +790,11 @@ export default function OrdersPage() {
                             </p>
                           </TableCell>
 
-                          <TableCell className="text-right font-semibold">
-                            {formatVND(o.totalAmount)}
+                          <TableCell className="text-right">
+                            <Money
+                              value={o.totalAmount}
+                              className="font-medium text-slate-900"
+                            />
                             <span className={cn(TEXT_SUB, "block")}>
                               {PAYMENT_META[o.paymentStatus]?.label ??
                                 o.paymentStatus}

@@ -17,6 +17,9 @@ import {
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
+import { Money } from "@/components/ui/money";
+import { MONEY_NEGATIVE, TEXT_NUMBER_MUTED } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
@@ -51,7 +54,7 @@ import {
   type ChannelFilterValue,
 } from "@/components/channel-filter";
 import { exportShippingDisputes } from "@/lib/excel";
-import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { formatNumber, formatDateTime } from "@/lib/format";
 
 const PAGE_SIZE = 20;
 
@@ -239,7 +242,7 @@ export default function ShippingAlertsPage() {
 
           <DashboardCard
             title="Tổng số tiền cần đòi lại"
-            value={formatVND(summary.totalDiscrepancy)}
+            value={<Money value={summary.totalDiscrepancy} />}
             icon={PackageCheck}
             tone="negative"
             featured /* ← chỉ số cốt lõi của trang đối soát ship */
@@ -335,14 +338,22 @@ export default function ShippingAlertsPage() {
                         <TableCell className="text-right text-muted-foreground">
                           {o.settledAt ? formatDateTime(o.settledAt) : "—"}
                         </TableCell>
-                        <TableCell className="text-right font-semibold text-muted-foreground">
-                          {formatVND(o.shippingFeeQuoted)}
+                        <TableCell className="text-right">
+                          <Money
+                            value={o.shippingFeeQuoted}
+                            className={TEXT_NUMBER_MUTED}
+                          />
                         </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatVND(o.shippingFeeActual)}
+                        <TableCell className="text-right">
+                          <Money
+                            value={o.shippingFeeActual}
+                            className={TEXT_NUMBER_MUTED}
+                          />
                         </TableCell>
-                        <TableCell className="text-right font-bold text-rose-600">
-                          {formatVND(o.discrepancy)}
+                        <TableCell
+                          className={cn("text-right font-semibold", MONEY_NEGATIVE)}
+                        >
+                          <Money value={o.discrepancy} />
                         </TableCell>
                         <TableCell className="text-center">
                           <span
