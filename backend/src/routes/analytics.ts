@@ -15,13 +15,20 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// GET /api/analytics — Báo cáo kinh doanh. ADMIN và SALES vào được, WAREHOUSE thì không.
+// GET /api/analytics — Báo cáo kinh doanh REALTIME cho trang Tổng quan.
+// ADMIN và SALES vào được, WAREHOUSE thì không.
 // Lọc theo ?from=&to=&channelId= — channelId là GIAN HÀNG cụ thể, không phải sàn.
-// Các chỉ số tính trên đơn có trạng thái DELIVERED (Đã giao):
-//   - Tổng Doanh thu  = tổng totalAmount                    (ADMIN + SALES)
-//   - Tổng Giá vốn    = Σ (số lượng đã bán × costPrice)      (chỉ ADMIN)
+//
+// HỆ QUY CHIẾU: đơn PHÁT SINH trong kỳ, trừ đơn HỦY (GMV dự kiến).
+// Chọn vậy thay vì chỉ đơn Đã giao vì đây là màn hình điều hành trong ngày:
+// vừa có đơn mới mà Doanh thu vẫn báo 0 thì chủ shop tưởng hệ thống hỏng.
+// Mọi chỉ số (doanh thu, giá vốn, phí sàn, lợi nhuận) cùng một hệ quy chiếu
+// để sơ đồ bóc tách trừ dọc ra đúng con số lợi nhuận — số liệu QUYẾT TOÁN
+// theo đơn Đã giao đã có trang Báo cáo dòng tiền lo.
+//   - Doanh thu       = Σ totalAmount đơn không hủy          (ADMIN + SALES)
+//   - Giá vốn         = Σ (số lượng đã trừ kho × costPrice)   (chỉ ADMIN)
 //     (dựa vào InventoryLog trừ kho gắn với đơn — đơn cũ không có log thì giá vốn = 0)
-//   - Lợi nhuận gộp   = Doanh thu − Giá vốn                  (chỉ ADMIN)
+//   - Lợi nhuận dự kiến = Doanh thu − Giá vốn − Phí sàn − Chi phí vận hành (chỉ ADMIN)
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
@@ -47,11 +54,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
         })()
       : undefined;
 
-    // 1) Toàn bộ đơn ĐÃ GIAO trong phạm vi đang xem
-    const delivered = await prisma.order.findMany({
+    // 1) Toàn bộ đơn PHÁT SINH trong kỳ, trừ đơn hủy
+    const activeOrders = await prisma.order.findMany({
       where: {
         channel: scope,
-        shippingStatus: "DELIVERED",
+        shippingStatus: { not: "CANCELLED" },
         createdAt: range,
       },
       select: {
@@ -62,7 +69,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       },
     });
 
-    const totalRevenue = delivered.reduce(
+    const totalRevenue = activeOrders.reduce(
       (sum, o) => sum + Number(o.totalAmount),
       0
     );
@@ -74,16 +81,16 @@ router.get("/", async (req: AuthRequest, res, next) => {
      * đúng một công thức với bên đó (src/order-fee.ts).
      */
     const totalPlatformFee = seesFinancials
-      ? delivered.reduce((sum, o) => sum + orderPlatformFee(o).fee, 0)
+      ? activeOrders.reduce((sum, o) => sum + orderPlatformFee(o).fee, 0)
       : 0;
 
-    // 2) Giá vốn: các log TRỪ kho thuộc những đơn đã giao.
+    // 2) Giá vốn: các log TRỪ kho thuộc những đơn đang tính.
     // Người không được xem tài chính thì bỏ hẳn truy vấn này — vừa khỏi tốn công
     // vừa chắc chắn không có đường nào rò con số ra ngoài.
-    const deliveredIds = delivered.map((o) => o.id);
-    const deductionLogs = seesFinancials && deliveredIds.length
+    const activeIds = activeOrders.map((o) => o.id);
+    const deductionLogs = seesFinancials && activeIds.length
       ? await prisma.inventoryLog.findMany({
-          where: { orderId: { in: deliveredIds }, changeQuantity: { lt: 0 } },
+          where: { orderId: { in: activeIds }, changeQuantity: { lt: 0 } },
           include: { product: { select: { costPrice: true } } },
         })
       : [];
@@ -127,16 +134,16 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const MAX_POINTS = 90;
     const revenueMap = new Map<string, number>();
     const dayOfOrder = new Map<string, string>(); // orderId → "yyyy-mm-dd"
-    for (const o of delivered) {
+    for (const o of activeOrders) {
       const key = toDateKey(o.createdAt);
       dayOfOrder.set(o.id, key);
       revenueMap.set(key, (revenueMap.get(key) ?? 0) + Number(o.totalAmount));
     }
 
     /*
-     * CHI PHÍ THEO NGÀY = giá vốn hàng bán trong ngày + chi phí vận hành ghi
-     * nhận trong ngày. Cùng công thức với chuỗi ở Báo cáo dòng tiền để hai biểu
-     * đồ không kể hai câu chuyện khác nhau.
+     * CHI PHÍ THEO NGÀY = giá vốn các đơn phát sinh trong ngày + chi phí vận
+     * hành ghi nhận trong ngày — cùng hệ quy chiếu GMV với chuỗi doanh thu
+     * ngay phía trên để hai cột trong biểu đồ so được với nhau.
      */
     const costMap = new Map<string, number>();
     const addCost = (key: string, amount: number) =>
@@ -234,7 +241,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
               _sum: { totalAmount: true },
               where: {
                 channel: scope,
-                shippingStatus: "DELIVERED",
+                shippingStatus: { not: "CANCELLED" },
                 createdAt: prevRange,
               },
             }),
@@ -287,7 +294,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // tab Network là đọc được nguyên số liệu.
     if (!seesFinancials) {
       res.json({
-        deliveredOrderCount: delivered.length,
+        activeOrderCount: activeOrders.length,
         totalRevenue,
         // Bỏ trường cost khỏi từng điểm — SALES chỉ được thấy đường doanh thu
         revenueByDay: revenueByDay.map(({ date, label, revenue }) => ({
@@ -305,7 +312,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
-      deliveredOrderCount: delivered.length,
+      activeOrderCount: activeOrders.length,
       totalRevenue,
       totalCost,
       totalPlatformFee,

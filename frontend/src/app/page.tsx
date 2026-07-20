@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Package,
@@ -72,16 +71,10 @@ import { CHANNEL_META } from "@/lib/channel-meta";
 import {
   ALL_CHANNELS,
   ChannelFilter,
-  shopLabel,
   type ChannelFilterValue,
 } from "@/components/channel-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
-import {
-  moneyTone,
-  MONEY_NEGATIVE,
-  MONEY_POSITIVE,
-  TEXT_SUB,
-} from "@/lib/typography";
+import { moneyTone, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 // Màu nền của từng sàn trên biểu đồ tròn
@@ -91,35 +84,6 @@ const CHANNEL_COLORS: Record<string, string> = {
   LAZADA: "#3b82f6",
   OFFLINE: "#a1a1aa",
 };
-
-// Pha màu với trắng theo tỷ lệ 0..1 (0 = giữ nguyên, 1 = trắng hoàn toàn)
-function lighten(hex: string, ratio: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const mix = (c: number) => Math.round(c + (255 - c) * ratio);
-  const r = mix((n >> 16) & 255);
-  const g = mix((n >> 8) & 255);
-  const b = mix(n & 255);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
-}
-
-/**
- * Màu cho từng GIAN HÀNG: giữ tông của sàn để nhìn là biết thuộc sàn nào, gian
- * thứ hai trở đi trên cùng sàn thì nhạt dần — nếu để cùng một màu thì hai gian
- * Shopee sẽ là hai lát bánh không phân biệt được.
- */
-function shopColors(
-  rows: { channelId: string; channelName: string }[]
-): Record<string, string> {
-  const seen: Record<string, number> = {};
-  const colors: Record<string, string> = {};
-  for (const r of rows) {
-    const index = seen[r.channelName] ?? 0;
-    seen[r.channelName] = index + 1;
-    const base = CHANNEL_COLORS[r.channelName] ?? "#8b5cf6";
-    colors[r.channelId] = index === 0 ? base : lighten(base, Math.min(index * 0.22, 0.66));
-  }
-  return colors;
-}
 
 const PAYMENT_META: Record<string, { label: string; className: string }> = {
   PAID: { label: "Đã thanh toán", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -154,12 +118,6 @@ function MetaBadge({
 /** Cỡ số Hero riêng của Dashboard — 4 thẻ trên một hàng nên nhỏ hơn mặc định. */
 const HERO_SIZE = "text-xl font-bold";
 
-/**
- * Ngưỡng an toàn của tỷ lệ chi phí/doanh thu (%).
- * Vượt mốc này nghĩa là cứ 100đ thu về đã mất hơn 80đ — biên còn lại quá mỏng
- * để hấp thụ đơn hoàn, đơn hủy hay một đợt tăng phí sàn.
- */
-const COST_RATIO_SAFE_LIMIT = 80;
 
 /** Một ô chỉ số tích luỹ dạng viên thuốc trên thanh trạng thái. */
 function StatusPill({
@@ -293,23 +251,18 @@ function DeltaChip({
   );
 }
 
-/** Một bước trong phễu vận hành — bấm vào là sang trang Đơn hàng đúng tab. */
+/** Một ô trạng thái trong phễu — thuần hiển thị để liếc nhanh, không bấm được. */
 function PipelineStep({
   label,
   count,
-  tab,
   countClassName,
 }: {
   label: string;
   count: number;
-  tab: string;
   countClassName?: string;
 }) {
   return (
-    <Link
-      href={`/orders?tab=${tab}`}
-      className="flex min-w-24 flex-col items-center gap-0.5 rounded-lg px-3 py-2 transition-colors hover:bg-slate-50"
-    >
+    <div className="flex min-w-24 flex-col items-center gap-0.5 px-3 py-2">
       <span
         className={cn(
           "text-lg font-semibold text-slate-900",
@@ -319,7 +272,7 @@ function PipelineStep({
         {formatNumber(count)}
       </span>
       <span className={cn(TEXT_SUB, "whitespace-nowrap")}>{label}</span>
-    </Link>
+    </div>
   );
 }
 
@@ -329,10 +282,10 @@ function PipelineStep({
  */
 function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }) {
   const steps = [
-    { key: "PENDING", label: "Chờ xác nhận", tab: "pending" },
-    { key: "PROCESSED", label: "Đang xử lý", tab: "processed" },
-    { key: "SHIPPING", label: "Đang giao", tab: "shipping" },
-    { key: "DELIVERED", label: "Thành công", tab: "delivered" },
+    { key: "PENDING", label: "Chờ xác nhận" },
+    { key: "PROCESSED", label: "Đang xử lý" },
+    { key: "SHIPPING", label: "Đang giao" },
+    { key: "DELIVERED", label: "Thành công" },
   ] as const;
   return (
     <Card>
@@ -342,7 +295,7 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
             {i > 0 && (
               <ChevronRight className="size-4 shrink-0 text-slate-300" />
             )}
-            <PipelineStep label={st.label} count={pipeline[st.key]} tab={st.tab} />
+            <PipelineStep label={st.label} count={pipeline[st.key]} />
           </div>
         ))}
 
@@ -351,13 +304,11 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
           <PipelineStep
             label="⚠️ Hoàn / Trả hàng"
             count={pipeline.RETURNING}
-            tab="cancelled"
             countClassName={pipeline.RETURNING > 0 ? "text-amber-600" : ""}
           />
           <PipelineStep
             label="🚫 Đơn hủy"
             count={pipeline.CANCELLED}
-            tab="cancelled"
             countClassName={pipeline.CANCELLED > 0 ? "text-rose-600" : ""}
           />
         </div>
@@ -367,16 +318,23 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
 }
 
 /**
- * TỶ TRỌNG KÊNH BÁN — thanh xếp chồng ngang + danh sách từng gian hàng.
- * Chọn thanh ngang thay vì bánh tròn: đọc % và số tiền chính xác hơn, và
- * không chiếm chiều cao vô ích khi chỉ có 3–5 gian.
+ * TỶ TRỌNG KÊNH BÁN — thanh xếp chồng ngang + danh sách theo SÀN.
+ * Gom về cấp nền tảng (Shopee, TikTok…) thay vì xé lẻ từng gian hàng: đây là
+ * khối liếc nhanh, hai gian Shopee cộng làm một là đủ; muốn soi từng gian đã
+ * có bộ lọc gian hàng ở đầu trang.
  */
 function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
-  const rows = [...analytics.ordersByChannel].sort(
-    (a, b) => b.revenue - a.revenue
-  );
+  const byPlatform = new Map<string, { revenue: number; count: number }>();
+  for (const r of analytics.ordersByChannel) {
+    const cur = byPlatform.get(r.channelName) ?? { revenue: 0, count: 0 };
+    cur.revenue += r.revenue;
+    cur.count += r.count;
+    byPlatform.set(r.channelName, cur);
+  }
+  const rows = [...byPlatform.entries()]
+    .map(([channelName, v]) => ({ channelName, ...v }))
+    .sort((a, b) => b.revenue - a.revenue);
   const total = rows.reduce((sum, r) => sum + r.revenue, 0);
-  const colors = shopColors(rows);
 
   return (
     <Card>
@@ -397,10 +355,10 @@ function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
             <div className="flex h-3 w-full overflow-hidden rounded-full">
               {rows.map((r) => (
                 <div
-                  key={r.channelId}
+                  key={r.channelName}
                   style={{
                     width: `${Math.max((r.revenue / total) * 100, 1)}%`,
-                    backgroundColor: colors[r.channelId],
+                    backgroundColor: CHANNEL_COLORS[r.channelName] ?? "#8b5cf6",
                   }}
                 />
               ))}
@@ -411,15 +369,19 @@ function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
                 const pctShare = Math.round((r.revenue / total) * 1000) / 10;
                 return (
                   <div
-                    key={r.channelId}
+                    key={r.channelName}
                     className="flex items-center gap-3 border-b border-slate-100 py-2.5 last:border-b-0"
                   >
                     <span
                       className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: colors[r.channelId] }}
+                      style={{
+                        backgroundColor:
+                          CHANNEL_COLORS[r.channelName] ?? "#8b5cf6",
+                      }}
                     />
                     <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
-                      {shopLabel(r.channelName as ChannelName, r.shopName)}
+                      {CHANNEL_META[r.channelName as ChannelName]?.label ??
+                        r.channelName}
                     </span>
                     <span className={cn(TEXT_SUB, "shrink-0")}>
                       {formatNumber(r.count)} đơn
@@ -516,19 +478,16 @@ export default function DashboardPage() {
       ? Math.round((part / analytics.totalRevenue) * 1000) / 10
       : undefined;
 
-  /*
-   * Tỷ lệ chi phí / doanh thu: gồm TOÀN BỘ tiền đi ra (giá vốn + phí sàn +
-   * chi phí vận hành). Doanh thu bằng 0 thì tỷ lệ vô nghĩa → null để hiện "—".
-   */
+  // TOÀN BỘ tiền đi ra trong kỳ: giá vốn + phí sàn + chi phí vận hành
+  const totalExpense = analytics
+    ? analytics.totalCost +
+      analytics.totalPlatformFee +
+      analytics.totalOperatingExpense
+    : 0;
+  // Tỷ trọng chi phí trên doanh thu — doanh thu bằng 0 thì tỷ lệ vô nghĩa → null
   const costRatio =
     analytics && seesFinancials && analytics.totalRevenue > 0
-      ? Math.round(
-          ((analytics.totalCost +
-            analytics.totalPlatformFee +
-            analytics.totalOperatingExpense) /
-            analytics.totalRevenue) *
-            1000
-        ) / 10
+      ? Math.round((totalExpense / analytics.totalRevenue) * 1000) / 10
       : null;
 
   // Nhãn động theo phím nhanh đang chọn: xem "Hôm nay" thì thẻ ghi đúng như
@@ -635,8 +594,8 @@ export default function DashboardPage() {
             {seesFinancials ? "Báo cáo tài chính" : "Báo cáo bán hàng"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Tính trên {analytics ? formatNumber(analytics.deliveredOrderCount) : "—"}{" "}
-            đơn hàng có trạng thái <b>Đã giao</b> trong khoảng{" "}
+            Tính trên {analytics ? formatNumber(analytics.activeOrderCount) : "—"}{" "}
+            đơn phát sinh (không tính đơn hủy) trong khoảng{" "}
             <b>{formatRangeLabel(range).toLowerCase()}</b>.
           </p>
         </div>
@@ -681,26 +640,16 @@ export default function DashboardPage() {
           />
           {seesFinancials && (
             <>
-              {/*
-               * TỶ LỆ CHI PHÍ / DOANH THU — mỗi 100đ thu về thì bao nhiêu đồng
-               * đội nón ra đi (giá vốn + phí sàn + chi phí vận hành).
-               * Ngưỡng an toàn 80%: dưới ngưỡng chữ xanh, chạm hoặc vượt là đỏ
-               * vì biên còn lại quá mỏng để chịu thêm rủi ro hoàn/hủy.
-               */}
               <StatCard
-                label="Tỷ lệ Chi phí / Doanh thu"
-                value={
-                  costRatio === null ? "—" : `${costRatio}%`
-                }
+                label="Tổng Chi phí"
+                value={analytics ? <Money value={totalExpense} /> : "—"}
                 icon={Receipt}
-                valueClassName={cn(
-                  HERO_SIZE,
-                  costRatio !== null &&
-                    (costRatio < COST_RATIO_SAFE_LIMIT
-                      ? MONEY_POSITIVE
-                      : MONEY_NEGATIVE)
-                )}
-                subtitle={`Giá vốn + phí sàn + vận hành · ngưỡng an toàn ${COST_RATIO_SAFE_LIMIT}%`}
+                valueClassName={HERO_SIZE}
+                subtitle={
+                  costRatio === null
+                    ? "Giá vốn + phí sàn + chi phí vận hành"
+                    : `Chiếm ${costRatio}% doanh thu`
+                }
               />
               {(() => {
                 const net = analytics?.netProfit ?? 0;
@@ -748,8 +697,8 @@ export default function DashboardPage() {
               </CardTitle>
               <CardDescription>
                 {seesFinancials
-                  ? "Chi phí mỗi ngày = giá vốn hàng đã giao + chi phí vận hành phát sinh trong ngày."
-                  : "Doanh thu các đơn Đã giao theo từng ngày."}
+                  ? "Chi phí mỗi ngày = giá vốn đơn phát sinh + chi phí vận hành ghi nhận trong ngày."
+                  : "Giá trị đơn phát sinh theo từng ngày (không tính đơn hủy)."}
               </CardDescription>
             </CardHeader>
             <CardContent>

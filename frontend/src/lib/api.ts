@@ -352,7 +352,8 @@ export function fetchSkuPnl(range?: DateRange, channel?: ChannelFilterQuery) {
 }
 
 export interface AnalyticsResponse {
-  deliveredOrderCount: number;
+  /** Số đơn phát sinh trong kỳ đang tính doanh thu (không gồm đơn hủy). */
+  activeOrderCount: number;
   totalRevenue: number;
   totalCost: number;
   /** Phí sàn giữ lại trên các đơn Đã giao. Vắng mặt với SALES. */
