@@ -20,12 +20,12 @@ export const TEXT_PAGE_TITLE =
 /** Nội dung chính / số liệu trong bảng — 15px → 16px */
 export const TEXT_BODY = "text-[15px] 2xl:text-base text-foreground";
 
-/** Dòng phụ (sub-info) xếp chồng dưới số liệu — 12px → 13px */
-export const TEXT_SUB = "text-xs 2xl:text-[13px] text-muted-foreground";
+/** Dòng phụ (sub-info) xếp chồng dưới số liệu — 13px → 14px */
+export const TEXT_SUB = "text-[13px] 2xl:text-sm text-muted-foreground";
 
-/** Tiêu đề cột của bảng — 13px → 14px */
+/** Tiêu đề cột của bảng — 14px → 15px */
 export const TEXT_TABLE_HEAD =
-  "text-[13px] 2xl:text-sm font-semibold tracking-wide text-muted-foreground";
+  "text-sm 2xl:text-[15px] font-semibold tracking-wide text-muted-foreground";
 
 /** Tiêu đề khối / thẻ số liệu — 13px → 14px, in hoa */
 export const TEXT_CARD_TITLE =
@@ -41,10 +41,16 @@ export const TEXT_BIG_NUMBER =
  * con số này trước tiên, nên nó to & đậm hơn hẳn TEXT_BIG_NUMBER.
  */
 export const TEXT_HERO_NUMBER =
-  "text-[28px] leading-tight 2xl:text-[32px] font-bold tracking-tight text-foreground";
+  "text-[26px] leading-tight xl:text-[28px] 2xl:text-[32px] font-bold tracking-tight text-foreground";
 
 /**
- * Khoảng đệm ô trong bảng — dòng một tầng nội dung cao ≈56px cho mắt có chỗ
+ * Khoảng đệm ô trong bảng — dòng một tầng nội dung cao ≈58px cho mắt có chỗ
  * nghỉ giữa các dòng, theo chuẩn bảng dữ liệu SaaS (Shopify/Stripe)
  */
-export const CELL_PADDING = "px-4 py-4";
+export const CELL_PADDING = "px-4 py-[17px]";
+
+/**
+ * Số TIỀN trong bảng — mọi con số tài chính phải IN ĐẬM để nổi khỏi chữ
+ * thường; cột tiền luôn đi kèm text-right ở phía gọi.
+ */
+export const TEXT_MONEY = "font-semibold";

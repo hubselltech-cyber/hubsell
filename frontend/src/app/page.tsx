@@ -117,16 +117,16 @@ function shopColors(
 }
 
 const PAYMENT_META: Record<string, { label: string; className: string }> = {
-  PAID: { label: "Đã thanh toán", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  UNPAID: { label: "Chưa thanh toán", className: "bg-amber-100 text-amber-700 border-amber-200" },
-  REFUNDED: { label: "Đã hoàn tiền", className: "bg-rose-100 text-rose-700 border-rose-200" },
+  PAID: { label: "Đã thanh toán", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  UNPAID: { label: "Chưa thanh toán", className: "bg-amber-50 text-amber-700 border-amber-200" },
+  REFUNDED: { label: "Đã hoàn tiền", className: "bg-rose-50 text-rose-700 border-rose-200" },
 };
 
 const SHIPPING_META: Record<string, { label: string; className: string }> = {
-  DELIVERED: { label: "Đã giao", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  SHIPPING: { label: "Đang giao", className: "bg-sky-100 text-sky-700 border-sky-200" },
-  PENDING: { label: "Chờ xử lý", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
-  CANCELLED: { label: "Đã hủy", className: "bg-rose-100 text-rose-700 border-rose-200" },
+  DELIVERED: { label: "Đã giao", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  SHIPPING: { label: "Đang giao", className: "bg-sky-50 text-sky-700 border-sky-200" },
+  PENDING: { label: "Chờ xử lý", className: "bg-zinc-50 text-zinc-600 border-zinc-200" },
+  CANCELLED: { label: "Đã hủy", className: "bg-rose-50 text-rose-700 border-rose-200" },
 };
 
 function MetaBadge({
@@ -243,10 +243,10 @@ export default function DashboardPage() {
             <CardContent className="flex items-start gap-3 p-5">
               <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
               <div className="space-y-1 text-sm">
-                <p className="font-medium text-amber-800">{error}</p>
+                <p className="font-medium text-amber-700">{error}</p>
                 <p className="text-amber-700">
                   Bấm đúp file{" "}
-                  <code className="rounded bg-amber-100 px-1">start-backend.bat</code>{" "}
+                  <code className="rounded bg-amber-50 px-1">start-backend.bat</code>{" "}
                   trong thư mục dự án, sau đó bấm “Làm mới”.
                 </p>
               </div>
@@ -348,7 +348,7 @@ export default function DashboardPage() {
 
         {/* Chi phí hoạt động + Lợi nhuận thuần — chỉ chủ shop */}
         {seesFinancials && analytics?.operatingExpenseIsShopWide && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             Đang lọc theo một gian hàng. Chi phí hoạt động (mặt bằng, lương,
             marketing…) được ghi nhận ở cấp toàn shop nên vẫn là con số của cả
             shop — Lợi nhuận thuần bên dưới{" "}
@@ -540,7 +540,7 @@ export default function DashboardPage() {
                           fallback={o.shippingStatus}
                         />
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right font-semibold">
                         {formatVND(o.totalAmount)}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">

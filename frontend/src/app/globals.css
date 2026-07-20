@@ -129,8 +129,8 @@
   body {
     @apply bg-background text-foreground;
     /* Khoảng thở tối thiểu cho chữ — các cỡ chữ tuỳ biến (text-[15px]…) không
-       mang line-height riêng nên đều thừa hưởng mức 1.5 này */
-    line-height: 1.5;
+       mang line-height riêng nên đều thừa hưởng mức 1.6 này */
+    line-height: 1.6;
   }
   html {
     @apply font-sans;

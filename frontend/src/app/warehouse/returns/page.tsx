@@ -65,19 +65,19 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
 const STATUS_META: Record<string, { label: string; className: string }> = {
   AWAITING: {
     label: "Chờ về tay",
-    className: "bg-amber-100 text-amber-800 border-amber-200",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
   },
   RECEIVED_INTACT: {
     label: "Hoàn thành công",
-    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   DAMAGED: {
     label: "Chờ khiếu nại sàn",
-    className: "bg-rose-100 text-rose-700 border-rose-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
   },
   CLAIM_SETTLED: {
     label: "Đã đền bù",
-    className: "bg-sky-100 text-sky-700 border-sky-200",
+    className: "bg-sky-50 text-sky-700 border-sky-200",
   },
   WRITTEN_OFF: {
     label: "Hao hụt / Thất thoát",
@@ -381,7 +381,7 @@ export default function WarehouseReturnsPage() {
                             index % 2 === 1 && "bg-muted/40",
                             // Đơn quá hạn nhuộm hồng để nhìn phát thấy ngay
                             o.agingLevel === "overdue" &&
-                              "bg-rose-50 hover:bg-rose-100"
+                              "bg-rose-50 hover:bg-rose-50"
                           )}
                         >
                           <TableCell>

@@ -62,15 +62,15 @@ const STATUS_META: Record<
 > = {
   CHO_KHIEU_NAI: {
     label: "Chờ khiếu nại",
-    className: "bg-amber-100 text-amber-800 border-amber-300",
+    className: "bg-amber-50 text-amber-700 border-amber-300",
   },
   DANG_KHIEU_NAI: {
     label: "Đang khiếu nại",
-    className: "bg-sky-100 text-sky-800 border-sky-300",
+    className: "bg-sky-50 text-sky-800 border-sky-300",
   },
   DA_DOI_SOAT: {
     label: "Đã đối soát",
-    className: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    className: "bg-emerald-50 text-emerald-800 border-emerald-300",
   },
 };
 
@@ -288,7 +288,7 @@ export default function ShippingAlertsPage() {
               </p>
             ) : items.length === 0 ? (
               <div className="py-14 text-center">
-                <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-teal-100">
+                <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-teal-50">
                   <CheckCircle2 className="size-9 text-teal-600" />
                 </div>
                 <p className="text-lg font-semibold text-teal-700">
@@ -308,7 +308,7 @@ export default function ShippingAlertsPage() {
                     <TableHead className="text-right">Phí dự kiến</TableHead>
                     <TableHead className="text-right">Phí thực tế</TableHead>
                     <TableHead className="text-right">Chênh lệch</TableHead>
-                    <TableHead>Trạng thái</TableHead>
+                    <TableHead className="text-center">Trạng thái</TableHead>
                     <TableHead className="text-center">Thao tác</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -335,16 +335,16 @@ export default function ShippingAlertsPage() {
                         <TableCell className="text-right text-muted-foreground">
                           {o.settledAt ? formatDateTime(o.settledAt) : "—"}
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
+                        <TableCell className="text-right font-semibold text-muted-foreground">
                           {formatVND(o.shippingFeeQuoted)}
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-right font-semibold">
                           {formatVND(o.shippingFeeActual)}
                         </TableCell>
                         <TableCell className="text-right font-bold text-rose-600">
                           {formatVND(o.discrepancy)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <span
                             className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${st.className}`}
                           >

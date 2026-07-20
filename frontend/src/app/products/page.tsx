@@ -145,7 +145,7 @@ export default function ProductsPage() {
             columnHelper.accessor("costPrice", {
               header: () => <div className="text-right">Giá vốn</div>,
               cell: (info) => (
-                <div className="text-right text-muted-foreground">
+                <div className="text-right font-semibold text-muted-foreground">
                   {formatVND(info.getValue() ?? 0)}
                 </div>
               ),
@@ -155,7 +155,7 @@ export default function ProductsPage() {
       columnHelper.accessor("sellingPrice", {
         header: () => <div className="text-right">Giá bán</div>,
         cell: (info) => (
-          <div className="text-right font-medium">{formatVND(info.getValue())}</div>
+          <div className="text-right font-semibold">{formatVND(info.getValue())}</div>
         ),
       }),
       columnHelper.accessor("quantityInStock", {
@@ -168,10 +168,10 @@ export default function ProductsPage() {
                 className={cn(
                   "inline-flex min-w-12 items-center justify-center rounded-full border px-2.5 py-0.5 text-sm font-semibold",
                   qty === 0
-                    ? "border-rose-200 bg-rose-100 text-rose-700"
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
                     : qty < LOW_STOCK_THRESHOLD
-                      ? "border-amber-200 bg-amber-100 text-amber-700"
-                      : "border-emerald-200 bg-emerald-100 text-emerald-700"
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
                 )}
               >
                 {formatNumber(qty)}

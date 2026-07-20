@@ -48,11 +48,11 @@ export const EXPENSE_CATEGORY_META: Record<
   ExpenseCategory,
   { label: string; className: string }
 > = {
-  RENT: { label: "Mặt bằng", className: "bg-blue-100 text-blue-700 border-blue-200" },
-  SALARY: { label: "Nhân viên", className: "bg-violet-100 text-violet-700 border-violet-200" },
-  PACKAGING: { label: "Đóng gói", className: "bg-amber-100 text-amber-700 border-amber-200" },
-  ADS: { label: "Quảng cáo", className: "bg-rose-100 text-rose-700 border-rose-200" },
-  OTHER: { label: "Khác", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
+  RENT: { label: "Mặt bằng", className: "bg-blue-50 text-blue-700 border-blue-200" },
+  SALARY: { label: "Nhân viên", className: "bg-violet-50 text-violet-700 border-violet-200" },
+  PACKAGING: { label: "Đóng gói", className: "bg-amber-50 text-amber-700 border-amber-200" },
+  ADS: { label: "Quảng cáo", className: "bg-rose-50 text-rose-700 border-rose-200" },
+  OTHER: { label: "Khác", className: "bg-zinc-50 text-zinc-600 border-zinc-200" },
 };
 
 const CATEGORIES: ExpenseCategory[] = ["RENT", "SALARY", "PACKAGING", "ADS", "OTHER"];

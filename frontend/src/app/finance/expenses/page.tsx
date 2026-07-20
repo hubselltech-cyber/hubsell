@@ -72,11 +72,11 @@ import { formatVND, formatDateTime } from "@/lib/format";
 const TYPE_META: Record<ExpenseType, { label: string; className: string }> = {
   FIXED: {
     label: "Cố định",
-    className: "bg-blue-100 text-blue-700 border-blue-200",
+    className: "bg-blue-50 text-blue-700 border-blue-200",
   },
   VARIABLE: {
     label: "Biến đổi",
-    className: "bg-amber-100 text-amber-700 border-amber-200",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
   },
 };
 

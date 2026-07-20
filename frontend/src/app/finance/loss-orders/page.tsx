@@ -265,16 +265,16 @@ export default function LossOrdersPage() {
                             </p>
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right font-semibold">
                           {formatVND(o.revenue)}
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
+                        <TableCell className="text-right font-semibold text-muted-foreground">
                           {o.platformFee > 0 ? `− ${formatVND(o.platformFee)}` : "—"}
                           <span className="block text-xs">
                             {o.isSettled ? "(quyết toán)" : "(tạm tính)"}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
+                        <TableCell className="text-right font-semibold text-muted-foreground">
                           {formatVND(o.cost)}
                         </TableCell>
                         <TableCell

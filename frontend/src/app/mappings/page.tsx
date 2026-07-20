@@ -415,7 +415,7 @@ export default function MappingsPage() {
                             </p>
                           </TableCell>
 
-                          <TableCell className="text-right font-medium">
+                          <TableCell className="text-right font-semibold">
                             {formatVND(r.price)}
                           </TableCell>
 

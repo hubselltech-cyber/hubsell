@@ -480,7 +480,7 @@ export default function StaffPage() {
             {staff.map((s) => (
               <Card key={s.id}>
                 <CardContent className="flex flex-wrap items-center gap-4 p-4">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
                     <UserRound className="size-5" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -503,12 +503,12 @@ export default function StaffPage() {
                   {/* Phạm vi gian hàng — kho vốn thấy hết nên không liệt kê */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {s.role === "WAREHOUSE" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
                         <ShieldCheck className="size-3" />
                         Tất cả gian hàng
                       </span>
                     ) : s.allowedChannelIds.length === 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
                         <ShieldCheck className="size-3" />
                         Chưa phân công gian nào
                       </span>
@@ -518,7 +518,7 @@ export default function StaffPage() {
                         return label ? (
                           <span
                             key={id}
-                            className="inline-flex items-center rounded-full border border-sky-200 bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-700"
+                            className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700"
                           >
                             {label}
                           </span>

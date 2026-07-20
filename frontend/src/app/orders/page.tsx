@@ -68,40 +68,40 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
-  PENDING: { label: "Chờ xử lý", className: "bg-zinc-100 text-zinc-600 border-zinc-200" },
+  PENDING: { label: "Chờ xử lý", className: "bg-zinc-50 text-zinc-600 border-zinc-200" },
   PROCESSED: {
     label: "Đã xử lý",
-    className: "bg-violet-100 text-violet-700 border-violet-200",
+    className: "bg-violet-50 text-violet-700 border-violet-200",
   },
-  SHIPPING: { label: "Đang giao", className: "bg-sky-100 text-sky-700 border-sky-200" },
-  DELIVERED: { label: "Đã giao", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  CANCELLED: { label: "Đã hủy", className: "bg-rose-100 text-rose-700 border-rose-200" },
+  SHIPPING: { label: "Đang giao", className: "bg-sky-50 text-sky-700 border-sky-200" },
+  DELIVERED: { label: "Đã giao", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  CANCELLED: { label: "Đã hủy", className: "bg-rose-50 text-rose-700 border-rose-200" },
 };
 
 /** Nhãn tình trạng hàng hoàn — chỉ hiện với đơn thực sự có hoàn (khác NONE) */
 const RETURN_META: Record<string, { label: string; className: string }> = {
   AWAITING: {
     label: "Chờ nhận hàng hoàn",
-    className: "bg-amber-100 text-amber-800 border-amber-200",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
   },
   RECEIVED_INTACT: {
     label: "Đã nhận · nguyên vẹn",
-    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   DAMAGED: {
     label: "Chờ khiếu nại sàn",
-    className: "bg-rose-100 text-rose-700 border-rose-200",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
   },
   CLAIM_SETTLED: {
     label: "Đã được đền",
-    className: "bg-sky-100 text-sky-700 border-sky-200",
+    className: "bg-sky-50 text-sky-700 border-sky-200",
   },
 };
 
 const PAYMENT_META: Record<string, { label: string; className: string }> = {
-  PAID: { label: "Đã thanh toán", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  UNPAID: { label: "Chưa thanh toán", className: "bg-amber-100 text-amber-700 border-amber-200" },
-  REFUNDED: { label: "Đã hoàn tiền", className: "bg-rose-100 text-rose-700 border-rose-200" },
+  PAID: { label: "Đã thanh toán", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  UNPAID: { label: "Chưa thanh toán", className: "bg-amber-50 text-amber-700 border-amber-200" },
+  REFUNDED: { label: "Đã hoàn tiền", className: "bg-rose-50 text-rose-700 border-rose-200" },
 };
 
 function MetaBadge({
@@ -214,7 +214,7 @@ function UpdateStatusDialog({
           </div>
 
           {newStatus === "CANCELLED" && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <p>
                 Hủy đơn sẽ <b>tự động cộng hoàn lại tồn kho</b> cho các sản phẩm
@@ -706,7 +706,7 @@ export default function OrdersPage() {
                       <TableHead>Sản phẩm</TableHead>
                       <TableHead>Vận chuyển</TableHead>
                       <TableHead className="text-right">Tổng tiền</TableHead>
-                      <TableHead>Trạng thái</TableHead>
+                      <TableHead className="text-center">Trạng thái</TableHead>
                       <TableHead className="text-center">Thao tác</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -789,7 +789,7 @@ export default function OrdersPage() {
                             </p>
                           </TableCell>
 
-                          <TableCell className="text-right font-medium">
+                          <TableCell className="text-right font-semibold">
                             {formatVND(o.totalAmount)}
                             <span className={cn(TEXT_SUB, "block")}>
                               {PAYMENT_META[o.paymentStatus]?.label ??
@@ -797,7 +797,7 @@ export default function OrdersPage() {
                             </span>
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="text-center">
                             <MetaBadge
                               meta={STATUS_META[o.shippingStatus]}
                               fallback={o.shippingStatus}

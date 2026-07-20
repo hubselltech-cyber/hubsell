@@ -7,11 +7,11 @@ export const CHANNEL_META: Record<
 > = {
   SHOPEE: {
     label: "Shopee",
-    className: "bg-orange-100 text-orange-700 border-orange-200",
+    className: "bg-orange-50 text-orange-700 border-orange-200",
   },
   LAZADA: {
     label: "Lazada",
-    className: "bg-blue-100 text-blue-700 border-blue-200",
+    className: "bg-blue-50 text-blue-700 border-blue-200",
   },
   TIKTOK: {
     label: "TikTok",
@@ -19,6 +19,6 @@ export const CHANNEL_META: Record<
   },
   OFFLINE: {
     label: "Offline",
-    className: "bg-zinc-100 text-zinc-700 border-zinc-200",
+    className: "bg-zinc-50 text-zinc-700 border-zinc-200",
   },
 };

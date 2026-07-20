@@ -427,12 +427,12 @@ export function SkuPnlTable({
                           )}
                         </TableCell>
                         <TableCell
-                          className={cn(CELL_PAD, "text-right text-muted-foreground")}
+                          className={cn(CELL_PAD, "text-right font-semibold text-muted-foreground")}
                         >
                           {row.cogs > 0 ? `− ${formatVND(row.cogs)}` : "—"}
                         </TableCell>
                         <TableCell
-                          className={cn(CELL_PAD, "text-right text-muted-foreground")}
+                          className={cn(CELL_PAD, "text-right font-semibold text-muted-foreground")}
                         >
                           {row.allocatedFee > 0
                             ? `− ${formatVND(row.allocatedFee)}`
@@ -442,7 +442,7 @@ export function SkuPnlTable({
                         <TableCell className={cn(CELL_PAD, "text-right")}>
                           <span
                             className={cn(
-                              "block",
+                              "block font-semibold",
                               be?.isOverspending
                                 ? "font-semibold text-rose-600"
                                 : "text-muted-foreground"

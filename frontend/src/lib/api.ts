@@ -146,19 +146,19 @@ export const ROLE_META: Record<
   ADMIN: {
     label: "Chủ shop",
     description: "Toàn quyền: mọi gian hàng, mọi báo cáo tài chính.",
-    className: "bg-violet-100 text-violet-700 border-violet-200",
+    className: "bg-violet-50 text-violet-700 border-violet-200",
   },
   SALES: {
     label: "Nhân viên vận hành",
     description:
       "Chỉ xử lý đơn và xem doanh thu của những gian hàng được phân công. Không thấy giá vốn, lợi nhuận hay chi phí.",
-    className: "bg-sky-100 text-sky-700 border-sky-200",
+    className: "bg-sky-50 text-sky-700 border-sky-200",
   },
   WAREHOUSE: {
     label: "Nhân viên kho",
     description:
       "Thấy đơn của TẤT CẢ gian hàng để nhặt và đóng gói. Không vào được mục Tài chính và không thấy giá vốn.",
-    className: "bg-amber-100 text-amber-800 border-amber-200",
+    className: "bg-amber-50 text-amber-700 border-amber-200",
   },
 };
 
