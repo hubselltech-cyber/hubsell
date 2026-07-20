@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Package,
@@ -9,8 +10,8 @@ import {
   Wallet,
   RefreshCw,
   AlertTriangle,
+  ChevronRight,
   TrendingUp,
-  Coins,
   Receipt,
   Scale,
   type LucideIcon,
@@ -19,10 +20,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -36,8 +33,9 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
 import {
-  defaultRange,
   formatRangeLabel,
+  matchPreset,
+  RANGE_PRESETS,
   type DateRange,
 } from "@/lib/date-range";
 import { toneBySign } from "@/components/dashboard/dashboard-card";
@@ -78,7 +76,12 @@ import {
   type ChannelFilterValue,
 } from "@/components/channel-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
-import { moneyTone, TEXT_SUB } from "@/lib/typography";
+import {
+  moneyTone,
+  MONEY_NEGATIVE,
+  MONEY_POSITIVE,
+  TEXT_SUB,
+} from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 // Màu nền của từng sàn trên biểu đồ tròn
@@ -150,6 +153,13 @@ function MetaBadge({
 
 /** Cỡ số Hero riêng của Dashboard — 4 thẻ trên một hàng nên nhỏ hơn mặc định. */
 const HERO_SIZE = "text-xl font-bold";
+
+/**
+ * Ngưỡng an toàn của tỷ lệ chi phí/doanh thu (%).
+ * Vượt mốc này nghĩa là cứ 100đ thu về đã mất hơn 80đ — biên còn lại quá mỏng
+ * để hấp thụ đơn hoàn, đơn hủy hay một đợt tăng phí sàn.
+ */
+const COST_RATIO_SAFE_LIMIT = 80;
 
 /** Một ô chỉ số tích luỹ dạng viên thuốc trên thanh trạng thái. */
 function StatusPill({
@@ -244,6 +254,194 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
   );
 }
 
+/**
+ * NHÃN TĂNG/GIẢM so với kỳ trước liền kề.
+ * previous = null nghĩa là đang xem toàn bộ lịch sử — không có kỳ trước để so.
+ */
+function DeltaChip({
+  current,
+  previous,
+  compareLabel,
+}: {
+  current: number;
+  previous: number | null | undefined;
+  compareLabel: string;
+}) {
+  if (previous == null) return null;
+  // Kỳ trước bằng 0 thì mọi phép chia % đều vô nghĩa — nói thẳng bằng chữ
+  if (previous === 0) {
+    return (
+      <span className={TEXT_SUB}>
+        {current > 0 ? `Kỳ trước: 0 · ${compareLabel}` : `Bằng ${compareLabel}`}
+      </span>
+    );
+  }
+  const pct = Math.round(((current - previous) / previous) * 1000) / 10;
+  const up = pct >= 0;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span
+        className={cn(
+          "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium",
+          up ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+        )}
+      >
+        {up ? "▲" : "▼"} {Math.abs(pct)}%
+      </span>
+      <span className={TEXT_SUB}>{compareLabel}</span>
+    </span>
+  );
+}
+
+/** Một bước trong phễu vận hành — bấm vào là sang trang Đơn hàng đúng tab. */
+function PipelineStep({
+  label,
+  count,
+  tab,
+  countClassName,
+}: {
+  label: string;
+  count: number;
+  tab: string;
+  countClassName?: string;
+}) {
+  return (
+    <Link
+      href={`/orders?tab=${tab}`}
+      className="flex min-w-24 flex-col items-center gap-0.5 rounded-lg px-3 py-2 transition-colors hover:bg-slate-50"
+    >
+      <span
+        className={cn(
+          "text-lg font-semibold text-slate-900",
+          countClassName
+        )}
+      >
+        {formatNumber(count)}
+      </span>
+      <span className={cn(TEXT_SUB, "whitespace-nowrap")}>{label}</span>
+    </Link>
+  );
+}
+
+/**
+ * PHỄU VẬN HÀNH ĐƠN HÀNG — đọc từ trái sang phải theo vòng đời đơn,
+ * hai ô cảnh báo (hoàn / hủy) tách riêng bên phải.
+ */
+function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }) {
+  const steps = [
+    { key: "PENDING", label: "Chờ xác nhận", tab: "pending" },
+    { key: "PROCESSED", label: "Đang xử lý", tab: "processed" },
+    { key: "SHIPPING", label: "Đang giao", tab: "shipping" },
+    { key: "DELIVERED", label: "Thành công", tab: "delivered" },
+  ] as const;
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-x-1 gap-y-2 p-3">
+        {steps.map((st, i) => (
+          <div key={st.key} className="flex items-center gap-1">
+            {i > 0 && (
+              <ChevronRight className="size-4 shrink-0 text-slate-300" />
+            )}
+            <PipelineStep label={st.label} count={pipeline[st.key]} tab={st.tab} />
+          </div>
+        ))}
+
+        {/* Nhóm cảnh báo — chỉ nhuộm màu khi thật sự có đơn cần xử lý */}
+        <div className="ml-auto flex items-center gap-1 border-l border-slate-200 pl-2">
+          <PipelineStep
+            label="⚠️ Hoàn / Trả hàng"
+            count={pipeline.RETURNING}
+            tab="cancelled"
+            countClassName={pipeline.RETURNING > 0 ? "text-amber-600" : ""}
+          />
+          <PipelineStep
+            label="🚫 Đơn hủy"
+            count={pipeline.CANCELLED}
+            tab="cancelled"
+            countClassName={pipeline.CANCELLED > 0 ? "text-rose-600" : ""}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * TỶ TRỌNG KÊNH BÁN — thanh xếp chồng ngang + danh sách từng gian hàng.
+ * Chọn thanh ngang thay vì bánh tròn: đọc % và số tiền chính xác hơn, và
+ * không chiếm chiều cao vô ích khi chỉ có 3–5 gian.
+ */
+function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
+  const rows = [...analytics.ordersByChannel].sort(
+    (a, b) => b.revenue - a.revenue
+  );
+  const total = rows.reduce((sum, r) => sum + r.revenue, 0);
+  const colors = shopColors(rows);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tỷ trọng kênh bán hàng</CardTitle>
+        <CardDescription>
+          Giá trị đơn phát sinh trong kỳ theo từng gian hàng (không tính đơn hủy).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 || total === 0 ? (
+          <p className="py-10 text-center text-sm text-slate-500">
+            Chưa có đơn nào trong kỳ này.
+          </p>
+        ) : (
+          <>
+            {/* Thanh xếp chồng: nhìn một phát là thấy sàn nào đang gánh */}
+            <div className="flex h-3 w-full overflow-hidden rounded-full">
+              {rows.map((r) => (
+                <div
+                  key={r.channelId}
+                  style={{
+                    width: `${Math.max((r.revenue / total) * 100, 1)}%`,
+                    backgroundColor: colors[r.channelId],
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="mt-4">
+              {rows.map((r) => {
+                const pctShare = Math.round((r.revenue / total) * 1000) / 10;
+                return (
+                  <div
+                    key={r.channelId}
+                    className="flex items-center gap-3 border-b border-slate-100 py-2.5 last:border-b-0"
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: colors[r.channelId] }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
+                      {shopLabel(r.channelName as ChannelName, r.shopName)}
+                    </span>
+                    <span className={cn(TEXT_SUB, "shrink-0")}>
+                      {formatNumber(r.count)} đơn
+                    </span>
+                    <Money
+                      value={r.revenue}
+                      className="w-28 shrink-0 text-right text-sm text-slate-900"
+                    />
+                    <span className="w-14 shrink-0 text-right text-sm font-semibold text-slate-900">
+                      {pctShare}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardSummary | null>(null);
@@ -251,7 +449,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
-  const [range, setRange] = useState<DateRange>(defaultRange);
+  // Command Center mở ra là thấy HÔM NAY — câu hỏi đầu ngày của chủ shop là
+  // "hôm nay đang chạy thế nào", không phải bức tranh 30 ngày
+  const [range, setRange] = useState<DateRange>(() =>
+    RANGE_PRESETS.find((p) => p.key === "today")!.resolve()
+  );
   const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
   // SALES xem được doanh thu và sản lượng, nhưng không được biết giá vốn hay lãi.
   // Backend đã cắt các trường đó khỏi phản hồi; ở đây bỏ luôn thẻ để không hiện "—".
@@ -314,8 +516,32 @@ export default function DashboardPage() {
       ? Math.round((part / analytics.totalRevenue) * 1000) / 10
       : undefined;
 
-  const cogsRatio = ratioOfRevenue(analytics?.totalCost);
-  const opexRatio = ratioOfRevenue(analytics?.totalOperatingExpense);
+  /*
+   * Tỷ lệ chi phí / doanh thu: gồm TOÀN BỘ tiền đi ra (giá vốn + phí sàn +
+   * chi phí vận hành). Doanh thu bằng 0 thì tỷ lệ vô nghĩa → null để hiện "—".
+   */
+  const costRatio =
+    analytics && seesFinancials && analytics.totalRevenue > 0
+      ? Math.round(
+          ((analytics.totalCost +
+            analytics.totalPlatformFee +
+            analytics.totalOperatingExpense) /
+            analytics.totalRevenue) *
+            1000
+        ) / 10
+      : null;
+
+  // Nhãn động theo phím nhanh đang chọn: xem "Hôm nay" thì thẻ ghi đúng như
+  // vậy và mốc so sánh là "hôm qua" — chủ shop khỏi phải tự luận ra kỳ trước
+  const presetKey = matchPreset(range)?.key;
+  const revenueLabel =
+    presetKey === "today"
+      ? "Doanh thu hôm nay"
+      : presetKey === "yesterday"
+        ? "Doanh thu hôm qua"
+        : "Doanh thu";
+  const compareLabel =
+    presetKey === "today" ? "so với hôm qua" : "so với kỳ trước";
 
   return (
     <AppShell>
@@ -325,6 +551,29 @@ export default function DashboardPage() {
             Bảng điều khiển tổng quan hoạt động kinh doanh của bạn.
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Phím tắt 4 khoảng hay dùng nhất; khoảng khác đã có DateRangePicker */}
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
+              {RANGE_PRESETS.filter((preset) =>
+                ["today", "yesterday", "last7", "last30"].includes(preset.key)
+              ).map((preset) => {
+                const active = matchPreset(range)?.key === preset.key;
+                return (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    onClick={() => setRange(preset.resolve())}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-sm font-medium transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
             <ChannelFilter value={channel} onChange={setChannel} />
             <DateRangePicker value={range} onChange={setRange} disabled={loading} />
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -392,7 +641,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* ===== 4 THẺ HERO — cùng một hàng, cùng độ cao, cùng cỡ số ===== */}
+        {/* ===== TẦNG 1: HIỆU SUẤT TÀI CHÍNH — 4 thẻ cùng hàng, kèm delta ===== */}
         <Refreshing
           active={loading}
           className={cn(
@@ -401,39 +650,64 @@ export default function DashboardPage() {
           )}
         >
           <StatCard
-            label="Tổng Doanh thu"
+            label={revenueLabel}
             value={analytics ? <Money value={analytics.totalRevenue} /> : "—"}
             icon={TrendingUp}
             valueClassName={HERO_SIZE}
+            subtitle={
+              analytics && (
+                <DeltaChip
+                  current={analytics.totalRevenue}
+                  previous={analytics.previous?.totalRevenue ?? null}
+                  compareLabel={compareLabel}
+                />
+              )
+            }
+          />
+          <StatCard
+            label="Đơn hàng"
+            value={analytics ? formatNumber(analytics.orderCount) : "—"}
+            icon={ShoppingCart}
+            valueClassName={HERO_SIZE}
+            subtitle={
+              analytics && (
+                <DeltaChip
+                  current={analytics.orderCount}
+                  previous={analytics.previous?.orderCount ?? null}
+                  compareLabel={compareLabel}
+                />
+              )
+            }
           />
           {seesFinancials && (
             <>
+              {/*
+               * TỶ LỆ CHI PHÍ / DOANH THU — mỗi 100đ thu về thì bao nhiêu đồng
+               * đội nón ra đi (giá vốn + phí sàn + chi phí vận hành).
+               * Ngưỡng an toàn 80%: dưới ngưỡng chữ xanh, chạm hoặc vượt là đỏ
+               * vì biên còn lại quá mỏng để chịu thêm rủi ro hoàn/hủy.
+               */}
               <StatCard
-                label="Tổng Giá vốn"
-                value={analytics ? <Money value={analytics.totalCost} /> : "—"}
-                icon={Coins}
-                valueClassName={HERO_SIZE}
-                subtitle={
-                  cogsRatio !== undefined ? `${cogsRatio}% doanh thu` : undefined
-                }
-              />
-              <StatCard
-                label="Tổng Chi phí hoạt động"
+                label="Tỷ lệ Chi phí / Doanh thu"
                 value={
-                  analytics ? <Money value={analytics.totalOperatingExpense} /> : "—"
+                  costRatio === null ? "—" : `${costRatio}%`
                 }
                 icon={Receipt}
-                valueClassName={HERO_SIZE}
-                subtitle={
-                  opexRatio !== undefined ? `${opexRatio}% doanh thu` : undefined
-                }
+                valueClassName={cn(
+                  HERO_SIZE,
+                  costRatio !== null &&
+                    (costRatio < COST_RATIO_SAFE_LIMIT
+                      ? MONEY_POSITIVE
+                      : MONEY_NEGATIVE)
+                )}
+                subtitle={`Giá vốn + phí sàn + vận hành · ngưỡng an toàn ${COST_RATIO_SAFE_LIMIT}%`}
               />
               {(() => {
                 const net = analytics?.netProfit ?? 0;
                 const margin = ratioOfRevenue(net);
                 return (
                   <StatCard
-                    label="Lợi nhuận thuần (Net Profit)"
+                    label="Lợi nhuận dự kiến"
                     value={analytics ? <Money value={net} /> : "—"}
                     icon={Scale}
                     tone={toneBySign(net)}
@@ -441,8 +715,8 @@ export default function DashboardPage() {
                     valueClassName={HERO_SIZE}
                     subtitle={
                       margin !== undefined
-                        ? `Biên ${margin}% doanh thu`
-                        : "Sau phí sàn & chi phí"
+                        ? `Biên lợi nhuận ${margin}%`
+                        : "Sau giá vốn, phí sàn & chi phí"
                     }
                   />
                 );
@@ -451,8 +725,22 @@ export default function DashboardPage() {
           )}
         </Refreshing>
 
-        {/* ===== TRỰC QUAN TRUNG TÂM — biểu đồ 65% | bóc tách 35% ===== */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[13fr_7fr]">
+        {/* ===== TẦNG 2: PHỄU VẬN HÀNH ĐƠN HÀNG ===== */}
+        {analytics && (
+          <Refreshing active={loading}>
+            <PipelineStrip pipeline={analytics.pipeline} />
+          </Refreshing>
+        )}
+
+        {/* ===== TẦNG 3: TỶ TRỌNG KÊNH 60% | BÓC TÁCH DÒNG TIỀN 40% ===== */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
+          {analytics && <MarketplaceShare analytics={analytics} />}
+          {seesFinancials && analytics && (
+            <PnlBreakdown analytics={analytics} />
+          )}
+        </div>
+
+        {/* Nhịp dòng tiền theo ngày — hữu ích nhất khi xem khoảng 7/30 ngày */}
           <Card>
             <CardHeader>
               <CardTitle>
@@ -535,65 +823,8 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {seesFinancials && analytics && (
-            <PnlBreakdown analytics={analytics} />
-          )}
-        </div>
-
         {/* Quản lý chi phí hoạt động — chỉ chủ shop */}
         {seesFinancials && <ExpensesSection onChanged={load} />}
-
-        {/* Tỷ trọng đơn theo gian hàng + đơn gần đây */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tỷ lệ đơn theo gian hàng</CardTitle>
-              <CardDescription>
-                Đóng góp đơn hàng của từng gian hàng (không tính đơn hủy).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64 w-full">
-                {analytics && analytics.ordersByChannel.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={analytics.ordersByChannel.map((c) => ({
-                          name: shopLabel(
-                            c.channelName as ChannelName,
-                            c.shopName
-                          ),
-                          value: c.count,
-                          channelId: c.channelId,
-                        }))}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={45}
-                        outerRadius={80}
-                        paddingAngle={3}
-                      >
-                        {analytics.ordersByChannel.map((c) => (
-                          <Cell
-                            key={c.channelId}
-                            fill={shopColors(analytics.ordersByChannel)[c.channelId]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value, name) => [`${value} đơn`, name]}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="pt-20 text-center text-sm text-muted-foreground">
-                    Chưa có dữ liệu đơn hàng.
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
         {/* Đơn hàng gần đây */}
         <Card>

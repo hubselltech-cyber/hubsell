@@ -31,6 +31,22 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const filteredByChannel = hasChannelFilter(req);
     const seesFinancials = canSeeFinancials(req.userRole);
 
+    /*
+     * KỲ TRƯỚC LIỀN KỀ — để tính mức tăng/giảm.
+     * Cùng độ dài, nằm ngay sát phía trước: xem "Hôm nay" thì đối chiếu với
+     * "Hôm qua", xem "7 ngày" thì đối chiếu với 7 ngày trước đó.
+     * Không lọc ngày thì không có gì để so sánh.
+     */
+    const prevRange = range
+      ? (() => {
+          const span = range.lte.getTime() - range.gte.getTime() + 1;
+          return {
+            gte: new Date(range.gte.getTime() - span),
+            lte: new Date(range.lte.getTime() - span),
+          };
+        })()
+      : undefined;
+
     // 1) Toàn bộ đơn ĐÃ GIAO trong phạm vi đang xem
     const delivered = await prisma.order.findMany({
       where: {
@@ -172,6 +188,67 @@ router.get("/", async (req: AuthRequest, res, next) => {
       });
     }
 
+    /*
+     * 3b) PHỄU VẬN HÀNH — đếm đơn theo từng trạng thái trong kỳ.
+     * Đây là số liệu ĐƠN HÀNG (không phải tài chính) nên SALES cũng xem được,
+     * tất nhiên vẫn bó trong các gian họ phụ trách.
+     */
+    const [statusGroups, returningCount] = await Promise.all([
+      prisma.order.groupBy({
+        by: ["shippingStatus"],
+        _count: { _all: true },
+        where: { channel: scope, createdAt: range },
+      }),
+      prisma.order.count({
+        where: {
+          channel: scope,
+          createdAt: range,
+          // Chỉ đếm hàng hoàn CHƯA xử lý xong (đang chờ nhận / chờ khiếu nại).
+          // Đếm mọi đơn từng hoàn sẽ báo động cả những vụ đã giải quyết từ lâu.
+          returnStatus: { in: ["AWAITING", "DAMAGED"] },
+        },
+      }),
+    ]);
+    const pipeline: Record<string, number> = {
+      PENDING: 0,
+      PROCESSED: 0,
+      SHIPPING: 0,
+      DELIVERED: 0,
+      CANCELLED: 0,
+      RETURNING: returningCount,
+    };
+    let orderCount = 0;
+    for (const g of statusGroups) {
+      pipeline[g.shippingStatus] = g._count._all;
+      orderCount += g._count._all;
+    }
+
+    /*
+     * 3c) SỐ LIỆU KỲ TRƯỚC để tính delta. Chỉ cần doanh thu và số đơn — hai chỉ
+     * số duy nhất có nhãn tăng/giảm trên giao diện, nên không kéo thừa dữ liệu.
+     */
+    const previous = prevRange
+      ? await (async () => {
+          const [rev, cnt] = await Promise.all([
+            prisma.order.aggregate({
+              _sum: { totalAmount: true },
+              where: {
+                channel: scope,
+                shippingStatus: "DELIVERED",
+                createdAt: prevRange,
+              },
+            }),
+            prisma.order.count({
+              where: { channel: scope, createdAt: prevRange },
+            }),
+          ]);
+          return {
+            totalRevenue: Number(rev._sum.totalAmount ?? 0),
+            orderCount: cnt,
+          };
+        })()
+      : null;
+
     // 4) Đóng góp của TỪNG GIAN HÀNG (không tính đơn đã hủy).
     //    Gom theo channelId chứ không theo tên sàn: hai gian cùng nằm trên
     //    Shopee phải là hai dòng riêng thì chủ shop mới biết gian nào đang gánh
@@ -219,6 +296,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
           revenue,
         })),
         ordersByChannel,
+        orderCount,
+        pipeline,
+        previous,
         financialsHidden: true,
       });
       return;
@@ -235,6 +315,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       expensesByCategory,
       revenueByDay,
       ordersByChannel,
+      orderCount,
+      pipeline,
+      previous,
       financialsHidden: false,
       // Chi phí vận hành (mặt bằng, lương, marketing…) ghi ở cấp TOÀN SHOP, không
       // gắn với gian hàng nào. Khi đang lọc một gian, con số này vẫn là của cả

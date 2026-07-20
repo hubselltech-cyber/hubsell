@@ -375,6 +375,20 @@ export interface AnalyticsResponse {
     count: number;
     revenue: number;
   }[];
+  /** Tổng số đơn phát sinh trong kỳ (mọi trạng thái). */
+  orderCount: number;
+  /** Phễu vận hành: số đơn theo từng trạng thái trong kỳ. */
+  pipeline: {
+    PENDING: number;
+    PROCESSED: number;
+    SHIPPING: number;
+    DELIVERED: number;
+    CANCELLED: number;
+    /** Hàng hoàn CHƯA xử lý xong (chờ nhận / chờ khiếu nại). */
+    RETURNING: number;
+  };
+  /** Số liệu kỳ trước liền kề (cùng độ dài) để tính tăng/giảm. null khi không lọc ngày. */
+  previous: { totalRevenue: number; orderCount: number } | null;
   /** Đang lọc 1 gian hàng ⇒ chi phí vận hành vẫn là của TOÀN SHOP. */
   operatingExpenseIsShopWide: boolean;
 }
