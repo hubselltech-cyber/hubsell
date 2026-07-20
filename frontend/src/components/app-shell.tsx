@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronDown,
   Home,
+  Menu,
   Link2,
   Loader2,
   LogOut,
@@ -31,6 +32,7 @@ import {
   type Role,
 } from "@/lib/api";
 import { homePathFor } from "@/lib/permissions";
+import { TEXT_PAGE_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 interface NavChild {
@@ -110,6 +112,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [hasChannels, setHasChannels] = useState<boolean | null>(null);
   // Menu con nào đang mở (theo label). Tự mở nhóm Tài chính khi đang ở /finance/*
+  // Drawer điều hướng trên điện thoại — dưới md sidebar cố định bị ẩn,
+  // không có drawer này thì người dùng mobile không đi đâu được ngoài trang hiện tại
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<Set<string>>(() => {
     const open = new Set<string>();
     if (pathname.startsWith("/finance")) open.add("Quản lý Tài chính");
@@ -148,6 +153,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     checkStatus();
   }, [checkStatus]);
 
+  // Chuyển trang xong thì tự đóng drawer — người dùng bấm menu là muốn đi,
+  // không muốn phải đóng tay
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   const items = user
     ? NAV_ITEMS.filter((i) => i.roles.includes(user.role))
     : [];
@@ -177,10 +188,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-muted/40">
-      {/* ===== SIDEBAR DỌC BÊN TRÁI ===== */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r bg-background md:flex">
+  // Ruột sidebar (logo + menu + chân) — desktop và drawer mobile dùng chung
+  // một khối để hai bên không bao giờ lệch nhau khi thêm mục mới
+  const sidebarInner = (
+    <>
         <Link
           href={homePathFor(user?.role)}
           className="flex items-center gap-3 border-b px-5 py-4"
@@ -280,14 +291,48 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Hubsell © 2026
           </p>
         </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* ===== SIDEBAR DỌC BÊN TRÁI (desktop) ===== */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r bg-card md:flex">
+        {sidebarInner}
       </aside>
+
+      {/* ===== DRAWER ĐIỀU HƯỚNG (mobile, dưới md) ===== */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* Lớp phủ mờ — chạm ra ngoài để đóng */}
+          <div
+            className="absolute inset-0 bg-foreground/30"
+            aria-hidden
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r bg-card shadow-xl">
+            {sidebarInner}
+          </aside>
+        </div>
+      )}
 
       {/* ===== KHU VỰC BÊN PHẢI: HEADER + NỘI DUNG ===== */}
       <div className="flex min-h-screen flex-col md:pl-60">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <h1 className="text-lg font-semibold tracking-tight">
-            {getPageTitle(pathname)}
-          </h1>
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="shrink-0 md:hidden"
+              aria-label="Mở menu điều hướng"
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu className="size-5" />
+            </Button>
+            <h1 className={cn(TEXT_PAGE_TITLE, "truncate")}>
+              {getPageTitle(pathname)}
+            </h1>
+          </div>
 
           <div className="flex items-center gap-3">
             {user && (
@@ -315,7 +360,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
             tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}
-        <main className="w-full flex-1 px-6 py-6 lg:px-8">{children}</main>
+        <main className="w-full flex-1 px-4 py-5 md:px-6 md:py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

@@ -230,19 +230,19 @@ export default function LossOrdersPage() {
                           </span>
                           {/* Nhãn bóc tách LÝ DO LỖ */}
                           {o.lossReason === "COST" && (
-                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600">
                               <PackageX className="size-3" />
                               Lỗ do Giá vốn
                             </span>
                           )}
                           {o.lossReason === "FEE" && (
-                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-orange-300 bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600">
                               <Receipt className="size-3" />
                               Lỗ do Chi phí sàn
                             </span>
                           )}
                           {o.warning && (
-                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
                               <AlertTriangle className="size-3" />
                               Chưa cấu hình giá vốn
                             </span>

@@ -48,25 +48,30 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * BẢNG MÀU SLATE (xám xanh dịu) — thay cho xám trung tính cũ.
+ * Nền trang #F8FAFC (slate-50) để thẻ trắng nổi lên rõ ràng; chữ, viền và nền
+ * phụ đều ngả xanh cùng tông cho giao diện ấm mắt kiểu Shopify/Stripe.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.984 0.003 247.858); /* slate-50  #F8FAFC */
+  --foreground: oklch(0.208 0.042 265.755); /* slate-900 */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.208 0.042 265.755);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.208 0.042 265.755);
+  --primary: oklch(0.208 0.042 265.755);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896); /* slate-100 */
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417); /* slate-500 */
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.929 0.013 255.508); /* slate-200 */
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788); /* slate-400 */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -123,8 +128,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Khoảng thở tối thiểu cho chữ — các cỡ chữ tuỳ biến (text-[15px]…) không
+       mang line-height riêng nên đều thừa hưởng mức 1.5 này */
+    line-height: 1.5;
   }
   html {
     @apply font-sans;
+  }
+  /* Chữ số cùng bề rộng trong bảng — các cột tiền tệ thẳng hàng dọc như sổ
+     kế toán, không bị chữ số 1 hẹp làm lệch hàng */
+  td,
+  th {
+    font-variant-numeric: tabular-nums;
   }
 }

@@ -264,7 +264,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             label="Doanh thu (đã thanh toán)"
             value={data ? formatVND(data.totalRevenue) : "—"}
@@ -308,7 +308,7 @@ export default function DashboardPage() {
           active={loading}
           className={cn(
             "grid grid-cols-1 gap-4",
-            seesFinancials && "sm:grid-cols-3"
+            seesFinancials && "lg:grid-cols-3"
           )}
         >
           <StatCard

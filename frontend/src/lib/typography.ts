@@ -5,39 +5,46 @@
  * (Table, Input, StatCard, BreakdownCard…) đều ăn theo file này, nên muốn
  * chỉnh cỡ chữ toàn hệ thống chỉ cần sửa ở đây.
  *
- * ─── Vì sao dùng breakpoint `2xl` (≥1536px) thay vì `md` (≥768px)? ───
- * Mục tiêu: "laptop hiển thị gọn gàng, PC lớn tự nở to cho nét căng".
- * Laptop phổ biến rộng 1366–1440px → đã vượt `md` từ lâu, nếu dùng `md`
- * thì laptop cũng nhảy lên cỡ chữ lớn, mất đi sự gọn gàng.
- * Dùng `2xl`: laptop (≤1535px) giữ cỡ nhỏ, màn PC lớn (≥1536px) mới nở ra.
- * Muốn đổi ngưỡng, chỉ cần thay `2xl:` thành `xl:` hoặc `md:` trong file này.
+ * ─── Triết lý cỡ chữ ───
+ * Dễ đọc ở MỌI kích cỡ màn hình, không có cỡ nào dưới 12px. Phiên bản trước
+ * để laptop dùng cỡ nhỏ (11–12px) rồi chỉ nở to trên màn ≥1536px — kết quả là
+ * đa số người dùng (laptop 13–15 inch) phải đọc chữ nhi nhí cả ngày. Nay:
+ *   - Cỡ chuẩn đã thoải mái ngay trên laptop (nội dung bảng 15px).
+ *   - Màn PC lớn (`2xl` ≥1536px) nở thêm một nấc cho nét căng.
  */
 
-/** Nội dung chính / số liệu trong bảng — 14px → 16px */
-export const TEXT_BODY = "text-sm 2xl:text-base text-foreground";
+/** Tiêu đề trang trên thanh header — 24px, đậm */
+export const TEXT_PAGE_TITLE =
+  "text-2xl font-bold tracking-tight text-foreground";
 
-/** Dòng phụ (sub-info) xếp chồng dưới số liệu — 11px → 13px */
-export const TEXT_SUB = "text-[11px] 2xl:text-[13px] text-muted-foreground";
+/** Nội dung chính / số liệu trong bảng — 15px → 16px */
+export const TEXT_BODY = "text-[15px] 2xl:text-base text-foreground";
 
-/** Tiêu đề cột của bảng — 12px → 14px */
+/** Dòng phụ (sub-info) xếp chồng dưới số liệu — 12px → 13px */
+export const TEXT_SUB = "text-xs 2xl:text-[13px] text-muted-foreground";
+
+/** Tiêu đề cột của bảng — 13px → 14px */
 export const TEXT_TABLE_HEAD =
-  "text-xs 2xl:text-sm font-semibold tracking-wider text-foreground/75";
+  "text-[13px] 2xl:text-sm font-semibold tracking-wide text-muted-foreground";
 
-/** Tiêu đề khối / thẻ số liệu — 12px → 14px, in hoa */
+/** Tiêu đề khối / thẻ số liệu — 13px → 14px, in hoa */
 export const TEXT_CARD_TITLE =
-  "text-xs 2xl:text-sm font-medium uppercase tracking-wide text-muted-foreground";
+  "text-[13px] 2xl:text-sm font-medium uppercase tracking-wide text-muted-foreground";
 
-/** Số lớn trên dashboard — 20px → 24px */
+/** Số lớn trên dashboard — 24px → 26px */
 export const TEXT_BIG_NUMBER =
-  "text-xl 2xl:text-2xl font-bold tracking-tight text-foreground";
+  "text-2xl 2xl:text-[26px] font-bold tracking-tight text-foreground";
 
 /**
- * Số TỔNG trên thẻ chỉ số — 24px → 30px, đậm hơn một bậc.
+ * Số TỔNG trên thẻ chỉ số — 28px → 32px.
  * Đây là điểm neo thị giác (visual anchor) của mỗi khối: mắt phải bắt được
  * con số này trước tiên, nên nó to & đậm hơn hẳn TEXT_BIG_NUMBER.
  */
 export const TEXT_HERO_NUMBER =
-  "text-2xl 2xl:text-3xl font-extrabold tracking-tight text-foreground";
+  "text-[28px] leading-tight 2xl:text-[32px] font-bold tracking-tight text-foreground";
 
-/** Khoảng đệm ô trong bảng — luôn có khoảng thở khi chữ nở to */
-export const CELL_PADDING = "px-3 py-3 2xl:py-4";
+/**
+ * Khoảng đệm ô trong bảng — dòng một tầng nội dung cao ≈56px cho mắt có chỗ
+ * nghỉ giữa các dòng, theo chuẩn bảng dữ liệu SaaS (Shopify/Stripe)
+ */
+export const CELL_PADDING = "px-4 py-4";
