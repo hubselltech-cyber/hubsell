@@ -18,6 +18,8 @@ interface StatCardProps {
   featured?: boolean;
   /** Tô màu số tổng theo tone (thẻ featured mặc định đã tô) */
   colorValue?: boolean;
+  /** Ghi đè cỡ chữ số tổng — dùng khi xếp nhiều thẻ trên một hàng */
+  valueClassName?: string;
   subtitle?: React.ReactNode;
 }
 
@@ -33,6 +35,7 @@ export function StatCard({
   tone = "neutral",
   featured,
   colorValue,
+  valueClassName,
   subtitle,
 }: StatCardProps) {
   return (
@@ -43,6 +46,7 @@ export function StatCard({
       tone={tone}
       featured={featured}
       colorValue={colorValue}
+      valueClassName={valueClassName}
       subtitle={subtitle}
     />
   );

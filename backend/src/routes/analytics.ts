@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { canSeeFinancials, type AuthRequest } from "../auth";
 import { parseDateRange } from "../date-range";
 import { channelScope, hasChannelFilter } from "../channel-filter";
+import { FEE_SELECT, orderPlatformFee } from "../order-fee";
 
 const router = Router();
 
@@ -37,13 +38,28 @@ router.get("/", async (req: AuthRequest, res, next) => {
         shippingStatus: "DELIVERED",
         createdAt: range,
       },
-      select: { id: true, totalAmount: true, createdAt: true },
+      select: {
+        id: true,
+        totalAmount: true,
+        createdAt: true,
+        ...FEE_SELECT,
+      },
     });
 
     const totalRevenue = delivered.reduce(
       (sum, o) => sum + Number(o.totalAmount),
       0
     );
+
+    /*
+     * PHÍ SÀN — khoản sàn giữ lại trên mỗi đơn.
+     * Trước đây trang Tổng quan bỏ qua hẳn khoản này, nên Lợi nhuận thuần ở đây
+     * cao hơn thực tế và lệch hẳn với trang Báo cáo dòng tiền. Nay dùng chung
+     * đúng một công thức với bên đó (src/order-fee.ts).
+     */
+    const totalPlatformFee = seesFinancials
+      ? delivered.reduce((sum, o) => sum + orderPlatformFee(o).fee, 0)
+      : 0;
 
     // 2) Giá vốn: các log TRỪ kho thuộc những đơn đã giao.
     // Người không được xem tài chính thì bỏ hẳn truy vấn này — vừa khỏi tốn công
@@ -68,7 +84,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const expenses = seesFinancials
       ? await prisma.operatingExpense.findMany({
           where: { userId: ownerId, expenseDate: range },
-          select: { category: true, amount: true },
+          select: { category: true, amount: true, expenseDate: true },
         })
       : [];
     const totalOperatingExpense = expenses.reduce(
@@ -86,17 +102,37 @@ router.get("/", async (req: AuthRequest, res, next) => {
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount);
 
-    // Lợi nhuận thuần = Lợi nhuận gộp − Tổng chi phí hoạt động
-    const netProfit = grossProfit - totalOperatingExpense;
+    // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động
+    const netProfit = grossProfit - totalPlatformFee - totalOperatingExpense;
 
     // 3) Doanh thu theo ngày (kể cả ngày không có đơn để đường biểu đồ liền mạch)
     //    Khung thời gian bám đúng bộ lọc người dùng chọn; không lọc thì lấy 14
     //    ngày gần nhất. Trần 90 điểm để khoảng dài (cả năm) không làm vỡ trục X.
     const MAX_POINTS = 90;
     const revenueMap = new Map<string, number>();
+    const dayOfOrder = new Map<string, string>(); // orderId → "yyyy-mm-dd"
     for (const o of delivered) {
       const key = toDateKey(o.createdAt);
+      dayOfOrder.set(o.id, key);
       revenueMap.set(key, (revenueMap.get(key) ?? 0) + Number(o.totalAmount));
+    }
+
+    /*
+     * CHI PHÍ THEO NGÀY = giá vốn hàng bán trong ngày + chi phí vận hành ghi
+     * nhận trong ngày. Cùng công thức với chuỗi ở Báo cáo dòng tiền để hai biểu
+     * đồ không kể hai câu chuyện khác nhau.
+     */
+    const costMap = new Map<string, number>();
+    const addCost = (key: string, amount: number) =>
+      costMap.set(key, (costMap.get(key) ?? 0) + amount);
+
+    for (const log of deductionLogs) {
+      const key = log.orderId ? dayOfOrder.get(log.orderId) : undefined;
+      if (!key) continue;
+      addCost(key, Math.abs(log.changeQuantity) * Number(log.product.costPrice));
+    }
+    for (const e of expenses) {
+      addCost(toDateKey(e.expenseDate), Number(e.amount));
     }
 
     const chartEnd = range ? new Date(range.lte) : new Date();
@@ -116,7 +152,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
       chartStart.setDate(chartEnd.getDate() - (MAX_POINTS - 1));
     }
 
-    const revenueByDay: { date: string; label: string; revenue: number }[] = [];
+    const revenueByDay: {
+      date: string;
+      label: string;
+      revenue: number;
+      cost: number;
+    }[] = [];
     for (
       const d = new Date(chartStart);
       d <= chartEnd;
@@ -127,6 +168,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         date: key,
         label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
         revenue: revenueMap.get(key) ?? 0,
+        cost: costMap.get(key) ?? 0,
       });
     }
 
@@ -170,7 +212,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
       res.json({
         deliveredOrderCount: delivered.length,
         totalRevenue,
-        revenueByDay,
+        // Bỏ trường cost khỏi từng điểm — SALES chỉ được thấy đường doanh thu
+        revenueByDay: revenueByDay.map(({ date, label, revenue }) => ({
+          date,
+          label,
+          revenue,
+        })),
         ordersByChannel,
         financialsHidden: true,
       });
@@ -181,6 +228,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       deliveredOrderCount: delivered.length,
       totalRevenue,
       totalCost,
+      totalPlatformFee,
       grossProfit,
       totalOperatingExpense,
       netProfit,

@@ -32,7 +32,13 @@ export function Money({
       {symbol && (
         <span
           className={cn(
-            "ml-0.5 text-[0.85em] font-normal text-slate-400",
+            // align-baseline khai báo tường minh: span cỡ chữ nhỏ hơn nằm trong
+            // dòng có leading-tight/tracking-tight dễ bị trình duyệt đẩy lệch,
+            // ghim baseline để "₫" luôn đứng ngang chân các chữ số.
+            // Span INLINE thuần (không inline-block): chữ cỡ nhỏ hơn tự động
+            // dùng chung baseline với chữ số của thẻ cha, không treo cao cũng
+            // không tụt thấp. inline-block sẽ tự sinh baseline riêng và lệch.
+            "ml-1 align-baseline text-[0.7em] font-normal text-slate-400",
             symbolClassName
           )}
         >

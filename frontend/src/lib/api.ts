@@ -355,11 +355,19 @@ export interface AnalyticsResponse {
   deliveredOrderCount: number;
   totalRevenue: number;
   totalCost: number;
+  /** Phí sàn giữ lại trên các đơn Đã giao. Vắng mặt với SALES. */
+  totalPlatformFee: number;
   grossProfit: number;
   totalOperatingExpense: number;
   netProfit: number;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
-  revenueByDay: { date: string; label: string; revenue: number }[];
+  /** `cost` (giá vốn + chi phí vận hành trong ngày) vắng mặt với SALES. */
+  revenueByDay: {
+    date: string;
+    label: string;
+    revenue: number;
+    cost?: number;
+  }[];
   ordersByChannel: {
     channelId: string;
     channelName: ChannelName | string;

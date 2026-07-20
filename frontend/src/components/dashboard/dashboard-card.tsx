@@ -67,10 +67,16 @@ const VALUE_COLOR: Record<CardTone, string> = {
   negative: MONEY_NEGATIVE,
 };
 
-/** Nền + viền khi thẻ ở chế độ nổi bật. Chỉ có 2 sắc thái được phép. */
+/**
+ * Nền khi thẻ ở chế độ nổi bật — CHỈ đổi nền, KHÔNG đổi viền.
+ *
+ * Viền màu bo quanh thẻ tạo ra một khung đỏ/xanh đập vào mắt mạnh hơn cả con số
+ * bên trong, và phá vỡ nhịp viền slate đồng nhất của cả lưới thẻ. Lớp nền siêu
+ * nhạt là đủ để thẻ nổi lên mà không phá bố cục.
+ */
 const FEATURED_BG: Partial<Record<CardTone, string>> = {
-  positive: "border-emerald-200/80 bg-emerald-50/30",
-  negative: "border-rose-200/80 bg-rose-50/30",
+  positive: "bg-emerald-50/30",
+  negative: "bg-rose-50/20",
 };
 
 /** Dương → xanh, âm → đỏ. Dùng cho các chỉ số có thể lãi hoặc lỗ. */
@@ -105,6 +111,8 @@ export interface DashboardCardProps {
   /** Tô màu số tổng theo tone (thẻ featured mặc định đã tô) */
   colorValue?: boolean;
   subtitle?: React.ReactNode;
+  /** Ghi đè cỡ chữ của số tổng (mặc định TEXT_HERO_NUMBER) */
+  valueClassName?: string;
   /** Danh sách dòng chi tiết bên dưới */
   items?: DashboardCardItem[];
   footer?: React.ReactNode;
@@ -119,6 +127,7 @@ export function DashboardCard({
   featured = false,
   colorValue,
   subtitle,
+  valueClassName,
   items,
   footer,
   className,
@@ -146,8 +155,9 @@ export function DashboardCard({
             <p
               className={cn(
                 TEXT_HERO_NUMBER,
-                "mt-1 leading-tight break-words",
-                tinted && VALUE_COLOR[tone]
+                "mt-1 leading-tight",
+                tinted && VALUE_COLOR[tone],
+                valueClassName
               )}
             >
               {value}
@@ -158,11 +168,13 @@ export function DashboardCard({
 
         {/* ── Các dòng chi tiết: chỉ số tiền + % dạng text, không đồ hoạ ── */}
         {items && items.length > 0 && (
-          <div className="flex-1 space-y-3 border-t pt-4">
+          <div className="flex-1 border-t pt-1">
             {items.map((item) => (
               <div
                 key={item.key}
-                className="flex items-start justify-between gap-3"
+                // Kẻ mảnh giữa các dòng để mắt lần theo từng khoản; dòng cuối
+                // bỏ kẻ vì đã có viền thẻ đỡ bên dưới
+                className="flex items-start justify-between gap-3 border-b border-slate-100 py-2.5 last:border-b-0 last:pb-0"
               >
                 <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}>
                   {item.label}

@@ -19,6 +19,7 @@ import {
   hasChannelFilter,
   type ChannelScope,
 } from "../channel-filter";
+import { orderPlatformFee } from "../order-fee";
 
 const router = Router();
 
@@ -93,36 +94,6 @@ function orderCost(order: DeliveredOrder): {
     deductions.length === 0 ||
     deductions.some((l) => Number(l.product?.costPrice ?? 0) <= 0);
   return { cost, missingCostPrice };
-}
-
-// Phí sàn thực dùng cho một đơn:
-// - Đã quyết toán → dùng số THỰC TẾ sàn trả về (fixed + service + payment − trợ giá)
-// - Chưa quyết toán → dùng số TẠM TÍNH theo % của kênh
-interface FeeFields {
-  isSettled: boolean;
-  platformFee: Prisma.Decimal;
-  fixedFee: Prisma.Decimal;
-  serviceFee: Prisma.Decimal;
-  paymentFee: Prisma.Decimal;
-  affiliateFee: Prisma.Decimal;
-  sellerVoucher: Prisma.Decimal;
-  shippingFeeDiff: Prisma.Decimal;
-  platformSubsidy: Prisma.Decimal;
-}
-
-function orderPlatformFee(order: FeeFields): { fee: number; isSettled: boolean } {
-  if (order.isSettled) {
-    const fee =
-      Number(order.fixedFee) +
-      Number(order.serviceFee) +
-      Number(order.paymentFee) +
-      Number(order.affiliateFee) +
-      Number(order.sellerVoucher) +
-      Number(order.shippingFeeDiff) -
-      Number(order.platformSubsidy);
-    return { fee, isSettled: true };
-  }
-  return { fee: Number(order.platformFee), isSettled: false };
 }
 
 // Tỷ lệ % của một khoản so với tổng (làm tròn 2 chữ số, tránh chia cho 0)

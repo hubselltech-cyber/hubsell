@@ -11,9 +11,9 @@ import {
   AlertTriangle,
   TrendingUp,
   Coins,
-  PiggyBank,
   Receipt,
   Scale,
+  type LucideIcon,
 } from "lucide-react";
 import {
   Bar,
@@ -78,6 +78,7 @@ import {
   type ChannelFilterValue,
 } from "@/components/channel-filter";
 import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { moneyTone, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 // Màu nền của từng sàn trên biểu đồ tròn
@@ -144,6 +145,102 @@ function MetaBadge({
     >
       {meta.label}
     </span>
+  );
+}
+
+/** Cỡ số Hero riêng của Dashboard — 4 thẻ trên một hàng nên nhỏ hơn mặc định. */
+const HERO_SIZE = "text-xl font-bold";
+
+/** Một ô chỉ số tích luỹ dạng viên thuốc trên thanh trạng thái. */
+function StatusPill({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200/80 bg-card px-3 py-1.5">
+      <Icon className="size-4 shrink-0 text-slate-400" strokeWidth={2} />
+      <span className={TEXT_SUB}>{label}</span>
+      <span className="text-sm font-semibold text-slate-900">{value}</span>
+    </span>
+  );
+}
+
+/**
+ * SƠ ĐỒ BÓC TÁCH DÒNG TIỀN
+ *
+ * Xếp dọc theo đúng thứ tự tiền bị bào mòn: doanh thu gộp trừ dần từng khoản
+ * cho tới lợi nhuận ròng. Đọc từ trên xuống là thấy ngay khoản nào ăn nhiều
+ * nhất — thứ mà bốn thẻ Hero rời rạc không nói được.
+ */
+function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
+  const adsExpense = analytics.expensesByCategory
+    .filter((e) => e.category === "ADS")
+    .reduce((sum, e) => sum + e.amount, 0);
+  const otherExpense = analytics.totalOperatingExpense - adsExpense;
+
+  const steps = [
+    { key: "cogs", label: "Giá vốn hàng bán", amount: analytics.totalCost },
+    { key: "fee", label: "Phí sàn", amount: analytics.totalPlatformFee },
+    { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense },
+    { key: "other", label: "Chi phí vận hành khác", amount: otherExpense },
+  ].filter((st) => st.amount !== 0);
+
+  const net = analytics.netProfit;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Bóc tách dòng tiền</CardTitle>
+        <CardDescription>
+          Doanh thu bị bào mòn qua từng khoản cho tới lợi nhuận ròng.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Điểm xuất phát */}
+        <div className="flex items-baseline justify-between gap-3">
+          <span className={TEXT_SUB}>Doanh thu gộp</span>
+          <Money
+            value={analytics.totalRevenue}
+            className="text-lg font-semibold text-slate-900"
+          />
+        </div>
+
+        {/* Các khoản trừ dần — thụt lề và có vạch dọc để thấy đây là nhánh con */}
+        <div className="mt-2 space-y-0 border-l border-slate-200 pl-4">
+          {steps.map((st) => (
+            <div
+              key={st.key}
+              className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-2.5 last:border-b-0"
+            >
+              <span className="flex items-baseline gap-1.5 text-sm text-slate-600">
+                <span className="text-slate-400">−</span>
+                {st.label}
+              </span>
+              <Money
+                value={st.amount}
+                className="shrink-0 text-sm font-normal text-slate-600"
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Kết luận */}
+        <div className="mt-3 flex items-baseline justify-between gap-3 border-t pt-3">
+          <span className="text-sm font-medium text-slate-900">
+            Lợi nhuận ròng
+          </span>
+          <Money
+            value={net}
+            className={cn("text-lg font-bold", moneyTone(net))}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -218,7 +315,6 @@ export default function DashboardPage() {
       : undefined;
 
   const cogsRatio = ratioOfRevenue(analytics?.totalCost);
-  const grossMargin = ratioOfRevenue(analytics?.grossProfit);
   const opexRatio = ratioOfRevenue(analytics?.totalOperatingExpense);
 
   return (
@@ -238,6 +334,35 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* THANH TRẠNG THÁI — số liệu tích luỹ toàn thời gian, KHÔNG đổi theo bộ
+            lọc ngày. Trước đây chiếm 4 thẻ lớn ngang màn hình; chúng chỉ là số
+            tham chiếu nên thu về dạng pill, nhường chỗ cho dữ liệu tài chính. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill
+            icon={Wallet}
+            label="Doanh thu đã thanh toán"
+            value={data ? <Money value={data.totalRevenue} /> : "—"}
+          />
+          <StatusPill
+            icon={ShoppingCart}
+            label="Tổng đơn"
+            value={data ? formatNumber(data.orderCount) : "—"}
+          />
+          <StatusPill
+            icon={Package}
+            label="Sản phẩm"
+            value={data ? formatNumber(data.productCount) : "—"}
+          />
+          <StatusPill
+            icon={Store}
+            label="Gian hàng"
+            value={data ? formatNumber(data.channelCount) : "—"}
+          />
+          <span className={cn(TEXT_SUB, "ml-1")}>
+            Số liệu tích luỹ toàn thời gian
+          </span>
+        </div>
+
         {/* Trạng thái lỗi kết nối */}
         {error && (
           <Card className="border-amber-300 bg-amber-50">
@@ -255,42 +380,6 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {/* Thẻ thống kê chung — số liệu tích luỹ, cố ý KHÔNG theo bộ lọc ngày:
-            "Sản phẩm: 17" hay "Kênh bán: 4" là trạng thái hiện tại của shop,
-            cắt theo khoảng thời gian sẽ thành vô nghĩa. */}
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Hiện trạng shop</h2>
-          <p className="text-sm text-muted-foreground">
-            Số liệu tích luỹ toàn thời gian — không đổi theo bộ lọc ngày.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Doanh thu (đã thanh toán)"
-            value={data ? <Money value={data.totalRevenue} /> : "—"}
-            icon={Wallet}
-          />
-          <StatCard
-            label="Tổng đơn hàng"
-            value={data ? formatNumber(data.orderCount) : "—"}
-            icon={ShoppingCart}
-            tone="info"
-          />
-          <StatCard
-            label="Sản phẩm"
-            value={data ? formatNumber(data.productCount) : "—"}
-            icon={Package}
-            tone="accent"
-          />
-          <StatCard
-            label="Kênh bán"
-            value={data ? formatNumber(data.channelCount) : "—"}
-            icon={Store}
-            tone="neutral"
-          />
-        </div>
-
         {/* ===== BÁO CÁO TÀI CHÍNH (đơn Đã giao) ===== */}
         <div>
           <h2 className="text-lg font-semibold tracking-tight">
@@ -303,17 +392,19 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        {/* ===== 4 THẺ HERO — cùng một hàng, cùng độ cao, cùng cỡ số ===== */}
         <Refreshing
           active={loading}
           className={cn(
-            "grid grid-cols-1 gap-4",
-            seesFinancials && "lg:grid-cols-3"
+            "grid grid-cols-1 gap-4 sm:grid-cols-2",
+            seesFinancials && "xl:grid-cols-4"
           )}
         >
           <StatCard
             label="Tổng Doanh thu"
             value={analytics ? <Money value={analytics.totalRevenue} /> : "—"}
             icon={TrendingUp}
+            valueClassName={HERO_SIZE}
           />
           {seesFinancials && (
             <>
@@ -321,90 +412,81 @@ export default function DashboardPage() {
                 label="Tổng Giá vốn"
                 value={analytics ? <Money value={analytics.totalCost} /> : "—"}
                 icon={Coins}
+                valueClassName={HERO_SIZE}
                 subtitle={
                   cogsRatio !== undefined ? `${cogsRatio}% doanh thu` : undefined
                 }
               />
               <StatCard
-                label="Lợi nhuận gộp"
-                value={analytics ? <Money value={analytics.grossProfit} /> : "—"}
-                icon={PiggyBank}
-                tone={analytics ? toneBySign(analytics.grossProfit) : "neutral"}
-                colorValue
+                label="Tổng Chi phí hoạt động"
+                value={
+                  analytics ? <Money value={analytics.totalOperatingExpense} /> : "—"
+                }
+                icon={Receipt}
+                valueClassName={HERO_SIZE}
                 subtitle={
-                  grossMargin !== undefined
-                    ? `Biên lợi nhuận gộp ${grossMargin}%`
-                    : undefined
+                  opexRatio !== undefined ? `${opexRatio}% doanh thu` : undefined
                 }
               />
+              {(() => {
+                const net = analytics?.netProfit ?? 0;
+                const margin = ratioOfRevenue(net);
+                return (
+                  <StatCard
+                    label="Lợi nhuận thuần (Net Profit)"
+                    value={analytics ? <Money value={net} /> : "—"}
+                    icon={Scale}
+                    tone={toneBySign(net)}
+                    featured
+                    valueClassName={HERO_SIZE}
+                    subtitle={
+                      margin !== undefined
+                        ? `Biên ${margin}% doanh thu`
+                        : "Sau phí sàn & chi phí"
+                    }
+                  />
+                );
+              })()}
             </>
           )}
         </Refreshing>
 
-        {/* Chi phí hoạt động + Lợi nhuận thuần — chỉ chủ shop */}
-        {seesFinancials && analytics?.operatingExpenseIsShopWide && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            Đang lọc theo một gian hàng. Chi phí hoạt động (mặt bằng, lương,
-            marketing…) được ghi nhận ở cấp toàn shop nên vẫn là con số của cả
-            shop — Lợi nhuận thuần bên dưới{" "}
-            <strong>chưa phải lãi riêng của gian hàng này</strong>. Doanh thu,
-            giá vốn và lợi nhuận gộp thì đã lọc đúng theo gian.
-          </p>
-        )}
-        {seesFinancials && (
-        <Refreshing active={loading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <StatCard
-            label="Tổng Chi phí hoạt động"
-            value={analytics ? <Money value={analytics.totalOperatingExpense} /> : "—"}
-            icon={Receipt}
-            subtitle={
-              opexRatio !== undefined ? `${opexRatio}% doanh thu` : undefined
-            }
-          />
-
-          {/* Lợi nhuận thuần — khối cảnh báo tối cao, được phủ nền theo lãi/lỗ */}
-          {(() => {
-            const net = analytics?.netProfit ?? 0;
-            const margin = ratioOfRevenue(net);
-            return (
-              <StatCard
-                label="Lợi nhuận thuần (Net Profit)"
-                value={analytics ? <Money value={net} /> : "—"}
-                icon={Scale}
-                tone={toneBySign(net)}
-                featured
-                subtitle={`= Lợi nhuận gộp − Chi phí hoạt động${
-                  margin !== undefined ? ` · biên ${margin}% doanh thu` : ""
-                }`}
-              />
-            );
-          })()}
-        </Refreshing>
-        )}
-
-        {/* Quản lý chi phí hoạt động — chỉ chủ shop */}
-        {seesFinancials && <ExpensesSection onChanged={load} />}
-
-        {/* 2 biểu đồ */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-          <Card className="lg:col-span-3">
+        {/* ===== TRỰC QUAN TRUNG TÂM — biểu đồ 65% | bóc tách 35% ===== */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[13fr_7fr]">
+          <Card>
             <CardHeader>
-              <CardTitle>Doanh thu theo ngày</CardTitle>
+              <CardTitle>
+                {seesFinancials ? "Doanh thu vs Chi phí" : "Doanh thu theo ngày"}
+              </CardTitle>
               <CardDescription>
-                14 ngày gần nhất (đơn Đã giao).
+                {seesFinancials
+                  ? "Chi phí mỗi ngày = giá vốn hàng đã giao + chi phí vận hành phát sinh trong ngày."
+                  : "Doanh thu các đơn Đã giao theo từng ngày."}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-64 w-full">
+              <div className="h-72 w-full">
                 {analytics && (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={analytics.revenueByDay}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="label" fontSize={12} tickLine={false} />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#e2e8f0"
+                      />
+                      <XAxis
+                        dataKey="label"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={{ stroke: "#e2e8f0" }}
+                        stroke="#64748b"
+                      />
                       <YAxis
                         fontSize={12}
                         tickLine={false}
-                        width={70}
+                        axisLine={false}
+                        stroke="#64748b"
+                        width={56}
                         tickFormatter={(v: number) =>
                           v >= 1_000_000
                             ? `${(v / 1_000_000).toFixed(1)}tr`
@@ -412,22 +494,58 @@ export default function DashboardPage() {
                         }
                       />
                       <Tooltip
-                        formatter={(value) => [formatVND(Number(value)), "Doanh thu"]}
+                        cursor={{ fill: "#f1f5f9" }}
+                        formatter={(value, name) => [
+                          formatVND(Number(value)),
+                          name === "revenue" ? "Doanh thu" : "Chi phí",
+                        ]}
                       />
                       <Bar
                         dataKey="revenue"
+                        name="revenue"
                         fill="#10b981"
                         radius={[4, 4, 0, 0]}
-                        maxBarSize={32}
+                        maxBarSize={28}
                       />
+                      {seesFinancials && (
+                        <Bar
+                          dataKey="cost"
+                          name="cost"
+                          fill="#cbd5e1"
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={28}
+                        />
+                      )}
                     </BarChart>
                   </ResponsiveContainer>
                 )}
               </div>
+              {seesFinancials && (
+                <div className={cn(TEXT_SUB, "mt-3 flex items-center gap-4")}>
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2.5 rounded-sm bg-emerald-500" />
+                    Doanh thu
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2.5 rounded-sm bg-slate-300" />
+                    Chi phí
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-2">
+          {seesFinancials && analytics && (
+            <PnlBreakdown analytics={analytics} />
+          )}
+        </div>
+
+        {/* Quản lý chi phí hoạt động — chỉ chủ shop */}
+        {seesFinancials && <ExpensesSection onChanged={load} />}
+
+        {/* Tỷ trọng đơn theo gian hàng + đơn gần đây */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
             <CardHeader>
               <CardTitle>Tỷ lệ đơn theo gian hàng</CardTitle>
               <CardDescription>
