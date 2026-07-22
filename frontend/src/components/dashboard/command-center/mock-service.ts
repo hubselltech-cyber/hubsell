@@ -9,6 +9,7 @@ import type {
   ActivityItem,
   ChatMessage,
   OpsAlert,
+  Severity,
 } from "./types";
 
 /** Mốc thời gian gốc để các timestamp giả lập ổn định (không nhảy mỗi render). */
@@ -26,26 +27,90 @@ export function nextId(prefix: string): string {
   return `${prefix}-gen-${seq}`;
 }
 
-// ───────────────────────── CẢNH BÁO ─────────────────────────
+// ─────────── CẢNH BÁO CHÁY HÀNG: BACKEND QUÉT TỪNG SKU (mô phỏng) ───────────
+//
+// Backend soi độc lập từng SKU (chính xác nhất). Việc GOM nhiều SKU cùng sản
+// phẩm cha + cùng sàn thành một cảnh báo là do FRONTEND làm — buildInventoryAlerts().
 
-export const MOCK_ALERTS: OpsAlert[] = [
-  {
-    id: "al-inv-1",
-    tag: "inventory",
-    severity: "high",
-    title: "Áo thun SH-AO-THUN-M đang cháy hàng trên Shopee",
-    summary:
-      "Còn 0 tồn trên Shopee nhưng vẫn đang mở bán — nguy cơ quá bán, bị sàn phạt.",
-    actionLabel: "Cập nhật tồn",
-    action: {
-      kind: "restock",
-      sku: "SH-AO-THUN-M",
-      currentStock: 0,
-      suggestQty: 100,
-      channel: "Shopee",
-    },
-    createdAt: minsAgo(6),
-  },
+interface StockoutSku {
+  /** Sản phẩm cha — khoá để gom nhóm. */
+  product: string;
+  variantName: string;
+  sku: string;
+  channel: string;
+  channelStock: number;
+  warehouseStock: number;
+  suggestQty: number;
+  severity: Severity;
+}
+
+const MOCK_STOCKOUTS: StockoutSku[] = [
+  // Áo thun basic — cháy cả 3 size trên Shopee → sẽ gom thành 1 cảnh báo
+  { product: "Áo thun basic", variantName: "Size S", sku: "SH-AO-THUN-S", channel: "Shopee", channelStock: 0, warehouseStock: 40, suggestQty: 40, severity: "high" },
+  { product: "Áo thun basic", variantName: "Size M", sku: "SH-AO-THUN-M", channel: "Shopee", channelStock: 0, warehouseStock: 12, suggestQty: 12, severity: "high" },
+  { product: "Áo thun basic", variantName: "Size L", sku: "SH-AO-THUN-L", channel: "Shopee", channelStock: 0, warehouseStock: 0, suggestQty: 0, severity: "high" },
+  // Giày sneaker — chỉ 1 size cháy trên TikTok Shop (trường hợp không gom)
+  { product: "Giày sneaker trắng", variantName: "Size 40", sku: "SH-GIAY-40", channel: "TikTok Shop", channelStock: 0, warehouseStock: 8, suggestQty: 8, severity: "medium" },
+];
+
+function worstSeverity(items: StockoutSku[]): Severity {
+  if (items.some((i) => i.severity === "high")) return "high";
+  if (items.some((i) => i.severity === "medium")) return "medium";
+  return "low";
+}
+
+/**
+ * GOM các SKU cháy hàng theo (sản phẩm cha + sàn) thành một cảnh báo duy nhất.
+ * Nhiều size cùng cháy trên một sàn → 1 dòng, xử lý một thể thay vì click N lần.
+ */
+function buildInventoryAlerts(): OpsAlert[] {
+  const groups = new Map<string, StockoutSku[]>();
+  for (const s of MOCK_STOCKOUTS) {
+    const key = `${s.product}|||${s.channel}`;
+    const arr = groups.get(key);
+    if (arr) arr.push(s);
+    else groups.set(key, [s]);
+  }
+
+  const alerts: OpsAlert[] = [];
+  let n = 0;
+  for (const items of groups.values()) {
+    const { product, channel } = items[0];
+    const count = items.length;
+    alerts.push({
+      id: `al-inv-grp-${++n}`,
+      tag: "inventory",
+      severity: worstSeverity(items),
+      title:
+        count > 1
+          ? `${product} có ${count} phân loại đang cháy hàng trên ${channel}`
+          : `${product} (${items[0].variantName}) đang cháy hàng trên ${channel}`,
+      summary:
+        count > 1
+          ? `${count} phân loại tồn 0 trên ${channel} nhưng vẫn mở bán — bơm tồn hàng loạt để mở bán lại.`
+          : `Tồn 0 trên ${channel} nhưng vẫn mở bán — bơm tồn để mở bán lại.`,
+      actionLabel: "Cập nhật tồn",
+      action: {
+        kind: "restock",
+        product,
+        channel,
+        variants: items.map((i) => ({
+          sku: i.sku,
+          variantName: i.variantName,
+          channelStock: i.channelStock,
+          warehouseStock: i.warehouseStock,
+          suggestQty: i.suggestQty,
+        })),
+      },
+      createdAt: minsAgo(6),
+    });
+  }
+  return alerts;
+}
+
+// ───────────── CẢNH BÁO KHÁC (không gom — tài chính, sàn, ads, lệch tồn) ─────────────
+
+const STATIC_ALERTS: OpsAlert[] = [
   {
     id: "al-fin-1",
     tag: "finance",
@@ -149,6 +214,12 @@ export const MOCK_ALERTS: OpsAlert[] = [
   },
 ];
 
+/** Cảnh báo cháy hàng (đã gom theo sản phẩm cha) đứng trước, rồi tới cảnh báo khác. */
+export const MOCK_ALERTS: OpsAlert[] = [
+  ...buildInventoryAlerts(),
+  ...STATIC_ALERTS,
+];
+
 // ───────────────────────── NHẬT KÝ VẬN HÀNH ─────────────────────────
 
 export const MOCK_ACTIVITY: ActivityItem[] = [
@@ -195,12 +266,13 @@ export const MOCK_ACTIVITY: ActivityItem[] = [
 export const MOCK_CHAT: ChatMessage[] = [
   {
     id: "ms-1",
-    alertId: "al-inv-1",
+    // Gắn vào cảnh báo gom "Áo thun basic" (buildInventoryAlerts sinh id ...-grp-1)
+    alertId: "al-inv-grp-1",
     author: "Hệ thống",
     role: "ADMIN",
     body: {
       kind: "text",
-      text: "Tồn SH-AO-THUN-M về 0 lúc 08:54. Đơn mới vẫn đang vào.",
+      text: "Áo thun basic cháy cả 3 size trên Shopee lúc 08:54. Đơn mới vẫn đang vào.",
     },
     at: minsAgo(6),
   },

@@ -508,29 +508,18 @@ function UpdateShopDialog({
   onDone: () => void;
 }) {
   const [shopName, setShopName] = useState(channel.shopName);
-  // Người dùng nghĩ theo phần trăm (12%), cơ sở dữ liệu lưu thập phân (0.12).
-  const [feePercent, setFeePercent] = useState(
-    (Number(channel.feeRate) * 100).toString()
-  );
   const [submitting, setSubmitting] = useState(false);
 
   const trimmed = shopName.trim();
-  const percent = Number(feePercent);
-  const feeInvalid =
-    feePercent.trim() === "" ||
-    Number.isNaN(percent) ||
-    percent < 0 ||
-    percent > 100;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!trimmed || feeInvalid) return;
+    if (!trimmed) return;
     setSubmitting(true);
     try {
-      await updateChannel(channel.id, {
-        shopName: trimmed,
-        feeRate: percent / 100,
-      });
+      // Chỉ đổi tên gian hàng — phí sàn không còn nhập tay ở trang kết nối,
+      // hệ thống tự tạm tính (mặc định theo sàn, hoặc theo đơn thực tế).
+      await updateChannel(channel.id, { shopName: trimmed });
       toast.success(`Đã cập nhật gian hàng "${trimmed}"`);
       onOpenChange(false);
       onDone();
@@ -565,28 +554,6 @@ function UpdateShopDialog({
             />
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="edit-fee">Phí sàn (%)</Label>
-            <Input
-              id="edit-fee"
-              type="number"
-              step="0.1"
-              min="0"
-              max="100"
-              value={feePercent}
-              onChange={(e) => setFeePercent(e.target.value)}
-            />
-            {feeInvalid ? (
-              <p className="text-sm text-rose-600">
-                Phí sàn phải từ 0 đến 100%.
-              </p>
-            ) : (
-              <p className={TEXT_SUB}>
-                Dùng để tạm tính doanh thu thực nhận của gian hàng này.
-              </p>
-            )}
-          </div>
-
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -596,7 +563,7 @@ function UpdateShopDialog({
             >
               Huỷ
             </Button>
-            <Button type="submit" disabled={submitting || !trimmed || feeInvalid}>
+            <Button type="submit" disabled={submitting || !trimmed}>
               {submitting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (

@@ -16,6 +16,19 @@ export type AlertTag = "inventory" | "finance" | "channel" | "ads";
 /** Mức độ nghiêm trọng. */
 export type Severity = "high" | "medium" | "low";
 
+/** Một phân loại (SKU) cháy hàng — một dòng trong bảng nhập tồn của pop-up. */
+export interface RestockVariant {
+  sku: string;
+  /** Tên phân loại, VD "Size M". */
+  variantName: string;
+  /** Tồn hiện tại trên sàn (thường 0 khi cháy hàng). */
+  channelStock: number;
+  /** Tồn kho THỰC còn trong hệ thống — để nhân viên biết đường phân phối. */
+  warehouseStock: number;
+  /** Số lượng gợi ý bơm lên sàn. */
+  suggestQty: number;
+}
+
 /**
  * Tham số cho pop-up xử lý nhanh, phân nhánh theo LOẠI hành động (không theo tag,
  * vì một tag có thể có nhiều loại — VD inventory vừa có "nhập kho" vừa có "đối
@@ -24,11 +37,12 @@ export type Severity = "high" | "medium" | "low";
 export type ActionParams =
   | {
       kind: "restock";
-      sku: string;
-      currentStock: number;
-      suggestQty: number;
-      /** Kênh bán đang phát cảnh báo cháy hàng — được tích chọn sẵn trong form. */
+      /** Tên sản phẩm cha (gom các phân loại cháy hàng cùng sàn về một cảnh báo). */
+      product: string;
+      /** Sàn đang cháy hàng. */
       channel: string;
+      /** Danh sách các phân loại (SKU) đang cháy hàng của sản phẩm này trên sàn. */
+      variants: RestockVariant[];
     }
   | {
       kind: "stock-mismatch";
