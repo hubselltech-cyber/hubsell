@@ -38,8 +38,7 @@ import {
   type DateRange,
 } from "@/lib/date-range";
 import { toneBySign } from "@/components/dashboard/dashboard-card";
-import { ExpensesSection } from "@/components/dashboard/expenses-section";
-import { Badge } from "@/components/ui/badge";
+import { CommandCenter } from "@/components/dashboard/command-center";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -48,14 +47,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   fetchAnalytics,
   fetchDashboardSummary,
@@ -73,7 +64,7 @@ import {
   ChannelFilter,
   type ChannelFilterValue,
 } from "@/components/channel-filter";
-import { formatVND, formatNumber, formatDateTime } from "@/lib/format";
+import { formatVND, formatNumber } from "@/lib/format";
 import { moneyTone, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -84,36 +75,6 @@ const CHANNEL_COLORS: Record<string, string> = {
   LAZADA: "#3b82f6",
   OFFLINE: "#a1a1aa",
 };
-
-const PAYMENT_META: Record<string, { label: string; className: string }> = {
-  PAID: { label: "Đã thanh toán", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  UNPAID: { label: "Chưa thanh toán", className: "bg-amber-50 text-amber-700 border-amber-200" },
-  REFUNDED: { label: "Đã hoàn tiền", className: "bg-rose-50 text-rose-700 border-rose-200" },
-};
-
-const SHIPPING_META: Record<string, { label: string; className: string }> = {
-  DELIVERED: { label: "Đã giao", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  SHIPPING: { label: "Đang giao", className: "bg-sky-50 text-sky-700 border-sky-200" },
-  PENDING: { label: "Chờ xử lý", className: "bg-zinc-50 text-zinc-600 border-zinc-200" },
-  CANCELLED: { label: "Đã hủy", className: "bg-rose-50 text-rose-700 border-rose-200" },
-};
-
-function MetaBadge({
-  meta,
-  fallback,
-}: {
-  meta?: { label: string; className: string };
-  fallback: string;
-}) {
-  if (!meta) return <Badge variant="outline">{fallback}</Badge>;
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
-    >
-      {meta.label}
-    </span>
-  );
-}
 
 /** Cỡ số Hero riêng của Dashboard — 4 thẻ trên một hàng nên nhỏ hơn mặc định. */
 const HERO_SIZE = "text-xl font-bold";
@@ -772,81 +733,10 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-        {/* Quản lý chi phí hoạt động — chỉ chủ shop */}
-        {seesFinancials && <ExpensesSection onChanged={load} />}
-
-        {/* Đơn hàng gần đây */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Đơn hàng gần đây</CardTitle>
-            <CardDescription>
-              5 đơn hàng mới nhất
-              {seesFinancials
-                ? " từ tất cả các gian hàng."
-                : " từ gian hàng bạn phụ trách."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Đang tải dữ liệu…
-              </p>
-            ) : !data || data.recentOrders.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Chưa có đơn hàng nào.
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Mã đơn</TableHead>
-                    <TableHead>Khách hàng</TableHead>
-                    <TableHead>Kênh</TableHead>
-                    <TableHead>Thanh toán</TableHead>
-                    <TableHead>Vận chuyển</TableHead>
-                    <TableHead className="text-right">Tổng tiền</TableHead>
-                    <TableHead className="text-right">Thời gian</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.recentOrders.map((o) => (
-                    <TableRow key={o.id}>
-                      <TableCell className="font-medium">{o.orderCode}</TableCell>
-                      <TableCell>{o.customerName}</TableCell>
-                      <TableCell>
-                        <MetaBadge
-                          meta={CHANNEL_META[o.channelName]}
-                          fallback={o.channelName}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <MetaBadge
-                          meta={PAYMENT_META[o.paymentStatus]}
-                          fallback={o.paymentStatus}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <MetaBadge
-                          meta={SHIPPING_META[o.shippingStatus]}
-                          fallback={o.shippingStatus}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Money
-                          value={o.totalAmount}
-                          className="font-medium text-slate-900"
-                        />
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {formatDateTime(o.createdAt)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        {/* ===== OPERATIONS COMMAND CENTER — thay khối Chi phí + Đơn gần đây =====
+            Tính năng đóng gói riêng trong components/dashboard/command-center/
+            (cách ly lỗi). Chỉ hiện với chủ shop — nhân viên xem Dashboard rút gọn. */}
+        {seesFinancials && <CommandCenter />}
 
         <p className="text-center text-xs text-muted-foreground">
           Hubsell · Giai đoạn 4 — Báo cáo tài chính & Phân quyền
