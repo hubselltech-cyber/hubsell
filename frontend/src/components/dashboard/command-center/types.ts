@@ -16,6 +16,55 @@ export type AlertTag = "inventory" | "finance" | "channel" | "ads";
 /** Mức độ nghiêm trọng. */
 export type Severity = "high" | "medium" | "low";
 
+/**
+ * Tham số cho pop-up xử lý nhanh, phân nhánh theo LOẠI hành động (không theo tag,
+ * vì một tag có thể có nhiều loại — VD inventory vừa có "nhập kho" vừa có "đối
+ * soát lệch tồn"). `kind` là trường phân biệt để <ActionModal> chọn đúng form.
+ */
+export type ActionParams =
+  | {
+      kind: "restock";
+      sku: string;
+      currentStock: number;
+      suggestQty: number;
+    }
+  | {
+      kind: "stock-mismatch";
+      sku: string;
+      channel: string;
+      hubsellStock: number;
+      channelStock: number;
+    }
+  | {
+      kind: "edit-price";
+      sku: string;
+      cost: number;
+      price: number;
+      /** Tỷ lệ phí sàn dạng thập phân, VD 0.12 = 12%. */
+      feeRate: number;
+    }
+  | {
+      kind: "edit-shipping";
+      sku: string;
+      weightKg: number;
+      lengthCm: number;
+      widthCm: number;
+      heightCm: number;
+    }
+  | {
+      kind: "customer-refusal";
+      customer: string;
+      phone: string;
+      refusedOrders: number;
+    }
+  | {
+      kind: "roas";
+      campaign: string;
+      roas: number;
+      dailyBudget: number;
+    }
+  | { kind: "confirm"; description: string };
+
 export interface OpsAlert {
   id: string;
   tag: AlertTag;
@@ -24,6 +73,8 @@ export interface OpsAlert {
   summary: string;
   /** Nhãn nút xử lý nhanh, VD "+ Nhập kho", "Duyệt chi phí". */
   actionLabel: string;
+  /** Tham số form pop-up xử lý nhanh của cảnh báo này. */
+  action: ActionParams;
   /** ISO timestamp lúc phát sinh cảnh báo. */
   createdAt: string;
 }

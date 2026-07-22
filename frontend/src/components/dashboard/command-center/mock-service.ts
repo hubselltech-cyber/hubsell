@@ -33,20 +33,34 @@ export const MOCK_ALERTS: OpsAlert[] = [
     id: "al-inv-1",
     tag: "inventory",
     severity: "high",
-    title: "SKU-123 cháy hàng trên Shopee",
+    title: "SH-AO-THUN-M cháy hàng trên Shopee",
     summary:
-      "Áo thun basic (SH-AO-THUN-M) còn 0 tồn nhưng vẫn đang mở bán — nguy cơ quá bán, bị sàn phạt.",
+      "Áo thun basic còn 0 tồn nhưng vẫn đang mở bán — nguy cơ quá bán, bị sàn phạt.",
     actionLabel: "+ Nhập kho",
+    action: {
+      kind: "restock",
+      sku: "SH-AO-THUN-M",
+      currentStock: 0,
+      suggestQty: 100,
+    },
     createdAt: minsAgo(6),
   },
   {
     id: "al-fin-1",
     tag: "finance",
     severity: "high",
-    title: "3 đơn TikTok đang bán dưới giá vốn",
+    title: "Quần jean SP002 đang bán dưới giá hoà vốn",
     summary:
-      "Lợi nhuận âm sau khi trừ phí sàn. Cần rà lại giá bán hoặc giá vốn nhập cho nhóm SKU quần jean.",
-    actionLabel: "Duyệt rà soát",
+      "Biên lợi nhuận âm sau khi trừ phí sàn. Cần chỉnh giá bán để về dương.",
+    actionLabel: "Sửa giá nhanh",
+    // Giá 170k, vốn 155k, phí sàn 12% → biên hiện tại ≈ −3.2% (đúng "dưới hoà vốn")
+    action: {
+      kind: "edit-price",
+      sku: "SP002",
+      cost: 155000,
+      price: 170000,
+      feeRate: 0.12,
+    },
     createdAt: minsAgo(22),
   },
   {
@@ -57,6 +71,11 @@ export const MOCK_ALERTS: OpsAlert[] = [
     summary:
       "Webhook Lazada chậm bất thường, 5 đơn mới chưa kéo về kho. Kiểm tra kết nối gian hàng.",
     actionLabel: "Đồng bộ lại",
+    action: {
+      kind: "confirm",
+      description:
+        "Kích hoạt đồng bộ thủ công gian hàng Lazada để kéo 5 đơn còn treo về kho ngay.",
+    },
     createdAt: minsAgo(38),
   },
   {
@@ -66,37 +85,64 @@ export const MOCK_ALERTS: OpsAlert[] = [
     title: "ROAS chiến dịch áo khoác giảm còn 1.2",
     summary:
       "Chi phí quảng cáo TikTok vượt trần: 600.000₫/ngày nhưng doanh thu quy đổi chỉ 720.000₫.",
-    actionLabel: "Tạm dừng chiến dịch",
+    actionLabel: "Xử lý chiến dịch",
+    action: {
+      kind: "roas",
+      campaign: "TikTok · Áo khoác gió",
+      roas: 1.2,
+      dailyBudget: 600000,
+    },
     createdAt: minsAgo(12),
   },
   {
     id: "al-inv-2",
     tag: "inventory",
     severity: "medium",
-    title: "12 sản phẩm sắp chạm ngưỡng tồn tối thiểu",
+    title: "Lệch tồn SH-GIAY-40 giữa Hubsell và Shopee",
     summary:
-      "Nhóm phụ kiện dưới 10 tồn. Nên lên kế hoạch nhập bổ sung trước cuối tuần.",
-    actionLabel: "+ Nhập kho",
+      "Kho ghi 8 nhưng sàn Shopee đang hiển thị 15 — chênh 7, dễ phát sinh quá bán.",
+    actionLabel: "Đối soát tồn",
+    action: {
+      kind: "stock-mismatch",
+      sku: "SH-GIAY-40",
+      channel: "Shopee",
+      hubsellStock: 8,
+      channelStock: 15,
+    },
     createdAt: minsAgo(75),
   },
   {
     id: "al-chn-2",
     tag: "channel",
     severity: "low",
-    title: "Tỷ lệ hủy đơn Shopee tăng nhẹ",
+    title: "Khách 0908****21 bom 3 đơn Shopee liên tiếp",
     summary:
-      "Hủy đơn 24h qua ở mức 8%, cao hơn trung bình 5%. Theo dõi thêm, chưa cần can thiệp.",
-    actionLabel: "Xem chi tiết",
+      "Cùng số điện thoại từ chối nhận 3 đơn trong tuần. Cân nhắc gọi xác minh hoặc chặn.",
+    actionLabel: "Xử lý khách bom",
+    action: {
+      kind: "customer-refusal",
+      customer: "Nguyễn Thị H.",
+      phone: "0908xxxx21",
+      refusedOrders: 3,
+    },
     createdAt: minsAgo(140),
   },
   {
     id: "al-fin-2",
     tag: "finance",
     severity: "medium",
-    title: "Chi phí vận hành tháng vượt 18 triệu",
+    title: "Phí ship SH-AO-KHOAC cao do khai sai cân nặng",
     summary:
-      "Chi phí cố định + marketing đã vượt doanh thu kỳ. Cần soát lại ngân sách quảng cáo.",
-    actionLabel: "Duyệt chi phí",
+      "Sàn tính 1.8kg trong khi hàng thực ~0.6kg. Cập nhật lại cân nặng/kích thước để giảm phí.",
+    actionLabel: "Sửa cân nặng/KT",
+    action: {
+      kind: "edit-shipping",
+      sku: "SH-AO-KHOAC",
+      weightKg: 0.6,
+      lengthCm: 30,
+      widthCm: 24,
+      heightCm: 6,
+    },
     createdAt: minsAgo(180),
   },
 ];
@@ -193,6 +239,11 @@ export function parsePastedTable(raw: string): string[][] | null {
   const cols = rows[0].length;
   const consistent = rows.every((r) => Math.abs(r.length - cols) <= 1);
   return consistent ? rows : null;
+}
+
+/** Giả lập gọi API xử lý — trễ ~800ms để pop-up hiển thị trạng thái loading. */
+export function runMockAction(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 800));
 }
 
 /** ISO → "x phút trước" / "x giờ trước" / "dd/mm HH:mm". */

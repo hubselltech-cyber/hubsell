@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { AlertCard } from "./alert-card";
+import { ActionModal } from "./action-modal";
 import { ActivityFeed } from "./activity-feed";
 import { ChatDrawer } from "./chat-drawer";
 import {
@@ -21,6 +22,7 @@ import {
   nextId,
 } from "./mock-service";
 import {
+  canAct,
   canView,
   OPS_ROLES,
   ROLE_META,
@@ -49,6 +51,8 @@ export function CommandCenter() {
   const [activities, setActivities] = useState<ActivityItem[]>(MOCK_ACTIVITY);
   const [activityFilter, setActivityFilter] = useState<AlertTag | "all">("all");
   const [openAlertId, setOpenAlertId] = useState<string | null>(null);
+  // Cảnh báo đang mở pop-up xử lý nhanh
+  const [actionAlertId, setActionAlertId] = useState<string | null>(null);
 
   const tags = visibleTags(role);
 
@@ -82,14 +86,21 @@ export function CommandCenter() {
     ]);
   }
 
-  function handleAction(alertId: string) {
-    const alert = MOCK_ALERTS.find((a) => a.id === alertId);
-    if (!alert) return;
-    toast.success(`${alert.actionLabel} · ${alert.title}`);
-    logActivity(
-      alert.tag,
-      `${ROLE_META[role].label} đã thao tác "${alert.actionLabel}" cho: ${alert.title}`
-    );
+  // Pop-up chỉ mở với cảnh báo mà vai trò vừa XEM được vừa được THAO TÁC
+  const actionAlert = actionAlertId
+    ? MOCK_ALERTS.find(
+        (a) =>
+          a.id === actionAlertId && canView(role, a.tag) && canAct(role, a.tag)
+      ) ?? null
+    : null;
+
+  /** Xác nhận pop-up thành công → đánh dấu Đã xử lý + ghi nhật ký. */
+  function completeAction(summary: string) {
+    if (!actionAlert) return;
+    setResolved((prev) => new Set(prev).add(actionAlert.id));
+    logActivity(actionAlert.tag, `${ROLE_META[role].label}: ${summary}`);
+    toast.success(summary);
+    setActionAlertId(null);
   }
 
   function toggleResolved(alertId: string) {
@@ -194,7 +205,7 @@ export function CommandCenter() {
                   role={role}
                   resolved={resolved.has(a.id)}
                   chatCount={chat[a.id]?.length ?? 0}
-                  onAction={() => handleAction(a.id)}
+                  onAction={() => setActionAlertId(a.id)}
                   onToggleResolved={() => toggleResolved(a.id)}
                   onDiscuss={() => setOpenAlertId(a.id)}
                 />
@@ -228,6 +239,14 @@ export function CommandCenter() {
           messages={chat[openAlert.id] ?? []}
           onSend={sendMessage}
           onClose={() => setOpenAlertId(null)}
+        />
+      )}
+
+      {actionAlert && (
+        <ActionModal
+          alert={actionAlert}
+          onCancel={() => setActionAlertId(null)}
+          onDone={completeAction}
         />
       )}
     </section>
