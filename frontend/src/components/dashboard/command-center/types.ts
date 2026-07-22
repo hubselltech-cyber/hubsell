@@ -27,6 +27,8 @@ export type ActionParams =
       sku: string;
       currentStock: number;
       suggestQty: number;
+      /** Kênh bán đang phát cảnh báo cháy hàng — được tích chọn sẵn trong form. */
+      channel: string;
     }
   | {
       kind: "stock-mismatch";
@@ -39,7 +41,10 @@ export type ActionParams =
       kind: "edit-price";
       sku: string;
       cost: number;
+      /** Giá bán gốc (niêm yết) hiện tại. */
       price: number;
+      /** Giá khuyến mãi hiện tại — giá khách THỰC TẾ trả, dùng để tính biên. */
+      promoPrice: number;
       /** Tỷ lệ phí sàn dạng thập phân, VD 0.12 = 12%. */
       feeRate: number;
     }

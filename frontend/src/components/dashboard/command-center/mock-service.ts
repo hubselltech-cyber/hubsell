@@ -33,15 +33,16 @@ export const MOCK_ALERTS: OpsAlert[] = [
     id: "al-inv-1",
     tag: "inventory",
     severity: "high",
-    title: "SH-AO-THUN-M cháy hàng trên Shopee",
+    title: "Áo thun SH-AO-THUN-M đang cháy hàng trên Shopee",
     summary:
-      "Áo thun basic còn 0 tồn nhưng vẫn đang mở bán — nguy cơ quá bán, bị sàn phạt.",
-    actionLabel: "+ Nhập kho",
+      "Còn 0 tồn trên Shopee nhưng vẫn đang mở bán — nguy cơ quá bán, bị sàn phạt.",
+    actionLabel: "Cập nhật tồn",
     action: {
       kind: "restock",
       sku: "SH-AO-THUN-M",
       currentStock: 0,
       suggestQty: 100,
+      channel: "Shopee",
     },
     createdAt: minsAgo(6),
   },
@@ -53,12 +54,14 @@ export const MOCK_ALERTS: OpsAlert[] = [
     summary:
       "Biên lợi nhuận âm sau khi trừ phí sàn. Cần chỉnh giá bán để về dương.",
     actionLabel: "Sửa giá nhanh",
-    // Giá 170k, vốn 155k, phí sàn 12% → biên hiện tại ≈ −3.2% (đúng "dưới hoà vốn")
+    // Giá gốc 220k nhưng KM 170k; vốn 155k, phí sàn 12% tính trên giá KM →
+    // biên hiện tại ≈ −3.2% (đúng "bán dưới giá hoà vốn").
     action: {
       kind: "edit-price",
       sku: "SP002",
       cost: 155000,
-      price: 170000,
+      price: 220000,
+      promoPrice: 170000,
       feeRate: 0.12,
     },
     createdAt: minsAgo(22),
