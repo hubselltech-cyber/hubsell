@@ -31,9 +31,31 @@ router.get("/", async (req: AuthRequest, res, next) => {
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { orders: true, channelProducts: true } } },
     });
+
+    // Số sản phẩm sàn ĐÃ KHỚP mã SKU về kho gốc (productId != null) — khác với
+    // tổng channelProducts (gồm cả sản phẩm sàn chưa liên kết).
+    const matched = await prisma.channelProduct.groupBy({
+      by: ["channelId"],
+      where: {
+        productId: { not: null },
+        channel: {
+          userId: req.ownerId!,
+          ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        },
+      },
+      _count: { _all: true },
+    });
+    const matchedByChannel = new Map(
+      matched.map((m) => [m.channelId, m._count._all])
+    );
+
     const isAdmin = req.userRole === "ADMIN";
     res.json(
-      channels.map((c) => ({ ...c, apiToken: isAdmin ? c.apiToken : null }))
+      channels.map((c) => ({
+        ...c,
+        apiToken: isAdmin ? c.apiToken : null,
+        matchedProductCount: matchedByChannel.get(c.id) ?? 0,
+      }))
     );
   } catch (err) {
     next(err);

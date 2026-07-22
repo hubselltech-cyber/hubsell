@@ -45,8 +45,8 @@ export type ActionParams =
       price: number;
       /** Giá khuyến mãi hiện tại — giá khách THỰC TẾ trả, dùng để tính biên. */
       promoPrice: number;
-      /** Tỷ lệ phí sàn dạng thập phân, VD 0.12 = 12%. */
-      feeRate: number;
+      // Chi phí sàn KHÔNG lưu ở đây nữa — được ước tính động từ đơn hàng thành
+      // công gần nhất của chính SKU này (xem estimateChannelCost trong mock-service).
     }
   | {
       kind: "edit-shipping";

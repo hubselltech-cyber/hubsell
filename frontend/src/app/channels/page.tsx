@@ -797,13 +797,16 @@ export default function ChannelsPage() {
                             </p>
                           </div>
 
-                          <div className="min-w-40">
+                          {/* Trang Kênh bán chỉ lo KẾT NỐI API — không hiển thị
+                              phí sàn (phí thực tế do đơn hàng quyết định, xem ở
+                              Command Center / Báo cáo tài chính). */}
+                          <div className="min-w-48">
                             <p className={TEXT_SUB}>
-                              {formatNumber(c._count?.orders ?? 0)} đơn hàng ·{" "}
-                              {formatNumber(c._count?.channelProducts ?? 0)} SP sàn
+                              {formatNumber(c._count?.orders ?? 0)} đơn đã đồng bộ
                             </p>
                             <p className={TEXT_SUB}>
-                              Phí sàn {(Number(c.feeRate) * 100).toFixed(1)}%
+                              {formatNumber(c.matchedProductCount ?? 0)} SP sàn đã
+                              khớp SKU
                             </p>
                           </div>
 

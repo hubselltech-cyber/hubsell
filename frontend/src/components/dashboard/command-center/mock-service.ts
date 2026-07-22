@@ -54,15 +54,14 @@ export const MOCK_ALERTS: OpsAlert[] = [
     summary:
       "Biên lợi nhuận âm sau khi trừ phí sàn. Cần chỉnh giá bán để về dương.",
     actionLabel: "Sửa giá nhanh",
-    // Giá gốc 220k nhưng KM 170k; vốn 155k, phí sàn 12% tính trên giá KM →
-    // biên hiện tại ≈ −3.2% (đúng "bán dưới giá hoà vốn").
+    // Giá gốc 220k, KM 170k, vốn 155k. Chi phí sàn KHÔNG fix ở đây — modal tự
+    // ước tính từ đơn thành công gần nhất của SP002 (xem MOCK_SKU_ORDERS).
     action: {
       kind: "edit-price",
       sku: "SP002",
       cost: 155000,
       price: 220000,
       promoPrice: 170000,
-      feeRate: 0.12,
     },
     createdAt: minsAgo(22),
   },
@@ -242,6 +241,68 @@ export function parsePastedTable(raw: string): string[][] | null {
   const cols = rows[0].length;
   const consistent = rows.every((r) => Math.abs(r.length - cols) <= 1);
   return consistent ? rows : null;
+}
+
+// ─────────────── LỊCH SỬ ĐƠN THÀNH CÔNG THEO SKU (mô phỏng API sàn) ───────────────
+
+/** Một đơn ĐÃ GIAO — nguồn để tạm tính chi phí sàn thực tế của SKU. */
+export interface SkuOrderRecord {
+  orderCode: string;
+  channel: string;
+  deliveredAt: string; // ISO
+  /** Giá khách thực trả trên đơn đó. */
+  sellPrice: number;
+  /** Phí sàn THỰC TẾ sàn đã khấu trừ trên đơn đó. */
+  platformFee: number;
+}
+
+/**
+ * "Cơ sở dữ liệu" đơn hàng giả lập, thay cho API thật của sàn. Mỗi SKU giữ vài
+ * đơn giao gần nhất kèm phí sàn thực — để ước tính chi phí động, KHÔNG hardcode.
+ */
+const MOCK_SKU_ORDERS: Record<string, SkuOrderRecord[]> = {
+  SP002: [
+    {
+      orderCode: "SHOPEE-1784490221",
+      channel: "Shopee",
+      deliveredAt: minsAgo(95),
+      sellPrice: 170000,
+      platformFee: 21200,
+    },
+    {
+      orderCode: "SHOPEE-1784471880",
+      channel: "Shopee",
+      deliveredAt: minsAgo(640),
+      sellPrice: 175000,
+      platformFee: 21800,
+    },
+  ],
+};
+
+/** Chi phí sàn ước tính cho một SKU, suy ra từ đơn giao GẦN NHẤT của nó. */
+export interface EstimatedCost {
+  /** Tỷ lệ phí/giá bán của đơn gần nhất (thập phân). */
+  rate: number;
+  /** Phí thực tế của đơn gần nhất (đồng). */
+  amount: number;
+  order: SkuOrderRecord;
+}
+
+/**
+ * Trích xuất chi phí sàn ĐỘNG từ đơn giao thành công gần nhất của SKU.
+ * Không có đơn nào để dựa vào ⇒ null (form sẽ báo "chưa đủ dữ liệu tạm tính").
+ */
+export function estimateChannelCost(sku: string): EstimatedCost | null {
+  const orders = MOCK_SKU_ORDERS[sku];
+  if (!orders || orders.length === 0) return null;
+  const latest = [...orders].sort((a, b) =>
+    b.deliveredAt.localeCompare(a.deliveredAt)
+  )[0];
+  return {
+    rate: latest.platformFee / latest.sellPrice,
+    amount: latest.platformFee,
+    order: latest,
+  };
 }
 
 /** Giả lập gọi API xử lý — trễ ~800ms để pop-up hiển thị trạng thái loading. */

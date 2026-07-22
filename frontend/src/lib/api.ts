@@ -1068,6 +1068,8 @@ export interface Channel {
   feeRate: string | number;
   createdAt: string;
   _count?: { orders: number; channelProducts: number };
+  /** Số sản phẩm sàn đã khớp mã SKU về kho gốc (productId != null). */
+  matchedProductCount?: number;
 }
 
 /** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */

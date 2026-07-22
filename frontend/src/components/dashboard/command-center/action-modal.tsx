@@ -14,9 +14,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HintIcon } from "@/components/finance/hint-icon";
 import { formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { runMockAction } from "./mock-service";
+import { estimateChannelCost, runMockAction } from "./mock-service";
 import { TAG_META, type ActionParams, type OpsAlert } from "./types";
 
 /** Rate ship giả lập (đ/kg) để xem trước phí — chỉ minh hoạ. */
@@ -71,7 +72,7 @@ function Field({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -274,13 +275,18 @@ function EditPriceForm({
   const [listPrice, setListPrice] = useState(String(params.price));
   const [promo, setPromo] = useState(String(params.promoPrice));
 
+  // Chi phí sàn ước tính ĐỘNG từ đơn giao gần nhất của SKU — không hardcode.
+  const estimated = estimateChannelCost(params.sku);
+  const costRate = estimated?.rate ?? 0;
+
   /**
    * Biên lợi nhuận tính trên GIÁ KHUYẾN MÃI — vì đó là giá khách thực trả và
    * là căn cứ sàn thu phí. Giá bán gốc chỉ để niêm yết/gạch ngang.
+   * Chi phí sàn dùng tỷ lệ ước tính từ đơn gần nhất.
    */
   const marginOf = (sellPrice: number) => {
     if (sellPrice <= 0) return 0;
-    const profit = sellPrice - params.cost - sellPrice * params.feeRate;
+    const profit = sellPrice - params.cost - sellPrice * costRate;
     return Math.round((profit / sellPrice) * 1000) / 10;
   };
   const oldMargin = marginOf(params.promoPrice);
@@ -295,7 +301,20 @@ function EditPriceForm({
     <>
       <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-1">
         <Field label="Giá vốn">{formatVND(params.cost)}</Field>
-        <Field label="Phí sàn">{Math.round(params.feeRate * 100)}%</Field>
+        <Field
+          label={
+            <span className="inline-flex items-center gap-1">
+              Chi phí ước tính
+              <HintIcon hint="Hệ thống đang tạm tính dựa trên dữ liệu từ đơn hàng giao thành công gần nhất của sản phẩm này." />
+            </span>
+          }
+        >
+          {estimated ? (
+            `${(costRate * 100).toFixed(1)}%`
+          ) : (
+            <span className="text-slate-400">chưa đủ dữ liệu</span>
+          )}
+        </Field>
         <Field label="Biên hiện tại (theo giá KM)">
           <span className={oldMargin < 0 ? "text-rose-600" : "text-slate-900"}>
             {oldMargin}%
