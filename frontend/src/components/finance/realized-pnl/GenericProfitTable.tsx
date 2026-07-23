@@ -26,19 +26,19 @@ export function GenericProfitTable({ rows }: { rows: PnlDetailRow[] }) {
       <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
-            <th className={cn(HEADER_GROUP, "text-left")} colSpan={5}>
+            <th className={cn(HEADER_GROUP, "text-center")} colSpan={5}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn(HEADER_GROUP, "text-right text-emerald-700")} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={2}>
               Doanh thu
             </th>
-            <th className={cn(HEADER_GROUP, "text-right text-rose-700")} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={2}>
               Phí sàn
             </th>
-            <th className={cn(HEADER_GROUP, "text-right text-slate-600")} colSpan={1}>
+            <th className={cn(HEADER_GROUP, "text-center text-slate-600")} colSpan={1}>
               Vận hành
             </th>
-            <th className={cn(HEADER_GROUP, "text-right")}>Kết quả</th>
+            <th className={cn(HEADER_GROUP, "text-center")}>Kết quả</th>
           </tr>
           <tr>
             {[

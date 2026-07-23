@@ -34,21 +34,21 @@ export function TiktokProfitTable({ rows }: { rows: PnlDetailRow[] }) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[2280px] border-separate border-spacing-0 text-sm">
         <thead>
-          {/* Tầng nhóm block */}
+          {/* Tầng nhóm block — tiêu đề nhóm căn giữa trên các cột con */}
           <tr>
-            <th className={cn(HEADER_GROUP, "text-left")} colSpan={8}>
+            <th className={cn(HEADER_GROUP, "text-center")} colSpan={8}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn(HEADER_GROUP, "text-right text-emerald-700")} colSpan={4}>
+            <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={4}>
               Doanh thu &amp; Giảm giá
             </th>
-            <th className={cn(HEADER_GROUP, "text-right text-sky-700")} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-center text-sky-700")} colSpan={6}>
               Chi tiết phí vận chuyển
             </th>
-            <th className={cn(HEADER_GROUP, "text-right text-rose-700")} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={6}>
               Phí &amp; Thuế TikTok
             </th>
-            <th className={cn(HEADER_GROUP, "text-right")} colSpan={3}>
+            <th className={cn(HEADER_GROUP, "text-center")} colSpan={3}>
               Hiệu quả kinh doanh
             </th>
           </tr>
