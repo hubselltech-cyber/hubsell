@@ -183,6 +183,14 @@ model Product {
   sellingPrice    Decimal  @default(0) @db.Decimal(12, 2) // giá bán
   quantityInStock Int      @default(0)
   imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
+
+  // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
+  // Tên sản phẩm in trên hóa đơn có thể khác tên bán hàng (theo danh mục hàng hóa).
+  taxName String?
+  // % thuế suất GTGT đầu ra của SKU: 0 / 5 / 8 / 10. Lưu tĩnh khi user cấu hình,
+  // module hóa đơn/đối soát thuế sau này sẽ đọc để tính VAT đầu ra.
+  vatRate Int @default(0)
+
   createdAt       DateTime @default(now())
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)

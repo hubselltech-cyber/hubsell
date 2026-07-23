@@ -182,6 +182,10 @@ export interface Product {
   costPrice?: string | number;
   sellingPrice: string | number;
   quantityInStock: number;
+  /** Thuế & Hóa đơn (module đang dựng khung — giữ chỗ). */
+  taxName?: string | null;
+  /** % thuế suất GTGT đầu ra: 0 / 5 / 8 / 10. */
+  vatRate?: number;
   createdAt: string;
 }
 
@@ -548,6 +552,9 @@ export function createProduct(data: {
   costPrice: number;
   sellingPrice: number;
   initialQuantity: number;
+  /** Thuế & Hóa đơn (giữ chỗ) — tuỳ chọn. */
+  taxName?: string;
+  vatRate?: number;
 }) {
   return apiFetch<Product>("/api/products", {
     method: "POST",

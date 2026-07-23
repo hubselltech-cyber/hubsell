@@ -26,9 +26,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { createProduct, getStoredUser, ApiError } from "@/lib/api";
 import { canSeeFinancials } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+
+// Thuế suất GTGT đầu ra cho phép chọn (module Thuế & Hóa đơn — giữ chỗ).
+const VAT_RATE_OPTIONS = ["0", "5", "8", "10"] as const;
 
 // Ô nhập là chuỗi; kiểm tra rồi mới chuyển sang số khi gửi đi
 const numberString = (message: string) =>
@@ -47,6 +51,9 @@ const productSchema = z.object({
     (v) => Number.isInteger(Number(v)),
     "Số lượng phải là số nguyên"
   ),
+  // Thuế & Hóa đơn (giữ chỗ) — đều tuỳ chọn.
+  taxName: z.string().trim().max(255, "Tối đa 255 ký tự").optional(),
+  vatRate: z.enum(VAT_RATE_OPTIONS),
 });
 
 type ProductFormValues = z.infer<typeof productSchema>;
@@ -66,6 +73,8 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
       costPrice: seesCost ? "" : "0",
       sellingPrice: "",
       initialQuantity: "0",
+      taxName: "",
+      vatRate: "0",
     },
   });
 
@@ -78,9 +87,11 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
         costPrice: Number(values.costPrice),
         sellingPrice: Number(values.sellingPrice),
         initialQuantity: Number(values.initialQuantity),
+        taxName: values.taxName?.trim() || undefined,
+        vatRate: Number(values.vatRate),
       });
       toast.success(`Đã thêm sản phẩm "${created.productName}"`);
-      form.reset({ costPrice: seesCost ? "" : "0" });
+      form.reset({ costPrice: seesCost ? "" : "0", vatRate: "0" });
       setOpen(false);
       onCreated();
     } catch (err) {
@@ -178,6 +189,58 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
                 </FormItem>
               )}
             />
+
+            {/* ===== THÔNG TIN THUẾ & HÓA ĐƠN (module đang dựng khung — giữ chỗ) ===== */}
+            <div className="space-y-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-3">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-slate-700">
+                  Thông tin Thuế &amp; Hóa đơn
+                </p>
+                <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                  Giữ chỗ
+                </span>
+              </div>
+
+              <FormField
+                control={form.control}
+                name="taxName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tên sản phẩm trên hóa đơn</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="VD: Áo khoác gió (mã HH: 6201)"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Bỏ trống thì dùng tên sản phẩm mặc định khi xuất hóa đơn.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="vatRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Thuế suất GTGT đầu ra</FormLabel>
+                    <FormControl>
+                      <NativeSelect {...field}>
+                        {VAT_RATE_OPTIONS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}%
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className="flex justify-end gap-2 pt-2">
               <Button

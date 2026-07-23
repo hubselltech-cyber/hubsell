@@ -40,6 +40,13 @@ function parseMoney(value: unknown): number | null {
   return n;
 }
 
+// Thuế suất GTGT hợp lệ (module Thuế & Hóa đơn — giữ chỗ). Trả null nếu không hợp lệ.
+const VAT_RATES = [0, 5, 8, 10];
+function parseVatRate(value: unknown): number | null {
+  const n = typeof value === "string" ? Number(value) : (value as number);
+  return VAT_RATES.includes(n) ? n : null;
+}
+
 // Lấy giá trị của một cột trong hàng Excel, thử nhiều tên cột có thể (không phân biệt hoa/thường)
 function pickColumn(row: Record<string, unknown>, aliases: string[]): unknown {
   const normalized: Record<string, unknown> = {};
@@ -110,8 +117,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
 // Tạo sản phẩm + ghi log nhập kho trong CÙNG một transaction.
 router.post("/", async (req: AuthRequest, res, next) => {
   try {
-    const { skuCode, productName, costPrice, sellingPrice, initialQuantity } =
-      req.body ?? {};
+    const {
+      skuCode,
+      productName,
+      costPrice,
+      sellingPrice,
+      initialQuantity,
+      taxName,
+      vatRate,
+    } = req.body ?? {};
 
     if (typeof skuCode !== "string" || skuCode.trim().length === 0) {
       res.status(400).json({ error: "Vui lòng nhập mã SKU" });
@@ -136,6 +150,12 @@ router.post("/", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Thuế & Hóa đơn (giữ chỗ) — tuỳ chọn. vatRate sai chuẩn thì về 0 thay vì chặn
+    // cả việc tạo sản phẩm, vì đây là trường phụ của module đang dựng khung.
+    const invoiceTaxName =
+      typeof taxName === "string" && taxName.trim() ? taxName.trim() : null;
+    const invoiceVatRate = parseVatRate(vatRate) ?? 0;
+
     const sku = skuCode.trim().toUpperCase();
 
     // SKU không được trùng trong phạm vi user
@@ -156,6 +176,8 @@ router.post("/", async (req: AuthRequest, res, next) => {
           costPrice: cost,
           sellingPrice: selling,
           quantityInStock: initQty,
+          taxName: invoiceTaxName,
+          vatRate: invoiceVatRate,
         },
       });
 
@@ -191,7 +213,8 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const { skuCode, productName, costPrice, sellingPrice } = req.body ?? {};
+    const { skuCode, productName, costPrice, sellingPrice, taxName, vatRate } =
+      req.body ?? {};
     const data: Prisma.ProductUpdateInput = {};
 
     if (skuCode !== undefined) {
@@ -239,6 +262,19 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         return;
       }
       data.sellingPrice = selling;
+    }
+    // Thuế & Hóa đơn (giữ chỗ) — cho phép cập nhật độc lập.
+    if (taxName !== undefined) {
+      data.taxName =
+        typeof taxName === "string" && taxName.trim() ? taxName.trim() : null;
+    }
+    if (vatRate !== undefined) {
+      const rate = parseVatRate(vatRate);
+      if (rate === null) {
+        res.status(400).json({ error: "Thuế suất phải là 0, 5, 8 hoặc 10 (%)" });
+        return;
+      }
+      data.vatRate = rate;
     }
 
     const updated = await prisma.product.update({ where: { id }, data });
