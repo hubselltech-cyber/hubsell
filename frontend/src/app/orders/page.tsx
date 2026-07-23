@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { InvoiceStatusPanel } from "@/components/invoice/invoice-status-panel";
 import { Money } from "@/components/ui/money";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
@@ -197,6 +198,10 @@ function UpdateStatusDialog({
             Khách: {order.customerName}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Khu vực hóa đơn điện tử (giữ chỗ) — tách khỏi luồng đổi trạng thái
+            giao vận và khỏi phiếu đóng gói của kho. */}
+        <InvoiceStatusPanel reference={order.orderCode} />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-2">

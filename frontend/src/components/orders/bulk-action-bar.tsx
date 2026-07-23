@@ -184,10 +184,13 @@ export function BulkActionBar({
           variant="secondary"
           onClick={handlePrint}
           disabled={busy !== null}
+          // Làm rõ đây là phiếu NỘI BỘ để kho soạn hàng, tách hẳn khỏi hóa đơn
+          // điện tử pháp lý (HĐĐT) — tránh nhân viên kho thao tác nhầm.
           title={
-            reprinting.length > 0
-              ? `${reprinting.length} đơn trong danh sách đã được in phiếu trước đó`
-              : undefined
+            "In Phiếu đóng gói / Phiếu bán hàng cho kho soạn hàng — độc lập với hóa đơn điện tử (HĐĐT)." +
+            (reprinting.length > 0
+              ? ` ${reprinting.length} đơn đã in trước đó.`
+              : "")
           }
         >
           {busy === "print" ? (
@@ -195,7 +198,7 @@ export function BulkActionBar({
           ) : (
             <Printer className="size-4" />
           )}
-          In phiếu
+          In phiếu đóng gói
           {reprinting.length > 0 && ` (${formatNumber(reprinting.length)} in lại)`}
         </Button>
 
