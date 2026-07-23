@@ -16,6 +16,8 @@ import mappingsRouter from "./routes/mappings";
 import webhooksRouter from "./routes/webhooks";
 import staffRouter from "./routes/staff";
 import financeRouter from "./routes/finance";
+import commandCenterRouter from "./routes/command-center";
+import invoiceConfigRouter from "./routes/invoice-config";
 
 export function createApp() {
   const app = express();
@@ -68,6 +70,13 @@ export function createApp() {
 
   // Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
   app.use("/api/staff", requireAuth, adminOnly, staffRouter);
+
+  // Trung tâm điều hành — khối demo trên Dashboard, chỉ Admin thấy nên gác adminOnly.
+  // KHÔNG gác requireChannel: trạng thái (đã xử lý/chat/nhật ký) không phụ thuộc kênh.
+  app.use("/api/command-center", requireAuth, adminOnly, commandCenterRouter);
+
+  // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — chỉ Admin.
+  app.use("/api/invoice-config", requireAuth, adminOnly, invoiceConfigRouter);
 
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).

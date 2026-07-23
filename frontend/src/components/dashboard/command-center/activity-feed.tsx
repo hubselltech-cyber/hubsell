@@ -1,5 +1,7 @@
 "use client";
 
+import { FlaskConical } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import {
   TAG_META,
@@ -14,6 +16,7 @@ const DOT: Record<AlertTag, string> = {
   finance: "bg-violet-400",
   channel: "bg-amber-400",
   ads: "bg-rose-400",
+  tax: "bg-teal-400",
 };
 
 export function ActivityFeed({
@@ -51,9 +54,24 @@ export function ActivityFeed({
 
       <div className="mt-1 flex-1 space-y-0 overflow-y-auto">
         {shown.length === 0 ? (
-          <p className="pt-8 text-center text-sm text-slate-400">
-            Chưa có hoạt động nào.
-          </p>
+          filter === "tax" ? (
+            // Luồng Thuế chưa chạy — trạng thái Beta. Sau này chỉ hiện hoạt động
+            // khi có lỗi phát sinh (lỗi kết nối API hóa đơn, lỗi ký số…).
+            <div className="flex flex-col items-center gap-2 px-4 pt-10 text-center">
+              <FlaskConical className="size-8 text-teal-500" />
+              <p className="text-sm font-medium text-slate-600">
+                Tính năng đối soát Thuế tự động đang được thiết lập (Beta)
+              </p>
+              <p className="max-w-xs text-xs text-slate-400">
+                Khi hoàn tất, mục này chỉ hiển thị lúc có lỗi phát sinh (lỗi kết
+                nối API hóa đơn, lỗi ký số…).
+              </p>
+            </div>
+          ) : (
+            <p className="pt-8 text-center text-sm text-slate-400">
+              Chưa có hoạt động nào.
+            </p>
+          )
         ) : (
           shown.map((it) => (
             <div

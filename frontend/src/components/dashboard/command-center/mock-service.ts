@@ -214,6 +214,11 @@ const STATIC_ALERTS: OpsAlert[] = [
   },
 ];
 
+// Luồng THUẾ ở Trung tâm điều hành CHỦ ĐỘNG không có cảnh báo tĩnh — sau này chỉ
+// phát cảnh báo khi có LỖI phát sinh (lỗi kết nối API hóa đơn, lỗi ký số…). Trạng
+// thái "đang thiết lập (Beta)" được thể hiện ở Empty State của bộ lọc THUẾ trong
+// Nhật ký, không chiếm chỗ trong danh sách cảnh báo real-time.
+
 /** Cảnh báo cháy hàng (đã gom theo sản phẩm cha) đứng trước, rồi tới cảnh báo khác. */
 export const MOCK_ALERTS: OpsAlert[] = [
   ...buildInventoryAlerts(),

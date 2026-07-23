@@ -11,6 +11,7 @@ import {
   Loader2,
   LogOut,
   Package,
+  Settings,
   ShoppingCart,
   Store,
   Users,
@@ -82,6 +83,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/channels", label: "Kênh bán", icon: Store, roles: ["ADMIN"] },
   { href: "/mappings", label: "Liên kết SP", icon: Link2, roles: ["ADMIN"] },
   { href: "/staff", label: "Nhân viên", icon: Users, roles: ["ADMIN"] },
+  { href: "/settings", label: "Cấu hình", icon: Settings, roles: ["ADMIN"] },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
@@ -92,6 +94,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Liên kết sản phẩm" },
   { prefix: "/staff", title: "Quản lý nhân viên" },
+  { prefix: "/settings", title: "Cấu hình hệ thống" },
   { prefix: "/finance/analytics", title: "Báo cáo dòng tiền" },
   { prefix: "/finance/expenses", title: "Chi phí vận hành" },
   { prefix: "/finance/loss-orders", title: "Cảnh báo & P&L Sản phẩm" },

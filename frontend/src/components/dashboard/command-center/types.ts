@@ -11,7 +11,7 @@
 export type OpsRole = "ADMIN" | "KHO" | "KE_TOAN" | "MARKETING";
 
 /** Nhóm cảnh báo. */
-export type AlertTag = "inventory" | "finance" | "channel" | "ads";
+export type AlertTag = "inventory" | "finance" | "channel" | "ads" | "tax";
 
 /** Mức độ nghiêm trọng. */
 export type Severity = "high" | "medium" | "low";
@@ -136,6 +136,10 @@ export const TAG_META: Record<
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
   ads: { label: "ADS", className: "bg-rose-50 text-rose-700 border-rose-200" },
+  tax: {
+    label: "THUẾ",
+    className: "bg-teal-50 text-teal-700 border-teal-200",
+  },
 };
 
 export const SEVERITY_META: Record<
@@ -162,7 +166,7 @@ export const OPS_ROLES: OpsRole[] = ["ADMIN", "KHO", "KE_TOAN", "MARKETING"];
 const ROLE_VIEW: Record<OpsRole, AlertTag[] | "all"> = {
   ADMIN: "all",
   KHO: ["inventory", "channel"],
-  KE_TOAN: ["finance", "inventory"],
+  KE_TOAN: ["finance", "inventory", "tax"], // kế toán phụ trách luồng thuế
   MARKETING: ["ads", "channel"],
 };
 
@@ -179,6 +183,7 @@ const TAG_ACTORS: Record<AlertTag, OpsRole[]> = {
   finance: ["KE_TOAN"],
   channel: ["KHO", "MARKETING"],
   ads: ["MARKETING"],
+  tax: ["KE_TOAN"],
 };
 
 /** Vai trò này có được xem cảnh báo thuộc tag này không. */

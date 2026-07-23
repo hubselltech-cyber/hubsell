@@ -118,6 +118,14 @@ model User {
   // Không gán gian nào = SALES đó chưa xem được đơn nào (mặc định đóng, an toàn
   // hơn là mở toàn bộ); ADMIN và WAREHOUSE vốn đã thấy mọi gian nên bỏ qua bảng này.
   staffChannels StaffChannel[] @relation("StaffChannels")
+
+  // Trạng thái Trung tâm điều hành (Command Center) — gắn theo chủ shop.
+  opsResolvedAlerts OpsResolvedAlert[] @relation("OpsResolvedAlerts")
+  opsChatMessages   OpsChatMessage[]   @relation("OpsChatMessages")
+  opsActivities     OpsActivity[]      @relation("OpsActivities")
+
+  // Cấu hình hóa đơn điện tử & chữ ký số (Multi-Vendor Adapter).
+  invoiceConfigs InvoiceConfig[]
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
@@ -144,6 +152,7 @@ model Channel {
   orders          Order[]
   channelProducts ChannelProduct[]
   staffAccess     StaffChannel[]
+  invoiceConfigs  InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   @@index([userId])
@@ -171,6 +180,99 @@ model StaffChannel {
 
   @@unique([staffId, channelId])
   @@index([staffId])
+}
+
+// ---------- TRUNG TÂM ĐIỀU HÀNH (Command Center) ----------
+//
+// Cảnh báo gốc vẫn được SINH Ở FRONTEND (dữ liệu mock/quét theo thời gian thực),
+// nên 3 bảng dưới đây KHÔNG lưu cảnh báo — chỉ ghi nhận những THAY ĐỔI do người
+// dùng tạo ra để không mất khi F5:
+//   1) cảnh báo nào đã được đánh dấu "Đã xử lý"
+//   2) các tin nhắn thảo luận mới theo từng cảnh báo
+//   3) các sự kiện nhật ký vận hành mới phát sinh
+// Tất cả gắn theo `ownerId` (chủ shop) — mỗi shop một không gian riêng.
+
+/// Cảnh báo đã được đánh dấu "Đã xử lý". Có bản ghi = đã xử lý (làm mờ thẻ).
+model OpsResolvedAlert {
+  id         String   @id @default(cuid())
+  ownerId    String
+  /// id cảnh báo phía frontend (VD "al-inv-grp-1", "al-fin-1").
+  alertId    String
+  /// Vai trò vận hành đã tick (ADMIN/KHO/KE_TOAN/MARKETING) — lưu dạng chuỗi vì
+  /// đây là vai trò riêng của Command Center, không phải enum Role đăng nhập.
+  byRole     String
+  resolvedAt DateTime @default(now())
+
+  owner User @relation("OpsResolvedAlerts", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, alertId]) // mỗi cảnh báo chỉ một bản ghi đã-xử-lý cho mỗi shop
+  @@index([ownerId])
+}
+
+/// Một tin nhắn thảo luận gắn với một cảnh báo cụ thể.
+model OpsChatMessage {
+  id        String   @id @default(cuid())
+  ownerId   String
+  alertId   String
+  author    String
+  /// Vai trò vận hành người gửi (chuỗi, xem ghi chú ở OpsResolvedAlert).
+  role      String
+  /// Nội dung tin ở dạng JSON của ChatBody: text | table | image.
+  body      String
+  createdAt DateTime @default(now())
+
+  owner User @relation("OpsChatMessages", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, alertId])
+}
+
+/// Một dòng nhật ký vận hành.
+model OpsActivity {
+  id        String   @id @default(cuid())
+  ownerId   String
+  tag       String // inventory | finance | channel | ads
+  message   String
+  createdAt DateTime @default(now())
+
+  owner User @relation("OpsActivities", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+// ---------- HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ (Multi-Vendor Adapter) ----------
+//
+// Cấu hình kết nối tới các NCC hóa đơn (MISA/Viettel/Bkav/Custom) để chuẩn bị
+// tích hợp API thương mại. Tách bảng riêng để module này đóng gói độc lập, không
+// làm phình model Product/Channel.
+//
+// PHẠM VI theo `channelId`:
+//   - channelId = NULL  → cấu hình MẶC ĐỊNH cấp shop (chọn NCC, phương thức ký,
+//     partnerCode của Hubsell, thông tin đăng nhập chung).
+//   - channelId != NULL → override cho MỘT gian hàng, chủ yếu giữ `apiKey` riêng
+//     của gian đó (phục vụ đối soát hoa hồng theo từng shop sau này).
+
+/// Cấu hình hóa đơn điện tử của shop (và api_key riêng theo gian hàng).
+model InvoiceConfig {
+  id        String  @id @default(cuid())
+  ownerId   String
+  channelId String? // NULL = cấu hình cấp shop; có giá trị = cấu hình riêng 1 gian
+
+  provider     String  @default("MISA") // MISA | VIETTEL | BKAV | CUSTOM
+  signMethod   String  @default("usb") // usb (USB Token) | hsm (Cloud HSM)
+  partnerCode  String? // Mã đối tác của Hubsell với NCC — dùng cho đối soát hoa hồng
+  clientId     String? // Mã định danh (Client ID) do NCC cấp
+  secretKey    String? // Khóa bảo mật — nhạy cảm, chỉ trả về dạng che khi đọc
+  apiKey       String? // API key RIÊNG cho từng gian hàng — nhạy cảm, trả về che
+  customApiUrl String? // Endpoint khi provider = CUSTOM
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  channel Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, channelId]) // 1 cấu hình cho mỗi (shop, gian) — NULL là cấu hình mặc định
+  @@index([ownerId])
 }
 
 /// Sản phẩm trong kho

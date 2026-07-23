@@ -1233,3 +1233,125 @@ export function adjustInventory(data: {
     { method: "POST", body: JSON.stringify(data) }
   );
 }
+
+// ----- Trung tâm điều hành (Command Center) -----
+//
+// Chỉ lưu các THAY ĐỔI do người dùng tạo (đã xử lý / chat / nhật ký). Cảnh báo
+// gốc vẫn sinh ở frontend. role/tag để dạng string vì đây là vai trò & nhóm
+// riêng của Command Center (types.ts), component tự ép về kiểu của nó.
+
+/** Một dòng nhật ký vận hành đã lưu. */
+export interface OpsActivityDTO {
+  id: string;
+  tag: string;
+  message: string;
+  at: string;
+}
+
+/** Một tin thảo luận đã lưu (body là ChatBody dạng JSON). */
+export interface OpsChatDTO {
+  id: string;
+  alertId: string;
+  author: string;
+  role: string;
+  body: unknown;
+  at: string;
+}
+
+export interface OpsStateResponse {
+  resolvedAlertIds: string[];
+  chat: OpsChatDTO[];
+  activities: OpsActivityDTO[];
+}
+
+/** Đọc toàn bộ trạng thái Command Center đã lưu của shop (gọi khi load/F5). */
+export function fetchCommandCenterState() {
+  return apiFetch<OpsStateResponse>("/api/command-center/state");
+}
+
+/** Đánh dấu / bỏ đánh dấu một cảnh báo "Đã xử lý" (kèm nhật ký nếu có). */
+export function setCommandCenterResolved(input: {
+  alertId: string;
+  resolved: boolean;
+  byRole?: string;
+  activity?: { tag: string; message: string };
+}) {
+  return apiFetch<{ ok: boolean; resolved: boolean; activity: OpsActivityDTO | null }>(
+    "/api/command-center/resolve",
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+/** Lưu một tin thảo luận mới cho một cảnh báo (kèm nhật ký nếu có). */
+export function postCommandCenterChat(input: {
+  alertId: string;
+  role: string;
+  body: unknown;
+  author?: string;
+  activity?: { tag: string; message: string };
+}) {
+  return apiFetch<{ message: OpsChatDTO; activity: OpsActivityDTO | null }>(
+    "/api/command-center/chat",
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+// ----- Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor Adapter) -----
+//
+// Trường bí mật (secretKey, apiKey) KHÔNG bao giờ nhận về nguyên văn — chỉ có bản
+// che + cờ đã-đặt. Khi lưu, để trống nghĩa là giữ nguyên khóa cũ.
+
+export interface InvoiceConfigDTO {
+  provider: string; // MISA | VIETTEL | BKAV | CUSTOM
+  signMethod: string; // usb | hsm
+  partnerCode: string;
+  clientId: string;
+  customApiUrl: string;
+  hasSecretKey: boolean;
+  secretKeyMasked: string | null;
+}
+
+/** api_key riêng của một gian hàng (phục vụ đối soát hoa hồng theo shop). */
+export interface InvoiceChannelKeyDTO {
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  hasApiKey: boolean;
+  apiKeyMasked: string | null;
+}
+
+export interface InvoiceConfigResponse {
+  config: InvoiceConfigDTO;
+  channelKeys: InvoiceChannelKeyDTO[];
+}
+
+export function fetchInvoiceConfig() {
+  return apiFetch<InvoiceConfigResponse>("/api/invoice-config");
+}
+
+/** Lưu cấu hình cấp shop. secretKey để trống = giữ nguyên khóa cũ. */
+export function saveInvoiceConfig(input: {
+  provider: string;
+  signMethod: string;
+  partnerCode?: string;
+  clientId?: string;
+  secretKey?: string;
+  customApiUrl?: string;
+}) {
+  return apiFetch<{ config: InvoiceConfigDTO }>("/api/invoice-config", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Lưu api_key riêng cho một gian hàng. Để trống = giữ nguyên khóa cũ. */
+export function saveInvoiceChannelKey(channelId: string, apiKey: string) {
+  return apiFetch<{
+    channelId: string;
+    hasApiKey: boolean;
+    apiKeyMasked: string | null;
+  }>(`/api/invoice-config/channels/${channelId}`, {
+    method: "PUT",
+    body: JSON.stringify({ apiKey }),
+  });
+}
