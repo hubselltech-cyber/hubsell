@@ -32,6 +32,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
+import { CashFlowTable } from "@/components/finance/cash-flow-table";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -205,6 +206,9 @@ export default function FinanceAnalyticsPage() {
             <b> thực tế</b> sàn trả về; đơn đang đi đường dùng số <b>tạm tính</b>.
           </p>
         )}
+
+        {/* ===== BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG ===== */}
+        <CashFlowTable />
 
         {/* Biểu đồ vùng: Doanh thu vs Tổng chi phí */}
         <Card>

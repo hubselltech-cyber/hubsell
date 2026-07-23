@@ -450,6 +450,36 @@ export function fetchRealizedPnl(params: {
   );
 }
 
+// ----- Phân bổ dòng tiền theo gian hàng (Cash Flow) -----
+
+/**
+ * Một dòng dòng-tiền của MỘT gian hàng. Mọi giá trị là số tiền (VNĐ). Backend
+ * trả về đủ mọi gian đã liên kết (kể cả gian chưa phát sinh đơn = toàn 0).
+ */
+export interface CashFlowRow {
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  /** Tiền đang đi đường: đơn đang giao/chuẩn bị hoặc đang hoàn. */
+  inTransit: number;
+  /** Tiền chờ đối soát: đơn đã giao nhưng sàn chưa quyết toán. */
+  pendingSettle: number;
+  /** Tiền đã đối soát: đã về số dư ví sàn (có thể làm lệnh rút). */
+  settled: number;
+  /** Tiền đã thu về: đã rút ví về ngân hàng (GIỮ CHỖ — chưa có tính năng). */
+  withdrawn: number;
+  /** Tổng dòng tiền dự kiến của gian = tổng 4 cột trên. */
+  total: number;
+}
+
+export interface CashFlowResponse {
+  rows: CashFlowRow[];
+}
+
+export function fetchCashFlow() {
+  return apiFetch<CashFlowResponse>("/api/finance/cash-flow");
+}
+
 export interface AnalyticsResponse {
   /** Số đơn phát sinh trong kỳ đang tính doanh thu (không gồm đơn hủy). */
   activeOrderCount: number;

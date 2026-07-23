@@ -19,7 +19,7 @@ import {
   hasChannelFilter,
   type ChannelScope,
 } from "../channel-filter";
-import { orderPlatformFee } from "../order-fee";
+import { FEE_SELECT, orderPlatformFee } from "../order-fee";
 
 const router = Router();
 
@@ -419,6 +419,105 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         byPlatform,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG (Cash Flow allocation)
+// Mỗi gian hàng liên kết = một dòng; bóc dòng tiền theo trạng thái vòng đời:
+//   - inTransit    : đơn đang giao/chuẩn bị hoặc đang hoàn (tiền đi đường)
+//   - pendingSettle: đơn đã giao NHƯNG sàn chưa quyết toán (chờ về ví)
+//   - settled      : đơn đã quyết toán → tiền trong ví sàn (số thực nhận)
+//   - withdrawn    : tiền đã rút ví về ngân hàng — CHƯA có tính năng theo dõi
+//     lệnh rút nên GIỮ CHỖ 0đ (sẽ cắm số khi có module rút/đối soát ngân hàng).
+// Liệt kê theo DANH SÁCH CHANNEL (kể cả gian chưa phát sinh đơn) để kết nối
+// thêm gian là bảng tự có thêm dòng, không hardcode.
+// ============================================================
+
+// GET /api/finance/cash-flow — phân bổ dòng tiền theo từng gian hàng
+router.get("/cash-flow", async (req: AuthRequest, res, next) => {
+  try {
+    const scope = channelScope(req);
+    const [channels, orders] = await Promise.all([
+      prisma.channel.findMany({
+        where: scope,
+        orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
+        select: { id: true, channelName: true, shopName: true },
+      }),
+      prisma.order.findMany({
+        where: { channel: scope },
+        select: {
+          channelId: true,
+          totalAmount: true,
+          shippingStatus: true,
+          returnStatus: true,
+          actualPayout: true,
+          ...FEE_SELECT,
+        },
+      }),
+    ]);
+
+    interface Bucket {
+      channelId: string;
+      channelName: ChannelName;
+      shopName: string;
+      inTransit: number;
+      pendingSettle: number;
+      settled: number;
+      withdrawn: number;
+    }
+    const byChannel = new Map<string, Bucket>(
+      channels.map((c) => [
+        c.id,
+        {
+          channelId: c.id,
+          channelName: c.channelName,
+          shopName: c.shopName,
+          inTransit: 0,
+          pendingSettle: 0,
+          settled: 0,
+          withdrawn: 0, // giữ chỗ — chưa theo dõi lệnh rút ví
+        },
+      ])
+    );
+
+    // Ưu tiên theo VỊ TRÍ THỰC của dòng tiền (ground truth cho quản trị tiền):
+    //   1) Đã quyết toán → tiền ĐÃ nằm trong ví (dù đơn có đang hoàn thì tiền
+    //      vẫn đang ở ví cho tới khi hoàn tiền) → "đã đối soát".
+    //   2) Đã giao nhưng chưa quyết toán → "chờ đối soát".
+    //   3) Còn lại (đang giao/chuẩn bị, hoặc đang hoàn mà CHƯA quyết toán) →
+    //      tiền vẫn đang đi đường/chưa chắc → "đang đi đường".
+    for (const o of orders) {
+      const row = byChannel.get(o.channelId);
+      if (!row) continue;
+      if (o.shippingStatus === ShippingStatus.CANCELLED) continue; // hủy → bỏ
+
+      const { fee } = orderPlatformFee(o);
+      const net = Number(o.totalAmount) - fee; // dòng tiền dự kiến của đơn
+
+      if (o.shippingStatus === ShippingStatus.DELIVERED && o.isSettled) {
+        const payout = Number(o.actualPayout);
+        row.settled += payout > 0 ? payout : net; // tiền đã về ví
+      } else if (o.shippingStatus === ShippingStatus.DELIVERED) {
+        row.pendingSettle += net; // đã giao, chờ sàn quyết toán
+      } else {
+        // đang giao / chuẩn bị, hoặc đang hoàn (chưa quyết toán)
+        row.inTransit += net;
+      }
+    }
+
+    // Giữ ĐÚNG thứ tự channel để bảng ổn định; kèm tổng dòng tiền dự kiến/gian.
+    const rows = channels.map((c) => {
+      const b = byChannel.get(c.id)!;
+      return {
+        ...b,
+        total: b.inTransit + b.pendingSettle + b.settled + b.withdrawn,
+      };
+    });
+
+    res.json({ rows });
   } catch (err) {
     next(err);
   }
