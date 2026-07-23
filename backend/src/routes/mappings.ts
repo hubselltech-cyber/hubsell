@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
+import { ChannelName, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 
@@ -25,7 +25,11 @@ const INCLUDE = {
 
 /**
  * GET /api/mappings — danh sách sản phẩm sàn ở tầng đệm.
- * Query: channelId, linked=yes|no, search, page, pageSize
+ * Query: channelName (lọc theo SÀN), channelId (lọc theo GIAN cụ thể),
+ *        linked=yes|no, search, page, pageSize
+ *
+ * channelName và channelId lọc hai tầng độc lập: chọn sàn thu hẹp về mọi gian
+ * của sàn đó; chọn thêm một gian thì thu hẹp tiếp về đúng gian ấy.
  */
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
@@ -33,6 +37,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const channelId =
       typeof req.query.channelId === "string" ? req.query.channelId : "";
+    // Chỉ nhận giá trị có thật trong enum, tránh lọc bừa bằng chuỗi rác.
+    const rawChannelName =
+      typeof req.query.channelName === "string"
+        ? req.query.channelName.trim().toUpperCase()
+        : "";
+    const channelName =
+      rawChannelName in ChannelName
+        ? (rawChannelName as ChannelName)
+        : undefined;
     const linked = typeof req.query.linked === "string" ? req.query.linked : "";
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
@@ -41,6 +54,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       channel: {
         userId: req.ownerId!,
         ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        ...(channelName ? { channelName } : {}),
       },
       ...(channelId ? { channelId } : {}),
       ...(search

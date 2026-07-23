@@ -1166,6 +1166,8 @@ export function disconnectChannel(id: string) {
 
 /** Danh sách sản phẩm sàn ở tầng đệm, kèm trạng thái liên kết. */
 export function fetchChannelProducts(params: {
+  /** Lọc theo SÀN (Shopee/Lazada/…). Kết hợp được với channelId. */
+  channelName?: ChannelName;
   channelId?: string;
   linked?: "yes" | "no";
   search?: string;
@@ -1173,6 +1175,7 @@ export function fetchChannelProducts(params: {
   pageSize?: number;
 }) {
   const qs = new URLSearchParams();
+  if (params.channelName) qs.set("channelName", params.channelName);
   if (params.channelId) qs.set("channelId", params.channelId);
   if (params.linked) qs.set("linked", params.linked);
   if (params.search?.trim()) qs.set("search", params.search.trim());

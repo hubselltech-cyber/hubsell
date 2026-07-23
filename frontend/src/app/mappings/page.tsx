@@ -43,6 +43,7 @@ import {
   linkChannelProducts,
   unlinkChannelProducts,
   type Channel,
+  type ChannelName,
   type ChannelProduct,
   type Product,
 } from "@/lib/api";
@@ -59,6 +60,9 @@ const LINK_TABS: { key: "" | "no" | "yes"; label: string; countKey: string }[] =
   { key: "no", label: "Chưa liên kết", countKey: "unlinked" },
   { key: "yes", label: "Đã liên kết", countKey: "linked" },
 ];
+
+// Thứ tự sàn hiển thị ở dropdown "Chọn sàn".
+const PLATFORM_OPTIONS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA", "OFFLINE"];
 
 /**
  * TẦNG 2 — SẢN PHẨM SÀN & LIÊN KẾT VỀ KHO GỐC
@@ -77,6 +81,8 @@ export default function MappingsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
 
+  // Bộ lọc phân tầng: sàn (platform) và gian hàng cụ thể (channel).
+  const [platformFilter, setPlatformFilter] = useState<ChannelName | "">("");
   const [channelFilter, setChannelFilter] = useState("");
   const [linkTab, setLinkTab] = useState<"" | "no" | "yes">("");
   const [search, setSearch] = useState("");
@@ -103,6 +109,7 @@ export default function MappingsPage() {
     setLoading(true);
     try {
       const res = await fetchChannelProducts({
+        channelName: platformFilter || undefined,
         channelId: channelFilter || undefined,
         linked: linkTab || undefined,
         search: debounced || undefined,
@@ -122,7 +129,7 @@ export default function MappingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [channelFilter, linkTab, debounced, page, pageSize, router]);
+  }, [platformFilter, channelFilter, linkTab, debounced, page, pageSize, router]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -225,8 +232,28 @@ export default function MappingsPage() {
     }
   }
 
+  // Dropdown 2 chỉ hiện các gian thuộc sàn đang chọn ở Dropdown 1; chưa chọn sàn
+  // thì hiện tất cả.
+  const visibleChannels = platformFilter
+    ? channels.filter((c) => c.channelName === platformFilter)
+    : channels;
+
+  // Đổi sàn ở Dropdown 1: reset luôn gian đang chọn nếu nó không thuộc sàn mới,
+  // tránh trạng thái "đang lọc một gian không còn nằm trong danh sách hiển thị".
+  function handlePlatformChange(value: ChannelName | "") {
+    setPlatformFilter(value);
+    if (value && channelFilter) {
+      const cur = channels.find((c) => c.id === channelFilter);
+      if (!cur || cur.channelName !== value) setChannelFilter("");
+    }
+    setPage(1);
+  }
+
   const isFiltering =
-    Boolean(channelFilter) || Boolean(linkTab) || Boolean(search.trim());
+    Boolean(platformFilter) ||
+    Boolean(channelFilter) ||
+    Boolean(linkTab) ||
+    Boolean(search.trim());
 
   if (denied) {
     return (
@@ -284,6 +311,24 @@ export default function MappingsPage() {
               })}
             </div>
 
+            {/* Dropdown 1 — chọn SÀN */}
+            <NativeSelect
+              className="w-40"
+              aria-label="Lọc theo sàn"
+              value={platformFilter}
+              onChange={(e) =>
+                handlePlatformChange(e.target.value as ChannelName | "")
+              }
+            >
+              <option value="">Tất cả các sàn</option>
+              {PLATFORM_OPTIONS.map((name) => (
+                <option key={name} value={name}>
+                  {CHANNEL_META[name].label}
+                </option>
+              ))}
+            </NativeSelect>
+
+            {/* Dropdown 2 — chọn GIAN HÀNG (lọc động theo sàn đã chọn) */}
             <NativeSelect
               className="w-52"
               aria-label="Lọc theo gian hàng"
@@ -294,9 +339,11 @@ export default function MappingsPage() {
               }}
             >
               <option value="">Tất cả gian hàng</option>
-              {channels.map((c) => (
+              {visibleChannels.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {CHANNEL_META[c.channelName].label} · {c.shopName}
+                  {platformFilter
+                    ? c.shopName
+                    : `${CHANNEL_META[c.channelName].label} · ${c.shopName}`}
                 </option>
               ))}
             </NativeSelect>
