@@ -45,9 +45,29 @@ import {
   fetchFinanceAnalytics,
   getStoredUser,
   getToken,
+  type BreakdownItem,
   type FinanceAnalytics,
 } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
+
+// GIỮ CHỖ — module Thuế & Hóa đơn đang dựng khung. Hai dòng chi phí thuế mặc định
+// 0đ để hoàn thiện cấu trúc dòng tiền; sẽ được tính động khi luồng thuế hoàn tất.
+const TAX_PLACEHOLDER_COST_ITEMS: BreakdownItem[] = [
+  {
+    key: "tax-vat-output",
+    label: "Thuế VAT đầu ra (Dự kiến)",
+    hint: "Giữ chỗ — sẽ tính theo thuế suất GTGT cấu hình trên từng SKU khi module Hóa đơn điện tử hoàn tất.",
+    amount: 0,
+    percent: 0,
+  },
+  {
+    key: "tax-affiliate",
+    label: "Thuế Affiliate quy đổi (Tạm tính)",
+    hint: "Giữ chỗ — khoản thuế quy đổi từ phí tiếp thị liên kết, chờ luồng đối soát Thuế tự động.",
+    amount: 0,
+    percent: 0,
+  },
+];
 
 export default function FinanceAnalyticsPage() {
   const router = useRouter();
@@ -157,7 +177,11 @@ export default function FinanceAnalyticsPage() {
               icon={Receipt}
               tone="negative"
               colorValue
-              items={data.breakdown.costs.items}
+              // Nối thêm 2 dòng thuế GIỮ CHỖ (0đ) để hoàn thiện cấu trúc dòng tiền.
+              items={[
+                ...data.breakdown.costs.items,
+                ...TAX_PLACEHOLDER_COST_ITEMS,
+              ]}
             />
 
             <BreakdownCard
