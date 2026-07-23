@@ -148,16 +148,16 @@ export function CashFlowTable() {
             <table className="w-full min-w-[880px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="border-b-2 border-slate-200 bg-slate-50 px-4 py-3 text-left text-xs font-medium text-slate-500">
+                  <th className="border-b-2 border-slate-300 bg-slate-100 px-4 py-3.5 text-left text-xs font-semibold text-slate-700">
                     Kênh &amp; Gian hàng
                   </th>
                   {COLS.map((c, i) => (
                     <th
                       key={c}
                       className={cn(
-                        "border-b-2 border-slate-200 bg-slate-50 px-4 py-3 text-right text-xs font-medium text-slate-500",
-                        // Cột cuối: thêm khoảng thở phải để số không dính vách bảng
-                        i === COLS.length - 1 && "pr-6 font-semibold text-slate-700"
+                        "border-b-2 border-slate-300 bg-slate-100 px-4 py-3.5 text-right text-xs font-semibold text-slate-700",
+                        // Cột cuối (quan trọng nhất): khoảng thở phải + đậm/tối hơn
+                        i === COLS.length - 1 && "pr-6 font-bold text-slate-800"
                       )}
                     >
                       {c}
@@ -168,11 +168,12 @@ export function CashFlowTable() {
               <tbody className="tabular-nums">
                 {shown.map((r) => {
                   const meta = CHANNEL_META[r.channelName];
-                  const cell = "border-t border-slate-100 px-4 py-3";
+                  // py-3.5 cho hàng đủ "thở"; text-sm để số dễ đọc hơn.
+                  const cell = "border-t border-slate-100 px-4 py-3.5 text-sm";
                   return (
                     <tr
                       key={r.channelId}
-                      className="transition-colors hover:bg-primary/[0.04]"
+                      className="transition-colors hover:bg-primary/[0.05]"
                     >
                       <td className={cn(cell, "text-left")}>
                         <span className="flex items-center gap-2">
@@ -189,16 +190,16 @@ export function CashFlowTable() {
                           </span>
                         </span>
                       </td>
-                      <td className={cn(cell, "text-right text-slate-700")}>
+                      <td className={cn(cell, "text-right font-medium text-slate-800")}>
                         <Cash value={r.inTransit} />
                       </td>
-                      <td className={cn(cell, "text-right text-amber-700")}>
+                      <td className={cn(cell, "text-right font-medium text-amber-700")}>
                         <Cash value={r.pendingSettle} />
                       </td>
-                      <td className={cn(cell, "text-right text-emerald-700")}>
+                      <td className={cn(cell, "text-right font-medium text-emerald-700")}>
                         <Cash value={r.settled} />
                       </td>
-                      <td className={cn(cell, "text-right text-slate-700")}>
+                      <td className={cn(cell, "text-right font-medium text-slate-800")}>
                         <Cash value={r.withdrawn} />
                       </td>
                       <td className={cn(cell, "pr-6 text-right font-semibold text-slate-900")}>
@@ -211,22 +212,22 @@ export function CashFlowTable() {
               <tfoot>
                 {/* HÀNG TỔNG CỘNG — cộng dồn động bằng reduce, nền nhẹ + in đậm */}
                 <tr className="bg-slate-100 font-bold text-slate-900">
-                  <td className="border-t-2 border-slate-300 px-4 py-3 text-left">
+                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-left">
                     TỔNG CỘNG {platform ? `(${CHANNEL_META[platform].label})` : ""}
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3 text-right">
+                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
                     <Money value={totals.inTransit} className="font-bold" />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3 text-right">
+                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
                     <Money value={totals.pendingSettle} className="font-bold" />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3 text-right">
+                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
                     <Money value={totals.settled} className="font-bold" />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3 text-right">
+                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
                     <Money value={totals.withdrawn} className="font-bold" />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3 pr-6 text-right">
+                  <td className="border-t-2 border-slate-300 px-4 py-3.5 pr-6 text-right">
                     <Money value={totals.total} className="font-bold" />
                   </td>
                 </tr>
