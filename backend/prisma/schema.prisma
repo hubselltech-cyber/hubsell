@@ -149,11 +149,22 @@ model Channel {
   @@index([userId])
 }
 
-/// Phân quyền gian hàng cho nhân viên: nhân viên (staffId) được phép xử lý kênh (channelId).
+/// Phân quyền gian hàng cho nhân viên: nhân viên (staffId) được gán vào kênh
+/// (channelId). Sự TỒN TẠI của bản ghi = nhân viên được phân công gian này (dùng
+/// để lọc tầm nhìn dữ liệu ở channel-filter). Bốn cờ bên dưới tinh chỉnh nhân
+/// viên được làm GÌ trong gian đó — bật/tắt độc lập từng chức năng.
+///
+/// Mặc định `true` để dữ liệu cũ (đã phân công trước khi có phân quyền chi tiết)
+/// giữ nguyên toàn quyền như trước, không bị mất quyền âm thầm sau khi nâng cấp.
 model StaffChannel {
   id        String @id @default(cuid())
   staffId   String
   channelId String
+
+  canFinance   Boolean @default(true) // Tài chính — xem doanh thu/dòng tiền của gian
+  canWarehouse Boolean @default(true) // Kho hàng — nhặt/đóng/đối soát hàng hoàn
+  canAds       Boolean @default(true) // Quảng cáo — số liệu & tối ưu quảng cáo
+  canOrders    Boolean @default(true) // Đơn hàng — xử lý đơn của gian
 
   staff   User    @relation("StaffChannels", fields: [staffId], references: [id], onDelete: Cascade)
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)

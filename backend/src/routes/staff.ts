@@ -15,54 +15,165 @@ function isAssignableRole(value: unknown): value is Role {
   return ASSIGNABLE_ROLES.includes(value as Role);
 }
 
+// ---------- Phân quyền chức năng theo gian hàng ----------
+
 /**
- * Chỉ SALES mới bị giới hạn theo gian hàng. WAREHOUSE thấy đơn của mọi gian nên
- * danh sách gán kênh của họ luôn rỗng — trả về [] để giao diện không hiển thị
- * một danh sách vô nghĩa rồi khiến chủ shop tưởng kho đang bị chặn.
+ * Bốn chức năng có thể bật/tắt độc lập cho từng gian hàng của một SALES.
+ * Khóa dùng trong JSON (finance/warehouse/ads/orders) ↔ cột DB (canFinance…).
  */
-function scopeOf(role: Role, channelIds: string[]): string[] {
-  return role === Role.SALES ? channelIds : [];
+const PERMISSION_KEYS = ["finance", "warehouse", "ads", "orders"] as const;
+type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+/** Một dòng trong ma trận phân quyền: gian hàng + trạng thái 4 chức năng. */
+interface ChannelPermissionInput {
+  channelId: string;
+  finance: boolean;
+  warehouse: boolean;
+  ads: boolean;
+  orders: boolean;
 }
 
-// GET /api/staff — danh sách nhân viên của shop + vai trò + phạm vi gian hàng
+/** Bản ghi StaffChannel (chọn 4 cột cờ) → object trả cho giao diện. */
+type StaffChannelRow = {
+  channelId: string;
+  canFinance: boolean;
+  canWarehouse: boolean;
+  canAds: boolean;
+  canOrders: boolean;
+};
+
+function rowToPermission(row: StaffChannelRow): ChannelPermissionInput {
+  return {
+    channelId: row.channelId,
+    finance: row.canFinance,
+    warehouse: row.canWarehouse,
+    ads: row.canAds,
+    orders: row.canOrders,
+  };
+}
+
+const STAFF_CHANNEL_SELECT = {
+  channelId: true,
+  canFinance: true,
+  canWarehouse: true,
+  canAds: true,
+  canOrders: true,
+} as const;
+
+const STAFF_SELECT = {
+  id: true,
+  email: true,
+  fullName: true,
+  role: true,
+  createdAt: true,
+  staffChannels: { select: STAFF_CHANNEL_SELECT },
+} as const;
+
+/**
+ * Chỉ SALES mới bị giới hạn theo gian hàng. WAREHOUSE thấy đơn của mọi gian nên
+ * danh sách phân quyền của họ luôn rỗng — trả về [] để giao diện không hiển thị
+ * một ma trận vô nghĩa rồi khiến chủ shop tưởng kho đang bị chặn.
+ */
+function scopeOf(
+  role: Role,
+  rows: StaffChannelRow[]
+): ChannelPermissionInput[] {
+  return role === Role.SALES ? rows.map(rowToPermission) : [];
+}
+
+/** Định dạng chung của một nhân viên trả về cho giao diện. */
+function serializeStaff(staff: {
+  id: string;
+  email: string;
+  fullName: string;
+  role: Role;
+  createdAt: Date;
+  staffChannels: StaffChannelRow[];
+}) {
+  const allowedChannels = scopeOf(staff.role, staff.staffChannels);
+  return {
+    id: staff.id,
+    email: staff.email,
+    fullName: staff.fullName,
+    role: staff.role,
+    createdAt: staff.createdAt,
+    /** Mảng Object chi tiết: mỗi gian kèm 4 cờ chức năng bật/tắt độc lập. */
+    allowedChannels,
+    /** Danh sách id gian được phân công — tiện cho các chỗ chỉ cần biết phạm vi. */
+    allowedChannelIds: allowedChannels.map((c) => c.channelId),
+  };
+}
+
+/**
+ * Chuẩn hóa & lọc danh sách phân quyền gửi lên: chỉ giữ những gian THẬT SỰ thuộc
+ * shop này (chặn gán bừa id lạ) và ép các cờ về boolean.
+ */
+async function validChannelPermissions(
+  ownerId: string,
+  raw: unknown
+): Promise<ChannelPermissionInput[]> {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  const byId = new Map<string, ChannelPermissionInput>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const channelId = (item as Record<string, unknown>).channelId;
+    if (typeof channelId !== "string" || channelId === "") continue;
+    const perm: ChannelPermissionInput = {
+      channelId,
+      finance: false,
+      warehouse: false,
+      ads: false,
+      orders: false,
+    };
+    for (const key of PERMISSION_KEYS) {
+      perm[key] = (item as Record<string, unknown>)[key] === true;
+    }
+    // Trùng channelId thì giữ bản sau — tránh nhân đôi khi giao diện lỡ gửi lặp.
+    byId.set(channelId, perm);
+  }
+  if (byId.size === 0) return [];
+
+  const rows = await prisma.channel.findMany({
+    where: { userId: ownerId, id: { in: [...byId.keys()] } },
+    select: { id: true },
+  });
+  return rows
+    .map((c) => byId.get(c.id))
+    .filter((p): p is ChannelPermissionInput => p !== undefined);
+}
+
+/** Dữ liệu tạo bản ghi StaffChannel từ một dòng phân quyền. */
+function toStaffChannelCreate(perm: ChannelPermissionInput) {
+  return {
+    channelId: perm.channelId,
+    canFinance: perm.finance,
+    canWarehouse: perm.warehouse,
+    canAds: perm.ads,
+    canOrders: perm.orders,
+  };
+}
+
+// GET /api/staff — danh sách nhân viên của shop + vai trò + phân quyền gian hàng
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const staff = await prisma.user.findMany({
       where: { ownerId: req.ownerId! },
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        createdAt: true,
-        staffChannels: { select: { channelId: true } },
-      },
+      select: STAFF_SELECT,
     });
 
-    res.json(
-      staff.map((s) => ({
-        id: s.id,
-        email: s.email,
-        fullName: s.fullName,
-        role: s.role,
-        createdAt: s.createdAt,
-        allowedChannelIds: scopeOf(
-          s.role,
-          s.staffChannels.map((c) => c.channelId)
-        ),
-      }))
-    );
+    res.json(staff.map(serializeStaff));
   } catch (err) {
     next(err);
   }
 });
 
 // POST /api/staff — tạo tài khoản nhân viên mới cho shop.
-// Body: { email, password, fullName, role: SALES|WAREHOUSE, channelIds?: string[] }
+// Body: { email, password, fullName, role: SALES|WAREHOUSE, channels?: ChannelPermission[] }
 router.post("/", async (req: AuthRequest, res, next) => {
   try {
-    const { email, password, fullName, role, channelIds } = req.body ?? {};
+    const { email, password, fullName, role, channels } = req.body ?? {};
 
     if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
       res.status(400).json({ error: "Email không hợp lệ" });
@@ -94,8 +205,10 @@ router.post("/", async (req: AuthRequest, res, next) => {
 
     // Gán gian hàng ngay lúc tạo để tài khoản SALES không có khoảng thời gian
     // "đã tạo nhưng chưa thấy gì" khiến chủ shop tưởng hệ thống hỏng.
-    const validIds =
-      role === Role.SALES ? await validChannelIds(req.ownerId!, channelIds) : [];
+    const perms =
+      role === Role.SALES
+        ? await validChannelPermissions(req.ownerId!, channels)
+        : [];
 
     const staff = await prisma.user.create({
       data: {
@@ -104,37 +217,16 @@ router.post("/", async (req: AuthRequest, res, next) => {
         fullName: fullName.trim(),
         role,
         ownerId: req.ownerId!,
-        staffChannels: { create: validIds.map((channelId) => ({ channelId })) },
+        staffChannels: { create: perms.map(toStaffChannelCreate) },
       },
+      select: STAFF_SELECT,
     });
 
-    res.status(201).json({
-      id: staff.id,
-      email: staff.email,
-      fullName: staff.fullName,
-      role: staff.role,
-      createdAt: staff.createdAt,
-      allowedChannelIds: validIds,
-    });
+    res.status(201).json(serializeStaff(staff));
   } catch (err) {
     next(err);
   }
 });
-
-/** Lọc lấy những gian hàng thật sự thuộc shop này — chặn gán bừa id lạ. */
-async function validChannelIds(
-  ownerId: string,
-  channelIds: unknown
-): Promise<string[]> {
-  if (!Array.isArray(channelIds) || channelIds.length === 0) return [];
-  const ids = channelIds.filter((c): c is string => typeof c === "string");
-  if (ids.length === 0) return [];
-  const rows = await prisma.channel.findMany({
-    where: { userId: ownerId, id: { in: ids } },
-    select: { id: true },
-  });
-  return rows.map((c) => c.id);
-}
 
 // PATCH /api/staff/:id — đổi vai trò của nhân viên.
 // Body: { role: SALES|WAREHOUSE }
@@ -165,40 +257,24 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       return tx.user.update({
         where: { id: staff.id },
         data: { role },
-        select: {
-          id: true,
-          email: true,
-          fullName: true,
-          role: true,
-          createdAt: true,
-          staffChannels: { select: { channelId: true } },
-        },
+        select: STAFF_SELECT,
       });
     });
 
-    res.json({
-      id: updated.id,
-      email: updated.email,
-      fullName: updated.fullName,
-      role: updated.role,
-      createdAt: updated.createdAt,
-      allowedChannelIds: scopeOf(
-        updated.role,
-        updated.staffChannels.map((c) => c.channelId)
-      ),
-    });
+    res.json(serializeStaff(updated));
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/staff/:id/channels — đặt lại danh sách gian hàng một SALES phụ trách.
-// Body: { channelIds: string[] }. Mảng rỗng = nhân viên đó chưa thấy đơn nào.
+// PUT /api/staff/:id/channels — đặt lại phân quyền gian hàng của một SALES.
+// Body: { channels: ChannelPermission[] } — mỗi gian kèm 4 cờ chức năng.
+// Mảng rỗng = nhân viên đó chưa được gán gian nào (chưa thấy đơn nào).
 router.put("/:id/channels", async (req: AuthRequest, res, next) => {
   try {
-    const { channelIds } = req.body ?? {};
-    if (!Array.isArray(channelIds) || channelIds.some((c) => typeof c !== "string")) {
-      res.status(400).json({ error: "channelIds phải là mảng chuỗi" });
+    const { channels } = req.body ?? {};
+    if (channels !== undefined && !Array.isArray(channels)) {
+      res.status(400).json({ error: "channels phải là mảng" });
       return;
     }
 
@@ -217,56 +293,24 @@ router.put("/:id/channels", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const validIds = await validChannelIds(req.ownerId!, channelIds);
+    const perms = await validChannelPermissions(req.ownerId!, channels);
 
-    await prisma.$transaction([
-      prisma.staffChannel.deleteMany({ where: { staffId: staff.id } }),
-      prisma.staffChannel.createMany({
-        data: validIds.map((channelId) => ({ staffId: staff.id, channelId })),
-      }),
-    ]);
-
-    res.json({ id: staff.id, allowedChannelIds: validIds });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// PUT /api/staff/by-channel/:channelId — phân quyền NGƯỢC từ phía gian hàng:
-// chọn những SALES nào được phụ trách gian này. Body: { staffIds: string[] }
-router.put("/by-channel/:channelId", async (req: AuthRequest, res, next) => {
-  try {
-    const { staffIds } = req.body ?? {};
-    if (!Array.isArray(staffIds) || staffIds.some((s) => typeof s !== "string")) {
-      res.status(400).json({ error: "staffIds phải là mảng chuỗi" });
-      return;
-    }
-
-    const channel = await prisma.channel.findFirst({
-      where: { id: req.params.channelId, userId: req.ownerId! },
-      select: { id: true },
+    // Xoá sạch rồi tạo lại: gọn hơn dò từng dòng để cập nhật/thêm/xoá, và số
+    // gian của một shop luôn nhỏ nên không đáng lo về hiệu năng.
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.staffChannel.deleteMany({ where: { staffId: staff.id } });
+      if (perms.length > 0) {
+        await tx.staffChannel.createMany({
+          data: perms.map((p) => ({ staffId: staff.id, ...toStaffChannelCreate(p) })),
+        });
+      }
+      return tx.user.findUniqueOrThrow({
+        where: { id: staff.id },
+        select: STAFF_SELECT,
+      });
     });
-    if (!channel) {
-      res.status(404).json({ error: "Không tìm thấy gian hàng" });
-      return;
-    }
 
-    // Chỉ nhận SALES thuộc chính shop này
-    const validStaff = await prisma.user.findMany({
-      where: { ownerId: req.ownerId!, role: Role.SALES, id: { in: staffIds } },
-      select: { id: true },
-    });
-    const validIds = validStaff.map((s) => s.id);
-
-    // Ghi đè quyền của gian này, KHÔNG đụng tới các gian khác của cùng nhân viên
-    await prisma.$transaction([
-      prisma.staffChannel.deleteMany({ where: { channelId: channel.id } }),
-      prisma.staffChannel.createMany({
-        data: validIds.map((staffId) => ({ staffId, channelId: channel.id })),
-      }),
-    ]);
-
-    res.json({ channelId: channel.id, staffIds: validIds });
+    res.json(serializeStaff(updated));
   } catch (err) {
     next(err);
   }

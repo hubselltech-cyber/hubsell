@@ -11,7 +11,6 @@ import {
   Pencil,
   PlugZap,
   Plus,
-  ShieldCheck,
   ShoppingCart,
   Store,
   Unplug,
@@ -45,14 +44,11 @@ import {
   fetchChannels,
   getStoredUser,
   getToken,
-  fetchStaff,
   sendMockOrder,
-  setChannelStaff,
   updateChannel,
   type Channel,
   type ChannelName,
   type ChannelProduct,
-  type StaffMember,
 } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
@@ -365,135 +361,6 @@ function MockOrderDialog({
 
 // ---------- Trang chính ----------
 
-// ---------- Dialog: Phân quyền nhân viên cho gian hàng ----------
-
-/**
- * Phân quyền theo chiều NGƯỢC với trang Nhân viên: ở đây chủ shop đứng từ một
- * gian hàng và tick xem những ai được phụ trách nó. Cùng một bảng dữ liệu, chỉ
- * khác lối vào — chủ shop mới mở thêm gian thường nghĩ "gian này giao cho ai"
- * chứ không muốn mở từng hồ sơ nhân viên ra tick lại.
- *
- * Chỉ liệt kê SALES: nhân viên kho vốn đã thấy đơn của mọi gian.
- */
-function ChannelPermissionDialog({
-  channel,
-  open,
-  onOpenChange,
-}: {
-  channel: Channel;
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-}) {
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetchStaff()
-      .then((all) => {
-        const sales = all.filter((s) => s.role === "SALES");
-        setStaff(sales);
-        setSelected(
-          new Set(
-            sales
-              .filter((s) => s.allowedChannelIds.includes(channel.id))
-              .map((s) => s.id)
-          )
-        );
-      })
-      .catch(() => toast.error("Không tải được danh sách nhân viên"))
-      .finally(() => setLoading(false));
-  }, [channel.id]);
-
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleSave() {
-    setSubmitting(true);
-    try {
-      await setChannelStaff(channel.id, Array.from(selected));
-      toast.success(`Đã cập nhật người phụ trách "${channel.shopName}"`);
-      onOpenChange(false);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không lưu được");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="size-5" />
-            Phân quyền gian hàng
-          </DialogTitle>
-          <DialogDescription>
-            Chọn nhân viên vận hành được xem và xử lý đơn của{" "}
-            <b>{channel.shopName}</b>. Nhân viên kho không có trong danh sách vì
-            họ vốn xử lý đơn của mọi gian hàng.
-          </DialogDescription>
-        </DialogHeader>
-
-        {loading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Đang tải…
-          </p>
-        ) : staff.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Shop chưa có nhân viên vận hành nào.{" "}
-            <Link href="/staff" className="text-primary underline">
-              Tạo tài khoản
-            </Link>
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {staff.map((s) => (
-              <label
-                key={s.id}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2.5 hover:bg-muted/50"
-              >
-                <input
-                  type="checkbox"
-                  className="size-4 accent-primary"
-                  checked={selected.has(s.id)}
-                  onChange={() => toggle(s.id)}
-                />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{s.fullName}</p>
-                  <p className={cn(TEXT_SUB, "truncate")}>{s.email}</p>
-                </div>
-              </label>
-            ))}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
-            Huỷ
-          </Button>
-          <Button onClick={handleSave} disabled={submitting || loading}>
-            {submitting && <Loader2 className="size-4 animate-spin" />}
-            Lưu phân quyền
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ---------- Dialog: Cập nhật gian hàng ----------
 
 function UpdateShopDialog({
@@ -585,7 +452,6 @@ export default function ChannelsPage() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [mockFor, setMockFor] = useState<Channel | null>(null);
   const [editing, setEditing] = useState<Channel | null>(null);
-  const [permFor, setPermFor] = useState<Channel | null>(null);
   const [denied, setDenied] = useState(false);
 
   /**
@@ -791,15 +657,6 @@ export default function ChannelsPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="text-sky-700"
-                                  onClick={() => setPermFor(c)}
-                                >
-                                  <ShieldCheck className="size-3.5" />
-                                  Phân quyền
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
                                   className="text-amber-700"
                                   disabled={
                                     !c.apiToken || c.channelName === "OFFLINE"
@@ -866,16 +723,6 @@ export default function ChannelsPage() {
             if (!o) setMockFor(null);
           }}
           onDone={load}
-        />
-      )}
-
-      {permFor && (
-        <ChannelPermissionDialog
-          channel={permFor}
-          open={true}
-          onOpenChange={(o) => {
-            if (!o) setPermFor(null);
-          }}
         />
       )}
 

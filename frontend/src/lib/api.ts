@@ -439,13 +439,44 @@ export function fetchMe() {
 
 // ----- Quản lý nhân viên (chỉ Admin) -----
 
+/**
+ * Bốn chức năng có thể bật/tắt độc lập cho từng gian hàng của một SALES.
+ * Khớp với các cột canFinance/canWarehouse/canAds/canOrders ở backend.
+ */
+export type StaffPermissionKey = "finance" | "warehouse" | "ads" | "orders";
+
+/** Nhãn hiển thị của từng cột trong ma trận phân quyền. */
+export const STAFF_PERMISSION_META: {
+  key: StaffPermissionKey;
+  label: string;
+}[] = [
+  { key: "finance", label: "Tài chính" },
+  { key: "warehouse", label: "Kho hàng" },
+  { key: "ads", label: "Quảng cáo" },
+  { key: "orders", label: "Đơn hàng" },
+];
+
+/** Phân quyền của một SALES trên MỘT gian hàng: id gian + 4 cờ chức năng. */
+export interface StaffChannelPermission {
+  channelId: string;
+  finance: boolean;
+  warehouse: boolean;
+  ads: boolean;
+  orders: boolean;
+}
+
 export interface StaffMember {
   id: string;
   email: string;
   fullName: string;
   role: Role;
   createdAt: string;
-  /** Gian hàng được phân công. CHỈ có ý nghĩa với SALES; rỗng = chưa thấy đơn nào. */
+  /**
+   * Phân quyền chi tiết theo gian hàng. CHỈ có ý nghĩa với SALES; rỗng = chưa
+   * được gán gian nào (chưa thấy đơn nào). Mỗi phần tử là một gian kèm 4 cờ.
+   */
+  allowedChannels: StaffChannelPermission[];
+  /** Danh sách id gian được gán — tiện cho chỗ chỉ cần biết phạm vi. */
   allowedChannelIds: string[];
 }
 
@@ -458,7 +489,7 @@ export function createStaff(data: {
   password: string;
   fullName: string;
   role: Role;
-  channelIds?: string[];
+  channels?: StaffChannelPermission[];
 }) {
   return apiFetch<StaffMember>("/api/staff", {
     method: "POST",
@@ -466,11 +497,15 @@ export function createStaff(data: {
   });
 }
 
-export function setStaffChannels(staffId: string, channelIds: string[]) {
-  return apiFetch<{ id: string; allowedChannelIds: string[] }>(
-    `/api/staff/${staffId}/channels`,
-    { method: "PUT", body: JSON.stringify({ channelIds }) }
-  );
+/** Đặt lại toàn bộ ma trận phân quyền gian hàng cho một SALES. */
+export function setStaffChannels(
+  staffId: string,
+  channels: StaffChannelPermission[]
+) {
+  return apiFetch<StaffMember>(`/api/staff/${staffId}/channels`, {
+    method: "PUT",
+    body: JSON.stringify({ channels }),
+  });
 }
 
 /** Đổi vai trò của một nhân viên. */
@@ -479,14 +514,6 @@ export function updateStaffRole(staffId: string, role: Role) {
     method: "PATCH",
     body: JSON.stringify({ role }),
   });
-}
-
-/** Phân quyền từ phía gian hàng: chọn những SALES nào phụ trách gian này. */
-export function setChannelStaff(channelId: string, staffIds: string[]) {
-  return apiFetch<{ channelId: string; staffIds: string[] }>(
-    `/api/staff/by-channel/${channelId}`,
-    { method: "PUT", body: JSON.stringify({ staffIds }) }
-  );
 }
 
 export function deleteStaff(staffId: string) {

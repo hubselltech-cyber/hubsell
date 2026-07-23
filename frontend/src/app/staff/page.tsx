@@ -47,10 +47,13 @@ import {
   getToken,
   ROLE_META,
   setStaffChannels,
+  STAFF_PERMISSION_META,
   updateStaffRole,
   type Channel,
   type Role,
+  type StaffChannelPermission,
   type StaffMember,
+  type StaffPermissionKey,
 } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
@@ -101,7 +104,18 @@ function AddStaffDialog({
       await createStaff({
         ...values,
         role,
-        channelIds: role === "SALES" ? Array.from(selectedChannels) : [],
+        // Chọn gian ở bước tạo = cấp đủ 4 quyền cho gian đó; chủ shop tinh chỉnh
+        // lại từng quyền sau trong ma trận "Phân quyền gian hàng".
+        channels:
+          role === "SALES"
+            ? Array.from(selectedChannels).map((channelId) => ({
+                channelId,
+                finance: true,
+                warehouse: true,
+                ads: true,
+                orders: true,
+              }))
+            : [],
       });
       toast.success(
         `Đã tạo tài khoản ${ROLE_META[role].label.toLowerCase()} "${values.fullName}"`
@@ -247,6 +261,16 @@ function AddStaffDialog({
 
 // ---------- Dialog: Phân quyền gian hàng ----------
 
+/** Trạng thái 4 quyền của một hàng gian hàng trong ma trận. */
+type RowPerms = Record<StaffPermissionKey, boolean>;
+
+const FULL_PERMS: RowPerms = {
+  finance: true,
+  warehouse: true,
+  ads: true,
+  orders: true,
+};
+
 function PermissionDialog({
   staff,
   channels,
@@ -260,18 +284,42 @@ function PermissionDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Map có mặt = gian được BẬT; vắng mặt = tắt (hàng bị mờ, không có quyền nào).
+  const [rows, setRows] = useState<Map<string, RowPerms>>(new Map());
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) setSelected(new Set(staff.allowedChannelIds));
+    if (!open) return;
+    const next = new Map<string, RowPerms>();
+    for (const c of staff.allowedChannels) {
+      next.set(c.channelId, {
+        finance: c.finance,
+        warehouse: c.warehouse,
+        ads: c.ads,
+        orders: c.orders,
+      });
+    }
+    setRows(next);
   }, [open, staff]);
 
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
+  // Bật/tắt cả gian hàng. Bật thì mặc định sáng cả 4 quyền cho đỡ phải tick lại;
+  // tắt thì xoá luôn quyền của hàng đó (yêu cầu UX: bỏ tick shop ⇒ clear quyền).
+  function toggleShop(id: string) {
+    setRows((prev) => {
+      const next = new Map(prev);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else next.set(id, { ...FULL_PERMS });
+      return next;
+    });
+  }
+
+  // Tick từng ô quyền — chỉ có tác dụng khi gian đang bật.
+  function togglePerm(id: string, key: StaffPermissionKey) {
+    setRows((prev) => {
+      const cur = prev.get(id);
+      if (!cur) return prev;
+      const next = new Map(prev);
+      next.set(id, { ...cur, [key]: !cur[key] });
       return next;
     });
   }
@@ -279,7 +327,10 @@ function PermissionDialog({
   async function handleSave() {
     setSubmitting(true);
     try {
-      await setStaffChannels(staff.id, Array.from(selected));
+      const payload: StaffChannelPermission[] = Array.from(rows.entries()).map(
+        ([channelId, p]) => ({ channelId, ...p })
+      );
+      await setStaffChannels(staff.id, payload);
       toast.success(`Đã cập nhật quyền cho ${staff.fullName}`);
       onOpenChange(false);
       onSaved();
@@ -290,67 +341,111 @@ function PermissionDialog({
     }
   }
 
+  const enabledCount = rows.size;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="size-5" />
             Phân quyền gian hàng
           </DialogTitle>
           <DialogDescription>
-            Chọn các gian hàng mà <b>{staff.fullName}</b> được phép xem và xử lý
-            đơn. Không chọn gian nào thì tài khoản này chưa thấy đơn hàng nào.
+            Bật gian hàng mà <b>{staff.fullName}</b> được phụ trách, rồi tinh
+            chỉnh từng chức năng. Bỏ tick một gian sẽ thu hồi mọi quyền của gian
+            đó.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          {channels.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Shop chưa có kênh nào.
-            </p>
-          ) : (
-            channels.map((c) => {
-              const meta = CHANNEL_META[c.channelName];
-              const checked = selected.has(c.id);
-              return (
-                <label
-                  key={c.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2.5 hover:bg-muted/50"
-                >
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-primary"
-                    checked={checked}
-                    onChange={() => toggle(c.id)}
-                  />
-                  <Store className="size-4 shrink-0 text-muted-foreground" />
-                  <span
-                    className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
-                  >
-                    {meta.label}
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-medium">
-                    {c.shopName}
-                  </span>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                    {c._count?.orders ?? 0} đơn
-                  </span>
-                </label>
-              );
-            })
-          )}
-        </div>
+        {channels.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Shop chưa có kênh nào.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-left font-medium">Gian hàng</th>
+                  {STAFF_PERMISSION_META.map((p) => (
+                    <th
+                      key={p.key}
+                      className="w-20 px-2 py-2 text-center font-medium"
+                    >
+                      {p.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {channels.map((c) => {
+                  const meta = CHANNEL_META[c.channelName];
+                  const perms = rows.get(c.id);
+                  const enabled = perms !== undefined;
+                  return (
+                    <tr
+                      key={c.id}
+                      className={cn(
+                        "border-b last:border-0 transition-colors",
+                        enabled ? "bg-background" : "bg-muted/20"
+                      )}
+                    >
+                      {/* Cột gian hàng: tick để bật/tắt cả hàng */}
+                      <td className="px-3 py-2">
+                        <label className="flex cursor-pointer items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-primary"
+                            checked={enabled}
+                            onChange={() => toggleShop(c.id)}
+                          />
+                          <span
+                            className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta.className}`}
+                          >
+                            {meta.label}
+                          </span>
+                          <span
+                            className={cn(
+                              "min-w-0 truncate font-medium",
+                              !enabled && "text-muted-foreground"
+                            )}
+                          >
+                            {c.shopName}
+                          </span>
+                        </label>
+                      </td>
+
+                      {/* 4 ô quyền — mờ & khoá khi gian chưa bật */}
+                      {STAFF_PERMISSION_META.map((p) => (
+                        <td key={p.key} className="px-2 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`${p.label} — ${c.shopName}`}
+                            className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-30"
+                            disabled={!enabled}
+                            checked={enabled ? perms![p.key] : false}
+                            onChange={() => togglePerm(c.id, p.key)}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <p
           className={cn(
             "text-xs",
-            selected.size === 0 ? "text-amber-600" : "text-muted-foreground"
+            enabledCount === 0 ? "text-amber-600" : "text-muted-foreground"
           )}
         >
-          {selected.size === 0
+          {enabledCount === 0
             ? "→ Nhân viên này sẽ KHÔNG thấy đơn hàng nào."
-            : `→ Nhân viên chỉ xem được ${selected.size} gian hàng đã chọn.`}
+            : `→ Đang bật ${enabledCount} gian hàng. Chỉ những chức năng được tick mới sáng lên với nhân viên.`}
         </p>
 
         <div className="flex justify-end gap-2">
