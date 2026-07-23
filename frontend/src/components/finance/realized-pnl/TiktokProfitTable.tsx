@@ -1,0 +1,219 @@
+"use client";
+
+import type { PnlDetailRow } from "@/lib/api";
+import { toTiktokRow } from "@/lib/pnl-mappers";
+import { carrierShort } from "@/lib/carrier-meta";
+import { formatDateTime } from "@/lib/format";
+import { formatDayVN } from "@/lib/date-range";
+import { TEXT_SUB } from "@/lib/typography";
+import { cn } from "@/lib/utils";
+import {
+  Amount,
+  BLOCK,
+  Deduction,
+  PNL_STATUS_LABEL,
+  ProductLines,
+  ProfitCell,
+} from "./cells";
+
+/**
+ * BẢNG LÃI/LỖ THỰC HIỆN — TAB TIKTOK SHOP
+ *
+ * Cột chuẩn theo cấu trúc phí TikTok Shop: tách chiết khấu sàn/người bán, chi
+ * tiết phí vận chuyển trước/sau chiết khấu, và các nhóm phí đặc thù (SFP, Flash
+ * Sale, SFR, VAT). Nhóm cột tô nền: thông tin (trắng), doanh thu & giảm giá
+ * (xanh), phí VC (lam), phí & thuế (đỏ), hiệu quả (xám). Cột chưa có dữ liệu
+ * thật (chiết khấu PVC, Flash Sale, SFR, VAT) hiện GIỮ CHỖ 0đ.
+ */
+export function TiktokProfitTable({ rows }: { rows: PnlDetailRow[] }) {
+  const data = rows.map(toTiktokRow);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[2280px] border-separate border-spacing-0 text-sm">
+        <thead>
+          {/* Hàng nhóm block */}
+          <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <th className={cn("px-3 pt-3 pb-1 text-left", BLOCK.info)} colSpan={8}>
+              Thông tin đơn &amp; Sản phẩm
+            </th>
+            <th className={cn("px-3 pt-3 pb-1 text-right text-emerald-700", BLOCK.revenue)} colSpan={4}>
+              Doanh thu &amp; Giảm giá
+            </th>
+            <th className={cn("px-3 pt-3 pb-1 text-right text-sky-700", BLOCK.ship)} colSpan={6}>
+              Chi tiết phí vận chuyển
+            </th>
+            <th className={cn("px-3 pt-3 pb-1 text-right text-rose-700", BLOCK.fee)} colSpan={6}>
+              Phí &amp; Thuế TikTok
+            </th>
+            <th className={cn("px-3 pt-3 pb-1 text-right", BLOCK.result)} colSpan={3}>
+              Hiệu quả kinh doanh
+            </th>
+          </tr>
+          {/* Hàng tên cột */}
+          <tr className="text-xs text-slate-500">
+            {[
+              ["Mã đơn", "left", BLOCK.info],
+              ["Trạng thái", "left", BLOCK.info],
+              ["Shop", "left", BLOCK.info],
+              ["Ngày tạo", "left", BLOCK.info],
+              ["ĐVVC", "left", BLOCK.info],
+              ["Ngày gửi ĐVVC", "left", BLOCK.info],
+              ["Khách hàng", "left", BLOCK.info],
+              ["Chi tiết sản phẩm", "left", BLOCK.info],
+              ["Tổng giá trị SP", "right", BLOCK.revenue],
+              ["Chiết khấu của sàn", "right", BLOCK.revenue],
+              ["Chiết khấu người bán", "right", BLOCK.revenue],
+              ["Tổng SP sau chiết khấu", "right", BLOCK.revenue],
+              ["PVC trước chiết khấu", "right", BLOCK.ship],
+              ["CK PVC bởi sàn", "right", BLOCK.ship],
+              ["CK PVC bởi người bán", "right", BLOCK.ship],
+              ["PVC sau chiết khấu", "right", BLOCK.ship],
+              ["PVC thực tế", "right", BLOCK.ship],
+              ["Chênh lệch PVC", "right", BLOCK.ship],
+              ["Phí cố định & GD", "right", BLOCK.fee],
+              ["Phí dịch vụ SFP & Xtra", "right", BLOCK.fee],
+              ["Phí Flash Sale", "right", BLOCK.fee],
+              ["Phí Tiếp thị LK", "right", BLOCK.fee],
+              ["Phí xử lý đơn & SFR", "right", BLOCK.fee],
+              ["Thuế & VAT", "right", BLOCK.fee],
+              ["Doanh thu ước tính", "right", BLOCK.result],
+              ["Chi phí giá vốn", "right", BLOCK.result],
+              ["LỢI NHUẬN THỰC TẾ", "right", BLOCK.result],
+            ].map(([label, align, bg], i) => (
+              <th
+                key={i}
+                className={cn(
+                  "px-3 pb-2 font-medium",
+                  align === "right" ? "text-right" : "text-left",
+                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700",
+                  bg
+                )}
+              >
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="tabular-nums">
+          {data.map((r) => {
+            const b = r.base;
+            const cell = "border-t border-slate-100 px-3 py-2.5";
+            return (
+              <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
+                {/* Thông tin đơn */}
+                <td className={cn(cell, BLOCK.info)}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-zinc-900 bg-zinc-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      TikTok
+                    </span>
+                    <span className="font-medium text-slate-800">{b.orderCode}</span>
+                  </div>
+                  {b.missingCostPrice && (
+                    <span className="mt-0.5 block text-[11px] text-amber-600">
+                      Chưa nhập giá vốn
+                    </span>
+                  )}
+                </td>
+                <td className={cn(cell, BLOCK.info)}>
+                  <span className="text-slate-700">
+                    {PNL_STATUS_LABEL[b.shippingStatus] ?? b.shippingStatus}
+                  </span>
+                  {b.isSettled && (
+                    <span className="block text-[11px] text-emerald-600">đã đối soát</span>
+                  )}
+                </td>
+                <td className={cn(cell, BLOCK.info, "text-slate-600")}>{b.shopName}</td>
+                <td className={cn(cell, BLOCK.info)}>
+                  <span className="text-slate-700">{formatDateTime(b.createdAt)}</span>
+                </td>
+                <td className={cn(cell, BLOCK.info, "text-slate-600")}>
+                  {b.carrier ? carrierShort(b.carrier) : "—"}
+                </td>
+                <td className={cn(cell, BLOCK.info, "text-slate-600")}>
+                  {b.shippedAt ? formatDayVN(new Date(b.shippedAt)) : "—"}
+                </td>
+                <td className={cn(cell, BLOCK.info, "text-slate-600")}>
+                  {b.customerName}
+                </td>
+                <td className={cn(cell, BLOCK.info)}>
+                  <ProductLines items={b.items} />
+                </td>
+
+                {/* Doanh thu & giảm giá */}
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  <Amount value={r.revenueGross} tone="font-medium text-slate-800" />
+                </td>
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  <Amount value={r.platformDiscount} tone="text-emerald-700" />
+                </td>
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  <Deduction value={r.sellerDiscount} tone="text-emerald-700" />
+                </td>
+                <td className={cn(cell, BLOCK.revenue, "text-right font-medium text-slate-800")}>
+                  <Amount value={r.revenueAfterDiscount} />
+                </td>
+
+                {/* Phí vận chuyển */}
+                <td className={cn(cell, BLOCK.ship, "text-right text-slate-600")}>
+                  <Amount value={r.shipBeforeDiscount} />
+                </td>
+                <td className={cn(cell, BLOCK.ship, "text-right")}>
+                  <Deduction value={r.shipDiscountPlatform} tone="text-sky-700" />
+                </td>
+                <td className={cn(cell, BLOCK.ship, "text-right")}>
+                  <Deduction value={r.shipDiscountSeller} tone="text-sky-700" />
+                </td>
+                <td className={cn(cell, BLOCK.ship, "text-right text-slate-600")}>
+                  <Amount value={r.shipAfterDiscount} />
+                </td>
+                <td className={cn(cell, BLOCK.ship, "text-right text-slate-600")}>
+                  <Amount value={r.shipActual} />
+                </td>
+                <td className={cn(cell, BLOCK.ship, "text-right")}>
+                  <Deduction value={r.shipDiff} tone="text-rose-600" />
+                </td>
+
+                {/* Phí & thuế (âm) */}
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.feeFixedTransaction} />
+                </td>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.feeServiceSfpXtra} />
+                </td>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.feeFlashSale} />
+                </td>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.feeAffiliate} />
+                </td>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.feeOrderProcessingSfr} />
+                </td>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.taxVat} />
+                </td>
+
+                {/* Hiệu quả kinh doanh */}
+                <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
+                  <Amount value={r.estRevenue} />
+                </td>
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  <Deduction value={r.costSnapshot} tone="text-slate-600" />
+                </td>
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  <ProfitCell value={r.profit} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className={cn(TEXT_SUB, "px-3 py-2")}>
+        Cột chiết khấu PVC, Flash Sale, xử lý đơn &amp; SFR, Thuế &amp; VAT đang{" "}
+        <b>giữ chỗ (0₫)</b> — sẽ cắm số thật khi có luồng đồng bộ đối soát TikTok
+        Shop.
+      </p>
+    </div>
+  );
+}

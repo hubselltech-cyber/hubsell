@@ -355,6 +355,98 @@ export function fetchSkuPnl(range?: DateRange, channel?: ChannelFilterQuery) {
   );
 }
 
+/** Bộ lọc trạng thái đơn — dùng chung cho các báo cáo lãi/lỗ (P&L). */
+export type ReconciliationStatus =
+  | "all"
+  | "delivered"
+  | "shipping"
+  | "cancelled";
+
+// ----- Lãi/Lỗ Thực Hiện — chi tiết từng đơn theo sàn -----
+
+/** Một dòng sản phẩm trong đơn (phục vụ cột "Chi tiết sản phẩm"). */
+export interface PnlItemLine {
+  sku: string;
+  name: string;
+  variation: string;
+  quantity: number;
+  price: number;
+  costPriceAtSale: number;
+}
+
+/**
+ * "Detail row" GIÀU trường của một đơn — superset dùng chung cho mọi sàn. Mỗi
+ * bảng sàn (Shopee/TikTok) tự ánh xạ sang cấu trúc cột đặc thù của mình. Các
+ * trường phí là ĐỘ LỚN DƯƠNG (magnitude); giao diện tự thêm dấu trừ.
+ */
+export interface PnlDetailRow {
+  id: string;
+  orderCode: string;
+  shippingStatus: string;
+  isSettled: boolean;
+  channelName: ChannelName;
+  shopName: string;
+  createdAt: string;
+  /** Mốc bàn giao ĐVVC (≈ "ngày gửi ĐVVC") — null nếu chưa. */
+  shippedAt: string | null;
+  customerName: string;
+  carrier: Carrier | null;
+  items: PnlItemLine[];
+  // Doanh thu & trợ giá
+  revenueGross: number;
+  sellerVoucher: number;
+  platformSubsidy: number;
+  // Vận chuyển
+  shippingFeeQuoted: number;
+  shippingFeeActual: number;
+  shippingFeeDiff: number;
+  // Phí sàn theo bucket
+  feeFixedPayment: number;
+  feeService: number;
+  feeAffiliate: number;
+  // Hiệu quả
+  costSnapshot: number;
+  netRevenue: number;
+  actualPayout: number;
+  profit: number;
+  missingCostPrice: boolean;
+}
+
+export interface RealizedPnlResponse {
+  rows: PnlDetailRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+  summary: {
+    count: number;
+    settledCount: number;
+    totalNetRevenue: number;
+    totalProfit: number;
+    /** { SHOPEE: { count, profit }, ... } trên toàn bộ đơn khớp lọc. */
+    byPlatform: Record<string, { count: number; profit: number }>;
+  };
+}
+
+export function fetchRealizedPnl(params: {
+  range?: DateRange;
+  channel?: ChannelFilterQuery;
+  status?: ReconciliationStatus;
+  page?: number;
+  pageSize?: number;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params.range),
+    ...channelFilterToQuery(params.channel),
+    ...(params.status && params.status !== "all" ? { status: params.status } : {}),
+    ...(params.page ? { page: String(params.page) } : {}),
+    ...(params.pageSize ? { pageSize: String(params.pageSize) } : {}),
+  }).toString();
+  return apiFetch<RealizedPnlResponse>(
+    `/api/finance/realized-pnl${qs ? `?${qs}` : ""}`
+  );
+}
+
 export interface AnalyticsResponse {
   /** Số đơn phát sinh trong kỳ đang tính doanh thu (không gồm đơn hủy). */
   activeOrderCount: number;

@@ -2,13 +2,20 @@ import * as XLSX from "xlsx";
 import {
   fetchOrders,
   fetchProducts,
+  fetchRealizedPnl,
   fetchShippingDiscrepancies,
   type ChannelFilterQuery,
+  type ChannelName,
   type Order,
+  type PnlDetailRow,
+  type PnlItemLine,
   type Product,
+  type ReconciliationStatus,
   type ShippingDiscrepancy,
   type SkuProduct,
 } from "@/lib/api";
+import { toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
+import type { DateRange } from "@/lib/date-range";
 
 // Chuyển "yyyy-...T..." → "hh:mm dd/mm/yyyy" cho dễ đọc trong Excel
 function toDateTimeText(value: string): string {
@@ -204,6 +211,129 @@ export async function exportAllOrders(filter: {
     page++;
   }
   exportOrdersToExcel(all);
+  return all.length;
+}
+
+// ---------- LÃI/LỖ THỰC HIỆN (đối soát theo sàn) ----------
+
+/** Gộp các dòng sản phẩm thành một chuỗi cho ô Excel. */
+function pnlItemsText(items: PnlItemLine[]): string {
+  return items
+    .map(
+      (it) =>
+        `${it.sku} ${it.name}${it.variation ? ` (${it.variation})` : ""} x${it.quantity}`
+    )
+    .join("; ");
+}
+
+/** Xuất Excel theo layout cột Shopee (đúng bảng đang xem). */
+export function exportShopeePnlToExcel(rows: PnlDetailRow[]) {
+  const data = rows.map(toShopeeRow).map((r) => ({
+    "Mã đơn": r.base.orderCode,
+    "Trạng thái": SHIPPING_LABEL[r.base.shippingStatus] ?? r.base.shippingStatus,
+    Shop: r.base.shopName,
+    "Ngày tạo": toDateTimeText(r.base.createdAt),
+    "Chi tiết sản phẩm": pnlItemsText(r.base.items),
+    "Tổng giá trị SP": r.revenueGross,
+    "Trợ giá Shopee": r.shopeeSubsidy,
+    "Phí VC Dự kiến": r.shipQuoted,
+    "Phí VC Thực tế": r.shipActual,
+    "Trợ giá VC Shopee": r.shipSubsidyShopee,
+    "Trợ giá VC Shop": r.shipSubsidyShop,
+    "Người mua trả": r.buyerPaidShip,
+    "Chênh lệch phí VC": -r.shipDiff,
+    "Phí sàn (CĐ+TT)": -r.feePlatform,
+    "Phí TTLK": -r.feeAffiliate,
+    "PiShip (Xtra)": -r.feePiship,
+    "Nạp ví quảng cáo": -r.adWallet,
+    "Trợ giá người bán": -r.sellerSubsidy,
+    Thuế: -r.tax,
+    "Doanh thu ước tính": r.estRevenue,
+    "Doanh thu từ Shopee": r.revenueFromShopee,
+    "Chi phí giá vốn": -r.costSnapshot,
+    "LỢI NHUẬN THỰC TẾ": r.profit,
+  }));
+  downloadSheet(
+    data,
+    [
+      22, 14, 22, 18, 40, 16, 14, 14, 14, 16, 14, 14, 16, 16, 12, 12, 14, 16, 12,
+      18, 18, 16, 18,
+    ],
+    "Loi nhuan Shopee",
+    `hubsell_loinhuan_shopee_${fileStamp()}.xlsx`
+  );
+}
+
+/** Xuất Excel theo layout cột TikTok Shop (đúng bảng đang xem). */
+export function exportTiktokPnlToExcel(rows: PnlDetailRow[]) {
+  const data = rows.map(toTiktokRow).map((r) => ({
+    "Mã đơn": r.base.orderCode,
+    "Trạng thái": SHIPPING_LABEL[r.base.shippingStatus] ?? r.base.shippingStatus,
+    Shop: r.base.shopName,
+    "Ngày tạo": toDateTimeText(r.base.createdAt),
+    "Ngày gửi ĐVVC": r.base.shippedAt ? toDateTimeText(r.base.shippedAt) : "",
+    "Khách hàng": r.base.customerName,
+    "Chi tiết sản phẩm": pnlItemsText(r.base.items),
+    "Tổng giá trị SP": r.revenueGross,
+    "Chiết khấu của sàn": r.platformDiscount,
+    "Chiết khấu người bán": -r.sellerDiscount,
+    "Tổng SP sau chiết khấu": r.revenueAfterDiscount,
+    "PVC trước chiết khấu": r.shipBeforeDiscount,
+    "CK PVC bởi sàn": -r.shipDiscountPlatform,
+    "CK PVC bởi người bán": -r.shipDiscountSeller,
+    "PVC sau chiết khấu": r.shipAfterDiscount,
+    "PVC thực tế": r.shipActual,
+    "Chênh lệch PVC": -r.shipDiff,
+    "Phí cố định & GD": -r.feeFixedTransaction,
+    "Phí dịch vụ SFP & Xtra": -r.feeServiceSfpXtra,
+    "Phí Flash Sale": -r.feeFlashSale,
+    "Phí Tiếp thị LK": -r.feeAffiliate,
+    "Phí xử lý đơn & SFR": -r.feeOrderProcessingSfr,
+    "Thuế & VAT": -r.taxVat,
+    "Doanh thu ước tính": r.estRevenue,
+    "Chi phí giá vốn": -r.costSnapshot,
+    "LỢI NHUẬN THỰC TẾ": r.profit,
+  }));
+  downloadSheet(
+    data,
+    [
+      22, 14, 22, 18, 18, 20, 40, 16, 16, 16, 18, 16, 14, 16, 16, 14, 14, 16, 18,
+      14, 14, 16, 14, 18, 16, 18,
+    ],
+    "Loi nhuan TikTok",
+    `hubsell_loinhuan_tiktok_${fileStamp()}.xlsx`
+  );
+}
+
+/**
+ * Xuất Lãi/Lỗ Thực Hiện theo BỘ LỌC ĐỘNG từ giao diện (sàn/khoảng ngày/trạng
+ * thái). Gom hết các trang rồi chọn layout đúng theo sàn. Trả về số dòng đã xuất.
+ */
+export async function exportRealizedPnl(filter: {
+  platform: ChannelName | "ALL";
+  range?: DateRange;
+  status?: ReconciliationStatus;
+}): Promise<number> {
+  const channel: ChannelFilterQuery | undefined =
+    filter.platform === "ALL" ? undefined : { channelName: filter.platform };
+
+  const all: PnlDetailRow[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await fetchRealizedPnl({
+      range: filter.range,
+      channel,
+      status: filter.status,
+      page,
+      pageSize: 100,
+    });
+    all.push(...res.rows);
+    if (page >= res.pageCount || res.pageCount === 0) break;
+    page++;
+  }
+  if (all.length === 0) return 0;
+  if (filter.platform === "TIKTOK") exportTiktokPnlToExcel(all);
+  else exportShopeePnlToExcel(all); // Shopee / Lazada / Tất cả dùng layout Shopee
   return all.length;
 }
 

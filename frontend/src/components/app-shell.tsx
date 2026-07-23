@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["ADMIN"],
     children: [
       { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
+      { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện" },
       { href: "/finance/expenses", label: "Chi phí vận hành" },
       { href: "/finance/loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
       { href: "/finance/shipping-alerts", label: "Đối soát phí ship" },
@@ -109,6 +110,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/settings/other", title: "Cấu hình khác" },
   { prefix: "/settings", title: "Cấu hình hệ thống" },
   { prefix: "/finance/analytics", title: "Báo cáo dòng tiền" },
+  { prefix: "/finance/realized-pnl", title: "Lãi/Lỗ Thực Hiện" },
   { prefix: "/finance/expenses", title: "Chi phí vận hành" },
   { prefix: "/finance/loss-orders", title: "Cảnh báo & P&L Sản phẩm" },
   { prefix: "/finance/cost-prices", title: "Cấu hình Giá vốn" },

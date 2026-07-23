@@ -20,6 +20,11 @@ import {
   type ChannelScope,
 } from "../channel-filter";
 import { orderPlatformFee } from "../order-fee";
+import {
+  mapShopeeOrderFees,
+  reconciliationProfit,
+  type ShopeeOrderIncome,
+} from "../shopee-fee-mapper";
 
 const router = Router();
 
@@ -261,6 +266,262 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
       orders,
       // Giữ tên cũ để tương thích ngược
       lossOrders: orders.filter((o) => o.isLoss),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// BẢNG ĐỐI SOÁT LỢI NHUẬN ĐƠN HÀNG ĐA KÊNH
+// Mỗi đơn một dòng, bóc tách TỪNG loại phí ra cột riêng để so sánh theo hàng
+// ngang. Đơn ĐÃ QUYẾT TOÁN dùng số phí THỰC TẾ (đối soát sàn) → chính xác 100%;
+// đơn CHƯA quyết toán gộp phí TẠM TÍNH vào cột "Phí cố định & TT".
+// Ghi chú: bảng bám đúng đặc tả 8 cột — KHÔNG tính trợ giá sàn (platformSubsidy)
+// để công thức Lãi/Lỗ khớp tuyệt đối với đặc tả.
+// ============================================================
+
+/** Nhãn trạng thái ở bộ lọc → giá trị shippingStatus. Thiếu = "tất cả". */
+const RECON_STATUS: Record<string, ShippingStatus> = {
+  delivered: ShippingStatus.DELIVERED,
+  shipping: ShippingStatus.SHIPPING,
+  cancelled: ShippingStatus.CANCELLED,
+};
+
+// GET /api/finance/order-reconciliation — bảng đối soát lãi/lỗ từng đơn
+router.get("/order-reconciliation", async (req: AuthRequest, res, next) => {
+  try {
+    const statusKey =
+      typeof req.query.status === "string"
+        ? req.query.status.toLowerCase()
+        : "";
+    const shippingStatus = RECON_STATUS[statusKey]; // undefined = tất cả
+
+    const orders = await prisma.order.findMany({
+      where: {
+        channel: channelScope(req),
+        createdAt: parseDateRange(req.query),
+        ...(shippingStatus ? { shippingStatus } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        channel: { select: { channelName: true, shopName: true } },
+        items: true,
+        inventoryLogs: {
+          where: { changeQuantity: { lt: 0 } },
+          include: { product: { select: { costPrice: true } } },
+        },
+      },
+      take: 500, // trần an toàn cho bảng chi tiết
+    });
+
+    const rows = orders.map((o) => {
+      const { cost, missingCostPrice } = orderCost(o);
+      // Doanh thu gốc = tổng giá bán dòng hàng (chưa trừ voucher). Đơn cũ không
+      // có OrderItem → suy ngược từ totalAmount + voucher shop.
+      const gross =
+        o.items.length > 0
+          ? o.items.reduce((s, it) => s + it.quantity * Number(it.price), 0)
+          : Number(o.totalAmount) + Number(o.sellerVoucher);
+
+      // Dựng income statement chuẩn Shopee từ dữ liệu đã lưu rồi cho qua mapper
+      // DÙNG CHUNG với luồng đồng bộ API — một nguồn chân lý cho việc ánh xạ phí.
+      const income: ShopeeOrderIncome = o.isSettled
+        ? {
+            merchandise_subtotal: gross,
+            seller_voucher: Number(o.sellerVoucher),
+            commission_fee: Number(o.fixedFee),
+            transaction_fee: Number(o.paymentFee),
+            service_fee: Number(o.serviceFee),
+            seller_affiliate_program: Number(o.affiliateFee),
+            actual_shipping_fee: Number(o.shippingFeeActual),
+            estimated_shipping_fee: Number(o.shippingFeeQuoted),
+            weight_adjustment_fee: Number(o.shippingFeeDiff),
+          }
+        : {
+            merchandise_subtotal: gross,
+            seller_voucher: Number(o.sellerVoucher),
+            // Chưa quyết toán: gộp phí sàn tạm tính vào phí cố định & giao dịch.
+            commission_fee: Number(o.platformFee),
+            estimated_shipping_fee: Number(o.shippingFeeQuoted),
+            weight_adjustment_fee: Number(o.shippingFeeDiff),
+          };
+
+      const fees = mapShopeeOrderFees(income);
+      const profit = reconciliationProfit(fees, cost);
+
+      return {
+        id: o.id,
+        orderCode: o.orderCode,
+        channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
+        createdAt: o.createdAt,
+        completedAt: o.settledAt ?? o.returnedAt ?? null,
+        shippingStatus: o.shippingStatus,
+        isSettled: o.isSettled,
+        revenueGross: fees.revenueGross,
+        sellerVoucher: fees.sellerVoucher,
+        fixedAndTransaction: fees.fixedAndTransaction,
+        serviceXtra: fees.serviceXtra,
+        campaign: fees.campaign,
+        affiliate: fees.affiliate,
+        costSnapshot: cost,
+        shipAndWeight: fees.shipAndWeight,
+        profit,
+        missingCostPrice,
+      };
+    });
+
+    res.json({
+      rows,
+      summary: {
+        count: rows.length,
+        settledCount: rows.filter((r) => r.isSettled).length,
+        totalRevenueGross: rows.reduce((s, r) => s + r.revenueGross, 0),
+        totalProfit: rows.reduce((s, r) => s + r.profit, 0),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)
+// Trả về "detail row" GIÀU trường (superset) kèm dòng sản phẩm; frontend tách
+// theo từng sàn để render đúng cột đặc thù. Có phân trang + tóm tắt theo sàn.
+//
+// Quy ước: các trường phí bóc riêng để hai bảng tự chọn cột. Đơn ĐÃ QUYẾT TOÁN
+// dùng phí thực tế (chính xác); chưa quyết toán gộp phí tạm tính vào feeFixedPayment.
+// netRevenue = doanh thu sau khi trừ toàn bộ phí sàn; profit = netRevenue − giá vốn.
+// ============================================================
+
+const PNL_PAGE_SIZES = [20, 50, 100];
+
+// GET /api/finance/realized-pnl — bảng lãi/lỗ thực hiện chi tiết theo sàn
+router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
+  try {
+    const statusKey =
+      typeof req.query.status === "string"
+        ? req.query.status.toLowerCase()
+        : "";
+    const shippingStatus = RECON_STATUS[statusKey]; // undefined = tất cả
+
+    const rawSize = Number(req.query.pageSize);
+    const pageSize = PNL_PAGE_SIZES.includes(rawSize) ? rawSize : 20;
+    const page = Math.max(1, Math.floor(Number(req.query.page)) || 1);
+
+    const orders = await prisma.order.findMany({
+      where: {
+        channel: channelScope(req),
+        createdAt: parseDateRange(req.query),
+        ...(shippingStatus ? { shippingStatus } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        channel: { select: { channelName: true, shopName: true } },
+        items: true,
+        inventoryLogs: {
+          where: { changeQuantity: { lt: 0 } },
+          include: { product: { select: { costPrice: true } } },
+        },
+      },
+      take: 2000, // trần an toàn — báo cáo theo khoảng ngày thường nằm dưới mức này
+    });
+
+    const allRows = orders.map((o) => {
+      const { cost, missingCostPrice } = orderCost(o);
+      const revenueGross =
+        o.items.length > 0
+          ? o.items.reduce((s, it) => s + it.quantity * Number(it.price), 0)
+          : Number(o.totalAmount) + Number(o.sellerVoucher);
+
+      // Gộp phí theo bucket cột. Chưa quyết toán → dồn phí tạm tính vào cột
+      // "cố định + thanh toán", các bucket còn lại để 0 (chưa có số thực).
+      const feeFixedPayment = o.isSettled
+        ? Number(o.fixedFee) + Number(o.paymentFee)
+        : Number(o.platformFee);
+      const feeService = o.isSettled ? Number(o.serviceFee) : 0;
+      const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
+      const sellerVoucher = Number(o.sellerVoucher);
+      const platformSubsidy = Number(o.platformSubsidy);
+      const shippingFeeDiff = Number(o.shippingFeeDiff);
+
+      const netRevenue =
+        revenueGross -
+        sellerVoucher -
+        feeFixedPayment -
+        feeService -
+        feeAffiliate -
+        shippingFeeDiff +
+        platformSubsidy;
+      const profit = netRevenue - cost;
+
+      return {
+        id: o.id,
+        orderCode: o.orderCode,
+        shippingStatus: o.shippingStatus,
+        isSettled: o.isSettled,
+        channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
+        createdAt: o.createdAt,
+        shippedAt: o.packedAt, // mốc bàn giao ĐVVC (gần nhất với "ngày gửi ĐVVC")
+        customerName: o.customerName,
+        carrier: o.carrier,
+        items: o.items.map((it) => ({
+          sku: it.channelSku,
+          name: it.productName,
+          variation: "", // OrderItem chưa tách trường phân loại — giữ chỗ
+          quantity: it.quantity,
+          price: Number(it.price),
+          costPriceAtSale: Number(it.costPriceAtSale),
+        })),
+        // Doanh thu & trợ giá
+        revenueGross,
+        sellerVoucher,
+        platformSubsidy,
+        // Vận chuyển
+        shippingFeeQuoted: Number(o.shippingFeeQuoted),
+        shippingFeeActual: Number(o.shippingFeeActual),
+        shippingFeeDiff,
+        // Phí sàn theo bucket
+        feeFixedPayment,
+        feeService,
+        feeAffiliate,
+        // Hiệu quả
+        costSnapshot: cost,
+        netRevenue,
+        actualPayout: Number(o.actualPayout),
+        profit,
+        missingCostPrice,
+      };
+    });
+
+    // Tóm tắt theo sàn (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại)
+    const byPlatform: Record<string, { count: number; profit: number }> = {};
+    for (const r of allRows) {
+      const b = (byPlatform[r.channelName] ??= { count: 0, profit: 0 });
+      b.count += 1;
+      b.profit += r.profit;
+    }
+
+    const total = allRows.length;
+    const start = (page - 1) * pageSize;
+    const rows = allRows.slice(start, start + pageSize);
+
+    res.json({
+      rows,
+      page,
+      pageSize,
+      total,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
+      summary: {
+        count: total,
+        settledCount: allRows.filter((r) => r.isSettled).length,
+        totalNetRevenue: allRows.reduce((s, r) => s + r.netRevenue, 0),
+        totalProfit: allRows.reduce((s, r) => s + r.profit, 0),
+        byPlatform,
+      },
     });
   } catch (err) {
     next(err);
