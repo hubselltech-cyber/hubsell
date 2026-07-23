@@ -36,8 +36,7 @@ import {
 import { canAccessFinance } from "@/lib/permissions";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { exportRealizedPnl } from "@/lib/excel";
-import { formatNumber, formatVND } from "@/lib/format";
-import { TEXT_SUB } from "@/lib/typography";
+import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type PnlTab = "overview" | "shopee" | "tiktok" | "lazada";
@@ -258,28 +257,6 @@ export default function RealizedPnlPage() {
           </div>
         </div>
 
-        {/* ===== TỔNG QUAN: 4 chỉ số cốt lõi ===== */}
-        {tab === "overview" && summary && (
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <StatCard label="Số đơn" value={formatNumber(summary.count)} />
-            <StatCard
-              label="Đã đối soát"
-              value={formatNumber(summary.settledCount)}
-              tone="text-emerald-600"
-            />
-            <StatCard
-              label="Doanh thu ròng"
-              value={formatVND(summary.totalNetRevenue)}
-            />
-            <StatCard
-              label="Tổng Lãi/Lỗ"
-              value={`${summary.totalProfit < 0 ? "− " : ""}${formatVND(
-                Math.abs(summary.totalProfit)
-              )}`}
-              tone={summary.totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"}
-            />
-          </div>
-        )}
         {/* ===== BẢNG THEO TAB ===== */}
         <Card className="shadow-sm">
           <CardContent className="p-0">
@@ -356,25 +333,5 @@ export default function RealizedPnlPage() {
         </p>
       </div>
     </AppShell>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) {
-  return (
-    // h-full + flex để 4 card cao bằng nhau, vuông vắn & thoáng (chuẩn ERP).
-    <div className="flex h-full flex-col justify-center gap-1.5 rounded-xl border bg-card px-5 py-5">
-      <p className={cn(TEXT_SUB)}>{label}</p>
-      <p className={cn("text-xl font-bold tracking-tight text-slate-900", tone)}>
-        {value}
-      </p>
-    </div>
   );
 }
