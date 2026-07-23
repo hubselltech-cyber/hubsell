@@ -313,6 +313,7 @@ export async function exportRealizedPnl(filter: {
   platform: ChannelName | "ALL";
   range?: DateRange;
   status?: ReconciliationStatus;
+  lossOnly?: boolean;
 }): Promise<number> {
   const channel: ChannelFilterQuery | undefined =
     filter.platform === "ALL" ? undefined : { channelName: filter.platform };
@@ -324,6 +325,7 @@ export async function exportRealizedPnl(filter: {
       range: filter.range,
       channel,
       status: filter.status,
+      lossOnly: filter.lossOnly,
       page,
       pageSize: 100,
     });

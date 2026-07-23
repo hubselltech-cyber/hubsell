@@ -10,6 +10,7 @@ import {
   Loader2,
   PackageOpen,
   RefreshCw,
+  TrendingDown,
 } from "lucide-react";
 
 import { AccessDenied } from "@/components/access-denied";
@@ -67,6 +68,7 @@ export default function RealizedPnlPage() {
   const [tab, setTab] = useState<PnlTab>("overview");
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [status, setStatus] = useState<ReconciliationStatus>("all");
+  const [lossOnly, setLossOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [data, setData] = useState<RealizedPnlResponse | null>(null);
@@ -83,6 +85,7 @@ export default function RealizedPnlPage() {
         range,
         channel: channelOf(platform),
         status,
+        lossOnly,
         page,
         pageSize,
       });
@@ -96,7 +99,7 @@ export default function RealizedPnlPage() {
     } finally {
       setLoading(false);
     }
-  }, [router, range, platform, status, page, pageSize]);
+  }, [router, range, platform, status, lossOnly, page, pageSize]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -120,6 +123,10 @@ export default function RealizedPnlPage() {
     setStatus(s);
     setPage(1);
   }
+  function toggleLossOnly() {
+    setLossOnly((v) => !v);
+    setPage(1);
+  }
   function changeRange(r: DateRange) {
     setRange(r);
     setPage(1);
@@ -132,7 +139,7 @@ export default function RealizedPnlPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      const count = await exportRealizedPnl({ platform, range, status });
+      const count = await exportRealizedPnl({ platform, range, status, lossOnly });
       if (count === 0) toast.info("Không có đơn nào (theo bộ lọc) để xuất");
       else toast.success(`Đã xuất ${formatNumber(count)} đơn ra file Excel`);
     } catch {
@@ -215,6 +222,21 @@ export default function RealizedPnlPage() {
                 );
               })}
             </div>
+            {/* Bộ lọc nhanh: chỉ hiện đơn LỖ (lợi nhuận thực tế < 0) */}
+            <button
+              type="button"
+              aria-pressed={lossOnly}
+              onClick={toggleLossOnly}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+                lossOnly
+                  ? "border-rose-500 bg-rose-500 text-white"
+                  : "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
+              )}
+            >
+              <TrendingDown className="size-4" />
+              Lợi nhuận âm
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={load} disabled={loading}>

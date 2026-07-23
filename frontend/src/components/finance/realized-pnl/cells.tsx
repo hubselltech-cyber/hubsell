@@ -2,7 +2,6 @@
 
 import { Money } from "@/components/ui/money";
 import type { PnlItemLine } from "@/lib/api";
-import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
@@ -60,25 +59,22 @@ export function ProfitCell({ value }: { value: number }) {
   );
 }
 
-/** Cột "Chi tiết sản phẩm" — xếp chồng từng dòng: SKU · Tên · Phân loại × SL. */
+/**
+ * Cột "Chi tiết sản phẩm" — mini-list gọn: chỉ Mã SKU (hoặc mã phân loại) × SL,
+ * xếp chồng dọc từng dòng. BỎ tên sản phẩm cho bảng gọn nhất.
+ */
 export function ProductLines({ items }: { items: PnlItemLine[] }) {
-  if (items.length === 0)
-    return <span className="text-slate-300">—</span>;
-  const shown = items.slice(0, 3);
+  if (items.length === 0) return <span className="text-slate-300">—</span>;
   return (
-    <div className="min-w-[220px] space-y-1">
-      {shown.map((it, i) => (
-        <div key={`${it.sku}-${i}`} className="leading-tight">
-          <span className="font-mono text-[11px] text-slate-400">{it.sku}</span>
-          <span className="ml-1.5 text-slate-700">{it.name}</span>
-          <span className={cn(TEXT_SUB)}>
-            {it.variation ? ` · ${it.variation}` : ""} × {it.quantity}
+    <div className="space-y-0.5">
+      {items.map((it, i) => (
+        <div key={`${it.sku}-${i}`} className="whitespace-nowrap leading-tight">
+          <span className="font-mono text-[11px] text-slate-600">
+            {it.variation || it.sku}
           </span>
+          <span className="text-slate-400"> × {it.quantity}</span>
         </div>
       ))}
-      {items.length > 3 && (
-        <div className={cn(TEXT_SUB)}>+{items.length - 3} sản phẩm khác</div>
-      )}
     </div>
   );
 }

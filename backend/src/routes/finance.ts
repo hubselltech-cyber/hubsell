@@ -385,17 +385,25 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       };
     });
 
+    // Bộ lọc nhanh "Lợi nhuận âm": chỉ giữ đơn LỖ (profit < 0). Áp trước khi
+    // phân trang & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
+    const lossOnly =
+      req.query.lossOnly === "true" || req.query.lossOnly === "1";
+    const filtered = lossOnly
+      ? allRows.filter((r) => r.profit < 0)
+      : allRows;
+
     // Tóm tắt theo sàn (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại)
     const byPlatform: Record<string, { count: number; profit: number }> = {};
-    for (const r of allRows) {
+    for (const r of filtered) {
       const b = (byPlatform[r.channelName] ??= { count: 0, profit: 0 });
       b.count += 1;
       b.profit += r.profit;
     }
 
-    const total = allRows.length;
+    const total = filtered.length;
     const start = (page - 1) * pageSize;
-    const rows = allRows.slice(start, start + pageSize);
+    const rows = filtered.slice(start, start + pageSize);
 
     res.json({
       rows,
@@ -405,9 +413,9 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       pageCount: Math.max(1, Math.ceil(total / pageSize)),
       summary: {
         count: total,
-        settledCount: allRows.filter((r) => r.isSettled).length,
-        totalNetRevenue: allRows.reduce((s, r) => s + r.netRevenue, 0),
-        totalProfit: allRows.reduce((s, r) => s + r.profit, 0),
+        settledCount: filtered.filter((r) => r.isSettled).length,
+        totalNetRevenue: filtered.reduce((s, r) => s + r.netRevenue, 0),
+        totalProfit: filtered.reduce((s, r) => s + r.profit, 0),
         byPlatform,
       },
     });

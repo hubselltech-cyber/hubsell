@@ -98,12 +98,7 @@ export function ShopeeProfitTable({ rows }: { rows: PnlDetailRow[] }) {
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
                 {/* Thông tin đơn */}
                 <td className={cn(cell, BLOCK.info)}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
-                      Shopee
-                    </span>
-                    <span className="font-medium text-slate-800">{b.orderCode}</span>
-                  </div>
+                  <span className="font-medium text-slate-800">{b.orderCode}</span>
                   {b.missingCostPrice && (
                     <span className="mt-0.5 block text-[11px] text-amber-600">
                       Chưa nhập giá vốn

@@ -432,6 +432,8 @@ export function fetchRealizedPnl(params: {
   range?: DateRange;
   channel?: ChannelFilterQuery;
   status?: ReconciliationStatus;
+  /** Chỉ lấy đơn LỖ (lợi nhuận thực tế < 0). */
+  lossOnly?: boolean;
   page?: number;
   pageSize?: number;
 }) {
@@ -439,6 +441,7 @@ export function fetchRealizedPnl(params: {
     ...rangeToQuery(params.range),
     ...channelFilterToQuery(params.channel),
     ...(params.status && params.status !== "all" ? { status: params.status } : {}),
+    ...(params.lossOnly ? { lossOnly: "true" } : {}),
     ...(params.page ? { page: String(params.page) } : {}),
     ...(params.pageSize ? { pageSize: String(params.pageSize) } : {}),
   }).toString();
