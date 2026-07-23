@@ -20,11 +20,6 @@ import {
   type ChannelScope,
 } from "../channel-filter";
 import { orderPlatformFee } from "../order-fee";
-import {
-  mapShopeeOrderFees,
-  reconciliationProfit,
-  type ShopeeOrderIncome,
-} from "../shopee-fee-mapper";
 
 const router = Router();
 
@@ -272,119 +267,12 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   }
 });
 
-// ============================================================
-// BẢNG ĐỐI SOÁT LỢI NHUẬN ĐƠN HÀNG ĐA KÊNH
-// Mỗi đơn một dòng, bóc tách TỪNG loại phí ra cột riêng để so sánh theo hàng
-// ngang. Đơn ĐÃ QUYẾT TOÁN dùng số phí THỰC TẾ (đối soát sàn) → chính xác 100%;
-// đơn CHƯA quyết toán gộp phí TẠM TÍNH vào cột "Phí cố định & TT".
-// Ghi chú: bảng bám đúng đặc tả 8 cột — KHÔNG tính trợ giá sàn (platformSubsidy)
-// để công thức Lãi/Lỗ khớp tuyệt đối với đặc tả.
-// ============================================================
-
-/** Nhãn trạng thái ở bộ lọc → giá trị shippingStatus. Thiếu = "tất cả". */
+/** Nhãn trạng thái đơn ở bộ lọc → giá trị shippingStatus. Thiếu = "tất cả". */
 const RECON_STATUS: Record<string, ShippingStatus> = {
   delivered: ShippingStatus.DELIVERED,
   shipping: ShippingStatus.SHIPPING,
   cancelled: ShippingStatus.CANCELLED,
 };
-
-// GET /api/finance/order-reconciliation — bảng đối soát lãi/lỗ từng đơn
-router.get("/order-reconciliation", async (req: AuthRequest, res, next) => {
-  try {
-    const statusKey =
-      typeof req.query.status === "string"
-        ? req.query.status.toLowerCase()
-        : "";
-    const shippingStatus = RECON_STATUS[statusKey]; // undefined = tất cả
-
-    const orders = await prisma.order.findMany({
-      where: {
-        channel: channelScope(req),
-        createdAt: parseDateRange(req.query),
-        ...(shippingStatus ? { shippingStatus } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        channel: { select: { channelName: true, shopName: true } },
-        items: true,
-        inventoryLogs: {
-          where: { changeQuantity: { lt: 0 } },
-          include: { product: { select: { costPrice: true } } },
-        },
-      },
-      take: 500, // trần an toàn cho bảng chi tiết
-    });
-
-    const rows = orders.map((o) => {
-      const { cost, missingCostPrice } = orderCost(o);
-      // Doanh thu gốc = tổng giá bán dòng hàng (chưa trừ voucher). Đơn cũ không
-      // có OrderItem → suy ngược từ totalAmount + voucher shop.
-      const gross =
-        o.items.length > 0
-          ? o.items.reduce((s, it) => s + it.quantity * Number(it.price), 0)
-          : Number(o.totalAmount) + Number(o.sellerVoucher);
-
-      // Dựng income statement chuẩn Shopee từ dữ liệu đã lưu rồi cho qua mapper
-      // DÙNG CHUNG với luồng đồng bộ API — một nguồn chân lý cho việc ánh xạ phí.
-      const income: ShopeeOrderIncome = o.isSettled
-        ? {
-            merchandise_subtotal: gross,
-            seller_voucher: Number(o.sellerVoucher),
-            commission_fee: Number(o.fixedFee),
-            transaction_fee: Number(o.paymentFee),
-            service_fee: Number(o.serviceFee),
-            seller_affiliate_program: Number(o.affiliateFee),
-            actual_shipping_fee: Number(o.shippingFeeActual),
-            estimated_shipping_fee: Number(o.shippingFeeQuoted),
-            weight_adjustment_fee: Number(o.shippingFeeDiff),
-          }
-        : {
-            merchandise_subtotal: gross,
-            seller_voucher: Number(o.sellerVoucher),
-            // Chưa quyết toán: gộp phí sàn tạm tính vào phí cố định & giao dịch.
-            commission_fee: Number(o.platformFee),
-            estimated_shipping_fee: Number(o.shippingFeeQuoted),
-            weight_adjustment_fee: Number(o.shippingFeeDiff),
-          };
-
-      const fees = mapShopeeOrderFees(income);
-      const profit = reconciliationProfit(fees, cost);
-
-      return {
-        id: o.id,
-        orderCode: o.orderCode,
-        channelName: o.channel.channelName,
-        shopName: o.channel.shopName,
-        createdAt: o.createdAt,
-        completedAt: o.settledAt ?? o.returnedAt ?? null,
-        shippingStatus: o.shippingStatus,
-        isSettled: o.isSettled,
-        revenueGross: fees.revenueGross,
-        sellerVoucher: fees.sellerVoucher,
-        fixedAndTransaction: fees.fixedAndTransaction,
-        serviceXtra: fees.serviceXtra,
-        campaign: fees.campaign,
-        affiliate: fees.affiliate,
-        costSnapshot: cost,
-        shipAndWeight: fees.shipAndWeight,
-        profit,
-        missingCostPrice,
-      };
-    });
-
-    res.json({
-      rows,
-      summary: {
-        count: rows.length,
-        settledCount: rows.filter((r) => r.isSettled).length,
-        totalRevenueGross: rows.reduce((s, r) => s + r.revenueGross, 0),
-        totalProfit: rows.reduce((s, r) => s + r.profit, 0),
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
 
 // ============================================================
 // LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)
