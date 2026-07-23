@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import { Money } from "@/components/ui/money";
-import type { PnlItemLine } from "@/lib/api";
+import type { PnlDetailRow, PnlItemLine } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
@@ -32,6 +34,75 @@ export const HEADER_GROUP =
   "border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-bold uppercase tracking-wide";
 export const HEADER_COL =
   "border-b-2 border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-500";
+
+/**
+ * Bộ props tích chọn đơn dùng chung cho 3 bảng. State thật nằm ở trang cha; bảng
+ * chỉ render checkbox và gọi callback.
+ */
+export interface PnlSelection {
+  selectedIds: Set<string>;
+  /** Toàn bộ đơn TRANG HIỆN TẠI đã chọn hết chưa. */
+  allSelected: boolean;
+  /** Có chọn một phần (để hiện trạng thái indeterminate ở ô "chọn tất cả"). */
+  someSelected: boolean;
+  onToggle: (row: PnlDetailRow) => void;
+  onToggleAll: () => void;
+}
+
+/** Ô header "chọn tất cả" — chiếm cả 2 tầng header (rowSpan) ở cột đầu. */
+export function SelectAllTh({
+  allSelected,
+  someSelected,
+  onToggle,
+}: {
+  allSelected: boolean;
+  someSelected: boolean;
+  /** Bật/tắt chọn toàn bộ đơn của trang hiện tại. */
+  onToggle: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = someSelected && !allSelected;
+  }, [someSelected, allSelected]);
+  return (
+    <th
+      rowSpan={2}
+      className="w-10 border-b-2 border-slate-200 bg-slate-50 px-3 py-3 text-center align-middle"
+    >
+      <input
+        ref={ref}
+        type="checkbox"
+        aria-label="Chọn tất cả đơn trên trang"
+        checked={allSelected}
+        onChange={onToggle}
+        className="size-4 cursor-pointer align-middle accent-primary"
+      />
+    </th>
+  );
+}
+
+/** Ô checkbox của một hàng dữ liệu (căn giữa cột). */
+export function RowCheckTd({
+  checked,
+  onToggle,
+  label,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
+  return (
+    <td className="border-t border-slate-100 px-3 py-3 text-center align-middle">
+      <input
+        type="checkbox"
+        aria-label={label}
+        checked={checked}
+        onChange={onToggle}
+        className="size-4 cursor-pointer align-middle accent-primary"
+      />
+    </td>
+  );
+}
 
 export const PNL_STATUS_LABEL: Record<string, string> = {
   PENDING: "Chờ xử lý",

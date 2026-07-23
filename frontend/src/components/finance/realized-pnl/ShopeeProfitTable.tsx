@@ -15,6 +15,9 @@ import {
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
+  RowCheckTd,
+  SelectAllTh,
+  type PnlSelection,
 } from "./cells";
 
 /**
@@ -25,15 +28,27 @@ import {
  * chuyển (lam), phí sàn & thuế (đỏ), hiệu quả kinh doanh (xám). Các cột phí chưa
  * có dữ liệu thật (trợ giá VC, người mua trả, nạp ví QC, thuế) hiện GIỮ CHỖ 0đ.
  */
-export function ShopeeProfitTable({ rows }: { rows: PnlDetailRow[] }) {
+export function ShopeeProfitTable({
+  rows,
+  selectedIds,
+  allSelected,
+  someSelected,
+  onToggle,
+  onToggleAll,
+}: { rows: PnlDetailRow[] } & PnlSelection) {
   const data = rows.map(toShopeeRow);
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1900px] border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-[1940px] border-separate border-spacing-0 text-sm">
         <thead>
           {/* Tầng nhóm block — tiêu đề nhóm căn giữa trên các cột con */}
           <tr>
+            <SelectAllTh
+              allSelected={allSelected}
+              someSelected={someSelected}
+              onToggle={onToggleAll}
+            />
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={6}>
               Thông tin đơn &amp; Sản phẩm
             </th>
@@ -97,6 +112,11 @@ export function ShopeeProfitTable({ rows }: { rows: PnlDetailRow[] }) {
             const cell = "border-t border-slate-100 px-3 py-2.5";
             return (
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
+                <RowCheckTd
+                  checked={selectedIds.has(b.id)}
+                  onToggle={() => onToggle(b)}
+                  label={`Chọn đơn ${b.orderCode}`}
+                />
                 {/* Thông tin đơn */}
                 <td className={cn(cell, BLOCK.info)}>
                   <span className="font-medium text-slate-800">{b.orderCode}</span>

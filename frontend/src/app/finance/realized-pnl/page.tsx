@@ -30,12 +30,13 @@ import {
   getToken,
   type ChannelFilterQuery,
   type ChannelName,
+  type PnlDetailRow,
   type RealizedPnlResponse,
   type ReconciliationStatus,
 } from "@/lib/api";
 import { canAccessFinance } from "@/lib/permissions";
 import { defaultRange, type DateRange } from "@/lib/date-range";
-import { exportRealizedPnl } from "@/lib/excel";
+import { exportPnlRows, exportRealizedPnl } from "@/lib/excel";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,8 @@ export default function RealizedPnlPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // Đơn đang tích chọn — lưu cả object để xuất Excel không cần gọi lại API.
+  const [selected, setSelected] = useState<Map<string, PnlDetailRow>>(new Map());
 
   const platform = TABS.find((t) => t.key === tab)!.platform;
 
@@ -112,22 +115,27 @@ export default function RealizedPnlPage() {
     load();
   }, [load, router]);
 
-  // Đổi tab / bộ lọc / cỡ trang thì về trang 1 (tránh rơi vào trang trống).
+  // Đổi tab / bộ lọc thì về trang 1 VÀ xóa lựa chọn (tránh lẫn dữ liệu giữa các
+  // ngữ cảnh khác nhau — theo yêu cầu quản lý trạng thái).
   function changeTab(t: PnlTab) {
     setTab(t);
     setPage(1);
+    setSelected(new Map());
   }
   function changeStatus(s: ReconciliationStatus) {
     setStatus(s);
     setPage(1);
+    setSelected(new Map());
   }
   function toggleLossOnly() {
     setLossOnly((v) => !v);
     setPage(1);
+    setSelected(new Map());
   }
   function changeRange(r: DateRange) {
     setRange(r);
     setPage(1);
+    setSelected(new Map());
   }
   function changePageSize(n: number) {
     setPageSize(n);
@@ -137,9 +145,22 @@ export default function RealizedPnlPage() {
   async function handleExport() {
     setExporting(true);
     try {
-      const count = await exportRealizedPnl({ platform, range, status, lossOnly });
-      if (count === 0) toast.info("Không có đơn nào (theo bộ lọc) để xuất");
-      else toast.success(`Đã xuất ${formatNumber(count)} đơn ra file Excel`);
+      let count: number;
+      if (selected.size > 0) {
+        // CÓ tích chọn → chỉ xuất đúng các đơn đã chọn (mọi trang).
+        count = exportPnlRows(platform, [...selected.values()]);
+      } else {
+        // KHÔNG chọn → xuất toàn bộ theo bộ lọc hiện tại (logic cũ).
+        count = await exportRealizedPnl({ platform, range, status, lossOnly });
+      }
+      if (count === 0) {
+        toast.info("Không có đơn nào để xuất");
+      } else {
+        toast.success(
+          `Đã xuất ${formatNumber(count)} đơn ra file Excel` +
+            (selected.size > 0 ? " (theo lựa chọn)" : "")
+        );
+      }
     } catch {
       toast.error("Không xuất được file Excel");
     } finally {
@@ -157,6 +178,43 @@ export default function RealizedPnlPage() {
 
   const rows = data?.rows ?? [];
   const summary = data?.summary;
+
+  // Trạng thái tích chọn suy ra từ Map — áp cho các bảng.
+  const selectedIds = new Set(selected.keys());
+  const allSelected =
+    rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+  const someSelected = rows.some((r) => selectedIds.has(r.id)) && !allSelected;
+
+  /** Tích/bỏ tích một đơn (giữ object để xuất được kể cả khi sang trang khác). */
+  function toggleRow(row: PnlDetailRow) {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(row.id)) next.delete(row.id);
+      else next.set(row.id, row);
+      return next;
+    });
+  }
+
+  /** Chọn/bỏ chọn TẤT CẢ đơn của TRANG hiện tại. */
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (rows.every((r) => next.has(r.id))) {
+        rows.forEach((r) => next.delete(r.id));
+      } else {
+        rows.forEach((r) => next.set(r.id, r));
+      }
+      return next;
+    });
+  }
+
+  const selectionProps = {
+    selectedIds,
+    allSelected,
+    someSelected,
+    onToggle: toggleRow,
+    onToggleAll: toggleAll,
+  };
 
   return (
     <AppShell>
@@ -272,11 +330,11 @@ export default function RealizedPnlPage() {
             ) : (
               <Refreshing active={loading}>
                 {tab === "shopee" ? (
-                  <ShopeeProfitTable rows={rows} />
+                  <ShopeeProfitTable rows={rows} {...selectionProps} />
                 ) : tab === "tiktok" ? (
-                  <TiktokProfitTable rows={rows} />
+                  <TiktokProfitTable rows={rows} {...selectionProps} />
                 ) : (
-                  <GenericProfitTable rows={rows} />
+                  <GenericProfitTable rows={rows} {...selectionProps} />
                 )}
               </Refreshing>
             )}

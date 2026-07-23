@@ -13,6 +13,9 @@ import {
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
+  RowCheckTd,
+  SelectAllTh,
+  type PnlSelection,
 } from "./cells";
 
 /**
@@ -20,12 +23,24 @@ import {
  * như Lazada). Gộp phí sàn về một cột để nhìn nhanh; chi tiết từng loại phí xem
  * ở tab sàn tương ứng.
  */
-export function GenericProfitTable({ rows }: { rows: PnlDetailRow[] }) {
+export function GenericProfitTable({
+  rows,
+  selectedIds,
+  allSelected,
+  someSelected,
+  onToggle,
+  onToggleAll,
+}: { rows: PnlDetailRow[] } & PnlSelection) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
+            <SelectAllTh
+              allSelected={allSelected}
+              someSelected={someSelected}
+              onToggle={onToggleAll}
+            />
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={5}>
               Thông tin đơn &amp; Sản phẩm
             </th>
@@ -74,6 +89,11 @@ export function GenericProfitTable({ rows }: { rows: PnlDetailRow[] }) {
             const totalFee = b.feeFixedPayment + b.feeService + b.feeAffiliate;
             return (
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
+                <RowCheckTd
+                  checked={selectedIds.has(b.id)}
+                  onToggle={() => onToggle(b)}
+                  label={`Chọn đơn ${b.orderCode}`}
+                />
                 <td className={cn(cell, BLOCK.info)}>
                   <div className="flex items-center gap-1.5">
                     <span

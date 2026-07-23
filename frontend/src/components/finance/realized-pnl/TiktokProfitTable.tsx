@@ -16,6 +16,9 @@ import {
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
+  RowCheckTd,
+  SelectAllTh,
+  type PnlSelection,
 } from "./cells";
 
 /**
@@ -27,15 +30,27 @@ import {
  * (xanh), phí VC (lam), phí & thuế (đỏ), hiệu quả (xám). Cột chưa có dữ liệu
  * thật (chiết khấu PVC, Flash Sale, SFR, VAT) hiện GIỮ CHỖ 0đ.
  */
-export function TiktokProfitTable({ rows }: { rows: PnlDetailRow[] }) {
+export function TiktokProfitTable({
+  rows,
+  selectedIds,
+  allSelected,
+  someSelected,
+  onToggle,
+  onToggleAll,
+}: { rows: PnlDetailRow[] } & PnlSelection) {
   const data = rows.map(toTiktokRow);
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[2280px] border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-[2320px] border-separate border-spacing-0 text-sm">
         <thead>
           {/* Tầng nhóm block — tiêu đề nhóm căn giữa trên các cột con */}
           <tr>
+            <SelectAllTh
+              allSelected={allSelected}
+              someSelected={someSelected}
+              onToggle={onToggleAll}
+            />
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={8}>
               Thông tin đơn &amp; Sản phẩm
             </th>
@@ -102,6 +117,11 @@ export function TiktokProfitTable({ rows }: { rows: PnlDetailRow[] }) {
             const cell = "border-t border-slate-100 px-3 py-2.5";
             return (
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
+                <RowCheckTd
+                  checked={selectedIds.has(b.id)}
+                  onToggle={() => onToggle(b)}
+                  label={`Chọn đơn ${b.orderCode}`}
+                />
                 {/* Thông tin đơn */}
                 <td className={cn(cell, BLOCK.info)}>
                   <span className="font-medium text-slate-800">{b.orderCode}</span>

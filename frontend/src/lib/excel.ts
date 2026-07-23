@@ -339,6 +339,20 @@ export async function exportRealizedPnl(filter: {
   return all.length;
 }
 
+/**
+ * Xuất TRỰC TIẾP các dòng đã chọn (không gọi API) theo layout của tab đang xem.
+ * Dùng khi người dùng tích chọn thủ công một số đơn trong bảng.
+ */
+export function exportPnlRows(
+  platform: ChannelName | "ALL",
+  rows: PnlDetailRow[]
+): number {
+  if (rows.length === 0) return 0;
+  if (platform === "TIKTOK") exportTiktokPnlToExcel(rows);
+  else exportShopeePnlToExcel(rows);
+  return rows.length;
+}
+
 // ---------- GIÁ VỐN THEO SKU ----------
 
 /**
