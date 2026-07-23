@@ -34,7 +34,6 @@ import {
   type ReconciliationStatus,
 } from "@/lib/api";
 import { canAccessFinance } from "@/lib/permissions";
-import { CHANNEL_META } from "@/lib/channel-meta";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { exportRealizedPnl } from "@/lib/excel";
 import { formatNumber, formatVND } from "@/lib/format";
@@ -259,9 +258,9 @@ export default function RealizedPnlPage() {
           </div>
         </div>
 
-        {/* ===== TỔNG QUAN: dải chỉ số + lãi/lỗ theo sàn ===== */}
+        {/* ===== TỔNG QUAN: 4 chỉ số cốt lõi ===== */}
         {tab === "overview" && summary && (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard label="Số đơn" value={formatNumber(summary.count)} />
             <StatCard
               label="Đã đối soát"
@@ -281,36 +280,6 @@ export default function RealizedPnlPage() {
             />
           </div>
         )}
-        {tab === "overview" && summary && (
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(summary.byPlatform).map(([ch, v]) => {
-              const meta = CHANNEL_META[ch as ChannelName];
-              return (
-                <span
-                  key={ch}
-                  className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm"
-                >
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
-                      meta?.className
-                    )}
-                  >
-                    {meta?.label ?? ch}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {formatNumber(v.count)} đơn ·{" "}
-                    <b className={v.profit >= 0 ? "text-emerald-600" : "text-rose-600"}>
-                      {v.profit < 0 ? "− " : ""}
-                      {formatVND(Math.abs(v.profit))}
-                    </b>
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        )}
-
         {/* ===== BẢNG THEO TAB ===== */}
         <Card className="shadow-sm">
           <CardContent className="p-0">
@@ -400,9 +369,12 @@ function StatCard({
   tone?: string;
 }) {
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
+    // h-full + flex để 4 card cao bằng nhau, vuông vắn & thoáng (chuẩn ERP).
+    <div className="flex h-full flex-col justify-center gap-1.5 rounded-xl border bg-card px-5 py-5">
       <p className={cn(TEXT_SUB)}>{label}</p>
-      <p className={cn("mt-0.5 text-lg font-bold text-slate-900", tone)}>{value}</p>
+      <p className={cn("text-xl font-bold tracking-tight text-slate-900", tone)}>
+        {value}
+      </p>
     </div>
   );
 }
