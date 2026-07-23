@@ -20,7 +20,6 @@ import {
   type ChannelName,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
@@ -157,7 +156,8 @@ export function CashFlowTable() {
                       key={c}
                       className={cn(
                         "border-b-2 border-slate-200 bg-slate-50 px-4 py-3 text-right text-xs font-medium text-slate-500",
-                        i === COLS.length - 1 && "font-semibold text-slate-700"
+                        // Cột cuối: thêm khoảng thở phải để số không dính vách bảng
+                        i === COLS.length - 1 && "pr-6 font-semibold text-slate-700"
                       )}
                     >
                       {c}
@@ -201,7 +201,7 @@ export function CashFlowTable() {
                       <td className={cn(cell, "text-right text-slate-700")}>
                         <Cash value={r.withdrawn} />
                       </td>
-                      <td className={cn(cell, "text-right font-semibold text-slate-900")}>
+                      <td className={cn(cell, "pr-6 text-right font-semibold text-slate-900")}>
                         <Cash value={r.total} className="font-semibold" />
                       </td>
                     </tr>
@@ -226,7 +226,7 @@ export function CashFlowTable() {
                   <td className="border-t-2 border-slate-300 px-4 py-3 text-right">
                     <Money value={totals.withdrawn} className="font-bold" />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3 text-right">
+                  <td className="border-t-2 border-slate-300 px-4 py-3 pr-6 text-right">
                     <Money value={totals.total} className="font-bold" />
                   </td>
                 </tr>
@@ -237,9 +237,9 @@ export function CashFlowTable() {
 
         {/* Ghi chú cột giữ chỗ */}
         {!loading && !error && shown.length > 0 && (
-          <p className={cn(TEXT_SUB, "px-4 py-2.5")}>
-            Cột <b>“Tiền đã thu về”</b> cần module theo dõi lệnh rút ví về ngân
-            hàng (chưa có) nên đang <b>giữ chỗ 0₫</b>.
+          <p className="px-4 py-2.5 text-left text-xs italic text-slate-500">
+            Cột “Tiền đã thu về” cần module theo dõi lệnh rút ví về ngân hàng
+            (chưa có) nên đang giữ chỗ 0₫.
           </p>
         )}
       </CardContent>
