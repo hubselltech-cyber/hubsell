@@ -83,7 +83,17 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/channels", label: "Kênh bán", icon: Store, roles: ["ADMIN"] },
   { href: "/mappings", label: "Liên kết SP", icon: Link2, roles: ["ADMIN"] },
   { href: "/staff", label: "Nhân viên", icon: Users, roles: ["ADMIN"] },
-  { href: "/settings", label: "Cấu hình", icon: Settings, roles: ["ADMIN"] },
+  {
+    // Cấu hình hệ thống gom thành nhóm phân cấp theo quy hoạch SaaS.
+    label: "Cấu hình",
+    icon: Settings,
+    roles: ["ADMIN"],
+    children: [
+      { href: "/settings/general", label: "Cấu hình chung" },
+      { href: "/settings/tax", label: "Hóa đơn & Thuế" },
+      { href: "/settings/other", label: "Cấu hình khác" },
+    ],
+  },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
@@ -94,6 +104,9 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Liên kết sản phẩm" },
   { prefix: "/staff", title: "Quản lý nhân viên" },
+  { prefix: "/settings/general", title: "Cấu hình chung" },
+  { prefix: "/settings/tax", title: "Hóa đơn & Thuế" },
+  { prefix: "/settings/other", title: "Cấu hình khác" },
   { prefix: "/settings", title: "Cấu hình hệ thống" },
   { prefix: "/finance/analytics", title: "Báo cáo dòng tiền" },
   { prefix: "/finance/expenses", title: "Chi phí vận hành" },
@@ -123,6 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith("/finance")) open.add("Quản lý Tài chính");
     if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
       open.add("Quản lý Kho");
+    if (pathname.startsWith("/settings")) open.add("Cấu hình");
     return open;
   });
 

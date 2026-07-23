@@ -26,6 +26,14 @@ export function isCustomVendor(v: string): boolean {
   return INVOICE_VENDORS.find((x) => x.value === v)?.custom === true;
 }
 
+/**
+ * Mã đối tác ISV của Hubsell với nhà cung cấp hóa đơn — CỐ ĐỊNH, không cho shop
+ * sửa. Nhờ mã này mà mọi hóa đơn phát hành qua Hubsell được NCC ghi nhận thuộc
+ * đại lý Hubsell (hưởng hoa hồng ISV). Trường Partner Code ở giao diện phải
+ * read-only và luôn gửi đúng giá trị này khi lưu.
+ */
+export const HUBSELL_PARTNER_CODE = "HUBSELL-ISV-2026";
+
 /** Phương thức ký số. */
 export const SIGN_METHODS = [
   { value: "usb", label: "Ký số qua USB Token (Thủ công)" },

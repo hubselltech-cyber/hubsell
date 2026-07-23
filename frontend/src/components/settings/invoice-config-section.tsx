@@ -6,6 +6,7 @@ import {
   FileSignature,
   KeyRound,
   Loader2,
+  Lock,
   PlugZap,
   Save,
   ShieldCheck,
@@ -25,6 +26,7 @@ import {
   type InvoiceChannelKeyDTO,
 } from "@/lib/api";
 import {
+  HUBSELL_PARTNER_CODE,
   INVOICE_VENDORS,
   isCustomVendor,
   SIGN_METHODS,
@@ -41,13 +43,18 @@ import { cn } from "@/lib/utils";
  * nhập); (2) api_key RIÊNG cho từng gian hàng. Khóa bí mật chỉ hiển thị dạng che;
  * để trống khi lưu = giữ nguyên khóa cũ.
  */
-export function InvoiceConfigSection() {
+export function InvoiceConfigSection({
+  /** Chế độ Beta/xem trước: khóa các nút Lưu để không ghi cấu hình khi module tắt. */
+  readOnlyPreview = false,
+}: {
+  readOnlyPreview?: boolean;
+}) {
   const [loading, setLoading] = useState(true);
 
   // Cấu hình cấp shop
   const [provider, setProvider] = useState("MISA");
   const [signMethod, setSignMethod] = useState("usb");
-  const [partnerCode, setPartnerCode] = useState("");
+  // Partner Code KHÔNG cho sửa — luôn là mã ISV cố định của Hubsell (xem bên dưới).
   const [clientId, setClientId] = useState("");
   const [customApiUrl, setCustomApiUrl] = useState("");
   const [hasSecretKey, setHasSecretKey] = useState(false);
@@ -65,7 +72,6 @@ export function InvoiceConfigSection() {
       .then((r) => {
         setProvider(r.config.provider);
         setSignMethod(r.config.signMethod);
-        setPartnerCode(r.config.partnerCode);
         setClientId(r.config.clientId);
         setCustomApiUrl(r.config.customApiUrl);
         setHasSecretKey(r.config.hasSecretKey);
@@ -92,7 +98,8 @@ export function InvoiceConfigSection() {
       const r = await saveInvoiceConfig({
         provider,
         signMethod,
-        partnerCode: partnerCode.trim(),
+        // Luôn gửi mã ISV cố định của Hubsell — không lấy từ input (read-only).
+        partnerCode: HUBSELL_PARTNER_CODE,
         clientId: clientId.trim(),
         secretKey: secretInput.trim() || undefined,
         customApiUrl: customApiUrl.trim(),
@@ -200,15 +207,24 @@ export function InvoiceConfigSection() {
           )}
 
           <div className="grid gap-2">
-            <Label htmlFor="inv-partner">Mã đối tác Hubsell (Partner Code)</Label>
-            <Input
-              id="inv-partner"
-              placeholder="Mã đại lý/đối tác của Hubsell với NCC"
-              value={partnerCode}
-              onChange={(e) => setPartnerCode(e.target.value)}
-            />
+            <Label htmlFor="inv-partner">
+              Partner Code / Mã đại lý (ISV)
+            </Label>
+            <div className="relative">
+              <Input
+                id="inv-partner"
+                value={HUBSELL_PARTNER_CODE}
+                readOnly
+                aria-readonly
+                tabIndex={-1}
+                className="cursor-not-allowed bg-slate-50 pr-9 font-mono text-slate-600"
+              />
+              <Lock className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            </div>
             <p className={TEXT_SUB}>
-              Dùng để đối soát hoa hồng đại lý giữa Hubsell và nhà cung cấp.
+              Mã đại lý ISV của Hubsell — <b>cố định, không chỉnh sửa</b>. Nhờ mã
+              này mà mọi hóa đơn phát hành qua hệ thống được nhà cung cấp ghi nhận
+              thuộc đại lý Hubsell (hưởng hoa hồng ISV).
             </p>
           </div>
 
@@ -239,7 +255,15 @@ export function InvoiceConfigSection() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-            <Button onClick={handleSaveConfig} disabled={savingConfig}>
+            <Button
+              onClick={handleSaveConfig}
+              disabled={savingConfig || readOnlyPreview}
+              title={
+                readOnlyPreview
+                  ? "Module đang ở chế độ Beta — khóa lưu để an toàn dữ liệu"
+                  : undefined
+              }
+            >
               {savingConfig ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
@@ -253,7 +277,7 @@ export function InvoiceConfigSection() {
             </Button>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <ShieldCheck className="size-3.5" />
-              Sandbox — chưa gọi API thật.
+              {readOnlyPreview ? "Beta — đã khóa lưu, chạy Sandbox." : "Sandbox — chưa gọi API thật."}
             </p>
           </div>
         </CardContent>
@@ -321,7 +345,16 @@ export function InvoiceConfigSection() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={saving || !(keyInputs[c.channelId] ?? "").trim()}
+                      disabled={
+                        saving ||
+                        readOnlyPreview ||
+                        !(keyInputs[c.channelId] ?? "").trim()
+                      }
+                      title={
+                        readOnlyPreview
+                          ? "Module đang ở chế độ Beta — khóa lưu"
+                          : undefined
+                      }
                       onClick={() => handleSaveChannelKey(c.channelId)}
                     >
                       {saving ? (
