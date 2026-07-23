@@ -11,6 +11,8 @@ import {
   Amount,
   BLOCK,
   Deduction,
+  HEADER_COL,
+  HEADER_GROUP,
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
@@ -32,62 +34,61 @@ export function TiktokProfitTable({ rows }: { rows: PnlDetailRow[] }) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[2280px] border-separate border-spacing-0 text-sm">
         <thead>
-          {/* Hàng nhóm block */}
-          <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <th className={cn("px-3 pt-3 pb-1 text-left", BLOCK.info)} colSpan={8}>
+          {/* Tầng nhóm block */}
+          <tr>
+            <th className={cn(HEADER_GROUP, "text-left")} colSpan={8}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-emerald-700", BLOCK.revenue)} colSpan={4}>
+            <th className={cn(HEADER_GROUP, "text-right text-emerald-700")} colSpan={4}>
               Doanh thu &amp; Giảm giá
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-sky-700", BLOCK.ship)} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-right text-sky-700")} colSpan={6}>
               Chi tiết phí vận chuyển
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-rose-700", BLOCK.fee)} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-right text-rose-700")} colSpan={6}>
               Phí &amp; Thuế TikTok
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right", BLOCK.result)} colSpan={3}>
+            <th className={cn(HEADER_GROUP, "text-right")} colSpan={3}>
               Hiệu quả kinh doanh
             </th>
           </tr>
-          {/* Hàng tên cột */}
-          <tr className="text-xs text-slate-500">
+          {/* Tầng tên cột — căn lề khớp dữ liệu bên dưới */}
+          <tr>
             {[
-              ["Mã đơn", "left", BLOCK.info],
-              ["Trạng thái", "left", BLOCK.info],
-              ["Shop", "left", BLOCK.info],
-              ["Ngày tạo", "left", BLOCK.info],
-              ["ĐVVC", "left", BLOCK.info],
-              ["Ngày gửi ĐVVC", "left", BLOCK.info],
-              ["Khách hàng", "left", BLOCK.info],
-              ["Chi tiết sản phẩm", "left", BLOCK.info],
-              ["Tổng giá trị SP", "right", BLOCK.revenue],
-              ["Chiết khấu của sàn", "right", BLOCK.revenue],
-              ["Chiết khấu người bán", "right", BLOCK.revenue],
-              ["Tổng SP sau chiết khấu", "right", BLOCK.revenue],
-              ["PVC trước chiết khấu", "right", BLOCK.ship],
-              ["CK PVC bởi sàn", "right", BLOCK.ship],
-              ["CK PVC bởi người bán", "right", BLOCK.ship],
-              ["PVC sau chiết khấu", "right", BLOCK.ship],
-              ["PVC thực tế", "right", BLOCK.ship],
-              ["Chênh lệch PVC", "right", BLOCK.ship],
-              ["Phí cố định & GD", "right", BLOCK.fee],
-              ["Phí dịch vụ SFP & Xtra", "right", BLOCK.fee],
-              ["Phí Flash Sale", "right", BLOCK.fee],
-              ["Phí Tiếp thị LK", "right", BLOCK.fee],
-              ["Phí xử lý đơn & SFR", "right", BLOCK.fee],
-              ["Thuế & VAT", "right", BLOCK.fee],
-              ["Doanh thu ước tính", "right", BLOCK.result],
-              ["Chi phí giá vốn", "right", BLOCK.result],
-              ["LỢI NHUẬN THỰC TẾ", "right", BLOCK.result],
-            ].map(([label, align, bg], i) => (
+              ["Mã đơn", "left"],
+              ["Trạng thái", "left"],
+              ["Shop", "left"],
+              ["Ngày tạo", "left"],
+              ["ĐVVC", "left"],
+              ["Ngày gửi ĐVVC", "left"],
+              ["Khách hàng", "left"],
+              ["Chi tiết sản phẩm", "left"],
+              ["Tổng giá trị SP", "right"],
+              ["Chiết khấu của sàn", "right"],
+              ["Chiết khấu người bán", "right"],
+              ["Tổng SP sau chiết khấu", "right"],
+              ["PVC trước chiết khấu", "right"],
+              ["CK PVC bởi sàn", "right"],
+              ["CK PVC bởi người bán", "right"],
+              ["PVC sau chiết khấu", "right"],
+              ["PVC thực tế", "right"],
+              ["Chênh lệch PVC", "right"],
+              ["Phí cố định & GD", "right"],
+              ["Phí dịch vụ SFP & Xtra", "right"],
+              ["Phí Flash Sale", "right"],
+              ["Phí Tiếp thị LK", "right"],
+              ["Phí xử lý đơn & SFR", "right"],
+              ["Thuế & VAT", "right"],
+              ["Doanh thu ước tính", "right"],
+              ["Chi phí giá vốn", "right"],
+              ["LỢI NHUẬN THỰC TẾ", "right"],
+            ].map(([label, align], i) => (
               <th
                 key={i}
                 className={cn(
-                  "px-3 pb-2 font-medium",
+                  HEADER_COL,
                   align === "right" ? "text-right" : "text-left",
-                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700",
-                  bg
+                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700"
                 )}
               >
                 {label}

@@ -8,6 +8,8 @@ import {
   Amount,
   BLOCK,
   Deduction,
+  HEADER_COL,
+  HEADER_GROUP,
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
@@ -23,42 +25,41 @@ export function GenericProfitTable({ rows }: { rows: PnlDetailRow[] }) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-sm">
         <thead>
-          <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <th className={cn("px-3 pt-3 pb-1 text-left", BLOCK.info)} colSpan={5}>
+          <tr>
+            <th className={cn(HEADER_GROUP, "text-left")} colSpan={5}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-emerald-700", BLOCK.revenue)} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-right text-emerald-700")} colSpan={2}>
               Doanh thu
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-rose-700", BLOCK.fee)} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-right text-rose-700")} colSpan={2}>
               Phí sàn
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-slate-600", BLOCK.ship)} colSpan={1}>
+            <th className={cn(HEADER_GROUP, "text-right text-slate-600")} colSpan={1}>
               Vận hành
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right", BLOCK.result)}>Kết quả</th>
+            <th className={cn(HEADER_GROUP, "text-right")}>Kết quả</th>
           </tr>
-          <tr className="text-xs text-slate-500">
+          <tr>
             {[
-              ["Mã đơn", "left", BLOCK.info],
-              ["Trạng thái", "left", BLOCK.info],
-              ["Shop", "left", BLOCK.info],
-              ["Ngày tạo", "left", BLOCK.info],
-              ["Chi tiết sản phẩm", "left", BLOCK.info],
-              ["Doanh thu gốc", "right", BLOCK.revenue],
-              ["Voucher Shop", "right", BLOCK.revenue],
-              ["Tổng phí sàn", "right", BLOCK.fee],
-              ["Chênh lệch VC", "right", BLOCK.fee],
-              ["Giá vốn", "right", BLOCK.ship],
-              ["LỢI NHUẬN THỰC TẾ", "right", BLOCK.result],
-            ].map(([label, align, bg], i) => (
+              ["Mã đơn", "left"],
+              ["Trạng thái", "left"],
+              ["Shop", "left"],
+              ["Ngày tạo", "left"],
+              ["Chi tiết sản phẩm", "left"],
+              ["Doanh thu gốc", "right"],
+              ["Voucher Shop", "right"],
+              ["Tổng phí sàn", "right"],
+              ["Chênh lệch VC", "right"],
+              ["Giá vốn", "right"],
+              ["LỢI NHUẬN THỰC TẾ", "right"],
+            ].map(([label, align], i) => (
               <th
                 key={i}
                 className={cn(
-                  "px-3 pb-2 font-medium",
+                  HEADER_COL,
                   align === "right" ? "text-right" : "text-left",
-                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700",
-                  bg
+                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700"
                 )}
               >
                 {label}

@@ -10,6 +10,8 @@ import {
   Amount,
   BLOCK,
   Deduction,
+  HEADER_COL,
+  HEADER_GROUP,
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
@@ -30,59 +32,58 @@ export function ShopeeProfitTable({ rows }: { rows: PnlDetailRow[] }) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1900px] border-separate border-spacing-0 text-sm">
         <thead>
-          {/* Hàng nhóm block */}
-          <tr className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <th className={cn("px-3 pt-3 pb-1 text-left", BLOCK.info)} colSpan={6}>
+          {/* Tầng nhóm block */}
+          <tr>
+            <th className={cn(HEADER_GROUP, "text-left")} colSpan={6}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-emerald-700", BLOCK.revenue)} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-right text-emerald-700")} colSpan={2}>
               Doanh thu &amp; Trợ giá
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-sky-700", BLOCK.ship)} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-right text-sky-700")} colSpan={6}>
               Phí vận chuyển
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right text-rose-700", BLOCK.fee)} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-right text-rose-700")} colSpan={6}>
               Phí sàn &amp; Thuế
             </th>
-            <th className={cn("px-3 pt-3 pb-1 text-right", BLOCK.result)} colSpan={4}>
+            <th className={cn(HEADER_GROUP, "text-right")} colSpan={4}>
               Hiệu quả kinh doanh
             </th>
           </tr>
-          {/* Hàng tên cột */}
-          <tr className="text-xs text-slate-500">
+          {/* Tầng tên cột — căn lề khớp dữ liệu bên dưới */}
+          <tr>
             {[
-              ["Mã đơn", "left", BLOCK.info],
-              ["Trạng thái", "left", BLOCK.info],
-              ["Shop", "left", BLOCK.info],
-              ["Ngày tạo", "left", BLOCK.info],
-              ["ĐVVC", "left", BLOCK.info],
-              ["Chi tiết sản phẩm", "left", BLOCK.info],
-              ["Tổng giá trị SP", "right", BLOCK.revenue],
-              ["Trợ giá Shopee", "right", BLOCK.revenue],
-              ["Phí VC Dự kiến", "right", BLOCK.ship],
-              ["Phí VC Thực tế", "right", BLOCK.ship],
-              ["Trợ giá VC Shopee", "right", BLOCK.ship],
-              ["Trợ giá VC Shop", "right", BLOCK.ship],
-              ["Người mua trả", "right", BLOCK.ship],
-              ["Chênh lệch phí VC", "right", BLOCK.ship],
-              ["Phí sàn (CĐ+TT)", "right", BLOCK.fee],
-              ["Phí TTLK (Affiliate)", "right", BLOCK.fee],
-              ["PiShip (Xtra)", "right", BLOCK.fee],
-              ["Nạp ví quảng cáo", "right", BLOCK.fee],
-              ["Trợ giá người bán", "right", BLOCK.fee],
-              ["Thuế", "right", BLOCK.fee],
-              ["Doanh thu ước tính", "right", BLOCK.result],
-              ["Doanh thu từ Shopee", "right", BLOCK.result],
-              ["Chi phí giá vốn", "right", BLOCK.result],
-              ["LỢI NHUẬN THỰC TẾ", "right", BLOCK.result],
-            ].map(([label, align, bg], i) => (
+              ["Mã đơn", "left"],
+              ["Trạng thái", "left"],
+              ["Shop", "left"],
+              ["Ngày tạo", "left"],
+              ["ĐVVC", "left"],
+              ["Chi tiết sản phẩm", "left"],
+              ["Tổng giá trị SP", "right"],
+              ["Trợ giá Shopee", "right"],
+              ["Phí VC Dự kiến", "right"],
+              ["Phí VC Thực tế", "right"],
+              ["Trợ giá VC Shopee", "right"],
+              ["Trợ giá VC Shop", "right"],
+              ["Người mua trả", "right"],
+              ["Chênh lệch phí VC", "right"],
+              ["Phí sàn (CĐ+TT)", "right"],
+              ["Phí TTLK (Affiliate)", "right"],
+              ["PiShip (Xtra)", "right"],
+              ["Nạp ví quảng cáo", "right"],
+              ["Trợ giá người bán", "right"],
+              ["Thuế", "right"],
+              ["Doanh thu ước tính", "right"],
+              ["Doanh thu từ Shopee", "right"],
+              ["Chi phí giá vốn", "right"],
+              ["LỢI NHUẬN THỰC TẾ", "right"],
+            ].map(([label, align], i) => (
               <th
                 key={i}
                 className={cn(
-                  "px-3 pb-2 font-medium",
+                  HEADER_COL,
                   align === "right" ? "text-right" : "text-left",
-                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700",
-                  bg
+                  label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700"
                 )}
               >
                 {label}

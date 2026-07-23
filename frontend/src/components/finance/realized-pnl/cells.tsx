@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * sản phẩm.
  */
 
-/** Nền nhẹ theo block cột — dùng cho cả ô tiêu đề và ô dữ liệu. */
+/** Nền nhẹ theo block cột — dùng cho ô DỮ LIỆU (giữ mã màu để quét theo cột). */
 export const BLOCK = {
   info: "",
   revenue: "bg-emerald-50/60",
@@ -18,6 +18,20 @@ export const BLOCK = {
   fee: "bg-rose-50/50",
   result: "bg-slate-100/70",
 } as const;
+
+/**
+ * Class cho VÙNG TIÊU ĐỀ bảng — đồng bộ 3 bảng (Shopee/TikTok/Generic).
+ * Cả header dùng chung một nền xám nhạt để tách hẳn với vùng dữ liệu trắng bên
+ * dưới; mã màu nhóm chuyển sang thể hiện bằng MÀU CHỮ của tầng trên.
+ *
+ * - HEADER_GROUP: tầng trên (tên nhóm) — in đậm, có border-bottom phân tách tầng.
+ * - HEADER_COL:   tầng dưới (tên cột) — border-bottom đậm ngăn cách với dữ liệu.
+ * Cả hai đệm dọc py-3 cho thoáng.
+ */
+export const HEADER_GROUP =
+  "border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-bold uppercase tracking-wide";
+export const HEADER_COL =
+  "border-b-2 border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-500";
 
 export const PNL_STATUS_LABEL: Record<string, string> = {
   PENDING: "Chờ xử lý",
