@@ -5,6 +5,25 @@
 
 ---
 
+## Phiên 24/07/2026 (8) — FIX Shopee error_sign: host sandbox cũ bị khai tử
+
+### Triệu chứng & chẩn đoán
+Bấm kết nối Shopee → `{"error":"error_sign","message":"Wrong sign."}`. Debug rất sâu, loại trừ hết phía mình: sign scheme đúng chuẩn (HMAC-SHA256 partner_id+path+timestamp, hex lowercase), key đúng (đối chiếu Console + regenerate + tạo hẳn app mới 1239199 vẫn lỗi), clock lệch 0s, thử mọi encoding key/base-string/host. Phát hiện chốt: **`error_sign` là phản hồi CHUNG** (partner_id giả cũng bị) → không suy ra được host đúng.
+
+### Nguyên nhân thật
+**Domain sandbox `partner.test-stable.shopeemobile.com` ĐÃ BỊ KHAI TỬ.** (Con "Ask AI Assistant" của Shopee Open Platform xác nhận + đưa domain mới.) Host mới = **`https://openplatform.sandbox.test-stable.shopee.cn`** — đã kiểm chứng: chữ ký QUA (trả `invalid_code` cho code giả thay vì `error_sign`).
+
+### Đã sửa ✅
+- `shopee/config.ts`: `SHOPEE_HOSTS.sandbox` → `https://openplatform.sandbox.test-stable.shopee.cn`. Không đụng sign scheme/logic (đúng sẵn).
+- `.env`: đang dùng credential app mới **Hubsell ANO 2** (partner_id 1239199).
+- Verify: `token/get` trả `invalid_code` (chữ ký OK). Auth URL gen ra trỏ đúng host mới.
+
+### Việc cần làm 🔜
+- **Test luồng OAuth thật**: bấm Kết nối Shopee → uỷ quyền shop test → callback lưu Channel. (hosts hubsell.tech→127.0.0.1 + listener :80 đã sẵn.)
+- Production host (`partner.shopeemobile.com`) chưa verify — xem lại lúc Go-Live.
+
+---
+
 ## Phiên 24/07/2026 (7) — Tích hợp Shopee Open Platform OAuth (Sandbox)
 
 ### Mục tiêu

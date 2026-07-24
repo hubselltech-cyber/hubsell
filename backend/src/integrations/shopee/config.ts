@@ -22,8 +22,11 @@ export interface ShopeeConfig {
 }
 
 // Host API của Shopee theo môi trường.
+// LƯU Ý: domain sandbox cũ `partner.test-stable.shopeemobile.com` ĐÃ BỊ KHAI TỬ
+// (mọi request ký đúng vẫn trả error_sign). Sandbox mới là openplatform.sandbox.
+// test-stable.shopee.cn — đã kiểm chứng chữ ký qua (trả invalid_code cho code giả).
 const SHOPEE_HOSTS = {
-  sandbox: "https://partner.test-stable.shopeemobile.com",
+  sandbox: "https://openplatform.sandbox.test-stable.shopee.cn",
   production: "https://partner.shopeemobile.com",
 } as const;
 
