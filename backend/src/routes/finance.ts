@@ -6,13 +6,12 @@ import {
   ExpenseCategory,
   ExpenseType,
   Prisma,
-  ChannelProductStatus,
   ShippingDisputeStatus,
   ShippingStatus,
 } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
-import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
+import { syncChannelProducts } from "../marketplace/product-sync";
 import { parseDateRange, type DateRangeFilter } from "../date-range";
 import {
   channelScope,
@@ -971,14 +970,10 @@ router.patch(
 );
 
 // POST /api/finance/sync-products — QUÉT SẢN PHẨM TỪ CÁC SÀN ĐÃ KẾT NỐI.
-// Lấy danh mục sản phẩm (mã SKU, tên/biến thể, giá bán, ảnh) từ từng gian hàng
-// đang ACTIVE rồi UPSERT vào bảng đệm ChannelProduct:
-//   - SKU sàn chưa có   → tạo Product mới (giá vốn = 0 để chủ shop nhập) + liên kết
-//   - SKU sàn đã có     → cập nhật tên hiển thị/ảnh trên sàn
-// LƯU Ý: KHÔNG bao giờ ghi đè giá vốn (costPrice) vì đó là dữ liệu chủ shop tự nhập.
-//
-// Khi tích hợp API thật: thay MOCK_CATALOG bằng lời gọi API Shopee/TikTok/Lazada,
-// phần upsert bên dưới giữ nguyên.
+// Với mỗi gian ACTIVE, gọi marketplace/product-sync (Adapter Pattern): registry
+// chọn adapter (Shopee API thật nếu có refresh_token, còn lại mock), adapter kéo
+// + chuẩn hoá, tầng kho upsert vào bảng đệm ChannelProduct.
+// LƯU Ý: KHÔNG bao giờ ghi đè giá vốn (costPrice) hay productId (liên kết người dùng).
 router.post("/sync-products", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
@@ -1014,70 +1009,18 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
     }[] = [];
 
     for (const channel of channels) {
-      const catalog = MOCK_CATALOG[channel.channelName];
-      let createdHere = 0;
-      const now = new Date();
-
-      for (const item of catalog) {
-        // CHỈ ghi vào bảng đệm. KHÔNG tạo Product ở đây — tên và mã trên các
-        // shop sàn thường lệch nhau, đẩy thẳng vào kho vật lý là sinh rác
-        // không dọn nổi. Sản phẩm gốc chỉ do con người tạo ở trang Sản phẩm,
-        // rồi nối thủ công tại trang Liên kết SP.
-        const existing = await prisma.channelProduct.findUnique({
-          where: {
-            channelId_channelSku: {
-              channelId: channel.id,
-              channelSku: item.channelSku,
-            },
-          },
-          select: { id: true },
-        });
-
-        const data = {
-          productName: item.name,
-          price: item.price,
-          imageUrl: mockImageFor(channel.channelName, item.name),
-          status: ChannelProductStatus.ACTIVE,
-          lastSyncedAt: now,
-        };
-
-        if (existing) {
-          // Cập nhật thông tin hiển thị từ sàn. TUYỆT ĐỐI không đụng vào
-          // productId — liên kết là do người dùng cấu hình, đồng bộ không được
-          // tự ý gỡ hay đổi.
-          await prisma.channelProduct.update({
-            where: { id: existing.id },
-            data,
-          });
-          updated++;
-        } else {
-          await prisma.channelProduct.create({
-            data: {
-              channelId: channel.id,
-              channelSku: item.channelSku,
-              ...data,
-              // productId để trống = chờ người dùng liên kết
-            },
-          });
-          created++;
-          createdHere++;
-        }
-      }
-
-      // Sản phẩm không còn trong danh mục sàn → đánh dấu đã gỡ niêm yết thay vì
-      // xoá, để không mất lịch sử liên kết nếu shop bật bán lại.
-      const stillListed = catalog.map((c) => c.channelSku);
-      await prisma.channelProduct.updateMany({
-        where: { channelId: channel.id, channelSku: { notIn: stillListed } },
-        data: { status: ChannelProductStatus.DELISTED },
-      });
-
+      // ADAPTER PATTERN: route KHÔNG biết gian này là Shopee thật hay mock —
+      // registry chọn adapter, marketplace/product-sync lo phần kho (upsert bảng
+      // đệm, giữ nguyên productId/giá vốn, delist SKU cũ). Thêm sàn = thêm adapter.
+      const r = await syncChannelProducts(channel);
+      created += r.created;
+      updated += r.updated;
       perChannel.push({
         channelId: channel.id,
         channelName: channel.channelName,
         shopName: channel.shopName,
-        scanned: catalog.length,
-        created: createdHere,
+        scanned: r.scanned,
+        created: r.created,
       });
     }
 

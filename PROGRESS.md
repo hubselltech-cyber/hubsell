@@ -5,6 +5,29 @@
 
 ---
 
+## Phiên 24/07/2026 (10) — Adapter Pattern đa sàn + Sync Products Shopee thật
+
+### Kiến trúc mới: `backend/src/marketplace/` (Adapter Pattern)
+Tách logic API từng sàn khỏi logic kho nội bộ.
+- `types.ts` — `NormalizedChannelProduct` (cấu trúc chuẩn trung lập) + interface `MarketplaceProductAdapter`.
+- `registry.ts` — `getProductAdapter(channel)`: Shopee có refreshToken → adapter thật; còn lại → mock (giữ data demo).
+- `adapters/shopee-adapter.ts` — gọi API thật + phân trang + **transformer** Shopee→chuẩn + tự refresh token.
+- `adapters/mock-adapter.ts` — bọc MOCK_CATALOG cho gian chưa nối API.
+- `product-sync.ts` — tầng kho TRUNG LẬP SÀN: upsert ChannelProduct, giữ productId/costPrice, delist SKU cũ.
+
+### Shopee Product API (client.ts)
+- `getItemList` (offset/has_next_page, `item_status` LẶP đủ NORMAL/UNLIST/BANNED/DELETED), `getItemBaseInfo` (≤50), `getModelList`. Refactor `callShopGet` sang mảng pair để hỗ trợ param lặp.
+- `finance.ts /sync-products`: bỏ vòng lặp mock → gọi `syncChannelProducts` (adapter). Bỏ import MOCK_CATALOG/mockImageFor.
+
+### Verify thật ✅
+Trigger sync trên shop sandbox 227774404 → kéo **8 SKU thật** (Áo gió, Tất 3 màu, Túi TC015, Túi TC055 3 màu), tách model đúng; **5 mock cũ tự DELISTED**. Xử lý ca người bán đặt CHUNG 1 SKU cho nhiều model (Áo gió 9 biến thể → gộp về 1 SKU, variant null). `scanned:8` khớp.
+
+### Việc cần làm 🔜
+- Người dùng vào Liên kết SP → nối 8 SKU thật về kho gốc → tạo đơn test → đồng bộ đơn nghiệm thu trọn vòng.
+- Adapter Orders/Settlements có thể gom vào marketplace/ tương tự (hiện Orders vẫn ở integrations/shopee/service).
+
+---
+
 ## Phiên 24/07/2026 (9) — Shopee Sync Orders + OAuth chạy thật
 
 ### Cột mốc ✅

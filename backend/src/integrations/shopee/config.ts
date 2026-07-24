@@ -44,6 +44,12 @@ export const SHOPEE_PATHS = {
   orderList: "/api/v2/order/get_order_list",
   /** Chi tiết đơn theo order_sn (≤50 sn/lần). */
   orderDetail: "/api/v2/order/get_order_detail",
+  /** Danh sách item_id của shop (phân trang offset, lọc theo item_status). */
+  itemList: "/api/v2/product/get_item_list",
+  /** Thông tin cơ bản của item theo item_id (≤50 id/lần). */
+  itemBaseInfo: "/api/v2/product/get_item_base_info",
+  /** Danh sách phân loại (model) của một item — SKU thật nằm ở cấp model. */
+  modelList: "/api/v2/product/get_model_list",
 } as const;
 
 /**

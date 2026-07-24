@@ -149,25 +149,30 @@ export async function refreshAccessToken(
 /**
  * Helper gọi một SHOP API dạng GET: tự ghép partner_id/timestamp/access_token/
  * shop_id + chữ ký shop, kèm các tham số nghiệp vụ, rồi bóc lớp bao (ném nếu error).
+ *
+ * `extraParams` là MẢNG cặp [key, value] (không phải object) để hỗ trợ tham số
+ * LẶP như `item_status` của get_item_list. Chữ ký shop KHÔNG gồm các tham số
+ * nghiệp vụ nên thêm bao nhiêu param cũng không ảnh hưởng sign.
  */
 async function callShopGet<T extends ShopeeEnvelope>(
   path: string,
   accessToken: string,
   shopId: string,
-  extraQuery: Record<string, string | number>,
+  extraParams: Array<[string, string | number]>,
   ctx: string,
   cfg: ShopeeConfig
 ): Promise<T> {
   const timestamp = Math.floor(Date.now() / 1000);
   const sign = signShop(cfg.partnerKey, cfg.partnerId, path, timestamp, accessToken, shopId);
-  const qs = new URLSearchParams({
-    partner_id: cfg.partnerId,
-    timestamp: String(timestamp),
-    access_token: accessToken,
-    shop_id: shopId,
-    sign,
-    ...Object.fromEntries(Object.entries(extraQuery).map(([k, v]) => [k, String(v)])),
-  }).toString();
+  const params: Array<[string, string]> = [
+    ["partner_id", cfg.partnerId],
+    ["timestamp", String(timestamp)],
+    ["access_token", accessToken],
+    ["shop_id", shopId],
+    ["sign", sign],
+    ...extraParams.map(([k, v]) => [k, String(v)] as [string, string]),
+  ];
+  const qs = new URLSearchParams(params).toString();
   const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
   return ensureOk((await res.json()) as T, ctx);
 }
@@ -182,7 +187,7 @@ export async function getShopInfo(
     SHOPEE_PATHS.shopInfo,
     accessToken,
     shopId,
-    {},
+    [],
     "get_shop_info",
     cfg
   );
@@ -220,13 +225,13 @@ export async function getOrderList(
     SHOPEE_PATHS.orderList,
     params.accessToken,
     params.shopId,
-    {
-      time_range_field: params.timeRangeField ?? "create_time",
-      time_from: params.timeFrom,
-      time_to: params.timeTo,
-      page_size: params.pageSize ?? 100,
-      ...(params.cursor ? { cursor: params.cursor } : {}),
-    },
+    [
+      ["time_range_field", params.timeRangeField ?? "create_time"],
+      ["time_from", params.timeFrom],
+      ["time_to", params.timeTo],
+      ["page_size", params.pageSize ?? 100],
+      ...(params.cursor ? ([["cursor", params.cursor]] as [string, string][]) : []),
+    ],
     "get_order_list",
     cfg
   );
@@ -276,12 +281,117 @@ export async function getOrderDetail(
     SHOPEE_PATHS.orderDetail,
     accessToken,
     shopId,
-    {
-      order_sn_list: orderSnList.join(","),
-      response_optional_fields: ORDER_DETAIL_FIELDS,
-    },
+    [
+      ["order_sn_list", orderSnList.join(",")],
+      ["response_optional_fields", ORDER_DETAIL_FIELDS],
+    ],
     "get_order_detail",
     cfg
   );
   return data.response?.order_list ?? [];
+}
+
+// ---------- Kéo sản phẩm (Product API v2) ----------
+
+/** Các trạng thái item — get_item_list mặc định chỉ trả NORMAL, phải khai đủ. */
+export const ALL_ITEM_STATUSES = ["NORMAL", "UNLIST", "BANNED", "DELETED"] as const;
+
+export interface ShopeeItemListParams {
+  accessToken: string;
+  shopId: string;
+  offset: number;
+  pageSize?: number;
+  /** Mặc định lấy đủ mọi trạng thái để không sót item mới đăng/đang chờ. */
+  itemStatus?: readonly string[];
+}
+
+export interface ShopeeItemListData extends ShopeeEnvelope {
+  response?: {
+    item?: { item_id: number; item_status?: string; update_time?: number }[];
+    total_count?: number;
+    has_next_page?: boolean;
+    next_offset?: number;
+  };
+}
+
+/** Lấy một trang item_id (lọc theo item_status). */
+export async function getItemList(
+  params: ShopeeItemListParams,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeItemListData> {
+  const statuses = params.itemStatus ?? ALL_ITEM_STATUSES;
+  return callShopGet<ShopeeItemListData>(
+    SHOPEE_PATHS.itemList,
+    params.accessToken,
+    params.shopId,
+    [
+      ["offset", params.offset],
+      ["page_size", params.pageSize ?? 100],
+      // item_status là tham số LẶP: item_status=NORMAL&item_status=UNLIST&...
+      ...statuses.map((s) => ["item_status", s] as [string, string]),
+    ],
+    "get_item_list",
+    cfg
+  );
+}
+
+export interface ShopeeItemBaseInfo {
+  item_id: number;
+  item_name?: string;
+  item_sku?: string;
+  item_status?: string;
+  has_model?: boolean;
+  image?: { image_url_list?: string[] };
+  price_info?: { current_price?: number; original_price?: number }[];
+}
+
+export interface ShopeeItemBaseData extends ShopeeEnvelope {
+  response?: { item_list?: ShopeeItemBaseInfo[] };
+}
+
+/** Lấy thông tin cơ bản của nhiều item (≤50 id/lần). */
+export async function getItemBaseInfo(
+  accessToken: string,
+  shopId: string,
+  itemIds: number[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeItemBaseInfo[]> {
+  const data = await callShopGet<ShopeeItemBaseData>(
+    SHOPEE_PATHS.itemBaseInfo,
+    accessToken,
+    shopId,
+    [["item_id_list", itemIds.join(",")]],
+    "get_item_base_info",
+    cfg
+  );
+  return data.response?.item_list ?? [];
+}
+
+export interface ShopeeModel {
+  model_id: number;
+  model_name?: string;
+  model_sku?: string;
+  price_info?: { current_price?: number }[];
+}
+
+export interface ShopeeModelData extends ShopeeEnvelope {
+  response?: { model?: ShopeeModel[] };
+}
+
+/** Lấy danh sách phân loại (model) của một item — SKU thật thường ở cấp model. */
+export async function getModelList(
+  accessToken: string,
+  shopId: string,
+  itemId: number,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeModel[]> {
+  const data = await callShopGet<ShopeeModelData>(
+    SHOPEE_PATHS.modelList,
+    accessToken,
+    shopId,
+    [["item_id", itemId]],
+    "get_model_list",
+    cfg
+  );
+  return data.response?.model ?? [];
 }
