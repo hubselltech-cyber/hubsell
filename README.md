@@ -225,7 +225,7 @@ APP_FRONTEND_URL="https://localhost:3000"
 
 **Cấu trúc file:** `shopee/config.ts` (env + host + paths), `shopee/client.ts` (ký + token + get_shop_info), `shopee/service.ts` (state JWT + refresh + `handleShopeeCallback`).
 
-> ⚠️ **Redirect & domain:** callback là **route backend** nên local để `:4000`. Shopee chỉ chấp nhận redirect thuộc **domain đã đăng ký Console** (`http://hubsell.tech`) → muốn test thật phải trỏ `hubsell.tech` về backend rồi đổi `SHOPEE_REDIRECT_URI` cho khớp. Sandbox host mặc định `partner.test-stable.shopeemobile.com` (đặt `SHOPEE_API_BASE` để ghi đè nếu Console cấp host khác).
+> ⚠️ **Redirect & domain:** Shopee chỉ chấp nhận redirect thuộc **domain đã đăng ký Console** (`http://hubsell.tech`, tức cổng 80 http). Test local: map `hubsell.tech → 127.0.0.1` bằng file hosts, và đặt `SHOPEE_CALLBACK_HTTP_PORT="80"` để backend mở thêm listener HTTP cổng 80 nhận callback (server chính vẫn HTTPS :4000 phục vụ frontend — không mixed-content). Sandbox host mặc định `partner.test-stable.shopeemobile.com` (đặt `SHOPEE_API_BASE` để ghi đè nếu Console cấp host khác).
 >
 > 🔜 **Chưa làm:** đồng bộ đơn/đối soát Shopee (mới có OAuth + lưu token); chưa test end-to-end (cần domain hubsell.tech reachable).
 

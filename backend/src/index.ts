@@ -1,5 +1,6 @@
 import "dotenv/config";
 import fs from "fs";
+import http from "http";
 import https from "https";
 import { createApp } from "./app";
 
@@ -38,5 +39,30 @@ if (certFilesExist) {
         `   ⚠️  Đã đặt SSL_KEY_FILE/SSL_CERT_FILE nhưng không thấy file cert → đang chạy HTTP. Chạy: bash scripts/gen-certs.sh`
       );
     }
+  });
+}
+
+// ============================================================
+// LISTENER HTTP PHỤ (mặc định tắt) — chỉ để callback OAuth Shopee tới được.
+//
+// Shopee đăng ký redirect domain http://hubsell.tech (cổng 80, http). Sau khi
+// map hubsell.tech → 127.0.0.1 bằng file hosts, trình duyệt gọi callback vào
+// cổng 80. Server chính vẫn HTTPS :4000 phục vụ frontend; đây chỉ mở thêm một
+// listener HTTP dùng chung `app` cho callback. CHỈ dùng ở LOCAL.
+// ============================================================
+const extraHttpPort = Number(process.env.SHOPEE_CALLBACK_HTTP_PORT) || 0;
+if (extraHttpPort && extraHttpPort !== PORT) {
+  const httpServer = http.createServer(app);
+  httpServer.on("error", (e) => {
+    console.error(
+      `   ⚠️  Không mở được cổng HTTP phụ ${extraHttpPort} (callback Shopee): ${
+        (e as Error).message
+      } — server chính vẫn chạy bình thường.`
+    );
+  });
+  httpServer.listen(extraHttpPort, () => {
+    console.log(
+      `   ↪ Cổng HTTP phụ cho callback Shopee: http://localhost:${extraHttpPort} (vd http://hubsell.tech)`
+    );
   });
 }
