@@ -19,7 +19,17 @@ export interface TikTokConfig {
 
 // Các endpoint cố định của TikTok Shop Open Platform.
 export const TIKTOK_ENDPOINTS = {
-  /** Trang uỷ quyền hiển thị cho người bán (Seller authorization page). */
+  /**
+   * Trang uỷ quyền hiển thị cho người bán (Seller authorization page).
+   *
+   * Với shop nội địa VN, TikTok tự route về
+   * `seller-vn.tiktok.com/services/market/custom-authorize/{service_id}`.
+   *
+   * LƯU Ý: lỗi "không khả dụng tại khu vực" KHÔNG do URL này quyết định. TikTok
+   * chèn `region_check=1` + `shop_region=VN` + `target_countries=...` (thị trường
+   * app cấu hình ở Partner Center) rồi tự so — nếu VN không nằm trong
+   * `target_countries` thì chặn. Đây là cấu hình app, không sửa được từ code.
+   */
   authorize: "https://services.tiktokshop.com/open/authorize",
   /** Máy chủ xác thực: đổi auth_code → token và refresh token. */
   auth: "https://auth.tiktok-shops.com",
@@ -63,6 +73,10 @@ export function getTikTokConfig(): TikTokConfig {
  * Dựng URL trang uỷ quyền hiển thị cho người bán. Redirect URI KHÔNG truyền ở
  * đây — TikTok lấy đúng URI đã đăng ký trong Partner Center. `state` là chuỗi
  * ngẫu nhiên chống CSRF, sẽ được TikTok trả lại nguyên vẹn ở callback để đối chiếu.
+ *
+ * `service_id` định danh app; `app_type=custom` đánh dấu luồng Custom App. Việc
+ * shop VN uỷ quyền được hay không phụ thuộc `target_countries` của app ở Partner
+ * Center (phải chứa Vietnam), KHÔNG phụ thuộc các tham số dựng ở đây.
  */
 export function buildAuthorizeUrl(
   state: string,
@@ -70,6 +84,7 @@ export function buildAuthorizeUrl(
 ): string {
   const qs = new URLSearchParams({
     service_id: cfg.serviceId,
+    app_type: "custom",
     state,
   }).toString();
   return `${TIKTOK_ENDPOINTS.authorize}?${qs}`;

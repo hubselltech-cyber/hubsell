@@ -5,6 +5,33 @@
 
 ---
 
+## Phiên 24/07/2026 (6) — Chuẩn hoá endpoint OAuth + chẩn đoán lỗi khu vực
+
+### Bối cảnh
+Bấm uỷ quyền TikTok báo *"Không khả dụng tại khu vực của cửa hàng bạn"*. Điều tra qua nhiều bước để tách lỗi code vs lỗi cấu hình tài khoản.
+
+### Kết quả chẩn đoán (quan trọng cho phiên sau)
+- **KHÔNG phải lỗi code.** Bằng chứng từ URL uỷ quyền thật:
+  `seller-vn.tiktok.com/services/market/custom-authorize/{service_id}?is_draft=true&region_check=1&shop_region=VN&target_countries=...country_vietnam_selection&...`
+  → request tới đúng trang VN, `shop_region=VN` nhận đúng, `target_countries` CÓ Vietnam.
+- **Nút thắt thật (ảnh Partner Center):** app "Hubsell" (Bản nháp, Tùy chỉnh, người bán VN) — mục **Người bán mục tiêu → Việt Nam** hiện *"Vui lòng hoàn thiện biểu mẫu đăng ký đối tác — Cần hoàn tất"*; checklist *"Xét duyệt đăng ký đối tác"* chưa xong. → Thị trường VN chưa kích hoạt nên shop bị chặn.
+- **Chặn ở phía TikTok:** tài khoản Partner Center kẹt ở **xét duyệt Doanh nghiệp**. Kế hoạch của chủ shop: tạo tài khoản Partner Center **Cá nhân (Individual)** bằng email khác, gửi duyệt lại. Khi có app mới → **chỉ thay `TIKTOK_APP_KEY`/`TIKTOK_APP_SECRET`/`TIKTOK_SERVICE_ID` trong `.env`**, KHÔNG cần sửa code.
+
+### Đã hoàn thành (code) ✅
+- Chuẩn hoá `buildAuthorizeUrl` về hệ Custom App nội địa: `services.tiktokshop.com/open/authorize` + `service_id` + **`app_type=custom`**. (Đã thử `auth.tiktok-shops.com/oauth/authorize`+`app_key` — không hợp, đã revert.)
+- Sửa comment trong `config.ts` cho đúng thực tế (lỗi khu vực do `target_countries`/đăng ký đối tác ở Partner Center, không phải tham số URL).
+- `tsc` sạch. Không file tạm. Servers dev đã tắt.
+
+### Trạng thái
+🔒 **Code luồng OAuth coi như hoàn thiện & ổn định** — đóng băng phần code TikTok, chờ tài khoản Partner Center mới được duyệt. Toàn bộ luồng (OAuth → đồng bộ đơn/đối soát → webhook) đã dựng xong từ các phiên trước, chỉ chờ app "sống" để test thật.
+
+### Việc cần làm khi app mới được duyệt 🔜
+1. Thay 3 biến TikTok trong `backend/.env`, khởi động lại backend.
+2. Chạy `dev-https.sh` (hoặc để Claude boot) → bấm Kết nối TikTok chạy OAuth end-to-end.
+3. Test đồng bộ đơn/đối soát; dựng tunnel để nghiệm thu webhook trừ/hoàn kho.
+
+---
+
 ## Phiên 24/07/2026 (5) — Tự động hóa boot môi trường test HTTPS
 
 ### Mục tiêu
