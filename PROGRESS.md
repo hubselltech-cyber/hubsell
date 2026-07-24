@@ -5,6 +5,26 @@
 
 ---
 
+## Phiên 24/07/2026 (9) — Shopee Sync Orders + OAuth chạy thật
+
+### Cột mốc ✅
+- **OAuth Shopee chạy END-TO-END**: kết nối được shop sandbox thật `OpenSANDBOX11505875978db55c3b6` (shop_id 227774404) sau khi fix host `.cn`.
+- **Sync Orders Shopee** (mirror TikTok):
+  - `client.ts`: `getOrderList` (get_order_list, cửa sổ ≤15 ngày + cursor), `getOrderDetail` (≤50 sn/lần, response_optional_fields), helper `callShopGet` (ký shop-API dùng chung, refactor cả getShopInfo).
+  - `service.ts`: `syncShopeeOrders` — chia cửa sổ 15 ngày, phân trang cursor, batch chi tiết 50, upsert idempotent theo `(channelId, order_sn)`, map trạng thái Shopee→Hubsell, snapshot giá vốn qua mapping SKU. KHÔNG trừ kho (đồng bộ lô).
+  - `routes/channels.ts`: `POST /:id/sync-orders` giờ **dispatch TikTok/Shopee** theo channelName.
+  - Frontend: nút "Đồng bộ đơn" hiện cho cả Shopee (`isOAuth`); đổi tên api `syncTiktokOrders`→`syncChannelOrders` (endpoint generic); toast theo tên sàn.
+- **Verify thật**: chạy `syncShopeeOrders` trên gian sandbox → `fetched:0` (shop 0 đơn) **không lỗi chữ ký** → get_order_list + auto-refresh token OK.
+
+### Dữ liệu
+- Chốt **giữ nguyên** data cũ (10 gian mock + 15 đơn mock) để nhìn UI — KHÔNG xoá.
+
+### Việc cần làm 🔜
+- Tạo đơn test trong Shopee sandbox → bấm "Đồng bộ đơn" nghiệm thu kéo đơn thật.
+- Sau đó: Sync Settlements Shopee + webhook Shopee (nếu cần).
+
+---
+
 ## Phiên 24/07/2026 (8) — FIX Shopee error_sign: host sandbox cũ bị khai tử
 
 ### Triệu chứng & chẩn đoán

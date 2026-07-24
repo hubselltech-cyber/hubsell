@@ -1317,7 +1317,7 @@ export function tiktokCallback(code: string) {
   );
 }
 
-/** Kết quả đồng bộ đơn hàng TikTok thật về DB. */
+/** Kết quả đồng bộ đơn hàng thật (TikTok/Shopee) về DB. */
 export interface SyncOrdersResult {
   message: string;
   fetched: number;
@@ -1327,8 +1327,11 @@ export interface SyncOrdersResult {
   pages: number;
 }
 
-/** Kéo đơn hàng thật từ TikTok Shop về hệ thống (upsert theo mã đơn). */
-export function syncTiktokOrders(channelId: string) {
+/**
+ * Kéo đơn hàng thật về hệ thống (upsert theo mã đơn). Endpoint tự dispatch theo
+ * sàn của gian (TikTok/Shopee) — dùng chung cho mọi gian đã nối API thật.
+ */
+export function syncChannelOrders(channelId: string) {
   return apiFetch<SyncOrdersResult>(`/api/channels/${channelId}/sync-orders`, {
     method: "POST",
   });

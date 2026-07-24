@@ -40,6 +40,10 @@ export const SHOPEE_PATHS = {
   accessTokenGet: "/api/v2/auth/access_token/get",
   /** Lấy thông tin gian hàng (shop API, ký thêm access_token+shop_id). */
   shopInfo: "/api/v2/shop/get_shop_info",
+  /** Danh sách đơn (order_sn) trong một khoảng thời gian (≤15 ngày/lần). */
+  orderList: "/api/v2/order/get_order_list",
+  /** Chi tiết đơn theo order_sn (≤50 sn/lần). */
+  orderDetail: "/api/v2/order/get_order_detail",
 } as const;
 
 /**

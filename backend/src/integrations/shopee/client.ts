@@ -146,28 +146,142 @@ export async function refreshAccessToken(
 
 // ---------- Gọi SHOP API (GET, ký thêm access_token+shop_id) ----------
 
-/** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */
-export async function getShopInfo(
+/**
+ * Helper gọi một SHOP API dạng GET: tự ghép partner_id/timestamp/access_token/
+ * shop_id + chữ ký shop, kèm các tham số nghiệp vụ, rồi bóc lớp bao (ném nếu error).
+ */
+async function callShopGet<T extends ShopeeEnvelope>(
+  path: string,
   accessToken: string,
   shopId: string,
-  cfg: ShopeeConfig = getShopeeConfig()
-): Promise<ShopeeShopInfo> {
+  extraQuery: Record<string, string | number>,
+  ctx: string,
+  cfg: ShopeeConfig
+): Promise<T> {
   const timestamp = Math.floor(Date.now() / 1000);
-  const sign = signShop(
-    cfg.partnerKey,
-    cfg.partnerId,
-    SHOPEE_PATHS.shopInfo,
-    timestamp,
-    accessToken,
-    shopId
-  );
+  const sign = signShop(cfg.partnerKey, cfg.partnerId, path, timestamp, accessToken, shopId);
   const qs = new URLSearchParams({
     partner_id: cfg.partnerId,
     timestamp: String(timestamp),
     access_token: accessToken,
     shop_id: shopId,
     sign,
+    ...Object.fromEntries(Object.entries(extraQuery).map(([k, v]) => [k, String(v)])),
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${SHOPEE_PATHS.shopInfo}?${qs}`, { method: "GET" });
-  return ensureOk((await res.json()) as ShopeeShopInfo, "get_shop_info");
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
+  return ensureOk((await res.json()) as T, ctx);
+}
+
+/** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */
+export async function getShopInfo(
+  accessToken: string,
+  shopId: string,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeShopInfo> {
+  return callShopGet<ShopeeShopInfo>(
+    SHOPEE_PATHS.shopInfo,
+    accessToken,
+    shopId,
+    {},
+    "get_shop_info",
+    cfg
+  );
+}
+
+// ---------- Kéo đơn hàng (Order API v2) ----------
+
+export interface ShopeeOrderListParams {
+  accessToken: string;
+  shopId: string;
+  /** Mốc thời gian (Unix seconds). Shopee giới hạn khoảng ≤ 15 ngày mỗi lần gọi. */
+  timeFrom: number;
+  timeTo: number;
+  pageSize?: number;
+  /** Con trỏ phân trang Shopee trả về ở lần gọi trước. */
+  cursor?: string;
+  /** create_time | update_time */
+  timeRangeField?: "create_time" | "update_time";
+}
+
+export interface ShopeeOrderListData extends ShopeeEnvelope {
+  response?: {
+    order_list?: { order_sn: string; order_status?: string }[];
+    more?: boolean;
+    next_cursor?: string;
+  };
+}
+
+/** Lấy danh sách order_sn trong một khoảng thời gian (một trang). */
+export async function getOrderList(
+  params: ShopeeOrderListParams,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeOrderListData> {
+  return callShopGet<ShopeeOrderListData>(
+    SHOPEE_PATHS.orderList,
+    params.accessToken,
+    params.shopId,
+    {
+      time_range_field: params.timeRangeField ?? "create_time",
+      time_from: params.timeFrom,
+      time_to: params.timeTo,
+      page_size: params.pageSize ?? 100,
+      ...(params.cursor ? { cursor: params.cursor } : {}),
+    },
+    "get_order_list",
+    cfg
+  );
+}
+
+export interface ShopeeOrderItem {
+  item_id?: number;
+  item_name?: string;
+  item_sku?: string;
+  model_name?: string;
+  model_sku?: string;
+  model_quantity_purchased?: number;
+  model_discounted_price?: number;
+  model_original_price?: number;
+}
+
+export interface ShopeeOrderDetail {
+  order_sn: string;
+  order_status?: string;
+  create_time?: number;
+  update_time?: number;
+  pay_time?: number;
+  /** Tổng tiền đơn (Shopee trả SỐ, không phải chuỗi). */
+  total_amount?: number;
+  currency?: string;
+  buyer_username?: string;
+  recipient_address?: { name?: string; phone?: string };
+  item_list?: ShopeeOrderItem[];
+}
+
+export interface ShopeeOrderDetailData extends ShopeeEnvelope {
+  response?: { order_list?: ShopeeOrderDetail[] };
+}
+
+// Các trường chi tiết cần Shopee trả về (mặc định API chỉ trả tối thiểu).
+const ORDER_DETAIL_FIELDS =
+  "order_status,create_time,update_time,pay_time,total_amount,currency,buyer_username,recipient_address,item_list";
+
+/** Lấy chi tiết nhiều đơn theo order_sn (tối đa 50 sn/lần). */
+export async function getOrderDetail(
+  accessToken: string,
+  shopId: string,
+  orderSnList: string[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeOrderDetail[]> {
+  const data = await callShopGet<ShopeeOrderDetailData>(
+    SHOPEE_PATHS.orderDetail,
+    accessToken,
+    shopId,
+    {
+      order_sn_list: orderSnList.join(","),
+      response_optional_fields: ORDER_DETAIL_FIELDS,
+    },
+    "get_order_detail",
+    cfg
+  );
+  return data.response?.order_list ?? [];
 }

@@ -24,7 +24,10 @@ import {
 } from "../integrations/tiktok/service";
 import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
 import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
-import { signOauthState as signShopeeState } from "../integrations/shopee/service";
+import {
+  signOauthState as signShopeeState,
+  syncShopeeOrders,
+} from "../integrations/shopee/service";
 
 const router = Router();
 
@@ -356,13 +359,45 @@ async function requireTiktokChannel(req: AuthRequest, res: Response) {
   return channel;
 }
 
-// POST /api/channels/:id/sync-orders — kéo đơn TikTok thật → upsert vào DB.
+// POST /api/channels/:id/sync-orders — kéo đơn thật → upsert vào DB.
+// Dispatch theo sàn: TikTok (cần shopCipher) hoặc Shopee (cần refreshToken).
 router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
   try {
-    const channel = await requireTiktokChannel(req, res);
-    if (!channel) return;
-    const summary = await syncTiktokOrders(channel);
-    res.json({ message: "Đồng bộ đơn hàng TikTok xong", ...summary });
+    const channel = await prisma.channel.findFirst({
+      where: { id: req.params.id, userId: req.ownerId! },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+
+    if (channel.channelName === ChannelName.TIKTOK) {
+      if (!channel.shopCipher) {
+        res.status(409).json({
+          error: "Gian TikTok chưa uỷ quyền. Hãy kết nối lại để cấp quyền API.",
+          code: "TIKTOK_NOT_AUTHORIZED",
+        });
+        return;
+      }
+      const summary = await syncTiktokOrders(channel);
+      res.json({ message: "Đồng bộ đơn hàng TikTok xong", ...summary });
+      return;
+    }
+
+    if (channel.channelName === ChannelName.SHOPEE) {
+      if (!channel.refreshToken) {
+        res.status(409).json({
+          error: "Gian Shopee chưa uỷ quyền. Hãy kết nối lại để cấp quyền API.",
+          code: "SHOPEE_NOT_AUTHORIZED",
+        });
+        return;
+      }
+      const summary = await syncShopeeOrders(channel);
+      res.json({ message: "Đồng bộ đơn hàng Shopee xong", ...summary });
+      return;
+    }
+
+    res.status(400).json({ error: "Đồng bộ đơn hiện chỉ hỗ trợ TikTok và Shopee" });
   } catch (err) {
     res.status(502).json({ error: `Đồng bộ đơn thất bại: ${(err as Error).message}` });
   }

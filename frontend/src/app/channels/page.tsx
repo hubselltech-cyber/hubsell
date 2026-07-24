@@ -49,7 +49,7 @@ import {
   getTiktokAuthUrl,
   getToken,
   sendMockOrder,
-  syncTiktokOrders,
+  syncChannelOrders,
   syncTiktokSettlements,
   updateChannel,
   type Channel,
@@ -598,11 +598,13 @@ export default function ChannelsPage() {
   async function handleSyncOrders(c: Channel) {
     setSyncing(`${c.id}:orders`);
     try {
-      const r = await syncTiktokOrders(c.id);
+      const r = await syncChannelOrders(c.id);
       toast.success(
-        `Đồng bộ đơn TikTok: +${formatNumber(r.created)} mới, ${formatNumber(
-          r.updated
-        )} cập nhật (tổng ${formatNumber(r.fetched)} đơn).`
+        `Đồng bộ đơn ${CHANNEL_META[c.channelName].label}: +${formatNumber(
+          r.created
+        )} mới, ${formatNumber(r.updated)} cập nhật (tổng ${formatNumber(
+          r.fetched
+        )} đơn).`
       );
       load();
     } catch (err) {
@@ -748,9 +750,12 @@ export default function ChannelsPage() {
                                   <Pencil className="size-3.5" />
                                   Cập nhật
                                 </Button>
-                                {/* TikTok đã uỷ quyền API thật → đồng bộ dữ liệu
-                                    thật; các sàn còn lại vẫn dùng "Giả lập đơn". */}
-                                {c.channelName === "TIKTOK" && c.apiConnected ? (
+                                {/* Gian đã uỷ quyền API thật (TikTok/Shopee) →
+                                    đồng bộ dữ liệu thật; còn lại dùng "Giả lập đơn".
+                                    "Đồng bộ đối soát" hiện mới có cho TikTok. */}
+                                {(c.channelName === "TIKTOK" ||
+                                  c.channelName === "SHOPEE") &&
+                                c.apiConnected ? (
                                   <>
                                     <Button
                                       size="sm"
@@ -766,20 +771,22 @@ export default function ChannelsPage() {
                                       )}
                                       Đồng bộ đơn
                                     </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-slate-700"
-                                      disabled={syncing !== null}
-                                      onClick={() => handleSyncSettlements(c)}
-                                    >
-                                      {syncing === `${c.id}:settlements` ? (
-                                        <Loader2 className="size-3.5 animate-spin" />
-                                      ) : (
-                                        <Wallet className="size-3.5" />
-                                      )}
-                                      Đồng bộ đối soát
-                                    </Button>
+                                    {c.channelName === "TIKTOK" && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-slate-700"
+                                        disabled={syncing !== null}
+                                        onClick={() => handleSyncSettlements(c)}
+                                      >
+                                        {syncing === `${c.id}:settlements` ? (
+                                          <Loader2 className="size-3.5 animate-spin" />
+                                        ) : (
+                                          <Wallet className="size-3.5" />
+                                        )}
+                                        Đồng bộ đối soát
+                                      </Button>
+                                    )}
                                   </>
                                 ) : (
                                   <Button
