@@ -18,6 +18,7 @@ import {
   getOrderList,
   getShopInfo,
   refreshAccessToken,
+  shopeeChannelSku,
   type ShopeeOrderDetail,
 } from "./client";
 
@@ -231,7 +232,14 @@ function aggregateShopeeItems(order: ShopeeOrderDetail) {
     { channelSku: string; productName: string; price: number; quantity: number }
   >();
   for (const it of order.item_list ?? []) {
-    const sku = it.model_sku || it.item_sku || String(it.item_id ?? "");
+    // Cùng hàm sinh khoá với đồng bộ sản phẩm → đơn luôn khớp đúng ChannelProduct,
+    // kể cả khi người bán để trống SKU (tách theo model) hay đặt chung SKU (gộp).
+    const sku = shopeeChannelSku({
+      itemId: it.item_id,
+      modelId: it.model_id,
+      itemSku: it.item_sku,
+      modelSku: it.model_sku,
+    });
     const qty = it.model_quantity_purchased ?? 1;
     const price = Number(it.model_discounted_price ?? it.model_original_price ?? 0) || 0;
     const name = [it.item_name, it.model_name].filter(Boolean).join(" - ") || sku;

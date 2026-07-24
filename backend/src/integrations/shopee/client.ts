@@ -241,11 +241,31 @@ export interface ShopeeOrderItem {
   item_id?: number;
   item_name?: string;
   item_sku?: string;
+  model_id?: number;
   model_name?: string;
   model_sku?: string;
   model_quantity_purchased?: number;
   model_discounted_price?: number;
   model_original_price?: number;
+}
+
+/**
+ * Sinh KHOÁ SKU CHUẨN cho một dòng hàng Shopee — DÙNG CHUNG cho cả đồng bộ sản
+ * phẩm lẫn đồng bộ đơn, để hai luồng luôn khớp khoá.
+ *
+ * Ưu tiên model_sku → item_sku (SKU người bán đặt). Nếu người bán KHÔNG đặt SKU
+ * (để trống) mới rơi về khoá tổng hợp từ id: có model → `SPE-{item}-{model}`
+ * (tách từng biến thể), không model → `SPE-{item}`.
+ */
+export function shopeeChannelSku(opts: {
+  itemId?: number;
+  modelId?: number;
+  itemSku?: string;
+  modelSku?: string;
+}): string {
+  const sellerSku = opts.modelSku?.trim() || opts.itemSku?.trim();
+  if (sellerSku) return sellerSku;
+  return opts.modelId ? `SPE-${opts.itemId}-${opts.modelId}` : `SPE-${opts.itemId}`;
 }
 
 export interface ShopeeOrderDetail {

@@ -14,6 +14,7 @@ import {
   getItemBaseInfo,
   getItemList,
   getModelList,
+  shopeeChannelSku,
   type ShopeeItemBaseInfo,
   type ShopeeModel,
 } from "../../integrations/shopee/client";
@@ -32,7 +33,7 @@ function shopeeStatusToNorm(status?: string): "ACTIVE" | "DELISTED" {
 
 /** Sản phẩm ĐƠN (không có phân loại): 1 item = 1 dòng chuẩn. */
 function transformItem(info: ShopeeItemBaseInfo): NormalizedChannelProduct {
-  const sku = info.item_sku?.trim() || `SPE-${info.item_id}`;
+  const sku = shopeeChannelSku({ itemId: info.item_id, itemSku: info.item_sku });
   const price = Number(info.price_info?.[0]?.current_price ?? 0) || 0;
   return {
     channelSku: sku,
@@ -50,10 +51,12 @@ function transformModel(
   info: ShopeeItemBaseInfo,
   model: ShopeeModel
 ): NormalizedChannelProduct {
-  const sku =
-    model.model_sku?.trim() ||
-    info.item_sku?.trim() ||
-    `SPE-${info.item_id}-${model.model_id}`;
+  const sku = shopeeChannelSku({
+    itemId: info.item_id,
+    modelId: model.model_id,
+    itemSku: info.item_sku,
+    modelSku: model.model_sku,
+  });
   const price =
     Number(model.price_info?.[0]?.current_price ?? info.price_info?.[0]?.current_price ?? 0) || 0;
   return {
