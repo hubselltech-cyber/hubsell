@@ -117,6 +117,7 @@ hubsell/
 | POST | `/api/mappings` | Tạo/đổi liên kết (upsert) | 🔒 JWT |
 | DELETE | `/api/mappings/:id` | Gỡ liên kết | 🔒 JWT |
 | POST | `/api/webhooks/mock-order` | Webhook giả lập nhận đơn từ sàn: tra mapping → tạo Order + trừ kho + log SYNC (transaction) | 🔑 Token kênh |
+| POST | `/api/webhooks/tiktok` | **[TikTok thật]** Webhook `ORDER_STATUS_CHANGE`: verify chữ ký → lấy chi tiết đơn → upsert + trừ/hoàn kho (idempotent) | 🔑 Chữ ký HMAC |
 | PATCH | `/api/orders/:id/status` | Đổi trạng thái vận chuyển; CANCELLED → tự hoàn kho + ghi log (transaction) | 🔒 JWT |
 | GET | `/api/analytics` | Doanh thu / Giá vốn / Lợi nhuận gộp / **Chi phí HĐ / Lợi nhuận thuần**, biểu đồ | 🔒 Chỉ Admin |
 | GET/POST/DELETE | `/api/expenses` | Quản lý chi phí hoạt động (mặt bằng, lương, đóng gói, quảng cáo) | 🔒 Chỉ Admin |
@@ -170,8 +171,9 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 |---|---|
 | `backend/src/integrations/tiktok/config.ts` | Đọc env, dựng URL uỷ quyền, `expireToDate`, endpoint cố định |
 | `backend/src/integrations/tiktok/client.ts` | **Ký HMAC-SHA256**, đổi/refresh token, lấy shop + shop_cipher, `fetchOrders()` / `fetchSettlements()` / `fetchStatementTransactions()` (typed) |
-| `backend/src/integrations/tiktok/service.ts` | Tầng nghiệp vụ có DB: `getValidAccessToken()` (tự refresh), `syncTiktokOrders()`, `syncTiktokSettlements()` |
+| `backend/src/integrations/tiktok/service.ts` | Tầng nghiệp vụ có DB: `getValidAccessToken()` (tự refresh), `syncTiktokOrders()`, `syncTiktokSettlements()`, `processTiktokOrderEvent()` (webhook) |
 | `backend/src/routes/channels.ts` | 4 route: `auth-url` + `callback` + `sync-orders` + `sync-settlements` (chỉ Admin) |
+| `backend/src/routes/webhooks.ts` | `POST /api/webhooks/tiktok` — webhook real-time (verify chữ ký + trừ/hoàn kho) |
 | `frontend/src/app/channels/tiktok/callback/page.tsx` | Trang nhận callback, đối chiếu state, gọi BE |
 
 **Đồng bộ dữ liệu thật** (nút trên trang Kênh bán, chỉ hiện với gian TikTok đã uỷ quyền):
@@ -180,13 +182,20 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 - **Đồng bộ đơn** — kéo đơn (mặc định 90 ngày gần nhất), phân trang qua `next_page_token`, **upsert idempotent** theo `(channelId, orderCode)` (migration thêm unique index). Map trạng thái TikTok → vòng đời Hubsell; snapshot giá vốn qua mapping SKU. *Không* trừ tồn kho khi đồng bộ lô (tránh sai kho/không idempotent).
 - **Đồng bộ đối soát** — kéo `statements` → `statement_transactions`, gom theo `order_id`, cập nhật `isSettled` / `actualPayout` / `serviceFee` cho từng đơn → bảng Cash Flow & Lãi/Lỗ Thực Hiện chạy bằng số thật.
 
+**Webhook real-time** (`POST /api/webhooks/tiktok`, cấu hình URL trong Partner Center):
+
+1. **Verify chữ ký** — `verifyWebhookSignature()` tính `HMAC-SHA256(app_key + rawBody, app_secret)` so khớp header `Authorization` (hằng-thời-gian). Body thô lấy từ `req.rawBody` (giữ lại ở `express.json({ verify })`) vì serialize lại là sai chữ ký. Thiếu/sai chữ ký → **401**.
+2. **Chỉ xử lý** event `ORDER_STATUS_CHANGE` (type 1); loại khác ack **200** để TikTok khỏi gửi lại.
+3. Payload chỉ có `order_id` + trạng thái → gọi `getOrderDetail()` lấy đủ line_items → `processTiktokOrderEvent()` **upsert đơn + tác động tồn kho** trong một transaction.
+4. **Tồn kho idempotent**: đơn đã chốt/chờ giao → trừ kho một lần (mốc `stockDeductedAt`, `decrement` nguyên tử, cho phép âm để phơi bày bán vượt kho); đơn `CANCELLED` → hoàn kho một lần (mốc `stockRestoredAt`, mirror luồng hủy đơn thủ công). Webhook đẩy lại nhiều lần cũng không trừ/hoàn double.
+
 **Bảo mật:** `Channel` thêm `refreshToken`, `shopCipher`, `accessTokenExpireAt`, `refreshTokenExpireAt`, `externalShopName` — **không bao giờ trả `refreshToken`/`shopCipher` ra API** (`GET /api/channels` đã lọc; chỉ phơi cờ `apiConnected`).
 
 > ⚠️ **Chạy local:** Redirect của TikTok là **https**, nhưng Next dev mặc định chạy http → cần `next dev --experimental-https`. App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
 >
 > 🔎 **Cần đối chiếu payload thật:** tên trường trong `TikTokOrder` / `TikTokStatementTransaction` theo tài liệu 202309; parser dùng optional chaining nên lệch nhẹ không vỡ, nhưng hãy kiểm lại khi chạy end-to-end. TikTok trả **phí gộp** (`fee_amount`) → hiện dồn vào `serviceFee`; khi có nguồn chi tiết hơn thì bóc tách từng loại phí.
 >
-> 🔜 **Chưa làm:** trừ tồn kho cho đơn TikTok mới (cần webhook "đơn mới" riêng, không dùng đồng bộ lô); lịch tự động đồng bộ (cron) thay vì bấm tay.
+> 🔜 **Chưa làm:** lịch tự động đồng bộ (cron) thay vì bấm tay; bóc tách chi tiết từng loại phí đối soát (hiện dồn vào `serviceFee`).
 
 ## 💰 Hubsell Finance — Module tài chính chuyên sâu
 

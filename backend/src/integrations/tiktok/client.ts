@@ -74,6 +74,38 @@ export function signRequest(
   return crypto.createHmac("sha256", appSecret).update(wrapped).digest("hex");
 }
 
+/**
+ * XÁC THỰC CHỮ KÝ WEBHOOK của TikTok Shop (khác cách ký request API ở trên).
+ *
+ * TikTok ký payload webhook bằng: HMAC-SHA256( app_key + rawBody , app_secret ) → hex,
+ * đặt trong header `Authorization`. Ta tính lại trên THÂN REQUEST THÔ (nguyên văn
+ * chuỗi JSON nhận được — không được serialize lại vì thứ tự/khoảng trắng đổi là
+ * sai chữ ký) rồi so khớp theo kiểu hằng-thời-gian để chống dò chữ ký.
+ *
+ * @param rawBody chuỗi body thô đúng nguyên văn TikTok gửi.
+ * @param signature giá trị header `Authorization`.
+ */
+export function verifyWebhookSignature(
+  rawBody: string,
+  signature: string | undefined,
+  cfg: TikTokConfig = getTikTokConfig()
+): boolean {
+  if (!signature) return false;
+  const expected = crypto
+    .createHmac("sha256", cfg.appSecret)
+    .update(`${cfg.appKey}${rawBody}`)
+    .digest("hex");
+
+  // So khớp hằng-thời-gian; timingSafeEqual ném lỗi nếu độ dài lệch nên bọc try.
+  try {
+    const a = Buffer.from(expected, "utf8");
+    const b = Buffer.from(signature, "utf8");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 // ---------- Gọi máy chủ xác thực (token) ----------
 // Các endpoint token KHÔNG cần chữ ký — chỉ cần app_key + app_secret trong query.
 
@@ -281,6 +313,36 @@ export async function fetchOrders(
     },
     cfg
   );
+}
+
+export interface FetchOrderDetailParams {
+  accessToken: string;
+  shopCipher: string;
+  /** Tối đa 50 id/lần theo giới hạn TikTok. */
+  orderIds: string[];
+}
+
+/**
+ * Lấy CHI TIẾT đầy đủ của một/nhiều đơn theo id. Webhook đổi trạng thái chỉ gửi
+ * order_id + trạng thái mới, nên phải gọi hàm này để có line_items/địa chỉ… rồi
+ * mới upsert được như luồng đồng bộ.
+ *
+ * Endpoint GET /order/202309/orders nhận `ids` là danh sách ngăn cách bằng dấu phẩy.
+ */
+export async function getOrderDetail(
+  params: FetchOrderDetailParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokOrder[]> {
+  const data = await callApi<TikTokOrderSearchData>(
+    {
+      path: "/order/202309/orders",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query: { ids: params.orderIds.join(",") },
+    },
+    cfg
+  );
+  return data.orders ?? [];
 }
 
 // ============================================================

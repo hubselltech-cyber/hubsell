@@ -23,7 +23,15 @@ export function createApp() {
   const app = express();
 
   app.use(cors());
-  app.use(express.json());
+  // Giữ lại THÂN REQUEST THÔ (req.rawBody) khi parse JSON — webhook TikTok phải
+  // ký/kiểm chữ ký trên đúng nguyên văn body, serialize lại là sai chữ ký.
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    })
+  );
 
   // Kiểm tra sức khỏe máy chủ (công khai)
   app.get("/health", (_req, res) => {

@@ -7,8 +7,8 @@
 //   3) syncTiktokSettlements()— kéo đối soát thật → cập nhật số quyết toán/đơn.
 // ============================================================
 
-import type { Channel } from "@prisma/client";
-import { ChannelName, ShippingStatus } from "@prisma/client";
+import type { Channel, Prisma } from "@prisma/client";
+import { ChannelName, InventoryLogType, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
 import { expireToDate } from "./config";
@@ -16,6 +16,7 @@ import {
   fetchOrders,
   fetchSettlements,
   fetchStatementTransactions,
+  getOrderDetail,
   refreshAccessToken,
   type TikTokOrder,
 } from "./client";
@@ -185,7 +186,10 @@ export async function syncTiktokOrders(
 
     for (const o of data.orders ?? []) {
       result.fetched++;
-      const outcome = await upsertOrder(channel, o, feeRate);
+      // Đồng bộ lô CỐ Ý không trừ kho (chỉ upsert), nên mỗi đơn một transaction nhẹ.
+      const outcome = await prisma.$transaction((tx) =>
+        upsertOrderTx(tx, channel, o, feeRate)
+      );
       if (outcome.created) {
         result.created++;
         result.itemsCreated += outcome.itemsCreated;
@@ -201,15 +205,20 @@ export async function syncTiktokOrders(
 }
 
 /**
- * Tạo mới hoặc cập nhật MỘT đơn TikTok. Tạo mới thì kèm OrderItem + snapshot giá
- * vốn; đã tồn tại thì chỉ cập nhật các trường biến động (trạng thái, tổng tiền,
- * vận đơn) — KHÔNG đụng OrderItem để giữ nguyên snapshot giá vốn ban đầu.
+ * Tạo mới hoặc cập nhật MỘT đơn TikTok TRONG một transaction cho trước. Tạo mới
+ * thì kèm OrderItem + snapshot giá vốn; đã tồn tại thì chỉ cập nhật các trường
+ * biến động (trạng thái, tổng tiền, vận đơn) — KHÔNG đụng OrderItem để giữ
+ * nguyên snapshot giá vốn ban đầu.
+ *
+ * Nhận `tx` từ bên ngoài để webhook có thể GỘP upsert + trừ kho vào cùng một
+ * transaction (đảm bảo nguyên tử); luồng đồng bộ lô thì tự bọc `$transaction`.
  */
-async function upsertOrder(
+async function upsertOrderTx(
+  tx: Prisma.TransactionClient,
   channel: Channel,
   order: TikTokOrder,
   feeRate: number
-): Promise<{ created: boolean; itemsCreated: number }> {
+): Promise<{ orderId: string; created: boolean; itemsCreated: number }> {
   const orderCode = order.id;
   const totalAmount = Number(order.payment?.total_amount ?? 0) || 0;
   const shippingStatus = mapShippingStatus(order.order_status);
@@ -218,70 +227,68 @@ async function upsertOrder(
   const customerPhone = order.recipient_address?.phone_number?.trim() || null;
   const trackingCode = order.tracking_number?.trim() || null;
 
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.order.findUnique({
-      where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-      select: { id: true },
-    });
+  const existing = await tx.order.findUnique({
+    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+    select: { id: true },
+  });
 
-    if (existing) {
-      await tx.order.update({
-        where: { id: existing.id },
-        data: {
-          shippingStatus,
-          paymentStatus,
-          totalAmount,
-          ...(trackingCode ? { trackingCode } : {}),
-        },
-      });
-      return { created: false, itemsCreated: 0 };
-    }
-
-    const lines = aggregateLineItems(order);
-
-    // Nối SKU sàn → sản phẩm gốc (nếu đã liên kết) để snapshot giá vốn & gắn productId.
-    const skus = lines.map((l) => l.channelSku);
-    const mappings = skus.length
-      ? await tx.channelProduct.findMany({
-          where: { channelId: channel.id, channelSku: { in: skus }, productId: { not: null } },
-          select: { channelSku: true, productId: true, product: { select: { costPrice: true } } },
-        })
-      : [];
-    const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
-
-    const created = await tx.order.create({
+  if (existing) {
+    await tx.order.update({
+      where: { id: existing.id },
       data: {
-        channelId: channel.id,
-        orderCode,
-        customerName,
-        customerPhone,
-        totalAmount,
-        platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
-        paymentStatus,
         shippingStatus,
-        trackingCode,
-        itemCount: lines.length,
-        createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
+        paymentStatus,
+        totalAmount,
+        ...(trackingCode ? { trackingCode } : {}),
       },
     });
+    return { orderId: existing.id, created: false, itemsCreated: 0 };
+  }
 
-    for (const line of lines) {
-      const mp = mapBySku.get(line.channelSku);
-      await tx.orderItem.create({
-        data: {
-          orderId: created.id,
-          productId: mp?.productId ?? null,
-          channelSku: line.channelSku,
-          productName: line.productName,
-          quantity: line.quantity,
-          price: line.price,
-          costPriceAtSale: String(mp?.product?.costPrice ?? 0),
-        },
-      });
-    }
+  const lines = aggregateLineItems(order);
 
-    return { created: true, itemsCreated: lines.length };
+  // Nối SKU sàn → sản phẩm gốc (nếu đã liên kết) để snapshot giá vốn & gắn productId.
+  const skus = lines.map((l) => l.channelSku);
+  const mappings = skus.length
+    ? await tx.channelProduct.findMany({
+        where: { channelId: channel.id, channelSku: { in: skus }, productId: { not: null } },
+        select: { channelSku: true, productId: true, product: { select: { costPrice: true } } },
+      })
+    : [];
+  const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
+
+  const created = await tx.order.create({
+    data: {
+      channelId: channel.id,
+      orderCode,
+      customerName,
+      customerPhone,
+      totalAmount,
+      platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
+      paymentStatus,
+      shippingStatus,
+      trackingCode,
+      itemCount: lines.length,
+      createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
+    },
   });
+
+  for (const line of lines) {
+    const mp = mapBySku.get(line.channelSku);
+    await tx.orderItem.create({
+      data: {
+        orderId: created.id,
+        productId: mp?.productId ?? null,
+        channelSku: line.channelSku,
+        productName: line.productName,
+        quantity: line.quantity,
+        price: line.price,
+        costPriceAtSale: String(mp?.product?.costPrice ?? 0),
+      },
+    });
+  }
+
+  return { orderId: created.id, created: true, itemsCreated: lines.length };
 }
 
 export interface SyncSettlementsOptions {
@@ -391,4 +398,219 @@ export async function syncTiktokSettlements(
   }
 
   return result;
+}
+
+// ============================================================
+// WEBHOOK THỜI GIAN THỰC — đơn mới / đổi trạng thái → upsert + trừ/hoàn kho
+//
+// Khác luồng đồng bộ lô (chỉ upsert), webhook xử lý TỒN KHO real-time: khi đơn
+// đã chốt/chờ giao thì trừ kho; khi đơn hủy thì hoàn kho. Cả hai đều idempotent.
+// ============================================================
+
+/**
+ * Các trạng thái TikTok mà đơn đã ĐƯỢC CHỐT và cần trừ kho (khách đã trả tiền,
+ * shop phải giao). Loại UNPAID/ON_HOLD (chưa chắc chắn) và CANCELLED (xử lý riêng).
+ */
+function shouldDeductStock(tiktokStatus?: string): boolean {
+  switch (tiktokStatus) {
+    case "AWAITING_SHIPMENT":
+    case "AWAITING_COLLECTION":
+    case "PARTIALLY_SHIPPING":
+    case "IN_TRANSIT":
+    case "DELIVERED":
+    case "COMPLETED":
+      return true;
+    default:
+      return false;
+  }
+}
+
+type StockOutcome =
+  | "none"
+  | "deducted"
+  | "already-deducted"
+  | "restored"
+  | "already-restored";
+
+/**
+ * Trừ kho cho một đơn ĐÚNG MỘT LẦN. Chốt chặn: nếu `stockDeductedAt` đã có thì
+ * bỏ qua (webhook đẩy lại nhiều lần). Dùng `decrement` nguyên tử (an toàn khi
+ * nhiều đơn cùng trừ một SKU); CHO PHÉP tồn về âm để phơi bày tình trạng bán
+ * vượt kho thay vì âm thầm chặn — đơn đã phát sinh thật trên sàn rồi.
+ * Chỉ trừ các dòng đã liên kết SKU (productId != null); dòng chưa liên kết bỏ qua.
+ */
+async function deductStockTx(
+  tx: Prisma.TransactionClient,
+  orderId: string
+): Promise<{ deducted: number; outcome: StockOutcome }> {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      stockDeductedAt: true,
+      orderCode: true,
+      items: {
+        where: { productId: { not: null } },
+        select: { productId: true, quantity: true },
+      },
+    },
+  });
+  if (!order) return { deducted: 0, outcome: "none" };
+  if (order.stockDeductedAt) return { deducted: 0, outcome: "already-deducted" };
+
+  let deducted = 0;
+  for (const it of order.items) {
+    await tx.product.update({
+      where: { id: it.productId! },
+      data: { quantityInStock: { decrement: it.quantity } },
+    });
+    await tx.inventoryLog.create({
+      data: {
+        productId: it.productId!,
+        changeQuantity: -it.quantity,
+        type: InventoryLogType.SYNC,
+        reason: `Trừ kho tự động — webhook TikTok đơn ${order.orderCode}`,
+        orderId,
+      },
+    });
+    deducted += it.quantity;
+  }
+
+  // Đánh mốc kể cả khi 0 dòng khớp SKU: coi như đã xử lý, tránh quét lại mỗi webhook.
+  await tx.order.update({
+    where: { id: orderId },
+    data: { stockDeductedAt: new Date() },
+  });
+  return { deducted, outcome: deducted > 0 ? "deducted" : "none" };
+}
+
+/**
+ * Hoàn kho khi đơn bị hủy — mirror luồng hủy đơn thủ công ở routes/orders.ts:
+ * tìm các bút toán TRỪ kho gắn với đơn, cộng trả lại, ghi mốc `stockRestoredAt`
+ * để không hoàn lần hai. Chỉ hoàn khi trước đó thực sự đã trừ.
+ */
+async function restoreStockTx(
+  tx: Prisma.TransactionClient,
+  orderId: string
+): Promise<{ restored: number; outcome: StockOutcome }> {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { stockRestoredAt: true, orderCode: true },
+  });
+  if (!order) return { restored: 0, outcome: "none" };
+  if (order.stockRestoredAt) return { restored: 0, outcome: "already-restored" };
+
+  const deductions = await tx.inventoryLog.findMany({
+    where: { orderId, changeQuantity: { lt: 0 } },
+  });
+
+  let restored = 0;
+  for (const log of deductions) {
+    const qty = Math.abs(log.changeQuantity);
+    await tx.product.update({
+      where: { id: log.productId },
+      data: { quantityInStock: { increment: qty } },
+    });
+    await tx.inventoryLog.create({
+      data: {
+        productId: log.productId,
+        changeQuantity: qty,
+        type: InventoryLogType.SYNC,
+        reason: `Hoàn kho tự động — webhook TikTok hủy đơn ${order.orderCode}`,
+        orderId,
+      },
+    });
+    restored += qty;
+  }
+
+  if (restored > 0) {
+    await tx.order.update({
+      where: { id: orderId },
+      data: { stockRestoredAt: new Date() },
+    });
+    return { restored, outcome: "restored" };
+  }
+  return { restored: 0, outcome: "none" };
+}
+
+export interface OrderEventResult {
+  found: boolean; // TikTok có trả chi tiết đơn không
+  created: boolean; // upsert tạo mới hay cập nhật
+  orderStatus?: string; // trạng thái TikTok
+  inventory: StockOutcome; // kết quả tác động tồn kho
+  deducted?: number;
+  restored?: number;
+}
+
+/**
+ * XỬ LÝ MỘT SỰ KIỆN ĐỔI TRẠNG THÁI ĐƠN (từ webhook). Payload webhook chỉ có
+ * order_id + trạng thái, nên phải gọi getOrderDetail để lấy đầy đủ line_items
+ * rồi upsert + tác động tồn kho — TẤT CẢ trong một transaction để nguyên tử.
+ */
+export async function processTiktokOrderEvent(
+  channel: Channel,
+  orderId: string
+): Promise<OrderEventResult> {
+  const { accessToken, shopCipher } = await getValidAccessToken(channel);
+  const details = await getOrderDetail({ accessToken, shopCipher, orderIds: [orderId] });
+  const order = details[0];
+  if (!order) {
+    return { found: false, created: false, inventory: "none" };
+  }
+
+  const feeRate =
+    Number(channel.feeRate) > 0
+      ? Number(channel.feeRate)
+      : PLATFORM_FEE_RATE[ChannelName.TIKTOK];
+
+  return prisma.$transaction(async (tx) => {
+    const up = await upsertOrderTx(tx, channel, order, feeRate);
+
+    // Quyết định tác động tồn kho theo trạng thái TikTok.
+    if (order.order_status === "CANCELLED") {
+      const r = await restoreStockTx(tx, up.orderId);
+      return {
+        found: true,
+        created: up.created,
+        orderStatus: order.order_status,
+        inventory: r.outcome,
+        restored: r.restored,
+      };
+    }
+
+    if (shouldDeductStock(order.order_status)) {
+      const d = await deductStockTx(tx, up.orderId);
+      return {
+        found: true,
+        created: up.created,
+        orderStatus: order.order_status,
+        inventory: d.outcome,
+        deducted: d.deducted,
+      };
+    }
+
+    // UNPAID/ON_HOLD… — đã upsert nhưng chưa đụng kho.
+    return {
+      found: true,
+      created: up.created,
+      orderStatus: order.order_status,
+      inventory: "none",
+    };
+  });
+}
+
+/**
+ * Tìm gian TikTok của một shop theo shop_id phía TikTok (externalShopId). Webhook
+ * là kênh CÔNG KHAI nên chỉ dựa vào shop_id trong payload đã ký để định danh gian.
+ */
+export async function findTiktokChannelByShopId(
+  shopId: string
+): Promise<Channel | null> {
+  return prisma.channel.findFirst({
+    where: {
+      channelName: ChannelName.TIKTOK,
+      externalShopId: shopId,
+      status: "ACTIVE",
+      shopCipher: { not: null },
+    },
+  });
 }

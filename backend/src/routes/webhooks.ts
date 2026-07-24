@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
 import { findMarketplaceProduct, PLATFORM_FEE_RATE } from "../mockMarketplace";
@@ -7,8 +7,18 @@ import {
   randomPhone,
   randomTrackingCode,
 } from "../shipping";
+import { isTikTokConfigured } from "../integrations/tiktok/config";
+import { verifyWebhookSignature } from "../integrations/tiktok/client";
+import {
+  findTiktokChannelByShopId,
+  processTiktokOrderEvent,
+} from "../integrations/tiktok/service";
 
 const router = Router();
+
+// Loại sự kiện webhook của TikTok Shop (trường `type`, dạng số).
+// Ta chỉ xử lý ORDER_STATUS_CHANGE; các loại khác ack 200 và bỏ qua.
+const TIKTOK_ORDER_STATUS_CHANGE = 1;
 
 interface MockOrderItem {
   channelSku: string;
@@ -233,6 +243,68 @@ router.post("/mock-order", async (req, res, next) => {
       return;
     }
     next(err);
+  }
+});
+
+// ============================================================
+// POST /api/webhooks/tiktok — WEBHOOK THẬT TỪ TIKTOK SHOP
+//
+// TikTok gọi vào đây khi đơn đổi trạng thái (event ORDER_STATUS_CHANGE). Endpoint
+// CÔNG KHAI (không JWT) — an toàn dựa vào CHỮ KÝ trên body, không phải phiên đăng
+// nhập. Trả 200 nhanh cho các trường hợp không cần xử lý để TikTok khỏi gửi lại;
+// chỉ trả 5xx khi gặp lỗi TẠM THỜI (đáng để TikTok thử lại).
+//
+// Payload (rút gọn): { type, shop_id, timestamp, data: { order_id, order_status } }
+// ============================================================
+router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
+  try {
+    // Chưa cấu hình app thì không thể xác thực chữ ký → từ chối, tránh xử lý giả.
+    if (!isTikTokConfigured()) {
+      res.status(503).json({ error: "TikTok Shop chưa được cấu hình trên máy chủ" });
+      return;
+    }
+
+    // 1) XÁC THỰC CHỮ KÝ trên body thô (chống fake request).
+    const raw = req.rawBody?.toString("utf8") ?? JSON.stringify(req.body ?? {});
+    const signature = req.header("authorization") ?? undefined;
+    if (!verifyWebhookSignature(raw, signature)) {
+      res.status(401).json({ error: "Chữ ký webhook không hợp lệ" });
+      return;
+    }
+
+    const body = (req.body ?? {}) as {
+      type?: number;
+      shop_id?: string;
+      data?: { order_id?: string; order_status?: string };
+    };
+
+    // 2) Chỉ xử lý sự kiện đổi trạng thái đơn; loại khác (ping, sản phẩm…) ack luôn.
+    if (Number(body.type) !== TIKTOK_ORDER_STATUS_CHANGE) {
+      res.status(200).json({ ok: true, ignored: true, type: body.type });
+      return;
+    }
+
+    const shopId = String(body.shop_id ?? "");
+    const orderId = String(body.data?.order_id ?? "");
+    if (!shopId || !orderId) {
+      res.status(200).json({ ok: true, ignored: true, reason: "thiếu shop_id/order_id" });
+      return;
+    }
+
+    // 3) Tìm gian hàng theo shop_id (đã ký nên tin được). Không thấy → ack.
+    const channel = await findTiktokChannelByShopId(shopId);
+    if (!channel) {
+      res.status(200).json({ ok: true, ignored: true, reason: "shop chưa kết nối Hubsell" });
+      return;
+    }
+
+    // 4) Upsert đơn + trừ/hoàn kho (idempotent) trong một transaction.
+    const result = await processTiktokOrderEvent(channel, orderId);
+    res.status(200).json({ ok: true, orderId, ...result });
+  } catch (err) {
+    // Lỗi TẠM THỜI khi gọi API TikTok/DB → 500 để TikTok gửi lại sau.
+    console.error("[Webhook TikTok]", err);
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 

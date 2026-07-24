@@ -5,6 +5,32 @@
 
 ---
 
+## Phiên 24/07/2026 (3) — Webhook TikTok real-time + tự động trừ kho
+
+### Mục tiêu
+Nhận webhook TikTok khi đơn đổi trạng thái, xác thực chữ ký, upsert đơn và tự động trừ/hoàn kho theo thời gian thực (idempotent).
+
+### Đã hoàn thành ✅
+- **Endpoint** `POST /api/webhooks/tiktok` (công khai, trong `routes/webhooks.ts`) — xử lý event `ORDER_STATUS_CHANGE` (type 1); loại khác ack 200.
+- **Verify chữ ký** — `verifyWebhookSignature()` (client.ts): `HMAC-SHA256(app_key + rawBody, app_secret)` so khớp header `Authorization` theo kiểu hằng-thời-gian. Giữ body thô qua `express.json({ verify })` trong `app.ts` (serialize lại là sai chữ ký).
+- **Lấy chi tiết đơn** — `getOrderDetail()` (client.ts, GET /order/202309/orders?ids=) vì payload webhook chỉ có order_id + trạng thái.
+- **`processTiktokOrderEvent()`** (service.ts) — refactor `upsertOrder` → `upsertOrderTx(tx,…)` để GỘP upsert + tồn kho vào MỘT transaction. Trừ kho khi trạng thái đã chốt (AWAITING_SHIPMENT…COMPLETED), hoàn kho khi CANCELLED.
+- **Idempotent tồn kho** — thêm cột `Order.stockDeductedAt` (migration `order_stock_deducted_at`); trừ kho một lần (guard `stockDeductedAt`, `decrement` nguyên tử, cho phép âm = phơi bày bán vượt kho); hoàn kho một lần (guard `stockRestoredAt`, mirror luồng hủy đơn thủ công ở orders.ts). Chỉ trừ dòng đã liên kết SKU (productId != null).
+- **`findTiktokChannelByShopId()`** — định danh gian theo `shop_id` trong payload đã ký.
+
+### Kiểm chứng
+- Backend `tsc` ✅. Runtime: query `stockDeductedAt` OK; `verifyWebhookSignature` valid→true, tampered/missing→false.
+- **Test end-to-end webhook** (instance mới port 4100, ký bằng app_secret thật): chữ ký hợp lệ + shop lạ → 200 ack; thiếu/sai chữ ký → **401**; event type khác → 200 ack. ✅
+- **CHƯA test đường trừ/hoàn kho với đơn TikTok thật** (cần shop đã kết nối + đơn thật để `getOrderDetail` trả dữ liệu) — logic mirror luồng mock/hủy đơn đã kiểm chứng, có guard idempotent.
+- ⚠️ Server cũ trên :4000 (từ trước) không có code mới & đang giữ DLL (gây EPERM `prisma generate`, vô hại). **Cần khởi động lại dev server backend** để nạp webhook + rawBody.
+
+### Việc cần làm phiên sau 🔜
+1. Cấu hình URL webhook trên Partner Center (`https://.../api/webhooks/tiktok`), chạy đơn test thật để nghiệm thu trừ/hoàn kho.
+2. Đối chiếu tên trường payload webhook thật (type số, `data.order_id`, `data.order_status`) nếu TikTok đổi.
+3. Lịch cron tự đồng bộ; bóc tách chi tiết phí đối soát.
+
+---
+
 ## Phiên 24/07/2026 (2) — Đồng bộ dữ liệu thật TikTok Shop
 
 ### Mục tiêu

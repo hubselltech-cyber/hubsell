@@ -376,6 +376,15 @@ model Order {
   /// này thì đơn bị hủy (đã cộng kho) mà nhân viên còn quét nhận hoàn nữa là
   /// kho phình ảo — bán ra hàng không có thật, đúng kiểu mất tiền âm thầm.
   stockRestoredAt DateTime?
+
+  /// CHỐT CHẶN TRỪ KHO TRÙNG (song sinh với stockRestoredAt).
+  ///
+  /// Đơn từ webhook TikTok có thể được đẩy về NHIỀU LẦN (mỗi lần đổi trạng thái),
+  /// còn đồng bộ lô lại chạy lặp — nên tồn kho của một đơn chỉ được TRỪ đúng một
+  /// lần. Đánh mốc này ngay khi trừ kho; lần webhook sau thấy đã có mốc thì bỏ qua.
+  /// (Đơn tạo qua webhook giả lập /mock-order trừ kho ngay lúc tạo nên không cần
+  /// mốc; mốc này chỉ dùng cho luồng TikTok thật.)
+  stockDeductedAt DateTime?
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus ShippingStatus @default(PENDING)
   createdAt      DateTime @default(now())
