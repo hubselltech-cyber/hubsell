@@ -28,5 +28,8 @@ Thumbs.db
 # Prisma
 backend/prisma/*.db
 
+# Chứng chỉ SSL local (tự ký) — KHÔNG commit khóa riêng. Tạo lại bằng scripts/gen-certs.
+certs/
+
 # Docker volume data (nếu mount cục bộ)
 pgdata/

@@ -191,7 +191,7 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 
 **Bảo mật:** `Channel` thêm `refreshToken`, `shopCipher`, `accessTokenExpireAt`, `refreshTokenExpireAt`, `externalShopName` — **không bao giờ trả `refreshToken`/`shopCipher` ra API** (`GET /api/channels` đã lọc; chỉ phơi cờ `apiConnected`).
 
-> ⚠️ **Chạy local:** Redirect của TikTok là **https**, nhưng Next dev mặc định chạy http → cần `next dev --experimental-https`. App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
+> ⚠️ **Chạy local:** Redirect của TikTok là **https** nên cả frontend lẫn backend phải chạy HTTPS bằng cert tự ký dùng chung — xem [🔒 Chạy HTTPS ở local](#-chạy-https-ở-local-test-oauth--webhook-tiktok). App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
 >
 > 🔎 **Cần đối chiếu payload thật:** tên trường trong `TikTokOrder` / `TikTokStatementTransaction` theo tài liệu 202309; parser dùng optional chaining nên lệch nhẹ không vỡ, nhưng hãy kiểm lại khi chạy end-to-end. TikTok trả **phí gộp** (`fee_amount`) → hiện dồn vào `serviceFee`; khi có nguồn chi tiết hơn thì bóc tách từng loại phí.
 >
@@ -497,9 +497,25 @@ npm install
 npm run dev              # http://localhost:3000
 ```
 
-> 🔑 **Để thử luồng OAuth TikTok:** chạy frontend qua https cho khớp Redirect URL đã đăng ký —
-> `npm run dev -- --experimental-https` → mở `https://localhost:3000`. Trước đó điền
-> `TIKTOK_APP_KEY/SECRET/SERVICE_ID` vào `backend/.env` rồi khởi động lại backend.
+### 🔒 Chạy HTTPS ở local (test OAuth / webhook TikTok)
+
+Redirect URL của TikTok là **https**; hơn nữa trang callback https gọi API — nếu API còn http sẽ bị chặn **mixed-content**. Nên chạy **cả frontend và backend qua HTTPS** dùng chung một cert tự ký:
+
+```bash
+# 1) Tạo cert tự ký cho localhost (chỉ cần chạy MỘT LẦN — cần OpenSSL/Git Bash)
+bash scripts/gen-certs.sh          # sinh certs/localhost-key.pem + certs/localhost.pem
+
+# 2) Backend — HTTPS bật sẵn (SSL_KEY_FILE/SSL_CERT_FILE trong backend/.env)
+cd backend && npm run dev          # → https://localhost:4000
+
+# 3) Frontend — HTTPS dùng chung cert (NEXT_PUBLIC_API_URL đã trỏ https)
+cd frontend && npm run dev:https    # → https://localhost:3000
+```
+
+- **Tin cert tự ký (bắt buộc):** mở `https://localhost:4000/health` và `https://localhost:3000` mỗi cái một lần, bấm "vẫn tiếp tục" để trình duyệt chấp nhận cert cho từng cổng — nếu không, fetch cross-origin sẽ bị chặn.
+- **Quay lại HTTP thuần:** bỏ 2 dòng `SSL_*` trong `backend/.env` và đổi `NEXT_PUBLIC_API_URL=http://localhost:4000`, chạy `npm run dev` như thường. Backend tự nhận biết: có cert → HTTPS, không có → HTTP.
+- **Webhook thật cần tunnel:** TikTok gọi `/api/webhooks/tiktok` từ máy chủ của họ nên **không tới được `localhost`**. Muốn nhận webhook thật phải phơi backend qua tunnel công khai (ngrok/cloudflared) rồi khai URL đó trên Partner Center. (Logic webhook đã test cục bộ bằng request ký sẵn.)
+- App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
 
 ## 🚀 Hướng nâng cấp tiếp theo (sau v1.0)
 

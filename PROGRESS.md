@@ -5,6 +5,33 @@
 
 ---
 
+## Phiên 24/07/2026 (4) — Cấu hình HTTPS local để test OAuth/webhook
+
+### Mục tiêu
+Dựng môi trường HTTPS ở local cho khớp Redirect URL của TikTok (https) và tránh mixed-content khi trang callback https gọi API.
+
+### Đã hoàn thành ✅
+- **Cert tự ký** — `scripts/gen-certs.sh` (OpenSSL, xử lý `MSYS_NO_PATHCONV` cho Git Bash) sinh `certs/localhost-key.pem` + `certs/localhost.pem`, SAN `localhost` + `127.0.0.1`, hạn 2028. Đã tạo cert. `certs/` đã vào `.gitignore` (không commit khóa riêng).
+- **Backend HTTPS có điều kiện** — `src/index.ts`: có `SSL_KEY_FILE` + `SSL_CERT_FILE` (trỏ tới file tồn tại) → `https.createServer`; thiếu → fallback HTTP (không phá luồng cũ). `backend/.env` + `.env.example` thêm 2 biến (trỏ `../certs/...`).
+- **Frontend HTTPS** — thêm script `dev:https` (`next dev --experimental-https --experimental-https-key/cert` dùng chung cert). `.env.local` đổi `NEXT_PUBLIC_API_URL=https://localhost:4000` (kèm hướng dẫn quay lại http).
+- **README** — thêm mục "🔒 Chạy HTTPS ở local" (tạo cert, chạy 2 phía https, tin cert tự ký, quay lại http, và lưu ý webhook thật cần tunnel).
+
+### Kiểm chứng
+- Backend HTTPS boot (port 4101): `curl -k https://…/health` OK; HTTP bị từ chối trên cổng HTTPS. ✅
+- Fallback: SSL_* trỏ file không tồn tại → chạy HTTP + cảnh báo, không crash. ✅ (Boot HTTPS thành công cũng chứng minh cặp key/cert hợp lệ để Node/Next TLS nạp.)
+- `tsc` backend + frontend: sạch ✅.
+
+### Lưu ý vận hành ⚠️
+- Cert **tự ký** → trình duyệt cảnh báo; phải mở `https://localhost:4000/health` và `https://localhost:3000` mỗi cổng một lần bấm "vẫn tiếp tục" để tin cert.
+- **Webhook thật cần tunnel** (ngrok/cloudflared) vì TikTok không tới được `localhost`; HTTPS local chỉ phục vụ luồng OAuth callback (chạy trong trình duyệt người dùng).
+- Server backend cũ trên :4000 (từ phiên trước) vẫn cần **khởi động lại** để nạp code HTTPS + webhook.
+
+### Việc cần làm phiên sau 🔜
+1. Chạy `gen-certs` → backend `npm run dev` (https) → frontend `npm run dev:https`, tin cert, bấm Kết nối TikTok để chạy OAuth end-to-end thật.
+2. Dựng tunnel + khai webhook URL trên Partner Center, tạo đơn test nghiệm thu trừ/hoàn kho.
+
+---
+
 ## Phiên 24/07/2026 (3) — Webhook TikTok real-time + tự động trừ kho
 
 ### Mục tiêu
