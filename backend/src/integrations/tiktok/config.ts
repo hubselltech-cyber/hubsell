@@ -1,0 +1,85 @@
+// ============================================================
+// CẤU HÌNH KẾT NỐI TIKTOK SHOP API (bản 202309)
+//
+// App "Dịch vụ tùy chỉnh" (self/custom app) tạo trên TikTok Shop Partner Center.
+// App Key / App Secret KHÔNG được commit — điền trong backend/.env (đã gitignore).
+//
+// Redirect URI phải TRÙNG KHỚP tuyệt đối với cấu hình trên Partner Center, kể cả
+// dấu "/". Ở local: https://localhost:3000/channels/tiktok/callback
+// ============================================================
+
+export interface TikTokConfig {
+  appKey: string;
+  appSecret: string;
+  /** service_id của app — dùng để dựng URL uỷ quyền phía người bán. */
+  serviceId: string;
+  /** URL TikTok chuyển hướng về sau khi người bán bấm "Uỷ quyền". */
+  redirectUri: string;
+}
+
+// Các endpoint cố định của TikTok Shop Open Platform.
+export const TIKTOK_ENDPOINTS = {
+  /** Trang uỷ quyền hiển thị cho người bán (Seller authorization page). */
+  authorize: "https://services.tiktokshop.com/open/authorize",
+  /** Máy chủ xác thực: đổi auth_code → token và refresh token. */
+  auth: "https://auth.tiktok-shops.com",
+  /** Máy chủ API nghiệp vụ: đơn hàng, tài chính, sản phẩm... */
+  api: "https://open-api.tiktokglobalshop.com",
+} as const;
+
+/**
+ * Đọc cấu hình TikTok từ biến môi trường. Ném lỗi rõ ràng nếu thiếu — để lỗi
+ * cấu hình lộ ra ngay lúc bấm Kết nối, thay vì đẻ ra chữ ký sai khó truy vết.
+ */
+export function getTikTokConfig(): TikTokConfig {
+  const appKey = process.env.TIKTOK_APP_KEY;
+  const appSecret = process.env.TIKTOK_APP_SECRET;
+  const serviceId = process.env.TIKTOK_SERVICE_ID;
+  const redirectUri =
+    process.env.TIKTOK_REDIRECT_URI ??
+    "https://localhost:3000/channels/tiktok/callback";
+
+  const missing: string[] = [];
+  if (!appKey) missing.push("TIKTOK_APP_KEY");
+  if (!appSecret) missing.push("TIKTOK_APP_SECRET");
+  if (!serviceId) missing.push("TIKTOK_SERVICE_ID");
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Thiếu cấu hình TikTok Shop trong .env: ${missing.join(", ")}. ` +
+        "Điền App Key / App Secret / Service ID lấy từ Partner Center."
+    );
+  }
+
+  return {
+    appKey: appKey!,
+    appSecret: appSecret!,
+    serviceId: serviceId!,
+    redirectUri,
+  };
+}
+
+/**
+ * Dựng URL trang uỷ quyền hiển thị cho người bán. Redirect URI KHÔNG truyền ở
+ * đây — TikTok lấy đúng URI đã đăng ký trong Partner Center. `state` là chuỗi
+ * ngẫu nhiên chống CSRF, sẽ được TikTok trả lại nguyên vẹn ở callback để đối chiếu.
+ */
+export function buildAuthorizeUrl(
+  state: string,
+  cfg: TikTokConfig = getTikTokConfig()
+): string {
+  const qs = new URLSearchParams({
+    service_id: cfg.serviceId,
+    state,
+  }).toString();
+  return `${TIKTOK_ENDPOINTS.authorize}?${qs}`;
+}
+
+/** true nếu đã cấu hình đủ để chạy luồng thật (dùng để bật/tắt nút ở API). */
+export function isTikTokConfigured(): boolean {
+  return Boolean(
+    process.env.TIKTOK_APP_KEY &&
+      process.env.TIKTOK_APP_SECRET &&
+      process.env.TIKTOK_SERVICE_ID
+  );
+}

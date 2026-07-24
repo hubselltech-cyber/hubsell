@@ -141,7 +141,18 @@ model Channel {
   shopName    String
   /// Id gian hàng bên phía sàn, để dành cho khi có tích hợp API thật
   externalShopId String?
+  /// Tên gian hàng phía sàn trả về (khác shopName do chủ shop tự đặt để hiển thị)
+  externalShopName String?
+  /// access_token của sàn (TikTok Shop) — dùng để gọi API. Giai đoạn giả lập là token ảo.
   apiToken    String?
+  /// refresh_token để làm mới access_token khi hết hạn (OAuth2 của sàn)
+  refreshToken String?
+  /// Thời điểm access_token hết hạn — trước khi gọi API phải kiểm tra & refresh nếu cần
+  accessTokenExpireAt  DateTime?
+  /// Thời điểm refresh_token hết hạn — quá hạn thì buộc chủ shop uỷ quyền lại
+  refreshTokenExpireAt DateTime?
+  /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
+  shopCipher  String?
   status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
   // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.

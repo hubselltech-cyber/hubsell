@@ -1222,10 +1222,16 @@ export interface Channel {
   channelName: ChannelName; // sàn: SHOPEE / LAZADA / TIKTOK / OFFLINE
   shopName: string; // tên gian hàng — thứ phân biệt 2 shop cùng sàn
   externalShopId: string | null;
+  /** Tên gian phía sàn trả về (TikTok) — chỉ có khi nối qua API thật. */
+  externalShopName?: string | null;
   apiToken: string | null;
   status: string;
   feeRate: string | number;
   createdAt: string;
+  /** true = đã nối API thật (OAuth, có shop_cipher); false = gian giả lập/thủ công. */
+  apiConnected?: boolean;
+  /** Thời điểm access_token hết hạn (ISO) — chỉ có khi nối API thật. */
+  accessTokenExpireAt?: string | null;
   _count?: { orders: number; channelProducts: number };
   /** Số sản phẩm sàn đã khớp mã SKU về kho gốc (productId != null). */
   matchedProductCount?: number;
@@ -1272,6 +1278,34 @@ export function connectChannel(channelName: ChannelName, shopName?: string) {
     method: "POST",
     body: JSON.stringify({ channelName, shopName }),
   });
+}
+
+/**
+ * Lấy URL trang uỷ quyền TikTok Shop + state (chống CSRF). FE lưu state rồi
+ * chuyển hướng người dùng sang `url`. TikTok sẽ redirect về trang callback.
+ */
+export function getTiktokAuthUrl() {
+  return apiFetch<{ url: string; state: string }>("/api/channels/tiktok/auth-url");
+}
+
+/** Kết quả một gian TikTok đã nối qua OAuth (không chứa token). */
+export interface TiktokConnectedChannel {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+  externalShopId: string | null;
+  status: string;
+}
+
+/**
+ * Gửi auth_code (TikTok trả về ở callback) lên backend để đổi lấy access token,
+ * lấy shop_cipher và lưu gian hàng. state đã được FE đối chiếu trước khi gọi.
+ */
+export function tiktokCallback(code: string) {
+  return apiFetch<{ connected: number; channels: TiktokConnectedChannel[] }>(
+    "/api/channels/tiktok/callback",
+    { method: "POST", body: JSON.stringify({ code }) }
+  );
 }
 
 /** Sửa tên gian hàng và/hoặc % phí sàn. feeRate ở dạng thập phân (0.12 = 12%). */

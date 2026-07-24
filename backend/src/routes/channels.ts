@@ -8,8 +8,27 @@ import {
   PLATFORM_FEE_RATE,
   TOKEN_PREFIX,
 } from "../mockMarketplace";
+import {
+  buildAuthorizeUrl,
+  isTikTokConfigured,
+} from "../integrations/tiktok/config";
+import {
+  getAccessToken,
+  getAuthorizedShops,
+  type TikTokTokenData,
+} from "../integrations/tiktok/client";
 
 const router = Router();
+
+/**
+ * TikTok trả thời hạn token dưới dạng SỐ GIÂY. Field có thể là mốc tuyệt đối
+ * (epoch) hoặc khoảng thời gian tính từ hiện tại tuỳ phiên bản — phân biệt bằng
+ * ngưỡng 10^9 (mọi epoch hợp lệ đều lớn hơn, mọi khoảng ~ vài ngày đều nhỏ hơn).
+ */
+function expireToDate(seconds: number): Date {
+  const epochSeconds = seconds > 1_000_000_000 ? seconds : Math.floor(Date.now() / 1000) + seconds;
+  return new Date(epochSeconds * 1000);
+}
 
 const CONNECTABLE: ChannelName[] = [
   ChannelName.SHOPEE,
@@ -51,11 +70,26 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     const isAdmin = req.userRole === "ADMIN";
     res.json(
-      channels.map((c) => ({
-        ...c,
-        apiToken: isAdmin ? c.apiToken : null,
-        matchedProductCount: matchedByChannel.get(c.id) ?? 0,
-      }))
+      channels.map((c) => {
+        // KHÔNG bao giờ trả secret (refreshToken, shopCipher) ra ngoài. apiToken
+        // chỉ Admin thấy (giữ hành vi cũ). Còn lại phơi cờ tiện cho giao diện.
+        const {
+          refreshToken: _rt,
+          shopCipher: _sc,
+          accessTokenExpireAt,
+          refreshTokenExpireAt: _rte,
+          apiToken,
+          ...safe
+        } = c;
+        return {
+          ...safe,
+          apiToken: isAdmin ? apiToken : null,
+          // Đã nối API thật (OAuth) hay chỉ là gian giả lập/thủ công.
+          apiConnected: Boolean(c.shopCipher),
+          accessTokenExpireAt,
+          matchedProductCount: matchedByChannel.get(c.id) ?? 0,
+        };
+      })
     );
   } catch (err) {
     next(err);
@@ -126,6 +160,140 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       },
     });
     res.status(201).json(channel);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// KẾT NỐI TIKTOK SHOP THẬT (OAuth2)
+//
+// Luồng: FE bấm Kết nối → GET auth-url (BE dựng URL uỷ quyền) → user duyệt trên
+// TikTok → TikTok redirect về /channels/tiktok/callback?code=...&state=... →
+// FE gửi code về POST callback → BE đổi token + lấy shop_cipher + lưu Channel.
+// ============================================================
+
+// GET /api/channels/tiktok/auth-url — trả URL trang uỷ quyền + state chống CSRF.
+// FE lưu state (sessionStorage) rồi đối chiếu khi TikTok trả về.
+router.get("/tiktok/auth-url", requireAdmin, (_req: AuthRequest, res, next) => {
+  try {
+    if (!isTikTokConfigured()) {
+      res.status(503).json({
+        error:
+          "Chưa cấu hình TikTok Shop. Điền TIKTOK_APP_KEY / TIKTOK_APP_SECRET / TIKTOK_SERVICE_ID trong backend/.env.",
+        code: "TIKTOK_NOT_CONFIGURED",
+      });
+      return;
+    }
+    const state = crypto.randomBytes(16).toString("hex");
+    res.json({ url: buildAuthorizeUrl(state), state });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/channels/tiktok/callback — đổi auth_code lấy token và lưu gian hàng.
+// Body: { code: string }  (state đã được FE đối chiếu trước khi gọi).
+router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const { code } = req.body ?? {};
+    if (typeof code !== "string" || !code.trim()) {
+      res.status(400).json({ error: "Thiếu mã uỷ quyền (auth_code) từ TikTok" });
+      return;
+    }
+
+    // 1) Đổi auth_code → access/refresh token
+    let token: TikTokTokenData;
+    try {
+      token = await getAccessToken(code.trim());
+    } catch (e) {
+      res.status(502).json({
+        error: `Không đổi được mã uỷ quyền: ${(e as Error).message}`,
+      });
+      return;
+    }
+
+    // 2) Lấy danh sách gian đã uỷ quyền + shop_cipher (bắt buộc cho API sau này)
+    let shops;
+    try {
+      shops = await getAuthorizedShops(token.access_token);
+    } catch (e) {
+      res.status(502).json({
+        error: `Lấy được token nhưng không đọc được gian hàng: ${(e as Error).message}`,
+      });
+      return;
+    }
+    if (!shops.length) {
+      res.status(422).json({
+        error: "Tài khoản này chưa uỷ quyền gian hàng nào cho ứng dụng.",
+      });
+      return;
+    }
+
+    const accessExpireAt = expireToDate(token.access_token_expire_in);
+    const refreshExpireAt = expireToDate(token.refresh_token_expire_in);
+
+    // 3) Với mỗi gian: tạo mới hoặc cập nhật token (định danh theo externalShopId).
+    const saved = [];
+    for (const shop of shops) {
+      const existing = await prisma.channel.findFirst({
+        where: {
+          userId: req.ownerId!,
+          channelName: ChannelName.TIKTOK,
+          externalShopId: shop.id,
+        },
+      });
+
+      const tokenData = {
+        apiToken: token.access_token,
+        refreshToken: token.refresh_token,
+        accessTokenExpireAt: accessExpireAt,
+        refreshTokenExpireAt: refreshExpireAt,
+        shopCipher: shop.cipher,
+        externalShopName: shop.name,
+        status: "ACTIVE",
+      };
+
+      if (existing) {
+        saved.push(
+          await prisma.channel.update({ where: { id: existing.id }, data: tokenData })
+        );
+        continue;
+      }
+
+      // Tên gian mặc định = tên phía TikTok, tránh trùng tên gian đã có trong cùng sàn.
+      let shopName = shop.name?.trim() || CHANNEL_LABEL[ChannelName.TIKTOK];
+      const clash = await prisma.channel.findFirst({
+        where: { userId: req.ownerId!, channelName: ChannelName.TIKTOK, shopName },
+        select: { id: true },
+      });
+      if (clash) shopName = `${shopName} (${shop.id.slice(-4)})`;
+
+      saved.push(
+        await prisma.channel.create({
+          data: {
+            userId: req.ownerId!,
+            channelName: ChannelName.TIKTOK,
+            shopName,
+            externalShopId: shop.id,
+            feeRate: PLATFORM_FEE_RATE[ChannelName.TIKTOK],
+            ...tokenData,
+          },
+        })
+      );
+    }
+
+    // Không lộ token ra response — chỉ trả thông tin nhận diện gian.
+    res.status(201).json({
+      connected: saved.length,
+      channels: saved.map((c) => ({
+        id: c.id,
+        channelName: c.channelName,
+        shopName: c.shopName,
+        externalShopId: c.externalShopId,
+        status: c.status,
+      })),
+    });
   } catch (err) {
     next(err);
   }

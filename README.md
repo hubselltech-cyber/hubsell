@@ -107,6 +107,8 @@ hubsell/
 | GET | `/api/orders` | Danh sách đơn hàng | 🔒 JWT |
 | GET | `/api/channels` | Danh sách kênh bán (kèm số đơn/mapping) | 🔒 JWT |
 | POST | `/api/channels` | Kết nối gian hàng (giả lập — cấp API Token ảo) | 🔒 JWT |
+| GET | `/api/channels/tiktok/auth-url` | **[TikTok thật]** Dựng URL uỷ quyền OAuth + `state` chống CSRF | 🔒 Chỉ Admin |
+| POST | `/api/channels/tiktok/callback` | **[TikTok thật]** Đổi `auth_code` → access/refresh token, lấy `shop_cipher`, lưu gian hàng | 🔒 Chỉ Admin |
 | POST | `/api/channels/:id/disconnect` | Ngắt kết nối gian hàng | 🔒 JWT |
 | GET | `/api/channels/:id/products` | Danh mục sản phẩm trên sàn + trạng thái mapping | 🔒 JWT |
 | GET | `/api/mappings` | Danh sách liên kết SKU sàn ↔ SP gốc | 🔒 JWT |
@@ -138,6 +140,42 @@ Gom các đơn bị sàn trừ phí ship **cao hơn mức đã báo** để ch�
 - Nút **"Xuất file khiếu nại sàn"**: gom các đơn `CHO_KHIEU_NAI` theo bộ lọc, xuất Excel 5 cột — [Mã đơn hàng] [Sàn] [Phí ship sàn báo] [Phí ship thực tế bị trừ] [Số tiền chênh lệch]
 
 > ⚠️ **Quy ước dấu:** database lưu `shippingFeeDiff` **dương** (số tiền bị trừ thêm — đồng bộ với các trường phí khác), còn API/giao diện trả **số âm màu đỏ** theo góc nhìn "shop bị mất tiền".
+
+## 🔌 Tích hợp TikTok Shop API (OAuth thật)
+
+Kết nối gian hàng **TikTok Shop thật** qua App "Dịch vụ tùy chỉnh" trên Partner Center (bản API `202309`). Các sàn còn lại (Shopee/Lazada/Offline) vẫn ở chế độ giả lập.
+
+**Cấu hình (`backend/.env`)** — điền 3 khóa lấy từ Partner Center:
+
+```bash
+TIKTOK_APP_KEY=""          # App Key
+TIKTOK_APP_SECRET=""       # App Secret
+TIKTOK_SERVICE_ID=""       # Service ID của app (dựng URL uỷ quyền)
+TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
+```
+
+**Luồng OAuth** (nút *Kết nối gian hàng* → chọn TikTok → *Tiếp tục với TikTok*):
+
+1. FE gọi `GET /api/channels/tiktok/auth-url` → BE dựng URL trang uỷ quyền + `state` ngẫu nhiên (lưu `sessionStorage` chống CSRF).
+2. Chuyển hướng sang TikTok, người bán đăng nhập & cho phép Hubsell.
+3. TikTok redirect về `/channels/tiktok/callback?code=…&state=…`.
+4. Trang callback đối chiếu `state` → `POST /api/channels/tiktok/callback` với `auth_code`.
+5. BE đổi `auth_code` → **access/refresh token**, gọi `/authorization/202309/shops` lấy **`shop_cipher`** (bắt buộc cho mọi API sau), rồi lưu vào `Channel`.
+
+**Cấu trúc code** (mọi thứ "khó" gom trong một module để tái dùng):
+
+| File | Vai trò |
+|---|---|
+| `backend/src/integrations/tiktok/config.ts` | Đọc env, dựng URL uỷ quyền, endpoint cố định |
+| `backend/src/integrations/tiktok/client.ts` | **Ký HMAC-SHA256**, đổi/refresh token, lấy shop + shop_cipher, **khung** `fetchOrders()` / `fetchSettlements()` |
+| `backend/src/routes/channels.ts` | 2 route `auth-url` + `callback` (chỉ Admin) |
+| `frontend/src/app/channels/tiktok/callback/page.tsx` | Trang nhận callback, đối chiếu state, gọi BE |
+
+**Bảo mật:** `Channel` thêm `refreshToken`, `shopCipher`, `accessTokenExpireAt`, `refreshTokenExpireAt`, `externalShopName` — **không bao giờ trả `refreshToken`/`shopCipher` ra API** (`GET /api/channels` đã lọc; chỉ phơi cờ `apiConnected`).
+
+> ⚠️ **Chạy local:** Redirect của TikTok là **https**, nhưng Next dev mặc định chạy http → cần `next dev --experimental-https`. App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
+>
+> 🔜 **Chưa làm (khung để sẵn):** `fetchOrders()` / `fetchSettlements()` mới dựng chữ ký + endpoint, **chưa ghi dữ liệu vào DB** — sẽ nối ở phiên sau để kéo Đơn hàng & Đối soát thật thay `mockMarketplace`. Cần thêm cơ chế **tự refresh token** khi hết hạn trước mỗi lần gọi API.
 
 ## 💰 Hubsell Finance — Module tài chính chuyên sâu
 
@@ -438,6 +476,10 @@ cd frontend
 npm install
 npm run dev              # http://localhost:3000
 ```
+
+> 🔑 **Để thử luồng OAuth TikTok:** chạy frontend qua https cho khớp Redirect URL đã đăng ký —
+> `npm run dev -- --experimental-https` → mở `https://localhost:3000`. Trước đó điền
+> `TIKTOK_APP_KEY/SECRET/SERVICE_ID` vào `backend/.env` rồi khởi động lại backend.
 
 ## 🚀 Hướng nâng cấp tiếp theo (sau v1.0)
 

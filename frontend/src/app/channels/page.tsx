@@ -43,6 +43,7 @@ import {
   fetchChannelProducts,
   fetchChannels,
   getStoredUser,
+  getTiktokAuthUrl,
   getToken,
   sendMockOrder,
   updateChannel,
@@ -85,6 +86,7 @@ function ConnectDialog({
     if (open) {
       setChannelName(CONNECTABLE[0]);
       setShopName("");
+      setSubmitting(false);
     }
   }, [open]);
 
@@ -98,11 +100,22 @@ function ConnectDialog({
   const trimmed = shopName.trim();
   const duplicated = trimmed !== "" && usedNames.has(trimmed.toLowerCase());
 
+  // TikTok đi qua OAuth THẬT: rời trang sang TikTok để người bán uỷ quyền, tên
+  // gian do TikTok trả về nên không cần nhập tay. Các sàn còn lại vẫn giả lập.
+  const isTiktok = channelName === "TIKTOK";
+
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
-    if (duplicated) return;
+    if (!isTiktok && duplicated) return;
     setSubmitting(true);
     try {
+      if (isTiktok) {
+        const { url, state } = await getTiktokAuthUrl();
+        // Lưu state để trang callback đối chiếu (chống CSRF) sau khi TikTok trả về.
+        sessionStorage.setItem("tiktok_oauth_state", state);
+        window.location.href = url; // chuyển hướng sang trang uỷ quyền TikTok
+        return;
+      }
       const c = await connectChannel(channelName, trimmed || undefined);
       toast.success(
         `Đã kết nối gian hàng "${c.shopName}" trên ${CHANNEL_META[c.channelName].label}`
@@ -111,7 +124,6 @@ function ConnectDialog({
       onDone();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
-    } finally {
       setSubmitting(false);
     }
   }
@@ -122,8 +134,17 @@ function ConnectDialog({
         <DialogHeader>
           <DialogTitle>Kết nối gian hàng</DialogTitle>
           <DialogDescription>
-            Một sàn có thể kết nối nhiều gian hàng. Đặt tên để phân biệt chúng
-            trên báo cáo. (Kết nối giả lập — hệ thống cấp API Token ảo.)
+            {isTiktok ? (
+              <>
+                TikTok Shop dùng uỷ quyền thật: bạn sẽ được chuyển sang trang
+                TikTok để đăng nhập và cho phép Hubsell truy cập gian hàng.
+              </>
+            ) : (
+              <>
+                Một sàn có thể kết nối nhiều gian hàng. Đặt tên để phân biệt chúng
+                trên báo cáo. (Kết nối giả lập — hệ thống cấp API Token ảo.)
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -148,24 +169,31 @@ function ConnectDialog({
             )}
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="shop-name">Tên gian hàng</Label>
-            <Input
-              id="shop-name"
-              placeholder={`VD: ${CHANNEL_META[channelName].label} - Shop Chính`}
-              value={shopName}
-              onChange={(e) => setShopName(e.target.value)}
-              maxLength={60}
-            />
-            {duplicated ? (
-              <p className="text-sm text-rose-600">
-                Đã có gian hàng tên này trên {CHANNEL_META[channelName].label}.
-                Đặt tên khác để phân biệt.
-              </p>
-            ) : (
-              <p className={TEXT_SUB}>Bỏ trống thì lấy tên sàn làm mặc định.</p>
-            )}
-          </div>
+          {/* TikTok: tên gian do sàn trả về, không nhập tay. */}
+          {isTiktok ? (
+            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              Tên gian hàng sẽ được lấy tự động từ TikTok sau khi uỷ quyền.
+            </p>
+          ) : (
+            <div className="grid gap-2">
+              <Label htmlFor="shop-name">Tên gian hàng</Label>
+              <Input
+                id="shop-name"
+                placeholder={`VD: ${CHANNEL_META[channelName].label} - Shop Chính`}
+                value={shopName}
+                onChange={(e) => setShopName(e.target.value)}
+                maxLength={60}
+              />
+              {duplicated ? (
+                <p className="text-sm text-rose-600">
+                  Đã có gian hàng tên này trên {CHANNEL_META[channelName].label}.
+                  Đặt tên khác để phân biệt.
+                </p>
+              ) : (
+                <p className={TEXT_SUB}>Bỏ trống thì lấy tên sàn làm mặc định.</p>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button
@@ -176,13 +204,13 @@ function ConnectDialog({
             >
               Huỷ
             </Button>
-            <Button type="submit" disabled={submitting || duplicated}>
+            <Button type="submit" disabled={submitting || (!isTiktok && duplicated)}>
               {submitting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <PlugZap className="size-4" />
               )}
-              Kết nối
+              {isTiktok ? "Tiếp tục với TikTok" : "Kết nối"}
             </Button>
           </div>
         </form>
