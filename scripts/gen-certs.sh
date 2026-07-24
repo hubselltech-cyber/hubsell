@@ -10,19 +10,22 @@
 # ============================================================
 set -euo pipefail
 
+# Vào thư mục gốc repo rồi dùng ĐƯỜNG DẪN TƯƠNG ĐỐI cho openssl. Lý do: openssl là
+# exe Windows, còn MSYS_NO_PATHCONV=1 (bắt buộc để "/CN=localhost" không bị Git Bash
+# biến thành đường dẫn) lại chặn luôn việc đổi đường dẫn TUYỆT ĐỐI kiểu /d/... sang
+# D:\... → openssl không mở được. Đường dẫn tương đối "certs/..." không dính vấn đề này.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CERT_DIR="$ROOT/certs"
-mkdir -p "$CERT_DIR"
+cd "$ROOT"
+mkdir -p certs
 
-# MSYS_NO_PATHCONV=1: chặn Git Bash trên Windows biến "/CN=localhost" thành đường dẫn.
 MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout "$CERT_DIR/localhost-key.pem" \
-  -out "$CERT_DIR/localhost.pem" \
+  -keyout certs/localhost-key.pem \
+  -out certs/localhost.pem \
   -days 825 \
   -subj "/CN=localhost" \
   -addext "subjectAltName=DNS:localhost,DNS:*.localhost,IP:127.0.0.1"
 
-echo "✅ Đã tạo chứng chỉ tại $CERT_DIR"
+echo "✅ Đã tạo chứng chỉ tại $ROOT/certs"
 echo "   - localhost-key.pem (khóa riêng)"
 echo "   - localhost.pem (chứng chỉ)"
 echo ""

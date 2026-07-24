@@ -31,5 +31,8 @@ backend/prisma/*.db
 # Chứng chỉ SSL local (tự ký) — KHÔNG commit khóa riêng. Tạo lại bằng scripts/gen-certs.
 certs/
 
+# Log runtime của scripts/dev-https.sh
+.dev-logs/
+
 # Docker volume data (nếu mount cục bộ)
 pgdata/

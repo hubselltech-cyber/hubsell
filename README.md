@@ -499,7 +499,17 @@ npm run dev              # http://localhost:3000
 
 ### 🔒 Chạy HTTPS ở local (test OAuth / webhook TikTok)
 
-Redirect URL của TikTok là **https**; hơn nữa trang callback https gọi API — nếu API còn http sẽ bị chặn **mixed-content**. Nên chạy **cả frontend và backend qua HTTPS** dùng chung một cert tự ký:
+Redirect URL của TikTok là **https**; hơn nữa trang callback https gọi API — nếu API còn http sẽ bị chặn **mixed-content**. Nên chạy **cả frontend và backend qua HTTPS** dùng chung một cert tự ký.
+
+**Cách nhanh nhất — MỘT lệnh** (tự tắt tiến trình cũ ở cổng 4000/3000, tạo cert nếu thiếu, boot cả hai HTTPS, phơi tunnel nếu có, in link):
+
+```bash
+bash scripts/dev-https.sh          # hoặc double-click start-https.bat (cần Git Bash)
+```
+
+Kết thúc bằng `Ctrl+C` để tắt tất cả. Bỏ tunnel: `NO_TUNNEL=1 bash scripts/dev-https.sh`.
+
+**Cách thủ công (từng phần):**
 
 ```bash
 # 1) Tạo cert tự ký cho localhost (chỉ cần chạy MỘT LẦN — cần OpenSSL/Git Bash)
@@ -514,7 +524,7 @@ cd frontend && npm run dev:https    # → https://localhost:3000
 
 - **Tin cert tự ký (bắt buộc):** mở `https://localhost:4000/health` và `https://localhost:3000` mỗi cái một lần, bấm "vẫn tiếp tục" để trình duyệt chấp nhận cert cho từng cổng — nếu không, fetch cross-origin sẽ bị chặn.
 - **Quay lại HTTP thuần:** bỏ 2 dòng `SSL_*` trong `backend/.env` và đổi `NEXT_PUBLIC_API_URL=http://localhost:4000`, chạy `npm run dev` như thường. Backend tự nhận biết: có cert → HTTPS, không có → HTTP.
-- **Webhook thật cần tunnel:** TikTok gọi `/api/webhooks/tiktok` từ máy chủ của họ nên **không tới được `localhost`**. Muốn nhận webhook thật phải phơi backend qua tunnel công khai (ngrok/cloudflared) rồi khai URL đó trên Partner Center. (Logic webhook đã test cục bộ bằng request ký sẵn.)
+- **Webhook thật cần tunnel:** TikTok gọi `/api/webhooks/tiktok` từ máy chủ của họ nên **không tới được `localhost`**. `dev-https.sh` tự phơi cổng nếu tìm thấy `cloudflared`/`ngrok`/`lt` và in luôn URL webhook để dán vào Partner Center. Hiện máy **chưa cài** tool nào — khuyến nghị cloudflared (không có trang chặn, hợp webhook): tải `cloudflared.exe`, thêm vào PATH rồi chạy lại `dev-https.sh`. Chạy tay: `cloudflared tunnel --url https://localhost:4000 --no-tls-verify`. (Logic webhook đã test cục bộ bằng request ký sẵn.)
 - App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
 
 ## 🚀 Hướng nâng cấp tiếp theo (sau v1.0)

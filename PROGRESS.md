@@ -5,6 +5,37 @@
 
 ---
 
+## Phiên 24/07/2026 (5) — Tự động hóa boot môi trường test HTTPS
+
+### Mục tiêu
+Một lệnh duy nhất: tắt tiến trình cũ, boot Backend+Frontend HTTPS, phơi tunnel (nếu có), in link để click test ngay.
+
+### Đã hoàn thành ✅
+- **Sửa `scripts/gen-certs.sh`** — lỗi `MSYS_NO_PATHCONV` + đường dẫn tuyệt đối khiến openssl-Windows không mở được file. Fix: `cd ROOT` + dùng đường dẫn tương đối `certs/...`. Đã chạy lại, cert mới, cặp key/cert khớp (verify modulus md5).
+- **`scripts/dev-https.sh`** (bash thuần, zero-install vì máy không có concurrency/tunnel tool):
+  1. `kill_port` tắt tiến trình LISTENING trên 4000/3000 (netstat + `taskkill /F /PID`, `MSYS_NO_PATHCONV`).
+  2. Tự tạo cert nếu thiếu.
+  3. Boot backend (`npm run dev` → HTTPS) + frontend (`npm run dev:https`) song song, log ra `.dev-logs/`.
+  4. `wait_url` chờ cả hai `curl -sk` sẵn sàng.
+  5. Tunnel best-effort: dùng cloudflared/ngrok/lt NẾU có (parse URL public), không có thì bỏ qua + hướng dẫn.
+  6. In hộp link (Frontend/Backend/Callback/Tunnel/Webhook). `trap cleanup INT TERM` (có guard `CLEANED`) tắt sạch khi Ctrl+C.
+- **`start-https.bat`** — wrapper double-click gọi `bash scripts/dev-https.sh`.
+- **`.gitignore`** thêm `.dev-logs/`. README thêm mục "MỘT lệnh" + hướng dẫn cài cloudflared.
+
+### Kiểm chứng
+- Chạy thật launcher có `timeout 95s`: tắt PID cũ 21404 (:4000) → backend HTTPS lên → **frontend Next 16 `dev:https` Ready in 390ms, phục vụ `GET / 200`** → health cả hai qua → tunnel skip gọn → in hộp link → Ctrl+C(SIGTERM) dọn sạch, ports 4000/3000 FREE lại. ✅
+- `bash -n` cả hai script sạch. tsc không đổi (chỉ script/docs).
+
+### Môi trường hiện tại ⚠️
+- **Chưa cài** ngrok/cloudflared/localtunnel → bước tunnel bị bỏ qua; webhook thật cần cài 1 tool (khuyến nghị cloudflared) rồi chạy lại.
+- Server cũ trên :4000 đã bị launcher tắt; hiện KHÔNG có server nào chạy — anh chạy `bash scripts/dev-https.sh` để bật lại.
+
+### Việc cần làm phiên sau 🔜
+1. Cài cloudflared → chạy `dev-https.sh` → lấy URL tunnel khai webhook lên Partner Center.
+2. Bấm Kết nối TikTok chạy OAuth end-to-end; tạo đơn test nghiệm thu webhook trừ/hoàn kho.
+
+---
+
 ## Phiên 24/07/2026 (4) — Cấu hình HTTPS local để test OAuth/webhook
 
 ### Mục tiêu
