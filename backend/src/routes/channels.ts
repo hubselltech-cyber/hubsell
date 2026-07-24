@@ -22,6 +22,9 @@ import {
   syncTiktokOrders,
   syncTiktokSettlements,
 } from "../integrations/tiktok/service";
+import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
+import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
+import { signOauthState as signShopeeState } from "../integrations/shopee/service";
 
 const router = Router();
 
@@ -79,8 +82,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
         return {
           ...safe,
           apiToken: isAdmin ? apiToken : null,
-          // Đã nối API thật (OAuth) hay chỉ là gian giả lập/thủ công.
-          apiConnected: Boolean(c.shopCipher),
+          // Đã nối API thật (OAuth) hay chỉ là gian giả lập/thủ công. Dùng
+          // refreshToken làm dấu hiệu chung cho MỌI sàn (TikTok có shop_cipher,
+          // Shopee thì không — nhưng cả hai đều có refreshToken khi nối thật).
+          apiConnected: Boolean(c.refreshToken),
           accessTokenExpireAt,
           matchedProductCount: matchedByChannel.get(c.id) ?? 0,
         };
@@ -289,6 +294,37 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
         status: c.status,
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// KẾT NỐI SHOPEE THẬT (OAuth v2)
+//
+// Luồng: FE bấm Kết nối → GET auth-url (BE ký + dựng URL, nhét ownerId vào state)
+// → user duyệt trên Shopee → Shopee redirect về /api/auth/shopee/callback?code=
+// &shop_id=&state= → BE (routes/auth.ts) đổi token + lưu Channel + redirect về FE.
+// ============================================================
+
+// GET /api/channels/shopee/auth-url — trả URL uỷ quyền Shopee (đã ký).
+// State mang ownerId (JWT ngắn hạn) để callback công khai biết kết nối cho ai.
+router.get("/shopee/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
+  try {
+    if (!isShopeeConfigured()) {
+      res.status(503).json({
+        error:
+          "Chưa cấu hình Shopee. Điền SHOPEE_PARTNER_ID / SHOPEE_PARTNER_KEY trong backend/.env.",
+        code: "SHOPEE_NOT_CONFIGURED",
+      });
+      return;
+    }
+    const cfg = getShopeeConfig();
+    const state = signShopeeState(req.ownerId!);
+    // State đi kèm redirect; Shopee gắn thêm &code=&shop_id= khi trả về.
+    const sep = cfg.redirectUri.includes("?") ? "&" : "?";
+    const redirect = `${cfg.redirectUri}${sep}state=${encodeURIComponent(state)}`;
+    res.json({ url: buildShopeeAuthorizeUrl(redirect, cfg) });
   } catch (err) {
     next(err);
   }

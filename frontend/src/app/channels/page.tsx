@@ -44,6 +44,7 @@ import {
   disconnectChannel,
   fetchChannelProducts,
   fetchChannels,
+  getShopeeAuthUrl,
   getStoredUser,
   getTiktokAuthUrl,
   getToken,
@@ -104,13 +105,15 @@ function ConnectDialog({
   const trimmed = shopName.trim();
   const duplicated = trimmed !== "" && usedNames.has(trimmed.toLowerCase());
 
-  // TikTok đi qua OAuth THẬT: rời trang sang TikTok để người bán uỷ quyền, tên
-  // gian do TikTok trả về nên không cần nhập tay. Các sàn còn lại vẫn giả lập.
+  // TikTok & Shopee đi qua OAuth THẬT: rời trang sang sàn để người bán uỷ quyền,
+  // tên gian do sàn trả về nên không cần nhập tay. Các sàn còn lại vẫn giả lập.
   const isTiktok = channelName === "TIKTOK";
+  const isShopee = channelName === "SHOPEE";
+  const isOAuth = isTiktok || isShopee;
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
-    if (!isTiktok && duplicated) return;
+    if (!isOAuth && duplicated) return;
     setSubmitting(true);
     try {
       if (isTiktok) {
@@ -118,6 +121,12 @@ function ConnectDialog({
         // Lưu state để trang callback đối chiếu (chống CSRF) sau khi TikTok trả về.
         sessionStorage.setItem("tiktok_oauth_state", state);
         window.location.href = url; // chuyển hướng sang trang uỷ quyền TikTok
+        return;
+      }
+      if (isShopee) {
+        // Shopee: state (mang ownerId) đã ký ở backend, callback là route backend.
+        const { url } = await getShopeeAuthUrl();
+        window.location.href = url;
         return;
       }
       const c = await connectChannel(channelName, trimmed || undefined);
@@ -138,10 +147,11 @@ function ConnectDialog({
         <DialogHeader>
           <DialogTitle>Kết nối gian hàng</DialogTitle>
           <DialogDescription>
-            {isTiktok ? (
+            {isOAuth ? (
               <>
-                TikTok Shop dùng uỷ quyền thật: bạn sẽ được chuyển sang trang
-                TikTok để đăng nhập và cho phép Hubsell truy cập gian hàng.
+                {CHANNEL_META[channelName].label} dùng uỷ quyền thật: bạn sẽ được
+                chuyển sang trang {CHANNEL_META[channelName].label} để đăng nhập và
+                cho phép Hubsell truy cập gian hàng.
               </>
             ) : (
               <>
@@ -173,10 +183,11 @@ function ConnectDialog({
             )}
           </div>
 
-          {/* TikTok: tên gian do sàn trả về, không nhập tay. */}
-          {isTiktok ? (
+          {/* OAuth (TikTok/Shopee): tên gian do sàn trả về, không nhập tay. */}
+          {isOAuth ? (
             <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              Tên gian hàng sẽ được lấy tự động từ TikTok sau khi uỷ quyền.
+              Tên gian hàng sẽ được lấy tự động từ{" "}
+              {CHANNEL_META[channelName].label} sau khi uỷ quyền.
             </p>
           ) : (
             <div className="grid gap-2">
@@ -208,13 +219,13 @@ function ConnectDialog({
             >
               Huỷ
             </Button>
-            <Button type="submit" disabled={submitting || (!isTiktok && duplicated)}>
+            <Button type="submit" disabled={submitting || (!isOAuth && duplicated)}>
               {submitting ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
                 <PlugZap className="size-4" />
               )}
-              {isTiktok ? "Tiếp tục với TikTok" : "Kết nối"}
+              {isOAuth ? `Tiếp tục với ${CHANNEL_META[channelName].label}` : "Kết nối"}
             </Button>
           </div>
         </form>
@@ -538,6 +549,21 @@ export default function ChannelsPage() {
     }
     load();
   }, [load, router]);
+
+  // Sau khi Shopee uỷ quyền, backend redirect về /channels?shopee=connected|error.
+  // Đọc 1 lần rồi dọn query để F5 không toast lại. Đọc trực tiếp window.location
+  // (client-only) để khỏi cần bọc Suspense như useSearchParams ở Next 16.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shopee = params.get("shopee");
+    if (!shopee) return;
+    if (shopee === "connected") {
+      toast.success(`Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}`);
+    } else if (shopee === "error") {
+      toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
+    }
+    window.history.replaceState({}, "", "/channels");
+  }, []);
 
   if (denied) {
     return (

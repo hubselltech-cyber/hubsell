@@ -5,6 +5,34 @@
 
 ---
 
+## Phiên 24/07/2026 (7) — Tích hợp Shopee Open Platform OAuth (Sandbox)
+
+### Mục tiêu
+Dựng module Shopee OAuth (mirror cấu trúc TikTok): sinh URL uỷ quyền có ký, route callback, đổi code→token, lưu Channel.
+
+### Đã hoàn thành ✅
+- **`backend/src/integrations/shopee/`**: `config.ts` (env + host theo `SHOPEE_ENV`, override `SHOPEE_API_BASE`, paths), `client.ts` (`signPublic`/`signShop` HMAC-SHA256, `buildAuthorizeUrl`, `getAccessToken`, `refreshAccessToken`, `getShopInfo`), `service.ts` (`signOauthState`/`verifyOauthState` mang ownerId, `getValidShopeeAccessToken` tự refresh, `handleShopeeCallback` đổi token + upsert Channel).
+- **Routes**: `GET /api/channels/shopee/auth-url` (Admin, ký + state JWT) trong channels.ts; `GET /api/auth/shopee/callback` (công khai, verify state → đổi token → lưu → redirect FE) trong auth.ts.
+- **`apiConnected`** đổi từ `Boolean(shopCipher)` → `Boolean(refreshToken)` để đúng cho MỌI sàn (Shopee không có shop_cipher).
+- **Env**: thêm `SHOPEE_PARTNER_ID/KEY/ENV/REDIRECT_URI` + `APP_FRONTEND_URL` vào `.env` + `.env.example`.
+- **Frontend**: `getShopeeAuthUrl()`; ConnectDialog generalize `isTiktok`→`isOAuth` (TikTok+Shopee đều OAuth); toast handler đọc `?shopee=connected|error` sau redirect rồi dọn query.
+
+### Kiểm chứng
+- `tsc` backend + frontend + `eslint`: sạch ✅.
+- Smoke-test: `signPublic`/`signShop` **khớp HMAC tính tay**, URL uỷ quyền chuẩn (encode redirect+state), state JWT verify OK / tampered→null ✅.
+- Boot backend test (:4103): auth-url chưa auth → 401; callback thiếu param / state rác → 302 redirect FE với `shopee=error` đúng ✅.
+- **CHƯA test end-to-end với Shopee thật** — cần domain `hubsell.tech` (đã đăng ký Console) trỏ về backend; redirect localhost không được Shopee chấp nhận.
+
+### Quyết định & lưu ý
+- Redirect user cho là `:3000` nhưng callback là **route backend** → đặt `:4000` (giải thích: `:3000` là Next FE, không có route này). Domain thật phải khớp `hubsell.tech`.
+- Sandbox host mặc định `partner.test-stable.shopeemobile.com` (KHÁC `partner.shopeemobile.com` = production mà user tưởng là sandbox) — cho ghi đè qua `SHOPEE_API_BASE`.
+
+### Việc cần làm phiên sau 🔜
+1. Trỏ `hubsell.tech` về backend (hosts/tunnel/deploy) + đổi `SHOPEE_REDIRECT_URI` khớp domain → test OAuth end-to-end.
+2. Dựng đồng bộ đơn/đối soát Shopee (dùng `getValidShopeeAccessToken`).
+
+---
+
 ## Phiên 24/07/2026 (6) — Chuẩn hoá endpoint OAuth + chẩn đoán lỗi khu vực
 
 ### Bối cảnh

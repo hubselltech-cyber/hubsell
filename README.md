@@ -111,6 +111,8 @@ hubsell/
 | POST | `/api/channels/tiktok/callback` | **[TikTok thật]** Đổi `auth_code` → access/refresh token, lấy `shop_cipher`, lưu gian hàng | 🔒 Chỉ Admin |
 | POST | `/api/channels/:id/sync-orders` | **[TikTok thật]** Kéo đơn hàng thật → upsert `Order`+`OrderItem` (idempotent) | 🔒 Chỉ Admin |
 | POST | `/api/channels/:id/sync-settlements` | **[TikTok thật]** Kéo đối soát thật → cập nhật quyết toán từng đơn (Cash Flow) | 🔒 Chỉ Admin |
+| GET | `/api/channels/shopee/auth-url` | **[Shopee thật]** Dựng URL uỷ quyền (ký HMAC-SHA256) + state mang ownerId | 🔒 Chỉ Admin |
+| GET | `/api/auth/shopee/callback` | **[Shopee thật]** Nhận `code`+`shop_id`+`state` → đổi token → lưu Channel → redirect FE | 🔑 State JWT |
 | POST | `/api/channels/:id/disconnect` | Ngắt kết nối gian hàng | 🔒 JWT |
 | GET | `/api/channels/:id/products` | Danh mục sản phẩm trên sàn + trạng thái mapping | 🔒 JWT |
 | GET | `/api/mappings` | Danh sách liên kết SKU sàn ↔ SP gốc | 🔒 JWT |
@@ -196,6 +198,36 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 > 🔎 **Cần đối chiếu payload thật:** tên trường trong `TikTokOrder` / `TikTokStatementTransaction` theo tài liệu 202309; parser dùng optional chaining nên lệch nhẹ không vỡ, nhưng hãy kiểm lại khi chạy end-to-end. TikTok trả **phí gộp** (`fee_amount`) → hiện dồn vào `serviceFee`; khi có nguồn chi tiết hơn thì bóc tách từng loại phí.
 >
 > 🔜 **Chưa làm:** lịch tự động đồng bộ (cron) thay vì bấm tay; bóc tách chi tiết từng loại phí đối soát (hiện dồn vào `serviceFee`).
+
+## 🛒 Tích hợp Shopee Open Platform (OAuth v2)
+
+Kết nối gian hàng **Shopee thật** qua app "Seller In House System". Cấu trúc mirror TikTok, gói trong `backend/src/integrations/shopee/`.
+
+**Cấu hình (`backend/.env`):**
+
+```bash
+SHOPEE_PARTNER_ID=""        # Partner ID
+SHOPEE_PARTNER_KEY=""       # Partner Key (bí mật ký HMAC)
+SHOPEE_ENV="sandbox"        # sandbox | production → chọn host API
+SHOPEE_REDIRECT_URI="http://localhost:4000/api/auth/shopee/callback"
+APP_FRONTEND_URL="https://localhost:3000"
+```
+
+**Ký chữ ký (2 kiểu, HMAC-SHA256 với `partner_key`):**
+- Public API (auth/token): `base = partner_id + api_path + timestamp`
+- Shop API (get_shop_info…): `base = partner_id + api_path + timestamp + access_token + shop_id`
+
+**Luồng OAuth:**
+1. FE bấm Kết nối Shopee → `GET /api/channels/shopee/auth-url` → BE ký + dựng URL `.../api/v2/shop/auth_partner`, nhét **ownerId vào `state` (JWT 10 phút)** rồi kèm vào `redirect`.
+2. Người bán duyệt trên Shopee → Shopee redirect về **`GET /api/auth/shopee/callback?code=&shop_id=&state=`** (route backend công khai).
+3. BE verify `state` → khôi phục ownerId → đổi `code`+`shop_id` lấy `access_token`/`refresh_token` (`/api/v2/auth/token/get`) → lấy tên gian (`get_shop_info`) → **upsert Channel** (idempotent theo `userId`+`SHOPEE`+`shop_id`) → redirect trình duyệt về `/channels?shopee=connected`.
+4. `getValidShopeeAccessToken()` tự refresh access_token (<5 phút hết hạn) qua `/api/v2/auth/access_token/get`; refresh_token sống 30 ngày.
+
+**Cấu trúc file:** `shopee/config.ts` (env + host + paths), `shopee/client.ts` (ký + token + get_shop_info), `shopee/service.ts` (state JWT + refresh + `handleShopeeCallback`).
+
+> ⚠️ **Redirect & domain:** callback là **route backend** nên local để `:4000`. Shopee chỉ chấp nhận redirect thuộc **domain đã đăng ký Console** (`http://hubsell.tech`) → muốn test thật phải trỏ `hubsell.tech` về backend rồi đổi `SHOPEE_REDIRECT_URI` cho khớp. Sandbox host mặc định `partner.test-stable.shopeemobile.com` (đặt `SHOPEE_API_BASE` để ghi đè nếu Console cấp host khác).
+>
+> 🔜 **Chưa làm:** đồng bộ đơn/đối soát Shopee (mới có OAuth + lưu token); chưa test end-to-end (cần domain hubsell.tech reachable).
 
 ## 💰 Hubsell Finance — Module tài chính chuyên sâu
 

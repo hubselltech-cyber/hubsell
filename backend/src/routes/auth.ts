@@ -2,10 +2,17 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../prisma";
 import { requireAuth, signToken, type AuthRequest } from "../auth";
+import {
+  handleShopeeCallback,
+  verifyOauthState,
+} from "../integrations/shopee/service";
 
 const router = Router();
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Nơi FE hiển thị kết quả sau khi Shopee redirect về (callback là route BE).
+const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "https://localhost:3000";
 
 // POST /api/auth/register — Đăng ký tài khoản mới
 router.post("/register", async (req, res, next) => {
@@ -105,6 +112,41 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
     res.json({ user, hasChannels: channelCount > 0 });
   } catch (err) {
     next(err);
+  }
+});
+
+// ============================================================
+// GET /api/auth/shopee/callback — SHOPEE REDIRECT VỀ ĐÂY SAU KHI UỶ QUYỀN
+//
+// Endpoint CÔNG KHAI: Shopee mở bằng trình duyệt kèm ?code=&shop_id=&state=.
+// Danh tính chủ shop nằm trong `state` (JWT đã ký lúc sinh URL), không dùng JWT
+// đăng nhập. Xử lý xong thì redirect trình duyệt về trang Kênh bán của FE.
+// ============================================================
+router.get("/shopee/callback", async (req, res) => {
+  const done = (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    res.redirect(`${FRONTEND_BASE_URL}/channels?${qs}`);
+  };
+
+  try {
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const shopId = typeof req.query.shop_id === "string" ? req.query.shop_id : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+
+    if (!code || !shopId) {
+      done({ shopee: "error", msg: "Thiếu code hoặc shop_id từ Shopee" });
+      return;
+    }
+    const ownerId = state ? verifyOauthState(state) : null;
+    if (!ownerId) {
+      done({ shopee: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });
+      return;
+    }
+
+    const saved = await handleShopeeCallback(ownerId, code, shopId);
+    done({ shopee: "connected", shop: saved.shopName });
+  } catch (err) {
+    done({ shopee: "error", msg: (err as Error).message });
   }
 });
 

@@ -1288,6 +1288,15 @@ export function getTiktokAuthUrl() {
   return apiFetch<{ url: string; state: string }>("/api/channels/tiktok/auth-url");
 }
 
+/**
+ * Lấy URL trang uỷ quyền Shopee. FE chỉ việc chuyển hướng sang `url`; danh tính
+ * chủ shop đã được nhét vào `state` phía backend nên callback (route backend) tự
+ * biết kết nối cho ai rồi redirect về `/channels?shopee=connected|error`.
+ */
+export function getShopeeAuthUrl() {
+  return apiFetch<{ url: string }>("/api/channels/shopee/auth-url");
+}
+
 /** Kết quả một gian TikTok đã nối qua OAuth (không chứa token). */
 export interface TiktokConnectedChannel {
   id: string;
