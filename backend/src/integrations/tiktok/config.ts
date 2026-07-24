@@ -75,6 +75,17 @@ export function buildAuthorizeUrl(
   return `${TIKTOK_ENDPOINTS.authorize}?${qs}`;
 }
 
+/**
+ * TikTok trả thời hạn token dưới dạng SỐ GIÂY. Field có thể là mốc tuyệt đối
+ * (epoch) hoặc khoảng thời gian tính từ hiện tại tuỳ phiên bản — phân biệt bằng
+ * ngưỡng 10^9 (mọi epoch hợp lệ đều lớn hơn, mọi khoảng ~ vài ngày đều nhỏ hơn).
+ */
+export function expireToDate(seconds: number): Date {
+  const epochSeconds =
+    seconds > 1_000_000_000 ? seconds : Math.floor(Date.now() / 1000) + seconds;
+  return new Date(epochSeconds * 1000);
+}
+
 /** true nếu đã cấu hình đủ để chạy luồng thật (dùng để bật/tắt nút ở API). */
 export function isTikTokConfigured(): boolean {
   return Boolean(

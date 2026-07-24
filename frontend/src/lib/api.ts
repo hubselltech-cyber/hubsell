@@ -1308,6 +1308,41 @@ export function tiktokCallback(code: string) {
   );
 }
 
+/** Kết quả đồng bộ đơn hàng TikTok thật về DB. */
+export interface SyncOrdersResult {
+  message: string;
+  fetched: number;
+  created: number;
+  updated: number;
+  itemsCreated: number;
+  pages: number;
+}
+
+/** Kéo đơn hàng thật từ TikTok Shop về hệ thống (upsert theo mã đơn). */
+export function syncTiktokOrders(channelId: string) {
+  return apiFetch<SyncOrdersResult>(`/api/channels/${channelId}/sync-orders`, {
+    method: "POST",
+  });
+}
+
+/** Kết quả đồng bộ đối soát/dòng tiền TikTok thật. */
+export interface SyncSettlementsResult {
+  message: string;
+  statements: number;
+  transactions: number;
+  ordersUpdated: number;
+  ordersNotFound: number;
+  pages: number;
+}
+
+/** Kéo đối soát thật từ TikTok Shop → cập nhật số quyết toán từng đơn (Cash Flow). */
+export function syncTiktokSettlements(channelId: string) {
+  return apiFetch<SyncSettlementsResult>(
+    `/api/channels/${channelId}/sync-settlements`,
+    { method: "POST" }
+  );
+}
+
 /** Sửa tên gian hàng và/hoặc % phí sàn. feeRate ở dạng thập phân (0.12 = 12%). */
 export function updateChannel(
   id: string,

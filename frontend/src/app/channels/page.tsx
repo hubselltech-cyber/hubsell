@@ -11,9 +11,11 @@ import {
   Pencil,
   PlugZap,
   Plus,
+  RefreshCw,
   ShoppingCart,
   Store,
   Unplug,
+  Wallet,
   Zap,
 } from "lucide-react";
 
@@ -46,6 +48,8 @@ import {
   getTiktokAuthUrl,
   getToken,
   sendMockOrder,
+  syncTiktokOrders,
+  syncTiktokSettlements,
   updateChannel,
   type Channel,
   type ChannelName,
@@ -481,6 +485,8 @@ export default function ChannelsPage() {
   const [mockFor, setMockFor] = useState<Channel | null>(null);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [denied, setDenied] = useState(false);
+  // Khoá nút khi đang đồng bộ — giá trị dạng `${channelId}:orders|settlements`.
+  const [syncing, setSyncing] = useState<string | null>(null);
 
   /**
    * Gom gian hàng theo SÀN. Giữ thứ tự sàn cố định theo CONNECTABLE thay vì
@@ -560,6 +566,40 @@ export default function ChannelsPage() {
       load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    }
+  }
+
+  async function handleSyncOrders(c: Channel) {
+    setSyncing(`${c.id}:orders`);
+    try {
+      const r = await syncTiktokOrders(c.id);
+      toast.success(
+        `Đồng bộ đơn TikTok: +${formatNumber(r.created)} mới, ${formatNumber(
+          r.updated
+        )} cập nhật (tổng ${formatNumber(r.fetched)} đơn).`
+      );
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    } finally {
+      setSyncing(null);
+    }
+  }
+
+  async function handleSyncSettlements(c: Channel) {
+    setSyncing(`${c.id}:settlements`);
+    try {
+      const r = await syncTiktokSettlements(c.id);
+      toast.success(
+        `Đồng bộ đối soát: cập nhật ${formatNumber(
+          r.ordersUpdated
+        )} đơn (${formatNumber(r.transactions)} giao dịch).`
+      );
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    } finally {
+      setSyncing(null);
     }
   }
 
@@ -682,18 +722,53 @@ export default function ChannelsPage() {
                                   <Pencil className="size-3.5" />
                                   Cập nhật
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-amber-700"
-                                  disabled={
-                                    !c.apiToken || c.channelName === "OFFLINE"
-                                  }
-                                  onClick={() => setMockFor(c)}
-                                >
-                                  <Zap className="size-3.5" />
-                                  Giả lập đơn
-                                </Button>
+                                {/* TikTok đã uỷ quyền API thật → đồng bộ dữ liệu
+                                    thật; các sàn còn lại vẫn dùng "Giả lập đơn". */}
+                                {c.channelName === "TIKTOK" && c.apiConnected ? (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-slate-700"
+                                      disabled={syncing !== null}
+                                      onClick={() => handleSyncOrders(c)}
+                                    >
+                                      {syncing === `${c.id}:orders` ? (
+                                        <Loader2 className="size-3.5 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="size-3.5" />
+                                      )}
+                                      Đồng bộ đơn
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-slate-700"
+                                      disabled={syncing !== null}
+                                      onClick={() => handleSyncSettlements(c)}
+                                    >
+                                      {syncing === `${c.id}:settlements` ? (
+                                        <Loader2 className="size-3.5 animate-spin" />
+                                      ) : (
+                                        <Wallet className="size-3.5" />
+                                      )}
+                                      Đồng bộ đối soát
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-amber-700"
+                                    disabled={
+                                      !c.apiToken || c.channelName === "OFFLINE"
+                                    }
+                                    onClick={() => setMockFor(c)}
+                                  >
+                                    <Zap className="size-3.5" />
+                                    Giả lập đơn
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="outline"

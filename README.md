@@ -109,6 +109,8 @@ hubsell/
 | POST | `/api/channels` | Kết nối gian hàng (giả lập — cấp API Token ảo) | 🔒 JWT |
 | GET | `/api/channels/tiktok/auth-url` | **[TikTok thật]** Dựng URL uỷ quyền OAuth + `state` chống CSRF | 🔒 Chỉ Admin |
 | POST | `/api/channels/tiktok/callback` | **[TikTok thật]** Đổi `auth_code` → access/refresh token, lấy `shop_cipher`, lưu gian hàng | 🔒 Chỉ Admin |
+| POST | `/api/channels/:id/sync-orders` | **[TikTok thật]** Kéo đơn hàng thật → upsert `Order`+`OrderItem` (idempotent) | 🔒 Chỉ Admin |
+| POST | `/api/channels/:id/sync-settlements` | **[TikTok thật]** Kéo đối soát thật → cập nhật quyết toán từng đơn (Cash Flow) | 🔒 Chỉ Admin |
 | POST | `/api/channels/:id/disconnect` | Ngắt kết nối gian hàng | 🔒 JWT |
 | GET | `/api/channels/:id/products` | Danh mục sản phẩm trên sàn + trạng thái mapping | 🔒 JWT |
 | GET | `/api/mappings` | Danh sách liên kết SKU sàn ↔ SP gốc | 🔒 JWT |
@@ -166,16 +168,25 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 
 | File | Vai trò |
 |---|---|
-| `backend/src/integrations/tiktok/config.ts` | Đọc env, dựng URL uỷ quyền, endpoint cố định |
-| `backend/src/integrations/tiktok/client.ts` | **Ký HMAC-SHA256**, đổi/refresh token, lấy shop + shop_cipher, **khung** `fetchOrders()` / `fetchSettlements()` |
-| `backend/src/routes/channels.ts` | 2 route `auth-url` + `callback` (chỉ Admin) |
+| `backend/src/integrations/tiktok/config.ts` | Đọc env, dựng URL uỷ quyền, `expireToDate`, endpoint cố định |
+| `backend/src/integrations/tiktok/client.ts` | **Ký HMAC-SHA256**, đổi/refresh token, lấy shop + shop_cipher, `fetchOrders()` / `fetchSettlements()` / `fetchStatementTransactions()` (typed) |
+| `backend/src/integrations/tiktok/service.ts` | Tầng nghiệp vụ có DB: `getValidAccessToken()` (tự refresh), `syncTiktokOrders()`, `syncTiktokSettlements()` |
+| `backend/src/routes/channels.ts` | 4 route: `auth-url` + `callback` + `sync-orders` + `sync-settlements` (chỉ Admin) |
 | `frontend/src/app/channels/tiktok/callback/page.tsx` | Trang nhận callback, đối chiếu state, gọi BE |
+
+**Đồng bộ dữ liệu thật** (nút trên trang Kênh bán, chỉ hiện với gian TikTok đã uỷ quyền):
+
+- **Tự refresh token** — `getValidAccessToken()` được gọi TRƯỚC mọi call API: nếu `access_token` còn <5 phút là hết hạn thì tự `refreshAccessToken()` rồi lưu token mới xuống DB; `refresh_token` hết hạn thì báo lỗi buộc uỷ quyền lại.
+- **Đồng bộ đơn** — kéo đơn (mặc định 90 ngày gần nhất), phân trang qua `next_page_token`, **upsert idempotent** theo `(channelId, orderCode)` (migration thêm unique index). Map trạng thái TikTok → vòng đời Hubsell; snapshot giá vốn qua mapping SKU. *Không* trừ tồn kho khi đồng bộ lô (tránh sai kho/không idempotent).
+- **Đồng bộ đối soát** — kéo `statements` → `statement_transactions`, gom theo `order_id`, cập nhật `isSettled` / `actualPayout` / `serviceFee` cho từng đơn → bảng Cash Flow & Lãi/Lỗ Thực Hiện chạy bằng số thật.
 
 **Bảo mật:** `Channel` thêm `refreshToken`, `shopCipher`, `accessTokenExpireAt`, `refreshTokenExpireAt`, `externalShopName` — **không bao giờ trả `refreshToken`/`shopCipher` ra API** (`GET /api/channels` đã lọc; chỉ phơi cờ `apiConnected`).
 
 > ⚠️ **Chạy local:** Redirect của TikTok là **https**, nhưng Next dev mặc định chạy http → cần `next dev --experimental-https`. App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
 >
-> 🔜 **Chưa làm (khung để sẵn):** `fetchOrders()` / `fetchSettlements()` mới dựng chữ ký + endpoint, **chưa ghi dữ liệu vào DB** — sẽ nối ở phiên sau để kéo Đơn hàng & Đối soát thật thay `mockMarketplace`. Cần thêm cơ chế **tự refresh token** khi hết hạn trước mỗi lần gọi API.
+> 🔎 **Cần đối chiếu payload thật:** tên trường trong `TikTokOrder` / `TikTokStatementTransaction` theo tài liệu 202309; parser dùng optional chaining nên lệch nhẹ không vỡ, nhưng hãy kiểm lại khi chạy end-to-end. TikTok trả **phí gộp** (`fee_amount`) → hiện dồn vào `serviceFee`; khi có nguồn chi tiết hơn thì bóc tách từng loại phí.
+>
+> 🔜 **Chưa làm:** trừ tồn kho cho đơn TikTok mới (cần webhook "đơn mới" riêng, không dùng đồng bộ lô); lịch tự động đồng bộ (cron) thay vì bấm tay.
 
 ## 💰 Hubsell Finance — Module tài chính chuyên sâu
 

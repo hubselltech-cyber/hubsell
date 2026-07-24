@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import crypto from "crypto";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
@@ -10,6 +10,7 @@ import {
 } from "../mockMarketplace";
 import {
   buildAuthorizeUrl,
+  expireToDate,
   isTikTokConfigured,
 } from "../integrations/tiktok/config";
 import {
@@ -17,18 +18,12 @@ import {
   getAuthorizedShops,
   type TikTokTokenData,
 } from "../integrations/tiktok/client";
+import {
+  syncTiktokOrders,
+  syncTiktokSettlements,
+} from "../integrations/tiktok/service";
 
 const router = Router();
-
-/**
- * TikTok trả thời hạn token dưới dạng SỐ GIÂY. Field có thể là mốc tuyệt đối
- * (epoch) hoặc khoảng thời gian tính từ hiện tại tuỳ phiên bản — phân biệt bằng
- * ngưỡng 10^9 (mọi epoch hợp lệ đều lớn hơn, mọi khoảng ~ vài ngày đều nhỏ hơn).
- */
-function expireToDate(seconds: number): Date {
-  const epochSeconds = seconds > 1_000_000_000 ? seconds : Math.floor(Date.now() / 1000) + seconds;
-  return new Date(epochSeconds * 1000);
-}
 
 const CONNECTABLE: ChannelName[] = [
   ChannelName.SHOPEE,
@@ -296,6 +291,56 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
     });
   } catch (err) {
     next(err);
+  }
+});
+
+/**
+ * Lấy một gian TikTok đã uỷ quyền của shop hoặc trả lỗi phù hợp. Dùng chung cho
+ * 2 route đồng bộ bên dưới để không lặp phần kiểm tra.
+ */
+async function requireTiktokChannel(req: AuthRequest, res: Response) {
+  const channel = await prisma.channel.findFirst({
+    where: { id: req.params.id, userId: req.ownerId! },
+  });
+  if (!channel) {
+    res.status(404).json({ error: "Không tìm thấy gian hàng" });
+    return null;
+  }
+  if (channel.channelName !== ChannelName.TIKTOK) {
+    res.status(400).json({ error: "Đồng bộ API hiện chỉ hỗ trợ gian TikTok Shop" });
+    return null;
+  }
+  if (!channel.shopCipher) {
+    res.status(409).json({
+      error: "Gian hàng chưa uỷ quyền TikTok. Hãy kết nối lại để cấp quyền API.",
+      code: "TIKTOK_NOT_AUTHORIZED",
+    });
+    return null;
+  }
+  return channel;
+}
+
+// POST /api/channels/:id/sync-orders — kéo đơn TikTok thật → upsert vào DB.
+router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const channel = await requireTiktokChannel(req, res);
+    if (!channel) return;
+    const summary = await syncTiktokOrders(channel);
+    res.json({ message: "Đồng bộ đơn hàng TikTok xong", ...summary });
+  } catch (err) {
+    res.status(502).json({ error: `Đồng bộ đơn thất bại: ${(err as Error).message}` });
+  }
+});
+
+// POST /api/channels/:id/sync-settlements — kéo đối soát TikTok thật → cập nhật quyết toán đơn.
+router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const channel = await requireTiktokChannel(req, res);
+    if (!channel) return;
+    const summary = await syncTiktokSettlements(channel);
+    res.json({ message: "Đồng bộ đối soát TikTok xong", ...summary });
+  } catch (err) {
+    res.status(502).json({ error: `Đồng bộ đối soát thất bại: ${(err as Error).message}` });
   }
 });
 

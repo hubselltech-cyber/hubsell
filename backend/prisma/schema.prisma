@@ -406,6 +406,9 @@ model Order {
   inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
   items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
 
+  // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
+  // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
+  @@unique([channelId, orderCode])
   @@index([channelId])
 }
 

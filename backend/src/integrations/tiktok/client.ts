@@ -197,9 +197,52 @@ export async function getAuthorizedShops(
 }
 
 // ============================================================
-// KHUNG KÉO DỮ LIỆU — phiên sau nối vào DB.
-// Chữ ký + endpoint đã sẵn sàng; hiện chỉ trả nguyên phản hồi TikTok để test.
+// KÉO ĐƠN HÀNG (Order API 202309)
+//
+// LƯU Ý: tên trường bên dưới theo tài liệu TikTok Shop 202309. Do app đang ở
+// môi trường local/Draft, hãy đối chiếu lại payload thật khi chạy end-to-end —
+// parser phía service dùng optional chaining nên payload lệch nhẹ không vỡ.
 // ============================================================
+
+/** Một dòng hàng trong đơn TikTok. Ở 202309 mỗi phần tử thường là MỘT đơn vị. */
+export interface TikTokLineItem {
+  id: string;
+  product_id?: string;
+  product_name?: string;
+  sku_id?: string;
+  seller_sku?: string;
+  sku_image?: string;
+  /** Giá bán một đơn vị (chuỗi số). */
+  sale_price?: string;
+  original_price?: string;
+  currency?: string;
+  /** Có ở một số phiên bản; vắng thì coi mỗi line_item = 1 đơn vị. */
+  quantity?: number;
+}
+
+export interface TikTokOrder {
+  id: string;
+  order_status?: string;
+  create_time?: number; // Unix seconds
+  update_time?: number;
+  paid_time?: number;
+  payment?: {
+    total_amount?: string;
+    currency?: string;
+    sub_total?: string;
+    original_total_product_price?: string;
+  };
+  recipient_address?: { name?: string; phone_number?: string };
+  tracking_number?: string;
+  shipping_provider?: string;
+  line_items?: TikTokLineItem[];
+}
+
+export interface TikTokOrderSearchData {
+  total_count?: number;
+  next_page_token?: string;
+  orders?: TikTokOrder[];
+}
 
 export interface FetchOrdersParams {
   accessToken: string;
@@ -213,13 +256,13 @@ export interface FetchOrdersParams {
 }
 
 /**
- * KHUNG: tìm đơn hàng của gian. Endpoint /order/202309/orders/search là POST,
- * bộ lọc nằm trong body. Phiên sau: ánh xạ kết quả sang model Order + ghi DB.
+ * Tìm đơn hàng của gian. Endpoint /order/202309/orders/search là POST, bộ lọc
+ * thời gian nằm trong body; page_size/page_token nằm trên query.
  */
 export async function fetchOrders(
   params: FetchOrdersParams,
   cfg: TikTokConfig = getTikTokConfig()
-): Promise<unknown> {
+): Promise<TikTokOrderSearchData> {
   const query: Record<string, string | number> = { page_size: params.pageSize ?? 50 };
   if (params.pageToken) query.page_token = params.pageToken;
 
@@ -227,7 +270,7 @@ export async function fetchOrders(
   if (params.createTimeGe) body.create_time_ge = params.createTimeGe;
   if (params.createTimeLt) body.create_time_lt = params.createTimeLt;
 
-  return callApi<unknown>(
+  return callApi<TikTokOrderSearchData>(
     {
       method: "POST",
       path: "/order/202309/orders/search",
@@ -240,6 +283,51 @@ export async function fetchOrders(
   );
 }
 
+// ============================================================
+// KÉO ĐỐI SOÁT / DÒNG TIỀN (Finance API 202309)
+//
+// Hai tầng: statements (bản kê giải ngân theo đợt) → statement_transactions
+// (chi tiết TỪNG ĐƠN trong một bản kê, có order_id + settlement_amount).
+// ============================================================
+
+export interface TikTokStatement {
+  id: string;
+  statement_time?: number; // Unix seconds
+  currency?: string;
+  settlement_amount?: string;
+  revenue_amount?: string;
+  fee_amount?: string;
+  adjustment_amount?: string;
+  payment_status?: string;
+}
+
+export interface TikTokStatementListData {
+  next_page_token?: string;
+  total_count?: number;
+  statements?: TikTokStatement[];
+}
+
+export interface TikTokStatementTransaction {
+  id?: string;
+  order_id?: string;
+  order_create_time?: number;
+  type?: string;
+  currency?: string;
+  /** Doanh thu ghi nhận cho đơn (chuỗi số). */
+  revenue_amount?: string;
+  /** Phí TikTok khấu trừ — thường là số ÂM. */
+  fee_amount?: string;
+  shipping_cost_amount?: string;
+  /** Tiền THỰC NHẬN về ví cho đơn này. */
+  settlement_amount?: string;
+  adjustment_amount?: string;
+}
+
+export interface TikTokStatementTransactionData {
+  next_page_token?: string;
+  statement_transactions?: TikTokStatementTransaction[];
+}
+
 export interface FetchSettlementsParams {
   accessToken: string;
   shopCipher: string;
@@ -248,22 +336,52 @@ export interface FetchSettlementsParams {
 }
 
 /**
- * KHUNG: kéo bản kê đối soát/dòng tiền (statements) để dựng Báo cáo dòng tiền
- * bằng SỐ THẬT thay cho mockSettlement. Phiên sau: ánh xạ sang settlement của đơn.
+ * Kéo danh sách bản kê giải ngân (statements). Từng bản kê sau đó được bóc chi
+ * tiết theo đơn qua {@link fetchStatementTransactions}.
  */
 export async function fetchSettlements(
   params: FetchSettlementsParams,
   cfg: TikTokConfig = getTikTokConfig()
-): Promise<unknown> {
+): Promise<TikTokStatementListData> {
   const query: Record<string, string | number> = {
     page_size: params.pageSize ?? 50,
     sort_field: "statement_time",
   };
   if (params.pageToken) query.page_token = params.pageToken;
 
-  return callApi<unknown>(
+  return callApi<TikTokStatementListData>(
     {
       path: "/finance/202309/statements",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+    },
+    cfg
+  );
+}
+
+export interface FetchStatementTransactionsParams {
+  accessToken: string;
+  shopCipher: string;
+  statementId: string;
+  pageSize?: number;
+  pageToken?: string;
+}
+
+/**
+ * Bóc chi tiết TỪNG ĐƠN trong một bản kê — đây là nơi có `order_id` +
+ * `settlement_amount` để cập nhật số quyết toán thực tế cho từng Order.
+ */
+export async function fetchStatementTransactions(
+  params: FetchStatementTransactionsParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokStatementTransactionData> {
+  const query: Record<string, string | number> = { page_size: params.pageSize ?? 50 };
+  if (params.pageToken) query.page_token = params.pageToken;
+
+  return callApi<TikTokStatementTransactionData>(
+    {
+      path: `/finance/202309/statements/${params.statementId}/statement_transactions`,
       accessToken: params.accessToken,
       shopCipher: params.shopCipher,
       query,
