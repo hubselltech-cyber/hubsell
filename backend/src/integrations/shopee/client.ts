@@ -253,9 +253,13 @@ export interface ShopeeOrderItem {
  * Sinh KHOÁ SKU CHUẨN cho một dòng hàng Shopee — DÙNG CHUNG cho cả đồng bộ sản
  * phẩm lẫn đồng bộ đơn, để hai luồng luôn khớp khoá.
  *
- * Ưu tiên model_sku → item_sku (SKU người bán đặt). Nếu người bán KHÔNG đặt SKU
- * (để trống) mới rơi về khoá tổng hợp từ id: có model → `SPE-{item}-{model}`
- * (tách từng biến thể), không model → `SPE-{item}`.
+ * PHÂN LOẠI (có model_id): khoá = model_sku của CHÍNH phân loại đó. KHÔNG mượn
+ * item_sku — item_sku dùng chung cho mọi phân loại nên mượn nó sẽ gộp nhầm các
+ * phân loại khác nhau (vd 3 màu để trống SKU đều thành 1). Trống model_sku → khoá
+ * tổng hợp `SPE-{item}-{model}` để mỗi phân loại một dòng. Người bán cố tình đặt
+ * CÙNG model_sku cho nhiều phân loại thì vẫn gộp — đúng ý (một SKU bán).
+ *
+ * SẢN PHẨM ĐƠN (không model_id): dùng item_sku; trống thì `SPE-{item}`.
  */
 export function shopeeChannelSku(opts: {
   itemId?: number;
@@ -263,9 +267,10 @@ export function shopeeChannelSku(opts: {
   itemSku?: string;
   modelSku?: string;
 }): string {
-  const sellerSku = opts.modelSku?.trim() || opts.itemSku?.trim();
-  if (sellerSku) return sellerSku;
-  return opts.modelId ? `SPE-${opts.itemId}-${opts.modelId}` : `SPE-${opts.itemId}`;
+  if (opts.modelId) {
+    return opts.modelSku?.trim() || `SPE-${opts.itemId}-${opts.modelId}`;
+  }
+  return opts.itemSku?.trim() || `SPE-${opts.itemId}`;
 }
 
 export interface ShopeeOrderDetail {

@@ -66,12 +66,25 @@ async function tryCall(label: string, fn: () => Promise<any>) {
 }
 
 (async () => {
-  // (1) Lấy shop_id + access_token từ DB
+  // (1) Lấy shop_id + access_token từ DB.
+  // Có thể chỉ định shop qua tham số:  npx tsx scripts/shopee-sandbox-logistics.ts <shop_id>
+  // Khi DB có NHIỀU shop Shopee, không truyền thì lấy shop nối gần nhất (mới nhất).
+  const wantShopId = process.argv[2]?.trim();
   const channel = await prisma.channel.findFirst({
-    where: { channelName: "SHOPEE", refreshToken: { not: null }, status: "ACTIVE" },
+    where: {
+      channelName: "SHOPEE",
+      refreshToken: { not: null },
+      status: "ACTIVE",
+      ...(wantShopId ? { externalShopId: wantShopId } : {}),
+    },
+    orderBy: { createdAt: "desc" },
   });
   if (!channel) {
-    console.log("❌ Không tìm thấy gian Shopee đã nối API trong DB.");
+    console.log(
+      wantShopId
+        ? `❌ Không thấy gian Shopee shop_id=${wantShopId} đã nối API trong DB.`
+        : "❌ Không tìm thấy gian Shopee đã nối API trong DB."
+    );
     await prisma.$disconnect();
     return;
   }
@@ -90,12 +103,27 @@ async function tryCall(label: string, fn: () => Promise<any>) {
     shopGet("/api/v2/logistics/get_address_list", accessToken, shopId)
   );
   const addressList: any[] = addrRes?.response?.address_list ?? [];
-  const pickup = addressList.find((a) => (a.address_flag ?? []).includes("pickup_address"));
+  const showPickup = addrRes?.response?.show_pickup_address === true;
+  // Shopee trả cờ trong `address_type` (chữ HOA: PICKUP_ADDRESS), KHÔNG phải `address_flag`.
+  const pickup = addressList.find((a) => (a.address_type ?? []).includes("PICKUP_ADDRESS"));
+  const fullAddr = (a: any) =>
+    [a?.address, a?.town, a?.district, a?.city, a?.state, a?.region].filter(Boolean).join(", ");
   console.log(
     pickup
-      ? `✅ ĐÃ CÓ pickup address: id=${pickup.address_id} (${pickup.full_address ?? ""})`
-      : `⚠️  CHƯA có địa chỉ gắn cờ "pickup_address". Tổng ${addressList.length} địa chỉ.`
+      ? `✅ ĐÃ CÓ pickup address: id=${pickup.address_id} (${fullAddr(pickup)})`
+      : `⚠️  CHƯA có địa chỉ gắn cờ "PICKUP_ADDRESS". Tổng ${addressList.length} địa chỉ.`
   );
+  console.log(`   show_pickup_address (cờ shop): ${showPickup ? "true ✅" : "false ❌"}`);
+  // vn_data_version="old" = địa chỉ theo cấu trúc hành chính VN CŨ → Shopee từ chối làm
+  // pickup hợp lệ → Test Order báo "request dependency fail". Phải tạo lại địa chỉ mới.
+  for (const a of addressList) {
+    if (a.vn_data_version && a.vn_data_version !== "new") {
+      console.log(
+        `   ⛔ Địa chỉ id=${a.address_id} dùng vn_data_version="${a.vn_data_version}" (CŨ) — ` +
+          `tạo lại địa chỉ pickup bằng dữ liệu hành chính VN mới ở Seller Center.`
+      );
+    }
+  }
   // Nếu có địa chỉ nhưng chưa gắn cờ pickup → thử set_address_config (nếu API tồn tại)
   if (!pickup && addressList.length > 0) {
     const first = addressList[0];

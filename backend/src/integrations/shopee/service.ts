@@ -339,7 +339,7 @@ export async function syncShopeeOrders(
  * snapshot giá vốn; đã tồn tại thì chỉ cập nhật trường biến động (trạng thái,
  * tổng tiền) — không đụng OrderItem để giữ nguyên snapshot.
  */
-async function upsertShopeeOrderTx(
+export async function upsertShopeeOrderTx(
   tx: Prisma.TransactionClient,
   channel: Channel,
   order: ShopeeOrderDetail,
