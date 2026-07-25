@@ -170,9 +170,10 @@ function AddTxnDialog({
   }, [open, isIncome]);
 
   async function onSubmit(values: TxnFormValues) {
-    // THU luôn về Ngân hàng; CHI luôn ra từ Ví sàn (không cho chọn túi tiền cho gọn).
+    // Cả THU lẫn CHI đều đi qua NGÂN HÀNG: THU cộng vào, CHI trừ khỏi cột Ngân
+    // hàng. Ví sàn CHỈ để nhận tiền sàn quyết toán về, không dùng thu/chi thủ công.
     const fundChannelId = values.shopChannelId;
-    const fundSource: FundSourceType = isIncome ? "BANK_ACCOUNT" : "PLATFORM_WALLET";
+    const fundSource: FundSourceType = "BANK_ACCOUNT";
     setSubmitting(true);
     try {
       await createOperatingTxn({
@@ -316,8 +317,9 @@ function AddTxnDialog({
               />
             )}
 
-            {/* NGUỒN TIỀN — cả THU lẫn CHI: chọn Sàn rồi Shop. Túi tiền mặc định
-                theo chiều: THU → Ngân hàng, CHI → Ví sàn (không cho chọn cho gọn). */}
+            {/* NGUỒN TIỀN — chọn Sàn rồi Shop (để lọc báo cáo theo sàn/shop). Dòng
+                tiền: CẢ THU LẪN CHI đều qua cột NGÂN HÀNG của gian (THU +, CHI −).
+                Ví sàn không đụng tới ở đây. */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -371,7 +373,7 @@ function AddTxnDialog({
             <p className="text-xs text-muted-foreground">
               {isIncome
                 ? "Khoản thu sẽ CỘNG vào cột Ngân hàng của gian này trong Báo cáo dòng tiền."
-                : "Khoản chi sẽ TRỪ khỏi cột Ví sàn của gian này trong Báo cáo dòng tiền."}
+                : "Khoản chi sẽ TRỪ khỏi cột Ngân hàng của gian này trong Báo cáo dòng tiền."}
             </p>
 
             <div className="grid grid-cols-2 gap-4">
