@@ -244,14 +244,14 @@ export function CashFlowTable() {
             <table className="w-full min-w-[880px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-left text-sm font-semibold text-slate-800">
+                  <th className="border-b border-slate-300 bg-slate-50 px-5 py-3.5 text-left text-sm font-semibold text-slate-800">
                     Kênh &amp; Gian hàng
                   </th>
                   {COLS.map((c, i) => (
                     <th
                       key={c}
                       className={cn(
-                        "border-b border-slate-200 bg-slate-50 px-5 py-3.5 text-right text-sm font-semibold text-slate-800",
+                        "border-b border-slate-300 bg-slate-50 px-5 py-3.5 text-right text-sm font-semibold text-slate-800",
                         // Cột cuối (quan trọng nhất): khoảng thở phải + đậm hơn nữa
                         i === COLS.length - 1 && "pr-6 font-bold text-slate-900"
                       )}
