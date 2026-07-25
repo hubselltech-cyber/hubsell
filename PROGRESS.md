@@ -5,6 +5,25 @@
 
 ---
 
+## Phiên 24/07/2026 (11) — Test đơn thật Shopee: kẹt ở tool sandbox
+
+### Đã làm
+- **Refactor khoá SKU** (`shopeeChannelSku` trong client.ts) dùng chung product & order sync: SKU riêng → theo SKU; nhiều model chung 1 SKU → gộp (đúng `@@unique`); **KHÔNG có SKU → tách theo `SPE-{item}-{model_id}`**. Thêm `model_id` vào ShopeeOrderItem. Verify data thật: TC054 (không SKU) tách đúng 4 biến thể theo model_id; mô phỏng mua từng biến thể → khớp 4/4.
+- **Script `backend/scripts/shopee-sandbox-logistics.ts`**: gọi logistics API bằng token DB → kiểm địa chỉ pickup + bật kênh vận chuyển. Kết quả: shop 227774404 ĐÃ có pickup address (id 23339, VN) + cả 3 kênh (SPX/Economy Express, SPF Mart) enabled ở cả shop lẫn product.
+- **Điều khiển console Shopee (Claude in Chrome)**: Test Account-Sandbox có 2 shop test Local-VN (227774404 nối Hubsell, 227775379); Create Test Order form = Shop+Item+Shipping (KHÔNG có ô buyer).
+
+### 🔴 BLOCKER (phía Shopee, không phải code)
+Create Test Order **luôn báo "request dependency fail, please try again"** dù đã đủ MỌI prerequisite (đối chiếu doc Sandbox Testing V2 https://open.shopee.com/developer-guide/644): shop authorized ✓, sản phẩm published + tồn kho ✓, 3 shipping bật ✓ (thử cả 3, cả product Tất lẫn TC054), KHÔNG cần buyer ✓. Doc không có lỗi này → **lỗi backend sandbox Shopee** (chữ "please try again" = transient). → Cần **Raise Ticket** cho Shopee.
+
+### 🔜 CHIỀU LÀM TIẾP
+1. **Nghiệm thu order-sync bằng payload chuẩn** `get_order_detail` (dựng theo schema đã lấy từ API) → chạy `syncShopeeOrders` thật → kiểm `OrderItem.channelSku` khớp biến thể model_id, bắt lỗi mapping. (Test code thật, không cần đơn live.)
+2. Thử lại Create Test Order (transient?) / gửi **Raise Ticket** Shopee về "request dependency fail" (kèm: shop 227774404, đủ prerequisite). Khi có đơn live → pull payload verify.
+3. (Tuỳ chọn) Viết **Sync Settlements Shopee** (mirror TikTok, dùng `getValidShopeeAccessToken`) — code-only, không cần đơn live.
+
+### Trạng thái tổng: Hubsell Shopee = OAuth ✅ + Product sync THẬT ✅ + Order sync (code + logic biến thể) ✅. Chỉ thiếu 1 đơn LIVE để soi payload (kẹt tool Shopee).
+
+---
+
 ## Phiên 24/07/2026 (10) — Adapter Pattern đa sàn + Sync Products Shopee thật
 
 ### Kiến trúc mới: `backend/src/marketplace/` (Adapter Pattern)
