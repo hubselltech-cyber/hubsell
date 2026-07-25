@@ -146,6 +146,8 @@ router.get("/shopee/callback", async (req, res) => {
     const saved = await handleShopeeCallback(ownerId, code, shopId);
     done({ shopee: "connected", shop: saved.shopName });
   } catch (err) {
+    // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.
+    console.error("[shopee/callback] Lỗi xử lý callback:", err);
     done({ shopee: "error", msg: (err as Error).message });
   }
 });
