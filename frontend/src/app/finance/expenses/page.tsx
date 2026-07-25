@@ -105,7 +105,8 @@ const txnSchema = z.object({
     .trim()
     .min(1, "Vui lòng nhập số tiền")
     .refine((v) => Number(v) > 0, "Số tiền phải là số dương"),
-  fund: z.string().min(1, "Vui lòng chọn nguồn tiền áp dụng"),
+  platform: z.string().optional(), // chỉ dùng cho CHI để lọc shop theo sàn
+  shopChannelId: z.string().min(1, "Vui lòng chọn gian hàng"),
   type: z.enum(["FIXED", "VARIABLE"]).optional(),
   category: z.enum(["RENT", "SALARY", "PACKAGING", "ADS", "OTHER"]).optional(),
   appliedSku: z.string().optional(),
@@ -133,7 +134,8 @@ function AddTxnDialog({
     defaultValues: {
       name: "",
       amount: "",
-      fund: "",
+      platform: "",
+      shopChannelId: "",
       type: "FIXED",
       category: "RENT",
       appliedSku: "",
@@ -142,6 +144,10 @@ function AddTxnDialog({
     },
   });
   const expenseType = form.watch("type");
+  const selectedPlatform = form.watch("platform");
+  // Cả THU lẫn CHI: chọn Sàn rồi Shop (shop lọc theo sàn đã chọn).
+  const platforms = Array.from(new Set(channels.map((c) => c.channelName)));
+  const shopOptions = channels.filter((c) => c.channelName === selectedPlatform);
 
   // Nạp SKU (chỉ cần cho CHI biến đổi) khi mở dialog.
   useEffect(() => {
@@ -164,10 +170,9 @@ function AddTxnDialog({
   }, [open, isIncome]);
 
   async function onSubmit(values: TxnFormValues) {
-    const [fundChannelId, fundSource] = values.fund.split("::") as [
-      string,
-      FundSourceType,
-    ];
+    // THU luôn về Ngân hàng; CHI luôn ra từ Ví sàn (không cho chọn túi tiền cho gọn).
+    const fundChannelId = values.shopChannelId;
+    const fundSource: FundSourceType = isIncome ? "BANK_ACCOUNT" : "PLATFORM_WALLET";
     setSubmitting(true);
     try {
       await createOperatingTxn({
@@ -216,7 +221,7 @@ function AddTxnDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className={isIncome ? "text-emerald-600" : "text-rose-600"}>
             {isIncome ? "Thêm khoản thu vận hành" : "Thêm chi phí vận hành"}
           </DialogTitle>
           <DialogDescription>
@@ -311,39 +316,63 @@ function AddTxnDialog({
               />
             )}
 
-            {/* NGUỒN TIỀN ÁP DỤNG — bắt buộc */}
-            <FormField
-              control={form.control}
-              name="fund"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nguồn tiền áp dụng</FormLabel>
-                  <FormControl>
-                    <NativeSelect {...field}>
-                      <option value="">— Chọn gian hàng &amp; túi tiền —</option>
-                      {channels.map((c) => (
-                        <optgroup
-                          key={c.id}
-                          label={`${CHANNEL_META[c.channelName]?.label ?? c.channelName} · ${c.shopName}`}
-                        >
-                          <option value={`${c.id}::PLATFORM_WALLET`}>
-                            {c.shopName} — Ví sàn
+            {/* NGUỒN TIỀN — cả THU lẫn CHI: chọn Sàn rồi Shop. Túi tiền mặc định
+                theo chiều: THU → Ngân hàng, CHI → Ví sàn (không cho chọn cho gọn). */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="platform"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Chọn sàn</FormLabel>
+                    <FormControl>
+                      <NativeSelect
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          form.setValue("shopChannelId", ""); // đổi sàn → reset shop
+                        }}
+                      >
+                        <option value="">— Chọn sàn —</option>
+                        {platforms.map((p) => (
+                          <option key={p} value={p}>
+                            {CHANNEL_META[p]?.label ?? p}
                           </option>
-                          <option value={`${c.id}::BANK_ACCOUNT`}>
-                            {c.shopName} — Ngân hàng
+                        ))}
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="shopChannelId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Chọn shop</FormLabel>
+                    <FormControl>
+                      <NativeSelect {...field} disabled={!selectedPlatform}>
+                        <option value="">
+                          {!selectedPlatform ? "— Chọn sàn trước —" : "— Chọn gian hàng —"}
+                        </option>
+                        {shopOptions.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.shopName}
                           </option>
-                        </optgroup>
-                      ))}
-                    </NativeSelect>
-                  </FormControl>
-                  <FormDescription>
-                    Khoản này sẽ {isIncome ? "cộng vào" : "trừ khỏi"} đúng cột của
-                    gian hàng trong Báo cáo dòng tiền.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                        ))}
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {isIncome
+                ? "Khoản thu sẽ CỘNG vào cột Ngân hàng của gian này trong Báo cáo dòng tiền."
+                : "Khoản chi sẽ TRỪ khỏi cột Ví sàn của gian này trong Báo cáo dòng tiền."}
+            </p>
 
             <div className="grid grid-cols-2 gap-4">
               <FormField
