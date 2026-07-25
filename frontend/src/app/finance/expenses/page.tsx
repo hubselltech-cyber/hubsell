@@ -145,11 +145,9 @@ function AddTxnDialog({
   });
   const expenseType = form.watch("type");
   const selectedPlatform = form.watch("platform");
-  // CHI: chọn Sàn rồi Shop (lọc theo sàn). THU: chỉ chọn Shop (mọi sàn).
+  // Cả THU lẫn CHI: chọn Sàn rồi Shop (shop lọc theo sàn đã chọn).
   const platforms = Array.from(new Set(channels.map((c) => c.channelName)));
-  const shopOptions = isIncome
-    ? channels
-    : channels.filter((c) => c.channelName === selectedPlatform);
+  const shopOptions = channels.filter((c) => c.channelName === selectedPlatform);
 
   // Nạp SKU (chỉ cần cho CHI biến đổi) khi mở dialog.
   useEffect(() => {
@@ -317,38 +315,36 @@ function AddTxnDialog({
               />
             )}
 
-            {/* NGUỒN TIỀN — CHI: [Sàn]+[Shop] để định danh đối tượng chịu chi phí.
-                THU: chỉ [Shop] hưởng khoản thu. Dòng tiền LUÔN qua cột Ngân hàng
-                của shop (backend ép BANK_ACCOUNT) — Ví sàn không đụng tới. */}
-            <div className={cn(!isIncome && "grid grid-cols-2 gap-4")}>
-              {!isIncome && (
-                <FormField
-                  control={form.control}
-                  name="platform"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Chọn sàn</FormLabel>
-                      <FormControl>
-                        <NativeSelect
-                          {...field}
-                          onChange={(e) => {
-                            field.onChange(e);
-                            form.setValue("shopChannelId", ""); // đổi sàn → reset shop
-                          }}
-                        >
-                          <option value="">— Chọn sàn —</option>
-                          {platforms.map((p) => (
-                            <option key={p} value={p}>
-                              {CHANNEL_META[p]?.label ?? p}
-                            </option>
-                          ))}
-                        </NativeSelect>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+            {/* NGUỒN TIỀN — cả THU lẫn CHI: [Chọn Sàn] + [Chọn Shop] để định danh
+                sàn/shop (còn lọc báo cáo). Dòng tiền LUÔN qua cột Ngân hàng của
+                shop (backend ép BANK_ACCOUNT) — Ví sàn không đụng tới. */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="platform"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Chọn sàn</FormLabel>
+                    <FormControl>
+                      <NativeSelect
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          form.setValue("shopChannelId", ""); // đổi sàn → reset shop
+                        }}
+                      >
+                        <option value="">— Chọn sàn —</option>
+                        {platforms.map((p) => (
+                          <option key={p} value={p}>
+                            {CHANNEL_META[p]?.label ?? p}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="shopChannelId"
@@ -356,20 +352,13 @@ function AddTxnDialog({
                   <FormItem>
                     <FormLabel>Chọn shop</FormLabel>
                     <FormControl>
-                      <NativeSelect
-                        {...field}
-                        disabled={!isIncome && !selectedPlatform}
-                      >
+                      <NativeSelect {...field} disabled={!selectedPlatform}>
                         <option value="">
-                          {!isIncome && !selectedPlatform
-                            ? "— Chọn sàn trước —"
-                            : "— Chọn gian hàng —"}
+                          {!selectedPlatform ? "— Chọn sàn trước —" : "— Chọn gian hàng —"}
                         </option>
                         {shopOptions.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {isIncome
-                              ? `${CHANNEL_META[c.channelName]?.label ?? c.channelName} · ${c.shopName}`
-                              : c.shopName}
+                            {c.shopName}
                           </option>
                         ))}
                       </NativeSelect>
