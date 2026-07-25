@@ -8,6 +8,7 @@ import {
   Prisma,
   ShippingDisputeStatus,
   ShippingStatus,
+  TransactionDirection,
   WithdrawalSource,
 } from "@prisma/client";
 import { prisma } from "../prisma";
@@ -440,7 +441,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 router.get("/cash-flow", async (req: AuthRequest, res, next) => {
   try {
     const scope = channelScope(req);
-    const [channels, orders, withdrawals] = await Promise.all([
+    const [channels, orders, withdrawals, opTxns] = await Promise.all([
       prisma.channel.findMany({
         where: scope,
         orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
@@ -462,6 +463,13 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
         by: ["channelId"],
         _sum: { amount: true },
         where: { channel: scope, status: "SUCCESS" },
+      }),
+      // THU/CHI VẬN HÀNH gắn nguồn tiền — gom theo (gian, túi tiền, chiều) để
+      // cộng/trừ vào đúng cột Ví sàn/Ngân hàng của từng gian.
+      prisma.operatingExpense.groupBy({
+        by: ["fundChannelId", "fundSource", "direction"],
+        _sum: { amount: true },
+        where: { fundChannel: scope, fundSource: { not: null } },
       }),
     ]);
 
@@ -524,6 +532,20 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
       const amount = Number(w._sum.amount ?? 0);
       row.settled -= amount; // rời khỏi ví sàn
       row.withdrawn += amount; // về ngân hàng
+    }
+
+    // THU/CHI VẬN HÀNH gắn nguồn tiền: THU (+) / CHI (−) vào đúng cột của gian.
+    //  - PLATFORM_WALLET → cột Ví sàn (settled)
+    //  - BANK_ACCOUNT    → cột Ngân hàng (withdrawn)
+    // Cho phép âm như luồng rút ví — số âm là tín hiệu cần đối soát.
+    for (const t of opTxns) {
+      if (!t.fundChannelId) continue;
+      const row = byChannel.get(t.fundChannelId);
+      if (!row) continue;
+      const amt = Number(t._sum.amount ?? 0);
+      const signed = t.direction === "INCOME" ? amt : -amt;
+      if (t.fundSource === "PLATFORM_WALLET") row.settled += signed;
+      else if (t.fundSource === "BANK_ACCOUNT") row.withdrawn += signed;
     }
 
     // Giữ ĐÚNG thứ tự channel để bảng ổn định; kèm tổng dòng tiền dự kiến/gian.
@@ -664,7 +686,11 @@ router.delete("/withdrawals/:id", async (req: AuthRequest, res, next) => {
 router.get("/expenses", async (req: AuthRequest, res, next) => {
   try {
     const expenses = await prisma.operatingExpense.findMany({
-      where: { userId: req.ownerId!, expenseDate: parseDateRange(req.query) },
+      where: {
+        userId: req.ownerId!,
+        direction: TransactionDirection.EXPENSE,
+        expenseDate: parseDateRange(req.query),
+      },
       orderBy: { expenseDate: "desc" },
     });
     res.json(expenses);
@@ -800,6 +826,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
       prisma.operatingExpense.findMany({
         where: {
           userId: ownerId,
+          direction: TransactionDirection.EXPENSE,
           type: ExpenseType.VARIABLE,
           appliedSku: { not: null },
           expenseDate: range,
@@ -953,7 +980,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
 
     // Chi phí cố định KHÔNG phân bổ vào SKU — trừ vào tổng lợi nhuận toàn shop
     const fixedTotal = await prisma.operatingExpense.aggregate({
-      where: { userId: ownerId, type: ExpenseType.FIXED },
+      where: { userId: ownerId, direction: TransactionDirection.EXPENSE, type: ExpenseType.FIXED },
       _sum: { amount: true },
     });
     const fixedExpense = Number(fixedTotal._sum.amount ?? 0);
@@ -1534,7 +1561,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const [delivered, expenses, inFlight, cancelled] = await Promise.all([
       fetchDeliveredOrders(scope, range),
       prisma.operatingExpense.findMany({
-        where: { userId: ownerId, expenseDate: range },
+        where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
         select: {
           amount: true,
           type: true,

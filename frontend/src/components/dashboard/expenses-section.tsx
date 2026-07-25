@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
-  createExpense,
+  createOperatingTxn,
   deleteExpense,
   fetchExpenses,
   type ExpenseCategory,
@@ -81,7 +81,7 @@ function AddExpenseDialog({ onAdded }: { onAdded: () => void }) {
   async function onSubmit(values: ExpenseFormValues) {
     setSubmitting(true);
     try {
-      await createExpense({
+      await createOperatingTxn({
         name: values.name,
         category: values.category,
         amount: Number(values.amount),

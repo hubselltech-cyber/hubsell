@@ -79,6 +79,21 @@ enum ExpenseType {
   VARIABLE // Chi phí biến đổi (quảng cáo, đóng gói...)
 }
 
+/// Chiều của một giao dịch vận hành: THU (tiền vào) hay CHI (tiền ra).
+enum TransactionDirection {
+  INCOME  // khoản THU vận hành (tiền vào)
+  EXPENSE // khoản CHI vận hành (tiền ra)
+}
+
+/// "Túi tiền" mà khoản thu/chi tác động tới, ánh xạ thẳng sang cột của bảng
+/// "Phân bổ dòng tiền theo gian hàng":
+///  - PLATFORM_WALLET → cột "Tiền trên Ví sàn" (settled) của gian.
+///  - BANK_ACCOUNT    → cột "Tiền về Ngân hàng" (withdrawn) của gian.
+enum FundSourceType {
+  PLATFORM_WALLET
+  BANK_ACCOUNT
+}
+
 /// Trạng thái khiếu nại chênh lệch phí vận chuyển với sàn
 enum ShippingDisputeStatus {
   CHO_KHIEU_NAI  // phát hiện lệch, chưa gửi khiếu nại
@@ -165,6 +180,7 @@ model Channel {
   staffAccess     StaffChannel[]
   invoiceConfigs  InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
+  operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   @@index([userId])
@@ -539,18 +555,28 @@ model InventoryLog {
 model OperatingExpense {
   id          String          @id @default(cuid())
   userId      String // thuộc về chủ shop
-  name        String // tên/mô tả khoản chi, ví dụ "Thuê mặt bằng tháng 7"
+  name        String // tên/mô tả khoản, ví dụ "Thuê mặt bằng tháng 7" / "Hoàn tiền NCC"
+  // CHI phí: category + type có ý nghĩa. THU: bỏ qua (luôn hiển thị nhãn "Thu").
+  direction   TransactionDirection @default(EXPENSE)
   category    ExpenseCategory @default(OTHER)
   type        ExpenseType     @default(VARIABLE) // FIXED (cố định) | VARIABLE (biến đổi)
   // Chi phí VARIABLE có thể gắn trực tiếp vào 1 mã SKU (tiền Ads, book KOC...)
   // để tính Lời/Lỗ riêng cho sản phẩm đó. FIXED thì để trống (trừ vào tổng shop).
   appliedSku  String?
-  amount      Decimal         @db.Decimal(12, 2)
+  amount      Decimal         @db.Decimal(12, 2) // luôn DƯƠNG; chiều do `direction` quyết định
+
+  // NGUỒN TIỀN ÁP DỤNG — để đồng bộ sang bảng dòng tiền (cộng/trừ đúng cột của
+  // đúng gian). Nullable cho data cũ; API bắt buộc với bản ghi mới.
+  fundChannelId String?
+  fundSource    FundSourceType?
+
   note        String?
-  expenseDate DateTime        @default(now()) // ngày phát sinh chi phí
+  expenseDate DateTime        @default(now()) // ngày phát sinh
   createdAt   DateTime        @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fundChannel Channel? @relation(fields: [fundChannelId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([fundChannelId])
 }

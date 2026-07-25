@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ReturnStatus } from "@prisma/client";
+import { ReturnStatus, TransactionDirection } from "@prisma/client";
 import { prisma } from "../prisma";
 import { canSeeFinancials, type AuthRequest } from "../auth";
 import { parseDateRange } from "../date-range";
@@ -116,7 +116,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // 2b) Chi phí hoạt động: tổng + phân bổ theo loại
     const expenses = seesFinancials
       ? await prisma.operatingExpense.findMany({
-          where: { userId: ownerId, expenseDate: range },
+          // CHỈ khoản CHI mới là chi phí; khoản THU vận hành không tính vào đây.
+          where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
           select: { category: true, amount: true, expenseDate: true },
         })
       : [];

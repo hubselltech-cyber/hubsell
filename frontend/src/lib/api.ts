@@ -286,14 +286,22 @@ export interface OrderListResponse {
 
 export type ExpenseCategory = "RENT" | "SALARY" | "PACKAGING" | "ADS" | "OTHER";
 export type ExpenseType = "FIXED" | "VARIABLE";
+export type TransactionDirection = "INCOME" | "EXPENSE";
+export type FundSourceType = "PLATFORM_WALLET" | "BANK_ACCOUNT";
 
 export interface OperatingExpense {
   id: string;
+  direction: TransactionDirection;
   name: string;
   category: ExpenseCategory;
   type: ExpenseType;
   appliedSku: string | null; // SKU được gắn (chỉ với chi phí VARIABLE)
-  amount: string | number;
+  amount: number;
+  // Nguồn tiền áp dụng — để đối chiếu với bảng dòng tiền
+  fundChannelId: string | null;
+  fundSource: FundSourceType | null;
+  fundChannelName: ChannelName | null;
+  fundShopName: string | null;
   note: string | null;
   expenseDate: string;
   createdAt: string;
@@ -963,14 +971,19 @@ export function fetchExpenses(range?: DateRange) {
   return apiFetch<OperatingExpense[]>(withRange("/api/expenses", range));
 }
 
-export function createExpense(data: {
+export function createOperatingTxn(data: {
+  direction?: TransactionDirection; // mặc định EXPENSE
   name: string;
-  category: ExpenseCategory;
   amount: number;
+  fundChannelId?: string; // module bắt buộc; quick-add dashboard có thể bỏ
+  fundSource?: FundSourceType;
+  category?: ExpenseCategory; // chỉ với CHI
+  type?: ExpenseType; // chỉ với CHI
+  appliedSku?: string; // chỉ với CHI biến đổi
   note?: string;
   expenseDate?: string;
 }) {
-  return apiFetch<OperatingExpense>("/api/expenses", {
+  return apiFetch<{ id: string }>("/api/expenses", {
     method: "POST",
     body: JSON.stringify(data),
   });
