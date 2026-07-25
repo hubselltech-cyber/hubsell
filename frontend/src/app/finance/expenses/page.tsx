@@ -145,9 +145,11 @@ function AddTxnDialog({
   });
   const expenseType = form.watch("type");
   const selectedPlatform = form.watch("platform");
-  // Cả THU lẫn CHI: chọn Sàn rồi Shop (shop lọc theo sàn đã chọn).
+  // CHI: chọn Sàn rồi Shop (lọc theo sàn). THU: chỉ chọn Shop (mọi sàn).
   const platforms = Array.from(new Set(channels.map((c) => c.channelName)));
-  const shopOptions = channels.filter((c) => c.channelName === selectedPlatform);
+  const shopOptions = isIncome
+    ? channels
+    : channels.filter((c) => c.channelName === selectedPlatform);
 
   // Nạp SKU (chỉ cần cho CHI biến đổi) khi mở dialog.
   useEffect(() => {
@@ -170,10 +172,9 @@ function AddTxnDialog({
   }, [open, isIncome]);
 
   async function onSubmit(values: TxnFormValues) {
-    // Cả THU lẫn CHI đều đi qua NGÂN HÀNG: THU cộng vào, CHI trừ khỏi cột Ngân
-    // hàng. Ví sàn CHỈ để nhận tiền sàn quyết toán về, không dùng thu/chi thủ công.
+    // Nguồn tiền = shop được chọn. Túi tiền do BACKEND ép = Ngân hàng (ERP: thu/chi
+    // thủ công luôn qua ngân hàng, KHÔNG đụng Ví sàn).
     const fundChannelId = values.shopChannelId;
-    const fundSource: FundSourceType = "BANK_ACCOUNT";
     setSubmitting(true);
     try {
       await createOperatingTxn({
@@ -181,7 +182,6 @@ function AddTxnDialog({
         name: values.name,
         amount: Number(values.amount),
         fundChannelId,
-        fundSource,
         ...(isIncome
           ? {}
           : {
@@ -317,36 +317,38 @@ function AddTxnDialog({
               />
             )}
 
-            {/* NGUỒN TIỀN — chọn Sàn rồi Shop (để lọc báo cáo theo sàn/shop). Dòng
-                tiền: CẢ THU LẪN CHI đều qua cột NGÂN HÀNG của gian (THU +, CHI −).
-                Ví sàn không đụng tới ở đây. */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="platform"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Chọn sàn</FormLabel>
-                    <FormControl>
-                      <NativeSelect
-                        {...field}
-                        onChange={(e) => {
-                          field.onChange(e);
-                          form.setValue("shopChannelId", ""); // đổi sàn → reset shop
-                        }}
-                      >
-                        <option value="">— Chọn sàn —</option>
-                        {platforms.map((p) => (
-                          <option key={p} value={p}>
-                            {CHANNEL_META[p]?.label ?? p}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* NGUỒN TIỀN — CHI: [Sàn]+[Shop] để định danh đối tượng chịu chi phí.
+                THU: chỉ [Shop] hưởng khoản thu. Dòng tiền LUÔN qua cột Ngân hàng
+                của shop (backend ép BANK_ACCOUNT) — Ví sàn không đụng tới. */}
+            <div className={cn(!isIncome && "grid grid-cols-2 gap-4")}>
+              {!isIncome && (
+                <FormField
+                  control={form.control}
+                  name="platform"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Chọn sàn</FormLabel>
+                      <FormControl>
+                        <NativeSelect
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            form.setValue("shopChannelId", ""); // đổi sàn → reset shop
+                          }}
+                        >
+                          <option value="">— Chọn sàn —</option>
+                          {platforms.map((p) => (
+                            <option key={p} value={p}>
+                              {CHANNEL_META[p]?.label ?? p}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="shopChannelId"
@@ -354,13 +356,20 @@ function AddTxnDialog({
                   <FormItem>
                     <FormLabel>Chọn shop</FormLabel>
                     <FormControl>
-                      <NativeSelect {...field} disabled={!selectedPlatform}>
+                      <NativeSelect
+                        {...field}
+                        disabled={!isIncome && !selectedPlatform}
+                      >
                         <option value="">
-                          {!selectedPlatform ? "— Chọn sàn trước —" : "— Chọn gian hàng —"}
+                          {!isIncome && !selectedPlatform
+                            ? "— Chọn sàn trước —"
+                            : "— Chọn gian hàng —"}
                         </option>
                         {shopOptions.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.shopName}
+                            {isIncome
+                              ? `${CHANNEL_META[c.channelName]?.label ?? c.channelName} · ${c.shopName}`
+                              : c.shopName}
                           </option>
                         ))}
                       </NativeSelect>
@@ -372,8 +381,8 @@ function AddTxnDialog({
             </div>
             <p className="text-xs text-muted-foreground">
               {isIncome
-                ? "Khoản thu sẽ CỘNG vào cột Ngân hàng của gian này trong Báo cáo dòng tiền."
-                : "Khoản chi sẽ TRỪ khỏi cột Ngân hàng của gian này trong Báo cáo dòng tiền."}
+                ? "Khoản thu sẽ CỘNG vào cột Ngân hàng của shop này trong Báo cáo dòng tiền."
+                : "Khoản chi sẽ TRỪ khỏi cột Ngân hàng của shop này trong Báo cáo dòng tiền."}
             </p>
 
             <div className="grid grid-cols-2 gap-4">

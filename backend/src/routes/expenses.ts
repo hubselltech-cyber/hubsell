@@ -25,10 +25,6 @@ const VALID_CATEGORIES: ExpenseCategory[] = [
   ExpenseCategory.ADS,
   ExpenseCategory.OTHER,
 ];
-const VALID_SOURCES: FundSourceType[] = [
-  FundSourceType.PLATFORM_WALLET,
-  FundSourceType.BANK_ACCOUNT,
-];
 
 // GET /api/expenses — danh sách THU & CHI vận hành của shop (mới nhất trước)
 router.get("/", async (req: AuthRequest, res, next) => {
@@ -74,7 +70,6 @@ router.post("/", async (req: AuthRequest, res, next) => {
       note,
       expenseDate,
       fundChannelId,
-      fundSource,
     } = req.body ?? {};
 
     // Chiều giao dịch: mặc định CHI để tương thích ngược với form cũ.
@@ -115,18 +110,15 @@ router.post("/", async (req: AuthRequest, res, next) => {
         ? appliedSku.trim()
         : null;
 
-    // NGUỒN TIỀN ÁP DỤNG — TÙY CHỌN ở API (form module bắt buộc client-side). Nếu
-    // gắn thì gian phải thuộc chủ shop + túi tiền hợp lệ; khoản KHÔNG gắn nguồn
-    // vẫn tính vào P&L nhưng không tác động bảng dòng tiền.
+    // NGUỒN TIỀN — TÙY CHỌN ở API (form module gắn shop; quick-add dashboard bỏ trống).
+    // ERP CORE LOGIC: mọi khoản thu/chi THỦ CÔNG đi qua NGÂN HÀNG, TUYỆT ĐỐI không
+    // đụng Ví sàn (ví sàn chỉ nhận tiền sàn quyết toán về). Vì vậy khi có gắn gian,
+    // ÉP fundSource = BANK_ACCOUNT bất kể client gửi gì.
     let finalFundChannelId: string | null = null;
     let finalFundSource: FundSourceType | null = null;
-    if (fundChannelId || fundSource) {
-      if (typeof fundChannelId !== "string" || !fundChannelId) {
-        res.status(400).json({ error: "Thiếu gian hàng cho nguồn tiền" });
-        return;
-      }
-      if (!VALID_SOURCES.includes(fundSource)) {
-        res.status(400).json({ error: "Nguồn tiền không hợp lệ (Ví sàn / Ngân hàng)" });
+    if (fundChannelId) {
+      if (typeof fundChannelId !== "string") {
+        res.status(400).json({ error: "Gian hàng cho nguồn tiền không hợp lệ" });
         return;
       }
       const channel = await prisma.channel.findFirst({
@@ -138,7 +130,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
         return;
       }
       finalFundChannelId = fundChannelId;
-      finalFundSource = fundSource as FundSourceType;
+      finalFundSource = FundSourceType.BANK_ACCOUNT; // luôn Ngân hàng
     }
 
     if (note !== undefined && typeof note !== "string") {
