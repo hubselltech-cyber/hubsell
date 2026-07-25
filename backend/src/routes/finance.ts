@@ -1558,7 +1558,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    const [delivered, expenses, inFlight, cancelled] = await Promise.all([
+    const [delivered, expenses, inFlight, cancelled, operatingIncomeAgg] =
+      await Promise.all([
       fetchDeliveredOrders(scope, range),
       prisma.operatingExpense.findMany({
         where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
@@ -1602,7 +1603,14 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         },
         select: { totalAmount: true },
       }),
+      // Tổng THU vận hành nhập tay trong kỳ (đền bù, thưởng…) — cộng vào lợi nhuận.
+      // Shop-wide như chi phí vận hành (xem operatingExpenseIsShopWide).
+      prisma.operatingExpense.aggregate({
+        _sum: { amount: true },
+        where: { userId: ownerId, direction: TransactionDirection.INCOME, expenseDate: range },
+      }),
     ]);
+    const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
 
     // ===== DÒNG TIỀN TREO =====
     // Tiền chờ về (dự kiến): đơn Đang giao/Chờ xử lý — dùng số TẠM TÍNH
@@ -1686,12 +1694,19 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // --- CỘT 4: LỢI NHUẬN ---
     // Lợi nhuận thực tế: từ đơn ĐÃ HOÀN THÀNH (đã quyết toán xong)
     const settledCogs = settledOrders.reduce((s, o) => s + orderCost(o).cost, 0);
-    const actualProfit = settledPayout - settledCogs;
+    // Lợi nhuận THỰC TẾ (mở rộng): tiền thực nhận từ đơn Hoàn thành (đã trừ SẴN phí
+    // sàn trong actualPayout) + THU vận hành khác − giá vốn − chi phí biến đổi −
+    // chi phí cố định. KHÔNG trừ phí sàn lần nữa (đã nằm trong settledPayout).
+    const actualProfit =
+      settledPayout +
+      operatingIncomeTotal -
+      settledCogs -
+      variableExpenseTotal -
+      fixedExpenseTotal;
     // Lợi nhuận dự kiến: từ đơn ĐANG CHỜ (số tạm tính)
     const expectedProfit = pendingPayout - pendingCogs;
-    // Tổng lợi nhuận = (thực tế + dự kiến) − chi phí biến đổi − chi phí cố định
-    const totalProfit =
-      actualProfit + expectedProfit - variableExpenseTotal - fixedExpenseTotal;
+    // Tổng lợi nhuận = thực tế + dự kiến (chi phí vận hành đã nằm trong "thực tế").
+    const totalProfit = actualProfit + expectedProfit;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao)
     let totalRevenue = 0;
@@ -1870,9 +1885,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             // % ở đây là BIÊN LỢI NHUẬN (lãi / doanh thu tương ứng),
             // không phải tỷ trọng — vì tổng lợi nhuận có thể âm.
             {
+              key: "operatingIncome",
+              label: "Thu nhập vận hành khác",
+              hint: "Các khoản thu ngoài đơn hàng như đền bù, thưởng... được nhập thủ công từ module Thu chi vận hành",
+              amount: operatingIncomeTotal,
+              percent: pct(operatingIncomeTotal, settledPayout),
+            },
+            {
               key: "actual",
               label: "Lợi nhuận thực tế",
-              hint: "Tiền thực nhận − giá vốn, tính trên các đơn ĐÃ quyết toán xong. % = biên lợi nhuận trên doanh thu hoàn thành",
+              hint: "Lợi nhuận thực tế = (Tiền thực nhận từ đơn Hoàn thành + Thu nhập vận hành khác) − Giá vốn − Chi phí biến đổi − Chi phí cố định. Phí sàn đã được trừ sẵn trong tiền thực nhận.",
               amount: actualProfit,
               percent: pct(actualProfit, settledPayout),
             },

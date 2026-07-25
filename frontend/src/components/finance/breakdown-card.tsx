@@ -75,7 +75,15 @@ export function BreakdownCard({
       ),
       value: (
         <>
-          {itemsAreDeductions ? (isCredit ? "+ " : "− ") : ""}
+          {itemsAreDeductions
+            ? isCredit
+              ? "+ "
+              : "− "
+            : colorBySign
+              ? item.amount >= 0
+                ? "+ "
+                : "− "
+              : ""}
           <Money value={Math.abs(item.amount)} />
         </>
       ),
