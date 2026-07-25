@@ -41,8 +41,11 @@ export function createApp() {
   // Đăng nhập / đăng ký (công khai)
   app.use("/api/auth", authRouter);
 
-  // Webhook từ sàn (công khai — sàn xác thực bằng token của kênh, không dùng JWT)
+  // Webhook từ sàn (công khai — xác thực bằng CHỮ KÝ trên body, không dùng JWT).
+  // Mount cả 2 dạng: /api/webhooks (TikTok đã đăng ký từ trước) và /api/webhook
+  // (số ít — URL đăng ký Push Shopee: http://hubsell.tech/api/webhook/shopee).
   app.use("/api/webhooks", webhooksRouter);
+  app.use("/api/webhook", webhooksRouter);
 
   // ============================================================
   // PHÂN QUYỀN 2 LỚP

@@ -8,9 +8,10 @@
 // ============================================================
 
 import type { Channel, Prisma } from "@prisma/client";
-import { ChannelName, InventoryLogType, ShippingStatus } from "@prisma/client";
+import { ChannelName, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
 import { expireToDate } from "./config";
 import {
   fetchOrders,
@@ -425,112 +426,7 @@ function shouldDeductStock(tiktokStatus?: string): boolean {
   }
 }
 
-type StockOutcome =
-  | "none"
-  | "deducted"
-  | "already-deducted"
-  | "restored"
-  | "already-restored";
-
-/**
- * Trừ kho cho một đơn ĐÚNG MỘT LẦN. Chốt chặn: nếu `stockDeductedAt` đã có thì
- * bỏ qua (webhook đẩy lại nhiều lần). Dùng `decrement` nguyên tử (an toàn khi
- * nhiều đơn cùng trừ một SKU); CHO PHÉP tồn về âm để phơi bày tình trạng bán
- * vượt kho thay vì âm thầm chặn — đơn đã phát sinh thật trên sàn rồi.
- * Chỉ trừ các dòng đã liên kết SKU (productId != null); dòng chưa liên kết bỏ qua.
- */
-async function deductStockTx(
-  tx: Prisma.TransactionClient,
-  orderId: string
-): Promise<{ deducted: number; outcome: StockOutcome }> {
-  const order = await tx.order.findUnique({
-    where: { id: orderId },
-    select: {
-      stockDeductedAt: true,
-      orderCode: true,
-      items: {
-        where: { productId: { not: null } },
-        select: { productId: true, quantity: true },
-      },
-    },
-  });
-  if (!order) return { deducted: 0, outcome: "none" };
-  if (order.stockDeductedAt) return { deducted: 0, outcome: "already-deducted" };
-
-  let deducted = 0;
-  for (const it of order.items) {
-    await tx.product.update({
-      where: { id: it.productId! },
-      data: { quantityInStock: { decrement: it.quantity } },
-    });
-    await tx.inventoryLog.create({
-      data: {
-        productId: it.productId!,
-        changeQuantity: -it.quantity,
-        type: InventoryLogType.SYNC,
-        reason: `Trừ kho tự động — webhook TikTok đơn ${order.orderCode}`,
-        orderId,
-      },
-    });
-    deducted += it.quantity;
-  }
-
-  // Đánh mốc kể cả khi 0 dòng khớp SKU: coi như đã xử lý, tránh quét lại mỗi webhook.
-  await tx.order.update({
-    where: { id: orderId },
-    data: { stockDeductedAt: new Date() },
-  });
-  return { deducted, outcome: deducted > 0 ? "deducted" : "none" };
-}
-
-/**
- * Hoàn kho khi đơn bị hủy — mirror luồng hủy đơn thủ công ở routes/orders.ts:
- * tìm các bút toán TRỪ kho gắn với đơn, cộng trả lại, ghi mốc `stockRestoredAt`
- * để không hoàn lần hai. Chỉ hoàn khi trước đó thực sự đã trừ.
- */
-async function restoreStockTx(
-  tx: Prisma.TransactionClient,
-  orderId: string
-): Promise<{ restored: number; outcome: StockOutcome }> {
-  const order = await tx.order.findUnique({
-    where: { id: orderId },
-    select: { stockRestoredAt: true, orderCode: true },
-  });
-  if (!order) return { restored: 0, outcome: "none" };
-  if (order.stockRestoredAt) return { restored: 0, outcome: "already-restored" };
-
-  const deductions = await tx.inventoryLog.findMany({
-    where: { orderId, changeQuantity: { lt: 0 } },
-  });
-
-  let restored = 0;
-  for (const log of deductions) {
-    const qty = Math.abs(log.changeQuantity);
-    await tx.product.update({
-      where: { id: log.productId },
-      data: { quantityInStock: { increment: qty } },
-    });
-    await tx.inventoryLog.create({
-      data: {
-        productId: log.productId,
-        changeQuantity: qty,
-        type: InventoryLogType.SYNC,
-        reason: `Hoàn kho tự động — webhook TikTok hủy đơn ${order.orderCode}`,
-        orderId,
-      },
-    });
-    restored += qty;
-  }
-
-  if (restored > 0) {
-    await tx.order.update({
-      where: { id: orderId },
-      data: { stockRestoredAt: new Date() },
-    });
-    return { restored, outcome: "restored" };
-  }
-  return { restored: 0, outcome: "none" };
-}
+// deductStockTx/restoreStockTx idempotent nay ở ../order-stock (dùng chung Shopee).
 
 export interface OrderEventResult {
   found: boolean; // TikTok có trả chi tiết đơn không
@@ -567,7 +463,7 @@ export async function processTiktokOrderEvent(
 
     // Quyết định tác động tồn kho theo trạng thái TikTok.
     if (order.order_status === "CANCELLED") {
-      const r = await restoreStockTx(tx, up.orderId);
+      const r = await restoreStockTx(tx, up.orderId, "webhook TikTok");
       return {
         found: true,
         created: up.created,
@@ -578,7 +474,7 @@ export async function processTiktokOrderEvent(
     }
 
     if (shouldDeductStock(order.order_status)) {
-      const d = await deductStockTx(tx, up.orderId);
+      const d = await deductStockTx(tx, up.orderId, "webhook TikTok");
       return {
         found: true,
         created: up.created,

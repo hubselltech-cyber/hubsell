@@ -13,8 +13,19 @@ import {
   findTiktokChannelByShopId,
   processTiktokOrderEvent,
 } from "../integrations/tiktok/service";
+import { isShopeeConfigured } from "../integrations/shopee/config";
+import {
+  SHOPEE_PUSH_CODE,
+  enqueueShopeeWebhook,
+  verifyShopeeWebhookSignature,
+  type ShopeePushPayload,
+} from "../integrations/shopee/webhook";
+import { registerShopeeWebhookHandler } from "../integrations/shopee/service";
 
 const router = Router();
+
+// Nối tầng nghiệp vụ Shopee vào hàng đợi webhook (1 lần lúc nạp module).
+registerShopeeWebhookHandler();
 
 // Loại sự kiện webhook của TikTok Shop (trường `type`, dạng số).
 // Ta chỉ xử lý ORDER_STATUS_CHANGE; các loại khác ack 200 và bỏ qua.
@@ -306,6 +317,55 @@ router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
     console.error("[Webhook TikTok]", err);
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+// ============================================================
+// POST /api/webhook/shopee — WEBHOOK THẬT TỪ SHOPEE (Push Mechanism)
+//
+// Shopee push khi có sự kiện: code 3 (lịch lấy hàng), 4 (đơn đổi trạng thái),
+// 5 (thay đổi uỷ quyền). Yêu cầu khắt khe của Shopee: ack 200 trong <3 GIÂY,
+// chậm nhiều lần sẽ bị block push. Vì vậy route này CHỈ verify chữ ký rồi ack
+// ngay; toàn bộ xử lý DB/API (kéo chi tiết đơn, upsert, trừ/hoàn kho) chạy ở
+// hàng đợi nền trong integrations/shopee/webhook.ts.
+//
+// Chữ ký: header `Authorization` = HMAC-SHA256(partner_key, url + "|" + RAW
+// body). Bắt buộc kiểm trên req.rawBody (đã giữ ở app.ts) — body qua JSON.parse
+// serialize lại là sai chữ ký. Sai chữ ký → 401, không xử lý gì.
+// ============================================================
+router.post("/shopee", (req: Request & { rawBody?: Buffer }, res) => {
+  // Chưa cấu hình partner_key thì không thể xác thực → từ chối, tránh nhận giả.
+  if (!isShopeeConfigured()) {
+    res.status(503).json({ error: "Shopee chưa được cấu hình trên máy chủ" });
+    return;
+  }
+
+  // 1) XÁC THỰC CHỮ KÝ trên body thô. Thiếu rawBody (không thể verify) coi như sai.
+  const raw = req.rawBody;
+  const signature = req.header("authorization") ?? undefined;
+  if (!raw || !verifyShopeeWebhookSignature(raw, signature)) {
+    res.status(401).json({ error: "Chữ ký webhook không hợp lệ" });
+    return;
+  }
+
+  const payload = (req.body ?? {}) as ShopeePushPayload;
+  const code = Number(payload.code);
+  const handled = [
+    SHOPEE_PUSH_CODE.LOGISTICS,
+    SHOPEE_PUSH_CODE.ORDER_STATUS,
+    SHOPEE_PUSH_CODE.AUTHORIZATION,
+  ] as number[];
+
+  // 2) Sự kiện ngoài phạm vi (ping code 0, test...) → ack luôn cho Shopee khỏi retry.
+  if (!handled.includes(code)) {
+    res.status(200).json({ ok: true, ignored: true, code });
+    return;
+  }
+
+  // 3) ACK 200 NGAY (yêu cầu <3s của Shopee) rồi mới xếp hàng xử lý nền.
+  //    Dedup theo hash raw body chặn bản retry y nguyên; sự kiện lọt lưới vẫn
+  //    an toàn nhờ upsert + mốc kho idempotent ở tầng service.
+  const { queued, duplicate } = enqueueShopeeWebhook(raw, payload);
+  res.status(200).json({ ok: true, code, queued, duplicate });
 });
 
 export default router;

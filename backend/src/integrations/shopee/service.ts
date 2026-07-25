@@ -12,6 +12,12 @@ import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
+import {
+  SHOPEE_PUSH_CODE,
+  setShopeeWebhookHandler,
+  type ShopeePushPayload,
+} from "./webhook";
 import {
   getAccessToken,
   getOrderDetail,
@@ -428,4 +434,192 @@ export async function upsertShopeeOrderTx(
   }
 
   return { created: true, itemsCreated: lines.length };
+}
+
+// ============================================================
+// WEBHOOK THỜI GIAN THỰC — đơn mới / đổi trạng thái → upsert + trừ/hoàn kho
+//
+// Khác luồng đồng bộ lô (chỉ upsert), webhook xử lý TỒN KHO real-time: đơn đã
+// chốt thì trừ kho, đơn hủy thì hoàn kho — mirror TikTok, dùng chung order-stock.
+// Payload push của Shopee chỉ có order_sn + status nên phải gọi get_order_detail
+// lấy đủ dòng hàng rồi mới upsert, tất cả trong MỘT transaction.
+// ============================================================
+
+/** Tìm gian Shopee ĐANG HOẠT ĐỘNG theo shop_id trong payload (đã qua verify chữ ký). */
+export async function findShopeeChannelByShopId(
+  shopId: string
+): Promise<Channel | null> {
+  return prisma.channel.findFirst({
+    where: {
+      channelName: ChannelName.SHOPEE,
+      externalShopId: shopId,
+      status: "ACTIVE",
+      refreshToken: { not: null },
+    },
+  });
+}
+
+/**
+ * Các trạng thái Shopee mà đơn đã ĐƯỢC CHỐT và cần trừ kho (khách đã thanh
+ * toán/COD xác nhận, shop phải giao). Loại UNPAID/INVOICE_PENDING (chưa chắc),
+ * IN_CANCEL (chờ duyệt hủy — chưa hoàn vội) và CANCELLED (hoàn kho, xử lý riêng).
+ */
+function shouldDeductShopeeStock(status?: string): boolean {
+  switch (status) {
+    case "READY_TO_SHIP":
+    case "PROCESSED":
+    case "SHIPPED":
+    case "TO_CONFIRM_RECEIVE":
+    case "COMPLETED":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export interface ShopeeOrderEventResult {
+  found: boolean; // Shopee có trả chi tiết đơn không
+  created: boolean; // upsert tạo mới hay cập nhật
+  orderStatus?: string;
+  inventory: StockOutcome;
+  deducted?: number;
+  restored?: number;
+}
+
+/**
+ * XỬ LÝ MỘT SỰ KIỆN ĐƠN HÀNG (code 3 logistics / code 4 order status). Kéo chi
+ * tiết đơn mới nhất từ API rồi upsert + tác động tồn kho. Idempotent toàn phần:
+ * upsert theo (channelId, order_sn); trừ/hoàn kho chặn bằng stockDeductedAt/
+ * stockRestoredAt — Shopee retry bao nhiêu lần cũng không ghi trùng.
+ */
+export async function processShopeeOrderEvent(
+  channel: Channel,
+  orderSn: string
+): Promise<ShopeeOrderEventResult> {
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  let order: ShopeeOrderDetail | undefined;
+  try {
+    const details = await getOrderDetail(accessToken, shopId, [orderSn]);
+    order = details[0];
+  } catch (err) {
+    // "Đơn không tồn tại" là lỗi VĨNH VIỄN (sn sai/đơn bị xoá) — trả found:false
+    // để hàng đợi KHÔNG retry vô ích; lỗi khác (mạng, token) ném tiếp cho retry.
+    if ((err as Error).message.includes("error_not_found")) {
+      return { found: false, created: false, inventory: "none" };
+    }
+    throw err;
+  }
+  if (!order) {
+    return { found: false, created: false, inventory: "none" };
+  }
+
+  const feeRate =
+    Number(channel.feeRate) > 0
+      ? Number(channel.feeRate)
+      : PLATFORM_FEE_RATE[ChannelName.SHOPEE];
+
+  return prisma.$transaction(async (tx) => {
+    const up = await upsertShopeeOrderTx(tx, channel, order, feeRate);
+    const orderRow = await tx.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
+      select: { id: true },
+    });
+    if (!orderRow) {
+      return { found: true, created: up.created, orderStatus: order.order_status, inventory: "none" as StockOutcome };
+    }
+
+    if (order.order_status === "CANCELLED") {
+      const r = await restoreStockTx(tx, orderRow.id, "webhook Shopee");
+      return {
+        found: true,
+        created: up.created,
+        orderStatus: order.order_status,
+        inventory: r.outcome,
+        restored: r.restored,
+      };
+    }
+
+    if (shouldDeductShopeeStock(order.order_status)) {
+      const d = await deductStockTx(tx, orderRow.id, "webhook Shopee");
+      return {
+        found: true,
+        created: up.created,
+        orderStatus: order.order_status,
+        inventory: d.outcome,
+        deducted: d.deducted,
+      };
+    }
+
+    return {
+      found: true,
+      created: up.created,
+      orderStatus: order.order_status,
+      inventory: "none" as StockOutcome,
+    };
+  });
+}
+
+/**
+ * XỬ LÝ SỰ KIỆN UỶ QUYỀN (code 5): shop gia hạn/thu hồi quyền app. Payload không
+ * nói rõ chiều thay đổi nên KIỂM CHỨNG bằng chính API: gọi get_shop_info — token
+ * còn dùng được → giữ/khôi phục ACTIVE; bị sàn từ chối → đánh dấu DISCONNECTED
+ * để UI nhắc kết nối lại. Không xoá token (thu hồi nhầm còn tự phục hồi được).
+ */
+export async function processShopeeAuthorizationEvent(
+  shopId: string
+): Promise<{ status: string } | null> {
+  const channel = await prisma.channel.findFirst({
+    where: {
+      channelName: ChannelName.SHOPEE,
+      externalShopId: shopId,
+      refreshToken: { not: null },
+    },
+  });
+  if (!channel) return null;
+
+  let ok = false;
+  try {
+    const { accessToken } = await getValidShopeeAccessToken(channel);
+    const info = await getShopInfo(accessToken, shopId);
+    ok = Boolean(info.shop_name || info.region || info.status);
+  } catch {
+    ok = false;
+  }
+
+  const status = ok ? "ACTIVE" : "DISCONNECTED";
+  if (channel.status !== status) {
+    await prisma.channel.update({ where: { id: channel.id }, data: { status } });
+  }
+  return { status };
+}
+
+/**
+ * Bộ chia sự kiện cho hàng đợi webhook (đăng ký 1 lần lúc app khởi động).
+ * Ném lỗi = báo hàng đợi retry (lỗi tạm thời); các trường hợp "không có gì để
+ * làm" (shop chưa nối, thiếu order_sn...) thì nuốt êm — retry cũng vô ích.
+ */
+export function registerShopeeWebhookHandler(): void {
+  setShopeeWebhookHandler(async (payload: ShopeePushPayload) => {
+    const code = Number(payload.code);
+    const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
+    if (!shopId) return;
+
+    if (code === SHOPEE_PUSH_CODE.AUTHORIZATION) {
+      const r = await processShopeeAuthorizationEvent(shopId);
+      console.log(`[Webhook Shopee] Uỷ quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
+      return;
+    }
+
+    if (code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.LOGISTICS) {
+      const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "");
+      if (!orderSn) return;
+      const channel = await findShopeeChannelByShopId(shopId);
+      if (!channel) return;
+      const result = await processShopeeOrderEvent(channel, orderSn);
+      console.log(
+        `[Webhook Shopee] code=${code} đơn ${orderSn} (shop ${shopId}) →`,
+        JSON.stringify(result)
+      );
+    }
+  });
 }
