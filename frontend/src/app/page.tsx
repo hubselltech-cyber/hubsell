@@ -556,7 +556,7 @@ export default function DashboardPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Tính trên {analytics ? formatNumber(analytics.activeOrderCount) : "—"}{" "}
-            đơn phát sinh (không tính đơn hủy) trong khoảng{" "}
+            đơn phát sinh (không tính đơn hủy & hoàn/trả) trong khoảng{" "}
             <b>{formatRangeLabel(range).toLowerCase()}</b>.
           </p>
         </div>

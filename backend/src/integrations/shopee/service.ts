@@ -9,7 +9,7 @@
 
 import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
-import { ChannelName, ShippingStatus } from "@prisma/client";
+import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
 import {
@@ -225,6 +225,16 @@ function mapShopeeStatus(status?: string): ShippingStatus {
   }
 }
 
+/**
+ * Đơn Shopee đang HOÀN/TRẢ → cờ trên trục returnStatus (độc lập shippingStatus).
+ * TO_RETURN = người mua yêu cầu trả hàng/hoàn tiền. Nhờ cờ này, báo cáo Tổng quan
+ * tách đơn hoàn ra khỏi "Thành công" và khỏi doanh thu. CHỈ nhận diện, KHÔNG tự
+ * cộng kho — việc cộng kho khi hàng về là của luồng nhận hàng hoàn ở kho.
+ */
+function shopeeReturnStatus(status?: string): ReturnStatus | null {
+  return status === "TO_RETURN" ? ReturnStatus.AWAITING : null;
+}
+
 /** Gộp item_list theo SKU người bán, cộng dồn số lượng. */
 function aggregateShopeeItems(order: ShopeeOrderDetail) {
   const agg = new Map<
@@ -348,6 +358,7 @@ export async function upsertShopeeOrderTx(
   const orderCode = order.order_sn;
   const totalAmount = Number(order.total_amount ?? 0) || 0;
   const shippingStatus = mapShopeeStatus(order.order_status);
+  const returning = shopeeReturnStatus(order.order_status);
   const paymentStatus = order.order_status === "UNPAID" ? "UNPAID" : "PAID";
   const customerName =
     order.recipient_address?.name?.trim() || order.buyer_username?.trim() || "Khách Shopee";
@@ -355,13 +366,22 @@ export async function upsertShopeeOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true },
+    select: { id: true, returnStatus: true },
   });
 
   if (existing) {
     await tx.order.update({
       where: { id: existing.id },
-      data: { shippingStatus, paymentStatus, totalAmount },
+      data: {
+        shippingStatus,
+        paymentStatus,
+        totalAmount,
+        // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong
+        // (RECEIVED_INTACT / CLAIM_SETTLED…) để không regress tiến độ hoàn.
+        ...(returning && existing.returnStatus === ReturnStatus.NONE
+          ? { returnStatus: returning }
+          : {}),
+      },
     });
     return { created: false, itemsCreated: 0 };
   }
@@ -386,6 +406,7 @@ export async function upsertShopeeOrderTx(
       platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
       paymentStatus,
       shippingStatus,
+      ...(returning ? { returnStatus: returning } : {}),
       itemCount: lines.length,
       createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
     },

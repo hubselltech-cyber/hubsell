@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { ReturnStatus } from "@prisma/client";
 import { prisma } from "../prisma";
 import { canSeeFinancials, type AuthRequest } from "../auth";
 import { parseDateRange } from "../date-range";
@@ -6,6 +7,12 @@ import { channelScope, hasChannelFilter } from "../channel-filter";
 import { FEE_SELECT, orderPlatformFee } from "../order-fee";
 
 const router = Router();
+
+// Đơn HOÀN/TRẢ đang xử lý — nhận diện qua trục returnStatus (ĐỘC LẬP với
+// shippingStatus). Đây là các đơn bị LOẠI khỏi ô trạng thái giao (DELIVERED…) và
+// khỏi doanh thu, chỉ đếm ở ô "Hoàn/Trả". Nhờ vậy phễu là một phân hoạch loại
+// trừ nhau: Σ(ô trạng thái) + Hoàn/Trả = tổng đơn (hết cảnh đếm trùng).
+const RETURNING_IN = { in: [ReturnStatus.AWAITING, ReturnStatus.DAMAGED] };
 
 // Đổi Date → chuỗi "yyyy-mm-dd" theo giờ máy chủ
 function toDateKey(d: Date): string {
@@ -54,11 +61,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
         })()
       : undefined;
 
-    // 1) Toàn bộ đơn PHÁT SINH trong kỳ, trừ đơn hủy
+    // 1) Toàn bộ đơn PHÁT SINH trong kỳ, TRỪ đơn hủy VÀ đơn đang hoàn/trả.
+    // Đơn hoàn không được coi là bán thành công → không tính vào doanh thu/giá
+    // vốn/chuỗi ngày (thống nhất với ô "Hoàn/Trả" ở phễu bên dưới).
     const activeOrders = await prisma.order.findMany({
       where: {
         channel: scope,
         shippingStatus: { not: "CANCELLED" },
+        NOT: { returnStatus: RETURNING_IN },
         createdAt: range,
       },
       select: {
@@ -204,7 +214,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       prisma.order.groupBy({
         by: ["shippingStatus"],
         _count: { _all: true },
-        where: { channel: scope, createdAt: range },
+        // LOẠI đơn đang hoàn khỏi các ô trạng thái giao: một đơn "vừa DELIVERED
+        // vừa đang hoàn" chỉ được tính ở ô Hoàn/Trả, không đếm cả hai (hết trùng).
+        where: { channel: scope, createdAt: range, NOT: { returnStatus: RETURNING_IN } },
       }),
       prisma.order.count({
         where: {
@@ -212,7 +224,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
           createdAt: range,
           // Chỉ đếm hàng hoàn CHƯA xử lý xong (đang chờ nhận / chờ khiếu nại).
           // Đếm mọi đơn từng hoàn sẽ báo động cả những vụ đã giải quyết từ lâu.
-          returnStatus: { in: ["AWAITING", "DAMAGED"] },
+          returnStatus: RETURNING_IN,
         },
       }),
     ]);
@@ -224,7 +236,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       CANCELLED: 0,
       RETURNING: returningCount,
     };
-    let orderCount = 0;
+    // Tổng đơn = Σ(ô trạng thái, đã loại đơn hoàn) + ô Hoàn/Trả. Bằng đúng tổng
+    // phễu hiển thị và bằng số đơn thực tế trong kỳ — hết cảnh 3 con số lệch nhau.
+    let orderCount = returningCount;
     for (const g of statusGroups) {
       pipeline[g.shippingStatus] = g._count._all;
       orderCount += g._count._all;
@@ -242,6 +256,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
               where: {
                 channel: scope,
                 shippingStatus: { not: "CANCELLED" },
+                NOT: { returnStatus: RETURNING_IN },
                 createdAt: prevRange,
               },
             }),
@@ -267,6 +282,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       where: {
         channel: scope,
         shippingStatus: { not: "CANCELLED" },
+        NOT: { returnStatus: RETURNING_IN },
         createdAt: range,
       },
     });
