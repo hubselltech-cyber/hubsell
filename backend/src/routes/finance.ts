@@ -1694,19 +1694,15 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // --- CỘT 4: LỢI NHUẬN ---
     // Lợi nhuận thực tế: từ đơn ĐÃ HOÀN THÀNH (đã quyết toán xong)
     const settledCogs = settledOrders.reduce((s, o) => s + orderCost(o).cost, 0);
-    // Lợi nhuận THỰC TẾ (mở rộng): tiền thực nhận từ đơn Hoàn thành (đã trừ SẴN phí
-    // sàn trong actualPayout) + THU vận hành khác − giá vốn − chi phí biến đổi −
-    // chi phí cố định. KHÔNG trừ phí sàn lần nữa (đã nằm trong settledPayout).
+    // Lợi nhuận THỰC TẾ: tiền thực nhận từ đơn Hoàn thành (đã trừ SẴN phí sàn trong
+    // actualPayout) − giá vốn − chi phí biến đổi − chi phí cố định. KHÔNG gồm THU
+    // vận hành (tách thành dòng riêng), không trừ phí sàn lần nữa.
     const actualProfit =
-      settledPayout +
-      operatingIncomeTotal -
-      settledCogs -
-      variableExpenseTotal -
-      fixedExpenseTotal;
+      settledPayout - settledCogs - variableExpenseTotal - fixedExpenseTotal;
     // Lợi nhuận dự kiến: từ đơn ĐANG CHỜ (số tạm tính)
     const expectedProfit = pendingPayout - pendingCogs;
-    // Tổng lợi nhuận = thực tế + dự kiến (chi phí vận hành đã nằm trong "thực tế").
-    const totalProfit = actualProfit + expectedProfit;
+    // Tổng = Thực tế + Dự kiến + THU vận hành khác (3 phần tách riêng, cộng lại).
+    const totalProfit = actualProfit + expectedProfit + operatingIncomeTotal;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao)
     let totalRevenue = 0;
@@ -1885,25 +1881,25 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             // % ở đây là BIÊN LỢI NHUẬN (lãi / doanh thu tương ứng),
             // không phải tỷ trọng — vì tổng lợi nhuận có thể âm.
             {
-              key: "operatingIncome",
-              label: "Thu nhập vận hành khác",
-              hint: "Các khoản thu ngoài đơn hàng như đền bù, thưởng... được nhập thủ công từ module Thu chi vận hành",
-              amount: operatingIncomeTotal,
-              percent: pct(operatingIncomeTotal, settledPayout),
-            },
-            {
               key: "actual",
               label: "Lợi nhuận thực tế",
-              hint: "Lợi nhuận thực tế = (Tiền thực nhận từ đơn Hoàn thành + Thu nhập vận hành khác) − Giá vốn − Chi phí biến đổi − Chi phí cố định. Phí sàn đã được trừ sẵn trong tiền thực nhận.",
+              hint: "Tiền thực nhận từ đơn Hoàn thành (đã trừ phí sàn) − Giá vốn − Chi phí vận hành (biến đổi + cố định).",
               amount: actualProfit,
               percent: pct(actualProfit, settledPayout),
             },
             {
               key: "expected",
               label: "Lợi nhuận dự kiến",
-              hint: "Tiền dự kiến nhận − giá vốn, tính trên các đơn đang chờ xử lý. % = biên lợi nhuận dự kiến",
+              hint: "Tiền dự kiến nhận − giá vốn, trên các đơn đang chờ xử lý.",
               amount: expectedProfit,
               percent: pct(expectedProfit, pendingPayout),
+            },
+            {
+              key: "operatingIncome",
+              label: "Thu nhập vận hành khác",
+              hint: "Khoản thu ngoài đơn hàng (đền bù, thưởng…) nhập tay từ module Thu chi vận hành.",
+              amount: operatingIncomeTotal,
+              percent: pct(operatingIncomeTotal, settledPayout),
             },
           ],
         },
