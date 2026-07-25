@@ -164,9 +164,45 @@ model Channel {
   channelProducts ChannelProduct[]
   staffAccess     StaffChannel[]
   invoiceConfigs  InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
+  walletWithdrawals WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   @@index([userId])
+}
+
+/// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.
+///
+/// Bảng dòng tiền tách "Tiền trên Ví sàn" (đã quyết toán, còn nằm ở ví sàn) khỏi
+/// "Tiền về Ngân hàng" (đã rút về bank thật). Mỗi bản ghi ở đây = một lần tiền
+/// rời ví sàn: TRỪ khỏi cột Ví sàn, CỘNG vào cột Ngân hàng.
+///
+/// Hai nguồn ghi nhận:
+///  - SYNC   : đọc từ lịch sử ví của sàn (Shopee get_wallet_transaction_list),
+///             read-only, idempotent theo externalTxnId.
+///  - MANUAL : kế toán tự xác nhận đã rút (khi muốn khớp trước lúc sàn đồng bộ).
+model WalletWithdrawal {
+  id              String           @id @default(cuid())
+  channelId       String
+  amount          Decimal          @db.Decimal(12, 2) // số tiền rút (dương)
+  status          String           @default("SUCCESS") // SUCCESS | PENDING | FAILED
+  source          WithdrawalSource @default(MANUAL)
+  /// Id giao dịch phía sàn — khoá idempotent khi đồng bộ. NULL cho bản ghi nhập tay.
+  externalTxnId   String?
+  transactionTime DateTime // thời điểm rút (sàn báo, hoặc kế toán nhập)
+  note            String?
+  createdAt       DateTime         @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  /// Đồng bộ một giao dịch sàn chỉ ghi 1 lần. Postgres coi mỗi NULL là khác nhau
+  /// nên nhiều bản ghi MANUAL (externalTxnId = NULL) vẫn chèn được bình thường.
+  @@unique([channelId, externalTxnId])
+  @@index([channelId])
+}
+
+enum WithdrawalSource {
+  MANUAL // kế toán tự xác nhận
+  SYNC   // đọc từ API ví của sàn
 }
 
 /// Phân quyền gian hàng cho nhân viên: nhân viên (staffId) được gán vào kênh

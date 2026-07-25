@@ -420,3 +420,52 @@ export async function getModelList(
   );
   return data.response?.model ?? [];
 }
+
+// ---------- Ví sàn (READ-ONLY) ----------
+
+/** Một dòng giao dịch ví Shopee (rút tiền / giải ngân / phí…). */
+export interface ShopeeWalletTxn {
+  transaction_id?: number | string;
+  status?: string; // vd COMPLETED / SUCCESS / PENDING / FAILED
+  amount?: number; // âm/dương tuỳ money_flow; ta lấy trị tuyệt đối cho lệnh rút
+  transaction_type?: string; // vd WITHDRAWAL_CREATED / WITHDRAWAL_COMPLETED
+  create_time?: number; // epoch giây
+  reason?: string;
+}
+
+export interface ShopeeWalletTxnData extends ShopeeEnvelope {
+  response?: { transaction_list?: ShopeeWalletTxn[]; more?: boolean };
+}
+
+export interface WalletTxnParams {
+  accessToken: string;
+  shopId: string;
+  /** Khoảng thời gian (epoch giây) — Shopee giới hạn cửa sổ, chia lô ở tầng sync. */
+  createTimeFrom: number;
+  createTimeTo: number;
+  pageNo?: number;
+  pageSize?: number;
+}
+
+/**
+ * Lấy LỊCH SỬ GIAO DỊCH VÍ (read-only). Dùng để đối soát dòng tiền rút về ngân
+ * hàng. KHÔNG thực hiện bất kỳ thao tác chuyển tiền nào — chỉ đọc.
+ */
+export async function getWalletTransactionList(
+  params: WalletTxnParams,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeWalletTxnData> {
+  return callShopGet<ShopeeWalletTxnData>(
+    SHOPEE_PATHS.walletTransactionList,
+    params.accessToken,
+    params.shopId,
+    [
+      ["page_no", params.pageNo ?? 0],
+      ["page_size", params.pageSize ?? 100],
+      ["create_time_from", params.createTimeFrom],
+      ["create_time_to", params.createTimeTo],
+    ],
+    "get_wallet_transaction_list",
+    cfg
+  );
+}

@@ -464,9 +464,10 @@ export interface CashFlowRow {
   inTransit: number;
   /** Tiền chờ đối soát: đơn đã giao nhưng sàn chưa quyết toán. */
   pendingSettle: number;
-  /** Tiền đã đối soát: đã về số dư ví sàn (có thể làm lệnh rút). */
+  /** Tiền trên Ví sàn: đã quyết toán, còn ở ví sàn (đã trừ phần đã rút). Có thể ÂM
+   *  nếu số đã rút vượt tiền quyết toán — tín hiệu lệch pha cần đối soát. */
   settled: number;
-  /** Tiền đã thu về: đã rút ví về ngân hàng (GIỮ CHỖ — chưa có tính năng). */
+  /** Tiền về Ngân hàng: đã rút ví sàn về bank (Σ WalletWithdrawal thành công). */
   withdrawn: number;
   /** Tổng dòng tiền dự kiến của gian = tổng 4 cột trên. */
   total: number;
@@ -478,6 +479,46 @@ export interface CashFlowResponse {
 
 export function fetchCashFlow() {
   return apiFetch<CashFlowResponse>("/api/finance/cash-flow");
+}
+
+// ----- Rút ví sàn → ngân hàng (WalletWithdrawal) -----
+
+export interface Withdrawal {
+  id: string;
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  amount: number;
+  status: string;
+  source: "MANUAL" | "SYNC";
+  externalTxnId: string | null;
+  transactionTime: string;
+  note: string | null;
+}
+
+export function fetchWithdrawals(channelId?: string) {
+  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  return apiFetch<{ items: Withdrawal[] }>(`/api/finance/withdrawals${qs}`);
+}
+
+/** Kế toán xác nhận đã rút ví thủ công. */
+export function createWithdrawal(data: {
+  channelId: string;
+  amount: number;
+  transactionTime?: string;
+  note?: string;
+}) {
+  return apiFetch<{ id: string; amount: number }>("/api/finance/withdrawals", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteWithdrawal(id: string) {
+  return apiFetch<{ id: string; deleted: boolean }>(
+    `/api/finance/withdrawals/${id}`,
+    { method: "DELETE" }
+  );
 }
 
 export interface AnalyticsResponse {

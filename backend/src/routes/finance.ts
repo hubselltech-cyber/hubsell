@@ -8,6 +8,7 @@ import {
   Prisma,
   ShippingDisputeStatus,
   ShippingStatus,
+  WithdrawalSource,
 } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
@@ -439,7 +440,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 router.get("/cash-flow", async (req: AuthRequest, res, next) => {
   try {
     const scope = channelScope(req);
-    const [channels, orders] = await Promise.all([
+    const [channels, orders, withdrawals] = await Promise.all([
       prisma.channel.findMany({
         where: scope,
         orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
@@ -455,6 +456,12 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
           actualPayout: true,
           ...FEE_SELECT,
         },
+      }),
+      // Tổng tiền ĐÃ RÚT khỏi ví sàn về ngân hàng (thành công), gom theo gian.
+      prisma.walletWithdrawal.groupBy({
+        by: ["channelId"],
+        _sum: { amount: true },
+        where: { channel: scope, status: "SUCCESS" },
       }),
     ]);
 
@@ -507,7 +514,20 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
       }
     }
 
+    // RÚT VÍ: chuyển tiền từ "đã đối soát" (Ví sàn) sang "đã thu về" (Ngân hàng).
+    // CỐ Ý cho phép Ví sàn ÂM: nếu số đã rút > tiền đã quyết toán thì đó là tín
+    // hiệu lệch pha dữ liệu (sàn chưa đồng bộ hết, hoặc kế toán nhập lố) — để lộ
+    // số âm giúp chủ shop đối soát ngay, không che bằng cách kẹp về 0.
+    for (const w of withdrawals) {
+      const row = byChannel.get(w.channelId);
+      if (!row) continue;
+      const amount = Number(w._sum.amount ?? 0);
+      row.settled -= amount; // rời khỏi ví sàn
+      row.withdrawn += amount; // về ngân hàng
+    }
+
     // Giữ ĐÚNG thứ tự channel để bảng ổn định; kèm tổng dòng tiền dự kiến/gian.
+    // total KHÔNG đổi khi rút ví (tiền chỉ chuyển cột) — vẫn là tổng dòng tiền.
     const rows = channels.map((c) => {
       const b = byChannel.get(c.id)!;
       return {
@@ -517,6 +537,124 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
     });
 
     res.json({ rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// RÚT VÍ SÀN → NGÂN HÀNG (WalletWithdrawal)
+// Ghi nhận tiền rời ví sàn về bank. Hai nguồn: SYNC (đọc API ví sàn) và MANUAL
+// (kế toán tự xác nhận). Các endpoint dưới đây phục vụ luồng NHẬP TAY + tra cứu;
+// luồng SYNC nằm ở integrations/shopee/wallet.ts.
+// ============================================================
+
+// GET /api/finance/withdrawals?channelId= — liệt kê lệnh rút (mới nhất trước)
+router.get("/withdrawals", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId =
+      typeof req.query.channelId === "string" && req.query.channelId
+        ? req.query.channelId
+        : undefined;
+    const rows = await prisma.walletWithdrawal.findMany({
+      where: {
+        channel: { userId: req.ownerId!, ...(channelId ? { id: channelId } : {}) },
+      },
+      orderBy: { transactionTime: "desc" },
+      include: { channel: { select: { channelName: true, shopName: true } } },
+      take: 200,
+    });
+    res.json({
+      items: rows.map((w) => ({
+        id: w.id,
+        channelId: w.channelId,
+        channelName: w.channel.channelName,
+        shopName: w.channel.shopName,
+        amount: Number(w.amount),
+        status: w.status,
+        source: w.source,
+        externalTxnId: w.externalTxnId,
+        transactionTime: w.transactionTime,
+        note: w.note,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/finance/withdrawals — KẾ TOÁN xác nhận đã rút ví thủ công.
+// Body: { channelId, amount, transactionTime?, note? }
+router.post("/withdrawals", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelId, amount, transactionTime, note } = req.body ?? {};
+
+    if (typeof channelId !== "string" || !channelId) {
+      res.status(400).json({ error: "Thiếu gian hàng (channelId)" });
+      return;
+    }
+    // Gian hàng phải thuộc chủ shop đang đăng nhập — chặn ghi chéo shop.
+    const channel = await prisma.channel.findFirst({
+      where: { id: channelId, userId: req.ownerId! },
+      select: { id: true },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+
+    const amt = typeof amount === "string" ? Number(amount) : amount;
+    if (typeof amt !== "number" || Number.isNaN(amt) || amt <= 0) {
+      res.status(400).json({ error: "Số tiền rút phải là số dương" });
+      return;
+    }
+
+    let when = new Date();
+    if (transactionTime !== undefined && transactionTime !== "") {
+      const d = new Date(transactionTime);
+      if (Number.isNaN(d.getTime())) {
+        res.status(400).json({ error: "Thời điểm rút không hợp lệ" });
+        return;
+      }
+      when = d;
+    }
+
+    const created = await prisma.walletWithdrawal.create({
+      data: {
+        channelId,
+        amount: amt,
+        status: "SUCCESS",
+        source: WithdrawalSource.MANUAL,
+        transactionTime: when,
+        note: typeof note === "string" && note.trim() ? note.trim() : null,
+      },
+    });
+    res.status(201).json({ id: created.id, amount: Number(created.amount) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/finance/withdrawals/:id — xoá một lệnh rút NHẬP TAY (sửa sai).
+// Chỉ cho xoá bản ghi MANUAL; bản ghi SYNC là ảnh chụp từ sàn, không tự ý xoá.
+router.delete("/withdrawals/:id", async (req: AuthRequest, res, next) => {
+  try {
+    const w = await prisma.walletWithdrawal.findFirst({
+      where: { id: req.params.id, channel: { userId: req.ownerId! } },
+      select: { id: true, source: true },
+    });
+    if (!w) {
+      res.status(404).json({ error: "Không tìm thấy lệnh rút" });
+      return;
+    }
+    if (w.source !== WithdrawalSource.MANUAL) {
+      res.status(400).json({
+        error: "Chỉ xoá được lệnh rút nhập tay; bản ghi đồng bộ từ sàn không xoá.",
+      });
+      return;
+    }
+    await prisma.walletWithdrawal.delete({ where: { id: w.id } });
+    res.json({ id: w.id, deleted: true });
   } catch (err) {
     next(err);
   }

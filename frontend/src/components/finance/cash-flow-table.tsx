@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, RefreshCw } from "lucide-react";
+import { Banknote, Plus, RefreshCw, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,16 +11,35 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
+  createWithdrawal,
   fetchCashFlow,
   type CashFlowRow,
   type ChannelName,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { cn } from "@/lib/utils";
+
+/** yyyy-mm-dd hôm nay theo giờ máy — mặc định cho ô ngày rút. */
+function todayKey(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 /**
  * BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG
@@ -34,10 +53,29 @@ import { cn } from "@/lib/utils";
 /** Thứ tự sàn cố định để dropdown & bảng ổn định. */
 const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
-/** Ô tiền: 0 hiển thị gạch mờ cho đỡ rối; khác 0 hiển thị số. */
+/**
+ * Ô tiền: 0 vẫn hiển thị "0 ₫" nhưng LÀM MỜ (xám nhạt, opacity 50%) để bảng
+ * thẳng hàng theo cột tiền mà không rối mắt; khác 0 hiển thị số bình thường.
+ */
 function Cash({ value, className }: { value: number; className?: string }) {
-  if (!value) return <span className="text-slate-300">—</span>;
+  if (!value)
+    return <Money value={0} className={cn("text-slate-400 opacity-50", className)} />;
   return <Money value={value} className={className} />;
+}
+
+/**
+ * Ô số ở hàng TỔNG CỘNG: in đậm, MÀU CHỮ MẶC ĐỊNH (đen) — chỉ ô ÂM mới tô đỏ +
+ * icon cảnh báo để chủ shop nhận ra ngay điểm dòng tiền lệch pha cần đối soát.
+ */
+function TotalCell({ value }: { value: number }) {
+  if (value < 0)
+    return (
+      <span className="inline-flex items-center justify-end gap-1 text-rose-600">
+        <TriangleAlert className="size-3.5 shrink-0" />
+        <Money value={Math.abs(value)} negative className="font-bold" />
+      </span>
+    );
+  return <Money value={value} className="font-bold" />;
 }
 
 export function CashFlowTable() {
@@ -45,6 +83,15 @@ export function CashFlowTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [platform, setPlatform] = useState<ChannelName | "">("");
+
+  // Form "xác nhận đã rút ví" (nhập tay cho kế toán)
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [wChannelId, setWChannelId] = useState("");
+  const [wAmount, setWAmount] = useState(""); // chuỗi chữ số thô
+  const [wDate, setWDate] = useState(todayKey());
+  const [wNote, setWNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -87,20 +134,60 @@ export function CashFlowTable() {
     { inTransit: 0, pendingSettle: 0, settled: 0, withdrawn: 0, total: 0 }
   );
 
+  function openWithdrawDialog() {
+    setWChannelId(shown[0]?.channelId ?? rows[0]?.channelId ?? "");
+    setWAmount("");
+    setWDate(todayKey());
+    setWNote("");
+    setFormError(null);
+    setDialogOpen(true);
+  }
+
+  async function submitWithdraw() {
+    if (!wChannelId) {
+      setFormError("Vui lòng chọn gian hàng");
+      return;
+    }
+    const amount = Number(wAmount);
+    if (!amount || amount <= 0) {
+      setFormError("Số tiền rút phải là số dương");
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      await createWithdrawal({
+        channelId: wChannelId,
+        amount,
+        transactionTime: wDate,
+        note: wNote.trim() || undefined,
+      });
+      setDialogOpen(false);
+      await load(); // đồng bộ lại bảng: Ví sàn giảm, Ngân hàng tăng
+    } catch (err) {
+      setFormError(
+        err instanceof ApiError ? err.message : "Không lưu được lệnh rút ví"
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const COLS = [
-    "Tiền đang đi đường",
+    "Tiền đơn hàng đang giao",
     "Tiền chờ đối soát",
-    "Tiền đã đối soát",
-    "Tiền đã thu về",
+    "Tiền trên Ví sàn",
+    "Tiền về Ngân hàng",
     "Tổng dòng tiền dự kiến",
   ];
 
   return (
-    <Card className="shadow-sm">
+    <>
+      <Card className="shadow-sm">
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 border-b">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Banknote className="size-5 text-slate-400" />
+          <CardTitle className="flex items-center gap-2 text-xl font-semibold">
+            <Banknote className="size-6 text-slate-400" />
             Phân bổ dòng tiền theo gian hàng
           </CardTitle>
           <CardDescription className="mt-1">
@@ -123,6 +210,15 @@ export function CashFlowTable() {
               </option>
             ))}
           </NativeSelect>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openWithdrawDialog}
+            disabled={loading || rows.length === 0}
+          >
+            <Plus className="size-4" />
+            Xác nhận đã rút ví
+          </Button>
           <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className={cn("size-4", loading && "animate-spin")} />
             Làm mới
@@ -148,14 +244,14 @@ export function CashFlowTable() {
             <table className="w-full min-w-[880px] border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="border-b-2 border-slate-300 bg-slate-100 px-4 py-3.5 text-left text-xs font-semibold text-slate-700">
+                  <th className="border-b-2 border-slate-300 bg-slate-100 px-5 py-3.5 text-left text-xs font-semibold text-slate-700">
                     Kênh &amp; Gian hàng
                   </th>
                   {COLS.map((c, i) => (
                     <th
                       key={c}
                       className={cn(
-                        "border-b-2 border-slate-300 bg-slate-100 px-4 py-3.5 text-right text-xs font-semibold text-slate-700",
+                        "border-b-2 border-slate-300 bg-slate-100 px-5 py-3.5 text-right text-xs font-semibold text-slate-700",
                         // Cột cuối (quan trọng nhất): khoảng thở phải + đậm/tối hơn
                         i === COLS.length - 1 && "pr-6 font-bold text-slate-800"
                       )}
@@ -169,7 +265,7 @@ export function CashFlowTable() {
                 {shown.map((r) => {
                   const meta = CHANNEL_META[r.channelName];
                   // py-3.5 cho hàng đủ "thở"; text-sm để số dễ đọc hơn.
-                  const cell = "border-t border-slate-100 px-4 py-3.5 text-sm";
+                  const cell = "border-t border-slate-100 px-5 py-3.5 text-sm";
                   return (
                     <tr
                       key={r.channelId}
@@ -196,8 +292,25 @@ export function CashFlowTable() {
                       <td className={cn(cell, "text-right font-medium text-amber-700")}>
                         <Cash value={r.pendingSettle} />
                       </td>
-                      <td className={cn(cell, "text-right font-medium text-emerald-700")}>
-                        <Cash value={r.settled} />
+                      <td
+                        className={cn(
+                          cell,
+                          "text-right font-medium",
+                          r.settled < 0 ? "text-rose-600" : "text-emerald-700"
+                        )}
+                      >
+                        {r.settled < 0 ? (
+                          // Ví sàn ÂM = đã rút vượt tiền quyết toán → lệch pha, cần đối soát.
+                          <span
+                            className="inline-flex items-center justify-end gap-1"
+                            title="Số đã rút vượt tiền đã quyết toán — kiểm tra lại đối soát"
+                          >
+                            <TriangleAlert className="size-3.5 shrink-0" />
+                            <Money value={Math.abs(r.settled)} negative className="font-medium" />
+                          </span>
+                        ) : (
+                          <Cash value={r.settled} />
+                        )}
                       </td>
                       <td className={cn(cell, "text-right font-medium text-slate-800")}>
                         <Cash value={r.withdrawn} />
@@ -212,23 +325,23 @@ export function CashFlowTable() {
               <tfoot>
                 {/* HÀNG TỔNG CỘNG — cộng dồn động bằng reduce, nền nhẹ + in đậm */}
                 <tr className="bg-slate-100 font-bold text-slate-900">
-                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-left">
+                  <td className="border-t-2 border-slate-300 px-5 py-3.5 text-left">
                     TỔNG CỘNG {platform ? `(${CHANNEL_META[platform].label})` : ""}
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
-                    <Money value={totals.inTransit} className="font-bold" />
+                  <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
+                    <TotalCell value={totals.inTransit} />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
-                    <Money value={totals.pendingSettle} className="font-bold" />
+                  <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
+                    <TotalCell value={totals.pendingSettle} />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
-                    <Money value={totals.settled} className="font-bold" />
+                  <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
+                    <TotalCell value={totals.settled} />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3.5 text-right">
-                    <Money value={totals.withdrawn} className="font-bold" />
+                  <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
+                    <TotalCell value={totals.withdrawn} />
                   </td>
-                  <td className="border-t-2 border-slate-300 px-4 py-3.5 pr-6 text-right">
-                    <Money value={totals.total} className="font-bold" />
+                  <td className="border-t-2 border-slate-300 px-5 py-3.5 pr-6 text-right">
+                    <TotalCell value={totals.total} />
                   </td>
                 </tr>
               </tfoot>
@@ -236,14 +349,96 @@ export function CashFlowTable() {
           </div>
         )}
 
-        {/* Ghi chú cột giữ chỗ */}
+        {/* Ghi chú luồng rút ví */}
         {!loading && !error && shown.length > 0 && (
           <p className="px-4 py-2.5 text-left text-xs italic text-slate-500">
-            Cột “Tiền đã thu về” cần module theo dõi lệnh rút ví về ngân hàng
-            (chưa có) nên đang giữ chỗ 0₫.
+            “Tiền về Ngân hàng” ghi nhận khi tiền rời ví sàn về bank (đồng bộ từ
+            sàn hoặc bấm “Xác nhận đã rút ví”). Ví sàn hiện màu{" "}
+            <span className="font-medium text-rose-600">đỏ</span> nếu số đã rút
+            vượt tiền đã quyết toán — dấu hiệu lệch pha cần đối soát.
           </p>
         )}
       </CardContent>
-    </Card>
+      </Card>
+
+      {/* FORM NHẬP TAY: kế toán xác nhận đã rút ví về ngân hàng */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xác nhận đã rút ví về ngân hàng</DialogTitle>
+            <DialogDescription>
+              Ghi nhận một lần tiền rời ví sàn về tài khoản ngân hàng. Số tiền sẽ
+              được TRỪ khỏi “Tiền trên Ví sàn” và CỘNG vào “Tiền về Ngân hàng”.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="w-channel">Gian hàng</Label>
+              <NativeSelect
+                id="w-channel"
+                value={wChannelId}
+                onChange={(e) => setWChannelId(e.target.value)}
+              >
+                {rows.map((r) => (
+                  <option key={r.channelId} value={r.channelId}>
+                    {CHANNEL_META[r.channelName].label} · {r.shopName}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="w-amount">Số tiền rút (₫)</Label>
+              <CurrencyInput
+                id="w-amount"
+                value={wAmount}
+                onValueChange={setWAmount}
+                placeholder="Ví dụ: 5.000.000"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="w-date">Ngày rút</Label>
+              <Input
+                id="w-date"
+                type="date"
+                value={wDate}
+                max={todayKey()}
+                onChange={(e) => setWDate(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="w-note">Ghi chú (tuỳ chọn)</Label>
+              <Input
+                id="w-note"
+                value={wNote}
+                onChange={(e) => setWNote(e.target.value)}
+                placeholder="Vd: rút về Vietcombank ****1234"
+              />
+            </div>
+
+            {formError && (
+              <p className="text-sm font-medium text-rose-600">{formError}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setDialogOpen(false)}
+              disabled={submitting}
+            >
+              Huỷ
+            </Button>
+            <Button onClick={submitWithdraw} disabled={submitting}>
+              {submitting ? "Đang lưu…" : "Xác nhận đã rút"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
