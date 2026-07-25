@@ -3,7 +3,6 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import {
   ChannelName,
-  ExpenseCategory,
   ExpenseType,
   Prisma,
   ShippingDisputeStatus,
@@ -39,21 +38,12 @@ const upload = multer({
 
 // ============================================================
 // MODULE TÀI CHÍNH CHUYÊN SÂU (Hubsell Finance)
-// - POST /expenses        : thêm chi phí vận hành (FIXED/VARIABLE)
 // - GET  /orders-analysis : quét đơn Đã giao, tìm ĐƠN HÀNG LỖ
 // - GET  /analytics       : doanh thu / lãi gộp / lãi thuần + chuỗi ngày
+// (Thu/chi vận hành CRUD nằm ở routes/expenses.ts.)
 // Giá vốn của đơn ưu tiên lấy từ OrderItem.costPriceAtSale (snapshot lúc bán);
 // đơn cũ chưa có OrderItem thì fallback qua InventoryLog × giá vốn hiện tại.
 // ============================================================
-
-const VALID_TYPES: ExpenseType[] = [ExpenseType.FIXED, ExpenseType.VARIABLE];
-const VALID_CATEGORIES: ExpenseCategory[] = [
-  ExpenseCategory.RENT,
-  ExpenseCategory.SALARY,
-  ExpenseCategory.PACKAGING,
-  ExpenseCategory.ADS,
-  ExpenseCategory.OTHER,
-];
 
 // Kiểu đơn đã kèm dữ liệu tính giá vốn
 type DeliveredOrder = Prisma.OrderGetPayload<{
@@ -128,84 +118,6 @@ function toDateKey(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-
-// POST /api/finance/expenses — thêm chi phí vận hành
-// Body: { description (hoặc name), type: FIXED|VARIABLE, amount, category?, note?, expenseDate? }
-router.post("/expenses", async (req: AuthRequest, res, next) => {
-  try {
-    const {
-      description,
-      name,
-      type,
-      category,
-      amount,
-      note,
-      expenseDate,
-      appliedSku,
-    } = req.body ?? {};
-
-    const finalName = typeof description === "string" && description.trim()
-      ? description.trim()
-      : typeof name === "string" ? name.trim() : "";
-    if (!finalName) {
-      res.status(400).json({ error: "Vui lòng nhập mô tả khoản chi" });
-      return;
-    }
-    if (!VALID_TYPES.includes(type)) {
-      res.status(400).json({ error: "Phân loại phải là FIXED (cố định) hoặc VARIABLE (biến đổi)" });
-      return;
-    }
-    const amt = typeof amount === "string" ? Number(amount) : amount;
-    if (typeof amt !== "number" || Number.isNaN(amt) || amt <= 0) {
-      res.status(400).json({ error: "Số tiền phải là số dương" });
-      return;
-    }
-    const finalCategory = VALID_CATEGORIES.includes(category)
-      ? (category as ExpenseCategory)
-      : ExpenseCategory.OTHER;
-
-    let date: Date | undefined;
-    if (expenseDate !== undefined && expenseDate !== "") {
-      const d = new Date(expenseDate);
-      if (Number.isNaN(d.getTime())) {
-        res.status(400).json({ error: "Ngày chi không hợp lệ" });
-        return;
-      }
-      date = d;
-    }
-
-    // Chi phí BIẾN ĐỔI có thể gắn vào 1 SKU cụ thể; chi phí CỐ ĐỊNH thì không.
-    let finalSku: string | null = null;
-    if (type === ExpenseType.VARIABLE && typeof appliedSku === "string" && appliedSku.trim()) {
-      const sku = appliedSku.trim().toUpperCase();
-      const product = await prisma.product.findUnique({
-        where: { userId_skuCode: { userId: req.ownerId!, skuCode: sku } },
-        select: { skuCode: true },
-      });
-      if (!product) {
-        res.status(404).json({ error: `Không tìm thấy sản phẩm có mã SKU "${sku}"` });
-        return;
-      }
-      finalSku = product.skuCode;
-    }
-
-    const expense = await prisma.operatingExpense.create({
-      data: {
-        userId: req.ownerId!,
-        name: finalName,
-        type: type as ExpenseType,
-        category: finalCategory,
-        appliedSku: finalSku,
-        amount: amt,
-        note: typeof note === "string" && note.trim() ? note.trim() : null,
-        ...(date ? { expenseDate: date } : {}),
-      },
-    });
-    res.status(201).json(expense);
-  } catch (err) {
-    next(err);
-  }
-});
 
 // GET /api/finance/orders-analysis — quét đơn Đã giao.
 // Lợi nhuận đơn = Doanh thu − Phí sàn − Tổng giá vốn. ≤ 0 ⇒ ĐƠN LỖ.

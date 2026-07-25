@@ -1253,20 +1253,6 @@ export function fetchLossOrders(range?: DateRange, channel?: ChannelFilterQuery)
   }>(withRange("/api/finance/orders-analysis", range, channel));
 }
 
-export function createFinanceExpense(data: {
-  description: string;
-  type: ExpenseType;
-  amount: number;
-  category?: ExpenseCategory;
-  appliedSku?: string; // chỉ dùng khi type = VARIABLE
-  note?: string;
-  expenseDate?: string;
-}) {
-  return apiFetch<OperatingExpense>("/api/finance/expenses", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
 
 // ----- Kênh bán & Mapping -----
 
