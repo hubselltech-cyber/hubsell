@@ -3,11 +3,13 @@
 import { Building2, Globe, Clock } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppearanceSection } from "@/components/settings/appearance-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { TEXT_SUB } from "@/lib/typography";
 
 /**
- * CẤU HÌNH CHUNG — thông tin doanh nghiệp, khu vực, định dạng… (đang dựng khung).
+ * CẤU HÌNH CHUNG — Giao diện hệ thống (đa theme, chạy thật) + thông tin doanh
+ * nghiệp, khu vực, định dạng (đang dựng khung).
  */
 export default function SettingsGeneralPage() {
   const rows = [
@@ -33,6 +35,8 @@ export default function SettingsGeneralPage() {
       title="Cấu hình chung"
       description="Thiết lập cơ bản áp dụng cho toàn bộ hệ thống."
     >
+      <AppearanceSection />
+
       <Card className="max-w-2xl shadow-sm">
         <CardHeader className="border-b pb-3">
           <CardTitle className="flex items-center gap-2">
