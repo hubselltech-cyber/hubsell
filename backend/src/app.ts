@@ -18,6 +18,7 @@ import staffRouter from "./routes/staff";
 import financeRouter from "./routes/finance";
 import commandCenterRouter from "./routes/command-center";
 import invoiceConfigRouter from "./routes/invoice-config";
+import taxRouter from "./routes/tax";
 
 export function createApp() {
   const app = express();
@@ -88,6 +89,11 @@ export function createApp() {
 
   // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — chỉ Admin.
   app.use("/api/invoice-config", requireAuth, adminOnly, invoiceConfigRouter);
+
+  // Hóa đơn & Thuế: cấu hình Thuế bổ sung + Báo cáo thuế — chỉ Admin.
+  // Không gác requireChannel (giống invoice-config) để trang cấu hình thuế
+  // vẫn mở được khi shop chưa nối gian nào.
+  app.use("/api/tax", requireAuth, adminOnly, taxRouter);
 
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).

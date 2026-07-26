@@ -101,6 +101,30 @@ enum ShippingDisputeStatus {
   DA_DOI_SOAT    // sàn đã đối soát/hoàn tiền xong
 }
 
+/// Cơ sở tính của % thuế bổ sung — chủ shop chọn thẳng trên trang Thuế bổ
+/// sung (đã bỏ khái niệm "đối tượng chịu thuế" trung gian):
+///   PROFIT  → % nhân với LỢI NHUẬN trước thuế của kỳ (kiểu dự phòng TNDN)
+///   REVENUE → % nhân với DOANH THU gốc của kỳ (kiểu thuế khoán hộ KD)
+enum TaxCalculationBase {
+  PROFIT
+  REVENUE
+}
+
+/// Kỳ áp dụng của % thuế bổ sung khi lên báo cáo (khớp bộ lọc thời gian).
+enum TaxFilterPeriod {
+  MONTH   // theo tháng
+  QUARTER // theo quý
+  YEAR    // theo năm
+}
+
+/// Vòng đời một yêu cầu phát hành hóa đơn điện tử gửi sang NCC.
+enum InvoiceLogStatus {
+  PENDING   // đã gửi yêu cầu, chờ NCC phát hành
+  ISSUED    // NCC đã phát hành thành công (có số hóa đơn)
+  CANCELLED // đã hủy hóa đơn
+  FAILED    // NCC từ chối / lỗi — xem errorMessage
+}
+
 /// Vai trò tài khoản — quyết định thấy gì và làm được gì.
 enum Role {
   ADMIN     // Chủ shop: toàn quyền, thấy mọi gian hàng và mọi chỉ số tài chính
@@ -141,6 +165,10 @@ model User {
 
   // Cấu hình hóa đơn điện tử & chữ ký số (Multi-Vendor Adapter).
   invoiceConfigs InvoiceConfig[]
+
+  // Module Hóa đơn & Thuế: cấu hình thuế bổ sung + lịch sử phát hành hóa đơn.
+  taxSetting  ShopTaxSetting?
+  invoiceLogs InvoiceLog[]
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
@@ -338,6 +366,73 @@ model InvoiceConfig {
   @@index([ownerId])
 }
 
+/// CẤU HÌNH THUẾ của một shop (trang "Thuế bổ sung") — đúng 1 bản ghi/chủ shop.
+///
+/// Bảng TINH GỌN chỉ giữ lựa chọn của người dùng: % thuế bổ sung + cơ sở tính
+/// + kỳ áp dụng. THUẾ SÀN TMĐT 1.5% do luật ấn định KHÔNG lưu ở đây — nó là
+/// hằng số PLATFORM_TAX_RATE trong tax-config.ts (đổi luật thì sửa một chỗ đó).
+///
+/// Tỷ lệ lưu dạng PHÂN SỐ như Channel.feeRate: 0.2 = 20%.
+model ShopTaxSetting {
+  id      String @id @default(cuid())
+  ownerId String @unique
+
+  /// % thuế ước tính bổ sung. 0 = không trích thêm.
+  customTaxRate Decimal @default(0) @db.Decimal(5, 4)
+
+  /// Nhân % vào LỢI NHUẬN hay DOANH THU — xem enum TaxCalculationBase.
+  calculationBase TaxCalculationBase @default(PROFIT)
+
+  /// Kỳ áp dụng % bổ sung (Tháng/Quý/Năm) — báo cáo dùng để chú thích và
+  /// khớp với bộ lọc thời gian đang chọn.
+  filterPeriod TaxFilterPeriod @default(MONTH)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+/// NHẬT KÝ HÓA ĐƠN ĐIỆN TỬ — mỗi bản ghi = một lần gọi NCC phát hành/hủy hóa
+/// đơn cho một đơn hàng (trang "Lịch sử & Báo cáo thuế" đối soát trên bảng này).
+///
+/// Giữ orderCode TÁCH RIÊNG khỏi quan hệ orderId: đơn có thể bị xóa theo kênh
+/// (Cascade) nhưng hóa đơn đã phát hành là chứng từ pháp lý — log phải còn
+/// nguyên mã đơn để tra soát với cơ quan thuế.
+model InvoiceLog {
+  id      String @id @default(cuid())
+  ownerId String
+  orderId String? // SetNull khi đơn bị xóa — log vẫn giữ nguyên orderCode
+
+  orderCode String // mã đơn hàng (bản sao bền, không mất theo đơn)
+  provider  String // NCC phát hành: MISA | BKAV | VIETTEL | VNPT | CUSTOM
+
+  /// Số hóa đơn điện tử NCC cấp (VD "C25TAA-00001234"). NULL khi chưa phát hành xong.
+  invoiceNo String?
+  /// Mã giao dịch phía NCC — dùng để checkStatus/cancelInvoice sau này.
+  transactionId String?
+
+  status InvoiceLogStatus @default(PENDING)
+
+  totalAmount Decimal @default(0) @db.Decimal(12, 2) // tổng tiền trên hóa đơn
+  vatAmount   Decimal @default(0) @db.Decimal(12, 2) // tiền thuế GTGT đầu ra trên hóa đơn
+  /// Số tiền thuế sàn TMĐT đã TRÍCH HỘ cho đơn này (1.5% doanh thu gốc) —
+  /// nguồn số liệu cột "Thuế sàn trích hộ" của báo cáo đối soát.
+  platformTaxWithheld Decimal @default(0) @db.Decimal(12, 2)
+
+  errorMessage String? // lý do khi status = FAILED
+  issuedAt     DateTime? // thời điểm NCC phát hành thành công
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, createdAt])
+  @@index([orderId])
+}
+
 /// Sản phẩm trong kho
 model Product {
   id              String   @id @default(cuid())
@@ -474,6 +569,7 @@ model Order {
   channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
   items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
+  invoiceLogs   InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.

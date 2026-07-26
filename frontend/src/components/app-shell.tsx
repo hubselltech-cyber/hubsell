@@ -11,6 +11,7 @@ import {
   Loader2,
   LogOut,
   Package,
+  ReceiptText,
   Settings,
   ShoppingCart,
   Store,
@@ -69,6 +70,19 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    // Hóa đơn điện tử & thuế tách thành danh mục lớn riêng (trước nằm trong
+    // Cấu hình): đây là nghiệp vụ chạy hằng ngày sát với Tài chính, không phải
+    // thứ cài một lần rồi quên.
+    label: "Hóa đơn & Thuế",
+    icon: ReceiptText,
+    roles: ["ADMIN"],
+    children: [
+      { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
+      { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
+      { href: "/invoicing/history", label: "Lịch sử & Báo cáo thuế" },
+    ],
+  },
+  {
     // Nghiệp vụ kho gom về một nhóm: nhập hàng, quản lý sản phẩm và đối soát
     // hàng hoàn đều là việc của kho.
     label: "Quản lý Kho",
@@ -93,7 +107,8 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["ADMIN"],
     children: [
       { href: "/settings/general", label: "Cấu hình chung" },
-      { href: "/settings/tax", label: "Hóa đơn & Thuế" },
+      // "Hóa đơn & Thuế" đã chuyển lên danh mục lớn riêng (route /invoicing/*);
+      // /settings/tax cũ redirect sang đó để bookmark không chết.
       { href: "/settings/other", label: "Cấu hình khác" },
     ],
   },
@@ -108,8 +123,10 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/mappings", title: "Liên kết SP vào kho vật lý" },
   { prefix: "/staff", title: "Quản lý nhân viên" },
   { prefix: "/settings/general", title: "Cấu hình chung" },
-  { prefix: "/settings/tax", title: "Hóa đơn & Thuế" },
   { prefix: "/settings/other", title: "Cấu hình khác" },
+  { prefix: "/invoicing/connect", title: "Kết nối & Xuất hóa đơn" },
+  { prefix: "/invoicing/tax-settings", title: "Thuế bổ sung" },
+  { prefix: "/invoicing/history", title: "Lịch sử & Báo cáo thuế" },
   { prefix: "/settings", title: "Cấu hình hệ thống" },
   { prefix: "/finance/analytics", title: "Báo cáo dòng tiền" },
   { prefix: "/finance/realized-pnl", title: "Lãi/Lỗ Thực Hiện" },
@@ -129,6 +146,7 @@ function getPageTitle(pathname: string): string {
 function menusForPath(pathname: string): string[] {
   const labels: string[] = [];
   if (pathname.startsWith("/finance")) labels.push("Quản lý Tài chính");
+  if (pathname.startsWith("/invoicing")) labels.push("Hóa đơn & Thuế");
   if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
     labels.push("Quản lý Kho");
   if (pathname.startsWith("/settings")) labels.push("Cấu hình");

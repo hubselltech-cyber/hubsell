@@ -423,6 +423,10 @@ export interface PnlDetailRow {
   netRevenue: number;
   actualPayout: number;
   profit: number;
+  /** Thuế sàn TMĐT: số THẬT sàn trích khi đã quyết toán / ước tính % khi chưa. */
+  platformTax: number;
+  /** profit − platformTax (thuế bổ sung của kỳ nằm ở summary, không chia dòng). */
+  profitAfterTax: number;
   missingCostPrice: boolean;
 }
 
@@ -437,6 +441,16 @@ export interface RealizedPnlResponse {
     settledCount: number;
     totalNetRevenue: number;
     totalProfit: number;
+    /** Tổng thuế sàn TMĐT (thực + ước tính) của toàn bộ đơn khớp lọc. */
+    totalPlatformTax: number;
+    /** Thuế bổ sung ước tính của kỳ theo cấu hình trang "Thuế bổ sung". */
+    additionalTax: number;
+    totalProfitAfterTax: number;
+    taxSettings: {
+      calculationBase: TaxCalculationBase;
+      platformTaxPercent: number;
+      customTaxPercent: number;
+    };
     /** { SHOPEE: { count, profit }, ... } trên toàn bộ đơn khớp lọc. */
     byPlatform: Record<string, { count: number; profit: number }>;
   };
@@ -1055,6 +1069,20 @@ export interface FinanceAnalytics {
   fixedExpense: number;
   variableExpense: number;
   netProfit: number;
+  /** Khối THUẾ từ cấu hình trang "Thuế bổ sung" (module Hóa đơn & Thuế). */
+  taxes: {
+    calculationBase: TaxCalculationBase;
+    platformTaxPercent: number;
+    customTaxPercent: number;
+    filterPeriod: TaxFilterPeriod;
+    /** Sàn ĐÃ trích trên đơn quyết toán — chỉ đối soát, đã nằm trong tiền thực nhận. */
+    platformTaxActual: number;
+    /** Ước tính cho đơn chưa quyết toán — ĐÃ trừ vào netProfitAfterTax. */
+    platformTaxEstimated: number;
+    platformTaxTotal: number;
+    additionalTax: number;
+    netProfitAfterTax: number;
+  };
   series: { date: string; label: string; revenue: number; cost: number }[];
   /** Đang lọc 1 gian hàng ⇒ chi phí vận hành vẫn là của TOÀN SHOP. */
   operatingExpenseIsShopWide: boolean;
@@ -1606,4 +1634,77 @@ export function saveInvoiceChannelKey(channelId: string, apiKey: string) {
     method: "PUT",
     body: JSON.stringify({ apiKey }),
   });
+}
+
+// ----- Hóa đơn & Thuế: Thuế bổ sung + Báo cáo thuế -----
+//
+// % thuế đi qua API ở dạng PHẦN TRĂM (1.5 = 1.5%) khớp ô nhập của UI; backend
+// tự đổi sang phân số khi lưu DB. Thuế sàn (platformTaxPercent) do luật ấn
+// định — chỉ đọc, không có API sửa.
+
+/** Nhân % thuế bổ sung vào LỢI NHUẬN trước thuế hay DOANH THU gốc của kỳ. */
+export type TaxCalculationBase = "PROFIT" | "REVENUE";
+export type TaxFilterPeriod = "MONTH" | "QUARTER" | "YEAR";
+
+export interface TaxSettingsDTO {
+  customTaxPercent: number; // % thuế bổ sung chủ shop tự ước tính
+  calculationBase: TaxCalculationBase;
+  filterPeriod: TaxFilterPeriod;
+  platformTaxPercent: number; // thuế sàn TMĐT — hằng số luật 1.5, chỉ đọc
+}
+
+export function fetchTaxSettings() {
+  return apiFetch<{ settings: TaxSettingsDTO }>("/api/tax/settings");
+}
+
+export function saveTaxSettings(input: {
+  customTaxPercent: number;
+  calculationBase: TaxCalculationBase;
+  filterPeriod: TaxFilterPeriod;
+}) {
+  return apiFetch<{ settings: TaxSettingsDTO }>("/api/tax/settings", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export type InvoiceLogStatus = "PENDING" | "ISSUED" | "CANCELLED" | "FAILED";
+
+export interface InvoiceLogDTO {
+  id: string;
+  orderCode: string;
+  provider: string;
+  invoiceNo: string | null;
+  status: InvoiceLogStatus;
+  totalAmount: number;
+  vatAmount: number;
+  platformTaxWithheld: number;
+  errorMessage: string | null;
+  issuedAt: string | null;
+  createdAt: string;
+}
+
+export interface TaxReportResponse {
+  settings: TaxSettingsDTO;
+  summary: {
+    orderCount: number;
+    settledCount: number;
+    grossRevenue: number;
+    platformTaxActual: number; // sàn ĐÃ trích (số quyết toán thật)
+    platformTaxEstimated: number; // ước tính cho phần đơn chưa quyết toán
+    platformTaxTotal: number;
+    additionalTax: number;
+    additionalTaxBase: number; // cơ sở tính (doanh thu hoặc lợi nhuận)
+  };
+  logs: InvoiceLogDTO[];
+}
+
+export function fetchTaxReport(params?: { from?: string; to?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.from && params?.to) {
+    qs.set("from", params.from);
+    qs.set("to", params.to);
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<TaxReportResponse>(`/api/tax/report${suffix}`);
 }
