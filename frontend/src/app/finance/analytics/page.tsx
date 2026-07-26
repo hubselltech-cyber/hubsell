@@ -46,29 +46,17 @@ import {
   fetchFinanceAnalytics,
   getStoredUser,
   getToken,
-  type BreakdownItem,
   type FinanceAnalytics,
 } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
 
-// GIỮ CHỖ — module Thuế & Hóa đơn đang dựng khung. Hai dòng chi phí thuế mặc định
-// 0đ để hoàn thiện cấu trúc dòng tiền; sẽ được tính động khi luồng thuế hoàn tất.
-const TAX_PLACEHOLDER_COST_ITEMS: BreakdownItem[] = [
-  {
-    key: "tax-vat-output",
-    label: "Thuế VAT đầu ra (Dự kiến)",
-    hint: "Giữ chỗ — sẽ tính theo thuế suất GTGT cấu hình trên từng SKU khi module Hóa đơn điện tử hoàn tất.",
-    amount: 0,
-    percent: 0,
-  },
-  {
-    key: "tax-affiliate",
-    label: "Thuế Affiliate quy đổi (Tạm tính)",
-    hint: "Giữ chỗ — khoản thuế quy đổi từ phí tiếp thị liên kết, chờ luồng đối soát Thuế tự động.",
-    amount: 0,
-    percent: 0,
-  },
-];
+// Bố cục 4 cột theo chuẩn kế toán (backend quyết định toàn bộ items):
+//   - Cột Doanh thu: có thêm dòng "Thu nhập vận hành khác" ở cuối (khoản ngoài
+//     đơn hàng, không cộng vào tổng cột).
+//   - Cột Chi phí: gồm cả 2 dòng nghĩa vụ thuế thật từ module Hóa đơn & Thuế
+//     ("Thuế sàn TMĐT ước tính" + "Thuế bổ sung dự phòng") — tổng cột đã bao gồm.
+//   - Cột Lợi nhuận: TINH GIẢN — Tổng lợi nhuận tạm tính = Thực tế + Dự kiến,
+//     chỉ phân rã theo trạng thái đơn để quản trị rủi ro dòng tiền TMĐT.
 
 export default function FinanceAnalyticsPage() {
   const router = useRouter();
@@ -173,27 +161,23 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Chi phí"
-              subtitle="Giá vốn + chi phí vận hành ngoài sàn"
+              subtitle="Giá vốn + chi phí vận hành + nghĩa vụ thuế"
               total={data.breakdown.costs.total}
               icon={Receipt}
               tone="negative"
               colorValue
-              // Nối thêm 2 dòng thuế GIỮ CHỖ (0đ) để hoàn thiện cấu trúc dòng tiền.
-              items={[
-                ...data.breakdown.costs.items,
-                ...TAX_PLACEHOLDER_COST_ITEMS,
-              ]}
+              items={data.breakdown.costs.items}
             />
 
             <BreakdownCard
-              title="Lợi nhuận"
-              subtitle="Đã trừ toàn bộ chi phí vận hành"
+              title="Tổng lợi nhuận tạm tính"
+              subtitle="Thực tế + Dự kiến — thuế đã tách sang cột Chi phí"
               total={data.breakdown.profit.total}
               icon={Scale}
               items={data.breakdown.profit.items}
               colorBySign
               featured /* ← Card Ngôi Sao: chỉ số cốt lõi của trang này */
-              footer={<span>% là biên lợi nhuận trên doanh thu tương ứng</span>}
+              footer={<span>% là biên lợi nhuận trên dòng tiền tương ứng</span>}
             />
           </Refreshing>
         )}

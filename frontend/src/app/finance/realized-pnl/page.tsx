@@ -38,6 +38,8 @@ import { canAccessFinance } from "@/lib/permissions";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { exportPnlRows, exportRealizedPnl } from "@/lib/excel";
 import { formatNumber } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { moneyTone, TEXT_CARD_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 type PnlTab = "overview" | "shopee" | "tiktok" | "lazada";
@@ -314,6 +316,60 @@ export default function RealizedPnlPage() {
             </Button>
           </div>
         </div>
+
+        {/* ===== TỔNG HỢP THUẾ CỦA KỲ (module Hóa đơn & Thuế) =====
+            Trên TOÀN BỘ đơn khớp lọc (mọi trang). Thuế sàn: đơn quyết toán
+            dùng số THẬT sàn trích, chưa quyết toán ước tính % cấu hình. */}
+        {summary && summary.count > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="shadow-sm">
+              <CardContent className="px-4 py-3">
+                <p className={TEXT_CARD_TITLE}>Lợi nhuận (trước thuế)</p>
+                <p
+                  className={cn(
+                    "mt-1 text-lg font-semibold tracking-tight",
+                    moneyTone(summary.totalProfit)
+                  )}
+                >
+                  <Money value={summary.totalProfit} />
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm">
+              <CardContent className="px-4 py-3">
+                <p className={TEXT_CARD_TITLE}>
+                  Thuế sàn TMĐT ({summary.taxSettings.platformTaxPercent}%)
+                </p>
+                <p className="mt-1 text-lg font-semibold tracking-tight text-slate-600">
+                  − <Money value={summary.totalPlatformTax} />
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm">
+              <CardContent className="px-4 py-3">
+                <p className={TEXT_CARD_TITLE}>
+                  Thuế bổ sung ({summary.taxSettings.customTaxPercent}%)
+                </p>
+                <p className="mt-1 text-lg font-semibold tracking-tight text-slate-600">
+                  − <Money value={summary.additionalTax} />
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm">
+              <CardContent className="px-4 py-3">
+                <p className={TEXT_CARD_TITLE}>Lợi nhuận ròng sau thuế</p>
+                <p
+                  className={cn(
+                    "mt-1 text-lg font-semibold tracking-tight",
+                    moneyTone(summary.totalProfitAfterTax)
+                  )}
+                >
+                  <Money value={summary.totalProfitAfterTax} />
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* ===== BẢNG THEO TAB ===== */}
         <Card className="shadow-sm">

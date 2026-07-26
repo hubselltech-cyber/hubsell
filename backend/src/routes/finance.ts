@@ -20,6 +20,12 @@ import {
   type ChannelScope,
 } from "../channel-filter";
 import { FEE_SELECT, orderPlatformFee } from "../order-fee";
+import {
+  additionalTaxOn,
+  getShopTaxConfig,
+  PLATFORM_TAX_RATE,
+  platformTaxOn,
+} from "../tax-config";
 
 const router = Router();
 
@@ -212,6 +218,10 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     const pageSize = PNL_PAGE_SIZES.includes(rawSize) ? rawSize : 20;
     const page = Math.max(1, Math.floor(Number(req.query.page)) || 1);
 
+    // Cấu hình thuế (trang "Thuế bổ sung") — tính thuế sàn từng đơn + thuế
+    // bổ sung của kỳ, cùng công thức với /analytics và /api/tax/report.
+    const taxCfg = await getShopTaxConfig(req.ownerId!);
+
     const orders = await prisma.order.findMany({
       where: {
         channel: channelScope(req),
@@ -258,6 +268,13 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         platformSubsidy;
       const profit = netRevenue - cost;
 
+      // Thuế sàn TMĐT của đơn: quyết toán rồi dùng số THẬT sàn đã trích
+      // (taxWithheld); chưa thì ước tính % cấu hình trên doanh thu gốc.
+      const platformTax = o.isSettled
+        ? Number(o.taxWithheld)
+        : platformTaxOn(revenueGross);
+      const profitAfterTax = profit - platformTax;
+
       return {
         id: o.id,
         orderCode: o.orderCode,
@@ -299,6 +316,9 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         netRevenue,
         actualPayout: Number(o.actualPayout),
         profit,
+        // Thuế sàn TMĐT (thực khi đã quyết toán / ước tính khi chưa) + lãi sau thuế
+        platformTax,
+        profitAfterTax,
         missingCostPrice,
       };
     });
@@ -323,6 +343,17 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     const start = (page - 1) * pageSize;
     const rows = filtered.slice(start, start + pageSize);
 
+    // Tổng thuế của kỳ (trên toàn bộ đơn khớp lọc, không chỉ trang hiện tại).
+    // Khác /analytics: profit ở đây CHƯA trừ thuế sàn nào cả (kể cả đơn đã
+    // quyết toán) nên trừ đủ platformTax thực + ước tính, không sợ trùng.
+    const totalProfit = filtered.reduce((s, r) => s + r.profit, 0);
+    const totalGrossRevenue = filtered.reduce((s, r) => s + r.revenueGross, 0);
+    const totalPlatformTax = filtered.reduce((s, r) => s + r.platformTax, 0);
+    const additionalTax = additionalTaxOn(
+      { grossRevenue: totalGrossRevenue, profit: totalProfit },
+      taxCfg
+    );
+
     res.json({
       rows,
       page,
@@ -333,7 +364,15 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         count: total,
         settledCount: filtered.filter((r) => r.isSettled).length,
         totalNetRevenue: filtered.reduce((s, r) => s + r.netRevenue, 0),
-        totalProfit: filtered.reduce((s, r) => s + r.profit, 0),
+        totalProfit,
+        totalPlatformTax,
+        additionalTax,
+        totalProfitAfterTax: totalProfit - totalPlatformTax - additionalTax,
+        taxSettings: {
+          calculationBase: taxCfg.calculationBase,
+          platformTaxPercent: PLATFORM_TAX_RATE * 100,
+          customTaxPercent: taxCfg.customTaxRate * 100,
+        },
         byPlatform,
       },
     });
@@ -1475,7 +1514,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    const [delivered, expenses, inFlight, cancelled, operatingIncomeAgg] =
+    const [delivered, expenses, inFlight, cancelled, operatingIncomeAgg, taxCfg] =
       await Promise.all([
       fetchDeliveredOrders(scope, range),
       prisma.operatingExpense.findMany({
@@ -1526,6 +1565,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         _sum: { amount: true },
         where: { userId: ownerId, direction: TransactionDirection.INCOME, expenseDate: range },
       }),
+      // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
+      getShopTaxConfig(ownerId),
     ]);
     const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
 
@@ -1618,8 +1659,11 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       settledPayout - settledCogs - variableExpenseTotal - fixedExpenseTotal;
     // Lợi nhuận dự kiến: từ đơn ĐANG CHỜ (số tạm tính)
     const expectedProfit = pendingPayout - pendingCogs;
-    // Tổng = Thực tế + Dự kiến + THU vận hành khác (3 phần tách riêng, cộng lại).
-    const totalProfit = actualProfit + expectedProfit + operatingIncomeTotal;
+    // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến — hiệu năng của toàn bộ đơn
+    // trong kỳ, CHƯA trừ nghĩa vụ thuế (2 dòng thuế nằm ở cột Chi phí).
+    // "Thu nhập vận hành khác" KHÔNG cộng vào đây — nó là khoản ngoài đơn hàng,
+    // hiển thị ở cuối cột Doanh thu cho đúng bản chất kế toán.
+    const provisionalProfit = actualProfit + expectedProfit;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao)
     let totalRevenue = 0;
@@ -1658,6 +1702,45 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
 
     // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí vận hành
     const netProfit = grossProfit - totalPlatformFee - totalOperatingExpense;
+
+    // ============================================================
+    // THUẾ (module Hóa đơn & Thuế) — đọc cấu hình trang "Thuế bổ sung"
+    // qua tax-config.ts, cùng công thức với /api/tax/report.
+    //
+    // Thuế sàn TMĐT khấu trừ tại nguồn trên DOANH THU GỐC:
+    //  - Đơn ĐÃ quyết toán: số THẬT sàn đã trích (taxWithheld) — khoản này đã
+    //    bị trừ sẵn trong actualPayout, tức ĐÃ phản ánh trong lợi nhuận thực
+    //    tế. Chỉ báo cáo, KHÔNG trừ lần nữa kẻo trùng.
+    //  - Đơn CHƯA quyết toán (kể cả đang đi đường): ước tính theo % cấu hình.
+    // ============================================================
+    let platformTaxActual = 0;
+    let platformTaxEstimateBase = 0;
+    for (const o of delivered) {
+      if (o.isSettled) platformTaxActual += Number(o.taxWithheld);
+      else platformTaxEstimateBase += Number(o.totalAmount);
+    }
+    for (const o of inFlight) {
+      platformTaxEstimateBase += Number(o.totalAmount);
+    }
+    const platformTaxEstimated = platformTaxOn(platformTaxEstimateBase);
+
+    // Thuế bổ sung: cơ sở tính theo cấu hình (lợi nhuận tạm tính / doanh thu).
+    const additionalTax = additionalTaxOn(
+      { grossRevenue: grossValue, profit: provisionalProfit },
+      taxCfg
+    );
+
+    // LỢI NHUẬN RÒNG SAU THUẾ — công thức lũy kế của cột Lợi nhuận:
+    //   = Lợi nhuận thực tế + Lợi nhuận dự kiến
+    //     − Thuế sàn TMĐT ước tính − Thuế bổ sung dự phòng
+    // Phần thuế sàn THẬT không trừ (đã nằm trong actualPayout như ghi chú trên).
+    const netProfitAfterTax =
+      provisionalProfit - platformTaxEstimated - additionalTax;
+
+    // Cột CHI PHÍ gồm cả 2 dòng nghĩa vụ thuế (chuyển từ cột Lợi nhuận sang) —
+    // tổng cột phải khớp tổng các dòng bên trong nó.
+    const totalCostWithTax =
+      totalCostColumn + platformTaxEstimated + additionalTax;
 
     // Chuỗi 14 ngày: Doanh thu vs Tổng chi phí (giá vốn + chi phí vận hành phát sinh trong ngày)
     const days = 14;
@@ -1760,63 +1843,92 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: cancelRate,
               count: cancelled.length,
             },
+            // Khoản THU ngoài đơn hàng — đứng cuối cột Doanh thu cho đúng bản
+            // chất kế toán; KHÔNG cộng vào tổng Doanh thu phía trên (tổng đó
+            // thuần là tiền từ đơn hàng sau khấu trừ sàn).
+            {
+              key: "operatingIncome",
+              label: "Thu nhập vận hành khác",
+              hint: "Khoản thu ngoài đơn hàng (đền bù, thưởng…) nhập tay từ module Thu chi vận hành — không thuộc doanh thu đơn hàng nên không cộng vào tổng cột.",
+              amount: operatingIncomeTotal,
+              percent: pct(operatingIncomeTotal, netRevenue),
+            },
           ],
         },
 
-        // Cột 3 — Chi phí
+        // Cột 3 — Chi phí (gồm cả nghĩa vụ thuế — tổng khớp tổng các dòng)
         costs: {
-          total: totalCostColumn,
+          total: totalCostWithTax,
           items: [
             {
               key: "cogs",
               label: "Giá vốn sản phẩm",
               hint: "Tổng tiền nhập hàng, lấy theo giá vốn đã cấu hình cho từng SKU",
               amount: cogsAll,
-              percent: pct(cogsAll, totalCostColumn),
+              percent: pct(cogsAll, totalCostWithTax),
             },
             {
               key: "variable",
               label: "Chi phí biến đổi",
               hint: "Ads, book KOC, đóng gói… — khoản nào gắn SKU sẽ được tính vào lời/lỗ của chính SKU đó",
               amount: variableExpenseTotal,
-              percent: pct(variableExpenseTotal, totalCostColumn),
+              percent: pct(variableExpenseTotal, totalCostWithTax),
             },
             {
               key: "fixed",
               label: "Chi phí cố định",
               hint: "Mặt bằng, lương nhân sự… — không gắn vào SKU nào, trừ thẳng vào lợi nhuận toàn shop",
               amount: fixedExpenseTotal,
-              percent: pct(fixedExpenseTotal, totalCostColumn),
+              percent: pct(fixedExpenseTotal, totalCostWithTax),
+            },
+            // ---- Nghĩa vụ thuế (từ cấu hình Hóa đơn & Thuế → Thuế bổ sung).
+            // Số DƯƠNG như mọi dòng chi phí khác; cột Lợi nhuận chỉ trừ chúng
+            // ở dòng "Lợi nhuận ròng sau thuế".
+            {
+              key: "platformTaxEstimated",
+              label: "Thuế sàn TMĐT ước tính",
+              hint: `Ước tính ${PLATFORM_TAX_RATE * 100}% (GTGT + TNCN) trên doanh thu gốc của đơn CHƯA quyết toán. Đơn đã quyết toán sàn trích thật ${Math.round(platformTaxActual).toLocaleString("vi-VN")}đ — số đó đã trừ sẵn trong Lợi nhuận thực tế.`,
+              amount: platformTaxEstimated,
+              percent: pct(platformTaxEstimated, totalCostWithTax),
+            },
+            {
+              key: "additionalTax",
+              label: "Thuế bổ sung dự phòng",
+              hint:
+                taxCfg.calculationBase === "REVENUE"
+                  ? `${taxCfg.customTaxRate * 100}% trên DOANH THU của kỳ — cấu hình ở Hóa đơn & Thuế → Thuế bổ sung.`
+                  : `${taxCfg.customTaxRate * 100}% trên LỢI NHUẬN tạm tính của kỳ — cấu hình ở Hóa đơn & Thuế → Thuế bổ sung.`,
+              amount: additionalTax,
+              percent: pct(additionalTax, totalCostWithTax),
             },
           ],
         },
 
-        // Cột 4 — Lợi nhuận
+        // Cột 4 — TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến.
+        //
+        // Cột này TINH GIẢN, chỉ phân rã theo trạng thái đơn (quản trị rủi ro
+        // TMĐT: tiền đã về tay vs tiền đang trên đường). Các khoản đã dời đi:
+        //   - Thu nhập vận hành khác → cuối cột Doanh thu.
+        //   - 2 dòng nghĩa vụ thuế   → cuối cột Chi phí (số DƯƠNG như mọi dòng
+        //     chi phí, hết cảnh item âm nằm lẫn trong cột lợi nhuận gây sai tổng).
         profit: {
-          total: totalProfit,
+          total: provisionalProfit,
           items: [
-            // % ở đây là BIÊN LỢI NHUẬN (lãi / doanh thu tương ứng),
+            // % ở đây là BIÊN LỢI NHUẬN (lãi / dòng tiền tương ứng),
             // không phải tỷ trọng — vì tổng lợi nhuận có thể âm.
             {
               key: "actual",
               label: "Lợi nhuận thực tế",
-              hint: "Tiền thực nhận từ đơn Hoàn thành (đã trừ phí sàn) − Giá vốn − Chi phí vận hành (biến đổi + cố định).",
+              hint: "Đơn Đã giao/Hoàn thành: tiền thực nhận về ví (đã trừ phí sàn + thuế sàn trích tại nguồn) − Giá vốn − Chi phí vận hành (biến đổi + cố định).",
               amount: actualProfit,
               percent: pct(actualProfit, settledPayout),
             },
             {
               key: "expected",
               label: "Lợi nhuận dự kiến",
-              hint: "Tiền dự kiến nhận − giá vốn, trên các đơn đang chờ xử lý.",
+              hint: "Đơn Chờ xử lý/Đang giao: tiền dự kiến nhận (số tạm tính) − giá vốn. Thuế ước tính cho nhóm đơn này nằm ở cột Chi phí.",
               amount: expectedProfit,
               percent: pct(expectedProfit, pendingPayout),
-            },
-            {
-              key: "operatingIncome",
-              label: "Thu nhập vận hành khác",
-              hint: "Khoản thu ngoài đơn hàng (đền bù, thưởng…) nhập tay từ module Thu chi vận hành.",
-              amount: operatingIncomeTotal,
-              percent: pct(operatingIncomeTotal, settledPayout),
             },
           ],
         },
@@ -1827,6 +1939,19 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       fixedExpense,
       variableExpense,
       netProfit,
+
+      // ===== THUẾ (từ cấu hình trang "Thuế bổ sung") =====
+      taxes: {
+        calculationBase: taxCfg.calculationBase,
+        platformTaxPercent: PLATFORM_TAX_RATE * 100,
+        customTaxPercent: taxCfg.customTaxRate * 100,
+        filterPeriod: taxCfg.filterPeriod,
+        platformTaxActual, // sàn ĐÃ trích — chỉ để đối soát, đã nằm trong actualPayout
+        platformTaxEstimated, // ước tính cho đơn chưa quyết toán — ĐÃ trừ vào netProfitAfterTax
+        platformTaxTotal: platformTaxActual + platformTaxEstimated,
+        additionalTax,
+        netProfitAfterTax,
+      },
       series,
       // Chi phí vận hành ghi ở cấp toàn shop, không gắn gian hàng nào. Khi đang
       // lọc một gian, con số này vẫn là của cả shop — frontend cần nói rõ để
