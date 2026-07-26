@@ -21,6 +21,7 @@ import { Money } from "@/components/ui/money";
 import { Refreshing } from "@/components/refreshing";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { SkuCombobox } from "@/components/finance/sku-combobox";
+import { LinkOneDialog } from "@/components/mappings/link-one-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -96,6 +97,9 @@ export default function MappingsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [targetSku, setTargetSku] = useState("");
   const [linking, setLinking] = useState(false);
+
+  // Sản phẩm sàn đang mở hộp thoại nối nhanh (bấm "Chưa liên kết" trên dòng)
+  const [linkTarget, setLinkTarget] = useState<ChannelProduct | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -400,7 +404,7 @@ export default function MappingsPage() {
                       <TableHead>Sản phẩm trên sàn</TableHead>
                       <TableHead>Gian hàng</TableHead>
                       <TableHead className="text-right">Giá sàn</TableHead>
-                      <TableHead>Liên kết về kho gốc</TableHead>
+                      <TableHead>Liên kết SP vào kho vật lý</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -480,15 +484,18 @@ export default function MappingsPage() {
                                 </p>
                               </>
                             ) : (
-                              <span
+                              <button
+                                type="button"
+                                onClick={() => setLinkTarget(r)}
+                                title="Bấm để nối sản phẩm sàn này về SKU gốc"
                                 className={cn(
                                   TEXT_SUB,
-                                  "inline-flex items-center gap-1.5 text-amber-700"
+                                  "inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-medium text-amber-700 transition-colors hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800"
                                 )}
                               >
                                 <Link2Off className="size-3.5 shrink-0" />
                                 Chưa liên kết
-                              </span>
+                              </button>
                             )}
                           </TableCell>
                         </TableRow>
@@ -548,7 +555,7 @@ export default function MappingsPage() {
         )}
 
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell · Sản phẩm sàn & Liên kết về kho gốc
+          Hubsell · Sản phẩm sàn & Liên kết SP vào kho vật lý
         </p>
       </div>
 
@@ -614,6 +621,16 @@ export default function MappingsPage() {
           </div>
         </div>
       )}
+
+      {/* ===== HỘP THOẠI NỐI NHANH MỘT DÒNG ===== */}
+      <LinkOneDialog
+        item={linkTarget}
+        products={products}
+        onOpenChange={(open) => {
+          if (!open) setLinkTarget(null);
+        }}
+        onDone={load}
+      />
     </AppShell>
   );
 }

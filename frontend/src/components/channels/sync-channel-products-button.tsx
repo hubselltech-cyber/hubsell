@@ -23,11 +23,14 @@ export function SyncChannelProductsButton({
   channelId,
   onSynced,
   className,
+  label = "Đồng bộ từ sàn",
 }: {
   /** Chỉ đồng bộ một gian hàng. Bỏ trống = quét mọi gian hàng đang hoạt động. */
   channelId?: string;
   onSynced: () => void | Promise<void>;
   className?: string;
+  /** Nhãn trên nút — nơi khác gọi cùng hành động nhưng theo ngữ cảnh riêng. */
+  label?: string;
 }) {
   const [syncing, setSyncing] = React.useState(false);
 
@@ -57,7 +60,7 @@ export function SyncChannelProductsButton({
       className={cn("bg-teal-600 text-white hover:bg-teal-700", className)}
     >
       <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-      {syncing ? "Đang đồng bộ…" : "Đồng bộ từ sàn"}
+      {syncing ? "Đang đồng bộ…" : label}
     </Button>
   );
 }

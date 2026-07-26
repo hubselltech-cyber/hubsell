@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
 import { Money } from "@/components/ui/money";
+import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
@@ -44,7 +45,7 @@ import {
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
 import { formatNumber, formatDateTime } from "@/lib/format";
-import { canSeeFinancials } from "@/lib/permissions";
+import { canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -248,9 +249,17 @@ export default function ProductsPage() {
           <p className="text-muted-foreground">
             Kho vật lý — SKU nội bộ, tồn kho
             {seesCost ? " và giá vốn" : ""} ({formatNumber(total)} sản phẩm).
-            Sản phẩm từ sàn được nối về đây tại trang Liên kết SP.
+            Sản phẩm từ sàn được nối về đây tại trang Liên kết SP vào kho vật lý.
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Kéo danh mục sàn về tầng đệm rồi đưa thẳng sang trang Liên kết
+                SP vào kho vật lý để nối — bước 2 của luồng "kho có trước". */}
+            {canManageShop(getStoredUser()?.role) && (
+              <SyncChannelProductsButton
+                label="Kéo sản phẩm từ sàn về"
+                onSynced={() => router.push("/mappings")}
+              />
+            )}
             <ImportExcelDialog onImported={load} />
             <Button variant="outline" onClick={handleExport} disabled={exporting}>
               {exporting ? (

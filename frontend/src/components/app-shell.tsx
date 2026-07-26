@@ -77,12 +77,14 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
-      { href: "/products", label: "Sản phẩm" },
+      { href: "/products", label: "Kho vật lý" },
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
     ],
   },
   { href: "/channels", label: "Kênh bán", icon: Store, roles: ["ADMIN"] },
-  { href: "/mappings", label: "Liên kết SP", icon: Link2, roles: ["ADMIN"] },
+  // Nhãn sidebar để ngắn cho khỏi xuống dòng; tên đầy đủ "Liên kết SP vào kho
+  // vật lý" nằm ở tiêu đề trang (PAGE_TITLES) và cột bảng.
+  { href: "/mappings", label: "Liên kết sản phẩm", icon: Link2, roles: ["ADMIN"] },
   { href: "/staff", label: "Nhân viên", icon: Users, roles: ["ADMIN"] },
   {
     // Cấu hình hệ thống gom thành nhóm phân cấp theo quy hoạch SaaS.
@@ -100,10 +102,10 @@ const NAV_ITEMS: NavItem[] = [
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
 const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/orders", title: "Quản lý đơn hàng" },
-  { prefix: "/products", title: "Quản lý sản phẩm" },
+  { prefix: "/products", title: "Kho vật lý" },
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
-  { prefix: "/mappings", title: "Liên kết sản phẩm" },
+  { prefix: "/mappings", title: "Liên kết SP vào kho vật lý" },
   { prefix: "/staff", title: "Quản lý nhân viên" },
   { prefix: "/settings/general", title: "Cấu hình chung" },
   { prefix: "/settings/tax", title: "Hóa đơn & Thuế" },
