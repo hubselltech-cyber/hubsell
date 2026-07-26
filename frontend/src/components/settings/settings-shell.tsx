@@ -18,7 +18,8 @@ export function SettingsShell({
   description,
   children,
 }: {
-  title: string;
+  /** Cho phép ReactNode để trang con gắn thêm icon/tooltip cạnh tiêu đề. */
+  title: React.ReactNode;
   description?: string;
   children: React.ReactNode;
 }) {
@@ -51,7 +52,9 @@ export function SettingsShell({
             {title}
           </h2>
           {description && (
-            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {description}
+            </p>
           )}
         </div>
         {children}

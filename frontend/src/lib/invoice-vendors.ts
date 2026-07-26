@@ -6,19 +6,22 @@
  * API tương ứng vào đây mà không đụng tới giao diện.
  */
 
-export type InvoiceVendor = "MISA" | "VIETTEL" | "BKAV" | "CUSTOM";
+export type InvoiceVendor = "MISA" | "VIETTEL" | "VNPT" | "BKAV" | "CUSTOM";
 
 export interface InvoiceVendorMeta {
   value: InvoiceVendor;
   label: string;
   /** NCC tuỳ biến — cần nhập endpoint API riêng. */
   custom?: boolean;
+  /** Chưa tích hợp xong — hiển thị "(Sắp ra mắt)" nhưng vẫn cho cấu hình trước. */
+  soon?: boolean;
 }
 
 export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   { value: "MISA", label: "MISA meInvoice" },
-  { value: "VIETTEL", label: "Viettel Sinvoice" },
-  { value: "BKAV", label: "Bkav eHoadon" },
+  { value: "VIETTEL", label: "Viettel SInvoice", soon: true },
+  { value: "VNPT", label: "VNPT Invoice", soon: true },
+  { value: "BKAV", label: "Bkav eHoadon", soon: true },
   { value: "CUSTOM", label: "Khác (Custom API)", custom: true },
 ];
 

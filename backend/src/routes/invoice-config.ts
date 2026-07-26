@@ -5,7 +5,7 @@ import type { AuthRequest } from "../auth";
 /**
  * HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ — Multi-Vendor Adapter (module đóng gói độc lập).
  *
- * Cấu hình kết nối tới các NCC hóa đơn (MISA/Viettel/Bkav/Custom). Hai cấp:
+ * Cấu hình kết nối tới các NCC hóa đơn (MISA/Viettel/VNPT/Bkav/Custom). Hai cấp:
  *   - Cấu hình MẶC ĐỊNH cấp shop (channelId = null): NCC, phương thức ký,
  *     partnerCode của Hubsell, thông tin đăng nhập chung.
  *   - `apiKey` RIÊNG theo từng gian hàng (channelId != null) — phục vụ đối soát
@@ -18,7 +18,7 @@ import type { AuthRequest } from "../auth";
 
 const router = Router();
 
-const PROVIDERS = ["MISA", "VIETTEL", "BKAV", "CUSTOM"];
+const PROVIDERS = ["MISA", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
 const SIGN_METHODS = ["usb", "hsm"];
 
 /** Che chuỗi bí mật, chỉ lộ 4 ký tự cuối. */
