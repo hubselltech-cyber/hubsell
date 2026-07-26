@@ -60,7 +60,10 @@
   --card-foreground: oklch(0.208 0.042 265.755);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.208 0.042 265.755);
-  --primary: oklch(0.208 0.042 265.755);
+  /* THEME INDIGO (nhánh thử nghiệm): accent indigo-600 #4F46E5 thay cho đen
+     slate-900 — mọi nơi dùng bg-primary/border-primary (nút chính, pill lọc,
+     tab đang chọn, badge đếm) đồng loạt chuyển màu theo token này. */
+  --primary: oklch(0.511 0.262 276.966); /* indigo-600 #4F46E5 */
   --primary-foreground: oklch(0.984 0.003 247.858);
   --secondary: oklch(0.968 0.007 247.896); /* slate-100 */
   --secondary-foreground: oklch(0.208 0.042 265.755);
@@ -71,7 +74,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.929 0.013 255.508); /* slate-200 */
   --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788); /* slate-400 */
+  --ring: oklch(0.673 0.182 276.935); /* indigo-400 — vòng focus cùng họ accent */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);

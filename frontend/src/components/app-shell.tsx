@@ -287,7 +287,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className={cn(
                       "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
                       groupActive
-                        ? "font-semibold text-slate-900"
+                        ? "font-semibold text-indigo-600"
                         : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
@@ -311,7 +311,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             className={cn(
                               "relative block rounded-lg px-3 py-2 text-sm transition-colors",
                               childActive
-                                ? "bg-slate-100 font-semibold text-slate-900"
+                                ? "bg-indigo-50 font-semibold text-indigo-600"
                                 : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                             )}
                           >
@@ -319,7 +319,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             {childActive && (
                               <span
                                 aria-hidden
-                                className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-slate-900"
+                                className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-indigo-600"
                               />
                             )}
                             {child.label}
@@ -344,7 +344,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
                   active
-                    ? "bg-slate-100 font-semibold text-slate-900"
+                    ? "bg-indigo-50 font-semibold text-indigo-600"
                     : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
@@ -352,7 +352,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {active && (
                   <span
                     aria-hidden
-                    className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-slate-900"
+                    className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-indigo-600"
                   />
                 )}
                 <item.icon className="size-4.5 shrink-0" />
