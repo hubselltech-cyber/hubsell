@@ -239,7 +239,7 @@ export default function LossOrdersPage() {
                           </span>
                           {/* Nhãn bóc tách LÝ DO LỖ */}
                           {o.lossReason === "COST" && (
-                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600">
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-medium text-red-500">
                               <PackageX className="size-3" />
                               Lỗ do Giá vốn
                             </span>

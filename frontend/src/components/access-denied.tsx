@@ -13,7 +13,7 @@ export function AccessDenied() {
       <Card className="w-full max-w-md border-rose-200">
         <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
           <div className="flex size-14 items-center justify-center rounded-full bg-rose-100">
-            <ShieldAlert className="size-7 text-rose-600" />
+            <ShieldAlert className="size-7 text-red-500" />
           </div>
           <div>
             <p className="text-lg font-semibold">Bạn không có quyền truy cập</p>

@@ -409,7 +409,7 @@ function CostCell({
       {savingId === item.skuId ? (
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
       ) : savedId === item.skuId ? (
-        <Check className="size-4 shrink-0 text-emerald-600" />
+        <Check className="size-4 shrink-0 text-emerald-500" />
       ) : (
         <span className="size-4 shrink-0" />
       )}

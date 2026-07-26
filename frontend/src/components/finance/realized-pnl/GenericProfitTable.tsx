@@ -118,7 +118,7 @@ export function GenericProfitTable({
                     {PNL_STATUS_LABEL[b.shippingStatus] ?? b.shippingStatus}
                   </span>
                   {b.isSettled && (
-                    <span className="block text-[11px] text-emerald-600">đã đối soát</span>
+                    <span className="block text-[11px] text-emerald-500">đã đối soát</span>
                   )}
                 </td>
                 <td className={cn(cell, BLOCK.info, "text-slate-600")}>{b.shopName}</td>

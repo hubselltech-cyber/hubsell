@@ -421,7 +421,7 @@ export function SkuPnlTable({
                                 </span>
                               )}
                               {row.lossReason === "COST" && (
-                                <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600">
+                                <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-medium text-red-500">
                                   <PackageX className="size-3" />
                                   Lỗ do Giá vốn / Phí sàn
                                 </span>
@@ -441,7 +441,7 @@ export function SkuPnlTable({
                               className={cn(
                                 "mt-0.5",
                                 belowFloor
-                                  ? "font-medium text-rose-600"
+                                  ? "font-medium text-red-500"
                                   : "text-muted-foreground"
                               )}
                               hint={
@@ -503,7 +503,7 @@ export function SkuPnlTable({
                               className={cn(
                                 "mt-0.5",
                                 be.isOverspending
-                                  ? "font-medium text-rose-600"
+                                  ? "font-medium text-red-500"
                                   : "text-muted-foreground"
                               )}
                               hint={
@@ -537,7 +537,7 @@ export function SkuPnlTable({
                           <span
                             className={cn(
                               "flex items-center justify-end gap-1 font-semibold",
-                              profitable ? "text-emerald-600" : "text-rose-600"
+                              profitable ? "text-emerald-500" : "text-red-500"
                             )}
                           >
                             {!profitable && <TrendingDown className="size-3.5" />}
@@ -549,7 +549,7 @@ export function SkuPnlTable({
                                 "mt-0.5",
                                 be.maxDiscountPercent > 0
                                   ? "text-muted-foreground"
-                                  : "font-medium text-rose-600"
+                                  : "font-medium text-red-500"
                               )}
                               hint={
                                 <>
@@ -626,8 +626,8 @@ export function SkuPnlTable({
                     className={cn(
                       "font-semibold",
                       data.summary.skuProfitTotal >= 0
-                        ? "text-emerald-600"
-                        : "text-rose-600"
+                        ? "text-emerald-500"
+                        : "text-red-500"
                     )}
                   >
                     {formatVND(data.summary.skuProfitTotal)}
@@ -637,7 +637,7 @@ export function SkuPnlTable({
                   <span className="text-muted-foreground">
                     Chi phí cố định toàn shop (mặt bằng, lương…)
                   </span>
-                  <span className="font-semibold text-rose-600">
+                  <span className="font-semibold text-red-500">
                     − {formatVND(data.summary.fixedExpense)}
                   </span>
                 </div>
@@ -647,8 +647,8 @@ export function SkuPnlTable({
                     className={cn(
                       "text-base font-bold",
                       data.summary.shopProfit >= 0
-                        ? "text-emerald-600"
-                        : "text-rose-600"
+                        ? "text-emerald-500"
+                        : "text-red-500"
                     )}
                   >
                     {formatVND(data.summary.shopProfit)}

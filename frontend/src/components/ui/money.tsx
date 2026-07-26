@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  * trông đặc và mắt không biết bám vào đâu.
  *
  * Mặc định số dùng màu chữ đang kế thừa, nên đặt màu ở thẻ cha là đủ:
- *   <td className="text-rose-600"><Money value={-88700} /></td>
+ *   <td className="text-red-500"><Money value={-88700} /></td>
  */
 export function Money({
   value,

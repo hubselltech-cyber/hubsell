@@ -115,7 +115,7 @@ export const PNL_STATUS_LABEL: Record<string, string> = {
 /** Ô phí/khấu trừ (âm): hiện dấu trừ khi > 0, gạch mờ khi = 0. */
 export function Deduction({
   value,
-  tone = "text-rose-600",
+  tone = "text-red-500",
 }: {
   value: number;
   tone?: string;
@@ -132,7 +132,7 @@ export function Deduction({
  */
 export function ShipDiff({ value }: { value: number }) {
   if (!value) return <span className="text-slate-300">—</span>;
-  if (value > 0) return <Money value={value} negative className="text-rose-600" />;
+  if (value > 0) return <Money value={value} negative className="text-red-500" />;
   return (
     <span className="whitespace-nowrap text-emerald-700">
       + <Money value={Math.abs(value)} className="text-emerald-700" />
@@ -155,7 +155,7 @@ export function ProfitCell({ value }: { value: number }) {
     <Money
       value={Math.abs(value)}
       negative={!positive}
-      className={cn("font-bold", positive ? "text-emerald-600" : "text-rose-600")}
+      className={cn("font-bold", positive ? "text-emerald-500" : "text-red-500")}
     />
   );
 }

@@ -54,8 +54,8 @@ const ICON_BOX: Record<CardTone, string> = {
 
 /**
  * Màu chữ của SỐ LIỆU — nghiêm ngặt 3 trạng thái, không tô màu trang trí:
- *   tiền vào / lãi  → xanh lá
- *   tiền ra / lỗ    → đỏ sắc nét (600, không dùng 700 sẫm xỉn)
+ *   tiền vào / lãi  → emerald-500 (#10B981)
+ *   tiền ra / lỗ    → red-500 (#EF4444) — đỏ cam trầm, không dùng đỏ sẫm xỉn
  *   còn lại         → đen/xám mặc định
  */
 const VALUE_COLOR: Record<CardTone, string> = {

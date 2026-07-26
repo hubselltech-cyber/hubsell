@@ -122,7 +122,7 @@ export function ImportExcelDialog({ onImported }: { onImported: () => void }) {
                 : "border-input hover:border-primary/50 hover:bg-muted/40"
             )}
           >
-            <FileSpreadsheet className="size-9 text-emerald-600" />
+            <FileSpreadsheet className="size-9 text-emerald-500" />
             <p className="text-sm font-medium">
               Kéo thả file Excel vào đây, hoặc bấm để chọn
             </p>
@@ -139,7 +139,7 @@ export function ImportExcelDialog({ onImported }: { onImported: () => void }) {
           </div>
         ) : (
           <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
-            <FileSpreadsheet className="size-8 shrink-0 text-emerald-600" />
+            <FileSpreadsheet className="size-8 shrink-0 text-emerald-500" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{file.name}</p>
               <p className="text-xs text-muted-foreground">

@@ -70,7 +70,7 @@ function Cash({ value, className }: { value: number; className?: string }) {
 function TotalCell({ value }: { value: number }) {
   if (value < 0)
     return (
-      <span className="inline-flex items-center justify-end gap-1 text-rose-600">
+      <span className="inline-flex items-center justify-end gap-1 text-red-500">
         <TriangleAlert className="size-3.5 shrink-0" />
         <Money value={Math.abs(value)} negative className="font-bold" />
       </span>
@@ -296,7 +296,7 @@ export function CashFlowTable() {
                         className={cn(
                           cell,
                           "text-right font-medium",
-                          r.settled < 0 ? "text-rose-600" : "text-emerald-700"
+                          r.settled < 0 ? "text-red-500" : "text-emerald-700"
                         )}
                       >
                         {r.settled < 0 ? (
@@ -354,7 +354,7 @@ export function CashFlowTable() {
           <p className="px-4 py-2.5 text-left text-xs italic text-slate-500">
             “Tiền về Ngân hàng” ghi nhận khi tiền rời ví sàn về bank (đồng bộ từ
             sàn hoặc bấm “Xác nhận đã rút ví”). Ví sàn hiện màu{" "}
-            <span className="font-medium text-rose-600">đỏ</span> nếu số đã rút
+            <span className="font-medium text-red-500">đỏ</span> nếu số đã rút
             vượt tiền đã quyết toán — dấu hiệu lệch pha cần đối soát.
           </p>
         )}
@@ -421,7 +421,7 @@ export function CashFlowTable() {
             </div>
 
             {formError && (
-              <p className="text-sm font-medium text-rose-600">{formError}</p>
+              <p className="text-sm font-medium text-red-500">{formError}</p>
             )}
           </div>
 

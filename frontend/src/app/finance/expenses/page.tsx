@@ -241,7 +241,7 @@ export default function FinanceExpensesPage() {
                         <TableCell
                           className={cn(
                             "text-right font-semibold",
-                            income ? "text-emerald-600" : "text-rose-600"
+                            income ? "text-emerald-500" : "text-red-500"
                           )}
                         >
                           {income ? "+ " : "− "}
@@ -254,7 +254,7 @@ export default function FinanceExpensesPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            className="text-muted-foreground hover:text-rose-600"
+                            className="text-muted-foreground hover:text-red-500"
                             disabled={deletingId === e.id}
                             onClick={() => handleDelete(e)}
                           >

@@ -284,13 +284,13 @@ export function ExpensesSection({
                       {e.note ? ` · ${e.note}` : ""}
                     </p>
                   </div>
-                  <span className="shrink-0 font-semibold text-rose-600">
+                  <span className="shrink-0 font-semibold text-red-500">
                     − {formatVND(e.amount)}
                   </span>
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="shrink-0 text-muted-foreground hover:text-rose-600"
+                    className="shrink-0 text-muted-foreground hover:text-red-500"
                     disabled={deletingId === e.id}
                     onClick={() => handleDelete(e.id)}
                   >
@@ -307,7 +307,7 @@ export function ExpensesSection({
             {/* Tổng cộng */}
             <div className="flex items-center justify-between border-t pt-3">
               <span className="text-sm font-medium">Tổng chi phí hoạt động</span>
-              <span className="text-base font-bold text-rose-600">
+              <span className="text-base font-bold text-red-500">
                 − {formatVND(total)}
               </span>
             </div>

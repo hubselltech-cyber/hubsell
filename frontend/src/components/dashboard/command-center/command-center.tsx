@@ -290,7 +290,7 @@ export function CommandCenter() {
             <CardTitle className="flex items-center gap-2">
               Cảnh báo cần xử lý
               {unresolvedCount > 0 && (
-                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600">
+                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-red-500">
                   {unresolvedCount}
                 </span>
               )}

@@ -442,7 +442,7 @@ export default function WarehouseReturnsPage() {
                               <span
                                 className={cn(
                                   "font-semibold tabular-nums",
-                                  o.agingLevel === "overdue" && "text-rose-600",
+                                  o.agingLevel === "overdue" && "text-red-500",
                                   o.agingLevel === "warning" && "text-amber-700"
                                 )}
                               >
@@ -450,7 +450,7 @@ export default function WarehouseReturnsPage() {
                               </span>
                             )}
                             {o.agingLevel === "overdue" && (
-                              <p className={cn(TEXT_SUB, "text-rose-600")}>
+                              <p className={cn(TEXT_SUB, "text-red-500")}>
                                 Chưa về tay
                               </p>
                             )}

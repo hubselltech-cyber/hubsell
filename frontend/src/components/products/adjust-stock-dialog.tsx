@@ -80,9 +80,9 @@ export function AdjustStockDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isImport ? (
-              <ArrowDownToLine className="size-5 text-emerald-600" />
+              <ArrowDownToLine className="size-5 text-emerald-500" />
             ) : (
-              <ArrowUpFromLine className="size-5 text-rose-600" />
+              <ArrowUpFromLine className="size-5 text-red-500" />
             )}
             {isImport ? "Nhập kho" : "Xuất kho"}: {product.productName}
           </DialogTitle>

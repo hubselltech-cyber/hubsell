@@ -268,7 +268,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </Link>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4">
           {items.map((item) => {
             // ----- Mục có MENU CON (ví dụ: Quản lý Tài chính) -----
             if (item.children) {
@@ -285,10 +285,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     type="button"
                     onClick={() => toggleMenu(item.label)}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
                       groupActive
-                        ? "text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        ? "font-semibold text-slate-900"
+                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
                     <item.icon className="size-4.5 shrink-0" />
@@ -301,7 +301,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     />
                   </button>
                   {open && (
-                    <div className="mt-1 space-y-1 border-l pl-4 ml-5">
+                    <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
                       {item.children.map((child) => {
                         const childActive = pathname.startsWith(child.href);
                         return (
@@ -309,12 +309,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             key={child.href}
                             href={child.href}
                             className={cn(
-                              "block rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                              "relative block rounded-lg px-3 py-2 text-sm transition-colors",
                               childActive
-                                ? "bg-primary text-primary-foreground shadow-sm"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                ? "bg-slate-100 font-semibold text-slate-900"
+                                : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                             )}
                           >
+                            {/* Vạch neo thị giác — nét dọc mảnh sát cạnh trái của mục đang chọn */}
+                            {childActive && (
+                              <span
+                                aria-hidden
+                                className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-slate-900"
+                              />
+                            )}
                             {child.label}
                           </Link>
                         );
@@ -335,12 +342,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href!}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
                   active
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-slate-100 font-semibold text-slate-900"
+                    : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
+                {/* Vạch neo thị giác cho mục đang chọn */}
+                {active && (
+                  <span
+                    aria-hidden
+                    className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-slate-900"
+                  />
+                )}
                 <item.icon className="size-4.5 shrink-0" />
                 {item.label}
               </Link>
@@ -359,7 +373,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       {/* ===== SIDEBAR DỌC BÊN TRÁI (desktop) ===== */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r bg-card md:flex">
+      {/* Nền trắng của sidebar tự tách khỏi nền slate-50 của trang; viền phải
+          làm mờ đi để ranh giới tinh tế thay vì một nét xám cứng. */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-slate-200/60 bg-card md:flex">
         {sidebarInner}
       </aside>
 
@@ -372,7 +388,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             aria-hidden
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r bg-card shadow-xl">
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-slate-200/60 bg-card shadow-xl">
             {sidebarInner}
           </aside>
         </div>

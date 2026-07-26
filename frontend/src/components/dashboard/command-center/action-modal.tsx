@@ -144,7 +144,7 @@ function RestockForm({
                       {v.sku}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right text-rose-600">
+                  <td className="px-3 py-2 text-right text-red-500">
                     {v.channelStock}
                   </td>
                   <td
@@ -180,7 +180,7 @@ function RestockForm({
       </div>
 
       {!allRowsValid && (
-        <p className="text-xs text-rose-600">
+        <p className="text-xs text-red-500">
           Không bơm quá tồn kho thực còn của mỗi phân loại.
         </p>
       )}
@@ -239,8 +239,8 @@ function StockMismatchForm({
               </td>
             </tr>
             <tr className="border-t border-slate-100 bg-rose-50/40">
-              <td className="px-3 py-2 text-rose-600">Chênh lệch</td>
-              <td className="px-3 py-2 text-right font-semibold text-rose-600">
+              <td className="px-3 py-2 text-red-500">Chênh lệch</td>
+              <td className="px-3 py-2 text-right font-semibold text-red-500">
                 {diff > 0 ? `+${diff}` : diff}
               </td>
             </tr>
@@ -340,7 +340,7 @@ function EditPriceForm({
           )}
         </Field>
         <Field label="Biên hiện tại (theo giá KM)">
-          <span className={oldMargin < 0 ? "text-rose-600" : "text-slate-900"}>
+          <span className={oldMargin < 0 ? "text-red-500" : "text-slate-900"}>
             {oldMargin}%
           </span>
         </Field>
@@ -380,8 +380,8 @@ function EditPriceForm({
             invalid
               ? "text-slate-400"
               : newMargin >= 0
-                ? "text-emerald-600"
-                : "text-rose-600"
+                ? "text-emerald-500"
+                : "text-red-500"
           )}
         >
           {invalid ? "—" : `${newMargin}%`}
@@ -493,7 +493,7 @@ function CustomerRefusalForm({
           <span className="font-mono">{params.phone}</span>
         </Field>
         <Field label="Số đơn đã bom">
-          <span className="text-rose-600">{params.refusedOrders}</span>
+          <span className="text-red-500">{params.refusedOrders}</span>
         </Field>
       </div>
       <Button
@@ -545,7 +545,7 @@ function RoasForm({
       <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-1">
         <Field label="Chiến dịch">{params.campaign}</Field>
         <Field label="ROAS hiện tại">
-          <span className="text-rose-600">{params.roas}</span>
+          <span className="text-red-500">{params.roas}</span>
         </Field>
         <Field label="Ngân sách/ngày">{formatVND(params.dailyBudget)}</Field>
       </div>

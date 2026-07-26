@@ -14,7 +14,8 @@
  *     slate-600  số liệu phụ trợ      (giá vốn, phí — đọc khi cần)
  *     slate-500  nhãn & chú thích     (biết là gì, không cần đọc kỹ)
  *
- *   MÀU (emerald/rose) chỉ dành cho LÃI–LỖ và CẢNH BÁO. Không tô trang trí.
+ *   MÀU tín hiệu (emerald-500 / red-500) chỉ dành cho LÃI–LỖ và CẢNH BÁO.
+ *   Không tô trang trí.
  *   ĐẬM (semibold) chỉ dành cho cột Lợi nhuận và số Hero. Không đậm tràn lan.
  */
 
@@ -27,9 +28,10 @@ export const TEXT_BODY = "text-sm text-slate-900";
 
 /**
  * Số liệu PHỤ TRỢ trong bảng: giá vốn, phí sàn, chi phí Ads.
- * Cố ý KHÔNG đậm — đây là số để đối chiếu, không phải kết luận.
+ * font-medium + slate-700: đủ nổi để mắt quét trúng số khi lướt bảng, nhưng
+ * vẫn nhường bậc semibold cho cột kết luận (TEXT_NUMBER_STRONG).
  */
-export const TEXT_NUMBER_MUTED = "text-sm font-normal text-slate-600";
+export const TEXT_NUMBER_MUTED = "text-sm font-medium text-slate-700";
 
 /**
  * Số liệu KẾT LUẬN: cột Lợi nhuận cuối bảng.
@@ -72,10 +74,10 @@ export const TEXT_HERO_NUMBER =
 export const CELL_PADDING = "px-4 py-4";
 
 /** Màu chữ cho số dương/âm — dùng chung ở bảng và thẻ. */
-export const MONEY_POSITIVE = "text-emerald-600";
-export const MONEY_NEGATIVE = "text-rose-600";
+export const MONEY_POSITIVE = "text-emerald-500";
+export const MONEY_NEGATIVE = "text-red-500";
 
-/** Dương → xanh ngọc, âm → đỏ đô. Trả về class màu cho số tiền. */
+/** Dương → emerald-500 (#10B981), âm → red-500 (#EF4444). Class màu cho số tiền. */
 export function moneyTone(value: number): string {
   return value >= 0 ? MONEY_POSITIVE : MONEY_NEGATIVE;
 }

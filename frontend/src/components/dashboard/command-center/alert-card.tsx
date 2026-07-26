@@ -62,7 +62,7 @@ export function AlertCard({
               {formatRelative(alert.createdAt)}
             </span>
             {resolved && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-500">
                 <Check className="size-3" /> Đã xử lý
               </span>
             )}

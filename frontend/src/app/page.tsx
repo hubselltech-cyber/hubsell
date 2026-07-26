@@ -202,7 +202,7 @@ function DeltaChip({
       <span
         className={cn(
           "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium",
-          up ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+          up ? "bg-emerald-50 text-emerald-500" : "bg-rose-50 text-red-500"
         )}
       >
         {up ? "▲" : "▼"} {Math.abs(pct)}%
@@ -270,7 +270,7 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
           <PipelineStep
             label="🚫 Đơn hủy"
             count={pipeline.CANCELLED}
-            countClassName={pipeline.CANCELLED > 0 ? "text-rose-600" : ""}
+            countClassName={pipeline.CANCELLED > 0 ? "text-red-500" : ""}
           />
         </div>
       </CardContent>

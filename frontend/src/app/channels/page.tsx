@@ -200,7 +200,7 @@ function ConnectDialog({
                 maxLength={60}
               />
               {duplicated ? (
-                <p className="text-sm text-rose-600">
+                <p className="text-sm text-red-500">
                   Đã có gian hàng tên này trên {CHANNEL_META[channelName].label}.
                   Đặt tên khác để phân biệt.
                 </p>
@@ -703,7 +703,7 @@ export default function ChannelsPage() {
                               <span
                                 className={cn(
                                   "inline-flex shrink-0 items-center gap-1.5 text-xs font-medium",
-                                  active ? "text-emerald-600" : "text-zinc-400"
+                                  active ? "text-emerald-500" : "text-zinc-400"
                                 )}
                               >
                                 <span

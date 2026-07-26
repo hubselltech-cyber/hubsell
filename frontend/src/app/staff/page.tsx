@@ -654,7 +654,7 @@ export default function StaffPage() {
                     <Button
                       variant="outline"
                       size="icon-sm"
-                      className="text-muted-foreground hover:text-rose-600"
+                      className="text-muted-foreground hover:text-red-500"
                       disabled={deletingId === s.id}
                       onClick={() => handleDelete(s)}
                     >

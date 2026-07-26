@@ -289,7 +289,7 @@ export default function RealizedPnlPage() {
                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
                 lossOnly
                   ? "border-rose-500 bg-rose-500 text-white"
-                  : "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
+                  : "border-rose-200 bg-rose-50 text-red-500 hover:bg-rose-100"
               )}
             >
               <TrendingDown className="size-4" />

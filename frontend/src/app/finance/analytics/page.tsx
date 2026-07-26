@@ -142,7 +142,7 @@ export default function FinanceAnalyticsPage() {
               footer={
                 <span>
                   Tổng sàn khấu trừ:{" "}
-                  <b className="text-rose-600">
+                  <b className="text-red-500">
                     − {formatVND(data.breakdown.gross.totalDeduction)}
                   </b>
                 </span>

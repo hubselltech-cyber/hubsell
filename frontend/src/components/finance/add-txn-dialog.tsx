@@ -170,7 +170,7 @@ export function AddTxnDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className={isIncome ? "text-emerald-600" : "text-rose-600"}>
+          <DialogTitle className={isIncome ? "text-emerald-500" : "text-red-500"}>
             {isIncome ? "Thêm khoản thu vận hành" : "Thêm chi phí vận hành"}
           </DialogTitle>
           <DialogDescription>
