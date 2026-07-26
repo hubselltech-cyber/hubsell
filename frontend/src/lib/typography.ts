@@ -44,6 +44,14 @@ export const TEXT_SUB = "text-xs text-slate-500";
 export const TEXT_TABLE_HEAD =
   "text-xs font-medium uppercase tracking-wide text-slate-500";
 
+/**
+ * Thanh tiêu đề bảng bản NỔI — nền xám đặc, chữ đậm/sẫm hơn TEXT_TABLE_HEAD,
+ * viền đáy rõ + bo nhẹ hai góc trên. Áp qua <TableHeader className={...}> ở
+ * những bảng dày số liệu cần tách hẳn tiêu đề khỏi dữ liệu.
+ */
+export const TABLE_HEAD_EMPHASIS =
+  "bg-slate-50 [&_tr]:border-b [&_tr]:border-slate-200 [&_th]:font-semibold [&_th]:text-slate-700 [&_th:first-child]:rounded-tl-lg [&_th:last-child]:rounded-tr-lg";
+
 /** Nhãn của thẻ chỉ số — 12px in hoa, cùng cấp với tiêu đề cột bảng */
 export const TEXT_CARD_TITLE =
   "text-xs font-medium uppercase tracking-wide text-slate-500";

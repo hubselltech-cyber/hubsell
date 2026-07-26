@@ -26,6 +26,7 @@ import { Money } from "@/components/ui/money";
 import {
   MONEY_NEGATIVE,
   MONEY_POSITIVE,
+  TABLE_HEAD_EMPHASIS,
   TEXT_NUMBER_MUTED,
   TEXT_SUB,
 } from "@/lib/typography";
@@ -212,7 +213,7 @@ export default function LossOrdersPage() {
             ) : (
               <Refreshing active={loading}>
                 <Table>
-                <TableHeader>
+                <TableHeader className={TABLE_HEAD_EMPHASIS}>
                   <TableRow>
                     <TableHead>Mã đơn</TableHead>
                     <TableHead>Khách hàng</TableHead>

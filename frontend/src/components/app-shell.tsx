@@ -124,6 +124,17 @@ function getPageTitle(pathname: string): string {
   return found?.title ?? "Tổng quan";
 }
 
+// Những nhóm menu chứa route đang xem — để tự xoè nhóm ra khi điều hướng tới
+// trang con của nó (người dùng vẫn cụp tay lại được, xem openMenus bên dưới).
+function menusForPath(pathname: string): string[] {
+  const labels: string[] = [];
+  if (pathname.startsWith("/finance")) labels.push("Quản lý Tài chính");
+  if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
+    labels.push("Quản lý Kho");
+  if (pathname.startsWith("/settings")) labels.push("Cấu hình");
+  return labels;
+}
+
 // Bố cục chuẩn SaaS: Sidebar dọc + Header mỏng + nội dung chính.
 // Kèm Onboarding guard: chưa kết nối gian hàng nào → hiện màn hình chặn.
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -131,18 +142,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [hasChannels, setHasChannels] = useState<boolean | null>(null);
-  // Menu con nào đang mở (theo label). Tự mở nhóm Tài chính khi đang ở /finance/*
   // Drawer điều hướng trên điện thoại — dưới md sidebar cố định bị ẩn,
   // không có drawer này thì người dùng mobile không đi đâu được ngoài trang hiện tại
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState<Set<string>>(() => {
-    const open = new Set<string>();
-    if (pathname.startsWith("/finance")) open.add("Quản lý Tài chính");
-    if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
-      open.add("Quản lý Kho");
-    if (pathname.startsWith("/settings")) open.add("Cấu hình");
-    return open;
-  });
+  // openMenus là NGUỒN CHÂN LÝ DUY NHẤT cho việc nhóm nào đang xoè: route chỉ
+  // được "gieo" nhóm vào đây lúc mount/điều hướng, KHÔNG ép mở khi render —
+  // ép mở là người dùng hết cụp tay được nhóm chứa trang đang xem.
+  const [openMenus, setOpenMenus] = useState<Set<string>>(
+    () => new Set(menusForPath(pathname))
+  );
+
+  // Điều hướng sang trang con của nhóm đang đóng thì tự xoè nhóm đó ra —
+  // chỉ THÊM vào state nên không phá thao tác cụp tay trước đó của người dùng.
+  useEffect(() => {
+    setOpenMenus((prev) => {
+      const labels = menusForPath(pathname);
+      if (labels.every((l) => prev.has(l))) return prev;
+      const next = new Set(prev);
+      labels.forEach((l) => next.add(l));
+      return next;
+    });
+  }, [pathname]);
 
   function toggleMenu(label: string) {
     setOpenMenus((prev) => {
@@ -237,7 +257,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               const groupActive = item.children.some((c) =>
                 pathname.startsWith(c.href)
               );
-              const open = openMenus.has(item.label) || groupActive;
+              // groupActive chỉ dùng để TÔ MÀU nhãn nhóm; trạng thái xoè/cụp
+              // do openMenus quyết định hoàn toàn — trước đây `|| groupActive`
+              // ép nhóm chứa trang đang xem luôn mở, bấm không cụp lại được.
+              const open = openMenus.has(item.label);
               return (
                 <div key={item.label}>
                   <button

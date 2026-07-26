@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   Crown,
   ImageIcon,
   Loader2,
@@ -57,6 +59,7 @@ import {
   CELL_PADDING,
   MONEY_NEGATIVE,
   MONEY_POSITIVE,
+  TABLE_HEAD_EMPHASIS,
   TEXT_NUMBER_MUTED,
   TEXT_SUB,
 } from "@/lib/typography";
@@ -69,6 +72,14 @@ const CELL_PAD = CELL_PADDING;
 // Cột "Sản phẩm" ghim cố định mép trái khi cuộn ngang xem các chỉ số tài chính
 const STICKY_COL =
   "sticky left-0 z-10 bg-card shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
+
+// Ô tiêu đề của cột ghim: nền phải trùng nền thanh tiêu đề (TABLE_HEAD_EMPHASIS)
+// chứ không phải nền thẻ, kẻo cuộn ngang lộ một ô trắng lệch tông.
+const STICKY_HEAD =
+  "sticky left-0 z-10 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
+
+// Bảng dài thì cắt trang tại chỗ — dữ liệu đã về đủ trong một lần gọi API
+const PAGE_SIZE = 10;
 
 /** Ba tab lọc nhanh. Thứ tự đi từ rộng đến hẹp dần theo mức độ cần xử lý. */
 type PnlTab = "all" | "urgent" | "missing-cost";
@@ -211,6 +222,13 @@ export function SkuPnlTable({
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<PnlTab>("all");
   const [editingCost, setEditingCost] = useState<SkuPnlRow | null>(null);
+  const [page, setPage] = useState(1);
+
+  // Đổi tab hay bộ lọc là quay về trang đầu; riêng lưu giá vốn xong thì load()
+  // lại nhưng GIỮ nguyên trang để không mất mạch đang soát dở danh sách.
+  useEffect(() => {
+    setPage(1);
+  }, [tab, range, channel]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -231,6 +249,15 @@ export function SkuPnlTable({
   const items = useMemo(
     () => allItems.filter((r) => matchTab(r, tab)),
     [allItems, tab]
+  );
+
+  // Kẹp lại số trang khi dữ liệu co hẹp (vd. nhập xong giá vốn ở tab "Chưa
+  // nhập giá vốn" làm danh sách ngắn đi) — không bao giờ đứng ở trang rỗng.
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pagedItems = items.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
   );
 
   // Số đếm trên tab lấy từ máy chủ để phản ánh đúng toàn bộ tập dữ liệu
@@ -318,10 +345,10 @@ export function SkuPnlTable({
             )}
 
             <Table>
-                <TableHeader>
+                <TableHeader className={TABLE_HEAD_EMPHASIS}>
                   <TableRow>
                     {/* Cột sản phẩm ghim trái — luôn thấy được khi cuộn ngang */}
-                    <TableHead className={cn(STICKY_COL, CELL_PADDING)}>
+                    <TableHead className={cn(STICKY_HEAD, CELL_PADDING)}>
                       Sản phẩm
                     </TableHead>
                     <TableHead className={cn(CELL_PAD, "text-right")}>Đã bán</TableHead>
@@ -345,10 +372,12 @@ export function SkuPnlTable({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((row, index) => {
+                  {pagedItems.map((row, index) => {
                     const profitable = row.profit > 0;
-                    // Mã lãi cao nhất được gắn vương miện
-                    const isTop = index === 0 && profitable;
+                    // Mã lãi cao nhất được gắn vương miện — tính theo vị trí
+                    // trong TOÀN danh sách, không phải vị trí trên trang hiện tại
+                    const isTop =
+                      (safePage - 1) * PAGE_SIZE + index === 0 && profitable;
                     const be = row.breakEven;
                     // Giá bán thực tế đang thấp hơn giá hoà vốn ⇒ mỗi đơn bán ra là mỗi lần lỗ
                     const belowFloor = be ? be.avgSellingPrice < be.floorPrice : false;
@@ -553,6 +582,38 @@ export function SkuPnlTable({
                   })}
                 </TableBody>
             </Table>
+
+            {/* Thanh phân trang — chỉ hiện khi danh sách vượt một trang */}
+            {items.length > PAGE_SIZE && (
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Hiển thị {formatNumber((safePage - 1) * PAGE_SIZE + 1)}–
+                  {formatNumber(Math.min(safePage * PAGE_SIZE, items.length))} trên{" "}
+                  {formatNumber(items.length)} sản phẩm · trang {safePage}/
+                  {pageCount}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage(safePage - 1)}
+                  >
+                    <ChevronLeft className="size-4" />
+                    Trang trước
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= pageCount}
+                    onClick={() => setPage(safePage + 1)}
+                  >
+                    Trang sau
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Đối chiếu về lợi nhuận cuối cùng của shop */}
             {data && (
