@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN     "adWalletTopup" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "shipSubsidyPlatform" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "shipSubsidyShop" DECIMAL(12,2) NOT NULL DEFAULT 0,
+ADD COLUMN     "taxWithheld" DECIMAL(12,2) NOT NULL DEFAULT 0;

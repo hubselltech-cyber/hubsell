@@ -124,6 +124,22 @@ export function Deduction({
   return <Money value={value} negative className={tone} />;
 }
 
+/**
+ * Ô CHÊNH LỆCH PHÍ VC — khoản HAI CHIỀU duy nhất trong các cột phí.
+ * Quy ước dữ liệu: dương = sàn trừ THÊM của shop (xấu → đỏ, dấu −);
+ * âm = sàn HOÀN LẠI cho shop (tốt → xanh, dấu +). Không dùng Deduction ở đây:
+ * Deduction giả định phí luôn dương, gặp số âm sẽ in "− -5.500" (trừ kép).
+ */
+export function ShipDiff({ value }: { value: number }) {
+  if (!value) return <span className="text-slate-300">—</span>;
+  if (value > 0) return <Money value={value} negative className="text-rose-600" />;
+  return (
+    <span className="whitespace-nowrap text-emerald-700">
+      + <Money value={Math.abs(value)} className="text-emerald-700" />
+    </span>
+  );
+}
+
 /** Ô số dương (doanh thu). */
 export function Amount({ value, tone }: { value: number; tone?: string }) {
   if (!value) return <span className="text-slate-300">—</span>;

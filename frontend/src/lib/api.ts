@@ -408,10 +408,16 @@ export interface PnlDetailRow {
   shippingFeeQuoted: number;
   shippingFeeActual: number;
   shippingFeeDiff: number;
+  /** Trợ giá VC từ SÀN / do SHOP chịu — bóc tách nội bộ của phí ship. */
+  shipSubsidyPlatform: number;
+  shipSubsidyShop: number;
   // Phí sàn theo bucket
   feeFixedPayment: number;
   feeService: number;
   feeAffiliate: number;
+  /** Khấu trừ lúc giải ngân (đã phản ánh trong actualPayout) — chỉ hiển thị. */
+  adWalletTopup: number;
+  taxWithheld: number;
   // Hiệu quả
   costSnapshot: number;
   netRevenue: number;

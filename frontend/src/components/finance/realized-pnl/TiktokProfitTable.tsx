@@ -18,6 +18,7 @@ import {
   ProfitCell,
   RowCheckTd,
   SelectAllTh,
+  ShipDiff,
   type PnlSelection,
 } from "./cells";
 
@@ -28,7 +29,7 @@ import {
  * tiết phí vận chuyển trước/sau chiết khấu, và các nhóm phí đặc thù (SFP, Flash
  * Sale, SFR, VAT). Nhóm cột tô nền: thông tin (trắng), doanh thu & giảm giá
  * (xanh), phí VC (lam), phí & thuế (đỏ), hiệu quả (xám). Cột chưa có dữ liệu
- * thật (chiết khấu PVC, Flash Sale, SFR, VAT) hiện GIỮ CHỖ 0đ.
+ * thật (Flash Sale, SFR) hiện GIỮ CHỖ 0đ.
  */
 export function TiktokProfitTable({
   rows,
@@ -187,7 +188,7 @@ export function TiktokProfitTable({
                   <Amount value={r.shipActual} />
                 </td>
                 <td className={cn(cell, BLOCK.ship, "text-right")}>
-                  <Deduction value={r.shipDiff} tone="text-rose-600" />
+                  <ShipDiff value={r.shipDiff} />
                 </td>
 
                 {/* Phí & thuế (âm) */}

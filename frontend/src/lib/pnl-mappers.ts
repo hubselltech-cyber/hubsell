@@ -19,17 +19,17 @@ export interface ShopeeProfitRow {
   // Phí vận chuyển
   shipQuoted: number; // Phí VC Dự kiến
   shipActual: number; // Phí VC Thực tế
-  shipSubsidyShopee: number; // Trợ giá VC Shopee — giữ chỗ
-  shipSubsidyShop: number; // Trợ giá VC Shop — giữ chỗ
+  shipSubsidyShopee: number; // Trợ giá VC Shopee
+  shipSubsidyShop: number; // Trợ giá VC Shop
   buyerPaidShip: number; // Người mua trả — giữ chỗ
   shipDiff: number; // Chênh lệch phí vận chuyển
   // Phí sàn & thuế (âm)
   feePlatform: number; // Phí sàn (cố định + thanh toán)
   feeAffiliate: number; // Phí TTLK (Affiliate)
   feePiship: number; // PiShip (Freeship/Voucher Xtra)
-  adWallet: number; // Nạp ví quảng cáo — giữ chỗ
+  adWallet: number; // Nạp ví quảng cáo (sàn khấu trừ khi giải ngân)
   sellerSubsidy: number; // Trợ giá người bán
-  tax: number; // Thuế — giữ chỗ
+  tax: number; // Thuế sàn thu hộ
   // Hiệu quả kinh doanh
   estRevenue: number; // Doanh thu ước tính
   revenueFromShopee: number; // Doanh thu từ Shopee
@@ -47,16 +47,16 @@ export function toShopeeRow(r: PnlDetailRow): ShopeeProfitRow {
     shopeeSubsidy: r.platformSubsidy,
     shipQuoted: r.shippingFeeQuoted,
     shipActual: r.shippingFeeActual,
-    shipSubsidyShopee: 0,
-    shipSubsidyShop: 0,
+    shipSubsidyShopee: r.shipSubsidyPlatform,
+    shipSubsidyShop: r.shipSubsidyShop,
     buyerPaidShip: 0,
     shipDiff: r.shippingFeeDiff,
     feePlatform: r.feeFixedPayment,
     feeAffiliate: r.feeAffiliate,
     feePiship: r.feeService,
-    adWallet: 0,
+    adWallet: r.adWalletTopup,
     sellerSubsidy: r.sellerVoucher,
-    tax: 0,
+    tax: r.taxWithheld,
     estRevenue: r.netRevenue,
     revenueFromShopee,
     costSnapshot: r.costSnapshot,
@@ -75,8 +75,8 @@ export interface TiktokProfitRow {
   revenueAfterDiscount: number; // Tổng giá trị SP sau chiết khấu
   // Phí vận chuyển
   shipBeforeDiscount: number; // PVC trước chiết khấu
-  shipDiscountPlatform: number; // Chiết khấu PVC bởi sàn — giữ chỗ
-  shipDiscountSeller: number; // Chiết khấu PVC bởi người bán — giữ chỗ
+  shipDiscountPlatform: number; // Chiết khấu PVC bởi sàn
+  shipDiscountSeller: number; // Chiết khấu PVC bởi người bán
   shipAfterDiscount: number; // PVC sau chiết khấu
   shipActual: number; // PVC thực tế
   shipDiff: number; // Chênh lệch PVC (âm)
@@ -86,7 +86,7 @@ export interface TiktokProfitRow {
   feeFlashSale: number; // Phí Flash Sale — giữ chỗ
   feeAffiliate: number; // Phí Tiếp thị liên kết
   feeOrderProcessingSfr: number; // Phí xử lý đơn hàng & SFR — giữ chỗ
-  taxVat: number; // Thuế & VAT — giữ chỗ
+  taxVat: number; // Thuế & VAT (sàn thu hộ)
   // Hiệu quả kinh doanh
   estRevenue: number; // Doanh thu ước tính
   costSnapshot: number; // Chi phí giá vốn
@@ -101,9 +101,10 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
     sellerDiscount: r.sellerVoucher,
     revenueAfterDiscount: r.revenueGross - r.platformSubsidy - r.sellerVoucher,
     shipBeforeDiscount: r.shippingFeeQuoted,
-    shipDiscountPlatform: 0,
-    shipDiscountSeller: 0,
-    shipAfterDiscount: r.shippingFeeQuoted,
+    shipDiscountPlatform: r.shipSubsidyPlatform,
+    shipDiscountSeller: r.shipSubsidyShop,
+    shipAfterDiscount:
+      r.shippingFeeQuoted - r.shipSubsidyPlatform - r.shipSubsidyShop,
     shipActual: r.shippingFeeActual,
     shipDiff: r.shippingFeeDiff,
     feeFixedTransaction: r.feeFixedPayment,
@@ -111,7 +112,7 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
     feeFlashSale: 0,
     feeAffiliate: r.feeAffiliate,
     feeOrderProcessingSfr: 0,
-    taxVat: 0,
+    taxVat: r.taxWithheld,
     estRevenue: r.netRevenue,
     costSnapshot: r.costSnapshot,
     profit: r.netRevenue - r.costSnapshot,

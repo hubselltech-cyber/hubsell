@@ -462,6 +462,14 @@ model Order {
   shippingDisputeStatus ShippingDisputeStatus @default(CHO_KHIEU_NAI)
   platformSubsidy Decimal   @default(0) @db.Decimal(12, 2) // trợ giá từ SÀN (giảm chi phí cho shop)
   actualPayout    Decimal   @default(0) @db.Decimal(12, 2) // tiền thực nhận về ví
+  // --- Bóc tách quyết toán CHI TIẾT (chỉ hiển thị ở Lãi/Lỗ Thực Hiện) ---
+  // Các khoản này nằm NGOÀI công thức netRevenue dùng chung: trợ giá VC là bóc
+  // tách nội bộ của phí ship (đã gói trong shippingFeeDiff), còn ví QC/thuế là
+  // khoản sàn khấu trừ lúc GIẢI NGÂN — chúng đã phản ánh trong actualPayout.
+  shipSubsidyPlatform Decimal @default(0) @db.Decimal(12, 2) // trợ giá VC từ SÀN
+  shipSubsidyShop     Decimal @default(0) @db.Decimal(12, 2) // trợ giá VC do SHOP chịu
+  adWalletTopup       Decimal @default(0) @db.Decimal(12, 2) // sàn trừ nạp ví quảng cáo khi giải ngân
+  taxWithheld         Decimal @default(0) @db.Decimal(12, 2) // thuế sàn thu hộ (VD 1.5%)
 
   channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này

@@ -17,6 +17,7 @@ import {
   ProfitCell,
   RowCheckTd,
   SelectAllTh,
+  ShipDiff,
   type PnlSelection,
 } from "./cells";
 
@@ -25,8 +26,8 @@ import {
  *
  * Cột thiết kế riêng theo cấu trúc phí Shopee (tham chiếu file quyết toán
  * Salework). Nhóm cột tô nền: thông tin đơn (trắng), doanh thu (xanh), phí vận
- * chuyển (lam), phí sàn & thuế (đỏ), hiệu quả kinh doanh (xám). Các cột phí chưa
- * có dữ liệu thật (trợ giá VC, người mua trả, nạp ví QC, thuế) hiện GIỮ CHỖ 0đ.
+ * chuyển (lam), phí sàn & thuế (đỏ), hiệu quả kinh doanh (xám). Cột "Người mua
+ * trả" chưa có dữ liệu thật, hiện GIỮ CHỖ 0đ.
  */
 export function ShopeeProfitTable({
   rows,
@@ -170,7 +171,7 @@ export function ShopeeProfitTable({
                   <Amount value={r.buyerPaidShip} />
                 </td>
                 <td className={cn(cell, BLOCK.ship, "text-right")}>
-                  <Deduction value={r.shipDiff} tone="text-rose-600" />
+                  <ShipDiff value={r.shipDiff} />
                 </td>
 
                 {/* Phí sàn & thuế (âm) */}

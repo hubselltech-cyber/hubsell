@@ -15,6 +15,7 @@ import {
   ProfitCell,
   RowCheckTd,
   SelectAllTh,
+  ShipDiff,
   type PnlSelection,
 } from "./cells";
 
@@ -137,7 +138,7 @@ export function GenericProfitTable({
                   <Deduction value={totalFee} />
                 </td>
                 <td className={cn(cell, BLOCK.fee, "text-right")}>
-                  <Deduction value={b.shippingFeeDiff} />
+                  <ShipDiff value={b.shippingFeeDiff} />
                 </td>
                 <td className={cn(cell, BLOCK.ship, "text-right")}>
                   <Deduction value={b.costSnapshot} tone="text-slate-600" />

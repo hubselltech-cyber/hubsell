@@ -285,10 +285,15 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         shippingFeeQuoted: Number(o.shippingFeeQuoted),
         shippingFeeActual: Number(o.shippingFeeActual),
         shippingFeeDiff,
+        shipSubsidyPlatform: Number(o.shipSubsidyPlatform),
+        shipSubsidyShop: Number(o.shipSubsidyShop),
         // Phí sàn theo bucket
         feeFixedPayment,
         feeService,
         feeAffiliate,
+        // Khấu trừ lúc giải ngân — bóc tách hiển thị, đã nằm trong actualPayout
+        adWalletTopup: Number(o.adWalletTopup),
+        taxWithheld: Number(o.taxWithheld),
         // Hiệu quả
         costSnapshot: cost,
         netRevenue,
