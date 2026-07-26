@@ -302,7 +302,8 @@ function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
       <CardHeader>
         <CardTitle>Tỷ trọng kênh bán hàng</CardTitle>
         <CardDescription>
-          Giá trị đơn phát sinh trong kỳ theo từng gian hàng (không tính đơn hủy).
+          Giá trị đơn phát sinh trong kỳ theo từng gian hàng (không tính đơn hủy
+          và đơn đang hoàn/trả).
         </CardDescription>
       </CardHeader>
       <CardContent>
