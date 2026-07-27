@@ -12,12 +12,15 @@ import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
-import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
 import {
-  SHOPEE_PUSH_CODE,
-  setShopeeWebhookHandler,
-  type ShopeePushPayload,
-} from "./webhook";
+  deductStockTx,
+  holdStockTx,
+  releaseStockHoldTx,
+  restoreStockTx,
+  type StockOutcome,
+} from "../order-stock";
+import type { StockSyncRequest } from "./inventory-sync";
+import { SHOPEE_PUSH_CODE, type ShopeePushPayload } from "./webhook";
 import {
   getAccessToken,
   getOrderDetail,
@@ -477,6 +480,15 @@ function shouldDeductShopeeStock(status?: string): boolean {
   }
 }
 
+/**
+ * Đơn ở trạng thái CHƯA CHỐT (khách chưa thanh toán xong) — không trừ thật
+ * nhưng phải GIỮ (hold) tồn khả dụng ngay để hai khách cùng lúc không mua
+ * trùng một món hàng cuối cùng.
+ */
+function shouldHoldShopeeStock(status?: string): boolean {
+  return status === "UNPAID" || status === "INVOICE_PENDING";
+}
+
 export interface ShopeeOrderEventResult {
   found: boolean; // Shopee có trả chi tiết đơn không
   created: boolean; // upsert tạo mới hay cập nhật
@@ -484,6 +496,13 @@ export interface ShopeeOrderEventResult {
   inventory: StockOutcome;
   deducted?: number;
   restored?: number;
+  held?: number;
+  /**
+   * Kho có biến động → yêu cầu đẩy tồn khả dụng mới lên sàn. Worker webhook
+   * thực hiện SAU khi transaction này đã commit (đẩy sàn có retry riêng,
+   * không được nằm trong transaction kẻo giữ khoá DB suốt các lần chờ retry).
+   */
+  stockSync?: StockSyncRequest;
 }
 
 /**
@@ -528,34 +547,50 @@ export async function processShopeeOrderEvent(
       return { found: true, created: up.created, orderStatus: order.order_status, inventory: "none" as StockOutcome };
     }
 
+    // Snapshot tồn KHẢ DỤNG trước biến động — cột "số cũ" của log đối soát.
+    const itemRows = await tx.orderItem.findMany({
+      where: { orderId: orderRow.id, productId: { not: null } },
+      select: { productId: true },
+    });
+    const itemProductIds = [...new Set(itemRows.map((i) => i.productId!))];
+    const before = itemProductIds.length
+      ? await tx.product.findMany({
+          where: { id: { in: itemProductIds } },
+          select: { id: true, quantityInStock: true, holdQuantity: true },
+        })
+      : [];
+    const oldAvailable = Object.fromEntries(
+      before.map((p) => [p.id, p.quantityInStock - p.holdQuantity])
+    );
+    const syncFor = (productIds: string[]): StockSyncRequest | undefined =>
+      productIds.length > 0 ? { orderSn, productIds, oldAvailable } : undefined;
+
+    const base = { found: true, created: up.created, orderStatus: order.order_status };
+
     if (order.order_status === "CANCELLED") {
+      // Đơn hủy: nhả hold (nếu đơn chưa từng chốt) + hoàn kho (nếu đã trừ thật).
+      const rel = await releaseStockHoldTx(tx, orderRow.id);
       const r = await restoreStockTx(tx, orderRow.id, "webhook Shopee");
+      const productIds = [...new Set([...rel.productIds, ...r.productIds])];
       return {
-        found: true,
-        created: up.created,
-        orderStatus: order.order_status,
-        inventory: r.outcome,
+        ...base,
+        inventory: r.outcome === "none" && rel.released > 0 ? ("restored" as StockOutcome) : r.outcome,
         restored: r.restored,
+        stockSync: syncFor(productIds),
       };
     }
 
     if (shouldDeductShopeeStock(order.order_status)) {
       const d = await deductStockTx(tx, orderRow.id, "webhook Shopee");
-      return {
-        found: true,
-        created: up.created,
-        orderStatus: order.order_status,
-        inventory: d.outcome,
-        deducted: d.deducted,
-      };
+      return { ...base, inventory: d.outcome, deducted: d.deducted, stockSync: syncFor(d.productIds) };
     }
 
-    return {
-      found: true,
-      created: up.created,
-      orderStatus: order.order_status,
-      inventory: "none" as StockOutcome,
-    };
+    if (shouldHoldShopeeStock(order.order_status)) {
+      const h = await holdStockTx(tx, orderRow.id);
+      return { ...base, inventory: h.outcome, held: h.held, stockSync: syncFor(h.productIds) };
+    }
+
+    return { ...base, inventory: "none" as StockOutcome };
   });
 }
 
@@ -594,32 +629,39 @@ export async function processShopeeAuthorizationEvent(
 }
 
 /**
- * Bộ chia sự kiện cho hàng đợi webhook (đăng ký 1 lần lúc app khởi động).
+ * Bộ chia sự kiện cho HÀNG ĐỢI BỀN webhook (worker gọi từng job FIFO).
  * Ném lỗi = báo hàng đợi retry (lỗi tạm thời); các trường hợp "không có gì để
  * làm" (shop chưa nối, thiếu order_sn...) thì nuốt êm — retry cũng vô ích.
+ *
+ * Trả về yêu cầu đồng bộ tồn (nếu kho có biến động) để worker đẩy tồn mới lên
+ * sàn SAU khi transaction đơn hàng đã commit — tách bạch: lỗi đẩy sàn có retry
+ * + cảnh báo riêng, không làm job đơn hàng chạy lại.
  */
-export function registerShopeeWebhookHandler(): void {
-  setShopeeWebhookHandler(async (payload: ShopeePushPayload) => {
-    const code = Number(payload.code);
-    const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
-    if (!shopId) return;
+export async function dispatchShopeeWebhookEvent(
+  payload: ShopeePushPayload
+): Promise<StockSyncRequest | null> {
+  const code = Number(payload.code);
+  const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
+  if (!shopId) return null;
 
-    if (code === SHOPEE_PUSH_CODE.AUTHORIZATION) {
-      const r = await processShopeeAuthorizationEvent(shopId);
-      console.log(`[Webhook Shopee] Uỷ quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
-      return;
-    }
+  if (code === SHOPEE_PUSH_CODE.AUTHORIZATION) {
+    const r = await processShopeeAuthorizationEvent(shopId);
+    console.log(`[Webhook Shopee] Uỷ quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
+    return null;
+  }
 
-    if (code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.LOGISTICS) {
-      const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "");
-      if (!orderSn) return;
-      const channel = await findShopeeChannelByShopId(shopId);
-      if (!channel) return;
-      const result = await processShopeeOrderEvent(channel, orderSn);
-      console.log(
-        `[Webhook Shopee] code=${code} đơn ${orderSn} (shop ${shopId}) →`,
-        JSON.stringify(result)
-      );
-    }
-  });
+  if (code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.LOGISTICS) {
+    const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "");
+    if (!orderSn) return null;
+    const channel = await findShopeeChannelByShopId(shopId);
+    if (!channel) return null;
+    const result = await processShopeeOrderEvent(channel, orderSn);
+    console.log(
+      `[Webhook Shopee] code=${code} đơn ${orderSn} (shop ${shopId}) →`,
+      JSON.stringify({ ...result, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
+    );
+    return result.stockSync ?? null;
+  }
+
+  return null;
 }

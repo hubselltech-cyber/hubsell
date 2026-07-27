@@ -50,6 +50,8 @@ export const SHOPEE_PATHS = {
   itemBaseInfo: "/api/v2/product/get_item_base_info",
   /** Danh sách phân loại (model) của một item — SKU thật nằm ở cấp model. */
   modelList: "/api/v2/product/get_model_list",
+  /** Cập nhật tồn kho của item/model lên sàn (shop API, POST). */
+  updateStock: "/api/v2/product/update_stock",
   /** Lịch sử giao dịch ví sàn (rút tiền, phí, giải ngân...) — shop API, READ-ONLY. */
   walletTransactionList: "/api/v2/payment/get_wallet_transaction_list",
 } as const;

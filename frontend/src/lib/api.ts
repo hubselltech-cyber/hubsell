@@ -182,6 +182,11 @@ export interface Product {
   costPrice?: string | number;
   sellingPrice: string | number;
   quantityInStock: number;
+  /**
+   * Số đang bị GIỮ bởi đơn sàn chưa chốt (UNPAID) — khả dụng thật =
+   * quantityInStock − holdQuantity. Optional vì dữ liệu cũ có thể chưa có.
+   */
+  holdQuantity?: number;
   /** Thuế & Hóa đơn (module đang dựng khung — giữ chỗ). */
   taxName?: string | null;
   /** % thuế suất GTGT đầu ra: 0 / 5 / 8 / 10. */
@@ -203,6 +208,28 @@ export interface InventoryLog {
   changeQuantity: number;
   type: "IMPORT" | "EXPORT" | "SYNC";
   reason: string | null;
+  createdAt: string;
+}
+
+/** Cảnh báo lệch tồn: đẩy tồn lên sàn thất bại sau đủ số lần retry. */
+export interface InventorySyncAlert {
+  id: string;
+  shopName: string;
+  channelSku: string | null;
+  orderSn: string | null;
+  message: string;
+  createdAt: string;
+}
+
+/** Một dòng nhật ký đối soát đẩy tồn lên sàn: [SKU, số cũ, số mới, kết quả]. */
+export interface InventorySyncLog {
+  id: string;
+  shopName: string;
+  channelSku: string;
+  oldQuantity: number;
+  newQuantity: number;
+  status: "SUCCESS" | "FAILED";
+  message: string | null;
   createdAt: string;
 }
 
@@ -724,6 +751,25 @@ export function deleteStaff(staffId: string) {
 
 export function fetchDashboardSummary() {
   return apiFetch<DashboardSummary>("/api/dashboard/summary");
+}
+
+// ----- Đồng bộ tồn kho tự động (Inventory Sync) -----
+
+/** Cảnh báo lệch tồn CHƯA xử lý (mới nhất trước). */
+export function fetchSyncAlerts() {
+  return apiFetch<InventorySyncAlert[]>("/api/inventory/sync-alerts");
+}
+
+/** Đánh dấu một cảnh báo lệch tồn là đã xử lý tay xong. */
+export function resolveSyncAlert(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/inventory/sync-alerts/${id}/resolve`, {
+    method: "PATCH",
+  });
+}
+
+/** Nhật ký các lượt đẩy tồn kho lên sàn (đối soát). */
+export function fetchSyncLogs(limit = 50) {
+  return apiFetch<InventorySyncLog[]>(`/api/inventory/sync-logs?limit=${limit}`);
 }
 
 // ----- Sản phẩm -----

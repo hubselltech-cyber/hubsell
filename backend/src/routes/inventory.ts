@@ -112,4 +112,91 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
   }
 });
 
+// ============================================================
+// ĐỒNG BỘ TỒN KHO TỰ ĐỘNG — cảnh báo lệch tồn + nhật ký đối soát
+//
+// Nguồn dữ liệu do luồng webhook Shopee ghi (integrations/shopee/inventory-sync):
+//   InventorySyncAlert — đẩy tồn lên sàn thất bại sau đủ số lần retry, tồn trên
+//     sàn ĐANG LỆCH, chủ shop phải chỉnh tay rồi bấm "Đã xử lý".
+//   InventorySyncLog   — mỗi lượt đẩy tồn một dòng [SKU, số cũ, số mới, kết quả].
+// Phạm vi: theo gian hàng của chủ shop; SALES bị bó theo gian được phân công.
+// ============================================================
+
+/** Điều kiện lọc kênh theo quyền: gian của shop + phạm vi phân công (SALES). */
+function syncChannelScope(req: AuthRequest) {
+  return {
+    userId: req.ownerId!,
+    ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+  };
+}
+
+// GET /api/inventory/sync-alerts — cảnh báo lệch tồn CHƯA xử lý (mới nhất trước)
+router.get("/sync-alerts", async (req: AuthRequest, res, next) => {
+  try {
+    const alerts = await prisma.inventorySyncAlert.findMany({
+      where: { resolvedAt: null, channel: syncChannelScope(req) },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { channel: { select: { shopName: true, channelName: true } } },
+    });
+    res.json(
+      alerts.map((a) => ({
+        id: a.id,
+        shopName: a.channel.shopName,
+        channelSku: a.channelSku,
+        orderSn: a.orderSn,
+        message: a.message,
+        createdAt: a.createdAt,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/inventory/sync-alerts/:id/resolve — đánh dấu đã xử lý tay xong
+router.patch("/sync-alerts/:id/resolve", async (req: AuthRequest, res, next) => {
+  try {
+    // updateMany + điều kiện sở hữu: không sửa được cảnh báo của shop khác.
+    const updated = await prisma.inventorySyncAlert.updateMany({
+      where: { id: req.params.id, resolvedAt: null, channel: syncChannelScope(req) },
+      data: { resolvedAt: new Date() },
+    });
+    if (updated.count === 0) {
+      res.status(404).json({ error: "Không tìm thấy cảnh báo (hoặc đã xử lý rồi)" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/inventory/sync-logs — nhật ký đối soát các lượt đẩy tồn lên sàn
+router.get("/sync-logs", async (req: AuthRequest, res, next) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const logs = await prisma.inventorySyncLog.findMany({
+      where: { channel: syncChannelScope(req) },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: { channel: { select: { shopName: true } } },
+    });
+    res.json(
+      logs.map((l) => ({
+        id: l.id,
+        shopName: l.channel.shopName,
+        channelSku: l.channelSku,
+        oldQuantity: l.oldQuantity,
+        newQuantity: l.newQuantity,
+        status: l.status,
+        message: l.message,
+        createdAt: l.createdAt,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

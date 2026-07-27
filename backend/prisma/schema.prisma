@@ -125,6 +125,20 @@ enum InvoiceLogStatus {
   FAILED    // NCC từ chối / lỗi — xem errorMessage
 }
 
+/// Vòng đời một sự kiện webhook Shopee trong hàng đợi bền (shopee_webhook_logs).
+enum WebhookJobStatus {
+  PENDING    // chờ worker xử lý (hoặc chờ đến giờ retry — xem nextRetryAt)
+  PROCESSING // worker đang cầm job này
+  SUCCESS    // xử lý xong
+  FAILED     // đã retry đủ số lần vẫn lỗi — cần người xem (đã bắn cảnh báo)
+}
+
+/// Kết quả MỘT lượt đẩy tồn kho lên sàn (bảng đối soát InventorySyncLog).
+enum StockSyncStatus {
+  SUCCESS
+  FAILED
+}
+
 /// Vai trò tài khoản — quyết định thấy gì và làm được gì.
 enum Role {
   ADMIN     // Chủ shop: toàn quyền, thấy mọi gian hàng và mọi chỉ số tài chính
@@ -209,6 +223,8 @@ model Channel {
   invoiceConfigs  InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
+  inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
+  inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   @@index([userId])
@@ -442,6 +458,11 @@ model Product {
   costPrice       Decimal  @default(0) @db.Decimal(12, 2) // giá vốn (cấu hình ở trang Cấu hình Giá vốn)
   sellingPrice    Decimal  @default(0) @db.Decimal(12, 2) // giá bán
   quantityInStock Int      @default(0)
+
+  /// Số lượng đang bị GIỮ (hold) bởi các đơn sàn chưa chốt — xem Order.stockHeldAt.
+  /// Tồn KHẢ DỤNG (đẩy lên sàn / hiển thị) = quantityInStock − holdQuantity.
+  /// KHÔNG trừ thẳng quantityInStock vì hàng vẫn nằm trong kho vật lý.
+  holdQuantity    Int      @default(0)
   imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
 
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
@@ -532,6 +553,19 @@ model Order {
   /// (Đơn tạo qua webhook giả lập /mock-order trừ kho ngay lúc tạo nên không cần
   /// mốc; mốc này chỉ dùng cho luồng TikTok thật.)
   stockDeductedAt DateTime?
+
+  /// GIỮ KHO TẠM (Hold Stock) — đơn sàn vừa đổ về nhưng CHƯA chốt (UNPAID...).
+  ///
+  /// Chưa được trừ thẳng quantityInStock (khách có thể bỏ thanh toán), nhưng
+  /// cũng không thể coi như chưa bán — hai khách cùng lúc là bán vượt kho ngay.
+  /// Giải pháp: cộng số lượng đơn vào Product.holdQuantity; tồn KHẢ DỤNG đẩy
+  /// lên sàn = quantityInStock − holdQuantity. Mốc này chống hold trùng khi
+  /// webhook bắn lại (song sinh với stockDeductedAt).
+  stockHeldAt DateTime?
+
+  /// Mốc đã NHẢ hold (khi đơn chốt → chuyển thành trừ thật, hoặc đơn hủy).
+  /// Có mốc = holdQuantity đã được trả lại, không nhả lần hai.
+  stockHoldReleasedAt DateTime?
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus ShippingStatus @default(PENDING)
   createdAt      DateTime @default(now())
@@ -683,4 +717,84 @@ model OperatingExpense {
 
   @@index([userId])
   @@index([fundChannelId])
+}
+
+// ---------- ĐỒNG BỘ TỒN KHO TỰ ĐỘNG (Inventory Sync) ----------
+//
+// Ba bảng phục vụ luồng webhook Shopee → khóa/trừ kho → đẩy tồn ngược lên sàn:
+//   1) ShopeeWebhookLog   — HÀNG ĐỢI BỀN cho sự kiện push (sống sót qua restart,
+//      khác hàng đợi in-memory cũ). Worker xử lý FIFO + retry có giãn cách.
+//   2) InventorySyncLog   — NHẬT KÝ ĐỐI SOÁT từng lượt đẩy tồn lên sàn
+//      (SKU, số cũ, số mới, thành công/thất bại).
+//   3) InventorySyncAlert — CẢNH BÁO trên UI khi retry đủ số lần vẫn thất bại,
+//      chủ shop phải chỉnh tồn trên sàn thủ công kẻo bị phạt do hết hàng ảo.
+
+/// Một sự kiện webhook Shopee đã nhận (đã QUA verify chữ ký) chờ/đã xử lý.
+///
+/// Route webhook chỉ INSERT vào đây rồi ack 200 ngay (yêu cầu <3s của Shopee);
+/// mọi việc nặng (gọi API sàn, transaction kho) do worker nền làm sau. Nhờ nằm
+/// trong DB, sự kiện không mất khi backend restart giữa chừng.
+model ShopeeWebhookLog {
+  id        String           @id @default(cuid())
+  /// Mã sự kiện Shopee (3 logistics / 4 order status / 5 authorization).
+  eventCode Int
+  shopId    String
+  /// Mã đơn trong payload (nếu là sự kiện đơn hàng) — để tra soát theo đơn.
+  orderSn   String?
+  /// SHA-256 của RAW body — chốt chống trùng BỀN: Shopee gửi lại y nguyên một
+  /// sự kiện (retry mạng) thì insert đụng unique và bị bỏ qua ngay từ route.
+  bodyHash  String           @unique
+  /// Payload JSON nguyên văn (stringify) — worker đọc lại để xử lý.
+  payload   String
+  status    WebhookJobStatus @default(PENDING)
+  /// Số lần đã thử xử lý. Quá MAX (3) → FAILED + bắn InventorySyncAlert.
+  attempts  Int              @default(0)
+  /// Thời điểm sớm nhất được thử lại (exponential backoff). NULL = xử lý ngay.
+  nextRetryAt DateTime?
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
+  @@index([orderSn])
+  @@map("shopee_webhook_logs")
+}
+
+/// Nhật ký MỘT lượt đẩy tồn kho lên sàn cho MỘT SKU sàn — bảng đối soát:
+/// [thời gian] − [SKU] − [số cũ] − [số mới] − [trạng thái].
+model InventorySyncLog {
+  id        String @id @default(cuid())
+  channelId String
+  /// SKU trên sàn (ChannelProduct.channelSku) — khoá người vận hành tra được.
+  channelSku String
+  productId  String? // sản phẩm kho gốc (SetNull nếu bị xoá — log giữ nguyên SKU)
+  /// Tồn KHẢ DỤNG trước/sau biến động (quantityInStock − holdQuantity).
+  oldQuantity Int
+  newQuantity Int
+  status      StockSyncStatus
+  /// Ngữ cảnh lượt đồng bộ (vd "webhook Shopee đơn XXX") + lỗi nếu thất bại.
+  message     String?
+  createdAt   DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+  @@index([status])
+}
+
+/// Cảnh báo lệch tồn hiển thị trên UI: đẩy tồn lên sàn thất bại sau khi đã
+/// retry đủ số lần — tồn trên sàn ĐANG SAI so với Hubsell, cần xử lý tay.
+/// resolvedAt = NULL nghĩa là còn treo (hiện badge); bấm "Đã xử lý" thì đóng.
+model InventorySyncAlert {
+  id         String    @id @default(cuid())
+  channelId  String
+  channelSku String?  // NULL khi lỗi ở cấp sự kiện (không rõ SKU nào)
+  orderSn    String?  // đơn gây ra biến động (nếu có) — để tra soát
+  message    String
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, resolvedAt])
 }

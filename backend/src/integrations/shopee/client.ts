@@ -177,6 +177,35 @@ async function callShopGet<T extends ShopeeEnvelope>(
   return ensureOk((await res.json()) as T, ctx);
 }
 
+/**
+ * Helper gọi một SHOP API dạng POST (update_stock...): chữ ký y hệt GET (base
+ * string KHÔNG gồm body), tham số định danh nằm trên query, nghiệp vụ trong body.
+ */
+async function callShopPost<T extends ShopeeEnvelope>(
+  path: string,
+  accessToken: string,
+  shopId: string,
+  body: Record<string, unknown>,
+  ctx: string,
+  cfg: ShopeeConfig
+): Promise<T> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShop(cfg.partnerKey, cfg.partnerId, path, timestamp, accessToken, shopId);
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    access_token: accessToken,
+    shop_id: shopId,
+    sign,
+  }).toString();
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return ensureOk((await res.json()) as T, ctx);
+}
+
 /** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */
 export async function getShopInfo(
   accessToken: string,
@@ -419,6 +448,56 @@ export async function getModelList(
     cfg
   );
   return data.response?.model ?? [];
+}
+
+// ---------- Cập nhật tồn kho lên sàn ----------
+
+export interface ShopeeUpdateStockData extends ShopeeEnvelope {
+  response?: {
+    failure_list?: { model_id?: number; failed_reason?: string }[];
+    success_list?: { model_id?: number }[];
+  };
+}
+
+/**
+ * Đẩy tồn kho MỚI của một item/model lên Shopee (update_stock v2).
+ * `modelId` bỏ trống/0 = sản phẩm đơn không phân loại (Shopee quy ước model_id 0).
+ * Shopee có thể trả 200 nhưng kèm failure_list từng model → ném lỗi để tầng
+ * gọi retry, không được coi là thành công một nửa.
+ */
+export async function updateShopeeStock(
+  accessToken: string,
+  shopId: string,
+  itemId: number,
+  stock: number,
+  modelId?: number,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<void> {
+  const data = await callShopPost<ShopeeUpdateStockData>(
+    SHOPEE_PATHS.updateStock,
+    accessToken,
+    shopId,
+    {
+      item_id: itemId,
+      stock_list: [
+        {
+          model_id: modelId ?? 0,
+          // seller_stock: tồn của kho mặc định (không khai location_id).
+          seller_stock: [{ stock }],
+        },
+      ],
+    },
+    "update_stock",
+    cfg
+  );
+  const failed = data.response?.failure_list ?? [];
+  if (failed.length > 0) {
+    throw new Error(
+      `Shopee update_stock từ chối item ${itemId}: ${failed
+        .map((f) => f.failed_reason || `model ${f.model_id}`)
+        .join("; ")}`
+    );
+  }
 }
 
 // ---------- Ví sàn (READ-ONLY) ----------

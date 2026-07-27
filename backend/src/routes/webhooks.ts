@@ -16,16 +16,19 @@ import {
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import {
   SHOPEE_PUSH_CODE,
-  enqueueShopeeWebhook,
   verifyShopeeWebhookSignature,
   type ShopeePushPayload,
 } from "../integrations/shopee/webhook";
-import { registerShopeeWebhookHandler } from "../integrations/shopee/service";
+import {
+  enqueueShopeeWebhook,
+  startShopeeWebhookWorker,
+} from "../integrations/shopee/webhook-queue";
 
 const router = Router();
 
-// Nối tầng nghiệp vụ Shopee vào hàng đợi webhook (1 lần lúc nạp module).
-registerShopeeWebhookHandler();
+// Khởi động worker xử lý hàng đợi webhook Shopee (1 lần lúc nạp module):
+// nhặt lại job dở dang sau restart + quét job đến hạn retry theo nhịp.
+startShopeeWebhookWorker();
 
 // Loại sự kiện webhook của TikTok Shop (trường `type`, dạng số).
 // Ta chỉ xử lý ORDER_STATUS_CHANGE; các loại khác ack 200 và bỏ qua.
@@ -332,7 +335,7 @@ router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
 // body). Bắt buộc kiểm trên req.rawBody (đã giữ ở app.ts) — body qua JSON.parse
 // serialize lại là sai chữ ký. Sai chữ ký → 401, không xử lý gì.
 // ============================================================
-router.post("/shopee", (req: Request & { rawBody?: Buffer }, res) => {
+router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
   // Chưa cấu hình partner_key thì không thể xác thực → từ chối, tránh nhận giả.
   if (!isShopeeConfigured()) {
     res.status(503).json({ error: "Shopee chưa được cấu hình trên máy chủ" });
@@ -361,11 +364,17 @@ router.post("/shopee", (req: Request & { rawBody?: Buffer }, res) => {
     return;
   }
 
-  // 3) ACK 200 NGAY (yêu cầu <3s của Shopee) rồi mới xếp hàng xử lý nền.
-  //    Dedup theo hash raw body chặn bản retry y nguyên; sự kiện lọt lưới vẫn
-  //    an toàn nhờ upsert + mốc kho idempotent ở tầng service.
-  const { queued, duplicate } = enqueueShopeeWebhook(raw, payload);
-  res.status(200).json({ ok: true, code, queued, duplicate });
+  // 3) Ghi vào HÀNG ĐỢI BỀN (một INSERT — vẫn trong hạn ack 3s) rồi ack 200;
+  //    worker nền xử lý sau. Dedup bền theo hash raw body chặn bản retry y
+  //    nguyên; sự kiện lọt lưới vẫn an toàn nhờ upsert + mốc kho idempotent.
+  try {
+    const { queued, duplicate } = await enqueueShopeeWebhook(raw, payload);
+    res.status(200).json({ ok: true, code, queued, duplicate });
+  } catch (err) {
+    // Không ghi nổi vào hàng đợi (DB sự cố) → 500 để Shopee tự gửi lại sau.
+    console.error("[Webhook Shopee] Không ghi được vào hàng đợi:", err);
+    res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
+  }
 });
 
 export default router;

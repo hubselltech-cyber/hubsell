@@ -25,6 +25,7 @@ import { SyncChannelProductsButton } from "@/components/channels/sync-channel-pr
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
+import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -173,6 +174,9 @@ export default function ProductsPage() {
         header: () => <div className="text-center">Tồn kho</div>,
         cell: (info) => {
           const qty = info.getValue();
+          // Số đang bị GIỮ bởi đơn sàn chưa chốt (UNPAID) — khả dụng để bán
+          // tiếp = tồn kho − đang giữ; đây cũng là số Hubsell đẩy lên sàn.
+          const held = info.row.original.holdQuantity ?? 0;
           return (
             <div className="text-center">
               <span
@@ -187,6 +191,11 @@ export default function ProductsPage() {
               >
                 {formatNumber(qty)}
               </span>
+              {held > 0 && (
+                <p className="mt-1 text-xs text-amber-600">
+                  Giữ {formatNumber(held)} · khả dụng {formatNumber(qty - held)}
+                </p>
+              )}
             </div>
           );
         },
@@ -272,6 +281,9 @@ export default function ProductsPage() {
             <ProductFormDialog onCreated={load} />
           </div>
         </div>
+
+        {/* Cảnh báo lệch tồn với sàn — chỉ hiện khi có cảnh báo chưa xử lý */}
+        <SyncAlertBanner />
 
         {/* Thanh tìm kiếm */}
         <form onSubmit={handleSearch} className="flex max-w-md gap-2">
