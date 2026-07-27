@@ -31,6 +31,8 @@ import {
   DEFAULT_CAMPAIGN_OVERRIDES,
   TIKTOK_CAMPAIGN_DETAILS,
   findCampaignDetail,
+  loadAssistantState,
+  saveAssistantState,
   summarizeAssistant,
   type AssistantConfig,
   type AssistantRuleSet,
@@ -213,6 +215,33 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
   // "Cần loại trừ ngay", Seller tự bấm tay từng video trong modal.
   const [autoExecute, setAutoExecute] = useState(true);
   const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
+  // Cờ "đã nạp bản lưu xong" — chặn effect LƯU chạy trước effect NẠP, không
+  // thì render đầu tiên sẽ đè bản lưu của khách bằng bộ default.
+  const [storageReady, setStorageReady] = useState(false);
+
+  // ----- PERSISTENCE: nạp localStorage SAU khi mount (đọc trong useState
+  // initializer sẽ lệch SSR/CSR gây lỗi hydration), rồi tự lưu mỗi khi đổi.
+  useEffect(() => {
+    if (!isTiktok) return;
+    const saved = loadAssistantState();
+    if (saved) {
+      setAssistantConfig(saved.config);
+      setRuleOverrides(saved.overrides);
+      setDecisions(saved.decisions);
+      setAutoExecute(saved.autoExecute);
+    }
+    setStorageReady(true);
+  }, [isTiktok]);
+
+  useEffect(() => {
+    if (!isTiktok || !storageReady) return;
+    saveAssistantState({
+      config: assistantConfig,
+      overrides: ruleOverrides,
+      decisions,
+      autoExecute,
+    });
+  }, [isTiktok, storageReady, assistantConfig, ruleOverrides, decisions, autoExecute]);
 
   const assistantSummary = useMemo(
     () =>

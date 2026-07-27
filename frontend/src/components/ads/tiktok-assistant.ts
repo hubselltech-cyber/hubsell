@@ -563,6 +563,95 @@ export function summarizeAssistant(
   return summary;
 }
 
+// ---------- Lưu trữ cấu hình (localStorage) ----------
+//
+// MOCK persistence: toàn bộ trạng thái Trợ lý (switch tổng, bộ luật mặc định,
+// override theo chiến dịch, quyết định video, chế độ tự động thực thi) lưu
+// vào localStorage để F5/đóng-mở modal KHÔNG reset về default. Khi có backend
+// thật chỉ cần thay 2 hàm load/save bằng API — schema giữ nguyên.
+
+export const ASSISTANT_STORAGE_KEY = "hubsell_ads_assistant_v1";
+
+/** Trạng thái đầy đủ cần sống sót qua F5. */
+export interface PersistedAssistantState {
+  config: AssistantConfig;
+  overrides: CampaignRuleOverrides;
+  decisions: VideoDecisionMap;
+  autoExecute: boolean;
+}
+
+/** Bản lưu có thể thiếu trường (schema cũ) — mọi nhánh đều optional. */
+type PartialRuleSet = {
+  dataFloor?: Partial<AssistantRuleSet["dataFloor"]>;
+  hard?: Partial<AssistantRuleSet["hard"]>;
+  review?: Partial<AssistantRuleSet["review"]>;
+  spike?: Partial<AssistantRuleSet["spike"]>;
+  grace?: Partial<AssistantRuleSet["grace"]>;
+};
+
+/**
+ * Vá bản lưu THIẾU TRƯỜNG bằng giá trị mặc định — schema bộ luật đã đổi nhiều
+ * lần (thêm window/spike/grace…), bản lưu cũ mà đọc thẳng sẽ crash UI.
+ */
+export function normalizeRuleSet(
+  saved: PartialRuleSet | undefined,
+  base: AssistantRuleSet
+): AssistantRuleSet {
+  if (!saved) return cloneRuleSet(base);
+  return {
+    dataFloor: { ...base.dataFloor, ...saved.dataFloor },
+    hard: { ...base.hard, ...saved.hard },
+    review: { ...base.review, ...saved.review },
+    spike: { ...base.spike, ...saved.spike },
+    grace: { ...base.grace, ...saved.grace },
+  };
+}
+
+/**
+ * Nạp trạng thái đã lưu; null nếu chưa từng lưu / bản lưu hỏng / đang SSR.
+ * LƯU Ý: overrides lấy NGUYÊN từ bản lưu (không trộn DEFAULT_CAMPAIGN_OVERRIDES)
+ * — người dùng đã XÓA quy tắc riêng của một chiến dịch thì F5 không được tự
+ * mọc lại.
+ */
+export function loadAssistantState(): PersistedAssistantState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ASSISTANT_STORAGE_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as {
+      config?: PartialRuleSet & { enabled?: boolean };
+      overrides?: Record<string, PartialRuleSet>;
+      decisions?: VideoDecisionMap;
+      autoExecute?: boolean;
+    };
+    const overrides: CampaignRuleOverrides = {};
+    for (const [campaignId, rules] of Object.entries(saved.overrides ?? {})) {
+      overrides[campaignId] = normalizeRuleSet(rules, DEFAULT_ASSISTANT_CONFIG);
+    }
+    return {
+      config: {
+        enabled: saved.config?.enabled ?? DEFAULT_ASSISTANT_CONFIG.enabled,
+        ...normalizeRuleSet(saved.config, DEFAULT_ASSISTANT_CONFIG),
+      },
+      overrides,
+      decisions: saved.decisions ?? {},
+      autoExecute: saved.autoExecute ?? true,
+    };
+  } catch {
+    return null; // bản lưu hỏng → dùng default, KHÔNG làm sập trang
+  }
+}
+
+/** Ghi trạng thái xuống localStorage — nuốt lỗi quota/private mode. */
+export function saveAssistantState(state: PersistedAssistantState): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(ASSISTANT_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // storage đầy / bị chặn — bỏ qua, phiên hiện tại vẫn chạy bằng state RAM
+  }
+}
+
 // ---------- Cấu hình mặc định ----------
 
 export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = {
