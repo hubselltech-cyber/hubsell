@@ -5,6 +5,33 @@
 
 ---
 
+## Phiên 27/07/2026 (chiều) — Trợ lý quảng cáo 3 sàn + Trợ lý thông minh GMV Max TikTok
+
+(Sync Settlements Shopee + TikTok GÁC LẠI theo chỉ đạo — làm sau cùng Lazada rồi đẩy server một thể.)
+
+### Khung UI Trợ lý quảng cáo (3 sàn, ADMIN-only)
+- Sidebar thêm nhóm "Trợ lý quảng cáo" (icon Megaphone, dưới Kênh bán): 3 trang `/ads/{tiktok,shopee,lazada}` dùng chung `components/ads/ads-assistant-page.tsx` (chỉ khác prop platform, mock ở PLATFORM_PRESETS). 3 tab: Tổng quan (5 StatCard + danh sách chiến dịch) / Quản lý ngân sách (Switch + ô nhập, disable khi tắt) / Báo cáo (AreaChart 14 ngày + bảng). Banner Preview violet. Mock series tất định (không Math.random — SSR/CSR khớp).
+
+### Trợ lý thông minh GMV Max (TikTok) — chống "cắn tiền vô độ"
+- **Rule engine 2 lớp** port từ thiết kế đã test 13 ca PASS ở dự án tiền thân (`D:\FatherBot\AutoControlAdsTiktok\poc\rules.py`): Lớp 1 sàn dữ liệu (chưa đủ chi tiêu/giờ → KHÔNG phán xét), Lớp 2 gồm Quy tắc 1 loại thẳng tay (tiêu >X mà 0 đơn / ROAS <Y / CPA >trần, OR) + Quy tắc 2 chờ phê duyệt (≥N đơn nhưng CPA vượt % mục tiêu). Mọi cờ kèm `reasons` minh bạch + luôn khôi phục được. Logic thuần ở `components/ads/tiktok-assistant.ts` (types + engine + mock 3 tầng).
+- **Override theo chiến dịch** (`CampaignRuleOverrides`): mỗi SP một biên lãi — SP 100k trần CPA 30k, SP 1 triệu trần 200k vẫn lãi. Tab "Cấu hình Trợ lý Tự động" = bộ luật MẶC ĐỊNH hệ thống; trong modal từng chiến dịch có switch "Tùy chỉnh Quy tắc riêng" (bật = seed từ mặc định rồi sửa, tắt = kế thừa). Mock sẵn tt-1/TC054 trần CPA 150k → 2 video CPA 47–50k thoát cờ, banner tụt 3→1 video review — bằng chứng override chạy. Ô nhập luật dùng chung 2 nơi: `tiktok-assistant-rule-fields.tsx`.
+- **Modal "Phân tích kế hoạch quảng cáo" 3 tầng** đúng luồng TikTok (`tiktok-campaign-modal.tsx`): Tầng 1 chỉ số + LineChart; Tầng 2 bảng sản phẩm (chế độ tối ưu); Tầng 3 bảng video (ID bài đăng, badge "Kém hiệu quả — Chờ loại trừ"/"Chi phí cao — Cần xem xét"/"Chưa đủ dữ liệu", nút Loại trừ/Giữ lại/Khôi phục từng dòng + "Áp dụng" hàng loạt). Gotcha: DialogContent là grid — section phải `min-w-0` không thì bảng ép modal mọc thanh cuộn ngang.
+- **Banner "Đề xuất từ Trợ lý Hubsell"** trên dashboard + chip đếm cờ trên tab; mọi số đếm/cờ cập nhật sống theo từng phím gõ cấu hình và từng quyết định.
+- Verify E2E qua Chrome thật (đăng nhập sẵn): bulk exclude, giữ lại, toggle override off/on, đổi trần CPA — tất cả phản ứng đúng; tsc + ESLint sạch. Mock chỉ sống trong phiên (reload là về preset).
+
+---
+
+## Phiên 27/07/2026 — Test Order sandbox: ĐÓNG HỒ SƠ, chờ ticket Shopee
+
+Kiểm chứng nốt 4 giả thuyết cuối về "request dependency fail" và loại trừ hết:
+1. **model_id**: 2 sản phẩm từng thử đều có phân loại, nghi form console không gửi model → thử item ĐƠN duy nhất **TC015 (802688852, has_model=false, stock 250k)** vẫn fail; shop SG trước đó cũng fail → loại trừ.
+2. **Stock = 0 / kho khoá**: gọi live get_item_base_info/get_model_list — mọi item/model tồn 50–250.000; chưa từng có đơn test nào tạo thành công nên không có kho bị giữ → loại trừ.
+3. **Token/shop_id lệch** & 4. **Sign/timestamp local**: không áp dụng — Test Order tạo qua web console Shopee (session của họ, không đi qua localhost); sign phía mình đã chứng minh đúng (product sync, logistics, update_stock thật đều chạy).
+
+→ **Chốt: lỗi backend sandbox Shopee. Ngưng đào, chờ Shopee trả lời ticket rồi tính tiếp.** Luồng đơn không bị block (đã nghiệm thu bằng payload chuẩn e2e99f4).
+
+---
+
 ## Phiên 24/07/2026 (11) — Test đơn thật Shopee: kẹt ở tool sandbox
 
 ### Đã làm

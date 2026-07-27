@@ -10,6 +10,7 @@ import {
   Link2,
   Loader2,
   LogOut,
+  Megaphone,
   Package,
   ReceiptText,
   Settings,
@@ -96,6 +97,19 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { href: "/channels", label: "Kênh bán", icon: Store, roles: ["ADMIN"] },
+  {
+    // Khung giữ chỗ cho tích hợp Marketing/Ads API 3 sàn — hiện là preview
+    // mock. Chi phí Ads là dữ liệu tài chính nên chỉ ADMIN thấy (cùng luật
+    // với nhóm Quản lý Tài chính).
+    label: "Trợ lý quảng cáo",
+    icon: Megaphone,
+    roles: ["ADMIN"],
+    children: [
+      { href: "/ads/tiktok", label: "Quảng cáo TikTok" },
+      { href: "/ads/shopee", label: "Quảng cáo Shopee" },
+      { href: "/ads/lazada", label: "Quảng cáo Lazada" },
+    ],
+  },
   // Nhãn sidebar để ngắn cho khỏi xuống dòng; tên đầy đủ "Liên kết SP vào kho
   // vật lý" nằm ở tiêu đề trang (PAGE_TITLES) và cột bảng.
   { href: "/mappings", label: "Liên kết sản phẩm", icon: Link2, roles: ["ADMIN"] },
@@ -138,6 +152,9 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/finance/loss-orders", title: "Cảnh báo & P&L Sản phẩm" },
   { prefix: "/finance/cost-prices", title: "Cấu hình Giá vốn" },
   { prefix: "/finance/shipping-alerts", title: "Đối soát phí vận chuyển" },
+  { prefix: "/ads/tiktok", title: "Trợ lý quảng cáo TikTok" },
+  { prefix: "/ads/shopee", title: "Trợ lý quảng cáo Shopee" },
+  { prefix: "/ads/lazada", title: "Trợ lý quảng cáo Lazada" },
 ];
 
 function getPageTitle(pathname: string): string {
@@ -154,6 +171,7 @@ function menusForPath(pathname: string): string[] {
   if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
     labels.push("Quản lý Kho");
   if (pathname.startsWith("/settings")) labels.push("Cấu hình");
+  if (pathname.startsWith("/ads")) labels.push("Trợ lý quảng cáo");
   return labels;
 }
 
