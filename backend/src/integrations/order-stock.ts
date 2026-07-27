@@ -19,6 +19,27 @@ export type StockOutcome =
   | "held"
   | "already-held";
 
+/**
+ * KHOÁ DÒNG ĐƠN (SELECT ... FOR UPDATE) — chốt chặn race condition.
+ *
+ * Các hàm dưới đây đều theo mẫu "đọc mốc idempotent → biến đổi kho → ghi mốc".
+ * Không có khoá, hai webhook của CÙNG một đơn chạy song song (sàn bắn lại khi
+ * mạng lag, hoặc nhiều instance backend) có thể cùng đọc mốc = null rồi cùng
+ * trừ kho — trừ ĐÚP. Khoá dòng Order ngay đầu transaction buộc kẻ đến sau phải
+ * đợi kẻ đến trước COMMIT xong mới đọc được mốc (lúc này đã có) và bỏ qua.
+ *
+ * Khoá theo DÒNG ĐƠN chứ không theo sản phẩm: hai ĐƠN KHÁC NHAU không chặn
+ * nhau (tăng thông lượng); tranh chấp trên cùng sản phẩm đã có UPDATE
+ * increment/decrement nguyên tử của Postgres lo. Gọi lặp trong cùng một
+ * transaction (deduct → release hold) không sao — khoá đã giữ sẵn.
+ */
+async function lockOrderRow(
+  tx: Prisma.TransactionClient,
+  orderId: string
+): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`;
+}
+
 // ---------- GIỮ KHO TẠM (Hold Stock) ----------
 //
 // Đơn sàn mới đổ về nhưng CHƯA chốt (UNPAID/INVOICE_PENDING) chưa được trừ
@@ -38,6 +59,7 @@ export async function holdStockTx(
   tx: Prisma.TransactionClient,
   orderId: string
 ): Promise<{ held: number; outcome: StockOutcome; productIds: string[] }> {
+  await lockOrderRow(tx, orderId);
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
@@ -81,6 +103,7 @@ export async function releaseStockHoldTx(
   tx: Prisma.TransactionClient,
   orderId: string
 ): Promise<{ released: number; productIds: string[] }> {
+  await lockOrderRow(tx, orderId);
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
@@ -126,6 +149,7 @@ export async function deductStockTx(
   orderId: string,
   sourceLabel: string
 ): Promise<{ deducted: number; outcome: StockOutcome; productIds: string[] }> {
+  await lockOrderRow(tx, orderId);
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
@@ -186,6 +210,7 @@ export async function restoreStockTx(
   orderId: string,
   sourceLabel: string
 ): Promise<{ restored: number; outcome: StockOutcome; productIds: string[] }> {
+  await lockOrderRow(tx, orderId);
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: { stockRestoredAt: true, orderCode: true },
