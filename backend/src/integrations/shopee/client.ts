@@ -389,6 +389,30 @@ export async function getItemList(
   );
 }
 
+/** Cấu trúc tồn kho v2 Shopee trả kèm item/model (get_item_base_info / get_model_list). */
+export interface ShopeeStockInfoV2 {
+  summary_info?: {
+    total_reserved_stock?: number;
+    total_available_stock?: number;
+  };
+  seller_stock?: { location_id?: string; stock?: number }[];
+}
+
+/**
+ * Đọc SỐ TỒN NGƯỜI BÁN từ stock_info_v2 — đối chiếu được với số ta đẩy qua
+ * update_stock (cũng là seller_stock). Trả null nếu payload không có dữ liệu
+ * tồn (để tầng gọi phân biệt "không đọc được" với "tồn = 0").
+ */
+export function shopeeSellerStock(info?: ShopeeStockInfoV2): number | null {
+  if (!info) return null;
+  const list = info.seller_stock;
+  if (list && list.length > 0) {
+    return list.reduce((sum, s) => sum + (Number(s.stock) || 0), 0);
+  }
+  const total = info.summary_info?.total_available_stock;
+  return typeof total === "number" ? total : null;
+}
+
 export interface ShopeeItemBaseInfo {
   item_id: number;
   item_name?: string;
@@ -397,6 +421,7 @@ export interface ShopeeItemBaseInfo {
   has_model?: boolean;
   image?: { image_url_list?: string[] };
   price_info?: { current_price?: number; original_price?: number }[];
+  stock_info_v2?: ShopeeStockInfoV2;
 }
 
 export interface ShopeeItemBaseData extends ShopeeEnvelope {
@@ -426,6 +451,7 @@ export interface ShopeeModel {
   model_name?: string;
   model_sku?: string;
   price_info?: { current_price?: number }[];
+  stock_info_v2?: ShopeeStockInfoV2;
 }
 
 export interface ShopeeModelData extends ShopeeEnvelope {

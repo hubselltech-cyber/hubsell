@@ -24,7 +24,14 @@ import {
   dispatchShopeeWebhookEvent,
   findShopeeChannelByShopId,
 } from "./service";
-import { createSyncAlert, syncShopeeStockForProducts } from "./inventory-sync";
+import {
+  createSyncAlert,
+  STOCK_VERIFY_EVENT_CODE,
+  syncShopeeStockForProducts,
+  VERIFY_DELAY_MS,
+  verifyStockPush,
+  type StockVerifyPayload,
+} from "./inventory-sync";
 
 /** Tổng số lần thử một job (1 lần đầu + 2 lần retry). */
 const MAX_ATTEMPTS = 3;
@@ -104,10 +111,16 @@ async function drain(): Promise<void> {
   draining = true;
   try {
     for (;;) {
+      // Nhặt cả job webhook PENDING lẫn job đối soát VERIFYING đã đến giờ.
       const job = await prisma.shopeeWebhookLog.findFirst({
         where: {
-          status: WebhookJobStatus.PENDING,
-          OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
+          OR: [
+            {
+              status: WebhookJobStatus.PENDING,
+              OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
+            },
+            { status: WebhookJobStatus.VERIFYING, nextRetryAt: { lte: new Date() } },
+          ],
         },
         orderBy: { createdAt: "asc" },
       });
@@ -115,11 +128,17 @@ async function drain(): Promise<void> {
 
       // Nhận job bằng UPDATE có điều kiện — nếu tiến trình khác đã cầm thì thôi.
       const claimed = await prisma.shopeeWebhookLog.updateMany({
-        where: { id: job.id, status: WebhookJobStatus.PENDING },
+        where: { id: job.id, status: job.status },
         data: { status: WebhookJobStatus.PROCESSING, attempts: { increment: 1 } },
       });
       if (claimed.count === 0) continue;
       const attempt = job.attempts + 1;
+
+      // Job ĐỐI SOÁT tồn kho (Double-Check) — nhánh riêng, không phải webhook.
+      if (job.eventCode === STOCK_VERIFY_EVENT_CODE) {
+        await handleStockVerifyJob(job.id, job.payload, attempt);
+        continue;
+      }
 
       try {
         const payload = JSON.parse(job.payload) as ShopeePushPayload;
@@ -173,6 +192,88 @@ async function drain(): Promise<void> {
   }
 }
 
+/**
+ * XỬ LÝ MỘT LƯỢT JOB ĐỐI SOÁT (Double-Check) — update_stock trả 200 nhưng sàn
+ * có thể ghi trễ nên chỉ tin sau khi đọc lại thấy khớp:
+ *   · Khớp / không còn gì để soát → SUCCESS.
+ *   · Lệch (verifyStockPush ĐÃ tự đẩy lại số đúng) hoặc lỗi tạm thời → hẹn
+ *     giờ VERIFYING + VERIFY_DELAY_MS kiểm tra tiếp; quá MAX_ATTEMPTS lượt vẫn
+ *     chưa khớp → FAILED + bắn InventorySyncAlert để chủ shop chỉnh tay.
+ */
+async function handleStockVerifyJob(
+  jobId: string,
+  rawPayload: string,
+  attempt: number
+): Promise<void> {
+  let payload: StockVerifyPayload | null = null;
+  try {
+    payload = JSON.parse(rawPayload) as StockVerifyPayload;
+    const result = await verifyStockPush(payload);
+
+    if (result.outcome === "match" || result.outcome === "gone") {
+      await prisma.shopeeWebhookLog.update({
+        where: { id: jobId },
+        data: {
+          status: WebhookJobStatus.SUCCESS,
+          processedAt: new Date(),
+          lastError: null,
+        },
+      });
+      if (result.outcome === "match") {
+        console.log(
+          `[Inventory Sync] Đối soát khớp: SKU ${payload.channelSku} — sàn = Hubsell = ${result.actual} (lượt ${attempt})`
+        );
+      }
+      return;
+    }
+
+    // Lệch: đã đẩy lại bên trong verifyStockPush — hẹn kiểm tra tiếp/chốt FAILED.
+    const note = `Đối soát lượt ${attempt}/${MAX_ATTEMPTS}: sàn còn ${result.actual} ≠ Hubsell ${result.expected} — đã đẩy lại`;
+    console.warn(`[Inventory Sync] ${note} (SKU ${payload.channelSku})`);
+    await finishVerifyAttempt(jobId, payload, attempt, note);
+  } catch (err) {
+    // Lỗi tạm thời (token/mạng/sàn không trả số tồn) — đếm lượt y như lệch.
+    const message = (err as Error).message;
+    console.error(
+      `[Inventory Sync] Đối soát lỗi lượt ${attempt}/${MAX_ATTEMPTS} (job ${jobId}):`,
+      err
+    );
+    await finishVerifyAttempt(jobId, payload, attempt, message);
+  }
+}
+
+/** Chốt một lượt đối soát chưa khớp: còn lượt → hẹn giờ tiếp; hết → FAILED + cảnh báo. */
+async function finishVerifyAttempt(
+  jobId: string,
+  payload: StockVerifyPayload | null,
+  attempt: number,
+  reason: string
+): Promise<void> {
+  if (attempt < MAX_ATTEMPTS) {
+    await prisma.shopeeWebhookLog.update({
+      where: { id: jobId },
+      data: {
+        status: WebhookJobStatus.VERIFYING,
+        lastError: reason,
+        nextRetryAt: new Date(Date.now() + VERIFY_DELAY_MS),
+      },
+    });
+    return;
+  }
+
+  await prisma.shopeeWebhookLog.update({
+    where: { id: jobId },
+    data: { status: WebhookJobStatus.FAILED, lastError: reason },
+  });
+  if (payload) {
+    await createSyncAlert(payload.channelId, {
+      channelSku: payload.channelSku,
+      orderSn: payload.orderSn,
+      message: `Đối soát tồn kho SKU ${payload.channelSku} thất bại sau ${MAX_ATTEMPTS} lượt kiểm tra chéo: ${reason}. Tồn trên sàn nhiều khả năng ĐANG LỆCH với Hubsell — kiểm tra và chỉnh tay trên Seller Center.`,
+    });
+  }
+}
+
 /** Job hỏng hẳn sau MAX_ATTEMPTS lần — bắn cảnh báo lên UI cho chủ shop xử lý tay. */
 async function alertJobFailed(
   shopId: string,
@@ -190,6 +291,22 @@ async function alertJobFailed(
 /** Cho test/giám sát: số job đang chờ xử lý trong hàng đợi bền. */
 export async function shopeeWebhookQueueSize(): Promise<number> {
   return prisma.shopeeWebhookLog.count({
-    where: { status: { in: [WebhookJobStatus.PENDING, WebhookJobStatus.PROCESSING] } },
+    where: {
+      status: {
+        in: [
+          WebhookJobStatus.PENDING,
+          WebhookJobStatus.PROCESSING,
+          WebhookJobStatus.VERIFYING,
+        ],
+      },
+    },
   });
+}
+
+/**
+ * Cho integration test: chạy MỘT lượt drain và đợi nó xong (worker thật chạy
+ * nền qua timer nên test không await được). Không dùng trong luồng chạy thật.
+ */
+export async function drainShopeeWebhookQueueOnce(): Promise<void> {
+  await drain();
 }

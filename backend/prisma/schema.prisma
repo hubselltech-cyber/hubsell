@@ -125,11 +125,16 @@ enum InvoiceLogStatus {
   FAILED    // NCC từ chối / lỗi — xem errorMessage
 }
 
-/// Vòng đời một sự kiện webhook Shopee trong hàng đợi bền (shopee_webhook_logs).
+/// Vòng đời một job trong hàng đợi bền (shopee_webhook_logs) — dùng chung cho
+/// sự kiện webhook Shopee VÀ job đối soát tồn kho (Double-Check).
 enum WebhookJobStatus {
   PENDING    // chờ worker xử lý (hoặc chờ đến giờ retry — xem nextRetryAt)
   PROCESSING // worker đang cầm job này
-  SUCCESS    // xử lý xong
+  /// Đã đẩy tồn lên sàn thành công NHƯNG chưa tin — update_stock của Shopee có
+  /// thể trả 200 mà dữ liệu trên sàn ghi trễ. Job nằm ở trạng thái này chờ đến
+  /// giờ (nextRetryAt) để worker gọi API đọc lại tồn thực tế và so khớp.
+  VERIFYING
+  SUCCESS    // xử lý xong (job đối soát: tồn sàn ĐÃ khớp với Hubsell)
   FAILED     // đã retry đủ số lần vẫn lỗi — cần người xem (đã bắn cảnh báo)
 }
 

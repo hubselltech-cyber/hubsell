@@ -16,15 +16,46 @@
 //     [thời gian] − [SKU] − [số cũ] − [số mới] − [trạng thái] để đối soát.
 // ============================================================
 
-import { ChannelName, StockSyncStatus } from "@prisma/client";
+import { ChannelName, StockSyncStatus, WebhookJobStatus } from "@prisma/client";
+import type { Channel } from "@prisma/client";
 import { prisma } from "../../prisma";
-import { updateShopeeStock } from "./client";
+import {
+  getItemBaseInfo,
+  getModelList,
+  shopeeSellerStock,
+  updateShopeeStock,
+} from "./client";
 import { getValidShopeeAccessToken } from "./service";
 
 /** Số lần thử đẩy tồn cho MỘT SKU (1 lần đầu + 2 lần retry). */
 const SYNC_MAX_ATTEMPTS = 3;
 /** Giãn cách trước lần thử lại đầu tiên; các lần sau nhân đôi (2s → 4s). */
 const SYNC_BASE_DELAY_MS = 2000;
+
+// ---------- Double-Check (Reconciliation) ----------
+//
+// update_stock của Shopee có thể trả 200 OK nhưng dữ liệu trên sàn GHI TRỄ.
+// Vì vậy mỗi lượt đẩy thành công cho một (gian × SKU) không được tin ngay:
+// ta ghi một JOB ĐỐI SOÁT vào chính hàng đợi bền shopee_webhook_logs (status
+// VERIFYING, hẹn giờ VERIFY_DELAY_MS). Worker đến giờ sẽ gọi API đọc lại tồn
+// thực tế trên sàn (get_item_base_info / get_model_list) và so khớp — xem
+// verifyStockPush() bên dưới + nhánh xử lý trong webhook-queue.ts.
+
+/** eventCode NỘI BỘ đánh dấu job đối soát tồn (Shopee chỉ dùng 3/4/5). */
+export const STOCK_VERIFY_EVENT_CODE = 100;
+/** Chờ bao lâu sau khi đẩy tồn mới kiểm tra chéo (cho sàn kịp ghi). */
+export const VERIFY_DELAY_MS = 3 * 60 * 1000;
+
+/** Nội dung một job đối soát, lưu JSON trong cột payload. */
+export interface StockVerifyPayload {
+  kind: "stock-verify";
+  channelId: string;
+  channelSku: string;
+  productId: string;
+  itemId: number;
+  modelId?: number;
+  orderSn?: string;
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -160,6 +191,19 @@ export async function syncShopeeStockForProducts(
           error: ok ? undefined : lastError,
         });
 
+        if (ok) {
+          // 200 OK chưa chắc sàn đã ghi — hẹn giờ Double-Check đọc lại tồn.
+          await scheduleStockVerification(channel, {
+            kind: "stock-verify",
+            channelId: channel.id,
+            channelSku: mp.channelSku,
+            productId: mp.productId!,
+            itemId: ids.itemId,
+            modelId: ids.modelId,
+            orderSn: req.orderSn,
+          });
+        }
+
         if (!ok) {
           await createSyncAlert(channel.id, {
             channelSku: mp.channelSku,
@@ -217,6 +261,100 @@ async function recordSyncResult(
 
 function source(req: StockSyncRequest): string {
   return req.orderSn ? `webhook Shopee đơn ${req.orderSn}` : "webhook Shopee";
+}
+
+/**
+ * Ghi/làm mới JOB ĐỐI SOÁT cho một (gian × SKU) vào hàng đợi bền.
+ *
+ * Khoá `bodyHash` là chuỗi ổn định "stock-verify:{channelId}:{channelSku}" →
+ * upsert: nhiều lượt đẩy liên tiếp cho cùng SKU GỘP về một job đối soát duy
+ * nhất, tự dời giờ hẹn và reset số lần thử — worker chỉ đối soát trạng thái
+ * MỚI NHẤT thay vì rượt đuổi từng lượt đẩy cũ. Best-effort: lỗi DB chỉ log.
+ */
+async function scheduleStockVerification(
+  channel: Channel,
+  payload: StockVerifyPayload
+): Promise<void> {
+  try {
+    const bodyHash = `stock-verify:${payload.channelId}:${payload.channelSku}`;
+    const data = {
+      status: WebhookJobStatus.VERIFYING,
+      attempts: 0,
+      nextRetryAt: new Date(Date.now() + VERIFY_DELAY_MS),
+      lastError: null,
+      processedAt: null,
+      orderSn: payload.orderSn ?? null,
+      payload: JSON.stringify(payload),
+    };
+    await prisma.shopeeWebhookLog.upsert({
+      where: { bodyHash },
+      update: data,
+      create: {
+        eventCode: STOCK_VERIFY_EVENT_CODE,
+        shopId: channel.externalShopId ?? "",
+        bodyHash,
+        ...data,
+      },
+    });
+  } catch (err) {
+    console.error("[Inventory Sync] Không lên lịch được job đối soát:", err);
+  }
+}
+
+export type StockVerifyOutcome =
+  | { outcome: "match"; expected: number; actual: number }
+  /** Sàn còn lệch — ĐÃ đẩy lại update_stock, cần hẹn giờ kiểm tra tiếp. */
+  | { outcome: "mismatch"; expected: number; actual: number }
+  /** Mapping/sản phẩm/gian không còn — không có gì để đối soát nữa. */
+  | { outcome: "gone" };
+
+/**
+ * MỘT LƯỢT ĐỐI SOÁT: đọc tồn thực tế trên sàn và so với tồn khả dụng HIỆN TẠI
+ * của Hubsell (đọc lại lúc đối soát — giữa 2 mốc có thể đã có đơn khác).
+ * Lệch → đẩy lại update_stock ngay trong lượt này rồi trả "mismatch" để worker
+ * hẹn giờ kiểm tra tiếp. Lỗi tạm thời (mạng/token/sàn không trả số tồn) thì
+ * NÉM — worker đếm lượt và hẹn giờ y như mismatch.
+ */
+export async function verifyStockPush(
+  payload: StockVerifyPayload
+): Promise<StockVerifyOutcome> {
+  const channel = await prisma.channel.findFirst({
+    where: {
+      id: payload.channelId,
+      status: "ACTIVE",
+      refreshToken: { not: null },
+    },
+  });
+  const product = await prisma.product.findUnique({
+    where: { id: payload.productId },
+    select: { quantityInStock: true, holdQuantity: true },
+  });
+  if (!channel || !product) return { outcome: "gone" };
+
+  const expected = Math.max(0, product.quantityInStock - product.holdQuantity);
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+
+  // Đọc tồn thực tế: sản phẩm có phân loại nằm ở get_model_list, đơn ở base_info.
+  let actual: number | null = null;
+  if (payload.modelId) {
+    const models = await getModelList(accessToken, shopId, payload.itemId);
+    const model = models.find((m) => m.model_id === payload.modelId);
+    actual = shopeeSellerStock(model?.stock_info_v2);
+  } else {
+    const infos = await getItemBaseInfo(accessToken, shopId, [payload.itemId]);
+    actual = shopeeSellerStock(infos[0]?.stock_info_v2);
+  }
+  if (actual === null) {
+    throw new Error(
+      `Shopee không trả số tồn cho item ${payload.itemId}${payload.modelId ? ` model ${payload.modelId}` : ""} — chưa đối soát được`
+    );
+  }
+
+  if (actual === expected) return { outcome: "match", expected, actual };
+
+  // Sàn ghi trễ / lệch thật → đẩy lại số đúng ngay, worker sẽ kiểm tra tiếp.
+  await updateShopeeStock(accessToken, shopId, payload.itemId, expected, payload.modelId);
+  return { outcome: "mismatch", expected, actual };
 }
 
 /** Tạo cảnh báo lệch tồn cho UI (best-effort — lỗi DB chỉ log, không ném). */

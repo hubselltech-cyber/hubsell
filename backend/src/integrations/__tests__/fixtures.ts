@@ -12,6 +12,8 @@ export interface StockFixture {
   createProduct(stock: number): Promise<string>;
   /** Tạo một đơn 1 dòng hàng (qty) gắn vào sản phẩm — trả về orderId. */
   createOrder(productId: string, qty: number, orderCode?: string): Promise<string>;
+  /** Liên kết sản phẩm với một SKU sàn (ChannelProduct) — trả về channelSku. */
+  createMapping(productId: string, externalId: string): Promise<string>;
   cleanup(): Promise<void>;
 }
 
@@ -30,6 +32,11 @@ export async function createStockFixture(name: string): Promise<StockFixture> {
       userId: user.id,
       channelName: ChannelName.SHOPEE,
       shopName: `TEST-${suffix}`,
+      // Đủ điều kiện "gian Shopee đang nối" để lọt bộ lọc của inventory-sync
+      // (test nào gọi API sàn thật sự sẽ mock tầng client/token).
+      externalShopId: `9${Date.now()}`,
+      refreshToken: "test-refresh-token",
+      status: "ACTIVE",
     },
   });
 
@@ -74,6 +81,20 @@ export async function createStockFixture(name: string): Promise<StockFixture> {
         },
       });
       return o.id;
+    },
+
+    async createMapping(productId, externalId): Promise<string> {
+      const channelSku = `TEST-${suffix}-MAP-${externalId}`;
+      await prisma.channelProduct.create({
+        data: {
+          channelId: channel.id,
+          channelSku,
+          productName: `SP sàn test ${externalId}`,
+          productId,
+          externalId,
+        },
+      });
+      return channelSku;
     },
 
     async cleanup(): Promise<void> {
