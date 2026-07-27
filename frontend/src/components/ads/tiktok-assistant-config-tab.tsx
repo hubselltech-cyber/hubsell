@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, ScanSearch, ShieldX } from "lucide-react";
+import { ScanSearch } from "lucide-react";
 
 import {
   Card,
@@ -13,11 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-import {
-  NumberInput,
-  RuleRow,
-  VndInput,
-} from "@/components/ads/tiktok-assistant-rule-fields";
+import { AssistantRuleFields } from "@/components/ads/tiktok-assistant-rule-fields";
 import type {
   AssistantConfig,
   AssistantSummary,
@@ -93,144 +89,25 @@ export function TiktokAssistantConfigTab({
         </CardContent>
       </Card>
 
-      {/* Khối còn lại mờ đi khi tắt trợ lý — vẫn xem được luật nhưng biết là không chạy */}
-      <div className={cn("space-y-5", off && "pointer-events-none opacity-50")}>
-        {/* ===== SÀN DỮ LIỆU (Lớp 1) ===== */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Sàn dữ liệu — chưa đủ thì không phán xét</CardTitle>
-            <CardDescription>
-              GMV Max luôn cần thời gian test video mới. Đặt sàn để trợ lý không
-              giết nhầm video chưa kịp có dữ liệu.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RuleRow>
-              <span>Chỉ xét video đã tiêu tối thiểu</span>
-              <VndInput
-                value={config.dataFloor.minSpend}
-                onChange={(minSpend) =>
-                  onChange({ ...config, dataFloor: { ...config.dataFloor, minSpend } })
-                }
-                disabled={off}
-                ariaLabel="Sàn chi tiêu tối thiểu"
-              />
-              <span>và đã chạy đủ</span>
-              <NumberInput
-                value={config.dataFloor.minHours}
-                onChange={(minHours) =>
-                  onChange({ ...config, dataFloor: { ...config.dataFloor, minHours } })
-                }
-                disabled={off}
-                ariaLabel="Số giờ chạy tối thiểu"
-                suffix="giờ"
-              />
-            </RuleRow>
-          </CardContent>
-        </Card>
-
-        {/* ===== NHÓM QUY TẮC 1: LOẠI TRỪ THẲNG TAY ===== */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldX className="size-4.5 text-red-500" />
-              Quy tắc 1 — Tự động loại trừ thẳng tay
-            </CardTitle>
-            <CardDescription>
-              Video vi phạm BẤT KỲ điều kiện nào dưới đây sẽ bị trợ lý tự chuyển
-              sang trạng thái &quot;Đã loại trừ&quot; (kèm lý do, khôi phục được).
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RuleRow>
-              <span>Chi tiêu vượt</span>
-              <VndInput
-                value={config.hard.spendNoOrder}
-                onChange={(spendNoOrder) =>
-                  onChange({ ...config, hard: { ...config.hard, spendNoOrder } })
-                }
-                disabled={off}
-                ariaLabel="Ngưỡng chi tiêu khi chưa có đơn"
-              />
-              <span>
-                mà vẫn <b>0 đơn hàng</b>
-              </span>
-            </RuleRow>
-            <RuleRow>
-              <span>ROAS thấp hơn</span>
-              <NumberInput
-                value={config.hard.minRoas}
-                onChange={(minRoas) =>
-                  onChange({ ...config, hard: { ...config.hard, minRoas } })
-                }
-                disabled={off}
-                ariaLabel="ROAS tối thiểu"
-                step={0.1}
-                suffix="x"
-              />
-            </RuleRow>
-            <RuleRow>
-              <span>Chi phí mỗi đơn (CPA) vượt trần</span>
-              <VndInput
-                value={config.hard.maxCpa}
-                onChange={(maxCpa) =>
-                  onChange({ ...config, hard: { ...config.hard, maxCpa } })
-                }
-                disabled={off}
-                ariaLabel="Trần chi phí mỗi đơn"
-              />
-            </RuleRow>
-          </CardContent>
-        </Card>
-
-        {/* ===== NHÓM QUY TẮC 2: GỬI CẢNH BÁO PHÊ DUYỆT ===== */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BellRing className="size-4.5 text-amber-500" />
-              Quy tắc 2 — Gửi cảnh báo chờ phê duyệt
-            </CardTitle>
-            <CardDescription>
-              Video vẫn ra đơn đều (chuyển đổi tốt) nhưng giá mỗi đơn quá đắt —
-              trợ lý KHÔNG tự loại mà đưa vào danh sách chờ, Seller quyết định
-              giữ lại hay loại trừ.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RuleRow>
-              <span>Video có từ</span>
-              <NumberInput
-                value={config.review.minOrders}
-                onChange={(minOrders) =>
-                  onChange({ ...config, review: { ...config.review, minOrders } })
-                }
-                disabled={off}
-                ariaLabel="Số đơn tối thiểu để coi là chuyển đổi tốt"
-                suffix="đơn"
-              />
-              <span>trở lên, nhưng CPA vượt</span>
-              <NumberInput
-                value={config.review.overPct}
-                onChange={(overPct) =>
-                  onChange({ ...config, review: { ...config.review, overPct } })
-                }
-                disabled={off}
-                ariaLabel="Phần trăm vượt CPA mục tiêu"
-                suffix="%"
-              />
-              <span>so với CPA mục tiêu</span>
-              <VndInput
-                value={config.review.targetCpa}
-                onChange={(targetCpa) =>
-                  onChange({ ...config, review: { ...config.review, targetCpa } })
-                }
-                disabled={off}
-                ariaLabel="CPA mục tiêu"
-              />
-            </RuleRow>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Khối luật mờ đi khi tắt trợ lý — vẫn xem được luật nhưng biết là không chạy.
+          TRỌN BỘ Sàn dữ liệu + Quy tắc 1–4 dùng chung AssistantRuleFields với
+          modal chiến dịch — sửa khuôn nhập một chỗ, hai nơi cùng nhận. */}
+      <Card className={cn(off && "pointer-events-none opacity-50")}>
+        <CardHeader>
+          <CardTitle>Bộ quy tắc mặc định hệ thống</CardTitle>
+          <CardDescription>
+            Mỗi quy tắc có switch bật/tắt riêng. Chiến dịch bật &quot;Quy tắc
+            riêng&quot; trong modal sẽ ghi đè trọn bộ này.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AssistantRuleFields
+            rules={config}
+            onChange={(next) => onChange({ ...config, ...next })}
+            disabled={off}
+          />
+        </CardContent>
+      </Card>
 
       {/* ===== PREVIEW SỐNG: LUẬT HIỆN TẠI BẮT ĐƯỢC GÌ ===== */}
       <Card className={cn(off && "opacity-60")}>
@@ -253,6 +130,10 @@ export function TiktokAssistantConfigTab({
               <span className="text-slate-500">
                 <b>{formatNumber(summary.insufficient)}</b> video chưa đủ dữ liệu
                 (đứng ngoài)
+              </span>
+              <span className="text-violet-600">
+                <b>{formatNumber(summary.watching)}</b> video Seller đang theo dõi
+                thêm
               </span>
               <span className="text-slate-500">
                 <b>{formatNumber(summary.excluded)}</b> video đã loại trừ

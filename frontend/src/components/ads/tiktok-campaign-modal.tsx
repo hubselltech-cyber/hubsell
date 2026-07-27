@@ -1,16 +1,16 @@
 "use client";
 
-import { CircleSlash, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  Activity,
+  ChevronLeft,
+  ChevronRight,
+  CircleSlash,
+  Eye,
+  RotateCcw,
+  SlidersHorizontal,
+  Zap,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatNumber, formatVND } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 import {
   TABLE_HEAD_EMPHASIS,
   TEXT_CARD_TITLE,
@@ -50,15 +50,17 @@ import {
   type AssistantRuleSet,
   type TiktokAdVideo,
   type TiktokCampaignDetail,
+  type VideoDecision,
   type VideoDecisionMap,
   type VideoDisplayStatus,
 } from "@/components/ads/tiktok-assistant";
 
 /**
- * MODAL "PHÂN TÍCH KẾ HOẠCH QUẢNG CÁO" — mô phỏng đúng luồng 3 tầng của
- * TikTok Ads Manager: Chiến dịch GMV Max → Sản phẩm → Mẫu quảng cáo (Video).
- * Tầng 3 là chỗ ra quyết định: badge cờ của trợ lý + nút Loại trừ/Giữ lại
- * từng video hoặc Áp dụng hàng loạt.
+ * MODAL "PHÂN TÍCH KẾ HOẠCH QUẢNG CÁO" — GMV Max tập trung tối ưu video cho
+ * sản phẩm chính của chiến dịch, nên modal chỉ còn 2 tầng: Tổng quan chiến
+ * dịch (chỉ số + Báo cáo hiệu quả tối ưu) → Mẫu quảng cáo (Video). Tầng video
+ * là chỗ ra quyết định: badge cờ của trợ lý + Loại trừ / Giữ lại / Theo dõi
+ * thêm từng video, hoặc Áp dụng hàng loạt.
  */
 
 interface TiktokCampaignModalProps {
@@ -72,16 +74,40 @@ interface TiktokCampaignModalProps {
   onOverrideChange: (rules: AssistantRuleSet | null) => void;
   decisions: VideoDecisionMap;
   /** decision null = gỡ quyết định (khôi phục về trạng thái trợ lý chấm) */
-  onDecide: (videoId: string, decision: "EXCLUDED" | "KEPT" | null) => void;
+  onDecide: (videoId: string, decision: VideoDecision | null) => void;
   onBulkExclude: (videoIds: string[]) => void;
+  /**
+   * Chế độ "Tự động thực thi loại trừ": BẬT = video vi phạm Quy tắc 1 vào
+   * hàng chờ + nút Áp dụng hàng loạt (như cũ); TẮT = trợ lý chỉ cảnh báo
+   * "Cần loại trừ ngay" (badge vàng), Seller tự tay bấm từng video.
+   */
+  autoExecute: boolean;
+  onAutoExecuteChange: (on: boolean) => void;
   onClose: () => void;
 }
 
 /** Badge trạng thái của một video theo kết luận trợ lý + quyết định Seller. */
-function VideoStatusBadge({ status }: { status: VideoDisplayStatus }) {
+function VideoStatusBadge({
+  status,
+  autoExecute,
+}: {
+  status: VideoDisplayStatus;
+  /** Tắt tự động thực thi → cờ vi phạm đổi giọng: cảnh báo vàng giục Seller tự bấm */
+  autoExecute: boolean;
+}) {
   switch (status) {
     case "auto_exclude":
-      return <Badge variant="destructive">Kém hiệu quả — Chờ loại trừ</Badge>;
+      return autoExecute ? (
+        <Badge variant="destructive">Kém hiệu quả — Chờ loại trừ</Badge>
+      ) : (
+        <Badge className="bg-amber-100 text-amber-700">Cần loại trừ ngay</Badge>
+      );
+    case "spike_exclude":
+      // Đột biến chi phí là báo động đỏ ở CẢ hai chế độ — tiền đang cháy
+      // theo giờ, không có phiên bản "nhẹ nhàng" cho cờ này.
+      return (
+        <Badge variant="destructive">Loại trừ ngay (Đột biến chi phí)</Badge>
+      );
     case "needs_review":
       return (
         <Badge className="bg-amber-100 text-amber-700">
@@ -90,6 +116,18 @@ function VideoStatusBadge({ status }: { status: VideoDisplayStatus }) {
       );
     case "insufficient":
       return <Badge variant="outline">Chưa đủ dữ liệu</Badge>;
+    case "watching":
+      return (
+        <Badge className="bg-violet-100 text-violet-700">Đang theo dõi</Badge>
+      );
+    case "grace":
+      // Tím ĐẶC để phân biệt với "Đang theo dõi" (tím nhạt): đây là trợ lý
+      // tự đánh chặn theo Quy tắc 4, không phải Seller chọn.
+      return (
+        <Badge className="bg-violet-600 text-white">
+          Theo dõi — Ân hạn công thần
+        </Badge>
+      );
     case "excluded":
       return <Badge variant="secondary">Đã loại trừ</Badge>;
     case "kept":
@@ -106,24 +144,69 @@ function MiniStat({
   label,
   value,
   tone,
+  emphasis,
 }: {
   label: string;
   value: React.ReactNode;
   tone?: "positive" | "negative";
+  /** Ô KPI trọng tâm (CPA) — cùng nền sáng với dàn card, nổi bật bằng viền
+      amber + số đậm hơn để không bị "cô lập" về màu sắc */
+  emphasis?: boolean;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div
+      className={cn(
+        "rounded-lg border bg-card p-3",
+        emphasis && "border-amber-300 shadow-sm ring-1 ring-amber-200/60"
+      )}
+    >
       <p className={TEXT_CARD_TITLE}>{label}</p>
       <p
         className={cn(
-          "mt-1 text-base font-semibold tracking-tight",
+          "mt-1 text-base tracking-tight",
+          emphasis ? "font-bold" : "font-semibold",
           tone === "positive" && "text-emerald-500",
           tone === "negative" && "text-red-500",
-          !tone && "text-slate-900"
+          !tone && (emphasis ? "text-amber-600" : "text-slate-900")
         )}
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+/** Một ô đếm trong Khối báo cáo hiệu quả tối ưu (thay vị trí biểu đồ cũ). */
+function OptimizeStat({
+  icon: Icon,
+  count,
+  label,
+  hint,
+  iconClass,
+}: {
+  icon: typeof Activity;
+  count: number;
+  label: string;
+  hint: string;
+  iconClass: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border bg-card p-3">
+      <div
+        className={cn(
+          "flex size-10 shrink-0 items-center justify-center rounded-lg",
+          iconClass
+        )}
+      >
+        <Icon className="size-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xl font-semibold tracking-tight text-slate-900 tabular-nums">
+          {formatNumber(count)}
+        </p>
+        <p className="truncate text-xs font-medium text-slate-700">{label}</p>
+        <p className="truncate text-[11px] text-slate-500">{hint}</p>
+      </div>
     </div>
   );
 }
@@ -138,8 +221,19 @@ export function TiktokCampaignModal({
   decisions,
   onDecide,
   onBulkExclude,
+  autoExecute,
+  onAutoExecuteChange,
   onClose,
 }: TiktokCampaignModalProps) {
+  // ----- Phân trang bảng video (hooks phải đứng TRƯỚC early-return) -----
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
+  const campaignId = detail?.campaignId;
+  // Đổi chiến dịch là về trang đầu — trang 3 của chiến dịch cũ vô nghĩa
+  useEffect(() => {
+    setPage(0);
+  }, [campaignId]);
+
   if (!detail) return null;
 
   // Bộ luật HIỆU LỰC của chiến dịch: quy tắc riêng thắng, không có thì kế
@@ -147,7 +241,7 @@ export function TiktokCampaignModal({
   const custom = override !== null;
   const rules: AssistantRuleSet = override ?? config;
 
-  // Tầng 1 tính từ tổng video (nguồn chân lý của mock) để 3 tầng luôn khớp nhau
+  // Tầng 1 tính từ tổng video (nguồn chân lý của mock) để các tầng luôn khớp
   const spend = detail.videos.reduce((s, v) => s + v.spend, 0);
   const orders = detail.videos.reduce((s, v) => s + v.orders, 0);
   const revenue = detail.videos.reduce((s, v) => s + v.revenue, 0);
@@ -159,11 +253,41 @@ export function TiktokCampaignModal({
     ...assessVideo(video, rules, config.enabled, decisions),
   }));
   const pendingExcludeIds = assessed
-    .filter((a) => a.status === "auto_exclude")
+    .filter((a) => a.status === "auto_exclude" || a.status === "spike_exclude")
     .map((a) => a.video.id);
 
+  // ----- Báo cáo hiệu quả tối ưu: gom 3 nhóm trạng thái cốt lõi. Đếm từ
+  // `assessed` (đã trộn quy tắc hiệu lực + quyết định Seller) nên gạt switch
+  // quy tắc riêng hay bấm nút hành động là số nhảy theo ngay. -----
+  const activeCount = assessed.filter(
+    (a) => a.status === "healthy" || a.status === "kept"
+  ).length;
+  const watchingCount = assessed.filter(
+    (a) =>
+      a.status === "insufficient" ||
+      a.status === "watching" ||
+      a.status === "grace"
+  ).length;
+  const excludedCount = assessed.filter((a) => a.status === "excluded").length;
+  const flaggedCount = assessed.filter(
+    (a) =>
+      a.status === "auto_exclude" ||
+      a.status === "spike_exclude" ||
+      a.status === "needs_review"
+  ).length;
+
+  // Lát video của trang hiện tại — các bộ đếm/bulk phía trên vẫn tính trên
+  // TOÀN BỘ danh sách, chỉ phần bảng hiển thị là cắt trang.
+  const totalPages = Math.max(1, Math.ceil(assessed.length / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageRows = assessed.slice(
+    safePage * pageSize,
+    safePage * pageSize + pageSize
+  );
+
   function renderActions(video: TiktokAdVideo, status: VideoDisplayStatus) {
-    if (status === "excluded" || status === "kept") {
+    // Đã có quyết định của Seller (loại / giữ / theo dõi) → chỉ còn đường lui
+    if (status === "excluded" || status === "kept" || status === "watching") {
       return (
         <Button
           variant="outline"
@@ -177,7 +301,17 @@ export function TiktokCampaignModal({
     }
     return (
       <div className="flex justify-end gap-1.5">
-        {status === "needs_review" && (
+        {(status === "needs_review" || status === "insufficient") && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onDecide(video.id, "WATCHING")}
+          >
+            <Eye className="size-3.5" />
+            Theo dõi thêm
+          </Button>
+        )}
+        {(status === "needs_review" || status === "grace") && (
           <Button
             variant="outline"
             size="sm"
@@ -186,15 +320,28 @@ export function TiktokCampaignModal({
             Giữ lại
           </Button>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-red-500 hover:text-red-600"
-          onClick={() => onDecide(video.id, "EXCLUDED")}
-        >
-          <CircleSlash className="size-3.5" />
-          Loại trừ
-        </Button>
+        {status === "spike_exclude" ||
+        (!autoExecute && status === "auto_exclude") ? (
+          // Chế độ thủ công: video vi phạm cần Seller tự tay chém → nút đỏ đặc
+          <Button
+            size="sm"
+            className="bg-red-500 text-white hover:bg-red-600"
+            onClick={() => onDecide(video.id, "EXCLUDED")}
+          >
+            <CircleSlash className="size-3.5" />
+            Loại trừ ngay
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-500 hover:text-red-600"
+            onClick={() => onDecide(video.id, "EXCLUDED")}
+          >
+            <CircleSlash className="size-3.5" />
+            Loại trừ
+          </Button>
+        )}
       </div>
     );
   }
@@ -205,7 +352,7 @@ export function TiktokCampaignModal({
         <DialogHeader>
           <DialogTitle>Phân tích kế hoạch quảng cáo — {campaignName}</DialogTitle>
           <DialogDescription>
-            Dữ liệu 3 tầng theo đúng cấu trúc TikTok: Chiến dịch → Sản phẩm →
+            GMV Max tối ưu video cho sản phẩm chính của chiến dịch: Chiến dịch →
             Mẫu quảng cáo (video). Bản xem trước với số liệu mẫu.
           </DialogDescription>
         </DialogHeader>
@@ -217,7 +364,11 @@ export function TiktokCampaignModal({
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <MiniStat label="Chi phí" value={<Money value={spend} />} tone="negative" />
             <MiniStat label="Đơn hàng SKU" value={formatNumber(orders)} />
-            <MiniStat label="Chi phí mỗi đơn" value={<Money value={cpa} />} />
+            <MiniStat
+              label="Chi phí mỗi đơn (CPA)"
+              value={<Money value={cpa} />}
+              emphasis
+            />
             <MiniStat
               label="Doanh thu gộp"
               value={<Money value={revenue} />}
@@ -232,90 +383,82 @@ export function TiktokCampaignModal({
               }
             />
           </div>
-          <div className="h-48 w-full rounded-lg border bg-card p-3">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={detail.series}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" fontSize={11} tickLine={false} />
-                <YAxis
-                  fontSize={10}
-                  tickLine={false}
-                  width={90}
-                  tickFormatter={(v: number) => formatVND(v)}
-                />
-                <Tooltip
-                  formatter={(value, name) => [
-                    formatVND(Number(value)),
-                    name === "revenue" ? "Doanh thu gộp" : "Chi phí",
-                  ]}
-                />
-                <Legend
-                  formatter={(value) =>
-                    value === "revenue" ? "Doanh thu gộp" : "Chi phí"
-                  }
-                />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="spend"
-                  stroke="#f87171"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+
+          {/* ===== KHỐI BÁO CÁO HIỆU QUẢ TỐI ƯU (thay biểu đồ Tổng quan cũ) ===== */}
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Báo cáo hiệu quả tối ưu
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Trạng thái {formatNumber(detail.videos.length)} video trong
+                  chiến dịch — số đếm cập nhật ngay khi đổi quy tắc hoặc ra
+                  quyết định ở bảng dưới.
+                </p>
+              </div>
+              {flaggedCount > 0 && (
+                <Badge className="bg-amber-100 text-amber-700">
+                  {formatNumber(flaggedCount)} video bị gắn cờ — chờ quyết định
+                </Badge>
+              )}
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <OptimizeStat
+                icon={Activity}
+                count={activeCount}
+                label="Đang hoạt động"
+                hint="Hiệu quả / đang chạy tốt"
+                iconClass="bg-emerald-100 text-emerald-700"
+              />
+              <OptimizeStat
+                icon={Eye}
+                count={watchingCount}
+                label="Đang theo dõi"
+                hint="Chưa đủ dữ liệu · Seller giữ lại quan sát"
+                iconClass="bg-violet-100 text-violet-700"
+              />
+              <OptimizeStat
+                icon={CircleSlash}
+                count={excludedCount}
+                label="Đã loại trừ"
+                hint="Đã tắt/chặn do vi phạm luật"
+                iconClass="bg-red-100 text-red-600"
+              />
+            </div>
           </div>
         </section>
 
-        {/* ===== TẦNG 2: SẢN PHẨM ===== */}
-        <section className="min-w-0">
-          <p className="mb-2 text-sm font-semibold text-slate-900">Sản phẩm</p>
-          <Table>
-            <TableHeader className={TABLE_HEAD_EMPHASIS}>
-              <TableRow>
-                <TableHead>Tên sản phẩm</TableHead>
-                <TableHead>Chế độ tối ưu</TableHead>
-                <TableHead className="text-right">Chi phí</TableHead>
-                <TableHead className="text-right">Lượt đơn</TableHead>
-                <TableHead className="text-right">Chi phí/đơn</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {detail.products.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium text-slate-900">
-                    {p.name}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{p.optimizationMode}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Money value={p.spend} className="text-slate-700" />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatNumber(p.orders)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Money
-                      value={p.orders > 0 ? p.spend / p.orders : 0}
-                      className="text-slate-700"
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </section>
-
-        {/* ===== QUY TẮC RIÊNG CHO CHIẾN DỊCH (Override cấu hình mặc định) ===== */}
-        <section className="min-w-0 rounded-lg border bg-muted/30 p-4">
+        {/* ===== KHU VỰC QUY TẮC TRỢ LÝ — nơi làm việc chính của Seller =====
+            Viền đậm hơn + nền ambient + bóng nhẹ để tách hẳn khối này khỏi nền
+            modal, mắt bám vào đây ngay khi mở. */}
+        <section className="min-w-0 rounded-lg border-2 border-slate-300 bg-slate-50/60 p-4 shadow-sm">
+          {/* --- Switch 1: Tự động thực thi loại trừ (chế độ vận hành) --- */}
           <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                <Zap className="size-4.5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Tự động thực thi loại trừ
+                </p>
+                <p className="mt-0.5 max-w-2xl text-xs text-slate-500">
+                  {autoExecute
+                    ? "Video vi phạm Quy tắc 1 được gom vào hàng chờ, loại trừ hàng loạt bằng một nút Áp dụng ở bảng dưới."
+                    : "Hệ thống KHÔNG tự chém — video vi phạm chỉ hiện cảnh báo vàng “Cần loại trừ ngay” ở bảng dưới, Seller tự tay bấm từng video."}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={autoExecute}
+              onCheckedChange={onAutoExecuteChange}
+              aria-label="Bật/tắt tự động thực thi loại trừ"
+            />
+          </div>
+
+          {/* --- Switch 2: Quy tắc riêng cho chiến dịch (Override mặc định) --- */}
+          <div className="mt-4 flex flex-wrap items-start justify-between gap-3 border-t border-slate-200 pt-4">
             <div className="flex items-start gap-3">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
                 <SlidersHorizontal className="size-4.5" />
@@ -357,13 +500,13 @@ export function TiktokCampaignModal({
           )}
         </section>
 
-        {/* ===== TẦNG 3: MẪU QUẢNG CÁO (VIDEO) ===== */}
+        {/* ===== TẦNG 2: MẪU QUẢNG CÁO (VIDEO) ===== */}
         <section className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-slate-900">
               Mẫu quảng cáo (Video)
             </p>
-            {pendingExcludeIds.length > 0 && (
+            {autoExecute && pendingExcludeIds.length > 0 && (
               <Button
                 size="sm"
                 onClick={() => onBulkExclude(pendingExcludeIds)}
@@ -386,7 +529,7 @@ export function TiktokCampaignModal({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {assessed.map(({ video, status, reasons }) => {
+              {pageRows.map(({ video, status, reasons, grace }) => {
                 const vCpa = videoCpa(video);
                 const vRoas = videoRoas(video);
                 const dimmed = status === "excluded";
@@ -397,15 +540,22 @@ export function TiktokCampaignModal({
                       <p className="text-xs text-slate-500">
                         ID bài đăng: {video.postId}
                       </p>
-                      {reasons.length > 0 && (
+                      {/* Video đã loại trừ: lý do chuyển sang cột Trạng thái */}
+                      {status !== "excluded" && reasons.length > 0 && (
                         <p
                           className={cn(
                             "mt-0.5 max-w-xs text-xs",
-                            status === "auto_exclude"
+                            status === "spike_exclude"
                               ? "text-red-500"
-                              : status === "needs_review"
-                                ? "text-amber-600"
-                                : "text-slate-500"
+                              : status === "auto_exclude"
+                                ? autoExecute
+                                  ? "text-red-500"
+                                  : "text-amber-600"
+                                : status === "needs_review"
+                                  ? "text-amber-600"
+                                  : status === "grace"
+                                    ? "text-violet-600"
+                                    : "text-slate-500"
                           )}
                         >
                           {reasons.join("; ")}
@@ -435,7 +585,22 @@ export function TiktokCampaignModal({
                       {vRoas.toFixed(2)}x
                     </TableCell>
                     <TableCell>
-                      <VideoStatusBadge status={status} />
+                      <VideoStatusBadge status={status} autoExecute={autoExecute} />
+                      {status === "excluded" && reasons.length > 0 && (
+                        <p className="mt-1 max-w-48 text-xs text-slate-500">
+                          {reasons.join("; ")}
+                        </p>
+                      )}
+                      {status === "grace" && grace && (
+                        <p className="mt-1 text-xs font-medium text-violet-600">
+                          Còn {formatNumber(grace.hoursLeft)}h · còn{" "}
+                          <Money
+                            value={grace.spendLeft}
+                            className="text-violet-600"
+                          />{" "}
+                          ân hạn
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {renderActions(video, status)}
@@ -445,9 +610,59 @@ export function TiktokCampaignModal({
               })}
             </TableBody>
           </Table>
+
+          {/* ===== PHÂN TRANG BẢNG VIDEO ===== */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+            <label className="flex items-center gap-2">
+              Hiển thị
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(0);
+                }}
+                aria-label="Số mẫu quảng cáo mỗi trang"
+                className="h-7 rounded-lg border border-input bg-card px-1.5 text-xs text-slate-700 outline-none focus-visible:border-ring"
+              >
+                {[10, 20, 50].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              mẫu quảng cáo / trang
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="tabular-nums">
+                Trang {formatNumber(safePage + 1)}/{formatNumber(totalPages)} ·{" "}
+                {formatNumber(assessed.length)} video
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={safePage === 0}
+                onClick={() => setPage(safePage - 1)}
+                aria-label="Trang trước"
+              >
+                <ChevronLeft className="size-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={safePage >= totalPages - 1}
+                onClick={() => setPage(safePage + 1)}
+                aria-label="Trang sau"
+              >
+                <ChevronRight className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+
           <p className="mt-2 text-xs text-muted-foreground">
             Khi nối API thật, &quot;Loại trừ&quot; sẽ gọi endpoint exclude video
-            của GMV Max. Mọi hành động đều có lý do đi kèm và khôi phục được.
+            của GMV Max; &quot;Theo dõi thêm&quot; tạm ẩn cờ cảnh báo một thời
+            gian để trợ lý thu thêm số liệu. Mọi hành động đều có lý do đi kèm
+            và khôi phục được.
           </p>
         </section>
       </DialogContent>

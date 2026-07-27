@@ -209,6 +209,9 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
     DEFAULT_CAMPAIGN_OVERRIDES
   );
   const [decisions, setDecisions] = useState<VideoDecisionMap>({});
+  // Chế độ "Tự động thực thi loại trừ": tắt thì trợ lý chỉ cảnh báo vàng
+  // "Cần loại trừ ngay", Seller tự bấm tay từng video trong modal.
+  const [autoExecute, setAutoExecute] = useState(true);
   const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
 
   const assistantSummary = useMemo(
@@ -703,6 +706,8 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
             decisions={decisions}
             onDecide={decideVideo}
             onBulkExclude={bulkExclude}
+            autoExecute={autoExecute}
+            onAutoExecuteChange={setAutoExecute}
             onClose={() => setDetailCampaignId(null)}
           />
         )}
