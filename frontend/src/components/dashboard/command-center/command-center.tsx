@@ -13,8 +13,11 @@ import {
 import { cn } from "@/lib/utils";
 import {
   fetchCommandCenterState,
+  fetchSyncAlerts,
   postCommandCenterChat,
+  resolveSyncAlert,
   setCommandCenterResolved,
+  type InventorySyncAlert,
   type OpsActivityDTO,
   type OpsChatDTO,
 } from "@/lib/api";
@@ -38,8 +41,39 @@ import {
   type AlertTag,
   type ChatBody,
   type ChatMessage,
+  type OpsAlert,
   type OpsRole,
 } from "./types";
+
+// ─────────── CẢNH BÁO THẬT từ luồng đồng bộ tồn Shopee ───────────
+//
+// Khác các thẻ mock demo: đây là bản ghi InventorySyncAlert thật trong DB
+// (đẩy tồn thất bại sau 3 lần retry + 3 lượt đối soát). Map về cùng khuôn
+// OpsAlert để dùng chung thẻ/chat/nhật ký; nhận diện lại bằng
+// action.kind === "force-sync-stock" khi cần xử lý khác mock.
+
+function syncAlertToOps(a: InventorySyncAlert): OpsAlert {
+  return {
+    id: `sync-${a.id}`,
+    tag: "channel", // nhãn [SÀN]
+    severity: "high",
+    title: a.channelSku
+      ? `Cập nhật tồn kho Shopee thất bại — SKU ${a.channelSku}`
+      : `Đồng bộ Shopee gặp sự cố — ${a.shopName}`,
+    summary: a.channelSku
+      ? `Cập nhật tồn kho Shopee cho SKU ${a.channelSku} thất bại sau 3 lần thử lại (lệch tồn giữa sàn và hệ thống) — gian "${a.shopName}".`
+      : a.message,
+    actionLabel: "Cập nhật tồn",
+    action: {
+      kind: "force-sync-stock",
+      alertDbId: a.id,
+      sku: a.channelSku ?? "?",
+      channel: a.shopName,
+      hubsellStock: a.hubsellAvailable,
+    },
+    createdAt: new Date(a.createdAt).toISOString(),
+  };
+}
 
 const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
@@ -90,6 +124,8 @@ function mergeActivities(persisted: OpsActivityDTO[]): ActivityItem[] {
 export function CommandCenter() {
   // Vai trò vận hành giả lập — bộ chuyển ở góc để thử nghiệm RBAC.
   const [role, setRole] = useState<OpsRole>("ADMIN");
+  // Cảnh báo THẬT từ luồng đồng bộ tồn Shopee — đứng cạnh các thẻ demo.
+  const [syncAlerts, setSyncAlerts] = useState<OpsAlert[]>([]);
   const [resolved, setResolved] = useState<Set<string>>(new Set());
   const [chat, setChat] = useState<Record<string, ChatMessage[]>>(seedChat);
   const [activities, setActivities] = useState<ActivityItem[]>(MOCK_ACTIVITY);
@@ -111,14 +147,27 @@ export function CommandCenter() {
     }
   }, []);
 
+  const loadSyncAlerts = useCallback(async () => {
+    try {
+      const list = await fetchSyncAlerts();
+      setSyncAlerts(list.map(syncAlertToOps));
+    } catch {
+      // Lỗi tải cảnh báo thật không được làm vỡ khối demo — giữ danh sách cũ.
+    }
+  }, []);
+
   useEffect(() => {
     reloadState();
-  }, [reloadState]);
+    loadSyncAlerts();
+  }, [reloadState, loadSyncAlerts]);
 
   const tags = visibleTags(role);
 
+  // Cảnh báo thật đứng TRƯỚC thẻ demo (cùng khuôn OpsAlert, lọc RBAC như nhau).
+  const allAlerts = [...syncAlerts, ...MOCK_ALERTS];
+
   // Cảnh báo trong tầm nhìn của vai trò: chưa xử lý lên trước, rồi tới mức độ.
-  const alerts = MOCK_ALERTS.filter((a) => canView(role, a.tag)).sort((a, b) => {
+  const alerts = allAlerts.filter((a) => canView(role, a.tag)).sort((a, b) => {
     const byResolved =
       Number(resolved.has(a.id)) - Number(resolved.has(b.id));
     if (byResolved !== 0) return byResolved;
@@ -136,7 +185,7 @@ export function CommandCenter() {
 
   // Drawer chỉ mở được với cảnh báo vai trò có quyền xem (contextual privacy)
   const openAlert = openAlertId
-    ? MOCK_ALERTS.find((a) => a.id === openAlertId && canView(role, a.tag)) ??
+    ? allAlerts.find((a) => a.id === openAlertId && canView(role, a.tag)) ??
       null
     : null;
 
@@ -151,7 +200,7 @@ export function CommandCenter() {
 
   // Pop-up chỉ mở với cảnh báo mà vai trò vừa XEM được vừa được THAO TÁC
   const actionAlert = actionAlertId
-    ? MOCK_ALERTS.find(
+    ? allAlerts.find(
         (a) =>
           a.id === actionAlertId && canView(role, a.tag) && canAct(role, a.tag)
       ) ?? null
@@ -180,17 +229,41 @@ export function CommandCenter() {
   function completeAction(summary: string) {
     if (!actionAlert) return;
     const a = actionAlert;
+    toast.success(summary);
+    setActionAlertId(null);
+
+    if (a.action.kind === "force-sync-stock") {
+      // Cảnh báo THẬT: backend đã đè tồn + đóng cảnh báo + ghi nhật ký vận
+      // hành rồi — chỉ cần tải lại để thẻ biến mất và nhật ký hiện dòng mới.
+      loadSyncAlerts();
+      reloadState();
+      return;
+    }
+
     const message = `${ROLE_META[role].label}: ${summary}`;
     setResolved((prev) => new Set(prev).add(a.id));
     logActivityLocal(a.tag, message);
-    toast.success(summary);
-    setActionAlertId(null);
     persistResolve(a.id, true, { tag: a.tag, message });
   }
 
   function toggleResolved(alertId: string) {
-    const alert = MOCK_ALERTS.find((a) => a.id === alertId);
+    const alert = allAlerts.find((a) => a.id === alertId);
     if (!alert) return;
+
+    if (alert.action.kind === "force-sync-stock") {
+      // Cảnh báo THẬT đóng MỘT CHIỀU trong DB (không bỏ đánh dấu lại được).
+      const dbId = alert.action.alertDbId;
+      setSyncAlerts((prev) => prev.filter((a) => a.id !== alertId));
+      logActivityLocal(
+        "channel",
+        `${ROLE_META[role].label} đánh dấu ĐÃ XỬ LÝ: ${alert.title}`
+      );
+      resolveSyncAlert(dbId)
+        .catch(() => toast.error("Không đóng được cảnh báo — đang tải lại."))
+        .finally(() => loadSyncAlerts());
+      return;
+    }
+
     const nextResolved = !resolved.has(alertId);
 
     setResolved((prev) => {

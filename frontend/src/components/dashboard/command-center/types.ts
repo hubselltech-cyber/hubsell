@@ -82,7 +82,21 @@ export type ActionParams =
       roas: number;
       dailyBudget: number;
     }
-  | { kind: "confirm"; description: string };
+  | { kind: "confirm"; description: string }
+  /**
+   * CẢNH BÁO THẬT từ luồng đồng bộ tồn Shopee (không phải mock): đẩy tồn thất
+   * bại sau 3 lần retry + 3 lượt đối soát. Nút [Cập nhật tồn] gọi API
+   * force-sync ĐÈ tồn chuẩn Hubsell lên sàn — hành động thật, không giả lập.
+   */
+  | {
+      kind: "force-sync-stock";
+      /** id bản ghi InventorySyncAlert trong DB (để gọi API force-sync/resolve). */
+      alertDbId: string;
+      sku: string;
+      channel: string;
+      /** Tồn khả dụng hiện tại trên Hubsell — số sẽ được đè lên sàn. null = SKU chưa liên kết kho. */
+      hubsellStock: number | null;
+    };
 
 export interface OpsAlert {
   id: string;

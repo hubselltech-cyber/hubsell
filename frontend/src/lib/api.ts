@@ -219,6 +219,30 @@ export interface InventorySyncAlert {
   orderSn: string | null;
   message: string;
   createdAt: string;
+  /** Tồn khả dụng HIỆN TẠI của SKU trên Hubsell — số chuẩn nút "Cập nhật tồn" sẽ đè lên sàn. */
+  hubsellAvailable: number | null;
+}
+
+/** Một dòng trong hàng đợi webhook + job đối soát tồn (bảng shopee_webhook_logs). */
+export interface ShopeeWebhookLogRow {
+  id: string;
+  /** 3/4/5 = sự kiện push Shopee; 100 = job đối soát tồn nội bộ. */
+  eventCode: number;
+  shopId: string;
+  orderSn: string | null;
+  status: "PENDING" | "PROCESSING" | "VERIFYING" | "SUCCESS" | "FAILED";
+  attempts: number;
+  nextRetryAt: string | null;
+  processedAt: string | null;
+  lastError: string | null;
+  /** JSON thô (stringify) — payload webhook hoặc nội dung job đối soát. */
+  payload: string;
+  createdAt: string;
+}
+
+export interface WebhookLogsResponse {
+  items: ShopeeWebhookLogRow[];
+  counts: Partial<Record<ShopeeWebhookLogRow["status"], number>>;
 }
 
 /** Một dòng nhật ký đối soát đẩy tồn lên sàn: [SKU, số cũ, số mới, kết quả]. */
@@ -770,6 +794,27 @@ export function resolveSyncAlert(id: string) {
 /** Nhật ký các lượt đẩy tồn kho lên sàn (đối soát). */
 export function fetchSyncLogs(limit = 50) {
   return apiFetch<InventorySyncLog[]>(`/api/inventory/sync-logs?limit=${limit}`);
+}
+
+/**
+ * Nút [Cập nhật tồn] trên thẻ cảnh báo Trung tâm điều hành: đè trực tiếp tồn
+ * khả dụng chuẩn từ Hubsell lên sàn cho SKU của cảnh báo; thành công thì backend
+ * tự đóng cảnh báo + ghi nhật ký vận hành.
+ */
+export function forceSyncStockAlert(alertId: string) {
+  return apiFetch<{ ok: boolean; pushed: number; applied: number }>(
+    `/api/inventory/sync-alerts/${alertId}/force-sync`,
+    { method: "POST" }
+  );
+}
+
+/** Nhật ký hàng đợi webhook + job đối soát (CHỈ Quản trị). */
+export function fetchWebhookLogs(params: { q?: string; status?: string; limit?: number }) {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.status) qs.set("status", params.status);
+  if (params.limit) qs.set("limit", String(params.limit));
+  return apiFetch<WebhookLogsResponse>(`/api/inventory/webhook-logs?${qs.toString()}`);
 }
 
 // ----- Sản phẩm -----

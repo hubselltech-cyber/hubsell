@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { InventoryLogType } from "@prisma/client";
+import { InventoryLogType, Role, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import { syncShopeeStockForProducts } from "../integrations/shopee/inventory-sync";
 
 const router = Router();
 
@@ -139,6 +140,33 @@ router.get("/sync-alerts", async (req: AuthRequest, res, next) => {
       take: 100,
       include: { channel: { select: { shopName: true, channelName: true } } },
     });
+
+    // Tồn khả dụng HIỆN TẠI của từng SKU cảnh báo — số chuẩn Hubsell mà nút
+    // "Cập nhật tồn" trên Trung tâm điều hành sẽ đè lên sàn.
+    const skuAlerts = alerts.filter((a) => a.channelSku);
+    const mappings = skuAlerts.length
+      ? await prisma.channelProduct.findMany({
+          where: {
+            OR: skuAlerts.map((a) => ({
+              channelId: a.channelId,
+              channelSku: a.channelSku!,
+            })),
+            productId: { not: null },
+          },
+          select: {
+            channelId: true,
+            channelSku: true,
+            product: { select: { quantityInStock: true, holdQuantity: true } },
+          },
+        })
+      : [];
+    const availableByKey = new Map(
+      mappings.map((m) => [
+        `${m.channelId}:${m.channelSku}`,
+        m.product ? m.product.quantityInStock - m.product.holdQuantity : null,
+      ])
+    );
+
     res.json(
       alerts.map((a) => ({
         id: a.id,
@@ -147,6 +175,9 @@ router.get("/sync-alerts", async (req: AuthRequest, res, next) => {
         orderSn: a.orderSn,
         message: a.message,
         createdAt: a.createdAt,
+        hubsellAvailable: a.channelSku
+          ? (availableByKey.get(`${a.channelId}:${a.channelSku}`) ?? null)
+          : null,
       }))
     );
   } catch (err) {
@@ -167,6 +198,156 @@ router.patch("/sync-alerts/:id/resolve", async (req: AuthRequest, res, next) => 
       return;
     }
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/inventory/sync-alerts/:id/force-sync — nút [Cập nhật tồn] trên thẻ
+// cảnh báo của Trung tâm điều hành: ĐÈ trực tiếp tồn khả dụng chuẩn từ Hubsell
+// lên sàn cho SKU của cảnh báo (đẩy tới MỌI gian Shopee đang liên kết SKU đó),
+// thành công thì tự đóng cảnh báo + ghi nhật ký vận hành.
+router.post("/sync-alerts/:id/force-sync", async (req: AuthRequest, res, next) => {
+  try {
+    const alert = await prisma.inventorySyncAlert.findFirst({
+      where: { id: req.params.id, resolvedAt: null, channel: syncChannelScope(req) },
+      include: { channel: { select: { shopName: true, userId: true } } },
+    });
+    if (!alert) {
+      res.status(404).json({ error: "Không tìm thấy cảnh báo (hoặc đã xử lý rồi)" });
+      return;
+    }
+    if (!alert.channelSku) {
+      res.status(400).json({
+        error: "Cảnh báo này không gắn SKU cụ thể — hãy kiểm tra kết nối gian hàng rồi bấm Đã xử lý.",
+      });
+      return;
+    }
+
+    const mapping = await prisma.channelProduct.findFirst({
+      where: {
+        channelId: alert.channelId,
+        channelSku: alert.channelSku,
+        productId: { not: null },
+      },
+      select: {
+        productId: true,
+        product: { select: { quantityInStock: true, holdQuantity: true } },
+      },
+    });
+    if (!mapping?.productId || !mapping.product) {
+      res.status(400).json({
+        error: `SKU ${alert.channelSku} chưa liên kết với sản phẩm kho — vào "Liên kết sản phẩm" nối trước rồi thử lại.`,
+      });
+      return;
+    }
+
+    const available =
+      mapping.product.quantityInStock - mapping.product.holdQuantity;
+    const result = await syncShopeeStockForProducts(
+      {
+        orderSn: alert.orderSn ?? undefined,
+        productIds: [mapping.productId],
+        oldAvailable: { [mapping.productId]: available },
+      },
+      "force-sync từ Trung tâm điều hành"
+    );
+
+    if (result.failed > 0) {
+      // Lượt đè thất bại — syncShopeeStockForProducts đã tự ghi log + cảnh báo
+      // mới; giữ nguyên cảnh báo hiện tại cho chủ shop xử lý tiếp.
+      res.status(502).json({
+        error: `Đẩy lại tồn kho thất bại (${result.failed} lượt lỗi) — Shopee vẫn từ chối. Xem cảnh báo/log đồng bộ để biết chi tiết.`,
+      });
+      return;
+    }
+
+    await prisma.inventorySyncAlert.update({
+      where: { id: alert.id },
+      data: { resolvedAt: new Date() },
+    });
+    await prisma.opsActivity.create({
+      data: {
+        ownerId: alert.channel.userId,
+        tag: "channel",
+        message: `✅ Đã đẩy lại tồn kho chuẩn từ Hubsell (${Math.max(0, available)}) cho SKU ${alert.channelSku} lên gian "${alert.channel.shopName}" — cảnh báo lệch tồn được đóng.`,
+      },
+    });
+
+    res.json({ ok: true, pushed: result.pushed, applied: Math.max(0, available) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/inventory/webhook-logs — trang đối soát hàng đợi webhook + job đối
+// soát tồn (CHỈ Quản trị): dev/admin soi payload thô mà không phải vào DB.
+router.get("/webhook-logs", async (req: AuthRequest, res, next) => {
+  try {
+    if (req.userRole !== Role.ADMIN) {
+      res.status(403).json({ error: "Chỉ Quản trị (toàn quyền) được xem nhật ký webhook" });
+      return;
+    }
+
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const statusRaw = typeof req.query.status === "string" ? req.query.status : "";
+    const status = (Object.values(WebhookJobStatus) as string[]).includes(statusRaw)
+      ? (statusRaw as WebhookJobStatus)
+      : undefined;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+
+    // Phạm vi dữ liệu: chỉ log thuộc các gian hàng của shop này (khớp theo
+    // shop_id sàn — job đối soát tồn cũng ghi shopId của gian nên phủ cả hai).
+    const channels = await prisma.channel.findMany({
+      where: { userId: req.ownerId!, externalShopId: { not: null } },
+      select: { externalShopId: true },
+    });
+    const shopIds = channels.map((c) => c.externalShopId!);
+
+    const where = {
+      shopId: { in: shopIds },
+      ...(status ? { status } : {}),
+      ...(q
+        ? {
+            OR: [
+              { orderSn: { contains: q, mode: "insensitive" as const } },
+              // SKU nằm trong payload JSON của job đối soát; mã đơn cũng nằm
+              // trong payload webhook — contains phủ cả hai kiểu tìm.
+              { payload: { contains: q, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [rows, statusCounts] = await Promise.all([
+      prisma.shopeeWebhookLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+      prisma.shopeeWebhookLog.groupBy({
+        by: ["status"],
+        where: { shopId: { in: shopIds } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        eventCode: r.eventCode,
+        shopId: r.shopId,
+        orderSn: r.orderSn,
+        status: r.status,
+        attempts: r.attempts,
+        nextRetryAt: r.nextRetryAt,
+        processedAt: r.processedAt,
+        lastError: r.lastError,
+        payload: r.payload,
+        createdAt: r.createdAt,
+      })),
+      counts: Object.fromEntries(statusCounts.map((s) => [s.status, s._count._all])),
+    });
   } catch (err) {
     next(err);
   }

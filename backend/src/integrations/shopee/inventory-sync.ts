@@ -83,13 +83,15 @@ function parseShopeeExternalId(
 /**
  * Đẩy tồn khả dụng hiện tại của các sản phẩm lên mọi gian Shopee có mapping.
  * Best-effort: lỗi được retry + ghi log + bắn cảnh báo bên trong, KHÔNG ném ra.
+ * Trả bộ đếm {pushed, failed} để tầng gọi chủ động (force-sync) biết kết quả.
  */
 export async function syncShopeeStockForProducts(
   req: StockSyncRequest,
   source: string
-): Promise<void> {
+): Promise<{ pushed: number; failed: number }> {
+  const summary = { pushed: 0, failed: 0 };
   try {
-    if (req.productIds.length === 0) return;
+    if (req.productIds.length === 0) return summary;
 
     // Đọc trạng thái MỚI NHẤT — giữa lúc biến động và lúc đẩy có thể đã có đơn
     // khác chen vào; đẩy số hiện tại luôn an toàn hơn số tính từ trước.
@@ -97,7 +99,7 @@ export async function syncShopeeStockForProducts(
       where: { id: { in: req.productIds } },
       select: { id: true, skuCode: true, quantityInStock: true, holdQuantity: true },
     });
-    if (products.length === 0) return;
+    if (products.length === 0) return summary;
     const byProduct = new Map(products.map((p) => [p.id, p]));
 
     const mappings = await prisma.channelProduct.findMany({
@@ -117,7 +119,7 @@ export async function syncShopeeStockForProducts(
         channel: true,
       },
     });
-    if (mappings.length === 0) return;
+    if (mappings.length === 0) return summary;
 
     // Gom theo gian để mỗi gian chỉ lấy access_token một lần.
     const byChannel = new Map<string, typeof mappings>();
@@ -137,6 +139,7 @@ export async function syncShopeeStockForProducts(
         auth = await getValidShopeeAccessToken(channel);
       } catch (err) {
         const msg = (err as Error).message;
+        summary.failed += chMappings.length;
         for (const mp of chMappings) {
           await recordSyncResult(channel.id, mp.channelSku, mp.productId, req, {
             ok: false,
@@ -184,6 +187,9 @@ export async function syncShopeeStockForProducts(
           }
         }
 
+        if (ok) summary.pushed += 1;
+        else summary.failed += 1;
+
         await recordSyncResult(channel.id, mp.channelSku, mp.productId, req, {
           ok,
           attempts: attempt,
@@ -217,6 +223,7 @@ export async function syncShopeeStockForProducts(
     // Lỗi ngoài dự kiến (DB...) — nuốt để không kéo sập job đơn hàng, chỉ log.
     console.error("[Inventory Sync] Lỗi ngoài dự kiến khi đồng bộ tồn Shopee:", err);
   }
+  return summary;
 }
 
 /** Ghi một dòng đối soát + in log chuẩn [thời gian]−[SKU]−[cũ]−[mới]−[trạng thái]. */
@@ -357,7 +364,14 @@ export async function verifyStockPush(
   return { outcome: "mismatch", expected, actual };
 }
 
-/** Tạo cảnh báo lệch tồn cho UI (best-effort — lỗi DB chỉ log, không ném). */
+/**
+ * Tạo cảnh báo lệch tồn cho UI (best-effort — lỗi DB chỉ log, không ném).
+ *
+ * Ngoài bản ghi InventorySyncAlert (banner trang Kho + thẻ cảnh báo nhãn [SÀN]
+ * trên Trung tâm điều hành), còn ghi MỘT dòng OpsActivity — nhật ký vận hành
+ * có sẵn của Trung tâm điều hành — để sự cố xuất hiện ngay trong dòng thời
+ * gian của chủ shop, kể cả khi họ chưa nhìn thấy thẻ cảnh báo.
+ */
 export async function createSyncAlert(
   channelId: string,
   data: { channelSku?: string; orderSn?: string; message: string }
@@ -371,6 +385,22 @@ export async function createSyncAlert(
         message: data.message,
       },
     });
+
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { userId: true, shopName: true },
+    });
+    if (channel) {
+      await prisma.opsActivity.create({
+        data: {
+          ownerId: channel.userId,
+          tag: "channel", // nhãn [SÀN] trên Trung tâm điều hành
+          message: data.channelSku
+            ? `⚠️ Cập nhật tồn kho Shopee cho SKU ${data.channelSku} (${channel.shopName}) thất bại sau 3 lần thử lại — lệch tồn giữa sàn và hệ thống.`
+            : `⚠️ Đồng bộ Shopee với gian "${channel.shopName}" gặp sự cố — xem cảnh báo trên Trung tâm điều hành.`,
+        },
+      });
+    }
   } catch (err) {
     console.error("[Inventory Sync] Không tạo được InventorySyncAlert:", err);
   }

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HintIcon } from "@/components/finance/hint-icon";
+import { ApiError, forceSyncStockAlert } from "@/lib/api";
 import { formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { estimateChannelCost, runMockAction } from "./mock-service";
@@ -281,6 +282,70 @@ function StockMismatchForm({
             `Đồng bộ tồn ${params.sku} theo ${source === "hubsell" ? "Hubsell" : params.channel} (áp ${applied})`
           )
         }
+      />
+    </>
+  );
+}
+
+/**
+ * Form cho CẢNH BÁO THẬT lệch tồn Shopee — khác các form mock ở trên: nút
+ * [Cập nhật tồn] gọi API force-sync thật, đè tồn khả dụng chuẩn của Hubsell
+ * lên sàn. Thất bại thì giữ pop-up mở và báo lỗi để thử lại.
+ */
+function ForceSyncStockForm({
+  params,
+  onCancel,
+  onDone,
+}: {
+  params: Extract<ActionParams, { kind: "force-sync-stock" }>;
+  onCancel: () => void;
+  onDone: (s: string) => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const linked = params.hubsellStock !== null;
+
+  async function confirm() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await forceSyncStockAlert(params.alertDbId);
+      onDone(
+        `Đã đẩy lại tồn chuẩn Hubsell (${r.applied}) cho SKU ${params.sku} lên ${params.channel}`
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Không gọi được máy chủ — thử lại sau."
+      );
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="rounded-lg border border-slate-200 px-3">
+        <Field label="SKU trên sàn">{params.sku}</Field>
+        <Field label="Gian hàng">{params.channel}</Field>
+        <Field label="Tồn khả dụng chuẩn (Hubsell)">
+          {linked ? (
+            <span className="font-semibold">{Math.max(0, params.hubsellStock!)}</span>
+          ) : (
+            <span className="text-amber-600">SKU chưa liên kết kho</span>
+          )}
+        </Field>
+      </div>
+      <p className="text-xs text-slate-500">
+        Bấm <b>Cập nhật tồn</b> để ĐÈ trực tiếp số tồn khả dụng từ Hubsell sang
+        Shopee (áp cho mọi gian đang liên kết SKU này). Thành công thì cảnh báo
+        tự đóng và được ghi vào nhật ký vận hành.
+      </p>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <ActionFooter
+        submitting={submitting}
+        disabled={!linked}
+        confirmLabel="Cập nhật tồn"
+        onCancel={onCancel}
+        onConfirm={confirm}
       />
     </>
   );
@@ -672,6 +737,9 @@ export function ActionModal({
           )}
           {action.kind === "stock-mismatch" && (
             <StockMismatchForm params={action} onCancel={onCancel} onDone={onDone} />
+          )}
+          {action.kind === "force-sync-stock" && (
+            <ForceSyncStockForm params={action} onCancel={onCancel} onDone={onDone} />
           )}
           {action.kind === "edit-price" && (
             <EditPriceForm params={action} onCancel={onCancel} onDone={onDone} />
