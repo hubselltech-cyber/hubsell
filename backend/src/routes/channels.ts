@@ -29,6 +29,7 @@ import {
 import {
   signOauthState as signLazadaState,
   handleLazadaCallback,
+  syncLazadaOrders,
 } from "../integrations/lazada/service";
 import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
 import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
@@ -450,7 +451,20 @@ router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
       return;
     }
 
-    res.status(400).json({ error: "Đồng bộ đơn hiện chỉ hỗ trợ TikTok và Shopee" });
+    if (channel.channelName === ChannelName.LAZADA) {
+      if (!channel.refreshToken) {
+        res.status(409).json({
+          error: "Gian Lazada chưa uỷ quyền. Hãy kết nối lại để cấp quyền API.",
+          code: "LAZADA_NOT_AUTHORIZED",
+        });
+        return;
+      }
+      const summary = await syncLazadaOrders(channel);
+      res.json({ message: "Đồng bộ đơn hàng Lazada xong", ...summary });
+      return;
+    }
+
+    res.status(400).json({ error: "Đồng bộ đơn hiện chỉ hỗ trợ TikTok, Shopee và Lazada" });
   } catch (err) {
     res.status(502).json({ error: `Đồng bộ đơn thất bại: ${(err as Error).message}` });
   }

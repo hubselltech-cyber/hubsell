@@ -153,6 +153,185 @@ export async function refreshToken(
   );
 }
 
+// ---------- Đơn hàng (Order API) ----------
+
+/** Một đơn trong danh sách /orders/get (chỉ các trường Hubsell dùng). */
+export interface LazadaOrder {
+  order_id?: number | string;
+  /** Mã đơn hiển thị cho người bán — Hubsell dùng làm orderCode. */
+  order_number?: number | string;
+  /** Lazada trả MẢNG trạng thái (đơn nhiều kiện có thể lệch nhau). */
+  statuses?: string[];
+  /** Tổng tiền đơn — Lazada trả CHUỖI ("259000.00"). */
+  price?: string;
+  created_at?: string; // ISO 8601 kèm múi giờ, vd "2026-07-28T17:49:00+0700"
+  updated_at?: string;
+  customer_first_name?: string;
+  customer_last_name?: string;
+  address_shipping?: { first_name?: string; last_name?: string; phone?: string };
+  items_count?: number;
+}
+
+interface LazadaOrderListData extends LazadaEnvelope {
+  data?: { count?: number; orders?: LazadaOrder[] };
+}
+
+export interface LazadaOrderListParams {
+  accessToken: string;
+  /** Mốc ISO 8601 — chỉ lấy đơn TẠO sau thời điểm này. */
+  createdAfter: string;
+  offset?: number;
+  /** Tối đa 100 đơn/trang theo giới hạn Lazada. */
+  limit?: number;
+}
+
+/** Lấy một trang danh sách đơn tạo sau mốc `createdAfter`. */
+export async function getOrders(
+  params: LazadaOrderListParams,
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ count: number; orders: LazadaOrder[] }> {
+  const data = await callLazada<LazadaOrderListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.orderList,
+    {
+      access_token: params.accessToken,
+      created_after: params.createdAfter,
+      offset: String(params.offset ?? 0),
+      limit: String(params.limit ?? 100),
+      sort_by: "created_at",
+      sort_direction: "ASC",
+    },
+    "orders/get",
+    cfg
+  );
+  return { count: data.data?.count ?? 0, orders: data.data?.orders ?? [] };
+}
+
+/**
+ * Một dòng hàng trong /orders/items/get. LƯU Ý đặc thù Lazada: MỖI DÒNG LÀ MỘT
+ * ĐƠN VỊ SẢN PHẨM (khách mua 3 cái = 3 dòng lặp), không có trường quantity —
+ * tầng sync phải tự đếm số dòng trùng SKU.
+ */
+export interface LazadaOrderItem {
+  order_item_id?: number | string;
+  name?: string;
+  /** SKU người bán tự đặt (SellerSku) — khoá liên kết kho Hubsell. */
+  sku?: string;
+  /** SKU hệ thống Lazada sinh (đuôi định danh sàn). */
+  shop_sku?: string;
+  variation?: string;
+  /** Giá khách thực trả cho đơn vị này (sau khuyến mãi người bán). */
+  paid_price?: number | string;
+  item_price?: number | string;
+  status?: string;
+  product_main_image?: string;
+  product_id?: number | string;
+}
+
+interface LazadaMultiOrderItemsData extends LazadaEnvelope {
+  data?: {
+    order_id?: number | string;
+    order_number?: number | string;
+    order_items?: LazadaOrderItem[];
+  }[];
+}
+
+/** Lấy dòng hàng của NHIỀU đơn (≤50 order_id/lần) — trả map theo order_id. */
+export async function getMultipleOrderItems(
+  accessToken: string,
+  orderIds: (number | string)[],
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<Map<string, LazadaOrderItem[]>> {
+  const data = await callLazada<LazadaMultiOrderItemsData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.orderItemsGet,
+    {
+      access_token: accessToken,
+      // Lazada nhận mảng JSON trong query: order_ids=[123,456]
+      order_ids: `[${orderIds.map((id) => String(id)).join(",")}]`,
+    },
+    "orders/items/get",
+    cfg
+  );
+  const bySn = new Map<string, LazadaOrderItem[]>();
+  for (const row of data.data ?? []) {
+    if (row.order_id == null) continue;
+    bySn.set(String(row.order_id), row.order_items ?? []);
+  }
+  return bySn;
+}
+
+// ---------- Sản phẩm (Product API) ----------
+
+/** Một biến thể (SKU) trong /products/get — tên trường của Lazada viết HOA đầu. */
+export interface LazadaProductSku {
+  SkuId?: number | string;
+  SellerSku?: string;
+  ShopSku?: string;
+  quantity?: number;
+  price?: number | string;
+  special_price?: number | string;
+  Status?: string; // active / inactive / deleted
+  Images?: string[];
+  /** Chuỗi thuộc tính phân loại, vd "Đỏ, XL" (saleProp gộp sẵn). */
+  Variation?: string;
+}
+
+export interface LazadaProduct {
+  item_id?: number | string;
+  status?: string;
+  attributes?: { name?: string };
+  images?: string[];
+  skus?: LazadaProductSku[];
+}
+
+interface LazadaProductListData extends LazadaEnvelope {
+  data?: { total_products?: number; products?: LazadaProduct[] };
+}
+
+/** Lấy một trang sản phẩm (filter=all để không sót hàng ẩn/hết lượt bán). */
+export async function getProducts(
+  accessToken: string,
+  offset: number,
+  limit: number,
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ total: number; products: LazadaProduct[] }> {
+  const data = await callLazada<LazadaProductListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.productsGet,
+    {
+      access_token: accessToken,
+      filter: "all",
+      offset: String(offset),
+      limit: String(limit),
+    },
+    "products/get",
+    cfg
+  );
+  return {
+    total: data.data?.total_products ?? 0,
+    products: data.data?.products ?? [],
+  };
+}
+
+/**
+ * Sinh KHOÁ SKU CHUẨN cho một dòng hàng/biến thể Lazada — DÙNG CHUNG cho cả
+ * đồng bộ sản phẩm lẫn đồng bộ đơn để hai luồng luôn khớp khoá (như Shopee).
+ * Ưu tiên SellerSku người bán tự đặt; trống thì dựng khoá tổng hợp từ id sàn.
+ */
+export function lazadaChannelSku(opts: {
+  sellerSku?: string;
+  shopSku?: string;
+  itemId?: number | string;
+  skuId?: number | string;
+}): string {
+  const seller = opts.sellerSku?.trim();
+  if (seller) return seller;
+  const shop = opts.shopSku?.trim();
+  if (shop) return shop;
+  return `LZD-${opts.itemId ?? "0"}-${opts.skuId ?? "0"}`;
+}
+
 // ---------- Thông tin người bán ----------
 
 /** Lấy thông tin gian hàng (tên, seller_id...) để hiển thị + định danh gian. */

@@ -11,14 +11,19 @@
 // ============================================================
 
 import jwt from "jsonwebtoken";
-import type { Channel } from "@prisma/client";
-import { ChannelName } from "@prisma/client";
+import type { Channel, Prisma } from "@prisma/client";
+import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
 import {
   createToken,
+  getMultipleOrderItems,
+  getOrders,
   getSellerInfo,
+  lazadaChannelSku,
   refreshToken,
+  type LazadaOrder,
+  type LazadaOrderItem,
   type LazadaTokenData,
 } from "./client";
 
@@ -199,4 +204,284 @@ function toResult(c: Channel): LazadaConnectResult {
     externalShopId: c.externalShopId,
     status: c.status,
   };
+}
+
+// ============================================================
+// ĐỒNG BỘ ĐƠN HÀNG LAZADA — kéo đơn thật → upsert vào DB
+//
+// Cấu trúc mirror Shopee: phân trang, upsert idempotent theo (channelId,
+// orderCode), snapshot giá vốn qua mapping SKU. CỐ Ý KHÔNG trừ tồn kho (đồng bộ
+// lô chạy lặp) — trừ kho real-time là việc của luồng webhook sau này (nếu làm).
+// ============================================================
+
+const ORDER_LIST_PAGE_SIZE = 100; // Lazada cho tối đa 100 đơn/trang orders/get
+const ORDER_ITEMS_BATCH = 50; // tối đa 50 order_id/lần orders/items/get
+const MAX_PAGES = 100; // chốt chặn phân trang vô tận
+
+/**
+ * Ánh xạ trạng thái đơn Lazada → vòng đời của Hubsell. Lazada trả trạng thái
+ * theo TỪNG KIỆN (mảng statuses); tầng gọi đã chọn trạng thái đại diện.
+ */
+function mapLazadaStatus(status?: string): ShippingStatus {
+  switch (status) {
+    case "unpaid":
+    case "pending":
+      return ShippingStatus.PENDING;
+    case "packed":
+    case "repacked":
+    case "ready_to_ship":
+    case "ready_to_ship_pending":
+      return ShippingStatus.PROCESSED;
+    case "shipped":
+    case "shipping":
+      return ShippingStatus.SHIPPING;
+    case "delivered":
+    case "confirmed":
+    case "returned": // hàng đã giao rồi mới hoàn — trục hoàn xử lý riêng bên dưới
+      return ShippingStatus.DELIVERED;
+    case "canceled":
+    case "cancelled":
+    case "failed":
+    case "failed_delivery":
+      return ShippingStatus.CANCELLED;
+    default:
+      return ShippingStatus.PENDING;
+  }
+}
+
+/**
+ * Đơn Lazada đang HOÀN/TRẢ → cờ trên trục returnStatus (độc lập shippingStatus).
+ * Nhận diện mọi trạng thái chứa "return" (returned / return_initiated /
+ * shipped_back...). CHỈ nhận diện, KHÔNG tự cộng kho — cộng kho khi hàng về là
+ * của luồng nhận hàng hoàn ở kho (như Shopee).
+ */
+function lazadaReturnStatus(status?: string): ReturnStatus | null {
+  return status && status.includes("return") ? ReturnStatus.AWAITING : null;
+}
+
+/**
+ * Chọn TRẠNG THÁI ĐẠI DIỆN cho đơn từ mảng statuses theo kiện: ưu tiên trạng
+ * thái "đi xa nhất" trong vòng đời để đơn giao một phần không bị tụt về PENDING;
+ * riêng đơn toàn kiện huỷ mới coi là huỷ.
+ */
+function pickLazadaStatus(statuses?: string[]): string | undefined {
+  const list = (statuses ?? []).filter(Boolean);
+  if (list.length === 0) return undefined;
+  const rank = (s: string): number => {
+    if (s.includes("return")) return 5;
+    switch (mapLazadaStatus(s)) {
+      case ShippingStatus.DELIVERED:
+        return 4;
+      case ShippingStatus.SHIPPING:
+        return 3;
+      case ShippingStatus.PROCESSED:
+        return 2;
+      case ShippingStatus.PENDING:
+        return 1;
+      case ShippingStatus.CANCELLED:
+        return 0; // huỷ chỉ thắng khi MỌI kiện đều huỷ (min rank)
+    }
+  };
+  const allCancelled = list.every((s) => mapLazadaStatus(s) === ShippingStatus.CANCELLED);
+  if (allCancelled) return list[0];
+  const active = list.filter((s) => mapLazadaStatus(s) !== ShippingStatus.CANCELLED);
+  return active.sort((a, b) => rank(b) - rank(a))[0];
+}
+
+/**
+ * Gộp dòng hàng theo SKU người bán. ĐẶC THÙ LAZADA: mỗi dòng item là MỘT ĐƠN VỊ
+ * (khách mua 3 = 3 dòng lặp, không có trường quantity) → quantity = số dòng
+ * trùng SKU, giá lấy paid_price của từng đơn vị.
+ */
+function aggregateLazadaItems(items: LazadaOrderItem[]) {
+  const agg = new Map<
+    string,
+    { channelSku: string; productName: string; price: number; quantity: number }
+  >();
+  for (const it of items) {
+    const sku = lazadaChannelSku({
+      sellerSku: it.sku,
+      shopSku: it.shop_sku,
+      itemId: it.product_id,
+      skuId: it.order_item_id,
+    });
+    const price = Number(it.paid_price ?? it.item_price ?? 0) || 0;
+    const name = [it.name, it.variation].filter(Boolean).join(" - ") || sku;
+    const ex = agg.get(sku);
+    if (ex) ex.quantity += 1;
+    else agg.set(sku, { channelSku: sku, productName: name, price, quantity: 1 });
+  }
+  return [...agg.values()];
+}
+
+export interface SyncLazadaOrdersOptions {
+  /** Lấy đơn tạo trong bao nhiêu ngày gần nhất. Mặc định 90. */
+  daysBack?: number;
+  maxPages?: number;
+}
+
+export interface SyncLazadaOrdersResult {
+  fetched: number;
+  created: number;
+  updated: number;
+  itemsCreated: number;
+  pages: number;
+}
+
+/**
+ * Kéo đơn hàng thật từ Lazada và upsert vào DB (idempotent theo (channelId,
+ * order_number)). orders/get phân trang offset; dòng hàng lấy theo lô ≤50 đơn.
+ */
+export async function syncLazadaOrders(
+  channel: Channel,
+  opts: SyncLazadaOrdersOptions = {}
+): Promise<SyncLazadaOrdersResult> {
+  const accessToken = await getValidLazadaAccessToken(channel);
+
+  const daysBack = opts.daysBack ?? 90;
+  const maxPages = opts.maxPages ?? MAX_PAGES;
+  const createdAfter = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+  const feeRate =
+    Number(channel.feeRate) > 0
+      ? Number(channel.feeRate)
+      : PLATFORM_FEE_RATE[ChannelName.LAZADA];
+
+  const result: SyncLazadaOrdersResult = {
+    fetched: 0,
+    created: 0,
+    updated: 0,
+    itemsCreated: 0,
+    pages: 0,
+  };
+
+  // (1) Gom toàn bộ đơn qua phân trang offset.
+  const orders: LazadaOrder[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await getOrders({ accessToken, createdAfter, offset, limit: ORDER_LIST_PAGE_SIZE });
+    result.pages++;
+    orders.push(...page.orders);
+    offset += page.orders.length;
+    if (page.orders.length < ORDER_LIST_PAGE_SIZE || result.pages >= maxPages) break;
+  }
+
+  // (2) Lấy dòng hàng theo lô ≤50 order_id rồi upsert từng đơn.
+  const withId = orders.filter((o) => o.order_id != null);
+  for (let i = 0; i < withId.length; i += ORDER_ITEMS_BATCH) {
+    const batch = withId.slice(i, i + ORDER_ITEMS_BATCH);
+    const itemsByOrder = await getMultipleOrderItems(
+      accessToken,
+      batch.map((o) => o.order_id!)
+    );
+    for (const order of batch) {
+      result.fetched++;
+      const items = itemsByOrder.get(String(order.order_id)) ?? [];
+      const outcome = await prisma.$transaction((tx) =>
+        upsertLazadaOrderTx(tx, channel, order, items, feeRate)
+      );
+      if (outcome.created) {
+        result.created++;
+        result.itemsCreated += outcome.itemsCreated;
+      } else {
+        result.updated++;
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Tạo mới / cập nhật MỘT đơn Lazada trong transaction. Tạo mới kèm OrderItem +
+ * snapshot giá vốn; đã tồn tại thì chỉ cập nhật trường biến động (trạng thái,
+ * tổng tiền) — không đụng OrderItem để giữ nguyên snapshot. Mirror Shopee.
+ */
+export async function upsertLazadaOrderTx(
+  tx: Prisma.TransactionClient,
+  channel: Channel,
+  order: LazadaOrder,
+  items: LazadaOrderItem[],
+  feeRate: number
+): Promise<{ created: boolean; itemsCreated: number }> {
+  const orderCode = String(order.order_number ?? order.order_id);
+  const totalAmount = Number(order.price ?? 0) || 0;
+  const repStatus = pickLazadaStatus(order.statuses);
+  const shippingStatus = mapLazadaStatus(repStatus);
+  const returning = lazadaReturnStatus(repStatus);
+  const paymentStatus = repStatus === "unpaid" ? "UNPAID" : "PAID";
+  const shipName = [order.address_shipping?.first_name, order.address_shipping?.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const buyerName = [order.customer_first_name, order.customer_last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const customerName = shipName || buyerName || "Khách Lazada";
+  const customerPhone = order.address_shipping?.phone?.trim() || null;
+
+  const existing = await tx.order.findUnique({
+    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+    select: { id: true, returnStatus: true },
+  });
+
+  if (existing) {
+    await tx.order.update({
+      where: { id: existing.id },
+      data: {
+        shippingStatus,
+        paymentStatus,
+        totalAmount,
+        // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong.
+        ...(returning && existing.returnStatus === ReturnStatus.NONE
+          ? { returnStatus: returning }
+          : {}),
+      },
+    });
+    return { created: false, itemsCreated: 0 };
+  }
+
+  const lines = aggregateLazadaItems(items);
+  const skus = lines.map((l) => l.channelSku);
+  const mappings = skus.length
+    ? await tx.channelProduct.findMany({
+        where: { channelId: channel.id, channelSku: { in: skus }, productId: { not: null } },
+        select: { channelSku: true, productId: true, product: { select: { costPrice: true } } },
+      })
+    : [];
+  const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
+
+  const created = await tx.order.create({
+    data: {
+      channelId: channel.id,
+      orderCode,
+      customerName,
+      customerPhone,
+      totalAmount,
+      platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
+      paymentStatus,
+      shippingStatus,
+      ...(returning ? { returnStatus: returning } : {}),
+      itemCount: lines.length,
+      createdAt: order.created_at ? new Date(order.created_at) : undefined,
+    },
+  });
+
+  for (const line of lines) {
+    const mp = mapBySku.get(line.channelSku);
+    await tx.orderItem.create({
+      data: {
+        orderId: created.id,
+        productId: mp?.productId ?? null,
+        channelSku: line.channelSku,
+        productName: line.productName,
+        quantity: line.quantity,
+        price: line.price,
+        costPriceAtSale: String(mp?.product?.costPrice ?? 0),
+      },
+    });
+  }
+
+  return { created: true, itemsCreated: lines.length };
 }

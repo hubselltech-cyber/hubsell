@@ -41,11 +41,11 @@ export const LAZADA_PATHS = {
   tokenRefresh: "/auth/token/refresh",
   /** Thông tin gian hàng — dùng làm request "hello world" kiểm chữ ký. */
   sellerGet: "/seller/get",
-  /** Danh sách đơn trong khoảng thời gian (phân trang offset/limit). */
+  /** Danh sách đơn trong khoảng thời gian (phân trang offset/limit ≤100). */
   orderList: "/orders/get",
-  /** Danh sách item (sản phẩm) của một đơn. */
-  orderItemsGet: "/order/items/get",
-  /** Danh sách sản phẩm của shop. */
+  /** Dòng hàng của NHIỀU đơn một lượt (≤50 order_id/lần). */
+  orderItemsGet: "/orders/items/get",
+  /** Danh sách sản phẩm của shop (phân trang offset/limit ≤50). */
   productsGet: "/products/get",
 } as const;
 

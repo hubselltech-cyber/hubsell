@@ -808,11 +808,12 @@ export default function ChannelsPage() {
                                   <Pencil className="size-3.5" />
                                   Cập nhật
                                 </Button>
-                                {/* Gian đã uỷ quyền API thật (TikTok/Shopee) →
+                                {/* Gian đã uỷ quyền API thật (TikTok/Shopee/Lazada) →
                                     đồng bộ dữ liệu thật; còn lại dùng "Giả lập đơn".
                                     "Đồng bộ đối soát" hiện mới có cho TikTok. */}
                                 {(c.channelName === "TIKTOK" ||
-                                  c.channelName === "SHOPEE") &&
+                                  c.channelName === "SHOPEE" ||
+                                  c.channelName === "LAZADA") &&
                                 c.apiConnected ? (
                                   <>
                                     <Button
