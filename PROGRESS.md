@@ -5,6 +5,26 @@
 
 ---
 
+## Phiên 28/07/2026 — Tích hợp Lazada TRỌN GÓI + Giá vốn không cần liên kết kho
+
+### Lazada Open Platform: từ số 0 → chạy thật production trong một phiên
+- **App "Hubsell"** (Seller In-house APP, App Key 140639, status Testing): logo 120×120 tự sinh (`frontend/public/hubsell-logo-120.png`), callback `https://hubsell-backend.onrender.com/api/auth/lazada/callback` (Lazada BẮT BUỘC https → không dùng được mẹo hosts hubsell.tech như Shopee).
+- **Code** `backend/src/integrations/lazada/` mirror Shopee: config (host auth + api.lazada.vn) / client (đổi-refresh token, /seller/get, /orders/get, /orders/items/get, /products/get) / service (state CSRF, tự refresh trước hạn 30', handleLazadaCallback idempotent theo seller_id, syncLazadaOrders). **Chữ ký KHÁC Shopee**: HMAC-SHA256 trên `apiPath + concat(key+value sort ASCII, gồm CẢ access_token)`, hex CHỮ HOA, timestamp MILI-giây — kiểm chứng với server thật (code giả trả InvalidCode, không phải IncompleteSignature).
+- **2 luồng uỷ quyền**: production tự động qua callback Render; LOCAL dán code (Lazada không kiểm redirect_uri khi đổi token → copy `?code=` từ URL callback dán vào dialog Kết nối). Gotcha đã ăn đủ: trang authorize phải chọn **Site=Vietnam** trước khi login (kẻo "Thiếu Tham số"); app Testing phải thêm seller vào **Authorized Seller Whitelist** (nằm CUỐI trang App Overview isvconsole, phải cuộn; cần email+mật khẩu Seller Center; tối đa 5); phiên SSO console rất dễ văng khi gõ URL thẳng.
+- **ĐÃ NỐI SHOP THẬT "DarkMan"** (seller 200158131632, VN33VZ685X): sync sản phẩm qua `marketplace/adapters/lazada-adapter.ts` → **980 SKU**; sync đơn → **1004 đơn / 1104 dòng hàng** (3 năm, 11 trang, idempotent kiểm chứng chạy lại 0 tạo mới). Đặc thù Lazada: mỗi dòng order item = MỘT đơn vị (tự đếm quantity); `statuses` là MẢNG theo kiện → chọn trạng thái đại diện (huỷ chỉ khi mọi kiện huỷ); field /products/get viết hoa đầu (SellerSku/Status).
+- **Deploy**: 4 commit đã push, Render build xong + env LAZADA_* đã điền, callback production trả 302 chuẩn.
+
+### Giá vốn KHÔNG cần liên kết kho gốc (quyết định kiến trúc theo yêu cầu)
+- Lý do: nhiều khách không muốn quản tồn kho tập trung — liên kết kho là VIỆC TUỲ CHỌN, giá vốn phải nhập được độc lập để tính lãi/lỗ.
+- `ChannelProduct.costPrice` (Decimal?, migration `20260728113155`): giá vốn cấp SKU sàn khi chưa nối kho; đã nối thì Product vẫn là nguồn chân lý. Trang Giá vốn hiện CẢ SKU chưa liên kết (badge "Chưa nối kho"); mọi đường nhập (tay / bulk / Excel / popup SKU P&L) đều lưu đúng chỗ + vá đơn cũ theo (gian, mã SKU, snapshot=0). Sync đơn 3 sàn snapshot `product.costPrice ?? cp.costPrice ?? 0`. Khi liên kết, giá vốn cấp sàn kế thừa sang Product đang 0.
+- **2 công cụ mới ở Liên kết SP**: nút "Tự khớp SKU" (`POST /api/mappings/auto-match` — trùng mã không phân hoa-thường, không ghi đè liên kết tay) + nút "Tạo SKU kho (n)" trên thanh bulk (`POST /api/mappings/create-products` — sinh SP kho từ dữ liệu sàn rồi nối luôn, trùng mã dùng lại, ≤200/lần).
+- **Supabase production quản schema THỦ CÔNG** (Render chỉ tsc, không migrate deploy): đã ALTER thêm cột trên SQL Editor + cập nhật `supabase-schema.sql`. Thêm cột mới lần sau NHỚ bước này.
+- Verify toàn bộ trên dữ liệu DarkMan thật qua HTTP route: 986 SKU hiện ở Giá vốn, auto-match 6, nhập giá vốn SKU chưa nối vá 1 dòng đơn cũ, tạo+nối 2 SP kho (số liệu test đều đã hoàn trả).
+
+### 🔜 Còn lại của Lazada: webhook đơn real-time + trừ tồn kho, settlements (gác chung 3 sàn); `APP_FRONTEND_URL` trên Render chờ khi nào deploy frontend.
+
+---
+
 ## Phiên 27/07/2026 (chiều) — Trợ lý quảng cáo 3 sàn + Trợ lý thông minh GMV Max TikTok
 
 (Sync Settlements Shopee + TikTok GÁC LẠI theo chỉ đạo — làm sau cùng Lazada rồi đẩy server một thể.)
