@@ -310,6 +310,8 @@ CREATE TABLE "ChannelProduct" (
     "status" "ChannelProductStatus" NOT NULL DEFAULT 'ACTIVE',
     "lastSyncedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Giá vốn cấp SKU sàn khi CHƯA liên kết kho gốc (migration 20260728113155)
+    "costPrice" DECIMAL(12,2),
     "productId" TEXT,
 
     CONSTRAINT "ChannelProduct_pkey" PRIMARY KEY ("id")
