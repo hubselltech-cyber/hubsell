@@ -93,14 +93,18 @@ export function CostPriceTable({
   }
 
   return (
-    <Table>
+    // table-fixed để tự quyết độ rộng cột — bảng auto bị tên phân loại dài kéo
+    // tràn ngang, đẩy cột Giá vốn (cột thao tác chính) khuất sau mép cuộn.
+    // Giá vốn đứng TRƯỚC Giá bán: người dùng vào trang này để nhập giá vốn,
+    // cột đó phải luôn nhìn thấy; Giá bán chỉ để tham khảo nên ra rìa.
+    <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[38%]">Sản phẩm</TableHead>
-          <TableHead>Mã SKU</TableHead>
-          <TableHead>Kênh bán</TableHead>
+          <TableHead className="w-[40%]">Sản phẩm</TableHead>
+          <TableHead className="w-[13%]">Mã SKU</TableHead>
+          <TableHead className="w-[19%]">Kênh bán</TableHead>
+          <TableHead className="w-60 text-right">Giá vốn (VNĐ)</TableHead>
           <TableHead className="text-right">Giá bán</TableHead>
-          <TableHead className="w-64 text-right">Giá vốn (VNĐ)</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -164,9 +168,13 @@ function ParentRow({
   onBulkApplied: () => void;
 }) {
   const missing = group.variants.filter((v) => Number(v.costPrice) <= 0).length;
-  const costs = group.variants.map((v) => Number(v.costPrice)).filter((c) => c > 0);
-  const min = costs.length ? Math.min(...costs) : 0;
-  const max = costs.length ? Math.max(...costs) : 0;
+  // Khoảng GIÁ BÁN của các phân loại — hiển thị đúng dưới cột Giá bán
+  // (trước đây lỡ tính khoảng giá vốn rồi đặt nhầm cột này)
+  const sells = group.variants
+    .map((v) => Number(v.sellingPrice))
+    .filter((p) => p > 0);
+  const min = sells.length ? Math.min(...sells) : 0;
+  const max = sells.length ? Math.max(...sells) : 0;
 
   return (
     <TableRow
@@ -230,19 +238,20 @@ function ParentRow({
         </div>
       </TableCell>
 
-      {/* Mã SKU / kênh / giá bán để trống ở dòng cha — chi tiết nằm ở dòng con */}
+      {/* Mã SKU / kênh để trống ở dòng cha — chi tiết nằm ở dòng con */}
       <TableCell className={TEXT_SUB}>—</TableCell>
       <TableCell className={TEXT_SUB}>—</TableCell>
-      <TableCell className={cn(TEXT_SUB, "text-right")}>
-        {costs.length === 0
+
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <QuickFill group={group} onExpand={onExpand} onApplied={onBulkApplied} />
+      </TableCell>
+
+      <TableCell className={cn(TEXT_SUB, "truncate text-right")}>
+        {sells.length === 0
           ? "—"
           : min === max
             ? formatVND(min)
             : `${formatVND(min)} – ${formatVND(max)}`}
-      </TableCell>
-
-      <TableCell onClick={(e) => e.stopPropagation()}>
-        <QuickFill group={group} onExpand={onExpand} onApplied={onBulkApplied} />
       </TableCell>
     </TableRow>
   );
@@ -305,9 +314,10 @@ function QuickFill({
 
   return (
     <div className="flex items-center justify-end gap-1.5">
+      {/* Placeholder ngắn để không bị cắt chữ trong ô w-32; nghĩa đầy đủ ở aria-label */}
       <CurrencyInput
         className="w-32 text-right tabular-nums"
-        placeholder="Nhập cho tất cả"
+        placeholder="Giá vốn chung"
         aria-label={`Nhập nhanh giá vốn cho tất cả phân loại của ${group.name}`}
         value={digits}
         onValueChange={setDigits}
@@ -460,27 +470,33 @@ function ChildRow(props: RowProps) {
     <TableRow className="bg-muted/40 hover:bg-muted/50">
       <TableCell>
         {/* Thụt lề + vạch dọc để mắt thấy ngay đây là con của dòng phía trên */}
-        <div className="flex items-center gap-2.5 pl-3">
+        <div className="flex min-w-0 items-center gap-2.5 pl-3">
           <span
             aria-hidden
             className="h-8 w-px shrink-0 bg-border"
           />
-          <span className="text-muted-foreground">└</span>
-          <span className="font-medium">
+          <span className="shrink-0 text-muted-foreground">└</span>
+          {/* Truncate để tên phân loại dài không kéo tràn ngang cả bảng */}
+          <span
+            className="min-w-0 truncate font-medium"
+            title={label ?? item.variantName ?? item.sku}
+          >
             {label ?? item.variantName ?? item.sku}
           </span>
         </div>
       </TableCell>
-      <TableCell className="font-mono">{item.sku}</TableCell>
+      <TableCell className="truncate font-mono" title={item.sku}>
+        {item.sku}
+      </TableCell>
       <TableCell>
         <ChannelBadge name={item.channelName} />
         <UnlinkedHint linked={item.linked} />
       </TableCell>
-      <TableCell className="text-right font-medium">
-        {formatVND(item.sellingPrice)}
-      </TableCell>
       <TableCell>
         <CostCell {...props} />
+      </TableCell>
+      <TableCell className="truncate text-right font-medium">
+        {formatVND(item.sellingPrice)}
       </TableCell>
     </TableRow>
   );
@@ -508,19 +524,23 @@ function SingleRow(props: RowProps) {
               <ImageIcon className="size-4" />
             </div>
           )}
-          <p className="truncate font-medium">{item.productName}</p>
+          <p className="min-w-0 truncate font-medium" title={item.productName}>
+            {item.productName}
+          </p>
         </div>
       </TableCell>
-      <TableCell className="font-mono">{item.sku}</TableCell>
+      <TableCell className="truncate font-mono" title={item.sku}>
+        {item.sku}
+      </TableCell>
       <TableCell>
         <ChannelBadge name={item.channelName} />
         <UnlinkedHint linked={item.linked} />
       </TableCell>
-      <TableCell className="text-right font-medium">
-        {formatVND(item.sellingPrice)}
-      </TableCell>
       <TableCell>
         <CostCell {...props} />
+      </TableCell>
+      <TableCell className="truncate text-right font-medium">
+        {formatVND(item.sellingPrice)}
       </TableCell>
     </TableRow>
   );
