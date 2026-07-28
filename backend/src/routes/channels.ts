@@ -22,6 +22,14 @@ import {
   syncTiktokOrders,
   syncTiktokSettlements,
 } from "../integrations/tiktok/service";
+import {
+  isLazadaConfigured,
+  buildAuthorizeUrl as buildLazadaAuthorizeUrl,
+} from "../integrations/lazada/config";
+import {
+  signOauthState as signLazadaState,
+  handleLazadaCallback,
+} from "../integrations/lazada/service";
 import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
 import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
 import {
@@ -330,6 +338,51 @@ router.get("/shopee/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
     res.json({ url: buildShopeeAuthorizeUrl(redirect, cfg) });
   } catch (err) {
     next(err);
+  }
+});
+
+// ============================================================
+// KẾT NỐI LAZADA THẬT (OAuth2 Server-side)
+//
+// Luồng deploy: FE bấm Kết nối → GET auth-url (state mang ownerId) → user duyệt
+// trên Lazada → Lazada redirect về callback Render (routes/auth.ts) → lưu Channel.
+// Luồng LOCAL: callback đăng ký là URL Render (Lazada bắt https) nên local không
+// nhận được redirect — user copy ?code=... từ URL callback rồi DÁN vào FE, FE
+// gọi POST /lazada/connect bên dưới (ownerId lấy từ JWT đăng nhập, khỏi cần state).
+// ============================================================
+
+// GET /api/channels/lazada/auth-url — trả URL trang uỷ quyền Lazada.
+router.get("/lazada/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
+  try {
+    if (!isLazadaConfigured()) {
+      res.status(503).json({
+        error:
+          "Chưa cấu hình Lazada. Điền LAZADA_APP_KEY / LAZADA_APP_SECRET trong backend/.env.",
+        code: "LAZADA_NOT_CONFIGURED",
+      });
+      return;
+    }
+    const state = signLazadaState(req.ownerId!);
+    res.json({ url: buildLazadaAuthorizeUrl(state) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/channels/lazada/connect — đổi CODE dán tay lấy token + lưu Channel.
+// Dành cho test local (callback nằm trên Render). Idempotent theo seller_id.
+router.post("/lazada/connect", requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { code } = req.body ?? {};
+    if (typeof code !== "string" || !code.trim()) {
+      res.status(400).json({ error: "Thiếu code uỷ quyền Lazada" });
+      return;
+    }
+    const saved = await handleLazadaCallback(req.ownerId!, code.trim());
+    res.json({ message: `Đã kết nối gian "${saved.shopName}"`, channel: saved });
+  } catch (err) {
+    // Lỗi phía Lazada (code hết hạn, chữ ký sai...) trả 502 kèm message gốc.
+    res.status(502).json({ error: `Kết nối Lazada thất bại: ${(err as Error).message}` });
   }
 });
 

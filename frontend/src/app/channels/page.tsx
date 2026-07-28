@@ -41,9 +41,11 @@ import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   connectChannel,
+  connectLazadaCode,
   disconnectChannel,
   fetchChannelProducts,
   fetchChannels,
+  getLazadaAuthUrl,
   getShopeeAuthUrl,
   getStoredUser,
   getTiktokAuthUrl,
@@ -86,12 +88,19 @@ function ConnectDialog({
   const [channelName, setChannelName] = useState<ChannelName>(CONNECTABLE[0]);
   const [shopName, setShopName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Lazada: callback đăng ký là backend Render (Lazada bắt https) nên local
+  // không nhận được redirect — mở trang uỷ quyền ở TAB MỚI rồi người dùng dán
+  // code từ URL callback vào đây để đổi token.
+  const [lazadaCode, setLazadaCode] = useState("");
+  const [lazadaAuthOpened, setLazadaAuthOpened] = useState(false);
 
   useEffect(() => {
     if (open) {
       setChannelName(CONNECTABLE[0]);
       setShopName("");
       setSubmitting(false);
+      setLazadaCode("");
+      setLazadaAuthOpened(false);
     }
   }, [open]);
 
@@ -105,11 +114,12 @@ function ConnectDialog({
   const trimmed = shopName.trim();
   const duplicated = trimmed !== "" && usedNames.has(trimmed.toLowerCase());
 
-  // TikTok & Shopee đi qua OAuth THẬT: rời trang sang sàn để người bán uỷ quyền,
-  // tên gian do sàn trả về nên không cần nhập tay. Các sàn còn lại vẫn giả lập.
+  // TikTok/Shopee/Lazada đi qua OAuth THẬT: người bán uỷ quyền bên sàn, tên
+  // gian do sàn trả về nên không cần nhập tay. Các sàn còn lại vẫn giả lập.
   const isTiktok = channelName === "TIKTOK";
   const isShopee = channelName === "SHOPEE";
-  const isOAuth = isTiktok || isShopee;
+  const isLazada = channelName === "LAZADA";
+  const isOAuth = isTiktok || isShopee || isLazada;
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
@@ -127,6 +137,25 @@ function ConnectDialog({
         // Shopee: state (mang ownerId) đã ký ở backend, callback là route backend.
         const { url } = await getShopeeAuthUrl();
         window.location.href = url;
+        return;
+      }
+      if (isLazada) {
+        // Chưa có code: mở trang uỷ quyền ở tab mới, giữ dialog chờ dán code.
+        if (!lazadaCode.trim()) {
+          const { url } = await getLazadaAuthUrl();
+          window.open(url, "_blank", "noopener");
+          setLazadaAuthOpened(true);
+          setSubmitting(false);
+          return;
+        }
+        // Người dùng có thể dán NGUYÊN URL callback — tự bóc tham số code ra.
+        let code = lazadaCode.trim();
+        const fromUrl = code.match(/[?&]code=([^&\s]+)/);
+        if (fromUrl) code = decodeURIComponent(fromUrl[1]);
+        const r = await connectLazadaCode(code);
+        toast.success(`Đã kết nối Lazada: ${r.channel.shopName}`);
+        onOpenChange(false);
+        onDone();
         return;
       }
       const c = await connectChannel(channelName, trimmed || undefined);
@@ -183,12 +212,31 @@ function ConnectDialog({
             )}
           </div>
 
-          {/* OAuth (TikTok/Shopee): tên gian do sàn trả về, không nhập tay. */}
+          {/* OAuth (TikTok/Shopee/Lazada): tên gian do sàn trả về, không nhập tay. */}
           {isOAuth ? (
-            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              Tên gian hàng sẽ được lấy tự động từ{" "}
-              {CHANNEL_META[channelName].label} sau khi uỷ quyền.
-            </p>
+            <div className="space-y-3">
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                Tên gian hàng sẽ được lấy tự động từ{" "}
+                {CHANNEL_META[channelName].label} sau khi uỷ quyền.
+              </p>
+              {/* Lazada mở uỷ quyền ở tab mới → quay lại đây dán code đổi token. */}
+              {isLazada && (
+                <div className="grid gap-2">
+                  <Label htmlFor="lazada-code">Code uỷ quyền</Label>
+                  <Input
+                    id="lazada-code"
+                    placeholder="Dán code (hoặc nguyên URL callback) vào đây"
+                    value={lazadaCode}
+                    onChange={(e) => setLazadaCode(e.target.value)}
+                  />
+                  <p className={TEXT_SUB}>
+                    {lazadaAuthOpened
+                      ? "Uỷ quyền xong, trình duyệt chuyển tới trang callback — copy tham số code trên thanh địa chỉ rồi dán vào ô trên."
+                      : "Bấm nút bên dưới để mở trang uỷ quyền Lazada ở tab mới; uỷ quyền xong quay lại đây dán code."}
+                  </p>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="grid gap-2">
               <Label htmlFor="shop-name">Tên gian hàng</Label>
@@ -225,7 +273,11 @@ function ConnectDialog({
               ) : (
                 <PlugZap className="size-4" />
               )}
-              {isOAuth ? `Tiếp tục với ${CHANNEL_META[channelName].label}` : "Kết nối"}
+              {isLazada && lazadaCode.trim()
+                ? "Đổi code lấy token"
+                : isOAuth
+                  ? `Tiếp tục với ${CHANNEL_META[channelName].label}`
+                  : "Kết nối"}
             </Button>
           </div>
         </form>
@@ -556,11 +608,17 @@ export default function ChannelsPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const shopee = params.get("shopee");
-    if (!shopee) return;
+    const lazada = params.get("lazada");
+    if (!shopee && !lazada) return;
     if (shopee === "connected") {
       toast.success(`Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}`);
     } else if (shopee === "error") {
       toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
+    }
+    if (lazada === "connected") {
+      toast.success(`Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}`);
+    } else if (lazada === "error") {
+      toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`);
     }
     window.history.replaceState({}, "", "/channels");
   }, []);

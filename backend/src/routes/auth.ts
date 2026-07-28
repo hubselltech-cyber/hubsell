@@ -6,6 +6,10 @@ import {
   handleShopeeCallback,
   verifyOauthState,
 } from "../integrations/shopee/service";
+import {
+  handleLazadaCallback,
+  verifyOauthState as verifyLazadaOauthState,
+} from "../integrations/lazada/service";
 
 const router = Router();
 
@@ -149,6 +153,43 @@ router.get("/shopee/callback", async (req, res) => {
     // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.
     console.error("[shopee/callback] Lỗi xử lý callback:", err);
     done({ shopee: "error", msg: (err as Error).message });
+  }
+});
+
+// ============================================================
+// GET /api/auth/lazada/callback — LAZADA REDIRECT VỀ ĐÂY SAU KHI UỶ QUYỀN
+//
+// Endpoint CÔNG KHAI: Lazada mở bằng trình duyệt kèm ?code=&state=. Danh tính
+// chủ shop nằm trong `state` (JWT đã ký lúc sinh URL). Callback đăng ký trên
+// App Console là URL backend RENDER (Lazada bắt https) — luồng này chỉ chạy
+// end-to-end trên bản deploy; test local dùng đường "dán code" ở routes/channels.
+// ============================================================
+router.get("/lazada/callback", async (req, res) => {
+  const done = (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    res.redirect(`${FRONTEND_BASE_URL}/channels?${qs}`);
+  };
+
+  try {
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+
+    if (!code) {
+      done({ lazada: "error", msg: "Thiếu code từ Lazada" });
+      return;
+    }
+    const ownerId = state ? verifyLazadaOauthState(state) : null;
+    if (!ownerId) {
+      done({ lazada: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });
+      return;
+    }
+
+    const saved = await handleLazadaCallback(ownerId, code);
+    done({ lazada: "connected", shop: saved.shopName });
+  } catch (err) {
+    // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.
+    console.error("[lazada/callback] Lỗi xử lý callback:", err);
+    done({ lazada: "error", msg: (err as Error).message });
   }
 });
 

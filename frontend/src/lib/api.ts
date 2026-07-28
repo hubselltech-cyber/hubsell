@@ -1462,6 +1462,35 @@ export function getShopeeAuthUrl() {
   return apiFetch<{ url: string }>("/api/channels/shopee/auth-url");
 }
 
+/**
+ * Lấy URL trang uỷ quyền Lazada. Callback đăng ký trên App Console là backend
+ * RENDER (Lazada bắt https) nên khi chạy LOCAL, người dùng mở URL này ở tab
+ * mới, uỷ quyền xong copy ?code=... từ URL callback rồi dán lại vào dialog.
+ */
+export function getLazadaAuthUrl() {
+  return apiFetch<{ url: string }>("/api/channels/lazada/auth-url");
+}
+
+/** Gian Lazada vừa kết nối (không chứa token). */
+export interface LazadaConnectedChannel {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+  externalShopId: string | null;
+  status: string;
+}
+
+/**
+ * Đổi CODE uỷ quyền Lazada (dán tay từ URL callback) lấy token + lưu gian hàng.
+ * Danh tính chủ shop lấy từ JWT đăng nhập nên không cần state ở luồng này.
+ */
+export function connectLazadaCode(code: string) {
+  return apiFetch<{ message: string; channel: LazadaConnectedChannel }>(
+    "/api/channels/lazada/connect",
+    { method: "POST", body: JSON.stringify({ code }) }
+  );
+}
+
 /** Kết quả một gian TikTok đã nối qua OAuth (không chứa token). */
 export interface TiktokConnectedChannel {
   id: string;
