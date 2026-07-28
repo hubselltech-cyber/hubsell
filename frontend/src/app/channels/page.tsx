@@ -79,11 +79,14 @@ function ConnectDialog({
   onOpenChange,
   existing,
   onDone,
+  initialLazadaCode,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   existing: Channel[];
   onDone: () => void;
+  /** Code Lazada do callback Render bật về (?lazada=code) — điền sẵn vào ô. */
+  initialLazadaCode?: string;
 }) {
   const [channelName, setChannelName] = useState<ChannelName>(CONNECTABLE[0]);
   const [shopName, setShopName] = useState("");
@@ -96,13 +99,14 @@ function ConnectDialog({
 
   useEffect(() => {
     if (open) {
-      setChannelName(CONNECTABLE[0]);
+      // Có code Lazada chờ sẵn → nhảy thẳng vào bước đổi code của Lazada
+      setChannelName(initialLazadaCode ? "LAZADA" : CONNECTABLE[0]);
       setShopName("");
       setSubmitting(false);
-      setLazadaCode("");
+      setLazadaCode(initialLazadaCode ?? "");
       setLazadaAuthOpened(false);
     }
-  }, [open]);
+  }, [open, initialLazadaCode]);
 
   // Tên đã dùng trên chính sàn đang chọn. Chặn ngay trên giao diện thay vì để
   // người dùng điền xong bấm Kết nối rồi mới nhận lỗi từ máy chủ.
@@ -230,9 +234,11 @@ function ConnectDialog({
                     onChange={(e) => setLazadaCode(e.target.value)}
                   />
                   <p className={TEXT_SUB}>
-                    {lazadaAuthOpened
-                      ? "Uỷ quyền xong, trình duyệt chuyển tới trang callback — copy tham số code trên thanh địa chỉ rồi dán vào ô trên."
-                      : "Bấm nút bên dưới để mở trang uỷ quyền Lazada ở tab mới; uỷ quyền xong quay lại đây dán code."}
+                    {lazadaCode.trim()
+                      ? "Code đã sẵn sàng — bấm “Đổi code lấy token” để hoàn tất kết nối."
+                      : lazadaAuthOpened
+                        ? "Uỷ quyền xong, trình duyệt sẽ tự quay về trang này kèm code điền sẵn; nếu không, copy tham số code trên thanh địa chỉ rồi dán vào ô trên."
+                        : "Bấm nút bên dưới để mở trang uỷ quyền Lazada; uỷ quyền xong trình duyệt tự quay về đây."}
                   </p>
                 </div>
               )}
@@ -545,6 +551,8 @@ export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectOpen, setConnectOpen] = useState(false);
+  // Code Lazada do callback Render bật về máy dev (?lazada=code&code=...)
+  const [lazadaPrefill, setLazadaPrefill] = useState<string | null>(null);
   const [mockFor, setMockFor] = useState<Channel | null>(null);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [denied, setDenied] = useState(false);
@@ -619,6 +627,12 @@ export default function ChannelsPage() {
       toast.success(`Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}`);
     } else if (lazada === "error") {
       toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`);
+    } else if (lazada === "code" && params.get("code")) {
+      // Callback Render bật code uỷ quyền về máy dev — mở dialog với code điền
+      // sẵn, người dùng chỉ cần bấm nút hoàn tất (backend local đổi code lấy token).
+      setLazadaPrefill(params.get("code"));
+      setConnectOpen(true);
+      toast.info("Đã nhận code uỷ quyền Lazada — bấm “Đổi code lấy token” để hoàn tất.");
     }
     window.history.replaceState({}, "", "/channels");
   }, []);
@@ -906,9 +920,13 @@ export default function ChannelsPage() {
 
       <ConnectDialog
         open={connectOpen}
-        onOpenChange={setConnectOpen}
+        onOpenChange={(o) => {
+          setConnectOpen(o);
+          if (!o) setLazadaPrefill(null); // đóng dialog thì bỏ code chờ, mở lại là form trắng
+        }}
         existing={channels}
         onDone={load}
+        initialLazadaCode={lazadaPrefill ?? undefined}
       />
       {mockFor && (
         <MockOrderDialog

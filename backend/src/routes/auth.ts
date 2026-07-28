@@ -7,6 +7,7 @@ import {
   verifyOauthState,
 } from "../integrations/shopee/service";
 import {
+  decodeOauthStateOrigin as decodeLazadaStateOrigin,
   handleLazadaCallback,
   verifyOauthState as verifyLazadaOauthState,
 } from "../integrations/lazada/service";
@@ -16,7 +17,8 @@ const router = Router();
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Nơi FE hiển thị kết quả sau khi Shopee redirect về (callback là route BE).
-const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "https://localhost:3000";
+// FE dev chạy HTTP thường — mặc định https từng làm Chrome báo ERR_SSL_PROTOCOL_ERROR.
+const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
 
 // POST /api/auth/register — Đăng ký tài khoản mới
 router.post("/register", async (req, res, next) => {
@@ -178,6 +180,21 @@ router.get("/lazada/callback", async (req, res) => {
       done({ lazada: "error", msg: "Thiếu code từ Lazada" });
       return;
     }
+
+    // TRẠM TRUNG CHUYỂN CHO DEV LOCAL: callback đăng ký trên App Console là URL
+    // Render, nhưng luồng có thể khởi phát từ app chạy localhost — state khi đó
+    // ký bằng secret local nên Render không verify được. Nếu state khai origin
+    // localhost (và khác FE của môi trường này) thì bật nguyên `code` về đó cho
+    // backend local đổi token; ownerId lấy từ JWT đăng nhập ở local, không cần
+    // tin state. Origin đã lọc chặt chỉ nhận localhost — không mở redirect bừa.
+    const devOrigin = state ? decodeLazadaStateOrigin(state) : null;
+    if (devOrigin && devOrigin !== FRONTEND_BASE_URL) {
+      res.redirect(
+        `${devOrigin}/channels?${new URLSearchParams({ lazada: "code", code }).toString()}`
+      );
+      return;
+    }
+
     const ownerId = state ? verifyLazadaOauthState(state) : null;
     if (!ownerId) {
       done({ lazada: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });

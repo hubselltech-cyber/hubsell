@@ -37,6 +37,10 @@ const FALLBACK_REFRESH_TTL_S = 30 * 24 * 60 * 60;
 
 const STATE_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
 
+// FE của CHÍNH môi trường này. Nhét vào state lúc sinh URL uỷ quyền để callback
+// (luôn chạy trên Render vì Lazada bắt https) biết luồng khởi phát từ đâu.
+const STATE_FRONTEND_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
+
 // ---------- State chống CSRF + mang ownerId ----------
 //
 // Callback Lazada là endpoint CÔNG KHAI (không JWT) nên không tự biết đang kết
@@ -44,7 +48,11 @@ const STATE_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me
 // uỷ quyền, Lazada trả lại nguyên vẹn ở callback — vừa định danh vừa chống giả mạo.
 
 export function signOauthState(ownerId: string): string {
-  return jwt.sign({ ownerId, purpose: "lazada_oauth" }, STATE_SECRET, { expiresIn: "10m" });
+  return jwt.sign(
+    { ownerId, purpose: "lazada_oauth", fe: STATE_FRONTEND_URL },
+    STATE_SECRET,
+    { expiresIn: "10m" }
+  );
 }
 
 export function verifyOauthState(token: string): string | null {
@@ -52,6 +60,23 @@ export function verifyOauthState(token: string): string | null {
     const payload = jwt.verify(token, STATE_SECRET) as jwt.JwtPayload;
     if (payload.purpose !== "lazada_oauth" || !payload.ownerId) return null;
     return String(payload.ownerId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Đọc origin FE từ state mà KHÔNG kiểm chữ ký — dùng khi state do MÔI TRƯỜNG
+ * KHÁC ký (dev local ký bằng secret khác nên Render không verify được). Vì
+ * không tin được nội dung, chỉ chấp nhận origin localhost để bật code về máy
+ * dev; mọi giá trị khác trả null (chặn open-redirect).
+ */
+export function decodeOauthStateOrigin(token: string): string | null {
+  try {
+    const payload = jwt.decode(token) as jwt.JwtPayload | null;
+    if (!payload || payload.purpose !== "lazada_oauth") return null;
+    const fe = typeof payload.fe === "string" ? payload.fe : "";
+    return /^https?:\/\/localhost(:\d+)?$/.test(fe) ? fe : null;
   } catch {
     return null;
   }
