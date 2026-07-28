@@ -7,9 +7,11 @@
  *      trước) → tự tạo từ Order để không rơi chứng từ.
  *   2. ĐỐI SOÁT THUẾ: so tiền thuế MISA tính (tổng + từng dòng) với số Hubsell
  *      tự tính từ cấu hình thuế ĐỘC LẬP (Product.vatRate). Lệch trong biên độ
- *      cho phép (làm tròn) → tự điều chỉnh theo số NCC (hóa đơn là chứng từ
- *      pháp lý); lệch vượt biên độ → GIỮ NGUYÊN số Hubsell + cảnh báo để người
- *      xem — không tự "sửa sổ" khi chênh lệch bất thường.
+ *      cho phép (mặc định 500đ, làm tròn) → tự chấp nhận, điều chỉnh theo số
+ *      NCC (hóa đơn là chứng từ pháp lý); lệch VƯỢT biên độ → hóa đơn vào
+ *      trạng thái LỖI (FAILED) với errorMessage "TAX_MISMATCH: …", GIỮ NGUYÊN
+ *      số thuế Hubsell — không tự "sửa sổ" khi chênh lệch bất thường, kế toán
+ *      phải vào xem và xử lý tay.
  *   3. Trong MỘT transaction: cập nhật InvoiceLog + đơn hàng liên quan
  *      (Order.einvoiceStatus) + ghi InvoiceStatusHistory (audit log).
  *
@@ -23,7 +25,7 @@
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
 import {
-  MISA_EVENT_STATUS,
+  misaEventStatus,
   type MisaWebhookItem,
   type MisaWebhookPayload,
 } from "./misa-webhook";
@@ -62,7 +64,7 @@ export async function processMisaWebhookEvent(
   payload: MisaWebhookPayload
 ): Promise<MisaProcessResult> {
   const eventType = payload.EventType;
-  const targetStatus = MISA_EVENT_STATUS[eventType];
+  const targetStatus = misaEventStatus(eventType);
   if (!targetStatus) {
     // Không bao giờ tới đây trong luồng thật (route đã lọc) — chặn để an toàn.
     throw new Error(`Sự kiện MISA không được hỗ trợ: ${eventType}`);
@@ -96,25 +98,33 @@ export async function processMisaWebhookEvent(
     );
   }
 
+  // ---- 2) Đối soát thuế (chỉ có ý nghĩa khi hóa đơn phát hành/ký số) ----
+  const reconcile =
+    targetStatus === InvoiceLogStatus.ISSUED
+      ? await reconcileTax(log.id, log.orderId, payload)
+      : null;
+
+  // Lệch thuế VƯỢT biên độ = TAX_MISMATCH → trạng thái cuối là LỖI (FAILED),
+  // không phải ISSUED — kế toán bắt buộc phải nhìn thấy và xử lý.
+  const finalStatus = reconcile?.warning
+    ? InvoiceLogStatus.FAILED
+    : targetStatus;
+
   // ---- Idempotency: sự kiện bắn lại mà mọi thứ đã đúng → không ghi thêm ----
+  // (Khóa theo mã tra cứu — InvoiceId phía MISA: cùng mã + cùng trạng thái đích
+  // + cùng số hóa đơn thì lần bắn lại không tạo thêm bất kỳ bản ghi audit nào.)
   if (
-    log.status === targetStatus &&
+    log.status === finalStatus &&
     log.transactionId === transactionId &&
     (invoiceNo === null || log.invoiceNo === invoiceNo)
   ) {
     return {
       invoiceLogId: log.id,
       changed: false,
-      status: targetStatus,
+      status: finalStatus,
       taxNote: null,
     };
   }
-
-  // ---- 2) Đối soát thuế (chỉ có ý nghĩa khi hóa đơn phát hành thành công) ----
-  const reconcile =
-    targetStatus === InvoiceLogStatus.ISSUED
-      ? await reconcileTax(log.id, log.orderId, payload)
-      : null;
 
   // ---- 3) Cập nhật hóa đơn + đơn hàng + audit log trong MỘT transaction ----
   const noteParts: string[] = [];
@@ -128,9 +138,10 @@ export async function processMisaWebhookEvent(
     await tx.invoiceLog.update({
       where: { id: log!.id },
       data: {
-        status: targetStatus,
+        status: finalStatus,
         transactionId,
-        // Số hóa đơn chỉ ghi đè khi MISA gửi kèm — sự kiện hủy có thể không gửi.
+        // Số hóa đơn ghi khi MISA gửi kèm (kể cả case TAX_MISMATCH — vẫn là số
+        // NCC đã cấp, giữ để tra soát); sự kiện hủy có thể không gửi.
         ...(invoiceNo ? { invoiceNo } : {}),
         ...(payload.Data.TotalAmount != null
           ? { totalAmount: new Prisma.Decimal(payload.Data.TotalAmount) }
@@ -138,11 +149,17 @@ export async function processMisaWebhookEvent(
         ...(reconcile?.vatAmountToWrite != null
           ? { vatAmount: new Prisma.Decimal(reconcile.vatAmountToWrite) }
           : {}),
-        ...(targetStatus === InvoiceLogStatus.ISSUED
+        ...(finalStatus === InvoiceLogStatus.ISSUED
           ? { issuedAt: parseEventDate(payload.EventDate), errorMessage: null }
           : {}),
-        ...(targetStatus === InvoiceLogStatus.FAILED
-          ? { errorMessage: payload.Data.Reason ?? `NCC từ chối (${eventType})` }
+        // Lỗi có mã phân loại đứng đầu: TAX_MISMATCH (lệch thuế) để màn hình
+        // đối soát lọc thẳng theo tiền tố, còn lại là NCC từ chối.
+        ...(finalStatus === InvoiceLogStatus.FAILED
+          ? {
+              errorMessage: reconcile?.warning
+                ? `TAX_MISMATCH: ${reconcile.note}`
+                : payload.Data.Reason ?? `NCC từ chối (${eventType})`,
+            }
           : {}),
       },
     });
@@ -152,7 +169,7 @@ export async function processMisaWebhookEvent(
     if (log!.orderId) {
       await tx.order.update({
         where: { id: log!.orderId },
-        data: { einvoiceStatus: targetStatus },
+        data: { einvoiceStatus: finalStatus },
       });
     }
 
@@ -162,7 +179,7 @@ export async function processMisaWebhookEvent(
         invoiceLogId: log!.id,
         orderCode: log!.orderCode,
         fromStatus: log!.status,
-        toStatus: targetStatus,
+        toStatus: finalStatus,
         source: "MISA_WEBHOOK",
         note,
       },
@@ -176,7 +193,7 @@ export async function processMisaWebhookEvent(
   return {
     invoiceLogId: log.id,
     changed: true,
-    status: targetStatus,
+    status: finalStatus,
     taxNote: reconcile?.note ?? null,
   };
 }
@@ -221,8 +238,9 @@ async function createLogFromOrder(
  *   · TỪNG DÒNG (khớp ItemCode ↔ SKU sàn / SKU kho) — bắt lệch làm tròn lẻ tẻ;
  *   · TỔNG (TotalVATAmount ↔ tổng Hubsell) — chốt cuối cùng.
  *
- * Lệch tổng ≤ biên độ → điều chỉnh vatAmount theo số MISA (chứng từ pháp lý);
- * vượt biên độ → giữ số Hubsell + cảnh báo (warning=true) chờ người xem.
+ * Lệch tổng ≤ biên độ → tự chấp nhận, điều chỉnh vatAmount theo số MISA (chứng
+ * từ pháp lý); vượt biên độ → warning=true để nơi gọi chốt hóa đơn sang FAILED
+ * với errorMessage "TAX_MISMATCH: …" (giữ nguyên số thuế Hubsell).
  */
 async function reconcileTax(
   invoiceLogId: string,

@@ -25,6 +25,7 @@ import {
 } from "../integrations/shopee/webhook-queue";
 import {
   isHandledMisaEvent,
+  misaSecretMissingInProduction,
   validateMisaPayload,
   verifyMisaWebhookSignature,
   type MisaWebhookPayload,
@@ -393,8 +394,8 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
 // POST /v1/webhooks/misa-meinvoice — WEBHOOK TỪ MISA meInvoice (Sandbox)
 //
 // MISA gọi vào đây khi hóa đơn điện tử đổi trạng thái (đã ký số, bị hủy, bị
-// thay thế…). Endpoint CÔNG KHAI (không JWT) — chạy local thì forward qua
-// Ngrok/VPS để MISA Sandbox gọi được.
+// thay thế…). Endpoint CÔNG KHAI (không JWT) — triển khai trên Render/cloud là
+// có URL HTTPS thật để khai thẳng vào trang quản trị MISA.
 //
 // Yêu cầu MISA: phản hồi trong tối đa 3 GIÂY → route này NON-BLOCKING:
 //   1. Validate cấu trúc JSON tối thiểu (không đụng DB nghiệp vụ).
@@ -402,13 +403,23 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
 //   3. Ack `{ success: true }` NGAY — worker nền xử lý sau, lỗi tự retry
 //      3 lần × 5 phút.
 //
-// Chữ ký: chỉ kiểm khi đã cấu hình MISA_WEBHOOK_SECRET (header
-// x-misa-signature = HMAC-SHA256 của raw body) — sandbox chưa cấp thì bỏ qua.
+// Chữ ký: header x-misa-signature = HMAC-SHA256(secret, raw body). Dev local
+// chưa có secret thì bỏ qua; PRODUCTION bắt buộc cấu hình MISA_WEBHOOK_SECRET
+// — thiếu là trả 503 chứ không mở endpoint trần trên Internet.
 // ============================================================
 router.post(
   "/misa-meinvoice",
   async (req: Request & { rawBody?: Buffer }, res) => {
-    // 1) Xác thực chữ ký trên body thô (no-op khi chưa cấu hình secret).
+    // 0) Production mà chưa cấu hình secret → từ chối phục vụ, tránh nhận giả.
+    if (misaSecretMissingInProduction()) {
+      res.status(503).json({
+        success: false,
+        error: "Webhook MISA chưa được bảo vệ: thiếu MISA_WEBHOOK_SECRET trên môi trường production",
+      });
+      return;
+    }
+
+    // 1) Xác thực chữ ký trên body thô (no-op khi chưa cấu hình secret ở dev).
     const raw = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
     if (!verifyMisaWebhookSignature(raw, req.header("x-misa-signature"))) {
       res.status(401).json({ success: false, error: "Chữ ký webhook không hợp lệ" });

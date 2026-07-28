@@ -50,18 +50,40 @@ export interface MisaWebhookPayload {
   };
 }
 
-/** Các EventType được xử lý → trạng thái đích trên InvoiceLog. */
+/**
+ * Các EventType được xử lý → trạng thái đích trên InvoiceLog.
+ *
+ * MISA có HAI kiểu đặt tên tùy phiên bản tài liệu: PascalCase ("InvoiceSigned")
+ * và topic chấm ("invoice.signed") — hỗ trợ cả hai, tra cứu qua
+ * misaEventStatus() (thử nguyên văn rồi thử lowercase) để không lệ thuộc hoa
+ * thường của từng bản sandbox.
+ */
 export const MISA_EVENT_STATUS: Record<string, InvoiceLogStatus> = {
   // Phát hành/ký số thành công — hóa đơn có hiệu lực.
   InvoicePublished: InvoiceLogStatus.ISSUED,
   InvoiceSigned: InvoiceLogStatus.ISSUED,
+  "invoice.published": InvoiceLogStatus.ISSUED,
+  "invoice.signed": InvoiceLogStatus.ISSUED,
   // Hóa đơn bị hủy, hoặc bị THAY THẾ bởi hóa đơn khác (bản cũ hết hiệu lực —
-  // bản thay thế sẽ về bằng một sự kiện InvoicePublished với TransactionID mới).
+  // bản thay thế sẽ về bằng một sự kiện phát hành mới với TransactionID mới).
   InvoiceCancelled: InvoiceLogStatus.CANCELLED,
   InvoiceReplaced: InvoiceLogStatus.CANCELLED,
+  "invoice.canceled": InvoiceLogStatus.CANCELLED, // chính tả Mỹ theo spec topic
+  "invoice.cancelled": InvoiceLogStatus.CANCELLED,
+  "invoice.replaced": InvoiceLogStatus.CANCELLED,
   // Cơ quan thuế/NCC từ chối cấp mã — coi như phát hành thất bại.
   InvoiceRejected: InvoiceLogStatus.FAILED,
+  "invoice.rejected": InvoiceLogStatus.FAILED,
 };
+
+/** Tra trạng thái đích của một EventType/topic — null = ngoài phạm vi xử lý. */
+export function misaEventStatus(eventType: string): InvoiceLogStatus | null {
+  return (
+    MISA_EVENT_STATUS[eventType] ??
+    MISA_EVENT_STATUS[eventType.toLowerCase()] ??
+    null
+  );
+}
 
 /**
  * VALIDATE SƠ BỘ trên luồng nhận — chỉ soi cấu trúc tối thiểu đủ để job xử lý
@@ -81,13 +103,25 @@ export function validateMisaPayload(body: unknown): string | null {
 
 /** Sự kiện có nằm trong phạm vi xử lý không (loại lạ thì ack rồi bỏ qua). */
 export function isHandledMisaEvent(eventType: string): boolean {
-  return eventType in MISA_EVENT_STATUS;
+  return misaEventStatus(eventType) !== null;
+}
+
+/**
+ * Production BẮT BUỘC có MISA_WEBHOOK_SECRET — endpoint công khai trên URL
+ * HTTPS thật (Render) mà không kiểm chữ ký là nhận request giả mạo tùy ý.
+ * Route dùng hàm này để trả 503 thay vì mở cửa tự do.
+ */
+export function misaSecretMissingInProduction(): boolean {
+  return (
+    process.env.NODE_ENV === "production" && !process.env.MISA_WEBHOOK_SECRET
+  );
 }
 
 /**
  * Xác thực chữ ký webhook: header `x-misa-signature` = HMAC-SHA256(secret, RAW
- * body) dạng hex. CHỈ bật khi đã cấu hình MISA_WEBHOOK_SECRET — sandbox chưa
- * cấp secret thì bỏ qua bước này (trả true) để test bằng ngrok được ngay.
+ * body) dạng hex. CHỈ bật khi đã cấu hình MISA_WEBHOOK_SECRET — dev local chưa
+ * có secret thì bỏ qua (trả true); production không được phép thiếu secret
+ * (route chặn từ trước bằng misaSecretMissingInProduction).
  */
 export function verifyMisaWebhookSignature(
   rawBody: Buffer | string,

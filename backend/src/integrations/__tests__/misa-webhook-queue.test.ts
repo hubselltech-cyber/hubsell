@@ -9,9 +9,9 @@
 //      MISA, sự kiện nằm trong bảng misa_webhook_logs chờ worker.
 //   2. CHỐNG TRÙNG: MISA bắn lại Y NGUYÊN body → duplicate, hàng đợi vẫn 1 dòng.
 //   3. WORKER + ĐỐI SOÁT THUẾ: phát hành → InvoiceLog ISSUED + điều chỉnh thuế
-//      trong biên độ theo số MISA; lệch VƯỢT biên độ → giữ số Hubsell + cảnh
-//      báo trong audit; hủy → CANCELLED; Order.einvoiceStatus cập nhật theo;
-//      InvoiceStatusHistory đủ dòng đúng thứ tự.
+//      trong biên độ theo số MISA; lệch VƯỢT biên độ → TAX_MISMATCH: hóa đơn
+//      FAILED, giữ số Hubsell, cảnh báo trong audit; hủy → CANCELLED;
+//      Order.einvoiceStatus cập nhật theo; InvoiceStatusHistory đủ dòng đúng thứ tự.
 //   4. RETRY: mã đơn không tồn tại → job lỗi, quay về PENDING với lịch hẹn
 //      ~5 phút (không FAILED ngay).
 // ============================================================
@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { InvoiceLogStatus, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { createApp } from "../../app";
+import { misaEventStatus } from "../invoice/misa-webhook";
 import {
   buildCancelledPayload,
   buildPublishedPayload,
@@ -140,6 +141,15 @@ describe("Webhook MISA meInvoice — luồng đẩy vào hàng đợi", () => {
     expect(res.json.success).toBe(false);
   });
 
+  it("hỗ trợ cả hai kiểu tên sự kiện: PascalCase và topic chấm (invoice.signed…)", () => {
+    // MISA đổi kiểu đặt tên giữa các bản tài liệu — map phải nhận cả hai.
+    expect(misaEventStatus("invoice.signed")).toBe(InvoiceLogStatus.ISSUED);
+    expect(misaEventStatus("Invoice.Signed")).toBe(InvoiceLogStatus.ISSUED); // lệch hoa thường vẫn nhận
+    expect(misaEventStatus("invoice.canceled")).toBe(InvoiceLogStatus.CANCELLED);
+    expect(misaEventStatus("InvoicePublished")).toBe(InvoiceLogStatus.ISSUED);
+    expect(misaEventStatus("dinh.dang.la")).toBeNull();
+  });
+
   it("sự kiện ngoài phạm vi (ping) → ack 200 ignored, không ghi hàng đợi", async () => {
     const res = await postWebhook({
       EventType: "Ping",
@@ -175,7 +185,7 @@ describe("Webhook MISA meInvoice — worker, đối soát thuế và audit log",
     expect(log.statusHistory[0].note).toContain("TỰ ĐIỀU CHỈNH");
   });
 
-  it("lệch thuế VƯỢT biên độ → giữ số Hubsell + cảnh báo trong audit, vẫn ISSUED", async () => {
+  it("lệch thuế VƯỢT biên độ → TAX_MISMATCH: hóa đơn FAILED, giữ số Hubsell, cảnh báo trong audit", async () => {
     const productId = await fx.createProduct(10);
     await prisma.product.update({ where: { id: productId }, data: { vatRate: 10 } });
     const orderId = await fx.createOrder(productId, 1); // thuế Hubsell = 10.000đ
@@ -193,12 +203,16 @@ describe("Webhook MISA meInvoice — worker, đối soát thuế và audit log",
 
     const log = await prisma.invoiceLog.findFirstOrThrow({
       where: { transactionId: txnId },
-      include: { statusHistory: true },
+      include: { statusHistory: true, order: { select: { einvoiceStatus: true } } },
     });
-    expect(log.status).toBe(InvoiceLogStatus.ISSUED);
+    // Lệch bất thường → hóa đơn vào trạng thái LỖI, mã lỗi TAX_MISMATCH đứng đầu.
+    expect(log.status).toBe(InvoiceLogStatus.FAILED);
+    expect(log.errorMessage).toMatch(/^TAX_MISMATCH:/);
+    expect(log.order?.einvoiceStatus).toBe(InvoiceLogStatus.FAILED);
     // KHÔNG tự sửa sổ: giữ số Hubsell (log mới tạo nên vatAmount = 0).
     expect(Number(log.vatAmount)).toBe(0);
     expect(log.statusHistory[0].note).toContain("CẢNH BÁO LỆCH THUẾ");
+    expect(log.statusHistory[0].toStatus).toBe(InvoiceLogStatus.FAILED);
   });
 
   it("hủy hóa đơn: CANCELLED + audit đủ 2 dòng đúng thứ tự", async () => {

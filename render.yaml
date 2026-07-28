@@ -1,0 +1,40 @@
+# ============================================================
+# RENDER BLUEPRINT — deploy backend Hubsell lên Render Free.
+#
+# Cách dùng: Render Dashboard → New → Blueprint → chọn repo này. Render đọc
+# file này và dựng đúng service; các env đánh dấu sync:false sẽ được hỏi khi
+# tạo (điền tay — KHÔNG commit giá trị thật vào đây).
+#
+# Database KHÔNG tạo ở đây — dùng Supabase (free), điền chuỗi kết nối
+# Session pooler + sslmode=require vào DATABASE_URL. Chi tiết từng bước:
+# docs/DEPLOY-RENDER-SUPABASE.md
+# ============================================================
+services:
+  - type: web
+    name: hubsell-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    # prisma generate chạy trong build (Render cache node_modules — client phải
+    # sinh lại theo schema mới); migrate deploy chạy lúc start để bảng trên
+    # Supabase luôn khớp code đang chạy.
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL # chuỗi Supabase Session pooler, kèm ?sslmode=require
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true # Render tự sinh chuỗi ngẫu nhiên bí mật
+      - key: MISA_API_BASE
+        value: https://testapi.meinvoice.vn/api/v3
+      - key: MISA_CLIENT_ID
+        sync: false
+      - key: MISA_CLIENT_SECRET
+        sync: false
+      - key: MISA_WEBHOOK_SECRET # BẮT BUỘC trên production — thiếu là webhook trả 503
+        sync: false
+      - key: APP_FRONTEND_URL
+        sync: false # URL frontend (local hoặc deploy sau) để các luồng OAuth redirect về
