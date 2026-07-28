@@ -18,7 +18,9 @@ services:
     # prisma generate chạy trong build (Render cache node_modules — client phải
     # sinh lại theo schema mới); migrate deploy chạy lúc start để bảng trên
     # Supabase luôn khớp code đang chạy.
-    buildCommand: npm ci && npx prisma generate && npm run build
+    # --include=dev bắt buộc: NODE_ENV=production làm npm ci bỏ devDependencies,
+    # mà typescript/@types/prisma CLI đều nằm ở đó — thiếu là tsc fail.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && npm run start
     healthCheckPath: /health
     envVars:
