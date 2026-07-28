@@ -1246,7 +1246,7 @@ export type SkuChannelFilter = "all" | "shopee" | "tiktok" | "lazada" | "offline
 
 export interface SkuProduct {
   skuId: string; // id dùng để cập nhật giá vốn
-  productId: string;
+  productId: string; // "" nếu SKU sàn chưa liên kết kho gốc
   sku: string;
   productName: string;
   variantName: string | null; // phân loại (màu/size) theo tên trên sàn
@@ -1254,6 +1254,8 @@ export interface SkuProduct {
   imageUrl: string | null;
   sellingPrice: string;
   costPrice: string;
+  /** false = SKU sàn chưa nối kho gốc — giá vốn lưu ở cấp SKU sàn, vẫn nhập được. */
+  linked: boolean;
 }
 
 export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
@@ -1598,6 +1600,33 @@ export function linkChannelProducts(channelProductIds: string[], productId: stri
 /** Gỡ liên kết — sản phẩm sàn vẫn còn ở tầng đệm, chỉ bỏ nối về kho gốc. */
 export function unlinkChannelProducts(channelProductIds: string[]) {
   return apiFetch<{ unlinked: number }>("/api/mappings/unlink", {
+    method: "POST",
+    body: JSON.stringify({ channelProductIds }),
+  });
+}
+
+/**
+ * TỰ KHỚP các SKU sàn chưa liên kết vào kho gốc theo trùng mã SKU (không phân
+ * hoa-thường). Chỉ đụng dòng chưa nối — liên kết tay không bị ghi đè.
+ */
+export function autoMatchMappings(channelId?: string) {
+  return apiFetch<{ matched: number; products: number; scanned: number }>(
+    "/api/mappings/auto-match",
+    { method: "POST", body: JSON.stringify(channelId ? { channelId } : {}) }
+  );
+}
+
+/**
+ * TẠO SẢN PHẨM KHO từ các SKU sàn đã chọn rồi liên kết luôn (≤200/lần).
+ * Trùng mã sẵn có trong kho thì nối vào sản phẩm cũ thay vì tạo mới.
+ */
+export function createProductsFromMappings(channelProductIds: string[]) {
+  return apiFetch<{
+    createdProducts: number;
+    reusedProducts: number;
+    linked: number;
+    skipped: number;
+  }>("/api/mappings/create-products", {
     method: "POST",
     body: JSON.stringify({ channelProductIds }),
   });

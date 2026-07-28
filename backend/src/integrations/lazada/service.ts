@@ -444,10 +444,17 @@ export async function upsertLazadaOrderTx(
 
   const lines = aggregateLazadaItems(items);
   const skus = lines.map((l) => l.channelSku);
+  // Lấy CẢ dòng chưa liên kết kho: giá vốn khi đó nằm ở cấp SKU sàn (costPrice
+  // của ChannelProduct) — khách không nối kho gốc vẫn tính được lãi/lỗ.
   const mappings = skus.length
     ? await tx.channelProduct.findMany({
-        where: { channelId: channel.id, channelSku: { in: skus }, productId: { not: null } },
-        select: { channelSku: true, productId: true, product: { select: { costPrice: true } } },
+        where: { channelId: channel.id, channelSku: { in: skus } },
+        select: {
+          channelSku: true,
+          productId: true,
+          costPrice: true,
+          product: { select: { costPrice: true } },
+        },
       })
     : [];
   const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
@@ -478,7 +485,8 @@ export async function upsertLazadaOrderTx(
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,
-        costPriceAtSale: String(mp?.product?.costPrice ?? 0),
+        // Đã nối kho → giá vốn sản phẩm gốc; chưa nối → giá vốn cấp SKU sàn.
+        costPriceAtSale: String(mp?.product?.costPrice ?? mp?.costPrice ?? 0),
       },
     });
   }

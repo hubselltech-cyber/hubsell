@@ -10,8 +10,10 @@ import {
   Link2,
   Link2Off,
   Loader2,
+  PackagePlus,
   PackageSearch,
   Search,
+  Wand2,
   X,
 } from "lucide-react";
 
@@ -36,6 +38,8 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  autoMatchMappings,
+  createProductsFromMappings,
   fetchChannelProducts,
   fetchChannels,
   fetchProducts,
@@ -149,28 +153,31 @@ export default function MappingsPage() {
     load();
   }, [load, router]);
 
+  // Toàn bộ SKU gốc cho combobox nối về — gọi lại sau khi tạo SKU kho hàng loạt
+  const loadAllProducts = useCallback(async () => {
+    const all: Product[] = [];
+    let p = 1;
+    try {
+      for (;;) {
+        const res = await fetchProducts({ page: p, pageSize: 50 });
+        all.push(...res.items);
+        if (p >= res.pageCount || res.pageCount === 0) break;
+        p++;
+      }
+      setProducts(all);
+    } catch {
+      // không tải được thì combobox rỗng, người dùng vẫn xem được danh sách
+    }
+  }, []);
+
   // Danh sách gian hàng + toàn bộ SKU gốc để chọn nối về
   useEffect(() => {
     if (denied) return;
     fetchChannels()
       .then((cs) => setChannels(cs.filter((c) => c.status === "ACTIVE")))
       .catch(() => {});
-    (async () => {
-      const all: Product[] = [];
-      let p = 1;
-      try {
-        for (;;) {
-          const res = await fetchProducts({ page: p, pageSize: 50 });
-          all.push(...res.items);
-          if (p >= res.pageCount || res.pageCount === 0) break;
-          p++;
-        }
-        setProducts(all);
-      } catch {
-        // không tải được thì combobox rỗng, người dùng vẫn xem được danh sách
-      }
-    })();
-  }, [denied]);
+    loadAllProducts();
+  }, [denied, loadAllProducts]);
 
   // Chỉ coi là đang chọn những dòng CÒN hiện trên bảng, nên đổi bộ lọc là lựa
   // chọn cũ tự rơi ra — không thể lỡ tay nối những dòng không còn nhìn thấy.
@@ -236,6 +243,56 @@ export default function MappingsPage() {
     }
   }
 
+  // Tự khớp SKU sàn chưa liên kết vào kho theo trùng mã (đang lọc gian nào thì
+  // chỉ chạy trong gian đó). Không đụng những dòng đã nối tay.
+  const [autoMatching, setAutoMatching] = useState(false);
+  async function handleAutoMatch() {
+    setAutoMatching(true);
+    try {
+      const r = await autoMatchMappings(channelFilter || undefined);
+      if (r.matched === 0) {
+        toast.info(
+          `Không có SKU nào trùng mã với kho (đã quét ${formatNumber(r.scanned)} dòng chưa liên kết).`
+        );
+      } else {
+        toast.success(
+          `Tự khớp xong: nối ${formatNumber(r.matched)} SKU sàn vào ${formatNumber(r.products)} sản phẩm kho.`,
+          { duration: 6000 }
+        );
+      }
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không tự khớp được");
+    } finally {
+      setAutoMatching(false);
+    }
+  }
+
+  // Tạo sản phẩm kho từ các dòng sàn đã chọn (chỉ dòng CHƯA liên kết) rồi nối luôn.
+  const selectedUnlinked = selected.filter((s) => !s.productId);
+  async function handleCreateProducts() {
+    if (selectedUnlinked.length === 0) return;
+    setLinking(true);
+    try {
+      const r = await createProductsFromMappings(selectedUnlinked.map((s) => s.id));
+      toast.success(
+        `Đã tạo ${formatNumber(r.createdProducts)} SKU kho mới` +
+          (r.reusedProducts > 0
+            ? `, dùng lại ${formatNumber(r.reusedProducts)} SKU sẵn có`
+            : "") +
+          ` và nối ${formatNumber(r.linked)} sản phẩm sàn.`,
+        { duration: 6000 }
+      );
+      setSelectedIds(new Set());
+      load();
+      loadAllProducts(); // combobox phải thấy ngay các SKU kho vừa sinh
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không tạo được SKU kho");
+    } finally {
+      setLinking(false);
+    }
+  }
+
   // Dropdown 2 chỉ hiện các gian thuộc sàn đang chọn ở Dropdown 1; chưa chọn sàn
   // thì hiện tất cả.
   const visibleChannels = platformFilter
@@ -276,11 +333,26 @@ export default function MappingsPage() {
             Sản phẩm thô kéo từ các gian hàng về. Nối chúng về SKU gốc trong kho
             để đơn từ bất kỳ shop nào cũng trừ đúng tồn kho.
           </p>
-          {/* Đang lọc theo một gian hàng thì chỉ đồng bộ gian đó */}
-          <SyncChannelProductsButton
-            channelId={channelFilter || undefined}
-            onSynced={load}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Nối tự động các SKU sàn trùng mã với kho — một phát ăn cả loạt */}
+            <Button
+              variant="outline"
+              onClick={handleAutoMatch}
+              disabled={autoMatching || loading}
+            >
+              {autoMatching ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Wand2 className="size-4" />
+              )}
+              Tự khớp SKU
+            </Button>
+            {/* Đang lọc theo một gian hàng thì chỉ đồng bộ gian đó */}
+            <SyncChannelProductsButton
+              channelId={channelFilter || undefined}
+              onSynced={load}
+            />
+          </div>
         </div>
 
         {/* ===== BỘ LỌC ===== */}
@@ -608,6 +680,21 @@ export default function MappingsPage() {
               <Link2Off className="size-4" />
               Gỡ liên kết
             </Button>
+
+            {/* Chưa có hàng kho tương ứng? Sinh SKU kho từ chính dữ liệu sàn
+                (tên/ảnh/giá) rồi nối luôn — chỉ áp cho dòng chưa liên kết. */}
+            {selectedUnlinked.length > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleCreateProducts}
+                disabled={linking}
+                title="Tạo sản phẩm kho mới từ dữ liệu sàn cho các dòng chưa liên kết"
+              >
+                <PackagePlus className="size-4" />
+                Tạo SKU kho ({formatNumber(selectedUnlinked.length)})
+              </Button>
+            )}
 
             <Button
               size="icon-sm"

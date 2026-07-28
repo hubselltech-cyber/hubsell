@@ -156,7 +156,184 @@ router.post("/link", async (req: AuthRequest, res, next) => {
       data: { productId: product.id },
     });
 
+    // Giá vốn đã nhập ở cấp SKU sàn (lúc chưa nối kho) không được mất khi nối:
+    // sản phẩm gốc chưa có giá vốn thì kế thừa số đã nhập bên sàn.
+    await inheritChannelCostPrice([product.id], req.ownerId!);
+
     res.json({ linked: result.count, product });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Sản phẩm gốc costPrice = 0 nhưng có SKU sàn vừa nối mang costPrice > 0 →
+ * chép số đó sang sản phẩm gốc (không đụng sản phẩm đã có giá vốn thật).
+ */
+async function inheritChannelCostPrice(productIds: string[], ownerId: string) {
+  const bare = await prisma.product.findMany({
+    where: { id: { in: productIds }, userId: ownerId, costPrice: 0 },
+    select: { id: true },
+  });
+  for (const p of bare) {
+    const donor = await prisma.channelProduct.findFirst({
+      where: { productId: p.id, costPrice: { gt: 0 } },
+      select: { costPrice: true },
+    });
+    if (donor?.costPrice) {
+      await prisma.product.update({
+        where: { id: p.id },
+        data: { costPrice: donor.costPrice },
+      });
+    }
+  }
+}
+
+/**
+ * POST /api/mappings/auto-match — TỰ KHỚP các SKU sàn chưa liên kết vào kho gốc
+ * theo TRÙNG MÃ SKU (so không phân hoa-thường, kho lưu mã dạng UPPERCASE).
+ * Body (tuỳ chọn): { channelId } — giới hạn trong một gian; bỏ trống = mọi gian.
+ *
+ * Chỉ đụng dòng CHƯA liên kết — liên kết tay trước đó là quyết định của người
+ * dùng, auto-match không được ghi đè.
+ */
+router.post("/auto-match", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId =
+      typeof req.body?.channelId === "string" ? req.body.channelId : "";
+
+    const [products, unlinked] = await Promise.all([
+      prisma.product.findMany({
+        where: { userId: req.ownerId! },
+        select: { id: true, skuCode: true },
+      }),
+      prisma.channelProduct.findMany({
+        where: {
+          productId: null,
+          ...(channelId ? { channelId } : {}),
+          channel: {
+            userId: req.ownerId!,
+            ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+          },
+        },
+        select: { id: true, channelSku: true },
+      }),
+    ]);
+
+    const productBySku = new Map(products.map((p) => [p.skuCode.toUpperCase(), p.id]));
+
+    // Gom các dòng khớp theo productId để updateMany theo lô thay vì từng dòng.
+    const idsByProduct = new Map<string, string[]>();
+    for (const cp of unlinked) {
+      const pid = productBySku.get(cp.channelSku.trim().toUpperCase());
+      if (!pid) continue;
+      const list = idsByProduct.get(pid) ?? [];
+      list.push(cp.id);
+      idsByProduct.set(pid, list);
+    }
+
+    let matched = 0;
+    for (const [pid, ids] of idsByProduct) {
+      const r = await prisma.channelProduct.updateMany({
+        where: { id: { in: ids } },
+        data: { productId: pid },
+      });
+      matched += r.count;
+    }
+
+    await inheritChannelCostPrice([...idsByProduct.keys()], req.ownerId!);
+
+    res.json({
+      matched,
+      products: idsByProduct.size,
+      scanned: unlinked.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/mappings/create-products — TẠO SẢN PHẨM KHO từ các SKU sàn đã chọn
+ * rồi liên kết luôn. Body: { channelProductIds: string[] } (≤200).
+ *
+ * Mã SKU kho = channelSku (trim + UPPERCASE theo quy ước kho). Trùng mã đã có
+ * trong kho thì KHÔNG tạo mới mà nối vào sản phẩm sẵn có (idempotent). Giá bán/
+ * ảnh/tên lấy từ sàn; giá vốn kế thừa số đã nhập ở cấp SKU sàn (nếu có), tồn = 0.
+ */
+router.post("/create-products", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelProductIds } = req.body ?? {};
+    if (!Array.isArray(channelProductIds) || channelProductIds.length === 0) {
+      res.status(400).json({ error: "Chưa chọn sản phẩm sàn nào" });
+      return;
+    }
+    if (channelProductIds.length > 200) {
+      res.status(400).json({ error: "Tối đa 200 sản phẩm mỗi lần tạo" });
+      return;
+    }
+
+    const cps = await prisma.channelProduct.findMany({
+      where: {
+        id: { in: channelProductIds },
+        productId: null, // đã liên kết rồi thì bỏ qua, không tạo trùng
+        channel: {
+          userId: req.ownerId!,
+          ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        },
+      },
+    });
+
+    let createdProducts = 0;
+    let reusedProducts = 0;
+    let linked = 0;
+
+    // Xử lý TUẦN TỰ theo nhóm mã SKU: nhiều dòng sàn (các phân loại đặt chung
+    // SellerSku, hay 2 gian cùng bán một mã) quy về MỘT sản phẩm kho.
+    const byUpperSku = new Map<string, typeof cps>();
+    for (const cp of cps) {
+      const key = cp.channelSku.trim().toUpperCase();
+      const list = byUpperSku.get(key) ?? [];
+      list.push(cp);
+      byUpperSku.set(key, list);
+    }
+
+    for (const [skuCode, group] of byUpperSku) {
+      if (!skuCode) continue;
+      let product = await prisma.product.findUnique({
+        where: { userId_skuCode: { userId: req.ownerId!, skuCode } },
+        select: { id: true },
+      });
+      if (product) {
+        reusedProducts++;
+      } else {
+        // Dòng đại diện: ưu tiên dòng có giá vốn đã nhập, rồi dòng có ảnh.
+        const rep =
+          group.find((g) => Number(g.costPrice ?? 0) > 0) ??
+          group.find((g) => g.imageUrl) ??
+          group[0];
+        product = await prisma.product.create({
+          data: {
+            userId: req.ownerId!,
+            skuCode,
+            productName: rep.productName,
+            sellingPrice: rep.price,
+            costPrice: rep.costPrice ?? 0,
+            imageUrl: rep.imageUrl,
+            quantityInStock: 0,
+          },
+          select: { id: true },
+        });
+        createdProducts++;
+      }
+      const r = await prisma.channelProduct.updateMany({
+        where: { id: { in: group.map((g) => g.id) } },
+        data: { productId: product.id },
+      });
+      linked += r.count;
+    }
+
+    res.json({ createdProducts, reusedProducts, linked, skipped: channelProductIds.length - linked });
   } catch (err) {
     next(err);
   }

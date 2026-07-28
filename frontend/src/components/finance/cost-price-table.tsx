@@ -428,6 +428,23 @@ function ChannelBadge({ name }: { name: string }) {
   );
 }
 
+/**
+ * SKU sàn chưa nối kho gốc: giá vốn nhập ở đây lưu ngay trên SKU sàn — vẫn
+ * tính lãi/lỗ đầy đủ, chỉ là không quản tồn kho tập trung. Nhãn để người dùng
+ * hiểu vì sao dòng này không có tồn kho, KHÔNG phải lời nhắc bắt buộc phải nối.
+ */
+function UnlinkedHint({ linked }: { linked: boolean }) {
+  if (linked) return null;
+  return (
+    <span
+      title="Giá vốn lưu trên SKU sàn — muốn quản tồn kho tập trung thì liên kết ở trang Liên kết sản phẩm"
+      className="ml-1.5 inline-flex items-center rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+    >
+      Chưa nối kho
+    </span>
+  );
+}
+
 function ChildRow(props: RowProps) {
   const { item } = props;
   const label = variantLabel(item.productName);
@@ -449,6 +466,7 @@ function ChildRow(props: RowProps) {
       <TableCell className="font-mono">{item.sku}</TableCell>
       <TableCell>
         <ChannelBadge name={item.channelName} />
+        <UnlinkedHint linked={item.linked} />
       </TableCell>
       <TableCell className="text-right font-medium">
         {formatVND(item.sellingPrice)}
@@ -488,6 +506,7 @@ function SingleRow(props: RowProps) {
       <TableCell className="font-mono">{item.sku}</TableCell>
       <TableCell>
         <ChannelBadge name={item.channelName} />
+        <UnlinkedHint linked={item.linked} />
       </TableCell>
       <TableCell className="text-right font-medium">
         {formatVND(item.sellingPrice)}
