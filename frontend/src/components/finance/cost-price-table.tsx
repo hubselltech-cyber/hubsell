@@ -172,7 +172,10 @@ function ParentRow({
     <TableRow
       className={cn(
         "cursor-pointer bg-muted/25 hover:bg-muted/50",
-        open && "bg-muted/40"
+        // Đang mở: tô đậm nền hơn hẳn để cả cụm cha + con nổi thành một khối.
+        // Cần dấu ! vì TableRow gốc có has-aria-expanded:bg-slate-50/80 (nhạt hơn)
+        // nằm sau trong stylesheet nên sẽ đè mất màu này nếu không ép ưu tiên.
+        open && "bg-muted/60! hover:bg-muted/70!"
       )}
       onClick={onToggle}
     >
@@ -210,7 +213,10 @@ function ParentRow({
           )}
 
           <div className="min-w-0">
-            <p className="truncate font-semibold">{group.name}</p>
+            {/* Đang mở thì tên cha đậm hẳn lên làm điểm neo cho mắt */}
+            <p className={cn("truncate", open ? "font-bold" : "font-medium")}>
+              {group.name}
+            </p>
             <p className={cn(TEXT_SUB, "flex items-center gap-1")}>
               <Layers className="size-3 shrink-0" />
               {formatNumber(group.variants.length)} phân loại
@@ -440,7 +446,7 @@ function UnlinkedHint({ linked }: { linked: boolean }) {
       title="Giá vốn lưu trên SKU sàn — muốn quản tồn kho tập trung thì liên kết ở trang Liên kết sản phẩm"
       className="ml-1.5 inline-flex items-center rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[11px] text-muted-foreground"
     >
-      Chưa nối kho
+      Chưa nối kho vật lý
     </span>
   );
 }
@@ -449,7 +455,9 @@ function ChildRow(props: RowProps) {
   const { item } = props;
   const label = variantLabel(item.productName);
   return (
-    <TableRow className="bg-background">
+    // Nền xám nhạt cùng tông với dòng cha đang mở để cả cụm gom thành một khối,
+    // không còn tuột về nền trắng lẫn vào các mẫu hàng khác
+    <TableRow className="bg-muted/40 hover:bg-muted/50">
       <TableCell>
         {/* Thụt lề + vạch dọc để mắt thấy ngay đây là con của dòng phía trên */}
         <div className="flex items-center gap-2.5 pl-3">
