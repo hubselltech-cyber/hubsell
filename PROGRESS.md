@@ -5,6 +5,22 @@
 
 ---
 
+## Phiên 28/07/2026 (tối) — Trau chuốt trang Giá vốn + sửa tận gốc kết nối Lazada từ local
+
+### Trang Cấu hình Giá vốn (`cost-price-table.tsx`) — 3 commit ec569ef, 1432438
+- **Highlight nhóm đang mở**: dòng cha `bg-muted/60` + toàn bộ dòng con `bg-muted/40` nổi thành một khối xám; tên cha tự `font-bold` khi mở làm điểm neo. Gotcha: `TableRow` gốc có `has-aria-expanded:bg-slate-50/80` nằm sau trong stylesheet đè mất màu → phải dùng modifier `!` cục bộ (đo computed style mới phát hiện).
+- **Hết khuất nút "Áp dụng"**: bảng auto bị tên phân loại dài (không truncate) kéo tràn ngang 42px → chuyển `table-fixed` + chia lại cột, **Giá vốn đứng TRƯỚC Giá bán** (cột thao tác chính phải luôn thấy), truncate + title cho tên/SKU. Sửa luôn lỗi cũ: dòng cha hiển thị khoảng GIÁ VỐN dưới header "Giá bán" → nay tính đúng khoảng giá bán.
+- Badge "Chưa nối kho" → **"Chưa nối kho vật lý"** (chuẩn thuật ngữ); placeholder "Nhập cho tất cả" → "Giá vốn chung" (hết cắt chữ).
+- `.claude/launch.json`: frontend thêm `autoPort` để phiên Claude chạy song song không giành cổng 3000 (Next 16 vẫn khoá 2 dev server cùng thư mục — verify qua Chrome thật với server phiên khác + HMR).
+
+### Kết nối Lazada từ app local — trạm trung chuyển code (commit c9cf70b, ĐÃ LIVE Render)
+- **Chẩn đoán lỗi người dùng gặp**: callback đăng ký là URL Render; kết nối từ local → state ký secret local, Render verify fail → "Phiên uỷ quyền hết hạn hoặc không hợp lệ"; rồi redirect nhầm default `https://localhost:3000` (sai giao thức → ERR_SSL_PROTOCOL_ERROR). Màn đen Render chỉ là free tier thức dậy, vô hại.
+- **Fix**: state mang thêm `fe` (APP_FRONTEND_URL môi trường ký). Callback Render `jwt.decode` không verify, thấy origin localhost (regex chặt, chống open-redirect) khác FE của nó → 302 nguyên code về `<fe>/channels?lazada=code&code=...`; FE tự mở dialog Kết nối với code điền sẵn — bấm 1 nút là backend local đổi token (ownerId từ JWT đăng nhập, không tin state). Sửa default APP_FRONTEND_URL → http.
+- Test: FE prefill qua Chrome thật OK; poll callback Render bằng state giả + code TESTCODE → 302 đúng về localhost. **Người dùng đã kết nối thành công shop mới.**
+- Ghi nhớ cho bản THƯƠNG MẠI: khi frontend deploy domain thật + set `APP_FRONTEND_URL` trên Render → luồng OAuth một mạch không dán code (nhánh `lazada=connected` có sẵn); cần nộp app Lazada lên status chính thức (bỏ whitelist 5 seller) + Render trả phí/cron ping cho hết cold start.
+
+---
+
 ## Phiên 28/07/2026 — Tích hợp Lazada TRỌN GÓI + Giá vốn không cần liên kết kho
 
 ### Lazada Open Platform: từ số 0 → chạy thật production trong một phiên
