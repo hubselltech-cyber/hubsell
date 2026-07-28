@@ -23,12 +23,24 @@ import {
   enqueueShopeeWebhook,
   startShopeeWebhookWorker,
 } from "../integrations/shopee/webhook-queue";
+import {
+  isHandledMisaEvent,
+  validateMisaPayload,
+  verifyMisaWebhookSignature,
+  type MisaWebhookPayload,
+} from "../integrations/invoice/misa-webhook";
+import {
+  enqueueMisaWebhook,
+  startMisaWebhookWorker,
+} from "../integrations/invoice/misa-webhook-queue";
 
 const router = Router();
 
 // Khởi động worker xử lý hàng đợi webhook Shopee (1 lần lúc nạp module):
 // nhặt lại job dở dang sau restart + quét job đến hạn retry theo nhịp.
 startShopeeWebhookWorker();
+// Worker hàng đợi webhook MISA meInvoice — cùng cơ chế, hàng đợi riêng.
+startMisaWebhookWorker();
 
 // Loại sự kiện webhook của TikTok Shop (trường `type`, dạng số).
 // Ta chỉ xử lý ORDER_STATUS_CHANGE; các loại khác ack 200 và bỏ qua.
@@ -376,5 +388,59 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
     res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
   }
 });
+
+// ============================================================
+// POST /v1/webhooks/misa-meinvoice — WEBHOOK TỪ MISA meInvoice (Sandbox)
+//
+// MISA gọi vào đây khi hóa đơn điện tử đổi trạng thái (đã ký số, bị hủy, bị
+// thay thế…). Endpoint CÔNG KHAI (không JWT) — chạy local thì forward qua
+// Ngrok/VPS để MISA Sandbox gọi được.
+//
+// Yêu cầu MISA: phản hồi trong tối đa 3 GIÂY → route này NON-BLOCKING:
+//   1. Validate cấu trúc JSON tối thiểu (không đụng DB nghiệp vụ).
+//   2. Đẩy nguyên payload vào hàng đợi bền (MỘT insert vào misa_webhook_logs).
+//   3. Ack `{ success: true }` NGAY — worker nền xử lý sau, lỗi tự retry
+//      3 lần × 5 phút.
+//
+// Chữ ký: chỉ kiểm khi đã cấu hình MISA_WEBHOOK_SECRET (header
+// x-misa-signature = HMAC-SHA256 của raw body) — sandbox chưa cấp thì bỏ qua.
+// ============================================================
+router.post(
+  "/misa-meinvoice",
+  async (req: Request & { rawBody?: Buffer }, res) => {
+    // 1) Xác thực chữ ký trên body thô (no-op khi chưa cấu hình secret).
+    const raw = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+    if (!verifyMisaWebhookSignature(raw, req.header("x-misa-signature"))) {
+      res.status(401).json({ success: false, error: "Chữ ký webhook không hợp lệ" });
+      return;
+    }
+
+    // 2) Validate sơ bộ cấu trúc — sai thì 400 để MISA biết payload hỏng,
+    //    retry của họ với cùng payload cũng sẽ hỏng, không việc gì phải nhận.
+    const invalid = validateMisaPayload(req.body);
+    if (invalid) {
+      res.status(400).json({ success: false, error: invalid });
+      return;
+    }
+
+    const payload = req.body as MisaWebhookPayload;
+
+    // 3) Sự kiện ngoài phạm vi (ping, loại mới…) → ack luôn cho MISA khỏi retry.
+    if (!isHandledMisaEvent(payload.EventType)) {
+      res.status(200).json({ success: true, ignored: true, eventType: payload.EventType });
+      return;
+    }
+
+    // 4) Enqueue (một INSERT) rồi ack ngay — không đợi worker xử lý.
+    try {
+      const { queued, duplicate } = await enqueueMisaWebhook(raw, payload);
+      res.status(200).json({ success: true, queued, duplicate });
+    } catch (err) {
+      // Không ghi nổi vào hàng đợi (DB sự cố) → 500 để MISA tự gửi lại sau.
+      console.error("[Webhook MISA] Không ghi được vào hàng đợi:", err);
+      res.status(500).json({ success: false, error: "Không ghi nhận được sự kiện, hãy gửi lại" });
+    }
+  }
+);
 
 export default router;

@@ -450,8 +450,12 @@ model InvoiceLog {
   owner User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
+  statusHistory InvoiceStatusHistory[] // audit log — mỗi lần đổi trạng thái một dòng
+
   @@index([ownerId, createdAt])
   @@index([orderId])
+  // Webhook MISA tra hóa đơn theo mã giao dịch NCC — cần index để worker không quét bảng.
+  @@index([transactionId])
 }
 
 /// Sản phẩm trong kho
@@ -573,6 +577,11 @@ model Order {
   stockHoldReleasedAt DateTime?
   paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
   shippingStatus ShippingStatus @default(PENDING)
+
+  /// Trạng thái HÓA ĐƠN ĐIỆN TỬ mới nhất của đơn (denormalize từ InvoiceLog để
+  /// danh sách đơn lọc "đã/chưa xuất hóa đơn" không phải join). NULL = chưa từng
+  /// phát hành. Webhook MISA là nơi cập nhật chính.
+  einvoiceStatus InvoiceLogStatus?
   createdAt      DateTime @default(now())
 
   // ===== PHÍ SÀN 2 GIAI ĐOẠN =====
@@ -763,6 +772,62 @@ model ShopeeWebhookLog {
   @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
   @@index([orderSn])
   @@map("shopee_webhook_logs")
+}
+
+/// HÀNG ĐỢI BỀN WEBHOOK MISA meInvoice — cùng pattern shopee_webhook_logs:
+/// route /v1/webhooks/misa-meinvoice CHỈ validate sơ bộ + INSERT một dòng rồi
+/// ack 200 (<3s theo yêu cầu MISA); worker nền xử lý sau, lỗi thì retry tối đa
+/// 3 lần cách nhau 5 phút (nextRetryAt) trước khi FAILED.
+model MisaWebhookLog {
+  id        String @id @default(cuid())
+  /// Loại sự kiện MISA gửi: InvoicePublished | InvoiceCancelled | InvoiceReplaced…
+  eventType String
+  /// Mã giao dịch/mã tra cứu hóa đơn phía MISA — khớp InvoiceLog.transactionId.
+  transactionId String?
+  /// Số hóa đơn NCC cấp (VD "C26TAA-00001234") — có khi đã phát hành.
+  invoiceNo String?
+  /// Mã đơn hàng gốc Hubsell (MISA lưu làm RefID lúc phát hành) — để đối chiếu.
+  orderCode String?
+  /// SHA-256 của RAW body — chống trùng bền khi MISA retry y nguyên một sự kiện.
+  bodyHash String @unique
+  /// Payload JSON nguyên văn (stringify) — worker đọc lại để xử lý.
+  payload String
+  status  WebhookJobStatus @default(PENDING)
+  /// Số lần đã thử xử lý. Quá MAX (3) → FAILED, chờ người xem trang Nhật ký.
+  attempts Int @default(0)
+  /// Thời điểm sớm nhất được thử lại (cách đều 5 phút). NULL = xử lý ngay.
+  nextRetryAt DateTime?
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
+  @@index([orderCode])
+  @@map("misa_webhook_logs")
+}
+
+/// AUDIT LOG hóa đơn điện tử — mỗi dòng = MỘT lần trạng thái hóa đơn thay đổi
+/// (từ webhook MISA hay thao tác trong Hubsell). Giai đoạn test Sandbox soi
+/// bảng này để chứng minh sự kiện đã chạy đúng thứ tự; về sau là chứng cứ đối
+/// soát với cơ quan thuế nên KHÔNG bao giờ update/xóa, chỉ insert.
+model InvoiceStatusHistory {
+  id           String @id @default(cuid())
+  invoiceLogId String
+  /// Bản sao bền của mã đơn — tra soát được cả khi đơn gốc đã xóa theo kênh.
+  orderCode String
+  /// NULL = bản ghi đầu tiên (hóa đơn vừa được webhook tạo, chưa có trạng thái cũ).
+  fromStatus InvoiceLogStatus?
+  toStatus   InvoiceLogStatus
+  /// Nguồn phát sinh thay đổi: MISA_WEBHOOK | HUBSELL (thao tác trong app).
+  source String @default("MISA_WEBHOOK")
+  /// Ghi chú nghiệp vụ: kết quả đối soát thuế, lý do hủy/thay thế…
+  note      String?
+  createdAt DateTime @default(now())
+
+  invoiceLog InvoiceLog @relation(fields: [invoiceLogId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceLogId, createdAt])
+  @@index([orderCode])
 }
 
 /// Nhật ký MỘT lượt đẩy tồn kho lên sàn cho MỘT SKU sàn — bảng đối soát:

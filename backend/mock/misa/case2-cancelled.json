@@ -1,0 +1,10 @@
+{
+  "_comment": "CASE 2 — Hóa đơn BỊ HỦY. Bắn SAU case 1 với cùng --order để thấy dòng đời ISSUED → CANCELLED trong audit log (TransactionID phải trùng bản đã phát hành — script tự lo khi có --order).",
+  "EventType": "InvoiceCancelled",
+  "EventDate": "2026-07-28T10:30:00+07:00",
+  "Data": {
+    "TransactionID": "MISA-SBX-DEMO-CASE1",
+    "RefID": "THAY-BANG-MA-DON-THAT",
+    "Reason": "Người bán hủy hóa đơn — sai thông tin người mua (test sandbox)"
+  }
+}

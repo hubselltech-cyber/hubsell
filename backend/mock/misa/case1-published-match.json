@@ -1,0 +1,21 @@
+{
+  "_comment": "CASE 1 — Hóa đơn KÝ SỐ THÀNH CÔNG, tiền thuế KHỚP với Hubsell. RefID/ItemCode/VAT là placeholder: chạy script với --order <mã đơn> (hoặc --latest) để tự thay bằng số liệu thật của đơn trong DB.",
+  "EventType": "InvoicePublished",
+  "EventDate": "2026-07-28T09:00:00+07:00",
+  "Data": {
+    "TransactionID": "MISA-SBX-DEMO-CASE1",
+    "InvNo": "C26TAA-00000101",
+    "RefID": "THAY-BANG-MA-DON-THAT",
+    "TotalAmount": 220000,
+    "TotalVATAmount": 20000,
+    "InvoiceItems": [
+      {
+        "ItemCode": "SP001",
+        "Quantity": 2,
+        "UnitPrice": 100000,
+        "VATRate": 10,
+        "VATAmount": 20000
+      }
+    ]
+  }
+}

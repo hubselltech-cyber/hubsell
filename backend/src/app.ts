@@ -47,6 +47,8 @@ export function createApp() {
   // (số ít — URL đăng ký Push Shopee: http://hubsell.tech/api/webhook/shopee).
   app.use("/api/webhooks", webhooksRouter);
   app.use("/api/webhook", webhooksRouter);
+  // Dạng /v1 — URL đăng ký với MISA meInvoice: /v1/webhooks/misa-meinvoice.
+  app.use("/v1/webhooks", webhooksRouter);
 
   // ============================================================
   // PHÂN QUYỀN 2 LỚP

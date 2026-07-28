@@ -1,0 +1,21 @@
+{
+  "_comment": "CASE 3 — LỆCH TIỀN THUẾ để test biên độ làm tròn 500đ. Mặc định script bắn lệch +300đ (TRONG biên độ → hệ thống TỰ ĐIỀU CHỈNH theo số MISA); thêm --diff 40000 để lệch VƯỢT biên độ → giữ số Hubsell + CẢNH BÁO trong audit.",
+  "EventType": "InvoicePublished",
+  "EventDate": "2026-07-28T11:00:00+07:00",
+  "Data": {
+    "TransactionID": "MISA-SBX-DEMO-CASE3",
+    "InvNo": "C26TAA-00000103",
+    "RefID": "THAY-BANG-MA-DON-THAT",
+    "TotalAmount": 220300,
+    "TotalVATAmount": 20300,
+    "InvoiceItems": [
+      {
+        "ItemCode": "SP001",
+        "Quantity": 2,
+        "UnitPrice": 100000,
+        "VATRate": 10,
+        "VATAmount": 20300
+      }
+    ]
+  }
+}
