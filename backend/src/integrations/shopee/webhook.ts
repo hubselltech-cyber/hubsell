@@ -34,6 +34,16 @@ export function getShopeeWebhookUrl(): string {
 }
 
 /**
+ * Key ký push. Shopee Console cấp "Push Partner Key" RIÊNG cho Push Mechanism
+ * (thấy ở trang Set Push — KHÁC API Partner Key `shpk...`): push thật từ server
+ * Shopee ký bằng key này. Không đặt SHOPEE_PUSH_PARTNER_KEY thì rơi về API key
+ * (tương thích test tự ký cũ trong vitest).
+ */
+export function getShopeePushPartnerKey(): string {
+  return process.env.SHOPEE_PUSH_PARTNER_KEY || getShopeeConfig().partnerKey;
+}
+
+/**
  * Kiểm chữ ký webhook trên body THÔ (Buffer/string nguyên văn — JSON.parse rồi
  * serialize lại sẽ đảo thứ tự khoá/khoảng trắng làm sai chữ ký).
  * So sánh bằng timingSafeEqual để tránh timing attack.
@@ -42,7 +52,7 @@ export function verifyShopeeWebhookSignature(
   rawBody: Buffer | string,
   authorizationHeader: string | undefined,
   webhookUrl: string = getShopeeWebhookUrl(),
-  partnerKey: string = getShopeeConfig().partnerKey
+  partnerKey: string = getShopeePushPartnerKey()
 ): boolean {
   if (!authorizationHeader) return false;
   const bodyStr = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");

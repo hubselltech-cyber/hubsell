@@ -52,6 +52,8 @@ services:
         sync: false
       - key: SHOPEE_PARTNER_KEY
         sync: false
+      - key: SHOPEE_PUSH_PARTNER_KEY # key ký push RIÊNG — Console → Set Push
+        sync: false
       - key: SHOPEE_ENV
         value: production
       # ---- Lazada Open Platform (đã cấu hình tay trên Dashboard từ 28/07 —
