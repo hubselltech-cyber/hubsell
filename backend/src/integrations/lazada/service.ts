@@ -547,15 +547,16 @@ const SETTLE_MAX_PAGES = 200; // chốt chặn phân trang vô tận toàn lư�
 
 /** Cộng dồn phí của MỘT đơn trong lúc quét sao kê (số CÓ DẤU theo Lazada). */
 interface LazadaFeeAcc {
-  itemPrice: number; // tiền hàng sàn ghi có (+)
-  commission: number; // hoa hồng (Commission...)
-  payment: number; // phí thanh toán (Payment Fee)
+  itemPrice: number; // tiền hàng + các dòng GIẢM GIÁ đã phản ánh trong giá đơn
+  fixed: number; // "Phí cố định" (hoa hồng cố định của Lazada VN)
+  commission: number; // hoa hồng (Commission/hoa hồng...)
+  payment: number; // phí thanh toán / "Phí xử lý đơn hàng"
   affiliate: number; // tiếp thị liên kết (Sponsored Affiliates...)
-  voucherNeg: number; // voucher shop chịu (dòng âm)
+  voucherNeg: number; // phí khuyến mãi shop chịu (LazCoins, voucher... dòng âm)
   voucherPos: number; // voucher sàn bù (dòng dương)
   shipNeg: number; // phí vận chuyển sàn trừ (âm, giữ dấu)
   shipPos: number; // phí vận chuyển khách trả/sàn bù (dương)
-  tax: number; // thuế sàn thu hộ (âm)
+  tax: number; // thuế sàn thu hộ — GTGT/TNCN nhà bán hàng (âm)
   otherNeg: number; // phí âm không nhận diện được
   otherPos: number; // khoản dương không nhận diện được
   total: number; // tổng đại số mọi dòng = tiền về ví
@@ -565,7 +566,7 @@ interface LazadaFeeAcc {
 
 function emptyAcc(): LazadaFeeAcc {
   return {
-    itemPrice: 0, commission: 0, payment: 0, affiliate: 0,
+    itemPrice: 0, fixed: 0, commission: 0, payment: 0, affiliate: 0,
     voucherNeg: 0, voucherPos: 0, shipNeg: 0, shipPos: 0,
     tax: 0, otherNeg: 0, otherPos: 0, total: 0, lines: 0,
   };
@@ -606,17 +607,45 @@ function accumulateLazadaFee(acc: LazadaFeeAcc, trx: LazadaTransaction): void {
     acc.lastDate = d;
   }
 
-  if (name.includes("item price")) acc.itemPrice += amount;
-  else if (name.includes("commission")) acc.commission += amount;
-  else if (name.includes("payment")) acc.payment += amount;
-  else if (name.includes("sponsor") || name.includes("affiliate")) acc.affiliate += amount;
-  else if (name.includes("voucher")) {
+  // Danh mục theo SAO KÊ THẬT Lazada VN (đối chiếu đơn Hi.Bé 29/07/2026):
+  // "Giá trị sản phẩm" +, "Phí cố định" −, "Phí xử lý đơn hàng" −,
+  // "Infrastructure Fee - Auto" −, "Thuế GTGT/TNCN nhà bán hàng" −,
+  // "Giảm Giá Bằng Xu" − (giảm giá — KHÔNG phải phí), "Phí tham gia Khuyến Mãi
+  // LazCoins" − (phí thật). Giữ kèm từ khoá tiếng Anh cho thị trường khác.
+  if (name.includes("item price") || name.includes("giá trị sản phẩm")) {
+    acc.itemPrice += amount;
+  } else if (name.includes("giảm giá") || name.includes("discount")) {
+    // Giảm giá (bằng xu/voucher shop) ĐÃ trừ sẵn trong giá đơn (totalAmount) —
+    // tính vào phí nữa là TRỪ TRÙNG. Âm → gộp về phía doanh thu cho khớp giá
+    // đơn; dương (sàn hoàn/bù giảm giá) → trợ giá từ sàn.
+    if (amount < 0) acc.itemPrice += amount;
+    else acc.voucherPos += amount;
+  } else if (name.includes("phí cố định") || name.includes("fixed fee")) {
+    acc.fixed += amount;
+  } else if (name.includes("commission") || name.includes("hoa hồng")) {
+    acc.commission += amount;
+  } else if (name.includes("payment") || name.includes("xử lý đơn")) {
+    acc.payment += amount;
+  } else if (
+    name.includes("sponsor") || name.includes("affiliate") || name.includes("tiếp thị")
+  ) {
+    acc.affiliate += amount;
+  } else if (
+    name.includes("voucher") || name.includes("lazcoin") ||
+    name.includes("khuyến mãi") || name.includes("bằng xu")
+  ) {
     if (amount < 0) acc.voucherNeg += amount;
     else acc.voucherPos += amount;
-  } else if (name.includes("shipping") || name.includes("logistic")) {
+  } else if (
+    name.includes("shipping") || name.includes("logistic") ||
+    name.includes("vận chuyển") || name.includes("giao hàng")
+  ) {
     if (amount < 0) acc.shipNeg += amount;
     else acc.shipPos += amount;
-  } else if (name.includes("tax") || name.includes("tcs") || name.includes("wht")) {
+  } else if (
+    name.includes("tax") || name.includes("tcs") ||
+    name.includes("wht") || name.includes("thuế")
+  ) {
     acc.tax += amount;
   } else if (amount < 0) acc.otherNeg += amount;
   else acc.otherPos += amount;
@@ -726,7 +755,8 @@ export async function syncLazadaSettlements(
       data: {
         isSettled: true,
         settledAt: acc.lastDate ?? new Date(),
-        serviceFee: -acc.commission + -acc.otherNeg, // hoa hồng + phí âm chưa nhận diện
+        fixedFee: -acc.fixed, // "Phí cố định" của Lazada VN
+        serviceFee: -acc.commission + -acc.otherNeg, // hoa hồng + phí âm chưa nhận diện (Infrastructure Fee...)
         paymentFee: -acc.payment,
         affiliateFee: -acc.affiliate,
         sellerVoucher: -acc.voucherNeg,
