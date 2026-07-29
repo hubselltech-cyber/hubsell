@@ -38,6 +38,11 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const STATE_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
 
+// FE của CHÍNH môi trường này. Nhét vào state lúc sinh URL uỷ quyền để callback
+// (chạy trên Render khi redirect đăng ký là domain Render) biết luồng khởi phát
+// từ đâu — cùng cơ chế "trạm trung chuyển" với Lazada.
+const STATE_FRONTEND_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
+
 // ---------- State chống CSRF + mang ownerId ----------
 //
 // Callback Shopee là endpoint CÔNG KHAI (không JWT) nên không tự biết đang kết nối
@@ -46,7 +51,11 @@ const STATE_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me
 // chống giả mạo.
 
 export function signOauthState(ownerId: string): string {
-  return jwt.sign({ ownerId, purpose: "shopee_oauth" }, STATE_SECRET, { expiresIn: "10m" });
+  return jwt.sign(
+    { ownerId, purpose: "shopee_oauth", fe: STATE_FRONTEND_URL },
+    STATE_SECRET,
+    { expiresIn: "10m" }
+  );
 }
 
 export function verifyOauthState(token: string): string | null {
@@ -54,6 +63,23 @@ export function verifyOauthState(token: string): string | null {
     const payload = jwt.verify(token, STATE_SECRET) as jwt.JwtPayload;
     if (payload.purpose !== "shopee_oauth" || !payload.ownerId) return null;
     return String(payload.ownerId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Đọc origin FE từ state mà KHÔNG kiểm chữ ký — dùng khi state do MÔI TRƯỜNG
+ * KHÁC ký (dev local ký bằng secret khác nên Render không verify được). Vì
+ * không tin được nội dung, chỉ chấp nhận origin localhost để bật code về máy
+ * dev; mọi giá trị khác trả null (chặn open-redirect).
+ */
+export function decodeOauthStateOrigin(token: string): string | null {
+  try {
+    const payload = jwt.decode(token) as jwt.JwtPayload | null;
+    if (!payload || payload.purpose !== "shopee_oauth") return null;
+    const fe = typeof payload.fe === "string" ? payload.fe : "";
+    return /^https?:\/\/localhost(:\d+)?$/.test(fe) ? fe : null;
   } catch {
     return null;
   }
@@ -100,7 +126,9 @@ export async function getValidShopeeAccessToken(
     data: {
       apiToken: t.access_token,
       refreshToken: t.refresh_token,
-      accessTokenExpireAt: new Date(now + (t.expire_in ?? 0) * 1000),
+      // Number(): expire_in là GIÂY, phòng API trả chuỗi — cộng thẳng chuỗi vào
+      // timestamp sẽ ra Invalid Date và Prisma từ chối ghi cột DateTime.
+      accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
       refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
     },
   });
@@ -145,7 +173,8 @@ export async function handleShopeeCallback(
   const tokenData = {
     apiToken: token.access_token,
     refreshToken: token.refresh_token,
-    accessTokenExpireAt: new Date(now + (token.expire_in ?? 0) * 1000),
+    // Number(): expire_in là GIÂY, phòng API trả chuỗi (xem ghi chú ở refresh).
+    accessTokenExpireAt: new Date(now + Number(token.expire_in ?? 0) * 1000),
     refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
     externalShopName,
     status: "ACTIVE",

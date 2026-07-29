@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../prisma";
 import { requireAuth, signToken, type AuthRequest } from "../auth";
 import {
+  decodeOauthStateOrigin as decodeShopeeStateOrigin,
   handleShopeeCallback,
   verifyOauthState,
 } from "../integrations/shopee/service";
@@ -143,6 +144,26 @@ router.get("/shopee/callback", async (req, res) => {
       done({ shopee: "error", msg: "Thiếu code hoặc shop_id từ Shopee" });
       return;
     }
+
+    // TRẠM TRUNG CHUYỂN CHO DEV LOCAL (cùng cơ chế Lazada): redirect đăng ký
+    // trên Console là domain Render, nhưng luồng có thể khởi phát từ app chạy
+    // localhost — state khi đó ký bằng secret local nên Render không verify
+    // được. Nếu state khai origin localhost (và khác FE của môi trường này)
+    // thì bật nguyên `code`+`shop_id` về đó cho backend local đổi token;
+    // ownerId lấy từ JWT đăng nhập ở local, không cần tin state. Origin đã
+    // lọc chặt chỉ nhận localhost — không mở redirect bừa.
+    const devOrigin = state ? decodeShopeeStateOrigin(state) : null;
+    if (devOrigin && devOrigin !== FRONTEND_BASE_URL) {
+      res.redirect(
+        `${devOrigin}/channels?${new URLSearchParams({
+          shopee: "code",
+          code,
+          shop_id: shopId,
+        }).toString()}`
+      );
+      return;
+    }
+
     const ownerId = state ? verifyOauthState(state) : null;
     if (!ownerId) {
       done({ shopee: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });

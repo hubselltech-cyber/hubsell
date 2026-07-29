@@ -9,6 +9,7 @@
 // ============================================================
 
 import crypto from "crypto";
+import { getBackendBaseUrl } from "../../backend-url";
 import { getShopeeConfig } from "./config";
 
 // ---------- 1. Xác thực chữ ký ----------
@@ -18,11 +19,17 @@ import { getShopeeConfig } from "./config";
 // và gửi kết quả (hex) trong header `Authorization`. webhook_url phải là URL
 // ĐĂNG KÝ TRÊN CONSOLE (không lấy từ req — proxy/tunnel làm sai host nội bộ).
 
-/** URL webhook đã đăng ký trên Shopee Console — phần tử của chuỗi ký. */
+/**
+ * URL webhook đã đăng ký trên Shopee Console — phần tử của chuỗi ký. Mặc định
+ * suy từ URL gốc backend (Render: https://<app>.onrender.com/api/webhook/shopee)
+ * — URL khai trên Console phải TRÙNG TỪNG KÝ TỰ với giá trị này, lệch là mọi
+ * push đều rớt verify. Đặt SHOPEE_WEBHOOK_URL chỉ khi cần ghi đè (vd sandbox
+ * local đăng ký http://hubsell.tech/api/webhook/shopee).
+ */
 export function getShopeeWebhookUrl(): string {
   return (
     process.env.SHOPEE_WEBHOOK_URL ??
-    "http://hubsell.tech/api/webhook/shopee"
+    `${getBackendBaseUrl()}/api/webhook/shopee`
   );
 }
 

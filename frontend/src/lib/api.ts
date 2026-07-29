@@ -1464,6 +1464,28 @@ export function getShopeeAuthUrl() {
   return apiFetch<{ url: string }>("/api/channels/shopee/auth-url");
 }
 
+/** Gian Shopee vừa kết nối (không chứa token). */
+export interface ShopeeConnectedChannel {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+  externalShopId: string | null;
+  status: string;
+}
+
+/**
+ * Đổi CODE + SHOP_ID uỷ quyền Shopee lấy token + lưu gian hàng. Dành cho dev
+ * local: callback đăng ký trên Console là backend Render, Render bật code về
+ * FE local (?shopee=code&code=&shop_id=) rồi FE gọi vào đây — danh tính chủ
+ * shop lấy từ JWT đăng nhập nên không cần state.
+ */
+export function connectShopeeCode(code: string, shopId: string) {
+  return apiFetch<{ message: string; channel: ShopeeConnectedChannel }>(
+    "/api/channels/shopee/connect",
+    { method: "POST", body: JSON.stringify({ code, shopId }) }
+  );
+}
+
 /**
  * Lấy URL trang uỷ quyền Lazada. Callback đăng ký trên App Console là backend
  * RENDER (Lazada bắt https) nên khi chạy LOCAL, người dùng mở URL này ở tab

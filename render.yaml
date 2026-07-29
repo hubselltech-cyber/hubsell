@@ -27,6 +27,8 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL # chuỗi Supabase Session pooler, kèm ?sslmode=require
+        # Nên thêm &connection_limit=5&pool_timeout=30 — Supabase Free giới hạn
+        # ~15 kết nối, để Prisma tự mở theo CPU dễ nghẽn pool giờ cao điểm.
         sync: false
       - key: JWT_SECRET
         generateValue: true # Render tự sinh chuỗi ngẫu nhiên bí mật
@@ -40,3 +42,23 @@ services:
         sync: false
       - key: APP_FRONTEND_URL
         sync: false # URL frontend (local hoặc deploy sau) để các luồng OAuth redirect về
+      # ---- Shopee Open Platform (production) ----
+      # Redirect OAuth + URL webhook KHÔNG cần khai: code tự suy từ
+      # RENDER_EXTERNAL_URL (Render tự bơm) →
+      #   callback: https://<app>.onrender.com/api/auth/shopee/callback
+      #   webhook : https://<app>.onrender.com/api/webhook/shopee
+      # Đăng ký đúng 2 URL đó trên Shopee Console (webhook phải trùng từng ký tự).
+      - key: SHOPEE_PARTNER_ID
+        sync: false
+      - key: SHOPEE_PARTNER_KEY
+        sync: false
+      - key: SHOPEE_ENV
+        value: production
+      # ---- Lazada Open Platform (đã cấu hình tay trên Dashboard từ 28/07 —
+      # khai ở đây để Blueprint tái tạo được service đầy đủ) ----
+      - key: LAZADA_APP_KEY
+        sync: false
+      - key: LAZADA_APP_SECRET
+        sync: false
+      - key: LAZADA_REDIRECT_URI # https://<app>.onrender.com/api/auth/lazada/callback
+        sync: false

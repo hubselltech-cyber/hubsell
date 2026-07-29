@@ -5,9 +5,13 @@
 // Partner Key KHÔNG được commit — điền trong backend/.env (đã gitignore).
 //
 // Redirect URI phải nằm dưới ĐÚNG DOMAIN đã đăng ký trên Shopee Console (Shopee
-// chỉ kiểm domain của redirect, không kiểm full path). Sandbox đăng ký:
-// http://hubsell.tech → thực chạy phải trỏ domain đó về backend này.
+// chỉ kiểm domain của redirect, không kiểm full path). Mặc định suy ra động từ
+// URL gốc backend (BACKEND_URL / RENDER_EXTERNAL_URL — xem backend-url.ts) nên
+// deploy Render là tự đúng; chỉ đặt SHOPEE_REDIRECT_URI khi cần ghi đè (vd
+// sandbox local dùng trick hosts http://hubsell.tech).
 // ============================================================
+
+import { getBackendBaseUrl } from "../../backend-url";
 
 export interface ShopeeConfig {
   /** partner_id của app (giữ dạng chuỗi để ghép chữ ký / query). */
@@ -63,9 +67,11 @@ export const SHOPEE_PATHS = {
 export function getShopeeConfig(): ShopeeConfig {
   const partnerId = process.env.SHOPEE_PARTNER_ID;
   const partnerKey = process.env.SHOPEE_PARTNER_KEY;
+  // Không hardcode host: suy từ URL gốc backend (Render tự bơm RENDER_EXTERNAL_URL)
+  // → production trỏ thẳng về domain Render mà không cần đặt env riêng.
   const redirectUri =
     process.env.SHOPEE_REDIRECT_URI ??
-    "http://localhost:4000/api/auth/shopee/callback";
+    `${getBackendBaseUrl()}/api/auth/shopee/callback`;
   const env: "sandbox" | "production" =
     process.env.SHOPEE_ENV === "production" ? "production" : "sandbox";
   // Cho phép ghi đè host tường minh (nếu Console cấp host khác với mặc định).

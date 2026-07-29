@@ -42,6 +42,7 @@ import {
   ApiError,
   connectChannel,
   connectLazadaCode,
+  connectShopeeCode,
   disconnectChannel,
   fetchChannelProducts,
   fetchChannels,
@@ -622,6 +623,20 @@ export default function ChannelsPage() {
       toast.success(`Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}`);
     } else if (shopee === "error") {
       toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
+    } else if (shopee === "code" && params.get("code") && params.get("shop_id")) {
+      // Callback Render bật code+shop_id về máy dev — Shopee trả đủ cả hai nên
+      // đổi token luôn, không cần bước dán tay như Lazada.
+      toast.info("Đã nhận code uỷ quyền Shopee — đang đổi token…");
+      connectShopeeCode(params.get("code")!, params.get("shop_id")!)
+        .then(async (r) => {
+          toast.success(r.message);
+          setChannels(await fetchChannels());
+        })
+        .catch((err) =>
+          toast.error(
+            `Kết nối Shopee thất bại: ${err instanceof Error ? err.message : "lỗi không rõ"}`
+          )
+        );
     }
     if (lazada === "connected") {
       toast.success(`Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}`);

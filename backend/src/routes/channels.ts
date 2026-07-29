@@ -34,6 +34,7 @@ import {
 import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
 import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
 import {
+  handleShopeeCallback,
   signOauthState as signShopeeState,
   syncShopeeOrders,
 } from "../integrations/shopee/service";
@@ -339,6 +340,25 @@ router.get("/shopee/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
     res.json({ url: buildShopeeAuthorizeUrl(redirect, cfg) });
   } catch (err) {
     next(err);
+  }
+});
+
+// POST /api/channels/shopee/connect — đổi CODE + SHOP_ID lấy token + lưu Channel.
+// Dành cho dev local: callback đăng ký trên Console là URL Render, Render nhận
+// ra state ký từ localhost thì bật code+shop_id về FE local (?shopee=code) và FE
+// gọi vào đây. Idempotent theo (userId, SHOPEE, shop_id) — như callback thật.
+router.post("/shopee/connect", requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { code, shopId } = req.body ?? {};
+    if (typeof code !== "string" || !code.trim() || typeof shopId !== "string" || !shopId.trim()) {
+      res.status(400).json({ error: "Thiếu code hoặc shopId uỷ quyền Shopee" });
+      return;
+    }
+    const saved = await handleShopeeCallback(req.ownerId!, code.trim(), shopId.trim());
+    res.json({ message: `Đã kết nối gian "${saved.shopName}"`, channel: saved });
+  } catch (err) {
+    // Lỗi phía Shopee (code hết hạn, chữ ký sai...) trả 502 kèm message gốc.
+    res.status(502).json({ error: `Kết nối Shopee thất bại: ${(err as Error).message}` });
   }
 });
 
