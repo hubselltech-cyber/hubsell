@@ -521,56 +521,28 @@ export async function upsertLazadaOrderTx(
   return { created: true, itemsCreated: lines.length };
 }
 
+
 // ============================================================
-// ĐỒNG BỘ QUYẾT TOÁN LAZADA — kéo SỐ PHÍ THẬT từ Finance API → ghi vào đơn
+// ĐỒNG BỘ QUYẾT TOÁN LAZADA — SAO KÊ CHI TIẾT 100% TỪ FINANCE API
 //
-// /finance/transaction/details/get trả sao kê THEO DÒNG PHÍ: mỗi đơn quyết toán
-// gồm nhiều dòng — tiền hàng (+), hoa hồng (−), phí thanh toán (−), phí vận
-// chuyển (±), voucher (±), thuế thu hộ (−)... Ta gom theo mã đơn (order_no ↔
-// Order.orderCode), PHÂN LOẠI theo fee_name rồi ghi vào các cột quyết toán GĐ2
-// của Order — từ đó Lãi/Lỗ Thực Hiện và Báo cáo dòng tiền dùng số THẬT thay %
-// tạm tính (orderPlatformFee tự chuyển nguồn khi isSettled=true).
+// /finance/transaction/details/get trả sao kê THEO DÒNG: mỗi đơn quyết toán
+// gồm nhiều dòng phí/ghi có với TÊN TIẾNG VIỆT (Lazada VN). Ta gom theo mã đơn
+// (order_no ↔ Order.orderCode), BÓC TÁCH từng tên phí bằng classifyLazadaFee()
+// rồi ghi:
+//   1. LazadaOrderSettlement — số CÓ DẤU NGUYÊN BẢN từng cột chi tiết (nguồn
+//      cho bảng Lãi/Lỗ Thực Hiện tab Lazada). TUYỆT ĐỐI không % tạm tính.
+//   2. Cột GĐ2 gộp của Order (fixedFee/serviceFee/.../actualPayout) — để
+//      orderPlatformFee & Báo cáo dòng tiền dùng chung không cần biết chi tiết.
 //
-// NGUYÊN TẮC PHÂN LOẠI (phòng thủ — tên phí Lazada VN không có danh mục đóng):
-//   · Khớp từ khoá không phân biệt hoa thường trên fee_name.
-//   · Dòng ÂM không nhận diện được → dồn vào serviceFee (nhóm "phí sàn khác")
-//     — thà gộp thô còn hơn bỏ sót làm lệch tổng.
-//   · Dòng DƯƠNG không phải tiền hàng → platformSubsidy (sàn trợ giá/hoàn phí).
-//   · actualPayout = TỔNG ĐẠI SỐ mọi dòng của đơn — luôn đúng bằng tiền về ví
-//     bất kể phân loại đúng sai đến đâu.
+// CHỐT CHẶN AN TOÀN: dòng ÂM không nhận diện được → feeOther; DƯƠNG lạ →
+// subsidyOther — tổng đại số mọi dòng LUÔN = actualPayout = tiền thực về ví,
+// bất kể phân loại đúng sai đến đâu.
 // ============================================================
 
 /** Cửa sổ tối đa mỗi lần gọi Finance API (giới hạn Lazada ~30 ngày). */
 const SETTLE_WINDOW_DAYS = 30;
 const SETTLE_PAGE_SIZE = 500;
 const SETTLE_MAX_PAGES = 200; // chốt chặn phân trang vô tận toàn lượt chạy
-
-/** Cộng dồn phí của MỘT đơn trong lúc quét sao kê (số CÓ DẤU theo Lazada). */
-interface LazadaFeeAcc {
-  itemPrice: number; // tiền hàng + các dòng GIẢM GIÁ đã phản ánh trong giá đơn
-  fixed: number; // "Phí cố định" (hoa hồng cố định của Lazada VN)
-  commission: number; // hoa hồng (Commission/hoa hồng...)
-  payment: number; // phí thanh toán / "Phí xử lý đơn hàng"
-  affiliate: number; // tiếp thị liên kết (Sponsored Affiliates...)
-  voucherNeg: number; // phí khuyến mãi shop chịu (LazCoins, voucher... dòng âm)
-  voucherPos: number; // voucher sàn bù (dòng dương)
-  shipNeg: number; // phí vận chuyển sàn trừ (âm, giữ dấu)
-  shipPos: number; // phí vận chuyển khách trả/sàn bù (dương)
-  tax: number; // thuế sàn thu hộ — GTGT/TNCN nhà bán hàng (âm)
-  otherNeg: number; // phí âm không nhận diện được
-  otherPos: number; // khoản dương không nhận diện được
-  total: number; // tổng đại số mọi dòng = tiền về ví
-  lines: number;
-  lastDate?: Date;
-}
-
-function emptyAcc(): LazadaFeeAcc {
-  return {
-    itemPrice: 0, fixed: 0, commission: 0, payment: 0, affiliate: 0,
-    voucherNeg: 0, voucherPos: 0, shipNeg: 0, shipPos: 0,
-    tax: 0, otherNeg: 0, otherPos: 0, total: 0, lines: 0,
-  };
-}
 
 /**
  * Đọc số tiền từ sao kê Lazada VỀ SỐ CHUẨN. Lazada VN có thể trả "−1.208,00"
@@ -595,60 +567,127 @@ export function parseLazadaAmount(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Phân loại MỘT dòng sao kê vào bộ cộng dồn của đơn. */
-function accumulateLazadaFee(acc: LazadaFeeAcc, trx: LazadaTransaction): void {
-  const amount = parseLazadaAmount(trx.amount);
-  const name = String(trx.fee_name ?? trx.feeName ?? "").toLowerCase();
+/** Các cột chi tiết của LazadaOrderSettlement mà classifier có thể trỏ tới. */
+type LazadaFeeBucket =
+  | "itemRevenue"
+  | "shipFee"
+  | "shipFeeCustomer"
+  | "shipDiscountPlatform"
+  | "shipDiscountSeller"
+  | "shipFeeReturn"
+  | "shipFeeAdjustment"
+  | "feePayment"
+  | "feeCommission"
+  | "feeShipSeller"
+  | "shipSubsidySeller"
+  | "feeFreeshipMax"
+  | "feeCashbackMax"
+  | "feeSponsoredDiscovery"
+  | "feeLazadaBonus"
+  | "bonusLzdCofund"
+  | "feeBuyerReview"
+  | "feeLazpick"
+  | "feeCampaign"
+  | "feeAffiliate"
+  | "feeInfrastructure"
+  | "vatFee"
+  | "incomeTaxFee"
+  | "feeOther"
+  | "subsidyOther";
 
-  acc.total += amount;
-  acc.lines++;
-  const d = new Date(String(trx.transaction_date ?? trx.transactionDate ?? ""));
-  if (!Number.isNaN(d.getTime()) && (!acc.lastDate || d > acc.lastDate)) {
-    acc.lastDate = d;
+type LazadaDetailAcc = Record<LazadaFeeBucket, number> & {
+  total: number;
+  lines: number;
+  lastDate?: Date;
+};
+
+function emptyDetailAcc(): LazadaDetailAcc {
+  return {
+    itemRevenue: 0, shipFee: 0, shipFeeCustomer: 0, shipDiscountPlatform: 0,
+    shipDiscountSeller: 0, shipFeeReturn: 0, shipFeeAdjustment: 0,
+    feePayment: 0, feeCommission: 0, feeShipSeller: 0, shipSubsidySeller: 0,
+    feeFreeshipMax: 0, feeCashbackMax: 0, feeSponsoredDiscovery: 0,
+    feeLazadaBonus: 0, bonusLzdCofund: 0, feeBuyerReview: 0, feeLazpick: 0,
+    feeCampaign: 0, feeAffiliate: 0, feeInfrastructure: 0,
+    vatFee: 0, incomeTaxFee: 0, feeOther: 0, subsidyOther: 0,
+    total: 0, lines: 0,
+  };
+}
+
+/**
+ * BÓC TÁCH một tên phí sao kê Lazada VN về đúng cột chi tiết. Danh mục đối
+ * chiếu từ sao kê THẬT (đơn Hi.Bé 527296226771786) + tài liệu Finance API;
+ * giữ kèm từ khoá tiếng Anh phòng Lazada đổi ngôn ngữ trả về.
+ *
+ * THỨ TỰ KIỂM TRA CÓ CHỦ ĐÍCH: nhánh đặc thù (Lazpick, Freeship Max, giảm giá
+ * VC...) phải đứng TRƯỚC nhánh chung ("hoa hồng", "vận chuyển") kẻo bị nuốt.
+ * `sign` dùng cho nhánh mặc định (chốt chặn an toàn) phân theo chiều tiền.
+ */
+export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucket {
+  const name = rawName.toLowerCase();
+  const has = (...keys: string[]) => keys.some((k) => name.includes(k));
+
+  switch (true) {
+    // ----- Doanh thu & giảm giá đơn (đã phản ánh trong giá bán) -----
+    case has("giá trị sản phẩm", "item price"):
+      return "itemRevenue";
+    case has("giảm giá bằng xu"):
+      return "itemRevenue"; // giảm giá shop chịu — đã trừ sẵn trong giá đơn
+    // ----- Phí chương trình đặc thù (trước nhánh hoa hồng/vận chuyển chung) -----
+    case has("lazpick", "laztop"):
+      return "feeLazpick";
+    case has("freeship"):
+      return "feeFreeshipMax";
+    case has("cashback"):
+      return "feeCashbackMax";
+    case has("discovery"):
+      return "feeSponsoredDiscovery";
+    case has("đồng tài trợ", "co-fund", "cofund"):
+      return "bonusLzdCofund";
+    case has("lazada bonus"):
+      return "feeLazadaBonus";
+    case has("đánh giá người mua", "review"):
+      return "feeBuyerReview";
+    case has("lazcoin", "chiến dịch", "campaign", "khuyến mãi"):
+      return "feeCampaign";
+    case has("tiếp thị liên kết", "affiliate", "sponsor"):
+      return "feeAffiliate";
+    case has("hạ tầng", "infrastructure"):
+      return "feeInfrastructure";
+    // ----- Vận chuyển (nhánh con đứng trước nhánh chung) -----
+    case has("điều chỉnh") && has("vận chuyển", "shipping"):
+      return "shipFeeAdjustment";
+    case has("vận chuyển", "shipping", "giao hàng") && has("hoàn", "return"):
+      return "shipFeeReturn";
+    case has("vận chuyển", "shipping") && has("khách", "người mua", "customer", "buyer"):
+      return "shipFeeCustomer";
+    case has("giảm giá", "voucher", "miễn phí") && has("vận chuyển", "shipping"):
+      // Giảm giá phí VC: nền tảng bù hay người bán chịu?
+      return has("người bán", "seller", "cửa hàng")
+        ? "shipDiscountSeller"
+        : "shipDiscountPlatform";
+    case has("trợ giá") && has("vận chuyển", "shipping"):
+      return "shipSubsidySeller";
+    case has("vận chuyển", "shipping") && has("người bán", "seller"):
+      return "feeShipSeller";
+    case has("phí vận chuyển", "shipping fee", "logistic"):
+      return "shipFee";
+    // ----- Phí lõi -----
+    case has("phí cố định", "fixed fee", "hoa hồng", "commission"):
+      return "feeCommission";
+    case has("xử lý đơn", "phí thanh toán", "payment"):
+      return "feePayment";
+    // ----- Thuế sàn thu hộ -----
+    case has("gtgt", "vat"):
+      return "vatFee";
+    case has("tncn", "income tax", "wht"):
+      return "incomeTaxFee";
+    case has("thuế", "tax", "tcs"):
+      return "vatFee"; // thuế chưa rõ loại — gộp về GTGT
+    // ----- CHỐT CHẶN AN TOÀN: không bao giờ bỏ sót tiền -----
+    default:
+      return sign < 0 ? "feeOther" : "subsidyOther";
   }
-
-  // Danh mục theo SAO KÊ THẬT Lazada VN (đối chiếu đơn Hi.Bé 29/07/2026):
-  // "Giá trị sản phẩm" +, "Phí cố định" −, "Phí xử lý đơn hàng" −,
-  // "Infrastructure Fee - Auto" −, "Thuế GTGT/TNCN nhà bán hàng" −,
-  // "Giảm Giá Bằng Xu" − (giảm giá — KHÔNG phải phí), "Phí tham gia Khuyến Mãi
-  // LazCoins" − (phí thật). Giữ kèm từ khoá tiếng Anh cho thị trường khác.
-  if (name.includes("item price") || name.includes("giá trị sản phẩm")) {
-    acc.itemPrice += amount;
-  } else if (name.includes("giảm giá") || name.includes("discount")) {
-    // Giảm giá (bằng xu/voucher shop) ĐÃ trừ sẵn trong giá đơn (totalAmount) —
-    // tính vào phí nữa là TRỪ TRÙNG. Âm → gộp về phía doanh thu cho khớp giá
-    // đơn; dương (sàn hoàn/bù giảm giá) → trợ giá từ sàn.
-    if (amount < 0) acc.itemPrice += amount;
-    else acc.voucherPos += amount;
-  } else if (name.includes("phí cố định") || name.includes("fixed fee")) {
-    acc.fixed += amount;
-  } else if (name.includes("commission") || name.includes("hoa hồng")) {
-    acc.commission += amount;
-  } else if (name.includes("payment") || name.includes("xử lý đơn")) {
-    acc.payment += amount;
-  } else if (
-    name.includes("sponsor") || name.includes("affiliate") || name.includes("tiếp thị")
-  ) {
-    acc.affiliate += amount;
-  } else if (
-    name.includes("voucher") || name.includes("lazcoin") ||
-    name.includes("khuyến mãi") || name.includes("bằng xu")
-  ) {
-    if (amount < 0) acc.voucherNeg += amount;
-    else acc.voucherPos += amount;
-  } else if (
-    name.includes("shipping") || name.includes("logistic") ||
-    name.includes("vận chuyển") || name.includes("giao hàng")
-  ) {
-    if (amount < 0) acc.shipNeg += amount;
-    else acc.shipPos += amount;
-  } else if (
-    name.includes("tax") || name.includes("tcs") ||
-    name.includes("wht") || name.includes("thuế")
-  ) {
-    acc.tax += amount;
-  } else if (amount < 0) acc.otherNeg += amount;
-  else acc.otherPos += amount;
 }
 
 export interface SyncLazadaSettlementsOptions {
@@ -663,8 +702,9 @@ export interface SyncLazadaSettlementsResult {
 }
 
 /**
- * Kéo sao kê tài chính thật của một gian Lazada rồi ghi số quyết toán vào từng
- * đơn. Idempotent: chạy lặp chỉ ghi đè cùng bộ số (sao kê là nguồn sự thật).
+ * Kéo sao kê tài chính thật của một gian Lazada, bóc tách chi tiết từng loại
+ * phí rồi ghi vào LazadaOrderSettlement + cột gộp GĐ2 của Order. Idempotent:
+ * sao kê là nguồn sự thật, chạy lặp ghi đè cùng bộ số.
  */
 export async function syncLazadaSettlements(
   channel: Channel,
@@ -679,13 +719,12 @@ export async function syncLazadaSettlements(
     ordersNotFound: 0,
   };
 
-  // Gom theo mã đơn trên TOÀN lượt chạy (một đơn có thể nằm vắt qua 2 cửa sổ
-  // nếu quyết toán rải ngày) rồi mới ghi DB một thể.
-  const byOrder = new Map<string, LazadaFeeAcc>();
-  // Thống kê fee_name thật gặp trong lượt chạy — log cuối lượt để đối chiếu bộ
-  // phân loại với danh mục phí thực tế của Lazada VN (danh mục không có tài
-  // liệu đóng, phải soi từ dữ liệu thật).
-  const byFeeName = new Map<string, { count: number; sum: number }>();
+  // Gom theo mã đơn trên TOÀN lượt chạy (một đơn có thể quyết toán rải ngày
+  // vắt qua 2 cửa sổ) rồi mới ghi DB một thể.
+  const byOrder = new Map<string, LazadaDetailAcc>();
+  // Thống kê fee_name thật + bucket đã gán — log cuối lượt để đối chiếu bộ
+  // bóc tách với danh mục phí thực tế (danh mục Lazada không có tài liệu đóng).
+  const byFeeName = new Map<string, { count: number; sum: number; bucket: string }>();
   const fmt = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
 
   let pages = 0;
@@ -710,26 +749,36 @@ export async function syncLazadaSettlements(
       });
       for (const trx of rows) {
         const feeName = String(trx.fee_name ?? trx.feeName ?? "?");
-        const stat = byFeeName.get(feeName) ?? { count: 0, sum: 0 };
+        const amount = parseLazadaAmount(trx.amount);
+        const bucket = classifyLazadaFee(feeName, Math.sign(amount));
+
+        const stat = byFeeName.get(feeName) ?? { count: 0, sum: 0, bucket };
         stat.count++;
-        stat.sum += parseLazadaAmount(trx.amount);
+        stat.sum += amount;
         byFeeName.set(feeName, stat);
 
         const orderNo = String(trx.order_no ?? trx.orderNo ?? "").trim();
-        if (!orderNo) continue; // dòng không gắn đơn (phí thuê bao, nạp ví...) — bỏ qua ở cấp đơn
+        if (!orderNo) continue; // dòng không gắn đơn (phí thuê bao, nạp ví...) — ngoài phạm vi đơn
         result.transactions++;
-        const acc = byOrder.get(orderNo) ?? emptyAcc();
-        accumulateLazadaFee(acc, trx);
+
+        const acc = byOrder.get(orderNo) ?? emptyDetailAcc();
+        acc[bucket] += amount;
+        acc.total += amount;
+        acc.lines++;
+        const d = new Date(String(trx.transaction_date ?? trx.transactionDate ?? ""));
+        if (!Number.isNaN(d.getTime()) && (!acc.lastDate || d > acc.lastDate)) {
+          acc.lastDate = d;
+        }
         byOrder.set(orderNo, acc);
       }
       if (rows.length < SETTLE_PAGE_SIZE) break; // hết trang của cửa sổ này
     }
   }
 
-  // Log danh mục phí thật gặp được — mỗi lượt chạy một dòng, soi ở log server.
+  // Log danh mục phí thật + bucket đã gán — soi ở log server sau mỗi lượt chạy.
   if (byFeeName.size > 0) {
     console.log(
-      `[Lazada Settle] Gian "${channel.shopName}" — fee_name gặp trong sao kê:`,
+      "[Lazada Settle] Gian \"" + channel.shopName + "\" — fee_name gặp trong sao kê:",
       JSON.stringify(
         [...byFeeName.entries()].map(([name, s]) => ({ name, ...s }))
       )
@@ -747,26 +796,81 @@ export async function syncLazadaSettlements(
       continue;
     }
 
-    // Đổi từ số CÓ DẤU của Lazada sang các cột LƯU DƯƠNG của Hubsell.
-    const shipCharged = -acc.shipNeg; // sàn trừ shop (dương)
-    const shipCovered = acc.shipPos; // khách trả/sàn bù (dương)
+    const settledAt = acc.lastDate ?? new Date();
+
+    // (1) Bảng chi tiết — số CÓ DẤU NGUYÊN BẢN từ sao kê, ghi đè trọn bộ.
+    const detail = {
+      itemRevenue: acc.itemRevenue,
+      shipFee: acc.shipFee,
+      shipFeeCustomer: acc.shipFeeCustomer,
+      shipDiscountPlatform: acc.shipDiscountPlatform,
+      shipDiscountSeller: acc.shipDiscountSeller,
+      shipFeeReturn: acc.shipFeeReturn,
+      shipFeeAdjustment: acc.shipFeeAdjustment,
+      feePayment: acc.feePayment,
+      feeCommission: acc.feeCommission,
+      feeShipSeller: acc.feeShipSeller,
+      shipSubsidySeller: acc.shipSubsidySeller,
+      feeFreeshipMax: acc.feeFreeshipMax,
+      feeCashbackMax: acc.feeCashbackMax,
+      feeSponsoredDiscovery: acc.feeSponsoredDiscovery,
+      feeLazadaBonus: acc.feeLazadaBonus,
+      bonusLzdCofund: acc.bonusLzdCofund,
+      feeBuyerReview: acc.feeBuyerReview,
+      feeLazpick: acc.feeLazpick,
+      feeCampaign: acc.feeCampaign,
+      feeAffiliate: acc.feeAffiliate,
+      feeInfrastructure: acc.feeInfrastructure,
+      feeOther: acc.feeOther,
+      subsidyOther: acc.subsidyOther,
+      vatFee: acc.vatFee,
+      incomeTaxFee: acc.incomeTaxFee,
+      actualPayout: acc.total,
+      settledAt,
+    };
+    await prisma.lazadaOrderSettlement.upsert({
+      where: { orderId: order.id },
+      create: { orderId: order.id, ...detail },
+      update: detail,
+    });
+
+    // (2) Cột GĐ2 gộp của Order — công thức dùng chung (orderPlatformFee,
+    // Báo cáo dòng tiền) đọc từ đây. Đổi số CÓ DẤU → cột LƯU DƯƠNG:
+    //   · Vận chuyển: gom mọi dòng ship ÂM (sàn trừ) vs DƯƠNG (khách trả/bù);
+    //     chênh lệch âm ròng vào shippingFeeDiff, dư dương vào trợ giá.
+    //   · serviceFee = mọi phí nền tảng ngoài hoa hồng/thanh toán/affiliate/
+    //     khuyến mãi (Freeship Max, Cashback, Bonus, hạ tầng, phí lạ...).
+    const shipNeg =
+      Math.min(acc.shipFee, 0) + Math.min(acc.feeShipSeller, 0) +
+      Math.min(acc.shipFeeReturn, 0) + Math.min(acc.shipFeeAdjustment, 0) +
+      Math.min(acc.shipDiscountSeller, 0);
+    const shipPos =
+      Math.max(acc.shipFee, 0) + Math.max(acc.shipFeeCustomer, 0) +
+      Math.max(acc.shipDiscountPlatform, 0) + Math.max(acc.shipSubsidySeller, 0) +
+      Math.max(acc.shipFeeAdjustment, 0);
+    const otherPlatformFees = -(
+      acc.feeInfrastructure + acc.feeFreeshipMax + acc.feeCashbackMax +
+      acc.feeSponsoredDiscovery + acc.feeLazadaBonus + acc.feeBuyerReview +
+      acc.feeLazpick + acc.feeOther
+    );
+
     await prisma.order.update({
       where: { id: order.id },
       data: {
         isSettled: true,
-        settledAt: acc.lastDate ?? new Date(),
-        fixedFee: -acc.fixed, // "Phí cố định" của Lazada VN
-        serviceFee: -acc.commission + -acc.otherNeg, // hoa hồng + phí âm chưa nhận diện (Infrastructure Fee...)
-        paymentFee: -acc.payment,
-        affiliateFee: -acc.affiliate,
-        sellerVoucher: -acc.voucherNeg,
-        // Chênh lệch ship shop THỰC chịu; sàn bù dư thì phần dư sang trợ giá.
-        shippingFeeActual: shipCharged,
-        shippingFeeQuoted: shipCovered,
-        shippingFeeDiff: Math.max(shipCharged - shipCovered, 0),
+        settledAt,
+        fixedFee: -acc.feeCommission,
+        paymentFee: -acc.feePayment,
+        serviceFee: otherPlatformFees,
+        affiliateFee: -acc.feeAffiliate,
+        sellerVoucher: -acc.feeCampaign,
+        shippingFeeActual: -shipNeg,
+        shippingFeeQuoted: shipPos,
+        shippingFeeDiff: Math.max(-shipNeg - shipPos, 0),
         platformSubsidy:
-          acc.voucherPos + acc.otherPos + Math.max(shipCovered - shipCharged, 0),
-        taxWithheld: Math.max(-acc.tax, 0),
+          acc.subsidyOther + Math.max(acc.bonusLzdCofund, 0) +
+          Math.max(shipPos + shipNeg, 0),
+        taxWithheld: Math.max(-(acc.vatFee + acc.incomeTaxFee), 0),
         actualPayout: acc.total,
       },
     });

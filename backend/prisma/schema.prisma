@@ -618,6 +618,7 @@ model Order {
   inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
   items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
   invoiceLogs   InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
+  lazadaSettlement LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -873,4 +874,64 @@ model InventorySyncAlert {
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@index([channelId, resolvedAt])
+}
+
+/// SAO KÊ QUYẾT TOÁN LAZADA CHI TIẾT — mỗi đơn Lazada MỘT dòng, số CÓ DẤU
+/// NGUYÊN BẢN từ /finance/transaction/details/get (ÂM = sàn trừ shop, DƯƠNG =
+/// sàn ghi có). Tách bảng riêng thay vì thêm cột lên Order vì danh mục phí
+/// Lazada rất dài và chỉ có nghĩa với đơn Lazada; số GỘP vẫn ghi về các cột
+/// GĐ2 của Order để công thức dùng chung (orderPlatformFee, cash-flow) không
+/// phải biết chi tiết từng sàn. Nguồn sự thật là sao kê — đồng bộ lặp ghi đè.
+model LazadaOrderSettlement {
+  id      String @id @default(cuid())
+  orderId String @unique
+
+  // ===== DOANH THU =====
+  /// "Giá trị sản phẩm" cộng các dòng GIẢM GIÁ đơn (đã phản ánh trong giá bán)
+  itemRevenue Decimal @default(0) @db.Decimal(12, 2)
+
+  // ===== CHI TIẾT PHÍ VẬN CHUYỂN =====
+  shipFee              Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển (sàn ghi nhận)
+  shipFeeCustomer      Decimal @default(0) @db.Decimal(12, 2) /// Khách trả
+  shipDiscountPlatform Decimal @default(0) @db.Decimal(12, 2) /// Giảm giá VC từ nền tảng
+  shipDiscountSeller   Decimal @default(0) @db.Decimal(12, 2) /// Giảm giá VC người bán chịu
+  shipFeeReturn        Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển hoàn
+  shipFeeAdjustment    Decimal @default(0) @db.Decimal(12, 2) /// Điều chỉnh phí vận chuyển
+
+  // ===== PHÍ NỀN TẢNG =====
+  feePayment            Decimal @default(0) @db.Decimal(12, 2) /// Phí thanh toán / Phí xử lý đơn hàng
+  feeCommission         Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng / Phí cố định
+  feeShipSeller         Decimal @default(0) @db.Decimal(12, 2) /// Phí VC người bán trả
+  shipSubsidySeller     Decimal @default(0) @db.Decimal(12, 2) /// Trợ giá vận chuyển (người bán)
+  feeFreeshipMax        Decimal @default(0) @db.Decimal(12, 2) /// Phí Freeship Max
+  feeCashbackMax        Decimal @default(0) @db.Decimal(12, 2) /// Phí Cashback Max
+  feeSponsoredDiscovery Decimal @default(0) @db.Decimal(12, 2) /// Phí Discovery tài trợ
+  feeLazadaBonus        Decimal @default(0) @db.Decimal(12, 2) /// Phí Lazada Bonus
+  bonusLzdCofund        Decimal @default(0) @db.Decimal(12, 2) /// Lazada Bonus — LZD đồng tài trợ
+  feeBuyerReview        Decimal @default(0) @db.Decimal(12, 2) /// Phí đánh giá người mua
+  feeLazpick            Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng Lazpick/LazTop
+  feeCampaign           Decimal @default(0) @db.Decimal(12, 2) /// Phí chiến dịch/khuyến mãi (LazCoins...)
+  feeAffiliate          Decimal @default(0) @db.Decimal(12, 2) /// Phí tiếp thị liên kết
+  feeInfrastructure     Decimal @default(0) @db.Decimal(12, 2) /// Phí hạ tầng (Infrastructure Fee)
+  /// CHỐT CHẶN AN TOÀN: phí ÂM chưa nhận diện được — không bao giờ bỏ sót tiền.
+  feeOther              Decimal @default(0) @db.Decimal(12, 2)
+  /// CHỐT CHẶN AN TOÀN: khoản DƯƠNG chưa nhận diện được (sàn bù/hoàn).
+  subsidyOther          Decimal @default(0) @db.Decimal(12, 2)
+
+  // ===== THUẾ =====
+  vatFee       Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT nhà bán hàng
+  incomeTaxFee Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN nhà bán hàng
+
+  // ===== KẾT QUẢ =====
+  /// TỔNG ĐẠI SỐ mọi dòng sao kê của đơn = tiền THỰC về ví (đúng bất kể phân loại).
+  actualPayout Decimal @default(0) @db.Decimal(12, 2)
+  /// Ngày giao dịch MỚI NHẤT trên sao kê — mốc ghi nhận vào Báo cáo dòng tiền.
+  settledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("lazada_order_settlements")
 }

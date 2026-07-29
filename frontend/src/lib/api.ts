@@ -479,6 +479,45 @@ export interface PnlDetailRow {
   /** profit − platformTax (thuế bổ sung của kỳ nằm ở summary, không chia dòng). */
   profitAfterTax: number;
   missingCostPrice: boolean;
+  /**
+   * SAO KÊ QUYẾT TOÁN LAZADA CHI TIẾT — số CÓ DẤU NGUYÊN BẢN từ Finance API
+   * (âm = sàn trừ, dương = ghi có). null với đơn sàn khác / chưa đối soát.
+   */
+  lazada: LazadaSettlementDetail | null;
+}
+
+/** Bộ cột sao kê chi tiết Lazada (xem model LazadaOrderSettlement phía backend). */
+export interface LazadaSettlementDetail {
+  itemRevenue: number;
+  // Chi tiết phí vận chuyển
+  shipFee: number;
+  shipFeeCustomer: number;
+  shipDiscountPlatform: number;
+  shipDiscountSeller: number;
+  shipFeeReturn: number;
+  shipFeeAdjustment: number;
+  // Phí nền tảng
+  feePayment: number;
+  feeCommission: number;
+  feeShipSeller: number;
+  shipSubsidySeller: number;
+  feeFreeshipMax: number;
+  feeCashbackMax: number;
+  feeSponsoredDiscovery: number;
+  feeLazadaBonus: number;
+  bonusLzdCofund: number;
+  feeBuyerReview: number;
+  feeLazpick: number;
+  feeCampaign: number;
+  feeAffiliate: number;
+  feeInfrastructure: number;
+  feeOther: number;
+  subsidyOther: number;
+  // Thuế
+  vatFee: number;
+  incomeTaxFee: number;
+  // Kết quả
+  actualPayout: number;
 }
 
 export interface RealizedPnlResponse {

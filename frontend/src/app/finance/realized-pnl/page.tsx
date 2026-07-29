@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { GenericProfitTable } from "@/components/finance/realized-pnl/GenericProfitTable";
+import { LazadaProfitTable } from "@/components/finance/realized-pnl/LazadaProfitTable";
 import { ShopeeProfitTable } from "@/components/finance/realized-pnl/ShopeeProfitTable";
 import { TiktokProfitTable } from "@/components/finance/realized-pnl/TiktokProfitTable";
 import {
@@ -389,6 +390,8 @@ export default function RealizedPnlPage() {
                   <ShopeeProfitTable rows={rows} {...selectionProps} />
                 ) : tab === "tiktok" ? (
                   <TiktokProfitTable rows={rows} {...selectionProps} />
+                ) : tab === "lazada" ? (
+                  <LazadaProfitTable rows={rows} {...selectionProps} />
                 ) : (
                   <GenericProfitTable rows={rows} {...selectionProps} />
                 )}

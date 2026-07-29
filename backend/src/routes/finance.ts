@@ -236,6 +236,8 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
           where: { changeQuantity: { lt: 0 } },
           include: { product: { select: { costPrice: true } } },
         },
+        // Sao kê quyết toán chi tiết Lazada — bảng tab Lazada đọc số thật từ đây.
+        lazadaSettlement: true,
       },
       take: 2000, // trần an toàn — báo cáo theo khoảng ngày thường nằm dưới mức này
     });
@@ -320,6 +322,26 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         platformTax,
         profitAfterTax,
         missingCostPrice,
+        // SAO KÊ CHI TIẾT LAZADA — số CÓ DẤU NGUYÊN BẢN từ Finance API (null
+        // với đơn sàn khác / đơn Lazada chưa đối soát). Tab Lazada dùng 100%
+        // số thật này, không dùng bucket gộp phía trên.
+        lazada: o.lazadaSettlement
+          ? Object.fromEntries(
+              (
+                [
+                  "itemRevenue", "shipFee", "shipFeeCustomer",
+                  "shipDiscountPlatform", "shipDiscountSeller", "shipFeeReturn",
+                  "shipFeeAdjustment", "feePayment", "feeCommission",
+                  "feeShipSeller", "shipSubsidySeller", "feeFreeshipMax",
+                  "feeCashbackMax", "feeSponsoredDiscovery", "feeLazadaBonus",
+                  "bonusLzdCofund", "feeBuyerReview", "feeLazpick",
+                  "feeCampaign", "feeAffiliate", "feeInfrastructure",
+                  "feeOther", "subsidyOther", "vatFee", "incomeTaxFee",
+                  "actualPayout",
+                ] as const
+              ).map((k) => [k, Number(o.lazadaSettlement![k])])
+            )
+          : null,
       };
     });
 
