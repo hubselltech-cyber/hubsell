@@ -30,6 +30,7 @@ import {
   signOauthState as signLazadaState,
   handleLazadaCallback,
   syncLazadaOrders,
+  syncLazadaSettlements,
 } from "../integrations/lazada/service";
 import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
 import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
@@ -490,13 +491,40 @@ router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/channels/:id/sync-settlements — kéo đối soát TikTok thật → cập nhật quyết toán đơn.
+// POST /api/channels/:id/sync-settlements — kéo đối soát thật → cập nhật số
+// quyết toán (GĐ2) của từng đơn. Dispatch theo sàn: TikTok hoặc Lazada.
 router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res) => {
   try {
-    const channel = await requireTiktokChannel(req, res);
-    if (!channel) return;
-    const summary = await syncTiktokSettlements(channel);
-    res.json({ message: "Đồng bộ đối soát TikTok xong", ...summary });
+    const channel = await prisma.channel.findFirst({
+      where: { id: req.params.id, userId: req.ownerId! },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+
+    if (channel.channelName === ChannelName.LAZADA) {
+      if (!channel.refreshToken) {
+        res.status(409).json({
+          error: "Gian Lazada chưa uỷ quyền. Hãy kết nối lại để cấp quyền API.",
+          code: "LAZADA_NOT_AUTHORIZED",
+        });
+        return;
+      }
+      const summary = await syncLazadaSettlements(channel);
+      res.json({ message: "Đồng bộ đối soát Lazada xong", ...summary });
+      return;
+    }
+
+    if (channel.channelName === ChannelName.TIKTOK) {
+      const tiktok = await requireTiktokChannel(req, res);
+      if (!tiktok) return;
+      const summary = await syncTiktokSettlements(tiktok);
+      res.json({ message: "Đồng bộ đối soát TikTok xong", ...summary });
+      return;
+    }
+
+    res.status(400).json({ error: "Đồng bộ đối soát hiện hỗ trợ TikTok và Lazada" });
   } catch (err) {
     res.status(502).json({ error: `Đồng bộ đối soát thất bại: ${(err as Error).message}` });
   }

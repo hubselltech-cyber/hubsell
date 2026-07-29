@@ -20,11 +20,13 @@ import {
   getMultipleOrderItems,
   getOrders,
   getSellerInfo,
+  getTransactionDetails,
   lazadaChannelSku,
   refreshToken,
   type LazadaOrder,
   type LazadaOrderItem,
   type LazadaTokenData,
+  type LazadaTransaction,
 } from "./client";
 
 // Refresh khi access_token còn <30 phút là hết hạn. Token Lazada sống 7 ngày
@@ -517,4 +519,186 @@ export async function upsertLazadaOrderTx(
   }
 
   return { created: true, itemsCreated: lines.length };
+}
+
+// ============================================================
+// ĐỒNG BỘ QUYẾT TOÁN LAZADA — kéo SỐ PHÍ THẬT từ Finance API → ghi vào đơn
+//
+// /finance/transaction/details/get trả sao kê THEO DÒNG PHÍ: mỗi đơn quyết toán
+// gồm nhiều dòng — tiền hàng (+), hoa hồng (−), phí thanh toán (−), phí vận
+// chuyển (±), voucher (±), thuế thu hộ (−)... Ta gom theo mã đơn (order_no ↔
+// Order.orderCode), PHÂN LOẠI theo fee_name rồi ghi vào các cột quyết toán GĐ2
+// của Order — từ đó Lãi/Lỗ Thực Hiện và Báo cáo dòng tiền dùng số THẬT thay %
+// tạm tính (orderPlatformFee tự chuyển nguồn khi isSettled=true).
+//
+// NGUYÊN TẮC PHÂN LOẠI (phòng thủ — tên phí Lazada VN không có danh mục đóng):
+//   · Khớp từ khoá không phân biệt hoa thường trên fee_name.
+//   · Dòng ÂM không nhận diện được → dồn vào serviceFee (nhóm "phí sàn khác")
+//     — thà gộp thô còn hơn bỏ sót làm lệch tổng.
+//   · Dòng DƯƠNG không phải tiền hàng → platformSubsidy (sàn trợ giá/hoàn phí).
+//   · actualPayout = TỔNG ĐẠI SỐ mọi dòng của đơn — luôn đúng bằng tiền về ví
+//     bất kể phân loại đúng sai đến đâu.
+// ============================================================
+
+/** Cửa sổ tối đa mỗi lần gọi Finance API (giới hạn Lazada ~30 ngày). */
+const SETTLE_WINDOW_DAYS = 30;
+const SETTLE_PAGE_SIZE = 500;
+const SETTLE_MAX_PAGES = 200; // chốt chặn phân trang vô tận toàn lượt chạy
+
+/** Cộng dồn phí của MỘT đơn trong lúc quét sao kê (số CÓ DẤU theo Lazada). */
+interface LazadaFeeAcc {
+  itemPrice: number; // tiền hàng sàn ghi có (+)
+  commission: number; // hoa hồng (Commission...)
+  payment: number; // phí thanh toán (Payment Fee)
+  affiliate: number; // tiếp thị liên kết (Sponsored Affiliates...)
+  voucherNeg: number; // voucher shop chịu (dòng âm)
+  voucherPos: number; // voucher sàn bù (dòng dương)
+  shipNeg: number; // phí vận chuyển sàn trừ (âm, giữ dấu)
+  shipPos: number; // phí vận chuyển khách trả/sàn bù (dương)
+  tax: number; // thuế sàn thu hộ (âm)
+  otherNeg: number; // phí âm không nhận diện được
+  otherPos: number; // khoản dương không nhận diện được
+  total: number; // tổng đại số mọi dòng = tiền về ví
+  lines: number;
+  lastDate?: Date;
+}
+
+function emptyAcc(): LazadaFeeAcc {
+  return {
+    itemPrice: 0, commission: 0, payment: 0, affiliate: 0,
+    voucherNeg: 0, voucherPos: 0, shipNeg: 0, shipPos: 0,
+    tax: 0, otherNeg: 0, otherPos: 0, total: 0, lines: 0,
+  };
+}
+
+/** Phân loại MỘT dòng sao kê vào bộ cộng dồn của đơn. */
+function accumulateLazadaFee(acc: LazadaFeeAcc, trx: LazadaTransaction): void {
+  const amount = Number(trx.amount ?? 0) || 0;
+  const name = String(trx.fee_name ?? trx.feeName ?? "").toLowerCase();
+
+  acc.total += amount;
+  acc.lines++;
+  const d = new Date(String(trx.transaction_date ?? trx.transactionDate ?? ""));
+  if (!Number.isNaN(d.getTime()) && (!acc.lastDate || d > acc.lastDate)) {
+    acc.lastDate = d;
+  }
+
+  if (name.includes("item price")) acc.itemPrice += amount;
+  else if (name.includes("commission")) acc.commission += amount;
+  else if (name.includes("payment")) acc.payment += amount;
+  else if (name.includes("sponsor") || name.includes("affiliate")) acc.affiliate += amount;
+  else if (name.includes("voucher")) {
+    if (amount < 0) acc.voucherNeg += amount;
+    else acc.voucherPos += amount;
+  } else if (name.includes("shipping") || name.includes("logistic")) {
+    if (amount < 0) acc.shipNeg += amount;
+    else acc.shipPos += amount;
+  } else if (name.includes("tax") || name.includes("tcs") || name.includes("wht")) {
+    acc.tax += amount;
+  } else if (amount < 0) acc.otherNeg += amount;
+  else acc.otherPos += amount;
+}
+
+export interface SyncLazadaSettlementsOptions {
+  /** Quét sao kê trong bao nhiêu ngày gần nhất. Mặc định 90 (chia cửa sổ 30 ngày). */
+  daysBack?: number;
+}
+
+export interface SyncLazadaSettlementsResult {
+  transactions: number; // số dòng sao kê đọc được
+  ordersUpdated: number; // số Order được ghi số quyết toán thật
+  ordersNotFound: number; // sao kê có mã đơn nhưng đơn chưa đồng bộ về Hubsell
+}
+
+/**
+ * Kéo sao kê tài chính thật của một gian Lazada rồi ghi số quyết toán vào từng
+ * đơn. Idempotent: chạy lặp chỉ ghi đè cùng bộ số (sao kê là nguồn sự thật).
+ */
+export async function syncLazadaSettlements(
+  channel: Channel,
+  opts: SyncLazadaSettlementsOptions = {}
+): Promise<SyncLazadaSettlementsResult> {
+  const accessToken = await getValidLazadaAccessToken(channel);
+  const daysBack = opts.daysBack ?? 90;
+
+  const result: SyncLazadaSettlementsResult = {
+    transactions: 0,
+    ordersUpdated: 0,
+    ordersNotFound: 0,
+  };
+
+  // Gom theo mã đơn trên TOÀN lượt chạy (một đơn có thể nằm vắt qua 2 cửa sổ
+  // nếu quyết toán rải ngày) rồi mới ghi DB một thể.
+  const byOrder = new Map<string, LazadaFeeAcc>();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  let pages = 0;
+  const now = new Date();
+  for (
+    let winStart = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    winStart < now && pages < SETTLE_MAX_PAGES;
+    winStart = new Date(winStart.getTime() + SETTLE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  ) {
+    const winEnd = new Date(
+      Math.min(winStart.getTime() + SETTLE_WINDOW_DAYS * 24 * 60 * 60 * 1000, now.getTime())
+    );
+
+    for (let offset = 0; pages < SETTLE_MAX_PAGES; offset += SETTLE_PAGE_SIZE) {
+      pages++;
+      const rows = await getTransactionDetails({
+        accessToken,
+        startTime: fmt(winStart),
+        endTime: fmt(winEnd),
+        offset,
+        limit: SETTLE_PAGE_SIZE,
+      });
+      for (const trx of rows) {
+        const orderNo = String(trx.order_no ?? trx.orderNo ?? "").trim();
+        if (!orderNo) continue; // dòng không gắn đơn (phí thuê bao, nạp ví...) — bỏ qua ở cấp đơn
+        result.transactions++;
+        const acc = byOrder.get(orderNo) ?? emptyAcc();
+        accumulateLazadaFee(acc, trx);
+        byOrder.set(orderNo, acc);
+      }
+      if (rows.length < SETTLE_PAGE_SIZE) break; // hết trang của cửa sổ này
+    }
+  }
+
+  // Ghi số quyết toán vào từng đơn theo (channelId, orderCode).
+  for (const [orderNo, acc] of byOrder) {
+    const order = await prisma.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode: orderNo } },
+      select: { id: true },
+    });
+    if (!order) {
+      result.ordersNotFound++;
+      continue;
+    }
+
+    // Đổi từ số CÓ DẤU của Lazada sang các cột LƯU DƯƠNG của Hubsell.
+    const shipCharged = -acc.shipNeg; // sàn trừ shop (dương)
+    const shipCovered = acc.shipPos; // khách trả/sàn bù (dương)
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        isSettled: true,
+        settledAt: acc.lastDate ?? new Date(),
+        serviceFee: -acc.commission + -acc.otherNeg, // hoa hồng + phí âm chưa nhận diện
+        paymentFee: -acc.payment,
+        affiliateFee: -acc.affiliate,
+        sellerVoucher: -acc.voucherNeg,
+        // Chênh lệch ship shop THỰC chịu; sàn bù dư thì phần dư sang trợ giá.
+        shippingFeeActual: shipCharged,
+        shippingFeeQuoted: shipCovered,
+        shippingFeeDiff: Math.max(shipCharged - shipCovered, 0),
+        platformSubsidy:
+          acc.voucherPos + acc.otherPos + Math.max(shipCovered - shipCharged, 0),
+        taxWithheld: Math.max(-acc.tax, 0),
+        actualPayout: acc.total,
+      },
+    });
+    result.ordersUpdated++;
+  }
+
+  return result;
 }

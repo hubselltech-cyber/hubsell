@@ -47,6 +47,8 @@ export const LAZADA_PATHS = {
   orderItemsGet: "/orders/items/get",
   /** Danh sách sản phẩm của shop (phân trang offset/limit ≤50). */
   productsGet: "/products/get",
+  /** Sao kê giao dịch tài chính CHI TIẾT theo dòng phí (Finance API, READ-ONLY). */
+  transactionDetails: "/finance/transaction/details/get",
 } as const;
 
 /**

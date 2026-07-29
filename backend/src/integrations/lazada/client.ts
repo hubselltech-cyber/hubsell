@@ -332,6 +332,67 @@ export function lazadaChannelSku(opts: {
   return `LZD-${opts.itemId ?? "0"}-${opts.skuId ?? "0"}`;
 }
 
+// ---------- Tài chính (Finance API) ----------
+
+/**
+ * MỘT DÒNG PHÍ trong sao kê /finance/transaction/details/get. Mỗi đơn quyết
+ * toán sinh NHIỀU dòng: tiền hàng (+), hoa hồng (−), phí thanh toán (−), phí
+ * vận chuyển (±), voucher (±)... `amount` là CHUỖI CÓ DẤU ("−" là sàn trừ shop).
+ * Tên trường Lazada trả không đồng nhất giữa bản docs (snake/camel) — tầng
+ * service đọc phòng thủ cả hai kiểu.
+ */
+export interface LazadaTransaction {
+  order_no?: number | string;
+  orderNo?: number | string;
+  fee_name?: string;
+  feeName?: string;
+  transaction_type?: string;
+  transactionType?: string;
+  amount?: string | number;
+  paid_status?: string;
+  paidStatus?: string;
+  transaction_date?: string;
+  transactionDate?: string;
+  statement?: string;
+  [k: string]: unknown;
+}
+
+interface LazadaTransactionData extends LazadaEnvelope {
+  data?: LazadaTransaction[];
+}
+
+export interface LazadaTransactionParams {
+  accessToken: string;
+  /** Mốc đầu/cuối dạng YYYY-MM-DD — Lazada giới hạn mỗi lần gọi ≤30 ngày. */
+  startTime: string;
+  endTime: string;
+  offset?: number;
+  /** Tối đa 500 dòng/trang theo giới hạn Lazada. */
+  limit?: number;
+}
+
+/** Lấy một trang sao kê giao dịch tài chính (mọi loại — trans_type=-1). */
+export async function getTransactionDetails(
+  params: LazadaTransactionParams,
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaTransaction[]> {
+  const data = await callLazada<LazadaTransactionData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.transactionDetails,
+    {
+      access_token: params.accessToken,
+      trans_type: "-1",
+      start_time: params.startTime,
+      end_time: params.endTime,
+      offset: String(params.offset ?? 0),
+      limit: String(params.limit ?? 500),
+    },
+    "finance/transaction/details/get",
+    cfg
+  );
+  return data.data ?? [];
+}
+
 // ---------- Thông tin người bán ----------
 
 /** Lấy thông tin gian hàng (tên, seller_id...) để hiển thị + định danh gian. */

@@ -839,7 +839,8 @@ export default function ChannelsPage() {
                                 </Button>
                                 {/* Gian đã uỷ quyền API thật (TikTok/Shopee/Lazada) →
                                     đồng bộ dữ liệu thật; còn lại dùng "Giả lập đơn".
-                                    "Đồng bộ đối soát" hiện mới có cho TikTok. */}
+                                    "Đồng bộ đối soát" có cho TikTok + Lazada (số phí
+                                    thật từ Finance API); Shopee chờ làm sau. */}
                                 {(c.channelName === "TIKTOK" ||
                                   c.channelName === "SHOPEE" ||
                                   c.channelName === "LAZADA") &&
@@ -859,7 +860,8 @@ export default function ChannelsPage() {
                                       )}
                                       Đồng bộ đơn
                                     </Button>
-                                    {c.channelName === "TIKTOK" && (
+                                    {(c.channelName === "TIKTOK" ||
+                                      c.channelName === "LAZADA") && (
                                       <Button
                                         size="sm"
                                         variant="outline"
