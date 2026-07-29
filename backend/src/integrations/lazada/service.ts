@@ -571,9 +571,32 @@ function emptyAcc(): LazadaFeeAcc {
   };
 }
 
+/**
+ * Đọc số tiền từ sao kê Lazada VỀ SỐ CHUẨN. Lazada VN có thể trả "−1.208,00"
+ * (chấm ngăn nghìn, phẩy thập phân, dấu trừ unicode) — Number() thuần sẽ ra
+ * NaN và nuốt mất phí. Quy tắc: ký tự , hoặc . đứng SAU CÙNG là dấu thập phân.
+ */
+export function parseLazadaAmount(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  let s = String(v ?? "")
+    .trim()
+    .replace(/−/g, "-") // dấu trừ unicode → ASCII
+    .replace(/[^0-9,.\-]/g, ""); // bỏ ký hiệu tiền tệ, khoảng trắng
+  if (!s) return 0;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  if (lastComma > lastDot) {
+    s = s.replace(/\./g, "").replace(",", "."); // kiểu VN/EU: 1.208,50
+  } else {
+    s = s.replace(/,/g, ""); // kiểu US: 1,208.50
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** Phân loại MỘT dòng sao kê vào bộ cộng dồn của đơn. */
 function accumulateLazadaFee(acc: LazadaFeeAcc, trx: LazadaTransaction): void {
-  const amount = Number(trx.amount ?? 0) || 0;
+  const amount = parseLazadaAmount(trx.amount);
   const name = String(trx.fee_name ?? trx.feeName ?? "").toLowerCase();
 
   acc.total += amount;
@@ -630,6 +653,10 @@ export async function syncLazadaSettlements(
   // Gom theo mã đơn trên TOÀN lượt chạy (một đơn có thể nằm vắt qua 2 cửa sổ
   // nếu quyết toán rải ngày) rồi mới ghi DB một thể.
   const byOrder = new Map<string, LazadaFeeAcc>();
+  // Thống kê fee_name thật gặp trong lượt chạy — log cuối lượt để đối chiếu bộ
+  // phân loại với danh mục phí thực tế của Lazada VN (danh mục không có tài
+  // liệu đóng, phải soi từ dữ liệu thật).
+  const byFeeName = new Map<string, { count: number; sum: number }>();
   const fmt = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
 
   let pages = 0;
@@ -653,6 +680,12 @@ export async function syncLazadaSettlements(
         limit: SETTLE_PAGE_SIZE,
       });
       for (const trx of rows) {
+        const feeName = String(trx.fee_name ?? trx.feeName ?? "?");
+        const stat = byFeeName.get(feeName) ?? { count: 0, sum: 0 };
+        stat.count++;
+        stat.sum += parseLazadaAmount(trx.amount);
+        byFeeName.set(feeName, stat);
+
         const orderNo = String(trx.order_no ?? trx.orderNo ?? "").trim();
         if (!orderNo) continue; // dòng không gắn đơn (phí thuê bao, nạp ví...) — bỏ qua ở cấp đơn
         result.transactions++;
@@ -662,6 +695,16 @@ export async function syncLazadaSettlements(
       }
       if (rows.length < SETTLE_PAGE_SIZE) break; // hết trang của cửa sổ này
     }
+  }
+
+  // Log danh mục phí thật gặp được — mỗi lượt chạy một dòng, soi ở log server.
+  if (byFeeName.size > 0) {
+    console.log(
+      `[Lazada Settle] Gian "${channel.shopName}" — fee_name gặp trong sao kê:`,
+      JSON.stringify(
+        [...byFeeName.entries()].map(([name, s]) => ({ name, ...s }))
+      )
+    );
   }
 
   // Ghi số quyết toán vào từng đơn theo (channelId, orderCode).
