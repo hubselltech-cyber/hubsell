@@ -168,14 +168,19 @@ export function LazadaProfitTable({
             // Doanh thu ước tính: số sao kê (itemRevenue) khi đã đối soát;
             // chưa đối soát hiển thị doanh thu gốc của đơn (KHÔNG phải phí ước
             // tính — chỉ là giá bán thật của đơn).
-            const estRevenue = d ? d.itemRevenue : b.revenueGross;
+            // LƯU Ý: đơn CHƯA quyết toán vẫn có thể CÓ bản ghi sao kê MỘT PHẦN
+            // (chi tiết phí vận chuyển đồng bộ sớm từ Order API) — itemRevenue/
+            // actualPayout khi đó còn bằng 0. Vì vậy các cột KẾT QUẢ chỉ tin số
+            // sao kê khi ĐÃ ĐỐI SOÁT THẬT (isSettled), còn lại dùng số của đơn.
+            const settled = b.isSettled && d;
+            const estRevenue = settled ? d.itemRevenue : b.revenueGross;
             // Doanh thu thực tế = Giá trị đơn hàng − giảm giá bằng xu/voucher
             // của Shop. Đã đối soát: cộng sellerVoucher CÓ DẤU của sao kê (âm =
             // sàn trừ); chưa đối soát: số gốc từ đơn (actualRevenue).
-            const actualRevenue = d
+            const actualRevenue = settled
               ? d.itemRevenue + d.sellerVoucher
               : (b.actualRevenue ?? b.revenueGross - b.sellerVoucher);
-            const profit = d ? d.actualPayout - b.costSnapshot : null;
+            const profit = settled ? d.actualPayout - b.costSnapshot : null;
             return (
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
                 <RowCheckTd
