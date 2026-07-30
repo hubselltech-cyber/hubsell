@@ -114,7 +114,9 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
 
   const steps = [
     { key: "cogs", label: "Giá vốn hàng bán", amount: analytics.totalCost },
-    { key: "fee", label: "Phí sàn", amount: analytics.totalPlatformFee },
+    // TOÀN BỘ khoản sàn giữ lại: phí + thuế sàn + voucher/xu + chênh lệch VC
+    // (= Giá trị đơn − "Tổng tiền" sàn báo, cùng thước đo Báo cáo dòng tiền)
+    { key: "fee", label: "Sàn khấu trừ (phí, thuế, voucher)", amount: analytics.totalPlatformFee },
     { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense },
     { key: "other", label: "Chi phí vận hành khác", amount: otherExpense },
   ].filter((st) => st.amount !== 0);

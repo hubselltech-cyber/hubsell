@@ -655,7 +655,10 @@ export interface AnalyticsResponse {
   activeOrderCount: number;
   totalRevenue: number;
   totalCost: number;
-  /** Phí sàn giữ lại trên các đơn Đã giao. Vắng mặt với SALES. */
+  /**
+   * TOÀN BỘ sàn khấu trừ trên đơn của kỳ (phí + thuế + voucher/xu + chênh
+   * lệch VC − trợ giá) = Σ (Giá trị đơn − "Tổng tiền" sàn báo). Vắng với SALES.
+   */
   totalPlatformFee: number;
   grossProfit: number;
   totalOperatingExpense: number;

@@ -1,10 +1,14 @@
 import { Router } from "express";
-import { ReturnStatus, TransactionDirection } from "@prisma/client";
+import { ReturnStatus, ShippingStatus, TransactionDirection } from "@prisma/client";
 import { prisma } from "../prisma";
 import { canSeeFinancials, type AuthRequest } from "../auth";
 import { parseDateRange } from "../date-range";
 import { channelScope, hasChannelFilter } from "../channel-filter";
-import { FEE_SELECT, orderPlatformFee } from "../order-fee";
+// NGUỒN SỐ GỐC dùng chung (SSOT): mọi con số tiền của Tổng quan là SUM các
+// trường computePnlRow — không tự tính totalAmount/InventoryLog riêng nữa
+// (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
+// sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
+import { computePnlRow, fetchPnlOrders } from "./finance";
 
 const router = Router();
 
@@ -13,6 +17,7 @@ const router = Router();
 // khỏi doanh thu, chỉ đếm ở ô "Hoàn/Trả". Nhờ vậy phễu là một phân hoạch loại
 // trừ nhau: Σ(ô trạng thái) + Hoàn/Trả = tổng đơn (hết cảnh đếm trùng).
 const RETURNING_IN = { in: [ReturnStatus.AWAITING, ReturnStatus.DAMAGED] };
+const RETURNING_SET = new Set<ReturnStatus>(RETURNING_IN.in);
 
 // Đổi Date → chuỗi "yyyy-mm-dd" theo giờ máy chủ
 function toDateKey(d: Date): string {
@@ -32,10 +37,11 @@ function toDateKey(d: Date): string {
 // Mọi chỉ số (doanh thu, giá vốn, phí sàn, lợi nhuận) cùng một hệ quy chiếu
 // để sơ đồ bóc tách trừ dọc ra đúng con số lợi nhuận — số liệu QUYẾT TOÁN
 // theo đơn Đã giao đã có trang Báo cáo dòng tiền lo.
-//   - Doanh thu       = Σ totalAmount đơn không hủy          (ADMIN + SALES)
-//   - Giá vốn         = Σ (số lượng đã trừ kho × costPrice)   (chỉ ADMIN)
-//     (dựa vào InventoryLog trừ kho gắn với đơn — đơn cũ không có log thì giá vốn = 0)
-//   - Lợi nhuận dự kiến = Doanh thu − Giá vốn − Phí sàn − Chi phí vận hành (chỉ ADMIN)
+//   - Doanh thu       = Σ revenueGross (Giá trị đơn hàng)      (ADMIN + SALES)
+//   - Sàn khấu trừ    = Σ (revenueGross − platformRevenue)      (chỉ ADMIN)
+//   - Giá vốn         = Σ costSnapshot (cùng orderCost SSOT)    (chỉ ADMIN)
+//   - Lợi nhuận thuần = Doanh thu − Giá vốn − Sàn khấu trừ − Chi phí vận hành
+//     (= Σ profitAfterTax − chi phí vận hành — khớp Báo cáo dòng tiền)
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
@@ -64,52 +70,36 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // 1) Toàn bộ đơn PHÁT SINH trong kỳ, TRỪ đơn hủy VÀ đơn đang hoàn/trả.
     // Đơn hoàn không được coi là bán thành công → không tính vào doanh thu/giá
     // vốn/chuỗi ngày (thống nhất với ô "Hoàn/Trả" ở phễu bên dưới).
-    const activeOrders = await prisma.order.findMany({
-      where: {
-        channel: scope,
-        shippingStatus: { not: "CANCELLED" },
-        NOT: { returnStatus: RETURNING_IN },
-        createdAt: range,
-      },
-      select: {
-        id: true,
-        totalAmount: true,
-        createdAt: true,
-        ...FEE_SELECT,
-      },
-    });
+    // NGUỒN SỐ: computePnlRow — cùng tập đơn + cùng công thức với Lãi/Lỗ
+    // Thực Hiện và Báo cáo dòng tiền.
+    const activeRows = (await fetchPnlOrders(scope, range))
+      .map(computePnlRow)
+      .filter(
+        (r) =>
+          r.shippingStatus !== ShippingStatus.CANCELLED &&
+          !RETURNING_SET.has(r.returnStatus)
+      );
 
-    const totalRevenue = activeOrders.reduce(
-      (sum, o) => sum + Number(o.totalAmount),
-      0
-    );
+    // Doanh thu GMV phát sinh = Σ "Giá trị đơn hàng" (doanh thu gốc) — khớp
+    // thẻ "Tổng giá trị sản phẩm" của Báo cáo dòng tiền cùng kỳ lọc.
+    const totalRevenue = activeRows.reduce((sum, r) => sum + r.revenueGross, 0);
 
     /*
-     * PHÍ SÀN — khoản sàn giữ lại trên mỗi đơn.
-     * Trước đây trang Tổng quan bỏ qua hẳn khoản này, nên Lợi nhuận thuần ở đây
-     * cao hơn thực tế và lệch hẳn với trang Báo cáo dòng tiền. Nay dùng chung
-     * đúng một công thức với bên đó (src/order-fee.ts).
+     * SÀN KHẤU TRỪ — TOÀN BỘ khoản sàn giữ lại trên mỗi đơn = Giá trị đơn −
+     * "Tổng tiền" sàn báo (phí + thuế + voucher/xu + chênh lệch VC + nạp ví −
+     * trợ giá; đơn chưa quyết toán chỉ gồm voucher đã biết — không ước %).
+     * Nhờ vậy chuỗi trừ dọc của Tổng quan khớp thác nước Báo cáo dòng tiền.
      */
     const totalPlatformFee = seesFinancials
-      ? activeOrders.reduce((sum, o) => sum + orderPlatformFee(o).fee, 0)
+      ? activeRows.reduce((sum, r) => sum + (r.revenueGross - r.platformRevenue), 0)
       : 0;
 
-    // 2) Giá vốn: các log TRỪ kho thuộc những đơn đang tính.
-    // Người không được xem tài chính thì bỏ hẳn truy vấn này — vừa khỏi tốn công
-    // vừa chắc chắn không có đường nào rò con số ra ngoài.
-    const activeIds = activeOrders.map((o) => o.id);
-    const deductionLogs = seesFinancials && activeIds.length
-      ? await prisma.inventoryLog.findMany({
-          where: { orderId: { in: activeIds }, changeQuantity: { lt: 0 } },
-          include: { product: { select: { costPrice: true } } },
-        })
-      : [];
-
-    const totalCost = deductionLogs.reduce(
-      (sum, log) =>
-        sum + Math.abs(log.changeQuantity) * Number(log.product.costPrice),
-      0
-    );
+    // 2) Giá vốn = Σ costSnapshot (OrderItem.costPriceAtSale, fallback log trừ
+    // kho) — cùng công thức orderCost với mọi báo cáo tài chính. Người không
+    // được xem tài chính giữ 0 để không rò số.
+    const totalCost = seesFinancials
+      ? activeRows.reduce((sum, r) => sum + r.costSnapshot, 0)
+      : 0;
 
     const grossProfit = totalRevenue - totalCost;
 
@@ -144,26 +134,24 @@ router.get("/", async (req: AuthRequest, res, next) => {
     //    ngày gần nhất. Trần 90 điểm để khoảng dài (cả năm) không làm vỡ trục X.
     const MAX_POINTS = 90;
     const revenueMap = new Map<string, number>();
-    const dayOfOrder = new Map<string, string>(); // orderId → "yyyy-mm-dd"
-    for (const o of activeOrders) {
-      const key = toDateKey(o.createdAt);
-      dayOfOrder.set(o.id, key);
-      revenueMap.set(key, (revenueMap.get(key) ?? 0) + Number(o.totalAmount));
+    for (const r of activeRows) {
+      const key = toDateKey(r.createdAt);
+      revenueMap.set(key, (revenueMap.get(key) ?? 0) + r.revenueGross);
     }
 
     /*
-     * CHI PHÍ THEO NGÀY = giá vốn các đơn phát sinh trong ngày + chi phí vận
-     * hành ghi nhận trong ngày — cùng hệ quy chiếu GMV với chuỗi doanh thu
-     * ngay phía trên để hai cột trong biểu đồ so được với nhau.
+     * CHI PHÍ THEO NGÀY = giá vốn các đơn phát sinh trong ngày (costSnapshot,
+     * cùng nguồn tổng phía trên) + chi phí vận hành ghi nhận trong ngày —
+     * cùng hệ quy chiếu GMV với chuỗi doanh thu để hai cột so được với nhau.
      */
     const costMap = new Map<string, number>();
     const addCost = (key: string, amount: number) =>
       costMap.set(key, (costMap.get(key) ?? 0) + amount);
 
-    for (const log of deductionLogs) {
-      const key = log.orderId ? dayOfOrder.get(log.orderId) : undefined;
-      if (!key) continue;
-      addCost(key, Math.abs(log.changeQuantity) * Number(log.product.costPrice));
+    if (seesFinancials) {
+      for (const r of activeRows) {
+        if (r.costSnapshot) addCost(toDateKey(r.createdAt), r.costSnapshot);
+      }
     }
     for (const e of expenses) {
       addCost(toDateKey(e.expenseDate), Number(e.amount));
@@ -251,56 +239,52 @@ router.get("/", async (req: AuthRequest, res, next) => {
      */
     const previous = prevRange
       ? await (async () => {
-          const [rev, cnt] = await Promise.all([
-            prisma.order.aggregate({
-              _sum: { totalAmount: true },
-              where: {
-                channel: scope,
-                shippingStatus: { not: "CANCELLED" },
-                NOT: { returnStatus: RETURNING_IN },
-                createdAt: prevRange,
-              },
-            }),
+          // Cùng công thức doanh thu với kỳ hiện tại (Σ revenueGross qua
+          // computePnlRow) — so sánh mới cùng thước đo, hết lệch giả.
+          const [prevRows, cnt] = await Promise.all([
+            fetchPnlOrders(scope, prevRange),
             prisma.order.count({
               where: { channel: scope, createdAt: prevRange },
             }),
           ]);
-          return {
-            totalRevenue: Number(rev._sum.totalAmount ?? 0),
-            orderCount: cnt,
-          };
+          const prevRevenue = prevRows
+            .map(computePnlRow)
+            .filter(
+              (r) =>
+                r.shippingStatus !== ShippingStatus.CANCELLED &&
+                !RETURNING_SET.has(r.returnStatus)
+            )
+            .reduce((s, r) => s + r.revenueGross, 0);
+          return { totalRevenue: prevRevenue, orderCount: cnt };
         })()
       : null;
 
     // 4) Đóng góp của TỪNG GIAN HÀNG (không tính đơn đã hủy).
     //    Gom theo channelId chứ không theo tên sàn: hai gian cùng nằm trên
     //    Shopee phải là hai dòng riêng thì chủ shop mới biết gian nào đang gánh
-    //    doanh thu, gian nào đang lỗ.
-    const byChannel = await prisma.order.groupBy({
-      by: ["channelId"],
-      _count: { _all: true },
-      _sum: { totalAmount: true },
-      where: {
-        channel: scope,
-        shippingStatus: { not: "CANCELLED" },
-        NOT: { returnStatus: RETURNING_IN },
-        createdAt: range,
-      },
-    });
+    //    doanh thu, gian nào đang lỗ. Gom từ activeRows (SSOT) — cùng công
+    //    thức doanh thu với ô tổng phía trên, không groupBy totalAmount riêng.
+    const byChannelAgg = new Map<string, { count: number; revenue: number }>();
+    for (const r of activeRows) {
+      const b = byChannelAgg.get(r.channelId) ?? { count: 0, revenue: 0 };
+      b.count += 1;
+      b.revenue += r.revenueGross;
+      byChannelAgg.set(r.channelId, b);
+    }
     const channels = await prisma.channel.findMany({
       where: { userId: ownerId },
       select: { id: true, channelName: true, shopName: true },
     });
     const channelById = new Map(channels.map((c) => [c.id, c]));
-    const ordersByChannel = byChannel
-      .map((g) => {
-        const c = channelById.get(g.channelId);
+    const ordersByChannel = [...byChannelAgg.entries()]
+      .map(([channelId, g]) => {
+        const c = channelById.get(channelId);
         return {
-          channelId: g.channelId,
+          channelId,
           channelName: c?.channelName ?? "KHÁC",
           shopName: c?.shopName ?? "Gian hàng đã xoá",
-          count: g._count._all,
-          revenue: Number(g._sum.totalAmount ?? 0),
+          count: g.count,
+          revenue: g.revenue,
         };
       })
       .sort((a, b) => b.count - a.count);
@@ -311,7 +295,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // tab Network là đọc được nguyên số liệu.
     if (!seesFinancials) {
       res.json({
-        activeOrderCount: activeOrders.length,
+        activeOrderCount: activeRows.length,
         totalRevenue,
         // Bỏ trường cost khỏi từng điểm — SALES chỉ được thấy đường doanh thu
         revenueByDay: revenueByDay.map(({ date, label, revenue }) => ({
@@ -329,7 +313,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
-      activeOrderCount: activeOrders.length,
+      activeOrderCount: activeRows.length,
       totalRevenue,
       totalCost,
       totalPlatformFee,

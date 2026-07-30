@@ -237,8 +237,9 @@ type PnlOrder = Prisma.OrderGetPayload<{
   };
 }>;
 
-/** TẬP ĐƠN ĐẦU VÀO dùng chung: cùng WHERE, cùng include, cùng trần an toàn. */
-function fetchPnlOrders(
+/** TẬP ĐƠN ĐẦU VÀO dùng chung: cùng WHERE, cùng include, cùng trần an toàn.
+ * EXPORT cho Tổng quan (/api/analytics) + cash-flow dùng chung SSOT. */
+export function fetchPnlOrders(
   scope: ChannelScope,
   range?: DateRangeFilter,
   shippingStatus?: ShippingStatus
@@ -268,7 +269,8 @@ function fetchPnlOrders(
 type PnlRow = ReturnType<typeof computePnlRow>;
 
 // Bóc toàn bộ số liệu tài chính của MỘT đơn — công thức gốc duy nhất.
-function computePnlRow(o: PnlOrder) {
+// EXPORT cho Tổng quan (/api/analytics) dùng chung SSOT, không tự tính riêng.
+export function computePnlRow(o: PnlOrder) {
   const { cost, missingCostPrice } = orderCost(o);
 
   // ---- DOANH THU GỐC & VOUCHER SHOP ----
@@ -342,7 +344,10 @@ function computePnlRow(o: PnlOrder) {
     id: o.id,
     orderCode: o.orderCode,
     shippingStatus: o.shippingStatus,
+    // Trục hoàn/trả — Tổng quan cần để loại đơn đang hoàn khỏi doanh thu.
+    returnStatus: o.returnStatus,
     isSettled: o.isSettled,
+    channelId: o.channelId,
     channelName: o.channel.channelName,
     shopName: o.channel.shopName,
     createdAt: o.createdAt,
@@ -518,23 +523,17 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 router.get("/cash-flow", async (req: AuthRequest, res, next) => {
   try {
     const scope = channelScope(req);
-    const [channels, orders, withdrawals, opTxns] = await Promise.all([
+    const [channels, pnlOrders, withdrawals, opTxns] = await Promise.all([
       prisma.channel.findMany({
         where: scope,
         orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
         select: { id: true, channelName: true, shopName: true },
       }),
-      prisma.order.findMany({
-        where: { channel: scope },
-        select: {
-          channelId: true,
-          totalAmount: true,
-          shippingStatus: true,
-          returnStatus: true,
-          actualPayout: true,
-          ...FEE_SELECT,
-        },
-      }),
+      // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức computePnlRow với mọi
+      // báo cáo (chốt SSOT) — hết cảnh cash-flow tự tính totalAmount − phí
+      // riêng rồi lệch với thẻ Doanh thu (Lazada: totalAmount là giá GỐC
+      // chưa trừ voucher, tự trừ phí ước % là bịa số).
+      fetchPnlOrders(scope),
       // Tổng tiền ĐÃ RÚT khỏi ví sàn về ngân hàng (thành công), gom theo gian.
       prisma.walletWithdrawal.groupBy({
         by: ["channelId"],
@@ -580,22 +579,22 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
     //   2) Đã giao nhưng chưa quyết toán → "chờ đối soát".
     //   3) Còn lại (đang giao/chuẩn bị, hoặc đang hoàn mà CHƯA quyết toán) →
     //      tiền vẫn đang đi đường/chưa chắc → "đang đi đường".
-    for (const o of orders) {
-      const row = byChannel.get(o.channelId);
+    // Tiền của MỖI đơn = platformRevenue ("Tổng tiền" sàn báo: payout THẬT
+    // khi đã quyết toán / số API đơn hàng khi chờ — không ước phí %), khớp
+    // từng xu với thẻ Doanh thu của Báo cáo dòng tiền.
+    for (const r of pnlOrders.map(computePnlRow)) {
+      const row = byChannel.get(r.channelId);
       if (!row) continue;
-      if (o.shippingStatus === ShippingStatus.CANCELLED) continue; // hủy → bỏ
+      if (r.shippingStatus === ShippingStatus.CANCELLED) continue; // hủy → bỏ
 
-      const { fee } = orderPlatformFee(o);
-      const net = Number(o.totalAmount) - fee; // dòng tiền dự kiến của đơn
-
-      if (o.shippingStatus === ShippingStatus.DELIVERED && o.isSettled) {
-        const payout = Number(o.actualPayout);
-        row.settled += payout > 0 ? payout : net; // tiền đã về ví
-      } else if (o.shippingStatus === ShippingStatus.DELIVERED) {
-        row.pendingSettle += net; // đã giao, chờ sàn quyết toán
+      const money = r.platformRevenue;
+      if (r.shippingStatus === ShippingStatus.DELIVERED && r.isSettled) {
+        row.settled += money; // tiền đã về ví (số THẬT sao kê)
+      } else if (r.shippingStatus === ShippingStatus.DELIVERED) {
+        row.pendingSettle += money; // đã giao, chờ sàn quyết toán
       } else {
         // đang giao / chuẩn bị, hoặc đang hoàn (chưa quyết toán)
-        row.inTransit += net;
+        row.inTransit += money;
       }
     }
 
