@@ -475,8 +475,14 @@ export interface PnlDetailRow {
   costSnapshot: number;
   netRevenue: number;
   actualPayout: number;
+  /**
+   * DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo: đã đối soát =
+   * actualPayout (đã cấn trừ hết phí/thuế/xu); chưa = số từ API đơn hàng
+   * (tạm tính). Cột "Doanh thu trên sàn" + Lợi nhuận (= trường này − giá vốn).
+   */
+  platformRevenue: number;
   profit: number;
-  /** Thuế sàn TMĐT: số THẬT sàn trích khi đã quyết toán / ước tính % khi chưa. */
+  /** Thuế sàn TMĐT: số THẬT sàn trích khi đã quyết toán / 0 khi chờ đối soát. */
   platformTax: number;
   /** profit − platformTax (thuế bổ sung của kỳ nằm ở summary, không chia dòng). */
   profitAfterTax: number;

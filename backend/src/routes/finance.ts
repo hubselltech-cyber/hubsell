@@ -325,6 +325,16 @@ function computePnlRow(o: PnlOrder) {
   const platformTax = o.isSettled ? Number(o.taxWithheld) : 0;
   const profitAfterTax = profit - platformTax;
 
+  // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo (ảnh phân rã Seller
+  // Center 30/07): đơn ĐÃ đối soát = actualPayout (giá trị sản phẩm đã bị sàn
+  // cấn trừ hết phí/thuế/xu — 180.610 của đơn 527296226771786); đơn CHƯA =
+  // số từ API đơn hàng (đã trừ voucher đã biết), UI gắn nhãn tạm tính.
+  // Cột "Doanh thu trên sàn" và công thức Lợi nhuận = trường này − giá vốn.
+  const platformRevenue =
+    o.isSettled && Number(o.actualPayout) !== 0
+      ? Number(o.actualPayout)
+      : actualRevenue;
+
   return {
     id: o.id,
     orderCode: o.orderCode,
@@ -367,6 +377,8 @@ function computePnlRow(o: PnlOrder) {
     costSnapshot: cost,
     netRevenue,
     actualPayout: Number(o.actualPayout),
+    // "Tổng tiền" sàn báo — nguồn duy nhất của cột "Doanh thu trên sàn"
+    platformRevenue,
     profit,
     // Thuế sàn TMĐT (số thật khi đã quyết toán / 0 khi chờ đối soát) + lãi sau thuế
     platformTax,
