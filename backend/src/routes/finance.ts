@@ -97,6 +97,8 @@ function orderCost(order: DeliveredOrder): {
 // chung cho /realized-pnl và /analytics để hai màn hình ước thuế sàn trên cùng
 // một cơ sở. Ưu tiên tổng dòng sản phẩm; đơn cũ chưa có OrderItem thì suy từ
 // totalAmount (đã trừ voucher shop) cộng ngược sellerVoucher.
+// LƯU Ý: riêng LAZADA giá dòng hàng là paid_price ĐÃ trừ voucher shop —
+// computePnlRow cộng ngược lại từ sao kê/totalAmount, không xử lý ở đây.
 function orderGrossRevenue(order: {
   items: { quantity: number; price: Prisma.Decimal }[];
   totalAmount: Prisma.Decimal;
@@ -268,7 +270,28 @@ type PnlRow = ReturnType<typeof computePnlRow>;
 // Bóc toàn bộ số liệu tài chính của MỘT đơn — công thức gốc duy nhất.
 function computePnlRow(o: PnlOrder) {
   const { cost, missingCostPrice } = orderCost(o);
-  const revenueGross = orderGrossRevenue(o);
+
+  // ---- DOANH THU GỐC & VOUCHER SHOP ----
+  // LAZADA khác Shopee/TikTok: OrderItem.price là paid_price ĐÃ trừ voucher
+  // shop, còn totalAmount (order.price) là giá GỐC CHƯA trừ (đối chiếu đơn
+  // thật 527296226771786: totalAmount 248.000 = "Item Price Credit" sao kê;
+  // Σ items 241.676 = 248.000 − 6.324 voucher). Order.sellerVoucher của
+  // Lazada luôn 0 (xem chú thích syncLazadaSettlements) nên bóc tại đây:
+  //  - ĐÃ đối soát: itemRevenue + sellerVoucher CÓ DẤU của sao kê — đúng số
+  //    bảng tab Lazada hiển thị, thẻ Tổng SUM lên là khớp từng xu.
+  //  - CHƯA đối soát: suy từ totalAmount − Σ paid_price (phần shop giảm giá).
+  let revenueGross = orderGrossRevenue(o);
+  let sellerVoucher = Number(o.sellerVoucher);
+  if (o.channel.channelName === "LAZADA") {
+    const lz = o.lazadaSettlement;
+    if (o.isSettled && lz && Number(lz.itemRevenue) !== 0) {
+      revenueGross = Number(lz.itemRevenue);
+      sellerVoucher = -Number(lz.sellerVoucher); // sao kê âm → magnitude dương
+    } else {
+      sellerVoucher = Math.max(Number(o.totalAmount) - revenueGross, 0);
+      revenueGross += sellerVoucher; // trả cột "Giá trị đơn hàng" về giá gốc
+    }
+  }
 
   // Gộp phí theo bucket cột. Chưa quyết toán → dồn phí tạm tính vào cột
   // "cố định + thanh toán", các bucket còn lại để 0 (chưa có số thực).
@@ -277,7 +300,6 @@ function computePnlRow(o: PnlOrder) {
     : Number(o.platformFee);
   const feeService = o.isSettled ? Number(o.serviceFee) : 0;
   const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
-  const sellerVoucher = Number(o.sellerVoucher);
   const platformSubsidy = Number(o.platformSubsidy);
   const shippingFeeDiff = Number(o.shippingFeeDiff);
 
@@ -296,10 +318,12 @@ function computePnlRow(o: PnlOrder) {
   const profit = netRevenue - cost;
 
   // Thuế sàn TMĐT của đơn: quyết toán rồi dùng số THẬT sàn đã trích
-  // (taxWithheld); chưa thì ước tính % cấu hình trên doanh thu gốc.
+  // (taxWithheld); chưa thì ước tính % cấu hình trên DOANH THU THỰC TẾ (sau
+  // voucher shop) — đối chiếu sao kê thật: 3.625 = 1,5% × 241.676 (Lazada
+  // trích trên số SAU giảm giá, không phải giá gốc 248.000).
   const platformTax = o.isSettled
     ? Number(o.taxWithheld)
-    : platformTaxOn(revenueGross);
+    : platformTaxOn(actualRevenue);
   const profitAfterTax = profit - platformTax;
 
   return {
@@ -2143,7 +2167,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "platformTax",
               label: "Thuế sàn TMĐT (GTGT + TNCN)",
-              hint: `Đơn đã quyết toán: ${Math.round(platformTaxActual).toLocaleString("vi-VN")}đ thuế GTGT + TNCN sàn ĐÃ trích thật theo đối soát (khoản này đã trừ sẵn trong tiền về ví nên Lợi nhuận không trừ lại). Đơn chưa quyết toán: ước tính ${PLATFORM_TAX_RATE * 100}% trên doanh thu gốc.`,
+              hint: `Đơn đã quyết toán: ${Math.round(platformTaxActual).toLocaleString("vi-VN")}đ thuế GTGT + TNCN sàn ĐÃ trích thật theo đối soát (khoản này đã trừ sẵn trong tiền về ví nên Lợi nhuận không trừ lại). Đơn chưa quyết toán: ước tính ${PLATFORM_TAX_RATE * 100}% trên doanh thu thực tế (sau voucher/xu Shop — đúng cơ sở sàn trích thật).`,
               amount: platformTaxTotal,
               percent: pct(platformTaxTotal, totalCostWithTax),
             },

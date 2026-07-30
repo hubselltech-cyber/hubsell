@@ -294,10 +294,20 @@ export function LazadaProfitTable({
                   </td>
                 ))}
 
-                {/* Thuế & Kết quả */}
+                {/* Thuế & Kết quả. Đơn chưa đối soát: "Voucher người bán" hiện
+                    số TẠM TÍNH (b.sellerVoucher — suy từ giá gốc − giá khách
+                    trả, đúng trường thẻ Tổng Báo cáo dòng tiền đang SUM). */}
                 {TAX_COLS.map(([label, pick]) => (
                   <td key={label} className={cn(cell, BLOCK.result, "text-right")}>
-                    {d ? <Signed value={pick(d)} /> : <span className="text-slate-300">—</span>}
+                    {provisional && label === "Voucher người bán" && b.sellerVoucher ? (
+                      <Provisional>
+                        <Signed value={-b.sellerVoucher} />
+                      </Provisional>
+                    ) : settled ? (
+                      <Signed value={pick(d)} />
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
                   </td>
                 ))}
                 {/* Doanh thu ước tính — xanh, nhóm doanh thu */}

@@ -928,10 +928,13 @@ export async function syncLazadaSettlements(
       Math.max(acc.shipFee, 0) + Math.max(acc.shipFeeCustomer, 0) +
       Math.max(acc.shipDiscountPlatform, 0) + Math.max(acc.shipSubsidySeller, 0) +
       Math.max(acc.shipFeeAdjustment, 0);
+    // LZD đồng tài trợ: phần DƯƠNG là trợ giá (vào platformSubsidy bên dưới),
+    // phần ÂM (sàn thu hồi) là phí — gom vào đây kẻo rơi khỏi mọi bucket gộp.
     const otherPlatformFees = -(
       acc.feeInfrastructure + acc.feeFreeshipMax + acc.feeCashbackMax +
       acc.feeSponsoredDiscovery + acc.feeLazadaBonus + acc.feeBuyerReview +
-      acc.feeLazpick + acc.feeCampaign + acc.feeOther
+      acc.feeLazpick + acc.feeCampaign + acc.feeOther +
+      Math.min(acc.bonusLzdCofund, 0)
     );
 
     await prisma.order.update({
@@ -943,9 +946,13 @@ export async function syncLazadaSettlements(
         paymentFee: -(acc.feePayment + acc.feeOrderProcessing),
         serviceFee: otherPlatformFees,
         affiliateFee: -acc.feeAffiliate,
-        // Voucher người bán ("Giảm giá từ Cửa hàng") KHÔNG cộng vào cột gộp:
-        // giá đơn (totalAmount) Lazada trả đã trừ sẵn giảm giá — cộng nữa là
-        // trừ trùng trong công thức chung. Số chi tiết nằm ở LazadaOrderSettlement.
+        // Voucher người bán ("Giảm giá từ Cửa hàng"/LazCoins) KHÔNG ghi vào
+        // cột gộp: orderPlatformFee cộng sellerVoucher như một khoản phí, mà
+        // totalAmount Lazada là giá GỐC chưa trừ giảm giá (đối chiếu đơn thật
+        // 527296226771786: totalAmount 248.000 = Item Price Credit sao kê) —
+        // ghi vào đây sẽ lệch các trang dùng totalAmount − orderPlatformFee.
+        // Số thật nằm ở LazadaOrderSettlement.sellerVoucher; computePnlRow
+        // (routes/finance.ts) tự bóc lên dòng "Voucher trợ giá của shop".
         sellerVoucher: 0,
         shippingFeeActual: -shipNeg,
         shippingFeeQuoted: shipPos,
