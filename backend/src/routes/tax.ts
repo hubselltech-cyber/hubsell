@@ -9,7 +9,9 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
-import { FEE_SELECT, orderPlatformFee } from "../order-fee";
+// NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
+// bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
+import { computePnlRow, fetchPnlOrders } from "./finance";
 import {
   additionalTaxOn,
   getShopTaxConfig,
@@ -109,23 +111,11 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     const ownerId = req.ownerId!;
     const range = parseDateRange(req.query);
 
-    const [cfg, orders, logs] = await Promise.all([
+    const [cfg, pnlOrders, logs] = await Promise.all([
       getShopTaxConfig(ownerId),
-      // Đơn CÓ DOANH THU trong kỳ (loại đơn hủy) — cơ sở tính thuế sàn.
-      prisma.order.findMany({
-        where: {
-          channel: channelScope(req),
-          createdAt: range,
-          shippingStatus: { not: ShippingStatus.CANCELLED },
-        },
-        select: {
-          totalAmount: true,
-          taxWithheld: true,
-          ...FEE_SELECT,
-          items: { select: { quantity: true, costPriceAtSale: true } },
-        },
-        take: 5000, // trần an toàn cùng tinh thần realized-pnl
-      }),
+      // Đơn trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính (đơn hủy
+      // lọc ở vòng dưới; cùng trần an toàn 2000 đơn của fetchPnlOrders).
+      fetchPnlOrders(channelScope(req), range),
       prisma.invoiceLog.findMany({
         where: { ownerId, createdAt: range },
         orderBy: { createdAt: "desc" },
@@ -147,28 +137,28 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     ]);
 
     // ---- Thuế sàn TMĐT trích hộ ----
-    // Đơn ĐÃ quyết toán: dùng số THỰC sàn đã khấu trừ (Order.taxWithheld).
-    // Đơn CHƯA quyết toán: ước tính theo % cấu hình trên doanh thu gốc.
+    // Đơn ĐÃ quyết toán: dùng số THỰC sàn đã khấu trừ (platformTax của dòng).
+    // Đơn CHƯA quyết toán: ước tính % luật trên doanh thu thực tế (sau
+    // voucher) — riêng trang thuế được ước vì bản chất là DỰ PHÒNG nghĩa vụ.
+    const rows = pnlOrders
+      .map(computePnlRow)
+      .filter((r) => r.shippingStatus !== ShippingStatus.CANCELLED);
+
     let grossRevenue = 0;
     let profit = 0; // lợi nhuận ước tính của kỳ — cơ sở thuế bổ sung cho DN
     let platformTaxActual = 0;
     let estimateBase = 0; // doanh thu của phần đơn chưa quyết toán
     let settledCount = 0;
 
-    for (const o of orders) {
-      const revenue = Number(o.totalAmount);
-      grossRevenue += revenue;
-      const { fee } = orderPlatformFee(o);
-      const cost = o.items.reduce(
-        (s, it) => s + it.quantity * Number(it.costPriceAtSale),
-        0
-      );
-      profit += revenue - fee - cost;
-      if (o.isSettled) {
-        platformTaxActual += Number(o.taxWithheld);
+    for (const r of rows) {
+      grossRevenue += r.revenueGross;
+      // Lợi nhuận cùng công thức chốt: Doanh thu thực tế − giá vốn.
+      profit += r.profitAfterTax;
+      if (r.isSettled) {
+        platformTaxActual += r.platformTax;
         settledCount += 1;
       } else {
-        estimateBase += revenue;
+        estimateBase += r.platformRevenue; // doanh thu thực tế (sau voucher)
       }
     }
     const platformTaxEstimated = platformTaxOn(estimateBase);
@@ -177,7 +167,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     res.json({
       settings: serializeSettings(cfg),
       summary: {
-        orderCount: orders.length,
+        orderCount: rows.length,
         settledCount,
         grossRevenue,
         platformTaxActual, // sàn ĐÃ trích (số quyết toán thật)

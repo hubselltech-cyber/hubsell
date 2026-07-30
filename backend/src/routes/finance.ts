@@ -19,7 +19,6 @@ import {
   hasChannelFilter,
   type ChannelScope,
 } from "../channel-filter";
-import { FEE_SELECT, orderPlatformFee } from "../order-fee";
 import {
   additionalTaxOn,
   getShopTaxConfig,
@@ -115,72 +114,56 @@ function pct(amount: number, total: number): number {
   return Math.round((amount / total) * 10000) / 100;
 }
 
-// Lấy đơn Đã giao trong phạm vi kênh đang xem, kèm dữ liệu giá vốn
-function fetchDeliveredOrders(scope: ChannelScope, range?: DateRangeFilter) {
-  return prisma.order.findMany({
-    where: {
-      channel: scope,
-      shippingStatus: "DELIVERED",
-      createdAt: range,
-    },
-    orderBy: { createdAt: "desc" },
-    include: {
-      channel: { select: { channelName: true, shopName: true } },
-      items: true,
-      inventoryLogs: {
-        where: { changeQuantity: { lt: 0 } },
-        include: { product: { select: { costPrice: true } } },
-      },
-    },
-  });
-}
-
 // Đổi Date → "yyyy-mm-dd"
 function toDateKey(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-// GET /api/finance/orders-analysis — quét đơn Đã giao.
-// Lợi nhuận đơn = Doanh thu − Phí sàn − Tổng giá vốn. ≤ 0 ⇒ ĐƠN LỖ.
+// GET /api/finance/orders-analysis — quét đơn Đã giao tìm ĐƠN LỖ.
+// NGUỒN SỐ: computePnlRow (SSOT) — Lợi nhuận đơn = Doanh thu thực tế
+// (platformRevenue, "Tổng tiền" sàn báo) − Giá vốn; Sàn khấu trừ = Giá trị
+// đơn − Doanh thu thực tế. ≤ 0 ⇒ ĐƠN LỖ.
 // Đơn chứa SKU chưa cấu hình giá vốn ⇒ kèm warning để chủ shop đi nhập giá vốn.
 router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   try {
-    const delivered = await fetchDeliveredOrders(
+    const delivered = await fetchPnlOrders(
       channelScope(req),
-      parseDateRange(req.query)
+      parseDateRange(req.query),
+      ShippingStatus.DELIVERED
     );
 
     const analyzed = delivered.map((o) => {
-      const revenue = Number(o.totalAmount);
-      const { fee: platformFee, isSettled } = orderPlatformFee(o);
-      const { cost, missingCostPrice } = orderCost(o);
-      const profit = revenue - platformFee - cost;
+      const r = computePnlRow(o);
+      const revenue = r.revenueGross;
+      const platformFee = r.revenueGross - r.platformRevenue; // toàn bộ sàn khấu trừ
+      const cost = r.costSnapshot;
+      const profit = r.profitAfterTax; // = Doanh thu thực tế − giá vốn
       const isLoss = profit <= 0;
 
       // BÓC TÁCH LÝ DO LỖ:
       // - COST: bán dưới giá vốn (lỗ ngay từ khâu nhập hàng/định giá)
-      // - FEE : bán trên giá vốn nhưng phí sàn ăn hết lãi
+      // - FEE : bán trên giá vốn nhưng sàn khấu trừ ăn hết lãi
       let lossReason: "COST" | "FEE" | null = null;
-      if (isLoss && !missingCostPrice) {
+      if (isLoss && !r.missingCostPrice) {
         lossReason = revenue < cost ? "COST" : "FEE";
       }
 
       return {
-        id: o.id,
-        orderCode: o.orderCode,
-        customerName: o.customerName,
-        channelName: o.channel.channelName,
-        shopName: o.channel.shopName,
-        createdAt: o.createdAt,
+        id: r.id,
+        orderCode: r.orderCode,
+        customerName: r.customerName,
+        channelName: r.channelName,
+        shopName: r.shopName,
+        createdAt: r.createdAt,
         revenue,
         platformFee,
-        isSettled, // phí đã là số quyết toán hay còn tạm tính
+        isSettled: r.isSettled, // khấu trừ đã là số quyết toán hay còn chờ đối soát
         cost,
         profit, // âm hoặc 0 = lỗ
         isLoss,
         lossReason,
-        ...(missingCostPrice ? { warning: "Chưa nhập giá vốn" } : {}),
+        ...(r.missingCostPrice ? { warning: "Chưa nhập giá vốn" } : {}),
       };
     });
 
@@ -231,7 +214,8 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 type PnlOrder = Prisma.OrderGetPayload<{
   include: {
     channel: { select: { channelName: true; shopName: true } };
-    items: true;
+    // Kèm SKU kho gốc + ảnh để /sku-pnl gom nhóm — cùng tập đơn SSOT.
+    items: { include: { product: { select: { skuCode: true; imageUrl: true } } } };
     inventoryLogs: { include: { product: { select: { costPrice: true } } } };
     lazadaSettlement: true;
   };
@@ -253,7 +237,7 @@ export function fetchPnlOrders(
     orderBy: { createdAt: "desc" },
     include: {
       channel: { select: { channelName: true, shopName: true } },
-      items: true,
+      items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
       inventoryLogs: {
         where: { changeQuantity: { lt: 0 } },
         include: { product: { select: { costPrice: true } } },
@@ -893,17 +877,9 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
 
     const [orders, variableExpenses] = await Promise.all([
-      prisma.order.findMany({
-        where: {
-          channel: channelScope(req),
-          shippingStatus: "DELIVERED",
-          items: { some: {} }, // chỉ đơn có chi tiết dòng hàng
-          createdAt: range,
-        },
-        include: {
-          items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
-        },
-      }),
+      // NGUỒN SỐ GỐC: cùng tập đơn SSOT (đơn không có dòng hàng thì vòng phân
+      // bổ bên dưới tự bỏ qua — không cần filter riêng).
+      fetchPnlOrders(channelScope(req), range, ShippingStatus.DELIVERED),
       prisma.operatingExpense.findMany({
         where: {
           userId: ownerId,
@@ -929,7 +905,10 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
     const bySku = new Map<string, SkuRow>();
 
     for (const order of orders) {
-      const { fee: orderFee } = orderPlatformFee(order);
+      // Sàn khấu trừ của đơn = Giá trị đơn − Doanh thu thực tế (SSOT) — gồm
+      // đủ phí + thuế + voucher/xu; đơn chưa đối soát chỉ gồm voucher đã biết.
+      const r = computePnlRow(order);
+      const orderFee = r.revenueGross - r.platformRevenue;
 
       // Tổng doanh thu các dòng hàng trong đơn → dùng làm mẫu số phân bổ phí
       const orderLineRevenue = order.items.reduce(

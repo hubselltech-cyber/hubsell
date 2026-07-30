@@ -14,7 +14,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
-import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { CHANNEL_LABEL } from "../../mockMarketplace";
 import {
   createToken,
   getMultipleOrderItems,
@@ -210,13 +210,14 @@ export async function handleLazadaCallback(
   });
   if (clash) shopName = `${shopName} (${shopId.slice(-4)})`;
 
+  // KHÔNG gán feeRate % mặc định: từ chốt sổ đối soát 30-31/07, Lazada không
+  // dùng phí ước % ở bất kỳ báo cáo nào — phí chỉ có từ sao kê Finance API.
   const created = await prisma.channel.create({
     data: {
       userId: ownerId,
       channelName: ChannelName.LAZADA,
       shopName,
       externalShopId: shopId,
-      feeRate: PLATFORM_FEE_RATE[ChannelName.LAZADA],
       ...tokenData,
     },
   });
@@ -374,11 +375,6 @@ export async function syncLazadaOrders(
   const maxPages = opts.maxPages ?? MAX_PAGES;
   const createdAfter = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
 
-  const feeRate =
-    Number(channel.feeRate) > 0
-      ? Number(channel.feeRate)
-      : PLATFORM_FEE_RATE[ChannelName.LAZADA];
-
   const result: SyncLazadaOrdersResult = {
     fetched: 0,
     created: 0,
@@ -413,7 +409,7 @@ export async function syncLazadaOrders(
         result.sample = { order, item: items[0] ?? null };
       }
       const outcome = await prisma.$transaction((tx) =>
-        upsertLazadaOrderTx(tx, channel, order, items, feeRate)
+        upsertLazadaOrderTx(tx, channel, order, items)
       );
       if (outcome.created) {
         result.created++;
@@ -436,8 +432,7 @@ export async function upsertLazadaOrderTx(
   tx: Prisma.TransactionClient,
   channel: Channel,
   order: LazadaOrder,
-  items: LazadaOrderItem[],
-  feeRate: number
+  items: LazadaOrderItem[]
 ): Promise<{ created: boolean; itemsCreated: number }> {
   const orderCode = String(order.order_number ?? order.order_id);
   const totalAmount = Number(order.price ?? 0) || 0;
@@ -539,7 +534,8 @@ export async function upsertLazadaOrderTx(
       customerName,
       customerPhone,
       totalAmount,
-      platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
+      // KHÔNG ước phí % kênh (chốt sổ đối soát 30-31/07): mọi khoản phí chỉ
+      // ghi khi sàn trả số thật qua syncLazadaSettlements.
       paymentStatus,
       shippingStatus,
       ...(returning ? { returnStatus: returning } : {}),

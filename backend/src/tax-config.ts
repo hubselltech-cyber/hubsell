@@ -1,5 +1,5 @@
 /**
- * CẤU HÌNH THUẾ CỦA SHOP — HELPER DÙNG CHUNG (cùng vai trò với order-fee.ts).
+ * CẤU HÌNH THUẾ CỦA SHOP — HELPER DÙNG CHUNG.
  *
  * Mọi nơi cần số thuế (Báo cáo dòng tiền, Lãi/Lỗ Thực Hiện, Báo cáo thuế) đều
  * đọc cấu hình và tính qua các hàm ở đây, KHÔNG tự cộng trừ % — để trang "Thuế
