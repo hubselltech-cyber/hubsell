@@ -281,9 +281,13 @@ function computePnlRow(o: PnlOrder) {
   const platformSubsidy = Number(o.platformSubsidy);
   const shippingFeeDiff = Number(o.shippingFeeDiff);
 
+  // DOANH THU THỰC TẾ = Giá trị đơn hàng − giảm giá bằng xu/voucher của Shop.
+  // CHƯA trừ phí/thuế sàn — mạch đọc trên UI: Giá trị đơn hàng → các cột phí &
+  // thuế bóc tách → Doanh thu thực tế → Giá vốn → Lợi nhuận thực tế.
+  const actualRevenue = revenueGross - sellerVoucher;
+
   const netRevenue =
-    revenueGross -
-    sellerVoucher -
+    actualRevenue -
     feeFixedPayment -
     feeService -
     feeAffiliate -
@@ -320,6 +324,8 @@ function computePnlRow(o: PnlOrder) {
     // Doanh thu & trợ giá
     revenueGross,
     sellerVoucher,
+    // Doanh thu thực tế = Giá trị đơn hàng − voucher/xu Shop (chưa trừ phí/thuế)
+    actualRevenue,
     platformSubsidy,
     // Vận chuyển
     shippingFeeQuoted: Number(o.shippingFeeQuoted),

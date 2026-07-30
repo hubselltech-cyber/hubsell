@@ -454,6 +454,8 @@ export interface PnlDetailRow {
   // Doanh thu & trợ giá
   revenueGross: number;
   sellerVoucher: number;
+  /** Doanh thu thực tế = Giá trị đơn hàng (revenueGross) − voucher/xu của Shop. */
+  actualRevenue: number;
   platformSubsidy: number;
   // Vận chuyển
   shippingFeeQuoted: number;

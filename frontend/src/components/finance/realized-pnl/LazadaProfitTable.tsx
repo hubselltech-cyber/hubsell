@@ -95,7 +95,7 @@ export function LazadaProfitTable({
   onToggle,
   onToggleAll,
 }: { rows: PnlDetailRow[] } & PnlSelection) {
-  const minWidth = 900 + (SHIP_COLS.length + PLATFORM_COLS.length + TAX_COLS.length + 4) * 118;
+  const minWidth = 900 + (SHIP_COLS.length + PLATFORM_COLS.length + TAX_COLS.length + 5) * 118;
   return (
     <div className="overflow-x-auto">
       <table
@@ -125,7 +125,7 @@ export function LazadaProfitTable({
             >
               Phí nền tảng
             </th>
-            <th className={cn(HEADER_GROUP, "text-center")} colSpan={TAX_COLS.length + 3}>
+            <th className={cn(HEADER_GROUP, "text-center")} colSpan={TAX_COLS.length + 4}>
               Voucher, Thuế &amp; Kết quả
             </th>
           </tr>
@@ -138,10 +138,11 @@ export function LazadaProfitTable({
                 ["Shop", "left"],
                 ["Ngày tạo", "left"],
                 ["Chi tiết sản phẩm", "left"],
-                ["Doanh thu ước tính", "right"],
+                ["Giá trị đơn hàng", "right"],
                 ...SHIP_COLS.map(([l]) => [l, "right"] as const),
                 ...PLATFORM_COLS.map(([l]) => [l, "right"] as const),
                 ...TAX_COLS.map(([l]) => [l, "right"] as const),
+                ["Doanh thu thực tế", "right"],
                 ["Tiền thực về ví", "right"],
                 ["Giá vốn sản phẩm", "right"],
                 ["LỢI NHUẬN THỰC TẾ", "right"],
@@ -168,6 +169,12 @@ export function LazadaProfitTable({
             // chưa đối soát hiển thị doanh thu gốc của đơn (KHÔNG phải phí ước
             // tính — chỉ là giá bán thật của đơn).
             const estRevenue = d ? d.itemRevenue : b.revenueGross;
+            // Doanh thu thực tế = Giá trị đơn hàng − giảm giá bằng xu/voucher
+            // của Shop. Đã đối soát: cộng sellerVoucher CÓ DẤU của sao kê (âm =
+            // sàn trừ); chưa đối soát: số gốc từ đơn (actualRevenue).
+            const actualRevenue = d
+              ? d.itemRevenue + d.sellerVoucher
+              : (b.actualRevenue ?? b.revenueGross - b.sellerVoucher);
             const profit = d ? d.actualPayout - b.costSnapshot : null;
             return (
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
@@ -236,6 +243,9 @@ export function LazadaProfitTable({
                   </td>
                 ))}
                 <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
+                  <Amount value={actualRevenue} />
+                </td>
+                <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
                   {d ? (
                     <Amount value={d.actualPayout} />
                   ) : (
@@ -260,7 +270,9 @@ export function LazadaProfitTable({
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
         Mọi con số lấy <b>nguyên bản từ sao kê Finance API của Lazada</b> (âm = sàn
         trừ, dương = ghi có) — đơn <b>chưa đối soát</b> để trống, không dùng %
-        tạm tính. Lợi nhuận thực tế = Tiền thực về ví − Giá vốn sản phẩm.
+        tạm tính. <b>Doanh thu thực tế</b> = Giá trị đơn hàng − giảm giá bằng
+        xu/voucher của Shop. <b>Lợi nhuận thực tế</b> = Doanh thu thực tế − tổng
+        phí sàn − thuế − Giá vốn (= Tiền thực về ví − Giá vốn sản phẩm).
       </p>
     </div>
   );

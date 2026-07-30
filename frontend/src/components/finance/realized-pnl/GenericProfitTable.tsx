@@ -3,6 +3,7 @@
 import type { PnlDetailRow } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatDateTime } from "@/lib/format";
+import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import {
   Amount,
@@ -23,6 +24,10 @@ import {
  * BẢNG LÃI/LỖ — CỘT CỐT LÕI DÙNG CHUNG (Tổng quan & các sàn chưa có layout riêng
  * như Lazada). Gộp phí sàn về một cột để nhìn nhanh; chi tiết từng loại phí xem
  * ở tab sàn tương ứng.
+ *
+ * Mạch cột theo tư duy tài chính (chốt 30/07): Giá trị đơn hàng → các cột Phí &
+ * Thuế bóc tách → Doanh thu thực tế (= Giá trị đơn hàng − Voucher Shop) →
+ * Giá vốn → LỢI NHUẬN THỰC TẾ (= DT thực tế − phí − thuế − giá vốn).
  */
 export function GenericProfitTable({
   rows,
@@ -34,7 +39,7 @@ export function GenericProfitTable({
 }: { rows: PnlDetailRow[] } & PnlSelection) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-[1360px] border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             <SelectAllTh
@@ -48,13 +53,12 @@ export function GenericProfitTable({
             <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={2}>
               Doanh thu
             </th>
-            <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={2}>
-              Phí sàn
+            <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={3}>
+              Phí &amp; Thuế sàn
             </th>
-            <th className={cn(HEADER_GROUP, "text-center text-slate-600")} colSpan={1}>
-              Vận hành
+            <th className={cn(HEADER_GROUP, "text-center")} colSpan={3}>
+              Kết quả
             </th>
-            <th className={cn(HEADER_GROUP, "text-center")}>Kết quả</th>
           </tr>
           <tr>
             {[
@@ -63,10 +67,12 @@ export function GenericProfitTable({
               ["Shop", "left"],
               ["Ngày tạo", "left"],
               ["Chi tiết sản phẩm", "left"],
-              ["Doanh thu gốc", "right"],
+              ["Giá trị đơn hàng", "right"],
               ["Voucher Shop", "right"],
               ["Tổng phí sàn", "right"],
               ["Chênh lệch VC", "right"],
+              ["Thuế sàn", "right"],
+              ["Doanh thu thực tế", "right"],
               ["Giá vốn", "right"],
               ["LỢI NHUẬN THỰC TẾ", "right"],
             ].map(([label, align], i) => (
@@ -140,17 +146,33 @@ export function GenericProfitTable({
                 <td className={cn(cell, BLOCK.fee, "text-right")}>
                   <ShipDiff value={b.shippingFeeDiff} />
                 </td>
-                <td className={cn(cell, BLOCK.ship, "text-right")}>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={b.platformTax} />
+                </td>
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  {/* Fallback tự tính khi API cũ chưa trả actualRevenue */}
+                  <Amount
+                    value={b.actualRevenue ?? b.revenueGross - b.sellerVoucher}
+                    tone="font-medium text-slate-800"
+                  />
+                </td>
+                <td className={cn(cell, BLOCK.result, "text-right")}>
                   <Deduction value={b.costSnapshot} tone="text-slate-600" />
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>
-                  <ProfitCell value={b.profit} />
+                  <ProfitCell value={b.profitAfterTax} />
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <p className={cn(TEXT_SUB, "px-3 py-2")}>
+        <b>Doanh thu thực tế</b> = Giá trị đơn hàng − Voucher Shop.{" "}
+        <b>LỢI NHUẬN THỰC TẾ</b> = Doanh thu thực tế − Tổng phí sàn − Chênh lệch
+        VC − Thuế sàn − Giá vốn (cộng lại trợ giá từ sàn nếu có). Thuế sàn: số
+        thật với đơn đã đối soát, ước tính % với đơn chưa.
+      </p>
     </div>
   );
 }
