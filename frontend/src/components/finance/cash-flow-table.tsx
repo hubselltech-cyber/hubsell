@@ -44,10 +44,13 @@ function todayKey(): string {
 /**
  * BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG
  *
- * Bóc dòng tiền của TỪNG gian hàng theo trạng thái vòng đời (đi đường → chờ đối
- * soát → đã đối soát → đã thu về). Dòng được map ĐỘNG từ danh sách gian hàng API
- * trả về (kết nối thêm gian là tự có thêm dòng); hàng TỔNG CỘNG cộng dồn bằng
- * reduce theo đúng các dòng đang lọc. Cột tiền căn phải, cột chữ căn trái.
+ * Bản chất mọi cột là MỘT con số duy nhất: DOANH THU THỰC TẾ của đơn
+ * (platformRevenue — "Tổng tiền" sàn báo, cùng trường với thẻ Doanh thu của
+ * Báo cáo dòng tiền), chỉ khác GIAI ĐOẠN nó đang đứng trong vòng đời:
+ * đang giao → chờ đối soát → về Ví sàn → về Ngân hàng (chốt chủ shop 31/07).
+ * Dòng được map ĐỘNG từ danh sách gian hàng API trả về (kết nối thêm gian là
+ * tự có thêm dòng); hàng TỔNG CỘNG cộng dồn bằng reduce theo đúng các dòng
+ * đang lọc. Cột tiền căn phải, cột chữ căn trái.
  */
 
 /** Thứ tự sàn cố định để dropdown & bảng ổn định. */
@@ -173,12 +176,13 @@ export function CashFlowTable() {
     }
   }
 
+  // Mọi cột đều là DOANH THU THỰC TẾ — chỉ khác giai đoạn dòng tiền đang đứng.
   const COLS = [
-    "Tiền đơn hàng đang giao",
-    "Tiền chờ đối soát",
-    "Tiền trên Ví sàn",
-    "Tiền về Ngân hàng",
-    "Tổng dòng tiền dự kiến",
+    "Doanh thu đang giao",
+    "Doanh thu chờ đối soát",
+    "Doanh thu trên Ví sàn",
+    "Doanh thu về Ngân hàng",
+    "Tổng doanh thu thực tế",
   ];
 
   return (
@@ -191,8 +195,8 @@ export function CashFlowTable() {
             Phân bổ dòng tiền theo gian hàng
           </CardTitle>
           <CardDescription className="mt-1">
-            Ảnh chụp dòng tiền hiện tại — tổng hợp mọi đơn chưa hủy theo từng gian
-            hàng.
+            Doanh thu thực tế của từng gian, phân theo giai đoạn dòng tiền: đang
+            giao → chờ đối soát → về Ví sàn → về Ngân hàng (mọi đơn chưa hủy).
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -352,8 +356,11 @@ export function CashFlowTable() {
         {/* Ghi chú luồng rút ví */}
         {!loading && !error && shown.length > 0 && (
           <p className="px-4 py-2.5 text-left text-xs italic text-slate-500">
-            “Tiền về Ngân hàng” ghi nhận khi tiền rời ví sàn về bank (đồng bộ từ
-            sàn hoặc bấm “Xác nhận đã rút ví”). Ví sàn hiện màu{" "}
+            Đơn <b>đã đối soát</b>: doanh thu là số THẬT sàn trả về ví (Tổng
+            tiền sao kê); đơn <b>chưa đối soát</b> (đang giao / chờ đối soát):
+            số tạm tính từ API đơn hàng. “Doanh thu về Ngân hàng” ghi nhận khi
+            tiền rời ví sàn về bank (đồng bộ từ sàn hoặc bấm “Xác nhận đã rút
+            ví”). Ví sàn hiện màu{" "}
             <span className="font-medium text-red-500">đỏ</span> nếu số đã rút
             vượt tiền đã quyết toán — dấu hiệu lệch pha cần đối soát.
           </p>
@@ -368,7 +375,8 @@ export function CashFlowTable() {
             <DialogTitle>Xác nhận đã rút ví về ngân hàng</DialogTitle>
             <DialogDescription>
               Ghi nhận một lần tiền rời ví sàn về tài khoản ngân hàng. Số tiền sẽ
-              được TRỪ khỏi “Tiền trên Ví sàn” và CỘNG vào “Tiền về Ngân hàng”.
+              được TRỪ khỏi “Doanh thu trên Ví sàn” và CỘNG vào “Doanh thu về
+              Ngân hàng”.
             </DialogDescription>
           </DialogHeader>
 
