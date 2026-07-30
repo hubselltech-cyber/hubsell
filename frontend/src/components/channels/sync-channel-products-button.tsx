@@ -40,6 +40,17 @@ export function SyncChannelProductsButton({
     try {
       const res = await syncProductsFromChannels(channelId);
       await onSynced();
+      // Gian nào lỗi được trả đích danh (không kéo sập cả lượt) — báo rõ để
+      // chủ shop sửa đúng chỗ (thường là token hết hạn, cần Kết nối lại).
+      const failed = (res.perChannel ?? []).filter((c) => c.error);
+      if (failed.length > 0) {
+        toast.warning(
+          `Có ${failed.length} gian lỗi: ${failed
+            .map((c) => `${c.shopName} (${c.error})`)
+            .join("; ")}`,
+          { duration: 10000 }
+        );
+      }
       toast.success(
         `Đồng bộ xong: thêm mới ${formatNumber(res.created)} sản phẩm sàn, cập nhật ${formatNumber(res.updated)}.`,
         { duration: 6000 }

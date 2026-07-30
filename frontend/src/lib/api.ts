@@ -1324,6 +1324,8 @@ export function syncProductsFromChannels(channelId?: string) {
       shopName: string;
       scanned: number;
       created: number;
+      /** Lỗi riêng của gian này (nếu có) — các gian khác vẫn quét bình thường. */
+      error?: string;
     }[];
   }>("/api/finance/sync-products", {
     method: "POST",

@@ -1155,22 +1155,44 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
       shopName: string;
       scanned: number;
       created: number;
+      /** Lỗi của RIÊNG gian này (token hết hạn, sàn chập chờn...) — có giá trị
+       *  là gian đó quét hỏng, các gian khác vẫn chạy bình thường. */
+      error?: string;
     }[] = [];
 
     for (const channel of channels) {
       // ADAPTER PATTERN: route KHÔNG biết gian này là Shopee thật hay mock —
       // registry chọn adapter, marketplace/product-sync lo phần kho (upsert bảng
       // đệm, giữ nguyên productId/giá vốn, delist SKU cũ). Thêm sàn = thêm adapter.
-      const r = await syncChannelProducts(channel);
-      created += r.created;
-      updated += r.updated;
-      perChannel.push({
-        channelId: channel.id,
-        channelName: channel.channelName,
-        shopName: channel.shopName,
-        scanned: r.scanned,
-        created: r.created,
-      });
+      //
+      // MỖI GIAN MỘT try/catch: một gian hỏng (token hết hạn, API sàn lỗi)
+      // KHÔNG được kéo sập cả lượt quét thành 500 — trả lỗi đích danh từng
+      // gian để chủ shop biết sửa đúng chỗ.
+      try {
+        const r = await syncChannelProducts(channel);
+        created += r.created;
+        updated += r.updated;
+        perChannel.push({
+          channelId: channel.id,
+          channelName: channel.channelName,
+          shopName: channel.shopName,
+          scanned: r.scanned,
+          created: r.created,
+        });
+      } catch (err) {
+        console.error(
+          `[Sync Products] Gian "${channel.shopName}" (${channel.channelName}) lỗi:`,
+          err
+        );
+        perChannel.push({
+          channelId: channel.id,
+          channelName: channel.channelName,
+          shopName: channel.shopName,
+          scanned: 0,
+          created: 0,
+          error: (err as Error).message,
+        });
+      }
     }
 
     res.json({ created, updated, perChannel });
