@@ -686,6 +686,13 @@ export default function ChannelsPage() {
     setSyncing(`${c.id}:orders`);
     try {
       const r = await syncChannelOrders(c.id);
+      // Mẫu dữ liệu thô (Lazada) — in console để soi tên trường thật của API.
+      if ("sample" in r && (r as { sample?: unknown }).sample) {
+        console.log(
+          `[Đồng bộ ${c.shopName}] mẫu đơn/dòng hàng thô:`,
+          JSON.stringify((r as { sample: unknown }).sample)
+        );
+      }
       toast.success(
         `Đồng bộ đơn ${CHANNEL_META[c.channelName].label}: +${formatNumber(
           r.created

@@ -49,12 +49,11 @@ const SHIP_COLS: Col[] = [
   ["Giảm giá người bán", (d) => d.shipDiscountSeller],
   ["Phí VC hoàn", (d) => d.shipFeeReturn],
   [
+    // Phần ship SHOP THỰC CHỊU = cước gốc − nền tảng bù − người bán giảm −
+    // khách trả (+ hoàn/điều chỉnh nếu có). 0 = khách + sàn đã gánh đủ cước.
     "Chênh lệch",
     (d) =>
-      d.shipFee +
-      d.shipFeeCustomer +
-      d.shipDiscountPlatform +
-      d.shipDiscountSeller +
+      -(d.shipFee + d.shipDiscountPlatform + d.shipDiscountSeller - d.shipFeeCustomer) +
       d.shipFeeReturn +
       d.shipFeeAdjustment,
   ],

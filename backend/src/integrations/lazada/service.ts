@@ -353,6 +353,11 @@ export interface SyncLazadaOrdersResult {
   updated: number;
   itemsCreated: number;
   pages: number;
+  /**
+   * MẪU dữ liệu THÔ (đơn + dòng hàng đầu tiên) — FE in console để soi tên
+   * trường thật Lazada trả về (tránh vòng đoán tên như bài học fee_name).
+   */
+  sample?: { order: unknown; item: unknown };
 }
 
 /**
@@ -404,6 +409,9 @@ export async function syncLazadaOrders(
     for (const order of batch) {
       result.fetched++;
       const items = itemsByOrder.get(String(order.order_id)) ?? [];
+      if (!result.sample) {
+        result.sample = { order, item: items[0] ?? null };
+      }
       const outcome = await prisma.$transaction((tx) =>
         upsertLazadaOrderTx(tx, channel, order, items, feeRate)
       );
@@ -448,6 +456,43 @@ export async function upsertLazadaOrderTx(
   const customerName = shipName || buyerName || "Khách Lazada";
   const customerPhone = order.address_shipping?.phone?.trim() || null;
 
+  // ---- CHI TIẾT PHÍ VẬN CHUYỂN từ Order API (Seller-Center mirror) ----
+  // Khoản ship KHÔNG chảy qua ví người bán nên sao kê Finance không có dòng
+  // nào — nguồn duy nhất là dữ liệu đơn/dòng hàng. Ghi vào cùng bảng
+  // LazadaOrderSettlement (nhóm cột vận chuyển); phần phí ví do luồng đối
+  // soát ghi, hai luồng không giẫm cột của nhau.
+  let shipOriginal = 0; // cước gốc (+)
+  let shipCustomer = 0; // khách trả (+)
+  let shipDiscPlatform = 0; // nền tảng bù (lưu ÂM như dòng giảm giá)
+  let shipDiscSeller = 0; // người bán chịu (lưu ÂM)
+  for (const it of items) {
+    shipOriginal += Math.abs(
+      parseLazadaAmount(it.shipping_fee_original ?? it.shipping_service_cost)
+    );
+    shipCustomer += Math.abs(parseLazadaAmount(it.shipping_amount));
+    shipDiscPlatform -= Math.abs(parseLazadaAmount(it.shipping_fee_discount_platform));
+    shipDiscSeller -= Math.abs(parseLazadaAmount(it.shipping_fee_discount_seller));
+  }
+  if (shipCustomer === 0) {
+    shipCustomer = Math.abs(parseLazadaAmount(order.shipping_fee));
+  }
+  const hasShipDetail =
+    shipOriginal !== 0 || shipCustomer !== 0 || shipDiscPlatform !== 0 || shipDiscSeller !== 0;
+  const writeShipDetail = async (orderId: string) => {
+    if (!hasShipDetail) return;
+    const ship = {
+      shipFee: shipOriginal,
+      shipFeeCustomer: shipCustomer,
+      shipDiscountPlatform: shipDiscPlatform,
+      shipDiscountSeller: shipDiscSeller,
+    };
+    await tx.lazadaOrderSettlement.upsert({
+      where: { orderId },
+      create: { orderId, ...ship },
+      update: ship,
+    });
+  };
+
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
     select: { id: true, returnStatus: true },
@@ -466,6 +511,7 @@ export async function upsertLazadaOrderTx(
           : {}),
       },
     });
+    await writeShipDetail(existing.id);
     return { created: false, itemsCreated: 0 };
   }
 
@@ -821,12 +867,21 @@ export async function syncLazadaSettlements(
     const settledAt = acc.lastDate ?? new Date();
 
     // (1) Bảng chi tiết — số CÓ DẤU NGUYÊN BẢN từ sao kê, ghi đè trọn bộ.
+    // RIÊNG 4 cột ship nguồn Order API (cước gốc/khách trả/giảm giá): sao kê
+    // chỉ được ghi đè khi CÓ dòng ship thật (COD, hoàn...), không thì giữ số
+    // luồng đồng bộ đơn đã điền — hai luồng không giẫm cột của nhau.
+    const shipFromStatement = {
+      ...(acc.shipFee !== 0 ? { shipFee: acc.shipFee } : {}),
+      ...(acc.shipFeeCustomer !== 0 ? { shipFeeCustomer: acc.shipFeeCustomer } : {}),
+      ...(acc.shipDiscountPlatform !== 0
+        ? { shipDiscountPlatform: acc.shipDiscountPlatform }
+        : {}),
+      ...(acc.shipDiscountSeller !== 0
+        ? { shipDiscountSeller: acc.shipDiscountSeller }
+        : {}),
+    };
     const detail = {
       itemRevenue: acc.itemRevenue,
-      shipFee: acc.shipFee,
-      shipFeeCustomer: acc.shipFeeCustomer,
-      shipDiscountPlatform: acc.shipDiscountPlatform,
-      shipDiscountSeller: acc.shipDiscountSeller,
       shipFeeReturn: acc.shipFeeReturn,
       shipFeeAdjustment: acc.shipFeeAdjustment,
       feeFixed: acc.feeFixed,
@@ -855,8 +910,8 @@ export async function syncLazadaSettlements(
     };
     await prisma.lazadaOrderSettlement.upsert({
       where: { orderId: order.id },
-      create: { orderId: order.id, ...detail },
-      update: detail,
+      create: { orderId: order.id, ...detail, ...shipFromStatement },
+      update: { ...detail, ...shipFromStatement },
     });
 
     // (2) Cột GĐ2 gộp của Order — công thức dùng chung (orderPlatformFee,

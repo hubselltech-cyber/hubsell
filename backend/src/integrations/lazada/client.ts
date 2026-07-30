@@ -164,12 +164,16 @@ export interface LazadaOrder {
   statuses?: string[];
   /** Tổng tiền đơn — Lazada trả CHUỖI ("259000.00"). */
   price?: string;
+  /** Phí vận chuyển KHÁCH TRẢ ở cấp đơn (nếu Lazada trả về). */
+  shipping_fee?: number | string;
   created_at?: string; // ISO 8601 kèm múi giờ, vd "2026-07-28T17:49:00+0700"
   updated_at?: string;
   customer_first_name?: string;
   customer_last_name?: string;
   address_shipping?: { first_name?: string; last_name?: string; phone?: string };
   items_count?: number;
+  /** Trường khác Lazada trả kèm — đọc phòng thủ, soi bằng sample log. */
+  [k: string]: unknown;
 }
 
 interface LazadaOrderListData extends LazadaEnvelope {
@@ -226,6 +230,21 @@ export interface LazadaOrderItem {
   status?: string;
   product_main_image?: string;
   product_id?: number | string;
+  // ---- Chi tiết vận chuyển & voucher cấp dòng hàng (đọc phòng thủ) ----
+  /** Phí vận chuyển KHÁCH TRẢ cho dòng hàng này. */
+  shipping_amount?: number | string;
+  /** Cước vận chuyển gốc trước giảm giá. */
+  shipping_fee_original?: number | string;
+  /** Giảm giá vận chuyển do NỀN TẢNG bù. */
+  shipping_fee_discount_platform?: number | string;
+  /** Giảm giá vận chuyển do NGƯỜI BÁN chịu. */
+  shipping_fee_discount_seller?: number | string;
+  /** Chi phí dịch vụ vận chuyển (một số bản API dùng tên này). */
+  shipping_service_cost?: number | string;
+  voucher_platform?: number | string;
+  voucher_seller?: number | string;
+  /** Trường khác Lazada trả kèm — soi bằng sample log. */
+  [k: string]: unknown;
 }
 
 interface LazadaMultiOrderItemsData extends LazadaEnvelope {
