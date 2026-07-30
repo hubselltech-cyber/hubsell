@@ -705,6 +705,14 @@ export default function ChannelsPage() {
     setSyncing(`${c.id}:settlements`);
     try {
       const r = await syncTiktokSettlements(c.id);
+      // Danh mục fee_name THẬT từ sao kê (Lazada) — in console để đối chiếu bộ
+      // bóc tách phí với tên thực tế API trả về (khác tên trên Seller Center).
+      if ("feeNames" in r && Array.isArray((r as { feeNames?: unknown }).feeNames)) {
+        console.log(
+          `[Đối soát ${c.shopName}] fee_name thật:`,
+          JSON.stringify((r as { feeNames: unknown }).feeNames)
+        );
+      }
       toast.success(
         `Đồng bộ đối soát: cập nhật ${formatNumber(
           r.ordersUpdated

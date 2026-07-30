@@ -711,6 +711,12 @@ export interface SyncLazadaSettlementsResult {
   transactions: number; // số dòng sao kê đọc được
   ordersUpdated: number; // số Order được ghi số quyết toán thật
   ordersNotFound: number; // sao kê có mã đơn nhưng đơn chưa đồng bộ về Hubsell
+  /**
+   * Danh mục fee_name THẬT gặp trong lượt chạy + bucket đã gán — trả về FE để
+   * đối chiếu bộ bóc tách với sao kê thực tế (tên trong API có thể KHÁC tên
+   * hiển thị trên Seller Center).
+   */
+  feeNames: { name: string; count: number; sum: number; bucket: string }[];
 }
 
 /**
@@ -729,6 +735,7 @@ export async function syncLazadaSettlements(
     transactions: 0,
     ordersUpdated: 0,
     ordersNotFound: 0,
+    feeNames: [],
   };
 
   // Gom theo mã đơn trên TOÀN lượt chạy (một đơn có thể quyết toán rải ngày
@@ -787,13 +794,12 @@ export async function syncLazadaSettlements(
     }
   }
 
-  // Log danh mục phí thật + bucket đã gán — soi ở log server sau mỗi lượt chạy.
-  if (byFeeName.size > 0) {
+  // Danh mục phí thật + bucket đã gán — log server + trả về FE để đối chiếu.
+  result.feeNames = [...byFeeName.entries()].map(([name, s]) => ({ name, ...s }));
+  if (result.feeNames.length > 0) {
     console.log(
       "[Lazada Settle] Gian \"" + channel.shopName + "\" — fee_name gặp trong sao kê:",
-      JSON.stringify(
-        [...byFeeName.entries()].map(([name, s]) => ({ name, ...s }))
-      )
+      JSON.stringify(result.feeNames)
     );
   }
 
