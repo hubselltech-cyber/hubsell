@@ -152,7 +152,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Doanh thu"
-              subtitle="Sau khi trừ các khoản sàn giữ lại"
+              subtitle="Doanh thu thực tế = Giá trị đơn hàng − voucher/xu Shop"
               total={data.breakdown.revenue.total}
               icon={Wallet}
               tone="positive"
@@ -172,7 +172,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Tổng lợi nhuận tạm tính"
-              subtitle="Thực tế + Dự kiến — thuế đã tách sang cột Chi phí"
+              subtitle="= Doanh thu − Chi phí (phí & thuế sàn đã nằm ở cột Chi phí)"
               total={data.breakdown.profit.total}
               icon={Scale}
               items={data.breakdown.profit.items}

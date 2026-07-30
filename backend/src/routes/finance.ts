@@ -1868,8 +1868,14 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       feeShippingDiff -
       platformSubsidyTotal;
 
-    // --- CỘT 2: DOANH THU = gross − khấu trừ = Σ cột "Doanh thu thuần" ---
-    const netRevenue = grossValue - totalDeduction;
+    // --- CỘT 2: DOANH THU = Σ cột "Doanh thu thực tế" (actualRevenue =
+    // Giá trị đơn hàng − voucher/xu Shop) của Lãi/Lỗ Thực Hiện. TUYỆT ĐỐI
+    // không dùng actualPayout (tiền về ví) làm doanh thu — payout đã bị sàn
+    // cấn trừ phí/thuế, các khoản đó thuộc cột CHI PHÍ; nhờ vậy thẻ thỏa
+    // đẳng thức: Doanh thu − Chi phí = Lợi nhuận.
+    const actualRevenueTotal = sumBy(activeRows, (r) => r.actualRevenue);
+    const settledActualRevenue = sumBy(settledRows, (r) => r.actualRevenue);
+    const pendingActualRevenue = sumBy(pendingRows, (r) => r.actualRevenue);
     const cancelledValue = sumBy(cancelledRows, (r) => r.revenueGross);
     const cancelRate = pct(cancelledRows.length, pnlRows.length);
 
@@ -1901,12 +1907,12 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       sumBy(settledRows, (r) => r.profitAfterTax) -
       variableExpenseTotal -
       fixedExpenseTotal;
-    // Dự kiến = Σ cột "Lợi nhuận" (profit — CHƯA trừ thuế) của đơn chờ quyết
-    // toán; thuế ƯỚC TÍNH của nhóm này nằm ở cột Chi phí, chỉ trừ ở dòng
-    // "Lợi nhuận ròng sau thuế".
-    const expectedProfit = sumBy(pendingRows, (r) => r.profit);
-    // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến — hiệu năng của toàn bộ đơn
-    // trong kỳ, CHƯA trừ nghĩa vụ thuế ước tính/dự phòng.
+    // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán —
+    // ĐÃ trừ thuế ước tính, vì dòng thuế ở cột Chi phí gồm cả phần ước tính;
+    // nhờ vậy thẻ Lợi nhuận = thẻ Doanh thu − thẻ Chi phí (khi không có
+    // chênh lệch VC/trợ giá sàn/thuế bổ sung).
+    const expectedProfit = sumBy(pendingRows, (r) => r.profitAfterTax);
+    // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến.
     const provisionalProfit = actualProfit + expectedProfit;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao) — cùng các
@@ -1968,12 +1974,11 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       taxCfg
     );
 
-    // LỢI NHUẬN RÒNG SAU THUẾ — công thức lũy kế của cột Lợi nhuận:
-    //   = Lợi nhuận thực tế + Lợi nhuận dự kiến
-    //     − Thuế sàn TMĐT ước tính − Thuế bổ sung dự phòng
-    // Phần thuế sàn THẬT không trừ (đã nằm trong actualPayout như ghi chú trên).
-    const netProfitAfterTax =
-      provisionalProfit - platformTaxEstimated - additionalTax;
+    // LỢI NHUẬN RÒNG SAU THUẾ = Tổng lợi nhuận tạm tính − Thuế bổ sung dự
+    // phòng. KHÔNG trừ thuế sàn nữa: cả thuế THẬT (trong profitAfterTax đơn
+    // quyết toán) lẫn thuế ƯỚC TÍNH (trong profitAfterTax đơn chờ) đều đã
+    // nằm sẵn trong provisionalProfit — trừ thêm là trừ trùng.
+    const netProfitAfterTax = provisionalProfit - additionalTax;
 
     // Cột CHI PHÍ gồm cả 2 dòng nghĩa vụ thuế (chuyển từ cột Lợi nhuận sang) —
     // tổng cột phải khớp tổng các dòng bên trong nó.
@@ -2057,24 +2062,26 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           totalDeduction,
         },
 
-        // Cột 2 — Doanh thu theo trạng thái
+        // Cột 2 — DOANH THU THỰC TẾ theo trạng thái (Σ actualRevenue của
+        // Lãi/Lỗ; KHÔNG dùng tiền về ví — payout chỉ còn là số đối chiếu
+        // trong hint dòng "Hoàn thành")
         revenue: {
-          total: netRevenue,
+          total: actualRevenueTotal,
           items: [
             {
               key: "completed",
               label: "Hoàn thành",
-              hint: "Tiền sàn đã phê duyệt và giải ngân vào ví — Σ cột \"Thực nhận\" của đơn đã quyết toán trên Lãi/Lỗ Thực Hiện",
-              amount: settledPayout,
-              percent: pct(settledPayout, netRevenue),
+              hint: `Σ cột "Doanh thu thực tế" (giá trị đơn − voucher/xu Shop) của đơn ĐÃ quyết toán trên Lãi/Lỗ Thực Hiện. Sau khi sàn cấn trừ phí + thuế (đã nằm ở cột Chi phí), tiền thực về ví: ${Math.round(settledPayout).toLocaleString("vi-VN")}đ.`,
+              amount: settledActualRevenue,
+              percent: pct(settledActualRevenue, actualRevenueTotal),
               count: settledRows.length,
             },
             {
               key: "pending",
               label: "Chờ xử lý",
-              hint: "Đơn sàn CHƯA quyết toán (đang đi đường hoặc đã giao chờ đối soát) — Σ cột \"Doanh thu thuần\" tạm tính của các đơn đó trên Lãi/Lỗ Thực Hiện",
-              amount: pendingNetRevenue,
-              percent: pct(pendingNetRevenue, netRevenue),
+              hint: "Σ cột \"Doanh thu thực tế\" của đơn CHƯA quyết toán (đang đi đường hoặc đã giao chờ đối soát) — phí/thuế tạm tính của nhóm này nằm ở cột Chi phí.",
+              amount: pendingActualRevenue,
+              percent: pct(pendingActualRevenue, actualRevenueTotal),
               count: pendingRows.length,
             },
             {
@@ -2093,7 +2100,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               label: "Thu nhập vận hành khác",
               hint: "Khoản thu ngoài đơn hàng (đền bù, thưởng…) nhập tay từ module Thu chi vận hành — không thuộc doanh thu đơn hàng nên không cộng vào tổng cột.",
               amount: operatingIncomeTotal,
-              percent: pct(operatingIncomeTotal, netRevenue),
+              percent: pct(operatingIncomeTotal, actualRevenueTotal),
             },
           ],
         },
@@ -2170,14 +2177,14 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               label: "Lợi nhuận thực tế",
               hint: "Σ cột \"Lãi sau thuế\" của đơn ĐÃ QUYẾT TOÁN trên Lãi/Lỗ Thực Hiện (đã trừ phí sàn + thuế sàn trích tại nguồn + giá vốn) − Chi phí vận hành nhập tay (biến đổi + cố định).",
               amount: actualProfit,
-              percent: pct(actualProfit, settledPayout),
+              percent: pct(actualProfit, settledActualRevenue),
             },
             {
               key: "expected",
               label: "Lợi nhuận dự kiến",
-              hint: "Σ cột \"Lợi nhuận\" (tạm tính, chưa trừ thuế) của đơn CHƯA quyết toán trên Lãi/Lỗ Thực Hiện. Thuế ước tính cho nhóm đơn này nằm ở cột Chi phí.",
+              hint: "Σ cột \"Lãi sau thuế\" (tạm tính) của đơn CHƯA quyết toán trên Lãi/Lỗ Thực Hiện — phí + thuế ước tính của nhóm này đã nằm ở cột Chi phí.",
               amount: expectedProfit,
-              percent: pct(expectedProfit, pendingNetRevenue),
+              percent: pct(expectedProfit, pendingActualRevenue),
             },
           ],
         },
