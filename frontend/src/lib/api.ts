@@ -1217,7 +1217,7 @@ export interface FinanceAnalytics {
     netProfitAfterTax: number;
   };
   series: { date: string; label: string; revenue: number; cost: number }[];
-  /** Đang lọc 1 gian hàng ⇒ chi phí vận hành vẫn là của TOÀN SHOP. */
+  /** Luôn false từ 30/07 — thu/chi vận hành đã lọc theo sàn/gian (fundChannel). */
   operatingExpenseIsShopWide: boolean;
 }
 

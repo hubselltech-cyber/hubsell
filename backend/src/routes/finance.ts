@@ -1731,11 +1731,24 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
+    // THU/CHI VẬN HÀNH NHẬP TAY — luật lọc theo sàn/gian: khi đang lọc
+    // (Lazada/Shopee/1 gian cụ thể) CHỈ tính khoản đã gắn đúng nguồn tiền
+    // sàn/gian đó (fundChannel); khoản KHÔNG gắn gian nào chỉ xuất hiện ở chế
+    // độ "Tất cả sàn". Không chia đều, không gom phí sàn cấn trừ vào đây.
+    const manualTxnScope = hasChannelFilter(req)
+      ? { fundChannelId: { not: null }, fundChannel: scope }
+      : {};
+
     const [delivered, expenses, inFlight, cancelled, operatingIncomeAgg, taxCfg] =
       await Promise.all([
       fetchDeliveredOrders(scope, range),
       prisma.operatingExpense.findMany({
-        where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
+        where: {
+          userId: ownerId,
+          direction: TransactionDirection.EXPENSE,
+          expenseDate: range,
+          ...manualTxnScope,
+        },
         select: {
           amount: true,
           type: true,
@@ -1776,11 +1789,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         },
         select: { totalAmount: true },
       }),
-      // Tổng THU vận hành nhập tay trong kỳ (đền bù, thưởng…) — cộng vào lợi nhuận.
-      // Shop-wide như chi phí vận hành (xem operatingExpenseIsShopWide).
+      // Tổng THU vận hành nhập tay trong kỳ (đền bù, thưởng…) — cùng luật lọc
+      // sàn/gian với chi phí nhập tay (manualTxnScope).
       prisma.operatingExpense.aggregate({
         _sum: { amount: true },
-        where: { userId: ownerId, direction: TransactionDirection.INCOME, expenseDate: range },
+        where: {
+          userId: ownerId,
+          direction: TransactionDirection.INCOME,
+          expenseDate: range,
+          ...manualTxnScope,
+        },
       }),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
@@ -1823,13 +1841,11 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     let feeShippingDiff = 0;
     let platformSubsidyTotal = 0;
 
-    // BUCKET CHO CỘT CHI PHÍ — gom CÙNG CÔNG THỨC với bảng Lãi/Lỗ Thực Hiện:
-    //  - platformFixedFee   : "Phí cố định + thanh toán" sàn cấn trừ trên đơn
-    //    đã quyết toán; đơn CHƯA quyết toán dồn phí tạm tính vào đây (y hệt
-    //    bucket feeFixedPayment của /realized-pnl).
-    //  - platformVariableFee: phí sàn BIẾN ĐỔI theo đơn (dịch vụ + affiliate).
-    let platformFixedFee = 0;
-    let platformVariableFee = 0;
+    // BUCKET "PHÍ SÀN" CHO CỘT CHI PHÍ — MỘT dòng duy nhất gom toàn bộ phí
+    // HOẠT ĐỘNG sàn cấn trừ từ đối soát: phí cố định + thanh toán + dịch vụ +
+    // tiếp thị liên kết. KHÔNG gồm thuế sàn (taxWithheld) — thuế tách dòng
+    // riêng để theo dõi. Đơn CHƯA quyết toán dồn phí tạm tính theo % kênh.
+    let platformFeeTotal = 0;
 
     for (const o of delivered) {
       if (o.isSettled) {
@@ -1839,16 +1855,19 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         feeSellerVoucher += Number(o.sellerVoucher);
         feeShippingDiff += Number(o.shippingFeeDiff);
         platformSubsidyTotal += Number(o.platformSubsidy);
-        platformFixedFee += Number(o.fixedFee) + Number(o.paymentFee);
-        platformVariableFee += Number(o.serviceFee) + Number(o.affiliateFee);
+        platformFeeTotal +=
+          Number(o.fixedFee) +
+          Number(o.paymentFee) +
+          Number(o.serviceFee) +
+          Number(o.affiliateFee);
       } else {
         feePlatform += Number(o.platformFee); // chưa quyết toán → số tạm tính
-        platformFixedFee += Number(o.platformFee);
+        platformFeeTotal += Number(o.platformFee);
       }
     }
     for (const o of inFlight) {
       feePlatform += Number(o.platformFee); // đơn đang đi đường luôn là tạm tính
-      platformFixedFee += Number(o.platformFee);
+      platformFeeTotal += Number(o.platformFee);
     }
 
     const totalDeduction =
@@ -1867,20 +1886,18 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const totalOrderCount = activeOrders.length + cancelled.length;
     const cancelRate = pct(cancelled.length, totalOrderCount);
 
-    // --- CỘT 3: CHI PHÍ (giá vốn + phí sàn cấn trừ + chi phí vận hành) ---
+    // --- CỘT 3: CHI PHÍ (giá vốn + Phí sàn + chi phí vận hành nhập tay) ---
     const cogsAll = delivered.reduce((s, o) => s + orderCost(o).cost, 0) + pendingCogs;
-    // Bóc tách theo MÔ HÌNH CHI PHÍ: biến đổi (gắn được vào SKU) vs cố định (toàn shop)
+    // Chi phí cố định/biến đổi CHỈ là khoản NHẬP TAY từ Thu chi vận hành (đã
+    // qua luật lọc manualTxnScope) — tuyệt đối không gom phí sàn vào đây.
     const variableExpenseTotal = expenses
       .filter((e) => e.type === ExpenseType.VARIABLE)
       .reduce((s, e) => s + Number(e.amount), 0);
     const fixedExpenseTotal = expenses
       .filter((e) => e.type === ExpenseType.FIXED)
       .reduce((s, e) => s + Number(e.amount), 0);
-    // Chi phí biến đổi hiển thị = phí sàn biến đổi theo đơn (dịch vụ +
-    // affiliate, số THẬT từ đối soát) + chi phí biến đổi nhập tay (ads, KOC…)
-    const variableCostTotal = platformVariableFee + variableExpenseTotal;
     const totalCostColumn =
-      cogsAll + platformFixedFee + variableCostTotal + fixedExpenseTotal;
+      cogsAll + platformFeeTotal + variableExpenseTotal + fixedExpenseTotal;
 
     // --- CỘT 4: LỢI NHUẬN ---
     // Lợi nhuận thực tế: từ đơn ĐÃ HOÀN THÀNH (đã quyết toán xong)
@@ -2107,23 +2124,23 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: pct(cogsAll, totalCostWithTax),
             },
             {
-              key: "platformFixed",
-              label: "Phí cố định sàn TMĐT",
-              hint: "Phí cố định + phí thanh toán sàn đã cấn trừ trên từng đơn quyết toán (số thật từ đối soát); đơn chưa quyết toán dùng phí tạm tính theo % kênh — khớp cột \"Phí cố định + thanh toán\" của Lãi/Lỗ Thực Hiện.",
-              amount: platformFixedFee,
-              percent: pct(platformFixedFee, totalCostWithTax),
+              key: "platformFees",
+              label: "Phí sàn",
+              hint: "Tổng phí hoạt động sàn cấn trừ từ đối soát: phí cố định + phí thanh toán + phí dịch vụ + phí tiếp thị liên kết (KHÔNG gồm thuế sàn — thuế tách dòng riêng bên dưới). Đơn chưa quyết toán dùng phí tạm tính theo % kênh.",
+              amount: platformFeeTotal,
+              percent: pct(platformFeeTotal, totalCostWithTax),
             },
             {
               key: "variable",
               label: "Chi phí biến đổi",
-              hint: "Phí dịch vụ + phí tiếp thị liên kết sàn cấn trừ theo đơn (số thật từ đối soát), cộng chi phí biến đổi nhập tay: ads, book KOC, đóng gói…",
-              amount: variableCostTotal,
-              percent: pct(variableCostTotal, totalCostWithTax),
+              hint: "CHỈ khoản chi biến đổi NHẬP TAY ở Thu chi vận hành (ads, book KOC, đóng gói…). Khi lọc theo sàn/gian, chỉ tính khoản đã gắn đúng sàn/gian đó — khoản không gắn gian chỉ hiện ở \"Tất cả sàn\".",
+              amount: variableExpenseTotal,
+              percent: pct(variableExpenseTotal, totalCostWithTax),
             },
             {
               key: "fixed",
               label: "Chi phí cố định",
-              hint: "Chi phí vận hành cố định NGOÀI sàn (mặt bằng, lương nhân sự…) nhập ở module Thu chi vận hành — không gắn vào SKU nào, trừ thẳng vào lợi nhuận toàn shop",
+              hint: "CHỈ khoản chi cố định NHẬP TAY ở Thu chi vận hành (mặt bằng, lương nhân sự…). Khi lọc theo sàn/gian, chỉ tính khoản đã gắn đúng sàn/gian đó — khoản không gắn gian chỉ hiện ở \"Tất cả sàn\".",
               amount: fixedExpenseTotal,
               percent: pct(fixedExpenseTotal, totalCostWithTax),
             },
@@ -2199,10 +2216,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         netProfitAfterTax,
       },
       series,
-      // Chi phí vận hành ghi ở cấp toàn shop, không gắn gian hàng nào. Khi đang
-      // lọc một gian, con số này vẫn là của cả shop — frontend cần nói rõ để
-      // chủ shop không đọc nhầm Lợi nhuận thuần thành lãi riêng của gian đó.
-      operatingExpenseIsShopWide: hasChannelFilter(req),
+      // Từ 30/07: thu/chi vận hành đã LỌC theo sàn/gian (manualTxnScope) nên
+      // không còn cảnh "lọc gian nhưng chi phí của cả shop" — giữ field để
+      // tương thích ngược, luôn false.
+      operatingExpenseIsShopWide: false,
     });
   } catch (err) {
     next(err);
