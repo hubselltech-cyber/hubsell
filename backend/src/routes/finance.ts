@@ -24,7 +24,6 @@ import {
   additionalTaxOn,
   getShopTaxConfig,
   PLATFORM_TAX_RATE,
-  platformTaxOn,
 } from "../tax-config";
 
 const router = Router();
@@ -223,7 +222,8 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 // Muốn đổi công thức phí/thuế/lãi: sửa MỘT chỗ ở đây, mọi trang tự khớp nhau.
 //
 // Quy ước: các trường phí bóc riêng để hai bảng tự chọn cột. Đơn ĐÃ QUYẾT TOÁN
-// dùng phí thực tế (chính xác); chưa quyết toán gộp phí tạm tính vào feeFixedPayment.
+// dùng phí thực tế (chính xác); CHƯA quyết toán mọi bucket phí/thuế = 0 ("chờ
+// đối soát" — quyết định chủ shop 30/07: sổ đối soát không bịa phí % kênh).
 // netRevenue = doanh thu sau khi trừ toàn bộ phí sàn; profit = netRevenue − giá vốn.
 // ============================================================
 
@@ -293,11 +293,12 @@ function computePnlRow(o: PnlOrder) {
     }
   }
 
-  // Gộp phí theo bucket cột. Chưa quyết toán → dồn phí tạm tính vào cột
-  // "cố định + thanh toán", các bucket còn lại để 0 (chưa có số thực).
+  // Gộp phí theo bucket cột. QUYẾT ĐỊNH CHỦ SHOP 30/07: bảng Lãi/Lỗ là SỔ
+  // ĐỐI SOÁT VỚI SÀN — đơn CHƯA quyết toán để 0 ("chờ đối soát"), TUYỆT ĐỐI
+  // không ước phí % kênh rồi bịa vào cột chi phí.
   const feeFixedPayment = o.isSettled
     ? Number(o.fixedFee) + Number(o.paymentFee)
-    : Number(o.platformFee);
+    : 0;
   const feeService = o.isSettled ? Number(o.serviceFee) : 0;
   const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
   const platformSubsidy = Number(o.platformSubsidy);
@@ -317,13 +318,11 @@ function computePnlRow(o: PnlOrder) {
     platformSubsidy;
   const profit = netRevenue - cost;
 
-  // Thuế sàn TMĐT của đơn: quyết toán rồi dùng số THẬT sàn đã trích
-  // (taxWithheld); chưa thì ước tính % cấu hình trên DOANH THU THỰC TẾ (sau
-  // voucher shop) — đối chiếu sao kê thật: 3.625 = 1,5% × 241.676 (Lazada
-  // trích trên số SAU giảm giá, không phải giá gốc 248.000).
-  const platformTax = o.isSettled
-    ? Number(o.taxWithheld)
-    : platformTaxOn(actualRevenue);
+  // Thuế sàn TMĐT của đơn: CHỈ số THẬT sàn đã trích (taxWithheld) khi quyết
+  // toán; chưa quyết toán = 0 ("chờ đối soát" — cùng nguyên tắc không bịa số
+  // với phí sàn). Trang Báo cáo thuế (/api/tax/report) vẫn tự ước nghĩa vụ
+  // 1,5% riêng cho mục đích dự phòng — không dùng trường này.
+  const platformTax = o.isSettled ? Number(o.taxWithheld) : 0;
   const profitAfterTax = profit - platformTax;
 
   return {
@@ -369,7 +368,7 @@ function computePnlRow(o: PnlOrder) {
     netRevenue,
     actualPayout: Number(o.actualPayout),
     profit,
-    // Thuế sàn TMĐT (thực khi đã quyết toán / ước tính khi chưa) + lãi sau thuế
+    // Thuế sàn TMĐT (số thật khi đã quyết toán / 0 khi chờ đối soát) + lãi sau thuế
     platformTax,
     profitAfterTax,
     missingCostPrice,
@@ -451,8 +450,8 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     const rows = filtered.slice(start, start + pageSize);
 
     // Tổng thuế của kỳ (trên toàn bộ đơn khớp lọc, không chỉ trang hiện tại).
-    // Khác /analytics: profit ở đây CHƯA trừ thuế sàn nào cả (kể cả đơn đã
-    // quyết toán) nên trừ đủ platformTax thực + ước tính, không sợ trùng.
+    // platformTax = số THẬT sàn trích của đơn đã quyết toán (đơn chờ đối soát
+    // = 0 — không ước tính); profit ở đây CHƯA trừ thuế nên trừ không sợ trùng.
     const totalProfit = filtered.reduce((s, r) => s + r.profit, 0);
     const totalGrossRevenue = filtered.reduce((s, r) => s + r.revenueGross, 0);
     const totalPlatformTax = filtered.reduce((s, r) => s + r.platformTax, 0);
@@ -1907,7 +1906,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const cogsAll = sumBy(activeRows, (r) => r.costSnapshot);
     // "PHÍ SÀN" MỘT dòng duy nhất = Σ(phí cố định + thanh toán + dịch vụ +
     // tiếp thị liên kết) từ các bucket của Lãi/Lỗ. KHÔNG gồm thuế sàn (tách
-    // dòng riêng). Đơn chưa quyết toán: bucket đã chứa phí tạm tính theo % kênh.
+    // dòng riêng). Đơn chưa quyết toán: bucket = 0 (chờ đối soát, không ước %).
     const platformFeeTotal = sumBy(
       activeRows,
       (r) => r.feeFixedPayment + r.feeService + r.feeAffiliate
@@ -1931,10 +1930,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       sumBy(settledRows, (r) => r.profitAfterTax) -
       variableExpenseTotal -
       fixedExpenseTotal;
-    // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán —
-    // ĐÃ trừ thuế ước tính, vì dòng thuế ở cột Chi phí gồm cả phần ước tính;
-    // nhờ vậy thẻ Lợi nhuận = thẻ Doanh thu − thẻ Chi phí (khi không có
-    // chênh lệch VC/trợ giá sàn/thuế bổ sung).
+    // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
+    // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
+    // phí cũng không chứa khoản ước tính nào của nhóm, nên đẳng thức
+    // thẻ Lợi nhuận = thẻ Doanh thu − thẻ Chi phí vẫn đứng vững.
     const expectedProfit = sumBy(pendingRows, (r) => r.profitAfterTax);
     // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến.
     const provisionalProfit = actualProfit + expectedProfit;
@@ -1980,16 +1979,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // THUẾ (module Hóa đơn & Thuế) — đọc cấu hình trang "Thuế bổ sung"
     // qua tax-config.ts, cùng công thức với /api/tax/report.
     //
-    // Thuế sàn TMĐT khấu trừ tại nguồn trên DOANH THU GỐC:
+    // Thuế sàn TMĐT khấu trừ tại nguồn:
     //  - Đơn ĐÃ quyết toán: số THẬT sàn đã trích (taxWithheld) — khoản này đã
     //    bị trừ sẵn trong actualPayout, tức ĐÃ phản ánh trong lợi nhuận thực
     //    tế. Chỉ báo cáo, KHÔNG trừ lần nữa kẻo trùng.
-    //  - Đơn CHƯA quyết toán (kể cả đang đi đường): ước tính theo % cấu hình.
+    //  - Đơn CHƯA quyết toán: 0 (chờ đối soát — không ước tính; nghĩa vụ dự
+    //    phòng xem trang Báo cáo thuế).
     // ============================================================
-    // Thuế sàn = Σ cột "Thuế sàn" (platformTax) của dòng Lãi/Lỗ: số THẬT
-    // (taxWithheld) với đơn đã quyết toán, ước tính % trên doanh thu gốc với
-    // đơn chưa — không tính lại theo công thức riêng.
     const platformTaxActual = sumBy(settledRows, (r) => r.platformTax);
+    // Luôn = 0 từ 30/07 (không còn ước thuế cho đơn chờ) — giữ biến/field trả
+    // về để FE cũ không vỡ.
     const platformTaxEstimated = sumBy(pendingRows, (r) => r.platformTax);
 
     // Thuế bổ sung: cơ sở tính theo cấu hình (lợi nhuận tạm tính / doanh thu).
@@ -2006,10 +2005,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
 
     // Cột CHI PHÍ gồm cả 2 dòng nghĩa vụ thuế (chuyển từ cột Lợi nhuận sang) —
     // tổng cột phải khớp tổng các dòng bên trong nó.
-    // Dòng thuế sàn hiển thị SỐ ĐẦY ĐỦ = thuế THẬT (GTGT + TNCN sàn đã trích
-    // trên đơn quyết toán, từ dữ liệu đối soát) + ước tính cho đơn chưa quyết
-    // toán — khớp cột Thuế của bảng Lãi/Lỗ Thực Hiện. LƯU Ý: phần thuế THẬT đã
-    // trừ sẵn trong actualPayout nên netProfitAfterTax phía trên KHÔNG trừ lại.
+    // Dòng thuế sàn = thuế THẬT (GTGT + TNCN sàn đã trích trên đơn quyết toán,
+    // từ dữ liệu đối soát) — khớp cột Thuế của bảng Lãi/Lỗ Thực Hiện. LƯU Ý:
+    // phần thuế THẬT đã trừ sẵn trong actualPayout nên netProfitAfterTax phía
+    // trên KHÔNG trừ lại.
     const platformTaxTotal = platformTaxActual + platformTaxEstimated;
     const totalCostWithTax = totalCostColumn + platformTaxTotal + additionalTax;
 
@@ -2035,7 +2034,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       totalCost,
       totalPlatformFee,
       // Dòng tiền treo
-      pendingPayout: pendingNetRevenue, // tiền chờ về (đơn chưa quyết toán, tạm tính)
+      pendingPayout: pendingNetRevenue, // doanh thu chờ sàn đối soát (CHƯA trừ phí — không ước tính)
       settledPayout, // tiền thực tế đã quyết toán về ví
       pendingOrderCount: pendingRows.length,
       settledOrderCount: settledRows.length,
@@ -2103,7 +2102,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "pending",
               label: "Chờ xử lý",
-              hint: "Σ cột \"Doanh thu thực tế\" của đơn CHƯA quyết toán (đang đi đường hoặc đã giao chờ đối soát) — phí/thuế tạm tính của nhóm này nằm ở cột Chi phí.",
+              hint: "Σ cột \"Doanh thu thực tế\" của đơn CHƯA quyết toán (đang đi đường hoặc đã giao chờ đối soát) — phí/thuế của nhóm này CHƯA ghi nhận (chờ sao kê sàn, không ước tính).",
               amount: pendingActualRevenue,
               percent: pct(pendingActualRevenue, actualRevenueTotal),
               count: pendingRows.length,
@@ -2143,7 +2142,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "platformFees",
               label: "Phí sàn",
-              hint: "Tổng phí hoạt động sàn cấn trừ từ đối soát: phí cố định + phí thanh toán + phí dịch vụ + phí tiếp thị liên kết (KHÔNG gồm thuế sàn — thuế tách dòng riêng bên dưới). Đơn chưa quyết toán dùng phí tạm tính theo % kênh.",
+              hint: "Tổng phí hoạt động sàn cấn trừ từ đối soát: phí cố định + phí thanh toán + phí dịch vụ + phí tiếp thị liên kết (KHÔNG gồm thuế sàn — thuế tách dòng riêng bên dưới). CHỈ số THẬT từ sao kê — đơn chưa quyết toán chờ đối soát, không ước %.",
               amount: platformFeeTotal,
               percent: pct(platformFeeTotal, totalCostWithTax),
             },
@@ -2167,7 +2166,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "platformTax",
               label: "Thuế sàn TMĐT (GTGT + TNCN)",
-              hint: `Đơn đã quyết toán: ${Math.round(platformTaxActual).toLocaleString("vi-VN")}đ thuế GTGT + TNCN sàn ĐÃ trích thật theo đối soát (khoản này đã trừ sẵn trong tiền về ví nên Lợi nhuận không trừ lại). Đơn chưa quyết toán: ước tính ${PLATFORM_TAX_RATE * 100}% trên doanh thu thực tế (sau voucher/xu Shop — đúng cơ sở sàn trích thật).`,
+              hint: `Thuế GTGT + TNCN sàn ĐÃ trích THẬT theo đối soát (khoản này đã trừ sẵn trong tiền về ví nên Lợi nhuận không trừ lại). Đơn chưa quyết toán: chờ đối soát, không ước tính — nghĩa vụ thuế dự phòng xem trang Báo cáo thuế (${PLATFORM_TAX_RATE * 100}%).`,
               amount: platformTaxTotal,
               percent: pct(platformTaxTotal, totalCostWithTax),
             },
@@ -2206,7 +2205,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "expected",
               label: "Lợi nhuận dự kiến",
-              hint: "Σ cột \"Lãi sau thuế\" (tạm tính) của đơn CHƯA quyết toán trên Lãi/Lỗ Thực Hiện — phí + thuế ước tính của nhóm này đã nằm ở cột Chi phí.",
+              hint: "Σ cột \"Lợi nhuận\" của đơn CHƯA quyết toán trên Lãi/Lỗ Thực Hiện = doanh thu − giá vốn. CHƯA trừ phí & thuế sàn (chờ sao kê đối soát — hệ thống không ước %), nên đây là mức TRẦN lạc quan.",
               amount: expectedProfit,
               percent: pct(expectedProfit, pendingActualRevenue),
             },
@@ -2227,7 +2226,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         customTaxPercent: taxCfg.customTaxRate * 100,
         filterPeriod: taxCfg.filterPeriod,
         platformTaxActual, // sàn ĐÃ trích — chỉ để đối soát, đã nằm trong actualPayout
-        platformTaxEstimated, // ước tính cho đơn chưa quyết toán — ĐÃ trừ vào netProfitAfterTax
+        platformTaxEstimated, // luôn 0 từ 30/07 (không ước thuế đơn chờ) — giữ field cho FE cũ
         platformTaxTotal,
         additionalTax,
         netProfitAfterTax,

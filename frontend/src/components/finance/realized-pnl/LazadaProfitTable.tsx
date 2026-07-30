@@ -47,16 +47,22 @@ type Col = [string, (d: LazadaSettlementDetail) => number];
 type HeadCol = [string, "left" | "right", string?];
 
 /**
- * Bọc số TẠM TÍNH của đơn CHƯA đối soát: nghiêng + mờ + nhãn nhỏ, để phân
- * biệt với số THẬT từ sao kê nhưng vẫn khớp từng xu với thẻ Tổng ở Báo cáo
- * dòng tiền (thẻ Tổng SUM đúng các trường tạm tính này).
+ * Bọc số CHƯA CHỐT SỔ của đơn chưa đối soát: nghiêng + mờ + nhãn nhỏ, để phân
+ * biệt với số THẬT từ sao kê (chữ đứng, đậm). Đơn đối soát xong thì sao kê
+ * Finance API đè vào và bỏ kiểu chữ này ("chốt sổ").
  */
-function Provisional({ children }: { children: React.ReactNode }) {
+function Provisional({
+  children,
+  label = "chờ đối soát",
+}: {
+  children: React.ReactNode;
+  label?: string;
+}) {
   return (
     <div className="italic opacity-70">
       {children}
       <span className="block text-[10px] not-italic leading-tight text-slate-400">
-        tạm tính
+        {label}
       </span>
     </div>
   );
@@ -165,12 +171,12 @@ export function LazadaProfitTable({
                 [
                   "Doanh thu ước tính",
                   "right",
-                  "Doanh thu ước tính = Giá trị đơn hàng − giảm giá bằng xu/voucher của Shop. CHƯA trừ phí & thuế sàn — trừ tiếp các khoản đó sẽ ra Doanh thu trên sàn. Gọi là ước tính vì đơn chưa giao thành công/còn hoàn hủy thì chưa phải doanh thu cuối cùng.",
+                  "Tổng tiền đơn theo dữ liệu ĐƠN GỐC từ API lúc tạo — CHƯA trừ bất kỳ khoản nào. Dùng để đối soát: đơn giao thành công, cột này BẮT BUỘC khớp cột 'Doanh thu trên sàn'.",
                 ],
                 [
                   "Doanh thu trên sàn",
                   "right",
-                  "Doanh thu thực tế trên sàn — số tiền sàn trả về ví sau khi trừ phí và thuế sàn. Đơn đã đối soát: số THẬT từ sao kê; đơn chưa đối soát: số TẠM TÍNH (chữ nghiêng, mờ) theo % phí kênh + thuế ước tính.",
+                  "Doanh thu GỘP sàn ghi nhận ('Giá trị sản phẩm' / Item Price Credit trên sao kê Finance API) — TUYỆT ĐỐI không trừ phí/thuế/voucher vào cột này, các khoản trừ nằm ở các cột đỏ riêng. Đơn chưa đối soát: hiển thị theo số đơn gốc (nghiêng, mờ) chờ sao kê chốt sổ.",
                 ],
                 ["Giá vốn sản phẩm", "right"],
                 ["LỢI NHUẬN THỰC TẾ", "right"],
@@ -200,29 +206,24 @@ export function LazadaProfitTable({
           {rows.map((b) => {
             const d = b.lazada;
             const cell = "border-t border-slate-100 px-3 py-2.5";
-            // Doanh thu ước tính: số sao kê (itemRevenue) khi đã đối soát;
-            // chưa đối soát hiển thị doanh thu gốc của đơn (KHÔNG phải phí ước
-            // tính — chỉ là giá bán thật của đơn).
             // LƯU Ý: đơn CHƯA quyết toán vẫn có thể CÓ bản ghi sao kê MỘT PHẦN
             // (chi tiết phí vận chuyển đồng bộ sớm từ Order API) — itemRevenue/
             // actualPayout khi đó còn bằng 0. Vì vậy các cột KẾT QUẢ chỉ tin số
             // sao kê khi ĐÃ ĐỐI SOÁT THẬT (isSettled), còn lại dùng số của đơn.
             const settled = b.isSettled && d;
             const isCancelled = b.shippingStatus === "CANCELLED";
-            // Đơn chưa đối soát (trừ đơn hủy) hiển thị SỐ TẠM TÍNH — đúng các
-            // trường computePnlRow mà thẻ Tổng Báo cáo dòng tiền đang SUM
-            // ("Lợi nhuận dự kiến"), để hai màn hình khớp nhau từng xu.
+            // Đơn chưa đối soát (trừ đơn hủy): các cột phí ĐỂ TRỐNG ("chờ đối
+            // soát" — sổ đối soát không bịa phí %); doanh thu hiển thị theo số
+            // đơn gốc, nghiêng mờ chờ sao kê chốt sổ.
             const provisional = !settled && !isCancelled;
-            const estRevenue = settled ? d.itemRevenue : b.revenueGross;
-            // Doanh thu ước tính = Giá trị đơn hàng − giảm giá bằng xu/voucher
-            // của Shop. Đã đối soát: cộng sellerVoucher CÓ DẤU của sao kê (âm =
-            // sàn trừ); chưa đối soát: số gốc từ đơn (actualRevenue).
-            const actualRevenue = settled
-              ? d.itemRevenue + d.sellerVoucher
-              : (b.actualRevenue ?? b.revenueGross - b.sellerVoucher);
-            // Tiền dự kiến sàn trả về ví = doanh thu thuần − thuế ước tính
-            // (ghép từ 2 trường SSOT của dòng, không chế công thức mới).
-            const expectedPayout = b.netRevenue - b.platformTax;
+            // Doanh thu ước tính = tổng tiền đơn GỐC từ Order API (chưa trừ gì).
+            const estRevenue = b.revenueGross;
+            // Doanh thu trên sàn = doanh thu GỘP sàn ghi nhận trên sao kê
+            // (Item Price Credit) — đơn giao thành công PHẢI khớp cột ước tính.
+            const platformRevenue = settled ? d.itemRevenue : b.revenueGross;
+            // LỢI NHUẬN THỰC TẾ = Doanh thu trên sàn − Σ mọi dòng trừ/ghi có
+            // của sao kê − Giá vốn. actualPayout = tổng đại số cả sao kê nên
+            // công thức rút gọn thành actualPayout − giá vốn (tương đương).
             const profit = settled ? d.actualPayout - b.costSnapshot : null;
             return (
               <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
@@ -277,16 +278,11 @@ export function LazadaProfitTable({
                   </td>
                 ))}
 
-                {/* Phí nền tảng — số CÓ DẤU nguyên bản. Đơn chưa đối soát:
-                    phí sàn TẠM TÍNH theo % kênh dồn vào cột "Phí cố định"
-                    (đúng bucket feeFixedPayment backend đang dùng để tính tổng). */}
+                {/* Phí nền tảng — CHỈ số CÓ DẤU nguyên bản từ sao kê. Đơn chưa
+                    đối soát: ĐỂ TRỐNG (chờ đối soát) — tuyệt đối không ước %. */}
                 {PLATFORM_COLS.map(([label, pick]) => (
                   <td key={label} className={cn(cell, BLOCK.fee, "text-right")}>
-                    {provisional && label === "Phí cố định" && b.feeFixedPayment ? (
-                      <Provisional>
-                        <Signed value={-b.feeFixedPayment} />
-                      </Provisional>
-                    ) : settled ? (
+                    {settled ? (
                       <Signed value={pick(d)} />
                     ) : (
                       <span className="text-slate-300">—</span>
@@ -294,13 +290,13 @@ export function LazadaProfitTable({
                   </td>
                 ))}
 
-                {/* Thuế & Kết quả. Đơn chưa đối soát: "Voucher người bán" hiện
-                    số TẠM TÍNH (b.sellerVoucher — suy từ giá gốc − giá khách
-                    trả, đúng trường thẻ Tổng Báo cáo dòng tiền đang SUM). */}
+                {/* Thuế & Voucher. Đơn chưa đối soát: "Voucher người bán" là
+                    dữ liệu THẬT từ đơn gốc (giá gốc − giá khách trả) nên vẫn
+                    hiện (nghiêng mờ); thuế thì chờ sao kê, để trống. */}
                 {TAX_COLS.map(([label, pick]) => (
                   <td key={label} className={cn(cell, BLOCK.result, "text-right")}>
                     {provisional && label === "Voucher người bán" && b.sellerVoucher ? (
-                      <Provisional>
+                      <Provisional label="từ đơn gốc">
                         <Signed value={-b.sellerVoucher} />
                       </Provisional>
                     ) : settled ? (
@@ -310,18 +306,25 @@ export function LazadaProfitTable({
                     )}
                   </td>
                 ))}
-                {/* Doanh thu ước tính — xanh, nhóm doanh thu */}
+                {/* Doanh thu ước tính — tổng tiền đơn GỐC (Order API) */}
                 <td className={cn(cell, BLOCK.result, "text-right")}>
-                  <Amount value={actualRevenue} tone="font-medium text-emerald-700" />
+                  <Amount value={estRevenue} tone="font-medium text-emerald-700" />
                 </td>
-                {/* Doanh thu trên sàn — đã đối soát: tiền THẬT sàn trả về ví;
-                    chưa đối soát: số TẠM TÍNH (doanh thu thuần − thuế ước tính) */}
+                {/* Doanh thu trên sàn — GỘP sàn ghi nhận: đã đối soát = Item
+                    Price Credit sao kê (chốt sổ: chữ đứng, đậm); chưa = số đơn
+                    gốc nghiêng mờ chờ sao kê đè vào. */}
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   {settled ? (
-                    <Amount value={d.actualPayout} tone="font-medium text-emerald-700" />
+                    <Amount
+                      value={platformRevenue}
+                      tone="font-semibold text-emerald-700"
+                    />
                   ) : provisional ? (
                     <Provisional>
-                      <Amount value={expectedPayout} tone="font-medium text-emerald-700" />
+                      <Amount
+                        value={platformRevenue}
+                        tone="font-medium text-emerald-700"
+                      />
                     </Provisional>
                   ) : (
                     <span className="text-slate-300">—</span>
@@ -332,13 +335,14 @@ export function LazadaProfitTable({
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   <Amount value={b.costSnapshot} tone="text-rose-600" />
                 </td>
-                {/* Lợi nhuận — đã đối soát: số THẬT; chưa: TẠM TÍNH (profitAfterTax,
-                    đúng trường thẻ Tổng đang SUM thành "Lợi nhuận dự kiến") */}
+                {/* Lợi nhuận — đã đối soát: DT trên sàn − Σ cột trừ − giá vốn
+                    (số THẬT, chốt sổ); chưa: doanh thu − giá vốn, CHƯA gồm phí
+                    sàn (đúng trường thẻ Tổng SUM thành "Lợi nhuận dự kiến") */}
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   {profit != null ? (
                     <ProfitCell value={profit} />
                   ) : provisional ? (
-                    <Provisional>
+                    <Provisional label="chưa gồm phí sàn">
                       <ProfitCell value={b.profitAfterTax} />
                     </Provisional>
                   ) : (
@@ -351,16 +355,17 @@ export function LazadaProfitTable({
         </tbody>
       </table>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
-        Đơn <b>đã đối soát</b>: mọi con số lấy <b>nguyên bản từ sao kê Finance
-        API của Lazada</b> (âm = sàn trừ, dương = ghi có). Đơn <b>chưa đối
-        soát</b>: hiển thị <b>số tạm tính</b> (chữ nghiêng, mờ) — phí sàn theo %
-        kênh dồn ở cột &quot;Phí cố định&quot;, Doanh thu trên sàn &amp; Lợi nhuận
-        đã trừ thuế ước tính — SUM các số này đúng bằng dòng &quot;Lợi nhuận dự
-        kiến&quot; trên Báo cáo dòng tiền. <b>Doanh thu ước tính</b> = Giá trị
-        đơn hàng − giảm giá bằng xu/voucher của Shop. <b>Doanh thu trên sàn</b> =
-        tiền sàn trả về ví sau khi trừ phí &amp; thuế sàn. <b>Lợi nhuận thực
-        tế</b> = Doanh thu trên sàn − Giá vốn sản phẩm (giá vốn hiển thị số dương
-        màu đỏ, vẫn được TRỪ khi tính lợi nhuận).
+        Bảng này là <b>sổ đối soát với sàn</b>. <b>Doanh thu ước tính</b> = tổng
+        tiền đơn theo dữ liệu đơn gốc từ API; <b>Doanh thu trên sàn</b> = doanh
+        thu GỘP sàn ghi nhận trên sao kê (Item Price Credit) — <b>đơn giao thành
+        công hai cột phải khớp nhau</b>, mọi khoản trừ (phí, thuế, voucher, chênh
+        lệch VC) nằm ở các cột đỏ riêng, không trừ lẫn vào cột doanh thu. Đơn
+        <b> đã đối soát</b>: số nguyên bản từ sao kê Finance API (âm = sàn trừ,
+        dương = ghi có), chữ đứng đậm = đã chốt sổ; <b>Lợi nhuận thực tế</b> =
+        Doanh thu trên sàn − Σ các cột phí/thuế/voucher − Giá vốn sản phẩm. Đơn
+        <b> chưa đối soát</b> (chữ nghiêng, mờ): cột phí/thuế <b>để trống chờ đối
+        soát</b> — hệ thống KHÔNG ước phí %, sàn báo phát sinh nào thì cột đó
+        cập nhật ngay; Lợi nhuận tạm = doanh thu − giá vốn (chưa gồm phí sàn).
       </p>
     </div>
   );

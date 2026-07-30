@@ -39,7 +39,9 @@ export const FEE_SELECT = {
  * Phí sàn thực dùng cho một đơn:
  * - Đã quyết toán → dùng số THỰC TẾ sàn trả về (fixed + service + payment
  *   + affiliate + voucher + chênh lệch ship − trợ giá)
- * - Chưa quyết toán → dùng số TẠM TÍNH theo % của kênh
+ * - Chưa quyết toán → 0 ("chờ đối soát"). QUYẾT ĐỊNH CHỦ SHOP 30/07: mọi báo
+ *   cáo là SỔ ĐỐI SOÁT VỚI SÀN — phí chỉ ghi khi sàn trả số thật, TUYỆT ĐỐI
+ *   không ước % kênh (10%/12%...) rồi bịa vào cột chi phí.
  */
 export function orderPlatformFee(order: FeeFields): {
   fee: number;
@@ -56,5 +58,5 @@ export function orderPlatformFee(order: FeeFields): {
       Number(order.platformSubsidy);
     return { fee, isSettled: true };
   }
-  return { fee: Number(order.platformFee), isSettled: false };
+  return { fee: 0, isSettled: false };
 }
