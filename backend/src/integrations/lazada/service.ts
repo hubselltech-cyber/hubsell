@@ -576,6 +576,8 @@ type LazadaFeeBucket =
   | "shipDiscountSeller"
   | "shipFeeReturn"
   | "shipFeeAdjustment"
+  | "feeFixed"
+  | "feeOrderProcessing"
   | "feePayment"
   | "feeCommission"
   | "feeShipSeller"
@@ -590,6 +592,7 @@ type LazadaFeeBucket =
   | "feeCampaign"
   | "feeAffiliate"
   | "feeInfrastructure"
+  | "sellerVoucher"
   | "vatFee"
   | "incomeTaxFee"
   | "feeOther"
@@ -605,11 +608,12 @@ function emptyDetailAcc(): LazadaDetailAcc {
   return {
     itemRevenue: 0, shipFee: 0, shipFeeCustomer: 0, shipDiscountPlatform: 0,
     shipDiscountSeller: 0, shipFeeReturn: 0, shipFeeAdjustment: 0,
+    feeFixed: 0, feeOrderProcessing: 0,
     feePayment: 0, feeCommission: 0, feeShipSeller: 0, shipSubsidySeller: 0,
     feeFreeshipMax: 0, feeCashbackMax: 0, feeSponsoredDiscovery: 0,
     feeLazadaBonus: 0, bonusLzdCofund: 0, feeBuyerReview: 0, feeLazpick: 0,
     feeCampaign: 0, feeAffiliate: 0, feeInfrastructure: 0,
-    vatFee: 0, incomeTaxFee: 0, feeOther: 0, subsidyOther: 0,
+    sellerVoucher: 0, vatFee: 0, incomeTaxFee: 0, feeOther: 0, subsidyOther: 0,
     total: 0, lines: 0,
   };
 }
@@ -628,12 +632,10 @@ export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucke
   const has = (...keys: string[]) => keys.some((k) => name.includes(k));
 
   switch (true) {
-    // ----- Doanh thu & giảm giá đơn (đã phản ánh trong giá bán) -----
+    // ----- Doanh thu -----
     case has("giá trị sản phẩm", "item price"):
       return "itemRevenue";
-    case has("giảm giá bằng xu"):
-      return "itemRevenue"; // giảm giá shop chịu — đã trừ sẵn trong giá đơn
-    // ----- Phí chương trình đặc thù (trước nhánh hoa hồng/vận chuyển chung) -----
+    // ----- Phí chương trình đặc thù (trước nhánh chung kẻo bị nuốt) -----
     case has("lazpick", "laztop"):
       return "feeLazpick";
     case has("freeship"):
@@ -648,7 +650,8 @@ export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucke
       return "feeLazadaBonus";
     case has("đánh giá người mua", "review"):
       return "feeBuyerReview";
-    case has("lazcoin", "chiến dịch", "campaign", "khuyến mãi"):
+    case has("lazcoin", "chiến dịch", "campaign"):
+      // "Phí tham gia Khuyến Mãi LazCoins" là PHÍ chương trình → Phí chiến dịch.
       return "feeCampaign";
     case has("tiếp thị liên kết", "affiliate", "sponsor"):
       return "feeAffiliate";
@@ -660,9 +663,10 @@ export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucke
     case has("vận chuyển", "shipping", "giao hàng") && has("hoàn", "return"):
       return "shipFeeReturn";
     case has("vận chuyển", "shipping") && has("khách", "người mua", "customer", "buyer"):
-      return "shipFeeCustomer";
+      return "shipFeeCustomer"; // "Phí vận chuyển khách trả" (+)
     case has("giảm giá", "voucher", "miễn phí") && has("vận chuyển", "shipping"):
-      // Giảm giá phí VC: nền tảng bù hay người bán chịu?
+      // "Miễn phí vận chuyển" = Lazada trợ giá ship → Giảm giá nền tảng;
+      // dòng ghi rõ người bán/cửa hàng chịu → Giảm giá người bán.
       return has("người bán", "seller", "cửa hàng")
         ? "shipDiscountSeller"
         : "shipDiscountPlatform";
@@ -672,10 +676,18 @@ export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucke
       return "feeShipSeller";
     case has("phí vận chuyển", "shipping fee", "logistic"):
       return "shipFee";
-    // ----- Phí lõi -----
-    case has("phí cố định", "fixed fee", "hoa hồng", "commission"):
+    // ----- Voucher người bán ("Giảm giá từ Cửa hàng" / "Giảm Giá Bằng Xu") -----
+    case has("giảm giá bằng xu", "giảm giá từ cửa hàng") ||
+      (has("giảm giá", "voucher", "discount") && has("cửa hàng", "người bán", "seller")):
+      return "sellerVoucher";
+    // ----- Phí lõi: MỖI KHOẢN MỘT CỘT, tuyệt đối không gộp -----
+    case has("phí cố định", "fixed fee"):
+      return "feeFixed";
+    case has("xử lý đơn", "order processing"):
+      return "feeOrderProcessing";
+    case has("hoa hồng", "commission"):
       return "feeCommission";
-    case has("xử lý đơn", "phí thanh toán", "payment"):
+    case has("phí thanh toán", "payment"):
       return "feePayment";
     // ----- Thuế sàn thu hộ -----
     case has("gtgt", "vat"):
@@ -807,6 +819,8 @@ export async function syncLazadaSettlements(
       shipDiscountSeller: acc.shipDiscountSeller,
       shipFeeReturn: acc.shipFeeReturn,
       shipFeeAdjustment: acc.shipFeeAdjustment,
+      feeFixed: acc.feeFixed,
+      feeOrderProcessing: acc.feeOrderProcessing,
       feePayment: acc.feePayment,
       feeCommission: acc.feeCommission,
       feeShipSeller: acc.feeShipSeller,
@@ -823,6 +837,7 @@ export async function syncLazadaSettlements(
       feeInfrastructure: acc.feeInfrastructure,
       feeOther: acc.feeOther,
       subsidyOther: acc.subsidyOther,
+      sellerVoucher: acc.sellerVoucher,
       vatFee: acc.vatFee,
       incomeTaxFee: acc.incomeTaxFee,
       actualPayout: acc.total,
@@ -851,7 +866,7 @@ export async function syncLazadaSettlements(
     const otherPlatformFees = -(
       acc.feeInfrastructure + acc.feeFreeshipMax + acc.feeCashbackMax +
       acc.feeSponsoredDiscovery + acc.feeLazadaBonus + acc.feeBuyerReview +
-      acc.feeLazpick + acc.feeOther
+      acc.feeLazpick + acc.feeCampaign + acc.feeOther
     );
 
     await prisma.order.update({
@@ -859,11 +874,14 @@ export async function syncLazadaSettlements(
       data: {
         isSettled: true,
         settledAt,
-        fixedFee: -acc.feeCommission,
-        paymentFee: -acc.feePayment,
+        fixedFee: -(acc.feeFixed + acc.feeCommission),
+        paymentFee: -(acc.feePayment + acc.feeOrderProcessing),
         serviceFee: otherPlatformFees,
         affiliateFee: -acc.feeAffiliate,
-        sellerVoucher: -acc.feeCampaign,
+        // Voucher người bán ("Giảm giá từ Cửa hàng") KHÔNG cộng vào cột gộp:
+        // giá đơn (totalAmount) Lazada trả đã trừ sẵn giảm giá — cộng nữa là
+        // trừ trùng trong công thức chung. Số chi tiết nằm ở LazadaOrderSettlement.
+        sellerVoucher: 0,
         shippingFeeActual: -shipNeg,
         shippingFeeQuoted: shipPos,
         shippingFeeDiff: Math.max(-shipNeg - shipPos, 0),

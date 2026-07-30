@@ -898,9 +898,11 @@ model LazadaOrderSettlement {
   shipFeeReturn        Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển hoàn
   shipFeeAdjustment    Decimal @default(0) @db.Decimal(12, 2) /// Điều chỉnh phí vận chuyển
 
-  // ===== PHÍ NỀN TẢNG =====
-  feePayment            Decimal @default(0) @db.Decimal(12, 2) /// Phí thanh toán / Phí xử lý đơn hàng
-  feeCommission         Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng / Phí cố định
+  // ===== PHÍ NỀN TẢNG (mỗi khoản MỘT cột — khớp từng dòng sao kê Lazada VN) =====
+  feeFixed              Decimal @default(0) @db.Decimal(12, 2) /// "Phí cố định"
+  feeOrderProcessing    Decimal @default(0) @db.Decimal(12, 2) /// "Phí xử lý đơn hàng"
+  feePayment            Decimal @default(0) @db.Decimal(12, 2) /// Phí thanh toán (Payment Fee)
+  feeCommission         Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng (Commission)
   feeShipSeller         Decimal @default(0) @db.Decimal(12, 2) /// Phí VC người bán trả
   shipSubsidySeller     Decimal @default(0) @db.Decimal(12, 2) /// Trợ giá vận chuyển (người bán)
   feeFreeshipMax        Decimal @default(0) @db.Decimal(12, 2) /// Phí Freeship Max
@@ -918,7 +920,9 @@ model LazadaOrderSettlement {
   /// CHỐT CHẶN AN TOÀN: khoản DƯƠNG chưa nhận diện được (sàn bù/hoàn).
   subsidyOther          Decimal @default(0) @db.Decimal(12, 2)
 
-  // ===== THUẾ =====
+  // ===== VOUCHER & THUẾ =====
+  /// "Giảm giá từ Cửa hàng" / "Giảm Giá Bằng Xu" — voucher NGƯỜI BÁN chịu.
+  sellerVoucher Decimal @default(0) @db.Decimal(12, 2)
   vatFee       Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT nhà bán hàng
   incomeTaxFee Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN nhà bán hàng
 

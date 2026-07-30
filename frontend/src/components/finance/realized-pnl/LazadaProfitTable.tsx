@@ -61,6 +61,8 @@ const SHIP_COLS: Col[] = [
 ];
 
 const PLATFORM_COLS: Col[] = [
+  ["Phí cố định", (d) => d.feeFixed],
+  ["Phí xử lý đơn hàng", (d) => d.feeOrderProcessing],
   ["Phí thanh toán", (d) => d.feePayment],
   ["Phí hoa hồng", (d) => d.feeCommission],
   ["Phí VC người bán trả", (d) => d.feeShipSeller],
@@ -81,6 +83,7 @@ const PLATFORM_COLS: Col[] = [
 ];
 
 const TAX_COLS: Col[] = [
+  ["Voucher người bán", (d) => d.sellerVoucher],
   ["Thuế GTGT", (d) => d.vatFee],
   ["Thuế TNCN", (d) => d.incomeTaxFee],
 ];
@@ -124,7 +127,7 @@ export function LazadaProfitTable({
               Phí nền tảng
             </th>
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={TAX_COLS.length + 3}>
-              Thuế &amp; Kết quả
+              Voucher, Thuế &amp; Kết quả
             </th>
           </tr>
           {/* Tầng tên cột */}

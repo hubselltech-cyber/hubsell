@@ -331,13 +331,14 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
                 [
                   "itemRevenue", "shipFee", "shipFeeCustomer",
                   "shipDiscountPlatform", "shipDiscountSeller", "shipFeeReturn",
-                  "shipFeeAdjustment", "feePayment", "feeCommission",
+                  "shipFeeAdjustment", "feeFixed", "feeOrderProcessing",
+                  "feePayment", "feeCommission",
                   "feeShipSeller", "shipSubsidySeller", "feeFreeshipMax",
                   "feeCashbackMax", "feeSponsoredDiscovery", "feeLazadaBonus",
                   "bonusLzdCofund", "feeBuyerReview", "feeLazpick",
                   "feeCampaign", "feeAffiliate", "feeInfrastructure",
-                  "feeOther", "subsidyOther", "vatFee", "incomeTaxFee",
-                  "actualPayout",
+                  "feeOther", "subsidyOther", "sellerVoucher",
+                  "vatFee", "incomeTaxFee", "actualPayout",
                 ] as const
               ).map((k) => [k, Number(o.lazadaSettlement![k])])
             )

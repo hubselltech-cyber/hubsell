@@ -496,7 +496,9 @@ export interface LazadaSettlementDetail {
   shipDiscountSeller: number;
   shipFeeReturn: number;
   shipFeeAdjustment: number;
-  // Phí nền tảng
+  // Phí nền tảng — mỗi khoản một cột, khớp từng dòng sao kê Lazada VN
+  feeFixed: number;
+  feeOrderProcessing: number;
   feePayment: number;
   feeCommission: number;
   feeShipSeller: number;
@@ -513,7 +515,8 @@ export interface LazadaSettlementDetail {
   feeInfrastructure: number;
   feeOther: number;
   subsidyOther: number;
-  // Thuế
+  // Voucher người bán & Thuế
+  sellerVoucher: number;
   vatFee: number;
   incomeTaxFee: number;
   // Kết quả
