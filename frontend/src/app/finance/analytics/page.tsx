@@ -53,8 +53,9 @@ import { formatVND, formatNumber } from "@/lib/format";
 // Bố cục 4 cột theo chuẩn kế toán (backend quyết định toàn bộ items):
 //   - Cột Doanh thu: có thêm dòng "Thu nhập vận hành khác" ở cuối (khoản ngoài
 //     đơn hàng, không cộng vào tổng cột).
-//   - Cột Chi phí: gồm cả 2 dòng nghĩa vụ thuế thật từ module Hóa đơn & Thuế
-//     ("Thuế sàn TMĐT ước tính" + "Thuế bổ sung dự phòng") — tổng cột đã bao gồm.
+//   - Cột Chi phí: giá vốn + phí sàn cấn trừ trên từng đơn (số thật từ đối
+//     soát, cùng công thức với Lãi/Lỗ Thực Hiện) + chi phí vận hành + 2 dòng
+//     nghĩa vụ thuế ("Thuế sàn TMĐT (GTGT + TNCN)" + "Thuế bổ sung dự phòng").
 //   - Cột Lợi nhuận: TINH GIẢN — Tổng lợi nhuận tạm tính = Thực tế + Dự kiến,
 //     chỉ phân rã theo trạng thái đơn để quản trị rủi ro dòng tiền TMĐT.
 
@@ -161,7 +162,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Chi phí"
-              subtitle="Giá vốn + chi phí vận hành + nghĩa vụ thuế"
+              subtitle="Giá vốn + phí sàn cấn trừ + vận hành + nghĩa vụ thuế"
               total={data.breakdown.costs.total}
               icon={Receipt}
               tone="negative"
