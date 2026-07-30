@@ -209,13 +209,168 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 };
 
 // ============================================================
-// LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)
-// Trả về "detail row" GIÀU trường (superset) kèm dòng sản phẩm; frontend tách
-// theo từng sàn để render đúng cột đặc thù. Có phân trang + tóm tắt theo sàn.
+// NGUỒN SỐ GỐC DUY NHẤT (SINGLE SOURCE OF TRUTH) CỦA MODULE TÀI CHÍNH
+//
+// "Lãi/Lỗ Thực Hiện" là nguồn số gốc. Mọi con số tài chính của MỘT đơn
+// (doanh thu gốc, từng bucket phí, giá vốn, thuế, lợi nhuận) sinh ra từ đúng
+// MỘT hàm computePnlRow() trên đúng MỘT tập đơn fetchPnlOrders():
+//   - /realized-pnl : hiển thị từng dòng computePnlRow (chi tiết + phân trang).
+//   - /analytics    : Báo cáo dòng tiền — chỉ là VIEW tổng hợp, CHỈ được
+//     SUM() các trường của những dòng này theo nhóm; TUYỆT ĐỐI không tự
+//     query/tính lại theo công thức riêng.
+// Muốn đổi công thức phí/thuế/lãi: sửa MỘT chỗ ở đây, mọi trang tự khớp nhau.
 //
 // Quy ước: các trường phí bóc riêng để hai bảng tự chọn cột. Đơn ĐÃ QUYẾT TOÁN
 // dùng phí thực tế (chính xác); chưa quyết toán gộp phí tạm tính vào feeFixedPayment.
 // netRevenue = doanh thu sau khi trừ toàn bộ phí sàn; profit = netRevenue − giá vốn.
+// ============================================================
+
+/** Đơn kèm đủ dữ liệu quan hệ để bóc số Lãi/Lỗ. */
+type PnlOrder = Prisma.OrderGetPayload<{
+  include: {
+    channel: { select: { channelName: true; shopName: true } };
+    items: true;
+    inventoryLogs: { include: { product: { select: { costPrice: true } } } };
+    lazadaSettlement: true;
+  };
+}>;
+
+/** TẬP ĐƠN ĐẦU VÀO dùng chung: cùng WHERE, cùng include, cùng trần an toàn. */
+function fetchPnlOrders(
+  scope: ChannelScope,
+  range?: DateRangeFilter,
+  shippingStatus?: ShippingStatus
+): Promise<PnlOrder[]> {
+  return prisma.order.findMany({
+    where: {
+      channel: scope,
+      createdAt: range,
+      ...(shippingStatus ? { shippingStatus } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      channel: { select: { channelName: true, shopName: true } },
+      items: true,
+      inventoryLogs: {
+        where: { changeQuantity: { lt: 0 } },
+        include: { product: { select: { costPrice: true } } },
+      },
+      // Sao kê quyết toán chi tiết Lazada — bảng tab Lazada đọc số thật từ đây.
+      lazadaSettlement: true,
+    },
+    take: 2000, // trần an toàn — báo cáo theo khoảng ngày thường nằm dưới mức này
+  });
+}
+
+/** Dòng Lãi/Lỗ đã bóc số của một đơn — đơn vị số liệu gốc của mọi báo cáo. */
+type PnlRow = ReturnType<typeof computePnlRow>;
+
+// Bóc toàn bộ số liệu tài chính của MỘT đơn — công thức gốc duy nhất.
+function computePnlRow(o: PnlOrder) {
+  const { cost, missingCostPrice } = orderCost(o);
+  const revenueGross = orderGrossRevenue(o);
+
+  // Gộp phí theo bucket cột. Chưa quyết toán → dồn phí tạm tính vào cột
+  // "cố định + thanh toán", các bucket còn lại để 0 (chưa có số thực).
+  const feeFixedPayment = o.isSettled
+    ? Number(o.fixedFee) + Number(o.paymentFee)
+    : Number(o.platformFee);
+  const feeService = o.isSettled ? Number(o.serviceFee) : 0;
+  const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
+  const sellerVoucher = Number(o.sellerVoucher);
+  const platformSubsidy = Number(o.platformSubsidy);
+  const shippingFeeDiff = Number(o.shippingFeeDiff);
+
+  const netRevenue =
+    revenueGross -
+    sellerVoucher -
+    feeFixedPayment -
+    feeService -
+    feeAffiliate -
+    shippingFeeDiff +
+    platformSubsidy;
+  const profit = netRevenue - cost;
+
+  // Thuế sàn TMĐT của đơn: quyết toán rồi dùng số THẬT sàn đã trích
+  // (taxWithheld); chưa thì ước tính % cấu hình trên doanh thu gốc.
+  const platformTax = o.isSettled
+    ? Number(o.taxWithheld)
+    : platformTaxOn(revenueGross);
+  const profitAfterTax = profit - platformTax;
+
+  return {
+    id: o.id,
+    orderCode: o.orderCode,
+    shippingStatus: o.shippingStatus,
+    isSettled: o.isSettled,
+    channelName: o.channel.channelName,
+    shopName: o.channel.shopName,
+    createdAt: o.createdAt,
+    shippedAt: o.packedAt, // mốc bàn giao ĐVVC (gần nhất với "ngày gửi ĐVVC")
+    customerName: o.customerName,
+    carrier: o.carrier,
+    items: o.items.map((it) => ({
+      sku: it.channelSku,
+      name: it.productName,
+      variation: "", // OrderItem chưa tách trường phân loại — giữ chỗ
+      quantity: it.quantity,
+      price: Number(it.price),
+      costPriceAtSale: Number(it.costPriceAtSale),
+    })),
+    // Doanh thu & trợ giá
+    revenueGross,
+    sellerVoucher,
+    platformSubsidy,
+    // Vận chuyển
+    shippingFeeQuoted: Number(o.shippingFeeQuoted),
+    shippingFeeActual: Number(o.shippingFeeActual),
+    shippingFeeDiff,
+    shipSubsidyPlatform: Number(o.shipSubsidyPlatform),
+    shipSubsidyShop: Number(o.shipSubsidyShop),
+    // Phí sàn theo bucket
+    feeFixedPayment,
+    feeService,
+    feeAffiliate,
+    // Khấu trừ lúc giải ngân — bóc tách hiển thị, đã nằm trong actualPayout
+    adWalletTopup: Number(o.adWalletTopup),
+    taxWithheld: Number(o.taxWithheld),
+    // Hiệu quả
+    costSnapshot: cost,
+    netRevenue,
+    actualPayout: Number(o.actualPayout),
+    profit,
+    // Thuế sàn TMĐT (thực khi đã quyết toán / ước tính khi chưa) + lãi sau thuế
+    platformTax,
+    profitAfterTax,
+    missingCostPrice,
+    // SAO KÊ CHI TIẾT LAZADA — số CÓ DẤU NGUYÊN BẢN từ Finance API (null
+    // với đơn sàn khác / đơn Lazada chưa đối soát). Tab Lazada dùng 100%
+    // số thật này, không dùng bucket gộp phía trên.
+    lazada: o.lazadaSettlement
+      ? Object.fromEntries(
+          (
+            [
+              "itemRevenue", "shipFee", "shipFeeCustomer",
+              "shipDiscountPlatform", "shipDiscountSeller", "shipFeeReturn",
+              "shipFeeAdjustment", "feeFixed", "feeOrderProcessing",
+              "feePayment", "feeCommission",
+              "feeShipSeller", "shipSubsidySeller", "feeFreeshipMax",
+              "feeCashbackMax", "feeSponsoredDiscovery", "feeLazadaBonus",
+              "bonusLzdCofund", "feeBuyerReview", "feeLazpick",
+              "feeCampaign", "feeAffiliate", "feeInfrastructure",
+              "feeOther", "subsidyOther", "sellerVoucher",
+              "vatFee", "incomeTaxFee", "actualPayout",
+            ] as const
+          ).map((k) => [k, Number(o.lazadaSettlement![k])])
+        )
+      : null,
+  };
+}
+
+// ============================================================
+// LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)
+// Trả về "detail row" GIÀU trường (superset) kèm dòng sản phẩm; frontend tách
+// theo từng sàn để render đúng cột đặc thù. Có phân trang + tóm tắt theo sàn.
 // ============================================================
 
 const PNL_PAGE_SIZES = [20, 50, 100];
@@ -237,126 +392,13 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     // bổ sung của kỳ, cùng công thức với /analytics và /api/tax/report.
     const taxCfg = await getShopTaxConfig(req.ownerId!);
 
-    const orders = await prisma.order.findMany({
-      where: {
-        channel: channelScope(req),
-        createdAt: parseDateRange(req.query),
-        ...(shippingStatus ? { shippingStatus } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        channel: { select: { channelName: true, shopName: true } },
-        items: true,
-        inventoryLogs: {
-          where: { changeQuantity: { lt: 0 } },
-          include: { product: { select: { costPrice: true } } },
-        },
-        // Sao kê quyết toán chi tiết Lazada — bảng tab Lazada đọc số thật từ đây.
-        lazadaSettlement: true,
-      },
-      take: 2000, // trần an toàn — báo cáo theo khoảng ngày thường nằm dưới mức này
-    });
-
-    const allRows = orders.map((o) => {
-      const { cost, missingCostPrice } = orderCost(o);
-      const revenueGross = orderGrossRevenue(o);
-
-      // Gộp phí theo bucket cột. Chưa quyết toán → dồn phí tạm tính vào cột
-      // "cố định + thanh toán", các bucket còn lại để 0 (chưa có số thực).
-      const feeFixedPayment = o.isSettled
-        ? Number(o.fixedFee) + Number(o.paymentFee)
-        : Number(o.platformFee);
-      const feeService = o.isSettled ? Number(o.serviceFee) : 0;
-      const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
-      const sellerVoucher = Number(o.sellerVoucher);
-      const platformSubsidy = Number(o.platformSubsidy);
-      const shippingFeeDiff = Number(o.shippingFeeDiff);
-
-      const netRevenue =
-        revenueGross -
-        sellerVoucher -
-        feeFixedPayment -
-        feeService -
-        feeAffiliate -
-        shippingFeeDiff +
-        platformSubsidy;
-      const profit = netRevenue - cost;
-
-      // Thuế sàn TMĐT của đơn: quyết toán rồi dùng số THẬT sàn đã trích
-      // (taxWithheld); chưa thì ước tính % cấu hình trên doanh thu gốc.
-      const platformTax = o.isSettled
-        ? Number(o.taxWithheld)
-        : platformTaxOn(revenueGross);
-      const profitAfterTax = profit - platformTax;
-
-      return {
-        id: o.id,
-        orderCode: o.orderCode,
-        shippingStatus: o.shippingStatus,
-        isSettled: o.isSettled,
-        channelName: o.channel.channelName,
-        shopName: o.channel.shopName,
-        createdAt: o.createdAt,
-        shippedAt: o.packedAt, // mốc bàn giao ĐVVC (gần nhất với "ngày gửi ĐVVC")
-        customerName: o.customerName,
-        carrier: o.carrier,
-        items: o.items.map((it) => ({
-          sku: it.channelSku,
-          name: it.productName,
-          variation: "", // OrderItem chưa tách trường phân loại — giữ chỗ
-          quantity: it.quantity,
-          price: Number(it.price),
-          costPriceAtSale: Number(it.costPriceAtSale),
-        })),
-        // Doanh thu & trợ giá
-        revenueGross,
-        sellerVoucher,
-        platformSubsidy,
-        // Vận chuyển
-        shippingFeeQuoted: Number(o.shippingFeeQuoted),
-        shippingFeeActual: Number(o.shippingFeeActual),
-        shippingFeeDiff,
-        shipSubsidyPlatform: Number(o.shipSubsidyPlatform),
-        shipSubsidyShop: Number(o.shipSubsidyShop),
-        // Phí sàn theo bucket
-        feeFixedPayment,
-        feeService,
-        feeAffiliate,
-        // Khấu trừ lúc giải ngân — bóc tách hiển thị, đã nằm trong actualPayout
-        adWalletTopup: Number(o.adWalletTopup),
-        taxWithheld: Number(o.taxWithheld),
-        // Hiệu quả
-        costSnapshot: cost,
-        netRevenue,
-        actualPayout: Number(o.actualPayout),
-        profit,
-        // Thuế sàn TMĐT (thực khi đã quyết toán / ước tính khi chưa) + lãi sau thuế
-        platformTax,
-        profitAfterTax,
-        missingCostPrice,
-        // SAO KÊ CHI TIẾT LAZADA — số CÓ DẤU NGUYÊN BẢN từ Finance API (null
-        // với đơn sàn khác / đơn Lazada chưa đối soát). Tab Lazada dùng 100%
-        // số thật này, không dùng bucket gộp phía trên.
-        lazada: o.lazadaSettlement
-          ? Object.fromEntries(
-              (
-                [
-                  "itemRevenue", "shipFee", "shipFeeCustomer",
-                  "shipDiscountPlatform", "shipDiscountSeller", "shipFeeReturn",
-                  "shipFeeAdjustment", "feeFixed", "feeOrderProcessing",
-                  "feePayment", "feeCommission",
-                  "feeShipSeller", "shipSubsidySeller", "feeFreeshipMax",
-                  "feeCashbackMax", "feeSponsoredDiscovery", "feeLazadaBonus",
-                  "bonusLzdCofund", "feeBuyerReview", "feeLazpick",
-                  "feeCampaign", "feeAffiliate", "feeInfrastructure",
-                  "feeOther", "subsidyOther", "sellerVoucher",
-                  "vatFee", "incomeTaxFee", "actualPayout",
-                ] as const
-              ).map((k) => [k, Number(o.lazadaSettlement![k])])
-            )
-          : null,
-      };
-    });
+    // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức với mọi báo cáo tài chính.
+    const orders = await fetchPnlOrders(
+      channelScope(req),
+      parseDateRange(req.query),
+      shippingStatus
+    );
+    const allRows = orders.map(computePnlRow);
 
     // Bộ lọc nhanh "Lợi nhuận âm": chỉ giữ đơn LỖ (profit < 0). Áp trước khi
     // phân trang & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
@@ -1739,9 +1781,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       ? { fundChannelId: { not: null }, fundChannel: scope }
       : {};
 
-    const [delivered, expenses, inFlight, cancelled, operatingIncomeAgg, taxCfg] =
-      await Promise.all([
-      fetchDeliveredOrders(scope, range),
+    const [pnlOrders, expenses, operatingIncomeAgg, taxCfg] = await Promise.all([
+      // NGUỒN SỐ GỐC: CÙNG tập đơn + CÙNG công thức với trang Lãi/Lỗ Thực Hiện
+      // (không lọc trạng thái = tab "Tất cả" bên Lãi/Lỗ; cùng WHERE, cùng trần).
+      fetchPnlOrders(scope, range),
       prisma.operatingExpense.findMany({
         where: {
           userId: ownerId,
@@ -1755,39 +1798,6 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           category: true,
           expenseDate: true,
         },
-      }),
-      // Đơn chưa giao xong → tiền chưa về ví.
-      // PROCESSED (đã đóng gói, chờ shipper) cũng là tiền treo y như PENDING và
-      // SHIPPING — bỏ sót nó là cả nhóm đơn này biến mất khỏi "Tiền chờ về".
-      prisma.order.findMany({
-        where: {
-          channel: scope,
-          shippingStatus: {
-            in: [
-              ShippingStatus.PENDING,
-              ShippingStatus.PROCESSED,
-              ShippingStatus.SHIPPING,
-            ],
-          },
-          createdAt: range,
-        },
-        include: {
-          items: true,
-          inventoryLogs: {
-            where: { changeQuantity: { lt: 0 } },
-            include: { product: { select: { costPrice: true } } },
-          },
-          channel: { select: { channelName: true, shopName: true } },
-        },
-      }),
-      // Đơn bị hủy/bom hàng → phục vụ quản trị rủi ro
-      prisma.order.findMany({
-        where: {
-          channel: scope,
-          shippingStatus: "CANCELLED",
-          createdAt: range,
-        },
-        select: { totalAmount: true },
       }),
       // Tổng THU vận hành nhập tay trong kỳ (đền bù, thưởng…) — cùng luật lọc
       // sàn/gian với chi phí nhập tay (manualTxnScope).
@@ -1805,70 +1815,45 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     ]);
     const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
 
+    // ============================================================
+    // VIEW TỔNG HỢP TỪ NGUỒN SỐ GỐC — mọi con số bên dưới CHỈ là SUM() các
+    // trường của dòng computePnlRow: trang Lãi/Lỗ có đơn nào thì đây có đơn
+    // đó, Lãi/Lỗ hiển thị số nào thì đây cộng đúng số đó. Không tính lại.
+    // ============================================================
+    const pnlRows = pnlOrders.map(computePnlRow);
+    const sumBy = (rows: PnlRow[], pick: (r: PnlRow) => number) =>
+      rows.reduce((s, r) => s + pick(r), 0);
+
+    // Phân nhóm theo trạng thái — cùng trục với tab lọc bên Lãi/Lỗ.
+    const cancelledRows = pnlRows.filter(
+      (r) => r.shippingStatus === ShippingStatus.CANCELLED
+    );
+    const activeRows = pnlRows.filter(
+      (r) => r.shippingStatus !== ShippingStatus.CANCELLED
+    );
+    const settledRows = activeRows.filter((r) => r.isSettled);
+    // "Chờ quyết toán" = sàn chưa giải ngân: đang đi đường HOẶC đã giao nhưng
+    // chưa đối soát (nhóm đã-giao-chưa-quyết-toán trước đây bị bỏ sót khỏi cả
+    // hai dòng doanh thu/lợi nhuận — nay theo đúng trục isSettled của Lãi/Lỗ).
+    const pendingRows = activeRows.filter((r) => !r.isSettled);
+    const deliveredRows = activeRows.filter(
+      (r) => r.shippingStatus === ShippingStatus.DELIVERED
+    );
+
     // ===== DÒNG TIỀN TREO =====
-    // Tiền chờ về (dự kiến): đơn Đang giao/Chờ xử lý — dùng số TẠM TÍNH
-    let pendingPayout = 0;
-    let pendingCogs = 0;
-    for (const o of inFlight) {
-      const { fee } = orderPlatformFee(o);
-      pendingPayout += Number(o.totalAmount) - fee;
-      pendingCogs += orderCost(o).cost;
-    }
-    // Tiền thực tế (đã quyết toán): chỉ tính đơn sàn đã chốt giải ngân
-    const settledOrders = delivered.filter((o) => o.isSettled);
-    const settledPayout = settledOrders.reduce(
-      (sum, o) => sum + Number(o.actualPayout),
-      0
+    const settledPayout = sumBy(settledRows, (r) => r.actualPayout); // đã về ví
+    const pendingNetRevenue = sumBy(pendingRows, (r) => r.netRevenue); // chờ về
+
+    // --- CỘT 1: TỔNG GIÁ TRỊ SẢN PHẨM = Σ cột "Doanh thu gốc" của Lãi/Lỗ ---
+    const grossValue = sumBy(activeRows, (r) => r.revenueGross);
+    const feePlatform = sumBy(
+      activeRows,
+      (r) => r.feeFixedPayment + r.feeService
     );
-
-    // ============================================================
-    // BÓC TÁCH DÒNG TIỀN 4 CỘT
-    // Phạm vi: đơn Đã giao + đơn đang đi đường (KHÔNG tính đơn đã hủy)
-    // ============================================================
-    const activeOrders = [...delivered, ...inFlight];
-
-    // --- CỘT 1: TỔNG GIÁ TRỊ SẢN PHẨM (doanh số gốc, chưa trừ gì) ---
-    const grossValue = activeOrders.reduce(
-      (s, o) => s + Number(o.totalAmount),
-      0
-    );
-
-    // Các khoản sàn khấu trừ (chỉ đơn đã quyết toán mới có số bóc tách chi tiết;
-    // đơn chưa quyết toán gộp vào "phí nền tảng" theo số tạm tính)
-    let feePlatform = 0; // phí cố định + dịch vụ + thanh toán
-    let feeAffiliate = 0;
-    let feeSellerVoucher = 0;
-    let feeShippingDiff = 0;
-    let platformSubsidyTotal = 0;
-
-    // BUCKET "PHÍ SÀN" CHO CỘT CHI PHÍ — MỘT dòng duy nhất gom toàn bộ phí
-    // HOẠT ĐỘNG sàn cấn trừ từ đối soát: phí cố định + thanh toán + dịch vụ +
-    // tiếp thị liên kết. KHÔNG gồm thuế sàn (taxWithheld) — thuế tách dòng
-    // riêng để theo dõi. Đơn CHƯA quyết toán dồn phí tạm tính theo % kênh.
-    let platformFeeTotal = 0;
-
-    for (const o of delivered) {
-      if (o.isSettled) {
-        feePlatform +=
-          Number(o.fixedFee) + Number(o.serviceFee) + Number(o.paymentFee);
-        feeAffiliate += Number(o.affiliateFee);
-        feeSellerVoucher += Number(o.sellerVoucher);
-        feeShippingDiff += Number(o.shippingFeeDiff);
-        platformSubsidyTotal += Number(o.platformSubsidy);
-        platformFeeTotal +=
-          Number(o.fixedFee) +
-          Number(o.paymentFee) +
-          Number(o.serviceFee) +
-          Number(o.affiliateFee);
-      } else {
-        feePlatform += Number(o.platformFee); // chưa quyết toán → số tạm tính
-        platformFeeTotal += Number(o.platformFee);
-      }
-    }
-    for (const o of inFlight) {
-      feePlatform += Number(o.platformFee); // đơn đang đi đường luôn là tạm tính
-      platformFeeTotal += Number(o.platformFee);
-    }
+    const feeAffiliate = sumBy(activeRows, (r) => r.feeAffiliate);
+    const feeSellerVoucher = sumBy(activeRows, (r) => r.sellerVoucher);
+    const feeShippingDiff = sumBy(activeRows, (r) => r.shippingFeeDiff);
+    const platformSubsidyTotal = sumBy(activeRows, (r) => r.platformSubsidy);
 
     const totalDeduction =
       feePlatform +
@@ -1877,17 +1862,20 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       feeShippingDiff -
       platformSubsidyTotal;
 
-    // --- CỘT 2: DOANH THU (sau khi trừ các khoản sàn giữ lại) ---
+    // --- CỘT 2: DOANH THU = gross − khấu trừ = Σ cột "Doanh thu thuần" ---
     const netRevenue = grossValue - totalDeduction;
-    const cancelledValue = cancelled.reduce(
-      (s, o) => s + Number(o.totalAmount),
-      0
-    );
-    const totalOrderCount = activeOrders.length + cancelled.length;
-    const cancelRate = pct(cancelled.length, totalOrderCount);
+    const cancelledValue = sumBy(cancelledRows, (r) => r.revenueGross);
+    const cancelRate = pct(cancelledRows.length, pnlRows.length);
 
     // --- CỘT 3: CHI PHÍ (giá vốn + Phí sàn + chi phí vận hành nhập tay) ---
-    const cogsAll = delivered.reduce((s, o) => s + orderCost(o).cost, 0) + pendingCogs;
+    const cogsAll = sumBy(activeRows, (r) => r.costSnapshot);
+    // "PHÍ SÀN" MỘT dòng duy nhất = Σ(phí cố định + thanh toán + dịch vụ +
+    // tiếp thị liên kết) từ các bucket của Lãi/Lỗ. KHÔNG gồm thuế sàn (tách
+    // dòng riêng). Đơn chưa quyết toán: bucket đã chứa phí tạm tính theo % kênh.
+    const platformFeeTotal = sumBy(
+      activeRows,
+      (r) => r.feeFixedPayment + r.feeService + r.feeAffiliate
+    );
     // Chi phí cố định/biến đổi CHỈ là khoản NHẬP TAY từ Thu chi vận hành (đã
     // qua luật lọc manualTxnScope) — tuyệt đối không gom phí sàn vào đây.
     const variableExpenseTotal = expenses
@@ -1900,38 +1888,37 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       cogsAll + platformFeeTotal + variableExpenseTotal + fixedExpenseTotal;
 
     // --- CỘT 4: LỢI NHUẬN ---
-    // Lợi nhuận thực tế: từ đơn ĐÃ HOÀN THÀNH (đã quyết toán xong)
-    const settledCogs = settledOrders.reduce((s, o) => s + orderCost(o).cost, 0);
-    // Lợi nhuận THỰC TẾ: tiền thực nhận từ đơn Hoàn thành (đã trừ SẴN phí sàn trong
-    // actualPayout) − giá vốn − chi phí biến đổi − chi phí cố định. KHÔNG gồm THU
-    // vận hành (tách thành dòng riêng), không trừ phí sàn lần nữa.
+    // Thực tế = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn ĐÃ QUYẾT TOÁN
+    // trên Lãi/Lỗ − chi phí vận hành nhập tay. KHÔNG gồm THU vận hành (tách
+    // dòng riêng), không trừ phí sàn lần nữa (netRevenue đã trừ).
     const actualProfit =
-      settledPayout - settledCogs - variableExpenseTotal - fixedExpenseTotal;
-    // Lợi nhuận dự kiến: từ đơn ĐANG CHỜ (số tạm tính)
-    const expectedProfit = pendingPayout - pendingCogs;
+      sumBy(settledRows, (r) => r.profitAfterTax) -
+      variableExpenseTotal -
+      fixedExpenseTotal;
+    // Dự kiến = Σ cột "Lợi nhuận" (profit — CHƯA trừ thuế) của đơn chờ quyết
+    // toán; thuế ƯỚC TÍNH của nhóm này nằm ở cột Chi phí, chỉ trừ ở dòng
+    // "Lợi nhuận ròng sau thuế".
+    const expectedProfit = sumBy(pendingRows, (r) => r.profit);
     // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến — hiệu năng của toàn bộ đơn
-    // trong kỳ, CHƯA trừ nghĩa vụ thuế (2 dòng thuế nằm ở cột Chi phí).
-    // "Thu nhập vận hành khác" KHÔNG cộng vào đây — nó là khoản ngoài đơn hàng,
-    // hiển thị ở cuối cột Doanh thu cho đúng bản chất kế toán.
+    // trong kỳ, CHƯA trừ nghĩa vụ thuế ước tính/dự phòng.
     const provisionalProfit = actualProfit + expectedProfit;
 
-    // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao)
+    // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao) — cùng các
+    // trường dòng Lãi/Lỗ: doanh thu gốc, giá vốn snapshot, 3 bucket phí sàn.
     let totalRevenue = 0;
     let totalCost = 0;
     let totalPlatformFee = 0;
     const revenueByDay = new Map<string, number>();
     const cogsByDay = new Map<string, number>();
-    for (const o of delivered) {
-      const revenue = Number(o.totalAmount);
-      const { fee } = orderPlatformFee(o); // ưu tiên số quyết toán thực tế
-      const { cost } = orderCost(o);
-      totalRevenue += revenue;
-      totalCost += cost;
+    for (const r of deliveredRows) {
+      const fee = r.feeFixedPayment + r.feeService + r.feeAffiliate;
+      totalRevenue += r.revenueGross;
+      totalCost += r.costSnapshot;
       totalPlatformFee += fee;
-      const key = toDateKey(o.createdAt);
-      revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + revenue);
+      const key = toDateKey(r.createdAt);
+      revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + r.revenueGross);
       // Chi phí trong ngày gồm giá vốn + phí sàn của đơn
-      cogsByDay.set(key, (cogsByDay.get(key) ?? 0) + cost + fee);
+      cogsByDay.set(key, (cogsByDay.get(key) ?? 0) + r.costSnapshot + fee);
     }
     // Lợi nhuận gộp = Doanh thu − Giá vốn (giữ nguyên chuẩn kế toán)
     const grossProfit = totalRevenue - totalCost;
@@ -1963,18 +1950,11 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     //    tế. Chỉ báo cáo, KHÔNG trừ lần nữa kẻo trùng.
     //  - Đơn CHƯA quyết toán (kể cả đang đi đường): ước tính theo % cấu hình.
     // ============================================================
-    // Cơ sở ước tính dùng DOANH THU GỐC (orderGrossRevenue) — cùng công thức
-    // revenueGross của /realized-pnl để hai màn hình ra CÙNG một số thuế.
-    let platformTaxActual = 0;
-    let platformTaxEstimateBase = 0;
-    for (const o of delivered) {
-      if (o.isSettled) platformTaxActual += Number(o.taxWithheld);
-      else platformTaxEstimateBase += orderGrossRevenue(o);
-    }
-    for (const o of inFlight) {
-      platformTaxEstimateBase += orderGrossRevenue(o);
-    }
-    const platformTaxEstimated = platformTaxOn(platformTaxEstimateBase);
+    // Thuế sàn = Σ cột "Thuế sàn" (platformTax) của dòng Lãi/Lỗ: số THẬT
+    // (taxWithheld) với đơn đã quyết toán, ước tính % trên doanh thu gốc với
+    // đơn chưa — không tính lại theo công thức riêng.
+    const platformTaxActual = sumBy(settledRows, (r) => r.platformTax);
+    const platformTaxEstimated = sumBy(pendingRows, (r) => r.platformTax);
 
     // Thuế bổ sung: cơ sở tính theo cấu hình (lợi nhuận tạm tính / doanh thu).
     const additionalTax = additionalTaxOn(
@@ -2015,22 +1995,22 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
-      deliveredOrderCount: delivered.length,
+      deliveredOrderCount: deliveredRows.length,
       totalRevenue,
       totalCost,
       totalPlatformFee,
       // Dòng tiền treo
-      pendingPayout, // tiền chờ về (dự kiến, số tạm tính)
+      pendingPayout: pendingNetRevenue, // tiền chờ về (đơn chưa quyết toán, tạm tính)
       settledPayout, // tiền thực tế đã quyết toán về ví
-      pendingOrderCount: inFlight.length,
-      settledOrderCount: settledOrders.length,
+      pendingOrderCount: pendingRows.length,
+      settledOrderCount: settledRows.length,
 
       // ===== BÓC TÁCH DÒNG TIỀN 4 CỘT =====
       breakdown: {
         // Cột 1 — Tổng giá trị sản phẩm
         gross: {
           total: grossValue,
-          orderCount: activeOrders.length,
+          orderCount: activeRows.length,
           items: [
             {
               key: "platform",
@@ -2078,18 +2058,18 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "completed",
               label: "Hoàn thành",
-              hint: "Tiền sàn đã phê duyệt và giải ngân vào ví (số quyết toán thực tế)",
+              hint: "Tiền sàn đã phê duyệt và giải ngân vào ví — Σ cột \"Thực nhận\" của đơn đã quyết toán trên Lãi/Lỗ Thực Hiện",
               amount: settledPayout,
               percent: pct(settledPayout, netRevenue),
-              count: settledOrders.length,
+              count: settledRows.length,
             },
             {
               key: "pending",
               label: "Chờ xử lý",
-              hint: "Đơn đang đi đường / chờ đối soát — tính theo % phí tạm tính của kênh",
-              amount: pendingPayout,
-              percent: pct(pendingPayout, netRevenue),
-              count: inFlight.length,
+              hint: "Đơn sàn CHƯA quyết toán (đang đi đường hoặc đã giao chờ đối soát) — Σ cột \"Doanh thu thuần\" tạm tính của các đơn đó trên Lãi/Lỗ Thực Hiện",
+              amount: pendingNetRevenue,
+              percent: pct(pendingNetRevenue, netRevenue),
+              count: pendingRows.length,
             },
             {
               key: "cancelled",
@@ -2097,7 +2077,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Tổng giá trị đơn bị hủy/bom hàng. Tỷ lệ % giúp quản trị rủi ro",
               amount: cancelledValue,
               percent: cancelRate,
-              count: cancelled.length,
+              count: cancelledRows.length,
             },
             // Khoản THU ngoài đơn hàng — đứng cuối cột Doanh thu cho đúng bản
             // chất kế toán; KHÔNG cộng vào tổng Doanh thu phía trên (tổng đó
@@ -2182,16 +2162,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "actual",
               label: "Lợi nhuận thực tế",
-              hint: "Đơn Đã giao/Hoàn thành: tiền thực nhận về ví (đã trừ phí sàn + thuế sàn trích tại nguồn) − Giá vốn − Chi phí vận hành (biến đổi + cố định).",
+              hint: "Σ cột \"Lãi sau thuế\" của đơn ĐÃ QUYẾT TOÁN trên Lãi/Lỗ Thực Hiện (đã trừ phí sàn + thuế sàn trích tại nguồn + giá vốn) − Chi phí vận hành nhập tay (biến đổi + cố định).",
               amount: actualProfit,
               percent: pct(actualProfit, settledPayout),
             },
             {
               key: "expected",
               label: "Lợi nhuận dự kiến",
-              hint: "Đơn Chờ xử lý/Đang giao: tiền dự kiến nhận (số tạm tính) − giá vốn. Thuế ước tính cho nhóm đơn này nằm ở cột Chi phí.",
+              hint: "Σ cột \"Lợi nhuận\" (tạm tính, chưa trừ thuế) của đơn CHƯA quyết toán trên Lãi/Lỗ Thực Hiện. Thuế ước tính cho nhóm đơn này nằm ở cột Chi phí.",
               amount: expectedProfit,
-              percent: pct(expectedProfit, pendingPayout),
+              percent: pct(expectedProfit, pendingNetRevenue),
             },
           ],
         },
