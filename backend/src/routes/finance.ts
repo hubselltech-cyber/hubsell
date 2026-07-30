@@ -323,17 +323,20 @@ function computePnlRow(o: PnlOrder) {
   // với phí sàn). Trang Báo cáo thuế (/api/tax/report) vẫn tự ước nghĩa vụ
   // 1,5% riêng cho mục đích dự phòng — không dùng trường này.
   const platformTax = o.isSettled ? Number(o.taxWithheld) : 0;
-  const profitAfterTax = profit - platformTax;
 
   // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo (ảnh phân rã Seller
   // Center 30/07): đơn ĐÃ đối soát = actualPayout (giá trị sản phẩm đã bị sàn
   // cấn trừ hết phí/thuế/xu — 180.610 của đơn 527296226771786); đơn CHƯA =
   // số từ API đơn hàng (đã trừ voucher đã biết), UI gắn nhãn tạm tính.
-  // Cột "Doanh thu trên sàn" và công thức Lợi nhuận = trường này − giá vốn.
   const platformRevenue =
     o.isSettled && Number(o.actualPayout) !== 0
       ? Number(o.actualPayout)
       : actualRevenue;
+
+  // LÃI SAU THUẾ = MỘT công thức duy nhất chủ shop chốt (31/07):
+  // Doanh thu thực tế − Giá vốn. Đơn đã đối soát: payout đã net hết
+  // phí/thuế/xu; đơn chờ: doanh thu tạm từ API đơn − giá vốn (không ước phí).
+  const profitAfterTax = platformRevenue - cost;
 
   return {
     id: o.id,
@@ -1886,6 +1889,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const pendingNetRevenue = sumBy(pendingRows, (r) => r.netRevenue); // chờ về
 
     // --- CỘT 1: TỔNG GIÁ TRỊ SẢN PHẨM = Σ cột "Doanh thu gốc" của Lãi/Lỗ ---
+    // Mang TOÀN BỘ khấu trừ của sàn (phí + thuế + voucher + chênh lệch VC −
+    // trợ giá) để: Giá trị sản phẩm − Tổng khấu trừ = thẻ DOANH THU (thác
+    // nước 4 thẻ, chốt chủ shop 31/07).
     const grossValue = sumBy(activeRows, (r) => r.revenueGross);
     const feePlatform = sumBy(
       activeRows,
@@ -1893,36 +1899,45 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     );
     const feeAffiliate = sumBy(activeRows, (r) => r.feeAffiliate);
     const feeSellerVoucher = sumBy(activeRows, (r) => r.sellerVoucher);
-    const feeShippingDiff = sumBy(activeRows, (r) => r.shippingFeeDiff);
-    const platformSubsidyTotal = sumBy(activeRows, (r) => r.platformSubsidy);
+    // Chênh lệch VC / trợ giá / nạp ví quảng cáo: CHỈ đơn đã quyết toán (số
+    // THẬT đã cấn trong payout) — đơn chờ thuộc diện "chờ đối soát", gom vào
+    // sẽ làm thác nước Giá trị SP − Khấu trừ ≠ thẻ Doanh thu.
+    const feeShippingDiff = sumBy(settledRows, (r) => r.shippingFeeDiff);
+    const platformSubsidyTotal = sumBy(settledRows, (r) => r.platformSubsidy);
+    const adWalletTotal = sumBy(settledRows, (r) => r.adWalletTopup);
+    // Thuế sàn TMĐT = Σ cột "Thuế sàn" (platformTax): số THẬT sàn trích của
+    // đơn đã quyết toán (đơn chờ = 0, không ước) — tính ở đây vì từ 31/07
+    // thuế là một DÒNG KHẤU TRỪ của thẻ Tổng giá trị SP, không thuộc Chi phí.
+    const platformTaxActual = sumBy(settledRows, (r) => r.platformTax);
+    // Luôn = 0 từ 30/07 (không còn ước thuế đơn chờ) — giữ field cho FE cũ.
+    const platformTaxEstimated = sumBy(pendingRows, (r) => r.platformTax);
+    const platformTaxTotal = platformTaxActual + platformTaxEstimated;
 
     const totalDeduction =
       feePlatform +
       feeAffiliate +
+      platformTaxTotal +
       feeSellerVoucher +
-      feeShippingDiff -
+      feeShippingDiff +
+      adWalletTotal -
       platformSubsidyTotal;
 
-    // --- CỘT 2: DOANH THU = Σ cột "Doanh thu thực tế" (actualRevenue =
-    // Giá trị đơn hàng − voucher/xu Shop) của Lãi/Lỗ Thực Hiện. TUYỆT ĐỐI
-    // không dùng actualPayout (tiền về ví) làm doanh thu — payout đã bị sàn
-    // cấn trừ phí/thuế, các khoản đó thuộc cột CHI PHÍ; nhờ vậy thẻ thỏa
-    // đẳng thức: Doanh thu − Chi phí = Lợi nhuận.
-    const actualRevenueTotal = sumBy(activeRows, (r) => r.actualRevenue);
-    const settledActualRevenue = sumBy(settledRows, (r) => r.actualRevenue);
-    const pendingActualRevenue = sumBy(pendingRows, (r) => r.actualRevenue);
+    // --- CỘT 2: DOANH THU THỰC TẾ = Σ platformRevenue ("Tổng tiền" sàn báo):
+    // đơn đã quyết toán = actualPayout (tiền THẬT về ví, đã cấn trừ hết
+    // phí/thuế/xu); đơn chờ = số từ API đơn hàng (tạm tính). Phí & thuế sàn
+    // KHÔNG nằm ở cột Chi phí nữa — chúng là khấu trừ của thẻ Tổng giá trị SP;
+    // nhờ vậy: Giá trị SP − Khấu trừ = Doanh thu, Doanh thu − Chi phí = LN.
+    const actualRevenueTotal = sumBy(activeRows, (r) => r.platformRevenue);
+    const settledActualRevenue = sumBy(settledRows, (r) => r.platformRevenue);
+    const pendingActualRevenue = sumBy(pendingRows, (r) => r.platformRevenue);
     const cancelledValue = sumBy(cancelledRows, (r) => r.revenueGross);
     const cancelRate = pct(cancelledRows.length, pnlRows.length);
 
-    // --- CỘT 3: CHI PHÍ (giá vốn + Phí sàn + chi phí vận hành nhập tay) ---
+    // --- CỘT 3: CHI PHÍ (giá vốn + chi phí vận hành nhập tay + thuế bổ sung).
+    // KHÔNG còn dòng Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu, giữ lại là
+    // trừ trùng — chốt chủ shop 31/07; chi tiết phí vẫn xem ở thẻ Tổng giá
+    // trị SP + bảng Lãi/Lỗ). ---
     const cogsAll = sumBy(activeRows, (r) => r.costSnapshot);
-    // "PHÍ SÀN" MỘT dòng duy nhất = Σ(phí cố định + thanh toán + dịch vụ +
-    // tiếp thị liên kết) từ các bucket của Lãi/Lỗ. KHÔNG gồm thuế sàn (tách
-    // dòng riêng). Đơn chưa quyết toán: bucket = 0 (chờ đối soát, không ước %).
-    const platformFeeTotal = sumBy(
-      activeRows,
-      (r) => r.feeFixedPayment + r.feeService + r.feeAffiliate
-    );
     // Chi phí cố định/biến đổi CHỈ là khoản NHẬP TAY từ Thu chi vận hành (đã
     // qua luật lọc manualTxnScope) — tuyệt đối không gom phí sàn vào đây.
     const variableExpenseTotal = expenses
@@ -1931,8 +1946,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const fixedExpenseTotal = expenses
       .filter((e) => e.type === ExpenseType.FIXED)
       .reduce((s, e) => s + Number(e.amount), 0);
-    const totalCostColumn =
-      cogsAll + platformFeeTotal + variableExpenseTotal + fixedExpenseTotal;
+    const totalCostColumn = cogsAll + variableExpenseTotal + fixedExpenseTotal;
 
     // --- CỘT 4: LỢI NHUẬN ---
     // Thực tế = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn ĐÃ QUYẾT TOÁN
@@ -1990,19 +2004,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // ============================================================
     // THUẾ (module Hóa đơn & Thuế) — đọc cấu hình trang "Thuế bổ sung"
     // qua tax-config.ts, cùng công thức với /api/tax/report.
-    //
-    // Thuế sàn TMĐT khấu trừ tại nguồn:
-    //  - Đơn ĐÃ quyết toán: số THẬT sàn đã trích (taxWithheld) — khoản này đã
-    //    bị trừ sẵn trong actualPayout, tức ĐÃ phản ánh trong lợi nhuận thực
-    //    tế. Chỉ báo cáo, KHÔNG trừ lần nữa kẻo trùng.
-    //  - Đơn CHƯA quyết toán: 0 (chờ đối soát — không ước tính; nghĩa vụ dự
-    //    phòng xem trang Báo cáo thuế).
+    // (Thuế sàn TMĐT platformTaxActual/Estimated/Total đã tính ở CỘT 1 —
+    // từ 31/07 là dòng khấu trừ của thẻ Tổng giá trị SP.)
     // ============================================================
-    const platformTaxActual = sumBy(settledRows, (r) => r.platformTax);
-    // Luôn = 0 từ 30/07 (không còn ước thuế cho đơn chờ) — giữ biến/field trả
-    // về để FE cũ không vỡ.
-    const platformTaxEstimated = sumBy(pendingRows, (r) => r.platformTax);
-
     // Thuế bổ sung: cơ sở tính theo cấu hình (lợi nhuận tạm tính / doanh thu).
     const additionalTax = additionalTaxOn(
       { grossRevenue: grossValue, profit: provisionalProfit },
@@ -2010,19 +2014,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     );
 
     // LỢI NHUẬN RÒNG SAU THUẾ = Tổng lợi nhuận tạm tính − Thuế bổ sung dự
-    // phòng. KHÔNG trừ thuế sàn nữa: cả thuế THẬT (trong profitAfterTax đơn
-    // quyết toán) lẫn thuế ƯỚC TÍNH (trong profitAfterTax đơn chờ) đều đã
-    // nằm sẵn trong provisionalProfit — trừ thêm là trừ trùng.
+    // phòng. KHÔNG trừ thuế sàn nữa: thuế THẬT đã nằm sẵn trong actualPayout
+    // (tức trong provisionalProfit) — trừ thêm là trừ trùng.
     const netProfitAfterTax = provisionalProfit - additionalTax;
 
-    // Cột CHI PHÍ gồm cả 2 dòng nghĩa vụ thuế (chuyển từ cột Lợi nhuận sang) —
-    // tổng cột phải khớp tổng các dòng bên trong nó.
-    // Dòng thuế sàn = thuế THẬT (GTGT + TNCN sàn đã trích trên đơn quyết toán,
-    // từ dữ liệu đối soát) — khớp cột Thuế của bảng Lãi/Lỗ Thực Hiện. LƯU Ý:
-    // phần thuế THẬT đã trừ sẵn trong actualPayout nên netProfitAfterTax phía
-    // trên KHÔNG trừ lại.
-    const platformTaxTotal = platformTaxActual + platformTaxEstimated;
-    const totalCostWithTax = totalCostColumn + platformTaxTotal + additionalTax;
+    // Cột CHI PHÍ = giá vốn + vận hành + thuế bổ sung dự phòng — tổng cột
+    // phải khớp tổng các dòng bên trong nó (phí/thuế sàn KHÔNG ở đây nữa).
+    const totalCostWithTax = totalCostColumn + additionalTax;
 
     // Chuỗi 14 ngày: Doanh thu vs Tổng chi phí (giá vốn + chi phí vận hành phát sinh trong ngày)
     const days = 14;
@@ -2073,6 +2071,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: pct(feeAffiliate, grossValue),
             },
             {
+              key: "platformTax",
+              label: "Thuế sàn TMĐT (GTGT + TNCN)",
+              hint: `Thuế GTGT + TNCN sàn khấu trừ TẠI NGUỒN theo đối soát (số THẬT; đơn chưa quyết toán chờ đối soát, không ước tính — nghĩa vụ dự phòng xem trang Báo cáo thuế ${PLATFORM_TAX_RATE * 100}%). Nằm trong Tổng khấu trừ để: Giá trị sản phẩm − Tổng khấu trừ = thẻ Doanh thu.`,
+              amount: platformTaxTotal,
+              percent: pct(platformTaxTotal, grossValue),
+            },
+            {
               key: "voucher",
               label: "Voucher trợ giá của shop",
               hint: "Phần giảm giá do SHOP tự bỏ tiền (không phải sàn tài trợ)",
@@ -2082,9 +2087,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "shipping",
               label: "Chênh lệch phí vận chuyển",
-              hint: "Khoản sàn trừ thêm khi phí ship thực tế cao hơn phí đã thu của khách",
+              hint: "Khoản sàn trừ thêm khi phí ship thực tế cao hơn phí đã thu của khách (số thật từ đối soát)",
               amount: feeShippingDiff,
               percent: pct(feeShippingDiff, grossValue),
+            },
+            {
+              key: "adWallet",
+              label: "Nạp ví quảng cáo",
+              hint: "Khoản sàn khấu trừ khi giải ngân để nạp ví quảng cáo (đã trừ sẵn trong tiền về ví — số thật từ đối soát)",
+              amount: adWalletTotal,
+              percent: pct(adWalletTotal, grossValue),
             },
             {
               key: "subsidy",
@@ -2097,16 +2109,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           totalDeduction,
         },
 
-        // Cột 2 — DOANH THU THỰC TẾ theo trạng thái (Σ actualRevenue của
-        // Lãi/Lỗ; KHÔNG dùng tiền về ví — payout chỉ còn là số đối chiếu
-        // trong hint dòng "Hoàn thành")
+        // Cột 2 — DOANH THU THỰC TẾ theo trạng thái (Σ platformRevenue =
+        // "Tổng tiền" sàn báo — từ 31/07 chính là cột "Doanh thu trên sàn"
+        // của bảng Lãi/Lỗ; = Giá trị sản phẩm − Tổng khấu trừ của thẻ 1)
         revenue: {
           total: actualRevenueTotal,
           items: [
             {
               key: "completed",
               label: "Hoàn thành",
-              hint: `Σ cột "Doanh thu thực tế" (giá trị đơn − voucher/xu Shop) của đơn ĐÃ quyết toán trên Lãi/Lỗ Thực Hiện. Sau khi sàn cấn trừ phí + thuế (đã nằm ở cột Chi phí), tiền thực về ví: ${Math.round(settledPayout).toLocaleString("vi-VN")}đ.`,
+              hint: `Σ cột "Doanh thu trên sàn" của đơn ĐÃ quyết toán = "Tổng tiền" sao kê Finance API — tiền THẬT sàn trả về ví, đã cấn trừ hết phí/thuế/xu (các khoản đó xem ở thẻ Tổng giá trị sản phẩm).`,
               amount: settledActualRevenue,
               percent: pct(settledActualRevenue, actualRevenueTotal),
               count: settledRows.length,
@@ -2114,7 +2126,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "pending",
               label: "Chờ xử lý",
-              hint: "Σ cột \"Doanh thu thực tế\" của đơn CHƯA quyết toán (đang đi đường hoặc đã giao chờ đối soát) — phí/thuế của nhóm này CHƯA ghi nhận (chờ sao kê sàn, không ước tính).",
+              hint: "Σ cột \"Doanh thu trên sàn\" (tạm tính) của đơn CHƯA quyết toán = số từ API đơn hàng, đã trừ voucher đã biết — phí/thuế của nhóm này CHƯA ghi nhận (chờ sao kê sàn, không ước tính).",
               amount: pendingActualRevenue,
               percent: pct(pendingActualRevenue, actualRevenueTotal),
               count: pendingRows.length,
@@ -2140,7 +2152,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           ],
         },
 
-        // Cột 3 — Chi phí (gồm cả nghĩa vụ thuế — tổng khớp tổng các dòng)
+        // Cột 3 — Chi phí = giá vốn + vận hành nhập tay + thuế bổ sung.
+        // Phí sàn & Thuế sàn KHÔNG ở đây (chốt 31/07): chúng đã bị sàn cấn
+        // trừ TRƯỚC KHI ra thẻ Doanh thu — giữ lại là trừ trùng; chi tiết
+        // xem ở thẻ Tổng giá trị sản phẩm.
         costs: {
           total: totalCostWithTax,
           items: [
@@ -2150,13 +2165,6 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Tổng giá vốn (COGS) của các đơn trong bộ lọc, lấy theo giá vốn đã cấu hình cho từng SKU",
               amount: cogsAll,
               percent: pct(cogsAll, totalCostWithTax),
-            },
-            {
-              key: "platformFees",
-              label: "Phí sàn",
-              hint: "Tổng phí hoạt động sàn cấn trừ từ đối soát: phí cố định + phí thanh toán + phí dịch vụ + phí tiếp thị liên kết (KHÔNG gồm thuế sàn — thuế tách dòng riêng bên dưới). CHỈ số THẬT từ sao kê — đơn chưa quyết toán chờ đối soát, không ước %.",
-              amount: platformFeeTotal,
-              percent: pct(platformFeeTotal, totalCostWithTax),
             },
             {
               key: "variable",
@@ -2172,16 +2180,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               amount: fixedExpenseTotal,
               percent: pct(fixedExpenseTotal, totalCostWithTax),
             },
-            // ---- Nghĩa vụ thuế (từ cấu hình Hóa đơn & Thuế → Thuế bổ sung).
-            // Số DƯƠNG như mọi dòng chi phí khác; cột Lợi nhuận chỉ trừ chúng
-            // ở dòng "Lợi nhuận ròng sau thuế".
-            {
-              key: "platformTax",
-              label: "Thuế sàn TMĐT (GTGT + TNCN)",
-              hint: `Thuế GTGT + TNCN sàn ĐÃ trích THẬT theo đối soát (khoản này đã trừ sẵn trong tiền về ví nên Lợi nhuận không trừ lại). Đơn chưa quyết toán: chờ đối soát, không ước tính — nghĩa vụ thuế dự phòng xem trang Báo cáo thuế (${PLATFORM_TAX_RATE * 100}%).`,
-              amount: platformTaxTotal,
-              percent: pct(platformTaxTotal, totalCostWithTax),
-            },
+            // ---- Nghĩa vụ thuế BỔ SUNG (từ cấu hình Hóa đơn & Thuế). Thuế
+            // sàn TMĐT đã dời lên thẻ Tổng giá trị SP (khấu trừ tại nguồn).
             {
               key: "additionalTax",
               label: "Thuế bổ sung dự phòng",

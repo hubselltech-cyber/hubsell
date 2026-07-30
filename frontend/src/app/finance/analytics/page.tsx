@@ -50,12 +50,14 @@ import {
 } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
 
-// Bố cục 4 cột theo chuẩn kế toán (backend quyết định toàn bộ items):
-//   - Cột Doanh thu: có thêm dòng "Thu nhập vận hành khác" ở cuối (khoản ngoài
-//     đơn hàng, không cộng vào tổng cột).
-//   - Cột Chi phí: giá vốn + phí sàn cấn trừ trên từng đơn (số thật từ đối
-//     soát, cùng công thức với Lãi/Lỗ Thực Hiện) + chi phí vận hành + 2 dòng
-//     nghĩa vụ thuế ("Thuế sàn TMĐT (GTGT + TNCN)" + "Thuế bổ sung dự phòng").
+// Bố cục 4 thẻ = THÁC NƯỚC dòng tiền (chốt 31/07, backend quyết định items):
+//   Giá trị SP − Tổng sàn khấu trừ (phí + thuế sàn + voucher + chênh lệch VC
+//   − trợ giá) = Doanh thu → Doanh thu − Chi phí (giá vốn + vận hành + thuế
+//   bổ sung) = Lợi nhuận.
+//   - Cột Doanh thu = "Tổng tiền" sàn báo (payout thật / số API đơn khi chờ);
+//     thêm dòng "Thu nhập vận hành khác" cuối (không cộng vào tổng).
+//   - Cột Chi phí KHÔNG còn Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu —
+//     trừ nữa là trùng); 2 khoản đó là dòng khấu trừ của thẻ Giá trị SP.
 //   - Cột Lợi nhuận: TINH GIẢN — Tổng lợi nhuận tạm tính = Thực tế + Dự kiến,
 //     chỉ phân rã theo trạng thái đơn để quản trị rủi ro dòng tiền TMĐT.
 
@@ -152,7 +154,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Doanh thu"
-              subtitle="Doanh thu thực tế = Giá trị đơn hàng − voucher/xu Shop"
+              subtitle="Doanh thu thực tế = Tổng tiền sàn trả về (đã cấn trừ phí/thuế/xu) = Giá trị SP − Tổng sàn khấu trừ"
               total={data.breakdown.revenue.total}
               icon={Wallet}
               tone="positive"
@@ -162,7 +164,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Chi phí"
-              subtitle="Giá vốn + phí sàn cấn trừ + vận hành + nghĩa vụ thuế"
+              subtitle="Giá vốn + chi phí vận hành + thuế bổ sung dự phòng"
               total={data.breakdown.costs.total}
               icon={Receipt}
               tone="negative"
@@ -172,7 +174,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Tổng lợi nhuận tạm tính"
-              subtitle="= Doanh thu − Chi phí (phí & thuế sàn đã nằm ở cột Chi phí)"
+              subtitle="= Doanh thu − Chi phí (phí & thuế sàn đã cấn trừ sẵn trong Doanh thu)"
               total={data.breakdown.profit.total}
               icon={Scale}
               items={data.breakdown.profit.items}
