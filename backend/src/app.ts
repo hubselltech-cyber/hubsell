@@ -34,9 +34,14 @@ export function createApp() {
     })
   );
 
-  // Kiểm tra sức khỏe máy chủ (công khai)
+  // Kiểm tra sức khỏe máy chủ (công khai). version = SHA commit đang chạy
+  // (Render tự đặt RENDER_GIT_COMMIT) — để xác minh deploy đã lên code mới.
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", service: "hubsell-backend" });
+    res.json({
+      status: "ok",
+      service: "hubsell-backend",
+      version: process.env.RENDER_GIT_COMMIT ?? "dev",
+    });
   });
 
   // Đăng nhập / đăng ký (công khai)
