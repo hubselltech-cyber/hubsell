@@ -106,7 +106,10 @@ export function RowCheckTd({
 
 export const PNL_STATUS_LABEL: Record<string, string> = {
   PENDING: "Chờ xử lý",
-  PROCESSED: "Đã xử lý",
+  // PROCESSED = người bán đã đóng gói/chuẩn bị xong, ĐVVC CHƯA lấy hàng
+  // (Lazada: packed/ready_to_ship; Shopee/TikTok tương đương). Hiển thị đúng
+  // ngôn ngữ sàn thay cho "Đã xử lý" mơ hồ — mapper backend giữ nguyên.
+  PROCESSED: "Chờ lấy hàng",
   SHIPPING: "Đang giao",
   DELIVERED: "Đã giao",
   CANCELLED: "Đã hủy",

@@ -5,10 +5,10 @@ import { carrierShort } from "@/lib/carrier-meta";
 import { formatDateTime, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
+import { HintIcon } from "@/components/finance/hint-icon";
 import {
   Amount,
   BLOCK,
-  Deduction,
   HEADER_COL,
   HEADER_GROUP,
   PNL_STATUS_LABEL,
@@ -25,7 +25,8 @@ import {
  * 100% SỐ THẬT từ sao kê Finance API (/finance/transaction/details/get), hiển
  * thị NGUYÊN DẤU như Lazada ghi nhận: âm (đỏ) = sàn trừ, dương (lục) = ghi có.
  * Đơn CHƯA đối soát để trống toàn bộ cột phí — tuyệt đối không % tạm tính.
- * Lợi nhuận thực tế = Tiền thực về ví − Giá vốn (khớp Báo cáo dòng tiền).
+ * Lợi nhuận thực tế = Doanh thu trên sàn (tiền sàn trả về ví) − Giá vốn
+ * (khớp Báo cáo dòng tiền).
  */
 
 /** Ô số CÓ DẤU nguyên bản sao kê: âm đỏ, dương lục, 0/null hiện "—". */
@@ -41,6 +42,9 @@ function Signed({ value }: { value: number | null | undefined }) {
 
 /** Nhóm cột: [nhãn, hàm lấy giá trị từ sao kê chi tiết]. */
 type Col = [string, (d: LazadaSettlementDetail) => number];
+
+/** Cột header: [nhãn, căn lề, tooltip giải thích (tùy chọn)]. */
+type HeadCol = [string, "left" | "right", string?];
 
 const SHIP_COLS: Col[] = [
   ["Phí vận chuyển", (d) => d.shipFee],
@@ -129,7 +133,7 @@ export function LazadaProfitTable({
               Voucher, Thuế &amp; Kết quả
             </th>
           </tr>
-          {/* Tầng tên cột */}
+          {/* Tầng tên cột — phần tử thứ 3 (nếu có) là tooltip giải thích */}
           <tr>
             {(
               [
@@ -139,15 +143,23 @@ export function LazadaProfitTable({
                 ["Ngày tạo", "left"],
                 ["Chi tiết sản phẩm", "left"],
                 ["Giá trị đơn hàng", "right"],
-                ...SHIP_COLS.map(([l]) => [l, "right"] as const),
-                ...PLATFORM_COLS.map(([l]) => [l, "right"] as const),
-                ...TAX_COLS.map(([l]) => [l, "right"] as const),
-                ["Doanh thu thực tế", "right"],
-                ["Tiền thực về ví", "right"],
+                ...SHIP_COLS.map(([l]): HeadCol => [l, "right"]),
+                ...PLATFORM_COLS.map(([l]): HeadCol => [l, "right"]),
+                ...TAX_COLS.map(([l]): HeadCol => [l, "right"]),
+                [
+                  "Doanh thu ước tính",
+                  "right",
+                  "Doanh thu ước tính = Giá trị đơn hàng − giảm giá bằng xu/voucher của Shop. CHƯA trừ phí & thuế sàn — trừ tiếp các khoản đó sẽ ra Doanh thu trên sàn. Gọi là ước tính vì đơn chưa giao thành công/còn hoàn hủy thì chưa phải doanh thu cuối cùng.",
+                ],
+                [
+                  "Doanh thu trên sàn",
+                  "right",
+                  "Doanh thu thực tế trên sàn — số tiền sàn trả về ví sau khi trừ phí và thuế sàn (chỉ có khi đơn đã đối soát).",
+                ],
                 ["Giá vốn sản phẩm", "right"],
                 ["LỢI NHUẬN THỰC TẾ", "right"],
-              ] as const
-            ).map(([label, align], i) => (
+              ] as HeadCol[]
+            ).map(([label, align, hint], i) => (
               <th
                 key={i}
                 className={cn(
@@ -156,7 +168,14 @@ export function LazadaProfitTable({
                   label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700"
                 )}
               >
-                {label}
+                {hint ? (
+                  <span className="inline-flex items-center gap-1">
+                    {label}
+                    <HintIcon hint={hint} />
+                  </span>
+                ) : (
+                  label
+                )}
               </th>
             ))}
           </tr>
@@ -247,18 +266,22 @@ export function LazadaProfitTable({
                     {d ? <Signed value={pick(d)} /> : <span className="text-slate-300">—</span>}
                   </td>
                 ))}
-                <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
-                  <Amount value={actualRevenue} />
+                {/* Doanh thu ước tính — xanh, nhóm doanh thu */}
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  <Amount value={actualRevenue} tone="font-medium text-emerald-700" />
                 </td>
-                <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
-                  {d ? (
-                    <Amount value={d.actualPayout} />
+                {/* Doanh thu trên sàn — tiền sàn trả về ví (chỉ đơn đã đối soát) */}
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  {settled ? (
+                    <Amount value={d.actualPayout} tone="font-medium text-emerald-700" />
                   ) : (
                     <span className="text-slate-300">—</span>
                   )}
                 </td>
+                {/* Giá vốn — SỐ DƯƠNG (đúng như Cấu hình giá vốn nhập), chữ ĐỎ
+                    thể hiện chi phí giảm trừ; backend vẫn TRỪ trong lợi nhuận. */}
                 <td className={cn(cell, BLOCK.result, "text-right")}>
-                  <Deduction value={b.costSnapshot} tone="text-slate-600" />
+                  <Amount value={b.costSnapshot} tone="text-rose-600" />
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   {profit == null ? (
@@ -275,9 +298,11 @@ export function LazadaProfitTable({
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
         Mọi con số lấy <b>nguyên bản từ sao kê Finance API của Lazada</b> (âm = sàn
         trừ, dương = ghi có) — đơn <b>chưa đối soát</b> để trống, không dùng %
-        tạm tính. <b>Doanh thu thực tế</b> = Giá trị đơn hàng − giảm giá bằng
-        xu/voucher của Shop. <b>Lợi nhuận thực tế</b> = Doanh thu thực tế − tổng
-        phí sàn − thuế − Giá vốn (= Tiền thực về ví − Giá vốn sản phẩm).
+        tạm tính. <b>Doanh thu ước tính</b> = Giá trị đơn hàng − giảm giá bằng
+        xu/voucher của Shop. <b>Doanh thu trên sàn</b> = tiền sàn trả về ví sau
+        khi trừ phí &amp; thuế sàn. <b>Lợi nhuận thực tế</b> = Doanh thu trên sàn −
+        Giá vốn sản phẩm (giá vốn hiển thị số dương màu đỏ, vẫn được TRỪ khi
+        tính lợi nhuận).
       </p>
     </div>
   );
