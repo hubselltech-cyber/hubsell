@@ -9,11 +9,16 @@
 # Session pooler + sslmode=require vào DATABASE_URL. Chi tiết từng bước:
 # docs/DEPLOY-RENDER-SUPABASE.md
 # ============================================================
+# LƯU Ý 31/07: service production THẬT là hubsell-backend-sg (Singapore, tạo
+# tay trên Dashboard, auto-deploy từ master). Blueprint instance cũ đã
+# DISCONNECT + service Oregon hubsell-backend đã XÓA — file này chỉ còn là
+# khuôn dựng lại hạ tầng khi cần (đúng tên + region Singapore bên dưới).
 services:
   - type: web
-    name: hubsell-backend
+    name: hubsell-backend-sg
     runtime: node
     plan: free
+    region: singapore
     rootDir: backend
     # prisma generate chạy trong build (Render cache node_modules — client phải
     # sinh lại theo schema mới); migrate deploy chạy lúc start để bảng trên
