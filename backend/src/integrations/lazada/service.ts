@@ -650,8 +650,14 @@ export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucke
       return "feeLazadaBonus";
     case has("đánh giá người mua", "review"):
       return "feeBuyerReview";
+    // API: "LazCoins Discount Promotion Fee" = PHÍ tham gia chương trình →
+    // Phí chiến dịch; PHẢI bắt TRƯỚC "LazCoins Discount" (giảm giá) bên dưới.
+    case has("promotion fee", "phí tham gia"):
+      return "feeCampaign";
+    // API: "LazCoins Discount" = "Giảm Giá Bằng Xu" — voucher NGƯỜI BÁN chịu.
+    case has("lazcoins discount", "giảm giá bằng xu", "giảm giá từ cửa hàng"):
+      return "sellerVoucher";
     case has("lazcoin", "chiến dịch", "campaign"):
-      // "Phí tham gia Khuyến Mãi LazCoins" là PHÍ chương trình → Phí chiến dịch.
       return "feeCampaign";
     case has("tiếp thị liên kết", "affiliate", "sponsor"):
       return "feeAffiliate";
@@ -676,25 +682,23 @@ export function classifyLazadaFee(rawName: string, sign: number): LazadaFeeBucke
       return "feeShipSeller";
     case has("phí vận chuyển", "shipping fee", "logistic"):
       return "shipFee";
-    // ----- Voucher người bán ("Giảm giá từ Cửa hàng" / "Giảm Giá Bằng Xu") -----
-    case has("giảm giá bằng xu", "giảm giá từ cửa hàng") ||
-      (has("giảm giá", "voucher", "discount") && has("cửa hàng", "người bán", "seller")):
+    // ----- Voucher người bán (giảm giá shop chịu, ngoài LazCoins ở trên) -----
+    case has("giảm giá", "voucher", "discount") &&
+      has("cửa hàng", "người bán", "seller"):
       return "sellerVoucher";
-    // ----- Phí lõi: MỖI KHOẢN MỘT CỘT, tuyệt đối không gộp -----
-    case has("phí cố định", "fixed fee"):
+    // ----- Phí lõi: MỖI KHOẢN MỘT CỘT, tuyệt đối không gộp.
+    // ĐỐI CHIẾU SAO KÊ THẬT: API "Commission" = nhãn "Phí cố định" trên Seller
+    // Center; API "Payment Fee" = nhãn "Phí xử lý đơn hàng". -----
+    case has("phí cố định", "fixed fee", "commission", "hoa hồng"):
       return "feeFixed";
-    case has("xử lý đơn", "order processing"):
+    case has("xử lý đơn", "order processing", "payment"):
       return "feeOrderProcessing";
-    case has("hoa hồng", "commission"):
-      return "feeCommission";
-    case has("phí thanh toán", "payment"):
-      return "feePayment";
-    // ----- Thuế sàn thu hộ -----
-    case has("gtgt", "vat"):
-      return "vatFee";
-    case has("tncn", "income tax", "wht"):
+    // ----- Thuế sàn thu hộ (PIT bắt trước nhánh tax chung) -----
+    case has("pit", "tncn", "income tax"):
       return "incomeTaxFee";
-    case has("thuế", "tax", "tcs"):
+    case has("vat", "gtgt"):
+      return "vatFee";
+    case has("thuế", "tax", "tcs", "withholding"):
       return "vatFee"; // thuế chưa rõ loại — gộp về GTGT
     // ----- CHỐT CHẶN AN TOÀN: không bao giờ bỏ sót tiền -----
     default:
