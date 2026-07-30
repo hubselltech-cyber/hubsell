@@ -3,14 +3,14 @@ import fs from "fs";
 import http from "http";
 import https from "https";
 import { createApp } from "./app";
-import { startShopeeOrderAutoSync } from "./integrations/shopee/auto-sync";
+import { startOrderAutoSync } from "./order-auto-sync";
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
 
-// Worker tự đồng bộ đơn Shopee theo nhịp — khởi động ở đây (KHÔNG ở app.ts)
-// để test dựng createApp() không vô tình gọi API sàn thật.
-startShopeeOrderAutoSync();
+// Worker tự đồng bộ đa sàn theo nhịp (đơn Shopee+Lazada, đối soát Lazada) —
+// khởi động ở đây (KHÔNG ở app.ts) để test dựng createApp() không gọi API sàn.
+startOrderAutoSync();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

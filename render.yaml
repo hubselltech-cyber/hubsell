@@ -56,7 +56,7 @@ services:
         sync: false
       - key: SHOPEE_ENV
         value: production
-      - key: SHOPEE_AUTO_SYNC_MINUTES # lưới an toàn: tự quét đơn mỗi N phút ("0" = tắt)
+      - key: AUTO_SYNC_MINUTES # tự quét đơn Shopee+Lazada mỗi N phút, đối soát Lazada mỗi 6N phút ("0" = tắt)
         value: "10"
       # ---- Lazada Open Platform (đã cấu hình tay trên Dashboard từ 28/07 —
       # khai ở đây để Blueprint tái tạo được service đầy đủ) ----
