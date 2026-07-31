@@ -122,6 +122,42 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+// POST /api/auth/change-password — người dùng TỰ đổi mật khẩu của CHÍNH MÌNH
+// (dùng req.userId, không phải ownerId — nhân viên cũng đổi được mật khẩu riêng).
+// Bắt buộc xác nhận mật khẩu hiện tại để chống chiếm phiên đổi trộm mật khẩu.
+router.post("/change-password", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body ?? {};
+    if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
+      res.status(400).json({ error: "Thiếu mật khẩu hiện tại hoặc mật khẩu mới" });
+      return;
+    }
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 8 ký tự" });
+      return;
+    }
+    if (newPassword === currentPassword) {
+      res.status(400).json({ error: "Mật khẩu mới phải khác mật khẩu hiện tại" });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.userId! } });
+    const valid = user && (await bcrypt.compare(currentPassword, user.passwordHash));
+    if (!valid) {
+      res.status(401).json({ error: "Mật khẩu hiện tại không đúng" });
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await bcrypt.hash(newPassword, 10) },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ============================================================
 // GET /api/auth/shopee/callback — SHOPEE REDIRECT VỀ ĐÂY SAU KHI UỶ QUYỀN
 //

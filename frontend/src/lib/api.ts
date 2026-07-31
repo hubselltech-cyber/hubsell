@@ -735,6 +735,17 @@ export function register(email: string, password: string, fullName: string) {
   });
 }
 
+/** Người dùng TỰ đổi mật khẩu của chính mình (phải xác nhận mật khẩu hiện tại). */
+export function changePassword(data: {
+  currentPassword: string;
+  newPassword: string;
+}) {
+  return apiFetch<{ ok: boolean }>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export function fetchMe() {
   return apiFetch<{
     user: AuthUser & { createdAt: string };
