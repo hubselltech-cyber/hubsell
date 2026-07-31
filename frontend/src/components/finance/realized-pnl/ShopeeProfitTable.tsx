@@ -213,9 +213,11 @@ export function ShopeeProfitTable({
         </tbody>
       </table>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
-        Cột trợ giá VC, người mua trả, nạp ví quảng cáo, thuế đang{" "}
-        <b>giữ chỗ (0₫)</b> — sẽ cắm số thật khi có luồng đồng bộ file quyết toán
-        Shopee.
+        Đơn <b>đã đối soát</b> nhận số thật từ Escrow API (Đồng bộ đối soát) —
+        mỗi loại phí về đúng cột của nó. Riêng cột{" "}
+        <b>Người mua trả, Trợ giá VC Shop, Nạp ví quảng cáo</b> escrow không có
+        nguồn — giữ chỗ 0₫. &quot;Doanh thu từ Shopee&quot; = tiền thực về ví
+        (escrow_amount), là gốc tính lợi nhuận.
       </p>
     </div>
   );

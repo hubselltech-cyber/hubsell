@@ -593,6 +593,7 @@ export interface ShopeeOrderIncome {
   voucher_from_shopee?: number;
   coins?: number; // xu người mua dùng — sàn hoàn lại cho shop
   // Vận chuyển
+  estimated_shipping_fee?: number; // cước sàn báo lúc đặt đơn
   actual_shipping_fee?: number;
   buyer_paid_shipping_fee?: number;
   shopee_shipping_rebate?: number;

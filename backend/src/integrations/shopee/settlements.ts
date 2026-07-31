@@ -42,17 +42,27 @@ export interface SyncShopeeSettlementsResult {
 const n = (v: number | undefined | null): number => Number(v ?? 0) || 0;
 
 /**
- * Quy đổi order_income → cột GĐ2 gộp của Order (mọi cột LƯU DƯƠNG).
- * Export riêng để test nghiệm thu bằng payload chuẩn không cần gọi sàn
- * (cùng cách e2e với upsertShopeeOrderTx).
+ * Quy đổi order_income → cột nguyên bản của Order (mọi cột LƯU DƯƠNG),
+ * MAP 1:1 THEO ĐÚNG THIẾT KẾ BẢNG SHOPEE 24 CỘT (chốt chủ shop 31/07 —
+ * KHÔNG gộp nhiều loại phí vào một bucket kiểu Lazada):
+ *   commission_fee → fixedFee ("Phí sàn CĐ"), seller_transaction_fee (+thẻ
+ *   tín dụng) → paymentFee ("TT"), service_fee → serviceFee ("PiShip/Xtra"),
+ *   order_ams → affiliateFee, voucher shop/xu shop hoàn → sellerVoucher
+ *   ("Trợ giá người bán"), voucher sàn + xu sàn → platformSubsidy ("Trợ giá
+ *   Shopee"), shopee_shipping_rebate → shipSubsidyPlatform ("Trợ giá VC
+ *   Shopee"), estimated/actual → shippingFeeQuoted/Actual.
+ * Các phí lẻ KHÔNG có cột riêng (campaign, bảo hiểm, ship hoàn...) KHÔNG ép
+ * vào cột nào — số tiền của chúng vẫn nằm trong escrow_amount (actualPayout),
+ * nguồn sự thật mọi phép tính lợi nhuận, nên dòng tiền không sót một đồng.
+ * Export riêng để test nghiệm thu bằng payload chuẩn không cần gọi sàn.
  */
 export function mapShopeeEscrowToOrder(
   income: ShopeeOrderIncome,
   releasedAt: Date
 ) {
-  // Vận chuyển: phần shop THỰC CHỊU = cước thật − (khách trả + sàn trợ + 3PL
-  // giảm). Ưu tiên final_shipping_fee khi sàn trả (số ròng CÓ DẤU đã điều
-  // chỉnh vào payout; âm = shop bị trừ thêm).
+  // "Chênh lệch phí VC" = phần ship shop THỰC CHỊU = cước thật − (khách trả +
+  // sàn trợ + 3PL giảm). Ưu tiên final_shipping_fee khi sàn trả (số ròng CÓ
+  // DẤU đã điều chỉnh vào payout; âm = shop bị trừ thêm).
   const shipActual = n(income.actual_shipping_fee);
   const shipCovered =
     n(income.buyer_paid_shipping_fee) +
@@ -67,26 +77,27 @@ export function mapShopeeEscrowToOrder(
   return {
     isSettled: true,
     settledAt: releasedAt,
-    // Phí lõi — khớp trục cột của bảng Lãi/Lỗ (fixed+payment / service / affiliate).
+    // Phí sàn — mỗi loại đúng một cột như file quyết toán Shopee.
     fixedFee: n(income.commission_fee),
     paymentFee:
       n(income.seller_transaction_fee) + n(income.credit_card_transaction_fee),
-    serviceFee:
-      n(income.service_fee) +
-      n(income.campaign_fee) +
-      n(income.delivery_seller_protection_fee_premium_amount) +
-      n(income.reverse_shipping_fee),
+    serviceFee: n(income.service_fee),
     affiliateFee: n(income.order_ams_commission_fee),
-    // Voucher/xu SHOP chịu vs SÀN tài trợ (sàn hoàn lại cho shop → thu nhập).
-    sellerVoucher: n(income.voucher_from_seller) + n(income.seller_coin_cash_back),
+    // Trợ giá: SHOP chịu (voucher + xu shop hoàn) vs SÀN tài trợ (hoàn cho shop).
+    sellerVoucher:
+      n(income.voucher_from_seller) + n(income.seller_coin_cash_back),
     platformSubsidy: n(income.voucher_from_shopee) + n(income.coins),
-    // Vận chuyển & thuế thu hộ.
+    // Vận chuyển — đúng cột nhóm "Phí vận chuyển" của bảng Shopee.
+    shippingFeeQuoted: n(income.estimated_shipping_fee),
     shippingFeeActual: shipActual,
-    shippingFeeQuoted: shipCovered,
+    shipSubsidyPlatform: n(income.shopee_shipping_rebate),
     shippingFeeDiff: shipBorne,
+    // Thuế sàn thu hộ.
     taxWithheld: n(income.escrow_tax) + n(income.withholding_tax),
-    // Tiền THỰC về ví — tổng đại số cuối cùng của sàn, nguồn sự thật dòng tiền.
+    // Tiền THỰC về ví — tổng đại số cuối cùng của sàn, GỐC của mọi phép tính
+    // lợi nhuận (computePnlRow: platformRevenue/profitAfterTax đọc từ đây).
     actualPayout: n(income.escrow_amount),
+    // adWalletTopup / shipSubsidyShop: escrow không có nguồn — giữ nguyên 0.
   };
 }
 
