@@ -285,8 +285,10 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
+        {/* KHÔNG in tài khoản demo ra đây nữa: URL production công khai
+            (Vercel), lộ credentials admin là lộ dữ liệu shop thật. */}
         <p className="text-center text-xs text-muted-foreground">
-          Tài khoản dùng thử: admin@hubsell.vn / hubsell123
+          Hubsell · Quản lý bán hàng đa kênh
         </p>
       </div>
     </div>
