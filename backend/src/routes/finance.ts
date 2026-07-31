@@ -16,7 +16,8 @@ import { syncChannelProducts } from "../marketplace/product-sync";
 import { parseDateRange, type DateRangeFilter } from "../date-range";
 import {
   channelScope,
-  hasChannelFilter,
+  readChannelId,
+  readChannelName,
   type ChannelScope,
 } from "../channel-filter";
 import {
@@ -1795,13 +1796,26 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    // THU/CHI VẬN HÀNH NHẬP TAY — luật lọc theo sàn/gian: khi đang lọc
-    // (Lazada/Shopee/1 gian cụ thể) CHỈ tính khoản đã gắn đúng nguồn tiền
-    // sàn/gian đó (fundChannel); khoản KHÔNG gắn gian nào chỉ xuất hiện ở chế
-    // độ "Tất cả sàn". Không chia đều, không gom phí sàn cấn trừ vào đây.
-    const manualTxnScope = hasChannelFilter(req)
+    // THU/CHI VẬN HÀNH NHẬP TAY — luật lọc theo sàn/gian (khoản gắn 3 mức:
+    // đích danh gian / chung cấp sàn fundPlatform / chung toàn shop):
+    //   - "Tất cả sàn" (không lọc)   → tính HẾT (cả khoản chung mọi mức).
+    //   - Lọc CẤP SÀN (Lazada…)      → khoản gắn gian thuộc sàn đó + khoản
+    //     chung CỦA SÀN đó (fundPlatform); khoản chung toàn shop KHÔNG tính.
+    //   - Lọc đích danh MỘT gian     → CHỈ khoản gắn đúng gian đó; mọi khoản
+    //     chung (cấp sàn lẫn toàn shop) đều KHÔNG tính.
+    // Không chia đều, không gom phí sàn cấn trừ vào đây.
+    const filterChannelId = readChannelId(req);
+    const filterChannelName = readChannelName(req);
+    const manualTxnScope = filterChannelId
       ? { fundChannelId: { not: null }, fundChannel: scope }
-      : {};
+      : filterChannelName
+        ? {
+            OR: [
+              { fundChannelId: { not: null }, fundChannel: scope },
+              { fundChannelId: null, fundPlatform: filterChannelName },
+            ],
+          }
+        : {};
 
     const [pnlOrders, expenses, operatingIncomeAgg, taxCfg] = await Promise.all([
       // NGUỒN SỐ GỐC: CÙNG tập đơn + CÙNG công thức với trang Lãi/Lỗ Thực Hiện
@@ -1936,11 +1950,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       fixedExpenseTotal;
     // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
     // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
-    // phí cũng không chứa khoản ước tính nào của nhóm, nên đẳng thức
-    // thẻ Lợi nhuận = thẻ Doanh thu − thẻ Chi phí vẫn đứng vững.
+    // phí cũng không chứa khoản ước tính nào của nhóm.
     const expectedProfit = sumBy(pendingRows, (r) => r.profitAfterTax);
-    // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến.
-    const provisionalProfit = actualProfit + expectedProfit;
+    // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến + THU vận hành khác (chốt
+    // chủ shop 31/07 chiều: khoản thu nhập tay PHẢI cộng vào tổng lợi nhuận —
+    // dời từ cuối cột Doanh thu về lại cột Lợi nhuận làm dòng thứ 3). Đẳng
+    // thức thác nước thành: thẻ Lợi nhuận = Doanh thu − Chi phí + Thu khác.
+    const provisionalProfit = actualProfit + expectedProfit + operatingIncomeTotal;
 
     // Tổng doanh thu + tổng giá vốn + tổng phí sàn (đơn Đã giao) — cùng các
     // trường dòng Lãi/Lỗ: doanh thu gốc, giá vốn snapshot, 3 bucket phí sàn.
@@ -2117,16 +2133,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: cancelRate,
               count: cancelledRows.length,
             },
-            // Khoản THU ngoài đơn hàng — đứng cuối cột Doanh thu cho đúng bản
-            // chất kế toán; KHÔNG cộng vào tổng Doanh thu phía trên (tổng đó
-            // thuần là tiền từ đơn hàng sau khấu trừ sàn).
-            {
-              key: "operatingIncome",
-              label: "Thu nhập vận hành khác",
-              hint: "Khoản thu ngoài đơn hàng (đền bù, thưởng…) nhập tay từ module Thu chi vận hành — không thuộc doanh thu đơn hàng nên không cộng vào tổng cột.",
-              amount: operatingIncomeTotal,
-              percent: pct(operatingIncomeTotal, actualRevenueTotal),
-            },
+            // (Khoản THU vận hành nhập tay đã dời về cột Lợi nhuận — dòng thứ
+            // 3, CỘNG vào tổng lợi nhuận tạm tính; chốt chủ shop 31/07 chiều.)
           ],
         },
 
@@ -2173,13 +2181,12 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           ],
         },
 
-        // Cột 4 — TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến.
+        // Cột 4 — TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến + Thu vận hành
+        // khác (dòng 3 — chốt chủ shop 31/07 chiều: khoản thu nhập tay phải
+        // CỘNG vào tổng; trước đó nằm tham khảo cuối cột Doanh thu).
         //
-        // Cột này TINH GIẢN, chỉ phân rã theo trạng thái đơn (quản trị rủi ro
-        // TMĐT: tiền đã về tay vs tiền đang trên đường). Các khoản đã dời đi:
-        //   - Thu nhập vận hành khác → cuối cột Doanh thu.
-        //   - 2 dòng nghĩa vụ thuế   → cuối cột Chi phí (số DƯƠNG như mọi dòng
-        //     chi phí, hết cảnh item âm nằm lẫn trong cột lợi nhuận gây sai tổng).
+        // 2 dòng nghĩa vụ thuế vẫn ở cuối cột Chi phí (số DƯƠNG như mọi dòng
+        // chi phí, hết cảnh item âm nằm lẫn trong cột lợi nhuận gây sai tổng).
         profit: {
           total: provisionalProfit,
           items: [
@@ -2198,6 +2205,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Σ cột \"Lợi nhuận\" của đơn CHƯA quyết toán trên Lãi/Lỗ Thực Hiện = doanh thu − giá vốn. CHƯA trừ phí & thuế sàn (chờ sao kê đối soát — hệ thống không ước %), nên đây là mức TRẦN lạc quan.",
               amount: expectedProfit,
               percent: pct(expectedProfit, pendingActualRevenue),
+            },
+            {
+              key: "operatingIncome",
+              label: "Thu nhập vận hành khác",
+              hint: "Khoản THU ngoài đơn hàng (đền bù, thưởng, hoàn tiền NCC…) nhập tay ở Thu chi vận hành — CỘNG thẳng vào tổng lợi nhuận tạm tính; cùng luật lọc sàn/gian với chi phí nhập tay.",
+              amount: operatingIncomeTotal,
+              percent: pct(operatingIncomeTotal, actualRevenueTotal),
             },
           ],
         },

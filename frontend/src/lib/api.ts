@@ -348,8 +348,11 @@ export interface OperatingExpense {
   type: ExpenseType;
   appliedSku: string | null; // SKU được gắn (chỉ với chi phí VARIABLE)
   amount: number;
-  // Nguồn tiền áp dụng — để đối chiếu với bảng dòng tiền
+  // Nguồn tiền áp dụng — để đối chiếu với bảng dòng tiền.
+  // fundChannelId null + fundPlatform set = khoản CHUNG CẤP SÀN ("Lazada — Tất
+  // cả shop"); cả hai null = khoản CHUNG TOÀN SHOP.
   fundChannelId: string | null;
+  fundPlatform: ChannelName | null;
   fundSource: FundSourceType | null;
   fundChannelName: ChannelName | null;
   fundShopName: string | null;
@@ -1140,6 +1143,7 @@ export function createOperatingTxn(data: {
   name: string;
   amount: number;
   fundChannelId?: string; // module bắt buộc; quick-add dashboard có thể bỏ
+  fundPlatform?: ChannelName; // khoản chung CẤP SÀN: bỏ fundChannelId, gửi sàn ở đây
   fundSource?: FundSourceType;
   category?: ExpenseCategory; // chỉ với CHI
   type?: ExpenseType; // chỉ với CHI

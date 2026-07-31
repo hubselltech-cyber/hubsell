@@ -26,8 +26,10 @@ export interface ChannelScope {
   channelName?: ChannelName;
 }
 
-/** Đọc ?channelName= và chỉ nhận giá trị có thật trong enum, tránh lọc bừa. */
-function readChannelName(req: AuthRequest): ChannelName | undefined {
+/** Đọc ?channelName= và chỉ nhận giá trị có thật trong enum, tránh lọc bừa.
+ *  Export cho nơi cần phân biệt lọc CẤP SÀN với lọc đích danh gian (luật tính
+ *  khoản thu/chi chung theo sàn của Báo cáo dòng tiền). */
+export function readChannelName(req: AuthRequest): ChannelName | undefined {
   const raw =
     typeof req.query.channelName === "string"
       ? req.query.channelName.trim().toUpperCase()
@@ -35,7 +37,7 @@ function readChannelName(req: AuthRequest): ChannelName | undefined {
   return raw in ChannelName ? (raw as ChannelName) : undefined;
 }
 
-function readChannelId(req: AuthRequest): string {
+export function readChannelId(req: AuthRequest): string {
   return typeof req.query.channelId === "string"
     ? req.query.channelId.trim()
     : "";

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  ChannelName,
   ExpenseCategory,
   ExpenseType,
   FundSourceType,
@@ -44,6 +45,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         appliedSku: e.appliedSku,
         amount: Number(e.amount),
         fundChannelId: e.fundChannelId,
+        fundPlatform: e.fundPlatform,
         fundSource: e.fundSource,
         fundChannelName: e.fundChannel?.channelName ?? null,
         fundShopName: e.fundChannel?.shopName ?? null,
@@ -70,6 +72,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
       note,
       expenseDate,
       fundChannelId,
+      fundPlatform,
     } = req.body ?? {};
 
     // Chiều giao dịch: mặc định CHI để tương thích ngược với form cũ.
@@ -111,12 +114,18 @@ router.post("/", async (req: AuthRequest, res, next) => {
         : null;
 
     // NGUỒN TIỀN — TÙY CHỌN ở API (form module gắn shop; quick-add dashboard bỏ trống).
+    // Ba mức gắn (xem chú thích model OperatingExpense):
+    //   - fundChannelId thật            → đích danh 1 gian.
+    //   - "ALL"/trống + fundPlatform    → khoản CHUNG CẤP SÀN ("Lazada — Tất cả shop").
+    //   - "ALL"/trống + không sàn       → khoản CHUNG TOÀN SHOP.
+    // Khoản chung không cộng/trừ vào cột dòng tiền của riêng gian nào (fundSource null).
     // ERP CORE LOGIC: mọi khoản thu/chi THỦ CÔNG đi qua NGÂN HÀNG, TUYỆT ĐỐI không
     // đụng Ví sàn (ví sàn chỉ nhận tiền sàn quyết toán về). Vì vậy khi có gắn gian,
     // ÉP fundSource = BANK_ACCOUNT bất kể client gửi gì.
     let finalFundChannelId: string | null = null;
+    let finalFundPlatform: ChannelName | null = null;
     let finalFundSource: FundSourceType | null = null;
-    if (fundChannelId) {
+    if (fundChannelId && fundChannelId !== "ALL") {
       if (typeof fundChannelId !== "string") {
         res.status(400).json({ error: "Gian hàng cho nguồn tiền không hợp lệ" });
         return;
@@ -131,6 +140,12 @@ router.post("/", async (req: AuthRequest, res, next) => {
       }
       finalFundChannelId = fundChannelId;
       finalFundSource = FundSourceType.BANK_ACCOUNT; // luôn Ngân hàng
+    } else if (fundPlatform !== undefined && fundPlatform !== null && fundPlatform !== "" && fundPlatform !== "ALL") {
+      if (typeof fundPlatform !== "string" || !(fundPlatform in ChannelName)) {
+        res.status(400).json({ error: "Sàn cho nguồn tiền không hợp lệ" });
+        return;
+      }
+      finalFundPlatform = fundPlatform as ChannelName;
     }
 
     if (note !== undefined && typeof note !== "string") {
@@ -158,6 +173,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
         appliedSku: finalAppliedSku,
         amount: amt,
         fundChannelId: finalFundChannelId,
+        fundPlatform: finalFundPlatform,
         fundSource: finalFundSource,
         note: typeof note === "string" && note.trim() ? note.trim() : null,
         ...(date ? { expenseDate: date } : {}),

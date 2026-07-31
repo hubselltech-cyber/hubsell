@@ -37,6 +37,7 @@ import {
   type FundSourceType,
   type OperatingExpense,
 } from "@/lib/api";
+import { CHANNEL_META } from "@/lib/channel-meta";
 import { cn } from "@/lib/utils";
 import { formatVND, formatDateTime } from "@/lib/format";
 
@@ -49,7 +50,9 @@ const SOURCE_LABEL: Record<FundSourceType, string> = {
   BANK_ACCOUNT: "Ngân hàng",
 };
 
-/** Nhãn nguồn tiền của một dòng thu/chi (gian + túi tiền). */
+/** Nhãn nguồn tiền của một dòng thu/chi (gian + túi tiền).
+ *  null fundChannel = KHOẢN CHUNG (cấp sàn nếu có fundPlatform, không thì toàn
+ *  shop) — trả null để render badge riêng theo mức chung. */
 function fundLabel(e: OperatingExpense): string | null {
   if (!e.fundShopName || !e.fundSource) return null;
   return `${e.fundShopName} — ${SOURCE_LABEL[e.fundSource]}`;
@@ -236,7 +239,20 @@ export default function FinanceExpensesPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {src ?? <span className="text-slate-300">—</span>}
+                          {src ?? (
+                            <span
+                              className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600"
+                              title={
+                                e.fundPlatform
+                                  ? 'Khoản chung của sàn — tính vào báo cáo khi bộ lọc để "Tất cả sàn" hoặc chọn đúng sàn này (tất cả shop)'
+                                  : 'Khoản chung toàn shop — chỉ tính vào báo cáo khi bộ lọc để "Tất cả sàn"'
+                              }
+                            >
+                              {e.fundPlatform
+                                ? `${CHANNEL_META[e.fundPlatform]?.label ?? e.fundPlatform} — Tất cả shop`
+                                : "Tất cả sàn / shop"}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell
                           className={cn(

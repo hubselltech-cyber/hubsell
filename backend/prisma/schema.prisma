@@ -725,8 +725,16 @@ model OperatingExpense {
   amount      Decimal         @db.Decimal(12, 2) // luôn DƯƠNG; chiều do `direction` quyết định
 
   // NGUỒN TIỀN ÁP DỤNG — để đồng bộ sang bảng dòng tiền (cộng/trừ đúng cột của
-  // đúng gian). Nullable cho data cũ; API bắt buộc với bản ghi mới.
+  // đúng gian). Ba mức gắn:
+  //   1) fundChannelId set                → đích danh MỘT gian hàng.
+  //   2) fundChannelId null + fundPlatform set → CHUNG CẤP SÀN ("Lazada — Tất cả
+  //      shop"): báo cáo tính khi lọc "Tất cả sàn" hoặc đúng sàn đó (tất cả
+  //      shop); lọc đích danh 1 shop thì KHÔNG tính.
+  //   3) cả hai null                     → CHUNG TOÀN SHOP (form gửi "ALL"/"ALL",
+  //      hoặc data cũ/quick-add): chỉ tính ở chế độ lọc "Tất cả sàn".
+  // Khoản chung (2)(3) không thuộc cột dòng tiền của riêng gian nào.
   fundChannelId String?
+  fundPlatform  ChannelName?
   fundSource    FundSourceType?
 
   note        String?

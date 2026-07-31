@@ -54,12 +54,12 @@ import { formatVND, formatNumber } from "@/lib/format";
 //   Giá trị SP − Tổng sàn khấu trừ (phí + thuế sàn + voucher + chênh lệch VC
 //   − trợ giá) = Doanh thu → Doanh thu − Chi phí (giá vốn + vận hành + thuế
 //   bổ sung) = Lợi nhuận.
-//   - Cột Doanh thu = "Tổng tiền" sàn báo (payout thật / số API đơn khi chờ);
-//     thêm dòng "Thu nhập vận hành khác" cuối (không cộng vào tổng).
+//   - Cột Doanh thu = "Tổng tiền" sàn báo (payout thật / số API đơn khi chờ).
 //   - Cột Chi phí KHÔNG còn Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu —
 //     trừ nữa là trùng); 2 khoản đó là dòng khấu trừ của thẻ Giá trị SP.
-//   - Cột Lợi nhuận: TINH GIẢN — Tổng lợi nhuận tạm tính = Thực tế + Dự kiến,
-//     chỉ phân rã theo trạng thái đơn để quản trị rủi ro dòng tiền TMĐT.
+//   - Cột Lợi nhuận: Tổng lợi nhuận tạm tính = Thực tế + Dự kiến + Thu nhập
+//     vận hành khác (chốt 31/07 chiều: khoản THU nhập tay CỘNG vào tổng —
+//     đẳng thức thành Lợi nhuận = Doanh thu − Chi phí + Thu khác).
 
 export default function FinanceAnalyticsPage() {
   const router = useRouter();
@@ -174,7 +174,7 @@ export default function FinanceAnalyticsPage() {
 
             <BreakdownCard
               title="Tổng lợi nhuận tạm tính"
-              subtitle="= Doanh thu − Chi phí (phí & thuế sàn đã cấn trừ sẵn trong Doanh thu)"
+              subtitle="= Doanh thu − Chi phí + Thu vận hành khác (phí & thuế sàn đã cấn trừ sẵn trong Doanh thu)"
               total={data.breakdown.profit.total}
               icon={Scale}
               items={data.breakdown.profit.items}

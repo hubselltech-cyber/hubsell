@@ -33,6 +33,7 @@ import {
   createOperatingTxn,
   fetchProducts,
   type Channel,
+  type ChannelName,
   type ExpenseCategory,
   type Product,
   type TransactionDirection,
@@ -100,9 +101,18 @@ export function AddTxnDialog({
   });
   const expenseType = form.watch("type");
   const selectedPlatform = form.watch("platform");
+  const selectedShop = form.watch("shopChannelId");
   // Cả THU lẫn CHI: chọn Sàn rồi Shop (shop lọc theo sàn đã chọn).
+  // Sàn = "ALL" → khoản CHUNG TOÀN SHOP: shop cố định "Tất cả shop", DB không gắn gian.
+  // Sàn cụ thể + shop = "ALL" → khoản CHUNG CẤP SÀN (lưu fundPlatform, không gắn gian).
+  const isAllPlatforms = selectedPlatform === "ALL";
+  const isPlatformWide = !isAllPlatforms && !!selectedPlatform && selectedShop === "ALL";
   const platforms = Array.from(new Set(channels.map((c) => c.channelName)));
   const shopOptions = channels.filter((c) => c.channelName === selectedPlatform);
+  const platformLabel =
+    selectedPlatform && !isAllPlatforms
+      ? (CHANNEL_META[selectedPlatform as ChannelName]?.label ?? selectedPlatform)
+      : "";
 
   // Nạp SKU (chỉ cần cho CHI biến đổi) khi mở dialog.
   useEffect(() => {
@@ -131,7 +141,13 @@ export function AddTxnDialog({
         direction,
         name: values.name,
         amount: Number(values.amount),
-        fundChannelId: values.shopChannelId,
+        // "ALL" (Tất cả shop) → bỏ trống fundChannelId: backend lưu null = khoản chung.
+        // Sàn cụ thể + "Tất cả các shop" → gửi kèm fundPlatform = khoản chung CẤP SÀN.
+        fundChannelId: values.shopChannelId === "ALL" ? undefined : values.shopChannelId,
+        fundPlatform:
+          values.shopChannelId === "ALL" && values.platform && values.platform !== "ALL"
+            ? (values.platform as ChannelName)
+            : undefined,
         ...(isIncome
           ? {}
           : {
@@ -279,10 +295,16 @@ export function AddTxnDialog({
                         {...field}
                         onChange={(e) => {
                           field.onChange(e);
-                          form.setValue("shopChannelId", ""); // đổi sàn → reset shop
+                          // Đổi sàn → reset shop; riêng "Tất cả sàn" tự chốt luôn
+                          // "Tất cả shop" (khoản chung không gắn gian cụ thể).
+                          form.setValue(
+                            "shopChannelId",
+                            e.target.value === "ALL" ? "ALL" : ""
+                          );
                         }}
                       >
                         <option value="">— Chọn sàn —</option>
+                        <option value="ALL">Tất cả sàn (khoản chung)</option>
                         {platforms.map((p) => (
                           <option key={p} value={p}>
                             {CHANNEL_META[p]?.label ?? p}
@@ -302,14 +324,27 @@ export function AddTxnDialog({
                     <FormLabel>Chọn shop</FormLabel>
                     <FormControl>
                       <NativeSelect {...field} disabled={!selectedPlatform}>
-                        <option value="">
-                          {!selectedPlatform ? "— Chọn sàn trước —" : "— Chọn gian hàng —"}
-                        </option>
-                        {shopOptions.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.shopName}
-                          </option>
-                        ))}
+                        {isAllPlatforms ? (
+                          <option value="ALL">Tất cả shop</option>
+                        ) : (
+                          <>
+                            <option value="">
+                              {!selectedPlatform
+                                ? "— Chọn sàn trước —"
+                                : "— Chọn gian hàng —"}
+                            </option>
+                            {selectedPlatform && (
+                              <option value="ALL">
+                                Tất cả các shop (khoản chung của sàn)
+                              </option>
+                            )}
+                            {shopOptions.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.shopName}
+                              </option>
+                            ))}
+                          </>
+                        )}
                       </NativeSelect>
                     </FormControl>
                     <FormMessage />
@@ -318,9 +353,13 @@ export function AddTxnDialog({
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {isIncome
-                ? "Khoản thu sẽ CỘNG vào cột Ngân hàng của shop này trong Báo cáo dòng tiền."
-                : "Khoản chi sẽ TRỪ khỏi cột Ngân hàng của shop này trong Báo cáo dòng tiền."}
+              {isAllPlatforms
+                ? `Khoản ${isIncome ? "thu" : "chi"} CHUNG toàn shop: chỉ tính vào Báo cáo dòng tiền khi bộ lọc để "Tất cả sàn" — lọc đích danh một sàn/shop sẽ không gồm khoản này.`
+                : isPlatformWide
+                  ? `Khoản ${isIncome ? "thu" : "chi"} CHUNG của sàn ${platformLabel}: tính vào Báo cáo dòng tiền khi bộ lọc để "Tất cả sàn" hoặc chọn đúng sàn ${platformLabel} (tất cả shop) — lọc đích danh một shop sẽ không gồm khoản này.`
+                  : isIncome
+                    ? "Khoản thu sẽ CỘNG vào cột Ngân hàng của shop này trong Báo cáo dòng tiền."
+                    : "Khoản chi sẽ TRỪ khỏi cột Ngân hàng của shop này trong Báo cáo dòng tiền."}
             </p>
 
             <div className="grid grid-cols-2 gap-4">
