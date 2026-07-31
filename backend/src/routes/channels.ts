@@ -39,6 +39,7 @@ import {
   signOauthState as signShopeeState,
   syncShopeeOrders,
 } from "../integrations/shopee/service";
+import { syncShopeeSettlements } from "../integrations/shopee/settlements";
 
 const router = Router();
 
@@ -492,7 +493,7 @@ router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
 });
 
 // POST /api/channels/:id/sync-settlements — kéo đối soát thật → cập nhật số
-// quyết toán (GĐ2) của từng đơn. Dispatch theo sàn: TikTok hoặc Lazada.
+// quyết toán (GĐ2) của từng đơn. Dispatch theo sàn: TikTok, Shopee hoặc Lazada.
 router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res) => {
   try {
     const channel = await prisma.channel.findFirst({
@@ -500,6 +501,19 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
     });
     if (!channel) {
       res.status(404).json({ error: "Không tìm thấy gian hàng" });
+      return;
+    }
+
+    if (channel.channelName === ChannelName.SHOPEE) {
+      if (!channel.refreshToken) {
+        res.status(409).json({
+          error: "Gian Shopee chưa uỷ quyền. Hãy kết nối lại để cấp quyền API.",
+          code: "SHOPEE_NOT_AUTHORIZED",
+        });
+        return;
+      }
+      const summary = await syncShopeeSettlements(channel);
+      res.json({ message: "Đồng bộ đối soát Shopee xong", ...summary });
       return;
     }
 
@@ -524,7 +538,7 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
       return;
     }
 
-    res.status(400).json({ error: "Đồng bộ đối soát hiện hỗ trợ TikTok và Lazada" });
+    res.status(400).json({ error: "Đồng bộ đối soát hiện hỗ trợ TikTok, Shopee và Lazada" });
   } catch (err) {
     res.status(502).json({ error: `Đồng bộ đối soát thất bại: ${(err as Error).message}` });
   }

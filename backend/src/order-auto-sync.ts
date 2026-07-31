@@ -4,10 +4,10 @@
 // Phủ MỌI gian đang hoạt động, không ai phải bấm tay:
 //   · ĐƠN HÀNG (Shopee + Lazada): quét mỗi nhịp (mặc định 10 phút, cửa sổ
 //     2 ngày gần nhất, upsert idempotent — chạy lặp vô hại).
-//   · ĐỐI SOÁT PHÍ THẬT (Lazada Finance API): chạy MỖI GIỜ (mỗi
-//     SETTLE_EVERY_SWEEPS nhịp) với cửa sổ 7 ngày — sao kê đổi chậm, quét
-//     dày chỉ tốn quota (10k call/ngày); backfill sâu 90 ngày vẫn dùng nút
-//     "Đồng bộ đối soát" tay.
+//   · ĐỐI SOÁT PHÍ THẬT (Lazada Finance API + Shopee Escrow API): chạy MỖI
+//     GIỜ (mỗi SETTLE_EVERY_SWEEPS nhịp) với cửa sổ 7 ngày — sao kê đổi chậm,
+//     quét dày chỉ tốn quota (10k call/ngày); backfill sâu 90 ngày vẫn dùng
+//     nút "Đồng bộ đối soát" tay.
 //
 // TikTok cố ý đứng ngoài: gian hiện tại là mock sandbox không token, webhook
 // TikTok thật đã có đường riêng — thêm vào đây khi nối shop TikTok thật.
@@ -20,6 +20,7 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "./prisma";
 import { isShopeeConfigured } from "./integrations/shopee/config";
 import { syncShopeeOrders } from "./integrations/shopee/service";
+import { syncShopeeSettlements } from "./integrations/shopee/settlements";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -29,7 +30,7 @@ import {
 const DEFAULT_INTERVAL_MIN = 10;
 /** Quét đơn tạo trong N ngày gần nhất — đủ phủ đơn mới + đổi trạng thái gần đây. */
 const ORDERS_DAYS_BACK = 2;
-/** Đối soát Lazada chạy 1 lần mỗi N nhịp (10' × 6 = mỗi giờ). */
+/** Đối soát (Lazada + Shopee) chạy 1 lần mỗi N nhịp (10' × 6 = mỗi giờ). */
 const SETTLE_EVERY_SWEEPS = 6;
 /** Cửa sổ sao kê cho lượt đối soát tự động — đơn thường quyết toán trong vài ngày. */
 const SETTLE_DAYS_BACK = 7;
@@ -61,7 +62,7 @@ export function startOrderAutoSync(): void {
   setTimeout(() => void runOnce(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void runOnce(), min * 60 * 1000).unref();
   console.log(
-    `[Auto-sync] BẬT — quét đơn Shopee+Lazada mỗi ${min} phút; đối soát phí Lazada mỗi ${
+    `[Auto-sync] BẬT — quét đơn Shopee+Lazada mỗi ${min} phút; đối soát phí Lazada+Shopee mỗi ${
       min * SETTLE_EVERY_SWEEPS
     } phút`
   );
@@ -112,14 +113,23 @@ async function runOnce(): Promise<void> {
         );
       }
 
-      // --- Đối soát phí thật (Lazada, theo nhịp giờ) ---
-      if (settleSweep && channel.channelName === ChannelName.LAZADA) {
+      // --- Đối soát phí thật (Lazada + Shopee, theo nhịp giờ) ---
+      if (settleSweep) {
         try {
-          const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
-          if (s.ordersUpdated > 0) {
-            console.log(
-              `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
-            );
+          if (channel.channelName === ChannelName.LAZADA) {
+            const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+            if (s.ordersUpdated > 0) {
+              console.log(
+                `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
+              );
+            }
+          } else if (channel.channelName === ChannelName.SHOPEE) {
+            const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+            if (s.ordersUpdated > 0) {
+              console.log(
+                `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
+              );
+            }
           }
         } catch (err) {
           console.error(

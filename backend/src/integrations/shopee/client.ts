@@ -526,6 +526,108 @@ export async function updateShopeeStock(
   }
 }
 
+// ---------- Ký quỹ / đối soát (Payment API, READ-ONLY) ----------
+
+/** Một dòng của get_escrow_list — đơn đã được sàn GIẢI NGÂN trong khoảng lọc. */
+export interface ShopeeEscrowListRow {
+  order_sn?: string;
+  payout_amount?: number;
+  escrow_release_time?: number; // epoch giây — thời điểm sàn giải ngân
+}
+
+export interface ShopeeEscrowListData extends ShopeeEnvelope {
+  response?: { escrow_list?: ShopeeEscrowListRow[]; more?: boolean };
+}
+
+/**
+ * DS đơn ĐÃ GIẢI NGÂN ký quỹ theo khoảng release_time. Đây là tín hiệu
+ * "quyết toán thật" duy nhất — get_escrow_detail trả được cả số ƯỚC TÍNH cho
+ * đơn chưa giải ngân, nên KHÔNG được dùng riêng nó để đánh dấu isSettled.
+ */
+export async function getEscrowList(
+  params: {
+    accessToken: string;
+    shopId: string;
+    releaseTimeFrom: number; // epoch giây
+    releaseTimeTo: number;
+    pageNo?: number; // Shopee đánh số từ 1
+    pageSize?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEscrowListData> {
+  return callShopGet<ShopeeEscrowListData>(
+    SHOPEE_PATHS.escrowList,
+    params.accessToken,
+    params.shopId,
+    [
+      ["release_time_from", params.releaseTimeFrom],
+      ["release_time_to", params.releaseTimeTo],
+      ["page_no", params.pageNo ?? 1],
+      ["page_size", params.pageSize ?? 100],
+    ],
+    "get_escrow_list",
+    cfg
+  );
+}
+
+/**
+ * Bảng thu nhập ký quỹ (order_income) của một đơn — mọi trường là SỐ DƯƠNG
+ * (magnitude); chiều thu/chi do ngữ nghĩa từng trường quyết định. Chỉ khai
+ * những trường Hubsell dùng; API còn nhiều trường khác (bỏ qua an toàn).
+ */
+export interface ShopeeOrderIncome {
+  // Giá trị hàng & tiền về
+  order_selling_price?: number;
+  escrow_amount?: number; // tiền THỰC về ví (sau mọi cấn trừ)
+  // Phí sàn
+  commission_fee?: number;
+  service_fee?: number;
+  seller_transaction_fee?: number;
+  credit_card_transaction_fee?: number;
+  campaign_fee?: number;
+  delivery_seller_protection_fee_premium_amount?: number;
+  order_ams_commission_fee?: number; // hoa hồng quảng cáo affiliate (AMS)
+  // Voucher / xu
+  voucher_from_seller?: number;
+  seller_coin_cash_back?: number;
+  voucher_from_shopee?: number;
+  coins?: number; // xu người mua dùng — sàn hoàn lại cho shop
+  // Vận chuyển
+  actual_shipping_fee?: number;
+  buyer_paid_shipping_fee?: number;
+  shopee_shipping_rebate?: number;
+  shipping_fee_discount_from_3pl?: number;
+  final_shipping_fee?: number; // điều chỉnh ship ròng vào payout (có dấu)
+  reverse_shipping_fee?: number;
+  // Thuế sàn thu hộ
+  escrow_tax?: number;
+  withholding_tax?: number;
+}
+
+export interface ShopeeEscrowDetailData extends ShopeeEnvelope {
+  response?: {
+    order_sn?: string;
+    buyer_user_name?: string;
+    return_order_sn_list?: string[];
+    order_income?: ShopeeOrderIncome;
+  };
+}
+
+/** Chi tiết thu nhập ký quỹ của MỘT đơn theo order_sn (read-only). */
+export async function getEscrowDetail(
+  params: { accessToken: string; shopId: string; orderSn: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEscrowDetailData> {
+  return callShopGet<ShopeeEscrowDetailData>(
+    SHOPEE_PATHS.escrowDetail,
+    params.accessToken,
+    params.shopId,
+    [["order_sn", params.orderSn]],
+    "get_escrow_detail",
+    cfg
+  );
+}
+
 // ---------- Ví sàn (READ-ONLY) ----------
 
 /** Một dòng giao dịch ví Shopee (rút tiền / giải ngân / phí…). */

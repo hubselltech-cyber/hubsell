@@ -56,6 +56,10 @@ export const SHOPEE_PATHS = {
   modelList: "/api/v2/product/get_model_list",
   /** Cập nhật tồn kho của item/model lên sàn (shop API, POST). */
   updateStock: "/api/v2/product/update_stock",
+  /** DS đơn ĐÃ GIẢI NGÂN ký quỹ trong khoảng release_time (payment API). */
+  escrowList: "/api/v2/payment/get_escrow_list",
+  /** Chi tiết thu nhập ký quỹ (order_income) của MỘT đơn theo order_sn. */
+  escrowDetail: "/api/v2/payment/get_escrow_detail",
   /** Lịch sử giao dịch ví sàn (rút tiền, phí, giải ngân...) — shop API, READ-ONLY. */
   walletTransactionList: "/api/v2/payment/get_wallet_transaction_list",
 } as const;
