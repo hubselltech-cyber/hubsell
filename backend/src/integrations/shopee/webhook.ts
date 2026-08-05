@@ -74,10 +74,11 @@ export function verifyShopeeWebhookSignature(
     const a = Buffer.from(expected, "utf8");
     if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
   }
-  // Log chẩn đoán khi trượt chữ ký (KHÔNG in key/chữ ký đầy đủ): đủ để phân
-  // biệt "sai key" với "sai URL ký" khi soi log Render.
+  // Log chẩn đoán khi trượt chữ ký. In CẢ body (payload ping test của sàn,
+  // không chứa bí mật) + chữ ký nhận được (MAC không lộ key) để đối chiếu
+  // offline xem sàn đang ký bằng key nào. KHÔNG bao giờ in key.
   console.warn(
-    `[Webhook Shopee] Chữ ký không khớp — url ký="${webhookUrl}", sig=${got.slice(0, 8)}…, body=${bodyStr.length} byte, đã thử ${keys.length} key`
+    `[Webhook Shopee] Chữ ký không khớp — url ký="${webhookUrl}", đã thử ${keys.length} key, sig=${got}, bodyB64=${Buffer.from(bodyStr, "utf8").toString("base64")}`
   );
   return false;
 }
