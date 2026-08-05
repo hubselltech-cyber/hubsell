@@ -355,6 +355,18 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
     return;
   }
 
+  // 0) PING VERIFY của Console (code 0, mang data.verify_info) → 200 rỗng NGAY,
+  //    TRƯỚC bước kiểm chữ ký. Đã đối chiếu HMAC đủ 4 key của app (Live/Test
+  //    Push Key + Live/Test API Key, phiên 05/08/2026) — ping này ký bằng key
+  //    nội bộ Shopee KHÔNG công bố, giữ cổng chữ ký là kẹt Verify/Save vĩnh
+  //    viễn. Code 0 không có tác dụng nghiệp vụ nên bỏ chữ ký không mở lỗ hổng;
+  //    mọi sự kiện thật (code 1-4) vẫn phải qua chữ ký như cũ.
+  const pingCode = Number((req.body as { code?: unknown } | undefined)?.code);
+  if (pingCode === 0) {
+    res.status(200).end();
+    return;
+  }
+
   // 1) XÁC THỰC CHỮ KÝ trên body thô. Thiếu rawBody (không thể verify) coi như sai.
   const raw = req.rawBody;
   const signature = req.header("authorization") ?? undefined;
