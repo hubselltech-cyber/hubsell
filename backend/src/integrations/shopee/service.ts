@@ -726,13 +726,16 @@ export async function dispatchShopeeWebhookEvent(
   const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
   if (!shopId) return null;
 
-  if (code === SHOPEE_PUSH_CODE.AUTHORIZATION) {
+  if (
+    code === SHOPEE_PUSH_CODE.AUTHORIZATION ||
+    code === SHOPEE_PUSH_CODE.DEAUTHORIZATION
+  ) {
     const r = await processShopeeAuthorizationEvent(shopId);
     console.log(`[Webhook Shopee] Uỷ quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
     return null;
   }
 
-  if (code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.LOGISTICS) {
+  if (code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.TRACKING_NO) {
     const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "");
     if (!orderSn) return null;
     const channel = await findShopeeChannelByShopId(shopId);

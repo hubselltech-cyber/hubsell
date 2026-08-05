@@ -366,9 +366,10 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
   const payload = (req.body ?? {}) as ShopeePushPayload;
   const code = Number(payload.code);
   const handled = [
-    SHOPEE_PUSH_CODE.LOGISTICS,
-    SHOPEE_PUSH_CODE.ORDER_STATUS,
     SHOPEE_PUSH_CODE.AUTHORIZATION,
+    SHOPEE_PUSH_CODE.DEAUTHORIZATION,
+    SHOPEE_PUSH_CODE.ORDER_STATUS,
+    SHOPEE_PUSH_CODE.TRACKING_NO,
   ] as number[];
 
   // 2) Sự kiện ngoài phạm vi (ping code 0, test...) → ack luôn cho Shopee khỏi retry.

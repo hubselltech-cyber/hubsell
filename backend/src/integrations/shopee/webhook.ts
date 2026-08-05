@@ -69,14 +69,21 @@ export function verifyShopeeWebhookSignature(
 
 // ---------- 2. Payload & mã sự kiện ----------
 
-/** Mã sự kiện Shopee mà Hubsell xử lý; loại khác ack 200 và bỏ qua. */
+/** Mã sự kiện Shopee mà Hubsell xử lý; loại khác ack 200 và bỏ qua.
+ *
+ * Số lấy theo cột Push Code trên Console Live (đã đối chiếu 05/08/2026):
+ * 1 = shop_authorization_push, 2 = shop_authorization_canceled_push,
+ * 3 = order_status_push, 4 = order_trackingno_push. LƯU Ý: code 5 là
+ * shopee_updates (thông báo chung của sàn) — bản cũ nhầm 5 là authorization. */
 export const SHOPEE_PUSH_CODE = {
-  /** Sắp xếp lịch lấy hàng (logistics) — đơn đã có, cập nhật vận chuyển. */
-  LOGISTICS: 3,
+  /** Shop uỷ quyền / gia hạn quyền cho app. */
+  AUTHORIZATION: 1,
+  /** Shop THU HỒI uỷ quyền — xử lý cùng nhánh (verify token rồi cập nhật status). */
+  DEAUTHORIZATION: 2,
   /** Đơn hàng đổi trạng thái (đơn mới / hủy / giao...). */
-  ORDER_STATUS: 4,
-  /** Thay đổi uỷ quyền app (shop gia hạn / thu hồi quyền). */
-  AUTHORIZATION: 5,
+  ORDER_STATUS: 3,
+  /** Đơn có mã vận đơn — payload cũng mang ordersn, xử lý như sự kiện đơn. */
+  TRACKING_NO: 4,
 } as const;
 
 export interface ShopeePushPayload {
