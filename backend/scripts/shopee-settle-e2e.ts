@@ -83,7 +83,7 @@ async function main() {
     sellerProtectionFee: 2_700, // "Phí dịch vụ PiShip" — cột riêng
     affiliateFee: 5_119,
     sellerVoucher: 0,
-    platformSubsidy: 52_020, // chỉ hiển thị — không vào doanh thu ước tính
+    platformSubsidy: 0, // voucher_from_shopee bù cho NGƯỜI MUA — không phải trợ giá shop
     shippingFeeQuoted: 41_000,
     shippingFeeActual: 41_000,
     shipSubsidyPlatform: 30_000,

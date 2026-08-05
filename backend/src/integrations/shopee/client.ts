@@ -594,6 +594,12 @@ export interface ShopeeOrderIncome {
   seller_coin_cash_back?: number;
   voucher_from_shopee?: number;
   coins?: number; // xu người mua dùng — sàn hoàn lại cho shop
+  /** Sàn GIẢM TRỰC TIẾP vào giá bán và BÙ LẠI cho shop trong escrow — khoản
+   * trợ giá sàn DUY NHẤT thực sự vào payout (đối chiếu đơn 260728T943X8PX). */
+  shopee_discount?: number;
+  original_shopee_discount?: number;
+  /** Đơn hoàn: sàn hoàn tiền hàng cho khách (số ÂM) — escrow âm là vì đây. */
+  seller_return_refund?: number;
   // Vận chuyển
   estimated_shipping_fee?: number; // cước sàn báo lúc đặt đơn
   actual_shipping_fee?: number;

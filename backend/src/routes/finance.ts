@@ -307,10 +307,14 @@ export function computePnlRow(o: PnlOrder) {
 
   // "Doanh thu ước tính" — TÁI LẬP từ các cột phí đã bóc, để ĐỐI CHIẾU với
   // actualPayout: đơn đã quyết toán mà hai số lệch nhau nghĩa là còn khoản
-  // chưa bóc đúng cột. Đối chiếu đơn VN thật 2607303CGEHBCA (05/08/2026):
-  //   - KHÔNG cộng platformSubsidy: voucher/xu sàn bù cho NGƯỜI MUA, escrow
-  //     đã tính trên giá bán đủ của shop — cộng thêm là đếm đôi trợ giá.
+  // chưa bóc đúng cột. Đối chiếu đơn VN thật 2607303CGEHBCA + 260728T943X8PX
+  // (05/08/2026):
+  //   - platformSubsidy (Shopee) = shopee_discount: sàn giảm trực tiếp vào giá
+  //     rồi BÙ LẠI trong escrow → CỘNG. (voucher_from_shopee/coins bù cho
+  //     NGƯỜI MUA đã bị loại từ tầng mapping — xem mapShopeeEscrowToOrder.)
   //   - Trừ cả PiShip + thuế sàn thu hộ (trước đây bỏ sót 2 khoản này).
+  // Đơn HOÀN (seller_return_refund) cố ý KHÔNG ước — lệch ước tính/payout
+  // trên đơn hoàn là tín hiệu thật, đọc theo returnStatus.
   const netRevenue =
     actualRevenue -
     feeFixedPayment -
@@ -318,7 +322,8 @@ export function computePnlRow(o: PnlOrder) {
     feeSellerProtection -
     feeAffiliate -
     shippingFeeDiff -
-    platformTax;
+    platformTax +
+    platformSubsidy;
   const profit = netRevenue - cost;
 
   // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo (ảnh phân rã Seller

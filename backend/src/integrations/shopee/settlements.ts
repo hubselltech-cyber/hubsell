@@ -90,10 +90,14 @@ export function mapShopeeEscrowToOrder(
     // riêng khỏi Phí Dịch Vụ nên map cột riêng, không ép vào serviceFee.
     sellerProtectionFee: n(income.shipping_seller_protection_fee_amount),
     affiliateFee: n(income.order_ams_commission_fee),
-    // Trợ giá: SHOP chịu (voucher + xu shop hoàn) vs SÀN tài trợ (hoàn cho shop).
+    // Trợ giá: SHOP chịu (voucher + xu shop hoàn) vs SÀN bù THẬT cho shop.
     sellerVoucher:
       n(income.voucher_from_seller) + n(income.seller_coin_cash_back),
-    platformSubsidy: n(income.voucher_from_shopee) + n(income.coins),
+    // "Trợ giá Shopee" = shopee_discount — sàn giảm trực tiếp vào giá bán rồi
+    // BÙ LẠI trong escrow (đơn 260728T943X8PX: +8.750 khớp payout từng đồng).
+    // KHÔNG dùng voucher_from_shopee/coins: đó là tiền sàn bù cho NGƯỜI MUA,
+    // không chảy vào ví shop (đơn 2607303CGEHBCA: 52.020 không có trong escrow).
+    platformSubsidy: n(income.shopee_discount),
     // Vận chuyển — đúng cột nhóm "Phí vận chuyển" của bảng Shopee.
     shippingFeeQuoted: n(income.estimated_shipping_fee),
     shippingFeeActual: shipActual,
