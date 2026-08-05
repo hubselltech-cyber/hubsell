@@ -43,6 +43,7 @@ import {
   syncShopeePendingEscrowEstimates,
   syncShopeeSettlements,
 } from "../integrations/shopee/settlements";
+import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
 import { getEscrowDetail } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 
@@ -496,6 +497,33 @@ router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
     res.status(502).json({ error: `Đồng bộ đơn thất bại: ${(err as Error).message}` });
   }
 });
+
+// POST /api/channels/:id/sync-ads-spend — kéo CHI PHÍ QUẢNG CÁO theo ngày từ
+// Ads API (read-only) → bảng AdSpend. Lỗi permission trả 502 kèm message gốc
+// để chẩn đoán (app có thể chưa được Shopee bật module Ads).
+router.post(
+  "/:id/sync-ads-spend",
+  requireAdmin,
+  async (req: AuthRequest, res) => {
+    try {
+      const channel = await prisma.channel.findFirst({
+        where: {
+          id: req.params.id,
+          userId: req.ownerId!,
+          channelName: ChannelName.SHOPEE,
+        },
+      });
+      if (!channel) {
+        res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+        return;
+      }
+      const summary = await syncShopeeAdsSpend(channel, { daysBack: 30 });
+      res.json({ message: "Đồng bộ chi phí quảng cáo Shopee xong", ...summary });
+    } catch (err) {
+      res.status(502).json({ error: (err as Error).message });
+    }
+  }
+);
 
 // GET /api/channels/:id/escrow-debug/:orderSn — SOI PAYLOAD ĐỐI SOÁT THÔ.
 // Chỉ Admin, READ-ONLY (không ghi DB): trả nguyên văn order_income từ

@@ -24,6 +24,7 @@ import {
   syncShopeePendingEscrowEstimates,
   syncShopeeSettlements,
 } from "./integrations/shopee/settlements";
+import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -152,6 +153,21 @@ async function runOnce(): Promise<void> {
             if (est.updated > 0) {
               console.log(
                 `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
+              );
+            }
+            // Chi phí quảng cáo theo ngày (Ads API) — lỗi riêng (thường là app
+            // chưa được bật quyền Ads) không được chặn các luồng khác.
+            try {
+              const ads = await syncShopeeAdsSpend(channel, { daysBack: 30 });
+              if (ads.daysUpserted > 0) {
+                console.log(
+                  `[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+                (err as Error).message
               );
             }
           }

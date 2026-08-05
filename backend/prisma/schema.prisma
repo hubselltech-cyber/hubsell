@@ -228,6 +228,7 @@ model Channel {
   invoiceConfigs  InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
   walletWithdrawals WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
+  adSpends        AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
 
@@ -238,6 +239,24 @@ model Channel {
   /// mock không có externalShopId vẫn tạo thoải mái).
   @@unique([userId, channelName, externalShopId])
   @@index([userId])
+}
+
+/// CHI PHÍ QUẢNG CÁO SÀN theo NGÀY của một gian hàng — sync READ-ONLY từ Ads
+/// API của sàn (Shopee: get_all_cpc_ads_daily_performance, expense = tiền đã
+/// tiêu). Idempotent theo (channelId, date): sàn có thể cập nhật lại chi tiêu
+/// trong ngày nên chạy lặp GHI ĐÈ cùng bộ số. Báo cáo dòng tiền cộng vào cột
+/// Chi phí — tách khỏi OperatingExpense (nhập tay) để không lẫn hai nguồn.
+model AdSpend {
+  id        String   @id @default(cuid())
+  channelId String
+  date      DateTime @db.Date // ngày chi tiêu (theo múi giờ sàn)
+  amount    Decimal  @db.Decimal(12, 2) // tiền ads đã tiêu trong ngày
+  updatedAt DateTime @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, date])
+  @@index([channelId])
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.

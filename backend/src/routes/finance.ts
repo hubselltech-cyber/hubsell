@@ -1840,7 +1840,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           }
         : {};
 
-    const [pnlOrders, expenses, operatingIncomeAgg, taxCfg] = await Promise.all([
+    const [pnlOrders, expenses, operatingIncomeAgg, adSpendAgg, taxCfg] = await Promise.all([
       // NGUỒN SỐ GỐC: CÙNG tập đơn + CÙNG công thức với trang Lãi/Lỗ Thực Hiện
       // (không lọc trạng thái = tab "Tất cả" bên Lãi/Lỗ; cùng WHERE, cùng trần).
       fetchPnlOrders(scope, range),
@@ -1869,10 +1869,17 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           ...manualTxnScope,
         },
       }),
+      // CHI PHÍ QUẢNG CÁO SÀN theo ngày (bảng AdSpend, sync từ Ads API) —
+      // lọc theo cùng channel scope với tập đơn, khoảng ngày theo bộ lọc.
+      prisma.adSpend.aggregate({
+        _sum: { amount: true },
+        where: { channel: scope, ...(range ? { date: range } : {}) },
+      }),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
     ]);
     const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
+    const adsSpendTotal = Number(adSpendAgg._sum.amount ?? 0);
 
     // ============================================================
     // VIEW TỔNG HỢP TỪ NGUỒN SỐ GỐC — mọi con số bên dưới CHỈ là SUM() các
@@ -1908,23 +1915,24 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // trợ giá) để: Giá trị sản phẩm − Tổng khấu trừ = thẻ DOANH THU (thác
     // nước 4 thẻ, chốt chủ shop 31/07).
     const grossValue = sumBy(activeRows, (r) => r.revenueGross);
+    // Phí nền tảng = CĐ + thanh toán + dịch vụ + PiShip (bảo hiểm giao hàng).
     const feePlatform = sumBy(
       activeRows,
-      (r) => r.feeFixedPayment + r.feeService
+      (r) => r.feeFixedPayment + r.feeService + r.feeSellerProtection
     );
     const feeAffiliate = sumBy(activeRows, (r) => r.feeAffiliate);
     const feeSellerVoucher = sumBy(activeRows, (r) => r.sellerVoucher);
-    // Chênh lệch VC / trợ giá / nạp ví quảng cáo: CHỈ đơn đã quyết toán (số
-    // THẬT đã cấn trong payout) — đơn chờ thuộc diện "chờ đối soát", gom vào
-    // sẽ làm thác nước Giá trị SP − Khấu trừ ≠ thẻ Doanh thu.
-    const feeShippingDiff = sumBy(settledRows, (r) => r.shippingFeeDiff);
-    const platformSubsidyTotal = sumBy(settledRows, (r) => r.platformSubsidy);
-    const adWalletTotal = sumBy(settledRows, (r) => r.adWalletTopup);
-    // Thuế sàn TMĐT = Σ cột "Thuế sàn" (platformTax): số THẬT sàn trích của
-    // đơn đã quyết toán (đơn chờ = 0, không ước) — tính ở đây vì từ 31/07
-    // thuế là một DÒNG KHẤU TRỪ của thẻ Tổng giá trị SP, không thuộc Chi phí.
+    // Từ 05/08 các bucket SUM trên TOÀN BỘ đơn hoạt động: đơn chờ quyết toán
+    // đã mang SỐ ƯỚC TÍNH CỦA CHÍNH SHOPEE (syncShopeePendingEscrowEstimates,
+    // chưa sync = 0) — SUM cả hai nhóm thì thác nước Giá trị SP − Khấu trừ =
+    // thẻ Doanh thu mới khớp từng đồng với platformRevenue mới của đơn chờ.
+    const feeShippingDiff = sumBy(activeRows, (r) => r.shippingFeeDiff);
+    const platformSubsidyTotal = sumBy(activeRows, (r) => r.platformSubsidy);
+    const adWalletTotal = sumBy(activeRows, (r) => r.adWalletTopup);
+    // Thuế sàn TMĐT = Σ cột "Thuế sàn" (platformTax): số THẬT (đơn quyết toán)
+    // + số sàn ước tính (đơn chờ) — là một DÒNG KHẤU TRỪ của thẻ Tổng giá trị
+    // SP, không thuộc Chi phí.
     const platformTaxActual = sumBy(settledRows, (r) => r.platformTax);
-    // Luôn = 0 từ 30/07 (không còn ước thuế đơn chờ) — giữ field cho FE cũ.
     const platformTaxEstimated = sumBy(pendingRows, (r) => r.platformTax);
     const platformTaxTotal = platformTaxActual + platformTaxEstimated;
 
@@ -1961,7 +1969,9 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const fixedExpenseTotal = expenses
       .filter((e) => e.type === ExpenseType.FIXED)
       .reduce((s, e) => s + Number(e.amount), 0);
-    const totalCostColumn = cogsAll + variableExpenseTotal + fixedExpenseTotal;
+    // + Chi phí quảng cáo sàn (AdSpend — sync tự động, tách khỏi khoản nhập tay).
+    const totalCostColumn =
+      cogsAll + variableExpenseTotal + fixedExpenseTotal + adsSpendTotal;
 
     // --- CỘT 4: LỢI NHUẬN ---
     // Thực tế = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn ĐÃ QUYẾT TOÁN
@@ -1970,7 +1980,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const actualProfit =
       sumBy(settledRows, (r) => r.profitAfterTax) -
       variableExpenseTotal -
-      fixedExpenseTotal;
+      fixedExpenseTotal -
+      adsSpendTotal;
     // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
     // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
     // phí cũng không chứa khoản ước tính nào của nhóm.
@@ -1989,7 +2000,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const revenueByDay = new Map<string, number>();
     const cogsByDay = new Map<string, number>();
     for (const r of deliveredRows) {
-      const fee = r.feeFixedPayment + r.feeService + r.feeAffiliate;
+      const fee =
+        r.feeFixedPayment + r.feeService + r.feeSellerProtection + r.feeAffiliate;
       totalRevenue += r.revenueGross;
       totalCost += r.costSnapshot;
       totalPlatformFee += fee;
@@ -2176,9 +2188,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               percent: pct(cogsAll, totalCostWithTax),
             },
             {
+              key: "adsSpend",
+              label: "Chi phí quảng cáo sàn (Ads)",
+              hint: "Tiền quảng cáo ĐÃ TIÊU trên sàn, sync tự động theo ngày từ Ads API (Shopee: get_all_cpc_ads_daily_performance) — tách riêng khỏi khoản ads nhập tay ở Thu chi vận hành, đừng nhập trùng.",
+              amount: adsSpendTotal,
+              percent: pct(adsSpendTotal, totalCostWithTax),
+            },
+            {
               key: "variable",
               label: "Chi phí biến đổi",
-              hint: "CHỈ khoản chi biến đổi NHẬP TAY ở Thu chi vận hành (ads, book KOC, đóng gói…). Khi lọc theo sàn/gian, chỉ tính khoản đã gắn đúng sàn/gian đó — khoản không gắn gian chỉ hiện ở \"Tất cả sàn\".",
+              hint: "CHỈ khoản chi biến đổi NHẬP TAY ở Thu chi vận hành (book KOC, đóng gói…). Khi lọc theo sàn/gian, chỉ tính khoản đã gắn đúng sàn/gian đó — khoản không gắn gian chỉ hiện ở \"Tất cả sàn\". LƯU Ý: tiền ads sàn đã có dòng tự động riêng — đừng nhập tay trùng.",
               amount: variableExpenseTotal,
               percent: pct(variableExpenseTotal, totalCostWithTax),
             },

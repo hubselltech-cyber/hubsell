@@ -688,3 +688,51 @@ export async function getWalletTransactionList(
     cfg
   );
 }
+
+// ---------- Chi phí quảng cáo (Ads API, READ-ONLY) ----------
+
+/** Một ngày hiệu suất quảng cáo CPC toàn shop — chỉ quan tâm expense (chi tiêu). */
+export interface ShopeeAdsDailyPerformance {
+  date?: string; // "DD-MM-YYYY"
+  expense?: number;
+  impression?: number;
+  clicks?: number;
+  broad_gmv?: number;
+  direct_gmv?: number;
+}
+
+export interface ShopeeAdsDailyPerfData extends ShopeeEnvelope {
+  // Shopee từng trả cả dạng mảng thẳng lẫn dạng bọc — parse phòng thủ ở tầng sync.
+  response?:
+    | ShopeeAdsDailyPerformance[]
+    | { performance_list?: ShopeeAdsDailyPerformance[] };
+}
+
+export interface AdsDailyPerfParams {
+  accessToken: string;
+  shopId: string;
+  /** Định dạng Shopee yêu cầu: "DD-MM-YYYY". */
+  startDate: string;
+  endDate: string;
+}
+
+/**
+ * Lấy CHI TIÊU QUẢNG CÁO CPC toàn shop theo ngày (read-only). Ads API có thể
+ * cần bật quyền riêng trên Console — lỗi permission ném ra để tầng sync log.
+ */
+export async function getAdsDailyPerformance(
+  params: AdsDailyPerfParams,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsDailyPerfData> {
+  return callShopGet<ShopeeAdsDailyPerfData>(
+    SHOPEE_PATHS.adsAllCpcDaily,
+    params.accessToken,
+    params.shopId,
+    [
+      ["start_date", params.startDate],
+      ["end_date", params.endDate],
+    ],
+    "get_all_cpc_ads_daily_performance",
+    cfg
+  );
+}

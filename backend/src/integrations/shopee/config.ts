@@ -62,6 +62,10 @@ export const SHOPEE_PATHS = {
   escrowDetail: "/api/v2/payment/get_escrow_detail",
   /** Lịch sử giao dịch ví sàn (rút tiền, phí, giải ngân...) — shop API, READ-ONLY. */
   walletTransactionList: "/api/v2/payment/get_wallet_transaction_list",
+  /** Hiệu suất quảng cáo CPC toàn shop theo NGÀY (expense = tiền ads đã tiêu).
+   *  LƯU Ý: Ads API có thể cần bật quyền riêng trên Console — lỗi permission
+   *  thì liên hệ Shopee mở module Ads cho app. */
+  adsAllCpcDaily: "/api/v2/ads/get_all_cpc_ads_daily_performance",
 } as const;
 
 /**
