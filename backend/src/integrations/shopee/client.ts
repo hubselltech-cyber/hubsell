@@ -586,6 +586,8 @@ export interface ShopeeOrderIncome {
   credit_card_transaction_fee?: number;
   campaign_fee?: number;
   delivery_seller_protection_fee_premium_amount?: number;
+  /** Phí "dịch vụ PiShip" (bảo hiểm giao hàng) — Seller Center VN tách dòng riêng. */
+  shipping_seller_protection_fee_amount?: number;
   order_ams_commission_fee?: number; // hoa hồng quảng cáo affiliate (AMS)
   // Voucher / xu
   voucher_from_seller?: number;
@@ -600,9 +602,12 @@ export interface ShopeeOrderIncome {
   shipping_fee_discount_from_3pl?: number;
   final_shipping_fee?: number; // điều chỉnh ship ròng vào payout (có dấu)
   reverse_shipping_fee?: number;
-  // Thuế sàn thu hộ
+  // Thuế sàn thu hộ. Đơn VN thật (đối chiếu 05/08/2026, đơn 2607303CGEHBCA)
+  // KHÔNG dùng escrow_tax/withholding_tax mà tách 2 field VAT/PIT riêng.
   escrow_tax?: number;
   withholding_tax?: number;
+  withholding_vat_tax?: number; // Thuế GTGT sàn thu hộ
+  withholding_pit_tax?: number; // Thuế TNCN sàn thu hộ
 }
 
 export interface ShopeeEscrowDetailData extends ShopeeEnvelope {

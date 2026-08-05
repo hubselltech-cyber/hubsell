@@ -61,27 +61,34 @@ export function mapShopeeEscrowToOrder(
   releasedAt: Date
 ) {
   // "Chênh lệch phí VC" = phần ship shop THỰC CHỊU = cước thật − (khách trả +
-  // sàn trợ + 3PL giảm). Ưu tiên final_shipping_fee khi sàn trả (số ròng CÓ
-  // DẤU đã điều chỉnh vào payout; âm = shop bị trừ thêm).
+  // sàn trợ + 3PL giảm). KHÔNG dùng final_shipping_fee: đối chiếu đơn VN thật
+  // 2607303CGEHBCA (05/08/2026) — final_shipping_fee = −11.000 trong khi khách
+  // trả 11.000 + sàn trợ 30.000 đã phủ đủ cước 41.000, escrow KHÔNG trừ đồng
+  // ship nào (field này không tính phần khách trả, tin nó là bịa phí cho shop).
   const shipActual = n(income.actual_shipping_fee);
   const shipCovered =
     n(income.buyer_paid_shipping_fee) +
     n(income.shopee_shipping_rebate) +
     n(income.shipping_fee_discount_from_3pl);
-  const finalShip = n(income.final_shipping_fee);
-  const shipBorne =
-    finalShip !== 0
-      ? Math.max(-finalShip, 0)
-      : Math.max(shipActual - shipCovered, 0);
+  const shipBorne = Math.max(shipActual - shipCovered, 0);
+
+  // Phí xử lý giao dịch: đơn VN thật trả seller_transaction_fee VÀ
+  // credit_card_transaction_fee CÙNG một giá trị cho CÙNG một khoản (Seller
+  // Center chỉ hiện MỘT dòng 18.000) — cộng cả hai là đếm đôi. Lấy
+  // seller_transaction_fee làm chuẩn, chỉ rơi về credit_card khi seller = 0.
+  const sellerTxnFee = n(income.seller_transaction_fee);
+  const creditTxnFee = n(income.credit_card_transaction_fee);
 
   return {
     isSettled: true,
     settledAt: releasedAt,
     // Phí sàn — mỗi loại đúng một cột như file quyết toán Shopee.
     fixedFee: n(income.commission_fee),
-    paymentFee:
-      n(income.seller_transaction_fee) + n(income.credit_card_transaction_fee),
+    paymentFee: sellerTxnFee > 0 ? sellerTxnFee : creditTxnFee,
     serviceFee: n(income.service_fee),
+    // Phí "dịch vụ PiShip" (bảo hiểm giao hàng) — Seller Center tách dòng
+    // riêng khỏi Phí Dịch Vụ nên map cột riêng, không ép vào serviceFee.
+    sellerProtectionFee: n(income.shipping_seller_protection_fee_amount),
     affiliateFee: n(income.order_ams_commission_fee),
     // Trợ giá: SHOP chịu (voucher + xu shop hoàn) vs SÀN tài trợ (hoàn cho shop).
     sellerVoucher:
@@ -92,8 +99,14 @@ export function mapShopeeEscrowToOrder(
     shippingFeeActual: shipActual,
     shipSubsidyPlatform: n(income.shopee_shipping_rebate),
     shippingFeeDiff: shipBorne,
-    // Thuế sàn thu hộ.
-    taxWithheld: n(income.escrow_tax) + n(income.withholding_tax),
+    // Thuế sàn thu hộ. Đơn VN dùng cặp withholding_vat_tax/withholding_pit_tax
+    // (GTGT + TNCN) — escrow_tax/withholding_tax là tên vùng khác, giữ để
+    // tương thích (payload thật VN không trả các field đó nên không đếm đôi).
+    taxWithheld:
+      n(income.escrow_tax) +
+      n(income.withholding_tax) +
+      n(income.withholding_vat_tax) +
+      n(income.withholding_pit_tax),
     // Tiền THỰC về ví — tổng đại số cuối cùng của sàn, GỐC của mọi phép tính
     // lợi nhuận (computePnlRow: platformRevenue/profitAfterTax đọc từ đây).
     actualPayout: n(income.escrow_amount),

@@ -26,7 +26,11 @@ export interface ShopeeProfitRow {
   // Phí sàn & thuế (âm)
   feePlatform: number; // Phí sàn (cố định + thanh toán)
   feeAffiliate: number; // Phí TTLK (Affiliate)
-  feePiship: number; // PiShip (Freeship/Voucher Xtra)
+  // Đối chiếu Seller Center VN 05/08/2026: "Phí Dịch Vụ" (Freeship/Voucher
+  // Xtra) và "Phí dịch vụ PiShip" (bảo hiểm giao hàng) là HAI dòng khác nhau —
+  // trước đây cột "PiShip (Xtra)" hiển thị nhầm Phí Dịch Vụ.
+  feeServiceXtra: number; // Phí Dịch Vụ (Freeship/Voucher Xtra)
+  feePiship: number; // Phí dịch vụ PiShip (bảo hiểm giao hàng)
   adWallet: number; // Nạp ví quảng cáo (sàn khấu trừ khi giải ngân)
   sellerSubsidy: number; // Trợ giá người bán
   tax: number; // Thuế sàn thu hộ
@@ -53,7 +57,8 @@ export function toShopeeRow(r: PnlDetailRow): ShopeeProfitRow {
     shipDiff: r.shippingFeeDiff,
     feePlatform: r.feeFixedPayment,
     feeAffiliate: r.feeAffiliate,
-    feePiship: r.feeService,
+    feeServiceXtra: r.feeService,
+    feePiship: r.feeSellerProtection,
     adWallet: r.adWalletTopup,
     sellerSubsidy: r.sellerVoucher,
     tax: r.taxWithheld,

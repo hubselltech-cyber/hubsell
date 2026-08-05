@@ -287,29 +287,39 @@ export function computePnlRow(o: PnlOrder) {
     ? Number(o.fixedFee) + Number(o.paymentFee)
     : 0;
   const feeService = o.isSettled ? Number(o.serviceFee) : 0;
+  // Phí "dịch vụ PiShip" (bảo hiểm giao hàng Shopee VN) — cột riêng, xem
+  // mapShopeeEscrowToOrder. Sàn khác chưa có nguồn → luôn 0.
+  const feeSellerProtection = o.isSettled ? Number(o.sellerProtectionFee) : 0;
   const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
   const platformSubsidy = Number(o.platformSubsidy);
   const shippingFeeDiff = Number(o.shippingFeeDiff);
-
-  // DOANH THU THỰC TẾ = Giá trị đơn hàng − giảm giá bằng xu/voucher của Shop.
-  // CHƯA trừ phí/thuế sàn — mạch đọc trên UI: Giá trị đơn hàng → các cột phí &
-  // thuế bóc tách → Doanh thu thực tế → Giá vốn → Lợi nhuận thực tế.
-  const actualRevenue = revenueGross - sellerVoucher;
-
-  const netRevenue =
-    actualRevenue -
-    feeFixedPayment -
-    feeService -
-    feeAffiliate -
-    shippingFeeDiff +
-    platformSubsidy;
-  const profit = netRevenue - cost;
 
   // Thuế sàn TMĐT của đơn: CHỈ số THẬT sàn đã trích (taxWithheld) khi quyết
   // toán; chưa quyết toán = 0 ("chờ đối soát" — cùng nguyên tắc không bịa số
   // với phí sàn). Trang Báo cáo thuế (/api/tax/report) vẫn tự ước nghĩa vụ
   // 1,5% riêng cho mục đích dự phòng — không dùng trường này.
   const platformTax = o.isSettled ? Number(o.taxWithheld) : 0;
+
+  // DOANH THU THỰC TẾ = Giá trị đơn hàng − giảm giá bằng xu/voucher của Shop.
+  // CHƯA trừ phí/thuế sàn — mạch đọc trên UI: Giá trị đơn hàng → các cột phí &
+  // thuế bóc tách → Doanh thu thực tế → Giá vốn → Lợi nhuận thực tế.
+  const actualRevenue = revenueGross - sellerVoucher;
+
+  // "Doanh thu ước tính" — TÁI LẬP từ các cột phí đã bóc, để ĐỐI CHIẾU với
+  // actualPayout: đơn đã quyết toán mà hai số lệch nhau nghĩa là còn khoản
+  // chưa bóc đúng cột. Đối chiếu đơn VN thật 2607303CGEHBCA (05/08/2026):
+  //   - KHÔNG cộng platformSubsidy: voucher/xu sàn bù cho NGƯỜI MUA, escrow
+  //     đã tính trên giá bán đủ của shop — cộng thêm là đếm đôi trợ giá.
+  //   - Trừ cả PiShip + thuế sàn thu hộ (trước đây bỏ sót 2 khoản này).
+  const netRevenue =
+    actualRevenue -
+    feeFixedPayment -
+    feeService -
+    feeSellerProtection -
+    feeAffiliate -
+    shippingFeeDiff -
+    platformTax;
+  const profit = netRevenue - cost;
 
   // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo (ảnh phân rã Seller
   // Center 30/07): đơn ĐÃ đối soát = actualPayout (giá trị sản phẩm đã bị sàn
@@ -362,6 +372,7 @@ export function computePnlRow(o: PnlOrder) {
     // Phí sàn theo bucket
     feeFixedPayment,
     feeService,
+    feeSellerProtection, // phí "dịch vụ PiShip" (bảo hiểm giao hàng)
     feeAffiliate,
     // Khấu trừ lúc giải ngân — bóc tách hiển thị, đã nằm trong actualPayout
     adWalletTopup: Number(o.adWalletTopup),

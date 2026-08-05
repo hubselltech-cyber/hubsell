@@ -244,7 +244,8 @@ export function exportShopeePnlToExcel(rows: PnlDetailRow[]) {
     "Chênh lệch phí VC": -r.shipDiff,
     "Phí sàn (CĐ+TT)": -r.feePlatform,
     "Phí TTLK": -r.feeAffiliate,
-    "PiShip (Xtra)": -r.feePiship,
+    "Phí DV (Xtra)": -r.feeServiceXtra,
+    PiShip: -r.feePiship,
     "Nạp ví quảng cáo": -r.adWallet,
     "Trợ giá người bán": -r.sellerSubsidy,
     Thuế: -r.tax,
@@ -256,8 +257,8 @@ export function exportShopeePnlToExcel(rows: PnlDetailRow[]) {
   downloadSheet(
     data,
     [
-      22, 14, 22, 18, 40, 16, 14, 14, 14, 16, 14, 14, 16, 16, 12, 12, 14, 16, 12,
-      18, 18, 16, 18,
+      22, 14, 22, 18, 40, 16, 14, 14, 14, 16, 14, 14, 16, 16, 12, 12, 12, 14, 16,
+      12, 18, 18, 16, 18,
     ],
     "Loi nhuan Shopee",
     `hubsell_loinhuan_shopee_${fileStamp()}.xlsx`

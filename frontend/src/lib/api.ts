@@ -470,6 +470,8 @@ export interface PnlDetailRow {
   // Phí sàn theo bucket
   feeFixedPayment: number;
   feeService: number;
+  /** Phí "dịch vụ PiShip" (bảo hiểm giao hàng Shopee VN) — cột riêng, khác Phí Dịch Vụ. */
+  feeSellerProtection: number;
   feeAffiliate: number;
   /** Khấu trừ lúc giải ngân (đã phản ánh trong actualPayout) — chỉ hiển thị. */
   adWalletTopup: number;

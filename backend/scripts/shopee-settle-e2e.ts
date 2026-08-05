@@ -28,42 +28,44 @@ async function main() {
     where: { channelId: channel.id, orderCode: ORDER_CODE },
   });
 
-  // Đơn 500.000: khách dùng 10.000 xu (sàn hoàn) + shop voucher 20.000.
   const order = await prisma.order.create({
     data: {
       channelId: channel.id,
       orderCode: ORDER_CODE,
       customerName: "Khách Test Đối Soát",
-      totalAmount: 500_000,
+      totalAmount: 289_000,
       paymentStatus: "PAID",
       shippingStatus: "DELIVERED",
     },
   });
 
-  // order_income mẫu — mọi trường magnitude DƯƠNG như API thật.
-  // campaign_fee cố ý CÓ SỐ nhưng KHÔNG có cột riêng (thiết kế 24 cột) →
-  // không được ép vào cột nào; tiền của nó vẫn phản ánh trong escrow_amount.
+  // order_income = NGUYÊN VĂN đơn VN THẬT 2607303CGEHBCA (DarkMan Store,
+  // 05/08/2026) — từng con số đã đối chiếu khớp màn "Chi tiết doanh thu"
+  // Seller Center. Payload này cài sẵn đủ 3 bẫy thực địa:
+  //   1) seller_transaction_fee và credit_card_transaction_fee CÙNG 18.000
+  //      cho CÙNG một khoản (Seller Center chỉ có MỘT dòng) → cấm đếm đôi.
+  //   2) final_shipping_fee = −11.000 nhưng khách trả 11.000 + sàn trợ 30.000
+  //      đã phủ đủ cước 41.000 → chênh lệch VC phải = 0, không tin field này.
+  //   3) thuế nằm ở withholding_vat_tax/withholding_pit_tax (không phải
+  //      escrow_tax), PiShip nằm ở shipping_seller_protection_fee_amount.
   const income = {
-    order_selling_price: 500_000,
-    commission_fee: 20_000, // 4% hoa hồng → "Phí sàn (CĐ)"
-    service_fee: 25_000, // gói Voucher Xtra → "PiShip (Xtra)"
-    seller_transaction_fee: 11_000, // phí thanh toán
-    credit_card_transaction_fee: 2_000,
-    campaign_fee: 3_000, // KHÔNG có cột riêng — chỉ nằm trong escrow_amount
-    order_ams_commission_fee: 5_000, // hoa hồng affiliate ads
-    voucher_from_seller: 20_000,
-    seller_coin_cash_back: 1_000,
-    voucher_from_shopee: 15_000, // sàn tài trợ → hoàn lại cho shop
-    coins: 10_000,
-    estimated_shipping_fee: 30_000, // cước sàn báo lúc đặt đơn
-    actual_shipping_fee: 32_000,
-    buyer_paid_shipping_fee: 12_000,
-    shopee_shipping_rebate: 15_000,
+    order_selling_price: 289_000,
+    commission_fee: 47_685, // "Phí cố định"
+    service_fee: 18_895, // "Phí Dịch Vụ" (Freeship/Voucher Xtra)
+    shipping_seller_protection_fee_amount: 2_700, // "Phí dịch vụ PiShip"
+    seller_transaction_fee: 18_000, // "Phí xử lý giao dịch"
+    credit_card_transaction_fee: 18_000, // BẪY: trùng khoản trên
+    order_ams_commission_fee: 5_119, // "Phí hoa hồng TTLK"
+    voucher_from_shopee: 52_020, // sàn bù cho NGƯỜI MUA — không cộng vào DT
+    estimated_shipping_fee: 41_000,
+    actual_shipping_fee: 41_000,
+    buyer_paid_shipping_fee: 11_000,
+    shopee_shipping_rebate: 30_000,
     shipping_fee_discount_from_3pl: 0,
-    final_shipping_fee: 0, // để test nhánh suy từ actual − covered
-    escrow_tax: 6_500, // GTGT + TNCN sàn trích
-    withholding_tax: 0,
-    escrow_amount: 415_500,
+    final_shipping_fee: -11_000, // BẪY: phải bị bỏ qua
+    withholding_vat_tax: 2_890, // "Thuế GTGT"
+    withholding_pit_tax: 1_445, // "Thuế TNCN"
+    escrow_amount: 192_266, // "Doanh Thu Đơn Hàng" — SSOT
   };
   const releasedAt = new Date("2026-07-30T10:00:00Z");
 
@@ -75,20 +77,21 @@ async function main() {
   // ---- (1) Soi cột GĐ2 ----
   const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
   const expect: Record<string, number> = {
-    fixedFee: 20_000, // chỉ hoa hồng — không gộp gì thêm
-    paymentFee: 13_000, // 11.000 + 2.000 thẻ tín dụng (cùng bản chất thanh toán)
-    serviceFee: 25_000, // CHỈ service_fee — campaign 3.000 KHÔNG được ép vào
-    affiliateFee: 5_000,
-    sellerVoucher: 21_000, // 20.000 + 1.000 xu shop hoàn
-    platformSubsidy: 25_000, // 15.000 voucher sàn + 10.000 xu → "Trợ giá Shopee"
-    shippingFeeQuoted: 30_000, // estimated_shipping_fee → "Phí VC Dự kiến"
-    shippingFeeActual: 32_000,
-    shipSubsidyPlatform: 15_000, // rebate → "Trợ giá VC Shopee"
+    fixedFee: 47_685, // "Phí cố định"
+    paymentFee: 18_000, // MỘT khoản giao dịch — không đếm đôi credit_card
+    serviceFee: 18_895, // "Phí Dịch Vụ" (Xtra)
+    sellerProtectionFee: 2_700, // "Phí dịch vụ PiShip" — cột riêng
+    affiliateFee: 5_119,
+    sellerVoucher: 0,
+    platformSubsidy: 52_020, // chỉ hiển thị — không vào doanh thu ước tính
+    shippingFeeQuoted: 41_000,
+    shippingFeeActual: 41_000,
+    shipSubsidyPlatform: 30_000,
     shipSubsidyShop: 0, // escrow không có nguồn — giữ chỗ
     adWalletTopup: 0, // escrow không có nguồn — giữ chỗ
-    shippingFeeDiff: 5_000, // 32.000 − (12.000 + 15.000) shop chịu
-    taxWithheld: 6_500,
-    actualPayout: 415_500,
+    shippingFeeDiff: 0, // khách 11.000 + sàn 30.000 phủ đủ cước 41.000
+    taxWithheld: 4_335, // GTGT 2.890 + TNCN 1.445
+    actualPayout: 192_266,
   };
   const errors: string[] = [];
   for (const [k, v] of Object.entries(expect)) {
@@ -103,17 +106,24 @@ async function main() {
   const pnlOrders = await fetchPnlOrders({ userId: channel.userId, id: channel.id });
   const pnl = pnlOrders.map(computePnlRow).find((r) => r.orderCode === ORDER_CODE);
   if (!pnl) throw new Error("computePnlRow không thấy đơn test");
-  if (pnl.platformRevenue !== 415_500)
-    errors.push(`platformRevenue: mong 415.500 (= actualPayout), ra ${pnl.platformRevenue}`);
-  if (pnl.profitAfterTax !== 415_500)
+  if (pnl.platformRevenue !== 192_266)
+    errors.push(`platformRevenue: mong 192.266 (= actualPayout), ra ${pnl.platformRevenue}`);
+  if (pnl.profitAfterTax !== 192_266)
     errors.push(
-      `profitAfterTax: mong 415.500 (= escrow_amount − giá vốn 0), ra ${pnl.profitAfterTax}`
+      `profitAfterTax: mong 192.266 (= escrow_amount − giá vốn 0), ra ${pnl.profitAfterTax}`
     );
-  if (pnl.feeFixedPayment !== 33_000)
-    errors.push(`feeFixedPayment: mong 33.000, ra ${pnl.feeFixedPayment}`);
-  if (pnl.feeService !== 25_000) errors.push(`feeService: mong 25.000, ra ${pnl.feeService}`);
-  if (pnl.feeAffiliate !== 5_000) errors.push(`feeAffiliate: mong 5.000, ra ${pnl.feeAffiliate}`);
-  if (pnl.platformTax !== 6_500) errors.push(`platformTax: mong 6.500, ra ${pnl.platformTax}`);
+  // PHÉP THỬ VÀNG: đơn đã quyết toán thì "Doanh thu ước tính" (tái lập từ các
+  // cột phí) phải KHỚP TỪNG ĐỒNG với escrow_amount — chính là yêu cầu đối soát
+  // chủ shop chốt 05/08/2026.
+  if (pnl.netRevenue !== 192_266)
+    errors.push(`netRevenue: mong 192.266 (khớp actualPayout), ra ${pnl.netRevenue}`);
+  if (pnl.feeFixedPayment !== 65_685)
+    errors.push(`feeFixedPayment: mong 65.685 (47.685 + 18.000), ra ${pnl.feeFixedPayment}`);
+  if (pnl.feeService !== 18_895) errors.push(`feeService: mong 18.895, ra ${pnl.feeService}`);
+  if (pnl.feeSellerProtection !== 2_700)
+    errors.push(`feeSellerProtection: mong 2.700, ra ${pnl.feeSellerProtection}`);
+  if (pnl.feeAffiliate !== 5_119) errors.push(`feeAffiliate: mong 5.119, ra ${pnl.feeAffiliate}`);
+  if (pnl.platformTax !== 4_335) errors.push(`platformTax: mong 4.335, ra ${pnl.platformTax}`);
   if (!pnl.isSettled) errors.push("PnlRow.isSettled phải = true");
 
   if (errors.length > 0) {

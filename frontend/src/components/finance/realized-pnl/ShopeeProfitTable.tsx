@@ -59,7 +59,7 @@ export function ShopeeProfitTable({
             <th className={cn(HEADER_GROUP, "text-center text-sky-700")} colSpan={6}>
               Phí vận chuyển
             </th>
-            <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={6}>
+            <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={7}>
               Phí sàn &amp; Thuế
             </th>
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={4}>
@@ -85,7 +85,8 @@ export function ShopeeProfitTable({
               ["Chênh lệch phí VC", "right"],
               ["Phí sàn (CĐ+TT)", "right"],
               ["Phí TTLK (Affiliate)", "right"],
-              ["PiShip (Xtra)", "right"],
+              ["Phí DV (Xtra)", "right"],
+              ["PiShip", "right"],
               ["Nạp ví quảng cáo", "right"],
               ["Trợ giá người bán", "right"],
               ["Thuế", "right"],
@@ -180,6 +181,9 @@ export function ShopeeProfitTable({
                 </td>
                 <td className={cn(cell, BLOCK.fee, "text-right")}>
                   <Deduction value={r.feeAffiliate} />
+                </td>
+                <td className={cn(cell, BLOCK.fee, "text-right")}>
+                  <Deduction value={r.feeServiceXtra} />
                 </td>
                 <td className={cn(cell, BLOCK.fee, "text-right")}>
                   <Deduction value={r.feePiship} />

@@ -598,7 +598,10 @@ model Order {
   isSettled       Boolean   @default(false) // đã được sàn quyết toán/giải ngân chưa
   settledAt       DateTime? // thời điểm quyết toán
   fixedFee        Decimal   @default(0) @db.Decimal(12, 2) // phí cố định
-  serviceFee      Decimal   @default(0) @db.Decimal(12, 2) // phí dịch vụ
+  serviceFee      Decimal   @default(0) @db.Decimal(12, 2) // phí dịch vụ (Freeship/Voucher Xtra)
+  /// Phí "dịch vụ PiShip" (bảo hiểm giao hàng Shopee VN) — Seller Center tách
+  /// dòng riêng khỏi Phí Dịch Vụ nên Hubsell cũng tách cột riêng, khỏi nhầm.
+  sellerProtectionFee Decimal @default(0) @db.Decimal(12, 2)
   paymentFee      Decimal   @default(0) @db.Decimal(12, 2) // phí thanh toán
   affiliateFee    Decimal   @default(0) @db.Decimal(12, 2) // phí tiếp thị liên kết (Affiliate)
   sellerVoucher   Decimal   @default(0) @db.Decimal(12, 2) // voucher trợ giá do SHOP tự chịu
