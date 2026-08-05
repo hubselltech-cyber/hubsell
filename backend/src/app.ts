@@ -20,10 +20,46 @@ import commandCenterRouter from "./routes/command-center";
 import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
 
+// ============================================================
+// CORS — ALLOWLIST thay cho mở toang (beta multi-user).
+//
+// Chỉ nhận request trình duyệt từ frontend chính thức + môi trường dev local.
+// Thêm origin (vd URL preview Vercel của một PR) bằng env CORS_ORIGINS, phân
+// tách dấu phẩy — KHÔNG mở khoá *.vercel.app vì bất kỳ ai cũng host được app
+// lạ dưới domain đó.
+//
+// Request KHÔNG có header Origin (webhook sàn gọi server-to-server, curl,
+// health-check của Render) vẫn đi qua: CORS là hàng rào của TRÌNH DUYỆT, các
+// luồng máy-gọi-máy được bảo vệ bằng chữ ký webhook / JWT riêng.
+// ============================================================
+function buildAllowedOrigins(): Set<string> {
+  const origins = new Set<string>([
+    "https://hubsell.tech",
+    "https://www.hubsell.tech",
+    "http://localhost:3000",
+    "https://localhost:3000",
+  ]);
+  if (process.env.APP_FRONTEND_URL) origins.add(process.env.APP_FRONTEND_URL);
+  for (const o of (process.env.CORS_ORIGINS ?? "").split(",")) {
+    const trimmed = o.trim().replace(/\/$/, "");
+    if (trimmed) origins.add(trimmed);
+  }
+  return origins;
+}
+
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  const allowedOrigins = buildAllowedOrigins();
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // Origin lạ: trả false (không set header CORS) chứ KHÔNG ném lỗi —
+        // ném lỗi sẽ rơi vào error-handler thành 500 gây nhiễu log.
+        callback(null, !origin || allowedOrigins.has(origin));
+      },
+    })
+  );
   // Giữ lại THÂN REQUEST THÔ (req.rawBody) khi parse JSON — webhook TikTok phải
   // ký/kiểm chữ ký trên đúng nguyên văn body, serialize lại là sai chữ ký.
   app.use(

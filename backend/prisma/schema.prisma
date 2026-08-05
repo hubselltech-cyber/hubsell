@@ -232,6 +232,11 @@ model Channel {
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
+  /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
+  /// sàn — callback OAuth upsert theo khóa này nên bấm "Liên kết" bao nhiêu lần
+  /// cũng không đẻ ra gian trùng (Postgres coi NULL khác nhau nên gian OFFLINE /
+  /// mock không có externalShopId vẫn tạo thoải mái).
+  @@unique([userId, channelName, externalShopId])
   @@index([userId])
 }
 

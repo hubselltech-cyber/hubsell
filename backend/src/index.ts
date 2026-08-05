@@ -4,6 +4,7 @@ import http from "http";
 import https from "https";
 import { createApp } from "./app";
 import { startOrderAutoSync } from "./order-auto-sync";
+import { startTokenRefreshWorker } from "./token-refresh";
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
@@ -11,6 +12,9 @@ const app = createApp();
 // Worker tự đồng bộ đa sàn theo nhịp (đơn Shopee+Lazada, đối soát Lazada) —
 // khởi động ở đây (KHÔNG ở app.ts) để test dựng createApp() không gọi API sàn.
 startOrderAutoSync();
+// Cron refresh token Shopee đa shop — lưới an toàn cạnh lazy-refresh, quét DB
+// lọc token sắp hết hạn của TỪNG gian rồi làm mới tuần tự có giãn cách.
+startTokenRefreshWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

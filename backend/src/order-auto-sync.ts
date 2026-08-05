@@ -36,10 +36,21 @@ const SETTLE_EVERY_SWEEPS = 6;
 const SETTLE_DAYS_BACK = 7;
 /** Chạy lượt đầu sớm sau khi boot để không phải đợi trọn một nhịp. */
 const FIRST_RUN_DELAY_MS = 15 * 1000;
+/**
+ * Giãn cách giữa hai gian liên tiếp trong một lượt quét (+ jitter ngẫu nhiên).
+ * Nhiều shop cùng kết nối qua MỘT partner_id: bắn API cho cả chục shop trong
+ * cùng một giây, đều tăm tắp mỗi nhịp, là pattern máy móc dễ lọt vào thuật toán
+ * quét bất thường của sàn. Tuần tự + jitter làm nhịp gọi tự nhiên hơn, đổi lại
+ * mỗi lượt quét dài thêm vài chục giây — vô hại với worker nền.
+ */
+const CHANNEL_STAGGER_BASE_MS = 2000;
+const CHANNEL_STAGGER_JITTER_MS = 3000;
 
 let started = false;
 let running = false;
 let sweepCount = 0;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * Khởi động worker (gọi 1 lần từ index.ts — KHÔNG gọi trong test, kẻo test
@@ -137,6 +148,11 @@ async function runOnce(): Promise<void> {
             (err as Error).message
           );
         }
+      }
+
+      // Giãn cách trước khi sang gian kế tiếp (gian cuối không cần chờ).
+      if (channel !== channels[channels.length - 1]) {
+        await sleep(CHANNEL_STAGGER_BASE_MS + Math.random() * CHANNEL_STAGGER_JITTER_MS);
       }
     }
   } catch (err) {

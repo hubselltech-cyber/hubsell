@@ -93,11 +93,27 @@ export interface ShopeeAccessContext {
 }
 
 /**
+ * MUTEX REFRESH THEO TỪNG SHOP. refresh_token của Shopee bị ROTATE mỗi lần
+ * refresh (dùng một lần) — hai luồng (webhook + cron sync) cùng refresh một shop
+ * thì luồng đến sau cầm refresh_token đã chết → invalid_refresh_token, chủ shop
+ * phải uỷ quyền lại. Map giữ promise refresh đang chạy của từng channel: luồng
+ * đến sau chờ chung kết quả thay vì bắn thêm request. Khóa trong-process là đủ
+ * vì backend chạy MỘT instance Render; nếu sau này scale ngang phải chuyển sang
+ * khóa DB (SELECT ... FOR UPDATE) hoặc Redis.
+ */
+const refreshInFlight = new Map<string, Promise<ShopeeAccessContext>>();
+
+/**
  * Trả access_token còn hạn cho một gian Shopee, TỰ refresh nếu sắp/đã hết hạn rồi
  * lưu token mới xuống DB. Gọi NGAY TRƯỚC mọi lượt gọi API nghiệp vụ Shopee.
+ * An toàn khi gọi đồng thời cho cùng một shop (xem refreshInFlight).
+ *
+ * `minTtlMs` — ngưỡng "còn sống đủ lâu": mặc định 5 phút cho luồng gọi API;
+ * cron token-refresh truyền ngưỡng dài hơn để chủ động làm mới sớm.
  */
 export async function getValidShopeeAccessToken(
-  channel: Channel
+  channel: Channel,
+  minTtlMs: number = REFRESH_BUFFER_MS
 ): Promise<ShopeeAccessContext> {
   if (channel.channelName !== ChannelName.SHOPEE) {
     throw new Error("Gian hàng này không phải Shopee");
@@ -106,9 +122,38 @@ export async function getValidShopeeAccessToken(
     throw new Error("Gian hàng chưa uỷ quyền Shopee (thiếu token/shop_id)");
   }
 
+  const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
+  if (accessExp - Date.now() > minTtlMs) {
+    return { accessToken: channel.apiToken, shopId: channel.externalShopId };
+  }
+
+  const inFlight = refreshInFlight.get(channel.id);
+  if (inFlight) return inFlight;
+
+  const job = refreshShopeeTokenLocked(channel.id, minTtlMs).finally(() => {
+    refreshInFlight.delete(channel.id);
+  });
+  refreshInFlight.set(channel.id, job);
+  return job;
+}
+
+/**
+ * Thân refresh chạy TRONG khóa. Đọc lại channel từ DB trước khi gọi Shopee
+ * (double-check): luồng khác có thể vừa refresh xong trong lúc mình chờ khóa —
+ * token trong DB đã mới thì dùng luôn, không đốt thêm một lượt rotate.
+ */
+async function refreshShopeeTokenLocked(
+  channelId: string,
+  minTtlMs: number
+): Promise<ShopeeAccessContext> {
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel?.apiToken || !channel.refreshToken || !channel.externalShopId) {
+    throw new Error("Gian hàng chưa uỷ quyền Shopee (thiếu token/shop_id)");
+  }
+
   const now = Date.now();
   const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
-  if (accessExp - now > REFRESH_BUFFER_MS) {
+  if (accessExp - now > minTtlMs) {
     return { accessToken: channel.apiToken, shopId: channel.externalShopId };
   }
 
@@ -147,8 +192,9 @@ export interface ShopeeConnectResult {
 
 /**
  * Đổi `code`+`shop_id` (Shopee trả ở callback) lấy token, lấy tên gian rồi
- * tạo mới / cập nhật Channel cho chủ shop `ownerId`. Định danh gian theo
- * (userId, channelName=SHOPEE, externalShopId=shop_id) — idempotent khi kết nối lại.
+ * UPSERT Channel cho chủ shop `ownerId` theo khóa unique (userId, channelName,
+ * externalShopId) — atomic ở tầng DB: bấm "Liên kết" lại bao nhiêu lần (kể cả
+ * hai callback về cùng lúc) cũng chỉ có đúng MỘT bản ghi cho mỗi shop.
  */
 export async function handleShopeeCallback(
   ownerId: string,
@@ -180,32 +226,31 @@ export async function handleShopeeCallback(
     status: "ACTIVE",
   };
 
-  const existing = await prisma.channel.findFirst({
+  // Tên gian mặc định = tên phía Shopee, tránh trùng tên gian đã có trong cùng
+  // sàn (unique [userId, channelName, shopName]). Chỉ dùng khi TẠO MỚI — kết nối
+  // lại giữ nguyên shopName chủ shop đã tự đặt.
+  let shopName = externalShopName || `${CHANNEL_LABEL[ChannelName.SHOPEE]} ${shopId}`;
+  const clash = await prisma.channel.findFirst({
     where: {
       userId: ownerId,
       channelName: ChannelName.SHOPEE,
-      externalShopId: shopId,
+      shopName,
+      NOT: { externalShopId: shopId },
     },
-  });
-
-  if (existing) {
-    const updated = await prisma.channel.update({
-      where: { id: existing.id },
-      data: tokenData,
-    });
-    return toResult(updated);
-  }
-
-  // Tên gian mặc định = tên phía Shopee, tránh trùng tên gian đã có trong cùng sàn.
-  let shopName = externalShopName || `${CHANNEL_LABEL[ChannelName.SHOPEE]} ${shopId}`;
-  const clash = await prisma.channel.findFirst({
-    where: { userId: ownerId, channelName: ChannelName.SHOPEE, shopName },
     select: { id: true },
   });
   if (clash) shopName = `${shopName} (${shopId.slice(-4)})`;
 
-  const created = await prisma.channel.create({
-    data: {
+  const saved = await prisma.channel.upsert({
+    where: {
+      userId_channelName_externalShopId: {
+        userId: ownerId,
+        channelName: ChannelName.SHOPEE,
+        externalShopId: shopId,
+      },
+    },
+    update: tokenData,
+    create: {
       userId: ownerId,
       channelName: ChannelName.SHOPEE,
       shopName,
@@ -214,7 +259,7 @@ export async function handleShopeeCallback(
       ...tokenData,
     },
   });
-  return toResult(created);
+  return toResult(saved);
 }
 
 function toResult(c: Channel): ShopeeConnectResult {
