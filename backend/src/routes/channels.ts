@@ -39,7 +39,10 @@ import {
   signOauthState as signShopeeState,
   syncShopeeOrders,
 } from "../integrations/shopee/service";
-import { syncShopeeSettlements } from "../integrations/shopee/settlements";
+import {
+  syncShopeePendingEscrowEstimates,
+  syncShopeeSettlements,
+} from "../integrations/shopee/settlements";
 import { getEscrowDetail } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 
@@ -547,7 +550,9 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
         return;
       }
       const summary = await syncShopeeSettlements(channel);
-      res.json({ message: "Đồng bộ đối soát Shopee xong", ...summary });
+      // Kèm lượt ước tính phí cho đơn chưa giải ngân (P&L real-time).
+      const estimates = await syncShopeePendingEscrowEstimates(channel);
+      res.json({ message: "Đồng bộ đối soát Shopee xong", ...summary, estimates });
       return;
     }
 

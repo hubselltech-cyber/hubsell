@@ -20,7 +20,10 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "./prisma";
 import { isShopeeConfigured } from "./integrations/shopee/config";
 import { syncShopeeOrders } from "./integrations/shopee/service";
-import { syncShopeeSettlements } from "./integrations/shopee/settlements";
+import {
+  syncShopeePendingEscrowEstimates,
+  syncShopeeSettlements,
+} from "./integrations/shopee/settlements";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -139,6 +142,16 @@ async function runOnce(): Promise<void> {
             if (s.ordersUpdated > 0) {
               console.log(
                 `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
+              );
+            }
+            // Đơn CHƯA giải ngân: kéo số phí ƯỚC TÍNH của sàn để P&L real-time
+            // (isSettled vẫn false — nhãn "chờ đối soát" giữ nguyên).
+            const est = await syncShopeePendingEscrowEstimates(channel, {
+              daysBack: SETTLE_DAYS_BACK,
+            });
+            if (est.updated > 0) {
+              console.log(
+                `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
               );
             }
           }

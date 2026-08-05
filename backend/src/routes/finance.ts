@@ -280,25 +280,24 @@ export function computePnlRow(o: PnlOrder) {
     }
   }
 
-  // Gộp phí theo bucket cột. QUYẾT ĐỊNH CHỦ SHOP 30/07: bảng Lãi/Lỗ là SỔ
-  // ĐỐI SOÁT VỚI SÀN — đơn CHƯA quyết toán để 0 ("chờ đối soát"), TUYỆT ĐỐI
-  // không ước phí % kênh rồi bịa vào cột chi phí.
-  const feeFixedPayment = o.isSettled
-    ? Number(o.fixedFee) + Number(o.paymentFee)
-    : 0;
-  const feeService = o.isSettled ? Number(o.serviceFee) : 0;
+  // Gộp phí theo bucket cột. CẬP NHẬT QUYẾT ĐỊNH CHỦ SHOP 05/08: bảng Lãi/Lỗ
+  // hiển thị REAL-TIME — đơn CHƯA quyết toán dùng SỐ ƯỚC TÍNH CỦA CHÍNH SHOPEE
+  // (sync từ get_escrow_detail, xem syncShopeePendingEscrowEstimates), gắn
+  // nhãn "chờ đối soát" qua isSettled. Vẫn giữ nguyên tắc 30/07: TUYỆT ĐỐI
+  // không tự bịa phí % kênh — chưa sync được số của sàn thì cột = 0.
+  const feeFixedPayment = Number(o.fixedFee) + Number(o.paymentFee);
+  const feeService = Number(o.serviceFee);
   // Phí "dịch vụ PiShip" (bảo hiểm giao hàng Shopee VN) — cột riêng, xem
   // mapShopeeEscrowToOrder. Sàn khác chưa có nguồn → luôn 0.
-  const feeSellerProtection = o.isSettled ? Number(o.sellerProtectionFee) : 0;
-  const feeAffiliate = o.isSettled ? Number(o.affiliateFee) : 0;
+  const feeSellerProtection = Number(o.sellerProtectionFee);
+  const feeAffiliate = Number(o.affiliateFee);
   const platformSubsidy = Number(o.platformSubsidy);
   const shippingFeeDiff = Number(o.shippingFeeDiff);
 
-  // Thuế sàn TMĐT của đơn: CHỈ số THẬT sàn đã trích (taxWithheld) khi quyết
-  // toán; chưa quyết toán = 0 ("chờ đối soát" — cùng nguyên tắc không bịa số
-  // với phí sàn). Trang Báo cáo thuế (/api/tax/report) vẫn tự ước nghĩa vụ
-  // 1,5% riêng cho mục đích dự phòng — không dùng trường này.
-  const platformTax = o.isSettled ? Number(o.taxWithheld) : 0;
+  // Thuế sàn TMĐT của đơn: số THẬT sàn trích (đã quyết toán) hoặc số sàn ƯỚC
+  // TÍNH (chưa quyết toán, sync từ escrow detail). Trang Báo cáo thuế
+  // (/api/tax/report) vẫn tự ước nghĩa vụ 1,5% riêng — không dùng trường này.
+  const platformTax = Number(o.taxWithheld);
 
   // DOANH THU THỰC TẾ = Giá trị đơn hàng − giảm giá bằng xu/voucher của Shop.
   // CHƯA trừ phí/thuế sàn — mạch đọc trên UI: Giá trị đơn hàng → các cột phí &
@@ -326,14 +325,12 @@ export function computePnlRow(o: PnlOrder) {
     platformSubsidy;
   const profit = netRevenue - cost;
 
-  // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo (ảnh phân rã Seller
-  // Center 30/07): đơn ĐÃ đối soát = actualPayout (giá trị sản phẩm đã bị sàn
-  // cấn trừ hết phí/thuế/xu — 180.610 của đơn 527296226771786); đơn CHƯA =
-  // số từ API đơn hàng (đã trừ voucher đã biết), UI gắn nhãn tạm tính.
+  // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo: đơn ĐÃ đối soát =
+  // escrow_amount thật; đơn CHƯA đối soát = escrow_amount ƯỚC TÍNH của sàn
+  // (khớp dòng "Doanh thu đơn hàng ước tính" trên Seller Center) nếu đã sync
+  // được, không thì rơi về số từ API đơn hàng. UI phân biệt qua isSettled.
   const platformRevenue =
-    o.isSettled && Number(o.actualPayout) !== 0
-      ? Number(o.actualPayout)
-      : actualRevenue;
+    Number(o.actualPayout) !== 0 ? Number(o.actualPayout) : actualRevenue;
 
   // LÃI SAU THUẾ = MỘT công thức duy nhất chủ shop chốt (31/07):
   // Doanh thu thực tế − Giá vốn. Đơn đã đối soát: payout đã net hết
@@ -454,9 +451,19 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     // phân trang & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
     const lossOnly =
       req.query.lossOnly === "true" || req.query.lossOnly === "1";
-    const filtered = lossOnly
+    const lossFiltered = lossOnly
       ? allRows.filter((r) => r.profit < 0)
       : allRows;
+
+    // Tìm kiếm theo MÃ ĐƠN (contains, không phân biệt hoa thường) — áp trước
+    // phân trang & tóm tắt để mọi con số khớp đúng những gì bảng hiển thị.
+    const search =
+      typeof req.query.search === "string"
+        ? req.query.search.trim().toLowerCase()
+        : "";
+    const filtered = search
+      ? lossFiltered.filter((r) => r.orderCode.toLowerCase().includes(search))
+      : lossFiltered;
 
     // Tóm tắt theo sàn (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại)
     const byPlatform: Record<string, { count: number; profit: number }> = {};

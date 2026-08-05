@@ -10,6 +10,7 @@ import {
   Loader2,
   PackageOpen,
   RefreshCw,
+  Search,
   TrendingDown,
 } from "lucide-react";
 
@@ -71,6 +72,10 @@ export default function RealizedPnlPage() {
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [status, setStatus] = useState<ReconciliationStatus>("all");
   const [lossOnly, setLossOnly] = useState(false);
+  // Tìm theo mã đơn: searchInput là ô gõ, search là giá trị đã debounce 400ms
+  // (tránh dội API theo từng phím).
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [data, setData] = useState<RealizedPnlResponse | null>(null);
@@ -90,6 +95,7 @@ export default function RealizedPnlPage() {
         channel: channelOf(platform),
         status,
         lossOnly,
+        search,
         page,
         pageSize,
       });
@@ -103,7 +109,16 @@ export default function RealizedPnlPage() {
     } finally {
       setLoading(false);
     }
-  }, [router, range, platform, status, lossOnly, page, pageSize]);
+  }, [router, range, platform, status, lossOnly, search, page, pageSize]);
+
+  // Debounce ô tìm kiếm → cập nhật search sau 400ms ngừng gõ, về trang 1.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   useEffect(() => {
     if (!getToken()) {
@@ -256,10 +271,22 @@ export default function RealizedPnlPage() {
           })}
         </div>
 
-        {/* ===== FILTER BAR + XUẤT EXCEL ===== */}
+        {/* ===== FILTER BAR + XUẤT EXCEL =====
+            Bộ lọc ngày nằm BÊN PHẢI (yêu cầu chủ shop 05/08 — dễ nhìn hơn);
+            bên trái là tìm kiếm mã đơn + các lọc trạng thái. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <DateRangePicker value={range} onChange={changeRange} disabled={loading} />
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Tìm mã đơn hàng…"
+                aria-label="Tìm kiếm theo mã đơn hàng"
+                className="h-9 w-52 rounded-md border bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
+              />
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {STATUS_TABS.map((s) => {
                 const active = status === s.key;
@@ -298,6 +325,7 @@ export default function RealizedPnlPage() {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            <DateRangePicker value={range} onChange={changeRange} disabled={loading} />
             <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={cn("size-4", loading && "animate-spin")} />
               Làm mới

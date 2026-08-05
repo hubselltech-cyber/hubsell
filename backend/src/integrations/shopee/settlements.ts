@@ -14,6 +14,7 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
+import { ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import {
   getEscrowDetail,
@@ -60,6 +61,23 @@ export function mapShopeeEscrowToOrder(
   income: ShopeeOrderIncome,
   releasedAt: Date
 ) {
+  return {
+    isSettled: true,
+    settledAt: releasedAt,
+    ...mapShopeeEscrowFields(income),
+  };
+}
+
+/**
+ * Phần THÂN dùng chung của mapper: bóc order_income → các cột phí/payout,
+ * KHÔNG đụng cờ isSettled/settledAt. Dùng cho cả 2 luồng:
+ *   - Đơn ĐÃ giải ngân (mapShopeeEscrowToOrder): số THẬT + isSettled=true.
+ *   - Đơn CHƯA giải ngân (syncShopeePendingEscrowEstimates): get_escrow_detail
+ *     trả SỐ ƯỚC TÍNH của chính Shopee (khớp màn "Doanh thu đơn hàng ước tính"
+ *     Seller Center) — ghi vào cùng bộ cột để P&L hiển thị real-time, nhưng
+ *     GIỮ isSettled=false làm nhãn "chờ đối soát".
+ */
+export function mapShopeeEscrowFields(income: ShopeeOrderIncome) {
   // "Chênh lệch phí VC" = phần ship shop THỰC CHỊU = cước thật − (khách trả +
   // sàn trợ + 3PL giảm). KHÔNG dùng final_shipping_fee: đối chiếu đơn VN thật
   // 2607303CGEHBCA (05/08/2026) — final_shipping_fee = −11.000 trong khi khách
@@ -80,8 +98,6 @@ export function mapShopeeEscrowToOrder(
   const creditTxnFee = n(income.credit_card_transaction_fee);
 
   return {
-    isSettled: true,
-    settledAt: releasedAt,
     // Phí sàn — mỗi loại đúng một cột như file quyết toán Shopee.
     fixedFee: n(income.commission_fee),
     paymentFee: sellerTxnFee > 0 ? sellerTxnFee : creditTxnFee,
@@ -203,6 +219,86 @@ export async function syncShopeeSettlements(
     } catch (err) {
       console.error(
         `[Shopee Settle] Lỗi escrow_detail đơn ${orderSn} (gian "${channel.shopName}"):`,
+        (err as Error).message
+      );
+    }
+  }
+
+  return result;
+}
+
+// ============================================================
+// ƯỚC TÍNH PHÍ CHO ĐƠN CHƯA GIẢI NGÂN — P&L REAL-TIME
+//
+// get_escrow_detail trả được SỐ ƯỚC TÍNH của chính Shopee cho đơn CHƯA payout
+// (khớp màn "Doanh thu đơn hàng ước tính" trên Seller Center). Yêu cầu chủ shop
+// 05/08: bảng Lãi/Lỗ phải real-time — đơn mới có phí tạm tính ngay, không chờ
+// giải ngân. Ghi vào CÙNG bộ cột phí nhưng GIỮ isSettled=false ("chờ đối
+// soát"); khi sàn giải ngân thật, syncShopeeSettlements ghi đè số cuối cùng.
+// ============================================================
+
+export interface SyncShopeePendingEstimatesOptions {
+  /** Chỉ ước tính cho đơn tạo trong N ngày gần nhất. Mặc định 7. */
+  daysBack?: number;
+  /** Trần số đơn mỗi lượt (mỗi đơn 1 call API — giữ quota). */
+  limit?: number;
+}
+
+export interface SyncShopeePendingEstimatesResult {
+  scanned: number;
+  updated: number;
+  errors: number;
+}
+
+export async function syncShopeePendingEscrowEstimates(
+  channel: Channel,
+  opts: SyncShopeePendingEstimatesOptions = {}
+): Promise<SyncShopeePendingEstimatesResult> {
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  const daysBack = opts.daysBack ?? 7;
+  const limit = opts.limit ?? 300;
+
+  // Đơn CHƯA quyết toán, chưa hủy, mới tạo gần đây — đơn hủy không có escrow,
+  // đơn đã settled do luồng chính thống quản.
+  const orders = await prisma.order.findMany({
+    where: {
+      channelId: channel.id,
+      isSettled: false,
+      shippingStatus: { not: ShippingStatus.CANCELLED },
+      createdAt: { gte: new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000) },
+    },
+    select: { id: true, orderCode: true },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+
+  const result: SyncShopeePendingEstimatesResult = {
+    scanned: orders.length,
+    updated: 0,
+    errors: 0,
+  };
+
+  for (const order of orders) {
+    try {
+      const detail = await getEscrowDetail({
+        accessToken,
+        shopId,
+        orderSn: order.orderCode,
+      });
+      const income = detail.response?.order_income;
+      // Đơn quá mới sàn chưa dựng xong bản nháp phí → bỏ qua êm, lượt sau lấy.
+      if (!income) continue;
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
+      });
+      result.updated++;
+    } catch (err) {
+      // Lỗi một đơn (đơn chưa có escrow, mạng...) không chặn đơn khác.
+      result.errors++;
+      console.error(
+        `[Shopee Estimate] Lỗi escrow_detail đơn ${order.orderCode} (gian "${channel.shopName}"):`,
         (err as Error).message
       );
     }

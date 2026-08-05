@@ -235,7 +235,13 @@ export function LazadaProfitTable({
             // cột đỏ nào nữa — chúng đã nằm sẵn trong "Tổng tiền" sàn báo.
             const profit = settled ? d.actualPayout - b.costSnapshot : null;
             return (
-              <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
+              <tr
+                key={b.id}
+                className={cn(
+                  "transition-colors hover:bg-primary/[0.04]",
+                  selectedIds.has(b.id) && "bg-primary/[0.07] font-semibold"
+                )}
+              >
                 <RowCheckTd
                   checked={selectedIds.has(b.id)}
                   onToggle={() => onToggle(b)}

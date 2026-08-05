@@ -113,7 +113,14 @@ export function ShopeeProfitTable({
             const b = r.base;
             const cell = "border-t border-slate-100 px-3 py-2.5";
             return (
-              <tr key={b.id} className="transition-colors hover:bg-primary/[0.04]">
+              <tr
+                key={b.id}
+                className={cn(
+                  "transition-colors hover:bg-primary/[0.04]",
+                  // Đơn đang tích chọn: tô nền + đậm cả dòng cho dễ theo dõi.
+                  selectedIds.has(b.id) && "bg-primary/[0.07] font-semibold"
+                )}
+              >
                 <RowCheckTd
                   checked={selectedIds.has(b.id)}
                   onToggle={() => onToggle(b)}

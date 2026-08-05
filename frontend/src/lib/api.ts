@@ -568,6 +568,8 @@ export function fetchRealizedPnl(params: {
   status?: ReconciliationStatus;
   /** Chỉ lấy đơn LỖ (lợi nhuận thực tế < 0). */
   lossOnly?: boolean;
+  /** Tìm theo MÃ ĐƠN (contains, không phân biệt hoa thường). */
+  search?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -576,6 +578,7 @@ export function fetchRealizedPnl(params: {
     ...channelFilterToQuery(params.channel),
     ...(params.status && params.status !== "all" ? { status: params.status } : {}),
     ...(params.lossOnly ? { lossOnly: "true" } : {}),
+    ...(params.search ? { search: params.search } : {}),
     ...(params.page ? { page: String(params.page) } : {}),
     ...(params.pageSize ? { pageSize: String(params.pageSize) } : {}),
   }).toString();
