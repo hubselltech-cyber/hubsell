@@ -40,6 +40,8 @@ import {
   syncShopeeOrders,
 } from "../integrations/shopee/service";
 import { syncShopeeSettlements } from "../integrations/shopee/settlements";
+import { getEscrowDetail } from "../integrations/shopee/client";
+import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 
 const router = Router();
 
@@ -491,6 +493,38 @@ router.post("/:id/sync-orders", requireAdmin, async (req: AuthRequest, res) => {
     res.status(502).json({ error: `Đồng bộ đơn thất bại: ${(err as Error).message}` });
   }
 });
+
+// GET /api/channels/:id/escrow-debug/:orderSn — SOI PAYLOAD ĐỐI SOÁT THÔ.
+// Chỉ Admin, READ-ONLY (không ghi DB): trả nguyên văn order_income từ
+// get_escrow_detail để đối chiếu từng field khi số P&L lệch với sàn.
+router.get(
+  "/:id/escrow-debug/:orderSn",
+  requireAdmin,
+  async (req: AuthRequest, res) => {
+    try {
+      const channel = await prisma.channel.findFirst({
+        where: {
+          id: req.params.id,
+          userId: req.ownerId!,
+          channelName: ChannelName.SHOPEE,
+        },
+      });
+      if (!channel) {
+        res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+        return;
+      }
+      const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+      const detail = await getEscrowDetail({
+        accessToken,
+        shopId,
+        orderSn: req.params.orderSn,
+      });
+      res.json({ orderIncome: detail.response?.order_income ?? null });
+    } catch (err) {
+      res.status(502).json({ error: (err as Error).message });
+    }
+  }
+);
 
 // POST /api/channels/:id/sync-settlements — kéo đối soát thật → cập nhật số
 // quyết toán (GĐ2) của từng đơn. Dispatch theo sàn: TikTok, Shopee hoặc Lazada.
