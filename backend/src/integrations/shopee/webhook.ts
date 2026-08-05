@@ -47,24 +47,39 @@ export function getShopeePushPartnerKey(): string {
  * Kiểm chữ ký webhook trên body THÔ (Buffer/string nguyên văn — JSON.parse rồi
  * serialize lại sẽ đảo thứ tự khoá/khoảng trắng làm sai chữ ký).
  * So sánh bằng timingSafeEqual để tránh timing attack.
+ *
+ * Chấp nhận chữ ký ký bằng Push Partner Key HOẶC API Partner Key: cú ping
+ * "Verify" của Console Live bắn TRƯỚC khi Push Key được lưu bên Shopee nên có
+ * thể được ký bằng API key; push thật sau khi Save ký bằng Push Key. Cả hai
+ * đều là secret của app — nhận thêm key thứ hai không nới cửa cho bên ngoài.
  */
 export function verifyShopeeWebhookSignature(
   rawBody: Buffer | string,
   authorizationHeader: string | undefined,
   webhookUrl: string = getShopeeWebhookUrl(),
-  partnerKey: string = getShopeePushPartnerKey()
+  partnerKey?: string
 ): boolean {
   if (!authorizationHeader) return false;
   const bodyStr = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");
-  const expected = crypto
-    .createHmac("sha256", partnerKey)
-    .update(`${webhookUrl}|${bodyStr}`)
-    .digest("hex");
+  const keys = partnerKey
+    ? [partnerKey]
+    : [...new Set([getShopeePushPartnerKey(), getShopeeConfig().partnerKey])];
   const got = authorizationHeader.trim().toLowerCase();
-  const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(got, "utf8");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  for (const key of keys) {
+    const expected = crypto
+      .createHmac("sha256", key)
+      .update(`${webhookUrl}|${bodyStr}`)
+      .digest("hex");
+    const a = Buffer.from(expected, "utf8");
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+  }
+  // Log chẩn đoán khi trượt chữ ký (KHÔNG in key/chữ ký đầy đủ): đủ để phân
+  // biệt "sai key" với "sai URL ký" khi soi log Render.
+  console.warn(
+    `[Webhook Shopee] Chữ ký không khớp — url ký="${webhookUrl}", sig=${got.slice(0, 8)}…, body=${bodyStr.length} byte, đã thử ${keys.length} key`
+  );
+  return false;
 }
 
 // ---------- 2. Payload & mã sự kiện ----------
