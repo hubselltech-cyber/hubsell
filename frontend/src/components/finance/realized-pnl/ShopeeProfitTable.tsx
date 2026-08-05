@@ -6,6 +6,7 @@ import { carrierShort } from "@/lib/carrier-meta";
 import { formatDateTime } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
+import { HintIcon } from "@/components/finance/hint-icon";
 import {
   Amount,
   BLOCK,
@@ -90,11 +91,19 @@ export function ShopeeProfitTable({
               ["Nạp ví quảng cáo", "right"],
               ["Trợ giá người bán", "right"],
               ["Thuế", "right"],
-              ["Doanh thu ước tính", "right"],
-              ["Doanh thu từ Shopee", "right"],
+              [
+                "Doanh thu ước tính",
+                "right",
+                "= Giá trị sản phẩm − toàn bộ phí & thuế sàn đã ghi nhận (+ Trợ giá Shopee bù thật). Dùng để ĐỐI SOÁT: đơn đã đối soát, con số này phải khớp chằn chặn với 'Doanh thu từ Shopee' — lệch tức là sót/phân loại thiếu phí, hoặc đơn bị hoàn.",
+              ],
+              [
+                "Doanh thu từ Shopee",
+                "right",
+                "'Doanh Thu Đơn Hàng' Shopee báo (escrow_amount): tiền sàn trả về ví sau khi cấn trừ hết phí/thuế. Đơn chưa giải ngân: hiển thị số ƯỚC TÍNH của chính Shopee (khớp màn Chi tiết doanh thu trên Seller Center), nhãn 'chờ đối soát'.",
+              ],
               ["Chi phí giá vốn", "right"],
               ["LỢI NHUẬN THỰC TẾ", "right"],
-            ].map(([label, align], i) => (
+            ].map(([label, align, hint], i) => (
               <th
                 key={i}
                 className={cn(
@@ -103,7 +112,14 @@ export function ShopeeProfitTable({
                   label === "LỢI NHUẬN THỰC TẾ" && "font-semibold text-slate-700"
                 )}
               >
-                {label}
+                {hint ? (
+                  <span className="inline-flex items-center gap-1">
+                    {label}
+                    <HintIcon hint={hint} />
+                  </span>
+                ) : (
+                  label
+                )}
               </th>
             ))}
           </tr>
@@ -205,15 +221,16 @@ export function ShopeeProfitTable({
                   <Deduction value={r.tax} />
                 </td>
 
-                {/* Hiệu quả kinh doanh */}
-                <td className={cn(cell, BLOCK.result, "text-right text-slate-700")}>
-                  <Amount value={r.estRevenue} />
-                </td>
-                <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
-                  <Amount value={r.revenueFromShopee} />
+                {/* Hiệu quả kinh doanh — 2 cột doanh thu XANH, giá vốn ĐỎ
+                    (đồng bộ quy ước màu với tab Lazada). */}
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  <Amount value={r.estRevenue} tone="font-medium text-emerald-700" />
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>
-                  <Deduction value={r.costSnapshot} tone="text-slate-600" />
+                  <Amount value={r.revenueFromShopee} tone="font-medium text-emerald-700" />
+                </td>
+                <td className={cn(cell, BLOCK.result, "text-right")}>
+                  <Amount value={r.costSnapshot} tone="text-rose-600" />
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   <ProfitCell value={r.profit} />
