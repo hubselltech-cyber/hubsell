@@ -215,11 +215,15 @@ export function CommandCenter() {
   const isNewAlert = (a: OpsAlert) =>
     lastSeenAt !== null && a.createdAt > lastSeenAt;
 
-  // Cảnh báo trong tầm nhìn của vai trò: chưa xử lý lên trước, rồi tới mức độ.
+  // Cảnh báo trong tầm nhìn của vai trò: chưa xử lý lên trước, rồi THẬT trước
+  // DEMO (sự cố thật luôn đứng trên thẻ trình diễn bất kể mức độ), rồi mức độ.
   const alerts = allAlerts.filter((a) => canView(role, a.tag)).sort((a, b) => {
     const byResolved =
       Number(resolved.has(a.id)) - Number(resolved.has(b.id));
     if (byResolved !== 0) return byResolved;
+    const byDemo =
+      Number(a.id.startsWith("al-")) - Number(b.id.startsWith("al-"));
+    if (byDemo !== 0) return byDemo;
     const bySev = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
     if (bySev !== 0) return bySev;
     return b.createdAt.localeCompare(a.createdAt);
