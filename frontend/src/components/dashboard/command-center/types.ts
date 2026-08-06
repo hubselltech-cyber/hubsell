@@ -84,6 +84,12 @@ export type ActionParams =
     }
   | { kind: "confirm"; description: string }
   /**
+   * CẢNH BÁO THẬT dạng deep-link: nút xử lý điều hướng thẳng tới trang chuyên
+   * sâu đã có sẵn (Đơn lỗ, Đối soát phí ship, Kênh bán, Tồn kho…) thay vì mở
+   * pop-up. KHÔNG qua <ActionModal>.
+   */
+  | { kind: "navigate"; href: string }
+  /**
    * CẢNH BÁO THẬT từ luồng đồng bộ tồn Shopee (không phải mock): đẩy tồn thất
    * bại sau 3 lần retry + 3 lượt đối soát. Nút [Cập nhật tồn] gọi API
    * force-sync ĐÈ tồn chuẩn Hubsell lên sàn — hành động thật, không giả lập.

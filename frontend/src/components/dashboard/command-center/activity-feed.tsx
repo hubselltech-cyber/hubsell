@@ -34,6 +34,14 @@ export function ActivityFeed({
   const shown =
     filter === "all" ? items : items.filter((it) => it.tag === filter);
 
+  // Chia "Hôm nay / Trước đó" — danh sách đã sắp mới nhất lên đầu nên chỉ cần
+  // một vạch ngăn tại điểm chuyển ngày (tin cũ tự hiện "dd/mm HH:mm").
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const isToday = (iso: string) => new Date(iso).getTime() >= todayStart.getTime();
+  const todayItems = shown.filter((it) => isToday(it.at));
+  const olderItems = shown.filter((it) => !isToday(it.at));
+
   return (
     <div className="flex h-full flex-col">
       {/* Bộ lọc nhanh theo nhóm hoạt động */}
@@ -73,26 +81,47 @@ export function ActivityFeed({
             </p>
           )
         ) : (
-          shown.map((it) => (
-            <div
-              key={it.id}
-              className="flex gap-3 border-b border-slate-100 py-2.5 last:border-b-0"
-            >
-              <span
-                className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[it.tag])}
-              />
-              <div className="min-w-0">
-                <p className="text-sm leading-relaxed text-slate-700">
-                  {it.message}
-                </p>
-                <p className="mt-0.5 text-[11px] text-slate-400">
-                  {formatRelative(it.at)}
-                </p>
-              </div>
-            </div>
-          ))
+          <>
+            {todayItems.length > 0 && <DayDivider label="Hôm nay" />}
+            {todayItems.map((it) => (
+              <FeedRow key={it.id} item={it} />
+            ))}
+            {olderItems.length > 0 && todayItems.length > 0 && (
+              <DayDivider label="Trước đó" />
+            )}
+            {olderItems.map((it) => (
+              <FeedRow key={it.id} item={it} />
+            ))}
+          </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Một dòng nhật ký. */
+function FeedRow({ item }: { item: ActivityItem }) {
+  return (
+    <div className="flex gap-3 border-b border-slate-100 py-2.5 last:border-b-0">
+      <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[item.tag])} />
+      <div className="min-w-0">
+        <p className="text-sm leading-relaxed text-slate-700">{item.message}</p>
+        <p className="mt-0.5 text-[11px] text-slate-400">
+          {formatRelative(item.at)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Vạch ngăn "Hôm nay / Trước đó" trong dòng thời gian. */
+function DayDivider({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 pt-2 pb-1 first:pt-1">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-slate-100" />
     </div>
   );
 }

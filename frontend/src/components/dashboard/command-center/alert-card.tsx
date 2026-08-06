@@ -18,6 +18,8 @@ export function AlertCard({
   role,
   resolved,
   chatCount,
+  isNew = false,
+  demo = false,
   onAction,
   onToggleResolved,
   onDiscuss,
@@ -26,6 +28,10 @@ export function AlertCard({
   role: OpsRole;
   resolved: boolean;
   chatCount: number;
+  /** Phát sinh sau lần mở Trung tâm điều hành trước → nhãn "Mới". */
+  isNew?: boolean;
+  /** Thẻ dữ liệu giả lập (trình diễn) — gắn nhãn DEMO để không lẫn với thật. */
+  demo?: boolean;
   onAction: () => void;
   onToggleResolved: () => void;
   onDiscuss: () => void;
@@ -58,6 +64,19 @@ export function AlertCard({
             >
               {TAG_META[alert.tag].label}
             </span>
+            {demo && (
+              <span
+                className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-400"
+                title="Thẻ trình diễn với dữ liệu giả lập — không phải sự cố thật"
+              >
+                DEMO
+              </span>
+            )}
+            {isNew && !resolved && (
+              <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                Mới
+              </span>
+            )}
             <span className="text-[11px] text-slate-400">
               {formatRelative(alert.createdAt)}
             </span>

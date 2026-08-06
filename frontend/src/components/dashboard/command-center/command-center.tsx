@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Activity, ShieldCheck } from "lucide-react";
 
@@ -15,10 +16,13 @@ import {
   fetchCommandCenterState,
   fetchSyncAlerts,
   postCommandCenterChat,
+  postCommandCenterSeen,
+  resolveCommandCenterOpsAlert,
   resolveSyncAlert,
   setCommandCenterResolved,
   type InventorySyncAlert,
   type OpsActivityDTO,
+  type OpsAlertDTO,
   type OpsChatDTO,
 } from "@/lib/api";
 import { AlertCard } from "./alert-card";
@@ -77,6 +81,35 @@ function syncAlertToOps(a: InventorySyncAlert): OpsAlert {
 
 const SEVERITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
+// ─────────── CẢNH BÁO THẬT từ bảng OpsAlert (detector backend) ───────────
+//
+// Backend quét dữ liệu thật (cháy hàng, gian mất kết nối, đơn lỗ, chênh phí
+// ship) và trả về các dòng OpsAlert đang MỞ. Map về khuôn OpsAlert chung của
+// UI; nút xử lý là deep-link (kind "navigate") tới trang chuyên sâu sẵn có.
+
+const UI_TAGS: AlertTag[] = ["inventory", "finance", "channel", "ads", "tax"];
+
+function opsDtoToAlert(dto: OpsAlertDTO): OpsAlert {
+  const p = dto.payload as
+    | { kind?: string; href?: string; label?: string }
+    | null;
+  const action =
+    p?.kind === "navigate" && typeof p.href === "string"
+      ? ({ kind: "navigate", href: p.href } as const)
+      : ({ kind: "confirm", description: dto.summary } as const);
+  return {
+    id: `ops-${dto.id}`,
+    tag: UI_TAGS.includes(dto.tag as AlertTag) ? (dto.tag as AlertTag) : "channel",
+    severity:
+      dto.severity === "high" || dto.severity === "low" ? dto.severity : "medium",
+    title: dto.title,
+    summary: dto.summary,
+    actionLabel: p?.label ?? "Xem chi tiết",
+    action,
+    createdAt: dto.createdAt,
+  };
+}
+
 /** Gom seed chat theo alertId để tra cứu nhanh. */
 function seedChat(): Record<string, ChatMessage[]> {
   const map: Record<string, ChatMessage[]> = {};
@@ -122,10 +155,16 @@ function mergeActivities(persisted: OpsActivityDTO[]): ActivityItem[] {
 }
 
 export function CommandCenter() {
+  const router = useRouter();
   // Vai trò vận hành giả lập — bộ chuyển ở góc để thử nghiệm RBAC.
   const [role, setRole] = useState<OpsRole>("ADMIN");
   // Cảnh báo THẬT từ luồng đồng bộ tồn Shopee — đứng cạnh các thẻ demo.
   const [syncAlerts, setSyncAlerts] = useState<OpsAlert[]>([]);
+  // Cảnh báo THẬT từ bảng OpsAlert (detector cháy hàng / mất kết nối / đơn lỗ /
+  // chênh phí ship) — backend tự đóng khi điều kiện hết.
+  const [opsAlerts, setOpsAlerts] = useState<OpsAlert[]>([]);
+  // Mốc lần mở TRƯỚC — cảnh báo phát sinh sau mốc này được gắn nhãn "Mới".
+  const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Set<string>>(new Set());
   const [chat, setChat] = useState<Record<string, ChatMessage[]>>(seedChat);
   const [activities, setActivities] = useState<ActivityItem[]>(MOCK_ACTIVITY);
@@ -142,6 +181,8 @@ export function CommandCenter() {
       setResolved(new Set(s.resolvedAlertIds));
       setChat(mergeChat(s.chat));
       setActivities(mergeActivities(s.activities));
+      setOpsAlerts((s.opsAlerts ?? []).map(opsDtoToAlert));
+      setLastSeenAt(s.lastSeenAt ?? null);
     } catch {
       // Không tải được thì giữ nguyên seed đang hiển thị — không làm vỡ Dashboard.
     }
@@ -157,14 +198,22 @@ export function CommandCenter() {
   }, []);
 
   useEffect(() => {
-    reloadState();
+    // Đọc mốc "Mới" cũ TRƯỚC rồi mới dời mốc — thứ tự này quyết định nhãn đúng.
+    void (async () => {
+      await reloadState();
+      postCommandCenterSeen().catch(() => {}); // fire-and-forget, hỏng cũng không sao
+    })();
     loadSyncAlerts();
   }, [reloadState, loadSyncAlerts]);
 
   const tags = visibleTags(role);
 
   // Cảnh báo thật đứng TRƯỚC thẻ demo (cùng khuôn OpsAlert, lọc RBAC như nhau).
-  const allAlerts = [...syncAlerts, ...MOCK_ALERTS];
+  const allAlerts = [...syncAlerts, ...opsAlerts, ...MOCK_ALERTS];
+
+  /** Cảnh báo phát sinh SAU lần mở trước → nhãn "Mới" (mốc null = lần đầu, bỏ qua). */
+  const isNewAlert = (a: OpsAlert) =>
+    lastSeenAt !== null && a.createdAt > lastSeenAt;
 
   // Cảnh báo trong tầm nhìn của vai trò: chưa xử lý lên trước, rồi tới mức độ.
   const alerts = allAlerts.filter((a) => canView(role, a.tag)).sort((a, b) => {
@@ -205,6 +254,15 @@ export function CommandCenter() {
           a.id === actionAlertId && canView(role, a.tag) && canAct(role, a.tag)
       ) ?? null
     : null;
+
+  /** Bấm nút xử lý: deep-link thì điều hướng thẳng, còn lại mở pop-up. */
+  function handleAction(a: OpsAlert) {
+    if (a.action.kind === "navigate") {
+      router.push(a.action.href);
+      return;
+    }
+    setActionAlertId(a.id);
+  }
 
   /** Lưu trạng thái đã-xử-lý xuống backend; hỏng thì hoà giải lại từ server. */
   async function persistResolve(
@@ -249,6 +307,20 @@ export function CommandCenter() {
   function toggleResolved(alertId: string) {
     const alert = allAlerts.find((a) => a.id === alertId);
     if (!alert) return;
+
+    if (alertId.startsWith("ops-")) {
+      // Cảnh báo THẬT (OpsAlert): đóng MỘT CHIỀU — backend ẩn nó cho tới khi
+      // điều kiện hết hẳn rồi tái phát mới mở lại như cảnh báo mới.
+      const dbId = alertId.slice("ops-".length);
+      const message = `${ROLE_META[role].label} đánh dấu ĐÃ XỬ LÝ: ${alert.title}`;
+      setOpsAlerts((prev) => prev.filter((a) => a.id !== alertId));
+      logActivityLocal(alert.tag, message);
+      resolveCommandCenterOpsAlert(dbId, { tag: alert.tag, message }).catch(() => {
+        toast.error("Không lưu được trạng thái — đang tải lại.");
+        reloadState();
+      });
+      return;
+    }
 
     if (alert.action.kind === "force-sync-stock") {
       // Cảnh báo THẬT đóng MỘT CHIỀU trong DB (không bỏ đánh dấu lại được).
@@ -382,7 +454,9 @@ export function CommandCenter() {
                   role={role}
                   resolved={resolved.has(a.id)}
                   chatCount={chat[a.id]?.length ?? 0}
-                  onAction={() => setActionAlertId(a.id)}
+                  isNew={isNewAlert(a)}
+                  demo={a.id.startsWith("al-")}
+                  onAction={() => handleAction(a)}
                   onToggleResolved={() => toggleResolved(a.id)}
                   onDiscuss={() => setOpenAlertId(a.id)}
                 />

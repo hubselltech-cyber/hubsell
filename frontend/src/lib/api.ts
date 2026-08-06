@@ -1838,10 +1838,27 @@ export interface OpsChatDTO {
   at: string;
 }
 
+/** Một cảnh báo THẬT từ bảng OpsAlert (detector backend quét dữ liệu thật). */
+export interface OpsAlertDTO {
+  id: string;
+  /** Loại detector: stockout | channel-disconnected | loss-orders | shipping-fee-diff */
+  type: string;
+  tag: string;
+  severity: string;
+  title: string;
+  summary: string;
+  /** ActionParams cho nút xử lý (VD {kind:"navigate",href,label}) — có thể null. */
+  payload: unknown;
+  createdAt: string;
+}
+
 export interface OpsStateResponse {
   resolvedAlertIds: string[];
   chat: OpsChatDTO[];
   activities: OpsActivityDTO[];
+  opsAlerts: OpsAlertDTO[];
+  /** Mốc lần mở Trung tâm điều hành TRƯỚC — null nếu chưa từng mở. */
+  lastSeenAt: string | null;
 }
 
 /** Đọc toàn bộ trạng thái Command Center đã lưu của shop (gọi khi load/F5). */
@@ -1859,6 +1876,25 @@ export function setCommandCenterResolved(input: {
   return apiFetch<{ ok: boolean; resolved: boolean; activity: OpsActivityDTO | null }>(
     "/api/command-center/resolve",
     { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+/** Tick "Đã xử lý" một cảnh báo THẬT (OpsAlert) — một chiều, ẩn tới khi tái phát. */
+export function resolveCommandCenterOpsAlert(
+  id: string,
+  activity?: { tag: string; message: string }
+) {
+  return apiFetch<{ ok: boolean; activity: OpsActivityDTO | null }>(
+    `/api/command-center/alerts/${id}/resolve`,
+    { method: "POST", body: JSON.stringify({ activity }) }
+  );
+}
+
+/** Ghi nhận "vừa xem Trung tâm điều hành" — dời mốc gắn nhãn "Mới". */
+export function postCommandCenterSeen() {
+  return apiFetch<{ ok: boolean; lastSeenAt: string }>(
+    "/api/command-center/seen",
+    { method: "POST", body: JSON.stringify({}) }
   );
 }
 

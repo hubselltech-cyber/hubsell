@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import { scanOpsAlerts } from "../ops-alerts";
 
 /**
  * TRUNG TÂM ĐIỀU HÀNH (Command Center) — lưu trạng thái người dùng thao tác.
@@ -89,11 +90,46 @@ async function maybeLogActivity(
   return serializeActivity(row);
 }
 
+/** Một cảnh báo THẬT (bảng OpsAlert) trả về frontend — payload đã parse. */
+function serializeOpsAlert(a: {
+  id: string;
+  type: string;
+  tag: string;
+  severity: string;
+  title: string;
+  summary: string;
+  payload: string | null;
+  createdAt: Date;
+}) {
+  let payload: unknown = null;
+  if (a.payload) {
+    try {
+      payload = JSON.parse(a.payload);
+    } catch {
+      payload = null; // payload hỏng → frontend fallback nút xác nhận thường
+    }
+  }
+  return {
+    id: a.id,
+    type: a.type,
+    tag: a.tag,
+    severity: a.severity,
+    title: a.title,
+    summary: a.summary,
+    payload,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
 // GET /api/command-center/state — toàn bộ trạng thái đã lưu của shop.
 router.get("/state", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
-    const [resolved, chat, activities] = await Promise.all([
+
+    // Quét cảnh báo thật trước khi đọc (throttle 10'/shop, nuốt lỗi nội bộ).
+    await scanOpsAlerts(ownerId);
+
+    const [resolved, chat, activities, opsAlerts, visit] = await Promise.all([
       prisma.opsResolvedAlert.findMany({
         where: { ownerId },
         select: { alertId: true },
@@ -106,13 +142,59 @@ router.get("/state", async (req: AuthRequest, res, next) => {
         where: { ownerId },
         orderBy: { createdAt: "desc" },
       }),
+      prisma.opsAlert.findMany({
+        where: { ownerId, status: "OPEN" },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.opsCenterVisit.findUnique({ where: { ownerId } }),
     ]);
 
     res.json({
       resolvedAlertIds: resolved.map((r) => r.alertId),
       chat: chat.map(serializeChat),
       activities: activities.map(serializeActivity),
+      opsAlerts: opsAlerts.map(serializeOpsAlert),
+      // Mốc lần xem TRƯỚC — frontend gắn nhãn "Mới" cho cảnh báo sau mốc này,
+      // rồi tự gọi POST /seen để dời mốc cho lần sau.
+      lastSeenAt: visit?.lastSeenAt.toISOString() ?? null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/command-center/seen — ghi nhận "vừa xem Trung tâm điều hành".
+router.post("/seen", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const now = new Date();
+    await prisma.opsCenterVisit.upsert({
+      where: { ownerId },
+      create: { ownerId, lastSeenAt: now },
+      update: { lastSeenAt: now },
+    });
+    res.json({ ok: true, lastSeenAt: now.toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/command-center/alerts/:id/resolve — chủ shop tick "Đã xử lý" một
+// cảnh báo THẬT. Một chiều: ẩn cho tới khi điều kiện hết hẳn rồi tái phát.
+// Body: { activity?: {tag,message} } — dòng nhật ký kèm theo (nếu có).
+router.post("/alerts/:id/resolve", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const updated = await prisma.opsAlert.updateMany({
+      where: { id: req.params.id, ownerId, status: "OPEN" },
+      data: { status: "RESOLVED", resolvedAt: new Date() },
+    });
+    if (updated.count === 0) {
+      res.status(404).json({ error: "Không tìm thấy cảnh báo đang mở" });
+      return;
+    }
+    const loggedActivity = await maybeLogActivity(ownerId, req.body?.activity);
+    res.json({ ok: true, activity: loggedActivity });
   } catch (err) {
     next(err);
   }

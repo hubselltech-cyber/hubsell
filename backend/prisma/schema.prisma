@@ -198,6 +198,8 @@ model User {
   opsResolvedAlerts OpsResolvedAlert[] @relation("OpsResolvedAlerts")
   opsChatMessages   OpsChatMessage[]   @relation("OpsChatMessages")
   opsActivities     OpsActivity[]      @relation("OpsActivities")
+  opsAlerts         OpsAlert[]         @relation("OpsAlerts")
+  opsCenterVisit    OpsCenterVisit?    @relation("OpsCenterVisit")
 
   // Cấu hình hóa đơn điện tử & chữ ký số (Multi-Vendor Adapter).
   invoiceConfigs InvoiceConfig[]
@@ -390,6 +392,46 @@ model OpsActivity {
   owner User @relation("OpsActivities", fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([ownerId])
+}
+
+/// CẢNH BÁO VẬN HÀNH THẬT — bảng HỢP NHẤT cho mọi detector của Trung tâm điều
+/// hành (cháy hàng, gian mất kết nối, đơn lỗ, chênh phí ship…). Mỗi điều kiện
+/// đang tồn tại chỉ có MỘT bản ghi (khoá ownerId × type × dedupeKey); detector
+/// upsert theo khoá đó và TỰ ĐÓNG (AUTO_CLOSED) khi điều kiện biến mất.
+model OpsAlert {
+  id        String @id @default(cuid())
+  ownerId   String
+  /// Loại detector: stockout | channel-disconnected | loss-orders | shipping-fee-diff
+  type      String
+  /// Khoá chống trùng trong phạm vi (owner × type), VD id gian hàng.
+  dedupeKey String
+  tag       String // inventory | finance | channel | ads | tax
+  severity  String // high | medium | low
+  title     String
+  summary   String
+  /// JSON ActionParams cho nút xử lý phía frontend (VD {kind:"navigate",href}).
+  payload   String?
+
+  /// OPEN → đang hiện; RESOLVED → chủ shop tick tay (ẩn cho tới khi điều kiện
+  /// hết hẳn rồi tái phát); AUTO_CLOSED → detector xác nhận điều kiện đã hết.
+  status     String    @default("OPEN")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+
+  owner User @relation("OpsAlerts", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, type, dedupeKey])
+  @@index([ownerId, status])
+}
+
+/// Lần mở Trung tâm điều hành gần nhất của mỗi chủ shop — mốc để gắn nhãn "Mới"
+/// cho cảnh báo phát sinh sau lần xem trước (không dùng mốc cứng 24h).
+model OpsCenterVisit {
+  ownerId    String   @id
+  lastSeenAt DateTime @default(now())
+
+  owner User @relation("OpsCenterVisit", fields: [ownerId], references: [id], onDelete: Cascade)
 }
 
 // ---------- HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ (Multi-Vendor Adapter) ----------
