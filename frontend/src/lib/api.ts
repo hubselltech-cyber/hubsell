@@ -170,6 +170,8 @@ export interface AuthUser {
   fullName: string;
   /** Quốc gia ISO 3166-1 alpha-2, mặc định "VN". */
   country?: string;
+  /** SĐT chuẩn E.164 (vd "+84912345678") — nền cho OTP SMS/WhatsApp sau này. */
+  phone?: string | null;
   role: Role;
   /**
    * Quản trị NỀN TẢNG Hubsell (khác ADMIN của shop) — mở mục "Hệ thống" trên
@@ -751,6 +753,8 @@ export function register(data: {
   username?: string;
   /** ISO alpha-2, mặc định "VN". */
   country?: string;
+  /** Số trong nước ("0912345678" hoặc "912345678") — backend chuẩn hoá E.164. */
+  phoneNumber?: string;
 }) {
   return apiFetch<AuthResponse>("/api/auth/register", {
     method: "POST",

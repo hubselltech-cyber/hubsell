@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "../prisma";
 import { requireAuth, signToken, type AuthRequest } from "../auth";
+import { formatE164 } from "../phone";
 import { isMailerConfigured, resetPasswordEmailHtml, sendMail } from "../mailer";
 import {
   buildGoogleAuthorizeUrl,
@@ -70,6 +71,7 @@ const PUBLIC_USER_SELECT = {
   username: true,
   fullName: true,
   country: true,
+  phone: true,
   role: true,
   // Cờ quản trị nền tảng — FE dựa vào đây để hiện mục "Hệ thống" trên sidebar.
   isPlatformAdmin: true,
@@ -80,12 +82,15 @@ const PUBLIC_USER_SELECT = {
 const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
 
 // POST /api/auth/register — Đăng ký tài khoản mới.
-// Body: { email, password, fullName, username?, country? }
+// Body: { email, password, fullName, username?, country?, phoneNumber? }
 // Email vẫn BẮT BUỘC (nhận thông báo/thanh toán/reset pass); username là tên
-// đăng nhập thay thế — bỏ trống thì tự sinh từ email.
+// đăng nhập thay thế — bỏ trống thì tự sinh từ email. phoneNumber là số TRONG
+// NƯỚC ("0912345678"/"912345678") — server ghép mã vùng theo country thành
+// E.164 rồi mới lưu (xem src/phone.ts); nhận cả alias `countryCode`.
 router.post("/register", async (req, res, next) => {
   try {
-    const { email, password, fullName, username, country } = req.body ?? {};
+    const { email, password, fullName, username, country, countryCode, phoneNumber } =
+      req.body ?? {};
 
     // Kiểm tra dữ liệu đầu vào
     if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
@@ -105,10 +110,23 @@ router.post("/register", async (req, res, next) => {
       res.status(400).json({ error: uname.error });
       return;
     }
+    const rawCountry = typeof countryCode === "string" ? countryCode : country;
     const normalizedCountry =
-      typeof country === "string" && COUNTRY_REGEX.test(country.trim().toUpperCase())
-        ? country.trim().toUpperCase()
+      typeof rawCountry === "string" && COUNTRY_REGEX.test(rawCountry.trim().toUpperCase())
+        ? rawCountry.trim().toUpperCase()
         : "VN";
+
+    // SĐT không bắt buộc ở tầng API (client cũ/Google flow không có), nhưng
+    // ĐÃ GỬI thì phải hợp lệ — lưu dạng E.164 để dùng cho OTP SMS sau này.
+    let phoneE164: string | null = null;
+    if (phoneNumber != null && phoneNumber !== "") {
+      const parsed = formatE164(normalizedCountry, phoneNumber);
+      if (parsed.error) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      phoneE164 = parsed.value!;
+    }
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -139,6 +157,7 @@ router.post("/register", async (req, res, next) => {
         passwordHash,
         fullName: fullName.trim(),
         country: normalizedCountry,
+        phone: phoneE164,
         role: "ADMIN",
       },
       select: PUBLIC_USER_SELECT,
@@ -183,6 +202,7 @@ router.post("/login", async (req, res, next) => {
         username: user.username,
         fullName: user.fullName,
         country: user.country,
+        phone: user.phone,
         role: user.role,
       },
     });

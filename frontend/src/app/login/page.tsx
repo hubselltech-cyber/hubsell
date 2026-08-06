@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
-import { CountrySelect } from "@/components/auth/country-select";
+import { PhoneInput } from "@/components/auth/phone-input";
 import { SocialAuthButtons } from "@/components/auth/social-buttons";
 import {
   login,
@@ -61,6 +61,11 @@ const registerSchema = z
         "3-30 ký tự: chữ thường, số, dấu chấm, gạch dưới; không chứa @"
       ),
     country: z.string().length(2),
+    // Số thuần trong nước (PhoneInput đã lọc chỉ còn chữ số) — backend sẽ ghép
+    // mã vùng theo country và chuẩn hoá E.164 trước khi lưu.
+    phone: z
+      .string()
+      .regex(/^\d{6,15}$/, "Vui lòng nhập số điện thoại hợp lệ (6-15 chữ số)"),
     password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
     confirmPassword: z.string(),
   })
@@ -172,6 +177,7 @@ function RegisterForm({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
       email: "",
       username: "",
       country: "VN",
+      phone: "",
       password: "",
       confirmPassword: "",
     },
@@ -186,6 +192,7 @@ function RegisterForm({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
         fullName: values.fullName,
         username: values.username,
         country: values.country,
+        phoneNumber: values.phone,
       });
       setToken(res.token);
       setStoredUser(res.user);
@@ -244,14 +251,24 @@ function RegisterForm({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
             </FormItem>
           )}
         />
+        {/* Ô ghép Quốc gia + SĐT: field `phone` giữ số thuần, field `country`
+            được PhoneInput set khi đổi mã vùng (validate riêng từng field). */}
         <FormField
           control={form.control}
-          name="country"
+          name="phone"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Quốc gia</FormLabel>
+              <FormLabel>Số điện thoại</FormLabel>
               <FormControl>
-                <CountrySelect value={field.value} onChange={field.onChange} />
+                <PhoneInput
+                  country={form.watch("country")}
+                  phone={field.value}
+                  onCountryChange={(code) =>
+                    form.setValue("country", code, { shouldValidate: true })
+                  }
+                  onPhoneChange={field.onChange}
+                  onPhoneBlur={field.onBlur}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
