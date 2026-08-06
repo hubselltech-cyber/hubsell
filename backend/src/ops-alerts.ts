@@ -178,9 +178,10 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
   );
   if (orders.length === 0) return [];
 
-  const losses = orders
-    .map(computePnlRow)
-    .filter((r) => !r.missingCostPrice && r.profitAfterTax <= 0);
+  // CÙNG LUẬT với trang Đơn lỗ (orders-analysis): lợi nhuận ≤ 0 là LỖ, KHÔNG
+  // loại đơn thiếu giá vốn — thiếu giá vốn mà vẫn âm nghĩa là phí sàn đã ăn
+  // hết doanh thu, càng phải báo. Thẻ nói N đơn thì trang mở ra cũng đúng N.
+  const losses = orders.map(computePnlRow).filter((r) => r.profitAfterTax <= 0);
   if (losses.length === 0) return [];
 
   const totalLoss = losses.reduce((s, r) => s + Math.abs(r.profitAfterTax), 0);
