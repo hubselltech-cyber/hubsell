@@ -29,6 +29,18 @@ const SELLING_WINDOW_DAYS = 30;
 /** Tổng lỗ / tổng chênh phí từ mức này trở lên thì nâng severity lên high. */
 const HIGH_LOSS_THRESHOLD = 500_000;
 
+// ── Ngưỡng cảnh báo Ads đột biến ──
+/** Chi ads ngày gần nhất ≥ 1.5× trung bình 7 ngày trước = đột biến. */
+const ADS_SPIKE_RATIO = 1.5;
+/** Dưới mức này/ngày thì bỏ qua (tránh báo vặt shop chạy ads nhỏ). */
+const ADS_MIN_SPEND = 100_000;
+const ADS_BASELINE_DAYS = 7;
+/** Đơn ngày spike phải TĂNG quá hệ số này so với TB thì mới coi là "ads hiệu quả" (bỏ qua). */
+const ADS_ORDER_GROWTH_OK = 1.2;
+
+/** Số nhịp auto-sync (10'/nhịp) lỗi LIÊN TIẾP thì báo "sàn trễ đồng bộ". */
+const SYNC_STALL_THRESHOLD = 3;
+
 const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
@@ -235,6 +247,130 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
   ];
 }
 
+/**
+ * SÀN TRỄ ĐỒNG BỘ: worker order-auto-sync (10'/nhịp) lỗi liên tiếp ≥ 3 nhịp
+ * với một gian ACTIVE (~30 phút không kéo được đơn) — đơn mới đang KHÔNG về
+ * Hubsell. Sync thành công là syncFailCount reset 0 → thẻ tự đóng.
+ */
+async function detectSyncStalled(ownerId: string): Promise<DetectedAlert[]> {
+  const channels = await prisma.channel.findMany({
+    where: {
+      userId: ownerId,
+      status: "ACTIVE",
+      syncFailCount: { gte: SYNC_STALL_THRESHOLD },
+      channelName: { not: ChannelName.OFFLINE },
+    },
+    select: {
+      id: true,
+      shopName: true,
+      channelName: true,
+      syncFailCount: true,
+      lastSyncError: true,
+      lastSyncAt: true,
+    },
+  });
+
+  return channels.map((c) => {
+    const lastOk = c.lastSyncAt
+      ? `Lần đồng bộ thành công gần nhất: ${c.lastSyncAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}.`
+      : "Chưa có lần đồng bộ thành công nào.";
+    return {
+      type: "channel-sync-stalled",
+      dedupeKey: c.id,
+      tag: "channel" as const,
+      severity: "high" as const,
+      title: `Gian "${c.shopName}" (${CHANNEL_LABEL[c.channelName] ?? c.channelName}) trễ đồng bộ đơn — ${c.syncFailCount} nhịp lỗi liên tiếp`,
+      summary: `Đơn mới đang KHÔNG kéo về được Hubsell. Lỗi gần nhất: ${c.lastSyncError ?? "không rõ"}. ${lastOk} Kiểm tra kết nối/uỷ quyền gian hàng.`,
+      payload: { kind: "navigate" as const, href: "/channels", label: "Kiểm tra gian hàng" },
+    };
+  });
+}
+
+/**
+ * ADS ĐỘT BIẾN NHƯNG CHUYỂN ĐỔI THẤP: chi ads Shopee (bảng AdSpend, sync mỗi
+ * giờ) của ngày gần nhất ≥ 1.5× trung bình 7 ngày trước, nhưng số đơn trong
+ * ngày KHÔNG tăng tương ứng. Hubsell chưa điều khiển được ads sàn nên nút xử
+ * lý là link mở Seller Center để seller tự kiểm tra chiến dịch.
+ */
+async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
+  const rows = await prisma.adSpend.findMany({
+    where: {
+      channel: { userId: ownerId },
+      date: { gte: daysAgo(ADS_BASELINE_DAYS + 3) },
+    },
+    select: {
+      channelId: true,
+      date: true,
+      amount: true,
+      channel: { select: { shopName: true, channelName: true } },
+    },
+  });
+  if (rows.length === 0) return [];
+
+  const byChannel = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const list = byChannel.get(r.channelId) ?? [];
+    list.push(r);
+    byChannel.set(r.channelId, list);
+  }
+
+  const alerts: DetectedAlert[] = [];
+  for (const [channelId, list] of byChannel) {
+    // Ngày gần nhất CÓ chi tiêu — mốc so sánh (ngày hôm nay có thể mới sync một phần).
+    const spendDays = list
+      .filter((r) => Number(r.amount) > 0)
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+    if (spendDays.length === 0) continue;
+    const latest = spendDays[0];
+    const spend = Number(latest.amount);
+    if (spend < ADS_MIN_SPEND) continue;
+
+    // Trung bình 7 ngày TRƯỚC ngày spike (ngày không có dòng = chi 0).
+    const baseStart = latest.date.getTime() - ADS_BASELINE_DAYS * 86_400_000;
+    const baseline =
+      list
+        .filter((r) => r.date.getTime() >= baseStart && r.date < latest.date)
+        .reduce((s, r) => s + Number(r.amount), 0) / ADS_BASELINE_DAYS;
+
+    const isSpike =
+      baseline > 0 ? spend >= baseline * ADS_SPIKE_RATIO : spend >= 2 * ADS_MIN_SPEND;
+    if (!isSpike) continue;
+
+    // Đơn của gian trong NGÀY spike (AdSpend.date theo múi giờ sàn — VN, UTC+7)
+    // so với trung bình đơn/ngày của 7 ngày baseline. Đơn tăng theo thì thôi.
+    const dayStart = new Date(latest.date.getTime() - 7 * 3_600_000);
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+    const baseOrdersStart = new Date(dayStart.getTime() - ADS_BASELINE_DAYS * 86_400_000);
+    const [ordersToday, ordersBase] = await Promise.all([
+      prisma.order.count({
+        where: { channelId, createdAt: { gte: dayStart, lt: dayEnd } },
+      }),
+      prisma.order.count({
+        where: { channelId, createdAt: { gte: baseOrdersStart, lt: dayStart } },
+      }),
+    ]);
+    const avgOrders = ordersBase / ADS_BASELINE_DAYS;
+    if (ordersToday > avgOrders * ADS_ORDER_GROWTH_OK) continue; // ads đang ra đơn — không báo
+
+    const dayKey = latest.date.toISOString().slice(0, 10);
+    const dd = dayKey.slice(8, 10), mm = dayKey.slice(5, 7);
+    alerts.push({
+      type: "ads-spike",
+      dedupeKey: `${channelId}:${dayKey}`,
+      tag: "ads",
+      severity: spend >= HIGH_LOSS_THRESHOLD ? "high" : "medium",
+      title: `Chi phí Ads gian "${latest.channel.shopName}" tăng đột biến — ${vnd(spend)} ngày ${dd}/${mm}`,
+      summary: `Trung bình 7 ngày trước chỉ ${vnd(baseline)}/ngày, nhưng đơn trong ngày không tăng tương ứng (${ordersToday} đơn so với TB ${avgOrders.toFixed(1)}/ngày). Vào ${CHANNEL_LABEL[latest.channel.channelName] ?? "sàn"} Seller Center kiểm tra chiến dịch đang đốt tiền.`,
+      payload: {
+        kind: "navigate",
+        href: "https://banhang.shopee.vn",
+        label: "Mở Shopee Seller Center",
+      },
+    });
+  }
+  return alerts;
+}
+
 // ─────────────────────────── HOÀ GIẢI & THROTTLE ───────────────────────────
 
 const lastScanAt = new Map<string, number>();
@@ -263,6 +399,8 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectDisconnectedChannels,
       detectLossOrders,
       detectShippingFeeDiff,
+      detectSyncStalled,
+      detectAdsSpike,
     ];
     for (const detect of detectors) {
       try {

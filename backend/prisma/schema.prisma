@@ -235,6 +235,16 @@ model Channel {
   /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
   shopCipher  String?
   status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
+
+  // ── Bookkeeping của worker order-auto-sync (nguồn cho cảnh báo "sàn trễ
+  // đồng bộ" trên Trung tâm điều hành) ──
+  /// Lần đồng bộ ĐƠN thành công gần nhất của worker (null = chưa từng chạy).
+  lastSyncAt    DateTime?
+  /// Lỗi của lần đồng bộ đơn gần nhất (null = lần gần nhất thành công).
+  lastSyncError String?
+  /// Số NHỊP đồng bộ đơn lỗi LIÊN TIẾP — thành công là reset về 0.
+  syncFailCount Int         @default(0)
+
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
   // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.
   feeRate     Decimal     @default(0) @db.Decimal(5, 4)
@@ -401,7 +411,8 @@ model OpsActivity {
 model OpsAlert {
   id        String @id @default(cuid())
   ownerId   String
-  /// Loại detector: stockout | channel-disconnected | loss-orders | shipping-fee-diff
+  /// Loại detector: stockout | channel-disconnected | loss-orders |
+  /// shipping-fee-diff | channel-sync-stalled | ads-spike
   type      String
   /// Khoá chống trùng trong phạm vi (owner × type), VD id gian hàng.
   dedupeKey String

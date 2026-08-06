@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Channel" ADD COLUMN "lastSyncAt" TIMESTAMP(3),
+ADD COLUMN "lastSyncError" TEXT,
+ADD COLUMN "syncFailCount" INTEGER NOT NULL DEFAULT 0;

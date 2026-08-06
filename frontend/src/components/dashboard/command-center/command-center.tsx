@@ -262,7 +262,12 @@ export function CommandCenter() {
   /** Bấm nút xử lý: deep-link thì điều hướng thẳng, còn lại mở pop-up. */
   function handleAction(a: OpsAlert) {
     if (a.action.kind === "navigate") {
-      router.push(a.action.href);
+      if (/^https?:\/\//.test(a.action.href)) {
+        // Link NGOÀI (VD Shopee Seller Center) — mở tab mới, giữ nguyên Dashboard.
+        window.open(a.action.href, "_blank", "noopener");
+      } else {
+        router.push(a.action.href);
+      }
       return;
     }
     setActionAlertId(a.id);

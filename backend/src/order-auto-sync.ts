@@ -123,12 +123,25 @@ async function runOnce(): Promise<void> {
             );
           }
         }
+        // Đồng bộ đơn OK → reset bộ đếm lỗi (nguồn cảnh báo "sàn trễ đồng bộ"
+        // tự đóng). Best-effort: lỗi ghi bookkeeping không được chặn vòng quét.
+        await prisma.channel
+          .update({
+            where: { id: channel.id },
+            data: { lastSyncAt: new Date(), lastSyncError: null, syncFailCount: 0 },
+          })
+          .catch(() => {});
       } catch (err) {
         // Lỗi một gian (token hết hạn, sàn chập chờn) không được chặn gian khác.
-        console.error(
-          `[Auto-sync] Lỗi đồng bộ đơn gian "${channel.shopName}":`,
-          (err as Error).message
-        );
+        const message = (err as Error).message;
+        console.error(`[Auto-sync] Lỗi đồng bộ đơn gian "${channel.shopName}":`, message);
+        // Đếm nhịp lỗi LIÊN TIẾP — detector Trung tâm điều hành báo khi ≥ 3.
+        await prisma.channel
+          .update({
+            where: { id: channel.id },
+            data: { lastSyncError: message, syncFailCount: { increment: 1 } },
+          })
+          .catch(() => {});
       }
 
       // --- Phí ƯỚC TÍNH Shopee cho đơn chờ đối soát: chạy MỖI NHỊP (không chờ
