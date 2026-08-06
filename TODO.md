@@ -1,9 +1,16 @@
 # TIẾN ĐỘ DỰ ÁN HUBSELL
 
 ## 🔜 Định hướng phiên sau (Next)
+- [ ] **Trung tâm điều hành — Đợt 3 (làm cả thể khi TikTok Shop cấp API):** triển khai theo KHUNG ĐẶC TẢ đã viết sẵn cuối phần detector trong `backend/src/ops-alerts.ts` — (7) khách bom hàng `customer-refusal` (dữ liệu `Order.customerPhone` + đơn CANCELLED đã có sẵn), (8) mở rộng `ads-spike` cho Lazada/TikTok (cần client API chi ads theo ngày của 2 sàn), (9) `tax-error` lỗi hóa đơn/ký số (chờ module Invoicing chạy thương mại). Khung OpsAlert/UI dùng chung — chỉ cần viết detector rồi thêm vào mảng `detectors`.
 - [ ] **Module theo dõi lệnh rút ví → ngân hàng:** để cột "Tiền đã thu về" (bảng Cash Flow) có số THẬT thay vì giữ chỗ 0đ.
 - [ ] **Cắm dữ liệu thật cho các cột giữ chỗ** ở bảng Shopee/TikTok (thuế, Flash Sale, chiết khấu PVC, SFR/VAT, trợ giá VC, nạp ví QC…) khi có luồng đồng bộ đối soát từ sàn.
 - [ ] Tiếp tục nghiệp vụ Hóa đơn/Thuế thật (xem mục dưới): tính VAT đầu ra động theo `vatRate` từng SKU; adapter gọi API NCC; đối soát hoa hồng đại lý theo `partnerCode`/`apiKey`.
+
+## ✅ Trung tâm điều hành — Cảnh báo THẬT (06/08/2026, Đợt 1 + 2 đã chạy production)
+> Bảng `OpsAlert` HỢP NHẤT cho mọi detector (unique `ownerId×type×dedupeKey`; OPEN/RESOLVED/AUTO_CLOSED — detector TỰ ĐÓNG thẻ khi điều kiện hết; tick tay = ẩn tới khi tái phát) + `OpsCenterVisit` (mốc nhãn "Mới"). Quét khi GET `/api/command-center/state`, throttle 10'/shop, không cần cron. Đã verify sống: thẻ "2 đơn giao gần đây bị LỖ" + deep-link đúng trang.
+- [x] **Đợt 1:** 4 detector — cháy hàng (SKU có đơn 30 ngày nhưng tồn khả dụng ≤ 0, gom theo gian), gian mất kết nối/hết uỷ quyền, đơn lỗ 7 ngày (CÙNG luật `computePnlRow` với trang Đơn lỗ), chênh phí ship chờ khiếu nại 30 ngày. Action kind `navigate` deep-link (`/products`, `/channels`, `/finance/loss-orders`, `/finance/shipping-alerts`).
+- [x] **Đợt 2:** detector sàn trễ đồng bộ (3 cột bookkeeping `lastSyncAt/lastSyncError/syncFailCount` trên `Channel`, worker order-auto-sync ghi mỗi nhịp; ≥3 nhịp lỗi liên tiếp → báo) + Ads Shopee đột biến (AdSpend ngày gần nhất ≥1.5× TB 7 ngày & ≥100k, đơn không tăng theo → nút mở Seller Center, link ngoài `window.open`). "Lệch tồn dai dẳng" đã có sẵn từ trước (3 lượt đối soát fail → `InventorySyncAlert`).
+- [x] **UI:** nhãn "Mới" theo lần mở trước (`POST /seen`), nhãn DEMO trên thẻ mock, thẻ THẬT xếp trên DEMO bất kể mức độ, Nhật ký chia "Hôm nay / Trước đó".
 
 ## 🧩 Chuẩn bị triển khai — Module Hóa đơn điện tử, Đối soát Thuế & Chữ ký số
 > Đã dựng khung để nối nghiệp vụ thật. Phần cảnh báo/P&L còn là placeholder; riêng **cấu hình NCC hóa đơn đã LƯU BỀN VỮNG** (bảng `InvoiceConfig`), sẵn sàng cho tích hợp API thương mại.

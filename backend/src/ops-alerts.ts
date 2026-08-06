@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // TRUNG TÂM ĐIỀU HÀNH — DETECTOR CẢNH BÁO THẬT (OpsAlert hợp nhất)
 //
 // Mỗi detector quét MỘT loại sự cố trên dữ liệu thật của chủ shop và trả về
@@ -18,6 +18,8 @@ import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/clie
 import { prisma } from "./prisma";
 import { computePnlRow, fetchPnlOrders } from "./routes/finance";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** Giãn cách tối thiểu giữa hai lượt quét của CÙNG một chủ shop. */
 const SCAN_INTERVAL_MS = 10 * 60 * 1000;
 /** Cửa sổ quét đơn lỗ (đơn Đã giao tạo trong N ngày gần nhất). */
@@ -26,8 +28,8 @@ const LOSS_WINDOW_DAYS = 7;
 const SHIPPING_WINDOW_DAYS = 30;
 /** Cửa sổ "SKU có bán" — chỉ báo cháy hàng cho SKU phát sinh đơn gần đây. */
 const SELLING_WINDOW_DAYS = 30;
-/** Tổng lỗ / tổng chênh phí từ mức này trở lên thì nâng severity lên high. */
-const HIGH_LOSS_THRESHOLD = 500_000;
+/** Số tiền (lỗ / chênh phí / chi ads) từ mức này trở lên → nâng severity lên high. */
+const HIGH_MONEY_THRESHOLD = 500_000;
 
 // ── Ngưỡng cảnh báo Ads đột biến ──
 /** Chi ads ngày gần nhất ≥ 1.5× trung bình 7 ngày trước = đột biến. */
@@ -41,7 +43,7 @@ const ADS_ORDER_GROWTH_OK = 1.2;
 /** Số nhịp auto-sync (10'/nhịp) lỗi LIÊN TIẾP thì báo "sàn trễ đồng bộ". */
 const SYNC_STALL_THRESHOLD = 3;
 
-const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
 
@@ -202,7 +204,7 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
       type: "loss-orders",
       dedupeKey: "rolling-7d",
       tag: "finance",
-      severity: totalLoss >= HIGH_LOSS_THRESHOLD ? "high" : "medium",
+      severity: totalLoss >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `${losses.length} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
       summary: `Trong ${LOSS_WINDOW_DAYS} ngày qua có ${losses.length} đơn Đã giao lợi nhuận âm (phí thật từ sao kê sàn). Bấm xem từng đơn lỗ do giá vốn hay do phí sàn để điều chỉnh giá bán.`,
       payload: { kind: "navigate", href: "/finance/loss-orders", label: "Xem đơn lỗ" },
@@ -235,7 +237,7 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
       type: "shipping-fee-diff",
       dedupeKey: "rolling-30d",
       tag: "finance",
-      severity: total >= HIGH_LOSS_THRESHOLD ? "high" : "medium",
+      severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `${count} đơn bị sàn trừ THÊM phí ship — tổng ${vnd(total)} chờ khiếu nại`,
       summary: `${SHIPPING_WINDOW_DAYS} ngày qua sàn khấu trừ phí vận chuyển cao hơn mức báo ban đầu trên ${count} đơn. Khiếu nại sớm để đòi lại tiền trước khi quá hạn đối soát.`,
       payload: {
@@ -326,7 +328,7 @@ async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
     if (spend < ADS_MIN_SPEND) continue;
 
     // Trung bình 7 ngày TRƯỚC ngày spike (ngày không có dòng = chi 0).
-    const baseStart = latest.date.getTime() - ADS_BASELINE_DAYS * 86_400_000;
+    const baseStart = latest.date.getTime() - ADS_BASELINE_DAYS * DAY_MS;
     const baseline =
       list
         .filter((r) => r.date.getTime() >= baseStart && r.date < latest.date)
@@ -339,8 +341,8 @@ async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
     // Đơn của gian trong NGÀY spike (AdSpend.date theo múi giờ sàn — VN, UTC+7)
     // so với trung bình đơn/ngày của 7 ngày baseline. Đơn tăng theo thì thôi.
     const dayStart = new Date(latest.date.getTime() - 7 * 3_600_000);
-    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-    const baseOrdersStart = new Date(dayStart.getTime() - ADS_BASELINE_DAYS * 86_400_000);
+    const dayEnd = new Date(dayStart.getTime() + DAY_MS);
+    const baseOrdersStart = new Date(dayStart.getTime() - ADS_BASELINE_DAYS * DAY_MS);
     const [ordersToday, ordersBase] = await Promise.all([
       prisma.order.count({
         where: { channelId, createdAt: { gte: dayStart, lt: dayEnd } },
@@ -358,7 +360,7 @@ async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
       type: "ads-spike",
       dedupeKey: `${channelId}:${dayKey}`,
       tag: "ads",
-      severity: spend >= HIGH_LOSS_THRESHOLD ? "high" : "medium",
+      severity: spend >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `Chi phí Ads gian "${latest.channel.shopName}" tăng đột biến — ${vnd(spend)} ngày ${dd}/${mm}`,
       summary: `Trung bình 7 ngày trước chỉ ${vnd(baseline)}/ngày, nhưng đơn trong ngày không tăng tương ứng (${ordersToday} đơn so với TB ${avgOrders.toFixed(1)}/ngày). Vào ${CHANNEL_LABEL[latest.channel.channelName] ?? "sàn"} Seller Center kiểm tra chiến dịch đang đốt tiền.`,
       payload: {
@@ -370,6 +372,37 @@ async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
   }
   return alerts;
 }
+
+// ════════════ ĐỢT 3 — KHUNG CHỜ TRIỂN KHAI (làm cả thể khi có API TikTok) ════════════
+//
+// Quyết định 06/08/2026 (anh Trung): Đợt 3 CHỈ dựng khung đặc tả, triển khai
+// trọn gói khi TikTok Shop cấp API thật. Khi làm: viết detector theo đặc tả
+// dưới đây rồi thêm vào mảng `detectors` trong scanOpsAlerts() — khung
+// OpsAlert/UI/deep-link đã dùng chung, KHÔNG cần sửa gì thêm ở frontend.
+//
+// (7) type "customer-refusal" — KHÁCH BOM HÀNG (dữ liệu ĐÃ CÓ SẴN):
+//     · Điều kiện: cùng `Order.customerPhone` (nullable — bỏ qua đơn không có
+//       số; sàn trả số đã che dạng "0908****21" vẫn dedupe được trong phạm vi
+//       một sàn) có ≥ 3 đơn CANCELLED trong 14 ngày gần nhất.
+//     · dedupeKey: `${channelId}:${customerPhone}` — tự đóng khi cửa sổ 14
+//       ngày trôi qua khỏi các đơn hủy.
+//     · tag "channel", severity medium (high nếu tổng giá trị đơn hủy ≥ 500k).
+//     · Action: navigate `/orders?search=<phone>` (trang Đơn hàng đã có ô tìm
+//       kiếm) để seller xem chuỗi đơn của khách rồi tự quyết chặn/gọi xác minh.
+//     · Thay thế thẻ mock al-chn-2 khi lên sóng.
+//
+// (8) MỞ RỘNG "ads-spike" cho Lazada + TikTok:
+//     · Bảng AdSpend đã đa kênh theo channelId — detectAdsSpike phía trên tự
+//       chạy cho mọi sàn NGAY KHI worker có luồng sync chi ads của sàn đó
+//       (thêm nhánh trong order-auto-sync.ts giống syncShopeeAdsSpend).
+//     · Việc cần làm: client API ads Lazada/TikTok (đọc chi tiêu theo ngày)
+//       + href Seller Center theo sàn trong payload (hiện hardcode Shopee).
+//
+// (9) type "tax-error" — LỖI HÓA ĐƠN/KÝ SỐ (chờ module Invoicing chạy thương mại):
+//     · Chỉ báo khi PHÁT SINH LỖI (lỗi kết nối API hóa đơn, lỗi ký số, webhook
+//       MISA trả TAX_MISMATCH) — đúng thiết kế Empty State (Beta) của tag THUẾ.
+//     · Nguồn: Order.einvoiceStatus = FAILED + bảng nhật ký webhook MISA.
+//     · tag "tax", KE_TOAN thao tác; action navigate `/invoicing/history`.
 
 // ─────────────────────────── HOÀ GIẢI & THROTTLE ───────────────────────────
 
