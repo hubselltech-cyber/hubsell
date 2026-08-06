@@ -200,13 +200,15 @@ router.get("/shopee/callback", async (req, res) => {
       return;
     }
 
-    const ownerId = state ? verifyOauthState(state) : null;
-    if (!ownerId) {
+    const st = state ? verifyOauthState(state) : null;
+    if (!st) {
       done({ shopee: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });
       return;
     }
 
-    const saved = await handleShopeeCallback(ownerId, code, shopId);
+    // targetChannelId (luồng Kết nối lại) → callback đối chiếu shop_id với gian
+    // đích, tránh ghi token nhầm gian khi trình duyệt đăng nhập sai tài khoản.
+    const saved = await handleShopeeCallback(st.ownerId, code, shopId, st.targetChannelId);
     done({ shopee: "connected", shop: saved.shopName });
   } catch (err) {
     // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.
@@ -252,13 +254,15 @@ router.get("/lazada/callback", async (req, res) => {
       return;
     }
 
-    const ownerId = state ? verifyLazadaOauthState(state) : null;
-    if (!ownerId) {
+    const st = state ? verifyLazadaOauthState(state) : null;
+    if (!st) {
       done({ lazada: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });
       return;
     }
 
-    const saved = await handleLazadaCallback(ownerId, code);
+    // targetChannelId (luồng Kết nối lại) → callback đối chiếu seller_id với
+    // gian đích, tránh ghi token nhầm gian khi đăng nhập sai tài khoản Lazada.
+    const saved = await handleLazadaCallback(st.ownerId, code, st.targetChannelId);
     done({ lazada: "connected", shop: saved.shopName });
   } catch (err) {
     // Ghi log server-side để truy vết — redirect về FE chỉ mang được message ngắn.

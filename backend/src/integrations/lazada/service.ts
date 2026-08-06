@@ -49,19 +49,35 @@ const STATE_FRONTEND_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:300
 // nối cho chủ shop nào. Ta ký ownerId vào `state` (JWT ngắn hạn) lúc sinh URL
 // uỷ quyền, Lazada trả lại nguyên vẹn ở callback — vừa định danh vừa chống giả mạo.
 
-export function signOauthState(ownerId: string): string {
+/** Nội dung state sau khi verify. targetChannelId có = luồng KẾT NỐI LẠI một gian cụ thể. */
+export interface OauthStatePayload {
+  ownerId: string;
+  targetChannelId?: string;
+}
+
+export function signOauthState(ownerId: string, targetChannelId?: string): string {
   return jwt.sign(
-    { ownerId, purpose: "lazada_oauth", fe: STATE_FRONTEND_URL },
+    {
+      ownerId,
+      purpose: "lazada_oauth",
+      fe: STATE_FRONTEND_URL,
+      // Gian đích khi bấm "Kết nối lại" từ MỘT dòng shop cụ thể — callback đối
+      // chiếu seller_id Lazada trả về với gian này, tránh upsert nhầm gian khác.
+      ...(targetChannelId ? { target: targetChannelId } : {}),
+    },
     STATE_SECRET,
     { expiresIn: "10m" }
   );
 }
 
-export function verifyOauthState(token: string): string | null {
+export function verifyOauthState(token: string): OauthStatePayload | null {
   try {
     const payload = jwt.verify(token, STATE_SECRET) as jwt.JwtPayload;
     if (payload.purpose !== "lazada_oauth" || !payload.ownerId) return null;
-    return String(payload.ownerId);
+    return {
+      ownerId: String(payload.ownerId),
+      targetChannelId: typeof payload.target === "string" ? payload.target : undefined,
+    };
   } catch {
     return null;
   }
@@ -148,10 +164,15 @@ export interface LazadaConnectResult {
  * (userId, channelName=LAZADA, externalShopId=seller_id) — idempotent khi kết
  * nối lại. Lazada KHÔNG kiểm redirect_uri ở bước đổi token nên hàm này dùng
  * được cho cả callback tự động (Render) lẫn luồng dán code thủ công (local).
+ *
+ * `targetChannelId` (luồng KẾT NỐI LẠI một gian cụ thể): đối chiếu seller_id
+ * Lazada trả về với gian đích trước khi ghi — trình duyệt có thể đang đăng
+ * nhập sẵn TÀI KHOẢN LAZADA KHÁC, không đối chiếu sẽ ghi token nhầm gian.
  */
 export async function handleLazadaCallback(
   ownerId: string,
-  code: string
+  code: string,
+  targetChannelId?: string
 ): Promise<LazadaConnectResult> {
   const token = await createToken(code);
   if (!token.access_token || !token.refresh_token) {
@@ -185,6 +206,31 @@ export async function handleLazadaCallback(
     externalShopName,
     status: "ACTIVE",
   };
+
+  // ---- Luồng KẾT NỐI LẠI gian cụ thể: verify seller_id khớp gian đích ----
+  if (targetChannelId) {
+    const target = await prisma.channel.findFirst({
+      where: { id: targetChannelId, userId: ownerId, channelName: ChannelName.LAZADA },
+    });
+    if (!target) {
+      throw new Error("Không tìm thấy gian hàng cần kết nối lại (có thể đã bị xoá)");
+    }
+    if (target.externalShopId && target.externalShopId !== shopId) {
+      throw new Error(
+        `Tài khoản Lazada vừa đăng nhập (seller ID: ${shopId}` +
+          `${externalShopName ? ` — "${externalShopName}"` : ""}) không trùng khớp với gian ` +
+          `cần kết nối lại "${target.shopName}" (seller ID: ${target.externalShopId}). ` +
+          "Hãy đăng xuất Lazada Seller Center trên trình duyệt, đăng nhập đúng tài khoản " +
+          "của gian này rồi bấm Kết nối lại."
+      );
+    }
+    // Khớp (hoặc bản ghi cũ chưa có externalShopId) → cập nhật ĐÚNG gian đích.
+    const updated = await prisma.channel.update({
+      where: { id: target.id },
+      data: { ...tokenData, externalShopId: shopId },
+    });
+    return toResult(updated);
+  }
 
   const existing = await prisma.channel.findFirst({
     where: {

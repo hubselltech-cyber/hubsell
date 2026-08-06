@@ -50,19 +50,35 @@ const STATE_FRONTEND_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:300
 // Shopee trả lại nguyên vẹn ở callback để khôi phục ownerId — vừa định danh vừa
 // chống giả mạo.
 
-export function signOauthState(ownerId: string): string {
+/** Nội dung state sau khi verify. targetChannelId có = luồng KẾT NỐI LẠI một gian cụ thể. */
+export interface OauthStatePayload {
+  ownerId: string;
+  targetChannelId?: string;
+}
+
+export function signOauthState(ownerId: string, targetChannelId?: string): string {
   return jwt.sign(
-    { ownerId, purpose: "shopee_oauth", fe: STATE_FRONTEND_URL },
+    {
+      ownerId,
+      purpose: "shopee_oauth",
+      fe: STATE_FRONTEND_URL,
+      // Gian đích khi bấm "Kết nối lại" từ MỘT dòng shop cụ thể — callback đối
+      // chiếu shop_id Shopee trả về với gian này, tránh upsert nhầm gian khác.
+      ...(targetChannelId ? { target: targetChannelId } : {}),
+    },
     STATE_SECRET,
     { expiresIn: "10m" }
   );
 }
 
-export function verifyOauthState(token: string): string | null {
+export function verifyOauthState(token: string): OauthStatePayload | null {
   try {
     const payload = jwt.verify(token, STATE_SECRET) as jwt.JwtPayload;
     if (payload.purpose !== "shopee_oauth" || !payload.ownerId) return null;
-    return String(payload.ownerId);
+    return {
+      ownerId: String(payload.ownerId),
+      targetChannelId: typeof payload.target === "string" ? payload.target : undefined,
+    };
   } catch {
     return null;
   }
@@ -199,8 +215,31 @@ export interface ShopeeConnectResult {
 export async function handleShopeeCallback(
   ownerId: string,
   code: string,
-  shopId: string
+  shopId: string,
+  targetChannelId?: string
 ): Promise<ShopeeConnectResult> {
+  // KẾT NỐI LẠI một gian cụ thể: shop_id Shopee trả ngay ở callback nên đối
+  // chiếu TRƯỚC khi đổi code (code chỉ dùng được một lần — đừng đốt vô ích).
+  // Trình duyệt có thể đang đăng nhập sẵn TÀI KHOẢN SHOPEE KHÁC; không đối
+  // chiếu sẽ upsert token nhầm sang gian của tài khoản đó.
+  if (targetChannelId) {
+    const target = await prisma.channel.findFirst({
+      where: { id: targetChannelId, userId: ownerId, channelName: ChannelName.SHOPEE },
+      select: { shopName: true, externalShopId: true },
+    });
+    if (!target) {
+      throw new Error("Không tìm thấy gian hàng cần kết nối lại (có thể đã bị xoá)");
+    }
+    if (target.externalShopId && target.externalShopId !== shopId) {
+      throw new Error(
+        `Tài khoản Shopee vừa uỷ quyền (shop ID: ${shopId}) không trùng khớp với gian ` +
+          `cần kết nối lại "${target.shopName}" (shop ID: ${target.externalShopId}). ` +
+          "Hãy đăng xuất Shopee trên trình duyệt, đăng nhập đúng tài khoản của gian này " +
+          "rồi bấm Kết nối lại."
+      );
+    }
+  }
+
   const token = await getAccessToken(code, shopId);
   if (!token.access_token || !token.refresh_token) {
     throw new Error("Shopee không trả access_token/refresh_token");

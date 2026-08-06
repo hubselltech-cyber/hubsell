@@ -1534,9 +1534,14 @@ export function getTiktokAuthUrl() {
  * Lấy URL trang uỷ quyền Shopee. FE chỉ việc chuyển hướng sang `url`; danh tính
  * chủ shop đã được nhét vào `state` phía backend nên callback (route backend) tự
  * biết kết nối cho ai rồi redirect về `/channels?shopee=connected|error`.
+ * `reconnectChannelId` (luồng Kết nối lại): gian đích được ký vào state để
+ * callback đối chiếu shop_id — đăng nhập sai tài khoản Shopee sẽ báo lỗi rõ.
  */
-export function getShopeeAuthUrl() {
-  return apiFetch<{ url: string }>("/api/channels/shopee/auth-url");
+export function getShopeeAuthUrl(reconnectChannelId?: string) {
+  const qs = reconnectChannelId
+    ? `?channelId=${encodeURIComponent(reconnectChannelId)}`
+    : "";
+  return apiFetch<{ url: string }>(`/api/channels/shopee/auth-url${qs}`);
 }
 
 /** Gian Shopee vừa kết nối (không chứa token). */
@@ -1554,10 +1559,17 @@ export interface ShopeeConnectedChannel {
  * FE local (?shopee=code&code=&shop_id=) rồi FE gọi vào đây — danh tính chủ
  * shop lấy từ JWT đăng nhập nên không cần state.
  */
-export function connectShopeeCode(code: string, shopId: string) {
+export function connectShopeeCode(
+  code: string,
+  shopId: string,
+  reconnectChannelId?: string
+) {
   return apiFetch<{ message: string; channel: ShopeeConnectedChannel }>(
     "/api/channels/shopee/connect",
-    { method: "POST", body: JSON.stringify({ code, shopId }) }
+    {
+      method: "POST",
+      body: JSON.stringify({ code, shopId, channelId: reconnectChannelId }),
+    }
   );
 }
 
@@ -1566,8 +1578,11 @@ export function connectShopeeCode(code: string, shopId: string) {
  * RENDER (Lazada bắt https) nên khi chạy LOCAL, người dùng mở URL này ở tab
  * mới, uỷ quyền xong copy ?code=... từ URL callback rồi dán lại vào dialog.
  */
-export function getLazadaAuthUrl() {
-  return apiFetch<{ url: string }>("/api/channels/lazada/auth-url");
+export function getLazadaAuthUrl(reconnectChannelId?: string) {
+  const qs = reconnectChannelId
+    ? `?channelId=${encodeURIComponent(reconnectChannelId)}`
+    : "";
+  return apiFetch<{ url: string }>(`/api/channels/lazada/auth-url${qs}`);
 }
 
 /** Gian Lazada vừa kết nối (không chứa token). */
@@ -1583,10 +1598,10 @@ export interface LazadaConnectedChannel {
  * Đổi CODE uỷ quyền Lazada (dán tay từ URL callback) lấy token + lưu gian hàng.
  * Danh tính chủ shop lấy từ JWT đăng nhập nên không cần state ở luồng này.
  */
-export function connectLazadaCode(code: string) {
+export function connectLazadaCode(code: string, reconnectChannelId?: string) {
   return apiFetch<{ message: string; channel: LazadaConnectedChannel }>(
     "/api/channels/lazada/connect",
-    { method: "POST", body: JSON.stringify({ code }) }
+    { method: "POST", body: JSON.stringify({ code, channelId: reconnectChannelId }) }
   );
 }
 
@@ -1603,10 +1618,10 @@ export interface TiktokConnectedChannel {
  * Gửi auth_code (TikTok trả về ở callback) lên backend để đổi lấy access token,
  * lấy shop_cipher và lưu gian hàng. state đã được FE đối chiếu trước khi gọi.
  */
-export function tiktokCallback(code: string) {
+export function tiktokCallback(code: string, reconnectChannelId?: string) {
   return apiFetch<{ connected: number; channels: TiktokConnectedChannel[] }>(
     "/api/channels/tiktok/callback",
-    { method: "POST", body: JSON.stringify({ code }) }
+    { method: "POST", body: JSON.stringify({ code, channelId: reconnectChannelId }) }
   );
 }
 

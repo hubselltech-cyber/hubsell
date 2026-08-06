@@ -214,10 +214,11 @@ router.get("/tiktok/auth-url", requireAdmin, (_req: AuthRequest, res, next) => {
 });
 
 // POST /api/channels/tiktok/callback — đổi auth_code lấy token và lưu gian hàng.
-// Body: { code: string }  (state đã được FE đối chiếu trước khi gọi).
+// Body: { code: string; channelId?: string } — channelId là gian đích của luồng
+// Kết nối lại (state đã được FE đối chiếu trước khi gọi).
 router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
-    const { code } = req.body ?? {};
+    const { code, channelId } = req.body ?? {};
     if (typeof code !== "string" || !code.trim()) {
       res.status(400).json({ error: "Thiếu mã uỷ quyền (auth_code) từ TikTok" });
       return;
@@ -249,6 +250,30 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
         error: "Tài khoản này chưa uỷ quyền gian hàng nào cho ứng dụng.",
       });
       return;
+    }
+
+    // KẾT NỐI LẠI một gian cụ thể: tài khoản TikTok vừa uỷ quyền phải CHỨA đúng
+    // gian đích — không thì báo rõ thay vì lặng lẽ ghi token cho gian khác
+    // (trình duyệt có thể đang đăng nhập sẵn tài khoản TikTok khác).
+    if (typeof channelId === "string" && channelId) {
+      const target = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.TIKTOK },
+        select: { shopName: true, externalShopId: true },
+      });
+      if (!target) {
+        res.status(404).json({ error: "Không tìm thấy gian TikTok cần kết nối lại" });
+        return;
+      }
+      if (target.externalShopId && !shops.some((s) => s.id === target.externalShopId)) {
+        res.status(409).json({
+          error:
+            `Tài khoản TikTok vừa uỷ quyền không chứa gian cần kết nối lại ` +
+            `"${target.shopName}" (shop ID: ${target.externalShopId}). Hãy đăng xuất ` +
+            "TikTok Seller Center trên trình duyệt, đăng nhập đúng tài khoản của gian " +
+            "này rồi bấm Kết nối lại.",
+        });
+        return;
+      }
     }
 
     const accessExpireAt = expireToDate(token.access_token_expire_in);
@@ -330,7 +355,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
 
 // GET /api/channels/shopee/auth-url — trả URL uỷ quyền Shopee (đã ký).
 // State mang ownerId (JWT ngắn hạn) để callback công khai biết kết nối cho ai.
-router.get("/shopee/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
+router.get("/shopee/auth-url", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     if (!isShopeeConfigured()) {
       res.status(503).json({
@@ -340,8 +365,24 @@ router.get("/shopee/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
       });
       return;
     }
+    // ?channelId= (tuỳ chọn) = luồng KẾT NỐI LẠI một gian cụ thể: nhét gian đích
+    // vào state để callback đối chiếu shop_id, tránh ghi token nhầm gian khác.
+    const channelId =
+      typeof req.query.channelId === "string" && req.query.channelId
+        ? req.query.channelId
+        : undefined;
+    if (channelId) {
+      const owned = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+        select: { id: true },
+      });
+      if (!owned) {
+        res.status(404).json({ error: "Không tìm thấy gian Shopee cần kết nối lại" });
+        return;
+      }
+    }
     const cfg = getShopeeConfig();
-    const state = signShopeeState(req.ownerId!);
+    const state = signShopeeState(req.ownerId!, channelId);
     // State đi kèm redirect; Shopee gắn thêm &code=&shop_id= khi trả về.
     const sep = cfg.redirectUri.includes("?") ? "&" : "?";
     const redirect = `${cfg.redirectUri}${sep}state=${encodeURIComponent(state)}`;
@@ -357,12 +398,19 @@ router.get("/shopee/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
 // gọi vào đây. Idempotent theo (userId, SHOPEE, shop_id) — như callback thật.
 router.post("/shopee/connect", requireAdmin, async (req: AuthRequest, res) => {
   try {
-    const { code, shopId } = req.body ?? {};
+    const { code, shopId, channelId } = req.body ?? {};
     if (typeof code !== "string" || !code.trim() || typeof shopId !== "string" || !shopId.trim()) {
       res.status(400).json({ error: "Thiếu code hoặc shopId uỷ quyền Shopee" });
       return;
     }
-    const saved = await handleShopeeCallback(req.ownerId!, code.trim(), shopId.trim());
+    // channelId (tuỳ chọn) = gian đích của luồng Kết nối lại — service đối chiếu
+    // shop_id trước khi ghi token.
+    const saved = await handleShopeeCallback(
+      req.ownerId!,
+      code.trim(),
+      shopId.trim(),
+      typeof channelId === "string" && channelId ? channelId : undefined
+    );
     res.json({ message: `Đã kết nối gian "${saved.shopName}"`, channel: saved });
   } catch (err) {
     // Lỗi phía Shopee (code hết hạn, chữ ký sai...) trả 502 kèm message gốc.
@@ -381,7 +429,7 @@ router.post("/shopee/connect", requireAdmin, async (req: AuthRequest, res) => {
 // ============================================================
 
 // GET /api/channels/lazada/auth-url — trả URL trang uỷ quyền Lazada.
-router.get("/lazada/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
+router.get("/lazada/auth-url", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     if (!isLazadaConfigured()) {
       res.status(503).json({
@@ -391,7 +439,25 @@ router.get("/lazada/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
       });
       return;
     }
-    const state = signLazadaState(req.ownerId!);
+    // ?channelId= (tuỳ chọn) = luồng KẾT NỐI LẠI một gian cụ thể: nhét gian đích
+    // vào state để callback đối chiếu seller_id, tránh ghi token nhầm gian khác.
+    // (URL uỷ quyền đã kèm force_auth=true — Lazada buộc đăng nhập/đồng ý lại,
+    // không tự nuốt session đang dở trên trình duyệt.)
+    const channelId =
+      typeof req.query.channelId === "string" && req.query.channelId
+        ? req.query.channelId
+        : undefined;
+    if (channelId) {
+      const owned = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.LAZADA },
+        select: { id: true },
+      });
+      if (!owned) {
+        res.status(404).json({ error: "Không tìm thấy gian Lazada cần kết nối lại" });
+        return;
+      }
+    }
+    const state = signLazadaState(req.ownerId!, channelId);
     res.json({ url: buildLazadaAuthorizeUrl(state) });
   } catch (err) {
     next(err);
@@ -402,12 +468,18 @@ router.get("/lazada/auth-url", requireAdmin, (req: AuthRequest, res, next) => {
 // Dành cho test local (callback nằm trên Render). Idempotent theo seller_id.
 router.post("/lazada/connect", requireAdmin, async (req: AuthRequest, res) => {
   try {
-    const { code } = req.body ?? {};
+    const { code, channelId } = req.body ?? {};
     if (typeof code !== "string" || !code.trim()) {
       res.status(400).json({ error: "Thiếu code uỷ quyền Lazada" });
       return;
     }
-    const saved = await handleLazadaCallback(req.ownerId!, code.trim());
+    // channelId (tuỳ chọn) = gian đích của luồng Kết nối lại — service đối chiếu
+    // seller_id trước khi ghi token.
+    const saved = await handleLazadaCallback(
+      req.ownerId!,
+      code.trim(),
+      typeof channelId === "string" && channelId ? channelId : undefined
+    );
     res.json({ message: `Đã kết nối gian "${saved.shopName}"`, channel: saved });
   } catch (err) {
     // Lỗi phía Lazada (code hết hạn, chữ ký sai...) trả 502 kèm message gốc.

@@ -67,6 +67,13 @@ import { cn } from "@/lib/utils";
 
 const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
+// Khoá sessionStorage nhớ GIAN ĐÍCH của luồng "Kết nối lại" khi code uỷ quyền
+// phải đi vòng về máy dev (?shopee=code / ?lazada=code) — backend đối chiếu
+// shop_id/seller_id với gian này để không ghi token nhầm gian khác.
+const RECONNECT_SHOPEE_KEY = "shopee_reconnect_channel_id";
+const RECONNECT_LAZADA_KEY = "lazada_reconnect_channel_id";
+const RECONNECT_TIKTOK_KEY = "tiktok_reconnect_channel_id";
+
 // Che bớt token cho gọn mắt: shp_41ef08…
 function maskToken(token: string | null): string {
   if (!token) return "(chưa có — hãy Kết nối lại)";
@@ -106,6 +113,9 @@ function ConnectDialog({
       setSubmitting(false);
       setLazadaCode(initialLazadaCode ?? "");
       setLazadaAuthOpened(false);
+      // Mở dialog để THÊM GIAN MỚI (không có code chờ) → bỏ gian đích re-connect
+      // còn sót từ lượt "Kết nối lại" bị bỏ dở, kẻo chặn nhầm việc thêm shop mới.
+      if (!initialLazadaCode) sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
     }
   }, [open, initialLazadaCode]);
 
@@ -157,7 +167,11 @@ function ConnectDialog({
         let code = lazadaCode.trim();
         const fromUrl = code.match(/[?&]code=([^&\s]+)/);
         if (fromUrl) code = decodeURIComponent(fromUrl[1]);
-        const r = await connectLazadaCode(code);
+        // Luồng "Kết nối lại" một gian cụ thể: gửi kèm gian đích để backend đối
+        // chiếu seller_id — đăng nhập sai tài khoản Lazada sẽ báo lỗi rõ ràng.
+        const reconnectId = sessionStorage.getItem(RECONNECT_LAZADA_KEY) ?? undefined;
+        const r = await connectLazadaCode(code, reconnectId);
+        sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
         toast.success(`Đã kết nối Lazada: ${r.channel.shopName}`);
         onOpenChange(false);
         onDone();
@@ -620,14 +634,19 @@ export default function ChannelsPage() {
     const lazada = params.get("lazada");
     if (!shopee && !lazada) return;
     if (shopee === "connected") {
+      sessionStorage.removeItem(RECONNECT_SHOPEE_KEY); // luồng deploy đã xong qua state
       toast.success(`Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}`);
     } else if (shopee === "error") {
+      sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
       toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
     } else if (shopee === "code" && params.get("code") && params.get("shop_id")) {
       // Callback Render bật code+shop_id về máy dev — Shopee trả đủ cả hai nên
-      // đổi token luôn, không cần bước dán tay như Lazada.
+      // đổi token luôn, không cần bước dán tay như Lazada. Kèm gian đích nếu
+      // đây là luồng "Kết nối lại" (backend đối chiếu shop_id trước khi ghi).
+      const reconnectId = sessionStorage.getItem(RECONNECT_SHOPEE_KEY) ?? undefined;
+      sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
       toast.info("Đã nhận code uỷ quyền Shopee — đang đổi token…");
-      connectShopeeCode(params.get("code")!, params.get("shop_id")!)
+      connectShopeeCode(params.get("code")!, params.get("shop_id")!, reconnectId)
         .then(async (r) => {
           toast.success(r.message);
           setChannels(await fetchChannels());
@@ -639,8 +658,10 @@ export default function ChannelsPage() {
         );
     }
     if (lazada === "connected") {
+      sessionStorage.removeItem(RECONNECT_LAZADA_KEY); // luồng deploy đã xong qua state
       toast.success(`Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}`);
     } else if (lazada === "error") {
+      sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
       toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`);
     } else if (lazada === "code" && params.get("code")) {
       // Callback Render bật code uỷ quyền về máy dev — mở dialog với code điền
@@ -670,13 +691,49 @@ export default function ChannelsPage() {
     }
   }
 
+  // "Kết nối lại" gian đã nối OAUTH THẬT phải đi lại luồng uỷ quyền của sàn.
+  // Trước đây gọi nhầm POST /api/channels (kết nối GIẢ LẬP) tìm gian theo TÊN
+  // MẶC ĐỊNH của sàn → kích hoạt nhầm gian trùng tên (vd shop Test Lazada) và
+  // cấp token ảo, còn gian cần nối thì không được đụng tới.
   async function handleReconnect(c: Channel) {
+    const isRealOAuth =
+      (c.channelName === "SHOPEE" ||
+        c.channelName === "LAZADA" ||
+        c.channelName === "TIKTOK") &&
+      Boolean(c.apiConnected || c.externalShopId);
     try {
-      await connectChannel(c.channelName);
-      toast.success(
-        `Đã kết nối lại ${CHANNEL_META[c.channelName].label} (token mới được cấp)`
+      if (!isRealOAuth) {
+        // Gian giả lập/thủ công: giữ luồng cũ, nhưng trỏ ĐÚNG gian theo tên
+        // hiện tại (bỏ trống shopName từng khiến server dò theo tên mặc định).
+        await connectChannel(c.channelName, c.shopName);
+        toast.success(
+          `Đã kết nối lại ${CHANNEL_META[c.channelName].label} (token mới được cấp)`
+        );
+        load();
+        return;
+      }
+      if (c.channelName === "TIKTOK") {
+        const { url, state } = await getTiktokAuthUrl();
+        sessionStorage.setItem("tiktok_oauth_state", state);
+        sessionStorage.setItem(RECONNECT_TIKTOK_KEY, c.id);
+        window.location.assign(url);
+        return;
+      }
+      if (c.channelName === "SHOPEE") {
+        const { url } = await getShopeeAuthUrl(c.id);
+        sessionStorage.setItem(RECONNECT_SHOPEE_KEY, c.id);
+        window.location.assign(url);
+        return;
+      }
+      // LAZADA: mở trang uỷ quyền ở tab mới (callback nằm trên Render). Gian
+      // đích đã được ký vào state; nhớ thêm vào sessionStorage cho luồng dev
+      // local phải dán code tay.
+      const { url } = await getLazadaAuthUrl(c.id);
+      sessionStorage.setItem(RECONNECT_LAZADA_KEY, c.id);
+      window.open(url, "_blank", "noopener");
+      toast.info(
+        `Đang mở trang uỷ quyền Lazada cho gian "${c.shopName}" — hãy đăng nhập ĐÚNG tài khoản Lazada của gian này.`
       );
-      load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
     }

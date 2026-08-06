@@ -57,6 +57,11 @@ export default function TiktokCallbackPage() {
     // Đối chiếu state với giá trị đã lưu trước khi rời trang (chống CSRF).
     const savedState = sessionStorage.getItem("tiktok_oauth_state");
     sessionStorage.removeItem("tiktok_oauth_state");
+    // Gian đích của luồng "Kết nối lại" (trang Kênh bán lưu trước khi chuyển
+    // hướng) — backend đối chiếu danh sách shop vừa uỷ quyền có chứa gian này.
+    const reconnectId =
+      sessionStorage.getItem("tiktok_reconnect_channel_id") ?? undefined;
+    sessionStorage.removeItem("tiktok_reconnect_channel_id");
     if (!savedState || savedState !== state) {
       setPhase("error");
       setMessage(
@@ -65,7 +70,7 @@ export default function TiktokCallbackPage() {
       return;
     }
 
-    tiktokCallback(code)
+    tiktokCallback(code, reconnectId)
       .then((res) => {
         setChannels(res.channels);
         setPhase("success");
