@@ -165,7 +165,11 @@ export const ROLE_META: Record<
 export interface AuthUser {
   id: string;
   email: string;
+  /** Tên đăng nhập (thay thế được email ở ô login). Null với user cũ chưa đặt. */
+  username?: string | null;
   fullName: string;
+  /** Quốc gia ISO 3166-1 alpha-2, mặc định "VN". */
+  country?: string;
   role: Role;
 }
 
@@ -726,18 +730,48 @@ export interface DashboardSummary {
 
 // ----- Auth -----
 
-export function login(email: string, password: string) {
+/** Đăng nhập bằng TÊN ĐĂNG NHẬP hoặc EMAIL (backend tự phân biệt theo "@"). */
+export function login(identifier: string, password: string) {
   return apiFetch<AuthResponse>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 }
 
-export function register(email: string, password: string, fullName: string) {
+export function register(data: {
+  email: string;
+  password: string;
+  fullName: string;
+  /** Bỏ trống → backend tự sinh từ email. */
+  username?: string;
+  /** ISO alpha-2, mặc định "VN". */
+  country?: string;
+}) {
   return apiFetch<AuthResponse>("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password, fullName }),
+    body: JSON.stringify(data),
   });
+}
+
+/** Gửi link đặt lại mật khẩu qua email. Response luôn generic (chống dò email). */
+export function forgotPassword(email: string) {
+  return apiFetch<{ message: string }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Đặt mật khẩu mới bằng token trong link email (hạn 30 phút, dùng 1 lần). */
+export function resetPassword(token: string, newPassword: string) {
+  return apiFetch<{ ok: boolean; message: string }>("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, newPassword }),
+  });
+}
+
+/** URL bắt đầu luồng đăng nhập Google (redirect cả trang sang backend). */
+export function googleAuthUrl(): string {
+  return `${API_URL}/api/auth/google`;
 }
 
 /** Người dùng TỰ đổi mật khẩu của chính mình (phải xác nhận mật khẩu hiện tại). */

@@ -1,7 +1,16 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { prisma } from "../prisma";
 import { requireAuth, signToken, type AuthRequest } from "../auth";
+import { isMailerConfigured, resetPasswordEmailHtml, sendMail } from "../mailer";
+import {
+  buildGoogleAuthorizeUrl,
+  exchangeGoogleCode,
+  isGoogleConfigured,
+  signGoogleState,
+  verifyGoogleState,
+} from "../google-oauth";
 import {
   decodeOauthStateOrigin as decodeShopeeStateOrigin,
   handleShopeeCallback,
@@ -17,14 +26,64 @@ const router = Router();
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Username: 3-30 ký tự [a-z0-9._], bắt đầu bằng chữ/số, LƯU LOWERCASE.
+// CẤM "@" là chốt kiến trúc: ô đăng nhập chung phân biệt được ngay
+// "có @ → tra email, không @ → tra username" — không bao giờ nhập nhằng.
+const USERNAME_REGEX = /^[a-z0-9][a-z0-9._]{2,29}$/;
+// ISO 3166-1 alpha-2 (VN, US, TH...). Chỉ kiểm dạng — danh mục đầy đủ ở FE.
+const COUNTRY_REGEX = /^[A-Z]{2}$/;
+
+/** Chuẩn hoá + kiểm username. Trả lỗi tiếng Việt hoặc null nếu hợp lệ. */
+function normalizeUsername(raw: unknown): { value?: string; error?: string } {
+  if (raw == null || raw === "") return { value: undefined };
+  if (typeof raw !== "string") return { error: "Tên đăng nhập không hợp lệ" };
+  const value = raw.trim().toLowerCase();
+  if (!USERNAME_REGEX.test(value)) {
+    return {
+      error:
+        "Tên đăng nhập: 3-30 ký tự, chỉ gồm chữ thường/số/dấu chấm/gạch dưới, không chứa @",
+    };
+  }
+  return { value };
+}
+
+/**
+ * Sinh username duy nhất từ local-part email (cho đăng ký qua Google, hoặc
+ * fallback). Trùng thì gắn 4 số ngẫu nhiên, thử vài lượt.
+ */
+async function generateUsername(email: string): Promise<string> {
+  let base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9._]/g, "");
+  if (base.length < 3 || !/^[a-z0-9]/.test(base)) base = `user${base}`;
+  base = base.slice(0, 24);
+  for (let i = 0; i < 5; i++) {
+    const candidate = i === 0 ? base : `${base}${Math.floor(1000 + Math.random() * 9000)}`;
+    const clash = await prisma.user.findUnique({ where: { username: candidate } });
+    if (!clash) return candidate;
+  }
+  return `${base}${Date.now() % 100000}`;
+}
+
+/** Bộ trường public của User trả về FE — dùng chung mọi route auth. */
+const PUBLIC_USER_SELECT = {
+  id: true,
+  email: true,
+  username: true,
+  fullName: true,
+  country: true,
+  role: true,
+} as const;
+
 // Nơi FE hiển thị kết quả sau khi Shopee redirect về (callback là route BE).
 // FE dev chạy HTTP thường — mặc định https từng làm Chrome báo ERR_SSL_PROTOCOL_ERROR.
 const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
 
-// POST /api/auth/register — Đăng ký tài khoản mới
+// POST /api/auth/register — Đăng ký tài khoản mới.
+// Body: { email, password, fullName, username?, country? }
+// Email vẫn BẮT BUỘC (nhận thông báo/thanh toán/reset pass); username là tên
+// đăng nhập thay thế — bỏ trống thì tự sinh từ email.
 router.post("/register", async (req, res, next) => {
   try {
-    const { email, password, fullName } = req.body ?? {};
+    const { email, password, fullName, username, country } = req.body ?? {};
 
     // Kiểm tra dữ liệu đầu vào
     if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
@@ -39,6 +98,15 @@ router.post("/register", async (req, res, next) => {
       res.status(400).json({ error: "Vui lòng nhập họ tên" });
       return;
     }
+    const uname = normalizeUsername(username);
+    if (uname.error) {
+      res.status(400).json({ error: uname.error });
+      return;
+    }
+    const normalizedCountry =
+      typeof country === "string" && COUNTRY_REGEX.test(country.trim().toUpperCase())
+        ? country.trim().toUpperCase()
+        : "VN";
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -49,6 +117,15 @@ router.post("/register", async (req, res, next) => {
       res.status(409).json({ error: "Email này đã được đăng ký" });
       return;
     }
+    if (uname.value) {
+      const usernameTaken = await prisma.user.findUnique({
+        where: { username: uname.value },
+      });
+      if (usernameTaken) {
+        res.status(409).json({ error: "Tên đăng nhập này đã có người dùng" });
+        return;
+      }
+    }
 
     // Mã hoá mật khẩu bằng bcrypt (10 vòng salt)
     const passwordHash = await bcrypt.hash(password, 10);
@@ -56,45 +133,56 @@ router.post("/register", async (req, res, next) => {
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
+        username: uname.value ?? (await generateUsername(normalizedEmail)),
         passwordHash,
         fullName: fullName.trim(),
+        country: normalizedCountry,
         role: "ADMIN",
       },
+      select: PUBLIC_USER_SELECT,
     });
 
-    res.status(201).json({
-      token: signToken(user.id),
-      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
-    });
+    res.status(201).json({ token: signToken(user.id), user });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/auth/login — Đăng nhập
+// POST /api/auth/login — Đăng nhập bằng TÊN ĐĂNG NHẬP hoặc EMAIL.
+// Body: { identifier, password } — nhận cả { email } cũ để tương thích ngược.
+// Phân biệt: chuỗi CÓ "@" là email, KHÔNG có là username (username cấm @).
 router.post("/login", async (req, res, next) => {
   try {
-    const { email, password } = req.body ?? {};
-    if (typeof email !== "string" || typeof password !== "string") {
-      res.status(400).json({ error: "Thiếu email hoặc mật khẩu" });
+    const { identifier, email, password } = req.body ?? {};
+    const rawId = typeof identifier === "string" ? identifier : email;
+    if (typeof rawId !== "string" || !rawId.trim() || typeof password !== "string") {
+      res.status(400).json({ error: "Thiếu tên đăng nhập/email hoặc mật khẩu" });
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
-    });
+    const id = rawId.trim().toLowerCase();
+    const user = id.includes("@")
+      ? await prisma.user.findUnique({ where: { email: id } })
+      : await prisma.user.findUnique({ where: { username: id } });
 
     // So sánh mật khẩu với hash đã lưu.
-    // Dùng cùng một thông báo lỗi để không lộ email nào tồn tại.
+    // Dùng cùng một thông báo lỗi để không lộ tài khoản nào tồn tại.
     const valid = user && (await bcrypt.compare(password, user.passwordHash));
     if (!valid) {
-      res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
+      res.status(401).json({ error: "Tài khoản hoặc mật khẩu không đúng" });
       return;
     }
 
     res.json({
       token: signToken(user.id),
-      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        fullName: user.fullName,
+        country: user.country,
+        role: user.role,
+      },
     });
   } catch (err) {
     next(err);
@@ -108,7 +196,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
     const [user, channelCount] = await Promise.all([
       prisma.user.findUnique({
         where: { id: req.userId! },
-        select: { id: true, email: true, fullName: true, role: true, createdAt: true },
+        select: { ...PUBLIC_USER_SELECT, createdAt: true },
       }),
       prisma.channel.count({ where: { userId: req.ownerId! } }),
     ]);
@@ -155,6 +243,178 @@ router.post("/change-password", requireAuth, async (req: AuthRequest, res, next)
     res.json({ ok: true });
   } catch (err) {
     next(err);
+  }
+});
+
+// ============================================================
+// QUÊN MẬT KHẨU — reset bằng TOKEN LINK gửi qua email (không OTP: 1 click là
+// tới màn đặt lại, không cần UI nhập mã + chống brute-force mã 6 số).
+// DB chỉ lưu SHA-256 của token (lộ DB không lộ link), hạn 30 phút, dùng 1 lần.
+// ============================================================
+
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+// POST /api/auth/forgot-password — Body: { email }
+// LUÔN trả 200 với thông điệp chung (không lộ email nào có tài khoản); chỉ trả
+// 503 khi server chưa cấu hình SMTP (lỗi vận hành, cần lộ rõ).
+router.post("/forgot-password", async (req, res, next) => {
+  try {
+    const { email } = req.body ?? {};
+    if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
+      res.status(400).json({ error: "Email không hợp lệ" });
+      return;
+    }
+    if (!isMailerConfigured()) {
+      res.status(503).json({
+        error:
+          "Máy chủ chưa cấu hình gửi email (SMTP_HOST/SMTP_USER/SMTP_PASS). Liên hệ quản trị viên.",
+      });
+      return;
+    }
+
+    const generic = {
+      message:
+        "Nếu email tồn tại trong hệ thống, link đặt lại mật khẩu đã được gửi. Kiểm tra cả hộp thư Spam.",
+    };
+    const user = await prisma.user.findUnique({
+      where: { email: email.trim().toLowerCase() },
+    });
+    if (!user) {
+      res.json(generic);
+      return;
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetTokenHash: crypto.createHash("sha256").update(token).digest("hex"),
+        resetTokenExpiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+      },
+    });
+
+    const resetUrl = `${FRONTEND_BASE_URL}/reset-password?token=${token}`;
+    await sendMail({
+      to: user.email,
+      subject: "Hubsell — Đặt lại mật khẩu",
+      html: resetPasswordEmailHtml(user.fullName, resetUrl),
+    });
+    res.json(generic);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/reset-password — Body: { token, newPassword }
+router.post("/reset-password", async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body ?? {};
+    if (typeof token !== "string" || !token.trim()) {
+      res.status(400).json({ error: "Thiếu token đặt lại mật khẩu" });
+      return;
+    }
+    if (typeof newPassword !== "string" || newPassword.length < 6) {
+      res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 6 ký tự" });
+      return;
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(token.trim()).digest("hex");
+    const user = await prisma.user.findFirst({
+      where: { resetTokenHash: tokenHash, resetTokenExpiresAt: { gt: new Date() } },
+    });
+    if (!user) {
+      res.status(400).json({
+        error: "Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu lại.",
+      });
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await bcrypt.hash(newPassword, 10),
+        resetTokenHash: null, // dùng một lần — vô hiệu ngay
+        resetTokenExpiresAt: null,
+      },
+    });
+    res.json({ ok: true, message: "Đã đổi mật khẩu. Hãy đăng nhập bằng mật khẩu mới." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// ĐĂNG NHẬP GOOGLE (OAuth 2.0 code flow) — xem ghi chú kiến trúc google-oauth.ts
+// ============================================================
+
+// GET /api/auth/google — chuyển hướng sang trang chọn tài khoản Google.
+router.get("/google", (_req, res) => {
+  if (!isGoogleConfigured()) {
+    res.status(503).json({
+      error:
+        "Đăng nhập Google chưa được bật (thiếu GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET).",
+    });
+    return;
+  }
+  res.redirect(buildGoogleAuthorizeUrl(signGoogleState()));
+});
+
+// GET /api/auth/google/callback — Google redirect về kèm ?code=&state=.
+// Upsert user theo googleId → email; user MỚI: tự sinh username, mật khẩu là
+// bcrypt của 32 byte ngẫu nhiên (không đăng nhập được bằng password — muốn đặt
+// mật khẩu thì đi luồng Quên mật khẩu). Xong phát JWT, redirect FE kèm token.
+router.get("/google/callback", async (req, res) => {
+  const fail = (msg: string) =>
+    res.redirect(
+      `${FRONTEND_BASE_URL}/login?${new URLSearchParams({ social: "error", msg }).toString()}`
+    );
+  try {
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    if (!code || !verifyGoogleState(state)) {
+      fail("Phiên đăng nhập Google không hợp lệ hoặc đã hết hạn");
+      return;
+    }
+
+    const profile = await exchangeGoogleCode(code);
+    if (!profile.emailVerified) {
+      fail("Email Google chưa được xác minh — không thể dùng để đăng nhập");
+      return;
+    }
+
+    let user = await prisma.user.findUnique({ where: { googleId: profile.sub } });
+    if (!user) {
+      // Email đã có tài khoản (đăng ký thường trước đó) → LIÊN KẾT googleId,
+      // lần sau bấm Google là vào thẳng.
+      const byEmail = await prisma.user.findUnique({ where: { email: profile.email } });
+      if (byEmail) {
+        user = await prisma.user.update({
+          where: { id: byEmail.id },
+          data: { googleId: profile.sub },
+        });
+      } else {
+        user = await prisma.user.create({
+          data: {
+            email: profile.email,
+            username: await generateUsername(profile.email),
+            googleId: profile.sub,
+            fullName: profile.name,
+            passwordHash: await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10),
+            role: "ADMIN",
+          },
+        });
+      }
+    }
+
+    res.redirect(
+      `${FRONTEND_BASE_URL}/login?${new URLSearchParams({
+        social: "ok",
+        token: signToken(user.id),
+      }).toString()}`
+    );
+  } catch (err) {
+    console.error("[google/callback] Lỗi xử lý callback:", err);
+    fail((err as Error).message);
   }
 });
 

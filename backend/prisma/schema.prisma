@@ -157,8 +157,20 @@ enum Role {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
+  /// Tên đăng nhập (thay thế được email ở ô login). LƯU LOWERCASE, 3-30 ký tự
+  /// [a-z0-9._], CẤM "@" — ô đăng nhập chung phân biệt: có @ = email, không @ =
+  /// username. Nullable: user cũ/staff chưa đặt vẫn đăng nhập bằng email.
+  username     String?  @unique
   passwordHash String
   fullName     String
+  /// Quốc gia ISO 3166-1 alpha-2 (mặc định VN) — nền cho i18n/tiền tệ sau này.
+  country      String   @default("VN")
+  /// `sub` Google trả về khi đăng nhập Google — khoá liên kết tài khoản OAuth.
+  googleId     String?  @unique
+  /// Quên mật khẩu: chỉ lưu SHA-256 CỦA token (lộ DB không lộ link reset),
+  /// hạn 30 phút, dùng một lần (reset xong xoá cả hai cột).
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
   role         Role     @default(SALES)
   createdAt    DateTime @default(now())
 
