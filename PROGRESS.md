@@ -5,6 +5,31 @@
 
 ---
 
+## Phiên 06/08/2026 — Fix re-connect + dọn sandbox + webhook Lazada + nâng cấp Auth toàn diện
+
+### Fix bug "Kết nối lại" gian hàng (c1d7983) — nguyên nhân KHÁC giả định ban đầu
+- Thủ phạm: nút "Kết nối lại" FE gọi nhầm `POST /api/channels` (kết nối GIẢ LẬP) dò gian theo TÊN MẶC ĐỊNH sàn → kích hoạt nhầm shop trùng tên ("Test Lazada") với token ảo. Nay: gian OAuth thật đi lại luồng uỷ quyền của đúng sàn, `channelId` gian đích ký vào state; callback đối chiếu seller_id/shop_id (CẢ 3 SÀN — Shopee đối chiếu TRƯỚC khi đốt code), lệch → báo "đăng nhập sai tài khoản" rõ ràng. `auth-url` kiểm quyền sở hữu channelId trước khi ký.
+- Sửa nốt việc sót đợt dọn Oregon: env `LAZADA_REDIRECT_URI` trên Render SG vẫn trỏ domain cũ (authorize về "Not Found") — Lazada ưu tiên redirect_uri param hơn Callback URL Console. **DarkMan reconnect verify sống OK.**
+- **Dọn sạch test/sandbox cả local + Supabase production** (script `cleanup-test-shops.ts`, 6bf5218 — dry-run mặc định): prod xoá 4 gian (2 OpenSANDBOX Shopee + 2 "Lazada" giả lập) + 10 đơn test. Prod còn đúng 3 gian thật: DarkMan Store (Shopee, 963 đơn), DarkMan + Hi.Bé (Lazada) — vào giai đoạn theo dõi số thật.
+
+### Webhook đơn real-time Lazada (LPM) + phí Shopee tức thì (0a7a3c5)
+- `POST /api/webhook/lazada`: chữ ký = hex HMAC-SHA256(app_secret, **app_key + raw body**); ràng buộc ack 200 trong **500ms** → route chỉ verify + ack, xử lý nền fire-and-forget (không hàng đợi bền — cron 10' vét miss, đúng khuyến nghị "consume push, pull with low frequency" của docs LPM). Client thêm `/order/get`; dùng chung `upsertLazadaOrderTx` (idempotent — LPM push "at least once"). 4 unit test chữ ký. Đăng ký Console (tab Push Mechanism) + subscribe Order Information — **ping Verify xuyên qua chữ ký thành công** (log "seller 9999… đơn 123456"); cert Let's Encrypt (DV) của Render được chấp nhận dù docs đòi OV/EV.
+- **Shopee Live Push VERIFIED bằng đơn sống**: Push Log Console 4 success/0 fail, đơn 260806M5NAMV6Q nhảy UNPAID→READY_TO_SHIP real-time.
+- **Phí P&L đơn mới hết chậm**: `syncShopeeEscrowEstimateForOrder` — worker webhook kéo ngay số ước tính khi đơn có sự kiện; vòng quét ước tính đôn từ mỗi giờ xuống MỖI NHỊP 10' (cửa sổ 2 ngày). Verify log prod: "22/22 đơn chờ đối soát nhận số tạm tính" ngay lượt đầu.
+
+### Nâng cấp Auth: username/email + quên mật khẩu + Google OAuth + country (180912c)
+- **Chốt kiến trúc**: `username` unique nullable LƯU LOWERCASE **cấm "@"** (ô đăng nhập chung tự phân biệt: có @ = email); Google OAuth code-flow TỰ VIẾT (không NextAuth — 2 hệ session; không Passport — codebase sẵn 3 luồng OAuth cùng pattern); `country` ISO alpha-2 mặc định VN; reset = **token link** (SHA-256 trong DB, hạn 30', dùng 1 lần, response chống dò email) — không OTP.
+- Migration `20260806140000_auth_username_country_reset` (username/country/googleId/resetTokenHash+ExpiresAt — nullable/default, an toàn dữ liệu thật, tự áp Supabase qua migrate deploy). User Google mới: tự sinh username từ email + passwordHash ngẫu nhiên (muốn đặt pass → đi luồng quên mật khẩu).
+- FE: ô "Tên đăng nhập hoặc Email", nút "Quên mật khẩu?", icon mắt ẩn/hiện (PasswordInput dùng chung), CountrySelect tìm kiếm ~80 nước (VN 🇻🇳 +84 mặc định), divider "Hoặc tiếp tục với" + 4 nút Google/Facebook/Apple/GitHub (3 nút sau toast "sắp ra mắt" — Apple $99/năm, FB cần App Review), màn Quên mật khẩu + trang `/reset-password`. Login cũ bằng email tương thích ngược 100%.
+- **Hạ tầng bật sống trong phiên**: Google Cloud consent screen "Hubsell" + client "Hubsell Web" (redirect -sg) + app **En production** (scope cơ bản, không cần review); Render env GOOGLE_* + SMTP_* (Gmail App Password). **Quên mật khẩu verify sống — email về Gmail thật**; sender đổi sang hubselltech@gmail.com (SMTP_USER + App Password của chính tài khoản đó — Gmail không cho mạo danh From).
+
+### 🔜 Còn lại
+1. Verify webhook Lazada bằng đơn sống (đơn Lazada mới phải về Hubsell trong vài giây).
+2. Nút Google test end-to-end trên hubsell.tech (sau khi Render deploy env xong).
+3. Các mục cũ: nhập giá vốn SKU DarkMan Store, gắn nhãn đơn hoàn seller_return_refund, mời beta.
+
+---
+
 ## Phiên 05-06/08/2026 — Shopee LIVE + shop thật đầu tiên + đối soát P&L khớp từng đồng
 
 ### Kích hoạt Live & shop thật (8 commit đầu ngày, 92508c1 → ededf3b)
