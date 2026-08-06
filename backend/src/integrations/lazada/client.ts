@@ -211,6 +211,30 @@ export async function getOrders(
   return { count: data.data?.count ?? 0, orders: data.data?.orders ?? [] };
 }
 
+interface LazadaSingleOrderData extends LazadaEnvelope {
+  data?: LazadaOrder;
+}
+
+/**
+ * Lấy chi tiết MỘT đơn theo order_id (webhook đơn real-time chỉ có
+ * trade_order_id, không có mốc thời gian để lọc qua /orders/get).
+ * LƯU Ý: /order/get trả `statuses` cùng dạng MẢNG như /orders/get.
+ */
+export async function getOrder(
+  accessToken: string,
+  orderId: number | string,
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaOrder | null> {
+  const data = await callLazada<LazadaSingleOrderData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.orderGet,
+    { access_token: accessToken, order_id: String(orderId) },
+    "order/get",
+    cfg
+  );
+  return data.data ?? null;
+}
+
 /**
  * Một dòng hàng trong /orders/items/get. LƯU Ý đặc thù Lazada: MỖI DÒNG LÀ MỘT
  * ĐƠN VỊ SẢN PHẨM (khách mua 3 cái = 3 dòng lặp), không có trường quantity —

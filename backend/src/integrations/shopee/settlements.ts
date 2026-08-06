@@ -306,3 +306,33 @@ export async function syncShopeePendingEscrowEstimates(
 
   return result;
 }
+
+/**
+ * Ước tính phí escrow cho MỘT đơn — móc từ worker webhook: đơn vừa tạo/đổi
+ * trạng thái nhận số phí tạm tính NGAY (yêu cầu chủ shop 06/08: P&L đơn mới
+ * đang phải chờ nhịp quét nên phí hiện chậm), không đợi vòng quét.
+ * Đơn đã isSettled bỏ qua — số THẬT do syncShopeeSettlements quản, không cho
+ * ước tính ghi đè. Sàn chưa dựng bản nháp phí (đơn quá mới) → trả false êm,
+ * lượt webhook đổi trạng thái sau hoặc vòng quét sẽ lấy được.
+ */
+export async function syncShopeeEscrowEstimateForOrder(
+  channel: Channel,
+  orderCode: string
+): Promise<boolean> {
+  const order = await prisma.order.findUnique({
+    where: { channelId_orderCode: { channelId: channel.id, orderCode } },
+    select: { id: true, isSettled: true },
+  });
+  if (!order || order.isSettled) return false;
+
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  const detail = await getEscrowDetail({ accessToken, shopId, orderSn: orderCode });
+  const income = detail.response?.order_income;
+  if (!income) return false;
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
+  });
+  return true;
+}

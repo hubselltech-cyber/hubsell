@@ -23,6 +23,14 @@ import {
   enqueueShopeeWebhook,
   startShopeeWebhookWorker,
 } from "../integrations/shopee/webhook-queue";
+import { isLazadaConfigured } from "../integrations/lazada/config";
+import {
+  findLazadaChannelsBySellerId,
+  LAZADA_MSG_ORDER,
+  processLazadaOrderPush,
+  verifyLazadaWebhookSignature,
+  type LazadaPushPayload,
+} from "../integrations/lazada/webhook";
 import {
   isHandledMisaEvent,
   misaSecretMissingInProduction,
@@ -401,6 +409,70 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
     console.error("[Webhook Shopee] Không ghi được vào hàng đợi:", err);
     res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
   }
+});
+
+// ============================================================
+// POST /api/webhook/lazada — WEBHOOK THẬT TỪ LAZADA (Push Mechanism / LPM)
+//
+// Lazada push khi đơn đổi trạng thái (message_type 0 — loại duy nhất đang có).
+// Ràng buộc GẮT NHẤT trong 3 sàn: ack 200 trong 500ms, trượt thì retry mỗi 30
+// phút tối đa 12 lần. Vì vậy route CHỈ verify chữ ký + parse rồi ACK NGAY;
+// tra gian + gọi API + upsert DB chạy nền fire-and-forget sau khi đã trả lời.
+// Sự kiện lỡ (restart giữa chừng) có worker order-auto-sync 10 phút vét lại —
+// đúng mô hình "consume push, pull with low frequency" Lazada khuyến nghị,
+// nên không cần hàng đợi bền như Shopee (tránh thêm bảng + ALTER tay Supabase).
+//
+// Chữ ký: header `Authorization` = hex HMAC-SHA256(app_secret, app_key + RAW
+// body) — kiểm trên req.rawBody. Sai chữ ký → 401, không xử lý gì.
+// ============================================================
+router.post("/lazada", async (req: Request & { rawBody?: Buffer }, res) => {
+  // Chưa cấu hình app thì không thể xác thực chữ ký → từ chối, tránh nhận giả.
+  if (!isLazadaConfigured()) {
+    res.status(503).json({ error: "Lazada chưa được cấu hình trên máy chủ" });
+    return;
+  }
+
+  // 1) XÁC THỰC CHỮ KÝ trên body thô. Thiếu rawBody (không thể verify) coi như sai.
+  const raw = req.rawBody;
+  const signature = req.header("authorization") ?? undefined;
+  if (!raw || !verifyLazadaWebhookSignature(raw, signature)) {
+    res.status(401).json({ error: "Chữ ký webhook không hợp lệ" });
+    return;
+  }
+
+  // 2) Ngoài phạm vi (ping Verify của Console, loại message tương lai, thiếu
+  //    trường) → ack luôn cho Lazada khỏi retry vô ích.
+  const payload = (req.body ?? {}) as LazadaPushPayload;
+  const sellerId = String(payload.seller_id ?? "").trim();
+  const orderId = String(payload.data?.trade_order_id ?? "").trim();
+  if (Number(payload.message_type) !== LAZADA_MSG_ORDER || !sellerId || !orderId) {
+    res.status(200).json({ ok: true, ignored: true, messageType: payload.message_type });
+    return;
+  }
+
+  // 3) ACK NGAY trong hạn 500ms — mọi việc còn lại chạy nền sau phản hồi.
+  res.status(200).json({ ok: true, orderId });
+
+  setImmediate(async () => {
+    try {
+      const channels = await findLazadaChannelsBySellerId(sellerId);
+      if (channels.length === 0) {
+        console.warn(`[Webhook Lazada] seller ${sellerId} chưa nối gian nào — bỏ qua đơn ${orderId}`);
+        return;
+      }
+      for (const channel of channels) {
+        const result = await processLazadaOrderPush(channel, orderId);
+        console.log(
+          `[Webhook Lazada] Gian "${channel.shopName}" đơn ${orderId} (${payload.data?.order_status ?? "?"}):`,
+          JSON.stringify(result)
+        );
+      }
+    } catch (err) {
+      // Đã ack nên không còn đường trả lỗi cho Lazada — ghi log để truy vết;
+      // đơn này sẽ được cron auto-sync 10 phút vét lại.
+      console.error(`[Webhook Lazada] Lỗi xử lý nền đơn ${orderId}:`, err);
+    }
+  });
 });
 
 // ============================================================

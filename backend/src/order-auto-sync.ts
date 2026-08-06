@@ -4,6 +4,9 @@
 // Phủ MỌI gian đang hoạt động, không ai phải bấm tay:
 //   · ĐƠN HÀNG (Shopee + Lazada): quét mỗi nhịp (mặc định 10 phút, cửa sổ
 //     2 ngày gần nhất, upsert idempotent — chạy lặp vô hại).
+//   · PHÍ ƯỚC TÍNH Shopee (đơn chờ đối soát): MỖI NHỊP với cửa sổ hẹp — P&L
+//     đơn mới có phí tạm tính trong ≤1 nhịp (webhook còn kéo ngay khi có sự
+//     kiện đơn); nhịp giờ mở rộng cửa sổ vét đơn tồn.
 //   · ĐỐI SOÁT PHÍ THẬT (Lazada Finance API + Shopee Escrow API): chạy MỖI
 //     GIỜ (mỗi SETTLE_EVERY_SWEEPS nhịp) với cửa sổ 7 ngày — sao kê đổi chậm,
 //     quét dày chỉ tốn quota (10k call/ngày); backfill sâu 90 ngày vẫn dùng
@@ -128,6 +131,28 @@ async function runOnce(): Promise<void> {
         );
       }
 
+      // --- Phí ƯỚC TÍNH Shopee cho đơn chờ đối soát: chạy MỖI NHỊP (không chờ
+      // nhịp giờ như trước — chủ shop 06/08: phí đơn mới hiện chậm) nhưng cửa
+      // sổ hẹp bằng cửa sổ quét đơn; đơn tồn cũ hơn đã có lượt đối soát mỗi giờ
+      // (SETTLE_DAYS_BACK ngày) vét. isSettled vẫn false — giữ nhãn "chờ đối soát".
+      if (channel.channelName === ChannelName.SHOPEE && isShopeeConfigured()) {
+        try {
+          const est = await syncShopeePendingEscrowEstimates(channel, {
+            daysBack: settleSweep ? SETTLE_DAYS_BACK : ORDERS_DAYS_BACK,
+          });
+          if (est.updated > 0) {
+            console.log(
+              `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
+      }
+
       // --- Đối soát phí thật (Lazada + Shopee, theo nhịp giờ) ---
       if (settleSweep) {
         try {
@@ -143,16 +168,6 @@ async function runOnce(): Promise<void> {
             if (s.ordersUpdated > 0) {
               console.log(
                 `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
-              );
-            }
-            // Đơn CHƯA giải ngân: kéo số phí ƯỚC TÍNH của sàn để P&L real-time
-            // (isSettled vẫn false — nhãn "chờ đối soát" giữ nguyên).
-            const est = await syncShopeePendingEscrowEstimates(channel, {
-              daysBack: SETTLE_DAYS_BACK,
-            });
-            if (est.updated > 0) {
-              console.log(
-                `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
               );
             }
             // Chi phí quảng cáo theo ngày (Ads API) — lỗi riêng (thường là app

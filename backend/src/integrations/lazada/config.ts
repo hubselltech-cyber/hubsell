@@ -43,6 +43,8 @@ export const LAZADA_PATHS = {
   sellerGet: "/seller/get",
   /** Danh sách đơn trong khoảng thời gian (phân trang offset/limit ≤100). */
   orderList: "/orders/get",
+  /** Chi tiết MỘT đơn theo order_id — dùng cho webhook đơn real-time. */
+  orderGet: "/order/get",
   /** Dòng hàng của NHIỀU đơn một lượt (≤50 order_id/lần). */
   orderItemsGet: "/orders/items/get",
   /** Danh sách sản phẩm của shop (phân trang offset/limit ≤50). */

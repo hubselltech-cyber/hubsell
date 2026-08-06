@@ -19,11 +19,12 @@
 import crypto from "crypto";
 import { WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
-import type { ShopeePushPayload } from "./webhook";
+import { SHOPEE_PUSH_CODE, type ShopeePushPayload } from "./webhook";
 import {
   dispatchShopeeWebhookEvent,
   findShopeeChannelByShopId,
 } from "./service";
+import { syncShopeeEscrowEstimateForOrder } from "./settlements";
 import {
   createSyncAlert,
   STOCK_VERIFY_EVENT_CODE,
@@ -157,6 +158,28 @@ async function drain(): Promise<void> {
         // hàm này tự retry + ghi log + bắn cảnh báo, không bao giờ ném.
         if (stockSync) {
           await syncShopeeStockForProducts(stockSync, "webhook Shopee");
+        }
+
+        // PHÍ TẠM TÍNH REAL-TIME: đơn vừa có sự kiện → kéo luôn số ước tính
+        // escrow để P&L hiện phí ngay, không chờ vòng quét. Best-effort: lỗi
+        // (đơn quá mới chưa có bản nháp phí...) chỉ log, KHÔNG được làm hỏng
+        // job webhook đã SUCCESS — vòng quét ước tính sẽ vét lại sau.
+        if (
+          job.orderSn &&
+          (job.eventCode === SHOPEE_PUSH_CODE.ORDER_STATUS ||
+            job.eventCode === SHOPEE_PUSH_CODE.TRACKING_NO)
+        ) {
+          try {
+            const channel = await findShopeeChannelByShopId(job.shopId);
+            if (channel) {
+              await syncShopeeEscrowEstimateForOrder(channel, job.orderSn);
+            }
+          } catch (err) {
+            console.warn(
+              `[Webhook Shopee] Chưa lấy được phí ước tính đơn ${job.orderSn} (vòng quét sẽ vét lại):`,
+              (err as Error).message
+            );
+          }
         }
       } catch (err) {
         const message = (err as Error).message;
