@@ -135,6 +135,18 @@ export function formatRangeLabel(range: DateRange): string {
   return `${formatDayVN(range.from)} - ${formatDayVN(range.to)}`;
 }
 
+/**
+ * KỲ LIỀN TRƯỚC cùng độ dài — để so sánh tăng/giảm giữa hai kỳ.
+ * Vd đang xem 09/07→07/08 (30 ngày) → kỳ trước là 09/06→08/07.
+ */
+export function previousRange(range: DateRange): DateRange {
+  const DAY_MS = 86_400_000;
+  const days =
+    Math.round((startOfDay(range.to).getTime() - startOfDay(range.from).getTime()) / DAY_MS) + 1;
+  const prevTo = addDays(startOfDay(range.from), -1);
+  return { from: addDays(prevTo, -(days - 1)), to: prevTo };
+}
+
 /** Đổi range thành query param cho API. Dùng chung cho mọi endpoint báo cáo. */
 export function rangeToQuery(range?: DateRange): Record<string, string> {
   if (!range) return {};

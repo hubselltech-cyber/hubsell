@@ -97,9 +97,15 @@ export interface DashboardCardItem {
 }
 
 export interface DashboardCardProps {
-  title: string;
+  /** Tiêu đề — nhận ReactNode để kèm được HintIcon giải thích công thức */
+  title: React.ReactNode;
   /** Số tổng, đã format sẵn */
   value: React.ReactNode;
+  /**
+   * Khối góc PHẢI đầu thẻ, song song với số tổng — chỗ chuẩn cho tỷ trọng %
+   * và mũi tên tăng/giảm so kỳ trước (Báo cáo dòng tiền).
+   */
+  headerRight?: React.ReactNode;
   icon: LucideIcon;
   tone?: CardTone;
   /**
@@ -122,6 +128,7 @@ export interface DashboardCardProps {
 export function DashboardCard({
   title,
   value,
+  headerRight,
   icon: Icon,
   tone = "neutral",
   featured = false,
@@ -150,7 +157,9 @@ export function DashboardCard({
             <Icon className="size-5" strokeWidth={2} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className={TEXT_CARD_TITLE}>{title}</p>
+            <p className={cn(TEXT_CARD_TITLE, "flex items-center gap-1")}>
+              {title}
+            </p>
             {/* break-words để số tiền dài không bị cắt mất chữ số */}
             <p
               className={cn(
@@ -164,6 +173,7 @@ export function DashboardCard({
             </p>
             {subtitle && <p className={cn(TEXT_SUB, "mt-1.5")}>{subtitle}</p>}
           </div>
+          {headerRight && <div className="shrink-0 text-right">{headerRight}</div>}
         </div>
 
         {/* ── Các dòng chi tiết: chỉ số tiền + % dạng text, không đồ hoạ ── */}

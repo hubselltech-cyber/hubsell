@@ -30,7 +30,12 @@ import {
 } from "@/components/channel-filter";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Refreshing } from "@/components/refreshing";
-import { defaultRange, type DateRange } from "@/lib/date-range";
+import {
+  defaultRange,
+  formatDayVN,
+  previousRange,
+  type DateRange,
+} from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { CashFlowTable } from "@/components/finance/cash-flow-table";
 import { Button } from "@/components/ui/button";
@@ -52,18 +57,21 @@ import { formatVND, formatNumber } from "@/lib/format";
 
 // Bố cục 4 thẻ = THÁC NƯỚC dòng tiền (chốt 31/07, backend quyết định items):
 //   Giá trị SP − Tổng sàn khấu trừ (phí + thuế sàn + voucher + chênh lệch VC
-//   − trợ giá) = Doanh thu → Doanh thu − Chi phí (giá vốn + vận hành + thuế
-//   bổ sung) = Lợi nhuận.
+//   − trợ giá) = Doanh thu → Doanh thu − Chi phí (giá vốn + ads + vận hành)
+//   + Thu khác − Thuế bổ sung dự phòng = Lợi nhuận ròng.
 //   - Cột Doanh thu = "Tổng tiền" sàn báo (payout thật / số API đơn khi chờ).
 //   - Cột Chi phí KHÔNG còn Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu —
 //     trừ nữa là trùng); 2 khoản đó là dòng khấu trừ của thẻ Giá trị SP.
-//   - Cột Lợi nhuận: Tổng lợi nhuận tạm tính = Thực tế + Dự kiến + Thu nhập
-//     vận hành khác (chốt 31/07 chiều: khoản THU nhập tay CỘNG vào tổng —
-//     đẳng thức thành Lợi nhuận = Doanh thu − Chi phí + Thu khác).
+//   - Cột Lợi nhuận (chốt 07/08, chuẩn P&L): 3 dòng Thực tế + Dự kiến + Thu
+//     vận hành khác = LN TRƯỚC thuế, dòng 4 "Thuế bổ sung dự phòng" là KHẤU
+//     TRỪ (amount âm từ backend) → số to trên thẻ = LN RÒNG sau thuế dự phòng.
 
 export default function FinanceAnalyticsPage() {
   const router = useRouter();
   const [data, setData] = useState<FinanceAnalytics | null>(null);
+  // Cùng số liệu của KỲ LIỀN TRƯỚC (cùng độ dài) — để vẽ mũi tên tăng/giảm
+  // trên 4 thẻ. Nạp lỗi cũng không sao (null → ẩn mũi tên, trang vẫn chạy).
+  const [prevData, setPrevData] = useState<FinanceAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -72,7 +80,12 @@ export default function FinanceAnalyticsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchFinanceAnalytics(range, channel));
+      const [cur, prev] = await Promise.all([
+        fetchFinanceAnalytics(range, channel),
+        fetchFinanceAnalytics(previousRange(range), channel).catch(() => null),
+      ]);
+      setData(cur);
+      setPrevData(prev);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -128,62 +141,101 @@ export default function FinanceAnalyticsPage() {
           </div>
         </div>
 
-        {/* ===== BÓC TÁCH DÒNG TIỀN 4 CỘT ===== */}
-        {data && (
-          <Refreshing
-            active={loading}
-            className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
-          >
-            <BreakdownCard
-              title="Tổng giá trị sản phẩm"
-              subtitle={`${formatNumber(data.breakdown.gross.orderCount)} đơn (chưa trừ chi phí)`}
-              total={data.breakdown.gross.total}
-              icon={ShoppingBag}
-              tone="info"
-              items={data.breakdown.gross.items}
-              itemsAreDeductions
-              footer={
-                <span>
-                  Tổng sàn khấu trừ:{" "}
-                  <b className="text-red-500">
-                    − {formatVND(data.breakdown.gross.totalDeduction)}
-                  </b>
-                </span>
-              }
-            />
+        {/* ===== BÓC TÁCH DÒNG TIỀN 4 CỘT =====
+            Chú thích công thức ẩn hết vào tooltip (?) cạnh tiêu đề cho gọn;
+            góc phải mỗi thẻ: tỷ trọng % + mũi tên so kỳ liền trước. */}
+        {data &&
+          (() => {
+            const prevR = previousRange(range);
+            const deltaHint = `so với kỳ liền trước cùng độ dài (${formatDayVN(prevR.from)} - ${formatDayVN(prevR.to)})`;
+            // % thay đổi so kỳ trước; kỳ trước = 0 thì không so được → null.
+            const deltaOf = (cur: number, prev: number | undefined) =>
+              prevData == null || prev == null || prev === 0
+                ? null
+                : ((cur - prev) / Math.abs(prev)) * 100;
+            // Tỷ trọng %: chia cho 0 → 0 (kỳ trống, hiện 0% thay vì NaN).
+            const share = (part: number, whole: number) =>
+              whole === 0 ? 0 : (part / whole) * 100;
+            const b = data.breakdown;
+            const pb = prevData?.breakdown;
 
-            <BreakdownCard
-              title="Doanh thu"
-              subtitle="Doanh thu thực tế = Tổng tiền sàn trả về (đã cấn trừ phí/thuế/xu) = Giá trị SP − Tổng sàn khấu trừ"
-              total={data.breakdown.revenue.total}
-              icon={Wallet}
-              tone="positive"
-              colorValue
-              items={data.breakdown.revenue.items}
-            />
+            return (
+              <Refreshing
+                active={loading}
+                className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
+              >
+                <BreakdownCard
+                  title="Tổng giá trị sản phẩm"
+                  subtitle={`${formatNumber(b.gross.orderCount)} đơn (chưa trừ chi phí)`}
+                  total={b.gross.total}
+                  delta={deltaOf(b.gross.total, pb?.gross.total)}
+                  deltaHint={deltaHint}
+                  icon={ShoppingBag}
+                  tone="info"
+                  items={b.gross.items}
+                  itemsAreDeductions
+                  footer={
+                    <span>
+                      Tổng sàn khấu trừ:{" "}
+                      <b className="text-red-500">
+                        − {formatVND(b.gross.totalDeduction)}
+                      </b>
+                    </span>
+                  }
+                />
 
-            <BreakdownCard
-              title="Chi phí"
-              subtitle="Giá vốn + chi phí vận hành + thuế bổ sung dự phòng"
-              total={data.breakdown.costs.total}
-              icon={Receipt}
-              tone="negative"
-              colorValue
-              items={data.breakdown.costs.items}
-            />
+                <BreakdownCard
+                  title="Doanh thu"
+                  titleHint="Tiền sàn thực trả về cho shop — đã trừ sẵn phí và thuế sàn."
+                  total={b.revenue.total}
+                  share={{
+                    percent: share(b.revenue.total, b.gross.total),
+                    label: "trên giá trị SP",
+                  }}
+                  delta={deltaOf(b.revenue.total, pb?.revenue.total)}
+                  deltaHint={deltaHint}
+                  icon={Wallet}
+                  tone="positive"
+                  colorValue
+                  items={b.revenue.items}
+                />
 
-            <BreakdownCard
-              title="Tổng lợi nhuận tạm tính"
-              subtitle="= Doanh thu − Chi phí + Thu vận hành khác (phí & thuế sàn đã cấn trừ sẵn trong Doanh thu)"
-              total={data.breakdown.profit.total}
-              icon={Scale}
-              items={data.breakdown.profit.items}
-              colorBySign
-              featured /* ← Card Ngôi Sao: chỉ số cốt lõi của trang này */
-              footer={<span>% là biên lợi nhuận trên dòng tiền tương ứng</span>}
-            />
-          </Refreshing>
-        )}
+                <BreakdownCard
+                  title="Chi phí"
+                  titleHint="Giá vốn + quảng cáo + chi phí vận hành. Khoản thuế để dành xem ở thẻ Lợi nhuận."
+                  total={b.costs.total}
+                  share={{
+                    percent: share(b.costs.total, b.revenue.total),
+                    label: "trên doanh thu",
+                  }}
+                  delta={deltaOf(b.costs.total, pb?.costs.total)}
+                  deltaInverted /* chi phí tăng là XẤU → mũi tên đảo màu */
+                  deltaHint={deltaHint}
+                  icon={Receipt}
+                  tone="negative"
+                  colorValue
+                  items={b.costs.items}
+                />
+
+                <BreakdownCard
+                  title="Lợi nhuận ròng tạm tính"
+                  titleHint="Tiền lãi thực còn lại = Doanh thu − Chi phí + Thu khác − Thuế để dành."
+                  total={b.profit.total}
+                  share={{
+                    percent: share(b.profit.total, b.revenue.total),
+                    label: "biên ròng",
+                  }}
+                  delta={deltaOf(b.profit.total, pb?.profit.total)}
+                  deltaHint={deltaHint}
+                  icon={Scale}
+                  items={b.profit.items}
+                  colorBySign
+                  featured /* ← Card Ngôi Sao: chỉ số cốt lõi của trang này */
+                  footer={<span>% là biên lợi nhuận trên dòng tiền tương ứng</span>}
+                />
+              </Refreshing>
+            );
+          })()}
 
         {/* Ghi chú cách đọc số liệu */}
         {data && (
