@@ -13,6 +13,9 @@ export interface AuthRequest extends Request {
   ownerId?: string; // id CHỦ SHOP — mọi dữ liệu đều thuộc về chủ shop.
   // Với Admin: ownerId = userId. Với Staff: ownerId = id của chủ shop.
   userRole?: Role;
+  // Quản trị NỀN TẢNG Hubsell (cờ trên User, không thuộc enum Role) — chỉ dùng
+  // để gác nhóm API /api/admin, không ảnh hưởng phân quyền dữ liệu shop.
+  isPlatformAdmin?: boolean;
   // Phạm vi gian hàng: null = xem TẤT CẢ; mảng = chỉ các gian này (kể cả mảng rỗng).
   // ADMIN và WAREHOUSE luôn null; SALES luôn là mảng.
   allowedChannelIds?: string[] | null;
@@ -49,7 +52,7 @@ export async function requireAuth(
 
     const user = await prisma.user.findUnique({
       where: { id: String(payload.sub) },
-      select: { id: true, role: true, ownerId: true },
+      select: { id: true, role: true, ownerId: true, isPlatformAdmin: true },
     });
     if (!user) {
       res.status(401).json({ error: "Tài khoản không còn tồn tại" });
@@ -59,6 +62,7 @@ export async function requireAuth(
     req.userId = user.id;
     req.ownerId = user.ownerId ?? user.id; // Nhân viên dùng chung dữ liệu của chủ shop
     req.userRole = user.role;
+    req.isPlatformAdmin = user.isPlatformAdmin;
 
     // PHẠM VI GIAN HÀNG THEO VAI TRÒ:
     // - ADMIN     : toàn bộ gian hàng của shop
@@ -108,6 +112,20 @@ export function requireAdmin(
   next: NextFunction
 ) {
   if (req.userRole !== Role.ADMIN) {
+    res.status(403).json({ error: "Bạn không có quyền truy cập" });
+    return;
+  }
+  next();
+}
+
+// Middleware: chỉ cho phép QUẢN TRỊ NỀN TẢNG (cờ isPlatformAdmin) đi tiếp.
+// Trả 403 y hệt các chặn quyền khác — không tiết lộ khu /admin tồn tại.
+export function requirePlatformAdmin(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  if (!req.isPlatformAdmin) {
     res.status(403).json({ error: "Bạn không có quyền truy cập" });
     return;
   }

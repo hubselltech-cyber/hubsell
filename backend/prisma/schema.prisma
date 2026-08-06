@@ -172,6 +172,11 @@ model User {
   resetTokenHash      String?
   resetTokenExpiresAt DateTime?
   role         Role     @default(SALES)
+  /// Quản trị NỀN TẢNG Hubsell (khác ADMIN của shop): mở khóa khu /admin —
+  /// thống kê người dùng đăng ký, nhật ký webhook toàn hệ thống. Không nằm
+  /// trong enum Role để khỏi đụng ma trận quyền shop; gán bằng script
+  /// scripts/grant-platform-admin.ts, KHÔNG có API nào tự bật được cờ này.
+  isPlatformAdmin Boolean @default(false)
   createdAt    DateTime @default(now())
 
   // Nhân viên thuộc về một chủ shop → dùng chung dữ liệu của shop đó.

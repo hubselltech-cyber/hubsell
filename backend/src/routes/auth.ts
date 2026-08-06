@@ -71,6 +71,8 @@ const PUBLIC_USER_SELECT = {
   fullName: true,
   country: true,
   role: true,
+  // Cờ quản trị nền tảng — FE dựa vào đây để hiện mục "Hệ thống" trên sidebar.
+  isPlatformAdmin: true,
 } as const;
 
 // Nơi FE hiển thị kết quả sau khi Shopee redirect về (callback là route BE).

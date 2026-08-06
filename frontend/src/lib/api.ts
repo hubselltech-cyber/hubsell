@@ -171,6 +171,11 @@ export interface AuthUser {
   /** Quốc gia ISO 3166-1 alpha-2, mặc định "VN". */
   country?: string;
   role: Role;
+  /**
+   * Quản trị NỀN TẢNG Hubsell (khác ADMIN của shop) — mở mục "Hệ thống" trên
+   * sidebar (/admin). Chỉ gán được bằng script phía server, FE chỉ đọc.
+   */
+  isPlatformAdmin?: boolean;
 }
 
 export interface AuthResponse {
@@ -2002,4 +2007,100 @@ export function fetchTaxReport(params?: { from?: string; to?: string }) {
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<TaxReportResponse>(`/api/tax/report${suffix}`);
+}
+
+// ============================================================
+// QUẢN TRỊ NỀN TẢNG (/api/admin) — chỉ tài khoản có isPlatformAdmin.
+// Đây là góc nhìn CHỦ NỀN TẢNG trên toàn hệ thống, không bó theo shop.
+// ============================================================
+
+export interface PlatformStats {
+  users: {
+    totalOwners: number;
+    totalStaff: number;
+    newOwners7d: number;
+    newOwners30d: number;
+  };
+  channelsByPlatform: { platform: ChannelName; count: number }[];
+  orders: { total: number; last24h: number };
+  webhooks: {
+    shopee: { status: string; count: number }[];
+    misa: { status: string; count: number }[];
+  };
+}
+
+export function fetchPlatformStats() {
+  return apiFetch<PlatformStats>("/api/admin/stats");
+}
+
+export interface PlatformUserRow {
+  id: string;
+  email: string;
+  username: string | null;
+  fullName: string;
+  country: string;
+  createdAt: string;
+  hasGoogle: boolean;
+  staffCount: number;
+  channelCount: number;
+  productCount: number;
+  orderCount: number;
+}
+
+export interface PlatformUsersResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  users: PlatformUserRow[];
+}
+
+export function fetchPlatformUsers(params?: { page?: number; pageSize?: number }) {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<PlatformUsersResponse>(`/api/admin/users${suffix}`);
+}
+
+export type PlatformWebhookSource = "shopee" | "misa";
+
+/** Một dòng nhật ký webhook toàn hệ thống — trường khác nhau theo nguồn. */
+export interface PlatformWebhookLogRow {
+  id: string;
+  status: "PENDING" | "PROCESSING" | "VERIFYING" | "SUCCESS" | "FAILED";
+  attempts: number;
+  lastError: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  // Shopee
+  eventCode?: number;
+  shopId?: string;
+  orderSn?: string | null;
+  // MISA
+  eventType?: string;
+  invoiceNo?: string | null;
+  orderCode?: string | null;
+}
+
+export interface PlatformWebhookLogsResponse {
+  source: PlatformWebhookSource;
+  total: number;
+  page: number;
+  pageSize: number;
+  logs: PlatformWebhookLogRow[];
+}
+
+export function fetchPlatformWebhookLogs(params?: {
+  source?: PlatformWebhookSource;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.source) qs.set("source", params.source);
+  if (params?.status) qs.set("status", params.status);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<PlatformWebhookLogsResponse>(`/api/admin/webhook-logs${suffix}`);
 }

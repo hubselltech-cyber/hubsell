@@ -2,7 +2,13 @@ import express from "express";
 import cors from "cors";
 
 import { Role } from "@prisma/client";
-import { requireAuth, requireChannel, requireRole } from "./auth";
+import {
+  requireAuth,
+  requireChannel,
+  requirePlatformAdmin,
+  requireRole,
+} from "./auth";
+import adminRouter from "./routes/admin";
 import authRouter from "./routes/auth";
 import analyticsRouter from "./routes/analytics";
 import expensesRouter from "./routes/expenses";
@@ -122,6 +128,11 @@ export function createApp() {
   app.use("/api/inventory", requireAuth, anyRole, requireChannel, inventoryRouter);
   app.use("/api/warehouse", requireAuth, anyRole, requireChannel, warehouseRouter);
   app.use("/api/mappings", requireAuth, adminOnly, requireChannel, mappingsRouter);
+
+  // QUẢN TRỊ NỀN TẢNG — chỉ tài khoản có cờ isPlatformAdmin (chủ nền tảng
+  // Hubsell), KHÔNG phải ADMIN của shop. Không gác requireChannel: số liệu
+  // toàn hệ thống không phụ thuộc shop của người xem có gian hay không.
+  app.use("/api/admin", requireAuth, requirePlatformAdmin, adminRouter);
 
   // Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
   app.use("/api/staff", requireAuth, adminOnly, staffRouter);

@@ -14,6 +14,7 @@ import {
   Package,
   ReceiptText,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Store,
   Users,
@@ -48,6 +49,11 @@ interface NavItem {
   icon: LucideIcon;
   /** Vai trò nào nhìn thấy mục này. Không có tên trong đây thì mục bị ẩn hẳn. */
   roles: Role[];
+  /**
+   * Mục chỉ dành cho QUẢN TRỊ NỀN TẢNG (cờ isPlatformAdmin trên tài khoản) —
+   * ẩn hẳn với mọi chủ shop thường. Backend vẫn chặn 403 độc lập với UI.
+   */
+  platformOnly?: boolean;
   children?: NavChild[];
 }
 
@@ -129,10 +135,20 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/settings/webhook-logs", label: "Nhật ký Webhook" },
     ],
   },
+  {
+    // Khu QUẢN TRỊ NỀN TẢNG Hubsell — thống kê người dùng đăng ký, nhật ký
+    // webhook TOÀN hệ thống. Chỉ hiện với tài khoản có cờ isPlatformAdmin.
+    href: "/admin",
+    label: "Hệ thống",
+    icon: ShieldCheck,
+    roles: ["ADMIN"],
+    platformOnly: true,
+  },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
 const PAGE_TITLES: { prefix: string; title: string }[] = [
+  { prefix: "/admin", title: "Quản trị nền tảng Hubsell" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   { prefix: "/products", title: "Kho vật lý" },
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
@@ -241,7 +257,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const items = user
-    ? NAV_ITEMS.filter((i) => i.roles.includes(user.role))
+    ? NAV_ITEMS.filter(
+        (i) =>
+          i.roles.includes(user.role) &&
+          (!i.platformOnly || user.isPlatformAdmin === true)
+      )
     : [];
 
   function handleLogout() {
