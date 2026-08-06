@@ -312,6 +312,7 @@ export default function PlatformAdminPage() {
                         <TableHead>Đăng ký lúc</TableHead>
                         <TableHead>Chủ shop</TableHead>
                         <TableHead>Email</TableHead>
+                        <TableHead>Số điện thoại</TableHead>
                         <TableHead className="text-center">Quốc gia</TableHead>
                         <TableHead className="text-center">Google</TableHead>
                         <TableHead className="text-center">Gian hàng</TableHead>
@@ -335,6 +336,9 @@ export default function PlatformAdminPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-sm">{u.email}</TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-sm">
+                            {u.phone ?? "—"}
+                          </TableCell>
                           <TableCell className="text-center text-sm">
                             {u.country}
                           </TableCell>

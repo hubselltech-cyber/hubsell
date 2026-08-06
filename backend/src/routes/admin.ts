@@ -96,6 +96,7 @@ router.get("/users", async (req, res, next) => {
           username: true,
           fullName: true,
           country: true,
+          phone: true,
           createdAt: true,
           // googleId là dữ liệu liên kết OAuth — chỉ trả CÓ/KHÔNG, không trả giá trị.
           googleId: true,
@@ -138,6 +139,7 @@ router.get("/users", async (req, res, next) => {
         username: u.username,
         fullName: u.fullName,
         country: u.country,
+        phone: u.phone,
         createdAt: u.createdAt,
         hasGoogle: u.googleId !== null,
         staffCount: u._count.staff,

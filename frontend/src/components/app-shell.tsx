@@ -130,9 +130,8 @@ const NAV_ITEMS: NavItem[] = [
       // "Hóa đơn & Thuế" đã chuyển lên danh mục lớn riêng (route /invoicing/*);
       // /settings/tax cũ redirect sang đó để bookmark không chết.
       { href: "/settings/other", label: "Cấu hình khác" },
-      // Trang nội bộ cho admin/dev soi hàng đợi webhook Shopee + job đối soát
-      // tồn (backend chặn 403 với vai trò khác ADMIN).
-      { href: "/settings/webhook-logs", label: "Nhật ký Webhook" },
+      // "Nhật ký Webhook" từng ở đây đã XÓA HẲN (06/08): dữ liệu vận hành nội
+      // bộ không nên lộ với khách — chỉ còn bản toàn hệ thống trong /admin.
     ],
   },
   {
@@ -157,7 +156,6 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/staff", title: "Quản lý nhân viên" },
   { prefix: "/settings/general", title: "Cấu hình chung" },
   { prefix: "/settings/other", title: "Cấu hình khác" },
-  { prefix: "/settings/webhook-logs", title: "Nhật ký Webhook & Đối soát" },
   { prefix: "/invoicing/connect", title: "Kết nối & Xuất hóa đơn" },
   { prefix: "/invoicing/tax-settings", title: "Thuế bổ sung" },
   { prefix: "/invoicing/history", title: "Lịch sử & Báo cáo thuế" },

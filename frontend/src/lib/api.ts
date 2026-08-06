@@ -234,28 +234,6 @@ export interface InventorySyncAlert {
   hubsellAvailable: number | null;
 }
 
-/** Một dòng trong hàng đợi webhook + job đối soát tồn (bảng shopee_webhook_logs). */
-export interface ShopeeWebhookLogRow {
-  id: string;
-  /** 3/4/5 = sự kiện push Shopee; 100 = job đối soát tồn nội bộ. */
-  eventCode: number;
-  shopId: string;
-  orderSn: string | null;
-  status: "PENDING" | "PROCESSING" | "VERIFYING" | "SUCCESS" | "FAILED";
-  attempts: number;
-  nextRetryAt: string | null;
-  processedAt: string | null;
-  lastError: string | null;
-  /** JSON thô (stringify) — payload webhook hoặc nội dung job đối soát. */
-  payload: string;
-  createdAt: string;
-}
-
-export interface WebhookLogsResponse {
-  items: ShopeeWebhookLogRow[];
-  counts: Partial<Record<ShopeeWebhookLogRow["status"], number>>;
-}
-
 /** Một dòng nhật ký đối soát đẩy tồn lên sàn: [SKU, số cũ, số mới, kết quả]. */
 export interface InventorySyncLog {
   id: string;
@@ -921,15 +899,6 @@ export function forceSyncStockAlert(alertId: string) {
     `/api/inventory/sync-alerts/${alertId}/force-sync`,
     { method: "POST" }
   );
-}
-
-/** Nhật ký hàng đợi webhook + job đối soát (CHỈ Quản trị). */
-export function fetchWebhookLogs(params: { q?: string; status?: string; limit?: number }) {
-  const qs = new URLSearchParams();
-  if (params.q) qs.set("q", params.q);
-  if (params.status) qs.set("status", params.status);
-  if (params.limit) qs.set("limit", String(params.limit));
-  return apiFetch<WebhookLogsResponse>(`/api/inventory/webhook-logs?${qs.toString()}`);
 }
 
 // ----- Sản phẩm -----
@@ -2077,6 +2046,8 @@ export interface PlatformUserRow {
   id: string;
   email: string;
   username: string | null;
+  /** SĐT chuẩn E.164 (vd "+84912345678") — null với user cũ/đăng ký Google. */
+  phone: string | null;
   fullName: string;
   country: string;
   createdAt: string;

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { InventoryLogType, Role, WebhookJobStatus } from "@prisma/client";
+import { InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { syncShopeeStockForProducts } from "../integrations/shopee/inventory-sync";
@@ -280,78 +280,9 @@ router.post("/sync-alerts/:id/force-sync", async (req: AuthRequest, res, next) =
   }
 });
 
-// GET /api/inventory/webhook-logs — trang đối soát hàng đợi webhook + job đối
-// soát tồn (CHỈ Quản trị): dev/admin soi payload thô mà không phải vào DB.
-router.get("/webhook-logs", async (req: AuthRequest, res, next) => {
-  try {
-    if (req.userRole !== Role.ADMIN) {
-      res.status(403).json({ error: "Chỉ Quản trị (toàn quyền) được xem nhật ký webhook" });
-      return;
-    }
-
-    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-    const statusRaw = typeof req.query.status === "string" ? req.query.status : "";
-    const status = (Object.values(WebhookJobStatus) as string[]).includes(statusRaw)
-      ? (statusRaw as WebhookJobStatus)
-      : undefined;
-    const limit = Math.min(Number(req.query.limit) || 50, 200);
-
-    // Phạm vi dữ liệu: chỉ log thuộc các gian hàng của shop này (khớp theo
-    // shop_id sàn — job đối soát tồn cũng ghi shopId của gian nên phủ cả hai).
-    const channels = await prisma.channel.findMany({
-      where: { userId: req.ownerId!, externalShopId: { not: null } },
-      select: { externalShopId: true },
-    });
-    const shopIds = channels.map((c) => c.externalShopId!);
-
-    const where = {
-      shopId: { in: shopIds },
-      ...(status ? { status } : {}),
-      ...(q
-        ? {
-            OR: [
-              { orderSn: { contains: q, mode: "insensitive" as const } },
-              // SKU nằm trong payload JSON của job đối soát; mã đơn cũng nằm
-              // trong payload webhook — contains phủ cả hai kiểu tìm.
-              { payload: { contains: q, mode: "insensitive" as const } },
-            ],
-          }
-        : {}),
-    };
-
-    const [rows, statusCounts] = await Promise.all([
-      prisma.shopeeWebhookLog.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: limit,
-      }),
-      prisma.shopeeWebhookLog.groupBy({
-        by: ["status"],
-        where: { shopId: { in: shopIds } },
-        _count: { _all: true },
-      }),
-    ]);
-
-    res.json({
-      items: rows.map((r) => ({
-        id: r.id,
-        eventCode: r.eventCode,
-        shopId: r.shopId,
-        orderSn: r.orderSn,
-        status: r.status,
-        attempts: r.attempts,
-        nextRetryAt: r.nextRetryAt,
-        processedAt: r.processedAt,
-        lastError: r.lastError,
-        payload: r.payload,
-        createdAt: r.createdAt,
-      })),
-      counts: Object.fromEntries(statusCounts.map((s) => [s.status, s._count._all])),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+// Route GET /webhook-logs (trang "Nhật ký Webhook" trong Cấu hình) đã XÓA HẲN
+// 06/08: dữ liệu vận hành nội bộ không nên lộ với khách hàng — nhật ký webhook
+// toàn hệ thống chỉ còn ở /api/admin/webhook-logs (chặn isPlatformAdmin).
 
 // GET /api/inventory/sync-logs — nhật ký đối soát các lượt đẩy tồn lên sàn
 router.get("/sync-logs", async (req: AuthRequest, res, next) => {
