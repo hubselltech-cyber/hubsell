@@ -5,6 +5,30 @@
 
 ---
 
+## Phiên 05-06/08/2026 — Shopee LIVE + shop thật đầu tiên + đối soát P&L khớp từng đồng
+
+### Kích hoạt Live & shop thật (8 commit đầu ngày, 92508c1 → ededf3b)
+- **Gia cố multi-shop cho beta 5-10 shop**: unique `(userId, channelName, externalShopId)` + upsert atomic ở callback OAuth (hết race bấm Liên kết 2 lần); mutex refresh token per-shop (refresh_token Shopee rotate 1 lần dùng — chống race webhook × cron); worker mới `token-refresh.ts` (30'/lượt, quét token sắp hết hạn, quá hạn → DISCONNECTED); stagger + jitter giữa các gian trong auto-sync (chống burst pattern); CORS allowlist (hubsell.tech + localhost + env `CORS_ORIGINS`). **DB local + Supabase đã CREATE INDEX tay.**
+- **Chuyển Render sang bộ key Live** (partner 2040029): lỗi "bấm Log In không tác dụng" = env còn sandbox → trang login sandbox không nhận tài khoản thật. **3 bẫy webhook Live đã vượt**: push code authorization là **1/2 không phải 5**; verify nhận chữ ký cả Push Key lẫn API Key; **ping Verify (code 0) ký bằng key nội bộ Shopee không công bố** (đối chiếu HMAC đủ 4 key app × 3 kiểu chuỗi ký đều trượt) → trả 200 rỗng TRƯỚC bước kiểm chữ ký. Live Push **ON** (URL hubsell-backend-sg, khu vực Singapore, 4 push codes). `APP_FRONTEND_URL` sửa về hubsell.tech (redirect sau uỷ quyền hết văng localhost).
+- **Shop thật đầu tiên: DarkMan Store (shop 128600269)** — 958 đơn/90 ngày + 808 SKU sàn + 744 đơn đối soát; 2 gian sandbox DISCONNECTED.
+
+### Đối soát P&L khớp từng đồng (b3310fd, 38e4414) — chân lý là đơn thật, không phải docs
+- Đối chiếu 3 chiều (Seller Center ↔ raw `order_income` qua route debug mới `escrow-debug/:orderSn` ↔ Hubsell) đơn 2607303CGEHBCA lộ **6 lỗi mapping**: phí giao dịch đếm đôi (seller + credit_card cùng 1 khoản); PiShip (`shipping_seller_protection_fee_amount`) chưa map → cột mới `Order.sellerProtectionFee` (ALTER 2 DB); cột UI "PiShip (Xtra)" hiện nhầm service_fee → "Phí DV (Xtra)" + cột PiShip riêng; thuế VN ở `withholding_vat/pit_tax`; `final_shipping_fee` không gồm phần khách trả; "Trợ giá Shopee" thật = `shopee_discount` (sàn bù vào escrow) chứ KHÔNG phải `voucher_from_shopee` (bù cho người mua, không vào ví).
+- `netRevenue` ("Doanh thu ước tính") tái lập từ cột phí → **đơn settled khớp `actualPayout` từng đồng** (47/49 trang 1; toàn bộ lệch còn lại = 16 đơn hoàn 3,21tr — có task chip gắn nhãn hoàn từ `seller_return_refund`). E2E script dùng nguyên văn payload đơn thật làm chuẩn.
+
+### P&L real-time + UX + Ads (c225412, 0a76b4f, 2dda047)
+- **Đơn CHƯA giải ngân hiện số ƯỚC TÍNH của chính Shopee** (`syncShopeePendingEscrowEstimates` — get_escrow_detail trả bản nháp phí; isSettled vẫn false; verify đơn 260805J458S868 khớp từng đồng Seller Center). computePnlRow bỏ gating isSettled trên cột phí — vẫn cấm tự bịa %.
+- FE: ô tìm mã đơn (search server-side, debounce), DateRangePicker sang phải, tick chọn tô đậm dòng (4 bảng), tooltip HintIcon 2 cột doanh thu tab Shopee + màu emerald/rose đồng bộ Lazada.
+- **Chi phí quảng cáo sàn**: bảng `AdSpend` (channelId, date — CREATE TABLE 2 DB) sync từ Ads API `get_all_cpc_ads_daily_performance` (app CÓ quyền, không cần xin thêm); dòng mới trong cột Chi phí của Báo cáo dòng tiền + trừ vào lợi nhuận. **DarkMan 30 ngày = 0đ (chủ shop xác nhận không chạy CPC ads — số đúng).** Vá thác nước dòng tiền sau real-time: Phí nền tảng += PiShip, các bucket SUM cả đơn chờ.
+
+### 🔜 Còn lại
+1. **Nhập giá vốn SKU DarkMan Store** (chưa nhập → Lợi nhuận = Doanh thu; nhập đến đâu `applyCostPrice` vá ngược đơn cũ đến đó).
+2. Đặt 1 đơn nhỏ verify Live Push tự chảy end-to-end (webhook đơn mới real-time).
+3. Task chip: gắn nhãn đơn hoàn từ `seller_return_refund` khi sync đối soát.
+4. Mời 5-10 shop bạn bè vào beta.
+
+---
+
 ## Phiên 28/07/2026 (tối) — Trau chuốt trang Giá vốn + sửa tận gốc kết nối Lazada từ local
 
 ### Trang Cấu hình Giá vốn (`cost-price-table.tsx`) — 3 commit ec569ef, 1432438
