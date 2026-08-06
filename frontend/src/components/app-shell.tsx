@@ -3,25 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  ChevronDown,
-  Home,
-  Menu,
-  Link2,
-  Loader2,
-  LogOut,
-  Megaphone,
-  Package,
-  ReceiptText,
-  Settings,
-  ShieldCheck,
-  ShoppingCart,
-  Store,
-  Users,
-  UserRound,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDown, Menu, Loader2, LogOut, UserRound } from "lucide-react";
 
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { Button } from "@/components/ui/button";
@@ -46,7 +28,8 @@ interface NavChild {
 interface NavItem {
   href?: string;
   label: string;
-  icon: LucideIcon;
+  /** Tên glyph Material Symbols Rounded (https://fonts.google.com/icons). */
+  icon: string;
   /** Vai trò nào nhìn thấy mục này. Không có tên trong đây thì mục bị ẩn hẳn. */
   roles: Role[];
   /**
@@ -61,11 +44,11 @@ const ALL_ROLES: Role[] = ["ADMIN", "SALES", "WAREHOUSE"];
 
 const NAV_ITEMS: NavItem[] = [
   // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
-  { href: "/", label: "Tổng quan", icon: Home, roles: ["ADMIN", "SALES"] },
-  { href: "/orders", label: "Đơn hàng", icon: ShoppingCart, roles: ALL_ROLES },
+  { href: "/", label: "Tổng quan", icon: "dashboard", roles: ["ADMIN", "SALES"] },
+  { href: "/orders", label: "Đơn hàng", icon: "shopping_cart", roles: ALL_ROLES },
   {
     label: "Quản lý Tài chính",
-    icon: Wallet,
+    icon: "account_balance_wallet",
     roles: ["ADMIN"],
     children: [
       { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
@@ -81,7 +64,7 @@ const NAV_ITEMS: NavItem[] = [
     // Cấu hình): đây là nghiệp vụ chạy hằng ngày sát với Tài chính, không phải
     // thứ cài một lần rồi quên.
     label: "Hóa đơn & Thuế",
-    icon: ReceiptText,
+    icon: "receipt_long",
     roles: ["ADMIN"],
     children: [
       { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
@@ -93,7 +76,7 @@ const NAV_ITEMS: NavItem[] = [
     // Nghiệp vụ kho gom về một nhóm: nhập hàng, quản lý sản phẩm và đối soát
     // hàng hoàn đều là việc của kho.
     label: "Quản lý Kho",
-    icon: Package,
+    icon: "package_2",
     roles: ALL_ROLES,
     children: [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
@@ -102,13 +85,13 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
     ],
   },
-  { href: "/channels", label: "Kênh bán", icon: Store, roles: ["ADMIN"] },
+  { href: "/channels", label: "Kênh bán", icon: "storefront", roles: ["ADMIN"] },
   {
     // Khung giữ chỗ cho tích hợp Marketing/Ads API 3 sàn — hiện là preview
     // mock. Chi phí Ads là dữ liệu tài chính nên chỉ ADMIN thấy (cùng luật
     // với nhóm Quản lý Tài chính).
     label: "Trợ lý quảng cáo",
-    icon: Megaphone,
+    icon: "campaign",
     roles: ["ADMIN"],
     children: [
       { href: "/ads/tiktok", label: "Quảng cáo TikTok" },
@@ -118,12 +101,12 @@ const NAV_ITEMS: NavItem[] = [
   },
   // Nhãn sidebar để ngắn cho khỏi xuống dòng; tên đầy đủ "Liên kết SP vào kho
   // vật lý" nằm ở tiêu đề trang (PAGE_TITLES) và cột bảng.
-  { href: "/mappings", label: "Liên kết sản phẩm", icon: Link2, roles: ["ADMIN"] },
-  { href: "/staff", label: "Nhân viên", icon: Users, roles: ["ADMIN"] },
+  { href: "/mappings", label: "Liên kết sản phẩm", icon: "link", roles: ["ADMIN"] },
+  { href: "/staff", label: "Nhân viên", icon: "group", roles: ["ADMIN"] },
   {
     // Cấu hình hệ thống gom thành nhóm phân cấp theo quy hoạch SaaS.
     label: "Cấu hình",
-    icon: Settings,
+    icon: "settings",
     roles: ["ADMIN"],
     children: [
       { href: "/settings/general", label: "Cấu hình chung" },
@@ -139,7 +122,7 @@ const NAV_ITEMS: NavItem[] = [
     // webhook TOÀN hệ thống. Chỉ hiện với tài khoản có cờ isPlatformAdmin.
     href: "/admin",
     label: "Hệ thống",
-    icon: ShieldCheck,
+    icon: "admin_panel_settings",
     roles: ["ADMIN"],
     platformOnly: true,
   },
@@ -187,6 +170,24 @@ function menusForPath(pathname: string): string[] {
   if (pathname.startsWith("/settings")) labels.push("Cấu hình");
   if (pathname.startsWith("/ads")) labels.push("Trợ lý quảng cáo");
   return labels;
+}
+
+// Icon sidebar bằng Material Symbols Rounded (variable font, trục FILL) —
+// active thì FILL 0→1: icon outline "đổ đầy" thành filled đúng kiểu YouTube
+// Studio, chi tiết bên trong vẫn khoét trắng vì glyph filled được vẽ riêng.
+// transition font-variation-settings cho chuyển trạng thái mượt.
+function NavIcon({ name, filled }: { name: string; filled?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="material-symbols-rounded w-5 shrink-0 text-center text-[20px] leading-none transition-[font-variation-settings] duration-200 select-none"
+      style={{
+        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24`,
+      }}
+    >
+      {name}
+    </span>
+  );
 }
 
 // Bố cục chuẩn SaaS: Sidebar dọc + Header mỏng + nội dung chính.
@@ -325,17 +326,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     type="button"
                     onClick={() => toggleMenu(item.label)}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                      // text-left: button mặc định canh GIỮA — nhãn dài xuống
+                      // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
+                      // canh giữa lộn xộn nếu không ép canh trái.
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
                       groupActive
                         ? "font-semibold text-sidebar-active-text"
                         : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
-                    <item.icon className="size-4.5 shrink-0" />
-                    {item.label}
+                    <NavIcon name={item.icon} filled={groupActive} />
+                    <span className="min-w-0 flex-1">{item.label}</span>
                     <ChevronDown
                       className={cn(
-                        "ml-auto size-4 transition-transform",
+                        "size-4 shrink-0 transition-transform",
                         open && "rotate-180"
                       )}
                     />
@@ -388,14 +392,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                {/* Vạch neo thị giác cho mục đang chọn */}
-                {active && (
-                  <span
-                    aria-hidden
-                    className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-sidebar-active-border"
-                  />
-                )}
-                <item.icon className="size-4.5 shrink-0" />
+                {/* Kiểu YouTube Studio: mục active = pill nền + icon FILLED
+                    (glyph filled thật của Material Symbols — chi tiết trong
+                    icon vẫn khoét trắng, không phải silhouette). Vạch neo bỏ
+                    ở tầng này — icon filled là tín hiệu chính; menu con
+                    (không có icon) vẫn giữ vạch neo. */}
+                <NavIcon name={item.icon} filled={active} />
                 {item.label}
               </Link>
             );

@@ -3,6 +3,9 @@ import { Inter, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
+// Bộ icon Material Symbols (Rounded) — variable font có trục FILL: sidebar
+// đổi icon outline ↔ filled khi active đúng kiểu YouTube Studio.
+import "material-symbols/rounded.css";
 
 // Inter là font hiếm hoi có bộ ký tự TIẾNG VIỆT đầy đủ trên Google Fonts.
 // Font trước đó (Geist) chỉ có subset latin nên mọi chữ có dấu bị rơi về font
