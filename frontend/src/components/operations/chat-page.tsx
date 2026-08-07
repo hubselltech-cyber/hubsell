@@ -91,7 +91,11 @@ interface ConvFlags {
   starred?: boolean;
 }
 
-/** Mốc thời gian hiển thị gọn: hôm nay → HH:mm, khác ngày → dd/MM. */
+/**
+ * Mốc thời gian hiển thị gọn: hôm nay → HH:mm, cùng năm → dd/MM, KHÁC NĂM →
+ * dd/MM/yy. Không giấu năm nữa — hội thoại năm ngoái từng hiện "10/8" khiến
+ * người dùng tưởng ngày sai/tương lai.
+ */
 function fmtTime(ms: number | null): string {
   if (!ms) return "";
   const d = new Date(ms);
@@ -100,9 +104,12 @@ function fmtTime(ms: number | null): string {
     d.getDate() === now.getDate() &&
     d.getMonth() === now.getMonth() &&
     d.getFullYear() === now.getFullYear();
-  return sameDay
-    ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-    : `${d.getDate()}/${d.getMonth() + 1}`;
+  if (sameDay)
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const base = `${d.getDate()}/${d.getMonth() + 1}`;
+  return d.getFullYear() === now.getFullYear()
+    ? base
+    : `${base}/${String(d.getFullYear() % 100).padStart(2, "0")}`;
 }
 
 export function OperationsChatPage() {

@@ -23,6 +23,7 @@ import {
   replyComment,
   sendChatMessage,
   shopeeSellerStock,
+  type ShopeeConversation,
 } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 import {
@@ -95,14 +96,18 @@ function errMsg(e: unknown): string {
 
 /**
  * Chuẩn hoá mốc thời gian sàn trả về ms: Shopee chat trả NANO giây ở một số
- * region, chỗ khác trả giây; Lazada trả mili. Đoán theo bậc độ lớn.
+ * region, có chỗ MICRO, chỗ khác giây; Lazada trả mili. Chia dần theo bậc độ
+ * lớn cho tới khi rơi vào thang mili hợp lý — chịu được MỌI thang đo thay vì
+ * đoán cứng từng ngưỡng (ngưỡng cứng từng làm micro giây bị dịch về 1970).
  */
 function toMs(v: unknown): number | null {
-  const n = Number(v);
+  let n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return null;
-  if (n > 1e15) return Math.round(n / 1e6); // nano → ms
-  if (n > 1e12) return n; // đã là ms
-  return n * 1000; // giây → ms
+  // 1e14 ms ≈ năm 5138 — lớn hơn chắc chắn là micro/nano, chia 1000 dần
+  while (n > 1e14) n = n / 1000;
+  // nhỏ hơn 1e11 ms (≈ năm 1973) là thang GIÂY → nhân lên
+  if (n < 1e11) n = n * 1000;
+  return Math.round(n);
 }
 
 // ── Nhãn tiếng Việt cho TIN NHẮN KHÔNG PHẢI VĂN BẢN ──
@@ -164,6 +169,93 @@ function lazadaMessageText(templateId: string, content: unknown): string {
   return LAZADA_TEMPLATE_LABEL[templateId] ?? `[tin nhắn dạng ${templateId}]`;
 }
 
+// ── LẤY HỘI THOẠI SHOPEE "TỰ HIỆU CHỈNH" ──
+// Docs sellerchat bị Shopee khoá quyền xem nên không tra được hành vi chuẩn
+// của `direction`/mốc phân trang; thực tế production từng trả 25 hội thoại
+// CŨ NHẤT (toàn năm ngoái) làm tin mới không bao giờ hiện. Giải pháp: gọi
+// thử CÁC BIẾN THỂ tham số, biến thể nào trả về hội thoại có mốc thời gian
+// MỚI NHẤT chính là biến thể đúng — nhớ lại theo shop trong 10 phút để các
+// lượt poll sau chỉ gọi 1 lần.
+
+interface ShopeeConvVariant {
+  name: string;
+  direction?: string;
+  nextTimestampNano?: string;
+}
+
+function shopeeConvVariants(): ShopeeConvVariant[] {
+  return [
+    { name: "latest" }, // direction=latest (mặc định hiện tại)
+    // Đi LÙI từ mốc "bây giờ" — pattern cursor next_timestamp_nano của sellerchat
+    {
+      name: "older_from_now",
+      direction: "older",
+      nextTimestampNano: String(Date.now()) + "000000", // ms → nano
+    },
+  ];
+}
+
+/** Biến thể thắng gần nhất theo shop — đỡ gọi đôi ở mọi lượt poll. */
+const shopeeConvWinner = new Map<string, { name: string; expires: number }>();
+const SHOPEE_VARIANT_TTL_MS = 10 * 60 * 1000;
+
+async function fetchShopeeConversationsSmart(
+  accessToken: string,
+  shopId: string
+): Promise<ShopeeConversation[]> {
+  const readList = (
+    d: Awaited<ReturnType<typeof getConversationList>>
+  ): ShopeeConversation[] =>
+    d.response?.page_result?.conversations ?? d.response?.conversations ?? [];
+  const maxAt = (list: { last_message_timestamp?: number }[]) =>
+    list.reduce((mx, c) => Math.max(mx, toMs(c.last_message_timestamp) ?? 0), 0);
+
+  const cached = shopeeConvWinner.get(shopId);
+  const variants = shopeeConvVariants();
+  if (cached && cached.expires > Date.now()) {
+    const v = variants.find((x) => x.name === cached.name) ?? variants[0];
+    const data = await getConversationList({
+      accessToken,
+      shopId,
+      direction: v.direction,
+      nextTimestampNano: v.nextTimestampNano,
+    });
+    return readList(data);
+  }
+
+  // Chưa biết biến thể đúng → gọi song song, chấm theo mốc MỚI nhất
+  const results = await Promise.allSettled(
+    variants.map((v) =>
+      getConversationList({
+        accessToken,
+        shopId,
+        direction: v.direction,
+        nextTimestampNano: v.nextTimestampNano,
+      })
+    )
+  );
+  let best: { name: string; list: ShopeeConversation[]; score: number } | null = null;
+  let firstError: unknown = null;
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      if (!firstError) firstError = r.reason;
+      return;
+    }
+    const list = readList(r.value);
+    const score = maxAt(list);
+    if (!best || score > best.score || (score === best.score && list.length > best.list.length)) {
+      best = { name: variants[i].name, list, score };
+    }
+  });
+  if (!best) throw firstError ?? new Error("Shopee get_conversation_list không trả dữ liệu");
+  const winner: { name: string; list: ShopeeConversation[]; score: number } = best;
+  shopeeConvWinner.set(shopId, {
+    name: winner.name,
+    expires: Date.now() + SHOPEE_VARIANT_TTL_MS,
+  });
+  return winner.list;
+}
+
 /** Các gian SHOPEE/LAZADA đã uỷ quyền trong tầm nhìn của người đang xem. */
 async function connectedChannels(req: AuthRequest): Promise<Channel[]> {
   return prisma.channel.findMany({
@@ -213,12 +305,7 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
         try {
           if (ch.channelName === ChannelName.SHOPEE) {
             const { accessToken, shopId } = await getValidShopeeAccessToken(ch);
-            const data = await getConversationList({ accessToken, shopId });
-            // Mảng hội thoại nằm trong page_result HOẶC ngang hàng tuỳ version
-            const convList =
-              data.response?.page_result?.conversations ??
-              data.response?.conversations ??
-              [];
+            const convList = await fetchShopeeConversationsSmart(accessToken, shopId);
             for (const c of convList) {
               if (c.conversation_id == null) continue;
               conversations.push({

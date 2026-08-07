@@ -557,13 +557,19 @@ export interface ShopeeConversationListData extends ShopeeEnvelope {
   };
 }
 
-/** DS hội thoại mới nhất của shop (một trang). */
+/**
+ * DS hội thoại của shop (một trang). Docs sellerchat bị Shopee khoá quyền xem
+ * nên `direction` + mốc phân trang để hở cho tầng gọi thử nghiệm — xem
+ * fetchShopeeConversationsSmart bên routes/operations.ts (tự chọn biến thể
+ * trả về hội thoại MỚI nhất).
+ */
 export async function getConversationList(
   params: {
     accessToken: string;
     shopId: string;
     pageSize?: number;
-    /** "latest" (mặc định) — hội thoại có tin mới nhất trước. */
+    /** "latest" | "older" — hành vi thật khác nhau theo version API. */
+    direction?: string;
     nextTimestampNano?: string;
     nextConversationId?: string;
   },
@@ -574,7 +580,7 @@ export async function getConversationList(
     params.accessToken,
     params.shopId,
     [
-      ["direction", "latest"],
+      ["direction", params.direction ?? "latest"],
       ["type", "all"],
       ["page_size", params.pageSize ?? 25],
       ...(params.nextTimestampNano
