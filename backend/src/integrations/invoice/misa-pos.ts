@@ -24,6 +24,7 @@ import {
   type MisaAuthCredentials,
 } from "./misa-auth";
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
+import { assertPublishAllowed } from "./misa-safety";
 import type { CreateInvoiceInput } from "./types";
 
 /**
@@ -187,6 +188,10 @@ export async function publishPosInvoice(
   input: CreateInvoiceInput,
   cfg: PosInvoiceConfig
 ): Promise<PosPublishResult> {
+  // Hàng rào ĐẦU TIÊN — hóa đơn máy tính tiền phát hành TỨC THÌ từ dải mã CQT
+  // nên lại càng phải chặn sớm (xem misa-safety.ts).
+  assertPublishAllowed("hóa đơn máy tính tiền");
+
   const missing = posConfigMissing(cfg);
   if (missing.length > 0) {
     throw new Error(`Chưa đủ cấu hình máy tính tiền — thiếu: ${missing.join(", ")}`);

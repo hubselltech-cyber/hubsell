@@ -27,6 +27,7 @@ import {
 } from "./misa-auth";
 import { esignLogin } from "./misa-esign";
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
+import { assertPublishAllowed } from "./misa-safety";
 import type { CreateInvoiceInput } from "./types";
 
 /**
@@ -194,6 +195,10 @@ export async function publishStandardInvoice(
   input: CreateInvoiceInput,
   cfg: StandardInvoiceConfig
 ): Promise<StandardPublishResult> {
+  // Hàng rào ĐẦU TIÊN — chặn trước cả khi kiểm cấu hình, để không có đường
+  // nào chạm tới API phát hành khi chưa được phép (xem misa-safety.ts).
+  assertPublishAllowed("hóa đơn kê khai");
+
   const missing = standardConfigMissing(cfg);
   if (missing.length > 0) {
     throw new Error(`Chưa đủ cấu hình phát hành kê khai — thiếu: ${missing.join(", ")}`);
