@@ -91,6 +91,70 @@ export function vendorMeta(v: string): InvoiceVendorMeta {
   return INVOICE_VENDORS.find((x) => x.value === v) ?? INVOICE_VENDORS[0];
 }
 
+// ============================================================
+// NCC LUỒNG MÁY TÍNH TIỀN (tab POS) — danh mục RIÊNG với luồng kê khai:
+// không có CUSTOM (máy tính tiền phải là NCC được CQT công nhận), và key
+// trường map vào cặp cột posClientId/posSecretKey của InvoiceConfig.
+// ============================================================
+
+export interface PosVendorCredentialField {
+  key: "posClientId" | "posSecretKey";
+  label: string;
+  placeholder?: string;
+  /** true = ô password + luồng che/giữ-nguyên-khi-trống. */
+  secret?: boolean;
+}
+
+export interface PosVendorMeta {
+  value: Exclude<InvoiceVendor, "CUSTOM">;
+  label: string;
+  soon?: boolean;
+  credentialFields: PosVendorCredentialField[];
+}
+
+export const POS_VENDORS: PosVendorMeta[] = [
+  {
+    value: "MISA",
+    label: "MISA meInvoice POS",
+    credentialFields: [
+      { key: "posClientId", label: "POS Client ID", placeholder: "Client ID luồng POS do MISA cấp" },
+      { key: "posSecretKey", label: "POS Secret Key", secret: true },
+    ],
+  },
+  {
+    value: "VIETTEL",
+    label: "Viettel SInvoice POS",
+    soon: true,
+    credentialFields: [
+      { key: "posClientId", label: "Tài khoản API (Username)", placeholder: "Username SInvoice cấp" },
+      { key: "posSecretKey", label: "Mật khẩu API (Password)", secret: true },
+    ],
+  },
+  {
+    value: "VNPT",
+    label: "VNPT Invoice POS",
+    soon: true,
+    credentialFields: [
+      { key: "posClientId", label: "Tài khoản dịch vụ (Account)", placeholder: "Account VNPT cấp" },
+      { key: "posSecretKey", label: "Mật khẩu dịch vụ (ACPass)", secret: true },
+    ],
+  },
+  {
+    value: "BKAV",
+    label: "Bkav eHoadon POS",
+    soon: true,
+    credentialFields: [
+      { key: "posClientId", label: "Partner GUID", placeholder: "GUID Bkav cấp" },
+      { key: "posSecretKey", label: "Partner Token", secret: true },
+    ],
+  },
+];
+
+/** Meta NCC POS đang chọn — fallback MISA khi giá trị lạ. */
+export function posVendorMeta(v: string): PosVendorMeta {
+  return POS_VENDORS.find((x) => x.value === v) ?? POS_VENDORS[0];
+}
+
 export function isCustomVendor(v: string): boolean {
   return INVOICE_VENDORS.find((x) => x.value === v)?.custom === true;
 }

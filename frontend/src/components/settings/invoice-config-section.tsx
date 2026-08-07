@@ -45,6 +45,8 @@ import {
   INVOICE_SERIES_RE,
   INVOICE_VENDORS,
   POS_SERIES_RE,
+  POS_VENDORS,
+  posVendorMeta,
   SIGN_METHODS,
   TAX_CODE_RE,
   vendorMeta,
@@ -175,6 +177,7 @@ export function InvoiceConfigSection({
   const [esignPasswordInput, setEsignPasswordInput] = useState("");
 
   // (4) Máy tính tiền (POS)
+  const [posProvider, setPosProvider] = useState("MISA");
   const [posClientId, setPosClientId] = useState("");
   const [posCodePrefix, setPosCodePrefix] = useState("");
   const [posMachineId, setPosMachineId] = useState("");
@@ -225,6 +228,7 @@ export function InvoiceConfigSection({
         setEsignSecretMasked(r.config.esignSecretKeyMasked);
         setHasEsignPassword(r.config.hasEsignPassword);
         setEsignPasswordMasked(r.config.esignPasswordMasked);
+        setPosProvider(r.config.posProvider);
         setPosClientId(r.config.posClientId);
         setPosCodePrefix(r.config.posCodePrefix);
         setPosMachineId(r.config.posMachineId);
@@ -246,6 +250,8 @@ export function InvoiceConfigSection({
 
   /** Meta NCC đang chọn — quyết định bộ trường credential (Dynamic Form). */
   const vendor = vendorMeta(provider);
+  /** Meta NCC luồng MÁY TÍNH TIỀN (chọn riêng với luồng kê khai). */
+  const posVendor = posVendorMeta(posProvider);
   const isEsignCloud = signMethod === "ESIGN_CLOUD";
 
   /** Validate TT 78 các trường ĐÃ nhập — trả map lỗi (rỗng = hợp lệ). */
@@ -295,6 +301,7 @@ export function InvoiceConfigSection({
         esignUsername: esignUsername.trim(),
         esignPassword: esignPasswordInput.trim() || undefined,
         certSerial: certSerial.trim(),
+        posProvider,
         posClientId: posClientId.trim(),
         posSecretKey: posSecretInput.trim() || undefined,
         posCodePrefix: posCodePrefix.trim(),
@@ -501,8 +508,9 @@ export function InvoiceConfigSection({
           {/* ================== CỘT TRÁI (8/12) ================== */}
           <div className="min-w-0 space-y-6 lg:col-span-8">
             {/* --- Segmented Control 2 tab --- */}
-            {/* Segmented control TƯƠNG PHẢN CAO: nền xám đậm hơn, tab active
-                trắng tinh + shadow-md nổi hẳn, tab inactive chữ xám phẳng. */}
+            {/* Segmented control BẬT TONE theo luồng: active trắng + viền/chữ
+                màu accent (blue = Kê khai, emerald = Máy tính tiền) + badge
+                tên luồng — nhìn phát biết ngay đang ở đâu. */}
             <div
               role="tablist"
               aria-label="Hình thức hóa đơn"
@@ -510,6 +518,7 @@ export function InvoiceConfigSection({
             >
               {TABS.map((t) => {
                 const active = activeTab === t.value;
+                const isStd = t.value === "standard";
                 return (
                   <button
                     key={t.value}
@@ -520,11 +529,30 @@ export function InvoiceConfigSection({
                     className={cn(
                       "flex-1 rounded-lg px-4 py-2.5 text-left transition-all",
                       active
-                        ? "border border-slate-200/80 bg-white font-bold text-slate-900 shadow-md"
+                        ? cn(
+                            "bg-white font-bold shadow-md",
+                            isStd
+                              ? "border border-blue-500 text-blue-700"
+                              : "border border-emerald-500 text-emerald-700",
+                          )
                         : "border border-transparent text-slate-500 hover:text-slate-700",
                     )}
                   >
-                    <span className="block text-sm">{t.label}</span>
+                    <span className="flex items-center gap-2 text-sm">
+                      {t.label}
+                      {active && (
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            isStd
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-emerald-100 text-emerald-700",
+                          )}
+                        >
+                          {isStd ? "Kê khai" : "Máy tính tiền"}
+                        </span>
+                      )}
+                    </span>
                     <span
                       className={cn(
                         "block text-[11px] font-normal",
@@ -538,8 +566,16 @@ export function InvoiceConfigSection({
               })}
             </div>
 
-            {/* --- CARD CHÍNH: Pháp nhân + API theo tab --- */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            {/* --- CARD CHÍNH: Pháp nhân + API theo tab. Viền accent mép trên
+                đồng bộ màu với tab active — cả khu form thuộc luồng nào là rõ. --- */}
+            <div
+              className={cn(
+                "rounded-2xl border border-slate-200 border-t-4 bg-white p-6 shadow-sm",
+                activeTab === "standard"
+                  ? "border-t-blue-600"
+                  : "border-t-emerald-600",
+              )}
+            >
               {/* Section 1 — Pháp nhân & Thuế (dùng chung 2 tab) */}
               <div className="space-y-4">
                 <SectionHeading
@@ -728,36 +764,65 @@ export function InvoiceConfigSection({
                   <SectionHeading
                     icon={<MonitorSmartphone className="size-4" />}
                     tone="bg-emerald-50 text-emerald-600"
-                    title="Cấu hình MISA POS — Máy tính tiền"
-                    desc="Phát hành tức thì bằng dải mã CQT cấp sẵn — không cần ký số từng đơn như luồng kê khai."
+                    title="Cấu hình API Nhà cung cấp — Máy tính tiền"
+                    desc="Phát hành tức thì bằng dải mã CQT cấp sẵn — không cần ký số từng đơn. Chọn NCC trước, bộ trường tự đổi theo."
                   />
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="pos-client">POS Client ID</Label>
-                      <Input
-                        id="pos-client"
-                        placeholder="Client ID luồng POS do MISA cấp"
-                        value={posClientId}
-                        onChange={(e) => setPosClientId(e.target.value)}
-                        className={INPUT_FOCUS}
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="pos-secret">POS Secret Key</Label>
-                      <Input
-                        id="pos-secret"
-                        type="password"
-                        placeholder={secretPlaceholder(
-                          hasPosSecret,
-                          posSecretMasked,
-                        )}
-                        value={posSecretInput}
-                        onChange={(e) => setPosSecretInput(e.target.value)}
-                        className={INPUT_FOCUS}
-                      />
-                    </div>
+                  {/* Vendor Selector POS đứng ĐẦU — danh mục RIÊNG với kê khai. */}
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="pos-provider">Nhà cung cấp Hóa đơn (POS)</Label>
+                    <NativeSelect
+                      id="pos-provider"
+                      value={posProvider}
+                      onChange={(e) => setPosProvider(e.target.value)}
+                    >
+                      {POS_VENDORS.map((v) => (
+                        <option key={v.value} value={v.value}>
+                          {v.label}
+                          {v.soon ? " (Sắp ra mắt)" : ""}
+                        </option>
+                      ))}
+                    </NativeSelect>
                   </div>
+
+                  {/* DYNAMIC FORM theo NCC POS — preset ở invoice-vendors.ts,
+                      key map cặp cột posClientId/posSecretKey. */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {posVendor.credentialFields.map((f) => (
+                      <div key={f.key} className="grid gap-1.5">
+                        <Label htmlFor={`pos-cred-${f.key}`}>{f.label}</Label>
+                        {f.secret ? (
+                          <Input
+                            id={`pos-cred-${f.key}`}
+                            type="password"
+                            placeholder={secretPlaceholder(
+                              hasPosSecret,
+                              posSecretMasked,
+                            )}
+                            value={posSecretInput}
+                            onChange={(e) => setPosSecretInput(e.target.value)}
+                            className={INPUT_FOCUS}
+                          />
+                        ) : (
+                          <Input
+                            id={`pos-cred-${f.key}`}
+                            placeholder={f.placeholder}
+                            value={posClientId}
+                            onChange={(e) => setPosClientId(e.target.value)}
+                            className={INPUT_FOCUS}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {posVendor.soon && (
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                      {posVendor.label} đang <b>Sắp ra mắt</b> — cấu hình được
+                      lưu trước, hệ thống chưa phát hành hóa đơn thật qua NCC
+                      này.
+                    </p>
+                  )}
 
                   {/* Dropdown gợi ý máy từ danh mục MISA (có sau khi Quick Test) */}
                   {posMachines.length > 0 && (
@@ -1015,14 +1080,21 @@ export function InvoiceConfigSection({
                   </>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-slate-700">MISA POS</span>
+                    <span className="truncate text-sm text-slate-700">
+                      {posVendor.label}
+                    </span>
                     <span className="flex items-center gap-2">
                       <ConnBadge state={connStatus.pos} hasKeys={hasPosKeys} />
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={handleTestPos}
-                        disabled={testingPos}
+                        disabled={testingPos || posVendor.soon}
+                        title={
+                          posVendor.soon
+                            ? `${posVendor.label} sắp ra mắt — hiện mới test được MISA POS`
+                            : undefined
+                        }
                       >
                         {testingPos ? (
                           <Loader2 className="size-3.5 animate-spin" />

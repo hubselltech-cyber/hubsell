@@ -238,6 +238,7 @@ CREATE TABLE "InvoiceConfig" (
     "esignUsername" TEXT,
     "esignPassword" TEXT,
     "certSerial" TEXT,
+    "posProvider" TEXT NOT NULL DEFAULT 'MISA',
     "posClientId" TEXT,
     "posSecretKey" TEXT,
     "posCodePrefix" TEXT,

@@ -78,6 +78,7 @@ type ShopConfig = {
   esignUsername: string | null;
   esignPassword: string | null;
   certSerial: string | null;
+  posProvider: string;
   posClientId: string | null;
   posSecretKey: string | null;
   posCodePrefix: string | null;
@@ -111,6 +112,7 @@ function serializeConfig(c: ShopConfig | null) {
     hasEsignPassword: Boolean(c?.esignPassword),
     esignPasswordMasked: mask(c?.esignPassword),
     // (4) Máy tính tiền (POS)
+    posProvider: c?.posProvider ?? "MISA",
     posClientId: c?.posClientId ?? "",
     posCodePrefix: c?.posCodePrefix ?? "",
     posMachineId: c?.posMachineId ?? "",
@@ -186,6 +188,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       esignUsername,
       esignPassword,
       certSerial,
+      posProvider,
       posClientId,
       posSecretKey,
       posCodePrefix,
@@ -200,6 +203,17 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
     }
     if (typeof signMethod !== "string" || !SIGN_METHODS.includes(signMethod)) {
       res.status(400).json({ error: "Phương thức ký không hợp lệ (USB_TOKEN | ESIGN_CLOUD)" });
+      return;
+    }
+    // posProvider tuỳ chọn (client cũ không gửi) — có gửi thì phải hợp lệ.
+    // Không nhận CUSTOM: máy tính tiền phải là NCC được CQT công nhận.
+    if (
+      posProvider !== undefined &&
+      (typeof posProvider !== "string" ||
+        !PROVIDERS.includes(posProvider) ||
+        posProvider === "CUSTOM")
+    ) {
+      res.status(400).json({ error: "NCC máy tính tiền không hợp lệ (MISA | VIETTEL | VNPT | BKAV)" });
       return;
     }
     if (
@@ -264,6 +278,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       esignSecretKey: nextSecret(esignSecretKey, existing?.esignSecretKey ?? null),
       esignPassword: nextSecret(esignPassword, existing?.esignPassword ?? null),
       // (4) Máy tính tiền
+      ...(typeof posProvider === "string" ? { posProvider } : {}),
       posClientId: str(posClientId),
       posCodePrefix: str(posCodePrefix),
       posMachineId: str(posMachineId),
@@ -353,6 +368,13 @@ router.post("/test-esign", async (req: AuthRequest, res) => {
 router.post("/test-pos", async (req: AuthRequest, res) => {
   try {
     const cfg = await findShopConfig(req.ownerId!);
+    if (cfg && cfg.posProvider !== "MISA") {
+      res.status(400).json({
+        ok: false,
+        error: `NCC máy tính tiền đang chọn là ${cfg.posProvider} (Sắp ra mắt) — hiện mới test được MISA POS.`,
+      });
+      return;
+    }
     clearMisaTokenCache();
     const posCfg = {
       taxCode: cfg?.taxCode ?? null,

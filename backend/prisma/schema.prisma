@@ -522,6 +522,9 @@ model InvoiceConfig {
   //      CQT cấp DẢI MÃ trước cho máy đã đăng ký → phát hành tức thì tại máy,
   //      KHÔNG cần eSign ký từng đơn (miễn ký số lẻ theo NĐ 123 Đ.11; dữ liệu
   //      chuyển CQT theo bảng tổng hợp). Bộ khóa API RIÊNG với meInvoice chuẩn.
+  /// NCC luồng máy tính tiền — CHỌN RIÊNG với provider kê khai (shop có thể
+  /// kê khai qua MISA nhưng POS qua NCC khác). Cùng bộ giá trị MISA|VIETTEL|VNPT|BKAV.
+  posProvider  String  @default("MISA")
   posClientId  String?
   posSecretKey String? // nhạy cảm — chỉ trả dạng che
   /// Dải mã CQT cấp sẵn cho máy tính tiền.

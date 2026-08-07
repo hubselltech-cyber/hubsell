@@ -1914,6 +1914,7 @@ export interface InvoiceConfigDTO {
   hasEsignPassword: boolean;
   esignPasswordMasked: string | null;
   // (4) Hóa đơn từ máy tính tiền (POS — HKD/bán lẻ, ký hiệu C26MXX)
+  posProvider: string; // NCC luồng POS: MISA | VIETTEL | VNPT | BKAV
   posClientId: string;
   posCodePrefix: string; // dải mã CQT cấp sẵn
   posMachineId: string;
@@ -1959,6 +1960,7 @@ export function saveInvoiceConfig(input: {
   esignUsername?: string;
   esignPassword?: string;
   certSerial?: string;
+  posProvider?: string;
   posClientId?: string;
   posSecretKey?: string;
   posCodePrefix?: string;
