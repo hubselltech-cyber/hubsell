@@ -17,13 +17,14 @@ import {
   generateReviewReply,
 } from "@/components/operations/copilot-engine";
 import {
-  CHANNEL_META,
+  channelMeta,
   MOCK_REVIEWS,
   MOCK_SHOPS,
   REVIEW_TAG_META,
   type OpsChannel,
   type ReviewTag,
 } from "@/components/operations/mock-data";
+import { pickRandomReply } from "@/components/operations/reply-templates";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -60,8 +61,11 @@ import { cn } from "@/lib/utils";
  */
 
 type PageMode = "loading" | "real" | "demo";
+type ChannelFilter = "ALL" | "SHOPEE" | "LAZADA" | "TIKTOK";
 type StarFilter = "ALL" | "1" | "2" | "3" | "4" | "5";
 type StatusFilter = "ALL" | "UNREPLIED" | "REPLIED";
+/** WITH_COMMENT = có chữ/ảnh; RATING_ONLY = khách chỉ chấm sao. */
+type ContentFilter = "ALL" | "WITH_COMMENT" | "RATING_ONLY";
 
 /** Dòng đánh giá hợp nhất cho render — demo và real cùng đổ về đây. */
 interface ReviewRow {
@@ -71,6 +75,8 @@ interface ReviewRow {
   /** Khoá lọc gian hàng: demo = shopId mock, real = channelId. */
   shopKey: string;
   shopLabel: string;
+  /** Tên shop trần (không kèm tên sàn) — đổ vào biến {TEN_SHOP} của mẫu câu. */
+  shopName: string;
   productName: string;
   rating: number;
   content: string;
@@ -108,12 +114,16 @@ function StarRow({ rating }: { rating: number }) {
 
 /** Map MOCK_REVIEWS → ReviewRow (chế độ demo). */
 function demoRows(): ReviewRow[] {
-  return MOCK_REVIEWS.map((r) => ({
+  return MOCK_REVIEWS.map((r) => {
+    const label = MOCK_SHOPS.find((s) => s.id === r.shopId)?.label ?? r.shopId;
+    return {
     id: r.id,
     customer: r.customer,
     channel: r.channel,
     shopKey: r.shopId,
-    shopLabel: MOCK_SHOPS.find((s) => s.id === r.shopId)?.label ?? r.shopId,
+    shopLabel: label,
+    // "Shopee — DarkMan Store" → "DarkMan Store"
+    shopName: label.split("—").pop()?.trim() ?? label,
     productName: r.product,
     rating: r.rating,
     content: r.content,
@@ -121,7 +131,8 @@ function demoRows(): ReviewRow[] {
     createdAt: r.createdAt,
     tag: r.tag,
     aiSuggestion: r.aiSuggestion,
-  }));
+    };
+  });
 }
 
 export function OperationsReviewsPage() {
@@ -129,9 +140,14 @@ export function OperationsReviewsPage() {
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [channelErrors, setChannelErrors] = useState<OpsChannelError[]>([]);
 
+  // ── Bộ lọc đa cấp: Sàn → Gian hàng → Số sao → Nội dung → Trạng thái ──
+  // Lọc HOÀN TOÀN phía client trên rows đã tải MỘT lần lúc vào trang — đổi
+  // filter không refetch nên không có chuyện lặp request lên sàn.
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("ALL");
   const [shopFilter, setShopFilter] = useState("ALL");
   const [starFilter, setStarFilter] = useState<StarFilter>("ALL");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [contentFilter, setContentFilter] = useState<ContentFilter>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
@@ -155,7 +171,8 @@ export function OperationsReviewsPage() {
                 customer: rv.customer,
                 channel: rv.channelName as OpsChannel,
                 shopKey: rv.channelId,
-                shopLabel: `${CHANNEL_META[rv.channelName as OpsChannel].label} — ${rv.shopName}`,
+                shopLabel: `${channelMeta(rv.channelName).label} — ${rv.shopName}`,
+                shopName: rv.shopName,
                 productName: rv.productName,
                 rating: rv.rating,
                 content: rv.content,
@@ -194,23 +211,38 @@ export function OperationsReviewsPage() {
 
   const isReal = mode === "real";
 
-  // Tuỳ chọn lọc gian hàng dựng từ chính dữ liệu đang hiển thị
+  // Tuỳ chọn lọc gian hàng dựng từ chính dữ liệu đang hiển thị, THU HẸP theo
+  // sàn đang chọn (chọn Shopee thì dropdown shop chỉ còn shop Shopee)
   const shopOptions = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const r of rows) if (!seen.has(r.shopKey)) seen.set(r.shopKey, r.shopLabel);
+    for (const r of rows) {
+      if (channelFilter !== "ALL" && r.channel !== channelFilter) continue;
+      if (!seen.has(r.shopKey)) seen.set(r.shopKey, r.shopLabel);
+    }
     return [...seen.entries()].map(([value, label]) => ({ value, label }));
-  }, [rows]);
+  }, [rows, channelFilter]);
+
+  /** Đổi sàn thì reset chọn shop — shop cũ có thể không thuộc sàn mới. */
+  function changeChannelFilter(next: ChannelFilter) {
+    setChannelFilter(next);
+    setShopFilter("ALL");
+  }
 
   const filtered = useMemo(
     () =>
       rows.filter(
         (r) =>
+          (channelFilter === "ALL" || r.channel === channelFilter) &&
           (shopFilter === "ALL" || r.shopKey === shopFilter) &&
           (starFilter === "ALL" || r.rating === Number(starFilter)) &&
           (statusFilter === "ALL" ||
-            (statusFilter === "REPLIED" ? r.replied : !r.replied))
+            (statusFilter === "REPLIED" ? r.replied : !r.replied)) &&
+          (contentFilter === "ALL" ||
+            (contentFilter === "WITH_COMMENT"
+              ? r.content.trim() !== ""
+              : r.content.trim() === ""))
       ),
-    [rows, shopFilter, starFilter, statusFilter]
+    [rows, channelFilter, shopFilter, starFilter, statusFilter, contentFilter]
   );
 
   const selected = rows.find((r) => r.id === selectedId) ?? null;
@@ -224,11 +256,23 @@ export function OperationsReviewsPage() {
   const urgentBad = unreplied.filter((r) => r.rating <= 3);
   const bulkTargets = unreplied.filter((r) => r.rating === 5);
 
+  /** Câu trả lời cho một đánh giá: RANDOM từ 5 mẫu của mức sao tương ứng
+   *  (chống sàn phạt trùng nội dung); user xoá hết mẫu thì rơi về câu engine. */
+  function suggestionFor(r: ReviewRow): string {
+    return (
+      pickRandomReply(r.rating, {
+        customer: r.customer,
+        shopName: r.shopName,
+        productName: r.productName,
+      }) ?? r.aiSuggestion
+    );
+  }
+
   function selectReview(id: string) {
     const r = rows.find((x) => x.id === id);
     if (!r) return;
     setSelectedId(id);
-    setDraft(r.aiSuggestion);
+    setDraft(suggestionFor(r));
     setEditing(false);
   }
 
@@ -255,7 +299,7 @@ export function OperationsReviewsPage() {
       markReplied(new Set([selected.id]));
       setSelectedId(null);
       setDraft("");
-      toast.success(`Đã gửi phản hồi lên ${CHANNEL_META[selected.channel].label}.`);
+      toast.success(`Đã gửi phản hồi lên ${channelMeta(selected.channel).label}.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gửi phản hồi thất bại");
     } finally {
@@ -282,7 +326,8 @@ export function OperationsReviewsPage() {
         await replyOpsReview({
           channelId: r.channelId!,
           reviewId: r.externalId!,
-          content: r.aiSuggestion,
+          // Mỗi đánh giá bốc một mẫu NGẪU NHIÊN khác nhau — chống spam trùng
+          content: suggestionFor(r),
         });
         done.add(r.id);
         ok++;
@@ -365,11 +410,22 @@ export function OperationsReviewsPage() {
         />
       </div>
 
-      {/* ===== BỘ LỌC ===== */}
+      {/* ===== BỘ LỌC ĐA CẤP: Sàn → Gian hàng → Số sao → Nội dung → Trạng thái ===== */}
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 py-4">
           <NativeSelect
-            className="w-full sm:w-64"
+            className="w-full sm:w-44"
+            value={channelFilter}
+            onChange={(e) => changeChannelFilter(e.target.value as ChannelFilter)}
+            aria-label="Lọc theo sàn"
+          >
+            <option value="ALL">Tất cả sàn</option>
+            <option value="SHOPEE">Shopee</option>
+            <option value="LAZADA">Lazada</option>
+            <option value="TIKTOK">TikTok Shop</option>
+          </NativeSelect>
+          <NativeSelect
+            className="w-full sm:w-60"
             value={shopFilter}
             onChange={(e) => setShopFilter(e.target.value)}
             aria-label="Chọn gian hàng"
@@ -382,7 +438,7 @@ export function OperationsReviewsPage() {
             ))}
           </NativeSelect>
           <NativeSelect
-            className="w-full sm:w-40"
+            className="w-full sm:w-36"
             value={starFilter}
             onChange={(e) => setStarFilter(e.target.value as StarFilter)}
             aria-label="Lọc theo số sao"
@@ -395,7 +451,17 @@ export function OperationsReviewsPage() {
             ))}
           </NativeSelect>
           <NativeSelect
-            className="w-full sm:w-44"
+            className="w-full sm:w-60"
+            value={contentFilter}
+            onChange={(e) => setContentFilter(e.target.value as ContentFilter)}
+            aria-label="Lọc theo nội dung đánh giá"
+          >
+            <option value="ALL">Mọi nội dung</option>
+            <option value="WITH_COMMENT">💬 Có bình luận chữ/hình ảnh</option>
+            <option value="RATING_ONLY">⭐ Chỉ có sao (không bình luận)</option>
+          </NativeSelect>
+          <NativeSelect
+            className="w-full sm:w-40"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             aria-label="Lọc theo trạng thái"
@@ -435,7 +501,7 @@ export function OperationsReviewsPage() {
                 <CardContent className="space-y-2.5 py-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
-                      {r.customer.charAt(0)}
+                      {(r.customer || "?").charAt(0)}
                     </div>
                     <span className="text-sm font-semibold text-slate-900">{r.customer}</span>
                     <StarRow rating={r.rating} />
@@ -452,8 +518,8 @@ export function OperationsReviewsPage() {
                   <p className={TEXT_SUB}>{r.productName}</p>
 
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <Badge variant="outline" className={CHANNEL_META[r.channel].badgeClass}>
-                      {CHANNEL_META[r.channel].label}
+                    <Badge variant="outline" className={channelMeta(r.channel).badgeClass}>
+                      {channelMeta(r.channel).label}
                     </Badge>
                     <Badge variant="outline" className={REVIEW_TAG_META[r.tag].badgeClass}>
                       AI: {REVIEW_TAG_META[r.tag].label}

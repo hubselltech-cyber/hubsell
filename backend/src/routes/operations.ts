@@ -105,6 +105,65 @@ function toMs(v: unknown): number | null {
   return n * 1000; // giây → ms
 }
 
+// ── Nhãn tiếng Việt cho TIN NHẮN KHÔNG PHẢI VĂN BẢN ──
+// Payload thật của sàn chứa đủ loại: ảnh, sticker, thẻ sản phẩm, thẻ đơn,
+// voucher… — không map thì UI hiện chuỗi rỗng/`[object]` rất dễ gây hiểu là
+// crash. Loại chưa biết vẫn ra `[nhãn thô]` chứ KHÔNG ném lỗi.
+
+const SHOPEE_TYPE_LABEL: Record<string, string> = {
+  image: "[Hình ảnh]",
+  image_with_text: "[Hình ảnh kèm chữ]",
+  sticker: "[Sticker]",
+  item: "[Thẻ sản phẩm]",
+  product: "[Thẻ sản phẩm]",
+  item_list: "[Danh sách sản phẩm]",
+  order: "[Thẻ đơn hàng]",
+  voucher: "[Voucher]",
+  video: "[Video]",
+  bundle_deal_info: "[Combo khuyến mãi]",
+};
+
+/** Text hiển thị cho một tin Shopee — luôn trả CHUỖI, không bao giờ undefined. */
+function shopeeMessageText(messageType?: string, text?: string): string {
+  if (typeof text === "string" && text.trim()) return text;
+  if (!messageType || messageType === "text") return "";
+  return SHOPEE_TYPE_LABEL[messageType] ?? `[${messageType}]`;
+}
+
+const LAZADA_TEMPLATE_LABEL: Record<string, string> = {
+  "3": "[Hình ảnh]",
+  "4": "[Emoji]",
+  "6": "[Video]",
+  "10006": "[Thẻ sản phẩm]",
+  "10007": "[Thẻ đơn hàng]",
+  "10008": "[Voucher]",
+  "10010": "[Mời theo dõi shop]",
+};
+
+/**
+ * Text hiển thị cho một tin Lazada. content của template text (1) là JSON
+ * string {"txt":"…"} nhưng payload thật có khi trả sẵn OBJECT — đọc cả hai,
+ * hỏng thì rơi về nhãn template, tuyệt đối không ném.
+ */
+function lazadaMessageText(templateId: string, content: unknown): string {
+  let txt = "";
+  try {
+    if (typeof content === "string" && content.trim()) {
+      const parsed = JSON.parse(content) as { txt?: unknown };
+      if (typeof parsed?.txt === "string") txt = parsed.txt;
+    } else if (content && typeof content === "object") {
+      const obj = content as { txt?: unknown };
+      if (typeof obj.txt === "string") txt = obj.txt;
+    }
+  } catch {
+    // content không phải JSON — với template text thì chính nó là chữ
+    if (typeof content === "string") txt = content;
+  }
+  if (txt.trim()) return txt;
+  if (templateId === "1") return "";
+  return LAZADA_TEMPLATE_LABEL[templateId] ?? `[tin nhắn dạng ${templateId}]`;
+}
+
 /** Các gian SHOPEE/LAZADA đã uỷ quyền trong tầm nhìn của người đang xem. */
 async function connectedChannels(req: AuthRequest): Promise<Channel[]> {
   return prisma.channel.findMany({
@@ -151,7 +210,10 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 channelName: "SHOPEE",
                 shopName: ch.shopName,
                 customer: c.to_name || `Khách ${c.to_id ?? ""}`.trim(),
-                lastMessage: c.latest_message_content?.text ?? "",
+                lastMessage: shopeeMessageText(
+                  c.latest_message_type,
+                  c.latest_message_content?.text
+                ),
                 unread: c.unread_count ?? 0,
                 lastAt: toMs(c.last_message_timestamp),
                 buyerId: c.to_id != null ? String(c.to_id) : null,
@@ -170,8 +232,11 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 channelName: "LAZADA",
                 shopName: ch.shopName,
                 customer: s.title || "Khách Lazada",
-                lastMessage:
-                  s.last_message_content ?? s.latest_message_content ?? "",
+                // Payload thật có thể trả object thay vì string — ép phòng thủ
+                lastMessage: lazadaMessageText(
+                  "1",
+                  s.last_message_content ?? s.latest_message_content
+                ),
                 unread: Number(s.unread_count ?? s.unreadCount ?? 0) || 0,
                 lastAt: toMs(s.last_message_time),
                 buyerId: null,
@@ -220,11 +285,7 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
         messages.push({
           id: String(m.message_id ?? messages.length),
           fromShop,
-          text:
-            m.content?.text ??
-            (m.message_type && m.message_type !== "text"
-              ? `[${m.message_type}]`
-              : ""),
+          text: shopeeMessageText(m.message_type, m.content?.text),
           at: toMs(m.created_timestamp),
           itemId: m.content?.item_id != null ? String(m.content.item_id) : null,
         });
@@ -233,23 +294,14 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
       const accessToken = await getValidLazadaAccessToken(ch);
       const list = await getImMessages({ accessToken, sessionId: conversationId });
       for (const m of list) {
-        // content của template text là JSON string {"txt":"..."} — parse phòng thủ
-        let text = "";
-        try {
-          const parsed = JSON.parse(String(m.content ?? "{}")) as { txt?: string };
-          text = parsed.txt ?? "";
-        } catch {
-          text = String(m.content ?? "");
-        }
         const tpl = String(m.template_id ?? m.templateId ?? "1");
-        if (!text && tpl !== "1") text = `[tin nhắn dạng ${tpl}]`;
         // from_account_type: đối chiếu log thật cho chắc — tạm quy ước tài
         // khoản loại "2" (seller) là shop, còn lại là khách.
         const fromType = String(m.from_account_type ?? m.fromAccountType ?? "");
         messages.push({
           id: String(m.message_id ?? m.messageId ?? messages.length),
           fromShop: fromType === "2",
-          text,
+          text: lazadaMessageText(tpl, m.content),
           at: toMs(m.send_time ?? m.sendTime),
           itemId: null,
         });

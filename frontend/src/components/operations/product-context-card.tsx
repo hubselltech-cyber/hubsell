@@ -3,7 +3,7 @@
 import { Shirt, TriangleAlert } from "lucide-react";
 
 import {
-  CHANNEL_META,
+  channelMeta,
   type MockProductInfo,
   type OpsChannel,
   type StockSource,
@@ -34,18 +34,18 @@ export function ProductContextCard({
   /** Nguồn AI đang dùng tư vấn (theo cấu hình seller) — hiện ở dòng chú thích. */
   stockSource: StockSource;
 }) {
-  // Gom tồn kho thành ma trận màu × size cho bảng đọc nhanh
-  const colors = [...new Set(product.variants.map((v) => v.color))];
-  const sizes = [...new Set(product.variants.map((v) => v.size))];
+  // Gom tồn kho thành ma trận màu × size cho bảng đọc nhanh.
+  // variants đọc phòng thủ: dữ liệu thật có thể chưa đồng bộ biến thể nào.
+  const variants = product.variants ?? [];
+  const colors = [...new Set(variants.map((v) => v.color))];
+  const sizes = [...new Set(variants.map((v) => v.size))];
   const variantOf = (color: string, size: string) =>
-    product.variants.find((v) => v.color === color && v.size === size) ?? null;
+    variants.find((v) => v.color === color && v.size === size) ?? null;
 
-  const totalChannel = product.variants.reduce((s, v) => s + v.channelStock, 0);
-  const totalPhysical = product.variants.reduce((s, v) => s + v.stockQuantity, 0);
-  const hasMismatch = product.variants.some(
-    (v) => v.channelStock !== v.stockQuantity
-  );
-  const channelLabel = CHANNEL_META[channel].label;
+  const totalChannel = variants.reduce((s, v) => s + (Number(v.channelStock) || 0), 0);
+  const totalPhysical = variants.reduce((s, v) => s + (Number(v.stockQuantity) || 0), 0);
+  const hasMismatch = variants.some((v) => v.channelStock !== v.stockQuantity);
+  const channelLabel = channelMeta(channel).label;
 
   return (
     <div className="space-y-4 p-4">
@@ -142,7 +142,9 @@ export function ProductContextCard({
       )}
 
       {/* Ma trận TỒN TRÊN SÀN màu × size — đỏ khi hết, vàng khi sắp hết (≤5);
-          ô lệch kho vật lý ghi kèm "Kho: Y" bên dưới */}
+          ô lệch kho vật lý ghi kèm "Kho: Y" bên dưới. Chưa có biến thể nào
+          (SP thật chưa đồng bộ chi tiết) thì ẩn hẳn khối, không vẽ bảng rỗng. */}
+      {variants.length > 0 && (
       <div>
         <p className={cn(TEXT_SUB, "mb-1.5 font-medium uppercase tracking-wide")}>
           Tồn trên sàn {channelLabel}
@@ -204,9 +206,10 @@ export function ProductContextCard({
               <b>kho vật lý</b> (theo cấu hình)
             </>
           )}
-          . Vàng: sắp hết (≤5). Số liệu preview — mock.
+          . Vàng: sắp hết (≤5).
         </p>
       </div>
+      )}
     </div>
   );
 }

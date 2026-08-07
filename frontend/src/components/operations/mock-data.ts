@@ -29,6 +29,20 @@ export const CHANNEL_META: Record<
   },
 };
 
+/**
+ * Tra meta kênh AN TOÀN: dữ liệu thật có thể trả tên kênh ngoài dự kiến —
+ * truy cập thẳng CHANNEL_META[x] khi x lạ sẽ undefined rồi vỡ ở .label.
+ * Mọi chỗ render badge kênh phải đi qua hàm này thay vì index trực tiếp.
+ */
+export function channelMeta(channel: string): { label: string; badgeClass: string } {
+  return (
+    CHANNEL_META[channel as OpsChannel] ?? {
+      label: channel || "Kênh khác",
+      badgeClass: "border-slate-200 bg-slate-50 text-slate-600",
+    }
+  );
+}
+
 /** Gian hàng demo — trùng tên các shop thật đã kết nối cho đỡ giả. */
 export const MOCK_SHOPS: { id: string; label: string; channel: OpsChannel }[] = [
   { id: "shopee-darkman", label: "Shopee — DarkMan Store", channel: "SHOPEE" },

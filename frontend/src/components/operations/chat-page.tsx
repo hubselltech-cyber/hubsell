@@ -22,7 +22,7 @@ import {
   SAMPLE_QUESTIONS,
 } from "@/components/operations/copilot-engine";
 import {
-  CHANNEL_META,
+  channelMeta,
   MOCK_CONVERSATIONS,
   MOCK_PRODUCTS,
   MOCK_STOCK_SOURCE_PREFERENCE,
@@ -88,6 +88,9 @@ export function OperationsChatPage() {
   const [activeRealId, setActiveRealId] = useState<string | null>(null);
   const [realMessages, setRealMessages] = useState<Record<string, OpsMessageDTO[]>>({});
   const [loadingMessages, setLoadingMessages] = useState(false);
+  // Lỗi tải tin nhắn của hội thoại đang mở — hiện error state NHẸ trong khung
+  // chat kèm nút thử lại, không kéo sập cả trang
+  const [messagesError, setMessagesError] = useState<string | null>(null);
   const [realProduct, setRealProduct] = useState<MockProductInfo | null>(null);
   const [productQuery, setProductQuery] = useState("");
   const [productLoading, setProductLoading] = useState(false);
@@ -138,16 +141,29 @@ export function OperationsChatPage() {
   const loadRealMessages = useCallback(
     async (conv: OpsConversationDTO) => {
       setLoadingMessages(true);
+      setMessagesError(null);
+      let msgs: OpsMessageDTO[] = [];
       try {
         const r = await fetchOpsMessages({
           channelId: conv.channelId,
           conversationId: conv.externalId,
           buyerId: conv.buyerId,
         });
-        setRealMessages((prev) => ({ ...prev, [conv.id]: r.messages }));
+        msgs = r.messages ?? [];
+        setRealMessages((prev) => ({ ...prev, [conv.id]: msgs }));
+      } catch (err) {
+        // Token hết hạn / sàn chặn quyền — hiện trong khung chat, các hội
+        // thoại khác vẫn dùng bình thường
+        setMessagesError(err instanceof Error ? err.message : "Không tải được tin nhắn");
+        setLoadingMessages(false);
+        return;
+      }
+      setLoadingMessages(false);
 
-        // Khách chat từ trang sản phẩm → tin nhắn có item_id: tự tra ngữ cảnh
-        const withItem = [...r.messages].reverse().find((m) => m.itemId);
+      // Ngữ cảnh SP tách RIÊNG khỏi luồng tin nhắn: khách gửi kèm sản phẩm mà
+      // tra ngữ cảnh lỗi thì chat vẫn phải hiện đủ — chỉ ghi log, không toast.
+      try {
+        const withItem = [...msgs].reverse().find((m) => m?.itemId);
         if (withItem?.itemId) {
           const ctx = await fetchOpsProductContext({
             channelId: conv.channelId,
@@ -157,10 +173,8 @@ export function OperationsChatPage() {
             setRealProduct(productInfoFromContext(ctx.product));
           }
         }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Không tải được tin nhắn");
-      } finally {
-        setLoadingMessages(false);
+      } catch {
+        // best-effort — nhân viên vẫn tra tay được bằng ô tìm kiếm
       }
     },
     []
@@ -168,6 +182,7 @@ export function OperationsChatPage() {
 
   useEffect(() => {
     if (mode !== "real" || !activeReal) return;
+    setMessagesError(null); // lỗi là của hội thoại cũ — đừng đeo sang hội thoại mới
     if (!realMessages[activeReal.id]) void loadRealMessages(activeReal);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ nạp khi đổi hội thoại
   }, [mode, activeRealId]);
@@ -203,13 +218,25 @@ export function OperationsChatPage() {
     : activeDemo.channel;
 
   const suggestion = useMemo(() => {
-    const lastCustomerText = isReal
-      ? [...(activeReal ? realMessages[activeReal.id] ?? [] : [])]
-          .reverse()
-          .find((m) => !m.fromShop)?.text ?? ""
-      : [...activeDemo.messages].reverse().find((m) => m.from === "CUSTOMER")?.text ?? "";
-    const fallback = isReal ? GENERIC_CHAT_FALLBACK : activeDemo.aiSuggestion;
-    return buildAiSuggestion(product, lastCustomerText, fallback, MOCK_STOCK_SOURCE_PREFERENCE);
+    // Bọc TOÀN BỘ đường sinh gợi ý: một payload dị (text undefined, chart
+    // hỏng…) làm engine ném lỗi thì copilot rơi về câu chung, chat KHÔNG sập.
+    try {
+      const lastCustomerText = isReal
+        ? [...(activeReal ? realMessages[activeReal.id] ?? [] : [])]
+            .reverse()
+            .find((m) => m && !m.fromShop)?.text ?? ""
+        : [...activeDemo.messages].reverse().find((m) => m.from === "CUSTOMER")?.text ??
+          "";
+      const fallback = isReal ? GENERIC_CHAT_FALLBACK : activeDemo.aiSuggestion;
+      return buildAiSuggestion(
+        product,
+        typeof lastCustomerText === "string" ? lastCustomerText : "",
+        fallback,
+        MOCK_STOCK_SOURCE_PREFERENCE
+      );
+    } catch {
+      return { text: GENERIC_CHAT_FALLBACK, intent: "GENERAL" as const };
+    }
   }, [isReal, activeReal, realMessages, activeDemo, product]);
 
   // ── Gửi tin nhắn ──
@@ -239,7 +266,7 @@ export function OperationsChatPage() {
         ],
       }));
       setDraft("");
-      toast.success(`Đã gửi tới ${activeReal.customer} qua ${CHANNEL_META[activeReal.channelName].label}.`);
+      toast.success(`Đã gửi tới ${activeReal.customer} qua ${channelMeta(activeReal.channelName).label}.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gửi tin thất bại");
     } finally {
@@ -274,11 +301,11 @@ export function OperationsChatPage() {
   const convItems = isReal
     ? realConvs.map((c) => ({
         key: c.id,
-        customer: c.customer,
+        customer: c.customer || "Khách",
         channel: c.channelName as OpsChannel,
-        lastMessage: c.lastMessage,
+        lastMessage: typeof c.lastMessage === "string" ? c.lastMessage : "",
         time: fmtTime(c.lastAt),
-        unread: c.unread,
+        unread: Number(c.unread) || 0,
         active: c.id === activeRealId,
         select: () => setActiveRealId(c.id),
       }))
@@ -295,12 +322,14 @@ export function OperationsChatPage() {
 
   // ── View model tin nhắn của hội thoại đang mở ──
   const messageItems = isReal
-    ? (activeReal ? realMessages[activeReal.id] ?? [] : []).map((m) => ({
-        key: m.id,
-        fromShop: m.fromShop,
-        text: m.text,
-        time: fmtTime(m.at),
-      }))
+    ? (activeReal ? realMessages[activeReal.id] ?? [] : [])
+        .filter((m) => m != null)
+        .map((m, i) => ({
+          key: m.id ?? `msg-${i}`,
+          fromShop: Boolean(m.fromShop),
+          text: typeof m.text === "string" ? m.text : "[tin nhắn không đọc được]",
+          time: fmtTime(m.at),
+        }))
     : activeDemo.messages.map((m) => ({
         key: m.id,
         fromShop: m.from === "SHOP",
@@ -365,7 +394,7 @@ export function OperationsChatPage() {
                   )}
                 >
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
-                    {c.customer.charAt(0)}
+                    {(c.customer || "?").charAt(0)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -376,8 +405,8 @@ export function OperationsChatPage() {
                     </div>
                     <p className="mt-0.5 truncate text-sm text-slate-600">{c.lastMessage}</p>
                     <div className="mt-1 flex items-center gap-1.5">
-                      <Badge variant="outline" className={CHANNEL_META[c.channel].badgeClass}>
-                        {CHANNEL_META[c.channel].label}
+                      <Badge variant="outline" className={channelMeta(c.channel).badgeClass}>
+                        {channelMeta(c.channel).label}
                       </Badge>
                       {c.unread > 0 && (
                         <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-red-500 text-[11px] font-semibold text-white tabular-nums">
@@ -396,12 +425,12 @@ export function OperationsChatPage() {
             {/* Header hội thoại */}
             <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
-                {headerCustomer.charAt(0)}
+                {(headerCustomer || "?").charAt(0)}
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">{headerCustomer}</p>
                 <p className={TEXT_SUB}>
-                  {CHANNEL_META[activeChannel].label} · {headerShop}
+                  {channelMeta(activeChannel).label} · {headerShop}
                 </p>
               </div>
               <div className="ml-auto flex items-center gap-2">
@@ -446,7 +475,23 @@ export function OperationsChatPage() {
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
                 </div>
               )}
-              {!loadingMessages && messageItems.length === 0 && (
+              {/* Error state NHẸ trong khung — trang và các hội thoại khác vẫn sống */}
+              {!loadingMessages && messagesError && (
+                <div className="mx-auto max-w-sm rounded-lg border border-amber-200 bg-amber-50 p-4 text-center">
+                  <p className="text-sm text-amber-800">
+                    Không tải được tin nhắn: {messagesError}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 border-amber-300 text-amber-800 hover:bg-amber-100"
+                    onClick={() => activeReal && loadRealMessages(activeReal)}
+                  >
+                    Thử lại
+                  </Button>
+                </div>
+              )}
+              {!loadingMessages && !messagesError && messageItems.length === 0 && (
                 <p className="py-6 text-center text-sm text-muted-foreground">
                   Chưa có tin nhắn nào trong hội thoại này.
                 </p>
