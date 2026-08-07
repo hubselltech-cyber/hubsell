@@ -713,7 +713,15 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     // Thứ tự dò theo query: khớp CHÍNH XÁC channelSku trước, và trong mỗi bậc
     // ưu tiên dòng ĐÃ LIÊN KẾT kho (productId != null) — gõ "TC025" phải ra
     // đúng TC025 kèm tồn vật lý, không phải dòng biến thể mồ côi vừa sync.
-    const scope = channelScope(req) as object;
+    //
+    // ⚠️ KHÔNG dùng channelScope(req) ở đây: hàm đó TỰ ĐỌC ?channelId và ghim
+    // cứng gian vào scope — làm pass "tìm chéo gian" bên dưới thành fallback
+    // giả (gian chưa đồng bộ danh mục là found:false vĩnh viễn). Tự dựng scope
+    // chủ sở hữu + giới hạn gian nhân viên; việc ghim gian để pass 1 cầm riêng.
+    const scope: { userId: string; id?: { in: string[] } } = {
+      userId: req.ownerId!,
+    };
+    if (req.allowedChannelIds) scope.id = { in: req.allowedChannelIds };
     const cpInclude = { product: true, channel: true } as const;
     let cp = null;
     if (itemId) {
