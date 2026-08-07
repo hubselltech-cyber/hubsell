@@ -258,6 +258,123 @@ export const MOCK_REVIEWS: MockReview[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SẢN PHẨM & TỒN KHO — NGỮ CẢNH CHO AI COPILOT
+//
+// Hợp đồng dữ liệu chuẩn bị cho DB thật: sizeChart/material/care dự kiến là
+// cột JSON + text trên bảng Product (kho vật lý — KHÔNG phải ChannelProduct,
+// vì thông số vật lý là thuộc tính của hàng trong kho, dùng chung mọi sàn);
+// variants.stock đọc từ tồn kho vật lý hiện có. Đây chính là khối dữ liệu sẽ
+// được NẠP THẲNG vào prompt AI (Context Injection) khi sinh gợi ý trả lời.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Một dòng bảng quy đổi size: khoảng chiều cao/cân nặng phù hợp. */
+export interface SizeRow {
+  size: string;
+  /** [min, max] chiều cao cm */
+  heightCm: [number, number];
+  /** [min, max] cân nặng kg */
+  weightKg: [number, number];
+}
+
+/**
+ * Một biến thể màu × size kèm HAI nguồn tồn:
+ * - stockQuantity: Kho vật lý Hubsell (bảng inventory hiện có)
+ * - channelStock: tồn ĐANG TREO TRÊN SÀN của gian hàng khách chat (đọc từ
+ *   ChannelProduct / API sàn) — với shop KHÔNG bật đồng bộ kho, đây mới là
+ *   số khách bấm mua được, hai số hoàn toàn có thể lệch nhau.
+ */
+export interface ProductVariant {
+  color: string;
+  size: string;
+  stockQuantity: number;
+  channelStock: number;
+}
+
+/** Nguồn tồn kho AI Copilot dùng để tư vấn khách. */
+export type StockSource = "CHANNEL" | "PHYSICAL";
+
+/**
+ * Cấu hình của seller (sau này lưu theo user/shop trong DB, đặt cạnh các cờ
+ * cấu hình chung): AI đọc nguồn tồn nào khi trả lời khách. Mặc định CHANNEL —
+ * tư vấn theo số sàn để không bao giờ báo "hết hàng" trong khi trên sàn khách
+ * vẫn bấm mua được; shop nào đồng bộ kho chuẩn thì chuyển PHYSICAL.
+ */
+export const MOCK_STOCK_SOURCE_PREFERENCE: StockSource = "CHANNEL";
+
+export interface MockProductInfo {
+  sku: string;
+  name: string;
+  /** Class gradient cho ô ảnh giữ chỗ (chưa nối ảnh thật từ sàn). */
+  imageClass: string;
+  material: string;
+  /** Hướng dẫn bảo quản — AI hay cần khi khách hỏi cách giặt/vệ sinh. */
+  care: string;
+  sizeChart: SizeRow[];
+  variants: ProductVariant[];
+}
+
+export const MOCK_PRODUCTS: Record<string, MockProductInfo> = {
+  "DM-TS-OVS": {
+    sku: "DM-TS-OVS",
+    name: "Áo thun oversize DarkMan Basic",
+    imageClass: "from-slate-700 to-slate-900",
+    material: "100% cotton 2 chiều, định lượng 250gsm",
+    care: "Giặt máy nước lạnh, lộn trái khi giặt, không sấy nhiệt cao",
+    sizeChart: [
+      { size: "S", heightCm: [150, 160], weightKg: [45, 55] },
+      { size: "M", heightCm: [158, 168], weightKg: [52, 62] },
+      { size: "L", heightCm: [166, 175], weightKg: [60, 70] },
+      { size: "XL", heightCm: [172, 182], weightKg: [68, 80] },
+    ],
+    variants: [
+      { color: "Đen", size: "S", stockQuantity: 24, channelStock: 24 },
+      // Lệch tồn: sàn chưa trừ 8 đơn đang đóng
+      { color: "Đen", size: "M", stockQuantity: 56, channelStock: 48 },
+      { color: "Đen", size: "L", stockQuantity: 31, channelStock: 31 },
+      // Ca kinh điển: kho vật lý HẾT nhưng sàn vẫn treo 2 cái khách mua được
+      { color: "Đen", size: "XL", stockQuantity: 0, channelStock: 2 },
+      { color: "Trắng", size: "S", stockQuantity: 12, channelStock: 12 },
+      { color: "Trắng", size: "M", stockQuantity: 40, channelStock: 40 },
+      { color: "Trắng", size: "L", stockQuantity: 4, channelStock: 4 },
+      { color: "Trắng", size: "XL", stockQuantity: 9, channelStock: 8 },
+    ],
+  },
+  "DM-HD-SIG": {
+    sku: "DM-HD-SIG",
+    name: "Hoodie DarkMan Signature",
+    imageClass: "from-zinc-600 to-zinc-900",
+    material: "Nỉ bông da cá 350gsm, lót bo gân co giãn",
+    care: "Giặt tay hoặc máy chế độ nhẹ, phơi ngang tránh giãn form",
+    sizeChart: [
+      { size: "M", heightCm: [158, 168], weightKg: [52, 63] },
+      { size: "L", heightCm: [165, 174], weightKg: [60, 72] },
+      { size: "XL", heightCm: [171, 181], weightKg: [70, 84] },
+    ],
+    variants: [
+      { color: "Đen", size: "M", stockQuantity: 18, channelStock: 18 },
+      { color: "Đen", size: "L", stockQuantity: 22, channelStock: 20 },
+      { color: "Đen", size: "XL", stockQuantity: 3, channelStock: 3 },
+      { color: "Xám", size: "M", stockQuantity: 15, channelStock: 15 },
+      { color: "Xám", size: "L", stockQuantity: 0, channelStock: 0 },
+      { color: "Xám", size: "XL", stockQuantity: 7, channelStock: 7 },
+    ],
+  },
+  "HB-BS-240": {
+    sku: "HB-BS-240",
+    name: "Bình sữa PPSU Hi.Bé 240ml",
+    imageClass: "from-sky-400 to-blue-600",
+    material: "Nhựa PPSU chịu nhiệt 180°C, núm silicone y tế",
+    care: "Tiệt trùng nước sôi/máy UV, thay núm định kỳ 3 tháng",
+    // Sản phẩm không mặc — bảng size trống, AI sẽ bỏ qua tư vấn size
+    sizeChart: [],
+    variants: [
+      { color: "Hồng", size: "240ml", stockQuantity: 35, channelStock: 35 },
+      { color: "Xanh", size: "240ml", stockQuantity: 42, channelStock: 40 },
+    ],
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TRỢ LÝ CHAT — HỘI THOẠI MOCK
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -278,8 +395,17 @@ export interface MockConversation {
   unread: number;
   /** Mã đơn liên quan (nếu khách đang hỏi về một đơn cụ thể). */
   orderCode?: string;
+  /**
+   * SKU sản phẩm gắn với hội thoại (khách bấm chat từ trang sản phẩm hoặc
+   * suy từ đơn hàng) — chìa khoá để nạp ngữ cảnh sản phẩm cho AI Copilot
+   * và hiện widget "Sản phẩm đang chat". Không có thì AI chỉ dựa hội thoại.
+   */
+  productSku?: string;
   messages: MockMessage[];
-  /** Gợi ý trả lời của AI Copilot cho tin nhắn mới nhất của khách. */
+  /**
+   * Gợi ý trả lời DỰ PHÒNG khi copilot-engine không bắt được ý định nào
+   * (câu hỏi không liên quan size/tồn kho) — mô phỏng câu LLM trả về.
+   */
   aiSuggestion: string;
 }
 
@@ -292,6 +418,7 @@ export const MOCK_CONVERSATIONS: MockConversation[] = [
     lastMessage: "Mình cao 1m60 nặng 52kg thì mặc size gì hả shop?",
     time: "2 phút",
     unread: 2,
+    productSku: "DM-TS-OVS",
     messages: [
       {
         id: "m1",
@@ -344,6 +471,7 @@ export const MOCK_CONVERSATIONS: MockConversation[] = [
     time: "1 giờ",
     unread: 0,
     orderCode: "LZ0708HB31",
+    productSku: "HB-BS-240",
     messages: [
       {
         id: "m1",
@@ -397,5 +525,31 @@ export const MOCK_CONVERSATIONS: MockConversation[] = [
     ],
     aiSuggestion:
       "Dạ shop cảm ơn bạn nhiều lắm ạ! Nếu ưng sản phẩm, bạn để lại đánh giá 5 sao giúp shop nha — shop có gửi kèm mã giảm giá 10% cho đơn tiếp theo trong kiện hàng đó ạ 🧡",
+  },
+  {
+    id: "cv-05",
+    customer: "Đỗ Mạnh Hùng",
+    channel: "TIKTOK",
+    shop: "DarkMan",
+    lastMessage: "Shop ơi mã này còn hàng màu đen không?",
+    time: "5 giờ",
+    unread: 1,
+    productSku: "DM-HD-SIG",
+    messages: [
+      {
+        id: "m1",
+        from: "CUSTOMER",
+        text: "Hoodie Signature bên mình đẹp quá.",
+        time: "05:12",
+      },
+      {
+        id: "m2",
+        from: "CUSTOMER",
+        text: "Shop ơi mã này còn hàng màu đen không?",
+        time: "05:13",
+      },
+    ],
+    aiSuggestion:
+      "Dạ shop cảm ơn bạn đã quan tâm Hoodie Signature ạ! Bạn cho shop xin chiều cao cân nặng để shop tư vấn size chuẩn nhất nha.",
   },
 ];
