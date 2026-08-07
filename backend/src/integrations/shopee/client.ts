@@ -644,7 +644,7 @@ export interface ShopeeSendMessageData extends ShopeeEnvelope {
 
 /**
  * Gửi MỘT tin nhắn văn bản tới người mua. `toId` là user_id người mua (trường
- * to_id của hội thoại). Chỉ hỗ trợ text — đủ cho CSKH; ảnh/voucher làm sau.
+ * to_id của hội thoại). Ảnh/voucher làm sau; thẻ sản phẩm xem sendChatItemMessage.
  */
 export async function sendChatMessage(
   params: { accessToken: string; shopId: string; toId: number; text: string },
@@ -658,6 +658,28 @@ export async function sendChatMessage(
       to_id: params.toId,
       message_type: "text",
       content: { text: params.text },
+    },
+    "send_message",
+    cfg
+  );
+}
+
+/**
+ * Gửi THẺ SẢN PHẨM chuẩn sàn (message_type "item" + item_id) — trên app Shopee
+ * khách thấy đúng card sản phẩm bấm mua được, không phải link text.
+ */
+export async function sendChatItemMessage(
+  params: { accessToken: string; shopId: string; toId: number; itemId: number },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeSendMessageData> {
+  return callShopPost<ShopeeSendMessageData>(
+    SHOPEE_PATHS.chatSendMessage,
+    params.accessToken,
+    params.shopId,
+    {
+      to_id: params.toId,
+      message_type: "item",
+      content: { item_id: params.itemId },
     },
     "send_message",
     cfg

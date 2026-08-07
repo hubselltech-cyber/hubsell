@@ -21,6 +21,7 @@ import {
   getChatMessages,
   getModelList,
   replyComment,
+  sendChatItemMessage,
   sendChatMessage,
   shopeeSellerStock,
   type ShopeeConversation,
@@ -468,6 +469,46 @@ router.post("/conversations/send", async (req: AuthRequest, res, next) => {
 });
 
 // ============================================================
+// POST /api/operations/conversations/send-item — gửi THẺ SẢN PHẨM chuẩn sàn
+// Body: { channelId, buyerId, itemId }
+//
+// Chỉ Shopee (message_type "item"): khách thấy card sản phẩm bấm mua được
+// ngay trong app. Lazada có template 10006 nhưng app đang thiếu quyền im/* —
+// frontend tự fallback text + link đúng sàn, route này trả 400 nói thẳng.
+// ============================================================
+router.post("/conversations/send-item", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelId, buyerId, itemId } = req.body ?? {};
+    const ch = await findChannel(req, String(channelId ?? ""));
+    if (!ch) {
+      res.status(404).json({ error: "Không tìm thấy gian hàng đã uỷ quyền" });
+      return;
+    }
+    if (ch.channelName !== ChannelName.SHOPEE) {
+      res.status(400).json({
+        error: "Gửi thẻ sản phẩm hiện chỉ hỗ trợ Shopee — Lazada dùng tin nhắn kèm link.",
+      });
+      return;
+    }
+    const toId = Number(buyerId);
+    const item = Number(itemId);
+    if (!Number.isFinite(toId) || toId <= 0) {
+      res.status(400).json({ error: "Thiếu buyerId (to_id) của người mua Shopee" });
+      return;
+    }
+    if (!Number.isFinite(item) || item <= 0) {
+      res.status(400).json({ error: "itemId sản phẩm Shopee không hợp lệ" });
+      return;
+    }
+    const { accessToken, shopId } = await getValidShopeeAccessToken(ch);
+    await sendChatItemMessage({ accessToken, shopId, toId, itemId: item });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
 // GET /api/operations/reviews — đánh giá hợp nhất
 //
 // Shopee: get_comment lấy được TOÀN SHOP một lượt. Lazada bắt buộc theo từng
@@ -687,6 +728,11 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           include: cpInclude,
         }));
     } else {
+      // STRICT CHANNEL ISOLATION: hội thoại gửi kèm channelId thì CHỈ tìm
+      // trong đúng gian đó — thà không có link còn hơn dính link sàn khác
+      // (bug thật: chat Shopee mà thẻ SP sinh link lazada.vn vì TC025 khớp
+      // dòng Lazada trước).
+      const inChannel = channelId ? { channelId } : {};
       const exact = { channelSku: { equals: query, mode: "insensitive" as const } };
       const fuzzy = {
         OR: [
@@ -701,7 +747,7 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
         fuzzy,
       ]) {
         cp = await prisma.channelProduct.findFirst({
-          where: { channel: scope, ...cond },
+          where: { channel: scope, ...inChannel, ...cond },
           include: cpInclude,
           orderBy: { lastSyncedAt: "desc" },
         });
@@ -742,19 +788,22 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    // Tồn SÀN live (chỉ Shopee, best-effort — lỗi thì để null, không chặn)
+    // Tồn SÀN live (chỉ Shopee, best-effort — lỗi thì để null, không chặn).
+    // Lấy TOÀN BỘ model của item (khách mua ở cấp item nên tư vấn phải thấy đủ
+    // màu/size) — trả kèm channelVariants cho widget vẽ ma trận tồn thật.
     let channelStock: number | null = null;
+    let channelVariants: { name: string; stock: number | null }[] | null = null;
     if (cp?.channel.channelName === ChannelName.SHOPEE && cp.externalId) {
       try {
         const { accessToken, shopId } = await getValidShopeeAccessToken(cp.channel);
         const models = await getModelList(accessToken, shopId, Number(cp.externalId));
         if (models.length > 0) {
-          // Có phân loại: cộng đúng model khớp channelSku, không khớp thì cộng hết
-          const matched = models.filter(
-            (m) => (m.model_sku?.trim() || "") === cp.channelSku
-          );
-          const stocks = (matched.length > 0 ? matched : models)
-            .map((m) => shopeeSellerStock(m.stock_info_v2))
+          channelVariants = models.map((m) => ({
+            name: m.model_name?.trim() || m.model_sku?.trim() || "Phân loại",
+            stock: shopeeSellerStock(m.stock_info_v2),
+          }));
+          const stocks = channelVariants
+            .map((v) => v.stock)
             .filter((s): s is number => s !== null);
           // Không model nào đọc được tồn → trả null (không biết) thay vì 0 —
           // số 0 giả làm widget báo "Hết hàng" trong khi sàn vẫn bán được.
@@ -792,11 +841,19 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
         physicalStock:
           product != null ? product.quantityInStock - product.holdQuantity : null,
         channelStock,
+        channelVariants,
         channelName: cp?.channel.channelName ?? null,
         variantName: cp?.variantName ?? null,
         linked: product != null,
         productUrl,
         price,
+        // item_id phía sàn — nguồn cho nút gửi thẻ SP chuẩn Shopee
+        // (externalId Lazada dạng "itemId-skuId" nên tách lấy phần item).
+        itemId: cp?.externalId
+          ? cp.channel.channelName === ChannelName.LAZADA
+            ? String(cp.externalId).split("-")[0]
+            : String(cp.externalId)
+          : null,
       },
     });
   } catch (err) {

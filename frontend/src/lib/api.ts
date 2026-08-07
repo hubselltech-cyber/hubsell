@@ -2296,6 +2296,8 @@ export interface OpsProductContextDTO {
     | null;
   physicalStock: number | null;
   channelStock: number | null;
+  /** Tồn live TỪNG phân loại (model Shopee) — vẽ ma trận màu/size thật. */
+  channelVariants: { name: string; stock: number | null }[] | null;
   channelName: ChannelName | null;
   variantName: string | null;
   linked: boolean;
@@ -2303,6 +2305,8 @@ export interface OpsProductContextDTO {
   productUrl: string | null;
   /** Giá niêm yết (VND) — ưu tiên giá trên sàn, null khi chưa sync giá. */
   price: number | null;
+  /** item_id phía sàn — nguồn gửi thẻ SP chuẩn Shopee (message_type item). */
+  itemId: string | null;
 }
 
 /** Trạng thái từng gian sau một lượt quét inbox — kể cả gian thành công 0 hội thoại. */
@@ -2344,6 +2348,18 @@ export function sendOpsMessage(body: {
   text: string;
 }) {
   return apiFetch<{ ok: boolean }>("/api/operations/conversations/send", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Gửi THẺ SẢN PHẨM chuẩn sàn (Shopee message_type "item"). */
+export function sendOpsItemMessage(body: {
+  channelId: string;
+  buyerId?: string | null;
+  itemId: string;
+}) {
+  return apiFetch<{ ok: boolean }>("/api/operations/conversations/send-item", {
     method: "POST",
     body: JSON.stringify(body),
   });

@@ -55,8 +55,16 @@ export function ProductContextCard({
     variants.find((v) => v.color === color && v.size === size) ?? null;
 
   const totalChannel = variants.reduce((s, v) => s + (Number(v.channelStock) || 0), 0);
-  const totalPhysical = variants.reduce((s, v) => s + (Number(v.stockQuantity) || 0), 0);
-  const hasMismatch = variants.some((v) => v.channelStock !== v.stockQuantity);
+  // physicalTotal: undefined = mock (tự cộng từ variants); null = SKU chưa
+  // liên kết kho → hiện "—" chứ KHÔNG phải 0 giả (bug "kho báo 0 dù còn hàng").
+  const totalPhysical =
+    product.physicalTotal !== undefined
+      ? product.physicalTotal
+      : variants.reduce((s, v) => s + (Number(v.stockQuantity) || 0), 0);
+  const hasMismatch =
+    product.physicalTotal !== undefined
+      ? product.physicalTotal !== null && product.physicalTotal !== totalChannel
+      : variants.some((v) => v.channelStock !== v.stockQuantity);
   const channelLabel = channelMeta(channel).label;
 
   return (
@@ -144,7 +152,9 @@ export function ProductContextCard({
         </span>
         <span className="mx-1.5 text-slate-300">|</span>
         <span className="text-slate-500">Kho vật lý:</span>{" "}
-        <span className="font-medium text-slate-700">{totalPhysical}</span>
+        <span className="font-medium text-slate-700">
+          {totalPhysical === null ? "— (chưa liên kết)" : totalPhysical}
+        </span>
       </p>
 
       {/* Chất liệu & bảo quản — hai câu khách hỏi nhiều nhất sau size */}

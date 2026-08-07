@@ -280,12 +280,38 @@ export const GENERIC_CHAT_FALLBACK =
 
 /**
  * Đổi ngữ cảnh sản phẩm THẬT (API /product-context) về shape MockProductInfo
- * để engine + widget dùng chung một đường code với demo. Dữ liệu thật v1 chưa
- * có ma trận màu×size — gom thành MỘT dòng tồn tổng; khi nào đồng bộ biến thể
- * chi tiết thì chỉ cần thay chỗ này.
+ * để engine + widget dùng chung một đường code với demo.
+ *
+ * Ma trận tồn: có channelVariants (model Shopee live) thì mỗi model một dòng —
+ * model_name Shopee dạng "Đen,XL" tách thành màu × size; không có thì gom một
+ * dòng "Tổng tồn" như v1. Tồn vật lý CẤP BIẾN THỂ chưa đồng bộ nên
+ * stockQuantity gán bằng tồn sàn (không chế số lệch giả); tổng kho thật đi
+ * riêng qua physicalTotal.
  */
 export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductInfo {
   const physical = ctx.physicalStock ?? 0;
+  const liveVariants = (ctx.channelVariants ?? []).filter((v) => v.stock !== null);
+  const variants: ProductVariant[] =
+    liveVariants.length > 0
+      ? liveVariants.map((v) => {
+          const [color, ...rest] = v.name.split(",").map((s) => s.trim());
+          return {
+            color: color || "Phân loại",
+            size: rest.join(", ") || "—",
+            stockQuantity: v.stock ?? 0,
+            channelStock: v.stock ?? 0,
+          };
+        })
+      : [
+          {
+            color: "Tổng tồn",
+            size: ctx.variantName?.trim() || "—",
+            stockQuantity: physical,
+            // Sàn chưa trả được tồn live (Lazada / lỗi API) thì mượn tồn vật
+            // lý — thà nói số kho còn hơn nói "hết hàng" sai.
+            channelStock: ctx.channelStock ?? physical,
+          },
+        ];
   return {
     sku: ctx.sku,
     name: ctx.name,
@@ -295,19 +321,18 @@ export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductIn
     imageUrl: ctx.imageUrl ?? null,
     productUrl: ctx.productUrl ?? null,
     price: ctx.price ?? null,
+    itemId: ctx.itemId ?? null,
+    sourceChannel:
+      ctx.channelName === "SHOPEE" ||
+      ctx.channelName === "LAZADA" ||
+      ctx.channelName === "TIKTOK"
+        ? ctx.channelName
+        : null,
+    physicalTotal: ctx.physicalStock,
     material: ctx.material ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
     care: ctx.care ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
     sizeChart: ctx.sizeChart ?? [],
-    variants: [
-      {
-        color: "Tổng tồn",
-        size: ctx.variantName?.trim() || "—",
-        stockQuantity: physical,
-        // Sàn chưa trả được tồn live (Lazada / lỗi API) thì mượn tồn vật lý —
-        // thà nói số kho còn hơn nói "hết hàng" sai.
-        channelStock: ctx.channelStock ?? physical,
-      },
-    ],
+    variants,
   };
 }
 

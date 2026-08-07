@@ -51,6 +51,7 @@ import {
   fetchOpsConversations,
   fetchOpsMessages,
   fetchOpsProductContext,
+  sendOpsItemMessage,
   sendOpsMessage,
   type OpsChannelError,
   type OpsChannelStat,
@@ -356,11 +357,16 @@ export function OperationsChatPage() {
   }, [mode, activeRealId]);
 
   // ── Tra ngữ cảnh sản phẩm theo từ khoá (SKU / tên) ──
+  // LUÔN kèm channelId của hội thoại đang mở: backend chỉ tìm trong đúng gian
+  // đó (strict isolation) — hết cảnh chat Shopee mà ra link/tồn của Lazada.
   async function searchProduct() {
     if (!productQuery.trim()) return;
     setProductLoading(true);
     try {
-      const ctx = await fetchOpsProductContext({ query: productQuery.trim() });
+      const ctx = await fetchOpsProductContext({
+        query: productQuery.trim(),
+        ...(activeReal ? { channelId: activeReal.channelId } : {}),
+      });
       if (ctx.found && ctx.product) {
         setRealProduct(productInfoFromContext(ctx.product));
         toast.success(`Đã nạp ngữ cảnh: ${ctx.product.name}`);
@@ -392,10 +398,67 @@ export function OperationsChatPage() {
     ? (activeReal?.channelName ?? "SHOPEE")
     : activeDemo.channel;
 
-  /** Đổ thẻ SP vào ô soạn tin — CSKH xem lại rồi Enter là gửi. */
-  function handleSendProductCard() {
+  /**
+   * Gửi thẻ sản phẩm cho khách:
+   *  · Hội thoại Shopee thật + SP có item trên ĐÚNG gian → gọi API gửi payload
+   *    ITEM chuẩn sàn (khách thấy card bấm mua được trên app Shopee) và hiện
+   *    ngay bong bóng thẻ SP trong khung chat.
+   *  · Lazada (app chưa có quyền im gửi template) / demo / SP chưa niêm yết
+   *    gian này → fallback đổ text vào ô soạn tin, link + nhãn theo SÀN NGUỒN
+   *    của sản phẩm — tuyệt đối không mượn nhãn sàn của hội thoại.
+   */
+  const [sendingCard, setSendingCard] = useState(false);
+  async function handleSendProductCard() {
     if (!product) return;
-    setDraft(buildProductCardMessage(product, channelMeta(activeChannel).label));
+    if (
+      isReal &&
+      activeReal &&
+      product.itemId &&
+      activeReal.channelName === "SHOPEE" &&
+      product.sourceChannel === "SHOPEE"
+    ) {
+      if (sendingCard) return;
+      setSendingCard(true);
+      try {
+        await sendOpsItemMessage({
+          channelId: activeReal.channelId,
+          buyerId: activeReal.buyerId,
+          itemId: product.itemId,
+        });
+        setRealMessages((prev) => ({
+          ...prev,
+          [activeReal.id]: [
+            ...(prev[activeReal.id] ?? []),
+            {
+              id: `local-item-${Date.now()}`,
+              fromShop: true,
+              text: "🛍️ [Thẻ sản phẩm]",
+              at: Date.now(),
+              itemId: product.itemId ?? null,
+            },
+          ],
+        }));
+        toast.success(`🛍️ Đã gửi thẻ ${product.sku} tới ${activeReal.customer}.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Gửi thẻ sản phẩm thất bại");
+      } finally {
+        setSendingCard(false);
+      }
+      return;
+    }
+    // Chốt chặn cuối chống chéo sàn: SP thuộc sàn khác hội thoại thì bỏ link
+    const crossChannel =
+      isReal &&
+      activeReal != null &&
+      product.sourceChannel != null &&
+      product.sourceChannel !== activeReal.channelName;
+    const safe = crossChannel ? { ...product, productUrl: null } : product;
+    setDraft(
+      buildProductCardMessage(
+        safe,
+        channelMeta(safe.sourceChannel ?? activeChannel).label
+      )
+    );
     toast.success("Đã đổ thẻ sản phẩm vào ô soạn tin — kiểm tra rồi Enter để gửi.");
   }
 
@@ -595,12 +658,14 @@ export function OperationsChatPage() {
           fromShop: Boolean(m.fromShop),
           text: typeof m.text === "string" ? m.text : "[tin nhắn không đọc được]",
           time: fmtTime(m.at),
+          itemId: m.itemId ?? null,
         }))
     : activeDemo.messages.map((m) => ({
         key: m.id,
         fromShop: m.from === "SHOP",
         text: m.text,
         time: m.time,
+        itemId: null as string | null,
       }));
 
   const headerCustomer = isReal ? activeReal?.customer ?? "" : activeDemo.customer;
@@ -821,8 +886,56 @@ export function OperationsChatPage() {
                   Chưa có tin nhắn nào trong hội thoại này.
                 </p>
               )}
-              {messageItems.map((m) => (
+              {messageItems.map((m) => {
+                // Tin nhắn đính kèm SP trùng với SP đang nạp Cột 3 → vẽ bong
+                // bóng THẺ SẢN PHẨM (ảnh + tên + giá + badge sàn) thay text thô
+                const isCard = m.itemId != null && product?.itemId === m.itemId;
+                return (
                 <div key={m.key} className={cn("flex", m.fromShop ? "justify-end" : "justify-start")}>
+                  {isCard && product ? (
+                    <div
+                      className={cn(
+                        "max-w-[75%] rounded-2xl border bg-card p-2.5 shadow-xs",
+                        m.fromShop ? "rounded-br-sm" : "rounded-bl-sm"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {product.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- ảnh CDN sàn domain động
+                          <img
+                            src={product.imageUrl}
+                            alt={product.name}
+                            className="size-12 shrink-0 rounded-lg border object-cover"
+                          />
+                        ) : (
+                          <div
+                            className={cn(
+                              "flex size-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-white",
+                              product.imageClass
+                            )}
+                          >
+                            <Package className="size-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-900">
+                            {product.name}
+                          </p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                            {product.price != null && product.price > 0 && (
+                              <span className="text-sm font-semibold text-slate-900">
+                                {product.price.toLocaleString("vi-VN")}₫
+                              </span>
+                            )}
+                            <Badge variant="outline" className="text-[10px]">
+                              {channelMeta(product.sourceChannel ?? activeChannel).label}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-right text-[11px] text-slate-400">{m.time}</p>
+                    </div>
+                  ) : (
                   <div
                     className={cn(
                       "max-w-[75%] rounded-2xl px-3.5 py-2 text-sm shadow-xs",
@@ -841,8 +954,10 @@ export function OperationsChatPage() {
                       {m.time}
                     </p>
                   </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               {/* Mốc cuộn — luôn là phần tử cuối để scrollIntoView đậu đúng đáy */}
               <div ref={messagesEndRef} aria-hidden />
             </div>

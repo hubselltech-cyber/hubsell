@@ -326,6 +326,14 @@ export interface MockProductInfo {
   productUrl?: string | null;
   /** Giá niêm yết (VND) hiện trên thẻ sản phẩm gửi khách. */
   price?: number | null;
+  /** item_id phía sàn — có là gửi được thẻ SP chuẩn Shopee. */
+  itemId?: string | null;
+  /** Sàn NGUỒN của link/itemId — nhãn link phải theo trường này, cấm lấy theo
+   *  sàn của hội thoại (từng sinh "trên Shopee tại: lazada.vn/..."). */
+  sourceChannel?: OpsChannel | null;
+  /** Tổng tồn kho vật lý THẬT: undefined = mock (tự cộng từ variants);
+   *  null = SKU chưa liên kết kho → widget hiện "—" thay vì 0 giả. */
+  physicalTotal?: number | null;
   material: string;
   /** Hướng dẫn bảo quản — AI hay cần khi khách hỏi cách giặt/vệ sinh. */
   care: string;
