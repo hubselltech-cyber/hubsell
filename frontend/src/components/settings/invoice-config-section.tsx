@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -134,6 +133,13 @@ function ConnBadge({ state, hasKeys }: { state: ConnState; hasKeys: boolean }) {
       {hasKeys ? "Chưa kiểm tra" : "Chưa kết nối"}
     </span>
   );
+}
+
+/** Dòng lỗi định dạng inline dưới ô nhập — component TĨNH cấp module (khai báo
+ *  trong thân component sẽ bị React coi là tạo mới mỗi render). */
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <p className="text-xs text-red-500">{msg}</p>;
 }
 
 export function InvoiceConfigSection({
@@ -436,13 +442,6 @@ export function InvoiceConfigSection({
     return has ? `Đã lưu (${masked ?? "••••"}) — nhập để đổi` : "••••••••";
   }
 
-  /** Dòng lỗi định dạng inline dưới ô nhập. */
-  function FieldError({ name }: { name: string }) {
-    const msg = fieldErrors[name];
-    if (!msg) return null;
-    return <p className="text-xs text-red-500">{msg}</p>;
-  }
-
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
@@ -604,7 +603,7 @@ export function InvoiceConfigSection({
                         fieldErrors.taxCode && "border-red-400",
                       )}
                     />
-                    <FieldError name="taxCode" />
+                    <FieldError msg={fieldErrors.taxCode} />
                   </div>
                   <div className="grid gap-1.5">
                     <Label htmlFor="inv-company">
@@ -737,7 +736,7 @@ export function InvoiceConfigSection({
                           fieldErrors.invoicePattern && "border-red-400",
                         )}
                       />
-                      <FieldError name="invoicePattern" />
+                      <FieldError msg={fieldErrors.invoicePattern} />
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="inv-series">Ký hiệu hóa đơn (Serial)</Label>
@@ -755,7 +754,7 @@ export function InvoiceConfigSection({
                           fieldErrors.invoiceSeries && "border-red-400",
                         )}
                       />
-                      <FieldError name="invoiceSeries" />
+                      <FieldError msg={fieldErrors.invoiceSeries} />
                     </div>
                   </div>
                 </div>
@@ -886,7 +885,7 @@ export function InvoiceConfigSection({
                         fieldErrors.posSeries && "border-red-400",
                       )}
                     />
-                    <FieldError name="posSeries" />
+                    <FieldError msg={fieldErrors.posSeries} />
                   </div>
                 </div>
               )}
