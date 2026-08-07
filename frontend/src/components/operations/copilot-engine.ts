@@ -214,16 +214,20 @@ export function buildAiSuggestion(
       sizeNote = ` Size ${askedSize} bạn hỏi là chuẩn luôn ạ.`;
     }
 
-    // Đọc tồn thật của size được tư vấn — tư vấn xong mà hết hàng là dở
+    // Đọc tồn thật của size được tư vấn — tư vấn xong mà hết hàng là dở.
+    // KHÔNG có dữ liệu tồn (variants rỗng — tra chéo gian/chưa đồng bộ) thì
+    // im lặng về tồn kho, tuyệt đối không phán "hết hàng" bừa.
     const inStock = product.variants.filter(
       (v) => v.size === best.size && qtyOf(v, stockSource) > 0
     );
     const stockNote =
-      inStock.length > 0
-        ? ` Size ${best.size} hiện còn ${inStock
-            .map((v) => `màu ${v.color} (${qtyOf(v, stockSource)} cái)`)
-            .join(", ")} — bạn chốt sớm kẻo hết nha!`
-        : ` Size ${best.size} hiện tạm hết hàng, shop sẽ báo ngay khi hàng về ạ.`;
+      product.variants.length === 0
+        ? ""
+        : inStock.length > 0
+          ? ` Size ${best.size} hiện còn ${inStock
+              .map((v) => `màu ${v.color} (${qtyOf(v, stockSource)} cái)`)
+              .join(", ")} — bạn chốt sớm kẻo hết nha!`
+          : ` Size ${best.size} hiện tạm hết hàng, shop sẽ báo ngay khi hàng về ạ.`;
 
     return {
       text: `Dạ với ${measure}, bạn mặc size ${best.size} của ${product.name} là chuẩn form nhất ạ.${sizeNote} Chất liệu ${product.material} nên mặc rất thoải mái.${stockNote}`,
@@ -232,6 +236,10 @@ export function buildAiSuggestion(
   }
 
   // ── Ý ĐỊNH 2: hỏi tồn kho / màu sắc ──
+  // Không có dữ liệu tồn nào đáng tin → trả lời chung, đừng phán "hết hàng"
+  if ((asksStock || color) && product.variants.length === 0) {
+    return { text: fallback, intent: "GENERAL" };
+  }
   if (asksStock || color) {
     const scope = color
       ? product.variants.filter((v) => v.color === color)
@@ -290,6 +298,9 @@ export const GENERIC_CHAT_FALLBACK =
  */
 export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductInfo {
   const physical = ctx.physicalStock ?? 0;
+  // Tổng tồn sàn để HIỂN THỊ: sàn không trả được thì mượn tồn vật lý; cả hai
+  // đều không biết → null cho widget hiện "—" thay vì 0 đỏ giả.
+  const knownTotal = ctx.channelStock ?? ctx.physicalStock;
   const liveVariants = (ctx.channelVariants ?? []).filter((v) => v.stock !== null);
   const variants: ProductVariant[] =
     liveVariants.length > 0
@@ -302,16 +313,18 @@ export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductIn
             channelStock: v.stock ?? 0,
           };
         })
-      : [
-          {
-            color: "Tổng tồn",
-            size: ctx.variantName?.trim() || "—",
-            stockQuantity: physical,
-            // Sàn chưa trả được tồn live (Lazada / lỗi API) thì mượn tồn vật
-            // lý — thà nói số kho còn hơn nói "hết hàng" sai.
-            channelStock: ctx.channelStock ?? physical,
-          },
-        ];
+      : knownTotal !== null
+        ? [
+            {
+              color: "Tổng tồn",
+              size: ctx.variantName?.trim() || "—",
+              stockQuantity: physical,
+              // Sàn chưa trả được tồn live (Lazada / lỗi API) thì mượn tồn vật
+              // lý — thà nói số kho còn hơn nói "hết hàng" sai.
+              channelStock: ctx.channelStock ?? physical,
+            },
+          ]
+        : []; // không có số tồn nào đáng tin → ẩn ma trận, đừng chế số 0
   return {
     sku: ctx.sku,
     name: ctx.name,
@@ -321,6 +334,7 @@ export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductIn
     imageUrl: ctx.imageUrl ?? null,
     productUrl: ctx.productUrl ?? null,
     price: ctx.price ?? null,
+    channelTotal: knownTotal,
     itemId: ctx.itemId ?? null,
     sourceChannel:
       ctx.channelName === "SHOPEE" ||

@@ -54,16 +54,22 @@ export function ProductContextCard({
   const variantOf = (color: string, size: string) =>
     variants.find((v) => v.color === color && v.size === size) ?? null;
 
-  const totalChannel = variants.reduce((s, v) => s + (Number(v.channelStock) || 0), 0);
-  // physicalTotal: undefined = mock (tự cộng từ variants); null = SKU chưa
-  // liên kết kho → hiện "—" chứ KHÔNG phải 0 giả (bug "kho báo 0 dù còn hàng").
+  // Tổng 2 nguồn: undefined = mock (tự cộng từ variants); null = KHÔNG BIẾT
+  // (chưa liên kết kho / sàn không trả tồn) → hiện "—" chứ KHÔNG phải 0 giả
+  // (bug "kho báo 0 dù còn hàng").
+  const totalChannel =
+    product.channelTotal !== undefined
+      ? product.channelTotal
+      : variants.reduce((s, v) => s + (Number(v.channelStock) || 0), 0);
   const totalPhysical =
     product.physicalTotal !== undefined
       ? product.physicalTotal
       : variants.reduce((s, v) => s + (Number(v.stockQuantity) || 0), 0);
   const hasMismatch =
-    product.physicalTotal !== undefined
-      ? product.physicalTotal !== null && product.physicalTotal !== totalChannel
+    product.physicalTotal !== undefined || product.channelTotal !== undefined
+      ? product.physicalTotal != null &&
+        totalChannel != null &&
+        product.physicalTotal !== totalChannel
       : variants.some((v) => v.channelStock !== v.stockQuantity);
   const channelLabel = channelMeta(channel).label;
 
@@ -145,10 +151,14 @@ export function ProductContextCard({
         <span
           className={cn(
             "font-semibold",
-            totalChannel > 0 ? "text-emerald-500" : "text-red-500"
+            totalChannel === null
+              ? "text-slate-400"
+              : totalChannel > 0
+                ? "text-emerald-500"
+                : "text-red-500"
           )}
         >
-          {totalChannel}
+          {totalChannel === null ? "—" : totalChannel}
         </span>
         <span className="mx-1.5 text-slate-300">|</span>
         <span className="text-slate-500">Kho vật lý:</span>{" "}

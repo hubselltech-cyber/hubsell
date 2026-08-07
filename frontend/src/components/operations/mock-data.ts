@@ -334,6 +334,9 @@ export interface MockProductInfo {
   /** Tổng tồn kho vật lý THẬT: undefined = mock (tự cộng từ variants);
    *  null = SKU chưa liên kết kho → widget hiện "—" thay vì 0 giả. */
   physicalTotal?: number | null;
+  /** Tổng tồn TRÊN SÀN thật: undefined = mock (tự cộng từ variants);
+   *  null = không đọc được tồn sàn → widget hiện "—" thay vì 0 giả. */
+  channelTotal?: number | null;
   material: string;
   /** Hướng dẫn bảo quản — AI hay cần khi khách hỏi cách giặt/vệ sinh. */
   care: string;

@@ -728,11 +728,12 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           include: cpInclude,
         }));
     } else {
-      // STRICT CHANNEL ISOLATION: hội thoại gửi kèm channelId thì CHỈ tìm
-      // trong đúng gian đó — thà không có link còn hơn dính link sàn khác
-      // (bug thật: chat Shopee mà thẻ SP sinh link lazada.vn vì TC025 khớp
-      // dòng Lazada trước).
-      const inChannel = channelId ? { channelId } : {};
+      // STRICT CHANNEL ISOLATION: hội thoại gửi kèm channelId thì tìm TRONG
+      // gian đó trước — thà không có link còn hơn dính link sàn khác (bug
+      // thật: chat Shopee mà thẻ SP sinh link lazada.vn vì TC025 khớp dòng
+      // Lazada trước). Gian chưa đồng bộ danh mục (bảng đệm rỗng) thì rơi
+      // xuống tìm CHÉO GIAN chỉ để lấy thông số — link/itemId/tồn sàn của
+      // gian khác bị lược sạch ở dưới, ô tra cứu không chết cứng.
       const exact = { channelSku: { equals: query, mode: "insensitive" as const } };
       const fuzzy = {
         OR: [
@@ -740,20 +741,27 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           { productName: { contains: query, mode: "insensitive" as const } },
         ],
       };
-      for (const cond of [
+      const tiers = [
         { ...exact, productId: { not: null } },
         exact,
         { ...fuzzy, productId: { not: null } },
         fuzzy,
-      ]) {
-        cp = await prisma.channelProduct.findFirst({
-          where: { channel: scope, ...inChannel, ...cond },
-          include: cpInclude,
-          orderBy: { lastSyncedAt: "desc" },
-        });
+      ];
+      const passes = channelId ? [{ channelId }, {}] : [{}];
+      for (const pass of passes) {
+        for (const cond of tiers) {
+          cp = await prisma.channelProduct.findFirst({
+            where: { channel: scope, ...pass, ...cond },
+            include: cpInclude,
+            orderBy: { lastSyncedAt: "desc" },
+          });
+          if (cp) break;
+        }
         if (cp) break;
       }
     }
+    // Match nằm NGOÀI gian hội thoại → chỉ được dùng thông số, cấm link/tồn
+    const crossChannel = Boolean(channelId && cp && cp.channelId !== channelId);
 
     // Không liên kết sẵn → thử thẳng kho vật lý: theo query của nhân viên,
     // hoặc theo channelSku của item khách đính kèm (luồng itemId trước đây bỏ
@@ -793,7 +801,7 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     // màu/size) — trả kèm channelVariants cho widget vẽ ma trận tồn thật.
     let channelStock: number | null = null;
     let channelVariants: { name: string; stock: number | null }[] | null = null;
-    if (cp?.channel.channelName === ChannelName.SHOPEE && cp.externalId) {
+    if (!crossChannel && cp?.channel.channelName === ChannelName.SHOPEE && cp.externalId) {
       try {
         const { accessToken, shopId } = await getValidShopeeAccessToken(cp.channel);
         const models = await getModelList(accessToken, shopId, Number(cp.externalId));
@@ -817,7 +825,7 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     // Link xem/đặt hàng cho nút "Gửi thẻ sản phẩm": Shopee cần shopId + itemId;
     // Lazada chỉ cần itemId (externalId Lazada lưu dạng "itemId-skuId").
     let productUrl: string | null = null;
-    if (cp?.externalId) {
+    if (!crossChannel && cp?.externalId) {
       if (cp.channel.channelName === ChannelName.SHOPEE && cp.channel.externalShopId) {
         productUrl = `https://shopee.vn/product/${cp.channel.externalShopId}/${cp.externalId}`;
       } else if (cp.channel.channelName === ChannelName.LAZADA) {
@@ -842,18 +850,21 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           product != null ? product.quantityInStock - product.holdQuantity : null,
         channelStock,
         channelVariants,
-        channelName: cp?.channel.channelName ?? null,
+        // Match chéo gian: giấu danh tính sàn để frontend không dán nhãn/tồn
+        // của gian khác vào hội thoại đang mở
+        channelName: crossChannel ? null : cp?.channel.channelName ?? null,
         variantName: cp?.variantName ?? null,
         linked: product != null,
         productUrl,
         price,
         // item_id phía sàn — nguồn cho nút gửi thẻ SP chuẩn Shopee
         // (externalId Lazada dạng "itemId-skuId" nên tách lấy phần item).
-        itemId: cp?.externalId
-          ? cp.channel.channelName === ChannelName.LAZADA
-            ? String(cp.externalId).split("-")[0]
-            : String(cp.externalId)
-          : null,
+        itemId:
+          !crossChannel && cp?.externalId
+            ? cp.channel.channelName === ChannelName.LAZADA
+              ? String(cp.externalId).split("-")[0]
+              : String(cp.externalId)
+            : null,
       },
     });
   } catch (err) {
