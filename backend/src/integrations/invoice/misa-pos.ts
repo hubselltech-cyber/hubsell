@@ -29,6 +29,7 @@ import type { CreateInvoiceInput } from "./types";
 /** Path API POS (nối sau misaApiBase()) — sandbox chê 404 thì chỉnh TẠI ĐÂY. */
 const ENDPOINTS = {
   publish: "/invoice/pos/publish", // phát hành tức thì bằng dải mã CQT cấp sẵn
+  machines: "/invoice/pos/machines", // danh mục máy tính tiền đã đăng ký của tài khoản
 };
 
 /** Lát cắt InvoiceConfig cần cho luồng máy tính tiền. */
@@ -84,6 +85,50 @@ export async function testPosConnection(cfg: PosInvoiceConfig): Promise<{
     tokenLength: token.length,
     usingShopKeys: Boolean(cfg.posClientId && cfg.posSecretKey),
   };
+}
+
+/** Một máy tính tiền đã đăng ký với CQT (rút gọn từ danh mục MISA trả về). */
+export interface PosMachine {
+  machineId: string | null;
+  codePrefix: string | null;
+  serial: string | null;
+}
+
+/**
+ * Danh mục máy tính tiền của tài khoản — nguồn AUTO-FILL cho ô "Mã máy tính
+ * tiền"/"Dải mã CQT" trên UI (nút Kiểm tra kết nối POS gọi kèm).
+ *
+ * BEST-EFFORT CÓ CHỦ ĐÍCH: endpoint danh mục có thể chưa mở trên sandbox/kit —
+ * lỗi gì cũng trả null (đã có token là kết nối OK rồi, auto-fill chỉ là quà
+ * thêm). Đừng đổi thành throw kẻo nút test báo đỏ oan.
+ */
+export async function listPosMachines(cfg: PosInvoiceConfig): Promise<PosMachine[] | null> {
+  try {
+    const token = await getMisaAccessToken(credsFromConfig(cfg));
+    const res = await fetch(`${misaApiBase()}${ENDPOINTS.machines}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const raw: unknown = JSON.parse(await res.text());
+    if (pick(raw, "Success", "success") === false) return null;
+    const data = pick(raw, "Data", "data") ?? raw;
+    const list = Array.isArray(data)
+      ? data
+      : (pick(data, "Machines", "Items", "List") as unknown[] | undefined);
+    if (!Array.isArray(list)) return null;
+    return list.map((m) => {
+      const machineId = pick(m, "MachineCode", "MachineID", "MachineId", "Code");
+      const codePrefix = pick(m, "CodePrefix", "InvoiceCodePrefix", "Prefix");
+      const serial = pick(m, "InvSeries", "InvoiceSeries", "Serial");
+      return {
+        machineId: typeof machineId === "string" ? machineId : null,
+        codePrefix: typeof codePrefix === "string" ? codePrefix : null,
+        serial: typeof serial === "string" ? serial : null,
+      };
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** Payload phát hành POS PascalCase — sandbox chê trường nào sửa ở đây. */

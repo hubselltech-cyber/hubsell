@@ -1972,13 +1972,23 @@ export function saveInvoiceConfig(input: {
   });
 }
 
-/** Kết quả 2 nút "Kiểm tra kết nối" (meInvoice / eSign). */
+/** Một máy tính tiền đã đăng ký — test-pos trả kèm (nếu MISA mở API danh mục)
+ * để UI auto-fill Mã máy/Dải mã CQT. */
+export interface PosMachineDTO {
+  machineId: string | null;
+  codePrefix: string | null;
+  serial: string | null;
+}
+
+/** Kết quả các nút "Kiểm tra kết nối" (meInvoice / eSign / POS). */
 export interface InvoiceConnectionTestResult {
   ok: boolean;
   /** Bộ khóa đã dùng: của shop hay env sandbox dùng chung. */
   source?: "shop-config" | "env-sandbox";
   message?: string;
   error?: string;
+  /** Chỉ có ở test-pos, khi MISA trả được danh mục máy tính tiền. */
+  machines?: PosMachineDTO[];
 }
 
 export function testMeinvoiceConnection() {

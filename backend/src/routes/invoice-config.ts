@@ -15,7 +15,10 @@ import {
   POS_SERIES_RE,
   TAX_CODE_RE,
 } from "../integrations/invoice/misa-einvoice";
-import { testPosConnection } from "../integrations/invoice/misa-pos";
+import {
+  listPosMachines,
+  testPosConnection,
+} from "../integrations/invoice/misa-pos";
 
 /**
  * HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ — Multi-Vendor Adapter (module đóng gói độc lập).
@@ -351,7 +354,7 @@ router.post("/test-pos", async (req: AuthRequest, res) => {
   try {
     const cfg = await findShopConfig(req.ownerId!);
     clearMisaTokenCache();
-    const r = await testPosConnection({
+    const posCfg = {
       taxCode: cfg?.taxCode ?? null,
       companyName: cfg?.companyName ?? null,
       companyAddress: cfg?.companyAddress ?? null,
@@ -360,11 +363,16 @@ router.post("/test-pos", async (req: AuthRequest, res) => {
       posCodePrefix: cfg?.posCodePrefix ?? null,
       posMachineId: cfg?.posMachineId ?? null,
       posSeries: cfg?.posSeries ?? null,
-    });
+    };
+    const r = await testPosConnection(posCfg);
+    // Quà thêm cho UI: có danh mục máy tính tiền thì gửi kèm để AUTO-FILL các ô
+    // Mã máy/Dải mã — listPosMachines tự nuốt lỗi (null = sandbox chưa mở endpoint).
+    const machines = await listPosMachines(posCfg);
     res.json({
       ok: true,
       source: r.usingShopKeys ? "shop-config" : "env-sandbox",
       message: `Kết nối meInvoice POS OK — đã lấy được Access Token (${r.tokenLength} ký tự).`,
+      ...(machines && machines.length > 0 ? { machines } : {}),
     });
   } catch (err) {
     res.status(502).json({ ok: false, error: (err as Error).message });

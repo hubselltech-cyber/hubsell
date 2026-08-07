@@ -254,7 +254,7 @@ export function InvoiceConfigSection({
   }
 
   async function runConnectionTest(
-    kind: "meinvoice" | "esign" | "pos",
+    kind: "meinvoice" | "esign",
     setBusy: (v: boolean) => void,
   ) {
     setBusy(true);
@@ -262,9 +262,7 @@ export function InvoiceConfigSection({
       const r =
         kind === "meinvoice"
           ? await testMeinvoiceConnection()
-          : kind === "esign"
-            ? await testEsignConnection()
-            : await testPosConnection();
+          : await testEsignConnection();
       toast.success(r.message ?? "Kết nối OK");
     } catch (err) {
       toast.error(
@@ -272,6 +270,45 @@ export function InvoiceConfigSection({
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Test POS tách riêng vì có AUTO-FILL: MISA trả được danh mục máy tính tiền
+   * thì tự điền Mã máy / Dải mã CQT / Ký hiệu vào các Ô CÒN TRỐNG (không ghi đè
+   * giá trị user đã gõ — lỡ họ cố tình chọn máy khác).
+   */
+  async function handleTestPos() {
+    setTestingPos(true);
+    try {
+      const r = await testPosConnection();
+      const machine = r.machines?.[0];
+      const filled: string[] = [];
+      if (machine) {
+        if (!posMachineId.trim() && machine.machineId) {
+          setPosMachineId(machine.machineId);
+          filled.push("Mã máy");
+        }
+        if (!posCodePrefix.trim() && machine.codePrefix) {
+          setPosCodePrefix(machine.codePrefix);
+          filled.push("Dải mã CQT");
+        }
+        if (!posSeries.trim() && machine.serial) {
+          setPosSeries(machine.serial.toUpperCase());
+          filled.push("Ký hiệu");
+        }
+      }
+      toast.success(
+        filled.length > 0
+          ? `${r.message ?? "Kết nối POS OK"} Đã tự điền: ${filled.join(", ")} (nhớ bấm Lưu).`
+          : (r.message ?? "Kết nối POS OK"),
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Không kết nối được — thử lại sau",
+      );
+    } finally {
+      setTestingPos(false);
     }
   }
 
@@ -842,11 +879,15 @@ export function InvoiceConfigSection({
                     <Label htmlFor="pos-machine">Mã máy tính tiền</Label>
                     <Input
                       id="pos-machine"
-                      placeholder="Mã máy đã đăng ký với CQT"
+                      placeholder="VD: POS-01 hoặc MTT001"
                       value={posMachineId}
                       onChange={(e) => setPosMachineId(e.target.value)}
                       className="font-mono"
                     />
+                    <p className={TEXT_SUB}>
+                      Lấy trên Portal MISA meInvoice (Danh mục Máy tính tiền)
+                      hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT đã được CQT chấp nhận.
+                    </p>
                   </div>
                 </div>
 
@@ -872,7 +913,7 @@ export function InvoiceConfigSection({
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => runConnectionTest("pos", setTestingPos)}
+                    onClick={handleTestPos}
                     disabled={testingPos}
                   >
                     {testingPos ? (
