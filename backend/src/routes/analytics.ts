@@ -21,7 +21,11 @@ const router = Router();
 // shippingStatus). Đây là các đơn bị LOẠI khỏi ô trạng thái giao (DELIVERED…) và
 // khỏi doanh thu, chỉ đếm ở ô "Hoàn/Trả". Nhờ vậy phễu là một phân hoạch loại
 // trừ nhau: Σ(ô trạng thái) + Hoàn/Trả = tổng đơn (hết cảnh đếm trùng).
-const RETURNING_IN = { in: [ReturnStatus.AWAITING, ReturnStatus.DAMAGED] };
+// RECEIVED (đã quét nhận, chưa nhập kho) vẫn là hoàn CHƯA xử lý xong — chỉ khi
+// nhập kho (RECEIVED_INTACT) hoặc chốt khiếu nại thì đơn mới rời nhóm này.
+const RETURNING_IN = {
+  in: [ReturnStatus.AWAITING, ReturnStatus.RECEIVED, ReturnStatus.DAMAGED],
+};
 const RETURNING_SET = new Set<ReturnStatus>(RETURNING_IN.in);
 
 // Bucket theo NGÀY GIỜ VN — toBusinessDateKey/businessDayStart/dateKeyLabel

@@ -250,6 +250,7 @@ export interface InventorySyncLog {
 export type ReturnStatus =
   | "NONE"
   | "AWAITING"
+  | "RECEIVED"
   | "RECEIVED_INTACT"
   | "DAMAGED"
   | "CLAIM_SETTLED"
@@ -1110,7 +1111,42 @@ export function updateReturnClaim(
   );
 }
 
-/** Kho xác nhận đã nhận kiện hàng hoàn. INTACT thì cộng ngược tồn kho. */
+/**
+ * CÔNG ĐOẠN 1 — quét nhận: ghi nhận kiện hàng hoàn ĐÃ VỀ TAY kho.
+ * KHÔNG cộng tồn kho; việc nhập kho là bước riêng (processOrderReturn hoặc
+ * bulkInboundReturns). `unannounced` = true khi sàn chưa kịp báo hoàn đơn này.
+ */
+export function receiveWarehouseReturn(orderId: string) {
+  return apiFetch<{ order: Order; unannounced: boolean }>(
+    `/api/warehouse/returns/${orderId}/receive`,
+    { method: "POST" }
+  );
+}
+
+/**
+ * CÔNG ĐOẠN 2 — "NHẬP KHO TẤT CẢ ĐƠN ĐÃ NHẬN" một chạm: cộng ngược tồn kho
+ * cho toàn bộ đơn đang ở trạng thái RECEIVED, không cần tích chọn từng đơn.
+ */
+export function bulkInboundReturns() {
+  return apiFetch<{
+    processed: number;
+    restockedUnits: number;
+    orders: {
+      orderCode: string;
+      restored: {
+        productName: string;
+        restoredQuantity: number;
+        newQuantity: number;
+      }[];
+    }[];
+    failed: { orderCode: string; error: string }[];
+  }>("/api/orders/returns/bulk-inbound", { method: "POST" });
+}
+
+/**
+ * CÔNG ĐOẠN 2 — xử lý lẻ kiện hàng đã nhận: INTACT thì nhập kho (cộng ngược
+ * tồn kho), DAMAGED thì gắn cờ chờ khiếu nại.
+ */
 export function processOrderReturn(
   orderId: string,
   condition: "INTACT" | "DAMAGED",

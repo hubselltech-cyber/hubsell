@@ -22,16 +22,17 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * XỬ LÝ KIỆN HÀNG HOÀN VỪA QUÉT
+ * XỬ LÝ LẺ KIỆN HÀNG ĐÃ NHẬN — công đoạn 2 của luồng đối soát.
  *
- * Mở ra ngay sau khi quét trúng mã. Nhân viên đối chiếu hàng trong tay với
- * danh sách trên màn hình rồi chọn một trong hai:
+ * Mở từ nút "Báo hỏng/Khiếu nại" trên dòng đơn Đã nhận (quét nhận giờ là bước
+ * TỰ ĐỘNG, không mở dialog nữa). Nhân viên đối chiếu hàng trong tay với danh
+ * sách trên màn hình rồi chọn một trong hai:
  *
- *   Nguyên vẹn  → cộng NGƯỢC tồn kho cho từng SKU, hàng bán lại được
+ *   Nhập kho    → cộng NGƯỢC tồn kho cho từng SKU, hàng bán lại được
  *   Hư hỏng/mất → KHÔNG cộng kho, gắn cờ chờ khiếu nại sàn/đơn vị vận chuyển
  *
- * Hai nút cố ý tách rời và ghi rõ hệ quả ngay trên nút, vì chọn nhầm "nguyên
- * vẹn" cho kiện hàng vỡ là bơm hàng ma vào kho — bán ra rồi mới biết không có
+ * Hai nút cố ý tách rời và ghi rõ hệ quả ngay trên nút, vì chọn nhầm "nhập
+ * kho" cho kiện hàng vỡ là bơm hàng ma vào kho — bán ra rồi mới biết không có
  * hàng để giao.
  */
 export function ReturnDialog({
@@ -182,10 +183,12 @@ export function ReturnDialog({
               ) : (
                 <PackageCheck className="size-4" />
               )}
-              Hàng nguyên vẹn
+              📦 Nhập kho
             </span>
             <span className="text-xs font-normal opacity-90">
-              {alreadyRestored ? "Chỉ ghi nhận trạng thái" : "Cộng lại tồn kho"}
+              {alreadyRestored
+                ? "Chỉ ghi nhận trạng thái"
+                : "Hàng nguyên vẹn · cộng lại tồn kho"}
             </span>
           </Button>
 

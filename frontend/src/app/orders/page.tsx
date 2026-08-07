@@ -86,8 +86,12 @@ const RETURN_META: Record<string, { label: string; className: string }> = {
     label: "Chờ nhận hàng hoàn",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
+  RECEIVED: {
+    label: "Đã nhận · chờ nhập kho",
+    className: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  },
   RECEIVED_INTACT: {
-    label: "Đã nhận · nguyên vẹn",
+    label: "Đã nhập kho",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   DAMAGED: {
@@ -574,7 +578,8 @@ export default function OrdersPage() {
                   [
                     { key: "", label: "Tất cả đơn hủy/hoàn" },
                     { key: "AWAITING", label: "Chờ nhận hàng hoàn" },
-                    { key: "RECEIVED_INTACT", label: "Đã nhận · nguyên vẹn" },
+                    { key: "RECEIVED", label: "Đã nhận · chờ nhập kho" },
+                    { key: "RECEIVED_INTACT", label: "Đã nhập kho" },
                     { key: "DAMAGED", label: "Chờ khiếu nại sàn" },
                   ] as const
                 ).map((f) => {

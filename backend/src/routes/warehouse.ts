@@ -12,8 +12,15 @@ const router = Router();
  * Trang /orders theo dõi vòng đời từng đơn; ở đây kho đối chiếu danh sách SÀN
  * BÁO HOÀN với hàng thực nhận, để lòi ra kiện đi lạc.
  *
- * ⚠️ Route này CỐ Ý KHÔNG có endpoint cộng tồn kho. Việc nhận hàng hoàn vẫn gọi
- * `POST /api/orders/:id/return` — nơi duy nhất được phép cộng kho, có chốt chặn
+ * Luồng 2 CÔNG ĐOẠN (tối ưu thao tác điện thoại):
+ *   1. QUÉT NHẬN  — POST /returns/:id/receive (ở đây): AWAITING → RECEIVED,
+ *      chỉ ghi nhận "hàng đã về tay", KHÔNG đụng tồn kho.
+ *   2. NHẬP KHO   — POST /api/orders/:id/return (lẻ) hoặc
+ *      POST /api/orders/returns/bulk-inbound (tất cả): RECEIVED → RECEIVED_INTACT,
+ *      cộng ngược tồn kho.
+ *
+ * ⚠️ Route này CỐ Ý KHÔNG có endpoint cộng tồn kho. Mọi đường cộng kho đều nằm
+ * ở /api/orders/* — nơi duy nhất được phép cộng kho, có chốt chặn
  * `Order.stockRestoredAt` chống cộng trùng. Mở đường cộng kho thứ hai ở đây là
  * mở lại đúng lỗ hổng làm kho phình ảo.
  */
@@ -64,11 +71,20 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       returnStatus: { not: ReturnStatus.NONE },
     };
 
+    // "ISSUES" là filter GỘP cho tab Hao hụt/Khiếu nại: hư hỏng đang khiếu nại
+    // + đã đền bù + đã xoá sổ — gom một tab để thanh tab gọn trên màn điện thoại
+    const ISSUE_STATUSES = [
+      ReturnStatus.DAMAGED,
+      ReturnStatus.CLAIM_SETTLED,
+      ReturnStatus.WRITTEN_OFF,
+    ];
     const where: Prisma.OrderWhereInput = {
       ...scope,
-      ...((Object.values(ReturnStatus) as string[]).includes(statusQ)
-        ? { returnStatus: statusQ as ReturnStatus }
-        : {}),
+      ...(statusQ === "ISSUES"
+        ? { returnStatus: { in: ISSUE_STATUSES } }
+        : (Object.values(ReturnStatus) as string[]).includes(statusQ)
+          ? { returnStatus: statusQ as ReturnStatus }
+          : {}),
       ...(search
         ? {
             OR: [
@@ -126,6 +142,7 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
 
     const summary: Record<string, number> = {
       AWAITING: 0,
+      RECEIVED: 0,
       RECEIVED_INTACT: 0,
       DAMAGED: 0,
       CLAIM_SETTLED: 0,
@@ -208,6 +225,77 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
     res.json({
       synced: candidates.length,
       orderCodes: candidates.map((o) => o.orderCode),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/warehouse/returns/:id/receive — CÔNG ĐOẠN 1: quét nhận hàng hoàn.
+ *
+ * Ghi nhận "kiện hàng ĐÃ VỀ TAY kho" (AWAITING → RECEIVED) và dừng ở đó —
+ * KHÔNG cộng tồn kho. Việc cộng kho là công đoạn 2, làm lẻ qua
+ * `POST /api/orders/:id/return` hoặc gộp qua `POST /api/orders/returns/bulk-inbound`.
+ *
+ * Nhận cả đơn returnStatus = NONE: thực tế có kiện hoàn về tay TRƯỚC khi sàn
+ * kịp báo — quét trúng thì vẫn phải nhận được, đồng thời tự gắn mốc sàn báo
+ * hoàn để đơn xuất hiện trong danh sách đối soát.
+ */
+router.post("/returns/:id/receive", async (req: AuthRequest, res, next) => {
+  try {
+    const order = await prisma.order.findFirst({
+      where: {
+        id: req.params.id,
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      },
+      select: {
+        id: true,
+        orderCode: true,
+        returnStatus: true,
+        returnRequestedAt: true,
+      },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+      return;
+    }
+    if (order.returnStatus === ReturnStatus.RECEIVED) {
+      res.status(409).json({
+        error: `Đơn ${order.orderCode} đã quét nhận rồi — chỉ còn chờ nhập kho`,
+      });
+      return;
+    }
+    if (
+      order.returnStatus !== ReturnStatus.AWAITING &&
+      order.returnStatus !== ReturnStatus.NONE
+    ) {
+      res.status(409).json({
+        error: `Đơn ${order.orderCode} đã được xử lý hoàn trước đó rồi`,
+      });
+      return;
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        returnStatus: ReturnStatus.RECEIVED,
+        // Mốc "đã cầm hàng trên tay" — dừng đồng hồ đếm ngày chờ về
+        returnedAt: new Date(),
+        // Hàng đã quay về thì vòng đời giao hàng của đơn kết thúc
+        shippingStatus: ShippingStatus.CANCELLED,
+        // Đơn sàn chưa kịp báo hoàn: lấy luôn lúc quét làm mốc báo hoàn
+        returnRequestedAt: order.returnRequestedAt ?? new Date(),
+      },
+      include: { channel: { select: { channelName: true, shopName: true } } },
+    });
+
+    res.json({
+      order: updated,
+      unannounced: order.returnStatus === ReturnStatus.NONE,
     });
   } catch (err) {
     next(err);

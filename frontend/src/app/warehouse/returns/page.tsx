@@ -9,7 +9,9 @@ import {
   ChevronRight,
   Gavel,
   HandCoins,
+  Loader2,
   PackageCheck,
+  PackageOpen,
   PackageSearch,
   PackageX,
   RefreshCw,
@@ -39,8 +41,11 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  bulkInboundReturns,
   fetchWarehouseReturns,
   getToken,
+  processOrderReturn,
+  receiveWarehouseReturn,
   syncWarehouseReturns,
   type ChannelName,
   type Order,
@@ -67,8 +72,12 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
     label: "Chờ về tay",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
+  RECEIVED: {
+    label: "Đã nhận · chờ nhập kho",
+    className: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  },
   RECEIVED_INTACT: {
-    label: "Hoàn thành công",
+    label: "Đã nhập kho",
     className: "bg-emerald-50 text-emerald-700 border-emerald-200",
   },
   DAMAGED: {
@@ -85,24 +94,32 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   },
 };
 
+/** Nhóm trạng thái gộp cho tab Hao hụt/Khiếu nại — khớp filter ISSUES ở backend */
+const ISSUE_KEYS = ["DAMAGED", "CLAIM_SETTLED", "WRITTEN_OFF"] as const;
+
 const TABS: { key: string; label: string; countKey: string }[] = [
   { key: "", label: "Tất cả", countKey: "" },
   { key: "AWAITING", label: "Chờ về tay", countKey: "AWAITING" },
-  { key: "RECEIVED_INTACT", label: "Hoàn thành công", countKey: "RECEIVED_INTACT" },
-  { key: "DAMAGED", label: "Chờ khiếu nại", countKey: "DAMAGED" },
-  { key: "CLAIM_SETTLED", label: "Đã đền bù", countKey: "CLAIM_SETTLED" },
-  { key: "WRITTEN_OFF", label: "Hao hụt", countKey: "WRITTEN_OFF" },
+  { key: "RECEIVED", label: "Đã nhận (Chờ nhập kho)", countKey: "RECEIVED" },
+  { key: "RECEIVED_INTACT", label: "Đã nhập kho", countKey: "RECEIVED_INTACT" },
+  { key: "ISSUES", label: "Hao hụt/Khiếu nại", countKey: "ISSUES" },
 ];
 
 /**
  * ĐỐI SOÁT ĐƠN HOÀN — nơi DUY NHẤT nhân viên kho thao tác với hàng hoàn.
  *
- * Trang /orders chỉ còn hiển thị trạng thái để theo dõi luồng đơn; mọi hành
- * động vật lý (quét mã, xác nhận nhận hàng, cộng kho) nằm ở đây.
+ * Luồng 2 CÔNG ĐOẠN, tối ưu thao tác một tay trên điện thoại:
  *
- * ⚠️ Việc cộng tồn kho vẫn gọi `POST /api/orders/:id/return` qua ReturnDialog —
- * KHÔNG có đường cộng kho riêng ở phân hệ Kho. Đó là nơi duy nhất có chốt chặn
- * `stockRestoredAt` chống cộng trùng.
+ *   1. QUÉT NHẬN — bắn máy quét / camera vào mã vận đơn là đơn TỰ chuyển sang
+ *      "Đã nhận · chờ nhập kho" (RECEIVED), không mở dialog, không hỏi gì thêm.
+ *      Chỉ ghi nhận hàng đã về tay, CHƯA cộng tồn kho.
+ *   2. NHẬP KHO — một nút "Nhập kho tất cả đơn đã nhận" cộng tồn kho cho toàn
+ *      bộ đơn RECEIVED, không cần tích chọn checkbox từng đơn. Xử lý lẻ vẫn có
+ *      nút Nhập kho / Báo hỏng trên từng dòng.
+ *
+ * ⚠️ Việc cộng tồn kho vẫn chỉ đi qua `/api/orders/*` (đơn lẻ: /:id/return,
+ * hàng loạt: /returns/bulk-inbound) — nơi duy nhất có chốt chặn
+ * `stockRestoredAt` chống cộng trùng. KHÔNG có đường cộng kho riêng ở phân hệ Kho.
  */
 export default function WarehouseReturnsPage() {
   const router = useRouter();
@@ -121,7 +138,13 @@ export default function WarehouseReturnsPage() {
   const [debounced, setDebounced] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  /** Đơn đang mở dialog Báo hỏng / Khiếu nại (xử lý lẻ công đoạn 2) */
   const [processing, setProcessing] = useState<Order | null>(null);
+  /** id đơn đang gọi API quét nhận — khoá nút của đúng dòng đó */
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  /** id đơn đang nhập kho lẻ */
+  const [inboundingId, setInboundingId] = useState<string | null>(null);
+  const [bulkInbounding, setBulkInbounding] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -188,9 +211,130 @@ export default function WarehouseReturnsPage() {
     }
   }
 
+  /**
+   * CÔNG ĐOẠN 1 — quét nhận: đơn tự chuyển sang "Đã nhận · chờ nhập kho".
+   * KHÔNG cộng tồn kho ở bước này.
+   */
+  const handleReceive = useCallback(
+    async (order: Order) => {
+      setReceivingId(order.id);
+      try {
+        const res = await receiveWarehouseReturn(order.id);
+        if (res.unannounced) {
+          toast.warning(
+            `${order.orderCode}: sàn CHƯA báo hoàn đơn này — vẫn ghi nhận đã về tay, chờ nhập kho`,
+            { duration: 6000 }
+          );
+        } else {
+          toast.success(`Đã nhận hàng đơn ${order.orderCode} — chờ nhập kho`);
+        }
+        load();
+      } catch (err) {
+        toast.error(
+          err instanceof ApiError ? err.message : "Không ghi nhận được đơn hoàn"
+        );
+      } finally {
+        setReceivingId(null);
+      }
+    },
+    [load]
+  );
+
+  /**
+   * Quét trúng mã → nhận hàng NGAY, không mở dialog hỏi thêm — nhân viên đang
+   * cầm điện thoại một tay, tay kia cầm kiện hàng. Đơn đã qua bước nhận thì chỉ
+   * nhắc trạng thái hiện tại chứ không làm gì.
+   */
+  const handleScanFound = useCallback(
+    (order: Order) => {
+      if (order.returnStatus === "RECEIVED") {
+        toast.info(
+          `${order.orderCode} đã quét nhận rồi — bấm “Nhập kho” hoặc dùng nút Nhập kho tất cả`
+        );
+        return;
+      }
+      const meta = STATUS_META[order.returnStatus];
+      if (order.returnStatus !== "AWAITING" && order.returnStatus !== "NONE") {
+        toast.info(
+          `${order.orderCode} đã xử lý hoàn trước đó${meta ? ` (${meta.label})` : ""}`
+        );
+        return;
+      }
+      handleReceive(order);
+    },
+    [handleReceive]
+  );
+
+  /** CÔNG ĐOẠN 2 xử lý lẻ — nhập kho một đơn đã nhận, một chạm. */
+  async function handleInbound(order: Order) {
+    setInboundingId(order.id);
+    try {
+      const res = await processOrderReturn(order.id, "INTACT");
+      if (res.restored.length > 0) {
+        toast.success(
+          `Đã nhập kho ${order.orderCode} · ${res.restored
+            .map((r) => `${r.productName} +${r.restoredQuantity} (còn ${r.newQuantity})`)
+            .join("; ")}`,
+          { duration: 8000 }
+        );
+      } else if (res.stockSkippedReason) {
+        toast.warning(`${order.orderCode}: ${res.stockSkippedReason}`, {
+          duration: 8000,
+        });
+      } else {
+        toast.success(`Đã nhập kho đơn ${order.orderCode}`);
+      }
+      load();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Không nhập kho được đơn hoàn"
+      );
+    } finally {
+      setInboundingId(null);
+    }
+  }
+
+  /**
+   * CÔNG ĐOẠN 2 hàng loạt — "NHẬP KHO TẤT CẢ ĐƠN ĐÃ NHẬN" một chạm: backend tự
+   * quét toàn bộ đơn RECEIVED và cộng kho, không cần tích chọn gì ở đây.
+   */
+  async function handleBulkInbound() {
+    setBulkInbounding(true);
+    try {
+      const res = await bulkInboundReturns();
+      if (res.processed === 0 && res.failed.length === 0) {
+        toast.info("Không có đơn nào đang chờ nhập kho");
+      } else {
+        toast.success(
+          `Đã nhập kho ${res.processed} đơn · cộng ${formatNumber(
+            res.restockedUnits
+          )} sản phẩm vào tồn kho`,
+          { duration: 8000 }
+        );
+        if (res.failed.length > 0) {
+          toast.error(
+            `${res.failed.length} đơn lỗi, chưa nhập được: ${res.failed
+              .map((f) => f.orderCode)
+              .join(", ")}`,
+            { duration: 10000 }
+          );
+        }
+      }
+      load();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Không nhập kho hàng loạt được"
+      );
+    } finally {
+      setBulkInbounding(false);
+    }
+  }
+
   // Đơn quá hạn dồn lên đầu bảng đã do backend sắp; ở đây chỉ đếm để cảnh báo
   const overdue = summary.overdue ?? 0;
   const warning = summary.warning ?? 0;
+  /** Số đơn đã quét nhận, đang chờ nhập kho — hiện ngay trên nút bulk */
+  const receivedCount = summary.RECEIVED ?? 0;
 
   const isFiltering =
     Boolean(tab) || Boolean(search.trim()) || Boolean(channelFilter.channelName);
@@ -205,8 +349,9 @@ export default function WarehouseReturnsPage() {
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Đối chiếu danh sách sàn báo hoàn với hàng kho thực nhận. Quét mã để
-            nhận hàng về kho; đơn quá hạn là căn cứ khiếu nại bưu cục.
+            Hai công đoạn: <b>quét mã để nhận hàng</b> về tay, rồi bấm{" "}
+            <b>Nhập kho tất cả</b> để cộng tồn kho một lượt. Đơn quá hạn là căn
+            cứ khiếu nại bưu cục.
           </p>
           <Button
             onClick={handleSync}
@@ -218,21 +363,46 @@ export default function WarehouseReturnsPage() {
           </Button>
         </div>
 
-        {/* ===== QUÉT MÃ — hành động chính của kho ===== */}
+        {/* ===== CÔNG ĐOẠN 1: QUÉT NHẬN — quét trúng là tự nhận, không hỏi thêm ===== */}
         <Card className="shadow-sm">
           <CardContent className="py-1">
-            <ScanReturnBox onFound={setProcessing} />
+            <ScanReturnBox onFound={handleScanFound} disabled={receivingId !== null} />
           </CardContent>
         </Card>
 
-        {/* ===== BA CHỈ SỐ ĐỐI SOÁT ===== */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        {/* ===== CÔNG ĐOẠN 2: NHẬP KHO TẤT CẢ — nút 1 chạm cho điện thoại,
+             không có checkbox tích chọn gì hết ===== */}
+        <Button
+          size="lg"
+          onClick={handleBulkInbound}
+          disabled={bulkInbounding || receivedCount === 0}
+          className="w-full bg-emerald-600 text-base font-semibold text-white shadow-sm hover:bg-emerald-700 sm:w-auto"
+        >
+          {bulkInbounding ? (
+            <Loader2 className="size-5 animate-spin" />
+          ) : (
+            <PackageOpen className="size-5" />
+          )}
+          {bulkInbounding
+            ? "Đang nhập kho…"
+            : `📦 Nhập kho tất cả đơn đã nhận (${formatNumber(receivedCount)})`}
+        </Button>
+
+        {/* ===== BỐN CHỈ SỐ ĐỐI SOÁT ===== */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <DashboardCard
             title="Chờ về tay"
             value={formatNumber(summary.AWAITING ?? 0)}
             icon={PackageSearch}
             tone="warning"
             subtitle="Sàn đã báo hoàn, kho chưa quét nhận"
+          />
+          <DashboardCard
+            title="Đã nhận · chờ nhập kho"
+            value={formatNumber(receivedCount)}
+            icon={PackageOpen}
+            tone={receivedCount > 0 ? "positive" : "neutral"}
+            subtitle="Hàng đã về tay, bấm nút trên để cộng kho"
           />
           <DashboardCard
             title={`Quá ${thresholds.overdueDays} ngày chưa về`}
@@ -282,12 +452,16 @@ export default function WarehouseReturnsPage() {
             // Tab "Tất cả" cộng dồn TỪ DANH SÁCH TRẠNG THÁI, không liệt kê tay
             // — thêm trạng thái mới mà quên cộng vào đây là con số lệch âm thầm
             // (đã dính đúng lỗi này khi thêm Hao hụt).
-            const count = t.countKey
-              ? summary[t.countKey]
-              : Object.keys(STATUS_META).reduce(
-                  (sum, k) => sum + (summary[k] ?? 0),
-                  0
-                );
+            // Tab gộp Hao hụt/Khiếu nại cũng cộng từ ISSUE_KEYS cùng lý do.
+            const count =
+              t.countKey === "ISSUES"
+                ? ISSUE_KEYS.reduce((sum, k) => sum + (summary[k] ?? 0), 0)
+                : t.countKey
+                  ? summary[t.countKey]
+                  : Object.keys(STATUS_META).reduce(
+                      (sum, k) => sum + (summary[k] ?? 0),
+                      0
+                    );
             return (
               <button
                 key={t.key || "all"}
@@ -489,14 +663,51 @@ export default function WarehouseReturnsPage() {
 
                           <TableCell className="text-center">
                             {o.returnStatus === "AWAITING" ? (
+                              // Công đoạn 1 xử lý lẻ: bấm là nhận luôn, không dialog
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setProcessing(o)}
+                                disabled={receivingId === o.id}
+                                onClick={() => handleReceive(o)}
                               >
-                                <PackageCheck className="size-3.5" />
+                                {receivingId === o.id ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : (
+                                  <PackageCheck className="size-3.5" />
+                                )}
                                 Nhận hàng
                               </Button>
+                            ) : o.returnStatus === "RECEIVED" ? (
+                              // Công đoạn 2 xử lý lẻ: nhập kho 1 chạm là chính,
+                              // báo hỏng là đường phụ (mở dialog ghi chú)
+                              <div className="flex flex-col items-stretch gap-1.5">
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    inboundingId === o.id || bulkInbounding
+                                  }
+                                  onClick={() => handleInbound(o)}
+                                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                                >
+                                  {inboundingId === o.id ? (
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                  ) : (
+                                    <PackageOpen className="size-3.5" />
+                                  )}
+                                  📦 Nhập kho
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={
+                                    inboundingId === o.id || bulkInbounding
+                                  }
+                                  onClick={() => setProcessing(o)}
+                                >
+                                  <PackageX className="size-3.5" />
+                                  Báo hỏng/Khiếu nại
+                                </Button>
+                              </div>
                             ) : o.returnStatus === "DAMAGED" ? (
                               <Button
                                 variant="outline"
