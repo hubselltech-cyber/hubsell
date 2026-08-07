@@ -26,10 +26,17 @@ import {
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
 import type { CreateInvoiceInput } from "./types";
 
-/** Path API POS (nối sau misaApiBase()) — sandbox chê 404 thì chỉnh TẠI ĐÂY. */
+/**
+ * Path API POS (nối sau misaApiBase()).
+ *
+ * ⚠️ ĐÃ DÒ THỰC TẾ 07/08/2026: sandbox trả **404 rỗng** cho cả 2 path dưới
+ * (cùng tình trạng với luồng kê khai — xem ghi chú ENDPOINTS ở misa-einvoice.ts).
+ * Base URL đúng (`/auth/token` sống), chỉ path nghiệp vụ là chưa đúng — lấy
+ * path thật từ kit MISA rồi sửa TẠI ĐÂY.
+ */
 const ENDPOINTS = {
-  publish: "/invoice/pos/publish", // phát hành tức thì bằng dải mã CQT cấp sẵn
-  machines: "/invoice/pos/machines", // danh mục máy tính tiền đã đăng ký của tài khoản
+  publish: "/invoice/pos/publish", // phát hành tức thì — CHỜ KIT XÁC NHẬN
+  machines: "/invoice/pos/machines", // danh mục máy tính tiền — CHỜ KIT XÁC NHẬN
 };
 
 /** Lát cắt InvoiceConfig cần cho luồng máy tính tiền. */

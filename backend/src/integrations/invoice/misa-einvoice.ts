@@ -29,9 +29,17 @@ import { esignLogin } from "./misa-esign";
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
 import type { CreateInvoiceInput } from "./types";
 
-/** Path API v3 (nối sau misaApiBase()) — sandbox chê 404 thì chỉnh TẠI ĐÂY. */
+/**
+ * Path API v3 (nối sau misaApiBase()).
+ *
+ * ⚠️ ĐÃ DÒ THỰC TẾ 07/08/2026: sandbox testapi.meinvoice.vn/api/v3 trả **404
+ * rỗng** cho `/invoice/publish` và mọi biến thể thử (`/invoices/publish`,
+ * `/invoice/create`, `/invoice/save`). Trong khi `/auth/token` trả 200 →
+ * base URL đúng, chỉ path phát hành là CHƯA ĐÚNG. Phải lấy path thật từ kit
+ * tài liệu MISA gửi kèm hợp đồng rồi sửa TẠI ĐÂY (không đoán tiếp).
+ */
 const ENDPOINTS = {
-  publish: "/invoice/publish", // phát hành + xin cấp mã CQT
+  publish: "/invoice/publish", // phát hành + xin cấp mã CQT — CHỜ KIT XÁC NHẬN
 };
 
 // ============================================================
