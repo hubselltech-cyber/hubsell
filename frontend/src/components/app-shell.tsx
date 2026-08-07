@@ -85,6 +85,19 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
     ],
   },
+  {
+    // Tự động hoá CSKH & phản hồi sàn đa kênh — hiện là preview mock (cùng
+    // trạng thái với Trợ lý quảng cáo). CSKH là việc của SALES nên SALES vào
+    // được; kho không liên quan.
+    label: "Trợ lý vận hành",
+    icon: "smart_toy",
+    roles: ["ADMIN", "SALES"],
+    children: [
+      { href: "/operations-assistant/chat", label: "Trợ lý Chat" },
+      { href: "/operations-assistant/reviews", label: "Phản hồi đánh giá" },
+      { href: "/operations-assistant/ai-rules", label: "Cấu hình kịch bản AI" },
+    ],
+  },
   { href: "/channels", label: "Kênh bán", icon: "storefront", roles: ["ADMIN"] },
   {
     // Khung giữ chỗ cho tích hợp Marketing/Ads API 3 sàn — hiện là preview
@@ -149,6 +162,9 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/finance/loss-orders", title: "Cảnh báo & P&L Sản phẩm" },
   { prefix: "/finance/cost-prices", title: "Cấu hình Giá vốn" },
   { prefix: "/finance/shipping-alerts", title: "Đối soát phí vận chuyển" },
+  { prefix: "/operations-assistant/chat", title: "Trợ lý Chat CSKH" },
+  { prefix: "/operations-assistant/reviews", title: "Phản hồi đánh giá đa kênh" },
+  { prefix: "/operations-assistant/ai-rules", title: "Cấu hình kịch bản AI" },
   { prefix: "/ads/tiktok", title: "Trợ lý quảng cáo TikTok" },
   { prefix: "/ads/shopee", title: "Trợ lý quảng cáo Shopee" },
   { prefix: "/ads/lazada", title: "Trợ lý quảng cáo Lazada" },
@@ -169,6 +185,8 @@ function menusForPath(pathname: string): string[] {
     labels.push("Quản lý Kho");
   if (pathname.startsWith("/settings")) labels.push("Cấu hình");
   if (pathname.startsWith("/ads")) labels.push("Trợ lý quảng cáo");
+  if (pathname.startsWith("/operations-assistant"))
+    labels.push("Trợ lý vận hành");
   return labels;
 }
 

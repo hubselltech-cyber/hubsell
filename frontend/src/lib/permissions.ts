@@ -35,6 +35,14 @@ export function canAccessDashboard(role?: Role): boolean {
   return role === "ADMIN" || role === "SALES";
 }
 
+/**
+ * Được vào nhóm "Trợ lý vận hành" (CSKH: chat, phản hồi đánh giá, kịch bản AI).
+ * Là việc chăm sóc khách nên SALES làm được; kho không liên quan.
+ */
+export function canAccessOperations(role?: Role): boolean {
+  return role === "ADMIN" || role === "SALES";
+}
+
 /** Được cấu hình gian hàng, liên kết sản phẩm, quản lý nhân viên. */
 export function canManageShop(role?: Role): boolean {
   return role === "ADMIN";
