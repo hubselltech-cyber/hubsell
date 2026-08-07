@@ -2232,3 +2232,139 @@ export function fetchPlatformWebhookLogs(params?: {
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<PlatformWebhookLogsResponse>(`/api/admin/webhook-logs${suffix}`);
 }
+
+// ============================================================
+// TRỢ LÝ VẬN HÀNH (CSKH đa kênh) — /api/operations/*
+// Shape do backend chuẩn hoá từ Shopee sellerchat/get_comment và Lazada IM/
+// review; xem backend/src/routes/operations.ts. Gian nào lỗi (token hết hạn,
+// chưa được cấp quyền module chat) nằm trong errors[] — UI ghi chú riêng.
+// ============================================================
+
+export type OpsChannelName = "SHOPEE" | "LAZADA";
+
+export interface OpsChannelError {
+  channelId: string;
+  shopName: string;
+  message: string;
+}
+
+export interface OpsConversationDTO {
+  id: string;
+  channelId: string;
+  channelName: OpsChannelName;
+  shopName: string;
+  customer: string;
+  lastMessage: string;
+  unread: number;
+  lastAt: number | null;
+  /** Shopee: to_id người mua — bắt buộc kèm khi gửi tin. */
+  buyerId: string | null;
+  externalId: string;
+}
+
+export interface OpsMessageDTO {
+  id: string;
+  fromShop: boolean;
+  text: string;
+  at: number | null;
+  itemId: string | null;
+}
+
+export interface OpsReviewDTO {
+  id: string;
+  channelId: string;
+  channelName: OpsChannelName;
+  shopName: string;
+  customer: string;
+  rating: number;
+  content: string;
+  reply: string | null;
+  productName: string;
+  orderCode: string | null;
+  createdAt: number | null;
+  externalId: string;
+}
+
+export interface OpsProductContextDTO {
+  sku: string;
+  name: string;
+  imageUrl: string | null;
+  material: string | null;
+  care: string | null;
+  sizeChart:
+    | { size: string; heightCm: [number, number]; weightKg: [number, number] }[]
+    | null;
+  physicalStock: number | null;
+  channelStock: number | null;
+  channelName: ChannelName | null;
+  variantName: string | null;
+  linked: boolean;
+}
+
+export function fetchOpsConversations() {
+  return apiFetch<{
+    conversations: OpsConversationDTO[];
+    errors: OpsChannelError[];
+    channelCount: number;
+  }>("/api/operations/conversations");
+}
+
+export function fetchOpsMessages(params: {
+  channelId: string;
+  conversationId: string;
+  buyerId?: string | null;
+}) {
+  const q = new URLSearchParams({
+    channelId: params.channelId,
+    conversationId: params.conversationId,
+    ...(params.buyerId ? { buyerId: params.buyerId } : {}),
+  });
+  return apiFetch<{ messages: OpsMessageDTO[] }>(
+    `/api/operations/conversations/messages?${q}`
+  );
+}
+
+export function sendOpsMessage(body: {
+  channelId: string;
+  conversationId: string;
+  buyerId?: string | null;
+  text: string;
+}) {
+  return apiFetch<{ ok: boolean }>("/api/operations/conversations/send", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchOpsReviews() {
+  return apiFetch<{
+    reviews: OpsReviewDTO[];
+    errors: OpsChannelError[];
+    channelCount: number;
+  }>("/api/operations/reviews");
+}
+
+export function replyOpsReview(body: {
+  channelId: string;
+  reviewId: string;
+  content: string;
+}) {
+  return apiFetch<{ ok: boolean }>("/api/operations/reviews/reply", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchOpsProductContext(params: {
+  query?: string;
+  channelId?: string;
+  itemId?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params.query) q.set("query", params.query);
+  if (params.channelId) q.set("channelId", params.channelId);
+  if (params.itemId) q.set("itemId", params.itemId);
+  return apiFetch<{ found: boolean; product?: OpsProductContextDTO }>(
+    `/api/operations/product-context?${q}`
+  );
+}

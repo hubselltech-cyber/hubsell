@@ -1,6 +1,9 @@
+import type { OpsProductContextDTO } from "@/lib/api";
+
 import type {
   MockProductInfo,
   ProductVariant,
+  ReviewTag,
   StockSource,
 } from "@/components/operations/mock-data";
 
@@ -267,4 +270,70 @@ export function buildAiSuggestion(
 
   // ── Không bắt được ý định nào → dùng câu dự phòng (LLM thuần hội thoại) ──
   return { text: fallback, intent: "GENERAL" };
+}
+
+// ─── Cầu nối DỮ LIỆU THẬT → engine ───────────────────────────────────────────
+
+/** Câu dự phòng khi hội thoại thật không bắt được ý định nào. */
+export const GENERIC_CHAT_FALLBACK =
+  "Dạ shop đã nhận được tin nhắn của bạn, shop kiểm tra và phản hồi bạn ngay ạ. Cảm ơn bạn đã nhắn cho shop!";
+
+/**
+ * Đổi ngữ cảnh sản phẩm THẬT (API /product-context) về shape MockProductInfo
+ * để engine + widget dùng chung một đường code với demo. Dữ liệu thật v1 chưa
+ * có ma trận màu×size — gom thành MỘT dòng tồn tổng; khi nào đồng bộ biến thể
+ * chi tiết thì chỉ cần thay chỗ này.
+ */
+export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductInfo {
+  const physical = ctx.physicalStock ?? 0;
+  return {
+    sku: ctx.sku,
+    name: ctx.name,
+    imageClass: "from-slate-600 to-slate-900",
+    material: ctx.material ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
+    care: ctx.care ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
+    sizeChart: ctx.sizeChart ?? [],
+    variants: [
+      {
+        color: "Tổng tồn",
+        size: ctx.variantName?.trim() || "—",
+        stockQuantity: physical,
+        // Sàn chưa trả được tồn live (Lazada / lỗi API) thì mượn tồn vật lý —
+        // thà nói số kho còn hơn nói "hết hàng" sai.
+        channelStock: ctx.channelStock ?? physical,
+      },
+    ],
+  };
+}
+
+// ─── Sinh câu trả lời cho ĐÁNH GIÁ THẬT (mô phỏng LLM, rule-based) ──────────
+
+/** Phân loại nhãn lỗi cho đánh giá thật từ sao + nội dung (thay LLM sau). */
+export function classifyReviewTag(rating: number, content: string): ReviewTag {
+  if (rating >= 4) return "SATISFIED";
+  const t = content.toLowerCase();
+  if (/giao|ship|van chuyen|vận chuyển|chậm|cham|lâu|lau/.test(t)) return "SHIPPING";
+  if (/vỡ|vo|móp|mop|bể|be |rách|rach|trầy|tray|hỏng|hong/.test(t)) return "DAMAGED";
+  return "QUALITY";
+}
+
+/** Soạn câu trả lời CSKH cho một đánh giá thật theo nhãn phân loại. */
+export function generateReviewReply(params: {
+  customer: string;
+  rating: number;
+  productName: string;
+  tag: ReviewTag;
+}): string {
+  const { customer, productName, tag } = params;
+  const name = customer && customer !== "Người mua Lazada" ? customer : "bạn";
+  switch (tag) {
+    case "SATISFIED":
+      return `Cảm ơn ${name} đã tin tưởng và đánh giá tốt cho ${productName}! Shop rất vui khi sản phẩm vừa ý bạn. Hẹn gặp lại bạn ở những đơn hàng sau, shop luôn có ưu đãi riêng cho khách quen ạ!`;
+    case "SHIPPING":
+      return `Chào ${name}, shop thành thật xin lỗi vì đơn hàng đến tay bạn chậm hơn dự kiến do sự cố từ đơn vị vận chuyển. Shop đã gửi phản ánh tới hãng vận chuyển và sẽ ưu tiên xử lý các đơn sau của bạn. Mong bạn thông cảm và cho shop cơ hội phục vụ tốt hơn ạ!`;
+    case "DAMAGED":
+      return `Chào ${name}, shop rất tiếc vì kiện hàng gặp vấn đề trong quá trình vận chuyển. Bạn vui lòng nhắn tin cho shop kèm ảnh sản phẩm, shop sẽ hỗ trợ đổi mới hoàn toàn miễn phí trong 24h. Cảm ơn bạn đã phản hồi để shop cải thiện khâu đóng gói ạ!`;
+    default:
+      return `Chào ${name}, cảm ơn bạn đã góp ý về ${productName}. Shop xin lỗi vì trải nghiệm chưa trọn vẹn — bạn nhắn tin cho shop để được hỗ trợ đổi trả/khắc phục ngay nha. Góp ý của bạn giúp shop hoàn thiện sản phẩm hơn ạ!`;
+  }
 }

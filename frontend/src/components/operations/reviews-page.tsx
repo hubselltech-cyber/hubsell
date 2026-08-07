@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bot,
+  Loader2,
   MessageCircle,
   PencilLine,
   SendHorizontal,
@@ -11,7 +12,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { CHANNEL_META, MOCK_REVIEWS, MOCK_SHOPS, REVIEW_TAG_META } from "@/components/operations/mock-data";
+import {
+  classifyReviewTag,
+  generateReviewReply,
+} from "@/components/operations/copilot-engine";
+import {
+  CHANNEL_META,
+  MOCK_REVIEWS,
+  MOCK_SHOPS,
+  REVIEW_TAG_META,
+  type OpsChannel,
+  type ReviewTag,
+} from "@/components/operations/mock-data";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -24,24 +36,58 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
+import {
+  ApiError,
+  fetchOpsReviews,
+  replyOpsReview,
+  type OpsChannelError,
+} from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * PHẢN HỒI ĐÁNH GIÁ — MÀN HÌNH MOCKUP (PREVIEW)
+ * PHẢN HỒI ĐÁNH GIÁ — HỢP NHẤT SHOPEE + LAZADA
  *
- * Bố cục 2 cột chuẩn SaaS: trái là FEED đánh giá (không dùng bảng — nội dung
- * đánh giá dài ngắn thất thường, feed đọc nhanh hơn và giống ngữ cảnh CSKH
- * quen thuộc trên Seller Center), phải là khối AI Reply Builder ghim sticky.
+ * CHẠY 2 CHẾ ĐỘ như Trợ lý Chat:
+ *   · real — đánh giá kéo LIVE từ sàn qua /api/operations/reviews; nút "Gửi
+ *     ngay" và bulk 5 sao GỬI THẬT lên sàn (Shopee reply_comment / Lazada
+ *     reply/add). Câu gợi ý sinh rule-based theo nhãn phân loại (thay bằng
+ *     LLM thật sau — hợp đồng giữ nguyên).
+ *   · demo — chưa có dữ liệu thật: bộ mock cũ, thao tác chỉ đổi state client.
  *
- * Toàn bộ số liệu suy ra từ MOCK_REVIEWS phía client — logic lọc/gửi/bulk là
- * thật, chỉ nguồn dữ liệu là mock. Khi nối API đánh giá của sàn, thay mock
- * bằng fetch + mutation là khung này chạy được ngay.
+ * Bố cục 2 cột: feed đánh giá (trái) + AI Reply Builder sticky (phải).
  */
 
+type PageMode = "loading" | "real" | "demo";
 type StarFilter = "ALL" | "1" | "2" | "3" | "4" | "5";
 type StatusFilter = "ALL" | "UNREPLIED" | "REPLIED";
+
+/** Dòng đánh giá hợp nhất cho render — demo và real cùng đổ về đây. */
+interface ReviewRow {
+  id: string;
+  customer: string;
+  channel: OpsChannel;
+  /** Khoá lọc gian hàng: demo = shopId mock, real = channelId. */
+  shopKey: string;
+  shopLabel: string;
+  productName: string;
+  rating: number;
+  content: string;
+  replied: boolean;
+  createdAt: string;
+  tag: ReviewTag;
+  aiSuggestion: string;
+  /** Chỉ chế độ real — toạ độ để gọi API trả lời. */
+  channelId?: string;
+  externalId?: string;
+}
+
+function fmtDate(ms: number | null): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  return `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 /** Dãy sao vàng — sao rỗng tô slate nhạt để giữ nguyên bề rộng hàng. */
 function StarRow({ rating }: { rating: number }) {
@@ -60,71 +106,233 @@ function StarRow({ rating }: { rating: number }) {
   );
 }
 
+/** Map MOCK_REVIEWS → ReviewRow (chế độ demo). */
+function demoRows(): ReviewRow[] {
+  return MOCK_REVIEWS.map((r) => ({
+    id: r.id,
+    customer: r.customer,
+    channel: r.channel,
+    shopKey: r.shopId,
+    shopLabel: MOCK_SHOPS.find((s) => s.id === r.shopId)?.label ?? r.shopId,
+    productName: r.product,
+    rating: r.rating,
+    content: r.content,
+    replied: r.replied,
+    createdAt: r.createdAt,
+    tag: r.tag,
+    aiSuggestion: r.aiSuggestion,
+  }));
+}
+
 export function OperationsReviewsPage() {
-  const [reviews, setReviews] = useState(MOCK_REVIEWS);
+  const [mode, setMode] = useState<PageMode>("loading");
+  const [rows, setRows] = useState<ReviewRow[]>([]);
+  const [channelErrors, setChannelErrors] = useState<OpsChannelError[]>([]);
+
   const [shopFilter, setShopFilter] = useState("ALL");
   const [starFilter, setStarFilter] = useState<StarFilter>("ALL");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Bản nháp đang sửa trong builder — gieo từ gợi ý AI khi chọn đánh giá
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
+  const [sendingReply, setSendingReply] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
+
+  // ── Nạp đánh giá thật khi vào trang; trống/lỗi → demo ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetchOpsReviews();
+        if (cancelled) return;
+        setChannelErrors(r.errors);
+        if (r.reviews.length > 0) {
+          setRows(
+            r.reviews.map((rv) => {
+              const tag = classifyReviewTag(rv.rating, rv.content);
+              return {
+                id: rv.id,
+                customer: rv.customer,
+                channel: rv.channelName as OpsChannel,
+                shopKey: rv.channelId,
+                shopLabel: `${CHANNEL_META[rv.channelName as OpsChannel].label} — ${rv.shopName}`,
+                productName: rv.productName,
+                rating: rv.rating,
+                content: rv.content,
+                replied: rv.reply != null && rv.reply !== "",
+                createdAt: fmtDate(rv.createdAt),
+                tag,
+                aiSuggestion: generateReviewReply({
+                  customer: rv.customer,
+                  rating: rv.rating,
+                  productName: rv.productName,
+                  tag,
+                }),
+                channelId: rv.channelId,
+                externalId: rv.externalId,
+              };
+            })
+          );
+          setMode("real");
+        } else {
+          setRows(demoRows());
+          setMode("demo");
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status !== 401) {
+          setChannelErrors([{ channelId: "", shopName: "Hệ thống", message: err.message }]);
+        }
+        setRows(demoRows());
+        setMode("demo");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isReal = mode === "real";
+
+  // Tuỳ chọn lọc gian hàng dựng từ chính dữ liệu đang hiển thị
+  const shopOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of rows) if (!seen.has(r.shopKey)) seen.set(r.shopKey, r.shopLabel);
+    return [...seen.entries()].map(([value, label]) => ({ value, label }));
+  }, [rows]);
 
   const filtered = useMemo(
     () =>
-      reviews.filter(
+      rows.filter(
         (r) =>
-          (shopFilter === "ALL" || r.shopId === shopFilter) &&
+          (shopFilter === "ALL" || r.shopKey === shopFilter) &&
           (starFilter === "ALL" || r.rating === Number(starFilter)) &&
           (statusFilter === "ALL" ||
             (statusFilter === "REPLIED" ? r.replied : !r.replied))
       ),
-    [reviews, shopFilter, starFilter, statusFilter]
+    [rows, shopFilter, starFilter, statusFilter]
   );
 
-  const selected = reviews.find((r) => r.id === selectedId) ?? null;
+  const selected = rows.find((r) => r.id === selectedId) ?? null;
 
   // ── Chỉ số thẻ tổng quan — suy trực tiếp từ danh sách để luôn khớp feed ──
   const fiveStarRate =
-    (reviews.filter((r) => r.rating === 5).length / reviews.length) * 100;
-  const unreplied = reviews.filter((r) => !r.replied);
-  // "Xấu cần xử lý gấp" = 1–3 sao chưa trả lời: để lâu là sàn trừ điểm shop
+    rows.length > 0
+      ? (rows.filter((r) => r.rating === 5).length / rows.length) * 100
+      : 0;
+  const unreplied = rows.filter((r) => !r.replied);
   const urgentBad = unreplied.filter((r) => r.rating <= 3);
-  // Ứng viên bulk: 5 sao chưa trả lời — AI trả lời hàng loạt an toàn vì khen
-  // thì cảm ơn là đủ, không cần người duyệt từng câu như đánh giá xấu
   const bulkTargets = unreplied.filter((r) => r.rating === 5);
 
   function selectReview(id: string) {
-    const r = reviews.find((x) => x.id === id);
+    const r = rows.find((x) => x.id === id);
     if (!r) return;
     setSelectedId(id);
     setDraft(r.aiSuggestion);
     setEditing(false);
   }
 
-  function sendReply() {
-    if (!selected) return;
-    setReviews((prev) =>
-      prev.map((r) => (r.id === selected.id ? { ...r, replied: true } : r))
-    );
-    setSelectedId(null);
-    setDraft("");
-    toast.success(`Đã gửi phản hồi tới ${selected.customer} (preview).`);
+  function markReplied(ids: Set<string>) {
+    setRows((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, replied: true } : r)));
   }
 
-  function bulkAutoReply() {
-    if (bulkTargets.length === 0) return;
-    const ids = new Set(bulkTargets.map((r) => r.id));
-    setReviews((prev) =>
-      prev.map((r) => (ids.has(r.id) ? { ...r, replied: true } : r))
-    );
-    toast.success(
-      `AI đã tự động trả lời ${formatNumber(bulkTargets.length)} đánh giá 5 sao (preview).`
+  async function sendReply() {
+    if (!selected || sendingReply) return;
+    if (!isReal) {
+      markReplied(new Set([selected.id]));
+      setSelectedId(null);
+      setDraft("");
+      toast.success(`Đã gửi phản hồi tới ${selected.customer} (demo).`);
+      return;
+    }
+    setSendingReply(true);
+    try {
+      await replyOpsReview({
+        channelId: selected.channelId!,
+        reviewId: selected.externalId!,
+        content: draft.trim(),
+      });
+      markReplied(new Set([selected.id]));
+      setSelectedId(null);
+      setDraft("");
+      toast.success(`Đã gửi phản hồi lên ${CHANNEL_META[selected.channel].label}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gửi phản hồi thất bại");
+    } finally {
+      setSendingReply(false);
+    }
+  }
+
+  async function bulkAutoReply() {
+    if (bulkTargets.length === 0 || bulkRunning) return;
+    if (!isReal) {
+      markReplied(new Set(bulkTargets.map((r) => r.id)));
+      toast.success(
+        `AI đã tự động trả lời ${formatNumber(bulkTargets.length)} đánh giá 5 sao (demo).`
+      );
+      return;
+    }
+    // GỬI THẬT lên sàn — chạy TUẦN TỰ cho nhẹ rate limit; gom kết quả cuối.
+    setBulkRunning(true);
+    let ok = 0;
+    const done = new Set<string>();
+    let firstError = "";
+    for (const r of bulkTargets) {
+      try {
+        await replyOpsReview({
+          channelId: r.channelId!,
+          reviewId: r.externalId!,
+          content: r.aiSuggestion,
+        });
+        done.add(r.id);
+        ok++;
+      } catch (err) {
+        if (!firstError) firstError = err instanceof Error ? err.message : "lỗi không rõ";
+      }
+    }
+    markReplied(done);
+    setBulkRunning(false);
+    if (ok > 0) toast.success(`AI đã trả lời ${formatNumber(ok)} đánh giá 5 sao lên sàn.`);
+    if (ok < bulkTargets.length)
+      toast.error(
+        `${formatNumber(bulkTargets.length - ok)} đánh giá gửi thất bại${firstError ? ` — ${firstError}` : ""}`
+      );
+  }
+
+  if (mode === "loading") {
+    return (
+      <OperationsFrame>
+        <Card className="flex min-h-[420px] items-center justify-center">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Đang tải đánh giá từ các gian hàng…
+          </div>
+        </Card>
+      </OperationsFrame>
     );
   }
 
   return (
     <OperationsFrame>
+      {/* ===== NHÃN NGUỒN DỮ LIỆU + LỖI TỪNG GIAN ===== */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant="outline"
+          className={
+            isReal
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-violet-200 bg-violet-50 text-violet-700"
+          }
+        >
+          {isReal ? "Dữ liệu thật từ sàn" : "Demo — chưa có đánh giá thật"}
+        </Badge>
+        {channelErrors.map((e) => (
+          <span key={`${e.channelId}-${e.message}`} className={cn(TEXT_SUB, "text-amber-700")}>
+            ⚠️ {e.shopName}: {e.message}
+          </span>
+        ))}
+      </div>
+
       {/* ===== THẺ THỐNG KÊ TỔNG QUAN ===== */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -132,13 +340,13 @@ export function OperationsReviewsPage() {
           value={`${fiveStarRate.toFixed(1).replace(".", ",")}%`}
           icon={Star}
           tone="positive"
-          subtitle="30 ngày gần nhất"
+          subtitle={isReal ? "Trên dữ liệu đã tải" : "30 ngày gần nhất (demo)"}
         />
         <StatCard
           label="Chưa trả lời"
           value={formatNumber(unreplied.length)}
           icon={MessageCircle}
-          subtitle="Trên cả 3 sàn"
+          subtitle="Trên các gian đã nối"
         />
         <StatCard
           label="Đánh giá xấu cần xử lý gấp"
@@ -150,10 +358,10 @@ export function OperationsReviewsPage() {
           subtitle="1–3 sao chưa phản hồi"
         />
         <StatCard
-          label="AI trả lời tự động"
-          value={formatNumber(reviews.filter((r) => r.replied).length)}
+          label="Đã trả lời"
+          value={formatNumber(rows.filter((r) => r.replied).length)}
           icon={Bot}
-          subtitle="Trong kỳ (demo)"
+          subtitle="Gồm cả trả lời tay trên sàn"
         />
       </div>
 
@@ -161,14 +369,14 @@ export function OperationsReviewsPage() {
       <Card>
         <CardContent className="flex flex-wrap items-center gap-3 py-4">
           <NativeSelect
-            className="w-full sm:w-56"
+            className="w-full sm:w-64"
             value={shopFilter}
             onChange={(e) => setShopFilter(e.target.value)}
             aria-label="Chọn gian hàng"
           >
             <option value="ALL">Tất cả gian hàng</option>
-            {MOCK_SHOPS.map((s) => (
-              <option key={s.id} value={s.id}>
+            {shopOptions.map((s) => (
+              <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
@@ -197,7 +405,7 @@ export function OperationsReviewsPage() {
             <option value="REPLIED">Đã trả lời</option>
           </NativeSelect>
           <p className={cn(TEXT_SUB, "ml-auto")}>
-            {formatNumber(filtered.length)} / {formatNumber(reviews.length)} đánh giá
+            {formatNumber(filtered.length)} / {formatNumber(rows.length)} đánh giá
           </p>
         </CardContent>
       </Card>
@@ -220,9 +428,7 @@ export function OperationsReviewsPage() {
                 key={r.id}
                 className={cn(
                   "cursor-pointer transition-colors",
-                  active
-                    ? "border-primary/60 ring-2 ring-primary/20"
-                    : "hover:border-slate-300"
+                  active ? "border-primary/60 ring-2 ring-primary/20" : "hover:border-slate-300"
                 )}
                 onClick={() => selectReview(r.id)}
               >
@@ -231,30 +437,25 @@ export function OperationsReviewsPage() {
                     <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
                       {r.customer.charAt(0)}
                     </div>
-                    <span className="text-sm font-semibold text-slate-900">
-                      {r.customer}
-                    </span>
+                    <span className="text-sm font-semibold text-slate-900">{r.customer}</span>
                     <StarRow rating={r.rating} />
-                    <span className={cn(TEXT_SUB, "ml-auto shrink-0")}>
-                      {r.createdAt}
-                    </span>
+                    <span className={cn(TEXT_SUB, "ml-auto shrink-0")}>{r.createdAt}</span>
                   </div>
 
-                  <p className="text-sm text-slate-900">{r.content}</p>
-                  <p className={TEXT_SUB}>{r.product}</p>
+                  {r.content ? (
+                    <p className="text-sm text-slate-900">{r.content}</p>
+                  ) : (
+                    <p className="text-sm italic text-slate-400">
+                      (Khách chấm sao, không viết nội dung)
+                    </p>
+                  )}
+                  <p className={TEXT_SUB}>{r.productName}</p>
 
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <Badge
-                      variant="outline"
-                      className={CHANNEL_META[r.channel].badgeClass}
-                    >
+                    <Badge variant="outline" className={CHANNEL_META[r.channel].badgeClass}>
                       {CHANNEL_META[r.channel].label}
                     </Badge>
-                    {/* Badge phân loại lỗi do AI gắn — lọc nhanh nguyên nhân */}
-                    <Badge
-                      variant="outline"
-                      className={REVIEW_TAG_META[r.tag].badgeClass}
-                    >
+                    <Badge variant="outline" className={REVIEW_TAG_META[r.tag].badgeClass}>
                       AI: {REVIEW_TAG_META[r.tag].label}
                     </Badge>
                     <Badge
@@ -284,8 +485,8 @@ export function OperationsReviewsPage() {
                 AI Reply Builder
               </CardTitle>
               <CardDescription>
-                Chọn một đánh giá bên trái — AI soạn sẵn câu trả lời CSKH, bạn
-                sửa lại hoặc gửi thẳng.
+                Chọn một đánh giá bên trái — AI soạn sẵn câu trả lời CSKH, bạn sửa
+                lại hoặc gửi thẳng{isReal ? " lên sàn" : ""}.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -299,7 +500,7 @@ export function OperationsReviewsPage() {
                       <StarRow rating={selected.rating} />
                     </div>
                     <p className="mt-1 line-clamp-2 text-sm text-slate-600">
-                      {selected.content}
+                      {selected.content || "(không có nội dung)"}
                     </p>
                   </div>
 
@@ -327,8 +528,12 @@ export function OperationsReviewsPage() {
                       <PencilLine className="size-4" />
                       {editing ? "Xong" : "Sửa"}
                     </Button>
-                    <Button size="sm" className="flex-1" onClick={sendReply}>
-                      <SendHorizontal className="size-4" />
+                    <Button size="sm" className="flex-1" onClick={sendReply} disabled={sendingReply}>
+                      {sendingReply ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <SendHorizontal className="size-4" />
+                      )}
                       Gửi ngay
                     </Button>
                   </div>
@@ -341,21 +546,21 @@ export function OperationsReviewsPage() {
             </CardContent>
           </Card>
 
-          {/* Nút bulk tách khỏi builder: đây là thao tác trên CẢ danh sách,
-              không phụ thuộc đánh giá đang chọn */}
+          {/* Nút bulk tách khỏi builder: thao tác trên CẢ danh sách */}
           <Card className="border-violet-200">
             <CardContent className="space-y-2 py-4">
               <Button
                 className="w-full bg-violet-600 text-white hover:bg-violet-700"
-                disabled={bulkTargets.length === 0}
+                disabled={bulkTargets.length === 0 || bulkRunning}
                 onClick={bulkAutoReply}
               >
-                🤖 Tự động trả lời hàng loạt {formatNumber(bulkTargets.length)}{" "}
-                đánh giá 5 sao
+                {bulkRunning && <Loader2 className="size-4 animate-spin" />}
+                🤖 Tự động trả lời hàng loạt {formatNumber(bulkTargets.length)} đánh giá 5 sao
               </Button>
               <p className={cn(TEXT_SUB, "text-center")}>
-                Chỉ áp dụng cho đánh giá 5 sao chưa trả lời. Đánh giá 1–3 sao
-                luôn cần người duyệt từng câu.
+                Chỉ áp dụng cho đánh giá 5 sao chưa trả lời
+                {isReal ? " — gửi THẬT lên sàn" : ""}. Đánh giá 1–3 sao luôn cần
+                người duyệt từng câu.
               </p>
             </CardContent>
           </Card>

@@ -47,6 +47,31 @@ function parseVatRate(value: unknown): number | null {
   return VAT_RATES.includes(n) ? n : null;
 }
 
+/**
+ * Kiểm tra bảng size cho Trợ lý vận hành: mảng {size, heightCm:[min,max],
+ * weightKg:[min,max]}. Trả về mảng đã làm sạch, hoặc null nếu sai cấu trúc —
+ * dữ liệu này được AI đọc thẳng nên thà chặn từ đầu còn hơn tư vấn bậy.
+ */
+function parseSizeChart(value: unknown): Prisma.InputJsonValue | null {
+  if (!Array.isArray(value)) return null;
+  const cleaned: { size: string; heightCm: [number, number]; weightKg: [number, number] }[] = [];
+  for (const row of value) {
+    const r = row as { size?: unknown; heightCm?: unknown; weightKg?: unknown };
+    const okRange = (x: unknown): x is [number, number] =>
+      Array.isArray(x) && x.length === 2 && x.every((n) => typeof n === "number" && n > 0);
+    if (
+      typeof r?.size !== "string" ||
+      r.size.trim() === "" ||
+      !okRange(r.heightCm) ||
+      !okRange(r.weightKg)
+    ) {
+      return null;
+    }
+    cleaned.push({ size: r.size.trim(), heightCm: r.heightCm, weightKg: r.weightKg });
+  }
+  return cleaned;
+}
+
 // Lấy giá trị của một cột trong hàng Excel, thử nhiều tên cột có thể (không phân biệt hoa/thường)
 function pickColumn(row: Record<string, unknown>, aliases: string[]): unknown {
   const normalized: Record<string, unknown> = {};
@@ -213,8 +238,17 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const { skuCode, productName, costPrice, sellingPrice, taxName, vatRate } =
-      req.body ?? {};
+    const {
+      skuCode,
+      productName,
+      costPrice,
+      sellingPrice,
+      taxName,
+      vatRate,
+      material,
+      careInstructions,
+      sizeChart,
+    } = req.body ?? {};
     const data: Prisma.ProductUpdateInput = {};
 
     if (skuCode !== undefined) {
@@ -275,6 +309,33 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         return;
       }
       data.vatRate = rate;
+    }
+
+    // ── Thông số cho Trợ lý vận hành (AI CSKH) — chuỗi rỗng/null là XOÁ ──
+    if (material !== undefined) {
+      data.material =
+        typeof material === "string" && material.trim() ? material.trim() : null;
+    }
+    if (careInstructions !== undefined) {
+      data.careInstructions =
+        typeof careInstructions === "string" && careInstructions.trim()
+          ? careInstructions.trim()
+          : null;
+    }
+    if (sizeChart !== undefined) {
+      if (sizeChart === null || (Array.isArray(sizeChart) && sizeChart.length === 0)) {
+        data.sizeChart = Prisma.DbNull;
+      } else {
+        const chart = parseSizeChart(sizeChart);
+        if (chart === null) {
+          res.status(400).json({
+            error:
+              'Bảng size sai cấu trúc — cần mảng {"size","heightCm":[min,max],"weightKg":[min,max]}',
+          });
+          return;
+        }
+        data.sizeChart = chart;
+      }
     }
 
     const updated = await prisma.product.update({ where: { id }, data });

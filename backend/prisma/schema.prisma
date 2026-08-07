@@ -684,6 +684,18 @@ model Product {
   // module hóa đơn/đối soát thuế sau này sẽ đọc để tính VAT đầu ra.
   vatRate Int @default(0)
 
+  // ── Thông số vật lý cho Trợ lý vận hành (AI CSKH) ──
+  // Đặt ở Product (kho vật lý) chứ KHÔNG phải ChannelProduct: chất liệu/size là
+  // thuộc tính của món hàng, dùng chung cho mọi sàn. AI Copilot nạp các trường
+  // này vào ngữ cảnh để tư vấn size/chất liệu/bảo quản (xem copilot-engine.ts).
+  /// Chất liệu — vd "100% cotton 2 chiều, 250gsm".
+  material String?
+  /// Hướng dẫn bảo quản — vd "Giặt máy nước lạnh, lộn trái khi giặt".
+  careInstructions String?
+  /// Bảng quy đổi size JSON: [{"size":"M","heightCm":[158,168],"weightKg":[52,62]}].
+  /// Sản phẩm không mặc để null/[] — AI tự bỏ qua tư vấn size.
+  sizeChart Json?
+
   createdAt       DateTime @default(now())
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)

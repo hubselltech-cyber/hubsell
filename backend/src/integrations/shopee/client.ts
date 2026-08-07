@@ -526,6 +526,215 @@ export async function updateShopeeStock(
   }
 }
 
+// ---------- Chat với người mua (SellerChat API) ----------
+// Path theo tài liệu Shopee OpenAPI v2 (module sellerchat). Module này có thể
+// cần bật quyền riêng trên Console — lỗi permission nổi nguyên văn lên tầng gọi.
+
+/** Một hội thoại trong get_conversation_list. */
+export interface ShopeeConversation {
+  conversation_id?: number | string;
+  to_id?: number; // user_id người mua — dùng làm to_id khi gửi tin
+  to_name?: string;
+  to_avatar?: string;
+  shop_id?: number;
+  unread_count?: number;
+  latest_message_content?: { text?: string } | null;
+  latest_message_type?: string;
+  last_message_timestamp?: number; // NANO giây ở một số region — chuẩn hoá ở tầng gọi
+  latest_message_from_id?: number;
+}
+
+export interface ShopeeConversationListData extends ShopeeEnvelope {
+  response?: {
+    page_result?: {
+      page_size?: number;
+      conversations?: ShopeeConversation[];
+      next_cursor?: { next_message_time_nano?: string; conversation_id?: string };
+    };
+  };
+}
+
+/** DS hội thoại mới nhất của shop (một trang). */
+export async function getConversationList(
+  params: {
+    accessToken: string;
+    shopId: string;
+    pageSize?: number;
+    /** "latest" (mặc định) — hội thoại có tin mới nhất trước. */
+    nextTimestampNano?: string;
+    nextConversationId?: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeConversationListData> {
+  return callShopGet<ShopeeConversationListData>(
+    SHOPEE_PATHS.chatConversationList,
+    params.accessToken,
+    params.shopId,
+    [
+      ["direction", "latest"],
+      ["type", "all"],
+      ["page_size", params.pageSize ?? 25],
+      ...(params.nextTimestampNano
+        ? ([["next_timestamp_nano", params.nextTimestampNano]] as [string, string][])
+        : []),
+      ...(params.nextConversationId
+        ? ([["conversation_id", params.nextConversationId]] as [string, string][])
+        : []),
+    ],
+    "get_conversation_list",
+    cfg
+  );
+}
+
+/** Một tin nhắn trong get_message. */
+export interface ShopeeChatMessage {
+  message_id?: string;
+  message_type?: string; // text / image / sticker / order / product...
+  from_id?: number;
+  from_shop_id?: number;
+  to_id?: number;
+  content?: { text?: string; item_id?: number; order_sn?: string };
+  created_timestamp?: number; // epoch giây
+}
+
+export interface ShopeeChatMessagesData extends ShopeeEnvelope {
+  response?: {
+    messages?: ShopeeChatMessage[];
+    page_result?: { next_offset?: string };
+  };
+}
+
+/** DS tin nhắn của một hội thoại (mới nhất trước; một trang). */
+export async function getChatMessages(
+  params: {
+    accessToken: string;
+    shopId: string;
+    conversationId: string;
+    pageSize?: number;
+    offset?: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeChatMessagesData> {
+  return callShopGet<ShopeeChatMessagesData>(
+    SHOPEE_PATHS.chatMessages,
+    params.accessToken,
+    params.shopId,
+    [
+      ["conversation_id", params.conversationId],
+      ["page_size", params.pageSize ?? 25],
+      ...(params.offset ? ([["offset", params.offset]] as [string, string][]) : []),
+    ],
+    "get_message",
+    cfg
+  );
+}
+
+export interface ShopeeSendMessageData extends ShopeeEnvelope {
+  response?: { message_id?: string };
+}
+
+/**
+ * Gửi MỘT tin nhắn văn bản tới người mua. `toId` là user_id người mua (trường
+ * to_id của hội thoại). Chỉ hỗ trợ text — đủ cho CSKH; ảnh/voucher làm sau.
+ */
+export async function sendChatMessage(
+  params: { accessToken: string; shopId: string; toId: number; text: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeSendMessageData> {
+  return callShopPost<ShopeeSendMessageData>(
+    SHOPEE_PATHS.chatSendMessage,
+    params.accessToken,
+    params.shopId,
+    {
+      to_id: params.toId,
+      message_type: "text",
+      content: { text: params.text },
+    },
+    "send_message",
+    cfg
+  );
+}
+
+// ---------- Đánh giá sản phẩm (get_comment / reply_comment) ----------
+
+/** Một đánh giá trong get_comment. */
+export interface ShopeeComment {
+  comment_id?: number;
+  comment?: string;
+  buyer_username?: string;
+  item_id?: number;
+  model_id?: number;
+  order_sn?: string;
+  rating_star?: number; // 1..5
+  create_time?: number; // epoch giây
+  comment_reply?: { reply?: string; hidden?: boolean } | null;
+}
+
+export interface ShopeeCommentListData extends ShopeeEnvelope {
+  response?: {
+    item_comment_list?: ShopeeComment[];
+    more?: boolean;
+    next_cursor?: string;
+  };
+}
+
+/**
+ * DS đánh giá của shop (một trang, cursor rỗng = trang đầu). Không truyền
+ * item_id để lấy TOÀN SHOP — đúng nhu cầu màn "Phản hồi đánh giá".
+ */
+export async function getComments(
+  params: {
+    accessToken: string;
+    shopId: string;
+    cursor?: string;
+    pageSize?: number;
+    itemId?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeCommentListData> {
+  return callShopGet<ShopeeCommentListData>(
+    SHOPEE_PATHS.productComments,
+    params.accessToken,
+    params.shopId,
+    [
+      ["cursor", params.cursor ?? ""],
+      ["page_size", params.pageSize ?? 50],
+      ...(params.itemId ? ([["item_id", params.itemId]] as [string, number][]) : []),
+    ],
+    "get_comment",
+    cfg
+  );
+}
+
+export interface ShopeeReplyCommentData extends ShopeeEnvelope {
+  response?: {
+    result_list?: { comment_id?: number; fail_error?: string; fail_message?: string }[];
+  };
+}
+
+/** Trả lời MỘT đánh giá. Shopee có thể trả 200 kèm fail per-comment → ném lỗi rõ. */
+export async function replyComment(
+  params: { accessToken: string; shopId: string; commentId: number; reply: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<void> {
+  const data = await callShopPost<ShopeeReplyCommentData>(
+    SHOPEE_PATHS.productReplyComment,
+    params.accessToken,
+    params.shopId,
+    { comment_list: [{ comment_id: params.commentId, comment: params.reply }] },
+    "reply_comment",
+    cfg
+  );
+  const failed = (data.response?.result_list ?? []).filter((r) => r.fail_error);
+  if (failed.length > 0) {
+    throw new Error(
+      `Shopee reply_comment từ chối: ${failed
+        .map((f) => f.fail_message || f.fail_error)
+        .join("; ")}`
+    );
+  }
+}
+
 // ---------- Ký quỹ / đối soát (Payment API, READ-ONLY) ----------
 
 /** Một dòng của get_escrow_list — đơn đã được sàn GIẢI NGÂN trong khoảng lọc. */

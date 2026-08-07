@@ -51,6 +51,18 @@ export const LAZADA_PATHS = {
   productsGet: "/products/get",
   /** Sao kê giao dịch tài chính CHI TIẾT theo dòng phí (Finance API, READ-ONLY). */
   transactionDetails: "/finance/transaction/details/get",
+
+  // ── Trợ lý vận hành (CSKH) — path đã ĐỐI CHIẾU tài liệu open.lazada.com 07/08/2026 ──
+  /** Đánh giá của MỘT sản phẩm (item_id BẮT BUỘC — Lazada không có list toàn shop). */
+  reviewList: "/review/seller/list",
+  /** Trả lời một đánh giá (id + content ≤500 ký tự). */
+  reviewReplyAdd: "/review/seller/reply/add",
+  /** DS hội thoại chat (start_time=now ms, phân trang last_session_id). */
+  imSessionList: "/im/session/list",
+  /** DS tin nhắn một hội thoại (session_id + start_time=now ms). */
+  imMessageList: "/im/message/list",
+  /** Gửi tin nhắn (POST; template_id=1 là text). */
+  imMessageSend: "/im/message/send",
 } as const;
 
 /**

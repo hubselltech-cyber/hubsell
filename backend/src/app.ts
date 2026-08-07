@@ -26,6 +26,7 @@ import commandCenterRouter from "./routes/command-center";
 import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
 import testMisaSandboxRouter from "./routes/test-misa-sandbox";
+import operationsRouter from "./routes/operations";
 
 // ============================================================
 // CORS — ALLOWLIST thay cho mở toang (beta multi-user).
@@ -153,6 +154,10 @@ export function createApp() {
   // Không gác requireChannel (giống invoice-config) để trang cấu hình thuế
   // vẫn mở được khi shop chưa nối gian nào.
   app.use("/api/tax", requireAuth, adminOnly, taxRouter);
+
+  // Trợ lý vận hành (CSKH đa kênh): chat + đánh giá + ngữ cảnh sản phẩm.
+  // CSKH là việc của SALES nên gác notWarehouse (khớp canAccessOperations bên FE).
+  app.use("/api/operations", requireAuth, notWarehouse, requireChannel, operationsRouter);
 
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).

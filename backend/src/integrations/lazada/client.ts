@@ -123,6 +123,34 @@ async function callLazada<T extends LazadaEnvelope>(
   return ensureOk((await res.json()) as T, ctx);
 }
 
+/**
+ * Helper gọi API Lazada dạng POST (im/message/send...): chữ ký tính y hệt GET
+ * trên TOÀN BỘ param, nhưng param gửi trong body x-www-form-urlencoded theo
+ * chuẩn LazOP (SDK chính hãng cũng gửi form, không phải JSON).
+ */
+async function callLazadaPost<T extends LazadaEnvelope>(
+  host: string,
+  path: string,
+  params: Record<string, string>,
+  ctx: string,
+  cfg: LazadaConfig
+): Promise<T> {
+  const all: Record<string, string> = {
+    ...params,
+    app_key: cfg.appKey,
+    sign_method: "sha256",
+    timestamp: String(Date.now()),
+  };
+  const sign = signLazada(cfg.appSecret, path, all);
+  const body = new URLSearchParams({ ...all, sign }).toString();
+  const res = await fetch(`${host}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  return ensureOk((await res.json()) as T, ctx);
+}
+
 // ---------- Token ----------
 
 /** Đổi `code` (nhận ở callback) lấy access_token/refresh_token. */
@@ -434,6 +462,205 @@ export async function getTransactionDetails(
     cfg
   );
   return data.data ?? [];
+}
+
+// ---------- Đánh giá sản phẩm (Product Review API) ----------
+// Path đã đối chiếu tài liệu open.lazada.com (07/08/2026). Đặc thù Lazada:
+// KHÔNG có API list review toàn shop — /review/seller/list bắt buộc item_id,
+// tầng service phải quét theo danh sách sản phẩm của shop.
+
+/** Một đánh giá trong /review/seller/list. */
+export interface LazadaReview {
+  id?: number | string;
+  review_content?: string;
+  seller_reply?: string;
+  create_time?: string | number; // epoch MILI-giây (Lazada trả chuỗi)
+  review_type?: string; // PRODUCT_REVIEW / SELLER_REVIEW...
+  review_images?: unknown[];
+  review_videos?: unknown[];
+}
+
+/** Một cụm đánh giá của MỘT đơn hàng trên MỘT sản phẩm. */
+export interface LazadaReviewGroup {
+  item_id?: number | string;
+  order_id?: number | string;
+  ratings?: {
+    product_rating?: string | number;
+    seller_rating?: string | number;
+    logistics_rating?: string | number;
+  };
+  reviews?: LazadaReview[];
+}
+
+interface LazadaReviewListData extends LazadaEnvelope {
+  data?: { current?: string | number; total?: string | number; data?: LazadaReviewGroup[] };
+}
+
+/** DS đánh giá của MỘT sản phẩm (page_size ≤50; status_filter NOT_REPLIED được). */
+export async function getItemReviews(
+  params: {
+    accessToken: string;
+    itemId: number | string;
+    pageSize?: number;
+    current?: number;
+    statusFilter?: "NOT_REPLIED";
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaReviewGroup[]> {
+  const data = await callLazada<LazadaReviewListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.reviewList,
+    {
+      access_token: params.accessToken,
+      item_id: String(params.itemId),
+      page_size: String(params.pageSize ?? 50),
+      current: String(params.current ?? 1),
+      ...(params.statusFilter ? { status_filter: params.statusFilter } : {}),
+    },
+    "review/seller/list",
+    cfg
+  );
+  return data.data?.data ?? [];
+}
+
+/** Trả lời một đánh giá theo review id (content ≤500 ký tự, chỉ text). */
+export async function replyReview(
+  params: { accessToken: string; reviewId: number | string; content: string },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<void> {
+  await callLazada(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.reviewReplyAdd,
+    {
+      access_token: params.accessToken,
+      id: String(params.reviewId),
+      content: params.content.slice(0, 500),
+    },
+    "review/seller/reply/add",
+    cfg
+  );
+}
+
+// ---------- Chat với người mua (Instant Messaging API) ----------
+
+/** Một hội thoại trong /im/session/list (tên trường đọc phòng thủ). */
+export interface LazadaImSession {
+  session_id?: string;
+  sessionId?: string;
+  title?: string; // tên người mua
+  buyer_id?: number | string;
+  last_message_content?: string;
+  latest_message_content?: string;
+  unread_count?: number;
+  unreadCount?: number;
+  last_message_time?: number | string;
+  [k: string]: unknown;
+}
+
+interface LazadaImSessionListData extends LazadaEnvelope {
+  data?: {
+    session_list?: LazadaImSession[];
+    sessionList?: LazadaImSession[];
+    next_start_time?: number | string;
+    last_session_id?: string;
+    has_more?: boolean;
+  };
+}
+
+/** DS hội thoại chat (trang đầu: start_time = hiện tại theo MILI-giây). */
+export async function getImSessions(
+  params: {
+    accessToken: string;
+    pageSize?: number;
+    startTime?: number;
+    lastSessionId?: string;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaImSession[]> {
+  const data = await callLazada<LazadaImSessionListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.imSessionList,
+    {
+      access_token: params.accessToken,
+      start_time: String(params.startTime ?? Date.now()),
+      page_size: String(params.pageSize ?? 20),
+      ...(params.lastSessionId ? { last_session_id: params.lastSessionId } : {}),
+    },
+    "im/session/list",
+    cfg
+  );
+  return data.data?.session_list ?? data.data?.sessionList ?? [];
+}
+
+/** Một tin nhắn trong /im/message/list (tên trường đọc phòng thủ). */
+export interface LazadaImMessage {
+  message_id?: string;
+  messageId?: string;
+  /** 1 = text; các template khác (ảnh/đơn/voucher) hiển thị dạng mô tả. */
+  template_id?: number | string;
+  templateId?: number | string;
+  content?: string; // JSON string {"txt":"..."} với template 1
+  from_account_type?: number | string; // phân biệt shop/người mua
+  fromAccountType?: number | string;
+  send_time?: number | string;
+  sendTime?: number | string;
+  [k: string]: unknown;
+}
+
+interface LazadaImMessageListData extends LazadaEnvelope {
+  data?: {
+    message_list?: LazadaImMessage[];
+    messageList?: LazadaImMessage[];
+    next_start_time?: number | string;
+    last_message_id?: string;
+    has_more?: boolean;
+  };
+}
+
+/** DS tin nhắn một hội thoại (trang đầu: start_time = hiện tại MILI-giây). */
+export async function getImMessages(
+  params: {
+    accessToken: string;
+    sessionId: string;
+    pageSize?: number;
+    startTime?: number;
+    lastMessageId?: string;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaImMessage[]> {
+  const data = await callLazada<LazadaImMessageListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.imMessageList,
+    {
+      access_token: params.accessToken,
+      session_id: params.sessionId,
+      start_time: String(params.startTime ?? Date.now()),
+      page_size: String(params.pageSize ?? 25),
+      ...(params.lastMessageId ? { last_message_id: params.lastMessageId } : {}),
+    },
+    "im/message/list",
+    cfg
+  );
+  return data.data?.message_list ?? data.data?.messageList ?? [];
+}
+
+/** Gửi MỘT tin nhắn văn bản vào hội thoại (template_id=1). */
+export async function sendImMessage(
+  params: { accessToken: string; sessionId: string; text: string },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<void> {
+  await callLazadaPost(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.imMessageSend,
+    {
+      access_token: params.accessToken,
+      session_id: params.sessionId,
+      template_id: "1",
+      txt: params.text,
+    },
+    "im/message/send",
+    cfg
+  );
 }
 
 // ---------- Thông tin người bán ----------

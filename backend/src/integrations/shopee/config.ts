@@ -66,6 +66,21 @@ export const SHOPEE_PATHS = {
    *  LƯU Ý: Ads API có thể cần bật quyền riêng trên Console — lỗi permission
    *  thì liên hệ Shopee mở module Ads cho app. */
   adsAllCpcDaily: "/api/v2/ads/get_all_cpc_ads_daily_performance",
+
+  // ── Trợ lý vận hành (CSKH): chat + đánh giá ──
+  // LƯU Ý: module Chat (sellerchat) có thể cần bật quyền riêng trên Shopee
+  // Console giống Ads — lỗi permission trả về nguyên văn để chủ shop biết
+  // đường xin mở module.
+  /** DS hội thoại chat của shop (phân trang cursor). */
+  chatConversationList: "/api/v2/sellerchat/get_conversation_list",
+  /** DS tin nhắn của một hội thoại. */
+  chatMessages: "/api/v2/sellerchat/get_message",
+  /** Gửi tin nhắn tới người mua (POST). */
+  chatSendMessage: "/api/v2/sellerchat/send_message",
+  /** DS đánh giá (comment) của shop — item_id bỏ trống là lấy toàn shop. */
+  productComments: "/api/v2/product/get_comment",
+  /** Trả lời đánh giá (POST, gửi được nhiều comment một lượt). */
+  productReplyComment: "/api/v2/product/reply_comment",
 } as const;
 
 /**
