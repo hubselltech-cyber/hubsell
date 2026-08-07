@@ -578,6 +578,8 @@ export function InvoiceConfigSection({
             >
               {/* Section 1 — Pháp nhân & Thuế (dùng chung 2 tab) */}
               <div className="space-y-4">
+                {/* Các dòng chỉ dẫn/tooltip gom hết về box "Hướng dẫn nhanh"
+                    ở sidebar (yêu cầu 07/08) — section chỉ giữ tiêu đề. */}
                 <SectionHeading
                   icon={<Building2 className="size-4" />}
                   tone="bg-blue-50 text-blue-600"
@@ -586,7 +588,6 @@ export function InvoiceConfigSection({
                       ? "Thông tin Pháp nhân & Thuế"
                       : "Thông tin Hộ kinh doanh / Shop"
                   }
-                  desc="NĐ 123/2020: hóa đơn phải mang MST, tên và địa chỉ người bán — dùng chung cho cả hai luồng."
                 />
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-1.5">
@@ -643,7 +644,6 @@ export function InvoiceConfigSection({
                     icon={<FileSignature className="size-4" />}
                     tone="bg-purple-50 text-purple-600"
                     title="Cấu hình API Nhà cung cấp"
-                    desc="Chọn NCC trước — bộ trường bên dưới tự đổi theo chuẩn API của từng nhà (Multi-Vendor)."
                   />
 
                   {/* Vendor Selector đứng ĐẦU — quyết định Dynamic Form bên dưới. */}
@@ -765,7 +765,6 @@ export function InvoiceConfigSection({
                     icon={<MonitorSmartphone className="size-4" />}
                     tone="bg-emerald-50 text-emerald-600"
                     title="Cấu hình API Nhà cung cấp — Máy tính tiền"
-                    desc="Phát hành tức thì bằng dải mã CQT cấp sẵn — không cần ký số từng đơn. Chọn NCC trước, bộ trường tự đổi theo."
                   />
 
                   {/* Vendor Selector POS đứng ĐẦU — danh mục RIÊNG với kê khai. */}
@@ -870,10 +869,6 @@ export function InvoiceConfigSection({
                         onChange={(e) => setPosMachineId(e.target.value)}
                         className={cn("font-mono", INPUT_FOCUS)}
                       />
-                      <p className={TEXT_SUB}>
-                        Mã máy đã được CQT chấp nhận (Xem trên Portal NCC Hóa
-                        đơn hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT).
-                      </p>
                     </div>
                   </div>
 
@@ -1120,10 +1115,6 @@ export function InvoiceConfigSection({
                     <option value="STANDARD">Hóa đơn thông thường (Kê khai)</option>
                     <option value="POS">Hóa đơn từ Máy tính tiền</option>
                   </NativeSelect>
-                  <p className={cn(TEXT_SUB, "mt-1.5")}>
-                    Test kết nối dùng khóa <b>đã lưu</b> — đổi khóa xong nhớ bấm
-                    Lưu trước khi Test.
-                  </p>
                 </div>
               </div>
             </div>
@@ -1135,7 +1126,6 @@ export function InvoiceConfigSection({
                   icon={<PenLine className="size-4" />}
                   tone="bg-violet-50 text-violet-600"
                   title="Chữ ký số MISA eSign"
-                  desc="Luồng kê khai phải ký số từng hóa đơn trước khi CQT cấp mã."
                 />
 
                 <div className="mt-4 space-y-4">
@@ -1237,6 +1227,24 @@ export function InvoiceConfigSection({
               />
               <ul className="mt-3 list-disc space-y-2 pl-4 text-xs leading-relaxed text-slate-600">
                 <li>
+                  <b>Thông tin pháp nhân/HKD:</b> NĐ 123/2020 — hóa đơn phải
+                  mang MST, tên và địa chỉ người bán; dùng chung cho cả hai
+                  luồng.
+                </li>
+                <li>
+                  <b>Nhà cung cấp:</b> chọn NCC trước, bộ trường bên dưới tự
+                  đổi theo chuẩn API của từng nhà.
+                </li>
+                <li>
+                  <b>Luồng kê khai:</b> mẫu số + ký hiệu phải khớp đúng ký hiệu
+                  đã đăng ký với CQT; mỗi hóa đơn phải ký số trước khi CQT cấp
+                  mã (eSign ký nền tự động, không cần USB).
+                </li>
+                <li>
+                  <b>Luồng máy tính tiền:</b> phát hành tức thì bằng dải mã CQT
+                  cấp sẵn — không cần ký số từng đơn.
+                </li>
+                <li>
                   <b>Mã máy tính tiền:</b> mã đã được CQT chấp nhận — xem trên
                   Portal NCC Hóa đơn hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT.
                 </li>
@@ -1247,6 +1255,10 @@ export function InvoiceConfigSection({
                 <li>
                   <b>Ký hiệu hóa đơn:</b> kê khai dạng C26TAA; máy tính tiền
                   bắt buộc chữ thứ 4 là M (C26MAA).
+                </li>
+                <li>
+                  <b>Test kết nối:</b> dùng khóa <b>đã lưu</b> — đổi khóa xong
+                  nhớ bấm Lưu trước khi Test.
                 </li>
                 <li>
                   <a
