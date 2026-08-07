@@ -2301,10 +2301,19 @@ export interface OpsProductContextDTO {
   linked: boolean;
 }
 
+/** Trạng thái từng gian sau một lượt quét inbox — kể cả gian thành công 0 hội thoại. */
+export interface OpsChannelStat {
+  channelId: string;
+  shopName: string;
+  channelName: string;
+  count: number;
+}
+
 export function fetchOpsConversations() {
   return apiFetch<{
     conversations: OpsConversationDTO[];
     errors: OpsChannelError[];
+    channelStats?: OpsChannelStat[];
     channelCount: number;
   }>("/api/operations/conversations");
 }

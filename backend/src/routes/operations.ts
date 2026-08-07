@@ -195,14 +195,31 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
     const channels = await connectedChannels(req);
     const conversations: OpsConversation[] = [];
     const errors: OpsChannelError[] = [];
+    // Trạng thái từng gian kể cả khi THÀNH CÔNG — "kết nối OK nhưng 0 hội
+    // thoại" khác hẳn "gian bị lỗi", UI cần phân biệt để người dùng khỏi
+    // tưởng tính năng chưa chạy.
+    const channelStats: {
+      channelId: string;
+      shopName: string;
+      channelName: string;
+      count: number;
+    }[] = [];
 
     await Promise.all(
       channels.map(async (ch) => {
+        // Đếm CỤC BỘ từng gian — hai job chạy song song cùng push vào mảng
+        // chung nên hiệu số length trước/sau sẽ đếm nhầm của nhau.
+        let added = 0;
         try {
           if (ch.channelName === ChannelName.SHOPEE) {
             const { accessToken, shopId } = await getValidShopeeAccessToken(ch);
             const data = await getConversationList({ accessToken, shopId });
-            for (const c of data.response?.page_result?.conversations ?? []) {
+            // Mảng hội thoại nằm trong page_result HOẶC ngang hàng tuỳ version
+            const convList =
+              data.response?.page_result?.conversations ??
+              data.response?.conversations ??
+              [];
+            for (const c of convList) {
               if (c.conversation_id == null) continue;
               conversations.push({
                 id: `${ch.id}:${c.conversation_id}`,
@@ -219,6 +236,7 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 buyerId: c.to_id != null ? String(c.to_id) : null,
                 externalId: String(c.conversation_id),
               });
+              added++;
             }
           } else {
             const accessToken = await getValidLazadaAccessToken(ch);
@@ -242,8 +260,15 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 buyerId: null,
                 externalId: String(sid),
               });
+              added++;
             }
           }
+          channelStats.push({
+            channelId: ch.id,
+            shopName: ch.shopName,
+            channelName: ch.channelName,
+            count: added,
+          });
         } catch (e) {
           errors.push({ channelId: ch.id, shopName: ch.shopName, message: errMsg(e) });
         }
@@ -251,7 +276,7 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
     );
 
     conversations.sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
-    res.json({ conversations, errors, channelCount: channels.length });
+    res.json({ conversations, errors, channelStats, channelCount: channels.length });
   } catch (err) {
     next(err);
   }

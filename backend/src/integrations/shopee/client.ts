@@ -545,7 +545,10 @@ export interface ShopeeConversation {
 }
 
 export interface ShopeeConversationListData extends ShopeeEnvelope {
+  // Tuỳ version API, mảng hội thoại nằm TRONG page_result hoặc NGANG HÀNG
+  // với nó — khai cả hai, tầng gọi đọc phòng thủ.
   response?: {
+    conversations?: ShopeeConversation[];
     page_result?: {
       page_size?: number;
       conversations?: ShopeeConversation[];

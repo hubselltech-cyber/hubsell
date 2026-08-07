@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChevronDown,
@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   ApiError,
   fetchOpsConversations,
@@ -43,6 +44,7 @@ import {
   fetchOpsProductContext,
   sendOpsMessage,
   type OpsChannelError,
+  type OpsChannelStat,
   type OpsConversationDTO,
   type OpsMessageDTO,
 } from "@/lib/api";
@@ -64,6 +66,9 @@ import { cn } from "@/lib/utils";
  */
 
 type ChatMode = "loading" | "real" | "demo";
+
+/** Khoá localStorage nhớ trạng thái nút Auto trả lời giữa các phiên. */
+const AUTO_REPLY_KEY = "hubsell_ops_chat_autoreply";
 
 /** Mốc thời gian hiển thị gọn: hôm nay → HH:mm, khác ngày → dd/MM. */
 function fmtTime(ms: number | null): string {
@@ -103,45 +108,112 @@ export function OperationsChatPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
+  const [channelStats, setChannelStats] = useState<OpsChannelStat[]>([]);
 
-  // ── Nạp inbox thật khi vào trang ──
+  // ── AUTO TRẢ LỜI TIN MỚI ──
+  // Bật là hệ thống tự gửi câu xác nhận đã nhận tin cho hội thoại có tin mới
+  // của khách (mỗi tin mới auto 1 lần — theo dõi bằng khoá conv.id:lastAt).
+  // Chạy khi trang đang mở (client-side); auto-reply nền 24/7 cần worker +
+  // webhook sàn — ghi lộ trình, làm sau.
+  const [autoReply, setAutoReply] = useState(false);
+  const autoReplyRef = useRef(autoReply);
+  const autoRepliedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    autoReplyRef.current = autoReply;
+  }, [autoReply]);
+  useEffect(() => {
+    setAutoReply(localStorage.getItem(AUTO_REPLY_KEY) === "1");
+  }, []);
+  function toggleAutoReply(on: boolean) {
+    setAutoReply(on);
+    localStorage.setItem(AUTO_REPLY_KEY, on ? "1" : "0");
+    toast.success(on ? "Đã BẬT auto trả lời tin nhắn mới." : "Đã tắt auto trả lời.");
+  }
+
+  /** Tự gửi câu xác nhận cho các hội thoại vừa có tin mới của khách (real). */
+  const maybeAutoReply = useCallback(async (convs: OpsConversationDTO[]) => {
+    if (!autoReplyRef.current) return;
+    for (const c of convs) {
+      if (!c || c.unread <= 0) continue;
+      const key = `${c.id}:${c.lastAt ?? ""}`;
+      if (autoRepliedRef.current.has(key)) continue;
+      autoRepliedRef.current.add(key); // đánh dấu TRƯỚC — lỗi cũng không dội bom khách
+      try {
+        await sendOpsMessage({
+          channelId: c.channelId,
+          conversationId: c.externalId,
+          buyerId: c.buyerId,
+          text: GENERIC_CHAT_FALLBACK,
+        });
+        toast.success(`🤖 Auto đã trả lời ${c.customer}.`);
+      } catch {
+        // gian lỗi quyền/token — bỏ qua, tin kế tiếp (key mới) sẽ thử lại
+      }
+    }
+  }, []);
+
+  // ── Nạp + LÀM MỚI inbox (dùng cho cả lượt đầu lẫn polling 30s) ──
+  const refreshConversations = useCallback(
+    async (opts?: { initial?: boolean }) => {
       try {
         const r = await fetchOpsConversations();
-        if (cancelled) return;
         setChannelErrors(r.errors);
+        setChannelStats(r.channelStats ?? []);
         if (r.conversations.length > 0) {
           setRealConvs(r.conversations);
-          setActiveRealId(r.conversations[0].id);
+          // Giữ nguyên hội thoại đang mở nếu còn; khách nhắn khi đang demo →
+          // tự chuyển sang dữ liệu thật, không cần F5
+          setActiveRealId((prev) =>
+            prev && r.conversations.some((c) => c.id === prev)
+              ? prev
+              : r.conversations[0].id
+          );
           setMode("real");
-        } else {
+          void maybeAutoReply(r.conversations);
+        } else if (opts?.initial) {
           setMode("demo");
         }
       } catch (err) {
-        if (cancelled) return;
-        // 401 đã bị OperationsFrame đẩy về /login; lỗi khác (NO_CHANNEL, mạng,
-        // backend tắt) → demo để trang vẫn dùng được.
-        if (err instanceof ApiError && err.status !== 401) {
-          setChannelErrors([{ channelId: "", shopName: "Hệ thống", message: err.message }]);
+        if (opts?.initial) {
+          // 401 đã bị OperationsFrame đẩy về /login; lỗi khác (NO_CHANNEL,
+          // mạng, backend tắt) → demo để trang vẫn dùng được.
+          if (err instanceof ApiError && err.status !== 401) {
+            setChannelErrors([
+              { channelId: "", shopName: "Hệ thống", message: err.message },
+            ]);
+          }
+          setMode("demo");
         }
-        setMode("demo");
+        // Poll nền lỗi thoáng qua → giữ nguyên dữ liệu đang có, lượt sau thử lại
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    },
+    [maybeAutoReply]
+  );
+
+  useEffect(() => {
+    void refreshConversations({ initial: true });
+  }, [refreshConversations]);
+
+  // Polling inbox mỗi 30s — chạy cả ở chế độ demo để có khách nhắn là bắt được
+  useEffect(() => {
+    if (mode === "loading") return;
+    const iv = setInterval(() => void refreshConversations(), 30_000);
+    return () => clearInterval(iv);
+  }, [mode, refreshConversations]);
 
   const activeReal = realConvs.find((c) => c.id === activeRealId) ?? null;
   const activeDemo = demoConvs.find((c) => c.id === activeDemoId) ?? demoConvs[0];
 
   // ── Nạp tin nhắn + ngữ cảnh SP của hội thoại thật đang mở ──
   const loadRealMessages = useCallback(
-    async (conv: OpsConversationDTO) => {
-      setLoadingMessages(true);
-      setMessagesError(null);
+    async (conv: OpsConversationDTO, opts?: { silent?: boolean }) => {
+      // silent = poll nền 15s: không nháy spinner, lỗi thoáng qua thì giữ
+      // nguyên tin nhắn đang có thay vì đập error state vào mặt người dùng
+      const silent = opts?.silent === true;
+      if (!silent) {
+        setLoadingMessages(true);
+        setMessagesError(null);
+      }
       let msgs: OpsMessageDTO[] = [];
       try {
         const r = await fetchOpsMessages({
@@ -154,11 +226,15 @@ export function OperationsChatPage() {
       } catch (err) {
         // Token hết hạn / sàn chặn quyền — hiện trong khung chat, các hội
         // thoại khác vẫn dùng bình thường
-        setMessagesError(err instanceof Error ? err.message : "Không tải được tin nhắn");
-        setLoadingMessages(false);
+        if (!silent) {
+          setMessagesError(
+            err instanceof Error ? err.message : "Không tải được tin nhắn"
+          );
+          setLoadingMessages(false);
+        }
         return;
       }
-      setLoadingMessages(false);
+      if (!silent) setLoadingMessages(false);
 
       // Ngữ cảnh SP tách RIÊNG khỏi luồng tin nhắn: khách gửi kèm sản phẩm mà
       // tra ngữ cảnh lỗi thì chat vẫn phải hiện đủ — chỉ ghi log, không toast.
@@ -185,6 +261,18 @@ export function OperationsChatPage() {
     setMessagesError(null); // lỗi là của hội thoại cũ — đừng đeo sang hội thoại mới
     if (!realMessages[activeReal.id]) void loadRealMessages(activeReal);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ nạp khi đổi hội thoại
+  }, [mode, activeRealId]);
+
+  // Polling khung chat đang mở mỗi 15s — tin khách vừa nhắn tự hiện, không F5.
+  // (Real-time đúng nghĩa qua webhook sàn nằm trong lộ trình worker nền.)
+  useEffect(() => {
+    if (mode !== "real" || !activeReal) return;
+    const iv = setInterval(
+      () => void loadRealMessages(activeReal, { silent: true }),
+      15_000
+    );
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- theo hội thoại đang mở
   }, [mode, activeRealId]);
 
   // ── Tra ngữ cảnh sản phẩm theo từ khoá (SKU / tên) ──
@@ -274,11 +362,13 @@ export function OperationsChatPage() {
     }
   }
 
-  /** Giả lập khách nhắn (CHỈ demo) — engine sinh gợi ý mới ngay. */
+  /** Giả lập khách nhắn (CHỈ demo) — engine sinh gợi ý mới ngay; đang bật
+   *  Auto trả lời thì shop tự nhắn lại sau ~1 giây, demo đúng luồng thật. */
   function simulateCustomer(text: string) {
+    const convId = activeDemo.id;
     setDemoConvs((prev) =>
       prev.map((c) =>
-        c.id === activeDemo.id
+        c.id === convId
           ? {
               ...c,
               lastMessage: text,
@@ -295,6 +385,39 @@ export function OperationsChatPage() {
           : c
       )
     );
+
+    if (!autoReplyRef.current) return;
+    const demoProduct = activeDemo.productSku
+      ? MOCK_PRODUCTS[activeDemo.productSku]
+      : undefined;
+    const reply = buildAiSuggestion(
+      demoProduct,
+      text,
+      activeDemo.aiSuggestion,
+      MOCK_STOCK_SOURCE_PREFERENCE
+    ).text;
+    setTimeout(() => {
+      setDemoConvs((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: reply,
+                messages: [
+                  ...c.messages,
+                  {
+                    id: `auto-${c.messages.length + 1}`,
+                    from: "SHOP" as const,
+                    text: reply,
+                    time: "Vừa xong",
+                  },
+                ],
+              }
+            : c
+        )
+      );
+      toast.success("🤖 Auto đã trả lời khách (demo).");
+    }, 900);
   }
 
   // ── View model danh sách hội thoại (chung 2 chế độ) ──
@@ -355,23 +478,62 @@ export function OperationsChatPage() {
 
   return (
     <OperationsFrame>
-      {/* ===== NHÃN NGUỒN DỮ LIỆU + LỖI TỪNG GIAN ===== */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className={
-            isReal
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-violet-200 bg-violet-50 text-violet-700"
-          }
-        >
-          {isReal ? "Dữ liệu thật từ sàn" : "Demo — chưa có hội thoại thật"}
-        </Badge>
-        {channelErrors.map((e) => (
-          <span key={`${e.channelId}-${e.message}`} className={cn(TEXT_SUB, "text-amber-700")}>
-            ⚠️ {e.shopName}: {e.message}
-          </span>
-        ))}
+      {/* ===== NHÃN NGUỒN DỮ LIỆU + CÔNG TẮC AUTO + TRẠNG THÁI TỪNG GIAN ===== */}
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Badge
+            variant="outline"
+            className={
+              isReal
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-violet-200 bg-violet-50 text-violet-700"
+            }
+          >
+            {isReal ? "Dữ liệu thật từ sàn" : "Demo — chưa có hội thoại thật"}
+          </Badge>
+          {/* Công tắc auto trả lời — dùng được ở cả hai chế độ.
+              KHÔNG bọc <label>: label dội thêm một click vào control con làm
+              switch bật-rồi-tắt trong một lần bấm; chữ bên cạnh tự xử lý click. */}
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={autoReply}
+              onCheckedChange={toggleAutoReply}
+              aria-label="Bật/tắt auto trả lời tin nhắn mới"
+            />
+            <button
+              type="button"
+              className="text-sm font-medium text-slate-900"
+              onClick={() => toggleAutoReply(!autoReply)}
+            >
+              🤖 Auto trả lời tin mới
+            </button>
+          </div>
+          {autoReply && (
+            <span className={TEXT_SUB}>
+              Tự gửi câu xác nhận cho tin nhắn mới của khách (khi đang mở trang).
+            </span>
+          )}
+        </div>
+        {/* Trạng thái từng gian: phân biệt rõ "lỗi" với "OK nhưng 0 hội thoại" */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {channelStats.map((s) => (
+            <span key={s.channelId} className={cn(TEXT_SUB, "text-emerald-600")}>
+              ✓ {s.shopName} ({channelMeta(s.channelName).label}): kết nối OK —{" "}
+              {s.count} hội thoại
+            </span>
+          ))}
+          {channelErrors.map((e) => (
+            <span key={`${e.channelId}-${e.message}`} className={cn(TEXT_SUB, "text-amber-700")}>
+              ⚠️ {e.shopName}: {e.message}
+            </span>
+          ))}
+          {!isReal && channelStats.length > 0 && (
+            <span className={TEXT_SUB}>
+              Inbox tự làm mới mỗi 30 giây — có khách nhắn là chuyển sang dữ liệu
+              thật, không cần tải lại trang.
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Chiều cao cố định kiểu app chat: các cột tự cuộn bên trong. */}
