@@ -8,6 +8,24 @@
 
 export type InvoiceVendor = "MISA" | "VIETTEL" | "VNPT" | "BKAV" | "CUSTOM";
 
+/**
+ * MỘT TRƯỜNG CREDENTIAL của form cấu hình NCC (Dynamic Form theo vendor).
+ *
+ * `key` map THẲNG vào cột sẵn có của InvoiceConfig — thêm NCC mới là thêm
+ * preset nhãn/placeholder cho đúng thuật ngữ của NCC đó, KHÔNG thêm cột DB
+ * (Viettel gọi là Username/Password, VNPT là Account/ACPass… nhưng về bản chất
+ * vẫn là một cặp định danh + bí mật, đổ chung vào clientId/secretKey).
+ */
+export interface VendorCredentialField {
+  key: "partnerCode" | "clientId" | "secretKey" | "customApiUrl";
+  label: string;
+  placeholder?: string;
+  /** true = ô password + luồng che/giữ-nguyên-khi-trống. */
+  secret?: boolean;
+  /** true = read-only (VD mã ISV cố định của Hubsell). */
+  readOnly?: boolean;
+}
+
 export interface InvoiceVendorMeta {
   value: InvoiceVendor;
   label: string;
@@ -15,15 +33,63 @@ export interface InvoiceVendorMeta {
   custom?: boolean;
   /** Chưa tích hợp xong — hiển thị "(Sắp ra mắt)" nhưng vẫn cho cấu hình trước. */
   soon?: boolean;
+  /** Bộ trường credential hiển thị khi chọn NCC này (Dynamic Form). */
+  credentialFields: VendorCredentialField[];
 }
 
 export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
-  { value: "MISA", label: "MISA meInvoice" },
-  { value: "VIETTEL", label: "Viettel SInvoice", soon: true },
-  { value: "VNPT", label: "VNPT Invoice", soon: true },
-  { value: "BKAV", label: "Bkav eHoadon", soon: true },
-  { value: "CUSTOM", label: "Khác (Custom API)", custom: true },
+  {
+    value: "MISA",
+    label: "MISA meInvoice",
+    credentialFields: [
+      { key: "partnerCode", label: "Mã đại lý ISV (Partner Code)", readOnly: true },
+      { key: "clientId", label: "Mã định danh (Client ID)", placeholder: "Client ID do MISA cấp" },
+      { key: "secretKey", label: "Khóa bảo mật (Client Secret)", secret: true },
+    ],
+  },
+  {
+    value: "VIETTEL",
+    label: "Viettel SInvoice",
+    soon: true,
+    credentialFields: [
+      { key: "clientId", label: "Tài khoản API (Username)", placeholder: "Username SInvoice cấp" },
+      { key: "secretKey", label: "Mật khẩu API (Password)", secret: true },
+    ],
+  },
+  {
+    value: "VNPT",
+    label: "VNPT Invoice",
+    soon: true,
+    credentialFields: [
+      { key: "clientId", label: "Tài khoản dịch vụ (Account)", placeholder: "Account VNPT cấp" },
+      { key: "secretKey", label: "Mật khẩu dịch vụ (ACPass)", secret: true },
+    ],
+  },
+  {
+    value: "BKAV",
+    label: "Bkav eHoadon",
+    soon: true,
+    credentialFields: [
+      { key: "clientId", label: "Partner GUID", placeholder: "GUID Bkav cấp" },
+      { key: "secretKey", label: "Partner Token", secret: true },
+    ],
+  },
+  {
+    value: "CUSTOM",
+    label: "Khác (Custom API)",
+    custom: true,
+    credentialFields: [
+      { key: "customApiUrl", label: "Endpoint API (Custom)", placeholder: "https://api.nhacungcap.vn/invoice" },
+      { key: "clientId", label: "Mã định danh (Client ID)", placeholder: "Client ID của NCC" },
+      { key: "secretKey", label: "Khóa bảo mật (Secret Key)", secret: true },
+    ],
+  },
 ];
+
+/** Meta của NCC đang chọn — fallback MISA khi giá trị lạ. */
+export function vendorMeta(v: string): InvoiceVendorMeta {
+  return INVOICE_VENDORS.find((x) => x.value === v) ?? INVOICE_VENDORS[0];
+}
 
 export function isCustomVendor(v: string): boolean {
   return INVOICE_VENDORS.find((x) => x.value === v)?.custom === true;

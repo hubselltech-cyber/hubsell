@@ -44,10 +44,10 @@ import {
   INVOICE_PATTERN_RE,
   INVOICE_SERIES_RE,
   INVOICE_VENDORS,
-  isCustomVendor,
   POS_SERIES_RE,
   SIGN_METHODS,
   TAX_CODE_RE,
+  vendorMeta,
 } from "@/lib/invoice-vendors";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { shopLabel } from "@/components/channel-filter";
@@ -99,7 +99,7 @@ function SectionHeading({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <span className={cn("rounded-lg p-2", tone)}>{icon}</span>
+      <span className={cn("rounded-xl p-2.5", tone)}>{icon}</span>
       <div className="min-w-0">
         <p className="text-sm font-semibold text-slate-900">{title}</p>
         {desc && <p className={cn(TEXT_SUB, "mt-0.5")}>{desc}</p>}
@@ -244,7 +244,8 @@ export function InvoiceConfigSection({
       .finally(() => setLoading(false));
   }, []);
 
-  const isCustom = isCustomVendor(provider);
+  /** Meta NCC đang chọn — quyết định bộ trường credential (Dynamic Form). */
+  const vendor = vendorMeta(provider);
   const isEsignCloud = signMethod === "ESIGN_CLOUD";
 
   /** Validate TT 78 các trường ĐÃ nhập — trả map lỗi (rỗng = hợp lệ). */
@@ -500,10 +501,12 @@ export function InvoiceConfigSection({
           {/* ================== CỘT TRÁI (8/12) ================== */}
           <div className="min-w-0 space-y-6 lg:col-span-8">
             {/* --- Segmented Control 2 tab --- */}
+            {/* Segmented control TƯƠNG PHẢN CAO: nền xám đậm hơn, tab active
+                trắng tinh + shadow-md nổi hẳn, tab inactive chữ xám phẳng. */}
             <div
               role="tablist"
-              aria-label="Luồng phát hành hóa đơn"
-              className="flex gap-1 rounded-xl border border-slate-200/80 bg-slate-50 p-1"
+              aria-label="Hình thức hóa đơn"
+              className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1.5"
             >
               {TABS.map((t) => {
                 const active = activeTab === t.value;
@@ -517,12 +520,17 @@ export function InvoiceConfigSection({
                     className={cn(
                       "flex-1 rounded-lg px-4 py-2.5 text-left transition-all",
                       active
-                        ? "border border-slate-200/80 bg-white font-semibold text-slate-900 shadow-sm"
-                        : "border border-transparent text-muted-foreground hover:bg-white/60",
+                        ? "border border-slate-200/80 bg-white font-bold text-slate-900 shadow-md"
+                        : "border border-transparent text-slate-500 hover:text-slate-700",
                     )}
                   >
                     <span className="block text-sm">{t.label}</span>
-                    <span className="block text-[11px] font-normal text-muted-foreground">
+                    <span
+                      className={cn(
+                        "block text-[11px] font-normal",
+                        active ? "text-muted-foreground" : "text-slate-400",
+                      )}
+                    >
                       {t.sub}
                     </span>
                   </button>
@@ -531,7 +539,7 @@ export function InvoiceConfigSection({
             </div>
 
             {/* --- CARD CHÍNH: Pháp nhân + API theo tab --- */}
-            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               {/* Section 1 — Pháp nhân & Thuế (dùng chung 2 tab) */}
               <div className="space-y-4">
                 <SectionHeading
@@ -597,79 +605,86 @@ export function InvoiceConfigSection({
                 <div className="mt-6 space-y-4 border-t border-slate-100 pt-6">
                   <SectionHeading
                     icon={<FileSignature className="size-4" />}
-                    tone="bg-indigo-50 text-indigo-600"
-                    title="Cấu hình meInvoice API"
-                    desc="Mẫu số + ký hiệu phải khớp đúng ký hiệu đã đăng ký với Cơ quan Thuế — sai/thiếu là NCC từ chối cấp số."
+                    tone="bg-purple-50 text-purple-600"
+                    title="Cấu hình API Nhà cung cấp"
+                    desc="Chọn NCC trước — bộ trường bên dưới tự đổi theo chuẩn API của từng nhà (Multi-Vendor)."
                   />
 
+                  {/* Vendor Selector đứng ĐẦU — quyết định Dynamic Form bên dưới. */}
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="inv-provider">Nhà cung cấp Hóa đơn</Label>
+                    <NativeSelect
+                      id="inv-provider"
+                      value={provider}
+                      onChange={(e) => setProvider(e.target.value)}
+                    >
+                      {INVOICE_VENDORS.map((v) => (
+                        <option key={v.value} value={v.value}>
+                          {v.label}
+                          {v.soon ? " (Sắp ra mắt)" : ""}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+
+                  {/* DYNAMIC FORM theo NCC — preset trường ở invoice-vendors.ts,
+                      key map thẳng cột InvoiceConfig (mỗi NCC tối đa MỘT trường
+                      secret, đổ vào secretKey). Thêm NCC = thêm preset, không
+                      đụng component này. */}
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="inv-provider">Nhà cung cấp hóa đơn</Label>
-                      <NativeSelect
-                        id="inv-provider"
-                        value={provider}
-                        onChange={(e) => setProvider(e.target.value)}
+                    {vendor.credentialFields.map((f) => (
+                      <div
+                        key={f.key}
+                        className={cn(
+                          "grid gap-1.5",
+                          f.key === "customApiUrl" && "sm:col-span-2",
+                        )}
                       >
-                        {INVOICE_VENDORS.map((v) => (
-                          <option key={v.value} value={v.value}>
-                            {v.label}
-                            {v.soon ? " (Sắp ra mắt)" : ""}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="inv-partner">Mã đại lý ISV</Label>
-                      <div className="relative">
-                        <Input
-                          id="inv-partner"
-                          value={HUBSELL_PARTNER_CODE}
-                          readOnly
-                          aria-readonly
-                          tabIndex={-1}
-                          className="cursor-not-allowed bg-slate-50 pr-9 font-mono text-slate-600"
-                        />
-                        <Lock className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                        <Label htmlFor={`cred-${f.key}`}>{f.label}</Label>
+                        {f.readOnly ? (
+                          <div className="relative">
+                            <Input
+                              id={`cred-${f.key}`}
+                              value={HUBSELL_PARTNER_CODE}
+                              readOnly
+                              aria-readonly
+                              tabIndex={-1}
+                              className="cursor-not-allowed bg-slate-50 pr-9 font-mono text-slate-600"
+                            />
+                            <Lock className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                          </div>
+                        ) : f.secret ? (
+                          <Input
+                            id={`cred-${f.key}`}
+                            type="password"
+                            placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
+                            value={secretInput}
+                            onChange={(e) => setSecretInput(e.target.value)}
+                            className={INPUT_FOCUS}
+                          />
+                        ) : (
+                          <Input
+                            id={`cred-${f.key}`}
+                            placeholder={f.placeholder}
+                            value={f.key === "customApiUrl" ? customApiUrl : clientId}
+                            onChange={(e) =>
+                              f.key === "customApiUrl"
+                                ? setCustomApiUrl(e.target.value)
+                                : setClientId(e.target.value)
+                            }
+                            className={INPUT_FOCUS}
+                          />
+                        )}
                       </div>
-                    </div>
+                    ))}
                   </div>
 
-                  {isCustom && (
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="inv-custom-url">Endpoint API (Custom)</Label>
-                      <Input
-                        id="inv-custom-url"
-                        placeholder="https://api.nhacungcap.vn/invoice"
-                        value={customApiUrl}
-                        onChange={(e) => setCustomApiUrl(e.target.value)}
-                        className={INPUT_FOCUS}
-                      />
-                    </div>
+                  {vendor.soon && (
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                      {vendor.label} đang <b>Sắp ra mắt</b> — cấu hình được lưu
+                      trước, hệ thống chưa phát hành hóa đơn thật qua NCC này.
+                    </p>
                   )}
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="inv-client">Mã định danh (Client ID)</Label>
-                      <Input
-                        id="inv-client"
-                        placeholder="Client ID do NCC cấp"
-                        value={clientId}
-                        onChange={(e) => setClientId(e.target.value)}
-                        className={INPUT_FOCUS}
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="inv-secret">Khóa bảo mật (Secret Key)</Label>
-                      <Input
-                        id="inv-secret"
-                        type="password"
-                        placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
-                        value={secretInput}
-                        onChange={(e) => setSecretInput(e.target.value)}
-                        className={INPUT_FOCUS}
-                      />
-                    </div>
-                  </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="grid gap-1.5">
@@ -791,8 +806,8 @@ export function InvoiceConfigSection({
                         className={cn("font-mono", INPUT_FOCUS)}
                       />
                       <p className={TEXT_SUB}>
-                        Xem trên Portal MISA meInvoice (Danh mục Máy tính tiền)
-                        hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT đã được CQT chấp nhận.
+                        Mã máy đã được CQT chấp nhận (Xem trên Portal NCC Hóa
+                        đơn hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT).
                       </p>
                     </div>
                   </div>
@@ -943,7 +958,9 @@ export function InvoiceConfigSection({
                 {activeTab === "standard" ? (
                   <>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-slate-700">meInvoice</span>
+                      <span className="truncate text-sm text-slate-700">
+                        {vendor.label}
+                      </span>
                       <span className="flex items-center gap-2">
                         <ConnBadge
                           state={connStatus.meinvoice}
@@ -1148,9 +1165,8 @@ export function InvoiceConfigSection({
               />
               <ul className="mt-3 list-disc space-y-2 pl-4 text-xs leading-relaxed text-slate-600">
                 <li>
-                  <b>Mã máy tính tiền:</b> xem trên Portal MISA meInvoice
-                  (Danh mục Máy tính tiền) hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT đã
-                  được CQT chấp nhận.
+                  <b>Mã máy tính tiền:</b> mã đã được CQT chấp nhận — xem trên
+                  Portal NCC Hóa đơn hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT.
                 </li>
                 <li>
                   <b>Dải mã CQT:</b> cấp sau khi đăng ký máy tính tiền thành
