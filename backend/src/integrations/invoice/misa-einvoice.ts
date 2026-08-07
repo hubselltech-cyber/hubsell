@@ -30,36 +30,57 @@ import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" d�
 import type { CreateInvoiceInput } from "./types";
 
 /**
- * Path API v3 (nối sau misaApiBase()).
- *
- * ⚠️ ĐÃ DÒ THỰC TẾ 07/08/2026: sandbox testapi.meinvoice.vn/api/v3 trả **404
- * rỗng** cho `/invoice/publish` và mọi biến thể thử (`/invoices/publish`,
- * `/invoice/create`, `/invoice/save`). Trong khi `/auth/token` trả 200 →
- * base URL đúng, chỉ path phát hành là CHƯA ĐÚNG. Phải lấy path thật từ kit
- * tài liệu MISA gửi kèm hợp đồng rồi sửa TẠI ĐÂY (không đoán tiếp).
+ * Path API (nối sau misaApiBase() = https://developer.misa.vn/apis/itg/meinvoice).
+ * Lấy ĐÚNG từ tài liệu portal developer.misa.vn ngày 07/08/2026.
  */
 const ENDPOINTS = {
-  publish: "/invoice/publish", // phát hành + xin cấp mã CQT — CHỜ KIT XÁC NHẬN
+  publish: "/invoice/publishing", // phát hành + xin cấp mã CQT
+  templates: "/invoice/templates", // danh sách mẫu/ký hiệu đã đăng ký với CQT
+  status: "/invoice/status", // tra trạng thái hóa đơn
 };
+
+/**
+ * SignType của meInvoice (tài liệu "Lưu ý khi bắt đầu"):
+ *   1 = ký qua USB token / file mềm
+ *   2 = ký qua HSM (ký số từ xa, có hiển thị CKS) ← MISA eSign
+ *   5 = hóa đơn máy tính tiền, ký sau, không hiển thị CKS
+ */
+export const MISA_SIGN_TYPE = { USB_TOKEN: 1, ESIGN_CLOUD: 2, POS: 5 } as const;
+
+/** Map signMethod của Hubsell → SignType meInvoice. */
+export function misaSignType(signMethod: string): number {
+  return signMethod === "ESIGN_CLOUD" ? MISA_SIGN_TYPE.ESIGN_CLOUD : MISA_SIGN_TYPE.USB_TOKEN;
+}
 
 // ============================================================
 // VALIDATE THEO TT 78/2021 — nguồn regex DUY NHẤT, route + UI cùng dùng.
 // ============================================================
 
-/** MST: 10 số (doanh nghiệp) hoặc 10-3 số / 13 số (đơn vị phụ thuộc). */
-export const TAX_CODE_RE = /^\d{10}(-?\d{3})?$/;
-
-/** MẪU SỐ hóa đơn: 1 chữ số 1-6 (1=GTGT, 2=bán hàng, 5=tem/vé/thẻ…). */
-export const INVOICE_PATTERN_RE = /^[1-6]$/;
+/**
+ * MST người bán: 10 số (doanh nghiệp), 12 số (hộ kinh doanh/cá nhân — VD MST
+ * của HKD Hubsell 026093012010), hoặc 13 số / 10-3 số (đơn vị phụ thuộc).
+ */
+export const TAX_CODE_RE = /^\d{10}(-?\d{3})?$|^\d{12}$/;
 
 /**
- * KÝ HIỆU hóa đơn KÊ KHAI: C/K + 2 số năm + chữ loại hóa đơn + 2 ký tự,
- * VD "C26TAA". Ký tự thứ 4 KHÔNG được là M — M dành riêng máy tính tiền.
+ * MẪU SỐ hóa đơn = KÝ TỰ ĐẦU của ký hiệu (tài liệu "Lưu ý khi bắt đầu"):
+ *   1 = HĐ GTGT · 2 = HĐ bán hàng · 5 = vé điện tử · 6 = phiếu xuất kho
  */
-export const INVOICE_SERIES_RE = /^[CK]\d{2}[A-LN-Z][A-Z0-9]{2}$/;
+export const INVOICE_PATTERN_RE = /^[1256]$/;
 
-/** KÝ HIỆU hóa đơn MÁY TÍNH TIỀN: ký tự thứ 4 BẮT BUỘC là M, VD "C26MAA". */
-export const POS_SERIES_RE = /^[CK]\d{2}M[A-Z0-9]{2}$/;
+/**
+ * KÝ HIỆU hóa đơn MISA — 7 KÝ TỰ, cấu trúc `XY##ZWW` (VD "1C26TAA"):
+ *   X (1) : loại hóa đơn — 1/2/5/6 (khớp mẫu số)
+ *   Y (2) : C = có mã CQT · K = không mã
+ *   ## (3-4): 2 số cuối của năm
+ *   Z (5) : T = hóa đơn thường · M = hóa đơn từ máy tính tiền
+ *   WW (6-7): 2 ký tự do người bán tự đặt
+ * MISA TỰ đổi số năm theo InvDate nên không cần sửa tay mỗi năm.
+ */
+export const INVOICE_SERIES_RE = /^[1256][CK]\d{2}T[A-Z0-9]{2}$/;
+
+/** KÝ HIỆU hóa đơn MÁY TÍNH TIỀN: ký tự thứ 5 BẮT BUỘC là M, VD "1C26MAA". */
+export const POS_SERIES_RE = /^[1256][CK]\d{2}M[A-Z0-9]{2}$/;
 
 // ============================================================
 
@@ -136,6 +157,7 @@ export function buildStandardInvoicePayload(
     RefID: input.orderCode, // mã đơn Hubsell — meInvoice lưu làm tham chiếu 2 chiều
     TemplateNo: cfg.invoicePattern,
     InvSeries: cfg.invoiceSeries,
+    SignType: misaSignType(cfg.signMethod), // 1 = USB token · 2 = HSM (eSign)
     SellerTaxCode: cfg.taxCode,
     SellerLegalName: cfg.companyName,
     SellerAddress: cfg.companyAddress,
@@ -193,7 +215,11 @@ export async function publishStandardInvoice(
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        ClientID: cfg.clientId ?? "",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(buildStandardInvoicePayload(input, cfg)),
     });
   } catch (err) {

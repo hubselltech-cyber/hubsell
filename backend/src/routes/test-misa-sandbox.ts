@@ -62,7 +62,7 @@ router.get("/", (_req, res) => {
   res.json({
     ok: true,
     inbot: inbot.ok
-      ? { configured: true, appBase: inbot.config.appBase, apiBase: inbot.config.apiBase }
+      ? { configured: true, apiBase: inbot.config.apiBase }
       : { configured: false, missing: inbot.missing },
     esign: esign.ok
       ? { configured: true, apiBase: esign.config.apiBase }

@@ -40,11 +40,17 @@ interface CachedToken {
 
 let cached: CachedToken | null = null;
 
-/** Base URL API meInvoice — sandbox mặc định, đổi qua env khi lên production. */
+/**
+ * Base URL API meInvoice.
+ *
+ * ĐÚNG THEO TÀI LIỆU PORTAL (developer.misa.vn → Open API → Hóa đơn điện tử,
+ * đọc ngày 07/08/2026): mọi lời gọi đi qua cổng developer.misa.vn, KHÔNG phải
+ * testapi.meinvoice.vn (host cũ đó trả InvalidParameter/404 cho mọi path).
+ */
 export function misaApiBase(): string {
   return (
     process.env.MISA_API_BASE?.replace(/\/+$/, "") ??
-    "https://testapi.meinvoice.vn/api/v3"
+    "https://developer.misa.vn/apis/itg/meinvoice"
   );
 }
 
@@ -57,24 +63,27 @@ export function misaEnvCredentials(): MisaAuthCredentials | null {
 }
 
 /**
- * Body request đăng nhập — sandbox trả InvalidParameter thì chỉnh TẠI ĐÂY.
+ * Body request đăng nhập — ĐÚNG THEO TÀI LIỆU PORTAL (07/08/2026):
+ *   POST {base}/invoice/token
+ *   Headers : Content-Type, ClientID, ClientSecret   ← cặp khóa đi ở HEADER
+ *   Body    : { taxcode, username, password }        ← tài khoản meInvoice
  *
- * Đã bắn thử thực tế (28/07/2026): sandbox NHẬN request (HTTP 200) nhưng trả
- * `ErrorCode: InvalidParameter` — theo tài liệu meInvoice, auth cần thêm THÔNG
- * TIN TÀI KHOẢN sandbox bên cạnh cặp khóa: mã số thuế + tài khoản đăng nhập.
- * Khi MISA gửi bộ tài khoản sandbox, điền 3 env dưới là chạy:
- *   MISA_TAX_CODE / MISA_USERNAME / MISA_PASSWORD
+ * Bản cũ nhét appid/appsecret vào BODY nên sandbox luôn trả InvalidParameter.
  */
 function buildAuthBody(creds: MisaAuthCredentials): Record<string, string> {
-  const taxCode = creds.taxCode ?? process.env.MISA_TAX_CODE;
-  const username = creds.username ?? process.env.MISA_USERNAME;
-  const password = creds.password ?? process.env.MISA_PASSWORD;
   return {
-    appid: creds.clientId,
-    appsecret: creds.clientSecret,
-    ...(taxCode ? { taxcode: taxCode } : {}),
-    ...(username ? { username } : {}),
-    ...(password ? { password } : {}),
+    taxcode: creds.taxCode ?? process.env.MISA_TAX_CODE ?? "",
+    username: creds.username ?? process.env.MISA_USERNAME ?? "",
+    password: creds.password ?? process.env.MISA_PASSWORD ?? "",
+  };
+}
+
+/** Header xác thực dùng chung cho MỌI request meInvoice (kể cả /invoice/token). */
+export function misaAuthHeaders(creds: MisaAuthCredentials): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    ClientID: creds.clientId,
+    ClientSecret: creds.clientSecret,
   };
 }
 
@@ -102,12 +111,12 @@ export async function getMisaAccessToken(
     return cached.token;
   }
 
-  const url = `${misaApiBase()}/auth/token`;
+  const url = `${misaApiBase()}/invoice/token`;
   let res: Response;
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: misaAuthHeaders(effective),
       body: JSON.stringify(buildAuthBody(effective)),
     });
   } catch (err) {

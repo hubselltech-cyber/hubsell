@@ -27,17 +27,18 @@ import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" d�
 import type { CreateInvoiceInput } from "./types";
 
 /**
- * Path API POS (nối sau misaApiBase()).
- *
- * ⚠️ ĐÃ DÒ THỰC TẾ 07/08/2026: sandbox trả **404 rỗng** cho cả 2 path dưới
- * (cùng tình trạng với luồng kê khai — xem ghi chú ENDPOINTS ở misa-einvoice.ts).
- * Base URL đúng (`/auth/token` sống), chỉ path nghiệp vụ là chưa đúng — lấy
- * path thật từ kit MISA rồi sửa TẠI ĐÂY.
+ * Path API (nối sau misaApiBase()). Theo tài liệu portal 07/08/2026, meInvoice
+ * KHÔNG có cụm endpoint riêng cho máy tính tiền: vẫn dùng `/invoice/publishing`,
+ * chỉ khác ở KÝ HIỆU (ký tự thứ 5 = M) và SignType = 5 (ký sau, không hiển thị
+ * CKS trên hóa đơn MTT). Danh mục máy tính tiền suy từ `/invoice/templates`.
  */
 const ENDPOINTS = {
-  publish: "/invoice/pos/publish", // phát hành tức thì — CHỜ KIT XÁC NHẬN
-  machines: "/invoice/pos/machines", // danh mục máy tính tiền — CHỜ KIT XÁC NHẬN
+  publish: "/invoice/publishing",
+  templates: "/invoice/templates", // nguồn suy ra ký hiệu/máy đã đăng ký CQT
 };
+
+/** SignType cho hóa đơn máy tính tiền (ký sau, không hiển thị CKS). */
+const POS_SIGN_TYPE = 5;
 
 /** Lát cắt InvoiceConfig cần cho luồng máy tính tiền. */
 export interface PosInvoiceConfig {
@@ -111,9 +112,13 @@ export interface PosMachine {
  */
 export async function listPosMachines(cfg: PosInvoiceConfig): Promise<PosMachine[] | null> {
   try {
-    const token = await getMisaAccessToken(credsFromConfig(cfg));
-    const res = await fetch(`${misaApiBase()}${ENDPOINTS.machines}`, {
-      headers: { Authorization: `Bearer ${token}` },
+    const creds = credsFromConfig(cfg);
+    const token = await getMisaAccessToken(creds);
+    const res = await fetch(`${misaApiBase()}${ENDPOINTS.templates}`, {
+      headers: {
+        ...(creds ? { ClientID: creds.clientId } : {}),
+        Authorization: `Bearer ${token}`,
+      },
     });
     if (!res.ok) return null;
     const raw: unknown = JSON.parse(await res.text());
@@ -121,18 +126,23 @@ export async function listPosMachines(cfg: PosInvoiceConfig): Promise<PosMachine
     const data = pick(raw, "Data", "data") ?? raw;
     const list = Array.isArray(data)
       ? data
-      : (pick(data, "Machines", "Items", "List") as unknown[] | undefined);
+      : (pick(data, "Templates", "Items", "List") as unknown[] | undefined);
     if (!Array.isArray(list)) return null;
-    return list.map((m) => {
-      const machineId = pick(m, "MachineCode", "MachineID", "MachineId", "Code");
-      const codePrefix = pick(m, "CodePrefix", "InvoiceCodePrefix", "Prefix");
-      const serial = pick(m, "InvSeries", "InvoiceSeries", "Serial");
-      return {
-        machineId: typeof machineId === "string" ? machineId : null,
-        codePrefix: typeof codePrefix === "string" ? codePrefix : null,
-        serial: typeof serial === "string" ? serial : null,
-      };
-    });
+    return (
+      list
+        .map((m) => {
+          const serial = pick(m, "InvSeries", "InvoiceSeries", "Serial", "TemplateNo");
+          const machineId = pick(m, "MachineCode", "MachineID", "MachineId", "Code");
+          const codePrefix = pick(m, "CodePrefix", "InvoiceCodePrefix", "Prefix");
+          return {
+            machineId: typeof machineId === "string" ? machineId : null,
+            codePrefix: typeof codePrefix === "string" ? codePrefix : null,
+            serial: typeof serial === "string" ? serial : null,
+          };
+        })
+        // Chỉ giữ mẫu của HÓA ĐƠN MÁY TÍNH TIỀN (ký tự thứ 5 của ký hiệu = M).
+        .filter((m) => !m.serial || /^[1256][CK]\d{2}M/.test(m.serial))
+    );
   } catch {
     return null;
   }
@@ -142,7 +152,8 @@ export async function listPosMachines(cfg: PosInvoiceConfig): Promise<PosMachine
 export function buildPosInvoicePayload(input: CreateInvoiceInput, cfg: PosInvoiceConfig) {
   return {
     RefID: input.orderCode,
-    InvSeries: cfg.posSeries, // ký hiệu C26MXX — CQT nhận diện hóa đơn máy tính tiền
+    InvSeries: cfg.posSeries, // ký hiệu 1C26MXX — CQT nhận diện hóa đơn máy tính tiền
+    SignType: POS_SIGN_TYPE, // 5 = ký sau, không hiển thị CKS (đúng chuẩn HĐ MTT)
     CodePrefix: cfg.posCodePrefix, // dải mã CQT cấp sẵn
     MachineCode: cfg.posMachineId, // mã máy đã đăng ký với CQT
     SellerTaxCode: cfg.taxCode,
@@ -187,7 +198,11 @@ export async function publishPosInvoice(
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        ClientID: cfg.posClientId ?? "",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(buildPosInvoicePayload(input, cfg)),
     });
   } catch (err) {

@@ -6,18 +6,24 @@
  * base /api/v3): Inbot dùng CẶP base URL riêng + auth 2 BƯỚC riêng — đừng gộp
  * hai luồng token vào nhau.
  *
- * Auth 2 bước (tài liệu Open API meInvoice Đầu vào):
- *   1. POST {MISA_INBOT_API_BASE}/validateUser
- *      header AppID / CompanyTaxCode / UserName, body { PassWord }
- *      → SecureToken.
- *   2. POST {MISA_INBOT_API_BASE}/auth/jwttoken
- *      header như trên + securetoken → AccessToken (JWT, Bearer).
+ * ĐÚNG THEO TÀI LIỆU PORTAL developer.misa.vn (Open API → Hóa đơn điện tử đầu
+ * vào, đọc 07/08/2026). Base URL DUY NHẤT: https://developer.misa.vn/apis
  *
- * API nghiệp vụ (base MISA_INBOT_APP_BASE, prefix
- * /inbot/api/{subscriberId}/{organizationId}, header ClientId + Bearer):
- *   GET /invoices/v2/modified?from&to&take&skip — hóa đơn phát sinh/cập nhật
- *       trong kỳ (take tối đa 100 → PHẢI phân trang bằng skip).
- *   GET /invoices/{invoiceId}                   — chi tiết một hóa đơn.
+ * Auth 2 bước:
+ *   1. POST /meinvoicebot/v1/validateuser
+ *      header ClientID / CompanyTaxCode / UserName, body { PassWord } → securetoken.
+ *   2. POST /meinvoicebot/v1/auth/jwttoken
+ *      header ClientID / companytaxcode / username / securetoken → JWT.
+ *   Request nghiệp vụ sau đó: Authorization: Bearer {jwt} + ClientID.
+ *
+ * API nghiệp vụ:
+ *   GET /meinvoicebot/v1/subscribers/code/{taxcode}      — tra SubscribersId
+ *   GET /meinvoicebot/v1/{sub}/organizations             — tra organizationId
+ *   GET /meinvoicebot/v1/{sub}/{org}/invoices/v2/modified?from&to&take&skip
+ *   GET /meinvoicebot/v1/{sub}/{org}/invoices/{InvoiceId}
+ *
+ * Nhờ 2 API tra cứu trên, subscriberId/organizationId KHÔNG cần nhập tay nữa —
+ * chỉ cần MST; env chỉ dùng để ghi đè khi muốn cố định.
  *
  * Inbot KHÔNG có webhook → luồng về DB là POLLING: gọi syncInputInvoicesToDb
  * theo kỳ (cron sẽ nối vào worker auto-sync sau khi sandbox thông). Idempotent
@@ -41,16 +47,16 @@ const MAX_PAGES_PER_SYNC = 20;
 // ---------- Cấu hình từ env ----------
 
 export interface InbotConfig {
-  /** Base API nghiệp vụ (testapp.meinvoice.vn khi sandbox). */
-  appBase: string;
-  /** Base API auth (testapi.meinvoice.vn/api2 khi sandbox). */
+  /** Base URL DUY NHẤT của cổng developer.misa.vn (auth + nghiệp vụ chung). */
   apiBase: string;
-  appId: string;
   clientId: string;
+  clientSecret: string;
   taxCode: string;
   username: string;
   password: string;
+  /** Bỏ trống = tự tra bằng API subscribers/code/{taxcode}. */
   subscriberId: string;
+  /** Bỏ trống = tự tra bằng API {sub}/organizations. */
   organizationId: string;
 }
 
@@ -63,28 +69,23 @@ export function inbotConfigFromEnv():
   | { ok: false; missing: string[] } {
   const read = (key: string) => process.env[key]?.trim() || "";
   const values = {
-    appBase:
-      read("MISA_INBOT_APP_BASE").replace(/\/+$/, "") ||
-      "https://testapp.meinvoice.vn",
     apiBase:
       read("MISA_INBOT_API_BASE").replace(/\/+$/, "") ||
-      "https://testapi.meinvoice.vn/api2",
-    appId: read("MISA_INBOT_APP_ID"),
+      "https://developer.misa.vn/apis",
     clientId: read("MISA_INBOT_CLIENT_ID"),
+    clientSecret: read("MISA_INBOT_CLIENT_SECRET"),
     taxCode: read("MISA_INBOT_TAX_CODE"),
     username: read("MISA_INBOT_USERNAME"),
     password: read("MISA_INBOT_PASSWORD"),
     subscriberId: read("MISA_INBOT_SUBSCRIBER_ID"),
     organizationId: read("MISA_INBOT_ORG_ID"),
   };
+  // subscriberId/organizationId KHÔNG bắt buộc — tra tự động từ MST.
   const required: Array<[keyof typeof values, string]> = [
-    ["appId", "MISA_INBOT_APP_ID"],
     ["clientId", "MISA_INBOT_CLIENT_ID"],
     ["taxCode", "MISA_INBOT_TAX_CODE"],
     ["username", "MISA_INBOT_USERNAME"],
     ["password", "MISA_INBOT_PASSWORD"],
-    ["subscriberId", "MISA_INBOT_SUBSCRIBER_ID"],
-    ["organizationId", "MISA_INBOT_ORG_ID"],
   ];
   const missing = required.filter(([k]) => !values[k]).map(([, env]) => env);
   if (missing.length > 0) return { ok: false, missing };
@@ -183,9 +184,13 @@ let cachedInbot: CachedToken | null = null;
 function authHeaders(cfg: InbotConfig): Record<string, string> {
   return {
     "Content-Type": "application/json",
-    AppID: cfg.appId,
+    ClientID: cfg.clientId,
     CompanyTaxCode: cfg.taxCode,
     UserName: cfg.username,
+    // Tài liệu bước 2 viết thường; gửi cả hai kiểu cho chắc (header không
+    // phân biệt hoa thường theo chuẩn HTTP, nhưng gateway có thể khó tính).
+    companytaxcode: cfg.taxCode,
+    username: cfg.username,
   };
 }
 
@@ -223,25 +228,25 @@ export async function getInbotAccessToken(): Promise<string> {
   // Bước 1 — SecureToken
   const step1 = unwrapEnvelope(
     await postJson(
-      `${cfg.apiBase}/validateUser`,
+      `${cfg.apiBase}/meinvoicebot/v1/validateuser`,
       authHeaders(cfg),
       { PassWord: cfg.password },
-      "validateUser"
+      "validateuser"
     ),
-    "validateUser"
+    "validateuser"
   );
   const secureToken =
     typeof step1 === "string" ? step1 : asString(pick(step1, "SecureToken", "securetoken", "Token"));
   if (!secureToken) {
     throw new Error(
-      `validateUser: không thấy SecureToken trong response: ${JSON.stringify(step1).slice(0, 300)}`
+      `validateuser: không thấy SecureToken trong response: ${JSON.stringify(step1).slice(0, 300)}`
     );
   }
 
   // Bước 2 — JWT AccessToken
   const step2 = unwrapEnvelope(
     await postJson(
-      `${cfg.apiBase}/auth/jwttoken`,
+      `${cfg.apiBase}/meinvoicebot/v1/auth/jwttoken`,
       { ...authHeaders(cfg), securetoken: secureToken },
       {},
       "auth/jwttoken"
@@ -272,18 +277,20 @@ export function clearInbotTokenCache(): void {
 
 // ---------- API nghiệp vụ ----------
 
-async function inbotGet(path: string, query?: Record<string, string | number>): Promise<unknown> {
+/** GET một path TUYỆT ĐỐI dưới /meinvoicebot/v1 (đã kèm Bearer + ClientID). */
+async function inbotGetRaw(
+  path: string,
+  query?: Record<string, string | number>
+): Promise<unknown> {
   const cfg = requireConfig();
   const token = await getInbotAccessToken();
-  const url = new URL(
-    `${cfg.appBase}/inbot/api/${cfg.subscriberId}/${cfg.organizationId}${path}`
-  );
+  const url = new URL(`${cfg.apiBase}/meinvoicebot/v1${path}`);
   for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, String(v));
 
   let res: Response;
   try {
     res = await fetch(url, {
-      headers: { ClientId: cfg.clientId, Authorization: `Bearer ${token}` },
+      headers: { ClientID: cfg.clientId, Authorization: `Bearer ${token}` },
     });
   } catch (err) {
     throw new Error(`Inbot GET ${path}: không gọi được — ${(err as Error).message}`);
@@ -293,6 +300,59 @@ async function inbotGet(path: string, query?: Record<string, string | number>): 
     throw new Error(`Inbot GET ${path}: HTTP ${res.status} — ${text.slice(0, 300)}`);
   }
   return unwrapEnvelope(text, `Inbot GET ${path}`);
+}
+
+/** Cache cặp (subscriberId, organizationId) đã tra được — mỗi process một lần. */
+let cachedScope: { taxCode: string; subscriberId: string; organizationId: string } | null = null;
+
+/**
+ * Tra SubscribersId + organizationId từ MST (env để trống thì tự lấy).
+ * Đây là thứ thay cho việc bắt người dùng đi tìm 2 mã này trên portal.
+ */
+export async function resolveInbotScope(): Promise<{
+  subscriberId: string;
+  organizationId: string;
+}> {
+  const cfg = requireConfig();
+  if (cfg.subscriberId && cfg.organizationId) {
+    return { subscriberId: cfg.subscriberId, organizationId: cfg.organizationId };
+  }
+  if (cachedScope && cachedScope.taxCode === cfg.taxCode) {
+    return { subscriberId: cachedScope.subscriberId, organizationId: cachedScope.organizationId };
+  }
+
+  const subRaw = await inbotGetRaw(`/subscribers/code/${encodeURIComponent(cfg.taxCode)}`);
+  const subscriberId =
+    cfg.subscriberId ||
+    asString(pick(subRaw, "SubscribersId", "SubscriberId", "ID", "Id", "id")) ||
+    asString(pick(Array.isArray(subRaw) ? subRaw[0] : undefined, "SubscribersId", "ID", "Id"));
+  if (!subscriberId) {
+    throw new Error(
+      `Không tra được SubscribersId từ MST ${cfg.taxCode}: ${JSON.stringify(subRaw).slice(0, 300)}`
+    );
+  }
+
+  const orgRaw = await inbotGetRaw(`/${encodeURIComponent(subscriberId)}/organizations`);
+  const orgList = Array.isArray(orgRaw)
+    ? orgRaw
+    : (pick(orgRaw, "Organizations", "Items", "List") as unknown[] | undefined);
+  const organizationId =
+    cfg.organizationId ||
+    asString(pick(Array.isArray(orgList) ? orgList[0] : orgRaw, "OrganizationId", "ID", "Id", "id"));
+  if (!organizationId) {
+    throw new Error(
+      `Không tra được organizationId của subscriber ${subscriberId}: ${JSON.stringify(orgRaw).slice(0, 300)}`
+    );
+  }
+
+  cachedScope = { taxCode: cfg.taxCode, subscriberId, organizationId };
+  return { subscriberId, organizationId };
+}
+
+/** GET dưới scope {sub}/{org} — tự tra scope nếu env chưa khai. */
+async function inbotGet(path: string, query?: Record<string, string | number>): Promise<unknown> {
+  const { subscriberId, organizationId } = await resolveInbotScope();
+  return inbotGetRaw(`/${subscriberId}/${organizationId}${path}`, query);
 }
 
 export interface ListInputInvoicesParams {

@@ -5,20 +5,20 @@
  * Vai trò trong Hubsell: ký số hồ sơ/hóa đơn thay cho USB Token — khớp lựa
  * chọn signMethod = "ESIGN_CLOUD" trong InvoiceConfig.
  *
- * Luồng ký số từ xa chuẩn theo tài liệu Open API MISA eSign:
- *   1. POST /api/auth/api/v1/auth/login-api        (header x-clientId/x-clientKey,
- *      body {userName, password}) → accessToken + remoteSigningAccessToken.
- *   2. GET  /external/esrm/service/general/api/v1/Certificates/by-userId
- *      → danh sách chứng thư số của tài khoản (lấy certAlias/certId).
- *   3. POST /external/esrm/service/document/api/v1/documents/hash
- *      → tạo hash tài liệu (PDF/XML/Word/Excel) cần ký.
- *   4. POST /external/esrm/service/signing/api/v1/Signing/hash
- *      → gửi yêu cầu ký hash — NGƯỜI KÝ XÁC NHẬN TRÊN APP MISA eSign
- *      (sandbox có thể cấu hình tự động) → transactionId.
- *   5. GET  /external/esrm/service/signing/api/v1/Signing/status/{transactionId}
- *      → poll trạng thái đến khi ký xong, nhận chữ ký.
- *   6. POST /external/esrm/service/document/api/v1/documents/attachment
- *      → đóng chữ ký vào file gốc, nhận file đã ký (base64).
+ * ĐÚNG THEO TÀI LIỆU PORTAL developer.misa.vn (Open API → Chữ ký số Esign,
+ * đọc 07/08/2026). Base URL: https://developer.misa.vn/apis
+ * Header xác thực: ClientID + ClientSecret (KHÔNG phải x-clientId/x-clientKey
+ * như bản tài liệu marketing cũ).
+ *
+ * Luồng ký số từ xa:
+ *   1. POST /esign/v1/auth/login-api   body {userName, password}
+ *      → accessToken + remoteSigningAccessToken (+ two-factor nếu bật).
+ *   2. GET  /esign/v1/certificates/by-userId  → chọn CTS keyStatus = ACTIVE.
+ *   3. POST /esign/v1/documents/hash          → hash tài liệu cần ký.
+ *   4. POST /esign/v1/signing/hash            → transactionId (người ký xác
+ *      nhận trên app MISA eSign).
+ *   5. GET  /esign/v1/signing/status/{id}     → poll đến khi có chữ ký.
+ *   6. POST /esign/v1/documents/attachment    → gắn chữ ký vào file gốc.
  *
  * Response bọc { status: {code, error, ...}, data: {...} } (camelCase) — khác
  * envelope PascalCase của meInvoice; bước hash/sign lại nhận body PascalCase
@@ -44,11 +44,10 @@ export interface EsignConfig {
 /** Đọc bộ cấu hình eSign từ env — trả danh sách env còn thiếu để test dễ soi. */
 export function esignConfigFromEnv():
   | { ok: true; config: EsignConfig }
-  | { ok: false; missing: string[] } {
+  | { ok: false; missing: string[]; partial: Partial<EsignConfig> } {
   const read = (key: string) => process.env[key]?.trim() || "";
   const values = {
-    // Production: https://esignapp.misa.vn — sandbox điền URL trong kit MISA gửi.
-    apiBase: read("MISA_ESIGN_API_BASE").replace(/\/+$/, "") || "https://esignapp.misa.vn",
+    apiBase: read("MISA_ESIGN_API_BASE").replace(/\/+$/, "") || "https://developer.misa.vn/apis",
     clientId: read("MISA_ESIGN_CLIENT_ID"),
     clientKey: read("MISA_ESIGN_CLIENT_KEY"),
     username: read("MISA_ESIGN_USERNAME"),
@@ -61,7 +60,9 @@ export function esignConfigFromEnv():
     ["password", "MISA_ESIGN_PASSWORD"],
   ];
   const missing = required.filter(([k]) => !values[k]).map(([, env]) => env);
-  if (missing.length > 0) return { ok: false, missing };
+  // Trả kèm `partial` để nơi gọi vẫn dùng được các giá trị ĐÃ khai (nếu không
+  // thì thông báo lỗi sẽ kê cả những khóa thực ra đã có trong .env).
+  if (missing.length > 0) return { ok: false, missing, partial: values };
   return { ok: true, config: values };
 }
 
@@ -72,10 +73,9 @@ export function esignConfigFromEnv():
  */
 function requireConfig(overrides?: Partial<EsignConfig>): EsignConfig {
   const r = esignConfigFromEnv();
-  const base: Partial<EsignConfig> = r.ok
-    ? r.config
-    : { apiBase: "https://esignapp.misa.vn" };
+  const base: Partial<EsignConfig> = r.ok ? r.config : r.partial;
   const merged: Partial<EsignConfig> = {
+    apiBase: "https://developer.misa.vn/apis",
     ...base,
     ...Object.fromEntries(
       Object.entries(overrides ?? {}).filter(([, v]) => typeof v === "string" && v.trim() !== "")
@@ -146,15 +146,15 @@ export async function esignLogin(overrides?: Partial<EsignConfig>): Promise<Esig
     return cachedSession;
   }
 
-  const url = `${cfg.apiBase}/api/auth/api/v1/auth/login-api`;
+  const url = `${cfg.apiBase}/esign/v1/auth/login-api`;
   let res: Response;
   try {
     res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-clientId": cfg.clientId,
-        "x-clientKey": cfg.clientKey,
+        ClientID: cfg.clientId,
+        ClientSecret: cfg.clientKey,
       },
       body: JSON.stringify({ userName: cfg.username, password: cfg.password }),
     });
@@ -214,8 +214,8 @@ async function esrmFetch(
       method,
       headers: {
         "Content-Type": "application/json",
-        "x-clientId": cfg.clientId,
-        "x-clientKey": cfg.clientKey,
+        ClientID: cfg.clientId,
+        ClientSecret: cfg.clientKey,
         Authorization: `Bearer ${token}`,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -233,7 +233,7 @@ export async function listCertificates(): Promise<unknown> {
   const session = await esignLogin();
   return esrmFetch(
     "GET",
-    "/external/esrm/service/general/api/v1/Certificates/by-userId",
+    "/esign/v1/certificates/by-userId",
     undefined,
     session.userId ? { userId: session.userId } : undefined
   );
@@ -243,7 +243,7 @@ export async function listCertificates(): Promise<unknown> {
 export async function getCertificateById(certId: string): Promise<unknown> {
   return esrmFetch(
     "GET",
-    "/external/esrm/service/general/api/v1/Certificates/by-certId",
+    "/esign/v1/certificates/by-certId",
     undefined,
     { certId }
   );
@@ -251,7 +251,7 @@ export async function getCertificateById(certId: string): Promise<unknown> {
 
 /** Bước 3 — tạo hash tài liệu. Body theo mẫu tài liệu (certificate + *Docs). */
 export async function hashDocuments(body: unknown): Promise<unknown> {
-  return esrmFetch("POST", "/external/esrm/service/document/api/v1/documents/hash", body);
+  return esrmFetch("POST", "/esign/v1/documents/hash", body);
 }
 
 export interface SignHashRequest {
@@ -264,7 +264,7 @@ export interface SignHashRequest {
 
 /** Bước 4 — gửi yêu cầu ký hash → transactionId (chờ người ký duyệt trên app). */
 export async function requestSignHash(req: SignHashRequest): Promise<string> {
-  const data = await esrmFetch("POST", "/external/esrm/service/signing/api/v1/Signing/hash", {
+  const data = await esrmFetch("POST", "/esign/v1/signing/hash", {
     DataToBeDisplayed: req.dataToBeDisplayed,
     UserId: req.userId,
     CertAlias: req.certAlias,
@@ -283,13 +283,13 @@ export async function requestSignHash(req: SignHashRequest): Promise<string> {
 export async function getSigningStatus(transactionId: string): Promise<unknown> {
   return esrmFetch(
     "GET",
-    `/external/esrm/service/signing/api/v1/Signing/status/${encodeURIComponent(transactionId)}`
+    `/esign/v1/signing/status/${encodeURIComponent(transactionId)}`
   );
 }
 
 /** Bước 6 — đóng chữ ký vào file gốc, nhận file đã ký (base64). */
 export async function attachSignatures(body: unknown): Promise<unknown> {
-  return esrmFetch("POST", "/external/esrm/service/document/api/v1/documents/attachment", body);
+  return esrmFetch("POST", "/esign/v1/documents/attachment", body);
 }
 
 // ---------- Smoke test sandbox ----------

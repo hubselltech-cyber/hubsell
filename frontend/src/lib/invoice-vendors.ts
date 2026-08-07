@@ -180,23 +180,26 @@ export const SIGN_METHODS = [
 // validate lại nên lệch nhau không gây sai dữ liệu.
 // ============================================================
 
-/** MST: 10 số (doanh nghiệp/HKD) hoặc 13 số / 10-3 số (đơn vị phụ thuộc). */
-export const TAX_CODE_RE = /^\d{10}(-?\d{3})?$/;
+/** MST: 10 số (DN), 12 số (hộ kinh doanh/cá nhân), hoặc 13 số / 10-3 số (đơn vị phụ thuộc). */
+export const TAX_CODE_RE = /^\d{10}(-?\d{3})?$|^\d{12}$/;
 
-/** MẪU SỐ hóa đơn: 1 chữ số 1-6 (1 = HĐ GTGT, 2 = HĐ bán hàng…). */
-export const INVOICE_PATTERN_RE = /^[1-6]$/;
+/** MẪU SỐ = ký tự đầu ký hiệu: 1 GTGT · 2 bán hàng · 5 vé điện tử · 6 phiếu xuất kho. */
+export const INVOICE_PATTERN_RE = /^[1256]$/;
 
-/** KÝ HIỆU KÊ KHAI: VD C26TAA — ký tự thứ 4 KHÔNG được là M (M = máy tính tiền). */
-export const INVOICE_SERIES_RE = /^[CK]\d{2}[A-LN-Z][A-Z0-9]{2}$/;
+/** KÝ HIỆU KÊ KHAI (7 ký tự): VD 1C26TAA — ký tự thứ 5 là T (hóa đơn thường). */
+export const INVOICE_SERIES_RE = /^[1256][CK]\d{2}T[A-Z0-9]{2}$/;
 
-/** KÝ HIỆU MÁY TÍNH TIỀN: ký tự thứ 4 BẮT BUỘC là M, VD C26MAA. */
-export const POS_SERIES_RE = /^[CK]\d{2}M[A-Z0-9]{2}$/;
+/** KÝ HIỆU MÁY TÍNH TIỀN (7 ký tự): ký tự thứ 5 BẮT BUỘC là M, VD 1C26MAA. */
+export const POS_SERIES_RE = /^[1256][CK]\d{2}M[A-Z0-9]{2}$/;
 
 /** Thông điệp lỗi định dạng — dùng chung cho validate inline trên UI. */
 export const INVOICE_FIELD_HINTS = {
-  taxCode: "MST gồm 10 số, hoặc 13 số/10-3 số với đơn vị phụ thuộc (VD 0101243150-001).",
-  invoicePattern: "Mẫu số là 1 chữ số từ 1 đến 6 (VD 1 = hóa đơn GTGT).",
+  taxCode:
+    "MST gồm 10 số (doanh nghiệp), 12 số (hộ kinh doanh) hoặc 13 số/10-3 số với đơn vị phụ thuộc.",
+  invoicePattern:
+    "Mẫu số là ký tự đầu của ký hiệu: 1 = HĐ GTGT, 2 = HĐ bán hàng, 5 = vé điện tử, 6 = phiếu xuất kho.",
   invoiceSeries:
-    "Ký hiệu dạng C26TAA: C/K + 2 số năm + chữ loại hóa đơn + 2 ký tự. Chữ thứ 4 không được là M.",
-  posSeries: "Ký hiệu máy tính tiền dạng C26MAA — ký tự thứ 4 bắt buộc là M.",
+    "Ký hiệu 7 ký tự dạng 1C26TAA: mẫu số + C/K (có mã/không mã) + 2 số năm + T (hóa đơn thường) + 2 ký tự tự đặt.",
+  posSeries:
+    "Ký hiệu máy tính tiền 7 ký tự dạng 1C26MAA — ký tự thứ 5 bắt buộc là M.",
 } as const;
