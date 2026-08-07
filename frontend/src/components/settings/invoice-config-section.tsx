@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   Building2,
+  CircleHelp,
+  ExternalLink,
   FileSignature,
   KeyRound,
   Loader2,
@@ -11,6 +13,7 @@ import {
   MonitorSmartphone,
   PenLine,
   PlugZap,
+  Radio,
   Save,
   ShieldCheck,
   Store,
@@ -33,6 +36,7 @@ import {
   testMeinvoiceConnection,
   testPosConnection,
   type InvoiceChannelKeyDTO,
+  type PosMachineDTO,
 } from "@/lib/api";
 import {
   HUBSELL_PARTNER_CODE,
@@ -51,23 +55,84 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * TRANG HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ — 2 TAB theo 2 luồng phát hành của
- * NĐ 123/2020 (một bản ghi InvoiceConfig cấp shop chứa cả hai nhóm cấu hình):
+ * TRANG HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ — layout 2 CỘT 8:4 kiểu Stripe/Shopify
+ * Settings (refactor 07/08 trị "visual fatigue" của bản xếp 6 card dọc):
  *
- *   TAB 1 — HĐĐT THÔNG THƯỜNG (kê khai/doanh nghiệp): Pháp nhân & Thuế +
- *           meInvoice API (mẫu số/ký hiệu TT 78) + Chữ ký số MISA eSign ký lẻ
- *           từng hóa đơn. Nút "Kiểm tra kết nối meInvoice" + "… eSign".
- *   TAB 2 — HĐ TỪ MÁY TÍNH TIỀN (HKD/bán lẻ, ký hiệu C26MXX): thông tin
- *           HKD/Shop + API MISA POS + dải mã CQT/mã máy. KHÔNG có cấu hình
- *           eSign — loại này miễn ký số từng đơn, phát hành tức thì bằng dải
- *           mã CQT cấp sẵn. Nút "Kiểm tra kết nối POS" riêng.
+ *   CỘT TRÁI (8/12) — form chính:
+ *     · Segmented control 2 tab (Kê khai ↔ Máy tính tiền — NĐ 123/2020).
+ *     · MỘT card chính gom Pháp nhân + API (meInvoice hoặc POS theo tab),
+ *       phân section bằng tiêu đề icon-badge màu + border-t.
+ *     · Card API Key theo gian hàng + thanh Lưu.
+ *   CỘT PHẢI (4/12) — sidebar:
+ *     · Widget Trạng thái kết nối: badge từng dịch vụ + nút Quick Test
+ *       (kết quả test giữ TRONG PHIÊN, không persist) + luồng mặc định.
+ *     · Card Chữ ký số MISA eSign — CHỈ hiện ở tab Kê khai (POS miễn ký lẻ).
+ *     · Box Hướng dẫn nhanh (tra mã máy tính tiền, dải mã CQT, link MISA).
  *
- * Validate TT 78 chặn ngay trên UI (MST/mẫu số/ký hiệu — regex mirror backend
- * trong invoice-vendors.ts); khóa bí mật chỉ hiển thị dạng che, để trống khi
- * lưu = giữ nguyên. Nút Lưu dùng chung — lưu trọn bản ghi bất kể đang ở tab nào.
+ * Nghiệp vụ giữ nguyên bản trước: một bản ghi InvoiceConfig cấp shop cho cả
+ * 2 tab; validate TT 78 inline (regex mirror backend); secret dạng che, để
+ * trống khi lưu = giữ nguyên; nút test POS auto-fill Mã máy/Dải mã/Ký hiệu
+ * vào ô trống + dropdown chọn máy khi MISA trả danh mục.
  */
 
 type InvoiceTab = "standard" | "pos";
+
+/** Trạng thái test kết nối TRONG PHIÊN của từng dịch vụ. */
+type ConnState = "idle" | "ok" | "fail";
+
+/** Viền focus nổi bật cho input (yêu cầu thiết kế mới) — cộng vào className. */
+const INPUT_FOCUS =
+  "focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-500";
+
+/** Tiêu đề section trong card chính: icon badge màu nhã + title + mô tả. */
+function SectionHeading({
+  icon,
+  tone,
+  title,
+  desc,
+}: {
+  icon: ReactNode;
+  /** Lớp màu của icon badge, VD "bg-blue-50 text-blue-600". */
+  tone: string;
+  title: string;
+  desc?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className={cn("rounded-lg p-2", tone)}>{icon}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-900">{title}</p>
+        {desc && <p className={cn(TEXT_SUB, "mt-0.5")}>{desc}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** Badge trạng thái kết nối trong widget sidebar. */
+function ConnBadge({ state, hasKeys }: { state: ConnState; hasKeys: boolean }) {
+  if (state === "ok") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">
+        <span className="size-1.5 rounded-full bg-emerald-500" />
+        Đã kết nối
+      </span>
+    );
+  }
+  if (state === "fail") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">
+        <span className="size-1.5 rounded-full bg-red-500" />
+        Lỗi kết nối
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+      <span className="size-1.5 rounded-full bg-slate-400" />
+      {hasKeys ? "Chưa kiểm tra" : "Chưa kết nối"}
+    </span>
+  );
+}
 
 export function InvoiceConfigSection({
   /** Chế độ Beta/xem trước: khóa các nút Lưu để không ghi cấu hình khi module tắt. */
@@ -97,7 +162,7 @@ export function InvoiceConfigSection({
   const [secretMasked, setSecretMasked] = useState<string | null>(null);
   const [secretInput, setSecretInput] = useState("");
 
-  // (3) Chữ ký số MISA eSign (chỉ tab kê khai)
+  // (3) Chữ ký số MISA eSign (sidebar, chỉ tab kê khai)
   const [signMethod, setSignMethod] = useState("USB_TOKEN");
   const [esignClientId, setEsignClientId] = useState("");
   const [esignUsername, setEsignUsername] = useState("");
@@ -118,9 +183,16 @@ export function InvoiceConfigSection({
   const [posSecretMasked, setPosSecretMasked] = useState<string | null>(null);
   const [posSecretInput, setPosSecretInput] = useState("");
   const [defaultInvoiceType, setDefaultInvoiceType] = useState("STANDARD");
+  /** Danh mục máy MISA trả từ lần test gần nhất — nguồn dropdown gợi ý. */
+  const [posMachines, setPosMachines] = useState<PosMachineDTO[]>([]);
 
   // Lỗi định dạng inline theo trường (validate TT 78 ngay trên UI).
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Trạng thái kết nối trong phiên (widget sidebar).
+  const [connStatus, setConnStatus] = useState<
+    Record<"meinvoice" | "esign" | "pos", ConnState>
+  >({ meinvoice: "idle", esign: "idle", pos: "idle" });
 
   const [savingConfig, setSavingConfig] = useState(false);
   const [testingMeinvoice, setTestingMeinvoice] = useState(false);
@@ -263,8 +335,10 @@ export function InvoiceConfigSection({
         kind === "meinvoice"
           ? await testMeinvoiceConnection()
           : await testEsignConnection();
+      setConnStatus((prev) => ({ ...prev, [kind]: "ok" }));
       toast.success(r.message ?? "Kết nối OK");
     } catch (err) {
+      setConnStatus((prev) => ({ ...prev, [kind]: "fail" }));
       toast.error(
         err instanceof ApiError ? err.message : "Không kết nối được — thử lại sau",
       );
@@ -273,16 +347,27 @@ export function InvoiceConfigSection({
     }
   }
 
+  /** Điền thông tin một máy từ danh mục vào form (thao tác CHỌN chủ động —
+   * cho phép ghi đè, khác auto-fill sau test chỉ điền ô trống). */
+  function applyPosMachine(m: PosMachineDTO) {
+    if (m.machineId) setPosMachineId(m.machineId);
+    if (m.codePrefix) setPosCodePrefix(m.codePrefix);
+    if (m.serial) setPosSeries(m.serial.toUpperCase());
+  }
+
   /**
    * Test POS tách riêng vì có AUTO-FILL: MISA trả được danh mục máy tính tiền
-   * thì tự điền Mã máy / Dải mã CQT / Ký hiệu vào các Ô CÒN TRỐNG (không ghi đè
-   * giá trị user đã gõ — lỡ họ cố tình chọn máy khác).
+   * thì lưu vào dropdown gợi ý + tự điền Mã máy / Dải mã CQT / Ký hiệu vào các
+   * Ô CÒN TRỐNG (không ghi đè giá trị user đã gõ).
    */
   async function handleTestPos() {
     setTestingPos(true);
     try {
       const r = await testPosConnection();
-      const machine = r.machines?.[0];
+      setConnStatus((prev) => ({ ...prev, pos: "ok" }));
+      const machines = r.machines ?? [];
+      setPosMachines(machines);
+      const machine = machines[0];
       const filled: string[] = [];
       if (machine) {
         if (!posMachineId.trim() && machine.machineId) {
@@ -304,6 +389,7 @@ export function InvoiceConfigSection({
           : (r.message ?? "Kết nối POS OK"),
       );
     } catch (err) {
+      setConnStatus((prev) => ({ ...prev, pos: "fail" }));
       toast.error(
         err instanceof ApiError ? err.message : "Không kết nối được — thử lại sau",
       );
@@ -371,13 +457,17 @@ export function InvoiceConfigSection({
     },
   ];
 
+  const hasMeinvoiceKeys = Boolean(clientId.trim() || hasSecretKey);
+  const hasEsignKeys = Boolean(esignClientId.trim() || hasEsignSecret);
+  const hasPosKeys = Boolean(posClientId.trim() || hasPosSecret);
+
   return (
     <div className="space-y-6">
       {/* ===== BÁO CÁO & GIÁM SÁT PHÔI — LUÔN HIỂN THỊ Ở ĐẦU TRANG ===== */}
       <InvoiceQuotaMonitorSection />
 
       {/* ===== CÔNG TẮC TỔNG: KÍCH HOẠT MODULE HĐĐT ===== */}
-      <div className="flex max-w-2xl items-center justify-between gap-4 rounded-lg border bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200/80 bg-card p-4 shadow-sm">
         <div>
           <Label
             htmlFor="inv-module-toggle"
@@ -400,62 +490,62 @@ export function InvoiceConfigSection({
       <fieldset
         disabled={!isInvoiceModuleEnabled}
         className={cn(
-          "min-w-0 space-y-6 transition-all duration-300",
+          "min-w-0 transition-all duration-300",
           !isInvoiceModuleEnabled &&
             "pointer-events-none opacity-50 select-none",
         )}
       >
-        {/* ===== TAB BAR: 2 LUỒNG PHÁT HÀNH ===== */}
-        <div
-          role="tablist"
-          aria-label="Luồng phát hành hóa đơn"
-          className="flex max-w-2xl gap-1 rounded-lg border bg-muted/40 p-1"
-        >
-          {TABS.map((t) => {
-            const active = activeTab === t.value;
-            return (
-              <button
-                key={t.value}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setActiveTab(t.value)}
-                className={cn(
-                  "flex-1 rounded-md px-3 py-2 text-left transition-colors",
-                  active
-                    ? "bg-card shadow-sm"
-                    : "hover:bg-card/60 text-muted-foreground",
-                )}
-              >
-                <span className="block text-sm font-semibold">{t.label}</span>
-                <span className="block text-[11px] text-muted-foreground">
-                  {t.sub}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {/* ===== GRID 12 CỘT — TRÁI 8 (form) / PHẢI 4 (sidebar) ===== */}
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+          {/* ================== CỘT TRÁI (8/12) ================== */}
+          <div className="min-w-0 space-y-6 lg:col-span-8">
+            {/* --- Segmented Control 2 tab --- */}
+            <div
+              role="tablist"
+              aria-label="Luồng phát hành hóa đơn"
+              className="flex gap-1 rounded-xl border border-slate-200/80 bg-slate-50 p-1"
+            >
+              {TABS.map((t) => {
+                const active = activeTab === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setActiveTab(t.value)}
+                    className={cn(
+                      "flex-1 rounded-lg px-4 py-2.5 text-left transition-all",
+                      active
+                        ? "border border-slate-200/80 bg-white font-semibold text-slate-900 shadow-sm"
+                        : "border border-transparent text-muted-foreground hover:bg-white/60",
+                    )}
+                  >
+                    <span className="block text-sm">{t.label}</span>
+                    <span className="block text-[11px] font-normal text-muted-foreground">
+                      {t.sub}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
-        {/* ================= TAB 1 — KÊ KHAI (DOANH NGHIỆP) ================= */}
-        {activeTab === "standard" && (
-          <div className="space-y-6">
-            {/* --- Nhóm 1: Pháp nhân & Thuế --- */}
-            <Card className="max-w-2xl shadow-sm">
-              <CardHeader className="border-b pb-3">
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  <Building2 className="size-5 text-slate-500" />
-                  Thông tin Pháp nhân &amp; Thuế
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-5">
-                <p className={TEXT_SUB}>
-                  Theo Nghị định 123/2020/NĐ-CP, hóa đơn điện tử bắt buộc mang{" "}
-                  <b>MST, tên và địa chỉ người bán</b> đúng đăng ký kinh doanh —
-                  thông tin dưới đây in lên mọi hóa đơn phát hành qua Hubsell
-                  (dùng chung cho cả hai luồng).
-                </p>
+            {/* --- CARD CHÍNH: Pháp nhân + API theo tab --- */}
+            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
+              {/* Section 1 — Pháp nhân & Thuế (dùng chung 2 tab) */}
+              <div className="space-y-4">
+                <SectionHeading
+                  icon={<Building2 className="size-4" />}
+                  tone="bg-blue-50 text-blue-600"
+                  title={
+                    activeTab === "standard"
+                      ? "Thông tin Pháp nhân & Thuế"
+                      : "Thông tin Hộ kinh doanh / Shop"
+                  }
+                  desc="NĐ 123/2020: hóa đơn phải mang MST, tên và địa chỉ người bán — dùng chung cho cả hai luồng."
+                />
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
+                  <div className="grid gap-1.5">
                     <Label htmlFor="inv-taxcode">Mã số thuế (MST)</Label>
                     <Input
                       id="inv-taxcode"
@@ -465,221 +555,529 @@ export function InvoiceConfigSection({
                       aria-invalid={Boolean(fieldErrors.taxCode)}
                       className={cn(
                         "font-mono",
+                        INPUT_FOCUS,
                         fieldErrors.taxCode && "border-red-400",
                       )}
                     />
                     <FieldError name="taxCode" />
                   </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="inv-company">Tên pháp nhân</Label>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="inv-company">
+                      {activeTab === "standard"
+                        ? "Tên pháp nhân"
+                        : "Tên Hộ kinh doanh/Shop"}
+                    </Label>
                     <Input
                       id="inv-company"
-                      placeholder="VD: CÔNG TY TNHH ABC"
+                      placeholder={
+                        activeTab === "standard"
+                          ? "VD: CÔNG TY TNHH ABC"
+                          : "VD: HKD NGUYỄN VĂN A"
+                      }
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
+                      className={INPUT_FOCUS}
                     />
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="inv-address">Địa chỉ trụ sở (theo ĐKKD)</Label>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="inv-address">Địa chỉ (theo ĐKKD)</Label>
                   <Input
                     id="inv-address"
                     placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
                     value={companyAddress}
                     onChange={(e) => setCompanyAddress(e.target.value)}
+                    className={INPUT_FOCUS}
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            {/* --- Nhóm 2: meInvoice API --- */}
-            <Card className="max-w-2xl shadow-sm">
-              <CardHeader className="border-b pb-3">
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  <FileSignature className="size-5 text-slate-500" />
-                  Cấu hình meInvoice API
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                    Multi-Vendor
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-5">
-                <div className="grid gap-2">
-                  <Label htmlFor="inv-provider">Nhà cung cấp hóa đơn</Label>
-                  <NativeSelect
-                    id="inv-provider"
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
-                  >
-                    {INVOICE_VENDORS.map((v) => (
-                      <option key={v.value} value={v.value}>
-                        {v.label}
-                        {v.soon ? " (Sắp ra mắt)" : ""}
-                      </option>
-                    ))}
-                  </NativeSelect>
+              {/* Section 2 — API theo tab */}
+              {activeTab === "standard" ? (
+                <div className="mt-6 space-y-4 border-t border-slate-100 pt-6">
+                  <SectionHeading
+                    icon={<FileSignature className="size-4" />}
+                    tone="bg-indigo-50 text-indigo-600"
+                    title="Cấu hình meInvoice API"
+                    desc="Mẫu số + ký hiệu phải khớp đúng ký hiệu đã đăng ký với Cơ quan Thuế — sai/thiếu là NCC từ chối cấp số."
+                  />
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-provider">Nhà cung cấp hóa đơn</Label>
+                      <NativeSelect
+                        id="inv-provider"
+                        value={provider}
+                        onChange={(e) => setProvider(e.target.value)}
+                      >
+                        {INVOICE_VENDORS.map((v) => (
+                          <option key={v.value} value={v.value}>
+                            {v.label}
+                            {v.soon ? " (Sắp ra mắt)" : ""}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-partner">Mã đại lý ISV</Label>
+                      <div className="relative">
+                        <Input
+                          id="inv-partner"
+                          value={HUBSELL_PARTNER_CODE}
+                          readOnly
+                          aria-readonly
+                          tabIndex={-1}
+                          className="cursor-not-allowed bg-slate-50 pr-9 font-mono text-slate-600"
+                        />
+                        <Lock className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {isCustom && (
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-custom-url">Endpoint API (Custom)</Label>
+                      <Input
+                        id="inv-custom-url"
+                        placeholder="https://api.nhacungcap.vn/invoice"
+                        value={customApiUrl}
+                        onChange={(e) => setCustomApiUrl(e.target.value)}
+                        className={INPUT_FOCUS}
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-client">Mã định danh (Client ID)</Label>
+                      <Input
+                        id="inv-client"
+                        placeholder="Client ID do NCC cấp"
+                        value={clientId}
+                        onChange={(e) => setClientId(e.target.value)}
+                        className={INPUT_FOCUS}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-secret">Khóa bảo mật (Secret Key)</Label>
+                      <Input
+                        id="inv-secret"
+                        type="password"
+                        placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
+                        value={secretInput}
+                        onChange={(e) => setSecretInput(e.target.value)}
+                        className={INPUT_FOCUS}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-pattern">Mẫu số hóa đơn (Pattern)</Label>
+                      <Input
+                        id="inv-pattern"
+                        placeholder="VD: 1 (HĐ GTGT)"
+                        value={invoicePattern}
+                        onChange={(e) => setInvoicePattern(e.target.value)}
+                        aria-invalid={Boolean(fieldErrors.invoicePattern)}
+                        className={cn(
+                          "font-mono",
+                          INPUT_FOCUS,
+                          fieldErrors.invoicePattern && "border-red-400",
+                        )}
+                      />
+                      <FieldError name="invoicePattern" />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="inv-series">Ký hiệu hóa đơn (Serial)</Label>
+                      <Input
+                        id="inv-series"
+                        placeholder="VD: C26TAA"
+                        value={invoiceSeries}
+                        onChange={(e) =>
+                          setInvoiceSeries(e.target.value.toUpperCase())
+                        }
+                        aria-invalid={Boolean(fieldErrors.invoiceSeries)}
+                        className={cn(
+                          "font-mono",
+                          INPUT_FOCUS,
+                          fieldErrors.invoiceSeries && "border-red-400",
+                        )}
+                      />
+                      <FieldError name="invoiceSeries" />
+                    </div>
+                  </div>
                 </div>
+              ) : (
+                <div className="mt-6 space-y-4 border-t border-slate-100 pt-6">
+                  <SectionHeading
+                    icon={<MonitorSmartphone className="size-4" />}
+                    tone="bg-emerald-50 text-emerald-600"
+                    title="Cấu hình MISA POS — Máy tính tiền"
+                    desc="Phát hành tức thì bằng dải mã CQT cấp sẵn — không cần ký số từng đơn như luồng kê khai."
+                  />
 
-                {isCustom && (
-                  <div className="grid gap-2">
-                    <Label htmlFor="inv-custom-url">Endpoint API (Custom)</Label>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="pos-client">POS Client ID</Label>
+                      <Input
+                        id="pos-client"
+                        placeholder="Client ID luồng POS do MISA cấp"
+                        value={posClientId}
+                        onChange={(e) => setPosClientId(e.target.value)}
+                        className={INPUT_FOCUS}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="pos-secret">POS Secret Key</Label>
+                      <Input
+                        id="pos-secret"
+                        type="password"
+                        placeholder={secretPlaceholder(
+                          hasPosSecret,
+                          posSecretMasked,
+                        )}
+                        value={posSecretInput}
+                        onChange={(e) => setPosSecretInput(e.target.value)}
+                        className={INPUT_FOCUS}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dropdown gợi ý máy từ danh mục MISA (có sau khi Quick Test) */}
+                  {posMachines.length > 0 && (
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="pos-machine-pick">
+                        Chọn máy từ danh mục MISA ({posMachines.length} máy)
+                      </Label>
+                      <NativeSelect
+                        id="pos-machine-pick"
+                        value=""
+                        onChange={(e) => {
+                          const m = posMachines[Number(e.target.value)];
+                          if (m) applyPosMachine(m);
+                        }}
+                      >
+                        <option value="">— Chọn để tự điền 3 ô dưới —</option>
+                        {posMachines.map((m, i) => (
+                          <option key={i} value={i}>
+                            {m.machineId ?? "(không mã)"}
+                            {m.codePrefix ? ` · ${m.codePrefix}` : ""}
+                            {m.serial ? ` · ${m.serial}` : ""}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  )}
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="pos-prefix">Dải mã CQT (Code Prefix)</Label>
+                      <Input
+                        id="pos-prefix"
+                        placeholder="Dải mã CQT cấp cho máy tính tiền"
+                        value={posCodePrefix}
+                        onChange={(e) => setPosCodePrefix(e.target.value)}
+                        className={cn("font-mono", INPUT_FOCUS)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="pos-machine">Mã máy tính tiền</Label>
+                      <Input
+                        id="pos-machine"
+                        placeholder="VD: POS-01 hoặc MTT001"
+                        value={posMachineId}
+                        onChange={(e) => setPosMachineId(e.target.value)}
+                        className={cn("font-mono", INPUT_FOCUS)}
+                      />
+                      <p className={TEXT_SUB}>
+                        Xem trên Portal MISA meInvoice (Danh mục Máy tính tiền)
+                        hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT đã được CQT chấp nhận.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="pos-series">Ký hiệu hóa đơn máy tính tiền</Label>
                     <Input
-                      id="inv-custom-url"
-                      placeholder="https://api.nhacungcap.vn/invoice"
-                      value={customApiUrl}
-                      onChange={(e) => setCustomApiUrl(e.target.value)}
+                      id="pos-series"
+                      placeholder="VD: C26MAA (ký tự thứ 4 bắt buộc là M)"
+                      value={posSeries}
+                      onChange={(e) => setPosSeries(e.target.value.toUpperCase())}
+                      aria-invalid={Boolean(fieldErrors.posSeries)}
+                      className={cn(
+                        "font-mono",
+                        INPUT_FOCUS,
+                        fieldErrors.posSeries && "border-red-400",
+                      )}
                     />
+                    <FieldError name="posSeries" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* --- API KEY THEO GIAN HÀNG --- */}
+            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
+              <SectionHeading
+                icon={<KeyRound className="size-4" />}
+                tone="bg-amber-50 text-amber-600"
+                title="API Key hóa đơn theo gian hàng"
+                desc="Mỗi gian hàng một API Key riêng — phục vụ đối soát hoa hồng theo từng shop."
+              />
+
+              <div className="mt-4">
+                {channelKeys.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    Shop chưa có gian hàng nào để cấu hình.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {channelKeys.map((c) => {
+                      const meta = CHANNEL_META[c.channelName];
+                      const saving = savingKeyId === c.channelId;
+                      return (
+                        <div
+                          key={c.channelId}
+                          className="flex flex-wrap items-center gap-2.5 rounded-lg border border-slate-200/80 p-3"
+                        >
+                          <span className="flex min-w-40 items-center gap-2">
+                            <Store className="size-4 shrink-0 text-muted-foreground" />
+                            <span
+                              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}
+                            >
+                              {meta.label}
+                            </span>
+                            <span className="truncate text-sm font-medium">
+                              {c.shopName}
+                            </span>
+                          </span>
+
+                          <Input
+                            type="password"
+                            className={cn("min-w-40 flex-1", INPUT_FOCUS)}
+                            aria-label={`API Key ${shopLabel(c.channelName, c.shopName)}`}
+                            placeholder={
+                              c.hasApiKey
+                                ? `Đã lưu (${c.apiKeyMasked ?? "••••"}) — nhập để đổi`
+                                : "Chưa cấu hình API Key"
+                            }
+                            value={keyInputs[c.channelId] ?? ""}
+                            onChange={(e) =>
+                              setKeyInputs((prev) => ({
+                                ...prev,
+                                [c.channelId]: e.target.value,
+                              }))
+                            }
+                          />
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              saving ||
+                              readOnlyPreview ||
+                              !(keyInputs[c.channelId] ?? "").trim()
+                            }
+                            title={
+                              readOnlyPreview
+                                ? "Module đang ở chế độ Beta — khóa lưu"
+                                : undefined
+                            }
+                            onClick={() => handleSaveChannelKey(c.channelId)}
+                          >
+                            {saving ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Save className="size-4" />
+                            )}
+                            Lưu
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* --- THANH LƯU (một bản ghi cho cả 2 tab) --- */}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={handleSaveConfig}
+                disabled={savingConfig || readOnlyPreview}
+                title={
+                  readOnlyPreview
+                    ? "Module đang ở chế độ Beta — khóa lưu để an toàn dữ liệu"
+                    : undefined
+                }
+              >
+                {savingConfig ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                Lưu toàn bộ cấu hình
+              </Button>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <ShieldCheck className="size-3.5" />
+                {readOnlyPreview
+                  ? "Beta — đã khóa lưu, chạy Sandbox."
+                  : "Lưu cả 2 tab cùng lúc; khóa bí mật để trống = giữ nguyên."}
+              </p>
+            </div>
+          </div>
+
+          {/* ================== CỘT PHẢI (4/12) — SIDEBAR ================== */}
+          <div className="min-w-0 space-y-6 lg:col-span-4">
+            {/* --- Widget Trạng thái kết nối --- */}
+            <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+              <SectionHeading
+                icon={<Radio className="size-4" />}
+                tone="bg-sky-50 text-sky-600"
+                title="Trạng thái kết nối"
+                desc="Kết quả kiểm tra trong phiên làm việc này."
+              />
+
+              <div className="mt-4 space-y-3">
+                {activeTab === "standard" ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-slate-700">meInvoice</span>
+                      <span className="flex items-center gap-2">
+                        <ConnBadge
+                          state={connStatus.meinvoice}
+                          hasKeys={hasMeinvoiceKeys}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            runConnectionTest("meinvoice", setTestingMeinvoice)
+                          }
+                          disabled={testingMeinvoice}
+                        >
+                          {testingMeinvoice ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <PlugZap className="size-3.5" />
+                          )}
+                          Test
+                        </Button>
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-slate-700">MISA eSign</span>
+                      <span className="flex items-center gap-2">
+                        <ConnBadge
+                          state={connStatus.esign}
+                          hasKeys={hasEsignKeys}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            runConnectionTest("esign", setTestingEsign)
+                          }
+                          disabled={testingEsign || !isEsignCloud}
+                          title={
+                            !isEsignCloud
+                              ? "Chọn phương thức MISA eSign để kiểm tra"
+                              : undefined
+                          }
+                        >
+                          {testingEsign ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <PlugZap className="size-3.5" />
+                          )}
+                          Test
+                        </Button>
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-slate-700">MISA POS</span>
+                    <span className="flex items-center gap-2">
+                      <ConnBadge state={connStatus.pos} hasKeys={hasPosKeys} />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleTestPos}
+                        disabled={testingPos}
+                      >
+                        {testingPos ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <PlugZap className="size-3.5" />
+                        )}
+                        Test
+                      </Button>
+                    </span>
                   </div>
                 )}
 
-                <div className="grid gap-2">
-                  <Label htmlFor="inv-partner">Mã đại lý ISV (Partner Code)</Label>
-                  <div className="relative">
-                    <Input
-                      id="inv-partner"
-                      value={HUBSELL_PARTNER_CODE}
-                      readOnly
-                      aria-readonly
-                      tabIndex={-1}
-                      className="cursor-not-allowed bg-slate-50 pr-9 font-mono text-slate-600"
-                    />
-                    <Lock className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                  </div>
-                  <p className={TEXT_SUB}>
-                    Mã đại lý ISV của Hubsell — <b>cố định, không chỉnh sửa</b>.
-                    Nhờ mã này mà hóa đơn phát hành qua hệ thống được nhà cung
-                    cấp ghi nhận thuộc đại lý Hubsell.
-                  </p>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="inv-client">Mã định danh (Client ID)</Label>
-                    <Input
-                      id="inv-client"
-                      placeholder="Client ID do NCC cấp"
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="inv-secret">Khóa bảo mật (Secret Key)</Label>
-                    <Input
-                      id="inv-secret"
-                      type="password"
-                      placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
-                      value={secretInput}
-                      onChange={(e) => setSecretInput(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="inv-pattern">Mẫu số hóa đơn (Pattern)</Label>
-                    <Input
-                      id="inv-pattern"
-                      placeholder="VD: 1 (HĐ GTGT)"
-                      value={invoicePattern}
-                      onChange={(e) => setInvoicePattern(e.target.value)}
-                      aria-invalid={Boolean(fieldErrors.invoicePattern)}
-                      className={cn(
-                        "font-mono",
-                        fieldErrors.invoicePattern && "border-red-400",
-                      )}
-                    />
-                    <FieldError name="invoicePattern" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="inv-series">Ký hiệu hóa đơn (Serial)</Label>
-                    <Input
-                      id="inv-series"
-                      placeholder="VD: C26TAA"
-                      value={invoiceSeries}
-                      onChange={(e) =>
-                        setInvoiceSeries(e.target.value.toUpperCase())
-                      }
-                      aria-invalid={Boolean(fieldErrors.invoiceSeries)}
-                      className={cn(
-                        "font-mono",
-                        fieldErrors.invoiceSeries && "border-red-400",
-                      )}
-                    />
-                    <FieldError name="invoiceSeries" />
-                  </div>
-                </div>
-                <p className={TEXT_SUB}>
-                  Mẫu số + ký hiệu theo Thông tư 78/2021/TT-BTC, phải khớp{" "}
-                  <b>đúng ký hiệu đã đăng ký với Cơ quan Thuế</b> trên meInvoice
-                  — sai/thiếu là nhà cung cấp từ chối cấp số hóa đơn.
-                </p>
-
-                <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      runConnectionTest("meinvoice", setTestingMeinvoice)
-                    }
-                    disabled={testingMeinvoice}
-                  >
-                    {testingMeinvoice ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <PlugZap className="size-4" />
-                    )}
-                    Kiểm tra kết nối meInvoice
-                  </Button>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <ShieldCheck className="size-3.5" />
-                    Đăng nhập thử bằng khóa đã lưu — không phát sinh hóa đơn.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* --- Nhóm 3: Chữ ký số MISA eSign (chỉ luồng kê khai) --- */}
-            <Card className="max-w-2xl shadow-sm">
-              <CardHeader className="border-b pb-3">
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  <PenLine className="size-5 text-slate-500" />
-                  Chữ ký số MISA eSign
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-5">
-                <div className="grid gap-2">
-                  <Label htmlFor="inv-method">Phương thức ký số</Label>
+                <div className="border-t border-slate-100 pt-3">
+                  <Label htmlFor="inv-default-type" className="text-xs">
+                    Luồng áp dụng khi xuất hóa đơn
+                  </Label>
                   <NativeSelect
-                    id="inv-method"
-                    value={signMethod}
-                    onChange={(e) => setSignMethod(e.target.value)}
+                    id="inv-default-type"
+                    value={defaultInvoiceType}
+                    onChange={(e) => setDefaultInvoiceType(e.target.value)}
+                    className="mt-1.5"
                   >
-                    {SIGN_METHODS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
+                    <option value="STANDARD">Hóa đơn thông thường (Kê khai)</option>
+                    <option value="POS">Hóa đơn từ Máy tính tiền</option>
                   </NativeSelect>
-                  <p className={TEXT_SUB}>
-                    Luồng kê khai phải <b>ký số từng hóa đơn</b> trước khi gửi
-                    Cơ quan Thuế cấp mã. Chọn <b>MISA eSign</b> để ký nền tự
-                    động — không cần cắm USB Token mỗi lần phát hành.
+                  <p className={cn(TEXT_SUB, "mt-1.5")}>
+                    Test kết nối dùng khóa <b>đã lưu</b> — đổi khóa xong nhớ bấm
+                    Lưu trước khi Test.
                   </p>
                 </div>
+              </div>
+            </div>
 
-                {isEsignCloud && (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="grid gap-2">
+            {/* --- Card Chữ ký số MISA eSign — CHỈ tab Kê khai --- */}
+            {activeTab === "standard" && (
+              <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+                <SectionHeading
+                  icon={<PenLine className="size-4" />}
+                  tone="bg-violet-50 text-violet-600"
+                  title="Chữ ký số MISA eSign"
+                  desc="Luồng kê khai phải ký số từng hóa đơn trước khi CQT cấp mã."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="inv-method">Phương thức ký số</Label>
+                    <NativeSelect
+                      id="inv-method"
+                      value={signMethod}
+                      onChange={(e) => setSignMethod(e.target.value)}
+                    >
+                      {SIGN_METHODS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+
+                  {isEsignCloud ? (
+                    <>
+                      <div className="grid gap-1.5">
                         <Label htmlFor="esign-client">eSign Client ID</Label>
                         <Input
                           id="esign-client"
                           placeholder="x-clientId do MISA cấp"
                           value={esignClientId}
                           onChange={(e) => setEsignClientId(e.target.value)}
+                          className={INPUT_FOCUS}
                         />
                       </div>
-                      <div className="grid gap-2">
+                      <div className="grid gap-1.5">
                         <Label htmlFor="esign-secret">eSign Secret Key</Label>
                         <Input
                           id="esign-secret"
@@ -690,21 +1088,20 @@ export function InvoiceConfigSection({
                           )}
                           value={esignSecretInput}
                           onChange={(e) => setEsignSecretInput(e.target.value)}
+                          className={INPUT_FOCUS}
                         />
                       </div>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="grid gap-2">
+                      <div className="grid gap-1.5">
                         <Label htmlFor="esign-user">Tài khoản eSign</Label>
                         <Input
                           id="esign-user"
                           placeholder="Email/SĐT tài khoản MISA eSign"
                           value={esignUsername}
                           onChange={(e) => setEsignUsername(e.target.value)}
+                          className={INPUT_FOCUS}
                         />
                       </div>
-                      <div className="grid gap-2">
+                      <div className="grid gap-1.5">
                         <Label htmlFor="esign-pass">Mật khẩu eSign</Label>
                         <Input
                           id="esign-pass"
@@ -717,348 +1114,67 @@ export function InvoiceConfigSection({
                           onChange={(e) =>
                             setEsignPasswordInput(e.target.value)
                           }
+                          className={INPUT_FOCUS}
                         />
                       </div>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label htmlFor="esign-serial">
-                        Serial chứng thư số (Cert Serial)
-                      </Label>
-                      <Input
-                        id="esign-serial"
-                        placeholder="Để trống = dùng chứng thư đầu tiên của tài khoản"
-                        value={certSerial}
-                        onChange={(e) => setCertSerial(e.target.value)}
-                        className="font-mono"
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => runConnectionTest("esign", setTestingEsign)}
-                    disabled={testingEsign || !isEsignCloud}
-                    title={
-                      !isEsignCloud
-                        ? "Chọn phương thức MISA eSign để kiểm tra kết nối"
-                        : undefined
-                    }
-                  >
-                    {testingEsign ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <PlugZap className="size-4" />
-                    )}
-                    Kiểm tra kết nối eSign
-                  </Button>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <ShieldCheck className="size-3.5" />
-                    Đăng nhập thử eSign — chưa ký bất kỳ tài liệu nào.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ================= TAB 2 — MÁY TÍNH TIỀN (HKD/BÁN LẺ) ================= */}
-        {activeTab === "pos" && (
-          <div className="space-y-6">
-            {/* --- Thông tin Hộ kinh doanh / Shop (dùng chung cột pháp nhân) --- */}
-            <Card className="max-w-2xl shadow-sm">
-              <CardHeader className="border-b pb-3">
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  <Building2 className="size-5 text-slate-500" />
-                  Thông tin Hộ kinh doanh / Shop
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-5">
-                <p className={TEXT_SUB}>
-                  Hóa đơn máy tính tiền vẫn phải mang <b>MST và tên</b> của Hộ
-                  kinh doanh/Shop (NĐ 123/2020). Thông tin này dùng chung với
-                  tab Hóa đơn thông thường — sửa ở đâu cũng là một.
-                </p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="pos-taxcode">Mã số thuế (MST)</Label>
-                    <Input
-                      id="pos-taxcode"
-                      placeholder="VD: 0101243150"
-                      value={taxCode}
-                      onChange={(e) => setTaxCode(e.target.value)}
-                      aria-invalid={Boolean(fieldErrors.taxCode)}
-                      className={cn(
-                        "font-mono",
-                        fieldErrors.taxCode && "border-red-400",
-                      )}
-                    />
-                    <FieldError name="taxCode" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="pos-company">Tên Hộ kinh doanh/Shop</Label>
-                    <Input
-                      id="pos-company"
-                      placeholder="VD: HKD NGUYỄN VĂN A"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="pos-address">Địa chỉ kinh doanh</Label>
-                  <Input
-                    id="pos-address"
-                    placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
-                    value={companyAddress}
-                    onChange={(e) => setCompanyAddress(e.target.value)}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* --- API MISA POS + dải mã CQT (KHÔNG có eSign — miễn ký lẻ) --- */}
-            <Card className="max-w-2xl shadow-sm">
-              <CardHeader className="border-b pb-3">
-                <CardTitle className="flex flex-wrap items-center gap-2">
-                  <MonitorSmartphone className="size-5 text-slate-500" />
-                  Cấu hình MISA POS — Máy tính tiền
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">
-                    Không cần ký số từng đơn
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5 pt-5">
-                <p className={TEXT_SUB}>
-                  Hóa đơn khởi tạo từ máy tính tiền dùng <b>dải mã do Cơ quan
-                  Thuế cấp sẵn</b> cho máy đã đăng ký — phát hành <b>tức thì</b>{" "}
-                  tại quầy, không có vòng ký số/chờ cấp mã theo từng hóa đơn như
-                  luồng kê khai.
-                </p>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="pos-client">POS Client ID</Label>
-                    <Input
-                      id="pos-client"
-                      placeholder="Client ID luồng POS do MISA cấp"
-                      value={posClientId}
-                      onChange={(e) => setPosClientId(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="pos-secret">POS Secret Key</Label>
-                    <Input
-                      id="pos-secret"
-                      type="password"
-                      placeholder={secretPlaceholder(
-                        hasPosSecret,
-                        posSecretMasked,
-                      )}
-                      value={posSecretInput}
-                      onChange={(e) => setPosSecretInput(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="pos-prefix">Dải mã CQT (Code Prefix)</Label>
-                    <Input
-                      id="pos-prefix"
-                      placeholder="Dải mã CQT cấp cho máy tính tiền"
-                      value={posCodePrefix}
-                      onChange={(e) => setPosCodePrefix(e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="pos-machine">Mã máy tính tiền</Label>
-                    <Input
-                      id="pos-machine"
-                      placeholder="VD: POS-01 hoặc MTT001"
-                      value={posMachineId}
-                      onChange={(e) => setPosMachineId(e.target.value)}
-                      className="font-mono"
-                    />
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="esign-serial">Serial chứng thư số</Label>
+                        <Input
+                          id="esign-serial"
+                          placeholder="Để trống = dùng chứng thư đầu tiên"
+                          value={certSerial}
+                          onChange={(e) => setCertSerial(e.target.value)}
+                          className={cn("font-mono", INPUT_FOCUS)}
+                        />
+                      </div>
+                    </>
+                  ) : (
                     <p className={TEXT_SUB}>
-                      Lấy trên Portal MISA meInvoice (Danh mục Máy tính tiền)
-                      hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT đã được CQT chấp nhận.
+                      Đang chọn USB Token (ký thủ công). Chuyển sang{" "}
+                      <b>MISA eSign</b> để ký nền tự động — không cần cắm USB
+                      mỗi lần phát hành.
                     </p>
-                  </div>
+                  )}
                 </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="pos-series">
-                    Ký hiệu hóa đơn máy tính tiền
-                  </Label>
-                  <Input
-                    id="pos-series"
-                    placeholder="VD: C26MAA (ký tự thứ 4 bắt buộc là M)"
-                    value={posSeries}
-                    onChange={(e) => setPosSeries(e.target.value.toUpperCase())}
-                    aria-invalid={Boolean(fieldErrors.posSeries)}
-                    className={cn(
-                      "font-mono",
-                      fieldErrors.posSeries && "border-red-400",
-                    )}
-                  />
-                  <FieldError name="posSeries" />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleTestPos}
-                    disabled={testingPos}
-                  >
-                    {testingPos ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <PlugZap className="size-4" />
-                    )}
-                    Kiểm tra kết nối POS
-                  </Button>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <ShieldCheck className="size-3.5" />
-                    Đăng nhập thử bằng khóa POS — không phát sinh hóa đơn.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ===== LUỒNG MẶC ĐỊNH + NÚT LƯU CHUNG (một bản ghi cho cả 2 tab) ===== */}
-        <div className="flex max-w-2xl flex-wrap items-end gap-3">
-          <div className="grid gap-2">
-            <Label htmlFor="inv-default-type">Luồng phát hành mặc định</Label>
-            <NativeSelect
-              id="inv-default-type"
-              value={defaultInvoiceType}
-              onChange={(e) => setDefaultInvoiceType(e.target.value)}
-              className="w-64"
-            >
-              <option value="STANDARD">Hóa đơn thông thường (Kê khai)</option>
-              <option value="POS">Hóa đơn từ Máy tính tiền</option>
-            </NativeSelect>
-          </div>
-          <Button
-            onClick={handleSaveConfig}
-            disabled={savingConfig || readOnlyPreview}
-            title={
-              readOnlyPreview
-                ? "Module đang ở chế độ Beta — khóa lưu để an toàn dữ liệu"
-                : undefined
-            }
-          >
-            {savingConfig ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Save className="size-4" />
-            )}
-            Lưu toàn bộ cấu hình
-          </Button>
-          <p className="flex items-center gap-1.5 pb-2 text-xs text-muted-foreground">
-            <ShieldCheck className="size-3.5" />
-            {readOnlyPreview
-              ? "Beta — đã khóa lưu, chạy Sandbox."
-              : "Lưu cả 2 tab cùng lúc; khóa bí mật để trống = giữ nguyên."}
-          </p>
-        </div>
-
-        {/* ===== API KEY THEO GIAN HÀNG ===== */}
-        <Card className="max-w-2xl shadow-sm">
-          <CardHeader className="border-b pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <KeyRound className="size-5 text-slate-500" />
-              API Key hóa đơn theo gian hàng
-            </CardTitle>
-          </CardHeader>
-
-          <CardContent className="pt-5">
-            <p className={cn(TEXT_SUB, "mb-4")}>
-              Mỗi gian hàng dùng một API Key riêng để phát hành hóa đơn — phục
-              vụ đối soát hoa hồng theo từng shop.
-            </p>
-
-            {channelKeys.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                Shop chưa có gian hàng nào để cấu hình.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {channelKeys.map((c) => {
-                  const meta = CHANNEL_META[c.channelName];
-                  const saving = savingKeyId === c.channelId;
-                  return (
-                    <div
-                      key={c.channelId}
-                      className="flex flex-wrap items-center gap-2.5 rounded-lg border p-3"
-                    >
-                      <span className="flex min-w-40 items-center gap-2">
-                        <Store className="size-4 shrink-0 text-muted-foreground" />
-                        <span
-                          className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}
-                        >
-                          {meta.label}
-                        </span>
-                        <span className="truncate text-sm font-medium">
-                          {c.shopName}
-                        </span>
-                      </span>
-
-                      <Input
-                        type="password"
-                        className="min-w-40 flex-1"
-                        aria-label={`API Key ${shopLabel(c.channelName, c.shopName)}`}
-                        placeholder={
-                          c.hasApiKey
-                            ? `Đã lưu (${c.apiKeyMasked ?? "••••"}) — nhập để đổi`
-                            : "Chưa cấu hình API Key"
-                        }
-                        value={keyInputs[c.channelId] ?? ""}
-                        onChange={(e) =>
-                          setKeyInputs((prev) => ({
-                            ...prev,
-                            [c.channelId]: e.target.value,
-                          }))
-                        }
-                      />
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          saving ||
-                          readOnlyPreview ||
-                          !(keyInputs[c.channelId] ?? "").trim()
-                        }
-                        title={
-                          readOnlyPreview
-                            ? "Module đang ở chế độ Beta — khóa lưu"
-                            : undefined
-                        }
-                        onClick={() => handleSaveChannelKey(c.channelId)}
-                      >
-                        {saving ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Save className="size-4" />
-                        )}
-                        Lưu
-                      </Button>
-                    </div>
-                  );
-                })}
               </div>
             )}
-          </CardContent>
-        </Card>
+
+            {/* --- Box Hướng dẫn nhanh --- */}
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-5">
+              <SectionHeading
+                icon={<CircleHelp className="size-4" />}
+                tone="bg-teal-50 text-teal-600"
+                title="Hướng dẫn nhanh"
+              />
+              <ul className="mt-3 list-disc space-y-2 pl-4 text-xs leading-relaxed text-slate-600">
+                <li>
+                  <b>Mã máy tính tiền:</b> xem trên Portal MISA meInvoice
+                  (Danh mục Máy tính tiền) hoặc Tờ khai Mẫu 01/ĐKTĐ-HĐĐT đã
+                  được CQT chấp nhận.
+                </li>
+                <li>
+                  <b>Dải mã CQT:</b> cấp sau khi đăng ký máy tính tiền thành
+                  công — nút Test POS sẽ tự điền nếu MISA trả về danh mục.
+                </li>
+                <li>
+                  <b>Ký hiệu hóa đơn:</b> kê khai dạng C26TAA; máy tính tiền
+                  bắt buộc chữ thứ 4 là M (C26MAA).
+                </li>
+                <li>
+                  <a
+                    href="https://www.meinvoice.vn/tro-giup/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-teal-700 hover:underline"
+                  >
+                    Trung tâm trợ giúp MISA meInvoice
+                    <ExternalLink className="size-3" />
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </fieldset>
 
       {/* ===== MUA GÓI PHÔI HÓA ĐƠN — LUÔN MỞ ===== */}
