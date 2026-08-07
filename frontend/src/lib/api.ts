@@ -1891,13 +1891,36 @@ export function postCommandCenterChat(input: {
 // che + cờ đã-đặt. Khi lưu, để trống nghĩa là giữ nguyên khóa cũ.
 
 export interface InvoiceConfigDTO {
+  // (1) Pháp nhân & Thuế — NĐ 123/2020: hóa đơn phải mang MST + tên + địa chỉ.
+  taxCode: string; // MST: 10 số hoặc 10-3 số
+  companyName: string;
+  companyAddress: string;
+  // (2) meInvoice API
   provider: string; // MISA | VIETTEL | BKAV | CUSTOM
-  signMethod: string; // usb | hsm
   partnerCode: string;
   clientId: string;
   customApiUrl: string;
+  invoicePattern: string; // Mẫu số hóa đơn (TT 78/2021)
+  invoiceSeries: string; // Ký hiệu hóa đơn (VD "C26TAA")
   hasSecretKey: boolean;
   secretKeyMasked: string | null;
+  // (3) Chữ ký số MISA eSign
+  signMethod: string; // USB_TOKEN | ESIGN_CLOUD
+  esignClientId: string;
+  esignUsername: string;
+  certSerial: string;
+  hasEsignSecretKey: boolean;
+  esignSecretKeyMasked: string | null;
+  hasEsignPassword: boolean;
+  esignPasswordMasked: string | null;
+  // (4) Hóa đơn từ máy tính tiền (POS — HKD/bán lẻ, ký hiệu C26MXX)
+  posClientId: string;
+  posCodePrefix: string; // dải mã CQT cấp sẵn
+  posMachineId: string;
+  posSeries: string; // ký tự thứ 4 bắt buộc là M
+  hasPosSecretKey: boolean;
+  posSecretKeyMasked: string | null;
+  defaultInvoiceType: string; // STANDARD | POS
 }
 
 /** api_key riêng của một gian hàng (phục vụ đối soát hoa hồng theo shop). */
@@ -1918,19 +1941,65 @@ export function fetchInvoiceConfig() {
   return apiFetch<InvoiceConfigResponse>("/api/invoice-config");
 }
 
-/** Lưu cấu hình cấp shop. secretKey để trống = giữ nguyên khóa cũ. */
+/** Lưu cấu hình cấp shop. Các secret để trống = giữ nguyên khóa cũ. */
 export function saveInvoiceConfig(input: {
+  taxCode?: string;
+  companyName?: string;
+  companyAddress?: string;
   provider: string;
   signMethod: string;
   partnerCode?: string;
   clientId?: string;
   secretKey?: string;
   customApiUrl?: string;
+  invoicePattern?: string;
+  invoiceSeries?: string;
+  esignClientId?: string;
+  esignSecretKey?: string;
+  esignUsername?: string;
+  esignPassword?: string;
+  certSerial?: string;
+  posClientId?: string;
+  posSecretKey?: string;
+  posCodePrefix?: string;
+  posMachineId?: string;
+  posSeries?: string;
+  defaultInvoiceType?: string;
 }) {
   return apiFetch<{ config: InvoiceConfigDTO }>("/api/invoice-config", {
     method: "PUT",
     body: JSON.stringify(input),
   });
+}
+
+/** Kết quả 2 nút "Kiểm tra kết nối" (meInvoice / eSign). */
+export interface InvoiceConnectionTestResult {
+  ok: boolean;
+  /** Bộ khóa đã dùng: của shop hay env sandbox dùng chung. */
+  source?: "shop-config" | "env-sandbox";
+  message?: string;
+  error?: string;
+}
+
+export function testMeinvoiceConnection() {
+  return apiFetch<InvoiceConnectionTestResult>(
+    "/api/invoice-config/test-meinvoice",
+    { method: "POST" }
+  );
+}
+
+export function testEsignConnection() {
+  return apiFetch<InvoiceConnectionTestResult>(
+    "/api/invoice-config/test-esign",
+    { method: "POST" }
+  );
+}
+
+export function testPosConnection() {
+  return apiFetch<InvoiceConnectionTestResult>(
+    "/api/invoice-config/test-pos",
+    { method: "POST" }
+  );
 }
 
 /** Lưu api_key riêng cho một gian hàng. Để trống = giữ nguyên khóa cũ. */

@@ -1,25 +1,46 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Response } from "express";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
+import {
+  clearMisaTokenCache,
+  getMisaAccessToken,
+} from "../integrations/invoice/misa-auth";
+import {
+  clearEsignSessionCache,
+  esignLogin,
+} from "../integrations/invoice/misa-esign";
+import {
+  INVOICE_PATTERN_RE,
+  INVOICE_SERIES_RE,
+  POS_SERIES_RE,
+  TAX_CODE_RE,
+} from "../integrations/invoice/misa-einvoice";
+import { testPosConnection } from "../integrations/invoice/misa-pos";
 
 /**
  * HÓA ĐƠN ĐIỆN TỬ & CHỮ KÝ SỐ — Multi-Vendor Adapter (module đóng gói độc lập).
  *
- * Cấu hình kết nối tới các NCC hóa đơn (MISA/Viettel/VNPT/Bkav/Custom). Hai cấp:
- *   - Cấu hình MẶC ĐỊNH cấp shop (channelId = null): NCC, phương thức ký,
- *     partnerCode của Hubsell, thông tin đăng nhập chung.
- *   - `apiKey` RIÊNG theo từng gian hàng (channelId != null) — phục vụ đối soát
- *     hoa hồng theo từng shop.
+ * Cấu hình kết nối tới các NCC hóa đơn (MISA/Viettel/VNPT/Bkav/Custom), gắn
+ * theo ownerId (một chủ shop = một pháp nhân = một MST — xem chú thích model
+ * InvoiceConfig). Ba nhóm trường, khớp 3 khối trên trang Kết nối & Xuất hóa đơn:
+ *   (1) Pháp nhân & Thuế : taxCode / companyName / companyAddress — NĐ 123/2020
+ *       bắt buộc hóa đơn mang MST + tên + địa chỉ người bán.
+ *   (2) meInvoice API    : provider, clientId/secretKey, mẫu số (invoicePattern)
+ *       + ký hiệu (invoiceSeries) theo TT 78/2021 — thiếu/sai ký hiệu là NCC
+ *       từ chối cấp số.
+ *   (3) MISA eSign       : signMethod USB_TOKEN | ESIGN_CLOUD + bộ khóa ký nền
+ *       (esignClientId/esignSecretKey, esignUsername/esignPassword, certSerial).
  *
- * Trường nhạy cảm (secretKey, apiKey) KHÔNG bao giờ trả về nguyên văn — chỉ trả
- * bản CHE (••••1234) + cờ đã-đặt. Khi lưu, để trống nghĩa là GIỮ NGUYÊN giá trị
- * cũ, tránh vô tình xoá khóa khi người dùng không nhập lại.
+ * Trường nhạy cảm (secretKey, apiKey, esignSecretKey, esignPassword) KHÔNG bao
+ * giờ trả về nguyên văn — chỉ trả bản CHE (••••1234) + cờ đã-đặt. Khi lưu, để
+ * trống nghĩa là GIỮ NGUYÊN giá trị cũ, tránh vô tình xoá khóa.
  */
 
 const router = Router();
 
 const PROVIDERS = ["MISA", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
-const SIGN_METHODS = ["usb", "hsm"];
+const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
+const INVOICE_TYPES = ["STANDARD", "POS"];
 
 /** Che chuỗi bí mật, chỉ lộ 4 ký tự cuối. */
 function mask(v: string | null | undefined): string | null {
@@ -37,23 +58,68 @@ function nextSecret(incoming: unknown, current: string | null): string | null {
   return s === null ? current : s;
 }
 
-function serializeConfig(c: {
+type ShopConfig = {
+  taxCode: string | null;
+  companyName: string | null;
+  companyAddress: string | null;
   provider: string;
   signMethod: string;
   partnerCode: string | null;
   clientId: string | null;
   secretKey: string | null;
   customApiUrl: string | null;
-} | null) {
+  invoicePattern: string | null;
+  invoiceSeries: string | null;
+  esignClientId: string | null;
+  esignSecretKey: string | null;
+  esignUsername: string | null;
+  esignPassword: string | null;
+  certSerial: string | null;
+  posClientId: string | null;
+  posSecretKey: string | null;
+  posCodePrefix: string | null;
+  posMachineId: string | null;
+  posSeries: string | null;
+  defaultInvoiceType: string;
+};
+
+function serializeConfig(c: ShopConfig | null) {
   return {
+    // (1) Pháp nhân & Thuế
+    taxCode: c?.taxCode ?? "",
+    companyName: c?.companyName ?? "",
+    companyAddress: c?.companyAddress ?? "",
+    // (2) meInvoice API
     provider: c?.provider ?? "MISA",
-    signMethod: c?.signMethod ?? "usb",
     partnerCode: c?.partnerCode ?? "",
     clientId: c?.clientId ?? "",
     customApiUrl: c?.customApiUrl ?? "",
+    invoicePattern: c?.invoicePattern ?? "",
+    invoiceSeries: c?.invoiceSeries ?? "",
     hasSecretKey: Boolean(c?.secretKey),
     secretKeyMasked: mask(c?.secretKey),
+    // (3) Chữ ký số eSign
+    signMethod: c?.signMethod ?? "USB_TOKEN",
+    esignClientId: c?.esignClientId ?? "",
+    esignUsername: c?.esignUsername ?? "",
+    certSerial: c?.certSerial ?? "",
+    hasEsignSecretKey: Boolean(c?.esignSecretKey),
+    esignSecretKeyMasked: mask(c?.esignSecretKey),
+    hasEsignPassword: Boolean(c?.esignPassword),
+    esignPasswordMasked: mask(c?.esignPassword),
+    // (4) Máy tính tiền (POS)
+    posClientId: c?.posClientId ?? "",
+    posCodePrefix: c?.posCodePrefix ?? "",
+    posMachineId: c?.posMachineId ?? "",
+    posSeries: c?.posSeries ?? "",
+    hasPosSecretKey: Boolean(c?.posSecretKey),
+    posSecretKeyMasked: mask(c?.posSecretKey),
+    defaultInvoiceType: c?.defaultInvoiceType ?? "STANDARD",
   };
+}
+
+function findShopConfig(ownerId: string) {
+  return prisma.invoiceConfig.findFirst({ where: { ownerId, channelId: null } });
 }
 
 // GET /api/invoice-config — cấu hình cấp shop + api_key theo từng gian hàng.
@@ -61,7 +127,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
     const [shopConfig, channels, channelConfigs] = await Promise.all([
-      prisma.invoiceConfig.findFirst({ where: { ownerId, channelId: null } }),
+      findShopConfig(ownerId),
       prisma.channel.findMany({
         where: { userId: ownerId },
         orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
@@ -95,35 +161,114 @@ router.get("/", async (req: AuthRequest, res, next) => {
   }
 });
 
-// PUT /api/invoice-config — lưu cấu hình cấp shop.
-// Body: { provider, signMethod, partnerCode?, clientId?, secretKey?, customApiUrl? }
-router.put("/", async (req: AuthRequest, res, next) => {
+// PUT /api/invoice-config — lưu cấu hình cấp shop (cả 3 nhóm trong MỘT body;
+// các secret để trống = giữ nguyên). POST giữ làm alias cho client cũ/tài liệu.
+async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const ownerId = req.ownerId!;
-    const { provider, signMethod, partnerCode, clientId, secretKey, customApiUrl } =
-      req.body ?? {};
+    const {
+      taxCode,
+      companyName,
+      companyAddress,
+      provider,
+      signMethod,
+      partnerCode,
+      clientId,
+      secretKey,
+      customApiUrl,
+      invoicePattern,
+      invoiceSeries,
+      esignClientId,
+      esignSecretKey,
+      esignUsername,
+      esignPassword,
+      certSerial,
+      posClientId,
+      posSecretKey,
+      posCodePrefix,
+      posMachineId,
+      posSeries,
+      defaultInvoiceType,
+    } = req.body ?? {};
 
     if (typeof provider !== "string" || !PROVIDERS.includes(provider)) {
       res.status(400).json({ error: "Nhà cung cấp không hợp lệ" });
       return;
     }
     if (typeof signMethod !== "string" || !SIGN_METHODS.includes(signMethod)) {
-      res.status(400).json({ error: "Phương thức ký không hợp lệ" });
+      res.status(400).json({ error: "Phương thức ký không hợp lệ (USB_TOKEN | ESIGN_CLOUD)" });
+      return;
+    }
+    if (
+      defaultInvoiceType !== undefined &&
+      (typeof defaultInvoiceType !== "string" || !INVOICE_TYPES.includes(defaultInvoiceType))
+    ) {
+      res.status(400).json({ error: "Luồng phát hành không hợp lệ (STANDARD | POS)" });
       return;
     }
 
-    const existing = await prisma.invoiceConfig.findFirst({
-      where: { ownerId, channelId: null },
-    });
+    // ---- Validate định dạng theo TT 78/2021 (regex dùng chung misa-einvoice.ts).
+    // Chỉ validate khi CÓ nhập — cho phép lưu dở dang lúc đang cấu hình.
+    const taxCodeVal = str(taxCode);
+    if (taxCodeVal && !TAX_CODE_RE.test(taxCodeVal)) {
+      res.status(400).json({
+        error: "MST không hợp lệ — 10 số hoặc 13 số/10-3 số (VD 0101243150 hoặc 0101243150-001)",
+      });
+      return;
+    }
+    const patternVal = str(invoicePattern);
+    if (patternVal && !INVOICE_PATTERN_RE.test(patternVal)) {
+      res.status(400).json({ error: "Mẫu số không hợp lệ — 1 chữ số từ 1 đến 6 (VD 1 = HĐ GTGT)" });
+      return;
+    }
+    const seriesVal = str(invoiceSeries)?.toUpperCase() ?? null;
+    if (seriesVal && !INVOICE_SERIES_RE.test(seriesVal)) {
+      res.status(400).json({
+        error:
+          "Ký hiệu kê khai không hợp lệ — dạng C26TAA (C/K + 2 số năm + chữ loại HĐ + 2 ký tự; chữ thứ 4 không được là M — M dành cho máy tính tiền)",
+      });
+      return;
+    }
+    const posSeriesVal = str(posSeries)?.toUpperCase() ?? null;
+    if (posSeriesVal && !POS_SERIES_RE.test(posSeriesVal)) {
+      res.status(400).json({
+        error: "Ký hiệu máy tính tiền không hợp lệ — ký tự thứ 4 phải là M, dạng C26MAA",
+      });
+      return;
+    }
+
+    const existing = await findShopConfig(ownerId);
 
     const data = {
+      // (1) Pháp nhân & Thuế
+      taxCode: taxCodeVal,
+      companyName: str(companyName),
+      companyAddress: str(companyAddress),
+      // (2) meInvoice
       provider,
-      signMethod,
       partnerCode: str(partnerCode),
       clientId: str(clientId),
       // Chỉ ghi endpoint tuỳ biến khi chọn Custom, tránh giữ rác của lần chọn trước.
       customApiUrl: provider === "CUSTOM" ? str(customApiUrl) : null,
+      invoicePattern: patternVal,
+      invoiceSeries: seriesVal,
       secretKey: nextSecret(secretKey, existing?.secretKey ?? null),
+      // (3) eSign
+      signMethod,
+      esignClientId: str(esignClientId),
+      esignUsername: str(esignUsername),
+      certSerial: str(certSerial),
+      esignSecretKey: nextSecret(esignSecretKey, existing?.esignSecretKey ?? null),
+      esignPassword: nextSecret(esignPassword, existing?.esignPassword ?? null),
+      // (4) Máy tính tiền
+      posClientId: str(posClientId),
+      posCodePrefix: str(posCodePrefix),
+      posMachineId: str(posMachineId),
+      posSeries: posSeriesVal,
+      posSecretKey: nextSecret(posSecretKey, existing?.posSecretKey ?? null),
+      ...(typeof defaultInvoiceType === "string"
+        ? { defaultInvoiceType: defaultInvoiceType as "STANDARD" | "POS" }
+        : {}),
     };
 
     const saved = existing
@@ -133,6 +278,96 @@ router.put("/", async (req: AuthRequest, res, next) => {
     res.json({ config: serializeConfig(saved) });
   } catch (err) {
     next(err);
+  }
+}
+router.put("/", saveShopConfig);
+router.post("/", saveShopConfig);
+
+// ============================================================
+// KIỂM TRA KẾT NỐI — 2 nút riêng trên UI, dùng KHÓA ĐÃ LƯU của shop
+// (fallback bộ env sandbox dùng chung khi shop chưa nhập). Chỉ đăng nhập lấy
+// token — đủ chứng minh cặp khóa + tài khoản sống, không phát sinh hóa đơn.
+// ============================================================
+
+// POST /api/invoice-config/test-meinvoice
+router.post("/test-meinvoice", async (req: AuthRequest, res) => {
+  try {
+    const cfg = await findShopConfig(req.ownerId!);
+    if (cfg && cfg.provider !== "MISA") {
+      res.status(400).json({
+        ok: false,
+        error: `Đang chọn NCC ${cfg.provider} — nút này kiểm tra kết nối MISA meInvoice.`,
+      });
+      return;
+    }
+    // Xoá cache để chắc chắn đăng nhập MỚI bằng đúng bộ khóa hiện tại.
+    clearMisaTokenCache();
+    const creds =
+      cfg?.clientId && cfg?.secretKey
+        ? {
+            clientId: cfg.clientId,
+            clientSecret: cfg.secretKey,
+            taxCode: cfg.taxCode ?? undefined,
+          }
+        : undefined; // undefined = misa-auth tự đọc env sandbox
+    const token = await getMisaAccessToken(creds);
+    res.json({
+      ok: true,
+      source: creds ? "shop-config" : "env-sandbox",
+      message: `Kết nối meInvoice OK — đã lấy được Access Token (${token.length} ký tự).`,
+    });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// POST /api/invoice-config/test-esign
+router.post("/test-esign", async (req: AuthRequest, res) => {
+  try {
+    const cfg = await findShopConfig(req.ownerId!);
+    clearEsignSessionCache();
+    const session = await esignLogin({
+      clientId: cfg?.esignClientId ?? undefined,
+      clientKey: cfg?.esignSecretKey ?? undefined,
+      username: cfg?.esignUsername ?? undefined,
+      password: cfg?.esignPassword ?? undefined,
+    });
+    const usingShopKeys = Boolean(cfg?.esignClientId && cfg?.esignSecretKey);
+    res.json({
+      ok: true,
+      source: usingShopKeys ? "shop-config" : "env-sandbox",
+      userId: session.userId,
+      hasRemoteSigningToken: Boolean(session.remoteSigningAccessToken),
+      message: "Kết nối MISA eSign OK — đăng nhập lấy token thành công.",
+    });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// POST /api/invoice-config/test-pos — kiểm tra kết nối luồng MÁY TÍNH TIỀN
+// (đăng nhập bằng cặp khóa POS của shop; fallback env MISA_POS_* → meInvoice chung).
+router.post("/test-pos", async (req: AuthRequest, res) => {
+  try {
+    const cfg = await findShopConfig(req.ownerId!);
+    clearMisaTokenCache();
+    const r = await testPosConnection({
+      taxCode: cfg?.taxCode ?? null,
+      companyName: cfg?.companyName ?? null,
+      companyAddress: cfg?.companyAddress ?? null,
+      posClientId: cfg?.posClientId ?? null,
+      posSecretKey: cfg?.posSecretKey ?? null,
+      posCodePrefix: cfg?.posCodePrefix ?? null,
+      posMachineId: cfg?.posMachineId ?? null,
+      posSeries: cfg?.posSeries ?? null,
+    });
+    res.json({
+      ok: true,
+      source: r.usingShopKeys ? "shop-config" : "env-sandbox",
+      message: `Kết nối meInvoice POS OK — đã lấy được Access Token (${r.tokenLength} ký tự).`,
+    });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: (err as Error).message });
   }
 });
 

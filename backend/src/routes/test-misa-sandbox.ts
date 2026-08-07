@@ -14,6 +14,7 @@ import {
   listModifiedInputInvoices,
   syncInputInvoicesToDb,
 } from "../integrations/invoice/misa-inbot";
+import { testPosConnection } from "../integrations/invoice/misa-pos";
 
 /**
  * ĐIỂM BẮN TEST SANDBOX MISA (nội bộ) — /api/test/misa-sandbox/*
@@ -118,6 +119,27 @@ router.get("/inbot/invoices", async (req: AuthRequest, res) => {
 router.get("/inbot/invoices/:id", async (req, res) => {
   try {
     res.json({ ok: true, invoice: await getInputInvoiceDetail(req.params.id) });
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+// ---------- MISA meInvoice POS — Máy tính tiền ----------
+
+// POST /pos/auth — thử lấy token luồng POS bằng env (MISA_POS_* → MISA_CLIENT_*).
+router.post("/pos/auth", async (_req, res) => {
+  try {
+    const r = await testPosConnection({
+      taxCode: null,
+      companyName: null,
+      companyAddress: null,
+      posClientId: null,
+      posSecretKey: null,
+      posCodePrefix: null,
+      posMachineId: null,
+      posSeries: null,
+    });
+    res.json({ ok: true, source: "env-sandbox", tokenLength: r.tokenLength });
   } catch (err) {
     fail(res, err);
   }

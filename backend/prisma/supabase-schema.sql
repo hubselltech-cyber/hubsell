@@ -52,6 +52,9 @@ CREATE TYPE "TaxCalculationBase" AS ENUM ('PROFIT', 'REVENUE');
 CREATE TYPE "TaxFilterPeriod" AS ENUM ('MONTH', 'QUARTER', 'YEAR');
 
 -- CreateEnum
+CREATE TYPE "InvoiceType" AS ENUM ('STANDARD', 'POS');
+
+-- CreateEnum
 CREATE TYPE "InvoiceLogStatus" AS ENUM ('PENDING', 'ISSUED', 'CANCELLED', 'FAILED');
 
 -- CreateEnum
@@ -218,13 +221,29 @@ CREATE TABLE "InvoiceConfig" (
     "id" TEXT NOT NULL,
     "ownerId" TEXT NOT NULL,
     "channelId" TEXT,
+    "taxCode" TEXT,
+    "companyName" TEXT,
+    "companyAddress" TEXT,
     "provider" TEXT NOT NULL DEFAULT 'MISA',
-    "signMethod" TEXT NOT NULL DEFAULT 'usb',
     "partnerCode" TEXT,
     "clientId" TEXT,
     "secretKey" TEXT,
     "apiKey" TEXT,
     "customApiUrl" TEXT,
+    "invoicePattern" TEXT,
+    "invoiceSeries" TEXT,
+    "signMethod" TEXT NOT NULL DEFAULT 'USB_TOKEN',
+    "esignClientId" TEXT,
+    "esignSecretKey" TEXT,
+    "esignUsername" TEXT,
+    "esignPassword" TEXT,
+    "certSerial" TEXT,
+    "posClientId" TEXT,
+    "posSecretKey" TEXT,
+    "posCodePrefix" TEXT,
+    "posMachineId" TEXT,
+    "posSeries" TEXT,
+    "defaultInvoiceType" "InvoiceType" NOT NULL DEFAULT 'STANDARD',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 

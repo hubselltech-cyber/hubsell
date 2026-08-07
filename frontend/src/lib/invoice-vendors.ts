@@ -37,8 +37,36 @@ export function isCustomVendor(v: string): boolean {
  */
 export const HUBSELL_PARTNER_CODE = "HUBSELL-ISV-2026";
 
-/** Phương thức ký số. */
+/** Phương thức ký số (giá trị lưu DB — backend validate đúng 2 giá trị này). */
 export const SIGN_METHODS = [
-  { value: "usb", label: "Ký số qua USB Token (Thủ công)" },
-  { value: "hsm", label: "Ký số từ xa Cloud HSM (Tự động)" },
+  { value: "USB_TOKEN", label: "Ký số qua USB Token (Thủ công)" },
+  { value: "ESIGN_CLOUD", label: "MISA eSign — Ký số từ xa (Tự động)" },
 ] as const;
+
+// ============================================================
+// VALIDATE THEO TT 78/2021 — bản MIRROR của backend
+// (backend/src/integrations/invoice/misa-einvoice.ts, nguồn chuẩn). UI chặn
+// sớm để người dùng không phải chờ API MISA trả lỗi định dạng; backend vẫn
+// validate lại nên lệch nhau không gây sai dữ liệu.
+// ============================================================
+
+/** MST: 10 số (doanh nghiệp/HKD) hoặc 13 số / 10-3 số (đơn vị phụ thuộc). */
+export const TAX_CODE_RE = /^\d{10}(-?\d{3})?$/;
+
+/** MẪU SỐ hóa đơn: 1 chữ số 1-6 (1 = HĐ GTGT, 2 = HĐ bán hàng…). */
+export const INVOICE_PATTERN_RE = /^[1-6]$/;
+
+/** KÝ HIỆU KÊ KHAI: VD C26TAA — ký tự thứ 4 KHÔNG được là M (M = máy tính tiền). */
+export const INVOICE_SERIES_RE = /^[CK]\d{2}[A-LN-Z][A-Z0-9]{2}$/;
+
+/** KÝ HIỆU MÁY TÍNH TIỀN: ký tự thứ 4 BẮT BUỘC là M, VD C26MAA. */
+export const POS_SERIES_RE = /^[CK]\d{2}M[A-Z0-9]{2}$/;
+
+/** Thông điệp lỗi định dạng — dùng chung cho validate inline trên UI. */
+export const INVOICE_FIELD_HINTS = {
+  taxCode: "MST gồm 10 số, hoặc 13 số/10-3 số với đơn vị phụ thuộc (VD 0101243150-001).",
+  invoicePattern: "Mẫu số là 1 chữ số từ 1 đến 6 (VD 1 = hóa đơn GTGT).",
+  invoiceSeries:
+    "Ký hiệu dạng C26TAA: C/K + 2 số năm + chữ loại hóa đơn + 2 ký tự. Chữ thứ 4 không được là M.",
+  posSeries: "Ký hiệu máy tính tiền dạng C26MAA — ký tự thứ 4 bắt buộc là M.",
+} as const;

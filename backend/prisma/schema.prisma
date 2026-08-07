@@ -117,6 +117,17 @@ enum TaxFilterPeriod {
   YEAR    // theo năm
 }
 
+/// Hai luồng phát hành HĐĐT theo NĐ 123/2020 — quyết định tab cấu hình và bộ
+/// API MISA sẽ gọi khi xuất hóa đơn từ đơn hàng:
+///   STANDARD — hóa đơn kê khai (doanh nghiệp): meInvoice + ký số eSign từng
+///              hóa đơn, chờ CQT cấp mã.
+///   POS      — hóa đơn từ máy tính tiền (HKD/bán lẻ, ký hiệu C26MXX): CQT cấp
+///              DẢI MÃ trước, phát hành tức thì, KHÔNG ký số từng đơn.
+enum InvoiceType {
+  STANDARD
+  POS
+}
+
 /// Vòng đời một yêu cầu phát hành hóa đơn điện tử gửi sang NCC.
 enum InvoiceLogStatus {
   PENDING   // đã gửi yêu cầu, chờ NCC phát hành
@@ -464,18 +475,66 @@ model OpsCenterVisit {
 //     của gian đó (phục vụ đối soát hoa hồng theo từng shop sau này).
 
 /// Cấu hình hóa đơn điện tử của shop (và api_key riêng theo gian hàng).
+///
+/// GẮN THEO ownerId (chủ shop) chứ KHÔNG theo gian hàng: một chủ shop = một
+/// pháp nhân = một MST, dù bán trên bao nhiêu gian (NĐ 123/2020 — hóa đơn phát
+/// hành theo pháp nhân, không theo kênh bán). Nhiều pháp nhân → nhiều tài
+/// khoản Hubsell. Dòng channelId != null chỉ giữ apiKey riêng của gian.
 model InvoiceConfig {
   id        String  @id @default(cuid())
   ownerId   String
   channelId String? // NULL = cấu hình cấp shop; có giá trị = cấu hình riêng 1 gian
 
+  // ---- (1) Thông tin PHÁP NHÂN & THUẾ — bắt buộc để phát hành HĐĐT hợp lệ
+  //      theo NĐ 123/2020 (hóa đơn phải mang MST + tên + địa chỉ người bán).
+  taxCode        String? // MST người bán: 10 số hoặc 10-3 số (chi nhánh)
+  companyName    String? // tên pháp nhân ĐÚNG đăng ký kinh doanh (in lên hóa đơn)
+  companyAddress String? // địa chỉ trụ sở theo ĐKKD
+
+  // ---- (2) Kết nối NCC hóa đơn (meInvoice khi provider = MISA)
   provider     String  @default("MISA") // MISA | VIETTEL | BKAV | CUSTOM
-  signMethod   String  @default("usb") // usb (USB Token) | hsm (Cloud HSM)
-  partnerCode  String? // Mã đối tác của Hubsell với NCC — dùng cho đối soát hoa hồng
+  partnerCode  String? // Mã đại lý ISV của Hubsell với NCC (isvCode) — đối soát hoa hồng
   clientId     String? // Mã định danh (Client ID) do NCC cấp
   secretKey    String? // Khóa bảo mật — nhạy cảm, chỉ trả về dạng che khi đọc
   apiKey       String? // API key RIÊNG cho từng gian hàng — nhạy cảm, trả về che
   customApiUrl String? // Endpoint khi provider = CUSTOM
+  /// MẪU SỐ hóa đơn theo TT 78/2021 (VD "1" = HĐ GTGT) — phải khớp mẫu đã
+  /// đăng ký với CQT trên meInvoice, sai là NCC từ chối phát hành.
+  invoicePattern String?
+  /// KÝ HIỆU hóa đơn theo TT 78/2021 (VD "C26TAA") — meInvoice tra đúng ký
+  /// hiệu này để cấp số; không có/không khớp là lỗi "ký hiệu không tồn tại".
+  invoiceSeries String?
+
+  // ---- (3) Chữ ký số — USB_TOKEN (thủ công) | ESIGN_CLOUD (MISA eSign từ xa,
+  //      ký nền tự động không cần cắm USB)
+  signMethod String @default("USB_TOKEN")
+  /// Bộ khóa tích hợp MISA eSign của shop (header x-clientId / x-clientKey).
+  esignClientId  String?
+  esignSecretKey String? // nhạy cảm — chỉ trả dạng che
+  /// Tài khoản eSign để login-api lấy token ký nền.
+  esignUsername String?
+  esignPassword String? // nhạy cảm — chỉ trả dạng che
+  /// SERIAL CHỨNG THƯ SỐ dùng ký (chọn đúng cert khi tài khoản có nhiều) —
+  /// map certAlias trong yêu cầu ký Signing/hash.
+  certSerial String?
+
+  // ---- (4) meInvoice POS — HÓA ĐƠN TỪ MÁY TÍNH TIỀN (HKD/bán lẻ).
+  //      CQT cấp DẢI MÃ trước cho máy đã đăng ký → phát hành tức thì tại máy,
+  //      KHÔNG cần eSign ký từng đơn (miễn ký số lẻ theo NĐ 123 Đ.11; dữ liệu
+  //      chuyển CQT theo bảng tổng hợp). Bộ khóa API RIÊNG với meInvoice chuẩn.
+  posClientId  String?
+  posSecretKey String? // nhạy cảm — chỉ trả dạng che
+  /// Dải mã CQT cấp sẵn cho máy tính tiền.
+  posCodePrefix String?
+  /// Mã máy tính tiền đã đăng ký với CQT.
+  posMachineId String?
+  /// Ký hiệu HĐ máy tính tiền theo TT 78/2021 — ký tự thứ 4 BẮT BUỘC là M
+  /// (VD "C26MAA"); khác ký hiệu kê khai (invoiceSeries).
+  posSeries String?
+
+  /// Luồng phát hành dùng khi xuất hóa đơn từ đơn hàng (tab đang cấu hình chỉ
+  /// là giao diện — cờ này mới quyết định gọi bộ API nào).
+  defaultInvoiceType InvoiceType @default(STANDARD)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

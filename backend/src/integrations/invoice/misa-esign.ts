@@ -3,7 +3,7 @@
  *
  * Đây là dịch vụ ĐỘC LẬP với meInvoice (base URL, cặp khóa, token đều riêng).
  * Vai trò trong Hubsell: ký số hồ sơ/hóa đơn thay cho USB Token — khớp lựa
- * chọn signMethod = "hsm" trong InvoiceConfig.
+ * chọn signMethod = "ESIGN_CLOUD" trong InvoiceConfig.
  *
  * Luồng ký số từ xa chuẩn theo tài liệu Open API MISA eSign:
  *   1. POST /api/auth/api/v1/auth/login-api        (header x-clientId/x-clientKey,
@@ -65,15 +65,34 @@ export function esignConfigFromEnv():
   return { ok: true, config: values };
 }
 
-function requireConfig(): EsignConfig {
+/**
+ * Hợp nhất env + overrides theo SHOP (InvoiceConfig.esign*): trường nào shop
+ * có thì ghi đè env, còn thiếu ở CẢ HAI thì báo rõ tên env. Nút "Kiểm tra kết
+ * nối eSign" và luồng ký nền per-shop đi qua đây.
+ */
+function requireConfig(overrides?: Partial<EsignConfig>): EsignConfig {
   const r = esignConfigFromEnv();
-  if (!r.ok) {
+  const base: Partial<EsignConfig> = r.ok
+    ? r.config
+    : { apiBase: "https://esignapp.misa.vn" };
+  const merged: Partial<EsignConfig> = {
+    ...base,
+    ...Object.fromEntries(
+      Object.entries(overrides ?? {}).filter(([, v]) => typeof v === "string" && v.trim() !== "")
+    ),
+  };
+  const missing: string[] = [];
+  if (!merged.clientId) missing.push("MISA_ESIGN_CLIENT_ID");
+  if (!merged.clientKey) missing.push("MISA_ESIGN_CLIENT_KEY");
+  if (!merged.username) missing.push("MISA_ESIGN_USERNAME");
+  if (!merged.password) missing.push("MISA_ESIGN_PASSWORD");
+  if (missing.length > 0) {
     throw new Error(
-      `Chưa cấu hình đủ env MISA eSign — còn thiếu: ${r.missing.join(", ")} ` +
-        "(điền vào backend/.env theo kit sandbox MISA gửi)."
+      `Chưa cấu hình đủ MISA eSign — còn thiếu: ${missing.join(", ")} ` +
+        "(điền backend/.env theo kit sandbox, hoặc nhập ở trang Kết nối & Xuất hóa đơn)."
     );
   }
-  return r.config;
+  return merged as EsignConfig;
 }
 
 // ---------- Envelope {status, data} ----------
@@ -114,9 +133,10 @@ export interface EsignSession {
 
 let cachedSession: EsignSession | null = null;
 
-/** Đăng nhập eSign (cache theo username, làm mới sớm 60s trước hạn). */
-export async function esignLogin(): Promise<EsignSession> {
-  const cfg = requireConfig();
+/** Đăng nhập eSign (cache theo clientId+username, làm mới sớm 60s trước hạn).
+ * `overrides` = bộ khóa theo shop (InvoiceConfig) ghi đè env. */
+export async function esignLogin(overrides?: Partial<EsignConfig>): Promise<EsignSession> {
+  const cfg = requireConfig(overrides);
   const cacheKey = `${cfg.clientId}:${cfg.username}`;
   if (
     cachedSession &&

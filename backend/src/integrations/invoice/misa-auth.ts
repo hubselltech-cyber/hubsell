@@ -23,6 +23,11 @@ const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000; // MISA không trả expires_in th�
 export interface MisaAuthCredentials {
   clientId: string;
   clientSecret: string;
+  /** MST + tài khoản meInvoice — truyền theo SHOP (InvoiceConfig) sẽ ghi đè
+   * bộ env sandbox dùng chung; thiếu thì buildAuthBody fallback env. */
+  taxCode?: string;
+  username?: string;
+  password?: string;
 }
 
 interface CachedToken {
@@ -61,12 +66,15 @@ export function misaEnvCredentials(): MisaAuthCredentials | null {
  *   MISA_TAX_CODE / MISA_USERNAME / MISA_PASSWORD
  */
 function buildAuthBody(creds: MisaAuthCredentials): Record<string, string> {
+  const taxCode = creds.taxCode ?? process.env.MISA_TAX_CODE;
+  const username = creds.username ?? process.env.MISA_USERNAME;
+  const password = creds.password ?? process.env.MISA_PASSWORD;
   return {
     appid: creds.clientId,
     appsecret: creds.clientSecret,
-    ...(process.env.MISA_TAX_CODE ? { taxcode: process.env.MISA_TAX_CODE } : {}),
-    ...(process.env.MISA_USERNAME ? { username: process.env.MISA_USERNAME } : {}),
-    ...(process.env.MISA_PASSWORD ? { password: process.env.MISA_PASSWORD } : {}),
+    ...(taxCode ? { taxcode: taxCode } : {}),
+    ...(username ? { username } : {}),
+    ...(password ? { password } : {}),
   };
 }
 
