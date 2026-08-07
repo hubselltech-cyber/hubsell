@@ -290,6 +290,11 @@ export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductIn
     sku: ctx.sku,
     name: ctx.name,
     imageClass: "from-slate-600 to-slate-900",
+    // Ảnh + link + giá thật từ sàn/kho — trước đây bị vứt ở bước map này nên
+    // widget lúc nào cũng rơi về icon xám dù backend đã trả imageUrl.
+    imageUrl: ctx.imageUrl ?? null,
+    productUrl: ctx.productUrl ?? null,
+    price: ctx.price ?? null,
     material: ctx.material ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
     care: ctx.care ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
     sizeChart: ctx.sizeChart ?? [],

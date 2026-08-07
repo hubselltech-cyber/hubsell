@@ -669,41 +669,73 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     }
 
     // Ưu tiên tra theo item đính kèm hội thoại; không có thì tìm text.
-    const cp = itemId
-      ? await prisma.channelProduct.findFirst({
-          where: {
-            externalId: itemId,
-            ...(channelId ? { channelId } : {}),
-            channel: channelScope(req) as object,
-          },
-          include: { product: true, channel: true },
-        })
-      : await prisma.channelProduct.findFirst({
-          where: {
-            channel: channelScope(req) as object,
-            OR: [
-              { channelSku: { contains: query, mode: "insensitive" } },
-              { productName: { contains: query, mode: "insensitive" } },
-            ],
-          },
-          include: { product: true, channel: true },
+    // Thứ tự dò theo query: khớp CHÍNH XÁC channelSku trước, và trong mỗi bậc
+    // ưu tiên dòng ĐÃ LIÊN KẾT kho (productId != null) — gõ "TC025" phải ra
+    // đúng TC025 kèm tồn vật lý, không phải dòng biến thể mồ côi vừa sync.
+    const scope = channelScope(req) as object;
+    const cpInclude = { product: true, channel: true } as const;
+    let cp = null;
+    if (itemId) {
+      const byItem = { externalId: itemId, ...(channelId ? { channelId } : {}) };
+      cp =
+        (await prisma.channelProduct.findFirst({
+          where: { ...byItem, channel: scope, productId: { not: null } },
+          include: cpInclude,
+        })) ??
+        (await prisma.channelProduct.findFirst({
+          where: { ...byItem, channel: scope },
+          include: cpInclude,
+        }));
+    } else {
+      const exact = { channelSku: { equals: query, mode: "insensitive" as const } };
+      const fuzzy = {
+        OR: [
+          { channelSku: { contains: query, mode: "insensitive" as const } },
+          { productName: { contains: query, mode: "insensitive" as const } },
+        ],
+      };
+      for (const cond of [
+        { ...exact, productId: { not: null } },
+        exact,
+        { ...fuzzy, productId: { not: null } },
+        fuzzy,
+      ]) {
+        cp = await prisma.channelProduct.findFirst({
+          where: { channel: scope, ...cond },
+          include: cpInclude,
           orderBy: { lastSyncedAt: "desc" },
         });
+        if (cp) break;
+      }
+    }
 
-    // Không thấy trên sàn → thử thẳng kho vật lý (SKU chưa niêm yết)
-    const product =
-      cp?.product ??
-      (query
-        ? await prisma.product.findFirst({
+    // Không liên kết sẵn → thử thẳng kho vật lý: theo query của nhân viên,
+    // hoặc theo channelSku của item khách đính kèm (luồng itemId trước đây bỏ
+    // sót bước này nên tồn vật lý luôn null → UI báo 0 dù kho còn hàng).
+    let product = cp?.product ?? null;
+    if (!product) {
+      const skuGuess = query || cp?.channelSku || "";
+      if (skuGuess) {
+        product =
+          (await prisma.product.findFirst({
             where: {
               userId: req.ownerId!,
-              OR: [
-                { skuCode: { contains: query, mode: "insensitive" } },
-                { productName: { contains: query, mode: "insensitive" } },
-              ],
+              skuCode: { equals: skuGuess, mode: "insensitive" },
             },
-          })
-        : null);
+          })) ??
+          (query
+            ? await prisma.product.findFirst({
+                where: {
+                  userId: req.ownerId!,
+                  OR: [
+                    { skuCode: { contains: query, mode: "insensitive" } },
+                    { productName: { contains: query, mode: "insensitive" } },
+                  ],
+                },
+              })
+            : null);
+      }
+    }
 
     if (!cp && !product) {
       res.json({ found: false });
@@ -721,16 +753,32 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           const matched = models.filter(
             (m) => (m.model_sku?.trim() || "") === cp.channelSku
           );
-          const scope = matched.length > 0 ? matched : models;
-          channelStock = scope.reduce(
-            (sum, m) => sum + (shopeeSellerStock(m.stock_info_v2) ?? 0),
-            0
-          );
+          const stocks = (matched.length > 0 ? matched : models)
+            .map((m) => shopeeSellerStock(m.stock_info_v2))
+            .filter((s): s is number => s !== null);
+          // Không model nào đọc được tồn → trả null (không biết) thay vì 0 —
+          // số 0 giả làm widget báo "Hết hàng" trong khi sàn vẫn bán được.
+          channelStock = stocks.length > 0 ? stocks.reduce((a, b) => a + b, 0) : null;
         }
       } catch {
         channelStock = null; // token lỗi/permission — widget vẫn hiện phần còn lại
       }
     }
+
+    // Link xem/đặt hàng cho nút "Gửi thẻ sản phẩm": Shopee cần shopId + itemId;
+    // Lazada chỉ cần itemId (externalId Lazada lưu dạng "itemId-skuId").
+    let productUrl: string | null = null;
+    if (cp?.externalId) {
+      if (cp.channel.channelName === ChannelName.SHOPEE && cp.channel.externalShopId) {
+        productUrl = `https://shopee.vn/product/${cp.channel.externalShopId}/${cp.externalId}`;
+      } else if (cp.channel.channelName === ChannelName.LAZADA) {
+        productUrl = `https://www.lazada.vn/products/-i${String(cp.externalId).split("-")[0]}.html`;
+      }
+    }
+    // Giá niêm yết trên sàn ưu tiên (đúng số khách thấy); 0 = chưa sync giá.
+    const cpPrice = cp ? Number(cp.price) : 0;
+    const basePrice = product ? Number(product.sellingPrice) : 0;
+    const price = cpPrice > 0 ? cpPrice : basePrice > 0 ? basePrice : null;
 
     res.json({
       found: true,
@@ -747,6 +795,8 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
         channelName: cp?.channel.channelName ?? null,
         variantName: cp?.variantName ?? null,
         linked: product != null,
+        productUrl,
+        price,
       },
     });
   } catch (err) {

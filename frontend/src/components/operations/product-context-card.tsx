@@ -1,6 +1,7 @@
 "use client";
 
-import { Shirt, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ShoppingBag, Shirt, Sparkles, TriangleAlert } from "lucide-react";
 
 import {
   channelMeta,
@@ -9,6 +10,7 @@ import {
   type StockSource,
 } from "@/components/operations/mock-data";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -27,13 +29,23 @@ export function ProductContextCard({
   product,
   channel,
   stockSource,
+  onSendCard,
+  onLoadToCopilot,
 }: {
   product: MockProductInfo;
   /** Sàn của hội thoại đang mở — để ghi nhãn "Tồn trên sàn Shopee". */
   channel: OpsChannel;
   /** Nguồn AI đang dùng tư vấn (theo cấu hình seller) — hiện ở dòng chú thích. */
   stockSource: StockSource;
+  /** Đổ thẻ SP (tên + giá + link đặt hàng) vào ô soạn tin cho khách. */
+  onSendCard?: () => void;
+  /** Ghim SKU này làm bối cảnh CHÍNH cho AI Copilot của hội thoại. */
+  onLoadToCopilot?: () => void;
 }) {
+  // Ảnh thật lỗi (404/hotlink chặn) → rơi về icon giữ chỗ; đổi SP thì thử lại.
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => setImgError(false), [product.imageUrl]);
+  const showImage = Boolean(product.imageUrl) && !imgError;
   // Gom tồn kho thành ma trận màu × size cho bảng đọc nhanh.
   // variants đọc phòng thủ: dữ liệu thật có thể chưa đồng bộ biến thể nào.
   const variants = product.variants ?? [];
@@ -49,16 +61,26 @@ export function ProductContextCard({
 
   return (
     <div className="space-y-4 p-4">
-      {/* Ảnh giữ chỗ + tên + SKU */}
+      {/* Ảnh thật từ sàn/kho (fallback icon giữ chỗ) + tên + SKU + giá */}
       <div className="flex items-center gap-3">
-        <div
-          className={cn(
-            "flex size-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white",
-            product.imageClass
-          )}
-        >
-          <Shirt className="size-6" />
-        </div>
+        {showImage ? (
+          // eslint-disable-next-line @next/next/no-img-element -- ảnh CDN sàn (Shopee/Lazada) domain động, không đi qua next/image
+          <img
+            src={product.imageUrl!}
+            alt={product.name}
+            onError={() => setImgError(true)}
+            className="size-14 shrink-0 rounded-xl border object-cover"
+          />
+        ) : (
+          <div
+            className={cn(
+              "flex size-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white",
+              product.imageClass
+            )}
+          >
+            <Shirt className="size-6" />
+          </div>
+        )}
         <div className="min-w-0">
           <p className="text-sm font-semibold leading-snug text-slate-900">
             {product.name}
@@ -67,6 +89,11 @@ export function ProductContextCard({
             <Badge variant="outline" className="font-mono">
               {product.sku}
             </Badge>
+            {product.price != null && product.price > 0 && (
+              <span className="text-sm font-semibold text-slate-900">
+                {product.price.toLocaleString("vi-VN")}₫
+              </span>
+            )}
             {hasMismatch && (
               <Badge
                 variant="outline"
@@ -79,6 +106,30 @@ export function ProductContextCard({
           </div>
         </div>
       </div>
+
+      {/* Hành động CSKH — khối riêng full-width dưới tên SP, không chen vào
+          ma trận tồn: gửi thẻ SP cho khách / ghim SKU làm bối cảnh AI */}
+      {(onSendCard || onLoadToCopilot) && (
+        <div className="space-y-2">
+          {onSendCard && (
+            <Button size="sm" className="w-full" onClick={onSendCard}>
+              <ShoppingBag className="size-4" />
+              Gửi thẻ sản phẩm
+            </Button>
+          )}
+          {onLoadToCopilot && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full border-violet-300 text-violet-700 hover:bg-violet-100 hover:text-violet-800"
+              onClick={onLoadToCopilot}
+            >
+              <Sparkles className="size-4" />
+              Nạp vào AI Copilot
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Dòng so sánh tổng 2 nguồn tồn */}
       <p className="text-sm">

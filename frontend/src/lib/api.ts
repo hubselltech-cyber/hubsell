@@ -2299,6 +2299,10 @@ export interface OpsProductContextDTO {
   channelName: ChannelName | null;
   variantName: string | null;
   linked: boolean;
+  /** Link xem/đặt hàng trên sàn — nguồn cho nút "Gửi thẻ sản phẩm". */
+  productUrl: string | null;
+  /** Giá niêm yết (VND) — ưu tiên giá trên sàn, null khi chưa sync giá. */
+  price: number | null;
 }
 
 /** Trạng thái từng gian sau một lượt quét inbox — kể cả gian thành công 0 hội thoại. */

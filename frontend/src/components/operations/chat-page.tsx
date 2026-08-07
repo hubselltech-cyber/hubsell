@@ -96,6 +96,30 @@ interface ConvFlags {
  * dd/MM/yy. Không giấu năm nữa — hội thoại năm ngoái từng hiện "10/8" khiến
  * người dùng tưởng ngày sai/tương lai.
  */
+/**
+ * Soạn nội dung "thẻ sản phẩm" gửi khách dạng TEXT + LINK (v1): sendOpsMessage
+ * hiện chỉ gửi text và Lazada không có API card tương đương payload ITEM của
+ * Shopee — text chạy đồng nhất 2 sàn, CSKH còn sửa được trước khi Enter.
+ * Nâng cấp gửi payload ITEM cho riêng Shopee nằm trong lộ trình.
+ */
+function buildProductCardMessage(p: MockProductInfo, channelLabel: string): string {
+  const lines = [`🛍️ ${p.name} (mã ${p.sku})`];
+  if (p.price != null && p.price > 0)
+    lines.push(`💰 Giá: ${p.price.toLocaleString("vi-VN")}đ`);
+  const inStock = (p.variants ?? []).filter((v) => v.channelStock > 0);
+  // Dòng gộp "Tổng tồn / —" của dữ liệu thật v1 không phải màu/size thật — lọc ra
+  const colors = [...new Set(inStock.map((v) => v.color))].filter((c) => c !== "Tổng tồn");
+  const sizes = [...new Set(inStock.map((v) => v.size))].filter((s) => s !== "—");
+  if (colors.length > 0) lines.push(`🎨 Màu còn hàng: ${colors.join(", ")}`);
+  if (sizes.length > 0) lines.push(`📏 Size còn hàng: ${sizes.join(", ")}`);
+  lines.push(
+    p.productUrl
+      ? `👉 Bạn xem & đặt hàng trên ${channelLabel} tại: ${p.productUrl}`
+      : `👉 Bạn nhắn shop mã ${p.sku}, shop lên đơn giúp mình ngay nha!`
+  );
+  return lines.join("\n");
+}
+
 function fmtTime(ms: number | null): string {
   if (!ms) return "";
   const d = new Date(ms);
@@ -350,16 +374,37 @@ export function OperationsChatPage() {
     }
   }
 
+  // ── Ghim SKU làm bối cảnh CHÍNH cho AI Copilot (nút ✨ trên widget Cột 3)
+  // — thắng sản phẩm suy ra từ hội thoại; đổi hội thoại là bỏ ghim. ──
+  const [copilotPinned, setCopilotPinned] = useState<MockProductInfo | null>(null);
+  useEffect(() => setCopilotPinned(null), [activeRealId, activeDemoId]);
+
   // ── Hợp nhất dữ liệu cho phần render ──
   const isReal = mode === "real";
-  const product: MockProductInfo | undefined = isReal
-    ? realProduct ?? undefined
-    : activeDemo.productSku
-      ? MOCK_PRODUCTS[activeDemo.productSku]
-      : undefined;
+  const product: MockProductInfo | undefined =
+    copilotPinned ??
+    (isReal
+      ? realProduct ?? undefined
+      : activeDemo.productSku
+        ? MOCK_PRODUCTS[activeDemo.productSku]
+        : undefined);
   const activeChannel: OpsChannel = isReal
     ? (activeReal?.channelName ?? "SHOPEE")
     : activeDemo.channel;
+
+  /** Đổ thẻ SP vào ô soạn tin — CSKH xem lại rồi Enter là gửi. */
+  function handleSendProductCard() {
+    if (!product) return;
+    setDraft(buildProductCardMessage(product, channelMeta(activeChannel).label));
+    toast.success("Đã đổ thẻ sản phẩm vào ô soạn tin — kiểm tra rồi Enter để gửi.");
+  }
+
+  /** Ghim SP đang xem làm bối cảnh chính cho AI Copilot. */
+  function handleLoadToCopilot() {
+    if (!product) return;
+    setCopilotPinned(product);
+    toast.success(`✨ AI Copilot sẽ tư vấn theo ${product.sku} trong hội thoại này.`);
+  }
 
   const suggestion = useMemo(() => {
     // Bọc TOÀN BỘ đường sinh gợi ý: một payload dị (text undefined, chart
@@ -741,6 +786,8 @@ export function OperationsChatPage() {
                   product={product}
                   channel={activeChannel}
                   stockSource={MOCK_STOCK_SOURCE_PREFERENCE}
+                  onSendCard={handleSendProductCard}
+                  onLoadToCopilot={handleLoadToCopilot}
                 />
               </div>
             )}
@@ -829,6 +876,14 @@ export function OperationsChatPage() {
                     <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
                       AI Copilot gợi ý
                     </p>
+                    {copilotPinned && (
+                      <Badge
+                        variant="outline"
+                        className="border-violet-300 bg-violet-100 font-mono text-violet-700"
+                      >
+                        📌 {copilotPinned.sku}
+                      </Badge>
+                    )}
                     {suggestion.intent !== "GENERAL" && (
                       <Badge
                         variant="outline"
@@ -909,6 +964,8 @@ export function OperationsChatPage() {
                 product={product}
                 channel={activeChannel}
                 stockSource={MOCK_STOCK_SOURCE_PREFERENCE}
+                onSendCard={handleSendProductCard}
+                onLoadToCopilot={handleLoadToCopilot}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">

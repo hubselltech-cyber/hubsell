@@ -318,8 +318,14 @@ export const MOCK_STOCK_SOURCE_PREFERENCE: StockSource = "CHANNEL";
 export interface MockProductInfo {
   sku: string;
   name: string;
-  /** Class gradient cho ô ảnh giữ chỗ (chưa nối ảnh thật từ sàn). */
+  /** Class gradient cho ô ảnh giữ chỗ (khi KHÔNG có ảnh thật từ sàn/kho). */
   imageClass: string;
+  /** Ảnh thật từ sàn/kho — có URL thì widget render <img>, không thì icon. */
+  imageUrl?: string | null;
+  /** Link xem/đặt hàng trên sàn — nguồn cho nút "Gửi thẻ sản phẩm". */
+  productUrl?: string | null;
+  /** Giá niêm yết (VND) hiện trên thẻ sản phẩm gửi khách. */
+  price?: number | null;
   material: string;
   /** Hướng dẫn bảo quản — AI hay cần khi khách hỏi cách giặt/vệ sinh. */
   care: string;
