@@ -13,7 +13,13 @@ import {
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
-import { parseDateRange, type DateRangeFilter } from "../date-range";
+import {
+  businessDayStart,
+  dateKeyLabel,
+  parseDateRange,
+  toBusinessDateKey,
+  type DateRangeFilter,
+} from "../date-range";
 import {
   channelScope,
   readChannelId,
@@ -115,11 +121,8 @@ function pct(amount: number, total: number): number {
   return Math.round((amount / total) * 10000) / 100;
 }
 
-// Đổi Date → "yyyy-mm-dd"
-function toDateKey(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+// Bucket theo NGÀY GIỜ VN — toBusinessDateKey/businessDayStart/dateKeyLabel
+// import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
 // GET /api/finance/orders-analysis — quét đơn Đã giao tìm ĐƠN LỖ.
 // NGUỒN SỐ: computePnlRow (SSOT) — Lợi nhuận đơn = Doanh thu thực tế
@@ -2005,7 +2008,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       totalRevenue += r.revenueGross;
       totalCost += r.costSnapshot;
       totalPlatformFee += fee;
-      const key = toDateKey(r.createdAt);
+      const key = toBusinessDateKey(r.createdAt);
       revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + r.revenueGross);
       // Chi phí trong ngày gồm giá vốn + phí sàn của đơn
       cogsByDay.set(key, (cogsByDay.get(key) ?? 0) + r.costSnapshot + fee);
@@ -2023,7 +2026,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       totalOperatingExpense += amt;
       if (e.type === ExpenseType.FIXED) fixedExpense += amt;
       else variableExpense += amt;
-      const key = toDateKey(e.expenseDate);
+      const key = toBusinessDateKey(e.expenseDate);
       expenseByDay.set(key, (expenseByDay.get(key) ?? 0) + amt);
     }
 
@@ -2054,17 +2057,16 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // méo cơ cấu (có kỳ thuế chiếm >90% "chi phí"). Nó thành DÒNG KHẤU TRỪ
     // cuối cột Lợi nhuận: LN trước thuế − Thuế dự phòng = LN ròng (chuẩn P&L).
 
-    // Chuỗi 14 ngày: Doanh thu vs Tổng chi phí (giá vốn + chi phí vận hành phát sinh trong ngày)
+    // Chuỗi 14 ngày: Doanh thu vs Tổng chi phí (giá vốn + chi phí vận hành phát
+    // sinh trong ngày) — mốc "hôm nay" và nhãn ngày đều theo GIỜ VN.
     const days = 14;
-    const today = new Date();
+    const todayStart = businessDayStart(new Date());
     const series: { date: string; label: string; revenue: number; cost: number }[] = [];
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const key = toDateKey(d);
+      const key = toBusinessDateKey(new Date(todayStart.getTime() - i * 86_400_000));
       series.push({
         date: key,
-        label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: dateKeyLabel(key),
         revenue: revenueByDay.get(key) ?? 0,
         cost: (cogsByDay.get(key) ?? 0) + (expenseByDay.get(key) ?? 0),
       });

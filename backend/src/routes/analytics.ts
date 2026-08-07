@@ -2,7 +2,12 @@ import { Router } from "express";
 import { ReturnStatus, ShippingStatus, TransactionDirection } from "@prisma/client";
 import { prisma } from "../prisma";
 import { canSeeFinancials, type AuthRequest } from "../auth";
-import { parseDateRange } from "../date-range";
+import {
+  businessDayStart,
+  dateKeyLabel,
+  parseDateRange,
+  toBusinessDateKey,
+} from "../date-range";
 import { channelScope, hasChannelFilter } from "../channel-filter";
 // NGUỒN SỐ GỐC dùng chung (SSOT): mọi con số tiền của Tổng quan là SUM các
 // trường computePnlRow — không tự tính totalAmount/InventoryLog riêng nữa
@@ -19,13 +24,8 @@ const router = Router();
 const RETURNING_IN = { in: [ReturnStatus.AWAITING, ReturnStatus.DAMAGED] };
 const RETURNING_SET = new Set<ReturnStatus>(RETURNING_IN.in);
 
-// Đổi Date → chuỗi "yyyy-mm-dd" theo giờ máy chủ
-function toDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// Bucket theo NGÀY GIỜ VN — toBusinessDateKey/businessDayStart/dateKeyLabel
+// import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
 // GET /api/analytics — Báo cáo kinh doanh REALTIME cho trang Tổng quan.
 // ADMIN và SALES vào được, WAREHOUSE thì không.
@@ -135,7 +135,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const MAX_POINTS = 90;
     const revenueMap = new Map<string, number>();
     for (const r of activeRows) {
-      const key = toDateKey(r.createdAt);
+      const key = toBusinessDateKey(r.createdAt);
       revenueMap.set(key, (revenueMap.get(key) ?? 0) + r.revenueGross);
     }
 
@@ -150,28 +150,24 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     if (seesFinancials) {
       for (const r of activeRows) {
-        if (r.costSnapshot) addCost(toDateKey(r.createdAt), r.costSnapshot);
+        if (r.costSnapshot) addCost(toBusinessDateKey(r.createdAt), r.costSnapshot);
       }
     }
     for (const e of expenses) {
-      addCost(toDateKey(e.expenseDate), Number(e.amount));
+      addCost(toBusinessDateKey(e.expenseDate), Number(e.amount));
     }
 
-    const chartEnd = range ? new Date(range.lte) : new Date();
-    chartEnd.setHours(0, 0, 0, 0);
-    let chartStart: Date;
-    if (range) {
-      chartStart = new Date(range.gte);
-      chartStart.setHours(0, 0, 0, 0);
-    } else {
-      chartStart = new Date(chartEnd);
-      chartStart.setDate(chartEnd.getDate() - 13);
-    }
+    // Mốc đầu/cuối trục ngày đều là 00:00 GIỜ VN (businessDayStart) — không
+    // dùng setHours theo giờ máy chủ.
+    const DAY_MS = 86_400_000;
+    const chartEnd = businessDayStart(range ? range.lte : new Date());
+    let chartStart = range
+      ? businessDayStart(range.gte)
+      : new Date(chartEnd.getTime() - 13 * DAY_MS);
     const spanDays =
-      Math.round((chartEnd.getTime() - chartStart.getTime()) / 86_400_000) + 1;
+      Math.round((chartEnd.getTime() - chartStart.getTime()) / DAY_MS) + 1;
     if (spanDays > MAX_POINTS) {
-      chartStart = new Date(chartEnd);
-      chartStart.setDate(chartEnd.getDate() - (MAX_POINTS - 1));
+      chartStart = new Date(chartEnd.getTime() - (MAX_POINTS - 1) * DAY_MS);
     }
 
     const revenueByDay: {
@@ -180,15 +176,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
       revenue: number;
       cost: number;
     }[] = [];
-    for (
-      const d = new Date(chartStart);
-      d <= chartEnd;
-      d.setDate(d.getDate() + 1)
-    ) {
-      const key = toDateKey(d);
+    for (let t = chartStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
+      const key = toBusinessDateKey(new Date(t));
       revenueByDay.push({
         date: key,
-        label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: dateKeyLabel(key),
         revenue: revenueMap.get(key) ?? 0,
         cost: costMap.get(key) ?? 0,
       });

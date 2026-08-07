@@ -5,32 +5,44 @@
  * nhận cùng một cặp query param `?from=yyyy-mm-dd&to=yyyy-mm-dd`, nên frontend
  * chỉ cần một component chọn ngày duy nhất cho tất cả các trang.
  *
- * Quy ước: `from` tính từ 00:00:00.000 và `to` tính đến 23:59:59.999 theo giờ
- * máy chủ — người dùng chọn "01/07 đến 15/07" thì đơn lúc 15/07 20:30 vẫn phải
- * được tính, nếu cắt ở 00:00 sẽ mất trọn ngày cuối.
+ * ⚠️ MÚI GIỜ NGHIỆP VỤ CỐ ĐỊNH UTC+7 (Việt Nam) — TUYỆT ĐỐI không dùng giờ
+ * máy chủ để cắt ngày: Render chạy UTC nên "hôm nay" từng bắt đầu lúc 7h sáng
+ * VN, mọi đơn phát sinh 0h–7h bị dạt về ngày hôm trước trên mọi báo cáo (bug
+ * thật 07/08/2026 — đơn sáng sớm có trong Lãi/Lỗ nhưng "Hôm nay" đếm 0).
+ * Ghim +7 thì local dev (máy VN) và Render ra cùng một con số.
+ *
+ * Quy ước: `from` tính từ 00:00:00.000 và `to` tính đến 23:59:59.999 theo
+ * GIỜ VIỆT NAM.
  */
+
+/** Múi giờ nghiệp vụ của shop (VN, UTC+7) tính bằng mili giây. */
+export const BUSINESS_TZ_OFFSET_MS = 7 * 3_600_000;
+
+const DAY_MS = 86_400_000;
 
 export interface DateRangeFilter {
   gte: Date;
   lte: Date;
 }
 
-/** Chuỗi "yyyy-mm-dd" → Date đầu ngày (giờ máy chủ). Sai định dạng → null. */
+/** Chuỗi "yyyy-mm-dd" → Date 00:00 NGÀY ĐÓ GIỜ VN. Sai định dạng → null. */
 function parseDayStart(value: unknown): Date | null {
   if (typeof value !== "string") return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   if (!m) return null;
   const [, y, mo, d] = m;
-  const date = new Date(Number(y), Number(mo) - 1, Number(d), 0, 0, 0, 0);
+  const utcMidnight = Date.UTC(Number(y), Number(mo) - 1, Number(d));
   // Chặn ngày không tồn tại kiểu 2026-02-31 (JS tự nhảy sang tháng sau)
+  const probe = new Date(utcMidnight);
   if (
-    date.getFullYear() !== Number(y) ||
-    date.getMonth() !== Number(mo) - 1 ||
-    date.getDate() !== Number(d)
+    probe.getUTCFullYear() !== Number(y) ||
+    probe.getUTCMonth() !== Number(mo) - 1 ||
+    probe.getUTCDate() !== Number(d)
   ) {
     return null;
   }
-  return date;
+  // 00:00 giờ VN = 17:00 UTC ngày hôm trước
+  return new Date(utcMidnight - BUSINESS_TZ_OFFSET_MS);
 }
 
 /**
@@ -49,8 +61,29 @@ export function parseDateRange(query: {
   // Người dùng lỡ chọn ngược (từ 15/07 đến 01/07) → tự đảo lại thay vì trả rỗng
   const [start, end] = from <= to ? [from, to] : [to, from];
 
-  const lte = new Date(end);
-  lte.setHours(23, 59, 59, 999);
+  // Hết ngày `to` giờ VN = đầu ngày + 24h − 1ms (KHÔNG setHours — giờ máy chủ)
+  return { gte: start, lte: new Date(end.getTime() + DAY_MS - 1) };
+}
 
-  return { gte: start, lte };
+/**
+ * Date → chuỗi "yyyy-mm-dd" theo NGÀY GIỜ VN — nguồn duy nhất để bucket
+ * doanh thu/chi phí theo ngày trên biểu đồ (analytics.ts + finance.ts).
+ */
+export function toBusinessDateKey(d: Date): string {
+  const t = new Date(d.getTime() + BUSINESS_TZ_OFFSET_MS);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`;
+}
+
+/** Đầu ngày (00:00 giờ VN) chứa thời điểm `d` — thay cho setHours(0,0,0,0). */
+export function businessDayStart(d: Date): Date {
+  return new Date(
+    Math.floor((d.getTime() + BUSINESS_TZ_OFFSET_MS) / DAY_MS) * DAY_MS -
+      BUSINESS_TZ_OFFSET_MS
+  );
+}
+
+/** "yyyy-mm-dd" → nhãn "dd/mm" cho trục X biểu đồ. */
+export function dateKeyLabel(key: string): string {
+  return `${key.slice(8, 10)}/${key.slice(5, 7)}`;
 }
