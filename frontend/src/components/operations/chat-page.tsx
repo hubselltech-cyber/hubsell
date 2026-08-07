@@ -8,11 +8,20 @@ import {
   Loader2,
   Package,
   PackageSearch,
+  Pin,
   Search,
-  SendHorizontal,
   Sparkles,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
+
+import { ChatInput } from "@/components/operations/chat/chat-input";
+import {
+  ConversationList,
+  type ChatChannelFilter,
+  type ChatStatusFilter,
+  type ConversationItemView,
+} from "@/components/operations/chat/conversation-list";
 
 import {
   buildAiSuggestion,
@@ -70,6 +79,18 @@ type ChatMode = "loading" | "real" | "demo";
 /** Khoá localStorage nhớ trạng thái nút Auto trả lời giữa các phiên. */
 const AUTO_REPLY_KEY = "hubsell_ops_chat_autoreply";
 
+/**
+ * Khoá localStorage lưu Ghim/Theo dõi từng hội thoại (User Preference cục bộ).
+ * Khoá phần tử = id hội thoại "channelId:externalId" — ổn định giữa các lần
+ * tải nên ghim hôm nay mai vẫn còn; khi có bảng cấu hình user ở DB thì dời
+ * lên server để dùng chung nhiều máy.
+ */
+const FLAGS_KEY = "hubsell_ops_chat_flags_v1";
+interface ConvFlags {
+  pinned?: boolean;
+  starred?: boolean;
+}
+
 /** Mốc thời gian hiển thị gọn: hôm nay → HH:mm, khác ngày → dd/MM. */
 function fmtTime(ms: number | null): string {
   if (!ms) return "";
@@ -109,6 +130,34 @@ export function OperationsChatPage() {
   const [sending, setSending] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [channelStats, setChannelStats] = useState<OpsChannelStat[]>([]);
+
+  // ── Bộ lọc danh sách hội thoại + tìm kiếm ──
+  const [searchText, setSearchText] = useState("");
+  const [chatChannelFilter, setChatChannelFilter] = useState<ChatChannelFilter>("ALL");
+  const [chatStatusFilter, setChatStatusFilter] = useState<ChatStatusFilter>("ALL");
+
+  // ── Ghim / Theo dõi từng hội thoại (lưu localStorage) ──
+  const [convFlags, setConvFlags] = useState<Record<string, ConvFlags>>({});
+  useEffect(() => {
+    try {
+      setConvFlags(JSON.parse(localStorage.getItem(FLAGS_KEY) ?? "{}"));
+    } catch {
+      // dữ liệu hỏng → coi như chưa ghim gì
+    }
+  }, []);
+  function toggleFlag(key: string, field: keyof ConvFlags) {
+    setConvFlags((prev) => {
+      const next = {
+        ...prev,
+        [key]: { ...prev[key], [field]: !prev[key]?.[field] },
+      };
+      localStorage.setItem(FLAGS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  // ── Tự cuộn xuống tin mới nhất khi đổi hội thoại / có tin mới / gợi ý dài ──
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ── AUTO TRẢ LỜI TIN MỚI ──
   // Bật là hệ thống tự gửi câu xác nhận đã nhận tin cho hội thoại có tin mới
@@ -421,27 +470,69 @@ export function OperationsChatPage() {
   }
 
   // ── View model danh sách hội thoại (chung 2 chế độ) ──
-  const convItems = isReal
-    ? realConvs.map((c) => ({
-        key: c.id,
-        customer: c.customer || "Khách",
-        channel: c.channelName as OpsChannel,
-        lastMessage: typeof c.lastMessage === "string" ? c.lastMessage : "",
-        time: fmtTime(c.lastAt),
-        unread: Number(c.unread) || 0,
-        active: c.id === activeRealId,
-        select: () => setActiveRealId(c.id),
-      }))
-    : demoConvs.map((c) => ({
-        key: c.id,
-        customer: c.customer,
-        channel: c.channel,
-        lastMessage: c.lastMessage,
-        time: c.time,
-        unread: c.unread,
-        active: c.id === activeDemoId,
-        select: () => setActiveDemoId(c.id),
-      }));
+  // needsReply (nghiệp vụ "Chưa trả lời"): tin CUỐI CÙNG là của KHÁCH → ca này
+  // đang chờ shop. Với hội thoại thật chưa tải tin nhắn thì dùng unread > 0
+  // (sàn báo có tin chưa đọc = chắc chắn khách vừa nhắn).
+  const rawConvItems: ConversationItemView[] = isReal
+    ? realConvs.map((c) => {
+        const msgs = realMessages[c.id];
+        const lastFromCustomer =
+          msgs && msgs.length > 0 ? !msgs[msgs.length - 1].fromShop : false;
+        const flags = convFlags[c.id] ?? {};
+        return {
+          key: c.id,
+          customer: c.customer || "Khách",
+          channel: c.channelName,
+          lastMessage: typeof c.lastMessage === "string" ? c.lastMessage : "",
+          time: fmtTime(c.lastAt),
+          unread: Number(c.unread) || 0,
+          active: c.id === activeRealId,
+          pinned: flags.pinned === true,
+          starred: flags.starred === true,
+          needsReply: (Number(c.unread) || 0) > 0 || lastFromCustomer,
+          select: () => setActiveRealId(c.id),
+          togglePin: () => toggleFlag(c.id, "pinned"),
+          toggleStar: () => toggleFlag(c.id, "starred"),
+        };
+      })
+    : demoConvs.map((c) => {
+        const flags = convFlags[c.id] ?? {};
+        const last = c.messages[c.messages.length - 1];
+        return {
+          key: c.id,
+          customer: c.customer,
+          channel: c.channel,
+          lastMessage: c.lastMessage,
+          time: c.time,
+          unread: c.unread,
+          active: c.id === activeDemoId,
+          pinned: flags.pinned === true,
+          starred: flags.starred === true,
+          needsReply: last ? last.from === "CUSTOMER" : false,
+          select: () => setActiveDemoId(c.id),
+          togglePin: () => toggleFlag(c.id, "pinned"),
+          toggleStar: () => toggleFlag(c.id, "starred"),
+        };
+      });
+
+  // Lọc (sàn → trạng thái → tìm kiếm) rồi GHIM LÊN ĐẦU — sort ổn định nên
+  // trong từng nhóm vẫn giữ thứ tự tin mới nhất trước
+  const q = searchText.trim().toLowerCase();
+  const convItems = rawConvItems
+    .filter(
+      (c) =>
+        (chatChannelFilter === "ALL" || c.channel === chatChannelFilter) &&
+        (chatStatusFilter === "ALL" ||
+          (chatStatusFilter === "UNREPLIED"
+            ? c.needsReply
+            : chatStatusFilter === "REPLIED"
+              ? !c.needsReply
+              : c.pinned || c.starred)) &&
+        (q === "" ||
+          c.customer.toLowerCase().includes(q) ||
+          c.lastMessage.toLowerCase().includes(q))
+    )
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned));
 
   // ── View model tin nhắn của hội thoại đang mở ──
   const messageItems = isReal
@@ -462,6 +553,15 @@ export function OperationsChatPage() {
 
   const headerCustomer = isReal ? activeReal?.customer ?? "" : activeDemo.customer;
   const headerShop = isReal ? activeReal?.shopName ?? "" : activeDemo.shop;
+  const activeKey = isReal ? activeReal?.id ?? null : activeDemoId;
+  const activeFlags = (activeKey && convFlags[activeKey]) || {};
+
+  // Khung chat luôn đậu ở tin mới nhất: đổi hội thoại, có tin mới (kể cả từ
+  // polling/auto-reply) là cuộn xuống đáy — scrollIntoView trên mốc cuối,
+  // KHÔNG scroll cả trang.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messageItems.length, activeRealId, activeDemoId]);
 
   if (mode === "loading") {
     return (
@@ -539,51 +639,22 @@ export function OperationsChatPage() {
       {/* Chiều cao cố định kiểu app chat: các cột tự cuộn bên trong. */}
       <Card className="overflow-hidden py-0">
         <div className="grid min-h-[560px] lg:h-[calc(100vh-21rem)] lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_330px]">
-          {/* ----- CỘT TRÁI: DANH SÁCH HỘI THOẠI ----- */}
-          <div className="flex flex-col border-b lg:border-b-0 lg:border-r">
-            <div className="border-b p-3">
-              <Input placeholder="Tìm khách hàng, mã đơn…" aria-label="Tìm hội thoại" />
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {convItems.map((c) => (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={c.select}
-                  className={cn(
-                    "flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0",
-                    c.active ? "bg-muted" : "hover:bg-muted/50"
-                  )}
-                >
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
-                    {(c.customer || "?").charAt(0)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-slate-900">
-                        {c.customer}
-                      </span>
-                      <span className={cn(TEXT_SUB, "ml-auto shrink-0")}>{c.time}</span>
-                    </div>
-                    <p className="mt-0.5 truncate text-sm text-slate-600">{c.lastMessage}</p>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <Badge variant="outline" className={channelMeta(c.channel).badgeClass}>
-                        {channelMeta(c.channel).label}
-                      </Badge>
-                      {c.unread > 0 && (
-                        <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-red-500 text-[11px] font-semibold text-white tabular-nums">
-                          {c.unread}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* ----- CỘT TRÁI: DANH SÁCH HỘI THOẠI (lọc + ghim trong component) ----- */}
+          <ConversationList
+            items={convItems}
+            search={searchText}
+            onSearch={setSearchText}
+            channelFilter={chatChannelFilter}
+            onChannelFilter={setChatChannelFilter}
+            statusFilter={chatStatusFilter}
+            onStatusFilter={setChatStatusFilter}
+          />
 
-          {/* ----- CỘT GIỮA: KHUNG CHAT + AI COPILOT ----- */}
-          <div className="flex min-w-0 flex-col">
+          {/* ----- CỘT GIỮA: KHUNG CHAT + AI COPILOT -----
+              min-h-0 BẮT BUỘC: thiếu nó, hội thoại dài làm vùng tin nhắn nở
+              quá cột và ĐẨY Copilot + ô soạn tin ra khỏi vùng nhìn (bug khung
+              trống từng gặp với dữ liệu thật). */}
+          <div className="flex min-h-0 min-w-0 flex-col">
             {/* Header hội thoại */}
             <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
@@ -595,12 +666,49 @@ export function OperationsChatPage() {
                   {channelMeta(activeChannel).label} · {headerShop}
                 </p>
               </div>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex items-center gap-1.5">
                 {!isReal && activeDemo.orderCode && (
                   <Badge variant="outline" className="gap-1">
                     <Package className="size-3" />
                     Đơn {activeDemo.orderCode}
                   </Badge>
+                )}
+                {/* Ghim / Theo dõi hội thoại đang mở */}
+                {activeKey && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={activeFlags.pinned ? "Bỏ ghim hội thoại" : "Ghim hội thoại"}
+                      title={activeFlags.pinned ? "Bỏ ghim" : "Ghim lên đầu danh sách"}
+                      onClick={() => toggleFlag(activeKey, "pinned")}
+                    >
+                      <Pin
+                        className={cn(
+                          "size-4",
+                          activeFlags.pinned ? "fill-primary text-primary" : "text-slate-400"
+                        )}
+                      />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={
+                        activeFlags.starred ? "Bỏ theo dõi hội thoại" : "Theo dõi hội thoại"
+                      }
+                      title={activeFlags.starred ? "Bỏ theo dõi" : "Đánh dấu cần theo dõi"}
+                      onClick={() => toggleFlag(activeKey, "starred")}
+                    >
+                      <Star
+                        className={cn(
+                          "size-4",
+                          activeFlags.starred
+                            ? "fill-amber-400 text-amber-400"
+                            : "text-slate-400"
+                        )}
+                      />
+                    </Button>
+                  </>
                 )}
                 {product && (
                   <Button
@@ -630,8 +738,9 @@ export function OperationsChatPage() {
               </div>
             )}
 
-            {/* Luồng tin nhắn */}
-            <div className="flex-1 space-y-3 overflow-y-auto bg-muted/30 p-4">
+            {/* Luồng tin nhắn — min-h-0 để hội thoại dài CUỘN trong khung
+                thay vì đẩy Copilot + ô soạn tin ra ngoài */}
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/30 p-4">
               {loadingMessages && (
                 <div className="flex justify-center py-6">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -680,6 +789,8 @@ export function OperationsChatPage() {
                   </div>
                 </div>
               ))}
+              {/* Mốc cuộn — luôn là phần tử cuối để scrollIntoView đậu đúng đáy */}
+              <div ref={messagesEndRef} aria-hidden />
             </div>
 
             {/* Thanh giả lập khách nhắn — CHỈ demo */}
@@ -748,24 +859,19 @@ export function OperationsChatPage() {
               </div>
             </div>
 
-            {/* Ô soạn tin */}
-            <div className="flex items-center gap-2 border-t p-3">
-              <Input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Nhập tin nhắn trả lời khách…"
-                aria-label="Soạn tin nhắn"
-                disabled={sending}
-              />
-              <Button size="icon" aria-label="Gửi tin nhắn" onClick={handleSend} disabled={sending}>
-                {sending ? <Loader2 className="size-4 animate-spin" /> : <SendHorizontal className="size-4" />}
-              </Button>
-            </div>
+            {/* Khung soạn tin — Enter gửi, Shift+Enter xuống dòng, nút Dùng
+                gợi ý AI đổ câu Copilot vào ô để sửa trước khi gửi */}
+            <ChatInput
+              value={draft}
+              onChange={setDraft}
+              onSend={handleSend}
+              onUseSuggestion={() => setDraft(suggestion.text)}
+              sending={sending}
+            />
           </div>
 
           {/* ----- CỘT PHẢI: PRODUCT CONTEXT CARD (chỉ xl trở lên) ----- */}
-          <div className="hidden flex-col overflow-y-auto border-l xl:flex">
+          <div className="hidden min-h-0 flex-col overflow-y-auto border-l xl:flex">
             {/* Ô tra sản phẩm — chế độ thật cho nhân viên nạp ngữ cảnh theo SKU/tên */}
             {isReal && (
               <div className="flex items-center gap-2 border-b p-3">
