@@ -25,6 +25,7 @@ import financeRouter from "./routes/finance";
 import commandCenterRouter from "./routes/command-center";
 import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
+import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 
 // ============================================================
 // CORS — ALLOWLIST thay cho mở toang (beta multi-user).
@@ -143,6 +144,10 @@ export function createApp() {
 
   // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — chỉ Admin.
   app.use("/api/invoice-config", requireAuth, adminOnly, invoiceConfigRouter);
+
+  // Test sandbox MISA (Hóa đơn đầu vào + eSign) — chỉ Admin; trên production
+  // router tự chặn 503 trừ khi bật MISA_SANDBOX_TEST_ENABLED=1 (xem file route).
+  app.use("/api/test/misa-sandbox", requireAuth, adminOnly, testMisaSandboxRouter);
 
   // Hóa đơn & Thuế: cấu hình Thuế bổ sung + Báo cáo thuế — chỉ Admin.
   // Không gác requireChannel (giống invoice-config) để trang cấu hình thuế

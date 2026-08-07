@@ -210,6 +210,9 @@ model User {
   // Module Hóa đơn & Thuế: cấu hình thuế bổ sung + lịch sử phát hành hóa đơn.
   taxSetting  ShopTaxSetting?
   invoiceLogs InvoiceLog[]
+
+  // Hóa đơn ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ Xử lý hóa đơn đầu vào).
+  inputInvoices InputInvoice[]
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
@@ -553,6 +556,46 @@ model InvoiceLog {
   @@index([orderId])
   // Webhook MISA tra hóa đơn theo mã giao dịch NCC — cần index để worker không quét bảng.
   @@index([transactionId])
+}
+
+/// HÓA ĐƠN ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ "Xử lý hóa đơn đầu vào"
+/// — nội bộ MISA gọi là Inbot). Mỗi dòng = một hóa đơn nhà cung cấp xuất CHO
+/// shop, kéo về bằng POLLING API `/invoices/v2/modified` (Inbot không có
+/// webhook — xem misa-inbot.ts). Khoá idempotency (ownerId, misaInvoiceId):
+/// polling trùng kỳ chỉ upsert, không nhân bản.
+///
+/// Trường nghiệp vụ map "best effort" từ payload PascalCase của MISA;
+/// `rawPayload` giữ NGUYÊN VĂN JSON để đối chiếu/bổ sung cột về sau mà không
+/// phải kéo lại từ MISA — đừng bỏ cột này.
+model InputInvoice {
+  id      String @id @default(cuid())
+  ownerId String
+
+  /// ID hóa đơn phía MISA (InvoiceID) — khoá tra cứu chi tiết + idempotency.
+  misaInvoiceId String
+
+  invoiceNo     String? // số hóa đơn (VD "00001234")
+  invoiceSerial String? // ký hiệu (VD "1C26TAA")
+  sellerTaxCode String? // MST nhà cung cấp xuất hóa đơn
+  sellerName    String?
+  invoiceDate   DateTime?
+  totalAmount   Decimal @default(0) @db.Decimal(14, 2) // tổng thanh toán trên hóa đơn
+  vatAmount     Decimal @default(0) @db.Decimal(14, 2) // tiền thuế GTGT đầu VÀO
+  /// Trạng thái NGUYÊN VĂN MISA trả (chưa chuẩn hoá enum — đợi thấy đủ giá trị
+  /// thật từ sandbox rồi mới chốt bộ trạng thái).
+  statusRaw String?
+  /// JSON nguyên văn (stringify) bản ghi MISA trả về lần đồng bộ gần nhất.
+  rawPayload String
+
+  syncedAt  DateTime @default(now()) // lần đồng bộ gần nhất chạm vào dòng này
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, misaInvoiceId])
+  @@index([ownerId, invoiceDate])
+  @@map("input_invoices")
 }
 
 /// Sản phẩm trong kho

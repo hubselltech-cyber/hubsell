@@ -1,15 +1,15 @@
--- ============================================================
--- HUBSELL — SCRIPT TẠO TOÀN BỘ BẢNG TRÊN SUPABASE (Postgres)
+﻿-- ============================================================
+-- HUBSELL â€” SCRIPT Táº O TOÃ€N Bá»˜ Báº¢NG TRÃŠN SUPABASE (Postgres)
 --
--- File này SINH TỰ ĐỘNG từ prisma/schema.prisma bằng:
+-- File nÃ y SINH Tá»° Äá»˜NG tá»« prisma/schema.prisma báº±ng:
 --   npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script
--- ĐỪNG sửa tay — đổi schema thì sửa schema.prisma rồi sinh lại.
+-- Äá»ªNG sá»­a tay â€” Ä‘á»•i schema thÃ¬ sá»­a schema.prisma rá»“i sinh láº¡i.
 --
--- 2 cách dùng (chọn MỘT):
---   A. (khuyến nghị) Để Render tự chạy migration lúc deploy:
---      startCommand đã có `prisma migrate deploy` — KHÔNG cần chạy file này.
---   B. Tạo tay: dán toàn bộ file vào Supabase → SQL Editor → Run
---      (chỉ chạy trên database RỖNG; chạy lại trên DB đã có bảng sẽ lỗi trùng).
+-- 2 cÃ¡ch dÃ¹ng (chá»n Má»˜T):
+--   A. (khuyáº¿n nghá»‹) Äá»ƒ Render tá»± cháº¡y migration lÃºc deploy:
+--      startCommand Ä‘Ã£ cÃ³ `prisma migrate deploy` â€” KHÃ”NG cáº§n cháº¡y file nÃ y.
+--   B. Táº¡o tay: dÃ¡n toÃ n bá»™ file vÃ o Supabase â†’ SQL Editor â†’ Run
+--      (chá»‰ cháº¡y trÃªn database Rá»–NG; cháº¡y láº¡i trÃªn DB Ä‘Ã£ cÃ³ báº£ng sáº½ lá»—i trÃ¹ng).
 -- ============================================================
 
 -- CreateSchema
@@ -73,9 +73,16 @@ CREATE TYPE "ChannelProductStatus" AS ENUM ('ACTIVE', 'DELISTED');
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
+    "username" TEXT,
     "passwordHash" TEXT NOT NULL,
     "fullName" TEXT NOT NULL,
+    "country" TEXT NOT NULL DEFAULT 'VN',
+    "phone" TEXT,
+    "googleId" TEXT,
+    "resetTokenHash" TEXT,
+    "resetTokenExpiresAt" TIMESTAMP(3),
     "role" "Role" NOT NULL DEFAULT 'SALES',
+    "isPlatformAdmin" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "ownerId" TEXT,
 
@@ -96,10 +103,24 @@ CREATE TABLE "Channel" (
     "refreshTokenExpireAt" TIMESTAMP(3),
     "shopCipher" TEXT,
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "lastSyncAt" TIMESTAMP(3),
+    "lastSyncError" TEXT,
+    "syncFailCount" INTEGER NOT NULL DEFAULT 0,
     "feeRate" DECIMAL(5,4) NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Channel_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "AdSpend" (
+    "id" TEXT NOT NULL,
+    "channelId" TEXT NOT NULL,
+    "date" DATE NOT NULL,
+    "amount" DECIMAL(12,2) NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AdSpend_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -166,6 +187,33 @@ CREATE TABLE "OpsActivity" (
 );
 
 -- CreateTable
+CREATE TABLE "OpsAlert" (
+    "id" TEXT NOT NULL,
+    "ownerId" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "dedupeKey" TEXT NOT NULL,
+    "tag" TEXT NOT NULL,
+    "severity" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "summary" TEXT NOT NULL,
+    "payload" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'OPEN',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "resolvedAt" TIMESTAMP(3),
+
+    CONSTRAINT "OpsAlert_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OpsCenterVisit" (
+    "ownerId" TEXT NOT NULL,
+    "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "OpsCenterVisit_pkey" PRIMARY KEY ("ownerId")
+);
+
+-- CreateTable
 CREATE TABLE "InvoiceConfig" (
     "id" TEXT NOT NULL,
     "ownerId" TEXT NOT NULL,
@@ -218,6 +266,27 @@ CREATE TABLE "InvoiceLog" (
 );
 
 -- CreateTable
+CREATE TABLE "input_invoices" (
+    "id" TEXT NOT NULL,
+    "ownerId" TEXT NOT NULL,
+    "misaInvoiceId" TEXT NOT NULL,
+    "invoiceNo" TEXT,
+    "invoiceSerial" TEXT,
+    "sellerTaxCode" TEXT,
+    "sellerName" TEXT,
+    "invoiceDate" TIMESTAMP(3),
+    "totalAmount" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "vatAmount" DECIMAL(14,2) NOT NULL DEFAULT 0,
+    "statusRaw" TEXT,
+    "rawPayload" TEXT NOT NULL,
+    "syncedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "input_invoices_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Product" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -266,6 +335,7 @@ CREATE TABLE "Order" (
     "settledAt" TIMESTAMP(3),
     "fixedFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "serviceFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "sellerProtectionFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "paymentFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "affiliateFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "sellerVoucher" DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -310,7 +380,6 @@ CREATE TABLE "ChannelProduct" (
     "status" "ChannelProductStatus" NOT NULL DEFAULT 'ACTIVE',
     "lastSyncedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- Giá vốn cấp SKU sàn khi CHƯA liên kết kho gốc (migration 20260728113155)
     "costPrice" DECIMAL(12,2),
     "productId" TEXT,
 
@@ -341,6 +410,7 @@ CREATE TABLE "OperatingExpense" (
     "appliedSku" TEXT,
     "amount" DECIMAL(12,2) NOT NULL,
     "fundChannelId" TEXT,
+    "fundPlatform" "ChannelName",
     "fundSource" "FundSourceType",
     "note" TEXT,
     "expenseDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -428,14 +498,69 @@ CREATE TABLE "InventorySyncAlert" (
     CONSTRAINT "InventorySyncAlert_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "lazada_order_settlements" (
+    "id" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "itemRevenue" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipFeeCustomer" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipDiscountPlatform" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipDiscountSeller" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipFeeReturn" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipFeeAdjustment" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeFixed" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeOrderProcessing" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feePayment" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeCommission" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeShipSeller" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "shipSubsidySeller" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeFreeshipMax" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeCashbackMax" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeSponsoredDiscovery" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeLazadaBonus" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "bonusLzdCofund" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeBuyerReview" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeLazpick" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeCampaign" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeAffiliate" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeInfrastructure" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "feeOther" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "subsidyOther" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "sellerVoucher" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "vatFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "incomeTaxFee" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "actualPayout" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "settledAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "lazada_order_settlements_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_googleId_key" ON "User"("googleId");
 
 -- CreateIndex
 CREATE INDEX "Channel_userId_idx" ON "Channel"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Channel_userId_channelName_shopName_key" ON "Channel"("userId", "channelName", "shopName");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Channel_userId_channelName_externalShopId_key" ON "Channel"("userId", "channelName", "externalShopId");
+
+-- CreateIndex
+CREATE INDEX "AdSpend_channelId_idx" ON "AdSpend"("channelId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AdSpend_channelId_date_key" ON "AdSpend"("channelId", "date");
 
 -- CreateIndex
 CREATE INDEX "WalletWithdrawal_channelId_idx" ON "WalletWithdrawal"("channelId");
@@ -462,6 +587,12 @@ CREATE INDEX "OpsChatMessage_ownerId_alertId_idx" ON "OpsChatMessage"("ownerId",
 CREATE INDEX "OpsActivity_ownerId_idx" ON "OpsActivity"("ownerId");
 
 -- CreateIndex
+CREATE INDEX "OpsAlert_ownerId_status_idx" ON "OpsAlert"("ownerId", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OpsAlert_ownerId_type_dedupeKey_key" ON "OpsAlert"("ownerId", "type", "dedupeKey");
+
+-- CreateIndex
 CREATE INDEX "InvoiceConfig_ownerId_idx" ON "InvoiceConfig"("ownerId");
 
 -- CreateIndex
@@ -478,6 +609,12 @@ CREATE INDEX "InvoiceLog_orderId_idx" ON "InvoiceLog"("orderId");
 
 -- CreateIndex
 CREATE INDEX "InvoiceLog_transactionId_idx" ON "InvoiceLog"("transactionId");
+
+-- CreateIndex
+CREATE INDEX "input_invoices_ownerId_invoiceDate_idx" ON "input_invoices"("ownerId", "invoiceDate");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "input_invoices_ownerId_misaInvoiceId_key" ON "input_invoices"("ownerId", "misaInvoiceId");
 
 -- CreateIndex
 CREATE INDEX "Product_userId_idx" ON "Product"("userId");
@@ -548,11 +685,17 @@ CREATE INDEX "InventorySyncLog_status_idx" ON "InventorySyncLog"("status");
 -- CreateIndex
 CREATE INDEX "InventorySyncAlert_channelId_resolvedAt_idx" ON "InventorySyncAlert"("channelId", "resolvedAt");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "lazada_order_settlements_orderId_key" ON "lazada_order_settlements"("orderId");
+
 -- AddForeignKey
 ALTER TABLE "User" ADD CONSTRAINT "User_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Channel" ADD CONSTRAINT "Channel_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AdSpend" ADD CONSTRAINT "AdSpend_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "WalletWithdrawal" ADD CONSTRAINT "WalletWithdrawal_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -573,6 +716,12 @@ ALTER TABLE "OpsChatMessage" ADD CONSTRAINT "OpsChatMessage_ownerId_fkey" FOREIG
 ALTER TABLE "OpsActivity" ADD CONSTRAINT "OpsActivity_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "OpsAlert" ADD CONSTRAINT "OpsAlert_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpsCenterVisit" ADD CONSTRAINT "OpsCenterVisit_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "InvoiceConfig" ADD CONSTRAINT "InvoiceConfig_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -586,6 +735,9 @@ ALTER TABLE "InvoiceLog" ADD CONSTRAINT "InvoiceLog_ownerId_fkey" FOREIGN KEY ("
 
 -- AddForeignKey
 ALTER TABLE "InvoiceLog" ADD CONSTRAINT "InvoiceLog_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "input_invoices" ADD CONSTRAINT "input_invoices_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Product" ADD CONSTRAINT "Product_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -625,4 +777,7 @@ ALTER TABLE "InventorySyncLog" ADD CONSTRAINT "InventorySyncLog_channelId_fkey" 
 
 -- AddForeignKey
 ALTER TABLE "InventorySyncAlert" ADD CONSTRAINT "InventorySyncAlert_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "lazada_order_settlements" ADD CONSTRAINT "lazada_order_settlements_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
