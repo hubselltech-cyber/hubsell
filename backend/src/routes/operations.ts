@@ -725,7 +725,13 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     const cpInclude = { product: true, channel: true } as const;
     let cp = null;
     if (itemId) {
-      const byItem = { externalId: itemId, ...(channelId ? { channelId } : {}) };
+      // externalId sản phẩm CÓ phân loại lưu "itemId-modelId" (cả Shopee lẫn
+      // Lazada) — tin nhắn khách đính kèm chỉ mang itemId gốc nên phải khớp
+      // cả dạng đúng bằng lẫn dạng có đuôi "-modelId".
+      const byItem = {
+        OR: [{ externalId: itemId }, { externalId: { startsWith: `${itemId}-` } }],
+        ...(channelId ? { channelId } : {}),
+      };
       cp =
         (await prisma.channelProduct.findFirst({
           where: { ...byItem, channel: scope, productId: { not: null } },
@@ -804,15 +810,19 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // externalId có thể là "itemId-modelId" (sản phẩm có phân loại) — mọi chỗ
+    // gọi sàn / dựng link / trả itemId đều phải dùng itemId GỐC đã tách.
+    const rootItemId = cp?.externalId ? String(cp.externalId).split("-")[0] : null;
+
     // Tồn SÀN live (chỉ Shopee, best-effort — lỗi thì để null, không chặn).
     // Lấy TOÀN BỘ model của item (khách mua ở cấp item nên tư vấn phải thấy đủ
     // màu/size) — trả kèm channelVariants cho widget vẽ ma trận tồn thật.
     let channelStock: number | null = null;
     let channelVariants: { name: string; stock: number | null }[] | null = null;
-    if (!crossChannel && cp?.channel.channelName === ChannelName.SHOPEE && cp.externalId) {
+    if (!crossChannel && cp?.channel.channelName === ChannelName.SHOPEE && rootItemId) {
       try {
         const { accessToken, shopId } = await getValidShopeeAccessToken(cp.channel);
-        const models = await getModelList(accessToken, shopId, Number(cp.externalId));
+        const models = await getModelList(accessToken, shopId, Number(rootItemId));
         if (models.length > 0) {
           channelVariants = models.map((m) => ({
             name: m.model_name?.trim() || m.model_sku?.trim() || "Phân loại",
@@ -833,11 +843,11 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     // Link xem/đặt hàng cho nút "Gửi thẻ sản phẩm": Shopee cần shopId + itemId;
     // Lazada chỉ cần itemId (externalId Lazada lưu dạng "itemId-skuId").
     let productUrl: string | null = null;
-    if (!crossChannel && cp?.externalId) {
+    if (!crossChannel && cp && rootItemId) {
       if (cp.channel.channelName === ChannelName.SHOPEE && cp.channel.externalShopId) {
-        productUrl = `https://shopee.vn/product/${cp.channel.externalShopId}/${cp.externalId}`;
+        productUrl = `https://shopee.vn/product/${cp.channel.externalShopId}/${rootItemId}`;
       } else if (cp.channel.channelName === ChannelName.LAZADA) {
-        productUrl = `https://www.lazada.vn/products/-i${String(cp.externalId).split("-")[0]}.html`;
+        productUrl = `https://www.lazada.vn/products/-i${rootItemId}.html`;
       }
     }
     // Giá niêm yết trên sàn ưu tiên (đúng số khách thấy); 0 = chưa sync giá.
@@ -865,14 +875,8 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
         linked: product != null,
         productUrl,
         price,
-        // item_id phía sàn — nguồn cho nút gửi thẻ SP chuẩn Shopee
-        // (externalId Lazada dạng "itemId-skuId" nên tách lấy phần item).
-        itemId:
-          !crossChannel && cp?.externalId
-            ? cp.channel.channelName === ChannelName.LAZADA
-              ? String(cp.externalId).split("-")[0]
-              : String(cp.externalId)
-            : null,
+        // item_id GỐC phía sàn — nguồn cho nút gửi thẻ SP chuẩn Shopee
+        itemId: !crossChannel ? rootItemId : null,
       },
     });
   } catch (err) {
