@@ -21,7 +21,7 @@ import { Refreshing } from "@/components/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
-import { GenericProfitTable } from "@/components/finance/realized-pnl/GenericProfitTable";
+import { OverviewDashboard } from "@/components/finance/realized-pnl/OverviewDashboard";
 import { LazadaProfitTable } from "@/components/finance/realized-pnl/LazadaProfitTable";
 import { ShopeeProfitTable } from "@/components/finance/realized-pnl/ShopeeProfitTable";
 import { TiktokProfitTable } from "@/components/finance/realized-pnl/TiktokProfitTable";
@@ -352,8 +352,9 @@ export default function RealizedPnlPage() {
 
         {/* ===== TỔNG HỢP THUẾ CỦA KỲ (module Hóa đơn & Thuế) =====
             Trên TOÀN BỘ đơn khớp lọc (mọi trang). Thuế sàn: đơn quyết toán
-            dùng số THẬT sàn trích, chưa quyết toán ước tính % cấu hình. */}
-        {summary && summary.count > 0 && (
+            dùng số THẬT sàn trích, chưa quyết toán ước tính % cấu hình.
+            Chỉ hiện ở TAB SÀN CON — tab Tổng quan có bộ thẻ điều hành riêng. */}
+        {tab !== "overview" && summary && summary.count > 0 && (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Card className="shadow-sm">
               <CardContent className="px-4 py-3">
@@ -404,36 +405,63 @@ export default function RealizedPnlPage() {
           </div>
         )}
 
-        {/* ===== BẢNG THEO TAB ===== */}
-        <Card className="shadow-sm">
-          <CardContent className="p-0">
-            {loading && rows.length === 0 ? (
-              <p className="py-12 text-center text-sm text-muted-foreground">
-                Đang tải dữ liệu…
-              </p>
-            ) : rows.length === 0 ? (
-              <div className="py-14 text-center text-sm text-muted-foreground">
-                <PackageOpen className="mx-auto mb-2 size-8" />
-                Không có đơn hàng nào khớp bộ lọc.
-              </div>
-            ) : (
-              <Refreshing active={loading}>
-                {tab === "shopee" ? (
-                  <ShopeeProfitTable rows={rows} {...selectionProps} />
-                ) : tab === "tiktok" ? (
-                  <TiktokProfitTable rows={rows} {...selectionProps} />
-                ) : tab === "lazada" ? (
-                  <LazadaProfitTable rows={rows} {...selectionProps} />
-                ) : (
-                  <GenericProfitTable rows={rows} {...selectionProps} />
-                )}
-              </Refreshing>
-            )}
-          </CardContent>
-        </Card>
+        {/* ===== NỘI DUNG THEO TAB =====
+            Tab "Tổng quan" = dashboard báo cáo (đọc NGUYÊN summary — số của
+            TOÀN BỘ đơn khớp lọc, không phụ thuộc trang); các tab sàn con =
+            bảng đối soát chi tiết + phân trang. Cùng một state lọc/nạp dùng
+            chung nên chuyển tab không vỡ ngữ cảnh. */}
+        {tab === "overview" ? (
+          loading && !summary ? (
+            <Card className="shadow-sm">
+              <CardContent>
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  Đang tải dữ liệu…
+                </p>
+              </CardContent>
+            </Card>
+          ) : !summary || summary.count === 0 ? (
+            <Card className="shadow-sm">
+              <CardContent>
+                <div className="py-14 text-center text-sm text-muted-foreground">
+                  <PackageOpen className="mx-auto mb-2 size-8" />
+                  Không có đơn hàng nào khớp bộ lọc.
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Refreshing active={loading}>
+              <OverviewDashboard summary={summary} />
+            </Refreshing>
+          )
+        ) : (
+          <Card className="shadow-sm">
+            <CardContent className="p-0">
+              {loading && rows.length === 0 ? (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  Đang tải dữ liệu…
+                </p>
+              ) : rows.length === 0 ? (
+                <div className="py-14 text-center text-sm text-muted-foreground">
+                  <PackageOpen className="mx-auto mb-2 size-8" />
+                  Không có đơn hàng nào khớp bộ lọc.
+                </div>
+              ) : (
+                <Refreshing active={loading}>
+                  {tab === "shopee" ? (
+                    <ShopeeProfitTable rows={rows} {...selectionProps} />
+                  ) : tab === "tiktok" ? (
+                    <TiktokProfitTable rows={rows} {...selectionProps} />
+                  ) : (
+                    <LazadaProfitTable rows={rows} {...selectionProps} />
+                  )}
+                </Refreshing>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* ===== PHÂN TRANG ===== */}
-        {data && rows.length > 0 && (
+        {/* ===== PHÂN TRANG — chỉ có nghĩa với bảng chi tiết tab sàn con ===== */}
+        {tab !== "overview" && data && rows.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Hiển thị</span>

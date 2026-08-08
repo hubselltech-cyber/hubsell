@@ -363,6 +363,12 @@ export function computePnlRow(o: PnlOrder) {
   // đơn chỉ có cờ returnStatus (chưa có dữ liệu cấp dòng) coi là hoàn cả đơn.
   const totalQuantity = o.items.reduce((s, it) => s + it.quantity, 0);
   const returnedQuantity = o.items.reduce((s, it) => s + it.returnedQuantity, 0);
+  // Giá vốn (tại thời điểm bán) của RIÊNG phần hàng bị trả — mẫu số để tính
+  // "giá vốn mất/hỏng" của đơn trả MỘT PHẦN (computeReturnLoss).
+  const returnedCostAtSale = o.items.reduce(
+    (s, it) => s + it.returnedQuantity * Number(it.costPriceAtSale),
+    0
+  );
   let returnType:
     | "REFUND_ONLY"
     | "PARTIAL_REFUND"
@@ -463,6 +469,7 @@ export function computePnlRow(o: PnlOrder) {
     refundEstimated: refundRecorded === 0 && refundedAmount > 0, // đang tạm tính
     returnedQuantity,
     totalQuantity,
+    returnedCostAtSale, // giá vốn (lúc bán) của riêng phần hàng bị trả
     recoveredCost, // giá vốn đã thu hồi nhờ hàng trả nhập lại kho nguyên vẹn
     // Hiệu quả
     costSnapshot: cost,
@@ -499,6 +506,43 @@ export function computePnlRow(o: PnlOrder) {
   };
 }
 
+/**
+ * BÓC 3 KHOẢN THẤT THU của MỘT đơn hoàn/trả (đơn thường → toàn 0):
+ *   - feeLoss : phí sàn + thuế sàn KHÔNG được hoàn lại dù đơn đã trả
+ *     (fixed/payment/service/PiShip/affiliate/thuế — số THẬT từ sao kê; đơn
+ *     hoàn chưa quyết toán mọi bucket = 0, đúng nguyên tắc không bịa phí %).
+ *   - shipLoss: phí ship shop gánh cho vòng đi + vòng hoàn (chênh lệch VC
+ *     shop chịu; Lazada đã đối soát cộng thêm dòng "Phí VC trả hàng" sao kê).
+ *   - costLoss: giá vốn hàng mất/hỏng — phần vốn KHÔNG thu hồi được:
+ *     hoàn tiền 100% khách giữ hàng / hoàn cả đơn → costSnapshot (đã trừ phần
+ *     restock); trả một phần → vốn phần trả − phần đã nhập lại kho; hoàn tiền
+ *     một phần khách giữ hàng → 0 (hàng vẫn bán, chỉ giảm doanh thu).
+ * Tổng 3 khoản = "Tiền thất thu do đơn hoàn" trên dashboard Tổng quan.
+ */
+export function computeReturnLoss(r: PnlRow) {
+  if (r.returnType === null) {
+    return { feeLoss: 0, shipLoss: 0, costLoss: 0, total: 0 };
+  }
+  const feeLoss =
+    r.feeFixedPayment +
+    r.feeService +
+    r.feeSellerProtection +
+    r.feeAffiliate +
+    r.platformTax;
+  // Lazada: shipFeeReturn mang DẤU NGUYÊN BẢN sao kê (âm = sàn trừ tiền shop).
+  const lazadaReturnShip = r.lazada
+    ? Math.abs(Math.min(Number(r.lazada.shipFeeReturn), 0))
+    : 0;
+  const shipLoss = Math.max(r.shippingFeeDiff, 0) + lazadaReturnShip;
+  let costLoss = 0;
+  if (r.returnType === "REFUND_ONLY" || r.returnType === "FULL_RETURN") {
+    costLoss = Math.max(r.costSnapshot, 0);
+  } else if (r.returnType === "PARTIAL_RETURN") {
+    costLoss = Math.max(r.returnedCostAtSale - r.recoveredCost, 0);
+  }
+  return { feeLoss, shipLoss, costLoss, total: feeLoss + shipLoss + costLoss };
+}
+
 // ============================================================
 // LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)
 // Trả về "detail row" GIÀU trường (superset) kèm dòng sản phẩm; frontend tách
@@ -525,9 +569,10 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     const taxCfg = await getShopTaxConfig(req.ownerId!);
 
     // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức với mọi báo cáo tài chính.
+    const dateRange = parseDateRange(req.query);
     const orders = await fetchPnlOrders(
       channelScope(req),
-      parseDateRange(req.query),
+      dateRange,
       shippingStatus
     );
     const computedRows = orders.map(computePnlRow);
@@ -558,12 +603,84 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       ? lossFiltered.filter((r) => r.orderCode.toLowerCase().includes(search))
       : lossFiltered;
 
-    // Tóm tắt theo sàn (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại)
-    const byPlatform: Record<string, { count: number; profit: number }> = {};
+    // ===== TÓM TẮT THEO SÀN + THẤT THU ĐƠN HOÀN + CHUỖI NGÀY =====
+    // (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại) — nuôi dashboard
+    // "Tổng quan Lợi nhuận": mỗi dòng bóc thất thu đúng MỘT lần rồi cộng dồn
+    // song song vào 3 trục: theo sàn, tổng kỳ, theo ngày.
+    const byPlatform: Record<
+      string,
+      { count: number; profit: number; returnCount: number; returnLoss: number }
+    > = {};
+    const returnLoss = { total: 0, feeLoss: 0, shipLoss: 0, costLoss: 0 };
+    const dayAgg = new Map<
+      string,
+      { profit: number; returnLoss: number; orderCount: number; returnCount: number }
+    >();
     for (const r of filtered) {
-      const b = (byPlatform[r.channelName] ??= { count: 0, profit: 0 });
+      const rl = computeReturnLoss(r);
+      const b = (byPlatform[r.channelName] ??= {
+        count: 0,
+        profit: 0,
+        returnCount: 0,
+        returnLoss: 0,
+      });
       b.count += 1;
       b.profit += r.profit;
+      const key = toBusinessDateKey(r.createdAt);
+      const d =
+        dayAgg.get(key) ??
+        { profit: 0, returnLoss: 0, orderCount: 0, returnCount: 0 };
+      d.profit += r.profit;
+      d.orderCount += 1;
+      if (r.returnType !== null) {
+        b.returnCount += 1;
+        b.returnLoss += rl.total;
+        returnLoss.total += rl.total;
+        returnLoss.feeLoss += rl.feeLoss;
+        returnLoss.shipLoss += rl.shipLoss;
+        returnLoss.costLoss += rl.costLoss;
+        d.returnCount += 1;
+        d.returnLoss += rl.total;
+      }
+      dayAgg.set(key, d);
+    }
+
+    // Trục ngày liền mạch (lấp ngày trống = 0) cho biểu đồ Lãi/Lỗ & Tỷ lệ hoàn.
+    // Mốc đầu/cuối là 00:00 GIỜ VN (businessDayStart); không lọc ngày → 30
+    // ngày gần nhất; kỳ quá dài cắt còn PNL_MAX_POINTS điểm cuối cho nhẹ chart.
+    const DAY_MS = 86_400_000;
+    const PNL_MAX_POINTS = 92;
+    const chartEnd = businessDayStart(dateRange ? dateRange.lte : new Date());
+    let chartStart = dateRange
+      ? businessDayStart(dateRange.gte)
+      : new Date(chartEnd.getTime() - 29 * DAY_MS);
+    const spanDays =
+      Math.round((chartEnd.getTime() - chartStart.getTime()) / DAY_MS) + 1;
+    if (spanDays > PNL_MAX_POINTS) {
+      chartStart = new Date(chartEnd.getTime() - (PNL_MAX_POINTS - 1) * DAY_MS);
+    }
+    const daily: {
+      date: string;
+      label: string;
+      profit: number;
+      returnLoss: number;
+      orderCount: number;
+      returnCount: number;
+      returnRatePercent: number;
+    }[] = [];
+    for (let t = chartStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
+      const key = toBusinessDateKey(new Date(t));
+      const d = dayAgg.get(key);
+      daily.push({
+        date: key,
+        label: dateKeyLabel(key),
+        profit: d?.profit ?? 0,
+        returnLoss: d?.returnLoss ?? 0,
+        orderCount: d?.orderCount ?? 0,
+        returnCount: d?.returnCount ?? 0,
+        returnRatePercent:
+          d && d.orderCount > 0 ? (d.returnCount / d.orderCount) * 100 : 0,
+      });
     }
 
     const total = filtered.length;
@@ -595,6 +712,10 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         // Bức tranh hoàn/trả của kỳ: số đơn hoàn + tổng tiền đã/tạm tính hoàn
         returnCount: filtered.filter((r) => r.returnType !== null).length,
         totalRefunded: filtered.reduce((s, r) => s + r.refundedAmount, 0),
+        // Thất thu do đơn hoàn (3 khoản, xem computeReturnLoss) + chuỗi ngày
+        // — nuôi dashboard "Tổng quan Lợi nhuận" phía frontend.
+        returnLoss,
+        daily,
         totalProfit,
         totalPlatformTax,
         additionalTax,

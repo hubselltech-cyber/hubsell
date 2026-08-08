@@ -482,6 +482,8 @@ export interface PnlDetailRow {
   refundEstimated: boolean;
   returnedQuantity: number;
   totalQuantity: number;
+  /** Giá vốn (tại thời điểm bán) của RIÊNG phần hàng bị trả. */
+  returnedCostAtSale: number;
   /** Giá vốn đã thu hồi nhờ hàng trả nhập lại kho nguyên vẹn. */
   recoveredCost: number;
   // Hiệu quả — costSnapshot là giá vốn THỰC TÍNH (đã trừ phần thu hồi)
@@ -544,6 +546,29 @@ export interface LazadaSettlementDetail {
   actualPayout: number;
 }
 
+/**
+ * Bóc tách THẤT THU do đơn hoàn của kỳ (xem computeReturnLoss backend):
+ * feeLoss = phí + thuế sàn không hoàn lại; shipLoss = ship hoàn 2 chiều shop
+ * gánh; costLoss = giá vốn hàng mất/hỏng không thu hồi. total = tổng 3 khoản.
+ */
+export interface ReturnLossBreakdown {
+  total: number;
+  feeLoss: number;
+  shipLoss: number;
+  costLoss: number;
+}
+
+/** Một điểm ngày trên biểu đồ Lãi/Lỗ & Tỷ lệ hoàn (ngày trống = 0). */
+export interface PnlDailyPoint {
+  date: string; // YYYY-MM-DD (giờ VN)
+  label: string; // dd/MM
+  profit: number;
+  returnLoss: number;
+  orderCount: number;
+  returnCount: number;
+  returnRatePercent: number;
+}
+
 export interface RealizedPnlResponse {
   rows: PnlDetailRow[];
   page: number;
@@ -559,6 +584,10 @@ export interface RealizedPnlResponse {
     returnCount: number;
     /** Tổng tiền hoàn trả khách (số thật + tạm tính) của tập lọc. */
     totalRefunded: number;
+    /** Thất thu do đơn hoàn của kỳ — bóc 3 khoản cho dashboard Tổng quan. */
+    returnLoss: ReturnLossBreakdown;
+    /** Chuỗi ngày liền mạch cho biểu đồ Lãi/Lỗ & Tỷ lệ hoàn theo thời gian. */
+    daily: PnlDailyPoint[];
     totalProfit: number;
     /** Tổng thuế sàn TMĐT (thực + ước tính) của toàn bộ đơn khớp lọc. */
     totalPlatformTax: number;
@@ -570,10 +599,16 @@ export interface RealizedPnlResponse {
       platformTaxPercent: number;
       customTaxPercent: number;
     };
-    /** { SHOPEE: { count, profit }, ... } trên toàn bộ đơn khớp lọc. */
-    byPlatform: Record<string, { count: number; profit: number }>;
+    /** { SHOPEE: { count, profit, returnCount, returnLoss }, ... } trên toàn bộ đơn khớp lọc. */
+    byPlatform: Record<
+      string,
+      { count: number; profit: number; returnCount: number; returnLoss: number }
+    >;
   };
 }
+
+/** Kiểu phần summary của Lãi/Lỗ Thực Hiện — dashboard Tổng quan nhận nguyên khối. */
+export type RealizedPnlSummary = RealizedPnlResponse["summary"];
 
 export function fetchRealizedPnl(params: {
   range?: DateRange;
