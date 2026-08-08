@@ -131,3 +131,73 @@ export function pickRandomReply(rating: number, vars: ReplyVars): string | null 
   const template = list[Math.floor(Math.random() * list.length)];
   return applyTemplate(template, vars);
 }
+
+// ─── CỜ TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO ─────────────────────────────────────────
+//
+// Bật mức sao nào thì trang Phản hồi đánh giá TỰ GỬI THẬT phản hồi lên sàn cho
+// đánh giá chưa trả lời ở mức đó (bốc random từ bộ mẫu cùng mức). Lưu cùng tầng
+// localStorage với bộ mẫu — engine phụ thuộc mẫu nên hai cấu hình phải đi cùng
+// nhau; khi thương mại hoá chuyển CẢ HAI vào DB thì cron server 24/7 mới đọc
+// được (chữ ký hàm giữ nguyên).
+
+export type AutoReplyStars = Record<StarLevel, boolean>;
+
+/** Mặc định TẮT HẾT — gửi tự động lên sàn là hành vi phải chủ động bật. */
+export const DEFAULT_AUTO_REPLY_STARS: AutoReplyStars = {
+  "1": false,
+  "2": false,
+  "3": false,
+  "4": false,
+  "5": false,
+};
+
+const AUTO_REPLY_KEY = "hubsell_ops_review_autoreply_v1";
+
+export function loadAutoReplyStars(): AutoReplyStars {
+  if (typeof window === "undefined") return DEFAULT_AUTO_REPLY_STARS;
+  try {
+    const raw = localStorage.getItem(AUTO_REPLY_KEY);
+    if (!raw) return DEFAULT_AUTO_REPLY_STARS;
+    const parsed = JSON.parse(raw) as Partial<AutoReplyStars>;
+    const merged = { ...DEFAULT_AUTO_REPLY_STARS };
+    for (const star of ["1", "2", "3", "4", "5"] as StarLevel[]) {
+      if (typeof parsed[star] === "boolean") merged[star] = parsed[star];
+    }
+    return merged;
+  } catch {
+    return DEFAULT_AUTO_REPLY_STARS;
+  }
+}
+
+export function saveAutoReplyStars(cfg: AutoReplyStars) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTO_REPLY_KEY, JSON.stringify(cfg));
+}
+
+// Sổ reviewId ĐÃ auto-gửi — chống bắn trùng khi sàn trả dữ liệu trễ (review
+// vừa trả lời xong nhưng lượt quét sau vẫn thấy reply rỗng) hoặc effect chạy
+// lại. Giữ 800 id mới nhất cho localStorage không phình.
+
+const AUTO_REPLIED_KEY = "hubsell_ops_review_autoreplied_v1";
+const AUTO_REPLIED_MAX = 800;
+
+export function loadAutoRepliedIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(AUTO_REPLIED_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(
+      Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : []
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveAutoRepliedIds(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(
+    AUTO_REPLIED_KEY,
+    JSON.stringify([...ids].slice(-AUTO_REPLIED_MAX))
+  );
+}

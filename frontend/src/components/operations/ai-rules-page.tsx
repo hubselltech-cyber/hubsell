@@ -7,10 +7,14 @@ import { toast } from "sonner";
 
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import {
+  DEFAULT_AUTO_REPLY_STARS,
   DEFAULT_REPLY_TEMPLATES,
+  loadAutoReplyStars,
   loadReplyTemplates,
+  saveAutoReplyStars,
   saveReplyTemplates,
   TEMPLATE_VARS,
+  type AutoReplyStars,
   type ReplyTemplates,
   type StarLevel,
 } from "@/components/operations/reply-templates";
@@ -43,15 +47,9 @@ interface AiRule {
   enabled: boolean;
 }
 
+// Rule "tự động trả lời 5 sao" (mock) đã được THAY bằng khối 5 công tắc theo
+// số sao phía trên — cấu hình THẬT, trang Phản hồi đánh giá đọc và tự gửi.
 const DEFAULT_RULES: AiRule[] = [
-  {
-    id: "auto-5-star",
-    icon: Star,
-    title: "Tự động trả lời đánh giá 5 sao",
-    description:
-      "AI gửi lời cảm ơn theo giọng điệu thương hiệu ngay khi có đánh giá 5 sao, không cần người duyệt.",
-    enabled: true,
-  },
   {
     id: "classify-bad",
     icon: Bot,
@@ -78,9 +76,39 @@ const DEFAULT_RULES: AiRule[] = [
   },
 ];
 
+/** Thứ tự hiển thị + chấm màu mức độ rủi ro khi bật tự động từng mức sao. */
+const STAR_SWITCH_ROWS: { star: StarLevel; dot: string; note?: string }[] = [
+  { star: "5", dot: "🟢" },
+  { star: "4", dot: "🟢" },
+  { star: "3", dot: "🟡", note: "Nên duyệt tay nếu shop hay có khiếu nại." },
+  { star: "2", dot: "🔴", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
+  { star: "1", dot: "🔴", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
+];
+
 export function OperationsAiRulesPage() {
   const [rules, setRules] = useState(DEFAULT_RULES);
   const [tone, setTone] = useState("FRIENDLY");
+
+  // ── Cờ tự động phản hồi theo số sao (CẤU HÌNH THẬT — reviews-page đọc) ──
+  // Nạp bản đã lưu ở useEffect (tránh lệch SSR/CSR như templates bên dưới);
+  // gạt switch là ghi localStorage ngay, không cần nút Lưu riêng.
+  const [autoStars, setAutoStars] = useState<AutoReplyStars>(DEFAULT_AUTO_REPLY_STARS);
+  useEffect(() => {
+    setAutoStars(loadAutoReplyStars());
+  }, []);
+
+  function toggleAutoStar(star: StarLevel, enabled: boolean) {
+    setAutoStars((prev) => {
+      const next = { ...prev, [star]: enabled };
+      saveAutoReplyStars(next);
+      return next;
+    });
+    toast.success(
+      enabled
+        ? `Đã BẬT tự động phản hồi đánh giá ${star} sao — áp dụng từ lượt quét kế tiếp của trang Phản hồi đánh giá.`
+        : `Đã tắt tự động phản hồi đánh giá ${star} sao.`
+    );
+  }
 
   // ── Bộ mẫu câu phản hồi đánh giá (randomizer) ──
   // Khởi tạo bằng mặc định rồi nạp bản đã lưu ở useEffect: localStorage chỉ
@@ -188,6 +216,51 @@ export function OperationsAiRulesPage() {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         {/* ----- DANH SÁCH KỊCH BẢN ----- */}
         <div className="space-y-3">
+          {/* ===== 5 CÔNG TẮC TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (CẤU HÌNH THẬT) =====
+              Thay cho rule mock "tự động trả lời 5 sao" cũ: bật mức nào thì
+              trang Phản hồi đánh giá TỰ GỬI THẬT phản hồi lên sàn cho đánh giá
+              chưa trả lời ở mức đó (quét mỗi 5 phút khi trang đang mở). */}
+          <Card className="border-violet-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bot className="size-4.5 text-violet-600" />
+                Tự động phản hồi đánh giá theo số sao
+              </CardTitle>
+              <CardDescription>
+                Bật mức sao nào, hệ thống tự gửi phản hồi <b>thật</b> sang sàn cho
+                đánh giá mới ở mức đó. Hiệu lực khi trang Phản hồi đánh giá đang
+                mở (tự quét đánh giá mới 5 phút/lần); mức đang tắt vẫn được AI
+                soạn sẵn câu trả lời chờ nhân viên duyệt.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              {STAR_SWITCH_ROWS.map(({ star, dot, note }) => (
+                <div
+                  key={star}
+                  className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50"
+                >
+                  <span className="mt-0.5 text-sm leading-none">{dot}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Tự động trả lời Đánh giá {star} sao
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Khi bật, AI sẽ tự chọn 1 mẫu câu trong bộ mẫu [{star} sao] để
+                      gửi phản hồi trực tiếp sang sàn.
+                      {note ? <span className="text-amber-700"> {note}</span> : null}
+                    </p>
+                  </div>
+                  {/* KHÔNG bọc Switch trong <label> — từng dính bug double-toggle */}
+                  <Switch
+                    checked={autoStars[star]}
+                    onCheckedChange={(v) => toggleAutoStar(star, v)}
+                    aria-label={`Bật/tắt tự động trả lời đánh giá ${star} sao`}
+                  />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
           {rules.map((rule) => (
             <Card key={rule.id}>
               <CardContent className="flex items-start gap-3.5 py-4">

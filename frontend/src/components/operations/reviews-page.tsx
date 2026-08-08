@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Loader2,
@@ -24,7 +24,13 @@ import {
   type OpsChannel,
   type ReviewTag,
 } from "@/components/operations/mock-data";
-import { pickRandomReply } from "@/components/operations/reply-templates";
+import {
+  loadAutoRepliedIds,
+  loadAutoReplyStars,
+  pickRandomReply,
+  saveAutoRepliedIds,
+  toStarLevel,
+} from "@/components/operations/reply-templates";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +63,14 @@ import { cn } from "@/lib/utils";
  *     LLM thật sau — hợp đồng giữ nguyên).
  *   · demo — chưa có dữ liệu thật: bộ mock cũ, thao tác chỉ đổi state client.
  *
+ * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (cấu hình ở trang Cấu hình kịch bản AI):
+ *   trang tự quét đánh giá mới 5 phút/lần; đánh giá THẬT chưa trả lời ở mức
+ *   sao đang BẬT cờ autoReplyStars → tự bốc mẫu random + GỬI THẬT lên sàn,
+ *   đánh dấu badge "AI Auto"; mức đang TẮT giữ trạng thái chờ duyệt tay (ô
+ *   soạn prefill sẵn gợi ý). Sổ localStorage chống gửi trùng giữa các lượt
+ *   quét. Đây là "cron phía client" — cron server 24/7 chờ chuyển bộ mẫu +
+ *   cờ vào DB khi thương mại hoá.
+ *
  * Bố cục 2 cột: feed đánh giá (trái) + AI Reply Builder sticky (phải).
  */
 
@@ -81,6 +95,8 @@ interface ReviewRow {
   rating: number;
   content: string;
   replied: boolean;
+  /** true = phản hồi do engine TỰ ĐỘNG gửi trong phiên này — badge "AI Auto". */
+  autoReplied?: boolean;
   createdAt: string;
   tag: ReviewTag;
   aiSuggestion: string;
@@ -154,60 +170,71 @@ export function OperationsReviewsPage() {
   const [sendingReply, setSendingReply] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
 
-  // ── Nạp đánh giá thật khi vào trang; trống/lỗi → demo ──
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetchOpsReviews();
-        if (cancelled) return;
-        setChannelErrors(r.errors);
-        if (r.reviews.length > 0) {
-          setRows(
-            r.reviews.map((rv) => {
-              const tag = classifyReviewTag(rv.rating, rv.content);
-              return {
-                id: rv.id,
+  // ── Nạp đánh giá thật: lần đầu khi vào trang, sau đó QUÉT 5 phút/lần —
+  // "cron phía client" cấp dữ liệu mới cho engine tự động phản hồi. Lượt quét
+  // sau lỗi/trống thì GIỮ dữ liệu đang có, không rơi ngược về demo. ──
+  const loadingRef = useRef(false);
+  const loadReviews = useCallback(async (initial: boolean) => {
+    if (loadingRef.current) return; // lượt trước chưa xong thì bỏ qua nhịp này
+    loadingRef.current = true;
+    try {
+      const r = await fetchOpsReviews();
+      setChannelErrors(r.errors);
+      if (r.reviews.length > 0) {
+        // Review có trong sổ auto-replied coi như ĐÃ trả lời kể cả khi sàn
+        // trả dữ liệu trễ (reply rỗng ở lượt quét ngay sau khi gửi).
+        const ledger = loadAutoRepliedIds();
+        setRows(
+          r.reviews.map((rv) => {
+            const tag = classifyReviewTag(rv.rating, rv.content);
+            return {
+              id: rv.id,
+              customer: rv.customer,
+              channel: rv.channelName as OpsChannel,
+              shopKey: rv.channelId,
+              shopLabel: `${channelMeta(rv.channelName).label} — ${rv.shopName}`,
+              shopName: rv.shopName,
+              productName: rv.productName,
+              rating: rv.rating,
+              content: rv.content,
+              replied: (rv.reply != null && rv.reply !== "") || ledger.has(rv.id),
+              autoReplied: ledger.has(rv.id),
+              createdAt: fmtDate(rv.createdAt),
+              tag,
+              aiSuggestion: generateReviewReply({
                 customer: rv.customer,
-                channel: rv.channelName as OpsChannel,
-                shopKey: rv.channelId,
-                shopLabel: `${channelMeta(rv.channelName).label} — ${rv.shopName}`,
-                shopName: rv.shopName,
-                productName: rv.productName,
                 rating: rv.rating,
-                content: rv.content,
-                replied: rv.reply != null && rv.reply !== "",
-                createdAt: fmtDate(rv.createdAt),
+                productName: rv.productName,
                 tag,
-                aiSuggestion: generateReviewReply({
-                  customer: rv.customer,
-                  rating: rv.rating,
-                  productName: rv.productName,
-                  tag,
-                }),
-                channelId: rv.channelId,
-                externalId: rv.externalId,
-              };
-            })
-          );
-          setMode("real");
-        } else {
-          setRows(demoRows());
-          setMode("demo");
-        }
-      } catch (err) {
-        if (cancelled) return;
+              }),
+              channelId: rv.channelId,
+              externalId: rv.externalId,
+            };
+          })
+        );
+        setMode("real");
+      } else if (initial) {
+        setRows(demoRows());
+        setMode("demo");
+      }
+    } catch (err) {
+      if (initial) {
         if (err instanceof ApiError && err.status !== 401) {
           setChannelErrors([{ channelId: "", shopName: "Hệ thống", message: err.message }]);
         }
         setRows(demoRows());
         setMode("demo");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      } // lượt quét định kỳ lỗi → im lặng, giữ dữ liệu cũ chờ nhịp sau
+    } finally {
+      loadingRef.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    loadReviews(true);
+    const timer = setInterval(() => loadReviews(false), 5 * 60_000);
+    return () => clearInterval(timer);
+  }, [loadReviews]);
 
   const isReal = mode === "real";
 
@@ -279,6 +306,74 @@ export function OperationsReviewsPage() {
   function markReplied(ids: Set<string>) {
     setRows((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, replied: true } : r)));
   }
+
+  // ── ENGINE TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO ──────────────────────────────────
+  // Chạy sau mỗi lượt quét (rows đổi): lọc đánh giá THẬT chưa trả lời ở mức
+  // sao đang BẬT trong cấu hình (trang Cấu hình kịch bản AI) và chưa có trong
+  // sổ chống trùng → bốc mẫu random đúng mức sao, GỬI THẬT lên sàn TUẦN TỰ
+  // (rate limit Lazada tính toàn app), xong đánh dấu replied + badge AI Auto.
+  // Mức sao đang TẮT không đụng tới — giữ "Chưa trả lời" chờ CSKH duyệt tay.
+  const autoRunningRef = useRef(false);
+  useEffect(() => {
+    if (mode !== "real" || autoRunningRef.current) return;
+    const cfg = loadAutoReplyStars();
+    if (!Object.values(cfg).some(Boolean)) return; // tắt hết — khỏi tốn công
+    const ledger = loadAutoRepliedIds();
+    const targets = rows.filter(
+      (r) =>
+        !r.replied &&
+        r.channelId != null &&
+        r.externalId != null &&
+        cfg[toStarLevel(r.rating)] &&
+        !ledger.has(r.id)
+    );
+    if (targets.length === 0) return;
+
+    autoRunningRef.current = true;
+    (async () => {
+      let ok = 0;
+      let firstError = "";
+      const done = new Set<string>();
+      for (const r of targets) {
+        try {
+          await replyOpsReview({
+            channelId: r.channelId!,
+            reviewId: r.externalId!,
+            // Mỗi đánh giá một mẫu NGẪU NHIÊN — sàn không quét trùng nội dung
+            content:
+              pickRandomReply(r.rating, {
+                customer: r.customer,
+                shopName: r.shopName,
+                productName: r.productName,
+              }) ?? r.aiSuggestion,
+          });
+          done.add(r.id);
+          ledger.add(r.id);
+          ok++;
+        } catch (err) {
+          if (!firstError)
+            firstError = err instanceof Error ? err.message : "lỗi không rõ";
+        }
+      }
+      saveAutoRepliedIds(ledger);
+      if (done.size > 0) {
+        setRows((prev) =>
+          prev.map((r) =>
+            done.has(r.id) ? { ...r, replied: true, autoReplied: true } : r
+          )
+        );
+        toast.success(
+          `🤖 AI đã tự động trả lời ${formatNumber(ok)} đánh giá lên sàn theo cấu hình số sao.`
+        );
+      }
+      if (ok < targets.length) {
+        toast.error(
+          `${formatNumber(targets.length - ok)} đánh giá tự động gửi thất bại${firstError ? ` — ${firstError}` : ""}`
+        );
+      }
+      autoRunningRef.current = false;
+    })();
+  }, [rows, mode]);
 
   async function sendReply() {
     if (!selected || sendingReply) return;
@@ -524,6 +619,14 @@ export function OperationsReviewsPage() {
                     <Badge variant="outline" className={REVIEW_TAG_META[r.tag].badgeClass}>
                       AI: {REVIEW_TAG_META[r.tag].label}
                     </Badge>
+                    {r.autoReplied && (
+                      <Badge
+                        variant="outline"
+                        className="border-violet-200 bg-violet-50 text-violet-700"
+                      >
+                        🤖 AI Auto
+                      </Badge>
+                    )}
                     <Badge
                       variant="outline"
                       className={cn(
@@ -624,9 +727,9 @@ export function OperationsReviewsPage() {
                 🤖 Tự động trả lời hàng loạt {formatNumber(bulkTargets.length)} đánh giá 5 sao
               </Button>
               <p className={cn(TEXT_SUB, "text-center")}>
-                Chỉ áp dụng cho đánh giá 5 sao chưa trả lời
-                {isReal ? " — gửi THẬT lên sàn" : ""}. Đánh giá 1–3 sao luôn cần
-                người duyệt từng câu.
+                Nút bấm tay này chỉ áp dụng cho đánh giá 5 sao chưa trả lời
+                {isReal ? " — gửi THẬT lên sàn" : ""}. Muốn hệ thống TỰ gửi theo
+                từng mức sao, bật công tắc ở trang Cấu hình kịch bản AI.
               </p>
             </CardContent>
           </Card>
