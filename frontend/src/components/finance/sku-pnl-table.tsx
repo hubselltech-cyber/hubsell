@@ -79,7 +79,7 @@ const STICKY_HEAD =
   "sticky left-0 z-10 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
 
 // Bảng dài thì cắt trang tại chỗ — dữ liệu đã về đủ trong một lần gọi API
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 /** Ba tab lọc nhanh. Thứ tự đi từ rộng đến hẹp dần theo mức độ cần xử lý. */
 type PnlTab = "all" | "urgent" | "missing-cost";

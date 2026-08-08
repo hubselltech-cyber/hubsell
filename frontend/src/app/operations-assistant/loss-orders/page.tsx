@@ -6,6 +6,8 @@ import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   PackageX,
   Receipt,
   RefreshCw,
@@ -70,6 +72,13 @@ export default function LossOrdersPage() {
   // Phân biệt lần tải đầu (hiện chữ "đang quét") với các lần đổi bộ lọc
   // sau đó (giữ nguyên bảng cũ, chỉ làm mờ) để giao diện không nhấp nháy
   const [loadedOnce, setLoadedOnce] = useState(false);
+  const [page, setPage] = useState(1);
+
+  // Đổi bộ lọc là quay về trang đầu; riêng "Quét lại" giữ nguyên trang để
+  // không mất mạch đang soát dở danh sách (cùng quy ước với SkuPnlTable).
+  useEffect(() => {
+    setPage(1);
+  }, [range, channel]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +129,16 @@ export default function LossOrdersPage() {
   const totalLoss = orders
     .filter((o) => o.isLoss)
     .reduce((s, o) => s + o.profit, 0);
+
+  // Cắt trang tại chỗ — dữ liệu đã về đủ trong một lần gọi API. Kẹp lại số
+  // trang khi danh sách co hẹp (đổi khoảng ngày/kênh) để không đứng ở trang rỗng.
+  const PAGE_SIZE = 20;
+  const pageCount = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pagedOrders = orders.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   return (
     <AppShell>
@@ -226,7 +245,7 @@ export default function LossOrdersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {orders.map((o) => {
+                  {pagedOrders.map((o) => {
                     const meta = CHANNEL_META[o.channelName as ChannelName];
                     return (
                       <TableRow key={o.id}>
@@ -310,6 +329,40 @@ export default function LossOrdersPage() {
                   })}
                 </TableBody>
                 </Table>
+
+                {/* Thanh phân trang — chỉ hiện khi danh sách vượt một trang */}
+                {orders.length > PAGE_SIZE && (
+                  <div className="flex flex-wrap items-center justify-end gap-3 border-t px-4 py-3">
+                    <span className="text-sm text-muted-foreground">
+                      Hiển thị {formatNumber((safePage - 1) * PAGE_SIZE + 1)}–
+                      {formatNumber(
+                        Math.min(safePage * PAGE_SIZE, orders.length)
+                      )}{" "}
+                      trên {formatNumber(orders.length)} đơn · trang {safePage}/
+                      {pageCount}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={safePage <= 1}
+                        onClick={() => setPage(safePage - 1)}
+                      >
+                        <ChevronLeft className="size-4" />
+                        Trang trước
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={safePage >= pageCount}
+                        onClick={() => setPage(safePage + 1)}
+                      >
+                        Trang sau
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </Refreshing>
             )}
           </CardContent>
