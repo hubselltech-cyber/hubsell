@@ -255,8 +255,10 @@ export default function FinanceAnalyticsPage() {
           <CardHeader>
             <CardTitle>Doanh thu vs Tổng chi phí (14 ngày)</CardTitle>
             <CardDescription>
-              Tổng chi phí mỗi ngày = giá vốn đơn Đã giao + chi phí vận hành phát
-              sinh trong ngày.
+              Doanh thu = tiền trên sàn của đơn phát sinh trong ngày (Đã giao +
+              Đang giao, gồm cả đơn chờ đối soát — khớp thẻ Doanh thu). Tổng chi
+              phí = giá vốn + quảng cáo + chi phí vận hành trong ngày (khớp thẻ
+              Chi phí, không gồm phí sàn vì đã khấu trừ trong doanh thu).
             </CardDescription>
           </CardHeader>
           <CardContent>

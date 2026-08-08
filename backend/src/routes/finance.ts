@@ -2058,7 +2058,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           }
         : {};
 
-    const [pnlOrders, expenses, operatingIncomeAgg, adSpendAgg, taxCfg] = await Promise.all([
+    const [pnlOrders, expenses, operatingIncomeAgg, adSpendRows, taxCfg] = await Promise.all([
       // NGUỒN SỐ GỐC: CÙNG tập đơn + CÙNG công thức với trang Lãi/Lỗ Thực Hiện
       // (không lọc trạng thái = tab "Tất cả" bên Lãi/Lỗ; cùng WHERE, cùng trần).
       fetchPnlOrders(scope, range),
@@ -2088,16 +2088,22 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         },
       }),
       // CHI PHÍ QUẢNG CÁO SÀN theo ngày (bảng AdSpend, sync từ Ads API) —
-      // lọc theo cùng channel scope với tập đơn, khoảng ngày theo bộ lọc.
-      prisma.adSpend.aggregate({
-        _sum: { amount: true },
+      // lấy TỪNG DÒNG (date, amount) thay vì aggregate: tổng cộng cho cột Chi
+      // phí, còn từng ngày đổ vào chuỗi 14 ngày cho khớp định nghĩa cột.
+      prisma.adSpend.findMany({
         where: { channel: scope, ...(range ? { date: range } : {}) },
+        select: { date: true, amount: true },
       }),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
     ]);
     const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
-    const adsSpendTotal = Number(adSpendAgg._sum.amount ?? 0);
+    const adsSpendTotal = adSpendRows.reduce((s, a) => s + Number(a.amount), 0);
+    const adsByDay = new Map<string, number>();
+    for (const a of adSpendRows) {
+      const key = toBusinessDateKey(a.date);
+      adsByDay.set(key, (adsByDay.get(key) ?? 0) + Number(a.amount));
+    }
 
     // ============================================================
     // VIEW TỔNG HỢP TỪ NGUỒN SỐ GỐC — mọi con số bên dưới CHỈ là SUM() các
@@ -2215,18 +2221,30 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     let totalRevenue = 0;
     let totalCost = 0;
     let totalPlatformFee = 0;
-    const revenueByDay = new Map<string, number>();
-    const cogsByDay = new Map<string, number>();
     for (const r of deliveredRows) {
       const fee =
         r.feeFixedPayment + r.feeService + r.feeSellerProtection + r.feeAffiliate;
       totalRevenue += r.revenueGross;
       totalCost += r.costSnapshot;
       totalPlatformFee += fee;
+    }
+
+    // ===== CHUỖI NGÀY cho biểu đồ — PHẢI khớp định nghĩa các thẻ phía trên =====
+    // Trước đây chuỗi chỉ cộng đơn ĐÃ GIAO nên 3–7 ngày gần nhất luôn tụt về 0
+    // (đơn mới còn đang đi đường) — chủ shop nhìn tưởng doanh thu sập (bug anh
+    // Trung báo 08/08). Sửa theo đúng phạm vi trang:
+    //   Doanh thu/ngày = Σ platformRevenue của đơn PHÁT SINH trong ngày (Đã
+    //     giao + Đang giao, trừ hủy) — cùng nguồn với thẻ DOANH THU (cột 2).
+    //   Chi phí/ngày  = giá vốn đơn phát sinh + quảng cáo AdSpend + chi phí
+    //     vận hành nhập tay — đúng cơ cấu cột CHI PHÍ (cột 3). KHÔNG cộng phí
+    //     sàn: phí sàn là khấu trừ của Doanh thu (chốt 31/07), cộng vào chi
+    //     phí là trừ trùng.
+    const revenueByDay = new Map<string, number>();
+    const cogsByDay = new Map<string, number>();
+    for (const r of activeRows) {
       const key = toBusinessDateKey(r.createdAt);
-      revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + r.revenueGross);
-      // Chi phí trong ngày gồm giá vốn + phí sàn của đơn
-      cogsByDay.set(key, (cogsByDay.get(key) ?? 0) + r.costSnapshot + fee);
+      revenueByDay.set(key, (revenueByDay.get(key) ?? 0) + r.platformRevenue);
+      cogsByDay.set(key, (cogsByDay.get(key) ?? 0) + r.costSnapshot);
     }
     // Lợi nhuận gộp = Doanh thu − Giá vốn (giữ nguyên chuẩn kế toán)
     const grossProfit = totalRevenue - totalCost;
@@ -2272,8 +2290,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // méo cơ cấu (có kỳ thuế chiếm >90% "chi phí"). Nó thành DÒNG KHẤU TRỪ
     // cuối cột Lợi nhuận: LN trước thuế − Thuế dự phòng = LN ròng (chuẩn P&L).
 
-    // Chuỗi 14 ngày: Doanh thu vs Tổng chi phí (giá vốn + chi phí vận hành phát
-    // sinh trong ngày) — mốc "hôm nay" và nhãn ngày đều theo GIỜ VN.
+    // Chuỗi 14 ngày: Doanh thu vs Tổng chi phí — mốc "hôm nay" và nhãn ngày
+    // đều theo GIỜ VN. Thành phần từng ngày xem chú thích khối CHUỖI NGÀY trên.
     const days = 14;
     const todayStart = businessDayStart(new Date());
     const series: { date: string; label: string; revenue: number; cost: number }[] = [];
@@ -2283,7 +2301,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         date: key,
         label: dateKeyLabel(key),
         revenue: revenueByDay.get(key) ?? 0,
-        cost: (cogsByDay.get(key) ?? 0) + (expenseByDay.get(key) ?? 0),
+        cost:
+          (cogsByDay.get(key) ?? 0) +
+          (expenseByDay.get(key) ?? 0) +
+          (adsByDay.get(key) ?? 0),
       });
     }
 
