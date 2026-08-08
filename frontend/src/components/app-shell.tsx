@@ -122,18 +122,19 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    // Mạng lưới KOC & Affiliate đa kênh — hiện là preview mock (cùng trạng
-    // thái với Trợ lý quảng cáo, nên đặt ngay dưới để gom cụm Marketing).
-    // Booking fee / Net-ROI là dữ liệu tài chính → chỉ ADMIN (xem
-    // canAccessKocMarketing). Lazada affiliate còn nhỏ, chưa có trang riêng —
-    // theo dõi chung ở Tổng quan Net-ROI.
+    // Mạng lưới KOC & Affiliate đa kênh (đặt dưới Trợ lý quảng cáo để gom cụm
+    // Marketing). Booking fee / Net-ROI là dữ liệu tài chính → chỉ ADMIN (xem
+    // canAccessKocMarketing). Trang Shopee/Lazada đọc SỐ THẬT từ /api/koc/*;
+    // TikTok là CỔNG CHỜ (đợi sandbox + shop thật uỷ quyền); Hàng mẫu & Chi
+    // phí còn preview mock.
     label: "Mạng lưới KOC & Marketing",
     icon: "diversity_3",
     roles: ["ADMIN"],
     children: [
       { href: "/koc-marketing/overview", label: "Tổng quan Net-ROI Đa kênh" },
+      { href: "/koc-marketing/shopee", label: "Shopee Affiliate (AMS)" },
+      { href: "/koc-marketing/lazada", label: "Lazada Affiliate" },
       { href: "/koc-marketing/tiktok", label: "TikTok Affiliate & MCN" },
-      { href: "/koc-marketing/shopee", label: "Shopee Affiliate (SAP)" },
       { href: "/koc-marketing/samples", label: "Hàng mẫu & Seeding" },
       { href: "/koc-marketing/expenses", label: "Chi phí Booking & Hợp đồng" },
     ],
@@ -193,7 +194,8 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/operations-assistant/ai-rules", title: "Cấu hình kịch bản AI" },
   { prefix: "/koc-marketing/overview", title: "Tổng quan Net-ROI Đa kênh" },
   { prefix: "/koc-marketing/tiktok", title: "TikTok Affiliate & MCN" },
-  { prefix: "/koc-marketing/shopee", title: "Shopee Affiliate (SAP)" },
+  { prefix: "/koc-marketing/shopee", title: "Shopee Affiliate (AMS)" },
+  { prefix: "/koc-marketing/lazada", title: "Lazada Affiliate" },
   { prefix: "/koc-marketing/samples", title: "Quản lý Hàng mẫu & Seeding" },
   { prefix: "/koc-marketing/expenses", title: "Chi phí Booking & Hợp đồng" },
   { prefix: "/ads/tiktok", title: "Trợ lý quảng cáo TikTok" },

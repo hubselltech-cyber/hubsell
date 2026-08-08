@@ -210,4 +210,178 @@ router.get("/orders", async (req: AuthRequest, res) => {
   });
 });
 
+// ------------------------------------------------------------
+// GET /api/koc/channel-detail?channelName=SHOPEE|LAZADA|TIKTOK&days=30
+// Bức tranh affiliate THẬT của MỘT sàn — nguồn số cho 3 trang kênh của
+// module KOC. TikTok dùng CHUNG endpoint này (cổng chờ): khi có shop thật
+// uỷ quyền + settlements ghi affiliateFee, số tự chảy vào không cần sửa API.
+//
+// Trả về:
+//   shops   — từng gian của sàn: trạng thái liên kết + số affiliate riêng
+//   totals  — gộp sàn, kèm tỷ trọng affiliate/tổng GMV sàn cùng kỳ
+//   series  — chuỗi NGÀY (đủ mọi ngày trong kỳ, ngày trống = 0) để vẽ chart
+//   topSkus — SKU được affiliate bán chạy; hoa hồng cấp ĐƠN được PHÂN BỔ về
+//             dòng theo tỷ trọng giá trị dòng (ước lượng — sàn không trả
+//             hoa hồng theo dòng, ghi chú rõ trên UI)
+// ------------------------------------------------------------
+router.get("/channel-detail", async (req: AuthRequest, res) => {
+  const { days, since } = sinceFromQuery(req);
+  const rawName = String(req.query.channelName ?? "").trim().toUpperCase();
+  if (!["SHOPEE", "LAZADA", "TIKTOK"].includes(rawName)) {
+    res.status(400).json({ error: "channelName phải là SHOPEE, LAZADA hoặc TIKTOK" });
+    return;
+  }
+  const channelName = rawName as ChannelName;
+  const scope = { ...channelScope(req), channelName };
+
+  const [channels, shopAgg, affGrouped, affOrders] = await Promise.all([
+    prisma.channel.findMany({
+      where: scope,
+      select: {
+        id: true,
+        shopName: true,
+        externalShopId: true,
+        status: true,
+        lastSyncAt: true,
+        apiToken: true,
+        accessTokenExpireAt: true,
+      },
+    }),
+    // Tổng GMV + số đơn TOÀN SÀN cùng kỳ — mẫu số của tỷ trọng affiliate.
+    prisma.order.aggregate({
+      where: { channel: scope, createdAt: { gte: since } },
+      _sum: { totalAmount: true },
+      _count: { _all: true },
+    }),
+    prisma.order.groupBy({
+      by: ["channelId"],
+      where: { channel: scope, affiliateFee: { gt: 0 }, createdAt: { gte: since } },
+      _count: { _all: true },
+      _sum: { totalAmount: true, affiliateFee: true, refundedAmount: true },
+    }),
+    // Đơn affiliate kèm dòng hàng — nguồn cho series ngày + top SKU.
+    // take 5000 là trần an toàn; vượt trần thì series/topSku thiếu phần đuôi
+    // nhưng các con số tổng bên trên vẫn đúng (tính bằng aggregate riêng).
+    prisma.order.findMany({
+      where: { channel: scope, affiliateFee: { gt: 0 }, createdAt: { gte: since } },
+      select: {
+        createdAt: true,
+        totalAmount: true,
+        affiliateFee: true,
+        returnStatus: true,
+        items: {
+          select: { channelSku: true, productName: true, quantity: true, price: true },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 5000,
+    }),
+  ]);
+
+  const affByChannel = new Map(affGrouped.map((g) => [g.channelId, g]));
+  const shops = channels.map((c) => {
+    const g = affByChannel.get(c.id);
+    return {
+      channelId: c.id,
+      shopName: c.shopName,
+      externalShopId: c.externalShopId,
+      connected: c.status === "ACTIVE" && Boolean(c.apiToken),
+      /// Đã uỷ quyền OAuth THẬT với sàn hay chưa — gian giả lập không có
+      /// externalShopId (đây là cách trang TikTok nhận biết "cổng chờ").
+      authorizedReal: Boolean(c.externalShopId),
+      accessTokenExpireAt: c.accessTokenExpireAt,
+      lastSyncAt: c.lastSyncAt,
+      affiliate: {
+        orders: g?._count._all ?? 0,
+        gmv: Number(g?._sum.totalAmount ?? 0),
+        commission: Number(g?._sum.affiliateFee ?? 0),
+        refundedAmount: Number(g?._sum.refundedAmount ?? 0),
+      },
+    };
+  });
+
+  // ----- Chuỗi ngày: khởi tạo đủ mọi ngày trong kỳ rồi cộng dồn đơn vào -----
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+  const series: { date: string; gmv: number; commission: number; orders: number }[] = [];
+  const seriesIndex = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    seriesIndex.set(dayKey(d), series.length);
+    series.push({
+      date: `${d.getUTCDate()}/${d.getUTCMonth() + 1}`,
+      gmv: 0,
+      commission: 0,
+      orders: 0,
+    });
+  }
+
+  // ----- Top SKU: gom dòng hàng, phân bổ hoa hồng đơn theo tỷ trọng dòng -----
+  const skuMap = new Map<
+    string,
+    { channelSku: string; productName: string; quantity: number; gmv: number; commission: number }
+  >();
+  let refundedOrders = 0;
+
+  for (const o of affOrders) {
+    const idx = seriesIndex.get(dayKey(o.createdAt));
+    if (idx !== undefined) {
+      series[idx].gmv += Number(o.totalAmount);
+      series[idx].commission += Number(o.affiliateFee);
+      series[idx].orders += 1;
+    }
+    if (RETURN_STATUSES.includes(o.returnStatus)) refundedOrders += 1;
+
+    const lineTotal = o.items.reduce(
+      (s, it) => s + Number(it.price) * it.quantity,
+      0
+    );
+    for (const it of o.items) {
+      const lineGmv = Number(it.price) * it.quantity;
+      const entry = skuMap.get(it.channelSku) ?? {
+        channelSku: it.channelSku,
+        productName: it.productName,
+        quantity: 0,
+        gmv: 0,
+        commission: 0,
+      };
+      entry.quantity += it.quantity;
+      entry.gmv += lineGmv;
+      if (lineTotal > 0) {
+        entry.commission += Number(o.affiliateFee) * (lineGmv / lineTotal);
+      }
+      skuMap.set(it.channelSku, entry);
+    }
+  }
+
+  const topSkus = [...skuMap.values()]
+    .sort((a, b) => b.gmv - a.gmv)
+    .slice(0, 10)
+    .map((s) => ({ ...s, commission: Math.round(s.commission) }));
+
+  const gmv = shops.reduce((s, x) => s + x.affiliate.gmv, 0);
+  const commission = shops.reduce((s, x) => s + x.affiliate.commission, 0);
+  const refundedAmount = shops.reduce((s, x) => s + x.affiliate.refundedAmount, 0);
+  const shopGmv = Number(shopAgg._sum.totalAmount ?? 0);
+
+  res.json({
+    days,
+    channelName,
+    shops,
+    totals: {
+      orders: shops.reduce((s, x) => s + x.affiliate.orders, 0),
+      gmv,
+      commission,
+      refundedAmount,
+      refundedOrders,
+      netRevenue: gmv - refundedAmount,
+      shopGmv,
+      shopOrders: shopAgg._count._all,
+      /// % GMV toàn sàn đến từ affiliate — thước đo mức phụ thuộc vào KOC.
+      sharePct: shopGmv > 0 ? (gmv / shopGmv) * 100 : 0,
+    },
+    series,
+    topSkus,
+  });
+});
+
 export default router;

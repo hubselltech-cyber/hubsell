@@ -2596,3 +2596,60 @@ export function fetchKocAffiliateOrders(params: {
   });
   return apiFetch<KocOrdersDTO>(`/api/koc/orders?${q}`);
 }
+
+/** Một gian hàng trong channel-detail — kèm cờ đã uỷ quyền OAuth thật. */
+export interface KocChannelShopDTO {
+  channelId: string;
+  shopName: string;
+  externalShopId: string | null;
+  connected: boolean;
+  /** false = gian giả lập/chưa OAuth thật (TikTok đang chờ sandbox). */
+  authorizedReal: boolean;
+  accessTokenExpireAt: string | null;
+  lastSyncAt: string | null;
+  affiliate: {
+    orders: number;
+    gmv: number;
+    commission: number;
+    refundedAmount: number;
+  };
+}
+
+/** Bức tranh affiliate thật của MỘT sàn — nguồn số cho 3 trang kênh KOC. */
+export interface KocChannelDetailDTO {
+  days: number;
+  channelName: ChannelName;
+  shops: KocChannelShopDTO[];
+  totals: {
+    orders: number;
+    gmv: number;
+    commission: number;
+    refundedAmount: number;
+    refundedOrders: number;
+    netRevenue: number;
+    /** Tổng GMV toàn sàn cùng kỳ (mọi đơn, không chỉ affiliate). */
+    shopGmv: number;
+    shopOrders: number;
+    /** % GMV toàn sàn đến từ affiliate. */
+    sharePct: number;
+  };
+  series: { date: string; gmv: number; commission: number; orders: number }[];
+  topSkus: {
+    channelSku: string;
+    productName: string;
+    quantity: number;
+    gmv: number;
+    /** Hoa hồng PHÂN BỔ theo tỷ trọng dòng — ước lượng, sàn chỉ trả cấp đơn. */
+    commission: number;
+  }[];
+}
+
+/** Chi tiết affiliate thật của một sàn trong `days` ngày gần nhất. */
+export function fetchKocChannelDetail(
+  channelName: "SHOPEE" | "LAZADA" | "TIKTOK",
+  days = 30
+) {
+  return apiFetch<KocChannelDetailDTO>(
+    `/api/koc/channel-detail?channelName=${channelName}&days=${days}`
+  );
+}
