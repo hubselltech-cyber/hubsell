@@ -54,8 +54,6 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
       { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện" },
       { href: "/finance/expenses", label: "Thu chi vận hành" },
-      { href: "/finance/loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
-      { href: "/finance/shipping-alerts", label: "Đối soát phí ship" },
       { href: "/finance/cost-prices", label: "Cấu hình Giá vốn" },
     ],
   },
@@ -83,6 +81,10 @@ const NAV_ITEMS: NavItem[] = [
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
       { href: "/products", label: "Kho vật lý" },
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
+      // GIỮ NGUYÊN route /finance/shipping-alerts — chỉ điều chuyển vị trí menu
+      // sang nhóm Kho (nghiệp vụ đối soát vận chuyển sát với kho vận), đổi
+      // route sẽ làm hỏng link cũ và bookmark của người dùng.
+      { href: "/finance/shipping-alerts", label: "Đối soát phí ship" },
     ],
   },
   {
@@ -95,6 +97,11 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { href: "/operations-assistant/chat", label: "Trợ lý Chat" },
       { href: "/operations-assistant/reviews", label: "Phản hồi đánh giá" },
+      // GIỮ NGUYÊN route /finance/loss-orders — chỉ điều chuyển vị trí menu
+      // sang nhóm Trợ lý vận hành, đổi route sẽ hỏng bookmark/link cũ.
+      // LƯU Ý phân quyền: nhóm cha mở cho SALES nên SALES cũng thấy menu này
+      // — chấp nhận tạm, chờ phương thức phân quyền mới (anh Trung 08/08).
+      { href: "/finance/loss-orders", label: "Cảnh báo & P&L Sản phẩm" },
       { href: "/operations-assistant/ai-rules", label: "Cấu hình kịch bản AI" },
     ],
   },
@@ -179,13 +186,28 @@ function getPageTitle(pathname: string): string {
 // trang con của nó (người dùng vẫn cụp tay lại được, xem openMenus bên dưới).
 function menusForPath(pathname: string): string[] {
   const labels: string[] = [];
-  if (pathname.startsWith("/finance")) labels.push("Quản lý Tài chính");
+  // /finance/shipping-alerts và /finance/loss-orders là ngoại lệ: route vẫn
+  // thuộc /finance nhưng menu đã điều chuyển sang nhóm khác (Quản lý Kho và
+  // Trợ lý vận hành tương ứng).
+  if (
+    pathname.startsWith("/finance") &&
+    !pathname.startsWith("/finance/shipping-alerts") &&
+    !pathname.startsWith("/finance/loss-orders")
+  )
+    labels.push("Quản lý Tài chính");
   if (pathname.startsWith("/invoicing")) labels.push("Hóa đơn & Thuế");
-  if (pathname.startsWith("/products") || pathname.startsWith("/warehouse"))
+  if (
+    pathname.startsWith("/products") ||
+    pathname.startsWith("/warehouse") ||
+    pathname.startsWith("/finance/shipping-alerts")
+  )
     labels.push("Quản lý Kho");
   if (pathname.startsWith("/settings")) labels.push("Cấu hình");
   if (pathname.startsWith("/ads")) labels.push("Trợ lý quảng cáo");
-  if (pathname.startsWith("/operations-assistant"))
+  if (
+    pathname.startsWith("/operations-assistant") ||
+    pathname.startsWith("/finance/loss-orders")
+  )
     labels.push("Trợ lý vận hành");
   return labels;
 }
