@@ -378,53 +378,31 @@ function MarketplaceShare({
 }
 
 /**
- * CƠ CẤU CHI PHÍ — donut 6 khoản theo chuẩn P&L: phí dịch vụ sàn, thuế sàn,
- * quảng cáo, giá vốn, vận hành biến đổi, vận hành cố định. Σ 6 khoản =
- * totalPlatformFee + totalCost + totalOperatingExpense — luôn khớp từng đồng
- * với thẻ "Tổng Chi phí" và Bóc tách dòng tiền.
+ * CƠ CẤU CHI PHÍ — donut bóc tách theo ĐÚNG các dòng khấu trừ của Báo cáo
+ * dòng tiền (7 bucket sàn từ platformFeeBreakdown) + giá vốn + 3 nhóm chi phí
+ * vận hành. Σ mọi mảnh = totalPlatformFee + totalCost + totalOperatingExpense
+ * — luôn khớp từng đồng với thẻ "Tổng Chi phí"; khoản 0 đồng tự ẩn.
  */
 function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
   const adsExpense = analytics.expensesByCategory
     .filter((e) => e.category === "ADS")
     .reduce((sum, e) => sum + e.amount, 0);
+  const fee = analytics.platformFeeBreakdown;
 
   const segments = [
-    {
-      key: "fee",
-      label: "Phí dịch vụ & Cố định sàn",
-      amount: analytics.totalPlatformFee - analytics.totalPlatformTax,
-      color: "#f97316",
-    },
-    {
-      key: "tax",
-      label: "Thuế sàn (TNCN & VAT thu hộ)",
-      amount: analytics.totalPlatformTax,
-      color: "#ef4444",
-    },
-    {
-      key: "ads",
-      label: "Quảng cáo Ads",
-      amount: adsExpense,
-      color: "#8b5cf6",
-    },
-    {
-      key: "cogs",
-      label: "Giá vốn hàng bán (COGS)",
-      amount: analytics.totalCost,
-      color: "#3b82f6",
-    },
-    {
-      key: "varops",
-      label: "Chi phí Biến đổi Vận hành",
-      amount: analytics.operatingVariableExpense,
-      color: "#10b981",
-    },
-    {
-      key: "fixops",
-      label: "Chi phí Cố định Vận hành",
-      amount: analytics.operatingFixedExpense,
-      color: "#a16207",
-    },
+    // ---- Sàn khấu trừ: cùng nhãn với thẻ "Tổng giá trị SP" bên Dòng tiền ----
+    { key: "service", label: "Phí nền tảng (CĐ, thanh toán, dịch vụ)", amount: fee.service, color: "#f97316" },
+    { key: "affiliate", label: "Phí tiếp thị liên kết", amount: fee.affiliate, color: "#f59e0b" },
+    { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN)", amount: fee.tax, color: "#ef4444" },
+    { key: "voucher", label: "Voucher trợ giá của shop", amount: fee.voucher, color: "#ec4899" },
+    { key: "shippingDiff", label: "Chênh lệch phí vận chuyển", amount: fee.shippingDiff, color: "#14b8a6" },
+    { key: "adWallet", label: "Nạp ví quảng cáo sàn", amount: fee.adWallet, color: "#6366f1" },
+    { key: "feeOther", label: "Khấu trừ khác của sàn", amount: fee.other, color: "#94a3b8" },
+    // ---- Ngoài sàn ----
+    { key: "cogs", label: "Giá vốn hàng bán (COGS)", amount: analytics.totalCost, color: "#3b82f6" },
+    { key: "ads", label: "Quảng cáo Ads (nhập tay)", amount: adsExpense, color: "#8b5cf6" },
+    { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: analytics.operatingVariableExpense, color: "#10b981" },
+    { key: "fixops", label: "Chi phí Cố định Vận hành", amount: analytics.operatingFixedExpense, color: "#a16207" },
   ].filter((s) => s.amount > 0);
   const total = segments.reduce((sum, s) => sum + s.amount, 0);
 

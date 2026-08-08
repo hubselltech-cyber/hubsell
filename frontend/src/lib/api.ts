@@ -660,6 +660,20 @@ export interface AnalyticsResponse {
   totalPlatformFee: number;
   /** Riêng THUẾ SÀN (TNCN + VAT thu hộ) đã nằm trong totalPlatformFee. */
   totalPlatformTax: number;
+  /**
+   * Bóc tách totalPlatformFee theo ĐÚNG các dòng khấu trừ của Báo cáo dòng
+   * tiền (thẻ Tổng giá trị SP). `other` = phần dư chưa rơi vào bucket nào
+   * (lệch đối soát, đã cấn trợ giá sàn) — Σ tất cả = totalPlatformFee.
+   */
+  platformFeeBreakdown: {
+    service: number; // phí cố định + thanh toán + dịch vụ + PiShip
+    affiliate: number; // hoa hồng tiếp thị liên kết
+    tax: number; // thuế sàn TMĐT (GTGT + TNCN thu hộ)
+    voucher: number; // voucher/xu trợ giá do shop chịu
+    shippingDiff: number; // chênh lệch phí vận chuyển
+    adWallet: number; // sàn giữ tiền đơn nạp ví quảng cáo
+    other: number; // khấu trừ khác/lệch đối soát
+  };
   grossProfit: number;
   totalOperatingExpense: number;
   /** Chi phí vận hành BIẾN ĐỔI ngoài quảng cáo (bao bì, phí hoàn…). */

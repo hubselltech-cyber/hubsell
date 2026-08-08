@@ -105,6 +105,42 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? activeRows.reduce((sum, r) => sum + r.platformTax, 0)
       : 0;
 
+    /*
+     * BÓC TÁCH SÀN KHẤU TRỪ theo ĐÚNG các dòng của thẻ "Tổng giá trị sản phẩm"
+     * bên Báo cáo dòng tiền (/api/finance/analytics) — cùng bucket, cùng nhãn,
+     * cùng nguồn computePnlRow. "Khác" = phần dư totalPlatformFee chưa rơi vào
+     * bucket nào (lệch đối soát/khoản sàn chưa bóc cột, đã cấn trợ giá sàn) để
+     * Σ các mảnh donut = đúng totalPlatformFee, không rơi rớt đồng nào.
+     */
+    const sumRows = (pick: (r: (typeof activeRows)[number]) => number) =>
+      seesFinancials ? activeRows.reduce((s, r) => s + pick(r), 0) : 0;
+    const feeService = sumRows(
+      (r) => r.feeFixedPayment + r.feeService + r.feeSellerProtection
+    );
+    const feeAffiliate = sumRows((r) => r.feeAffiliate);
+    const feeVoucher = sumRows((r) => r.sellerVoucher);
+    const feeShippingDiff = sumRows((r) => r.shippingFeeDiff);
+    const feeAdWallet = sumRows((r) => r.adWalletTopup);
+    const feeSubsidy = sumRows((r) => r.platformSubsidy);
+    const feeOther =
+      totalPlatformFee -
+      (feeService +
+        feeAffiliate +
+        totalPlatformTax +
+        feeVoucher +
+        feeShippingDiff +
+        feeAdWallet -
+        feeSubsidy);
+    const platformFeeBreakdown = {
+      service: feeService, // phí cố định + thanh toán + dịch vụ + PiShip
+      affiliate: feeAffiliate,
+      tax: totalPlatformTax,
+      voucher: feeVoucher,
+      shippingDiff: feeShippingDiff,
+      adWallet: feeAdWallet,
+      other: feeOther, // đã cấn trợ giá sàn (subsidy làm giảm khấu trừ)
+    };
+
     // 2) Giá vốn = Σ costSnapshot (OrderItem.costPriceAtSale, fallback log trừ
     // kho) — cùng công thức orderCost với mọi báo cáo tài chính. Người không
     // được xem tài chính giữ 0 để không rò số.
@@ -334,6 +370,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       totalCost,
       totalPlatformFee,
       totalPlatformTax,
+      platformFeeBreakdown,
       grossProfit,
       totalOperatingExpense,
       operatingVariableExpense,
