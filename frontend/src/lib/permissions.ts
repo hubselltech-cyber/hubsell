@@ -43,6 +43,15 @@ export function canAccessOperations(role?: Role): boolean {
   return role === "ADMIN" || role === "SALES";
 }
 
+/**
+ * Được vào nhóm "Mạng lưới KOC & Marketing" (Net-ROI, booking, hàng mẫu).
+ * Chi phí booking và lợi nhuận ròng theo KOC là dữ liệu tài chính — cùng luật
+ * với nhóm Quản lý Tài chính: chỉ chủ shop.
+ */
+export function canAccessKocMarketing(role?: Role): boolean {
+  return role === "ADMIN";
+}
+
 /** Được cấu hình gian hàng, liên kết sản phẩm, quản lý nhân viên. */
 export function canManageShop(role?: Role): boolean {
   return role === "ADMIN";
