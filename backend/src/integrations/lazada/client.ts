@@ -464,6 +464,64 @@ export async function getTransactionDetails(
   return data.data ?? [];
 }
 
+/**
+ * MỘT ĐỢT CHI TIỀN (payout statement) trong /finance/payout/status/get — mỗi
+ * kỳ sao kê Lazada chốt một đợt chuyển tiền về ngân hàng người bán.
+ *
+ * Docs open.lazada.com chặn đọc tự động nên tên trường khai PHÒNG THỦ cả
+ * snake/camel (cùng bài học fee_name của getTransactionDetails); hình dạng
+ * THẬT đối chiếu bằng scripts/lazada-payout-probe.ts trên shop đã liên kết
+ * trước khi tin — tầng service chỉ đọc qua các hàm chuẩn hoá bên payouts.ts.
+ */
+export interface LazadaPayout {
+  statement_number?: string;
+  statementNumber?: string;
+  payout_amount?: string | number;
+  payoutAmount?: string | number;
+  /** Trạng thái đã chi — Lazada từng trả "paid"/"unpaid" hoặc cờ boolean. */
+  paid?: string | boolean;
+  paid_status?: string;
+  paidStatus?: string;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+  [k: string]: unknown;
+}
+
+interface LazadaPayoutData extends LazadaEnvelope {
+  /** Bao ngoài có thể là mảng thẳng hoặc bọc thêm một lớp — chuẩn hoá ở dưới. */
+  data?: unknown;
+}
+
+/**
+ * Lấy danh sách đợt chi tiền tạo sau mốc `createdAfter` (YYYY-MM-DD).
+ * READ-ONLY — tuyệt đối không có thao tác chuyển/rút tiền nào ở đây.
+ */
+export async function getPayoutStatus(
+  params: { accessToken: string; createdAfter: string },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaPayout[]> {
+  const data = await callLazada<LazadaPayoutData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.payoutStatus,
+    {
+      access_token: params.accessToken,
+      created_after: params.createdAfter,
+    },
+    "finance/payout/status/get",
+    cfg
+  );
+  // Chuẩn hoá lớp bao: mảng thẳng, hoặc object chứa đúng MỘT mảng bên trong.
+  const raw = data.data;
+  if (Array.isArray(raw)) return raw as LazadaPayout[];
+  if (raw && typeof raw === "object") {
+    const firstArray = Object.values(raw).find((v) => Array.isArray(v));
+    if (firstArray) return firstArray as LazadaPayout[];
+  }
+  return [];
+}
+
 // ---------- Đánh giá sản phẩm (Product Review API) ----------
 // Path đã đối chiếu tài liệu open.lazada.com (07/08/2026). Đặc thù Lazada:
 // KHÔNG có API list review toàn shop — /review/seller/list bắt buộc item_id,

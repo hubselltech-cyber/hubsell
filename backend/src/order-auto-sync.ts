@@ -11,6 +11,9 @@
 //     GIỜ (mỗi SETTLE_EVERY_SWEEPS nhịp) với cửa sổ 7 ngày — sao kê đổi chậm,
 //     quét dày chỉ tốn quota (10k call/ngày); backfill sâu 90 ngày vẫn dùng
 //     nút "Đồng bộ đối soát" tay.
+//   · ĐỢT CHI TIỀN VỀ BANK (Shopee rút ví + Lazada payout, từ 08/08): cùng
+//     nhịp giờ, cửa sổ 30 ngày → WalletWithdrawal (SYNC) — cột "Doanh thu về
+//     Ngân hàng" của bảng Phân bổ dòng tiền tự động, hết bấm tay.
 //
 // TikTok cố ý đứng ngoài: gian hiện tại là mock sandbox không token, webhook
 // TikTok thật đã có đường riêng — thêm vào đây khi nối shop TikTok thật.
@@ -28,11 +31,13 @@ import {
   syncShopeeSettlements,
 } from "./integrations/shopee/settlements";
 import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
+import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
   syncLazadaSettlements,
 } from "./integrations/lazada/service";
+import { syncLazadaPayouts } from "./integrations/lazada/payouts";
 
 const DEFAULT_INTERVAL_MIN = 10;
 /** Quét đơn tạo trong N ngày gần nhất — đủ phủ đơn mới + đổi trạng thái gần đây. */
@@ -41,6 +46,12 @@ const ORDERS_DAYS_BACK = 2;
 const SETTLE_EVERY_SWEEPS = 6;
 /** Cửa sổ sao kê cho lượt đối soát tự động — đơn thường quyết toán trong vài ngày. */
 const SETTLE_DAYS_BACK = 7;
+/**
+ * Cửa sổ quét ĐỢT CHI TIỀN về bank (Shopee rút ví / Lazada payout) — payout
+ * chốt theo tuần và trạng thái có thể đổi muộn (unpaid → paid), nên quét rộng
+ * 30 ngày; upsert idempotent theo (channelId, externalTxnId) nên quét lặp vô hại.
+ */
+const PAYOUT_DAYS_BACK = 30;
 /** Chạy lượt đầu sớm sau khi boot để không phải đợi trọn một nhịp. */
 const FIRST_RUN_DELAY_MS = 15 * 1000;
 /**
@@ -176,6 +187,23 @@ async function runOnce(): Promise<void> {
                 `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
               );
             }
+            // Đợt CHI TIỀN về bank (payout theo kỳ sao kê) → WalletWithdrawal.
+            // Lỗi riêng không được chặn các luồng khác (cùng luật với Ads).
+            try {
+              const po = await syncLazadaPayouts(channel, {
+                daysBack: PAYOUT_DAYS_BACK,
+              });
+              if (po.created > 0 || po.updated > 0) {
+                console.log(
+                  `[Auto-sync] Payout Lazada "${channel.shopName}": +${po.created} đợt mới, ${po.updated} cập nhật`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi sync payout Lazada "${channel.shopName}":`,
+                (err as Error).message
+              );
+            }
           } else if (channel.channelName === ChannelName.SHOPEE) {
             const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
             if (s.ordersUpdated > 0) {
@@ -195,6 +223,24 @@ async function runOnce(): Promise<void> {
             } catch (err) {
               console.error(
                 `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+                (err as Error).message
+              );
+            }
+            // Lệnh RÚT VÍ về bank (get_wallet_transaction_list, read-only) →
+            // WalletWithdrawal. Lỗi riêng (app chưa bật quyền Payment/ví) không
+            // được chặn các luồng khác.
+            try {
+              const wd = await syncShopeeWithdrawals(channel, {
+                daysBack: PAYOUT_DAYS_BACK,
+              });
+              if (wd.created > 0 || wd.updated > 0) {
+                console.log(
+                  `[Auto-sync] Rút ví Shopee "${channel.shopName}": +${wd.created} lệnh mới, ${wd.updated} cập nhật`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi sync rút ví Shopee "${channel.shopName}" (app có thể chưa bật quyền ví):`,
                 (err as Error).message
               );
             }

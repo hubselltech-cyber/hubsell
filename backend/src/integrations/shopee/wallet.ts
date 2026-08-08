@@ -7,8 +7,10 @@
 // TUYỆT ĐỐI không gọi API chuyển/rút tiền. Idempotent theo (channelId, txnId) nên
 // chạy lại bao nhiêu lần cũng không nhân đôi.
 //
-// TRẠNG THÁI: cấu trúc SẴN SÀNG, CHƯA gắn cron/chưa chạy thật (sandbox chưa test
-// được luồng ví). Chạy tay: scripts/shopee-sync-withdrawals.ts.
+// TRẠNG THÁI: đã GẮN CRON nhịp giờ trong order-auto-sync.ts (08/08) — lỗi quyền
+// ví (nếu app chưa bật) được bắt riêng, không chặn luồng khác. Sandbox không test
+// được luồng ví; kiểm chứng bằng shop thật production. Chạy tay khi cần backfill:
+// scripts/shopee-sync-withdrawals.ts.
 // ============================================================
 
 import type { Channel } from "@prisma/client";

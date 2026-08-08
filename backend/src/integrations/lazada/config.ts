@@ -51,6 +51,8 @@ export const LAZADA_PATHS = {
   productsGet: "/products/get",
   /** Sao kê giao dịch tài chính CHI TIẾT theo dòng phí (Finance API, READ-ONLY). */
   transactionDetails: "/finance/transaction/details/get",
+  /** Danh sách ĐỢT CHI TIỀN (payout) về ngân hàng theo kỳ sao kê (READ-ONLY). */
+  payoutStatus: "/finance/payout/status/get",
 
   // ── Trợ lý vận hành (CSKH) — path đã ĐỐI CHIẾU tài liệu open.lazada.com 07/08/2026 ──
   /** Đánh giá của MỘT sản phẩm (item_id BẮT BUỘC — Lazada không có list toàn shop). */
