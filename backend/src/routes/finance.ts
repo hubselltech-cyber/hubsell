@@ -5,6 +5,7 @@ import {
   ChannelName,
   ExpenseType,
   Prisma,
+  ReturnStatus,
   ShippingDisputeStatus,
   ShippingStatus,
   TransactionDirection,
@@ -67,27 +68,46 @@ type DeliveredOrder = Prisma.OrderGetPayload<{
   };
 }>;
 
-// Tính giá vốn (COGS) của một đơn + phát hiện SKU chưa cấu hình giá vốn
+// Tính giá vốn (COGS) THỰC TÍNH của một đơn + phát hiện SKU chưa cấu hình giá
+// vốn. XỬ LÝ HOÀN/TRẢ CẤP DÒNG SKU: phần hàng trả ĐÃ VỀ KHO NGUYÊN VẸN được
+// thu hồi giá vốn (không tính COGS nữa); các dòng không bị trả giữ nguyên 100%.
+//   - Item-level: it.returnedQuantity + it.returnRestocked (trả 1 vài SKU).
+//   - Fallback đơn-level: returnStatus = RECEIVED_INTACT mà chưa có số liệu
+//     item-level → coi HOÀN CẢ ĐƠN đã nhập kho, thu hồi toàn bộ giá vốn.
+//   - DAMAGED / WRITTEN_OFF / đang chờ hàng về: KHÔNG thu hồi — shop vẫn gánh.
 function orderCost(order: DeliveredOrder): {
   cost: number;
+  recoveredCost: number;
   missingCostPrice: boolean;
 } {
   if (order.items.length > 0) {
-    // Chuẩn: dùng snapshot giá vốn tại thời điểm bán
-    const cost = order.items.reduce(
-      (sum, it) => sum + it.quantity * Number(it.costPriceAtSale),
-      0
-    );
+    const orderRestockedAll =
+      order.returnStatus === ReturnStatus.RECEIVED_INTACT &&
+      order.items.every((it) => it.returnedQuantity === 0);
+    let cost = 0;
+    let recoveredCost = 0;
+    for (const it of order.items) {
+      const unit = Number(it.costPriceAtSale);
+      // Số lượng thu hồi được vốn: hàng trả đã restock (cờ dòng), hoặc cả đơn
+      // đã nhập kho nguyên vẹn mà không có dữ liệu cấp dòng.
+      const recoveredQty = orderRestockedAll
+        ? it.quantity
+        : it.returnRestocked
+          ? Math.min(it.returnedQuantity, it.quantity)
+          : 0;
+      cost += (it.quantity - recoveredQty) * unit;
+      recoveredCost += recoveredQty * unit;
+    }
     // Có dòng nào giá vốn = 0 nghĩa là SKU đó chưa được nhập giá vốn
     const missingCostPrice = order.items.some(
       (it) => Number(it.costPriceAtSale) <= 0
     );
-    return { cost, missingCostPrice };
+    return { cost, recoveredCost, missingCostPrice };
   }
 
   // Fallback cho đơn cũ (trước khi có OrderItem): log trừ kho × giá vốn hiện tại
   const deductions = order.inventoryLogs.filter((l) => l.changeQuantity < 0);
-  const cost = deductions.reduce(
+  const rawCost = deductions.reduce(
     (sum, log) =>
       sum + Math.abs(log.changeQuantity) * Number(log.product?.costPrice ?? 0),
     0
@@ -95,7 +115,13 @@ function orderCost(order: DeliveredOrder): {
   const missingCostPrice =
     deductions.length === 0 ||
     deductions.some((l) => Number(l.product?.costPrice ?? 0) <= 0);
-  return { cost, missingCostPrice };
+  // Đơn cũ đã hoàn nguyên vẹn về kho: vốn được thu hồi toàn bộ.
+  const restocked = order.returnStatus === ReturnStatus.RECEIVED_INTACT;
+  return {
+    cost: restocked ? 0 : rawCost,
+    recoveredCost: restocked ? rawCost : 0,
+    missingCostPrice,
+  };
 }
 
 // Doanh thu gốc (tổng tiền hàng) của một đơn — NGUỒN CÔNG THỨC DUY NHẤT, dùng
@@ -259,7 +285,8 @@ type PnlRow = ReturnType<typeof computePnlRow>;
 // Bóc toàn bộ số liệu tài chính của MỘT đơn — công thức gốc duy nhất.
 // EXPORT cho Tổng quan (/api/analytics) dùng chung SSOT, không tự tính riêng.
 export function computePnlRow(o: PnlOrder) {
-  const { cost, missingCostPrice } = orderCost(o);
+  // cost = giá vốn THỰC TÍNH (đã thu hồi phần hàng trả về kho nguyên vẹn)
+  const { cost, recoveredCost, missingCostPrice } = orderCost(o);
 
   // ---- DOANH THU GỐC & VOUCHER SHOP ----
   // LAZADA khác Shopee/TikTok: OrderItem.price là paid_price ĐÃ trừ voucher
@@ -307,6 +334,50 @@ export function computePnlRow(o: PnlOrder) {
   // thuế bóc tách → Doanh thu thực tế → Giá vốn → Lợi nhuận thực tế.
   const actualRevenue = revenueGross - sellerVoucher;
 
+  /*
+   * ---- HOÀN TIỀN / TRẢ HÀNG: 4 KỊCH BẢN QUY VỀ MỘT CÔNG THỨC ----
+   * refundedAmount = tiền TRẢ LẠI KHÁCH của đơn:
+   *   - Có số THẬT từ sàn (Shopee escrow seller_return_refund…) → dùng số thật.
+   *   - Đơn hoàn CHƯA có số (đang chờ hàng về / sàn chưa chốt) → tạm tính
+   *     THẬN TRỌNG hoàn TOÀN BỘ doanh thu — hết cảnh đơn hoàn báo lãi dương ảo
+   *     bằng nguyên giá bán; sàn chốt số tới đâu tự chỉnh tới đó.
+   *   - CLAIM_SETTLED (thắng khiếu nại, đã được đền) → không tạm tính nữa.
+   * KB1 hoàn 100% không trả hàng: refund = full → doanh thu 0, vốn giữ 100%.
+   * KB2 hoàn 1 phần giữ hàng:     refund một phần → doanh thu = giá − hoàn.
+   * KB3 trả 1 vài SKU:            refund các SKU trả; vốn SKU trả thu hồi khi
+   *                               restock (orderCost) — SKU giữ lại nguyên vẹn.
+   * KB4 hoàn toàn bộ:             refund = full; vốn theo trạng thái nhập kho.
+   */
+  const pendingReturn =
+    o.returnStatus !== ReturnStatus.NONE &&
+    o.returnStatus !== ReturnStatus.CLAIM_SETTLED;
+  const refundRecorded = Number(o.refundedAmount);
+  const refundedAmount =
+    refundRecorded > 0
+      ? refundRecorded
+      : pendingReturn
+        ? Math.max(actualRevenue, 0)
+        : 0;
+
+  // Phân loại hình thức hoàn để UI gắn badge — dựa số lượng trả cấp dòng SKU;
+  // đơn chỉ có cờ returnStatus (chưa có dữ liệu cấp dòng) coi là hoàn cả đơn.
+  const totalQuantity = o.items.reduce((s, it) => s + it.quantity, 0);
+  const returnedQuantity = o.items.reduce((s, it) => s + it.returnedQuantity, 0);
+  let returnType:
+    | "REFUND_ONLY"
+    | "PARTIAL_REFUND"
+    | "PARTIAL_RETURN"
+    | "FULL_RETURN"
+    | null = null;
+  if (returnedQuantity > 0 && returnedQuantity < totalQuantity) {
+    returnType = "PARTIAL_RETURN";
+  } else if (returnedQuantity > 0 || o.returnStatus !== ReturnStatus.NONE) {
+    returnType = "FULL_RETURN";
+  } else if (refundRecorded > 0) {
+    returnType =
+      refundRecorded >= actualRevenue ? "REFUND_ONLY" : "PARTIAL_REFUND";
+  }
+
   // "Doanh thu ước tính" — TÁI LẬP từ các cột phí đã bóc, để ĐỐI CHIẾU với
   // actualPayout: đơn đã quyết toán mà hai số lệch nhau nghĩa là còn khoản
   // chưa bóc đúng cột. Đối chiếu đơn VN thật 2607303CGEHBCA + 260728T943X8PX
@@ -319,6 +390,7 @@ export function computePnlRow(o: PnlOrder) {
   // trên đơn hoàn là tín hiệu thật, đọc theo returnStatus.
   const netRevenue =
     actualRevenue -
+    refundedAmount -
     feeFixedPayment -
     feeService -
     feeSellerProtection -
@@ -329,11 +401,14 @@ export function computePnlRow(o: PnlOrder) {
   const profit = netRevenue - cost;
 
   // DOANH THU THỰC TẾ TRÊN SÀN — "Tổng tiền" sàn báo: đơn ĐÃ đối soát =
-  // escrow_amount thật; đơn CHƯA đối soát = escrow_amount ƯỚC TÍNH của sàn
-  // (khớp dòng "Doanh thu đơn hàng ước tính" trên Seller Center) nếu đã sync
-  // được, không thì rơi về số từ API đơn hàng. UI phân biệt qua isSettled.
+  // escrow_amount thật (ĐÃ net tiền hoàn); đơn CHƯA đối soát = escrow_amount
+  // ƯỚC TÍNH của sàn nếu đã sync được, không thì rơi về số từ API đơn hàng
+  // TRỪ tiền hoàn — đơn hoàn chưa quyết toán KHÔNG còn rơi về nguyên giá bán
+  // (trước đây gây lãi dương ảo bằng full doanh thu). UI phân biệt qua isSettled.
   const platformRevenue =
-    Number(o.actualPayout) !== 0 ? Number(o.actualPayout) : actualRevenue;
+    Number(o.actualPayout) !== 0
+      ? Number(o.actualPayout)
+      : Math.max(actualRevenue - refundedAmount, 0);
 
   // LÃI SAU THUẾ = MỘT công thức duy nhất chủ shop chốt (31/07):
   // Doanh thu thực tế − Giá vốn. Đơn đã đối soát: payout đã net hết
@@ -382,6 +457,13 @@ export function computePnlRow(o: PnlOrder) {
     // Khấu trừ lúc giải ngân — bóc tách hiển thị, đã nằm trong actualPayout
     adWalletTopup: Number(o.adWalletTopup),
     taxWithheld: Number(o.taxWithheld),
+    // Hoàn tiền / trả hàng — 4 kịch bản (null = đơn bán bình thường)
+    returnType,
+    refundedAmount, // tiền trả khách: số thật, hoặc tạm tính full khi chưa chốt
+    refundEstimated: refundRecorded === 0 && refundedAmount > 0, // đang tạm tính
+    returnedQuantity,
+    totalQuantity,
+    recoveredCost, // giá vốn đã thu hồi nhờ hàng trả nhập lại kho nguyên vẹn
     // Hiệu quả
     costSnapshot: cost,
     netRevenue,
@@ -448,7 +530,15 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       parseDateRange(req.query),
       shippingStatus
     );
-    const allRows = orders.map(computePnlRow);
+    const computedRows = orders.map(computePnlRow);
+
+    // Trục lọc "Hoàn/Trả" — đơn hoàn nằm trên trục returnStatus ĐỘC LẬP với
+    // shippingStatus (đơn "vừa DELIVERED vừa đang hoàn" là chuyện thường) nên
+    // lọc sau khi bóc số, không map được vào RECON_STATUS.
+    const allRows =
+      statusKey === "returning"
+        ? computedRows.filter((r) => r.returnType !== null)
+        : computedRows;
 
     // Bộ lọc nhanh "Lợi nhuận âm": chỉ giữ đơn LỖ (profit < 0). Áp trước khi
     // phân trang & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
@@ -500,7 +590,11 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       summary: {
         count: total,
         settledCount: filtered.filter((r) => r.isSettled).length,
+        // Doanh thu thực nhận = Σ netRevenue — ĐÃ trừ tiền hoàn trả khách
         totalNetRevenue: filtered.reduce((s, r) => s + r.netRevenue, 0),
+        // Bức tranh hoàn/trả của kỳ: số đơn hoàn + tổng tiền đã/tạm tính hoàn
+        returnCount: filtered.filter((r) => r.returnType !== null).length,
+        totalRefunded: filtered.reduce((s, r) => s + r.refundedAmount, 0),
         totalProfit,
         totalPlatformTax,
         additionalTax,

@@ -3,8 +3,61 @@
 import { useEffect, useRef } from "react";
 
 import { Money } from "@/components/ui/money";
-import type { PnlDetailRow, PnlItemLine } from "@/lib/api";
+import type { PnlDetailRow, PnlItemLine, PnlReturnType } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+/** Nhãn + màu badge cho 4 hình thức hoàn tiền/trả hàng. */
+const RETURN_TYPE_META: Record<
+  PnlReturnType,
+  { label: string; className: string }
+> = {
+  REFUND_ONLY: {
+    label: "🔴 Hoàn tiền 100%",
+    className: "border-red-200 bg-red-50 text-red-600",
+  },
+  PARTIAL_REFUND: {
+    label: "🟡 Hoàn tiền 1 phần",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  PARTIAL_RETURN: {
+    label: "🟠 Trả một phần SP",
+    className: "border-orange-200 bg-orange-50 text-orange-700",
+  },
+  FULL_RETURN: {
+    label: "🟣 Hoàn toàn bộ đơn",
+    className: "border-purple-200 bg-purple-50 text-purple-700",
+  },
+};
+
+/**
+ * BADGE HOÀN/TRẢ trên dòng đơn — phân loại 4 kịch bản; PARTIAL_RETURN kèm số
+ * lượng "x/y SP"; số hoàn đang TẠM TÍNH (sàn chưa chốt) chú thích rõ để không
+ * đọc nhầm thành số thật. Đơn bán bình thường (returnType null) không render.
+ */
+export function ReturnBadge({ row }: { row: PnlDetailRow }) {
+  if (!row.returnType) return null;
+  const meta = RETURN_TYPE_META[row.returnType];
+  return (
+    <span className="mt-0.5 block">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
+          meta.className
+        )}
+      >
+        {meta.label}
+        {row.returnType === "PARTIAL_RETURN" && (
+          <> ({row.returnedQuantity}/{row.totalQuantity} SP)</>
+        )}
+      </span>
+      {row.refundEstimated && (
+        <span className="block text-[10px] text-slate-400">
+          tạm tính chờ sàn chốt
+        </span>
+      )}
+    </span>
+  );
+}
 
 /**
  * Ô & hằng dùng chung cho các bảng Lãi/Lỗ theo sàn (Shopee, TikTok…). Gom về một

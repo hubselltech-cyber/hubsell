@@ -14,6 +14,7 @@ import {
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
+  ReturnBadge,
   RowCheckTd,
   SelectAllTh,
   type PnlSelection,
@@ -265,6 +266,7 @@ export function LazadaProfitTable({
                   ) : (
                     <span className="block text-[11px] text-amber-500">chưa đối soát</span>
                   )}
+                  <ReturnBadge row={b} />
                 </td>
                 <td className={cn(cell, BLOCK.info, "text-slate-600")}>
                   {b.shopName}

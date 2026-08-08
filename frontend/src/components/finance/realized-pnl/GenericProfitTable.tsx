@@ -14,6 +14,7 @@ import {
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
+  ReturnBadge,
   RowCheckTd,
   SelectAllTh,
   ShipDiff,
@@ -39,7 +40,7 @@ export function GenericProfitTable({
 }: { rows: PnlDetailRow[] } & PnlSelection) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1360px] border-separate border-spacing-0 text-sm">
+      <table className="w-full min-w-[1480px] border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             <SelectAllTh
@@ -50,7 +51,7 @@ export function GenericProfitTable({
             <th className={cn(HEADER_GROUP, "text-center")} colSpan={5}>
               Thông tin đơn &amp; Sản phẩm
             </th>
-            <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={2}>
+            <th className={cn(HEADER_GROUP, "text-center text-emerald-700")} colSpan={3}>
               Doanh thu
             </th>
             <th className={cn(HEADER_GROUP, "text-center text-rose-700")} colSpan={3}>
@@ -69,6 +70,7 @@ export function GenericProfitTable({
               ["Chi tiết sản phẩm", "left"],
               ["Giá trị đơn hàng", "right"],
               ["Voucher Shop", "right"],
+              ["Tiền hoàn trả", "right"],
               ["Tổng phí sàn", "right"],
               ["Chênh lệch VC", "right"],
               ["Thuế sàn", "right"],
@@ -132,6 +134,7 @@ export function GenericProfitTable({
                   {b.isSettled && (
                     <span className="block text-[11px] text-emerald-500">đã đối soát</span>
                   )}
+                  <ReturnBadge row={b} />
                 </td>
                 <td className={cn(cell, BLOCK.info, "text-slate-600")}>{b.shopName}</td>
                 <td className={cn(cell, BLOCK.info, "text-slate-700")}>
@@ -145,6 +148,12 @@ export function GenericProfitTable({
                 </td>
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
                   <Deduction value={b.sellerVoucher} tone="text-emerald-700" />
+                </td>
+                <td className={cn(cell, BLOCK.revenue, "text-right")}>
+                  <Deduction value={b.refundedAmount} tone="text-red-500" />
+                  {b.refundEstimated && b.refundedAmount > 0 && (
+                    <span className="block text-[10px] text-slate-400">tạm tính</span>
+                  )}
                 </td>
                 <td className={cn(cell, BLOCK.fee, "text-right")}>
                   <Deduction value={totalFee} />
@@ -164,6 +173,11 @@ export function GenericProfitTable({
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   <Deduction value={b.costSnapshot} tone="text-slate-600" />
+                  {b.recoveredCost > 0 && (
+                    <span className="block text-[10px] text-emerald-600">
+                      đã thu hồi vốn hàng về kho
+                    </span>
+                  )}
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>
                   <ProfitCell value={b.profitAfterTax} />
@@ -175,9 +189,12 @@ export function GenericProfitTable({
       </table>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
         <b>Doanh thu thực tế</b> = Giá trị đơn hàng − Voucher Shop.{" "}
-        <b>LỢI NHUẬN THỰC TẾ</b> = Doanh thu thực tế − Tổng phí sàn − Chênh lệch
-        VC − Thuế sàn − Giá vốn (cộng lại trợ giá từ sàn nếu có). Thuế sàn: số
-        thật với đơn đã đối soát, ước tính % với đơn chưa.
+        <b>LỢI NHUẬN THỰC TẾ</b> = Doanh thu thực tế − Tiền hoàn trả − Tổng phí
+        sàn − Chênh lệch VC − Thuế sàn − Giá vốn (cộng lại trợ giá từ sàn nếu
+        có). Thuế sàn: số thật với đơn đã đối soát, ước tính % với đơn chưa.
+        Đơn hoàn/trả: tiền hoàn là số thật từ sàn hoặc <b>tạm tính toàn bộ</b>{" "}
+        khi sàn chưa chốt; <b>Giá vốn</b> đã trừ phần hàng trả nhập lại kho
+        nguyên vẹn.
       </p>
     </div>
   );

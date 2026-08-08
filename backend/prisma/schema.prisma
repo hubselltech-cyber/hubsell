@@ -831,6 +831,10 @@ model Order {
   shipSubsidyShop     Decimal @default(0) @db.Decimal(12, 2) // trợ giá VC do SHOP chịu
   adWalletTopup       Decimal @default(0) @db.Decimal(12, 2) // sàn trừ nạp ví quảng cáo khi giải ngân
   taxWithheld         Decimal @default(0) @db.Decimal(12, 2) // thuế sàn thu hộ (VD 1.5%)
+  /// TIỀN ĐÃ HOÀN CHO KHÁCH (magnitude dương) — nguồn: Shopee escrow
+  /// seller_return_refund; TikTok/Lazada reverse API đổ vào sau. 0 = chưa có
+  /// số hoàn thật (đơn hoàn chưa chốt → engine tạm tính thận trọng).
+  refundedAmount      Decimal @default(0) @db.Decimal(12, 2)
 
   channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
   inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
@@ -856,6 +860,12 @@ model OrderItem {
   quantity        Int
   price           Decimal @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
   costPriceAtSale Decimal @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
+  /// HOÀN/TRẢ CẤP DÒNG SKU (kịch bản trả 1 vài SP trong đơn nhiều SP):
+  /// số lượng bị khách trả của riêng dòng này — 0 = dòng không bị trả.
+  returnedQuantity Int @default(0)
+  /// Hàng trả của dòng này ĐÃ nhập lại kho nguyên vẹn → giá vốn phần trả được
+  /// thu hồi (không tính vào COGS nữa). false = chưa về kho / hư hỏng.
+  returnRestocked Boolean @default(false)
 
   order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)

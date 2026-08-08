@@ -412,7 +412,15 @@ export type ReconciliationStatus =
   | "all"
   | "delivered"
   | "shipping"
-  | "cancelled";
+  | "cancelled"
+  | "returning";
+
+/** Hình thức hoàn tiền/trả hàng của một đơn (null = đơn bán bình thường). */
+export type PnlReturnType =
+  | "REFUND_ONLY" // hoàn tiền 100%, khách giữ hàng
+  | "PARTIAL_REFUND" // hoàn tiền một phần, khách giữ hàng
+  | "PARTIAL_RETURN" // trả một vài SKU trong đơn nhiều sản phẩm
+  | "FULL_RETURN"; // hoàn trả toàn bộ đơn
 
 // ----- Lãi/Lỗ Thực Hiện — chi tiết từng đơn theo sàn -----
 
@@ -466,7 +474,17 @@ export interface PnlDetailRow {
   /** Khấu trừ lúc giải ngân (đã phản ánh trong actualPayout) — chỉ hiển thị. */
   adWalletTopup: number;
   taxWithheld: number;
-  // Hiệu quả
+  // Hoàn tiền / trả hàng — 4 kịch bản
+  returnType: PnlReturnType | null;
+  /** Tiền trả khách: số thật từ sàn, hoặc tạm tính full khi đơn hoàn chưa chốt. */
+  refundedAmount: number;
+  /** true = refundedAmount đang là số TẠM TÍNH (sàn chưa chốt số hoàn thật). */
+  refundEstimated: boolean;
+  returnedQuantity: number;
+  totalQuantity: number;
+  /** Giá vốn đã thu hồi nhờ hàng trả nhập lại kho nguyên vẹn. */
+  recoveredCost: number;
+  // Hiệu quả — costSnapshot là giá vốn THỰC TÍNH (đã trừ phần thu hồi)
   costSnapshot: number;
   netRevenue: number;
   actualPayout: number;
@@ -535,7 +553,12 @@ export interface RealizedPnlResponse {
   summary: {
     count: number;
     settledCount: number;
+    /** Doanh thu thực nhận = Σ netRevenue — ĐÃ trừ tiền hoàn trả khách. */
     totalNetRevenue: number;
+    /** Số đơn có hoàn tiền/trả hàng trong tập lọc. */
+    returnCount: number;
+    /** Tổng tiền hoàn trả khách (số thật + tạm tính) của tập lọc. */
+    totalRefunded: number;
     totalProfit: number;
     /** Tổng thuế sàn TMĐT (thực + ước tính) của toàn bộ đơn khớp lọc. */
     totalPlatformTax: number;

@@ -57,7 +57,11 @@ const STATUS_TABS: { key: ReconciliationStatus; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "delivered", label: "Giao thành công" },
   { key: "shipping", label: "Đang vận chuyển" },
-  { key: "cancelled", label: "Đã hủy / Hoàn trả" },
+  // Hai trục ĐỘC LẬP: "Đã hủy" lọc shippingStatus; "Hoàn/Trả" lọc theo trục
+  // returnStatus + đơn có hoàn tiền (nhãn cũ "Đã hủy / Hoàn trả" gây hiểu nhầm
+  // là gồm cả đơn hoàn — thực tế chỉ ra đơn hủy).
+  { key: "cancelled", label: "Đã hủy" },
+  { key: "returning", label: "Hoàn / Trả hàng" },
 ];
 
 const PAGE_SIZES = [20, 50, 100];

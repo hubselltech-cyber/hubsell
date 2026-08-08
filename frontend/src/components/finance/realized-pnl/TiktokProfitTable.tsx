@@ -16,6 +16,7 @@ import {
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
+  ReturnBadge,
   RowCheckTd,
   SelectAllTh,
   ShipDiff,
@@ -145,6 +146,7 @@ export function TiktokProfitTable({
                   {b.isSettled && (
                     <span className="block text-[11px] text-emerald-500">đã đối soát</span>
                   )}
+                  <ReturnBadge row={b} />
                 </td>
                 <td className={cn(cell, BLOCK.info, "text-slate-600")}>{b.shopName}</td>
                 <td className={cn(cell, BLOCK.info)}>

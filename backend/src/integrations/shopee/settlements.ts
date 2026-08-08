@@ -130,6 +130,10 @@ export function mapShopeeEscrowFields(income: ShopeeOrderIncome) {
     // Tiền THỰC về ví — tổng đại số cuối cùng của sàn, GỐC của mọi phép tính
     // lợi nhuận (computePnlRow: platformRevenue/profitAfterTax đọc từ đây).
     actualPayout: n(income.escrow_amount),
+    // ĐƠN HOÀN: tiền sàn đã trả lại khách (API trả số ÂM → lưu magnitude
+    // DƯƠNG như mọi cột khác). computePnlRow dùng làm số hoàn THẬT thay cho
+    // tạm tính — phủ cả 4 kịch bản refund-only/partial/return của Shopee.
+    refundedAmount: Math.abs(n(income.seller_return_refund)),
     // adWalletTopup / shipSubsidyShop: escrow không có nguồn — giữ nguyên 0.
   };
 }
