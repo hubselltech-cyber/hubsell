@@ -60,11 +60,22 @@ export function buildInjectedContext(
   product: MockProductInfo,
   source: StockSource
 ): string {
-  const lines = [
-    `SKU: ${product.sku} — ${product.name}`,
-    `Chất liệu: ${product.material}`,
-    `Bảo quản: ${product.care}`,
-  ];
+  const lines = [`SKU: ${product.sku} — ${product.name}`];
+  // Thông số chỉ ghi khi CÓ dữ liệu — dòng rỗng/placeholder làm nhiễu prompt
+  if (product.material) lines.push(`Chất liệu: ${product.material}`);
+  if (product.care) lines.push(`Bảo quản: ${product.care}`);
+  if (product.price != null) {
+    lines.push(`Giá niêm yết: ${product.price.toLocaleString("vi-VN")}đ`);
+  }
+  if (product.attributes && product.attributes.length > 0) {
+    lines.push(
+      "Thuộc tính trên sàn: " +
+        product.attributes.map((a) => `${a.name}: ${a.value}`).join("; ")
+    );
+  }
+  if (product.description) {
+    lines.push(`Mô tả trên sàn:\n${product.description}`);
+  }
   if (product.sizeChart.length > 0) {
     lines.push(
       "Bảng size: " +
@@ -230,7 +241,7 @@ export function buildAiSuggestion(
           : ` Size ${best.size} hiện tạm hết hàng, shop sẽ báo ngay khi hàng về ạ.`;
 
     return {
-      text: `Dạ với ${measure}, bạn mặc size ${best.size} của ${product.name} là chuẩn form nhất ạ.${sizeNote} Chất liệu ${product.material} nên mặc rất thoải mái.${stockNote}`,
+      text: `Dạ với ${measure}, bạn mặc size ${best.size} của ${product.name} là chuẩn form nhất ạ.${sizeNote}${product.material ? ` Chất liệu ${product.material} nên mặc rất thoải mái.` : ""}${stockNote}`,
       intent: "SIZE_ADVICE",
     };
   }
@@ -343,8 +354,12 @@ export function productInfoFromContext(ctx: OpsProductContextDTO): MockProductIn
         ? ctx.channelName
         : null,
     physicalTotal: ctx.physicalStock,
-    material: ctx.material ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
-    care: ctx.care ?? "Chưa cấu hình — bổ sung trong Kho vật lý",
+    // Thông số ưu tiên TỪ SÀN (backend đã trộn); rỗng thì widget ẨN dòng —
+    // hết cảnh "Chưa cấu hình — bổ sung trong Kho vật lý" gây rối mắt.
+    material: ctx.material ?? "",
+    care: ctx.care ?? "",
+    description: ctx.channelDescription ?? null,
+    attributes: ctx.channelAttributes ?? null,
     sizeChart: ctx.sizeChart ?? [],
     variants,
   };

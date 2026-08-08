@@ -48,11 +48,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   ApiError,
+  fetchCopilotSuggestion,
   fetchOpsConversations,
   fetchOpsMessages,
   fetchOpsProductContext,
   sendOpsItemMessage,
   sendOpsMessage,
+  type CopilotSuggestionDTO,
   type OpsChannelError,
   type OpsChannelStat,
   type OpsConversationDTO,
@@ -67,12 +69,16 @@ import { cn } from "@/lib/utils";
  * CHẠY 2 CHẾ ĐỘ:
  *   · real — có gian hàng uỷ quyền và sàn trả về hội thoại: danh sách/tin nhắn/
  *     gửi tin đi thẳng API sàn qua backend /api/operations/*. Ngữ cảnh sản phẩm
- *     cho AI lấy từ Kho vật lý (sizeChart/material) + tồn sàn live.
+ *     cho AI lấy TỪ SÀN (mô tả + thuộc tính + tồn live) — Kho vật lý chỉ còn
+ *     là fallback thông số.
  *   · demo — chưa có dữ liệu thật (chưa uỷ quyền, sàn lỗi, hoặc chưa ai nhắn):
  *     rơi về bộ mock cũ để màn hình vẫn trình diễn được đầy đủ luồng.
  *
- * AI Copilot dùng CHUNG engine cho cả hai chế độ (copilot-engine.ts) — thay
- * nguồn dữ liệu, không thay luật.
+ * AI COPILOT chạy 2 tầng:
+ *   1. Hội thoại THẬT → gọi Claude API qua /api/operations/copilot-suggest
+ *      (Context Injection — khối buildInjectedContext nhét vào prompt).
+ *   2. Demo, backend chưa có ANTHROPIC_API_KEY (503), hoặc AI lỗi → engine
+ *      luật copilot-engine.ts. Chat KHÔNG BAO GIỜ phụ thuộc AI để hoạt động.
  */
 
 type ChatMode = "loading" | "real" | "demo";
@@ -469,27 +475,71 @@ export function OperationsChatPage() {
     toast.success(`✨ AI Copilot sẽ tư vấn theo ${product.sku} trong hội thoại này.`);
   }
 
-  const suggestion = useMemo(() => {
+  // Câu khách nhắn gần nhất — đầu vào chung cho cả engine luật lẫn LLM thật
+  const lastCustomerText = useMemo(() => {
+    const raw = isReal
+      ? [...(activeReal ? realMessages[activeReal.id] ?? [] : [])]
+          .reverse()
+          .find((m) => m && !m.fromShop)?.text ?? ""
+      : [...activeDemo.messages].reverse().find((m) => m.from === "CUSTOMER")?.text ??
+        "";
+    return typeof raw === "string" ? raw : "";
+  }, [isReal, activeReal, realMessages, activeDemo]);
+
+  const ruleSuggestion = useMemo(() => {
     // Bọc TOÀN BỘ đường sinh gợi ý: một payload dị (text undefined, chart
     // hỏng…) làm engine ném lỗi thì copilot rơi về câu chung, chat KHÔNG sập.
     try {
-      const lastCustomerText = isReal
-        ? [...(activeReal ? realMessages[activeReal.id] ?? [] : [])]
-            .reverse()
-            .find((m) => m && !m.fromShop)?.text ?? ""
-        : [...activeDemo.messages].reverse().find((m) => m.from === "CUSTOMER")?.text ??
-          "";
       const fallback = isReal ? GENERIC_CHAT_FALLBACK : activeDemo.aiSuggestion;
       return buildAiSuggestion(
         product,
-        typeof lastCustomerText === "string" ? lastCustomerText : "",
+        lastCustomerText,
         fallback,
         MOCK_STOCK_SOURCE_PREFERENCE
       );
     } catch {
       return { text: GENERIC_CHAT_FALLBACK, intent: "GENERAL" as const };
     }
-  }, [isReal, activeReal, realMessages, activeDemo, product]);
+  }, [isReal, activeDemo, product, lastCustomerText]);
+
+  // ── AI Copilot THẬT (Claude API) — chỉ hội thoại thật ──
+  // Debounce 400ms + đánh số lượt gọi để vứt kết quả cũ về muộn; backend trả
+  // 503 (chưa cấu hình ANTHROPIC_API_KEY) thì tắt hẳn trong phiên, khỏi gọi
+  // lãng phí. Trong lúc chờ LLM, engine luật hiển thị trước — có kết quả thì
+  // thay êm, không spinner.
+  const [llmSuggestion, setLlmSuggestion] = useState<CopilotSuggestionDTO | null>(null);
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmDisabled, setLlmDisabled] = useState(false);
+  const llmSeq = useRef(0);
+  useEffect(() => {
+    setLlmSuggestion(null);
+    if (!isReal || llmDisabled || !lastCustomerText.trim()) {
+      setLlmLoading(false);
+      return;
+    }
+    const seq = ++llmSeq.current;
+    setLlmLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const s = await fetchCopilotSuggestion({
+          context: product
+            ? buildInjectedContext(product, MOCK_STOCK_SOURCE_PREFERENCE)
+            : null,
+          customerMessage: lastCustomerText,
+          channelLabel: channelMeta(activeChannel).label,
+        });
+        if (llmSeq.current === seq) setLlmSuggestion(s);
+      } catch (err) {
+        // 503 NO_AI_KEY → thôi gọi trong phiên; lỗi khác → giữ engine luật
+        if (err instanceof ApiError && err.status === 503) setLlmDisabled(true);
+      } finally {
+        if (llmSeq.current === seq) setLlmLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [isReal, llmDisabled, lastCustomerText, product, activeChannel]);
+
+  const suggestion = llmSuggestion ?? ruleSuggestion;
 
   // ── Gửi tin nhắn ──
   async function handleSend() {
@@ -998,6 +1048,24 @@ export function OperationsChatPage() {
                       >
                         📌 {copilotPinned.sku}
                       </Badge>
+                    )}
+                    {/* Nguồn gợi ý: Claude API thật / đang sinh — không badge = engine luật */}
+                    {llmSuggestion ? (
+                      <Badge
+                        variant="outline"
+                        className="border-violet-300 bg-violet-100 text-violet-700"
+                      >
+                        <Sparkles className="size-3" /> Claude AI
+                      </Badge>
+                    ) : (
+                      llmLoading && (
+                        <Badge
+                          variant="outline"
+                          className="border-violet-200 bg-violet-50 text-violet-500"
+                        >
+                          <Loader2 className="size-3 animate-spin" /> AI đang soạn…
+                        </Badge>
+                      )
                     )}
                     {suggestion.intent !== "GENERAL" && (
                       <Badge

@@ -422,6 +422,16 @@ export interface ShopeeItemBaseInfo {
   image?: { image_url_list?: string[] };
   price_info?: { current_price?: number; original_price?: number }[];
   stock_info_v2?: ShopeeStockInfoV2;
+  /** Mô tả sản phẩm — item dùng mô tả mở rộng thì text nằm trong description_info. */
+  description?: string;
+  description_info?: {
+    extended_description?: { field_list?: { field_type?: string; text?: string }[] };
+  };
+  /** Thuộc tính seller khai trên sàn (Chất liệu, Xuất xứ…) — ngữ cảnh AI Copilot. */
+  attribute_list?: {
+    original_attribute_name?: string;
+    attribute_value_list?: { original_value_name?: string }[];
+  }[];
 }
 
 export interface ShopeeItemBaseData extends ShopeeEnvelope {

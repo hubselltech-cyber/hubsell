@@ -2335,6 +2335,10 @@ export interface OpsProductContextDTO {
   imageUrl: string | null;
   material: string | null;
   care: string | null;
+  /** Mô tả sản phẩm TỪ SÀN (Shopee get_item_base_info) — ngữ cảnh cho AI. */
+  channelDescription: string | null;
+  /** Thuộc tính seller khai TRÊN SÀN (Xuất xứ, kiểu dáng…) — đã tách Chất liệu. */
+  channelAttributes: { name: string; value: string }[] | null;
   sizeChart:
     | { size: string; heightCm: [number, number]; weightKg: [number, number] }[]
     | null;
@@ -2423,6 +2427,28 @@ export function replyOpsReview(body: {
   content: string;
 }) {
   return apiFetch<{ ok: boolean }>("/api/operations/reviews/reply", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Gợi ý AI Copilot THẬT (Claude API) — cùng hợp đồng với engine luật. */
+export interface CopilotSuggestionDTO {
+  text: string;
+  intent: "SIZE_ADVICE" | "STOCK_CHECK" | "GENERAL";
+}
+
+/**
+ * Sinh gợi ý trả lời khách bằng Claude API. Backend chưa cấu hình
+ * ANTHROPIC_API_KEY sẽ trả 503 code NO_AI_KEY — caller bắt ApiError.status
+ * === 503 để rơi về engine luật và ngưng gọi lại.
+ */
+export function fetchCopilotSuggestion(body: {
+  context: string | null;
+  customerMessage: string;
+  channelLabel: string | null;
+}) {
+  return apiFetch<CopilotSuggestionDTO>("/api/operations/copilot-suggest", {
     method: "POST",
     body: JSON.stringify(body),
   });

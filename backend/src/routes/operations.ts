@@ -19,6 +19,7 @@ import {
   getComments,
   getConversationList,
   getChatMessages,
+  getItemBaseInfo,
   getModelList,
   replyComment,
   sendChatItemMessage,
@@ -35,6 +36,10 @@ import {
   sendImMessage,
 } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
+import {
+  copilotConfigured,
+  generateCopilotSuggestion,
+} from "../integrations/ai/copilot";
 
 const router = Router();
 
@@ -814,15 +819,24 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
     // gọi sàn / dựng link / trả itemId đều phải dùng itemId GỐC đã tách.
     const rootItemId = cp?.externalId ? String(cp.externalId).split("-")[0] : null;
 
-    // Tồn SÀN live (chỉ Shopee, best-effort — lỗi thì để null, không chặn).
-    // Lấy TOÀN BỘ model của item (khách mua ở cấp item nên tư vấn phải thấy đủ
-    // màu/size) — trả kèm channelVariants cho widget vẽ ma trận tồn thật.
+    // Tồn SÀN live + THÔNG SỐ SÀN (chỉ Shopee, best-effort — lỗi thì để null,
+    // không chặn). getModelList vẽ ma trận tồn thật; getItemBaseInfo lấy mô tả
+    // + thuộc tính seller khai trên sàn (Chất liệu, Xuất xứ…) — nguồn thông số
+    // CHÍNH cho AI Copilot, thay cho cấu hình material/care ở Kho vật lý.
     let channelStock: number | null = null;
     let channelVariants: { name: string; stock: number | null }[] | null = null;
+    let channelDescription: string | null = null;
+    let channelAttributes: { name: string; value: string }[] | null = null;
+    let channelMaterial: string | null = null;
     if (!crossChannel && cp?.channel.channelName === ChannelName.SHOPEE && rootItemId) {
       try {
         const { accessToken, shopId } = await getValidShopeeAccessToken(cp.channel);
-        const models = await getModelList(accessToken, shopId, Number(rootItemId));
+        // allSettled: một trong hai API hỏng thì vẫn dùng được nửa còn lại
+        const [modelsRs, baseRs] = await Promise.allSettled([
+          getModelList(accessToken, shopId, Number(rootItemId)),
+          getItemBaseInfo(accessToken, shopId, [Number(rootItemId)]),
+        ]);
+        const models = modelsRs.status === "fulfilled" ? modelsRs.value : [];
         if (models.length > 0) {
           channelVariants = models.map((m) => ({
             name: m.model_name?.trim() || m.model_sku?.trim() || "Phân loại",
@@ -834,6 +848,32 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
           // Không model nào đọc được tồn → trả null (không biết) thay vì 0 —
           // số 0 giả làm widget báo "Hết hàng" trong khi sàn vẫn bán được.
           channelStock = stocks.length > 0 ? stocks.reduce((a, b) => a + b, 0) : null;
+        }
+        const base = baseRs.status === "fulfilled" ? baseRs.value[0] : undefined;
+        if (base) {
+          // Mô tả thường + mô tả mở rộng (item bật extended description thì
+          // text nằm rải trong field_list) — cắt 1500 ký tự đủ cho AI đọc.
+          const extended = (base.description_info?.extended_description?.field_list ?? [])
+            .map((f) => f.text?.trim())
+            .filter(Boolean)
+            .join("\n");
+          const desc = (base.description?.trim() || extended).trim();
+          channelDescription = desc ? desc.slice(0, 1500) : null;
+          const attrs = (base.attribute_list ?? [])
+            .map((a) => ({
+              name: a.original_attribute_name?.trim() ?? "",
+              value: (a.attribute_value_list ?? [])
+                .map((v) => v.original_value_name?.trim())
+                .filter(Boolean)
+                .join(", "),
+            }))
+            .filter((a) => a.name && a.value);
+          // Chất liệu tách riêng (dòng khách hỏi nhiều nhất) — phần còn lại
+          // giữ nguyên danh sách cho widget + ngữ cảnh AI.
+          const materialAttr = attrs.find((a) => /chất liệu|material|vải|fabric/i.test(a.name));
+          channelMaterial = materialAttr?.value ?? null;
+          const rest = attrs.filter((a) => a !== materialAttr);
+          channelAttributes = rest.length > 0 ? rest : null;
         }
       } catch {
         channelStock = null; // token lỗi/permission — widget vẫn hiện phần còn lại
@@ -861,8 +901,12 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
         sku: product?.skuCode ?? cp?.channelSku ?? "",
         name: product?.productName ?? cp?.productName ?? "",
         imageUrl: product?.imageUrl ?? cp?.imageUrl ?? null,
-        material: product?.material ?? null,
+        // Thông số ưu tiên TỪ SÀN (đúng thứ khách đang đọc trên listing);
+        // Kho vật lý chỉ còn là fallback khi sàn không khai.
+        material: channelMaterial ?? product?.material ?? null,
         care: product?.careInstructions ?? null,
+        channelDescription,
+        channelAttributes,
         sizeChart: product?.sizeChart ?? null,
         physicalStock:
           product != null ? product.quantityInStock - product.holdQuantity : null,
@@ -879,6 +923,40 @@ router.get("/product-context", async (req: AuthRequest, res, next) => {
         itemId: !crossChannel ? rootItemId : null,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// POST /api/operations/copilot-suggest — AI Copilot THẬT (Claude API)
+//
+// Body: { context: string|null, customerMessage: string, channelLabel: string|null }
+// Trả { text, intent } cùng hợp đồng với engine luật ở frontend.
+// Chưa cấu hình ANTHROPIC_API_KEY → 503 code NO_AI_KEY, frontend tự rơi về
+// engine luật và ngưng gọi lại trong phiên — chat không phụ thuộc AI.
+// ============================================================
+router.post("/copilot-suggest", async (req: AuthRequest, res, next) => {
+  try {
+    const { context, customerMessage, channelLabel } = req.body ?? {};
+    if (typeof customerMessage !== "string" || !customerMessage.trim()) {
+      res.status(400).json({ error: "Thiếu customerMessage" });
+      return;
+    }
+    if (!copilotConfigured()) {
+      res.status(503).json({
+        error: "Chưa cấu hình ANTHROPIC_API_KEY cho AI Copilot",
+        code: "NO_AI_KEY",
+      });
+      return;
+    }
+    const suggestion = await generateCopilotSuggestion({
+      context: typeof context === "string" && context.trim() ? context : null,
+      customerMessage,
+      channelLabel:
+        typeof channelLabel === "string" && channelLabel.trim() ? channelLabel : null,
+    });
+    res.json(suggestion);
   } catch (err) {
     next(err);
   }

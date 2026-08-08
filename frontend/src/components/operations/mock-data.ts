@@ -337,9 +337,15 @@ export interface MockProductInfo {
   /** Tổng tồn TRÊN SÀN thật: undefined = mock (tự cộng từ variants);
    *  null = không đọc được tồn sàn → widget hiện "—" thay vì 0 giả. */
   channelTotal?: number | null;
+  /** Chất liệu — dữ liệu thật ưu tiên đọc từ thuộc tính TRÊN SÀN; rỗng = sàn
+   *  lẫn kho đều chưa khai (widget ẩn dòng, không hiện "Chưa cấu hình"). */
   material: string;
   /** Hướng dẫn bảo quản — AI hay cần khi khách hỏi cách giặt/vệ sinh. */
   care: string;
+  /** Mô tả sản phẩm TỪ SÀN — ngữ cảnh chính cho AI Copilot thật. */
+  description?: string | null;
+  /** Thuộc tính seller khai TRÊN SÀN (Xuất xứ, kiểu dáng…) ngoài Chất liệu. */
+  attributes?: { name: string; value: string }[] | null;
   sizeChart: SizeRow[];
   variants: ProductVariant[];
 }

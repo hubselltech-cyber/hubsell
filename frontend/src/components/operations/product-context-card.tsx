@@ -167,15 +167,30 @@ export function ProductContextCard({
         </span>
       </p>
 
-      {/* Chất liệu & bảo quản — hai câu khách hỏi nhiều nhất sau size */}
-      <div className="space-y-1.5">
-        <p className="text-sm text-slate-900">
-          <span className="text-slate-500">Chất liệu:</span> {product.material}
-        </p>
-        <p className="text-sm text-slate-900">
-          <span className="text-slate-500">Bảo quản:</span> {product.care}
-        </p>
-      </div>
+      {/* Thông số TỪ SÀN — chất liệu/bảo quản + thuộc tính seller khai trên
+          listing. Chỉ hiện dòng CÓ dữ liệu; không còn placeholder "Chưa cấu
+          hình — bổ sung trong Kho vật lý". */}
+      {(product.material ||
+        product.care ||
+        (product.attributes?.length ?? 0) > 0) && (
+        <div className="space-y-1.5">
+          {product.material && (
+            <p className="text-sm text-slate-900">
+              <span className="text-slate-500">Chất liệu:</span> {product.material}
+            </p>
+          )}
+          {product.care && (
+            <p className="text-sm text-slate-900">
+              <span className="text-slate-500">Bảo quản:</span> {product.care}
+            </p>
+          )}
+          {(product.attributes ?? []).slice(0, 6).map((a) => (
+            <p key={a.name} className="text-sm text-slate-900">
+              <span className="text-slate-500">{a.name}:</span> {a.value}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Bảng quy đổi size */}
       {product.sizeChart.length > 0 && (
