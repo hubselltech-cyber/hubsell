@@ -207,7 +207,12 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
       severity: totalLoss >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `${losses.length} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
       summary: `Trong ${LOSS_WINDOW_DAYS} ngày qua có ${losses.length} đơn Đã giao lợi nhuận âm (phí thật từ sao kê sàn). Bấm xem từng đơn lỗ do giá vốn hay do phí sàn để điều chỉnh giá bán.`,
-      payload: { kind: "navigate", href: "/finance/loss-orders", label: "Xem đơn lỗ" },
+      // Route mới sau điều chuyển menu 08/08; /finance/loss-orders cũ vẫn redirect
+      payload: {
+        kind: "navigate",
+        href: "/operations-assistant/loss-orders",
+        label: "Xem đơn lỗ",
+      },
     },
   ];
 }
@@ -240,9 +245,10 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
       title: `${count} đơn bị sàn trừ THÊM phí ship — tổng ${vnd(total)} chờ khiếu nại`,
       summary: `${SHIPPING_WINDOW_DAYS} ngày qua sàn khấu trừ phí vận chuyển cao hơn mức báo ban đầu trên ${count} đơn. Khiếu nại sớm để đòi lại tiền trước khi quá hạn đối soát.`,
+      // Route mới sau điều chuyển menu 08/08; /finance/shipping-alerts cũ vẫn redirect
       payload: {
         kind: "navigate",
-        href: "/finance/shipping-alerts",
+        href: "/warehouse/shipping-alerts",
         label: "Mở Đối soát phí ship",
       },
     },

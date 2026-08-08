@@ -49,7 +49,7 @@ hubsell/
 │       │   └── finance/            # 💰 Hubsell Finance — chỉ Admin
 │       │       ├── analytics/      #   Báo cáo dòng tiền (Area Chart doanh thu vs chi phí)
 │       │       ├── expenses/       #   Chi phí vận hành (bảng + modal thêm nhanh)
-│       │       ├── loss-orders/    #   Cảnh báo đơn lỗ (đối soát đơn bán lỗ)
+│       │       ├── ...             #   (loss-orders đã dời sang operations-assistant/, shipping-alerts sang warehouse/ — route cũ redirect)
 │       │       └── cost-prices/    #   Cấu hình Giá vốn (lọc theo sàn, nhập onBlur tự lưu)
 │       ├── components/
 │       │   ├── app-shell.tsx       # Khung chung: header + menu + đăng xuất
@@ -135,7 +135,7 @@ hubsell/
 | GET | `/api/finance/shipping-discrepancies` | Đơn bị sàn trừ thừa phí ship (phân trang, lọc sàn + trạng thái khiếu nại) | 🔒 Chỉ Admin |
 | PATCH | `/api/finance/shipping-discrepancies/:id/status` | Đổi trạng thái khiếu nại | 🔒 Chỉ Admin |
 
-### 🚚 Đối soát & Khiếu nại chênh lệch phí vận chuyển (`/finance/shipping-alerts`)
+### 🚚 Đối soát & Khiếu nại chênh lệch phí vận chuyển (`/warehouse/shipping-alerts`)
 
 Gom các đơn bị sàn trừ phí ship **cao hơn mức đã báo** để chủ shop đòi lại tiền.
 

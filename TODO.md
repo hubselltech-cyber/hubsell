@@ -8,7 +8,7 @@
 
 ## ✅ Trung tâm điều hành — Cảnh báo THẬT (06/08/2026, Đợt 1 + 2 đã chạy production)
 > Bảng `OpsAlert` HỢP NHẤT cho mọi detector (unique `ownerId×type×dedupeKey`; OPEN/RESOLVED/AUTO_CLOSED — detector TỰ ĐÓNG thẻ khi điều kiện hết; tick tay = ẩn tới khi tái phát) + `OpsCenterVisit` (mốc nhãn "Mới"). Quét khi GET `/api/command-center/state`, throttle 10'/shop, không cần cron. Đã verify sống: thẻ "2 đơn giao gần đây bị LỖ" + deep-link đúng trang.
-- [x] **Đợt 1:** 4 detector — cháy hàng (SKU có đơn 30 ngày nhưng tồn khả dụng ≤ 0, gom theo gian), gian mất kết nối/hết uỷ quyền, đơn lỗ 7 ngày (CÙNG luật `computePnlRow` với trang Đơn lỗ), chênh phí ship chờ khiếu nại 30 ngày. Action kind `navigate` deep-link (`/products`, `/channels`, `/finance/loss-orders`, `/finance/shipping-alerts`).
+- [x] **Đợt 1:** 4 detector — cháy hàng (SKU có đơn 30 ngày nhưng tồn khả dụng ≤ 0, gom theo gian), gian mất kết nối/hết uỷ quyền, đơn lỗ 7 ngày (CÙNG luật `computePnlRow` với trang Đơn lỗ), chênh phí ship chờ khiếu nại 30 ngày. Action kind `navigate` deep-link (`/products`, `/channels`, `/operations-assistant/loss-orders`, `/warehouse/shipping-alerts`).
 - [x] **Đợt 2:** detector sàn trễ đồng bộ (3 cột bookkeeping `lastSyncAt/lastSyncError/syncFailCount` trên `Channel`, worker order-auto-sync ghi mỗi nhịp; ≥3 nhịp lỗi liên tiếp → báo) + Ads Shopee đột biến (AdSpend ngày gần nhất ≥1.5× TB 7 ngày & ≥100k, đơn không tăng theo → nút mở Seller Center, link ngoài `window.open`). "Lệch tồn dai dẳng" đã có sẵn từ trước (3 lượt đối soát fail → `InventorySyncAlert`).
 - [x] **UI:** nhãn "Mới" theo lần mở trước (`POST /seen`), nhãn DEMO trên thẻ mock, thẻ THẬT xếp trên DEMO bất kể mức độ, Nhật ký chia "Hôm nay / Trước đó".
 
