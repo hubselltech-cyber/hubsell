@@ -695,6 +695,7 @@ export interface AnalyticsResponse {
     voucher: number; // voucher/xu trợ giá do shop chịu
     shippingDiff: number; // chênh lệch phí vận chuyển
     adWallet: number; // sàn giữ tiền đơn nạp ví quảng cáo
+    refund: number; // tiền hoàn trả khách (đơn hoàn còn tính doanh thu)
     other: number; // khấu trừ khác/lệch đối soát
   };
   grossProfit: number;

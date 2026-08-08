@@ -122,6 +122,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const feeShippingDiff = sumRows((r) => r.shippingFeeDiff);
     const feeAdWallet = sumRows((r) => r.adWalletTopup);
     const feeSubsidy = sumRows((r) => r.platformSubsidy);
+    // TIỀN HOÀN TRẢ KHÁCH của đơn còn tính doanh thu (hoàn tiền 100%/1 phần
+    // khách giữ hàng, trả 1 vài SKU) — engine hoàn tiền đã trừ khoản này khỏi
+    // platformRevenue nên nó NẰM TRONG totalPlatformFee; tách bucket riêng để
+    // donut không nhét nhầm vào "Khấu trừ khác của sàn" (sai bản chất).
+    const feeRefund = sumRows((r) => r.refundedAmount);
     const feeOther =
       totalPlatformFee -
       (feeService +
@@ -129,7 +134,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
         totalPlatformTax +
         feeVoucher +
         feeShippingDiff +
-        feeAdWallet -
+        feeAdWallet +
+        feeRefund -
         feeSubsidy);
     const platformFeeBreakdown = {
       service: feeService, // phí cố định + thanh toán + dịch vụ + PiShip
@@ -138,6 +144,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       voucher: feeVoucher,
       shippingDiff: feeShippingDiff,
       adWallet: feeAdWallet,
+      refund: feeRefund, // tiền hoàn trả khách (đơn hoàn còn tính doanh thu)
       other: feeOther, // đã cấn trợ giá sàn (subsidy làm giảm khấu trừ)
     };
 
