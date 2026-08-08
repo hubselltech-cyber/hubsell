@@ -401,34 +401,16 @@ export function CommandCenter() {
   const unresolvedCount = alerts.filter((a) => !resolved.has(a.id)).length;
 
   return (
-    // Card Container bao cả khối: viền mảnh + bóng mềm, overflow-hidden để dải
-    // gradient trên cùng tự ôm khít góc bo (border-t không nhận gradient).
-    <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-sm">
-      {/* Top Accent Border — dải gradient 4px đánh dấu khối điều hành realtime */}
-      <div
-        aria-hidden
-        className="h-1 w-full bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-500"
-      />
-      <div className="space-y-3 p-4 sm:p-5">
+    <section className="space-y-3">
       {/* Đầu khối: tiêu đề + bộ chuyển vai trò giả lập */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="relative flex size-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-            <Activity className="size-5" />
-            {/* Chấm Live: lớp ping lan toả + lõi đỏ tĩnh — dữ liệu đang quét realtime */}
-            <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-              Trung tâm điều hành
-            </h2>
-            <p className="text-sm text-slate-500">
-              Cảnh báo &amp; nhật ký vận hành, lọc theo vai trò phụ trách.
-            </p>
-          </div>
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            Trung tâm điều hành
+          </h2>
+          <p className="text-sm text-slate-500">
+            Cảnh báo &amp; nhật ký vận hành, lọc theo vai trò phụ trách.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="hidden items-center gap-1 text-xs text-slate-400 sm:flex">
@@ -456,8 +438,13 @@ export function CommandCenter() {
 
       {/* Split view 70/30 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[7fr_3fr] lg:items-stretch">
-        {/* CỘT TRÁI — bảng cảnh báo */}
-        <Card className="flex flex-col lg:h-[560px]">
+        {/* CỘT TRÁI — bảng cảnh báo. pt-0 để dải accent gradient nằm sát mép
+            trên; overflow-hidden sẵn có của Card cắt dải màu ôm khít góc bo. */}
+        <Card className="flex flex-col pt-0 lg:h-[560px]">
+          <div
+            aria-hidden
+            className="h-1 w-full shrink-0 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-500"
+          />
           <CardHeader className="border-b border-slate-100 pb-3">
             <CardTitle className="flex items-center gap-2">
               Cảnh báo cần xử lý
@@ -509,7 +496,6 @@ export function CommandCenter() {
             />
           </CardContent>
         </Card>
-      </div>
       </div>
 
       {openAlert && (
