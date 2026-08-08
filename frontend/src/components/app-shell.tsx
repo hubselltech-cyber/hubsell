@@ -48,26 +48,16 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/orders", label: "Đơn hàng", icon: "shopping_cart", roles: ALL_ROLES },
   {
     label: "Quản lý Tài chính",
-    icon: "account_balance_wallet",
+    // "credit_card" (thẻ ngân hàng): gọn, sang, outline và filled cùng một
+    // silhouette — "wallet" và "account_balance_wallet" đều bị chê thô
+    // (anh Trung 08/08).
+    icon: "credit_card",
     roles: ["ADMIN"],
     children: [
       { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
       { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện" },
       { href: "/finance/expenses", label: "Thu chi vận hành" },
       { href: "/finance/cost-prices", label: "Cấu hình Giá vốn" },
-    ],
-  },
-  {
-    // Hóa đơn điện tử & thuế tách thành danh mục lớn riêng (trước nằm trong
-    // Cấu hình): đây là nghiệp vụ chạy hằng ngày sát với Tài chính, không phải
-    // thứ cài một lần rồi quên.
-    label: "Hóa đơn & Thuế",
-    icon: "receipt_long",
-    roles: ["ADMIN"],
-    children: [
-      { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
-      { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
-      { href: "/invoicing/history", label: "Lịch sử & Báo cáo thuế" },
     ],
   },
   {
@@ -107,7 +97,6 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/operations-assistant/ai-rules", label: "Cấu hình kịch bản AI" },
     ],
   },
-  { href: "/channels", label: "Kênh bán", icon: "storefront", roles: ["ADMIN"] },
   {
     // Khung giữ chỗ cho tích hợp Marketing/Ads API 3 sàn — hiện là preview
     // mock. Chi phí Ads là dữ liệu tài chính nên chỉ ADMIN thấy (cùng luật
@@ -128,7 +117,8 @@ const NAV_ITEMS: NavItem[] = [
     // TikTok là CỔNG CHỜ (đợi sandbox + shop thật uỷ quyền); Hàng mẫu & Chi
     // phí còn preview mock.
     label: "Mạng lưới KOC & Marketing",
-    icon: "diversity_3",
+    // "handshake" thay "diversity_3": hợp tác/booking KOC (anh Trung 08/08).
+    icon: "handshake",
     roles: ["ADMIN"],
     children: [
       { href: "/koc-marketing/overview", label: "Tổng quan Net-ROI Đa kênh" },
@@ -139,10 +129,30 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/koc-marketing/expenses", label: "Chi phí Booking & Hợp đồng" },
     ],
   },
+  {
+    // Hóa đơn điện tử & thuế — nghiệp vụ chạy hằng ngày nhưng tần suất thấp
+    // hơn cụm bán hàng/marketing nên xếp sau (thứ tự anh Trung chốt 08/08).
+    label: "Hóa đơn & Thuế",
+    icon: "receipt_long",
+    roles: ["ADMIN"],
+    children: [
+      { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
+      { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
+      { href: "/invoicing/history", label: "Lịch sử & Báo cáo thuế" },
+    ],
+  },
+  // "store" thay "storefront": nhà mái hiên có CỬA GIỮA (anh Trung 08/08).
+  { href: "/channels", label: "Kênh bán", icon: "store", roles: ["ADMIN"] },
   // Nhãn sidebar để ngắn cho khỏi xuống dòng; tên đầy đủ "Liên kết SP vào kho
   // vật lý" nằm ở tiêu đề trang (PAGE_TITLES) và cột bảng.
   { href: "/mappings", label: "Liên kết sản phẩm", icon: "link", roles: ["ADMIN"] },
   { href: "/staff", label: "Nhân viên", icon: "group", roles: ["ADMIN"] },
+];
+
+// Khu CHÂN SIDEBAR — tách hẳn khỏi khu làm việc bên trên, ghim sát đáy với
+// đường kẻ phân cách (anh Trung chốt 08/08): đây là chỗ "cài một lần rồi
+// quên", không chen giữa các nghiệp vụ chạy hằng ngày.
+const NAV_ITEMS_BOTTOM: NavItem[] = [
   {
     // Cấu hình hệ thống gom thành nhóm phân cấp theo quy hoạch SaaS.
     label: "Cấu hình",
@@ -228,6 +238,9 @@ function menusForPath(pathname: string): string[] {
 // Icon sidebar bằng Material Symbols Rounded (variable font, trục FILL) —
 // active thì FILL 0→1: icon outline "đổ đầy" thành filled đúng kiểu YouTube
 // Studio, chi tiết bên trong vẫn khoét trắng vì glyph filled được vẽ riêng.
+// Outline để wght 350 — mỏng hơn mặc định 400 nhưng không mảnh dây (300):
+// đối chiếu ảnh sidebar YouTube Studio thật thì nét của họ nằm đúng khoảng này.
+// Khi đổ đầy trả về wght 400 để khối đen đủ đậm.
 // transition font-variation-settings cho chuyển trạng thái mượt.
 function NavIcon({ name, filled }: { name: string; filled?: boolean }) {
   return (
@@ -235,7 +248,7 @@ function NavIcon({ name, filled }: { name: string; filled?: boolean }) {
       aria-hidden
       className="material-symbols-rounded w-5 shrink-0 text-center text-[20px] leading-none transition-[font-variation-settings] duration-200 select-none"
       style={{
-        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 400, 'GRAD' 0, 'opsz' 24`,
+        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' ${filled ? 400 : 350}, 'GRAD' 0, 'opsz' 24`,
       }}
     >
       {name}
@@ -308,13 +321,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setMobileOpen(false);
   }, [pathname]);
 
-  const items = user
-    ? NAV_ITEMS.filter(
-        (i) =>
-          i.roles.includes(user.role) &&
-          (!i.platformOnly || user.isPlatformAdmin === true)
-      )
-    : [];
+  // Cùng một luật hiển thị cho cả khu làm việc lẫn khu chân sidebar.
+  const visible = (i: NavItem) =>
+    user !== null &&
+    i.roles.includes(user.role) &&
+    (!i.platformOnly || user.isPlatformAdmin === true);
+  const items = NAV_ITEMS.filter(visible);
+  const bottomItems = NAV_ITEMS_BOTTOM.filter(visible);
 
   function handleLogout() {
     clearToken();
@@ -341,6 +354,109 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // Vẽ MỘT mục menu — tách hàm để khu làm việc và khu chân sidebar (Cấu hình /
+  // Hệ thống) dùng chung một kiểu dáng, không bao giờ lệch nhau.
+  const renderNavItem = (item: NavItem) => {
+    // ----- Mục có MENU CON (ví dụ: Quản lý Tài chính) -----
+    if (item.children) {
+      const groupActive = item.children.some((c) =>
+        pathname.startsWith(c.href)
+      );
+      // groupActive chỉ dùng để TÔ MÀU nhãn nhóm; trạng thái xoè/cụp
+      // do openMenus quyết định hoàn toàn — trước đây `|| groupActive`
+      // ép nhóm chứa trang đang xem luôn mở, bấm không cụp lại được.
+      const open = openMenus.has(item.label);
+      return (
+        <div key={item.label}>
+          <button
+            type="button"
+            onClick={() => toggleMenu(item.label)}
+            className={cn(
+              // text-left: button mặc định canh GIỮA — nhãn dài xuống
+              // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
+              // canh giữa lộn xộn nếu không ép canh trái.
+              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
+              // Chưa chọn vẫn để chữ/icon ĐẬM MÀU (slate-700) chứ không
+              // xám nhạt — học YouTube Studio: cả sidebar sắc nét, trạng
+              // thái active phân biệt bằng pill + icon đổ đầy chứ không
+              // phải bằng cách dìm màu phần còn lại.
+              groupActive
+                ? "font-semibold text-sidebar-active-text"
+                : "font-medium text-slate-700 hover:bg-muted hover:text-foreground",
+              // Nhóm đang CỤP mà chứa trang hiện hành → nhận pill nền y
+              // như mục thường (hết cảnh active "nửa vời" chỉ đậm chữ);
+              // lúc XOÈ thì nhường pill cho mục con đang chọn bên dưới,
+              // tránh hai pill chồng nhau trong cùng một nhóm.
+              groupActive && !open && "bg-sidebar-active-bg"
+            )}
+          >
+            <NavIcon name={item.icon} filled={groupActive} />
+            <span className="min-w-0 flex-1">{item.label}</span>
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 transition-transform",
+                open && "rotate-180"
+              )}
+            />
+          </button>
+          {open && (
+            <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
+              {item.children.map((child) => {
+                const childActive = pathname.startsWith(child.href);
+                return (
+                  <Link
+                    key={child.href}
+                    href={child.href}
+                    className={cn(
+                      "relative block rounded-lg px-3 py-2 text-sm transition-colors",
+                      childActive
+                        ? "bg-sidebar-active-bg font-semibold text-sidebar-active-text"
+                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {/* Vạch neo thị giác — nét dọc mảnh sát cạnh trái của mục đang chọn */}
+                    {childActive && (
+                      <span
+                        aria-hidden
+                        className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-sidebar-active-border"
+                      />
+                    )}
+                    {child.label}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ----- Mục thường -----
+    const active =
+      item.href === "/" ? pathname === "/" : pathname.startsWith(item.href!);
+    return (
+      <Link
+        key={item.href}
+        href={item.href!}
+        className={cn(
+          "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+          // Chưa chọn để slate-700 sắc màu (xem chú thích ở nút nhóm).
+          active
+            ? "bg-sidebar-active-bg font-semibold text-sidebar-active-text"
+            : "font-medium text-slate-700 hover:bg-muted hover:text-foreground"
+        )}
+      >
+        {/* Kiểu YouTube Studio: mục active = pill nền + icon FILLED
+            (glyph filled thật của Material Symbols — chi tiết trong
+            icon vẫn khoét trắng, không phải silhouette). Vạch neo bỏ
+            ở tầng này — icon filled là tín hiệu chính; menu con
+            (không có icon) vẫn giữ vạch neo. */}
+        <NavIcon name={item.icon} filled={active} />
+        {item.label}
+      </Link>
+    );
+  };
+
   // Ruột sidebar (logo + menu + chân) — desktop và drawer mobile dùng chung
   // một khối để hai bên không bao giờ lệch nhau khi thêm mục mới
   const sidebarInner = (
@@ -363,99 +479,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
 
         <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4">
-          {items.map((item) => {
-            // ----- Mục có MENU CON (ví dụ: Quản lý Tài chính) -----
-            if (item.children) {
-              const groupActive = item.children.some((c) =>
-                pathname.startsWith(c.href)
-              );
-              // groupActive chỉ dùng để TÔ MÀU nhãn nhóm; trạng thái xoè/cụp
-              // do openMenus quyết định hoàn toàn — trước đây `|| groupActive`
-              // ép nhóm chứa trang đang xem luôn mở, bấm không cụp lại được.
-              const open = openMenus.has(item.label);
-              return (
-                <div key={item.label}>
-                  <button
-                    type="button"
-                    onClick={() => toggleMenu(item.label)}
-                    className={cn(
-                      // text-left: button mặc định canh GIỮA — nhãn dài xuống
-                      // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
-                      // canh giữa lộn xộn nếu không ép canh trái.
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-                      groupActive
-                        ? "font-semibold text-sidebar-active-text"
-                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <NavIcon name={item.icon} filled={groupActive} />
-                    <span className="min-w-0 flex-1">{item.label}</span>
-                    <ChevronDown
-                      className={cn(
-                        "size-4 shrink-0 transition-transform",
-                        open && "rotate-180"
-                      )}
-                    />
-                  </button>
-                  {open && (
-                    <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
-                      {item.children.map((child) => {
-                        const childActive = pathname.startsWith(child.href);
-                        return (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            className={cn(
-                              "relative block rounded-lg px-3 py-2 text-sm transition-colors",
-                              childActive
-                                ? "bg-sidebar-active-bg font-semibold text-sidebar-active-text"
-                                : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                            )}
-                          >
-                            {/* Vạch neo thị giác — nét dọc mảnh sát cạnh trái của mục đang chọn */}
-                            {childActive && (
-                              <span
-                                aria-hidden
-                                className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-sidebar-active-border"
-                              />
-                            )}
-                            {child.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            // ----- Mục thường -----
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href!);
-            return (
-              <Link
-                key={item.href}
-                href={item.href!}
-                className={cn(
-                  "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                  active
-                    ? "bg-sidebar-active-bg font-semibold text-sidebar-active-text"
-                    : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                {/* Kiểu YouTube Studio: mục active = pill nền + icon FILLED
-                    (glyph filled thật của Material Symbols — chi tiết trong
-                    icon vẫn khoét trắng, không phải silhouette). Vạch neo bỏ
-                    ở tầng này — icon filled là tín hiệu chính; menu con
-                    (không có icon) vẫn giữ vạch neo. */}
-                <NavIcon name={item.icon} filled={active} />
-                {item.label}
-              </Link>
-            );
-          })}
+          {items.map(renderNavItem)}
         </nav>
+
+        {/* Khu CHÂN SIDEBAR: Cấu hình & Hệ thống ghim sát đáy (nav flex-1 bên
+            trên đẩy khối này xuống), kẻ phân cách tách hẳn khỏi khu làm việc.
+            Vai trò không thấy mục nào (SALES/WAREHOUSE) thì ẩn luôn đường kẻ. */}
+        {bottomItems.length > 0 && (
+          <div className="space-y-1.5 border-t px-3 py-3">
+            {bottomItems.map(renderNavItem)}
+          </div>
+        )}
 
         <div className="border-t p-4">
           <p className="text-center text-xs text-muted-foreground">
