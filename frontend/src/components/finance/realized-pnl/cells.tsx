@@ -6,52 +6,59 @@ import { Money } from "@/components/ui/money";
 import type { PnlDetailRow, PnlItemLine, PnlReturnType } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** Nhãn + màu badge cho 4 hình thức hoàn tiền/trả hàng. */
+/** Nhãn + màu badge cho 4 hình thức hoàn tiền/trả hàng (chấm màu + chữ gọn). */
 const RETURN_TYPE_META: Record<
   PnlReturnType,
-  { label: string; className: string }
+  { label: string; className: string; dotClassName: string }
 > = {
   REFUND_ONLY: {
-    label: "🔴 Hoàn tiền 100%",
+    label: "Hoàn tiền 100%",
     className: "border-red-200 bg-red-50 text-red-600",
+    dotClassName: "bg-red-500",
   },
   PARTIAL_REFUND: {
-    label: "🟡 Hoàn tiền 1 phần",
+    label: "Hoàn 1 phần",
     className: "border-amber-200 bg-amber-50 text-amber-700",
+    dotClassName: "bg-amber-500",
   },
   PARTIAL_RETURN: {
-    label: "🟠 Trả một phần SP",
+    label: "Trả 1 phần SP",
     className: "border-orange-200 bg-orange-50 text-orange-700",
+    dotClassName: "bg-orange-500",
   },
   FULL_RETURN: {
-    label: "🟣 Hoàn toàn bộ đơn",
+    label: "Hoàn toàn bộ",
     className: "border-purple-200 bg-purple-50 text-purple-700",
+    dotClassName: "bg-purple-500",
   },
 };
 
 /**
  * BADGE HOÀN/TRẢ trên dòng đơn — phân loại 4 kịch bản; PARTIAL_RETURN kèm số
- * lượng "x/y SP"; số hoàn đang TẠM TÍNH (sàn chưa chốt) chú thích rõ để không
+ * lượng "x/y"; số hoàn đang TẠM TÍNH (sàn chưa chốt) chú thích rõ để không
  * đọc nhầm thành số thật. Đơn bán bình thường (returnType null) không render.
+ * whitespace-nowrap toàn bộ: badge quyết định độ rộng cột Trạng thái, tuyệt
+ * đối không để pill gãy chữ xuống dòng.
  */
 export function ReturnBadge({ row }: { row: PnlDetailRow }) {
   if (!row.returnType) return null;
   const meta = RETURN_TYPE_META[row.returnType];
   return (
-    <span className="mt-0.5 block">
+    <span className="mt-1 block">
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
+          "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
           meta.className
         )}
       >
+        <span className={cn("size-1.5 shrink-0 rounded-full", meta.dotClassName)} />
         {meta.label}
         {row.returnType === "PARTIAL_RETURN" && (
-          <> ({row.returnedQuantity}/{row.totalQuantity} SP)</>
+          <> ({row.returnedQuantity}/{row.totalQuantity})</>
         )}
       </span>
       {row.refundEstimated && (
-        <span className="block text-[10px] text-slate-400">
+        <span className="block whitespace-nowrap text-[10px] text-slate-400">
           tạm tính chờ sàn chốt
         </span>
       )}

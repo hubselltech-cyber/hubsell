@@ -153,7 +153,7 @@ export function ShopeeProfitTable({
                   )}
                 </td>
                 <td className={cn(cell, BLOCK.info)}>
-                  <span className="text-slate-700">
+                  <span className="whitespace-nowrap text-slate-700">
                     {PNL_STATUS_LABEL[b.shippingStatus] ?? b.shippingStatus}
                   </span>
                   {b.isSettled && (
