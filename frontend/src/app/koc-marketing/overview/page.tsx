@@ -1,14 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  HandCoins,
-  Sparkle,
-  Target,
-  TrendingUp,
-  TriangleAlert,
-  Wallet,
-} from "lucide-react";
+import { Sparkle, TriangleAlert } from "lucide-react";
 
 import {
   KOC_CAMPAIGNS,
@@ -16,14 +9,13 @@ import {
   KOC_PLATFORM_META,
   campaignName,
   kocNetProfit,
-  kocNetRevenue,
   kocNetRoi,
   kocRating,
   kocTotalCost,
   type KocPlatform,
 } from "@/components/koc/koc-data";
+import { KocRealData } from "@/components/koc/koc-real-data";
 import { KocShell } from "@/components/koc/koc-shell";
-import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -56,9 +48,14 @@ import { cn } from "@/lib/utils";
  * TỔNG QUAN NET-ROI ĐA KÊNH — màn hình chính của Mạng lưới KOC.
  *
  * Trả lời một câu hỏi duy nhất: "Đổ tiền booking + hàng mẫu cho từng KOC,
- * cuối cùng LÃI hay LỖ bao nhiêu?" — nên 4 thẻ đầu trang đi thẳng từ GMV →
- * doanh thu ròng → chi phí → Net ROI, và bảng dưới kết luận bằng cột Lợi
- * nhuận ròng + badge đánh giá.
+ * cuối cùng LÃI hay LỖ bao nhiêu?"
+ *
+ * HAI TẦNG DỮ LIỆU, TÁCH BẠCH TRÊN UI:
+ *   1. KocRealData — số THẬT cấp sàn/gian hàng từ /api/koc/* (đối soát sàn
+ *      ghi Order.affiliateFee). 4 thẻ chỉ số vàng + bảng gian hàng + bảng đơn.
+ *   2. Bảng hồ sơ TỪNG KOC bên dưới — vẫn PREVIEW MOCK: API seller của
+ *      Shopee/Lazada không trả danh tính creator theo đơn, phải chờ TikTok
+ *      Affiliate API (shop thật + scope) mới có attribution thật.
  */
 
 type RoiFilter = "ALL" | "PROFIT" | "LOSS";
@@ -82,65 +79,21 @@ export default function KocOverviewPage() {
     [platform, campaign, roi]
   );
 
-  // 4 chỉ số vàng tính trên tập ĐANG LỌC — filter đổi là số đổi theo,
-  // để chủ shop soi riêng từng sàn/chiến dịch mà không phải cộng tay.
-  const totals = useMemo(() => {
-    const gmv = rows.reduce((s, k) => s + k.gmv, 0);
-    const netRevenue = rows.reduce((s, k) => s + kocNetRevenue(k), 0);
-    const cost = rows.reduce((s, k) => s + kocTotalCost(k), 0);
-    return {
-      gmv,
-      netRevenue,
-      cost,
-      avgRoi: cost > 0 ? netRevenue / cost : 0,
-    };
-  }, [rows]);
-
   return (
     <KocShell>
-      {/* ===== 4 THẺ CHỈ SỐ VÀNG ===== */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Total GMV KOC"
-          value={<Money value={totals.gmv} />}
-          icon={TrendingUp}
-          tone="info"
-          subtitle="GMV phát sinh quy cho KOC trong kỳ"
-        />
-        <StatCard
-          label="Doanh thu ròng thực tế"
-          value={<Money value={totals.netRevenue} />}
-          icon={Wallet}
-          tone="positive"
-          colorValue
-          subtitle="Đã trừ đơn hoàn/huỷ theo tỷ lệ từng KOC"
-        />
-        <StatCard
-          label="Tổng chi phí Booking & Mẫu"
-          value={<Money value={totals.cost} />}
-          icon={HandCoins}
-          tone="negative"
-          colorValue
-          subtitle="Hoa hồng + booking + hàng mẫu (giá vốn)"
-        />
-        <StatCard
-          label="Net ROI trung bình"
-          value={`${totals.avgRoi.toLocaleString("vi-VN", { maximumFractionDigits: 1 })}x`}
-          icon={Target}
-          tone="accent"
-          subtitle="Doanh thu ròng trên 1đ chi phí KOC"
-        />
-      </div>
+      {/* ===== TẦNG 1: DỮ LIỆU AFFILIATE THẬT TỪ SÀN ===== */}
+      <KocRealData />
 
-      {/* ===== BẢNG KOC PERFORMANCE + FILTER BAR ===== */}
+      {/* ===== TẦNG 2 (PREVIEW): HỒ SƠ TỪNG KOC + FILTER BAR ===== */}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <CardTitle>Hiệu quả từng KOC</CardTitle>
+              <CardTitle>Hiệu quả từng KOC (Preview)</CardTitle>
               <CardDescription>
-                Xếp theo Lợi nhuận ròng — số liệu doanh số/hoàn đồng bộ từ sàn,
-                chi phí booking &amp; hàng mẫu do bạn nhập.
+                Bản mẫu giao diện — API seller của sàn chưa trả danh tính
+                creator theo đơn nên hồ sơ từng KOC chờ TikTok Affiliate API
+                (shop thật + scope Affiliate) mới có số thật.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">

@@ -2502,3 +2502,97 @@ export function fetchOpsProductContext(params: {
     `/api/operations/product-context?${q}`
   );
 }
+
+// ============================================================
+// MẠNG LƯỚI KOC & AFFILIATE — dữ liệu affiliate THẬT từ đối soát sàn
+// (Order.affiliateFee: Shopee AMS escrow / Lazada Finance API). Chi tiết
+// nguồn số xem backend/src/routes/koc.ts.
+// ============================================================
+
+/** Số liệu affiliate gộp của một phạm vi (gian hàng hoặc sàn). */
+export interface KocAffiliateStats {
+  orders: number;
+  gmv: number;
+  commission: number;
+  refundedAmount: number;
+  refundedOrders: number;
+  netRevenue: number;
+}
+
+/** Một gian hàng trong /api/koc/summary — kèm trạng thái quyền access. */
+export interface KocShopDTO {
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  externalShopId: string | null;
+  /** Liên kết còn hiệu lực (ACTIVE + có access token) — cờ, không lộ token. */
+  connected: boolean;
+  accessTokenExpireAt: string | null;
+  lastSyncAt: string | null;
+  affiliate: KocAffiliateStats & { actualPayout: number };
+}
+
+export interface KocPlatformDTO {
+  channelName: ChannelName;
+  shopCount: number;
+  connectedCount: number;
+  affiliate: KocAffiliateStats;
+}
+
+export interface KocSummaryDTO {
+  days: number;
+  since: string;
+  platforms: KocPlatformDTO[];
+  shops: KocShopDTO[];
+  total: {
+    orders: number;
+    gmv: number;
+    commission: number;
+    refundedAmount: number;
+    netRevenue: number;
+  };
+}
+
+/** Tổng hợp affiliate thật theo sàn/gian trong `days` ngày gần nhất. */
+export function fetchKocSummary(days = 30) {
+  return apiFetch<KocSummaryDTO>(`/api/koc/summary?days=${days}`);
+}
+
+/** Một đơn affiliate thật (sàn đã trừ hoa hồng) trong /api/koc/orders. */
+export interface KocAffiliateOrderDTO {
+  id: string;
+  orderCode: string;
+  createdAt: string;
+  channelName: ChannelName;
+  shopName: string;
+  gmv: number;
+  commission: number;
+  returnStatus: string;
+  refundedAmount: number;
+  isSettled: boolean;
+  actualPayout: number;
+}
+
+export interface KocOrdersDTO {
+  days: number;
+  page: number;
+  pageSize: number;
+  total: number;
+  orders: KocAffiliateOrderDTO[];
+}
+
+/** Danh sách đơn affiliate thật, phân trang. */
+export function fetchKocAffiliateOrders(params: {
+  days?: number;
+  page?: number;
+  pageSize?: number;
+  channel?: ChannelFilterQuery;
+}) {
+  const q = new URLSearchParams({
+    days: String(params.days ?? 30),
+    page: String(params.page ?? 1),
+    pageSize: String(params.pageSize ?? 20),
+    ...channelFilterToQuery(params.channel),
+  });
+  return apiFetch<KocOrdersDTO>(`/api/koc/orders?${q}`);
+}

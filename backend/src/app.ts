@@ -27,6 +27,7 @@ import invoiceConfigRouter from "./routes/invoice-config";
 import taxRouter from "./routes/tax";
 import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 import operationsRouter from "./routes/operations";
+import kocRouter from "./routes/koc";
 
 // ============================================================
 // CORS — ALLOWLIST thay cho mở toang (beta multi-user).
@@ -158,6 +159,11 @@ export function createApp() {
   // Trợ lý vận hành (CSKH đa kênh): chat + đánh giá + ngữ cảnh sản phẩm.
   // CSKH là việc của SALES nên gác notWarehouse (khớp canAccessOperations bên FE).
   app.use("/api/operations", requireAuth, notWarehouse, requireChannel, operationsRouter);
+
+  // Mạng lưới KOC & Affiliate: đọc dữ liệu affiliate THẬT từ đối soát sàn
+  // (Order.affiliateFee). Chi phí booking/hoa hồng là dữ liệu tài chính → chỉ
+  // ADMIN (khớp canAccessKocMarketing bên FE).
+  app.use("/api/koc", requireAuth, adminOnly, requireChannel, kocRouter);
 
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).

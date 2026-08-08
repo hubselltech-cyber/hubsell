@@ -46,12 +46,14 @@ export function KocShell({ children }: { children: React.ReactNode }) {
           <Sparkles className="mt-0.5 size-5 shrink-0 text-violet-600" />
           <div>
             <p className="font-semibold">
-              Mạng lưới KOC &amp; Affiliate đang được phát triển.
+              Mạng lưới KOC &amp; Affiliate — số liệu cấp sàn là THẬT, hồ sơ
+              từng KOC đang là Preview.
             </p>
             <p className="mt-0.5 text-violet-700">
-              Dữ liệu dưới đây là bản xem trước (Preview) — khung giao diện
-              chuẩn bị cho tích hợp Affiliate API của TikTok Shop, Shopee và
-              Lazada, chưa phản ánh số liệu thật.
+              GMV/hoa hồng affiliate đọc từ đối soát thật của gian hàng đã
+              liên kết (Shopee AMS, Lazada tiếp thị liên kết — không cần uỷ
+              quyền thêm). Danh tính từng KOC chờ TikTok Affiliate API có shop
+              thật uỷ quyền mới bật được.
             </p>
           </div>
         </div>
