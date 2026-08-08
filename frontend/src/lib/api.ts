@@ -658,8 +658,14 @@ export interface AnalyticsResponse {
    * lệch VC − trợ giá) = Σ (Giá trị đơn − "Tổng tiền" sàn báo). Vắng với SALES.
    */
   totalPlatformFee: number;
+  /** Riêng THUẾ SÀN (TNCN + VAT thu hộ) đã nằm trong totalPlatformFee. */
+  totalPlatformTax: number;
   grossProfit: number;
   totalOperatingExpense: number;
+  /** Chi phí vận hành BIẾN ĐỔI ngoài quảng cáo (bao bì, phí hoàn…). */
+  operatingVariableExpense: number;
+  /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương, phần mềm…). */
+  operatingFixedExpense: number;
   netProfit: number;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
   /** `cost` (giá vốn + chi phí vận hành trong ngày) vắng mặt với SALES. */

@@ -19,6 +19,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -124,7 +127,7 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
   const net = analytics.netProfit;
 
   return (
-    <Card>
+    <Card className="h-full lg:col-span-5">
       <CardHeader>
         <CardTitle>Bóc tách dòng tiền</CardTitle>
         <CardDescription>
@@ -286,7 +289,13 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
  * khối liếc nhanh, hai gian Shopee cộng làm một là đủ; muốn soi từng gian đã
  * có bộ lọc gian hàng ở đầu trang.
  */
-function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
+function MarketplaceShare({
+  analytics,
+  className,
+}: {
+  analytics: AnalyticsResponse;
+  className?: string;
+}) {
   const byPlatform = new Map<string, { revenue: number; count: number }>();
   for (const r of analytics.ordersByChannel) {
     const cur = byPlatform.get(r.channelName) ?? { revenue: 0, count: 0 };
@@ -300,7 +309,7 @@ function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
   const total = rows.reduce((sum, r) => sum + r.revenue, 0);
 
   return (
-    <Card>
+    <Card className={cn("h-full", className)}>
       <CardHeader>
         <CardTitle>Tỷ trọng kênh bán hàng</CardTitle>
         <CardDescription>
@@ -362,6 +371,138 @@ function MarketplaceShare({ analytics }: { analytics: AnalyticsResponse }) {
               })}
             </div>
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * CƠ CẤU CHI PHÍ — donut 6 khoản theo chuẩn P&L: phí dịch vụ sàn, thuế sàn,
+ * quảng cáo, giá vốn, vận hành biến đổi, vận hành cố định. Σ 6 khoản =
+ * totalPlatformFee + totalCost + totalOperatingExpense — luôn khớp từng đồng
+ * với thẻ "Tổng Chi phí" và Bóc tách dòng tiền.
+ */
+function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
+  const adsExpense = analytics.expensesByCategory
+    .filter((e) => e.category === "ADS")
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const segments = [
+    {
+      key: "fee",
+      label: "Phí dịch vụ & Cố định sàn",
+      amount: analytics.totalPlatformFee - analytics.totalPlatformTax,
+      color: "#f97316",
+    },
+    {
+      key: "tax",
+      label: "Thuế sàn (TNCN & VAT thu hộ)",
+      amount: analytics.totalPlatformTax,
+      color: "#ef4444",
+    },
+    {
+      key: "ads",
+      label: "Quảng cáo Ads",
+      amount: adsExpense,
+      color: "#8b5cf6",
+    },
+    {
+      key: "cogs",
+      label: "Giá vốn hàng bán (COGS)",
+      amount: analytics.totalCost,
+      color: "#3b82f6",
+    },
+    {
+      key: "varops",
+      label: "Chi phí Biến đổi Vận hành",
+      amount: analytics.operatingVariableExpense,
+      color: "#10b981",
+    },
+    {
+      key: "fixops",
+      label: "Chi phí Cố định Vận hành",
+      amount: analytics.operatingFixedExpense,
+      color: "#a16207",
+    },
+  ].filter((s) => s.amount > 0);
+  const total = segments.reduce((sum, s) => sum + s.amount, 0);
+
+  return (
+    <Card className="h-full lg:col-span-5">
+      <CardHeader>
+        <CardTitle>Cơ cấu Chi phí</CardTitle>
+        <CardDescription>Tỷ lệ % các khoản chi trong kỳ.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {total <= 0 ? (
+          <p className="py-10 text-center text-sm text-slate-500">
+            Chưa ghi nhận khoản chi nào trong kỳ này.
+          </p>
+        ) : (
+          /* Donut TRÁI — chú thích PHẢI: 6 khoản xếp dọc dưới donut sẽ đè bẹp
+             biểu đồ, đặt cạnh nhau thì donut giữ nguyên cỡ dù thêm khoản mới.
+             Màn hẹp (mobile) tự gãy về xếp dọc, donut căn giữa. */
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-5">
+            <div className="relative size-44 shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={segments}
+                    dataKey="amount"
+                    nameKey="label"
+                    innerRadius="62%"
+                    outerRadius="92%"
+                    paddingAngle={2}
+                    strokeWidth={0}
+                  >
+                    {segments.map((s) => (
+                      <Cell key={s.key} fill={s.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value, name) => [formatVND(Number(value)), name]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              {/* Tâm donut: tổng chi của kỳ — đỡ phải cộng nhẩm các mảnh */}
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className={TEXT_SUB}>Tổng chi</span>
+                <Money
+                  value={total}
+                  className="text-sm font-semibold text-slate-900"
+                />
+              </div>
+            </div>
+
+            {/* Chú thích: số tiền + tỷ trọng từng khoản */}
+            <div className="w-full min-w-0 flex-1">
+              {segments.map((s) => {
+                const pct = Math.round((s.amount / total) * 1000) / 10;
+                return (
+                  <div
+                    key={s.key}
+                    className="flex items-center gap-2.5 border-b border-slate-100 py-2 last:border-b-0"
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: s.color }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
+                      {s.label}
+                    </span>
+                    <Money
+                      value={s.amount}
+                      className="shrink-0 text-right text-sm text-slate-600"
+                    />
+                    <span className="w-12 shrink-0 text-right text-sm font-semibold text-slate-900">
+                      {pct}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -645,23 +786,38 @@ export default function DashboardPage() {
           </Refreshing>
         )}
 
-        {/* ===== TẦNG 3: TỶ TRỌNG KÊNH 60% | BÓC TÁCH DÒNG TIỀN 40% ===== */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
-          {analytics && <MarketplaceShare analytics={analytics} />}
+        {/* ===== TẦNG 3: TỶ TRỌNG KÊNH 7 cột | BÓC TÁCH DÒNG TIỀN 5 cột =====
+            CÙNG lưới 12 cột chia 7/5 với Tầng 4 bên dưới — vạch ngăn dọc của
+            hai hàng gióng thẳng nhau, không còn lệch 3fr/2fr vs 7/5. */}
+        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12">
+          {analytics && (
+            <MarketplaceShare
+              analytics={analytics}
+              className={seesFinancials ? "lg:col-span-7" : "lg:col-span-12"}
+            />
+          )}
           {seesFinancials && analytics && (
             <PnlBreakdown analytics={analytics} />
           )}
         </div>
 
-        {/* Nhịp dòng tiền theo ngày — hữu ích nhất khi xem khoảng 7/30 ngày */}
-          <Card>
+        {/* ===== TẦNG 4: NHỊP DÒNG TIỀN 7 cột | CƠ CẤU CHI PHÍ 5 cột =====
+            Mobile xếp dọc 1 cột; SALES không thấy chart tròn nên chart cột
+            giãn đủ 12 cột. */}
+        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12">
+          <Card
+            className={cn(
+              "h-full",
+              seesFinancials ? "lg:col-span-7" : "lg:col-span-12"
+            )}
+          >
             <CardHeader>
               <CardTitle>
                 {seesFinancials ? "Doanh thu vs Chi phí" : "Doanh thu theo ngày"}
               </CardTitle>
               <CardDescription>
                 {seesFinancials
-                  ? "Chi phí mỗi ngày = giá vốn đơn phát sinh + chi phí vận hành ghi nhận trong ngày."
+                  ? "Chi phí mỗi ngày = giá vốn + sàn khấu trừ của đơn phát sinh + chi phí vận hành trong ngày."
                   : "Giá trị đơn phát sinh theo từng ngày (không tính đơn hủy)."}
               </CardDescription>
             </CardHeader>
@@ -735,6 +891,11 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {seesFinancials && analytics && (
+            <CostStructure analytics={analytics} />
+          )}
+        </div>
 
         {/* ===== OPERATIONS COMMAND CENTER — thay khối Chi phí + Đơn gần đây =====
             Tính năng đóng gói riêng trong components/dashboard/command-center/

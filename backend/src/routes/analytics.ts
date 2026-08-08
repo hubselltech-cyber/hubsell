@@ -98,6 +98,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? activeRows.reduce((sum, r) => sum + (r.revenueGross - r.platformRevenue), 0)
       : 0;
 
+    // Bóc riêng THUẾ SÀN (TNCN + VAT thu hộ) khỏi con số khấu trừ gộp — donut
+    // Cơ cấu Chi phí cần tách "Phí dịch vụ sàn" và "Thuế sàn" thành 2 khoản
+    // theo chuẩn P&L. Phí dịch vụ = totalPlatformFee − totalPlatformTax.
+    const totalPlatformTax = seesFinancials
+      ? activeRows.reduce((sum, r) => sum + r.platformTax, 0)
+      : 0;
+
     // 2) Giá vốn = Σ costSnapshot (OrderItem.costPriceAtSale, fallback log trừ
     // kho) — cùng công thức orderCost với mọi báo cáo tài chính. Người không
     // được xem tài chính giữ 0 để không rò số.
@@ -112,7 +119,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? await prisma.operatingExpense.findMany({
           // CHỈ khoản CHI mới là chi phí; khoản THU vận hành không tính vào đây.
           where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
-          select: { category: true, amount: true, expenseDate: true },
+          select: { category: true, type: true, amount: true, expenseDate: true },
         })
       : [];
     const totalOperatingExpense = expenses.reduce(
@@ -130,6 +137,17 @@ router.get("/", async (req: AuthRequest, res, next) => {
       .map(([category, amount]) => ({ category, amount }))
       .sort((a, b) => b.amount - a.amount);
 
+    // Chi phí vận hành NGOÀI quảng cáo, tách BIẾN ĐỔI / CỐ ĐỊNH theo cờ type —
+    // ADS đứng riêng một khoản trên donut nên loại khỏi cả hai nhóm này.
+    // Σ(ads + variable + fixed) = totalOperatingExpense, không rơi rớt đồng nào.
+    let operatingVariableExpense = 0;
+    let operatingFixedExpense = 0;
+    for (const e of expenses) {
+      if (e.category === "ADS") continue;
+      if (e.type === "FIXED") operatingFixedExpense += Number(e.amount);
+      else operatingVariableExpense += Number(e.amount);
+    }
+
     // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động
     const netProfit = grossProfit - totalPlatformFee - totalOperatingExpense;
 
@@ -144,9 +162,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
 
     /*
-     * CHI PHÍ THEO NGÀY = giá vốn các đơn phát sinh trong ngày (costSnapshot,
-     * cùng nguồn tổng phía trên) + chi phí vận hành ghi nhận trong ngày —
-     * cùng hệ quy chiếu GMV với chuỗi doanh thu để hai cột so được với nhau.
+     * CHI PHÍ THEO NGÀY = giá vốn + SÀN KHẤU TRỪ của đơn phát sinh trong ngày
+     * + chi phí vận hành ghi nhận trong ngày. Đủ cả ba khoản để Σ cột chi phí
+     * khớp đúng thẻ "Tổng Chi phí" và sơ đồ Bóc tách dòng tiền — thiếu phí sàn
+     * thì ngày chưa liên kết SKU cột chi phí về 0 dù sàn vẫn đang khấu trừ.
      */
     const costMap = new Map<string, number>();
     const addCost = (key: string, amount: number) =>
@@ -154,7 +173,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     if (seesFinancials) {
       for (const r of activeRows) {
-        if (r.costSnapshot) addCost(toBusinessDateKey(r.createdAt), r.costSnapshot);
+        const dayCost = r.costSnapshot + (r.revenueGross - r.platformRevenue);
+        if (dayCost) addCost(toBusinessDateKey(r.createdAt), dayCost);
       }
     }
     for (const e of expenses) {
@@ -313,8 +333,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
       totalRevenue,
       totalCost,
       totalPlatformFee,
+      totalPlatformTax,
       grossProfit,
       totalOperatingExpense,
+      operatingVariableExpense,
+      operatingFixedExpense,
       netProfit,
       expensesByCategory,
       revenueByDay,
