@@ -86,7 +86,7 @@ export interface KocPartner {
 
 /** Ngưỡng gắn badge cảnh báo/khen — chỉnh 1 chỗ, mọi bảng ăn theo. */
 export const KOC_REFUND_WARN_PCT = 15;
-export const KOC_STAR_ROI = 5;
+export const KOC_STAR_ROI = 3;
 
 export const KOC_PARTNERS: KocPartner[] = [
   // ----- TikTok: GMV lớn, chạy qua video gắn giỏ + phiên live -----
@@ -130,12 +130,24 @@ export function kocNetRoi(k: KocPartner): number {
   return cost > 0 ? kocNetRevenue(k) / cost : 0;
 }
 
-/** Badge đánh giá KOC — cảnh báo hoàn cao ưu tiên hơn khen hiệu quả. */
-export type KocRating = "STAR" | "HIGH_REFUND" | null;
-export function kocRating(k: KocPartner): KocRating {
-  if (k.refundRate > KOC_REFUND_WARN_PCT) return "HIGH_REFUND";
-  if (kocNetRoi(k) >= KOC_STAR_ROI && kocNetProfit(k) > 0) return "STAR";
-  return null;
+/**
+ * Badge đánh giá KOC — 3 nhãn chuẩn hoá:
+ *   STAR        ✨ KOC Hiệu quả : lợi nhuận ròng > 0 VÀ Net ROI ≥ 3x
+ *   LOSS        🚨 KOC Bán Lỗ  : lợi nhuận ròng < 0
+ *   HIGH_REFUND ⚠️ Hoàn cao    : tỷ lệ hoàn > 15%
+ *
+ * Một KOC có thể mang NHIỀU nhãn cảnh báo cùng lúc (lỗ + hoàn cao là tổ hợp
+ * hay gặp — hoàn cao chính là lý do lỗ); nhãn khen chỉ gắn khi KHÔNG dính
+ * cảnh báo nào, tránh cảnh "vừa hiệu quả vừa báo động" gây nhiễu.
+ */
+export type KocRating = "STAR" | "LOSS" | "HIGH_REFUND";
+export function kocRatings(k: KocPartner): KocRating[] {
+  const warnings: KocRating[] = [];
+  if (kocNetProfit(k) < 0) warnings.push("LOSS");
+  if (k.refundRate > KOC_REFUND_WARN_PCT) warnings.push("HIGH_REFUND");
+  if (warnings.length > 0) return warnings;
+  if (kocNetProfit(k) > 0 && kocNetRoi(k) >= KOC_STAR_ROI) return ["STAR"];
+  return [];
 }
 
 // ═══════════════ HÀNG MẪU & SEEDING ═══════════════

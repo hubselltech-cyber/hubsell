@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PackageOpen } from "lucide-react";
 
 import {
@@ -39,16 +39,25 @@ export function SampleExportModal({
   onOpenChange,
   skus,
   onExport,
+  initialKocId,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   /** Tồn kho mẫu hiện tại (đã trừ các phiếu xuất trong phiên) */
   skus: SampleSku[];
   onExport: (shipment: SampleShipment) => void;
+  /** Chọn sẵn KOC khi mở từ nút thao tác nhanh trên bảng Hiệu quả. */
+  initialKocId?: string;
 }) {
   const [kocId, setKocId] = useState(KOC_PARTNERS[0]?.id ?? "");
   const [sku, setSku] = useState(skus[0]?.sku ?? "");
   const [qty, setQty] = useState(1);
+
+  // Mỗi lần MỞ modal thì đồng bộ lại KOC được chỉ định — state khởi tạo một
+  // lần nên không tự đổi khi mở cho KOC khác nếu thiếu bước này.
+  useEffect(() => {
+    if (open && initialKocId) setKocId(initialKocId);
+  }, [open, initialKocId]);
 
   const koc = useMemo(() => KOC_PARTNERS.find((k) => k.id === kocId), [kocId]);
   const picked = useMemo(() => skus.find((s) => s.sku === sku), [skus, sku]);
