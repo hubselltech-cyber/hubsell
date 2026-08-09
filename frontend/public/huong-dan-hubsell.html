@@ -322,6 +322,28 @@ body { font-family: var(--font); color: var(--ink); }
    CHROME NGOÀI STAGE
    =========================================== */
 .deck-controls { display: flex; gap: 10px; align-items: center; }
+
+/* Nút Back/Next hai bên màn hình — trải nghiệm bấm chuyển slide cho khách
+   (song song với phím mũi tên / lăn chuột / vuốt). Nằm NGOÀI stage nên luôn
+   cố định hai mép cửa sổ, không co giãn theo slide. */
+.navbtn {
+    position: fixed; top: 50%; transform: translateY(-50%);
+    z-index: 1000;
+    width: 58px; height: 58px; border-radius: 50%;
+    border: 1.5px solid var(--line);
+    background: rgba(255, 255, 255, .95);
+    color: var(--ink);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+    transition: all .2s var(--ease);
+}
+.navbtn svg { width: 26px; height: 26px; stroke: currentColor; stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.navbtn:hover { background: #fff; color: var(--primary); transform: translateY(-50%) scale(1.08); box-shadow: 0 10px 26px rgba(0, 0, 0, .34); }
+.navbtn.prev { left: 22px; }
+.navbtn.next { right: 22px; }
+/* Hết đường thì mờ đi và không bấm được — khách biết đang ở đầu/cuối */
+.navbtn:disabled { opacity: .25; cursor: default; pointer-events: none; }
 .pdot {
     width: 10px; height: 10px; border-radius: 50%;
     background: rgba(255, 255, 255, .28); border: none; cursor: pointer; padding: 0;
@@ -634,7 +656,13 @@ body.editing [contenteditable="true"] { outline: 1.5px dashed #a78bfa; outline-o
 </main>
 </div>
 
-<!-- Chrome ngoài stage: chấm tiến trình + sửa nhanh nội dung -->
+<!-- Chrome ngoài stage: nút Back/Next + chấm tiến trình + sửa nhanh nội dung -->
+<button class="navbtn prev" id="btnPrev" aria-label="Slide trước" title="Slide trước (←)">
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+</button>
+<button class="navbtn next" id="btnNext" aria-label="Slide tiếp theo" title="Slide tiếp theo (→)">
+    <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+</button>
 <div class="deck-controls" id="deckDots"></div>
 <div class="edit-hotzone"></div>
 <button class="edit-toggle" id="editToggle" title="Chế độ sửa chữ (phím E)">✏️</button>
@@ -650,11 +678,18 @@ class SlidePresentation {
         this.stage = document.getElementById('deckStage');
         this.current = 0;
         this.buildDots();
+        this.setupNavButtons();
         this.setupStageScale();
         this.setupKeyboard();
         this.setupWheel();
         this.setupTouch();
         this.show(0);
+    }
+    setupNavButtons() {
+        this.btnPrev = document.getElementById('btnPrev');
+        this.btnNext = document.getElementById('btnNext');
+        this.btnPrev.addEventListener('click', () => this.show(this.current - 1));
+        this.btnNext.addEventListener('click', () => this.show(this.current + 1));
     }
     setupStageScale() {
         const scale = () => {
@@ -712,6 +747,9 @@ class SlidePresentation {
             s.classList.toggle('visible', k === this.current);
         });
         this.dots.forEach((d, k) => d.classList.toggle('on', k === this.current));
+        // Đầu/cuối đường thì mờ nút tương ứng
+        this.btnPrev.disabled = this.current === 0;
+        this.btnNext.disabled = this.current === this.slides.length - 1;
     }
 }
 const deck = new SlidePresentation();
