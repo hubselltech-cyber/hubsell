@@ -507,18 +507,20 @@ body.editing [contenteditable="true"] { outline: 1.5px dashed #a78bfa; outline-o
                 <div>
                     <h2 class="h2 reveal r1">Màn hình đăng nhập của Shopee</h2>
                     <div class="steps">
-                        <div class="step reveal r2"><span class="stepnum">1</span><div><h4>Chọn quốc gia / khu vực</h4><p>Nếu Shopee hỏi khu vực, chọn <b>Việt Nam</b> — đúng nước mà gian hàng của bạn đang bán.</p></div></div>
+                        <div class="step reveal r2"><span class="stepnum">1</span><div><h4>Chọn quốc gia / khu vực</h4><p>Ô nhỏ bên trái ô tài khoản là khu vực — bấm và chọn <b>VN</b> (Việt Nam), đúng nước mà gian hàng đang bán.</p></div></div>
                         <div class="step reveal r3"><span class="stepnum">2</span><div><h4>Nhập tài khoản người bán</h4><p>Điền <b>Email / Số điện thoại / Tên đăng nhập</b> của tài khoản Kênh Người Bán — đúng tài khoản của gian đang kết nối.</p></div></div>
                         <div class="step reveal r4"><span class="stepnum">3</span><div><h4>Nhập mật khẩu, bấm ĐĂNG NHẬP</h4><p>Đăng nhập như bình thường; quét <b>mã QR</b> bằng app Shopee hoặc dùng Facebook / Google cũng được.</p></div></div>
                         <div class="step reveal r5"><span class="stepnum">4</span><div><h4>Bấm xác nhận ủy quyền</h4><p>Shopee hỏi có cho phép Hubsell truy cập gian hàng — bấm đồng ý là trình duyệt <b>tự quay về Hubsell</b>, kết nối hoàn tất.</p></div></div>
                     </div>
                 </div>
                 <div class="mockwrap reveal r6">
-                    <div class="shot">
+                    <!-- Ảnh khổ DỌC (form đăng nhập crop sát) — khoá bề rộng 540px
+                         để tổng chiều cao ảnh + thanh + chú thích nằm gọn trong stage -->
+                    <div class="shot" style="max-width:540px">
                         <div class="bar"><i></i><i></i><i></i></div>
-                        <img src="guide-assets/shopee-seller-login.png" alt="Trang đăng nhập Kênh Người Bán Shopee với ô Email/SĐT/Tên đăng nhập và Mật khẩu">
+                        <img src="guide-assets/shopee-oauth-login.png" alt="Màn hình Đăng nhập để cấp quyền cho nền tảng ứng dụng Shopee — có ô chọn khu vực, tài khoản và mật khẩu">
                     </div>
-                    <p class="caption">Màn hình thật: trang đăng nhập <b>Kênh Người Bán</b> của Shopee</p>
+                    <p class="caption">Màn hình thật: <b>Đăng nhập để cấp quyền</b> — đúng trang bạn sẽ gặp khi ủy quyền</p>
                 </div>
             </div>
         </div>
