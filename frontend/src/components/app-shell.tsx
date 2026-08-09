@@ -154,6 +154,15 @@ const NAV_ITEMS: NavItem[] = [
 // quên", không chen giữa các nghiệp vụ chạy hằng ngày.
 const NAV_ITEMS_BOTTOM: NavItem[] = [
   {
+    // Hướng dẫn sử dụng cơ bản cho khách hàng mới (kế hoạch 09/08) — đặt cạnh
+    // Cấu hình theo thông lệ SaaS: tài liệu trợ giúp nằm khu "ít khi động tới".
+    // Mở cho MỌI vai trò: nhân viên cũng cần tra cứu cách dùng phần việc của mình.
+    href: "/guide",
+    label: "Hướng dẫn sử dụng",
+    icon: "help",
+    roles: ALL_ROLES,
+  },
+  {
     // Cấu hình hệ thống gom thành nhóm phân cấp theo quy hoạch SaaS.
     label: "Cấu hình",
     icon: "settings",
@@ -181,6 +190,7 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
 const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/admin", title: "Quản trị nền tảng Hubsell" },
+  { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   { prefix: "/products", title: "Kho vật lý" },
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
