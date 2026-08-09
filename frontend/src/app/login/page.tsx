@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -438,9 +439,17 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="flex flex-col items-center gap-2">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground">
-            H
-          </div>
+          {/* unoptimized: để trình duyệt tự thu từ bản gốc 417px — optimizer
+              của Next resize + nén WebP làm nét mảnh của logo bị nhòe */}
+          <Image
+            src="/logo-hubsell.png"
+            alt="Hubsell"
+            width={417}
+            height={417}
+            priority
+            unoptimized
+            className="size-16 rounded-2xl shadow-sm"
+          />
           <div className="text-center">
             <p className="text-xl font-bold">Hubsell</p>
             <p className="flex items-center gap-1 text-sm text-muted-foreground">

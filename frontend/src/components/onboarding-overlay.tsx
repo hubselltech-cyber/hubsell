@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { toast } from "sonner";
 import { Loader2, LogOut, PlugZap, Sparkles, Store } from "lucide-react";
 
@@ -53,9 +54,16 @@ export function OnboardingOverlay({
       <div className="w-full max-w-2xl">
         {/* Logo */}
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-600 text-2xl font-bold text-primary-foreground shadow-lg">
-            H
-          </div>
+          {/* unoptimized: giữ độ nét từ bản gốc 417px (xem chú thích ở /login) */}
+          <Image
+            src="/logo-hubsell.png"
+            alt="Hubsell"
+            width={417}
+            height={417}
+            priority
+            unoptimized
+            className="size-18 rounded-2xl shadow-lg"
+          />
           <div>
             <h1 className="flex items-center justify-center gap-2 text-2xl font-bold tracking-tight">
               <Sparkles className="size-6 text-primary" />

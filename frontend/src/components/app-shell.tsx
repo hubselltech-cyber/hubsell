@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Menu, Loader2, LogOut, UserRound } from "lucide-react";
@@ -475,9 +476,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           href={homePathFor(user?.role)}
           className="flex items-center gap-3 border-b px-5 py-4"
         >
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 text-lg font-bold text-primary-foreground shadow-sm">
-            H
-          </div>
+          {/* unoptimized: giữ độ nét từ bản gốc 417px (xem chú thích ở /login) */}
+          <Image
+            src="/logo-hubsell.png"
+            alt="Hubsell"
+            width={417}
+            height={417}
+            unoptimized
+            className="size-10 shrink-0 rounded-xl"
+          />
           <div className="min-w-0">
             <p className="text-base font-bold leading-tight tracking-tight">
               Hubsell
