@@ -4,7 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, Menu, Loader2, LogOut, UserRound } from "lucide-react";
+import {
+  ChevronDown,
+  Coins,
+  Menu,
+  Loader2,
+  LogOut,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { Button } from "@/components/ui/button";
@@ -29,8 +37,12 @@ interface NavChild {
 interface NavItem {
   href?: string;
   label: string;
-  /** Tên glyph Material Symbols Rounded (https://fonts.google.com/icons). */
-  icon: string;
+  /**
+   * Tên glyph Material Symbols Rounded (https://fonts.google.com/icons), hoặc
+   * một component lucide-react cho mục cần icon không có glyph tương xứng
+   * (vd Coins của "Kiếm Tiền Cùng Hubsell") — NavIcon tự nhận dạng cả hai.
+   */
+  icon: string | LucideIcon;
   /** Vai trò nào nhìn thấy mục này. Không có tên trong đây thì mục bị ẩn hẳn. */
   roles: Role[];
   /**
@@ -178,6 +190,16 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
     ],
   },
   {
+    // Affiliate Tiếp Thị của CHÍNH Hubsell (giới thiệu bạn bè nhận 10% vào Ví
+    // Hubsell) — KHÁC nhóm "Mạng lưới KOC & Marketing" của chủ shop. Vị trí
+    // ngay dưới Cấu hình (anh Trung chốt 09/08); icon lucide Coins vì Material
+    // Symbols không có glyph đồng xu ưng ý.
+    href: "/affiliate",
+    label: "Kiếm Tiền Cùng Hubsell",
+    icon: Coins,
+    roles: ["ADMIN"],
+  },
+  {
     // Khu QUẢN TRỊ NỀN TẢNG Hubsell — thống kê người dùng đăng ký, nhật ký
     // webhook TOÀN hệ thống. Chỉ hiện với tài khoản có cờ isPlatformAdmin.
     href: "/admin",
@@ -198,6 +220,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Liên kết SP vào kho vật lý" },
   { prefix: "/staff", title: "Quản lý nhân viên" },
+  { prefix: "/affiliate", title: "Kiếm Tiền Cùng Hubsell" },
   { prefix: "/settings/general", title: "Cấu hình chung" },
   { prefix: "/settings/other", title: "Cấu hình khác" },
   { prefix: "/invoicing/connect", title: "Kết nối & Xuất hóa đơn" },
@@ -253,7 +276,26 @@ function menusForPath(pathname: string): string[] {
 // đối chiếu ảnh sidebar YouTube Studio thật thì nét của họ nằm đúng khoảng này.
 // Khi đổ đầy trả về wght 400 để khối đen đủ đậm.
 // transition font-variation-settings cho chuyển trạng thái mượt.
-function NavIcon({ name, filled }: { name: string; filled?: boolean }) {
+function NavIcon({
+  name,
+  filled,
+}: {
+  name: string | LucideIcon;
+  filled?: boolean;
+}) {
+  // Icon lucide (component) — kích cỡ 20px khớp Material Symbols; active thì
+  // nét dày hơn một bậc thay cho hiệu ứng FILL của glyph.
+  if (typeof name !== "string") {
+    const Icon = name;
+    return (
+      <Icon
+        aria-hidden
+        className="w-5 shrink-0"
+        size={20}
+        strokeWidth={filled ? 2.25 : 1.75}
+      />
+    );
+  }
   return (
     <span
       aria-hidden

@@ -28,6 +28,7 @@ import taxRouter from "./routes/tax";
 import testMisaSandboxRouter from "./routes/test-misa-sandbox";
 import operationsRouter from "./routes/operations";
 import kocRouter from "./routes/koc";
+import referralRouter from "./routes/referral";
 
 // ============================================================
 // CORS — ALLOWLIST thay cho mở toang (beta multi-user).
@@ -164,6 +165,10 @@ export function createApp() {
   // (Order.affiliateFee). Chi phí booking/hoa hồng là dữ liệu tài chính → chỉ
   // ADMIN (khớp canAccessKocMarketing bên FE).
   app.use("/api/koc", requireAuth, adminOnly, requireChannel, kocRouter);
+
+  // Affiliate Tiếp Thị & Ví Hubsell — referral của CHÍNH nền tảng (khác /api/koc).
+  // Chỉ chủ shop; KHÔNG gác requireChannel: chưa kết nối gian vẫn giới thiệu được.
+  app.use("/api/referral", requireAuth, adminOnly, referralRouter);
 
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).

@@ -192,6 +192,19 @@ model User {
   /// trong enum Role để khỏi đụng ma trận quyền shop; gán bằng script
   /// scripts/grant-platform-admin.ts, KHÔNG có API nào tự bật được cờ này.
   isPlatformAdmin Boolean @default(false)
+
+  // ── Affiliate Tiếp Thị (referral của CHÍNH Hubsell — khác module /koc-marketing) ──
+  /// Số thứ tự người dùng TỰ TĂNG — xương sống của mã giới thiệu có cấu trúc
+  /// "HUBSELL<seq>" (vd HUBSELL102): dễ đọc, dễ nhớ, không bao giờ trùng.
+  referralSeq  Int     @unique @default(autoincrement())
+  /// Mã giới thiệu duy nhất, định dạng "HUBSELL<referralSeq>" — sinh lười ở lần
+  /// đầu mở trang Affiliate. Link chia sẻ: https://hubsell.tech/register?ref=<mã>.
+  referralCode String? @unique
+  /// Ai đã giới thiệu user này — set MỘT LẦN lúc đăng ký (qua ?ref=), không đổi.
+  referredById String?
+  referredBy   User?   @relation("ReferralTree", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    User[]  @relation("ReferralTree")
+
   createdAt    DateTime @default(now())
 
   // Nhân viên thuộc về một chủ shop → dùng chung dữ liệu của shop đó.
@@ -225,6 +238,11 @@ model User {
 
   // Hóa đơn ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ Xử lý hóa đơn đầu vào).
   inputInvoices InputInvoice[]
+
+  // Ví Hubsell & Affiliate Tiếp Thị.
+  hubsellWallet      HubsellWallet?
+  walletTransactions WalletTransaction[]
+  withdrawalRequests WithdrawalRequest[]
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
@@ -1174,4 +1192,94 @@ model LazadaOrderSettlement {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("lazada_order_settlements")
+}
+
+// ---------- AFFILIATE TIẾP THỊ & VÍ HUBSELL ----------
+//
+// Chương trình referral của CHÍNH nền tảng Hubsell (KHÁC module /koc-marketing
+// đo Net-ROI creator cho chủ shop): Seller giới thiệu bạn bè dùng Hubsell, mỗi
+// lượt THANH TOÁN THÀNH CÔNG của người được giới thiệu chia 10% hoa hồng vào
+// Ví Hubsell của người giới thiệu — vĩnh viễn, mọi lần gia hạn về sau.
+// Số dư ví dùng để GIA HẠN GÓI hoặc RÚT VỀ NGÂN HÀNG (duyệt thủ công).
+
+/// Loại biến động số dư Ví Hubsell.
+enum WalletTxnType {
+  COMMISSION      // +10% hoa hồng khi người được giới thiệu thanh toán thành công
+  PACKAGE_RENEWAL // − trừ ví để gia hạn gói Hubsell
+  WITHDRAWAL      // − rút về ngân hàng (tạo cùng WithdrawalRequest)
+  ADJUSTMENT      // ± điều chỉnh thủ công (hoàn lại lệnh rút bị từ chối...)
+}
+
+enum WalletTxnStatus {
+  PENDING   // lệnh rút đang chờ duyệt — tiền ĐÃ trừ khỏi balance (giữ chỗ)
+  COMPLETED
+  REJECTED  // lệnh rút bị từ chối — đã có bản ghi ADJUSTMENT hoàn tiền đi kèm
+}
+
+enum WithdrawalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// VÍ HUBSELL — số dư khả dụng của một user (1-1). Tạo lười khi phát sinh
+/// giao dịch đầu tiên hoặc lần đầu mở trang Affiliate.
+/// BẤT BIẾN: balance = Σ amount (có dấu) của mọi WalletTransaction không REJECTED.
+model HubsellWallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("hubsell_wallets")
+}
+
+/// LỊCH SỬ biến động Ví Hubsell — sổ cái append-only, KHÔNG sửa/xoá bản ghi.
+/// `amount` CÓ DẤU: dương = cộng vào ví, âm = trừ khỏi ví.
+model WalletTransaction {
+  id     String          @id @default(cuid())
+  userId String
+  type   WalletTxnType
+  amount Decimal         @db.Decimal(14, 2)
+  status WalletTxnStatus @default(COMPLETED)
+  /// Diễn giải hiển thị thẳng trên UI (vd "Hoa hồng 10% từ abc@gmail.com").
+  note   String?
+  /// Với COMMISSION: user ĐÃ THANH TOÁN làm phát sinh hoa hồng (để đối soát).
+  sourceUserId String?
+  /// Với WITHDRAWAL/ADJUSTMENT hoàn tiền: lệnh rút liên quan.
+  withdrawalRequestId String?
+  createdAt DateTime @default(now())
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  withdrawalRequest WithdrawalRequest? @relation(fields: [withdrawalRequestId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("wallet_transactions")
+}
+
+/// YÊU CẦU RÚT TIỀN ví Hubsell → ngân hàng. Tiền bị TRỪ NGAY khỏi balance lúc
+/// đặt lệnh (chống rút trùng); REJECTED thì hoàn lại bằng txn ADJUSTMENT.
+/// Duyệt thủ công (platform admin) — giai đoạn đầu chưa có cổng chi hộ.
+model WithdrawalRequest {
+  id     String                  @id @default(cuid())
+  userId String
+  amount Decimal                 @db.Decimal(14, 2)
+  bankName          String
+  bankAccountNumber String
+  bankAccountName   String
+  status      WithdrawalRequestStatus @default(PENDING)
+  /// Ghi chú của người duyệt (lý do từ chối / mã giao dịch chuyển khoản).
+  reviewNote  String?
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("withdrawal_requests")
 }

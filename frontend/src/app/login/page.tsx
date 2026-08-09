@@ -169,7 +169,14 @@ function LoginForm({
   );
 }
 
-function RegisterForm({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
+function RegisterForm({
+  onSuccess,
+  referralCode,
+}: {
+  onSuccess: (user: AuthUser) => void;
+  /** Mã giới thiệu Affiliate bắt từ ?ref= trên link — null nếu vào thẳng. */
+  referralCode: string | null;
+}) {
   const [submitting, setSubmitting] = useState(false);
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -194,6 +201,7 @@ function RegisterForm({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
         username: values.username,
         country: values.country,
         phoneNumber: values.phone,
+        referralCode: referralCode ?? undefined,
       });
       setToken(res.token);
       setStoredUser(res.user);
@@ -209,6 +217,12 @@ function RegisterForm({ onSuccess }: { onSuccess: (user: AuthUser) => void }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        {referralCode && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            Bạn đăng ký qua mã giới thiệu{" "}
+            <span className="font-semibold tracking-wide">{referralCode}</span>
+          </div>
+        )}
         <FormField
           control={form.control}
           name="fullName"
@@ -402,6 +416,21 @@ const MODE_COPY: Record<Mode, { title: string; description: string }> = {
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
+  // Mã giới thiệu Affiliate bắt từ ?ref= — giữ trong sessionStorage để sống
+  // sót qua chuyến khứ hồi Google OAuth (backend redirect về /login sạch query).
+  const [refCode, setRefCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("ref")?.trim().toUpperCase() || null;
+    if (fromUrl) {
+      sessionStorage.setItem("hubsell_ref", fromUrl);
+      setRefCode(fromUrl);
+      setMode("register"); // vào bằng link giới thiệu → mở thẳng form đăng ký
+      return;
+    }
+    setRefCode(sessionStorage.getItem("hubsell_ref"));
+  }, []);
 
   function goToDashboard(user: AuthUser) {
     // Nhân viên kho không vào được Tổng quan → đưa thẳng tới Đơn hàng
@@ -467,7 +496,9 @@ export default function LoginPage() {
             {mode === "login" && (
               <LoginForm onSuccess={goToDashboard} onForgot={() => setMode("forgot")} />
             )}
-            {mode === "register" && <RegisterForm onSuccess={goToDashboard} />}
+            {mode === "register" && (
+              <RegisterForm onSuccess={goToDashboard} referralCode={refCode} />
+            )}
             {mode === "forgot" && <ForgotForm onBack={() => setMode("login")} />}
 
             {mode !== "forgot" && (

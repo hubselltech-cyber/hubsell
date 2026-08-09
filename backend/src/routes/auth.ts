@@ -22,6 +22,7 @@ import {
   handleLazadaCallback,
   verifyOauthState as verifyLazadaOauthState,
 } from "../integrations/lazada/service";
+import { findReferrerByCode } from "../referral-wallet";
 
 const router = Router();
 
@@ -89,8 +90,16 @@ const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000
 // E.164 rồi mới lưu (xem src/phone.ts); nhận cả alias `countryCode`.
 router.post("/register", async (req, res, next) => {
   try {
-    const { email, password, fullName, username, country, countryCode, phoneNumber } =
-      req.body ?? {};
+    const {
+      email,
+      password,
+      fullName,
+      username,
+      country,
+      countryCode,
+      phoneNumber,
+      referralCode,
+    } = req.body ?? {};
 
     // Kiểm tra dữ liệu đầu vào
     if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
@@ -150,6 +159,10 @@ router.post("/register", async (req, res, next) => {
     // Mã hoá mật khẩu bằng bcrypt (10 vòng salt)
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // Affiliate Tiếp Thị: đăng ký qua link ?ref= thì ghi nhận người giới thiệu.
+    // Mã sai/không tồn tại thì BỎ QUA trong im lặng — không được chặn đăng ký.
+    const referrer = await findReferrerByCode(referralCode);
+
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
@@ -159,6 +172,7 @@ router.post("/register", async (req, res, next) => {
         country: normalizedCountry,
         phone: phoneE164,
         role: "ADMIN",
+        referredById: referrer?.id ?? null,
       },
       select: PUBLIC_USER_SELECT,
     });

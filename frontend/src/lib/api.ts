@@ -813,6 +813,8 @@ export function register(data: {
   country?: string;
   /** Số trong nước ("0912345678" hoặc "912345678") — backend chuẩn hoá E.164. */
   phoneNumber?: string;
+  /** Mã giới thiệu Affiliate (?ref= trên link) — sai/thiếu không chặn đăng ký. */
+  referralCode?: string;
 }) {
   return apiFetch<AuthResponse>("/api/auth/register", {
     method: "POST",
@@ -2651,5 +2653,112 @@ export function fetchKocChannelDetail(
 ) {
   return apiFetch<KocChannelDetailDTO>(
     `/api/koc/channel-detail?channelName=${channelName}&days=${days}`
+  );
+}
+
+// ----- Affiliate Tiếp Thị & Ví Hubsell (referral của CHÍNH Hubsell) -----
+//
+// KHÁC hoàn toàn module KOC & Marketing phía trên (đo Net-ROI creator cho chủ
+// shop): đây là chương trình Seller giới thiệu bạn bè dùng Hubsell, nhận 10%
+// hoa hồng vĩnh viễn trên mọi lượt thanh toán vào Ví Hubsell.
+
+export type WalletTxnType =
+  | "COMMISSION"
+  | "PACKAGE_RENEWAL"
+  | "WITHDRAWAL"
+  | "ADJUSTMENT";
+export type WalletTxnStatus = "PENDING" | "COMPLETED" | "REJECTED";
+export type WithdrawalRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface RenewalPackage {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface ReferralSummary {
+  referralCode: string;
+  referralLink: string;
+  stats: {
+    referredCount: number;
+    paidCount: number;
+    totalCommission: number;
+    balance: number;
+  };
+  packages: RenewalPackage[];
+  minWithdrawal: number;
+}
+
+export interface ReferralFriend {
+  id: string;
+  fullName: string;
+  email: string;
+  registeredAt: string;
+  paidCount: number;
+  totalCommission: number;
+}
+
+export interface WalletTxn {
+  id: string;
+  type: WalletTxnType;
+  /** CÓ DẤU: dương = cộng vào ví, âm = trừ khỏi ví. */
+  amount: number;
+  status: WalletTxnStatus;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface WithdrawalRequestRow {
+  id: string;
+  amount: number;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountName: string;
+  status: WithdrawalRequestStatus;
+  reviewNote: string | null;
+  createdAt: string;
+  processedAt: string | null;
+}
+
+export interface ReferralHistory {
+  referrals: ReferralFriend[];
+  transactions: WalletTxn[];
+  withdrawals: WithdrawalRequestRow[];
+}
+
+export function fetchReferralSummary() {
+  return apiFetch<ReferralSummary>("/api/referral/summary");
+}
+
+export function fetchReferralHistory() {
+  return apiFetch<ReferralHistory>("/api/referral/history");
+}
+
+/** Đặt lệnh rút ví về ngân hàng — tiền bị giữ ngay, chờ Hubsell duyệt tay. */
+export function createWalletWithdrawalRequest(data: {
+  amount: number;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountName: string;
+}) {
+  return apiFetch<{ id: string; amount: number; status: string; message: string }>(
+    "/api/referral/withdraw",
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+/** Dùng số dư ví gia hạn gói (khung demo — chưa thương mại hóa). */
+export function renewPackageWithWallet(packageId: string) {
+  return apiFetch<{ ok: boolean; package: RenewalPackage; message: string }>(
+    "/api/referral/renew",
+    { method: "POST", body: JSON.stringify({ packageId }) }
+  );
+}
+
+/** DEV ONLY — mô phỏng một người được giới thiệu thanh toán thành công. */
+export function mockReferralPayment(payerEmail: string, amount: number) {
+  return apiFetch<{ ok: boolean; commission: number }>(
+    "/api/referral/mock/payment",
+    { method: "POST", body: JSON.stringify({ payerEmail, amount }) }
   );
 }
