@@ -1,11 +1,14 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
   BookOpenText,
   CircleHelp,
+  ExternalLink,
   Link2,
+  Maximize2,
   PlugZap,
   Presentation,
   RefreshCw,
@@ -13,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TEXT_SUB } from "@/lib/typography";
 
@@ -273,30 +277,69 @@ const SECTIONS = [
 ] as const;
 
 export default function GuidePage() {
+  // Tham chiếu iframe slide để bấm "Toàn màn hình" phóng đúng khung trình chiếu
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
   return (
     <AppShell>
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="space-y-6">
+        {/* ===== BẢN TRÌNH CHIẾU NHÚNG — khách mở trang là xem slide luôn =====
+            Deck là file tĩnh trong public/ (cùng origin) nên nhúng iframe thẳng;
+            stage 16:9 của deck tự co theo kích thước iframe. Rộng hơn khối text
+            (max-w-5xl so với 3xl) để slide đủ lớn mà không cần toàn màn hình. */}
+        <Card className="mx-auto max-w-5xl overflow-hidden py-0 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2.5">
+            <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <Presentation className="size-4 text-slate-500" />
+              Bản trình chiếu — 8 slide
+              <span className={TEXT_SUB}>(phím ← → hoặc lăn chuột để chuyển)</span>
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => frameRef.current?.requestFullscreen()}
+              >
+                <Maximize2 className="size-3.5" />
+                Toàn màn hình
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={
+                  <a
+                    href="/huong-dan-hubsell.html"
+                    target="_blank"
+                    rel="noopener"
+                  />
+                }
+              >
+                <ExternalLink className="size-3.5" />
+                Mở tab mới
+              </Button>
+            </div>
+          </div>
+          <iframe
+            ref={frameRef}
+            src="/huong-dan-hubsell.html"
+            title="Slide hướng dẫn sử dụng Hubsell"
+            className="aspect-video w-full border-0"
+            allowFullScreen
+          />
+        </Card>
+
+        <div className="mx-auto max-w-3xl space-y-6">
         {/* ===== MỞ ĐẦU: 3 chặng vận hành ===== */}
         <Card className="shadow-sm">
           <CardContent className="space-y-5 pt-6">
-            <div className="flex flex-wrap items-start gap-3">
+            <div className="flex items-start gap-3">
               <BookOpenText className="mt-0.5 size-5 shrink-0 text-slate-500" />
               <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-600">
                 Hubsell vận hành theo 3 chặng: kết nối gian hàng một lần, sau
-                đó đơn hàng và tiền quyết toán tự chảy về. Làm theo thứ tự
-                dưới đây là dùng được ngay.
+                đó đơn hàng và tiền quyết toán tự chảy về. Bản chi tiết dưới
+                đây để tra cứu từng bước khi thao tác.
               </p>
-              {/* Bản slide trình chiếu (kèm ảnh màn hình thật) — file tĩnh
-                  trong public/, mở tab mới để không rời phiên làm việc. */}
-              <a
-                href="/huong-dan-hubsell.html"
-                target="_blank"
-                rel="noopener"
-                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
-              >
-                <Presentation className="size-4 text-slate-500" />
-                Xem bản slide
-              </a>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               {SECTIONS.map((s, i) => (
@@ -407,6 +450,7 @@ export default function GuidePage() {
               Kết nối gian hàng đầu tiên
             </Link>
           </p>
+        </div>
         </div>
       </div>
     </AppShell>
