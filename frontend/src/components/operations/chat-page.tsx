@@ -6,6 +6,7 @@ import {
   ChevronDown,
   FlaskConical,
   Loader2,
+  MessagesSquare,
   Package,
   PackageSearch,
   Pin,
@@ -196,6 +197,11 @@ export function OperationsChatPage() {
 
   // ── Tự cuộn xuống tin mới nhất khi đổi hội thoại / có tin mới / gợi ý dài ──
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Container cuộn của luồng tin nhắn + hội thoại đang mở ở lần render trước —
+  // để phân biệt "vừa đổi hội thoại" (luôn cuộn đáy) với "đang đọc tin cũ"
+  // (giữ nguyên vị trí, không giật người dùng xuống)
+  const messagesBoxRef = useRef<HTMLDivElement>(null);
+  const prevActiveKeyRef = useRef<string | null>(null);
 
   // ── AUTO TRẢ LỜI TIN MỚI ──
   // Bật là hệ thống tự gửi câu xác nhận đã nhận tin cho hội thoại có tin mới
@@ -257,6 +263,12 @@ export function OperationsChatPage() {
           );
           setMode("real");
           void maybeAutoReply(r.conversations);
+        } else if (r.channelCount > 0) {
+          // ĐÃ liên kết gian thật → tuyệt đối không đổ hội thoại demo trông
+          // như thật (từng gây hiểu nhầm nick giả là khách thật). Inbox trống
+          // thì hiện đúng trạng thái trống; KHÔNG xoá realConvs đang có — lượt
+          // poll lỗi thoáng qua trả 0 hội thoại không được phép quét sạch UI.
+          setMode("real");
         } else if (opts?.initial) {
           setMode("demo");
         }
@@ -546,6 +558,28 @@ export function OperationsChatPage() {
     const text = draft.trim();
     if (!text || sending) return;
     if (!isReal) {
+      // Nối tin vào khung chat như thật — chỉ toast mà không hiện bong bóng
+      // khiến người dùng tưởng gửi thất bại
+      const convId = activeDemo.id;
+      setDemoConvs((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: text,
+                messages: [
+                  ...c.messages,
+                  {
+                    id: `sent-${c.messages.length + 1}`,
+                    from: "SHOP" as const,
+                    text,
+                    time: "Vừa xong",
+                  },
+                ],
+              }
+            : c
+        )
+      );
       setDraft("");
       toast.success("Đã gửi tin nhắn (demo — chưa nối gian hàng thật).");
       return;
@@ -723,12 +757,19 @@ export function OperationsChatPage() {
   const activeKey = isReal ? activeReal?.id ?? null : activeDemoId;
   const activeFlags = (activeKey && convFlags[activeKey]) || {};
 
-  // Khung chat luôn đậu ở tin mới nhất: đổi hội thoại, có tin mới (kể cả từ
-  // polling/auto-reply) là cuộn xuống đáy — scrollIntoView trên mốc cuối,
-  // KHÔNG scroll cả trang.
+  // Khung chat đậu ở tin mới nhất khi ĐỔI hội thoại hoặc khi người dùng đang
+  // ở gần đáy mà có tin mới. Đang kéo LÊN đọc tin cũ thì giữ nguyên vị trí —
+  // polling 15s/tin mới không được giật người dùng xuống đáy nữa.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messageItems.length, activeRealId, activeDemoId]);
+    const key = isReal ? activeRealId : activeDemoId;
+    const convChanged = prevActiveKeyRef.current !== key;
+    prevActiveKeyRef.current = key;
+    const box = messagesBoxRef.current;
+    const nearBottom =
+      !box || box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    if (convChanged || nearBottom)
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messageItems.length, activeRealId, activeDemoId, isReal]);
 
   if (mode === "loading") {
     return (
@@ -815,6 +856,11 @@ export function OperationsChatPage() {
             onChannelFilter={setChatChannelFilter}
             statusFilter={chatStatusFilter}
             onStatusFilter={setChatStatusFilter}
+            emptyText={
+              isReal && rawConvItems.length === 0
+                ? "Chưa có khách nào nhắn tin tới gian hàng."
+                : undefined
+            }
           />
 
           {/* ----- CỘT GIỮA: KHUNG CHAT + AI COPILOT -----
@@ -822,6 +868,21 @@ export function OperationsChatPage() {
               quá cột và ĐẨY Copilot + ô soạn tin ra khỏi vùng nhìn (bug khung
               trống từng gặp với dữ liệu thật). */}
           <div className="flex min-h-0 min-w-0 flex-col">
+            {/* Gian thật đã liên kết nhưng CHƯA có khách nhắn → empty state
+                trung thực, không đổ hội thoại demo trông như thật nữa */}
+            {isReal && !activeReal ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <MessagesSquare className="size-10 text-slate-300" />
+                <p className="text-sm font-medium text-slate-900">
+                  Chưa có khách nào nhắn tin
+                </p>
+                <p className={TEXT_SUB}>
+                  Inbox tự làm mới mỗi 30 giây — khách nhắn tới gian hàng là hội
+                  thoại hiện ngay tại đây.
+                </p>
+              </div>
+            ) : (
+              <>
             {/* Header hội thoại */}
             <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-slate-600">
@@ -909,7 +970,10 @@ export function OperationsChatPage() {
 
             {/* Luồng tin nhắn — min-h-0 để hội thoại dài CUỘN trong khung
                 thay vì đẩy Copilot + ô soạn tin ra ngoài */}
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/30 p-4">
+            <div
+              ref={messagesBoxRef}
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/30 p-4"
+            >
               {loadingMessages && (
                 <div className="flex justify-center py-6">
                   <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -1113,6 +1177,8 @@ export function OperationsChatPage() {
               onUseSuggestion={() => setDraft(suggestion.text)}
               sending={sending}
             />
+              </>
+            )}
           </div>
 
           {/* ----- CỘT PHẢI: PRODUCT CONTEXT CARD (chỉ xl trở lên) ----- */}

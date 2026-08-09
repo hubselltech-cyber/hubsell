@@ -45,6 +45,7 @@ export function ConversationList({
   onChannelFilter,
   statusFilter,
   onStatusFilter,
+  emptyText,
 }: {
   items: ConversationItemView[];
   search: string;
@@ -53,6 +54,8 @@ export function ConversationList({
   onChannelFilter: (v: ChatChannelFilter) => void;
   statusFilter: ChatStatusFilter;
   onStatusFilter: (v: ChatStatusFilter) => void;
+  /** Câu hiện khi danh sách trống — inbox thật chưa có khách khác với "không khớp bộ lọc". */
+  emptyText?: string;
 }) {
   return (
     <div className="flex min-h-0 flex-col border-b lg:border-b-0 lg:border-r">
@@ -94,7 +97,7 @@ export function ConversationList({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {items.length === 0 && (
           <p className="p-6 text-center text-sm text-muted-foreground">
-            Không có hội thoại nào khớp bộ lọc.
+            {emptyText ?? "Không có hội thoại nào khớp bộ lọc."}
           </p>
         )}
         {items.map((c) => (

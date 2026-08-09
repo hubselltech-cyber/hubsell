@@ -488,6 +488,8 @@ export const MOCK_CONVERSATIONS: MockConversation[] = [
     time: "18 phút",
     unread: 1,
     orderCode: "TT2608A7K9",
+    // Đơn TT2608A7K9 là đơn áo thun oversize — gắn SKU để cột phải có ngữ cảnh SP
+    productSku: "DM-TS-OVS",
     messages: [
       {
         id: "m1",
