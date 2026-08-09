@@ -392,6 +392,11 @@ export interface SyncLazadaOrdersOptions {
   /** Lấy đơn tạo trong bao nhiêu ngày gần nhất. Mặc định 90. */
   daysBack?: number;
   maxPages?: number;
+  /**
+   * true → lọc theo trục BIẾN ĐỘNG (update_after) thay vì ngày tạo: đơn cũ vừa
+   * đổi trạng thái — đặc biệt sàn báo HOÀN — vẫn lọt cửa sổ quét hẹp của worker.
+   */
+  byUpdateTime?: boolean;
 }
 
 export interface SyncLazadaOrdersResult {
@@ -419,7 +424,8 @@ export async function syncLazadaOrders(
 
   const daysBack = opts.daysBack ?? 90;
   const maxPages = opts.maxPages ?? MAX_PAGES;
-  const createdAfter = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  const timeFilter = opts.byUpdateTime ? { updatedAfter: since } : { createdAfter: since };
 
   const result: SyncLazadaOrdersResult = {
     fetched: 0,
@@ -433,7 +439,7 @@ export async function syncLazadaOrders(
   const orders: LazadaOrder[] = [];
   let offset = 0;
   for (;;) {
-    const page = await getOrders({ accessToken, createdAfter, offset, limit: ORDER_LIST_PAGE_SIZE });
+    const page = await getOrders({ accessToken, ...timeFilter, offset, limit: ORDER_LIST_PAGE_SIZE });
     result.pages++;
     orders.push(...page.orders);
     offset += page.orders.length;
@@ -536,7 +542,7 @@ export async function upsertLazadaOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true },
+    select: { id: true, returnStatus: true, returnRequestedAt: true },
   });
 
   if (existing) {
@@ -547,8 +553,14 @@ export async function upsertLazadaOrderTx(
         paymentStatus,
         totalAmount,
         // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong.
+        // Kèm mốc "sàn báo hoàn" cho trang Đối soát đơn hoàn tính tuổi đơn.
         ...(returning && existing.returnStatus === ReturnStatus.NONE
-          ? { returnStatus: returning }
+          ? { returnStatus: returning, returnRequestedAt: new Date() }
+          : {}),
+        ...(returning &&
+        existing.returnStatus === ReturnStatus.AWAITING &&
+        !existing.returnRequestedAt
+          ? { returnRequestedAt: new Date() }
           : {}),
       },
     });
@@ -584,7 +596,7 @@ export async function upsertLazadaOrderTx(
       // ghi khi sàn trả số thật qua syncLazadaSettlements.
       paymentStatus,
       shippingStatus,
-      ...(returning ? { returnStatus: returning } : {}),
+      ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
       itemCount: lines.length,
       createdAt: order.created_at ? new Date(order.created_at) : undefined,
     },

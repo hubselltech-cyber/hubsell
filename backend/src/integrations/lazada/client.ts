@@ -211,26 +211,35 @@ interface LazadaOrderListData extends LazadaEnvelope {
 export interface LazadaOrderListParams {
   accessToken: string;
   /** Mốc ISO 8601 — chỉ lấy đơn TẠO sau thời điểm này. */
-  createdAfter: string;
+  createdAfter?: string;
+  /**
+   * Mốc ISO 8601 — lấy đơn có BIẾN ĐỘNG (đổi trạng thái, kể cả sàn báo hoàn)
+   * sau thời điểm này. Ưu tiên hơn createdAfter khi truyền cả hai: worker nền
+   * quét trục update để bắt đơn cũ vừa chuyển "đang hoàn".
+   */
+  updatedAfter?: string;
   offset?: number;
   /** Tối đa 100 đơn/trang theo giới hạn Lazada. */
   limit?: number;
 }
 
-/** Lấy một trang danh sách đơn tạo sau mốc `createdAfter`. */
+/** Lấy một trang danh sách đơn theo mốc `createdAfter` HOẶC `updatedAfter`. */
 export async function getOrders(
   params: LazadaOrderListParams,
   cfg: LazadaConfig = getLazadaConfig()
 ): Promise<{ count: number; orders: LazadaOrder[] }> {
+  const byUpdate = Boolean(params.updatedAfter);
   const data = await callLazada<LazadaOrderListData>(
     LAZADA_ENDPOINTS.api,
     LAZADA_PATHS.orderList,
     {
       access_token: params.accessToken,
-      created_after: params.createdAfter,
+      ...(byUpdate
+        ? { update_after: params.updatedAfter! }
+        : { created_after: params.createdAfter! }),
       offset: String(params.offset ?? 0),
       limit: String(params.limit ?? 100),
-      sort_by: "created_at",
+      sort_by: byUpdate ? "updated_at" : "created_at",
       sort_direction: "ASC",
     },
     "orders/get",

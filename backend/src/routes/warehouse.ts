@@ -1,8 +1,12 @@
 import { Router } from "express";
-import { Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
+import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
+import { isShopeeConfigured } from "../integrations/shopee/config";
+import { syncShopeeOrders } from "../integrations/shopee/service";
+import { isLazadaConfigured } from "../integrations/lazada/config";
+import { syncLazadaOrders } from "../integrations/lazada/service";
 
 const router = Router();
 
@@ -180,13 +184,80 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
 /**
  * POST /api/warehouse/returns/sync — kéo về các đơn sàn báo "Đang hoàn".
  *
- * ⚠️ BẢN GIẢ LẬP. Hubsell chưa có tích hợp API thật với Shopee/TikTok/Lazada
- * nên không có nguồn nào báo đơn nào đang hoàn. Endpoint này bốc ngẫu nhiên
- * vài đơn đang giao để tạo dữ liệu cho kho thao tác. Khi có API thật, thay
- * ruột hàm này bằng lời gọi ra sàn — phần còn lại của trang giữ nguyên.
+ * Từ 09/08: user có gian THẬT thì gọi API sàn THẬT — đồng bộ đơn theo trục
+ * BIẾN ĐỘNG (update) 2 ngày gần nhất, upsert sẽ tự gắn cờ AWAITING cho đơn sàn
+ * báo hoàn (Shopee TO_RETURN / Lazada *return*). Worker nền 10'/lần cũng quét
+ * đúng trục này nên nút chỉ là "quét ngay khỏi đợi nhịp".
+ *
+ * User CHƯA có gian thật (demo/dev) giữ bản giả lập cũ: bốc vài đơn đang giao
+ * gắn cờ hoàn để kho có dữ liệu thao tác thử luồng 2 công đoạn.
  */
+const SYNC_RETURNS_DAYS_BACK = 2;
+
 router.post("/returns/sync", async (req: AuthRequest, res, next) => {
   try {
+    const realChannels = await prisma.channel.findMany({
+      where: {
+        userId: req.ownerId!,
+        ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+        status: "ACTIVE",
+        refreshToken: { not: null },
+      },
+    });
+
+    if (realChannels.length > 0) {
+      // Cờ AWAITING trước lượt quét — để diff ra danh sách đơn hoàn MỚI phát hiện.
+      const orderScope = {
+        channel: { userId: req.ownerId! },
+        ...(req.allowedChannelIds
+          ? { channelId: { in: req.allowedChannelIds } }
+          : {}),
+      };
+      const before = await prisma.order.findMany({
+        where: { ...orderScope, returnStatus: ReturnStatus.AWAITING },
+        select: { id: true },
+      });
+      const beforeIds = new Set(before.map((o) => o.id));
+
+      let firstError: string | null = null;
+      let anyOk = false;
+      for (const channel of realChannels) {
+        try {
+          if (channel.channelName === ChannelName.SHOPEE) {
+            if (!isShopeeConfigured()) continue;
+            await syncShopeeOrders(channel, {
+              daysBack: SYNC_RETURNS_DAYS_BACK,
+              timeRangeField: "update_time",
+            });
+          } else {
+            if (!isLazadaConfigured()) continue;
+            await syncLazadaOrders(channel, {
+              daysBack: SYNC_RETURNS_DAYS_BACK,
+              byUpdateTime: true,
+            });
+          }
+          anyOk = true;
+        } catch (err) {
+          // Một gian lỗi (token hết hạn, sàn chập chờn) không chặn gian khác.
+          if (!firstError) firstError = (err as Error).message;
+        }
+      }
+      if (!anyOk && firstError) {
+        res.status(502).json({ error: `Không gọi được API sàn: ${firstError}` });
+        return;
+      }
+
+      const after = await prisma.order.findMany({
+        where: { ...orderScope, returnStatus: ReturnStatus.AWAITING },
+        select: { id: true, orderCode: true },
+      });
+      const fresh = after.filter((o) => !beforeIds.has(o.id));
+      res.json({ synced: fresh.length, orderCodes: fresh.map((o) => o.orderCode) });
+      return;
+    }
+
+    // ---- BẢN GIẢ LẬP cho tài khoản demo (không có gian thật nào) ----
     const candidates = await prisma.order.findMany({
       where: {
         channel: { userId: req.ownerId! },

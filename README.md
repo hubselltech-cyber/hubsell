@@ -401,7 +401,7 @@ AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng l�
 
 ⚠️ **Badge tab "Tất cả" cộng dồn từ `Object.keys(STATUS_META)`, đừng liệt kê tay.** Đã dính lỗi này: thêm trạng thái Hao hụt mà quên cộng vào tổng, tab hiện 13 trong khi bảng có 14 dòng — lệch âm thầm, không có lỗi nào báo.
 
-**Đồng bộ từ sàn:** `POST /api/warehouse/returns/sync` hiện là **bản giả lập** (chưa có API sàn thật) — bốc vài đơn đang giao và rải mốc 2/9/17 ngày. Khi có tích hợp thật chỉ cần thay ruột hàm.
+**Đồng bộ từ sàn:** `POST /api/warehouse/returns/sync` — user có gian THẬT thì gọi API sàn thật: đồng bộ đơn theo trục **biến động** (`update_time` Shopee / `update_after` Lazada) 2 ngày gần nhất, upsert tự gắn cờ AWAITING + `returnRequestedAt` cho đơn sàn báo hoàn; nút chỉ là "quét ngay khỏi đợi nhịp" vì **worker nền 10'/lần cũng quét đúng trục update này** (từ 09/08 — trục `create_time` cũ bỏ sót đơn cũ vừa báo hoàn, phải đồng bộ tay). Tài khoản demo (không gian thật) giữ bản giả lập: bốc vài đơn đang giao rải mốc 2/9/17 ngày.
 
 #### Chi tiết thao tác
 

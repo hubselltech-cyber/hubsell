@@ -386,6 +386,12 @@ export interface SyncShopeeOrdersOptions {
   /** Lấy đơn tạo trong bao nhiêu ngày gần nhất. Mặc định 90 (chia cửa sổ 15 ngày). */
   daysBack?: number;
   maxPages?: number;
+  /**
+   * Trục thời gian lọc đơn. Worker nền dùng "update_time": đơn CŨ (tạo cả tháng
+   * trước) vừa đổi trạng thái — đặc biệt sàn báo HOÀN — vẫn lọt cửa sổ quét hẹp.
+   * Mặc định "create_time" (đồng bộ tay/backfill theo ngày tạo như cũ).
+   */
+  timeRangeField?: "create_time" | "update_time";
 }
 
 export interface SyncShopeeOrdersResult {
@@ -437,6 +443,7 @@ export async function syncShopeeOrders(
         timeTo: winTo,
         pageSize: ORDER_LIST_PAGE_SIZE,
         cursor,
+        timeRangeField: opts.timeRangeField,
       });
       result.pages++;
 
@@ -488,7 +495,7 @@ export async function upsertShopeeOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true },
+    select: { id: true, returnStatus: true, returnRequestedAt: true },
   });
 
   if (existing) {
@@ -500,8 +507,15 @@ export async function upsertShopeeOrderTx(
         totalAmount,
         // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong
         // (RECEIVED_INTACT / CLAIM_SETTLED…) để không regress tiến độ hoàn.
+        // Kèm mốc "sàn báo hoàn" để trang Đối soát đơn hoàn tính tuổi đơn
+        // (không có mốc thì đơn hiện "không rõ", cảnh báo quá hạn tê liệt).
         ...(returning && existing.returnStatus === ReturnStatus.NONE
-          ? { returnStatus: returning }
+          ? { returnStatus: returning, returnRequestedAt: new Date() }
+          : {}),
+        ...(returning &&
+        existing.returnStatus === ReturnStatus.AWAITING &&
+        !existing.returnRequestedAt
+          ? { returnRequestedAt: new Date() }
           : {}),
       },
     });
@@ -535,7 +549,7 @@ export async function upsertShopeeOrderTx(
       platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
       paymentStatus,
       shippingStatus,
-      ...(returning ? { returnStatus: returning } : {}),
+      ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
       itemCount: lines.length,
       createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
     },

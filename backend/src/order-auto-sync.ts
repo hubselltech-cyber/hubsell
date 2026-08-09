@@ -40,7 +40,12 @@ import {
 import { syncLazadaPayouts } from "./integrations/lazada/payouts";
 
 const DEFAULT_INTERVAL_MIN = 10;
-/** Quét đơn tạo trong N ngày gần nhất — đủ phủ đơn mới + đổi trạng thái gần đây. */
+/**
+ * Quét đơn có BIẾN ĐỘNG trong N ngày gần nhất (trục update_time, từ 09/08).
+ * Trục update phủ cả đơn mới tạo LẪN đơn cũ vừa đổi trạng thái — đặc biệt đơn
+ * tạo 1-3 tuần trước mà sàn vừa báo HOÀN, thứ trục create_time cũ bỏ sót khiến
+ * trang Đối soát đơn hoàn phải chờ người bấm đồng bộ tay 90 ngày.
+ */
 const ORDERS_DAYS_BACK = 2;
 /** Đối soát (Lazada + Shopee) chạy 1 lần mỗi N nhịp (10' × 6 = mỗi giờ). */
 const SETTLE_EVERY_SWEEPS = 6;
@@ -119,7 +124,10 @@ async function runOnce(): Promise<void> {
       try {
         if (channel.channelName === ChannelName.SHOPEE) {
           if (!isShopeeConfigured()) continue;
-          const r = await syncShopeeOrders(channel, { daysBack: ORDERS_DAYS_BACK });
+          const r = await syncShopeeOrders(channel, {
+            daysBack: ORDERS_DAYS_BACK,
+            timeRangeField: "update_time",
+          });
           if (r.created > 0) {
             console.log(
               `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
@@ -127,7 +135,10 @@ async function runOnce(): Promise<void> {
           }
         } else {
           if (!isLazadaConfigured()) continue;
-          const r = await syncLazadaOrders(channel, { daysBack: ORDERS_DAYS_BACK });
+          const r = await syncLazadaOrders(channel, {
+            daysBack: ORDERS_DAYS_BACK,
+            byUpdateTime: true,
+          });
           if (r.created > 0) {
             console.log(
               `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
