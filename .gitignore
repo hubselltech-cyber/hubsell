@@ -36,3 +36,6 @@ certs/
 
 # Docker volume data (nếu mount cục bộ)
 pgdata/
+
+# Du an Landing Page doc lap — repo git rieng, khong thuoc repo nay
+/hubsell-landing/

@@ -13,6 +13,12 @@
       "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "landing",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "hubsell-landing"],
+      "port": 3001
     }
   ]
 }
