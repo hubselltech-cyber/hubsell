@@ -26,7 +26,7 @@ export default function GuidePage() {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-2.5">
           <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <Presentation className="size-4 text-slate-500" />
-            Hướng dẫn sử dụng Hubsell — 9 slide
+            Hướng dẫn sử dụng Hubsell — 8 bước
             <span className={TEXT_SUB}>
               (phím ← → hoặc lăn chuột để chuyển)
             </span>

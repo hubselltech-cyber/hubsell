@@ -14,27 +14,22 @@
 <style>
 /* ===========================================
    BIẾN THIẾT KẾ (THEME) — hệ Premium Monochrome của Hubsell
-   Đổi màu/chữ toàn bộ deck tại đây
    =========================================== */
 :root {
-    /* Màu — trích từ giao diện thật của phần mềm */
-    --stage-bg: #0b0f19;          /* nền ngoài stage (letterbox) */
-    --slide-bg: #f8fafc;          /* slate-50 — nền trang app */
+    --stage-bg: #0b0f19;
+    --slide-bg: #f8fafc;
     --card: #ffffff;
-    --ink: #0f172a;               /* slate-900 */
-    --body: #334155;              /* slate-700 */
-    --muted: #64748b;             /* slate-500 */
-    --line: #e2e8f0;              /* slate-200 */
-    --primary: #6d28d9;           /* violet-700 — logo Hubsell */
-    --violet2: #7c3aed;           /* violet-600 */
-    --violet-soft: #ede9fe;       /* violet-100 — pill active sidebar */
-    --emerald: #10b981;           /* tín hiệu dương */
+    --ink: #0f172a;
+    --body: #334155;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --primary: #6d28d9;
+    --violet2: #7c3aed;
+    --violet-soft: #ede9fe;
+    --emerald: #10b981;
+    --red: #ef4444;
     --amber-bg: #fffbeb; --amber-line: #fde68a; --amber-ink: #92400e;
-
-    /* Chữ — kích thước soạn ở khổ 1920×1080 */
     --font: 'Be Vietnam Pro', sans-serif;
-
-    /* Chuyển động */
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -121,7 +116,7 @@ img, video, canvas, svg { max-width: 100%; max-height: 100%; }
 }
 
 /* ===========================================
-   HIỆU ỨNG VÀO SLIDE — kích hoạt bằng .visible
+   HIỆU ỨNG VÀO SLIDE
    =========================================== */
 .reveal {
     opacity: 0;
@@ -134,15 +129,12 @@ img, video, canvas, svg { max-width: 100%; max-height: 100%; }
 .slide.visible .r3 { transition-delay: .32s; }
 .slide.visible .r4 { transition-delay: .44s; }
 .slide.visible .r5 { transition-delay: .56s; }
-.slide.visible .r6 { transition-delay: .68s; }
 
 /* ===========================================
-   TỪ VỰNG THIẾT KẾ CHUNG — "slide trông như app"
+   TỪ VỰNG THIẾT KẾ CHUNG
    =========================================== */
 body { font-family: var(--font); color: var(--ink); }
 
-/* logo Hubsell — dùng file logo thật (guide-assets/logo-hubsell.png),
-   nền trắng viền mảnh; giữ bóng nhẹ cho nổi trên mọi nền */
 .logo {
     border-radius: 14px;
     background: #fff;
@@ -154,7 +146,7 @@ body { font-family: var(--font); color: var(--ink); }
 }
 .logo img { width: 100%; height: 100%; object-fit: cover; }
 
-/* chip tên nút/menu — như phím bấm trên giao diện */
+/* chip tên nút/menu như trên giao diện */
 .ui {
     display: inline-block;
     border: 1.5px solid var(--line);
@@ -166,7 +158,6 @@ body { font-family: var(--font); color: var(--ink); }
     white-space: nowrap;
 }
 
-/* thẻ trắng bóng mềm — đúng card của app */
 .card {
     background: var(--card);
     border: 1.5px solid var(--line);
@@ -174,37 +165,26 @@ body { font-family: var(--font); color: var(--ink); }
     box-shadow: 0 4px 16px rgba(15, 23, 42, .06);
 }
 
-/* số bước tròn đen — đồng bộ trang /guide trong app */
-.stepnum {
-    width: 52px; height: 52px; border-radius: 50%;
-    background: var(--ink); color: #fff;
-    font-size: 24px; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-}
-
-/* khối lưu ý hổ phách */
 .note {
     background: var(--amber-bg);
     border: 1.5px solid var(--amber-line);
     border-radius: 16px;
     color: var(--amber-ink);
-    padding: 24px 32px;
-    font-size: 25px; line-height: 1.5;
+    padding: 20px 30px;
+    font-size: 24px; line-height: 1.5;
 }
 
-/* chấm trạng thái emerald */
 .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--emerald); display: inline-block; }
 
-/* ===== CHROME SLIDE NỘI DUNG: thanh đầu như header app + chân trang ===== */
+/* ===== CHROME SLIDE NỘI DUNG ===== */
 .content { padding: 0; display: flex; flex-direction: column; }
 .apphead {
-    height: 108px; background: var(--card);
+    height: 104px; background: var(--card);
     border-bottom: 1.5px solid var(--line);
     display: flex; align-items: center; gap: 24px;
     padding: 0 80px; flex-shrink: 0;
 }
-.apphead .logo { width: 52px; height: 52px; font-size: 27px; }
+.apphead .logo { width: 52px; height: 52px; }
 .apphead .crumb { font-size: 24px; color: var(--muted); font-weight: 500; }
 .apphead .crumb b { color: var(--ink); font-weight: 700; }
 .apphead .stage-tag {
@@ -214,15 +194,77 @@ body { font-family: var(--font); color: var(--ink); }
     background: var(--slide-bg);
     padding: 10px 24px; font-size: 20px; font-weight: 600; color: var(--body);
 }
-.body { flex: 1; padding: 56px 80px 0; display: flex; flex-direction: column; }
+.body { flex: 1; padding: 44px 80px 0; display: flex; flex-direction: column; min-height: 0; }
 .foot {
-    height: 84px; display: flex; align-items: center; justify-content: space-between;
+    height: 80px; display: flex; align-items: center; justify-content: space-between;
     padding: 0 80px; color: #94a3b8; font-size: 20px; flex-shrink: 0;
 }
-.h2 { font-size: 58px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
-.lead { font-size: 27px; color: var(--muted); line-height: 1.5; margin-top: 14px; }
 
-/* ============ SLIDE 1: BÌA (sidebar app + hero) ============ */
+/* ===== MẪU SLIDE "MỘT BƯỚC — MỘT HÀNH ĐỘNG" ===== */
+.bighead { display: flex; align-items: flex-start; gap: 30px; }
+.bignum {
+    width: 92px; height: 92px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--primary), var(--violet2));
+    color: #fff; font-size: 42px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 24px rgba(109, 40, 217, .3);
+}
+.bigtitle { font-size: 52px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.12; }
+.bigsub { font-size: 27px; color: var(--body); line-height: 1.5; margin-top: 12px; max-width: 1450px; }
+.bigsub .ui { font-size: 24px; }
+
+/* số đỏ nhỏ trong câu lệnh — khớp với vòng khoanh trên ảnh */
+.k {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--red); color: #fff;
+    font-size: 20px; font-weight: 800;
+    vertical-align: -6px;
+}
+
+/* khu ảnh: căn giữa phần còn lại của slide */
+.shotstage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+
+/* khung "cửa sổ trình duyệt" bọc ảnh thật */
+.shot {
+    width: 100%; max-width: 950px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, .14);
+}
+.shot .bar {
+    height: 38px; background: #f1f5f9; border-bottom: 1.5px solid var(--line);
+    display: flex; align-items: center; gap: 9px; padding: 0 20px;
+}
+.shot .bar i { width: 13px; height: 13px; border-radius: 50%; background: #cbd5e1; }
+.shot img { display: block; width: 100%; height: auto; }
+.caption { font-size: 20px; color: var(--muted); text-align: center; line-height: 1.4; }
+
+/* VÒNG KHOANH ĐỎ chỉ đúng chỗ cần bấm — toạ độ % theo ảnh */
+.rel { position: relative; }
+.ring {
+    position: absolute;
+    border: 5px solid var(--red);
+    border-radius: 14px;
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, .22);
+    animation: pulse 1.6s ease-in-out infinite;
+}
+.ring i {
+    position: absolute; top: -20px; left: -20px;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--red); color: #fff;
+    font-style: normal; font-size: 21px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 10px rgba(239, 68, 68, .45);
+}
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 6px rgba(239, 68, 68, .22); }
+    50% { box-shadow: 0 0 0 12px rgba(239, 68, 68, .1); }
+}
+
+/* ============ SLIDE BÌA ============ */
 .s-cover { display: flex; }
 .side {
     width: 400px; height: 100%; background: var(--card);
@@ -230,7 +272,7 @@ body { font-family: var(--font); color: var(--ink); }
     padding: 52px 36px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
 }
 .side .brand { display: flex; align-items: center; gap: 16px; padding-bottom: 34px; border-bottom: 1.5px solid var(--line); margin-bottom: 26px; }
-.side .logo { width: 60px; height: 60px; font-size: 32px; border-radius: 16px; }
+.side .logo { width: 60px; height: 60px; border-radius: 16px; }
 .side h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
 .side .brand p { font-size: 16px; color: var(--muted); }
 .mi { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-radius: 12px; font-size: 22px; font-weight: 500; color: var(--body); }
@@ -252,119 +294,22 @@ body { font-family: var(--font); color: var(--ink); }
     background: linear-gradient(90deg, var(--primary), var(--violet2));
     -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.s-cover .subtitle { margin-top: 32px; font-size: 29px; line-height: 1.55; color: var(--muted); max-width: 980px; }
+.s-cover .subtitle { margin-top: 32px; font-size: 29px; line-height: 1.55; color: var(--muted); max-width: 1000px; }
 .s-cover .cards3 { display: flex; gap: 22px; margin-top: 58px; }
 .s-cover .c { flex: 1; max-width: 360px; padding: 28px; }
 .s-cover .no { font-size: 17px; font-weight: 600; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; }
 .s-cover .nm { font-size: 26px; font-weight: 700; margin-top: 10px; }
-.s-cover .bar { height: 5px; border-radius: 100px; margin-top: 20px; background: #f1f5f9; overflow: hidden; }
-.s-cover .bar i { display: block; height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--primary), var(--violet2)); }
+.s-cover .bar2 { height: 5px; border-radius: 100px; margin-top: 20px; background: #f1f5f9; overflow: hidden; }
+.s-cover .bar2 i { display: block; height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--primary), var(--violet2)); }
 
-/* ============ SLIDE 2: 3 CHẶNG ============ */
-.flow { display: flex; align-items: stretch; gap: 0; margin-top: 64px; }
-.flow .fcard { flex: 1; padding: 44px 40px; position: relative; }
-.flow .arrow {
-    align-self: center; width: 76px; text-align: center;
-    color: #cbd5e1; font-size: 44px; font-weight: 400; flex-shrink: 0;
-}
-.fcard .fk { font-size: 19px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--primary); }
-.fcard h3 { font-size: 36px; font-weight: 800; margin: 16px 0 14px; letter-spacing: -0.01em; }
-.fcard p { font-size: 24px; line-height: 1.55; color: var(--muted); }
-.fcard .once {
-    position: absolute; top: 40px; right: 36px;
-    background: var(--violet-soft); color: var(--primary);
-    font-size: 18px; font-weight: 700; border-radius: 100px; padding: 8px 20px;
-}
-.fcard .auto {
-    display: inline-flex; align-items: center; gap: 10px; margin-top: 22px;
-    color: #059669; font-size: 21px; font-weight: 600;
-}
-
-/* ============ SLIDE 3 & 5...: DANH SÁCH BƯỚC + MOCK UI ============ */
-.split { display: flex; gap: 64px; flex: 1; min-height: 0; }
-.steps { flex: 1.15; display: flex; flex-direction: column; gap: 34px; margin-top: 48px; }
-.step { display: flex; gap: 26px; align-items: flex-start; }
-.step h4 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
-.step p { font-size: 24px; line-height: 1.5; color: var(--muted); margin-top: 8px; max-width: 760px; }
-.step .ui { font-size: 21px; }
-
-/* ẢNH CHỤP GIAO DIỆN THẬT — bọc khung cửa sổ trình duyệt cho ngữ cảnh */
-.mockwrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-width: 0; }
-.shot {
-    width: 100%; max-width: 820px;
-    background: var(--card);
-    border: 1.5px solid var(--line);
-    border-radius: 18px;
-    overflow: hidden;
-    box-shadow: 0 18px 44px rgba(15, 23, 42, .14);
-}
-.shot .bar {
-    height: 40px; background: #f1f5f9; border-bottom: 1.5px solid var(--line);
-    display: flex; align-items: center; gap: 9px; padding: 0 20px;
-}
-.shot .bar i { width: 13px; height: 13px; border-radius: 50%; background: #cbd5e1; }
-.shot img { display: block; width: 100%; height: auto; }
-.caption { font-size: 20px; color: var(--muted); text-align: center; line-height: 1.4; }
-
-/* ============ SLIDE 4: LƯU Ý TỪNG SÀN (2 cột: chữ trái, ảnh phải) ============ */
-.plats { display: flex; flex-direction: column; gap: 22px; margin-top: 44px; }
-.plat { padding: 28px 32px; display: flex; gap: 24px; align-items: flex-start; }
-.plat .pbadge {
-    display: inline-block; border-radius: 10px; padding: 8px 20px;
-    font-size: 21px; font-weight: 700; white-space: nowrap; flex-shrink: 0;
-}
-.plat.shopee .pbadge { background: #fff7ed; color: #c2410c; border: 1.5px solid #fed7aa; }
-.plat.lazada .pbadge { background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; }
-.plat.tiktok .pbadge { background: #0f172a; color: #fff; }
-.plat p { font-size: 22px; line-height: 1.5; color: var(--body); }
-.plat .ui { font-size: 19px; }
-
-/* ============ SLIDE 5: 3 BƯỚC NGANG + ẢNH DẢI GIAN HÀNG ============ */
-.hsteps { display: flex; gap: 26px; margin-top: 44px; }
-.hstep { flex: 1; padding: 30px 32px; }
-.hstep .stepnum { width: 46px; height: 46px; font-size: 22px; margin-bottom: 18px; }
-.hstep h4 { font-size: 27px; font-weight: 700; letter-spacing: -0.01em; }
-.hstep p { font-size: 21px; line-height: 1.5; color: var(--muted); margin-top: 10px; }
-.hstep .ui { font-size: 19px; }
-.stripwrap { margin-top: 40px; display: flex; flex-direction: column; gap: 14px; }
-.stripwrap .shot { max-width: none; }
-
-/* ============ SLIDE 6: 2 THẺ LIÊN KẾT + GIÁ VỐN ============ */
-.duo { display: flex; gap: 32px; margin-top: 52px; }
-.duo .dcard { flex: 1; padding: 44px 42px; }
-.dico {
-    width: 76px; height: 76px; border-radius: 18px; background: var(--violet-soft);
-    display: flex; align-items: center; justify-content: center; margin-bottom: 26px;
-}
-.dico svg { width: 38px; height: 38px; stroke: var(--primary); stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.dcard h3 { font-size: 33px; font-weight: 800; letter-spacing: -0.01em; }
-.dcard p { font-size: 24px; line-height: 1.55; color: var(--muted); margin-top: 14px; }
-.dcard .gain { display: flex; align-items: center; gap: 12px; margin-top: 26px; font-size: 22px; font-weight: 600; color: #059669; }
-
-/* ============ SLIDE 7: DÒNG TIỀN ĐỐI SOÁT ============ */
-.money { display: flex; align-items: center; gap: 0; margin-top: 56px; }
-.mcard { padding: 34px 40px; text-align: center; }
-.mcard .mk { font-size: 19px; font-weight: 600; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
-.mcard .mv { font-size: 42px; font-weight: 800; margin-top: 10px; letter-spacing: -0.01em; }
-.mcard.fees .mv { color: #dc2626; }
-.mcard.net { background: linear-gradient(135deg, var(--primary), var(--violet2)); border: none; }
-.mcard.net .mk { color: rgba(255, 255, 255, .75); }
-.mcard.net .mv { color: #fff; }
-.money .op { width: 90px; text-align: center; font-size: 46px; color: #94a3b8; font-weight: 400; flex-shrink: 0; }
-.mnote { font-size: 21px; color: var(--muted); margin-top: 18px; line-height: 1.5; }
-.where { display: flex; gap: 28px; margin-top: 56px; }
-.where .wcard { flex: 1; padding: 30px 34px; display: flex; gap: 20px; align-items: flex-start; }
-.where h4 { font-size: 25px; font-weight: 700; }
-.where p { font-size: 21px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
-
-/* ============ SLIDE 8: FAQ + KẾT ============ */
-.faqgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 48px; }
+/* ============ SLIDE FAQ + KẾT ============ */
+.faqgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 8px; }
 .faq { padding: 30px 34px; }
 .faq h4 { font-size: 24px; font-weight: 700; line-height: 1.35; }
 .faq p { font-size: 21px; color: var(--muted); line-height: 1.5; margin-top: 10px; }
 .faq .ui { font-size: 19px; }
 .cta {
-    margin-top: 44px; display: flex; align-items: center; gap: 26px;
+    margin-top: 40px; display: flex; align-items: center; gap: 26px;
     background: linear-gradient(135deg, var(--primary), var(--violet2));
     border-radius: 20px; padding: 34px 44px; color: #fff;
 }
@@ -374,7 +319,7 @@ body { font-family: var(--font); color: var(--ink); }
 .cta .link { margin-left: auto; background: #fff; color: var(--primary); border-radius: 100px; padding: 16px 36px; font-size: 22px; font-weight: 700; white-space: nowrap; }
 
 /* ===========================================
-   CHROME NGOÀI STAGE: chấm tiến trình + nút sửa
+   CHROME NGOÀI STAGE
    =========================================== */
 .deck-controls { display: flex; gap: 10px; align-items: center; }
 .pdot {
@@ -417,244 +362,253 @@ body.editing [contenteditable="true"] { outline: 1.5px dashed #a78bfa; outline-o
         <div class="main">
             <span class="chip reveal r1"><span class="dot"></span>Tài liệu chính thức · Tháng 8, 2026</span>
             <div class="hero">
-                <h1 class="title reveal r2">Làm chủ Hubsell<br>trong <em class="grad">3 chặng</em></h1>
-                <p class="subtitle reveal r3">Từ ủy quyền gian hàng tới đối soát dòng tiền — hướng dẫn từng nút bấm, đúng như trên phần mềm.</p>
+                <h1 class="title reveal r2">8 bước bắt đầu<br>với <em class="grad">Hubsell</em></h1>
+                <p class="subtitle reveal r3">Mỗi bước một hành động: làm gì, ấn vào đâu — kèm ảnh màn hình thật khoanh đỏ đúng chỗ cần bấm.</p>
                 <div class="cards3 reveal r4">
-                    <div class="c card"><div class="no">Chặng 01</div><div class="nm">Ủy quyền gian hàng</div><div class="bar"><i style="width:100%"></i></div></div>
-                    <div class="c card"><div class="no">Chặng 02</div><div class="nm">Đồng bộ đơn hàng</div><div class="bar"><i style="width:66%"></i></div></div>
-                    <div class="c card"><div class="no">Chặng 03</div><div class="nm">Đối soát dòng tiền</div><div class="bar"><i style="width:33%"></i></div></div>
+                    <div class="c card"><div class="no">Bước 1–4</div><div class="nm">Ủy quyền gian hàng</div><div class="bar2"><i style="width:100%"></i></div></div>
+                    <div class="c card"><div class="no">Bước 5–7</div><div class="nm">Đồng bộ đơn hàng</div><div class="bar2"><i style="width:66%"></i></div></div>
+                    <div class="c card"><div class="no">Bước 8</div><div class="nm">Đối soát dòng tiền</div><div class="bar2"><i style="width:33%"></i></div></div>
                 </div>
             </div>
-            <div class="foot reveal r5" style="padding:0"><span>Shopee · Lazada · TikTok Shop</span><span>01 / 09</span></div>
+            <div class="foot reveal r5" style="padding:0"><span>Shopee · Lazada · TikTok Shop</span><span>01 / 10</span></div>
         </div>
     </section>
 
-    <!-- ============ SLIDE 2 · TỔNG QUAN 3 CHẶNG ============ -->
+    <!-- ============ SLIDE 2 · BƯỚC 1 ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Hướng dẫn sử dụng · <b>Lộ trình tổng quan</b></div>
-            <div class="stage-tag"><span class="dot"></span>Làm theo thứ tự là dùng được ngay</div>
+            <div class="crumb">Ủy quyền gian hàng · <b>Bước 1</b></div>
+            <div class="stage-tag">Làm 1 lần cho mỗi gian hàng</div>
         </div>
         <div class="body">
-            <h2 class="h2 reveal r1">3 chặng vận hành</h2>
-            <p class="lead reveal r2">Kết nối một lần — sau đó đơn hàng và tiền quyết toán tự chảy về, kể cả khi bạn không mở phần mềm.</p>
-            <div class="flow">
-                <div class="fcard card reveal r3">
-                    <span class="once">Làm 1 lần</span>
-                    <div class="fk">Chặng 01</div>
-                    <h3>Ủy quyền gian hàng</h3>
-                    <p>Cho phép Hubsell đọc dữ liệu shop qua cổng chính thức của sàn. Không cần đưa mật khẩu.</p>
-                </div>
-                <div class="arrow">→</div>
-                <div class="fcard card reveal r4">
-                    <div class="fk">Chặng 02</div>
-                    <h3>Đồng bộ đơn hàng</h3>
-                    <p>Đơn mọi sàn tự chảy về một màn hình, tự trừ tồn kho đúng sản phẩm.</p>
-                    <span class="auto">⟳ Tự động ~10 phút/lần</span>
-                </div>
-                <div class="arrow">→</div>
-                <div class="fcard card reveal r5">
-                    <div class="fk">Chặng 03</div>
-                    <h3>Đối soát dòng tiền</h3>
-                    <p>Biết chính xác từng đơn thực nhận bao nhiêu sau khi sàn trừ phí.</p>
-                    <span class="auto">⟳ Tự động mỗi giờ</span>
-                </div>
-            </div>
-        </div>
-        <div class="foot"><span>Hubsell — Hướng dẫn sử dụng</span><span>02 / 09</span></div>
-    </section>
-
-    <!-- ============ SLIDE 3 · CHẶNG 1: ỦY QUYỀN ============ -->
-    <section class="slide content">
-        <div class="apphead">
-            <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Chặng 01 · <b>Ủy quyền gian hàng</b></div>
-            <div class="stage-tag">🔒 Hubsell không hỏi, không lưu mật khẩu</div>
-        </div>
-        <div class="body">
-            <div class="split">
+            <div class="bighead reveal r1">
+                <span class="bignum">1</span>
                 <div>
-                    <h2 class="h2 reveal r1">4 bước kết nối shop</h2>
-                    <div class="steps">
-                        <div class="step reveal r2"><span class="stepnum">1</span><div><h4>Mở trang Kênh bán</h4><p>Trên menu trái chọn <span class="ui">Kênh bán</span>, bấm nút <span class="ui">Kết nối gian hàng</span> góc phải.</p></div></div>
-                        <div class="step reveal r3"><span class="stepnum">2</span><div><h4>Chọn sàn cần kết nối</h4><p>Shopee, Lazada hoặc TikTok Shop — tên gian hàng sẽ lấy tự động, không cần nhập tay.</p></div></div>
-                        <div class="step reveal r4"><span class="stepnum">3</span><div><h4>Đăng nhập trên trang của sàn</h4><p>Đăng nhập tài khoản người bán và bấm xác nhận ủy quyền — thao tác trực tiếp với sàn.</p></div></div>
-                        <div class="step reveal r5"><span class="stepnum">4</span><div><h4>Kiểm tra kết quả</h4><p>Gian hàng hiện <b style="color:#059669">Đang hoạt động</b> là thành công. Lặp lại cho từng gian nếu có nhiều shop.</p></div></div>
-                    </div>
+                    <h2 class="bigtitle">Mở trang Kênh bán</h2>
+                    <p class="bigsub">Ở menu bên trái bấm <span class="k">1</span> <span class="ui">Kênh bán</span> — rồi bấm nút <span class="k">2</span> <span class="ui">+ Kết nối gian hàng</span> ở góc phải màn hình.</p>
                 </div>
-                <div class="mockwrap reveal r6">
-                    <div class="shot">
-                        <div class="bar"><i></i><i></i><i></i></div>
-                        <img src="guide-assets/connect-dialog-shopee.png" alt="Hộp thoại Kết nối gian hàng trên Hubsell, đang chọn sàn Shopee">
+            </div>
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:1150px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/channels-page.png" alt="Trang Kênh bán của Hubsell">
+                        <span class="ring" style="left:0.8%; top:55.4%; width:9.5%; height:5.2%"><i>1</i></span>
+                        <span class="ring" style="left:86%; top:8.6%; width:12%; height:6%"><i>2</i></span>
                     </div>
-                    <p class="caption">Màn hình thật: hộp thoại <b>Kết nối gian hàng</b> khi chọn Shopee</p>
                 </div>
             </div>
         </div>
-        <div class="foot"><span>Chặng 01 — Ủy quyền gian hàng</span><span>03 / 09</span></div>
+        <div class="foot"><span>Ủy quyền gian hàng — Bước 1/4</span><span>02 / 10</span></div>
     </section>
 
-    <!-- ============ SLIDE 4 · ĐĂNG NHẬP SHOPEE KHI ỦY QUYỀN ============ -->
+    <!-- ============ SLIDE 3 · BƯỚC 2 ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Chặng 01 · <b>Đăng nhập &amp; xác nhận trên Shopee</b></div>
-            <div class="stage-tag">🔒 Mật khẩu nhập trên trang Shopee — không phải trên Hubsell</div>
+            <div class="crumb">Ủy quyền gian hàng · <b>Bước 2</b></div>
+            <div class="stage-tag">Tên gian hàng lấy tự động — không cần nhập</div>
         </div>
         <div class="body">
-            <div class="split">
+            <div class="bighead reveal r1">
+                <span class="bignum">2</span>
                 <div>
-                    <h2 class="h2 reveal r1">Màn hình đăng nhập của Shopee</h2>
-                    <div class="steps">
-                        <div class="step reveal r2"><span class="stepnum">1</span><div><h4>Chọn quốc gia / khu vực</h4><p>Ô nhỏ bên trái ô tài khoản là khu vực — bấm và chọn <b>VN</b> (Việt Nam), đúng nước mà gian hàng đang bán.</p></div></div>
-                        <div class="step reveal r3"><span class="stepnum">2</span><div><h4>Nhập tài khoản người bán</h4><p>Điền <b>Email / Số điện thoại / Tên đăng nhập</b> của tài khoản Kênh Người Bán — đúng tài khoản của gian đang kết nối.</p></div></div>
-                        <div class="step reveal r4"><span class="stepnum">3</span><div><h4>Nhập mật khẩu, bấm ĐĂNG NHẬP</h4><p>Đăng nhập như bình thường; quét <b>mã QR</b> bằng app Shopee hoặc dùng Facebook / Google cũng được.</p></div></div>
-                        <div class="step reveal r5"><span class="stepnum">4</span><div><h4>Bấm xác nhận ủy quyền</h4><p>Shopee hỏi có cho phép Hubsell truy cập gian hàng — bấm đồng ý là trình duyệt <b>tự quay về Hubsell</b>, kết nối hoàn tất.</p></div></div>
-                    </div>
+                    <h2 class="bigtitle">Chọn sàn cần kết nối</h2>
+                    <p class="bigsub">Trong hộp thoại, chọn sàn ở ô <span class="k">1</span> (Shopee, Lazada hoặc TikTok Shop) — rồi bấm nút <span class="k">2</span> <span class="ui">Tiếp tục với Shopee</span>.</p>
                 </div>
-                <div class="mockwrap reveal r6">
-                    <!-- Ảnh khổ DỌC (form đăng nhập crop sát) — khoá bề rộng 540px
-                         để tổng chiều cao ảnh + thanh + chú thích nằm gọn trong stage -->
-                    <div class="shot" style="max-width:540px">
-                        <div class="bar"><i></i><i></i><i></i></div>
-                        <img src="guide-assets/shopee-oauth-login.png" alt="Màn hình Đăng nhập để cấp quyền cho nền tảng ứng dụng Shopee — có ô chọn khu vực, tài khoản và mật khẩu">
+            </div>
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:1020px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/connect-dialog-shopee.png" alt="Hộp thoại Kết nối gian hàng, đang chọn Shopee">
+                        <span class="ring" style="left:34.5%; top:44%; width:30.5%; height:6.4%"><i>1</i></span>
+                        <span class="ring" style="left:51%; top:61%; width:14.5%; height:6.4%"><i>2</i></span>
                     </div>
-                    <p class="caption">Màn hình thật: <b>Đăng nhập để cấp quyền</b> — đúng trang bạn sẽ gặp khi ủy quyền</p>
                 </div>
             </div>
         </div>
-        <div class="foot"><span>Chặng 01 — Ủy quyền gian hàng</span><span>04 / 09</span></div>
+        <div class="foot"><span>Ủy quyền gian hàng — Bước 2/4</span><span>03 / 10</span></div>
     </section>
 
-    <!-- ============ SLIDE 5 · LƯU Ý TỪNG SÀN ============ -->
+    <!-- ============ SLIDE 4 · BƯỚC 3 ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Chặng 01 · <b>Lưu ý riêng từng sàn</b></div>
-            <div class="stage-tag">Mỗi sàn một luồng ủy quyền hơi khác</div>
+            <div class="crumb">Ủy quyền gian hàng · <b>Bước 3</b></div>
+            <div class="stage-tag">🔒 Mật khẩu nhập trên trang Shopee — Hubsell không lưu</div>
         </div>
         <div class="body">
-            <div class="split">
-                <div style="flex:1.05">
-                    <h2 class="h2 reveal r1">Từng sàn có gì khác nhau?</h2>
-                    <div class="plats">
-                        <div class="plat card shopee reveal r2">
-                            <span class="pbadge">Shopee</span>
-                            <p>Trình duyệt <b>tự chuyển</b> sang trang Shopee — đăng nhập, bấm xác nhận, hệ thống tự đưa bạn quay về Hubsell.</p>
-                        </div>
-                        <div class="plat card lazada reveal r3">
-                            <span class="pbadge">Lazada</span>
-                            <p>Trang ủy quyền mở ở <b>tab mới</b>. Ủy quyền xong quay về Hubsell với mã điền sẵn — chỉ cần bấm <span class="ui">Đổi code lấy token</span>.</p>
-                        </div>
-                        <div class="plat card tiktok reveal r4">
-                            <span class="pbadge">TikTok Shop</span>
-                            <p>Giống Shopee: <b>tự chuyển</b> sang trang TikTok Shop rồi tự quay về sau khi bạn xác nhận.</p>
-                        </div>
-                    </div>
-                    <div class="note reveal r5" style="margin-top:30px; font-size:22px">
-                        <b>Có nhiều gian hàng?</b> Đăng nhập <b>đúng tài khoản sàn của gian đang kết nối</b> — nhầm tài khoản, hệ thống báo lỗi và không ghi đè gian cũ.
-                    </div>
-                </div>
-                <div class="mockwrap reveal r6">
-                    <div class="shot">
-                        <div class="bar"><i></i><i></i><i></i></div>
-                        <img src="guide-assets/connect-dialog-lazada.png" alt="Hộp thoại Kết nối gian hàng khi chọn Lazada, có ô Code ủy quyền">
-                    </div>
-                    <p class="caption">Màn hình thật: Lazada có thêm ô <b>Code uỷ quyền</b> — thường được điền sẵn</p>
+            <div class="bighead reveal r1">
+                <span class="bignum">3</span>
+                <div>
+                    <h2 class="bigtitle">Đăng nhập Shopee như bình thường</h2>
+                    <p class="bigsub"><span class="k">1</span> chọn khu vực <b>VN</b> &nbsp;→&nbsp; <span class="k">2</span> nhập Email / SĐT / Tên đăng nhập của shop &nbsp;→&nbsp; <span class="k">3</span> nhập mật khẩu &nbsp;→&nbsp; <span class="k">4</span> bấm <span class="ui">Đăng Nhập</span>. Shopee hỏi cấp quyền — bấm đồng ý là <b>tự quay về Hubsell</b>.</p>
                 </div>
             </div>
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:440px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/shopee-oauth-login.png" alt="Màn hình Đăng nhập để cấp quyền cho nền tảng ứng dụng Shopee">
+                        <span class="ring" style="left:12%; top:33.2%; width:17%; height:8.6%"><i>1</i></span>
+                        <span class="ring" style="left:29.5%; top:33.2%; width:56.5%; height:8.6%"><i>2</i></span>
+                        <span class="ring" style="left:12%; top:42.7%; width:74%; height:8.4%"><i>3</i></span>
+                        <span class="ring" style="left:12%; top:59.2%; width:74%; height:8.4%"><i>4</i></span>
+                    </div>
+                </div>
+                <p class="caption">Lazada tương tự nhưng mở ở tab mới — quay về Hubsell bấm thêm <b>Đổi code lấy token</b> là xong</p>
+            </div>
         </div>
-        <div class="foot"><span>Chặng 01 — Ủy quyền gian hàng</span><span>05 / 09</span></div>
+        <div class="foot"><span>Ủy quyền gian hàng — Bước 3/4</span><span>04 / 10</span></div>
     </section>
 
-    <!-- ============ SLIDE 5 · CHẶNG 2: ĐỒNG BỘ ĐƠN ============ -->
+    <!-- ============ SLIDE 5 · BƯỚC 4 ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Chặng 02 · <b>Đồng bộ đơn hàng</b></div>
+            <div class="crumb">Ủy quyền gian hàng · <b>Bước 4</b></div>
+            <div class="stage-tag"><span class="dot"></span>Nhiều gian hàng? Lặp lại bước 1–3 cho từng gian</div>
+        </div>
+        <div class="body">
+            <div class="bighead reveal r1">
+                <span class="bignum">4</span>
+                <div>
+                    <h2 class="bigtitle">Kiểm tra: gian hàng đã hiện chưa?</h2>
+                    <p class="bigsub">Quay lại trang <span class="ui">Kênh bán</span> — gian hàng hiện chữ xanh <span class="k">1</span> <b style="color:#059669">Đang hoạt động</b> là kết nối thành công.</p>
+                </div>
+            </div>
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:1500px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/shopee-card.png" alt="Gian hàng DarkMan Store trạng thái Đang hoạt động trên trang Kênh bán">
+                        <span class="ring" style="left:11.5%; top:50%; width:12.5%; height:22%"><i>1</i></span>
+                    </div>
+                </div>
+                <div class="note">Nếu sau này gian hàng báo <b>“Đã ngắt kết nối”</b> (phiên ủy quyền hết hạn): bấm <b>Kết nối lại</b> và đăng nhập đúng tài khoản sàn — dữ liệu cũ không mất.</div>
+            </div>
+        </div>
+        <div class="foot"><span>Ủy quyền gian hàng — Bước 4/4</span><span>05 / 10</span></div>
+    </section>
+
+    <!-- ============ SLIDE 6 · BƯỚC 5 ============ -->
+    <section class="slide content">
+        <div class="apphead">
+            <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
+            <div class="crumb">Đồng bộ đơn hàng · <b>Bước 5</b></div>
             <div class="stage-tag"><span class="dot"></span>Chạy cả khi bạn không mở phần mềm</div>
         </div>
         <div class="body">
-            <h2 class="h2 reveal r1">Đơn tự chảy về</h2>
-            <div class="hsteps">
-                <div class="hstep card reveal r2"><span class="stepnum">1</span><h4>Không cần làm gì cả</h4><p>Hệ thống tự quét đơn mới khoảng <b>10 phút một lần</b>, chạy cả khi bạn không mở phần mềm. Lazada nhận đơn tức thời.</p></div>
-                <div class="hstep card reveal r3"><span class="stepnum">2</span><h4>Muốn lấy đơn ngay</h4><p>Vào <span class="ui">Kênh bán</span>, bấm <span class="ui">Đồng bộ đơn</span> trên gian hàng cần lấy.</p></div>
-                <div class="hstep card reveal r4"><span class="stepnum">3</span><h4>Xem và xử lý đơn</h4><p>Tất cả đơn mọi sàn nằm chung tại menu <span class="ui">Đơn hàng</span> — lọc theo sàn, gian hàng, trạng thái.</p></div>
+            <div class="bighead reveal r1">
+                <span class="bignum">5</span>
+                <div>
+                    <h2 class="bigtitle">Đơn hàng tự chảy về — không cần làm gì</h2>
+                    <p class="bigsub">Hệ thống tự quét đơn mới <b>10 phút một lần</b>. Muốn lấy đơn NGAY: bấm nút <span class="k">1</span> <span class="ui">Đồng bộ đơn</span> trên gian hàng.</p>
+                </div>
             </div>
-            <div class="stripwrap reveal r5">
-                <div class="shot">
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:1500px">
                     <div class="bar"><i></i><i></i><i></i></div>
-                    <img src="guide-assets/shopee-card.png" alt="Dòng gian hàng DarkMan Store trên trang Kênh bán với nút Đồng bộ đơn và Đồng bộ đối soát">
+                    <div class="rel">
+                        <img src="guide-assets/shopee-card.png" alt="Nút Đồng bộ đơn trên gian hàng">
+                        <span class="ring" style="left:62.7%; top:50%; width:12%; height:24%"><i>1</i></span>
+                    </div>
                 </div>
-                <p class="caption">Màn hình thật: mỗi gian hàng có nút <b>Đồng bộ đơn</b> và <b>Đồng bộ đối soát</b> ngay trên trang Kênh bán</p>
+                <p class="caption">Xem tất cả đơn của mọi sàn tại menu <b>Đơn hàng</b> bên trái — lọc theo sàn, gian hàng, trạng thái</p>
             </div>
         </div>
-        <div class="foot"><span>Chặng 02 — Đồng bộ đơn hàng</span><span>06 / 09</span></div>
+        <div class="foot"><span>Đồng bộ đơn hàng — Bước 5</span><span>06 / 10</span></div>
     </section>
 
-    <!-- ============ SLIDE 6 · LIÊN KẾT SP + GIÁ VỐN ============ -->
+    <!-- ============ SLIDE 7 · BƯỚC 6 ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Chặng 02 · <b>Liên kết sản phẩm &amp; giá vốn</b></div>
-            <div class="stage-tag">Điều kiện để trừ kho &amp; tính lãi lỗ đúng</div>
+            <div class="crumb">Đồng bộ đơn hàng · <b>Bước 6</b></div>
+            <div class="stage-tag">Điều kiện để tự trừ tồn kho</div>
         </div>
         <div class="body">
-            <h2 class="h2 reveal r1">2 việc nên làm ngay sau khi kết nối</h2>
-            <div class="duo">
-                <div class="dcard card reveal r2">
-                    <div class="dico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></div>
-                    <h3>Liên kết sản phẩm</h3>
-                    <p>Vào menu <span class="ui">Liên kết sản phẩm</span> để nối SKU trên sàn với sản phẩm trong kho của bạn.</p>
-                    <div class="gain">✓&nbsp; Đơn về tự trừ tồn kho đúng sản phẩm</div>
-                </div>
-                <div class="dcard card reveal r3">
-                    <div class="dico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 6.5v11M9 9.2c0-1.2 1.3-2 3-2s3 .8 3 2-1.3 1.8-3 2-3 .9-3 2 1.3 2 3 2 3-.8 3-2"/></svg></div>
-                    <h3>Nhập giá vốn</h3>
-                    <p>Vào <span class="ui">Quản lý Tài chính</span> → <span class="ui">Cấu hình Giá vốn</span> và điền giá vốn cho từng sản phẩm.</p>
-                    <div class="gain">✓&nbsp; Báo cáo lãi/lỗ tính đúng từng đơn</div>
+            <div class="bighead reveal r1">
+                <span class="bignum">6</span>
+                <div>
+                    <h2 class="bigtitle">Nối sản phẩm sàn với kho của bạn</h2>
+                    <p class="bigsub">Vào menu <span class="k">1</span> <span class="ui">Liên kết sản phẩm</span> — nối SKU sàn với kho để <b>đơn về tự trừ tồn kho</b>.</p>
                 </div>
             </div>
-            <div class="note reveal r4" style="margin-top:44px">
-                Chưa làm 2 việc này thì đơn vẫn về bình thường — nhưng kho không tự trừ và báo cáo lợi nhuận chưa có số để tính.
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:950px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/channels-page.png" alt="Menu Liên kết sản phẩm trên thanh bên trái">
+                        <span class="ring" style="left:0.8%; top:61%; width:13.5%; height:5.2%"><i>1</i></span>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="foot"><span>Chặng 02 — Đồng bộ đơn hàng</span><span>07 / 09</span></div>
+        <div class="foot"><span>Đồng bộ đơn hàng — Bước 6</span><span>07 / 10</span></div>
     </section>
 
-    <!-- ============ SLIDE 7 · CHẶNG 3: ĐỐI SOÁT ============ -->
+    <!-- ============ SLIDE 8 · BƯỚC 7 ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-            <div class="crumb">Chặng 03 · <b>Đối soát dòng tiền</b></div>
-            <div class="stage-tag"><span class="dot"></span>Tự cập nhật mỗi giờ, cả 3 sàn</div>
+            <div class="crumb">Đồng bộ đơn hàng · <b>Bước 7</b></div>
+            <div class="stage-tag">Điều kiện để báo cáo lãi/lỗ tính đúng</div>
         </div>
         <div class="body">
-            <h2 class="h2 reveal r1">Mỗi đơn, bạn thực nhận bao nhiêu?</h2>
-            <div class="money reveal r2">
-                <div class="mcard card" style="flex:1"><div class="mk">Khách trả</div><div class="mv">Giá bán</div></div>
-                <div class="op">−</div>
-                <div class="mcard card fees" style="flex:1.4"><div class="mk">Sàn giữ lại</div><div class="mv">Phí sàn · vận chuyển · khuyến mãi</div></div>
-                <div class="op">=</div>
-                <div class="mcard card net" style="flex:1"><div class="mk">Về túi bạn</div><div class="mv">Thực nhận</div></div>
+            <div class="bighead reveal r1">
+                <span class="bignum">7</span>
+                <div>
+                    <h2 class="bigtitle">Nhập giá vốn cho sản phẩm</h2>
+                    <p class="bigsub">Vào <span class="k">1</span> <span class="ui">Quản lý Tài chính</span> → <span class="ui">Cấu hình Giá vốn</span>, điền giá vốn từng sản phẩm để tính <b>lãi/lỗ thật</b>.</p>
+                </div>
             </div>
-            <p class="mnote reveal r3">Đối soát là bước Hubsell lấy bảng quyết toán thật của sàn về — muốn cập nhật ngay, bấm <span class="ui">Đồng bộ đối soát</span> ở trang <span class="ui">Kênh bán</span>.</p>
-            <div class="where">
-                <div class="wcard card reveal r4">
-                    <div class="dico" style="width:60px;height:60px;margin:0;flex-shrink:0"><svg viewBox="0 0 24 24" style="width:30px;height:30px"><path d="M3 17l5-5 4 4 7-8"/><path d="M15 8h4v4"/></svg></div>
-                    <div><h4>Lãi/Lỗ Thực Hiện</h4><p>Lợi nhuận từng đơn sau khi trừ đủ phí thật của sàn — trong <span class="ui">Quản lý Tài chính</span>.</p></div>
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:950px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/channels-page.png" alt="Menu Quản lý Tài chính trên thanh bên trái">
+                        <span class="ring" style="left:0.8%; top:20.8%; width:13.5%; height:5.2%"><i>1</i></span>
+                    </div>
                 </div>
-                <div class="wcard card reveal r5">
-                    <div class="dico" style="width:60px;height:60px;margin:0;flex-shrink:0"><svg viewBox="0 0 24 24" style="width:30px;height:30px"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg></div>
-                    <div><h4>Báo cáo dòng tiền</h4><p>Tiền sàn đã chuyển về ngân hàng theo từng ngày — đối chiếu với sao kê được ngay.</p></div>
-                </div>
+                <p class="caption">Chưa làm bước 6–7 thì đơn vẫn về bình thường — nhưng kho không tự trừ và lợi nhuận chưa có số</p>
             </div>
         </div>
-        <div class="foot"><span>Chặng 03 — Đối soát dòng tiền</span><span>08 / 09</span></div>
+        <div class="foot"><span>Đồng bộ đơn hàng — Bước 7</span><span>08 / 10</span></div>
     </section>
 
-    <!-- ============ SLIDE 8 · FAQ + BẮT ĐẦU ============ -->
+    <!-- ============ SLIDE 9 · BƯỚC 8 ============ -->
+    <section class="slide content">
+        <div class="apphead">
+            <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
+            <div class="crumb">Đối soát dòng tiền · <b>Bước 8</b></div>
+            <div class="stage-tag"><span class="dot"></span>Tự chạy mỗi giờ cho cả 3 sàn</div>
+        </div>
+        <div class="body">
+            <div class="bighead reveal r1">
+                <span class="bignum">8</span>
+                <div>
+                    <h2 class="bigtitle">Đối soát: biết từng đơn thực nhận bao nhiêu</h2>
+                    <p class="bigsub">Sàn trừ phí rồi mới chuyển tiền. Bấm <span class="k">1</span> <span class="ui">Đồng bộ đối soát</span> để lấy số liệu quyết toán ngay — rồi xem lợi nhuận từng đơn ở <span class="ui">Quản lý Tài chính</span> → <span class="ui">Lãi/Lỗ Thực Hiện</span>, tiền về ngân hàng ở <span class="ui">Báo cáo dòng tiền</span>.</p>
+                </div>
+            </div>
+            <div class="shotstage reveal r2">
+                <div class="shot" style="max-width:1500px">
+                    <div class="bar"><i></i><i></i><i></i></div>
+                    <div class="rel">
+                        <img src="guide-assets/shopee-card.png" alt="Nút Đồng bộ đối soát trên gian hàng">
+                        <span class="ring" style="left:73.5%; top:50%; width:14%; height:24%"><i>1</i></span>
+                    </div>
+                </div>
+                <p class="caption">Phí thật chỉ có sau khi sàn quyết toán — thường vài ngày sau khi đơn giao thành công</p>
+            </div>
+        </div>
+        <div class="foot"><span>Đối soát dòng tiền — Bước 8</span><span>09 / 10</span></div>
+    </section>
+
+    <!-- ============ SLIDE 10 · FAQ + KẾT ============ -->
     <section class="slide content">
         <div class="apphead">
             <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
@@ -665,16 +619,16 @@ body.editing [contenteditable="true"] { outline: 1.5px dashed #a78bfa; outline-o
             <div class="faqgrid">
                 <div class="faq card reveal r1"><h4>Gian hàng báo “Đã ngắt kết nối”?</h4><p>Phiên ủy quyền có thời hạn. Bấm <span class="ui">Kết nối lại</span> và đăng nhập đúng tài khoản sàn — dữ liệu cũ không mất.</p></div>
                 <div class="faq card reveal r2"><h4>Khách đặt đơn mà chưa thấy về?</h4><p>Chờ tối đa 10 phút cho chu kỳ tự quét, hoặc bấm <span class="ui">Đồng bộ đơn</span> để lấy ngay.</p></div>
-                <div class="faq card reveal r3"><h4>Đơn về nhưng không trừ kho?</h4><p>SKU chưa được nối với kho. Vào <span class="ui">Liên kết sản phẩm</span> — các đơn sau sẽ trừ tự động.</p></div>
-                <div class="faq card reveal r4"><h4>Lãi/lỗ chưa thấy số hoặc chưa đúng?</h4><p>Kiểm tra đã nhập giá vốn chưa, và chờ sàn quyết toán (vài ngày sau khi giao thành công).</p></div>
+                <div class="faq card reveal r3"><h4>Đơn về nhưng không trừ kho?</h4><p>SKU chưa được nối với kho. Làm lại <b>Bước 6</b> — các đơn sau sẽ trừ tự động.</p></div>
+                <div class="faq card reveal r4"><h4>Lãi/lỗ chưa thấy số hoặc chưa đúng?</h4><p>Kiểm tra đã nhập giá vốn chưa (<b>Bước 7</b>), và chờ sàn quyết toán (vài ngày sau khi giao thành công).</p></div>
             </div>
             <div class="cta reveal r5">
                 <div class="logo"><img src="guide-assets/logo-hubsell.png" alt="Logo Hubsell"></div>
-                <div><h3>Sẵn sàng bắt đầu?</h3><p>Vào Kênh bán và kết nối gian hàng đầu tiên của bạn — mất chưa tới 2 phút.</p></div>
+                <div><h3>Sẵn sàng bắt đầu?</h3><p>Làm theo Bước 1 — vào Kênh bán và kết nối gian hàng đầu tiên, mất chưa tới 2 phút.</p></div>
                 <div class="link">hubsell.tech</div>
             </div>
         </div>
-        <div class="foot"><span>Hubsell — Quản lý bán hàng đa kênh</span><span>09 / 09</span></div>
+        <div class="foot"><span>Hubsell — Quản lý bán hàng đa kênh</span><span>10 / 10</span></div>
     </section>
 
 </main>
@@ -702,7 +656,6 @@ class SlidePresentation {
         this.setupTouch();
         this.show(0);
     }
-    /* Scale cả stage 1920×1080 vừa cửa sổ — letterbox chứ không reflow */
     setupStageScale() {
         const scale = () => {
             const k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
@@ -783,17 +736,8 @@ const editor = {
     },
     save() {
         localStorage.setItem(this.key, document.getElementById('deckStage').innerHTML);
-    },
-    restore() {
-        const html = localStorage.getItem(this.key);
-        if (html) {
-            document.getElementById('deckStage').innerHTML = html;
-            // Gắn lại deck sau khi thay DOM
-            location.reload.toString(); // no-op giữ tham chiếu
-        }
     }
 };
-// Nút sửa: hotzone góc trái + phím E + Ctrl+S xuất file
 const hotzone = document.querySelector('.edit-hotzone');
 const editToggle = document.getElementById('editToggle');
 let hideTimeout = null;
