@@ -67,6 +67,18 @@ export const SHOPEE_PATHS = {
    *  thì liên hệ Shopee mở module Ads cho app. */
   adsAllCpcDaily: "/api/v2/ads/get_all_cpc_ads_daily_performance",
 
+  // ── Trợ lý quảng cáo (GĐ1: toàn bộ READ-ONLY, không có endpoint ghi) ──
+  /** DS campaign_id quảng cáo sản phẩm của shop (phân trang offset/limit). */
+  adsCampaignIdList: "/api/v2/ads/get_product_level_campaign_id_list",
+  /** Cấu hình campaign theo lô ≤100 id (info_type: 1 common, 3 auto bidding). */
+  adsCampaignSettingInfo: "/api/v2/ads/get_product_level_campaign_setting_info",
+  /** Hiệu suất THEO NGÀY của từng campaign (lô ≤100 id, direct/broad GMV-ROI). */
+  adsCampaignDailyPerf: "/api/v2/ads/get_product_campaign_daily_performance",
+  /** Hiệu suất THEO GIỜ của từng campaign trong MỘT ngày (cho quy tắc spike GĐ2). */
+  adsCampaignHourlyPerf: "/api/v2/ads/get_product_campaign_hourly_performance",
+  /** Số dư ví quảng cáo real-time. */
+  adsTotalBalance: "/api/v2/ads/get_total_balance",
+
   // ── Trợ lý vận hành (CSKH): chat + đánh giá ──
   // LƯU Ý: module Chat (sellerchat) có thể cần bật quyền riêng trên Shopee
   // Console giống Ads — lỗi permission trả về nguyên văn để chủ shop biết

@@ -2762,3 +2762,92 @@ export function mockReferralPayment(payerEmail: string, amount: number) {
     { method: "POST", body: JSON.stringify({ payerEmail, amount }) }
   );
 }
+
+// ----- Trợ lý quảng cáo Shopee (GĐ1: dashboard dữ liệu thật, read-only) -----
+
+export interface ShopeeAdsCampaignRow {
+  id: string;
+  campaignId: string;
+  name: string;
+  adType: string; // auto | manual
+  status: string; // ongoing | scheduled | ended | paused | deleted | closed
+  placement: string; // search | discovery | all
+  biddingMethod: string;
+  budget: number; // 0 = không giới hạn
+  roasTarget: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  itemCount: number;
+  spend: number;
+  impression: number;
+  clicks: number;
+  broadOrder: number;
+  broadGmv: number;
+  directOrder: number;
+  directGmv: number;
+  roasBroad: number | null;
+  roasDirect: number | null;
+  /** Biên lãi ròng (chưa trừ ads) của SKU trong campaign — nền của ROAS hòa vốn. */
+  margin: number | null;
+  /** Nguồn biên lãi: "campaign" = đủ đơn của chính SKU; "shop" = rơi về toàn shop. */
+  marginSource: "campaign" | "shop" | null;
+  marginOrders: number;
+  breakevenRoas: number | null;
+  /** Lãi/lỗ THẬT ước tính trong kỳ = GMV direct × biên lãi − chi phí ads. */
+  estProfit: number | null;
+  lossBeforeAds: boolean;
+}
+
+export interface ShopeeAdsSummary {
+  spend: number;
+  broadOrder: number;
+  broadGmv: number;
+  directOrder: number;
+  directGmv: number;
+  estProfit: number;
+  roasBroad: number | null;
+  roasDirect: number | null;
+  /** Tổng chi ads toàn shop từ bảng AdSpend (đối chiếu — gồm cả ads ngoài campaign SP). */
+  adSpendTotal: number;
+  shopMargin: number | null;
+  shopBreakevenRoas: number | null;
+  marginWindowDays: number;
+  pnlOrders: number;
+  missingCostOrders: number;
+}
+
+export interface ShopeeAdsDashboard {
+  channels: { id: string; shopName: string; externalShopId: string | null }[];
+  selectedChannelId: string | null;
+  days: number;
+  wallet: { balance: number } | null;
+  summary: ShopeeAdsSummary | null;
+  campaigns: ShopeeAdsCampaignRow[];
+  series: { date: string; spend: number; broadGmv: number; directGmv: number }[];
+}
+
+export function fetchShopeeAdsDashboard(params: {
+  channelId?: string;
+  days?: 7 | 30;
+}) {
+  const q = new URLSearchParams();
+  if (params.channelId) q.set("channelId", params.channelId);
+  if (params.days) q.set("days", String(params.days));
+  const qs = q.toString();
+  return apiFetch<ShopeeAdsDashboard>(`/api/ads/shopee${qs ? `?${qs}` : ""}`);
+}
+
+export interface SyncAdsCampaignsResult {
+  message: string;
+  campaignsFound: number;
+  campaignsUpserted: number;
+  perfDaysUpserted: number;
+}
+
+/** Kéo chiến dịch quảng cáo + hiệu suất 30 ngày từ Shopee (read-only). */
+export function syncShopeeAdsCampaigns(channelId: string) {
+  return apiFetch<SyncAdsCampaignsResult>(
+    `/api/channels/${channelId}/sync-ads-campaigns`,
+    { method: "POST" }
+  );
+}

@@ -986,3 +986,198 @@ export async function getAdsDailyPerformance(
     cfg
   );
 }
+
+// ---------- Trợ lý quảng cáo (Ads API cấp campaign, READ-ONLY) ----------
+//
+// GĐ1 chỉ dùng nhóm ĐỌC: danh sách campaign + cấu hình + hiệu suất ngày/giờ +
+// số dư ví ads. Docs Shopee từng trả response lúc là object lúc là mảng bọc
+// shop_id (đa shop) → mọi kiểu dưới đây khai phòng thủ, tầng sync tự bóc.
+
+/** Một campaign trong danh sách id (chưa có tên — tên nằm ở setting_info). */
+export interface ShopeeAdsCampaignRef {
+  campaign_id?: number;
+  ad_type?: string; // "auto" | "manual"
+}
+
+export interface ShopeeAdsCampaignIdListData extends ShopeeEnvelope {
+  response?: {
+    shop_id?: number;
+    region?: string;
+    has_next_page?: boolean;
+    campaign_list?: ShopeeAdsCampaignRef[];
+  };
+}
+
+/** DS campaign_id quảng cáo sản phẩm (phân trang offset/limit, ad_type "all"). */
+export async function getAdsCampaignIdList(
+  params: {
+    accessToken: string;
+    shopId: string;
+    adType?: string; // "" | "all" | "auto" | "manual"
+    offset?: number;
+    limit?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsCampaignIdListData> {
+  return callShopGet<ShopeeAdsCampaignIdListData>(
+    SHOPEE_PATHS.adsCampaignIdList,
+    params.accessToken,
+    params.shopId,
+    [
+      ["ad_type", params.adType ?? "all"],
+      ["offset", params.offset ?? 0],
+      ["limit", params.limit ?? 100],
+    ],
+    "get_product_level_campaign_id_list",
+    cfg
+  );
+}
+
+/** Cấu hình chung của một campaign (info_type 1). */
+export interface ShopeeAdsCampaignCommonInfo {
+  ad_type?: string; // "auto" | "manual"
+  ad_name?: string;
+  campaign_status?: string; // ongoing | scheduled | ended | paused | deleted | closed
+  bidding_method?: string; // "auto" | "manual"
+  campaign_placement?: string; // search | discovery | all
+  campaign_budget?: number; // 0 = không giới hạn
+  campaign_duration?: { start_time?: number; end_time?: number }; // epoch giây, end 0 = không hẹn
+  item_id_list?: number[];
+}
+
+export interface ShopeeAdsCampaignSettingEntry {
+  campaign_id?: number;
+  common_info?: ShopeeAdsCampaignCommonInfo;
+  auto_bidding_info?: { roas_target?: number };
+}
+
+export interface ShopeeAdsCampaignSettingData extends ShopeeEnvelope {
+  response?: {
+    shop_id?: number;
+    region?: string;
+    campaign_list?: ShopeeAdsCampaignSettingEntry[];
+  };
+}
+
+/** Cấu hình campaign theo lô ≤100 id. info_type_list "1,3" = common + ROAS target. */
+export async function getAdsCampaignSettingInfo(
+  params: {
+    accessToken: string;
+    shopId: string;
+    campaignIds: Array<number | string>; // ≤100 — caller tự chia lô
+    infoTypeList?: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsCampaignSettingData> {
+  return callShopGet<ShopeeAdsCampaignSettingData>(
+    SHOPEE_PATHS.adsCampaignSettingInfo,
+    params.accessToken,
+    params.shopId,
+    [
+      ["info_type_list", params.infoTypeList ?? "1,3"],
+      ["campaign_id_list", params.campaignIds.join(",")],
+    ],
+    "get_product_level_campaign_setting_info",
+    cfg
+  );
+}
+
+/** Một điểm hiệu suất ngày (hoặc giờ — thêm trường hour) của campaign. */
+export interface ShopeeAdsCampaignMetricPoint {
+  date?: string; // "DD-MM-YYYY"
+  hour?: number; // 0-23, chỉ có ở API theo giờ
+  impression?: number;
+  clicks?: number;
+  ctr?: number;
+  expense?: number;
+  broad_gmv?: number;
+  broad_order?: number;
+  broad_roi?: number;
+  direct_gmv?: number;
+  direct_order?: number;
+  direct_roi?: number;
+  cr?: number;
+  cpc?: number;
+}
+
+export interface ShopeeAdsCampaignPerfEntry {
+  campaign_id?: number;
+  ad_type?: string;
+  campaign_placement?: string;
+  ad_name?: string;
+  metrics_list?: ShopeeAdsCampaignMetricPoint[];
+}
+
+/** Response hiệu suất: docs mô tả dạng MẢNG bọc theo shop — khai cả hai kiểu. */
+export interface ShopeeAdsCampaignPerfData extends ShopeeEnvelope {
+  response?:
+    | Array<{ shop_id?: number; region?: string; campaign_list?: ShopeeAdsCampaignPerfEntry[] }>
+    | { shop_id?: number; region?: string; campaign_list?: ShopeeAdsCampaignPerfEntry[] };
+}
+
+/** Hiệu suất THEO NGÀY của từng campaign (lô ≤100 id, cửa sổ start→end). */
+export async function getAdsCampaignDailyPerformance(
+  params: {
+    accessToken: string;
+    shopId: string;
+    campaignIds: Array<number | string>; // ≤100 — caller tự chia lô
+    startDate: string; // "DD-MM-YYYY"
+    endDate: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsCampaignPerfData> {
+  return callShopGet<ShopeeAdsCampaignPerfData>(
+    SHOPEE_PATHS.adsCampaignDailyPerf,
+    params.accessToken,
+    params.shopId,
+    [
+      ["start_date", params.startDate],
+      ["end_date", params.endDate],
+      ["campaign_id_list", params.campaignIds.join(",")],
+    ],
+    "get_product_campaign_daily_performance",
+    cfg
+  );
+}
+
+/** Hiệu suất THEO GIỜ của từng campaign trong MỘT ngày (quy tắc spike GĐ2). */
+export async function getAdsCampaignHourlyPerformance(
+  params: {
+    accessToken: string;
+    shopId: string;
+    campaignIds: Array<number | string>;
+    performanceDate: string; // "DD-MM-YYYY"
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsCampaignPerfData> {
+  return callShopGet<ShopeeAdsCampaignPerfData>(
+    SHOPEE_PATHS.adsCampaignHourlyPerf,
+    params.accessToken,
+    params.shopId,
+    [
+      ["performance_date", params.performanceDate],
+      ["campaign_id_list", params.campaignIds.join(",")],
+    ],
+    "get_product_campaign_hourly_performance",
+    cfg
+  );
+}
+
+export interface ShopeeAdsTotalBalanceData extends ShopeeEnvelope {
+  response?: { total_balance?: number; data_timestamp?: number };
+}
+
+/** Số dư ví quảng cáo real-time (read-only) — cảnh báo sắp hết tiền ads. */
+export async function getAdsTotalBalance(
+  params: { accessToken: string; shopId: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsTotalBalanceData> {
+  return callShopGet<ShopeeAdsTotalBalanceData>(
+    SHOPEE_PATHS.adsTotalBalance,
+    params.accessToken,
+    params.shopId,
+    [],
+    "get_total_balance",
+    cfg
+  );
+}

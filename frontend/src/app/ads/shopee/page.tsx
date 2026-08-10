@@ -1,8 +1,8 @@
 "use client";
 
-import { AdsAssistantPage } from "@/components/ads/ads-assistant-page";
+import { ShopeeAdsPage } from "@/components/ads/shopee-ads-page";
 
-/** Trợ lý quảng cáo — Shopee (khung preview, chờ Marketing API). */
-export default function ShopeeAdsPage() {
-  return <AdsAssistantPage platform="SHOPEE" />;
+/** Trợ lý quảng cáo — Shopee (GĐ1: dashboard dữ liệu thật từ Ads API). */
+export default function Page() {
+  return <ShopeeAdsPage />;
 }

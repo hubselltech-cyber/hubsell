@@ -44,6 +44,7 @@ import {
   syncShopeeSettlements,
 } from "../integrations/shopee/settlements";
 import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
+import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
 import { getEscrowDetail } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 
@@ -591,6 +592,33 @@ router.post(
       }
       const summary = await syncShopeeAdsSpend(channel, { daysBack: 30 });
       res.json({ message: "Đồng bộ chi phí quảng cáo Shopee xong", ...summary });
+    } catch (err) {
+      res.status(502).json({ error: (err as Error).message });
+    }
+  }
+);
+
+// POST /api/channels/:id/sync-ads-campaigns — kéo CHIẾN DỊCH QUẢNG CÁO + hiệu
+// suất ngày từ Ads API (read-only) → AdsCampaign/AdsCampaignDailyPerf. Nút
+// "Đồng bộ" trên trang Trợ lý quảng cáo Shopee gọi vào đây.
+router.post(
+  "/:id/sync-ads-campaigns",
+  requireAdmin,
+  async (req: AuthRequest, res) => {
+    try {
+      const channel = await prisma.channel.findFirst({
+        where: {
+          id: req.params.id,
+          userId: req.ownerId!,
+          channelName: ChannelName.SHOPEE,
+        },
+      });
+      if (!channel) {
+        res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+        return;
+      }
+      const summary = await syncShopeeAdsCampaigns(channel, { daysBack: 30 });
+      res.json({ message: "Đồng bộ chiến dịch quảng cáo Shopee xong", ...summary });
     } catch (err) {
       res.status(502).json({ error: (err as Error).message });
     }

@@ -294,6 +294,7 @@ model Channel {
   walletWithdrawals WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
   operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
   adSpends        AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
+  adsCampaigns    AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
 
@@ -322,6 +323,61 @@ model AdSpend {
 
   @@unique([channelId, date])
   @@index([channelId])
+}
+
+/// CHIẾN DỊCH QUẢNG CÁO SẢN PHẨM của một gian hàng — sync READ-ONLY từ Ads API
+/// (Shopee: get_product_level_campaign_id_list + setting_info). Trợ lý quảng
+/// cáo đọc bảng này để hiển thị/đánh giá; GIAI ĐOẠN 1 tuyệt đối không ghi
+/// ngược lên sàn. campaignId giữ dạng String (id sàn có thể vượt Int32 — cùng
+/// quy ước với ChannelProduct.externalId).
+model AdsCampaign {
+  id            String    @id @default(cuid())
+  channelId     String
+  campaignId    String // campaign_id bên sàn
+  adType        String    @default("") // auto | manual
+  name          String    @default("") // ad_name — campaign auto có thể trống
+  status        String    @default("") // ongoing | scheduled | ended | paused | deleted | closed
+  placement     String    @default("") // search | discovery | all
+  biddingMethod String    @default("") // auto | manual
+  budget        Decimal   @default(0) @db.Decimal(14, 2) // ngân sách campaign, 0 = không giới hạn
+  roasTarget    Decimal?  @db.Decimal(8, 2) // mục tiêu ROAS (auto bidding); NULL = không đặt
+  startTime     DateTime? // campaign_duration.start_time
+  endTime       DateTime? // campaign_duration.end_time; NULL = không hẹn ngày tắt
+  /// item_id_list của campaign, nối bằng dấu phẩy ("8027...,8031...") — dùng để
+  /// map về ChannelProduct (externalId = item hoặc item-model) khi tính ROAS hòa vốn.
+  itemIds       String    @default("")
+  lastSyncedAt  DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+
+  channel   Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dailyPerf AdsCampaignDailyPerf[]
+
+  @@unique([channelId, campaignId])
+  @@index([channelId])
+}
+
+/// HIỆU SUẤT THEO NGÀY của một chiến dịch quảng cáo — sync READ-ONLY từ
+/// get_product_campaign_daily_performance. Idempotent theo (campaign, ngày):
+/// sàn cập nhật lại số trong ngày thì chạy lặp ghi đè. Cặp direct/broad theo
+/// đúng định nghĩa Shopee: direct = đơn của chính SP chạy ads, broad = mọi đơn
+/// của shop trong 7 ngày sau click.
+model AdsCampaignDailyPerf {
+  id            String   @id @default(cuid())
+  adsCampaignId String
+  date          DateTime @db.Date // ngày hiệu suất (múi giờ sàn)
+  impression    Int      @default(0)
+  clicks        Int      @default(0)
+  expense       Decimal  @default(0) @db.Decimal(14, 2) // tiền ads đã tiêu trong ngày
+  broadOrder    Int      @default(0)
+  broadGmv      Decimal  @default(0) @db.Decimal(14, 2)
+  directOrder   Int      @default(0)
+  directGmv     Decimal  @default(0) @db.Decimal(14, 2)
+  updatedAt     DateTime @updatedAt
+
+  adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
+
+  @@unique([adsCampaignId, date])
+  @@index([adsCampaignId])
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.

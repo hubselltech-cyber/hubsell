@@ -31,6 +31,7 @@ import {
   syncShopeeSettlements,
 } from "./integrations/shopee/settlements";
 import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
+import { syncShopeeAdsCampaigns } from "./integrations/shopee/ads-campaigns";
 import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
@@ -234,6 +235,21 @@ async function runOnce(): Promise<void> {
             } catch (err) {
               console.error(
                 `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+                (err as Error).message
+              );
+            }
+            // Chiến dịch quảng cáo + hiệu suất ngày (Trợ lý quảng cáo GĐ1,
+            // read-only) — lỗi riêng không được chặn các luồng khác.
+            try {
+              const camp = await syncShopeeAdsCampaigns(channel, { daysBack: 30 });
+              if (camp.campaignsUpserted > 0) {
+                console.log(
+                  `[Auto-sync] Campaign Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi sync campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
                 (err as Error).message
               );
             }

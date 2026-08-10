@@ -28,14 +28,14 @@ export interface SyncShopeeAdsSpendResult {
   daysUpserted: number; // số ngày ghi được vào DB
 }
 
-/** Đổi Date → "DD-MM-YYYY" theo yêu cầu của Ads API. */
-function toShopeeDate(d: Date): string {
+/** Đổi Date → "DD-MM-YYYY" theo yêu cầu của Ads API (export cho ads-campaigns). */
+export function toShopeeDate(d: Date): string {
   const p = (x: number) => String(x).padStart(2, "0");
   return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
 }
 
 /** Parse "DD-MM-YYYY" của sàn → Date (00:00 UTC, cột @db.Date chỉ giữ ngày). */
-function fromShopeeDate(s: string): Date | null {
+export function fromShopeeDate(s: string): Date | null {
   const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(s.trim());
   if (!m) return null;
   return new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])));
