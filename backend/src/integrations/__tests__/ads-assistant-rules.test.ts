@@ -134,57 +134,6 @@ describe("Q2 — vùng vàng chờ duyệt", () => {
   });
 });
 
-describe("Q5 — ngưỡng ROAS tự đặt (điều kiện ROAS + thời gian của chủ shop)", () => {
-  it("ROAS cửa sổ đã chọn dưới ngưỡng tự đặt → pause_now, không cần hòa vốn", () => {
-    // breakeven null (chưa có P&L) → Q1 theo hòa vốn im lặng, Q5 vẫn bắt được
-    const out = evaluateShopeeCampaign(
-      mkInput(
-        { "7d": { spend: 200_000, clicks: 80, broadOrder: 4, broadGmv: 300_000 } }, // roas 1.5
-        { breakeven: null }
-      ),
-      cfg((c) => (c.roasFloor = { enabled: true, minRoas: 2, window: "7d" }))
-    );
-    expect(out.verdict).toBe("pause_now");
-    expect(out.window).toBe("7d");
-    expect(out.reasons.join(" ")).toContain("NGƯỠNG TỰ ĐẶT");
-  });
-
-  it("mặc định TẮT → cùng dữ liệu không bị đụng", () => {
-    const out = evaluateShopeeCampaign(
-      mkInput(
-        { "7d": { spend: 200_000, clicks: 80, broadOrder: 4, broadGmv: 300_000 } },
-        { breakeven: null }
-      )
-    );
-    expect(out.verdict).toBe("healthy");
-  });
-
-  it("cửa sổ đã chọn chưa đủ sàn dữ liệu → Q5 không phán xét", () => {
-    // Chỉ cửa sổ today đủ sàn; Q5 đặt theo 7d → không đánh giá
-    const out = evaluateShopeeCampaign(
-      mkInput(
-        { today: { spend: 50_000, clicks: 15, broadOrder: 2, broadGmv: 400_000 } },
-        { breakeven: null }
-      ),
-      cfg((c) => (c.roasFloor = { enabled: true, minRoas: 2, window: "7d" }))
-    );
-    expect(out.verdict).toBe("healthy");
-  });
-
-  it("Q4 công thần vẫn đánh chặn Q5", () => {
-    const out = evaluateShopeeCampaign(
-      mkInput(
-        {
-          "7d": { spend: 400_000, clicks: 160, broadOrder: 35, broadGmv: 600_000 }, // roas 1.5
-        },
-        { breakeven: null }
-      ),
-      cfg((c) => (c.roasFloor = { enabled: true, minRoas: 2, window: "7d" }))
-    );
-    expect(out.verdict).toBe("grace");
-  });
-});
-
 describe("Q3 — spend spike (chạy trước sàn dữ liệu)", () => {
   it("hôm nay vọt chi + ROAS dưới hòa vốn → spike, dù chưa đủ mẫu 7 ngày", () => {
     const out = evaluateShopeeCampaign(

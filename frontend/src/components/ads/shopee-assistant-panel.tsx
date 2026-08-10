@@ -351,6 +351,42 @@ export function ShopeeAssistantConfigCard({
               />
             </RuleBlock>
             <RuleBlock
+              title="Tự thực thi (GĐ3)"
+              hint="Trợ lý TỰ TẠM DỪNG chiến dịch dính 'Đề xuất tạm dừng' / 'Vọt chi'. Diễn tập = chỉ ghi sổ để anh/chị xem Trợ lý ĐỊNH làm gì; Thực thi thật chỉ nên bật sau khi đã tin bản diễn tập."
+            >
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-600">Chế độ</span>
+                <select
+                  value={draft.autoExecute.mode}
+                  onChange={(e) =>
+                    patch("autoExecute", {
+                      mode: e.target.value as "off" | "dry_run" | "live",
+                    })
+                  }
+                  disabled={!draft.enabled}
+                  className="h-9 w-32 rounded-lg border border-input bg-background px-2 text-sm"
+                  aria-label="Chế độ tự thực thi"
+                >
+                  <option value="off">Tắt</option>
+                  <option value="dry_run">Diễn tập</option>
+                  <option value="live">Thực thi thật</option>
+                </select>
+              </label>
+              <NumberField
+                label="Tối đa hành động/ngày"
+                value={draft.autoExecute.maxActionsPerDay}
+                onChange={(v) => patch("autoExecute", { maxActionsPerDay: v })}
+                disabled={!draft.enabled || draft.autoExecute.mode === "off"}
+              />
+              {draft.autoExecute.mode === "live" && (
+                <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">
+                  ⚠ Chế độ THẬT: Trợ lý sẽ gọi lệnh tạm dừng lên Shopee. Chiến
+                  dịch anh/chị đã bấm &quot;Bỏ qua&quot;/&quot;Theo dõi&quot; sẽ
+                  không bị đụng. Mọi lệnh đều ghi vào Sổ hành động bên dưới.
+                </p>
+              )}
+            </RuleBlock>
+            <RuleBlock
               title="Quy tắc 1 — Loại thẳng"
               hint="Tiêu lớn mà 0 đơn, hoặc ROAS tụt dưới hòa vốn × hệ số → đề xuất tạm dừng ngay."
               enabled={draft.hard.enabled}
@@ -371,40 +407,6 @@ export function ShopeeAssistantConfigCard({
                 step={0.05}
                 disabled={!draft.enabled || !draft.hard.enabled}
               />
-            </RuleBlock>
-            <RuleBlock
-              title="Ngưỡng ROAS tự đặt"
-              hint="Anh/chị cầm lái trực tiếp: ROAS của cửa sổ đã chọn tụt dưới ngưỡng này → đề xuất tạm dừng (Diễn tập/Thực thi thật xử như Quy tắc 1). Không phụ thuộc hòa vốn tự tính; công thần vẫn được bảo vệ."
-              enabled={draft.roasFloor.enabled}
-              onToggle={(v) => patch("roasFloor", { enabled: v })}
-            >
-              <NumberField
-                label="ROAS tối thiểu"
-                value={draft.roasFloor.minRoas}
-                onChange={(v) => patch("roasFloor", { minRoas: v })}
-                step={0.1}
-                suffix="x"
-                disabled={!draft.enabled || !draft.roasFloor.enabled}
-              />
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-slate-600">Tính trong khoảng</span>
-                <select
-                  value={draft.roasFloor.window}
-                  onChange={(e) =>
-                    patch("roasFloor", {
-                      window: e.target.value as "today" | "3d" | "7d" | "30d",
-                    })
-                  }
-                  disabled={!draft.enabled || !draft.roasFloor.enabled}
-                  className="h-9 w-32 rounded-lg border border-input bg-background px-2 text-sm"
-                  aria-label="Cửa sổ tính ROAS tự đặt"
-                >
-                  <option value="today">Hôm nay</option>
-                  <option value="3d">3 ngày</option>
-                  <option value="7d">7 ngày</option>
-                  <option value="30d">30 ngày</option>
-                </select>
-              </label>
             </RuleBlock>
             <RuleBlock
               title="Quy tắc 2 — Vùng vàng chờ duyệt"
@@ -454,42 +456,6 @@ export function ShopeeAssistantConfigCard({
                 onChange={(v) => patch("grace", { minOrders7d: v })}
                 disabled={!draft.enabled || !draft.grace.enabled}
               />
-            </RuleBlock>
-            <RuleBlock
-              title="Tự thực thi (GĐ3)"
-              hint="Trợ lý TỰ TẠM DỪNG chiến dịch dính 'Đề xuất tạm dừng' / 'Vọt chi'. Diễn tập = chỉ ghi sổ để anh/chị xem Trợ lý ĐỊNH làm gì; Thực thi thật chỉ nên bật sau khi đã tin bản diễn tập."
-            >
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-slate-600">Chế độ</span>
-                <select
-                  value={draft.autoExecute.mode}
-                  onChange={(e) =>
-                    patch("autoExecute", {
-                      mode: e.target.value as "off" | "dry_run" | "live",
-                    })
-                  }
-                  disabled={!draft.enabled}
-                  className="h-9 w-32 rounded-lg border border-input bg-background px-2 text-sm"
-                  aria-label="Chế độ tự thực thi"
-                >
-                  <option value="off">Tắt</option>
-                  <option value="dry_run">Diễn tập</option>
-                  <option value="live">Thực thi thật</option>
-                </select>
-              </label>
-              <NumberField
-                label="Tối đa hành động/ngày"
-                value={draft.autoExecute.maxActionsPerDay}
-                onChange={(v) => patch("autoExecute", { maxActionsPerDay: v })}
-                disabled={!draft.enabled || draft.autoExecute.mode === "off"}
-              />
-              {draft.autoExecute.mode === "live" && (
-                <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">
-                  ⚠ Chế độ THẬT: Trợ lý sẽ gọi lệnh tạm dừng lên Shopee. Chiến
-                  dịch anh/chị đã bấm &quot;Bỏ qua&quot;/&quot;Theo dõi&quot; sẽ
-                  không bị đụng. Mọi lệnh đều ghi vào Sổ hành động bên dưới.
-                </p>
-              )}
             </RuleBlock>
           </div>
           <div className="flex items-center justify-end gap-3 border-t pt-3">

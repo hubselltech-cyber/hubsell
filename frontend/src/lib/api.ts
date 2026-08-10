@@ -2791,12 +2791,6 @@ export interface ShopeeAssistantConfig {
   enabled: boolean;
   floor: { minSpend7d: number; minClicks7d: number };
   hard: { enabled: boolean; zeroOrderSpend7d: number; breakevenFactor: number };
-  /** Q5 — ngưỡng ROAS + cửa sổ do chủ shop TỰ ĐẶT (độc lập hòa vốn tự tính). */
-  roasFloor: {
-    enabled: boolean;
-    minRoas: number;
-    window: "today" | "3d" | "7d" | "30d";
-  };
   review: { enabled: boolean; dangerFactor: number };
   spike: { enabled: boolean; dayMultiple: number; minTodaySpend: number };
   grace: { enabled: boolean; minOrders7d: number };
