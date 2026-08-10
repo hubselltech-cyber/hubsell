@@ -373,6 +373,40 @@ export function ShopeeAssistantConfigCard({
               />
             </RuleBlock>
             <RuleBlock
+              title="Ngưỡng ROAS tự đặt"
+              hint="Anh/chị cầm lái trực tiếp: ROAS của cửa sổ đã chọn tụt dưới ngưỡng này → đề xuất tạm dừng (Diễn tập/Thực thi thật xử như Quy tắc 1). Không phụ thuộc hòa vốn tự tính; công thần vẫn được bảo vệ."
+              enabled={draft.roasFloor.enabled}
+              onToggle={(v) => patch("roasFloor", { enabled: v })}
+            >
+              <NumberField
+                label="ROAS tối thiểu"
+                value={draft.roasFloor.minRoas}
+                onChange={(v) => patch("roasFloor", { minRoas: v })}
+                step={0.1}
+                suffix="x"
+                disabled={!draft.enabled || !draft.roasFloor.enabled}
+              />
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-600">Tính trong khoảng</span>
+                <select
+                  value={draft.roasFloor.window}
+                  onChange={(e) =>
+                    patch("roasFloor", {
+                      window: e.target.value as "today" | "3d" | "7d" | "30d",
+                    })
+                  }
+                  disabled={!draft.enabled || !draft.roasFloor.enabled}
+                  className="h-9 w-32 rounded-lg border border-input bg-background px-2 text-sm"
+                  aria-label="Cửa sổ tính ROAS tự đặt"
+                >
+                  <option value="today">Hôm nay</option>
+                  <option value="3d">3 ngày</option>
+                  <option value="7d">7 ngày</option>
+                  <option value="30d">30 ngày</option>
+                </select>
+              </label>
+            </RuleBlock>
+            <RuleBlock
               title="Quy tắc 2 — Vùng vàng chờ duyệt"
               hint="ROAS trên hòa vốn nhưng chưa vượt vùng an toàn — lãi mỏng, cần người quyết."
               enabled={draft.review.enabled}

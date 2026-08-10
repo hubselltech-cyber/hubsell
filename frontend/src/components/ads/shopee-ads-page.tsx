@@ -35,6 +35,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
@@ -155,6 +156,9 @@ export function ShopeeAdsPage() {
   const [deciding, setDeciding] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [onlyNeedsAction, setOnlyNeedsAction] = useState(false);
+  // Bộ lọc bảng: tìm theo tên/mã campaign + lọc trạng thái (client-side).
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   useEffect(() => {
     if (!getToken()) {
@@ -283,17 +287,27 @@ export function ShopeeAdsPage() {
   const campaigns = data?.campaigns ?? [];
   const noChannel = !loading && (data?.channels.length ?? 0) === 0;
 
-  // Lọc "chỉ cần xử lý": cảnh báo nặng chưa được quyết (spike/dừng/duyệt/công thần).
-  const visibleCampaigns = onlyNeedsAction
-    ? campaigns.filter(
-        (c) =>
-          !c.assistant.decisionActive &&
-          (c.assistant.verdict === "spike" ||
-            c.assistant.verdict === "pause_now" ||
-            c.assistant.verdict === "review" ||
-            c.assistant.verdict === "grace")
-      )
-    : campaigns;
+  // Chuỗi lọc: trạng thái → tìm kiếm → "chỉ cần xử lý". Áp trước phân trang.
+  const searchLower = search.trim().toLowerCase();
+  const visibleCampaigns = campaigns.filter((c) => {
+    if (statusFilter && c.status !== statusFilter) return false;
+    if (
+      searchLower &&
+      !c.name.toLowerCase().includes(searchLower) &&
+      !c.campaignId.includes(searchLower)
+    )
+      return false;
+    if (onlyNeedsAction) {
+      return (
+        !c.assistant.decisionActive &&
+        (c.assistant.verdict === "spike" ||
+          c.assistant.verdict === "pause_now" ||
+          c.assistant.verdict === "review" ||
+          c.assistant.verdict === "grace")
+      );
+    }
+    return true;
+  });
 
   // Phân trang client-side: API trả trọn bộ (đã sort theo chi tiêu giảm dần),
   // bảng chỉ hiện PAGE_SIZE dòng một trang. Kẹp page khi dữ liệu co lại.
@@ -569,17 +583,46 @@ export function ShopeeAdsPage() {
                   Bấm một dòng để xem căn cứ của Trợ lý.
                 </CardDescription>
               </div>
-              <label className="flex shrink-0 items-center gap-2 text-sm text-slate-600">
-                <Switch
-                  checked={onlyNeedsAction}
-                  onCheckedChange={(v) => {
-                    setOnlyNeedsAction(v);
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Input
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
                     setPage(0);
                   }}
-                  aria-label="Chỉ hiện chiến dịch cần xử lý"
+                  placeholder="Tìm tên / mã chiến dịch…"
+                  className="w-52"
+                  aria-label="Tìm chiến dịch"
                 />
-                Chỉ cần xử lý
-              </label>
+                <NativeSelect
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(0);
+                  }}
+                  aria-label="Lọc trạng thái chiến dịch"
+                  className="w-36"
+                >
+                  <option value="">Mọi trạng thái</option>
+                  <option value="ongoing">Đang chạy</option>
+                  <option value="scheduled">Hẹn giờ</option>
+                  <option value="paused">Tạm dừng</option>
+                  <option value="ended">Đã kết thúc</option>
+                  <option value="closed">Đã đóng</option>
+                  <option value="deleted">Đã xóa</option>
+                </NativeSelect>
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <Switch
+                    checked={onlyNeedsAction}
+                    onCheckedChange={(v) => {
+                      setOnlyNeedsAction(v);
+                      setPage(0);
+                    }}
+                    aria-label="Chỉ hiện chiến dịch cần xử lý"
+                  />
+                  Chỉ cần xử lý
+                </label>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -600,7 +643,9 @@ export function ShopeeAdsPage() {
               </div>
             ) : visibleCampaigns.length === 0 && !loading ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Không còn chiến dịch nào cần xử lý 🎉 — tắt bộ lọc để xem toàn bộ.
+                {onlyNeedsAction && !searchLower && !statusFilter
+                  ? "Không còn chiến dịch nào cần xử lý 🎉 — tắt bộ lọc để xem toàn bộ."
+                  : "Không có chiến dịch nào khớp bộ lọc — thử đổi từ khóa/trạng thái."}
               </p>
             ) : (
               <div className="min-w-0 overflow-x-auto">

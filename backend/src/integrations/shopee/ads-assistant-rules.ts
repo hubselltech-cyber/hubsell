@@ -83,6 +83,11 @@ export interface ShopeeAssistantConfig {
   floor: { minSpend7d: number; minClicks7d: number };
   /** Q1 — loại thẳng. breakevenFactor <1 chừa vùng đệm quanh hòa vốn cho Q2. */
   hard: { enabled: boolean; zeroOrderSpend7d: number; breakevenFactor: number };
+  /** Q5 — NGƯỠNG ROAS TỰ ĐẶT (chủ shop yêu cầu 10/08): ROAS cửa sổ đã chọn
+   *  tụt dưới minRoas → đề xuất tạm dừng, KHÔNG phụ thuộc hòa vốn tự tính.
+   *  Dành cho người muốn cầm lái trực tiếp ("dưới 2x trong 7 ngày là cắt").
+   *  Vẫn tôn trọng sàn dữ liệu + bị Q4 công thần đánh chặn như Q1. */
+  roasFloor: { enabled: boolean; minRoas: number; window: AssistantWindowKey };
   /** Q2 — vùng vàng: hòa vốn×breakevenFactor ≤ ROAS < hòa vốn×dangerFactor. */
   review: { enabled: boolean; dangerFactor: number };
   /** Q3 — spike: hôm nay tiêu ≥ dayMultiple × trung bình ngày (và ≥ minTodaySpend). */
@@ -104,6 +109,7 @@ export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
   enabled: true,
   floor: { minSpend7d: 100_000, minClicks7d: 50 },
   hard: { enabled: true, zeroOrderSpend7d: 150_000, breakevenFactor: 0.95 },
+  roasFloor: { enabled: false, minRoas: 2, window: "7d" },
   review: { enabled: true, dangerFactor: 1.1 },
   spike: { enabled: true, dayMultiple: 2, minTodaySpend: 100_000 },
   grace: { enabled: true, minOrders7d: 30 },
@@ -136,6 +142,15 @@ export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
       enabled: bool(sect("hard").enabled, d.hard.enabled),
       zeroOrderSpend7d: num(sect("hard").zeroOrderSpend7d, d.hard.zeroOrderSpend7d),
       breakevenFactor: num(sect("hard").breakevenFactor, d.hard.breakevenFactor),
+    },
+    roasFloor: {
+      enabled: bool(sect("roasFloor").enabled, d.roasFloor.enabled),
+      minRoas: num(sect("roasFloor").minRoas, d.roasFloor.minRoas),
+      window: (ASSISTANT_WINDOWS as readonly string[]).includes(
+        String(sect("roasFloor").window)
+      )
+        ? (String(sect("roasFloor").window) as AssistantWindowKey)
+        : d.roasFloor.window,
     },
     review: {
       enabled: bool(sect("review").enabled, d.review.enabled),
@@ -258,6 +273,22 @@ export function evaluateShopeeCampaign(
       if (reasons.length > 0) {
         hardHit = { window: k, reasons };
         break;
+      }
+    }
+  }
+
+  // ---- Q5 NGƯỠNG ROAS TỰ ĐẶT — chủ shop cầm lái trực tiếp ----
+  if (!hardHit && config.roasFloor.enabled) {
+    const k = config.roasFloor.window;
+    if (eligible.includes(k)) {
+      const roas = windowRoas(windows[k]);
+      if (roas != null && roas < config.roasFloor.minRoas) {
+        hardHit = {
+          window: k,
+          reasons: [
+            `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas)} dưới NGƯỠNG TỰ ĐẶT ${roasTxt(config.roasFloor.minRoas)} — vi phạm điều kiện anh/chị cấu hình.`,
+          ],
+        };
       }
     }
   }
