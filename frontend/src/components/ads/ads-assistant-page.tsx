@@ -65,7 +65,7 @@ import {
 } from "@/components/ui/table";
 import { getStoredUser, getToken } from "@/lib/api";
 import { formatNumber, formatVND } from "@/lib/format";
-import { isAdmin } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { TABLE_HEAD_EMPHASIS, TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -287,7 +287,7 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
       router.replace("/login");
       return;
     }
-    if (!isAdmin(getStoredUser()?.role)) setDenied(true);
+    if (!can(getStoredUser(), "ads")) setDenied(true);
   }, [router]);
 
   function toggleCampaign(id: string, enabled: boolean) {

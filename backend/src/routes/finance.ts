@@ -12,7 +12,7 @@ import {
   WithdrawalSource,
 } from "@prisma/client";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { requirePermission, type AuthRequest } from "../auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
 import {
   businessDayStart,
@@ -34,6 +34,33 @@ import {
 } from "../tax-config";
 
 const router = Router();
+
+// ============================================================
+// SIẾT QUYỀN THEO LÁ (mount app.ts chỉ mở CỬA cho ai có một trong ba nhóm
+// finance / warehouse.shipping-alerts / operations.loss-orders — tại đây mỗi
+// nhánh route bó về đúng LÁ của trang dùng nó, người "bẻ khóa URL" gọi chéo
+// sang nhánh khác bị 403 dù đã qua được cửa mount). ADMIN luôn qua.
+// ============================================================
+// Báo cáo dòng tiền (trang /finance/analytics)
+router.use("/cash-flow", requirePermission("finance.analytics"));
+router.use("/withdrawals", requirePermission("finance.analytics"));
+router.use("/expenses", requirePermission("finance.analytics"));
+router.use("/analytics", requirePermission("finance.analytics"));
+// Lãi/Lỗ Thực Hiện (trang /finance/realized-pnl)
+router.use("/realized-pnl", requirePermission("finance.realized-pnl"));
+router.use("/sku-pnl", requirePermission("finance.realized-pnl"));
+// Cấu hình Giá vốn (trang /finance/cost-prices). Riêng update-cost mở thêm cho
+// realized-pnl vì bảng SKU P&L cho sửa giá vốn ngay tại dòng.
+router.use("/sku-products", requirePermission("finance.cost-prices"));
+router.use("/sync-products", requirePermission("finance.cost-prices"));
+router.use("/cost-prices", requirePermission("finance.cost-prices"));
+router.use("/update-cost", requirePermission("finance.cost-prices", "finance.realized-pnl"));
+router.use("/update-cost-bulk", requirePermission("finance.cost-prices", "finance.realized-pnl"));
+// Đối soát phí ship (trang /warehouse/shipping-alerts — nghiệp vụ kho vận)
+router.use("/shipping-discrepancies", requirePermission("warehouse.shipping-alerts"));
+// Cảnh báo & P&L Sản phẩm (trang /operations-assistant/loss-orders) — cũng là
+// dữ liệu lãi/lỗ nên mở cho cả người có quyền Lãi/Lỗ Thực Hiện.
+router.use("/orders-analysis", requirePermission("operations.loss-orders", "finance.realized-pnl"));
 
 // Nhận file Excel vào bộ nhớ (không lưu ra đĩa), giới hạn 5MB
 const upload = multer({

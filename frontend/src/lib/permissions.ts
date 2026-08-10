@@ -1,63 +1,81 @@
 /**
- * PHÂN QUYỀN PHÍA GIAO DIỆN
+ * PHÂN QUYỀN PHÍA GIAO DIỆN (mô hình cây phân quyền 10/08)
  *
  * Đây chỉ là lớp trải nghiệm: ẩn menu và chặn vào trang để nhân viên không đâm
- * vào màn hình "không có quyền". Lớp chặn THẬT nằm ở backend (requireRole +
- * canSeeFinancials) — mọi hàm ở đây đều có một chốt tương ứng bên máy chủ, nên
- * kể cả người dùng sửa localStorage cũng không lấy được dữ liệu.
+ * vào màn hình "không có quyền". Lớp chặn THẬT nằm ở backend (requirePermission
+ * trên từng nhóm API + canSeeFinancials trong controller) — kể cả người dùng
+ * sửa localStorage cũng không lấy được dữ liệu.
  *
- * Gom về một chỗ để khi thêm vai trò mới chỉ phải sửa đúng file này, thay vì đi
- * tìm từng câu `role === "..."` rải rác trong các trang rồi bỏ sót một chỗ.
+ * Mọi hàm nhận CẢ AuthUser (không chỉ role): quyền của nhân viên giờ nằm trong
+ * user.permissions (mảng khóa lá — xem lib/permission-registry.ts), role chỉ còn
+ * phân biệt chủ shop / nhân viên.
  */
 
-import type { Role } from "./api";
+import type { AuthUser } from "./api";
+import { hasPermission, HOME_PRIORITY } from "./permission-registry";
+
+type MaybeUser = AuthUser | null | undefined;
 
 /** Chủ shop — toàn quyền. */
-export function isAdmin(role?: Role): boolean {
-  return role === "ADMIN";
+export function isAdmin(user?: MaybeUser): boolean {
+  return user?.role === "ADMIN";
 }
 
 /**
- * Được xem giá vốn, lợi nhuận, chi phí vận hành.
- * Chỉ chủ shop: SALES thấy doanh thu nhưng không thấy lãi, kho không thấy gì.
+ * CỔNG KIỂM DUY NHẤT: user có quyền `key` không? Chủ shop luôn có; nhân viên
+ * tra cây quyền (lá khớp đúng lá, nhóm khớp mọi lá con). Các hàm canAccess*
+ * bên dưới chỉ là bí danh dễ đọc của hàm này.
  */
-export function canSeeFinancials(role?: Role): boolean {
-  return role === "ADMIN";
-}
-
-/** Được vào nhóm menu "Quản lý Tài chính" (dòng tiền, chi phí, đơn lỗ, giá vốn). */
-export function canAccessFinance(role?: Role): boolean {
-  return role === "ADMIN";
-}
-
-/** Được vào trang Tổng quan. Kho không có việc gì ở đây nên bị ẩn hẳn. */
-export function canAccessDashboard(role?: Role): boolean {
-  return role === "ADMIN" || role === "SALES";
+export function can(user: MaybeUser, key: string): boolean {
+  if (isAdmin(user)) return true;
+  return hasPermission(user?.permissions ?? [], key);
 }
 
 /**
- * Được vào nhóm "Trợ lý vận hành" (CSKH: chat, phản hồi đánh giá, kịch bản AI).
- * Là việc chăm sóc khách nên SALES làm được; kho không liên quan.
+ * Được xem giá vốn, lợi nhuận, chi phí vận hành. "Tick gì thấy nấy" (chốt
+ * 10/08): chủ shop, và nhân viên có BẤT KỲ quyền Tài chính nào.
  */
-export function canAccessOperations(role?: Role): boolean {
-  return role === "ADMIN" || role === "SALES";
+export function canSeeFinancials(user?: MaybeUser): boolean {
+  return can(user, "finance");
+}
+
+/** Được vào nhóm menu "Quản lý Tài chính" (có ít nhất một trang trong nhóm). */
+export function canAccessFinance(user?: MaybeUser): boolean {
+  return can(user, "finance");
+}
+
+/** Được vào trang Tổng quan. */
+export function canAccessDashboard(user?: MaybeUser): boolean {
+  return can(user, "dashboard");
+}
+
+/** Được vào nhóm "Trợ lý vận hành" (CSKH: chat, phản hồi đánh giá, kịch bản AI). */
+export function canAccessOperations(user?: MaybeUser): boolean {
+  return can(user, "operations");
+}
+
+/** Được vào nhóm "Mạng lưới KOC & Marketing" (mục nguyên khối trong cây quyền). */
+export function canAccessKocMarketing(user?: MaybeUser): boolean {
+  return can(user, "koc");
 }
 
 /**
- * Được vào nhóm "Mạng lưới KOC & Marketing" (Net-ROI, booking, hàng mẫu).
- * Chi phí booking và lợi nhuận ròng theo KOC là dữ liệu tài chính — cùng luật
- * với nhóm Quản lý Tài chính: chỉ chủ shop.
+ * Được cấu hình gian hàng, liên kết sản phẩm, quản lý nhân viên — các khu
+ * VĨNH VIỄN chỉ chủ shop, cố tình không nằm trong cây phân quyền.
  */
-export function canAccessKocMarketing(role?: Role): boolean {
-  return role === "ADMIN";
+export function canManageShop(user?: MaybeUser): boolean {
+  return isAdmin(user);
 }
 
-/** Được cấu hình gian hàng, liên kết sản phẩm, quản lý nhân viên. */
-export function canManageShop(role?: Role): boolean {
-  return role === "ADMIN";
-}
-
-/** Trang mặc định sau khi đăng nhập — kho không vào được Tổng quan. */
-export function homePathFor(role?: Role): string {
-  return canAccessDashboard(role) ? "/" : "/orders";
+/**
+ * Trang mặc định sau khi đăng nhập: trang đầu tiên trong danh sách ưu tiên mà
+ * user vào được. Nhân viên chưa được cấp quyền nào → /guide (mở cho mọi người,
+ * không gọi API dữ liệu nên không dội thêm 403).
+ */
+export function homePathFor(user?: MaybeUser): string {
+  if (isAdmin(user)) return "/";
+  for (const { key, path } of HOME_PRIORITY) {
+    if (can(user, key)) return path;
+  }
+  return "/guide";
 }

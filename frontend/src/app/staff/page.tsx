@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import {
+  KeyRound,
   Loader2,
   ShieldCheck,
   Store,
@@ -38,91 +39,235 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   ApiError,
-  ASSIGNABLE_ROLES,
   createStaff,
   deleteStaff,
   fetchChannels,
   fetchStaff,
   getStoredUser,
   getToken,
-  ROLE_META,
-  setStaffChannels,
-  STAFF_PERMISSION_META,
-  updateStaffRole,
+  resetStaffPassword,
+  updateStaff,
   type Channel,
-  type Role,
-  type StaffChannelPermission,
   type StaffMember,
-  type StaffPermissionKey,
 } from "@/lib/api";
+import {
+  PERMISSION_PRESETS,
+  PERMISSION_TREE,
+  type PermissionNode,
+} from "@/lib/permission-registry";
 import { canManageShop } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { shopLabel } from "@/components/channel-filter";
 import { formatDateTime } from "@/lib/format";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Label } from "@/components/ui/label";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-// ---------- Dialog: Thêm nhân viên ----------
+// ============================================================
+// CÂY PHÂN QUYỀN CHA-CON (3 trạng thái)
+//
+// State duy nhất là Set<khóa LÁ> — trạng thái nút CHA suy ra lúc render:
+//   đủ lá  → checked  ·  một phần → indeterminate  ·  không lá nào → unchecked
+// Tick cha = bật đủ lá con; bỏ tick cha = tắt đủ lá con (đúng đề bài).
+// Cây ~25 lá nên render phẳng, không cần thư viện treeview.
+// ============================================================
+
+function leavesOf(node: PermissionNode): string[] {
+  return node.children ? node.children.map((c) => c.key) : [node.key];
+}
+
+function PermissionTree({
+  value,
+  onChange,
+}: {
+  value: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  function toggleLeaf(key: string) {
+    const next = new Set(value);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onChange(next);
+  }
+
+  function toggleParent(node: PermissionNode) {
+    const leaves = leavesOf(node);
+    const allOn = leaves.every((k) => value.has(k));
+    const next = new Set(value);
+    for (const k of leaves) {
+      if (allOn) next.delete(k);
+      else next.add(k);
+    }
+    onChange(next);
+  }
+
+  return (
+    <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-2">
+      {PERMISSION_TREE.map((node) => {
+        const leaves = leavesOf(node);
+        const onCount = leaves.filter((k) => value.has(k)).length;
+        const allOn = onCount === leaves.length;
+        const someOn = onCount > 0 && !allOn;
+        return (
+          <div key={node.key}>
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-muted/60">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={allOn}
+                // indeterminate là THUỘC TÍNH DOM, không phải prop React —
+                // phải set qua ref mỗi lần render.
+                ref={(el) => {
+                  if (el) el.indeterminate = someOn;
+                }}
+                onChange={() => toggleParent(node)}
+              />
+              {node.label}
+              {node.children && (
+                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                  {onCount}/{leaves.length}
+                </span>
+              )}
+            </label>
+            {node.children && (
+              <div className="ml-5 space-y-0.5 border-l pl-3">
+                {node.children.map((leaf) => (
+                  <label
+                    key={leaf.key}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1 text-sm hover:bg-muted/60"
+                  >
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={value.has(leaf.key)}
+                      onChange={() => toggleLeaf(leaf.key)}
+                    />
+                    {leaf.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Hàng nút preset 1-click — đổ sẵn mảng quyền mẫu, sửa lẻ thoải mái sau đó. */
+function PresetRow({ onPick }: { onPick: (perms: string[]) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-muted-foreground">Chọn nhanh:</span>
+      {PERMISSION_PRESETS.map((p) => (
+        <button
+          key={p.key}
+          type="button"
+          title={p.description}
+          className="rounded-full border px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:border-primary hover:text-primary"
+          onClick={() => onPick(p.permissions)}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Phạm vi gian hàng — nhân viên chỉ thấy dữ liệu của gian được tick. */
+function ChannelScope({
+  channels,
+  value,
+  onChange,
+}: {
+  channels: Channel[];
+  value: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  function toggle(id: string) {
+    const next = new Set(value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  }
+  if (channels.length === 0) {
+    return <p className={TEXT_SUB}>Shop chưa có gian hàng nào.</p>;
+  }
+  return (
+    <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border p-2">
+      {channels.map((c) => (
+        <label
+          key={c.id}
+          className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60"
+        >
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={value.has(c.id)}
+            onChange={() => toggle(c.id)}
+          />
+          <Store className="size-3.5 shrink-0 text-muted-foreground" />
+          {shopLabel(c.channelName, c.shopName)}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Dialog: Thêm nhân viên (không cần email) ----------
 
 const staffSchema = z.object({
   fullName: z.string().trim().min(2, "Vui lòng nhập họ tên"),
-  email: z.string().trim().email("Email không hợp lệ"),
+  staffUsername: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(
+      /^[a-z0-9][a-z0-9._]{2,29}$/,
+      "3-30 ký tự, chỉ chữ thường/số/dấu chấm/gạch dưới"
+    ),
   password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
 });
 type StaffFormValues = z.infer<typeof staffSchema>;
 
 function AddStaffDialog({
   channels,
+  ownerUsername,
   onAdded,
 }: {
   channels: Channel[];
+  ownerUsername: string | null;
   onAdded: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [role, setRole] = useState<Role>("SALES");
-  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set());
+  const [perms, setPerms] = useState<Set<string>>(new Set());
+  const [scope, setScope] = useState<Set<string>>(new Set());
   const form = useForm<StaffFormValues>({
     resolver: zodResolver(staffSchema),
-    defaultValues: { fullName: "", email: "", password: "" },
+    defaultValues: { fullName: "", staffUsername: "", password: "" },
   });
 
-  function toggleChannel(id: string) {
-    setSelectedChannels((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  // Tiền tố "chủ/" hiển thị trước ô nhập; chủ shop cũ chưa đặt username thì
+  // backend tự sinh lúc lưu — hiển thị nhãn tạm để không chặn thao tác.
+  const prefix = ownerUsername ?? getStoredUser()?.username ?? "tênshop";
 
   async function onSubmit(values: StaffFormValues) {
     setSubmitting(true);
     try {
-      await createStaff({
+      const created = await createStaff({
         ...values,
-        role,
-        // Chọn gian ở bước tạo = cấp đủ 4 quyền cho gian đó; chủ shop tinh chỉnh
-        // lại từng quyền sau trong ma trận "Phân quyền gian hàng".
-        channels:
-          role === "SALES"
-            ? Array.from(selectedChannels).map((channelId) => ({
-                channelId,
-                finance: true,
-                warehouse: true,
-                ads: true,
-                orders: true,
-              }))
-            : [],
+        permissions: Array.from(perms),
+        channelIds: Array.from(scope),
       });
       toast.success(
-        `Đã tạo tài khoản ${ROLE_META[role].label.toLowerCase()} "${values.fullName}"`
+        created.loginName
+          ? `Đã tạo nhân viên — đăng nhập bằng "${created.loginName}"`
+          : `Đã tạo nhân viên "${values.fullName}"`
       );
       form.reset();
-      setRole("SALES");
-      setSelectedChannels(new Set());
+      setPerms(new Set());
+      setScope(new Set());
       setOpen(false);
       onAdded();
     } catch (err) {
@@ -138,12 +283,16 @@ function AddStaffDialog({
         <UserPlus className="size-4" />
         Thêm nhân viên
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Thêm nhân viên mới</DialogTitle>
           <DialogDescription>
-            Tài khoản nhân viên dùng chung dữ liệu của shop. Vai trò quyết định
-            họ vào được mục nào và thấy bao nhiêu gian hàng.
+            Không cần email — nhân viên đăng nhập bằng{" "}
+            <b>
+              {prefix}/<i>tênnhânviên</i>
+            </b>{" "}
+            với mật khẩu anh cấp. Tick tính năng nào, nhân viên dùng được tính
+            năng đó.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -163,12 +312,22 @@ function AddStaffDialog({
             />
             <FormField
               control={form.control}
-              name="email"
+              name="staffUsername"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email đăng nhập</FormLabel>
+                  <FormLabel>Tên đăng nhập</FormLabel>
                   <FormControl>
-                    <Input placeholder="nhanvien@email.com" {...field} />
+                    <div className="flex items-center">
+                      <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 bg-muted px-3 text-sm text-muted-foreground">
+                        {prefix}/
+                      </span>
+                      <Input
+                        className="rounded-l-none"
+                        placeholder="kho01"
+                        autoComplete="off"
+                        {...field}
+                      />
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -181,62 +340,35 @@ function AddStaffDialog({
                 <FormItem>
                   <FormLabel>Mật khẩu</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="Ít nhất 6 ký tự" {...field} />
+                    <Input type="password" placeholder="Ít nhất 6 ký tự" autoComplete="new-password" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            {/* VAI TRÒ — quyết định vào được mục nào */}
+
             <div className="grid gap-2">
-              <Label htmlFor="staff-role">Vai trò</Label>
-              <NativeSelect
-                id="staff-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value as Role)}
-              >
-                {ASSIGNABLE_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_META[r].label}
-                  </option>
-                ))}
-              </NativeSelect>
-              <p className={TEXT_SUB}>{ROLE_META[role].description}</p>
+              <Label>Phân quyền tính năng</Label>
+              <PresetRow onPick={(p) => setPerms(new Set(p))} />
+              <PermissionTree value={perms} onChange={setPerms} />
+              {perms.size === 0 && (
+                <p className="text-sm text-amber-600">
+                  Chưa tick quyền nào — nhân viên đăng nhập được nhưng chưa dùng
+                  được tính năng nào.
+                </p>
+              )}
             </div>
 
-            {/* Gian hàng phụ trách — chỉ SALES mới cần */}
-            {role === "SALES" && (
-              <div className="grid gap-2">
-                <Label>Gian hàng phụ trách</Label>
-                {channels.length === 0 ? (
-                  <p className={TEXT_SUB}>Shop chưa có gian hàng nào.</p>
-                ) : (
-                  <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-lg border p-2">
-                    {channels.map((c) => (
-                      <label
-                        key={c.id}
-                        className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60"
-                      >
-                        <input
-                          type="checkbox"
-                          className="size-4 accent-primary"
-                          checked={selectedChannels.has(c.id)}
-                          onChange={() => toggleChannel(c.id)}
-                        />
-                        <Store className="size-3.5 shrink-0 text-muted-foreground" />
-                        {shopLabel(c.channelName, c.shopName)}
-                      </label>
-                    ))}
-                  </div>
-                )}
-                {selectedChannels.size === 0 && (
-                  <p className="text-sm text-amber-600">
-                    Chưa chọn gian nào — tài khoản này sẽ chưa thấy đơn hàng nào
-                    cho tới khi anh phân công.
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="grid gap-2">
+              <Label>Gian hàng phụ trách</Label>
+              <ChannelScope channels={channels} value={scope} onChange={setScope} />
+              {scope.size === 0 && channels.length > 0 && (
+                <p className="text-sm text-amber-600">
+                  Chưa chọn gian nào — nhân viên sẽ chưa thấy đơn/dữ liệu nào
+                  cho tới khi anh phân công.
+                </p>
+              )}
+            </div>
 
             <div className="flex justify-end gap-2 pt-1">
               <Button
@@ -259,17 +391,7 @@ function AddStaffDialog({
   );
 }
 
-// ---------- Dialog: Phân quyền gian hàng ----------
-
-/** Trạng thái 4 quyền của một hàng gian hàng trong ma trận. */
-type RowPerms = Record<StaffPermissionKey, boolean>;
-
-const FULL_PERMS: RowPerms = {
-  finance: true,
-  warehouse: true,
-  ads: true,
-  orders: true,
-};
+// ---------- Dialog: Phân quyền (cây tính năng + phạm vi gian hàng) ----------
 
 function PermissionDialog({
   staff,
@@ -284,53 +406,23 @@ function PermissionDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
-  // Map có mặt = gian được BẬT; vắng mặt = tắt (hàng bị mờ, không có quyền nào).
-  const [rows, setRows] = useState<Map<string, RowPerms>>(new Map());
+  const [perms, setPerms] = useState<Set<string>>(new Set());
+  const [scope, setScope] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    const next = new Map<string, RowPerms>();
-    for (const c of staff.allowedChannels) {
-      next.set(c.channelId, {
-        finance: c.finance,
-        warehouse: c.warehouse,
-        ads: c.ads,
-        orders: c.orders,
-      });
-    }
-    setRows(next);
+    setPerms(new Set(staff.permissions));
+    setScope(new Set(staff.allowedChannelIds));
   }, [open, staff]);
-
-  // Bật/tắt cả gian hàng. Bật thì mặc định sáng cả 4 quyền cho đỡ phải tick lại;
-  // tắt thì xoá luôn quyền của hàng đó (yêu cầu UX: bỏ tick shop ⇒ clear quyền).
-  function toggleShop(id: string) {
-    setRows((prev) => {
-      const next = new Map(prev);
-      if (next.has(id)) next.delete(id);
-      else next.set(id, { ...FULL_PERMS });
-      return next;
-    });
-  }
-
-  // Tick từng ô quyền — chỉ có tác dụng khi gian đang bật.
-  function togglePerm(id: string, key: StaffPermissionKey) {
-    setRows((prev) => {
-      const cur = prev.get(id);
-      if (!cur) return prev;
-      const next = new Map(prev);
-      next.set(id, { ...cur, [key]: !cur[key] });
-      return next;
-    });
-  }
 
   async function handleSave() {
     setSubmitting(true);
     try {
-      const payload: StaffChannelPermission[] = Array.from(rows.entries()).map(
-        ([channelId, p]) => ({ channelId, ...p })
-      );
-      await setStaffChannels(staff.id, payload);
+      await updateStaff(staff.id, {
+        permissions: Array.from(perms),
+        channelIds: Array.from(scope),
+      });
       toast.success(`Đã cập nhật quyền cho ${staff.fullName}`);
       onOpenChange(false);
       onSaved();
@@ -341,111 +433,44 @@ function PermissionDialog({
     }
   }
 
-  const enabledCount = rows.size;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="size-5" />
-            Phân quyền gian hàng
+            Phân quyền — {staff.fullName}
           </DialogTitle>
           <DialogDescription>
-            Bật gian hàng mà <b>{staff.fullName}</b> được phụ trách, rồi tinh
-            chỉnh từng chức năng. Bỏ tick một gian sẽ thu hồi mọi quyền của gian
-            đó.
+            Tick tính năng nhân viên được dùng và gian hàng họ phụ trách. Quyền
+            mới có hiệu lực NGAY với phiên đang đăng nhập.
           </DialogDescription>
         </DialogHeader>
 
-        {channels.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            Shop chưa có kênh nào.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
-                  <th className="px-3 py-2 text-left font-medium">Gian hàng</th>
-                  {STAFF_PERMISSION_META.map((p) => (
-                    <th
-                      key={p.key}
-                      className="w-20 px-2 py-2 text-center font-medium"
-                    >
-                      {p.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {channels.map((c) => {
-                  const meta = CHANNEL_META[c.channelName];
-                  const perms = rows.get(c.id);
-                  const enabled = perms !== undefined;
-                  return (
-                    <tr
-                      key={c.id}
-                      className={cn(
-                        "border-b last:border-0 transition-colors",
-                        enabled ? "bg-background" : "bg-muted/20"
-                      )}
-                    >
-                      {/* Cột gian hàng: tick để bật/tắt cả hàng */}
-                      <td className="px-3 py-2">
-                        <label className="flex cursor-pointer items-center gap-2.5">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-primary"
-                            checked={enabled}
-                            onChange={() => toggleShop(c.id)}
-                          />
-                          <span
-                            className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta.className}`}
-                          >
-                            {meta.label}
-                          </span>
-                          <span
-                            className={cn(
-                              "min-w-0 truncate font-medium",
-                              !enabled && "text-muted-foreground"
-                            )}
-                          >
-                            {c.shopName}
-                          </span>
-                        </label>
-                      </td>
+        <div className="grid gap-2">
+          <Label>Tính năng</Label>
+          <PresetRow onPick={(p) => setPerms(new Set(p))} />
+          <PermissionTree value={perms} onChange={setPerms} />
+        </div>
 
-                      {/* 4 ô quyền — mờ & khoá khi gian chưa bật */}
-                      {STAFF_PERMISSION_META.map((p) => (
-                        <td key={p.key} className="px-2 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            aria-label={`${p.label} — ${c.shopName}`}
-                            className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-30"
-                            disabled={!enabled}
-                            checked={enabled ? perms![p.key] : false}
-                            onChange={() => togglePerm(c.id, p.key)}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="grid gap-2">
+          <Label>Gian hàng phụ trách</Label>
+          <ChannelScope channels={channels} value={scope} onChange={setScope} />
+        </div>
 
         <p
           className={cn(
             "text-xs",
-            enabledCount === 0 ? "text-amber-600" : "text-muted-foreground"
+            perms.size === 0 || scope.size === 0
+              ? "text-amber-600"
+              : "text-muted-foreground"
           )}
         >
-          {enabledCount === 0
-            ? "→ Nhân viên này sẽ KHÔNG thấy đơn hàng nào."
-            : `→ Đang bật ${enabledCount} gian hàng. Chỉ những chức năng được tick mới sáng lên với nhân viên.`}
+          {perms.size === 0
+            ? "→ Nhân viên này sẽ KHÔNG dùng được tính năng nào."
+            : scope.size === 0 && channels.length > 0
+              ? "→ Có quyền tính năng nhưng CHƯA được gán gian nào — sẽ không thấy dữ liệu."
+              : `→ Đang bật ${perms.size} quyền trên ${scope.size} gian hàng.`}
         </p>
 
         <div className="flex justify-end gap-2">
@@ -466,22 +491,100 @@ function PermissionDialog({
   );
 }
 
+// ---------- Dialog: Cấp lại mật khẩu ----------
+
+function ResetPasswordDialog({
+  staff,
+  open,
+  onOpenChange,
+}: {
+  staff: StaffMember;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) setPassword("");
+  }, [open]);
+
+  async function handleSave() {
+    if (password.length < 6) {
+      toast.error("Mật khẩu mới phải có ít nhất 6 ký tự");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await resetStaffPassword(staff.id, password);
+      toast.success(`Đã cấp mật khẩu mới cho ${staff.fullName}`);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="size-5" />
+            Cấp lại mật khẩu
+          </DialogTitle>
+          <DialogDescription>
+            Đặt mật khẩu mới cho <b>{staff.fullName}</b>
+            {staff.loginName ? (
+              <>
+                {" "}
+                (đăng nhập <b>{staff.loginName}</b>)
+              </>
+            ) : null}
+            . Nhớ gửi mật khẩu này cho nhân viên.
+          </DialogDescription>
+        </DialogHeader>
+        <Input
+          type="password"
+          placeholder="Mật khẩu mới (ít nhất 6 ký tự)"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Huỷ
+          </Button>
+          <Button onClick={handleSave} disabled={submitting}>
+            {submitting && <Loader2 className="size-4 animate-spin" />}
+            Lưu mật khẩu
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------- Trang chính ----------
 
 export default function StaffPage() {
   const router = useRouter();
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [ownerUsername, setOwnerUsername] = useState<string | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [permFor, setPermFor] = useState<StaffMember | null>(null);
+  const [resetFor, setResetFor] = useState<StaffMember | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [s, c] = await Promise.all([fetchStaff(), fetchChannels()]);
-      setStaff(s);
+      setStaff(s.staff);
+      setOwnerUsername(s.ownerUsername);
       setChannels(c);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -503,7 +606,7 @@ export default function StaffPage() {
       router.replace("/login");
       return;
     }
-    if (!canManageShop(getStoredUser()?.role)) {
+    if (!canManageShop(getStoredUser())) {
       setDenied(true);
       setLoading(false);
       return;
@@ -524,21 +627,19 @@ export default function StaffPage() {
     }
   }
 
-  function channelLabel(id: string): string | null {
-    const c = channels.find((x) => x.id === id);
-    return c ? shopLabel(c.channelName, c.shopName) : null;
-  }
+  const channelLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of channels) m.set(c.id, shopLabel(c.channelName, c.shopName));
+    return m;
+  }, [channels]);
 
-  async function handleRoleChange(s: StaffMember, role: Role) {
-    try {
-      await updateStaffRole(s.id, role);
-      toast.success(
-        `${s.fullName} giờ là ${ROLE_META[role].label.toLowerCase()}`
-      );
-      load();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không đổi được vai trò");
-    }
+  /** Tóm tắt quyền hiển thị trên thẻ: các NHÓM có ít nhất một lá được bật. */
+  function permissionSummary(perms: string[]): string[] {
+    return PERMISSION_TREE.filter((n) =>
+      (n.children ? n.children.map((c) => c.key) : [n.key]).some((k) =>
+        perms.includes(k)
+      )
+    ).map((n) => n.label);
   }
 
   if (denied) {
@@ -554,9 +655,14 @@ export default function StaffPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Tạo tài khoản nhân viên và phân quyền gian hàng họ được xử lý.
+            Tạo tài khoản nhân viên (không cần email) và phân quyền từng tính
+            năng, từng gian hàng.
           </p>
-          <AddStaffDialog channels={channels} onAdded={load} />
+          <AddStaffDialog
+            channels={channels}
+            ownerUsername={ownerUsername}
+            onAdded={load}
+          />
         </div>
 
         {loading ? (
@@ -572,107 +678,91 @@ export default function StaffPage() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {staff.map((s) => (
-              <Card key={s.id}>
-                <CardContent className="flex flex-wrap items-center gap-4 p-4">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-                    <UserRound className="size-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 font-medium">
-                      {s.fullName}
-                      <span
-                        className={cn(
-                          "rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                          ROLE_META[s.role].className
-                        )}
-                      >
-                        {ROLE_META[s.role].label}
-                      </span>
-                    </p>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {s.email} · tạo {formatDateTime(s.createdAt)}
-                    </p>
-                  </div>
+            {staff.map((s) => {
+              const groups = permissionSummary(s.permissions);
+              return (
+                <Card key={s.id}>
+                  <CardContent className="flex flex-wrap items-center gap-4 p-4">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+                      <UserRound className="size-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex flex-wrap items-center gap-2 font-medium">
+                        {s.fullName}
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 font-mono text-xs font-medium text-sky-700">
+                          {s.loginName ?? s.email}
+                        </span>
+                      </p>
+                      <p className="truncate text-sm text-muted-foreground">
+                        tạo {formatDateTime(s.createdAt)} ·{" "}
+                        {s.allowedChannelIds.length === 0
+                          ? "chưa gán gian nào"
+                          : s.allowedChannelIds
+                              .map((id) => channelLabelById.get(id))
+                              .filter(Boolean)
+                              .join(", ")}
+                      </p>
+                    </div>
 
-                  {/* Phạm vi gian hàng — kho vốn thấy hết nên không liệt kê */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {s.role === "WAREHOUSE" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                        <ShieldCheck className="size-3" />
-                        Tất cả gian hàng
-                      </span>
-                    ) : s.allowedChannelIds.length === 0 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                        <ShieldCheck className="size-3" />
-                        Chưa phân công gian nào
-                      </span>
-                    ) : (
-                      s.allowedChannelIds.map((id) => {
-                        const label = channelLabel(id);
-                        return label ? (
-                          <span
-                            key={id}
-                            className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700"
-                          >
-                            {label}
-                          </span>
-                        ) : null;
-                      })
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <NativeSelect
-                      className="w-44"
-                      aria-label={`Vai trò của ${s.fullName}`}
-                      value={s.role}
-                      onChange={(e) =>
-                        handleRoleChange(s, e.target.value as Role)
-                      }
-                    >
-                      {ASSIGNABLE_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {ROLE_META[r].label}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={s.role !== "SALES"}
-                      title={
-                        s.role === "SALES"
-                          ? undefined
-                          : "Nhân viên kho vốn xử lý đơn của mọi gian hàng"
-                      }
-                      onClick={() => setPermFor(s)}
-                    >
-                      <ShieldCheck className="size-4" />
-                      Phân quyền
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-red-500"
-                      disabled={deletingId === s.id}
-                      onClick={() => handleDelete(s)}
-                    >
-                      {deletingId === s.id ? (
-                        <Loader2 className="size-4 animate-spin" />
+                    {/* Các nhóm tính năng đang được bật */}
+                    <div className="flex max-w-md flex-wrap items-center gap-1.5">
+                      {groups.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                          <ShieldCheck className="size-3" />
+                          Chưa cấp quyền nào
+                        </span>
                       ) : (
-                        <Trash2 className="size-4" />
+                        groups.map((g) => (
+                          <span
+                            key={g}
+                            className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700"
+                          >
+                            {g}
+                          </span>
+                        ))
                       )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPermFor(s)}
+                      >
+                        <ShieldCheck className="size-4" />
+                        Phân quyền
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        title="Cấp lại mật khẩu"
+                        onClick={() => setResetFor(s)}
+                      >
+                        <KeyRound className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-red-500"
+                        disabled={deletingId === s.id}
+                        onClick={() => handleDelete(s)}
+                      >
+                        {deletingId === s.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
 
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell · Phân quyền nhân viên theo gian hàng (Multi-store)
+          Hubsell · Phân quyền nhân viên theo tính năng × gian hàng
         </p>
       </div>
 
@@ -685,6 +775,15 @@ export default function StaffPage() {
             if (!o) setPermFor(null);
           }}
           onSaved={load}
+        />
+      )}
+      {resetFor && (
+        <ResetPasswordDialog
+          staff={resetFor}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setResetFor(null);
+          }}
         />
       )}
     </AppShell>

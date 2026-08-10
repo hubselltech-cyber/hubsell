@@ -124,7 +124,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       }),
     ]);
 
-    const seesFinancials = canSeeFinancials(req.userRole);
+    const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => hideCost(p, seesFinancials)),
       total,
@@ -162,7 +162,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
     }
     // Nhân viên vẫn được thêm sản phẩm mới (kho nhập hàng là việc của họ) nhưng
     // giá vốn thì để 0 cho chủ shop vào cấu hình sau, không nhận từ nhân viên.
-    const seesFinancials = canSeeFinancials(req.userRole);
+    const seesFinancials = canSeeFinancials(req);
     const cost = seesFinancials ? parseMoney(costPrice) : 0;
     const selling = parseMoney(sellingPrice);
     if (cost === null || selling === null) {
@@ -276,7 +276,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       data.productName = productName.trim();
     }
     if (costPrice !== undefined) {
-      if (!canSeeFinancials(req.userRole)) {
+      if (!canSeeFinancials(req)) {
         res.status(403).json({
           error: "Chỉ chủ shop mới được sửa giá vốn",
         });
@@ -415,7 +415,7 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
       // Nhân viên nhập file có cột Giá vốn thì cột đó bị bỏ qua, không phải
       // báo lỗi cả dòng — hàng vẫn vào kho, chủ shop vào đặt giá vốn sau.
-      const cost = canSeeFinancials(req.userRole)
+      const cost = canSeeFinancials(req)
         ? parseMoney(pickColumn(row, COLS.cost) ?? 0)
         : 0;
       const selling = parseMoney(pickColumn(row, COLS.selling) ?? 0);

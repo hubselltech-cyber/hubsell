@@ -45,7 +45,7 @@ import {
   type ShippingDiscrepancy,
   type ShippingDisputeStatus,
 } from "@/lib/api";
-import { canAccessFinance } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import {
   ALL_CHANNELS,
@@ -144,7 +144,7 @@ export default function ShippingAlertsPage() {
       return;
     }
     // Đối soát tiền với sàn: chỉ Chủ shop
-    if (!canAccessFinance(getStoredUser()?.role)) {
+    if (!can(getStoredUser(), "warehouse.shipping-alerts")) {
       setDenied(true);
       setLoading(false);
       return;

@@ -31,7 +31,7 @@ export function SettingsShell({
       router.replace("/login");
       return;
     }
-    if (!canManageShop(getStoredUser()?.role)) {
+    if (!canManageShop(getStoredUser())) {
       setDenied(true);
     }
   }, [router]);

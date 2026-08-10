@@ -61,7 +61,7 @@ type ProductFormValues = z.infer<typeof productSchema>;
 export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const seesCost = canSeeFinancials(getStoredUser()?.role);
+  const seesCost = canSeeFinancials(getStoredUser());
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),

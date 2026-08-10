@@ -21,7 +21,7 @@ import {
 } from "recharts";
 
 import { AccessDenied } from "@/components/access-denied";
-import { canAccessFinance } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
 import {
   ALL_CHANNELS,
@@ -107,7 +107,7 @@ export default function FinanceAnalyticsPage() {
       return;
     }
     // Báo cáo tài chính: chỉ Chủ shop
-    if (!canAccessFinance(getStoredUser()?.role)) {
+    if (!can(getStoredUser(), "finance.analytics")) {
       setDenied(true);
       setLoading(false);
       return;

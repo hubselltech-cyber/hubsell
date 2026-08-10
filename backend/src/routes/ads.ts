@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { requirePermission, type AuthRequest } from "../auth";
 import {
   editManualProductAdsRaw,
   getAdsTotalBalance,
@@ -16,6 +16,11 @@ import {
 } from "../integrations/shopee/ads-insights";
 
 const router = Router();
+
+// Siết quyền theo LÁ: mount app.ts chỉ kiểm "có lá ads.* bất kỳ", nhánh Shopee
+// (dữ liệu + cấu hình trợ lý thật) bó đúng ads.shopee. TikTok/Lazada hiện là
+// preview mock phía FE, có API thật thì thêm router.use tương ứng tại đây.
+router.use("/shopee", requirePermission("ads.shopee"));
 
 // ============================================================
 // TRỢ LÝ QUẢNG CÁO SHOPEE — GĐ1: DASHBOARD DỮ LIỆU THẬT (READ-ONLY)

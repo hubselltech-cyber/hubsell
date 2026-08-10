@@ -168,7 +168,9 @@ enum Role {
 /// Người dùng của hệ thống (chủ shop / nhân viên)
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  /// Nullable từ 10/08: TÀI KHOẢN NHÂN VIÊN kiểu "chủ/nhânviên" không cần email
+  /// (chủ shop cấp/reset mật khẩu hộ). Chủ shop luôn có email.
+  email        String?  @unique
   /// Tên đăng nhập (thay thế được email ở ô login). LƯU LOWERCASE, 3-30 ký tự
   /// [a-z0-9._], CẤM "@" — ô đăng nhập chung phân biệt: có @ = email, không @ =
   /// username. Nullable: user cũ/staff chưa đặt vẫn đăng nhập bằng email.
@@ -213,6 +215,18 @@ model User {
   owner   User?   @relation("ShopStaff", fields: [ownerId], references: [id], onDelete: Cascade)
   staff   User[]  @relation("ShopStaff")
 
+  /// Tên đăng nhập NHÂN VIÊN — đăng nhập dạng "<username chủ shop>/<staffUsername>"
+  /// (vd "darkman/kho01"). KHÁC cột `username` (không gian tên riêng của chủ shop,
+  /// unique toàn cục); staffUsername chỉ unique TRONG một shop — hai shop khác nhau
+  /// thoải mái cùng có "kho01". Null với chủ shop và nhân viên cũ đăng nhập email.
+  staffUsername String?
+
+  /// Ma trận quyền tính năng của NHÂN VIÊN — mảng KHÓA LÁ từ permission-registry.ts
+  /// (vd ["orders","finance.analytics"]). Chỉ có nghĩa khi ownerId != null; ADMIN
+  /// (chủ shop) toàn quyền không cần mảng này. Mặc định RỖNG = chưa được cấp gì
+  /// (default-deny). Trạng thái quyền CHA suy từ các lá lúc render, không lưu.
+  permissions String[] @default([])
+
   channels          Channel[]
   products          Product[]
   operatingExpenses OperatingExpense[]
@@ -243,6 +257,10 @@ model User {
   hubsellWallet      HubsellWallet?
   walletTransactions WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
+
+  // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
+  // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
+  @@unique([ownerId, staffUsername])
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)
@@ -479,10 +497,10 @@ model StaffChannel {
   staffId   String
   channelId String
 
-  canFinance   Boolean @default(true) // Tài chính — xem doanh thu/dòng tiền của gian
-  canWarehouse Boolean @default(true) // Kho hàng — nhặt/đóng/đối soát hàng hoàn
-  canAds       Boolean @default(true) // Quảng cáo — số liệu & tối ưu quảng cáo
-  canOrders    Boolean @default(true) // Đơn hàng — xử lý đơn của gian
+  // 10/08: 4 cờ canFinance/canWarehouse/canAds/canOrders ĐÃ GỠ — chúng được lưu
+  // nhưng chưa từng được API nào kiểm tra (cờ chết). Quyền TÍNH NĂNG giờ nằm ở
+  // User.permissions (cây phân quyền); bảng này chỉ còn một việc: PHẠM VI GIAN
+  // HÀNG — nhân viên thấy dữ liệu của những gian nào.
 
   staff   User    @relation("StaffChannels", fields: [staffId], references: [id], onDelete: Cascade)
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)

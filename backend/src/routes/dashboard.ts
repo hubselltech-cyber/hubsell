@@ -49,7 +49,7 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
         shopName: o.channel.shopName,
         createdAt: o.createdAt,
       })),
-      financialsHidden: !canSeeFinancials(req.userRole),
+      financialsHidden: !canSeeFinancials(req),
     });
   } catch (err) {
     next(err);

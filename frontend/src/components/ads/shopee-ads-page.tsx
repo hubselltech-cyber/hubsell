@@ -67,7 +67,7 @@ import {
   assistantBannerText,
 } from "@/components/ads/shopee-assistant-panel";
 import { formatNumber, formatVND } from "@/lib/format";
-import { isAdmin } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { TABLE_HEAD_EMPHASIS, TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -179,7 +179,7 @@ export function ShopeeAdsPage() {
       router.replace("/login");
       return;
     }
-    if (!isAdmin(getStoredUser()?.role)) setDenied(true);
+    if (!can(getStoredUser(), "ads.shopee")) setDenied(true);
   }, [router]);
 
   const load = useCallback(async (cid: string, d: number) => {

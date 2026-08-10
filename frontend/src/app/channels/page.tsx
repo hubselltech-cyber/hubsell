@@ -617,7 +617,7 @@ export default function ChannelsPage() {
       return;
     }
     // Trang cấu hình gian hàng chỉ dành cho Chủ shop
-    if (!canManageShop(getStoredUser()?.role)) {
+    if (!canManageShop(getStoredUser())) {
       setDenied(true);
       setLoading(false);
       return;

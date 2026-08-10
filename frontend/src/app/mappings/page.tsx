@@ -145,7 +145,7 @@ export default function MappingsPage() {
       return;
     }
     // Liên kết sản phẩm là việc cấu hình của Chủ shop
-    if (!canManageShop(getStoredUser()?.role)) {
+    if (!canManageShop(getStoredUser())) {
       setDenied(true);
       setLoading(false);
       return;

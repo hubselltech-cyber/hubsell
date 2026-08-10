@@ -55,7 +55,7 @@ import {
   type ChannelName,
   type LossOrder,
 } from "@/lib/api";
-import { canAccessFinance } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatDateTime } from "@/lib/format";
 
@@ -110,7 +110,7 @@ export default function LossOrdersPage() {
       return;
     }
     // Trang này phơi bày giá vốn và lợi nhuận từng mã: chỉ Chủ shop
-    if (!canAccessFinance(getStoredUser()?.role)) {
+    if (!can(getStoredUser(), "operations.loss-orders")) {
       setDenied(true);
       setLoading(false);
       return;

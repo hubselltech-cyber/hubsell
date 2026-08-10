@@ -5,6 +5,7 @@ import { Role } from "@prisma/client";
 import {
   requireAuth,
   requireChannel,
+  requirePermission,
   requirePlatformAdmin,
   requireRole,
 } from "./auth";
@@ -103,35 +104,45 @@ export function createApp() {
   app.use("/v1/webhooks", webhooksRouter);
 
   // ============================================================
-  // PHÂN QUYỀN 2 LỚP
+  // PHÂN QUYỀN 3 LỚP (mô hình cây phân quyền 10/08)
   //
-  // Lớp 1 — VAI TRÒ quyết định vào được API nào (chặn ngay tại đây):
-  //   ADMIN     : toàn bộ
-  //   SALES     : đơn hàng, kho, sản phẩm, và Tổng quan (doanh thu, số đơn)
-  //   WAREHOUSE : đơn hàng, kho, sản phẩm — KHÔNG một API tài chính nào
+  // Lớp 1 — QUYỀN TÍNH NĂNG quyết định vào được nhóm API nào (chặn ngay tại
+  //   đây bằng requirePermission): ADMIN toàn quyền; nhân viên phải có khóa
+  //   quyền tương ứng trong User.permissions (cây lá ở permission-registry.ts).
+  //   Nhiều khóa = CÓ MỘT là qua (vd /api/finance mở cho cả người chỉ được
+  //   "Đối soát phí ship" — route lẻ bên trong router tự siết đúng lá).
   //
   // Lớp 2 — PHẠM VI GIAN HÀNG quyết định thấy bao nhiêu dữ liệu trong API đó.
   //   Nạp ở requireAuth (req.allowedChannelIds), áp bởi channelScope() ở từng
-  //   truy vấn. SALES bị bó theo gian được phân công; ADMIN và WAREHOUSE thấy hết.
+  //   truy vấn. Nhân viên bó theo gian được phân công; ADMIN thấy hết.
   //
-  // Chỉ số nhạy cảm (giá vốn, lợi nhuận, chi phí) còn bị lọc thêm một lớp nữa
-  // ngay trong controller bằng canSeeFinancials() — SALES vào được /analytics
-  // nhưng không nhận được các trường đó.
+  // Lớp 3 — Chỉ số nhạy cảm (giá vốn, lợi nhuận, chi phí) lọc thêm ngay trong
+  //   controller bằng canSeeFinancials(req): "tick gì thấy nấy" — nhân viên có
+  //   quyền finance.* mới nhận các trường này.
   //
   // requireChannel = Onboarding guard: shop chưa có gian nào → 409 NO_CHANNEL.
+  // Các khu VĨNH VIỄN CHỈ CHỦ SHOP (staff/mappings/channels/referral/…) vẫn gác
+  // adminOnly — cố tình không nằm trong cây phân quyền.
   // ============================================================
   const adminOnly = requireRole(Role.ADMIN);
-  const notWarehouse = requireRole(Role.ADMIN, Role.SALES);
-  const anyRole = requireRole(Role.ADMIN, Role.SALES, Role.WAREHOUSE);
 
-  app.use("/api/dashboard", requireAuth, notWarehouse, requireChannel, dashboardRouter);
-  app.use("/api/analytics", requireAuth, notWarehouse, requireChannel, analyticsRouter);
-  app.use("/api/expenses", requireAuth, adminOnly, requireChannel, expensesRouter);
-  app.use("/api/finance", requireAuth, adminOnly, requireChannel, financeRouter);
-  app.use("/api/products", requireAuth, anyRole, requireChannel, productsRouter);
-  app.use("/api/orders", requireAuth, anyRole, requireChannel, ordersRouter);
-  app.use("/api/inventory", requireAuth, anyRole, requireChannel, inventoryRouter);
-  app.use("/api/warehouse", requireAuth, anyRole, requireChannel, warehouseRouter);
+  app.use("/api/dashboard", requireAuth, requirePermission("dashboard"), requireChannel, dashboardRouter);
+  // /api/analytics phục vụ biểu đồ trang Tổng quan → đi cùng quyền dashboard.
+  app.use("/api/analytics", requireAuth, requirePermission("dashboard"), requireChannel, analyticsRouter);
+  app.use("/api/expenses", requireAuth, requirePermission("finance.expenses"), requireChannel, expensesRouter);
+  // Router finance chứa cả 2 route mà trang Kho/Vận hành cần (shipping-discrepancies,
+  // orders-analysis) → cửa mount mở cho 3 nhóm quyền, từng route bên trong siết đúng lá.
+  app.use(
+    "/api/finance",
+    requireAuth,
+    requirePermission("finance", "warehouse.shipping-alerts", "operations.loss-orders"),
+    requireChannel,
+    financeRouter
+  );
+  app.use("/api/products", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, productsRouter);
+  app.use("/api/orders", requireAuth, requirePermission("orders"), requireChannel, ordersRouter);
+  app.use("/api/inventory", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, inventoryRouter);
+  app.use("/api/warehouse", requireAuth, requirePermission("warehouse.returns"), requireChannel, warehouseRouter);
   app.use("/api/mappings", requireAuth, adminOnly, requireChannel, mappingsRouter);
 
   // QUẢN TRỊ NỀN TẢNG — chỉ tài khoản có cờ isPlatformAdmin (chủ nền tảng
@@ -146,30 +157,31 @@ export function createApp() {
   // KHÔNG gác requireChannel: trạng thái (đã xử lý/chat/nhật ký) không phụ thuộc kênh.
   app.use("/api/command-center", requireAuth, adminOnly, commandCenterRouter);
 
-  // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — chỉ Admin.
-  app.use("/api/invoice-config", requireAuth, adminOnly, invoiceConfigRouter);
+  // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — khóa "invoicing"
+  // (nguyên khối cùng /api/tax: cấp Hóa đơn & Thuế là cấp trọn gói).
+  app.use("/api/invoice-config", requireAuth, requirePermission("invoicing"), invoiceConfigRouter);
 
   // Test sandbox MISA (Hóa đơn đầu vào + eSign) — chỉ Admin; trên production
   // router tự chặn 503 trừ khi bật MISA_SANDBOX_TEST_ENABLED=1 (xem file route).
   app.use("/api/test/misa-sandbox", requireAuth, adminOnly, testMisaSandboxRouter);
 
-  // Hóa đơn & Thuế: cấu hình Thuế bổ sung + Báo cáo thuế — chỉ Admin.
+  // Hóa đơn & Thuế: cấu hình Thuế bổ sung + Báo cáo thuế — khóa "invoicing".
   // Không gác requireChannel (giống invoice-config) để trang cấu hình thuế
   // vẫn mở được khi shop chưa nối gian nào.
-  app.use("/api/tax", requireAuth, adminOnly, taxRouter);
+  app.use("/api/tax", requireAuth, requirePermission("invoicing"), taxRouter);
 
   // Trợ lý vận hành (CSKH đa kênh): chat + đánh giá + ngữ cảnh sản phẩm.
-  // CSKH là việc của SALES nên gác notWarehouse (khớp canAccessOperations bên FE).
-  app.use("/api/operations", requireAuth, notWarehouse, requireChannel, operationsRouter);
+  // Cửa mount = có BẤT KỲ lá operations.* nào; route chat/reviews bên trong
+  // router tự siết đúng lá của mình.
+  app.use("/api/operations", requireAuth, requirePermission("operations"), requireChannel, operationsRouter);
 
   // Mạng lưới KOC & Affiliate: đọc dữ liệu affiliate THẬT từ đối soát sàn
-  // (Order.affiliateFee). Chi phí booking/hoa hồng là dữ liệu tài chính → chỉ
-  // ADMIN (khớp canAccessKocMarketing bên FE).
-  app.use("/api/koc", requireAuth, adminOnly, requireChannel, kocRouter);
+  // (Order.affiliateFee). Mục nguyên khối trong cây phân quyền — khóa "koc".
+  app.use("/api/koc", requireAuth, requirePermission("koc"), requireChannel, kocRouter);
 
-  // Trợ lý quảng cáo: dashboard campaign + ROAS hòa vốn từ P&L thật. Chi phí
-  // Ads là dữ liệu tài chính → chỉ ADMIN (cùng luật /api/finance).
-  app.use("/api/ads", requireAuth, adminOnly, requireChannel, adsRouter);
+  // Trợ lý quảng cáo: cửa mount = có lá ads.* bất kỳ; nhánh /shopee bên trong
+  // router siết đúng ads.shopee (tiktok/lazada hiện là preview mock phía FE).
+  app.use("/api/ads", requireAuth, requirePermission("ads"), requireChannel, adsRouter);
 
   // Affiliate Tiếp Thị & Ví Hubsell — referral của CHÍNH nền tảng (khác /api/koc).
   // Chỉ chủ shop; KHÔNG gác requireChannel: chưa kết nối gian vẫn giới thiệu được.

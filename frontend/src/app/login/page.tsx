@@ -124,7 +124,7 @@ function LoginForm({
               <FormLabel>Tên đăng nhập hoặc Email</FormLabel>
               <FormControl>
                 <Input
-                  placeholder="tendangnhap hoặc ban@email.com"
+                  placeholder="tendangnhap, ban@email.com hoặc tenshop/nhanvien"
                   autoComplete="username"
                   {...field}
                 />
@@ -434,7 +434,7 @@ export default function LoginPage() {
 
   function goToDashboard(user: AuthUser) {
     // Nhân viên kho không vào được Tổng quan → đưa thẳng tới Đơn hàng
-    router.replace(homePathFor(user.role));
+    router.replace(homePathFor(user));
   }
 
   // Nhận kết quả đăng nhập Google: backend redirect về ?social=ok&token=...
@@ -455,7 +455,7 @@ export default function LoginPage() {
         .then(({ user }) => {
           setStoredUser(user);
           toast.success(`Chào mừng, ${user.fullName}!`);
-          router.replace(homePathFor(user.role));
+          router.replace(homePathFor(user));
         })
         .catch(() => toast.error("Không lấy được thông tin tài khoản, hãy thử lại."));
     }

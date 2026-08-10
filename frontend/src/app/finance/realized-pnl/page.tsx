@@ -36,7 +36,7 @@ import {
   type RealizedPnlResponse,
   type ReconciliationStatus,
 } from "@/lib/api";
-import { canAccessFinance } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { exportPnlRows, exportRealizedPnl } from "@/lib/excel";
 import { formatNumber } from "@/lib/format";
@@ -129,7 +129,7 @@ export default function RealizedPnlPage() {
       router.replace("/login");
       return;
     }
-    if (!canAccessFinance(getStoredUser()?.role)) {
+    if (!can(getStoredUser(), "finance.realized-pnl")) {
       setDenied(true);
       setLoading(false);
       return;

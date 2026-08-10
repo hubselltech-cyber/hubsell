@@ -13,7 +13,7 @@
 import { Router } from "express";
 import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { requirePermission, type AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import {
   getComments,
@@ -42,6 +42,14 @@ import {
 } from "../integrations/ai/copilot";
 
 const router = Router();
+
+// Siết quyền theo LÁ (mount app.ts chỉ kiểm "có lá operations.* bất kỳ"):
+// chat và đánh giá là hai quyền tách bạch; product-context phục vụ khung chat;
+// copilot gợi ý cho cả hai nghiệp vụ nên ai có một trong hai là dùng được.
+router.use("/conversations", requirePermission("operations.chat"));
+router.use("/product-context", requirePermission("operations.chat"));
+router.use("/reviews", requirePermission("operations.reviews"));
+router.use("/copilot-suggest", requirePermission("operations.chat", "operations.reviews"));
 
 // ---------- Shape chuẩn hoá trả cho frontend ----------
 

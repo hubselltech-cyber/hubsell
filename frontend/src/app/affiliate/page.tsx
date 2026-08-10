@@ -214,7 +214,7 @@ export default function AffiliatePage() {
   }, []);
 
   useEffect(() => {
-    if (!canManageShop(getStoredUser()?.role)) {
+    if (!canManageShop(getStoredUser())) {
       setDenied(true);
       setLoading(false);
       return;

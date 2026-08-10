@@ -23,46 +23,50 @@ import {
   verifyOauthState as verifyLazadaOauthState,
 } from "../integrations/lazada/service";
 import { findReferrerByCode } from "../referral-wallet";
+import { generateUsername, normalizeUsername } from "../username";
 
 const router = Router();
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Username: 3-30 ký tự [a-z0-9._], bắt đầu bằng chữ/số, LƯU LOWERCASE.
-// CẤM "@" là chốt kiến trúc: ô đăng nhập chung phân biệt được ngay
-// "có @ → tra email, không @ → tra username" — không bao giờ nhập nhằng.
-const USERNAME_REGEX = /^[a-z0-9][a-z0-9._]{2,29}$/;
 // ISO 3166-1 alpha-2 (VN, US, TH...). Chỉ kiểm dạng — danh mục đầy đủ ở FE.
 const COUNTRY_REGEX = /^[A-Z]{2}$/;
 
-/** Chuẩn hoá + kiểm username. Trả lỗi tiếng Việt hoặc null nếu hợp lệ. */
-function normalizeUsername(raw: unknown): { value?: string; error?: string } {
-  if (raw == null || raw === "") return { value: undefined };
-  if (typeof raw !== "string") return { error: "Tên đăng nhập không hợp lệ" };
-  const value = raw.trim().toLowerCase();
-  if (!USERNAME_REGEX.test(value)) {
-    return {
-      error:
-        "Tên đăng nhập: 3-30 ký tự, chỉ gồm chữ thường/số/dấu chấm/gạch dưới, không chứa @",
-    };
-  }
-  return { value };
+// ============================================================
+// RATE-LIMIT ĐĂNG NHẬP (in-memory, đủ cho 1 instance Render).
+// Cú pháp "chủ/nhânviên" làm lộ cấu trúc 2 lớp của tài khoản → chặn brute-force
+// theo (IP + identifier): quá MAX lần sai trong WINDOW thì 429. Đăng nhập đúng
+// là xoá bộ đếm ngay. Map tự dọn phần tử hết hạn khi phình to.
+// ============================================================
+const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILS = 10;
+const loginFails = new Map<string, { count: number; resetAt: number }>();
+
+function loginFailKey(req: { ip?: string }, identifier: string): string {
+  return `${req.ip ?? "?"}|${identifier}`;
 }
 
-/**
- * Sinh username duy nhất từ local-part email (cho đăng ký qua Google, hoặc
- * fallback). Trùng thì gắn 4 số ngẫu nhiên, thử vài lượt.
- */
-async function generateUsername(email: string): Promise<string> {
-  let base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9._]/g, "");
-  if (base.length < 3 || !/^[a-z0-9]/.test(base)) base = `user${base}`;
-  base = base.slice(0, 24);
-  for (let i = 0; i < 5; i++) {
-    const candidate = i === 0 ? base : `${base}${Math.floor(1000 + Math.random() * 9000)}`;
-    const clash = await prisma.user.findUnique({ where: { username: candidate } });
-    if (!clash) return candidate;
+function isLoginBlocked(key: string): boolean {
+  const entry = loginFails.get(key);
+  if (!entry) return false;
+  if (Date.now() > entry.resetAt) {
+    loginFails.delete(key);
+    return false;
   }
-  return `${base}${Date.now() % 100000}`;
+  return entry.count >= LOGIN_MAX_FAILS;
+}
+
+function recordLoginFail(key: string) {
+  // Dọn rác khi map phình — tránh giữ vô hạn bộ nhớ vì bị quét identifier.
+  if (loginFails.size > 10_000) {
+    const now = Date.now();
+    for (const [k, v] of loginFails) if (now > v.resetAt) loginFails.delete(k);
+  }
+  const entry = loginFails.get(key);
+  if (entry && Date.now() <= entry.resetAt) {
+    entry.count += 1;
+  } else {
+    loginFails.set(key, { count: 1, resetAt: Date.now() + LOGIN_FAIL_WINDOW_MS });
+  }
 }
 
 /** Bộ trường public của User trả về FE — dùng chung mọi route auth. */
@@ -70,10 +74,15 @@ const PUBLIC_USER_SELECT = {
   id: true,
   email: true,
   username: true,
+  // Tên đăng nhập nhân viên (null với chủ shop) — FE hiển thị "chủ/nhânviên".
+  staffUsername: true,
   fullName: true,
   country: true,
   phone: true,
   role: true,
+  // Cây quyền của nhân viên — FE dựa vào đây để ẩn/hiện menu (lớp chặn thật
+  // vẫn là requirePermission ở backend).
+  permissions: true,
   // Cờ quản trị nền tảng — FE dựa vào đây để hiện mục "Hệ thống" trên sidebar.
   isPlatformAdmin: true,
 } as const;
@@ -183,9 +192,11 @@ router.post("/register", async (req, res, next) => {
   }
 });
 
-// POST /api/auth/login — Đăng nhập bằng TÊN ĐĂNG NHẬP hoặc EMAIL.
+// POST /api/auth/login — Đăng nhập bằng TÊN ĐĂNG NHẬP, EMAIL, hoặc TÀI KHOẢN
+// NHÂN VIÊN dạng "chủ/nhânviên" (vd "darkman/kho01").
 // Body: { identifier, password } — nhận cả { email } cũ để tương thích ngược.
-// Phân biệt: chuỗi CÓ "@" là email, KHÔNG có là username (username cấm @).
+// Ba nhánh KHÔNG BAO GIỜ nhập nhằng vì username cấm cả "@" lẫn "/":
+//   có "@" → email · có "/" → nhân viên "chủ/nhânviên" · còn lại → username chủ shop
 router.post("/login", async (req, res, next) => {
   try {
     const { identifier, email, password } = req.body ?? {};
@@ -196,17 +207,50 @@ router.post("/login", async (req, res, next) => {
     }
 
     const id = rawId.trim().toLowerCase();
-    const user = id.includes("@")
-      ? await prisma.user.findUnique({ where: { email: id } })
-      : await prisma.user.findUnique({ where: { username: id } });
+
+    const failKey = loginFailKey(req, id);
+    if (isLoginBlocked(failKey)) {
+      res.status(429).json({
+        error: "Sai mật khẩu quá nhiều lần. Vui lòng thử lại sau 15 phút.",
+      });
+      return;
+    }
+
+    let user = null;
+    if (id.includes("@")) {
+      user = await prisma.user.findUnique({ where: { email: id } });
+    } else if (id.includes("/")) {
+      // Nhân viên "chủ/nhânviên": tách tại dấu "/" ĐẦU TIÊN. Tên hợp lệ không
+      // chứa "/" nên chuỗi có ≥2 dấu "/" chắc chắn sai — cứ tra rồi ra null.
+      const slash = id.indexOf("/");
+      const ownerUsername = id.slice(0, slash);
+      const staffUsername = id.slice(slash + 1);
+      if (ownerUsername && staffUsername && !staffUsername.includes("/")) {
+        const owner = await prisma.user.findUnique({
+          where: { username: ownerUsername },
+          select: { id: true },
+        });
+        if (owner) {
+          user = await prisma.user.findUnique({
+            where: {
+              ownerId_staffUsername: { ownerId: owner.id, staffUsername },
+            },
+          });
+        }
+      }
+    } else {
+      user = await prisma.user.findUnique({ where: { username: id } });
+    }
 
     // So sánh mật khẩu với hash đã lưu.
-    // Dùng cùng một thông báo lỗi để không lộ tài khoản nào tồn tại.
-    const valid = user && (await bcrypt.compare(password, user.passwordHash));
-    if (!valid) {
+    // Dùng cùng MỘT thông báo lỗi cho mọi trường hợp (sai chủ shop, sai nhân
+    // viên, sai mật khẩu) để không lộ tài khoản/shop nào tồn tại.
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      recordLoginFail(failKey);
       res.status(401).json({ error: "Tài khoản hoặc mật khẩu không đúng" });
       return;
     }
+    loginFails.delete(failKey);
 
     res.json({
       token: signToken(user.id),
@@ -214,10 +258,12 @@ router.post("/login", async (req, res, next) => {
         id: user.id,
         email: user.email,
         username: user.username,
+        staffUsername: user.staffUsername,
         fullName: user.fullName,
         country: user.country,
         phone: user.phone,
         role: user.role,
+        permissions: user.permissions,
       },
     });
   } catch (err) {
@@ -315,7 +361,9 @@ router.post("/forgot-password", async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { email: email.trim().toLowerCase() },
     });
-    if (!user) {
+    // user?.email: email giờ nullable (nhân viên "chủ/nhânviên" không có email
+    // — họ nhờ chủ shop reset hộ, không đi luồng này).
+    if (!user?.email) {
       res.json(generic);
       return;
     }

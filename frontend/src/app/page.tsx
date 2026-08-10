@@ -503,7 +503,7 @@ export default function DashboardPage() {
   const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
   // SALES xem được doanh thu và sản lượng, nhưng không được biết giá vốn hay lãi.
   // Backend đã cắt các trường đó khỏi phản hồi; ở đây bỏ luôn thẻ để không hiện "—".
-  const seesFinancials = canSeeFinancials(getStoredUser()?.role);
+  const seesFinancials = canSeeFinancials(getStoredUser());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -539,7 +539,7 @@ export default function DashboardPage() {
       return;
     }
     // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
-    if (!canAccessDashboard(getStoredUser()?.role)) {
+    if (!canAccessDashboard(getStoredUser())) {
       setDenied(true);
       setLoading(false);
       return;

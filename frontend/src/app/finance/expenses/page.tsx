@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Loader2, Receipt, Scale, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 
 import { AccessDenied } from "@/components/access-denied";
-import { canAccessFinance } from "@/lib/permissions";
+import { can } from "@/lib/permissions";
 import { AppShell } from "@/components/app-shell";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DateRangePicker } from "@/components/date-range-picker";
@@ -95,7 +95,7 @@ export default function FinanceExpensesPage() {
       router.replace("/login");
       return;
     }
-    if (!canAccessFinance(getStoredUser()?.role)) {
+    if (!can(getStoredUser(), "finance.expenses")) {
       setDenied(true);
       setLoading(false);
       return;

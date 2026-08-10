@@ -3,180 +3,122 @@ import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
-
-const router = Router();
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Chủ shop không thể tự tạo thêm chủ shop từ trang Nhân viên
-const ASSIGNABLE_ROLES: Role[] = [Role.SALES, Role.WAREHOUSE];
-
-function isAssignableRole(value: unknown): value is Role {
-  return ASSIGNABLE_ROLES.includes(value as Role);
-}
-
-// ---------- Phân quyền chức năng theo gian hàng ----------
+import { sanitizePermissions } from "../permission-registry";
+import { ensureOwnerUsername, USERNAME_REGEX } from "../username";
 
 /**
- * Bốn chức năng có thể bật/tắt độc lập cho từng gian hàng của một SALES.
- * Khóa dùng trong JSON (finance/warehouse/ads/orders) ↔ cột DB (canFinance…).
+ * QUẢN LÝ NHÂN VIÊN (chỉ chủ shop — mount gác adminOnly ở app.ts).
+ *
+ * Mô hình 10/08 (thay hệ SALES/WAREHOUSE + 4 cờ StaffChannel cũ):
+ *  - Tài khoản nhân viên KHÔNG cần email: đăng nhập "<username chủ>/<staffUsername>"
+ *    (vd "darkman/kho01"), mật khẩu do chủ shop cấp/reset.
+ *  - Quyền TÍNH NĂNG = User.permissions (mảng khóa lá của permission-registry).
+ *  - Phạm vi GIAN HÀNG = StaffChannel (gian nào được thấy dữ liệu).
+ *  - Mọi nhân viên mang role SALES ("nhân viên" — requireAuth bó phạm vi gian
+ *    theo StaffChannel); enum WAREHOUSE giữ lại nhưng không cấp mới.
+ * Nhân viên kiểu CŨ (tạo bằng email) đã XÓA HẲN trong migration 10/08 theo chốt
+ * của chủ shop — đó chỉ là tài khoản test; email của nhân viên từ nay luôn null.
  */
-const PERMISSION_KEYS = ["finance", "warehouse", "ads", "orders"] as const;
-type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
-/** Một dòng trong ma trận phân quyền: gian hàng + trạng thái 4 chức năng. */
-interface ChannelPermissionInput {
-  channelId: string;
-  finance: boolean;
-  warehouse: boolean;
-  ads: boolean;
-  orders: boolean;
-}
-
-/** Bản ghi StaffChannel (chọn 4 cột cờ) → object trả cho giao diện. */
-type StaffChannelRow = {
-  channelId: string;
-  canFinance: boolean;
-  canWarehouse: boolean;
-  canAds: boolean;
-  canOrders: boolean;
-};
-
-function rowToPermission(row: StaffChannelRow): ChannelPermissionInput {
-  return {
-    channelId: row.channelId,
-    finance: row.canFinance,
-    warehouse: row.canWarehouse,
-    ads: row.canAds,
-    orders: row.canOrders,
-  };
-}
-
-const STAFF_CHANNEL_SELECT = {
-  channelId: true,
-  canFinance: true,
-  canWarehouse: true,
-  canAds: true,
-  canOrders: true,
-} as const;
+const router = Router();
 
 const STAFF_SELECT = {
   id: true,
   email: true,
+  staffUsername: true,
   fullName: true,
   role: true,
   createdAt: true,
-  staffChannels: { select: STAFF_CHANNEL_SELECT },
+  permissions: true,
+  staffChannels: { select: { channelId: true } },
 } as const;
 
-/**
- * Chỉ SALES mới bị giới hạn theo gian hàng. WAREHOUSE thấy đơn của mọi gian nên
- * danh sách phân quyền của họ luôn rỗng — trả về [] để giao diện không hiển thị
- * một ma trận vô nghĩa rồi khiến chủ shop tưởng kho đang bị chặn.
- */
-function scopeOf(
-  role: Role,
-  rows: StaffChannelRow[]
-): ChannelPermissionInput[] {
-  return role === Role.SALES ? rows.map(rowToPermission) : [];
-}
-
-/** Định dạng chung của một nhân viên trả về cho giao diện. */
-function serializeStaff(staff: {
+type StaffRow = {
   id: string;
-  email: string;
+  email: string | null;
+  staffUsername: string | null;
   fullName: string;
   role: Role;
   createdAt: Date;
-  staffChannels: StaffChannelRow[];
-}) {
-  const allowedChannels = scopeOf(staff.role, staff.staffChannels);
+  permissions: string[];
+  staffChannels: { channelId: string }[];
+};
+
+/** Định dạng chung của một nhân viên trả về cho giao diện. */
+function serializeStaff(staff: StaffRow, ownerUsername: string | null) {
   return {
     id: staff.id,
-    email: staff.email,
     fullName: staff.fullName,
+    /** Email chỉ còn ở nhân viên CŨ (tạo trước 10/08) — null với tài khoản mới. */
+    email: staff.email,
+    staffUsername: staff.staffUsername,
+    /** Chuỗi gõ vào ô đăng nhập: "chủ/nhânviên"; null = nhân viên cũ dùng email. */
+    loginName:
+      staff.staffUsername && ownerUsername
+        ? `${ownerUsername}/${staff.staffUsername}`
+        : null,
     role: staff.role,
     createdAt: staff.createdAt,
-    /** Mảng Object chi tiết: mỗi gian kèm 4 cờ chức năng bật/tắt độc lập. */
-    allowedChannels,
-    /** Danh sách id gian được phân công — tiện cho các chỗ chỉ cần biết phạm vi. */
-    allowedChannelIds: allowedChannels.map((c) => c.channelId),
+    permissions: staff.permissions,
+    allowedChannelIds: staff.staffChannels.map((c) => c.channelId),
   };
 }
 
-/**
- * Chuẩn hóa & lọc danh sách phân quyền gửi lên: chỉ giữ những gian THẬT SỰ thuộc
- * shop này (chặn gán bừa id lạ) và ép các cờ về boolean.
- */
-async function validChannelPermissions(
-  ownerId: string,
-  raw: unknown
-): Promise<ChannelPermissionInput[]> {
+/** Lọc danh sách gian gửi lên: chỉ giữ gian THẬT SỰ thuộc shop này. */
+async function validChannelIds(ownerId: string, raw: unknown): Promise<string[]> {
   if (!Array.isArray(raw) || raw.length === 0) return [];
-
-  const byId = new Map<string, ChannelPermissionInput>();
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const channelId = (item as Record<string, unknown>).channelId;
-    if (typeof channelId !== "string" || channelId === "") continue;
-    const perm: ChannelPermissionInput = {
-      channelId,
-      finance: false,
-      warehouse: false,
-      ads: false,
-      orders: false,
-    };
-    for (const key of PERMISSION_KEYS) {
-      perm[key] = (item as Record<string, unknown>)[key] === true;
-    }
-    // Trùng channelId thì giữ bản sau — tránh nhân đôi khi giao diện lỡ gửi lặp.
-    byId.set(channelId, perm);
-  }
-  if (byId.size === 0) return [];
-
+  const wanted = new Set(raw.filter((v): v is string => typeof v === "string" && v !== ""));
+  if (wanted.size === 0) return [];
   const rows = await prisma.channel.findMany({
-    where: { userId: ownerId, id: { in: [...byId.keys()] } },
+    where: { userId: ownerId, id: { in: [...wanted] } },
     select: { id: true },
   });
-  return rows
-    .map((c) => byId.get(c.id))
-    .filter((p): p is ChannelPermissionInput => p !== undefined);
+  return rows.map((r) => r.id);
 }
 
-/** Dữ liệu tạo bản ghi StaffChannel từ một dòng phân quyền. */
-function toStaffChannelCreate(perm: ChannelPermissionInput) {
-  return {
-    channelId: perm.channelId,
-    canFinance: perm.finance,
-    canWarehouse: perm.warehouse,
-    canAds: perm.ads,
-    canOrders: perm.orders,
-  };
+async function ownerUsernameOf(req: AuthRequest): Promise<string | null> {
+  const owner = await prisma.user.findUnique({
+    where: { id: req.ownerId! },
+    select: { username: true },
+  });
+  return owner?.username ?? null;
 }
 
-// GET /api/staff — danh sách nhân viên của shop + vai trò + phân quyền gian hàng
+// GET /api/staff — danh sách nhân viên + quyền + phạm vi gian hàng.
+// Kèm ownerUsername để giao diện dựng tiền tố "chủ/" trong modal tạo tài khoản.
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
-    const staff = await prisma.user.findMany({
-      where: { ownerId: req.ownerId! },
-      orderBy: { createdAt: "desc" },
-      select: STAFF_SELECT,
+    const [staff, ownerUsername] = await Promise.all([
+      prisma.user.findMany({
+        where: { ownerId: req.ownerId! },
+        orderBy: { createdAt: "desc" },
+        select: STAFF_SELECT,
+      }),
+      ownerUsernameOf(req),
+    ]);
+    res.json({
+      ownerUsername,
+      staff: staff.map((s) => serializeStaff(s, ownerUsername)),
     });
-
-    res.json(staff.map(serializeStaff));
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/staff — tạo tài khoản nhân viên mới cho shop.
-// Body: { email, password, fullName, role: SALES|WAREHOUSE, channels?: ChannelPermission[] }
+// POST /api/staff — tạo tài khoản nhân viên "chủ/nhânviên" (KHÔNG cần email).
+// Body: { staffUsername, password, fullName, permissions?: string[], channelIds?: string[] }
 router.post("/", async (req: AuthRequest, res, next) => {
   try {
-    const { email, password, fullName, role, channels } = req.body ?? {};
+    const { staffUsername, password, fullName, permissions, channelIds } =
+      req.body ?? {};
 
-    if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
-      res.status(400).json({ error: "Email không hợp lệ" });
+    const uname =
+      typeof staffUsername === "string" ? staffUsername.trim().toLowerCase() : "";
+    if (!USERNAME_REGEX.test(uname)) {
+      res.status(400).json({
+        error:
+          "Tên đăng nhập nhân viên: 3-30 ký tự, chỉ gồm chữ thường/số/dấu chấm/gạch dưới",
+      });
       return;
     }
     if (typeof password !== "string" || password.length < 6) {
@@ -187,130 +129,135 @@ router.post("/", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Vui lòng nhập họ tên" });
       return;
     }
-    if (!isAssignableRole(role)) {
-      res.status(400).json({
-        error: "Vai trò phải là SALES (nhân viên vận hành) hoặc WAREHOUSE (nhân viên kho)",
-      });
-      return;
-    }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const existing = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
+    const clash = await prisma.user.findUnique({
+      where: {
+        ownerId_staffUsername: { ownerId: req.ownerId!, staffUsername: uname },
+      },
+      select: { id: true },
     });
-    if (existing) {
-      res.status(409).json({ error: "Email này đã được đăng ký" });
+    if (clash) {
+      res
+        .status(409)
+        .json({ error: `Shop đã có nhân viên tên đăng nhập "${uname}"` });
       return;
     }
 
-    // Gán gian hàng ngay lúc tạo để tài khoản SALES không có khoảng thời gian
-    // "đã tạo nhưng chưa thấy gì" khiến chủ shop tưởng hệ thống hỏng.
-    const perms =
-      role === Role.SALES
-        ? await validChannelPermissions(req.ownerId!, channels)
-        : [];
+    // Chủ shop cũ chưa đặt username (đăng nhập email thuần) → tự sinh và lưu
+    // luôn, vì username chủ là NỬA TRÁI của định dạng đăng nhập nhân viên.
+    const owner = await prisma.user.findUniqueOrThrow({
+      where: { id: req.ownerId! },
+      select: { id: true, email: true, username: true },
+    });
+    const ownerUsername = await ensureOwnerUsername(owner);
+
+    const perms = sanitizePermissions(permissions);
+    const channels = await validChannelIds(req.ownerId!, channelIds);
 
     const staff = await prisma.user.create({
       data: {
-        email: normalizedEmail,
+        email: null,
+        staffUsername: uname,
         passwordHash: await bcrypt.hash(password, 10),
         fullName: fullName.trim(),
-        role,
+        role: Role.SALES, // "nhân viên" — phạm vi gian bó theo StaffChannel
         ownerId: req.ownerId!,
-        staffChannels: { create: perms.map(toStaffChannelCreate) },
+        permissions: perms,
+        staffChannels: { create: channels.map((channelId) => ({ channelId })) },
       },
       select: STAFF_SELECT,
     });
 
-    res.status(201).json(serializeStaff(staff));
+    res.status(201).json(serializeStaff(staff, ownerUsername));
   } catch (err) {
     next(err);
   }
 });
 
-// PATCH /api/staff/:id — đổi vai trò của nhân viên.
-// Body: { role: SALES|WAREHOUSE }
+// PATCH /api/staff/:id — cập nhật nhân viên: họ tên / cây quyền / phạm vi gian.
+// Body: { fullName?, permissions?: string[], channelIds?: string[] } — trường
+// nào vắng mặt thì giữ nguyên (permissions/channelIds gửi mảng RỖNG = thu hồi hết).
 router.patch("/:id", async (req: AuthRequest, res, next) => {
   try {
-    const { role } = req.body ?? {};
-    if (!isAssignableRole(role)) {
-      res.status(400).json({
-        error: "Vai trò phải là SALES (nhân viên vận hành) hoặc WAREHOUSE (nhân viên kho)",
-      });
-      return;
-    }
+    const { fullName, permissions, channelIds } = req.body ?? {};
 
     const staff = await prisma.user.findFirst({
       where: { id: req.params.id, ownerId: req.ownerId! },
+      select: { id: true },
     });
     if (!staff) {
       res.status(404).json({ error: "Không tìm thấy nhân viên" });
       return;
     }
 
-    // Chuyển sang WAREHOUSE thì xoá luôn phân công gian hàng: kho vốn thấy mọi
-    // gian, để lại bản ghi cũ sẽ hồi sinh sai phạm vi nếu sau này đổi về SALES.
+    if (fullName !== undefined && (typeof fullName !== "string" || fullName.trim().length < 2)) {
+      res.status(400).json({ error: "Họ tên không hợp lệ" });
+      return;
+    }
+    if (permissions !== undefined && !Array.isArray(permissions)) {
+      res.status(400).json({ error: "permissions phải là mảng khóa quyền" });
+      return;
+    }
+    if (channelIds !== undefined && !Array.isArray(channelIds)) {
+      res.status(400).json({ error: "channelIds phải là mảng id gian hàng" });
+      return;
+    }
+
+    const channels =
+      channelIds !== undefined
+        ? await validChannelIds(req.ownerId!, channelIds)
+        : undefined;
+
     const updated = await prisma.$transaction(async (tx) => {
-      if (role === Role.WAREHOUSE) {
+      if (channels !== undefined) {
+        // Xoá sạch rồi tạo lại: gọn hơn dò từng dòng, số gian một shop luôn nhỏ.
         await tx.staffChannel.deleteMany({ where: { staffId: staff.id } });
+        if (channels.length > 0) {
+          await tx.staffChannel.createMany({
+            data: channels.map((channelId) => ({ staffId: staff.id, channelId })),
+          });
+        }
       }
       return tx.user.update({
         where: { id: staff.id },
-        data: { role },
+        data: {
+          ...(fullName !== undefined ? { fullName: fullName.trim() } : {}),
+          ...(permissions !== undefined
+            ? { permissions: sanitizePermissions(permissions) }
+            : {}),
+        },
         select: STAFF_SELECT,
       });
     });
 
-    res.json(serializeStaff(updated));
+    res.json(serializeStaff(updated, await ownerUsernameOf(req)));
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/staff/:id/channels — đặt lại phân quyền gian hàng của một SALES.
-// Body: { channels: ChannelPermission[] } — mỗi gian kèm 4 cờ chức năng.
-// Mảng rỗng = nhân viên đó chưa được gán gian nào (chưa thấy đơn nào).
-router.put("/:id/channels", async (req: AuthRequest, res, next) => {
+// POST /api/staff/:id/reset-password — chủ shop cấp lại mật khẩu cho nhân viên
+// (nhân viên "chủ/nhânviên" không có email nên không đi được luồng quên mật khẩu).
+router.post("/:id/reset-password", async (req: AuthRequest, res, next) => {
   try {
-    const { channels } = req.body ?? {};
-    if (channels !== undefined && !Array.isArray(channels)) {
-      res.status(400).json({ error: "channels phải là mảng" });
+    const { password } = req.body ?? {};
+    if (typeof password !== "string" || password.length < 6) {
+      res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 6 ký tự" });
       return;
     }
-
     const staff = await prisma.user.findFirst({
       where: { id: req.params.id, ownerId: req.ownerId! },
+      select: { id: true },
     });
     if (!staff) {
       res.status(404).json({ error: "Không tìm thấy nhân viên" });
       return;
     }
-    if (staff.role !== Role.SALES) {
-      res.status(400).json({
-        error:
-          "Chỉ nhân viên vận hành (SALES) mới phân công theo gian hàng. Nhân viên kho vốn xử lý đơn của mọi gian.",
-      });
-      return;
-    }
-
-    const perms = await validChannelPermissions(req.ownerId!, channels);
-
-    // Xoá sạch rồi tạo lại: gọn hơn dò từng dòng để cập nhật/thêm/xoá, và số
-    // gian của một shop luôn nhỏ nên không đáng lo về hiệu năng.
-    const updated = await prisma.$transaction(async (tx) => {
-      await tx.staffChannel.deleteMany({ where: { staffId: staff.id } });
-      if (perms.length > 0) {
-        await tx.staffChannel.createMany({
-          data: perms.map((p) => ({ staffId: staff.id, ...toStaffChannelCreate(p) })),
-        });
-      }
-      return tx.user.findUniqueOrThrow({
-        where: { id: staff.id },
-        select: STAFF_SELECT,
-      });
+    await prisma.user.update({
+      where: { id: staff.id },
+      data: { passwordHash: await bcrypt.hash(password, 10) },
     });
-
-    res.json(serializeStaff(updated));
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -321,6 +268,7 @@ router.delete("/:id", async (req: AuthRequest, res, next) => {
   try {
     const staff = await prisma.user.findFirst({
       where: { id: req.params.id, ownerId: req.ownerId! },
+      select: { id: true },
     });
     if (!staff) {
       res.status(404).json({ error: "Không tìm thấy nhân viên" });

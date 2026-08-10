@@ -26,7 +26,7 @@ export function OperationsFrame({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    if (!canAccessOperations(getStoredUser()?.role)) setDenied(true);
+    if (!canAccessOperations(getStoredUser())) setDenied(true);
   }, [router]);
 
   if (denied) {

@@ -28,7 +28,7 @@ export function KocShell({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    if (!canAccessKocMarketing(getStoredUser()?.role)) setDenied(true);
+    if (!canAccessKocMarketing(getStoredUser())) setDenied(true);
   }, [router]);
 
   if (denied) {

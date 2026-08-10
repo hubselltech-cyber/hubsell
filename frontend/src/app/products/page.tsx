@@ -130,7 +130,7 @@ export default function ProductsPage() {
 
   // Nhân viên (SALES/WAREHOUSE) không được biết giá vốn — backend đã cắt hẳn
   // trường này khỏi dữ liệu trả về, ở đây bỏ luôn cột để bảng không có ô trống.
-  const seesCost = canSeeFinancials(getStoredUser()?.role);
+  const seesCost = canSeeFinancials(getStoredUser());
 
   const columns = useMemo(
     () => [
@@ -263,7 +263,7 @@ export default function ProductsPage() {
           <div className="flex flex-wrap items-center gap-2">
             {/* Kéo danh mục sàn về tầng đệm rồi đưa thẳng sang trang Liên kết
                 SP vào kho vật lý để nối — bước 2 của luồng "kho có trước". */}
-            {canManageShop(getStoredUser()?.role) && (
+            {canManageShop(getStoredUser()) && (
               <SyncChannelProductsButton
                 label="Kéo sản phẩm từ sàn về"
                 onSynced={() => router.push("/mappings")}

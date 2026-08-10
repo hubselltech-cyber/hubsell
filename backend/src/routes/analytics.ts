@@ -53,7 +53,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
     const filteredByChannel = hasChannelFilter(req);
-    const seesFinancials = canSeeFinancials(req.userRole);
+    const seesFinancials = canSeeFinancials(req);
 
     /*
      * KỲ TRƯỚC LIỀN KỀ — để tính mức tăng/giảm.

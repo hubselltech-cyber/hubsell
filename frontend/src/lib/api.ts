@@ -115,6 +115,16 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     } catch {
       // giữ thông báo mặc định
     }
+    // Chủ shop vừa RÚT QUYỀN giữa phiên làm việc của nhân viên → phát tín hiệu
+    // cho AppShell refetch /me để sidebar cập nhật ngay (trang hiện tại tự lo
+    // hiển thị AccessDenied qua nhánh 403 sẵn có của nó).
+    if (
+      res.status === 403 &&
+      code === "PERMISSION_DENIED" &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new CustomEvent("hubsell:permission-denied"));
+    }
     throw new ApiError(res.status, message, code);
   }
 
@@ -129,15 +139,14 @@ export const NO_CHANNEL_CODE = "NO_CHANNEL";
 export type ChannelName = "SHOPEE" | "LAZADA" | "TIKTOK" | "OFFLINE";
 
 /**
- * Vai trò tài khoản.
+ * Vai trò tài khoản (mô hình 10/08).
  * - ADMIN     : chủ shop, toàn quyền
- * - SALES     : nhân viên vận hành — chỉ gian hàng được phân công, không thấy giá vốn/lợi nhuận
- * - WAREHOUSE : nhân viên kho — đơn của mọi gian, nhưng không vào được mục Tài chính
+ * - SALES     : NHÂN VIÊN — vào được gì do CÂY PHÂN QUYỀN (permissions) quyết,
+ *               phạm vi gian hàng do chủ shop phân công
+ * - WAREHOUSE : vai trò cũ, đã migration hết về SALES — giữ trong type để đọc
+ *               được dữ liệu cũ, KHÔNG cấp mới
  */
 export type Role = "ADMIN" | "SALES" | "WAREHOUSE";
-
-/** Vai trò chủ shop có thể gán cho nhân viên. */
-export const ASSIGNABLE_ROLES: Role[] = ["SALES", "WAREHOUSE"];
 
 export const ROLE_META: Record<
   Role,
@@ -149,30 +158,37 @@ export const ROLE_META: Record<
     className: "bg-violet-50 text-violet-700 border-violet-200",
   },
   SALES: {
-    label: "Nhân viên vận hành",
+    label: "Nhân viên",
     description:
-      "Chỉ xử lý đơn và xem doanh thu của những gian hàng được phân công. Không thấy giá vốn, lợi nhuận hay chi phí.",
+      "Vào được những chức năng được tick trong cây phân quyền, trên những gian hàng được phân công.",
     className: "bg-sky-50 text-sky-700 border-sky-200",
   },
   WAREHOUSE: {
     label: "Nhân viên kho",
-    description:
-      "Thấy đơn của TẤT CẢ gian hàng để nhặt và đóng gói. Không vào được mục Tài chính và không thấy giá vốn.",
+    description: "Vai trò cũ — đã chuyển sang mô hình cây phân quyền.",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
 };
 
 export interface AuthUser {
   id: string;
-  email: string;
+  /** Null với tài khoản NHÂN VIÊN kiểu "chủ/nhânviên" (không cần email). */
+  email: string | null;
   /** Tên đăng nhập (thay thế được email ở ô login). Null với user cũ chưa đặt. */
   username?: string | null;
+  /** Tên đăng nhập NHÂN VIÊN (nửa phải của "chủ/nhânviên"). Null với chủ shop. */
+  staffUsername?: string | null;
   fullName: string;
   /** Quốc gia ISO 3166-1 alpha-2, mặc định "VN". */
   country?: string;
   /** SĐT chuẩn E.164 (vd "+84912345678") — nền cho OTP SMS/WhatsApp sau này. */
   phone?: string | null;
   role: Role;
+  /**
+   * Cây quyền của NHÂN VIÊN — mảng khóa lá của permission-registry. Chủ shop
+   * không cần (toàn quyền). Chỉ là lớp ẩn/hiện menu; lớp chặn thật ở backend.
+   */
+  permissions?: string[];
   /**
    * Quản trị NỀN TẢNG Hubsell (khác ADMIN của shop) — mở mục "Hệ thống" trên
    * sidebar (/admin). Chỉ gán được bằng script phía server, FE chỉ đọc.
@@ -863,57 +879,39 @@ export function fetchMe() {
 
 // ----- Quản lý nhân viên (chỉ Admin) -----
 
-/**
- * Bốn chức năng có thể bật/tắt độc lập cho từng gian hàng của một SALES.
- * Khớp với các cột canFinance/canWarehouse/canAds/canOrders ở backend.
- */
-export type StaffPermissionKey = "finance" | "warehouse" | "ads" | "orders";
-
-/** Nhãn hiển thị của từng cột trong ma trận phân quyền. */
-export const STAFF_PERMISSION_META: {
-  key: StaffPermissionKey;
-  label: string;
-}[] = [
-  { key: "finance", label: "Tài chính" },
-  { key: "warehouse", label: "Kho hàng" },
-  { key: "ads", label: "Quảng cáo" },
-  { key: "orders", label: "Đơn hàng" },
-];
-
-/** Phân quyền của một SALES trên MỘT gian hàng: id gian + 4 cờ chức năng. */
-export interface StaffChannelPermission {
-  channelId: string;
-  finance: boolean;
-  warehouse: boolean;
-  ads: boolean;
-  orders: boolean;
-}
-
 export interface StaffMember {
   id: string;
-  email: string;
+  /** Luôn null với nhân viên mô hình mới (kiểu cũ tạo bằng email đã xóa 10/08). */
+  email: string | null;
+  /** Tên đăng nhập nhân viên (nửa phải của "chủ/nhânviên"). */
+  staffUsername: string | null;
+  /** Chuỗi gõ vào ô đăng nhập: "chủ/nhânviên". */
+  loginName: string | null;
   fullName: string;
   role: Role;
+  /** Cây quyền — mảng khóa lá của permission-registry. */
+  permissions: string[];
   createdAt: string;
   /**
-   * Phân quyền chi tiết theo gian hàng. CHỈ có ý nghĩa với SALES; rỗng = chưa
-   * được gán gian nào (chưa thấy đơn nào). Mỗi phần tử là một gian kèm 4 cờ.
+   * PHẠM VI GIAN HÀNG — id các gian được phân công (StaffChannel). Rỗng = chưa
+   * gán gian nào → nhân viên chưa thấy đơn/dữ liệu nào (default-deny).
    */
-  allowedChannels: StaffChannelPermission[];
-  /** Danh sách id gian được gán — tiện cho chỗ chỉ cần biết phạm vi. */
   allowedChannelIds: string[];
 }
 
 export function fetchStaff() {
-  return apiFetch<StaffMember[]>("/api/staff");
+  return apiFetch<{ ownerUsername: string | null; staff: StaffMember[] }>(
+    "/api/staff"
+  );
 }
 
+/** Tạo tài khoản nhân viên "chủ/nhânviên" — KHÔNG cần email. */
 export function createStaff(data: {
-  email: string;
+  staffUsername: string;
   password: string;
   fullName: string;
-  role: Role;
-  channels?: StaffChannelPermission[];
+  permissions: string[];
+  channelIds: string[];
 }) {
   return apiFetch<StaffMember>("/api/staff", {
     method: "POST",
@@ -921,22 +919,25 @@ export function createStaff(data: {
   });
 }
 
-/** Đặt lại toàn bộ ma trận phân quyền gian hàng cho một SALES. */
-export function setStaffChannels(
+/**
+ * Cập nhật nhân viên: họ tên / cây quyền / phạm vi gian hàng — trường vắng mặt
+ * giữ nguyên (mảng RỖNG = thu hồi hết).
+ */
+export function updateStaff(
   staffId: string,
-  channels: StaffChannelPermission[]
+  data: { fullName?: string; permissions?: string[]; channelIds?: string[] }
 ) {
-  return apiFetch<StaffMember>(`/api/staff/${staffId}/channels`, {
-    method: "PUT",
-    body: JSON.stringify({ channels }),
+  return apiFetch<StaffMember>(`/api/staff/${staffId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
   });
 }
 
-/** Đổi vai trò của một nhân viên. */
-export function updateStaffRole(staffId: string, role: Role) {
-  return apiFetch<StaffMember>(`/api/staff/${staffId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ role }),
+/** Chủ shop cấp lại mật khẩu cho nhân viên (nhân viên không có email để tự reset). */
+export function resetStaffPassword(staffId: string, password: string) {
+  return apiFetch<{ ok: boolean }>(`/api/staff/${staffId}/reset-password`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
   });
 }
 

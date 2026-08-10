@@ -24,15 +24,19 @@ import {
   ROLE_META,
   setStoredUser,
   type AuthUser,
-  type Role,
 } from "@/lib/api";
-import { homePathFor } from "@/lib/permissions";
+import { can, homePathFor, isAdmin } from "@/lib/permissions";
 import { TEXT_PAGE_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 interface NavChild {
   href: string;
   label: string;
+  /**
+   * Khóa quyền LÁ của trang (permission-registry). Vắng mặt = thừa kế perm của
+   * nhóm cha (nhóm nguyên khối như KOC/Hóa đơn & Thuế).
+   */
+  perm?: string;
 }
 interface NavItem {
   href?: string;
@@ -43,8 +47,17 @@ interface NavItem {
    * (vd Coins của "Kiếm Tiền Cùng Hubsell") — NavIcon tự nhận dạng cả hai.
    */
   icon: string | LucideIcon;
-  /** Vai trò nào nhìn thấy mục này. Không có tên trong đây thì mục bị ẩn hẳn. */
-  roles: Role[];
+  /**
+   * Khóa quyền trong permission-registry (nhóm hoặc lá). Chủ shop luôn thấy;
+   * nhân viên phải có quyền tương ứng. Vắng mặt = mọi người đăng nhập đều thấy
+   * (vd Hướng dẫn sử dụng) — TRỪ KHI adminOnly bật.
+   */
+  perm?: string;
+  /**
+   * Khu VĨNH VIỄN CHỈ CHỦ SHOP (Kênh bán, Nhân viên, Cấu hình…) — cố tình không
+   * nằm trong cây phân quyền, nhân viên không bao giờ thấy.
+   */
+  adminOnly?: boolean;
   /**
    * Mục chỉ dành cho QUẢN TRỊ NỀN TẢNG (cờ isPlatformAdmin trên tài khoản) —
    * ẩn hẳn với mọi chủ shop thường. Backend vẫn chặn 403 độc lập với UI.
@@ -53,24 +66,21 @@ interface NavItem {
   children?: NavChild[];
 }
 
-const ALL_ROLES: Role[] = ["ADMIN", "SALES", "WAREHOUSE"];
-
 const NAV_ITEMS: NavItem[] = [
-  // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
-  { href: "/", label: "Tổng quan", icon: "dashboard", roles: ["ADMIN", "SALES"] },
-  { href: "/orders", label: "Đơn hàng", icon: "shopping_cart", roles: ALL_ROLES },
+  { href: "/", label: "Tổng quan", icon: "dashboard", perm: "dashboard" },
+  { href: "/orders", label: "Đơn hàng", icon: "shopping_cart", perm: "orders" },
   {
     label: "Quản lý Tài chính",
     // "credit_card" (thẻ ngân hàng): gọn, sang, outline và filled cùng một
     // silhouette — "wallet" và "account_balance_wallet" đều bị chê thô
     // (anh Trung 08/08).
     icon: "credit_card",
-    roles: ["ADMIN"],
+    perm: "finance",
     children: [
-      { href: "/finance/analytics", label: "Báo cáo dòng tiền" },
-      { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện" },
-      { href: "/finance/expenses", label: "Thu chi vận hành" },
-      { href: "/finance/cost-prices", label: "Cấu hình Giá vốn" },
+      { href: "/finance/analytics", label: "Báo cáo dòng tiền", perm: "finance.analytics" },
+      { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện", perm: "finance.realized-pnl" },
+      { href: "/finance/expenses", label: "Thu chi vận hành", perm: "finance.expenses" },
+      { href: "/finance/cost-prices", label: "Cấu hình Giá vốn", perm: "finance.cost-prices" },
     ],
   },
   {
@@ -78,61 +88,52 @@ const NAV_ITEMS: NavItem[] = [
     // hàng hoàn đều là việc của kho.
     label: "Quản lý Kho",
     icon: "package_2",
-    roles: ALL_ROLES,
+    perm: "warehouse",
     children: [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
-      { href: "/products", label: "Kho vật lý" },
-      { href: "/warehouse/returns", label: "Đối soát đơn hoàn" },
+      { href: "/products", label: "Kho vật lý", perm: "warehouse.products" },
+      { href: "/warehouse/returns", label: "Đối soát đơn hoàn", perm: "warehouse.returns" },
       // Điều chuyển từ nhóm Tài chính sang (nghiệp vụ đối soát vận chuyển sát
       // với kho vận); route cũ /finance/shipping-alerts vẫn redirect về đây.
-      { href: "/warehouse/shipping-alerts", label: "Đối soát phí ship" },
+      { href: "/warehouse/shipping-alerts", label: "Đối soát phí ship", perm: "warehouse.shipping-alerts" },
     ],
   },
   {
-    // Tự động hoá CSKH & phản hồi sàn đa kênh — hiện là preview mock (cùng
-    // trạng thái với Trợ lý quảng cáo). CSKH là việc của SALES nên SALES vào
-    // được; kho không liên quan.
+    // Tự động hoá CSKH & phản hồi sàn đa kênh — chat Shopee THẬT production.
     label: "Trợ lý vận hành",
     icon: "smart_toy",
-    roles: ["ADMIN", "SALES"],
+    perm: "operations",
     children: [
-      { href: "/operations-assistant/chat", label: "Trợ lý Chat" },
-      { href: "/operations-assistant/reviews", label: "Phản hồi đánh giá" },
-      // Điều chuyển từ nhóm Tài chính sang; route cũ /finance/loss-orders vẫn
-      // redirect về đây. LƯU Ý phân quyền: nhóm cha mở cho SALES nên SALES
-      // cũng thấy menu này — chấp nhận tạm, chờ phương thức phân quyền mới
-      // (anh Trung 08/08).
+      { href: "/operations-assistant/chat", label: "Trợ lý Chat", perm: "operations.chat" },
+      { href: "/operations-assistant/reviews", label: "Phản hồi đánh giá", perm: "operations.reviews" },
+      // Trước 10/08 mục này "SALES thấy menu nhưng API 403 vì là dữ liệu lãi/lỗ"
+      // — cây phân quyền đã giải đúng nợ đó: có lá operations.loss-orders mới thấy.
       {
         href: "/operations-assistant/loss-orders",
         label: "Cảnh báo & P&L Sản phẩm",
+        perm: "operations.loss-orders",
       },
-      { href: "/operations-assistant/ai-rules", label: "Cấu hình kịch bản AI" },
+      { href: "/operations-assistant/ai-rules", label: "Cấu hình kịch bản AI", perm: "operations.ai-rules" },
     ],
   },
   {
-    // Khung giữ chỗ cho tích hợp Marketing/Ads API 3 sàn — hiện là preview
-    // mock. Chi phí Ads là dữ liệu tài chính nên chỉ ADMIN thấy (cùng luật
-    // với nhóm Quản lý Tài chính).
     label: "Trợ lý quảng cáo",
     icon: "campaign",
-    roles: ["ADMIN"],
+    perm: "ads",
     children: [
-      { href: "/ads/tiktok", label: "Quảng cáo TikTok" },
-      { href: "/ads/shopee", label: "Quảng cáo Shopee" },
-      { href: "/ads/lazada", label: "Quảng cáo Lazada" },
+      { href: "/ads/tiktok", label: "Quảng cáo TikTok", perm: "ads.tiktok" },
+      { href: "/ads/shopee", label: "Quảng cáo Shopee", perm: "ads.shopee" },
+      { href: "/ads/lazada", label: "Quảng cáo Lazada", perm: "ads.lazada" },
     ],
   },
   {
-    // Mạng lưới KOC & Affiliate đa kênh (đặt dưới Trợ lý quảng cáo để gom cụm
-    // Marketing). Booking fee / Net-ROI là dữ liệu tài chính → chỉ ADMIN (xem
-    // canAccessKocMarketing). Trang Shopee/Lazada đọc SỐ THẬT từ /api/koc/*;
-    // TikTok là CỔNG CHỜ (đợi sandbox + shop thật uỷ quyền); Hàng mẫu & Chi
-    // phí còn preview mock.
+    // Mạng lưới KOC & Affiliate đa kênh — mục NGUYÊN KHỐI trong cây quyền
+    // (khóa "koc"): cấp là cấp cả cụm, các trang con thừa kế perm nhóm.
     label: "Mạng lưới KOC & Marketing",
     // "handshake" thay "diversity_3": hợp tác/booking KOC (anh Trung 08/08).
     icon: "handshake",
-    roles: ["ADMIN"],
+    perm: "koc",
     children: [
       { href: "/koc-marketing/overview", label: "Tổng quan Net-ROI Đa kênh" },
       { href: "/koc-marketing/shopee", label: "Shopee Affiliate (AMS)" },
@@ -143,11 +144,10 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    // Hóa đơn điện tử & thuế — nghiệp vụ chạy hằng ngày nhưng tần suất thấp
-    // hơn cụm bán hàng/marketing nên xếp sau (thứ tự anh Trung chốt 08/08).
+    // Hóa đơn & thuế — mục NGUYÊN KHỐI (khóa "invoicing"), thứ tự anh Trung chốt 08/08.
     label: "Hóa đơn & Thuế",
     icon: "receipt_long",
-    roles: ["ADMIN"],
+    perm: "invoicing",
     children: [
       { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
       { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
@@ -155,11 +155,11 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   // "store" thay "storefront": nhà mái hiên có CỬA GIỮA (anh Trung 08/08).
-  { href: "/channels", label: "Kênh bán", icon: "store", roles: ["ADMIN"] },
+  { href: "/channels", label: "Kênh bán", icon: "store", adminOnly: true },
   // Nhãn sidebar để ngắn cho khỏi xuống dòng; tên đầy đủ "Liên kết SP vào kho
   // vật lý" nằm ở tiêu đề trang (PAGE_TITLES) và cột bảng.
-  { href: "/mappings", label: "Liên kết sản phẩm", icon: "link", roles: ["ADMIN"] },
-  { href: "/staff", label: "Nhân viên", icon: "group", roles: ["ADMIN"] },
+  { href: "/mappings", label: "Liên kết sản phẩm", icon: "link", adminOnly: true },
+  { href: "/staff", label: "Nhân viên", icon: "group", adminOnly: true },
 ];
 
 // Khu CHÂN SIDEBAR — tách hẳn khỏi khu làm việc bên trên, ghim sát đáy với
@@ -169,17 +169,16 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
   {
     // Hướng dẫn sử dụng cơ bản cho khách hàng mới (kế hoạch 09/08) — đặt cạnh
     // Cấu hình theo thông lệ SaaS: tài liệu trợ giúp nằm khu "ít khi động tới".
-    // Mở cho MỌI vai trò: nhân viên cũng cần tra cứu cách dùng phần việc của mình.
+    // KHÔNG có perm: nhân viên cũng cần tra cứu cách dùng phần việc của mình.
     href: "/guide",
     label: "Hướng dẫn sử dụng",
     icon: "help",
-    roles: ALL_ROLES,
   },
   {
     // Cấu hình hệ thống gom thành nhóm phân cấp theo quy hoạch SaaS.
     label: "Cấu hình",
     icon: "settings",
-    roles: ["ADMIN"],
+    adminOnly: true,
     children: [
       { href: "/settings/general", label: "Cấu hình chung" },
       // "Hóa đơn & Thuế" đã chuyển lên danh mục lớn riêng (route /invoicing/*);
@@ -197,7 +196,7 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
     href: "/affiliate",
     label: "Kiếm Tiền Cùng Hubsell",
     icon: Coins,
-    roles: ["ADMIN"],
+    adminOnly: true,
   },
   {
     // Khu QUẢN TRỊ NỀN TẢNG Hubsell — thống kê người dùng đăng ký, nhật ký
@@ -205,7 +204,7 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
     href: "/admin",
     label: "Hệ thống",
     icon: "admin_panel_settings",
-    roles: ["ADMIN"],
+    adminOnly: true,
     platformOnly: true,
   },
 ];
@@ -368,19 +367,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     checkStatus();
   }, [checkStatus]);
 
+  // Chủ shop rút quyền giữa phiên → apiFetch phát sự kiện này khi gặp 403
+  // PERMISSION_DENIED. Refetch /me để sidebar cập nhật ngay theo quyền mới.
+  useEffect(() => {
+    const onDenied = () => {
+      checkStatus();
+    };
+    window.addEventListener("hubsell:permission-denied", onDenied);
+    return () =>
+      window.removeEventListener("hubsell:permission-denied", onDenied);
+  }, [checkStatus]);
+
   // Chuyển trang xong thì tự đóng drawer — người dùng bấm menu là muốn đi,
   // không muốn phải đóng tay
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  // Cùng một luật hiển thị cho cả khu làm việc lẫn khu chân sidebar.
+  // Cùng một luật hiển thị cho cả khu làm việc lẫn khu chân sidebar:
+  // adminOnly → chỉ chủ shop; perm → tra cây quyền (chủ shop luôn qua);
+  // nhóm có children thì lọc từng trang con theo lá — nhân viên chỉ được
+  // "Báo cáo dòng tiền" sẽ thấy nhóm Tài chính đúng MỘT mục con.
   const visible = (i: NavItem) =>
     user !== null &&
-    i.roles.includes(user.role) &&
-    (!i.platformOnly || user.isPlatformAdmin === true);
-  const items = NAV_ITEMS.filter(visible);
-  const bottomItems = NAV_ITEMS_BOTTOM.filter(visible);
+    (!i.adminOnly || isAdmin(user)) &&
+    (!i.platformOnly || user.isPlatformAdmin === true) &&
+    (!i.perm || can(user, i.perm));
+  const visibleChildren = (i: NavItem): NavItem => {
+    if (!i.children) return i;
+    const children = i.children.filter(
+      (c) => isAdmin(user) || !c.perm || can(user, c.perm)
+    );
+    return { ...i, children };
+  };
+  const items = NAV_ITEMS.filter(visible)
+    .map(visibleChildren)
+    .filter((i) => !i.children || i.children.length > 0);
+  const bottomItems = NAV_ITEMS_BOTTOM.filter(visible)
+    .map(visibleChildren)
+    .filter((i) => !i.children || i.children.length > 0);
 
   function handleLogout() {
     clearToken();
@@ -515,7 +540,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const sidebarInner = (
     <>
         <Link
-          href={homePathFor(user?.role)}
+          href={homePathFor(user)}
           className="flex items-center gap-3 border-b px-5 py-4"
         >
           {/* unoptimized: giữ độ nét từ bản gốc 417px (xem chú thích ở /login) */}

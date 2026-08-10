@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
 import { prisma } from "./prisma";
+import { hasPermission } from "./permission-registry";
 
 // Khóa bí mật để ký token. Ở môi trường thật PHẢI đặt trong biến môi trường.
 const JWT_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
@@ -17,16 +18,25 @@ export interface AuthRequest extends Request {
   // để gác nhóm API /api/admin, không ảnh hưởng phân quyền dữ liệu shop.
   isPlatformAdmin?: boolean;
   // Phạm vi gian hàng: null = xem TẤT CẢ; mảng = chỉ các gian này (kể cả mảng rỗng).
-  // ADMIN và WAREHOUSE luôn null; SALES luôn là mảng.
+  // ADMIN luôn null; nhân viên luôn là mảng (lấy từ StaffChannel).
   allowedChannelIds?: string[] | null;
+  // Cây phân quyền của NHÂN VIÊN — mảng khóa lá từ permission-registry.
+  // ĐỌC TƯƠI TỪ DB MỖI REQUEST (không nhét vào JWT): chủ shop đổi quyền là
+  // request kế tiếp có hiệu lực ngay, không chờ token 7 ngày hết hạn.
+  permissions?: string[];
 }
 
 /**
- * Vai trò nào được xem số liệu tài chính (giá vốn, lợi nhuận, chi phí vận hành).
- * Chỉ chủ shop. SALES thấy doanh thu nhưng không thấy lãi; WAREHOUSE không thấy gì.
+ * Ai được xem số liệu tài chính (giá vốn, lợi nhuận, chi phí vận hành)?
+ * Chủ shop, và nhân viên được cấp BẤT KỲ quyền Tài chính nào — triết lý
+ * "tick gì thấy nấy" (anh Trung chốt 10/08): đã tin giao mảng Tài chính thì
+ * không giấu lãi/lỗ nửa vời nữa.
  */
-export function canSeeFinancials(role?: Role): boolean {
-  return role === Role.ADMIN;
+export function canSeeFinancials(req: AuthRequest): boolean {
+  return (
+    req.userRole === Role.ADMIN ||
+    hasPermission(req.permissions ?? [], "finance")
+  );
 }
 
 // Tạo token đăng nhập cho một user
@@ -52,7 +62,13 @@ export async function requireAuth(
 
     const user = await prisma.user.findUnique({
       where: { id: String(payload.sub) },
-      select: { id: true, role: true, ownerId: true, isPlatformAdmin: true },
+      select: {
+        id: true,
+        role: true,
+        ownerId: true,
+        isPlatformAdmin: true,
+        permissions: true,
+      },
     });
     if (!user) {
       res.status(401).json({ error: "Tài khoản không còn tồn tại" });
@@ -63,13 +79,15 @@ export async function requireAuth(
     req.ownerId = user.ownerId ?? user.id; // Nhân viên dùng chung dữ liệu của chủ shop
     req.userRole = user.role;
     req.isPlatformAdmin = user.isPlatformAdmin;
+    req.permissions = user.permissions;
 
-    // PHẠM VI GIAN HÀNG THEO VAI TRÒ:
+    // PHẠM VI GIAN HÀNG:
     // - ADMIN     : toàn bộ gian hàng của shop
-    // - WAREHOUSE : cũng toàn bộ — kho phải nhặt hàng cho đơn của mọi gian
-    // - SALES     : đúng những gian được phân công. Chưa phân công gian nào thì
-    //   chưa thấy đơn nào; mở sẵn toàn shop cho một tài khoản chưa cấu hình là
-    //   mặc định nguy hiểm, thà để trống rồi báo chủ shop đi phân công.
+    // - Nhân viên : đúng những gian được phân công trong StaffChannel. Chưa phân
+    //   công gian nào thì chưa thấy đơn nào; mở sẵn toàn shop cho một tài khoản
+    //   chưa cấu hình là mặc định nguy hiểm, thà để trống rồi báo chủ shop.
+    //   (Nhân viên kiểu cũ SALES/WAREHOUSE đã XÓA HẲN trong migration 10/08 —
+    //    chỉ là tài khoản test; mọi nhân viên từ nay đều là SALES nhánh này.)
     if (user.role === Role.SALES) {
       const perms = await prisma.staffChannel.findMany({
         where: { staffId: user.id },
@@ -144,5 +162,33 @@ export function requireRole(...roles: Role[]) {
       return;
     }
     next();
+  };
+}
+
+/**
+ * Middleware PHÂN QUYỀN TÍNH NĂNG: cho đi tiếp khi là CHỦ SHOP, hoặc nhân viên
+ * có BẤT KỲ quyền nào trong danh sách `keys` (lá khớp đúng lá; nhóm khớp mọi lá
+ * con — xem hasPermission). Gác ở TẦNG MOUNT app.ts để "bẻ khóa URL" gọi thẳng
+ * API chết ngay tầng cửa; route lẻ cần mịn hơn thì gắn thêm chính hàm này ở
+ * cấp route trong router con.
+ *
+ * Trả 403 kèm code PERMISSION_DENIED — FE bắt code này để refetch /me và cập
+ * nhật sidebar khi chủ shop rút quyền giữa phiên làm việc của nhân viên.
+ */
+export function requirePermission(...keys: string[]) {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (req.userRole === Role.ADMIN) {
+      next();
+      return;
+    }
+    const perms = req.permissions ?? [];
+    if (keys.some((k) => hasPermission(perms, k))) {
+      next();
+      return;
+    }
+    res.status(403).json({
+      error: "Bạn không có quyền truy cập chức năng này",
+      code: "PERMISSION_DENIED",
+    });
   };
 }
