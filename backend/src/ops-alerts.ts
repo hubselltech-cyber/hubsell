@@ -17,6 +17,13 @@
 import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "./prisma";
 import { computePnlRow, fetchPnlOrders } from "./routes/finance";
+import {
+  assistantDecisionActive,
+  computeChannelAdsInsights,
+} from "./integrations/shopee/ads-insights";
+import type { AssistantTrigger } from "./integrations/shopee/ads-assistant-rules";
+import { getAdsTotalBalance } from "./integrations/shopee/client";
+import { getValidShopeeAccessToken } from "./integrations/shopee/service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -43,6 +50,10 @@ const ADS_ORDER_GROWTH_OK = 1.2;
 /** Số nhịp auto-sync (10'/nhịp) lỗi LIÊN TIẾP thì báo "sàn trễ đồng bộ". */
 const SYNC_STALL_THRESHOLD = 3;
 
+// ── Ngưỡng Trợ lý quảng cáo Shopee (verdict rule engine GĐ2 → Trung tâm điều hành) ──
+/** Ví ads dự kiến cạn dưới mức này (giờ) thì phát cảnh báo Low Balance. */
+const ADS_WALLET_LOW_HOURS = 24;
+
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
 
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
@@ -56,15 +67,16 @@ const CHANNEL_LABEL: Record<string, string> = {
 };
 
 /** Một điều kiện sự cố mà detector phát hiện được (chưa gắn với DB). */
-interface DetectedAlert {
+export interface DetectedAlert {
   type: string;
   dedupeKey: string;
   tag: "inventory" | "finance" | "channel" | "ads" | "tax";
   severity: "high" | "medium" | "low";
   title: string;
   summary: string;
-  /** ActionParams cho nút xử lý phía frontend — hiện là deep-link nội bộ. */
-  payload: { kind: "navigate"; href: string; label: string };
+  /** ActionParams cho nút xử lý phía frontend — hiện là deep-link nội bộ.
+   *  `source` = nhãn sàn phát sinh cảnh báo (badge "Shopee"/"TikTok"… trên thẻ). */
+  payload: { kind: "navigate"; href: string; label: string; source?: string };
 }
 
 // ─────────────────────────── DETECTORS ───────────────────────────
@@ -301,6 +313,17 @@ async function detectSyncStalled(ownerId: string): Promise<DetectedAlert[]> {
  * lý là link mở Seller Center để seller tự kiểm tra chiến dịch.
  */
 async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
+  // Gian đã sync được CHIẾN DỊCH ads → detectShopeeAdsAssistant bên dưới báo
+  // spike theo TỪNG campaign (chính xác + deep-link nội bộ) — nhường, tránh
+  // báo đúp cùng một hiện tượng. Detector này giữ vai trò lưới an toàn cho
+  // gian chỉ có tổng chi AdSpend (Lazada/TikTok sau này, gian lỗi sync campaign).
+  const campaignChannels = await prisma.adsCampaign.findMany({
+    where: { channel: { userId: ownerId } },
+    select: { channelId: true },
+    distinct: ["channelId"],
+  });
+  const hasCampaignData = new Set(campaignChannels.map((r) => r.channelId));
+
   const rows = await prisma.adSpend.findMany({
     where: {
       channel: { userId: ownerId },
@@ -324,6 +347,7 @@ async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
 
   const alerts: DetectedAlert[] = [];
   for (const [channelId, list] of byChannel) {
+    if (hasCampaignData.has(channelId)) continue; // Trợ lý Shopee lo gian này
     // Ngày gần nhất CÓ chi tiêu — mốc so sánh (ngày hôm nay có thể mới sync một phần).
     const spendDays = list
       .filter((r) => Number(r.amount) > 0)
@@ -373,8 +397,268 @@ async function detectAdsSpike(ownerId: string): Promise<DetectedAlert[]> {
         kind: "navigate",
         href: "https://banhang.shopee.vn",
         label: "Mở Shopee Seller Center",
+        source: CHANNEL_LABEL[latest.channel.channelName],
       },
     });
+  }
+  return alerts;
+}
+
+// ─────────── TRỢ LÝ QUẢNG CÁO SHOPEE → TRUNG TÂM ĐIỀU HÀNH ───────────
+//
+// Nguồn verdict là rule engine GĐ2 (computeChannelAdsInsights — CÙNG lõi với
+// trang /ads/shopee và executor GĐ3, không tính lại luật). Chỉ đẩy 3 kịch bản
+// "báo động đỏ" lên Trung tâm điều hành, GOM MỖI KỊCH BẢN MỘT THẺ/GIAN để
+// không nhấn chìm cảnh báo KHO/TÀI CHÍNH (quyết định 10/08, anh Trung):
+//   ads-spend-spike      = verdict spike (Q3 — vọt chi hôm nay, không bù nổi)
+//   ads-zero-order-drain = pause_now nhánh zero_order (đốt tiền 0 đơn)
+//   ads-roas-risk        = pause_now nhánh below_breakeven (ROAS dưới hòa vốn thật)
+//   ads-low-balance      = ví ads dự kiến cạn < 24h (số dư gọi sống mỗi lượt quét)
+// review/grace Ở LẠI trang /ads/shopee — vùng vàng không réo còi điều hành.
+// Campaign chủ shop ĐÃ QUYẾT (decisionActive) bị loại từ nguồn → thẻ tự đóng.
+
+/** Lát cắt tối giản của một campaign cho việc gom kịch bản — thuần để test. */
+export interface ShopeeAdsCampaignSignal {
+  campaignId: string;
+  name: string;
+  verdict: string | null;
+  triggers: AssistantTrigger[];
+  /** Chủ shop đã quyết trên /ads/shopee và verdict chưa đổi loại. */
+  decisionActive: boolean;
+  spendToday: number;
+  spend7d: number;
+}
+
+export interface ShopeeAdsScenarioGroups {
+  spendSpike: ShopeeAdsCampaignSignal[];
+  zeroOrderDrain: ShopeeAdsCampaignSignal[];
+  roasRisk: ShopeeAdsCampaignSignal[];
+}
+
+/**
+ * Chia campaign vào 3 kịch bản báo động đỏ — mỗi campaign vào ĐÚNG MỘT nhóm
+ * (dính cả zero_order lẫn below_breakeven thì xếp zero_order: 0 đơn là nặng hơn).
+ */
+export function groupShopeeAdsScenarios(
+  campaigns: ShopeeAdsCampaignSignal[]
+): ShopeeAdsScenarioGroups {
+  const groups: ShopeeAdsScenarioGroups = {
+    spendSpike: [],
+    zeroOrderDrain: [],
+    roasRisk: [],
+  };
+  for (const c of campaigns) {
+    if (c.decisionActive) continue; // người đã quyết — máy không réo lại
+    if (c.verdict === "spike") groups.spendSpike.push(c);
+    else if (c.verdict === "pause_now") {
+      if (c.triggers.includes("zero_order")) groups.zeroOrderDrain.push(c);
+      else if (c.triggers.includes("below_breakeven")) groups.roasRisk.push(c);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Ước số giờ còn lại của ví ads: số dư ÷ tốc độ đốt/giờ. Tốc độ đốt lấy MAX của
+ * (chi hôm nay quy theo giờ đã trôi, trung bình 7 ngày ÷ 24) — lấy max để thận
+ * trọng: sáng sớm chưa tiêu gì thì nhịp 7 ngày vẫn giữ mẫu, ngày đang vọt chi
+ * thì nhịp hôm nay phản ánh đúng đám cháy. Không có nhịp đốt nào (> 0) → null.
+ */
+export function estimateAdsWalletHoursLeft(input: {
+  balance: number;
+  spendToday: number;
+  /** Số giờ đã trôi của hôm nay theo GIỜ VN (kẹp tối thiểu 1 để khỏi chia 0). */
+  hoursElapsedToday: number;
+  avgDailySpend7d: number;
+}): number | null {
+  const todayRate = input.spendToday / Math.max(1, input.hoursElapsedToday);
+  const burnPerHour = Math.max(todayRate, input.avgDailySpend7d / 24);
+  if (burnPerHour <= 0) return null;
+  return input.balance / burnPerHour;
+}
+
+/** Số giờ đã trôi của hôm nay theo giờ VN (server Render chạy UTC). */
+function hoursElapsedTodayVN(): number {
+  return (Date.now() / 3_600_000 + 7) % 24;
+}
+
+/** Liệt kê tối đa 3 tên campaign, phần dư gộp thành "+N chiến dịch khác". */
+function campaignListText(list: ShopeeAdsCampaignSignal[]): string {
+  const names = list
+    .slice(0, 3)
+    .map((c) => `"${c.name || `#${c.campaignId}`}"`)
+    .join(", ");
+  return list.length > 3 ? `${names} +${list.length - 3} chiến dịch khác` : names;
+}
+
+/** 1 campaign → deep-link thẳng campaign; nhiều → bộ lọc "cần xử lý" của trang ads. */
+function adsDeepLink(channelId: string, list: ShopeeAdsCampaignSignal[]): string {
+  return list.length === 1
+    ? `/ads/shopee?channelId=${channelId}&campaign_id=${encodeURIComponent(list[0].campaignId)}`
+    : `/ads/shopee?channelId=${channelId}&needs_action=1`;
+}
+
+/**
+ * Dựng các thẻ cảnh báo từ nhóm kịch bản + trạng thái ví — THUẦN, vitest đánh
+ * thẳng. dedupeKey = channelId (type đã phân biệt kịch bản trong khoá hoà giải).
+ */
+export function buildShopeeAdsAssistantAlerts(
+  shop: { channelId: string; shopName: string },
+  groups: ShopeeAdsScenarioGroups,
+  wallet: { balance: number; hoursLeft: number | null } | null
+): DetectedAlert[] {
+  const alerts: DetectedAlert[] = [];
+  const base = {
+    dedupeKey: shop.channelId,
+    tag: "ads" as const,
+  };
+  const payload = (list: ShopeeAdsCampaignSignal[]) => ({
+    kind: "navigate" as const,
+    href: adsDeepLink(shop.channelId, list),
+    label: "Xử lý chiến dịch",
+    source: "Shopee",
+  });
+
+  const spike = groups.spendSpike;
+  if (spike.length > 0) {
+    const totalToday = spike.reduce((s, c) => s + c.spendToday, 0);
+    alerts.push({
+      ...base,
+      type: "ads-spend-spike",
+      severity: "high",
+      title:
+        spike.length > 1
+          ? `${spike.length} chiến dịch Shopee vọt chi bất thường hôm nay — gian "${shop.shopName}"`
+          : `Chiến dịch ${campaignListText(spike)} vọt chi bất thường hôm nay — gian "${shop.shopName}"`,
+      summary: `Hôm nay đã tiêu ${vnd(totalToday)}, vượt xa nhịp ngày thường mà doanh thu chưa bù nổi hòa vốn: ${campaignListText(spike)}. Kiểm tra ngay trước khi cháy thêm ngân sách.`,
+      payload: payload(spike),
+    });
+  }
+
+  const drain = groups.zeroOrderDrain;
+  if (drain.length > 0) {
+    const total7d = drain.reduce((s, c) => s + c.spend7d, 0);
+    alerts.push({
+      ...base,
+      type: "ads-zero-order-drain",
+      severity: "high",
+      title: `Ads đốt ${vnd(total7d)} nhưng KHÔNG ra đơn nào — ${drain.length > 1 ? `${drain.length} chiến dịch` : "chiến dịch " + campaignListText(drain)} gian "${shop.shopName}"`,
+      summary: `${campaignListText(drain)} tiêu vượt ngưỡng trong cửa sổ gần nhất mà 0 đơn — tiền đang chảy một chiều. Trợ lý đề xuất tạm dừng để cắt lỗ.`,
+      payload: payload(drain),
+    });
+  }
+
+  const roas = groups.roasRisk;
+  if (roas.length > 0) {
+    const total7d = roas.reduce((s, c) => s + c.spend7d, 0);
+    alerts.push({
+      ...base,
+      type: "ads-roas-risk",
+      severity: total7d >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
+      title: `ROAS dưới hòa vốn thật — ${roas.length > 1 ? `${roas.length} chiến dịch` : "chiến dịch " + campaignListText(roas)} gian "${shop.shopName}" đang lỗ`,
+      summary: `${campaignListText(roas)} có ROAS thấp hơn ngưỡng hòa vốn tính từ lãi/lỗ thật của SKU — mỗi đồng ads đang lỗ thật. Đã tiêu ${vnd(total7d)} trong 7 ngày gần nhất.`,
+      payload: payload(roas),
+    });
+  }
+
+  if (
+    wallet &&
+    wallet.hoursLeft != null &&
+    wallet.hoursLeft < ADS_WALLET_LOW_HOURS
+  ) {
+    alerts.push({
+      ...base,
+      type: "ads-low-balance",
+      severity: "high",
+      title: `Ví Shopee Ads gian "${shop.shopName}" sắp cạn — còn ${vnd(wallet.balance)}`,
+      summary: `Với tốc độ đốt hiện tại, ví quảng cáo dự kiến cạn trong ~${Math.max(1, Math.round(wallet.hoursLeft))} giờ nữa — chiến dịch sẽ dừng giữa chừng nếu không nạp thêm.`,
+      payload: {
+        kind: "navigate",
+        href: `/ads/shopee?channelId=${shop.channelId}`,
+        label: "Kiểm tra ví Ads",
+        source: "Shopee",
+      },
+    });
+  }
+
+  return alerts;
+}
+
+/**
+ * DETECTOR: quét verdict Trợ lý quảng cáo của từng gian Shopee ACTIVE đã có
+ * dữ liệu campaign (sync mỗi giờ bởi order-auto-sync). Không gọi API sàn nào
+ * ngoài MỘT call số dư ví/gian (lỗi quyền → bỏ qua êm, các kịch bản khác vẫn chạy).
+ */
+async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[]> {
+  const channels = await prisma.channel.findMany({
+    where: {
+      userId: ownerId,
+      channelName: ChannelName.SHOPEE,
+      status: "ACTIVE",
+    },
+    select: { id: true, shopName: true },
+  });
+
+  const alerts: DetectedAlert[] = [];
+  for (const ch of channels) {
+    const campaignCount = await prisma.adsCampaign.count({
+      where: { channelId: ch.id },
+    });
+    if (campaignCount === 0) continue; // chưa sync campaign — detectAdsSpike lo
+
+    const insights = await computeChannelAdsInsights({
+      id: ch.id,
+      userId: ownerId,
+    });
+    if (!insights.config.enabled) continue; // chủ shop tắt Trợ lý của gian này
+
+    const signals: ShopeeAdsCampaignSignal[] = insights.items
+      .filter((it) => it.row.status === "ongoing")
+      .map((it) => ({
+        campaignId: it.row.campaignId,
+        name: it.row.name,
+        verdict: it.assessment.verdict,
+        triggers: it.assessment.triggers ?? [],
+        decisionActive: assistantDecisionActive(it),
+        spendToday: it.windows.today.spend,
+        spend7d: it.windows["7d"].spend,
+      }));
+    const groups = groupShopeeAdsScenarios(signals);
+
+    // Số dư ví ads — call sống duy nhất (throttle 10' của vòng quét gánh tần suất).
+    let wallet: { balance: number; hoursLeft: number | null } | null = null;
+    try {
+      const channel = await prisma.channel.findUnique({ where: { id: ch.id } });
+      if (channel) {
+        const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+        const bal = await getAdsTotalBalance({ accessToken, shopId });
+        const balance = Number(bal.response?.total_balance);
+        if (Number.isFinite(balance)) {
+          wallet = {
+            balance,
+            hoursLeft: estimateAdsWalletHoursLeft({
+              balance,
+              spendToday: signals.reduce((s, c) => s + c.spendToday, 0),
+              hoursElapsedToday: hoursElapsedTodayVN(),
+              avgDailySpend7d: insights.items.reduce(
+                (s, it) => s + it.avgDailySpend7d,
+                0
+              ),
+            }),
+          };
+        }
+      }
+    } catch {
+      // App chưa có quyền ví / token lỗi — không chặn 3 kịch bản còn lại.
+    }
+
+    alerts.push(
+      ...buildShopeeAdsAssistantAlerts(
+        { channelId: ch.id, shopName: ch.shopName },
+        groups,
+        wallet
+      )
+    );
   }
   return alerts;
 }
@@ -440,6 +724,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectShippingFeeDiff,
       detectSyncStalled,
       detectAdsSpike,
+      detectShopeeAdsAssistant,
     ];
     for (const detect of detectors) {
       try {

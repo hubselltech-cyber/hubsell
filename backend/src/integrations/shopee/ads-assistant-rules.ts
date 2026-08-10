@@ -66,6 +66,14 @@ export type AssistantVerdict =
   | "healthy"
   | "insufficient_data"; // lớp sàn: chưa đủ mẫu để phán xét
 
+/**
+ * Nhánh Q1 đã kích hoạt — dạng CÓ CẤU TRÚC để nơi tiêu thụ (Trung tâm điều
+ * hành) phân loại kịch bản mà không phải parse chuỗi `reasons`:
+ *   zero_order      = đốt ngân sách vượt ngưỡng nhưng 0 đơn (Zero Order Drain)
+ *   below_breakeven = ROAS dưới ngưỡng nguy hiểm quanh hòa vốn (ROAS Risk)
+ */
+export type AssistantTrigger = "zero_order" | "below_breakeven";
+
 export interface AssistantAssessment {
   /** null = không đánh giá (campaign không chạy / Trợ lý tắt). */
   verdict: AssistantVerdict | null;
@@ -73,6 +81,8 @@ export interface AssistantAssessment {
   reasons: string[];
   /** Cửa sổ kích hoạt quy tắc (badge tooltip); undefined với healthy/floor. */
   window?: AssistantWindowKey;
+  /** Nhánh Q1 kích hoạt — chỉ có với pause_now/grace (grace kế thừa từ Q1). */
+  triggers?: AssistantTrigger[];
 }
 
 // ---------- Cấu hình luật ----------
@@ -234,17 +244,23 @@ export function evaluateShopeeCampaign(
   }
 
   // ---- Q1 LOẠI THẲNG (duyệt cửa sổ NGẮN trước — bắt bão hòa sớm nhất) ----
-  let hardHit: { window: AssistantWindowKey; reasons: string[] } | null = null;
+  let hardHit: {
+    window: AssistantWindowKey;
+    reasons: string[];
+    triggers: AssistantTrigger[];
+  } | null = null;
   if (config.hard.enabled) {
     for (const k of eligible) {
       const w = windows[k];
       const roas = windowRoas(w);
       const reasons: string[] = [];
+      const triggers: AssistantTrigger[] = [];
       const zeroFloor = config.hard.zeroOrderSpend7d * WINDOW_FLOOR_SCALE[k];
       if (w.spend >= zeroFloor && w.broadOrder === 0) {
         reasons.push(
           `Cửa sổ ${WINDOW_LABEL[k]}: tiêu ${vnd(w.spend)} mà KHÔNG có đơn nào.`
         );
+        triggers.push("zero_order");
       }
       if (
         breakevenRoas != null &&
@@ -254,9 +270,10 @@ export function evaluateShopeeCampaign(
         reasons.push(
           `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas)} dưới ngưỡng nguy hiểm ${roasTxt(breakevenRoas * config.hard.breakevenFactor)} (hòa vốn ${roasTxt(breakevenRoas)} × ${config.hard.breakevenFactor}) — mỗi đồng ads đang lỗ thật.`
         );
+        triggers.push("below_breakeven");
       }
       if (reasons.length > 0) {
-        hardHit = { window: k, reasons };
+        hardHit = { window: k, reasons, triggers };
         break;
       }
     }
@@ -295,12 +312,18 @@ export function evaluateShopeeCampaign(
           `Chiến dịch công thần: ${orders7d} đơn/7 ngày (ngưỡng ${config.grace.minOrders7d}) — KHÔNG đề xuất dừng ngay, theo dõi sát thêm.`,
           ...base.reasons,
         ],
+        triggers: hardHit?.triggers,
       };
     }
   }
 
   if (hardHit) {
-    return { verdict: "pause_now", window: hardHit.window, reasons: hardHit.reasons };
+    return {
+      verdict: "pause_now",
+      window: hardHit.window,
+      reasons: hardHit.reasons,
+      triggers: hardHit.triggers,
+    };
   }
   if (reviewHit) {
     return { verdict: "review", window: reviewHit.window, reasons: reviewHit.reasons };

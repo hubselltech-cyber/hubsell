@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import {
   canAct,
   SEVERITY_META,
+  SOURCE_FALLBACK,
+  SOURCE_META,
   TAG_META,
   type OpsAlert,
   type OpsRole,
@@ -64,6 +66,17 @@ export function AlertCard({
             >
               {TAG_META[alert.tag].label}
             </span>
+            {alert.source && (
+              <span
+                className={cn(
+                  "rounded-md border px-1.5 py-0.5 text-[10px] font-semibold",
+                  SOURCE_META[alert.source] ?? SOURCE_FALLBACK
+                )}
+                title={`Nguồn: ${alert.source}`}
+              >
+                {alert.source}
+              </span>
+            )}
             {demo && (
               <span
                 className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-400"

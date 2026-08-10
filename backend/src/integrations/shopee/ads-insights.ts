@@ -63,6 +63,20 @@ export interface CampaignInsight {
   assessment: AssistantAssessment;
 }
 
+/**
+ * Quyết định của chủ shop trên một cảnh báo còn hiệu lực (verdict CHƯA đổi loại
+ * từ lúc quyết) — dùng chung cho executor GĐ3 và detector Trung tâm điều hành:
+ * người đã quyết thì máy không réo lại, ở bất kỳ nơi hiển thị nào.
+ */
+export function assistantDecisionActive(insight: CampaignInsight): boolean {
+  const c = insight.row;
+  return (
+    c.assistantDecision !== "" &&
+    insight.assessment.verdict !== null &&
+    c.assistantDecisionVerdict === insight.assessment.verdict
+  );
+}
+
 export interface ChannelAdsInsights {
   config: ShopeeAssistantConfig;
   items: CampaignInsight[];

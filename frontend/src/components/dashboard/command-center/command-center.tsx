@@ -91,7 +91,7 @@ const UI_TAGS: AlertTag[] = ["inventory", "finance", "channel", "ads", "tax"];
 
 function opsDtoToAlert(dto: OpsAlertDTO): OpsAlert {
   const p = dto.payload as
-    | { kind?: string; href?: string; label?: string }
+    | { kind?: string; href?: string; label?: string; source?: string }
     | null;
   const action =
     p?.kind === "navigate" && typeof p.href === "string"
@@ -100,6 +100,7 @@ function opsDtoToAlert(dto: OpsAlertDTO): OpsAlert {
   return {
     id: `ops-${dto.id}`,
     tag: UI_TAGS.includes(dto.tag as AlertTag) ? (dto.tag as AlertTag) : "channel",
+    source: typeof p?.source === "string" ? p.source : undefined,
     severity:
       dto.severity === "high" || dto.severity === "low" ? dto.severity : "medium",
     title: dto.title,

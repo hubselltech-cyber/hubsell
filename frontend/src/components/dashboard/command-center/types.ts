@@ -108,6 +108,9 @@ export interface OpsAlert {
   id: string;
   tag: AlertTag;
   severity: Severity;
+  /** Nhãn SÀN phát sinh cảnh báo (badge "Shopee"/"TikTok"… cạnh badge tag) —
+   *  để phân biệt nguồn khi cùng tag, VD ADS Shopee với ADS TikTok. */
+  source?: string;
   title: string;
   summary: string;
   /** Nhãn nút xử lý nhanh, VD "+ Nhập kho", "Duyệt chi phí". */
@@ -161,6 +164,15 @@ export const TAG_META: Record<
     className: "bg-teal-50 text-teal-700 border-teal-200",
   },
 };
+
+/** Màu badge NGUỒN sàn — chưa liệt kê thì dùng SOURCE_FALLBACK (trung tính). */
+export const SOURCE_META: Record<string, string> = {
+  Shopee: "bg-orange-50 text-orange-600 border-orange-200",
+  TikTok: "bg-slate-900 text-white border-slate-900",
+  Lazada: "bg-indigo-50 text-indigo-600 border-indigo-200",
+};
+
+export const SOURCE_FALLBACK = "bg-slate-50 text-slate-500 border-slate-200";
 
 export const SEVERITY_META: Record<
   Severity,

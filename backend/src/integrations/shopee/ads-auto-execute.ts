@@ -27,6 +27,7 @@ import { prisma } from "../../prisma";
 import { editManualProductAdsRaw } from "./client";
 import { getValidShopeeAccessToken } from "./service";
 import {
+  assistantDecisionActive,
   computeChannelAdsInsights,
   vnDateKey,
   type CampaignInsight,
@@ -46,16 +47,6 @@ export interface AutoExecuteResult {
   skippedDone: number; // bỏ qua vì hôm nay đã hành động rồi (referenceId trùng)
 }
 
-/** Quyết định của chủ shop còn hiệu lực → executor nhường người. */
-function decisionActive(insight: CampaignInsight): boolean {
-  const c = insight.row;
-  return (
-    c.assistantDecision !== "" &&
-    insight.assessment.verdict !== null &&
-    c.assistantDecisionVerdict === insight.assessment.verdict
-  );
-}
-
 /**
  * LỌC + XẾP HÀNG hành động — logic thuần tách riêng cho vitest:
  * chỉ campaign ongoing, verdict đáng hành động, chưa bị người quyết;
@@ -70,7 +61,7 @@ export function selectAutoActionCandidates(
         it.row.status === "ongoing" &&
         it.assessment.verdict !== null &&
         ACTIONABLE_VERDICTS.has(it.assessment.verdict) &&
-        !decisionActive(it)
+        !assistantDecisionActive(it)
     )
     .sort((a, b) => b.windows["7d"].spend - a.windows["7d"].spend);
 }

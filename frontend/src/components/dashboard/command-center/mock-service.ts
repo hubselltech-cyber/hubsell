@@ -148,6 +148,7 @@ const STATIC_ALERTS: OpsAlert[] = [
   {
     id: "al-ads-1",
     tag: "ads",
+    source: "TikTok", // đối chứng badge nguồn với cảnh báo ADS Shopee thật
     severity: "high",
     title: "ROAS chiến dịch áo khoác giảm còn 1.2",
     summary:

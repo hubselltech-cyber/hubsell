@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   Megaphone,
@@ -138,12 +138,23 @@ function formatRoas(v: number | null): string {
 
 export function ShopeeAdsPage() {
   const router = useRouter();
+  // Deep-link từ Trung tâm điều hành: ?channelId= chọn gian, ?campaign_id=
+  // prefill ô tìm kiếm + tự mở modal chi tiết, ?needs_action=1 bật lọc cần xử lý.
+  // (Trang này được bọc <Suspense> ở app/ads/shopee/page.tsx theo yêu cầu của
+  // useSearchParams khi prerender.)
+  const searchParams = useSearchParams();
   const [denied, setDenied] = useState(false);
   const [data, setData] = useState<ShopeeAdsDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [channelId, setChannelId] = useState<string>("");
+  const [channelId, setChannelId] = useState<string>(
+    () => searchParams.get("channelId") ?? ""
+  );
   const [days, setDays] = useState<number>(7);
+  // Campaign đích của deep-link — chờ dữ liệu về rồi mở modal đúng một lần.
+  const [pendingCampaignId, setPendingCampaignId] = useState<string | null>(
+    () => searchParams.get("campaign_id")
+  );
   // Tab trong trang (khuôn giống trang TikTok): dashboard / cấu hình Trợ lý.
   const [tab, setTab] = useState<"overview" | "config">("overview");
   const [syncing, setSyncing] = useState(false);
@@ -155,9 +166,12 @@ export function ShopeeAdsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [onlyNeedsAction, setOnlyNeedsAction] = useState(false);
+  const [onlyNeedsAction, setOnlyNeedsAction] = useState(
+    () => searchParams.get("needs_action") === "1"
+  );
   // Bộ lọc bảng: tìm theo tên/mã campaign + lọc trạng thái (client-side).
-  const [search, setSearch] = useState("");
+  // campaign_id từ deep-link prefill luôn ô tìm kiếm → bảng chỉ còn campaign đó.
+  const [search, setSearch] = useState(() => searchParams.get("campaign_id") ?? "");
   const [statusFilter, setStatusFilter] = useState("");
 
   useEffect(() => {
@@ -190,6 +204,22 @@ export function ShopeeAdsPage() {
     // channelId đổi qua chính load() (server chọn gian đầu) — chỉ nghe người dùng đổi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Deep-link ?campaign_id=: dữ liệu về thì mở modal chi tiết đúng một lần.
+  // Không thấy campaign (đã xoá / thuộc gian khác / chưa sync) → báo nhẹ ở
+  // syncNote thay vì để người dùng đối diện bảng trống không lời giải thích.
+  useEffect(() => {
+    if (!pendingCampaignId || !data) return;
+    const target = data.campaigns.find((c) => c.campaignId === pendingCampaignId);
+    if (target) {
+      setDetailId(target.id);
+    } else {
+      setSyncNote(
+        `Không tìm thấy chiến dịch #${pendingCampaignId} trong gian này — có thể đã bị xoá hoặc thuộc gian khác. Xoá ô tìm kiếm để xem toàn bộ.`
+      );
+    }
+    setPendingCampaignId(null);
+  }, [pendingCampaignId, data]);
 
   function changeChannel(cid: string) {
     setChannelId(cid);
