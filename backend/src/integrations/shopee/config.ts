@@ -78,6 +78,10 @@ export const SHOPEE_PATHS = {
   adsCampaignHourlyPerf: "/api/v2/ads/get_product_campaign_hourly_performance",
   /** Số dư ví quảng cáo real-time. */
   adsTotalBalance: "/api/v2/ads/get_total_balance",
+  /** GĐ3 — endpoint GHI DUY NHẤT: sửa Manual Product Ads (edit_action pause...).
+   *  ⚠ enum edit_action CHƯA xác minh từ docs — chỉ gọi ở mode live sau khi
+   *  probe trên shop thật xác nhận; mọi lệnh đều ghi sổ AdsActionLog. */
+  adsEditManualProductAds: "/api/v2/ads/edit_manual_product_ads",
 
   // ── Trợ lý vận hành (CSKH): chat + đánh giá ──
   // LƯU Ý: module Chat (sellerchat) có thể cần bật quyền riêng trên Shopee

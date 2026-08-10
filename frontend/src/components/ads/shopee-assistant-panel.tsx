@@ -22,11 +22,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { Switch } from "@/components/ui/switch";
-import type {
-  ShopeeAdsCampaignRow,
-  ShopeeAssistantConfig,
-  ShopeeAssistantDecision,
-  ShopeeAssistantVerdict,
+import {
+  fetchShopeeAdsActionLog,
+  type ShopeeAdsActionLogRow,
+  type ShopeeAdsCampaignRow,
+  type ShopeeAssistantConfig,
+  type ShopeeAssistantDecision,
+  type ShopeeAssistantVerdict,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -292,7 +294,6 @@ export function ShopeeAssistantConfigCard({
   onSave: (config: ShopeeAssistantConfig) => void;
   saving: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ShopeeAssistantConfig>(config);
   // Server trả config mới (đổi gian / sau khi lưu) → đồng bộ lại bản nháp.
   useEffect(() => setDraft(config), [config]);
@@ -312,32 +313,17 @@ export function ShopeeAssistantConfigCard({
 
   return (
     <Card>
-      <CardHeader
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setOpen((v) => !v);
-          }
-        }}
-        className="cursor-pointer select-none"
-      >
+      <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <SlidersHorizontal className="size-4.5 text-slate-500" />
           Cấu hình Trợ lý Tự động
-          <span className="ml-auto text-xs font-normal text-muted-foreground">
-            {open ? "Thu gọn" : "Mở rộng"}
-          </span>
         </CardTitle>
         <CardDescription>
           Luật riêng của gian đang chọn — mọi ngưỡng lãi/lỗ neo theo ROAS hòa vốn
           thật của từng chiến dịch, không phải con số đoán.
         </CardDescription>
       </CardHeader>
-      {open && (
-        <CardContent className="space-y-3">
+      <CardContent className="space-y-3">
           <RuleBlock
             title="Bật Trợ lý cho gian này"
             hint="Tắt là toàn bộ cột Trợ lý và cảnh báo biến mất — dữ liệu dashboard vẫn sync bình thường."
@@ -435,6 +421,42 @@ export function ShopeeAssistantConfigCard({
                 disabled={!draft.enabled || !draft.grace.enabled}
               />
             </RuleBlock>
+            <RuleBlock
+              title="Tự thực thi (GĐ3)"
+              hint="Trợ lý TỰ TẠM DỪNG chiến dịch dính 'Đề xuất tạm dừng' / 'Vọt chi'. Diễn tập = chỉ ghi sổ để anh/chị xem Trợ lý ĐỊNH làm gì; Thực thi thật chỉ nên bật sau khi đã tin bản diễn tập."
+            >
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-600">Chế độ</span>
+                <select
+                  value={draft.autoExecute.mode}
+                  onChange={(e) =>
+                    patch("autoExecute", {
+                      mode: e.target.value as "off" | "dry_run" | "live",
+                    })
+                  }
+                  disabled={!draft.enabled}
+                  className="h-9 w-32 rounded-lg border border-input bg-background px-2 text-sm"
+                  aria-label="Chế độ tự thực thi"
+                >
+                  <option value="off">Tắt</option>
+                  <option value="dry_run">Diễn tập</option>
+                  <option value="live">Thực thi thật</option>
+                </select>
+              </label>
+              <NumberField
+                label="Tối đa hành động/ngày"
+                value={draft.autoExecute.maxActionsPerDay}
+                onChange={(v) => patch("autoExecute", { maxActionsPerDay: v })}
+                disabled={!draft.enabled || draft.autoExecute.mode === "off"}
+              />
+              {draft.autoExecute.mode === "live" && (
+                <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">
+                  ⚠ Chế độ THẬT: Trợ lý sẽ gọi lệnh tạm dừng lên Shopee. Chiến
+                  dịch anh/chị đã bấm &quot;Bỏ qua&quot;/&quot;Theo dõi&quot; sẽ
+                  không bị đụng. Mọi lệnh đều ghi vào Sổ hành động bên dưới.
+                </p>
+              )}
+            </RuleBlock>
           </div>
           <div className="flex items-center justify-end gap-3 border-t pt-3">
             <p className="mr-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -446,7 +468,123 @@ export function ShopeeAssistantConfigCard({
             </Button>
           </div>
         </CardContent>
-      )}
+    </Card>
+  );
+}
+
+// ---------- Sổ hành động (GĐ3) ----------
+
+const ACTION_STATUS_META: Record<string, { label: string; className: string }> = {
+  PLANNED: { label: "Diễn tập", className: "bg-sky-100 text-sky-700" },
+  PENDING: { label: "Đang gửi", className: "bg-slate-100 text-slate-500" },
+  SUCCESS: { label: "Đã tạm dừng", className: "bg-emerald-500 text-white" },
+  FAILED: { label: "Sàn từ chối", className: "bg-red-100 text-red-700" },
+};
+
+export function ShopeeActionLogCard({ channelId }: { channelId: string }) {
+  const [logs, setLogs] = useState<ShopeeAdsActionLogRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    if (!channelId) return;
+    setLoading(true);
+    try {
+      const res = await fetchShopeeAdsActionLog(channelId);
+      setLogs(res.logs);
+    } catch {
+      // gian chưa có sổ / lỗi mạng — bảng rỗng là đủ thông tin
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Sổ hành động của Trợ lý</CardTitle>
+            <CardDescription className="mt-1.5">
+              Mọi lần Trợ lý định (diễn tập) hoặc đã (thật) tạm dừng chiến dịch —
+              kèm căn cứ tại thời điểm đó. Tối đa 1 hành động/chiến dịch/ngày.
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            {loading ? "Đang tải…" : "Làm mới"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {logs.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Chưa có hành động nào. Bật chế độ &quot;Diễn tập&quot; ở trên để xem
+            Trợ lý định làm gì với các chiến dịch đang bị gắn cờ.
+          </p>
+        ) : (
+          <div className="min-w-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">Thời gian</th>
+                  <th className="py-2 pr-3 font-medium">Chiến dịch</th>
+                  <th className="py-2 pr-3 font-medium">Trạng thái</th>
+                  <th className="py-2 font-medium">Căn cứ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((l) => {
+                  const meta = ACTION_STATUS_META[l.status] ?? {
+                    label: l.status,
+                    className: "bg-slate-100 text-slate-500",
+                  };
+                  const verdictMeta =
+                    l.verdict in VERDICT_META
+                      ? VERDICT_META[l.verdict as keyof typeof VERDICT_META]
+                      : null;
+                  return (
+                    <tr key={l.id} className="border-b last:border-0 align-top">
+                      <td className="whitespace-nowrap py-2.5 pr-3 tabular-nums text-slate-600">
+                        {new Date(l.createdAt).toLocaleString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          day: "2-digit",
+                          month: "2-digit",
+                        })}
+                      </td>
+                      <td className="max-w-56 truncate py-2.5 pr-3 font-medium text-slate-900">
+                        {l.campaignName}
+                      </td>
+                      <td className="py-2.5 pr-3">
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge className={meta.className}>{meta.label}</Badge>
+                          {verdictMeta && (
+                            <span className="text-xs text-slate-500">
+                              vì: {verdictMeta.label}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 text-xs text-slate-600">
+                        {l.reasons.map((r, i) => (
+                          <p key={i}>• {r}</p>
+                        ))}
+                        {l.error && (
+                          <p className="mt-1 text-red-600">Lỗi sàn: {l.error}</p>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }

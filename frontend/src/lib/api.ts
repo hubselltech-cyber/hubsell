@@ -2794,6 +2794,27 @@ export interface ShopeeAssistantConfig {
   review: { enabled: boolean; dangerFactor: number };
   spike: { enabled: boolean; dayMultiple: number; minTodaySpend: number };
   grace: { enabled: boolean; minOrders7d: number };
+  /** GĐ3 — tự thực thi: off | dry_run (diễn tập ghi sổ) | live (gọi sàn thật). */
+  autoExecute: { mode: "off" | "dry_run" | "live"; maxActionsPerDay: number };
+}
+
+/** Một dòng SỔ HÀNH ĐỘNG của Trợ lý (GĐ3). */
+export interface ShopeeAdsActionLogRow {
+  id: string;
+  campaignName: string;
+  action: string; // "pause"
+  mode: "dry_run" | "live";
+  verdict: string;
+  reasons: string[];
+  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED";
+  error: string | null;
+  createdAt: string;
+}
+
+export function fetchShopeeAdsActionLog(channelId: string, limit = 50) {
+  return apiFetch<{ logs: ShopeeAdsActionLogRow[] }>(
+    `/api/ads/shopee/action-log?channelId=${encodeURIComponent(channelId)}&limit=${limit}`
+  );
 }
 
 export interface ShopeeAssistantSummary {
@@ -2868,7 +2889,8 @@ export interface ShopeeAdsDashboard {
 
 export function fetchShopeeAdsDashboard(params: {
   channelId?: string;
-  days?: 7 | 30;
+  /** Cửa sổ hiển thị 1–30 ngày (dữ liệu sync tối đa 30 ngày về trước). */
+  days?: number;
 }) {
   const q = new URLSearchParams();
   if (params.channelId) q.set("channelId", params.channelId);

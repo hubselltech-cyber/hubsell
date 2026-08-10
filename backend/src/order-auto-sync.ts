@@ -32,6 +32,7 @@ import {
 } from "./integrations/shopee/settlements";
 import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
 import { syncShopeeAdsCampaigns } from "./integrations/shopee/ads-campaigns";
+import { runShopeeAdsAutoExecute } from "./integrations/shopee/ads-auto-execute";
 import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
@@ -250,6 +251,22 @@ async function runOnce(): Promise<void> {
             } catch (err) {
               console.error(
                 `[Auto-sync] Lỗi sync campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+                (err as Error).message
+              );
+            }
+            // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập ghi
+            // sổ; live chỉ bật sau probe). Chạy SAU sync campaign để đánh giá
+            // trên số mới nhất; lỗi riêng không chặn luồng khác.
+            try {
+              const act = await runShopeeAdsAutoExecute(channel);
+              if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
+                console.log(
+                  `[Auto-sync] Trợ lý Ads "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
                 (err as Error).message
               );
             }

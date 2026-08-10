@@ -89,6 +89,15 @@ export interface ShopeeAssistantConfig {
   spike: { enabled: boolean; dayMultiple: number; minTodaySpend: number };
   /** Q4 — công thần: ≥ minOrders7d đơn/7 ngày thì Q1/Q2 hạ xuống theo dõi sát. */
   grace: { enabled: boolean; minOrders7d: number };
+  /** GĐ3 — TỰ THỰC THI (v1 chỉ hành động PAUSE với verdict pause_now/spike):
+   *  off = tắt; dry_run = DIỄN TẬP (ghi sổ AdsActionLog, KHÔNG gọi sàn);
+   *  live = gọi edit_manual_product_ads thật. Mặc định off — chỉ bật live sau
+   *  khi probe xác minh enum edit_action + quyền write trên shop thật. */
+  autoExecute: {
+    mode: "off" | "dry_run" | "live";
+    /** Trần hành động/ngày/gian — đệm dưới giới hạn sàn ~10 thao tác/item/ngày. */
+    maxActionsPerDay: number;
+  };
 }
 
 export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
@@ -98,7 +107,11 @@ export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
   review: { enabled: true, dangerFactor: 1.1 },
   spike: { enabled: true, dayMultiple: 2, minTodaySpend: 100_000 },
   grace: { enabled: true, minOrders7d: 30 },
+  autoExecute: { mode: "off", maxActionsPerDay: 5 },
 };
+
+/** Các mode tự thực thi hợp lệ (validate bản lưu/PUT). */
+export const AUTO_EXECUTE_MODES = ["off", "dry_run", "live"] as const;
 
 /** Vá bản lưu DB theo schema hiện tại — thêm luật mới không vỡ config cũ. */
 export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
@@ -136,6 +149,17 @@ export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
     grace: {
       enabled: bool(sect("grace").enabled, d.grace.enabled),
       minOrders7d: num(sect("grace").minOrders7d, d.grace.minOrders7d),
+    },
+    autoExecute: {
+      mode: (AUTO_EXECUTE_MODES as readonly string[]).includes(
+        String(sect("autoExecute").mode)
+      )
+        ? (String(sect("autoExecute").mode) as "off" | "dry_run" | "live")
+        : d.autoExecute.mode,
+      maxActionsPerDay: num(
+        sect("autoExecute").maxActionsPerDay,
+        d.autoExecute.maxActionsPerDay
+      ),
     },
   };
 }

@@ -296,6 +296,7 @@ model Channel {
   adSpends        AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
   adsCampaigns    AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
   adsAssistantConfig AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
+  adsActionLogs   AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
 
@@ -359,8 +360,9 @@ model AdsCampaign {
   lastSyncedAt  DateTime  @updatedAt
   createdAt     DateTime  @default(now())
 
-  channel   Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  dailyPerf AdsCampaignDailyPerf[]
+  channel    Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dailyPerf  AdsCampaignDailyPerf[]
+  actionLogs AdsActionLog[]
 
   @@unique([channelId, campaignId])
   @@index([channelId])
@@ -401,6 +403,33 @@ model AdsAssistantConfig {
   updatedAt DateTime @updatedAt
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+}
+
+/// SỔ HÀNH ĐỘNG của Trợ lý quảng cáo (GĐ3 — tự thực thi). Mỗi dòng = một lần
+/// Trợ lý ĐỊNH (dry_run) hoặc ĐÃ (live) thao tác lên sàn. Ba vai trò:
+///   1. Kiểm toán: chủ shop truy lại vì sao campaign bị tạm dừng, căn cứ nào.
+///   2. Idempotency: referenceId unique "pause-{campaignRowId}-{yyyy-mm-dd}"
+///      → 1 hành động/campaign/ngày, sweep chạy lặp không bắn trùng.
+///   3. Quota: đếm hành động/ngày/gian để tôn trọng giới hạn sàn
+///      (~10 thao tác/sản phẩm/ngày — vượt là Shopee khóa sửa item).
+model AdsActionLog {
+  id            String   @id @default(cuid())
+  channelId     String
+  adsCampaignId String
+  action        String // "pause" — v1 chỉ tạm dừng (cắt lỗ), chưa đụng budget/bid
+  mode          String // dry_run (diễn tập, không gọi sàn) | live
+  verdict       String // verdict kích hoạt: pause_now | spike
+  reasons       String   @default("") // căn cứ tại thời điểm hành động, nối "\n"
+  referenceId   String   @unique // chống double-fire; mode live gửi kèm lên sàn
+  status        String // PLANNED (dry_run) | SUCCESS | FAILED
+  error         String? // nguyên văn lỗi sàn — tư liệu học enum edit_action
+  createdAt     DateTime @default(now())
+
+  channel     Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+  @@index([adsCampaignId, createdAt])
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.

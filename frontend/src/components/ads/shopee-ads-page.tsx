@@ -60,6 +60,7 @@ import {
 } from "@/lib/api";
 import {
   AssistantVerdictBadge,
+  ShopeeActionLogCard,
   ShopeeAssistantConfigCard,
   ShopeeAssistantModal,
   assistantBannerText,
@@ -105,6 +106,19 @@ const PLACEMENT_LABEL: Record<string, string> = {
 /** Hệ số an toàn trên ROAS hòa vốn — dưới hòa vốn×1.1 coi là vùng nguy hiểm. */
 const DANGER_FACTOR = 1.1;
 
+/** Preset cửa sổ thời gian — trần 30 ngày theo cửa sổ sync hiệu suất. */
+const DAY_PRESETS: { label: string; value: number }[] = [
+  { label: "Hôm nay", value: 1 },
+  { label: "7 ngày", value: 7 },
+  { label: "14 ngày", value: 14 },
+  { label: "30 ngày", value: 30 },
+];
+
+/** Nhãn cửa sổ cho tiêu đề/subtitle: "hôm nay" | "N ngày". */
+function daysLabel(days: number): string {
+  return days === 1 ? "hôm nay" : `${days} ngày`;
+}
+
 function roasToneClass(
   roas: number | null,
   breakeven: number | null
@@ -128,7 +142,9 @@ export function ShopeeAdsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [channelId, setChannelId] = useState<string>("");
-  const [days, setDays] = useState<7 | 30>(7);
+  const [days, setDays] = useState<number>(7);
+  // Tab trong trang (khuôn giống trang TikTok): dashboard / cấu hình Trợ lý.
+  const [tab, setTab] = useState<"overview" | "config">("overview");
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
@@ -148,7 +164,7 @@ export function ShopeeAdsPage() {
     if (!isAdmin(getStoredUser()?.role)) setDenied(true);
   }, [router]);
 
-  const load = useCallback(async (cid: string, d: 7 | 30) => {
+  const load = useCallback(async (cid: string, d: number) => {
     setLoading(true);
     setError(null);
     try {
@@ -177,7 +193,7 @@ export function ShopeeAdsPage() {
     void load(cid, days);
   }
 
-  function changeDays(d: 7 | 30) {
+  function changeDays(d: number) {
     setDays(d);
     setPage(0);
     void load(channelId, d);
@@ -319,18 +335,18 @@ export function ShopeeAdsPage() {
               </NativeSelect>
             )}
             <div className="flex overflow-hidden rounded-lg border">
-              {([7, 30] as const).map((d) => (
+              {DAY_PRESETS.map((p) => (
                 <button
-                  key={d}
-                  onClick={() => changeDays(d)}
+                  key={p.value}
+                  onClick={() => changeDays(p.value)}
                   className={cn(
                     "px-3 py-1.5 text-sm font-medium transition-colors",
-                    days === d
+                    days === p.value
                       ? "bg-slate-900 text-white"
                       : "bg-card text-slate-600 hover:bg-muted"
                   )}
                 >
-                  {d} ngày
+                  {p.label}
                 </button>
               ))}
             </div>
@@ -355,6 +371,43 @@ export function ShopeeAdsPage() {
           </div>
         )}
 
+        {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}
+        <div role="tablist" className="flex flex-wrap gap-1 border-b">
+          {(
+            [
+              { key: "overview", label: "Tổng quan chiến dịch" },
+              { key: "config", label: "Cấu hình Trợ lý Tự động" },
+            ] as const
+          ).map((t) => {
+            const active = tab === t.key;
+            const chip =
+              t.key === "config" && assistant ? assistant.needsAction : 0;
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                )}
+              >
+                {t.label}
+                {chip > 0 && (
+                  <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-semibold text-white tabular-nums">
+                    {formatNumber(chip)}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {tab === "overview" && (
+          <>
         {/* ===== ĐỀ XUẤT TỪ TRỢ LÝ (GĐ2 — verdict rule engine, chưa ai quyết) ===== */}
         {assistant && assistant.needsAction > 0 && (
           <div className="flex flex-wrap items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
@@ -401,7 +454,7 @@ export function ShopeeAdsPage() {
             icon={Wallet}
             tone="negative"
             colorValue
-            subtitle={`${days} ngày · campaign sản phẩm`}
+            subtitle={`${daysLabel(days)} · campaign sản phẩm`}
           />
           <StatCard
             label="GMV từ Ads"
@@ -443,7 +496,7 @@ export function ShopeeAdsPage() {
         {series.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Chi phí vs GMV từ Ads ({days} ngày)</CardTitle>
+              <CardTitle>Chi phí vs GMV từ Ads ({daysLabel(days)})</CardTitle>
               <CardDescription>
                 Số thật theo ngày, gộp mọi chiến dịch của gian đang chọn.
               </CardDescription>
@@ -626,23 +679,6 @@ export function ShopeeAdsPage() {
           </CardContent>
         </Card>
 
-        {/* ===== CẤU HÌNH TRỢ LÝ (GĐ2) ===== */}
-        {assistant && !noChannel && (
-          <ShopeeAssistantConfigCard
-            config={assistant.config}
-            onSave={(config) => void saveConfig(config)}
-            saving={savingConfig}
-          />
-        )}
-
-        {/* ===== MODAL CĂN CỨ + QUYẾT ĐỊNH ===== */}
-        <ShopeeAssistantModal
-          campaign={detailCampaign}
-          onDecide={(d) => void decideCampaign(d)}
-          onClose={() => setDetailId(null)}
-          deciding={deciding}
-        />
-
         {/* ===== GHI CHÚ NGUỒN SỐ ===== */}
         {summary && (
           <p className="text-center text-xs text-muted-foreground">
@@ -659,6 +695,33 @@ export function ShopeeAdsPage() {
             Tổng chi ads toàn shop (AdSpend): {formatVND(summary.adSpendTotal)}.
           </p>
         )}
+          </>
+        )}
+
+        {/* ===== TAB CẤU HÌNH TRỢ LÝ TỰ ĐỘNG (+ sổ hành động GĐ3) ===== */}
+        {tab === "config" &&
+          (assistant && !noChannel ? (
+            <>
+              <ShopeeAssistantConfigCard
+                config={assistant.config}
+                onSave={(config) => void saveConfig(config)}
+                saving={savingConfig}
+              />
+              <ShopeeActionLogCard channelId={channelId} />
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Kết nối gian Shopee để cấu hình Trợ lý.
+            </p>
+          ))}
+
+        {/* ===== MODAL CĂN CỨ + QUYẾT ĐỊNH ===== */}
+        <ShopeeAssistantModal
+          campaign={detailCampaign}
+          onDecide={(d) => void decideCampaign(d)}
+          onClose={() => setDetailId(null)}
+          deciding={deciding}
+        />
       </div>
     </AppShell>
   );

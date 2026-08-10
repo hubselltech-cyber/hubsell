@@ -2,16 +2,18 @@ import { Router } from "express";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
-import { computePnlRow, fetchPnlOrders } from "./finance";
-import { getAdsTotalBalance } from "../integrations/shopee/client";
-import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 import {
-  ASSISTANT_WINDOWS,
-  evaluateShopeeCampaign,
-  normalizeAssistantConfig,
-  type AssistantWindowKey,
-  type AssistantWindowMetrics,
-} from "../integrations/shopee/ads-assistant-rules";
+  editManualProductAdsRaw,
+  getAdsTotalBalance,
+} from "../integrations/shopee/client";
+import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
+import {
+  MARGIN_WINDOW_DAYS,
+  computeChannelAdsInsights,
+  dateKey,
+  startOfDaysAgo,
+} from "../integrations/shopee/ads-insights";
 
 const router = Router();
 
@@ -34,31 +36,6 @@ const router = Router();
 //
 // Chỉ ADMIN (mount adminOnly ở app.ts) — chi phí Ads là dữ liệu tài chính.
 // ============================================================
-
-/** Cửa sổ P&L để ước biên lãi — cố định 30 ngày cho đủ mẫu, KHÔNG theo ?days. */
-const MARGIN_WINDOW_DAYS = 30;
-/** Campaign cần tối thiểu bấy nhiêu đơn khớp SKU mới dùng biên lãi riêng. */
-const MIN_ORDERS_FOR_MARGIN = 5;
-
-function startOfDaysAgo(days: number): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - (days - 1));
-  return d;
-}
-
-/** "YYYY-MM-DD" theo UTC — cột @db.Date lưu 00:00 UTC nên đọc bằng UTC mới đúng ngày. */
-function dateKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN — ngày trong AdsCampaignDailyPerf
- *  là ngày của SÀN (múi giờ VN), server Render chạy UTC nên phải cộng 7h. */
-function vnDateKey(daysAgo: number): string {
-  return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-}
 
 /** Quyết định của chủ shop còn hiệu lực khi verdict CHƯA đổi loại từ lúc quyết. */
 function decisionActive(
@@ -90,90 +67,26 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
       typeof req.query.channelId === "string" ? req.query.channelId : "";
     const selected =
       channels.find((c) => c.id === requestedId) ?? channels[0];
-    const days = req.query.days === "30" ? 30 : 7;
+    // Cửa sổ hiển thị tự chọn 1–30 ngày (dữ liệu sync tối đa 30 ngày về trước).
+    const daysRaw = Number(req.query.days);
+    const days = Number.isFinite(daysRaw)
+      ? Math.min(30, Math.max(1, Math.trunc(daysRaw)))
+      : 7;
     const perfStart = startOfDaysAgo(days);
 
-    // ---- Campaign + hiệu suất: luôn kéo TRỌN 30 ngày — hiển thị cắt theo
-    // ?days, còn Trợ lý (GĐ2) cần đủ các lát today/3d/7d/30d để đánh giá ----
-    const campaignRows = await prisma.adsCampaign.findMany({
-      where: { channelId: selected.id },
-      include: { dailyPerf: { where: { date: { gte: startOfDaysAgo(30) } } } },
+    // ---- Lõi tính toán dùng chung với executor GĐ3 (ads-insights.ts):
+    // perf 30 ngày + windows + biên lãi/hòa vốn + verdict rule engine ----
+    const insights = await computeChannelAdsInsights({
+      id: selected.id,
+      userId: req.ownerId!,
     });
+    const assistantConfig = insights.config;
+    const shopMargin = insights.shop.margin;
+    const shopBreakeven = insights.shop.breakevenRoas;
 
-    // ---- Luật Trợ lý của gian (chưa lưu = bộ mặc định) ----
-    const configRow = await prisma.adsAssistantConfig.findUnique({
-      where: { channelId: selected.id },
-    });
-    const assistantConfig = normalizeAssistantConfig(configRow?.config);
-
-    // Mốc cửa sổ theo NGÀY SÀN (giờ VN): key ngày nhỏ nhất thuộc mỗi cửa sổ.
-    const windowFloorKey: Record<AssistantWindowKey, string> = {
-      today: vnDateKey(0),
-      "3d": vnDateKey(2),
-      "7d": vnDateKey(6),
-      "30d": vnDateKey(29),
-    };
-    const yesterdayKey = vnDateKey(1);
-    const weekAgoKey = vnDateKey(7);
-
-    // ---- Nền P&L 30 ngày để tính biên lãi (chưa trừ ads) ----
-    const pnlOrders = await fetchPnlOrders(
-      { userId: req.ownerId!, id: selected.id, channelName: ChannelName.SHOPEE },
-      { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
-    );
-    const pnlRows = pnlOrders.map(computePnlRow);
-
-    // Map SKU sàn → campaign qua externalId của ChannelProduct ("item" | "item-model").
-    const channelProducts = await prisma.channelProduct.findMany({
-      where: { channelId: selected.id, externalId: { not: null } },
-      select: { channelSku: true, externalId: true },
-    });
-    const skusByItemId = new Map<string, Set<string>>();
-    for (const cp of channelProducts) {
-      const itemId = (cp.externalId ?? "").split("-")[0];
-      if (!itemId) continue;
-      let set = skusByItemId.get(itemId);
-      if (!set) skusByItemId.set(itemId, (set = new Set()));
-      set.add(cp.channelSku);
-    }
-
-    /** Biên lãi ròng (chưa trừ ads) trên một tập SKU — null nếu SKU rỗng = tính toàn shop. */
-    function marginOver(skuSet: Set<string> | null): {
-      orders: number;
-      revenue: number;
-      profit: number;
-      missingCostOrders: number;
-    } {
-      let orders = 0;
-      let revenue = 0;
-      let profit = 0;
-      let missingCostOrders = 0;
-      for (const row of pnlRows) {
-        const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
-        if (itemTotal <= 0) continue;
-        const matchTotal = skuSet
-          ? row.items
-              .filter((it) => skuSet.has(it.sku))
-              .reduce((s, it) => s + it.price * it.quantity, 0)
-          : itemTotal;
-        if (matchTotal <= 0) continue;
-        const ratio = matchTotal / itemTotal;
-        orders++;
-        revenue += row.actualRevenue * ratio;
-        profit += row.profit * ratio;
-        if (row.missingCostPrice) missingCostOrders++;
-      }
-      return { orders, revenue, profit, missingCostOrders };
-    }
-
-    const shopMarginBase = marginOver(null);
-    const shopMargin =
-      shopMarginBase.revenue > 0 ? shopMarginBase.profit / shopMarginBase.revenue : null;
-    const shopBreakeven =
-      shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null;
-
-    // ---- Tổng hợp từng campaign ----
-    const campaigns = campaignRows.map((c) => {
+    // ---- Lớp HIỂN THỊ: cắt cửa sổ ?days + trải phẳng cho FE ----
+    const campaigns = insights.items.map((it) => {
+      const c = it.row;
       // Hiển thị: chỉ cộng các ngày thuộc cửa sổ ?days đang xem.
       const perf = c.dailyPerf.reduce(
         (acc, p) => {
@@ -190,51 +103,13 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
         { spend: 0, impression: 0, clicks: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0 }
       );
 
-      // Trợ lý: lát cắt today/3d/7d/30d + trung bình ngày 7 ngày TRƯỚC hôm nay.
-      const windows = {} as Record<AssistantWindowKey, AssistantWindowMetrics>;
-      for (const k of ASSISTANT_WINDOWS) {
-        windows[k] = { spend: 0, clicks: 0, broadOrder: 0, broadGmv: 0 };
-      }
-      let prev7Spend = 0;
-      for (const p of c.dailyPerf) {
-        const key = dateKey(p.date);
-        for (const k of ASSISTANT_WINDOWS) {
-          if (key >= windowFloorKey[k]) {
-            windows[k].spend += Number(p.expense);
-            windows[k].clicks += p.clicks;
-            windows[k].broadOrder += p.broadOrder;
-            windows[k].broadGmv += Number(p.broadGmv);
-          }
-        }
-        if (key >= weekAgoKey && key <= yesterdayKey) prev7Spend += Number(p.expense);
-      }
-      const avgDailySpend7d = prev7Spend / 7;
-
-      // Biên lãi riêng của campaign từ P&L các SKU trong campaign.
-      const itemIds = c.itemIds ? c.itemIds.split(",") : [];
-      const skuSet = new Set<string>();
-      for (const itemId of itemIds) {
-        for (const sku of skusByItemId.get(itemId) ?? []) skuSet.add(sku);
-      }
-      const own = skuSet.size > 0 ? marginOver(skuSet) : { orders: 0, revenue: 0, profit: 0, missingCostOrders: 0 };
-      const useOwn = own.orders >= MIN_ORDERS_FOR_MARGIN && own.revenue > 0;
-      const margin = useOwn ? own.profit / own.revenue : shopMargin;
-      const marginSource: "campaign" | "shop" | null =
-        useOwn ? "campaign" : shopMargin != null ? "shop" : null;
-      const breakevenRoas = margin != null && margin > 0 ? 1 / margin : null;
-
       // Lãi/lỗ THẬT ước tính của campaign trong cửa sổ: phần lãi ròng của doanh
       // thu direct do ads mang về, trừ tiền ads. Thận trọng dùng direct (không
       // tính broad — đơn "ăn theo" 7 ngày có thể vẫn về mà không cần ads).
       const estProfit =
-        margin != null ? perf.directGmv * margin - perf.spend : null;
+        it.margin != null ? perf.directGmv * it.margin - perf.spend : null;
 
-      // ---- Verdict Trợ lý (GĐ2 — chỉ đề xuất, người bấm nút) ----
-      const assessment = evaluateShopeeCampaign(
-        { status: c.status, breakevenRoas, windows, avgDailySpend7d },
-        assistantConfig
-      );
-
+      const assessment = it.assessment;
       return {
         assistant: {
           verdict: assessment.verdict,
@@ -259,25 +134,26 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
         roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null,
         startTime: c.startTime,
         endTime: c.endTime,
-        itemCount: itemIds.length,
+        itemCount: it.itemIds.length,
         ...perf,
         roasBroad: perf.spend > 0 ? perf.broadGmv / perf.spend : null,
         roasDirect: perf.spend > 0 ? perf.directGmv / perf.spend : null,
-        margin,
-        marginSource,
-        marginOrders: useOwn ? own.orders : shopMarginBase.orders,
-        breakevenRoas,
+        margin: it.margin,
+        marginSource: it.marginSource,
+        marginOrders: it.marginOrders,
+        breakevenRoas: it.breakevenRoas,
         estProfit,
         // margin ≤ 0: SKU này đang LỖ ngay cả trước ads — cảnh báo riêng.
-        lossBeforeAds: margin != null && margin <= 0,
+        lossBeforeAds: it.margin != null && it.margin <= 0,
       };
     });
     campaigns.sort((a, b) => b.spend - a.spend);
 
     // ---- Chuỗi ngày cho biểu đồ (gộp mọi campaign) ----
     const seriesMap = new Map<string, { spend: number; broadGmv: number; directGmv: number }>();
-    for (const c of campaignRows) {
-      for (const p of c.dailyPerf) {
+    for (const it of insights.items) {
+      for (const p of it.row.dailyPerf) {
+        if (p.date < perfStart) continue; // chart cũng theo cửa sổ ?days
         const key = dateKey(p.date);
         const point = seriesMap.get(key) ?? { spend: 0, broadGmv: 0, directGmv: 0 };
         point.spend += Number(p.expense);
@@ -352,8 +228,8 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
         shopMargin,
         shopBreakevenRoas: shopBreakeven,
         marginWindowDays: MARGIN_WINDOW_DAYS,
-        pnlOrders: shopMarginBase.orders,
-        missingCostOrders: shopMarginBase.missingCostOrders,
+        pnlOrders: insights.shop.pnlOrders,
+        missingCostOrders: insights.shop.missingCostOrders,
       },
       campaigns,
       series,
@@ -390,6 +266,91 @@ router.put("/shopee/assistant-config", async (req: AuthRequest, res, next) => {
       create: { channelId: channel.id, config: jsonConfig },
     });
     res.json({ message: "Đã lưu cấu hình Trợ lý", config: normalized });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/ads/shopee/action-log?channelId=&limit= — SỔ HÀNH ĐỘNG của Trợ lý
+// (GĐ3): mọi lần diễn tập/thực thi, kèm căn cứ + lỗi sàn nguyên văn.
+router.get("/shopee/action-log", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId =
+      typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const channel = await prisma.channel.findFirst({
+      where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+      return;
+    }
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(100, Math.max(1, Math.trunc(limitRaw)))
+      : 50;
+    const rows = await prisma.adsActionLog.findMany({
+      where: { channelId: channel.id },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: { adsCampaign: { select: { name: true, campaignId: true } } },
+    });
+    res.json({
+      logs: rows.map((r) => ({
+        id: r.id,
+        campaignName:
+          r.adsCampaign.name || `Chiến dịch #${r.adsCampaign.campaignId}`,
+        action: r.action,
+        mode: r.mode,
+        verdict: r.verdict,
+        reasons: r.reasons ? r.reasons.split("\n").filter(Boolean) : [],
+        status: r.status,
+        error: r.error,
+        createdAt: r.createdAt,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ads/shopee/write-probe — DỤNG CỤ XÁC MINH GĐ3 (chỉ ADMIN, dùng tay).
+//
+// Bắn MỘT lệnh edit_manual_product_ads lên MỘT campaign chỉ định và trả về
+// NGUYÊN VĂN envelope của Shopee (kể cả lỗi) — để xác minh enum edit_action +
+// quyền write trước khi bật autoExecute mode live. Đây là thao tác GHI THẬT
+// lên gian hàng: đòi confirm=true tường minh; khuyến nghị chạy trên campaign
+// test/đã tạm dừng, làm cùng chủ shop.
+router.post("/shopee/write-probe", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelId, campaignId, editAction, confirm } = req.body as {
+      channelId?: string;
+      campaignId?: string | number;
+      editAction?: string;
+      confirm?: boolean;
+    };
+    if (confirm !== true || !campaignId || !editAction) {
+      res.status(400).json({
+        error:
+          "Cần đủ: channelId, campaignId, editAction và confirm=true (đây là lệnh GHI THẬT lên sàn)",
+      });
+      return;
+    }
+    const channel = await prisma.channel.findFirst({
+      where: { id: channelId ?? "", userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+      return;
+    }
+    const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+    const raw = await editManualProductAdsRaw({
+      accessToken,
+      shopId,
+      campaignId,
+      editAction,
+      referenceId: `probe-${campaignId}-${Date.now()}`,
+    });
+    res.json({ probe: { campaignId, editAction }, shopeeResponse: raw });
   } catch (err) {
     next(err);
   }

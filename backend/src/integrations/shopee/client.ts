@@ -67,7 +67,7 @@ export function buildAuthorizeUrl(
 // ---------- Kiểu dữ liệu Shopee trả về ----------
 
 /** Bao ngoài chuẩn của Shopee: `error` rỗng ("") là thành công. */
-interface ShopeeEnvelope {
+export interface ShopeeEnvelope {
   error?: string;
   message?: string;
   request_id?: string;
@@ -1165,6 +1165,51 @@ export async function getAdsCampaignHourlyPerformance(
 
 export interface ShopeeAdsTotalBalanceData extends ShopeeEnvelope {
   response?: { total_balance?: number; data_timestamp?: number };
+}
+
+/**
+ * GĐ3 — LỆNH GHI DUY NHẤT của Trợ lý: sửa Manual Product Ads.
+ * Trả NGUYÊN VĂN envelope (KHÔNG ensureOk) — caller tự đọc error/message để
+ * ghi sổ AdsActionLog và học enum edit_action (docs không công bố, đang xác
+ * minh bằng probe). reference_id chống double-fire phía sàn.
+ */
+export async function editManualProductAdsRaw(
+  params: {
+    accessToken: string;
+    shopId: string;
+    campaignId: number | string;
+    editAction: string; // "pause" | ... (enum chưa xác minh)
+    referenceId: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: unknown }> {
+  const path = SHOPEE_PATHS.adsEditManualProductAds;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShop(
+    cfg.partnerKey,
+    cfg.partnerId,
+    path,
+    timestamp,
+    params.accessToken,
+    params.shopId
+  );
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    access_token: params.accessToken,
+    shop_id: params.shopId,
+    sign,
+  }).toString();
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reference_id: params.referenceId,
+      campaign_id: Number(params.campaignId),
+      edit_action: params.editAction,
+    }),
+  });
+  return (await res.json()) as ShopeeEnvelope & { response?: unknown };
 }
 
 /** Số dư ví quảng cáo real-time (read-only) — cảnh báo sắp hết tiền ads. */

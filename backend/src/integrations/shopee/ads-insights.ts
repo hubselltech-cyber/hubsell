@@ -1,0 +1,228 @@
+// ============================================================
+// TRỢ LÝ QUẢNG CÁO SHOPEE — LÕI TÍNH TOÁN DÙNG CHUNG (GĐ3 tách từ routes/ads)
+//
+// Một nguồn duy nhất cho: lát cắt cửa sổ today/3d/7d/30d, biên lãi ròng theo
+// SKU campaign (phân bổ tỷ trọng doanh thu, SSOT computePnlRow), ROAS hòa vốn
+// và verdict rule engine. HAI người dùng:
+//   - routes/ads.ts  : dashboard + verdict hiển thị
+//   - ads-auto-execute.ts : executor GĐ3 quyết hành động trong worker
+// Route và executor mà tự tính riêng thì có ngày hai nơi lệch số — người dùng
+// thấy badge "Ổn" nhưng executor lại tạm dừng campaign. Tách ra đây để không bao
+// giờ xảy ra chuyện đó.
+// ============================================================
+
+import { ChannelName, type AdsCampaign, type AdsCampaignDailyPerf } from "@prisma/client";
+import { prisma } from "../../prisma";
+import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
+import {
+  ASSISTANT_WINDOWS,
+  evaluateShopeeCampaign,
+  normalizeAssistantConfig,
+  type AssistantAssessment,
+  type AssistantWindowKey,
+  type AssistantWindowMetrics,
+  type ShopeeAssistantConfig,
+} from "./ads-assistant-rules";
+
+/** Cửa sổ P&L để ước biên lãi — cố định 30 ngày cho đủ mẫu, KHÔNG theo ?days. */
+export const MARGIN_WINDOW_DAYS = 30;
+/** Campaign cần tối thiểu bấy nhiêu đơn khớp SKU mới dùng biên lãi riêng. */
+export const MIN_ORDERS_FOR_MARGIN = 5;
+
+export function startOfDaysAgo(days: number): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - (days - 1));
+  return d;
+}
+
+/** "YYYY-MM-DD" theo UTC — cột @db.Date lưu 00:00 UTC nên đọc bằng UTC mới đúng ngày. */
+export function dateKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN — ngày trong AdsCampaignDailyPerf
+ *  là ngày của SÀN (múi giờ VN), server Render chạy UTC nên phải cộng 7h. */
+export function vnDateKey(daysAgo: number): string {
+  return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+export type CampaignWithPerf = AdsCampaign & { dailyPerf: AdsCampaignDailyPerf[] };
+
+export interface CampaignInsight {
+  row: CampaignWithPerf;
+  itemIds: string[];
+  windows: Record<AssistantWindowKey, AssistantWindowMetrics>;
+  avgDailySpend7d: number;
+  margin: number | null;
+  marginSource: "campaign" | "shop" | null;
+  marginOrders: number;
+  breakevenRoas: number | null;
+  assessment: AssistantAssessment;
+}
+
+export interface ChannelAdsInsights {
+  config: ShopeeAssistantConfig;
+  items: CampaignInsight[];
+  shop: {
+    margin: number | null;
+    breakevenRoas: number | null;
+    pnlOrders: number;
+    missingCostOrders: number;
+  };
+}
+
+/**
+ * Tính trọn bộ insight + verdict cho MỌI campaign của một gian Shopee.
+ * dailyPerf kèm theo là 30 ngày — caller hiển thị tự cắt cửa sổ ngắn hơn.
+ */
+export async function computeChannelAdsInsights(channel: {
+  id: string;
+  userId: string;
+}): Promise<ChannelAdsInsights> {
+  const campaignRows = await prisma.adsCampaign.findMany({
+    where: { channelId: channel.id },
+    include: { dailyPerf: { where: { date: { gte: startOfDaysAgo(30) } } } },
+  });
+
+  const configRow = await prisma.adsAssistantConfig.findUnique({
+    where: { channelId: channel.id },
+  });
+  const config = normalizeAssistantConfig(configRow?.config);
+
+  // Mốc cửa sổ theo NGÀY SÀN (giờ VN): key ngày nhỏ nhất thuộc mỗi cửa sổ.
+  const windowFloorKey: Record<AssistantWindowKey, string> = {
+    today: vnDateKey(0),
+    "3d": vnDateKey(2),
+    "7d": vnDateKey(6),
+    "30d": vnDateKey(29),
+  };
+  const yesterdayKey = vnDateKey(1);
+  const weekAgoKey = vnDateKey(7);
+
+  // ---- Nền P&L 30 ngày để tính biên lãi (chưa trừ ads) ----
+  const pnlOrders = await fetchPnlOrders(
+    { userId: channel.userId, id: channel.id, channelName: ChannelName.SHOPEE },
+    { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
+  );
+  const pnlRows = pnlOrders.map(computePnlRow);
+
+  // Map SKU sàn → campaign qua externalId của ChannelProduct ("item" | "item-model").
+  const channelProducts = await prisma.channelProduct.findMany({
+    where: { channelId: channel.id, externalId: { not: null } },
+    select: { channelSku: true, externalId: true },
+  });
+  const skusByItemId = new Map<string, Set<string>>();
+  for (const cp of channelProducts) {
+    const itemId = (cp.externalId ?? "").split("-")[0];
+    if (!itemId) continue;
+    let set = skusByItemId.get(itemId);
+    if (!set) skusByItemId.set(itemId, (set = new Set()));
+    set.add(cp.channelSku);
+  }
+
+  /** Biên lãi ròng (chưa trừ ads) trên một tập SKU — null = tính toàn shop. */
+  function marginOver(skuSet: Set<string> | null): {
+    orders: number;
+    revenue: number;
+    profit: number;
+    missingCostOrders: number;
+  } {
+    let orders = 0;
+    let revenue = 0;
+    let profit = 0;
+    let missingCostOrders = 0;
+    for (const row of pnlRows) {
+      const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
+      if (itemTotal <= 0) continue;
+      const matchTotal = skuSet
+        ? row.items
+            .filter((it) => skuSet.has(it.sku))
+            .reduce((s, it) => s + it.price * it.quantity, 0)
+        : itemTotal;
+      if (matchTotal <= 0) continue;
+      const ratio = matchTotal / itemTotal;
+      orders++;
+      revenue += row.actualRevenue * ratio;
+      profit += row.profit * ratio;
+      if (row.missingCostPrice) missingCostOrders++;
+    }
+    return { orders, revenue, profit, missingCostOrders };
+  }
+
+  const shopMarginBase = marginOver(null);
+  const shopMargin =
+    shopMarginBase.revenue > 0 ? shopMarginBase.profit / shopMarginBase.revenue : null;
+  const shopBreakeven = shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null;
+
+  const items: CampaignInsight[] = campaignRows.map((c) => {
+    // Lát cắt cửa sổ + trung bình ngày 7 ngày TRƯỚC hôm nay (mẫu so spike).
+    const windows = {} as Record<AssistantWindowKey, AssistantWindowMetrics>;
+    for (const k of ASSISTANT_WINDOWS) {
+      windows[k] = { spend: 0, clicks: 0, broadOrder: 0, broadGmv: 0 };
+    }
+    let prev7Spend = 0;
+    for (const p of c.dailyPerf) {
+      const key = dateKey(p.date);
+      for (const k of ASSISTANT_WINDOWS) {
+        if (key >= windowFloorKey[k]) {
+          windows[k].spend += Number(p.expense);
+          windows[k].clicks += p.clicks;
+          windows[k].broadOrder += p.broadOrder;
+          windows[k].broadGmv += Number(p.broadGmv);
+        }
+      }
+      if (key >= weekAgoKey && key <= yesterdayKey) prev7Spend += Number(p.expense);
+    }
+    const avgDailySpend7d = prev7Spend / 7;
+
+    // Biên lãi riêng của campaign từ P&L các SKU trong campaign.
+    const itemIds = c.itemIds ? c.itemIds.split(",") : [];
+    const skuSet = new Set<string>();
+    for (const itemId of itemIds) {
+      for (const sku of skusByItemId.get(itemId) ?? []) skuSet.add(sku);
+    }
+    const own =
+      skuSet.size > 0
+        ? marginOver(skuSet)
+        : { orders: 0, revenue: 0, profit: 0, missingCostOrders: 0 };
+    const useOwn = own.orders >= MIN_ORDERS_FOR_MARGIN && own.revenue > 0;
+    const margin = useOwn ? own.profit / own.revenue : shopMargin;
+    const marginSource: "campaign" | "shop" | null = useOwn
+      ? "campaign"
+      : shopMargin != null
+        ? "shop"
+        : null;
+    const breakevenRoas = margin != null && margin > 0 ? 1 / margin : null;
+
+    const assessment = evaluateShopeeCampaign(
+      { status: c.status, breakevenRoas, windows, avgDailySpend7d },
+      config
+    );
+
+    return {
+      row: c,
+      itemIds,
+      windows,
+      avgDailySpend7d,
+      margin,
+      marginSource,
+      marginOrders: useOwn ? own.orders : shopMarginBase.orders,
+      breakevenRoas,
+      assessment,
+    };
+  });
+
+  return {
+    config,
+    items,
+    shop: {
+      margin: shopMargin,
+      breakevenRoas: shopBreakeven,
+      pnlOrders: shopMarginBase.orders,
+      missingCostOrders: shopMarginBase.missingCostOrders,
+    },
+  };
+}
