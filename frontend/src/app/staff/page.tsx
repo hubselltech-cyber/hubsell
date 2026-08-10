@@ -216,6 +216,37 @@ function ChannelScope({
 
 // ---------- Dialog: Thêm nhân viên (không cần email) ----------
 
+/**
+ * QUY ƯỚC TÊN ĐĂNG NHẬP (anh Trung chốt 10/08): viết LIỀN, KHÔNG DẤU.
+ * Ép ngay khi gõ thay vì báo lỗi sau: "Anh Yêu Em" → "anhyeuem" — bỏ dấu
+ * tiếng Việt (kể cả đ→d), thường hóa, xoá khoảng trắng/ký tự lạ, tối đa 30 ký
+ * tự. Cùng văn phạm với USERNAME_REGEX phía backend.
+ */
+function toAsciiUsername(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // bỏ dấu tổ hợp (á→a, ê→e…)
+    .replace(/[đĐ]/g, "d") // đ không nằm trong dải dấu tổ hợp, thay riêng
+    .toLowerCase()
+    .replace(/[^a-z0-9._]/g, "")
+    .slice(0, 30);
+}
+
+/**
+ * Tiền tố "cha" của tài khoản nhân viên — ưu tiên username chủ shop; chưa đặt
+ * username thì lấy ĐẦU EMAIL (trùng cách backend tự sinh lúc lưu, nên xem
+ * trước và kết quả thật khớp nhau trừ khi tên bị trùng phải gắn thêm số).
+ */
+function ownerPrefixOf(
+  ownerUsername: string | null,
+  user: { username?: string | null; email: string | null } | null
+): string {
+  if (ownerUsername) return ownerUsername;
+  if (user?.username) return user.username;
+  if (user?.email) return toAsciiUsername(user.email.split("@")[0]);
+  return "tenshop";
+}
+
 const staffSchema = z.object({
   fullName: z.string().trim().min(2, "Vui lòng nhập họ tên"),
   staffUsername: z
@@ -248,9 +279,10 @@ function AddStaffDialog({
     defaultValues: { fullName: "", staffUsername: "", password: "" },
   });
 
-  // Tiền tố "chủ/" hiển thị trước ô nhập; chủ shop cũ chưa đặt username thì
-  // backend tự sinh lúc lưu — hiển thị nhãn tạm để không chặn thao tác.
-  const prefix = ownerUsername ?? getStoredUser()?.username ?? "tênshop";
+  // Tiền tố "chủ/" hiển thị trước ô nhập — ưu tiên username, thiếu thì lấy đầu
+  // email (backend ensureOwnerUsername sinh cùng một gốc lúc lưu).
+  const prefix = ownerPrefixOf(ownerUsername, getStoredUser());
+  const typedUsername = form.watch("staffUsername");
 
   async function onSubmit(values: StaffFormValues) {
     setSubmitting(true);
@@ -323,12 +355,23 @@ function AddStaffDialog({
                       </span>
                       <Input
                         className="rounded-l-none"
-                        placeholder="kho01"
+                        placeholder="vd: kho01, sale.mai"
                         autoComplete="off"
                         {...field}
+                        // Ép quy ước NGAY KHI GÕ: "Anh Yêu Em" thành "anhyeuem"
+                        // — người dùng thấy kết quả liền, không bị mắng sau.
+                        onChange={(e) =>
+                          field.onChange(toAsciiUsername(e.target.value))
+                        }
                       />
                     </div>
                   </FormControl>
+                  <p className={TEXT_SUB}>
+                    Viết liền, không dấu. Nhân viên sẽ đăng nhập bằng:{" "}
+                    <b className="font-mono">
+                      {prefix}/{typedUsername || "…"}
+                    </b>
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}
