@@ -136,6 +136,7 @@ async function main() {
       itemIds: "900002",
       spendBase: 260_000,
       roas: 4.5, // hòa vốn 4,24x → VÀNG (sát ngưỡng ×1.1)
+      ordersPerDay: 3, // 21 đơn/7 ngày < ngưỡng công thần 30 → Q2 review sạch
     },
     {
       campaignId: "DEMO-3",
@@ -163,7 +164,65 @@ async function main() {
       spendBase: 0,
       roas: 0,
     },
-  ];
+    // ---- Ca GĐ2: rule engine Trợ lý ----
+    {
+      campaignId: "DEMO-5",
+      name: "Mũ lưỡi trai — VỌT CHI hôm nay",
+      adType: "manual",
+      status: "ongoing",
+      placement: "search",
+      biddingMethod: "manual",
+      budget: 0,
+      roasTarget: null,
+      itemIds: "900001", // hòa vốn ~3,5x
+      spendBase: 100_000,
+      roas: 5, // các ngày trước vẫn ổn
+      todaySpend: 420_000, // hôm nay gấp ~4 lần trung bình
+      todayRoas: 1, // và đang lỗ → Q3 spike
+    },
+    {
+      campaignId: "DEMO-6",
+      name: "Túi tote canvas — công thần đang hụt hơi",
+      adType: "auto",
+      status: "ongoing",
+      placement: "all",
+      biddingMethod: "auto",
+      budget: 0,
+      roasTarget: null,
+      itemIds: "900001", // hòa vốn ~3,5x; roas 2 → vi phạm Q1
+      spendBase: 80_000,
+      roas: 2,
+      ordersPerDay: 6, // 42 đơn/7 ngày ≥ ngưỡng 30 → Q4 grace đánh chặn
+    },
+    {
+      campaignId: "DEMO-7",
+      name: "Ví da mini — mới chạy, chưa đủ mẫu",
+      adType: "manual",
+      status: "ongoing",
+      placement: "search",
+      biddingMethod: "manual",
+      budget: 50_000,
+      roasTarget: null,
+      itemIds: "900002",
+      spendBase: 8_000, // 56k/7 ngày < sàn 100k → insufficient_data
+      roas: 3,
+    },
+  ] as Array<{
+    campaignId: string;
+    name: string;
+    adType: string;
+    status: string;
+    placement: string;
+    biddingMethod: string;
+    budget: number;
+    roasTarget: number | null;
+    itemIds: string;
+    spendBase: number;
+    roas: number;
+    todaySpend?: number;
+    todayRoas?: number;
+    ordersPerDay?: number;
+  }>;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -190,9 +249,15 @@ async function main() {
       const date = new Date(
         Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() - i)
       );
+      // Ngày hôm nay (i=0) cho phép ghi đè riêng — dựng ca spike Q3.
+      const isToday = i === 0;
       const wave = 1 + 0.25 * Math.sin((6 - i) * 1.3);
-      const spend = Math.round((d.spendBase * wave) / 1000) * 1000;
-      const broadGmv = Math.round((spend * d.roas * (1 + 0.1 * Math.cos(i))) / 1000) * 1000;
+      const spend =
+        isToday && d.todaySpend != null
+          ? d.todaySpend
+          : Math.round((d.spendBase * wave) / 1000) * 1000;
+      const roas = isToday && d.todayRoas != null ? d.todayRoas : d.roas;
+      const broadGmv = Math.round((spend * roas * (1 + 0.1 * Math.cos(i))) / 1000) * 1000;
       const directGmv = Math.round(broadGmv * 0.72);
       const clicks = Math.round(spend / 1_400);
       await prisma.adsCampaignDailyPerf.create({
@@ -202,7 +267,7 @@ async function main() {
           impression: clicks * 45,
           clicks,
           expense: spend,
-          broadOrder: Math.max(Math.round(broadGmv / 210_000), 0),
+          broadOrder: d.ordersPerDay ?? Math.max(Math.round(broadGmv / 210_000), 0),
           broadGmv,
           directOrder: Math.max(Math.round(directGmv / 210_000), 0),
           directGmv,

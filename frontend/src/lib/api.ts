@@ -2763,9 +2763,48 @@ export function mockReferralPayment(payerEmail: string, amount: number) {
   );
 }
 
-// ----- Trợ lý quảng cáo Shopee (GĐ1: dashboard dữ liệu thật, read-only) -----
+// ----- Trợ lý quảng cáo Shopee (GĐ1 dashboard + GĐ2 rule engine khuyến nghị) -----
+
+/** Verdict của rule engine (null = campaign không chạy / Trợ lý tắt). */
+export type ShopeeAssistantVerdict =
+  | "spike"
+  | "pause_now"
+  | "grace"
+  | "review"
+  | "healthy"
+  | "insufficient_data"
+  | null;
+
+/** Quyết định của chủ shop với một cảnh báo. */
+export type ShopeeAssistantDecision = "" | "HANDLED" | "WATCHING" | "IGNORED";
+
+export interface ShopeeAssistantInfo {
+  verdict: ShopeeAssistantVerdict;
+  reasons: string[];
+  window: string | null;
+  decision: ShopeeAssistantDecision;
+  /** true = quyết định còn hiệu lực (verdict chưa đổi loại) → ẩn cảnh báo. */
+  decisionActive: boolean;
+}
+
+export interface ShopeeAssistantConfig {
+  enabled: boolean;
+  floor: { minSpend7d: number; minClicks7d: number };
+  hard: { enabled: boolean; zeroOrderSpend7d: number; breakevenFactor: number };
+  review: { enabled: boolean; dangerFactor: number };
+  spike: { enabled: boolean; dayMultiple: number; minTodaySpend: number };
+  grace: { enabled: boolean; minOrders7d: number };
+}
+
+export interface ShopeeAssistantSummary {
+  config: ShopeeAssistantConfig;
+  counts: { spike: number; pauseNow: number; grace: number; review: number };
+  /** spike + pauseNow + review chưa được quyết — số trên banner. */
+  needsAction: number;
+}
 
 export interface ShopeeAdsCampaignRow {
+  assistant: ShopeeAssistantInfo;
   id: string;
   campaignId: string;
   name: string;
@@ -2821,6 +2860,7 @@ export interface ShopeeAdsDashboard {
   selectedChannelId: string | null;
   days: number;
   wallet: { balance: number } | null;
+  assistant: ShopeeAssistantSummary | null;
   summary: ShopeeAdsSummary | null;
   campaigns: ShopeeAdsCampaignRow[];
   series: { date: string; spend: number; broadGmv: number; directGmv: number }[];
@@ -2849,5 +2889,28 @@ export function syncShopeeAdsCampaigns(channelId: string) {
   return apiFetch<SyncAdsCampaignsResult>(
     `/api/channels/${channelId}/sync-ads-campaigns`,
     { method: "POST" }
+  );
+}
+
+/** Lưu luật Trợ lý riêng của một gian (backend normalize trước khi lưu). */
+export function saveShopeeAssistantConfig(
+  channelId: string,
+  config: ShopeeAssistantConfig
+) {
+  return apiFetch<{ message: string; config: ShopeeAssistantConfig }>(
+    "/api/ads/shopee/assistant-config",
+    { method: "PUT", body: JSON.stringify({ channelId, config }) }
+  );
+}
+
+/** Chủ shop quyết một cảnh báo ("" = gỡ quyết định, cảnh báo hiện lại). */
+export function decideShopeeAdsCampaign(
+  campaignRowId: string,
+  decision: ShopeeAssistantDecision,
+  verdict: string
+) {
+  return apiFetch<{ message: string }>(
+    `/api/ads/shopee/campaigns/${campaignRowId}/decision`,
+    { method: "POST", body: JSON.stringify({ decision, verdict }) }
   );
 }

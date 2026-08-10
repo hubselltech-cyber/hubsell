@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -46,13 +47,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  decideShopeeAdsCampaign,
   fetchShopeeAdsDashboard,
   getStoredUser,
   getToken,
+  saveShopeeAssistantConfig,
   syncShopeeAdsCampaigns,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
+  type ShopeeAssistantConfig,
+  type ShopeeAssistantDecision,
 } from "@/lib/api";
+import {
+  AssistantVerdictBadge,
+  ShopeeAssistantConfigCard,
+  ShopeeAssistantModal,
+  assistantBannerText,
+} from "@/components/ads/shopee-assistant-panel";
 import { formatNumber, formatVND } from "@/lib/format";
 import { isAdmin } from "@/lib/permissions";
 import { TABLE_HEAD_EMPHASIS, TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typography";
@@ -123,6 +134,11 @@ export function ShopeeAdsPage() {
   // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
+  // ----- Trợ lý (GĐ2): modal chi tiết + lọc cần-xử-lý + lưu cấu hình -----
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [onlyNeedsAction, setOnlyNeedsAction] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -206,19 +222,39 @@ export function ShopeeAdsPage() {
     [data?.series]
   );
 
-  // Campaign "đáng lo": đang chạy, có tiêu tiền, ROAS dưới hòa vốn × hệ số.
-  const dangerCount = useMemo(
-    () =>
-      (data?.campaigns ?? []).filter(
-        (c) =>
-          c.status === "ongoing" &&
-          c.spend > 0 &&
-          c.roasBroad != null &&
-          c.breakevenRoas != null &&
-          c.roasBroad < c.breakevenRoas * DANGER_FACTOR
-      ).length,
-    [data?.campaigns]
-  );
+  const assistant = data?.assistant ?? null;
+
+  async function decideCampaign(decision: ShopeeAssistantDecision) {
+    const campaign = data?.campaigns.find((c) => c.id === detailId);
+    if (!campaign || deciding) return;
+    setDeciding(true);
+    try {
+      await decideShopeeAdsCampaign(
+        campaign.id,
+        decision,
+        campaign.assistant.verdict ?? ""
+      );
+      setDetailId(null);
+      await load(channelId, days);
+    } catch (err) {
+      setSyncNote(`Ghi nhận quyết định lỗi: ${(err as Error).message}`);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
+  async function saveConfig(config: ShopeeAssistantConfig) {
+    if (!channelId || savingConfig) return;
+    setSavingConfig(true);
+    try {
+      await saveShopeeAssistantConfig(channelId, config);
+      await load(channelId, days);
+    } catch (err) {
+      setSyncNote(`Lưu cấu hình lỗi: ${(err as Error).message}`);
+    } finally {
+      setSavingConfig(false);
+    }
+  }
 
   if (denied) {
     return (
@@ -231,14 +267,27 @@ export function ShopeeAdsPage() {
   const campaigns = data?.campaigns ?? [];
   const noChannel = !loading && (data?.channels.length ?? 0) === 0;
 
+  // Lọc "chỉ cần xử lý": cảnh báo nặng chưa được quyết (spike/dừng/duyệt/công thần).
+  const visibleCampaigns = onlyNeedsAction
+    ? campaigns.filter(
+        (c) =>
+          !c.assistant.decisionActive &&
+          (c.assistant.verdict === "spike" ||
+            c.assistant.verdict === "pause_now" ||
+            c.assistant.verdict === "review" ||
+            c.assistant.verdict === "grace")
+      )
+    : campaigns;
+
   // Phân trang client-side: API trả trọn bộ (đã sort theo chi tiêu giảm dần),
   // bảng chỉ hiện PAGE_SIZE dòng một trang. Kẹp page khi dữ liệu co lại.
-  const pageCount = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(visibleCampaigns.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
-  const pagedCampaigns = campaigns.slice(
+  const pagedCampaigns = visibleCampaigns.slice(
     safePage * PAGE_SIZE,
     (safePage + 1) * PAGE_SIZE
   );
+  const detailCampaign = campaigns.find((c) => c.id === detailId) ?? null;
 
   return (
     <AppShell>
@@ -306,17 +355,31 @@ export function ShopeeAdsPage() {
           </div>
         )}
 
-        {/* ===== CẢNH BÁO: campaign dưới hòa vốn + ví ads sắp cạn ===== */}
-        {dangerCount > 0 && (
-          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+        {/* ===== ĐỀ XUẤT TỪ TRỢ LÝ (GĐ2 — verdict rule engine, chưa ai quyết) ===== */}
+        {assistant && assistant.needsAction > 0 && (
+          <div className="flex flex-wrap items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-500" />
-            <p>
-              <b>{formatNumber(dangerCount)} chiến dịch đang chạy dưới ROAS hòa
-              vốn</b>{" "}
-              (hoặc sát ngưỡng ×{DANGER_FACTOR}) — ROAS sàn báo có thể vẫn dương
-              nhưng sau giá vốn và phí sàn là đang lỗ. Xem cột &quot;Lãi/lỗ ước
-              tính&quot; trong bảng dưới.
-            </p>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">
+                Trợ lý phát hiện {formatNumber(assistant.needsAction)} chiến dịch
+                cần xử lý
+              </p>
+              <p className="mt-0.5 text-red-600">
+                {assistantBannerText(assistant.counts)} — bấm badge ở cột Trợ lý
+                để xem căn cứ và quyết định.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-300 text-red-700 hover:bg-red-100 hover:text-red-800"
+              onClick={() => {
+                setOnlyNeedsAction(true);
+                setPage(0);
+              }}
+            >
+              Lọc cần xử lý
+            </Button>
           </div>
         )}
         {walletLow && wallet && (
@@ -442,13 +505,29 @@ export function ShopeeAdsPage() {
         {/* ===== BẢNG CHIẾN DỊCH ===== */}
         <Card>
           <CardHeader>
-            <CardTitle>Chiến dịch quảng cáo</CardTitle>
-            <CardDescription>
-              ROAS tô màu theo ROAS hòa vốn của chính SKU trong chiến dịch —{" "}
-              <span className="text-emerald-600">xanh</span> là có lãi thật,{" "}
-              <span className="text-amber-600">vàng</span> là sát ngưỡng,{" "}
-              <span className="text-red-600">đỏ</span> là đang lỗ dù ROAS dương.
-            </CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Chiến dịch quảng cáo</CardTitle>
+                <CardDescription className="mt-1.5">
+                  ROAS tô màu theo ROAS hòa vốn của chính SKU trong chiến dịch —{" "}
+                  <span className="text-emerald-600">xanh</span> là có lãi thật,{" "}
+                  <span className="text-amber-600">vàng</span> là sát ngưỡng,{" "}
+                  <span className="text-red-600">đỏ</span> là đang lỗ dù ROAS dương.
+                  Bấm một dòng để xem căn cứ của Trợ lý.
+                </CardDescription>
+              </div>
+              <label className="flex shrink-0 items-center gap-2 text-sm text-slate-600">
+                <Switch
+                  checked={onlyNeedsAction}
+                  onCheckedChange={(v) => {
+                    setOnlyNeedsAction(v);
+                    setPage(0);
+                  }}
+                  aria-label="Chỉ hiện chiến dịch cần xử lý"
+                />
+                Chỉ cần xử lý
+              </label>
+            </div>
           </CardHeader>
           <CardContent>
             {noChannel ? (
@@ -466,12 +545,17 @@ export function ShopeeAdsPage() {
                   Đồng bộ ngay
                 </Button>
               </div>
+            ) : visibleCampaigns.length === 0 && !loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Không còn chiến dịch nào cần xử lý 🎉 — tắt bộ lọc để xem toàn bộ.
+              </p>
             ) : (
               <div className="min-w-0 overflow-x-auto">
                 <Table>
                   <TableHeader className={TABLE_HEAD_EMPHASIS}>
                     <TableRow>
                       <TableHead>Chiến dịch</TableHead>
+                      <TableHead className="w-36">Trợ lý</TableHead>
                       <TableHead className="w-28">Trạng thái</TableHead>
                       <TableHead className="w-32 text-right">Ngân sách</TableHead>
                       <TableHead className="w-32 text-right">Chi phí</TableHead>
@@ -499,18 +583,18 @@ export function ShopeeAdsPage() {
                   </TableHeader>
                   <TableBody>
                     {pagedCampaigns.map((c) => (
-                      <CampaignRow key={c.id} c={c} />
+                      <CampaignRow key={c.id} c={c} onOpen={() => setDetailId(c.id)} />
                     ))}
                   </TableBody>
                 </Table>
-                {campaigns.length > PAGE_SIZE && (
+                {visibleCampaigns.length > PAGE_SIZE && (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
                       Hiển thị {formatNumber(safePage * PAGE_SIZE + 1)}–
                       {formatNumber(
-                        Math.min((safePage + 1) * PAGE_SIZE, campaigns.length)
+                        Math.min((safePage + 1) * PAGE_SIZE, visibleCampaigns.length)
                       )}{" "}
-                      trong {formatNumber(campaigns.length)} chiến dịch
+                      trong {formatNumber(visibleCampaigns.length)} chiến dịch
                     </p>
                     <div className="flex items-center gap-2">
                       <Button
@@ -542,6 +626,23 @@ export function ShopeeAdsPage() {
           </CardContent>
         </Card>
 
+        {/* ===== CẤU HÌNH TRỢ LÝ (GĐ2) ===== */}
+        {assistant && !noChannel && (
+          <ShopeeAssistantConfigCard
+            config={assistant.config}
+            onSave={(config) => void saveConfig(config)}
+            saving={savingConfig}
+          />
+        )}
+
+        {/* ===== MODAL CĂN CỨ + QUYẾT ĐỊNH ===== */}
+        <ShopeeAssistantModal
+          campaign={detailCampaign}
+          onDecide={(d) => void decideCampaign(d)}
+          onClose={() => setDetailId(null)}
+          deciding={deciding}
+        />
+
         {/* ===== GHI CHÚ NGUỒN SỐ ===== */}
         {summary && (
           <p className="text-center text-xs text-muted-foreground">
@@ -563,7 +664,13 @@ export function ShopeeAdsPage() {
   );
 }
 
-function CampaignRow({ c }: { c: ShopeeAdsCampaignRow }) {
+function CampaignRow({
+  c,
+  onOpen,
+}: {
+  c: ShopeeAdsCampaignRow;
+  onOpen: () => void;
+}) {
   const status = STATUS_META[c.status] ?? {
     label: c.status || "—",
     className: "bg-slate-100 text-slate-500",
@@ -576,7 +683,10 @@ function CampaignRow({ c }: { c: ShopeeAdsCampaignRow }) {
     c.roasBroad < c.breakevenRoas;
 
   return (
-    <TableRow className={cn(danger && "bg-red-50/50")}>
+    <TableRow
+      className={cn("cursor-pointer", danger && "bg-red-50/50")}
+      onClick={onOpen}
+    >
       <TableCell>
         <p className="max-w-64 truncate text-sm font-medium text-slate-900">
           {c.name || `Chiến dịch #${c.campaignId}`}
@@ -587,6 +697,9 @@ function CampaignRow({ c }: { c: ShopeeAdsCampaignRow }) {
           {c.itemCount > 0 && ` · ${formatNumber(c.itemCount)} SP`}
           {c.roasTarget != null && ` · mục tiêu ${formatRoas(c.roasTarget)}`}
         </p>
+      </TableCell>
+      <TableCell>
+        <AssistantVerdictBadge c={c} />
       </TableCell>
       <TableCell>
         <div className="flex flex-col items-start gap-1">

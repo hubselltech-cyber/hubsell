@@ -5,6 +5,13 @@ import type { AuthRequest } from "../auth";
 import { computePnlRow, fetchPnlOrders } from "./finance";
 import { getAdsTotalBalance } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import {
+  ASSISTANT_WINDOWS,
+  evaluateShopeeCampaign,
+  normalizeAssistantConfig,
+  type AssistantWindowKey,
+  type AssistantWindowMetrics,
+} from "../integrations/shopee/ads-assistant-rules";
 
 const router = Router();
 
@@ -45,6 +52,23 @@ function dateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** "YYYY-MM-DD" của N ngày trước theo GIỜ VN — ngày trong AdsCampaignDailyPerf
+ *  là ngày của SÀN (múi giờ VN), server Render chạy UTC nên phải cộng 7h. */
+function vnDateKey(daysAgo: number): string {
+  return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Quyết định của chủ shop còn hiệu lực khi verdict CHƯA đổi loại từ lúc quyết. */
+function decisionActive(
+  decision: string,
+  decisionVerdict: string,
+  currentVerdict: string | null
+): boolean {
+  return decision !== "" && currentVerdict !== null && decisionVerdict === currentVerdict;
+}
+
 router.get("/shopee", async (req: AuthRequest, res, next) => {
   try {
     // ---- Gian Shopee của shop (ADMIN thấy hết — không cần allowedChannelIds) ----
@@ -69,11 +93,28 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
     const days = req.query.days === "30" ? 30 : 7;
     const perfStart = startOfDaysAgo(days);
 
-    // ---- Campaign + hiệu suất trong cửa sổ ----
+    // ---- Campaign + hiệu suất: luôn kéo TRỌN 30 ngày — hiển thị cắt theo
+    // ?days, còn Trợ lý (GĐ2) cần đủ các lát today/3d/7d/30d để đánh giá ----
     const campaignRows = await prisma.adsCampaign.findMany({
       where: { channelId: selected.id },
-      include: { dailyPerf: { where: { date: { gte: perfStart } } } },
+      include: { dailyPerf: { where: { date: { gte: startOfDaysAgo(30) } } } },
     });
+
+    // ---- Luật Trợ lý của gian (chưa lưu = bộ mặc định) ----
+    const configRow = await prisma.adsAssistantConfig.findUnique({
+      where: { channelId: selected.id },
+    });
+    const assistantConfig = normalizeAssistantConfig(configRow?.config);
+
+    // Mốc cửa sổ theo NGÀY SÀN (giờ VN): key ngày nhỏ nhất thuộc mỗi cửa sổ.
+    const windowFloorKey: Record<AssistantWindowKey, string> = {
+      today: vnDateKey(0),
+      "3d": vnDateKey(2),
+      "7d": vnDateKey(6),
+      "30d": vnDateKey(29),
+    };
+    const yesterdayKey = vnDateKey(1);
+    const weekAgoKey = vnDateKey(7);
 
     // ---- Nền P&L 30 ngày để tính biên lãi (chưa trừ ads) ----
     const pnlOrders = await fetchPnlOrders(
@@ -133,8 +174,10 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
 
     // ---- Tổng hợp từng campaign ----
     const campaigns = campaignRows.map((c) => {
+      // Hiển thị: chỉ cộng các ngày thuộc cửa sổ ?days đang xem.
       const perf = c.dailyPerf.reduce(
         (acc, p) => {
+          if (p.date < perfStart) return acc;
           acc.spend += Number(p.expense);
           acc.impression += p.impression;
           acc.clicks += p.clicks;
@@ -146,6 +189,26 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
         },
         { spend: 0, impression: 0, clicks: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0 }
       );
+
+      // Trợ lý: lát cắt today/3d/7d/30d + trung bình ngày 7 ngày TRƯỚC hôm nay.
+      const windows = {} as Record<AssistantWindowKey, AssistantWindowMetrics>;
+      for (const k of ASSISTANT_WINDOWS) {
+        windows[k] = { spend: 0, clicks: 0, broadOrder: 0, broadGmv: 0 };
+      }
+      let prev7Spend = 0;
+      for (const p of c.dailyPerf) {
+        const key = dateKey(p.date);
+        for (const k of ASSISTANT_WINDOWS) {
+          if (key >= windowFloorKey[k]) {
+            windows[k].spend += Number(p.expense);
+            windows[k].clicks += p.clicks;
+            windows[k].broadOrder += p.broadOrder;
+            windows[k].broadGmv += Number(p.broadGmv);
+          }
+        }
+        if (key >= weekAgoKey && key <= yesterdayKey) prev7Spend += Number(p.expense);
+      }
+      const avgDailySpend7d = prev7Spend / 7;
 
       // Biên lãi riêng của campaign từ P&L các SKU trong campaign.
       const itemIds = c.itemIds ? c.itemIds.split(",") : [];
@@ -166,7 +229,25 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
       const estProfit =
         margin != null ? perf.directGmv * margin - perf.spend : null;
 
+      // ---- Verdict Trợ lý (GĐ2 — chỉ đề xuất, người bấm nút) ----
+      const assessment = evaluateShopeeCampaign(
+        { status: c.status, breakevenRoas, windows, avgDailySpend7d },
+        assistantConfig
+      );
+
       return {
+        assistant: {
+          verdict: assessment.verdict,
+          reasons: assessment.reasons,
+          window: assessment.window ?? null,
+          decision: c.assistantDecision,
+          // Quyết định cũ hết hiệu lực khi verdict ĐỔI LOẠI → cảnh báo hiện lại.
+          decisionActive: decisionActive(
+            c.assistantDecision,
+            c.assistantDecisionVerdict,
+            assessment.verdict
+          ),
+        },
         id: c.id,
         campaignId: c.campaignId,
         name: c.name,
@@ -243,11 +324,26 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
       wallet = null; // app chưa có quyền / token lỗi — dashboard vẫn hiển thị
     }
 
+    // ---- Tổng hợp Trợ lý cho banner: chỉ đếm cảnh báo CHƯA được chủ shop quyết ----
+    const counts = { spike: 0, pauseNow: 0, grace: 0, review: 0 };
+    for (const c of campaigns) {
+      if (c.assistant.decisionActive) continue;
+      if (c.assistant.verdict === "spike") counts.spike++;
+      else if (c.assistant.verdict === "pause_now") counts.pauseNow++;
+      else if (c.assistant.verdict === "grace") counts.grace++;
+      else if (c.assistant.verdict === "review") counts.review++;
+    }
+
     res.json({
       channels,
       selectedChannelId: selected.id,
       days,
       wallet,
+      assistant: {
+        config: assistantConfig,
+        counts,
+        needsAction: counts.spike + counts.pauseNow + counts.review,
+      },
       summary: {
         ...totals,
         roasBroad: totals.spend > 0 ? totals.broadGmv / totals.spend : null,
@@ -266,5 +362,81 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+// PUT /api/ads/shopee/assistant-config — lưu luật Trợ lý riêng của một gian.
+// Body: { channelId, config } — config được normalize trước khi lưu (giá trị
+// rác/âm tự về default từng trường, schema cũ không vỡ khi thêm luật mới).
+router.put("/shopee/assistant-config", async (req: AuthRequest, res, next) => {
+  try {
+    const { channelId, config } = req.body as { channelId?: string; config?: unknown };
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId ?? "",
+        userId: req.ownerId!,
+        channelName: ChannelName.SHOPEE,
+      },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+      return;
+    }
+    const normalized = normalizeAssistantConfig(config);
+    // Prisma Json input đòi index signature — config là object phẳng thuần nên
+    // structuredClone qua JSON là đủ (không hàm, không Date).
+    const jsonConfig = JSON.parse(JSON.stringify(normalized)) as object;
+    await prisma.adsAssistantConfig.upsert({
+      where: { channelId: channel.id },
+      update: { config: jsonConfig },
+      create: { channelId: channel.id, config: jsonConfig },
+    });
+    res.json({ message: "Đã lưu cấu hình Trợ lý", config: normalized });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Các quyết định hợp lệ của chủ shop với một cảnh báo (xem schema AdsCampaign). */
+const VALID_DECISIONS = ["", "HANDLED", "WATCHING", "IGNORED"];
+
+// POST /api/ads/shopee/campaigns/:id/decision — chủ shop quyết một cảnh báo.
+// Body: { decision, verdict } — verdict là loại cảnh báo ĐANG hiển thị lúc bấm;
+// lưu kèm để verdict đổi loại thì cảnh báo tự hiện lại ("" = gỡ quyết định).
+router.post(
+  "/shopee/campaigns/:id/decision",
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { decision, verdict } = req.body as {
+        decision?: string;
+        verdict?: string;
+      };
+      if (!VALID_DECISIONS.includes(decision ?? "_")) {
+        res.status(400).json({ error: "Quyết định không hợp lệ" });
+        return;
+      }
+      const campaign = await prisma.adsCampaign.findFirst({
+        where: {
+          id: req.params.id,
+          channel: { userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+        },
+      });
+      if (!campaign) {
+        res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+        return;
+      }
+      const cleared = decision === "";
+      await prisma.adsCampaign.update({
+        where: { id: campaign.id },
+        data: {
+          assistantDecision: decision ?? "",
+          assistantDecisionVerdict: cleared ? "" : (verdict ?? ""),
+          assistantDecisionAt: cleared ? null : new Date(),
+        },
+      });
+      res.json({ message: cleared ? "Đã gỡ quyết định" : "Đã ghi nhận quyết định" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;

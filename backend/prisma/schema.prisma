@@ -295,6 +295,7 @@ model Channel {
   operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
   adSpends        AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
   adsCampaigns    AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
+  adsAssistantConfig AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
 
@@ -346,6 +347,15 @@ model AdsCampaign {
   /// item_id_list của campaign, nối bằng dấu phẩy ("8027...,8031...") — dùng để
   /// map về ChannelProduct (externalId = item hoặc item-model) khi tính ROAS hòa vốn.
   itemIds       String    @default("")
+
+  /// QUYẾT ĐỊNH CỦA CHỦ SHOP với verdict Trợ lý (GĐ2 — Trợ lý chỉ đề xuất):
+  /// "" = chưa quyết; HANDLED = đã xử lý trên Seller Center; WATCHING = theo
+  /// dõi thêm (ẩn cảnh báo, tiếp tục quan sát); IGNORED = bỏ qua cảnh báo.
+  /// Kèm verdict TẠI THỜI ĐIỂM QUYẾT — verdict đổi loại thì cảnh báo hiện lại.
+  assistantDecision        String    @default("")
+  assistantDecisionVerdict String    @default("")
+  assistantDecisionAt      DateTime?
+
   lastSyncedAt  DateTime  @updatedAt
   createdAt     DateTime  @default(now())
 
@@ -378,6 +388,19 @@ model AdsCampaignDailyPerf {
 
   @@unique([adsCampaignId, date])
   @@index([adsCampaignId])
+}
+
+/// LUẬT TRỢ LÝ QUẢNG CÁO riêng của một gian (GĐ2). Cấu trúc JSON xem
+/// ShopeeAssistantConfig trong integrations/shopee/ads-assistant-rules.ts —
+/// backend luôn vá bản lưu qua normalize (schema cũ không vỡ khi thêm luật).
+/// Chưa có dòng = dùng bộ mặc định.
+model AdsAssistantConfig {
+  id        String   @id @default(cuid())
+  channelId String   @unique
+  config    Json
+  updatedAt DateTime @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.
