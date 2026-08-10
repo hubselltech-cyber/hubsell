@@ -101,7 +101,7 @@ export async function processMisaWebhookEvent(
   // ---- 2) Đối soát thuế (chỉ có ý nghĩa khi hóa đơn phát hành/ký số) ----
   const reconcile =
     targetStatus === InvoiceLogStatus.ISSUED
-      ? await reconcileTax(log.id, log.orderId, payload)
+      ? await reconcileTax(log.orderId, payload)
       : null;
 
   // Lệch thuế VƯỢT biên độ = TAX_MISMATCH → trạng thái cuối là LỖI (FAILED),
@@ -243,7 +243,6 @@ async function createLogFromOrder(
  * với errorMessage "TAX_MISMATCH: …" (giữ nguyên số thuế Hubsell).
  */
 async function reconcileTax(
-  invoiceLogId: string,
   orderId: string | null,
   payload: MisaWebhookPayload
 ): Promise<TaxReconcileResult> {

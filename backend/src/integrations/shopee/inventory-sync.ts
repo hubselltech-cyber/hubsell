@@ -86,8 +86,7 @@ function parseShopeeExternalId(
  * Trả bộ đếm {pushed, failed} để tầng gọi chủ động (force-sync) biết kết quả.
  */
 export async function syncShopeeStockForProducts(
-  req: StockSyncRequest,
-  source: string
+  req: StockSyncRequest
 ): Promise<{ pushed: number; failed: number }> {
   const summary = { pushed: 0, failed: 0 };
   try {

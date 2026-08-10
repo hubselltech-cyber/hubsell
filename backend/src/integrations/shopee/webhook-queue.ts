@@ -157,7 +157,7 @@ async function drain(): Promise<void> {
         // Đẩy tồn khả dụng mới lên sàn SAU khi job đơn hàng đã chốt xong —
         // hàm này tự retry + ghi log + bắn cảnh báo, không bao giờ ném.
         if (stockSync) {
-          await syncShopeeStockForProducts(stockSync, "webhook Shopee");
+          await syncShopeeStockForProducts(stockSync);
         }
 
         // PHÍ TẠM TÍNH REAL-TIME: đơn vừa có sự kiện → kéo luôn số ước tính

@@ -26,7 +26,6 @@ import {
   type LazadaOrder,
   type LazadaOrderItem,
   type LazadaTokenData,
-  type LazadaTransaction,
 } from "./client";
 
 // Refresh khi access_token còn <30 phút là hết hạn. Token Lazada sống 7 ngày

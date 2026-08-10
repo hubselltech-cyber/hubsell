@@ -93,10 +93,11 @@ beforeEach(() => {
 
 describe("Double-Check tồn kho sau update_stock (sàn ghi trễ)", () => {
   it("đẩy tồn thành công → sinh job VERIFYING hẹn giờ; đẩy lại → gộp về MỘT job", async () => {
-    await syncShopeeStockForProducts(
-      { orderSn: "TEST-VERIFY-SN", productIds: [productId], oldAvailable: {} },
-      "test double-check"
-    );
+    await syncShopeeStockForProducts({
+      orderSn: "TEST-VERIFY-SN",
+      productIds: [productId],
+      oldAvailable: {},
+    });
 
     const job = await verifyJob();
     expect(job.eventCode).toBe(STOCK_VERIFY_EVENT_CODE);
@@ -105,10 +106,11 @@ describe("Double-Check tồn kho sau update_stock (sàn ghi trễ)", () => {
     expect(job.nextRetryAt!.getTime()).toBeGreaterThan(Date.now() + 2 * 60 * 1000);
 
     // Đẩy lần 2 cho cùng SKU: upsert đè, vẫn đúng MỘT job đối soát.
-    await syncShopeeStockForProducts(
-      { orderSn: "TEST-VERIFY-SN-2", productIds: [productId], oldAvailable: {} },
-      "test double-check"
-    );
+    await syncShopeeStockForProducts({
+      orderSn: "TEST-VERIFY-SN-2",
+      productIds: [productId],
+      oldAvailable: {},
+    });
     const rows = await prisma.shopeeWebhookLog.findMany({
       where: { bodyHash: { startsWith: `stock-verify:${fx.channelId}:` } },
     });

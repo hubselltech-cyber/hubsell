@@ -39,11 +39,6 @@ export function canSeeFinancials(user?: MaybeUser): boolean {
   return can(user, "finance");
 }
 
-/** Được vào nhóm menu "Quản lý Tài chính" (có ít nhất một trang trong nhóm). */
-export function canAccessFinance(user?: MaybeUser): boolean {
-  return can(user, "finance");
-}
-
 /** Được vào trang Tổng quan. */
 export function canAccessDashboard(user?: MaybeUser): boolean {
   return can(user, "dashboard");

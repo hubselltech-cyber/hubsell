@@ -249,8 +249,7 @@ router.post("/sync-alerts/:id/force-sync", async (req: AuthRequest, res, next) =
         orderSn: alert.orderSn ?? undefined,
         productIds: [mapping.productId],
         oldAvailable: { [mapping.productId]: available },
-      },
-      "force-sync từ Trung tâm điều hành"
+      }
     );
 
     if (result.failed > 0) {

@@ -57,7 +57,6 @@ import {
 } from "@/lib/permission-registry";
 import { canManageShop } from "@/lib/permissions";
 import { toAsciiUsername } from "@/lib/username";
-import { CHANNEL_META } from "@/lib/channel-meta";
 import { shopLabel } from "@/components/channel-filter";
 import { formatDateTime } from "@/lib/format";
 import { Label } from "@/components/ui/label";
