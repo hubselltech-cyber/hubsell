@@ -120,6 +120,9 @@ export function ShopeeAdsPage() {
   const [days, setDays] = useState<7 | 30>(7);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 20;
 
   useEffect(() => {
     if (!getToken()) {
@@ -154,11 +157,13 @@ export function ShopeeAdsPage() {
 
   function changeChannel(cid: string) {
     setChannelId(cid);
+    setPage(0); // đổi gian là bộ campaign khác — về trang đầu
     void load(cid, days);
   }
 
   function changeDays(d: 7 | 30) {
     setDays(d);
+    setPage(0);
     void load(channelId, d);
   }
 
@@ -225,6 +230,15 @@ export function ShopeeAdsPage() {
 
   const campaigns = data?.campaigns ?? [];
   const noChannel = !loading && (data?.channels.length ?? 0) === 0;
+
+  // Phân trang client-side: API trả trọn bộ (đã sort theo chi tiêu giảm dần),
+  // bảng chỉ hiện PAGE_SIZE dòng một trang. Kẹp page khi dữ liệu co lại.
+  const pageCount = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedCampaigns = campaigns.slice(
+    safePage * PAGE_SIZE,
+    (safePage + 1) * PAGE_SIZE
+  );
 
   return (
     <AppShell>
@@ -484,11 +498,45 @@ export function ShopeeAdsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {campaigns.map((c) => (
+                    {pagedCampaigns.map((c) => (
                       <CampaignRow key={c.id} c={c} />
                     ))}
                   </TableBody>
                 </Table>
+                {campaigns.length > PAGE_SIZE && (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      Hiển thị {formatNumber(safePage * PAGE_SIZE + 1)}–
+                      {formatNumber(
+                        Math.min((safePage + 1) * PAGE_SIZE, campaigns.length)
+                      )}{" "}
+                      trong {formatNumber(campaigns.length)} chiến dịch
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(Math.max(0, safePage - 1))}
+                        disabled={safePage === 0}
+                      >
+                        Trước
+                      </Button>
+                      <span className="text-xs tabular-nums text-slate-600">
+                        Trang {formatNumber(safePage + 1)}/{formatNumber(pageCount)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setPage(Math.min(pageCount - 1, safePage + 1))
+                        }
+                        disabled={safePage >= pageCount - 1}
+                      >
+                        Sau
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

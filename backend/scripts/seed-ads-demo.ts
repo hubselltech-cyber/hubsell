@@ -211,8 +211,46 @@ async function main() {
     }
   }
 
+  // --many: cắm thêm 26 campaign nền (đã kết thúc, chi tiêu nhỏ) để test PHÂN TRANG
+  let extra = 0;
+  if (process.argv.includes("--many")) {
+    for (let n = 1; n <= 26; n++) {
+      const row = await prisma.adsCampaign.create({
+        data: {
+          channelId: channel.id,
+          campaignId: `DEMO-BG-${n}`,
+          adType: n % 2 === 0 ? "auto" : "manual",
+          name: `Campaign nền #${n} (demo phân trang)`,
+          status: "ended",
+          placement: "all",
+          biddingMethod: "auto",
+          budget: 100_000,
+          itemIds: "",
+          startTime: new Date(today.getTime() - 60 * 86_400_000),
+          endTime: new Date(today.getTime() - 10 * 86_400_000),
+        },
+      });
+      await prisma.adsCampaignDailyPerf.create({
+        data: {
+          adsCampaignId: row.id,
+          date: new Date(
+            Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() - 5)
+          ),
+          impression: 900,
+          clicks: 20,
+          expense: 30_000 + n * 1_000,
+          broadOrder: 1,
+          broadGmv: 120_000,
+          directOrder: 1,
+          directGmv: 90_000,
+        },
+      });
+      extra++;
+    }
+  }
+
   console.log(
-    `Đã dựng gian "${channel.shopName}" + ${skus.length} SKU + 18 đơn P&L + ${demos.length} campaign demo`
+    `Đã dựng gian "${channel.shopName}" + ${skus.length} SKU + 18 đơn P&L + ${demos.length + extra} campaign demo`
   );
 }
 
