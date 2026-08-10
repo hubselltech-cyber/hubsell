@@ -3,6 +3,7 @@ import fs from "fs";
 import http from "http";
 import https from "https";
 import { createApp } from "./app";
+import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
 import { startTokenRefreshWorker } from "./token-refresh";
 
@@ -15,6 +16,9 @@ startOrderAutoSync();
 // Cron refresh token Shopee đa shop — lưới an toàn cạnh lazy-refresh, quét DB
 // lọc token sắp hết hạn của TỪNG gian rồi làm mới tuần tự có giãn cách.
 startTokenRefreshWorker();
+// Cron dọn log kỹ thuật (hàng đợi webhook, nhật ký đẩy tồn) — xoay vòng
+// 7/30 ngày giữ database Supabase Free không phình vô hạn theo log.
+startLogCleanupWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.
