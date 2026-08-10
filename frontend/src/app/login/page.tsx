@@ -32,6 +32,7 @@ import { SocialAuthButtons } from "@/components/auth/social-buttons";
 import {
   login,
   register as apiRegister,
+  checkUsernameAvailable,
   fetchMe,
   forgotPassword,
   setToken,
@@ -40,6 +41,7 @@ import {
   type AuthUser,
 } from "@/lib/api";
 import { homePathFor } from "@/lib/permissions";
+import { toAsciiUsername } from "@/lib/username";
 
 // ----- Validation bằng zod -----
 
@@ -191,7 +193,38 @@ function RegisterForm({
     },
   });
 
+  // Kiểm tra TRÙNG TÊN ĐĂNG NHẬP ngay khi gõ (debounce 450ms) — username là
+  // unique toàn hệ thống (nền của định dạng nhân viên "chủ/nhânviên") nên báo
+  // sớm ở đây, không để người dùng điền xong cả form mới dính lỗi 409.
+  const [usernameStatus, setUsernameStatus] = useState<
+    "idle" | "checking" | "free" | "taken"
+  >("idle");
+  const usernameValue = form.watch("username");
+  useEffect(() => {
+    if (!usernameValue || usernameValue.length < 3) {
+      setUsernameStatus("idle");
+      return;
+    }
+    setUsernameStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameAvailable(usernameValue);
+        // Chống đáp án trễ: chỉ nhận kết quả nếu ô nhập chưa đổi tiếp.
+        if (form.getValues("username") === usernameValue) {
+          setUsernameStatus(res.available ? "free" : "taken");
+        }
+      } catch {
+        setUsernameStatus("idle"); // mạng lỗi thì im lặng, server vẫn chặn lúc submit
+      }
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [usernameValue, form]);
+
   async function onSubmit(values: RegisterValues) {
+    if (usernameStatus === "taken") {
+      toast.error("Tên đăng nhập này đã có người sử dụng — chọn tên khác nhé");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await apiRegister({
@@ -260,8 +293,21 @@ function RegisterForm({
                   placeholder="tendangnhap"
                   autoComplete="username"
                   {...field}
+                  // Ép quy ước viết liền không dấu NGAY KHI GÕ (cùng luật với
+                  // ô tạo nhân viên): "Đỗ Văn Ơi" → "dovanoi".
+                  onChange={(e) => field.onChange(toAsciiUsername(e.target.value))}
                 />
               </FormControl>
+              {usernameStatus === "taken" && (
+                <p className="text-sm font-medium text-red-500">
+                  Tên đăng nhập này đã có người sử dụng
+                </p>
+              )}
+              {usernameStatus === "free" && (
+                <p className="text-sm font-medium text-emerald-600">
+                  ✓ Tên đăng nhập dùng được
+                </p>
+              )}
               <FormMessage />
             </FormItem>
           )}

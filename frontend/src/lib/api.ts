@@ -870,6 +870,16 @@ export function changePassword(data: {
   });
 }
 
+/**
+ * Tên đăng nhập chủ shop còn trống không? (endpoint công khai — form đăng ký
+ * báo "đã có người sử dụng" ngay khi gõ, không đợi submit dính 409.)
+ */
+export function checkUsernameAvailable(username: string) {
+  return apiFetch<{ available: boolean }>(
+    `/api/auth/check-username?username=${encodeURIComponent(username)}`
+  );
+}
+
 export function fetchMe() {
   return apiFetch<{
     user: AuthUser & { createdAt: string };

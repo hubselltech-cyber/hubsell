@@ -192,6 +192,29 @@ router.post("/register", async (req, res, next) => {
   }
 });
 
+// GET /api/auth/check-username?username=... — CÔNG KHAI, cho form đăng ký báo
+// "tên này đã có người sử dụng" NGAY KHI GÕ thay vì đợi submit dính 409.
+// Chỉ trả một bit available — không lộ thêm thông tin gì về tài khoản; kẻ dò
+// tên hàng loạt cũng chỉ biết điều mà nút Đăng ký sẽ nói ra ngay sau đó.
+router.get("/check-username", async (req, res, next) => {
+  try {
+    const uname = normalizeUsername(req.query.username);
+    if (uname.error || !uname.value) {
+      // Tên chưa hợp lệ về văn phạm → coi như "không dùng được", FE tự hiển
+      // thị thông điệp định dạng của nó, không cần phân biệt lý do ở đây.
+      res.json({ available: false });
+      return;
+    }
+    const clash = await prisma.user.findUnique({
+      where: { username: uname.value },
+      select: { id: true },
+    });
+    res.json({ available: !clash });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/auth/login — Đăng nhập bằng TÊN ĐĂNG NHẬP, EMAIL, hoặc TÀI KHOẢN
 // NHÂN VIÊN dạng "chủ/nhânviên" (vd "darkman/kho01").
 // Body: { identifier, password } — nhận cả { email } cũ để tương thích ngược.
