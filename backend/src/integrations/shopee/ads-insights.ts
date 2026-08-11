@@ -269,6 +269,8 @@ export interface ProductBreakevenRow {
   imageUrl: string | null;
   /** Số SKU sàn (phân loại) thuộc sản phẩm. */
   skuCount: number;
+  /** SKU người bán TỰ ĐẶT (đã lọc khóa tổng hợp SPE-… sinh cho SKU trống). */
+  sellerSkus: string[];
   /** Số đơn P&L 30 ngày có chứa SKU của sản phẩm (cỡ mẫu của biên lãi). */
   orders: number;
   /** Doanh thu thực nhận phân bổ cho sản phẩm trong 30 ngày. */
@@ -346,11 +348,17 @@ export async function computeChannelProductBreakeven(channel: {
   const rows: ProductBreakevenRow[] = [...groups.entries()].map(([itemId, g]) => {
     const base = marginOverRows(pnlRows, g.skus);
     const margin = base.orders > 0 && base.revenue > 0 ? base.profit / base.revenue : null;
+    // SKU người bán tự đặt — bỏ khóa tổng hợp shopeeChannelSku sinh khi SKU
+    // trống (`SPE-{item}` / `SPE-{item}-{model}`), khách không nhận ra mã đó.
+    const sellerSkus = [...g.skus]
+      .filter((s) => s !== `SPE-${itemId}` && !s.startsWith(`SPE-${itemId}-`))
+      .sort();
     return {
       itemId,
       productName: g.productName,
       imageUrl: g.imageUrl,
       skuCount: g.skus.size,
+      sellerSkus,
       orders: base.orders,
       revenue: base.revenue,
       margin,

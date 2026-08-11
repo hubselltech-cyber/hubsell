@@ -878,7 +878,10 @@ function ProductBreakevenTab({
     const q = search.trim().toLowerCase();
     if (!q) return data.rows;
     return data.rows.filter(
-      (r) => r.productName.toLowerCase().includes(q) || r.itemId.includes(q)
+      (r) =>
+        r.productName.toLowerCase().includes(q) ||
+        r.itemId.includes(q) ||
+        r.sellerSkus.some((s) => s.toLowerCase().includes(q))
     );
   }, [data, search]);
 
@@ -911,7 +914,7 @@ function ProductBreakevenTab({
               setSearch(e.target.value);
               setPage(0);
             }}
-            placeholder="Tìm tên sản phẩm / item ID…"
+            placeholder="Tìm tên sản phẩm / SKU / item ID…"
             className="max-w-xs"
           />
         </div>
@@ -937,6 +940,12 @@ function ProductBreakevenTab({
               <TableHeader className={TABLE_HEAD_EMPHASIS}>
                 <TableRow>
                   <TableHead>Sản phẩm</TableHead>
+                  <TableHead className="w-32">
+                    <span className="inline-flex items-center gap-1">
+                      SKU
+                      <HintIcon hint="SKU người bán tự đặt trên Shopee. Gạch ngang = sản phẩm chưa đặt SKU trên sàn." />
+                    </span>
+                  </TableHead>
                   <TableHead className="w-24 text-right">
                     <span className="inline-flex items-center gap-1">
                       Đơn 30d
@@ -1048,6 +1057,24 @@ function ProductBreakevenRowView({
           #{r.itemId}
           {r.skuCount > 1 && ` · ${formatNumber(r.skuCount)} phân loại`}
         </p>
+      </TableCell>
+      <TableCell className="text-slate-700">
+        {r.sellerSkus.length === 0 ? (
+          <span className="text-slate-400">—</span>
+        ) : (
+          <span
+            className="block max-w-32 truncate text-sm"
+            title={r.sellerSkus.join(", ")}
+          >
+            {r.sellerSkus[0]}
+            {r.sellerSkus.length > 1 && (
+              <span className="text-xs text-slate-400">
+                {" "}
+                +{formatNumber(r.sellerSkus.length - 1)}
+              </span>
+            )}
+          </span>
+        )}
       </TableCell>
       <TableCell className="text-right tabular-nums text-slate-700">
         {formatNumber(r.orders)}

@@ -2848,6 +2848,8 @@ export interface ShopeeProductBreakevenRow {
   productName: string;
   imageUrl: string | null;
   skuCount: number;
+  /** SKU người bán tự đặt (đã lọc khóa tổng hợp SPE-… sinh cho SKU trống). */
+  sellerSkus: string[];
   /** Số đơn P&L 30 ngày khớp SKU của sản phẩm (cỡ mẫu của biên lãi). */
   orders: number;
   revenue: number;
