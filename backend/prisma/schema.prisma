@@ -1041,6 +1041,10 @@ model ChannelProduct {
   price       Decimal  @default(0) @db.Decimal(12, 2) // giá niêm yết trên sàn
   imageUrl    String?
   externalId  String? // id sản phẩm bên phía sàn
+
+  /// SKU TỔNG cấp sản phẩm (item_sku Shopee) — KHÁC channelSku vốn là SKU của
+  /// từng phân loại. NULL = người bán không đặt / sàn chưa đổ về.
+  itemSku String?
   status      ChannelProductStatus @default(ACTIVE)
   lastSyncedAt DateTime? // lần cuối kéo về từ sàn
   createdAt   DateTime @default(now())

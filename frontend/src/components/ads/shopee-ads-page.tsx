@@ -881,6 +881,7 @@ function ProductBreakevenTab({
       (r) =>
         r.productName.toLowerCase().includes(q) ||
         r.itemId.includes(q) ||
+        (r.itemSku != null && r.itemSku.toLowerCase().includes(q)) ||
         r.sellerSkus.some((s) => s.toLowerCase().includes(q))
     );
   }, [data, search]);
@@ -943,7 +944,7 @@ function ProductBreakevenTab({
                   <TableHead className="w-32">
                     <span className="inline-flex items-center gap-1">
                       SKU
-                      <HintIcon hint="SKU người bán tự đặt trên Shopee. Gạch ngang = sản phẩm chưa đặt SKU trên sàn." />
+                      <HintIcon hint="SKU TỔNG của sản phẩm (cấp item trên Shopee, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại." />
                     </span>
                   </TableHead>
                   <TableHead className="w-24 text-right">
@@ -1059,20 +1060,27 @@ function ProductBreakevenRowView({
         </p>
       </TableCell>
       <TableCell className="text-slate-700">
-        {r.sellerSkus.length === 0 ? (
-          <span className="text-slate-400">—</span>
-        ) : (
+        {r.itemSku ? (
           <span
             className="block max-w-32 truncate text-sm"
-            title={r.sellerSkus.join(", ")}
+            title={
+              r.sellerSkus.length > 0
+                ? `SKU phân loại: ${r.sellerSkus.join(", ")}`
+                : undefined
+            }
           >
-            {r.sellerSkus[0]}
-            {r.sellerSkus.length > 1 && (
-              <span className="text-xs text-slate-400">
-                {" "}
-                +{formatNumber(r.sellerSkus.length - 1)}
-              </span>
-            )}
+            {r.itemSku}
+          </span>
+        ) : (
+          <span
+            className="text-slate-400"
+            title={
+              r.sellerSkus.length > 0
+                ? `Chưa đặt SKU tổng — SKU phân loại: ${r.sellerSkus.join(", ")}`
+                : undefined
+            }
+          >
+            —
           </span>
         )}
       </TableCell>

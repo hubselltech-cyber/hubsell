@@ -21,6 +21,7 @@ export const mockProductAdapter: MarketplaceProductAdapter = {
       price: item.price,
       imageUrl: mockImageFor(channel.channelName, item.name),
       externalId: null,
+      itemSku: null,
       status: "ACTIVE" as const,
     }));
   },

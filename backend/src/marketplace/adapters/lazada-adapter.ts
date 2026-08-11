@@ -50,6 +50,7 @@ function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelP
     price,
     imageUrl: s.Images?.[0] || p.images?.[0] || null,
     externalId: `${p.item_id ?? "0"}-${s.SkuId ?? "0"}`,
+    itemSku: null, // Lazada không có SKU tổng cấp item — SellerSku nằm ở từng skus[]
     status: lazadaStatusToNorm(p.status, s.Status),
   };
 }

@@ -269,7 +269,9 @@ export interface ProductBreakevenRow {
   imageUrl: string | null;
   /** Số SKU sàn (phân loại) thuộc sản phẩm. */
   skuCount: number;
-  /** SKU người bán TỰ ĐẶT (đã lọc khóa tổng hợp SPE-… sinh cho SKU trống). */
+  /** SKU TỔNG cấp sản phẩm (item_sku Shopee) — null nếu người bán không đặt. */
+  itemSku: string | null;
+  /** SKU phân loại người bán TỰ ĐẶT (đã lọc khóa tổng hợp SPE-…) — cho tìm kiếm/tooltip. */
   sellerSkus: string[];
   /** Số đơn P&L 30 ngày có chứa SKU của sản phẩm (cỡ mẫu của biên lãi). */
   orders: number;
@@ -307,7 +309,13 @@ export async function computeChannelProductBreakeven(channel: {
     fetchChannelPnlRows(channel),
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
-      select: { channelSku: true, externalId: true, productName: true, imageUrl: true },
+      select: {
+        channelSku: true,
+        externalId: true,
+        productName: true,
+        imageUrl: true,
+        itemSku: true,
+      },
     }),
     prisma.adsCampaign.findMany({
       where: { channelId: channel.id },
@@ -323,10 +331,15 @@ export async function computeChannelProductBreakeven(channel: {
     for (const id of c.itemIds.split(",")) ongoingItemIds.add(id);
   }
 
-  // Gom SKU theo item_id — giữ tên/ảnh của dòng đầu tiên có dữ liệu.
+  // Gom SKU theo item_id — giữ tên/ảnh/SKU tổng của dòng đầu tiên có dữ liệu.
   const groups = new Map<
     string,
-    { productName: string; imageUrl: string | null; skus: Set<string> }
+    {
+      productName: string;
+      imageUrl: string | null;
+      itemSku: string | null;
+      skus: Set<string>;
+    }
   >();
   for (const cp of channelProducts) {
     const itemId = (cp.externalId ?? "").split("-")[0];
@@ -335,10 +348,16 @@ export async function computeChannelProductBreakeven(channel: {
     if (!g) {
       groups.set(
         itemId,
-        (g = { productName: cp.productName, imageUrl: cp.imageUrl, skus: new Set() })
+        (g = {
+          productName: cp.productName,
+          imageUrl: cp.imageUrl,
+          itemSku: cp.itemSku,
+          skus: new Set(),
+        })
       );
     }
     if (!g.imageUrl && cp.imageUrl) g.imageUrl = cp.imageUrl;
+    if (!g.itemSku && cp.itemSku) g.itemSku = cp.itemSku;
     g.skus.add(cp.channelSku);
   }
 
@@ -358,6 +377,7 @@ export async function computeChannelProductBreakeven(channel: {
       productName: g.productName,
       imageUrl: g.imageUrl,
       skuCount: g.skus.size,
+      itemSku: g.itemSku,
       sellerSkus,
       orders: base.orders,
       revenue: base.revenue,

@@ -27,6 +27,8 @@ export interface NormalizedChannelProduct {
   imageUrl: string | null;
   /** Id phía sàn (item_id / model_id…) để đối chiếu về sau. */
   externalId: string | null;
+  /** SKU TỔNG cấp sản phẩm (item_sku Shopee) — null nếu người bán không đặt. */
+  itemSku: string | null;
   /** ACTIVE = đang bán; DELISTED = đã gỡ/ẩn/khoá. */
   status: "ACTIVE" | "DELISTED";
 }

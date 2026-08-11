@@ -2848,7 +2848,9 @@ export interface ShopeeProductBreakevenRow {
   productName: string;
   imageUrl: string | null;
   skuCount: number;
-  /** SKU người bán tự đặt (đã lọc khóa tổng hợp SPE-… sinh cho SKU trống). */
+  /** SKU TỔNG cấp sản phẩm (item_sku Shopee) — null nếu người bán không đặt. */
+  itemSku: string | null;
+  /** SKU phân loại người bán tự đặt (đã lọc khóa tổng hợp SPE-…) — tìm kiếm/tooltip. */
   sellerSkus: string[];
   /** Số đơn P&L 30 ngày khớp SKU của sản phẩm (cỡ mẫu của biên lãi). */
   orders: number;

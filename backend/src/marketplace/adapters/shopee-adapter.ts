@@ -42,6 +42,7 @@ function transformItem(info: ShopeeItemBaseInfo): NormalizedChannelProduct {
     price,
     imageUrl: info.image?.image_url_list?.[0] ?? null,
     externalId: String(info.item_id),
+    itemSku: info.item_sku?.trim() || null,
     status: shopeeStatusToNorm(info.item_status),
   };
 }
@@ -66,6 +67,7 @@ function transformModel(
     price,
     imageUrl: info.image?.image_url_list?.[0] ?? null,
     externalId: `${info.item_id}-${model.model_id}`,
+    itemSku: info.item_sku?.trim() || null,
     status: shopeeStatusToNorm(info.item_status),
   };
 }

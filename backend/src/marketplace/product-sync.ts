@@ -41,6 +41,7 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
       price: p.price,
       imageUrl: p.imageUrl,
       externalId: p.externalId,
+      itemSku: p.itemSku,
       status:
         p.status === "ACTIVE"
           ? ChannelProductStatus.ACTIVE
