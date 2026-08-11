@@ -13,6 +13,7 @@
 import crypto from "crypto";
 import {
   getShopeeConfig,
+  SHOPEE_AUTH_URLS,
   SHOPEE_PATHS,
   type ShopeeConfig,
 } from "./config";
@@ -46,22 +47,25 @@ export function signShop(
 // ---------- URL uỷ quyền ----------
 
 /**
- * Dựng URL trang uỷ quyền Shopee. `redirect` là URL đầy đủ (đã kèm state của
- * mình) mà Shopee sẽ chuyển hướng về, gắn thêm `?code=...&shop_id=...`.
+ * Dựng URL trang uỷ quyền Shopee theo luồng MỚI (developer-guide/20): URL cố
+ * định + auth_type=seller, KHÔNG ký sign/timestamp → link không hết hạn 5 phút.
+ * `state` đi qua tham số chuẩn, Shopee trả nguyên vẹn về `redirect_uri` kèm
+ * `code` + `shop_id` (hoặc `main_account_id` nếu seller đăng nhập main account).
+ * Domain của `redirect_uri` phải khớp Live Redirect URL Domain khai trên Console.
  */
 export function buildAuthorizeUrl(
-  redirect: string,
+  redirectUri: string,
+  state: string,
   cfg: ShopeeConfig = getShopeeConfig()
 ): string {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const sign = signPublic(cfg.partnerKey, cfg.partnerId, SHOPEE_PATHS.authPartner, timestamp);
   const qs = new URLSearchParams({
     partner_id: cfg.partnerId,
-    timestamp: String(timestamp),
-    sign,
-    redirect,
+    auth_type: "seller",
+    redirect_uri: redirectUri,
+    response_type: "code",
+    state,
   }).toString();
-  return `${cfg.apiBase}${SHOPEE_PATHS.authPartner}?${qs}`;
+  return `${SHOPEE_AUTH_URLS[cfg.env]}?${qs}`;
 }
 
 // ---------- Kiểu dữ liệu Shopee trả về ----------

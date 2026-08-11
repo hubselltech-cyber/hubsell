@@ -543,6 +543,17 @@ router.get("/shopee/callback", async (req, res) => {
     const shopId = typeof req.query.shop_id === "string" ? req.query.shop_id : "";
     const state = typeof req.query.state === "string" ? req.query.state : "";
 
+    // Luồng uỷ quyền mới: đăng nhập bằng MAIN ACCOUNT sẽ trả main_account_id
+    // thay cho shop_id — chưa hỗ trợ (cần đổi token cấp account rồi tách từng
+    // shop). Hướng khách đăng nhập bằng tài khoản shop.
+    if (!shopId && typeof req.query.main_account_id === "string" && req.query.main_account_id) {
+      done({
+        shopee: "error",
+        msg: "Vui lòng đăng nhập bằng tài khoản shop (không dùng tài khoản chính/main account) rồi uỷ quyền lại",
+      });
+      return;
+    }
+
     if (!code || !shopId) {
       done({ shopee: "error", msg: "Thiếu code hoặc shop_id từ Shopee" });
       return;

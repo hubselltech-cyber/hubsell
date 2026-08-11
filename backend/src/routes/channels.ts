@@ -354,7 +354,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
 // &shop_id=&state= → BE (routes/auth.ts) đổi token + lưu Channel + redirect về FE.
 // ============================================================
 
-// GET /api/channels/shopee/auth-url — trả URL uỷ quyền Shopee (đã ký).
+// GET /api/channels/shopee/auth-url — trả URL uỷ quyền Shopee (luồng mới, không ký).
 // State mang ownerId (JWT ngắn hạn) để callback công khai biết kết nối cho ai.
 router.get("/shopee/auth-url", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
@@ -384,10 +384,9 @@ router.get("/shopee/auth-url", requireAdmin, async (req: AuthRequest, res, next)
     }
     const cfg = getShopeeConfig();
     const state = signShopeeState(req.ownerId!, channelId);
-    // State đi kèm redirect; Shopee gắn thêm &code=&shop_id= khi trả về.
-    const sep = cfg.redirectUri.includes("?") ? "&" : "?";
-    const redirect = `${cfg.redirectUri}${sep}state=${encodeURIComponent(state)}`;
-    res.json({ url: buildShopeeAuthorizeUrl(redirect, cfg) });
+    // Luồng mới: state đi qua tham số chuẩn của link uỷ quyền, Shopee trả
+    // nguyên vẹn về redirect_uri kèm &code=&shop_id=.
+    res.json({ url: buildShopeeAuthorizeUrl(cfg.redirectUri, state, cfg) });
   } catch (err) {
     next(err);
   }

@@ -34,10 +34,17 @@ const SHOPEE_HOSTS = {
   production: "https://partner.shopeemobile.com",
 } as const;
 
+// URL trang uỷ quyền MỚI (developer-guide/20, Shopee xác nhận qua ticket 08/2026):
+// URL cố định, KHÔNG ký sign/timestamp, tham số auth_type=seller. Trang cũ
+// /api/v2/shop/auth_partner đá seller sang cổng developer nên khách không tự
+// liên kết được — đó chính là bug đã report.
+export const SHOPEE_AUTH_URLS = {
+  sandbox: "https://open.sandbox.test-stable.shopee.com/auth",
+  production: "https://open.shopee.com/auth",
+} as const;
+
 // Đường dẫn API cố định (dùng để ghép chữ ký — path là một phần của base string).
 export const SHOPEE_PATHS = {
-  /** Trang uỷ quyền cho người bán (public API, ký partner_id+path+timestamp). */
-  authPartner: "/api/v2/shop/auth_partner",
   /** Đổi code → access_token/refresh_token (public API). */
   tokenGet: "/api/v2/auth/token/get",
   /** Làm mới access_token bằng refresh_token (public API). */
