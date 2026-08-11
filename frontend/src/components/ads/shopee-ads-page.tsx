@@ -50,6 +50,7 @@ import {
 import {
   decideShopeeAdsCampaign,
   fetchShopeeAdsDashboard,
+  fetchShopeeProductBreakeven,
   getStoredUser,
   getToken,
   saveShopeeAssistantConfig,
@@ -58,6 +59,8 @@ import {
   type ShopeeAdsDashboard,
   type ShopeeAssistantConfig,
   type ShopeeAssistantDecision,
+  type ShopeeProductBreakevenResponse,
+  type ShopeeProductBreakevenRow,
 } from "@/lib/api";
 import {
   AssistantVerdictBadge,
@@ -155,8 +158,16 @@ export function ShopeeAdsPage() {
   const [pendingCampaignId, setPendingCampaignId] = useState<string | null>(
     () => searchParams.get("campaign_id")
   );
-  // Tab trong trang (khuôn giống trang TikTok): dashboard / cấu hình Trợ lý.
-  const [tab, setTab] = useState<"overview" | "config">("overview");
+  // Tab trong trang (khuôn giống trang TikTok): dashboard / bảng hòa vốn SP /
+  // cấu hình Trợ lý.
+  const [tab, setTab] = useState<"overview" | "breakeven" | "config">("overview");
+  // Bảng ROAS hòa vốn theo SP — nạp lười khi mở tab, cache theo gian đang chọn.
+  const [breakeven, setBreakeven] = useState<{
+    channelId: string;
+    data: ShopeeProductBreakevenResponse;
+  } | null>(null);
+  const [breakevenLoading, setBreakevenLoading] = useState(false);
+  const [breakevenError, setBreakevenError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   // Phân trang bảng chiến dịch — shop thật có hàng trăm campaign (DarkMan: 142).
@@ -204,6 +215,28 @@ export function ShopeeAdsPage() {
     // channelId đổi qua chính load() (server chọn gian đầu) — chỉ nghe người dùng đổi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Nạp bảng hòa vốn SP khi mở tab (hoặc đổi gian trong lúc đang ở tab).
+  useEffect(() => {
+    if (tab !== "breakeven" || !channelId) return;
+    if (breakeven?.channelId === channelId) return;
+    let cancelled = false;
+    setBreakevenLoading(true);
+    setBreakevenError(null);
+    fetchShopeeProductBreakeven(channelId)
+      .then((res) => {
+        if (!cancelled) setBreakeven({ channelId, data: res });
+      })
+      .catch((err) => {
+        if (!cancelled) setBreakevenError((err as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setBreakevenLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, channelId, breakeven]);
 
   // Deep-link ?campaign_id=: dữ liệu về thì mở modal chi tiết đúng một lần.
   // Không thấy campaign (đã xoá / thuộc gian khác / chưa sync) → báo nhẹ ở
@@ -420,6 +453,7 @@ export function ShopeeAdsPage() {
           {(
             [
               { key: "overview", label: "Tổng quan chiến dịch" },
+              { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
               { key: "config", label: "Cấu hình Trợ lý Tự động" },
             ] as const
           ).map((t) => {
@@ -779,6 +813,16 @@ export function ShopeeAdsPage() {
           </>
         )}
 
+        {/* ===== TAB ROAS HÒA VỐN THEO SẢN PHẨM ===== */}
+        {tab === "breakeven" && (
+          <ProductBreakevenTab
+            data={breakeven?.data ?? null}
+            loading={breakevenLoading}
+            error={breakevenError}
+            noChannel={noChannel}
+          />
+        )}
+
         {/* ===== TAB CẤU HÌNH TRỢ LÝ TỰ ĐỘNG (+ sổ hành động GĐ3) ===== */}
         {tab === "config" &&
           (assistant && !noChannel ? (
@@ -805,6 +849,249 @@ export function ShopeeAdsPage() {
         />
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * Bảng ROAS hòa vốn theo SẢN PHẨM — công cụ tra cứu TRƯỚC khi tạo campaign:
+ * vào Seller Center đặt ROAS mục tiêu là mở tab này lấy số. Khác bảng chiến
+ * dịch (hòa vốn chỉ có SAU khi campaign đã chạy), bảng này phủ MỌI sản phẩm
+ * của gian, kể cả chưa từng chạy ads. Cùng SSOT computePnlRow — không lệch số.
+ */
+function ProductBreakevenTab({
+  data,
+  loading,
+  error,
+  noChannel,
+}: {
+  data: ShopeeProductBreakevenResponse | null;
+  loading: boolean;
+  error: string | null;
+  noChannel: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 20;
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return data.rows;
+    return data.rows.filter(
+      (r) => r.productName.toLowerCase().includes(q) || r.itemId.includes(q)
+    );
+  }, [data, search]);
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const paged = rows.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+  if (noChannel) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Kết nối gian Shopee để tra cứu ROAS hòa vốn sản phẩm.
+      </p>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>ROAS hòa vốn theo sản phẩm</CardTitle>
+        <CardDescription>
+          Số để mang đi đặt ROAS mục tiêu TRƯỚC khi tạo chiến dịch: ROAS ads
+          dưới cột hòa vốn là chạy lỗ dù sàn báo dương. Biên lãi tính từ P&L
+          thật {data ? `${formatNumber(data.marginWindowDays)} ngày` : "30 ngày"}{" "}
+          (giá vốn + phí sàn, chưa gồm ads) của chính sản phẩm.
+        </CardDescription>
+        <div className="pt-1">
+          <Input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Tìm tên sản phẩm / item ID…"
+            className="max-w-xs"
+          />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+            {error}
+          </div>
+        ) : loading || !data ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Đang tính biên lãi từng sản phẩm…
+          </p>
+        ) : rows.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {search
+              ? "Không có sản phẩm nào khớp từ khóa."
+              : "Chưa có sản phẩm nào đồng bộ từ gian này."}
+          </p>
+        ) : (
+          <div className="min-w-0 overflow-x-auto">
+            <Table>
+              <TableHeader className={TABLE_HEAD_EMPHASIS}>
+                <TableRow>
+                  <TableHead>Sản phẩm</TableHead>
+                  <TableHead className="w-24 text-right">
+                    <span className="inline-flex items-center gap-1">
+                      Đơn 30d
+                      <HintIcon hint="Số đơn P&L 30 ngày có chứa sản phẩm — cỡ mẫu của biên lãi. Dưới 5 đơn thì số hòa vốn chỉ mang tính tham khảo." />
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-32 text-right">Doanh thu 30d</TableHead>
+                  <TableHead className="w-24 text-right">
+                    <span className="inline-flex items-center gap-1">
+                      Biên lãi
+                      <HintIcon hint="Lợi nhuận ròng / doanh thu thực nhận (giá vốn + phí sàn thật, CHƯA trừ ads). Đơn ghép nhiều SP phân bổ theo tỷ trọng giá trị." />
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-28 text-right">
+                    <span className="inline-flex items-center gap-1">
+                      ROAS hòa vốn
+                      <HintIcon hint="1 / biên lãi ròng — chạy ads tới đúng ROAS này thì hòa vốn. Đây là số để đối chiếu khi đặt ROAS mục tiêu." />
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-32 text-right">
+                    <span className="inline-flex items-center gap-1">
+                      Mục tiêu an toàn
+                      <HintIcon
+                        hint={`ROAS hòa vốn × ${data.safeRoasFactor.toLocaleString("vi-VN")} (hệ số vùng an toàn trong cấu hình Trợ lý) — đặt ROAS mục tiêu từ mức này trở lên để có lãi thật.`}
+                      />
+                    </span>
+                  </TableHead>
+                  <TableHead className="w-28">Ads</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paged.map((r) => (
+                  <ProductBreakevenRowView
+                    key={r.itemId}
+                    r={r}
+                    safeFactor={data.safeRoasFactor}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+            {rows.length > PAGE_SIZE && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Hiển thị {formatNumber(safePage * PAGE_SIZE + 1)}–
+                  {formatNumber(Math.min((safePage + 1) * PAGE_SIZE, rows.length))}{" "}
+                  trong {formatNumber(rows.length)} sản phẩm
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(Math.max(0, safePage - 1))}
+                    disabled={safePage === 0}
+                  >
+                    Trước
+                  </Button>
+                  <span className="text-xs tabular-nums text-slate-600">
+                    Trang {formatNumber(safePage + 1)}/{formatNumber(pageCount)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+                    disabled={safePage >= pageCount - 1}
+                  >
+                    Sau
+                  </Button>
+                </div>
+              </div>
+            )}
+            {data.shop.missingCostOrders > 0 && (
+              <p className="mt-3 text-xs text-amber-600">
+                ⚠ {formatNumber(data.shop.missingCostOrders)} đơn trong mẫu còn
+                SKU thiếu giá vốn — biên lãi các sản phẩm liên quan đang lạc
+                quan hơn thật, nhập đủ giá vốn để số hòa vốn chính xác.
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              Toàn gian: biên lãi{" "}
+              {data.shop.margin != null
+                ? `${(data.shop.margin * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
+                : "—"}{" "}
+              · ROAS hòa vốn {formatRoas(data.shop.breakevenRoas)} (từ{" "}
+              {formatNumber(data.shop.pnlOrders)} đơn P&L) — sản phẩm chưa đủ
+              đơn có thể tạm dùng số toàn gian này.
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProductBreakevenRowView({
+  r,
+  safeFactor,
+}: {
+  r: ShopeeProductBreakevenRow;
+  safeFactor: number;
+}) {
+  const thinSample = r.orders > 0 && r.orders < 5;
+  return (
+    <TableRow className={cn(r.lossBeforeAds && "bg-red-50/50")}>
+      <TableCell>
+        <p className="max-w-72 truncate text-sm font-medium text-slate-900">
+          {r.productName}
+        </p>
+        <p className="text-xs text-slate-500">
+          #{r.itemId}
+          {r.skuCount > 1 && ` · ${formatNumber(r.skuCount)} phân loại`}
+        </p>
+      </TableCell>
+      <TableCell className="text-right tabular-nums text-slate-700">
+        {formatNumber(r.orders)}
+        {thinSample && (
+          <span className="ml-1 text-xs text-amber-600" title="Dưới 5 đơn — số hòa vốn chỉ mang tính tham khảo">
+            (mỏng)
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <Money value={r.revenue} className="text-slate-700" />
+      </TableCell>
+      <TableCell
+        className={cn(
+          "text-right tabular-nums",
+          r.margin == null
+            ? "text-slate-400"
+            : r.margin <= 0
+              ? "text-red-600"
+              : "text-slate-700"
+        )}
+      >
+        {r.margin != null
+          ? `${(r.margin * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
+          : "—"}
+      </TableCell>
+      <TableCell className={cn("text-right", TEXT_NUMBER_STRONG)}>
+        {r.lossBeforeAds ? (
+          <span className="text-red-600" title="Bán đã lỗ chưa tính ads — không ROAS nào cứu được, xem lại giá/giá vốn trước">
+            Lỗ trước ads
+          </span>
+        ) : (
+          formatRoas(r.breakevenRoas)
+        )}
+      </TableCell>
+      <TableCell className="text-right tabular-nums text-emerald-600">
+        {r.breakevenRoas != null ? `≥ ${formatRoas(r.breakevenRoas * safeFactor)}` : "—"}
+      </TableCell>
+      <TableCell>
+        {r.runningAds && (
+          <Badge className="bg-emerald-500 text-white">Đang chạy ads</Badge>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 

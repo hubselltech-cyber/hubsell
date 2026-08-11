@@ -2842,6 +2842,41 @@ export function fetchShopeeAdsActionLog(channelId: string, limit = 50) {
   );
 }
 
+/** Một sản phẩm trong bảng ROAS hòa vốn — tra cứu trước khi tạo campaign. */
+export interface ShopeeProductBreakevenRow {
+  itemId: string;
+  productName: string;
+  imageUrl: string | null;
+  skuCount: number;
+  /** Số đơn P&L 30 ngày khớp SKU của sản phẩm (cỡ mẫu của biên lãi). */
+  orders: number;
+  revenue: number;
+  margin: number | null;
+  breakevenRoas: number | null;
+  lossBeforeAds: boolean;
+  missingCostOrders: number;
+  runningAds: boolean;
+}
+
+export interface ShopeeProductBreakevenResponse {
+  rows: ShopeeProductBreakevenRow[];
+  shop: {
+    margin: number | null;
+    breakevenRoas: number | null;
+    pnlOrders: number;
+    missingCostOrders: number;
+  };
+  /** Hệ số vùng an toàn (Q2 dangerFactor) — gợi ý ROAS mục tiêu = hòa vốn × hệ số. */
+  safeRoasFactor: number;
+  marginWindowDays: number;
+}
+
+export function fetchShopeeProductBreakeven(channelId: string) {
+  return apiFetch<ShopeeProductBreakevenResponse>(
+    `/api/ads/shopee/product-breakeven?channelId=${encodeURIComponent(channelId)}`
+  );
+}
+
 export interface ShopeeAssistantSummary {
   config: ShopeeAssistantConfig;
   counts: { spike: number; pauseNow: number; grace: number; review: number };

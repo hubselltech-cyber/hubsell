@@ -51,6 +51,50 @@ export function vnDateKey(daysAgo: number): string {
 
 export type CampaignWithPerf = AdsCampaign & { dailyPerf: AdsCampaignDailyPerf[] };
 
+type PnlRow = ReturnType<typeof computePnlRow>;
+
+/** Nền P&L 30 ngày của một gian (chưa trừ ads) — nguyên liệu tính biên lãi. */
+async function fetchChannelPnlRows(channel: {
+  id: string;
+  userId: string;
+}): Promise<PnlRow[]> {
+  const pnlOrders = await fetchPnlOrders(
+    { userId: channel.userId, id: channel.id, channelName: ChannelName.SHOPEE },
+    { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
+  );
+  return pnlOrders.map(computePnlRow);
+}
+
+/**
+ * Biên lãi ròng (chưa trừ ads) trên một tập SKU — null = tính toàn shop.
+ * Đơn nhiều SKU phân bổ doanh thu/lãi theo tỷ trọng giá trị hàng của SKU khớp.
+ */
+function marginOverRows(
+  pnlRows: PnlRow[],
+  skuSet: Set<string> | null
+): { orders: number; revenue: number; profit: number; missingCostOrders: number } {
+  let orders = 0;
+  let revenue = 0;
+  let profit = 0;
+  let missingCostOrders = 0;
+  for (const row of pnlRows) {
+    const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
+    if (itemTotal <= 0) continue;
+    const matchTotal = skuSet
+      ? row.items
+          .filter((it) => skuSet.has(it.sku))
+          .reduce((s, it) => s + it.price * it.quantity, 0)
+      : itemTotal;
+    if (matchTotal <= 0) continue;
+    const ratio = matchTotal / itemTotal;
+    orders++;
+    revenue += row.actualRevenue * ratio;
+    profit += row.profit * ratio;
+    if (row.missingCostPrice) missingCostOrders++;
+  }
+  return { orders, revenue, profit, missingCostOrders };
+}
+
 export interface CampaignInsight {
   row: CampaignWithPerf;
   itemIds: string[];
@@ -117,11 +161,7 @@ export async function computeChannelAdsInsights(channel: {
   const weekAgoKey = vnDateKey(7);
 
   // ---- Nền P&L 30 ngày để tính biên lãi (chưa trừ ads) ----
-  const pnlOrders = await fetchPnlOrders(
-    { userId: channel.userId, id: channel.id, channelName: ChannelName.SHOPEE },
-    { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
-  );
-  const pnlRows = pnlOrders.map(computePnlRow);
+  const pnlRows = await fetchChannelPnlRows(channel);
 
   // Map SKU sàn → campaign qua externalId của ChannelProduct ("item" | "item-model").
   const channelProducts = await prisma.channelProduct.findMany({
@@ -137,34 +177,7 @@ export async function computeChannelAdsInsights(channel: {
     set.add(cp.channelSku);
   }
 
-  /** Biên lãi ròng (chưa trừ ads) trên một tập SKU — null = tính toàn shop. */
-  function marginOver(skuSet: Set<string> | null): {
-    orders: number;
-    revenue: number;
-    profit: number;
-    missingCostOrders: number;
-  } {
-    let orders = 0;
-    let revenue = 0;
-    let profit = 0;
-    let missingCostOrders = 0;
-    for (const row of pnlRows) {
-      const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
-      if (itemTotal <= 0) continue;
-      const matchTotal = skuSet
-        ? row.items
-            .filter((it) => skuSet.has(it.sku))
-            .reduce((s, it) => s + it.price * it.quantity, 0)
-        : itemTotal;
-      if (matchTotal <= 0) continue;
-      const ratio = matchTotal / itemTotal;
-      orders++;
-      revenue += row.actualRevenue * ratio;
-      profit += row.profit * ratio;
-      if (row.missingCostPrice) missingCostOrders++;
-    }
-    return { orders, revenue, profit, missingCostOrders };
-  }
+  const marginOver = (skuSet: Set<string> | null) => marginOverRows(pnlRows, skuSet);
 
   const shopMarginBase = marginOver(null);
   const shopMargin =
@@ -238,5 +251,126 @@ export async function computeChannelAdsInsights(channel: {
       pnlOrders: shopMarginBase.orders,
       missingCostOrders: shopMarginBase.missingCostOrders,
     },
+  };
+}
+
+// ============================================================
+// BẢNG ROAS HÒA VỐN THEO SẢN PHẨM — tra cứu TRƯỚC khi tạo campaign
+// (campaign chỉ có hòa vốn SAU khi đã chạy; bảng này trả lời "SP này đặt
+// ROAS mục tiêu bao nhiêu thì không lỗ" ngay từ lúc lên chiến dịch).
+// Đơn vị gom nhóm = item_id của sàn (một sản phẩm Shopee, gồm mọi phân loại)
+// vì ads sản phẩm Shopee nhắm theo item, không theo model.
+// ============================================================
+
+export interface ProductBreakevenRow {
+  /** item_id phía Shopee — dùng đối chiếu với itemIds của campaign. */
+  itemId: string;
+  productName: string;
+  imageUrl: string | null;
+  /** Số SKU sàn (phân loại) thuộc sản phẩm. */
+  skuCount: number;
+  /** Số đơn P&L 30 ngày có chứa SKU của sản phẩm (cỡ mẫu của biên lãi). */
+  orders: number;
+  /** Doanh thu thực nhận phân bổ cho sản phẩm trong 30 ngày. */
+  revenue: number;
+  /** Biên lãi ròng (chưa trừ ads); null = chưa có đơn P&L nào khớp. */
+  margin: number | null;
+  /** 1/biên lãi; null khi chưa đủ dữ liệu hoặc biên ≤ 0 (lỗ trước ads). */
+  breakevenRoas: number | null;
+  /** Biên ≤ 0: bán đã lỗ chưa tính ads — cấm chỉ định chạy ads. */
+  lossBeforeAds: boolean;
+  /** Số đơn trong mẫu còn SKU thiếu giá vốn — biên lãi đang lạc quan hơn thật. */
+  missingCostOrders: number;
+  /** Sản phẩm đang nằm trong ít nhất một campaign đang chạy. */
+  runningAds: boolean;
+}
+
+export interface ChannelProductBreakeven {
+  rows: ProductBreakevenRow[];
+  shop: {
+    margin: number | null;
+    breakevenRoas: number | null;
+    pnlOrders: number;
+    missingCostOrders: number;
+  };
+  /** Hệ số vùng an toàn từ config Trợ lý (Q2 dangerFactor) — FE gợi ý ROAS mục tiêu. */
+  safeRoasFactor: number;
+}
+
+export async function computeChannelProductBreakeven(channel: {
+  id: string;
+  userId: string;
+}): Promise<ChannelProductBreakeven> {
+  const [pnlRows, channelProducts, campaignRows, configRow] = await Promise.all([
+    fetchChannelPnlRows(channel),
+    prisma.channelProduct.findMany({
+      where: { channelId: channel.id, externalId: { not: null } },
+      select: { channelSku: true, externalId: true, productName: true, imageUrl: true },
+    }),
+    prisma.adsCampaign.findMany({
+      where: { channelId: channel.id },
+      select: { status: true, itemIds: true },
+    }),
+    prisma.adsAssistantConfig.findUnique({ where: { channelId: channel.id } }),
+  ]);
+  const config = normalizeAssistantConfig(configRow?.config);
+
+  const ongoingItemIds = new Set<string>();
+  for (const c of campaignRows) {
+    if (c.status !== "ongoing" || !c.itemIds) continue;
+    for (const id of c.itemIds.split(",")) ongoingItemIds.add(id);
+  }
+
+  // Gom SKU theo item_id — giữ tên/ảnh của dòng đầu tiên có dữ liệu.
+  const groups = new Map<
+    string,
+    { productName: string; imageUrl: string | null; skus: Set<string> }
+  >();
+  for (const cp of channelProducts) {
+    const itemId = (cp.externalId ?? "").split("-")[0];
+    if (!itemId) continue;
+    let g = groups.get(itemId);
+    if (!g) {
+      groups.set(
+        itemId,
+        (g = { productName: cp.productName, imageUrl: cp.imageUrl, skus: new Set() })
+      );
+    }
+    if (!g.imageUrl && cp.imageUrl) g.imageUrl = cp.imageUrl;
+    g.skus.add(cp.channelSku);
+  }
+
+  const shopBase = marginOverRows(pnlRows, null);
+  const shopMargin = shopBase.revenue > 0 ? shopBase.profit / shopBase.revenue : null;
+
+  const rows: ProductBreakevenRow[] = [...groups.entries()].map(([itemId, g]) => {
+    const base = marginOverRows(pnlRows, g.skus);
+    const margin = base.orders > 0 && base.revenue > 0 ? base.profit / base.revenue : null;
+    return {
+      itemId,
+      productName: g.productName,
+      imageUrl: g.imageUrl,
+      skuCount: g.skus.size,
+      orders: base.orders,
+      revenue: base.revenue,
+      margin,
+      breakevenRoas: margin != null && margin > 0 ? 1 / margin : null,
+      lossBeforeAds: margin != null && margin <= 0,
+      missingCostOrders: base.missingCostOrders,
+      runningAds: ongoingItemIds.has(itemId),
+    };
+  });
+  // Doanh thu lớn đứng trước — SP chưa có đơn chìm xuống đáy.
+  rows.sort((a, b) => b.revenue - a.revenue);
+
+  return {
+    rows,
+    shop: {
+      margin: shopMargin,
+      breakevenRoas: shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null,
+      pnlOrders: shopBase.orders,
+      missingCostOrders: shopBase.missingCostOrders,
+    },
+    safeRoasFactor: config.review.dangerFactor,
   };
 }

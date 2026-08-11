@@ -11,6 +11,7 @@ import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-r
 import {
   MARGIN_WINDOW_DAYS,
   computeChannelAdsInsights,
+  computeChannelProductBreakeven,
   dateKey,
   startOfDaysAgo,
 } from "../integrations/shopee/ads-insights";
@@ -242,6 +243,31 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
       campaigns,
       series,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/ads/shopee/product-breakeven?channelId= — BẢNG ROAS HÒA VỐN THEO
+// SẢN PHẨM: tra cứu TRƯỚC khi tạo campaign (SP này đặt ROAS mục tiêu bao nhiêu
+// thì không lỗ). Nhóm theo item_id sàn, biên lãi từ P&L 30 ngày cùng SSOT với
+// hòa vốn campaign — hai bảng không bao giờ lệch số.
+router.get("/shopee/product-breakeven", async (req: AuthRequest, res, next) => {
+  try {
+    const channelId =
+      typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const channel = await prisma.channel.findFirst({
+      where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+      return;
+    }
+    const data = await computeChannelProductBreakeven({
+      id: channel.id,
+      userId: req.ownerId!,
+    });
+    res.json({ ...data, marginWindowDays: MARGIN_WINDOW_DAYS });
   } catch (err) {
     next(err);
   }
