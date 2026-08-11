@@ -183,6 +183,8 @@ export interface AuthUser {
   country?: string;
   /** SĐT chuẩn E.164 (vd "+84912345678") — nền cho OTP SMS/WhatsApp sau này. */
   phone?: string | null;
+  /** Ảnh đại diện data URL base64 (~256px). Null/vắng mặt = icon mặc định. */
+  avatar?: string | null;
   role: Role;
   /**
    * Cây quyền của NHÂN VIÊN — mảng khóa lá của permission-registry. Chủ shop
@@ -867,6 +869,18 @@ export function changePassword(data: {
   return apiFetch<{ ok: boolean }>("/api/auth/change-password", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Đặt/gỡ ảnh đại diện của CHÍNH người đang đăng nhập (nhân viên cũng dùng
+ * được). `avatar` là data URL base64 đã thu nhỏ ~256px; null = gỡ ảnh.
+ * Trả về user mới để cập nhật localStorage + state ngay, khỏi gọi lại /me.
+ */
+export function updateAvatar(avatar: string | null) {
+  return apiFetch<{ user: AuthUser }>("/api/auth/me/avatar", {
+    method: "PUT",
+    body: JSON.stringify({ avatar }),
   });
 }
 

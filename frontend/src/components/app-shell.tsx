@@ -10,18 +10,17 @@ import {
   Menu,
   Loader2,
   LogOut,
-  UserRound,
   type LucideIcon,
 } from "lucide-react";
 
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { Button } from "@/components/ui/button";
+import { UserAvatarMenu } from "@/components/user-avatar-menu";
 import {
   ApiError,
   clearToken,
   fetchMe,
   getStoredUser,
-  ROLE_META,
   setStoredUser,
   type AuthUser,
 } from "@/lib/api";
@@ -627,20 +626,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-3">
             {user && (
-              <div className="hidden items-center gap-2 sm:flex">
-                <div className="flex size-8 items-center justify-center rounded-full bg-muted">
-                  <UserRound className="size-4 text-muted-foreground" />
-                </div>
-                <span className="text-sm font-medium">{user.fullName}</span>
-                <span
-                  className={cn(
-                    "rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                    ROLE_META[user.role].className
-                  )}
-                >
-                  {ROLE_META[user.role].label}
-                </span>
-              </div>
+              <UserAvatarMenu
+                user={user}
+                onUserChange={(u) => {
+                  setStoredUser(u);
+                  setUser(u);
+                }}
+              />
             )}
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="size-4" />

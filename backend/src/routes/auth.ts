@@ -79,6 +79,8 @@ const PUBLIC_USER_SELECT = {
   fullName: true,
   country: true,
   phone: true,
+  // Ảnh đại diện data URL base64 (~vài chục KB) — header FE hiển thị thay icon.
+  avatar: true,
   role: true,
   // Cây quyền của nhân viên — FE dựa vào đây để ẩn/hiện menu (lớp chặn thật
   // vẫn là requirePermission ở backend).
@@ -346,6 +348,43 @@ router.post("/change-password", requireAuth, async (req: AuthRequest, res, next)
       data: { passwordHash: await bcrypt.hash(newPassword, 10) },
     });
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/auth/me/avatar — đặt/gỡ ảnh đại diện của CHÍNH MÌNH (req.userId —
+// nhân viên cũng có avatar riêng). Body: { avatar: string | null }; string là
+// data URL base64 FE đã thu nhỏ ~256px, null = gỡ ảnh về icon mặc định.
+router.put("/me/avatar", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { avatar } = req.body ?? {};
+    if (avatar !== null && typeof avatar !== "string") {
+      res.status(400).json({ error: "Thiếu dữ liệu ảnh đại diện" });
+      return;
+    }
+    if (typeof avatar === "string") {
+      // Chỉ nhận đúng data URL ảnh — chặn nhét chuỗi lạ (script, URL ngoài…)
+      // vào cột rồi render ngược ra <img> của người khác xem.
+      if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar)) {
+        res.status(400).json({ error: "Ảnh đại diện không đúng định dạng" });
+        return;
+      }
+      // FE đã nén ~256px (vài chục KB); trần 90KB chuỗi để vừa giới hạn body
+      // JSON 100kb của express.json và giữ DB không phình vì ảnh gốc ai đó
+      // gọi API tay.
+      if (avatar.length > 90_000) {
+        res.status(400).json({ error: "Ảnh quá lớn — vui lòng chọn ảnh nhỏ hơn" });
+        return;
+      }
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.userId! },
+      data: { avatar },
+      select: PUBLIC_USER_SELECT,
+    });
+    res.json({ user });
   } catch (err) {
     next(err);
   }

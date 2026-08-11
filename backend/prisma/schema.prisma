@@ -182,6 +182,10 @@ model User {
   /// SĐT chuẩn E.164 (vd "+84912345678") — src/phone.ts chuẩn hoá khi đăng ký;
   /// nền cho OTP SMS/WhatsApp sau này. Nullable: user cũ/Google chưa có SĐT.
   phone        String?
+  /// Ảnh đại diện dạng data URL base64 (image/jpeg|png|webp, FE đã thu nhỏ
+  /// ~256px nên chỉ vài chục KB) — lưu thẳng trong DB, khỏi dựng object storage
+  /// riêng cho một tấm ảnh nhỏ. Null = chưa đặt, FE hiện icon mặc định.
+  avatar       String?
   /// `sub` Google trả về khi đăng nhập Google — khoá liên kết tài khoản OAuth.
   googleId     String?  @unique
   /// Quên mật khẩu: chỉ lưu SHA-256 CỦA token (lộ DB không lộ link reset),
