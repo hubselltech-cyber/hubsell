@@ -2846,7 +2846,6 @@ export function fetchShopeeAdsActionLog(channelId: string, limit = 50) {
 export interface ShopeeProductBreakevenRow {
   itemId: string;
   productName: string;
-  imageUrl: string | null;
   skuCount: number;
   /** SKU TỔNG cấp sản phẩm (item_sku Shopee) — null nếu người bán không đặt. */
   itemSku: string | null;
@@ -2858,7 +2857,6 @@ export interface ShopeeProductBreakevenRow {
   margin: number | null;
   breakevenRoas: number | null;
   lossBeforeAds: boolean;
-  missingCostOrders: number;
   runningAds: boolean;
 }
 

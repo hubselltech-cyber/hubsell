@@ -266,7 +266,6 @@ export interface ProductBreakevenRow {
   /** item_id phía Shopee — dùng đối chiếu với itemIds của campaign. */
   itemId: string;
   productName: string;
-  imageUrl: string | null;
   /** Số SKU sàn (phân loại) thuộc sản phẩm. */
   skuCount: number;
   /** SKU TỔNG cấp sản phẩm (item_sku Shopee) — null nếu người bán không đặt. */
@@ -283,8 +282,6 @@ export interface ProductBreakevenRow {
   breakevenRoas: number | null;
   /** Biên ≤ 0: bán đã lỗ chưa tính ads — cấm chỉ định chạy ads. */
   lossBeforeAds: boolean;
-  /** Số đơn trong mẫu còn SKU thiếu giá vốn — biên lãi đang lạc quan hơn thật. */
-  missingCostOrders: number;
   /** Sản phẩm đang nằm trong ít nhất một campaign đang chạy. */
   runningAds: boolean;
 }
@@ -313,7 +310,6 @@ export async function computeChannelProductBreakeven(channel: {
         channelSku: true,
         externalId: true,
         productName: true,
-        imageUrl: true,
         itemSku: true,
       },
     }),
@@ -331,15 +327,10 @@ export async function computeChannelProductBreakeven(channel: {
     for (const id of c.itemIds.split(",")) ongoingItemIds.add(id);
   }
 
-  // Gom SKU theo item_id — giữ tên/ảnh/SKU tổng của dòng đầu tiên có dữ liệu.
+  // Gom SKU theo item_id — giữ tên/SKU tổng của dòng đầu tiên có dữ liệu.
   const groups = new Map<
     string,
-    {
-      productName: string;
-      imageUrl: string | null;
-      itemSku: string | null;
-      skus: Set<string>;
-    }
+    { productName: string; itemSku: string | null; skus: Set<string> }
   >();
   for (const cp of channelProducts) {
     const itemId = (cp.externalId ?? "").split("-")[0];
@@ -348,15 +339,9 @@ export async function computeChannelProductBreakeven(channel: {
     if (!g) {
       groups.set(
         itemId,
-        (g = {
-          productName: cp.productName,
-          imageUrl: cp.imageUrl,
-          itemSku: cp.itemSku,
-          skus: new Set(),
-        })
+        (g = { productName: cp.productName, itemSku: cp.itemSku, skus: new Set() })
       );
     }
-    if (!g.imageUrl && cp.imageUrl) g.imageUrl = cp.imageUrl;
     if (!g.itemSku && cp.itemSku) g.itemSku = cp.itemSku;
     g.skus.add(cp.channelSku);
   }
@@ -375,7 +360,6 @@ export async function computeChannelProductBreakeven(channel: {
     return {
       itemId,
       productName: g.productName,
-      imageUrl: g.imageUrl,
       skuCount: g.skus.size,
       itemSku: g.itemSku,
       sellerSkus,
@@ -384,7 +368,6 @@ export async function computeChannelProductBreakeven(channel: {
       margin,
       breakevenRoas: margin != null && margin > 0 ? 1 / margin : null,
       lossBeforeAds: margin != null && margin <= 0,
-      missingCostOrders: base.missingCostOrders,
       runningAds: ongoingItemIds.has(itemId),
     };
   });
