@@ -532,7 +532,7 @@ export function ShopeeAdsPage() {
             icon={Megaphone}
             tone={(summary?.estProfit ?? 0) >= 0 ? "positive" : "negative"}
             colorValue
-            subtitle="GMV direct × biên lãi − chi phí"
+            subtitle="GMV từ Ads × biên lãi − chi phí"
           />
         </div>
 
@@ -693,6 +693,12 @@ export function ShopeeAdsPage() {
                           <HintIcon hint="Đơn broad: mọi đơn của shop trong 7 ngày sau khi khách bấm quảng cáo (định nghĩa Shopee)." />
                         </span>
                       </TableHead>
+                      <TableHead className="w-28 text-right">
+                        <span className="inline-flex items-center gap-1">
+                          CP/đơn
+                          <HintIcon hint="Chi phí quảng cáo trung bình để có 1 đơn = chi phí ÷ đơn broad trong kỳ. So với lãi gộp mỗi đơn để biết còn dư bao nhiêu." />
+                        </span>
+                      </TableHead>
                       <TableHead className="w-32 text-right">GMV</TableHead>
                       <TableHead className="w-24 text-right">ROAS</TableHead>
                       <TableHead className="w-28 text-right">
@@ -704,7 +710,7 @@ export function ShopeeAdsPage() {
                       <TableHead className="w-32 text-right">
                         <span className="inline-flex items-center gap-1">
                           Lãi/lỗ ước tính
-                          <HintIcon hint="GMV direct × biên lãi ròng − chi phí ads trong kỳ. Thận trọng: không tính đơn broad." />
+                          <HintIcon hint="GMV × biên lãi ròng − chi phí ads trong kỳ. Cùng rổ đơn broad với ROAS: ROAS trên hòa vốn thì số này dương, dưới thì âm." />
                         </span>
                       </TableHead>
                     </TableRow>
@@ -857,6 +863,9 @@ function CampaignRow({
       </TableCell>
       <TableCell className="text-right tabular-nums text-slate-700">
         {formatNumber(c.broadOrder)}
+      </TableCell>
+      <TableCell className="text-right tabular-nums text-slate-700">
+        {c.broadOrder > 0 ? formatVND(c.spend / c.broadOrder) : "—"}
       </TableCell>
       <TableCell className="text-right">
         <Money value={c.broadGmv} className="text-slate-900" />

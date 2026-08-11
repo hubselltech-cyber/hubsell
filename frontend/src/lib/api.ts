@@ -2878,7 +2878,7 @@ export interface ShopeeAdsCampaignRow {
   marginSource: "campaign" | "shop" | null;
   marginOrders: number;
   breakevenRoas: number | null;
-  /** Lãi/lỗ THẬT ước tính trong kỳ = GMV direct × biên lãi − chi phí ads. */
+  /** Lãi/lỗ ước tính trong kỳ = GMV broad × biên lãi − chi phí ads (cùng rổ đơn với ROAS). */
   estProfit: number | null;
   lossBeforeAds: boolean;
 }

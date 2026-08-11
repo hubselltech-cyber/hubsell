@@ -108,11 +108,14 @@ router.get("/shopee", async (req: AuthRequest, res, next) => {
         { spend: 0, impression: 0, clicks: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0 }
       );
 
-      // Lãi/lỗ THẬT ước tính của campaign trong cửa sổ: phần lãi ròng của doanh
-      // thu direct do ads mang về, trừ tiền ads. Thận trọng dùng direct (không
-      // tính broad — đơn "ăn theo" 7 ngày có thể vẫn về mà không cần ads).
+      // Lãi/lỗ ước tính của campaign trong cửa sổ: lãi ròng của GMV broad trừ
+      // tiền ads. Dùng broad — CÙNG rổ đơn với ROAS hiển thị và rule engine
+      // Trợ lý, để dấu của cột tiền luôn lật đúng tại điểm ROAS cắt hòa vốn
+      // (chốt với anh Trung 11/08: hết cảnh "Ổn" đứng cạnh số âm, khách đỡ hỏi;
+      // direct từng dùng trước đây bi quan quá — campaign toàn đơn broad bị
+      // phán "mất trắng" dù ROAS gấp mấy lần hòa vốn).
       const estProfit =
-        it.margin != null ? perf.directGmv * it.margin - perf.spend : null;
+        it.margin != null ? perf.broadGmv * it.margin - perf.spend : null;
 
       const assessment = it.assessment;
       return {
