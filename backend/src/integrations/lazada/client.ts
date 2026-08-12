@@ -14,6 +14,7 @@
 import crypto from "crypto";
 import {
   getLazadaConfig,
+  LAZADA_ADS_BIZ_CODE,
   LAZADA_ENDPOINTS,
   LAZADA_PATHS,
   type LazadaConfig,
@@ -728,6 +729,221 @@ export async function sendImMessage(
     "im/message/send",
     cfg
   );
+}
+
+// ---------- Trợ lý quảng cáo (Sponsored Solutions API, READ-ONLY) ----------
+//
+// Envelope nhóm LSS KHÁC các API seller thường: payload nằm ở `result` cấp 1
+// (searchCampaignList/searchAdgroupList) hoặc `result.result` (nhóm report),
+// KHÔNG có `data`. Metric trống Lazada trả CHUỖI "-" (đã thấy trong probe thật
+// 12/08/2026 trên shop DarkMan) — mọi số đi qua lazAdsNum, đừng Number() thẳng.
+
+/** Đổi giá trị LSS (number | chuỗi | "-") về number; "-"/rác → 0. */
+export function lazAdsNum(v: unknown): number {
+  if (v == null || v === "-" || v === "") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Một campaign trong searchCampaignList (tên trường đọc phòng thủ). */
+export interface LazadaAdsCampaign {
+  campaignId?: number | string;
+  campaignName?: string;
+  /** 1 = đang online; 0 = offline (tắt); 9 = đã xóa. */
+  status?: number | string;
+  /** Công tắc bật/tắt của chủ shop (1/0) — tách khỏi status tổng hợp. */
+  campaignSwitchStatus?: number | string;
+  campaignScheduleStatus?: number | string;
+  /** 0 = HẾT ngân sách ngày (nguyên liệu cảnh báo). */
+  campaignDailyBudgetStatus?: number | string;
+  /** 0 = VÍ ADS HẾT TIỀN (nguyên liệu cảnh báo, khỏi gọi API ví riêng). */
+  adAccountBalanceStatus?: number | string;
+  haveActiveAdStatus?: number | string;
+  /** VND nguyên; -1 = không giới hạn. */
+  dailyBudget?: number | string;
+  startDate?: string; // yyyy-MM-dd
+  /** "3020-12-30" = không hẹn ngày tắt. */
+  endDate?: string;
+  spend?: number | string;
+  clicks?: number | string;
+  impressions?: number | string;
+  ctr?: number | string;
+  cpc?: number | string;
+  storeRevenue?: number | string;
+  storeOrders?: number | string;
+  storeUnitsSold?: number | string;
+  storeRoi?: number | string;
+  [k: string]: unknown;
+}
+
+interface LazadaAdsCampaignListData extends LazadaEnvelope {
+  result?: LazadaAdsCampaign[];
+  totalCount?: number | string;
+  success?: boolean | string;
+  errorMsg?: string;
+}
+
+/**
+ * DS campaign Sponsored Solutions (phân trang). startDate/endDate là tham số
+ * BẮT BUỘC của sàn nhưng lọc rất lỏng (probe: range 1 năm vẫn trả campaign tạo
+ * 2022) — cứ truyền cửa sổ rộng để không sót campaign cũ đang tắt.
+ */
+export async function getAdsCampaignList(
+  params: {
+    accessToken: string;
+    startDate: string; // yyyy-MM-dd
+    endDate: string;
+    pageNo: number;
+    pageSize?: number;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ campaigns: LazadaAdsCampaign[]; totalCount: number }> {
+  const data = await callLazada<LazadaAdsCampaignListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.adsCampaignList,
+    {
+      access_token: params.accessToken,
+      bizCode: LAZADA_ADS_BIZ_CODE,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      pageNo: String(params.pageNo),
+      pageSize: String(params.pageSize ?? 100),
+    },
+    "sponsor/campaign/searchCampaignList",
+    cfg
+  );
+  return {
+    campaigns: data.result ?? [],
+    totalCount: lazAdsNum(data.totalCount),
+  };
+}
+
+/** Một adgroup (= MỘT sản phẩm chạy ads) trong searchAdgroupList. */
+export interface LazadaAdsAdgroup {
+  adgroupId?: number | string;
+  adgroupName?: string;
+  /** item_id sàn — khớp ChannelProduct.externalId dạng "itemId-skuId". */
+  itemId?: number | string;
+  bidPrice?: number | string;
+  adSwitchStatus?: number | string;
+  adApproveStatus?: number | string;
+  productStockStatus?: number | string;
+  status?: number | string;
+  spend?: number | string;
+  storeRevenue?: number | string;
+  storeOrders?: number | string;
+  [k: string]: unknown;
+}
+
+interface LazadaAdsAdgroupListData extends LazadaEnvelope {
+  result?: LazadaAdsAdgroup[];
+  totalCount?: number | string;
+}
+
+/** DS adgroup (sản phẩm) của MỘT campaign — nguồn itemIds để map biên lãi SKU. */
+export async function getAdsAdgroupList(
+  params: {
+    accessToken: string;
+    campaignId: string | number;
+    startDate: string;
+    endDate: string;
+    pageNo: number;
+    pageSize?: number;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ adgroups: LazadaAdsAdgroup[]; totalCount: number }> {
+  const data = await callLazada<LazadaAdsAdgroupListData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.adsAdgroupList,
+    {
+      access_token: params.accessToken,
+      bizCode: LAZADA_ADS_BIZ_CODE,
+      campaignId: String(params.campaignId),
+      startDate: params.startDate,
+      endDate: params.endDate,
+      pageNo: String(params.pageNo),
+      pageSize: String(params.pageSize ?? 100),
+    },
+    "sponsor/adgroup/searchAdgroupList",
+    cfg
+  );
+  return {
+    adgroups: data.result ?? [],
+    totalCount: lazAdsNum(data.totalCount),
+  };
+}
+
+/** Một dòng báo cáo campaign trong getDiscoveryReportCampaign. */
+export interface LazadaAdsCampaignReportRow {
+  campaignId?: number | string;
+  campaignName?: string;
+  /** 1 Manual | 2 Automated. */
+  campaignType?: number | string;
+  /** N Sponsored Search | J Sponsored Product. */
+  productType?: string;
+  dayBudget?: number | string;
+  spend?: number | string;
+  impressions?: number | string;
+  clicks?: number | string;
+  ctr?: number | string;
+  cpc?: number | string;
+  /** Rổ STORE = broad (mọi đơn của gian trong 30 ngày sau click). */
+  storeRevenue?: number | string;
+  storeOrders?: number | string;
+  storeUnitSold?: number | string;
+  storeRoi?: number | string;
+  storeCvr?: number | string;
+  /** Rổ PRODUCT = direct (đơn của chính SP chạy ads). */
+  productRevenue?: number | string;
+  productOrders?: number | string;
+  productUnitSold?: number | string;
+  productCvr?: number | string;
+  [k: string]: unknown;
+}
+
+interface LazadaAdsCampaignReportData extends LazadaEnvelope {
+  result?: {
+    result?: LazadaAdsCampaignReportRow[];
+    totalCount?: number | string;
+    success?: boolean | string;
+    errorMsg?: string;
+  };
+}
+
+/**
+ * Báo cáo hiệu suất cấp campaign trong [startDate, endDate] (AGGREGATE cả
+ * khoảng — muốn số theo NGÀY thì gọi từng ngày startDate=endDate=D).
+ * useRtTable=true khi endDate là hôm nay để lấy số realtime.
+ */
+export async function getAdsCampaignReport(
+  params: {
+    accessToken: string;
+    startDate: string;
+    endDate: string;
+    pageNo: number;
+    pageSize?: number;
+    useRtTable?: boolean;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ rows: LazadaAdsCampaignReportRow[]; totalCount: number }> {
+  const data = await callLazada<LazadaAdsCampaignReportData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.adsReportCampaign,
+    {
+      access_token: params.accessToken,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      pageNo: String(params.pageNo),
+      pageSize: String(params.pageSize ?? 100),
+      ...(params.useRtTable ? { useRtTable: "true" } : {}),
+    },
+    "sponsor/report/getDiscoveryReportCampaign",
+    cfg
+  );
+  return {
+    rows: data.result?.result ?? [],
+    totalCount: lazAdsNum(data.result?.totalCount),
+  };
 }
 
 // ---------- Thông tin người bán ----------

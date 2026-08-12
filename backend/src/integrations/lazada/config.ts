@@ -65,7 +65,24 @@ export const LAZADA_PATHS = {
   imMessageList: "/im/message/list",
   /** Gửi tin nhắn (POST; template_id=1 là text). */
   imMessageSend: "/im/message/send",
+
+  // ── Trợ lý quảng cáo — Sponsored Solutions API (đối chiếu docs + PROBE THẬT
+  // 12/08/2026 trên 2 shop: app có sẵn quyền, không cần xin thêm ở Console) ──
+  /** DS campaign kèm cờ trạng thái (ví cạn/hết ngân sách ngày) + tổng hiệu suất. */
+  adsCampaignList: "/sponsor/solutions/campaign/searchCampaignList",
+  /** DS adgroup của MỘT campaign — mỗi adgroup là MỘT sản phẩm (có itemId). */
+  adsAdgroupList: "/sponsor/solutions/adgroup/searchAdgroupList",
+  /** Báo cáo hiệu suất cấp campaign theo KHOẢNG NGÀY (2 rổ store/product). */
+  adsReportCampaign: "/sponsor/solutions/report/getDiscoveryReportCampaign",
 } as const;
+
+/**
+ * bizCode bắt buộc của mọi API Sponsored Solutions. Docs chỉ công bố duy nhất
+ * "sponsoredSearch" (phủ placement N Sponsored Search + J Sponsored Product);
+ * format Sponsored Max mới của Lazada CHƯA chắc lộ qua Open API — xem ghi chú
+ * khảo sát 12/08/2026 trong memory hubsell-ads-assistant.
+ */
+export const LAZADA_ADS_BIZ_CODE = "sponsoredSearch";
 
 /**
  * Đọc cấu hình Lazada từ biến môi trường. Ném lỗi rõ ràng nếu thiếu — để lỗi

@@ -32,6 +32,7 @@ import {
 } from "./integrations/shopee/settlements";
 import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
 import { syncShopeeAdsCampaigns } from "./integrations/shopee/ads-campaigns";
+import { syncLazadaAdsCampaigns } from "./integrations/lazada/ads-campaigns";
 import { runShopeeAdsAutoExecute } from "./integrations/shopee/ads-auto-execute";
 import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
 import { isLazadaConfigured } from "./integrations/lazada/config";
@@ -214,6 +215,21 @@ async function runOnce(): Promise<void> {
             } catch (err) {
               console.error(
                 `[Auto-sync] Lỗi sync payout Lazada "${channel.shopName}":`,
+                (err as Error).message
+              );
+            }
+            // Chiến dịch quảng cáo + hiệu suất ngày (Trợ lý quảng cáo Lazada
+            // GĐ1, read-only Sponsored Solutions) — lỗi riêng không chặn luồng.
+            try {
+              const camp = await syncLazadaAdsCampaigns(channel, { daysBack: 30 });
+              if (camp.campaignsUpserted > 0) {
+                console.log(
+                  `[Auto-sync] Campaign Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi sync campaign Ads Lazada "${channel.shopName}":`,
                 (err as Error).message
               );
             }

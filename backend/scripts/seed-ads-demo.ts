@@ -11,16 +11,23 @@
 // Mọi bản ghi mang tiền tố DEMO — chạy lặp tự xóa cắm lại. KHÔNG chạy trên
 // production; dữ liệu thật do syncShopeeAdsCampaigns lo.
 //
-// Chạy: npx tsx scripts/seed-ads-demo.ts
-// Xóa:  npx tsx scripts/seed-ads-demo.ts --clean
+// Chạy: npx tsx scripts/seed-ads-demo.ts            (gian Shopee demo)
+//       npx tsx scripts/seed-ads-demo.ts --platform lazada   (gian Lazada demo
+//         — 12/08/2026: trang /ads/lazada dùng chung lõi, cùng bộ ca kiểm thử)
+// Xóa:  npx tsx scripts/seed-ads-demo.ts [--platform lazada] --clean
 // ============================================================
 
 import { prisma } from "../src/prisma";
 
-const SHOP_EXTERNAL_ID = "DEMO-ADS-SHOP";
-
 async function main() {
   const clean = process.argv.includes("--clean");
+  const platformIdx = process.argv.indexOf("--platform");
+  const platform =
+    platformIdx !== -1 && process.argv[platformIdx + 1] === "lazada"
+      ? ("LAZADA" as const)
+      : ("SHOPEE" as const);
+  const shopExternalId =
+    platform === "LAZADA" ? "DEMO-ADS-LZD" : "DEMO-ADS-SHOP";
 
   const owner = await prisma.user.findUnique({
     where: { email: "admin@hubsell.vn" },
@@ -30,8 +37,8 @@ async function main() {
   const existing = await prisma.channel.findFirst({
     where: {
       userId: owner.id,
-      channelName: "SHOPEE",
-      externalShopId: SHOP_EXTERNAL_ID,
+      channelName: platform,
+      externalShopId: shopExternalId,
     },
   });
 
@@ -45,9 +52,9 @@ async function main() {
   const channel = await prisma.channel.create({
     data: {
       userId: owner.id,
-      channelName: "SHOPEE",
-      shopName: "Shopee Demo Ads",
-      externalShopId: SHOP_EXTERNAL_ID,
+      channelName: platform,
+      shopName: platform === "LAZADA" ? "Lazada Demo Ads" : "Shopee Demo Ads",
+      externalShopId: shopExternalId,
       status: "ACTIVE",
     },
   });
@@ -69,7 +76,9 @@ async function main() {
         channelSku: s.sku,
         productName: s.name,
         price: 210_000,
-        externalId: s.itemId,
+        // Đúng khuôn externalId từng sàn: Shopee "item", Lazada "itemId-skuId"
+        // (mọi chỗ đọc đều split("-")[0] nên map campaign.itemIds vẫn khớp).
+        externalId: platform === "LAZADA" ? `${s.itemId}-1` : s.itemId,
         status: "ACTIVE",
       },
     });

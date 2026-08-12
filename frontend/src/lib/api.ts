@@ -2873,9 +2873,12 @@ export interface ShopeeProductBreakevenResponse {
   marginWindowDays: number;
 }
 
-export function fetchShopeeProductBreakeven(channelId: string) {
+export function fetchShopeeProductBreakeven(
+  channelId: string,
+  platform: "shopee" | "lazada" = "shopee"
+) {
   return apiFetch<ShopeeProductBreakevenResponse>(
-    `/api/ads/shopee/product-breakeven?channelId=${encodeURIComponent(channelId)}`
+    `/api/ads/${platform}/product-breakeven?channelId=${encodeURIComponent(channelId)}`
   );
 }
 
@@ -2949,16 +2952,23 @@ export interface ShopeeAdsDashboard {
   series: { date: string; spend: number; broadGmv: number; directGmv: number }[];
 }
 
+/** Sàn của Trợ lý quảng cáo dữ liệu thật — backend đăng ký cùng bộ route cho cả hai. */
+export type AdsPlatform = "shopee" | "lazada";
+
 export function fetchShopeeAdsDashboard(params: {
   channelId?: string;
   /** Cửa sổ hiển thị 1–30 ngày (dữ liệu sync tối đa 30 ngày về trước). */
   days?: number;
+  /** Mặc định "shopee" — trang Lazada truyền "lazada" (payload y hệt). */
+  platform?: AdsPlatform;
 }) {
   const q = new URLSearchParams();
   if (params.channelId) q.set("channelId", params.channelId);
   if (params.days) q.set("days", String(params.days));
   const qs = q.toString();
-  return apiFetch<ShopeeAdsDashboard>(`/api/ads/shopee${qs ? `?${qs}` : ""}`);
+  return apiFetch<ShopeeAdsDashboard>(
+    `/api/ads/${params.platform ?? "shopee"}${qs ? `?${qs}` : ""}`
+  );
 }
 
 export interface SyncAdsCampaignsResult {
@@ -2979,10 +2989,11 @@ export function syncShopeeAdsCampaigns(channelId: string) {
 /** Lưu luật Trợ lý riêng của một gian (backend normalize trước khi lưu). */
 export function saveShopeeAssistantConfig(
   channelId: string,
-  config: ShopeeAssistantConfig
+  config: ShopeeAssistantConfig,
+  platform: AdsPlatform = "shopee"
 ) {
   return apiFetch<{ message: string; config: ShopeeAssistantConfig }>(
-    "/api/ads/shopee/assistant-config",
+    `/api/ads/${platform}/assistant-config`,
     { method: "PUT", body: JSON.stringify({ channelId, config }) }
   );
 }
@@ -2991,10 +3002,11 @@ export function saveShopeeAssistantConfig(
 export function decideShopeeAdsCampaign(
   campaignRowId: string,
   decision: ShopeeAssistantDecision,
-  verdict: string
+  verdict: string,
+  platform: AdsPlatform = "shopee"
 ) {
   return apiFetch<{ message: string }>(
-    `/api/ads/shopee/campaigns/${campaignRowId}/decision`,
+    `/api/ads/${platform}/campaigns/${campaignRowId}/decision`,
     { method: "POST", body: JSON.stringify({ decision, verdict }) }
   );
 }

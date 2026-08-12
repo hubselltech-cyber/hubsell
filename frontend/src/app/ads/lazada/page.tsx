@@ -1,8 +1,19 @@
 "use client";
 
-import { AdsAssistantPage } from "@/components/ads/ads-assistant-page";
+import { Suspense } from "react";
 
-/** Trợ lý quảng cáo — Lazada (khung preview, chờ Marketing API). */
-export default function LazadaAdsPage() {
-  return <AdsAssistantPage platform="LAZADA" />;
+import { ShopeeAdsPage } from "@/components/ads/shopee-ads-page";
+
+/**
+ * Trợ lý quảng cáo — Lazada (GĐ1+2: dashboard dữ liệu thật từ Sponsored
+ * Solutions API + rule engine khuyến nghị, 12/08/2026). Dùng chung component
+ * với Shopee qua prop platform — backend /api/ads/lazada trả payload y hệt.
+ * Bọc <Suspense> vì trang đọc useSearchParams (yêu cầu của Next khi prerender).
+ */
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <ShopeeAdsPage platform="lazada" />
+    </Suspense>
+  );
 }

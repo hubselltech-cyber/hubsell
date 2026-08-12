@@ -609,6 +609,7 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
     const insights = await computeChannelAdsInsights({
       id: ch.id,
       userId: ownerId,
+      channelName: ChannelName.SHOPEE,
     });
     if (!insights.config.enabled) continue; // chủ shop tắt Trợ lý của gian này
 

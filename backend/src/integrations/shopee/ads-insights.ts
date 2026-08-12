@@ -1,14 +1,19 @@
 // ============================================================
-// TRỢ LÝ QUẢNG CÁO SHOPEE — LÕI TÍNH TOÁN DÙNG CHUNG (GĐ3 tách từ routes/ads)
+// TRỢ LÝ QUẢNG CÁO — LÕI TÍNH TOÁN DÙNG CHUNG (GĐ3 tách từ routes/ads)
 //
 // Một nguồn duy nhất cho: lát cắt cửa sổ today/3d/7d/30d, biên lãi ròng theo
 // SKU campaign (phân bổ tỷ trọng doanh thu, SSOT computePnlRow), ROAS hòa vốn
-// và verdict rule engine. HAI người dùng:
+// và verdict rule engine. BA người dùng:
 //   - routes/ads.ts  : dashboard + verdict hiển thị
 //   - ads-auto-execute.ts : executor GĐ3 quyết hành động trong worker
+//   - ops-alerts.ts  : detector cảnh báo Trung tâm điều hành
 // Route và executor mà tự tính riêng thì có ngày hai nơi lệch số — người dùng
 // thấy badge "Ổn" nhưng executor lại tạm dừng campaign. Tách ra đây để không bao
 // giờ xảy ra chuyện đó.
+//
+// 12/08/2026: lõi này TRUNG LẬP SÀN — Lazada dùng chung (bảng AdsCampaign/
+// DailyPerf/Config chung, chỉ khác channelName khi kéo nền P&L). File vẫn nằm
+// integrations/shopee/ vì Shopee đặt nền + đỡ xáo import đang chạy production.
 // ============================================================
 
 import { ChannelName, type AdsCampaign, type AdsCampaignDailyPerf } from "@prisma/client";
@@ -54,12 +59,16 @@ export type CampaignWithPerf = AdsCampaign & { dailyPerf: AdsCampaignDailyPerf[]
 type PnlRow = ReturnType<typeof computePnlRow>;
 
 /** Nền P&L 30 ngày của một gian (chưa trừ ads) — nguyên liệu tính biên lãi. */
-async function fetchChannelPnlRows(channel: {
+/** Định danh gian truyền vào lõi — channelName quyết định nhánh P&L của sàn. */
+export interface AdsInsightChannel {
   id: string;
   userId: string;
-}): Promise<PnlRow[]> {
+  channelName: ChannelName;
+}
+
+async function fetchChannelPnlRows(channel: AdsInsightChannel): Promise<PnlRow[]> {
   const pnlOrders = await fetchPnlOrders(
-    { userId: channel.userId, id: channel.id, channelName: ChannelName.SHOPEE },
+    { userId: channel.userId, id: channel.id, channelName: channel.channelName },
     { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
   );
   return pnlOrders.map(computePnlRow);
@@ -136,10 +145,9 @@ export interface ChannelAdsInsights {
  * Tính trọn bộ insight + verdict cho MỌI campaign của một gian Shopee.
  * dailyPerf kèm theo là 30 ngày — caller hiển thị tự cắt cửa sổ ngắn hơn.
  */
-export async function computeChannelAdsInsights(channel: {
-  id: string;
-  userId: string;
-}): Promise<ChannelAdsInsights> {
+export async function computeChannelAdsInsights(
+  channel: AdsInsightChannel
+): Promise<ChannelAdsInsights> {
   const campaignRows = await prisma.adsCampaign.findMany({
     where: { channelId: channel.id },
     include: { dailyPerf: { where: { date: { gte: startOfDaysAgo(30) } } } },
@@ -298,10 +306,9 @@ export interface ChannelProductBreakeven {
   safeRoasFactor: number;
 }
 
-export async function computeChannelProductBreakeven(channel: {
-  id: string;
-  userId: string;
-}): Promise<ChannelProductBreakeven> {
+export async function computeChannelProductBreakeven(
+  channel: AdsInsightChannel
+): Promise<ChannelProductBreakeven> {
   const [pnlRows, channelProducts, campaignRows, configRow] = await Promise.all([
     fetchChannelPnlRows(channel),
     prisma.channelProduct.findMany({
@@ -352,10 +359,16 @@ export async function computeChannelProductBreakeven(channel: {
   const rows: ProductBreakevenRow[] = [...groups.entries()].map(([itemId, g]) => {
     const base = marginOverRows(pnlRows, g.skus);
     const margin = base.orders > 0 && base.revenue > 0 ? base.profit / base.revenue : null;
-    // SKU người bán tự đặt — bỏ khóa tổng hợp shopeeChannelSku sinh khi SKU
-    // trống (`SPE-{item}` / `SPE-{item}-{model}`), khách không nhận ra mã đó.
+    // SKU người bán tự đặt — bỏ khóa tổng hợp sinh khi SKU trống: Shopee
+    // `SPE-{item}`/`SPE-{item}-{model}`, Lazada `LZD-{item}-{sku}` — khách
+    // không nhận ra các mã máy tự đặt đó.
     const sellerSkus = [...g.skus]
-      .filter((s) => s !== `SPE-${itemId}` && !s.startsWith(`SPE-${itemId}-`))
+      .filter(
+        (s) =>
+          s !== `SPE-${itemId}` &&
+          !s.startsWith(`SPE-${itemId}-`) &&
+          !s.startsWith(`LZD-${itemId}-`)
+      )
       .sort();
     return {
       itemId,

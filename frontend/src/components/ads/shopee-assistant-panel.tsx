@@ -81,18 +81,26 @@ export function AssistantVerdictBadge({ c }: { c: ShopeeAdsCampaignRow }) {
 
 // ---------- Modal chi tiết + quyết định ----------
 
-const SELLER_CENTER_ADS_URL = "https://banhang.shopee.vn/portal/marketing/pas/index";
+/** Trang quản lý quảng cáo trên Seller Center từng sàn — nút "Mở Seller Center".
+ *  Lazada không có URL sâu ổn định công khai cho Sponsored Solutions → về trang
+ *  chủ Seller Center, chủ shop vào mục Tiếp thị (đừng đoán deep-link — bài học MISA). */
+const SELLER_CENTER_ADS_URLS: Record<"shopee" | "lazada", string> = {
+  shopee: "https://banhang.shopee.vn/portal/marketing/pas/index",
+  lazada: "https://sellercenter.lazada.vn/",
+};
 
 export function ShopeeAssistantModal({
   campaign,
   onDecide,
   onClose,
   deciding,
+  platform = "shopee",
 }: {
   campaign: ShopeeAdsCampaignRow | null;
   onDecide: (decision: ShopeeAssistantDecision) => void;
   onClose: () => void;
   deciding: boolean;
+  platform?: "shopee" | "lazada";
 }) {
   const a = campaign?.assistant;
   const verdictMeta = a?.verdict ? VERDICT_META[a.verdict] : null;
@@ -165,7 +173,9 @@ export function ShopeeAssistantModal({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => window.open(SELLER_CENTER_ADS_URL, "_blank", "noopener")}
+                onClick={() =>
+                  window.open(SELLER_CENTER_ADS_URLS[platform], "_blank", "noopener")
+                }
               >
                 <ExternalLink className="size-4" />
                 Mở Seller Center
@@ -289,10 +299,14 @@ export function ShopeeAssistantConfigCard({
   config,
   onSave,
   saving,
+  showAutoExecute = true,
 }: {
   config: ShopeeAssistantConfig;
   onSave: (config: ShopeeAssistantConfig) => void;
   saving: boolean;
+  /** Ẩn khối "Tự thực thi (GĐ3)" — Lazada chưa nối executor, hiện switch mà
+   *  không có gì chạy phía sau là đánh lừa người dùng. */
+  showAutoExecute?: boolean;
 }) {
   const [draft, setDraft] = useState<ShopeeAssistantConfig>(config);
   // Server trả config mới (đổi gian / sau khi lưu) → đồng bộ lại bản nháp.
@@ -350,6 +364,7 @@ export function ShopeeAssistantConfigCard({
                 disabled={!draft.enabled}
               />
             </RuleBlock>
+            {showAutoExecute && (
             <RuleBlock
               title="Tự thực thi (GĐ3)"
               hint="Trợ lý TỰ TẠM DỪNG chiến dịch dính 'Đề xuất tạm dừng' / 'Vọt chi'. Diễn tập = chỉ ghi sổ để anh/chị xem Trợ lý ĐỊNH làm gì; Thực thi thật chỉ nên bật sau khi đã tin bản diễn tập."
@@ -386,6 +401,7 @@ export function ShopeeAssistantConfigCard({
                 </p>
               )}
             </RuleBlock>
+            )}
             <RuleBlock
               title="Quy tắc 1 — Loại thẳng"
               hint="Tiêu lớn mà 0 đơn, hoặc ROAS tụt dưới hòa vốn × hệ số → đề xuất tạm dừng ngay."

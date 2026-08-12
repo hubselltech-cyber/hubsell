@@ -72,6 +72,7 @@ export async function runShopeeAdsAutoExecute(
   const insights = await computeChannelAdsInsights({
     id: channel.id,
     userId: channel.userId,
+    channelName: channel.channelName,
   });
   const auto: ShopeeAssistantConfig["autoExecute"] = insights.config.autoExecute;
 

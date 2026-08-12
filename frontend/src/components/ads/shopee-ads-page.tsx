@@ -75,16 +75,51 @@ import { TABLE_HEAD_EMPHASIS, TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typogr
 import { cn } from "@/lib/utils";
 
 /**
- * TRỢ LÝ QUẢNG CÁO SHOPEE — GIAI ĐOẠN 1: DASHBOARD DỮ LIỆU THẬT (READ-ONLY)
+ * TRỢ LÝ QUẢNG CÁO — DASHBOARD DỮ LIỆU THẬT (READ-ONLY) + RULE ENGINE
+ *
+ * 12/08/2026: trang DÙNG CHUNG cho Shopee lẫn Lazada qua prop `platform`
+ * (backend /api/ads/{shopee|lazada} trả payload y hệt — bảng AdsCampaign trung
+ * lập sàn). Tên file/component giữ "Shopee" vì Shopee đặt nền và để không xáo
+ * import đang chạy production; PLATFORM_META gom mọi khác biệt nhãn/quyền.
+ * Khác biệt chức năng duy nhất: ví ads + Tự thực thi GĐ3 + Sổ hành động mới có
+ * ở Shopee (Lazada chờ GĐ3 riêng — đừng hiện switch không có gì chạy phía sau).
  *
  * Khác Seller Center một điểm ăn tiền: mỗi chiến dịch có thêm ROAS HÒA VỐN
  * tính từ P&L thật của chính SKU trong chiến dịch (giá vốn + phí sàn đã đối
- * soát) — ROAS sàn báo dương nhưng dưới ngưỡng này vẫn là đốt tiền. Nguồn số
- * là /api/ads/shopee (sync tự động theo nhịp đối soát + nút Đồng bộ tay).
+ * soát) — ROAS sàn báo dương nhưng dưới ngưỡng này vẫn là đốt tiền.
  *
- * Chỉ ADMIN (chi phí Ads là dữ liệu tài chính). TikTok/Lazada vẫn dùng khung
- * mock ads-assistant-page cho tới khi nối API thật của từng sàn.
+ * Chỉ ADMIN (chi phí Ads là dữ liệu tài chính). TikTok vẫn dùng khung mock
+ * ads-assistant-page cho tới khi nối API thật.
  */
+
+/** Mọi khác biệt giữa hai sàn gom một chỗ — thêm sàn mới chỉ thêm một dòng. */
+const PLATFORM_META: Record<
+  "shopee" | "lazada",
+  {
+    label: string;
+    perm: "ads.shopee" | "ads.lazada";
+    description: string;
+    /** Tooltip cột Đơn — định nghĩa rổ broad của từng sàn. */
+    broadHint: string;
+  }
+> = {
+  shopee: {
+    label: "Shopee",
+    perm: "ads.shopee",
+    description:
+      "Dữ liệu thật từ Shopee Ads API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
+    broadHint:
+      "Đơn broad: mọi đơn của shop trong 7 ngày sau khi khách bấm quảng cáo (định nghĩa Shopee).",
+  },
+  lazada: {
+    label: "Lazada",
+    perm: "ads.lazada",
+    description:
+      "Dữ liệu thật từ Lazada Sponsored Solutions API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
+    broadHint:
+      "Đơn store: mọi đơn của gian trong 30 ngày sau khi khách bấm quảng cáo, tính về ngày bấm (định nghĩa Lazada) — số các ngày gần nhất còn tiếp tục tăng.",
+  },
+};
 
 /** Nhãn + màu trạng thái campaign theo từ vựng Shopee. */
 const STATUS_META: Record<string, { label: string; className: string }> = {
@@ -105,6 +140,8 @@ const PLACEMENT_LABEL: Record<string, string> = {
   search: "Tìm kiếm",
   discovery: "Khám phá",
   all: "Tất cả vị trí",
+  // Lazada: productType J = Sponsored Product (N = Sponsored Search → "search").
+  product: "Sản phẩm",
 };
 
 /** Hệ số an toàn trên ROAS hòa vốn — dưới hòa vốn×1.1 coi là vùng nguy hiểm. */
@@ -139,7 +176,12 @@ function formatRoas(v: number | null): string {
   return `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
 }
 
-export function ShopeeAdsPage() {
+export function ShopeeAdsPage({
+  platform = "shopee",
+}: {
+  platform?: "shopee" | "lazada";
+} = {}) {
+  const meta = PLATFORM_META[platform];
   const router = useRouter();
   // Deep-link từ Trung tâm điều hành: ?channelId= chọn gian, ?campaign_id=
   // prefill ô tìm kiếm + tự mở modal chi tiết, ?needs_action=1 bật lọc cần xử lý.
@@ -190,8 +232,8 @@ export function ShopeeAdsPage() {
       router.replace("/login");
       return;
     }
-    if (!can(getStoredUser(), "ads.shopee")) setDenied(true);
-  }, [router]);
+    if (!can(getStoredUser(), meta.perm)) setDenied(true);
+  }, [router, meta.perm]);
 
   const load = useCallback(async (cid: string, d: number) => {
     setLoading(true);
@@ -200,6 +242,7 @@ export function ShopeeAdsPage() {
       const res = await fetchShopeeAdsDashboard({
         channelId: cid || undefined,
         days: d,
+        platform,
       });
       setData(res);
       if (res.selectedChannelId) setChannelId(res.selectedChannelId);
@@ -208,7 +251,7 @@ export function ShopeeAdsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [platform]);
 
   useEffect(() => {
     void load(channelId, days);
@@ -223,7 +266,7 @@ export function ShopeeAdsPage() {
     let cancelled = false;
     setBreakevenLoading(true);
     setBreakevenError(null);
-    fetchShopeeProductBreakeven(channelId)
+    fetchShopeeProductBreakeven(channelId, platform)
       .then((res) => {
         if (!cancelled) setBreakeven({ channelId, data: res });
       })
@@ -236,7 +279,7 @@ export function ShopeeAdsPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab, channelId, breakeven]);
+  }, [tab, channelId, breakeven, platform]);
 
   // Deep-link ?campaign_id=: dữ liệu về thì mở modal chi tiết đúng một lần.
   // Không thấy campaign (đã xoá / thuộc gian khác / chưa sync) → báo nhẹ ở
@@ -315,7 +358,8 @@ export function ShopeeAdsPage() {
       await decideShopeeAdsCampaign(
         campaign.id,
         decision,
-        campaign.assistant.verdict ?? ""
+        campaign.assistant.verdict ?? "",
+        platform
       );
       setDetailId(null);
       await load(channelId, days);
@@ -330,7 +374,7 @@ export function ShopeeAdsPage() {
     if (!channelId || savingConfig) return;
     setSavingConfig(true);
     try {
-      await saveShopeeAssistantConfig(channelId, config);
+      await saveShopeeAssistantConfig(channelId, config, platform);
       await load(channelId, days);
     } catch (err) {
       setSyncNote(`Lưu cấu hình lỗi: ${(err as Error).message}`);
@@ -389,19 +433,16 @@ export function ShopeeAdsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">
-              Trợ lý quảng cáo Shopee
+              Trợ lý quảng cáo {meta.label}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Dữ liệu thật từ Shopee Ads API — kèm ROAS hòa vốn tính từ lãi/lỗ
-              thực tế của shop.
-            </p>
+            <p className="text-sm text-muted-foreground">{meta.description}</p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {(data?.channels.length ?? 0) > 1 && (
               <NativeSelect
                 value={channelId}
                 onChange={(e) => changeChannel(e.target.value)}
-                aria-label="Chọn gian hàng Shopee"
+                aria-label={`Chọn gian hàng ${meta.label}`}
                 className="w-52"
               >
                 {data?.channels.map((c) => (
@@ -692,13 +733,13 @@ export function ShopeeAdsPage() {
           <CardContent>
             {noChannel ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Chưa có gian Shopee nào được kết nối.
+                Chưa có gian {meta.label} nào được kết nối.
               </p>
             ) : campaigns.length === 0 && !loading ? (
               <div className="py-10 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Chưa có dữ liệu chiến dịch. Bấm Đồng bộ để kéo từ Shopee về
-                  (worker cũng tự chạy mỗi giờ).
+                  Chưa có dữ liệu chiến dịch. Bấm Đồng bộ để kéo từ {meta.label}{" "}
+                  về (worker cũng tự chạy mỗi giờ).
                 </p>
                 <Button className="mt-4" onClick={() => void runSync()} disabled={syncing}>
                   <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
@@ -724,7 +765,7 @@ export function ShopeeAdsPage() {
                       <TableHead className="w-20 text-right">
                         <span className="inline-flex items-center gap-1">
                           Đơn
-                          <HintIcon hint="Đơn broad: mọi đơn của shop trong 7 ngày sau khi khách bấm quảng cáo (định nghĩa Shopee)." />
+                          <HintIcon hint={meta.broadHint} />
                         </span>
                       </TableHead>
                       <TableHead className="w-28 text-right">
@@ -820,6 +861,7 @@ export function ShopeeAdsPage() {
             loading={breakevenLoading}
             error={breakevenError}
             noChannel={noChannel}
+            platformLabel={meta.label}
           />
         )}
 
@@ -831,12 +873,15 @@ export function ShopeeAdsPage() {
                 config={assistant.config}
                 onSave={(config) => void saveConfig(config)}
                 saving={savingConfig}
+                showAutoExecute={platform === "shopee"}
               />
-              <ShopeeActionLogCard channelId={channelId} />
+              {platform === "shopee" && (
+                <ShopeeActionLogCard channelId={channelId} />
+              )}
             </>
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Kết nối gian Shopee để cấu hình Trợ lý.
+              Kết nối gian {meta.label} để cấu hình Trợ lý.
             </p>
           ))}
 
@@ -846,6 +891,7 @@ export function ShopeeAdsPage() {
           onDecide={(d) => void decideCampaign(d)}
           onClose={() => setDetailId(null)}
           deciding={deciding}
+          platform={platform}
         />
       </div>
     </AppShell>
@@ -863,11 +909,13 @@ function ProductBreakevenTab({
   loading,
   error,
   noChannel,
+  platformLabel,
 }: {
   data: ShopeeProductBreakevenResponse | null;
   loading: boolean;
   error: string | null;
   noChannel: boolean;
+  platformLabel: string;
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -893,7 +941,7 @@ function ProductBreakevenTab({
   if (noChannel) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        Kết nối gian Shopee để tra cứu ROAS hòa vốn sản phẩm.
+        Kết nối gian {platformLabel} để tra cứu ROAS hòa vốn sản phẩm.
       </p>
     );
   }
@@ -944,7 +992,7 @@ function ProductBreakevenTab({
                   <TableHead className="w-32">
                     <span className="inline-flex items-center gap-1">
                       SKU
-                      <HintIcon hint="SKU TỔNG của sản phẩm (cấp item trên Shopee, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại." />
+                      <HintIcon hint="SKU TỔNG của sản phẩm (cấp item trên sàn, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại." />
                     </span>
                   </TableHead>
                   <TableHead className="w-24 text-right">
