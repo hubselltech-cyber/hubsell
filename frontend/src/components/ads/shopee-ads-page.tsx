@@ -873,11 +873,9 @@ export function ShopeeAdsPage({
                 config={assistant.config}
                 onSave={(config) => void saveConfig(config)}
                 saving={savingConfig}
-                showAutoExecute={platform === "shopee"}
+                platformLabel={meta.label}
               />
-              {platform === "shopee" && (
-                <ShopeeActionLogCard channelId={channelId} />
-              )}
+              <ShopeeActionLogCard channelId={channelId} platform={platform} />
             </>
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
@@ -892,6 +890,7 @@ export function ShopeeAdsPage({
           onClose={() => setDetailId(null)}
           deciding={deciding}
           platform={platform}
+          days={days}
         />
       </div>
     </AppShell>

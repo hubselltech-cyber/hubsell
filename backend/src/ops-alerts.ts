@@ -20,10 +20,13 @@ import { computePnlRow, fetchPnlOrders } from "./routes/finance";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
+  vnDateKey,
 } from "./integrations/shopee/ads-insights";
 import type { AssistantTrigger } from "./integrations/shopee/ads-assistant-rules";
 import { getAdsTotalBalance } from "./integrations/shopee/client";
 import { getValidShopeeAccessToken } from "./integrations/shopee/service";
+import { getAdsCampaignList, lazAdsNum } from "./integrations/lazada/client";
+import { getValidLazadaAccessToken } from "./integrations/lazada/service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -491,21 +494,36 @@ function campaignListText(list: ShopeeAdsCampaignSignal[]): string {
   return list.length > 3 ? `${names} +${list.length - 3} chiến dịch khác` : names;
 }
 
+/** Nhãn + đường dẫn trang ads theo sàn — mọi text/deep-link của thẻ đi qua đây. */
+export interface AdsAlertPlatform {
+  label: string; // "Shopee" | "Lazada" — cũng là badge nguồn trên FE (SOURCE_META)
+  path: string; // "/ads/shopee" | "/ads/lazada"
+}
+const ADS_ALERT_SHOPEE: AdsAlertPlatform = { label: "Shopee", path: "/ads/shopee" };
+const ADS_ALERT_LAZADA: AdsAlertPlatform = { label: "Lazada", path: "/ads/lazada" };
+
 /** 1 campaign → deep-link thẳng campaign; nhiều → bộ lọc "cần xử lý" của trang ads. */
-function adsDeepLink(channelId: string, list: ShopeeAdsCampaignSignal[]): string {
+function adsDeepLink(
+  path: string,
+  channelId: string,
+  list: ShopeeAdsCampaignSignal[]
+): string {
   return list.length === 1
-    ? `/ads/shopee?channelId=${channelId}&campaign_id=${encodeURIComponent(list[0].campaignId)}`
-    : `/ads/shopee?channelId=${channelId}&needs_action=1`;
+    ? `${path}?channelId=${channelId}&campaign_id=${encodeURIComponent(list[0].campaignId)}`
+    : `${path}?channelId=${channelId}&needs_action=1`;
 }
 
 /**
  * Dựng các thẻ cảnh báo từ nhóm kịch bản + trạng thái ví — THUẦN, vitest đánh
  * thẳng. dedupeKey = channelId (type đã phân biệt kịch bản trong khoá hoà giải).
+ * Dùng chung Shopee + Lazada qua `platform` (mặc định Shopee — giữ chữ ký cũ
+ * cho test và detector hiện có).
  */
 export function buildShopeeAdsAssistantAlerts(
   shop: { channelId: string; shopName: string },
   groups: ShopeeAdsScenarioGroups,
-  wallet: { balance: number; hoursLeft: number | null } | null
+  wallet: { balance: number; hoursLeft: number | null } | null,
+  platform: AdsAlertPlatform = ADS_ALERT_SHOPEE
 ): DetectedAlert[] {
   const alerts: DetectedAlert[] = [];
   const base = {
@@ -514,9 +532,9 @@ export function buildShopeeAdsAssistantAlerts(
   };
   const payload = (list: ShopeeAdsCampaignSignal[]) => ({
     kind: "navigate" as const,
-    href: adsDeepLink(shop.channelId, list),
+    href: adsDeepLink(platform.path, shop.channelId, list),
     label: "Xử lý chiến dịch",
-    source: "Shopee",
+    source: platform.label,
   });
 
   const spike = groups.spendSpike;
@@ -528,7 +546,7 @@ export function buildShopeeAdsAssistantAlerts(
       severity: "high",
       title:
         spike.length > 1
-          ? `${spike.length} chiến dịch Shopee vọt chi bất thường hôm nay — gian "${shop.shopName}"`
+          ? `${spike.length} chiến dịch ${platform.label} vọt chi bất thường hôm nay — gian "${shop.shopName}"`
           : `Chiến dịch ${campaignListText(spike)} vọt chi bất thường hôm nay — gian "${shop.shopName}"`,
       summary: `Hôm nay đã tiêu ${vnd(totalToday)}, vượt xa nhịp ngày thường mà doanh thu chưa bù nổi hòa vốn: ${campaignListText(spike)}. Kiểm tra ngay trước khi cháy thêm ngân sách.`,
       payload: payload(spike),
@@ -570,13 +588,13 @@ export function buildShopeeAdsAssistantAlerts(
       ...base,
       type: "ads-low-balance",
       severity: "high",
-      title: `Ví Shopee Ads gian "${shop.shopName}" sắp cạn — còn ${vnd(wallet.balance)}`,
+      title: `Ví ${platform.label} Ads gian "${shop.shopName}" sắp cạn — còn ${vnd(wallet.balance)}`,
       summary: `Với tốc độ đốt hiện tại, ví quảng cáo dự kiến cạn trong ~${Math.max(1, Math.round(wallet.hoursLeft))} giờ nữa — chiến dịch sẽ dừng giữa chừng nếu không nạp thêm.`,
       payload: {
         kind: "navigate",
-        href: `/ads/shopee?channelId=${shop.channelId}`,
+        href: `${platform.path}?channelId=${shop.channelId}`,
         label: "Kiểm tra ví Ads",
-        source: "Shopee",
+        source: platform.label,
       },
     });
   }
@@ -585,22 +603,53 @@ export function buildShopeeAdsAssistantAlerts(
 }
 
 /**
- * DETECTOR: quét verdict Trợ lý quảng cáo của từng gian Shopee ACTIVE đã có
- * dữ liệu campaign (sync mỗi giờ bởi order-auto-sync). Không gọi API sàn nào
- * ngoài MỘT call số dư ví/gian (lỗi quyền → bỏ qua êm, các kịch bản khác vẫn chạy).
+ * Thẻ VÍ ADS LAZADA HẾT TIỀN — THUẦN, vitest đánh thẳng. Lazada không có API
+ * số dư ví như Shopee; nguồn tin là CỜ `adAccountBalanceStatus` = 0 trên dòng
+ * searchCampaignList (sàn tự báo "tài khoản ads hết số dư"). Không ước được
+ * "còn N giờ" — thẻ nói thẳng trạng thái sàn báo, severity high vì lúc cờ bật
+ * là quảng cáo ĐÃ ngừng hiển thị.
+ */
+export function buildLazadaAdsWalletEmptyAlert(shop: {
+  channelId: string;
+  shopName: string;
+}): DetectedAlert {
+  return {
+    dedupeKey: shop.channelId,
+    tag: "ads",
+    type: "ads-low-balance",
+    severity: "high",
+    title: `Ví Lazada Ads gian "${shop.shopName}" hết số dư — quảng cáo đang ngừng hiển thị`,
+    summary:
+      "Lazada báo tài khoản quảng cáo hết số dư (adAccountBalanceStatus) — các chiến dịch đang bật không thể phân phối cho tới khi nạp thêm tiền vào ví Ads trên Seller Center.",
+    payload: {
+      kind: "navigate",
+      href: `/ads/lazada?channelId=${shop.channelId}`,
+      label: "Kiểm tra ví Ads",
+      source: "Lazada",
+    },
+  };
+}
+
+/**
+ * DETECTOR: quét verdict Trợ lý quảng cáo của từng gian Shopee/Lazada ACTIVE
+ * đã có dữ liệu campaign (sync mỗi giờ bởi order-auto-sync). Mỗi gian tối đa
+ * MỘT call sống ra sàn (Shopee: số dư ví; Lazada: cờ ví trên trang đầu
+ * searchCampaignList) — lỗi quyền/token → bỏ qua êm, 3 kịch bản campaign vẫn chạy.
  */
 async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[]> {
   const channels = await prisma.channel.findMany({
     where: {
       userId: ownerId,
-      channelName: ChannelName.SHOPEE,
+      channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
       status: "ACTIVE",
     },
-    select: { id: true, shopName: true },
+    select: { id: true, shopName: true, channelName: true },
   });
 
   const alerts: DetectedAlert[] = [];
   for (const ch of channels) {
+    const isLazada = ch.channelName === ChannelName.LAZADA;
+    const platform = isLazada ? ADS_ALERT_LAZADA : ADS_ALERT_SHOPEE;
     const campaignCount = await prisma.adsCampaign.count({
       where: { channelId: ch.id },
     });
@@ -609,7 +658,7 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
     const insights = await computeChannelAdsInsights({
       id: ch.id,
       userId: ownerId,
-      channelName: ChannelName.SHOPEE,
+      channelName: ch.channelName,
     });
     if (!insights.config.enabled) continue; // chủ shop tắt Trợ lý của gian này
 
@@ -626,11 +675,32 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
       }));
     const groups = groupShopeeAdsScenarios(signals);
 
-    // Số dư ví ads — call sống duy nhất (throttle 10' của vòng quét gánh tần suất).
+    // ---- Ví ads — call sống duy nhất/gian (throttle vòng quét gánh tần suất) ----
     let wallet: { balance: number; hoursLeft: number | null } | null = null;
+    let lazadaWalletEmpty = false;
     try {
       const channel = await prisma.channel.findUnique({ where: { id: ch.id } });
-      if (channel) {
+      if (channel && isLazada) {
+        // Lazada không có API số dư — đọc CỜ adAccountBalanceStatus (0 = hết
+        // số dư) trên trang đầu searchCampaignList. Chỉ soi khi còn campaign
+        // đang bật: ví cạn mà chẳng có gì chạy thì không cần réo còi.
+        if (signals.length > 0) {
+          const accessToken = await getValidLazadaAccessToken(channel);
+          const page = await getAdsCampaignList({
+            accessToken,
+            startDate: vnDateKey(30),
+            endDate: vnDateKey(0),
+            pageNo: 1,
+            pageSize: 100,
+          });
+          lazadaWalletEmpty = page.campaigns.some(
+            (c) =>
+              lazAdsNum(c.campaignSwitchStatus) === 1 &&
+              c.adAccountBalanceStatus != null &&
+              lazAdsNum(c.adAccountBalanceStatus) === 0
+          );
+        }
+      } else if (channel) {
         const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
         const bal = await getAdsTotalBalance({ accessToken, shopId });
         const balance = Number(bal.response?.total_balance);
@@ -657,9 +727,15 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
       ...buildShopeeAdsAssistantAlerts(
         { channelId: ch.id, shopName: ch.shopName },
         groups,
-        wallet
+        wallet,
+        platform
       )
     );
+    if (lazadaWalletEmpty) {
+      alerts.push(
+        buildLazadaAdsWalletEmptyAlert({ channelId: ch.id, shopName: ch.shopName })
+      );
+    }
   }
   return alerts;
 }

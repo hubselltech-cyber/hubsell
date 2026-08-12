@@ -23,14 +23,16 @@ import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { Switch } from "@/components/ui/switch";
 import {
+  fetchLazadaCampaignLiveDetail,
   fetchShopeeAdsActionLog,
+  type LazadaCampaignLiveDetail,
   type ShopeeAdsActionLogRow,
   type ShopeeAdsCampaignRow,
   type ShopeeAssistantConfig,
   type ShopeeAssistantDecision,
   type ShopeeAssistantVerdict,
 } from "@/lib/api";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -89,19 +91,62 @@ const SELLER_CENTER_ADS_URLS: Record<"shopee" | "lazada", string> = {
   lazada: "https://sellercenter.lazada.vn/",
 };
 
+/** Màu ROAS so hòa vốn — bản mini cho hai bảng soi sống trong modal Lazada. */
+function liveRoasTone(roas: number | null, breakeven: number | null): string {
+  if (roas == null) return "text-slate-400";
+  if (breakeven == null) return "text-slate-700";
+  if (roas < breakeven) return "text-red-600";
+  if (roas < breakeven * 1.1) return "text-amber-600";
+  return "text-emerald-600";
+}
+
+function liveRoasText(v: number | null): string {
+  return v == null
+    ? "—"
+    : `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
+}
+
 export function ShopeeAssistantModal({
   campaign,
   onDecide,
   onClose,
   deciding,
   platform = "shopee",
+  days = 7,
 }: {
   campaign: ShopeeAdsCampaignRow | null;
   onDecide: (decision: ShopeeAssistantDecision) => void;
   onClose: () => void;
   deciding: boolean;
   platform?: "shopee" | "lazada";
+  /** Cửa sổ ngày đang xem trên trang — phần soi sống Lazada dùng cùng cửa sổ. */
+  days?: number;
 }) {
+  // ---- Soi sống SP & từ khóa (CHỈ Lazada — Shopee không có API keyword) ----
+  const [live, setLive] = useState<LazadaCampaignLiveDetail | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  useEffect(() => {
+    setLive(null);
+    setLiveError(null);
+    if (platform !== "lazada" || !campaign) return;
+    let cancelled = false;
+    setLiveLoading(true);
+    fetchLazadaCampaignLiveDetail(campaign.id, days)
+      .then((res) => {
+        if (!cancelled) setLive(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setLiveError((err as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setLiveLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, campaign, days]);
+
   const a = campaign?.assistant;
   const verdictMeta = a?.verdict ? VERDICT_META[a.verdict] : null;
   const actionable =
@@ -109,7 +154,15 @@ export function ShopeeAssistantModal({
 
   return (
     <Dialog open={campaign !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-xl">
+      <DialogContent
+        className={cn(
+          "max-w-xl",
+          // Lazada rộng hơn: chứa 2 bảng soi sống SP & từ khóa. Base của
+          // DialogContent có sm:max-w-sm (variant breakpoint) — phải ghi đè
+          // bằng đúng variant sm: thì twMerge mới gộp.
+          platform === "lazada" && "max-w-3xl sm:max-w-3xl max-h-[85vh] overflow-y-auto"
+        )}
+      >
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 truncate">
@@ -165,6 +218,178 @@ export function ShopeeAssistantModal({
                     <li key={i}>{r}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Soi sống SP & từ khóa — đặc sản Lazada (Shopee không có API keyword) */}
+            {platform === "lazada" && (
+              <div className="space-y-3 border-t pt-4">
+                <p className="text-sm font-semibold text-slate-900">
+                  Soi trong chiến dịch ({days === 1 ? "hôm nay" : `${days} ngày`}
+                  , lấy thẳng từ Lazada)
+                </p>
+                {liveLoading && (
+                  <p className="text-sm text-muted-foreground">
+                    Đang hỏi Lazada từng sản phẩm và từ khóa…
+                  </p>
+                )}
+                {liveError && (
+                  <p className="text-sm text-amber-700">
+                    Không tải được chi tiết sống từ Lazada: {liveError}
+                  </p>
+                )}
+                {live && live.adgroups.length === 0 && live.keywords.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Chiến dịch chưa có dữ liệu sản phẩm/từ khóa trong cửa sổ này.
+                  </p>
+                )}
+                {live && live.adgroups.length > 0 && (
+                  <div className="min-w-0 overflow-x-auto">
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                      Sản phẩm trong chiến dịch
+                    </p>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">Sản phẩm</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Chi phí</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Đơn</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">GMV</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">ROAS</th>
+                          <th className="py-1.5 text-right font-medium">Hòa vốn</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {live.adgroups.slice(0, 10).map((g) => (
+                          <tr key={g.adgroupId} className="border-b last:border-0">
+                            <td className="max-w-56 py-1.5 pr-3">
+                              <span className="block truncate font-medium text-slate-900">
+                                {g.name || `#${g.itemId}`}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {!g.adSwitchOn && "đã tắt · "}bid {formatVND(g.bidPrice)}
+                                {g.lossBeforeAds && (
+                                  <span className="text-red-600"> · lỗ trước ads</span>
+                                )}
+                              </span>
+                            </td>
+                            <td className="py-1.5 pr-3 text-right tabular-nums">
+                              {formatVND(g.spend)}
+                            </td>
+                            <td
+                              className={cn(
+                                "py-1.5 pr-3 text-right tabular-nums",
+                                g.spend > 0 && g.storeOrders === 0 && "font-semibold text-red-600"
+                              )}
+                            >
+                              {formatNumber(g.storeOrders)}
+                            </td>
+                            <td className="py-1.5 pr-3 text-right tabular-nums">
+                              {formatVND(g.storeRevenue)}
+                            </td>
+                            <td
+                              className={cn(
+                                "py-1.5 pr-3 text-right font-semibold tabular-nums",
+                                liveRoasTone(g.roas, g.breakevenRoas)
+                              )}
+                            >
+                              {liveRoasText(g.roas)}
+                            </td>
+                            <td className="py-1.5 text-right tabular-nums text-slate-600">
+                              {liveRoasText(g.breakevenRoas)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {live.adgroups.length > 10 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        +{formatNumber(live.adgroups.length - 10)} sản phẩm khác — xem đủ trên Seller Center.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {live && live.keywords.length > 0 && (
+                  <div className="min-w-0 overflow-x-auto">
+                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                      Từ khóa (tiêu nhiều xếp trước) — từ khóa đỏ đang đốt tiền
+                    </p>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">Từ khóa</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Chi phí</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Click</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Đơn</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">ROAS</th>
+                          <th className="py-1.5 text-right font-medium">Bid tối đa</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {live.keywords.slice(0, 12).map((k, i) => {
+                          const wasteful =
+                            k.spend > 0 &&
+                            (k.storeOrders === 0 ||
+                              (k.roas != null &&
+                                k.breakevenRoas != null &&
+                                k.roas < k.breakevenRoas));
+                          return (
+                            <tr
+                              key={`${k.keyword}-${i}`}
+                              className={cn(
+                                "border-b last:border-0",
+                                wasteful && "bg-red-50/60"
+                              )}
+                            >
+                              <td className="max-w-52 py-1.5 pr-3">
+                                <span className="block truncate font-medium text-slate-900">
+                                  {k.keyword}
+                                </span>
+                                <span className="block truncate text-xs text-slate-500">
+                                  {k.adgroupName}
+                                </span>
+                              </td>
+                              <td className="py-1.5 pr-3 text-right tabular-nums">
+                                {formatVND(k.spend)}
+                              </td>
+                              <td className="py-1.5 pr-3 text-right tabular-nums">
+                                {formatNumber(k.clicks)}
+                              </td>
+                              <td
+                                className={cn(
+                                  "py-1.5 pr-3 text-right tabular-nums",
+                                  k.spend > 0 && k.storeOrders === 0 && "font-semibold text-red-600"
+                                )}
+                              >
+                                {formatNumber(k.storeOrders)}
+                              </td>
+                              <td
+                                className={cn(
+                                  "py-1.5 pr-3 text-right font-semibold tabular-nums",
+                                  liveRoasTone(k.roas, k.breakevenRoas)
+                                )}
+                              >
+                                {liveRoasText(k.roas)}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums text-slate-600">
+                                {formatVND(k.maxBid)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {live.keywords.length > 12 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        +{formatNumber(live.keywords.length - 12)} từ khóa khác — xem đủ trên Seller Center.
+                      </p>
+                    )}
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Lazada chưa có API chỉnh/tắt từ khóa — thấy từ khóa đốt tiền
+                      thì chỉnh bid hoặc tắt trên Seller Center.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -299,14 +524,13 @@ export function ShopeeAssistantConfigCard({
   config,
   onSave,
   saving,
-  showAutoExecute = true,
+  platformLabel = "Shopee",
 }: {
   config: ShopeeAssistantConfig;
   onSave: (config: ShopeeAssistantConfig) => void;
   saving: boolean;
-  /** Ẩn khối "Tự thực thi (GĐ3)" — Lazada chưa nối executor, hiện switch mà
-   *  không có gì chạy phía sau là đánh lừa người dùng. */
-  showAutoExecute?: boolean;
+  /** Tên sàn cho câu cảnh báo mode live — executor GĐ3 chạy chung 2 sàn. */
+  platformLabel?: string;
 }) {
   const [draft, setDraft] = useState<ShopeeAssistantConfig>(config);
   // Server trả config mới (đổi gian / sau khi lưu) → đồng bộ lại bản nháp.
@@ -364,7 +588,6 @@ export function ShopeeAssistantConfigCard({
                 disabled={!draft.enabled}
               />
             </RuleBlock>
-            {showAutoExecute && (
             <RuleBlock
               title="Tự thực thi (GĐ3)"
               hint="Trợ lý TỰ TẠM DỪNG chiến dịch dính 'Đề xuất tạm dừng' / 'Vọt chi'. Diễn tập = chỉ ghi sổ để anh/chị xem Trợ lý ĐỊNH làm gì; Thực thi thật chỉ nên bật sau khi đã tin bản diễn tập."
@@ -395,13 +618,13 @@ export function ShopeeAssistantConfigCard({
               />
               {draft.autoExecute.mode === "live" && (
                 <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">
-                  ⚠ Chế độ THẬT: Trợ lý sẽ gọi lệnh tạm dừng lên Shopee. Chiến
-                  dịch anh/chị đã bấm &quot;Bỏ qua&quot;/&quot;Theo dõi&quot; sẽ
-                  không bị đụng. Mọi lệnh đều ghi vào Sổ hành động bên dưới.
+                  ⚠ Chế độ THẬT: Trợ lý sẽ gọi lệnh tạm dừng lên {platformLabel}.
+                  Chiến dịch anh/chị đã bấm &quot;Bỏ qua&quot;/&quot;Theo
+                  dõi&quot; sẽ không bị đụng. Mọi lệnh đều ghi vào Sổ hành động
+                  bên dưới.
                 </p>
               )}
             </RuleBlock>
-            )}
             <RuleBlock
               title="Quy tắc 1 — Loại thẳng"
               hint="Tiêu lớn mà 0 đơn, hoặc ROAS tụt dưới hòa vốn × hệ số → đề xuất tạm dừng ngay."
@@ -497,7 +720,13 @@ const ACTION_STATUS_META: Record<string, { label: string; className: string }> =
   FAILED: { label: "Sàn từ chối", className: "bg-red-100 text-red-700" },
 };
 
-export function ShopeeActionLogCard({ channelId }: { channelId: string }) {
+export function ShopeeActionLogCard({
+  channelId,
+  platform = "shopee",
+}: {
+  channelId: string;
+  platform?: "shopee" | "lazada";
+}) {
   const [logs, setLogs] = useState<ShopeeAdsActionLogRow[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -505,7 +734,7 @@ export function ShopeeActionLogCard({ channelId }: { channelId: string }) {
     if (!channelId) return;
     setLoading(true);
     try {
-      const res = await fetchShopeeAdsActionLog(channelId);
+      const res = await fetchShopeeAdsActionLog(channelId, 50, platform);
       setLogs(res.logs);
     } catch {
       // gian chưa có sổ / lỗi mạng — bảng rỗng là đủ thông tin
@@ -517,7 +746,7 @@ export function ShopeeActionLogCard({ channelId }: { channelId: string }) {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channelId]);
+  }, [channelId, platform]);
 
   return (
     <Card>

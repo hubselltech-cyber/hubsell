@@ -2836,9 +2836,62 @@ export interface ShopeeAdsActionLogRow {
   createdAt: string;
 }
 
-export function fetchShopeeAdsActionLog(channelId: string, limit = 50) {
+export function fetchShopeeAdsActionLog(
+  channelId: string,
+  limit = 50,
+  platform: "shopee" | "lazada" = "shopee"
+) {
   return apiFetch<{ logs: ShopeeAdsActionLogRow[] }>(
-    `/api/ads/shopee/action-log?channelId=${encodeURIComponent(channelId)}&limit=${limit}`
+    `/api/ads/${platform}/action-log?channelId=${encodeURIComponent(channelId)}&limit=${limit}`
+  );
+}
+
+// ----- Soi sống chiến dịch Lazada: từng SP (adgroup) + từng từ khóa -----
+// Đặc sản Lazada — Shopee không có API hiệu suất keyword. Lấy thẳng từ sàn lúc
+// mở modal, kèm ROAS hòa vốn của chính SP để chỉ mặt chỗ đốt tiền.
+
+export interface LazadaAdgroupLiveRow {
+  adgroupId: string;
+  name: string;
+  itemId: string;
+  bidPrice: number;
+  adSwitchOn: boolean;
+  spend: number;
+  clicks: number;
+  impressions: number;
+  storeOrders: number;
+  storeRevenue: number;
+  roas: number | null;
+  breakevenRoas: number | null;
+  lossBeforeAds: boolean;
+}
+
+export interface LazadaKeywordLiveRow {
+  keyword: string;
+  adgroupName: string;
+  maxBid: number;
+  cpc: number;
+  spend: number;
+  clicks: number;
+  impressions: number;
+  storeOrders: number;
+  storeRevenue: number;
+  roas: number | null;
+  breakevenRoas: number | null;
+}
+
+export interface LazadaCampaignLiveDetail {
+  days: number;
+  adgroups: LazadaAdgroupLiveRow[];
+  keywords: LazadaKeywordLiveRow[];
+}
+
+export function fetchLazadaCampaignLiveDetail(
+  campaignRowId: string,
+  days: number
+) {
+  return apiFetch<LazadaCampaignLiveDetail>(
+    `/api/ads/lazada/campaigns/${campaignRowId}/live-detail?days=${days}`
   );
 }
 

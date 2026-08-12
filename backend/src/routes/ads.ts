@@ -14,7 +14,15 @@ import {
   computeChannelProductBreakeven,
   dateKey,
   startOfDaysAgo,
+  vnDateKey,
 } from "../integrations/shopee/ads-insights";
+import {
+  getAdsAdgroupList,
+  getAdsKeywordReport,
+  lazAdsNum,
+  updateAdsCampaignSwitchRaw,
+} from "../integrations/lazada/client";
+import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 
 const router = Router();
 
@@ -371,47 +379,215 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
   );
 }
 
+// GET /api/ads/{sàn}/action-log?channelId=&limit= — SỔ HÀNH ĐỘNG của Trợ lý
+// (GĐ3): mọi lần diễn tập/thực thi, kèm căn cứ + lỗi sàn nguyên văn. Bảng
+// AdsActionLog dùng chung hai sàn — handler đăng ký trong registerAdsPlatform.
+function registerActionLog(platform: AdsPlatformKey) {
+  const { channelName, label } = ADS_PLATFORMS[platform];
+  router.get(`/${platform}/action-log`, async (req: AuthRequest, res, next) => {
+    try {
+      const channelId =
+        typeof req.query.channelId === "string" ? req.query.channelId : "";
+      const channel = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName },
+      });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const limitRaw = Number(req.query.limit);
+      const limit = Number.isFinite(limitRaw)
+        ? Math.min(100, Math.max(1, Math.trunc(limitRaw)))
+        : 50;
+      const rows = await prisma.adsActionLog.findMany({
+        where: { channelId: channel.id },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: { adsCampaign: { select: { name: true, campaignId: true } } },
+      });
+      res.json({
+        logs: rows.map((r) => ({
+          id: r.id,
+          campaignName:
+            r.adsCampaign.name || `Chiến dịch #${r.adsCampaign.campaignId}`,
+          action: r.action,
+          mode: r.mode,
+          verdict: r.verdict,
+          reasons: r.reasons ? r.reasons.split("\n").filter(Boolean) : [],
+          status: r.status,
+          error: r.error,
+          createdAt: r.createdAt,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+}
+
 registerAdsPlatform("shopee");
 registerAdsPlatform("lazada");
+registerActionLog("shopee");
+registerActionLog("lazada");
 
-// GET /api/ads/shopee/action-log?channelId=&limit= — SỔ HÀNH ĐỘNG của Trợ lý
-// (GĐ3): mọi lần diễn tập/thực thi, kèm căn cứ + lỗi sàn nguyên văn.
-// CHỈ SHOPEE — executor tự thực thi Lazada chưa bật (GĐ3 Lazada làm sau).
-router.get("/shopee/action-log", async (req: AuthRequest, res, next) => {
+// GET /api/ads/lazada/campaigns/:id/live-detail?days= — SOI SỐNG MỘT CHIẾN
+// DỊCH LAZADA: từng SẢN PHẨM (adgroup) + từng TỪ KHÓA, lấy thẳng từ Sponsored
+// Solutions lúc mở modal (không bảng DB mới — dữ liệu luôn tươi, đỡ SQL tay).
+// Đây là vũ khí riêng của Lazada: Shopee KHÔNG có API hiệu suất keyword.
+// Mỗi dòng gắn kèm ROAS hòa vốn của chính SP (map itemId → biên lãi P&L thật)
+// để chỉ mặt "từ khóa/SP đốt tiền": spend > 0 mà 0 đơn, hoặc ROAS < hòa vốn.
+router.get(
+  "/lazada/campaigns/:id/live-detail",
+  async (req: AuthRequest, res, next) => {
+    try {
+      const campaign = await prisma.adsCampaign.findFirst({
+        where: {
+          id: req.params.id,
+          channel: { userId: req.ownerId!, channelName: ChannelName.LAZADA },
+        },
+        include: { channel: true },
+      });
+      if (!campaign) {
+        res.status(404).json({ error: "Không tìm thấy chiến dịch Lazada" });
+        return;
+      }
+      const daysRaw = Number(req.query.days);
+      const days = Number.isFinite(daysRaw)
+        ? Math.min(30, Math.max(1, Math.trunc(daysRaw)))
+        : 7;
+      const startDate = vnDateKey(days - 1);
+      const endDate = vnDateKey(0);
+
+      const accessToken = await getValidLazadaAccessToken(campaign.channel);
+      const [adgroupPage, keywordPage, breakeven] = await Promise.all([
+        getAdsAdgroupList({
+          accessToken,
+          campaignId: campaign.campaignId,
+          startDate,
+          endDate,
+          pageNo: 1,
+          pageSize: 100,
+        }),
+        getAdsKeywordReport({
+          accessToken,
+          campaignId: campaign.campaignId,
+          startDate,
+          endDate,
+          pageNo: 1,
+          pageSize: 100,
+          useRtTable: true,
+        }),
+        computeChannelProductBreakeven({
+          id: campaign.channelId,
+          userId: req.ownerId!,
+          channelName: ChannelName.LAZADA,
+        }),
+      ]);
+
+      const breakevenByItemId = new Map(
+        breakeven.rows.map((r) => [r.itemId, r])
+      );
+      const itemIdByAdgroupId = new Map<string, string>();
+
+      const adgroups = adgroupPage.adgroups.map((g) => {
+        const itemId = g.itemId != null ? String(g.itemId) : "";
+        const adgroupId = g.adgroupId != null ? String(g.adgroupId) : "";
+        if (adgroupId && itemId) itemIdByAdgroupId.set(adgroupId, itemId);
+        const be = breakevenByItemId.get(itemId);
+        const spend = lazAdsNum(g.spend);
+        const storeRevenue = lazAdsNum(g.storeRevenue);
+        return {
+          adgroupId,
+          name: g.adgroupName ?? "",
+          itemId,
+          bidPrice: lazAdsNum(g.bidPrice),
+          // 1 = ad đang bật trong campaign; 0 = chủ shop đã tắt SP này.
+          adSwitchOn: lazAdsNum(g.adSwitchStatus) === 1,
+          spend,
+          clicks: Math.trunc(lazAdsNum(g.clicks)),
+          impressions: Math.trunc(lazAdsNum(g.impressions)),
+          storeOrders: Math.trunc(lazAdsNum(g.storeOrders)),
+          storeRevenue,
+          roas: spend > 0 ? storeRevenue / spend : null,
+          breakevenRoas: be?.breakevenRoas ?? null,
+          lossBeforeAds: be?.lossBeforeAds ?? false,
+        };
+      });
+
+      const keywords = keywordPage.rows.map((k) => {
+        const adgroupId = k.adgroupId != null ? String(k.adgroupId) : "";
+        const itemId = itemIdByAdgroupId.get(adgroupId) ?? "";
+        const be = breakevenByItemId.get(itemId);
+        const spend = lazAdsNum(k.spend);
+        const storeRevenue = lazAdsNum(k.storeRevenue);
+        return {
+          keyword: k.keyword ?? "",
+          adgroupName: k.adgroupName ?? "",
+          maxBid: lazAdsNum(k.maxBid),
+          cpc: lazAdsNum(k.cpc),
+          spend,
+          clicks: Math.trunc(lazAdsNum(k.clicks)),
+          impressions: Math.trunc(lazAdsNum(k.impressions)),
+          storeOrders: Math.trunc(lazAdsNum(k.storeOrders)),
+          storeRevenue,
+          roas: spend > 0 ? storeRevenue / spend : null,
+          breakevenRoas: be?.breakevenRoas ?? null,
+        };
+      });
+      // Từ khóa tiêu nhiều đứng trước — đúng mạch "soi chỗ chảy máu to trước".
+      keywords.sort((a, b) => b.spend - a.spend);
+      adgroups.sort((a, b) => b.spend - a.spend);
+
+      res.json({ days, adgroups, keywords });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/ads/lazada/write-probe — DỤNG CỤ XÁC MINH GĐ3 LAZADA (chỉ ADMIN,
+// dùng tay). Bắn MỘT lệnh updateCampaign switchStatus lên MỘT campaign chỉ
+// định và trả NGUYÊN VĂN envelope (kể cả lỗi) — xác minh quyền write + hành vi
+// thật của updateCampaign trước khi bật autoExecute live. Khuyến nghị chạy
+// trên campaign ĐÃ TẮT SẴN với switchStatus=0 (tắt một campaign đang tắt là
+// vô hại), làm cùng chủ shop.
+router.post("/lazada/write-probe", async (req: AuthRequest, res, next) => {
   try {
-    const channelId =
-      typeof req.query.channelId === "string" ? req.query.channelId : "";
-    const channel = await prisma.channel.findFirst({
-      where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.SHOPEE },
-    });
-    if (!channel) {
-      res.status(404).json({ error: "Không tìm thấy gian Shopee" });
+    const { channelId, campaignId, switchStatus, confirm } = req.body as {
+      channelId?: string;
+      campaignId?: string | number;
+      switchStatus?: number;
+      confirm?: boolean;
+    };
+    if (
+      confirm !== true ||
+      !campaignId ||
+      (switchStatus !== 0 && switchStatus !== 1)
+    ) {
+      res.status(400).json({
+        error:
+          "Cần đủ: channelId, campaignId, switchStatus (0|1) và confirm=true (đây là lệnh GHI THẬT lên sàn)",
+      });
       return;
     }
-    const limitRaw = Number(req.query.limit);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.min(100, Math.max(1, Math.trunc(limitRaw)))
-      : 50;
-    const rows = await prisma.adsActionLog.findMany({
-      where: { channelId: channel.id },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      include: { adsCampaign: { select: { name: true, campaignId: true } } },
+    const channel = await prisma.channel.findFirst({
+      where: {
+        id: channelId ?? "",
+        userId: req.ownerId!,
+        channelName: ChannelName.LAZADA,
+      },
     });
-    res.json({
-      logs: rows.map((r) => ({
-        id: r.id,
-        campaignName:
-          r.adsCampaign.name || `Chiến dịch #${r.adsCampaign.campaignId}`,
-        action: r.action,
-        mode: r.mode,
-        verdict: r.verdict,
-        reasons: r.reasons ? r.reasons.split("\n").filter(Boolean) : [],
-        status: r.status,
-        error: r.error,
-        createdAt: r.createdAt,
-      })),
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy gian Lazada" });
+      return;
+    }
+    const accessToken = await getValidLazadaAccessToken(channel);
+    const raw = await updateAdsCampaignSwitchRaw({
+      accessToken,
+      campaignId,
+      switchStatus,
     });
+    res.json({ probe: { campaignId, switchStatus }, lazadaResponse: raw });
   } catch (err) {
     next(err);
   }

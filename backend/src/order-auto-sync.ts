@@ -33,7 +33,7 @@ import {
 import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
 import { syncShopeeAdsCampaigns } from "./integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "./integrations/lazada/ads-campaigns";
-import { runShopeeAdsAutoExecute } from "./integrations/shopee/ads-auto-execute";
+import { runAdsAutoExecute } from "./integrations/shopee/ads-auto-execute";
 import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
@@ -233,6 +233,22 @@ async function runOnce(): Promise<void> {
                 (err as Error).message
               );
             }
+            // GĐ3 Lazada — Trợ lý tự thực thi (mặc định OFF; cùng executor và
+            // quy trình bật live với Shopee). Chạy SAU sync campaign; lỗi riêng
+            // không chặn luồng khác.
+            try {
+              const act = await runAdsAutoExecute(channel);
+              if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
+                console.log(
+                  `[Auto-sync] Trợ lý Ads Lazada "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi Trợ lý tự thực thi Lazada "${channel.shopName}":`,
+                (err as Error).message
+              );
+            }
           } else if (channel.channelName === ChannelName.SHOPEE) {
             const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
             if (s.ordersUpdated > 0) {
@@ -274,7 +290,7 @@ async function runOnce(): Promise<void> {
             // sổ; live chỉ bật sau probe). Chạy SAU sync campaign để đánh giá
             // trên số mới nhất; lỗi riêng không chặn luồng khác.
             try {
-              const act = await runShopeeAdsAutoExecute(channel);
+              const act = await runAdsAutoExecute(channel);
               if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
                 console.log(
                   `[Auto-sync] Trợ lý Ads "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`

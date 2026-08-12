@@ -74,6 +74,12 @@ export const LAZADA_PATHS = {
   adsAdgroupList: "/sponsor/solutions/adgroup/searchAdgroupList",
   /** Báo cáo hiệu suất cấp campaign theo KHOẢNG NGÀY (2 rổ store/product). */
   adsReportCampaign: "/sponsor/solutions/report/getDiscoveryReportCampaign",
+  /** Báo cáo hiệu suất TỪNG TỪ KHÓA (kèm maxBid) — Shopee KHÔNG có API này. */
+  adsReportKeyword: "/sponsor/solutions/report/getDiscoveryReportKeyword",
+  /** GHI DUY NHẤT của Trợ lý (GĐ3): bật/tắt campaign + đổi ngân sách ngày.
+   *  switchStatus 1:Online 0:Offline — CÓ TRONG DOCS chính thức (khác Shopee
+   *  phải probe enum edit_action). */
+  adsCampaignUpdate: "/sponsor/solutions/campaign/updateCampaign",
 } as const;
 
 /**

@@ -58,8 +58,9 @@ function dateFromStr(s: string): Date {
 /**
  * Trạng thái tổng hợp theo bộ từ vựng chung của AdsCampaign (Shopee đặt nền:
  * ongoing | scheduled | ended | paused | deleted) — FE hai sàn đọc chung.
+ * EXPORT cho vitest — logic thuần, không chạm DB/sàn.
  */
-function deriveStatus(c: LazadaAdsCampaign, todayVn: string): string {
+export function deriveStatus(c: LazadaAdsCampaign, todayVn: string): string {
   if (lazAdsNum(c.status) === 9) return "deleted";
   if (lazAdsNum(c.campaignSwitchStatus) === 0) return "paused";
   // endDate "3020-12-30" = không hẹn tắt; ngày thật đã qua → ended.

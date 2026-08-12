@@ -1,16 +1,22 @@
 // ============================================================
-// TRỢ LÝ QUẢNG CÁO SHOPEE — GĐ3: TỰ THỰC THI (EXECUTOR)
+// TRỢ LÝ QUẢNG CÁO — GĐ3: TỰ THỰC THI (EXECUTOR DÙNG CHUNG SHOPEE + LAZADA)
 //
-// Chạy kèm nhịp đối soát trong order-auto-sync, NGAY SAU syncShopeeAdsCampaigns
+// Chạy kèm nhịp đối soát trong order-auto-sync, NGAY SAU sync campaign của sàn
 // (đánh giá trên số vừa sync). v1 chỉ có MỘT hành động: PAUSE campaign dính
 // verdict pause_now / spike — cắt lỗ, không đụng budget/bid/keyword.
+//
+// 12/08/2026: dùng chung cho Lazada — toàn bộ vòng chọn/quota/sổ y hệt, chỉ
+// khác CÚ GỌI PAUSE lên sàn (makePauser bên dưới): Shopee đi
+// edit_manual_product_ads (enum edit_action CHƯA xác minh — chờ probe), Lazada
+// đi updateCampaign switchStatus=0 (CÓ trong docs chính thức nhưng cũng chưa
+// từng bắn thật — quy trình bật live của hai sàn giống nhau: dry_run vài ngày
+// → write-probe trên campaign đã tắt sẵn → mới gạt live).
 //
 // BA CHỐT AN TOÀN (thứ tự kiểm):
 //   1. Mode per-gian trong AdsAssistantConfig.autoExecute:
 //      off (mặc định) | dry_run (DIỄN TẬP: ghi sổ, KHÔNG gọi sàn) | live.
-//      Chỉ bật live sau khi probe xác minh enum edit_action (bài học MISA:
-//      không đoán API) — về mặt code, live gọi editManualProductAdsRaw và ghi
-//      NGUYÊN VĂN lỗi sàn vào sổ để có tư liệu chỉnh enum.
+//      Chỉ bật live sau khi probe xác minh lệnh ghi (bài học MISA: không đoán
+//      API) — về mặt code, live ghi NGUYÊN VĂN lỗi sàn vào sổ làm tư liệu.
 //   2. Idempotency: referenceId "pause-{campaignRowId}-{yyyy-mm-dd}" unique
 //      trong AdsActionLog → mỗi campaign tối đa 1 hành động/ngày, sweep chạy
 //      lặp mỗi giờ không bắn trùng (P2002 = đã hành động, bỏ qua êm).
@@ -22,10 +28,15 @@
 // người luôn thắng máy.
 // ============================================================
 
-import { Prisma, type Channel } from "@prisma/client";
+import { ChannelName, Prisma, type Channel } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { editManualProductAdsRaw } from "./client";
 import { getValidShopeeAccessToken } from "./service";
+import {
+  lazAdsWriteOk,
+  updateAdsCampaignSwitchRaw,
+} from "../lazada/client";
+import { getValidLazadaAccessToken } from "../lazada/service";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -66,7 +77,51 @@ export function selectAutoActionCandidates(
     .sort((a, b) => b.windows["7d"].spend - a.windows["7d"].spend);
 }
 
-export async function runShopeeAdsAutoExecute(
+/** Kết quả một cú pause lên sàn — error là NGUYÊN VĂN để ghi sổ. */
+type PauseOutcome = { ok: boolean; error: string | null };
+
+/**
+ * Dựng hàm pause theo sàn của gian (chỉ gọi ở mode live; token lấy MỘT lần).
+ * Shopee: edit_manual_product_ads editAction="pause" (kèm referenceId lên sàn).
+ * Lazada: updateCampaign switchStatus=0 (idempotency chỉ nằm ở sổ phía mình —
+ * API Lazada không nhận referenceId, nhưng tắt một campaign đã tắt là vô hại).
+ */
+async function makePauser(
+  channel: Channel
+): Promise<(campaignId: string, referenceId: string) => Promise<PauseOutcome>> {
+  if (channel.channelName === ChannelName.LAZADA) {
+    const accessToken = await getValidLazadaAccessToken(channel);
+    return async (campaignId) => {
+      const raw = await updateAdsCampaignSwitchRaw({
+        accessToken,
+        campaignId,
+        switchStatus: 0,
+      });
+      const ok = lazAdsWriteOk(raw);
+      return {
+        ok,
+        error: ok
+          ? null
+          : `${raw.code ?? ""} ${raw.errorMsg ?? raw.message ?? ""}`.trim() ||
+            "Lazada từ chối, không kèm lý do",
+      };
+    };
+  }
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  return async (campaignId, referenceId) => {
+    const raw = await editManualProductAdsRaw({
+      accessToken,
+      shopId,
+      campaignId,
+      editAction: "pause",
+      referenceId,
+    });
+    const ok = !raw.error || raw.error === "";
+    return { ok, error: ok ? null : `${raw.error}: ${raw.message ?? ""}` };
+  };
+}
+
+export async function runAdsAutoExecute(
   channel: Channel
 ): Promise<AutoExecuteResult> {
   const insights = await computeChannelAdsInsights({
@@ -99,10 +154,11 @@ export async function runShopeeAdsAutoExecute(
     where: { channelId: channel.id, createdAt: { gte: startOfVnToday } },
   });
 
-  // Token chỉ cần cho mode live — lấy MỘT lần ngoài vòng lặp.
-  let live: { accessToken: string; shopId: string } | null = null;
+  // Token chỉ cần cho mode live — lấy MỘT lần ngoài vòng lặp (theo sàn).
+  let pause: ((campaignId: string, referenceId: string) => Promise<PauseOutcome>) | null =
+    null;
   if (auto.mode === "live") {
-    live = await getValidShopeeAccessToken(channel);
+    pause = await makePauser(channel);
   }
 
   for (const it of candidates) {
@@ -157,21 +213,14 @@ export async function runShopeeAdsAutoExecute(
       continue;
     }
 
-    // ---- MODE LIVE: gọi sàn, ghi nguyên văn kết quả vào sổ ----
+    // ---- MODE LIVE: gọi sàn (pauser theo sàn), ghi nguyên văn kết quả vào sổ ----
     try {
-      const raw = await editManualProductAdsRaw({
-        accessToken: live!.accessToken,
-        shopId: live!.shopId,
-        campaignId: it.row.campaignId,
-        editAction: "pause",
-        referenceId,
-      });
-      const ok = !raw.error || raw.error === "";
+      const { ok, error } = await pause!(it.row.campaignId, referenceId);
       await prisma.adsActionLog.update({
         where: { id: logId },
         data: {
           status: ok ? "SUCCESS" : "FAILED",
-          error: ok ? null : `${raw.error}: ${raw.message ?? ""}`.slice(0, 1000),
+          error: ok ? null : (error ?? "").slice(0, 1000),
         },
       });
       if (ok) {

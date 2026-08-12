@@ -946,6 +946,128 @@ export async function getAdsCampaignReport(
   };
 }
 
+/** Một dòng báo cáo từ khóa trong getDiscoveryReportKeyword. */
+export interface LazadaAdsKeywordReportRow {
+  keyword?: string;
+  keywordId?: number | string;
+  campaignId?: number | string;
+  adgroupId?: number | string;
+  adgroupName?: string;
+  /** Giá thầu tối đa chủ shop đặt cho từ khóa. */
+  maxBid?: number | string;
+  spend?: number | string;
+  impressions?: number | string;
+  clicks?: number | string;
+  ctr?: number | string;
+  cpc?: number | string;
+  storeRevenue?: number | string;
+  storeOrders?: number | string;
+  storeRoi?: number | string;
+  productRevenue?: number | string;
+  productOrders?: number | string;
+  [k: string]: unknown;
+}
+
+interface LazadaAdsKeywordReportData extends LazadaEnvelope {
+  result?: {
+    result?: LazadaAdsKeywordReportRow[];
+    totalCount?: number | string;
+  };
+}
+
+/**
+ * Báo cáo hiệu suất TỪNG TỪ KHÓA trong [startDate, endDate] — vũ khí riêng của
+ * Lazada (Shopee không có API keyword). READ-ONLY: nhóm keyword không có API
+ * ghi, hành động chỉnh bid/tắt từ khóa là của chủ shop trên Seller Center.
+ */
+export async function getAdsKeywordReport(
+  params: {
+    accessToken: string;
+    campaignId?: string | number;
+    startDate: string;
+    endDate: string;
+    pageNo: number;
+    pageSize?: number;
+    useRtTable?: boolean;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ rows: LazadaAdsKeywordReportRow[]; totalCount: number }> {
+  const data = await callLazada<LazadaAdsKeywordReportData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.adsReportKeyword,
+    {
+      access_token: params.accessToken,
+      ...(params.campaignId != null
+        ? { campaignId: String(params.campaignId) }
+        : {}),
+      startDate: params.startDate,
+      endDate: params.endDate,
+      pageNo: String(params.pageNo),
+      pageSize: String(params.pageSize ?? 100),
+      ...(params.useRtTable ? { useRtTable: "true" } : {}),
+    },
+    "sponsor/report/getDiscoveryReportKeyword",
+    cfg
+  );
+  return {
+    rows: data.result?.result ?? [],
+    totalCount: lazAdsNum(data.result?.totalCount),
+  };
+}
+
+/**
+ * GHI DUY NHẤT của Trợ lý (GĐ3): bật/tắt một campaign qua updateCampaign.
+ * Trả NGUYÊN VĂN envelope (không ném lỗi theo code) — executor và write-probe
+ * cần cả phần lỗi để ghi sổ AdsActionLog làm tư liệu chỉnh khi có sự cố thật.
+ * POST theo chuẩn LazOP (form-urlencoded, chữ ký y hệt GET).
+ */
+export async function updateAdsCampaignSwitchRaw(
+  params: {
+    accessToken: string;
+    campaignId: string | number;
+    /** 1 = bật (Online), 0 = tắt (Offline). */
+    switchStatus: 0 | 1;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<
+  LazadaEnvelope & { result?: unknown; success?: boolean | string; errorMsg?: string }
+> {
+  const path = LAZADA_PATHS.adsCampaignUpdate;
+  const all: Record<string, string> = {
+    access_token: params.accessToken,
+    bizCode: LAZADA_ADS_BIZ_CODE,
+    campaignId: String(params.campaignId),
+    switchStatus: String(params.switchStatus),
+    app_key: cfg.appKey,
+    sign_method: "sha256",
+    timestamp: String(Date.now()),
+  };
+  const sign = signLazada(cfg.appSecret, path, all);
+  const body = new URLSearchParams({ ...all, sign }).toString();
+  const res = await fetch(`${LAZADA_ENDPOINTS.api}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  return (await res.json()) as LazadaEnvelope & {
+    result?: unknown;
+    success?: boolean | string;
+    errorMsg?: string;
+  };
+}
+
+/** Đọc envelope updateCampaign: thành công khi code "0" và success không phải false. */
+export function lazAdsWriteOk(raw: {
+  code?: string;
+  success?: boolean | string;
+}): boolean {
+  return (
+    (raw.code == null || raw.code === "0") &&
+    raw.success !== false &&
+    raw.success !== "false"
+  );
+}
+
 // ---------- Thông tin người bán ----------
 
 /** Lấy thông tin gian hàng (tên, seller_id...) để hiển thị + định danh gian. */
