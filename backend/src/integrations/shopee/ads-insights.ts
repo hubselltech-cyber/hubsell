@@ -307,27 +307,18 @@ export interface ChannelProductBreakeven {
 }
 
 /**
- * Suy "SKU tổng" cho sản phẩm LAZADA từ các SellerSku phân loại — Lazada không
- * có khái niệm item_sku cấp sản phẩm như Shopee (adapter cố tình để null).
- * Quy ước thực tế của seller VN: SKU phân loại mang gốc chung + đuôi biến thể
- * ("TC042-Đen", "TC042-Xám" → TC042). Logic thuần, EXPORT cho vitest:
- *   · 1 phân loại → lấy nguyên SKU đó.
- *   · nhiều phân loại → tiền tố chung dài nhất, cắt đuôi ký tự nối; dưới 3 ký
- *     tự coi như không có gốc chung → null (đừng bịa "T" từ "TC042"+"TUI01").
+ * "SKU tổng" cho sản phẩm LAZADA — Lazada không có item_sku cấp sản phẩm như
+ * Shopee (adapter cố tình để null). QUYẾT ĐỊNH ANH TRUNG 12/08 tối: KHÔNG suy
+ * đoán/cắt tiền tố (mỗi seller một quy ước đặt SKU, cắt là sai chuẩn của họ) —
+ * hiển thị NGUYÊN VĂN SKU seller đã đặt:
+ *   · đúng 1 phân loại (trùng nhau cũng tính) → lấy trọn SKU đó làm SKU tổng.
+ *   · nhiều phân loại khác nhau → null; FE hiện ĐỦ danh sách SKU phân loại
+ *     ngay trong ô (rút gọn thị giác + tooltip đầy đủ), tìm kiếm vẫn bắt hết.
+ * Logic thuần, EXPORT cho vitest.
  */
 export function deriveLazadaItemSku(sellerSkus: string[]): string | null {
-  const skus = sellerSkus.map((s) => s.trim()).filter(Boolean);
-  if (skus.length === 0) return null;
-  if (skus.length === 1) return skus[0];
-  let prefix = skus[0];
-  for (const s of skus.slice(1)) {
-    let i = 0;
-    while (i < prefix.length && i < s.length && prefix[i] === s[i]) i++;
-    prefix = prefix.slice(0, i);
-    if (prefix.length < 3) return null;
-  }
-  prefix = prefix.replace(/[-_.\s/]+$/, "");
-  return prefix.length >= 3 ? prefix : null;
+  const unique = [...new Set(sellerSkus.map((s) => s.trim()).filter(Boolean))];
+  return unique.length === 1 ? unique[0] : null;
 }
 
 export async function computeChannelProductBreakeven(

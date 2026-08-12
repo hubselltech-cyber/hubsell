@@ -85,23 +85,23 @@ describe("deriveStatus — map trạng thái Lazada về bộ từ vựng chung"
   });
 });
 
-describe("deriveLazadaItemSku — suy SKU tổng từ SKU phân loại", () => {
-  it("1 phân loại → lấy nguyên SKU", () => {
+describe("deriveLazadaItemSku — SKU tổng NGUYÊN VĂN, không suy đoán (chốt 12/08)", () => {
+  it("1 phân loại → lấy trọn SKU seller đặt, dài bao nhiêu cũng giữ nguyên", () => {
     expect(deriveLazadaItemSku(["TC042"])).toBe("TC042");
+    expect(
+      deriveLazadaItemSku(["AO-THUN-COTTON-NAM-NU-FORM-RONG-2026-TRANG-XL"])
+    ).toBe("AO-THUN-COTTON-NAM-NU-FORM-RONG-2026-TRANG-XL");
   });
-  it("nhiều phân loại cùng gốc → tiền tố chung, cắt đuôi ký tự nối", () => {
-    expect(deriveLazadaItemSku(["TC042-Đen", "TC042-Xám", "TC042-Đỏ"])).toBe(
-      "TC042"
-    );
-    expect(deriveLazadaItemSku(["BLT002_M", "BLT002_L"])).toBe("BLT002");
+  it("các phân loại trùng hệt một SKU → vẫn là 1 SKU duy nhất", () => {
+    expect(deriveLazadaItemSku(["AOGIO01", "AOGIO01"])).toBe("AOGIO01");
   });
-  it("không có gốc chung đủ dài → null (đừng bịa 'T' từ TC042+TUI01)", () => {
+  it("nhiều SKU khác nhau → null (KHÔNG cắt tiền tố — FE hiện đủ danh sách)", () => {
+    expect(deriveLazadaItemSku(["TC042-Đen", "TC042-Xám"])).toBeNull();
     expect(deriveLazadaItemSku(["TC042", "TUI01"])).toBeNull();
+  });
+  it("rỗng/toàn khoảng trắng → null", () => {
     expect(deriveLazadaItemSku([])).toBeNull();
     expect(deriveLazadaItemSku(["  ", ""])).toBeNull();
-  });
-  it("các phân loại trùng hệt SKU → giữ nguyên", () => {
-    expect(deriveLazadaItemSku(["AOGIO01", "AOGIO01"])).toBe("AOGIO01");
   });
 });
 

@@ -876,7 +876,7 @@ export function ShopeeAdsPage({
             loading={breakevenLoading}
             error={breakevenError}
             noChannel={noChannel}
-            platformLabel={meta.label}
+            platform={platform}
           />
         )}
 
@@ -923,14 +923,15 @@ function ProductBreakevenTab({
   loading,
   error,
   noChannel,
-  platformLabel,
+  platform,
 }: {
   data: ShopeeProductBreakevenResponse | null;
   loading: boolean;
   error: string | null;
   noChannel: boolean;
-  platformLabel: string;
+  platform: "shopee" | "lazada";
 }) {
+  const platformLabel = PLATFORM_META[platform].label;
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
@@ -1006,7 +1007,13 @@ function ProductBreakevenTab({
                   <TableHead className="w-32">
                     <span className="inline-flex items-center gap-1">
                       SKU
-                      <HintIcon hint="SKU TỔNG của sản phẩm (cấp item trên sàn, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại." />
+                      <HintIcon
+                        hint={
+                          platform === "lazada"
+                            ? "Lazada không có SKU tổng cấp sản phẩm — sản phẩm 1 phân loại hiện trọn SKU seller đặt; nhiều phân loại hiện đủ danh sách SKU phân loại (rê chuột xem hết). Ô tìm kiếm bắt được mọi SKU."
+                            : "SKU TỔNG của sản phẩm (cấp item trên sàn, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại."
+                        }
+                      />
                     </span>
                   </TableHead>
                   <TableHead className="w-24 text-right">
@@ -1045,6 +1052,7 @@ function ProductBreakevenTab({
                     key={r.itemId}
                     r={r}
                     safeFactor={data.safeRoasFactor}
+                    platform={platform}
                   />
                 ))}
               </TableBody>
@@ -1105,9 +1113,11 @@ function ProductBreakevenTab({
 function ProductBreakevenRowView({
   r,
   safeFactor,
+  platform,
 }: {
   r: ShopeeProductBreakevenRow;
   safeFactor: number;
+  platform: "shopee" | "lazada";
 }) {
   const thinSample = r.orders > 0 && r.orders < 5;
   return (
@@ -1132,6 +1142,16 @@ function ProductBreakevenRowView({
             }
           >
             {r.itemSku}
+          </span>
+        ) : platform === "lazada" && r.sellerSkus.length > 0 ? (
+          // Lazada không có SKU tổng — QUYẾT ĐỊNH anh Trung 12/08: hiện NGUYÊN
+          // VĂN đủ danh sách SKU phân loại seller đặt, không suy đoán/cắt gọt
+          // (ô hẹp rút gọn thị giác, tooltip đầy đủ; tìm kiếm bắt mọi SKU).
+          <span
+            className="block max-w-32 truncate text-sm"
+            title={`SKU phân loại: ${r.sellerSkus.join(", ")}`}
+          >
+            {r.sellerSkus.join(", ")}
           </span>
         ) : (
           <span
