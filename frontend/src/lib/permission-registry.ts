@@ -133,6 +133,50 @@ export const PERMISSION_PRESETS: {
   },
 ];
 
+// ============================================================
+// CÂY QUYỀN ĐIỀU HÀNH HUBSELL (khối HQ) — dành cho nhân viên của CHÍNH công ty
+// Hubsell, do chủ nền tảng (cờ isPlatformAdmin) tạo. Họ làm việc trên khu
+// /admin (dữ liệu toàn nền tảng), không đụng nghiệp vụ bán hàng của shop nào.
+// ⚠️ GIỮ ĐỒNG BỘ với backend/src/platform-permission-registry.ts.
+// Khóa luôn mang tiền tố "hq." nên không va chạm cây shop; hasPermission dùng
+// chung được (lá khớp đúng chuỗi, nhóm "hq" khớp theo tiền tố).
+// ============================================================
+
+export const HQ_PERMISSION_TREE: PermissionNode[] = [
+  { key: "hq.overview", label: "Tổng quan hệ thống" },
+  { key: "hq.customers", label: "Khách hàng đăng ký" },
+  { key: "hq.webhooks", label: "Nhật ký Webhook" },
+];
+
+/** PRESET 1-click cho nhân viên điều hành (khớp backend). */
+export const HQ_PERMISSION_PRESETS: {
+  key: string;
+  label: string;
+  description: string;
+  permissions: string[];
+}[] = [
+  {
+    key: "HQ_SALE",
+    label: "Sale / CSKH khách hàng",
+    description: "Danh sách chủ shop đăng ký — chăm sóc, tư vấn khách hàng mới.",
+    permissions: ["hq.customers"],
+  },
+  {
+    key: "HQ_TECH",
+    label: "Kỹ thuật vận hành",
+    description: "Tổng quan hệ thống và nhật ký webhook — theo dõi sức khỏe nền tảng.",
+    permissions: ["hq.overview", "hq.webhooks"],
+  },
+  {
+    key: "HQ_MANAGER",
+    label: "Quản lý điều hành",
+    description: "Toàn bộ khu Hệ thống Hubsell.",
+    permissions: HQ_PERMISSION_TREE.flatMap((n) =>
+      n.children ? n.children.map((c) => c.key) : [n.key]
+    ),
+  },
+];
+
 /**
  * Trang đích ưu tiên sau đăng nhập theo quyền — duyệt từ trên xuống, lấy trang
  * đầu tiên nhân viên vào được. Không có quyền nào → /guide (mở cho mọi người,

@@ -63,11 +63,26 @@ export function canManageShop(user?: MaybeUser): boolean {
 }
 
 /**
+ * Thuộc KHÔNG GIAN ĐIỀU HÀNH HUBSELL (chủ nền tảng hoặc nhân viên điều hành)?
+ * Ưu tiên cờ platformWorkspace backend tính sẵn; fallback isPlatformAdmin cho
+ * user cũ còn nằm trong localStorage từ trước khi có cờ mới.
+ */
+export function isPlatformWorkspace(user?: MaybeUser): boolean {
+  return user?.platformWorkspace === true || user?.isPlatformAdmin === true;
+}
+
+/**
  * Trang mặc định sau khi đăng nhập: trang đầu tiên trong danh sách ưu tiên mà
  * user vào được. Nhân viên chưa được cấp quyền nào → /guide (mở cho mọi người,
  * không gọi API dữ liệu nên không dội thêm 403).
  */
 export function homePathFor(user?: MaybeUser): string {
+  // Khu điều hành Hubsell: chủ nền tảng về trang Nhân viên (việc chính của
+  // họ); nhân viên điều hành về khu Hệ thống nếu được cấp lá hq.* bất kỳ.
+  if (isPlatformWorkspace(user)) {
+    if (isAdmin(user)) return "/staff";
+    return can(user, "hq") ? "/admin" : "/guide";
+  }
   if (isAdmin(user)) return "/";
   for (const { key, path } of HOME_PRIORITY) {
     if (can(user, key)) return path;

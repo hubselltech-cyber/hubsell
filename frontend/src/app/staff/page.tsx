@@ -51,11 +51,13 @@ import {
   type StaffMember,
 } from "@/lib/api";
 import {
+  HQ_PERMISSION_PRESETS,
+  HQ_PERMISSION_TREE,
   PERMISSION_PRESETS,
   PERMISSION_TREE,
   type PermissionNode,
 } from "@/lib/permission-registry";
-import { canManageShop } from "@/lib/permissions";
+import { canManageShop, isPlatformWorkspace } from "@/lib/permissions";
 import { toAsciiUsername } from "@/lib/username";
 import { shopLabel } from "@/components/channel-filter";
 import { formatDateTime } from "@/lib/format";
@@ -76,10 +78,19 @@ function leavesOf(node: PermissionNode): string[] {
   return node.children ? node.children.map((c) => c.key) : [node.key];
 }
 
+/**
+ * Trang này phục vụ HAI loại chủ tài khoản với HAI cây quyền khác nhau:
+ *  - Chủ shop thường     → cây nghiệp vụ bán hàng (PERMISSION_TREE) + gian hàng.
+ *  - Chủ nền tảng Hubsell → cây điều hành (HQ_PERMISSION_TREE, lá hq.*), KHÔNG
+ *    có khái niệm gian hàng — nhân viên của công ty Hubsell làm việc trên khu
+ *    /admin chứ không bán hàng. Backend tự lọc lá theo đúng cây của chủ.
+ */
 function PermissionTree({
+  tree,
   value,
   onChange,
 }: {
+  tree: PermissionNode[];
   value: Set<string>;
   onChange: (next: Set<string>) => void;
 }) {
@@ -103,7 +114,7 @@ function PermissionTree({
 
   return (
     <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-2">
-      {PERMISSION_TREE.map((node) => {
+      {tree.map((node) => {
         const leaves = leavesOf(node);
         const onCount = leaves.filter((k) => value.has(k)).length;
         const allOn = onCount === leaves.length;
@@ -155,11 +166,17 @@ function PermissionTree({
 }
 
 /** Hàng nút preset 1-click — đổ sẵn mảng quyền mẫu, sửa lẻ thoải mái sau đó. */
-function PresetRow({ onPick }: { onPick: (perms: string[]) => void }) {
+function PresetRow({
+  presets,
+  onPick,
+}: {
+  presets: typeof PERMISSION_PRESETS;
+  onPick: (perms: string[]) => void;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-xs text-muted-foreground">Chọn nhanh:</span>
-      {PERMISSION_PRESETS.map((p) => (
+      {presets.map((p) => (
         <button
           key={p.key}
           type="button"
@@ -246,10 +263,13 @@ const staffSchema = z.object({
 type StaffFormValues = z.infer<typeof staffSchema>;
 
 function AddStaffDialog({
+  hqMode,
   channels,
   ownerUsername,
   onAdded,
 }: {
+  /** Chủ nền tảng Hubsell — cây quyền HQ, không có mục gian hàng. */
+  hqMode: boolean;
   channels: Channel[];
   ownerUsername: string | null;
   onAdded: () => void;
@@ -376,8 +396,15 @@ function AddStaffDialog({
 
             <div className="grid gap-2">
               <Label>Phân quyền tính năng</Label>
-              <PresetRow onPick={(p) => setPerms(new Set(p))} />
-              <PermissionTree value={perms} onChange={setPerms} />
+              <PresetRow
+                presets={hqMode ? HQ_PERMISSION_PRESETS : PERMISSION_PRESETS}
+                onPick={(p) => setPerms(new Set(p))}
+              />
+              <PermissionTree
+                tree={hqMode ? HQ_PERMISSION_TREE : PERMISSION_TREE}
+                value={perms}
+                onChange={setPerms}
+              />
               {perms.size === 0 && (
                 <p className="text-sm text-amber-600">
                   Chưa tick quyền nào — nhân viên đăng nhập được nhưng chưa dùng
@@ -386,16 +413,20 @@ function AddStaffDialog({
               )}
             </div>
 
-            <div className="grid gap-2">
-              <Label>Gian hàng phụ trách</Label>
-              <ChannelScope channels={channels} value={scope} onChange={setScope} />
-              {scope.size === 0 && channels.length > 0 && (
-                <p className="text-sm text-amber-600">
-                  Chưa chọn gian nào — nhân viên sẽ chưa thấy đơn/dữ liệu nào
-                  cho tới khi anh phân công.
-                </p>
-              )}
-            </div>
+            {/* Khu điều hành không có gian hàng — nhân viên Hubsell làm việc
+                trên dữ liệu toàn nền tảng, không bó theo gian nào. */}
+            {!hqMode && (
+              <div className="grid gap-2">
+                <Label>Gian hàng phụ trách</Label>
+                <ChannelScope channels={channels} value={scope} onChange={setScope} />
+                {scope.size === 0 && channels.length > 0 && (
+                  <p className="text-sm text-amber-600">
+                    Chưa chọn gian nào — nhân viên sẽ chưa thấy đơn/dữ liệu nào
+                    cho tới khi anh phân công.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-1">
               <Button
@@ -421,12 +452,15 @@ function AddStaffDialog({
 // ---------- Dialog: Phân quyền (cây tính năng + phạm vi gian hàng) ----------
 
 function PermissionDialog({
+  hqMode,
   staff,
   channels,
   open,
   onOpenChange,
   onSaved,
 }: {
+  /** Chủ nền tảng Hubsell — cây quyền HQ, không có mục gian hàng. */
+  hqMode: boolean;
   staff: StaffMember;
   channels: Channel[];
   open: boolean;
@@ -469,35 +503,47 @@ function PermissionDialog({
             Phân quyền — {staff.fullName}
           </DialogTitle>
           <DialogDescription>
-            Tick tính năng nhân viên được dùng và gian hàng họ phụ trách. Quyền
-            mới có hiệu lực NGAY với phiên đang đăng nhập.
+            {hqMode
+              ? "Tick khu vực nhân viên được làm việc trong Hệ thống Hubsell. Quyền mới có hiệu lực NGAY với phiên đang đăng nhập."
+              : "Tick tính năng nhân viên được dùng và gian hàng họ phụ trách. Quyền mới có hiệu lực NGAY với phiên đang đăng nhập."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-2">
           <Label>Tính năng</Label>
-          <PresetRow onPick={(p) => setPerms(new Set(p))} />
-          <PermissionTree value={perms} onChange={setPerms} />
+          <PresetRow
+            presets={hqMode ? HQ_PERMISSION_PRESETS : PERMISSION_PRESETS}
+            onPick={(p) => setPerms(new Set(p))}
+          />
+          <PermissionTree
+            tree={hqMode ? HQ_PERMISSION_TREE : PERMISSION_TREE}
+            value={perms}
+            onChange={setPerms}
+          />
         </div>
 
-        <div className="grid gap-2">
-          <Label>Gian hàng phụ trách</Label>
-          <ChannelScope channels={channels} value={scope} onChange={setScope} />
-        </div>
+        {!hqMode && (
+          <div className="grid gap-2">
+            <Label>Gian hàng phụ trách</Label>
+            <ChannelScope channels={channels} value={scope} onChange={setScope} />
+          </div>
+        )}
 
         <p
           className={cn(
             "text-xs",
-            perms.size === 0 || scope.size === 0
+            perms.size === 0 || (!hqMode && scope.size === 0)
               ? "text-amber-600"
               : "text-muted-foreground"
           )}
         >
           {perms.size === 0
             ? "→ Nhân viên này sẽ KHÔNG dùng được tính năng nào."
-            : scope.size === 0 && channels.length > 0
-              ? "→ Có quyền tính năng nhưng CHƯA được gán gian nào — sẽ không thấy dữ liệu."
-              : `→ Đang bật ${perms.size} quyền trên ${scope.size} gian hàng.`}
+            : hqMode
+              ? `→ Đang bật ${perms.size} khu vực trong Hệ thống Hubsell.`
+              : scope.size === 0 && channels.length > 0
+                ? "→ Có quyền tính năng nhưng CHƯA được gán gian nào — sẽ không thấy dữ liệu."
+                : `→ Đang bật ${perms.size} quyền trên ${scope.size} gian hàng.`}
         </p>
 
         <div className="flex justify-end gap-2">
@@ -599,6 +645,9 @@ export default function StaffPage() {
   const router = useRouter();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [ownerUsername, setOwnerUsername] = useState<string | null>(null);
+  // Chủ nền tảng Hubsell? Đọc localStorage nên phải nằm trong effect (mount),
+  // không đọc lúc render kẻo lệch với bản prerender.
+  const [hqMode, setHqMode] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
@@ -633,11 +682,13 @@ export default function StaffPage() {
       router.replace("/login");
       return;
     }
-    if (!canManageShop(getStoredUser())) {
+    const user = getStoredUser();
+    if (!canManageShop(user)) {
       setDenied(true);
       setLoading(false);
       return;
     }
+    setHqMode(isPlatformWorkspace(user));
     load();
   }, [load, router]);
 
@@ -662,11 +713,13 @@ export default function StaffPage() {
 
   /** Tóm tắt quyền hiển thị trên thẻ: các NHÓM có ít nhất một lá được bật. */
   function permissionSummary(perms: string[]): string[] {
-    return PERMISSION_TREE.filter((n) =>
-      (n.children ? n.children.map((c) => c.key) : [n.key]).some((k) =>
-        perms.includes(k)
+    return (hqMode ? HQ_PERMISSION_TREE : PERMISSION_TREE)
+      .filter((n) =>
+        (n.children ? n.children.map((c) => c.key) : [n.key]).some((k) =>
+          perms.includes(k)
+        )
       )
-    ).map((n) => n.label);
+      .map((n) => n.label);
   }
 
   if (denied) {
@@ -682,10 +735,12 @@ export default function StaffPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Tạo tài khoản nhân viên (không cần email) và phân quyền từng tính
-            năng, từng gian hàng.
+            {hqMode
+              ? "Tạo tài khoản nhân viên điều hành Hubsell (không cần email) và phân quyền từng khu vực trong Hệ thống."
+              : "Tạo tài khoản nhân viên (không cần email) và phân quyền từng tính năng, từng gian hàng."}
           </p>
           <AddStaffDialog
+            hqMode={hqMode}
             channels={channels}
             ownerUsername={ownerUsername}
             onAdded={load}
@@ -721,13 +776,20 @@ export default function StaffPage() {
                         </span>
                       </p>
                       <p className="truncate text-sm text-muted-foreground">
-                        tạo {formatDateTime(s.createdAt)} ·{" "}
-                        {s.allowedChannelIds.length === 0
-                          ? "chưa gán gian nào"
-                          : s.allowedChannelIds
-                              .map((id) => channelLabelById.get(id))
-                              .filter(Boolean)
-                              .join(", ")}
+                        tạo {formatDateTime(s.createdAt)}
+                        {/* Khu điều hành không có gian hàng — đừng hiện
+                            "chưa gán gian nào" gây hiểu nhầm thiếu cấu hình. */}
+                        {!hqMode && (
+                          <>
+                            {" · "}
+                            {s.allowedChannelIds.length === 0
+                              ? "chưa gán gian nào"
+                              : s.allowedChannelIds
+                                  .map((id) => channelLabelById.get(id))
+                                  .filter(Boolean)
+                                  .join(", ")}
+                          </>
+                        )}
                       </p>
                     </div>
 
@@ -789,12 +851,15 @@ export default function StaffPage() {
         )}
 
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell · Phân quyền nhân viên theo tính năng × gian hàng
+          {hqMode
+            ? "Hubsell · Nhân viên điều hành nền tảng"
+            : "Hubsell · Phân quyền nhân viên theo tính năng × gian hàng"}
         </p>
       </div>
 
       {permFor && (
         <PermissionDialog
+          hqMode={hqMode}
           staff={permFor}
           channels={channels}
           open={true}

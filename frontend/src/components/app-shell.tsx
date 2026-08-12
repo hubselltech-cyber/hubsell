@@ -24,7 +24,12 @@ import {
   setStoredUser,
   type AuthUser,
 } from "@/lib/api";
-import { can, homePathFor, isAdmin } from "@/lib/permissions";
+import {
+  can,
+  homePathFor,
+  isAdmin,
+  isPlatformWorkspace,
+} from "@/lib/permissions";
 import { TEXT_PAGE_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -208,6 +213,23 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
   },
 ];
 
+// ============================================================
+// SIDEBAR KHU ĐIỀU HÀNH HUBSELL — thay TOÀN BỘ hai khối trên khi tài khoản
+// thuộc không gian điều hành (isPlatformWorkspace: chủ nền tảng dev@hubsell.tech
+// hoặc nhân viên điều hành do chủ nền tảng tạo). Đây là "văn phòng công ty
+// Hubsell": quản lý nhân sự nội bộ + số liệu toàn nền tảng, KHÔNG có nghiệp vụ
+// bán hàng nào (đơn, kho, tài chính shop… đều vô nghĩa với tài khoản này).
+// ============================================================
+const NAV_ITEMS_HQ: NavItem[] = [
+  // Chỉ chủ nền tảng tạo/phân quyền nhân viên điều hành — nhân viên không thấy.
+  { href: "/staff", label: "Nhân viên", icon: "group", adminOnly: true },
+];
+const NAV_ITEMS_HQ_BOTTOM: NavItem[] = [
+  // Khu /admin: chủ nền tảng thấy trọn; nhân viên điều hành cần lá hq.* bất kỳ
+  // (trang /admin tự lọc tab theo đúng lá được cấp).
+  { href: "/admin", label: "Hệ thống", icon: "admin_panel_settings", perm: "hq" },
+];
+
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
 const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/admin", title: "Quản trị nền tảng Hubsell" },
@@ -383,6 +405,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setMobileOpen(false);
   }, [pathname]);
 
+  // Khu điều hành Hubsell không có trang Tổng quan shop — vào "/" (bookmark
+  // cũ, gõ tay) thì đưa về trang chủ của khu điều hành (/staff hoặc /admin).
+  useEffect(() => {
+    if (pathname === "/" && isPlatformWorkspace(user)) {
+      router.replace(homePathFor(user));
+    }
+  }, [pathname, user, router]);
+
   // Cùng một luật hiển thị cho cả khu làm việc lẫn khu chân sidebar:
   // adminOnly → chỉ chủ shop; perm → tra cây quyền (chủ shop luôn qua);
   // nhóm có children thì lọc từng trang con theo lá — nhân viên chỉ được
@@ -399,10 +429,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
     return { ...i, children };
   };
-  const items = NAV_ITEMS.filter(visible)
+  // Không gian điều hành Hubsell → thay trọn bộ menu bằng sidebar HQ.
+  const hqWorkspace = isPlatformWorkspace(user);
+  const items = (hqWorkspace ? NAV_ITEMS_HQ : NAV_ITEMS)
+    .filter(visible)
     .map(visibleChildren)
     .filter((i) => !i.children || i.children.length > 0);
-  const bottomItems = NAV_ITEMS_BOTTOM.filter(visible)
+  const bottomItems = (hqWorkspace ? NAV_ITEMS_HQ_BOTTOM : NAV_ITEMS_BOTTOM)
+    .filter(visible)
     .map(visibleChildren)
     .filter((i) => !i.children || i.children.length > 0);
 
@@ -420,8 +454,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Chưa kết nối gian hàng → chặn toàn bộ, hiện màn hình onboarding
-  if (!hasChannels) {
+  // Chưa kết nối gian hàng → chặn toàn bộ, hiện màn hình onboarding.
+  // TRỪ khu điều hành Hubsell: văn phòng công ty không bao giờ liên kết sàn —
+  // không bỏ điều kiện này là chủ nền tảng bị màn "kết nối gian hàng" chặn đứng.
+  if (!hasChannels && !hqWorkspace) {
     return (
       <OnboardingOverlay
         isAdmin={user?.role === "ADMIN"}
@@ -556,7 +592,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               Hubsell
             </p>
             <p className="truncate text-xs leading-tight text-muted-foreground">
-              Quản lý bán hàng đa kênh
+              {hqWorkspace ? "Điều hành Hubsell" : "Quản lý bán hàng đa kênh"}
             </p>
           </div>
         </Link>

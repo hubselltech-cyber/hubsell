@@ -196,6 +196,13 @@ export interface AuthUser {
    * sidebar (/admin). Chỉ gán được bằng script phía server, FE chỉ đọc.
    */
   isPlatformAdmin?: boolean;
+  /**
+   * Thuộc KHÔNG GIAN ĐIỀU HÀNH HUBSELL: chủ nền tảng, hoặc nhân viên do chủ
+   * nền tảng tạo (quyền toàn lá hq.*). Backend tính sẵn (login + /me) — FE dựa
+   * vào đây để vẽ sidebar Điều hành thay sidebar shop và bỏ màn chặn
+   * onboarding "kết nối gian hàng".
+   */
+  platformWorkspace?: boolean;
 }
 
 export interface AuthResponse {

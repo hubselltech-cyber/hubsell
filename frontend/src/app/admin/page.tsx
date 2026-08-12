@@ -34,6 +34,7 @@ import {
   fetchPlatformStats,
   fetchPlatformUsers,
   fetchPlatformWebhookLogs,
+  getStoredUser,
   getToken,
   type PlatformStats,
   type PlatformUsersResponse,
@@ -41,6 +42,7 @@ import {
   type PlatformWebhookLogRow,
   type PlatformWebhookSource,
 } from "@/lib/api";
+import { can } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +53,17 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "users", label: "Người dùng đăng ký" },
   { key: "webhooks", label: "Nhật ký Webhook" },
 ];
+
+/**
+ * Lá quyền HQ gác từng tab (khớp requirePlatformPermission ở backend/routes/
+ * admin.ts). Chủ nền tảng qua hết (can() cho ADMIN luôn đúng); nhân viên điều
+ * hành chỉ thấy tab được tick — tab đầu tiên nhìn thấy là tab mở mặc định.
+ */
+const TAB_PERM: Record<Tab, string> = {
+  overview: "hq.overview",
+  users: "hq.customers",
+  webhooks: "hq.webhooks",
+};
 
 const PLATFORM_LABEL: Record<string, string> = {
   SHOPEE: "Shopee",
@@ -93,7 +106,11 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
 
 export default function PlatformAdminPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("overview");
+  // tab = null cho tới khi biết người xem được cấp những tab nào — nhân viên
+  // chỉ có "Khách hàng đăng ký" mà cứ nạp tab Tổng quan mặc định là dính 403
+  // rồi AccessDenied oan cả trang.
+  const [tab, setTab] = useState<Tab | null>(null);
+  const [visibleTabs, setVisibleTabs] = useState<typeof TABS>(TABS);
   const [denied, setDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +125,7 @@ export default function PlatformAdminPage() {
 
   // Nạp dữ liệu của tab đang mở. 403 = không phải quản trị nền tảng → AccessDenied.
   const load = useCallback(async () => {
+    if (!tab) return; // chưa chốt tab mặc định theo quyền
     setLoading(true);
     setError(null);
     try {
@@ -142,6 +160,19 @@ export default function PlatformAdminPage() {
     }
   }, [tab, usersPage, logSource, logStatus, logsPage, router]);
 
+  // Chốt danh sách tab theo quyền của người xem (đọc localStorage nên phải nằm
+  // trong effect, không chạy lúc prerender). Không được tab nào → AccessDenied.
+  useEffect(() => {
+    const u = getStoredUser();
+    const tabs = u ? TABS.filter((t) => can(u, TAB_PERM[t.key])) : TABS;
+    setVisibleTabs(tabs);
+    if (tabs.length === 0) {
+      setDenied(true);
+      return;
+    }
+    setTab((cur) => cur ?? tabs[0].key);
+  }, []);
+
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
@@ -166,8 +197,8 @@ export default function PlatformAdminPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
-            Khu vực riêng của chủ nền tảng: số liệu vận hành trên TOÀN BỘ
-            Hubsell (mọi shop đã đăng ký) — không phải số liệu shop của bạn.
+            Khu điều hành Hubsell: số liệu vận hành trên TOÀN BỘ hệ thống (mọi
+            shop đã đăng ký) — dành cho chủ nền tảng và nhân viên điều hành.
           </p>
           <Button variant="outline" onClick={load} disabled={loading}>
             {loading ? (
@@ -179,9 +210,9 @@ export default function PlatformAdminPage() {
           </Button>
         </div>
 
-        {/* Thanh tab */}
+        {/* Thanh tab — chỉ những tab người xem có quyền */}
         <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.key}
               type="button"

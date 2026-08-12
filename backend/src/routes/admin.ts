@@ -1,19 +1,24 @@
 import { Router } from "express";
 import { WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../prisma";
+import { requirePlatformPermission } from "../auth";
 
 // ============================================================
-// QUẢN TRỊ NỀN TẢNG (/api/admin) — chỉ tài khoản có cờ isPlatformAdmin.
+// QUẢN TRỊ NỀN TẢNG (/api/admin) — chủ nền tảng (cờ isPlatformAdmin) và nhân
+// viên ĐIỀU HÀNH HUBSELL (cây quyền hq.* — platform-permission-registry.ts).
+// Cửa mount ở app.ts đã chặn "có lá hq.* bất kỳ"; từng route dưới đây siết
+// đúng lá của mình (Sale thấy khách hàng nhưng không thấy nhật ký webhook).
 //
 // Khác mọi router còn lại: dữ liệu ở đây KHÔNG bó theo ownerId — đây là góc
 // nhìn của chủ nền tảng Hubsell trên TOÀN BỘ hệ thống (mọi shop đăng ký).
 // Vì vậy tuyệt đối không thêm endpoint ghi/sửa dữ liệu shop ở đây; chỉ đọc
 // số liệu vận hành: người dùng đăng ký, gian hàng đã nối, nhật ký webhook.
+// (Endpoint GHI tương lai phải gác requirePlatformAdmin — chỉ chủ nền tảng.)
 // ============================================================
 const router = Router();
 
 // GET /api/admin/stats — số liệu tổng quan toàn nền tảng.
-router.get("/stats", async (_req, res, next) => {
+router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res, next) => {
   try {
     const now = Date.now();
     const d7 = new Date(now - 7 * 24 * 60 * 60 * 1000);
@@ -78,7 +83,7 @@ router.get("/stats", async (_req, res, next) => {
 // GET /api/admin/users?page=1&pageSize=20 — danh sách CHỦ SHOP đã đăng ký
 // (mới nhất trước), kèm số nhân viên / gian hàng / đơn của từng shop.
 // KHÔNG trả passwordHash hay bất kỳ trường bí mật nào.
-router.get("/users", async (req, res, next) => {
+router.get("/users", requirePlatformPermission("hq.customers"), async (req, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
@@ -157,7 +162,7 @@ router.get("/users", async (req, res, next) => {
 // Nhật ký webhook toàn hệ thống (mới nhất trước). Lazada xử lý trực tiếp
 // không ghi bảng log nên chưa có ở đây. Không trả payload (nặng) — chỉ metadata
 // đủ để tra soát; cần soi payload thì tra DB theo id.
-router.get("/webhook-logs", async (req, res, next) => {
+router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req, res, next) => {
   try {
     const source = req.query.source === "misa" ? "misa" : "shopee";
     const page = Math.max(1, Number(req.query.page) || 1);

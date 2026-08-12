@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
 import { prisma } from "./prisma";
 import { hasPermission } from "./permission-registry";
+import { hasHqPermission } from "./platform-permission-registry";
 
 // Khóa bí mật để ký token. Ở môi trường thật PHẢI đặt trong biến môi trường.
 const JWT_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
@@ -138,6 +139,8 @@ export function requireAdmin(
 
 // Middleware: chỉ cho phép QUẢN TRỊ NỀN TẢNG (cờ isPlatformAdmin) đi tiếp.
 // Trả 403 y hệt các chặn quyền khác — không tiết lộ khu /admin tồn tại.
+// Vẫn giữ cho các endpoint GHI/SỬA tương lai của khu /admin: nhân viên điều
+// hành chỉ được ĐỌC qua requirePlatformPermission bên dưới.
 export function requirePlatformAdmin(
   req: AuthRequest,
   res: Response,
@@ -148,6 +151,46 @@ export function requirePlatformAdmin(
     return;
   }
   next();
+}
+
+/**
+ * Middleware PHÂN QUYỀN KHU ĐIỀU HÀNH HUBSELL (/api/admin): cho đi tiếp khi
+ *  - chính user mang cờ isPlatformAdmin (chủ nền tảng), hoặc
+ *  - user là NHÂN VIÊN ĐIỀU HÀNH: chủ của họ mang cờ isPlatformAdmin VÀ họ được
+ *    cấp lá hq.* khớp `keys` (cây ở platform-permission-registry.ts).
+ *
+ * Cờ của CHỦ đọc tươi từ DB mỗi request (giống triết lý permissions trong
+ * requireAuth) — thu hồi cờ là nhân viên mất quyền ngay. Nhân viên shop thường
+ * không bao giờ qua được: quyền của họ toàn khóa shop, không có lá hq.* nào.
+ */
+export function requirePlatformPermission(...keys: string[]) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      if (req.isPlatformAdmin) {
+        next();
+        return;
+      }
+      if (req.ownerId && req.ownerId !== req.userId) {
+        const perms = req.permissions ?? [];
+        if (keys.some((k) => hasHqPermission(perms, k))) {
+          const owner = await prisma.user.findUnique({
+            where: { id: req.ownerId },
+            select: { isPlatformAdmin: true },
+          });
+          if (owner?.isPlatformAdmin) {
+            next();
+            return;
+          }
+        }
+      }
+      res.status(403).json({
+        error: "Bạn không có quyền truy cập chức năng này",
+        code: "PERMISSION_DENIED",
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 /**

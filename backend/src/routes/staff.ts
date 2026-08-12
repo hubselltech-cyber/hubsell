@@ -4,6 +4,7 @@ import { Role } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { sanitizePermissions } from "../permission-registry";
+import { sanitizeHqPermissions } from "../platform-permission-registry";
 import { ensureOwnerUsername, USERNAME_REGEX } from "../username";
 
 /**
@@ -21,6 +22,16 @@ import { ensureOwnerUsername, USERNAME_REGEX } from "../username";
  */
 
 const router = Router();
+
+/**
+ * Chọn bộ lọc quyền theo LOẠI CHỦ TÀI KHOẢN: chủ nền tảng (isPlatformAdmin —
+ * tài khoản điều hành Hubsell) cấp lá hq.* của cây HQ; chủ shop thường cấp lá
+ * cây shop. req.isPlatformAdmin luôn là cờ của CHÍNH người gọi — /api/staff
+ * gác adminOnly nên người gọi chắc chắn là chủ, không phải nhân viên.
+ */
+function permissionSanitizer(req: AuthRequest) {
+  return req.isPlatformAdmin ? sanitizeHqPermissions : sanitizePermissions;
+}
 
 const STAFF_SELECT = {
   id: true,
@@ -151,7 +162,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
     });
     const ownerUsername = await ensureOwnerUsername(owner);
 
-    const perms = sanitizePermissions(permissions);
+    const perms = permissionSanitizer(req)(permissions);
     const channels = await validChannelIds(req.ownerId!, channelIds);
 
     const staff = await prisma.user.create({
@@ -223,7 +234,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         data: {
           ...(fullName !== undefined ? { fullName: fullName.trim() } : {}),
           ...(permissions !== undefined
-            ? { permissions: sanitizePermissions(permissions) }
+            ? { permissions: permissionSanitizer(req)(permissions) }
             : {}),
         },
         select: STAFF_SELECT,

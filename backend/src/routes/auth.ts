@@ -87,7 +87,28 @@ const PUBLIC_USER_SELECT = {
   permissions: true,
   // Cờ quản trị nền tảng — FE dựa vào đây để hiện mục "Hệ thống" trên sidebar.
   isPlatformAdmin: true,
+  // ownerId chỉ để tính platformWorkspace (xem isPlatformWorkspace) — FE không dùng.
+  ownerId: true,
 } as const;
+
+/**
+ * User có thuộc KHÔNG GIAN ĐIỀU HÀNH HUBSELL không? (chủ nền tảng, hoặc nhân
+ * viên do chủ nền tảng tạo). FE dựa vào cờ này để vẽ sidebar Điều hành thay
+ * cho sidebar shop — chỉ là lớp trải nghiệm; lớp chặn thật vẫn là
+ * requirePlatformPermission ở /api/admin.
+ */
+async function isPlatformWorkspace(user: {
+  isPlatformAdmin: boolean;
+  ownerId: string | null;
+}): Promise<boolean> {
+  if (user.isPlatformAdmin) return true;
+  if (!user.ownerId) return false;
+  const owner = await prisma.user.findUnique({
+    where: { id: user.ownerId },
+    select: { isPlatformAdmin: true },
+  });
+  return owner?.isPlatformAdmin === true;
+}
 
 // Nơi FE hiển thị kết quả sau khi Shopee redirect về (callback là route BE).
 // FE dev chạy HTTP thường — mặc định https từng làm Chrome báo ERR_SSL_PROTOCOL_ERROR.
@@ -188,7 +209,11 @@ router.post("/register", async (req, res, next) => {
       select: PUBLIC_USER_SELECT,
     });
 
-    res.status(201).json({ token: signToken(user.id), user });
+    // Tài khoản vừa đăng ký luôn là chủ shop thường — không thuộc khu điều hành.
+    res.status(201).json({
+      token: signToken(user.id),
+      user: { ...user, platformWorkspace: false },
+    });
   } catch (err) {
     next(err);
   }
@@ -289,6 +314,10 @@ router.post("/login", async (req, res, next) => {
         phone: user.phone,
         role: user.role,
         permissions: user.permissions,
+        isPlatformAdmin: user.isPlatformAdmin,
+        // FE cần cờ này NGAY LÚC LOGIN để redirect đúng trang chủ của khu
+        // điều hành (homePathFor) — không đợi được tới lượt fetch /me.
+        platformWorkspace: await isPlatformWorkspace(user),
       },
     });
   } catch (err) {
@@ -311,7 +340,10 @@ router.get("/me", requireAuth, async (req: AuthRequest, res, next) => {
       res.status(401).json({ error: "Tài khoản không tồn tại" });
       return;
     }
-    res.json({ user, hasChannels: channelCount > 0 });
+    res.json({
+      user: { ...user, platformWorkspace: await isPlatformWorkspace(user) },
+      hasChannels: channelCount > 0,
+    });
   } catch (err) {
     next(err);
   }
@@ -384,7 +416,11 @@ router.put("/me/avatar", requireAuth, async (req: AuthRequest, res, next) => {
       data: { avatar },
       select: PUBLIC_USER_SELECT,
     });
-    res.json({ user });
+    // Kèm platformWorkspace như /me — FE setStoredUser nguyên object này,
+    // thiếu cờ là sidebar Điều hành "nhảy" về sidebar shop sau khi đổi avatar.
+    res.json({
+      user: { ...user, platformWorkspace: await isPlatformWorkspace(user) },
+    });
   } catch (err) {
     next(err);
   }

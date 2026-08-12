@@ -6,7 +6,7 @@ import {
   requireAuth,
   requireChannel,
   requirePermission,
-  requirePlatformAdmin,
+  requirePlatformPermission,
   requireRole,
 } from "./auth";
 import adminRouter from "./routes/admin";
@@ -145,10 +145,12 @@ export function createApp() {
   app.use("/api/warehouse", requireAuth, requirePermission("warehouse.returns"), requireChannel, warehouseRouter);
   app.use("/api/mappings", requireAuth, adminOnly, requireChannel, mappingsRouter);
 
-  // QUẢN TRỊ NỀN TẢNG — chỉ tài khoản có cờ isPlatformAdmin (chủ nền tảng
-  // Hubsell), KHÔNG phải ADMIN của shop. Không gác requireChannel: số liệu
+  // QUẢN TRỊ NỀN TẢNG — chủ nền tảng (cờ isPlatformAdmin) và NHÂN VIÊN ĐIỀU
+  // HÀNH HUBSELL do chủ nền tảng tạo (cây quyền hq.* riêng — xem
+  // platform-permission-registry.ts). Cửa mount = có lá hq.* bất kỳ; từng
+  // route trong admin.ts tự siết đúng lá. Không gác requireChannel: số liệu
   // toàn hệ thống không phụ thuộc shop của người xem có gian hay không.
-  app.use("/api/admin", requireAuth, requirePlatformAdmin, adminRouter);
+  app.use("/api/admin", requireAuth, requirePlatformPermission("hq"), adminRouter);
 
   // Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
   app.use("/api/staff", requireAuth, adminOnly, staffRouter);
