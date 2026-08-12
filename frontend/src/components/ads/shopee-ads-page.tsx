@@ -101,6 +101,10 @@ const PLATFORM_META: Record<
     description: string;
     /** Tooltip cột Đơn — định nghĩa rổ broad của từng sàn. */
     broadHint: string;
+    /** Huy hiệu nhận diện sàn cạnh tiêu đề — CÙNG bảng màu SOURCE_META của
+     *  Trung tâm điều hành (Shopee cam / Lazada chàm / TikTok đen) để seller
+     *  liếc màu là biết đang thao tác cho sàn nào (góp ý anh Trung 12/08). */
+    badgeClass: string;
   }
 > = {
   shopee: {
@@ -110,6 +114,7 @@ const PLATFORM_META: Record<
       "Dữ liệu thật từ Shopee Ads API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
     broadHint:
       "Đơn broad: mọi đơn của shop trong 7 ngày sau khi khách bấm quảng cáo (định nghĩa Shopee).",
+    badgeClass: "border-orange-200 bg-orange-50 text-orange-600",
   },
   lazada: {
     label: "Lazada",
@@ -118,6 +123,7 @@ const PLATFORM_META: Record<
       "Dữ liệu thật từ Lazada Sponsored Solutions API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
     broadHint:
       "Đơn store: mọi đơn của gian trong 30 ngày sau khi khách bấm quảng cáo, tính về ngày bấm (định nghĩa Lazada) — số các ngày gần nhất còn tiếp tục tăng.",
+    badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-600",
   },
 };
 
@@ -432,8 +438,17 @@ export function ShopeeAdsPage({
         {/* ===== THANH ĐIỀU KHIỂN: chọn gian + cửa sổ + đồng bộ ===== */}
         <div className="flex flex-wrap items-center gap-3">
           <div>
-            <h1 className="text-lg font-semibold text-slate-900">
+            <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
               Trợ lý quảng cáo {meta.label}
+              <span
+                className={cn(
+                  "rounded-md border px-1.5 py-0.5 text-[11px] font-semibold",
+                  meta.badgeClass
+                )}
+                title={`Đang thao tác trên sàn ${meta.label}`}
+              >
+                {meta.label}
+              </span>
             </h1>
             <p className="text-sm text-muted-foreground">{meta.description}</p>
           </div>

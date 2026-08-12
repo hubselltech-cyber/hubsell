@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { lazAdsNum, lazAdsWriteOk } from "../lazada/client";
 import { deriveStatus } from "../lazada/ads-campaigns";
+import { deriveLazadaItemSku } from "../shopee/ads-insights";
 import {
   buildLazadaAdsWalletEmptyAlert,
   buildShopeeAdsAssistantAlerts,
@@ -81,6 +82,26 @@ describe("deriveStatus — map trạng thái Lazada về bộ từ vựng chung"
         TODAY
       )
     ).toBe("scheduled");
+  });
+});
+
+describe("deriveLazadaItemSku — suy SKU tổng từ SKU phân loại", () => {
+  it("1 phân loại → lấy nguyên SKU", () => {
+    expect(deriveLazadaItemSku(["TC042"])).toBe("TC042");
+  });
+  it("nhiều phân loại cùng gốc → tiền tố chung, cắt đuôi ký tự nối", () => {
+    expect(deriveLazadaItemSku(["TC042-Đen", "TC042-Xám", "TC042-Đỏ"])).toBe(
+      "TC042"
+    );
+    expect(deriveLazadaItemSku(["BLT002_M", "BLT002_L"])).toBe("BLT002");
+  });
+  it("không có gốc chung đủ dài → null (đừng bịa 'T' từ TC042+TUI01)", () => {
+    expect(deriveLazadaItemSku(["TC042", "TUI01"])).toBeNull();
+    expect(deriveLazadaItemSku([])).toBeNull();
+    expect(deriveLazadaItemSku(["  ", ""])).toBeNull();
+  });
+  it("các phân loại trùng hệt SKU → giữ nguyên", () => {
+    expect(deriveLazadaItemSku(["AOGIO01", "AOGIO01"])).toBe("AOGIO01");
   });
 });
 
