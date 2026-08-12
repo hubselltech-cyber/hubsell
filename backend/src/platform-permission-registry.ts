@@ -22,6 +22,8 @@ import type { PermissionNode } from "./permission-registry";
 export const HQ_PERMISSION_TREE: PermissionNode[] = [
   { key: "hq.overview", label: "Tổng quan hệ thống" },
   { key: "hq.customers", label: "Khách hàng đăng ký" },
+  { key: "hq.finance", label: "Kế toán nội bộ" },
+  { key: "hq.marketing", label: "Marketing & Giới thiệu" },
   { key: "hq.webhooks", label: "Nhật ký Webhook" },
 ];
 
@@ -65,6 +67,18 @@ export const HQ_PERMISSION_PRESETS: {
     label: "Sale / CSKH khách hàng",
     description: "Danh sách chủ shop đăng ký — chăm sóc, tư vấn khách hàng mới.",
     permissions: ["hq.customers"],
+  },
+  {
+    key: "HQ_ACCOUNTANT",
+    label: "Kế toán nội bộ",
+    description: "Ví Hubsell toàn hệ thống + duyệt lệnh rút tiền hoa hồng giới thiệu.",
+    permissions: ["hq.finance"],
+  },
+  {
+    key: "HQ_MARKETING",
+    label: "Marketing / Tiếp thị",
+    description: "Hiệu quả chương trình giới thiệu + danh sách khách hàng đăng ký.",
+    permissions: ["hq.marketing", "hq.customers"],
   },
   {
     key: "HQ_TECH",

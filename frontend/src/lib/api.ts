@@ -2272,6 +2272,22 @@ export function fetchPlatformStats() {
   return apiFetch<PlatformStats>("/api/admin/stats");
 }
 
+/** Trạng thái chăm sóc khách hàng (CRM nội bộ Hubsell — khớp enum backend). */
+export type PlatformCareStatus =
+  | "NEW"
+  | "CONTACTED"
+  | "ACTIVE"
+  | "CHURN_RISK"
+  | "CHURNED";
+
+/** Hồ sơ chăm sóc — null khi chưa ai đụng tới khách này (ngầm định NEW). */
+export interface PlatformCareInfo {
+  status: PlatformCareStatus;
+  note: string | null;
+  updatedAt: string;
+  assignee: { id: string; fullName: string } | null;
+}
+
 export interface PlatformUserRow {
   id: string;
   email: string;
@@ -2286,6 +2302,9 @@ export interface PlatformUserRow {
   channelCount: number;
   productCount: number;
   orderCount: number;
+  /** Đơn gần nhất trên mọi gian của shop — tín hiệu "còn hoạt động". */
+  lastOrderAt: string | null;
+  care: PlatformCareInfo | null;
 }
 
 export interface PlatformUsersResponse {
@@ -2295,12 +2314,133 @@ export interface PlatformUsersResponse {
   users: PlatformUserRow[];
 }
 
-export function fetchPlatformUsers(params?: { page?: number; pageSize?: number }) {
+export function fetchPlatformUsers(params?: {
+  page?: number;
+  pageSize?: number;
+  careStatus?: PlatformCareStatus;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.careStatus) qs.set("careStatus", params.careStatus);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<PlatformUsersResponse>(`/api/admin/users${suffix}`);
+}
+
+/** Thành viên khu điều hành (chủ nền tảng + nhân viên) — cho ô "người phụ trách". */
+export interface HqMember {
+  id: string;
+  fullName: string;
+  staffUsername: string | null;
+}
+
+export function fetchHqStaff() {
+  return apiFetch<{ members: HqMember[] }>("/api/admin/hq-staff");
+}
+
+/** Cập nhật hồ sơ chăm sóc — trường vắng mặt giữ nguyên; assigneeId null = bỏ phân công. */
+export function updateCustomerCare(
+  userId: string,
+  data: { status?: PlatformCareStatus; assigneeId?: string | null; note?: string }
+) {
+  return apiFetch<{ care: PlatformCareInfo }>(
+    `/api/admin/customers/${userId}/care`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+// ---------- Kế toán nội bộ (hq.finance) ----------
+
+export interface PlatformWithdrawalRow {
+  id: string;
+  amount: number;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountName: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewNote: string | null;
+  processedAt: string | null;
+  createdAt: string;
+  user: { id: string; email: string | null; fullName: string };
+}
+
+export interface PlatformFinanceResponse {
+  wallet: {
+    /** Tổng số dư mọi Ví Hubsell = khoản nền tảng đang NỢ người dùng. */
+    totalBalance: number;
+    totalCommission: number;
+    commissionCount: number;
+    totalPaidOut: number;
+    paidOutCount: number;
+    pendingAmount: number;
+    pendingCount: number;
+  };
+  pendingWithdrawals: PlatformWithdrawalRow[];
+  processedWithdrawals: PlatformWithdrawalRow[];
+}
+
+export function fetchPlatformFinance() {
+  return apiFetch<PlatformFinanceResponse>("/api/admin/finance");
+}
+
+export function approveWithdrawal(id: string, reviewNote?: string) {
+  return apiFetch<{ withdrawal: PlatformWithdrawalRow }>(
+    `/api/admin/withdrawals/${id}/approve`,
+    { method: "POST", body: JSON.stringify({ reviewNote }) }
+  );
+}
+
+export function rejectWithdrawal(id: string, reviewNote: string) {
+  return apiFetch<{ withdrawal: PlatformWithdrawalRow }>(
+    `/api/admin/withdrawals/${id}/reject`,
+    { method: "POST", body: JSON.stringify({ reviewNote }) }
+  );
+}
+
+// ---------- Marketing & Giới thiệu (hq.marketing) ----------
+
+export interface PlatformMarketingResponse {
+  totalReferred: number;
+  referred30d: number;
+  activeReferrers: number;
+  topReferrers: {
+    userId: string;
+    fullName: string;
+    email: string | null;
+    referralCode: string | null;
+    referredCount: number;
+    totalCommission: number;
+  }[];
+}
+
+export function fetchPlatformMarketing() {
+  return apiFetch<PlatformMarketingResponse>("/api/admin/marketing");
+}
+
+// ---------- Nhật ký thao tác (chỉ chủ nền tảng) ----------
+
+export interface PlatformAuditLogRow {
+  id: string;
+  actorName: string;
+  action: string;
+  targetLabel: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface PlatformAuditLogsResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  logs: PlatformAuditLogRow[];
+}
+
+export function fetchPlatformAuditLogs(params?: { page?: number; pageSize?: number }) {
   const qs = new URLSearchParams();
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiFetch<PlatformUsersResponse>(`/api/admin/users${suffix}`);
+  return apiFetch<PlatformAuditLogsResponse>(`/api/admin/audit-logs${suffix}`);
 }
 
 export type PlatformWebhookSource = "shopee" | "misa";

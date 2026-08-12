@@ -5,6 +5,7 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { sanitizePermissions } from "../permission-registry";
 import { sanitizeHqPermissions } from "../platform-permission-registry";
+import { writeAuditLog } from "../platform-audit";
 import { ensureOwnerUsername, USERNAME_REGEX } from "../username";
 
 /**
@@ -179,6 +180,17 @@ router.post("/", async (req: AuthRequest, res, next) => {
       select: STAFF_SELECT,
     });
 
+    // Nhật ký thao tác — CHỈ khu điều hành Hubsell (thao tác nhân sự của chủ
+    // shop thường không thuộc phạm vi giám sát nền tảng).
+    if (req.isPlatformAdmin) {
+      await writeAuditLog(req, {
+        action: "staff.create",
+        targetUserId: staff.id,
+        targetLabel: `${staff.fullName} (${ownerUsername}/${uname})`,
+        detail: { permissions: perms },
+      });
+    }
+
     res.status(201).json(serializeStaff(staff, ownerUsername));
   } catch (err) {
     next(err);
@@ -241,6 +253,18 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       });
     });
 
+    if (req.isPlatformAdmin) {
+      await writeAuditLog(req, {
+        action: "staff.update",
+        targetUserId: updated.id,
+        targetLabel: `${updated.fullName}${updated.staffUsername ? ` (${updated.staffUsername})` : ""}`,
+        detail: {
+          ...(fullName !== undefined ? { fullName: fullName.trim() } : {}),
+          ...(permissions !== undefined ? { permissions: updated.permissions } : {}),
+        },
+      });
+    }
+
     res.json(serializeStaff(updated, await ownerUsernameOf(req)));
   } catch (err) {
     next(err);
@@ -258,7 +282,7 @@ router.post("/:id/reset-password", async (req: AuthRequest, res, next) => {
     }
     const staff = await prisma.user.findFirst({
       where: { id: req.params.id, ownerId: req.ownerId! },
-      select: { id: true },
+      select: { id: true, fullName: true, staffUsername: true },
     });
     if (!staff) {
       res.status(404).json({ error: "Không tìm thấy nhân viên" });
@@ -268,6 +292,15 @@ router.post("/:id/reset-password", async (req: AuthRequest, res, next) => {
       where: { id: staff.id },
       data: { passwordHash: await bcrypt.hash(password, 10) },
     });
+
+    if (req.isPlatformAdmin) {
+      await writeAuditLog(req, {
+        action: "staff.reset-password",
+        targetUserId: staff.id,
+        targetLabel: `${staff.fullName}${staff.staffUsername ? ` (${staff.staffUsername})` : ""}`,
+      });
+    }
+
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -279,13 +312,22 @@ router.delete("/:id", async (req: AuthRequest, res, next) => {
   try {
     const staff = await prisma.user.findFirst({
       where: { id: req.params.id, ownerId: req.ownerId! },
-      select: { id: true },
+      select: { id: true, fullName: true, staffUsername: true },
     });
     if (!staff) {
       res.status(404).json({ error: "Không tìm thấy nhân viên" });
       return;
     }
     await prisma.user.delete({ where: { id: staff.id } });
+
+    // Ghi log SAU khi xoá, actorId là người xoá (target đã mất — chỉ còn nhãn).
+    if (req.isPlatformAdmin) {
+      await writeAuditLog(req, {
+        action: "staff.delete",
+        targetLabel: `${staff.fullName}${staff.staffUsername ? ` (${staff.staffUsername})` : ""}`,
+      });
+    }
+
     res.json({ ok: true });
   } catch (err) {
     next(err);

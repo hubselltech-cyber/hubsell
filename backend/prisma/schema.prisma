@@ -262,6 +262,11 @@ model User {
   walletTransactions WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
 
+  // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác).
+  careProfile     PlatformCustomerCare?  @relation("CareCustomer")
+  careAssignments PlatformCustomerCare[] @relation("CareAssignee")
+  auditActions    PlatformAuditLog[]     @relation("AuditActor")
+
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
   @@unique([ownerId, staffUsername])
@@ -1337,6 +1342,72 @@ model LazadaOrderSettlement {
 // Số dư ví dùng để GIA HẠN GÓI hoặc RÚT VỀ NGÂN HÀNG (duyệt thủ công).
 
 /// Loại biến động số dư Ví Hubsell.
+// ============================================================
+// KHU ĐIỀU HÀNH HUBSELL (Hubsell HQ) — dữ liệu nội bộ công ty, KHÔNG phải
+// dữ liệu shop của khách. Chỉ đọc/ghi qua /api/admin (cây quyền hq.*).
+// ============================================================
+
+/// Trạng thái chăm sóc một CHỦ SHOP trong CRM nội bộ — do Sale/CSKH đặt tay,
+/// bổ trợ cho tín hiệu hoạt động tự suy (đơn hàng gần nhất).
+enum PlatformCareStatus {
+  NEW        // vừa đăng ký, chưa ai liên hệ
+  CONTACTED  // đã liên hệ / đang tư vấn
+  ACTIVE     // đang dùng ổn định
+  CHURN_RISK // có dấu hiệu rời bỏ (lâu không hoạt động, phàn nàn...)
+  CHURNED    // đã rời bỏ
+}
+
+/// HỒ SƠ CHĂM SÓC KHÁCH HÀNG (CRM nội bộ Hubsell) — 1-1 với chủ shop, tạo lười
+/// khi nhân viên điều hành lần đầu cập nhật. Ghi chú là bản MỚI NHẤT (lịch sử
+/// thay đổi nằm ở PlatformAuditLog, không nhân bản ở đây).
+model PlatformCustomerCare {
+  id     String             @id @default(cuid())
+  /// Chủ shop được chăm sóc.
+  userId String             @unique
+  status PlatformCareStatus @default(NEW)
+  /// Nhân viên điều hành phụ trách (User thuộc HQ) — null = chưa phân công.
+  assigneeId String?
+  /// Ghi chú chăm sóc mới nhất (thay thế mỗi lần lưu).
+  note String?
+  /// Ai cập nhật lần cuối — để hiển thị, chi tiết đầy đủ tra PlatformAuditLog.
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User  @relation("CareCustomer", fields: [userId], references: [id], onDelete: Cascade)
+  assignee User? @relation("CareAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("platform_customer_care")
+}
+
+/// NHẬT KÝ THAO TÁC khu điều hành — sổ APPEND-ONLY, không sửa/xoá bản ghi.
+/// Ghi mọi thao tác GHI của khu /admin (cập nhật chăm sóc, duyệt/từ chối lệnh
+/// rút, tạo/sửa/xoá nhân viên điều hành) — điều kiện bắt buộc trước khi nhân
+/// viên HQ được đụng dữ liệu khách hàng thật. Chỉ CHỦ NỀN TẢNG xem được.
+model PlatformAuditLog {
+  id      String  @id @default(cuid())
+  /// Ai thao tác — SetNull khi tài khoản bị xoá, actorName vẫn giữ vết.
+  actorId   String?
+  actorName String
+  /// Mã hành động phẳng: "care.update" / "withdrawal.approve" /
+  /// "withdrawal.reject" / "staff.create" / "staff.update" / "staff.delete" /
+  /// "staff.reset-password".
+  action String
+  /// Đối tượng bị tác động (chủ shop / nhân viên) + nhãn snapshot để log còn
+  /// đọc được sau khi đối tượng bị xoá.
+  targetUserId String?
+  targetLabel  String?
+  /// Chi tiết tuỳ hành động (giá trị mới, số tiền, lý do...) — hiển thị thô.
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
 enum WalletTxnType {
   COMMISSION      // +10% hoa hồng khi người được giới thiệu thanh toán thành công
   PACKAGE_RENEWAL // − trừ ví để gia hạn gói Hubsell

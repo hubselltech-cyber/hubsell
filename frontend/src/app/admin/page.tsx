@@ -1,21 +1,25 @@
 "use client";
 
 // ============================================================
-// QUẢN TRỊ NỀN TẢNG HUBSELL (/admin) — CHỈ tài khoản có cờ isPlatformAdmin.
+// QUẢN TRỊ NỀN TẢNG HUBSELL (/admin) — trung tâm làm việc của KHU ĐIỀU HÀNH:
+// chủ nền tảng (cờ isPlatformAdmin) + nhân viên điều hành (cây quyền hq.*).
 //
-// Góc nhìn CHỦ NỀN TẢNG trên toàn hệ thống (mọi shop đăng ký), khác hẳn các
-// trang còn lại vốn bó theo shop đang đăng nhập:
-//   - Tổng quan  : người dùng đăng ký, gian hàng đã nối, đơn, sức khỏe webhook
-//   - Người dùng : danh sách chủ shop đăng ký mới nhất + quy mô từng shop
-//   - Webhook    : nhật ký hàng đợi webhook Shopee/MISA toàn hệ thống
+// Góc nhìn TOÀN HỆ THỐNG (mọi shop đăng ký), khác hẳn các trang còn lại vốn
+// bó theo shop đang đăng nhập:
+//   - Tổng quan   : người dùng đăng ký, gian hàng đã nối, đơn, sức khỏe webhook
+//   - Khách hàng  : CRM nội bộ GĐ2 — trạng thái chăm sóc, phụ trách, ghi chú
+//   - Kế toán     : GĐ3 — Ví Hubsell toàn hệ thống + duyệt lệnh rút hoa hồng
+//   - Marketing   : GĐ4 — hiệu quả chương trình giới thiệu
+//   - Webhook     : nhật ký hàng đợi webhook Shopee/MISA toàn hệ thống
+//   - Nhật ký thao tác: GĐ4 — CHỈ chủ nền tảng, giám sát chính đội điều hành
 //
-// Quyền chặn ở backend (403) — trang chỉ phản chiếu: bị 403 thì hiện màn
-// AccessDenied chứ không tự suy diễn từ localStorage (có thể cũ).
+// Tab hiện theo lá hq.* được cấp (khớp requirePlatformPermission backend);
+// quyền chặn thật ở backend (403) — trang chỉ phản chiếu.
 // ============================================================
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, RefreshCcw } from "lucide-react";
+import { HeartHandshake, Loader2, RefreshCcw } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { AccessDenied } from "@/components/access-denied";
@@ -31,12 +35,22 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  fetchHqStaff,
+  fetchPlatformAuditLogs,
+  fetchPlatformFinance,
+  fetchPlatformMarketing,
   fetchPlatformStats,
   fetchPlatformUsers,
   fetchPlatformWebhookLogs,
   getStoredUser,
   getToken,
+  type HqMember,
+  type PlatformAuditLogsResponse,
+  type PlatformCareStatus,
+  type PlatformFinanceResponse,
+  type PlatformMarketingResponse,
   type PlatformStats,
+  type PlatformUserRow,
   type PlatformUsersResponse,
   type PlatformWebhookLogsResponse,
   type PlatformWebhookLogRow,
@@ -45,23 +59,39 @@ import {
 import { can } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CareDialog } from "./care-dialog";
+import { FinanceTab } from "./finance-tab";
+import { MarketingTab } from "./marketing-tab";
+import { AuditTab } from "./audit-tab";
+import {
+  CARE_STATUS_META,
+  CARE_STATUSES,
+  StatCard,
+  formatCount,
+  pageCount,
+} from "./shared";
 
-type Tab = "overview" | "users" | "webhooks";
+type Tab = "overview" | "users" | "finance" | "marketing" | "webhooks" | "audit";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Tổng quan hệ thống" },
-  { key: "users", label: "Người dùng đăng ký" },
+  { key: "users", label: "Khách hàng đăng ký" },
+  { key: "finance", label: "Kế toán nội bộ" },
+  { key: "marketing", label: "Marketing" },
   { key: "webhooks", label: "Nhật ký Webhook" },
+  { key: "audit", label: "Nhật ký thao tác" },
 ];
 
 /**
  * Lá quyền HQ gác từng tab (khớp requirePlatformPermission ở backend/routes/
- * admin.ts). Chủ nền tảng qua hết (can() cho ADMIN luôn đúng); nhân viên điều
- * hành chỉ thấy tab được tick — tab đầu tiên nhìn thấy là tab mở mặc định.
+ * admin.ts). Riêng "audit" KHÔNG có lá — chỉ chủ nền tảng (isPlatformAdmin)
+ * thấy: sổ giám sát đội điều hành thì người bị giám sát không tự soát được.
  */
-const TAB_PERM: Record<Tab, string> = {
+const TAB_PERM: Record<Exclude<Tab, "audit">, string> = {
   overview: "hq.overview",
   users: "hq.customers",
+  finance: "hq.finance",
+  marketing: "hq.marketing",
   webhooks: "hq.webhooks",
 };
 
@@ -85,25 +115,6 @@ const STATUS_META: Record<
 
 const WEBHOOK_STATUS_FILTERS = ["", "PENDING", "SUCCESS", "FAILED"] as const;
 
-function formatCount(n: number): string {
-  return n.toLocaleString("vi-VN");
-}
-
-/** Thẻ số liệu to — dùng cho tab Tổng quan. */
-function StatCard(props: { label: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <CardContent className="py-5">
-        <p className="text-sm text-muted-foreground">{props.label}</p>
-        <p className="mt-1 text-2xl font-bold tracking-tight">{props.value}</p>
-        {props.hint && (
-          <p className="mt-1 text-xs text-muted-foreground">{props.hint}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function PlatformAdminPage() {
   const router = useRouter();
   // tab = null cho tới khi biết người xem được cấp những tab nào — nhân viên
@@ -117,21 +128,42 @@ export default function PlatformAdminPage() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [users, setUsers] = useState<PlatformUsersResponse | null>(null);
   const [usersPage, setUsersPage] = useState(1);
+  const [careFilter, setCareFilter] = useState<"" | PlatformCareStatus>("");
+  const [hqMembers, setHqMembers] = useState<HqMember[] | null>(null);
+  const [careFor, setCareFor] = useState<PlatformUserRow | null>(null);
+  const [finance, setFinance] = useState<PlatformFinanceResponse | null>(null);
+  const [marketing, setMarketing] = useState<PlatformMarketingResponse | null>(null);
+  const [audit, setAudit] = useState<PlatformAuditLogsResponse | null>(null);
+  const [auditPage, setAuditPage] = useState(1);
   const [logs, setLogs] = useState<PlatformWebhookLogsResponse | null>(null);
   const [logSource, setLogSource] = useState<PlatformWebhookSource>("shopee");
   const [logStatus, setLogStatus] = useState<string>("");
   const [logsPage, setLogsPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  // Nạp dữ liệu của tab đang mở. 403 = không phải quản trị nền tảng → AccessDenied.
+  // Nạp dữ liệu của tab đang mở. 403 = không có quyền tab này → AccessDenied.
   const load = useCallback(async () => {
     if (!tab) return; // chưa chốt tab mặc định theo quyền
     setLoading(true);
     setError(null);
     try {
       if (tab === "overview") setStats(await fetchPlatformStats());
-      else if (tab === "users")
-        setUsers(await fetchPlatformUsers({ page: usersPage, pageSize: 20 }));
+      else if (tab === "users") {
+        const [u, members] = await Promise.all([
+          fetchPlatformUsers({
+            page: usersPage,
+            pageSize: 20,
+            careStatus: careFilter || undefined,
+          }),
+          // Danh sách thành viên HQ chỉ cần nạp một lần cho dropdown phụ trách.
+          hqMembers === null ? fetchHqStaff() : Promise.resolve(null),
+        ]);
+        setUsers(u);
+        if (members) setHqMembers(members.members);
+      } else if (tab === "finance") setFinance(await fetchPlatformFinance());
+      else if (tab === "marketing") setMarketing(await fetchPlatformMarketing());
+      else if (tab === "audit")
+        setAudit(await fetchPlatformAuditLogs({ page: auditPage, pageSize: 20 }));
       else
         setLogs(
           await fetchPlatformWebhookLogs({
@@ -158,13 +190,17 @@ export default function PlatformAdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, usersPage, logSource, logStatus, logsPage, router]);
+  }, [tab, usersPage, careFilter, hqMembers, auditPage, logSource, logStatus, logsPage, router]);
 
   // Chốt danh sách tab theo quyền của người xem (đọc localStorage nên phải nằm
   // trong effect, không chạy lúc prerender). Không được tab nào → AccessDenied.
   useEffect(() => {
     const u = getStoredUser();
-    const tabs = u ? TABS.filter((t) => can(u, TAB_PERM[t.key])) : TABS;
+    const tabs = u
+      ? TABS.filter((t) =>
+          t.key === "audit" ? u.isPlatformAdmin === true : can(u, TAB_PERM[t.key])
+        )
+      : TABS.filter((t) => t.key !== "audit");
     setVisibleTabs(tabs);
     if (tabs.length === 0) {
       setDenied(true);
@@ -188,9 +224,6 @@ export default function PlatformAdminPage() {
       </AppShell>
     );
   }
-
-  const pageCount = (total: number, pageSize: number) =>
-    Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <AppShell>
@@ -323,106 +356,170 @@ export default function PlatformAdminPage() {
           </div>
         )}
 
-        {/* ================= TAB NGƯỜI DÙNG ================= */}
+        {/* ================= TAB KHÁCH HÀNG (CRM GĐ2) ================= */}
         {tab === "users" && !error && (
-          <Card>
-            <CardContent className="p-0">
-              {loading && !users ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  Đang tải dữ liệu…
-                </p>
-              ) : users && users.users.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  Chưa có chủ shop nào đăng ký.
-                </p>
-              ) : users ? (
-                <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Đăng ký lúc</TableHead>
-                        <TableHead>Chủ shop</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Số điện thoại</TableHead>
-                        <TableHead className="text-center">Quốc gia</TableHead>
-                        <TableHead className="text-center">Google</TableHead>
-                        <TableHead className="text-center">Gian hàng</TableHead>
-                        <TableHead className="text-center">Nhân viên</TableHead>
-                        <TableHead className="text-center">Sản phẩm</TableHead>
-                        <TableHead className="text-center">Đơn hàng</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.users.map((u) => (
-                        <TableRow key={u.id}>
-                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                            {formatDateTime(u.createdAt)}
-                          </TableCell>
-                          <TableCell>
-                            <p className="text-sm font-medium">{u.fullName}</p>
-                            {u.username && (
-                              <p className="font-mono text-xs text-muted-foreground">
-                                @{u.username}
-                              </p>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm">{u.email}</TableCell>
-                          <TableCell className="whitespace-nowrap font-mono text-sm">
-                            {u.phone ?? "—"}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            {u.country}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            {u.hasGoogle ? "✓" : "—"}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            {formatCount(u.channelCount)}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            {formatCount(u.staffCount)}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            {formatCount(u.productCount)}
-                          </TableCell>
-                          <TableCell className="text-center text-sm">
-                            {formatCount(u.orderCount)}
-                          </TableCell>
+          <div className="space-y-4">
+            {/* Lọc theo trạng thái chăm sóc */}
+            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
+              {([["", "Tất cả"]] as [string, string][])
+                .concat(CARE_STATUSES.map((s) => [s, CARE_STATUS_META[s].label]))
+                .map(([value, label]) => (
+                  <button
+                    key={value || "all"}
+                    type="button"
+                    onClick={() => {
+                      setCareFilter(value as "" | PlatformCareStatus);
+                      setUsersPage(1);
+                    }}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                      careFilter === value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                {loading && !users ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    Đang tải dữ liệu…
+                  </p>
+                ) : users && users.users.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    Không có khách hàng nào khớp bộ lọc.
+                  </p>
+                ) : users ? (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Đăng ký lúc</TableHead>
+                          <TableHead>Chủ shop</TableHead>
+                          <TableHead>Liên hệ</TableHead>
+                          <TableHead>Quy mô</TableHead>
+                          <TableHead>Hoạt động gần nhất</TableHead>
+                          <TableHead>Trạng thái</TableHead>
+                          <TableHead>Phụ trách</TableHead>
+                          <TableHead className="text-right">CSKH</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
-                    <span>
-                      {formatCount(users.total)} chủ shop · trang {users.page}/
-                      {pageCount(users.total, users.pageSize)}
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={usersPage <= 1 || loading}
-                        onClick={() => setUsersPage((p) => p - 1)}
-                      >
-                        Trước
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={
-                          usersPage >= pageCount(users.total, users.pageSize) ||
-                          loading
-                        }
-                        onClick={() => setUsersPage((p) => p + 1)}
-                      >
-                        Sau
-                      </Button>
+                      </TableHeader>
+                      <TableBody>
+                        {users.users.map((u) => {
+                          const care = CARE_STATUS_META[u.care?.status ?? "NEW"];
+                          return (
+                            <TableRow key={u.id}>
+                              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                                {formatDateTime(u.createdAt)}
+                              </TableCell>
+                              <TableCell>
+                                <p className="text-sm font-medium">{u.fullName}</p>
+                                {u.username && (
+                                  <p className="font-mono text-xs text-muted-foreground">
+                                    @{u.username}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {u.email}
+                                {u.phone && (
+                                  <p className="font-mono text-xs text-muted-foreground">
+                                    {u.phone}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                                {formatCount(u.channelCount)} gian ·{" "}
+                                {formatCount(u.productCount)} SP ·{" "}
+                                {formatCount(u.orderCount)} đơn
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                                {u.lastOrderAt ? formatDateTime(u.lastOrderAt) : "—"}
+                              </TableCell>
+                              <TableCell>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                    care.className
+                                  )}
+                                >
+                                  {care.label}
+                                </span>
+                                {u.care?.note && (
+                                  <p
+                                    className="mt-1 max-w-[180px] truncate text-xs text-muted-foreground"
+                                    title={u.care.note}
+                                  >
+                                    {u.care.note}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm">
+                                {u.care?.assignee?.fullName ?? (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setCareFor(u)}
+                                >
+                                  <HeartHandshake className="size-4" />
+                                  Chăm sóc
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                    <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
+                      <span>
+                        {formatCount(users.total)} khách hàng · trang {users.page}/
+                        {pageCount(users.total, users.pageSize)}
+                      </span>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={usersPage <= 1 || loading}
+                          onClick={() => setUsersPage((p) => p - 1)}
+                        >
+                          Trước
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            usersPage >= pageCount(users.total, users.pageSize) ||
+                            loading
+                          }
+                          onClick={() => setUsersPage((p) => p + 1)}
+                        >
+                          Sau
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </>
-              ) : null}
-            </CardContent>
-          </Card>
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ================= TAB KẾ TOÁN NỘI BỘ (GĐ3) ================= */}
+        {tab === "finance" && !error && (
+          <FinanceTab data={finance} loading={loading} onChanged={load} />
+        )}
+
+        {/* ================= TAB MARKETING (GĐ4) ================= */}
+        {tab === "marketing" && !error && (
+          <MarketingTab data={marketing} loading={loading} />
         )}
 
         {/* ================= TAB WEBHOOK ================= */}
@@ -569,7 +666,29 @@ export default function PlatformAdminPage() {
             </Card>
           </div>
         )}
+
+        {/* ================= TAB NHẬT KÝ THAO TÁC (GĐ4, chỉ chủ nền tảng) ================= */}
+        {tab === "audit" && !error && (
+          <AuditTab
+            data={audit}
+            loading={loading}
+            page={auditPage}
+            onPageChange={setAuditPage}
+          />
+        )}
       </div>
+
+      {careFor && (
+        <CareDialog
+          customer={careFor}
+          members={hqMembers ?? []}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setCareFor(null);
+          }}
+          onSaved={load}
+        />
+      )}
     </AppShell>
   );
 }
