@@ -2515,6 +2515,46 @@ export function fetchPlatformMarketing() {
   return apiFetch<PlatformMarketingResponse>("/api/admin/marketing");
 }
 
+// ---------- Báo cáo nhà đầu tư (GĐ6 — chỉ chủ nền tảng) ----------
+
+export interface InvestorMonthPoint {
+  month: string;
+  label: string;
+  /** Tăng trưởng so tháng trước (%) — null khi tháng trước = 0 (chưa so được). */
+  momPct: number | null;
+}
+
+export interface InvestorReportResponse {
+  generatedAt: string;
+  signupsByMonth: (InvestorMonthPoint & { count: number })[];
+  gmvByMonth: (InvestorMonthPoint & { gmv: number })[];
+  funnel: {
+    registered: number;
+    connectedChannel: number;
+    connectedPct: number;
+    hasOrder: number;
+    hasOrderPct: number;
+  };
+  /** Cohort 6 tháng: activePct[k] = % cohort còn có đơn sau k tháng (null = cohort rỗng). */
+  retention: {
+    month: string;
+    label: string;
+    size: number;
+    activePct: (number | null)[];
+  }[];
+  viral: { totalReferred: number; pctOfSignups: number };
+  burn: {
+    byMonth: { month: string; label: string; in: number; out: number }[];
+    avgMonthlyBurn: number;
+  };
+  activity: { mau30d: number; trackedSince: string };
+  revenue: { mrr: number; arpu: number; note: string };
+}
+
+export function fetchInvestorReport() {
+  return apiFetch<InvestorReportResponse>("/api/admin/investor-report");
+}
+
 // ---------- Nhật ký thao tác (chỉ chủ nền tảng) ----------
 
 export interface PlatformAuditLogRow {

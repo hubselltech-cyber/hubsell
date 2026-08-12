@@ -9,6 +9,7 @@ import {
   type Order,
   type PnlDetailRow,
   type PnlItemLine,
+  type InvestorReportResponse,
   type PlatformLedgerEntry,
   type Product,
   type ReconciliationStatus,
@@ -414,6 +415,85 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
     `So quy ${month}`,
     `hubsell_so_quy_${month}.xlsx`
   );
+}
+
+// ---------- BÁO CÁO NHÀ ĐẦU TƯ (khu điều hành, chỉ chủ nền tảng) ----------
+
+/**
+ * Xuất trọn bộ chỉ số nhà đầu tư ra MỘT file Excel nhiều sheet — mang đi pitch
+ * là mở được ngay: Tổng quan / Đăng ký / GMV / Funnel / Retention / Sổ quỹ.
+ * Số chưa có (MRR...) ghi rõ "chờ thương mại hóa", không vẽ.
+ */
+export function exportInvestorReportToExcel(report: InvestorReportResponse) {
+  const wb = XLSX.utils.book_new();
+  const addSheet = (
+    rows: Record<string, string | number>[],
+    colWidths: number[],
+    name: string
+  ) => {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = colWidths.map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  };
+
+  addSheet(
+    [
+      { "Chỉ số": "Chủ shop đã đăng ký", "Giá trị": report.funnel.registered, "Ghi chú": "" },
+      { "Chỉ số": "Đã kết nối sàn", "Giá trị": report.funnel.connectedChannel, "Ghi chú": `${report.funnel.connectedPct}% số đăng ký` },
+      { "Chỉ số": "Đã có đơn qua hệ thống", "Giá trị": report.funnel.hasOrder, "Ghi chú": `${report.funnel.hasOrderPct}% số đăng ký` },
+      { "Chỉ số": "Đăng ký qua giới thiệu", "Giá trị": report.viral.totalReferred, "Ghi chú": `${report.viral.pctOfSignups}% số đăng ký (tăng trưởng tự nhiên)` },
+      { "Chỉ số": "MAU 30 ngày (đăng nhập)", "Giá trị": report.activity.mau30d, "Ghi chú": `Theo dõi từ ${report.activity.trackedSince}` },
+      { "Chỉ số": "Chi trung bình/tháng (burn)", "Giá trị": report.burn.avgMonthlyBurn, "Ghi chú": "Bình quân các tháng có phát sinh sổ quỹ" },
+      { "Chỉ số": "MRR", "Giá trị": report.revenue.mrr, "Ghi chú": report.revenue.note },
+      { "Chỉ số": "ARPU", "Giá trị": report.revenue.arpu, "Ghi chú": report.revenue.note },
+    ],
+    [30, 16, 44],
+    "Tong quan"
+  );
+  addSheet(
+    report.signupsByMonth.map((r) => ({
+      Tháng: r.label,
+      "Đăng ký mới": r.count,
+      "Tăng trưởng MoM (%)": r.momPct ?? "",
+    })),
+    [10, 14, 20],
+    "Dang ky"
+  );
+  addSheet(
+    report.gmvByMonth.map((r) => ({
+      Tháng: r.label,
+      "GMV qua nền tảng": r.gmv,
+      "Tăng trưởng MoM (%)": r.momPct ?? "",
+    })),
+    [10, 20, 20],
+    "GMV"
+  );
+  addSheet(
+    report.retention.map((c) => {
+      const row: Record<string, string | number> = {
+        "Cohort (tháng đăng ký)": c.label,
+        "Quy mô": c.size,
+      };
+      c.activePct.forEach((p, k) => {
+        row[`M${k} (%)`] = p ?? "";
+      });
+      return row;
+    }),
+    [22, 10, 9, 9, 9, 9, 9, 9],
+    "Retention"
+  );
+  addSheet(
+    report.burn.byMonth.map((r) => ({
+      Tháng: r.label,
+      "Tiền vào": r.in,
+      "Tiền ra": r.out,
+      "Chênh lệch": r.in - r.out,
+    })),
+    [10, 14, 14, 14],
+    "So quy"
+  );
+
+  XLSX.writeFile(wb, `hubsell_bao_cao_nha_dau_tu_${fileStamp()}.xlsx`);
 }
 
 // ---------- GIÁ VỐN THEO SKU ----------

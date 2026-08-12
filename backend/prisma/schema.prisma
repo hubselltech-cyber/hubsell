@@ -212,6 +212,11 @@ model User {
   referrals    User[]  @relation("ReferralTree")
 
   createdAt    DateTime @default(now())
+  /// Lần cuối tài khoản CÓ HOẠT ĐỘNG (request kèm token hợp lệ) — requireAuth
+  /// chạm cột này tối đa 1 lần/6 giờ (fire-and-forget, không chặn request).
+  /// Nền của chỉ số MAU/WAU trong Báo cáo nhà đầu tư; null = chưa ghi nhận
+  /// (dữ liệu chỉ tích lũy từ khi deploy 13/08/2026).
+  lastActiveAt DateTime?
 
   // Nhân viên thuộc về một chủ shop → dùng chung dữ liệu của shop đó.
   // ownerId = null nghĩa là chính user này là chủ shop.

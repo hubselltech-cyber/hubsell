@@ -69,11 +69,22 @@ export async function requireAuth(
         ownerId: true,
         isPlatformAdmin: true,
         permissions: true,
+        lastActiveAt: true,
       },
     });
     if (!user) {
       res.status(401).json({ error: "Tài khoản không còn tồn tại" });
       return;
+    }
+
+    // Dấu chân hoạt động cho chỉ số MAU/WAU (Báo cáo nhà đầu tư): chạm tối đa
+    // 1 lần/6 giờ và KHÔNG await — request không gánh thêm độ trễ, lỗi ghi
+    // (mất mạng thoáng qua) cũng không được phép làm hỏng xác thực.
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    if (!user.lastActiveAt || Date.now() - user.lastActiveAt.getTime() > SIX_HOURS) {
+      prisma.user
+        .update({ where: { id: user.id }, data: { lastActiveAt: new Date() } })
+        .catch(() => {});
     }
 
     req.userId = user.id;

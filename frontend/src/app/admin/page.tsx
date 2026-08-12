@@ -8,7 +8,7 @@
 // một cửa, Sale không bao giờ lạc vào sổ tiền của kế toán.
 // ============================================================
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -25,10 +25,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   fetchPlatformOverview,
   fetchPlatformStats,
+  getStoredUser,
   type PlatformOverviewResponse,
   type PlatformStats,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { InvestorReport } from "./investor-report";
 import {
   AdminError,
   AdminPageHeader,
@@ -87,6 +89,13 @@ export default function PlatformOverviewPage() {
     return { overview, stats };
   }, []);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
+
+  // Báo cáo nhà đầu tư CHỈ chủ nền tảng (backend gác requirePlatformAdmin) —
+  // đọc localStorage trong effect, không đọc lúc render kẻo lệch prerender.
+  const [showInvestorReport, setShowInvestorReport] = useState(false);
+  useEffect(() => {
+    setShowInvestorReport(getStoredUser()?.isPlatformAdmin === true);
+  }, []);
 
   if (denied) {
     return (
@@ -218,6 +227,9 @@ export default function PlatformOverviewPage() {
                 hint={`${formatCount(stats.users.newOwners30d)} trong 30 ngày`}
               />
             </div>
+
+            {/* ===== Báo cáo nhà đầu tư (GĐ6, chỉ chủ nền tảng) ===== */}
+            {showInvestorReport && <InvestorReport />}
           </>
         ) : null}
       </div>
