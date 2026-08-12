@@ -2272,6 +2272,33 @@ export function fetchPlatformStats() {
   return apiFetch<PlatformStats>("/api/admin/stats");
 }
 
+/** Dashboard điều hành (GĐ5) — biểu đồ đăng ký, phân bố chăm sóc, gia hạn. */
+export interface PlatformOverviewResponse {
+  totals: {
+    owners: number;
+    newOwners30d: number;
+    /** Shop có đơn phát sinh trong 30 ngày. */
+    active30d: number;
+    activePct: number;
+    churnRisk: number;
+    churned: number;
+    churnedPct: number;
+  };
+  signupsByWeek: { weekStart: string; label: string; count: number }[];
+  careDistribution: { status: PlatformCareStatus; count: number }[];
+  /** Gia hạn gói qua Ví Hubsell — khung demo chờ thương mại hóa. */
+  renewals: {
+    countTotal: number;
+    amountTotal: number;
+    count30d: number;
+    amount30d: number;
+  };
+}
+
+export function fetchPlatformOverview() {
+  return apiFetch<PlatformOverviewResponse>("/api/admin/overview");
+}
+
 /** Trạng thái chăm sóc khách hàng (CRM nội bộ Hubsell — khớp enum backend). */
 export type PlatformCareStatus =
   | "NEW"
@@ -2395,6 +2422,77 @@ export function rejectWithdrawal(id: string, reviewNote: string) {
     `/api/admin/withdrawals/${id}/reject`,
     { method: "POST", body: JSON.stringify({ reviewNote }) }
   );
+}
+
+// ---------- Sổ quỹ nội bộ (GĐ5 — hq.finance) ----------
+
+export type LedgerDirection = "IN" | "OUT";
+export type LedgerSource = "SUBSCRIPTION" | "REFERRAL_PAYOUT" | "OTHER";
+export type LedgerInvoiceStatus = "NONE" | "PENDING" | "ISSUED";
+
+export interface PlatformLedgerEntry {
+  id: string;
+  direction: LedgerDirection;
+  source: LedgerSource;
+  /** Luôn DƯƠNG — chiều tiền do direction quyết định. */
+  amount: number;
+  note: string | null;
+  invoiceStatus: LedgerInvoiceStatus;
+  invoiceNo: string | null;
+  occurredAt: string;
+  createdByName: string;
+  /** Khác null = bút toán TỰ SINH từ duyệt lệnh rút (không sửa tiền/xoá được). */
+  withdrawalRequestId: string | null;
+  customer: { id: string; email: string | null; fullName: string } | null;
+}
+
+export interface PlatformLedgerResponse {
+  month: string;
+  totals: { in: number; out: number; net: number; pendingInvoices: number };
+  entries: PlatformLedgerEntry[];
+}
+
+export function fetchPlatformLedger(month?: string) {
+  const suffix = month ? `?month=${month}` : "";
+  return apiFetch<PlatformLedgerResponse>(`/api/admin/finance/ledger${suffix}`);
+}
+
+export function createLedgerEntry(data: {
+  direction: LedgerDirection;
+  source: Exclude<LedgerSource, "REFERRAL_PAYOUT">;
+  amount: number;
+  note?: string;
+  customerEmail?: string;
+  occurredAt?: string;
+  invoiceStatus?: LedgerInvoiceStatus;
+  invoiceNo?: string;
+}) {
+  return apiFetch<{ entry: PlatformLedgerEntry }>("/api/admin/finance/ledger", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateLedgerEntry(
+  id: string,
+  data: {
+    note?: string | null;
+    invoiceStatus?: LedgerInvoiceStatus;
+    invoiceNo?: string;
+    occurredAt?: string;
+    amount?: number;
+  }
+) {
+  return apiFetch<{ entry: PlatformLedgerEntry }>(
+    `/api/admin/finance/ledger/${id}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+export function deleteLedgerEntry(id: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/finance/ledger/${id}`, {
+    method: "DELETE",
+  });
 }
 
 // ---------- Marketing & Giới thiệu (hq.marketing) ----------

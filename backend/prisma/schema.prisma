@@ -262,10 +262,11 @@ model User {
   walletTransactions WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
 
-  // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác).
+  // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác + sổ quỹ).
   careProfile     PlatformCustomerCare?  @relation("CareCustomer")
   careAssignments PlatformCustomerCare[] @relation("CareAssignee")
   auditActions    PlatformAuditLog[]     @relation("AuditActor")
+  ledgerEntries   PlatformLedgerEntry[]  @relation("LedgerCustomer")
 
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
@@ -1406,6 +1407,57 @@ model PlatformAuditLog {
 
   @@index([createdAt])
   @@map("platform_audit_logs")
+}
+
+/// Chiều dòng tiền của một bút toán sổ quỹ nội bộ Hubsell.
+enum LedgerDirection {
+  IN  // tiền VÀO (khách trả phí gói dịch vụ...)
+  OUT // tiền RA  (chi trả hoa hồng, chi phí vận hành...)
+}
+
+/// Nguồn phát sinh bút toán — quyết định bút toán tự sinh hay ghi tay.
+enum LedgerSource {
+  SUBSCRIPTION    // thu phí đăng ký/gia hạn gói (ghi tay khi chưa có cổng thanh toán)
+  REFERRAL_PAYOUT // chi trả lệnh rút hoa hồng giới thiệu — TỰ SINH khi duyệt lệnh
+  OTHER           // khoản thu/chi khác (ghi tay)
+}
+
+/// Nghĩa vụ hóa đơn của bút toán THU: NONE = không cần (khoản chi/nội bộ),
+/// PENDING = phải xuất mà chưa xuất, ISSUED = đã xuất (kèm số hóa đơn).
+enum LedgerInvoiceStatus {
+  NONE
+  PENDING
+  ISSUED
+}
+
+/// SỔ QUỸ NỘI BỘ HUBSELL (GĐ5) — mỗi dòng một khoản tiền vào/ra của CHÍNH công
+/// ty Hubsell (không phải tiền của shop khách). `amount` luôn DƯƠNG, chiều do
+/// `direction` quyết định — kế toán không phải nhớ quy ước dấu.
+/// Bút toán tự sinh (withdrawalRequestId != null) KHÔNG sửa/xoá được số tiền —
+/// nguồn sự thật là lệnh rút; chỉ bút toán ghi tay mới sửa/xoá trọn vẹn.
+model PlatformLedgerEntry {
+  id        String          @id @default(cuid())
+  direction LedgerDirection
+  source    LedgerSource
+  amount    Decimal         @db.Decimal(14, 2)
+  /// Diễn giải hiển thị trên sổ (vd "Thu phí gói Professional 12 tháng").
+  note String?
+  /// Chủ shop liên quan (người trả phí / người nhận hoa hồng) — SetNull khi xoá.
+  customerId String?
+  customer   User?   @relation("LedgerCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  /// Lệnh rút sinh ra bút toán này (chi hoa hồng) — null với bút toán ghi tay.
+  withdrawalRequestId String? @unique
+  invoiceStatus       LedgerInvoiceStatus @default(NONE)
+  invoiceNo           String?
+  /// Ngày PHÁT SINH nghiệp vụ (kế toán chọn khi ghi tay — khác ngày nhập máy).
+  occurredAt DateTime @default(now())
+  /// Ai ghi bút toán — snapshot tên để sổ còn đọc được khi tài khoản bị xoá.
+  createdById   String?
+  createdByName String
+  createdAt     DateTime @default(now())
+
+  @@index([occurredAt])
+  @@map("platform_ledger_entries")
 }
 
 enum WalletTxnType {

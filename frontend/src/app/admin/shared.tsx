@@ -1,9 +1,92 @@
-// Đồ dùng chung của khu Quản trị nền tảng (/admin) — page.tsx và các tab
-// (finance / marketing / audit) cùng một kiểu thẻ số liệu, định dạng số và
-// bảng màu trạng thái chăm sóc, không bao giờ lệch nhau.
+// Đồ dùng chung của KHU ĐIỀU HÀNH (/admin/*) — các trang con cùng một kiểu
+// thẻ số liệu, định dạng số, bảng màu trạng thái chăm sóc và một hook nạp dữ
+// liệu chuẩn (401 → login, 403 → AccessDenied), không bao giờ lệch nhau.
 
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2, RefreshCcw } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { PlatformCareStatus } from "@/lib/api";
+import { ApiError, getToken, type PlatformCareStatus } from "@/lib/api";
+
+/**
+ * Hook nạp dữ liệu chuẩn của một trang /admin/*: gọi `fetcher` (bọc useCallback
+ * ở trang — đổi bộ lọc là tự nạp lại), quy đổi lỗi về 3 trạng thái quen thuộc.
+ */
+export function useAdminPage<T>(fetcher: () => Promise<T>) {
+  const router = useRouter();
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await fetcher());
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (err instanceof ApiError && err.status === 403) {
+        setDenied(true);
+        return;
+      }
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Chưa kết nối được máy chủ (backend). Hãy chắc chắn backend đang chạy ở cổng 4000."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [fetcher, router]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { data, loading, denied, error, reload };
+}
+
+/** Dòng đầu trang: mô tả + nút Tải lại — mọi trang điều hành cùng một kiểu. */
+export function AdminPageHeader(props: {
+  description: string;
+  loading: boolean;
+  onReload: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <p className="text-muted-foreground">{props.description}</p>
+      <Button variant="outline" onClick={props.onReload} disabled={props.loading}>
+        {props.loading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <RefreshCcw className="size-4" />
+        )}
+        Tải lại
+      </Button>
+    </div>
+  );
+}
+
+/** Thông báo lỗi kết nối — hộp vàng giữa trang. */
+export function AdminError({ message }: { message: string }) {
+  return (
+    <Card>
+      <CardContent>
+        <p className="py-6 text-center text-sm text-amber-700">{message}</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function formatCount(n: number): string {
   return n.toLocaleString("vi-VN");

@@ -27,6 +27,9 @@ const ACTION_LABELS: Record<string, string> = {
   "staff.update": "Sửa nhân viên điều hành",
   "staff.delete": "Xoá nhân viên điều hành",
   "staff.reset-password": "Cấp lại mật khẩu nhân viên",
+  "ledger.create": "Ghi bút toán sổ quỹ",
+  "ledger.update": "Sửa bút toán sổ quỹ",
+  "ledger.delete": "Xoá bút toán sổ quỹ",
 };
 
 /** Diễn giải detail JSON thành chuỗi ngắn dễ đọc. */

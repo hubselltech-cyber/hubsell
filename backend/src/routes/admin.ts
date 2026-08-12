@@ -1,5 +1,12 @@
 import { Router } from "express";
-import { PlatformCareStatus, Prisma, WebhookJobStatus } from "@prisma/client";
+import {
+  LedgerDirection,
+  LedgerInvoiceStatus,
+  LedgerSource,
+  PlatformCareStatus,
+  Prisma,
+  WebhookJobStatus,
+} from "@prisma/client";
 import { prisma } from "../prisma";
 import {
   requirePlatformAdmin,
@@ -78,6 +85,103 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
           status: s.status,
           count: s._count._all,
         })),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/overview — DASHBOARD ĐIỀU HÀNH (GĐ5): biểu đồ đăng ký theo
+// tuần, phân bố trạng thái chăm sóc, tỷ lệ đang hoạt động / rời bỏ, gia hạn.
+// Bổ trợ cho /stats (số đếm thô) — trang Tổng quan gọi cả hai.
+router.get("/overview", requirePlatformPermission("hq.overview"), async (_req, res, next) => {
+  try {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    const d30 = new Date(now - 30 * DAY);
+    // 12 tuần: neo tuần theo THỨ HAI để cột cuối là "tuần này" (đang chạy dở).
+    const monday = new Date(now);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const chartStart = new Date(monday.getTime() - 11 * 7 * DAY);
+
+    const [totalOwners, newOwners30d, recentSignups, careGroups, activeChannels, renewAllAgg, renew30dAgg] =
+      await Promise.all([
+        prisma.user.count({ where: { ownerId: null } }),
+        prisma.user.count({ where: { ownerId: null, createdAt: { gte: d30 } } }),
+        prisma.user.findMany({
+          where: { ownerId: null, createdAt: { gte: chartStart } },
+          select: { createdAt: true },
+        }),
+        prisma.platformCustomerCare.groupBy({ by: ["status"], _count: { _all: true } }),
+        // Shop "đang hoạt động" = có đơn phát sinh trong 30 ngày (distinct chủ shop).
+        prisma.channel.findMany({
+          where: { orders: { some: { createdAt: { gte: d30 } } } },
+          select: { userId: true },
+          distinct: ["userId"],
+        }),
+        prisma.walletTransaction.aggregate({
+          where: { type: "PACKAGE_RENEWAL" },
+          _sum: { amount: true },
+          _count: true,
+        }),
+        prisma.walletTransaction.aggregate({
+          where: { type: "PACKAGE_RENEWAL", createdAt: { gte: d30 } },
+          _sum: { amount: true },
+          _count: true,
+        }),
+      ]);
+
+    // Gom đăng ký theo 12 tuần — số chủ shop nhỏ nên bó trong JS cho gọn.
+    const weeks = Array.from({ length: 12 }, (_, i) => {
+      const start = new Date(chartStart.getTime() + i * 7 * DAY);
+      return { start, count: 0 };
+    });
+    for (const u of recentSignups) {
+      const idx = Math.floor((u.createdAt.getTime() - chartStart.getTime()) / (7 * DAY));
+      if (idx >= 0 && idx < 12) weeks[idx].count += 1;
+    }
+
+    // Khách chưa có hồ sơ care = NEW ngầm định.
+    const careCount = new Map(careGroups.map((g) => [g.status, g._count._all]));
+    const trackedTotal = careGroups.reduce((s, g) => s + g._count._all, 0);
+    const careDistribution = (Object.values(PlatformCareStatus) as PlatformCareStatus[]).map(
+      (status) => ({
+        status,
+        count:
+          status === PlatformCareStatus.NEW
+            ? (careCount.get(status) ?? 0) + Math.max(0, totalOwners - trackedTotal)
+            : careCount.get(status) ?? 0,
+      })
+    );
+    const churned = careCount.get(PlatformCareStatus.CHURNED) ?? 0;
+    const pct = (part: number, whole: number) =>
+      whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0;
+
+    res.json({
+      totals: {
+        owners: totalOwners,
+        newOwners30d,
+        active30d: activeChannels.length,
+        activePct: pct(activeChannels.length, totalOwners),
+        churnRisk: careCount.get(PlatformCareStatus.CHURN_RISK) ?? 0,
+        churned,
+        churnedPct: pct(churned, totalOwners),
+      },
+      signupsByWeek: weeks.map((w) => ({
+        weekStart: w.start.toISOString(),
+        label: `${String(w.start.getDate()).padStart(2, "0")}/${String(w.start.getMonth() + 1).padStart(2, "0")}`,
+        count: w.count,
+      })),
+      careDistribution,
+      // Gia hạn gói qua Ví Hubsell — KHUNG DEMO chờ thương mại hóa (amount âm
+      // trong sổ ví → trả về số dương cho dễ đọc).
+      renewals: {
+        countTotal: renewAllAgg._count,
+        amountTotal: Math.abs(toNumber(renewAllAgg._sum.amount)),
+        count30d: renew30dAgg._count,
+        amount30d: Math.abs(toNumber(renew30dAgg._sum.amount)),
       },
     });
   } catch (err) {
@@ -458,6 +562,12 @@ router.post(
       const noteValue =
         typeof reviewNote === "string" && reviewNote.trim() ? reviewNote.trim() : null;
 
+      // Tên người duyệt — snapshot vào bút toán sổ quỹ tự sinh bên dưới.
+      const actor = await prisma.user.findUnique({
+        where: { id: req.userId! },
+        select: { fullName: true },
+      });
+
       const result = await prisma.$transaction(async (tx) => {
         // updateMany có điều kiện status=PENDING: hai kế toán bấm duyệt cùng
         // lúc thì người sau tự trượt, không duyệt đúp.
@@ -470,10 +580,26 @@ router.post(
           where: { withdrawalRequestId: req.params.id, type: "WITHDRAWAL" },
           data: { status: "COMPLETED" },
         });
-        return tx.withdrawalRequest.findUniqueOrThrow({
+        const wr = await tx.withdrawalRequest.findUniqueOrThrow({
           where: { id: req.params.id },
           select: WITHDRAWAL_SELECT,
         });
+        // SỔ QUỸ (GĐ5): duyệt chi trả = một khoản tiền RA — tự ghi bút toán,
+        // kế toán không phải nhập tay. withdrawalRequestId unique nên lệnh
+        // nào cũng chỉ có đúng một bút toán.
+        await tx.platformLedgerEntry.create({
+          data: {
+            direction: LedgerDirection.OUT,
+            source: LedgerSource.REFERRAL_PAYOUT,
+            amount: wr.amount,
+            note: `Chi trả hoa hồng giới thiệu — ${wr.bankName} · ${wr.bankAccountNumber}${noteValue ? ` (${noteValue})` : ""}`,
+            customerId: wr.user.id,
+            withdrawalRequestId: wr.id,
+            createdById: req.userId!,
+            createdByName: actor?.fullName ?? "(không rõ)",
+          },
+        });
+        return wr;
       });
       if (!result) {
         res.status(409).json({ error: "Lệnh rút không tồn tại hoặc đã được xử lý" });
@@ -556,6 +682,273 @@ router.post(
         detail: { amount: toNumber(result.amount), reviewNote: reason },
       });
       res.json({ withdrawal: { ...result, amount: toNumber(result.amount) } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
+// SỔ QUỸ NỘI BỘ (GĐ5 — lá hq.finance): mỗi dòng một khoản tiền vào/ra của
+// CHÍNH công ty Hubsell. Chi hoa hồng TỰ SINH khi duyệt lệnh rút (ở trên);
+// thu phí gói/khoản khác kế toán ghi tay chờ ngày có cổng thanh toán. Mỗi
+// khoản THU mang nghĩa vụ hóa đơn (PENDING → ISSUED kèm số HĐ) — không bao
+// giờ lọt khoản thu chưa xuất hóa đơn.
+// ============================================================
+
+const LEDGER_SELECT = {
+  id: true,
+  direction: true,
+  source: true,
+  amount: true,
+  note: true,
+  invoiceStatus: true,
+  invoiceNo: true,
+  occurredAt: true,
+  createdByName: true,
+  withdrawalRequestId: true,
+  customer: { select: { id: true, email: true, fullName: true } },
+} as const;
+
+/** Khoảng thời gian [đầu tháng, đầu tháng sau) từ chuỗi "YYYY-MM". */
+function monthRange(raw: unknown): { month: string; start: Date; end: Date } {
+  const now = new Date();
+  const fallback = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const month = typeof raw === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(raw) ? raw : fallback;
+  const [y, m] = month.split("-").map(Number);
+  return { month, start: new Date(y, m - 1, 1), end: new Date(y, m, 1) };
+}
+
+// GET /api/admin/finance/ledger?month=YYYY-MM — sổ quỹ một tháng + tổng kết.
+router.get(
+  "/finance/ledger",
+  requirePlatformPermission("hq.finance"),
+  async (req, res, next) => {
+    try {
+      const { month, start, end } = monthRange(req.query.month);
+      const entries = await prisma.platformLedgerEntry.findMany({
+        where: { occurredAt: { gte: start, lt: end } },
+        orderBy: { occurredAt: "desc" },
+        select: LEDGER_SELECT,
+      });
+      let totalIn = 0;
+      let totalOut = 0;
+      let pendingInvoices = 0;
+      for (const e of entries) {
+        if (e.direction === LedgerDirection.IN) totalIn += toNumber(e.amount);
+        else totalOut += toNumber(e.amount);
+        if (e.invoiceStatus === LedgerInvoiceStatus.PENDING) pendingInvoices += 1;
+      }
+      res.json({
+        month,
+        totals: { in: totalIn, out: totalOut, net: totalIn - totalOut, pendingInvoices },
+        entries: entries.map((e) => ({ ...e, amount: toNumber(e.amount) })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/ledger — GHI TAY một bút toán (phiếu thu/chi).
+// Body: { direction, source, amount, note?, customerEmail?, occurredAt?,
+//         invoiceStatus?, invoiceNo? }
+// REFERRAL_PAYOUT không ghi tay được — nguồn đó chỉ tự sinh từ duyệt lệnh rút.
+router.post(
+  "/finance/ledger",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { direction, source, amount, note, customerEmail, occurredAt, invoiceStatus, invoiceNo } =
+        req.body ?? {};
+
+      if (!(Object.values(LedgerDirection) as string[]).includes(direction)) {
+        res.status(400).json({ error: "Chiều dòng tiền không hợp lệ (IN/OUT)" });
+        return;
+      }
+      if (
+        !(Object.values(LedgerSource) as string[]).includes(source) ||
+        source === LedgerSource.REFERRAL_PAYOUT
+      ) {
+        res.status(400).json({ error: "Nguồn bút toán không hợp lệ" });
+        return;
+      }
+      const value = Math.floor(Number(amount));
+      if (!Number.isFinite(value) || value <= 0) {
+        res.status(400).json({ error: "Số tiền phải là số dương" });
+        return;
+      }
+      const when = occurredAt ? new Date(occurredAt) : new Date();
+      if (Number.isNaN(when.getTime())) {
+        res.status(400).json({ error: "Ngày phát sinh không hợp lệ" });
+        return;
+      }
+      let customerId: string | null = null;
+      if (typeof customerEmail === "string" && customerEmail.trim()) {
+        const customer = await prisma.user.findFirst({
+          where: { email: customerEmail.trim().toLowerCase(), ownerId: null },
+          select: { id: true },
+        });
+        if (!customer) {
+          res.status(400).json({ error: "Không tìm thấy chủ shop với email này" });
+          return;
+        }
+        customerId = customer.id;
+      }
+      // Nghĩa vụ hóa đơn: khoản THU mặc định PENDING (phải xuất), khoản CHI = NONE.
+      const invStatus = (Object.values(LedgerInvoiceStatus) as string[]).includes(invoiceStatus)
+        ? (invoiceStatus as LedgerInvoiceStatus)
+        : direction === LedgerDirection.IN
+          ? LedgerInvoiceStatus.PENDING
+          : LedgerInvoiceStatus.NONE;
+
+      const actor = await prisma.user.findUnique({
+        where: { id: req.userId! },
+        select: { fullName: true },
+      });
+      const entry = await prisma.platformLedgerEntry.create({
+        data: {
+          direction: direction as LedgerDirection,
+          source: source as LedgerSource,
+          amount: value,
+          note: typeof note === "string" && note.trim() ? note.trim() : null,
+          customerId,
+          occurredAt: when,
+          invoiceStatus: invStatus,
+          invoiceNo:
+            typeof invoiceNo === "string" && invoiceNo.trim() ? invoiceNo.trim() : null,
+          createdById: req.userId!,
+          createdByName: actor?.fullName ?? "(không rõ)",
+        },
+        select: LEDGER_SELECT,
+      });
+
+      await writeAuditLog(req, {
+        action: "ledger.create",
+        targetUserId: customerId,
+        detail: { direction, source, amount: value, note: entry.note, occurredAt: when.toISOString() },
+      });
+      res.status(201).json({ entry: { ...entry, amount: toNumber(entry.amount) } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PATCH /api/admin/finance/ledger/:id — sửa bút toán. Bút toán TỰ SINH (từ
+// lệnh rút) chỉ sửa được diễn giải; bút toán ghi tay sửa được mọi trường.
+router.patch(
+  "/finance/ledger/:id",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { note, invoiceStatus, invoiceNo, occurredAt, amount } = req.body ?? {};
+      const entry = await prisma.platformLedgerEntry.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, withdrawalRequestId: true },
+      });
+      if (!entry) {
+        res.status(404).json({ error: "Không tìm thấy bút toán" });
+        return;
+      }
+      const isAuto = entry.withdrawalRequestId !== null;
+      if (isAuto && (invoiceStatus !== undefined || invoiceNo !== undefined || occurredAt !== undefined || amount !== undefined)) {
+        res.status(400).json({
+          error: "Bút toán tự sinh từ lệnh rút — chỉ sửa được diễn giải; nguồn sự thật là lệnh rút",
+        });
+        return;
+      }
+
+      const patch: Prisma.PlatformLedgerEntryUpdateInput = {};
+      if (note !== undefined) {
+        if (note !== null && typeof note !== "string") {
+          res.status(400).json({ error: "Diễn giải không hợp lệ" });
+          return;
+        }
+        patch.note = note === null || note.trim() === "" ? null : note.trim();
+      }
+      if (invoiceStatus !== undefined) {
+        if (!(Object.values(LedgerInvoiceStatus) as string[]).includes(invoiceStatus)) {
+          res.status(400).json({ error: "Trạng thái hóa đơn không hợp lệ" });
+          return;
+        }
+        patch.invoiceStatus = invoiceStatus as LedgerInvoiceStatus;
+      }
+      if (invoiceNo !== undefined) {
+        patch.invoiceNo =
+          typeof invoiceNo === "string" && invoiceNo.trim() ? invoiceNo.trim() : null;
+      }
+      if (occurredAt !== undefined) {
+        const when = new Date(occurredAt);
+        if (Number.isNaN(when.getTime())) {
+          res.status(400).json({ error: "Ngày phát sinh không hợp lệ" });
+          return;
+        }
+        patch.occurredAt = when;
+      }
+      if (amount !== undefined) {
+        const value = Math.floor(Number(amount));
+        if (!Number.isFinite(value) || value <= 0) {
+          res.status(400).json({ error: "Số tiền phải là số dương" });
+          return;
+        }
+        patch.amount = value;
+      }
+
+      const updated = await prisma.platformLedgerEntry.update({
+        where: { id: entry.id },
+        data: patch,
+        select: LEDGER_SELECT,
+      });
+      await writeAuditLog(req, {
+        action: "ledger.update",
+        targetUserId: updated.customer?.id ?? null,
+        detail: JSON.parse(JSON.stringify({ id: entry.id, ...req.body })),
+      });
+      res.json({ entry: { ...updated, amount: toNumber(updated.amount) } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /api/admin/finance/ledger/:id — chỉ xoá được bút toán GHI TAY (nhập
+// nhầm); bút toán tự sinh sống chết theo lệnh rút, không xoá lẻ.
+router.delete(
+  "/finance/ledger/:id",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const entry = await prisma.platformLedgerEntry.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          direction: true,
+          source: true,
+          amount: true,
+          note: true,
+          withdrawalRequestId: true,
+        },
+      });
+      if (!entry) {
+        res.status(404).json({ error: "Không tìm thấy bút toán" });
+        return;
+      }
+      if (entry.withdrawalRequestId !== null) {
+        res.status(400).json({ error: "Bút toán tự sinh từ lệnh rút — không xoá được" });
+        return;
+      }
+      await prisma.platformLedgerEntry.delete({ where: { id: entry.id } });
+      await writeAuditLog(req, {
+        action: "ledger.delete",
+        detail: {
+          direction: entry.direction,
+          source: entry.source,
+          amount: toNumber(entry.amount),
+          note: entry.note,
+        },
+      });
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

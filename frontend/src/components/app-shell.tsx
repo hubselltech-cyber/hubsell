@@ -221,18 +221,32 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
 // bán hàng nào (đơn, kho, tài chính shop… đều vô nghĩa với tài khoản này).
 // ============================================================
 const NAV_ITEMS_HQ: NavItem[] = [
+  // Dashboard điều hành: biểu đồ đăng ký / hoạt động / rời bỏ — góc nhìn của
+  // người quản lý, tách khỏi khu tác nghiệp bên dưới.
+  { href: "/admin", label: "Tổng quan", icon: "dashboard", perm: "hq.overview" },
+  // Khu của SALE/CSKH: CRM khách hàng đăng ký.
+  { href: "/admin/customers", label: "Khách hàng", icon: "support_agent", perm: "hq.customers" },
+  // Khu của KẾ TOÁN: sổ quỹ + duyệt lệnh rút + nghĩa vụ hóa đơn — tách hẳn
+  // trang riêng để Sale không bao giờ nhìn thấy sổ tiền.
+  { href: "/admin/finance", label: "Kế toán", icon: "account_balance", perm: "hq.finance" },
+  { href: "/admin/marketing", label: "Marketing", icon: "campaign", perm: "hq.marketing" },
   // Chỉ chủ nền tảng tạo/phân quyền nhân viên điều hành — nhân viên không thấy.
   { href: "/staff", label: "Nhân viên", icon: "group", adminOnly: true },
 ];
 const NAV_ITEMS_HQ_BOTTOM: NavItem[] = [
-  // Khu /admin: chủ nền tảng thấy trọn; nhân viên điều hành cần lá hq.* bất kỳ
-  // (trang /admin tự lọc tab theo đúng lá được cấp).
-  { href: "/admin", label: "Hệ thống", icon: "admin_panel_settings", perm: "hq" },
+  // Khu kỹ thuật: nhật ký webhook (lá hq.webhooks) + nhật ký thao tác (chỉ
+  // chủ nền tảng — trang tự ẩn phần này với nhân viên).
+  { href: "/admin/system", label: "Hệ thống", icon: "admin_panel_settings", perm: "hq.webhooks" },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
 const PAGE_TITLES: { prefix: string; title: string }[] = [
-  { prefix: "/admin", title: "Quản trị nền tảng Hubsell" },
+  // Khu điều hành Hubsell — các route con phải đứng TRƯỚC "/admin" (match tiền tố).
+  { prefix: "/admin/customers", title: "Khách hàng đăng ký" },
+  { prefix: "/admin/finance", title: "Kế toán nội bộ" },
+  { prefix: "/admin/marketing", title: "Marketing & Giới thiệu" },
+  { prefix: "/admin/system", title: "Hệ thống & Kỹ thuật" },
+  { prefix: "/admin", title: "Điều hành Hubsell" },
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   { prefix: "/products", title: "Kho vật lý" },
@@ -545,8 +559,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     // ----- Mục thường -----
+    // "/" và "/admin" là CHA của các route khác cùng tiền tố → phải khớp
+    // tuyệt đối, không thì "Tổng quan" sáng đèn cả khi đang ở /admin/finance.
     const active =
-      item.href === "/" ? pathname === "/" : pathname.startsWith(item.href!);
+      item.href === "/" || item.href === "/admin"
+        ? pathname === item.href
+        : pathname.startsWith(item.href!);
     return (
       <Link
         key={item.href}

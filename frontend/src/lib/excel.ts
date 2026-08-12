@@ -9,6 +9,7 @@ import {
   type Order,
   type PnlDetailRow,
   type PnlItemLine,
+  type PlatformLedgerEntry,
   type Product,
   type ReconciliationStatus,
   type ShippingDiscrepancy,
@@ -352,6 +353,67 @@ export function exportPnlRows(
   if (platform === "TIKTOK") exportTiktokPnlToExcel(rows);
   else exportShopeePnlToExcel(rows);
   return rows.length;
+}
+
+// ---------- SỔ QUỸ NỘI BỘ HUBSELL (khu điều hành) ----------
+
+const LEDGER_SOURCE_LABEL: Record<string, string> = {
+  SUBSCRIPTION: "Thu phí gói dịch vụ",
+  REFERRAL_PAYOUT: "Chi hoa hồng giới thiệu",
+  OTHER: "Khoản khác",
+};
+const LEDGER_INVOICE_LABEL: Record<string, string> = {
+  NONE: "",
+  PENDING: "CHƯA XUẤT",
+  ISSUED: "Đã xuất",
+};
+
+/**
+ * Xuất sổ quỹ một tháng ra Excel — layout sổ thu/chi quen thuộc của kế toán:
+ * hai cột Tiền vào / Tiền ra tách riêng + dòng TỔNG CỘNG cuối sổ, kèm cột
+ * nghĩa vụ hóa đơn để rà khoản thu nào chưa xuất.
+ */
+export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: string) {
+  const rows: Record<string, string | number>[] = entries.map((e) => ({
+    "Ngày phát sinh": toDateTimeText(e.occurredAt),
+    Loại: e.direction === "IN" ? "THU" : "CHI",
+    Nguồn: LEDGER_SOURCE_LABEL[e.source] ?? e.source,
+    "Diễn giải": e.note ?? "",
+    "Khách hàng / Người nhận": e.customer
+      ? `${e.customer.fullName}${e.customer.email ? ` (${e.customer.email})` : ""}`
+      : "",
+    "Tiền vào": e.direction === "IN" ? e.amount : "",
+    "Tiền ra": e.direction === "OUT" ? e.amount : "",
+    "Hóa đơn": LEDGER_INVOICE_LABEL[e.invoiceStatus] ?? e.invoiceStatus,
+    "Số hóa đơn": e.invoiceNo ?? "",
+    "Người ghi": e.createdByName,
+  }));
+
+  const totalIn = entries
+    .filter((e) => e.direction === "IN")
+    .reduce((s, e) => s + e.amount, 0);
+  const totalOut = entries
+    .filter((e) => e.direction === "OUT")
+    .reduce((s, e) => s + e.amount, 0);
+  rows.push({
+    "Ngày phát sinh": "TỔNG CỘNG",
+    Loại: "",
+    Nguồn: "",
+    "Diễn giải": `Chênh lệch: ${totalIn - totalOut}`,
+    "Khách hàng / Người nhận": "",
+    "Tiền vào": totalIn,
+    "Tiền ra": totalOut,
+    "Hóa đơn": "",
+    "Số hóa đơn": "",
+    "Người ghi": "",
+  });
+
+  downloadSheet(
+    rows,
+    [20, 8, 24, 44, 32, 14, 14, 12, 16, 20],
+    `So quy ${month}`,
+    `hubsell_so_quy_${month}.xlsx`
+  );
 }
 
 // ---------- GIÁ VỐN THEO SKU ----------

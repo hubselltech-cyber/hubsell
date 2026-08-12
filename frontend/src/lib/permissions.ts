@@ -76,12 +76,24 @@ export function isPlatformWorkspace(user?: MaybeUser): boolean {
  * user vào được. Nhân viên chưa được cấp quyền nào → /guide (mở cho mọi người,
  * không gọi API dữ liệu nên không dội thêm 403).
  */
+/** Trang đích ưu tiên của KHU ĐIỀU HÀNH — duyệt từ trên xuống theo lá hq.*. */
+const HQ_HOME_PRIORITY: { key: string; path: string }[] = [
+  { key: "hq.overview", path: "/admin" },
+  { key: "hq.customers", path: "/admin/customers" },
+  { key: "hq.finance", path: "/admin/finance" },
+  { key: "hq.marketing", path: "/admin/marketing" },
+  { key: "hq.webhooks", path: "/admin/system" },
+];
+
 export function homePathFor(user?: MaybeUser): string {
-  // Khu điều hành Hubsell: chủ nền tảng về trang Nhân viên (việc chính của
-  // họ); nhân viên điều hành về khu Hệ thống nếu được cấp lá hq.* bất kỳ.
+  // Khu điều hành Hubsell: chủ nền tảng về Dashboard điều hành; nhân viên về
+  // khu đầu tiên được cấp quyền (Sale → Khách hàng, Kế toán → Kế toán...).
   if (isPlatformWorkspace(user)) {
-    if (isAdmin(user)) return "/staff";
-    return can(user, "hq") ? "/admin" : "/guide";
+    if (isAdmin(user)) return "/admin";
+    for (const { key, path } of HQ_HOME_PRIORITY) {
+      if (can(user, key)) return path;
+    }
+    return "/guide";
   }
   if (isAdmin(user)) return "/";
   for (const { key, path } of HOME_PRIORITY) {
