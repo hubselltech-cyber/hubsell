@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
@@ -54,6 +55,7 @@ const SCANNABLE = [
 export default function ScanReturnsScreen() {
   useKeepAwake(); // kho quét cả ca — không để màn hình tự tắt
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -391,16 +393,39 @@ export default function ScanReturnsScreen() {
         style={{ paddingTop: insets.top + 12 }}
       >
         <View className="flex-row items-center justify-between px-4">
-          <View>
-            <Text className="text-lg font-bold text-white">Quét đơn hoàn</Text>
-            <Text className="text-[11px] text-slate-300">
-              Đưa mã vận đơn trên tem vào khung
-            </Text>
+          <View className="flex-row items-center gap-2.5">
+            {/* Chủ shop push từ trang Kho vào — cần lối về; nhân viên kho
+                vào thẳng (màn gốc, canGoBack false) thì không hiện. */}
+            {router.canGoBack() ? (
+              <Pressable
+                className="h-10 w-10 items-center justify-center rounded-full bg-black/40 active:bg-black/60"
+                onPress={() => router.back()}
+                hitSlop={6}
+              >
+                <Ionicons name="arrow-back" size={20} color="#fff" />
+              </Pressable>
+            ) : null}
+            <View>
+              {/* Đổ bóng chữ — nền camera có thể SÁNG (tem trắng, kho đèn
+                  mạnh), chữ trắng trần sẽ chìm nghỉm */}
+              <Text
+                className="text-lg font-bold text-white"
+                style={{ textShadowColor: "rgba(0,0,0,0.6)", textShadowRadius: 4 }}
+              >
+                Quét đơn hoàn
+              </Text>
+              <Text
+                className="text-[11px] text-slate-200"
+                style={{ textShadowColor: "rgba(0,0,0,0.6)", textShadowRadius: 3 }}
+              >
+                Đưa mã vận đơn trên tem vào khung
+              </Text>
+            </View>
           </View>
           {!isWeb ? (
             <Pressable
               className={`h-10 w-10 items-center justify-center rounded-full ${
-                torch ? "bg-amber-400" : "bg-white/20"
+                torch ? "bg-amber-400" : "bg-black/40"
               }`}
               onPress={() => setTorch((t) => !t)}
             >
