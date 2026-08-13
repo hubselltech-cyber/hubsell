@@ -512,6 +512,10 @@ export async function upsertShopeeOrderTx(
         totalAmount,
         // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
         ...(carrier && !existing.carrier ? { carrier } : {}),
+        // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
+        ...(order.shipping_carrier
+          ? { shippingCarrierName: order.shipping_carrier }
+          : {}),
         // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong
         // (RECEIVED_INTACT / CLAIM_SETTLED…) để không regress tiến độ hoàn.
         // Kèm mốc "sàn báo hoàn" để trang Đối soát đơn hoàn tính tuổi đơn
@@ -557,6 +561,9 @@ export async function upsertShopeeOrderTx(
       paymentStatus,
       shippingStatus,
       ...(carrier ? { carrier } : {}),
+      ...(order.shipping_carrier
+        ? { shippingCarrierName: order.shipping_carrier }
+        : {}),
       ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
       itemCount: lines.length,
       createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,

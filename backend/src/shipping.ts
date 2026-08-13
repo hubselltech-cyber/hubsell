@@ -52,6 +52,32 @@ export function carrierFromName(name?: string | null): Carrier | null {
   return Carrier.KHAC;
 }
 
+/**
+ * Đơn HỎA TỐC (giao trong ngày/vài giờ) — nhận từ TÊN HÃNG nguyên văn sàn trả.
+ * Shopee giao hỏa tốc qua đối tác tức thời (AhaMove/Grab/be) hoặc ghi thẳng
+ * "Hỏa Tốc"/"Instant". KHÔNG dùng từ "express" trần — "SPX Express" là
+ * giao THƯỜNG, dính từ khoá này là báo đỏ oan cả sàn.
+ */
+export function isExpressShipping(name?: string | null): boolean {
+  const s = (name ?? "").toLowerCase();
+  if (!s.trim()) return false;
+  return (
+    s.includes("hỏa tốc") ||
+    s.includes("hoả tốc") ||
+    s.includes("hoa toc") ||
+    s.includes("instant") ||
+    s.includes("siêu tốc") ||
+    s.includes("sieu toc") ||
+    s.includes("ahamove") ||
+    s.includes("grab") ||
+    s.includes("bedelivery") ||
+    s.includes("be delivery") ||
+    s.includes("trong ngày") ||
+    s.includes("trong ngay") ||
+    s.includes("same day")
+  );
+}
+
 function pick<T>(list: T[]): T {
   return list[Math.floor(Math.random() * list.length)];
 }

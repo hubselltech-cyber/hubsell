@@ -12,6 +12,7 @@ import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
 import { channelScope } from "../channel-filter";
 import { attachItemImages } from "../item-images";
+import { isExpressShipping } from "../shipping";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -171,27 +172,32 @@ router.get("/", async (req: AuthRequest, res, next) => {
 });
 
 // ============================================================
-// GET /api/orders/stats — thống kê SẢN PHẨM / SKU bán ra.
+// GET /api/orders/stats — PHIẾU BỐC HÀNG: thống kê SẢN PHẨM / SKU cần nhặt.
 //
-// Nhận NGUYÊN bộ query lọc của danh sách (sàn/shop/trạng thái/hãng VC/tìm
-// kiếm) + ?days= (mặc định 30) → chủ shop lọc gì thì thống kê đúng phạm vi đó.
+// CỐ ĐỊNH phạm vi trạng thái = Chờ xử lý + Đã xử lý (chốt với anh Trung
+// 13/08: mục đích duy nhất là nhân viên nhìn vào để bốc hàng — đơn đã giao
+// đi không còn gì để nhặt). Các bộ lọc còn lại (sàn/shop/hãng VC/tìm kiếm)
+// + ?days= (0 = không giới hạn ngày) vẫn nhận nguyên từ query danh sách.
 // Gộp bằng JS sau MỘT lượt findMany: cần doanh số = SUM(price×quantity) mà
-// groupBy Prisma không nhân được 2 cột; cỡ vài nghìn dòng/tháng là nhẹ.
+// groupBy Prisma không nhân được 2 cột; cỡ vài nghìn dòng là nhẹ.
 // ============================================================
 router.get("/stats", async (req: AuthRequest, res, next) => {
   try {
-    // days=0 = KHÔNG giới hạn ngày — kịch bản bốc hàng: lọc "Chờ xử lý" thì
-    // phải đếm MỌI đơn đang chờ, không được cắt cửa sổ thời gian.
     const daysRaw = Number(req.query.days);
     const days = Number.isFinite(daysRaw)
       ? Math.min(365, Math.max(0, Math.floor(daysRaw)))
-      : 30;
+      : 0;
     const since =
       days > 0 ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
     const rows = await prisma.orderItem.findMany({
       where: {
         order: {
           ...ordersWhere(req),
+          // Đè MỌI lựa chọn trạng thái từ query — phiếu bốc hàng chỉ có
+          // nghĩa với đơn chưa bàn giao vận chuyển
+          shippingStatus: {
+            in: [ShippingStatus.PENDING, ShippingStatus.PROCESSED],
+          },
           ...(since ? { createdAt: { gte: since } } : {}),
         },
       },
@@ -201,9 +207,10 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
         channelSku: true,
         quantity: true,
         price: true,
+        // Cờ hỏa tốc tính từ tên hãng nguyên văn của ĐƠN chứa dòng hàng
+        order: { select: { shippingCarrierName: true } },
       },
-      // Trần an toàn ~ vài trăm đơn/ngày vẫn lọt; vượt trần thì top vẫn đúng
-      // xu hướng, chấp nhận sai số thay vì kéo sập truy vấn.
+      // Trần an toàn — đơn đang chờ xử lý hiếm khi vượt nổi con số này
       take: 20000,
     });
 
@@ -211,51 +218,96 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
       name: string;
       sku: string | null;
       qty: number;
+      /** Số món thuộc đơn HỎA TỐC — kho phải nhặt TRƯỚC. */
+      expressQty: number;
       revenue: number;
       orderIds: Set<string>;
     }
+    const blank = (name: string, sku: string | null): Agg => ({
+      name,
+      sku,
+      qty: 0,
+      expressQty: 0,
+      revenue: 0,
+      orderIds: new Set<string>(),
+    });
     const byProduct = new Map<string, Agg>();
     const bySku = new Map<string, Agg>();
+    const allOrderIds = new Set<string>();
+    let totalQty = 0;
+    let totalExpressQty = 0;
+    let totalRevenue = 0;
     for (const r of rows) {
       const revenue = Number(r.price) * r.quantity;
-      const p =
-        byProduct.get(r.productName) ??
-        { name: r.productName, sku: null, qty: 0, revenue: 0, orderIds: new Set<string>() };
+      const express = isExpressShipping(r.order.shippingCarrierName);
+
+      const p = byProduct.get(r.productName) ?? blank(r.productName, null);
       p.qty += r.quantity;
+      if (express) p.expressQty += r.quantity;
       p.revenue += revenue;
       p.orderIds.add(r.orderId);
+      // Nhớ MỘT sku đại diện để tra ảnh ChannelProduct cho dòng sản phẩm
+      if (!p.sku && r.channelSku) p.sku = r.channelSku;
       byProduct.set(r.productName, p);
 
       const skuKey = r.channelSku || "(không có SKU)";
-      const s =
-        bySku.get(skuKey) ??
-        { name: r.productName, sku: skuKey, qty: 0, revenue: 0, orderIds: new Set<string>() };
+      const s = bySku.get(skuKey) ?? blank(r.productName, skuKey);
       s.qty += r.quantity;
+      if (express) s.expressQty += r.quantity;
       s.revenue += revenue;
       s.orderIds.add(r.orderId);
       bySku.set(skuKey, s);
-    }
-    const top = (m: Map<string, Agg>) =>
-      [...m.values()]
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, 50)
-        .map(({ orderIds, ...rest }) => ({ ...rest, orders: orderIds.size }));
 
-    // Dòng TỔNG cho kho: cần bốc tổng cộng bao nhiêu món, thuộc mấy đơn
-    const allOrderIds = new Set<string>();
-    let totalQty = 0;
-    let totalRevenue = 0;
-    for (const r of rows) {
       allOrderIds.add(r.orderId);
       totalQty += r.quantity;
-      totalRevenue += Number(r.price) * r.quantity;
+      if (express) totalExpressQty += r.quantity;
+      totalRevenue += revenue;
     }
+
+    // HỎA TỐC nổi lên ĐẦU danh sách (kho nhặt trước), trong nhóm xếp theo qty
+    const top = (m: Map<string, Agg>) =>
+      [...m.values()]
+        .sort((a, b) => b.expressQty - a.expressQty || b.qty - a.qty)
+        .slice(0, 50)
+        .map(({ orderIds, ...rest }) => ({ ...rest, orders: orderIds.size }));
+    const topProducts = top(byProduct);
+    const topSkus = top(bySku);
+
+    // Ảnh cho từng dòng: tra ChannelProduct theo sku (ưu tiên ảnh sàn — cùng
+    // luật với danh sách đơn); một lượt query cho cả hai bảng xếp hạng
+    const skuSet = new Set<string>();
+    for (const r of [...topProducts, ...topSkus]) if (r.sku) skuSet.add(r.sku);
+    const imageMap = new Map<string, string>();
+    if (skuSet.size > 0) {
+      const imgs = await prisma.channelProduct.findMany({
+        where: {
+          channel: channelScope(req),
+          channelSku: { in: [...skuSet] },
+          imageUrl: { not: null },
+        },
+        select: { channelSku: true, imageUrl: true },
+      });
+      for (const i of imgs) {
+        if (i.imageUrl && !imageMap.has(i.channelSku)) {
+          imageMap.set(i.channelSku, i.imageUrl);
+        }
+      }
+    }
+    const withImage = <T extends { sku: string | null }>(r: T) => ({
+      ...r,
+      imageUrl: r.sku ? (imageMap.get(r.sku) ?? null) : null,
+    });
 
     res.json({
       days,
-      totals: { qty: totalQty, orders: allOrderIds.size, revenue: totalRevenue },
-      byProduct: top(byProduct),
-      bySku: top(bySku),
+      totals: {
+        qty: totalQty,
+        expressQty: totalExpressQty,
+        orders: allOrderIds.size,
+        revenue: totalRevenue,
+      },
+      byProduct: topProducts.map(withImage),
+      bySku: topSkus.map(withImage),
     });
   } catch (err) {
     next(err);

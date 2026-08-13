@@ -548,9 +548,10 @@ export async function upsertLazadaOrderTx(
     items
       .map((it) => (it.tracking_code ?? it.tracking_code_pre ?? "").toString().trim())
       .find(Boolean) || null;
-  const carrier = carrierFromName(
-    items.map((it) => it.shipment_provider?.toString().trim()).find(Boolean)
-  );
+  const rawProvider =
+    items.map((it) => it.shipment_provider?.toString().trim()).find(Boolean) ||
+    null;
+  const carrier = carrierFromName(rawProvider);
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
@@ -570,6 +571,8 @@ export async function upsertLazadaOrderTx(
           ? { trackingCode }
           : {}),
         ...(carrier && !existing.carrier ? { carrier } : {}),
+        // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
+        ...(rawProvider ? { shippingCarrierName: rawProvider } : {}),
         // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong.
         // Kèm mốc "sàn báo hoàn" cho trang Đối soát đơn hoàn tính tuổi đơn.
         ...(returning && existing.returnStatus === ReturnStatus.NONE
@@ -616,6 +619,7 @@ export async function upsertLazadaOrderTx(
       shippingStatus,
       ...(trackingCode ? { trackingCode } : {}),
       ...(carrier ? { carrier } : {}),
+      ...(rawProvider ? { shippingCarrierName: rawProvider } : {}),
       ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
       itemCount: lines.length,
       createdAt: order.created_at ? new Date(order.created_at) : undefined,

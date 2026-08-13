@@ -32,6 +32,7 @@ import {
   SHIPPING_STATUS,
 } from "@/lib/labels";
 import { CHANNEL_COLOR } from "@/components/ChannelDonut";
+import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
 
 /** Số dòng hàng hiện sẵn trên card — đơn dài hơn thì bấm "Xem thêm". */
@@ -215,6 +216,7 @@ export default function OrdersScreen() {
   const renderOrder = ({ item }: { item: OrderDto }) => {
     const ship = SHIPPING_STATUS[item.shippingStatus];
     const ret = item.returnStatus !== "NONE" ? RETURN_STATUS[item.returnStatus] : null;
+    const express = isExpressShipping(item.shippingCarrierName);
     const isExpanded = expanded.has(item.id);
     const visibleItems = isExpanded
       ? item.items
@@ -222,13 +224,19 @@ export default function OrdersScreen() {
     const hiddenCount = item.items.length - ITEMS_PREVIEW;
     return (
       <View className="mb-2.5 rounded-2xl bg-white p-3" style={{ elevation: 1 }}>
-        <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center justify-between gap-2">
           <Text
-            className="flex-1 pr-2 text-[13px] font-semibold text-slate-900"
+            className="flex-1 pr-1 text-[13px] font-semibold text-slate-900"
             numberOfLines={1}
           >
             {item.orderCode}
           </Text>
+          {/* HỎA TỐC đỏ rực — anh Trung chốt 13/08: loại đơn quan trọng nhất */}
+          {express ? (
+            <View className="rounded-full bg-red-500 px-2 py-0.5">
+              <Text className="text-[10px] font-bold text-white">⚡ Hỏa tốc</Text>
+            </View>
+          ) : null}
           <Badge label={ship.label} bg={ship.bg} text={ship.text} />
         </View>
         {/* Tên SHOP thay nhãn sàn (anh Trung chốt 13/08) — nhà nhiều gian
@@ -262,11 +270,24 @@ export default function OrdersScreen() {
         {/* Chân card: hãng vận chuyển + mã vận đơn | tổng tiền */}
         <View className="mt-2.5 flex-row items-center justify-between border-t border-slate-100 pt-2">
           <View className="flex-1 flex-row items-center gap-1.5 pr-2">
-            <Ionicons name="car-outline" size={13} color="#64748b" />
-            <Text className="flex-1 text-[11px] text-slate-500" numberOfLines={1}>
-              {item.carrier
-                ? (CARRIER_LABEL[item.carrier] ?? item.carrier)
-                : "Chưa gán hãng vận chuyển"}
+            <Ionicons
+              name="car-outline"
+              size={13}
+              color={express ? "#ef4444" : "#64748b"}
+            />
+            <Text
+              className={`flex-1 text-[11px] ${
+                express ? "font-semibold text-red-500" : "text-slate-500"
+              }`}
+              numberOfLines={1}
+            >
+              {/* Đơn hỏa tốc hiện TÊN NGUYÊN VĂN (AhaMove/GrabExpress…) —
+                  enum gộp về "Hãng khác" là mất thông tin quan trọng nhất */}
+              {express
+                ? (item.shippingCarrierName ?? "Hỏa tốc")
+                : item.carrier
+                  ? (CARRIER_LABEL[item.carrier] ?? item.carrier)
+                  : "Chưa gán hãng vận chuyển"}
               {item.trackingCode ? ` · ${item.trackingCode}` : ""}
             </Text>
           </View>
@@ -635,9 +656,6 @@ function StatsSheet({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"product" | "sku">("product");
-  // Kỳ thống kê: 0 = TOÀN BỘ theo bộ lọc — kịch bản bốc hàng (lọc "Chờ xử
-  // lý" rồi xem cần nhặt SKU nào bao nhiêu món, không cắt cửa sổ ngày)
-  const [days, setDays] = useState(30);
   const [data, setData] = useState<OrderStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -646,23 +664,19 @@ function StatsSheet({
     if (!visible) return;
     setLoading(true);
     setError("");
-    fetchOrderStats({ ...filter, days })
+    // days=0: phiếu bốc hàng đếm TRỌN đơn đang chờ, backend đã cố định
+    // trạng thái Chờ xử lý + Đã xử lý nên không cần chọn kỳ
+    fetchOrderStats({ ...filter, days: 0 })
       .then(setData)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra")
       )
       .finally(() => setLoading(false));
-    // filter dựng mới mỗi render — nạp lại khi MỞ panel hoặc đổi kỳ là đủ
+    // filter dựng mới mỗi render — nạp lại khi MỞ panel là đủ
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, days]);
+  }, [visible]);
 
   const rows = mode === "product" ? (data?.byProduct ?? []) : (data?.bySku ?? []);
-  const DAY_OPTIONS = [
-    { value: 1, label: "Hôm nay" },
-    { value: 7, label: "7 ngày" },
-    { value: 30, label: "30 ngày" },
-    { value: 0, label: "Toàn bộ" },
-  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -673,26 +687,17 @@ function StatsSheet({
             <View className="h-1 w-10 rounded-full bg-slate-200" />
           </View>
           <View className="mb-1 flex-row items-center justify-between">
-            <Text className="text-base font-bold text-slate-900">Thống kê bán ra</Text>
+            <Text className="text-base font-bold text-slate-900">
+              Thống kê bốc hàng
+            </Text>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color="#64748b" />
             </Pressable>
           </View>
           <Text className="mb-2 text-[11px] text-slate-400">
-            Theo bộ lọc đang chọn — lọc &quot;Chờ xử lý&quot; + Toàn bộ là ra
-            danh sách bốc hàng
+            Chỉ tính đơn Chờ xử lý + Đã xử lý (chưa bàn giao) — hỏa tốc đỏ,
+            nhặt trước
           </Text>
-
-          <View className="mb-2 flex-row gap-1.5">
-            {DAY_OPTIONS.map((d) => (
-              <PickChip
-                key={d.value}
-                label={d.label}
-                active={days === d.value}
-                onPress={() => setDays(d.value)}
-              />
-            ))}
-          </View>
 
           <View className="mb-2 flex-row gap-2">
             <PickChip
@@ -710,13 +715,20 @@ function StatsSheet({
           {/* Dòng TỔNG cho kho: cần bốc bao nhiêu món, thuộc mấy đơn.
               Check cả totals — backend cũ (đang chờ deploy) chưa trả trường này */}
           {data?.totals && !loading ? (
-            <View className="mb-2 flex-row items-center justify-between rounded-xl bg-slate-100 px-3 py-2">
-              <Text className="text-xs font-semibold text-slate-700">
-                Tổng cần: {data.totals.qty} sản phẩm · {data.totals.orders} đơn
-              </Text>
-              <Text className="text-xs font-bold text-emerald-600">
-                {compactMoney(data.totals.revenue)}
-              </Text>
+            <View className="mb-2 rounded-xl bg-slate-100 px-3 py-2">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-semibold text-slate-700">
+                  Tổng cần: {data.totals.qty} sản phẩm · {data.totals.orders} đơn
+                </Text>
+                <Text className="text-xs font-bold text-emerald-600">
+                  {compactMoney(data.totals.revenue)}
+                </Text>
+              </View>
+              {data.totals.expressQty > 0 ? (
+                <Text className="mt-0.5 text-xs font-bold text-red-500">
+                  ⚡ Trong đó {data.totals.expressQty} món HỎA TỐC — nhặt trước!
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -737,9 +749,20 @@ function StatsSheet({
               }
               renderItem={({ item, index }) => (
                 <View className="flex-row items-center gap-2.5 border-b border-slate-100 py-2.5">
-                  <Text className="w-6 text-center text-xs font-bold text-slate-400">
+                  <Text className="w-5 text-center text-xs font-bold text-slate-400">
                     {index + 1}
                   </Text>
+                  <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+                    {item.imageUrl ? (
+                      <Image
+                        source={{ uri: item.imageUrl }}
+                        style={{ width: 40, height: 40 }}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <Ionicons name="cube-outline" size={16} color="#94a3b8" />
+                    )}
+                  </View>
                   <View className="flex-1">
                     <Text className="text-xs text-slate-800" numberOfLines={2}>
                       {mode === "sku" && item.sku ? item.sku : item.name}
@@ -748,9 +771,18 @@ function StatsSheet({
                       {mode === "sku" ? item.name + " · " : ""}
                       {item.orders} đơn
                     </Text>
+                    {item.expressQty > 0 ? (
+                      <Text className="text-[10px] font-bold text-red-500">
+                        ⚡ {item.expressQty} món hỏa tốc
+                      </Text>
+                    ) : null}
                   </View>
                   <View className="items-end">
-                    <Text className="text-xs font-bold text-slate-900">
+                    <Text
+                      className={`text-xs font-bold ${
+                        item.expressQty > 0 ? "text-red-500" : "text-slate-900"
+                      }`}
+                    >
                       {item.qty} sp
                     </Text>
                     <Text className="text-[10px] text-emerald-600">

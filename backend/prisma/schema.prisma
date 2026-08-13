@@ -881,6 +881,9 @@ model Order {
   // Đơn vị vận chuyển (SPX, GHTK, J&T…) và mã vận đơn để in phiếu giao hàng.
   // Trống = sàn chưa gán đơn vị vận chuyển cho đơn này.
   carrier      Carrier?
+  /// Tên hãng NGUYÊN VĂN sàn trả ("SPX Instant", "AhaMove", "Hỏa Tốc"…) —
+  /// nguồn nhận diện đơn HỎA TỐC (enum Carrier đã gộp mất sắc thái này).
+  shippingCarrierName String?
   trackingCode String?
   // Đã bấm "Xác nhận chuẩn bị hàng" chưa — mốc giữa lúc đơn về và lúc bàn giao
   // cho shipper, để chủ shop biết đơn nào đã đóng gói xong mà chưa ai đến lấy.

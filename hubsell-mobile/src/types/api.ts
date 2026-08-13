@@ -76,6 +76,8 @@ export interface OrderDto {
   customerPhone?: string | null;
   totalAmount: string | number;
   carrier: string | null;
+  /** Tên hãng NGUYÊN VĂN sàn trả — nguồn nhận diện đơn HỎA TỐC (lib/shipping). */
+  shippingCarrierName?: string | null;
   trackingCode: string | null;
   returnTrackingCode: string | null;
   shippingStatus: ShippingStatus;
@@ -292,18 +294,25 @@ export interface OpsMessagesResponse {
 
 export interface OrderStatsRow {
   name: string;
-  /** null với nhóm theo sản phẩm; mã SKU với nhóm theo SKU. */
+  /** SKU đại diện (nhóm sản phẩm) / mã SKU (nhóm SKU) — null nếu không có. */
   sku: string | null;
   qty: number;
+  /** Số món thuộc đơn HỎA TỐC — kho nhặt TRƯỚC, hiện đỏ. */
+  expressQty: number;
   revenue: number;
   orders: number;
+  /** Ảnh ChannelProduct theo sku — cùng luật ưu tiên ảnh sàn. */
+  imageUrl: string | null;
 }
 
-/** GET /api/orders/stats?days=30 (days=0 = toàn bộ) + nguyên bộ query lọc. */
+/**
+ * GET /api/orders/stats — PHIẾU BỐC HÀNG. Backend CỐ ĐỊNH phạm vi trạng
+ * thái = Chờ xử lý + Đã xử lý (đè mọi lựa chọn từ query); days=0 = toàn bộ.
+ */
 export interface OrderStatsResponse {
   days: number;
   /** Dòng tổng cho kho: cần bốc tổng bao nhiêu món, thuộc mấy đơn. */
-  totals: { qty: number; orders: number; revenue: number };
+  totals: { qty: number; expressQty: number; orders: number; revenue: number };
   byProduct: OrderStatsRow[];
   bySku: OrderStatsRow[];
 }
