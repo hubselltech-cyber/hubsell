@@ -32,6 +32,18 @@ export const CHANNEL_LABEL: Record<ChannelName, string> = {
   OFFLINE: "Offline",
 };
 
+/** Nhãn NGẮN của hãng vận chuyển — cho chip lọc chật chỗ trên mobile. */
+export const CARRIER_SHORT: Record<string, string> = {
+  SPX: "SPX",
+  GHTK: "GHTK",
+  GHN: "GHN",
+  JT: "J&T",
+  VIETTEL_POST: "VTPost",
+  NINJA_VAN: "Ninja",
+  BEST: "BEST",
+  KHAC: "Khác",
+};
+
 /** Nhãn hãng vận chuyển — CHÉP TAY từ frontend/src/lib/carrier-meta.ts. */
 export const CARRIER_LABEL: Record<string, string> = {
   SPX: "SPX Express",

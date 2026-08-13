@@ -32,31 +32,28 @@ function isCarrier(value: string): value is Carrier {
   return (Object.values(Carrier) as string[]).includes(value);
 }
 
-// GET /api/orders?page=1&pageSize=20&shippingStatus=PENDING&channelId=...
-// Danh sách đơn hàng gom về từ TẤT CẢ các kênh, có bộ lọc + phân trang.
-router.get("/", async (req: AuthRequest, res, next) => {
-  try {
-    const page = Math.max(1, Number(req.query.page) || 1);
-    // Trần 100: cho phép chủ shop mở rộng 20 → 50 → 100 đơn/trang khi soát
-    // đơn hàng loạt, nhưng không để gõ tay ?pageSize=100000 làm nghẽn truy vấn.
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
-    const shippingStatus =
-      typeof req.query.shippingStatus === "string" ? req.query.shippingStatus : "";
-    const carrier =
-      typeof req.query.carrier === "string" ? req.query.carrier : "";
-    const search =
-      typeof req.query.search === "string" ? req.query.search.trim() : "";
-    // Bộ lọc con của tab "Đã xử lý": "yes" = đã in phiếu, "no" = chưa in.
-    // Giá trị khác thì bỏ qua, coi như không lọc.
-    const printed = typeof req.query.printed === "string" ? req.query.printed : "";
-    // Loại đơn theo độ khó đóng gói: "single" = 1 dòng hàng (đóng nhanh),
-    // "multi" = từ 2 dòng trở lên (phải soát kỹ hơn).
-    const orderType =
-      typeof req.query.orderType === "string" ? req.query.orderType : "";
-    const returnStatusQ =
-      typeof req.query.returnStatus === "string" ? req.query.returnStatus : "";
+/**
+ * Dựng mảnh `where` từ CHUNG một bộ query lọc của màn Đơn hàng — dùng cho cả
+ * danh sách (GET /) lẫn thống kê (GET /stats) để hai nơi luôn cùng phạm vi.
+ */
+function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
+  const shippingStatus =
+    typeof req.query.shippingStatus === "string" ? req.query.shippingStatus : "";
+  const carrier =
+    typeof req.query.carrier === "string" ? req.query.carrier : "";
+  const search =
+    typeof req.query.search === "string" ? req.query.search.trim() : "";
+  // Bộ lọc con của tab "Đã xử lý": "yes" = đã in phiếu, "no" = chưa in.
+  // Giá trị khác thì bỏ qua, coi như không lọc.
+  const printed = typeof req.query.printed === "string" ? req.query.printed : "";
+  // Loại đơn theo độ khó đóng gói: "single" = 1 dòng hàng (đóng nhanh),
+  // "multi" = từ 2 dòng trở lên (phải soát kỹ hơn).
+  const orderType =
+    typeof req.query.orderType === "string" ? req.query.orderType : "";
+  const returnStatusQ =
+    typeof req.query.returnStatus === "string" ? req.query.returnStatus : "";
 
-    const where: Prisma.OrderWhereInput = {
+  return {
       channel: channelScope(req),
       ...(isStatus(shippingStatus) ? { shippingStatus } : {}),
       ...(isCarrier(carrier) ? { carrier } : {}),
@@ -88,7 +85,18 @@ router.get("/", async (req: AuthRequest, res, next) => {
             ],
           }
         : {}),
-    };
+  };
+}
+
+// GET /api/orders?page=1&pageSize=20&shippingStatus=PENDING&channelId=...
+// Danh sách đơn hàng gom về từ TẤT CẢ các kênh, có bộ lọc + phân trang.
+router.get("/", async (req: AuthRequest, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    // Trần 100: cho phép chủ shop mở rộng 20 → 50 → 100 đơn/trang khi soát
+    // đơn hàng loạt, nhưng không để gõ tay ?pageSize=100000 làm nghẽn truy vấn.
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+    const where = ordersWhere(req);
 
     const [total, items, statusCounts, notPrinted, alreadyPrinted] =
       await Promise.all([
@@ -157,6 +165,72 @@ router.get("/", async (req: AuthRequest, res, next) => {
       pageCount: Math.ceil(total / pageSize),
       counts,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// GET /api/orders/stats — thống kê SẢN PHẨM / SKU bán ra.
+//
+// Nhận NGUYÊN bộ query lọc của danh sách (sàn/shop/trạng thái/hãng VC/tìm
+// kiếm) + ?days= (mặc định 30) → chủ shop lọc gì thì thống kê đúng phạm vi đó.
+// Gộp bằng JS sau MỘT lượt findMany: cần doanh số = SUM(price×quantity) mà
+// groupBy Prisma không nhân được 2 cột; cỡ vài nghìn dòng/tháng là nhẹ.
+// ============================================================
+router.get("/stats", async (req: AuthRequest, res, next) => {
+  try {
+    const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rows = await prisma.orderItem.findMany({
+      where: { order: { ...ordersWhere(req), createdAt: { gte: since } } },
+      select: {
+        orderId: true,
+        productName: true,
+        channelSku: true,
+        quantity: true,
+        price: true,
+      },
+      // Trần an toàn ~ vài trăm đơn/ngày vẫn lọt; vượt trần thì top vẫn đúng
+      // xu hướng, chấp nhận sai số thay vì kéo sập truy vấn.
+      take: 20000,
+    });
+
+    interface Agg {
+      name: string;
+      sku: string | null;
+      qty: number;
+      revenue: number;
+      orderIds: Set<string>;
+    }
+    const byProduct = new Map<string, Agg>();
+    const bySku = new Map<string, Agg>();
+    for (const r of rows) {
+      const revenue = Number(r.price) * r.quantity;
+      const p =
+        byProduct.get(r.productName) ??
+        { name: r.productName, sku: null, qty: 0, revenue: 0, orderIds: new Set<string>() };
+      p.qty += r.quantity;
+      p.revenue += revenue;
+      p.orderIds.add(r.orderId);
+      byProduct.set(r.productName, p);
+
+      const skuKey = r.channelSku || "(không có SKU)";
+      const s =
+        bySku.get(skuKey) ??
+        { name: r.productName, sku: skuKey, qty: 0, revenue: 0, orderIds: new Set<string>() };
+      s.qty += r.quantity;
+      s.revenue += revenue;
+      s.orderIds.add(r.orderId);
+      bySku.set(skuKey, s);
+    }
+    const top = (m: Map<string, Agg>) =>
+      [...m.values()]
+        .sort((a, b) => b.qty - a.qty)
+        .slice(0, 50)
+        .map(({ orderIds, ...rest }) => ({ ...rest, orders: orderIds.size }));
+
+    res.json({ days, byProduct: top(byProduct), bySku: top(bySku) });
   } catch (err) {
     next(err);
   }

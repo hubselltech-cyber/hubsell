@@ -284,3 +284,32 @@ export interface OpsConversationsResponse {
 export interface OpsMessagesResponse {
   messages: OpsMessageDto[];
 }
+
+// ============================================================
+// Thống kê SP/SKU + danh sách gian — chép tay từ backend
+// (routes/orders.ts GET /stats, routes/channels.ts GET /)
+// ============================================================
+
+export interface OrderStatsRow {
+  name: string;
+  /** null với nhóm theo sản phẩm; mã SKU với nhóm theo SKU. */
+  sku: string | null;
+  qty: number;
+  revenue: number;
+  orders: number;
+}
+
+/** GET /api/orders/stats?days=30 + nguyên bộ query lọc của danh sách. */
+export interface OrderStatsResponse {
+  days: number;
+  byProduct: OrderStatsRow[];
+  bySku: OrderStatsRow[];
+}
+
+/** GET /api/channels — chỉ lấy các trường màn lọc cần. */
+export interface ChannelListItem {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+  status: string;
+}

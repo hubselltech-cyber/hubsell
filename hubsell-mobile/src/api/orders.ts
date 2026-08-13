@@ -2,25 +2,44 @@ import { api } from "./client";
 import type {
   LookupResponse,
   OrdersListResponse,
+  OrderStatsResponse,
   ReceiveReturnResponse,
   OrderDto,
 } from "../types/api";
 
-export function fetchOrders(params: {
-  page?: number;
-  pageSize?: number;
+export interface OrdersFilter {
   search?: string;
   shippingStatus?: string;
   /** Lọc theo sàn — channelScope backend tự đọc, số đếm tab cũng lọc theo. */
   channelName?: string;
-}) {
+  /** Lọc đích danh MỘT gian hàng — thắng channelName khi có cả hai. */
+  channelId?: string;
+  /** Hãng vận chuyển (SPX/GHTK/…). */
+  carrier?: string;
+}
+
+function filterParams(params: OrdersFilter): URLSearchParams {
   const q = new URLSearchParams();
-  q.set("page", String(params.page ?? 1));
-  q.set("pageSize", String(params.pageSize ?? 20));
   if (params.search) q.set("search", params.search);
   if (params.shippingStatus) q.set("shippingStatus", params.shippingStatus);
   if (params.channelName) q.set("channelName", params.channelName);
+  if (params.channelId) q.set("channelId", params.channelId);
+  if (params.carrier) q.set("carrier", params.carrier);
+  return q;
+}
+
+export function fetchOrders(params: OrdersFilter & { page?: number; pageSize?: number }) {
+  const q = filterParams(params);
+  q.set("page", String(params.page ?? 1));
+  q.set("pageSize", String(params.pageSize ?? 20));
   return api<OrdersListResponse>(`/api/orders?${q.toString()}`);
+}
+
+/** Thống kê SP/SKU bán ra — cùng phạm vi lọc với danh sách, mặc định 30 ngày. */
+export function fetchOrderStats(params: OrdersFilter & { days?: number }) {
+  const q = filterParams(params);
+  q.set("days", String(params.days ?? 30));
+  return api<OrderStatsResponse>(`/api/orders/stats?${q.toString()}`);
 }
 
 /**
