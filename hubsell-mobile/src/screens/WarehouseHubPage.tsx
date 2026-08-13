@@ -15,7 +15,12 @@ import { fetchReturns } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
 import type { ReturnOrderDto, ReturnsSummaryResponse } from "@/types/api";
 import { RETURN_STATUS, CHANNEL_LABEL } from "@/lib/labels";
+import { CHANNEL_COLOR } from "@/components/ChannelDonut";
 import { Badge } from "@/components/Badge";
+
+// Bộ lọc sàn — cùng thứ tự với tab Tin nhắn (chốt 13/08)
+const CHANNEL_FILTERS = ["", "SHOPEE", "TIKTOK", "LAZADA"] as const;
+type ChannelFilter = (typeof CHANNEL_FILTERS)[number];
 
 /**
  * Trang KHO — trang 3 của pager Trang chủ (chủ shop).
@@ -34,8 +39,10 @@ export function WarehouseHubPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [channel, setChannel] = useState<ChannelFilter>("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef("");
+  const channelRef = useRef<ChannelFilter>("");
 
   const load = useCallback(
     async (nextPage: number, append: boolean, asRefresh = false) => {
@@ -48,6 +55,7 @@ export function WarehouseHubPage() {
           page: nextPage,
           pageSize: 20,
           search: searchRef.current || undefined,
+          channelName: channelRef.current || undefined,
         });
         setSummary(res.summary);
         setItems((prev) => (append ? [...prev, ...res.items] : res.items));
@@ -68,8 +76,9 @@ export function WarehouseHubPage() {
   );
 
   useEffect(() => {
+    channelRef.current = channel;
     void load(1, false);
-  }, [load]);
+  }, [channel, load]);
 
   const onSearch = (text: string) => {
     setSearch(text);
@@ -102,6 +111,36 @@ export function WarehouseHubPage() {
         </View>
       ) : (
         <>
+          {/* Bộ lọc sàn — áp cho CẢ thẻ đếm lẫn danh sách (backend lọc chung) */}
+          <View className="mb-3 flex-row gap-2">
+            {CHANNEL_FILTERS.map((ch) => {
+              const active = channel === ch;
+              return (
+                <Pressable
+                  key={ch || "ALL"}
+                  className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-2 ${
+                    active ? "bg-slate-900" : "bg-white border border-slate-200"
+                  }`}
+                  onPress={() => setChannel(ch)}
+                >
+                  {ch ? (
+                    <View
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: CHANNEL_COLOR[ch] }}
+                    />
+                  ) : null}
+                  <Text
+                    className={`text-xs font-semibold ${
+                      active ? "text-white" : "text-slate-600"
+                    }`}
+                  >
+                    {ch ? CHANNEL_LABEL[ch] : "Tất cả"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           <View className="mb-3 flex-row flex-wrap gap-2">
             {tiles.map((t) => (
               <View
@@ -163,7 +202,9 @@ export function WarehouseHubPage() {
             <Text className="py-6 text-center text-sm text-slate-400">
               {searchRef.current
                 ? "Không tìm thấy đơn hoàn nào khớp từ khóa"
-                : "Không có đơn hoàn nào"}
+                : channel
+                  ? `Không có đơn hoàn nào trên ${CHANNEL_LABEL[channel]}`
+                  : "Không có đơn hoàn nào"}
             </Text>
           ) : (
             items.map((o) => {

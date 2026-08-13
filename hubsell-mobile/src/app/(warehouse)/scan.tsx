@@ -19,6 +19,7 @@ import { lookupOrder, markDamaged, receiveReturn } from "@/api/orders";
 import { ApiError } from "@/api/client";
 import type { LookupAmbiguousBody, OrderDto } from "@/types/api";
 import { CHANNEL_LABEL, RETURN_STATUS } from "@/lib/labels";
+import { playScanSound } from "@/lib/scan-sounds";
 import { Badge } from "@/components/Badge";
 
 /**
@@ -74,9 +75,19 @@ export default function ScanReturnsScreen() {
     setBusy(true);
     try {
       const res = await lookupOrder(trimmed);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Âm phân biệt ngay từ lượt tra: đơn còn thao tác được = success;
+      // đơn ĐÃ quét nhận/nhập kho/xử lý rồi = tiếng "quét trùng"
+      const fresh =
+        res.order.returnStatus === "AWAITING" || res.order.returnStatus === "NONE";
+      playScanSound(fresh ? "success" : "duplicate");
+      void Haptics.notificationAsync(
+        fresh
+          ? Haptics.NotificationFeedbackType.Success
+          : Haptics.NotificationFeedbackType.Warning
+      );
       setPanel({ type: "order", order: res.order });
     } catch (err) {
+      playScanSound("error");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       if (err instanceof ApiError && err.status === 409 && err.body) {
         const body = err.body as LookupAmbiguousBody;
@@ -108,6 +119,7 @@ export default function ScanReturnsScreen() {
     setBusy(true);
     try {
       const res = await receiveReturn(order.id);
+      playScanSound("success");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setPanel({
         type: "done",
@@ -117,6 +129,7 @@ export default function ScanReturnsScreen() {
           : undefined,
       });
     } catch (err) {
+      playScanSound("error");
       setPanel({
         type: "error",
         message: err instanceof ApiError ? err.message : "Có lỗi xảy ra, thử lại",
@@ -130,12 +143,14 @@ export default function ScanReturnsScreen() {
     setBusy(true);
     try {
       await markDamaged(order.id, damageNote);
+      playScanSound("success");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setPanel({
         type: "done",
         message: `Đã đánh dấu HÀNG HỎNG đơn ${order.orderCode} — chờ khiếu nại`,
       });
     } catch (err) {
+      playScanSound("error");
       setPanel({
         type: "error",
         message: err instanceof ApiError ? err.message : "Có lỗi xảy ra, thử lại",

@@ -11,12 +11,15 @@ export function fetchReturns(params: {
   pageSize?: number;
   search?: string;
   status?: string;
+  /** Lọc theo sàn — channelScope backend tự đọc, thẻ đếm cũng lọc theo. */
+  channelName?: string;
 } = {}) {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("pageSize", String(params.pageSize ?? 20));
   if (params.search) q.set("search", params.search);
   if (params.status) q.set("status", params.status);
+  if (params.channelName) q.set("channelName", params.channelName);
   return api<ReturnsSummaryResponse>(`/api/warehouse/returns?${q.toString()}`);
 }
 

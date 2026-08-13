@@ -55,10 +55,19 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View className="mb-10 items-center">
-          {/* Logo Hubsell thật (chữ H xanh lá + mũi tên đi lên) */}
+          {/* Logo Hubsell thật (chữ H xanh lá + mũi tên đi lên) — PNG nền
+              trắng vuông nên phải bo góc + viền mảnh cho khỏi thô trên nền
+              slate-50, kèm bóng nhẹ kiểu app icon. */}
           <Image
             source={require("@/assets/images/logo-hubsell.png")}
-            style={{ width: 72, height: 72, marginBottom: 12 }}
+            style={{
+              width: 72,
+              height: 72,
+              marginBottom: 12,
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: "#e2e8f0",
+            }}
             contentFit="contain"
           />
           <Text className="text-2xl font-bold text-slate-900">Hubsell</Text>

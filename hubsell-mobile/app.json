@@ -37,7 +37,8 @@
         {
           "cameraPermission": "Hubsell cần Camera để quét mã vận đơn trên kiện hàng hoàn."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,
