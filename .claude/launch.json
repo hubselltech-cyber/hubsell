@@ -15,6 +15,12 @@
       "autoPort": true
     },
     {
+      "name": "mobile-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "web", "--prefix", "hubsell-mobile"],
+      "port": 8081
+    },
+    {
       "name": "landing",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "hubsell-landing"],
