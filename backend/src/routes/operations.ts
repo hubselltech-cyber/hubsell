@@ -11,6 +11,7 @@
 // ============================================================
 
 import { Router } from "express";
+import multer from "multer";
 import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../prisma";
 import { requirePermission, type AuthRequest } from "../auth";
@@ -22,9 +23,11 @@ import {
   getItemBaseInfo,
   getModelList,
   replyComment,
+  sendChatImageMessage,
   sendChatItemMessage,
   sendChatMessage,
   shopeeSellerStock,
+  uploadChatImage,
   type ShopeeConversation,
 } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
@@ -68,6 +71,12 @@ interface OpsConversation {
   buyerId: string | null;
   /** id hội thoại phía sàn (conversation_id / session_id). */
   externalId: string;
+  /**
+   * Tin CUỐI là của shop? — nguồn cho bộ lọc Đã/Chưa trả lời trên client.
+   * Shopee so latest_message_from_id với to_id (người mua); Lazada không trả
+   * người gửi trong session list → null (chỉ hiện ở tab "Tất cả").
+   */
+  lastFromShop: boolean | null;
 }
 
 interface OpsMessage {
@@ -77,6 +86,8 @@ interface OpsMessage {
   at: number | null;
   /** item_id nếu tin nhắn đính kèm sản phẩm — frontend tra ngữ cảnh SP. */
   itemId: string | null;
+  /** url ảnh nếu là tin kiểu image — client render bong bóng ảnh. */
+  imageUrl: string | null;
 }
 
 interface OpsReview {
@@ -336,6 +347,10 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 lastAt: toMs(c.last_message_timestamp),
                 buyerId: c.to_id != null ? String(c.to_id) : null,
                 externalId: String(c.conversation_id),
+                lastFromShop:
+                  c.latest_message_from_id != null && c.to_id != null
+                    ? String(c.latest_message_from_id) !== String(c.to_id)
+                    : null,
               });
               added++;
             }
@@ -360,6 +375,7 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 lastAt: toMs(s.last_message_time),
                 buyerId: null,
                 externalId: String(sid),
+                lastFromShop: null,
               });
               added++;
             }
@@ -414,6 +430,10 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
           text: shopeeMessageText(m.message_type, m.content?.text),
           at: toMs(m.created_timestamp),
           itemId: m.content?.item_id != null ? String(m.content.item_id) : null,
+          imageUrl:
+            m.message_type === "image"
+              ? (m.content?.image_url ?? m.content?.url ?? m.content?.thumb_url ?? null)
+              : null,
         });
       }
     } else {
@@ -430,6 +450,7 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
           text: lazadaMessageText(tpl, m.content),
           at: toMs(m.send_time ?? m.sendTime),
           itemId: null,
+          imageUrl: null,
         });
       }
     }
@@ -480,6 +501,67 @@ router.post("/conversations/send", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+// ============================================================
+// POST /api/operations/conversations/send-image — gửi ẢNH (multipart "image")
+// Fields: channelId, buyerId. Chỉ Shopee: upload lên file server sàn lấy url
+// rồi send_message kiểu image. Lazada thiếu quyền im/* — trả 400 nói thẳng.
+// ============================================================
+
+// Ảnh chat vào bộ nhớ (không lưu đĩa), giới hạn 8MB — Shopee nhận jpg/png/gif
+const chatImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpe?g|png|gif|webp)$/i.test(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Chỉ chấp nhận ảnh JPG/PNG/GIF/WebP"));
+    }
+  },
+});
+
+router.post(
+  "/conversations/send-image",
+  chatImageUpload.single("image"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { channelId, buyerId } = req.body ?? {};
+      if (!req.file) {
+        res.status(400).json({ error: "Thiếu file ảnh (field \"image\")" });
+        return;
+      }
+      const ch = await findChannel(req, String(channelId ?? ""));
+      if (!ch) {
+        res.status(404).json({ error: "Không tìm thấy gian hàng đã uỷ quyền" });
+        return;
+      }
+      if (ch.channelName !== ChannelName.SHOPEE) {
+        res.status(400).json({
+          error: "Gửi ảnh hiện chỉ hỗ trợ Shopee — Lazada chưa được sàn cấp quyền chat.",
+        });
+        return;
+      }
+      const toId = Number(buyerId);
+      if (!Number.isFinite(toId) || toId <= 0) {
+        res.status(400).json({ error: "Thiếu buyerId (to_id) của người mua Shopee" });
+        return;
+      }
+      const { accessToken, shopId } = await getValidShopeeAccessToken(ch);
+      const imageUrl = await uploadChatImage({
+        accessToken,
+        shopId,
+        buffer: req.file.buffer,
+        filename: req.file.originalname || "photo.jpg",
+        mime: req.file.mimetype,
+      });
+      await sendChatImageMessage({ accessToken, shopId, toId, imageUrl });
+      res.json({ ok: true, imageUrl });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ============================================================
 // POST /api/operations/conversations/send-item — gửi THẺ SẢN PHẨM chuẩn sàn

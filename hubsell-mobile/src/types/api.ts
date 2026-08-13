@@ -8,6 +8,7 @@
  *   - backend/src/routes/orders.ts        (GET /, /lookup, POST /:id/return)
  *   - backend/src/routes/warehouse.ts     (POST /returns/:id/receive)
  *   - backend/src/routes/finance.ts       (realized-pnl summary, cash-flow)
+ *   - backend/src/routes/operations.ts    (conversations: inbox/messages/send)
  *
  * Lưu ý: Prisma Decimal (totalAmount, price) serialize thành CHUỖI qua JSON —
  * luôn bọc Number() khi tính toán (xem lib/format.ts num()).
@@ -219,4 +220,65 @@ export interface ReturnsSummaryResponse {
     unknown: number;
   };
   totalCompensated: number;
+}
+
+// ============================================================
+// Tin nhắn CSKH — chép tay từ backend/src/routes/operations.ts
+// ============================================================
+
+/** Một hội thoại trong inbox hợp nhất — id là chuỗi ghép "channelId:idSàn". */
+export interface OpsConversationDto {
+  id: string;
+  channelId: string;
+  /** Backend hiện chỉ trả SHOPEE/LAZADA — TikTok chưa có API chat. */
+  channelName: "SHOPEE" | "LAZADA";
+  shopName: string;
+  customer: string;
+  lastMessage: string;
+  unread: number;
+  /** epoch MILI-giây; null nếu sàn không trả. */
+  lastAt: number | null;
+  /** Shopee: user_id người mua — BẮT BUỘC khi gửi tin. Lazada: null. */
+  buyerId: string | null;
+  externalId: string;
+  /**
+   * Tin CUỐI là của shop? — nguồn bộ lọc Đã/Chưa trả lời. Lazada không trả
+   * người gửi trong session list → null (chỉ hiện ở tab "Tất cả").
+   */
+  lastFromShop: boolean | null;
+}
+
+export interface OpsMessageDto {
+  id: string;
+  fromShop: boolean;
+  text: string;
+  at: number | null;
+  itemId: string | null;
+  /** url ảnh nếu là tin kiểu image — render bong bóng ảnh thay text. */
+  imageUrl: string | null;
+}
+
+/** Gian bị lỗi (hết hạn token, sàn chưa mở quyền chat) — UI ghi chú riêng. */
+export interface OpsChannelErrorDto {
+  channelId: string;
+  shopName: string;
+  message: string;
+}
+
+/** GET /api/operations/conversations */
+export interface OpsConversationsResponse {
+  conversations: OpsConversationDto[];
+  errors: OpsChannelErrorDto[];
+  channelStats: {
+    channelId: string;
+    shopName: string;
+    channelName: string;
+    count: number;
+  }[];
+  channelCount: number;
+}
+
+/** GET /api/operations/conversations/messages */
+export interface OpsMessagesResponse {
+  messages: OpsMessageDto[];
 }

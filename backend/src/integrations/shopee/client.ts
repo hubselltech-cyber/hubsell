@@ -711,7 +711,15 @@ export interface ShopeeChatMessage {
   from_id?: number;
   from_shop_id?: number;
   to_id?: number;
-  content?: { text?: string; item_id?: number; order_sn?: string };
+  // Tin kiểu image: tuỳ region trả image_url / url / thumb_url — đọc phòng thủ
+  content?: {
+    text?: string;
+    item_id?: number;
+    order_sn?: string;
+    image_url?: string;
+    url?: string;
+    thumb_url?: string;
+  };
   created_timestamp?: number; // epoch giây
 }
 
@@ -789,6 +797,92 @@ export async function sendChatItemMessage(
       to_id: params.toId,
       message_type: "item",
       content: { item_id: params.itemId },
+    },
+    "send_message",
+    cfg
+  );
+}
+
+export interface ShopeeUploadImageData extends ShopeeEnvelope {
+  // Tên trường url tuỳ version docs — đọc phòng thủ ở tầng gọi
+  response?: {
+    url?: string;
+    image_url?: string;
+    file_server_url?: string;
+    thumbnail?: string;
+    thumb_width?: number;
+    thumb_height?: number;
+  };
+}
+
+/**
+ * Upload MỘT ảnh lên file server chat của Shopee — bước bắt buộc trước khi
+ * send_message kiểu image (content.image_url phải là url do Shopee cấp,
+ * link ngoài bị từ chối). Multipart field tên "file"; chữ ký shop y hệt
+ * callShopPost (base string không gồm body).
+ */
+export async function uploadChatImage(
+  params: {
+    accessToken: string;
+    shopId: string;
+    buffer: Buffer;
+    filename: string;
+    mime: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<string> {
+  const path = SHOPEE_PATHS.chatUploadImage;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShop(
+    cfg.partnerKey,
+    cfg.partnerId,
+    path,
+    timestamp,
+    params.accessToken,
+    params.shopId
+  );
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    access_token: params.accessToken,
+    shop_id: params.shopId,
+    sign,
+  }).toString();
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([new Uint8Array(params.buffer)], { type: params.mime }),
+    params.filename
+  );
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+    method: "POST",
+    body: form,
+  });
+  const data = ensureOk(
+    (await res.json()) as ShopeeUploadImageData,
+    "upload_image"
+  );
+  const url =
+    data.response?.url ?? data.response?.image_url ?? data.response?.file_server_url;
+  if (!url) {
+    throw new Error("Shopee upload_image không trả url ảnh");
+  }
+  return url;
+}
+
+/** Gửi tin nhắn ẢNH — imageUrl phải là url Shopee cấp từ uploadChatImage. */
+export async function sendChatImageMessage(
+  params: { accessToken: string; shopId: string; toId: number; imageUrl: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeSendMessageData> {
+  return callShopPost<ShopeeSendMessageData>(
+    SHOPEE_PATHS.chatSendMessage,
+    params.accessToken,
+    params.shopId,
+    {
+      to_id: params.toId,
+      message_type: "image",
+      content: { image_url: params.imageUrl },
     },
     "send_message",
     cfg

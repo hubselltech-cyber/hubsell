@@ -100,6 +100,8 @@ export const SHOPEE_PATHS = {
   chatMessages: "/api/v2/sellerchat/get_message",
   /** Gửi tin nhắn tới người mua (POST). */
   chatSendMessage: "/api/v2/sellerchat/send_message",
+  /** Upload ảnh chat lên file server Shopee (POST multipart) — lấy url rồi mới send_message kiểu image. */
+  chatUploadImage: "/api/v2/sellerchat/upload_image",
   /** DS đánh giá (comment) của shop — item_id bỏ trống là lấy toàn shop. */
   productComments: "/api/v2/product/get_comment",
   /** Trả lời đánh giá (POST, gửi được nhiều comment một lượt). */

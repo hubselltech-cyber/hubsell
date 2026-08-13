@@ -49,17 +49,24 @@ interface ApiOptions {
 }
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
+  // FormData (upload ảnh chat): để fetch TỰ đặt Content-Type multipart kèm
+  // boundary — set tay là server không parse được phần file.
+  const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method: opts.method ?? "GET",
       headers: {
-        "Content-Type": "application/json",
+        ...(isForm ? {} : { "Content-Type": "application/json" }),
         ...(authToken && !opts.anonymous
           ? { Authorization: `Bearer ${authToken}` }
           : {}),
       },
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: isForm
+        ? (opts.body as FormData)
+        : opts.body !== undefined
+          ? JSON.stringify(opts.body)
+          : undefined,
     });
   } catch {
     // Render free có thể ngủ đông — câu chữ nhắc thử lại thay vì báo lỗi cụt.

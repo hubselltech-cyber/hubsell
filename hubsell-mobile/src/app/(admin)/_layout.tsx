@@ -3,6 +3,10 @@ import { Redirect } from "expo-router";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/auth/AuthContext";
+import {
+  ConversationsProvider,
+  useConversations,
+} from "@/chat/ConversationsContext";
 
 /** Khu CHỦ SHOP — nhân viên lạc vào đây bị đá về cổng phân vai. */
 export default function AdminLayout() {
@@ -10,6 +14,17 @@ export default function AdminLayout() {
   if (status === "loading") return null;
   if (status === "signedOut" || !user) return <Redirect href="/login" />;
   if (user.role !== "ADMIN") return <Redirect href="/" />;
+
+  return (
+    <ConversationsProvider>
+      <AdminTabs />
+    </ConversationsProvider>
+  );
+}
+
+function AdminTabs() {
+  // Đếm tin chưa đọc cho badge tab — provider poll sẵn nên vào app là có số
+  const { totalUnread } = useConversations();
 
   return (
     <Tabs
@@ -36,6 +51,26 @@ export default function AdminLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="receipt-outline" size={size - 2} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: "Tin nhắn",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubbles-outline" size={size - 2} color={color} />
+          ),
+          tabBarBadge: totalUnread
+            ? totalUnread > 99
+              ? "99+"
+              : totalUnread
+            : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: "#10b981",
+            color: "#fff",
+            fontSize: 10,
+            fontWeight: "700",
+          },
         }}
       />
       <Tabs.Screen
