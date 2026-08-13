@@ -180,10 +180,21 @@ router.get("/", async (req: AuthRequest, res, next) => {
 // ============================================================
 router.get("/stats", async (req: AuthRequest, res, next) => {
   try {
-    const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    // days=0 = KHÔNG giới hạn ngày — kịch bản bốc hàng: lọc "Chờ xử lý" thì
+    // phải đếm MỌI đơn đang chờ, không được cắt cửa sổ thời gian.
+    const daysRaw = Number(req.query.days);
+    const days = Number.isFinite(daysRaw)
+      ? Math.min(365, Math.max(0, Math.floor(daysRaw)))
+      : 30;
+    const since =
+      days > 0 ? new Date(Date.now() - days * 24 * 60 * 60 * 1000) : null;
     const rows = await prisma.orderItem.findMany({
-      where: { order: { ...ordersWhere(req), createdAt: { gte: since } } },
+      where: {
+        order: {
+          ...ordersWhere(req),
+          ...(since ? { createdAt: { gte: since } } : {}),
+        },
+      },
       select: {
         orderId: true,
         productName: true,
@@ -230,7 +241,22 @@ router.get("/stats", async (req: AuthRequest, res, next) => {
         .slice(0, 50)
         .map(({ orderIds, ...rest }) => ({ ...rest, orders: orderIds.size }));
 
-    res.json({ days, byProduct: top(byProduct), bySku: top(bySku) });
+    // Dòng TỔNG cho kho: cần bốc tổng cộng bao nhiêu món, thuộc mấy đơn
+    const allOrderIds = new Set<string>();
+    let totalQty = 0;
+    let totalRevenue = 0;
+    for (const r of rows) {
+      allOrderIds.add(r.orderId);
+      totalQty += r.quantity;
+      totalRevenue += Number(r.price) * r.quantity;
+    }
+
+    res.json({
+      days,
+      totals: { qty: totalQty, orders: allOrderIds.size, revenue: totalRevenue },
+      byProduct: top(byProduct),
+      bySku: top(bySku),
+    });
   } catch (err) {
     next(err);
   }

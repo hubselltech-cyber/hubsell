@@ -299,9 +299,11 @@ export interface OrderStatsRow {
   orders: number;
 }
 
-/** GET /api/orders/stats?days=30 + nguyên bộ query lọc của danh sách. */
+/** GET /api/orders/stats?days=30 (days=0 = toàn bộ) + nguyên bộ query lọc. */
 export interface OrderStatsResponse {
   days: number;
+  /** Dòng tổng cho kho: cần bốc tổng bao nhiêu món, thuộc mấy đơn. */
+  totals: { qty: number; orders: number; revenue: number };
   byProduct: OrderStatsRow[];
   bySku: OrderStatsRow[];
 }

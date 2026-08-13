@@ -149,6 +149,16 @@ export default function OrdersScreen() {
     }, 450);
   };
 
+  /** Đổi SÀN: gian hàng đang lọc mà thuộc sàn khác thì gỡ luôn — để nguyên
+   *  là phép giao backend trả rỗng, người dùng tưởng mất đơn. */
+  const pickChannel = (ch: ChannelFilter) => {
+    setChannel(ch);
+    if (ch && shopId) {
+      const shop = channels.find((c) => c.id === shopId);
+      if (shop && shop.channelName !== ch) setShopId("");
+    }
+  };
+
   /** Bộ lọc hiện hành — truyền nguyên cho màn Thống kê để cùng phạm vi. */
   const currentFilter: OrdersFilter = {
     search: search.trim() || undefined,
@@ -311,7 +321,7 @@ export default function OrdersScreen() {
               className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-1.5 ${
                 active ? "bg-slate-900" : "bg-white border border-slate-200"
               }`}
-              onPress={() => setChannel(ch)}
+              onPress={() => pickChannel(ch)}
             >
               {ch ? (
                 <View
@@ -414,6 +424,7 @@ export default function OrdersScreen() {
         visible={filterOpen}
         counts={counts}
         channels={channels}
+        channel={channel}
         value={{ status, carrier, shopId }}
         onClose={() => setFilterOpen(false)}
         onApply={(v) => {
@@ -486,6 +497,7 @@ function FilterSheet({
   visible,
   counts,
   channels,
+  channel,
   value,
   onClose,
   onApply,
@@ -493,6 +505,8 @@ function FilterSheet({
   visible: boolean;
   counts: Record<string, number>;
   channels: ChannelListItem[];
+  /** Sàn đang chọn ở chip ngoài — mục Gian hàng CHỈ hiện gian của sàn đó. */
+  channel: ChannelFilter;
   value: FilterValue;
   onClose: () => void;
   onApply: (v: FilterValue) => void;
@@ -503,6 +517,11 @@ function FilterSheet({
     if (visible) setDraft(value);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // Map theo bộ lọc sàn (anh Trung chốt): chọn Shopee thì chỉ còn gian Shopee
+  const visibleChannels = channel
+    ? channels.filter((c) => c.channelName === channel)
+    : channels;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -554,10 +573,10 @@ function FilterSheet({
               ))}
             </View>
 
-            {channels.length > 0 ? (
+            {visibleChannels.length > 0 ? (
               <>
                 <Text className="mb-1.5 text-xs font-semibold text-slate-500">
-                  Gian hàng
+                  Gian hàng{channel ? ` ${CHANNEL_LABEL[channel]}` : ""}
                 </Text>
                 <View className="mb-3 flex-row flex-wrap gap-1.5">
                   <PickChip
@@ -565,10 +584,15 @@ function FilterSheet({
                     active={draft.shopId === ""}
                     onPress={() => setDraft((d) => ({ ...d, shopId: "" }))}
                   />
-                  {channels.map((c) => (
+                  {visibleChannels.map((c) => (
                     <PickChip
                       key={c.id}
-                      label={`${c.shopName} · ${CHANNEL_LABEL[c.channelName] ?? c.channelName}`}
+                      // Đã lọc sàn thì đuôi nhãn sàn là thừa
+                      label={
+                        channel
+                          ? c.shopName
+                          : `${c.shopName} · ${CHANNEL_LABEL[c.channelName] ?? c.channelName}`
+                      }
                       active={draft.shopId === c.id}
                       onPress={() => setDraft((d) => ({ ...d, shopId: c.id }))}
                     />
@@ -611,6 +635,9 @@ function StatsSheet({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"product" | "sku">("product");
+  // Kỳ thống kê: 0 = TOÀN BỘ theo bộ lọc — kịch bản bốc hàng (lọc "Chờ xử
+  // lý" rồi xem cần nhặt SKU nào bao nhiêu món, không cắt cửa sổ ngày)
+  const [days, setDays] = useState(30);
   const [data, setData] = useState<OrderStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -619,17 +646,23 @@ function StatsSheet({
     if (!visible) return;
     setLoading(true);
     setError("");
-    fetchOrderStats(filter)
+    fetchOrderStats({ ...filter, days })
       .then(setData)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Có lỗi xảy ra")
       )
       .finally(() => setLoading(false));
-    // filter dựng mới mỗi render — chỉ nạp lại khi MỞ panel là đủ
+    // filter dựng mới mỗi render — nạp lại khi MỞ panel hoặc đổi kỳ là đủ
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, days]);
 
   const rows = mode === "product" ? (data?.byProduct ?? []) : (data?.bySku ?? []);
+  const DAY_OPTIONS = [
+    { value: 1, label: "Hôm nay" },
+    { value: 7, label: "7 ngày" },
+    { value: 30, label: "30 ngày" },
+    { value: 0, label: "Toàn bộ" },
+  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -646,10 +679,22 @@ function StatsSheet({
             </Pressable>
           </View>
           <Text className="mb-2 text-[11px] text-slate-400">
-            {data?.days ?? 30} ngày gần nhất · theo bộ lọc đang chọn
+            Theo bộ lọc đang chọn — lọc &quot;Chờ xử lý&quot; + Toàn bộ là ra
+            danh sách bốc hàng
           </Text>
 
-          <View className="mb-3 flex-row gap-2">
+          <View className="mb-2 flex-row gap-1.5">
+            {DAY_OPTIONS.map((d) => (
+              <PickChip
+                key={d.value}
+                label={d.label}
+                active={days === d.value}
+                onPress={() => setDays(d.value)}
+              />
+            ))}
+          </View>
+
+          <View className="mb-2 flex-row gap-2">
             <PickChip
               label="Theo sản phẩm"
               active={mode === "product"}
@@ -661,6 +706,19 @@ function StatsSheet({
               onPress={() => setMode("sku")}
             />
           </View>
+
+          {/* Dòng TỔNG cho kho: cần bốc bao nhiêu món, thuộc mấy đơn.
+              Check cả totals — backend cũ (đang chờ deploy) chưa trả trường này */}
+          {data?.totals && !loading ? (
+            <View className="mb-2 flex-row items-center justify-between rounded-xl bg-slate-100 px-3 py-2">
+              <Text className="text-xs font-semibold text-slate-700">
+                Tổng cần: {data.totals.qty} sản phẩm · {data.totals.orders} đơn
+              </Text>
+              <Text className="text-xs font-bold text-emerald-600">
+                {compactMoney(data.totals.revenue)}
+              </Text>
+            </View>
+          ) : null}
 
           {loading ? (
             <View className="items-center py-12">

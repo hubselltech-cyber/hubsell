@@ -35,7 +35,10 @@ export function fetchOrders(params: OrdersFilter & { page?: number; pageSize?: n
   return api<OrdersListResponse>(`/api/orders?${q.toString()}`);
 }
 
-/** Thống kê SP/SKU bán ra — cùng phạm vi lọc với danh sách, mặc định 30 ngày. */
+/**
+ * Thống kê SP/SKU bán ra — cùng phạm vi lọc với danh sách.
+ * days=0 = TOÀN BỘ (không giới hạn ngày) cho kịch bản bốc hàng.
+ */
 export function fetchOrderStats(params: OrdersFilter & { days?: number }) {
   const q = filterParams(params);
   q.set("days", String(params.days ?? 30));
