@@ -11,6 +11,7 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
 import { channelScope } from "../channel-filter";
+import { attachItemImages } from "../item-images";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -148,7 +149,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
     counts.PROCESSED_PRINTED = alreadyPrinted;
 
     res.json({
-      items,
+      // Gắn ảnh dòng hàng: SP kho gốc → fallback ảnh ChannelProduct
+      items: await attachItemImages(items),
       total,
       page,
       pageSize,
@@ -702,7 +704,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    res.json({ order });
+    res.json({ order: (await attachItemImages([order]))[0] });
   } catch (err) {
     next(err);
   }

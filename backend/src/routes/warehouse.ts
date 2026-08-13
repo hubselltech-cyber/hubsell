@@ -3,6 +3,7 @@ import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/clien
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
+import { attachItemImages } from "../item-images";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -164,8 +165,10 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       else if (agingLevel === "unknown") summary.unknown++;
     }
 
+    // Gắn ảnh dòng hàng: SP kho gốc → fallback ảnh ChannelProduct
+    const rowsWithImages = await attachItemImages(rows);
     res.json({
-      items: rows.map((o) => ({ ...o, ...agingOf(o.returnRequestedAt) })),
+      items: rowsWithImages.map((o) => ({ ...o, ...agingOf(o.returnRequestedAt) })),
       total,
       page,
       pageSize,

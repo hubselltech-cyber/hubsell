@@ -11,12 +11,15 @@ export function fetchOrders(params: {
   pageSize?: number;
   search?: string;
   shippingStatus?: string;
+  /** Lọc theo sàn — channelScope backend tự đọc, số đếm tab cũng lọc theo. */
+  channelName?: string;
 }) {
   const q = new URLSearchParams();
   q.set("page", String(params.page ?? 1));
   q.set("pageSize", String(params.pageSize ?? 20));
   if (params.search) q.set("search", params.search);
   if (params.shippingStatus) q.set("shippingStatus", params.shippingStatus);
+  if (params.channelName) q.set("channelName", params.channelName);
   return api<OrdersListResponse>(`/api/orders?${q.toString()}`);
 }
 

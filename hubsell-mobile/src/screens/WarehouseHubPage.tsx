@@ -209,7 +209,10 @@ export function WarehouseHubPage() {
           ) : (
             items.map((o) => {
               const ret = RETURN_STATUS[o.returnStatus];
-              const thumb = o.items.find((i) => i.product?.imageUrl)?.product?.imageUrl;
+              const thumb =
+                o.items
+                  .map((i) => i.imageUrl ?? i.product?.imageUrl)
+                  .find((u) => u) ?? null;
               const overdue = o.agingLevel === "overdue";
               return (
                 <View

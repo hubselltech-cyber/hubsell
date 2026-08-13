@@ -31,3 +31,15 @@ export const CHANNEL_LABEL: Record<ChannelName, string> = {
   TIKTOK: "TikTok",
   OFFLINE: "Offline",
 };
+
+/** Nhãn hãng vận chuyển — CHÉP TAY từ frontend/src/lib/carrier-meta.ts. */
+export const CARRIER_LABEL: Record<string, string> = {
+  SPX: "SPX Express",
+  GHTK: "Giao Hàng Tiết Kiệm",
+  GHN: "Giao Hàng Nhanh",
+  JT: "J&T Express",
+  VIETTEL_POST: "Viettel Post",
+  NINJA_VAN: "Ninja Van",
+  BEST: "BEST Express",
+  KHAC: "Hãng khác / shop tự giao",
+};

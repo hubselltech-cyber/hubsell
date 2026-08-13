@@ -65,6 +65,8 @@ export interface OrderItemDto {
   quantity: number;
   price: string | number;
   product: { imageUrl: string | null } | null;
+  /** Backend gắn phẳng: ảnh SP kho gốc → fallback ảnh ChannelProduct — ƯU TIÊN đọc trường này. */
+  imageUrl?: string | null;
 }
 
 export interface OrderDto {

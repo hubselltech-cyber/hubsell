@@ -286,9 +286,9 @@ export default function ScanReturnsScreen() {
         {order.items.map((it) => (
           <View key={it.id} className="mb-2 flex-row items-center gap-3">
             <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
-              {it.product?.imageUrl ? (
+              {(it.imageUrl ?? it.product?.imageUrl) ? (
                 <Image
-                  source={{ uri: it.product.imageUrl }}
+                  source={{ uri: (it.imageUrl ?? it.product?.imageUrl)! }}
                   style={{ width: 48, height: 48 }}
                   contentFit="cover"
                 />
