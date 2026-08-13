@@ -35,6 +35,10 @@ import { syncShopeeAdsCampaigns } from "./integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "./integrations/lazada/ads-campaigns";
 import { runAdsAutoExecute } from "./integrations/shopee/ads-auto-execute";
 import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
+import {
+  backfillShopeeTrackingCodes,
+  syncShopeeReturns,
+} from "./integrations/shopee/returns-sync";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -50,6 +54,16 @@ const DEFAULT_INTERVAL_MIN = 10;
  * trang Đối soát đơn hoàn phải chờ người bấm đồng bộ tay 90 ngày.
  */
 const ORDERS_DAYS_BACK = 2;
+/**
+ * Cửa sổ quét YÊU CẦU HOÀN Shopee (Returns API, trục update_time). Yêu cầu hoàn
+ * trên đơn COMPLETED không đổi order_status nên quét đơn ở trên KHÔNG thấy —
+ * đây là luồng duy nhất bắt được chúng. Mỗi nhịp quét hẹp; nhịp giờ quét sâu
+ * hơn để vét yêu cầu đổi trạng thái muộn (thêm tracking, bị hủy...).
+ */
+const RETURNS_DAYS_BACK = 2;
+const RETURNS_DAYS_BACK_DEEP = 7;
+/** Mỗi nhịp điền tối đa N mã vận đơn chiều đi còn trống (get_tracking_number). */
+const TRACKING_BACKFILL_PER_SWEEP = 30;
 /** Đối soát (Lazada + Shopee) chạy 1 lần mỗi N nhịp (10' × 6 = mỗi giờ). */
 const SETTLE_EVERY_SWEEPS = 6;
 /** Cửa sổ sao kê cho lượt đối soát tự động — đơn thường quyết toán trong vài ngày. */
@@ -186,6 +200,45 @@ async function runOnce(): Promise<void> {
         } catch (err) {
           console.error(
             `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
+      }
+
+      // --- ĐƠN HOÀN Shopee (Returns API) — chạy MỖI NHỊP để trang Đối soát
+      // đơn hoàn gần real-time không cần ai bấm tay. Đây là nguồn duy nhất
+      // thấy yêu cầu Trả hàng/Hoàn tiền trên đơn đã COMPLETED, kèm mã vận đơn
+      // CHIỀU HOÀN cho kho quét. Lỗi riêng không chặn các luồng khác.
+      if (channel.channelName === ChannelName.SHOPEE && isShopeeConfigured()) {
+        try {
+          const ret = await syncShopeeReturns(channel, {
+            daysBack: settleSweep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
+          });
+          if (ret.flagged > 0 || ret.unflagged > 0 || ret.trackingSaved > 0) {
+            console.log(
+              `[Auto-sync] Đơn hoàn Shopee "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ (yêu cầu hủy), ${ret.trackingSaved} mã vận đơn hoàn, ${ret.ordersFetched} đơn cũ kéo mới`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi quét đơn hoàn Shopee "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
+        // Điền dần mã vận đơn CHIỀU ĐI còn trống (đơn cũ trước bản vá này) —
+        // có tiết chế quota, ưu tiên đơn mới; kho quét kiện quay đầu cần mã này.
+        try {
+          const bf = await backfillShopeeTrackingCodes(channel, {
+            limit: TRACKING_BACKFILL_PER_SWEEP,
+          });
+          if (bf.saved > 0) {
+            console.log(
+              `[Auto-sync] Vận đơn Shopee "${channel.shopName}": điền ${bf.saved}/${bf.checked} mã còn trống`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi backfill vận đơn Shopee "${channel.shopName}":`,
             (err as Error).message
           );
         }

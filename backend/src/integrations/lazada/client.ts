@@ -305,6 +305,13 @@ export interface LazadaOrderItem {
   shipping_service_cost?: number | string;
   voucher_platform?: number | string;
   voucher_seller?: number | string;
+  // ---- Vận chuyển: mã vận đơn + hãng (cấp DÒNG HÀNG — Lazada tách kiện) ----
+  /** Mã vận đơn của kiện chứa dòng hàng này — thứ kho quét trên tem. */
+  tracking_code?: string;
+  /** Mã vận đơn tạm cấp trước (một số luồng dùng tên này khi chưa chốt). */
+  tracking_code_pre?: string;
+  /** Tên hãng vận chuyển ("Ninja Van", "GHN"...) — map sang enum Carrier. */
+  shipment_provider?: string;
   /** Trường khác Lazada trả kèm — soi bằng sample log. */
   [k: string]: unknown;
 }

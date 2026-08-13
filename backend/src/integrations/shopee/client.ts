@@ -318,6 +318,8 @@ export interface ShopeeOrderDetail {
   buyer_username?: string;
   recipient_address?: { name?: string; phone?: string };
   item_list?: ShopeeOrderItem[];
+  /** Tên hãng vận chuyển sàn gán cho đơn (vd "SPX Express") — map sang enum Carrier. */
+  shipping_carrier?: string;
 }
 
 export interface ShopeeOrderDetailData extends ShopeeEnvelope {
@@ -326,7 +328,7 @@ export interface ShopeeOrderDetailData extends ShopeeEnvelope {
 
 // Các trường chi tiết cần Shopee trả về (mặc định API chỉ trả tối thiểu).
 const ORDER_DETAIL_FIELDS =
-  "order_status,create_time,update_time,pay_time,total_amount,currency,buyer_username,recipient_address,item_list";
+  "order_status,create_time,update_time,pay_time,total_amount,currency,buyer_username,recipient_address,item_list,shipping_carrier";
 
 /** Lấy chi tiết nhiều đơn theo order_sn (tối đa 50 sn/lần). */
 export async function getOrderDetail(
@@ -347,6 +349,99 @@ export async function getOrderDetail(
     cfg
   );
   return data.response?.order_list ?? [];
+}
+
+// ---------- Đơn hoàn (Returns API v2) + mã vận đơn (Logistics) ----------
+
+/**
+ * MỘT yêu cầu Trả hàng/Hoàn tiền (đọc phòng thủ — chỉ khai trường Hubsell dùng,
+ * trường lạ giữ nguyên qua index signature để soi log khi cần).
+ */
+export interface ShopeeReturnEntry {
+  return_sn?: string;
+  order_sn?: string;
+  /** REQUESTED / PROCESSING / JUDGING / ACCEPTED / COMPLETED / CANCELLED / CLOSED... */
+  status?: string;
+  /** Mã vận đơn CHIỀU HOÀN (kiện khách gửi trả) — thứ kho quét trên tem. */
+  tracking_number?: string;
+  reason?: string;
+  text_reason?: string;
+  create_time?: number;
+  update_time?: number;
+  refund_amount?: number;
+  [k: string]: unknown;
+}
+
+export interface ShopeeReturnListData extends ShopeeEnvelope {
+  response?: {
+    // Docs đặt tên mảng là "return" (từ khoá xấu nhưng là tên thật của sàn).
+    return?: ShopeeReturnEntry[];
+    more?: boolean;
+  };
+}
+
+export interface ShopeeReturnListParams {
+  accessToken: string;
+  shopId: string;
+  /** Trang bắt đầu từ 1 (khác get_order_list dùng cursor). */
+  pageNo: number;
+  pageSize?: number;
+  /** Lọc theo BIẾN ĐỘNG — bắt cả yêu cầu mới tạo lẫn đổi trạng thái/thêm tracking. */
+  updateTimeFrom?: number;
+  updateTimeTo?: number;
+}
+
+/**
+ * DS yêu cầu Trả hàng/Hoàn tiền của shop. Nguồn duy nhất nhìn thấy yêu cầu hoàn
+ * trên đơn đã COMPLETED (order_status không đổi nên mọi luồng quét đơn đều mù).
+ */
+export async function getReturnList(
+  params: ShopeeReturnListParams,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeReturnListData> {
+  return callShopGet<ShopeeReturnListData>(
+    SHOPEE_PATHS.returnList,
+    params.accessToken,
+    params.shopId,
+    [
+      ["page_no", params.pageNo],
+      ["page_size", params.pageSize ?? 50],
+      ...(params.updateTimeFrom != null
+        ? ([["update_time_from", params.updateTimeFrom]] as [string, number][])
+        : []),
+      ...(params.updateTimeTo != null
+        ? ([["update_time_to", params.updateTimeTo]] as [string, number][])
+        : []),
+    ],
+    "get_return_list",
+    cfg
+  );
+}
+
+interface ShopeeTrackingNumberData extends ShopeeEnvelope {
+  response?: { tracking_number?: string; plp_number?: string };
+}
+
+/**
+ * Mã vận đơn CHIỀU ĐI của một đơn — get_order_detail v2 không còn trả tracking
+ * nên phải hỏi endpoint logistics riêng (1 call / 1 đơn, dùng có tiết chế).
+ * Đơn chưa phát sinh vận đơn (chưa arrange shipment) trả chuỗi rỗng → null.
+ */
+export async function getTrackingNumber(
+  accessToken: string,
+  shopId: string,
+  orderSn: string,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<string | null> {
+  const data = await callShopGet<ShopeeTrackingNumberData>(
+    SHOPEE_PATHS.trackingNumber,
+    accessToken,
+    shopId,
+    [["order_sn", orderSn]],
+    "get_tracking_number",
+    cfg
+  );
+  return data.response?.tracking_number?.trim() || null;
 }
 
 // ---------- Kéo sản phẩm (Product API v2) ----------

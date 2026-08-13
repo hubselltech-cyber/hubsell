@@ -321,6 +321,8 @@ export interface Order {
   shippingStatus: ShippingStatus;
   carrier: Carrier | null;
   trackingCode: string | null;
+  /** Mã vận đơn CHIỀU HOÀN (kiện khách gửi trả — Shopee cấp mã riêng) */
+  returnTrackingCode: string | null;
   packedAt: string | null;
   /** Mốc đã in phiếu giao hàng — null nghĩa là chưa in lần nào */
   labelPrintedAt: string | null;

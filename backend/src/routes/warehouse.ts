@@ -5,6 +5,7 @@ import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
+import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
 
@@ -230,6 +231,11 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
               daysBack: SYNC_RETURNS_DAYS_BACK,
               timeRangeField: "update_time",
             });
+            // Returns API — nguồn duy nhất thấy yêu cầu Trả hàng/Hoàn tiền
+            // trên đơn đã COMPLETED (không đổi order_status nên quét đơn ở
+            // trên không thấy); kèm mã vận đơn CHIỀU HOÀN cho kho quét.
+            // Bấm tay là "muốn thấy ngay" nên quét sâu hơn nhịp nền một chút.
+            await syncShopeeReturns(channel, { daysBack: 7 });
           } else {
             if (!isLazadaConfigured()) continue;
             await syncLazadaOrders(channel, {

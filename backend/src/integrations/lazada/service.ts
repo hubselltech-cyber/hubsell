@@ -15,6 +15,7 @@ import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL } from "../../mockMarketplace";
+import { carrierFromName } from "../../shipping";
 import {
   createToken,
   getMultipleOrderItems,
@@ -539,9 +540,21 @@ export async function upsertLazadaOrderTx(
     });
   };
 
+  // ---- MÃ VẬN ĐƠN + HÃNG từ dòng hàng (đã nằm sẵn trong call items — 0 call
+  // thêm). Kho quét tem trên kiện (cả chiều đi lẫn kiện giao thất bại quay đầu
+  // — Lazada giữ nguyên mã) nên thiếu là tra trượt. Đơn nhiều kiện lấy mã kiện
+  // đầu có mã; lookup còn đường khớp lỏng "chứa" cho các kiện sau.
+  const trackingCode =
+    items
+      .map((it) => (it.tracking_code ?? it.tracking_code_pre ?? "").toString().trim())
+      .find(Boolean) || null;
+  const carrier = carrierFromName(
+    items.map((it) => it.shipment_provider?.toString().trim()).find(Boolean)
+  );
+
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true, returnRequestedAt: true },
+    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true, trackingCode: true },
   });
 
   if (existing) {
@@ -551,6 +564,12 @@ export async function upsertLazadaOrderTx(
         shippingStatus,
         paymentStatus,
         totalAmount,
+        // Điền vận chuyển khi có dữ liệu mới — sàn cấp vận đơn SAU khi tạo đơn
+        // nên bản ghi cũ thường trống; không ghi đè bằng giá trị rỗng.
+        ...(trackingCode && trackingCode !== existing.trackingCode
+          ? { trackingCode }
+          : {}),
+        ...(carrier && !existing.carrier ? { carrier } : {}),
         // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong.
         // Kèm mốc "sàn báo hoàn" cho trang Đối soát đơn hoàn tính tuổi đơn.
         ...(returning && existing.returnStatus === ReturnStatus.NONE
@@ -595,6 +614,8 @@ export async function upsertLazadaOrderTx(
       // ghi khi sàn trả số thật qua syncLazadaSettlements.
       paymentStatus,
       shippingStatus,
+      ...(trackingCode ? { trackingCode } : {}),
+      ...(carrier ? { carrier } : {}),
       ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
       itemCount: lines.length,
       createdAt: order.created_at ? new Date(order.created_at) : undefined,

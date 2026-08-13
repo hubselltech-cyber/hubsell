@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   Carrier,
+  ChannelName,
   InventoryLogType,
   Prisma,
   ReturnStatus,
@@ -10,6 +11,11 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
 import { channelScope } from "../channel-filter";
+import { isShopeeConfigured } from "../integrations/shopee/config";
+import { syncShopeeOrders } from "../integrations/shopee/service";
+import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
+import { isLazadaConfigured } from "../integrations/lazada/config";
+import { syncLazadaOrders } from "../integrations/lazada/service";
 
 const router = Router();
 
@@ -551,10 +557,21 @@ router.post("/bulk/mark-printed", async (req: AuthRequest, res, next) => {
  *
  * Máy quét bắn ra chuỗi gì thì tra chuỗi đó: tem vận đơn Shopee/TikTok in cả
  * mã vận đơn lẫn mã đơn, và mã QR thường chứa thêm ký tự thừa. Nên thử lần
- * lượt: khớp chính xác mã vận đơn → mã đơn → cuối cùng mới khớp lỏng (chứa).
+ * lượt: khớp chính xác mã vận đơn (CẢ HAI CHIỀU — kiện hoàn Shopee mang mã
+ * riêng ở returnTrackingCode) → mã đơn → cuối cùng mới khớp lỏng (chứa).
  * Khớp lỏng để cuối vì nó dễ ra nhiều kết quả; ra nhiều thì báo rõ chứ không
  * đoán bừa lấy đơn đầu tiên — quét nhầm đơn là cộng kho nhầm sản phẩm.
+ *
+ * TỰ CHỮA LÀNH: tra trượt mà user có gian sàn thật → đồng bộ nhanh (đơn trục
+ * update 2 ngày + yêu cầu hoàn Shopee) rồi tra lại MỘT lần. Nhân viên kho quét
+ * kiện vừa về là ra đơn ngay cả khi worker nền chưa tới nhịp — không ai phải
+ * biết nút "Đồng bộ" ở đâu. Cooldown theo user chống đốt quota khi quét liên
+ * tiếp nhiều mã lạ (mã hỏng, tem đơn vị khác).
  */
+const LOOKUP_SYNC_COOLDOWN_MS = 90 * 1000;
+/** ownerId → lần đồng bộ cứu quét gần nhất (in-memory, mất khi restart là vô hại). */
+const lastLookupSyncAt = new Map<string, number>();
+
 router.get("/lookup", async (req: AuthRequest, res, next) => {
   try {
     const raw = typeof req.query.code === "string" ? req.query.code.trim() : "";
@@ -585,40 +602,103 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
       },
     };
 
-    // 1) Khớp chính xác
-    let order = await prisma.order.findFirst({
-      where: { ...scope, OR: [{ trackingCode: code }, { orderCode: code }] },
-      include,
-    });
+    /** Một lượt tra trọn vẹn: khớp chính xác → khớp lỏng. */
+    const findByCode = async () => {
+      // 1) Khớp chính xác — mã vận đơn chiều đi, chiều hoàn, hoặc mã đơn
+      const exact = await prisma.order.findFirst({
+        where: {
+          ...scope,
+          OR: [
+            { trackingCode: code },
+            { returnTrackingCode: code },
+            { orderCode: code },
+          ],
+        },
+        include,
+      });
+      if (exact) return { order: exact, ambiguous: null };
 
-    // 2) Khớp lỏng — dành cho mã QR chứa URL hoặc tiền tố của sàn
-    if (!order && code.length >= 6) {
+      // 2) Khớp lỏng — dành cho mã QR chứa URL hoặc tiền tố của sàn
+      if (code.length < 6) return { order: null, ambiguous: null };
       const loose = await prisma.order.findMany({
         where: {
           ...scope,
           OR: [
             { trackingCode: { contains: code, mode: "insensitive" } },
+            { returnTrackingCode: { contains: code, mode: "insensitive" } },
             { orderCode: { contains: code, mode: "insensitive" } },
           ],
         },
         include,
         take: 5,
       });
-      if (loose.length > 1) {
-        res.status(409).json({
-          error: `Mã "${raw}" khớp với ${loose.length} đơn — quét lại hoặc nhập chính xác mã vận đơn`,
-          candidates: loose.map((o) => ({
-            orderCode: o.orderCode,
-            trackingCode: o.trackingCode,
-          })),
+      if (loose.length > 1) return { order: null, ambiguous: loose };
+      return { order: loose[0] ?? null, ambiguous: null };
+    };
+
+    let { order, ambiguous } = await findByCode();
+    let resynced = false;
+
+    // 3) TỰ CHỮA LÀNH — tra trượt thì hỏi thẳng sàn rồi tra lại một lần.
+    if (!order && !ambiguous) {
+      const now = Date.now();
+      const last = lastLookupSyncAt.get(req.ownerId!) ?? 0;
+      if (now - last > LOOKUP_SYNC_COOLDOWN_MS) {
+        const realChannels = await prisma.channel.findMany({
+          where: {
+            userId: req.ownerId!,
+            ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
+            channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+            status: "ACTIVE",
+            refreshToken: { not: null },
+          },
         });
-        return;
+        if (realChannels.length > 0) {
+          lastLookupSyncAt.set(req.ownerId!, now);
+          resynced = true;
+          for (const channel of realChannels) {
+            try {
+              if (channel.channelName === ChannelName.SHOPEE) {
+                if (!isShopeeConfigured()) continue;
+                await syncShopeeOrders(channel, {
+                  daysBack: 2,
+                  timeRangeField: "update_time",
+                });
+                await syncShopeeReturns(channel, { daysBack: 7 });
+              } else {
+                if (!isLazadaConfigured()) continue;
+                await syncLazadaOrders(channel, { daysBack: 2, byUpdateTime: true });
+              }
+            } catch (err) {
+              // Một gian lỗi không chặn gian khác — mục tiêu là cứu lượt quét.
+              console.warn(
+                `[Lookup] Đồng bộ cứu quét lỗi gian "${channel.shopName}":`,
+                (err as Error).message
+              );
+            }
+          }
+          ({ order, ambiguous } = await findByCode());
+        }
       }
-      order = loose[0] ?? null;
+    }
+
+    if (ambiguous) {
+      res.status(409).json({
+        error: `Mã "${raw}" khớp với ${ambiguous.length} đơn — quét lại hoặc nhập chính xác mã vận đơn`,
+        candidates: ambiguous.map((o) => ({
+          orderCode: o.orderCode,
+          trackingCode: o.trackingCode,
+        })),
+      });
+      return;
     }
 
     if (!order) {
-      res.status(404).json({ error: `Không tìm thấy đơn nào có mã "${raw}"` });
+      res.status(404).json({
+        error: resynced
+          ? `Không tìm thấy đơn nào có mã "${raw}" — đã hỏi lại sàn vẫn không có. Kiểm tra tem có đúng kiện của shop không.`
+          : `Không tìm thấy đơn nào có mã "${raw}"`,
+      });
       return;
     }
 

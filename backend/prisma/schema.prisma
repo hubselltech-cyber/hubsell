@@ -902,6 +902,13 @@ model Order {
   returnNote   String? // ghi chú tình trạng kiện hàng khi nhận (vỡ, thiếu, bị tráo…)
   returnedAt   DateTime? // thời điểm kho xác nhận đã cầm hàng trên tay
 
+  /// Mã vận đơn CHIỀU HOÀN (kiện khách gửi trả về kho). Shopee cấp tracking
+  /// RIÊNG cho chiều ngược (tracking_number trong Returns API) — khác hẳn
+  /// trackingCode chiều đi. Kho quét tem trên kiện hoàn là quét mã NÀY, nên
+  /// lookup phải khớp được cả hai. Null = sàn chưa cấp / hoàn kiểu giao thất
+  /// bại (kiện quay đầu giữ nguyên mã chiều đi).
+  returnTrackingCode String?
+
   /// Số tiền bưu cục/sàn đã đền cho kiện hàng hỏng hoặc mất.
   ///
   /// Chỉ có giá trị khi returnStatus = CLAIM_SETTLED. Thua kiện (WRITTEN_OFF)

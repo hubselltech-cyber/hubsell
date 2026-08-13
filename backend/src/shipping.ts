@@ -29,6 +29,29 @@ const CARRIERS_BY_CHANNEL: Record<ChannelName, Carrier[]> = {
   OFFLINE: [Carrier.KHAC],
 };
 
+/**
+ * Đoán enum Carrier từ TÊN HÃNG dạng chữ mà sàn trả về (Shopee shipping_carrier
+ * "SPX Express", Lazada shipment_provider "Ninja Van VN"...). Khớp lỏng theo
+ * chuỗi con vì mỗi sàn/mỗi nước viết một kiểu; không nhận ra thì KHAC — thà
+ * nhãn chung còn hơn null làm bộ lọc theo hãng bỏ sót đơn.
+ */
+export function carrierFromName(name?: string | null): Carrier | null {
+  const s = (name ?? "").toLowerCase();
+  if (!s.trim()) return null;
+  if (s.includes("spx") || s.includes("shopee xpress") || s.includes("shopee express"))
+    return Carrier.SPX;
+  if (s.includes("ghtk") || s.includes("tiết kiệm") || s.includes("tiet kiem"))
+    return Carrier.GHTK;
+  if (s.includes("ghn") || s.includes("giao hàng nhanh") || s.includes("giao hang nhanh"))
+    return Carrier.GHN;
+  if (s.includes("j&t") || s.includes("jnt") || s.includes("j-t") || s.startsWith("jt"))
+    return Carrier.JT;
+  if (s.includes("viettel")) return Carrier.VIETTEL_POST;
+  if (s.includes("ninja")) return Carrier.NINJA_VAN;
+  if (s.includes("best")) return Carrier.BEST;
+  return Carrier.KHAC;
+}
+
 function pick<T>(list: T[]): T {
   return list[Math.floor(Math.random() * list.length)];
 }

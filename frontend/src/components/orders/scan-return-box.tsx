@@ -158,6 +158,8 @@ export function ScanReturnBox({
       <p className={TEXT_SUB}>
         Máy quét barcode/2D hoạt động như bàn phím — bắn xong là tự tra, không
         cần bấm gì thêm. Ô nhập tự lấy lại tiêu điểm để quét liên tục cả xấp.
+        Mã chưa có trong hệ thống sẽ được hỏi thẳng sàn — lượt đó chờ lâu hơn
+        vài giây là bình thường.
       </p>
 
       {/* Khung camera — luôn có trong DOM khi mở vì thư viện cần phần tử sẵn */}

@@ -104,6 +104,14 @@ export const SHOPEE_PATHS = {
   productComments: "/api/v2/product/get_comment",
   /** Trả lời đánh giá (POST, gửi được nhiều comment một lượt). */
   productReplyComment: "/api/v2/product/reply_comment",
+
+  // ── Đối soát đơn hoàn (Returns API + Logistics) ──
+  /** DS yêu cầu Trả hàng/Hoàn tiền (return_sn) — lọc được theo update_time.
+   *  Đây là nguồn DUY NHẤT thấy được yêu cầu hoàn trên đơn đã COMPLETED
+   *  (không đổi order_status nên get_order_list trục update KHÔNG thấy). */
+  returnList: "/api/v2/returns/get_return_list",
+  /** Mã vận đơn CHIỀU ĐI của một đơn (order detail v2 không còn trả tracking). */
+  trackingNumber: "/api/v2/logistics/get_tracking_number",
 } as const;
 
 /**

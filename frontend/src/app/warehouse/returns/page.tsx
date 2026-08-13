@@ -154,32 +154,37 @@ export default function WarehouseReturnsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchWarehouseReturns({
-        status: tab || undefined,
-        search: debounced || undefined,
-        channel: channelFilter,
-        page,
-        pageSize,
-      });
-      setRows(res.items);
-      setSummary(res.summary);
-      setThresholds(res.thresholds);
-      setTotal(res.total);
-      setPageCount(res.pageCount);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
+  const load = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      // Lượt TỰ cập nhật nền chạy im lặng — không bật overlay loading để bảng
+      // không nhấp nháy mỗi nhịp trước mặt nhân viên đang quét hàng.
+      if (!opts.silent) setLoading(true);
+      try {
+        const res = await fetchWarehouseReturns({
+          status: tab || undefined,
+          search: debounced || undefined,
+          channel: channelFilter,
+          page,
+          pageSize,
+        });
+        setRows(res.items);
+        setSummary(res.summary);
+        setThresholds(res.thresholds);
+        setTotal(res.total);
+        setPageCount(res.pageCount);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (err instanceof ApiError && err.status === 409) return; // chưa có kênh
+        if (!opts.silent) toast.error("Không tải được danh sách đơn hoàn");
+      } finally {
+        if (!opts.silent) setLoading(false);
       }
-      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh
-      toast.error("Không tải được danh sách đơn hoàn");
-    } finally {
-      setLoading(false);
-    }
-  }, [tab, debounced, channelFilter, page, pageSize, router]);
+    },
+    [tab, debounced, channelFilter, page, pageSize, router]
+  );
 
   useEffect(() => {
     if (!getToken()) {
@@ -188,6 +193,23 @@ export default function WarehouseReturnsPage() {
     }
     load();
   }, [load, router]);
+
+  // TỰ CẬP NHẬT: worker nền + webhook đã đổ đơn hoàn mới vào DB — trang phải
+  // tự thấy chứ không bắt ai bấm gì. Nhịp 30s khi tab đang hiện; tab bị ẩn thì
+  // đứng im (đỡ gọi API vô ích), quay lại tab là làm mới ngay một lượt.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") load({ silent: true });
+    }, 30 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [load]);
 
   async function handleSync() {
     setSyncing(true);
@@ -350,8 +372,9 @@ export default function WarehouseReturnsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-muted-foreground">
             Hai công đoạn: <b>quét mã để nhận hàng</b> về tay, rồi bấm{" "}
-            <b>Nhập kho tất cả</b> để cộng tồn kho một lượt. Đơn quá hạn là căn
-            cứ khiếu nại bưu cục.
+            <b>Nhập kho tất cả</b> để cộng tồn kho một lượt. Đơn sàn báo hoàn{" "}
+            <b>tự đổ về</b> (danh sách tự làm mới mỗi 30 giây) — nút bên chỉ để
+            quét ngay khỏi đợi nhịp.
           </p>
           <Button
             onClick={handleSync}
@@ -607,6 +630,15 @@ export default function WarehouseReturnsPage() {
                             <p className={cn(TEXT_SUB, "font-mono")}>
                               {o.trackingCode ?? "—"}
                             </p>
+                            {/* Kiện hoàn Shopee đi chiều ngược bằng MÃ RIÊNG —
+                                đây là mã in trên tem kiện đang về, kho dò tem
+                                bằng mắt là so với dòng này */}
+                            {o.returnTrackingCode &&
+                              o.returnTrackingCode !== o.trackingCode && (
+                                <p className={cn(TEXT_SUB, "font-mono text-indigo-700")}>
+                                  Hoàn: {o.returnTrackingCode}
+                                </p>
+                              )}
                           </TableCell>
 
                           <TableCell>

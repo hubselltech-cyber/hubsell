@@ -12,6 +12,7 @@ import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { carrierFromName } from "../../shipping";
 import {
   deductStockTx,
   holdStockTx,
@@ -26,6 +27,7 @@ import {
   getOrderDetail,
   getOrderList,
   getShopInfo,
+  getTrackingNumber,
   refreshAccessToken,
   shopeeChannelSku,
   type ShopeeOrderDetail,
@@ -493,9 +495,12 @@ export async function upsertShopeeOrderTx(
     order.recipient_address?.name?.trim() || order.buyer_username?.trim() || "Khách Shopee";
   const customerPhone = order.recipient_address?.phone?.trim() || null;
 
+  // Hãng vận chuyển từ tên chữ sàn trả ("SPX Express"...) — cho bộ lọc kho.
+  const carrier = carrierFromName(order.shipping_carrier);
+
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true, returnRequestedAt: true },
+    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true },
   });
 
   if (existing) {
@@ -505,6 +510,8 @@ export async function upsertShopeeOrderTx(
         shippingStatus,
         paymentStatus,
         totalAmount,
+        // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
+        ...(carrier && !existing.carrier ? { carrier } : {}),
         // Chỉ TIẾN cờ hoàn NONE → AWAITING; KHÔNG đụng nếu kho đã xử lý xong
         // (RECEIVED_INTACT / CLAIM_SETTLED…) để không regress tiến độ hoàn.
         // Kèm mốc "sàn báo hoàn" để trang Đối soát đơn hoàn tính tuổi đơn
@@ -549,6 +556,7 @@ export async function upsertShopeeOrderTx(
       platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
       paymentStatus,
       shippingStatus,
+      ...(carrier ? { carrier } : {}),
       ...(returning ? { returnStatus: returning, returnRequestedAt: new Date() } : {}),
       itemCount: lines.length,
       createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
@@ -648,7 +656,11 @@ export interface ShopeeOrderEventResult {
  */
 export async function processShopeeOrderEvent(
   channel: Channel,
-  orderSn: string
+  orderSn: string,
+  opts: {
+    /** Mã vận đơn kèm sẵn trong push code 4 — có thì khỏi tốn call hỏi lại. */
+    trackingNo?: string;
+  } = {}
 ): Promise<ShopeeOrderEventResult> {
   const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
   let order: ShopeeOrderDetail | undefined;
@@ -672,7 +684,7 @@ export async function processShopeeOrderEvent(
       ? Number(channel.feeRate)
       : PLATFORM_FEE_RATE[ChannelName.SHOPEE];
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const up = await upsertShopeeOrderTx(tx, channel, order, feeRate);
     const orderRow = await tx.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
@@ -727,6 +739,45 @@ export async function processShopeeOrderEvent(
 
     return { ...base, inventory: "none" as StockOutcome };
   });
+
+  // LƯU MÃ VẬN ĐƠN CHIỀU ĐI (ngoài transaction — best-effort, lỗi không được
+  // làm hỏng job webhook đã xong): push code 4 mang sẵn tracking_no thì dùng
+  // luôn; không có thì hỏi get_tracking_number MỘT lần cho đơn đã cấp vận đơn.
+  // Kho quét tem kiện quay đầu (giao thất bại) là quét đúng mã này.
+  try {
+    const row = await prisma.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
+      select: { id: true, trackingCode: true },
+    });
+    if (row && !row.trackingCode) {
+      const HAS_TRACKING_STATUSES = new Set([
+        "PROCESSED",
+        "SHIPPED",
+        "TO_CONFIRM_RECEIVE",
+        "COMPLETED",
+        "TO_RETURN",
+        "CANCELLED", // đơn hủy sau khi đã giao cho vận chuyển — kiện sẽ quay đầu
+      ]);
+      const tracking =
+        opts.trackingNo?.trim() ||
+        (HAS_TRACKING_STATUSES.has(order.order_status ?? "")
+          ? await getTrackingNumber(accessToken, shopId, orderSn)
+          : null);
+      if (tracking) {
+        await prisma.order.update({
+          where: { id: row.id },
+          data: { trackingCode: tracking },
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[Shopee] Chưa lưu được mã vận đơn ${orderSn} (backfill nền sẽ vét lại):`,
+      (err as Error).message
+    );
+  }
+
+  return result;
 }
 
 /**
@@ -793,7 +844,13 @@ export async function dispatchShopeeWebhookEvent(
     if (!orderSn) return null;
     const channel = await findShopeeChannelByShopId(shopId);
     if (!channel) return null;
-    const result = await processShopeeOrderEvent(channel, orderSn);
+    // Push code 4 mang sẵn mã vận đơn — đọc phòng thủ cả hai kiểu đặt tên.
+    const trackingNo = String(
+      payload.data?.trackingno ?? payload.data?.tracking_no ?? ""
+    ).trim();
+    const result = await processShopeeOrderEvent(channel, orderSn, {
+      trackingNo: trackingNo || undefined,
+    });
     console.log(
       `[Webhook Shopee] code=${code} đơn ${orderSn} (shop ${shopId}) →`,
       JSON.stringify({ ...result, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
