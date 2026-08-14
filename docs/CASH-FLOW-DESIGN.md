@@ -26,6 +26,13 @@
    (hiện số đã sync ngay, sàn trả về xong thì số tự thay); cron giờ trong
    `order-auto-sync.ts` là lưới đỡ. Lỗi từng gian gom vào `errors[]` hiển thị
    cảnh báo vàng — không nuốt im lặng.
+7. **Vòng đời gian đã ngắt kết nối** (`Channel.disconnectedAt`, chốt 14/08):
+   ngắt xong vẫn HIỂN THỊ 30 ngày kèm nhãn mờ "Đã ngắt" — cho tiền đang giao /
+   chờ đối soát về nốt — rồi backend tự ẩn khỏi bảng; nối lại là hiện lại ngay
+   (`disconnectedAt` về null). Gian đã ngắt KHÔNG được gọi API refresh (token
+   chết chỉ sinh cảnh báo nhiễu); mọi điểm chuyển status ACTIVE/DISCONNECTED
+   đều phải set/clear `disconnectedAt` (webhook có guard đổi trạng thái thật
+   mới ghi để không reset đồng hồ 30 ngày).
 
 ## Nguồn số từng sàn (cột Ví sàn + Về Ngân hàng)
 
