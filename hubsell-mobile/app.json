@@ -33,6 +33,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Hubsell dùng Face ID để mở khóa app, bảo vệ số liệu bán hàng của bạn."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Hubsell cần Camera để quét mã vận đơn trên kiện hàng hoàn."

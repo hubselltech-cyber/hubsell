@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   View,
@@ -16,6 +17,7 @@ import { useAuth } from "../auth/AuthContext";
 import { changePassword } from "../api/auth";
 import { ApiError } from "../api/client";
 import { useThemePref, type ThemePref } from "../theme/ThemeContext";
+import { useBiometricLock } from "../auth/BiometricGate";
 import { SegmentedTabs } from "./SegmentedTabs";
 
 const THEME_OPTIONS: { key: ThemePref; label: string }[] = [
@@ -28,6 +30,7 @@ const THEME_OPTIONS: { key: ThemePref; label: string }[] = [
 export function SettingsScreen() {
   const { user, signOut } = useAuth();
   const { pref, setPref } = useThemePref();
+  const bio = useBiometricLock();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -120,6 +123,33 @@ export function SettingsScreen() {
             "Hệ thống" tự chuyển sáng↔tối theo cài đặt điện thoại.
           </Text>
         </View>
+
+        {/* Khóa app bằng Face ID/vân tay — chỉ hiện khi máy có sinh trắc học */}
+        {bio.supported ? (
+          <View
+            className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
+            style={{ elevation: 2 }}
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-500/15">
+                <Ionicons name="finger-print" size={20} color="#059669" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  Khóa app bằng sinh trắc học
+                </Text>
+                <Text className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Mở app phải Face ID/vân tay mới xem được số liệu
+                </Text>
+              </View>
+              <Switch
+                value={bio.enabled}
+                onValueChange={(on) => void bio.setEnabled(on)}
+                trackColor={{ true: "#10b981" }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         <View
           className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"

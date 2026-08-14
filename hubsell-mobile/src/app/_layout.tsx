@@ -4,6 +4,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/auth/AuthContext";
+import { BiometricGate } from "@/auth/BiometricGate";
 import { ThemeProvider } from "@/theme/ThemeContext";
 
 export default function RootLayout() {
@@ -11,9 +12,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-          {/* style auto: chữ status bar tự đảo theo scheme sáng/tối */}
-          <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }} />
+          <BiometricGate>
+            {/* style auto: chữ status bar tự đảo theo scheme sáng/tối */}
+            <StatusBar style="auto" />
+            <Stack screenOptions={{ headerShown: false }} />
+          </BiometricGate>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>
