@@ -24,11 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { HintIcon } from "@/components/finance/hint-icon";
 import {
   ApiError,
   createWithdrawal,
@@ -305,22 +301,11 @@ export function CashFlowTable() {
                         i === COLS.length - 1 && "pr-6 font-bold text-slate-900"
                       )}
                     >
-                      {/* Gạch chấm + con trỏ dấu hỏi: mách người dùng là rê chuột có giải thích */}
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <span className="cursor-help underline decoration-slate-300 decoration-dotted underline-offset-4" />
-                          }
-                        >
-                          {c.label}
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="bottom"
-                          className="block max-w-72 text-left text-xs font-normal leading-relaxed"
-                        >
-                          {c.tip}
-                        </TooltipContent>
-                      </Tooltip>
+                      {/* Dấu hỏi nhỏ cạnh tiêu đề — pattern tooltip chung của app */}
+                      <span className="inline-flex items-center gap-1">
+                        {c.label}
+                        <HintIcon hint={c.tip} />
+                      </span>
                     </th>
                   ))}
                 </tr>
