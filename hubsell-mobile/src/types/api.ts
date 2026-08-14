@@ -156,13 +156,18 @@ export interface CashFlowRow {
   channelId: string;
   channelName: ChannelName;
   shopName: string;
+  /** Doanh thu đơn ĐÃ bàn giao vận chuyển, chưa quyết toán. */
   inTransit: number;
+  /** Doanh thu đơn đã giao, sàn chưa quyết toán. */
   pendingSettle: number;
-  /** Tiền ĐANG NẰM TRONG VÍ SÀN (đã quyết toán, chưa rút). */
-  settled: number;
-  /** Tiền ĐÃ RÚT VỀ NGÂN HÀNG. */
-  withdrawn: number;
-  total: number;
+  /** Số dư Ví sàn THẬT từ API — null = sàn không có ví/chưa sync (hiện "—"). */
+  walletBalance: number | null;
+  /** Mốc đồng bộ số dư ví (ISO) — chỉ Shopee có. */
+  walletSyncedAt: string | null;
+  /** Tiền đã về ngân hàng 30 ngày gần nhất. */
+  withdrawn30d: number;
+  /** Tổng doanh thu DỰ KIẾN = đang giao + chờ đối soát + ví sàn. */
+  totalExpected: number;
 }
 
 export interface CashFlowResponse {

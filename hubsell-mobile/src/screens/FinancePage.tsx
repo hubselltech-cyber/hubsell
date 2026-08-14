@@ -92,8 +92,13 @@ export function FinancePage() {
   const visibleCashRows = (cashRows ?? []).filter(
     (r) => !channel || r.channelName === channel
   );
-  const walletTotal = visibleCashRows.reduce((s, r) => s + r.settled, 0);
-  const bankTotal = visibleCashRows.reduce((s, r) => s + r.withdrawn, 0);
+  // Ví sàn null (sàn không có ví) không đóng góp vào tổng.
+  const walletTotal = visibleCashRows.reduce(
+    (s, r) => s + (r.walletBalance ?? 0),
+    0
+  );
+  const bankTotal = visibleCashRows.reduce((s, r) => s + r.withdrawn30d, 0);
+  const expectedTotal = visibleCashRows.reduce((s, r) => s + r.totalExpected, 0);
 
   /** Một tầng của thác nước — CÓ items thì bấm bung chi tiết, không thì tĩnh. */
   const WaterfallRow = ({
@@ -274,13 +279,13 @@ export function FinancePage() {
               icon="business-outline"
               label="Đã về Bank"
               value={bankTotal}
-              sub="Lũy kế đã rút ví"
+              sub="30 ngày gần nhất"
             />
             <StatCard
               icon="wallet-outline"
               label="Ví sàn"
               value={walletTotal}
-              sub="Đã đối soát, chưa rút"
+              sub="Số dư thật trên sàn"
             />
           </View>
 
@@ -373,7 +378,7 @@ export function FinancePage() {
               Tiền theo gian hàng
             </Text>
             <Text className="mb-3 text-[11px] text-slate-400">
-              Ví sàn = đã đối soát chưa rút · Bank = đã rút về
+              Ví = số dư THẬT trên sàn · Bank = đã về ngân hàng 30 ngày
             </Text>
             {visibleCashRows.map((r) => (
               <View
@@ -390,10 +395,10 @@ export function FinancePage() {
                 </View>
                 <View className="items-end">
                   <Text className="text-sm font-semibold text-slate-900">
-                    Ví {compactMoney(r.settled)}
+                    Ví {r.walletBalance == null ? "—" : compactMoney(r.walletBalance)}
                   </Text>
                   <Text className="text-[11px] text-emerald-600">
-                    Bank {compactMoney(r.withdrawn)}
+                    Bank {compactMoney(r.withdrawn30d)}
                   </Text>
                 </View>
               </View>
@@ -405,7 +410,8 @@ export function FinancePage() {
             ) : null}
             <View className="mt-2 border-t border-slate-200 pt-2">
               <Text className="text-right text-[11px] text-slate-400">
-                Tổng ví + bank: {formatMoney(walletTotal + bankTotal)}
+                Ví sàn: {formatMoney(walletTotal)} · Doanh thu dự kiến:{" "}
+                {formatMoney(expectedTotal)}
               </Text>
             </View>
           </View>

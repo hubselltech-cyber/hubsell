@@ -20,7 +20,7 @@ import { getWalletTransactionList, type ShopeeWalletTxn } from "./client";
 import { getValidShopeeAccessToken } from "./service";
 
 const WINDOW_SEC = 15 * 24 * 60 * 60; // chia cửa sổ 15 ngày/lần cho an toàn
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 40; // TRẦN của get_wallet_transaction_list — quá là sàn báo lỗi
 const MAX_PAGES = 200; // chốt chặn phân trang vô tận
 
 /** Đây có phải lệnh RÚT TIỀN không (bất kể giai đoạn created/completed). */
@@ -42,6 +42,8 @@ export interface SyncWithdrawalsResult {
   created: number;
   updated: number;
   pages: number;
+  /** Số dư ví THẬT sau giao dịch mới nhất quét được (null = cửa sổ không có giao dịch). */
+  walletBalance: number | null;
 }
 
 /**
@@ -63,7 +65,10 @@ export async function syncShopeeWithdrawals(
     created: 0,
     updated: 0,
     pages: 0,
+    walletBalance: null,
   };
+  // Giao dịch MỚI NHẤT quét được — current_balance của nó = số dư ví thật.
+  let latestTxnTime = -1;
 
   for (let winFrom = startFrom; winFrom < nowSec && result.pages < MAX_PAGES; winFrom += WINDOW_SEC) {
     const winTo = Math.min(winFrom + WINDOW_SEC, nowSec);
@@ -84,6 +89,15 @@ export async function syncShopeeWithdrawals(
       const list = data.response?.transaction_list ?? [];
       for (const txn of list) {
         result.fetched++;
+        // Số dư ví: current_balance của giao dịch mới nhất (mọi loại giao dịch,
+        // không riêng lệnh rút) — Shopee không có API số dư riêng.
+        if (
+          typeof txn.current_balance === "number" &&
+          (txn.create_time ?? 0) > latestTxnTime
+        ) {
+          latestTxnTime = txn.create_time ?? 0;
+          result.walletBalance = txn.current_balance;
+        }
         if (!isWithdrawal(txn) || txn.transaction_id == null) continue;
         result.withdrawals++;
 
@@ -125,6 +139,19 @@ export async function syncShopeeWithdrawals(
       more = data.response?.more === true && list.length > 0;
       pageNo++;
     }
+  }
+
+  // Ghi số dư ví thật vào Channel cho bảng Phân bổ dòng tiền. Cửa sổ quét không
+  // có giao dịch nào → số dư KHÔNG đổi (ví chỉ thay đổi qua giao dịch) nên giữ
+  // nguyên giá trị cũ, không ghi đè null.
+  if (result.walletBalance != null) {
+    await prisma.channel.update({
+      where: { id: channel.id },
+      data: {
+        walletBalance: result.walletBalance,
+        walletBalanceSyncedAt: new Date(),
+      },
+    });
   }
 
   return result;

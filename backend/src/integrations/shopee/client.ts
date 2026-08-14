@@ -1093,6 +1093,10 @@ export interface ShopeeWalletTxn {
   transaction_type?: string; // vd WITHDRAWAL_CREATED / WITHDRAWAL_COMPLETED
   create_time?: number; // epoch giây
   reason?: string;
+  /// SỐ DƯ VÍ ngay SAU giao dịch này — Shopee không có API số dư riêng, nên
+  /// current_balance của giao dịch MỚI NHẤT chính là số dư ví thật hiện tại.
+  current_balance?: number;
+  money_flow?: string; // MONEY_IN / MONEY_OUT
 }
 
 export interface ShopeeWalletTxnData extends ShopeeEnvelope {
@@ -1122,8 +1126,10 @@ export async function getWalletTransactionList(
     params.accessToken,
     params.shopId,
     [
+      // Trần page_size của endpoint này là 40 (nhỏ hơn các API khác) — truyền
+      // quá trần sàn trả lỗi tham số, từng làm cron rút ví câm lặng 0 bản ghi.
       ["page_no", params.pageNo ?? 0],
-      ["page_size", params.pageSize ?? 100],
+      ["page_size", Math.min(params.pageSize ?? 40, 40)],
       ["create_time_from", params.createTimeFrom],
       ["create_time_to", params.createTimeTo],
     ],

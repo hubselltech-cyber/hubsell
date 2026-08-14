@@ -672,17 +672,20 @@ export interface CashFlowRow {
   channelId: string;
   channelName: ChannelName;
   shopName: string;
-  /** Tiền đang đi đường: đơn đang giao/chuẩn bị hoặc đang hoàn. */
+  /** Doanh thu đang giao: đơn ĐÃ bàn giao vận chuyển, chưa quyết toán. */
   inTransit: number;
-  /** Tiền chờ đối soát: đơn đã giao nhưng sàn chưa quyết toán. */
+  /** Doanh thu chờ đối soát: đơn đã giao nhưng sàn chưa quyết toán. */
   pendingSettle: number;
-  /** Tiền trên Ví sàn: đã quyết toán, còn ở ví sàn (đã trừ phần đã rút). Có thể ÂM
-   *  nếu số đã rút vượt tiền quyết toán — tín hiệu lệch pha cần đối soát. */
-  settled: number;
-  /** Tiền về Ngân hàng: đã rút ví sàn về bank (Σ WalletWithdrawal thành công). */
-  withdrawn: number;
-  /** Tổng dòng tiền dự kiến của gian = tổng 4 cột trên. */
-  total: number;
+  /** Số dư Ví sàn THẬT (Shopee: API ví; Lazada: sao kê đã chốt chưa chi).
+   *  null = sàn không có ví / chưa sync được — hiển thị "—", không phải 0. */
+  walletBalance: number | null;
+  /** Mốc đồng bộ số dư ví (ISO) — chỉ Shopee có; null với các sàn còn lại. */
+  walletSyncedAt: string | null;
+  /** Tiền đã về ngân hàng trong 30 ngày gần nhất. */
+  withdrawn30d: number;
+  /** Tổng doanh thu DỰ KIẾN = đang giao + chờ đối soát + ví sàn (tiền còn nằm
+   *  ngoài ngân hàng, sẽ về tay chủ shop). */
+  totalExpected: number;
 }
 
 export interface CashFlowResponse {
@@ -691,6 +694,14 @@ export interface CashFlowResponse {
 
 export function fetchCashFlow() {
   return apiFetch<CashFlowResponse>("/api/finance/cash-flow");
+}
+
+/** Kéo số dư ví/kỳ chi tiền mới nhất từ sàn (Shopee + Lazada) trước khi GET lại bảng. */
+export function refreshCashFlow() {
+  return apiFetch<{ synced: number; errors: string[] }>(
+    "/api/finance/cash-flow/refresh",
+    { method: "POST" }
+  );
 }
 
 // ----- Rút ví sàn → ngân hàng (WalletWithdrawal) -----

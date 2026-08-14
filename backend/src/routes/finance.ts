@@ -32,6 +32,8 @@ import {
   getShopTaxConfig,
   PLATFORM_TAX_RATE,
 } from "../tax-config";
+import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
+import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 
 const router = Router();
 
@@ -762,12 +764,26 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 
 // ============================================================
 // PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG (Cash Flow allocation)
-// Mỗi gian hàng liên kết = một dòng; bóc dòng tiền theo trạng thái vòng đời:
-//   - inTransit    : đơn đang giao/chuẩn bị hoặc đang hoàn (tiền đi đường)
-//   - pendingSettle: đơn đã giao NHƯNG sàn chưa quyết toán (chờ về ví)
-//   - settled      : đơn đã quyết toán → tiền trong ví sàn (số thực nhận)
-//   - withdrawn    : tiền đã rút ví về ngân hàng — CHƯA có tính năng theo dõi
-//     lệnh rút nên GIỮ CHỖ 0đ (sẽ cắm số khi có module rút/đối soát ngân hàng).
+// Thiết kế lại 14/08 (chốt chủ shop): mỗi cột trả lời "tiền đang ở đâu",
+// KHÔNG mô phỏng — cột nào không có số THẬT thì để trống chứ không bịa:
+//   - inTransit     : đơn ĐÃ BÀN GIAO vận chuyển (SHIPPING), chưa quyết toán.
+//     Đơn PENDING/PROCESSED cố ý KHÔNG tính — chưa bàn giao thì tỷ lệ hủy cao,
+//     đưa vào dòng tiền dự kiến là lạc quan ảo.
+//   - pendingSettle : đơn đã giao NHƯNG sàn chưa quyết toán (chờ về ví).
+//   - walletBalance : số dư ví THẬT của sàn. Shopee = current_balance giao dịch
+//     ví mới nhất (sync lưu Channel.walletBalance); Lazada không có ví giữ tiền
+//     → dùng Σ kỳ sao kê đã chốt nhưng CHƯA chi (WalletWithdrawal PENDING từ
+//     /finance/payout/status/get — cùng bản chất "tiền sàn đang giữ", số thật);
+//     TikTok/Offline = null (TikTok chờ shop thật để kiểm chứng ledger).
+//   - withdrawn30d  : tiền đã về ngân hàng 30 NGÀY GẦN NHẤT (lũy kế all-time
+//     phình mãi, vô nghĩa quản trị) — số đối chiếu sổ bank theo tháng.
+//   - totalExpected : inTransit + pendingSettle + walletBalance = "Tổng doanh
+//     thu dự kiến" — tiền còn nằm ngoài ngân hàng, SẼ về tay chủ shop. Tiền đã
+//     về bank là quá khứ đã cầm chắc, không thuộc "dự kiến".
+// Đơn ĐÃ quyết toán không cộng theo từng đơn nữa — tiền của chúng đã nằm trong
+// số dư ví thật/sổ bank, cộng thêm là đếm hai lần. Chi phí vận hành nguồn
+// PLATFORM_WALLET/BANK_ACCOUNT cũng bỏ khỏi bảng này vì lý do đó (số dư thật
+// đã tự phản ánh) — chúng vẫn nằm nguyên trong các trang P&L.
 // Liệt kê theo DANH SÁCH CHANNEL (kể cả gian chưa phát sinh đơn) để kết nối
 // thêm gian là bảng tự có thêm dòng, không hardcode.
 // ============================================================
@@ -776,118 +792,132 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 router.get("/cash-flow", async (req: AuthRequest, res, next) => {
   try {
     const scope = channelScope(req);
-    const [channels, pnlOrders, withdrawals, opTxns] = await Promise.all([
-      prisma.channel.findMany({
-        where: scope,
-        orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
-        select: { id: true, channelName: true, shopName: true },
-      }),
-      // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức computePnlRow với mọi
-      // báo cáo (chốt SSOT) — hết cảnh cash-flow tự tính totalAmount − phí
-      // riêng rồi lệch với thẻ Doanh thu (Lazada: totalAmount là giá GỐC
-      // chưa trừ voucher, tự trừ phí ước % là bịa số).
-      fetchPnlOrders(scope),
-      // Tổng tiền ĐÃ RÚT khỏi ví sàn về ngân hàng (thành công), gom theo gian.
-      prisma.walletWithdrawal.groupBy({
-        by: ["channelId"],
-        _sum: { amount: true },
-        where: { channel: scope, status: "SUCCESS" },
-      }),
-      // THU/CHI VẬN HÀNH gắn nguồn tiền — gom theo (gian, túi tiền, chiều) để
-      // cộng/trừ vào đúng cột Ví sàn/Ngân hàng của từng gian.
-      prisma.operatingExpense.groupBy({
-        by: ["fundChannelId", "fundSource", "direction"],
-        _sum: { amount: true },
-        where: { fundChannel: scope, fundSource: { not: null } },
-      }),
-    ]);
+    const since30d = new Date(Date.now() - 30 * 86_400_000);
+    const [channels, pnlOrders, pendingPayouts, recentWithdrawals] =
+      await Promise.all([
+        prisma.channel.findMany({
+          where: scope,
+          orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
+          select: {
+            id: true,
+            channelName: true,
+            shopName: true,
+            walletBalance: true,
+            walletBalanceSyncedAt: true,
+          },
+        }),
+        // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức computePnlRow với mọi
+        // báo cáo (chốt SSOT) — không tự tính totalAmount − phí riêng.
+        fetchPnlOrders(scope),
+        // "Ví sàn" Lazada: kỳ sao kê đã chốt nhưng sàn CHƯA chi (paid=0 từ
+        // /finance/payout/status/get, sync ghi status=PENDING) — số thật.
+        prisma.walletWithdrawal.groupBy({
+          by: ["channelId"],
+          _sum: { amount: true },
+          where: { channel: scope, status: "PENDING", source: "SYNC" },
+        }),
+        // Tiền ĐÃ VỀ ngân hàng 30 ngày gần nhất (sync sàn + kế toán nhập tay).
+        prisma.walletWithdrawal.groupBy({
+          by: ["channelId"],
+          _sum: { amount: true },
+          where: {
+            channel: scope,
+            status: "SUCCESS",
+            transactionTime: { gte: since30d },
+          },
+        }),
+      ]);
 
-    interface Bucket {
-      channelId: string;
-      channelName: ChannelName;
-      shopName: string;
-      inTransit: number;
-      pendingSettle: number;
-      settled: number;
-      withdrawn: number;
-    }
-    const byChannel = new Map<string, Bucket>(
-      channels.map((c) => [
-        c.id,
-        {
-          channelId: c.id,
-          channelName: c.channelName,
-          shopName: c.shopName,
-          inTransit: 0,
-          pendingSettle: 0,
-          settled: 0,
-          withdrawn: 0, // giữ chỗ — chưa theo dõi lệnh rút ví
-        },
-      ])
+    const pendingByChannel = new Map(
+      pendingPayouts.map((p) => [p.channelId, Number(p._sum.amount ?? 0)])
+    );
+    const withdrawn30dByChannel = new Map(
+      recentWithdrawals.map((w) => [w.channelId, Number(w._sum.amount ?? 0)])
     );
 
-    // Ưu tiên theo VỊ TRÍ THỰC của dòng tiền (ground truth cho quản trị tiền):
-    //   1) Đã quyết toán → tiền ĐÃ nằm trong ví (dù đơn có đang hoàn thì tiền
-    //      vẫn đang ở ví cho tới khi hoàn tiền) → "đã đối soát".
-    //   2) Đã giao nhưng chưa quyết toán → "chờ đối soát".
-    //   3) Còn lại (đang giao/chuẩn bị, hoặc đang hoàn mà CHƯA quyết toán) →
-    //      tiền vẫn đang đi đường/chưa chắc → "đang đi đường".
-    // Tiền của MỖI đơn = platformRevenue ("Tổng tiền" sàn báo: payout THẬT
-    // khi đã quyết toán / số API đơn hàng khi chờ — không ước phí %), khớp
-    // từng xu với thẻ Doanh thu của Báo cáo dòng tiền.
+    // Doanh thu theo giai đoạn vận đơn. Tiền của MỖI đơn = platformRevenue
+    // ("Tổng tiền" sàn báo — không ước phí %). Đơn đã quyết toán bỏ qua: tiền
+    // của nó đã nằm trong số dư ví thật/sổ bank.
+    const inTransitByChannel = new Map<string, number>();
+    const pendingSettleByChannel = new Map<string, number>();
     for (const r of pnlOrders.map(computePnlRow)) {
-      const row = byChannel.get(r.channelId);
-      if (!row) continue;
-      if (r.shippingStatus === ShippingStatus.CANCELLED) continue; // hủy → bỏ
-
-      const money = r.platformRevenue;
-      if (r.shippingStatus === ShippingStatus.DELIVERED && r.isSettled) {
-        row.settled += money; // tiền đã về ví (số THẬT sao kê)
+      if (r.isSettled) continue;
+      if (r.shippingStatus === ShippingStatus.SHIPPING) {
+        inTransitByChannel.set(
+          r.channelId,
+          (inTransitByChannel.get(r.channelId) ?? 0) + r.platformRevenue
+        );
       } else if (r.shippingStatus === ShippingStatus.DELIVERED) {
-        row.pendingSettle += money; // đã giao, chờ sàn quyết toán
-      } else {
-        // đang giao / chuẩn bị, hoặc đang hoàn (chưa quyết toán)
-        row.inTransit += money;
+        pendingSettleByChannel.set(
+          r.channelId,
+          (pendingSettleByChannel.get(r.channelId) ?? 0) + r.platformRevenue
+        );
       }
+      // PENDING/PROCESSED (chưa bàn giao) và CANCELLED: không thuộc dòng tiền dự kiến.
     }
 
-    // RÚT VÍ: chuyển tiền từ "đã đối soát" (Ví sàn) sang "đã thu về" (Ngân hàng).
-    // CỐ Ý cho phép Ví sàn ÂM: nếu số đã rút > tiền đã quyết toán thì đó là tín
-    // hiệu lệch pha dữ liệu (sàn chưa đồng bộ hết, hoặc kế toán nhập lố) — để lộ
-    // số âm giúp chủ shop đối soát ngay, không che bằng cách kẹp về 0.
-    for (const w of withdrawals) {
-      const row = byChannel.get(w.channelId);
-      if (!row) continue;
-      const amount = Number(w._sum.amount ?? 0);
-      row.settled -= amount; // rời khỏi ví sàn
-      row.withdrawn += amount; // về ngân hàng
-    }
-
-    // THU/CHI VẬN HÀNH gắn nguồn tiền: THU (+) / CHI (−) vào đúng cột của gian.
-    //  - PLATFORM_WALLET → cột Ví sàn (settled)
-    //  - BANK_ACCOUNT    → cột Ngân hàng (withdrawn)
-    // Cho phép âm như luồng rút ví — số âm là tín hiệu cần đối soát.
-    for (const t of opTxns) {
-      if (!t.fundChannelId) continue;
-      const row = byChannel.get(t.fundChannelId);
-      if (!row) continue;
-      const amt = Number(t._sum.amount ?? 0);
-      const signed = t.direction === "INCOME" ? amt : -amt;
-      if (t.fundSource === "PLATFORM_WALLET") row.settled += signed;
-      else if (t.fundSource === "BANK_ACCOUNT") row.withdrawn += signed;
-    }
-
-    // Giữ ĐÚNG thứ tự channel để bảng ổn định; kèm tổng dòng tiền dự kiến/gian.
-    // total KHÔNG đổi khi rút ví (tiền chỉ chuyển cột) — vẫn là tổng dòng tiền.
     const rows = channels.map((c) => {
-      const b = byChannel.get(c.id)!;
+      const inTransit = inTransitByChannel.get(c.id) ?? 0;
+      const pendingSettle = pendingSettleByChannel.get(c.id) ?? 0;
+      // Số dư ví theo sàn: Shopee = số đã sync; Lazada = Σ sao kê chưa chi;
+      // TikTok/Offline = null (frontend hiển thị "—", không phải 0).
+      let walletBalance: number | null = null;
+      if (c.channelName === ChannelName.SHOPEE && c.walletBalance != null) {
+        walletBalance = Number(c.walletBalance);
+      } else if (c.channelName === ChannelName.LAZADA) {
+        walletBalance = pendingByChannel.get(c.id) ?? 0;
+      }
       return {
-        ...b,
-        total: b.inTransit + b.pendingSettle + b.settled + b.withdrawn,
+        channelId: c.id,
+        channelName: c.channelName,
+        shopName: c.shopName,
+        inTransit,
+        pendingSettle,
+        walletBalance,
+        // Chỉ ví Shopee có mốc sync (Lazada tính live từ sao kê mỗi request).
+        walletSyncedAt:
+          c.channelName === ChannelName.SHOPEE
+            ? (c.walletBalanceSyncedAt?.toISOString() ?? null)
+            : null,
+        withdrawn30d: withdrawn30dByChannel.get(c.id) ?? 0,
+        totalExpected: inTransit + pendingSettle + (walletBalance ?? 0),
       };
     });
 
     res.json({ rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/finance/cash-flow/refresh — kéo số dư ví/kỳ chi tiền MỚI NHẤT từ
+// sàn rồi để frontend GET lại bảng. Lỗi từng gian gom vào mảng (token hết hạn,
+// app thiếu quyền ví…) — không chặn các gian còn lại.
+router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
+  try {
+    const channels = await prisma.channel.findMany({
+      where: {
+        AND: [
+          channelScope(req),
+          { channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] } },
+        ],
+      },
+    });
+    let synced = 0;
+    const errors: string[] = [];
+    for (const ch of channels) {
+      try {
+        if (ch.channelName === ChannelName.SHOPEE) {
+          await syncShopeeWithdrawals(ch, { daysBack: 30 });
+        } else {
+          await syncLazadaPayouts(ch, { daysBack: 30 });
+        }
+        synced++;
+      } catch (err) {
+        errors.push(`${ch.shopName}: ${(err as Error).message}`);
+      }
+    }
+    res.json({ synced, errors });
   } catch (err) {
     next(err);
   }

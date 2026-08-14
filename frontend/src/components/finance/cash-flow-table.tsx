@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Plus, RefreshCw, TriangleAlert } from "lucide-react";
+import { Banknote, Plus, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +28,7 @@ import {
   ApiError,
   createWithdrawal,
   fetchCashFlow,
+  refreshCashFlow,
   type CashFlowRow,
   type ChannelName,
 } from "@/lib/api";
@@ -42,12 +43,14 @@ function todayKey(): string {
 }
 
 /**
- * BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG
+ * BẢNG PHÂN BỔ DÒNG TIỀN THEO GIAN HÀNG (thiết kế lại 14/08 — chốt chủ shop)
  *
- * Bản chất mọi cột là MỘT con số duy nhất: DOANH THU THỰC TẾ của đơn
- * (platformRevenue — "Tổng tiền" sàn báo, cùng trường với thẻ Doanh thu của
- * Báo cáo dòng tiền), chỉ khác GIAI ĐOẠN nó đang đứng trong vòng đời:
- * đang giao → chờ đối soát → về Ví sàn → về Ngân hàng (chốt chủ shop 31/07).
+ * Mỗi cột trả lời "tiền đang ở đâu", KHÔNG mô phỏng:
+ *   đang giao (đơn đã bàn giao VC) → chờ đối soát (đã giao, chưa quyết toán)
+ *   → Số dư Ví sàn (SỐ THẬT từ API — sàn không có ví thì "—")
+ *   → Về Ngân hàng 30 ngày (đối chiếu sổ bank theo tháng).
+ * Tổng doanh thu DỰ KIẾN = 3 cột đầu — tiền còn nằm ngoài ngân hàng, sẽ về
+ * tay chủ shop; tiền đã về bank là quá khứ đã cầm chắc, không thuộc "dự kiến".
  * Dòng được map ĐỘNG từ danh sách gian hàng API trả về (kết nối thêm gian là
  * tự có thêm dòng); hàng TỔNG CỘNG cộng dồn bằng reduce theo đúng các dòng
  * đang lọc. Cột tiền căn phải, cột chữ căn trái.
@@ -66,19 +69,13 @@ function Cash({ value, className }: { value: number; className?: string }) {
   return <Money value={value} className={className} />;
 }
 
-/**
- * Ô số ở hàng TỔNG CỘNG: in đậm, MÀU CHỮ MẶC ĐỊNH (đen) — chỉ ô ÂM mới tô đỏ +
- * icon cảnh báo để chủ shop nhận ra ngay điểm dòng tiền lệch pha cần đối soát.
- */
-function TotalCell({ value }: { value: number }) {
-  if (value < 0)
-    return (
-      <span className="inline-flex items-center justify-end gap-1 text-red-500">
-        <TriangleAlert className="size-3.5 shrink-0" />
-        <Money value={Math.abs(value)} negative className="font-bold" />
-      </span>
-    );
-  return <Money value={value} className="font-bold" />;
+/** "cập nhật 14:05 14/08" cho tooltip số dư ví — null thì chuỗi rỗng. */
+function syncedLabel(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `cập nhật ${p(d.getHours())}:${p(d.getMinutes())} ${p(d.getDate())}/${p(d.getMonth() + 1)}`;
 }
 
 export function CashFlowTable() {
@@ -86,6 +83,8 @@ export function CashFlowTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [platform, setPlatform] = useState<ChannelName | "">("");
+  // Gian sync ví lỗi ở lần "Làm mới" gần nhất (token hết hạn, app thiếu quyền…)
+  const [syncErrors, setSyncErrors] = useState<string[]>([]);
 
   // Form "xác nhận đã rút ví" (nhập tay cho kế toán)
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -109,6 +108,18 @@ export function CashFlowTable() {
     }
   }
 
+  /** "Làm mới" = kéo số dư ví/kỳ chi tiền MỚI NHẤT từ sàn rồi tải lại bảng. */
+  async function refresh() {
+    setLoading(true);
+    try {
+      const r = await refreshCashFlow();
+      setSyncErrors(r.errors);
+    } catch {
+      // Sync sàn lỗi toàn phần vẫn tải lại bảng — số cũ trong DB vẫn dùng được.
+    }
+    await load();
+  }
+
   useEffect(() => {
     load();
   }, []);
@@ -126,15 +137,16 @@ export function CashFlowTable() {
     : rows;
 
   // Hàng TỔNG CỘNG: reduce động trên đúng các dòng đang hiển thị.
+  // Ví sàn null (sàn không có ví) không đóng góp vào tổng.
   const totals = shown.reduce(
     (acc, r) => ({
       inTransit: acc.inTransit + r.inTransit,
       pendingSettle: acc.pendingSettle + r.pendingSettle,
-      settled: acc.settled + r.settled,
-      withdrawn: acc.withdrawn + r.withdrawn,
-      total: acc.total + r.total,
+      wallet: acc.wallet + (r.walletBalance ?? 0),
+      withdrawn30d: acc.withdrawn30d + r.withdrawn30d,
+      totalExpected: acc.totalExpected + r.totalExpected,
     }),
-    { inTransit: 0, pendingSettle: 0, settled: 0, withdrawn: 0, total: 0 }
+    { inTransit: 0, pendingSettle: 0, wallet: 0, withdrawn30d: 0, totalExpected: 0 }
   );
 
   function openWithdrawDialog() {
@@ -176,13 +188,13 @@ export function CashFlowTable() {
     }
   }
 
-  // Mọi cột đều là DOANH THU THỰC TẾ — chỉ khác giai đoạn dòng tiền đang đứng.
+  // 3 cột đầu là các chặng tiền CHƯA về tay; cột 4 là số đối chiếu sổ bank.
   const COLS = [
     "Doanh thu đang giao",
     "Doanh thu chờ đối soát",
-    "Doanh thu trên Ví sàn",
-    "Doanh thu về Ngân hàng",
-    "Tổng doanh thu thực tế",
+    "Số dư Ví sàn",
+    "Về Ngân hàng (30 ngày)",
+    "Tổng doanh thu dự kiến",
   ];
 
   return (
@@ -195,8 +207,8 @@ export function CashFlowTable() {
             Phân bổ dòng tiền theo gian hàng
           </CardTitle>
           <CardDescription className="mt-1">
-            Doanh thu thực tế của từng gian, phân theo giai đoạn dòng tiền: đang
-            giao → chờ đối soát → về Ví sàn → về Ngân hàng (mọi đơn chưa hủy).
+            Tiền của từng gian đang ở đâu: đang giao → chờ đối soát → Ví sàn (số
+            dư THẬT từ API) → về Ngân hàng. Tổng dự kiến = tiền chưa về tay.
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -223,7 +235,7 @@ export function CashFlowTable() {
             <Plus className="size-4" />
             Xác nhận đã rút ví
           </Button>
-          <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+          <Button variant="ghost" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={cn("size-4", loading && "animate-spin")} />
             Làm mới
           </Button>
@@ -296,31 +308,27 @@ export function CashFlowTable() {
                       <td className={cn(cell, "text-right font-medium text-amber-700")}>
                         <Cash value={r.pendingSettle} />
                       </td>
-                      <td
-                        className={cn(
-                          cell,
-                          "text-right font-medium",
-                          r.settled < 0 ? "text-red-500" : "text-emerald-700"
-                        )}
-                      >
-                        {r.settled < 0 ? (
-                          // Ví sàn ÂM = đã rút vượt tiền quyết toán → lệch pha, cần đối soát.
+                      <td className={cn(cell, "text-right font-medium text-emerald-700")}>
+                        {r.walletBalance == null ? (
+                          // Sàn không có ví giữ tiền (TikTok/Offline) hoặc chưa
+                          // sync được số dư — "—" chứ không phải 0đ.
                           <span
-                            className="inline-flex items-center justify-end gap-1"
-                            title="Số đã rút vượt tiền đã quyết toán — kiểm tra lại đối soát"
+                            className="text-slate-400"
+                            title="Sàn không có ví giữ tiền hoặc chưa đồng bộ được số dư"
                           >
-                            <TriangleAlert className="size-3.5 shrink-0" />
-                            <Money value={Math.abs(r.settled)} negative className="font-medium" />
+                            —
                           </span>
                         ) : (
-                          <Cash value={r.settled} />
+                          <span title={syncedLabel(r.walletSyncedAt) || undefined}>
+                            <Cash value={r.walletBalance} />
+                          </span>
                         )}
                       </td>
                       <td className={cn(cell, "text-right font-medium text-slate-800")}>
-                        <Cash value={r.withdrawn} />
+                        <Cash value={r.withdrawn30d} />
                       </td>
                       <td className={cn(cell, "pr-6 text-right font-semibold text-slate-900")}>
-                        <Cash value={r.total} className="font-semibold" />
+                        <Cash value={r.totalExpected} className="font-semibold" />
                       </td>
                     </tr>
                   );
@@ -333,19 +341,19 @@ export function CashFlowTable() {
                     TỔNG CỘNG {platform ? `(${CHANNEL_META[platform].label})` : ""}
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
-                    <TotalCell value={totals.inTransit} />
+                    <Money value={totals.inTransit} className="font-bold" />
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
-                    <TotalCell value={totals.pendingSettle} />
+                    <Money value={totals.pendingSettle} className="font-bold" />
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
-                    <TotalCell value={totals.settled} />
+                    <Money value={totals.wallet} className="font-bold" />
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 text-right">
-                    <TotalCell value={totals.withdrawn} />
+                    <Money value={totals.withdrawn30d} className="font-bold" />
                   </td>
                   <td className="border-t-2 border-slate-300 px-5 py-3.5 pr-6 text-right">
-                    <TotalCell value={totals.total} />
+                    <Money value={totals.totalExpected} className="font-bold" />
                   </td>
                 </tr>
               </tfoot>
@@ -353,17 +361,24 @@ export function CashFlowTable() {
           </div>
         )}
 
-        {/* Ghi chú luồng rút ví */}
+        {/* Ghi chú cách đọc bảng + lỗi sync ví (nếu có) */}
         {!loading && !error && shown.length > 0 && (
-          <p className="px-4 py-2.5 text-left text-xs italic text-slate-500">
-            Đơn <b>đã đối soát</b>: doanh thu là số THẬT sàn trả về ví (Tổng
-            tiền sao kê); đơn <b>chưa đối soát</b> (đang giao / chờ đối soát):
-            số tạm tính từ API đơn hàng. “Doanh thu về Ngân hàng” ghi nhận khi
-            tiền rời ví sàn về bank (đồng bộ từ sàn hoặc bấm “Xác nhận đã rút
-            ví”). Ví sàn hiện màu{" "}
-            <span className="font-medium text-red-500">đỏ</span> nếu số đã rút
-            vượt tiền đã quyết toán — dấu hiệu lệch pha cần đối soát.
-          </p>
+          <div className="px-4 py-2.5">
+            {syncErrors.length > 0 && (
+              <p className="mb-1 text-xs font-medium text-amber-700">
+                Chưa làm mới được số dư của: {syncErrors.join(" · ")}
+              </p>
+            )}
+            <p className="text-left text-xs italic text-slate-500">
+              <b>Đang giao</b>: đơn đã bàn giao vận chuyển (đơn chưa bàn giao
+              không tính — tỷ lệ hủy còn cao). <b>Số dư Ví sàn</b> là số THẬT:
+              Shopee đọc từ API ví; Lazada là các kỳ sao kê đã chốt nhưng sàn
+              chưa chi tiền; sàn không có ví hiển thị “—”. <b>Về Ngân hàng</b>{" "}
+              chỉ tính 30 ngày gần nhất (đồng bộ từ sàn hoặc bấm “Xác nhận đã
+              rút ví”) và KHÔNG cộng vào Tổng — <b>Tổng doanh thu dự kiến</b> là
+              tiền còn nằm ngoài ngân hàng, sẽ về tay anh/chị.
+            </p>
+          </div>
         )}
       </CardContent>
       </Card>
@@ -374,9 +389,9 @@ export function CashFlowTable() {
           <DialogHeader>
             <DialogTitle>Xác nhận đã rút ví về ngân hàng</DialogTitle>
             <DialogDescription>
-              Ghi nhận một lần tiền rời ví sàn về tài khoản ngân hàng. Số tiền sẽ
-              được TRỪ khỏi “Doanh thu trên Ví sàn” và CỘNG vào “Doanh thu về
-              Ngân hàng”.
+              Ghi nhận một lần tiền rời ví sàn về tài khoản ngân hàng — cộng vào
+              cột “Về Ngân hàng (30 ngày)”. Số dư Ví sàn đọc thẳng từ API nên tự
+              giảm khi sàn ghi nhận lệnh rút, không cần trừ tay.
             </DialogDescription>
           </DialogHeader>
 
