@@ -23,7 +23,7 @@ import { StatCard } from "@/components/StatCard";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { hapticSelect } from "@/lib/haptics";
 import { ProfitBarChart } from "@/components/ProfitBarChart";
-import { CHANNEL_COLOR } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/components/ChannelDonut";
 import { DonutChart } from "@/components/DonutChart";
 
 /**
@@ -49,6 +49,7 @@ const COST_COLOR: Record<string, string> = {
 };
 
 export function FinancePage() {
+  const channelColors = useChannelColors();
   const [range, setRange] = useState<RangeKey>("30d");
   const [channel, setChannel] = useState("");
   const [summary, setSummary] = useState<PnlSummary | null>(null);
@@ -124,14 +125,14 @@ export function FinancePage() {
     const open = expandable && expanded === id;
     const amountColor =
       tone === "minus"
-        ? "text-red-500"
+        ? "text-red-500 dark:text-red-400"
         : tone === "result"
           ? amount < 0
-            ? "text-red-500"
-            : "text-emerald-600"
-          : "text-slate-900";
+            ? "text-red-500 dark:text-red-400"
+            : "text-emerald-600 dark:text-emerald-400"
+          : "text-slate-900 dark:text-slate-100";
     return (
-      <View className="border-t border-slate-100">
+      <View className="border-t border-slate-100 dark:border-slate-800">
         <Pressable
           className="flex-row items-center gap-2.5 py-3 active:opacity-70"
           disabled={!expandable}
@@ -139,9 +140,9 @@ export function FinancePage() {
         >
           <Ionicons name={icon} size={15} color="#64748b" />
           <View className="flex-1">
-            <Text className="text-[13px] font-semibold text-slate-900">{label}</Text>
+            <Text className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">{label}</Text>
             {countHint ? (
-              <Text className="text-[10px] text-slate-400">{countHint}</Text>
+              <Text className="text-[10px] text-slate-400 dark:text-slate-500">{countHint}</Text>
             ) : null}
           </View>
           <Text className={`text-[13px] font-bold ${amountColor}`}>
@@ -157,24 +158,24 @@ export function FinancePage() {
           ) : null}
         </Pressable>
         {open ? (
-          <View className="mb-2 rounded-xl bg-slate-50 px-3 py-1">
+          <View className="mb-2 rounded-xl bg-slate-50 dark:bg-slate-950 px-3 py-1">
             {items!.map((it) => (
               <View
                 key={it.key}
                 className="flex-row items-center justify-between py-1.5"
               >
-                <Text className="flex-1 pr-2 text-xs text-slate-600" numberOfLines={1}>
+                <Text className="flex-1 pr-2 text-xs text-slate-600 dark:text-slate-300" numberOfLines={1}>
                   {it.label}
                   {typeof it.count === "number" ? ` (${it.count})` : ""}
                 </Text>
                 <Text
                   className={`text-xs font-semibold ${
-                    it.amount < 0 ? "text-emerald-600" : "text-slate-900"
+                    it.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-slate-100"
                   }`}
                 >
                   {formatMoney(Math.abs(it.amount))}
                 </Text>
-                <Text className="w-12 text-right text-[10px] text-slate-400">
+                <Text className="w-12 text-right text-[10px] text-slate-400 dark:text-slate-500">
                   {Math.abs(it.percent).toFixed(1).replace(".", ",")}%
                 </Text>
               </View>
@@ -187,7 +188,7 @@ export function FinancePage() {
 
   return (
     <ScrollView
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       refreshControl={
         <RefreshControl
@@ -212,7 +213,7 @@ export function FinancePage() {
             <Pressable
               key={c.key || "ALL"}
               className={`flex-row items-center gap-1.5 rounded-full px-3 py-1.5 ${
-                active ? "bg-slate-900" : "border border-slate-200 bg-white"
+                active ? "bg-slate-900 dark:bg-slate-100" : "border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
               }`}
               onPress={() => {
                 if (!active) hapticSelect();
@@ -222,12 +223,12 @@ export function FinancePage() {
               {c.key ? (
                 <View
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: CHANNEL_COLOR[c.key] ?? "#94a3b8" }}
+                  style={{ backgroundColor: channelColors[c.key] ?? "#94a3b8" }}
                 />
               ) : null}
               <Text
                 className={`text-xs font-semibold ${
-                  active ? "text-white" : "text-slate-600"
+                  active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                 }`}
               >
                 {c.label}
@@ -239,11 +240,11 @@ export function FinancePage() {
 
       {loading ? (
         <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#0f172a" />
+          <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : error ? (
-        <View className="items-center rounded-2xl bg-white p-6">
-          <Text className="text-center text-sm text-red-500">{error}</Text>
+        <View className="items-center rounded-2xl bg-white dark:bg-slate-900 p-6">
+          <Text className="text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
         </View>
       ) : (
         <>
@@ -282,11 +283,11 @@ export function FinancePage() {
 
           {/* THÁC NƯỚC CHI TIẾT — cùng số với web Báo cáo dòng tiền */}
           {analytics ? (
-            <View className="mb-4 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
-              <Text className="text-sm font-semibold text-slate-900">
+            <View className="mb-4 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+              <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Chi tiết dòng tiền
               </Text>
-              <Text className="mb-1 text-[11px] text-slate-400">
+              <Text className="mb-1 text-[11px] text-slate-400 dark:text-slate-500">
                 Bấm từng dòng để xem bóc tách
               </Text>
               {/* Dòng TĨNH — chi tiết các khoản khấu trừ chỉ nằm ở dòng "Sàn
@@ -336,8 +337,8 @@ export function FinancePage() {
 
           {/* CƠ CẤU CHI PHÍ — % từng khoản */}
           {analytics && analytics.costs.total > 0 ? (
-            <View className="mb-4 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
-              <Text className="mb-3 text-sm font-semibold text-slate-900">
+            <View className="mb-4 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+              <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Cơ cấu chi phí
               </Text>
               <DonutChart
@@ -356,52 +357,52 @@ export function FinancePage() {
           ) : null}
 
           {/* Biểu đồ Lãi/Lỗ theo ngày */}
-          <View className="mb-4 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
-            <Text className="mb-3 text-sm font-semibold text-slate-900">
+          <View className="mb-4 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+            <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Lãi/Lỗ theo ngày
             </Text>
             <ProfitBarChart data={summary?.daily ?? []} />
           </View>
 
           {/* Dòng tiền theo gian hàng */}
-          <View className="rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
-            <Text className="mb-1 text-sm font-semibold text-slate-900">
+          <View className="rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+            <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Tiền theo gian hàng
             </Text>
-            <Text className="mb-3 text-[11px] text-slate-400">
+            <Text className="mb-3 text-[11px] text-slate-400 dark:text-slate-500">
               Ví = số dư THẬT trên sàn · Bank = đã về ngân hàng 30 ngày
             </Text>
             {visibleCashRows.map((r) => (
               <View
                 key={r.channelId}
-                className="flex-row items-center justify-between border-t border-slate-100 py-2.5"
+                className="flex-row items-center justify-between border-t border-slate-100 dark:border-slate-800 py-2.5"
               >
                 <View className="flex-1 pr-2">
-                  <Text className="text-sm font-medium text-slate-900" numberOfLines={1}>
+                  <Text className="text-sm font-medium text-slate-900 dark:text-slate-100" numberOfLines={1}>
                     {r.shopName}
                   </Text>
-                  <Text className="text-[11px] text-slate-400">
+                  <Text className="text-[11px] text-slate-400 dark:text-slate-500">
                     {CHANNEL_LABEL[r.channelName] ?? r.channelName}
                     {r.disconnected ? " · Đã ngắt" : ""}
                   </Text>
                 </View>
                 <View className="items-end">
-                  <Text className="text-sm font-semibold text-slate-900">
+                  <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     Ví {r.walletBalance == null ? "—" : compactMoney(r.walletBalance)}
                   </Text>
-                  <Text className="text-[11px] text-emerald-600">
+                  <Text className="text-[11px] text-emerald-600 dark:text-emerald-400">
                     Bank {compactMoney(r.withdrawn30d)}
                   </Text>
                 </View>
               </View>
             ))}
             {visibleCashRows.length === 0 ? (
-              <Text className="py-4 text-center text-sm text-slate-400">
+              <Text className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
                 Không có gian hàng nào trên sàn này
               </Text>
             ) : null}
-            <View className="mt-2 border-t border-slate-200 pt-2">
-              <Text className="text-right text-[11px] text-slate-400">
+            <View className="mt-2 border-t border-slate-200 dark:border-slate-700 pt-2">
+              <Text className="text-right text-[11px] text-slate-400 dark:text-slate-500">
                 Ví sàn: {formatMoney(walletTotal)} · Doanh thu dự kiến:{" "}
                 {formatMoney(expectedTotal)}
               </Text>

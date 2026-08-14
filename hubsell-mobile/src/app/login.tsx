@@ -47,7 +47,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
@@ -70,14 +70,14 @@ export default function LoginScreen() {
             }}
             contentFit="contain"
           />
-          <Text className="text-2xl font-bold text-slate-900">Hubsell</Text>
-          <Text className="mt-1 text-sm text-slate-500">
+          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Hubsell</Text>
+          <Text className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Quản lý bán hàng đa kênh
           </Text>
         </View>
 
         <View
-          className="rounded-2xl bg-white p-5"
+          className="rounded-2xl bg-white dark:bg-slate-900 p-5"
           style={{
             shadowColor: "#0f172a",
             shadowOpacity: 0.06,
@@ -86,11 +86,11 @@ export default function LoginScreen() {
             elevation: 3,
           }}
         >
-          <Text className="mb-1.5 text-xs font-medium text-slate-600">
+          <Text className="mb-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
             Tên đăng nhập
           </Text>
           <TextInput
-            className="mb-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-900"
+            className="mb-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3.5 py-3 text-sm text-slate-900 dark:text-slate-100"
             placeholder="email, tên đăng nhập hoặc chushop/nhanvien"
             placeholderTextColor="#94a3b8"
             autoCapitalize="none"
@@ -98,16 +98,16 @@ export default function LoginScreen() {
             value={identifier}
             onChangeText={setIdentifier}
           />
-          <Text className="mb-3 text-[11px] text-slate-400">
+          <Text className="mb-3 text-[11px] text-slate-400 dark:text-slate-500">
             Nhân viên đăng nhập dạng: tênchủshop/têncủabạn
           </Text>
 
-          <Text className="mb-1.5 text-xs font-medium text-slate-600">
+          <Text className="mb-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
             Mật khẩu
           </Text>
-          <View className="mb-4 flex-row items-center rounded-xl border border-slate-200 bg-slate-50">
+          <View className="mb-4 flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
             <TextInput
-              className="flex-1 px-3.5 py-3 text-sm text-slate-900"
+              className="flex-1 px-3.5 py-3 text-sm text-slate-900 dark:text-slate-100"
               placeholder="••••••••"
               placeholderTextColor="#94a3b8"
               secureTextEntry={!showPassword}
@@ -129,11 +129,11 @@ export default function LoginScreen() {
           </View>
 
           {error ? (
-            <Text className="mb-3 text-xs text-red-500">{error}</Text>
+            <Text className="mb-3 text-xs text-red-500 dark:text-red-400">{error}</Text>
           ) : null}
 
           <Pressable
-            className="items-center rounded-xl bg-slate-900 py-3.5 active:opacity-80"
+            className="items-center rounded-xl bg-slate-900 py-3.5 active:opacity-80 dark:bg-slate-700"
             onPress={submit}
             disabled={busy}
           >

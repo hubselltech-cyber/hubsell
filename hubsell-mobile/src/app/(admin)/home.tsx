@@ -35,20 +35,20 @@ export default function AdminHome() {
   ];
 
   return (
-    <View className="flex-1 bg-slate-50" style={{ paddingTop: insets.top + 10 }}>
+    <View className="flex-1 bg-slate-50 dark:bg-slate-950" style={{ paddingTop: insets.top + 10 }}>
       {/* Thanh mục + chấm chỉ báo trang */}
       <View className="flex-row items-center gap-1 px-4 pb-2">
         {SECTIONS.map((label, i) => (
           <Pressable
             key={label}
             className={`rounded-full px-3.5 py-1.5 ${
-              page === i ? "bg-slate-900" : ""
+              page === i ? "bg-slate-900 dark:bg-slate-100" : ""
             }`}
             onPress={() => go(i)}
           >
             <Text
               className={`text-sm font-semibold ${
-                page === i ? "text-white" : "text-slate-400"
+                page === i ? "text-white dark:text-slate-900" : "text-slate-400 dark:text-slate-500"
               }`}
             >
               {label}
@@ -61,7 +61,7 @@ export default function AdminHome() {
             <View
               key={i}
               className={`h-1.5 rounded-full ${
-                page === i ? "w-4 bg-slate-900" : "w-1.5 bg-slate-300"
+                page === i ? "w-4 bg-slate-900 dark:bg-slate-100" : "w-1.5 bg-slate-300 dark:bg-slate-700"
               }`}
             />
           ))}

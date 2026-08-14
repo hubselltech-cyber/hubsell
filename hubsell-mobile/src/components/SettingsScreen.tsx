@@ -15,10 +15,19 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../auth/AuthContext";
 import { changePassword } from "../api/auth";
 import { ApiError } from "../api/client";
+import { useThemePref, type ThemePref } from "../theme/ThemeContext";
+import { SegmentedTabs } from "./SegmentedTabs";
+
+const THEME_OPTIONS: { key: ThemePref; label: string }[] = [
+  { key: "light", label: "Sáng" },
+  { key: "dark", label: "Tối" },
+  { key: "system", label: "Hệ thống" },
+];
 
 /** Tài khoản + đổi mật khẩu + đăng xuất — dùng chung cho cả 2 vai. */
 export function SettingsScreen() {
   const { user, signOut } = useAuth();
+  const { pref, setPref } = useThemePref();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -65,7 +74,7 @@ export function SettingsScreen() {
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
@@ -73,32 +82,54 @@ export function SettingsScreen() {
         contentContainerStyle={{ padding: 16, paddingTop: insets.top + 16 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text className="mb-4 text-2xl font-bold text-slate-900">Cấu hình</Text>
+        <Text className="mb-4 text-2xl font-bold text-slate-900 dark:text-slate-100">
+          Cấu hình
+        </Text>
 
-        <View className="mb-4 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
+        <View
+          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
+          style={{ elevation: 2 }}
+        >
           <View className="flex-row items-center gap-3">
-            <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-900">
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-slate-900 dark:bg-slate-700">
               <Text className="text-lg font-bold text-white">
                 {(user.fullName || "?").charAt(0).toUpperCase()}
               </Text>
             </View>
             <View className="flex-1">
-              <Text className="text-base font-semibold text-slate-900">
+              <Text className="text-base font-semibold text-slate-900 dark:text-slate-100">
                 {user.fullName}
               </Text>
-              <Text className="text-xs text-slate-500">
+              <Text className="text-xs text-slate-500 dark:text-slate-400">
                 {identity} · {roleLabel}
               </Text>
             </View>
           </View>
         </View>
 
-        <View className="mb-4 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
-          <Text className="mb-3 text-sm font-semibold text-slate-900">
+        {/* Giao diện Sáng/Tối — mặc định theo lịch sáng↔tối của hệ điều hành */}
+        <View
+          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
+          style={{ elevation: 2 }}
+        >
+          <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            Giao diện
+          </Text>
+          <SegmentedTabs options={THEME_OPTIONS} value={pref} onChange={setPref} />
+          <Text className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+            "Hệ thống" tự chuyển sáng↔tối theo cài đặt điện thoại.
+          </Text>
+        </View>
+
+        <View
+          className="mb-4 rounded-2xl bg-white p-4 dark:bg-slate-900"
+          style={{ elevation: 2 }}
+        >
+          <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
             Đổi mật khẩu
           </Text>
           <TextInput
-            className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900"
+            className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             placeholder="Mật khẩu hiện tại"
             placeholderTextColor="#94a3b8"
             secureTextEntry
@@ -106,7 +137,7 @@ export function SettingsScreen() {
             onChangeText={setCurrent}
           />
           <TextInput
-            className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900"
+            className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             placeholder="Mật khẩu mới (tối thiểu 6 ký tự)"
             placeholderTextColor="#94a3b8"
             secureTextEntry
@@ -114,7 +145,7 @@ export function SettingsScreen() {
             onChangeText={setNext}
           />
           <TextInput
-            className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900"
+            className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             placeholder="Nhập lại mật khẩu mới"
             placeholderTextColor="#94a3b8"
             secureTextEntry
@@ -129,7 +160,7 @@ export function SettingsScreen() {
             </Text>
           ) : null}
           <Pressable
-            className="items-center rounded-xl bg-slate-900 py-3 active:opacity-80"
+            className="items-center rounded-xl bg-slate-900 py-3 active:opacity-80 dark:bg-slate-700"
             onPress={submit}
             disabled={busy}
           >
@@ -142,7 +173,7 @@ export function SettingsScreen() {
         </View>
 
         <Pressable
-          className="flex-row items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white py-3.5 active:opacity-80"
+          className="flex-row items-center justify-center gap-2 rounded-2xl border border-red-200 bg-white py-3.5 active:opacity-80 dark:border-red-900 dark:bg-slate-900"
           onPress={async () => {
             await signOut();
             router.replace("/login");

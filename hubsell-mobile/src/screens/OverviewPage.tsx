@@ -20,7 +20,7 @@ import type { PnlSummary, ReturnsSummaryResponse } from "@/types/api";
 import { rangeFor, yesterdayRange } from "@/lib/dates";
 import { compactMoney } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
-import { CHANNEL_COLOR } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/components/ChannelDonut";
 import { DonutChart } from "@/components/DonutChart";
 import { DeltaPill } from "@/components/DeltaPill";
 import { CHANNEL_LABEL } from "@/lib/labels";
@@ -45,14 +45,15 @@ const FIXED_CHANNELS: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK"];
  */
 
 const STATUS_TILES: { key: string; label: string; color: string }[] = [
-  { key: "PENDING", label: "Chờ xử lý", color: "text-amber-600" },
-  { key: "SHIPPING", label: "Đang giao", color: "text-indigo-600" },
-  { key: "DELIVERED", label: "Đã giao", color: "text-emerald-600" },
-  { key: "CANCELLED", label: "Hủy/Hoàn", color: "text-red-500" },
+  { key: "PENDING", label: "Chờ xử lý", color: "text-amber-600 dark:text-amber-400" },
+  { key: "SHIPPING", label: "Đang giao", color: "text-indigo-600 dark:text-indigo-400" },
+  { key: "DELIVERED", label: "Đã giao", color: "text-emerald-600 dark:text-emerald-400" },
+  { key: "CANCELLED", label: "Hủy/Hoàn", color: "text-red-500 dark:text-red-400" },
 ];
 
 export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
   const { user } = useAuth();
+  const channelColors = useChannelColors();
   const router = useRouter();
   const [summary, setSummary] = useState<PnlSummary | null>(null);
   const [prevSummary, setPrevSummary] = useState<PnlSummary | null>(null);
@@ -106,24 +107,24 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
 
   return (
     <ScrollView
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />
       }
     >
-      <Text className="text-base font-semibold text-slate-900">
+      <Text className="text-base font-semibold text-slate-900 dark:text-slate-100">
         Xin chào, {user?.fullName ?? "chủ shop"} 👋
       </Text>
-      <Text className="mb-4 text-xs text-slate-500">Hôm nay {dateLabel}</Text>
+      <Text className="mb-4 text-xs text-slate-500 dark:text-slate-400">Hôm nay {dateLabel}</Text>
 
       {loading ? (
         <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#0f172a" />
+          <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : error ? (
-        <View className="items-center rounded-2xl bg-white p-6">
-          <Text className="text-center text-sm text-red-500">{error}</Text>
+        <View className="items-center rounded-2xl bg-white dark:bg-slate-900 p-6">
+          <Text className="text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
         </View>
       ) : (
         <>
@@ -131,24 +132,24 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               bản gộp một dòng bị chê lộn xộn), logo thật làm nhận diện.
               Các khối vào trang so le 60ms — đủ thấy nhịp, không đủ gây chờ. */}
           <Animated.View entering={FadeInDown.duration(280)}>
-          <View className="mb-3 rounded-2xl bg-white p-5" style={{ elevation: 2 }}>
+          <View className="mb-3 rounded-2xl bg-white dark:bg-slate-900 p-5" style={{ elevation: 2 }}>
             <View className="flex-row items-center gap-2">
               <Image
                 source={require("@/assets/images/logo-hubsell.png")}
                 style={{ width: 26, height: 26 }}
                 contentFit="contain"
               />
-              <Text className="flex-1 text-sm font-semibold text-slate-900">
+              <Text className="flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Kết quả hôm nay
               </Text>
-              <Text className="text-xs text-slate-400">
+              <Text className="text-xs text-slate-400 dark:text-slate-500">
                 {summary?.count ?? 0} đơn
               </Text>
             </View>
             <View className="mt-4 flex-row">
               <View className="flex-1">
-                <Text className="text-xs text-slate-500">Doanh thu</Text>
-                <Text className="mt-1 text-2xl font-bold text-slate-900">
+                <Text className="text-xs text-slate-500 dark:text-slate-400">Doanh thu</Text>
+                <Text className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
                   {compactMoney(summary?.totalNetRevenue ?? 0)}
                 </Text>
                 <View className="mt-2 flex-row">
@@ -158,14 +159,14 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                   />
                 </View>
               </View>
-              <View className="mx-4 w-px bg-slate-100" />
+              <View className="mx-4 w-px bg-slate-100 dark:bg-slate-800" />
               <View className="flex-1">
-                <Text className="text-xs text-slate-500">Lợi nhuận ròng</Text>
+                <Text className="text-xs text-slate-500 dark:text-slate-400">Lợi nhuận ròng</Text>
                 <Text
                   className={`mt-1 text-2xl font-bold ${
                     (summary?.totalProfitAfterTax ?? 0) < 0
-                      ? "text-red-500"
-                      : "text-emerald-600"
+                      ? "text-red-500 dark:text-red-400"
+                      : "text-emerald-600 dark:text-emerald-400"
                   }`}
                 >
                   {compactMoney(summary?.totalProfitAfterTax ?? 0)}
@@ -189,7 +190,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             {STATUS_TILES.map((t) => (
               <Pressable
                 key={t.key}
-                className="flex-1 items-center rounded-2xl bg-white py-3 active:opacity-70"
+                className="flex-1 items-center rounded-2xl bg-white dark:bg-slate-900 py-3 active:opacity-70"
                 style={{ elevation: 1 }}
                 onPress={() => {
                   hapticTap();
@@ -199,15 +200,15 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 <Text className={`text-lg font-bold ${t.color}`}>
                   {counts[t.key] ?? 0}
                 </Text>
-                <Text className="text-[10px] text-slate-500">{t.label}</Text>
+                <Text className="text-[10px] text-slate-500 dark:text-slate-400">{t.label}</Text>
               </Pressable>
             ))}
           </Animated.View>
 
           {/* Tỷ trọng kênh hôm nay — vị trí sàn CỐ ĐỊNH, chỉ số nhảy */}
           <Animated.View entering={FadeInDown.duration(280).delay(120)}>
-          <View className="mb-3 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
-            <Text className="mb-3 text-sm font-semibold text-slate-900">
+          <View className="mb-3 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+            <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Tỷ trọng kênh hôm nay
             </Text>
             <DonutChart
@@ -218,7 +219,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               slices={channelRows.map((r) => ({
                 label: CHANNEL_LABEL[r.channel],
                 value: r.count,
-                color: CHANNEL_COLOR[r.channel] ?? "#94a3b8",
+                color: channelColors[r.channel] ?? "#94a3b8",
               }))}
             />
             <View className="mt-4">
@@ -227,18 +228,18 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               {channelRows.map((r) => (
                 <View
                   key={r.channel}
-                  className="flex-row items-center gap-3 border-t border-slate-100 py-2.5"
+                  className="flex-row items-center gap-3 border-t border-slate-100 dark:border-slate-800 py-2.5"
                 >
                   <View
                     className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: CHANNEL_COLOR[r.channel] ?? "#94a3b8" }}
+                    style={{ backgroundColor: channelColors[r.channel] ?? "#94a3b8" }}
                   />
-                  <Text className="w-16 text-[13px] font-medium text-slate-700">
+                  <Text className="w-16 text-[13px] font-medium text-slate-700 dark:text-slate-300">
                     {CHANNEL_LABEL[r.channel]}
                   </Text>
                   <Text
                     className={`w-14 text-[13px] font-bold ${
-                      r.count > 0 ? "text-slate-900" : "text-slate-300"
+                      r.count > 0 ? "text-slate-900 dark:text-slate-100" : "text-slate-300 dark:text-slate-600"
                     }`}
                   >
                     {r.count} đơn
@@ -253,21 +254,21 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
           {/* Đơn hoàn cần để mắt — bấm sang trang Kho */}
           <Animated.View entering={FadeInDown.duration(280).delay(180)}>
           <Pressable
-            className="flex-row items-center gap-3 rounded-2xl bg-white p-4 active:opacity-70"
+            className="flex-row items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-4 active:opacity-70"
             style={{ elevation: 2 }}
             onPress={() => {
               hapticTap();
               goWarehouse();
             }}
           >
-            <View className="h-11 w-11 items-center justify-center rounded-xl bg-amber-100">
+            <View className="h-11 w-11 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-500/15">
               <Ionicons name="arrow-undo-outline" size={20} color="#d97706" />
             </View>
             <View className="flex-1">
-              <Text className="text-sm font-semibold text-slate-900">
+              <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 {returningTotal} đơn hoàn đang xử lý
               </Text>
-              <Text className="text-[11px] text-slate-500">
+              <Text className="text-[11px] text-slate-500 dark:text-slate-400">
                 {returns?.AWAITING ?? 0} chờ về kho · {returns?.RECEIVED ?? 0} chờ
                 nhập kho
                 {returns && returns.overdue > 0

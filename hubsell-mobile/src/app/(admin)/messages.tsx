@@ -17,7 +17,7 @@ import { fetchMessages, sendImage, sendMessage } from "@/api/operations";
 import { ApiError } from "@/api/client";
 import type { OpsConversationDto, OpsMessageDto } from "@/types/api";
 import { CHANNEL_LABEL } from "@/lib/labels";
-import { CHANNEL_COLOR } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/components/ChannelDonut";
 import { useConversations } from "@/chat/ConversationsContext";
 
 // Thứ tự tab chốt với anh Trung 13/08: Shopee → TikTok → Lazada.
@@ -51,6 +51,7 @@ function formatMs(ms: number | null): string {
 }
 
 export default function MessagesScreen() {
+  const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<ChannelTab>("SHOPEE");
   const [filter, setFilter] = useState<ReplyFilter>("");
@@ -113,17 +114,17 @@ export default function MessagesScreen() {
 
   const renderConversation = ({ item }: { item: OpsConversationDto }) => (
     <Pressable
-      className="mb-2.5 flex-row items-center gap-3 rounded-2xl bg-white p-3 active:opacity-70"
+      className="mb-2.5 flex-row items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3 active:opacity-70"
       style={{ elevation: 1 }}
       onPress={() => setActive(item)}
     >
       <View
         className="h-12 w-12 items-center justify-center rounded-full"
-        style={{ backgroundColor: `${CHANNEL_COLOR[item.channelName]}1a` }}
+        style={{ backgroundColor: `${channelColors[item.channelName]}1a` }}
       >
         <Text
           className="text-base font-bold"
-          style={{ color: CHANNEL_COLOR[item.channelName] }}
+          style={{ color: channelColors[item.channelName] }}
         >
           {(item.customer || "?").charAt(0).toUpperCase()}
         </Text>
@@ -132,32 +133,32 @@ export default function MessagesScreen() {
         <View className="flex-row items-center justify-between">
           <Text
             className={`flex-1 pr-2 text-[13px] ${
-              item.unread ? "font-bold text-slate-900" : "font-semibold text-slate-800"
+              item.unread ? "font-bold text-slate-900 dark:text-slate-100" : "font-semibold text-slate-800"
             }`}
             numberOfLines={1}
           >
             {item.customer}
           </Text>
-          <Text className="text-[11px] text-slate-400">{formatMs(item.lastAt)}</Text>
+          <Text className="text-[11px] text-slate-400 dark:text-slate-500">{formatMs(item.lastAt)}</Text>
         </View>
         <View className="mt-0.5 flex-row items-center justify-between">
           <Text
             className={`flex-1 pr-2 text-xs ${
-              item.unread ? "font-semibold text-slate-700" : "text-slate-500"
+              item.unread ? "font-semibold text-slate-700 dark:text-slate-300" : "text-slate-500 dark:text-slate-400"
             }`}
             numberOfLines={1}
           >
             {item.lastMessage || "…"}
           </Text>
           {item.unread ? (
-            <View className="min-w-[18px] items-center rounded-full bg-emerald-500 px-1.5 py-0.5">
+            <View className="min-w-[18px] items-center rounded-full bg-emerald-50 dark:bg-emerald-500/100 px-1.5 py-0.5">
               <Text className="text-[10px] font-bold text-white">
                 {item.unread > 99 ? "99+" : item.unread}
               </Text>
             </View>
           ) : null}
         </View>
-        <Text className="mt-0.5 text-[11px] text-slate-400" numberOfLines={1}>
+        <Text className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
           {item.shopName}
         </Text>
       </View>
@@ -165,10 +166,10 @@ export default function MessagesScreen() {
   );
 
   return (
-    <View className="flex-1 bg-slate-50" style={{ paddingTop: insets.top + 16 }}>
+    <View className="flex-1 bg-slate-50 dark:bg-slate-950" style={{ paddingTop: insets.top + 16 }}>
       <View className="mb-3 px-4">
-        <Text className="text-2xl font-bold text-slate-900">Tin nhắn</Text>
-        <Text className="text-xs text-slate-500">
+        <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Tin nhắn</Text>
+        <Text className="text-xs text-slate-500 dark:text-slate-400">
           Trả lời khách ngay trên sàn
         </Text>
       </View>
@@ -181,23 +182,23 @@ export default function MessagesScreen() {
             <Pressable
               key={ch}
               className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-2 ${
-                activeTab ? "bg-slate-900" : "bg-white border border-slate-200"
+                activeTab ? "bg-slate-900 dark:bg-slate-100" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
               }`}
               onPress={() => setTab(ch)}
             >
               <View
                 className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: CHANNEL_COLOR[ch] }}
+                style={{ backgroundColor: channelColors[ch] }}
               />
               <Text
                 className={`text-xs font-semibold ${
-                  activeTab ? "text-white" : "text-slate-600"
+                  activeTab ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                 }`}
               >
                 {CHANNEL_LABEL[ch]}
               </Text>
               {unread ? (
-                <View className="min-w-[16px] items-center rounded-full bg-emerald-500 px-1">
+                <View className="min-w-[16px] items-center rounded-full bg-emerald-50 dark:bg-emerald-500/100 px-1">
                   <Text className="text-[9px] font-bold text-white">
                     {unread > 99 ? "99+" : unread}
                   </Text>
@@ -217,20 +218,20 @@ export default function MessagesScreen() {
               <Pressable
                 key={f.key || "ALL"}
                 className={`flex-row items-center gap-1 rounded-full px-3 py-1.5 ${
-                  activeF ? "bg-slate-900" : "bg-white border border-slate-200"
+                  activeF ? "bg-slate-900 dark:bg-slate-100" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
                 }`}
                 onPress={() => setFilter(f.key)}
               >
                 <Text
                   className={`text-xs font-semibold ${
-                    activeF ? "text-white" : "text-slate-600"
+                    activeF ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                   }`}
                 >
                   {f.label}
                 </Text>
                 {count ? (
                   <Text
-                    className={`text-[10px] ${activeF ? "text-slate-300" : "text-slate-400"}`}
+                    className={`text-[10px] ${activeF ? "text-slate-300 dark:text-slate-600" : "text-slate-400 dark:text-slate-500"}`}
                   >
                     {count}
                   </Text>
@@ -242,22 +243,22 @@ export default function MessagesScreen() {
       ) : null}
 
       {tab === "TIKTOK" ? (
-        <View className="mx-4 mt-6 items-center rounded-2xl bg-white p-6" style={{ elevation: 1 }}>
+        <View className="mx-4 mt-6 items-center rounded-2xl bg-white dark:bg-slate-900 p-6" style={{ elevation: 1 }}>
           <Ionicons name="chatbubbles-outline" size={36} color="#94a3b8" />
-          <Text className="mt-3 text-center text-sm font-semibold text-slate-700">
+          <Text className="mt-3 text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
             TikTok Shop chưa mở API chat
           </Text>
-          <Text className="mt-1 text-center text-xs leading-5 text-slate-500">
+          <Text className="mt-1 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
             Hubsell sẽ bổ sung ngay khi sàn hỗ trợ. Tạm thời anh/chị trả lời
             khách trong app TikTok Seller.
           </Text>
         </View>
       ) : loading ? (
         <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#0f172a" />
+          <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : error ? (
-        <Text className="px-6 py-10 text-center text-sm text-red-500">{error}</Text>
+        <Text className="px-6 py-10 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
       ) : (
         <FlatList
           data={filtered}
@@ -271,9 +272,9 @@ export default function MessagesScreen() {
           }}
           ListHeaderComponent={
             channelErrors.length ? (
-              <View className="mb-2.5 rounded-xl bg-amber-50 px-3 py-2">
+              <View className="mb-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 px-3 py-2">
                 {channelErrors.map((e) => (
-                  <Text key={e.channelId} className="text-[11px] leading-4 text-amber-700">
+                  <Text key={e.channelId} className="text-[11px] leading-4 text-amber-700 dark:text-amber-300">
                     {e.shopName}: {e.message}
                   </Text>
                 ))}
@@ -281,7 +282,7 @@ export default function MessagesScreen() {
             ) : null
           }
           ListEmptyComponent={
-            <Text className="py-10 text-center text-sm text-slate-400">
+            <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
               {filter
                 ? "Không có hội thoại nào khớp bộ lọc"
                 : `Chưa có hội thoại nào trên ${CHANNEL_LABEL[tab]}`}
@@ -312,6 +313,7 @@ function ChatView({
   topInset: number;
   onBack: () => void;
 }) {
+  const channelColors = useChannelColors();
   const [messages, setMessages] = useState<PendingMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -458,9 +460,9 @@ function ChatView({
           className={`rounded-2xl px-3 py-2 ${
             item.fromShop
               ? item.failed
-                ? "bg-red-100"
-                : "bg-slate-900"
-              : "bg-white border border-slate-200"
+                ? "bg-red-100 dark:bg-red-500/15"
+                : "bg-slate-900 dark:bg-slate-700"
+              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
           }`}
           style={item.pending ? { opacity: 0.55 } : undefined}
         >
@@ -470,14 +472,14 @@ function ChatView({
                 ? item.failed
                   ? "text-red-600"
                   : "text-white"
-                : "text-slate-900"
+                : "text-slate-900 dark:text-slate-100"
             }`}
           >
             {item.text}
           </Text>
         </View>
       )}
-      <Text className="mt-0.5 text-[10px] text-slate-400">
+      <Text className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-500">
         {item.failed
           ? "Gửi thất bại"
           : item.pending
@@ -489,35 +491,35 @@ function ChatView({
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View
-        className="flex-row items-center gap-2 border-b border-slate-200 bg-white px-3 pb-3"
+        className="flex-row items-center gap-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pb-3"
         style={{ paddingTop: topInset + 10 }}
       >
         <Pressable
-          className="h-9 w-9 items-center justify-center rounded-xl active:bg-slate-100"
+          className="h-9 w-9 items-center justify-center rounded-xl active:bg-slate-100 dark:active:bg-slate-800"
           onPress={onBack}
         >
-          <Ionicons name="arrow-back" size={20} color="#0f172a" />
+          <Ionicons name="arrow-back" size={20} color="#64748b" />
         </Pressable>
         <View
           className="h-9 w-9 items-center justify-center rounded-full"
-          style={{ backgroundColor: `${CHANNEL_COLOR[conversation.channelName]}1a` }}
+          style={{ backgroundColor: `${channelColors[conversation.channelName]}1a` }}
         >
           <Text
             className="text-sm font-bold"
-            style={{ color: CHANNEL_COLOR[conversation.channelName] }}
+            style={{ color: channelColors[conversation.channelName] }}
           >
             {(conversation.customer || "?").charAt(0).toUpperCase()}
           </Text>
         </View>
         <View className="flex-1">
-          <Text className="text-sm font-bold text-slate-900" numberOfLines={1}>
+          <Text className="text-sm font-bold text-slate-900 dark:text-slate-100" numberOfLines={1}>
             {conversation.customer}
           </Text>
-          <Text className="text-[11px] text-slate-500" numberOfLines={1}>
+          <Text className="text-[11px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
             {CHANNEL_LABEL[conversation.channelName]} · {conversation.shopName}
           </Text>
         </View>
@@ -525,7 +527,7 @@ function ChatView({
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#0f172a" />
+          <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : (
         <FlatList
@@ -536,7 +538,7 @@ function ChatView({
           renderItem={renderMessage}
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
           ListEmptyComponent={
-            <Text className="py-10 text-center text-sm text-slate-400">
+            <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
               Chưa có tin nhắn trong hội thoại này
             </Text>
           }
@@ -544,21 +546,21 @@ function ChatView({
       )}
 
       {error ? (
-        <Text className="px-4 pb-1 text-center text-xs text-red-500">{error}</Text>
+        <Text className="px-4 pb-1 text-center text-xs text-red-500 dark:text-red-400">{error}</Text>
       ) : null}
 
-      <View className="flex-row items-end gap-2 border-t border-slate-200 bg-white px-3 py-2">
+      <View className="flex-row items-end gap-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
         {conversation.channelName === "SHOPEE" && conversation.buyerId ? (
           <Pressable
-            className="h-10 w-10 items-center justify-center rounded-full active:bg-slate-100"
+            className="h-10 w-10 items-center justify-center rounded-full active:bg-slate-100 dark:active:bg-slate-800"
             onPress={() => void onPickImage()}
             disabled={sending}
           >
-            <Ionicons name="image-outline" size={22} color="#0f172a" />
+            <Ionicons name="image-outline" size={22} color="#64748b" />
           </Pressable>
         ) : null}
         <TextInput
-          className="max-h-24 flex-1 rounded-2xl bg-slate-100 px-3.5 py-2.5 text-sm text-slate-900"
+          className="max-h-24 flex-1 rounded-2xl bg-slate-100 dark:bg-slate-800 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100"
           placeholder="Nhập tin nhắn…"
           placeholderTextColor="#94a3b8"
           value={text}
@@ -567,7 +569,7 @@ function ChatView({
         />
         <Pressable
           className={`h-10 w-10 items-center justify-center rounded-full ${
-            text.trim() && !sending ? "bg-emerald-500" : "bg-slate-200"
+            text.trim() && !sending ? "bg-emerald-50 dark:bg-emerald-500/100" : "bg-slate-200 dark:bg-slate-700"
           }`}
           onPress={() => void onSend()}
           disabled={!text.trim() || sending}

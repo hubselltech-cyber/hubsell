@@ -1,6 +1,7 @@
 import React from "react";
 import { Text, View } from "react-native";
 import Svg, { Circle, G } from "react-native-svg";
+import { useColorScheme } from "nativewind";
 
 export interface GenericSlice {
   label: string;
@@ -28,6 +29,9 @@ export function DonutChart({
   /** false = chỉ vẽ donut, nơi gọi tự render danh sách cố định bên dưới. */
   showLegend?: boolean;
 }) {
+  const { colorScheme } = useColorScheme();
+  // Vòng nền donut: slate-200 sáng / slate-700 tối (SVG không ăn class dark:)
+  const trackColor = colorScheme === "dark" ? "#334155" : "#e2e8f0";
   const total = slices.reduce((s, x) => s + Math.max(x.value, 0), 0);
   const stroke = Math.round(size * 0.13);
   const r = (size - stroke) / 2;
@@ -52,7 +56,7 @@ export function DonutChart({
               cx={size / 2}
               cy={size / 2}
               r={r}
-              stroke="#e2e8f0"
+              stroke={trackColor}
               strokeWidth={stroke}
               fill="none"
             />
@@ -73,8 +77,8 @@ export function DonutChart({
           </G>
         </Svg>
         <View className="absolute inset-0 items-center justify-center">
-          <Text className="text-xl font-bold text-slate-900">{centerLabel}</Text>
-          <Text className="text-[11px] text-slate-400">{centerSub}</Text>
+          <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">{centerLabel}</Text>
+          <Text className="text-[11px] text-slate-400 dark:text-slate-500">{centerSub}</Text>
         </View>
       </View>
 
@@ -86,13 +90,13 @@ export function DonutChart({
               className="h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: s.color }}
             />
-            <Text className="flex-1 text-xs text-slate-600" numberOfLines={1}>
+            <Text className="flex-1 text-xs text-slate-600 dark:text-slate-300" numberOfLines={1}>
               {s.label}
             </Text>
             {s.detail ? (
-              <Text className="text-xs font-semibold text-slate-900">{s.detail}</Text>
+              <Text className="text-xs font-semibold text-slate-900 dark:text-slate-100">{s.detail}</Text>
             ) : null}
-            <Text className="w-10 text-right text-xs font-semibold text-slate-500">
+            <Text className="w-10 text-right text-xs font-semibold text-slate-500 dark:text-slate-400">
               {total > 0 ? Math.round((Math.max(s.value, 0) / total) * 100) : 0}%
             </Text>
           </View>

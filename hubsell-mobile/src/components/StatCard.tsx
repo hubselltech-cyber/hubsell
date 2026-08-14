@@ -23,12 +23,12 @@ export function StatCard({
   const valueColor =
     tone === "signal"
       ? value < 0
-        ? "text-red-500"
-        : "text-emerald-600"
-      : "text-slate-900";
+        ? "text-red-500 dark:text-red-400"
+        : "text-emerald-600 dark:text-emerald-400"
+      : "text-slate-900 dark:text-slate-100";
   return (
     <View
-      className="flex-1 rounded-2xl bg-white p-4"
+      className="flex-1 rounded-2xl bg-white p-4 dark:bg-slate-900"
       style={{
         shadowColor: "#0f172a",
         shadowOpacity: 0.06,
@@ -39,12 +39,18 @@ export function StatCard({
     >
       <View className="mb-2 flex-row items-center gap-1.5">
         <Ionicons name={icon} size={14} color="#64748b" />
-        <Text className="text-xs font-medium text-slate-500">{label}</Text>
+        <Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          {label}
+        </Text>
       </View>
       <Text className={`text-2xl font-bold ${valueColor}`}>
         {compactMoney(value)}
       </Text>
-      {sub ? <Text className="mt-1 text-[11px] text-slate-400">{sub}</Text> : null}
+      {sub ? (
+        <Text className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+          {sub}
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -1,22 +1,26 @@
 import React from "react";
 import { Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 
 /**
  * Pill ▲/▼ % so với kỳ trước. Kỳ trước = 0 mà kỳ này có số → "mới" (không
  * chia 0 ra Infinity); cả hai = 0 → ẩn (trả null).
+ * Dark mode dùng lại đúng bảng màu của prop onDark (nền tối = nền card tối).
  */
 export function DeltaPill({
   current,
   previous,
   suffix = "so hôm qua",
-  onDark = false,
+  onDark: onDarkProp = false,
 }: {
   current: number;
   previous: number;
   suffix?: string;
   onDark?: boolean;
 }) {
+  const { colorScheme } = useColorScheme();
+  const onDark = onDarkProp || colorScheme === "dark";
   if (current === 0 && previous === 0) return null;
 
   let label: string;

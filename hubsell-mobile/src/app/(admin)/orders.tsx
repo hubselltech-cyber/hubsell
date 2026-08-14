@@ -31,7 +31,7 @@ import {
   RETURN_STATUS,
   SHIPPING_STATUS,
 } from "@/lib/labels";
-import { CHANNEL_COLOR } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/components/ChannelDonut";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
 
@@ -61,6 +61,7 @@ interface FilterValue {
 }
 
 export default function OrdersScreen() {
+  const channelColors = useChannelColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [orders, setOrders] = useState<OrderDto[]>([]);
@@ -185,7 +186,7 @@ export default function OrdersScreen() {
     const img = it.imageUrl ?? it.product?.imageUrl ?? null;
     return (
       <View key={it.id} className="mt-2 flex-row items-center gap-2.5">
-        <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+        <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
           {img ? (
             <Image
               source={{ uri: img }}
@@ -201,12 +202,12 @@ export default function OrdersScreen() {
             {it.productName}
           </Text>
           {it.channelSku ? (
-            <Text className="text-[10px] text-slate-400" numberOfLines={1}>
+            <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
               {it.channelSku}
             </Text>
           ) : null}
         </View>
-        <Text className="text-xs font-semibold text-slate-500">
+        <Text className="text-xs font-semibold text-slate-500 dark:text-slate-400">
           x{it.quantity}
         </Text>
       </View>
@@ -223,17 +224,17 @@ export default function OrdersScreen() {
       : item.items.slice(0, ITEMS_PREVIEW);
     const hiddenCount = item.items.length - ITEMS_PREVIEW;
     return (
-      <View className="mb-2.5 rounded-2xl bg-white p-3" style={{ elevation: 1 }}>
+      <View className="mb-2.5 rounded-2xl bg-white dark:bg-slate-900 p-3" style={{ elevation: 1 }}>
         <View className="flex-row items-center justify-between gap-2">
           <Text
-            className="flex-1 pr-1 text-[13px] font-semibold text-slate-900"
+            className="flex-1 pr-1 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
             numberOfLines={1}
           >
             {item.orderCode}
           </Text>
           {/* HỎA TỐC đỏ rực — anh Trung chốt 13/08: loại đơn quan trọng nhất */}
           {express ? (
-            <View className="rounded-full bg-red-500 px-2 py-0.5">
+            <View className="rounded-full bg-red-50 dark:bg-red-500/100 px-2 py-0.5">
               <Text className="text-[10px] font-bold text-white">⚡ Hỏa tốc</Text>
             </View>
           ) : null}
@@ -241,7 +242,7 @@ export default function OrdersScreen() {
         </View>
         {/* Tên SHOP thay nhãn sàn (anh Trung chốt 13/08) — nhà nhiều gian
             nhìn phát biết đơn của DarkMan hay Hi.Bé; sàn đã có chip lọc. */}
-        <Text className="mt-0.5 text-[11px] text-slate-500" numberOfLines={1}>
+        <Text className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
           {item.customerName}
           {" · "}
           {item.channel.shopName}
@@ -252,11 +253,11 @@ export default function OrdersScreen() {
         {visibleItems.map(renderItemRow)}
         {hiddenCount > 0 ? (
           <Pressable
-            className="mt-1.5 flex-row items-center justify-center gap-1 rounded-lg py-1.5 active:bg-slate-50"
+            className="mt-1.5 flex-row items-center justify-center gap-1 rounded-lg py-1.5 active:bg-slate-50 dark:active:bg-slate-800"
             onPress={() => toggleExpand(item.id)}
             hitSlop={4}
           >
-            <Text className="text-[11px] font-semibold text-sky-600">
+            <Text className="text-[11px] font-semibold text-sky-600 dark:text-sky-400">
               {isExpanded ? "Thu gọn" : `Xem thêm ${hiddenCount} sản phẩm`}
             </Text>
             <Ionicons
@@ -268,7 +269,7 @@ export default function OrdersScreen() {
         ) : null}
 
         {/* Chân card: hãng vận chuyển + mã vận đơn | tổng tiền */}
-        <View className="mt-2.5 flex-row items-center justify-between border-t border-slate-100 pt-2">
+        <View className="mt-2.5 flex-row items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2">
           <View className="flex-1 flex-row items-center gap-1.5 pr-2">
             <Ionicons
               name="car-outline"
@@ -277,7 +278,7 @@ export default function OrdersScreen() {
             />
             <Text
               className={`flex-1 text-[11px] ${
-                express ? "font-semibold text-red-500" : "text-slate-500"
+                express ? "font-semibold text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400"
               }`}
               numberOfLines={1}
             >
@@ -291,7 +292,7 @@ export default function OrdersScreen() {
               {item.trackingCode ? ` · ${item.trackingCode}` : ""}
             </Text>
           </View>
-          <Text className="text-[13px] font-bold text-slate-900">
+          <Text className="text-[13px] font-bold text-slate-900 dark:text-slate-100">
             {formatMoney(item.totalAmount)}
           </Text>
         </View>
@@ -305,25 +306,25 @@ export default function OrdersScreen() {
   };
 
   return (
-    <View className="flex-1 bg-slate-50" style={{ paddingTop: insets.top + 16 }}>
+    <View className="flex-1 bg-slate-50 dark:bg-slate-950" style={{ paddingTop: insets.top + 16 }}>
       <View className="mb-3 flex-row items-center justify-between px-4">
         <View>
-          <Text className="text-2xl font-bold text-slate-900">Đơn hàng</Text>
-          <Text className="text-xs text-slate-500">{counts.ALL ?? 0} đơn</Text>
+          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">Đơn hàng</Text>
+          <Text className="text-xs text-slate-500 dark:text-slate-400">{counts.ALL ?? 0} đơn</Text>
         </View>
         {/* Lối tắt cho chủ shop tự quét thử luồng kho */}
         <Pressable
-          className="h-10 w-10 items-center justify-center rounded-xl bg-slate-900 active:opacity-80"
+          className="h-10 w-10 items-center justify-center rounded-xl bg-slate-900 active:opacity-80 dark:bg-slate-700"
           onPress={() => router.push("/(warehouse)/scan" as Href)}
         >
           <Ionicons name="scan-outline" size={18} color="#fff" />
         </Pressable>
       </View>
 
-      <View className="mx-4 mb-2.5 flex-row items-center rounded-xl border border-slate-200 bg-white px-3">
+      <View className="mx-4 mb-2.5 flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
         <Ionicons name="search-outline" size={16} color="#94a3b8" />
         <TextInput
-          className="flex-1 px-2 py-2.5 text-sm text-slate-900"
+          className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
           placeholder="Mã đơn, tên khách, SĐT, mã vận đơn…"
           placeholderTextColor="#94a3b8"
           value={search}
@@ -340,19 +341,19 @@ export default function OrdersScreen() {
             <Pressable
               key={ch || "ALL"}
               className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-1.5 ${
-                active ? "bg-slate-900" : "bg-white border border-slate-200"
+                active ? "bg-slate-900 dark:bg-slate-100" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
               }`}
               onPress={() => pickChannel(ch)}
             >
               {ch ? (
                 <View
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: CHANNEL_COLOR[ch] }}
+                  style={{ backgroundColor: channelColors[ch] }}
                 />
               ) : null}
               <Text
                 className={`text-xs font-semibold ${
-                  active ? "text-white" : "text-slate-600"
+                  active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                 }`}
               >
                 {ch ? CHANNEL_LABEL[ch] : "Tất cả"}
@@ -366,13 +367,13 @@ export default function OrdersScreen() {
           VC + shop, học Salework) và Thống kê SP/SKU trong phạm vi đang lọc */}
       <View className="mb-2 flex-row gap-2 px-4">
         <Pressable
-          className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2 active:bg-slate-50"
+          className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2 active:bg-slate-50 dark:active:bg-slate-800"
           onPress={() => setFilterOpen(true)}
         >
-          <Ionicons name="funnel-outline" size={14} color="#0f172a" />
+          <Ionicons name="funnel-outline" size={14} color="#64748b" />
           <Text className="text-xs font-semibold text-slate-800">Bộ lọc</Text>
           {activeFilterCount > 0 ? (
-            <View className="min-w-[16px] items-center rounded-full bg-slate-900 px-1">
+            <View className="min-w-[16px] items-center rounded-full bg-slate-900 px-1 dark:bg-slate-600">
               <Text className="text-[10px] font-bold text-white">
                 {activeFilterCount}
               </Text>
@@ -380,10 +381,10 @@ export default function OrdersScreen() {
           ) : null}
         </Pressable>
         <Pressable
-          className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2 active:bg-slate-50"
+          className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2 active:bg-slate-50 dark:active:bg-slate-800"
           onPress={() => setStatsOpen(true)}
         >
-          <Ionicons name="bar-chart-outline" size={14} color="#0f172a" />
+          <Ionicons name="bar-chart-outline" size={14} color="#64748b" />
           <Text className="text-xs font-semibold text-slate-800">Thống kê</Text>
         </Pressable>
       </View>
@@ -414,10 +415,10 @@ export default function OrdersScreen() {
 
       {loading ? (
         <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#0f172a" />
+          <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : error ? (
-        <Text className="px-6 py-10 text-center text-sm text-red-500">{error}</Text>
+        <Text className="px-6 py-10 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
       ) : (
         <FlatList
           data={orders}
@@ -430,11 +431,11 @@ export default function OrdersScreen() {
           }}
           ListFooterComponent={
             loadingMore ? (
-              <ActivityIndicator className="py-4" color="#0f172a" />
+              <ActivityIndicator className="py-4" color="#64748b" />
             ) : null
           }
           ListEmptyComponent={
-            <Text className="py-10 text-center text-sm text-slate-400">
+            <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
               Không có đơn nào khớp bộ lọc
             </Text>
           }
@@ -468,7 +469,7 @@ export default function OrdersScreen() {
 function ActiveChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
     <Pressable
-      className="flex-row items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 active:opacity-80"
+      className="flex-row items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 active:opacity-80 dark:bg-slate-700"
       onPress={onClear}
       hitSlop={4}
     >
@@ -493,17 +494,17 @@ function PickChip({
   return (
     <Pressable
       className={`flex-row items-center gap-1 rounded-full px-3 py-1.5 ${
-        active ? "bg-slate-900" : "bg-slate-100"
+        active ? "bg-slate-900 dark:bg-slate-100" : "bg-slate-100 dark:bg-slate-800"
       }`}
       onPress={onPress}
     >
       <Text
-        className={`text-xs font-semibold ${active ? "text-white" : "text-slate-600"}`}
+        className={`text-xs font-semibold ${active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"}`}
       >
         {label}
       </Text>
       {count !== undefined && count > 0 ? (
-        <Text className={`text-[10px] ${active ? "text-slate-300" : "text-slate-400"}`}>
+        <Text className={`text-[10px] ${active ? "text-slate-300 dark:text-slate-600" : "text-slate-400 dark:text-slate-500"}`}>
           {count}
         </Text>
       ) : null}
@@ -548,19 +549,19 @@ function FilterSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <Pressable className="flex-1" onPress={onClose} />
-        <View className="max-h-[85%] rounded-t-3xl bg-white px-4 pb-6 pt-3">
+        <View className="max-h-[85%] rounded-t-3xl bg-white dark:bg-slate-900 px-4 pb-6 pt-3">
           <View className="mb-1 items-center">
-            <View className="h-1 w-10 rounded-full bg-slate-200" />
+            <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
           </View>
           <View className="mb-2 flex-row items-center justify-between">
-            <Text className="text-base font-bold text-slate-900">Bộ lọc</Text>
+            <Text className="text-base font-bold text-slate-900 dark:text-slate-100">Bộ lọc</Text>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color="#64748b" />
             </Pressable>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <Text className="mb-1.5 text-xs font-semibold text-slate-500">
+            <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
               Trạng thái đơn
             </Text>
             <View className="mb-3 flex-row flex-wrap gap-1.5">
@@ -575,7 +576,7 @@ function FilterSheet({
               ))}
             </View>
 
-            <Text className="mb-1.5 text-xs font-semibold text-slate-500">
+            <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
               Đơn vị vận chuyển
             </Text>
             <View className="mb-3 flex-row flex-wrap gap-1.5">
@@ -596,7 +597,7 @@ function FilterSheet({
 
             {visibleChannels.length > 0 ? (
               <>
-                <Text className="mb-1.5 text-xs font-semibold text-slate-500">
+                <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
                   Gian hàng{channel ? ` ${CHANNEL_LABEL[channel]}` : ""}
                 </Text>
                 <View className="mb-3 flex-row flex-wrap gap-1.5">
@@ -625,13 +626,13 @@ function FilterSheet({
 
           <View className="mt-2 flex-row gap-2">
             <Pressable
-              className="flex-1 items-center rounded-xl bg-slate-100 py-3 active:opacity-80"
+              className="flex-1 items-center rounded-xl bg-slate-100 dark:bg-slate-800 py-3 active:opacity-80"
               onPress={() => setDraft({ status: "", carrier: "", shopId: "" })}
             >
-              <Text className="text-sm font-semibold text-slate-600">Bỏ lọc</Text>
+              <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">Bỏ lọc</Text>
             </Pressable>
             <Pressable
-              className="flex-1 items-center rounded-xl bg-slate-900 py-3 active:opacity-80"
+              className="flex-1 items-center rounded-xl bg-slate-900 py-3 active:opacity-80 dark:bg-slate-700"
               onPress={() => onApply(draft)}
             >
               <Text className="text-sm font-semibold text-white">Áp dụng</Text>
@@ -682,19 +683,19 @@ function StatsSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
         <Pressable className="flex-1" onPress={onClose} />
-        <View className="h-[75%] rounded-t-3xl bg-white px-4 pb-6 pt-3">
+        <View className="h-[75%] rounded-t-3xl bg-white dark:bg-slate-900 px-4 pb-6 pt-3">
           <View className="mb-1 items-center">
-            <View className="h-1 w-10 rounded-full bg-slate-200" />
+            <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
           </View>
           <View className="mb-1 flex-row items-center justify-between">
-            <Text className="text-base font-bold text-slate-900">
+            <Text className="text-base font-bold text-slate-900 dark:text-slate-100">
               Thống kê bốc hàng
             </Text>
             <Pressable onPress={onClose} hitSlop={8}>
               <Ionicons name="close" size={20} color="#64748b" />
             </Pressable>
           </View>
-          <Text className="mb-2 text-[11px] text-slate-400">
+          <Text className="mb-2 text-[11px] text-slate-400 dark:text-slate-500">
             Chỉ tính đơn Chờ xử lý + Đã xử lý (chưa bàn giao) — hỏa tốc đỏ,
             nhặt trước
           </Text>
@@ -715,17 +716,17 @@ function StatsSheet({
           {/* Dòng TỔNG cho kho: cần bốc bao nhiêu món, thuộc mấy đơn.
               Check cả totals — backend cũ (đang chờ deploy) chưa trả trường này */}
           {data?.totals && !loading ? (
-            <View className="mb-2 rounded-xl bg-slate-100 px-3 py-2">
+            <View className="mb-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2">
               <View className="flex-row items-center justify-between">
-                <Text className="text-xs font-semibold text-slate-700">
+                <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Tổng cần: {data.totals.qty} sản phẩm · {data.totals.orders} đơn
                 </Text>
-                <Text className="text-xs font-bold text-emerald-600">
+                <Text className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                   {compactMoney(data.totals.revenue)}
                 </Text>
               </View>
               {data.totals.expressQty > 0 ? (
-                <Text className="mt-0.5 text-xs font-bold text-red-500">
+                <Text className="mt-0.5 text-xs font-bold text-red-500 dark:text-red-400">
                   ⚡ Trong đó {data.totals.expressQty} món HỎA TỐC — nhặt trước!
                 </Text>
               ) : null}
@@ -734,25 +735,25 @@ function StatsSheet({
 
           {loading ? (
             <View className="items-center py-12">
-              <ActivityIndicator size="large" color="#0f172a" />
+              <ActivityIndicator size="large" color="#64748b" />
             </View>
           ) : error ? (
-            <Text className="py-10 text-center text-sm text-red-500">{error}</Text>
+            <Text className="py-10 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
           ) : (
             <FlatList
               data={rows}
               keyExtractor={(r, i) => `${r.sku ?? r.name}-${i}`}
               ListEmptyComponent={
-                <Text className="py-10 text-center text-sm text-slate-400">
+                <Text className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
                   Không có dữ liệu trong phạm vi này
                 </Text>
               }
               renderItem={({ item, index }) => (
-                <View className="flex-row items-center gap-2.5 border-b border-slate-100 py-2.5">
-                  <Text className="w-5 text-center text-xs font-bold text-slate-400">
+                <View className="flex-row items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 py-2.5">
+                  <Text className="w-5 text-center text-xs font-bold text-slate-400 dark:text-slate-500">
                     {index + 1}
                   </Text>
-                  <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+                  <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                     {item.imageUrl ? (
                       <Image
                         source={{ uri: item.imageUrl }}
@@ -767,12 +768,12 @@ function StatsSheet({
                     <Text className="text-xs text-slate-800" numberOfLines={2}>
                       {mode === "sku" && item.sku ? item.sku : item.name}
                     </Text>
-                    <Text className="text-[10px] text-slate-400" numberOfLines={1}>
+                    <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
                       {mode === "sku" ? item.name + " · " : ""}
                       {item.orders} đơn
                     </Text>
                     {item.expressQty > 0 ? (
-                      <Text className="text-[10px] font-bold text-red-500">
+                      <Text className="text-[10px] font-bold text-red-500 dark:text-red-400">
                         ⚡ {item.expressQty} món hỏa tốc
                       </Text>
                     ) : null}
@@ -780,12 +781,12 @@ function StatsSheet({
                   <View className="items-end">
                     <Text
                       className={`text-xs font-bold ${
-                        item.expressQty > 0 ? "text-red-500" : "text-slate-900"
+                        item.expressQty > 0 ? "text-red-500 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
                       }`}
                     >
                       {item.qty} sp
                     </Text>
-                    <Text className="text-[10px] text-emerald-600">
+                    <Text className="text-[10px] text-emerald-600 dark:text-emerald-400">
                       {compactMoney(item.revenue)}
                     </Text>
                   </View>

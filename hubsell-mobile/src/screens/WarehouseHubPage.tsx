@@ -16,7 +16,7 @@ import { fetchReturns } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
 import type { ReturnOrderDto, ReturnsSummaryResponse } from "@/types/api";
 import { RETURN_STATUS, CHANNEL_LABEL } from "@/lib/labels";
-import { CHANNEL_COLOR } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/components/ChannelDonut";
 import { Badge } from "@/components/Badge";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
@@ -43,6 +43,7 @@ const DONE_STATUSES = new Set(["RECEIVED_INTACT", "CLAIM_SETTLED", "WRITTEN_OFF"
  */
 export function WarehouseHubPage() {
   const router = useRouter();
+  const channelColors = useChannelColors();
   const [summary, setSummary] = useState<ReturnsSummaryResponse["summary"] | null>(null);
   const [items, setItems] = useState<ReturnOrderDto[]>([]);
   const [page, setPage] = useState(1);
@@ -108,15 +109,15 @@ export function WarehouseHubPage() {
   };
 
   const tiles = [
-    { label: "Chờ về kho", value: summary?.AWAITING ?? 0, color: "text-amber-600", icon: "time-outline" as const },
-    { label: "Chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600", icon: "archive-outline" as const },
-    { label: "Quá hạn ≥14 ngày", value: summary?.overdue ?? 0, color: "text-red-500", icon: "alert-circle-outline" as const },
-    { label: "Hàng hỏng chờ khiếu nại", value: summary?.DAMAGED ?? 0, color: "text-red-500", icon: "bandage-outline" as const },
+    { label: "Chờ về kho", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline" as const },
+    { label: "Chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline" as const },
+    { label: "Quá hạn ≥14 ngày", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline" as const },
+    { label: "Hàng hỏng chờ khiếu nại", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline" as const },
   ];
 
   return (
     <ScrollView
-      className="flex-1 bg-slate-50"
+      className="flex-1 bg-slate-50 dark:bg-slate-950"
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={
@@ -125,7 +126,7 @@ export function WarehouseHubPage() {
     >
       {loading && !summary ? (
         <View className="items-center py-16">
-          <ActivityIndicator size="large" color="#0f172a" />
+          <ActivityIndicator size="large" color="#64748b" />
         </View>
       ) : (
         <>
@@ -137,7 +138,7 @@ export function WarehouseHubPage() {
                 <Pressable
                   key={ch || "ALL"}
                   className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-2 ${
-                    active ? "bg-slate-900" : "bg-white border border-slate-200"
+                    active ? "bg-slate-900 dark:bg-slate-100" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
                   }`}
                   onPress={() => {
                     if (!active) hapticSelect();
@@ -147,12 +148,12 @@ export function WarehouseHubPage() {
                   {ch ? (
                     <View
                       className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: CHANNEL_COLOR[ch] }}
+                      style={{ backgroundColor: channelColors[ch] }}
                     />
                   ) : null}
                   <Text
                     className={`text-xs font-semibold ${
-                      active ? "text-white" : "text-slate-600"
+                      active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
                     }`}
                   >
                     {ch ? CHANNEL_LABEL[ch] : "Tất cả"}
@@ -166,12 +167,12 @@ export function WarehouseHubPage() {
             {tiles.map((t) => (
               <View
                 key={t.label}
-                className="w-[48%] flex-grow rounded-2xl bg-white p-4"
+                className="w-[48%] flex-grow rounded-2xl bg-white dark:bg-slate-900 p-4"
                 style={{ elevation: 1 }}
               >
                 <View className="mb-1 flex-row items-center gap-1.5">
                   <Ionicons name={t.icon} size={14} color="#64748b" />
-                  <Text className="text-[11px] text-slate-500">{t.label}</Text>
+                  <Text className="text-[11px] text-slate-500 dark:text-slate-400">{t.label}</Text>
                 </View>
                 <Text className={`text-2xl font-bold ${t.color}`}>{t.value}</Text>
               </View>
@@ -210,10 +211,10 @@ export function WarehouseHubPage() {
           />
 
           {/* Tìm kiếm đơn hoàn */}
-          <View className="mb-2.5 flex-row items-center rounded-xl border border-slate-200 bg-white px-3">
+          <View className="mb-2.5 flex-row items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3">
             <Ionicons name="search-outline" size={16} color="#94a3b8" />
             <TextInput
-              className="flex-1 px-2 py-2.5 text-sm text-slate-900"
+              className="flex-1 px-2 py-2.5 text-sm text-slate-900 dark:text-slate-100"
               placeholder="Tìm mã đơn, mã vận đơn, tên khách…"
               placeholderTextColor="#94a3b8"
               value={search}
@@ -229,18 +230,18 @@ export function WarehouseHubPage() {
           </View>
 
           <View className="mb-2 flex-row items-center justify-between">
-            <Text className="text-sm font-semibold text-slate-900">
+            <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               Danh sách đơn hoàn
             </Text>
-            <Text className="text-[11px] text-slate-400">{total} đơn</Text>
+            <Text className="text-[11px] text-slate-400 dark:text-slate-500">{total} đơn</Text>
           </View>
 
           {error ? (
-            <Text className="py-6 text-center text-sm text-red-500">{error}</Text>
+            <Text className="py-6 text-center text-sm text-red-500 dark:text-red-400">{error}</Text>
           ) : loading ? (
-            <ActivityIndicator className="py-6" color="#0f172a" />
+            <ActivityIndicator className="py-6" color="#64748b" />
           ) : items.length === 0 ? (
-            <Text className="py-6 text-center text-sm text-slate-400">
+            <Text className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
               {searchRef.current
                 ? "Không tìm thấy đơn hoàn nào khớp từ khóa"
                 : channel
@@ -262,10 +263,10 @@ export function WarehouseHubPage() {
                   key={o.id}
                   // So le tối đa 6 dòng đầu — dòng tải thêm vào ngay không chờ
                   entering={FadeInDown.duration(220).delay(Math.min(idx, 6) * 40)}
-                  className="mb-2 flex-row gap-3 rounded-2xl bg-white p-3"
+                  className="mb-2 flex-row gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3"
                   style={{ elevation: 1 }}
                 >
-                  <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                  <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
                     {thumb ? (
                       <Image
                         source={{ uri: thumb }}
@@ -279,18 +280,18 @@ export function WarehouseHubPage() {
                   <View className="flex-1">
                     <View className="flex-row items-center justify-between">
                       <Text
-                        className="flex-1 pr-2 text-[13px] font-semibold text-slate-900"
+                        className="flex-1 pr-2 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
                         numberOfLines={1}
                       >
                         {o.orderCode}
                       </Text>
                       <Badge label={ret.label} bg={ret.bg} text={ret.text} />
                     </View>
-                    <Text className="mt-0.5 text-[11px] text-slate-500" numberOfLines={1}>
+                    <Text className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400" numberOfLines={1}>
                       VĐ hoàn: {o.returnTrackingCode ?? o.trackingCode ?? "—"}
                     </Text>
                     <View className="mt-0.5 flex-row items-center justify-between">
-                      <Text className="text-[11px] text-slate-400" numberOfLines={1}>
+                      <Text className="text-[11px] text-slate-400 dark:text-slate-500" numberOfLines={1}>
                         {CHANNEL_LABEL[o.channel.channelName] ?? o.channel.channelName}
                         {" · "}
                         {o.customerName}
@@ -300,10 +301,10 @@ export function WarehouseHubPage() {
                         <Text
                           className={`text-[11px] font-semibold ${
                             overdue
-                              ? "text-red-500"
+                              ? "text-red-500 dark:text-red-400"
                               : o.agingLevel === "warning"
-                                ? "text-amber-600"
-                                : "text-slate-400"
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-slate-400 dark:text-slate-500"
                           }`}
                         >
                           {overdue ? "⚠ " : ""}chờ {o.daysWaiting} ngày
@@ -318,22 +319,22 @@ export function WarehouseHubPage() {
 
           {!loading && page < pageCount ? (
             <Pressable
-              className="mt-1 items-center rounded-xl bg-slate-100 py-3 active:opacity-70"
+              className="mt-1 items-center rounded-xl bg-slate-100 dark:bg-slate-800 py-3 active:opacity-70"
               onPress={() => void load(page + 1, true)}
               disabled={loadingMore}
             >
               {loadingMore ? (
-                <ActivityIndicator size="small" color="#0f172a" />
+                <ActivityIndicator size="small" color="#64748b" />
               ) : (
-                <Text className="text-sm font-semibold text-slate-600">
+                <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">
                   Xem thêm ({total - items.length} đơn)
                 </Text>
               )}
             </Pressable>
           ) : null}
 
-          <View className="mt-3 rounded-2xl bg-slate-100 p-4">
-            <Text className="text-[11px] leading-4 text-slate-500">
+          <View className="mt-3 rounded-2xl bg-slate-100 dark:bg-slate-800 p-4">
+            <Text className="text-[11px] leading-4 text-slate-500 dark:text-slate-400">
               Luồng 2 công đoạn: quét trên điện thoại chỉ ghi nhận ĐÃ NHẬN hàng
               về tay. Nút "Nhập kho tất cả" (cộng tồn kho) nằm trên web — Kho →
               Đối soát đơn hoàn.

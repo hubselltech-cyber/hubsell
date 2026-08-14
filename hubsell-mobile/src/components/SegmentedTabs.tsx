@@ -20,14 +20,16 @@ export function SegmentedTabs<K extends string>({
   className?: string;
 }) {
   return (
-    <View className={`flex-row rounded-xl bg-slate-200/70 p-1 ${className}`}>
+    <View
+      className={`flex-row rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800 ${className}`}
+    >
       {options.map((opt) => {
         const active = value === opt.key;
         return (
           <Pressable
             key={opt.key}
             className={`flex-1 items-center rounded-lg py-2 ${
-              active ? "bg-white" : ""
+              active ? "bg-white dark:bg-slate-600" : ""
             }`}
             style={active ? { elevation: 1 } : undefined}
             onPress={() => {
@@ -37,7 +39,9 @@ export function SegmentedTabs<K extends string>({
           >
             <Text
               className={`text-xs font-semibold ${
-                active ? "text-slate-900" : "text-slate-500"
+                active
+                  ? "text-slate-900 dark:text-slate-50"
+                  : "text-slate-500 dark:text-slate-400"
               }`}
             >
               {opt.label}

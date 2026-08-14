@@ -1,6 +1,7 @@
 import React from "react";
 import { Text as RNText, View, useWindowDimensions } from "react-native";
 import Svg, { Line, Rect } from "react-native-svg";
+import { useColorScheme } from "nativewind";
 import type { PnlDailyPoint } from "../types/api";
 import { compactMoney } from "../lib/format";
 
@@ -10,13 +11,16 @@ import { compactMoney } from "../lib/format";
  */
 export function ProfitBarChart({ data }: { data: PnlDailyPoint[] }) {
   const { width } = useWindowDimensions();
+  const { colorScheme } = useColorScheme();
+  // Duong baseline 0: slate-300 sang / slate-600 toi (SVG khong an class dark:)
+  const baselineColor = colorScheme === "dark" ? "#475569" : "#cbd5e1";
   // Padding trang (16×2) + padding card (16×2)
   const chartW = Math.max(200, Math.min(width, 480) - 64);
   const chartH = 150;
 
   if (data.length === 0) {
     return (
-      <RNText className="py-8 text-center text-sm text-slate-400">
+      <RNText className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">
         Chưa có dữ liệu trong khoảng này
       </RNText>
     );
@@ -38,7 +42,7 @@ export function ProfitBarChart({ data }: { data: PnlDailyPoint[] }) {
   return (
     <View>
       <View className="mb-1 flex-row justify-between">
-        <RNText className="text-[11px] text-slate-400">
+        <RNText className="text-[11px] text-slate-400 dark:text-slate-500">
           Cao nhất: {compactMoney(maxProfit)}
         </RNText>
         {minProfit < 0 ? (
@@ -64,14 +68,14 @@ export function ProfitBarChart({ data }: { data: PnlDailyPoint[] }) {
             />
           );
         })}
-        <Line x1={0} y1={zeroY} x2={chartW} y2={zeroY} stroke="#cbd5e1" strokeWidth={1} />
+        <Line x1={0} y1={zeroY} x2={chartW} y2={zeroY} stroke={baselineColor} strokeWidth={1} />
       </Svg>
       <View className="mt-1 flex-row justify-between">
         {data
           .map((d, i) => ({ d, i }))
           .filter(({ i }) => labelIdx.has(i))
           .map(({ d }) => (
-            <RNText key={d.date} className="text-[10px] text-slate-400">
+            <RNText key={d.date} className="text-[10px] text-slate-400 dark:text-slate-500">
               {d.label}
             </RNText>
           ))}

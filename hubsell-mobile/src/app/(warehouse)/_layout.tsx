@@ -1,6 +1,7 @@
 import React from "react";
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useColorScheme } from "nativewind";
 import { useAuth } from "@/auth/AuthContext";
 import { hapticSelect } from "@/lib/haptics";
 import { hasPermission } from "@/lib/permissions";
@@ -17,12 +18,20 @@ export default function WarehouseLayout() {
     user.role === "ADMIN" || hasPermission(user.permissions, "warehouse.returns");
   if (!allowed) return <Redirect href="/no-access" />;
 
+  // Tab bar là component native — không ăn class dark: nên đổi màu bằng JS
+  const { colorScheme } = useColorScheme();
+  const dark = colorScheme === "dark";
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#0f172a",
-        tabBarInactiveTintColor: "#94a3b8",
+        tabBarActiveTintColor: dark ? "#f1f5f9" : "#0f172a",
+        tabBarInactiveTintColor: dark ? "#64748b" : "#94a3b8",
+        tabBarStyle: {
+          backgroundColor: dark ? "#0f172a" : "#ffffff",
+          borderTopColor: dark ? "#1e293b" : "#e2e8f0",
+        },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
       }}
       screenListeners={{ tabPress: () => hapticSelect() }}

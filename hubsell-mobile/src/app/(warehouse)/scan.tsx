@@ -172,11 +172,11 @@ export default function ScanReturnsScreen() {
           <Text className="mt-4 text-center text-base font-semibold text-white">
             Cần quyền Camera để quét mã vận đơn
           </Text>
-          <Text className="mt-2 text-center text-sm text-slate-400">
+          <Text className="mt-2 text-center text-sm text-slate-400 dark:text-slate-500">
             Hubsell chỉ dùng camera để đọc mã trên tem kiện hàng hoàn.
           </Text>
           <Pressable
-            className="mt-6 rounded-xl bg-emerald-500 px-6 py-3 active:opacity-80"
+            className="mt-6 rounded-xl bg-emerald-50 dark:bg-emerald-500/100 px-6 py-3 active:opacity-80"
             onPress={() => void requestPermission()}
           >
             <Text className="text-sm font-semibold text-white">Cấp quyền Camera</Text>
@@ -190,13 +190,13 @@ export default function ScanReturnsScreen() {
     if (!panel && !busy) return null;
     return (
       <View
-        className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-4 pt-4"
+        className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white dark:bg-slate-900 px-4 pt-4"
         style={{ paddingBottom: 16, maxHeight: 460 }}
       >
         {busy && !panel ? (
           <View className="items-center py-8">
-            <ActivityIndicator size="large" color="#0f172a" />
-            <Text className="mt-3 text-sm text-slate-500">
+            <ActivityIndicator size="large" color="#64748b" />
+            <Text className="mt-3 text-sm text-slate-500 dark:text-slate-400">
               Đang tra cứu — nếu chưa có sẽ tự hỏi lại sàn…
             </Text>
           </View>
@@ -206,26 +206,26 @@ export default function ScanReturnsScreen() {
 
         {panel?.type === "candidates" ? (
           <View>
-            <Text className="mb-1 text-base font-bold text-slate-900">
+            <Text className="mb-1 text-base font-bold text-slate-900 dark:text-slate-100">
               Mã khớp {panel.list.length} đơn
             </Text>
-            <Text className="mb-3 text-xs text-slate-500">
+            <Text className="mb-3 text-xs text-slate-500 dark:text-slate-400">
               Chọn đúng đơn theo mã trên tem:
             </Text>
             {panel.list.map((c) => (
               <Pressable
                 key={c.orderCode}
-                className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-3 active:bg-slate-100"
+                className="mb-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 active:bg-slate-100 dark:active:bg-slate-800"
                 onPress={() => {
                   setPanel(null);
                   void handleCode(c.orderCode);
                 }}
               >
-                <Text className="text-sm font-semibold text-slate-900">
+                <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {c.orderCode}
                 </Text>
                 {c.trackingCode ? (
-                  <Text className="text-xs text-slate-500">VĐ: {c.trackingCode}</Text>
+                  <Text className="text-xs text-slate-500 dark:text-slate-400">VĐ: {c.trackingCode}</Text>
                 ) : null}
               </Pressable>
             ))}
@@ -236,7 +236,7 @@ export default function ScanReturnsScreen() {
         {panel?.type === "error" ? (
           <View className="items-center py-2">
             <Ionicons name="alert-circle-outline" size={36} color="#ef4444" />
-            <Text className="mt-2 mb-4 text-center text-sm text-slate-700">
+            <Text className="mt-2 mb-4 text-center text-sm text-slate-700 dark:text-slate-300">
               {panel.message}
             </Text>
             <CloseButton onPress={reset} label="Quét tiếp" />
@@ -246,11 +246,11 @@ export default function ScanReturnsScreen() {
         {panel?.type === "done" ? (
           <View className="items-center py-2">
             <Ionicons name="checkmark-circle" size={40} color="#10b981" />
-            <Text className="mt-2 text-center text-sm font-semibold text-slate-900">
+            <Text className="mt-2 text-center text-sm font-semibold text-slate-900 dark:text-slate-100">
               {panel.message}
             </Text>
             {panel.warn ? (
-              <Text className="mt-1 text-center text-xs text-amber-600">
+              <Text className="mt-1 text-center text-xs text-amber-600 dark:text-amber-400">
                 ⚠️ {panel.warn}
               </Text>
             ) : null}
@@ -270,12 +270,12 @@ export default function ScanReturnsScreen() {
     return (
       <ScrollView keyboardShouldPersistTaps="handled">
         <View className="mb-2 flex-row items-center justify-between">
-          <Text className="text-base font-bold text-slate-900">
+          <Text className="text-base font-bold text-slate-900 dark:text-slate-100">
             {order.orderCode}
           </Text>
           <Badge label={ret.label} bg={ret.bg} text={ret.text} />
         </View>
-        <Text className="mb-3 text-xs text-slate-500">
+        <Text className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           {CHANNEL_LABEL[order.channel.channelName] ?? order.channel.channelName}
           {" · "}
           {order.channel.shopName}
@@ -285,7 +285,7 @@ export default function ScanReturnsScreen() {
 
         {order.items.map((it) => (
           <View key={it.id} className="mb-2 flex-row items-center gap-3">
-            <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-slate-100">
+            <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
               {(it.imageUrl ?? it.product?.imageUrl) ? (
                 <Image
                   source={{ uri: (it.imageUrl ?? it.product?.imageUrl)! }}
@@ -297,10 +297,10 @@ export default function ScanReturnsScreen() {
               )}
             </View>
             <View className="flex-1">
-              <Text className="text-[13px] font-medium text-slate-900" numberOfLines={2}>
+              <Text className="text-[13px] font-medium text-slate-900 dark:text-slate-100" numberOfLines={2}>
                 {it.productName}
               </Text>
-              <Text className="text-xs text-slate-500">
+              <Text className="text-xs text-slate-500 dark:text-slate-400">
                 {it.channelSku ? `${it.channelSku} · ` : ""}x{it.quantity}
               </Text>
             </View>
@@ -309,14 +309,14 @@ export default function ScanReturnsScreen() {
 
         {canDamage ? (
           <TextInput
-            className="mb-3 mt-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900"
+            className="mb-3 mt-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2.5 text-sm text-slate-900 dark:text-slate-100"
             placeholder="Ghi chú tình trạng kiện (vỡ, thiếu, bị tráo…) — tùy chọn"
             placeholderTextColor="#94a3b8"
             value={damageNote}
             onChangeText={setDamageNote}
           />
         ) : (
-          <Text className="mb-3 mt-1 text-xs text-slate-500">
+          <Text className="mb-3 mt-1 text-xs text-slate-500 dark:text-slate-400">
             Đơn này đã được xử lý — không còn thao tác nào ở bước quét.
           </Text>
         )}
@@ -324,7 +324,7 @@ export default function ScanReturnsScreen() {
         <View className="flex-row gap-3">
           {canReceive ? (
             <Pressable
-              className="flex-1 items-center justify-center rounded-2xl bg-emerald-500 py-4 active:opacity-80"
+              className="flex-1 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-500/100 py-4 active:opacity-80"
               onPress={() => void doReceive(order)}
               disabled={busy}
             >
@@ -345,12 +345,12 @@ export default function ScanReturnsScreen() {
           ) : null}
           {canDamage ? (
             <Pressable
-              className="flex-1 items-center justify-center rounded-2xl border-2 border-red-500 bg-white py-4 active:opacity-80"
+              className="flex-1 items-center justify-center rounded-2xl border-2 border-red-500 bg-white dark:bg-slate-900 py-4 active:opacity-80"
               onPress={() => void doDamage(order)}
               disabled={busy}
             >
               <Ionicons name="close" size={22} color="#ef4444" />
-              <Text className="mt-0.5 text-sm font-bold text-red-500">
+              <Text className="mt-0.5 text-sm font-bold text-red-500 dark:text-red-400">
                 Hàng hỏng
               </Text>
               <Text className="text-[10px] text-red-300">chờ khiếu nại</Text>
@@ -379,7 +379,7 @@ export default function ScanReturnsScreen() {
       ) : (
         <View className="flex-1 items-center justify-center">
           <Ionicons name="barcode-outline" size={64} color="#334155" />
-          <Text className="mt-3 px-10 text-center text-sm text-slate-500">
+          <Text className="mt-3 px-10 text-center text-sm text-slate-500 dark:text-slate-400">
             Camera quét chạy trên điện thoại (Expo Go).{"\n"}Bản web: nhập mã ở ô
             bên dưới để thử luồng.
           </Text>
@@ -450,9 +450,9 @@ export default function ScanReturnsScreen() {
           className="absolute inset-x-0 bottom-0 px-4"
           style={{ paddingBottom: 12 }}
         >
-          <View className="flex-row items-center gap-2 rounded-2xl bg-white/95 p-2">
+          <View className="flex-row items-center gap-2 rounded-2xl bg-white dark:bg-slate-900/95 p-2">
             <TextInput
-              className="flex-1 px-3 py-2 text-sm text-slate-900"
+              className="flex-1 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               placeholder="Hoặc nhập mã vận đơn / mã đơn…"
               placeholderTextColor="#94a3b8"
               autoCapitalize="characters"
@@ -468,7 +468,7 @@ export default function ScanReturnsScreen() {
               }}
             />
             <Pressable
-              className="rounded-xl bg-slate-900 px-4 py-2.5 active:opacity-80"
+              className="rounded-xl bg-slate-900 px-4 py-2.5 active:opacity-80 dark:bg-slate-700"
               onPress={() => {
                 if (manual.trim()) {
                   scanLock.current = true;
@@ -491,10 +491,10 @@ export default function ScanReturnsScreen() {
 function CloseButton({ onPress, label }: { onPress: () => void; label: string }) {
   return (
     <Pressable
-      className="mt-3 items-center rounded-xl bg-slate-100 py-3 active:opacity-80"
+      className="mt-3 items-center rounded-xl bg-slate-100 dark:bg-slate-800 py-3 active:opacity-80"
       onPress={onPress}
     >
-      <Text className="text-sm font-semibold text-slate-600">{label}</Text>
+      <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">{label}</Text>
     </Pressable>
   );
 }
