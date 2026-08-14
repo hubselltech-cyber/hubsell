@@ -25,6 +25,11 @@ import { Label } from "@/components/ui/label";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   ApiError,
   createWithdrawal,
   fetchCashFlow,
@@ -201,12 +206,28 @@ export function CashFlowTable() {
   }
 
   // 3 cột đầu là các chặng tiền CHƯA về tay; cột 4 là số đối chiếu sổ bank.
-  const COLS = [
-    "Doanh thu đang giao",
-    "Doanh thu chờ đối soát",
-    "Số dư Ví sàn",
-    "Về Ngân hàng (30 ngày)",
-    "Tổng doanh thu dự kiến",
+  // Tooltip viết NGÔN NGỮ ĐỜI THƯỜNG cho chủ shop — không thuật ngữ kỹ thuật.
+  const COLS: { label: string; tip: string }[] = [
+    {
+      label: "Doanh thu đang giao",
+      tip: "Tiền của các đơn đã đưa cho bên vận chuyển, hàng đang trên đường đến khách. Đơn còn nằm trong kho chưa tính vì vẫn có thể bị hủy.",
+    },
+    {
+      label: "Doanh thu chờ đối soát",
+      tip: "Đơn đã giao xong cho khách, đang chờ sàn tính toán và cộng tiền vào ví cho mình.",
+    },
+    {
+      label: "Số dư Ví sàn",
+      tip: "Số tiền đang nằm trong ví trên sàn — đọc thẳng từ sàn nên là số thật. Sàn nào không có ví giữ tiền thì hiện dấu —.",
+    },
+    {
+      label: "Về Ngân hàng (30 ngày)",
+      tip: "Tiền đã rút từ ví sàn về tài khoản ngân hàng trong 30 ngày gần nhất — để đối chiếu với sổ ngân hàng hằng tháng.",
+    },
+    {
+      label: "Tổng doanh thu dự kiến",
+      tip: "Đang giao + Chờ đối soát + Ví sàn = tổng số tiền sắp về tay anh/chị. Tiền đã về ngân hàng không tính nữa vì đã cầm chắc rồi.",
+    },
   ];
 
   return (
@@ -277,14 +298,29 @@ export function CashFlowTable() {
                   </th>
                   {COLS.map((c, i) => (
                     <th
-                      key={c}
+                      key={c.label}
                       className={cn(
                         "border-b border-slate-300 bg-slate-50 px-5 py-3.5 text-right text-sm font-semibold text-slate-800",
                         // Cột cuối (quan trọng nhất): khoảng thở phải + đậm hơn nữa
                         i === COLS.length - 1 && "pr-6 font-bold text-slate-900"
                       )}
                     >
-                      {c}
+                      {/* Gạch chấm + con trỏ dấu hỏi: mách người dùng là rê chuột có giải thích */}
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className="cursor-help underline decoration-slate-300 decoration-dotted underline-offset-4" />
+                          }
+                        >
+                          {c.label}
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="bottom"
+                          className="block max-w-72 text-left text-xs font-normal leading-relaxed"
+                        >
+                          {c.tip}
+                        </TooltipContent>
+                      </Tooltip>
                     </th>
                   ))}
                 </tr>
@@ -373,7 +409,7 @@ export function CashFlowTable() {
           </div>
         )}
 
-        {/* Ghi chú cách đọc bảng + lỗi sync ví (nếu có) */}
+        {/* Lỗi sync ví (nếu có) + gợi ý xem tooltip — giải thích cột nằm ở tooltip tiêu đề */}
         {!loading && !error && shown.length > 0 && (
           <div className="px-4 py-2.5">
             {syncErrors.length > 0 && (
@@ -382,13 +418,8 @@ export function CashFlowTable() {
               </p>
             )}
             <p className="text-left text-xs italic text-slate-500">
-              <b>Đang giao</b>: đơn đã bàn giao vận chuyển (đơn chưa bàn giao
-              không tính — tỷ lệ hủy còn cao). <b>Số dư Ví sàn</b> là số THẬT:
-              Shopee đọc từ API ví; Lazada là các kỳ sao kê đã chốt nhưng sàn
-              chưa chi tiền; sàn không có ví hiển thị “—”. <b>Về Ngân hàng</b>{" "}
-              chỉ tính 30 ngày gần nhất (đồng bộ từ sàn hoặc bấm “Xác nhận đã
-              rút ví”) và KHÔNG cộng vào Tổng — <b>Tổng doanh thu dự kiến</b> là
-              tiền còn nằm ngoài ngân hàng, sẽ về tay anh/chị.
+              Rê chuột lên tiêu đề cột để xem giải thích. Số liệu tự cập nhật từ
+              sàn mỗi khi mở bảng hoặc bấm “Làm mới”.
             </p>
           </div>
         )}
