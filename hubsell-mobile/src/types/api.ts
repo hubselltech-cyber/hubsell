@@ -224,6 +224,8 @@ export interface ReturnsSummaryResponse {
     DAMAGED: number;
     CLAIM_SETTLED: number;
     WRITTEN_OFF: number;
+    /** Tổng nhóm "hàng đã về tay" — backend tính cùng định nghĩa với ?status=SCANNED. */
+    SCANNED: number;
     /** Đơn AWAITING đã chờ 7–13 ngày. */
     warning: number;
     /** Đơn AWAITING đã chờ ≥14 ngày — cần đi đòi bưu cục. */

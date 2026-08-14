@@ -35,6 +35,26 @@ const router = Router();
 export const RETURN_WARNING_DAYS = 7;
 export const RETURN_OVERDUE_DAYS = 14;
 
+/**
+ * Nhóm trạng thái cho filter gộp (?status=) — định nghĩa cố định nên đặt
+ * module scope, và summary trả kèm số đếm CÙNG định nghĩa để client khỏi tự
+ * cộng rồi lệch khi thêm trạng thái mới (web /returns đã từng dính lỗi này).
+ *
+ * ISSUES  — tab Hao hụt/Khiếu nại: hư hỏng đang khiếu nại + đã đền bù + đã
+ *           xoá sổ, gom một tab cho gọn thanh tab trên màn điện thoại.
+ * SCANNED — tab "Đã nhận hoàn" mobile: hàng ĐÃ VỀ TAY, tức mọi trạng thái
+ *           trừ NONE/AWAITING — viết dạng phần bù để trạng thái sau-quét
+ *           thêm về sau tự vào nhóm thay vì âm thầm rơi ra.
+ */
+const ISSUE_STATUSES = [
+  ReturnStatus.DAMAGED,
+  ReturnStatus.CLAIM_SETTLED,
+  ReturnStatus.WRITTEN_OFF,
+];
+const SCANNED_STATUSES = Object.values(ReturnStatus).filter(
+  (s) => s !== ReturnStatus.NONE && s !== ReturnStatus.AWAITING
+);
+
 type AgingLevel = "unknown" | "ok" | "warning" | "overdue";
 
 /**
@@ -77,22 +97,6 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       returnStatus: { not: ReturnStatus.NONE },
     };
 
-    // "ISSUES" là filter GỘP cho tab Hao hụt/Khiếu nại: hư hỏng đang khiếu nại
-    // + đã đền bù + đã xoá sổ — gom một tab để thanh tab gọn trên màn điện thoại
-    const ISSUE_STATUSES = [
-      ReturnStatus.DAMAGED,
-      ReturnStatus.CLAIM_SETTLED,
-      ReturnStatus.WRITTEN_OFF,
-    ];
-    // "SCANNED" gộp mọi trạng thái SAU khi quét nhận (hàng đã về tay) — tab
-    // "Đã quét hoàn" trên mobile; đối lập với AWAITING = chưa quét, hàng chưa về
-    const SCANNED_STATUSES = [
-      ReturnStatus.RECEIVED,
-      ReturnStatus.RECEIVED_INTACT,
-      ReturnStatus.DAMAGED,
-      ReturnStatus.CLAIM_SETTLED,
-      ReturnStatus.WRITTEN_OFF,
-    ];
     const where: Prisma.OrderWhereInput = {
       ...scope,
       ...(statusQ === "ISSUES"
@@ -169,6 +173,11 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       unknown: 0,
     };
     for (const g of byStatus) summary[g.returnStatus] = g._count._all;
+    // Số đếm nhóm dùng chung định nghĩa với bộ lọc ?status=SCANNED
+    summary.SCANNED = SCANNED_STATUSES.reduce(
+      (n, s) => n + (summary[s] ?? 0),
+      0
+    );
     for (const a of awaiting) {
       const { agingLevel } = agingOf(a.returnRequestedAt);
       if (agingLevel === "overdue") summary.overdue++;

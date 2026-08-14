@@ -20,6 +20,7 @@ import { RANGE_OPTIONS, rangeFor, type RangeKey } from "@/lib/dates";
 import { compactMoney, formatMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { StatCard } from "@/components/StatCard";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { ProfitBarChart } from "@/components/ProfitBarChart";
 import { CHANNEL_COLOR } from "@/components/ChannelDonut";
 import { DonutChart } from "@/components/DonutChart";
@@ -195,26 +196,12 @@ export function FinancePage() {
       }
     >
       {/* Bộ chọn khoảng thời gian */}
-      <View className="mb-2 flex-row rounded-xl bg-slate-200/70 p-1">
-        {RANGE_OPTIONS.map((opt) => (
-          <Pressable
-            key={opt.key}
-            className={`flex-1 items-center rounded-lg py-1.5 ${
-              range === opt.key ? "bg-white" : ""
-            }`}
-            style={range === opt.key ? { elevation: 1 } : undefined}
-            onPress={() => setRange(opt.key)}
-          >
-            <Text
-              className={`text-xs font-semibold ${
-                range === opt.key ? "text-slate-900" : "text-slate-500"
-              }`}
-            >
-              {opt.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <SegmentedTabs
+        className="mb-2"
+        options={RANGE_OPTIONS}
+        value={range}
+        onChange={setRange}
+      />
 
       {/* Lọc theo sàn */}
       <View className="mb-4 flex-row gap-2">

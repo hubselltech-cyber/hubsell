@@ -17,6 +17,7 @@ import type { ReturnOrderDto, ReturnsSummaryResponse } from "@/types/api";
 import { RETURN_STATUS, CHANNEL_LABEL } from "@/lib/labels";
 import { CHANNEL_COLOR } from "@/components/ChannelDonut";
 import { Badge } from "@/components/Badge";
+import { SegmentedTabs } from "@/components/SegmentedTabs";
 
 // Bộ lọc sàn — cùng thứ tự với tab Tin nhắn (chốt 13/08)
 const CHANNEL_FILTERS = ["", "SHOPEE", "TIKTOK", "LAZADA"] as const;
@@ -184,38 +185,21 @@ export function WarehouseHubPage() {
           </Pressable>
 
           {/* 2 tab: hàng đã về tay (đã quét) hay chưa — đơn xong việc không còn
-              chen giữa đơn cần đi đòi */}
-          <View className="mb-2.5 flex-row rounded-xl bg-slate-200/70 p-1">
-            {RETURN_TABS.map((t) => {
-              const active = tab === t.key;
-              const count =
+              chen giữa đơn cần đi đòi. Số đếm SCANNED backend tính sẵn, cùng
+              một định nghĩa với bộ lọc nên không sợ lệch. */}
+          <SegmentedTabs
+            className="mb-2.5"
+            options={RETURN_TABS.map((t) => ({
+              key: t.key,
+              label: `${t.label} (${
                 t.key === "AWAITING"
                   ? summary?.AWAITING ?? 0
-                  : (summary?.RECEIVED ?? 0) +
-                    (summary?.RECEIVED_INTACT ?? 0) +
-                    (summary?.DAMAGED ?? 0) +
-                    (summary?.CLAIM_SETTLED ?? 0) +
-                    (summary?.WRITTEN_OFF ?? 0);
-              return (
-                <Pressable
-                  key={t.key}
-                  className={`flex-1 items-center rounded-lg py-2 ${
-                    active ? "bg-white" : ""
-                  }`}
-                  style={active ? { elevation: 1 } : undefined}
-                  onPress={() => setTab(t.key)}
-                >
-                  <Text
-                    className={`text-xs font-semibold ${
-                      active ? "text-slate-900" : "text-slate-500"
-                    }`}
-                  >
-                    {t.label} ({count})
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                  : summary?.SCANNED ?? 0
+              })`,
+            }))}
+            value={tab}
+            onChange={setTab}
+          />
 
           {/* Tìm kiếm đơn hoàn */}
           <View className="mb-2.5 flex-row items-center rounded-xl border border-slate-200 bg-white px-3">
