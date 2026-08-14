@@ -22,6 +22,17 @@ import { Badge } from "@/components/Badge";
 const CHANNEL_FILTERS = ["", "SHOPEE", "TIKTOK", "LAZADA"] as const;
 type ChannelFilter = (typeof CHANNEL_FILTERS)[number];
 
+// 2 tab theo tiêu chí "hàng đã về tay hay chưa" (chốt 14/08):
+// AWAITING = chưa quét; SCANNED = backend gộp mọi trạng thái sau khi quét nhận
+const RETURN_TABS = [
+  { key: "AWAITING", label: "Chờ nhận hoàn" },
+  { key: "SCANNED", label: "Đã nhận hoàn" },
+] as const;
+type ReturnTab = (typeof RETURN_TABS)[number]["key"];
+
+// Trạng thái đã xong việc — không còn chờ gì nên ẩn đồng hồ "chờ X ngày"
+const DONE_STATUSES = new Set(["RECEIVED_INTACT", "CLAIM_SETTLED", "WRITTEN_OFF"]);
+
 /**
  * Trang KHO — trang 3 của pager Trang chủ (chủ shop).
  * Số liệu đơn hoàn + nút mở camera + Ô TÌM KIẾM + DANH SÁCH đơn hoàn
@@ -40,9 +51,11 @@ export function WarehouseHubPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("");
+  const [tab, setTab] = useState<ReturnTab>("AWAITING");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef("");
   const channelRef = useRef<ChannelFilter>("");
+  const tabRef = useRef<ReturnTab>("AWAITING");
 
   const load = useCallback(
     async (nextPage: number, append: boolean, asRefresh = false) => {
@@ -56,6 +69,7 @@ export function WarehouseHubPage() {
           pageSize: 20,
           search: searchRef.current || undefined,
           channelName: channelRef.current || undefined,
+          status: tabRef.current,
         });
         setSummary(res.summary);
         setItems((prev) => (append ? [...prev, ...res.items] : res.items));
@@ -77,8 +91,9 @@ export function WarehouseHubPage() {
 
   useEffect(() => {
     channelRef.current = channel;
+    tabRef.current = tab;
     void load(1, false);
-  }, [channel, load]);
+  }, [channel, tab, load]);
 
   const onSearch = (text: string) => {
     setSearch(text);
@@ -168,6 +183,40 @@ export function WarehouseHubPage() {
             </Text>
           </Pressable>
 
+          {/* 2 tab: hàng đã về tay (đã quét) hay chưa — đơn xong việc không còn
+              chen giữa đơn cần đi đòi */}
+          <View className="mb-2.5 flex-row rounded-xl bg-slate-200/70 p-1">
+            {RETURN_TABS.map((t) => {
+              const active = tab === t.key;
+              const count =
+                t.key === "AWAITING"
+                  ? summary?.AWAITING ?? 0
+                  : (summary?.RECEIVED ?? 0) +
+                    (summary?.RECEIVED_INTACT ?? 0) +
+                    (summary?.DAMAGED ?? 0) +
+                    (summary?.CLAIM_SETTLED ?? 0) +
+                    (summary?.WRITTEN_OFF ?? 0);
+              return (
+                <Pressable
+                  key={t.key}
+                  className={`flex-1 items-center rounded-lg py-2 ${
+                    active ? "bg-white" : ""
+                  }`}
+                  style={active ? { elevation: 1 } : undefined}
+                  onPress={() => setTab(t.key)}
+                >
+                  <Text
+                    className={`text-xs font-semibold ${
+                      active ? "text-slate-900" : "text-slate-500"
+                    }`}
+                  >
+                    {t.label} ({count})
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           {/* Tìm kiếm đơn hoàn */}
           <View className="mb-2.5 flex-row items-center rounded-xl border border-slate-200 bg-white px-3">
             <Ionicons name="search-outline" size={16} color="#94a3b8" />
@@ -204,7 +253,9 @@ export function WarehouseHubPage() {
                 ? "Không tìm thấy đơn hoàn nào khớp từ khóa"
                 : channel
                   ? `Không có đơn hoàn nào trên ${CHANNEL_LABEL[channel]}`
-                  : "Không có đơn hoàn nào"}
+                  : tab === "AWAITING"
+                    ? "Không có đơn nào chờ hàng về"
+                    : "Chưa nhận đơn hoàn nào"}
             </Text>
           ) : (
             items.map((o) => {
@@ -250,7 +301,8 @@ export function WarehouseHubPage() {
                         {" · "}
                         {o.customerName}
                       </Text>
-                      {o.daysWaiting !== null ? (
+                      {o.daysWaiting !== null &&
+                      !DONE_STATUSES.has(o.returnStatus) ? (
                         <Text
                           className={`text-[11px] font-semibold ${
                             overdue

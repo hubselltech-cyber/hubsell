@@ -84,13 +84,24 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
       ReturnStatus.CLAIM_SETTLED,
       ReturnStatus.WRITTEN_OFF,
     ];
+    // "SCANNED" gộp mọi trạng thái SAU khi quét nhận (hàng đã về tay) — tab
+    // "Đã quét hoàn" trên mobile; đối lập với AWAITING = chưa quét, hàng chưa về
+    const SCANNED_STATUSES = [
+      ReturnStatus.RECEIVED,
+      ReturnStatus.RECEIVED_INTACT,
+      ReturnStatus.DAMAGED,
+      ReturnStatus.CLAIM_SETTLED,
+      ReturnStatus.WRITTEN_OFF,
+    ];
     const where: Prisma.OrderWhereInput = {
       ...scope,
       ...(statusQ === "ISSUES"
         ? { returnStatus: { in: ISSUE_STATUSES } }
-        : (Object.values(ReturnStatus) as string[]).includes(statusQ)
-          ? { returnStatus: statusQ as ReturnStatus }
-          : {}),
+        : statusQ === "SCANNED"
+          ? { returnStatus: { in: SCANNED_STATUSES } }
+          : (Object.values(ReturnStatus) as string[]).includes(statusQ)
+            ? { returnStatus: statusQ as ReturnStatus }
+            : {}),
       ...(search
         ? {
             OR: [
