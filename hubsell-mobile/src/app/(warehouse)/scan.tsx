@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { useKeepAwake } from "expo-keep-awake";
 import { Ionicons } from "@expo/vector-icons";
@@ -51,6 +52,37 @@ const SCANNABLE = [
   "ean13",
   "datamatrix",
 ] as const;
+
+// Liquid Glass (trend 2026) CHỈ cho lớp điều khiển nổi trên camera — panel
+// dữ liệu vẫn nền đặc cho dễ đọc. Máy không hỗ trợ (Android/iOS cũ/web)
+// fallback về đen mờ như cũ.
+const GLASS = isLiquidGlassAvailable();
+
+/** Nút tròn trên nền camera: Liquid Glass khi máy hỗ trợ, fallback đen mờ. */
+function CircleControl({ children }: { children: React.ReactNode }) {
+  if (GLASS) {
+    return (
+      <GlassView
+        glassEffectStyle="regular"
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+        }}
+      >
+        {children}
+      </GlassView>
+    );
+  }
+  return (
+    <View className="h-10 w-10 items-center justify-center rounded-full bg-black/40">
+      {children}
+    </View>
+  );
+}
 
 export default function ScanReturnsScreen() {
   useKeepAwake(); // kho quét cả ca — không để màn hình tự tắt
@@ -398,11 +430,13 @@ export default function ScanReturnsScreen() {
                 vào thẳng (màn gốc, canGoBack false) thì không hiện. */}
             {router.canGoBack() ? (
               <Pressable
-                className="h-10 w-10 items-center justify-center rounded-full bg-black/40 active:bg-black/60"
+                className="active:opacity-70"
                 onPress={() => router.back()}
                 hitSlop={6}
               >
-                <Ionicons name="arrow-back" size={20} color="#fff" />
+                <CircleControl>
+                  <Ionicons name="arrow-back" size={20} color="#fff" />
+                </CircleControl>
               </Pressable>
             ) : null}
             <View>
@@ -423,17 +457,17 @@ export default function ScanReturnsScreen() {
             </View>
           </View>
           {!isWeb ? (
-            <Pressable
-              className={`h-10 w-10 items-center justify-center rounded-full ${
-                torch ? "bg-amber-400" : "bg-black/40"
-              }`}
-              onPress={() => setTorch((t) => !t)}
-            >
-              <Ionicons
-                name={torch ? "flash" : "flash-outline"}
-                size={18}
-                color={torch ? "#0f172a" : "#fff"}
-              />
+            <Pressable className="active:opacity-70" onPress={() => setTorch((t) => !t)}>
+              {torch ? (
+                // Đèn ĐANG BẬT giữ nền amber đặc — trạng thái phải nhìn ra ngay
+                <View className="h-10 w-10 items-center justify-center rounded-full bg-amber-400">
+                  <Ionicons name="flash" size={18} color="#0f172a" />
+                </View>
+              ) : (
+                <CircleControl>
+                  <Ionicons name="flash-outline" size={18} color="#fff" />
+                </CircleControl>
+              )}
             </Pressable>
           ) : null}
         </View>
@@ -444,42 +478,65 @@ export default function ScanReturnsScreen() {
         ) : null}
       </View>
 
-      {/* Ô nhập tay — tem nhăn/rách là chuyện hằng ngày ở kho */}
+      {/* Ô nhập tay — tem nhăn/rách là chuyện hằng ngày ở kho. Máy hỗ trợ
+          Liquid Glass thì thanh nhập trong mờ nổi trên camera. */}
       {!panel && !busy ? (
         <View
           className="absolute inset-x-0 bottom-0 px-4"
           style={{ paddingBottom: 12 }}
         >
-          <View className="flex-row items-center gap-2 rounded-2xl bg-white dark:bg-slate-900/95 p-2">
-            <TextInput
-              className="flex-1 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
-              placeholder="Hoặc nhập mã vận đơn / mã đơn…"
-              placeholderTextColor="#94a3b8"
-              autoCapitalize="characters"
-              autoCorrect={false}
-              value={manual}
-              onChangeText={setManual}
-              onSubmitEditing={() => {
-                if (manual.trim()) {
-                  scanLock.current = true;
-                  void handleCode(manual);
-                  setManual("");
-                }
-              }}
-            />
-            <Pressable
-              className="rounded-xl bg-slate-900 px-4 py-2.5 active:opacity-80 dark:bg-slate-700"
-              onPress={() => {
-                if (manual.trim()) {
-                  scanLock.current = true;
-                  void handleCode(manual);
-                  setManual("");
-                }
-              }}
-            >
-              <Text className="text-sm font-semibold text-white">Tra mã</Text>
-            </Pressable>
-          </View>
+          {(() => {
+            const inner = (onGlass: boolean) => (
+              <View
+                className={`flex-row items-center gap-2 p-2 ${
+                  onGlass ? "" : "rounded-2xl bg-white dark:bg-slate-900/95"
+                }`}
+              >
+                <TextInput
+                  className={`flex-1 px-3 py-2 text-sm ${
+                    onGlass ? "text-white" : "text-slate-900 dark:text-slate-100"
+                  }`}
+                  placeholder="Hoặc nhập mã vận đơn / mã đơn…"
+                  placeholderTextColor={onGlass ? "#e2e8f0" : "#94a3b8"}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  value={manual}
+                  onChangeText={setManual}
+                  onSubmitEditing={() => {
+                    if (manual.trim()) {
+                      scanLock.current = true;
+                      void handleCode(manual);
+                      setManual("");
+                    }
+                  }}
+                />
+                <Pressable
+                  className={`rounded-xl px-4 py-2.5 active:opacity-80 ${
+                    onGlass ? "bg-white/25" : "bg-slate-900 dark:bg-slate-700"
+                  }`}
+                  onPress={() => {
+                    if (manual.trim()) {
+                      scanLock.current = true;
+                      void handleCode(manual);
+                      setManual("");
+                    }
+                  }}
+                >
+                  <Text className="text-sm font-semibold text-white">Tra mã</Text>
+                </Pressable>
+              </View>
+            );
+            return GLASS ? (
+              <GlassView
+                glassEffectStyle="regular"
+                style={{ borderRadius: 16, overflow: "hidden" }}
+              >
+                {inner(true)}
+              </GlassView>
+            ) : (
+              inner(false)
+            );
+          })()}
         </View>
       ) : null}
 

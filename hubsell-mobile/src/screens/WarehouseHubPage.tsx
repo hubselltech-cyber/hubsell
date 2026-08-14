@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,10 +15,10 @@ import { useRouter, type Href } from "expo-router";
 import { Image } from "expo-image";
 import { fetchReturns } from "@/api/warehouse";
 import { ApiError } from "@/api/client";
-import type { ReturnOrderDto, ReturnsSummaryResponse } from "@/types/api";
+import type { ChannelName, ReturnOrderDto, ReturnsSummaryResponse } from "@/types/api";
 import { RETURN_STATUS, CHANNEL_LABEL } from "@/lib/labels";
-import { useChannelColors } from "@/components/ChannelDonut";
 import { Badge } from "@/components/Badge";
+import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
 
@@ -36,6 +37,16 @@ type ReturnTab = (typeof RETURN_TABS)[number]["key"];
 // Trạng thái đã xong việc — không còn chờ gì nên ẩn đồng hồ "chờ X ngày"
 const DONE_STATUSES = new Set(["RECEIVED_INTACT", "CLAIM_SETTLED", "WRITTEN_OFF"]);
 
+// Trạng thái chi tiết bên trong tab "Đã nhận hoàn" — cho sheet Bộ lọc
+const SCANNED_DETAIL_KEYS = [
+  "RECEIVED",
+  "RECEIVED_INTACT",
+  "DAMAGED",
+  "CLAIM_SETTLED",
+  "WRITTEN_OFF",
+] as const;
+type ScannedDetail = "" | (typeof SCANNED_DETAIL_KEYS)[number];
+
 /**
  * Trang KHO — trang 3 của pager Trang chủ (chủ shop).
  * Số liệu đơn hoàn + nút mở camera + Ô TÌM KIẾM + DANH SÁCH đơn hoàn
@@ -43,7 +54,6 @@ const DONE_STATUSES = new Set(["RECEIVED_INTACT", "CLAIM_SETTLED", "WRITTEN_OFF"
  */
 export function WarehouseHubPage() {
   const router = useRouter();
-  const channelColors = useChannelColors();
   const [summary, setSummary] = useState<ReturnsSummaryResponse["summary"] | null>(null);
   const [items, setItems] = useState<ReturnOrderDto[]>([]);
   const [page, setPage] = useState(1);
@@ -56,10 +66,13 @@ export function WarehouseHubPage() {
   const [error, setError] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("");
   const [tab, setTab] = useState<ReturnTab>("AWAITING");
+  const [statusDetail, setStatusDetail] = useState<ScannedDetail>("");
+  const [sheetOpen, setSheetOpen] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef("");
   const channelRef = useRef<ChannelFilter>("");
   const tabRef = useRef<ReturnTab>("AWAITING");
+  const statusDetailRef = useRef<ScannedDetail>("");
 
   const load = useCallback(
     async (nextPage: number, append: boolean, asRefresh = false) => {
@@ -73,7 +86,9 @@ export function WarehouseHubPage() {
           pageSize: 20,
           search: searchRef.current || undefined,
           channelName: channelRef.current || undefined,
-          status: tabRef.current,
+          // Chọn trạng thái chi tiết trong sheet thì lọc đúng trạng thái đó,
+          // không thì lấy cả nhóm của tab (AWAITING / SCANNED)
+          status: statusDetailRef.current || tabRef.current,
         });
         setSummary(res.summary);
         setItems((prev) => (append ? [...prev, ...res.items] : res.items));
@@ -96,8 +111,9 @@ export function WarehouseHubPage() {
   useEffect(() => {
     channelRef.current = channel;
     tabRef.current = tab;
+    statusDetailRef.current = statusDetail;
     void load(1, false);
-  }, [channel, tab, load]);
+  }, [channel, tab, statusDetail, load]);
 
   const onSearch = (text: string) => {
     setSearch(text);
@@ -130,37 +146,46 @@ export function WarehouseHubPage() {
         </View>
       ) : (
         <>
-          {/* Bộ lọc sàn — áp cho CẢ thẻ đếm lẫn danh sách (backend lọc chung) */}
-          <View className="mb-3 flex-row gap-2">
-            {CHANNEL_FILTERS.map((ch) => {
-              const active = channel === ch;
-              return (
-                <Pressable
-                  key={ch || "ALL"}
-                  className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-2 ${
-                    active ? "bg-slate-900 dark:bg-slate-100" : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
-                  }`}
-                  onPress={() => {
-                    if (!active) hapticSelect();
-                    setChannel(ch);
-                  }}
-                >
-                  {ch ? (
-                    <View
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: channelColors[ch] }}
-                    />
-                  ) : null}
-                  <Text
-                    className={`text-xs font-semibold ${
-                      active ? "text-white dark:text-slate-900" : "text-slate-600 dark:text-slate-300"
-                    }`}
-                  >
-                    {ch ? CHANNEL_LABEL[ch] : "Tất cả"}
+          {/* Bộ lọc gom vào bottom sheet (pattern màn Đơn hàng) — sàn áp cho
+              CẢ thẻ đếm lẫn danh sách, trạng thái chi tiết chỉ áp danh sách */}
+          <View className="mb-3 flex-row items-center gap-2">
+            <Pressable
+              className="flex-row items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 active:opacity-70 dark:border-slate-700 dark:bg-slate-900"
+              onPress={() => {
+                hapticTap();
+                setSheetOpen(true);
+              }}
+            >
+              <Ionicons name="options-outline" size={15} color="#64748b" />
+              <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Bộ lọc
+              </Text>
+              {(channel ? 1 : 0) + (statusDetail ? 1 : 0) > 0 ? (
+                <View className="min-w-[16px] items-center rounded-full bg-slate-900 px-1 dark:bg-slate-600">
+                  <Text className="text-[10px] font-bold text-white">
+                    {(channel ? 1 : 0) + (statusDetail ? 1 : 0)}
                   </Text>
-                </Pressable>
-              );
-            })}
+                </View>
+              ) : null}
+            </Pressable>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6, alignItems: "center" }}
+            >
+              {channel ? (
+                <ActiveChip
+                  label={`Sàn: ${CHANNEL_LABEL[channel as ChannelName]}`}
+                  onClear={() => setChannel("")}
+                />
+              ) : null}
+              {statusDetail ? (
+                <ActiveChip
+                  label={RETURN_STATUS[statusDetail].label}
+                  onClear={() => setStatusDetail("")}
+                />
+              ) : null}
+            </ScrollView>
           </View>
 
           <View className="mb-3 flex-row flex-wrap gap-2">
@@ -207,7 +232,11 @@ export function WarehouseHubPage() {
               })`,
             }))}
             value={tab}
-            onChange={setTab}
+            onChange={(k) => {
+              setTab(k);
+              // Trạng thái chi tiết thuộc về tab đang mở — đổi tab thì gỡ
+              setStatusDetail("");
+            }}
           />
 
           {/* Tìm kiếm đơn hoàn */}
@@ -342,6 +371,119 @@ export function WarehouseHubPage() {
           </View>
         </>
       )}
+
+      <ReturnsFilterSheet
+        visible={sheetOpen}
+        tab={tab}
+        summary={summary}
+        channel={channel}
+        statusDetail={statusDetail}
+        onClose={() => setSheetOpen(false)}
+        onApply={(ch, st) => {
+          hapticSelect();
+          setChannel(ch);
+          setStatusDetail(st);
+          setSheetOpen(false);
+        }}
+      />
     </ScrollView>
+  );
+}
+
+// ============================================================
+// Panel BỘ LỌC trang Kho — sàn + trạng thái chi tiết (tab Đã nhận hoàn).
+// Nháp trong panel, bấm Áp dụng mới đổ ra ngoài — cùng nết với màn Đơn hàng.
+// ============================================================
+function ReturnsFilterSheet({
+  visible,
+  tab,
+  summary,
+  channel,
+  statusDetail,
+  onClose,
+  onApply,
+}: {
+  visible: boolean;
+  tab: ReturnTab;
+  summary: ReturnsSummaryResponse["summary"] | null;
+  channel: ChannelFilter;
+  statusDetail: ScannedDetail;
+  onClose: () => void;
+  onApply: (channel: ChannelFilter, statusDetail: ScannedDetail) => void;
+}) {
+  const [draftChannel, setDraftChannel] = useState<ChannelFilter>(channel);
+  const [draftStatus, setDraftStatus] = useState<ScannedDetail>(statusDetail);
+  useEffect(() => {
+    if (visible) {
+      setDraftChannel(channel);
+      setDraftStatus(statusDetail);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View className="flex-1 justify-end bg-black/40">
+        <Pressable className="flex-1" onPress={onClose} />
+        <View className="rounded-t-3xl bg-white px-4 pb-6 pt-3 dark:bg-slate-900">
+          <View className="mb-1 items-center">
+            <View className="h-1 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
+          </View>
+          <View className="mb-2 flex-row items-center justify-between">
+            <Text className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Bộ lọc
+            </Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={20} color="#64748b" />
+            </Pressable>
+          </View>
+
+          <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Sàn
+          </Text>
+          <View className="mb-3 flex-row flex-wrap gap-1.5">
+            {CHANNEL_FILTERS.map((ch) => (
+              <PickChip
+                key={ch || "ALL"}
+                label={ch ? CHANNEL_LABEL[ch] : "Tất cả"}
+                active={draftChannel === ch}
+                onPress={() => setDraftChannel(ch)}
+              />
+            ))}
+          </View>
+
+          {tab === "SCANNED" ? (
+            <>
+              <Text className="mb-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Trạng thái sau khi nhận
+              </Text>
+              <View className="mb-3 flex-row flex-wrap gap-1.5">
+                <PickChip
+                  label="Tất cả"
+                  active={draftStatus === ""}
+                  onPress={() => setDraftStatus("")}
+                />
+                {SCANNED_DETAIL_KEYS.map((k) => (
+                  <PickChip
+                    key={k}
+                    label={RETURN_STATUS[k].label}
+                    count={summary?.[k] ?? 0}
+                    active={draftStatus === k}
+                    onPress={() => setDraftStatus(k)}
+                  />
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          <Pressable
+            className="mt-1 items-center rounded-xl bg-slate-900 py-3 active:opacity-80 dark:bg-slate-700"
+            onPress={() => onApply(draftChannel, draftStatus)}
+          >
+            <Text className="text-sm font-semibold text-white">Áp dụng</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
