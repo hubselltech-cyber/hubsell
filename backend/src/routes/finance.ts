@@ -796,12 +796,28 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
     const [channels, pnlOrders, pendingPayouts, recentWithdrawals] =
       await Promise.all([
         prisma.channel.findMany({
-          where: scope,
+          // Gian đã NGẮT KẾT NỐI quá 30 ngày → ẨN khỏi bảng (tiền đang giao/chờ
+          // đối soát đã kịp về hết trong 30 ngày đó; giữ tiếp chỉ còn dòng chết).
+          // Trong 30 ngày đầu vẫn hiển thị kèm cờ disconnected để hiểu vì sao
+          // số không cập nhật nữa. Đơn/lịch sử của gian KHÔNG bị xóa đâu cả.
+          where: {
+            AND: [
+              scope,
+              {
+                OR: [
+                  { status: { not: "DISCONNECTED" } },
+                  { disconnectedAt: null },
+                  { disconnectedAt: { gte: since30d } },
+                ],
+              },
+            ],
+          },
           orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
           select: {
             id: true,
             channelName: true,
             shopName: true,
+            status: true,
             walletBalance: true,
             walletBalanceSyncedAt: true,
           },
@@ -871,6 +887,8 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
         channelId: c.id,
         channelName: c.channelName,
         shopName: c.shopName,
+        // Gian đã ngắt (còn trong 30 ngày hiển thị) — frontend gắn nhãn mờ.
+        disconnected: c.status === "DISCONNECTED",
         inTransit,
         pendingSettle,
         walletBalance,
@@ -899,7 +917,12 @@ router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
       where: {
         AND: [
           channelScope(req),
-          { channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] } },
+          // Chỉ gian ACTIVE — gian đã ngắt gọi API chỉ sinh lỗi token gây nhiễu
+          // cảnh báo (số của nó đóng băng có chủ đích cho tới khi bị ẩn/nối lại).
+          {
+            channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+            status: "ACTIVE",
+          },
         ],
       },
     });

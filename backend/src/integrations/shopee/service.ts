@@ -265,6 +265,7 @@ export async function handleShopeeCallback(
     refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
     externalShopName,
     status: "ACTIVE",
+    disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
   };
 
   // Tên gian mặc định = tên phía Shopee, tránh trùng tên gian đã có trong cùng
@@ -816,7 +817,11 @@ export async function processShopeeAuthorizationEvent(
 
   const status = ok ? "ACTIVE" : "DISCONNECTED";
   if (channel.status !== status) {
-    await prisma.channel.update({ where: { id: channel.id }, data: { status } });
+    await prisma.channel.update({
+      where: { id: channel.id },
+      // Guard status đổi thật mới ghi → không reset đồng hồ 30 ngày mỗi event.
+      data: { status, disconnectedAt: ok ? null : new Date() },
+    });
   }
   return { status };
 }

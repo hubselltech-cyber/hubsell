@@ -156,6 +156,8 @@ export interface CashFlowRow {
   channelId: string;
   channelName: ChannelName;
   shopName: string;
+  /** Gian đã ngắt kết nối — hiển thị thêm 30 ngày rồi backend tự ẩn. */
+  disconnected: boolean;
   /** Doanh thu đơn ĐÃ bàn giao vận chuyển, chưa quyết toán. */
   inTransit: number;
   /** Doanh thu đơn đã giao, sàn chưa quyết toán. */

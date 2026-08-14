@@ -333,6 +333,16 @@ export function CashFlowTable() {
                           <span className="font-medium text-slate-800">
                             {r.shopName}
                           </span>
+                          {r.disconnected && (
+                            // Gian đã ngắt: số đóng băng, còn hiển thị 30 ngày
+                            // cho tiền về nốt rồi tự ẩn khỏi bảng.
+                            <span
+                              className="inline-flex shrink-0 items-center rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-400"
+                              title="Gian đã ngắt kết nối — số không cập nhật nữa, sẽ ẩn khỏi bảng sau 30 ngày"
+                            >
+                              Đã ngắt
+                            </span>
+                          )}
                         </span>
                       </td>
                       <td className={cn(cell, "text-right font-medium text-slate-800")}>

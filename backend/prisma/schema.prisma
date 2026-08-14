@@ -304,6 +304,10 @@ model Channel {
   /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
   shopCipher  String?
   status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
+  /// Thời điểm chuyển sang DISCONNECTED (ngắt tay / hết hạn ủy quyền / sàn thu
+  /// hồi) — null khi ACTIVE. Bảng Phân bổ dòng tiền ẨN gian đã ngắt quá 30 ngày
+  /// (giữ 30 ngày cho tiền đang giao/chờ đối soát về nốt).
+  disconnectedAt DateTime?
 
   // ── Bookkeeping của worker order-auto-sync (nguồn cho cảnh báo "sàn trễ
   // đồng bộ" trên Trung tâm điều hành) ──

@@ -84,7 +84,7 @@ export async function runOnce(): Promise<void> {
       if (refreshExp && refreshExp < Date.now()) {
         await prisma.channel.update({
           where: { id: channel.id },
-          data: { status: "DISCONNECTED" },
+          data: { status: "DISCONNECTED", disconnectedAt: new Date() },
         });
         console.warn(
           `[Token-refresh] Gian "${channel.shopName}" (shop ${channel.externalShopId}) hết hạn uỷ quyền → DISCONNECTED, cần kết nối lại`

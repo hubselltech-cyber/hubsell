@@ -166,7 +166,12 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       // Đã từng ngắt kết nối → kết nối lại với token mới
       const reconnected = await prisma.channel.update({
         where: { id: existing.id },
-        data: { status: "ACTIVE", apiToken, feeRate: PLATFORM_FEE_RATE[name] },
+        data: {
+          status: "ACTIVE",
+          disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
+          apiToken,
+          feeRate: PLATFORM_FEE_RATE[name],
+        },
       });
       res.json(reconnected);
       return;
@@ -300,6 +305,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
         shopCipher: shop.cipher,
         externalShopName: shop.name,
         status: "ACTIVE",
+        disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
       };
 
       if (existing) {
@@ -807,7 +813,8 @@ router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next)
     }
     const updated = await prisma.channel.update({
       where: { id: channel.id },
-      data: { status: "DISCONNECTED" },
+      // disconnectedAt mở đồng hồ 30 ngày ẩn gian khỏi bảng Phân bổ dòng tiền.
+      data: { status: "DISCONNECTED", disconnectedAt: new Date() },
     });
     res.json(updated);
   } catch (err) {

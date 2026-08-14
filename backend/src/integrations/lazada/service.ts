@@ -205,6 +205,7 @@ export async function handleLazadaCallback(
     ...tokenFields(token, now),
     externalShopName,
     status: "ACTIVE",
+    disconnectedAt: null, // nối lại → tắt đồng hồ ẩn khỏi bảng dòng tiền
   };
 
   // ---- Luồng KẾT NỐI LẠI gian cụ thể: verify seller_id khớp gian đích ----

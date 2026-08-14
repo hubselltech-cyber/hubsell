@@ -391,6 +391,7 @@ export function FinancePage() {
                   </Text>
                   <Text className="text-[11px] text-slate-400">
                     {CHANNEL_LABEL[r.channelName] ?? r.channelName}
+                    {r.disconnected ? " · Đã ngắt" : ""}
                   </Text>
                 </View>
                 <View className="items-end">
