@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, type Href } from "expo-router";
 import { Image } from "expo-image";
@@ -18,6 +19,7 @@ import { RETURN_STATUS, CHANNEL_LABEL } from "@/lib/labels";
 import { CHANNEL_COLOR } from "@/components/ChannelDonut";
 import { Badge } from "@/components/Badge";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { hapticSelect, hapticTap } from "@/lib/haptics";
 
 // Bộ lọc sàn — cùng thứ tự với tab Tin nhắn (chốt 13/08)
 const CHANNEL_FILTERS = ["", "SHOPEE", "TIKTOK", "LAZADA"] as const;
@@ -137,7 +139,10 @@ export function WarehouseHubPage() {
                   className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full px-2 py-2 ${
                     active ? "bg-slate-900" : "bg-white border border-slate-200"
                   }`}
-                  onPress={() => setChannel(ch)}
+                  onPress={() => {
+                    if (!active) hapticSelect();
+                    setChannel(ch);
+                  }}
                 >
                   {ch ? (
                     <View
@@ -176,7 +181,10 @@ export function WarehouseHubPage() {
           <Pressable
             className="mb-4 flex-row items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 active:opacity-80"
             style={{ elevation: 2 }}
-            onPress={() => router.push("/(warehouse)/scan" as Href)}
+            onPress={() => {
+              hapticTap();
+              router.push("/(warehouse)/scan" as Href);
+            }}
           >
             <Ionicons name="scan" size={20} color="#fff" />
             <Text className="text-base font-bold text-white">
@@ -242,7 +250,7 @@ export function WarehouseHubPage() {
                     : "Chưa nhận đơn hoàn nào"}
             </Text>
           ) : (
-            items.map((o) => {
+            items.map((o, idx) => {
               const ret = RETURN_STATUS[o.returnStatus];
               const thumb =
                 o.items
@@ -250,8 +258,10 @@ export function WarehouseHubPage() {
                   .find((u) => u) ?? null;
               const overdue = o.agingLevel === "overdue";
               return (
-                <View
+                <Animated.View
                   key={o.id}
+                  // So le tối đa 6 dòng đầu — dòng tải thêm vào ngay không chờ
+                  entering={FadeInDown.duration(220).delay(Math.min(idx, 6) * 40)}
                   className="mb-2 flex-row gap-3 rounded-2xl bg-white p-3"
                   style={{ elevation: 1 }}
                 >
@@ -301,7 +311,7 @@ export function WarehouseHubPage() {
                       ) : null}
                     </View>
                   </View>
-                </View>
+                </Animated.View>
               );
             })
           )}

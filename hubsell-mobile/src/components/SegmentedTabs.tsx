@@ -1,5 +1,6 @@
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import { hapticSelect } from "@/lib/haptics";
 
 /**
  * Thanh tab kiểu segmented — hàng viên thuốc trên nền xám, tab active nổi
@@ -29,7 +30,10 @@ export function SegmentedTabs<K extends string>({
               active ? "bg-white" : ""
             }`}
             style={active ? { elevation: 1 } : undefined}
-            onPress={() => onChange(opt.key)}
+            onPress={() => {
+              if (!active) hapticSelect();
+              onChange(opt.key);
+            }}
           >
             <Text
               className={`text-xs font-semibold ${

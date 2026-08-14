@@ -21,6 +21,7 @@ import { compactMoney, formatMoney } from "@/lib/format";
 import { CHANNEL_LABEL } from "@/lib/labels";
 import { StatCard } from "@/components/StatCard";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
+import { hapticSelect } from "@/lib/haptics";
 import { ProfitBarChart } from "@/components/ProfitBarChart";
 import { CHANNEL_COLOR } from "@/components/ChannelDonut";
 import { DonutChart } from "@/components/DonutChart";
@@ -213,7 +214,10 @@ export function FinancePage() {
               className={`flex-row items-center gap-1.5 rounded-full px-3 py-1.5 ${
                 active ? "bg-slate-900" : "border border-slate-200 bg-white"
               }`}
-              onPress={() => setChannel(c.key)}
+              onPress={() => {
+                if (!active) hapticSelect();
+                setChannel(c.key);
+              }}
             >
               {c.key ? (
                 <View

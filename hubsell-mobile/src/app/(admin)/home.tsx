@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { hapticSelect } from "@/lib/haptics";
 import { OverviewPage } from "@/screens/OverviewPage";
 import { FinancePage } from "@/screens/FinancePage";
 import { WarehouseHubPage } from "@/screens/WarehouseHubPage";
@@ -22,6 +23,7 @@ export default function AdminHome() {
   const pagerRef = useRef<{ setPage: (i: number) => void } | null>(null);
 
   const go = (i: number) => {
+    if (i !== page) hapticSelect();
     setPage(i);
     pagerRef.current?.setPage(i);
   };

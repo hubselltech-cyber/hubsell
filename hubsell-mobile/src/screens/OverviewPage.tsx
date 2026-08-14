@@ -10,6 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter, type Href } from "expo-router";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { hapticTap } from "@/lib/haptics";
 import { fetchPnlSummary } from "@/api/finance";
 import { fetchOrders } from "@/api/orders";
 import { fetchReturnsSummary } from "@/api/warehouse";
@@ -126,7 +128,9 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
       ) : (
         <>
           {/* Kết quả hôm nay — bố cục 2 CỘT Doanh thu | Lợi nhuận (chốt 13/08:
-              bản gộp một dòng bị chê lộn xộn), logo thật làm nhận diện. */}
+              bản gộp một dòng bị chê lộn xộn), logo thật làm nhận diện.
+              Các khối vào trang so le 60ms — đủ thấy nhịp, không đủ gây chờ. */}
+          <Animated.View entering={FadeInDown.duration(280)}>
           <View className="mb-3 rounded-2xl bg-white p-5" style={{ elevation: 2 }}>
             <View className="flex-row items-center gap-2">
               <Image
@@ -175,17 +179,22 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               </View>
             </View>
           </View>
+          </Animated.View>
 
           {/* Đếm đơn theo trạng thái — bấm vào nhảy sang tab Đơn hàng đã lọc */}
-          <View className="mb-3 flex-row gap-2">
+          <Animated.View
+            entering={FadeInDown.duration(280).delay(60)}
+            className="mb-3 flex-row gap-2"
+          >
             {STATUS_TILES.map((t) => (
               <Pressable
                 key={t.key}
                 className="flex-1 items-center rounded-2xl bg-white py-3 active:opacity-70"
                 style={{ elevation: 1 }}
-                onPress={() =>
-                  router.push(`/(admin)/orders?status=${t.key}` as Href)
-                }
+                onPress={() => {
+                  hapticTap();
+                  router.push(`/(admin)/orders?status=${t.key}` as Href);
+                }}
               >
                 <Text className={`text-lg font-bold ${t.color}`}>
                   {counts[t.key] ?? 0}
@@ -193,9 +202,10 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 <Text className="text-[10px] text-slate-500">{t.label}</Text>
               </Pressable>
             ))}
-          </View>
+          </Animated.View>
 
           {/* Tỷ trọng kênh hôm nay — vị trí sàn CỐ ĐỊNH, chỉ số nhảy */}
+          <Animated.View entering={FadeInDown.duration(280).delay(120)}>
           <View className="mb-3 rounded-2xl bg-white p-4" style={{ elevation: 2 }}>
             <Text className="mb-3 text-sm font-semibold text-slate-900">
               Tỷ trọng kênh hôm nay
@@ -238,12 +248,17 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
               ))}
             </View>
           </View>
+          </Animated.View>
 
           {/* Đơn hoàn cần để mắt — bấm sang trang Kho */}
+          <Animated.View entering={FadeInDown.duration(280).delay(180)}>
           <Pressable
             className="flex-row items-center gap-3 rounded-2xl bg-white p-4 active:opacity-70"
             style={{ elevation: 2 }}
-            onPress={goWarehouse}
+            onPress={() => {
+              hapticTap();
+              goWarehouse();
+            }}
           >
             <View className="h-11 w-11 items-center justify-center rounded-xl bg-amber-100">
               <Ionicons name="arrow-undo-outline" size={20} color="#d97706" />
@@ -262,6 +277,7 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
           </Pressable>
+          </Animated.View>
         </>
       )}
     </ScrollView>

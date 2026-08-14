@@ -3,6 +3,7 @@ import { Redirect } from "expo-router";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/auth/AuthContext";
+import { hapticSelect } from "@/lib/haptics";
 import {
   ConversationsProvider,
   useConversations,
@@ -34,6 +35,7 @@ function AdminTabs() {
         tabBarInactiveTintColor: "#94a3b8",
         tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
       }}
+      screenListeners={{ tabPress: () => hapticSelect() }}
     >
       <Tabs.Screen
         name="home"
