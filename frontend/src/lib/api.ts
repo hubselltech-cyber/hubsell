@@ -320,6 +320,8 @@ export interface Order {
   paymentStatus: string;
   shippingStatus: ShippingStatus;
   carrier: Carrier | null;
+  /** Tên hãng NGUYÊN VĂN sàn trả (AhaMove, GrabExpress…) — nguồn nhận diện đơn hỏa tốc */
+  shippingCarrierName: string | null;
   trackingCode: string | null;
   /** Mã vận đơn CHIỀU HOÀN (kiện khách gửi trả — Shopee cấp mã riêng) */
   returnTrackingCode: string | null;

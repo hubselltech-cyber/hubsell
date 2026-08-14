@@ -55,6 +55,7 @@ import {
 } from "@/lib/api";
 import { exportAllOrders } from "@/lib/excel";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
+import { isExpressShipping } from "@/lib/shipping";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import {
   ALL_CHANNELS,
@@ -792,9 +793,24 @@ export default function OrdersPage() {
                           </TableCell>
 
                           <TableCell>
-                            <p className="font-medium">
-                              {carrierShort(o.carrier)}
-                            </p>
+                            {/* HỎA TỐC đỏ rực — cùng dấu hiệu với app mobile (chốt 13/08):
+                                loại đơn phải xử lý gấp nhất, nhìn phát thấy ngay */}
+                            {isExpressShipping(o.shippingCarrierName) ? (
+                              <>
+                                <span className="mb-0.5 inline-flex items-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                                  ⚡ Hỏa tốc
+                                </span>
+                                {/* Đơn hỏa tốc hiện TÊN NGUYÊN VĂN (AhaMove/GrabExpress…) —
+                                    enum gộp về "Hãng khác" là mất thông tin quan trọng nhất */}
+                                <p className="font-semibold text-red-600">
+                                  {o.shippingCarrierName ?? "Hỏa tốc"}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="font-medium">
+                                {carrierShort(o.carrier)}
+                              </p>
+                            )}
                             <p className={cn(TEXT_SUB, "font-mono")}>
                               {o.trackingCode ?? "—"}
                             </p>
