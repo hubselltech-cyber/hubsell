@@ -134,9 +134,17 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
           <Animated.View entering={FadeInDown.duration(280)}>
           <View className="mb-3 rounded-2xl bg-white dark:bg-slate-900 p-5" style={{ elevation: 2 }}>
             <View className="flex-row items-center gap-2">
+              {/* PNG logo nền trắng vuông — bo góc + viền mảnh kiểu app icon
+                  cho khỏi thành ô trắng thô trên card tối (góp ý 14/08) */}
               <Image
                 source={require("@/assets/images/logo-hubsell.png")}
-                style={{ width: 26, height: 26 }}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 7,
+                  borderWidth: 1,
+                  borderColor: "#e2e8f0",
+                }}
                 contentFit="contain"
               />
               <Text className="flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">

@@ -199,7 +199,7 @@ export default function OrdersScreen() {
           )}
         </View>
         <View className="flex-1">
-          <Text className="text-xs text-slate-800" numberOfLines={1}>
+          <Text className="text-xs text-slate-800 dark:text-slate-200" numberOfLines={1}>
             {it.productName}
           </Text>
           {it.channelSku ? (
@@ -372,7 +372,7 @@ export default function OrdersScreen() {
           onPress={() => setFilterOpen(true)}
         >
           <Ionicons name="funnel-outline" size={14} color="#64748b" />
-          <Text className="text-xs font-semibold text-slate-800">Bộ lọc</Text>
+          <Text className="text-xs font-semibold text-slate-800 dark:text-slate-200">Bộ lọc</Text>
           {activeFilterCount > 0 ? (
             <View className="min-w-[16px] items-center rounded-full bg-slate-900 px-1 dark:bg-slate-600">
               <Text className="text-[10px] font-bold text-white">
@@ -386,7 +386,7 @@ export default function OrdersScreen() {
           onPress={() => setStatsOpen(true)}
         >
           <Ionicons name="bar-chart-outline" size={14} color="#64748b" />
-          <Text className="text-xs font-semibold text-slate-800">Thống kê</Text>
+          <Text className="text-xs font-semibold text-slate-800 dark:text-slate-200">Thống kê</Text>
         </Pressable>
       </View>
 
@@ -719,7 +719,7 @@ function StatsSheet({
                     )}
                   </View>
                   <View className="flex-1">
-                    <Text className="text-xs text-slate-800" numberOfLines={2}>
+                    <Text className="text-xs text-slate-800 dark:text-slate-200" numberOfLines={2}>
                       {mode === "sku" && item.sku ? item.sku : item.name}
                     </Text>
                     <Text className="text-[10px] text-slate-400 dark:text-slate-500" numberOfLines={1}>

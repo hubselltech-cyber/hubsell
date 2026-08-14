@@ -120,9 +120,16 @@ export function BiometricGate({ children }: { children: React.ReactNode }) {
       {children}
       {showLock ? (
         <View className="absolute inset-0 items-center justify-center bg-slate-50 dark:bg-slate-950">
+          {/* Bo góc + viền mảnh kiểu app icon — PNG nền trắng vuông */}
           <Image
             source={require("@/assets/images/logo-hubsell.png")}
-            style={{ width: 72, height: 72 }}
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: "#e2e8f0",
+            }}
             contentFit="contain"
           />
           <Text className="mt-4 text-base font-bold text-slate-900 dark:text-slate-100">
