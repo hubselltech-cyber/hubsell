@@ -66,12 +66,27 @@ export interface AdsInsightChannel {
   channelName: ChannelName;
 }
 
+/**
+ * Lọc tập đơn P&L làm NGUYÊN LIỆU biên lãi theo đặc thù nguồn phí của sàn:
+ *   - Shopee: giữ cả đơn chờ đối soát — phí trên đơn đã là SỐ ƯỚC TÍNH của
+ *     chính sàn (syncShopeePendingEscrowEstimates) nên biên lãi vẫn đúng.
+ *   - Lazada: CHỈ đơn ĐÃ đối soát — sàn không có API ước tính phí, đơn chưa
+ *     có sao kê mang phí = 0 làm biên lãi ảo cao → ROAS hòa vốn ảo thấp
+ *     (quyết định anh Trung 14/08). Logic thuần, EXPORT cho vitest.
+ */
+export function pnlRowsForMargin<T extends { isSettled: boolean }>(
+  rows: T[],
+  channelName: ChannelName
+): T[] {
+  return channelName === ChannelName.LAZADA ? rows.filter((r) => r.isSettled) : rows;
+}
+
 async function fetchChannelPnlRows(channel: AdsInsightChannel): Promise<PnlRow[]> {
   const pnlOrders = await fetchPnlOrders(
     { userId: channel.userId, id: channel.id, channelName: channel.channelName },
     { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
   );
-  return pnlOrders.map(computePnlRow);
+  return pnlRowsForMargin(pnlOrders.map(computePnlRow), channel.channelName);
 }
 
 /**

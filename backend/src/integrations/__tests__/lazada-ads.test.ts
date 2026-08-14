@@ -10,7 +10,8 @@
 import { describe, expect, it } from "vitest";
 import { lazAdsNum, lazAdsWriteOk } from "../lazada/client";
 import { deriveStatus } from "../lazada/ads-campaigns";
-import { deriveLazadaItemSku } from "../shopee/ads-insights";
+import { deriveLazadaItemSku, pnlRowsForMargin } from "../shopee/ads-insights";
+import { ChannelName } from "@prisma/client";
 import {
   buildLazadaAdsWalletEmptyAlert,
   buildShopeeAdsAssistantAlerts,
@@ -102,6 +103,24 @@ describe("deriveLazadaItemSku — SKU tổng NGUYÊN VĂN, không suy đoán (ch
   it("rỗng/toàn khoảng trắng → null", () => {
     expect(deriveLazadaItemSku([])).toBeNull();
     expect(deriveLazadaItemSku(["  ", ""])).toBeNull();
+  });
+});
+
+describe("pnlRowsForMargin — nguyên liệu biên lãi theo sàn (chốt 14/08)", () => {
+  const rows = [
+    { id: "settled", isSettled: true },
+    { id: "pending", isSettled: false },
+  ];
+  it("Lazada: CHỈ đơn đã đối soát — đơn chờ sao kê phí = 0 làm biên lãi ảo cao", () => {
+    expect(pnlRowsForMargin(rows, ChannelName.LAZADA).map((r) => r.id)).toEqual([
+      "settled",
+    ]);
+  });
+  it("Shopee: giữ cả đơn chờ — phí đã là số ước tính của chính sàn", () => {
+    expect(pnlRowsForMargin(rows, ChannelName.SHOPEE)).toHaveLength(2);
+  });
+  it("Lazada không còn đơn đối soát nào → mảng rỗng (biên lãi null, FE báo chưa đủ dữ liệu)", () => {
+    expect(pnlRowsForMargin([{ isSettled: false }], ChannelName.LAZADA)).toEqual([]);
   });
 });
 

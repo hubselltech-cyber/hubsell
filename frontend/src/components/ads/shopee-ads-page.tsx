@@ -101,6 +101,10 @@ const PLATFORM_META: Record<
     description: string;
     /** Tooltip cột Đơn — định nghĩa rổ broad của từng sàn. */
     broadHint: string;
+    /** Nhãn đếm đơn làm mẫu biên lãi — Lazada chỉ tính đơn ĐÃ đối soát. */
+    marginOrdersLabel: string;
+    /** Câu chốt nguồn biên lãi, nối vào tooltip hòa vốn — mỗi sàn một nguồn phí. */
+    marginBasisHint: string;
     /** Huy hiệu nhận diện sàn cạnh tiêu đề — CÙNG bảng màu SOURCE_META của
      *  Trung tâm điều hành (Shopee cam / Lazada chàm / TikTok đen) để seller
      *  liếc màu là biết đang thao tác cho sàn nào (góp ý anh Trung 12/08). */
@@ -114,15 +118,21 @@ const PLATFORM_META: Record<
       "Dữ liệu thật từ Shopee Ads API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
     broadHint:
       "Đơn broad: mọi đơn của shop trong 7 ngày sau khi khách bấm quảng cáo (định nghĩa Shopee).",
+    marginOrdersLabel: "đơn P&L",
+    marginBasisHint:
+      "Biên lãi tính cả đơn chờ đối soát — phí trên các đơn này đã là số ước tính của chính Shopee.",
     badgeClass: "border-orange-200 bg-orange-50 text-orange-600",
   },
   lazada: {
     label: "Lazada",
     perm: "ads.lazada",
     description:
-      "Dữ liệu thật từ Lazada Sponsored Solutions API — kèm ROAS hòa vốn tính từ lãi/lỗ thực tế của shop.",
+      "Dữ liệu thật từ Lazada Sponsored Solutions API — kèm ROAS hòa vốn tính từ lãi/lỗ đã đối soát của shop.",
     broadHint:
       "Đơn store: mọi đơn của gian trong 30 ngày sau khi khách bấm quảng cáo, tính về ngày bấm (định nghĩa Lazada) — số các ngày gần nhất còn tiếp tục tăng.",
+    marginOrdersLabel: "đơn đã đối soát",
+    marginBasisHint:
+      "Biên lãi CHỈ tính các đơn Lazada ĐÃ đối soát (có sao kê phí thật) — đơn chưa đối soát bị loại vì sàn chưa báo phí, tính vào sẽ làm hòa vốn thấp giả tạo.",
     badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-600",
   },
 };
@@ -794,7 +804,9 @@ export function ShopeeAdsPage({
                       <TableHead className="w-28 text-right">
                         <span className="inline-flex items-center gap-1">
                           Hòa vốn
-                          <HintIcon hint="ROAS hòa vốn = 1 / biên lãi ròng của chính SKU trong chiến dịch (giá vốn + phí sàn thật, chưa gồm ads). ROAS dưới số này là đốt tiền dù sàn báo dương." />
+                          <HintIcon
+                            hint={`ROAS hòa vốn = 1 / biên lãi ròng của chính SKU trong chiến dịch (giá vốn + phí sàn thật, chưa gồm ads). ROAS dưới số này là đốt tiền dù sàn báo dương. ${meta.marginBasisHint}`}
+                          />
                         </span>
                       </TableHead>
                       <TableHead className="w-32 text-right">
@@ -853,9 +865,9 @@ export function ShopeeAdsPage({
         {/* ===== GHI CHÚ NGUỒN SỐ ===== */}
         {summary && (
           <p className="text-center text-xs text-muted-foreground">
-            Biên lãi tính từ {formatNumber(summary.pnlOrders)} đơn P&L{" "}
-            {summary.marginWindowDays} ngày gần nhất (SSOT computePnlRow, chưa
-            trừ ads).
+            Biên lãi tính từ {formatNumber(summary.pnlOrders)}{" "}
+            {meta.marginOrdersLabel} trong {summary.marginWindowDays} ngày gần
+            nhất (SSOT computePnlRow, chưa trừ ads).
             {summary.missingCostOrders > 0 && (
               <span className="text-amber-600">
                 {" "}
@@ -931,7 +943,8 @@ function ProductBreakevenTab({
   noChannel: boolean;
   platform: "shopee" | "lazada";
 }) {
-  const platformLabel = PLATFORM_META[platform].label;
+  const meta = PLATFORM_META[platform];
+  const platformLabel = meta.label;
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 20;
@@ -967,9 +980,12 @@ function ProductBreakevenTab({
         <CardTitle>ROAS hòa vốn theo sản phẩm</CardTitle>
         <CardDescription>
           Số để mang đi đặt ROAS mục tiêu TRƯỚC khi tạo chiến dịch: ROAS ads
-          dưới cột hòa vốn là chạy lỗ dù sàn báo dương. Biên lãi tính từ P&L
-          thật {data ? `${formatNumber(data.marginWindowDays)} ngày` : "30 ngày"}{" "}
-          (giá vốn + phí sàn, chưa gồm ads) của chính sản phẩm.
+          dưới cột hòa vốn là chạy lỗ dù sàn báo dương. Biên lãi tính từ{" "}
+          {meta.marginOrdersLabel} trong{" "}
+          {data ? `${formatNumber(data.marginWindowDays)} ngày` : "30 ngày"} (giá
+          vốn + phí sàn, chưa gồm ads) của chính sản phẩm.
+          {platform === "lazada" &&
+            " Đơn chưa đối soát được bỏ ra ngoài — sàn chưa báo phí, tính vào sẽ làm số hòa vốn thấp giả tạo."}
         </CardDescription>
         <div className="pt-1">
           <Input
@@ -1019,7 +1035,9 @@ function ProductBreakevenTab({
                   <TableHead className="w-24 text-right">
                     <span className="inline-flex items-center gap-1">
                       Đơn 30d
-                      <HintIcon hint="Số đơn P&L 30 ngày có chứa sản phẩm — cỡ mẫu của biên lãi. Dưới 5 đơn thì số hòa vốn chỉ mang tính tham khảo." />
+                      <HintIcon
+                        hint={`Số ${meta.marginOrdersLabel} 30 ngày có chứa sản phẩm — cỡ mẫu của biên lãi. Dưới 5 đơn thì số hòa vốn chỉ mang tính tham khảo.`}
+                      />
                     </span>
                   </TableHead>
                   <TableHead className="w-32 text-right">Doanh thu 30d</TableHead>
@@ -1032,7 +1050,9 @@ function ProductBreakevenTab({
                   <TableHead className="w-28 text-right">
                     <span className="inline-flex items-center gap-1">
                       ROAS hòa vốn
-                      <HintIcon hint="1 / biên lãi ròng — chạy ads tới đúng ROAS này thì hòa vốn. Đây là số để đối chiếu khi đặt ROAS mục tiêu." />
+                      <HintIcon
+                        hint={`1 / biên lãi ròng — chạy ads tới đúng ROAS này thì hòa vốn. Đây là số để đối chiếu khi đặt ROAS mục tiêu. ${meta.marginBasisHint}`}
+                      />
                     </span>
                   </TableHead>
                   <TableHead className="w-32 text-right">
@@ -1100,8 +1120,8 @@ function ProductBreakevenTab({
                 ? `${(data.shop.margin * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
                 : "—"}{" "}
               · ROAS hòa vốn {formatRoas(data.shop.breakevenRoas)} (từ{" "}
-              {formatNumber(data.shop.pnlOrders)} đơn P&L) — sản phẩm chưa đủ
-              đơn có thể tạm dùng số toàn gian này.
+              {formatNumber(data.shop.pnlOrders)} {meta.marginOrdersLabel}) —
+              sản phẩm chưa đủ đơn có thể tạm dùng số toàn gian này.
             </p>
           </div>
         )}
