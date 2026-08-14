@@ -719,7 +719,14 @@ export interface ShopeeChatMessage {
     image_url?: string;
     url?: string;
     thumb_url?: string;
+    /** bundle_message ("Lịch sử hỏi đáp" với bot): id các tin con — đã probe
+     *  14/08: sàn KHÔNG cho lấy nội dung tin con qua get_message (mọi cách
+     *  phân trang/offset đều rỗng), chỉ đếm được số lượt. */
+    messages?: string[];
   };
+  /** faq_liveagent: sàn đính kèm SP/đơn khách đang xem lúc bấm "Chat với
+   *  Người bán" — nguồn ngữ cảnh duy nhất thay cho nội dung hỏi đáp bị giấu. */
+  source_content?: { item_id?: number; order_sn?: string };
   created_timestamp?: number; // epoch giây
 }
 

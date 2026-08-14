@@ -151,10 +151,59 @@ const SHOPEE_TYPE_LABEL: Record<string, string> = {
   voucher: "[Voucher]",
   video: "[Video]",
   bundle_deal_info: "[Combo khuyến mãi]",
+  // ── Bổ sung 14/08 từ danh sách type đầy đủ của docs sellerchat (khảo sát
+  // qua AI Assistant open.shopee.com — docs gốc bị khoá quyền xem) ──
+  faq: "[Hỏi đáp với bot Shopee]",
+  faq_question: "[Câu hỏi gửi bot Shopee]",
+  faq_bot_response: "[Bot Shopee trả lời]",
+  faq_feedback_prompt: "[Bot hỏi khách có hài lòng]",
+  faq_feedback: "[Khách chấm bot]",
+  faq_unsupported: "[Nội dung bot không hỗ trợ]",
+  faq_liveagent_prompt: "[Bot gợi ý gặp Người bán]",
+  notification: "[Thông báo hệ thống]",
+  webview: "[Nội dung tương tác]",
+  shopping_cart: "[Giỏ hàng]",
+  flash_sale: "[Flash sale]",
+  add_on_deal: "[Deal mua kèm]",
+  bundle_deal: "[Combo khuyến mãi]",
+  unrated_order_reminder: "[Nhắc đánh giá đơn]",
+  customer_service_entrance: "[Khách vào từ mục CSKH]",
+  feed_story: "[Bài đăng Shopee Feed]",
+  return_refund_card: "[Thẻ Trả hàng/Hoàn tiền]",
+  rr_entrance_card: "[Thẻ mở yêu cầu Trả/Hoàn]",
+  track_rr_status_card: "[Thẻ trạng thái Trả/Hoàn]",
+  rr_operate_feedback_card: "[Thẻ phản hồi Trả/Hoàn]",
+  logistics_card: "[Thẻ vận chuyển]",
+  logistics_issue_enquiry_card: "[Thẻ hỏi vấn đề vận chuyển]",
+  expedited_logistics_card: "[Thẻ giao hỏa tốc]",
+  late_delivery_compensation_voucher: "[Voucher đền giao trễ]",
+  crm_item_list: "[Tin quảng bá sản phẩm]",
+  crm_order_rate: "[Tin mời đánh giá]",
+  crm_bundle_item_inform_promotion: "[Tin báo khuyến mãi]",
+  crm_bundle_item_new_arrival: "[Tin hàng mới về]",
+  crm_bundle_item_custom_message: "[Tin chăm sóc khách]",
 };
 
-/** Text hiển thị cho một tin Shopee — luôn trả CHUỖI, không bao giờ undefined. */
-function shopeeMessageText(messageType?: string, text?: string): string {
+/**
+ * Text hiển thị cho một tin Shopee — luôn trả CHUỖI, không bao giờ undefined.
+ * Nhận cả content để xử lý các tin bot/FAQ ("Lịch sử hỏi đáp" — probe 14/08):
+ * hai type này phải bắt TRƯỚC nhánh text vì content.text của chúng là chữ hệ
+ * thống ("Chat với Người bán") — hiện trần thì trông như khách tự gõ.
+ */
+function shopeeMessageText(
+  messageType?: string,
+  content?: { text?: string; messages?: string[] } | null
+): string {
+  if (messageType === "faq_liveagent") {
+    return "🤖 Khách đã hỏi đáp với bot Shopee, bấm «Chat với Người bán»";
+  }
+  if (messageType === "bundle_message") {
+    // Vỏ gói "Lịch sử hỏi đáp": chỉ đếm được số lượt — Shopee giấu nội dung
+    // tin con khỏi API (đã probe đủ hướng), nói thẳng để người trực chat hiểu.
+    const n = Array.isArray(content?.messages) ? content.messages.length : 0;
+    return `🤖 Khách hỏi đáp với bot Shopee${n ? ` (${n} tin)` : ""} — sàn không cung cấp nội dung qua API`;
+  }
+  const text = content?.text;
   if (typeof text === "string" && text.trim()) return text;
   if (!messageType || messageType === "text") return "";
   return SHOPEE_TYPE_LABEL[messageType] ?? `[${messageType}]`;
@@ -341,7 +390,7 @@ router.get("/conversations", async (req: AuthRequest, res, next) => {
                 customer: c.to_name || `Khách ${c.to_id ?? ""}`.trim(),
                 lastMessage: shopeeMessageText(
                   c.latest_message_type,
-                  c.latest_message_content?.text
+                  c.latest_message_content
                 ),
                 unread: c.unread_count ?? 0,
                 lastAt: toMs(c.last_message_timestamp),
@@ -424,12 +473,26 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
       for (const m of data.response?.messages ?? []) {
         // Phía gửi: tin của KHÁCH có from_id = buyerId; còn lại coi là shop.
         const fromShop = buyerId ? String(m.from_id ?? "") !== buyerId : false;
+        // faq_liveagent: nội dung hỏi đáp với bot bị sàn giấu, nhưng
+        // source_content kèm SP/đơn khách đang xem lúc bấm nút — ngữ cảnh
+        // quý nhất để biết khách cần gì, nối vào text + itemId (ra thẻ SP).
+        const isLiveagent = m.message_type === "faq_liveagent";
+        let text = shopeeMessageText(m.message_type, m.content);
+        if (isLiveagent && m.source_content?.order_sn) {
+          text += ` — về đơn ${m.source_content.order_sn}`;
+        }
+        const itemId =
+          m.content?.item_id != null
+            ? String(m.content.item_id)
+            : isLiveagent && m.source_content?.item_id != null
+              ? String(m.source_content.item_id)
+              : null;
         messages.push({
           id: String(m.message_id ?? messages.length),
           fromShop,
-          text: shopeeMessageText(m.message_type, m.content?.text),
+          text,
           at: toMs(m.created_timestamp),
-          itemId: m.content?.item_id != null ? String(m.content.item_id) : null,
+          itemId,
           imageUrl:
             m.message_type === "image"
               ? (m.content?.image_url ?? m.content?.url ?? m.content?.thumb_url ?? null)
