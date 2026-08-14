@@ -121,7 +121,19 @@ export function CashFlowTable() {
   }
 
   useEffect(() => {
-    load();
+    load(); // hiện ngay số đã sync trong DB — không bắt người dùng chờ sàn
+    // REAL-TIME (chốt chủ shop 14/08): mở bảng là kéo số dư ví/kỳ chi tiền mới
+    // nhất từ sàn chạy NGẦM (không bật spinner), xong tự thay số trên bảng.
+    (async () => {
+      try {
+        const r = await refreshCashFlow();
+        setSyncErrors(r.errors);
+        const res = await fetchCashFlow();
+        setRows(res.rows);
+      } catch {
+        // Sàn lỗi/chậm thì giữ nguyên số đã sync — cron giờ vẫn đuổi kịp.
+      }
+    })();
   }, []);
 
   // Các sàn THỰC SỰ có trong dữ liệu → dropdown động, không hardcode.
