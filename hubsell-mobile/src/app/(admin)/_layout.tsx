@@ -49,7 +49,7 @@ function AdminTabs() {
         options={{
           title: "Đơn hàng",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="receipt-outline" size={size - 2} color={color} />
+            <Ionicons name="bag-handle-outline" size={size - 2} color={color} />
           ),
         }}
       />
