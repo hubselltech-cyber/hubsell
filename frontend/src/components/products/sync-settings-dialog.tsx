@@ -196,7 +196,7 @@ export function SyncSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[min(42rem,calc(100%-2rem))]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CloudUpload className="size-5 text-slate-500" />

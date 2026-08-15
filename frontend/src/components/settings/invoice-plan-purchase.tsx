@@ -464,7 +464,7 @@ export function InvoicePlanPurchaseSection() {
           if (!open) setPayingPlan(null);
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-[min(42rem,calc(100%-2rem))]">
           {payingPlan && (
             <>
               {/* Logo NCC đặt trang trọng cạnh tiêu đề để tăng độ tin cậy. */}

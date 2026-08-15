@@ -348,7 +348,8 @@ export function TiktokCampaignModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-6xl">
+      {/* min(): laptop hẹp hơn 6xl (1152px) vẫn giữ lề 2 bên thay vì bung sát mép */}
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-[min(72rem,calc(100%-2rem))]">
         <DialogHeader>
           <DialogTitle>Phân tích kế hoạch quảng cáo — {campaignName}</DialogTitle>
           <DialogDescription>
