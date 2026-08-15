@@ -156,15 +156,19 @@ export function ShopeeAssistantModal({
     <Dialog open={campaign !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className={cn(
-          "max-w-xl",
-          // Lazada rộng hơn: chứa 2 bảng soi sống SP & từ khóa. Base của
-          // DialogContent có sm:max-w-sm (variant breakpoint) — phải ghi đè
-          // bằng đúng variant sm: thì twMerge mới gộp.
+          // Base của DialogContent có sm:max-w-sm (variant breakpoint) — phải
+          // ghi đè bằng đúng variant sm: thì mới thắng ở màn ≥640px (max-w-xl
+          // trần bị sm:max-w-sm đè, popup teo còn 384px với tên chiến dịch dài).
+          "max-w-xl sm:max-w-xl",
+          // Lazada rộng hơn: chứa 2 bảng soi sống SP & từ khóa.
           platform === "lazada" && "max-w-3xl sm:max-w-3xl max-h-[85vh] overflow-y-auto"
         )}
       >
-        <DialogHeader>
-          <DialogTitle className="flex flex-wrap items-center gap-2">
+        {/* min-w-0: chặn min-content của tên chiến dịch nowrap lan lên grid
+            của DialogContent làm nội dung phình rộng hơn khung (cùng họ bệnh
+            dialog nối nhanh 801f19c) */}
+        <DialogHeader className="min-w-0">
+          <DialogTitle className="flex flex-wrap items-center gap-2 pr-8">
             <span className="min-w-0 truncate">
               {campaign?.name || `Chiến dịch #${campaign?.campaignId}`}
             </span>
@@ -180,7 +184,7 @@ export function ShopeeAssistantModal({
         </DialogHeader>
 
         {campaign && a && (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {/* Số chính trong kỳ đang xem */}
             <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/40 p-3 text-sm sm:grid-cols-4">
               <div>
