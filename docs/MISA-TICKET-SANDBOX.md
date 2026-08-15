@@ -84,3 +84,45 @@ Nguyễn Trung Hiếu
 Chốt an toàn nằm ở `backend/src/integrations/invoice/misa-safety.ts` — mặc định
 chặn mọi lệnh phát hành, có test bảo vệ trong
 `src/integrations/__tests__/misa-safety.test.ts`.
+
+---
+
+## 📩 Vòng 1 — MISA trả lời (nhận ~15/08/2026)
+
+Kết quả rơi vào kịch bản **"dùng chung production"** (dòng 3 của bảng trên):
+
+1. **Mở khóa Bước 3:** MISA chưa hiểu câu hỏi, yêu cầu mô tả rõ đang nói bước
+   nào / sản phẩm nào → cần trả lời lại kèm screenshot.
+2. **Tài khoản sandbox meInvoice:** CÓ — MISA nói "đã cấp qua email khi duyệt
+   sản phẩm". Đã kiểm Gmail hubselltech@gmail.com (cả spam/trash, 15/08):
+   **KHÔNG có** — chỉ có 2 mail OTP ngày 26/07. Khả năng gửi về dev@hubsell.tech
+   (email đăng ký app). MISA hứa gửi lại nếu chưa nhận.
+3. **eSign:** KHÔNG BAO GIỜ có sandbox/tài khoản test (tính pháp lý) — test ký
+   số phải dùng tài khoản eSign thật.
+4. **⚠️ Môi trường:** KHÔNG có Base URL/header sandbox riêng. Tài khoản sandbox
+   được cấp **trên môi trường production**, và nguyên văn MISA: *"khi phát hành
+   hóa đơn thành công, hđ này sẽ được gửi sang CQT (kể cả gửi sandbox hay gửi
+   từ MST của đơn vị)"* — tức hóa đơn test vẫn lên Cơ quan Thuế, chỉ khác là
+   dưới MST của tài khoản sandbox. MISA dặn "test kỹ trước khi đổi sang MST
+   chính thức".
+
+**Hệ quả:** chốt chặn `misa-safety.ts` GIỮ NGUYÊN vĩnh viễn cho MST thật.
+`MISA_ALLOW_PUBLISH=1` chỉ được bật khi `.env` đang điền credentials sandbox.
+
+## 📤 Vòng 2 — Hubsell phản hồi (anh Trung ĐÃ GỬI 15/08/2026)
+
+Nội dung đã gửi gồm 3 ý:
+
+1. Mô tả lại vị trí Bước 3 "Kiểm thử & vận hành" (Open API → app Hubsell →
+   sản phẩm meInvoice) + screenshot, hỏi điều kiện mở khóa.
+2. Báo CHƯA nhận được email sandbox, xin gửi lại về **dev@hubsell.tech**.
+3. Hỏi xác nhận: hóa đơn test từ tài khoản sandbox lên CQT dưới MST sandbox
+   (không phải MST 026093012010)? Hóa đơn test có cần thủ tục hủy với CQT
+   không, hay MISA tự xử lý?
+
+**⏳ TRẠNG THÁI: ĐANG CHỜ MISA TRẢ LỜI VÒNG 2.** Khi có phản hồi:
+- Nhận được credentials sandbox → điền `MISA_TAXCODE` / `MISA_USERNAME` /
+  `MISA_PASSWORD` trong `backend/.env`, test luồng token → templates → paging
+  trước, phát hành sau cùng (bật `MISA_ALLOW_PUBLISH=1` tạm thời khi test).
+- Đồng thời anh Trung kiểm hộp thư **dev@hubsell.tech** — có thể email sandbox
+  đợt đầu đang nằm ở đó.
