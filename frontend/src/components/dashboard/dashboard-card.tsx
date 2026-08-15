@@ -150,7 +150,10 @@ export function DashboardCard({
         <div className="flex items-start gap-3">
           <div
             className={cn(
-              "flex size-9 shrink-0 items-center justify-center rounded-lg",
+              // Viền trong 1px cùng màu chữ ở 10% độ đục: khối màu nhạt có mép
+              // sắc nét thay vì tan nhòe vào nền trắng (vẽ bằng inset shadow để
+              // không đội kích thước như border)
+              "flex size-9 shrink-0 items-center justify-center rounded-lg [box-shadow:inset_0_0_0_1px_color-mix(in_oklab,currentColor_12%,transparent)]",
               ICON_BOX
             )}
           >

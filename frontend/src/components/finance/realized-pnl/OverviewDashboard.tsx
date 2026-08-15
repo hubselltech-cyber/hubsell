@@ -43,17 +43,12 @@ import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import type { ChannelName, RealizedPnlSummary } from "@/lib/api";
 import { moneyTone, TEXT_CARD_TITLE, TEXT_SUB } from "@/lib/typography";
+// Màu nhận diện sàn trên biểu đồ — dùng chung bảng CHANNEL_COLORS toàn hệ thống.
+import { CHANNEL_COLORS as PLATFORM_CHART_COLORS } from "@/lib/chart-colors";
 import { cn } from "@/lib/utils";
 
 // 3 sàn so sánh cố định (spec dashboard) — OFFLINE không có khái niệm "hoàn sàn".
 const PLATFORMS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
-
-// Màu nhận diện sàn trên biểu đồ — đồng bộ CHANNEL_COLORS của Dashboard chính.
-const PLATFORM_CHART_COLORS: Record<string, string> = {
-  SHOPEE: "#f97316",
-  TIKTOK: "#18181b",
-  LAZADA: "#3b82f6",
-};
 
 // Màu 3 lát donut thất thu: vốn mất (đỏ — nặng nhất) · ship hoàn · phí sàn.
 const LOSS_COLORS = { cost: "#ef4444", ship: "#f59e0b", fee: "#64748b" };

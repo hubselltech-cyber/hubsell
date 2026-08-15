@@ -76,11 +76,15 @@
   --border: oklch(0.929 0.013 255.508); /* slate-200 */
   --input: oklch(0.929 0.013 255.508);
   --ring: oklch(0.704 0.04 256.788); /* slate-400 */
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Bảng màu PHÂN LOẠI cho biểu đồ nhiều series — thay 5 sắc xám mặc định của
+     shadcn (xám chồng xám không phân biệt nổi series). Màu KÊNH cụ thể
+     (Shopee cam…) nằm ở lib/chart-colors.ts; bộ token này dành cho biểu đồ
+     không gắn với kênh nào. Cùng dải độ sáng để không màu nào lấn màu nào. */
+  --chart-1: oklch(0.705 0.213 47.604); /* orange-500 */
+  --chart-2: oklch(0.623 0.214 259.815); /* blue-500 */
+  --chart-3: oklch(0.696 0.17 162.48); /* emerald-500 */
+  --chart-4: oklch(0.606 0.25 292.717); /* violet-500 */
+  --chart-5: oklch(0.769 0.188 70.08); /* amber-500 */
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -160,11 +164,12 @@ html[data-theme="emerald"] {
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Cùng bảng phân loại với light mode — sáng hơn một nấc cho nền tối */
+  --chart-1: oklch(0.75 0.183 55.934); /* orange-400 */
+  --chart-2: oklch(0.707 0.165 254.624); /* blue-400 */
+  --chart-3: oklch(0.765 0.177 163.223); /* emerald-400 */
+  --chart-4: oklch(0.702 0.183 293.541); /* violet-400 */
+  --chart-5: oklch(0.828 0.189 84.429); /* amber-400 */
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

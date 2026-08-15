@@ -31,13 +31,14 @@ export const TEXT_BODY = "text-sm text-slate-900";
  * font-medium + slate-700: đủ nổi để mắt quét trúng số khi lướt bảng, nhưng
  * vẫn nhường bậc semibold cho cột kết luận (TEXT_NUMBER_STRONG).
  */
-export const TEXT_NUMBER_MUTED = "text-sm font-medium text-slate-700";
+export const TEXT_NUMBER_MUTED =
+  "text-sm font-medium text-slate-700 tabular-nums";
 
 /**
  * Số liệu KẾT LUẬN: cột Lợi nhuận cuối bảng.
  * Chỗ duy nhất trong bảng được in đậm, để mắt lướt dọc là thấy ngay.
  */
-export const TEXT_NUMBER_STRONG = "text-sm font-semibold";
+export const TEXT_NUMBER_STRONG = "text-sm font-semibold tabular-nums";
 
 /** Dòng phụ (sub-info) xếp chồng dưới số liệu — 12px */
 export const TEXT_SUB = "text-xs text-slate-500";
@@ -60,15 +61,19 @@ export const TEXT_CARD_TITLE =
 
 /** Số lớn trong thẻ phụ — 18px */
 export const TEXT_BIG_NUMBER =
-  "text-lg font-semibold tracking-tight text-slate-900";
+  "text-lg font-semibold tracking-tight text-slate-900 tabular-nums";
 
 /**
  * Số HERO trên thẻ chỉ số — 24px.
  * Cố định một cỡ ở mọi màn hình: to hơn nữa thì thẻ trông "chềnh ềnh" và số
  * tiền dài bị vỡ dòng ở khung hẹp.
+ *
+ * tabular-nums: bảng đã có sẵn qua globals.css (td/th) nhưng thẻ chỉ số thì
+ * không — thiếu nó con số to nhất màn hình lại dùng chữ số bề rộng lệch, số
+ * nhảy giật khi dữ liệu refresh và các thẻ cùng hàng nhìn không đều nhau.
  */
 export const TEXT_HERO_NUMBER =
-  "text-2xl font-bold tracking-tight text-slate-900";
+  "text-2xl font-bold tracking-tight text-slate-900 tabular-nums";
 
 /** Khoảng đệm ô trong bảng — dòng một tầng nội dung cao ≈56px */
 export const CELL_PADDING = "px-4 py-4";

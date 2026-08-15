@@ -12,10 +12,11 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        // Độ sâu bằng BÓNG MỊN thay vì viền xám cứng: viền slate-100/50 gần như
-        // tan vào nền, shadow-sm định hình khối; hover nâng nhẹ 1px + đậm bóng
-        // để giao diện có phản hồi sống động kiểu SaaS hiện đại.
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground border border-slate-100/50 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-[1px] [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        // Độ sâu bằng viền mảnh + BÓNG 2 LỚP (tiếp xúc 1px sát mép + tán rộng
+        // mờ): thẻ trắng tách khỏi nền slate-50 rõ ràng mà vẫn mềm, không phải
+        // khung xám cứng. Bóng pha từ slate-900 (15 23 42) thay vì đen thuần để
+        // cùng tông xám xanh với cả hệ. Hover nâng 1px + lớp tán sâu hơn.
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground border border-slate-200/80 shadow-[0_1px_2px_rgb(15_23_42/0.04),0_2px_8px_-2px_rgb(15_23_42/0.05)] transition-all duration-200 hover:shadow-[0_2px_4px_rgb(15_23_42/0.04),0_12px_24px_-8px_rgb(15_23_42/0.1)] hover:-translate-y-[1px] [--card-spacing:--spacing(5)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className
       )}
       {...props}

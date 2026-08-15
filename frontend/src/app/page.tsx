@@ -69,15 +69,8 @@ import {
 } from "@/components/channel-filter";
 import { formatVND, formatNumber } from "@/lib/format";
 import { moneyTone, TEXT_SUB } from "@/lib/typography";
+import { CHANNEL_COLORS, CHANNEL_COLOR_FALLBACK } from "@/lib/chart-colors";
 import { cn } from "@/lib/utils";
-
-// Màu nền của từng sàn trên biểu đồ tròn
-const CHANNEL_COLORS: Record<string, string> = {
-  SHOPEE: "#f97316",
-  TIKTOK: "#18181b",
-  LAZADA: "#3b82f6",
-  OFFLINE: "#a1a1aa",
-};
 
 /** Cỡ số Hero riêng của Dashboard — 4 thẻ trên một hàng nên nhỏ hơn mặc định. */
 const HERO_SIZE = "text-xl font-bold";
@@ -331,7 +324,8 @@ function MarketplaceShare({
                   key={r.channelName}
                   style={{
                     width: `${Math.max((r.revenue / total) * 100, 1)}%`,
-                    backgroundColor: CHANNEL_COLORS[r.channelName] ?? "#8b5cf6",
+                    backgroundColor:
+                      CHANNEL_COLORS[r.channelName] ?? CHANNEL_COLOR_FALLBACK,
                   }}
                 />
               ))}
@@ -349,7 +343,8 @@ function MarketplaceShare({
                       className="size-2.5 shrink-0 rounded-full"
                       style={{
                         backgroundColor:
-                          CHANNEL_COLORS[r.channelName] ?? "#8b5cf6",
+                          CHANNEL_COLORS[r.channelName] ??
+                          CHANNEL_COLOR_FALLBACK,
                       }}
                     />
                     <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
