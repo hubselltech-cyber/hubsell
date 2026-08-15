@@ -51,6 +51,8 @@ function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelP
     imageUrl: s.Images?.[0] || p.images?.[0] || null,
     externalId: `${p.item_id ?? "0"}-${s.SkuId ?? "0"}`,
     itemSku: null, // Lazada không có SKU tổng cấp item — SellerSku nằm ở từng skus[]
+    // Tồn trên sàn: Lazada trả `quantity` ở cấp biến thể; thiếu trường = null.
+    channelStock: typeof s.quantity === "number" ? s.quantity : null,
     status: lazadaStatusToNorm(p.status, s.Status),
   };
 }
@@ -93,8 +95,13 @@ export const lazadaProductAdapter: MarketplaceProductAdapter = {
     const bySku = new Map<string, NormalizedChannelProduct>();
     for (const p of normalized) {
       const existing = bySku.get(p.channelSku);
-      if (existing) existing.variantName = null;
-      else bySku.set(p.channelSku, p);
+      if (existing) {
+        existing.variantName = null;
+        // Mỗi biến thể giữ tồn RIÊNG trên sàn — gộp dòng thì CỘNG tồn.
+        if (p.channelStock !== null) {
+          existing.channelStock = (existing.channelStock ?? 0) + p.channelStock;
+        }
+      } else bySku.set(p.channelSku, p);
     }
     return [...bySku.values()];
   },

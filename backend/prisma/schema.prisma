@@ -1087,6 +1087,11 @@ model ChannelProduct {
   /// SKU TỔNG cấp sản phẩm (item_sku Shopee) — KHÁC channelSku vốn là SKU của
   /// từng phân loại. NULL = người bán không đặt / sàn chưa đổ về.
   itemSku String?
+
+  /// Tồn kho TRÊN SÀN tại lần đồng bộ sản phẩm gần nhất (Shopee stock_info_v2 /
+  /// Lazada quantity). NULL = sàn không trả số / chưa đồng bộ lại từ khi có cột.
+  /// Dùng cho "đồng bộ lần đầu lấy tồn theo sàn" khi liên kết SKU kho tồn 0.
+  channelStock Int?
   status      ChannelProductStatus @default(ACTIVE)
   lastSyncedAt DateTime? // lần cuối kéo về từ sàn
   createdAt   DateTime @default(now())

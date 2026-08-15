@@ -15,6 +15,8 @@ interface SkuComboboxProps {
   onChange: (sku: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** Dòng gợi ý khi KHO RỖNG (chưa có SKU nào) — ngữ cảnh gọi tự chỉ đường. */
+  emptyHint?: string;
 }
 
 /// Ô chọn SKU có TÌM KIẾM (autocomplete) — thay cho dropdown thường.
@@ -25,6 +27,7 @@ export function SkuCombobox({
   onChange,
   disabled,
   placeholder = "Gõ mã SKU hoặc tên sản phẩm để tìm…",
+  emptyHint = "Tạo sản phẩm trong kho trước rồi quay lại chọn.",
 }: SkuComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -184,11 +187,19 @@ export function SkuCombobox({
           </button>
 
           {filtered.length === 0 ? (
+            // Kho rỗng và không-khớp-từ-khoá là hai chuyện khác nhau — kho rỗng
+            // mà khuyên "đổi từ khoá" thì người dùng tưởng chức năng hỏng.
             <div className="px-3 py-6 text-center">
               <PackageSearch className="mx-auto mb-2 size-6 text-muted-foreground" />
-              <p className="text-sm font-medium">Không tìm thấy sản phẩm nào</p>
+              <p className="text-sm font-medium">
+                {products.length === 0
+                  ? "Kho vật lý chưa có SKU nào"
+                  : "Không tìm thấy sản phẩm nào"}
+              </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Thử đổi từ khoá tìm kiếm khác.
+                {products.length === 0
+                  ? emptyHint
+                  : "Thử đổi từ khoá tìm kiếm khác."}
               </p>
             </div>
           ) : (

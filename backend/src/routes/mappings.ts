@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ChannelName, Prisma } from "@prisma/client";
+import { ChannelName, InventoryLogType, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 
@@ -160,11 +160,79 @@ router.post("/link", async (req: AuthRequest, res, next) => {
     // sản phẩm gốc chưa có giá vốn thì kế thừa số đã nhập bên sàn.
     await inheritChannelCostPrice([product.id], req.ownerId!);
 
-    res.json({ linked: result.count, product });
+    // Sản phẩm tồn 0 vừa nối SKU sàn → nhận tồn ban đầu theo số trên sàn.
+    const seeded = await seedInitialStockFromChannel([product.id], req.ownerId!);
+
+    res.json({
+      linked: result.count,
+      product,
+      seededStock: seeded.get(product.id) ?? null,
+    });
   } catch (err) {
     next(err);
   }
 });
+
+/**
+ * ĐỒNG BỘ LẦN ĐẦU — LẤY TỒN THEO SÀN.
+ *
+ * Sản phẩm kho đang tồn 0 (chưa từng nhập tồn thật) vừa được nối SKU sàn →
+ * nhận tồn ban đầu = số ĐANG CÓ TRÊN SÀN (ChannelProduct.channelStock, cập nhật
+ * mỗi lần "Đồng bộ từ sàn"). Nhờ vậy shop mới liên kết xong là số kho khớp ngay
+ * với sàn, không có biến động nào bị đẩy ngược lên sàn — vận hành không gián đoạn.
+ *
+ * Nhiều gian cùng bán một SKU thường phản chiếu CÙNG một kho vật lý — cộng dồn
+ * sẽ đếm trùng, nên lấy SỐ LỚN NHẤT trong các gian ACTIVE. Chỉ đụng sản phẩm
+ * tồn 0: số tồn người dùng đã nhập tay là chân lý, không bao giờ ghi đè.
+ * KHÔNG enqueue đẩy tồn — số vừa lấy TỪ sàn, đẩy lại chỉ tốn quota.
+ *
+ * Trả map productId → số tồn đã seed để API đưa vào response cho UI báo toast.
+ */
+async function seedInitialStockFromChannel(
+  productIds: string[],
+  ownerId: string
+): Promise<Map<string, number>> {
+  const seeded = new Map<string, number>();
+  const ids = [...new Set(productIds)].filter(Boolean);
+  if (ids.length === 0) return seeded;
+
+  const bare = await prisma.product.findMany({
+    where: { id: { in: ids }, userId: ownerId, quantityInStock: 0 },
+    select: { id: true },
+  });
+  for (const p of bare) {
+    const rows = await prisma.channelProduct.findMany({
+      where: { productId: p.id, channelStock: { not: null }, status: "ACTIVE" },
+      select: {
+        channelStock: true,
+        channel: { select: { channelName: true, shopName: true } },
+      },
+    });
+    if (rows.length === 0) continue;
+    const best = rows.reduce((a, b) =>
+      (b.channelStock ?? 0) > (a.channelStock ?? 0) ? b : a
+    );
+    const qty = best.channelStock ?? 0;
+    if (qty <= 0) continue;
+
+    await prisma.$transaction([
+      prisma.product.update({
+        where: { id: p.id },
+        data: { quantityInStock: qty },
+      }),
+      prisma.inventoryLog.create({
+        data: {
+          productId: p.id,
+          changeQuantity: qty,
+          type: InventoryLogType.SYNC,
+          reason: `Đồng bộ lần đầu khi liên kết: lấy tồn theo sàn (${best.channel.channelName} · ${best.channel.shopName})`,
+        },
+      }),
+    ]);
+    seeded.set(p.id, qty);
+  }
+  return seeded;
+}
 
 /**
  * Sản phẩm gốc costPrice = 0 nhưng có SKU sàn vừa nối mang costPrice > 0 →
@@ -243,10 +311,17 @@ router.post("/auto-match", async (req: AuthRequest, res, next) => {
 
     await inheritChannelCostPrice([...idsByProduct.keys()], req.ownerId!);
 
+    // Các sản phẩm tồn 0 vừa được tự khớp → nhận tồn ban đầu theo số trên sàn.
+    const seeded = await seedInitialStockFromChannel(
+      [...idsByProduct.keys()],
+      req.ownerId!
+    );
+
     res.json({
       matched,
       products: idsByProduct.size,
       scanned: unlinked.length,
+      seededProducts: seeded.size,
     });
   } catch (err) {
     next(err);
@@ -287,6 +362,7 @@ router.post("/create-products", async (req: AuthRequest, res, next) => {
     let createdProducts = 0;
     let reusedProducts = 0;
     let linked = 0;
+    const touchedProductIds: string[] = [];
 
     // Xử lý TUẦN TỰ theo nhóm mã SKU: nhiều dòng sàn (các phân loại đặt chung
     // SellerSku, hay 2 gian cùng bán một mã) quy về MỘT sản phẩm kho.
@@ -331,9 +407,19 @@ router.post("/create-products", async (req: AuthRequest, res, next) => {
         data: { productId: product.id },
       });
       linked += r.count;
+      touchedProductIds.push(product.id);
     }
 
-    res.json({ createdProducts, reusedProducts, linked, skipped: channelProductIds.length - linked });
+    // SKU kho tạo mới (tồn 0) và SKU dùng lại còn tồn 0 → nhận tồn theo sàn.
+    const seeded = await seedInitialStockFromChannel(touchedProductIds, req.ownerId!);
+
+    res.json({
+      createdProducts,
+      reusedProducts,
+      linked,
+      skipped: channelProductIds.length - linked,
+      seededProducts: seeded.size,
+    });
   } catch (err) {
     next(err);
   }

@@ -59,7 +59,10 @@ export function LinkOneDialog({
     try {
       const res = await linkChannelProducts([shopeeItem.id], product.id);
       toast.success(
-        `Đã nối ${shopeeItem.channelSku} về ${res.product.skuCode} — ${res.product.productName}`,
+        `Đã nối ${shopeeItem.channelSku} về ${res.product.skuCode} — ${res.product.productName}` +
+          (res.seededStock != null
+            ? `. Tồn ban đầu lấy theo sàn: ${formatNumber(res.seededStock)}.`
+            : ""),
         { duration: 6000 }
       );
       onOpenChange(false);
@@ -131,6 +134,8 @@ export function LinkOneDialog({
                 <span className="font-semibold text-foreground">
                   {formatNumber(target.quantityInStock)}
                 </span>
+                {target.quantityInStock === 0 &&
+                  " — khi liên kết sẽ tự lấy tồn theo số đang có trên sàn."}
               </p>
             )}
           </div>

@@ -22,6 +22,7 @@ export const mockProductAdapter: MarketplaceProductAdapter = {
       imageUrl: mockImageFor(channel.channelName, item.name),
       externalId: null,
       itemSku: null,
+      channelStock: null, // gian mock không có tồn sàn thật
       status: "ACTIVE" as const,
     }));
   },

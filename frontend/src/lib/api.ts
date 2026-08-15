@@ -1950,6 +1950,8 @@ export function linkChannelProducts(channelProductIds: string[], productId: stri
   return apiFetch<{
     linked: number;
     product: { id: string; skuCode: string; productName: string };
+    /** Sản phẩm tồn 0 vừa nhận tồn ban đầu theo số trên sàn — null nếu không seed. */
+    seededStock: number | null;
   }>("/api/mappings/link", {
     method: "POST",
     body: JSON.stringify({ channelProductIds, productId }),
@@ -1969,10 +1971,16 @@ export function unlinkChannelProducts(channelProductIds: string[]) {
  * hoa-thường). Chỉ đụng dòng chưa nối — liên kết tay không bị ghi đè.
  */
 export function autoMatchMappings(channelId?: string) {
-  return apiFetch<{ matched: number; products: number; scanned: number }>(
-    "/api/mappings/auto-match",
-    { method: "POST", body: JSON.stringify(channelId ? { channelId } : {}) }
-  );
+  return apiFetch<{
+    matched: number;
+    products: number;
+    scanned: number;
+    /** Số sản phẩm tồn 0 vừa nhận tồn ban đầu theo số trên sàn. */
+    seededProducts: number;
+  }>("/api/mappings/auto-match", {
+    method: "POST",
+    body: JSON.stringify(channelId ? { channelId } : {}),
+  });
 }
 
 /**
@@ -1985,6 +1993,8 @@ export function createProductsFromMappings(channelProductIds: string[]) {
     reusedProducts: number;
     linked: number;
     skipped: number;
+    /** Số sản phẩm tồn 0 vừa nhận tồn ban đầu theo số trên sàn. */
+    seededProducts: number;
   }>("/api/mappings/create-products", {
     method: "POST",
     body: JSON.stringify({ channelProductIds }),

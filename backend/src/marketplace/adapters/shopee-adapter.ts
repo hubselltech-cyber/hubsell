@@ -15,6 +15,7 @@ import {
   getItemList,
   getModelList,
   shopeeChannelSku,
+  shopeeSellerStock,
   type ShopeeItemBaseInfo,
   type ShopeeModel,
 } from "../../integrations/shopee/client";
@@ -43,6 +44,7 @@ function transformItem(info: ShopeeItemBaseInfo): NormalizedChannelProduct {
     imageUrl: info.image?.image_url_list?.[0] ?? null,
     externalId: String(info.item_id),
     itemSku: info.item_sku?.trim() || null,
+    channelStock: shopeeSellerStock(info.stock_info_v2),
     status: shopeeStatusToNorm(info.item_status),
   };
 }
@@ -68,6 +70,7 @@ function transformModel(
     imageUrl: info.image?.image_url_list?.[0] ?? null,
     externalId: `${info.item_id}-${model.model_id}`,
     itemSku: info.item_sku?.trim() || null,
+    channelStock: shopeeSellerStock(model.stock_info_v2),
     status: shopeeStatusToNorm(info.item_status),
   };
 }
@@ -132,8 +135,14 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
     const bySku = new Map<string, NormalizedChannelProduct>();
     for (const p of normalized) {
       const existing = bySku.get(p.channelSku);
-      if (existing) existing.variantName = null;
-      else bySku.set(p.channelSku, p);
+      if (existing) {
+        existing.variantName = null;
+        // Mỗi model giữ tồn RIÊNG trên sàn — gộp dòng thì CỘNG tồn (null = sàn
+        // không trả số, chỉ cộng khi có ít nhất một bên biết số).
+        if (p.channelStock !== null) {
+          existing.channelStock = (existing.channelStock ?? 0) + p.channelStock;
+        }
+      } else bySku.set(p.channelSku, p);
     }
     return [...bySku.values()];
   },

@@ -42,6 +42,9 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
       imageUrl: p.imageUrl,
       externalId: p.externalId,
       itemSku: p.itemSku,
+      // Tồn sàn chỉ ghi đè khi adapter ĐỌC ĐƯỢC số — null giữ nguyên giá trị cũ
+      // (sàn không trả số không có nghĩa là hết hàng).
+      ...(p.channelStock !== null ? { channelStock: p.channelStock } : {}),
       status:
         p.status === "ACTIVE"
           ? ChannelProductStatus.ACTIVE

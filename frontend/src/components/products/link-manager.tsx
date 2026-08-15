@@ -220,7 +220,10 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
         product.id
       );
       toast.success(
-        `Đã nối ${formatNumber(res.linked)} sản phẩm sàn về ${res.product.skuCode} — ${res.product.productName}`,
+        `Đã nối ${formatNumber(res.linked)} sản phẩm sàn về ${res.product.skuCode} — ${res.product.productName}` +
+          (res.seededStock != null
+            ? `. Tồn ban đầu lấy theo sàn: ${formatNumber(res.seededStock)}.`
+            : ""),
         { duration: 6000 }
       );
       setSelectedIds(new Set());
@@ -260,7 +263,10 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
         );
       } else {
         toast.success(
-          `Tự khớp xong: nối ${formatNumber(r.matched)} SKU sàn vào ${formatNumber(r.products)} sản phẩm kho.`,
+          `Tự khớp xong: nối ${formatNumber(r.matched)} SKU sàn vào ${formatNumber(r.products)} sản phẩm kho.` +
+            (r.seededProducts > 0
+              ? ` ${formatNumber(r.seededProducts)} SKU tồn 0 đã lấy tồn theo sàn.`
+              : ""),
           { duration: 6000 }
         );
       }
@@ -284,7 +290,10 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
           (r.reusedProducts > 0
             ? `, dùng lại ${formatNumber(r.reusedProducts)} SKU sẵn có`
             : "") +
-          ` và nối ${formatNumber(r.linked)} sản phẩm sàn.`,
+          ` và nối ${formatNumber(r.linked)} sản phẩm sàn.` +
+          (r.seededProducts > 0
+            ? ` Tồn ban đầu của ${formatNumber(r.seededProducts)} SKU lấy theo số trên sàn.`
+            : ""),
         { duration: 6000 }
       );
       setSelectedIds(new Set());
@@ -702,6 +711,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                 products={products}
                 value={targetSku}
                 onChange={setTargetSku}
+                emptyHint="Bấm nút “Tạo SKU kho” bên cạnh — hệ thống tạo SKU từ chính sản phẩm sàn đã chọn rồi nối luôn."
               />
             </div>
 
@@ -777,8 +787,8 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
             <DialogDescription>
               Hệ thống sẽ làm hai bước: (1) tự khớp các SKU sàn TRÙNG MÃ với kho
               hiện có; (2) phần còn lại tạo SKU kho mới từ chính dữ liệu sàn
-              (tên/ảnh/giá, tồn bằng 0) rồi nối luôn. Sau đó anh chỉ cần nhập số
-              tồn thật cho các SKU mới.
+              (tên/ảnh/giá) rồi nối luôn. Tồn ban đầu lấy theo số đang có trên
+              sàn — SKU nào sàn không trả số thì tồn 0, chỉnh tay sau.
             </DialogDescription>
           </DialogHeader>
           {oneClickProgress && (
