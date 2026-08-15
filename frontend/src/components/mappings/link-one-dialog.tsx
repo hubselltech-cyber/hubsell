@@ -91,8 +91,10 @@ export function LinkOneDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Sản phẩm sàn đang chọn */}
-        <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
+        {/* Sản phẩm sàn đang chọn — min-w-0: tên sản phẩm truncate (nowrap) mà
+            thiếu min-w-0 thì min-content lan lên grid của dialog, đẩy toàn bộ
+            nội dung rộng hơn khung thoại (tràn mép phải ~70px). */}
+        <div className="flex min-w-0 items-center gap-3 rounded-lg border bg-muted/40 p-3">
           {item.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
