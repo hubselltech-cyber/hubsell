@@ -145,6 +145,44 @@ html[data-theme="emerald"] {
   --sidebar-active-border: oklch(0.596 0.145 163.225);
 }
 
+/*
+ * ===== CHUYỂN ĐỘNG VI MÔ (micro-interactions) =====
+ * Hai chuyển động dùng chung toàn hệ thống, đều ngắn (<300ms) để "có sức sống"
+ * mà không bắt người dùng chờ:
+ *   dialog-pop  — dialog mở nảy nhẹ kiểu lò xo (bezier vượt đích ~1.35 rồi hồi
+ *                 về); dùng thuộc tính `scale` RIÊNG chứ không transform, vì
+ *                 DialogContent định vị giữa màn bằng translate — keyframe mà
+ *                 ghi transform sẽ đè mất phép căn giữa trong lúc chạy.
+ *   page-enter  — nội dung trang mờ dần + trồi lên 4px khi điều hướng; dùng
+ *                 thuộc tính `translate` riêng với cùng lý do.
+ * Cả hai đều phải kèm motion-reduce:animate-none ở nơi sử dụng.
+ */
+@theme {
+  --animate-dialog-pop: dialog-pop 0.22s cubic-bezier(0.22, 1.35, 0.36, 1);
+  --animate-page-enter: page-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+
+  @keyframes dialog-pop {
+    from {
+      opacity: 0;
+      scale: 0.96;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      translate: 0 4px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

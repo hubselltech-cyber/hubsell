@@ -10,9 +10,12 @@ import {
   Menu,
   Loader2,
   LogOut,
+  Search as SearchIcon,
   type LucideIcon,
 } from "lucide-react";
 
+import { CommandPalette } from "@/components/command-palette";
+import { NavIcon } from "@/components/nav-icon";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { Button } from "@/components/ui/button";
 import { UserAvatarMenu } from "@/components/user-avatar-menu";
@@ -47,7 +50,7 @@ interface NavChild {
    */
   adminOnly?: boolean;
 }
-interface NavItem {
+export interface NavItem {
   href?: string;
   label: string;
   /**
@@ -311,46 +314,6 @@ function menusForPath(pathname: string): string[] {
   return labels;
 }
 
-// Icon sidebar bằng Material Symbols Rounded (variable font, trục FILL) —
-// active thì FILL 0→1: icon outline "đổ đầy" thành filled đúng kiểu YouTube
-// Studio, chi tiết bên trong vẫn khoét trắng vì glyph filled được vẽ riêng.
-// Outline để wght 350 — mỏng hơn mặc định 400 nhưng không mảnh dây (300):
-// đối chiếu ảnh sidebar YouTube Studio thật thì nét của họ nằm đúng khoảng này.
-// Khi đổ đầy trả về wght 400 để khối đen đủ đậm.
-// transition font-variation-settings cho chuyển trạng thái mượt.
-function NavIcon({
-  name,
-  filled,
-}: {
-  name: string | LucideIcon;
-  filled?: boolean;
-}) {
-  // Icon lucide (component) — kích cỡ 20px khớp Material Symbols; active thì
-  // nét dày hơn một bậc thay cho hiệu ứng FILL của glyph.
-  if (typeof name !== "string") {
-    const Icon = name;
-    return (
-      <Icon
-        aria-hidden
-        className="w-5 shrink-0"
-        size={20}
-        strokeWidth={filled ? 2.25 : 1.75}
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className="material-symbols-rounded w-5 shrink-0 text-center text-[20px] leading-none transition-[font-variation-settings] duration-200 select-none"
-      style={{
-        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' ${filled ? 400 : 350}, 'GRAD' 0, 'opsz' 24`,
-      }}
-    >
-      {name}
-    </span>
-  );
-}
-
 // Bố cục chuẩn SaaS: Sidebar dọc + Header mỏng + nội dung chính.
 // Kèm Onboarding guard: chưa kết nối gian hàng nào → hiện màn hình chặn.
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -361,6 +324,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Drawer điều hướng trên điện thoại — dưới md sidebar cố định bị ẩn,
   // không có drawer này thì người dùng mobile không đi đâu được ngoài trang hiện tại
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Command palette Ctrl+K — state đặt ở shell vì cả phím tắt toàn cục lẫn nút
+  // "Tìm nhanh" trên header cùng mở một hộp
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // openMenus là NGUỒN CHÂN LÝ DUY NHẤT cho việc nhóm nào đang xoè: route chỉ
   // được "gieo" nhóm vào đây lúc mount/điều hướng, KHÔNG ép mở khi render —
   // ép mở là người dùng hết cụp tay được nhóm chứa trang đang xem.
@@ -689,6 +655,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Nút mở command palette — bản pill kèm phím tắt trên desktop,
+                thu về icon kính lúp trên màn hẹp */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden font-normal text-muted-foreground sm:flex"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <SearchIcon className="size-4" />
+              Tìm nhanh
+              <kbd className="ml-1 rounded border bg-muted px-1.5 py-px font-mono text-[10px]">
+                Ctrl K
+              </kbd>
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="sm:hidden"
+              aria-label="Tìm nhanh (Ctrl+K)"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <SearchIcon className="size-5" />
+            </Button>
             {user && (
               <UserAvatarMenu
                 user={user}
@@ -707,8 +696,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
             tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}
-        <main className="w-full flex-1 px-4 py-5 md:px-6 md:py-6 lg:px-8">{children}</main>
+        <main className="w-full flex-1 px-4 py-5 md:px-6 md:py-6 lg:px-8">
+          {/* key={pathname}: mỗi lần điều hướng remount khối này để chạy lại
+              page-enter (mờ dần + trồi nhẹ) — đổi query string không kích hoạt
+              vì pathname không chứa query, bộ lọc trên cùng trang không nháy */}
+          <div
+            key={pathname}
+            className="animate-page-enter motion-reduce:animate-none"
+          >
+            {children}
+          </div>
+        </main>
       </div>
+
+      {/* Command palette Ctrl+K — nhận đúng cây menu ĐÃ lọc quyền ở trên */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        items={[...items, ...bottomItems]}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }
