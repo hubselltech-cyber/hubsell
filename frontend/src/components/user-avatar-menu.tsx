@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { ImageUp, Loader2, Trash2, UserRound } from "lucide-react";
+import { ImageUp, Loader2, LogOut, Trash2, UserRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -85,17 +85,21 @@ export function UserAvatarCircle({
 }
 
 /**
- * Khối người dùng trên header: bấm vào mở menu đổi/gỡ ảnh đại diện. Đặt ở đây
- * (thay vì trang Cấu hình chỉ Chủ shop vào được) để NHÂN VIÊN cũng tự đổi được
- * avatar của chính mình.
+ * Khối người dùng trên header: bấm vào mở menu đổi/gỡ ảnh đại diện + Đăng
+ * xuất. Đặt ở đây (thay vì trang Cấu hình chỉ Chủ shop vào được) để NHÂN VIÊN
+ * cũng tự đổi được avatar của chính mình. Đăng xuất nằm TRONG menu này (chuẩn
+ * SaaS) chứ không bày nút trần trên header — header chỉ giữ hành động dùng
+ * hằng ngày.
  */
 export function UserAvatarMenu({
   user,
   onUserChange,
+  onLogout,
 }: {
   user: AuthUser;
   /** Báo ngược cho AppShell cập nhật state + localStorage sau khi đổi ảnh. */
   onUserChange: (user: AuthUser) => void;
+  onLogout: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
@@ -130,15 +134,19 @@ export function UserAvatarMenu({
 
   return (
     <Popover>
+      {/* Mobile vẫn PHẢI thấy khối này (Đăng xuất nằm trong đây) — chỉ thu
+          gọn: giấu tên + nhãn vai trò, giữ vòng tròn avatar */}
       <PopoverTrigger
-        className="hidden items-center gap-2 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-muted sm:flex"
-        aria-label="Mở menu ảnh đại diện"
+        className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-muted sm:pr-2"
+        aria-label="Mở menu tài khoản"
       >
         <UserAvatarCircle user={user} className="size-8" iconClassName="size-4" />
-        <span className="text-sm font-medium">{user.fullName}</span>
+        <span className="hidden text-sm font-medium sm:inline">
+          {user.fullName}
+        </span>
         <span
           className={cn(
-            "rounded-full border px-2.5 py-0.5 text-xs font-medium",
+            "hidden rounded-full border px-2.5 py-0.5 text-xs font-medium sm:inline",
             ROLE_META[user.role].className
           )}
         >
@@ -190,6 +198,17 @@ export function UserAvatarMenu({
         <p className="mt-3 text-xs text-muted-foreground">
           Ảnh được cắt vuông và thu nhỏ tự động — chọn ảnh nào cũng được.
         </p>
+        <div className="mt-3 border-t pt-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full text-red-600 hover:text-red-600"
+            onClick={onLogout}
+          >
+            <LogOut className="size-4" />
+            Đăng xuất
+          </Button>
+        </div>
         <input
           ref={fileInputRef}
           type="file"

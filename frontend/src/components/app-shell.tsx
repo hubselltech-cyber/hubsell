@@ -10,7 +10,6 @@ import {
   Coins,
   Menu,
   Loader2,
-  LogOut,
   Moon,
   Search as SearchIcon,
   Sun,
@@ -700,6 +699,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>
+            {/* Đăng xuất nằm TRONG menu avatar (và trong command palette) —
+                header không bày nút trần cho gọn */}
             {user && (
               <UserAvatarMenu
                 user={user}
@@ -707,12 +708,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setStoredUser(u);
                   setUser(u);
                 }}
+                onLogout={handleLogout}
               />
             )}
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="size-4" />
-              Đăng xuất
-            </Button>
           </div>
         </header>
 
