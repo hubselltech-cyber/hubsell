@@ -122,18 +122,148 @@ router.get("/", async (req: AuthRequest, res, next) => {
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        // Tóm tắt liên kết sàn cho cột "Bán trên" của hub Hàng hóa — mỗi dòng
+        // vài chip nhỏ, chi tiết đầy đủ lấy lazy qua /:id/channel-links.
+        include: {
+          channelProducts: {
+            select: {
+              channelSku: true,
+              channel: { select: { channelName: true, shopName: true } },
+            },
+          },
+        },
       }),
     ]);
 
+    // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — MỘT query
+    // cho cả trang, nuôi badge đỏ trên cột Bán trên.
+    const pageSkus = items.flatMap((p) => p.channelProducts.map((c) => c.channelSku));
+    const openAlerts = pageSkus.length
+      ? await prisma.inventorySyncAlert.findMany({
+          where: {
+            resolvedAt: null,
+            channelSku: { in: pageSkus },
+            channel: { userId: req.ownerId! },
+          },
+          select: { channelSku: true },
+        })
+      : [];
+    const alertSkus = new Set(openAlerts.map((a) => a.channelSku));
+
     const seesFinancials = canSeeFinancials(req);
     res.json({
-      items: items.map((p) => hideCost(p, seesFinancials)),
+      items: items.map((p) => {
+        const { channelProducts, ...core } = p;
+        return {
+          ...hideCost(core, seesFinancials),
+          channelLinks: channelProducts.map((c) => ({
+            channelSku: c.channelSku,
+            channelName: c.channel.channelName,
+            shopName: c.channel.shopName,
+          })),
+          hasSyncAlert: channelProducts.some((c) => alertSkus.has(c.channelSku)),
+        };
+      }),
       total,
       page,
       pageSize,
       pageCount: Math.ceil(total / pageSize),
       costPriceHidden: !seesFinancials,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/products/:id/channel-links — chi tiết các SKU sàn đã nối vào một
+// sản phẩm kho (dòng bung của hub Hàng hóa): gian nào, SKU sàn nào, lượt đẩy
+// tồn gần nhất ra sao, có đang lệch tồn không. Lấy LAZY khi người dùng bung
+// dòng — không tải theo trang danh sách.
+router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
+  try {
+    const product = await prisma.product.findFirst({
+      where: { id: req.params.id, userId: req.ownerId! },
+      select: { id: true },
+    });
+    if (!product) {
+      res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+      return;
+    }
+
+    const links = await prisma.channelProduct.findMany({
+      where: { productId: product.id },
+      select: {
+        id: true,
+        channelId: true,
+        channelSku: true,
+        productName: true,
+        externalId: true,
+        channel: { select: { channelName: true, shopName: true, status: true } },
+      },
+      orderBy: [{ channel: { channelName: "asc" } }, { channelSku: "asc" }],
+    });
+
+    // Lượt đẩy tồn gần nhất + cờ lệch của TỪNG SKU sàn — hai query cho cả cụm.
+    const skus = links.map((l) => l.channelSku);
+    const [logs, alerts] = skus.length
+      ? await Promise.all([
+          prisma.inventorySyncLog.findMany({
+            where: {
+              channelSku: { in: skus },
+              channel: { userId: req.ownerId! },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 100,
+            select: {
+              channelId: true,
+              channelSku: true,
+              status: true,
+              newQuantity: true,
+              createdAt: true,
+            },
+          }),
+          prisma.inventorySyncAlert.findMany({
+            where: {
+              resolvedAt: null,
+              channelSku: { in: skus },
+              channel: { userId: req.ownerId! },
+            },
+            select: { channelId: true, channelSku: true },
+          }),
+        ])
+      : [[], []];
+
+    const latestByKey = new Map<string, (typeof logs)[number]>();
+    for (const l of logs) {
+      const key = `${l.channelId}:${l.channelSku}`;
+      if (!latestByKey.has(key)) latestByKey.set(key, l); // đã sort desc — bản đầu là mới nhất
+    }
+    const alertKeys = new Set(alerts.map((a) => `${a.channelId}:${a.channelSku}`));
+
+    res.json(
+      links.map((l) => {
+        const key = `${l.channelId}:${l.channelSku}`;
+        const last = latestByKey.get(key);
+        return {
+          id: l.id,
+          channelSku: l.channelSku,
+          productName: l.productName,
+          channelName: l.channel.channelName,
+          shopName: l.channel.shopName,
+          channelActive: l.channel.status === "ACTIVE",
+          /// Sàn này có đẩy tồn được không (TikTok chưa có externalId thì không).
+          pushable: Boolean(l.externalId) && l.channel.channelName !== "TIKTOK",
+          lastSync: last
+            ? {
+                status: last.status,
+                newQuantity: last.newQuantity,
+                at: last.createdAt,
+              }
+            : null,
+          hasAlert: alertKeys.has(key),
+        };
+      })
+    );
   } catch (err) {
     next(err);
   }

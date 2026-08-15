@@ -227,7 +227,34 @@ export interface Product {
   taxName?: string | null;
   /** % thuế suất GTGT đầu ra: 0 / 5 / 8 / 10. */
   vatRate?: number;
+  /** Tồn an toàn riêng của SKU — null/vắng = dùng mặc định toàn shop. */
+  safetyStock?: number | null;
   createdAt: string;
+  /** Tóm tắt các SKU sàn đã nối (cột "Bán trên" của hub Hàng hóa). */
+  channelLinks?: { channelSku: string; channelName: ChannelName; shopName: string }[];
+  /** Có SKU sàn đang LỆCH TỒN chưa xử lý (InventorySyncAlert mở). */
+  hasSyncAlert?: boolean;
+}
+
+/** Chi tiết MỘT liên kết sàn của sản phẩm kho — dòng bung của hub Hàng hóa. */
+export interface ProductChannelLink {
+  id: string; // id ChannelProduct — dùng để gỡ nối
+  channelSku: string;
+  productName: string;
+  channelName: ChannelName;
+  shopName: string;
+  channelActive: boolean;
+  /** Sàn này có đẩy tồn được không (TikTok chưa có product-sync thì không). */
+  pushable: boolean;
+  lastSync: { status: "SUCCESS" | "FAILED"; newQuantity: number; at: string } | null;
+  hasAlert: boolean;
+}
+
+/** Các SKU sàn đã nối vào một sản phẩm kho + trạng thái đẩy tồn gần nhất. */
+export function fetchProductChannelLinks(productId: string) {
+  return apiFetch<ProductChannelLink[]>(
+    `/api/products/${productId}/channel-links`
+  );
 }
 
 export interface ProductListResponse {

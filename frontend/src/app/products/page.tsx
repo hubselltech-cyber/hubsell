@@ -11,21 +11,30 @@ import {
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CloudUpload,
   Download,
+  Link2,
+  Link2Off,
   Loader2,
   Search,
+  Settings2,
+  Sparkles,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/app-shell";
 import { Money } from "@/components/ui/money";
-import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
+import { LinkManager } from "@/components/products/link-manager";
+import { SyncSettingsDialog } from "@/components/products/sync-settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,16 +47,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  ApiError,
+  fetchChannelProducts,
+  fetchProductChannelLinks,
   fetchProducts,
+  fetchSyncSettings,
   getStoredUser,
   getToken,
-  ApiError,
+  unlinkChannelProducts,
   type Product,
+  type ProductChannelLink,
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
-import { formatNumber, formatDateTime } from "@/lib/format";
+import { CHANNEL_META } from "@/lib/channel-meta";
+import { formatNumber } from "@/lib/format";
 import { canManageShop, canSeeFinancials } from "@/lib/permissions";
-import { TEXT_NUMBER_MUTED } from "@/lib/typography";
+import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
@@ -55,8 +70,28 @@ const LOW_STOCK_THRESHOLD = 10;
 
 const columnHelper = createColumnHelper<Product>();
 
-export default function ProductsPage() {
+type HubTab = "inventory" | "links";
+
+/**
+ * HUB "HÀNG HÓA" — một trang cho toàn bộ vòng đời hàng hóa của seller, thay ba
+ * trang cũ (Kho vật lý / Liên kết sản phẩm / Đồng bộ tồn kho):
+ *
+ *   · Tab TỒN KHO: bảng SKU kho + cột "Bán trên" (các gian đã nối, badge lệch
+ *     tồn) — bấm dòng bung ra từng SKU sàn với lượt đẩy tồn gần nhất, gỡ nối/
+ *     nối thêm ngay tại chỗ.
+ *   · Tab CHỜ LIÊN KẾT (chỉ chủ shop): trình quản lý liên kết + nút một cú bấm
+ *     "Tự khớp + tạo SKU toàn bộ".
+ *   · ĐỒNG BỘ là nút chứ không phải trang: chip BẬT/TẮT + dialog cài đặt.
+ *
+ * Route cũ /mappings và /warehouse/sync redirect về đây (?tab=links / ?sync=1).
+ */
+export default function ProductsHubPage() {
   const router = useRouter();
+  const isAdmin = canManageShop(getStoredUser());
+
+  const [tab, setTab] = useState<HubTab>("inventory");
+  // Từ khoá mồi cho tab Chờ liên kết khi bấm "Nối thêm gian" từ một SKU.
+  const [linkSeed, setLinkSeed] = useState<string | undefined>(undefined);
 
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
@@ -68,7 +103,22 @@ export default function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Hộp thoại nhập/xuất kho đang mở cho sản phẩm nào
+  // Số SP sàn chưa nối — nuôi badge tab + banner gợi ý (chỉ chủ shop).
+  const [unlinkedCount, setUnlinkedCount] = useState(0);
+
+  // Trạng thái đồng bộ cho chip header (chỉ chủ shop).
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncState, setSyncState] = useState<{
+    autoSyncEnabled: boolean;
+    pending: number;
+  } | null>(null);
+
+  // Dòng đang bung + cache chi tiết liên kết theo productId.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [linkDetails, setLinkDetails] = useState<
+    Record<string, ProductChannelLink[] | "loading">
+  >({});
+
   const [adjusting, setAdjusting] = useState<{
     product: Product;
     type: "IMPORT" | "EXPORT";
@@ -82,6 +132,8 @@ export default function ProductsPage() {
       setItems(res.items);
       setTotal(res.total);
       setPageCount(res.pageCount);
+      // Chi tiết liên kết có thể đã đổi (nối/gỡ ở tab kia) — xoá cache.
+      setLinkDetails({});
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -98,6 +150,16 @@ export default function ProductsPage() {
     }
   }, [page, search, router]);
 
+  const loadUnlinkedCount = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await fetchChannelProducts({ page: 1, pageSize: 1 });
+      setUnlinkedCount(res.counts.unlinked);
+    } catch {
+      // chưa có kênh / lỗi mạng — badge để 0, không chặn trang
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
@@ -105,6 +167,27 @@ export default function ProductsPage() {
     }
     load();
   }, [load, router]);
+
+  useEffect(() => {
+    loadUnlinkedCount();
+    if (isAdmin) {
+      fetchSyncSettings()
+        .then((s) =>
+          setSyncState({ autoSyncEnabled: s.autoSyncEnabled, pending: s.pendingJobs })
+        )
+        .catch(() => {});
+    }
+    // Route cũ redirect về kèm query: ?tab=links mở tab liên kết, ?sync=1 mở
+    // dialog cài đặt. Đọc một lần lúc mount — không cần useSearchParams.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "links" && canManageShop(getStoredUser())) {
+      setTab("links");
+    }
+    if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
+      setSyncOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -128,8 +211,50 @@ export default function ProductsPage() {
     }
   }
 
-  // Nhân viên (SALES/WAREHOUSE) không được biết giá vốn — backend đã cắt hẳn
-  // trường này khỏi dữ liệu trả về, ở đây bỏ luôn cột để bảng không có ô trống.
+  /** Bung/cụp một dòng; lần đầu bung thì tải chi tiết liên kết (lazy + cache). */
+  const toggleExpand = useCallback(
+    (product: Product) => {
+      setExpandedId((cur) => (cur === product.id ? null : product.id));
+      if (linkDetails[product.id]) return;
+      setLinkDetails((prev) => ({ ...prev, [product.id]: "loading" }));
+      fetchProductChannelLinks(product.id)
+        .then((links) =>
+          setLinkDetails((prev) => ({ ...prev, [product.id]: links }))
+        )
+        .catch(() =>
+          setLinkDetails((prev) => {
+            const next = { ...prev };
+            delete next[product.id];
+            return next;
+          })
+        );
+    },
+    [linkDetails]
+  );
+
+  async function handleUnlinkOne(link: ProductChannelLink, productId: string) {
+    try {
+      await unlinkChannelProducts([link.id]);
+      toast.success(`Đã gỡ ${link.channelSku} khỏi SKU kho`);
+      setLinkDetails((prev) => {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      });
+      load();
+      loadUnlinkedCount();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không gỡ được");
+    }
+  }
+
+  /** "Nối thêm gian" từ một SKU: nhảy sang tab liên kết, mồi sẵn từ khoá. */
+  function jumpToLinks(seedSearch?: string) {
+    setLinkSeed(seedSearch);
+    setTab("links");
+  }
+
+  // Nhân viên không được biết giá vốn — backend đã cắt trường, bỏ luôn cột.
   const seesCost = canSeeFinancials(getStoredUser());
 
   const columns = useMemo(
@@ -150,10 +275,7 @@ export default function ProductsPage() {
               header: () => <div className="text-right">Giá vốn</div>,
               cell: (info) => (
                 <div className="text-right">
-                  <Money
-                    value={info.getValue() ?? 0}
-                    className={TEXT_NUMBER_MUTED}
-                  />
+                  <Money value={info.getValue() ?? 0} className={TEXT_NUMBER_MUTED} />
                 </div>
               ),
             }),
@@ -163,10 +285,7 @@ export default function ProductsPage() {
         header: () => <div className="text-right">Giá bán</div>,
         cell: (info) => (
           <div className="text-right">
-            <Money
-              value={info.getValue()}
-              className="font-medium text-slate-900"
-            />
+            <Money value={info.getValue()} className="font-medium text-slate-900" />
           </div>
         ),
       }),
@@ -174,8 +293,6 @@ export default function ProductsPage() {
         header: () => <div className="text-center">Tồn kho</div>,
         cell: (info) => {
           const qty = info.getValue();
-          // Số đang bị GIỮ bởi đơn sàn chưa chốt (UNPAID) — khả dụng để bán
-          // tiếp = tồn kho − đang giữ; đây cũng là số Hubsell đẩy lên sàn.
           const held = info.row.original.holdQuantity ?? 0;
           return (
             <div className="text-center">
@@ -200,13 +317,69 @@ export default function ProductsPage() {
           );
         },
       }),
-      columnHelper.accessor("createdAt", {
-        header: () => <div className="text-right">Ngày tạo</div>,
-        cell: (info) => (
-          <div className="text-right text-sm text-muted-foreground">
-            {formatDateTime(info.getValue())}
-          </div>
-        ),
+      // ===== CỘT MỚI: BÁN TRÊN — trái tim của hub. Gom chip theo sàn + badge
+      // lệch tồn; bấm vào là bung chi tiết từng gian ngay dưới dòng. =====
+      columnHelper.display({
+        id: "channels",
+        header: "Bán trên",
+        cell: ({ row }) => {
+          const links = row.original.channelLinks ?? [];
+          if (links.length === 0) {
+            return isAdmin ? (
+              <button
+                type="button"
+                onClick={() => jumpToLinks(row.original.skuCode)}
+                className={cn(
+                  TEXT_SUB,
+                  "inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 transition-colors hover:border-primary hover:text-foreground"
+                )}
+              >
+                <Link2 className="size-3.5" />
+                Nối gian
+              </button>
+            ) : (
+              <span className={TEXT_SUB}>Chưa nối</span>
+            );
+          }
+          // Gom theo sàn: "Shopee ×2", "Lazada"…
+          const bySite = new Map<string, number>();
+          for (const l of links) {
+            bySite.set(l.channelName, (bySite.get(l.channelName) ?? 0) + 1);
+          }
+          return (
+            <button
+              type="button"
+              onClick={() => toggleExpand(row.original)}
+              className="flex flex-wrap items-center gap-1.5 text-left"
+              title="Bấm để xem chi tiết từng gian"
+            >
+              {[...bySite].map(([site, n]) => {
+                const meta = CHANNEL_META[site as keyof typeof CHANNEL_META];
+                return (
+                  <span
+                    key={site}
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta?.className ?? ""}`}
+                  >
+                    {meta?.label ?? site}
+                    {n > 1 ? ` ×${n}` : ""}
+                  </span>
+                );
+              })}
+              {row.original.hasSyncAlert && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                  <XCircle className="size-3" />
+                  lệch tồn
+                </span>
+              )}
+              <ChevronDown
+                className={cn(
+                  "size-4 text-muted-foreground transition-transform",
+                  expandedId === row.original.id && "rotate-180"
+                )}
+              />
+            </button>
+          );
+        },
       }),
       columnHelper.display({
         id: "actions",
@@ -217,9 +390,7 @@ export default function ProductsPage() {
               variant="outline"
               size="sm"
               className="text-emerald-700 hover:bg-emerald-50"
-              onClick={() =>
-                setAdjusting({ product: row.original, type: "IMPORT" })
-              }
+              onClick={() => setAdjusting({ product: row.original, type: "IMPORT" })}
             >
               <ArrowDownToLine className="size-4" />
               Nhập
@@ -229,9 +400,7 @@ export default function ProductsPage() {
               size="sm"
               className="text-rose-700 hover:bg-rose-50"
               disabled={row.original.quantityInStock === 0}
-              onClick={() =>
-                setAdjusting({ product: row.original, type: "EXPORT" })
-              }
+              onClick={() => setAdjusting({ product: row.original, type: "EXPORT" })}
             >
               <ArrowUpFromLine className="size-4" />
               Xuất
@@ -240,7 +409,8 @@ export default function ProductsPage() {
         ),
       }),
     ],
-    [seesCost]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [seesCost, isAdmin, expandedId, linkDetails]
   );
 
   const table = useReactTable({
@@ -250,130 +420,314 @@ export default function ProductsPage() {
     manualPagination: true,
     pageCount,
   });
+  const colCount = table.getAllColumns().length;
+
+  /** Chi tiết liên kết của dòng đang bung. */
+  function renderExpanded(product: Product) {
+    const detail = linkDetails[product.id];
+    return (
+      <TableRow key={`${product.id}-links`} className="bg-muted/30 hover:bg-muted/30">
+        <TableCell colSpan={colCount} className="py-2 pl-8">
+          {!detail || detail === "loading" ? (
+            <p className={cn(TEXT_SUB, "flex items-center gap-2 py-1")}>
+              <Loader2 className="size-3.5 animate-spin" />
+              Đang tải chi tiết liên kết…
+            </p>
+          ) : (
+            <div className="space-y-1.5 border-l-2 border-border pl-4">
+              {detail.map((l) => {
+                const meta = CHANNEL_META[l.channelName];
+                return (
+                  <div key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta?.className ?? ""}`}
+                    >
+                      {meta?.label ?? l.channelName}
+                    </span>
+                    <span className="text-muted-foreground">{l.shopName}</span>
+                    <span className="font-mono text-xs">{l.channelSku}</span>
+                    {/* Trạng thái đẩy tồn gần nhất — Shopee còn được đối soát
+                        đọc lại; Lazada hiển thị "đã đẩy lúc" (sàn không cho đọc
+                        nhanh), tuyệt đối không vẽ số ảo. */}
+                    {l.hasAlert ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                        <XCircle className="size-3.5" />
+                        lệch tồn — xem cảnh báo phía trên
+                      </span>
+                    ) : l.lastSync ? (
+                      l.lastSync.status === "SUCCESS" ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+                          <CheckCircle2 className="size-3.5" />
+                          đã đẩy {formatNumber(l.lastSync.newQuantity)} lúc{" "}
+                          {new Date(l.lastSync.at).toLocaleTimeString("vi-VN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                          <XCircle className="size-3.5" />
+                          lượt đẩy gần nhất thất bại
+                        </span>
+                      )
+                    ) : (
+                      <span className={cn(TEXT_SUB, "text-xs")}>
+                        {l.pushable ? "chưa đẩy tồn lần nào" : "sàn chưa hỗ trợ đẩy tồn"}
+                      </span>
+                    )}
+                    {!l.channelActive && (
+                      <span className={cn(TEXT_SUB, "text-xs")}>(gian đã ngắt)</span>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleUnlinkOne(l, product.id)}
+                        className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-red-600 hover:underline"
+                      >
+                        <Link2Off className="size-3" />
+                        gỡ nối
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => jumpToLinks(product.skuCode)}
+                  className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                >
+                  <Link2 className="size-3" />
+                  Nối thêm gian cho SKU này
+                </button>
+              )}
+            </div>
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  }
+
+  const tabButton = (key: HubTab, label: string, badge?: number) => (
+    <button
+      type="button"
+      aria-pressed={tab === key}
+      onClick={() => {
+        if (key === "links") setLinkSeed(undefined);
+        setTab(key);
+      }}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
+        tab === key
+          ? "border-primary bg-primary text-primary-foreground"
+          : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+      )}
+    >
+      {label}
+      {badge !== undefined && badge > 0 && (
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+            tab === key
+              ? "bg-primary-foreground/20"
+              : "bg-amber-100 text-amber-800"
+          )}
+        >
+          {formatNumber(badge)}
+        </span>
+      )}
+    </button>
+  );
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
-            Kho vật lý — SKU nội bộ, tồn kho
-            {seesCost ? " và giá vốn" : ""} ({formatNumber(total)} sản phẩm).
-            Sản phẩm từ sàn được nối về đây tại trang Liên kết SP vào kho vật lý.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Kéo danh mục sàn về tầng đệm rồi đưa thẳng sang trang Liên kết
-                SP vào kho vật lý để nối — bước 2 của luồng "kho có trước". */}
-            {canManageShop(getStoredUser()) && (
-              <SyncChannelProductsButton
-                label="Kéo sản phẩm từ sàn về"
-                onSynced={() => router.push("/mappings")}
-              />
-            )}
-            <ImportExcelDialog onImported={load} />
-            <Button variant="outline" onClick={handleExport} disabled={exporting}>
-              {exporting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Download className="size-4" />
+      <div className="space-y-5">
+        {/* ===== THANH TAB + TRẠNG THÁI ĐỒNG BỘ ===== */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {tabButton("inventory", "Tồn kho")}
+            {isAdmin && tabButton("links", "Chờ liên kết", unlinkedCount)}
+          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              {syncState && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+                    syncState.autoSyncEnabled
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  )}
+                >
+                  <CloudUpload className="size-3.5" />
+                  Đồng bộ sàn: {syncState.autoSyncEnabled ? "BẬT" : "TẮT"}
+                  {syncState.pending > 0 && (
+                    <span className="flex items-center gap-1">
+                      · <Loader2 className="size-3 animate-spin" />
+                      {formatNumber(syncState.pending)}
+                    </span>
+                  )}
+                </span>
               )}
-              Xuất Excel
-            </Button>
-            <ProductFormDialog onCreated={load} />
-          </div>
-        </div>
-
-        {/* Cảnh báo lệch tồn với sàn — chỉ hiện khi có cảnh báo chưa xử lý */}
-        <SyncAlertBanner />
-
-        {/* Thanh tìm kiếm */}
-        <form onSubmit={handleSearch} className="flex max-w-md gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
-          </div>
-          <Button type="submit" variant="secondary">
-            Tìm kiếm
-          </Button>
-        </form>
-
-        <Card>
-          <CardContent className="p-0">
-            {error ? (
-              <p className="py-10 text-center text-sm text-amber-700">{error}</p>
-            ) : loading ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                Đang tải dữ liệu…
-              </p>
-            ) : items.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                {search
-                  ? `Không tìm thấy sản phẩm nào khớp với "${search}".`
-                  : "Chưa có sản phẩm nào. Bấm “Thêm sản phẩm mới” để bắt đầu."}
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  {table.getHeaderGroups().map((headerGroup) => (
-                    <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => (
-                        <TableHead key={header.id}>
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Phân trang */}
-        {pageCount > 1 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Trang {page} / {pageCount}
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="size-4" />
-                Trang trước
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= pageCount || loading}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Trang sau
-                <ChevronRight className="size-4" />
+              <Button variant="outline" size="sm" onClick={() => setSyncOpen(true)}>
+                <Settings2 className="size-4" />
+                Cài đặt
               </Button>
             </div>
-          </div>
+          )}
+        </div>
+
+        {tab === "links" && isAdmin ? (
+          <LinkManager
+            key={linkSeed ?? "all"}
+            initialSearch={linkSeed}
+            onChanged={() => {
+              load();
+              loadUnlinkedCount();
+            }}
+          />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-muted-foreground">
+                SKU nội bộ, tồn kho{seesCost ? " và giá vốn" : ""} (
+                {formatNumber(total)} sản phẩm) — cột “Bán trên” cho biết mỗi SKU
+                đang nối những gian nào.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <ImportExcelDialog onImported={load} />
+                <Button variant="outline" onClick={handleExport} disabled={exporting}>
+                  {exporting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Download className="size-4" />
+                  )}
+                  Xuất Excel
+                </Button>
+                <ProductFormDialog onCreated={load} />
+              </div>
+            </div>
+
+            {/* Cảnh báo lệch tồn với sàn — chỉ hiện khi có cảnh báo chưa xử lý */}
+            <SyncAlertBanner />
+
+            {/* Gợi ý xử lý SP sàn chưa nối — dẫn thẳng sang tab Chờ liên kết */}
+            {isAdmin && unlinkedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => jumpToLinks()}
+                className="flex w-full items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-primary/10"
+              >
+                <Sparkles className="size-4 shrink-0 text-primary" />
+                <span>
+                  Còn <b>{formatNumber(unlinkedCount)}</b> sản phẩm trên sàn chưa
+                  nối về kho — sang tab <b>Chờ liên kết</b> để tự khớp hoặc tạo
+                  SKU một cú bấm.
+                </span>
+                <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
+              </button>
+            )}
+
+            {/* Thanh tìm kiếm */}
+            <form onSubmit={handleSearch} className="flex max-w-md gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+              </div>
+              <Button type="submit" variant="secondary">
+                Tìm kiếm
+              </Button>
+            </form>
+
+            <Card>
+              <CardContent className="p-0">
+                {error ? (
+                  <p className="py-10 text-center text-sm text-amber-700">{error}</p>
+                ) : loading ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    Đang tải dữ liệu…
+                  </p>
+                ) : items.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    {search
+                      ? `Không tìm thấy sản phẩm nào khớp với "${search}".`
+                      : "Chưa có sản phẩm nào. Bấm “Thêm sản phẩm mới” để bắt đầu."}
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      {table.getHeaderGroups().map((headerGroup) => (
+                        <TableRow key={headerGroup.id}>
+                          {headerGroup.headers.map((header) => (
+                            <TableHead key={header.id}>
+                              {flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableHeader>
+                    <TableBody>
+                      {table.getRowModel().rows.flatMap((row) => {
+                        const rendered = [
+                          <TableRow key={row.id}>
+                            {row.getVisibleCells().map((cell) => (
+                              <TableCell key={cell.id}>
+                                {flexRender(
+                                  cell.column.columnDef.cell,
+                                  cell.getContext()
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>,
+                        ];
+                        if (expandedId === row.original.id) {
+                          rendered.push(renderExpanded(row.original));
+                        }
+                        return rendered;
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Phân trang */}
+            {pageCount > 1 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Trang {page} / {pageCount}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1 || loading}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="size-4" />
+                    Trang trước
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= pageCount || loading}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Trang sau
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -387,6 +741,15 @@ export default function ProductsPage() {
             if (!open) setAdjusting(null);
           }}
           onDone={load}
+        />
+      )}
+
+      {/* Cài đặt đồng bộ tồn kho (chỉ chủ shop) */}
+      {isAdmin && (
+        <SyncSettingsDialog
+          open={syncOpen}
+          onOpenChange={setSyncOpen}
+          onStateChange={setSyncState}
         />
       )}
     </AppShell>

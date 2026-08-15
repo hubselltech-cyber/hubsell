@@ -101,10 +101,10 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
-      { href: "/products", label: "Kho vật lý", perm: "warehouse.products" },
-      // Switch tự động + tồn an toàn + sync tay — Hubsell ghi đè tồn sàn nên
-      // VĨNH VIỄN chỉ chủ shop (backend cũng chặn 403 độc lập với UI).
-      { href: "/warehouse/sync", label: "Đồng bộ tồn kho", adminOnly: true },
+      // HUB "HÀNG HÓA" (chốt 15/08): gộp Kho vật lý + Liên kết sản phẩm + Đồng
+      // bộ tồn kho vào MỘT trang — tab Tồn kho / Chờ liên kết + dialog Cài đặt
+      // đồng bộ. Route cũ /mappings, /warehouse/sync redirect về đây.
+      { href: "/products", label: "Hàng hóa", perm: "warehouse.products" },
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn", perm: "warehouse.returns" },
       // Điều chuyển từ nhóm Tài chính sang (nghiệp vụ đối soát vận chuyển sát
       // với kho vận); route cũ /finance/shipping-alerts vẫn redirect về đây.
@@ -168,9 +168,8 @@ const NAV_ITEMS: NavItem[] = [
   },
   // "store" thay "storefront": nhà mái hiên có CỬA GIỮA (anh Trung 08/08).
   { href: "/channels", label: "Kênh bán", icon: "store", adminOnly: true },
-  // Nhãn sidebar để ngắn cho khỏi xuống dòng; tên đầy đủ "Liên kết SP vào kho
-  // vật lý" nằm ở tiêu đề trang (PAGE_TITLES) và cột bảng.
-  { href: "/mappings", label: "Liên kết sản phẩm", icon: "link", adminOnly: true },
+  // "Liên kết sản phẩm" đã GỘP vào hub Hàng hóa (tab Chờ liên kết) — /mappings
+  // redirect về /products?tab=links, không còn mục sidebar riêng.
   { href: "/staff", label: "Nhân viên", icon: "group", adminOnly: true },
 ];
 
@@ -257,11 +256,11 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/admin", title: "Điều hành Hubsell" },
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
-  { prefix: "/products", title: "Kho vật lý" },
-  { prefix: "/warehouse/sync", title: "Đồng bộ tồn kho đa sàn" },
+  { prefix: "/products", title: "Hàng hóa" },
+  { prefix: "/warehouse/sync", title: "Hàng hóa" }, // redirect về hub — tránh nháy tiêu đề lạ
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
-  { prefix: "/mappings", title: "Liên kết SP vào kho vật lý" },
+  { prefix: "/mappings", title: "Hàng hóa" }, // redirect về hub — tránh nháy tiêu đề lạ
   { prefix: "/staff", title: "Quản lý nhân viên" },
   { prefix: "/affiliate", title: "Kiếm Tiền Cùng Hubsell" },
   { prefix: "/settings/general", title: "Cấu hình chung" },
