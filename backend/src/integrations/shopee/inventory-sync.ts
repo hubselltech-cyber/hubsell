@@ -19,6 +19,7 @@
 import { ChannelName, StockSyncStatus, WebhookJobStatus } from "@prisma/client";
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../prisma";
+import { availableToPush } from "../inventory-push";
 import {
   getItemBaseInfo,
   getModelList,
@@ -71,8 +72,9 @@ export interface StockSyncRequest {
   oldAvailable: Record<string, number>;
 }
 
-/** Bóc (item_id, model_id) từ ChannelProduct.externalId ("123" | "123-456"). */
-function parseShopeeExternalId(
+/** Bóc (item_id, model_id) từ ChannelProduct.externalId ("123" | "123-456").
+ *  Export cho worker đẩy tồn đa sàn (stock-push-worker) dùng chung. */
+export function parseShopeeExternalId(
   externalId: string | null
 ): { itemId: number; modelId?: number } | null {
   const m = /^(\d+)(?:-(\d+))?$/.exec(externalId ?? "");
@@ -96,10 +98,27 @@ export async function syncShopeeStockForProducts(
     // khác chen vào; đẩy số hiện tại luôn an toàn hơn số tính từ trước.
     const products = await prisma.product.findMany({
       where: { id: { in: req.productIds } },
-      select: { id: true, skuCode: true, quantityInStock: true, holdQuantity: true },
+      select: {
+        id: true,
+        userId: true,
+        skuCode: true,
+        quantityInStock: true,
+        holdQuantity: true,
+        safetyStock: true,
+      },
     });
     if (products.length === 0) return summary;
     const byProduct = new Map(products.map((p) => [p.id, p]));
+
+    // Tồn an toàn mặc định theo chủ shop (SKU không đặt riêng thì dùng số này).
+    const ownerIds = [...new Set(products.map((p) => p.userId))];
+    const settings = await prisma.shopSyncSetting.findMany({
+      where: { userId: { in: ownerIds } },
+      select: { userId: true, safetyStockDefault: true },
+    });
+    const safetyDefaultByOwner = new Map(
+      settings.map((s) => [s.userId, s.safetyStockDefault])
+    );
 
     const mappings = await prisma.channelProduct.findMany({
       where: {
@@ -159,9 +178,13 @@ export async function syncShopeeStockForProducts(
         const ids = parseShopeeExternalId(mp.externalId);
         if (!ids) continue; // mapping cũ chưa có externalId chuẩn — bỏ qua
 
-        const available = product.quantityInStock - product.holdQuantity;
-        // Sàn không nhận tồn âm — âm nghĩa là ĐÃ bán vượt, đẩy 0 để chặn bán thêm.
-        const pushValue = Math.max(0, available);
+        // Tồn khả dụng = tồn − hold − tồn an toàn; âm nghĩa là ĐÃ bán vượt,
+        // availableToPush tự chặn sàn 0 (sàn không nhận tồn âm).
+        const pushValue = availableToPush(
+          product,
+          safetyDefaultByOwner.get(product.userId) ?? 0
+        );
+        const available = pushValue;
 
         let lastError = "";
         let ok = false;
@@ -276,8 +299,9 @@ function source(req: StockSyncRequest): string {
  * upsert: nhiều lượt đẩy liên tiếp cho cùng SKU GỘP về một job đối soát duy
  * nhất, tự dời giờ hẹn và reset số lần thử — worker chỉ đối soát trạng thái
  * MỚI NHẤT thay vì rượt đuổi từng lượt đẩy cũ. Best-effort: lỗi DB chỉ log.
+ * Export cho worker đẩy tồn đa sàn (stock-push-worker) hẹn đối soát sau khi đẩy.
  */
-async function scheduleStockVerification(
+export async function scheduleStockVerification(
   channel: Channel,
   payload: StockVerifyPayload
 ): Promise<void> {
@@ -333,11 +357,21 @@ export async function verifyStockPush(
   });
   const product = await prisma.product.findUnique({
     where: { id: payload.productId },
-    select: { quantityInStock: true, holdQuantity: true },
+    select: {
+      userId: true,
+      quantityInStock: true,
+      holdQuantity: true,
+      safetyStock: true,
+    },
   });
   if (!channel || !product) return { outcome: "gone" };
 
-  const expected = Math.max(0, product.quantityInStock - product.holdQuantity);
+  // Cùng MỘT công thức với chiều đẩy — lệch công thức là đối soát báo sai mãi.
+  const setting = await prisma.shopSyncSetting.findUnique({
+    where: { userId: product.userId },
+    select: { safetyStockDefault: true },
+  });
+  const expected = availableToPush(product, setting?.safetyStockDefault ?? 0);
   const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
 
   // Đọc tồn thực tế: sản phẩm có phân loại nằm ở get_model_list, đơn ở base_info.
@@ -387,16 +421,19 @@ export async function createSyncAlert(
 
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
-      select: { userId: true, shopName: true },
+      select: { userId: true, shopName: true, channelName: true },
     });
     if (channel) {
+      // Nhãn sàn theo gian thật — hàm này giờ phục vụ cả Shopee lẫn Lazada.
+      const platform =
+        channel.channelName === ChannelName.LAZADA ? "Lazada" : "Shopee";
       await prisma.opsActivity.create({
         data: {
           ownerId: channel.userId,
           tag: "channel", // nhãn [SÀN] trên Trung tâm điều hành
           message: data.channelSku
-            ? `⚠️ Cập nhật tồn kho Shopee cho SKU ${data.channelSku} (${channel.shopName}) thất bại sau 3 lần thử lại — lệch tồn giữa sàn và hệ thống.`
-            : `⚠️ Đồng bộ Shopee với gian "${channel.shopName}" gặp sự cố — xem cảnh báo trên Trung tâm điều hành.`,
+            ? `⚠️ Cập nhật tồn kho ${platform} cho SKU ${data.channelSku} (${channel.shopName}) thất bại sau 3 lần thử lại — lệch tồn giữa sàn và hệ thống.`
+            : `⚠️ Đồng bộ ${platform} với gian "${channel.shopName}" gặp sự cố — xem cảnh báo trên Trung tâm điều hành.`,
         },
       });
     }

@@ -41,6 +41,11 @@ interface NavChild {
    * nhóm cha (nhóm nguyên khối như KOC/Hóa đơn & Thuế).
    */
   perm?: string;
+  /**
+   * Trang con VĨNH VIỄN CHỈ CHỦ SHOP nằm trong một nhóm nhân viên vẫn thấy
+   * (vd "Đồng bộ tồn kho" trong Quản lý Kho) — nhân viên không bao giờ thấy.
+   */
+  adminOnly?: boolean;
 }
 interface NavItem {
   href?: string;
@@ -97,6 +102,9 @@ const NAV_ITEMS: NavItem[] = [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
       { href: "/products", label: "Kho vật lý", perm: "warehouse.products" },
+      // Switch tự động + tồn an toàn + sync tay — Hubsell ghi đè tồn sàn nên
+      // VĨNH VIỄN chỉ chủ shop (backend cũng chặn 403 độc lập với UI).
+      { href: "/warehouse/sync", label: "Đồng bộ tồn kho", adminOnly: true },
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn", perm: "warehouse.returns" },
       // Điều chuyển từ nhóm Tài chính sang (nghiệp vụ đối soát vận chuyển sát
       // với kho vận); route cũ /finance/shipping-alerts vẫn redirect về đây.
@@ -250,6 +258,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },
   { prefix: "/products", title: "Kho vật lý" },
+  { prefix: "/warehouse/sync", title: "Đồng bộ tồn kho đa sàn" },
   { prefix: "/warehouse/returns", title: "Đối soát đơn hoàn" },
   { prefix: "/channels", title: "Cấu hình kết nối" },
   { prefix: "/mappings", title: "Liên kết SP vào kho vật lý" },
@@ -439,7 +448,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const visibleChildren = (i: NavItem): NavItem => {
     if (!i.children) return i;
     const children = i.children.filter(
-      (c) => isAdmin(user) || !c.perm || can(user, c.perm)
+      (c) =>
+        (!c.adminOnly || isAdmin(user)) &&
+        (isAdmin(user) || !c.perm || can(user, c.perm))
     );
     return { ...i, children };
   };

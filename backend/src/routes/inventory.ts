@@ -1,8 +1,13 @@
 import { Router } from "express";
-import { InventoryLogType } from "@prisma/client";
+import { InventoryLogType, Role } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { syncShopeeStockForProducts } from "../integrations/shopee/inventory-sync";
+import {
+  countPendingJobs,
+  enqueueStockPush,
+  enqueueStockPushForOwner,
+} from "../integrations/inventory-push";
 
 const router = Router();
 
@@ -69,6 +74,12 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
       });
 
       return { product: updated, log };
+    });
+
+    // Kho vừa biến động tay → xếp job đẩy tồn khả dụng mới lên các sàn đã liên
+    // kết (sau commit, best-effort — không chặn response).
+    await enqueueStockPush([productId], {
+      source: type === "IMPORT" ? "nhập kho thủ công" : "xuất kho thủ công",
     });
 
     res.json(result);
@@ -305,6 +316,126 @@ router.get("/sync-logs", async (req: AuthRequest, res, next) => {
         createdAt: l.createdAt,
       }))
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// CẤU HÌNH ĐỒNG BỘ TỒN KHO ĐA SÀN (trang Quản lý Kho → Đồng bộ tồn kho)
+// CHỈ CHỦ SHOP: bật switch = Hubsell trở thành nguồn sự thật GHI ĐÈ tồn sàn —
+// quyết định cấp shop, không nằm trong cây phân quyền nhân viên.
+// ============================================================
+
+function requireShopOwner(req: AuthRequest, res: import("express").Response): boolean {
+  if (req.userRole !== Role.ADMIN) {
+    res.status(403).json({ error: "Chỉ chủ shop mới được cấu hình đồng bộ tồn kho" });
+    return false;
+  }
+  return true;
+}
+
+// GET /api/inventory/sync-settings — cấu hình hiện tại + số job đang chờ đẩy.
+router.get("/sync-settings", async (req: AuthRequest, res, next) => {
+  try {
+    if (!requireShopOwner(req, res)) return;
+    const setting = await prisma.shopSyncSetting.findUnique({
+      where: { userId: req.ownerId! },
+      select: { autoSyncEnabled: true, safetyStockDefault: true, updatedAt: true },
+    });
+    res.json({
+      autoSyncEnabled: setting?.autoSyncEnabled ?? false,
+      safetyStockDefault: setting?.safetyStockDefault ?? 0,
+      updatedAt: setting?.updatedAt ?? null,
+      pendingJobs: await countPendingJobs(req.ownerId!),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/inventory/sync-settings — Body: { autoSyncEnabled?, safetyStockDefault? }
+// Bật autoSync (OFF→ON) hoặc đổi tồn an toàn khi đang ON → tự xếp job đẩy lại
+// TOÀN BỘ SKU đã liên kết (đưa tồn sàn về khớp ngay, không chờ biến động sau).
+router.put("/sync-settings", async (req: AuthRequest, res, next) => {
+  try {
+    if (!requireShopOwner(req, res)) return;
+    const { autoSyncEnabled, safetyStockDefault } = req.body ?? {};
+
+    if (autoSyncEnabled !== undefined && typeof autoSyncEnabled !== "boolean") {
+      res.status(400).json({ error: "autoSyncEnabled phải là true/false" });
+      return;
+    }
+    let safety: number | undefined;
+    if (safetyStockDefault !== undefined) {
+      safety = Number(safetyStockDefault);
+      if (!Number.isInteger(safety) || safety < 0) {
+        res.status(400).json({ error: "Tồn an toàn phải là số nguyên không âm" });
+        return;
+      }
+    }
+
+    const before = await prisma.shopSyncSetting.findUnique({
+      where: { userId: req.ownerId! },
+      select: { autoSyncEnabled: true, safetyStockDefault: true },
+    });
+    const updated = await prisma.shopSyncSetting.upsert({
+      where: { userId: req.ownerId! },
+      update: {
+        ...(autoSyncEnabled !== undefined ? { autoSyncEnabled } : {}),
+        ...(safety !== undefined ? { safetyStockDefault: safety } : {}),
+      },
+      create: {
+        userId: req.ownerId!,
+        autoSyncEnabled: autoSyncEnabled ?? false,
+        safetyStockDefault: safety ?? 0,
+      },
+    });
+
+    // Cấu hình mới làm đổi số tồn cần đẩy → sync lại toàn bộ khi:
+    //   (a) vừa BẬT autoSync (đưa tồn mọi sàn về khớp Hubsell ngay), hoặc
+    //   (b) đang ON và đổi tồn an toàn mặc định (available đổi hàng loạt).
+    const justEnabled = updated.autoSyncEnabled && !before?.autoSyncEnabled;
+    const safetyChanged =
+      safety !== undefined && safety !== (before?.safetyStockDefault ?? 0);
+    let queued = 0;
+    if (justEnabled || (updated.autoSyncEnabled && safetyChanged)) {
+      queued = (
+        await enqueueStockPushForOwner(
+          req.ownerId!,
+          justEnabled ? "bật tự động đồng bộ tồn" : "đổi tồn an toàn mặc định"
+        )
+      ).queued;
+    }
+
+    res.json({
+      autoSyncEnabled: updated.autoSyncEnabled,
+      safetyStockDefault: updated.safetyStockDefault,
+      queued,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/inventory/sync-all — nút [Sync ngay toàn bộ]: đẩy lại tồn khả dụng
+// của MỌI SKU đã liên kết lên mọi gian Shopee/Lazada, bất kể switch autoSync.
+router.post("/sync-all", async (req: AuthRequest, res, next) => {
+  try {
+    if (!requireShopOwner(req, res)) return;
+    const r = await enqueueStockPushForOwner(req.ownerId!, "sync tay toàn bộ");
+    res.json({ queued: r.queued });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/inventory/sync-pending — số job còn chờ trong hàng đợi (UI poll
+// để vẽ tiến độ sau khi bấm sync toàn bộ; nhẹ, gọi mỗi vài giây được).
+router.get("/sync-pending", async (req: AuthRequest, res, next) => {
+  try {
+    if (!requireShopOwner(req, res)) return;
+    res.json({ pending: await countPendingJobs(req.ownerId!) });
   } catch (err) {
     next(err);
   }

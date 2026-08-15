@@ -49,6 +49,9 @@ export const LAZADA_PATHS = {
   orderItemsGet: "/orders/items/get",
   /** Danh sách sản phẩm của shop (phân trang offset/limit ≤50). */
   productsGet: "/products/get",
+  /** Đặt tồn KHẢ BÁN tuyệt đối cho SKU (UpdateSellableQuantity — payload XML,
+   *  đã đối chiếu tài liệu open.lazada.com 15/08/2026; ≤50 SKU/lần, khuyến nghị 20). */
+  stockSellableUpdate: "/product/stock/sellable/update",
   /** Sao kê giao dịch tài chính CHI TIẾT theo dòng phí (Finance API, READ-ONLY). */
   transactionDetails: "/finance/transaction/details/get",
   /** Danh sách ĐỢT CHI TIỀN (payout) về ngân hàng theo kỳ sao kê (READ-ONLY). */

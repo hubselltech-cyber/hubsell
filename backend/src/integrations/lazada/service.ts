@@ -17,6 +17,13 @@ import { prisma } from "../../prisma";
 import { CHANNEL_LABEL } from "../../mockMarketplace";
 import { carrierFromName } from "../../shipping";
 import {
+  deductStockTx,
+  holdStockTx,
+  releaseStockHoldTx,
+  restoreStockTx,
+} from "../order-stock";
+import { enqueueStockPush } from "../inventory-push";
+import {
   createToken,
   getMultipleOrderItems,
   getOrders,
@@ -325,6 +332,35 @@ function mapLazadaStatus(status?: string): ShippingStatus {
 }
 
 /**
+ * Trạng thái Lazada mà đơn đã CHỐT (khách đã thanh toán / COD xác nhận) → trừ
+ * kho thật. Mirror shouldDeductShopeeStock: loại "unpaid" (chưa chắc — chỉ
+ * hold), nhóm hủy (hoàn kho, xử lý riêng) và trạng thái lạ (không đụng kho).
+ * Lưu ý "pending" của Lazada là ĐÃ thanh toán chờ xử lý (khác UNPAID Shopee).
+ */
+function lazadaShouldDeductStock(status?: string): boolean {
+  switch (status) {
+    case "pending":
+    case "packed":
+    case "repacked":
+    case "ready_to_ship":
+    case "ready_to_ship_pending":
+    case "shipped":
+    case "shipping":
+    case "delivered":
+    case "confirmed":
+    case "returned": // đã giao rồi mới hoàn — cộng kho là việc của luồng nhận hàng hoàn
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** Đơn CHƯA CHỐT (khách chưa thanh toán) — GIỮ tồn khả dụng, chưa trừ thật. */
+function lazadaShouldHoldStock(status?: string): boolean {
+  return status === "unpaid";
+}
+
+/**
  * Đơn Lazada đang HOÀN/TRẢ → cờ trên trục returnStatus (độc lập shippingStatus).
  * Nhận diện mọi trạng thái chứa "return" (returned / return_initiated /
  * shipped_back...). CHỈ nhận diện, KHÔNG tự cộng kho — cộng kho khi hàng về là
@@ -470,23 +506,88 @@ export async function syncLazadaOrders(
       } else {
         result.updated++;
       }
+      // Kho biến động → xếp job đẩy tồn khả dụng mới lên MỌI gian đã liên kết
+      // (SAU commit; enqueue chỉ ghi DB, không gọi API sàn — không chậm vòng quét).
+      if (outcome.stockSync) {
+        await enqueueStockPush(outcome.stockSync.productIds, {
+          source: `đồng bộ Lazada đơn ${order.order_number ?? order.order_id}`,
+          oldAvailable: outcome.stockSync.oldAvailable,
+        });
+      }
     }
   }
 
   return result;
 }
 
+export interface LazadaOrderUpsertResult {
+  created: boolean;
+  itemsCreated: number;
+  /**
+   * Kho có biến động (hold/trừ/hoàn) → tầng gọi enqueue đẩy tồn SAU khi
+   * transaction commit. oldAvailable là snapshot tồn khả dụng TRƯỚC biến động
+   * (cột "số cũ" của nhật ký sync) — mirror stockSync của Shopee.
+   */
+  stockSync?: { productIds: string[]; oldAvailable: Record<string, number> };
+}
+
+/**
+ * TÁC ĐỘNG TỒN KHO cho một đơn Lazada theo trạng thái đại diện — dùng chung
+ * lõi order-stock.ts với Shopee/TikTok nên idempotent tuyệt đối (vòng quét 10'
+ * và webhook LPM đẩy lại cùng đơn bao nhiêu lần cũng không trừ trùng):
+ *   unpaid → HOLD; đã chốt (pending/packed/.../delivered) → TRỪ thật;
+ *   nhóm hủy (canceled/failed_delivery...) → nhả hold + hoàn kho.
+ * Đơn lịch sử trước deploy đã được migration đóng dấu stockDeductedAt nên
+ * không bị trừ kho retroactive.
+ */
+async function applyLazadaStockTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  repStatus: string | undefined
+): Promise<LazadaOrderUpsertResult["stockSync"]> {
+  const itemRows = await tx.orderItem.findMany({
+    where: { orderId, productId: { not: null } },
+    select: { productId: true },
+  });
+  const ids = [...new Set(itemRows.map((i) => i.productId!))];
+  if (ids.length === 0) return undefined;
+
+  // Snapshot tồn khả dụng TRƯỚC biến động — chụp trong transaction.
+  const before = await tx.product.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, quantityInStock: true, holdQuantity: true },
+  });
+  const oldAvailable = Object.fromEntries(
+    before.map((p) => [p.id, p.quantityInStock - p.holdQuantity])
+  );
+
+  let touched: string[] = [];
+  if (mapLazadaStatus(repStatus) === ShippingStatus.CANCELLED) {
+    // Đơn hủy: nhả hold (nếu chưa từng chốt) + hoàn kho (nếu đã trừ thật).
+    const rel = await releaseStockHoldTx(tx, orderId);
+    const r = await restoreStockTx(tx, orderId, "đồng bộ Lazada");
+    touched = [...new Set([...rel.productIds, ...r.productIds])];
+  } else if (lazadaShouldDeductStock(repStatus)) {
+    touched = (await deductStockTx(tx, orderId, "đồng bộ Lazada")).productIds;
+  } else if (lazadaShouldHoldStock(repStatus)) {
+    touched = (await holdStockTx(tx, orderId)).productIds;
+  }
+  if (touched.length === 0) return undefined;
+  return { productIds: touched, oldAvailable };
+}
+
 /**
  * Tạo mới / cập nhật MỘT đơn Lazada trong transaction. Tạo mới kèm OrderItem +
  * snapshot giá vốn; đã tồn tại thì chỉ cập nhật trường biến động (trạng thái,
  * tổng tiền) — không đụng OrderItem để giữ nguyên snapshot. Mirror Shopee.
+ * Kèm tác động tồn kho (hold/trừ/hoàn) — xem applyLazadaStockTx.
  */
 export async function upsertLazadaOrderTx(
   tx: Prisma.TransactionClient,
   channel: Channel,
   order: LazadaOrder,
   items: LazadaOrderItem[]
-): Promise<{ created: boolean; itemsCreated: number }> {
+): Promise<LazadaOrderUpsertResult> {
   const orderCode = String(order.order_number ?? order.order_id);
   const totalAmount = Number(order.price ?? 0) || 0;
   const repStatus = pickLazadaStatus(order.statuses);
@@ -587,7 +688,8 @@ export async function upsertLazadaOrderTx(
       },
     });
     await writeShipDetail(existing.id);
-    return { created: false, itemsCreated: 0 };
+    const stockSync = await applyLazadaStockTx(tx, existing.id, repStatus);
+    return { created: false, itemsCreated: 0, stockSync };
   }
 
   const lines = aggregateLazadaItems(items);
@@ -643,7 +745,8 @@ export async function upsertLazadaOrderTx(
     });
   }
 
-  return { created: true, itemsCreated: lines.length };
+  const stockSync = await applyLazadaStockTx(tx, created.id, repStatus);
+  return { created: true, itemsCreated: lines.length, stockSync };
 }
 
 

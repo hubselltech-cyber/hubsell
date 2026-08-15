@@ -5,6 +5,7 @@ import https from "https";
 import { createApp } from "./app";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
+import { startStockPushWorker } from "./integrations/stock-push-worker";
 import { startTokenRefreshWorker } from "./token-refresh";
 
 const PORT = Number(process.env.PORT) || 4000;
@@ -19,6 +20,9 @@ startTokenRefreshWorker();
 // Cron dọn log kỹ thuật (hàng đợi webhook, nhật ký đẩy tồn) — xoay vòng
 // 7/30 ngày giữ database Supabase Free không phình vô hạn theo log.
 startLogCleanupWorker();
+// Worker đẩy tồn khả dụng đa sàn (Shopee + Lazada) — tiêu thụ hàng đợi bền
+// stock_push_jobs do mọi luồng biến động kho enqueue vào.
+startStockPushWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

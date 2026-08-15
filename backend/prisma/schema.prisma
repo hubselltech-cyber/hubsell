@@ -255,6 +255,9 @@ model User {
   // Cấu hình hóa đơn điện tử & chữ ký số (Multi-Vendor Adapter).
   invoiceConfigs InvoiceConfig[]
 
+  // Cấu hình Đồng bộ tồn kho đa sàn (switch tự động + tồn an toàn mặc định).
+  syncSetting ShopSyncSetting?
+
   // Module Hóa đơn & Thuế: cấu hình thuế bổ sung + lịch sử phát hành hóa đơn.
   taxSetting  ShopTaxSetting?
   invoiceLogs InvoiceLog[]
@@ -343,6 +346,7 @@ model Channel {
   adsActionLogs   AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
+  stockPushJobs       StockPushJob[]       // hàng đợi đẩy tồn khả dụng lên gian này
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
@@ -845,6 +849,12 @@ model Product {
   /// Tồn KHẢ DỤNG (đẩy lên sàn / hiển thị) = quantityInStock − holdQuantity.
   /// KHÔNG trừ thẳng quantityInStock vì hàng vẫn nằm trong kho vật lý.
   holdQuantity    Int      @default(0)
+
+  /// TỒN AN TOÀN riêng của SKU này — số lượng giữ lại KHÔNG bán trên sàn (đệm
+  /// chống bán vượt khi nhiều sàn nổ đơn sát nhau). NULL = dùng số mặc định
+  /// toàn shop (ShopSyncSetting.safetyStockDefault). Tồn đẩy lên sàn =
+  /// max(0, quantityInStock − holdQuantity − safetyStock).
+  safetyStock     Int?
   imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
 
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
@@ -1294,6 +1304,71 @@ model InventorySyncAlert {
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@index([channelId, resolvedAt])
+}
+
+/// CẤU HÌNH ĐỒNG BỘ TỒN KHO ĐA SÀN của một chủ shop (trang Quản lý Kho →
+/// Đồng bộ tồn kho). Không có bản ghi = mặc định: autoSync TẮT, tồn an toàn 0.
+model ShopSyncSetting {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  /// BẬT thì mọi biến động kho (đơn sàn, nhập/xuất tay, nhập hàng hoàn...) tự
+  /// đẩy tồn khả dụng lên các gian đã liên kết SKU. TẮT (mặc định) thì chỉ nút
+  /// [Sync ngay toàn bộ] và force-sync theo cảnh báo mới đẩy — an toàn cho shop
+  /// mới chưa nhập đúng tồn kho vật lý (tránh ghi đè tồn sàn bằng số 0).
+  autoSyncEnabled Boolean @default(false)
+
+  /// Tồn an toàn MẶC ĐỊNH toàn shop — SKU nào không đặt riêng
+  /// (Product.safetyStock = null) thì dùng số này.
+  safetyStockDefault Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("shop_sync_settings")
+}
+
+enum StockPushStatus {
+  PENDING // chờ worker nhặt (kể cả đang chờ đến giờ retry)
+  RUNNING // worker đang đẩy — enqueue mới trong lúc này sẽ ghi đè về PENDING
+}
+
+/// HÀNG ĐỢI ĐẨY TỒN ĐA SÀN — mỗi dòng là "cần đẩy tồn khả dụng mới nhất của
+/// (gian × SKU sàn) lên sàn". UNIQUE (channelId, channelSku) để GỘP: 10 biến
+/// động liên tiếp của cùng SKU chỉ còn 1 job, worker luôn đọc số MỚI NHẤT lúc
+/// đẩy nên không cần rượt đuổi từng biến động (tự chống bão rate-limit).
+/// Job xong (thành công hoặc hết lượt retry) là XÓA — audit nằm ở
+/// InventorySyncLog, cảnh báo nằm ở InventorySyncAlert; bảng này luôn nhỏ.
+model StockPushJob {
+  id         String @id @default(cuid())
+  channelId  String
+  /// SKU trên sàn (ChannelProduct.channelSku) — worker đọc lại mapping theo cặp
+  /// (channelId, channelSku) lúc đẩy; mapping đã bị gỡ thì job tự hủy.
+  channelSku String
+  productId  String
+
+  /// Tồn khả dụng TRƯỚC biến động đầu tiên (snapshot lúc enqueue lần đầu) —
+  /// chỉ phục vụ cột "số cũ" của InventorySyncLog; số đẩy luôn đọc mới nhất.
+  oldAvailable Int?
+  /// true = người dùng chủ động bấm sync (bỏ qua switch autoSyncEnabled).
+  forced       Boolean @default(false)
+  /// Nguồn biến động để ghi vào log (vd "webhook Shopee đơn X", "nhập kho tay").
+  source       String?
+
+  status      StockPushStatus @default(PENDING)
+  attempts    Int             @default(0)
+  nextRetryAt DateTime        @default(now())
+  lastError   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, channelSku])
+  @@index([status, nextRetryAt])
+  @@map("stock_push_jobs")
 }
 
 /// SAO KÊ QUYẾT TOÁN LAZADA CHI TIẾT — mỗi đơn Lazada MỘT dòng, số CÓ DẤU

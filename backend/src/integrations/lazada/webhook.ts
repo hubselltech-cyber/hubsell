@@ -19,6 +19,7 @@ import { prisma } from "../../prisma";
 import { getLazadaConfig, type LazadaConfig } from "./config";
 import { getMultipleOrderItems, getOrder } from "./client";
 import { getValidLazadaAccessToken, upsertLazadaOrderTx } from "./service";
+import { enqueueStockPush } from "../inventory-push";
 
 // ---------- 1. Xác thực chữ ký ----------
 
@@ -81,8 +82,9 @@ export const LAZADA_MSG_ORDER = 0;
 /**
  * Kéo chi tiết một đơn từ API rồi upsert vào DB — dùng chung upsertLazadaOrderTx
  * với luồng đồng bộ lô nên idempotent tuyệt đối (LPM là "at least once", push
- * trùng là bình thường). CỐ Ý không đụng tồn kho — nhất quán với đồng bộ lô
- * Lazada hiện tại (trừ kho real-time là bước nâng cấp riêng nếu làm).
+ * trùng là bình thường). Tồn kho biến động ngay trong transaction (hold/trừ/
+ * hoàn — xem applyLazadaStockTx); SAU commit xếp job đẩy tồn khả dụng mới lên
+ * các sàn đã liên kết.
  */
 export async function processLazadaOrderPush(
   channel: Channel,
@@ -95,7 +97,16 @@ export async function processLazadaOrderPush(
     (await getMultipleOrderItems(accessToken, [tradeOrderId])).get(
       String(tradeOrderId)
     ) ?? [];
-  return prisma.$transaction((tx) => upsertLazadaOrderTx(tx, channel, order, items));
+  const outcome = await prisma.$transaction((tx) =>
+    upsertLazadaOrderTx(tx, channel, order, items)
+  );
+  if (outcome.stockSync) {
+    await enqueueStockPush(outcome.stockSync.productIds, {
+      source: `webhook Lazada đơn ${order.order_number ?? tradeOrderId}`,
+      oldAvailable: outcome.stockSync.oldAvailable,
+    });
+  }
+  return outcome;
 }
 
 /**

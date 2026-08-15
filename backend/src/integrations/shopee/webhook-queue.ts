@@ -28,11 +28,11 @@ import { syncShopeeEscrowEstimateForOrder } from "./settlements";
 import {
   createSyncAlert,
   STOCK_VERIFY_EVENT_CODE,
-  syncShopeeStockForProducts,
   VERIFY_DELAY_MS,
   verifyStockPush,
   type StockVerifyPayload,
 } from "./inventory-sync";
+import { enqueueStockPush } from "../inventory-push";
 
 /** Tổng số lần thử một job (1 lần đầu + 2 lần retry). */
 const MAX_ATTEMPTS = 3;
@@ -154,10 +154,17 @@ async function drain(): Promise<void> {
           },
         });
 
-        // Đẩy tồn khả dụng mới lên sàn SAU khi job đơn hàng đã chốt xong —
-        // hàm này tự retry + ghi log + bắn cảnh báo, không bao giờ ném.
+        // Kho biến động → xếp job đẩy tồn khả dụng mới lên MỌI gian đã liên
+        // kết (Shopee lẫn Lazada) vào hàng đợi đa sàn. Chỉ 1 upsert/SKU-gian,
+        // worker stock-push-worker tự đẩy + retry + log + cảnh báo; switch
+        // autoSyncEnabled của chủ shop được tôn trọng ngay ở cửa enqueue.
         if (stockSync) {
-          await syncShopeeStockForProducts(stockSync);
+          await enqueueStockPush(stockSync.productIds, {
+            source: stockSync.orderSn
+              ? `webhook Shopee đơn ${stockSync.orderSn}`
+              : "webhook Shopee",
+            oldAvailable: stockSync.oldAvailable,
+          });
         }
 
         // PHÍ TẠM TÍNH REAL-TIME: đơn vừa có sự kiện → kéo luôn số ước tính

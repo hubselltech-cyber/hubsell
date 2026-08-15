@@ -1015,6 +1015,48 @@ export function resolveSyncAlert(id: string) {
   });
 }
 
+// ----- Cấu hình Đồng bộ tồn kho đa sàn (trang /warehouse/sync) -----
+
+export interface SyncSettings {
+  autoSyncEnabled: boolean;
+  safetyStockDefault: number;
+  updatedAt: string | null;
+  /** Số job đang chờ trong hàng đợi đẩy tồn — vẽ tiến độ sau khi sync tay. */
+  pendingJobs: number;
+}
+
+export function fetchSyncSettings() {
+  return apiFetch<SyncSettings>("/api/inventory/sync-settings");
+}
+
+/** Lưu cấu hình; backend tự xếp job sync lại toàn bộ khi vừa bật switch
+ *  hoặc đổi tồn an toàn lúc đang bật — `queued` là số job đã xếp. */
+export function updateSyncSettings(data: {
+  autoSyncEnabled?: boolean;
+  safetyStockDefault?: number;
+}) {
+  return apiFetch<{
+    autoSyncEnabled: boolean;
+    safetyStockDefault: number;
+    queued: number;
+  }>("/api/inventory/sync-settings", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Nút [Sync ngay toàn bộ] — đẩy lại tồn mọi SKU đã liên kết, bất kể switch. */
+export function syncAllStock() {
+  return apiFetch<{ queued: number }>("/api/inventory/sync-all", {
+    method: "POST",
+  });
+}
+
+/** Số job còn chờ trong hàng đợi đẩy tồn (poll nhẹ mỗi vài giây). */
+export function fetchSyncPending() {
+  return apiFetch<{ pending: number }>("/api/inventory/sync-pending");
+}
+
 /** Nhật ký các lượt đẩy tồn kho lên sàn (đối soát). */
 export function fetchSyncLogs(limit = 50) {
   return apiFetch<InventorySyncLog[]>(`/api/inventory/sync-logs?limit=${limit}`);

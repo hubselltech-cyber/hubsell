@@ -18,6 +18,7 @@ import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
+import { enqueueStockPush } from "../integrations/inventory-push";
 
 const router = Router();
 
@@ -396,6 +397,7 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
       });
 
       const restored: {
+        productId: string;
         productName: string;
         restoredQuantity: number;
         newQuantity: number;
@@ -417,6 +419,7 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
           },
         });
         restored.push({
+          productId: log.productId,
           productName: log.product.productName,
           restoredQuantity: qty,
           newQuantity: updatedProduct.quantityInStock,
@@ -447,6 +450,12 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
       return { order: updatedOrder, restored };
     });
+
+    // Hủy đơn vừa hoàn kho → đẩy tồn khả dụng mới lên các sàn đã liên kết.
+    await enqueueStockPush(
+      result.restored.map((l) => l.productId),
+      { source: `hủy đơn ${order.orderCode}` }
+    );
 
     res.json(result);
   } catch (err) {
@@ -875,6 +884,7 @@ async function restoreReturnStockTx(
   reason: string
 ) {
   const restored: {
+    productId: string;
     productName: string;
     restoredQuantity: number;
     newQuantity: number;
@@ -899,6 +909,7 @@ async function restoreReturnStockTx(
       },
     });
     restored.push({
+      productId: log.productId,
       productName: log.product.productName,
       restoredQuantity: qty,
       newQuantity: updated.quantityInStock,
@@ -936,7 +947,12 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
 
     const results: {
       orderCode: string;
-      restored: { productName: string; restoredQuantity: number; newQuantity: number }[];
+      restored: {
+        productId: string;
+        productName: string;
+        restoredQuantity: number;
+        newQuantity: number;
+      }[];
     }[] = [];
     const failed: { orderCode: string; error: string }[] = [];
 
@@ -969,6 +985,12 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
         });
       }
     }
+
+    // Hàng hoàn vừa nhập lại kho → đẩy tồn khả dụng mới lên các sàn đã liên kết.
+    await enqueueStockPush(
+      results.flatMap((r) => r.restored.map((l) => l.productId)),
+      { source: "nhập kho hàng hoàn (nhập kho tất cả)" }
+    );
 
     res.json({
       processed: results.length,
@@ -1084,6 +1106,12 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
 
       return { order: updatedOrder, restored, shouldRestore };
     });
+
+    // Hàng hoàn nguyên vẹn vừa cộng kho → đẩy tồn mới lên các sàn đã liên kết.
+    await enqueueStockPush(
+      result.restored.map((l) => l.productId),
+      { source: `nhận hàng hoàn — đơn ${order.orderCode}` }
+    );
 
     res.json({
       order: result.order,

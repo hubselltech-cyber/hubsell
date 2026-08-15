@@ -420,6 +420,57 @@ export function lazadaChannelSku(opts: {
   return `LZD-${opts.itemId ?? "0"}-${opts.skuId ?? "0"}`;
 }
 
+// ---------- Cập nhật tồn kho lên sàn ----------
+
+/** Escape 5 ký tự đặc biệt XML — SellerSku người bán đặt có thể chứa "&", "<"... */
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Đẩy tồn KHẢ BÁN tuyệt đối của MỘT SKU lên Lazada (UpdateSellableQuantity).
+ * Định danh bằng ItemId + SkuId (bóc từ ChannelProduct.externalId "itemId-skuId")
+ * — KHÔNG dùng channelSku vì có thể là khoá tổng hợp "LZD-..." khi người bán
+ * không đặt SellerSku. Lazada trả code "0" khi thành công; 501 kèm detail theo
+ * SKU, 901 là rate-limit ("retry in the next second") — đều ném lỗi để worker
+ * retry theo lịch riêng.
+ */
+export async function updateLazadaSellableStock(
+  params: {
+    accessToken: string;
+    itemId: string;
+    skuId: string;
+    quantity: number;
+    /** SellerSku thật (nếu biết) — gửi kèm cho khớp demo tài liệu, không bắt buộc. */
+    sellerSku?: string;
+  },
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<void> {
+  const sellerSkuTag = params.sellerSku
+    ? `<SellerSku>${escapeXml(params.sellerSku)}</SellerSku>`
+    : "";
+  const payload =
+    `<Request><Product><Skus><Sku>` +
+    `<ItemId>${escapeXml(params.itemId)}</ItemId>` +
+    `<SkuId>${escapeXml(params.skuId)}</SkuId>` +
+    sellerSkuTag +
+    `<SellableQuantity>${Math.max(0, Math.trunc(params.quantity))}</SellableQuantity>` +
+    `</Sku></Skus></Product></Request>`;
+
+  await callLazadaPost(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.stockSellableUpdate,
+    { access_token: params.accessToken, payload },
+    "product/stock/sellable/update",
+    cfg
+  );
+}
+
 // ---------- Tài chính (Finance API) ----------
 
 /**

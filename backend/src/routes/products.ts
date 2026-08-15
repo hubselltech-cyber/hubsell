@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { Prisma, InventoryLogType } from "@prisma/client";
 import { prisma } from "../prisma";
 import { canSeeFinancials, type AuthRequest } from "../auth";
+import { enqueueStockPush } from "../integrations/inventory-push";
 
 const router = Router();
 
@@ -338,7 +339,29 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       }
     }
 
+    // ── Tồn an toàn per-SKU (Đồng bộ tồn kho đa sàn) — null/rỗng = dùng mặc
+    // định toàn shop (ShopSyncSetting.safetyStockDefault) ──
+    const { safetyStock } = req.body ?? {};
+    if (safetyStock !== undefined) {
+      if (safetyStock === null || safetyStock === "") {
+        data.safetyStock = null;
+      } else {
+        const n = Number(safetyStock);
+        if (!Number.isInteger(n) || n < 0) {
+          res.status(400).json({ error: "Tồn an toàn phải là số nguyên không âm" });
+          return;
+        }
+        data.safetyStock = n;
+      }
+    }
+
     const updated = await prisma.product.update({ where: { id }, data });
+
+    // Đổi tồn an toàn làm đổi TỒN KHẢ DỤNG → đẩy số mới lên các sàn đã liên kết.
+    if (safetyStock !== undefined) {
+      await enqueueStockPush([id], { source: "đổi tồn an toàn của SKU" });
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -459,6 +482,8 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
     // Bước 2: upsert hàng loạt trong MỘT transaction
     const ownerId = req.ownerId!;
+    // Các sản phẩm CÓ đổi số tồn trong lần import — sau commit đẩy tồn mới lên sàn.
+    const stockChangedIds: string[] = [];
     const result = await prisma.$transaction(async (tx) => {
       let created = 0;
       let updated = 0;
@@ -492,6 +517,7 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
                 reason: "Điều chỉnh tồn kho khi nhập Excel",
               },
             });
+            stockChangedIds.push(found.id);
           }
           updated++;
         } else {
@@ -521,6 +547,9 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
 
       return { created, updated };
     });
+
+    // Tồn vừa đổi qua Excel → đẩy tồn khả dụng mới lên các sàn đã liên kết.
+    await enqueueStockPush(stockChangedIds, { source: "nhập tồn kho từ Excel" });
 
     res.json({
       created: result.created,
