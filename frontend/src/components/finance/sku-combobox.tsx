@@ -128,7 +128,10 @@ export function SkuCombobox({
       : "";
 
   return (
-    <div ref={containerRef} className="relative">
+    // min-w-0: tên sản phẩm trong danh sách là text nowrap (truncate) — thiếu
+    // min-w-0 thì min-content của nó lan ngược lên grid của dialog, đẩy cả form
+    // phình rộng hơn khung thoại (input/nút tràn ra ngoài mép phải).
+    <div ref={containerRef} className="relative min-w-0">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         ref={inputRef}
