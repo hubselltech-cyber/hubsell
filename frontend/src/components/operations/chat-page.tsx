@@ -53,6 +53,7 @@ import {
   fetchOpsConversations,
   fetchOpsMessages,
   fetchOpsProductContext,
+  sendOpsImageMessage,
   sendOpsItemMessage,
   sendOpsMessage,
   type CopilotSuggestionDTO,
@@ -608,6 +609,53 @@ export function OperationsChatPage() {
       toast.error(err instanceof Error ? err.message : "Gửi tin thất bại");
     } finally {
       setSending(false);
+    }
+  }
+
+  /**
+   * Gửi ẢNH cho khách (nút 📎): chỉ hội thoại THẬT trên Shopee — backend
+   * upload lên file server sàn rồi send_message kiểu image, trả imageUrl do
+   * Shopee cấp để nối lạc quan thành bong bóng ảnh ngay. Demo/Lazada đã bị
+   * chặn từ nút (attachDisabledReason) nên ở đây chỉ cần guard mỏng.
+   */
+  const [sendingImage, setSendingImage] = useState(false);
+  const attachDisabledReason = !isReal
+    ? "Đính kèm ảnh chỉ khả dụng với hội thoại thật"
+    : activeReal?.channelName === "LAZADA"
+      ? "Gửi ảnh hiện chỉ hỗ trợ Shopee — Lazada chưa được sàn cấp quyền chat"
+      : null;
+  async function handleSendImage(file: File) {
+    if (!isReal || !activeReal || sendingImage) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Ảnh vượt 8MB — chọn ảnh nhỏ hơn giúp em nhé.");
+      return;
+    }
+    setSendingImage(true);
+    try {
+      const { imageUrl } = await sendOpsImageMessage({
+        channelId: activeReal.channelId,
+        buyerId: activeReal.buyerId,
+        file,
+      });
+      setRealMessages((prev) => ({
+        ...prev,
+        [activeReal.id]: [
+          ...(prev[activeReal.id] ?? []),
+          {
+            id: `local-image-${Date.now()}`,
+            fromShop: true,
+            text: "",
+            at: Date.now(),
+            itemId: null,
+            imageUrl: imageUrl ?? null,
+          },
+        ],
+      }));
+      toast.success(`🖼️ Đã gửi ảnh tới ${activeReal.customer}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gửi ảnh thất bại");
+    } finally {
+      setSendingImage(false);
     }
   }
 
@@ -1194,6 +1242,9 @@ export function OperationsChatPage() {
               onSend={handleSend}
               onUseSuggestion={() => setDraft(suggestion.text)}
               sending={sending}
+              onAttachImage={handleSendImage}
+              sendingImage={sendingImage}
+              attachDisabledReason={attachDisabledReason}
             />
               </>
             )}

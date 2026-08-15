@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Loader2, Paperclip, SendHorizontal, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,8 @@ import { Button } from "@/components/ui/button";
  *  · Enter        → gửi
  *  · Shift+Enter  → xuống dòng (textarea tự giãn tối đa ~5 dòng)
  *  · [✨ Dùng gợi ý AI] đổ câu của Copilot vào ô nhập để sửa trước khi gửi
- *  · Nút đính kèm là UI giữ chỗ — API upload ảnh của sàn nối sau
+ *  · Nút đính kèm mở file picker ảnh (JPG/PNG/GIF/WebP) — trang cha quyết
+ *    định bật/tắt qua attachDisabledReason (demo, Lazada chưa có quyền chat)
  */
 export function ChatInput({
   value,
@@ -23,13 +25,22 @@ export function ChatInput({
   onSend,
   onUseSuggestion,
   sending,
+  onAttachImage,
+  sendingImage,
+  attachDisabledReason,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   onUseSuggestion: () => void;
   sending: boolean;
+  onAttachImage?: (file: File) => void;
+  sendingImage?: boolean;
+  /** Có giá trị → nút đính kèm tắt và tooltip giải thích lý do. */
+  attachDisabledReason?: string | null;
 }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -37,21 +48,45 @@ export function ChatInput({
     }
   }
 
+  function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset để chọn lại CÙNG một file vẫn bắn onChange lần nữa
+    e.target.value = "";
+    if (file) onAttachImage?.(file);
+  }
+
+  const attachDisabled = Boolean(attachDisabledReason) || sendingImage || !onAttachImage;
+  const attachTitle = attachDisabledReason ?? "Đính kèm hình ảnh (JPG/PNG/GIF/WebP, tối đa 8MB)";
+
   // Giãn theo số dòng đang gõ (1→5) — đủ mượt mà không cần đo scrollHeight
   const rows = Math.min(5, Math.max(1, value.split("\n").length));
 
   return (
     <div className="border-t bg-card p-3">
       <div className="flex items-end gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+          onChange={handleFilePicked}
+          aria-hidden
+          tabIndex={-1}
+        />
         <Button
           variant="outline"
           size="icon"
-          disabled
+          disabled={attachDisabled}
           className="shrink-0"
-          title="Đính kèm hình ảnh/file — sắp có"
-          aria-label="Đính kèm hình ảnh/file (sắp có)"
+          onClick={() => fileRef.current?.click()}
+          title={attachTitle}
+          aria-label={attachTitle}
         >
-          <Paperclip className="size-4" />
+          {sendingImage ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Paperclip className="size-4" />
+          )}
         </Button>
         <textarea
           value={value}

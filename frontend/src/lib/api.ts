@@ -2807,6 +2807,42 @@ export function sendOpsMessage(body: {
   });
 }
 
+/**
+ * Gửi ẢNH vào hội thoại (multipart — không dùng apiFetch vì apiFetch luôn gắn
+ * Content-Type: application/json). Chỉ Shopee; backend upload lên file server
+ * sàn rồi send_message kiểu image, trả về imageUrl do Shopee cấp để nối lạc
+ * quan vào khung chat.
+ */
+export async function sendOpsImageMessage(params: {
+  channelId: string;
+  buyerId?: string | null;
+  file: File;
+}): Promise<{ ok: boolean; imageUrl: string }> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("image", params.file);
+  form.append("channelId", params.channelId);
+  if (params.buyerId) form.append("buyerId", params.buyerId);
+
+  const res = await fetch(`${API_URL}/api/operations/conversations/send-image`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // body không phải JSON — giữ message mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json();
+}
+
 /** Gửi THẺ SẢN PHẨM chuẩn sàn (Shopee message_type "item"). */
 export function sendOpsItemMessage(body: {
   channelId: string;
