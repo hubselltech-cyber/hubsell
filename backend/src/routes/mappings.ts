@@ -181,10 +181,10 @@ router.post("/link", async (req: AuthRequest, res, next) => {
  * mỗi lần "Đồng bộ từ sàn"). Nhờ vậy shop mới liên kết xong là số kho khớp ngay
  * với sàn, không có biến động nào bị đẩy ngược lên sàn — vận hành không gián đoạn.
  *
- * Nhiều gian cùng bán một SKU thường phản chiếu CÙNG một kho vật lý — cộng dồn
- * sẽ đếm trùng, nên lấy SỐ LỚN NHẤT trong các gian ACTIVE. Chỉ đụng sản phẩm
- * tồn 0: số tồn người dùng đã nhập tay là chân lý, không bao giờ ghi đè.
- * KHÔNG enqueue đẩy tồn — số vừa lấy TỪ sàn, đẩy lại chỉ tốn quota.
+ * Tồn ban đầu = TỔNG tồn của mọi gian ACTIVE (chốt của anh Trung 15/08: mỗi
+ * gian được xem là một phần hàng riêng, cộng lại mới ra tổng tồn thật của SKU).
+ * Chỉ đụng sản phẩm tồn 0: số tồn người dùng đã nhập tay là chân lý, không bao
+ * giờ ghi đè. KHÔNG enqueue đẩy tồn — số vừa lấy TỪ sàn, đẩy lại chỉ tốn quota.
  *
  * Trả map productId → số tồn đã seed để API đưa vào response cho UI báo toast.
  */
@@ -209,11 +209,13 @@ async function seedInitialStockFromChannel(
       },
     });
     if (rows.length === 0) continue;
-    const best = rows.reduce((a, b) =>
-      (b.channelStock ?? 0) > (a.channelStock ?? 0) ? b : a
-    );
-    const qty = best.channelStock ?? 0;
+    const qty = rows.reduce((sum, r) => sum + (r.channelStock ?? 0), 0);
     if (qty <= 0) continue;
+
+    // Ghi rõ từng gian góp bao nhiêu để sổ kho tự giải thích được con số tổng.
+    const detail = rows
+      .map((r) => `${r.channel.shopName}: ${r.channelStock ?? 0}`)
+      .join(" + ");
 
     await prisma.$transaction([
       prisma.product.update({
@@ -225,7 +227,7 @@ async function seedInitialStockFromChannel(
           productId: p.id,
           changeQuantity: qty,
           type: InventoryLogType.SYNC,
-          reason: `Đồng bộ lần đầu khi liên kết: lấy tồn theo sàn (${best.channel.channelName} · ${best.channel.shopName})`,
+          reason: `Đồng bộ lần đầu khi liên kết: tổng tồn các gian trên sàn (${detail})`,
         },
       }),
     ]);
