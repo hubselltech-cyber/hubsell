@@ -29,6 +29,9 @@ export function SkuCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
+  // Danh sách mở LÊN TRÊN khi dưới ô nhập không đủ chỗ (vd thanh liên kết
+  // hàng loạt ghim sát đáy màn hình — mở xuống là chui ra ngoài viewport).
+  const [dropUp, setDropUp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -56,6 +59,15 @@ export function SkuCombobox({
 
   // Reset vị trí highlight mỗi khi kết quả lọc đổi
   useEffect(() => setHighlight(0), [query, open]);
+
+  // Đo chỗ trống mỗi lần mở: dưới không đủ cho danh sách (max-h-64 ≈ 256px)
+  // mà trên rộng hơn thì lật lên.
+  useEffect(() => {
+    if (!open || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom;
+    setDropUp(below < 280 && rect.top > below);
+  }, [open]);
 
   // Cuộn để mục đang chọn bằng bàn phím luôn nằm trong tầm nhìn
   useEffect(() => {
@@ -153,7 +165,10 @@ export function SkuCombobox({
           ref={listRef}
           role="listbox"
           // Giới hạn chiều cao + cuộn dọc để không làm vỡ layout modal
-          className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto overscroll-contain rounded-lg border bg-popover p-1 shadow-lg"
+          className={cn(
+            "absolute z-50 max-h-64 w-full overflow-y-auto overscroll-contain rounded-lg border bg-popover p-1 shadow-lg",
+            dropUp ? "bottom-full mb-1" : "top-full mt-1"
+          )}
         >
           {/* Lựa chọn bỏ gắn SKU */}
           <button
