@@ -157,11 +157,15 @@ export function ShopeeAssistantModal({
       <DialogContent
         className={cn(
           // Base của DialogContent có sm:max-w-sm (variant breakpoint) — phải
-          // ghi đè bằng đúng variant sm: thì mới thắng ở màn ≥640px (max-w-xl
-          // trần bị sm:max-w-sm đè, popup teo còn 384px với tên chiến dịch dài).
-          "max-w-xl sm:max-w-xl",
-          // Lazada rộng hơn: chứa 2 bảng soi sống SP & từ khóa.
-          platform === "lazada" && "max-w-3xl sm:max-w-3xl max-h-[85vh] overflow-y-auto"
+          // ghi đè bằng đúng variant sm: mới thắng ở màn ≥640px (max-w-xl trần
+          // bị sm:max-w-sm đè, popup teo còn 384px với tên chiến dịch dài).
+          // KHÔNG truyền max-w-* trần: nó đè mất max-w-[calc(100%-2rem)] của
+          // base làm cửa sổ <640px mất lề an toàn 2 bên. max-h[85vh]: màn thấp
+          // (laptop 768px) danh sách Căn cứ dài không trôi nút ra ngoài.
+          "sm:max-w-xl max-h-[85vh] overflow-y-auto",
+          // Lazada rộng hơn (chứa 2 bảng soi sống SP & từ khóa) — kẹp min()
+          // để cửa sổ 640–800px vẫn giữ lề thay vì bung sát mép.
+          platform === "lazada" && "sm:max-w-[min(48rem,calc(100%-2rem))]"
         )}
       >
         {/* min-w-0: chặn min-content của tên chiến dịch nowrap lan lên grid
