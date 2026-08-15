@@ -453,6 +453,7 @@ export function OperationsChatPage() {
               text: "🛍️ [Thẻ sản phẩm]",
               at: Date.now(),
               itemId: product.itemId ?? null,
+              imageUrl: null,
             },
           ],
         }));
@@ -598,7 +599,7 @@ export function OperationsChatPage() {
         ...prev,
         [activeReal.id]: [
           ...(prev[activeReal.id] ?? []),
-          { id: `local-${Date.now()}`, fromShop: true, text, at: Date.now(), itemId: null },
+          { id: `local-${Date.now()}`, fromShop: true, text, at: Date.now(), itemId: null, imageUrl: null },
         ],
       }));
       setDraft("");
@@ -743,6 +744,7 @@ export function OperationsChatPage() {
           text: typeof m.text === "string" ? m.text : "[tin nhắn không đọc được]",
           time: fmtTime(m.at),
           itemId: m.itemId ?? null,
+          imageUrl: m.imageUrl ?? null,
         }))
     : activeDemo.messages.map((m) => ({
         key: m.id,
@@ -750,6 +752,7 @@ export function OperationsChatPage() {
         text: m.text,
         time: m.time,
         itemId: null as string | null,
+        imageUrl: null as string | null,
       }));
 
   const headerCustomer = isReal ? activeReal?.customer ?? "" : activeDemo.customer;
@@ -1058,7 +1061,22 @@ export function OperationsChatPage() {
                         : "rounded-bl-sm border bg-card text-slate-900"
                     )}
                   >
-                    <p>{m.text}</p>
+                    {m.imageUrl && (
+                      // Bấm mở ảnh gốc tab mới — CDN sàn không cho embed cỡ lớn ổn định
+                      <a href={m.imageUrl} target="_blank" rel="noreferrer" className="block">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- ảnh CDN sàn domain động */}
+                        <img
+                          src={m.imageUrl}
+                          alt={m.fromShop ? "Ảnh shop gửi" : "Ảnh khách gửi"}
+                          loading="lazy"
+                          className={cn(
+                            "max-h-60 w-auto max-w-full rounded-lg object-contain",
+                            m.text && "mb-1.5"
+                          )}
+                        />
+                      </a>
+                    )}
+                    {m.text && <p>{m.text}</p>}
                     <p
                       className={cn(
                         "mt-1 text-right text-[11px]",

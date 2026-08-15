@@ -209,6 +209,19 @@ function shopeeMessageText(
   return SHOPEE_TYPE_LABEL[messageType] ?? `[${messageType}]`;
 }
 
+/**
+ * Url ảnh của tin Shopee kiểu image / image_with_text — null nếu payload
+ * không có (khi đó UI rơi về nhãn "[Hình ảnh]"). Tên trường tuỳ region:
+ * image_url / url / thumb_url — đọc phòng thủ cả ba.
+ */
+function shopeeMessageImageUrl(
+  messageType?: string,
+  content?: { image_url?: string; url?: string; thumb_url?: string } | null
+): string | null {
+  if (messageType !== "image" && messageType !== "image_with_text") return null;
+  return content?.image_url ?? content?.url ?? content?.thumb_url ?? null;
+}
+
 const LAZADA_TEMPLATE_LABEL: Record<string, string> = {
   "3": "[Hình ảnh]",
   "4": "[Emoji]",
@@ -241,6 +254,27 @@ function lazadaMessageText(templateId: string, content: unknown): string {
   if (txt.trim()) return txt;
   if (templateId === "1") return "";
   return LAZADA_TEMPLATE_LABEL[templateId] ?? `[tin nhắn dạng ${templateId}]`;
+}
+
+/**
+ * Url ảnh của tin Lazada template 3 (ảnh) — content là JSON string
+ * {"iUrl":"…"} nhưng đề phòng payload trả sẵn object / tên trường khác
+ * (imgUrl, url) như mọi chỗ đọc IM Lazada. Hỏng thì null, không ném.
+ */
+function lazadaMessageImageUrl(templateId: string, content: unknown): string | null {
+  if (templateId !== "3") return null;
+  let obj: Record<string, unknown> | null = null;
+  if (typeof content === "string" && content.trim()) {
+    try {
+      obj = JSON.parse(content) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  } else if (content && typeof content === "object") {
+    obj = content as Record<string, unknown>;
+  }
+  const url = obj?.iUrl ?? obj?.imgUrl ?? obj?.url;
+  return typeof url === "string" && url.trim() ? url : null;
 }
 
 // ── LẤY HỘI THOẠI SHOPEE "TỰ HIỆU CHỈNH" ──
@@ -477,7 +511,11 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
         // source_content kèm SP/đơn khách đang xem lúc bấm nút — ngữ cảnh
         // quý nhất để biết khách cần gì, nối vào text + itemId (ra thẻ SP).
         const isLiveagent = m.message_type === "faq_liveagent";
+        const imageUrl = shopeeMessageImageUrl(m.message_type, m.content);
         let text = shopeeMessageText(m.message_type, m.content);
+        // Có ảnh thật thì bỏ nhãn thay thế "[Hình ảnh]" — bong bóng chỉ cần
+        // ảnh; image_with_text giữ nguyên chữ thật khách gõ kèm.
+        if (imageUrl && text === SHOPEE_TYPE_LABEL[m.message_type ?? ""]) text = "";
         if (isLiveagent && m.source_content?.order_sn) {
           text += ` — về đơn ${m.source_content.order_sn}`;
         }
@@ -493,10 +531,7 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
           text,
           at: toMs(m.created_timestamp),
           itemId,
-          imageUrl:
-            m.message_type === "image"
-              ? (m.content?.image_url ?? m.content?.url ?? m.content?.thumb_url ?? null)
-              : null,
+          imageUrl,
         });
       }
     } else {
@@ -507,13 +542,16 @@ router.get("/conversations/messages", async (req: AuthRequest, res, next) => {
         // from_account_type: đối chiếu log thật cho chắc — tạm quy ước tài
         // khoản loại "2" (seller) là shop, còn lại là khách.
         const fromType = String(m.from_account_type ?? m.fromAccountType ?? "");
+        const imageUrl = lazadaMessageImageUrl(tpl, m.content);
+        let text = lazadaMessageText(tpl, m.content);
+        if (imageUrl && text === LAZADA_TEMPLATE_LABEL[tpl]) text = "";
         messages.push({
           id: String(m.message_id ?? m.messageId ?? messages.length),
           fromShop: fromType === "2",
-          text: lazadaMessageText(tpl, m.content),
+          text,
           at: toMs(m.send_time ?? m.sendTime),
           itemId: null,
-          imageUrl: null,
+          imageUrl,
         });
       }
     }

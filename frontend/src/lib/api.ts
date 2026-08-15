@@ -2716,6 +2716,8 @@ export interface OpsMessageDTO {
   text: string;
   at: number | null;
   itemId: string | null;
+  /** Url ảnh nếu là tin kiểu image — render bong bóng ảnh thay text. */
+  imageUrl: string | null;
 }
 
 export interface OpsReviewDTO {
