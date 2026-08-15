@@ -69,7 +69,7 @@ export function SyncAlertBanner() {
         {alerts.map((alert) => (
           <li
             key={alert.id}
-            className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-rose-100 bg-white p-3"
+            className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-rose-100 bg-card p-3"
           >
             <div className="min-w-0 flex-1">
               <p className="text-sm text-slate-800">{alert.message}</p>

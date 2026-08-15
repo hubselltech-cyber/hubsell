@@ -437,7 +437,7 @@ function EditPriceForm({
         )}
       </div>
       {/* Xem trước P&L: biên tính theo GIÁ KM, đổi màu theo dương/âm */}
-      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-card px-3 py-2.5">
         <span className="text-sm text-slate-500">Biên lợi nhuận mới</span>
         <span
           className={cn(
@@ -516,7 +516,7 @@ function EditShippingForm({
           <Input id="ship-h" type="number" min="0" value={h} onChange={(e) => setH(e.target.value)} />
         </div>
       </div>
-      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-card px-3 py-2.5">
         <span className="text-sm text-slate-500">Phí ship ước tính</span>
         <span className="text-lg font-bold text-slate-900">
           {invalid ? "—" : formatVND(estFee)}

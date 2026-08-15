@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Palette } from "lucide-react";
+import { useTheme } from "next-themes";
+import { Check, Monitor, Moon, Palette, Sun, SunMoon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,96 @@ import {
 } from "@/lib/theme";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
+
+/** 3 chế độ hiển thị — giá trị id đúng chuẩn next-themes. */
+const DISPLAY_MODES = [
+  {
+    id: "light",
+    label: "Sáng",
+    desc: "Nền sáng chuẩn, mặc định",
+    icon: Sun,
+  },
+  {
+    id: "dark",
+    label: "Tối",
+    desc: "Dịu mắt khi làm việc đêm",
+    icon: Moon,
+  },
+  {
+    id: "system",
+    label: "Theo hệ thống",
+    desc: "Tự đổi theo cài đặt máy",
+    icon: Monitor,
+  },
+] as const;
+
+/**
+ * CHẾ ĐỘ HIỂN THỊ (Sáng / Tối / Theo hệ thống) — trục ĐỘC LẬP với 3 theme
+ * accent bên dưới: theme đổi MÀU NHẤN, chế độ đổi NỀN SÁNG–TỐI, phối tự do.
+ * next-themes lưu localStorage "hubsell-theme-mode" và gắn class `dark`.
+ */
+function DisplayModeSection() {
+  const { theme, setTheme } = useTheme();
+  // theme chỉ đáng tin sau mount (SSR không đọc được localStorage) — trước đó
+  // không tô ô đang chọn để khỏi lệch hydration
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return (
+    <Card className="max-w-2xl shadow-sm">
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="flex items-center gap-2">
+          <SunMoon className="size-5 text-slate-500" />
+          Chế độ hiển thị
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-5">
+        <div
+          role="radiogroup"
+          aria-label="Chọn chế độ hiển thị sáng tối"
+          className="grid gap-3 sm:grid-cols-3"
+        >
+          {DISPLAY_MODES.map((m) => {
+            const active = mounted && theme === m.id;
+            const Icon = m.icon;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => {
+                  setTheme(m.id);
+                  toast.success(`Đã đổi chế độ hiển thị: ${m.label}`);
+                }}
+                className={cn(
+                  "rounded-lg border p-3 text-left transition-colors",
+                  active
+                    ? "border-primary ring-1 ring-primary"
+                    : "hover:border-slate-300 hover:bg-muted/50"
+                )}
+              >
+                <span className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                  <Icon className="size-5" />
+                </span>
+                <span className="mt-2.5 flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                  {m.label}
+                  {active && <Check className="size-3.5 text-primary" />}
+                </span>
+                <span className={cn(TEXT_SUB, "mt-0.5 block")}>{m.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className={cn(TEXT_SUB, "mt-3")}>
+          Có thể chuyển nhanh sáng/tối bằng nút mặt trăng trên thanh tiêu đề.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 /**
  * GIAO DIỆN HỆ THỐNG (Appearance) — khối chọn theme trong Cấu hình chung.
@@ -40,7 +131,9 @@ export function AppearanceSection() {
   }
 
   return (
-    <Card className="max-w-2xl shadow-sm">
+    <div className="space-y-4">
+      <DisplayModeSection />
+      <Card className="max-w-2xl shadow-sm">
       <CardHeader className="border-b pb-3">
         <CardTitle className="flex items-center gap-2">
           <Palette className="size-5 text-slate-500" />
@@ -102,6 +195,7 @@ export function AppearanceSection() {
           (xanh/đỏ) giữ nguyên ở mọi giao diện.
         </p>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }

@@ -111,7 +111,7 @@ export default function TiktokCallbackPage() {
                   {channels.map((c) => (
                     <li
                       key={c.id}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-2"
+                      className="rounded-md border border-slate-200 bg-card px-3 py-2"
                     >
                       {c.shopName}
                     </li>

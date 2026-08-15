@@ -529,7 +529,7 @@ export function InvoiceConfigSection({
                       "flex-1 rounded-lg px-4 py-2.5 text-left transition-all",
                       active
                         ? cn(
-                            "bg-white font-bold shadow-md",
+                            "bg-card font-bold shadow-md",
                             isStd
                               ? "border border-blue-500 text-blue-700"
                               : "border border-emerald-500 text-emerald-700",
@@ -569,7 +569,7 @@ export function InvoiceConfigSection({
                 đồng bộ màu với tab active — cả khu form thuộc luồng nào là rõ. --- */}
             <div
               className={cn(
-                "rounded-2xl border border-slate-200 border-t-4 bg-white p-6 shadow-sm",
+                "rounded-2xl border border-slate-200 border-t-4 bg-card p-6 shadow-sm",
                 activeTab === "standard"
                   ? "border-t-blue-600"
                   : "border-t-emerald-600",
@@ -892,7 +892,7 @@ export function InvoiceConfigSection({
             </div>
 
             {/* --- API KEY THEO GIAN HÀNG --- */}
-            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-slate-200/80 bg-card p-6 shadow-sm">
               <SectionHeading
                 icon={<KeyRound className="size-4" />}
                 tone="bg-amber-50 text-amber-600"
@@ -1005,7 +1005,7 @@ export function InvoiceConfigSection({
           {/* ================== CỘT PHẢI (4/12) — SIDEBAR ================== */}
           <div className="min-w-0 space-y-6 lg:col-span-4">
             {/* --- Widget Trạng thái kết nối --- */}
-            <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+            <div className="rounded-xl border border-slate-200/80 bg-card p-5 shadow-sm">
               <SectionHeading
                 icon={<Radio className="size-4" />}
                 tone="bg-sky-50 text-sky-600"
@@ -1120,7 +1120,7 @@ export function InvoiceConfigSection({
 
             {/* --- Card Chữ ký số MISA eSign — CHỈ tab Kê khai --- */}
             {activeTab === "standard" && (
-              <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+              <div className="rounded-xl border border-slate-200/80 bg-card p-5 shadow-sm">
                 <SectionHeading
                   icon={<PenLine className="size-4" />}
                   tone="bg-violet-50 text-violet-600"

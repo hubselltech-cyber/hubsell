@@ -283,7 +283,9 @@ export default function TaxSettingsPage() {
                     khi tính P&amp;L — không cần thao tác gì thêm.
                   </p>
                 </div>
-                <span className="shrink-0 rounded-lg bg-slate-900 px-3 py-1.5 text-lg font-bold tracking-tight text-white">
+                {/* bg-primary thay bg-slate-900 cứng: dark mode primary tự lật
+                    sáng, chip % luôn tương phản ở cả hai chế độ */}
+                <span className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-lg font-bold tracking-tight text-primary-foreground">
                   {platformTaxPercent}%
                 </span>
               </div>

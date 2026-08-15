@@ -37,7 +37,7 @@ function MessageTable({ rows }: { rows: string[][] }) {
         </thead>
         <tbody>
           {body.map((row, r) => (
-            <tr key={r} className="odd:bg-white even:bg-slate-50/50">
+            <tr key={r} className="odd:bg-card even:bg-slate-50/50">
               {row.map((cell, c) => (
                 <td
                   key={c}
@@ -174,7 +174,7 @@ export function ChatDrawer({
     <div className="fixed inset-0 z-50">
       {/* Nền mờ — chạm ra ngoài để đóng */}
       <div
-        className="absolute inset-0 bg-slate-900/30 animate-in fade-in"
+        className="absolute inset-0 bg-black/40 animate-in fade-in"
         aria-hidden
         onClick={onClose}
       />
@@ -280,7 +280,7 @@ export function ChatDrawer({
               }}
               rows={1}
               placeholder="Nhập tin nhắn, hoặc dán bảng từ Excel…"
-              className="max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+              className="max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-slate-200 bg-card px-3 py-1.5 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
             />
             <Button
               type="button"

@@ -485,7 +485,7 @@ export function ShopeeAdsPage({
                   className={cn(
                     "px-3 py-1.5 text-sm font-medium transition-colors",
                     days === p.value
-                      ? "bg-slate-900 text-white"
+                      ? "bg-primary text-primary-foreground"
                       : "bg-card text-slate-600 hover:bg-muted"
                   )}
                 >

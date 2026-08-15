@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
+import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -51,8 +52,22 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
-        <Toaster richColors position="top-right" />
+        {/* Dark mode do next-themes quản lý: gắn class `dark` lên <html> trước
+            paint (script tự chèn, chống nháy trắng), lưu localStorage
+            "hubsell-theme-mode". Mặc định SÁNG để khách cũ không bị đổi bất
+            ngờ; "system" là lựa chọn chủ động trong Cấu hình chung. KHÁC với
+            data-theme (accent monochrome/indigo/emerald) do script phía trên
+            quản lý — hai trục độc lập, phối tự do. */}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          storageKey="hubsell-theme-mode"
+          disableTransitionOnChange
+        >
+          <TooltipProvider>{children}</TooltipProvider>
+          <Toaster richColors position="top-right" />
+        </ThemeProvider>
       </body>
     </html>
   );

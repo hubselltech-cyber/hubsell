@@ -4,13 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import {
   ChevronDown,
   Coins,
   Menu,
   Loader2,
   LogOut,
+  Moon,
   Search as SearchIcon,
+  Sun,
   type LucideIcon,
 } from "lucide-react";
 
@@ -327,6 +330,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Command palette Ctrl+K — state đặt ở shell vì cả phím tắt toàn cục lẫn nút
   // "Tìm nhanh" trên header cùng mở một hộp
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Dark mode: resolvedTheme chỉ đáng tin sau khi mount (SSR không biết
+  // localStorage) — chưa mount thì icon nút chuyển phải render trung lập
+  // để không lệch hydration
+  const { resolvedTheme, setTheme } = useTheme();
+  const [themeReady, setThemeReady] = useState(false);
+  useEffect(() => {
+    setThemeReady(true);
+  }, []);
+  const isDark = themeReady && resolvedTheme === "dark";
   // openMenus là NGUỒN CHÂN LÝ DUY NHẤT cho việc nhóm nào đang xoè: route chỉ
   // được "gieo" nhóm vào đây lúc mount/điều hướng, KHÔNG ép mở khi render —
   // ép mở là người dùng hết cụp tay được nhóm chứa trang đang xem.
@@ -677,6 +689,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setPaletteOpen(true)}
             >
               <SearchIcon className="size-5" />
+            </Button>
+            {/* Chuyển nhanh sáng ↔ tối; chỉnh chi tiết (kèm "Theo hệ thống")
+                nằm ở Cấu hình chung → Giao diện */}
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label={isDark ? "Chuyển giao diện sáng" : "Chuyển giao diện tối"}
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+            >
+              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>
             {user && (
               <UserAvatarMenu

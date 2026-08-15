@@ -183,39 +183,245 @@ html[data-theme="emerald"] {
   }
 }
 
+/*
+ * ===== CHẾ ĐỘ TỐI (Dark mode) =====
+ * Bật bằng class `dark` trên <html> (next-themes quản lý, lưu localStorage
+ * "hubsell-theme-mode", mặc định SÁNG — khách cũ không bị đổi bất ngờ).
+ *
+ * CHIẾN LƯỢC: toàn app kỷ luật dùng thang slate + họ màu tint chuẩn, và
+ * Tailwind v4 biên dịch mọi class màu thành var(--color-*), nên thay vì đi
+ * sửa dark: cho 30+ trang, ta ĐỊNH NGHĨA LẠI THANG MÀU trong dark mode ngay
+ * tại đây — text-slate-900 tự thành trắng, bg-amber-50 tự thành hổ phách sẫm.
+ *
+ * NGUYÊN LÝ GƯƠNG cho các họ tint: 50↔950, 100↔900, 200↔800, 300↔700 (nền
+ * nhạt thành nền sẫm CÙNG HUE, chữ sẫm thành chữ sáng). Các sắc GIỮA
+ * (400/500/600) GIỮ NGUYÊN — đó là màu tín hiệu lãi/lỗ và màu đặc của nút/
+ * badge (bg-red-600 + text-white phải tối ở cả hai chế độ). Hệ quả cần nhớ:
+ * khối nào dùng bg-*-700/800 làm NỀN ĐẶC với chữ trắng phải kèm
+ * dark:bg-*-600 thủ công (đã rà toàn bộ khi làm 15/08).
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  /* ---- Token lõi — tông slate ấm đồng bộ light mode, KHÔNG xám trung tính ---- */
+  --background: #0b1220; /* sẫm hơn slate-900 một nhịp, ngả navy */
+  --foreground: #f1f5f9;
+  --card: #131c2f;
+  --card-foreground: #f1f5f9;
+  --popover: #1a2439; /* menu/dialog nổi hơn card một nấc */
+  --popover-foreground: #f1f5f9;
+  --primary: #e2e8f0; /* Monochrome: nút chính sáng trên nền tối */
+  --primary-foreground: #0f172a;
+  --secondary: #1f2c49;
+  --secondary-foreground: #f1f5f9;
+  --muted: #1a2439;
+  --muted-foreground: #94a3b8;
+  --accent: #1f2c49;
+  --accent-foreground: #f1f5f9;
+  --destructive: #f87171; /* red-400 — đỏ 500 gốc bị chìm trên nền tối */
+  --border: rgba(148, 163, 184, 0.16); /* slate-400 pha loãng — viền ngả xanh */
+  --input: rgba(148, 163, 184, 0.22);
+  --ring: #64748b;
   /* Cùng bảng phân loại với light mode — sáng hơn một nấc cho nền tối */
   --chart-1: oklch(0.75 0.183 55.934); /* orange-400 */
   --chart-2: oklch(0.707 0.165 254.624); /* blue-400 */
   --chart-3: oklch(0.765 0.177 163.223); /* emerald-400 */
   --chart-4: oklch(0.702 0.183 293.541); /* violet-400 */
   --chart-5: oklch(0.828 0.189 84.429); /* amber-400 */
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #0e1626;
+  --sidebar-foreground: #f1f5f9;
+  --sidebar-primary: #e2e8f0;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #1f2c49;
+  --sidebar-accent-foreground: #f1f5f9;
+  --sidebar-border: rgba(148, 163, 184, 0.14);
+  --sidebar-ring: #64748b;
+  --sidebar-active-bg: #1f2c49;
+  --sidebar-active-text: #f8fafc;
+  --sidebar-active-border: #f8fafc;
+
+  /* ---- Thang SLATE (bản đồ riêng, không theo gương vì kiêm vai bề mặt) ---- */
+  --color-slate-50: #182339; /* nền phụ/thead — nổi hơn card một nấc */
+  --color-slate-100: #1f2c49; /* pill, hover, icon box trung tính */
+  --color-slate-200: rgba(148, 163, 184, 0.16); /* viền chính */
+  --color-slate-300: rgba(148, 163, 184, 0.28); /* viền đậm / chữ mờ nhất */
+  --color-slate-400: #8593ab; /* ký hiệu ₫, icon phụ */
+  --color-slate-500: #94a3b8; /* nhãn — sáng lên một nấc so với gốc */
+  --color-slate-600: #b0bdd4;
+  --color-slate-700: #cbd5e1; /* chữ sidebar, số phụ trợ */
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f8fafc; /* chữ chính */
+  --color-slate-950: #ffffff;
+
+  /* ---- Các họ tint theo NGUYÊN LÝ GƯƠNG (hex chuẩn Tailwind) ---- */
+  --color-emerald-50: #022c22;
+  --color-emerald-100: #064e3b;
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-950: #ecfdf5;
+
+  --color-amber-50: #451a03;
+  --color-amber-100: #78350f;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-amber-900: #fef3c7;
+
+  --color-rose-50: #4c0519;
+  --color-rose-100: #881337;
+  --color-rose-200: #9f1239;
+  --color-rose-300: #be123c;
+  --color-rose-400: #fb7185; /* giữ nguyên gốc — neo cho bảng chú thích */
+  --color-rose-700: #fda4af;
+  --color-rose-800: #fecdd3;
+  --color-rose-900: #ffe4e6;
+
+  --color-red-50: #450a0a;
+  --color-red-100: #7f1d1d;
+  --color-red-200: #991b1b;
+  --color-red-300: #b91c1c;
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+
+  --color-violet-50: #2e1065;
+  --color-violet-100: #4c1d95;
+  --color-violet-200: #5b21b6;
+  --color-violet-300: #6d28d9;
+  --color-violet-700: #c4b5fd;
+  --color-violet-800: #ddd6fe;
+
+  --color-sky-50: #082f49;
+  --color-sky-100: #0c4a6e;
+  --color-sky-200: #075985;
+  --color-sky-300: #0369a1;
+  --color-sky-700: #7dd3fc;
+  --color-sky-800: #bae6fd;
+
+  --color-orange-50: #431407;
+  --color-orange-100: #7c2d12;
+  --color-orange-200: #9a3412;
+  --color-orange-700: #fdba74;
+
+  --color-blue-50: #172554;
+  --color-blue-100: #1e3a8a;
+  --color-blue-200: #1e40af;
+  --color-blue-700: #93c5fd;
+
+  --color-teal-50: #042f2e;
+  --color-teal-100: #134e4a;
+  --color-teal-200: #115e59;
+  --color-teal-700: #5eead4;
+  --color-teal-800: #99f6e4;
+
+  --color-purple-50: #3b0764;
+  --color-purple-100: #581c87;
+  --color-purple-200: #6b21a8;
+  --color-purple-600: #c084fc;
+  --color-purple-700: #d8b4fe;
+
+  --color-zinc-50: #18181b;
+  --color-zinc-100: #27272a;
+  --color-zinc-200: #3f3f46;
+  --color-zinc-300: #52525b;
+  --color-zinc-700: #d4d4d8;
+}
+
+/*
+ * Accent theme × dark: 3 theme màu vẫn hoạt động trong chế độ tối, nhưng
+ * accent phải chỉnh sắc độ (indigo-600 trên nền tối bị chìm). Selector
+ * html.dark[data-theme=...] để thắng cả khối .dark lẫn khối data-theme sáng.
+ */
+html.dark[data-theme="monochrome"] {
+  --primary: #e2e8f0;
+  --primary-foreground: #0f172a;
+  --ring: #64748b;
+  --sidebar-active-bg: #1f2c49;
+  --sidebar-active-text: #f8fafc;
+  --sidebar-active-border: #f8fafc;
+}
+html.dark[data-theme="indigo"] {
+  --primary: #6366f1; /* indigo-500 — sáng hơn bản light một nấc */
+  --primary-foreground: #eef2ff;
+  --ring: #818cf8;
+  --sidebar-active-bg: rgba(99, 102, 241, 0.16);
+  --sidebar-active-text: #a5b4fc; /* indigo-300 */
+  --sidebar-active-border: #818cf8;
+}
+html.dark[data-theme="emerald"] {
+  --primary: #10b981; /* emerald-500 */
+  --primary-foreground: #022c22;
+  --ring: #34d399;
+  --sidebar-active-bg: rgba(16, 185, 129, 0.15);
+  --sidebar-active-text: #6ee7b7; /* emerald-300 */
+  --sidebar-active-border: #34d399;
+}
+
+/*
+ * LỚP BÙ cho nút màu đặc trong dark mode: các nút bg-*-600 dùng sắc 700/800
+ * làm trạng thái hover (và 2 nút affiliate dùng 700 làm nền) — nhưng trong
+ * dark các sắc 700/800 đã LẬT THÀNH SÁNG để phục vụ chữ trên nền tint, hover
+ * sẽ thành nền sáng + chữ trắng. Bù tập trung tại đây theo đúng tên class
+ * (quy ước dark: hover chuyển sang sắc SÁNG HƠN cùng họ), khỏi rắc dark:
+ * vào từng nút. Nút mới sau này cứ theo mẫu bg-*-600 + hover:bg-*-700 là
+ * tự đúng ở cả hai chế độ.
+ */
+.dark .bg-emerald-700 {
+  background-color: #059669; /* emerald-600 */
+}
+.dark .hover\:bg-emerald-700:hover {
+  background-color: #10b981; /* emerald-500 */
+}
+.dark .hover\:bg-emerald-800:hover {
+  background-color: #10b981;
+}
+.dark .hover\:bg-rose-700:hover {
+  background-color: #f43f5e; /* rose-500 */
+}
+.dark .hover\:bg-sky-700:hover {
+  background-color: #0ea5e9; /* sky-500 */
+}
+.dark .hover\:bg-teal-700:hover {
+  background-color: #14b8a6; /* teal-500 */
+}
+.dark .hover\:bg-violet-700:hover {
+  background-color: #8b5cf6; /* violet-500 */
+}
+
+/*
+ * Biểu đồ Recharts trong dark mode — các trang truyền màu trục/lưới bằng HEX
+ * cứng (stroke="#e2e8f0"…) nên không ăn theo token. Stylesheet thắng
+ * presentation attribute, vậy ghi đè tập trung ở đây theo đúng giá trị hex
+ * đang dùng thay vì sửa từng biểu đồ; !important để thắng cả inline style.
+ */
+.dark svg [stroke="#e2e8f0"] {
+  stroke: #223049; /* lưới + trục */
+}
+.dark svg [stroke="#64748b"] {
+  stroke: #94a3b8; /* nhãn trục dùng stroke */
+}
+.dark .recharts-text {
+  fill: #94a3b8; /* nhãn trục dùng fill */
+}
+.dark .recharts-tooltip-cursor,
+.dark svg [fill="#f1f5f9"] {
+  fill: rgba(148, 163, 184, 0.1) !important; /* dải hover sau cột */
+}
+.dark svg [fill="#18181b"] {
+  fill: #d4d4d8; /* lát TikTok đen — trên nền tối phải lật thành sáng */
+}
+/* Chấm chú thích TikTok (inline style) — SSR ghi hex, runtime có thể là rgb */
+.dark span[style*="#18181b"],
+.dark span[style*="rgb(24, 24, 27)"] {
+  background-color: #d4d4d8 !important;
+}
+.dark .recharts-default-tooltip {
+  background-color: #1a2439 !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+.dark .recharts-default-tooltip .recharts-tooltip-label {
+  color: #f1f5f9 !important;
 }
 
 @layer base {
