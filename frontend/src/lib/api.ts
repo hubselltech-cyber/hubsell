@@ -737,24 +737,6 @@ export function refreshCashFlow() {
 
 // ----- Rút ví sàn → ngân hàng (WalletWithdrawal) -----
 
-export interface Withdrawal {
-  id: string;
-  channelId: string;
-  channelName: ChannelName;
-  shopName: string;
-  amount: number;
-  status: string;
-  source: "MANUAL" | "SYNC";
-  externalTxnId: string | null;
-  transactionTime: string;
-  note: string | null;
-}
-
-export function fetchWithdrawals(channelId?: string) {
-  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
-  return apiFetch<{ items: Withdrawal[] }>(`/api/finance/withdrawals${qs}`);
-}
-
 /** Kế toán xác nhận đã rút ví thủ công. */
 export function createWithdrawal(data: {
   channelId: string;
@@ -766,13 +748,6 @@ export function createWithdrawal(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
-}
-
-export function deleteWithdrawal(id: string) {
-  return apiFetch<{ id: string; deleted: boolean }>(
-    `/api/finance/withdrawals/${id}`,
-    { method: "DELETE" }
-  );
 }
 
 export interface AnalyticsResponse {
@@ -1165,20 +1140,6 @@ export async function importProductsExcel(file: File): Promise<ImportResult> {
   return res.json();
 }
 
-export function updateProduct(
-  id: string,
-  data: Partial<{
-    skuCode: string;
-    productName: string;
-    costPrice: number;
-    sellingPrice: number;
-  }>
-) {
-  return apiFetch<Product>(`/api/products/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  });
-}
 
 // ----- Đơn hàng -----
 
