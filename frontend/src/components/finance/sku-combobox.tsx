@@ -17,6 +17,12 @@ interface SkuComboboxProps {
   placeholder?: string;
   /** Dòng gợi ý khi KHO RỖNG (chưa có SKU nào) — ngữ cảnh gọi tự chỉ đường. */
   emptyHint?: string;
+  /**
+   * true = danh sách kết quả nằm TRONG luồng nội dung (đẩy phần dưới xuống)
+   * thay vì nổi đè lên. Dùng trong dialog/modal: danh sách nổi sẽ tràn ra
+   * ngoài khung thoại, đè lên nút bấm — nhìn như vỡ giao diện.
+   */
+  inlineList?: boolean;
 }
 
 /// Ô chọn SKU có TÌM KIẾM (autocomplete) — thay cho dropdown thường.
@@ -28,6 +34,7 @@ export function SkuCombobox({
   disabled,
   placeholder = "Gõ mã SKU hoặc tên sản phẩm để tìm…",
   emptyHint = "Tạo sản phẩm trong kho trước rồi quay lại chọn.",
+  inlineList = false,
 }: SkuComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -64,13 +71,14 @@ export function SkuCombobox({
   useEffect(() => setHighlight(0), [query, open]);
 
   // Đo chỗ trống mỗi lần mở: dưới không đủ cho danh sách (max-h-64 ≈ 256px)
-  // mà trên rộng hơn thì lật lên.
+  // mà trên rộng hơn thì lật lên. Danh sách inline nằm trong luồng nội dung
+  // nên không cần đo — không bao giờ tràn viewport.
   useEffect(() => {
-    if (!open || !containerRef.current) return;
+    if (inlineList || !open || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const below = window.innerHeight - rect.bottom;
     setDropUp(below < 280 && rect.top > below);
-  }, [open]);
+  }, [open, inlineList]);
 
   // Cuộn để mục đang chọn bằng bàn phím luôn nằm trong tầm nhìn
   useEffect(() => {
@@ -169,8 +177,10 @@ export function SkuCombobox({
           role="listbox"
           // Giới hạn chiều cao + cuộn dọc để không làm vỡ layout modal
           className={cn(
-            "absolute z-50 max-h-64 w-full overflow-y-auto overscroll-contain rounded-lg border bg-popover p-1 shadow-lg",
-            dropUp ? "bottom-full mb-1" : "top-full mt-1"
+            "max-h-64 w-full overflow-y-auto overscroll-contain rounded-lg border bg-popover p-1",
+            inlineList
+              ? "mt-2 max-h-56 shadow-sm" // trong dialog: nằm trong luồng, đẩy nút xuống
+              : cn("absolute z-50 shadow-lg", dropUp ? "bottom-full mb-1" : "top-full mt-1")
           )}
         >
           {/* Lựa chọn bỏ gắn SKU */}

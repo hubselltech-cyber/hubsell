@@ -127,6 +127,7 @@ export function LinkOneDialog({
               products={products}
               value={internalSku}
               onChange={setInternalSku}
+              inlineList
             />
             {target && (
               <p className={TEXT_SUB}>
