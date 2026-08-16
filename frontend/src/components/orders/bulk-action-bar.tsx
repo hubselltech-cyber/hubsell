@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, PackageCheck, Printer, Truck, X } from "lucide-react";
+import { Loader2, PackageCheck, Printer, Truck } from "lucide-react";
 
+import { BulkBar } from "@/components/data-table/bulk-bar";
 import { Button } from "@/components/ui/button";
 import {
   ApiError,
@@ -15,8 +16,6 @@ import {
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { printOrderLabels } from "@/lib/print-labels";
-import { TEXT_SUB } from "@/lib/typography";
-import { cn } from "@/lib/utils";
 
 /**
  * THANH XỬ LÝ HÀNG LOẠT
@@ -117,26 +116,19 @@ export function BulkActionBar({
     }
   }
 
-  if (selected.length === 0) return null;
-
+  // Khung thanh (đếm + bỏ chọn) đã tách về data-table/bulk-bar.tsx dùng chung
+  // cho mọi bảng — ở đây chỉ còn ba nút nghiệp vụ của quy trình kho.
   return (
-    <div
-      role="region"
-      aria-label="Thao tác hàng loạt"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-5"
+    <BulkBar
+      count={selected.length}
+      unitLabel="đơn"
+      subtitle={
+        reprinting.length > 0
+          ? `${formatNumber(reprinting.length)} đơn đã in phiếu trước đó`
+          : "Chưa đơn nào được in phiếu"
+      }
+      onClear={onClear}
     >
-      <div className="pointer-events-auto flex w-full max-w-4xl flex-wrap items-center gap-3 rounded-xl bg-foreground px-4 py-3 text-background shadow-lg ring-1 ring-black/10">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">
-            Đã chọn {formatNumber(selected.length)} đơn
-          </p>
-          <p className={cn(TEXT_SUB, "text-background/70")}>
-            {reprinting.length > 0
-              ? `${formatNumber(reprinting.length)} đơn đã in phiếu trước đó`
-              : "Chưa đơn nào được in phiếu"}
-          </p>
-        </div>
-
         <Button
           size="sm"
           variant="secondary"
@@ -201,17 +193,6 @@ export function BulkActionBar({
           In phiếu đóng gói
           {reprinting.length > 0 && ` (${formatNumber(reprinting.length)} in lại)`}
         </Button>
-
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={onClear}
-          aria-label="Bỏ chọn tất cả"
-          className="text-background hover:bg-background/15 hover:text-background"
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-    </div>
+    </BulkBar>
   );
 }

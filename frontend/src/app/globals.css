@@ -444,3 +444,39 @@ html.dark[data-theme="emerald"] {
     font-variant-numeric: tabular-nums;
   }
 }
+/* ============================================================
+   DATA TABLE (Tầng 2 kế hoạch UI) — ô của CỘT GHIM (sticky).
+   Ô ghim phải có NỀN ĐẶC (cuộn ngang chữ bên dưới không xuyên qua), mà nền
+   dòng lại đổi theo trạng thái (kẻ sọc / hover / đang chọn) và đều là màu
+   pha alpha — nên tính lại từng trạng thái bằng color-mix trên token.
+   Token đổi theo .dark nên sáng/tối tự khớp, đừng thay bằng hex cứng.
+   ============================================================ */
+.dt-pin {
+  position: sticky;
+  z-index: 2;
+  background: var(--color-card);
+}
+th.dt-pin {
+  /* thead có dải bg-slate-50/60 phủ trên nền card */
+  z-index: 3;
+  background: color-mix(in oklab, var(--color-slate-50) 60%, var(--color-card));
+}
+tr[data-striped="true"] > td.dt-pin {
+  background: color-mix(in oklab, var(--color-muted) 40%, var(--color-card));
+}
+tr:hover > td.dt-pin {
+  background: color-mix(in oklab, var(--color-primary) 10%, var(--color-card));
+}
+tr[data-selected="true"] > td.dt-pin {
+  background: color-mix(in oklab, var(--color-primary) 15%, var(--color-card));
+}
+tr[data-selected="true"]:hover > td.dt-pin {
+  background: color-mix(in oklab, var(--color-primary) 20%, var(--color-card));
+}
+/* Vạch phân cách mép vùng ghim — nhìn là biết cột nào đang "dính" */
+.dt-pin-left-last {
+  box-shadow: inset -1px 0 0 0 var(--color-slate-200);
+}
+.dt-pin-right-first {
+  box-shadow: inset 1px 0 0 0 var(--color-slate-200);
+}

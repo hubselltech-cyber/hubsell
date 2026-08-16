@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { DataTable } from "@/components/data-table/data-table";
 import { InvoiceStatusPanel } from "@/components/invoice/invoice-status-panel";
 import { Money } from "@/components/ui/money";
 import { BulkActionBar } from "@/components/orders/bulk-action-bar";
@@ -37,14 +39,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   ApiError,
   channelFilterToQuery,
@@ -374,26 +368,203 @@ export default function OrdersPage() {
   // hay đổi bộ lọc là các lựa chọn cũ tự rơi ra, không thể lỡ tay bấm "xác nhận
   // hàng loạt" lên đơn không còn hiện — mà không cần effect xoá thủ công.
   const selectedOrders = items.filter((o) => selectedIds.has(o.id));
-  const allOnPageSelected =
-    items.length > 0 && items.every((o) => selectedIds.has(o.id));
 
-  function toggleOne(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  // ===== ĐỊNH NGHĨA CỘT cho DataTable (Tầng 2) =====
+  // `size` chỉ có tác dụng khi cột được GHIM (ép bề rộng để offset sticky
+  // khớp); bình thường bảng vẫn tự co giãn. `meta.label` là tên trong menu Cột.
+  const orderColumns = useMemo<ColumnDef<Order>[]>(
+    () => [
+      {
+        id: "orderCode",
+        size: 250,
+        meta: { label: "Mã đơn" },
+        header: "Mã đơn",
+        cell: ({ row }) => {
+          const o = row.original;
+          const shop = shopOnlyName(o.channel.channelName, o.channel.shopName);
+          return (
+            <>
+              <div className="flex items-center gap-2">
+                <MetaBadge
+                  meta={CHANNEL_META[o.channel.channelName]}
+                  fallback={o.channel.channelName}
+                />
+                <span className="font-semibold tracking-tight">
+                  {o.orderCode}
+                </span>
+              </div>
+              <p className={cn(TEXT_SUB, "mt-1")}>
+                {formatDateTime(o.createdAt)}
+                {shop && <> · {shop}</>}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "customer",
+        size: 170,
+        meta: { label: "Khách hàng" },
+        header: "Khách hàng",
+        cell: ({ row }) => (
+          <>
+            <p className="font-medium">{row.original.customerName}</p>
+            <p className={cn(TEXT_SUB, "font-mono")}>
+              {row.original.customerPhone ?? "—"}
+            </p>
+          </>
+        ),
+      },
+      {
+        id: "products",
+        size: 300,
+        meta: {
+          label: "Sản phẩm",
+          cellClassName: "w-72 max-w-72 whitespace-normal",
+        },
+        header: "Sản phẩm",
+        cell: ({ row }) => <OrderProductsCell lines={row.original.items ?? []} />,
+      },
+      {
+        id: "shipping",
+        size: 170,
+        meta: { label: "Vận chuyển" },
+        header: "Vận chuyển",
+        cell: ({ row }) => {
+          const o = row.original;
+          return (
+            <>
+              {/* HỎA TỐC đỏ rực — cùng dấu hiệu với app mobile (chốt 13/08) */}
+              {isExpressShipping(o.shippingCarrierName) ? (
+                <>
+                  <span className="mb-0.5 inline-flex items-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                    ⚡ Hỏa tốc
+                  </span>
+                  <p className="font-semibold text-red-600">
+                    {o.shippingCarrierName ?? "Hỏa tốc"}
+                  </p>
+                </>
+              ) : (
+                <p className="font-medium">{carrierShort(o.carrier)}</p>
+              )}
+              <p className={cn(TEXT_SUB, "font-mono")}>
+                {o.trackingCode ?? "—"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "total",
+        size: 140,
+        meta: { label: "Tổng tiền", align: "right" },
+        header: "Tổng tiền",
+        cell: ({ row }) => (
+          <>
+            <Money
+              value={row.original.totalAmount}
+              className="font-medium text-slate-900"
+            />
+            <span className={cn(TEXT_SUB, "block")}>
+              {PAYMENT_META[row.original.paymentStatus]?.label ??
+                row.original.paymentStatus}
+            </span>
+          </>
+        ),
+      },
+      {
+        id: "status",
+        size: 180,
+        meta: { label: "Trạng thái", align: "center" },
+        header: "Trạng thái",
+        cell: ({ row }) => {
+          const o = row.original;
+          return (
+            <>
+              <MetaBadge
+                meta={STATUS_META[o.shippingStatus]}
+                fallback={o.shippingStatus}
+              />
+              {/* Nhãn đã in phiếu — nhìn là biết đơn nào người khác đang gói */}
+              {o.labelPrintedAt && (
+                <span
+                  className={cn(
+                    TEXT_SUB,
+                    "mt-1 flex items-center justify-center gap-1 text-emerald-700"
+                  )}
+                  title={`Đã in phiếu lúc ${formatDateTime(o.labelPrintedAt)}`}
+                >
+                  <Printer className="size-3 shrink-0" />
+                  Đã in phiếu
+                </span>
+              )}
+              {/* Tình trạng hàng hoàn — chỉ hiện khi đơn có hoàn */}
+              {o.returnStatus !== "NONE" && RETURN_META[o.returnStatus] && (
+                <span
+                  className={cn(
+                    "mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+                    RETURN_META[o.returnStatus].className
+                  )}
+                  title={o.returnNote ?? undefined}
+                >
+                  {RETURN_META[o.returnStatus].label}
+                </span>
+              )}
+            </>
+          );
+        },
+      },
+      {
+        id: "actions",
+        size: 130,
+        meta: { label: "Thao tác", align: "center" },
+        header: "Thao tác",
+        cell: ({ row }) => (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={row.original.shippingStatus === "CANCELLED"}
+            onClick={() => setEditing(row.original)}
+          >
+            <Pencil className="size-3.5" />
+            Cập nhật
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
 
-  function toggleAllOnPage() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allOnPageSelected) items.forEach((o) => next.delete(o.id));
-      else items.forEach((o) => next.add(o.id));
-      return next;
-    });
-  }
+  // Chế độ xem của bảng đóng gói CẢ bộ lọc trang — áp view là quay lại đúng
+  // cảnh làm việc (tab + kênh + ĐVVC + loại đơn + từ khóa + cỡ trang).
+  const viewExtras = {
+    get: () => ({
+      tab,
+      printedFilter,
+      returnFilter,
+      channelFilter,
+      carrierFilter,
+      orderTypeFilter,
+      search,
+      pageSize,
+    }),
+    apply: (ex: Record<string, unknown>) => {
+      if (typeof ex.tab === "string") setTab(ex.tab);
+      if (typeof ex.printedFilter === "string")
+        setPrintedFilter(ex.printedFilter as "" | "no" | "yes");
+      if (typeof ex.returnFilter === "string")
+        setReturnFilter(ex.returnFilter as ReturnStatus | "");
+      if (ex.channelFilter && typeof ex.channelFilter === "object")
+        setChannelFilter(ex.channelFilter as ChannelFilterValue);
+      if (typeof ex.carrierFilter === "string")
+        setCarrierFilter(ex.carrierFilter);
+      if (typeof ex.orderTypeFilter === "string")
+        setOrderTypeFilter(ex.orderTypeFilter as "" | "single" | "multi");
+      if (typeof ex.search === "string") setSearch(ex.search);
+      if (typeof ex.pageSize === "number") setPageSize(ex.pageSize);
+      setPage(1);
+    },
+  };
 
   function resetFilters() {
     setTab("all");
@@ -687,182 +858,17 @@ export default function OrdersPage() {
               </div>
             ) : (
               <Refreshing active={loading}>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <input
-                          type="checkbox"
-                          aria-label="Chọn tất cả đơn trên trang này"
-                          checked={allOnPageSelected}
-                          onChange={toggleAllOnPage}
-                          className="size-4 cursor-pointer accent-primary"
-                        />
-                      </TableHead>
-                      <TableHead>Mã đơn</TableHead>
-                      <TableHead>Khách hàng</TableHead>
-                      <TableHead>Sản phẩm</TableHead>
-                      <TableHead>Vận chuyển</TableHead>
-                      <TableHead className="text-right">Tổng tiền</TableHead>
-                      <TableHead className="text-center">Trạng thái</TableHead>
-                      <TableHead className="text-center">Thao tác</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((o, index) => {
-                      const checked = selectedIds.has(o.id);
-                      const lines = o.items ?? [];
-                      return (
-                        <TableRow
-                          key={o.id}
-                          className={cn(
-                            "transition-colors",
-                            // Sọc ngựa vằn: dòng chẵn nền nhạt để mắt bám đúng
-                            // hàng khi rê ngang qua nhiều cột
-                            index % 2 === 1 && "bg-muted/40",
-                            // Hover phải ĐẬM HƠN HẲN sọc, nếu không rê chuột
-                            // chẳng thấy gì. Không dùng bg-accent vì token accent
-                            // của theme này trùng đúng giá trị với muted.
-                            "hover:bg-primary/10",
-                            // Dòng đang tích chọn: đậm hơn nữa + vạch màu bên
-                            // trái, để phân biệt với hover bằng cả HÌNH lẫn màu
-                            checked &&
-                              "bg-primary/15 hover:bg-primary/20 shadow-[inset_3px_0_0_0_var(--color-primary)]"
-                          )}
-                        >
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              aria-label={`Chọn đơn ${o.orderCode}`}
-                              checked={checked}
-                              onChange={() => toggleOne(o.id)}
-                              className="size-4 cursor-pointer accent-primary"
-                            />
-                          </TableCell>
-
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <MetaBadge
-                                meta={CHANNEL_META[o.channel.channelName]}
-                                fallback={o.channel.channelName}
-                              />
-                              <span className="font-semibold tracking-tight">
-                                {o.orderCode}
-                              </span>
-                            </div>
-                            <p className={cn(TEXT_SUB, "mt-1")}>
-                              {formatDateTime(o.createdAt)}
-                              {shopOnlyName(
-                                o.channel.channelName,
-                                o.channel.shopName
-                              ) && (
-                                <>
-                                  {" · "}
-                                  {shopOnlyName(
-                                    o.channel.channelName,
-                                    o.channel.shopName
-                                  )}
-                                </>
-                              )}
-                            </p>
-                          </TableCell>
-
-                          <TableCell>
-                            <p className="font-medium">{o.customerName}</p>
-                            <p className={cn(TEXT_SUB, "font-mono")}>
-                              {o.customerPhone ?? "—"}
-                            </p>
-                          </TableCell>
-
-                          <TableCell className="w-72 max-w-72 whitespace-normal">
-                            <OrderProductsCell lines={lines} />
-                          </TableCell>
-
-                          <TableCell>
-                            {/* HỎA TỐC đỏ rực — cùng dấu hiệu với app mobile (chốt 13/08):
-                                loại đơn phải xử lý gấp nhất, nhìn phát thấy ngay */}
-                            {isExpressShipping(o.shippingCarrierName) ? (
-                              <>
-                                <span className="mb-0.5 inline-flex items-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white">
-                                  ⚡ Hỏa tốc
-                                </span>
-                                {/* Đơn hỏa tốc hiện TÊN NGUYÊN VĂN (AhaMove/GrabExpress…) —
-                                    enum gộp về "Hãng khác" là mất thông tin quan trọng nhất */}
-                                <p className="font-semibold text-red-600">
-                                  {o.shippingCarrierName ?? "Hỏa tốc"}
-                                </p>
-                              </>
-                            ) : (
-                              <p className="font-medium">
-                                {carrierShort(o.carrier)}
-                              </p>
-                            )}
-                            <p className={cn(TEXT_SUB, "font-mono")}>
-                              {o.trackingCode ?? "—"}
-                            </p>
-                          </TableCell>
-
-                          <TableCell className="text-right">
-                            <Money
-                              value={o.totalAmount}
-                              className="font-medium text-slate-900"
-                            />
-                            <span className={cn(TEXT_SUB, "block")}>
-                              {PAYMENT_META[o.paymentStatus]?.label ??
-                                o.paymentStatus}
-                            </span>
-                          </TableCell>
-
-                          <TableCell className="text-center">
-                            <MetaBadge
-                              meta={STATUS_META[o.shippingStatus]}
-                              fallback={o.shippingStatus}
-                            />
-                            {/* Nhãn đã in phiếu — nhìn là biết đơn nào người
-                                khác đang gói, khỏi in trùng */}
-                            {o.labelPrintedAt && (
-                              <span
-                                className={cn(
-                                  TEXT_SUB,
-                                  "mt-1 flex items-center gap-1 text-emerald-700"
-                                )}
-                                title={`Đã in phiếu lúc ${formatDateTime(o.labelPrintedAt)}`}
-                              >
-                                <Printer className="size-3 shrink-0" />
-                                Đã in phiếu
-                              </span>
-                            )}
-                            {/* Tình trạng hàng hoàn — chỉ hiện khi đơn có hoàn */}
-                            {o.returnStatus !== "NONE" &&
-                              RETURN_META[o.returnStatus] && (
-                                <span
-                                  className={cn(
-                                    "mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
-                                    RETURN_META[o.returnStatus].className
-                                  )}
-                                  title={o.returnNote ?? undefined}
-                                >
-                                  {RETURN_META[o.returnStatus].label}
-                                </span>
-                              )}
-                          </TableCell>
-
-                          <TableCell className="text-center">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={o.shippingStatus === "CANCELLED"}
-                              onClick={() => setEditing(o)}
-                            >
-                              <Pencil className="size-3.5" />
-                              Cập nhật
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                {/* Bảng chuẩn ERP (Tầng 2): menu Cột (ẩn/hiện + ghim trái),
+                    Chế độ xem lưu cột + bộ lọc, checkbox chọn dòng tích hợp */}
+                <DataTable
+                  tableId="orders"
+                  columns={orderColumns}
+                  data={items}
+                  getRowId={(o) => o.id}
+                  selection={{ selectedIds, onChange: setSelectedIds }}
+                  viewExtras={viewExtras}
+                  toolbar={`${formatNumber(total)} đơn khớp bộ lọc`}
+                />
               </Refreshing>
             )}
           </CardContent>
