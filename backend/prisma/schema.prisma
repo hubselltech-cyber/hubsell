@@ -1667,3 +1667,25 @@ model Notification {
   @@index([ownerId, createdAt])
   @@map("notifications")
 }
+
+/// NHẬT KÝ CÂU HỎI TRỢ LÝ HUBSELL (thác nước luật-trước-LLM-sau, chốt 16/08).
+/// Ghi MỌI câu hỏi ngay từ ngày đầu — mục tiêu số 1 là tiết kiệm token: định kỳ
+/// đọc các câu outcome=miss phổ biến để bồi thành intent luật mới (~15'/intent),
+/// tầng luật tự nở ra thì tỷ lệ phải đi LLM (gói cao, sau này) tự co lại.
+model AssistantQueryLog {
+  id      String @id @default(cuid())
+  ownerId String
+  /// Câu hỏi nguyên văn người dùng gõ (hoặc nhãn chip khi bấm chip hỏi lại).
+  question   String
+  /// Bản chuẩn hoá không dấu lowercase — gom nhóm câu trùng khi đọc log.
+  normalized String
+  /// Intent tầng luật đã khớp; null khi miss/analysis (nguyên liệu bồi luật).
+  intent String?
+  /// answered | clarify | miss | analysis
+  outcome   String
+  createdAt DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+  @@index([outcome, createdAt])
+  @@map("assistant_query_log")
+}

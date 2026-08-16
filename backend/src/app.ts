@@ -31,6 +31,7 @@ import operationsRouter from "./routes/operations";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
+import assistantRouter from "./routes/assistant";
 import { notificationsRouter, notificationStream } from "./notifications";
 
 // ============================================================
@@ -199,6 +200,11 @@ export function createApp() {
   // qua query và được verify bên trong. GĐ1 chỉ chủ shop (adminOnly).
   app.get("/api/notifications/stream", notificationStream);
   app.use("/api/notifications", requireAuth, adminOnly, notificationsRouter);
+
+  // Trợ lý Hubsell (bong bóng chat hỏi số liệu vận hành — tầng luật): câu trả
+  // lời chạm đủ mảng tài chính nên GĐ1 chỉ CHỦ SHOP, như chuông thông báo.
+  // KHÔNG gác requireChannel: shop chưa nối gian vẫn chat được (số về 0).
+  app.use("/api/assistant", requireAuth, adminOnly, assistantRouter);
 
   // Xử lý route không tồn tại
   app.use((_req, res) => {

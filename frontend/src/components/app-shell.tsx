@@ -18,6 +18,7 @@ import {
 
 import { useQueryClient } from "@tanstack/react-query";
 
+import { AssistantWidget } from "@/components/assistant/assistant-widget";
 import { CommandPalette } from "@/components/command-palette";
 import { NavIcon } from "@/components/nav-icon";
 import { NotificationBell } from "@/components/notification-bell";
@@ -751,6 +752,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         items={[...items, ...bottomItems]}
         onLogout={handleLogout}
       />
+
+      {/* Trợ lý Hubsell — bong bóng chat nổi mọi trang, sống xuyên chuyển trang
+          (nằm NGOÀI khối key={pathname}). GĐ1 chỉ CHỦ SHOP shop thường, cùng
+          điều kiện với chuông thông báo. */}
+      {user && isAdmin(user) && !hqWorkspace && <AssistantWidget />}
     </div>
   );
 }

@@ -3479,3 +3479,36 @@ export function markNotificationsRead(ids?: string[]) {
 export function notificationStreamUrl(): string {
   return `${API_URL}/api/notifications/stream?token=${encodeURIComponent(getToken() ?? "")}`;
 }
+
+// ----- Trợ lý Hubsell (bong bóng chat hỏi số liệu vận hành — tầng luật) -----
+
+export interface AssistantAnswerRow {
+  label: string;
+  value: string;
+  /** pos = xanh (lãi), neg = đỏ (lỗ/cảnh báo). */
+  tone?: "pos" | "neg";
+}
+
+export interface AssistantReply {
+  /** answered = có số; clarify = hỏi lại bằng chip; miss = chưa hiểu (đã ghi
+   *  log để bồi luật); analysis = câu phân tích chờ tầng AI gói cao. */
+  outcome: "answered" | "clarify" | "miss" | "analysis";
+  text: string;
+  rows?: AssistantAnswerRow[];
+  link?: { href: string; label: string };
+  chips?: { intent: string; label: string }[];
+  suggestions?: string[];
+}
+
+/** Hỏi trợ lý: câu chữ tự nhiên, hoặc intent đích danh khi bấm chip hỏi lại. */
+export function askAssistant(data: { question?: string; intent?: string }) {
+  return apiFetch<AssistantReply>("/api/assistant/ask", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+/** Câu mẫu cho màn chào của bong bóng chat. */
+export function fetchAssistantSuggestions() {
+  return apiFetch<{ suggestions: string[] }>("/api/assistant/suggestions");
+}
