@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { QueryProvider } from "@/components/query-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -65,7 +66,11 @@ export default function RootLayout({
           storageKey="hubsell-theme-mode"
           disableTransitionOnChange
         >
-          <TooltipProvider>{children}</TooltipProvider>
+          {/* Tầng cache dữ liệu React Query (Tầng 1 kế hoạch UI): quay lại
+              trang cũ hiện ngay số trong cache rồi âm thầm refetch. */}
+          <QueryProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </QueryProvider>
           <Toaster richColors position="top-right" />
         </ThemeProvider>
       </body>

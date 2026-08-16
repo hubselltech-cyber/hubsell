@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package,
@@ -55,11 +55,11 @@ import {
   fetchDashboardSummary,
   getStoredUser,
   getToken,
-  ApiError,
   type AnalyticsResponse,
   type ChannelName,
-  type DashboardSummary,
 } from "@/lib/api";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery } from "@/lib/use-api-query";
 import { canAccessDashboard, canSeeFinancials } from "@/lib/permissions";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import {
@@ -485,11 +485,6 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [data, setData] = useState<DashboardSummary | null>(null);
-  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [denied, setDenied] = useState(false);
   // Command Center mở ra là thấy HÔM NAY — câu hỏi đầu ngày của chủ shop là
   // "hôm nay đang chạy thế nào", không phải bức tranh 30 ngày
   const [range, setRange] = useState<DateRange>(() =>
@@ -499,48 +494,39 @@ export default function DashboardPage() {
   // SALES xem được doanh thu và sản lượng, nhưng không được biết giá vốn hay lãi.
   // Backend đã cắt các trường đó khỏi phản hồi; ở đây bỏ luôn thẻ để không hiện "—".
   const seesFinancials = canSeeFinancials(getStoredUser());
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [summary, stats] = await Promise.all([
-        fetchDashboardSummary(),
-        fetchAnalytics(range, channel),
-      ]);
-      setData(summary);
-      setAnalytics(stats);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (err instanceof ApiError && err.status === 403) {
-        setDenied(true);
-        return;
-      }
-      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
-      setError(
-        "Chưa kết nối được máy chủ (backend). Hãy chắc chắn backend đang chạy ở cổng 4000."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [router, range, channel]);
+  // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
+  const allowed = canAccessDashboard(getStoredUser());
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    // Kho không có việc gì ở Tổng quan; SALES vào được nhưng bị cắt chỉ số tài chính
-    if (!canAccessDashboard(getStoredUser())) {
-      setDenied(true);
-      setLoading(false);
-      return;
-    }
-    load();
-  }, [load, router]);
+    if (!getToken()) router.replace("/login");
+  }, [router]);
+
+  // Hai khối số của trang nằm trong cache React Query: quay lại Tổng quan là
+  // thấy ngay số cũ, refetch chạy ngầm phía sau (401/403/409 hook tự xử).
+  const summaryQ = useApiQuery({
+    queryKey: qk.dashboardSummary(),
+    queryFn: fetchDashboardSummary,
+    enabled: allowed,
+  });
+  const analyticsQ = useApiQuery({
+    queryKey: qk.analytics(range, channel),
+    queryFn: () => fetchAnalytics(range, channel),
+    enabled: allowed,
+  });
+
+  const data = summaryQ.data ?? null;
+  const analytics = analyticsQ.data ?? null;
+  // loading nghĩa "đang tính lại" (lần đầu LẪN nền) — điều khiển Refreshing,
+  // nút Làm mới và icon xoay, giữ nguyên ngữ nghĩa cũ của trang.
+  const loading = summaryQ.refreshing || analyticsQ.refreshing;
+  const error = analyticsQ.error ?? summaryQ.error;
+  const denied = !allowed || summaryQ.denied || analyticsQ.denied;
+
+  // Chỉ dùng cho nút "Làm mới" — không cần useCallback vì không effect nào phụ thuộc.
+  const load = () => {
+    summaryQ.refetch();
+    analyticsQ.refetch();
+  };
 
   if (denied) {
     return (

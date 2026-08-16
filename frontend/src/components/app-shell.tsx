@@ -16,6 +16,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { CommandPalette } from "@/components/command-palette";
 import { NavIcon } from "@/components/nav-icon";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
@@ -35,6 +37,7 @@ import {
   isAdmin,
   isPlatformWorkspace,
 } from "@/lib/permissions";
+import { prefetchRoute } from "@/lib/prefetch";
 import { TEXT_PAGE_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -344,6 +347,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [openMenus, setOpenMenus] = useState<Set<string>>(
     () => new Set(menusForPath(pathname))
   );
+  // Rê chuột lên link sidebar là nạp sẵn dữ liệu trang đích vào cache React
+  // Query — bấm vào hiện số tức thì (lib/prefetch.ts, Tầng 1 kế hoạch UI).
+  const queryClient = useQueryClient();
+  const prefetch = (href: string) => prefetchRoute(queryClient, href);
 
   // Điều hướng sang trang con của nhóm đang đóng thì tự xoè nhóm đó ra —
   // chỉ THÊM vào state nên không phá thao tác cụp tay trước đó của người dùng.
@@ -521,6 +528,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Link
                     key={child.href}
                     href={child.href}
+                    onMouseEnter={() => prefetch(child.href)}
+                    onFocus={() => prefetch(child.href)}
                     className={cn(
                       "relative block rounded-lg px-3 py-2 text-sm transition-colors",
                       childActive
@@ -556,6 +565,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Link
         key={item.href}
         href={item.href!}
+        onMouseEnter={() => prefetch(item.href!)}
+        onFocus={() => prefetch(item.href!)}
         className={cn(
           "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
           // Chưa chọn để slate-700 sắc màu (xem chú thích ở nút nhóm).

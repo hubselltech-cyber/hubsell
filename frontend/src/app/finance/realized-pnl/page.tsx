@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -26,18 +26,18 @@ import { LazadaProfitTable } from "@/components/finance/realized-pnl/LazadaProfi
 import { ShopeeProfitTable } from "@/components/finance/realized-pnl/ShopeeProfitTable";
 import { TiktokProfitTable } from "@/components/finance/realized-pnl/TiktokProfitTable";
 import {
-  ApiError,
   fetchRealizedPnl,
   getStoredUser,
   getToken,
   type ChannelFilterQuery,
   type ChannelName,
   type PnlDetailRow,
-  type RealizedPnlResponse,
   type ReconciliationStatus,
 } from "@/lib/api";
 import { can } from "@/lib/permissions";
-import { defaultRange, type DateRange } from "@/lib/date-range";
+import { defaultRange, rangeToQuery, type DateRange } from "@/lib/date-range";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery } from "@/lib/use-api-query";
 import { exportPnlRows, exportRealizedPnl } from "@/lib/excel";
 import { formatNumber } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -82,19 +82,32 @@ export default function RealizedPnlPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [data, setData] = useState<RealizedPnlResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
   const [exporting, setExporting] = useState(false);
   // Đơn đang tích chọn — lưu cả object để xuất Excel không cần gọi lại API.
   const [selected, setSelected] = useState<Map<string, PnlDetailRow>>(new Map());
 
   const platform = TABS.find((t) => t.key === tab)!.platform;
+  const allowed = can(getStoredUser(), "finance.realized-pnl");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchRealizedPnl({
+  useEffect(() => {
+    if (!getToken()) router.replace("/login");
+  }, [router]);
+
+  // Mỗi tổ hợp bộ lọc là một ô cache riêng — đảo qua lại giữa các tab sàn /
+  // trạng thái là thấy ngay số cũ, refetch chạy ngầm (keepPreviousData giữ
+  // bảng cũ trên màn khi đổi bộ lọc, Refreshing lo phần mờ số).
+  const pnlQ = useApiQuery({
+    queryKey: qk.realizedPnl({
+      ...rangeToQuery(range),
+      platform,
+      status,
+      lossOnly,
+      search,
+      page,
+      pageSize,
+    }),
+    queryFn: () =>
+      fetchRealizedPnl({
         range,
         channel: channelOf(platform),
         status,
@@ -102,18 +115,13 @@ export default function RealizedPnlPage() {
         search,
         page,
         pageSize,
-      });
-      setData(res);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (err instanceof ApiError && err.status === 403) setDenied(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [router, range, platform, status, lossOnly, search, page, pageSize]);
+      }),
+    enabled: allowed,
+  });
+  const data = pnlQ.data ?? null;
+  const loading = pnlQ.refreshing;
+  const denied = !allowed || pnlQ.denied;
+  const load = () => pnlQ.refetch();
 
   // Debounce ô tìm kiếm → cập nhật search sau 400ms ngừng gõ, về trang 1.
   useEffect(() => {
@@ -123,19 +131,6 @@ export default function RealizedPnlPage() {
     }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
-
-  useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    if (!can(getStoredUser(), "finance.realized-pnl")) {
-      setDenied(true);
-      setLoading(false);
-      return;
-    }
-    load();
-  }, [load, router]);
 
   // Đổi tab / bộ lọc thì về trang 1 VÀ xóa lựa chọn (tránh lẫn dữ liệu giữa các
   // ngữ cảnh khác nhau — theo yêu cầu quản lý trạng thái).

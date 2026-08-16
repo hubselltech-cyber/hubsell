@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   RefreshCw,
@@ -47,13 +47,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  ApiError,
   fetchFinanceAnalytics,
   getStoredUser,
   getToken,
-  type FinanceAnalytics,
 } from "@/lib/api";
 import { formatVND, formatNumber } from "@/lib/format";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery } from "@/lib/use-api-query";
 
 // Bố cục 4 thẻ = THÁC NƯỚC dòng tiền (chốt 31/07, backend quyết định items):
 //   Giá trị SP − Tổng sàn khấu trừ (phí + thuế sàn + voucher + chênh lệch VC
@@ -68,52 +68,38 @@ import { formatVND, formatNumber } from "@/lib/format";
 
 export default function FinanceAnalyticsPage() {
   const router = useRouter();
-  const [data, setData] = useState<FinanceAnalytics | null>(null);
-  // Cùng số liệu của KỲ LIỀN TRƯỚC (cùng độ dài) — để vẽ mũi tên tăng/giảm
-  // trên 4 thẻ. Nạp lỗi cũng không sao (null → ẩn mũi tên, trang vẫn chạy).
-  const [prevData, setPrevData] = useState<FinanceAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [channel, setChannel] = useState<ChannelFilterValue>(ALL_CHANNELS);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [cur, prev] = await Promise.all([
-        fetchFinanceAnalytics(range, channel),
-        fetchFinanceAnalytics(previousRange(range), channel).catch(() => null),
-      ]);
-      setData(cur);
-      setPrevData(prev);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (err instanceof ApiError && err.status === 403) {
-        setDenied(true);
-        return;
-      }
-      // 409 (chưa có kênh) — AppShell overlay xử lý
-    } finally {
-      setLoading(false);
-    }
-  }, [router, range, channel]);
+  // Báo cáo tài chính: chỉ Chủ shop
+  const allowed = can(getStoredUser(), "finance.analytics");
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    // Báo cáo tài chính: chỉ Chủ shop
-    if (!can(getStoredUser(), "finance.analytics")) {
-      setDenied(true);
-      setLoading(false);
-      return;
-    }
-    load();
-  }, [load, router]);
+    if (!getToken()) router.replace("/login");
+  }, [router]);
+
+  // Kỳ hiện tại + KỲ LIỀN TRƯỚC (cùng độ dài, vẽ mũi tên tăng/giảm) nằm trong
+  // cache React Query — quay lại trang là thấy số ngay, refetch chạy ngầm.
+  const dataQ = useApiQuery({
+    queryKey: qk.financeAnalytics(range, channel),
+    queryFn: () => fetchFinanceAnalytics(range, channel),
+    enabled: allowed,
+  });
+  // Kỳ trước nạp lỗi cũng không sao (null → ẩn mũi tên, trang vẫn chạy).
+  const prevQ = useApiQuery({
+    queryKey: qk.financeAnalytics(previousRange(range), channel),
+    queryFn: () =>
+      fetchFinanceAnalytics(previousRange(range), channel).catch(() => null),
+    enabled: allowed,
+  });
+
+  const data = dataQ.data ?? null;
+  const prevData = prevQ.data ?? null;
+  const loading = dataQ.refreshing;
+  const denied = !allowed || dataQ.denied;
+  const load = () => {
+    dataQ.refetch();
+    prevQ.refetch();
+  };
 
   if (denied) {
     return (

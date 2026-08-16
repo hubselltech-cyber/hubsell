@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -47,12 +47,15 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  channelFilterToQuery,
   fetchOrders,
   getToken,
   updateOrderStatus,
   type Order,
   type ReturnStatus,
 } from "@/lib/api";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { exportAllOrders } from "@/lib/excel";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
 import { isExpressShipping } from "@/lib/shipping";
@@ -291,10 +294,6 @@ const TABS: { key: string; label: string; status: string; countKey: string }[] =
 export default function OrdersPage() {
   const router = useRouter();
 
-  const [items, setItems] = useState<Order[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [total, setTotal] = useState(0);
-  const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("all");
@@ -311,7 +310,6 @@ export default function OrdersPage() {
   // Từ khoá đã "chốt" sau khi ngừng gõ — tách khỏi `search` để mỗi phím bấm
   // không bắn một request lên máy chủ.
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   // Id các đơn đang tích chọn. Dùng Set để tích/bỏ tích không phải quét mảng.
@@ -328,61 +326,49 @@ export default function OrdersPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchOrders({
-        page,
-        pageSize,
-        shippingStatus: statusFilter || undefined,
-        channel: channelFilter,
-        carrier: carrierFilter || undefined,
-        search: debouncedSearch || undefined,
-        // Chỉ gửi bộ lọc in khi đang ở tab Đã xử lý — các tab khác không có
-        // khái niệm "chưa in / đã in"
-        printed: tab === "processed" && printedFilter ? printedFilter : undefined,
-        orderType: orderTypeFilter || undefined,
-        returnStatus:
-          tab === "cancelled" && returnFilter ? returnFilter : undefined,
-      });
-      setItems(res.items);
-      setCounts(res.counts ?? {});
-      setTotal(res.total);
-      setPageCount(res.pageCount);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
-      toast.error("Không tải được danh sách đơn hàng");
-    } finally {
-      setLoading(false);
-    }
-  }, [
+  // Toàn bộ tham số lọc gom một chỗ — vừa là queryFn vừa sinh queryKey: mỗi tổ
+  // hợp tab/bộ lọc/trang là một ô cache riêng, quay lại là hiện ngay bảng cũ.
+  const queryParams = {
     page,
     pageSize,
-    statusFilter,
-    channelFilter,
-    carrierFilter,
-    orderTypeFilter,
-    debouncedSearch,
-    tab,
-    printedFilter,
-    returnFilter,
-    router,
-  ]);
+    shippingStatus: statusFilter || undefined,
+    channel: channelFilter,
+    carrier: carrierFilter || undefined,
+    search: debouncedSearch || undefined,
+    // Chỉ gửi bộ lọc in khi đang ở tab Đã xử lý — các tab khác không có
+    // khái niệm "chưa in / đã in"
+    printed: tab === "processed" && printedFilter ? printedFilter : undefined,
+    orderType: orderTypeFilter || undefined,
+    returnStatus:
+      tab === "cancelled" && returnFilter ? returnFilter : undefined,
+  };
+  const ordersQ = useApiQuery({
+    queryKey: qk.orders({
+      ...queryParams,
+      channel: channelFilterToQuery(channelFilter),
+    }),
+    queryFn: () => fetchOrders(queryParams),
+  });
+  const invalidate = useInvalidate();
+
+  const items = ordersQ.data?.items ?? [];
+  const counts = ordersQ.data?.counts ?? {};
+  const total = ordersQ.data?.total ?? 0;
+  const pageCount = ordersQ.data?.pageCount ?? 0;
+  const loading = ordersQ.refreshing;
+  // Sau thao tác ghi (bulk confirm/handover, đổi trạng thái) làm tươi MỌI biến
+  // thể bộ lọc của trang đơn — badge đếm trên các tab khác cũng đổi theo.
+  const load = () => invalidate(["orders"]);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
+    if (!getToken()) router.replace("/login");
   }, [router]);
 
+  // 401 hook tự xử; 409 (chưa có kênh) overlay của AppShell lo; lỗi còn lại
+  // báo toast như trước.
   useEffect(() => {
-    load();
-  }, [load]);
+    if (ordersQ.error) toast.error("Không tải được danh sách đơn hàng");
+  }, [ordersQ.error]);
 
   // Chỉ coi là "đang chọn" những đơn CÒN NHÌN THẤY trên bảng. Nhờ vậy đổi tab
   // hay đổi bộ lọc là các lựa chọn cũ tự rơi ra, không thể lỡ tay bấm "xác nhận

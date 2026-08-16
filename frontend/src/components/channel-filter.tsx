@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { NativeSelect } from "@/components/ui/native-select";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { fetchChannels, type Channel, type ChannelName } from "@/lib/api";
+import { qk } from "@/lib/query-keys";
 
 const PLATFORM_ORDER: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
@@ -43,15 +44,18 @@ export function ChannelFilter({
   onChange: (value: ChannelFilterValue) => void;
   className?: string;
 }) {
-  const [channels, setChannels] = useState<Channel[]>([]);
-
-  useEffect(() => {
-    // Bộ lọc hỏng thì trang vẫn phải xem được toàn bộ số liệu, nên nuốt lỗi ở
-    // đây thay vì bắn toast — người dùng chỉ mất khả năng lọc, không mất báo cáo.
-    fetchChannels()
-      .then(setChannels)
-      .catch(() => setChannels([]));
-  }, []);
+  // Danh sách gian hàng đổi rất hiếm — cache 5 phút để bộ lọc trên trang nào
+  // cũng hiện tức thì, không bắn lại /api/channels mỗi lần chuyển trang.
+  // Bộ lọc hỏng thì trang vẫn phải xem được toàn bộ số liệu, nên nuốt lỗi ở
+  // đây (channels rỗng) thay vì bắn toast — người dùng chỉ mất khả năng lọc,
+  // không mất báo cáo.
+  const { data } = useQuery({
+    queryKey: qk.channels(),
+    queryFn: fetchChannels,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const channels: Channel[] = data ?? [];
 
   // Chỉ liệt kê sàn thật sự có gian hàng, giữ thứ tự cố định để vị trí các lựa
   // chọn không nhảy giữa các lần tải.

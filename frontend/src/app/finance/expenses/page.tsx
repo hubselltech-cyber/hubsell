@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Receipt, Scale, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Receipt, Scale, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 
 import { AccessDenied } from "@/components/access-denied";
 import { can } from "@/lib/permissions";
@@ -32,11 +33,12 @@ import {
   fetchExpenses,
   getStoredUser,
   getToken,
-  type Channel,
   type ExpenseType,
   type FundSourceType,
   type OperatingExpense,
 } from "@/lib/api";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { cn } from "@/lib/utils";
 import { formatVND, formatDateTime } from "@/lib/format";
@@ -62,59 +64,62 @@ type TxnFilter = "ALL" | "INCOME" | "EXPENSE";
 
 export default function FinanceExpensesPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<OperatingExpense[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [filter, setFilter] = useState<TxnFilter>("ALL");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [txns, chs] = await Promise.all([fetchExpenses(range), fetchChannels()]);
-      setRows(txns);
-      setChannels(chs);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (err instanceof ApiError && err.status === 403) {
-        setDenied(true);
-        return;
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [router, range]);
+  const allowed = can(getStoredUser(), "finance.expenses");
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    if (!can(getStoredUser(), "finance.expenses")) {
-      setDenied(true);
-      setLoading(false);
-      return;
-    }
-    load();
-  }, [load, router]);
+    if (!getToken()) router.replace("/login");
+  }, [router]);
 
-  async function handleDelete(e: OperatingExpense) {
-    setDeletingId(e.id);
-    try {
-      await deleteExpense(e.id);
-      toast.success("Đã xoá khoản thu/chi");
-      load();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không xoá được");
-    } finally {
-      setDeletingId(null);
-    }
-  }
+  const expensesQ = useApiQuery({
+    queryKey: qk.expenses(range),
+    queryFn: () => fetchExpenses(range),
+    enabled: allowed,
+  });
+  // Danh sách gian hàng nuôi 2 dialog thêm khoản — cùng ô cache với ChannelFilter.
+  const channelsQ = useQuery({
+    queryKey: qk.channels(),
+    queryFn: fetchChannels,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const invalidate = useInvalidate();
+
+  const rows = expensesQ.data ?? [];
+  const channels = channelsQ.data ?? [];
+  const loading = expensesQ.refreshing;
+  const denied = !allowed || expensesQ.denied;
+  const load = () => invalidate(["expenses"]);
+
+  // XOÁ LẠC QUAN (optimistic): dòng biến mất NGAY khi bấm, 3 card tổng tự trừ
+  // theo; máy chủ báo lỗi mới trả dòng về chỗ cũ kèm toast — thao tác nhẹ không
+  // bắt người dùng ngồi nhìn spinner (Tầng 1 kế hoạch UI).
+  const queryClient = useQueryClient();
+  const deleteMut = useMutation({
+    mutationFn: (e: OperatingExpense) => deleteExpense(e.id),
+    onMutate: async (e) => {
+      const key = qk.expenses(range);
+      // Chặn refetch đang bay đè mất bản cập nhật lạc quan
+      await queryClient.cancelQueries({ queryKey: key });
+      const prev = queryClient.getQueryData<OperatingExpense[]>(key);
+      queryClient.setQueryData<OperatingExpense[]>(key, (old) =>
+        old?.filter((r) => r.id !== e.id)
+      );
+      return { prev, key };
+    },
+    onError: (err, _e, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(ctx.key, ctx.prev);
+      toast.error(
+        err instanceof ApiError
+          ? `${err.message} — đã hoàn tác`
+          : "Không xoá được — đã hoàn tác"
+      );
+    },
+    onSuccess: () => toast.success("Đã xoá khoản thu/chi"),
+    // Thành công hay thất bại đều đối chiếu lại với máy chủ cho chắc
+    onSettled: () => invalidate(["expenses"]),
+  });
 
   if (denied) {
     return (
@@ -188,7 +193,8 @@ export default function FinanceExpensesPage() {
 
         <Card>
           <CardContent className="p-0">
-            {loading ? (
+            {/* Lần đầu mới hiện "Đang tải…"; đổi kỳ thì giữ bảng cũ và làm mờ */}
+            {expensesQ.loading ? (
               <p className="py-10 text-center text-sm text-muted-foreground">Đang tải…</p>
             ) : shown.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
@@ -196,6 +202,7 @@ export default function FinanceExpensesPage() {
                 Chưa có khoản thu/chi nào. Bấm “Thêm khoản thu” hoặc “Thêm chi phí”.
               </div>
             ) : (
+              <Refreshing active={loading}>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -271,14 +278,9 @@ export default function FinanceExpensesPage() {
                             variant="ghost"
                             size="icon-sm"
                             className="text-muted-foreground hover:text-red-500"
-                            disabled={deletingId === e.id}
-                            onClick={() => handleDelete(e)}
+                            onClick={() => deleteMut.mutate(e)}
                           >
-                            {deletingId === e.id ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="size-4" />
-                            )}
+                            <Trash2 className="size-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -286,6 +288,7 @@ export default function FinanceExpensesPage() {
                   })}
                 </TableBody>
               </Table>
+              </Refreshing>
             )}
           </CardContent>
         </Card>

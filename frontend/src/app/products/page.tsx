@@ -59,6 +59,8 @@ import {
   type ProductChannelLink,
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber } from "@/lib/format";
 import { canManageShop, canSeeFinancials } from "@/lib/permissions";
@@ -93,14 +95,9 @@ export default function ProductsHubPage() {
   // Từ khoá mồi cho tab Chờ liên kết khi bấm "Nối thêm gian" từ một SKU.
   const [linkSeed, setLinkSeed] = useState<string | undefined>(undefined);
 
-  const [items, setItems] = useState<Product[]>([]);
-  const [total, setTotal] = useState(0);
-  const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // Số SP sàn chưa nối — nuôi badge tab + banner gợi ý (chỉ chủ shop).
@@ -124,31 +121,25 @@ export default function ProductsHubPage() {
     type: "IMPORT" | "EXPORT";
   } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchProducts({ page, pageSize: PAGE_SIZE, search });
-      setItems(res.items);
-      setTotal(res.total);
-      setPageCount(res.pageCount);
-      // Chi tiết liên kết có thể đã đổi (nối/gỡ ở tab kia) — xoá cache.
-      setLinkDetails({});
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (err instanceof ApiError && err.status === 409) return; // chưa có kênh — overlay xử lý
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Chưa kết nối được máy chủ (backend). Hãy chắc chắn backend đang chạy ở cổng 4000."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, router]);
+  // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
+  // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
+  const productsQ = useApiQuery({
+    queryKey: qk.products({ page, pageSize: PAGE_SIZE, search }),
+    queryFn: () => fetchProducts({ page, pageSize: PAGE_SIZE, search }),
+  });
+  const invalidate = useInvalidate();
+  const items = productsQ.data?.items ?? [];
+  const total = productsQ.data?.total ?? 0;
+  const pageCount = productsQ.data?.pageCount ?? 0;
+  const loading = productsQ.refreshing;
+  const error = productsQ.error;
+
+  // Gọi sau mọi thao tác GHI (tạo SKU, nhập Excel, nối/gỡ liên kết, chỉnh
+  // tồn): làm tươi mọi trang cache + xoá cache chi tiết liên kết đã đổi.
+  const load = useCallback(() => {
+    setLinkDetails({});
+    invalidate(["products"]);
+  }, [invalidate]);
 
   const loadUnlinkedCount = useCallback(async () => {
     if (!isAdmin) return;
@@ -161,12 +152,8 @@ export default function ProductsHubPage() {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    load();
-  }, [load, router]);
+    if (!getToken()) router.replace("/login");
+  }, [router]);
 
   useEffect(() => {
     loadUnlinkedCount();

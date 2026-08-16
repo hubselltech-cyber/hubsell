@@ -42,6 +42,7 @@ import {
 import {
   ApiError,
   bulkInboundReturns,
+  channelFilterToQuery,
   fetchWarehouseReturns,
   getToken,
   processOrderReturn,
@@ -49,8 +50,9 @@ import {
   syncWarehouseReturns,
   type ChannelName,
   type Order,
-  type ReturnRow,
 } from "@/lib/api";
+import { qk } from "@/lib/query-keys";
+import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { carrierShort } from "@/lib/carrier-meta";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import {
@@ -123,11 +125,6 @@ const TABS: { key: string; label: string; countKey: string }[] = [
  */
 export default function WarehouseReturnsPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<ReturnRow[]>([]);
-  const [summary, setSummary] = useState<Record<string, number>>({});
-  const [thresholds, setThresholds] = useState({ warningDays: 7, overdueDays: 14 });
-  const [total, setTotal] = useState(0);
-  const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [tab, setTab] = useState("");
@@ -136,7 +133,6 @@ export default function WarehouseReturnsPage() {
   const [claiming, setClaiming] = useState<Order | null>(null);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   /** Đơn đang mở dialog Báo hỏng / Khiếu nại (xử lý lẻ công đoạn 2) */
   const [processing, setProcessing] = useState<Order | null>(null);
@@ -154,62 +150,58 @@ export default function WarehouseReturnsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // TỰ CẬP NHẬT: worker nền + webhook đã đổ đơn hoàn mới vào DB — trang phải
+  // tự thấy chứ không bắt ai bấm gì. refetchInterval 30s của React Query tự
+  // đứng im khi cửa sổ mất focus (refetchIntervalInBackground mặc định false),
+  // đỡ gọi API vô ích đúng như setInterval + visibilitychange cũ.
+  const returnsQ = useApiQuery({
+    queryKey: qk.warehouseReturns({
+      status: tab || undefined,
+      search: debounced || undefined,
+      channel: channelFilterToQuery(channelFilter),
+      page,
+      pageSize,
+    }),
+    queryFn: () =>
+      fetchWarehouseReturns({
+        status: tab || undefined,
+        search: debounced || undefined,
+        channel: channelFilter,
+        page,
+        pageSize,
+      }),
+    refetchInterval: 30 * 1000,
+    // Trang cần số NÓNG (nhân viên đang cầm kiện hàng quét mã) — quay lại
+    // trang là refetch ngay thay vì tin cache 30s.
+    staleTime: 0,
+  });
+  const invalidate = useInvalidate();
+
+  const rows = returnsQ.data?.items ?? [];
+  const summary = returnsQ.data?.summary ?? {};
+  const thresholds = returnsQ.data?.thresholds ?? { warningDays: 7, overdueDays: 14 };
+  const total = returnsQ.data?.total ?? 0;
+  const pageCount = returnsQ.data?.pageCount ?? 0;
+  // Lượt TỰ cập nhật nền + refetch sau thao tác chạy IM LẶNG — không làm mờ
+  // bảng trước mặt nhân viên đang quét hàng. Chỉ báo bận khi tải lần đầu hoặc
+  // đổi bộ lọc (placeholder = đang hiện số cũ của bộ lọc trước).
+  const loading = returnsQ.loading || returnsQ.placeholder;
+
+  // Sau thao tác ghi (quét nhận / nhập kho / khiếu nại) làm tươi mọi biến thể
+  // bộ lọc của trang — badge đếm các tab khác đổi theo.
   const load = useCallback(
-    async (opts: { silent?: boolean } = {}) => {
-      // Lượt TỰ cập nhật nền chạy im lặng — không bật overlay loading để bảng
-      // không nhấp nháy mỗi nhịp trước mặt nhân viên đang quét hàng.
-      if (!opts.silent) setLoading(true);
-      try {
-        const res = await fetchWarehouseReturns({
-          status: tab || undefined,
-          search: debounced || undefined,
-          channel: channelFilter,
-          page,
-          pageSize,
-        });
-        setRows(res.items);
-        setSummary(res.summary);
-        setThresholds(res.thresholds);
-        setTotal(res.total);
-        setPageCount(res.pageCount);
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (err instanceof ApiError && err.status === 409) return; // chưa có kênh
-        if (!opts.silent) toast.error("Không tải được danh sách đơn hoàn");
-      } finally {
-        if (!opts.silent) setLoading(false);
-      }
-    },
-    [tab, debounced, channelFilter, page, pageSize, router]
+    () => invalidate(["warehouse-returns"]),
+    [invalidate]
   );
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    load();
-  }, [load, router]);
+    if (!getToken()) router.replace("/login");
+  }, [router]);
 
-  // TỰ CẬP NHẬT: worker nền + webhook đã đổ đơn hoàn mới vào DB — trang phải
-  // tự thấy chứ không bắt ai bấm gì. Nhịp 30s khi tab đang hiện; tab bị ẩn thì
-  // đứng im (đỡ gọi API vô ích), quay lại tab là làm mới ngay một lượt.
+  // 401 hook tự xử; 409 (chưa có kênh) overlay lo; lỗi khác báo toast như cũ.
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") load({ silent: true });
-    }, 30 * 1000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") load({ silent: true });
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [load]);
+    if (returnsQ.error) toast.error("Không tải được danh sách đơn hoàn");
+  }, [returnsQ.error]);
 
   async function handleSync() {
     setSyncing(true);
