@@ -65,6 +65,7 @@ import {
   upsertView,
   type SavedTableView,
 } from "@/lib/table-views";
+import { TABLE_HEAD_EMPHASIS } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 declare module "@tanstack/react-table" {
@@ -104,6 +105,8 @@ export function DataTable<TData>({
   striped = true,
   toolbar,
   rowClassName,
+  onRowClick,
+  headerEmphasis,
 }: {
   /** Khóa lưu trạng thái cột + view — đặt cố định, đổi là người dùng mất cấu hình. */
   tableId: string;
@@ -119,6 +122,10 @@ export function DataTable<TData>({
   /** Nội dung bên TRÁI hàng nút Cột/Chế độ xem (vd tổng số dòng). */
   toolbar?: React.ReactNode;
   rowClassName?: (row: TData, index: number) => string | undefined;
+  /** Bấm dòng (vd mở modal chi tiết) — tự thêm cursor-pointer. */
+  onRowClick?: (row: TData) => void;
+  /** Thanh tiêu đề bản NỔI (TABLE_HEAD_EMPHASIS) cho bảng dày số liệu. */
+  headerEmphasis?: boolean;
 }) {
   const defaultPinning = React.useMemo<ColumnPinningState>(
     () => ({
@@ -292,7 +299,12 @@ export function DataTable<TData>({
       </div>
 
       <Table>
-        <TableHeader>
+        <TableHeader
+          // data-emphasis: nền thead ĐẶC (bg-slate-50) — ô ghim trong header
+          // cần nền đặc tương ứng (CSS .dt-pin trong globals.css)
+          data-emphasis={headerEmphasis ? "true" : undefined}
+          className={cn(headerEmphasis && TABLE_HEAD_EMPHASIS)}
+        >
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
               {hg.headers.map((header) => {
@@ -377,8 +389,10 @@ export function DataTable<TData>({
                 key={row.id}
                 data-striped={striped && index % 2 === 1 ? "true" : undefined}
                 data-selected={checked ? "true" : undefined}
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                 className={cn(
                   "transition-colors",
+                  onRowClick && "cursor-pointer",
                   // Sọc ngựa vằn + hover đậm hơn hẳn sọc + dòng đang chọn có
                   // vạch màu trái — chuẩn hóa từ bảng Đơn hàng (chốt cũ).
                   striped && index % 2 === 1 && "bg-muted/40",

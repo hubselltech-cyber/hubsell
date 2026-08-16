@@ -22,8 +22,11 @@ import {
   YAxis,
 } from "recharts";
 
+import type { ColumnDef } from "@tanstack/react-table";
+
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
+import { DataTable } from "@/components/data-table/data-table";
 import { HintIcon } from "@/components/finance/hint-icon";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -39,14 +42,6 @@ import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   decideShopeeAdsCampaign,
   fetchShopeeAdsDashboard,
@@ -71,7 +66,7 @@ import {
 } from "@/components/ads/shopee-assistant-panel";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can } from "@/lib/permissions";
-import { TABLE_HEAD_EMPHASIS, TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typography";
+import { TEXT_NUMBER_STRONG, moneyTone } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
@@ -398,6 +393,11 @@ export function ShopeeAdsPage({
       setSavingConfig(false);
     }
   }
+
+  // Cột bảng chiến dịch — build theo sàn (tooltip khác nhau), không đổi runtime.
+  // Phải đứng TRƯỚC early-return denied (rules-of-hooks).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- meta suy ra từ platform, prop cố định của trang
+  const campaignColumns = useMemo(() => buildCampaignColumns(meta), [platform]);
 
   if (denied) {
     return (
@@ -778,51 +778,32 @@ export function ShopeeAdsPage({
                   : "Không có chiến dịch nào khớp bộ lọc — thử đổi từ khóa/trạng thái."}
               </p>
             ) : (
-              <div className="min-w-0 overflow-x-auto">
-                <Table>
-                  <TableHeader className={TABLE_HEAD_EMPHASIS}>
-                    <TableRow>
-                      <TableHead>Chiến dịch</TableHead>
-                      <TableHead className="w-36">Trợ lý</TableHead>
-                      <TableHead className="w-28">Trạng thái</TableHead>
-                      <TableHead className="w-32 text-right">Ngân sách</TableHead>
-                      <TableHead className="w-32 text-right">Chi phí</TableHead>
-                      <TableHead className="w-20 text-right">
-                        <span className="inline-flex items-center gap-1">
-                          Đơn
-                          <HintIcon hint={meta.broadHint} />
-                        </span>
-                      </TableHead>
-                      <TableHead className="w-28 text-right">
-                        <span className="inline-flex items-center gap-1">
-                          CP/đơn
-                          <HintIcon hint="Chi phí quảng cáo trung bình để có 1 đơn = chi phí ÷ đơn broad trong kỳ. So với lãi gộp mỗi đơn để biết còn dư bao nhiêu." />
-                        </span>
-                      </TableHead>
-                      <TableHead className="w-32 text-right">GMV</TableHead>
-                      <TableHead className="w-24 text-right">ROAS</TableHead>
-                      <TableHead className="w-28 text-right">
-                        <span className="inline-flex items-center gap-1">
-                          Hòa vốn
-                          <HintIcon
-                            hint={`ROAS hòa vốn = 1 / biên lãi ròng của chính SKU trong chiến dịch (giá vốn + phí sàn thật, chưa gồm ads). ROAS dưới số này là đốt tiền dù sàn báo dương. ${meta.marginBasisHint}`}
-                          />
-                        </span>
-                      </TableHead>
-                      <TableHead className="w-32 text-right">
-                        <span className="inline-flex items-center gap-1">
-                          Lãi/lỗ ước tính
-                          <HintIcon hint="GMV × biên lãi ròng − chi phí ads trong kỳ. Cùng rổ đơn broad với ROAS: ROAS trên hòa vốn thì số này dương, dưới thì âm." />
-                        </span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pagedCampaigns.map((c) => (
-                      <CampaignRow key={c.id} c={c} onOpen={() => setDetailId(c.id)} />
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="min-w-0">
+                {/* Bảng chuẩn ERP (Tầng 2): ẩn/hiện + ghim + kéo đổi vị trí
+                    cột, chế độ xem lưu cả bộ lọc — tableId tách theo sàn để
+                    Shopee/Lazada nhớ cấu hình riêng */}
+                <DataTable
+                  tableId={`ads-campaigns-${platform}`}
+                  columns={campaignColumns}
+                  data={pagedCampaigns}
+                  getRowId={(c) => c.id}
+                  onRowClick={(c) => setDetailId(c.id)}
+                  rowClassName={campaignRowDanger}
+                  striped={false}
+                  headerEmphasis
+                  toolbar={`${formatNumber(visibleCampaigns.length)} chiến dịch khớp bộ lọc`}
+                  viewExtras={{
+                    get: () => ({ search, statusFilter, onlyNeedsAction }),
+                    apply: (ex) => {
+                      if (typeof ex.search === "string") setSearch(ex.search);
+                      if (typeof ex.statusFilter === "string")
+                        setStatusFilter(ex.statusFilter);
+                      if (typeof ex.onlyNeedsAction === "boolean")
+                        setOnlyNeedsAction(ex.onlyNeedsAction);
+                      setPage(0);
+                    },
+                  }}
+                />
                 {visibleCampaigns.length > PAGE_SIZE && (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
@@ -966,6 +947,210 @@ function ProductBreakevenTab({
   const safePage = Math.min(page, pageCount - 1);
   const paged = rows.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
+  // Cột bảng hòa vốn — tooltip/ô SKU khác nhau theo sàn, hệ số an toàn lấy từ
+  // cấu hình Trợ lý (safeRoasFactor) nên thuộc deps.
+  const safeFactor = data?.safeRoasFactor ?? 1;
+  const breakevenColumns = useMemo<ColumnDef<ShopeeProductBreakevenRow>[]>(
+    () => [
+      {
+        id: "product",
+        size: 280,
+        meta: { label: "Sản phẩm" },
+        header: "Sản phẩm",
+        cell: ({ row }) => (
+          <>
+            <p className="max-w-72 truncate text-sm font-medium text-slate-900">
+              {row.original.productName}
+            </p>
+            <p className="text-xs text-slate-500">
+              #{row.original.itemId}
+              {row.original.skuCount > 1 &&
+                ` · ${formatNumber(row.original.skuCount)} phân loại`}
+            </p>
+          </>
+        ),
+      },
+      {
+        id: "sku",
+        size: 140,
+        meta: { label: "SKU" },
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            SKU
+            <HintIcon
+              hint={
+                platform === "lazada"
+                  ? "Lazada không có SKU tổng cấp sản phẩm — sản phẩm 1 phân loại hiện trọn SKU seller đặt; nhiều phân loại hiện đủ danh sách SKU phân loại (rê chuột xem hết). Ô tìm kiếm bắt được mọi SKU."
+                  : "SKU TỔNG của sản phẩm (cấp item trên sàn, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại."
+              }
+            />
+          </span>
+        ),
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.itemSku)
+            return (
+              <span
+                className="block max-w-32 truncate text-sm text-slate-700"
+                title={
+                  r.sellerSkus.length > 0
+                    ? `SKU phân loại: ${r.sellerSkus.join(", ")}`
+                    : undefined
+                }
+              >
+                {r.itemSku}
+              </span>
+            );
+          // Lazada không có SKU tổng — QUYẾT ĐỊNH anh Trung 12/08: hiện NGUYÊN
+          // VĂN đủ danh sách SKU phân loại seller đặt, không suy đoán/cắt gọt.
+          if (platform === "lazada" && r.sellerSkus.length > 0)
+            return (
+              <span
+                className="block max-w-32 truncate text-sm text-slate-700"
+                title={`SKU phân loại: ${r.sellerSkus.join(", ")}`}
+              >
+                {r.sellerSkus.join(", ")}
+              </span>
+            );
+          return (
+            <span
+              className="text-slate-400"
+              title={
+                r.sellerSkus.length > 0
+                  ? `Chưa đặt SKU tổng — SKU phân loại: ${r.sellerSkus.join(", ")}`
+                  : undefined
+              }
+            >
+              —
+            </span>
+          );
+        },
+      },
+      {
+        id: "orders",
+        size: 110,
+        meta: { label: "Đơn 30d", align: "right" },
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            Đơn 30d
+            <HintIcon
+              hint={`Số ${meta.marginOrdersLabel} 30 ngày có chứa sản phẩm — cỡ mẫu của biên lãi. Dưới 5 đơn thì số hòa vốn chỉ mang tính tham khảo.`}
+            />
+          </span>
+        ),
+        cell: ({ row }) => (
+          <span className="tabular-nums text-slate-700">
+            {formatNumber(row.original.orders)}
+            {row.original.orders > 0 && row.original.orders < 5 && (
+              <span
+                className="ml-1 text-xs text-amber-600"
+                title="Dưới 5 đơn — số hòa vốn chỉ mang tính tham khảo"
+              >
+                (mỏng)
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        id: "revenue",
+        size: 130,
+        meta: { label: "Doanh thu 30d", align: "right" },
+        header: "Doanh thu 30d",
+        cell: ({ row }) => (
+          <Money value={row.original.revenue} className="text-slate-700" />
+        ),
+      },
+      {
+        id: "margin",
+        size: 110,
+        meta: { label: "Biên lãi", align: "right" },
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            Biên lãi
+            <HintIcon hint="Lợi nhuận ròng / doanh thu thực nhận (giá vốn + phí sàn thật, CHƯA trừ ads). Đơn ghép nhiều SP phân bổ theo tỷ trọng giá trị." />
+          </span>
+        ),
+        cell: ({ row }) => {
+          const m = row.original.margin;
+          return (
+            <span
+              className={cn(
+                "tabular-nums",
+                m == null
+                  ? "text-slate-400"
+                  : m <= 0
+                    ? "text-red-600"
+                    : "text-slate-700"
+              )}
+            >
+              {m != null
+                ? `${(m * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
+                : "—"}
+            </span>
+          );
+        },
+      },
+      {
+        id: "breakevenRoas",
+        size: 130,
+        meta: { label: "ROAS hòa vốn", align: "right" },
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            ROAS hòa vốn
+            <HintIcon
+              hint={`1 / biên lãi ròng — chạy ads tới đúng ROAS này thì hòa vốn. Đây là số để đối chiếu khi đặt ROAS mục tiêu. ${meta.marginBasisHint}`}
+            />
+          </span>
+        ),
+        cell: ({ row }) =>
+          row.original.lossBeforeAds ? (
+            <span
+              className={cn(TEXT_NUMBER_STRONG, "text-red-600")}
+              title="Bán đã lỗ chưa tính ads — không ROAS nào cứu được, xem lại giá/giá vốn trước"
+            >
+              Lỗ trước ads
+            </span>
+          ) : (
+            <span className={TEXT_NUMBER_STRONG}>
+              {formatRoas(row.original.breakevenRoas)}
+            </span>
+          ),
+      },
+      {
+        id: "safeTarget",
+        size: 140,
+        meta: { label: "Mục tiêu an toàn", align: "right" },
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            Mục tiêu an toàn
+            <HintIcon
+              hint={`ROAS hòa vốn × ${safeFactor.toLocaleString("vi-VN")} (hệ số vùng an toàn trong cấu hình Trợ lý) — đặt ROAS mục tiêu từ mức này trở lên để có lãi thật.`}
+            />
+          </span>
+        ),
+        cell: ({ row }) => (
+          <span className="tabular-nums text-emerald-600">
+            {row.original.breakevenRoas != null
+              ? `≥ ${formatRoas(row.original.breakevenRoas * safeFactor)}`
+              : "—"}
+          </span>
+        ),
+      },
+      {
+        id: "ads",
+        size: 110,
+        meta: { label: "Ads" },
+        header: "Ads",
+        cell: ({ row }) =>
+          row.original.runningAds ? (
+            <Badge className="bg-emerald-500 text-white">Đang chạy ads</Badge>
+          ) : null,
+      },
+    ],
+    [platform, meta, safeFactor]
+  );
+
   if (noChannel) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
@@ -1015,68 +1200,27 @@ function ProductBreakevenTab({
               : "Chưa có sản phẩm nào đồng bộ từ gian này."}
           </p>
         ) : (
-          <div className="min-w-0 overflow-x-auto">
-            <Table>
-              <TableHeader className={TABLE_HEAD_EMPHASIS}>
-                <TableRow>
-                  <TableHead>Sản phẩm</TableHead>
-                  <TableHead className="w-32">
-                    <span className="inline-flex items-center gap-1">
-                      SKU
-                      <HintIcon
-                        hint={
-                          platform === "lazada"
-                            ? "Lazada không có SKU tổng cấp sản phẩm — sản phẩm 1 phân loại hiện trọn SKU seller đặt; nhiều phân loại hiện đủ danh sách SKU phân loại (rê chuột xem hết). Ô tìm kiếm bắt được mọi SKU."
-                            : "SKU TỔNG của sản phẩm (cấp item trên sàn, không phải SKU phân loại). Gạch ngang = chưa đặt SKU tổng trên sàn. Ô tìm kiếm vẫn bắt được cả SKU phân loại."
-                        }
-                      />
-                    </span>
-                  </TableHead>
-                  <TableHead className="w-24 text-right">
-                    <span className="inline-flex items-center gap-1">
-                      Đơn 30d
-                      <HintIcon
-                        hint={`Số ${meta.marginOrdersLabel} 30 ngày có chứa sản phẩm — cỡ mẫu của biên lãi. Dưới 5 đơn thì số hòa vốn chỉ mang tính tham khảo.`}
-                      />
-                    </span>
-                  </TableHead>
-                  <TableHead className="w-32 text-right">Doanh thu 30d</TableHead>
-                  <TableHead className="w-24 text-right">
-                    <span className="inline-flex items-center gap-1">
-                      Biên lãi
-                      <HintIcon hint="Lợi nhuận ròng / doanh thu thực nhận (giá vốn + phí sàn thật, CHƯA trừ ads). Đơn ghép nhiều SP phân bổ theo tỷ trọng giá trị." />
-                    </span>
-                  </TableHead>
-                  <TableHead className="w-28 text-right">
-                    <span className="inline-flex items-center gap-1">
-                      ROAS hòa vốn
-                      <HintIcon
-                        hint={`1 / biên lãi ròng — chạy ads tới đúng ROAS này thì hòa vốn. Đây là số để đối chiếu khi đặt ROAS mục tiêu. ${meta.marginBasisHint}`}
-                      />
-                    </span>
-                  </TableHead>
-                  <TableHead className="w-32 text-right">
-                    <span className="inline-flex items-center gap-1">
-                      Mục tiêu an toàn
-                      <HintIcon
-                        hint={`ROAS hòa vốn × ${data.safeRoasFactor.toLocaleString("vi-VN")} (hệ số vùng an toàn trong cấu hình Trợ lý) — đặt ROAS mục tiêu từ mức này trở lên để có lãi thật.`}
-                      />
-                    </span>
-                  </TableHead>
-                  <TableHead className="w-28">Ads</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paged.map((r) => (
-                  <ProductBreakevenRowView
-                    key={r.itemId}
-                    r={r}
-                    safeFactor={data.safeRoasFactor}
-                    platform={platform}
-                  />
-                ))}
-              </TableBody>
-            </Table>
+          <div className="min-w-0">
+            {/* Bảng chuẩn ERP (Tầng 2) — cấu hình cột nhớ riêng theo sàn */}
+            <DataTable
+              tableId={`ads-breakeven-${platform}`}
+              columns={breakevenColumns}
+              data={paged}
+              getRowId={(r) => r.itemId}
+              rowClassName={(r) =>
+                r.lossBeforeAds ? "bg-red-50/50" : undefined
+              }
+              striped={false}
+              headerEmphasis
+              toolbar={`${formatNumber(rows.length)} sản phẩm khớp bộ lọc`}
+              viewExtras={{
+                get: () => ({ search }),
+                apply: (ex) => {
+                  if (typeof ex.search === "string") setSearch(ex.search);
+                  setPage(0);
+                },
+              }}
+            />
             {rows.length > PAGE_SIZE && (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
@@ -1130,199 +1274,210 @@ function ProductBreakevenTab({
   );
 }
 
-function ProductBreakevenRowView({
-  r,
-  safeFactor,
-  platform,
-}: {
-  r: ShopeeProductBreakevenRow;
-  safeFactor: number;
-  platform: "shopee" | "lazada";
-}) {
-  const thinSample = r.orders > 0 && r.orders < 5;
-  return (
-    <TableRow className={cn(r.lossBeforeAds && "bg-red-50/50")}>
-      <TableCell>
-        <p className="max-w-72 truncate text-sm font-medium text-slate-900">
-          {r.productName}
-        </p>
-        <p className="text-xs text-slate-500">
-          #{r.itemId}
-          {r.skuCount > 1 && ` · ${formatNumber(r.skuCount)} phân loại`}
-        </p>
-      </TableCell>
-      <TableCell className="text-slate-700">
-        {r.itemSku ? (
-          <span
-            className="block max-w-32 truncate text-sm"
-            title={
-              r.sellerSkus.length > 0
-                ? `SKU phân loại: ${r.sellerSkus.join(", ")}`
-                : undefined
-            }
-          >
-            {r.itemSku}
-          </span>
-        ) : platform === "lazada" && r.sellerSkus.length > 0 ? (
-          // Lazada không có SKU tổng — QUYẾT ĐỊNH anh Trung 12/08: hiện NGUYÊN
-          // VĂN đủ danh sách SKU phân loại seller đặt, không suy đoán/cắt gọt
-          // (ô hẹp rút gọn thị giác, tooltip đầy đủ; tìm kiếm bắt mọi SKU).
-          <span
-            className="block max-w-32 truncate text-sm"
-            title={`SKU phân loại: ${r.sellerSkus.join(", ")}`}
-          >
-            {r.sellerSkus.join(", ")}
-          </span>
+
+/**
+ * ĐỊNH NGHĨA CỘT bảng Chiến dịch cho DataTable (Tầng 2) — factory theo sàn vì
+ * tooltip cột Đơn/Hòa vốn khác nhau giữa Shopee và Lazada. Click dòng mở modal
+ * do DataTable `onRowClick` lo, dòng nguy hiểm tô đỏ qua `rowClassName`.
+ */
+function buildCampaignColumns(
+  meta: (typeof PLATFORM_META)[keyof typeof PLATFORM_META]
+): ColumnDef<ShopeeAdsCampaignRow>[] {
+  return [
+    {
+      id: "name",
+      size: 260,
+      meta: { label: "Chiến dịch" },
+      header: "Chiến dịch",
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
+          <>
+            <p className="max-w-64 truncate text-sm font-medium text-slate-900">
+              {c.name || `Chiến dịch #${c.campaignId}`}
+            </p>
+            <p className="text-xs text-slate-500">
+              {AD_TYPE_LABEL[c.adType] ?? c.adType}
+              {c.placement && ` · ${PLACEMENT_LABEL[c.placement] ?? c.placement}`}
+              {c.itemCount > 0 && ` · ${formatNumber(c.itemCount)} SP`}
+              {c.roasTarget != null && ` · mục tiêu ${formatRoas(c.roasTarget)}`}
+            </p>
+          </>
+        );
+      },
+    },
+    {
+      id: "assistant",
+      size: 150,
+      meta: { label: "Trợ lý" },
+      header: "Trợ lý",
+      cell: ({ row }) => <AssistantVerdictBadge c={row.original} />,
+    },
+    {
+      id: "status",
+      size: 130,
+      meta: { label: "Trạng thái" },
+      header: "Trạng thái",
+      cell: ({ row }) => {
+        const c = row.original;
+        const status = STATUS_META[c.status] ?? {
+          label: c.status || "—",
+          className: "bg-slate-100 text-slate-500",
+        };
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <Badge className={status.className}>{status.label}</Badge>
+            {c.lossBeforeAds && (
+              <Badge variant="outline" className="border-rose-300 text-rose-600">
+                SKU lỗ trước ads
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "budget",
+      size: 130,
+      meta: { label: "Ngân sách", align: "right" },
+      header: "Ngân sách",
+      cell: ({ row }) =>
+        row.original.budget > 0 ? (
+          <Money value={row.original.budget} className="text-slate-700" />
         ) : (
+          <span className="text-slate-700">Không giới hạn</span>
+        ),
+    },
+    {
+      id: "spend",
+      size: 130,
+      meta: { label: "Chi phí", align: "right" },
+      header: "Chi phí",
+      cell: ({ row }) => (
+        <Money value={row.original.spend} className="text-slate-700" />
+      ),
+    },
+    {
+      id: "orders",
+      size: 90,
+      meta: { label: "Đơn", align: "right" },
+      header: () => (
+        <span className="inline-flex items-center gap-1">
+          Đơn
+          <HintIcon hint={meta.broadHint} />
+        </span>
+      ),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {formatNumber(row.original.broadOrder)}
+        </span>
+      ),
+    },
+    {
+      id: "cpo",
+      size: 120,
+      meta: { label: "CP/đơn", align: "right" },
+      header: () => (
+        <span className="inline-flex items-center gap-1">
+          CP/đơn
+          <HintIcon hint="Chi phí quảng cáo trung bình để có 1 đơn = chi phí ÷ đơn broad trong kỳ. So với lãi gộp mỗi đơn để biết còn dư bao nhiêu." />
+        </span>
+      ),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {row.original.broadOrder > 0
+            ? formatVND(row.original.spend / row.original.broadOrder)
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      id: "gmv",
+      size: 130,
+      meta: { label: "GMV", align: "right" },
+      header: "GMV",
+      cell: ({ row }) => (
+        <Money value={row.original.broadGmv} className="text-slate-900" />
+      ),
+    },
+    {
+      id: "roas",
+      size: 100,
+      meta: { label: "ROAS", align: "right" },
+      header: "ROAS",
+      cell: ({ row }) => (
+        <span
+          className={cn(
+            TEXT_NUMBER_STRONG,
+            roasToneClass(row.original.roasBroad, row.original.breakevenRoas)
+          )}
+        >
+          {formatRoas(row.original.roasBroad)}
+        </span>
+      ),
+    },
+    {
+      id: "breakeven",
+      size: 120,
+      meta: { label: "Hòa vốn", align: "right" },
+      header: () => (
+        <span className="inline-flex items-center gap-1">
+          Hòa vốn
+          <HintIcon
+            hint={`ROAS hòa vốn = 1 / biên lãi ròng của chính SKU trong chiến dịch (giá vốn + phí sàn thật, chưa gồm ads). ROAS dưới số này là đốt tiền dù sàn báo dương. ${meta.marginBasisHint}`}
+          />
+        </span>
+      ),
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-700">
+          {formatRoas(row.original.breakevenRoas)}
+          {row.original.marginSource === "shop" && (
+            <span
+              className="ml-1 text-xs text-slate-400"
+              title="Chiến dịch chưa đủ đơn khớp SKU — dùng biên lãi toàn shop"
+            >
+              (shop)
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "estProfit",
+      size: 140,
+      meta: { label: "Lãi/lỗ ước tính", align: "right" },
+      header: () => (
+        <span className="inline-flex items-center gap-1">
+          Lãi/lỗ ước tính
+          <HintIcon hint="GMV × biên lãi ròng − chi phí ads trong kỳ. Cùng rổ đơn broad với ROAS: ROAS trên hòa vốn thì số này dương, dưới thì âm." />
+        </span>
+      ),
+      cell: ({ row }) => {
+        const c = row.original;
+        return (
           <span
-            className="text-slate-400"
-            title={
-              r.sellerSkus.length > 0
-                ? `Chưa đặt SKU tổng — SKU phân loại: ${r.sellerSkus.join(", ")}`
-                : undefined
-            }
+            className={cn(
+              TEXT_NUMBER_STRONG,
+              c.estProfit != null
+                ? moneyTone(c.estProfit >= 0 ? 1 : -1)
+                : "text-slate-400"
+            )}
           >
-            —
+            {c.estProfit != null ? formatVND(c.estProfit) : "—"}
           </span>
-        )}
-      </TableCell>
-      <TableCell className="text-right tabular-nums text-slate-700">
-        {formatNumber(r.orders)}
-        {thinSample && (
-          <span className="ml-1 text-xs text-amber-600" title="Dưới 5 đơn — số hòa vốn chỉ mang tính tham khảo">
-            (mỏng)
-          </span>
-        )}
-      </TableCell>
-      <TableCell className="text-right">
-        <Money value={r.revenue} className="text-slate-700" />
-      </TableCell>
-      <TableCell
-        className={cn(
-          "text-right tabular-nums",
-          r.margin == null
-            ? "text-slate-400"
-            : r.margin <= 0
-              ? "text-red-600"
-              : "text-slate-700"
-        )}
-      >
-        {r.margin != null
-          ? `${(r.margin * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
-          : "—"}
-      </TableCell>
-      <TableCell className={cn("text-right", TEXT_NUMBER_STRONG)}>
-        {r.lossBeforeAds ? (
-          <span className="text-red-600" title="Bán đã lỗ chưa tính ads — không ROAS nào cứu được, xem lại giá/giá vốn trước">
-            Lỗ trước ads
-          </span>
-        ) : (
-          formatRoas(r.breakevenRoas)
-        )}
-      </TableCell>
-      <TableCell className="text-right tabular-nums text-emerald-600">
-        {r.breakevenRoas != null ? `≥ ${formatRoas(r.breakevenRoas * safeFactor)}` : "—"}
-      </TableCell>
-      <TableCell>
-        {r.runningAds && (
-          <Badge className="bg-emerald-500 text-white">Đang chạy ads</Badge>
-        )}
-      </TableCell>
-    </TableRow>
-  );
+        );
+      },
+    },
+  ];
 }
 
-function CampaignRow({
-  c,
-  onOpen,
-}: {
-  c: ShopeeAdsCampaignRow;
-  onOpen: () => void;
-}) {
-  const status = STATUS_META[c.status] ?? {
-    label: c.status || "—",
-    className: "bg-slate-100 text-slate-500",
-  };
+/** Dòng chiến dịch NGUY HIỂM: đang chạy mà ROAS thật dưới hòa vốn → nền đỏ. */
+function campaignRowDanger(c: ShopeeAdsCampaignRow): string | undefined {
   const danger =
     c.status === "ongoing" &&
     c.spend > 0 &&
     c.roasBroad != null &&
     c.breakevenRoas != null &&
     c.roasBroad < c.breakevenRoas;
-
-  return (
-    <TableRow
-      className={cn("cursor-pointer", danger && "bg-red-50/50")}
-      onClick={onOpen}
-    >
-      <TableCell>
-        <p className="max-w-64 truncate text-sm font-medium text-slate-900">
-          {c.name || `Chiến dịch #${c.campaignId}`}
-        </p>
-        <p className="text-xs text-slate-500">
-          {AD_TYPE_LABEL[c.adType] ?? c.adType}
-          {c.placement && ` · ${PLACEMENT_LABEL[c.placement] ?? c.placement}`}
-          {c.itemCount > 0 && ` · ${formatNumber(c.itemCount)} SP`}
-          {c.roasTarget != null && ` · mục tiêu ${formatRoas(c.roasTarget)}`}
-        </p>
-      </TableCell>
-      <TableCell>
-        <AssistantVerdictBadge c={c} />
-      </TableCell>
-      <TableCell>
-        <div className="flex flex-col items-start gap-1">
-          <Badge className={status.className}>{status.label}</Badge>
-          {c.lossBeforeAds && (
-            <Badge variant="outline" className="border-rose-300 text-rose-600">
-              SKU lỗ trước ads
-            </Badge>
-          )}
-        </div>
-      </TableCell>
-      <TableCell className="text-right text-slate-700">
-        {c.budget > 0 ? <Money value={c.budget} /> : "Không giới hạn"}
-      </TableCell>
-      <TableCell className="text-right">
-        <Money value={c.spend} className="text-slate-700" />
-      </TableCell>
-      <TableCell className="text-right tabular-nums text-slate-700">
-        {formatNumber(c.broadOrder)}
-      </TableCell>
-      <TableCell className="text-right tabular-nums text-slate-700">
-        {c.broadOrder > 0 ? formatVND(c.spend / c.broadOrder) : "—"}
-      </TableCell>
-      <TableCell className="text-right">
-        <Money value={c.broadGmv} className="text-slate-900" />
-      </TableCell>
-      <TableCell
-        className={cn(
-          "text-right",
-          TEXT_NUMBER_STRONG,
-          roasToneClass(c.roasBroad, c.breakevenRoas)
-        )}
-      >
-        {formatRoas(c.roasBroad)}
-      </TableCell>
-      <TableCell className="text-right tabular-nums text-slate-700">
-        {formatRoas(c.breakevenRoas)}
-        {c.marginSource === "shop" && (
-          <span
-            className="ml-1 text-xs text-slate-400"
-            title="Chiến dịch chưa đủ đơn khớp SKU — dùng biên lãi toàn shop"
-          >
-            (shop)
-          </span>
-        )}
-      </TableCell>
-      <TableCell
-        className={cn(
-          "text-right",
-          TEXT_NUMBER_STRONG,
-          c.estProfit != null ? moneyTone(c.estProfit >= 0 ? 1 : -1) : "text-slate-400"
-        )}
-      >
-        {c.estProfit != null ? formatVND(c.estProfit) : "—"}
-      </TableCell>
-    </TableRow>
-  );
+  return danger ? "bg-red-50/50" : undefined;
 }

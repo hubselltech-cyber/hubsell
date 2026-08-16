@@ -461,6 +461,10 @@ th.dt-pin {
   z-index: 3;
   background: color-mix(in oklab, var(--color-slate-50) 60%, var(--color-card));
 }
+/* Header bản NỔI (TABLE_HEAD_EMPHASIS qua prop headerEmphasis) nền đặc hơn */
+thead[data-emphasis] th.dt-pin {
+  background: var(--color-slate-50);
+}
 tr[data-striped="true"] > td.dt-pin {
   background: color-mix(in oklab, var(--color-muted) 40%, var(--color-card));
 }
