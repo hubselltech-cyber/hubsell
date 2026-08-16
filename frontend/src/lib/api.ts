@@ -3443,3 +3443,39 @@ export function decideShopeeAdsCampaign(
     { method: "POST", body: JSON.stringify({ decision, verdict }) }
   );
 }
+
+// ----- Chuông thông báo trong app (Tầng 3) -----
+
+export interface AppNotification {
+  id: string;
+  /** Nhóm sự kiện: ops-alert | return | system… */
+  type: string;
+  title: string;
+  body: string | null;
+  /** Deep-link nội bộ — bấm thông báo là điều hướng tới đây. */
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export function fetchNotifications() {
+  return apiFetch<{ items: AppNotification[]; unread: number }>(
+    "/api/notifications"
+  );
+}
+
+/** Đánh dấu ĐÃ ĐỌC — không truyền ids là đánh dấu toàn bộ. */
+export function markNotificationsRead(ids?: string[]) {
+  return apiFetch<{ marked: number }>("/api/notifications/read", {
+    method: "POST",
+    body: JSON.stringify(ids && ids.length > 0 ? { ids } : {}),
+  });
+}
+
+/**
+ * URL stream SSE của chuông — EventSource không gắn được header Authorization
+ * nên token đi qua query param (backend verify y như requireAuth).
+ */
+export function notificationStreamUrl(): string {
+  return `${API_URL}/api/notifications/stream?token=${encodeURIComponent(getToken() ?? "")}`;
+}

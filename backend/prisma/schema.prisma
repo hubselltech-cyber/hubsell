@@ -1646,3 +1646,24 @@ model WithdrawalRequest {
   @@index([status])
   @@map("withdrawal_requests")
 }
+
+/// THÔNG BÁO TRONG APP — chuông trên header (Tầng 3 kế hoạch UI).
+/// Nguồn phát qua notify() trong src/notifications.ts (ghi DB + đẩy SSE xuống
+/// trình duyệt đang mở): OpsAlert mới/tái phát của Trung tâm điều hành, đơn
+/// sàn báo hoàn mới… GĐ1 chỉ CHỦ SHOP nhận (type tài chính nhạy cảm); mở rộng
+/// cho nhân viên theo cây quyền là nợ ghi trong memory.
+model Notification {
+  id      String @id @default(cuid())
+  ownerId String
+  /// Nhóm sự kiện: ops-alert | return | system…
+  type    String
+  title   String
+  body    String?
+  /// Deep-link nội bộ frontend (VD /warehouse/returns) — bấm thông báo là tới.
+  link    String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([ownerId, createdAt])
+  @@map("notifications")
+}

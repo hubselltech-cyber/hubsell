@@ -31,6 +31,7 @@ import operationsRouter from "./routes/operations";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
+import { notificationsRouter, notificationStream } from "./notifications";
 
 // ============================================================
 // CORS — ALLOWLIST thay cho mở toang (beta multi-user).
@@ -192,6 +193,12 @@ export function createApp() {
   // Kênh bán: xem danh sách cho mọi người đã đăng nhập (KHÔNG gác requireChannel để
   // onboarding còn kết nối được), kết nối/ngắt/danh mục sàn thì chỉ Admin (gác trong router).
   app.use("/api/channels", requireAuth, channelsRouter);
+
+  // Chuông thông báo (Tầng 3): stream SSE đứng TRƯỚC router và KHÔNG qua
+  // requireAuth — EventSource không gắn được header Authorization, token đi
+  // qua query và được verify bên trong. GĐ1 chỉ chủ shop (adminOnly).
+  app.get("/api/notifications/stream", notificationStream);
+  app.use("/api/notifications", requireAuth, adminOnly, notificationsRouter);
 
   // Xử lý route không tồn tại
   app.use((_req, res) => {

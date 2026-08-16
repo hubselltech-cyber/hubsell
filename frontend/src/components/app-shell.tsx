@@ -20,6 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { CommandPalette } from "@/components/command-palette";
 import { NavIcon } from "@/components/nav-icon";
+import { NotificationBell } from "@/components/notification-bell";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { Button } from "@/components/ui/button";
 import { UserAvatarMenu } from "@/components/user-avatar-menu";
@@ -700,6 +701,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <SearchIcon className="size-5" />
             </Button>
+            {/* Chuông thông báo (Tầng 3) — GĐ1 chỉ chủ shop; khu điều hành HQ
+                không có (sự kiện toàn là nghiệp vụ shop) */}
+            {user && isAdmin(user) && !hqWorkspace && <NotificationBell />}
             {/* Chuyển nhanh sáng ↔ tối; chỉnh chi tiết (kèm "Theo hệ thống")
                 nằm ở Cấu hình chung → Giao diện */}
             <Button

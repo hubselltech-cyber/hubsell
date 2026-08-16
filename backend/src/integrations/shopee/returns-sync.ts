@@ -20,6 +20,7 @@
 
 import type { Channel } from "@prisma/client";
 import { ChannelName, ReturnStatus } from "@prisma/client";
+import { notify } from "../../notifications";
 import { prisma } from "../../prisma";
 import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
 import {
@@ -241,6 +242,17 @@ export async function syncShopeeReturns(
 
     if (Object.keys(plan.data).length > 0) {
       await prisma.order.update({ where: { id: order.id }, data: plan.data });
+    }
+
+    // CHUÔNG THÔNG BÁO (Tầng 3): sàn vừa báo hoàn một đơn MỚI (NONE→AWAITING)
+    // — kho cần biết ngay để đón kiện. notify tự chống trùng + nuốt lỗi.
+    if (plan.flagged) {
+      await notify(channel.userId, {
+        type: "return",
+        title: `Shopee báo hoàn đơn ${orderSn}`,
+        body: `Gian ${channel.shopName} — đơn chuyển sang "Chờ nhận hàng hoàn". Kho quét mã khi kiện về tay.`,
+        link: "/warehouse/returns",
+      });
     }
   }
 
