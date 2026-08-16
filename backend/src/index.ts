@@ -7,6 +7,7 @@ import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
 import { startStockPushWorker } from "./integrations/stock-push-worker";
 import { startTokenRefreshWorker } from "./token-refresh";
+import { startWeeklyReportWorker } from "./weekly-report";
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
@@ -23,6 +24,8 @@ startLogCleanupWorker();
 // Worker đẩy tồn khả dụng đa sàn (Shopee + Lazada) — tiêu thụ hàng đợi bền
 // stock_push_jobs do mọi luồng biến động kho enqueue vào.
 startStockPushWorker();
+// Sáng thứ 2 đẩy báo cáo tuần trước qua chuông thông báo cho từng chủ shop.
+startWeeklyReportWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

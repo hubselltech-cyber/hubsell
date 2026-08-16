@@ -44,6 +44,32 @@ const FALLBACK_SUGGESTIONS = [
   "SKU nào sắp hết hàng?",
 ];
 
+/**
+ * Biểu đồ cột thuần div — đủ cho khung chat 24rem, không kéo thư viện chart.
+ * Cột tô primary (tự đổi theo theme accent + dark), tooltip title số đầy đủ.
+ * Nhiều hơn ~10 cột (báo cáo tháng) thì nhãn trục chỉ in thưa cho khỏi dồn chữ.
+ */
+function MiniBarChart({ points }: { points: { label: string; value: number }[] }) {
+  const max = Math.max(...points.map((p) => p.value), 1);
+  const labelStep = points.length > 10 ? Math.ceil(points.length / 6) : 1;
+  return (
+    <div className="flex items-end gap-1">
+      {points.map((p, i) => (
+        <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
+          <div
+            title={`${p.label}: ${p.value.toLocaleString("vi-VN")}₫`}
+            className="w-full rounded-t bg-primary/75"
+            style={{ height: `${Math.max(3, Math.round((p.value / max) * 64))}px` }}
+          />
+          <span className="h-3 truncate text-[9px] tabular-nums text-slate-400">
+            {i % labelStep === 0 || i === points.length - 1 ? p.label : ""}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 let msgSeq = 0;
 
 /** Hội thoại + trạng thái mở, sống xuyên remount (điều hướng) và F5. */
@@ -132,6 +158,25 @@ export function AssistantWidget() {
       inputRef.current?.focus();
     }
   }
+
+  // Deep-link từ CHUÔNG THÔNG BÁO (báo cáo tuần): /?assistant=<câu hỏi> → tự
+  // mở panel và hỏi luôn câu đó. Đọc search TƯƠI trong effect + xóa param ngay
+  // bằng replaceState nên StrictMode/remount không hỏi lặp; ask tham chiếu qua
+  // ref để effect [] không thiếu dependency.
+  const askRef = React.useRef(ask);
+  React.useEffect(() => {
+    askRef.current = ask;
+  });
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("assistant");
+    if (!q) return;
+    params.delete("assistant");
+    const qs = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    setOpen(true);
+    void askRef.current({ question: q }, q);
+  }, []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -249,6 +294,16 @@ export function AssistantWidget() {
                       </span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Biểu đồ cột mini — doanh thu theo ngày của báo cáo tuần/tháng */}
+              {m.reply?.chart && m.reply.chart.points.length > 1 && (
+                <div className="mt-2 rounded-lg border bg-card p-2.5">
+                  <p className="mb-1.5 text-[11px] font-medium text-slate-500">
+                    {m.reply.chart.caption}
+                  </p>
+                  <MiniBarChart points={m.reply.chart.points} />
                 </div>
               )}
 

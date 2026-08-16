@@ -31,6 +31,7 @@ import { channelScope, type ChannelScope } from "../channel-filter";
 import {
   BUSINESS_TZ_OFFSET_MS,
   businessDayStart,
+  toBusinessDateKey,
   type DateRangeFilter,
 } from "../date-range";
 import { computePnlRow, fetchPnlOrders } from "./finance";
@@ -57,6 +58,8 @@ export interface AssistantReply {
   chips?: { intent: string; label: string }[];
   /** Câu mẫu gợi ý bấm-để-hỏi (màn chào + khi miss). */
   suggestions?: string[];
+  /** Biểu đồ cột mini vẽ ngay trong bong bóng chat (báo cáo tuần/tháng). */
+  chart?: { caption: string; points: { label: string; value: number }[] };
 }
 
 // ─────────────────────────── Chuẩn hoá & thời gian ───────────────────────────
@@ -117,6 +120,14 @@ function detectPeriod(norm: string): Period {
       explicit: true,
     };
   }
+  if (hasPhrase(norm, "tuan truoc") || hasPhrase(norm, "tuan roi")) {
+    const r = lastWeekRange();
+    return {
+      label: `Tuần trước (${fmtDayLabel(r.gte)}–${fmtDayLabel(r.lte)})`,
+      range: r,
+      explicit: true,
+    };
+  }
   if (hasPhrase(norm, "tuan nay") || hasPhrase(norm, "7 ngay") || hasPhrase(norm, "tuan qua")) {
     return {
       label: "7 ngày gần nhất",
@@ -157,6 +168,33 @@ function widenToMonth(period: Period): Period {
 
 const fmtMoney = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
 
+/** "dd/MM" theo ngày giờ VN — nhãn kỳ báo cáo + trục biểu đồ (worker dùng chung). */
+export function fmtDayLabel(d: Date): string {
+  const key = toBusinessDateKey(d);
+  return `${key.slice(8, 10)}/${key.slice(5, 7)}`;
+}
+
+/** TUẦN TRƯỚC trọn vẹn theo lịch VN: thứ 2 00:00 → chủ nhật 23:59:59.999. */
+export function lastWeekRange(now = new Date()): DateRangeFilter {
+  const todayStart = businessDayStart(now);
+  // getUTCDay trên mốc đã cộng offset VN: 0=CN … 6=T7 → số ngày lùi về thứ 2
+  const weekday = new Date(todayStart.getTime() + BUSINESS_TZ_OFFSET_MS).getUTCDay();
+  const daysSinceMonday = (weekday + 6) % 7;
+  const thisMonday = new Date(todayStart.getTime() - daysSinceMonday * DAY_MS);
+  return {
+    gte: new Date(thisMonday.getTime() - 7 * DAY_MS),
+    lte: new Date(thisMonday.getTime() - 1),
+  };
+}
+
+/** "▲ 12%" / "▼ 8%" so kỳ trước; kỳ trước = 0 thì không so được. */
+function pctDelta(current: number, previous: number): string | null {
+  if (previous === 0) return null;
+  const pct = Math.round(((current - previous) / Math.abs(previous)) * 100);
+  if (pct === 0) return "= kỳ trước";
+  return pct > 0 ? `▲ ${pct}%` : `▼ ${Math.abs(pct)}%`;
+}
+
 // ─────────────────────────── Nguyên liệu P&L dùng chung ───────────────────────────
 
 /** Đơn "đang tính doanh thu" — cùng hệ quy chiếu trang Tổng quan (analytics.ts):
@@ -184,6 +222,137 @@ function activeRows(rows: PnlRow[]): PnlRow[] {
   );
 }
 
+// ─────────────────────────── BÁO CÁO KỲ (tuần/tháng) ───────────────────────────
+
+/**
+ * Dựng BÁO CÁO ĐIỀU HÀNH cho một kỳ: doanh thu/lãi/đơn/hoàn/ads + so sánh %
+ * với kỳ TRƯỚC liền kề cùng độ dài + biểu đồ cột doanh thu theo ngày.
+ *
+ * DÙNG CHUNG 2 ĐƯỜNG: intent "báo cáo" trong chat, và worker sáng thứ 2 đẩy
+ * báo cáo tuần qua chuông (weekly-report.ts) — một nguồn số duy nhất.
+ */
+export async function buildPeriodReport(
+  ownerId: string,
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  label: string
+): Promise<AssistantReply> {
+  const lengthMs = range.lte.getTime() - range.gte.getTime() + 1;
+  const prevRange: DateRangeFilter = {
+    gte: new Date(range.gte.getTime() - lengthMs),
+    lte: new Date(range.gte.getTime() - 1),
+  };
+
+  // AdSpend.date là cột @db.Date (00:00 UTC theo NGÀY sàn/VN) — đối chiếu bằng
+  // mốc UTC-midnight của ngày VN, không so thẳng mốc giờ VN được.
+  const adDate = (d: Date) => new Date(toBusinessDateKey(d));
+
+  const [allRows, prevAllRows, opexAgg, prevOpexAgg, newReturns, adAgg, topItems] =
+    await Promise.all([
+      loadPnlRows(scope, range),
+      loadPnlRows(scope, prevRange),
+      prisma.operatingExpense.aggregate({
+        where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
+        _sum: { amount: true },
+      }),
+      prisma.operatingExpense.aggregate({
+        where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: prevRange },
+        _sum: { amount: true },
+      }),
+      prisma.order.count({
+        where: { channel: scope, returnRequestedAt: range },
+      }),
+      prisma.adSpend.aggregate({
+        where: { channel: scope, date: { gte: adDate(range.gte), lte: adDate(range.lte) } },
+        _sum: { amount: true },
+      }),
+      prisma.orderItem.groupBy({
+        by: ["channelSku", "productName"],
+        where: {
+          order: { channel: scope, createdAt: range, shippingStatus: { not: ShippingStatus.CANCELLED } },
+        },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: "desc" } },
+        take: 3,
+      }),
+    ]);
+
+  const sumOf = (rows: PnlRow[], opex: number) => {
+    const act = activeRows(rows);
+    const revenue = act.reduce((s, r) => s + r.revenueGross, 0);
+    const cost = act.reduce((s, r) => s + r.costSnapshot, 0);
+    const fee = act.reduce((s, r) => s + (r.revenueGross - r.platformRevenue), 0);
+    return { orders: act.length, revenue, net: revenue - cost - fee - opex };
+  };
+  const cur = sumOf(allRows, Number(opexAgg._sum.amount ?? 0));
+  const prev = sumOf(prevAllRows, Number(prevOpexAgg._sum.amount ?? 0));
+  const cancelled = allRows.filter(
+    (r) => r.shippingStatus === ShippingStatus.CANCELLED
+  ).length;
+  const adSpend = Number(adAgg._sum.amount ?? 0);
+
+  // Doanh thu theo NGÀY (giờ VN) cho biểu đồ cột — ngày trống vẫn vẽ cột 0.
+  const byDay = new Map<string, number>();
+  for (let t = range.gte.getTime(); t <= range.lte.getTime(); t += DAY_MS) {
+    byDay.set(toBusinessDateKey(new Date(t)), 0);
+  }
+  for (const r of activeRows(allRows)) {
+    const key = toBusinessDateKey(r.createdAt);
+    if (byDay.has(key)) byDay.set(key, (byDay.get(key) ?? 0) + r.revenueGross);
+  }
+  const points = [...byDay.entries()].map(([key, value]) => ({
+    label: `${key.slice(8, 10)}/${key.slice(5, 7)}`,
+    value: Math.round(value),
+  }));
+
+  const revDelta = pctDelta(cur.revenue, prev.revenue);
+  const netDelta = pctDelta(cur.net, prev.net);
+  const orderDelta = pctDelta(cur.orders, prev.orders);
+  const withDelta = (v: string, delta: string | null) =>
+    delta ? `${v} (${delta})` : v;
+
+  const rows: AssistantRow[] = [
+    { label: "Doanh thu", value: withDelta(fmtMoney(cur.revenue), revDelta) },
+    {
+      label: "Lợi nhuận ròng",
+      value: withDelta(fmtMoney(cur.net), netDelta),
+      tone: cur.net >= 0 ? "pos" : "neg",
+    },
+    {
+      label: "Đơn phát sinh",
+      value: withDelta(`${cur.orders} đơn`, orderDelta) + (cancelled > 0 ? ` · hủy ${cancelled}` : ""),
+    },
+    {
+      label: "Đơn báo hoàn mới",
+      value: `${newReturns} đơn`,
+      tone: newReturns > 0 ? "neg" : undefined,
+    },
+    { label: "Chi quảng cáo", value: fmtMoney(adSpend) },
+    ...topItems.map((g, i) => ({
+      label: `Top ${i + 1} bán chạy`,
+      value: `${g.channelSku} · ${g._sum.quantity ?? 0} sp`,
+    })),
+  ];
+
+  const missing = activeRows(allRows).filter((r) => r.missingCostPrice).length;
+  let text =
+    cur.orders === 0
+      ? `${label} chưa có đơn phát sinh nào.`
+      : `📊 Báo cáo ${label.toLowerCase()}: doanh thu ${fmtMoney(cur.revenue)}${revDelta ? ` (${revDelta} so kỳ trước)` : ""}, ${cur.net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(cur.net))}.`;
+  if (missing > 0) text += ` ⚠️ ${missing} đơn chưa có giá vốn.`;
+
+  return {
+    outcome: "answered",
+    text,
+    rows,
+    chart:
+      points.length >= 2
+        ? { caption: "Doanh thu theo ngày", points }
+        : undefined,
+    link: { href: "/", label: "Mở Tổng quan" },
+  };
+}
+
 // ─────────────────────────── Bộ intent (tầng luật) ───────────────────────────
 
 interface ResolveCtx {
@@ -204,6 +373,36 @@ interface IntentDef {
 }
 
 const INTENTS: IntentDef[] = [
+  {
+    id: "report",
+    label: "Báo cáo kinh doanh",
+    sample: "Báo cáo tuần này",
+    phrases: [
+      { p: "bao cao", w: 3 },
+      { p: "tong ket", w: 3 },
+      { p: "tinh hinh kinh doanh", w: 3 },
+      { p: "tinh hinh", w: 2 },
+      { p: "kinh doanh the nao", w: 3 },
+      { p: "buon ban the nao", w: 3 },
+    ],
+    async resolve({ ownerId, scope, period }) {
+      // "Báo cáo" trần không kèm mốc → mặc định 7 ngày gần nhất (1 ngày quá
+      // mỏng để gọi là báo cáo, biểu đồ cũng chỉ có 1 cột).
+      let p = period;
+      if (!p.explicit) {
+        const todayStart = businessDayStart(new Date());
+        p = {
+          label: "7 ngày gần nhất",
+          range: {
+            gte: new Date(todayStart.getTime() - 6 * DAY_MS),
+            lte: new Date(todayStart.getTime() + DAY_MS - 1),
+          },
+          explicit: false,
+        };
+      }
+      return buildPeriodReport(ownerId, scope, p.range, p.label);
+    },
+  },
   {
     id: "profit",
     label: "Lãi/lỗ của shop",
@@ -754,6 +953,7 @@ const INTENT_BY_ID = new Map(INTENTS.map((d) => [d.id, d]));
 
 /** Câu mẫu chào màn hình + gợi ý khi miss — lấy từ chính bộ intent. */
 const SUGGESTIONS = [
+  "Báo cáo tuần này",
   "Hôm nay lãi bao nhiêu?",
   "Có bao nhiêu đơn chờ xử lý?",
   "SKU nào sắp hết hàng?",

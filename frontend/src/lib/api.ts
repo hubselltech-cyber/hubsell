@@ -3498,6 +3498,8 @@ export interface AssistantReply {
   link?: { href: string; label: string };
   chips?: { intent: string; label: string }[];
   suggestions?: string[];
+  /** Biểu đồ cột mini (báo cáo tuần/tháng) — doanh thu theo ngày. */
+  chart?: { caption: string; points: { label: string; value: number }[] };
 }
 
 /** Hỏi trợ lý: câu chữ tự nhiên, hoặc intent đích danh khi bấm chip hỏi lại. */
