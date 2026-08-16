@@ -16,6 +16,8 @@ export interface TableColumnState {
   /** map columnId -> false là ẩn (thiếu = hiện, khớp VisibilityState tanstack) */
   columnVisibility: Record<string, boolean>;
   columnPinning: { left?: string[]; right?: string[] };
+  /** Thứ tự cột do người dùng kéo/sắp — rỗng = theo thứ tự khai báo. */
+  columnOrder?: string[];
 }
 
 export interface SavedTableView {

@@ -24,6 +24,7 @@ import {
   useReactTable,
   type Column,
   type ColumnDef,
+  type ColumnOrderState,
   type ColumnPinningState,
   type Table as TanstackTable,
   type VisibilityState,
@@ -31,6 +32,8 @@ import {
 import {
   Bookmark,
   BookmarkPlus,
+  ChevronDown,
+  ChevronUp,
   Pin,
   PinOff,
   RotateCcw,
@@ -133,6 +136,10 @@ export function DataTable<TData>({
     React.useState<VisibilityState>({});
   const [columnPinning, setColumnPinning] =
     React.useState<ColumnPinningState>(defaultPinning);
+  const [columnOrder, setColumnOrder] = React.useState<ColumnOrderState>([]);
+  // Kéo-thả tiêu đề cột: id cột đang kéo + id cột đang rê qua (vẽ vạch đích)
+  const [dragId, setDragId] = React.useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = React.useState<string | null>(null);
 
   // Nạp trạng thái đã lưu SAU khi mount (đọc localStorage lúc render đầu sẽ
   // lệch với bản SSR → lỗi hydration). `loaded` chặn việc auto-save đè bản
@@ -151,6 +158,7 @@ export function DataTable<TData>({
         ],
         right: saved.columnPinning?.right ?? [],
       });
+      setColumnOrder(saved.columnOrder ?? []);
     }
     setLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ nạp một lần theo tableId
@@ -164,8 +172,9 @@ export function DataTable<TData>({
         left: (columnPinning.left ?? []).filter((id) => id !== SELECT_COL_ID),
         right: columnPinning.right ?? [],
       },
+      columnOrder,
     });
-  }, [tableId, loaded, columnVisibility, columnPinning]);
+  }, [tableId, loaded, columnVisibility, columnPinning, columnOrder]);
 
   // Cột checkbox chọn dòng — ghép vào đầu danh sách cột của trang.
   const allColumns = React.useMemo<ColumnDef<TData>[]>(() => {
@@ -190,15 +199,54 @@ export function DataTable<TData>({
     columns: allColumns,
     getCoreRowModel: getCoreRowModel(),
     getRowId,
-    state: { columnVisibility, columnPinning },
+    state: { columnVisibility, columnPinning, columnOrder },
     onColumnVisibilityChange: setColumnVisibility,
     onColumnPinningChange: setColumnPinning,
+    onColumnOrderChange: setColumnOrder,
     enableColumnPinning: true,
   });
 
   const resetColumns = () => {
     setColumnVisibility({});
     setColumnPinning(defaultPinning);
+    setColumnOrder([]);
+  };
+
+  /**
+   * ĐỔI VỊ TRÍ CỘT — dùng chung cho kéo-thả tiêu đề lẫn nút ▲▼ trong menu.
+   * Chỉ đổi chỗ TRONG CÙNG VÙNG: cột ghim trái sắp theo mảng pinning.left,
+   * cột thường sắp theo columnOrder — kéo chéo vùng thì ghim/bỏ ghim trước.
+   */
+  const moveColumn = (colId: string, targetId: string) => {
+    if (colId === targetId) return;
+    const col = table.getColumn(colId);
+    const target = table.getColumn(targetId);
+    if (!col || !target) return;
+    const pinnedCol = col.getIsPinned();
+    if (pinnedCol !== target.getIsPinned()) return; // khác vùng — bỏ qua
+
+    if (pinnedCol === "left") {
+      setColumnPinning((prev) => {
+        const left = [...(prev.left ?? [])];
+        const from = left.indexOf(colId);
+        const to = left.indexOf(targetId);
+        if (from < 0 || to < 0) return prev;
+        left.splice(from, 1);
+        left.splice(to, 0, colId);
+        return { ...prev, left };
+      });
+      return;
+    }
+    // Vùng cột thường: dựng danh sách theo thứ tự ĐANG HIỂN THỊ rồi dời chỗ —
+    // columnOrder chứa cả id cột ghim cũng vô hại (thứ tự vùng ghim do mảng
+    // pinning quyết định).
+    const ids = table.getAllLeafColumns().map((c) => c.id);
+    const from = ids.indexOf(colId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, colId);
+    setColumnOrder(ids);
   };
 
   return (
@@ -218,6 +266,7 @@ export function DataTable<TData>({
                   ),
                   right: columnPinning.right ?? [],
                 },
+                columnOrder,
               },
               extras: viewExtras?.get(),
             })}
@@ -230,10 +279,15 @@ export function DataTable<TData>({
                 ],
                 right: view.columns.columnPinning?.right ?? [],
               });
+              setColumnOrder(view.columns.columnOrder ?? []);
               if (view.extras && viewExtras) viewExtras.apply(view.extras);
             }}
           />
-          <ColumnsMenu table={table} onReset={resetColumns} />
+          <ColumnsMenu
+            table={table}
+            onReset={resetColumns}
+            onMove={moveColumn}
+          />
         </div>
       </div>
 
@@ -244,11 +298,59 @@ export function DataTable<TData>({
               {hg.headers.map((header) => {
                 const { className, style } = pinProps(header.column);
                 const meta = header.column.columnDef.meta;
+                const colId = header.column.id;
+                // Kéo tiêu đề để đổi vị trí — cột ghim thì bỏ ghim trước
+                // (vị trí vùng ghim đổi bằng ▲▼ trong menu Cột).
+                const draggable =
+                  colId !== SELECT_COL_ID && !header.column.getIsPinned();
                 return (
                   <TableHead
                     key={header.id}
+                    draggable={draggable}
+                    onDragStart={
+                      draggable
+                        ? (e) => {
+                            setDragId(colId);
+                            e.dataTransfer.effectAllowed = "move";
+                            // Firefox cần setData mới chịu bắt đầu kéo
+                            e.dataTransfer.setData("text/plain", colId);
+                          }
+                        : undefined
+                    }
+                    onDragOver={(e) => {
+                      // Nhận diện nguồn qua dataTransfer.types (không đọc được
+                      // data lúc dragover theo spec) — không dựa state dragId
+                      // vì có thể chưa kịp render giữa dragstart và dragover.
+                      if (!draggable || !e.dataTransfer.types.includes("text/plain"))
+                        return;
+                      e.preventDefault(); // cho phép thả
+                      e.dataTransfer.dropEffect = "move";
+                      setDropTargetId(colId);
+                    }}
+                    onDragLeave={() => {
+                      if (dropTargetId === colId) setDropTargetId(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const sourceId =
+                        e.dataTransfer.getData("text/plain") || dragId;
+                      if (sourceId) moveColumn(sourceId, colId);
+                      setDragId(null);
+                      setDropTargetId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setDropTargetId(null);
+                    }}
+                    title={draggable ? "Kéo để đổi vị trí cột" : undefined}
                     className={cn(
                       className,
+                      draggable && "cursor-grab active:cursor-grabbing",
+                      dragId === colId && "opacity-40",
+                      // Vạch đích bên trái cột đang rê tới — biết thả vào đâu
+                      dropTargetId === colId &&
+                        dragId !== colId &&
+                        "shadow-[inset_2px_0_0_0_var(--color-primary)]",
                       meta?.align === "right" && "text-right",
                       meta?.align === "center" && "text-center",
                       meta?.headClassName
@@ -395,17 +497,29 @@ function RowCheckbox({
   );
 }
 
-/** Menu "Cột" — ẩn/hiện + ghim trái từng cột, nút đặt lại. */
+/** Menu "Cột" — ẩn/hiện, ghim trái và đổi vị trí (▲▼) từng cột. */
 function ColumnsMenu<TData>({
   table,
   onReset,
+  onMove,
 }: {
   table: TanstackTable<TData>;
   onReset: () => void;
+  /** Đổi chỗ hai cột cùng vùng (dùng chung với kéo-thả tiêu đề). */
+  onMove: (colId: string, targetId: string) => void;
 }) {
+  // Danh sách theo đúng thứ tự ĐANG HIỂN THỊ (đã tính ghim + columnOrder)
   const cols = table
     .getAllLeafColumns()
     .filter((c) => c.id !== SELECT_COL_ID);
+  // Hàng xóm CÙNG VÙNG (cùng trạng thái ghim) — ▲▼ chỉ đổi chỗ trong vùng
+  const neighbor = (index: number, dir: -1 | 1): string | null => {
+    const me = cols[index];
+    for (let i = index + dir; i >= 0 && i < cols.length; i += dir) {
+      if (cols[i].getIsPinned() === me.getIsPinned()) return cols[i].id;
+    }
+    return null;
+  };
   return (
     <Popover>
       <PopoverTrigger
@@ -416,13 +530,15 @@ function ColumnsMenu<TData>({
           </Button>
         }
       />
-      <PopoverContent align="end" className="w-64 gap-1 p-2">
+      <PopoverContent align="end" className="w-72 gap-1 p-2">
         <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-          Hiện / ẩn và ghim cột
+          Hiện / ẩn, ghim và sắp vị trí cột
         </p>
-        {cols.map((col) => {
+        {cols.map((col, index) => {
           const pinned = col.getIsPinned() === "left";
           const label = col.columnDef.meta?.label ?? col.id;
+          const up = neighbor(index, -1);
+          const down = neighbor(index, 1);
           return (
             <div
               key={col.id}
@@ -442,6 +558,25 @@ function ColumnsMenu<TData>({
               >
                 {label}
               </label>
+              {/* ▲▼ đổi vị trí — bản bàn phím/chuột của kéo-thả tiêu đề */}
+              <button
+                type="button"
+                aria-label={`Chuyển cột ${label} lên trước`}
+                disabled={!up}
+                onClick={() => up && onMove(col.id, up)}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronUp className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Chuyển cột ${label} ra sau`}
+                disabled={!down}
+                onClick={() => down && onMove(col.id, down)}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:pointer-events-none disabled:opacity-30"
+              >
+                <ChevronDown className="size-3.5" />
+              </button>
               <button
                 type="button"
                 aria-label={pinned ? `Bỏ ghim cột ${label}` : `Ghim trái cột ${label}`}
@@ -463,6 +598,9 @@ function ColumnsMenu<TData>({
             </div>
           );
         })}
+        <p className="px-2 pt-1 text-[11px] leading-snug text-muted-foreground">
+          Mẹo: kéo thả trực tiếp tiêu đề cột trên bảng để đổi vị trí.
+        </p>
         <div className="mt-1 border-t pt-1.5">
           <Button
             variant="ghost"
