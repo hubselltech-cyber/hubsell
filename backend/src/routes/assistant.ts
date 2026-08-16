@@ -843,12 +843,13 @@ router.post("/ask", async (req: AuthRequest, res, next) => {
       }
     }
 
-    // Tầng heuristic: câu phân tích là đất của LLM — chưa mở thì nói thẳng.
+    // Tầng heuristic: câu phân tích là đất của LLM — nhắc khéo lên gói
+    // Trợ lý chuyên sâu (lời thoại anh Trung chốt 16/08), kiêm luôn upsell.
     if (isAnalysisQuestion(norm)) {
       const reply: AssistantReply = {
         outcome: "analysis",
         text:
-          "Câu hỏi dạng phân tích/so sánh cần Trợ lý AI nâng cao — tính năng này sẽ mở trong gói trả phí sắp ra mắt. Trước mắt anh/chị có thể hỏi em các con số cụ thể:",
+          "🔒 Câu hỏi phân tích chuyên sâu như thế này nằm trong gói Trợ lý chuyên sâu — anh/chị vui lòng nâng cấp gói để mở khóa nhé. Còn các con số cụ thể thì em trả lời được ngay:",
         suggestions: SUGGESTIONS.slice(0, 3),
       };
       await logQuery(ownerId, rawQuestion, norm, null, "analysis");
