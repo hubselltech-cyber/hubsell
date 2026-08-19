@@ -13,7 +13,7 @@ import {
   WithdrawalSource,
 } from "@prisma/client";
 import { prisma } from "../prisma";
-import { requirePermission, type AuthRequest } from "../auth";
+import { requireAdmin, requirePermission, type AuthRequest } from "../auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
 import {
   businessDayStart,
@@ -34,6 +34,8 @@ import {
   PLATFORM_TAX_RATE,
 } from "../tax-config";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
+import { getEscrowDetail } from "../integrations/shopee/client";
+import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 
 const router = Router();
@@ -2714,5 +2716,50 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+// ============================================================
+// GET /api/finance/shopee-escrow-probe?orderSn= — ĐỌC THÔ order_income của
+// MỘT đơn (get_escrow_detail) để đối chiếu mapping phí/hoàn với payload thật.
+// CHỈ chủ shop (ADMIN) trên gian của mình, read-only, không ghi DB. Thêm 20/08 khi thấy 4 đơn
+// "chỉ hoàn tiền" ACCEPTED có escrow_amount âm nhưng seller_return_refund = 0
+// → tiền hoàn nằm ở field khác chưa map.
+// ============================================================
+router.get("/shopee-escrow-probe", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const orderSn = typeof req.query.orderSn === "string" ? req.query.orderSn.trim() : "";
+    if (!orderSn) {
+      res.status(400).json({ error: "Thiếu orderSn" });
+      return;
+    }
+    const order = await prisma.order.findFirst({
+      where: {
+        orderCode: orderSn,
+        channel: { userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+      },
+      include: { channel: true },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không thấy đơn Shopee này" });
+      return;
+    }
+    const { accessToken, shopId } = await getValidShopeeAccessToken(order.channel);
+    const data = await getEscrowDetail({ accessToken, shopId, orderSn });
+    res.json({
+      orderSn,
+      stored: {
+        isSettled: order.isSettled,
+        actualPayout: order.actualPayout,
+        refundedAmount: order.refundedAmount,
+        platformRefundAmount: order.platformRefundAmount,
+        returnSolution: order.returnSolution,
+        platformReturnStatus: order.platformReturnStatus,
+      },
+      escrow: data.response ?? null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 export default router;
