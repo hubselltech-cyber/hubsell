@@ -134,9 +134,13 @@ export function returnGoodsRecovered(order: {
   if (order.returnSolution === ReturnSolution.RETURN_REFUND && order.returnDeliveredAt) {
     return true;
   }
-  if (order.shippingStatus === ShippingStatus.CANCELLED && order.stockRestoredAt) {
-    return true;
-  }
+  // Đơn HỦY: hàng chưa xuất đi (khách hủy trước giao) hoặc kiện đã quay về
+  // người gửi (giao thất bại / hư hỏng khi vận chuyển → sàn hủy, "hoàn trả
+  // thành công") → KHÔNG mất giá trị sản phẩm; mất thật chỉ khi kho đánh
+  // DAMAGED/WRITTEN_OFF (đã chặn ở trên). Không phụ thuộc stockRestoredAt —
+  // đơn không quản tồn kho (giá vốn từ ChannelProduct) không có mốc đó, trước
+  // đây bị tính nguyên vốn (đơn 26081266V7GRHG, anh Trung 20/08).
+  if (order.shippingStatus === ShippingStatus.CANCELLED) return true;
   return false;
 }
 

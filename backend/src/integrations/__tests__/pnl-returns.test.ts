@@ -131,7 +131,10 @@ describe("returnGoodsRecovered — hàng đã về tay chưa (căn cứ kho / s�
       expect(returnGoodsRecovered({ ...base, returnStatus: st })).toBe(true);
     }
   });
-  it("đơn HỦY đã hoàn tồn kho (stockRestoredAt) → vốn không mất; chưa hoàn tồn → vẫn tính", () => {
+  it("đơn HỦY → hàng chưa xuất / đã quay về người gửi → vốn không mất (kể cả không quản tồn kho); kho đánh hỏng mới mất", () => {
+    expect(
+      returnGoodsRecovered({ ...base, shippingStatus: ShippingStatus.CANCELLED })
+    ).toBe(true);
     expect(
       returnGoodsRecovered({
         ...base,
@@ -140,7 +143,11 @@ describe("returnGoodsRecovered — hàng đã về tay chưa (căn cứ kho / s�
       })
     ).toBe(true);
     expect(
-      returnGoodsRecovered({ ...base, shippingStatus: ShippingStatus.CANCELLED })
+      returnGoodsRecovered({
+        ...base,
+        shippingStatus: ShippingStatus.CANCELLED,
+        returnStatus: ReturnStatus.DAMAGED,
+      })
     ).toBe(false);
   });
 });
@@ -259,11 +266,10 @@ describe("computePnlRow — 4 kịch bản hoàn/trả", () => {
     expect(r.refundSource).toBe("estimate");
   });
 
-  it("ĐƠN HỦY đã hoàn tồn kho + escrow trả lại khách full: KHÔNG phải đơn hoàn, vốn 0, doanh thu 0", () => {
+  it("ĐƠN HỦY (kể cả không quản tồn kho) + escrow trả lại khách full: KHÔNG phải đơn hoàn, vốn 0, doanh thu 0", () => {
     const r = computePnlRow(
       mkOrder({
         shippingStatus: ShippingStatus.CANCELLED,
-        stockRestoredAt: new Date(),
         refundedAmount: D(269000),
         isSettled: false,
         actualPayout: D(0),
@@ -291,5 +297,27 @@ describe("computePnlRow — 4 kịch bản hoàn/trả", () => {
     );
     expect(r.costSnapshot).toBe(131000);
     expect(computeReturnLoss(r).costLoss).toBe(131000);
+  });
+});
+
+describe("computePnlRow — đơn hủy giao thất bại quay về (ca thật 26081266V7GRHG, anh Trung 20/08)", () => {
+  it("sàn hủy vì hư hỏng khi vận chuyển, kiện hoàn về người gửi, escrow trả khách full, chỉ PiShip 2.700: lỗ đúng 2.700, không mất 131.000 vốn", () => {
+    const r = computePnlRow(
+      mkOrder({
+        shippingStatus: ShippingStatus.CANCELLED,
+        isSettled: false,
+        refundedAmount: D(239000),
+        actualPayout: D(-2700),
+        fixedFee: D(0),
+        serviceFee: D(0),
+        taxWithheld: D(0),
+        sellerProtectionFee: D(2700),
+        items: [{ price: D(239000) }],
+      })
+    );
+    expect(r.returnType).toBeNull();
+    expect(r.costSnapshot).toBe(0);
+    expect(r.profit).toBe(-2700);
+    expect(r.profitAfterTax).toBe(-2700);
   });
 });
