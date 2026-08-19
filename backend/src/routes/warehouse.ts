@@ -6,7 +6,10 @@ import { channelScope } from "../channel-filter";
 import { attachItemImages } from "../item-images";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
-import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
+import {
+  syncShopeeReturns,
+  type SyncShopeeReturnsResult,
+} from "../integrations/shopee/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
 
@@ -253,6 +256,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
 
       let firstError: string | null = null;
       const warnings: string[] = [];
+      const shopeeResults: Array<{ shop: string } & SyncShopeeReturnsResult> = [];
       let anyOk = false;
       for (const channel of realChannels) {
         try {
@@ -266,7 +270,11 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
             // trên đơn đã COMPLETED (không đổi order_status nên quét đơn ở
             // trên không thấy); kèm mã vận đơn CHIỀU HOÀN cho kho quét.
             // Bấm tay là "muốn thấy ngay" nên quét sâu hơn nhịp nền một chút.
-            await syncShopeeReturns(channel, { daysBack: returnsDaysBack });
+            const ret = await syncShopeeReturns(channel, { daysBack: returnsDaysBack });
+            shopeeResults.push({ shop: channel.shopName, ...ret });
+            console.log(
+              `[Returns sync] Gian "${channel.shopName}" (${returnsDaysBack} ngày): ${ret.scanned} yêu cầu, +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.delivered} kiện về tay, ${ret.itemsUpdated} dòng SKU trả`
+            );
           } else {
             if (!isLazadaConfigured()) continue;
             await syncLazadaOrders(channel, {
@@ -298,6 +306,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
         synced: fresh.length,
         orderCodes: fresh.map((o) => o.orderCode),
         ...(warnings.length > 0 ? { warnings } : {}),
+        shopee: shopeeResults,
       });
       return;
     }
