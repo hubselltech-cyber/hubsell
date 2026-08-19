@@ -252,6 +252,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
       const beforeIds = new Set(before.map((o) => o.id));
 
       let firstError: string | null = null;
+      const warnings: string[] = [];
       let anyOk = false;
       for (const channel of realChannels) {
         try {
@@ -277,6 +278,10 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
         } catch (err) {
           // Một gian lỗi (token hết hạn, sàn chập chờn) không chặn gian khác.
           if (!firstError) firstError = (err as Error).message;
+          // Nổi lỗi từng gian lên log + trả về — trước đây 1 gian lỗi mà gian
+          // khác OK thì lỗi chìm, backfill Shopee hỏng không ai biết (19/08).
+          warnings.push(`${channel.shopName}: ${(err as Error).message}`);
+          console.warn(`[Returns sync] Gian "${channel.shopName}" lỗi:`, (err as Error).message);
         }
       }
       if (!anyOk && firstError) {
@@ -289,7 +294,11 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
         select: { id: true, orderCode: true },
       });
       const fresh = after.filter((o) => !beforeIds.has(o.id));
-      res.json({ synced: fresh.length, orderCodes: fresh.map((o) => o.orderCode) });
+      res.json({
+        synced: fresh.length,
+        orderCodes: fresh.map((o) => o.orderCode),
+        ...(warnings.length > 0 ? { warnings } : {}),
+      });
       return;
     }
 

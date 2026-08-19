@@ -249,21 +249,34 @@ export async function syncShopeeReturns(
     itemsUpdated: 0,
   };
 
-  // (1) Gom toàn bộ yêu cầu hoàn trong cửa sổ biến động.
-  const entries: ShopeeReturnEntry[] = [];
-  for (let pageNo = 1; pageNo <= MAX_RETURN_PAGES; pageNo++) {
-    const page = await getReturnList({
-      accessToken,
-      shopId,
-      pageNo,
-      pageSize: 50,
-      updateTimeFrom: nowSec - daysBack * 24 * 60 * 60,
-      updateTimeTo: nowSec,
-    });
-    const list = page.response?.return ?? [];
-    entries.push(...list);
-    if (!page.response?.more || list.length === 0) break;
+  // (1) Gom toàn bộ yêu cầu hoàn trong cửa sổ biến động — CẮT LÁT tối đa
+  // 15 ngày/lần gọi (Shopee giới hạn khoảng update_time như get_order_list;
+  // backfill 120 ngày gọi một phát bị sàn từ chối, 19/08). Trùng return_sn
+  // giữa các lát → giữ bản mới nhất.
+  const bySn = new Map<string, ShopeeReturnEntry>();
+  const SLICE_SEC = 15 * 24 * 60 * 60;
+  const floorSec = nowSec - daysBack * 24 * 60 * 60;
+  for (let to = nowSec; to > floorSec; to -= SLICE_SEC) {
+    const from = Math.max(floorSec, to - SLICE_SEC);
+    for (let pageNo = 1; pageNo <= MAX_RETURN_PAGES; pageNo++) {
+      const page = await getReturnList({
+        accessToken,
+        shopId,
+        pageNo,
+        pageSize: 50,
+        updateTimeFrom: from,
+        updateTimeTo: to,
+      });
+      const list = page.response?.return ?? [];
+      for (const e of list) {
+        const key = e.return_sn ?? `${e.order_sn}-${e.create_time}`;
+        const prev = bySn.get(key);
+        if (!prev || (e.update_time ?? 0) >= (prev.update_time ?? 0)) bySn.set(key, e);
+      }
+      if (!page.response?.more || list.length === 0) break;
+    }
   }
+  const entries = [...bySn.values()];
   result.scanned = entries.length;
   if (entries.length === 0) return result;
 
