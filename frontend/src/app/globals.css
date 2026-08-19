@@ -58,6 +58,12 @@
  * phụ đều ngả xanh cùng tông cho giao diện ấm mắt kiểu Shopify/Stripe.
  */
 :root {
+  /* ---- Màu NHẬN DIỆN KÊNH cho biểu đồ (SSOT: lib/chart-colors.ts đọc qua var) ---- */
+  --channel-shopee: #ee4d2d;
+  --channel-tiktok: #000000;
+  --channel-lazada: #0f146d;
+  --channel-offline: #10b981;
+  --channel-other: #8b5cf6;
   --background: oklch(0.984 0.003 247.858); /* slate-50  #F8FAFC */
   --foreground: oklch(0.208 0.042 265.755); /* slate-900 */
   --card: oklch(1 0 0);
@@ -201,6 +207,9 @@ html[data-theme="emerald"] {
  * dark:bg-*-600 thủ công (đã rà toàn bộ khi làm 15/08).
  */
 .dark {
+  /* Màu kênh: đen/navy chìm vào nền tối → dùng bản sáng, vẫn đúng tông thương hiệu */
+  --channel-tiktok: #e4e4e7; /* zinc-200 — trắng tinh chói trên nền tối */
+  --channel-lazada: #6366f1; /* indigo-500 */
   /* ---- Token lõi — tông slate ấm đồng bộ light mode, KHÔNG xám trung tính ---- */
   --background: #0b1220; /* sẫm hơn slate-900 một nhịp, ngả navy */
   --foreground: #f1f5f9;

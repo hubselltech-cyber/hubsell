@@ -31,6 +31,27 @@ const RETURNING_SET = new Set<ReturnStatus>(RETURNING_IN.in);
 // Bucket theo NGÀY GIỜ VN — toBusinessDateKey/businessDayStart/dateKeyLabel
 // import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
+/**
+ * Đếm số đơn (MỌI trạng thái) theo NGÀY GIỜ VN trong [gte, lte]. Chỉ kéo cột
+ * createdAt, cửa sổ luôn bị chặn ≤ 90 ngày bởi nơi gọi nên không lo phình.
+ */
+async function countOrdersByDay(
+  scope: ReturnType<typeof channelScope>,
+  gte: Date,
+  lte: Date
+): Promise<Map<string, number>> {
+  const rows = await prisma.order.findMany({
+    where: { channel: scope, createdAt: { gte, lte } },
+    select: { createdAt: true },
+  });
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const key = toBusinessDateKey(r.createdAt);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return map;
+}
+
 // GET /api/analytics — Báo cáo kinh doanh REALTIME cho trang Tổng quan.
 // ADMIN và SALES vào được, WAREHOUSE thì không.
 // Lọc theo ?from=&to=&channelId= — channelId là GIAN HÀNG cụ thể, không phải sàn.
@@ -237,10 +258,20 @@ router.get("/", async (req: AuthRequest, res, next) => {
       chartStart = new Date(chartEnd.getTime() - (MAX_POINTS - 1) * DAY_MS);
     }
 
+    // SỐ ĐƠN THEO NGÀY — đếm MỌI trạng thái (kể cả hủy) cho khớp thẻ "Đơn hàng"
+    // (orderCount bên dưới cũng đếm mọi trạng thái). Chỉ kéo createdAt trong
+    // đúng khung trục X (≤ 90 ngày) nên nhẹ, không phụ thuộc "xem toàn bộ".
+    const ordersMap = await countOrdersByDay(
+      scope,
+      chartStart,
+      new Date(chartEnd.getTime() + DAY_MS - 1)
+    );
+
     const revenueByDay: {
       date: string;
       label: string;
       revenue: number;
+      orders: number;
       cost: number;
     }[] = [];
     for (let t = chartStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
@@ -249,8 +280,83 @@ router.get("/", async (req: AuthRequest, res, next) => {
         date: key,
         label: dateKeyLabel(key),
         revenue: revenueMap.get(key) ?? 0,
+        orders: ordersMap.get(key) ?? 0,
         cost: costMap.get(key) ?? 0,
       });
+    }
+
+    /*
+     * 3a) TREND 14 NGÀY cho sparkline chìm dưới 4 thẻ KPI — luôn là 14 ngày
+     * liền trước tính đến NGÀY CUỐI kỳ lọc, để xem "Hôm nay" (1 điểm) thẻ vẫn
+     * có đường sóng. Kỳ lọc đã ≥ 14 ngày thì cắt đuôi revenueByDay (cùng
+     * bucket, cùng computePnlRow → số y hệt); ngắn hơn thì chạy MỘT truy vấn
+     * RIÊNG trên cửa sổ 14 ngày — tuyệt đối không đụng tập activeRows nên mọi
+     * tổng số phía trên giữ nguyên 100%.
+     */
+    const TREND_DAYS = 14;
+    type TrendPoint = {
+      date: string;
+      label: string;
+      revenue: number;
+      orders: number;
+      cost: number;
+    };
+    let trend: TrendPoint[];
+    if (revenueByDay.length >= TREND_DAYS) {
+      trend = revenueByDay.slice(-TREND_DAYS);
+    } else {
+      const trendStart = new Date(
+        chartEnd.getTime() - (TREND_DAYS - 1) * DAY_MS
+      );
+      const trendRange = {
+        gte: trendStart,
+        lte: new Date(chartEnd.getTime() + DAY_MS - 1),
+      };
+      const [trendRows, trendExpenses, trendOrders] = await Promise.all([
+        fetchPnlOrders(scope, trendRange),
+        seesFinancials
+          ? prisma.operatingExpense.findMany({
+              where: {
+                userId: ownerId,
+                direction: TransactionDirection.EXPENSE,
+                expenseDate: trendRange,
+              },
+              select: { amount: true, expenseDate: true },
+            })
+          : Promise.resolve([]),
+        countOrdersByDay(scope, trendRange.gte, trendRange.lte),
+      ]);
+      const tRevenue = new Map<string, number>();
+      const tCost = new Map<string, number>();
+      const bump = (m: Map<string, number>, k: string, v: number) =>
+        m.set(k, (m.get(k) ?? 0) + v);
+      for (const r of trendRows.map(computePnlRow)) {
+        if (
+          r.shippingStatus === ShippingStatus.CANCELLED ||
+          RETURNING_SET.has(r.returnStatus)
+        )
+          continue;
+        const key = toBusinessDateKey(r.createdAt);
+        bump(tRevenue, key, r.revenueGross);
+        if (seesFinancials) {
+          // Cùng công thức chi phí/ngày với costMap phía trên
+          bump(tCost, key, r.costSnapshot + (r.revenueGross - r.platformRevenue));
+        }
+      }
+      for (const e of trendExpenses) {
+        bump(tCost, toBusinessDateKey(e.expenseDate), Number(e.amount));
+      }
+      trend = [];
+      for (let t = trendStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
+        const key = toBusinessDateKey(new Date(t));
+        trend.push({
+          date: key,
+          label: dateKeyLabel(key),
+          revenue: tRevenue.get(key) ?? 0,
+          orders: trendOrders.get(key) ?? 0,
+          cost: tCost.get(key) ?? 0,
+        });
+      }
     }
 
     /*
@@ -357,10 +463,17 @@ router.get("/", async (req: AuthRequest, res, next) => {
         activeOrderCount: activeRows.length,
         totalRevenue,
         // Bỏ trường cost khỏi từng điểm — SALES chỉ được thấy đường doanh thu
-        revenueByDay: revenueByDay.map(({ date, label, revenue }) => ({
+        revenueByDay: revenueByDay.map(({ date, label, revenue, orders }) => ({
           date,
           label,
           revenue,
+          orders,
+        })),
+        trend: trend.map(({ date, label, revenue, orders }) => ({
+          date,
+          label,
+          revenue,
+          orders,
         })),
         ordersByChannel,
         orderCount,
@@ -385,6 +498,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       netProfit,
       expensesByCategory,
       revenueByDay,
+      trend,
       ordersByChannel,
       orderCount,
       pipeline,

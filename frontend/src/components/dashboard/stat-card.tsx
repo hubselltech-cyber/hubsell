@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   DashboardCard,
   type CardTone,
+  type DashboardCardProps,
 } from "@/components/dashboard/dashboard-card";
 
 interface StatCardProps {
@@ -21,6 +22,8 @@ interface StatCardProps {
   /** Ghi đè cỡ chữ số tổng — dùng khi xếp nhiều thẻ trên một hàng */
   valueClassName?: string;
   subtitle?: React.ReactNode;
+  /** Đường sóng chìm dưới đáy thẻ — xem DashboardCardProps.sparkline */
+  sparkline?: DashboardCardProps["sparkline"];
 }
 
 /**
@@ -37,6 +40,7 @@ export function StatCard({
   colorValue,
   valueClassName,
   subtitle,
+  sparkline,
 }: StatCardProps) {
   return (
     <DashboardCard
@@ -48,6 +52,7 @@ export function StatCard({
       colorValue={colorValue}
       valueClassName={valueClassName}
       subtitle={subtitle}
+      sparkline={sparkline}
     />
   );
 }

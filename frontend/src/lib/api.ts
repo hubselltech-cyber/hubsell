@@ -790,6 +790,20 @@ export interface AnalyticsResponse {
     date: string;
     label: string;
     revenue: number;
+    /** Số đơn trong ngày — MỌI trạng thái, khớp thẻ "Đơn hàng". */
+    orders: number;
+    cost?: number;
+  }[];
+  /**
+   * TREND 14 NGÀY liền trước tính đến ngày cuối kỳ lọc — nguồn cho sparkline
+   * chìm dưới 4 thẻ KPI (xem "Hôm nay" vẫn có đường sóng). `cost` vắng với
+   * SALES; lợi nhuận/ngày = revenue − cost (Σ = netProfit cùng công thức).
+   */
+  trend: {
+    date: string;
+    label: string;
+    revenue: number;
+    orders: number;
     cost?: number;
   }[];
   ordersByChannel: {

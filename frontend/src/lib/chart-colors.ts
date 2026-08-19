@@ -5,16 +5,22 @@
  * mỗi trang tự khai một bản (Dashboard, P&L thực tế…) nên chỉ cần một nơi gõ
  * lệch mã hex là hai biểu đồ cùng nói về Shopee bằng hai màu khác nhau.
  *
- * Nguyên tắc: màu kênh là màu NHẬN DIỆN thương hiệu sàn (Shopee cam, Lazada
- * xanh dương…), tách bạch với màu TÍN HIỆU lãi–lỗ (emerald-500/red-500 trong
- * lib/typography.ts) — hai hệ không được vay mượn lẫn nhau.
+ * Nguyên tắc: màu kênh là màu NHẬN DIỆN thương hiệu sàn đúng mã gốc (Shopee
+ * #EE4D2D, TikTok đen, Lazada navy #0F146D — chốt 19/08). Riêng OFFLINE/khác
+ * dùng emerald "màu Hubsell" theo quyết định anh Trung — ngoại lệ có chủ đích
+ * của quy tắc "màu kênh không vay màu tín hiệu lãi–lỗ (lib/typography.ts)";
+ * các sàn thật vẫn tuyệt đối không dùng emerald/red.
  */
 export const CHANNEL_COLORS: Record<string, string> = {
-  SHOPEE: "#f97316", // orange-500 — nhận diện Shopee
-  TIKTOK: "#18181b", // zinc-900 — nhận diện TikTok
-  LAZADA: "#3b82f6", // blue-500 — nhận diện Lazada
-  OFFLINE: "#a1a1aa", // zinc-400 — kênh ngoài sàn, trung tính
+  // Giá trị là CSS VAR khai báo trong globals.css (:root + .dark): màu gốc
+  // thương hiệu ở light mode; TikTok (đen) & Lazada (navy sẫm) có bản SÁNG
+  // HƠN trong dark mode vì màu gốc chìm vào nền tối. var() dùng được cả cho
+  // fill SVG (Recharts) lẫn style.backgroundColor (chấm legend).
+  SHOPEE: "var(--channel-shopee)", // #EE4D2D cam đỏ Shopee
+  TIKTOK: "var(--channel-tiktok)", // #000000 đen TikTok (dark: zinc-200)
+  LAZADA: "var(--channel-lazada)", // #0F146D navy Lazada (dark: indigo-500)
+  OFFLINE: "var(--channel-offline)", // #10B981 emerald — kênh ngoài sàn / khác
 };
 
 /** Màu dự phòng cho kênh chưa có trong bảng (kênh mới thêm sau). */
-export const CHANNEL_COLOR_FALLBACK = "#8b5cf6"; // violet-500
+export const CHANNEL_COLOR_FALLBACK = "var(--channel-other)"; // violet-500

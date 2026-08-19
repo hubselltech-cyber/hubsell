@@ -41,6 +41,12 @@ import {
   type DateRange,
 } from "@/lib/date-range";
 import { toneBySign } from "@/components/dashboard/dashboard-card";
+import {
+  PnlWaterfall,
+  PnlWaterfallFooter,
+  type WaterfallStep,
+} from "@/components/dashboard/pnl-waterfall";
+import { ChannelShareCard } from "@/components/dashboard/channel-share-card";
 import { CommandCenter } from "@/components/dashboard/command-center";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,20 +62,17 @@ import {
   getStoredUser,
   getToken,
   type AnalyticsResponse,
-  type ChannelName,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery } from "@/lib/use-api-query";
 import { canAccessDashboard, canSeeFinancials } from "@/lib/permissions";
-import { CHANNEL_META } from "@/lib/channel-meta";
 import {
   ALL_CHANNELS,
   ChannelFilter,
   type ChannelFilterValue,
 } from "@/components/channel-filter";
 import { formatVND, formatNumber } from "@/lib/format";
-import { moneyTone, TEXT_SUB } from "@/lib/typography";
-import { CHANNEL_COLORS, CHANNEL_COLOR_FALLBACK } from "@/lib/chart-colors";
+import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /** Cỡ số Hero riêng của Dashboard — 4 thẻ trên một hàng nên nhỏ hơn mặc định. */
@@ -96,76 +99,46 @@ function StatusPill({
 }
 
 /**
- * SƠ ĐỒ BÓC TÁCH DÒNG TIỀN
+ * BÓC TÁCH DÒNG TIỀN — THÁC NƯỚC (Waterfall)
  *
- * Xếp dọc theo đúng thứ tự tiền bị bào mòn: doanh thu gộp trừ dần từng khoản
- * cho tới lợi nhuận ròng. Đọc từ trên xuống là thấy ngay khoản nào ăn nhiều
- * nhất — thứ mà bốn thẻ Hero rời rạc không nói được.
+ * Doanh thu gộp bị "xén" dần qua từng khoản theo đúng thứ tự nghiệp vụ P&L
+ * (Giá vốn → Sàn khấu trừ → Quảng cáo → Vận hành) cho tới cột chốt Lợi nhuận
+ * ròng — cùng thứ tự với Báo cáo dòng tiền để hai trang đọc giống nhau.
+ * Số liệu nguyên xi từ analytics (SSOT computePnlRow); gross − Σ khoản = net
+ * đúng từng đồng vì net truyền thẳng từ backend chứ không tự cộng lại ở đây.
  */
 function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
   const adsExpense = analytics.expensesByCategory
     .filter((e) => e.category === "ADS")
     .reduce((sum, e) => sum + e.amount, 0);
-  const otherExpense = analytics.totalOperatingExpense - adsExpense;
+  // Vận hành = cố định + biến đổi (ngoài quảng cáo) — gộp 1 cột để 6 cột vừa
+  // khít card 5/12; tách nhỏ hơn nữa thì nhãn trục X không còn chỗ.
+  const operatingExpense = analytics.totalOperatingExpense - adsExpense;
 
-  const steps = [
-    { key: "cogs", label: "Giá vốn hàng bán", amount: analytics.totalCost },
+  const steps: WaterfallStep[] = [
+    { key: "cogs", label: "Giá vốn hàng bán (COGS)", short: "Giá vốn", amount: analytics.totalCost, hue: "rose" },
     // TOÀN BỘ khoản sàn giữ lại: phí + thuế sàn + voucher/xu + chênh lệch VC
     // (= Giá trị đơn − "Tổng tiền" sàn báo, cùng thước đo Báo cáo dòng tiền)
-    { key: "fee", label: "Sàn khấu trừ (phí, thuế, voucher)", amount: analytics.totalPlatformFee },
-    { key: "ads", label: "Chi phí quảng cáo", amount: adsExpense },
-    { key: "other", label: "Chi phí vận hành khác", amount: otherExpense },
-  ].filter((st) => st.amount !== 0);
-
-  const net = analytics.netProfit;
+    { key: "fee", label: "Sàn khấu trừ (phí, thuế, voucher)", short: "Phí sàn", amount: analytics.totalPlatformFee, hue: "rose" },
+    { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
+    { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
+  ];
 
   return (
     <Card className="h-full lg:col-span-5">
       <CardHeader>
         <CardTitle>Bóc tách dòng tiền</CardTitle>
         <CardDescription>
-          Doanh thu bị bào mòn qua từng khoản cho tới lợi nhuận ròng.
+          Doanh thu bị bào mòn qua từng khoản tới lợi nhuận ròng.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {/* Điểm xuất phát */}
-        <div className="flex items-baseline justify-between gap-3">
-          <span className={TEXT_SUB}>Doanh thu gộp</span>
-          <Money
-            value={analytics.totalRevenue}
-            className="text-lg font-semibold text-slate-900"
-          />
-        </div>
-
-        {/* Các khoản trừ dần — thụt lề và có vạch dọc để thấy đây là nhánh con */}
-        <div className="mt-2 space-y-0 border-l border-slate-200 pl-4">
-          {steps.map((st) => (
-            <div
-              key={st.key}
-              className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-2.5 last:border-b-0"
-            >
-              <span className="flex items-baseline gap-1.5 text-sm text-slate-600">
-                <span className="text-slate-400">−</span>
-                {st.label}
-              </span>
-              <Money
-                value={st.amount}
-                className="shrink-0 text-sm font-normal text-slate-600"
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Kết luận */}
-        <div className="mt-3 flex items-baseline justify-between gap-3 border-t pt-3">
-          <span className="text-sm font-medium text-slate-900">
-            Lợi nhuận ròng
-          </span>
-          <Money
-            value={net}
-            className={cn("text-lg font-bold", moneyTone(net))}
-          />
-        </div>
+        <PnlWaterfall
+          gross={analytics.totalRevenue}
+          steps={steps}
+          net={analytics.netProfit}
+        />
+        <PnlWaterfallFooter net={analytics.netProfit} gross={analytics.totalRevenue} />
       </CardContent>
     </Card>
   );
@@ -271,102 +244,6 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
             countClassName={pipeline.CANCELLED > 0 ? "text-red-500" : ""}
           />
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * TỶ TRỌNG KÊNH BÁN — thanh xếp chồng ngang + danh sách theo SÀN.
- * Gom về cấp nền tảng (Shopee, TikTok…) thay vì xé lẻ từng gian hàng: đây là
- * khối liếc nhanh, hai gian Shopee cộng làm một là đủ; muốn soi từng gian đã
- * có bộ lọc gian hàng ở đầu trang.
- */
-function MarketplaceShare({
-  analytics,
-  className,
-}: {
-  analytics: AnalyticsResponse;
-  className?: string;
-}) {
-  const byPlatform = new Map<string, { revenue: number; count: number }>();
-  for (const r of analytics.ordersByChannel) {
-    const cur = byPlatform.get(r.channelName) ?? { revenue: 0, count: 0 };
-    cur.revenue += r.revenue;
-    cur.count += r.count;
-    byPlatform.set(r.channelName, cur);
-  }
-  const rows = [...byPlatform.entries()]
-    .map(([channelName, v]) => ({ channelName, ...v }))
-    .sort((a, b) => b.revenue - a.revenue);
-  const total = rows.reduce((sum, r) => sum + r.revenue, 0);
-
-  return (
-    <Card className={cn("h-full", className)}>
-      <CardHeader>
-        <CardTitle>Tỷ trọng kênh bán hàng</CardTitle>
-        <CardDescription>
-          Giá trị đơn phát sinh trong kỳ theo từng gian hàng (không tính đơn hủy
-          và đơn đang hoàn/trả).
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {rows.length === 0 || total === 0 ? (
-          <p className="py-10 text-center text-sm text-slate-500">
-            Chưa có đơn nào trong kỳ này.
-          </p>
-        ) : (
-          <>
-            {/* Thanh xếp chồng: nhìn một phát là thấy sàn nào đang gánh */}
-            <div className="flex h-3 w-full overflow-hidden rounded-full">
-              {rows.map((r) => (
-                <div
-                  key={r.channelName}
-                  style={{
-                    width: `${Math.max((r.revenue / total) * 100, 1)}%`,
-                    backgroundColor:
-                      CHANNEL_COLORS[r.channelName] ?? CHANNEL_COLOR_FALLBACK,
-                  }}
-                />
-              ))}
-            </div>
-
-            <div className="mt-4">
-              {rows.map((r) => {
-                const pctShare = Math.round((r.revenue / total) * 1000) / 10;
-                return (
-                  <div
-                    key={r.channelName}
-                    className="flex items-center gap-3 border-b border-slate-100 py-2.5 last:border-b-0"
-                  >
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{
-                        backgroundColor:
-                          CHANNEL_COLORS[r.channelName] ??
-                          CHANNEL_COLOR_FALLBACK,
-                      }}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
-                      {CHANNEL_META[r.channelName as ChannelName]?.label ??
-                        r.channelName}
-                    </span>
-                    <span className={cn(TEXT_SUB, "shrink-0")}>
-                      {formatNumber(r.count)} đơn
-                    </span>
-                    <Money
-                      value={r.revenue}
-                      className="w-28 shrink-0 text-right text-sm text-slate-900"
-                    />
-                    <span className="w-14 shrink-0 text-right text-sm font-semibold text-slate-900">
-                      {pctShare}%
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
       </CardContent>
     </Card>
   );
@@ -567,6 +444,17 @@ export default function DashboardPage() {
   const compareLabel =
     presetKey === "today" ? "so với hôm qua" : "so với kỳ trước";
 
+  // ĐƯỜNG SÓNG 14 NGÀY dưới 4 thẻ KPI — chuỗi trend từ backend (14 ngày liền
+  // trước tính đến cuối kỳ lọc, nên xem "Hôm nay" vẫn có sóng). Màu theo ngữ
+  // nghĩa: tăng/lãi → emerald, giảm/lỗ → rose, chi phí → amber (luôn là tiền ra).
+  const trend = analytics?.trend ?? [];
+  const sparkRevenue = trend.map((p) => p.revenue);
+  const sparkOrders = trend.map((p) => p.orders);
+  const sparkCost = trend.map((p) => p.cost ?? 0);
+  const sparkProfit = trend.map((p) => p.revenue - (p.cost ?? 0));
+  const deltaTone = (current: number, previous: number | null | undefined) =>
+    previous != null && current < previous ? "negative" : "positive";
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -678,6 +566,17 @@ export default function DashboardPage() {
             value={analytics ? <Money value={analytics.totalRevenue} /> : "—"}
             icon={TrendingUp}
             valueClassName={HERO_SIZE}
+            sparkline={
+              analytics
+                ? {
+                    data: sparkRevenue,
+                    tone: deltaTone(
+                      analytics.totalRevenue,
+                      analytics.previous?.totalRevenue
+                    ),
+                  }
+                : undefined
+            }
             subtitle={
               analytics && (
                 <DeltaChip
@@ -693,6 +592,17 @@ export default function DashboardPage() {
             value={analytics ? formatNumber(analytics.orderCount) : "—"}
             icon={ShoppingCart}
             valueClassName={HERO_SIZE}
+            sparkline={
+              analytics
+                ? {
+                    data: sparkOrders,
+                    tone: deltaTone(
+                      analytics.orderCount,
+                      analytics.previous?.orderCount
+                    ),
+                  }
+                : undefined
+            }
             subtitle={
               analytics && (
                 <DeltaChip
@@ -710,6 +620,9 @@ export default function DashboardPage() {
                 value={analytics ? <Money value={totalExpense} /> : "—"}
                 icon={Receipt}
                 valueClassName={HERO_SIZE}
+                sparkline={
+                  analytics ? { data: sparkCost, tone: "warning" } : undefined
+                }
                 subtitle={
                   costRatio === null
                     ? "Giá vốn + phí sàn + chi phí vận hành"
@@ -727,6 +640,11 @@ export default function DashboardPage() {
                     tone={toneBySign(net)}
                     featured
                     valueClassName={HERO_SIZE}
+                    sparkline={
+                      analytics
+                        ? { data: sparkProfit, tone: deltaTone(net, 0) }
+                        : undefined
+                    }
                     subtitle={
                       margin !== undefined
                         ? `Biên lợi nhuận ${margin}%`
@@ -751,7 +669,7 @@ export default function DashboardPage() {
             hai hàng gióng thẳng nhau, không còn lệch 3fr/2fr vs 7/5. */}
         <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12">
           {analytics && (
-            <MarketplaceShare
+            <ChannelShareCard
               analytics={analytics}
               className={seesFinancials ? "lg:col-span-7" : "lg:col-span-12"}
             />

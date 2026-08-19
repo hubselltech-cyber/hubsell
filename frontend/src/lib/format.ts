@@ -52,3 +52,20 @@ export function formatDateTime(value: string): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * Rút gọn tiền cho NHÃN BIỂU ĐỒ (trục, đầu cột): 1.250.000 → "1,25tr",
+ * 350.000 → "350k", 2.100.000.000 → "2,1 tỷ". Giữ dấu âm bằng ký tự trừ thật
+ * (U+2212) cho thẳng hàng với số. Tooltip/bảng vẫn dùng formatVND đầy đủ.
+ */
+export function formatCompactVND(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return "0";
+  const sign = value < 0 ? "−" : "";
+  const abs = Math.abs(value);
+  const fmt = (n: number, digits: number) =>
+    n.toLocaleString("vi-VN", { maximumFractionDigits: digits });
+  if (abs >= 1_000_000_000) return `${sign}${fmt(abs / 1e9, 2)} tỷ`;
+  if (abs >= 1_000_000) return `${sign}${fmt(abs / 1e6, abs >= 10_000_000 ? 1 : 2)}tr`;
+  if (abs >= 1_000) return `${sign}${fmt(abs / 1e3, 0)}k`;
+  return `${sign}${fmt(abs, 0)}`;
+}

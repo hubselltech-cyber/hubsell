@@ -10,6 +10,10 @@ import {
   TEXT_SUB,
 } from "@/lib/typography";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  KpiSparkline,
+  type SparklineTone,
+} from "@/components/dashboard/kpi-sparkline";
 import { cn } from "@/lib/utils";
 
 /**
@@ -122,6 +126,12 @@ export interface DashboardCardProps {
   /** Danh sách dòng chi tiết bên dưới */
   items?: DashboardCardItem[];
   footer?: React.ReactNode;
+  /**
+   * ĐƯỜNG SÓNG TRANG TRÍ chìm dưới đáy thẻ (opt-in — mặc định KHÔNG có, các
+   * trang khác dùng DashboardCard không đổi gì). Chỉ dành cho thẻ KPI Hero có
+   * chuỗi ngày đi kèm; con số chính xác vẫn là số to, sóng chỉ cho thấy nhịp.
+   */
+  sparkline?: { data: number[]; tone: SparklineTone };
   className?: string;
 }
 
@@ -137,6 +147,7 @@ export function DashboardCard({
   valueClassName,
   items,
   footer,
+  sparkline,
   className,
 }: DashboardCardProps) {
   const highlight = featured ? FEATURED_BG[tone] : undefined;
@@ -144,8 +155,14 @@ export function DashboardCard({
   const tinted = colorValue ?? Boolean(highlight);
 
   return (
-    <Card className={cn("h-full", highlight, className)}>
-      <CardContent className="flex h-full flex-col gap-4 p-5">
+    // relative để lớp sparkline absolute neo vào thẻ; Card đã overflow-hidden +
+    // bo góc nên gradient tự cắt theo góc thẻ. Sóng render TRƯỚC trong DOM và
+    // CardContent relative → nội dung luôn nằm trên sóng, không cần z-index.
+    <Card className={cn("h-full", sparkline && "relative", highlight, className)}>
+      {sparkline && <KpiSparkline data={sparkline.data} tone={sparkline.tone} />}
+      <CardContent
+        className={cn("flex h-full flex-col gap-4 p-5", sparkline && "relative")}
+      >
         {/* ── Đầu thẻ: icon có khối nền + tiêu đề + số tổng ── */}
         <div className="flex items-start gap-3">
           <div
