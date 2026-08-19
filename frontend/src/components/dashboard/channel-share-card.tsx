@@ -94,7 +94,7 @@ export function ChannelShareCard({
       .filter(
         (k) =>
           !(FIXED_CHANNELS as readonly string[]).includes(k) &&
-          (byPlatform.get(k)?.revenue ?? 0) > 0
+          (byPlatform.get(k)?.revenue ?? 0) > 0,
       )
       .map(toRow),
   ];
@@ -180,7 +180,8 @@ export function ChannelShareCard({
                     {!empty && (
                       <Tooltip
                         content={({ active, payload }) => {
-                          const p = payload?.[0]?.payload as ChannelRow | undefined;
+                          const p = payload?.[0]?.payload as
+                            ChannelRow | undefined;
                           if (!active || !p) return null;
                           return (
                             <div className="rounded-lg border border-slate-200/80 bg-card px-3 py-2 text-card-foreground shadow-[0_2px_8px_-2px_rgb(15_23_42/0.15)]">
@@ -223,7 +224,7 @@ export function ChannelShareCard({
                       value={total}
                       className={cn(
                         TEXT_HERO_NUMBER,
-                        "mt-0.5 leading-none sm:text-3xl xl:text-[2rem]"
+                        "mt-0.5 leading-none sm:text-3xl xl:text-[2rem]",
                       )}
                     />
                     <span className={cn(TEXT_SUB, "mt-1.5 font-medium")}>
@@ -243,46 +244,64 @@ export function ChannelShareCard({
           <div
             className={cn(
               "mx-auto grid w-full max-w-[26rem] gap-x-3 gap-y-3 xl:max-w-[28rem]",
-              rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"
+              rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
             )}
           >
             {rows.map((r) => {
               const idle = r.revenue <= 0;
               return (
-                <div key={r.channelName} className="min-w-0 text-center">
-                  <p
-                    className={cn(
-                      "flex items-center justify-center gap-1.5 text-sm font-medium",
-                      idle ? "text-slate-500" : "text-slate-900"
-                    )}
-                  >
-                    <span
-                      className={cn("size-2.5 shrink-0 rounded-full", idle && "opacity-40")}
-                      style={{ backgroundColor: r.color }}
-                    />
-                    <span className="truncate">{r.label}</span>
-                  </p>
-                  <Money
-                    value={r.revenue}
-                    className={cn(
-                      "mt-0.5 block text-sm font-semibold",
-                      idle ? "text-slate-400" : "text-slate-700"
-                    )}
-                  />
-                  <p className={cn(TEXT_SUB, "tabular-nums")}>
-                    <span className={cn("font-semibold", idle ? "text-slate-400" : "text-slate-700")}>
-                      {pctOf(r.revenue)}%
-                    </span>{" "}
-                    · {formatNumber(r.count)} đơn
-                  </p>
-                  {/* Giá trị TB/đơn — số duy nhất legend nói thêm được ngoài tỷ trọng */}
-                  {r.count > 0 ? (
-                    <p className={cn(TEXT_SUB, "tabular-nums")}>
-                      TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+                // Mỗi ô: khối w-fit đặt giữa cột, BÊN TRONG canh phải — các con số
+                // xếp thẳng mép phải như cột sổ, tên sàn ngồi ngay trên; cụm vẫn
+                // cân quanh tâm vòm (chỉ đạo anh Trung 19/08)
+                <div
+                  key={r.channelName}
+                  className="flex min-w-0 justify-center"
+                >
+                  <div className="w-fit max-w-full text-right">
+                    <p
+                      className={cn(
+                        "flex items-center justify-end gap-1.5 text-sm font-medium",
+                        idle ? "text-slate-500" : "text-slate-900",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "size-2.5 shrink-0 rounded-full",
+                          idle && "opacity-40",
+                        )}
+                        style={{ backgroundColor: r.color }}
+                      />
+                      <span className="truncate">{r.label}</span>
                     </p>
-                  ) : (
-                    <p className={cn(TEXT_SUB, "text-slate-400")}>Chưa có đơn</p>
-                  )}
+                    <Money
+                      value={r.revenue}
+                      className={cn(
+                        "mt-0.5 block text-sm font-semibold",
+                        idle ? "text-slate-400" : "text-slate-700",
+                      )}
+                    />
+                    <p className={cn(TEXT_SUB, "tabular-nums")}>
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          idle ? "text-slate-400" : "text-slate-700",
+                        )}
+                      >
+                        {pctOf(r.revenue)}%
+                      </span>{" "}
+                      · {formatNumber(r.count)} đơn
+                    </p>
+                    {/* Giá trị TB/đơn — số duy nhất legend nói thêm được ngoài tỷ trọng */}
+                    {r.count > 0 ? (
+                      <p className={cn(TEXT_SUB, "tabular-nums")}>
+                        TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+                      </p>
+                    ) : (
+                      <p className={cn(TEXT_SUB, "text-slate-400")}>
+                        Chưa có đơn
+                      </p>
+                    )}
+                  </div>
                 </div>
               );
             })}
