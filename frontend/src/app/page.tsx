@@ -122,11 +122,14 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
           Doanh thu bị bào mòn qua từng khoản tới lợi nhuận ròng.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      {/* flex-col + fill: chart giãn theo chiều cao card (card kéo bằng card
+          Tỷ trọng kênh bán bên cạnh) — hai khối luôn chạm đáy cùng nhau */}
+      <CardContent className="flex flex-1 flex-col">
         <PnlWaterfall
           gross={analytics.totalRevenue}
           steps={steps}
           net={analytics.netProfit}
+          fill
         />
         <PnlWaterfallFooter net={analytics.netProfit} gross={analytics.totalRevenue} />
       </CardContent>

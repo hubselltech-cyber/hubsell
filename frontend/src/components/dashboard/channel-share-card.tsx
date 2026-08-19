@@ -237,74 +237,108 @@ export function ChannelShareCard({
           </div>
         </div>
 
-        {/* LEGEND GHIM: 3 sàn cố định (+ kênh khác nếu có đơn), gom trong bề
-            ngang của vòm (cùng max-w) và căn giữa từng ô → khoảng cách từ tâm
-            ra hai bên cân nhau, không trải hết card trên màn rộng. */}
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <div
-            className={cn(
-              "mx-auto grid w-full max-w-[26rem] gap-x-3 gap-y-3 xl:max-w-[28rem]",
-              rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
-            )}
-          >
-            {rows.map((r) => {
-              const idle = r.revenue <= 0;
-              return (
-                // Mỗi ô: khối w-fit đặt giữa cột, BÊN TRONG canh phải — các con số
-                // xếp thẳng mép phải như cột sổ, tên sàn ngồi ngay trên; cụm vẫn
-                // cân quanh tâm vòm (chỉ đạo anh Trung 19/08)
-                <div
-                  key={r.channelName}
-                  className="flex min-w-0 justify-center"
-                >
-                  <div className="w-fit max-w-full text-right">
-                    <p
-                      className={cn(
-                        "flex items-center justify-end gap-1.5 text-sm font-medium",
-                        idle ? "text-slate-500" : "text-slate-900",
-                      )}
-                    >
-                      <span
+        {/* BẢNG MINI THAY LEGEND (theo cách Shopify/Stripe so nhiều kênh × nhiều
+            chỉ số): cột = sàn (chấm màu + tên, căn phải), hàng = chỉ số với nhãn
+            mờ bên trái, số căn phải thẳng cột, kẻ mảnh giữa hàng → thoáng và
+            thẳng hàng tuyệt đối (anh Trung chê bản xếp chồng "hơi dày"). Bảng
+            gom trong bề ngang vòm để cân quanh tâm; >3 kênh hoặc màn hẹp thì
+            cuộn ngang thay vì vỡ. */}
+        <div className="mt-4 border-t border-slate-100 pt-2">
+          <div className="mx-auto w-full max-w-[26rem] overflow-x-auto xl:max-w-[28rem]">
+            <table className="w-full text-sm tabular-nums">
+              <thead>
+                <tr>
+                  <th className="w-[5.5rem] py-2 text-left font-normal">
+                    <span className="sr-only">Chỉ số</span>
+                  </th>
+                  {rows.map((r) => {
+                    const idle = r.revenue <= 0;
+                    return (
+                      <th
+                        key={r.channelName}
                         className={cn(
-                          "size-2.5 shrink-0 rounded-full",
-                          idle && "opacity-40",
-                        )}
-                        style={{ backgroundColor: r.color }}
-                      />
-                      <span className="truncate">{r.label}</span>
-                    </p>
-                    <Money
-                      value={r.revenue}
-                      className={cn(
-                        "mt-0.5 block text-sm font-semibold",
-                        idle ? "text-slate-400" : "text-slate-700",
-                      )}
-                    />
-                    <p className={cn(TEXT_SUB, "tabular-nums")}>
-                      <span
-                        className={cn(
-                          "font-semibold",
-                          idle ? "text-slate-400" : "text-slate-700",
+                          "py-2 pl-3 text-right font-medium whitespace-nowrap",
+                          idle ? "text-slate-500" : "text-slate-900",
                         )}
                       >
-                        {pctOf(r.revenue)}%
-                      </span>{" "}
-                      · {formatNumber(r.count)} đơn
-                    </p>
-                    {/* Giá trị TB/đơn — số duy nhất legend nói thêm được ngoài tỷ trọng */}
-                    {r.count > 0 ? (
-                      <p className={cn(TEXT_SUB, "tabular-nums")}>
-                        TB {formatVND(Math.round(r.revenue / r.count))}/đơn
-                      </p>
-                    ) : (
-                      <p className={cn(TEXT_SUB, "text-slate-400")}>
-                        Chưa có đơn
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "size-2.5 rounded-full",
+                              idle && "opacity-40",
+                            )}
+                            style={{ backgroundColor: r.color }}
+                          />
+                          {r.label}
+                        </span>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className="[&_tr]:border-t [&_tr]:border-slate-100">
+                <tr>
+                  <td className={cn(TEXT_SUB, "py-2")}>Doanh thu</td>
+                  {rows.map((r) => (
+                    <td key={r.channelName} className="py-2 pl-3 text-right">
+                      <Money
+                        value={r.revenue}
+                        className={cn(
+                          "font-semibold",
+                          r.revenue > 0 ? "text-slate-900" : "text-slate-400",
+                        )}
+                      />
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className={cn(TEXT_SUB, "py-2")}>Đơn hàng</td>
+                  {rows.map((r) => (
+                    <td
+                      key={r.channelName}
+                      className={cn(
+                        "py-2 pl-3 text-right",
+                        r.count > 0 ? "text-slate-700" : "text-slate-400",
+                      )}
+                    >
+                      {formatNumber(r.count)}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className={cn(TEXT_SUB, "py-2")}>Tỷ trọng</td>
+                  {rows.map((r) => (
+                    <td
+                      key={r.channelName}
+                      className={cn(
+                        "py-2 pl-3 text-right font-medium",
+                        r.revenue > 0 ? "text-slate-700" : "text-slate-400",
+                      )}
+                    >
+                      {pctOf(r.revenue)}%
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  <td className={cn(TEXT_SUB, "py-2")}>TB/đơn</td>
+                  {rows.map((r) => (
+                    <td
+                      key={r.channelName}
+                      className={cn(
+                        "py-2 pl-3 text-right",
+                        r.count > 0 ? "text-slate-700" : "text-slate-400",
+                      )}
+                    >
+                      {r.count > 0 ? (
+                        <Money value={Math.round(r.revenue / r.count)} />
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </CardContent>
