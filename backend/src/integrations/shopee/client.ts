@@ -434,7 +434,7 @@ export interface ShopeeReturnListData extends ShopeeEnvelope {
 export interface ShopeeReturnListParams {
   accessToken: string;
   shopId: string;
-  /** Trang bắt đầu từ 1 (khác get_order_list dùng cursor). */
+  /** Trang/offset bắt đầu từ 0 (docs get_return_list: Default is 0; khác get_order_list dùng cursor). */
   pageNo: number;
   pageSize?: number;
   /** Lọc theo BIẾN ĐỘNG — bắt cả yêu cầu mới tạo lẫn đổi trạng thái/thêm tracking. */

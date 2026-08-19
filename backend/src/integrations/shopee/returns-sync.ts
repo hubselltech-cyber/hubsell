@@ -258,7 +258,11 @@ export async function syncShopeeReturns(
   const floorSec = nowSec - daysBack * 24 * 60 * 60;
   for (let to = nowSec; to > floorSec; to -= SLICE_SEC) {
     const from = Math.max(floorSec, to - SLICE_SEC);
-    for (let pageNo = 1; pageNo <= MAX_RETURN_PAGES; pageNo++) {
+    // page_no BẮT ĐẦU TỪ 0 (docs: "Specifies the starting entry... Default is 0")
+    // — trước gửi 1 nên trang đầu bị bỏ qua, API trả RỖNG suốt từ 13/08 (phát
+    // hiện 20/08 khi backfill: scanned=0 dù gian có đơn hoàn). Khớp return_sn
+    // giữa các trang nên dù sàn hiểu là offset hay page vẫn không trùng.
+    for (let pageNo = 0; pageNo < MAX_RETURN_PAGES; pageNo++) {
       const page = await getReturnList({
         accessToken,
         shopId,
