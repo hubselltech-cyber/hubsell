@@ -247,14 +247,17 @@ export function ChannelShareCard({
         <div className="mt-4 border-t border-slate-100 pt-4">
           <div
             className={cn(
-              "mx-auto grid w-full max-w-[26rem] gap-x-4 gap-y-4 xl:max-w-[28rem]",
+              // justify-items-center + ô w-fit: TÂM mỗi ô nằm ở 1/6 – 1/2 – 5/6 bề
+              // ngang vòm → ô giữa đúng dưới con số, hai ô bên đối xứng dưới hai
+              // chân vòm; chữ trong ô vẫn canh trái
+              "mx-auto grid w-full max-w-[26rem] justify-items-center gap-x-4 gap-y-4 xl:max-w-[28rem]",
               rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
             )}
           >
             {rows.map((r) => {
               const idle = r.revenue <= 0;
               return (
-                <div key={r.channelName} className="min-w-0">
+                <div key={r.channelName} className="w-fit min-w-0 max-w-full">
                   <p
                     className={cn(
                       "flex items-center gap-1.5 text-sm font-medium",
