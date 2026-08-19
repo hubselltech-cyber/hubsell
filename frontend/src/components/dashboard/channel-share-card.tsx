@@ -38,6 +38,9 @@ interface ChannelRow {
 /** Dữ liệu vòm nền — một lát 180° duy nhất nằm dưới các lát thật. */
 const TRACK = [{ v: 1 }];
 
+/** 3 sàn luôn có chỗ trên legend, đúng thứ tự này. */
+const FIXED_CHANNELS = ["SHOPEE", "TIKTOK", "LAZADA"] as const;
+
 /**
  * TỶ TRỌNG KÊNH BÁN — BÁN NGUYỆT 180° + legend lưới bên dưới.
  *
@@ -75,16 +78,29 @@ export function ChannelShareCard({
     cur.count += r.count;
     byPlatform.set(r.channelName, cur);
   }
-  const rows: ChannelRow[] = [...byPlatform.entries()]
-    .map(([channelName, v]) => ({
-      channelName,
-      label: CHANNEL_META[channelName as ChannelName]?.label ?? channelName,
-      color: CHANNEL_COLORS[channelName] ?? CHANNEL_COLOR_FALLBACK,
-      ...v,
-    }))
-    .sort((a, b) => b.revenue - a.revenue);
+  const toRow = (channelName: string): ChannelRow => ({
+    channelName,
+    label: CHANNEL_META[channelName as ChannelName]?.label ?? channelName,
+    color: CHANNEL_COLORS[channelName] ?? CHANNEL_COLOR_FALLBACK,
+    ...(byPlatform.get(channelName) ?? { revenue: 0, count: 0 }),
+  });
+  // LEGEND GHIM 3 SÀN theo thứ tự cố định (chỉ đạo anh Trung 19/08): sàn không
+  // có đơn vẫn hiện 0 ₫ · 0% để vị trí không nhảy giữa các kỳ lọc; kênh khác
+  // (Offline…) chỉ nối thêm khi có đơn. Lát vòm vẽ cùng thứ tự để đọc trái →
+  // phải khớp legend.
+  const rows: ChannelRow[] = [
+    ...FIXED_CHANNELS.map(toRow),
+    ...[...byPlatform.keys()]
+      .filter(
+        (k) =>
+          !(FIXED_CHANNELS as readonly string[]).includes(k) &&
+          (byPlatform.get(k)?.revenue ?? 0) > 0
+      )
+      .map(toRow),
+  ];
+  const slices = rows.filter((r) => r.revenue > 0);
   const total = rows.reduce((sum, r) => sum + r.revenue, 0);
-  const empty = rows.length === 0 || total === 0;
+  const empty = slices.length === 0 || total === 0;
   const pctOf = (v: number) =>
     total > 0 ? Math.round((v / total) * 1000) / 10 : 0;
 
@@ -127,7 +143,7 @@ export function ChannelShareCard({
                     />
                     {!empty && (
                       <Pie
-                        data={rows}
+                        data={slices}
                         dataKey="revenue"
                         nameKey="label"
                         cx="50%"
@@ -138,9 +154,9 @@ export function ChannelShareCard({
                         outerRadius="92%"
                         // Khe lát = viền màu card → đều ở mọi bán kính; 1 kênh thì
                         // không khe, vòm liền 180°
-                        paddingAngle={rows.length > 1 ? 1.5 : 0}
+                        paddingAngle={slices.length > 1 ? 1.5 : 0}
                         stroke="var(--card)"
-                        strokeWidth={rows.length > 1 ? 3 : 0}
+                        strokeWidth={slices.length > 1 ? 3 : 0}
                         cornerRadius={6}
                         isAnimationActive={animate && !reducedMotion}
                         animationBegin={0}
@@ -156,7 +172,7 @@ export function ChannelShareCard({
                         )}
                         inactiveShape={{ fillOpacity: 0.35 }}
                       >
-                        {rows.map((r) => (
+                        {slices.map((r) => (
                           <Cell key={r.channelName} fill={r.color} />
                         ))}
                       </Pie>
@@ -211,7 +227,7 @@ export function ChannelShareCard({
                       )}
                     />
                     <span className={cn(TEXT_SUB, "mt-1.5 font-medium")}>
-                      {rows.length} kênh hoạt động
+                      {slices.length} kênh hoạt động
                     </span>
                   </>
                 )}
@@ -220,57 +236,58 @@ export function ChannelShareCard({
           </div>
         </div>
 
-        {/* Legend lưới auto-fit: thêm sàn mới không phải sửa số cột;
-            mobile ~2 cột, card 7/12 ~3 cột, màn rộng 4 cột */}
-        {!empty && (
+        {/* LEGEND GHIM: 3 sàn cố định (+ kênh khác nếu có đơn), gom trong bề
+            ngang của vòm (cùng max-w) và căn giữa từng ô → khoảng cách từ tâm
+            ra hai bên cân nhau, không trải hết card trên màn rộng. */}
+        <div className="mt-4 border-t border-slate-100 pt-4">
           <div
             className={cn(
-              "mt-4 border-t border-slate-100 pt-4",
-              // 1–2 kênh (đa số shop): căn giữa cho khỏi lẻ loi góc trái;
-              // ≥3 kênh: lưới auto-fit, thêm sàn mới không phải sửa số cột
-              rows.length <= 2
-                ? "flex flex-wrap justify-center gap-x-12 gap-y-3"
-                : "grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-x-4 gap-y-3"
+              "mx-auto grid w-full max-w-[26rem] gap-x-3 gap-y-3 xl:max-w-[28rem]",
+              rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"
             )}
           >
-            {rows.map((r) => (
-              <div
-                key={r.channelName}
-                className={cn("min-w-0", rows.length <= 2 && "text-center")}
-              >
-                <p
-                  className={cn(
-                    "flex items-center gap-1.5 text-sm font-medium text-slate-900",
-                    rows.length <= 2 && "justify-center"
-                  )}
-                >
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: r.color }}
-                  />
-                  <span className="truncate">{r.label}</span>
-                </p>
-                <Money
-                  value={r.revenue}
-                  className="mt-0.5 block text-sm font-semibold text-slate-700"
-                />
-                <p className={cn(TEXT_SUB, "tabular-nums")}>
-                  <span className="font-semibold text-slate-700">
-                    {pctOf(r.revenue)}%
-                  </span>{" "}
-                  · {formatNumber(r.count)} đơn
-                </p>
-                {/* Giá trị trung bình/đơn — số duy nhất ô legend nói thêm được
-                    ngoài tỷ trọng, đặc biệt có nghĩa khi shop chỉ có 1 kênh */}
-                {r.count > 0 && (
-                  <p className={cn(TEXT_SUB, "tabular-nums")}>
-                    TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+            {rows.map((r) => {
+              const idle = r.revenue <= 0;
+              return (
+                <div key={r.channelName} className="min-w-0 text-center">
+                  <p
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 text-sm font-medium",
+                      idle ? "text-slate-500" : "text-slate-900"
+                    )}
+                  >
+                    <span
+                      className={cn("size-2.5 shrink-0 rounded-full", idle && "opacity-40")}
+                      style={{ backgroundColor: r.color }}
+                    />
+                    <span className="truncate">{r.label}</span>
                   </p>
-                )}
-              </div>
-            ))}
+                  <Money
+                    value={r.revenue}
+                    className={cn(
+                      "mt-0.5 block text-sm font-semibold",
+                      idle ? "text-slate-400" : "text-slate-700"
+                    )}
+                  />
+                  <p className={cn(TEXT_SUB, "tabular-nums")}>
+                    <span className={cn("font-semibold", idle ? "text-slate-400" : "text-slate-700")}>
+                      {pctOf(r.revenue)}%
+                    </span>{" "}
+                    · {formatNumber(r.count)} đơn
+                  </p>
+                  {/* Giá trị TB/đơn — số duy nhất legend nói thêm được ngoài tỷ trọng */}
+                  {r.count > 0 ? (
+                    <p className={cn(TEXT_SUB, "tabular-nums")}>
+                      TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+                    </p>
+                  ) : (
+                    <p className={cn(TEXT_SUB, "text-slate-400")}>Chưa có đơn</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
