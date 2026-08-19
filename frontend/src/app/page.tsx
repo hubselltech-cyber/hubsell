@@ -107,9 +107,12 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
 
   const steps: WaterfallStep[] = [
     { key: "cogs", label: "Giá vốn hàng bán (COGS)", short: "Giá vốn", amount: analytics.totalCost, hue: "rose" },
-    // TOÀN BỘ khoản sàn giữ lại: phí + thuế sàn + voucher/xu + chênh lệch VC
-    // (= Giá trị đơn − "Tổng tiền" sàn báo, cùng thước đo Báo cáo dòng tiền)
-    { key: "fee", label: "Sàn khấu trừ (phí, thuế, voucher)", short: "Phí sàn", amount: analytics.totalPlatformFee, hue: "rose" },
+    // Sàn khấu trừ TÁCH 2 CỘT: "Chi phí" = phí dịch vụ/thanh toán/voucher/chênh
+    // lệch VC… và "Thuế sàn" = GTGT + TNCN thu hộ. Cộng lại = totalPlatformFee
+    // (= Giá trị đơn − "Tổng tiền" sàn báo, cùng thước đo Báo cáo dòng tiền) nên
+    // thác vẫn cộng ra đúng Lãi ròng.
+    { key: "fee", label: "Chi phí sàn (phí dịch vụ, thanh toán, voucher, vận chuyển)", short: "Chi phí", amount: analytics.totalPlatformFee - analytics.totalPlatformTax, hue: "rose" },
+    { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN thu hộ)", short: "Thuế sàn", amount: analytics.totalPlatformTax, hue: "rose" },
     { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
   ];

@@ -242,7 +242,8 @@ export function PnlWaterfall({
           <XAxis
             dataKey="short"
             interval={0}
-            fontSize={11}
+            // 7 cột trong card 5/12 thì hạ cỡ chữ nhãn để không chạm nhau
+            fontSize={rows.length > 6 ? 10 : 11}
             tickLine={false}
             axisLine={{ stroke: "currentColor", strokeOpacity: 0.15 }}
             stroke={COLOR.axis}
