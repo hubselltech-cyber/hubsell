@@ -1,4 +1,4 @@
-import { Carrier, ChannelName } from "@prisma/client";
+import { Carrier, ChannelName, Prisma } from "@prisma/client";
 
 /**
  * DỮ LIỆU VẬN CHUYỂN CHO ĐƠN GIẢ LẬP
@@ -58,24 +58,60 @@ export function carrierFromName(name?: string | null): Carrier | null {
  * "Hỏa Tốc"/"Instant". KHÔNG dùng từ "express" trần — "SPX Express" là
  * giao THƯỜNG, dính từ khoá này là báo đỏ oan cả sàn.
  */
+/** Từ khoá nhận diện hỏa tốc — DÙNG CHUNG cho isExpressShipping() lẫn mảnh
+ *  where Prisma (expressShippingWhere) để nhận diện ở JS và ở DB không lệch. */
+export const EXPRESS_KEYWORDS = [
+  "hỏa tốc",
+  "hoả tốc",
+  "hoa toc",
+  "instant",
+  "siêu tốc",
+  "sieu toc",
+  "ahamove",
+  "grab",
+  "bedelivery",
+  "be delivery",
+  "trong ngày",
+  "trong ngay",
+  "same day",
+] as const;
+
 export function isExpressShipping(name?: string | null): boolean {
   const s = (name ?? "").toLowerCase();
   if (!s.trim()) return false;
-  return (
-    s.includes("hỏa tốc") ||
-    s.includes("hoả tốc") ||
-    s.includes("hoa toc") ||
-    s.includes("instant") ||
-    s.includes("siêu tốc") ||
-    s.includes("sieu toc") ||
-    s.includes("ahamove") ||
-    s.includes("grab") ||
-    s.includes("bedelivery") ||
-    s.includes("be delivery") ||
-    s.includes("trong ngày") ||
-    s.includes("trong ngay") ||
-    s.includes("same day")
-  );
+  return EXPRESS_KEYWORDS.some((k) => s.includes(k));
+}
+
+/**
+ * Mảnh `where` Prisma tương đương isExpressShipping() — cho truy vấn DB lọc /
+ * ghim đơn hỏa tốc (ILIKE không phân biệt hoa thường, giữ nguyên dấu tiếng Việt).
+ */
+export function expressShippingWhere(): Prisma.OrderWhereInput {
+  return {
+    OR: EXPRESS_KEYWORDS.map((k) => ({
+      shippingCarrierName: { contains: k, mode: "insensitive" as const },
+    })),
+  };
+}
+
+/**
+ * Phần bù của expressShippingWhere() — viết TƯỜNG MINH thay vì bọc NOT{...}
+ * vì shippingCarrierName nullable: `NOT (name ILIKE ...)` với name NULL ra
+ * NULL theo logic 3 trị SQL → đơn không có tên hãng bị rơi khỏi kết quả.
+ */
+export function notExpressShippingWhere(): Prisma.OrderWhereInput {
+  return {
+    OR: [
+      { shippingCarrierName: null },
+      {
+        AND: EXPRESS_KEYWORDS.map((k) => ({
+          NOT: {
+            shippingCarrierName: { contains: k, mode: "insensitive" as const },
+          },
+        })),
+      },
+    ],
+  };
 }
 
 function pick<T>(list: T[]): T {

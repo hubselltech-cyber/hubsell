@@ -12,7 +12,11 @@ import type { AuthRequest } from "../auth";
 import { mockSettlement } from "../mockMarketplace";
 import { channelScope } from "../channel-filter";
 import { attachItemImages } from "../item-images";
-import { isExpressShipping } from "../shipping";
+import {
+  expressShippingWhere,
+  isExpressShipping,
+  notExpressShippingWhere,
+} from "../shipping";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -100,31 +104,74 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const where = ordersWhere(req);
 
+    // GHIM ĐƠN HỎA TỐC CHỜ XỬ LÝ LÊN ĐẦU (anh Trung 19/08): đơn hỏa tốc còn
+    // PENDING phải luôn đứng trên mọi đơn khác dù ra đơn sớm hơn, để seller
+    // phát hiện và bàn giao vận chuyển ngay; sang PROCESSED thì trả về sắp
+    // theo thời gian như thường. Prisma không orderBy theo biểu thức được nên
+    // chia 2 nhóm — nhóm ghim (PENDING + hãng hỏa tốc) lấy trước, nhóm còn lại
+    // điền tiếp — và tự cắt trang trên tổng 2 nhóm để phân trang vẫn đúng.
+    const pinnedWhere: Prisma.OrderWhereInput = {
+      AND: [where, { shippingStatus: ShippingStatus.PENDING }, expressShippingWhere()],
+    };
+    // Phần bù: KHÔNG PENDING hoặc KHÔNG hỏa tốc (kể cả chưa có tên hãng).
+    const restWhere: Prisma.OrderWhereInput = {
+      AND: [
+        where,
+        {
+          OR: [
+            { shippingStatus: { not: ShippingStatus.PENDING } },
+            notExpressShippingWhere(),
+          ],
+        },
+      ],
+    };
+    const listInclude = {
+      channel: { select: { channelName: true, shopName: true } },
+      // Kèm dòng hàng để bảng hiện được tên + SKU + số lượng sản phẩm
+      items: {
+        select: {
+          id: true,
+          productName: true,
+          channelSku: true,
+          quantity: true,
+          price: true,
+          // Ảnh lấy từ sản phẩm gốc để bảng hiện thumbnail; sản phẩm đã bị
+          // xoá thì productId là null nên phải cho phép thiếu.
+          product: { select: { imageUrl: true } },
+        },
+      },
+    } satisfies Prisma.OrderInclude;
+    const offset = (page - 1) * pageSize;
+    const fetchPage = async () => {
+      const pinnedTotal = await prisma.order.count({ where: pinnedWhere });
+      const pinned =
+        offset < pinnedTotal
+          ? await prisma.order.findMany({
+              where: pinnedWhere,
+              orderBy: { createdAt: "desc" },
+              skip: offset,
+              take: pageSize,
+              include: listInclude,
+            })
+          : [];
+      const remain = pageSize - pinned.length;
+      const rest =
+        remain > 0
+          ? await prisma.order.findMany({
+              where: restWhere,
+              orderBy: { createdAt: "desc" },
+              skip: Math.max(0, offset - pinnedTotal),
+              take: remain,
+              include: listInclude,
+            })
+          : [];
+      return [...pinned, ...rest];
+    };
+
     const [total, items, statusCounts, notPrinted, alreadyPrinted] =
       await Promise.all([
       prisma.order.count({ where }),
-      prisma.order.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          channel: { select: { channelName: true, shopName: true } },
-          // Kèm dòng hàng để bảng hiện được tên + SKU + số lượng sản phẩm
-          items: {
-            select: {
-              id: true,
-              productName: true,
-              channelSku: true,
-              quantity: true,
-              price: true,
-              // Ảnh lấy từ sản phẩm gốc để bảng hiện thumbnail; sản phẩm đã bị
-              // xoá thì productId là null nên phải cho phép thiếu.
-              product: { select: { imageUrl: true } },
-            },
-          },
-        },
-      }),
+      fetchPage(),
       // Đếm số đơn theo từng trạng thái để hiện badge trên tab.
       // Cố ý BỎ shippingStatus VÀ printed khỏi điều kiện đếm — nếu không thì
       // tab/bộ lọc con đang mở sẽ là chỗ duy nhất có số, các tab khác luôn 0.
