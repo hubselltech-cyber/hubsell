@@ -242,59 +242,65 @@ export function ChannelShareCard({
             TB một đơn, mỗi sàn một cột thẳng mép trái; 3 sàn ghim cố định nên
             vị trí không nhảy giữa các kỳ, kênh khác (Offline…) nối thêm cột
             khi có đơn. */}
-        <div
-          className={cn(
-            "mt-4 grid gap-x-4 gap-y-4 border-t border-slate-100 pt-4",
-            rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
-          )}
-        >
-          {rows.map((r) => {
-            const idle = r.revenue <= 0;
-            return (
-              <div key={r.channelName} className="min-w-0">
-                <p
-                  className={cn(
-                    "flex items-center gap-1.5 text-sm font-medium",
-                    idle ? "text-slate-500" : "text-slate-900",
-                  )}
-                >
-                  <span
+        {/* Cụm 3 cột GOM TRONG BỀ NGANG VÒM (cùng max-w) và căn giữa card →
+            cân với biểu đồ phía trên, không trải hết card trên màn rộng */}
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <div
+            className={cn(
+              "mx-auto grid w-full max-w-[26rem] gap-x-4 gap-y-4 xl:max-w-[28rem]",
+              rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
+            )}
+          >
+            {rows.map((r) => {
+              const idle = r.revenue <= 0;
+              return (
+                <div key={r.channelName} className="min-w-0">
+                  <p
                     className={cn(
-                      "size-2.5 shrink-0 rounded-full",
-                      idle && "opacity-40",
-                    )}
-                    style={{ backgroundColor: r.color }}
-                  />
-                  <span className="truncate">{r.label}</span>
-                </p>
-                <Money
-                  value={r.revenue}
-                  className={cn(
-                    "mt-0.5 block text-sm font-semibold",
-                    idle ? "text-slate-400" : "text-slate-700",
-                  )}
-                />
-                <p className={cn(TEXT_SUB, "tabular-nums")}>
-                  <span
-                    className={cn(
-                      "font-semibold",
-                      idle ? "text-slate-400" : "text-slate-700",
+                      "flex items-center gap-1.5 text-sm font-medium",
+                      idle ? "text-slate-500" : "text-slate-900",
                     )}
                   >
-                    {pctOf(r.revenue)}%
-                  </span>{" "}
-                  · {formatNumber(r.count)} đơn
-                </p>
-                {r.count > 0 ? (
-                  <p className={cn(TEXT_SUB, "tabular-nums")}>
-                    TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+                    <span
+                      className={cn(
+                        "size-2.5 shrink-0 rounded-full",
+                        idle && "opacity-40",
+                      )}
+                      style={{ backgroundColor: r.color }}
+                    />
+                    <span className="truncate">{r.label}</span>
                   </p>
-                ) : (
-                  <p className={cn(TEXT_SUB, "text-slate-400")}>Chưa có đơn</p>
-                )}
-              </div>
-            );
-          })}
+                  <Money
+                    value={r.revenue}
+                    className={cn(
+                      "mt-0.5 block text-sm font-semibold",
+                      idle ? "text-slate-400" : "text-slate-700",
+                    )}
+                  />
+                  <p className={cn(TEXT_SUB, "tabular-nums")}>
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        idle ? "text-slate-400" : "text-slate-700",
+                      )}
+                    >
+                      {pctOf(r.revenue)}%
+                    </span>{" "}
+                    · {formatNumber(r.count)} đơn
+                  </p>
+                  {r.count > 0 ? (
+                    <p className={cn(TEXT_SUB, "tabular-nums")}>
+                      TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+                    </p>
+                  ) : (
+                    <p className={cn(TEXT_SUB, "text-slate-400")}>
+                      Chưa có đơn
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </CardContent>
     </Card>
