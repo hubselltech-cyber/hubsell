@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { lazAdsNum, lazAdsWriteOk } from "../lazada/client";
 import { deriveStatus } from "../lazada/ads-campaigns";
 import { deriveLazadaItemSku, pnlRowsForMargin } from "../shopee/ads-insights";
-import { ChannelName } from "@prisma/client";
+import { ChannelName, ShippingStatus } from "@prisma/client";
 import {
   buildLazadaAdsWalletEmptyAlert,
   buildShopeeAdsAssistantAlerts,
@@ -106,10 +106,12 @@ describe("deriveLazadaItemSku — SKU tổng NGUYÊN VĂN, không suy đoán (ch
   });
 });
 
-describe("pnlRowsForMargin — nguyên liệu biên lãi theo sàn (chốt 14/08)", () => {
+describe("pnlRowsForMargin — nguyên liệu biên lãi theo sàn (chốt 14/08, loại đơn hủy 19/08)", () => {
   const rows = [
-    { id: "settled", isSettled: true },
-    { id: "pending", isSettled: false },
+    { id: "settled", isSettled: true, shippingStatus: ShippingStatus.DELIVERED },
+    { id: "pending", isSettled: false, shippingStatus: ShippingStatus.SHIPPING },
+    { id: "cancelled", isSettled: false, shippingStatus: ShippingStatus.CANCELLED },
+    { id: "cancelled-settled", isSettled: true, shippingStatus: ShippingStatus.CANCELLED },
   ];
   it("Lazada: CHỈ đơn đã đối soát — đơn chờ sao kê phí = 0 làm biên lãi ảo cao", () => {
     expect(pnlRowsForMargin(rows, ChannelName.LAZADA).map((r) => r.id)).toEqual([
@@ -117,10 +119,25 @@ describe("pnlRowsForMargin — nguyên liệu biên lãi theo sàn (chốt 14/08
     ]);
   });
   it("Shopee: giữ cả đơn chờ — phí đã là số ước tính của chính sàn", () => {
-    expect(pnlRowsForMargin(rows, ChannelName.SHOPEE)).toHaveLength(2);
+    expect(pnlRowsForMargin(rows, ChannelName.SHOPEE).map((r) => r.id)).toEqual([
+      "settled",
+      "pending",
+    ]);
+  });
+  it("ĐƠN HỦY bị loại ở mọi sàn — computePnlRow vẫn tính đủ giá vốn cho đơn hủy (hàng đã hoàn kho) nên mỗi đơn hủy là một khoản lỗ ảo bằng nguyên giá vốn, kéo ROAS hòa vốn bò lên theo thời gian (TC025 ANO 11x → 22x, 19/08)", () => {
+    for (const ch of [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK]) {
+      expect(
+        pnlRowsForMargin(rows, ch).some((r) => r.shippingStatus === ShippingStatus.CANCELLED)
+      ).toBe(false);
+    }
   });
   it("Lazada không còn đơn đối soát nào → mảng rỗng (biên lãi null, FE báo chưa đủ dữ liệu)", () => {
-    expect(pnlRowsForMargin([{ isSettled: false }], ChannelName.LAZADA)).toEqual([]);
+    expect(
+      pnlRowsForMargin(
+        [{ isSettled: false, shippingStatus: ShippingStatus.DELIVERED }],
+        ChannelName.LAZADA
+      )
+    ).toEqual([]);
   });
 });
 

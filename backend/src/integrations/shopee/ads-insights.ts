@@ -16,7 +16,12 @@
 // integrations/shopee/ vì Shopee đặt nền + đỡ xáo import đang chạy production.
 // ============================================================
 
-import { ChannelName, type AdsCampaign, type AdsCampaignDailyPerf } from "@prisma/client";
+import {
+  ChannelName,
+  ShippingStatus,
+  type AdsCampaign,
+  type AdsCampaignDailyPerf,
+} from "@prisma/client";
 import { prisma } from "../../prisma";
 import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
 import {
@@ -74,11 +79,18 @@ export interface AdsInsightChannel {
  *     có sao kê mang phí = 0 làm biên lãi ảo cao → ROAS hòa vốn ảo thấp
  *     (quyết định anh Trung 14/08). Logic thuần, EXPORT cho vitest.
  */
-export function pnlRowsForMargin<T extends { isSettled: boolean }>(
-  rows: T[],
-  channelName: ChannelName
-): T[] {
-  return channelName === ChannelName.LAZADA ? rows.filter((r) => r.isSettled) : rows;
+export function pnlRowsForMargin<
+  T extends { isSettled: boolean; shippingStatus: ShippingStatus },
+>(rows: T[], channelName: ChannelName): T[] {
+  // LOẠI ĐƠN HỦY (anh Trung 19/08 — ROAS hòa vốn TC025 "bò" 11x → 22x): đơn
+  // CANCELLED vẫn mang đủ giá vốn trong computePnlRow (hàng đã hoàn kho nhưng
+  // orderCost không thu hồi) + tiền hoàn = full doanh thu → mỗi đơn hủy là một
+  // khoản "lỗ ảo" bằng nguyên giá vốn, tích lũy theo thời gian kéo biên lãi
+  // 11,9% xuống 4,4%. Tổng quan/Báo cáo dòng tiền đã loại CANCELLED khỏi
+  // activeRows — đây phải cùng phạm vi. Đơn HOÀN (returnStatus) vẫn giữ: thất
+  // thu thật, vốn tự thu hồi khi nhập kho lại.
+  const active = rows.filter((r) => r.shippingStatus !== ShippingStatus.CANCELLED);
+  return channelName === ChannelName.LAZADA ? active.filter((r) => r.isSettled) : active;
 }
 
 async function fetchChannelPnlRows(channel: AdsInsightChannel): Promise<PnlRow[]> {
