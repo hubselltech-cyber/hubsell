@@ -15,18 +15,7 @@ import {
   Scale,
   type LucideIcon,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { AccessDenied } from "@/components/access-denied";
 import { AppShell } from "@/components/app-shell";
@@ -47,6 +36,7 @@ import {
   type WaterfallStep,
 } from "@/components/dashboard/pnl-waterfall";
 import { ChannelShareCard } from "@/components/dashboard/channel-share-card";
+import { RevenueCostChart } from "@/components/dashboard/revenue-cost-chart";
 import { CommandCenter } from "@/components/dashboard/command-center";
 import { Button } from "@/components/ui/button";
 import {
@@ -285,16 +275,18 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
         <CardTitle>Cơ cấu Chi phí</CardTitle>
         <CardDescription>Tỷ lệ % các khoản chi trong kỳ.</CardDescription>
       </CardHeader>
-      <CardContent>
+      {/* flex-1 + items-center: khối donut căn giữa chiều cao card (card kéo
+          bằng chart Doanh thu vs Chi phí bên cạnh) — hết hở đáy */}
+      <CardContent className="flex flex-1 items-center">
         {total <= 0 ? (
-          <p className="py-10 text-center text-sm text-slate-500">
+          <p className="w-full py-10 text-center text-sm text-slate-500">
             Chưa ghi nhận khoản chi nào trong kỳ này.
           </p>
         ) : (
           /* Donut TRÁI — chú thích PHẢI: 6 khoản xếp dọc dưới donut sẽ đè bẹp
              biểu đồ, đặt cạnh nhau thì donut giữ nguyên cỡ dù thêm khoản mới.
              Màn hẹp (mobile) tự gãy về xếp dọc, donut căn giữa. */
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-5">
+          <div className="flex w-full flex-col items-center gap-4 sm:flex-row sm:gap-5">
             <div className="relative size-44 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -695,77 +687,16 @@ export default function DashboardPage() {
               </CardTitle>
               <CardDescription>
                 {seesFinancials
-                  ? "Chi phí mỗi ngày = giá vốn + sàn khấu trừ của đơn phát sinh + chi phí vận hành trong ngày."
+                  ? "Chi phí/ngày = giá vốn + sàn khấu trừ + vận hành trong ngày."
                   : "Giá trị đơn phát sinh theo từng ngày (không tính đơn hủy)."}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-72 w-full">
-                {analytics && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analytics.revenueByDay}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#e2e8f0"
-                      />
-                      <XAxis
-                        dataKey="label"
-                        fontSize={12}
-                        tickLine={false}
-                        axisLine={{ stroke: "#e2e8f0" }}
-                        stroke="#64748b"
-                      />
-                      <YAxis
-                        fontSize={12}
-                        tickLine={false}
-                        axisLine={false}
-                        stroke="#64748b"
-                        width={56}
-                        tickFormatter={(v: number) =>
-                          v >= 1_000_000
-                            ? `${(v / 1_000_000).toFixed(1)}tr`
-                            : `${Math.round(v / 1000)}k`
-                        }
-                      />
-                      <Tooltip
-                        cursor={{ fill: "#f1f5f9" }}
-                        formatter={(value, name) => [
-                          formatVND(Number(value)),
-                          name === "revenue" ? "Doanh thu" : "Chi phí",
-                        ]}
-                      />
-                      <Bar
-                        dataKey="revenue"
-                        name="revenue"
-                        fill="#10b981"
-                        radius={[4, 4, 0, 0]}
-                        maxBarSize={28}
-                      />
-                      {seesFinancials && (
-                        <Bar
-                          dataKey="cost"
-                          name="cost"
-                          fill="#cbd5e1"
-                          radius={[4, 4, 0, 0]}
-                          maxBarSize={28}
-                        />
-                      )}
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-              {seesFinancials && (
-                <div className={cn(TEXT_SUB, "mt-3 flex items-center gap-4")}>
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2.5 rounded-sm bg-emerald-500" />
-                    Doanh thu
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2.5 rounded-sm bg-slate-300" />
-                    Chi phí
-                  </span>
-                </div>
+              {analytics && (
+                <RevenueCostChart
+                  data={analytics.revenueByDay}
+                  showCost={seesFinancials}
+                />
               )}
             </CardContent>
           </Card>

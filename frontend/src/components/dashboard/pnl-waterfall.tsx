@@ -256,7 +256,8 @@ export function PnlWaterfall({
             dataKey="range"
             isAnimationActive={false}
             radius={[4, 4, 2, 2]}
-            maxBarSize={44}
+            // Ít cột (Ads/Vận hành = 0 tự ẩn) thì cột đậm hơn cho khỏi gầy giữa card
+            maxBarSize={rows.length <= 4 ? 56 : 44}
           >
             {rows.map((r) => (
               <Cell key={r.key} fill={r.fill} />

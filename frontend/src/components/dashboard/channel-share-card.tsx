@@ -223,10 +223,27 @@ export function ChannelShareCard({
         {/* Legend lưới auto-fit: thêm sàn mới không phải sửa số cột;
             mobile ~2 cột, card 7/12 ~3 cột, màn rộng 4 cột */}
         {!empty && (
-          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-x-4 gap-y-3 border-t border-slate-100 pt-4">
+          <div
+            className={cn(
+              "mt-4 border-t border-slate-100 pt-4",
+              // 1–2 kênh (đa số shop): căn giữa cho khỏi lẻ loi góc trái;
+              // ≥3 kênh: lưới auto-fit, thêm sàn mới không phải sửa số cột
+              rows.length <= 2
+                ? "flex flex-wrap justify-center gap-x-12 gap-y-3"
+                : "grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-x-4 gap-y-3"
+            )}
+          >
             {rows.map((r) => (
-              <div key={r.channelName} className="min-w-0">
-                <p className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
+              <div
+                key={r.channelName}
+                className={cn("min-w-0", rows.length <= 2 && "text-center")}
+              >
+                <p
+                  className={cn(
+                    "flex items-center gap-1.5 text-sm font-medium text-slate-900",
+                    rows.length <= 2 && "justify-center"
+                  )}
+                >
                   <span
                     className="size-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: r.color }}
@@ -243,6 +260,13 @@ export function ChannelShareCard({
                   </span>{" "}
                   · {formatNumber(r.count)} đơn
                 </p>
+                {/* Giá trị trung bình/đơn — số duy nhất ô legend nói thêm được
+                    ngoài tỷ trọng, đặc biệt có nghĩa khi shop chỉ có 1 kênh */}
+                {r.count > 0 && (
+                  <p className={cn(TEXT_SUB, "tabular-nums")}>
+                    TB {formatVND(Math.round(r.revenue / r.count))}/đơn
+                  </p>
+                )}
               </div>
             ))}
           </div>
