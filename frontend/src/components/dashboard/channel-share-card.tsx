@@ -39,7 +39,44 @@ interface ChannelRow {
 const TRACK = [{ v: 1 }];
 
 /** 3 sàn luôn có chỗ trên legend, đúng thứ tự này. */
-const FIXED_CHANNELS = ["SHOPEE", "TIKTOK", "LAZADA"] as const;
+const FIXED_CHANNELS: readonly string[] = ["SHOPEE", "TIKTOK", "LAZADA"];
+
+/** Một ô legend: tên sàn + 3 dòng số; sàn chưa có đơn thì mờ đi. */
+function LegendTile({ row, pct }: { row: ChannelRow; pct: number }) {
+  const idle = row.revenue <= 0;
+  const strong = idle ? "text-slate-400" : "text-slate-700";
+  return (
+    <div className="min-w-0">
+      <p
+        className={cn(
+          "flex items-center gap-1.5 text-sm font-medium",
+          idle ? "text-slate-500" : "text-slate-900",
+        )}
+      >
+        <span
+          className={cn("size-2.5 shrink-0 rounded-full", idle && "opacity-40")}
+          style={{ backgroundColor: row.color }}
+        />
+        <span className="truncate">{row.label}</span>
+      </p>
+      <Money
+        value={row.revenue}
+        className={cn("mt-0.5 block text-sm font-semibold", strong)}
+      />
+      <p className={cn(TEXT_SUB, "tabular-nums")}>
+        <span className={cn("font-semibold", strong)}>{pct}%</span> ·{" "}
+        {formatNumber(row.count)} đơn
+      </p>
+      {row.count > 0 ? (
+        <p className={cn(TEXT_SUB, "tabular-nums")}>
+          TB {formatVND(Math.round(row.revenue / row.count))}/đơn
+        </p>
+      ) : (
+        <p className={cn(TEXT_SUB, "text-slate-400")}>Chưa có đơn</p>
+      )}
+    </div>
+  );
+}
 
 /**
  * TỶ TRỌNG KÊNH BÁN — BÁN NGUYỆT 180° + legend lưới bên dưới.
@@ -84,17 +121,14 @@ export function ChannelShareCard({
     color: CHANNEL_COLORS[channelName] ?? CHANNEL_COLOR_FALLBACK,
     ...(byPlatform.get(channelName) ?? { revenue: 0, count: 0 }),
   });
-  // LEGEND GHIM 3 SÀN theo thứ tự cố định (chỉ đạo anh Trung 19/08): sàn không
-  // có đơn vẫn hiện 0 ₫ · 0% để vị trí không nhảy giữa các kỳ lọc; kênh khác
-  // (Offline…) chỉ nối thêm khi có đơn. Lát vòm vẽ cùng thứ tự để đọc trái →
-  // phải khớp legend.
+  // 3 sàn cố định luôn có mặt (0 ₫ nếu chưa có đơn), kênh khác (Offline…) nối
+  // thêm khi có đơn. Lát vòm vẽ cùng thứ tự để đọc trái → phải khớp legend.
   const rows: ChannelRow[] = [
     ...FIXED_CHANNELS.map(toRow),
     ...[...byPlatform.keys()]
       .filter(
         (k) =>
-          !(FIXED_CHANNELS as readonly string[]).includes(k) &&
-          (byPlatform.get(k)?.revenue ?? 0) > 0,
+          !FIXED_CHANNELS.includes(k) && (byPlatform.get(k)?.revenue ?? 0) > 0,
       )
       .map(toRow),
   ];
@@ -237,73 +271,18 @@ export function ChannelShareCard({
           </div>
         </div>
 
-        {/* LEGEND 3 CỘT TRẢI ĐỀU, Ô XẾP DỌC CANH TRÁI — bố cục anh Trung chốt
-            19/08 ("như này cơ mà"): tên sàn (chấm màu) / doanh thu / % · đơn /
-            TB một đơn, mỗi sàn một cột thẳng mép trái; 3 sàn ghim cố định nên
-            vị trí không nhảy giữa các kỳ, kênh khác (Offline…) nối thêm cột
-            khi có đơn. */}
-        {/* Cụm 3 cột GOM TRONG BỀ NGANG VÒM (cùng max-w) và căn giữa card →
-            cân với biểu đồ phía trên, không trải hết card trên màn rộng */}
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <div
-            className={cn(
-              // justify-items-center + ô w-fit: TÂM mỗi ô nằm ở 1/6 – 1/2 – 5/6 bề
-              // ngang vòm → ô giữa đúng dưới con số, hai ô bên đối xứng dưới hai
-              // chân vòm; chữ trong ô vẫn canh trái
-              "mx-auto grid w-full max-w-[26rem] justify-items-center gap-x-4 gap-y-4 xl:max-w-[28rem]",
-              rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
-            )}
-          >
-            {rows.map((r) => {
-              const idle = r.revenue <= 0;
-              return (
-                <div key={r.channelName} className="w-fit min-w-0 max-w-full">
-                  <p
-                    className={cn(
-                      "flex items-center gap-1.5 text-sm font-medium",
-                      idle ? "text-slate-500" : "text-slate-900",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-2.5 shrink-0 rounded-full",
-                        idle && "opacity-40",
-                      )}
-                      style={{ backgroundColor: r.color }}
-                    />
-                    <span className="truncate">{r.label}</span>
-                  </p>
-                  <Money
-                    value={r.revenue}
-                    className={cn(
-                      "mt-0.5 block text-sm font-semibold",
-                      idle ? "text-slate-400" : "text-slate-700",
-                    )}
-                  />
-                  <p className={cn(TEXT_SUB, "tabular-nums")}>
-                    <span
-                      className={cn(
-                        "font-semibold",
-                        idle ? "text-slate-400" : "text-slate-700",
-                      )}
-                    >
-                      {pctOf(r.revenue)}%
-                    </span>{" "}
-                    · {formatNumber(r.count)} đơn
-                  </p>
-                  {r.count > 0 ? (
-                    <p className={cn(TEXT_SUB, "tabular-nums")}>
-                      TB {formatVND(Math.round(r.revenue / r.count))}/đơn
-                    </p>
-                  ) : (
-                    <p className={cn(TEXT_SUB, "text-slate-400")}>
-                      Chưa có đơn
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        {/* Legend: mỗi sàn một cột trải đều bề ngang card, nội dung canh trái —
+            tên sàn / doanh thu / % · đơn / giá trị TB một đơn. 3 sàn ghim cố định
+            nên vị trí không nhảy giữa các kỳ lọc; kênh khác nối thêm cột khi có đơn. */}
+        <div
+          className={cn(
+            "mt-4 grid gap-x-4 gap-y-4 border-t border-slate-100 pt-4",
+            rows.length <= 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4",
+          )}
+        >
+          {rows.map((r) => (
+            <LegendTile key={r.channelName} row={r} pct={pctOf(r.revenue)} />
+          ))}
         </div>
       </CardContent>
     </Card>
