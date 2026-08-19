@@ -20,7 +20,9 @@ type PnlOrder = Parameters<typeof computePnlRow>[0];
 const D = (n: number) => new Prisma.Decimal(n);
 
 /** Đơn Shopee 1 SKU giá 269k, vốn 131k, phí sàn 90k — khung mọi kịch bản. */
-function mkOrder(over: Partial<PnlOrder> & { items?: Partial<PnlOrder["items"][number]>[] } = {}): PnlOrder {
+type ItemOverride = Partial<Record<keyof PnlOrder["items"][number], unknown>>;
+type OrderOverride = Partial<Record<Exclude<keyof PnlOrder, "items">, unknown>> & { items?: ItemOverride[] };
+function mkOrder(over: OrderOverride = {}): PnlOrder {
   const base = {
     id: "o1",
     orderCode: "2608TEST",
