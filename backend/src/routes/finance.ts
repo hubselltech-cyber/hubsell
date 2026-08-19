@@ -471,8 +471,12 @@ export function computePnlRow(o: PnlOrder) {
   if (isCancelled) {
     returnType = null; // đơn hủy nằm trên trục Đã hủy, không phải Hoàn/Trả
   } else if (o.returnSolution === ReturnSolution.REFUND_ONLY) {
+    // Sàn chưa báo số tiền (refund 0, yêu cầu mới/đang treo) → coi là hoàn tiền
+    // (chưa biết phần hay toàn bộ), không gắn nhãn "hoàn 1 phần" với số 0.
     returnType =
-      refundedAmount >= Math.max(actualRevenue, 0) - 0.5 ? "REFUND_ONLY" : "PARTIAL_REFUND";
+      refundedAmount <= 0 || refundedAmount >= Math.max(actualRevenue, 0) - 0.5
+        ? "REFUND_ONLY"
+        : "PARTIAL_REFUND";
   } else if (
     o.returnSolution === ReturnSolution.RETURN_REFUND ||
     o.returnStatus !== ReturnStatus.NONE ||

@@ -67,6 +67,11 @@ export function ReturnBadge({ row }: { row: PnlDetailRow }) {
           {row.platformReturnStatus ? ` (${row.platformReturnStatus})` : ""}
         </span>
       )}
+      {row.refundSource === null && row.platformReturnStatus && (
+        <span className="block whitespace-nowrap text-[10px] text-slate-400">
+          yêu cầu {row.platformReturnStatus} · sàn chưa báo số
+        </span>
+      )}
       {row.refundSource === "estimate" && (
         <span className="block whitespace-nowrap text-[10px] text-slate-400">
           tạm tính, chưa có số sàn

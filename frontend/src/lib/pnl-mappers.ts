@@ -42,9 +42,12 @@ export interface ShopeeProfitRow {
 }
 
 export function toShopeeRow(r: PnlDetailRow): ShopeeProfitRow {
-  // Doanh thu từ Shopee: ưu tiên số thực nhận về ví; chưa có thì lấy doanh thu
-  // ròng sau phí sàn.
-  const revenueFromShopee = r.actualPayout > 0 ? r.actualPayout : r.netRevenue;
+  // Doanh thu từ Shopee: ưu tiên số sàn báo về ví (escrow thật hoặc ước tính
+  // của chính sàn) — KỂ CẢ ÂM: đơn hoàn tiền 100% escrow = −2.700 (PiShip),
+  // trước đây điều kiện "> 0" làm rơi về doanh thu ước tính → đơn đã hoàn hiện
+  // lãi nguyên giá bán (anh Trung 20/08). Chưa có số của sàn (0) thì mới lấy
+  // doanh thu ròng sau phí.
+  const revenueFromShopee = r.actualPayout !== 0 ? r.actualPayout : r.netRevenue;
   return {
     base: r,
     revenueGross: r.revenueGross,
