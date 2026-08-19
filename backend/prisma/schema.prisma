@@ -38,6 +38,15 @@ enum ShippingStatus {
 /// Tách khỏi shippingStatus vì đây là hai trục khác nhau: đơn có thể đã HỦY từ
 /// lâu (trục vận chuyển) nhưng kiện hàng vẫn đang trên đường quay về (trục
 /// hoàn). Gộp chung thì không biết đơn nào đã thực sự cầm được hàng trong tay.
+/// Giải pháp hoàn SÀN CHỐT trên yêu cầu Trả hàng/Hoàn tiền (Shopee
+/// return_solution: 0 = RETURN_REFUND, 1 = REFUND_ONLY; TikTok return_type;
+/// Lazada request_type). Quyết định giá vốn có mất hay không trong Lãi/Lỗ:
+/// REFUND_ONLY = khách giữ hàng (mất vốn), RETURN_REFUND = hàng về (thu hồi).
+enum ReturnSolution {
+  RETURN_REFUND
+  REFUND_ONLY
+}
+
 enum ReturnStatus {
   NONE // không phải đơn hoàn
   AWAITING // đang chờ hàng quay về kho
@@ -932,6 +941,22 @@ model Order {
   /// lookup phải khớp được cả hai. Null = sàn chưa cấp / hoàn kiểu giao thất
   /// bại (kiện quay đầu giữ nguyên mã chiều đi).
   returnTrackingCode String?
+
+  /// ---- SỐ CỦA SÀN VỀ YÊU CẦU HOÀN (19/08, chốt anh Trung: "không bịa giá") ----
+  /// Giải pháp sàn chốt: hàng về hay khách giữ hàng. Null = chưa có yêu cầu /
+  /// sàn chưa nói (đơn cờ cũ trước khi có trường này).
+  returnSolution ReturnSolution?
+  /// Số tiền hoàn SÀN BÁO trên yêu cầu còn sống (đang treo HOẶC đã ACCEPTED) —
+  /// Shopee Returns refund_amount. KHÁC refundedAmount (số THẬT escrow): khi
+  /// escrow chưa có, Lãi/Lỗ dùng số này thay vì tạm tính full doanh thu.
+  platformRefundAmount Decimal @default(0) @db.Decimal(12, 2)
+  /// Trạng thái yêu cầu hoàn NGUYÊN VĂN của sàn (Shopee: REQUESTED/PROCESSING/
+  /// ACCEPTED/JUDGING/SELLER_DISPUTE…). Null = không có yêu cầu sống.
+  platformReturnStatus String?
+  /// Sàn xác nhận KIỆN HOÀN ĐÃ VỀ TAY seller (Shopee reverse_logistics_status
+  /// = LOGISTICS_DELIVERY_DONE) → Lãi/Lỗ thu hồi giá vốn dù kho chưa quét;
+  /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
+  returnDeliveredAt DateTime?
 
   /// Số tiền bưu cục/sàn đã đền cho kiện hàng hỏng hoặc mất.
   ///

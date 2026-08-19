@@ -5,6 +5,7 @@ import {
   ChannelName,
   ExpenseType,
   Prisma,
+  ReturnSolution,
   ReturnStatus,
   ShippingDisputeStatus,
   ShippingStatus,
@@ -98,32 +99,69 @@ type DeliveredOrder = Prisma.OrderGetPayload<{
 }>;
 
 // Tính giá vốn (COGS) THỰC TÍNH của một đơn + phát hiện SKU chưa cấu hình giá
-// vốn. XỬ LÝ HOÀN/TRẢ CẤP DÒNG SKU: phần hàng trả ĐÃ VỀ KHO NGUYÊN VẸN được
-// thu hồi giá vốn (không tính COGS nữa); các dòng không bị trả giữ nguyên 100%.
-//   - Item-level: it.returnedQuantity + it.returnRestocked (trả 1 vài SKU).
-//   - Fallback đơn-level: returnStatus = RECEIVED_INTACT mà chưa có số liệu
-//     item-level → coi HOÀN CẢ ĐƠN đã nhập kho, thu hồi toàn bộ giá vốn.
-//   - DAMAGED / WRITTEN_OFF / đang chờ hàng về: KHÔNG thu hồi — shop vẫn gánh.
+// vốn. XỬ LÝ HOÀN/TRẢ: phần hàng đã QUAY VỀ được thu hồi giá vốn (không tính
+// COGS nữa) — "đã trả hàng + hoàn tiền thì không lỗ giá trị sản phẩm, chỉ còn
+// lỗ phí/ship" (anh Trung 19/08). Căn cứ hàng đã về, KHÔNG bịa:
+//   - Kho xác nhận: returnStatus = RECEIVED / RECEIVED_INTACT (đã quét / đã nhập
+//     kho), hoặc dòng có returnRestocked.
+//   - SÀN xác nhận: returnSolution = RETURN_REFUND + returnDeliveredAt (Shopee
+//     reverse_logistics_status = LOGISTICS_DELIVERY_DONE) — kho chưa kịp quét
+//     vẫn thu hồi; kho đánh DAMAGED / WRITTEN_OFF sau đó thì mất vốn thật.
+//   - Đơn HỦY mà kho đã hoàn tồn (stockRestoredAt) → vốn không mất (hàng còn).
+// Phần trả = các dòng có returnedQuantity (từ item[] của sàn); chưa có dữ liệu
+// dòng → coi hoàn CẢ ĐƠN. Chỉ hoàn tiền (REFUND_ONLY, khách giữ hàng) thì KHÔNG
+// thu hồi gì. DAMAGED / WRITTEN_OFF / đang chờ hàng về: shop vẫn gánh.
+export function returnGoodsRecovered(order: {
+  shippingStatus: ShippingStatus;
+  returnStatus: ReturnStatus;
+  returnSolution: ReturnSolution | null;
+  returnDeliveredAt: Date | null;
+  stockRestoredAt: Date | null;
+}): boolean {
+  if (
+    order.returnStatus === ReturnStatus.DAMAGED ||
+    order.returnStatus === ReturnStatus.WRITTEN_OFF
+  ) {
+    return false;
+  }
+  if (
+    order.returnStatus === ReturnStatus.RECEIVED ||
+    order.returnStatus === ReturnStatus.RECEIVED_INTACT ||
+    order.returnStatus === ReturnStatus.CLAIM_SETTLED
+  ) {
+    return true;
+  }
+  if (order.returnSolution === ReturnSolution.RETURN_REFUND && order.returnDeliveredAt) {
+    return true;
+  }
+  if (order.shippingStatus === ShippingStatus.CANCELLED && order.stockRestoredAt) {
+    return true;
+  }
+  return false;
+}
+
 function orderCost(order: DeliveredOrder): {
   cost: number;
   recoveredCost: number;
   missingCostPrice: boolean;
 } {
+  const recoveredAll = returnGoodsRecovered(order);
   if (order.items.length > 0) {
-    const orderRestockedAll =
-      order.returnStatus === ReturnStatus.RECEIVED_INTACT &&
-      order.items.every((it) => it.returnedQuantity === 0);
+    const hasLineData = order.items.some((it) => it.returnedQuantity > 0);
     let cost = 0;
     let recoveredCost = 0;
     for (const it of order.items) {
       const unit = Number(it.costPriceAtSale);
-      // Số lượng thu hồi được vốn: hàng trả đã restock (cờ dòng), hoặc cả đơn
-      // đã nhập kho nguyên vẹn mà không có dữ liệu cấp dòng.
-      const recoveredQty = orderRestockedAll
-        ? it.quantity
-        : it.returnRestocked
-          ? Math.min(it.returnedQuantity, it.quantity)
-          : 0;
+      // Số lượng thu hồi được vốn:
+      //   - dòng đã restock (cờ kho) → phần trả của dòng;
+      //   - hàng đã về (kho/sàn/hủy-hoàn-tồn): có dữ liệu dòng → phần trả của
+      //     dòng; không có → cả dòng (hoàn cả đơn).
+      let recoveredQty = 0;
+      if (it.returnRestocked) {
+        recoveredQty = Math.min(it.returnedQuantity, it.quantity);
+      } else if (recoveredAll) {
+        recoveredQty = hasLineData ? Math.min(it.returnedQuantity, it.quantity) : it.quantity;
+      }
       cost += (it.quantity - recoveredQty) * unit;
       recoveredCost += recoveredQty * unit;
     }
@@ -144,11 +182,10 @@ function orderCost(order: DeliveredOrder): {
   const missingCostPrice =
     deductions.length === 0 ||
     deductions.some((l) => Number(l.product?.costPrice ?? 0) <= 0);
-  // Đơn cũ đã hoàn nguyên vẹn về kho: vốn được thu hồi toàn bộ.
-  const restocked = order.returnStatus === ReturnStatus.RECEIVED_INTACT;
+  // Đơn cũ đã về hàng (kho/sàn/hủy): vốn được thu hồi toàn bộ.
   return {
-    cost: restocked ? 0 : rawCost,
-    recoveredCost: restocked ? rawCost : 0,
+    cost: recoveredAll ? 0 : rawCost,
+    recoveredCost: recoveredAll ? rawCost : 0,
     missingCostPrice,
   };
 }
@@ -364,32 +401,50 @@ export function computePnlRow(o: PnlOrder) {
   const actualRevenue = revenueGross - sellerVoucher;
 
   /*
-   * ---- HOÀN TIỀN / TRẢ HÀNG: 4 KỊCH BẢN QUY VỀ MỘT CÔNG THỨC ----
-   * refundedAmount = tiền TRẢ LẠI KHÁCH của đơn:
-   *   - Có số THẬT từ sàn (Shopee escrow seller_return_refund…) → dùng số thật.
-   *   - Đơn hoàn CHƯA có số (đang chờ hàng về / sàn chưa chốt) → tạm tính
-   *     THẬN TRỌNG hoàn TOÀN BỘ doanh thu — hết cảnh đơn hoàn báo lãi dương ảo
-   *     bằng nguyên giá bán; sàn chốt số tới đâu tự chỉnh tới đó.
+   * ---- HOÀN TIỀN / TRẢ HÀNG: 4 KỊCH BẢN, SỐ LẤY THEO SÀN (chốt 19/08) ----
+   * Nguyên tắc anh Trung: "KHÔNG ĐƯỢC BỊA GIÁ" — tiền hoàn & hàng-về-hay-không
+   * đều lấy số của sàn, không tự tạm tính full doanh thu nữa.
+   * refundedAmount = tiền TRẢ LẠI KHÁCH của đơn, ưu tiên theo thứ tự:
+   *   1. Số THẬT sao kê (Shopee escrow seller_return_refund, Lazada reversal…).
+   *   2. Số SÀN BÁO trên yêu cầu hoàn (Shopee Returns refund_amount — kể cả
+   *      đang treo REQUESTED/PROCESSING hay đã ACCEPTED sau khi escrow đã trả):
+   *      gắn nhãn "sàn báo, chờ quyết toán".
+   *   3. Không có cả hai → 0. NGOẠI LỆ Lazada: sàn báo đơn "returned" nhưng
+   *      Hubsell chưa đọc Reverse Order API (chưa có refund_amount) → vẫn tạm
+   *      tính hoàn full như cũ cho tới khi nối API (ghi rõ là tạm tính).
    *   - CLAIM_SETTLED (thắng khiếu nại, đã được đền) → không tạm tính nữa.
-   * KB1 hoàn 100% không trả hàng: refund = full → doanh thu 0, vốn giữ 100%.
+   * Giá vốn: phần hàng ĐÃ VỀ (kho quét / sàn xác nhận giao về / đơn hủy đã hoàn
+   * tồn) được thu hồi trong orderCost — đơn trả hàng chỉ còn lỗ phí/ship/PiShip.
+   * KB1 hoàn 100% khách giữ hàng: refund = full → doanh thu 0, vốn mất 100%.
    * KB2 hoàn 1 phần giữ hàng:     refund một phần → doanh thu = giá − hoàn.
-   * KB3 trả 1 vài SKU:            refund các SKU trả; vốn SKU trả thu hồi khi
-   *                               restock (orderCost) — SKU giữ lại nguyên vẹn.
-   * KB4 hoàn toàn bộ:             refund = full; vốn theo trạng thái nhập kho.
+   * KB3 trả 1 vài SKU:            refund theo sàn; vốn SKU trả thu hồi khi về.
+   * KB4 trả toàn bộ:              refund theo sàn; vốn thu hồi khi hàng về.
+   * Đơn HỦY (shippingStatus CANCELLED) KHÔNG phải đơn hoàn — returnType null,
+   * tiền sàn trả lại khách (escrow) vẫn trừ để doanh thu = 0.
    */
+  const isCancelled = o.shippingStatus === ShippingStatus.CANCELLED;
   const pendingReturn =
     o.returnStatus !== ReturnStatus.NONE &&
     o.returnStatus !== ReturnStatus.CLAIM_SETTLED;
   const refundRecorded = Number(o.refundedAmount);
+  const refundPlatform = Number(o.platformRefundAmount);
+  const lazadaLegacyEstimate =
+    o.channel.channelName === ChannelName.LAZADA &&
+    pendingReturn &&
+    refundRecorded <= 0 &&
+    refundPlatform <= 0;
   const refundedAmount =
     refundRecorded > 0
       ? refundRecorded
-      : pendingReturn
-        ? Math.max(actualRevenue, 0)
-        : 0;
+      : refundPlatform > 0
+        ? Math.min(refundPlatform, Math.max(actualRevenue, 0))
+        : lazadaLegacyEstimate
+          ? Math.max(actualRevenue, 0)
+          : 0;
 
-  // Phân loại hình thức hoàn để UI gắn badge — dựa số lượng trả cấp dòng SKU;
-  // đơn chỉ có cờ returnStatus (chưa có dữ liệu cấp dòng) coi là hoàn cả đơn.
+  // Phân loại hình thức hoàn để UI gắn badge. Nguồn: giải pháp sàn chốt
+  // (returnSolution) + số lượng trả cấp dòng SKU (từ item[] của sàn); đơn chỉ có
+  // cờ returnStatus (kiểu cũ, chưa có dữ liệu sàn) coi là trả hàng cả đơn.
   const totalQuantity = o.items.reduce((s, it) => s + it.quantity, 0);
   const returnedQuantity = o.items.reduce((s, it) => s + it.returnedQuantity, 0);
   // Giá vốn (tại thời điểm bán) của RIÊNG phần hàng bị trả — mẫu số để tính
@@ -404,13 +459,29 @@ export function computePnlRow(o: PnlOrder) {
     | "PARTIAL_RETURN"
     | "FULL_RETURN"
     | null = null;
-  if (returnedQuantity > 0 && returnedQuantity < totalQuantity) {
-    returnType = "PARTIAL_RETURN";
-  } else if (returnedQuantity > 0 || o.returnStatus !== ReturnStatus.NONE) {
-    returnType = "FULL_RETURN";
-  } else if (refundRecorded > 0) {
+  const hasReturnSignal =
+    o.returnSolution !== null ||
+    o.returnStatus !== ReturnStatus.NONE ||
+    refundRecorded > 0 ||
+    refundPlatform > 0;
+  if (isCancelled) {
+    returnType = null; // đơn hủy nằm trên trục Đã hủy, không phải Hoàn/Trả
+  } else if (o.returnSolution === ReturnSolution.REFUND_ONLY) {
     returnType =
-      refundRecorded >= actualRevenue ? "REFUND_ONLY" : "PARTIAL_REFUND";
+      refundedAmount >= Math.max(actualRevenue, 0) - 0.5 ? "REFUND_ONLY" : "PARTIAL_REFUND";
+  } else if (
+    o.returnSolution === ReturnSolution.RETURN_REFUND ||
+    o.returnStatus !== ReturnStatus.NONE ||
+    returnedQuantity > 0
+  ) {
+    returnType =
+      returnedQuantity > 0 && returnedQuantity < totalQuantity
+        ? "PARTIAL_RETURN"
+        : "FULL_RETURN";
+  } else if (hasReturnSignal && refundedAmount > 0) {
+    // Chỉ có số hoàn từ sao kê (không có yêu cầu hoàn nào ghi nhận) → khách giữ hàng.
+    returnType =
+      refundedAmount >= Math.max(actualRevenue, 0) - 0.5 ? "REFUND_ONLY" : "PARTIAL_REFUND";
   }
 
   // "Doanh thu ước tính" — TÁI LẬP từ các cột phí đã bóc, để ĐỐI CHIẾU với
@@ -494,8 +565,22 @@ export function computePnlRow(o: PnlOrder) {
     taxWithheld: Number(o.taxWithheld),
     // Hoàn tiền / trả hàng — 4 kịch bản (null = đơn bán bình thường)
     returnType,
-    refundedAmount, // tiền trả khách: số thật, hoặc tạm tính full khi chưa chốt
-    refundEstimated: refundRecorded === 0 && refundedAmount > 0, // đang tạm tính
+    refundedAmount, // tiền trả khách: số thật sao kê / số sàn báo / (Lazada) tạm tính
+    refundEstimated: refundRecorded === 0 && refundedAmount > 0, // chưa phải số sao kê
+    // Nguồn số hoàn để UI ghi chú đúng: sao kê thật / sàn báo trên yêu cầu hoàn
+    // (chờ quyết toán) / tạm tính (Lazada chưa nối Reverse API) / không có.
+    refundSource:
+      refundRecorded > 0
+        ? ("settled" as const)
+        : refundPlatform > 0
+          ? ("platform" as const)
+          : refundedAmount > 0
+            ? ("estimate" as const)
+            : null,
+    // Số của sàn về yêu cầu hoàn — UI hiện trạng thái + kiện về tay chưa.
+    returnSolution: o.returnSolution,
+    platformReturnStatus: o.platformReturnStatus,
+    returnDeliveredAt: o.returnDeliveredAt,
     returnedQuantity,
     totalQuantity,
     returnedCostAtSale, // giá vốn (lúc bán) của riêng phần hàng bị trả

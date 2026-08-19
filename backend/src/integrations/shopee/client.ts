@@ -368,8 +368,59 @@ export interface ShopeeReturnEntry {
   text_reason?: string;
   create_time?: number;
   update_time?: number;
+  /** Tổng tiền sàn hoàn cho khách trên yêu cầu này (pending hoặc đã chốt). */
   refund_amount?: number;
+  /** 0 = Return and Refund (hàng về seller), 1 = Refund Only (khách giữ hàng). */
+  return_solution?: number;
+  /** true = kiện phải gửi về seller (có/không tích hợp vận chuyển). */
+  needs_logistics?: boolean;
+  /** Dòng hàng trong yêu cầu hoàn — `amount` = SỐ LƯỢNG trả của dòng. */
+  item?: ShopeeReturnItem[];
   [k: string]: unknown;
+}
+
+export interface ShopeeReturnItem {
+  item_id?: number;
+  model_id?: number;
+  item_sku?: string;
+  variation_sku?: string;
+  amount?: number;
+  item_price?: number;
+  /** Tiền hoàn riêng dòng (chỉ shop whitelist Partial Qty RR; không có thì dùng item_price). */
+  refund_amount?: number;
+}
+
+/** get_return_detail: thêm trạng thái vận chuyển CHIỀU HOÀN so với list. */
+export interface ShopeeReturnDetail extends ShopeeReturnEntry {
+  /** Trạng thái kiện hoàn mới (docs 11/2025): LOGISTICS_DELIVERY_DONE = đã về tay seller;
+   *  với In-transit RR / Return-on-the-Spot là chữ "Delivered". */
+  reverse_logistics_status?: string;
+  /** Tên field trong response example của docs (số ít) — đọc cả hai cho chắc. */
+  reverse_logistic_status?: string;
+  /** Legacy, chỉ phản ánh Normal RR. */
+  logistics_status?: string;
+}
+
+export interface ShopeeReturnDetailData extends ShopeeEnvelope {
+  response?: ShopeeReturnDetail;
+}
+
+/** Chi tiết MỘT yêu cầu hoàn — cần để biết kiện hoàn đã về tay seller chưa. */
+export async function getReturnDetail(
+  accessToken: string,
+  shopId: string,
+  returnSn: string,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeReturnDetail | null> {
+  const data = await callShopGet<ShopeeReturnDetailData>(
+    SHOPEE_PATHS.returnDetail,
+    accessToken,
+    shopId,
+    [["return_sn", returnSn]],
+    "get_return_detail",
+    cfg
+  );
+  return data.response ?? null;
 }
 
 export interface ShopeeReturnListData extends ShopeeEnvelope {

@@ -534,8 +534,16 @@ export interface PnlDetailRow {
   returnType: PnlReturnType | null;
   /** Tiền trả khách: số thật từ sàn, hoặc tạm tính full khi đơn hoàn chưa chốt. */
   refundedAmount: number;
-  /** true = refundedAmount đang là số TẠM TÍNH (sàn chưa chốt số hoàn thật). */
+  /** true = refundedAmount chưa phải số sao kê (sàn báo trên yêu cầu hoàn, hoặc tạm tính). */
   refundEstimated: boolean;
+  /** Nguồn số hoàn: sao kê thật / sàn báo (chờ quyết toán) / tạm tính (Lazada) / không có. */
+  refundSource: "settled" | "platform" | "estimate" | null;
+  /** Giải pháp sàn chốt: hàng về (RETURN_REFUND) hay khách giữ hàng (REFUND_ONLY). */
+  returnSolution: "RETURN_REFUND" | "REFUND_ONLY" | null;
+  /** Trạng thái yêu cầu hoàn nguyên văn của sàn (REQUESTED/PROCESSING/ACCEPTED…). */
+  platformReturnStatus: string | null;
+  /** Sàn xác nhận kiện hoàn đã về tay seller → giá vốn đã thu hồi trong Lãi/Lỗ. */
+  returnDeliveredAt: string | null;
   returnedQuantity: number;
   totalQuantity: number;
   /** Giá vốn (tại thời điểm bán) của RIÊNG phần hàng bị trả. */

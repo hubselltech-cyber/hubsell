@@ -7,10 +7,11 @@
 // ============================================================
 
 import { describe, expect, it } from "vitest";
-import { ReturnStatus } from "@prisma/client";
+import { ReturnSolution, ReturnStatus } from "@prisma/client";
 import {
   isDeadReturn,
   planReturnUpdate,
+  returnSolutionOf,
   type ReturnFlagState,
 } from "../shopee/returns-sync";
 
@@ -103,6 +104,7 @@ describe("planReturnUpdate — gắn cờ", () => {
         returnStatus: ReturnStatus.AWAITING,
         returnRequestedAt: new Date(),
         returnTrackingCode: "SPXVN123",
+        platformReturnStatus: "REQUESTED",
       },
       NOW_SEC
     );
@@ -184,5 +186,128 @@ describe("planReturnUpdate — KHÔNG đụng đơn kho đã xử lý", () => {
     );
     expect(plan.data.returnStatus).toBeUndefined();
     expect(plan.data.returnTrackingCode).toBe("SPXVN777");
+  });
+});
+
+// ============================================================
+// SỐ CỦA SÀN (19/08, chốt anh Trung "không bịa giá"): giải pháp hoàn, tiền hoàn
+// sàn báo, trạng thái yêu cầu, số lượng SKU trả — để Lãi/Lỗ không tạm tính
+// hoàn full và thu hồi được giá vốn hàng đã về.
+// ============================================================
+describe("planReturnUpdate — số của sàn", () => {
+  it("return_solution=0 (hàng về): ghi RETURN_REFUND + refund sàn báo + status + số lượng SKU trả", () => {
+    const plan = planReturnUpdate(
+      [
+        {
+          return_sn: "R1",
+          status: "PROCESSING",
+          create_time: NOW_SEC - 100,
+          update_time: NOW_SEC,
+          refund_amount: 269000,
+          return_solution: 0,
+          item: [
+            { item_id: 17676715439, model_id: 0, item_sku: "TC025", amount: 1 },
+            { item_id: 999, model_id: 5, variation_sku: "", amount: 2 },
+          ],
+        },
+      ],
+      noneOrder,
+      NOW_SEC
+    );
+    expect(plan.flagged).toBe(true);
+    expect(plan.data.returnSolution).toBe(ReturnSolution.RETURN_REFUND);
+    expect(plan.data.platformRefundAmount).toBe(269000);
+    expect(plan.data.platformReturnStatus).toBe("PROCESSING");
+    expect(plan.itemReturns).toEqual(new Map([["TC025", 1], ["SPE-999-5", 2]]));
+    expect(plan.latestAlive?.return_sn).toBe("R1");
+  });
+
+  it("return_solution=1 (chỉ hoàn tiền, khách giữ hàng): KHÔNG gắn AWAITING, không lưu tracking, số lượng trả = 0", () => {
+    const plan = planReturnUpdate(
+      [
+        {
+          return_sn: "R2",
+          status: "ACCEPTED",
+          create_time: NOW_SEC,
+          refund_amount: 50000,
+          return_solution: 1,
+          tracking_number: "SPXVN999",
+          item: [{ item_id: 1, item_sku: "A", amount: 1 }],
+        },
+      ],
+      noneOrder,
+      NOW_SEC
+    );
+    expect(plan.flagged).toBe(false);
+    expect(plan.data.returnStatus).toBeUndefined();
+    expect(plan.data.returnTrackingCode).toBeUndefined();
+    expect(plan.data.returnSolution).toBe(ReturnSolution.REFUND_ONLY);
+    expect(plan.data.platformRefundAmount).toBe(50000);
+    expect(plan.itemReturns).toEqual(new Map());
+  });
+
+  it("đơn đã AWAITING mà sàn chốt chỉ hoàn tiền → hạ cờ (không có kiện nào về)", () => {
+    const plan = planReturnUpdate(
+      [{ status: "ACCEPTED", create_time: NOW_SEC, return_solution: 1, refund_amount: 1 }],
+      {
+        returnStatus: ReturnStatus.AWAITING,
+        returnRequestedAt: new Date(),
+        returnTrackingCode: "SPXVN1",
+      },
+      NOW_SEC
+    );
+    expect(plan.unflagged).toBe(true);
+    expect(plan.data.returnStatus).toBe(ReturnStatus.NONE);
+    expect(plan.data.returnTrackingCode).toBeNull();
+  });
+
+  it("thiếu return_solution thì suy từ needs_logistics; thiếu cả hai → null (không đoán)", () => {
+    expect(returnSolutionOf({ needs_logistics: true })).toBe(ReturnSolution.RETURN_REFUND);
+    expect(returnSolutionOf({ needs_logistics: false })).toBe(ReturnSolution.REFUND_ONLY);
+    expect(returnSolutionOf({})).toBeNull();
+  });
+
+  it("số của sàn không đổi → không ghi lại (idempotent)", () => {
+    const plan = planReturnUpdate(
+      [{ status: "PROCESSING", create_time: NOW_SEC, return_solution: 0, refund_amount: 100 }],
+      {
+        returnStatus: ReturnStatus.AWAITING,
+        returnRequestedAt: new Date(),
+        returnTrackingCode: null,
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformRefundAmount: 100,
+        platformReturnStatus: "PROCESSING",
+      },
+      NOW_SEC
+    );
+    expect(plan.data).toEqual({});
+  });
+
+  it("mọi yêu cầu chết → xoá giải pháp + tiền sàn báo, status lưu CLOSED/CANCELLED", () => {
+    const plan = planReturnUpdate(
+      [{ status: "CLOSED", update_time: NOW_SEC }],
+      {
+        returnStatus: ReturnStatus.AWAITING,
+        returnRequestedAt: new Date(),
+        returnTrackingCode: "SPXVN1",
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformRefundAmount: 269000,
+        platformReturnStatus: "PROCESSING",
+      },
+      NOW_SEC
+    );
+    expect(plan.unflagged).toBe(true);
+    expect(plan.data.returnSolution).toBeNull();
+    expect(plan.data.platformRefundAmount).toBe(0);
+    expect(plan.data.platformReturnStatus).toBe("CLOSED");
+  });
+
+  it("đơn kho đã xử lý: yêu cầu chết mà chưa từng có số của sàn → không ghi gì (giữ bất biến)", () => {
+    const plan = planReturnUpdate(
+      [{ status: "CANCELLED" }],
+      { returnStatus: ReturnStatus.RECEIVED, returnRequestedAt: new Date(), returnTrackingCode: "X" },
+      NOW_SEC
+    );
+    expect(plan.data).toEqual({});
   });
 });

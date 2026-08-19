@@ -220,6 +220,13 @@ const SYNC_RETURNS_DAYS_BACK = 2;
 
 router.post("/returns/sync", async (req: AuthRequest, res, next) => {
   try {
+    // ?returnsDaysBack=N (1-180): quét sâu Returns API — dùng MỘT LẦN để
+    // backfill số của sàn (giải pháp hoàn / tiền hoàn / SKU trả) cho các yêu
+    // cầu cũ ngoài cửa sổ 7 ngày (19/08). Mặc định 7 như trước.
+    const returnsDaysBack = Math.min(
+      180,
+      Math.max(1, Math.floor(Number(req.query.returnsDaysBack)) || 7)
+    );
     const realChannels = await prisma.channel.findMany({
       where: {
         userId: req.ownerId!,
@@ -258,7 +265,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
             // trên đơn đã COMPLETED (không đổi order_status nên quét đơn ở
             // trên không thấy); kèm mã vận đơn CHIỀU HOÀN cho kho quét.
             // Bấm tay là "muốn thấy ngay" nên quét sâu hơn nhịp nền một chút.
-            await syncShopeeReturns(channel, { daysBack: 7 });
+            await syncShopeeReturns(channel, { daysBack: returnsDaysBack });
           } else {
             if (!isLazadaConfigured()) continue;
             await syncLazadaOrders(channel, {

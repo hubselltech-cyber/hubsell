@@ -57,11 +57,27 @@ export function ReturnBadge({ row }: { row: PnlDetailRow }) {
           <> ({row.returnedQuantity}/{row.totalQuantity})</>
         )}
       </span>
-      {row.refundEstimated && (
+      {/* Nguồn số hoàn (19/08 "không bịa giá"): sàn báo trên yêu cầu hoàn
+          (chờ sao kê) / tạm tính (Lazada chưa nối Reverse API). Số sao kê
+          thật thì không chú thích. Kèm "hàng đã về" khi sàn/kho xác nhận
+          kiện về tay → người đọc hiểu vì sao giá vốn không còn tính. */}
+      {row.refundSource === "platform" && (
         <span className="block whitespace-nowrap text-[10px] text-slate-400">
-          tạm tính chờ sàn chốt
+          sàn báo · chờ sao kê
+          {row.platformReturnStatus ? ` (${row.platformReturnStatus})` : ""}
         </span>
       )}
+      {row.refundSource === "estimate" && (
+        <span className="block whitespace-nowrap text-[10px] text-slate-400">
+          tạm tính, chưa có số sàn
+        </span>
+      )}
+      {(row.returnType === "FULL_RETURN" || row.returnType === "PARTIAL_RETURN") &&
+        (row.returnDeliveredAt || row.recoveredCost > 0) && (
+          <span className="block whitespace-nowrap text-[10px] text-emerald-600">
+            hàng đã về · vốn thu hồi
+          </span>
+        )}
     </span>
   );
 }

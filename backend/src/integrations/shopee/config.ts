@@ -112,6 +112,7 @@ export const SHOPEE_PATHS = {
    *  Đây là nguồn DUY NHẤT thấy được yêu cầu hoàn trên đơn đã COMPLETED
    *  (không đổi order_status nên get_order_list trục update KHÔNG thấy). */
   returnList: "/api/v2/returns/get_return_list",
+  returnDetail: "/api/v2/returns/get_return_detail",
   /** Mã vận đơn CHIỀU ĐI của một đơn (order detail v2 không còn trả tracking). */
   trackingNumber: "/api/v2/logistics/get_tracking_number",
 } as const;

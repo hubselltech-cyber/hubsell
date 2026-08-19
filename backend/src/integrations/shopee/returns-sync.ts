@@ -19,13 +19,15 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
-import { ChannelName, ReturnStatus } from "@prisma/client";
+import { ChannelName, ReturnSolution, ReturnStatus } from "@prisma/client";
 import { notify } from "../../notifications";
 import { prisma } from "../../prisma";
 import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
 import {
   getOrderDetail,
+  getReturnDetail,
   getReturnList,
+  shopeeChannelSku,
   getTrackingNumber,
   type ShopeeReturnEntry,
 } from "./client";
@@ -33,6 +35,8 @@ import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
 const MAX_RETURN_PAGES = 50;
+/** Trần số lần hỏi get_return_detail mỗi lượt quét (kiện hoàn về tay chưa). */
+const MAX_DETAIL_CALLS_PER_SWEEP = 40;
 
 /** Yêu cầu hoàn đã CHẾT — không còn hàng nào sẽ quay về kho từ yêu cầu này. */
 export function isDeadReturn(status?: string): boolean {
@@ -45,6 +49,10 @@ export interface ReturnFlagState {
   returnStatus: ReturnStatus;
   returnRequestedAt: Date | null;
   returnTrackingCode: string | null;
+  /** Số của sàn đã lưu — để chỉ ghi khi ĐỔI (idempotent). Thiếu = chưa có. */
+  returnSolution?: ReturnSolution | null;
+  platformRefundAmount?: number;
+  platformReturnStatus?: string | null;
 }
 
 export interface ReturnUpdatePlan {
@@ -52,17 +60,47 @@ export interface ReturnUpdatePlan {
     returnStatus?: ReturnStatus;
     returnRequestedAt?: Date | null;
     returnTrackingCode?: string | null;
+    returnSolution?: ReturnSolution | null;
+    platformRefundAmount?: number;
+    platformReturnStatus?: string | null;
+    returnDeliveredAt?: Date | null;
   };
   flagged: boolean;
   unflagged: boolean;
   trackingSaved: boolean;
+  /**
+   * SỐ LƯỢNG TRẢ theo channelSku từ `item[]` của yêu cầu sống mới nhất —
+   * null = không có dữ liệu dòng hàng (không đụng OrderItem.returnedQuantity).
+   * Chỉ hoàn tiền (khách giữ hàng) → map rỗng → mọi dòng về 0.
+   */
+  itemReturns: Map<string, number> | null;
+  /** Yêu cầu sống mới nhất (để vòng sync hỏi chi tiết kiện hoàn về tay chưa). */
+  latestAlive: ShopeeReturnEntry | null;
+}
+
+/**
+ * Giải pháp hoàn từ một yêu cầu: return_solution (0 hàng về / 1 khách giữ) là
+ * nguồn chính; thiếu thì suy từ needs_logistics; cả hai thiếu → null (đơn cờ
+ * kiểu cũ — Lãi/Lỗ không đoán, coi như chưa biết).
+ */
+export function returnSolutionOf(e: ShopeeReturnEntry): ReturnSolution | null {
+  if (e.return_solution === 0) return ReturnSolution.RETURN_REFUND;
+  if (e.return_solution === 1) return ReturnSolution.REFUND_ONLY;
+  if (typeof e.needs_logistics === "boolean") {
+    return e.needs_logistics ? ReturnSolution.RETURN_REFUND : ReturnSolution.REFUND_ONLY;
+  }
+  return null;
 }
 
 /**
  * QUYẾT ĐỊNH thuần (không API, không DB) cho một đơn từ nhóm yêu cầu hoàn của
- * nó: gắn cờ AWAITING, hạ cờ khi mọi yêu cầu đã hủy, lưu mã vận đơn chiều hoàn.
- * Bất biến quan trọng: CHỈ đổi qua lại NONE ↔ AWAITING — đơn kho đã xử lý
- * (RECEIVED trở đi) không bao giờ bị đụng.
+ * nó: gắn cờ AWAITING, hạ cờ khi mọi yêu cầu đã hủy, lưu mã vận đơn chiều hoàn,
+ * và (19/08) chép SỐ CỦA SÀN: giải pháp hoàn, tiền hoàn sàn báo, trạng thái
+ * yêu cầu, số lượng SKU trả. Bất biến quan trọng: trục returnStatus CHỈ đổi
+ * qua lại NONE ↔ AWAITING — đơn kho đã xử lý (RECEIVED trở đi) không bao giờ
+ * bị đụng. Yêu cầu CHỈ HOÀN TIỀN (khách giữ hàng) không có kiện nào về nên
+ * KHÔNG gắn AWAITING (và hạ cờ AWAITING nếu trước đó đã gắn nhầm) — danh sách
+ * "Chờ về tay" của kho chỉ giữ đơn thực sự có hàng quay về.
  */
 export function planReturnUpdate(
   group: ShopeeReturnEntry[],
@@ -70,13 +108,14 @@ export function planReturnUpdate(
   nowSec: number
 ): ReturnUpdatePlan {
   const alive = group.filter((e) => !isDeadReturn(e.status));
+  const aliveNewestFirst = [...alive].sort(
+    (a, b) => (b.update_time ?? 0) - (a.update_time ?? 0)
+  );
+  const latest = aliveNewestFirst[0] ?? null;
   // Mã vận đơn hoàn: ưu tiên của yêu cầu CÒN SỐNG mới nhất (yêu cầu cũ bị hủy
   // có thể mang tracking không còn dùng).
   const tracking =
-    [...alive]
-      .sort((a, b) => (b.update_time ?? 0) - (a.update_time ?? 0))
-      .map((e) => e.tracking_number?.trim())
-      .find(Boolean) ?? null;
+    aliveNewestFirst.map((e) => e.tracking_number?.trim()).find(Boolean) ?? null;
   // Mốc "sàn báo hoàn" = lúc tạo yêu cầu SỚM nhất còn sống — số ngày chờ là
   // căn cứ khiếu nại bưu cục nên lấy mốc thật của sàn, không lấy lúc mình quét.
   const requestedSec = alive.length
@@ -88,13 +127,24 @@ export function planReturnUpdate(
     flagged: false,
     unflagged: false,
     trackingSaved: false,
+    itemReturns: null,
+    latestAlive: latest,
   };
 
+  const solution = latest ? returnSolutionOf(latest) : null;
+  const refundOnly = solution === ReturnSolution.REFUND_ONLY;
+
   if (alive.length > 0) {
-    if (order.returnStatus === ReturnStatus.NONE) {
+    if (order.returnStatus === ReturnStatus.NONE && !refundOnly) {
       plan.data.returnStatus = ReturnStatus.AWAITING;
       plan.data.returnRequestedAt = new Date((requestedSec ?? nowSec) * 1000);
       plan.flagged = true;
+    } else if (order.returnStatus === ReturnStatus.AWAITING && refundOnly) {
+      // Sàn chốt "chỉ hoàn tiền" — không có kiện nào về, bỏ khỏi danh sách chờ.
+      plan.data.returnStatus = ReturnStatus.NONE;
+      plan.data.returnRequestedAt = null;
+      plan.data.returnTrackingCode = null;
+      plan.unflagged = true;
     } else if (
       order.returnStatus === ReturnStatus.AWAITING &&
       !order.returnRequestedAt &&
@@ -102,19 +152,54 @@ export function planReturnUpdate(
     ) {
       plan.data.returnRequestedAt = new Date(requestedSec * 1000);
     }
-    if (tracking && tracking !== order.returnTrackingCode) {
+    if (!refundOnly && tracking && tracking !== order.returnTrackingCode) {
       plan.data.returnTrackingCode = tracking;
       plan.trackingSaved = true;
     }
-  } else if (order.returnStatus === ReturnStatus.AWAITING) {
-    // Mọi yêu cầu hoàn của đơn trong cửa sổ đều đã hủy → hạ cờ để danh sách
-    // "Chờ về tay" không nuôi đơn không bao giờ về. Kiện sẽ không quay lại nên
-    // mã vận đơn hoàn cũng xoá — giữ lại là lookup khớp nhầm kiện ma. (Người
-    // mua mở yêu cầu MỚI thì nó nằm cùng cửa sổ biến động và đã vào `alive`.)
-    plan.data.returnStatus = ReturnStatus.NONE;
-    plan.data.returnRequestedAt = null;
-    plan.data.returnTrackingCode = null;
-    plan.unflagged = true;
+
+    // ---- Số của sàn (chỉ ghi khi đổi) ----
+    const refund = Number(latest?.refund_amount ?? 0) || 0;
+    const status = (latest?.status ?? "").toUpperCase() || null;
+    if (solution !== (order.returnSolution ?? null)) plan.data.returnSolution = solution;
+    if (refund !== (order.platformRefundAmount ?? 0)) plan.data.platformRefundAmount = refund;
+    if (status !== (order.platformReturnStatus ?? null)) plan.data.platformReturnStatus = status;
+    // Dòng hàng trả: chỉ khi hàng về; khách giữ hàng → không dòng nào bị trả.
+    if (latest?.item && latest.item.length > 0) {
+      const map = new Map<string, number>();
+      if (!refundOnly) {
+        for (const it of latest.item) {
+          const sku = shopeeChannelSku({
+            itemId: it.item_id,
+            modelId: it.model_id,
+            itemSku: it.item_sku,
+            modelSku: it.variation_sku,
+          });
+          map.set(sku, (map.get(sku) ?? 0) + (it.amount ?? 0));
+        }
+      }
+      plan.itemReturns = map;
+    }
+  } else {
+    if (order.returnStatus === ReturnStatus.AWAITING) {
+      // Mọi yêu cầu hoàn của đơn trong cửa sổ đều đã hủy → hạ cờ để danh sách
+      // "Chờ về tay" không nuôi đơn không bao giờ về. Kiện sẽ không quay lại nên
+      // mã vận đơn hoàn cũng xoá — giữ lại là lookup khớp nhầm kiện ma. (Người
+      // mua mở yêu cầu MỚI thì nó nằm cùng cửa sổ biến động và đã vào `alive`.)
+      plan.data.returnStatus = ReturnStatus.NONE;
+      plan.data.returnRequestedAt = null;
+      plan.data.returnTrackingCode = null;
+      plan.unflagged = true;
+    }
+    // Yêu cầu chết hết → không còn tiền hoàn nào treo: xoá giải pháp + tiền
+    // sàn báo; trạng thái lưu nguyên văn CLOSED/CANCELLED (chỉ khi trước đó có
+    // ghi — đơn chưa từng có số của sàn thì để yên, giữ idempotent).
+    if (order.returnSolution != null) plan.data.returnSolution = null;
+    if ((order.platformRefundAmount ?? 0) !== 0) plan.data.platformRefundAmount = 0;
+    if (order.platformReturnStatus != null) {
+      const dead = [...group].sort((a, b) => (b.update_time ?? 0) - (a.update_time ?? 0))[0];
+      const deadStatus = (dead?.status ?? "").toUpperCase() || null;
+      if (deadStatus !== order.platformReturnStatus) plan.data.platformReturnStatus = deadStatus;
+    }
   }
 
   return plan;
@@ -131,6 +216,10 @@ export interface SyncShopeeReturnsResult {
   trackingSaved: number;
   /** Số đơn phải kéo mới từ sàn vì DB chưa có (đơn cũ ngoài mọi cửa sổ quét). */
   ordersFetched: number;
+  /** Số đơn vừa ghi mốc KIỆN HOÀN ĐÃ VỀ TAY (sàn xác nhận hoặc kho đã quét). */
+  delivered: number;
+  /** Số dòng hàng được cập nhật số lượng trả theo sàn. */
+  itemsUpdated: number;
 }
 
 export interface SyncShopeeReturnsOptions {
@@ -156,6 +245,8 @@ export async function syncShopeeReturns(
     unflagged: 0,
     trackingSaved: 0,
     ordersFetched: 0,
+    delivered: 0,
+    itemsUpdated: 0,
   };
 
   // (1) Gom toàn bộ yêu cầu hoàn trong cửa sổ biến động.
@@ -191,17 +282,25 @@ export async function syncShopeeReturns(
       ? Number(channel.feeRate)
       : PLATFORM_FEE_RATE[ChannelName.SHOPEE];
 
+  const orderSelect = {
+    id: true,
+    returnStatus: true,
+    returnRequestedAt: true,
+    returnTrackingCode: true,
+    returnSolution: true,
+    platformRefundAmount: true,
+    platformReturnStatus: true,
+    returnDeliveredAt: true,
+    items: { select: { id: true, channelSku: true, returnedQuantity: true } },
+  } as const;
+  let detailCalls = 0;
+
   for (const [orderSn, group] of byOrder) {
     const alive = group.filter((e) => !isDeadReturn(e.status));
 
     let order = await prisma.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
-      select: {
-        id: true,
-        returnStatus: true,
-        returnRequestedAt: true,
-        returnTrackingCode: true,
-      },
+      select: orderSelect,
     });
 
     // Đơn chưa có trong DB (tạo từ lâu, ngoài mọi cửa sổ đồng bộ) → kéo về đã.
@@ -217,12 +316,7 @@ export async function syncShopeeReturns(
             where: {
               channelId_orderCode: { channelId: channel.id, orderCode: orderSn },
             },
-            select: {
-              id: true,
-              returnStatus: true,
-              returnRequestedAt: true,
-              returnTrackingCode: true,
-            },
+            select: orderSelect,
           });
         }
       } catch (err) {
@@ -235,13 +329,79 @@ export async function syncShopeeReturns(
     }
     if (!order) continue;
 
-    const plan = planReturnUpdate(group, order, nowSec);
+    const plan = planReturnUpdate(
+      group,
+      {
+        returnStatus: order.returnStatus,
+        returnRequestedAt: order.returnRequestedAt,
+        returnTrackingCode: order.returnTrackingCode,
+        returnSolution: order.returnSolution,
+        platformRefundAmount: Number(order.platformRefundAmount),
+        platformReturnStatus: order.platformReturnStatus,
+      },
+      nowSec
+    );
     if (plan.flagged) result.flagged++;
     if (plan.unflagged) result.unflagged++;
     if (plan.trackingSaved) result.trackingSaved++;
 
+    // KIỆN HOÀN ĐÃ VỀ TAY? Chỉ hỏi get_return_detail khi: hàng phải về
+    // (RETURN_REFUND), chưa ghi mốc về, yêu cầu đã qua bước khách gửi
+    // (PROCESSING trở đi) — REQUESTED thì khách còn chưa gửi, hỏi phí call.
+    // Kho đã quét (RECEIVED trở đi) = chắc chắn về tay → ghi mốc luôn, khỏi hỏi.
+    let deliveredAt: Date | null = null;
+    const latest = plan.latestAlive;
+    const solution =
+      plan.data.returnSolution !== undefined ? plan.data.returnSolution : order.returnSolution;
+    if (latest && solution === ReturnSolution.RETURN_REFUND && !order.returnDeliveredAt) {
+      const st = (latest.status ?? "").toUpperCase();
+      const kept =
+        order.returnStatus !== ReturnStatus.NONE && order.returnStatus !== ReturnStatus.AWAITING;
+      if (kept) {
+        deliveredAt = new Date();
+      } else if (
+        latest.return_sn &&
+        st !== "REQUESTED" &&
+        detailCalls < MAX_DETAIL_CALLS_PER_SWEEP
+      ) {
+        detailCalls++;
+        try {
+          const d = await getReturnDetail(accessToken, shopId, latest.return_sn);
+          const rl = String(
+            d?.reverse_logistics_status ?? d?.reverse_logistic_status ?? d?.logistics_status ?? ""
+          ).toUpperCase();
+          if (rl === "LOGISTICS_DELIVERY_DONE" || rl === "DELIVERED") {
+            deliveredAt = new Date((d?.update_time ?? latest.update_time ?? nowSec) * 1000);
+          }
+        } catch (err) {
+          console.warn(
+            `[Shopee Returns] Không đọc được chi tiết yêu cầu ${latest.return_sn}:`,
+            (err as Error).message
+          );
+        }
+      }
+    }
+    if (deliveredAt) {
+      plan.data.returnDeliveredAt = deliveredAt;
+      result.delivered++;
+    }
+
     if (Object.keys(plan.data).length > 0) {
       await prisma.order.update({ where: { id: order.id }, data: plan.data });
+    }
+
+    // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent).
+    if (plan.itemReturns) {
+      for (const it of order.items) {
+        const qty = plan.itemReturns.get(it.channelSku) ?? 0;
+        if (qty !== it.returnedQuantity) {
+          await prisma.orderItem.update({
+            where: { id: it.id },
+            data: { returnedQuantity: qty },
+          });
+          result.itemsUpdated++;
+        }
+      }
     }
 
     // CHUÔNG THÔNG BÁO (Tầng 3): sàn vừa báo hoàn một đơn MỚI (NONE→AWAITING)
@@ -258,6 +418,7 @@ export async function syncShopeeReturns(
 
   return result;
 }
+
 
 // ============================================================
 // BACKFILL MÃ VẬN ĐƠN CHIỀU ĐI — get_tracking_number (1 call / 1 đơn)

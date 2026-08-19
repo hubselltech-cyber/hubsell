@@ -325,6 +325,11 @@ function mapLazadaStatus(status?: string): ShippingStatus {
     case "cancelled":
     case "failed":
     case "failed_delivery":
+    // Giao thất bại, kiện đang/đã quay về seller (enum docs GetOrders 19/08) —
+    // trước đây rơi default PENDING làm đơn hiện "Chờ xử lý" oan. Kho cộng lại
+    // tồn như đơn hủy (mirror Shopee CANCELLED sau giao thất bại).
+    case "shipped_back":
+    case "shipped_back_success":
       return ShippingStatus.CANCELLED;
     default:
       return ShippingStatus.PENDING;
