@@ -27,11 +27,13 @@ import {
   getOrderDetail,
   getReturnDetail,
   getReturnList,
+  getEscrowDetail,
   shopeeChannelSku,
   getTrackingNumber,
   type ShopeeReturnEntry,
 } from "./client";
 import { getValidShopeeAccessToken, upsertShopeeOrderTx } from "./service";
+import { mapShopeeEscrowFields } from "./settlements";
 
 /** Chốt chặn phân trang vô tận (50 yêu cầu/trang → 2500 yêu cầu/lượt là quá đủ). */
 const MAX_RETURN_PAGES = 50;
@@ -220,6 +222,8 @@ export interface SyncShopeeReturnsResult {
   delivered: number;
   /** Số dòng hàng được cập nhật số lượng trả theo sàn. */
   itemsUpdated: number;
+  /** Số đơn đã đối soát được đọc lại escrow để lấy số hoàn sao kê còn thiếu. */
+  escrowRefreshed: number;
 }
 
 export interface SyncShopeeReturnsOptions {
@@ -247,6 +251,7 @@ export async function syncShopeeReturns(
     ordersFetched: 0,
     delivered: 0,
     itemsUpdated: 0,
+    escrowRefreshed: 0,
   };
 
   // (1) Gom toàn bộ yêu cầu hoàn trong cửa sổ biến động — CẮT LÁT tối đa
@@ -308,9 +313,12 @@ export async function syncShopeeReturns(
     platformRefundAmount: true,
     platformReturnStatus: true,
     returnDeliveredAt: true,
+    isSettled: true,
+    refundedAmount: true,
     items: { select: { id: true, channelSku: true, returnedQuantity: true } },
   } as const;
   let detailCalls = 0;
+  let escrowRefreshCalls = 0;
 
   for (const [orderSn, group] of byOrder) {
     const alive = group.filter((e) => !isDeadReturn(e.status));
@@ -405,6 +413,37 @@ export async function syncShopeeReturns(
 
     if (Object.keys(plan.data).length > 0) {
       await prisma.order.update({ where: { id: order.id }, data: plan.data });
+    }
+
+    // TỰ CHỮA SỐ HOÀN SAO KÊ: đơn ĐÃ đối soát, yêu cầu hoàn đã ACCEPTED mà DB
+    // chưa có refundedAmount (đối soát hồi trước 05/08 khi chưa map
+    // seller_return_refund, hoặc hoàn sau khi giải ngân) → đọc lại escrow của
+    // đúng đơn này (escrow thật 2607194YFVJ17J có seller_return_refund -230.000
+    // nhưng DB = 0, 20/08). Cap theo lượt để không đốt quota.
+    const stNow = (latest?.status ?? "").toUpperCase();
+    if (
+      order.isSettled &&
+      Number(order.refundedAmount) === 0 &&
+      stNow === "ACCEPTED" &&
+      escrowRefreshCalls < MAX_DETAIL_CALLS_PER_SWEEP
+    ) {
+      escrowRefreshCalls++;
+      try {
+        const detail = await getEscrowDetail({ accessToken, shopId, orderSn });
+        const income = detail.response?.order_income;
+        if (income) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: mapShopeeEscrowFields(income),
+          });
+          result.escrowRefreshed++;
+        }
+      } catch (err) {
+        console.warn(
+          `[Shopee Returns] Không đọc lại được escrow đơn :`,
+          (err as Error).message
+        );
+      }
     }
 
     // Số lượng trả theo dòng SKU (chỉ ghi dòng có thay đổi — idempotent).
