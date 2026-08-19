@@ -238,8 +238,8 @@ export function ChannelShareCard({
         </div>
 
         {/* BẢNG MINI THAY LEGEND (theo cách Shopify/Stripe so nhiều kênh × nhiều
-            chỉ số): cột = sàn (chấm màu + tên, căn phải), hàng = chỉ số với nhãn
-            mờ bên trái, số căn phải thẳng cột, kẻ mảnh giữa hàng → thoáng và
+            chỉ số): cột = sàn (chấm màu + tên, CANH TRÁI — anh Trung chốt lại 19/08), hàng = chỉ số với nhãn
+            mờ bên trái, số canh trái thẳng cột dưới tên sàn, kẻ mảnh giữa hàng → thoáng và
             thẳng hàng tuyệt đối (anh Trung chê bản xếp chồng "hơi dày"). Bảng
             gom trong bề ngang vòm để cân quanh tâm; >3 kênh hoặc màn hẹp thì
             cuộn ngang thay vì vỡ. */}
@@ -257,7 +257,7 @@ export function ChannelShareCard({
                       <th
                         key={r.channelName}
                         className={cn(
-                          "py-2 pl-3 text-right font-medium whitespace-nowrap",
+                          "py-2 pl-4 text-left font-medium whitespace-nowrap",
                           idle ? "text-slate-500" : "text-slate-900",
                         )}
                       >
@@ -280,7 +280,7 @@ export function ChannelShareCard({
                 <tr>
                   <td className={cn(TEXT_SUB, "py-2")}>Doanh thu</td>
                   {rows.map((r) => (
-                    <td key={r.channelName} className="py-2 pl-3 text-right">
+                    <td key={r.channelName} className="py-2 pl-4 text-left">
                       <Money
                         value={r.revenue}
                         className={cn(
@@ -297,7 +297,7 @@ export function ChannelShareCard({
                     <td
                       key={r.channelName}
                       className={cn(
-                        "py-2 pl-3 text-right",
+                        "py-2 pl-4 text-left",
                         r.count > 0 ? "text-slate-700" : "text-slate-400",
                       )}
                     >
@@ -311,7 +311,7 @@ export function ChannelShareCard({
                     <td
                       key={r.channelName}
                       className={cn(
-                        "py-2 pl-3 text-right font-medium",
+                        "py-2 pl-4 text-left font-medium",
                         r.revenue > 0 ? "text-slate-700" : "text-slate-400",
                       )}
                     >
@@ -325,7 +325,7 @@ export function ChannelShareCard({
                     <td
                       key={r.channelName}
                       className={cn(
-                        "py-2 pl-3 text-right",
+                        "py-2 pl-4 text-left",
                         r.count > 0 ? "text-slate-700" : "text-slate-400",
                       )}
                     >
