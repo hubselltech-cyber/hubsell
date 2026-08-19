@@ -39,3 +39,6 @@ pgdata/
 
 # Du an Landing Page doc lap — repo git rieng, khong thuoc repo nay
 /hubsell-landing/
+
+# Thu muc tam cua Claude Code (scratchpad, profile Chrome headless, anh chup test) - chuyen tu o C sang day 19/08
+.claude-tmp/
