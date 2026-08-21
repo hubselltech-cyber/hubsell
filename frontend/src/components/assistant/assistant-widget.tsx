@@ -154,6 +154,13 @@ export function AssistantWidget() {
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
+  // State khởi tạo từ sessionStorage (chỉ có ở client) nên HTML server ≠ client
+  // khi F5 lúc panel đang mở → hydration error. Chữa tận gốc: khung hình đầu
+  // render RỖNG ở cả hai phía cho khớp, sang effect mới hiện — state đã nạp
+  // sẵn từ storage nên panel mở hiện thẳng dạng mở, không chớp nút đóng.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   // Gửi hội thoại vào sessionStorage mỗi lần đổi — remount nạp lại nguyên trạng.
   React.useEffect(() => {
     try {
@@ -247,6 +254,8 @@ export function AssistantWidget() {
   function openLink(href: string) {
     router.push(href);
   }
+
+  if (!mounted) return null;
 
   if (!open) {
     return (
