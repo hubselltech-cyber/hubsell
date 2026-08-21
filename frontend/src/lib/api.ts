@@ -2957,6 +2957,9 @@ export function saveDeliveryFailConfig(input: DeliveryFailConfigDTO) {
 
 export type DeliveryFailChatStatus = "NONE" | "SENT" | "FAILED" | "SKIPPED";
 
+/** saved = chốt giao thành công không hoàn; lost = hủy/hoàn; pending = đang giao. */
+export type DeliveryFailOutcome = "saved" | "lost" | "pending";
+
 export interface DeliveryFailNoticeDTO {
   id: string;
   orderCode: string;
@@ -2965,6 +2968,7 @@ export interface DeliveryFailNoticeDTO {
   channelName: ChannelName;
   shippingStatus: ShippingStatus;
   returnStatus: ReturnStatus;
+  outcome: DeliveryFailOutcome;
   failCount: number;
   detectedAt: string;
   chatStatus: DeliveryFailChatStatus;
@@ -2973,10 +2977,21 @@ export interface DeliveryFailNoticeDTO {
   sentAt: string | null;
 }
 
+/** Báo cáo Kết quả cứu đơn — tính trên TOÀN BỘ lịch sử cảnh báo của chủ shop. */
+export interface DeliveryFailSummaryDTO {
+  total: number;
+  saved: number;
+  lost: number;
+  pending: number;
+  /** Tổng giá trị các đơn cứu được (doanh thu giữ lại, số tham khảo). */
+  savedRevenue: number;
+}
+
 export function fetchDeliveryFailLog() {
-  return apiFetch<{ notices: DeliveryFailNoticeDTO[] }>(
-    "/api/operations/delivery-fail/log"
-  );
+  return apiFetch<{
+    notices: DeliveryFailNoticeDTO[];
+    summary: DeliveryFailSummaryDTO;
+  }>("/api/operations/delivery-fail/log");
 }
 
 // ============================================================

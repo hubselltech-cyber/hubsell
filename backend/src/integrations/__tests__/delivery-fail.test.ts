@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ReturnStatus, ShippingStatus } from "@prisma/client";
 import {
   chatSkipReason,
+  classifyDeliveryFailOutcome,
   countFailedDeliveries,
   DEFAULT_CHAT_TEMPLATE,
   effectiveDeliveryFailConfig,
@@ -73,6 +74,41 @@ describe("renderChatTemplate", () => {
     expect(renderChatTemplate("{ten_san_pham}", { ...vars, productNames: [] })).toBe(
       "sản phẩm bạn đặt"
     );
+  });
+});
+
+describe("classifyDeliveryFailOutcome (báo cáo Kết quả cứu đơn)", () => {
+  it("giao thành công không hoàn = saved", () => {
+    expect(
+      classifyDeliveryFailOutcome({
+        shippingStatus: ShippingStatus.DELIVERED,
+        returnStatus: ReturnStatus.NONE,
+      })
+    ).toBe("saved");
+  });
+
+  it("hủy hoặc dính luồng hoàn = lost — KỂ CẢ đã giao rồi khách mở hoàn", () => {
+    expect(
+      classifyDeliveryFailOutcome({
+        shippingStatus: ShippingStatus.CANCELLED,
+        returnStatus: ReturnStatus.NONE,
+      })
+    ).toBe("lost");
+    expect(
+      classifyDeliveryFailOutcome({
+        shippingStatus: ShippingStatus.DELIVERED,
+        returnStatus: ReturnStatus.AWAITING,
+      })
+    ).toBe("lost");
+  });
+
+  it("còn trên đường = pending", () => {
+    expect(
+      classifyDeliveryFailOutcome({
+        shippingStatus: ShippingStatus.SHIPPING,
+        returnStatus: ReturnStatus.NONE,
+      })
+    ).toBe("pending");
   });
 });
 

@@ -11,8 +11,9 @@ import {
   saveDeliveryFailConfig,
   type DeliveryFailChatStatus,
   type DeliveryFailConfigDTO,
+  type DeliveryFailOutcome,
 } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatVND } from "@/lib/format";
 import { useApiQuery } from "@/lib/use-api-query";
 import { HintIcon } from "@/components/finance/hint-icon";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,13 @@ const CHAT_STATUS_META: Record<
   SENT: { label: "Đã nhắn khách", className: "bg-emerald-100 text-emerald-700" },
   FAILED: { label: "Sàn từ chối", className: "bg-red-100 text-red-700" },
   SKIPPED: { label: "Bỏ qua", className: "bg-amber-100 text-amber-700" },
+};
+
+/** Nhãn + màu cho cột Kết quả của từng đơn từng bị cảnh báo. */
+const OUTCOME_META: Record<DeliveryFailOutcome, { label: string; className: string }> = {
+  saved: { label: "✓ Đã cứu", className: "bg-emerald-100 text-emerald-700" },
+  lost: { label: "Hoàn/hủy", className: "bg-red-100 text-red-700" },
+  pending: { label: "Đang giao lại", className: "bg-amber-100 text-amber-700" },
 };
 
 const QK_CONFIG = ["delivery-fail-config"] as const;
@@ -116,9 +124,69 @@ export function DeliveryFailTab() {
   }
 
   const notices = logQuery.data?.notices ?? [];
+  const summary = logQuery.data?.summary;
+  // Tỷ lệ cứu tính trên đơn ĐÃ NGÃ NGŨ (cứu + mất) — đơn đang giao chưa biết.
+  const decided = (summary?.saved ?? 0) + (summary?.lost ?? 0);
+  const saveRate = summary && decided > 0 ? Math.round((summary.saved / decided) * 100) : null;
 
   return (
     <div className="space-y-5">
+      {/* ===== BÁO CÁO KẾT QUẢ CỨU ĐƠN (toàn bộ lịch sử cảnh báo) ===== */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card size="sm">
+          <CardContent>
+            <p className={TEXT_SUB}>Tổng đơn cảnh báo</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+              {summary?.total ?? "—"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <p className={cn(TEXT_SUB, "flex items-center gap-1.5")}>
+              Cứu được
+              <HintIcon
+                hint={
+                  <span>
+                    Đơn từng bị cảnh báo nhưng chốt <b>giao thành công, không
+                    hoàn</b>. Số tham khảo — không tách được phần shipper tự
+                    giao lại thành công dù shop không gọi khách.
+                  </span>
+                }
+              />
+            </p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-600">
+              {summary?.saved ?? "—"}
+              {saveRate !== null ? (
+                <span className="ml-1.5 text-sm font-medium text-emerald-700/70">
+                  ({saveRate}%)
+                </span>
+              ) : null}
+            </p>
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <p className={TEXT_SUB}>Mất đơn (hoàn/hủy)</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-red-600">
+              {summary?.lost ?? "—"}
+              {summary && summary.pending > 0 ? (
+                <span className="ml-1.5 text-sm font-medium text-slate-400">
+                  · {summary.pending} đang giao
+                </span>
+              ) : null}
+            </p>
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <p className={TEXT_SUB}>Doanh thu giữ lại</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+              {summary ? formatVND(summary.savedRevenue) : "—"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
       {/* ===== CẤU HÌNH: 2 CÔNG TẮC + MẪU TIN NHẮN =====
           (Tên + mô tả tính năng nằm ở nhãn tab — anh Trung chốt 22/08 bỏ khối
           header dài; ghi chú nợ tích hợp gói vào HintIcon cạnh switch chat.) */}
@@ -252,6 +320,7 @@ export function DeliveryFailTab() {
                     <th className="py-2 pr-3 font-medium">Gian</th>
                     <th className="py-2 pr-3 text-center font-medium">Lượt hỏng</th>
                     <th className="py-2 pr-3 font-medium">Phát hiện lúc</th>
+                    <th className="py-2 pr-3 font-medium">Kết quả</th>
                     <th className="py-2 font-medium">Nhắn khách</th>
                   </tr>
                 </thead>
@@ -280,6 +349,13 @@ export function DeliveryFailTab() {
                         </td>
                         <td className="py-2.5 pr-3 whitespace-nowrap tabular-nums text-slate-600">
                           {formatDateTime(n.detectedAt)}
+                        </td>
+                        <td className="py-2.5 pr-3 whitespace-nowrap">
+                          <Badge
+                            className={cn("font-medium", OUTCOME_META[n.outcome].className)}
+                          >
+                            {OUTCOME_META[n.outcome].label}
+                          </Badge>
                         </td>
                         <td className="py-2.5">
                           <Badge className={cn("font-medium", meta.className)}>

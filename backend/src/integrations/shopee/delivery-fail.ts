@@ -105,6 +105,31 @@ export function chatSkipReason(order: {
   return null;
 }
 
+/**
+ * KẾT QUẢ của một đơn từng bị cảnh báo — nguồn cho báo cáo "Kết quả cứu đơn"
+ * (dải số trên tab + cột Kết quả nhật ký), dùng chung mọi sàn:
+ *   · saved   = chốt GIAO THÀNH CÔNG và không hoàn — đơn được cứu.
+ *   · lost    = đơn hủy hoặc rơi vào luồng hoàn — kiện quay đầu.
+ *   · pending = vẫn đang trên đường (còn chờ lượt giao lại).
+ * Lưu ý trung thực: "saved" không tách được phần shipper tự giao lại thành
+ * công — coi là số THAM KHẢO, UI phải chú thích.
+ */
+export type DeliveryFailOutcome = "saved" | "lost" | "pending";
+
+export function classifyDeliveryFailOutcome(order: {
+  shippingStatus: ShippingStatus;
+  returnStatus: ReturnStatus;
+}): DeliveryFailOutcome {
+  if (
+    order.shippingStatus === ShippingStatus.CANCELLED ||
+    order.returnStatus !== ReturnStatus.NONE
+  ) {
+    return "lost";
+  }
+  if (order.shippingStatus === ShippingStatus.DELIVERED) return "saved";
+  return "pending";
+}
+
 /** Cấu hình HIỆU LỰC: chưa có dòng DB = cảnh báo BẬT, auto-chat TẮT. */
 export interface EffectiveDeliveryFailConfig {
   alertEnabled: boolean;

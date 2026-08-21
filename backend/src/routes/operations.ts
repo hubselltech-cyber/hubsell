@@ -43,7 +43,10 @@ import {
   copilotConfigured,
   generateCopilotSuggestion,
 } from "../integrations/ai/copilot";
-import { effectiveDeliveryFailConfig } from "../integrations/shopee/delivery-fail";
+import {
+  classifyDeliveryFailOutcome,
+  effectiveDeliveryFailConfig,
+} from "../integrations/shopee/delivery-fail";
 
 const router = Router();
 
@@ -1229,6 +1232,23 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
         },
       },
     });
+    // ---- BÁO CÁO "KẾT QUẢ CỨU ĐƠN" — tính trên TOÀN BỘ cảnh báo của chủ
+    // shop (bảng trên chỉ hiện 50 dòng mới nhất, số tổng phải đủ lịch sử).
+    const all = await prisma.deliveryFailNotice.findMany({
+      where: { ownerId: req.ownerId! },
+      select: {
+        order: {
+          select: { shippingStatus: true, returnStatus: true, totalAmount: true },
+        },
+      },
+    });
+    const summary = { total: all.length, saved: 0, lost: 0, pending: 0, savedRevenue: 0 };
+    for (const n of all) {
+      const outcome = classifyDeliveryFailOutcome(n.order);
+      summary[outcome]++;
+      if (outcome === "saved") summary.savedRevenue += Number(n.order.totalAmount);
+    }
+
     res.json({
       notices: notices.map((n) => ({
         id: n.id,
@@ -1238,6 +1258,7 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
         channelName: n.order.channel.channelName,
         shippingStatus: n.order.shippingStatus,
         returnStatus: n.order.returnStatus,
+        outcome: classifyDeliveryFailOutcome(n.order),
         failCount: n.failCount,
         detectedAt: n.detectedAt,
         chatStatus: n.chatStatus,
@@ -1245,6 +1266,7 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
         sentMessage: n.sentMessage,
         sentAt: n.sentAt,
       })),
+      summary,
     });
   } catch (err) {
     next(err);
