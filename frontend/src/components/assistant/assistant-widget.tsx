@@ -19,15 +19,73 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Send, Sparkles, X } from "lucide-react";
+import { ArrowRight, Send, X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import {
   askAssistant,
   fetchAssistantSuggestions,
   type AssistantReply,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+/**
+ * ══ NHẬN DIỆN RIÊNG CỦA TRỢ LÝ (chốt 21/08) ══
+ * Trợ lý KHÔNG ăn theo theme accent (--primary đổi theo lựa chọn người dùng)
+ * mà mang bộ màu logo Hubsell: mint #4ade80 → emerald #10b981/#059669 — dải
+ * emerald 400–600 không bị .dark remap nên giữ nguyên sắc thương hiệu ở cả
+ * 2 theme. Riêng band header phải LUÔN TỐI (slate-950 bị .dark đảo thành
+ * trắng) nên nền navy dùng hex cố định có chủ đích.
+ */
+
+/** Chip gợi ý / hỏi lại — viền + chữ emerald, các nấc 50/200/700 đã có remap dark. */
+const CHIP_CLASS =
+  "rounded-full border border-emerald-200 bg-card px-3 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50";
+
+/**
+ * Avatar SVG theo logo: orb navy tối + vành gradient + sparkle AI 4 cánh tô
+ * đúng dải mint→emerald của chữ H mũi tên. Vẽ inline vì logo-hubsell.png nền
+ * trắng đặc (24bpp, không alpha) không đặt lên nền tối được.
+ */
+function AssistantAvatar({ className }: { className?: string }) {
+  const uid = React.useId();
+  const spark = `hb-spark-${uid}`;
+  const orb = `hb-orb-${uid}`;
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden="true" className={className}>
+      <defs>
+        <linearGradient id={spark} x1="12%" y1="88%" x2="88%" y2="12%">
+          <stop offset="0%" stopColor="#4ade80" />
+          <stop offset="55%" stopColor="#2ee08d" />
+          <stop offset="100%" stopColor="#059669" />
+        </linearGradient>
+        <radialGradient id={orb} cx="30%" cy="22%" r="95%">
+          <stop offset="0%" stopColor="#17293f" />
+          <stop offset="100%" stopColor="#050b16" />
+        </radialGradient>
+      </defs>
+      <circle cx="24" cy="24" r="24" fill={`url(#${orb})`} />
+      <circle
+        cx="24"
+        cy="24"
+        r="21.4"
+        fill="none"
+        stroke={`url(#${spark})`}
+        strokeOpacity="0.55"
+        strokeWidth="1.4"
+      />
+      {/* Sparkle chính — cạnh cong lõm kiểu tia AI */}
+      <path
+        d="M23 12.5c1.55 6.9 4.9 10.25 11.8 11.8-6.9 1.55-10.25 4.9-11.8 11.8-1.55-6.9-4.9-10.25-11.8-11.8 6.9-1.55 10.25-4.9 11.8-11.8Z"
+        fill={`url(#${spark})`}
+      />
+      {/* Sparkle phụ nhỏ góc trên phải — điểm nhấn chuyển động đi lên như mũi tên logo */}
+      <path
+        d="M35.2 9.8c.68 2.75 1.97 4.04 4.72 4.72-2.75.68-4.04 1.97-4.72 4.72-.68-2.75-1.97-4.04-4.72-4.72 2.75-.68 4.04-1.97 4.72-4.72Z"
+        fill="#6ee7a7"
+      />
+    </svg>
+  );
+}
 
 interface Msg {
   id: number;
@@ -58,7 +116,7 @@ function MiniBarChart({ points }: { points: { label: string; value: number }[] }
         <div key={i} className="flex min-w-0 flex-1 flex-col items-center gap-0.5">
           <div
             title={`${p.label}: ${p.value.toLocaleString("vi-VN")}₫`}
-            className="w-full rounded-t bg-primary/75"
+            className="w-full rounded-t bg-emerald-500/80"
             style={{ height: `${Math.max(3, Math.round((p.value / max) * 64))}px` }}
           />
           <span className="h-3 truncate text-[9px] tabular-nums text-slate-400">
@@ -199,34 +257,55 @@ export function AssistantWidget() {
           setOpen(true);
         }}
         aria-label="Mở Trợ lý Hubsell"
-        className="fixed bottom-4 right-4 z-40 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-slate-900/20 transition-transform duration-200 hover:scale-105 active:scale-95 motion-reduce:transition-none sm:bottom-6 sm:right-6"
+        className="group fixed bottom-4 right-4 z-40 size-12 rounded-full transition-transform duration-200 hover:scale-105 active:scale-95 motion-reduce:transition-none sm:bottom-6 sm:right-6"
       >
-        <Sparkles className="size-5" />
+        {/* Quầng sáng gradient thở chậm sau orb — hiệu ứng "AI đang trực" */}
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 opacity-50 blur-md transition-opacity duration-300 animate-[pulse_3.5s_ease-in-out_infinite] group-hover:opacity-90 motion-reduce:animate-none"
+        />
+        <AssistantAvatar className="relative size-12 rounded-full shadow-lg shadow-emerald-950/40" />
       </button>
     );
   }
 
   return (
     <div className="fixed bottom-4 right-4 z-40 flex h-[min(37.5rem,calc(100dvh-5rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-xl shadow-slate-900/10 animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none sm:bottom-6 sm:right-6">
-      {/* ── Header ── */}
-      <div className="flex items-center gap-2.5 border-b px-4 py-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Sparkles className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-slate-900">Trợ lý Hubsell</p>
-          <p className="truncate text-xs text-slate-500">
+      {/* ── Header — band navy LUÔN TỐI (nhận diện trợ lý), hex cố định vì
+          slate-950 bị .dark đảo trắng ── */}
+      <div className="relative flex items-center gap-3 overflow-hidden border-b border-white/10 bg-[#0a1424] px-4 py-3">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-8 -top-12 size-32 rounded-full bg-emerald-500/25 blur-2xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-14 right-6 size-28 rounded-full bg-green-400/15 blur-2xl"
+        />
+        <AssistantAvatar className="relative size-9 shrink-0 rounded-full ring-1 ring-white/10" />
+        <div className="relative min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-white">
+            Trợ lý Hubsell
+            <span className="rounded-full bg-gradient-to-r from-green-400 to-emerald-500 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-[#04301f]">
+              AI
+            </span>
+          </p>
+          <p className="flex items-center gap-1.5 truncate text-xs text-[#8fa3bf]">
+            <span
+              aria-hidden
+              className="size-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none"
+            />
             Hỏi số liệu vận hành — trả lời tức thì
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <button
+          type="button"
           aria-label="Đóng trợ lý"
           onClick={() => setOpen(false)}
+          className="relative rounded-md p-1.5 text-[#8fa3bf] transition-colors hover:bg-white/10 hover:text-white"
         >
           <X className="size-4" />
-        </Button>
+        </button>
       </div>
 
       {/* ── Khung hội thoại ── */}
@@ -245,7 +324,7 @@ export function AssistantWidget() {
                   key={s}
                   type="button"
                   onClick={() => void ask({ question: s }, s)}
-                  className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-accent"
+                  className={CHIP_CLASS}
                 >
                   {s}
                 </button>
@@ -258,7 +337,7 @@ export function AssistantWidget() {
           m.role === "user" ? (
             <div
               key={m.id}
-              className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground"
+              className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-gradient-to-br from-emerald-500 to-emerald-600 px-3 py-2 text-sm text-white shadow-sm shadow-emerald-600/20"
             >
               {m.text}
             </div>
@@ -317,7 +396,7 @@ export function AssistantWidget() {
                       onClick={() =>
                         void ask({ intent: c.intent, question: c.label }, c.label)
                       }
-                      className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-accent"
+                      className={CHIP_CLASS}
                     >
                       {c.label}
                     </button>
@@ -333,7 +412,7 @@ export function AssistantWidget() {
                       key={s}
                       type="button"
                       onClick={() => void ask({ question: s }, s)}
-                      className="rounded-full border bg-card px-3 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-accent"
+                      className={CHIP_CLASS}
                     >
                       {s}
                     </button>
@@ -346,7 +425,7 @@ export function AssistantWidget() {
                 <button
                   type="button"
                   onClick={() => openLink(m.reply!.link!.href)}
-                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
                 >
                   {m.reply.link.label}
                   <ArrowRight className="size-3" />
@@ -359,9 +438,9 @@ export function AssistantWidget() {
         {/* Đang tính — ba chấm nhấp nháy */}
         {loading && (
           <div className="mr-auto flex items-center gap-1 rounded-2xl rounded-bl-sm bg-muted px-3 py-2.5">
-            <span className="size-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:0ms]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:0ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:150ms]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-emerald-500 [animation-delay:300ms]" />
           </div>
         )}
       </div>
@@ -377,16 +456,16 @@ export function AssistantWidget() {
           }}
           placeholder="Hỏi về lãi, đơn, tồn kho…"
           maxLength={300}
-          className="h-10 min-w-0 flex-1 rounded-lg border bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+          className="h-10 min-w-0 flex-1 rounded-lg border bg-transparent px-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/25"
         />
-        <Button
+        <button
           type="submit"
-          size="icon-sm"
           aria-label="Gửi câu hỏi"
           disabled={!input.trim() || loading}
+          className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-sm transition-all hover:from-emerald-400 hover:shadow-md hover:shadow-emerald-500/30 active:scale-95 disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
         >
           <Send className="size-4" />
-        </Button>
+        </button>
       </form>
     </div>
   );
