@@ -126,10 +126,12 @@ export function DeliveryFailTab() {
             Cứu đơn giao thất bại
           </CardTitle>
           <CardDescription>
-            Hệ thống đọc hành trình vận chuyển Shopee mỗi giờ. Đơn bị shipper báo
-            giao <b>2 lần không thành công</b> (bất kể lý do) thường chỉ còn một
-            lượt giao cuối trước khi kiện quay đầu — chủ động liên hệ khách lúc
-            này là cứu được đơn. Lazada/TikTok sẽ nối sau khi sàn mở API phù hợp.
+            <b>Shopee</b>: hệ thống đọc hành trình vận chuyển mỗi giờ — đơn bị
+            shipper báo giao <b>2 lần không thành công</b> (bất kể lý do) thường
+            chỉ còn một lượt giao cuối trước khi kiện quay đầu, chủ động liên hệ
+            khách lúc này là cứu được đơn. <b>Lazada</b>: sàn không cho đếm từng
+            lượt — cảnh báo phát ngay khi sàn kết luận giao không thành công
+            (theo dõi đơn 10 phút/lần + webhook). TikTok nối sau khi có API.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-1">
@@ -159,9 +161,10 @@ export function DeliveryFailTab() {
                 Tự nhắn khách qua chat sàn
               </p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Gửi mẫu tin bên dưới cho khách ngay khi phát hiện (chỉ Shopee).
-                Khách chặn shop hoặc hết cửa sổ chat thì sàn từ chối — hệ thống
-                ghi lại lý do và <b>không tự gửi lại</b>, chủ shop nhắn tay.
+                Gửi mẫu tin bên dưới cho khách ngay khi phát hiện — chỉ Shopee
+                (Lazada chưa có API cho shop chủ động nhắn, đơn Lazada chỉ cảnh
+                báo). Khách chặn shop hoặc hết cửa sổ chat thì sàn từ chối — hệ
+                thống ghi lại lý do và <b>không tự gửi lại</b>, chủ shop nhắn tay.
               </p>
             </div>
             <Switch
@@ -263,7 +266,17 @@ export function DeliveryFailTab() {
                         <td className="py-2.5 pr-3">{n.customerName}</td>
                         <td className="py-2.5 pr-3 text-slate-600">{n.shopName}</td>
                         <td className="py-2.5 pr-3 text-center font-semibold tabular-nums text-red-600">
-                          {n.failCount}
+                          {/* 0 = sàn kết luận thất bại nhưng không cho số lượt (Lazada) */}
+                          {n.failCount > 0 ? (
+                            n.failCount
+                          ) : (
+                            <span
+                              className="text-xs font-medium text-amber-700"
+                              title="Sàn báo giao không thành công — Lazada không cung cấp số lượt giao"
+                            >
+                              Sàn báo
+                            </span>
+                          )}
                         </td>
                         <td className="py-2.5 pr-3 whitespace-nowrap tabular-nums text-slate-600">
                           {formatDateTime(n.detectedAt)}

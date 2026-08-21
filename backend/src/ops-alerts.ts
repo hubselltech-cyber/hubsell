@@ -762,7 +762,10 @@ async function detectDeliveryFailed(ownerId: string): Promise<DetectedAlert[]> {
 
   const notices = await prisma.deliveryFailNotice.findMany({
     where: { ownerId, detectedAt: { gte: daysAgo(DELIVERY_FAIL_WINDOW_DAYS) } },
-    select: { chatStatus: true, order: { select: { orderCode: true } } },
+    select: {
+      chatStatus: true,
+      order: { select: { orderCode: true, channel: { select: { channelName: true } } } },
+    },
     orderBy: { detectedAt: "desc" },
   });
   if (notices.length === 0) return [];
@@ -773,22 +776,26 @@ async function detectDeliveryFailed(ownerId: string): Promise<DetectedAlert[]> {
     .join(", ");
   const more = notices.length > 3 ? ` +${notices.length - 3} đơn khác` : "";
   const sent = notices.filter((n) => n.chatStatus === "SENT").length;
+  // Badge sàn trên thẻ: một sàn thì nêu đích danh, lẫn lộn thì liệt kê.
+  const channels = [
+    ...new Set(notices.map((n) => CHANNEL_LABEL[n.order.channel.channelName] ?? n.order.channel.channelName)),
+  ];
   return [
     {
       type: "delivery-fail",
       dedupeKey: "rolling-7d",
       tag: "channel",
       severity: notices.length >= 5 ? "high" : "medium",
-      title: `${notices.length} đơn giao 2 lần KHÔNG thành công — nguy cơ kiện quay đầu`,
+      title: `${notices.length} đơn giao KHÔNG thành công — nguy cơ kiện quay đầu`,
       summary:
-        `${DELIVERY_FAIL_WINDOW_DAYS} ngày qua: ${head}${more} bị shipper báo giao thất bại 2 lần.` +
+        `${DELIVERY_FAIL_WINDOW_DAYS} ngày qua: ${head}${more} bị báo giao thất bại (Shopee: shipper hỏng 2 lượt; Lazada: sàn kết luận giao không thành công).` +
         (sent > 0 ? ` Đã tự nhắn khách ${sent} đơn qua chat sàn.` : "") +
-        " Chủ động gọi khách trước lượt giao cuối — kiện quay đầu là mất phí ship 2 chiều.",
+        " Chủ động gọi khách để cứu đơn — kiện quay đầu là mất phí ship 2 chiều.",
       payload: {
         kind: "navigate",
         href: DELIVERY_FAIL_TAB_HREF,
         label: "Xem nhật ký giao thất bại",
-        source: "Shopee",
+        source: channels.join(" + "),
       },
     },
   ];

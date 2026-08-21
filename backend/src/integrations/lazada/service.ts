@@ -23,6 +23,7 @@ import {
   restoreStockTx,
 } from "../order-stock";
 import { enqueueStockPush } from "../inventory-push";
+import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import {
   createToken,
   getMultipleOrderItems,
@@ -519,6 +520,9 @@ export async function syncLazadaOrders(
           oldAvailable: outcome.stockSync.oldAvailable,
         });
       }
+      // Sàn báo giao không thành công → chuông Cứu đơn giao thất bại (SAU
+      // commit; check thuần trước nên đơn thường không tốn query, tự nuốt lỗi).
+      await noticeLazadaDeliveryFail(channel, order);
     }
   }
 

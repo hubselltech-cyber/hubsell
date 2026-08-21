@@ -19,6 +19,7 @@ import { prisma } from "../../prisma";
 import { getLazadaConfig, type LazadaConfig } from "./config";
 import { getMultipleOrderItems, getOrder } from "./client";
 import { getValidLazadaAccessToken, upsertLazadaOrderTx } from "./service";
+import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import { enqueueStockPush } from "../inventory-push";
 
 // ---------- 1. Xác thực chữ ký ----------
@@ -106,6 +107,9 @@ export async function processLazadaOrderPush(
       oldAvailable: outcome.stockSync.oldAvailable,
     });
   }
+  // Sàn báo giao không thành công → chuông Cứu đơn giao thất bại ngay theo
+  // nhịp webhook (real-time hơn vòng quét 10'). Tự nuốt lỗi, không chặn ack.
+  await noticeLazadaDeliveryFail(channel, order);
   return outcome;
 }
 

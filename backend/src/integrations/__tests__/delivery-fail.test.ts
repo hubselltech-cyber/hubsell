@@ -10,6 +10,7 @@ import {
   effectiveDeliveryFailConfig,
   renderChatTemplate,
 } from "../shopee/delivery-fail";
+import { lazadaOrderDeliveryFailed } from "../lazada/delivery-fail";
 
 describe("countFailedDeliveries", () => {
   it("đếm đúng số mốc FAILED_DELIVERED, bỏ qua mốc thường", () => {
@@ -72,6 +73,22 @@ describe("renderChatTemplate", () => {
     expect(renderChatTemplate("{ten_san_pham}", { ...vars, productNames: [] })).toBe(
       "sản phẩm bạn đặt"
     );
+  });
+});
+
+describe("lazadaOrderDeliveryFailed", () => {
+  it("bắt đủ 3 trạng thái thất bại, kể cả đơn nhiều kiện lệch trạng thái", () => {
+    expect(lazadaOrderDeliveryFailed(["delivered", "failed_delivery"])).toBe(true);
+    expect(lazadaOrderDeliveryFailed(["shipped_back"])).toBe(true);
+    expect(lazadaOrderDeliveryFailed(["shipped_back_success"])).toBe(true);
+    expect(lazadaOrderDeliveryFailed(["FAILED_DELIVERY "])).toBe(true);
+  });
+
+  it("đơn thường / hủy chủ động / thiếu statuses → không báo", () => {
+    expect(lazadaOrderDeliveryFailed(["shipping", "delivered"])).toBe(false);
+    expect(lazadaOrderDeliveryFailed(["canceled"])).toBe(false);
+    expect(lazadaOrderDeliveryFailed([])).toBe(false);
+    expect(lazadaOrderDeliveryFailed(undefined)).toBe(false);
   });
 });
 
