@@ -434,9 +434,14 @@ export function computePnlRow(o: PnlOrder) {
     o.returnStatus !== ReturnStatus.CLAIM_SETTLED;
   const refundRecorded = Number(o.refundedAmount);
   const refundPlatform = Number(o.platformRefundAmount);
+  // Tạm tính hoàn full CHỈ còn cho đơn Lazada chưa được Reverse Order API quét
+  // tới (returnSolution null — cờ AWAITING đến từ order status "returned").
+  // Đã có dữ liệu Reverse mà sàn báo hoàn 0 thì tin số 0 (20/08, sau khi nối
+  // syncLazadaReturns).
   const lazadaLegacyEstimate =
     o.channel.channelName === ChannelName.LAZADA &&
     pendingReturn &&
+    o.returnSolution === null &&
     refundRecorded <= 0 &&
     refundPlatform <= 0;
   const refundedAmount =

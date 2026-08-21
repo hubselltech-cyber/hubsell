@@ -321,3 +321,32 @@ describe("computePnlRow — đơn hủy giao thất bại quay về (ca thật 2
     expect(r.profitAfterTax).toBe(-2700);
   });
 });
+
+describe("computePnlRow — Lazada sau khi nối Reverse Order API (20/08)", () => {
+  it("có dữ liệu Reverse: refund = số sàn báo, KHÔNG còn tạm tính full", () => {
+    const r = computePnlRow(
+      mkOrder({
+        channel: { channelName: ChannelName.LAZADA, shopName: "Hi.Bé" },
+        returnStatus: ReturnStatus.AWAITING,
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformRefundAmount: D(159000),
+        platformReturnStatus: "REQUEST_INITIATE",
+      })
+    );
+    expect(r.refundedAmount).toBe(159000);
+    expect(r.refundSource).toBe("platform");
+  });
+
+  it("Reverse nói KHÔNG hoàn đồng nào (returnSolution có, refund 0) → tin số 0, không bịa", () => {
+    const r = computePnlRow(
+      mkOrder({
+        channel: { channelName: ChannelName.LAZADA, shopName: "Hi.Bé" },
+        returnStatus: ReturnStatus.AWAITING,
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformRefundAmount: D(0),
+      })
+    );
+    expect(r.refundedAmount).toBe(0);
+    expect(r.refundSource).toBeNull();
+  });
+});

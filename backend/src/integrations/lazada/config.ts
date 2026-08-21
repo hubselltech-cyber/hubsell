@@ -56,6 +56,10 @@ export const LAZADA_PATHS = {
   transactionDetails: "/finance/transaction/details/get",
   /** Danh sách ĐỢT CHI TIỀN (payout) về ngân hàng theo kỳ sao kê (READ-ONLY). */
   payoutStatus: "/finance/payout/status/get",
+  /** DS yêu cầu hoàn/hủy (Reverse Order API, READ-ONLY) — nguồn số hoàn của
+   *  sàn: request_type RETURN/ONLY_REFUND, refund_amount từng dòng, tracking
+   *  chiều hoàn. Đối chiếu docs open.lazada.com 19/08/2026. */
+  reverseOrders: "/reverse/getreverseordersforseller",
 
   // ── Trợ lý vận hành (CSKH) — path đã ĐỐI CHIẾU tài liệu open.lazada.com 07/08/2026 ──
   /** Đánh giá của MỘT sản phẩm (item_id BẮT BUỘC — Lazada không có list toàn shop). */

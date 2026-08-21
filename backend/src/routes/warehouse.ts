@@ -10,6 +10,10 @@ import {
   syncShopeeReturns,
   type SyncShopeeReturnsResult,
 } from "../integrations/shopee/returns-sync";
+import {
+  syncLazadaReturns,
+  type SyncLazadaReturnsResult,
+} from "../integrations/lazada/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
 
@@ -257,6 +261,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
       let firstError: string | null = null;
       const warnings: string[] = [];
       const shopeeResults: Array<{ shop: string } & SyncShopeeReturnsResult> = [];
+      const lazadaResults: Array<{ shop: string } & SyncLazadaReturnsResult> = [];
       let anyOk = false;
       for (const channel of realChannels) {
         try {
@@ -281,6 +286,13 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
               daysBack: SYNC_RETURNS_DAYS_BACK,
               byUpdateTime: true,
             });
+            // Reverse Order API — số của sàn về yêu cầu hoàn (giải pháp, tiền
+            // hoàn, SKU trả); ?returnsDaysBack= dùng chung với Shopee để backfill.
+            const lret = await syncLazadaReturns(channel, { daysBack: returnsDaysBack });
+            lazadaResults.push({ shop: channel.shopName, ...lret });
+            console.log(
+              `[Returns sync] Gian Lazada "${channel.shopName}" (${returnsDaysBack} ngày): ${lret.scanned} yêu cầu, +${lret.flagged} chờ về tay, ${lret.unflagged} hạ cờ, ${lret.itemsUpdated} dòng SKU trả`
+            );
           }
           anyOk = true;
         } catch (err) {
@@ -307,6 +319,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
         orderCodes: fresh.map((o) => o.orderCode),
         ...(warnings.length > 0 ? { warnings } : {}),
         shopee: shopeeResults,
+        lazada: lazadaResults,
       });
       return;
     }

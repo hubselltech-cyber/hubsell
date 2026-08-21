@@ -45,6 +45,7 @@ import {
   syncLazadaSettlements,
 } from "./integrations/lazada/service";
 import { syncLazadaPayouts } from "./integrations/lazada/payouts";
+import { syncLazadaReturns } from "./integrations/lazada/returns-sync";
 
 const DEFAULT_INTERVAL_MIN = 10;
 /**
@@ -200,6 +201,27 @@ async function runOnce(): Promise<void> {
         } catch (err) {
           console.error(
             `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
+      }
+
+      // --- ĐƠN HOÀN Lazada (Reverse Order API) — cùng nhịp với Shopee bên
+      // dưới: đọc số của sàn (giải pháp hoàn, tiền hoàn, SKU trả, tracking
+      // chiều hoàn) cho Lãi/Lỗ + danh sách kho. Lỗi riêng không chặn luồng khác.
+      if (channel.channelName === ChannelName.LAZADA && isLazadaConfigured()) {
+        try {
+          const ret = await syncLazadaReturns(channel, {
+            daysBack: settleSweep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
+          });
+          if (ret.flagged > 0 || ret.unflagged > 0 || ret.itemsUpdated > 0) {
+            console.log(
+              `[Auto-sync] Đơn hoàn Lazada "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.itemsUpdated} dòng SKU trả (${ret.scanned} yêu cầu)`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi quét đơn hoàn Lazada "${channel.shopName}":`,
             (err as Error).message
           );
         }

@@ -420,6 +420,98 @@ export function lazadaChannelSku(opts: {
   return `LZD-${opts.itemId ?? "0"}-${opts.skuId ?? "0"}`;
 }
 
+// ---------- Reverse Order API (hoàn/trả — READ-ONLY) ----------
+
+/**
+ * MỘT DÒNG của yêu cầu hoàn (mỗi dòng = MỘT ĐƠN VỊ hàng, cùng quy ước với dòng
+ * đơn Lazada). Sàn trả toàn chuỗi — parse số ở tầng dùng. Đối chiếu response
+ * example docs GetReverseOrdersForSeller 19/08/2026.
+ */
+export interface LazadaReverseOrderLine {
+  reverse_order_line_id?: string | number;
+  trade_order_line_id?: string | number;
+  seller_sku_id?: string;
+  platform_sku_id?: string;
+  /** "true"/"false" dạng chuỗi — dòng này có hoàn tiền cho khách không. */
+  is_need_refund?: string | boolean;
+  refund_amount?: string | number;
+  item_unit_price?: string | number;
+  /** Trạng thái yêu cầu hoàn của dòng (vd REQUEST_INITIATE...) — docs KHÔNG
+   *  liệt kê đủ enum, lưu nguyên văn, chỉ nhận diện chết qua CANCEL/REJECT. */
+  reverse_status?: string;
+  /** Trạng thái kho vận chiều hoàn (vd RETURN_CANCELED, INITIAL...). */
+  ofc_status?: string;
+  /** QC kho: scrap / return_to_merchant / return_to_customer / not_returned... */
+  whqc_decision?: string;
+  tracking_number?: string;
+  reason_text?: string;
+  reason_code?: string | number;
+  return_order_line_gmt_create?: string | number;
+  return_order_line_gmt_modified?: string | number;
+  is_dispute?: string | boolean;
+  [k: string]: unknown;
+}
+
+export interface LazadaReverseOrder {
+  reverse_order_id?: string | number;
+  trade_order_id?: string | number;
+  /** CANCEL (hủy trước giao) / RETURN / ONLY_REFUND... — docs không liệt kê đủ. */
+  request_type?: string;
+  /** true = kiện hoàn trả về NGƯỜI BÁN (RTM), false = về kho sàn (RTW). */
+  is_rtm?: string | boolean;
+  reverse_order_lines?: LazadaReverseOrderLine[];
+  /** GetReverseOrderDetail đặt tên khác cho cùng mảng dòng. */
+  reverseOrderLineDTOList?: LazadaReverseOrderLine[];
+  [k: string]: unknown;
+}
+
+interface LazadaReverseOrdersData extends LazadaEnvelope {
+  result?: {
+    total?: string | number;
+    page_no?: string | number;
+    page_size?: string | number;
+    items?: LazadaReverseOrder[];
+  };
+}
+
+export interface LazadaReverseOrdersParams {
+  accessToken: string;
+  /** Trang bắt đầu từ 1 (response example "page_no": "1"). */
+  pageNo: number;
+  pageSize?: number;
+  /** Lọc theo BIẾN ĐỘNG dòng hoàn — MILI-GIÂY. */
+  modifiedFromMs?: number;
+  modifiedToMs?: number;
+}
+
+/** DS yêu cầu hoàn/hủy của shop — trang kết quả + tổng để caller tự phân trang. */
+export async function getReverseOrders(
+  params: LazadaReverseOrdersParams,
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<{ items: LazadaReverseOrder[]; total: number }> {
+  const data = await callLazada<LazadaReverseOrdersData>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.reverseOrders,
+    {
+      access_token: params.accessToken,
+      page_no: String(params.pageNo),
+      page_size: String(params.pageSize ?? 50),
+      ...(params.modifiedFromMs != null
+        ? { ReverseOrderLineModifiedTimeRangeStart: String(params.modifiedFromMs) }
+        : {}),
+      ...(params.modifiedToMs != null
+        ? { ReverseOrderLineModifiedTimeRangeEnd: String(params.modifiedToMs) }
+        : {}),
+    },
+    "reverse/getreverseordersforseller",
+    cfg
+  );
+  return {
+    items: data.result?.items ?? [],
+    total: Number(data.result?.total ?? 0) || 0,
+  };
+}
+
 // ---------- Cập nhật tồn kho lên sàn ----------
 
 /** Escape 5 ký tự đặc biệt XML — SellerSku người bán đặt có thể chứa "&", "<"... */
