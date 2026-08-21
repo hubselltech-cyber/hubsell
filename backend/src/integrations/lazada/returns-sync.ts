@@ -113,8 +113,14 @@ export function planLazadaReturnUpdate(
     }
   }
 
+  // Chuẩn hoá về MILI-GIÂY: data thật trả GIÂY (10 chữ số) dù docs ghi ms —
+  // giá trị < 1e12 coi là giây (probe 20/08: gmt_modified 1734669213).
+  const toMs = (v: string | number | undefined) => {
+    const n = Number(v ?? 0) || 0;
+    return n > 0 && n < 1e12 ? n * 1000 : n;
+  };
   const lineMs = (l: LazadaReverseOrderLine) =>
-    Number(l.return_order_line_gmt_modified ?? l.return_order_line_gmt_create ?? 0) || 0;
+    toMs(l.return_order_line_gmt_modified ?? l.return_order_line_gmt_create);
 
   if (aliveLines.length === 0) {
     if (order.returnStatus === ReturnStatus.AWAITING) {
@@ -161,9 +167,7 @@ export function planLazadaReturnUpdate(
       .map(({ line }) => line.tracking_number?.trim())
       .find(Boolean) ?? null;
   const requestedMs = Math.min(
-    ...aliveLines.map(
-      ({ line }) => Number(line.return_order_line_gmt_create ?? 0) || nowMs
-    )
+    ...aliveLines.map(({ line }) => toMs(line.return_order_line_gmt_create) || nowMs)
   );
 
   if (order.returnStatus === ReturnStatus.NONE && !refundOnly) {
@@ -255,8 +259,10 @@ export async function syncLazadaReturns(
         accessToken,
         pageNo,
         pageSize: 50,
-        modifiedFromMs: from,
-        modifiedToMs: to,
+        // GIÂY, không phải ms: docs ghi "Milliseconds" nhưng data thật trả
+        // timestamp GIÂY (probe 20/08) — truyền cùng đơn vị với data của sàn.
+        modifiedFromMs: Math.floor(from / 1000),
+        modifiedToMs: Math.floor(to / 1000),
       });
       for (const ro of page.items) {
         const key = String(ro.reverse_order_id ?? `${ro.trade_order_id}-${pageNo}`);

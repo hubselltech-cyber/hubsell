@@ -208,3 +208,31 @@ describe("planLazadaReturnUpdate — chỉ hoàn tiền / hủy / chết", () =>
     expect(plan.data.platformReturnStatus).toBe("RETURN_CANCELED");
   });
 });
+
+describe("planLazadaReturnUpdate — timestamp GIÂY của sàn (probe 20/08)", () => {
+  it("gmt_create dạng GIÂY được nhân 1000 — mốc báo hoàn không rơi về 1970", () => {
+    const sec = 1_755_500_000; // giây
+    const plan = planLazadaReturnUpdate(
+      [
+        {
+          request_type: "RETURN",
+          reverse_order_lines: [
+            {
+              seller_sku_id: "JS008",
+              is_need_refund: true,
+              refund_amount: 71027,
+              reverse_status: "REFUND_SUCCESS",
+              return_order_line_gmt_create: sec,
+              return_order_line_gmt_modified: sec + 100,
+            },
+          ],
+        },
+      ],
+      noneOrder,
+      NOW_MS
+    );
+    expect(plan.data.returnRequestedAt).toEqual(new Date(sec * 1000));
+    expect(plan.data.platformRefundAmount).toBe(71027);
+    expect(plan.data.platformReturnStatus).toBe("REFUND_SUCCESS");
+  });
+});
