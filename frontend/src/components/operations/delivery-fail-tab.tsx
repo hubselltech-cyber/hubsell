@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BellRing, MessageSquare, PackageX, Save, Truck } from "lucide-react";
+import { BellRing, MessageSquare, PackageX, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { useApiQuery } from "@/lib/use-api-query";
+import { HintIcon } from "@/components/finance/hint-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +29,7 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * TAB "GIAO KHÔNG THÀNH CÔNG" — Cứu đơn giao thất bại (tên tạm, 21/08).
+ * TAB "CỨU ĐƠN GIAO THẤT BẠI" (anh Trung chốt tên 22/08).
  *
  * Worker backend quét Shopee mỗi giờ, đơn bị shipper báo giao thất bại 2 lượt
  * thì phát chuông + (tuỳ công tắc) tự nhắn khách qua cổng chat sẵn có. Tab này
@@ -118,22 +119,10 @@ export function DeliveryFailTab() {
 
   return (
     <div className="space-y-5">
-      {/* ===== CẤU HÌNH: 2 CÔNG TẮC + MẪU TIN NHẮN ===== */}
+      {/* ===== CẤU HÌNH: 2 CÔNG TẮC + MẪU TIN NHẮN =====
+          (Tên + mô tả tính năng nằm ở nhãn tab — anh Trung chốt 22/08 bỏ khối
+          header dài; ghi chú nợ tích hợp gói vào HintIcon cạnh switch chat.) */}
       <Card className="border-violet-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Truck className="size-4.5 text-violet-600" />
-            Cứu đơn giao thất bại
-          </CardTitle>
-          <CardDescription>
-            <b>Shopee</b>: hệ thống đọc hành trình vận chuyển mỗi giờ — đơn bị
-            shipper báo giao <b>2 lần không thành công</b> (bất kể lý do) thường
-            chỉ còn một lượt giao cuối trước khi kiện quay đầu, chủ động liên hệ
-            khách lúc này là cứu được đơn. <b>Lazada</b>: sàn không cho đếm từng
-            lượt — cảnh báo phát ngay khi sàn kết luận giao không thành công
-            (theo dõi đơn 10 phút/lần + webhook). TikTok nối sau khi có API.
-          </CardDescription>
-        </CardHeader>
         <CardContent className="space-y-1">
           <div className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
             <BellRing className="mt-0.5 size-4.5 shrink-0 text-violet-600" />
@@ -157,14 +146,25 @@ export function DeliveryFailTab() {
           <div className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
             <MessageSquare className="mt-0.5 size-4.5 shrink-0 text-violet-600" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                 Tự nhắn khách qua chat sàn
+                {/* Bọc MỘT <span>: TooltipContent là inline-flex, fragment nhiều
+                    mảnh sẽ bị xếp thành cột dọc vỡ bố cục. */}
+                <HintIcon
+                  hint={
+                    <span>
+                      Nợ tích hợp chờ làm: <b>Lazada</b> mới dừng ở cảnh báo —
+                      sàn chưa có API cho shop chủ động nhắn nên chưa tự gửi tin
+                      được; <b>TikTok Shop</b> chưa nối cảnh báo (chờ API). Sàn
+                      mở API là cắm thêm vào đây.
+                    </span>
+                  }
+                />
               </p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Gửi mẫu tin bên dưới cho khách ngay khi phát hiện — chỉ Shopee
-                (Lazada chưa có API cho shop chủ động nhắn, đơn Lazada chỉ cảnh
-                báo). Khách chặn shop hoặc hết cửa sổ chat thì sàn từ chối — hệ
-                thống ghi lại lý do và <b>không tự gửi lại</b>, chủ shop nhắn tay.
+                Gửi mẫu tin bên dưới cho khách ngay khi phát hiện — chỉ Shopee.
+                Khách chặn shop hoặc hết cửa sổ chat thì sàn từ chối — hệ thống
+                ghi lại lý do và <b>không tự gửi lại</b>, chủ shop nhắn tay.
               </p>
             </div>
             <Switch

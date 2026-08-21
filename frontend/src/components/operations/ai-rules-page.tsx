@@ -91,7 +91,7 @@ type AiRulesTab = "reviews" | "delivery-fail";
 
 const TAB_ITEMS: { id: AiRulesTab; label: string }[] = [
   { id: "reviews", label: "Phản hồi đánh giá" },
-  { id: "delivery-fail", label: "Giao không thành công" },
+  { id: "delivery-fail", label: "Cứu đơn giao thất bại" },
 ];
 
 export function OperationsAiRulesPage() {
