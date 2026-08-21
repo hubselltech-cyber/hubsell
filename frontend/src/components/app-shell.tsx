@@ -40,6 +40,7 @@ import {
   isPlatformWorkspace,
 } from "@/lib/permissions";
 import { prefetchRoute } from "@/lib/prefetch";
+import { themeBaseIsSystem } from "@/lib/theme";
 import { TEXT_PAGE_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -337,12 +338,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Dark mode: resolvedTheme chỉ đáng tin sau khi mount (SSR không biết
   // localStorage) — chưa mount thì icon nút chuyển phải render trung lập
   // để không lệch hydration
-  const { resolvedTheme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme, systemTheme } = useTheme();
   const [themeReady, setThemeReady] = useState(false);
   useEffect(() => {
     setThemeReady(true);
   }, []);
   const isDark = themeReady && resolvedTheme === "dark";
+
+  // Nút mặt trăng trên header. Bẫy đã sửa (anh Trung báo 22/08): next-themes
+  // chỉ nhớ MỘT giá trị nên bấm nút này từng ghim cứng "light"/"dark" và lặng
+  // lẽ HỦY lựa chọn "Theo hệ thống" trong Cấu hình chung. Giờ khi lựa chọn
+  // GỐC là theo hệ thống (themeBaseIsSystem), nút chỉ là GHI ĐÈ TẠM: gạt về
+  // đúng chế độ mà máy đang chỉ thì trả lại "system" — Cấu hình giữ nguyên.
+  function toggleDisplayMode() {
+    const next = isDark ? "light" : "dark";
+    if (themeBaseIsSystem() && next === systemTheme) {
+      setTheme("system");
+      return;
+    }
+    setTheme(next);
+  }
   // openMenus là NGUỒN CHÂN LÝ DUY NHẤT cho việc nhóm nào đang xoè: route chỉ
   // được "gieo" nhóm vào đây lúc mount/điều hướng, KHÔNG ép mở khi render —
   // ép mở là người dùng hết cụp tay được nhóm chứa trang đang xem.
@@ -711,7 +726,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               variant="outline"
               size="icon-sm"
               aria-label={isDark ? "Chuyển giao diện sáng" : "Chuyển giao diện tối"}
-              onClick={() => setTheme(isDark ? "light" : "dark")}
+              onClick={toggleDisplayMode}
             >
               {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </Button>

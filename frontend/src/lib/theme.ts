@@ -69,3 +69,34 @@ export function applyTheme(theme: ThemeId): void {
     // Không lưu được thì theme vẫn áp cho phiên hiện tại — không cần báo lỗi.
   }
 }
+
+// ─── LỰA CHỌN GỐC của CHẾ ĐỘ HIỂN THỊ (sáng/tối/theo hệ thống) ───
+//
+// Vấn đề (anh Trung báo 22/08): next-themes chỉ nhớ MỘT giá trị — chọn "Theo
+// hệ thống" trong Cấu hình xong, bấm nút mặt trăng trên header một phát là nó
+// ghim cứng "light"/"dark", lặng lẽ HỦY lựa chọn theo hệ thống; hôm sau mở
+// máy thấy Cấu hình tự tick "Sáng" mà không hiểu vì sao.
+//
+// Giải pháp: nhớ thêm LỰA CHỌN GỐC ở key riêng. Khi gốc là "system", nút
+// mặt trăng chỉ là GHI ĐÈ TẠM — gạt về đúng chế độ mà hệ điều hành đang chỉ
+// thì trả lại "system" (không ghim cứng), Cấu hình giữ nguyên tick.
+
+const THEME_BASE_KEY = "hubsell-theme-base";
+
+/** Ghi lựa chọn gốc khi người dùng bấm chọn trong Cấu hình chung. */
+export function setThemeBase(mode: "light" | "dark" | "system"): void {
+  try {
+    localStorage.setItem(THEME_BASE_KEY, mode);
+  } catch {
+    // localStorage bị chặn → nút header rơi về hành vi 2 trạng thái cũ.
+  }
+}
+
+/** true = lựa chọn gốc của người dùng là "Theo hệ thống". */
+export function themeBaseIsSystem(): boolean {
+  try {
+    return localStorage.getItem(THEME_BASE_KEY) === "system";
+  } catch {
+    return false;
+  }
+}

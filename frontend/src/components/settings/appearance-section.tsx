@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   applyTheme,
   getStoredTheme,
+  setThemeBase,
   THEMES,
   type ThemeId,
 } from "@/lib/theme";
@@ -76,6 +77,9 @@ function DisplayModeSection() {
                 aria-checked={active}
                 onClick={() => {
                   setTheme(m.id);
+                  // Ghi LỰA CHỌN GỐC: chọn "Theo hệ thống" ở đây thì nút mặt
+                  // trăng trên header chỉ còn là ghi đè tạm (xem lib/theme.ts).
+                  setThemeBase(m.id);
                   toast.success(`Đã đổi chế độ hiển thị: ${m.label}`);
                 }}
                 className={cn(
