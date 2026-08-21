@@ -68,6 +68,36 @@ export function buildAuthorizeUrl(
   return `${SHOPEE_AUTH_URLS[cfg.env]}?${qs}`;
 }
 
+/**
+ * Dựng URL trang uỷ quyền theo LUỒNG CŨ (auth_partner, ký sign như public API).
+ * Announcement 902 xác nhận luồng này vẫn hợp lệ — dùng làm mặc định vì trang
+ * /auth mới đá seller sang cổng developer (bug sàn, ticket 11/08 chưa hồi âm).
+ *
+ * Khác luồng mới: KHÔNG có tham số `state` chuẩn, nên `state` được nhét thẳng
+ * vào query của `redirect` — Shopee chỉ kiểm DOMAIN của redirect và khi xong
+ * sẽ append `code` + `shop_id` vào chính URL đó, callback đọc state như cũ.
+ * Link mang timestamp + sign nên HẾT HẠN ~5 PHÚT — FE phải xin link mới mỗi
+ * lần bấm Kết nối (đang đúng như vậy: GET /shopee/auth-url lúc click).
+ */
+export function buildLegacyAuthorizeUrl(
+  redirectUri: string,
+  state: string,
+  cfg: ShopeeConfig = getShopeeConfig()
+): string {
+  const path = SHOPEE_PATHS.authPartner;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signPublic(cfg.partnerKey, cfg.partnerId, path, timestamp);
+  const sep = redirectUri.includes("?") ? "&" : "?";
+  const redirect = `${redirectUri}${sep}state=${encodeURIComponent(state)}`;
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    sign,
+    redirect,
+  }).toString();
+  return `${cfg.apiBase}${path}?${qs}`;
+}
+
 // ---------- Kiểu dữ liệu Shopee trả về ----------
 
 /** Bao ngoài chuẩn của Shopee: `error` rỗng ("") là thành công. */

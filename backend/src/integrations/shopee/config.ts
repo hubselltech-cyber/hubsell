@@ -34,17 +34,30 @@ const SHOPEE_HOSTS = {
   production: "https://partner.shopeemobile.com",
 } as const;
 
-// URL trang uỷ quyền MỚI (developer-guide/20, Shopee xác nhận qua ticket 08/2026):
-// URL cố định, KHÔNG ký sign/timestamp, tham số auth_type=seller. Trang cũ
-// /api/v2/shop/auth_partner đá seller sang cổng developer nên khách không tự
-// liên kết được — đó chính là bug đã report.
+// URL trang uỷ quyền MỚI (developer-guide/20): URL cố định, KHÔNG ký
+// sign/timestamp, tham số auth_type=seller.
+// ⚠ 08/2026: TRANG NÀY DÍNH BUG PHÍA SÀN — seller đăng nhập xong bị đá sang
+// cổng developer (ticket 2086736099706646528 gửi 11/08, sàn chưa trả lời).
+// Announcement 902 xác nhận luồng CŨ /api/v2/shop/auth_partner vẫn hợp lệ
+// ("can still be used") nên mặc định đã chuyển về luồng cũ — xem
+// SHOPEE_AUTH_FLOW bên dưới; khi sàn sửa bug thì đặt env SHOPEE_AUTH_FLOW=new.
 export const SHOPEE_AUTH_URLS = {
   sandbox: "https://open.sandbox.test-stable.shopee.com/auth",
   production: "https://open.shopee.com/auth",
 } as const;
 
+/**
+ * Luồng sinh link uỷ quyền đang dùng: "legacy" (auth_partner ký sign — mặc
+ * định, vì trang /auth mới bug) hoặc "new" (open.shopee.com/auth).
+ */
+export function getShopeeAuthFlow(): "legacy" | "new" {
+  return process.env.SHOPEE_AUTH_FLOW === "new" ? "new" : "legacy";
+}
+
 // Đường dẫn API cố định (dùng để ghép chữ ký — path là một phần của base string).
 export const SHOPEE_PATHS = {
+  /** Trang uỷ quyền LUỒNG CŨ (ký sign như public API, mở bằng trình duyệt). */
+  authPartner: "/api/v2/shop/auth_partner",
   /** Đổi code → access_token/refresh_token (public API). */
   tokenGet: "/api/v2/auth/token/get",
   /** Làm mới access_token bằng refresh_token (public API). */

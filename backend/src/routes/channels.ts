@@ -32,8 +32,15 @@ import {
   syncLazadaOrders,
   syncLazadaSettlements,
 } from "../integrations/lazada/service";
-import { isShopeeConfigured, getShopeeConfig } from "../integrations/shopee/config";
-import { buildAuthorizeUrl as buildShopeeAuthorizeUrl } from "../integrations/shopee/client";
+import {
+  isShopeeConfigured,
+  getShopeeConfig,
+  getShopeeAuthFlow,
+} from "../integrations/shopee/config";
+import {
+  buildAuthorizeUrl as buildShopeeAuthorizeUrl,
+  buildLegacyAuthorizeUrl as buildShopeeLegacyAuthorizeUrl,
+} from "../integrations/shopee/client";
 import {
   handleShopeeCallback,
   signOauthState as signShopeeState,
@@ -361,8 +368,11 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
 // &shop_id=&state= → BE (routes/auth.ts) đổi token + lưu Channel + redirect về FE.
 // ============================================================
 
-// GET /api/channels/shopee/auth-url — trả URL uỷ quyền Shopee (luồng mới, không ký).
+// GET /api/channels/shopee/auth-url — trả URL uỷ quyền Shopee.
 // State mang ownerId (JWT ngắn hạn) để callback công khai biết kết nối cho ai.
+// Mặc định dùng LUỒNG CŨ ký sign (auth_partner) vì trang /auth mới đá seller
+// sang cổng developer (bug sàn, ticket 11/08 chưa hồi âm; announcement 902 xác
+// nhận luồng cũ vẫn hợp lệ). Sàn sửa bug thì đặt env SHOPEE_AUTH_FLOW=new.
 router.get("/shopee/auth-url", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     if (!isShopeeConfigured()) {
@@ -391,9 +401,14 @@ router.get("/shopee/auth-url", requireAdmin, async (req: AuthRequest, res, next)
     }
     const cfg = getShopeeConfig();
     const state = signShopeeState(req.ownerId!, channelId);
-    // Luồng mới: state đi qua tham số chuẩn của link uỷ quyền, Shopee trả
-    // nguyên vẹn về redirect_uri kèm &code=&shop_id=.
-    res.json({ url: buildShopeeAuthorizeUrl(cfg.redirectUri, state, cfg) });
+    // Luồng cũ: state nhét trong query của redirect (Shopee chỉ kiểm domain);
+    // luồng mới: state đi qua tham số chuẩn. Cả hai đều đổ về callback kèm
+    // &code=&shop_id=&state=. Link luồng cũ hết hạn ~5' — FE xin link lúc click.
+    const url =
+      getShopeeAuthFlow() === "new"
+        ? buildShopeeAuthorizeUrl(cfg.redirectUri, state, cfg)
+        : buildShopeeLegacyAuthorizeUrl(cfg.redirectUri, state, cfg);
+    res.json({ url });
   } catch (err) {
     next(err);
   }
