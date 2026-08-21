@@ -525,6 +525,77 @@ export async function getTrackingNumber(
   return data.response?.tracking_number?.trim() || null;
 }
 
+// ---------- Hành trình vận chuyển chiều đi (get_tracking_info) ----------
+
+/** Một mốc trong hành trình vận chuyển của đơn (tracking_info[]). */
+export interface ShopeeTrackingEvent {
+  update_time?: number;
+  description?: string;
+  /** Enum TrackingLogisticsStatus (docs 21/08): DELIVERY_PENDING / DELIVERED /
+   *  FAILED_DELIVERED (giao thất bại MỘT LƯỢT) / RETURN_* / CANCELED... */
+  logistics_status?: string;
+  [k: string]: unknown;
+}
+
+export interface ShopeeTrackingInfoData extends ShopeeEnvelope {
+  response?: {
+    order_sn?: string;
+    /** Trạng thái cấp ĐƠN (enum LogisticsStatus) — LOGISTICS_DELIVERY_FAILED
+     *  chỉ nhảy khi đơn bị hủy hẳn vì giao thất bại, nên muốn bắt "2 lượt"
+     *  phải đếm mốc trong tracking_info chứ không nhìn trường này. */
+    logistics_status?: string;
+    tracking_info?: ShopeeTrackingEvent[];
+  };
+}
+
+/**
+ * Hành trình vận chuyển CHIỀU ĐI của một đơn (1 call / 1 đơn — dùng tiết chế).
+ * Nguồn duy nhất đếm được số lượt giao thất bại: webhook không có sự kiện này.
+ */
+export async function getTrackingInfo(
+  accessToken: string,
+  shopId: string,
+  orderSn: string,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeTrackingInfoData> {
+  return callShopGet<ShopeeTrackingInfoData>(
+    SHOPEE_PATHS.trackingInfo,
+    accessToken,
+    shopId,
+    [["order_sn", orderSn]],
+    "get_tracking_info",
+    cfg
+  );
+}
+
+/**
+ * user_id NGƯỜI MUA của một đơn — tham số to_id bắt buộc khi chủ động nhắn
+ * khách (auto-chat giao thất bại). Luồng đồng bộ đơn thường KHÔNG xin field
+ * này (ORDER_DETAIL_FIELDS) nên lúc cần gửi mới hỏi riêng, không đổi schema.
+ */
+export async function getOrderBuyerUserId(
+  accessToken: string,
+  shopId: string,
+  orderSn: string,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<number | null> {
+  const data = await callShopGet<ShopeeOrderDetailData>(
+    SHOPEE_PATHS.orderDetail,
+    accessToken,
+    shopId,
+    [
+      ["order_sn_list", orderSn],
+      ["response_optional_fields", "buyer_user_id"],
+    ],
+    "get_order_detail",
+    cfg
+  );
+  const raw = (data.response?.order_list?.[0] as { buyer_user_id?: unknown } | undefined)
+    ?.buyer_user_id;
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 // ---------- Kéo sản phẩm (Product API v2) ----------
 
 /** Các trạng thái item — get_item_list mặc định chỉ trả NORMAL, phải khai đủ. */

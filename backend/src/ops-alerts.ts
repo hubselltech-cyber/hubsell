@@ -28,6 +28,10 @@ import { getAdsTotalBalance } from "./integrations/shopee/client";
 import { getValidShopeeAccessToken } from "./integrations/shopee/service";
 import { getAdsCampaignList, lazAdsNum } from "./integrations/lazada/client";
 import { getValidLazadaAccessToken } from "./integrations/lazada/service";
+import {
+  DELIVERY_FAIL_TAB_HREF,
+  effectiveDeliveryFailConfig,
+} from "./integrations/shopee/delivery-fail";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -741,6 +745,55 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
   return alerts;
 }
 
+/** Cửa sổ thẻ tổng hợp giao thất bại — đơn phát hiện cũ hơn đã tự an bài. */
+const DELIVERY_FAIL_WINDOW_DAYS = 7;
+
+/**
+ * GIAO THẤT BẠI: gom các đơn chạm ngưỡng "2 lượt giao không thành công" trong
+ * 7 ngày thành MỘT thẻ (giống thẻ đơn lỗ) — chuông từng đơn đã bắn ngay lúc
+ * worker phát hiện, thẻ này là tầng nhìn tổng cho Trung tâm điều hành.
+ * Nguồn: bảng DeliveryFailNotice do scanShopeeDeliveryFails ghi.
+ */
+async function detectDeliveryFailed(ownerId: string): Promise<DetectedAlert[]> {
+  const cfg = effectiveDeliveryFailConfig(
+    await prisma.deliveryFailConfig.findUnique({ where: { ownerId } })
+  );
+  if (!cfg.alertEnabled) return [];
+
+  const notices = await prisma.deliveryFailNotice.findMany({
+    where: { ownerId, detectedAt: { gte: daysAgo(DELIVERY_FAIL_WINDOW_DAYS) } },
+    select: { chatStatus: true, order: { select: { orderCode: true } } },
+    orderBy: { detectedAt: "desc" },
+  });
+  if (notices.length === 0) return [];
+
+  const head = notices
+    .slice(0, 3)
+    .map((n) => n.order.orderCode)
+    .join(", ");
+  const more = notices.length > 3 ? ` +${notices.length - 3} đơn khác` : "";
+  const sent = notices.filter((n) => n.chatStatus === "SENT").length;
+  return [
+    {
+      type: "delivery-fail",
+      dedupeKey: "rolling-7d",
+      tag: "channel",
+      severity: notices.length >= 5 ? "high" : "medium",
+      title: `${notices.length} đơn giao 2 lần KHÔNG thành công — nguy cơ kiện quay đầu`,
+      summary:
+        `${DELIVERY_FAIL_WINDOW_DAYS} ngày qua: ${head}${more} bị shipper báo giao thất bại 2 lần.` +
+        (sent > 0 ? ` Đã tự nhắn khách ${sent} đơn qua chat sàn.` : "") +
+        " Chủ động gọi khách trước lượt giao cuối — kiện quay đầu là mất phí ship 2 chiều.",
+      payload: {
+        kind: "navigate",
+        href: DELIVERY_FAIL_TAB_HREF,
+        label: "Xem nhật ký giao thất bại",
+        source: "Shopee",
+      },
+    },
+  ];
+}
+
 // ════════════ ĐỢT 3 — KHUNG CHỜ TRIỂN KHAI (làm cả thể khi có API TikTok) ════════════
 //
 // Quyết định 06/08/2026 (anh Trung): Đợt 3 CHỈ dựng khung đặc tả, triển khai
@@ -812,6 +865,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectSyncStalled,
       detectAdsSpike,
       detectShopeeAdsAssistant,
+      detectDeliveryFailed,
     ];
     for (const detect of detectors) {
       try {

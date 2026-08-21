@@ -39,6 +39,7 @@ import {
   backfillShopeeTrackingCodes,
   syncShopeeReturns,
 } from "./integrations/shopee/returns-sync";
+import { scanShopeeDeliveryFails } from "./integrations/shopee/delivery-fail";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -374,6 +375,22 @@ async function runOnce(): Promise<void> {
             } catch (err) {
               console.error(
                 `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
+                (err as Error).message
+              );
+            }
+            // CỨU ĐƠN GIAO THẤT BẠI (nhịp giờ, 1 call/đơn có tiết chế): đếm
+            // mốc FAILED_DELIVERED trong get_tracking_info, chạm 2 lượt →
+            // chuông + (tuỳ config) auto-chat. Lỗi riêng không chặn luồng khác.
+            try {
+              const df = await scanShopeeDeliveryFails(channel);
+              if (df.noticed > 0) {
+                console.log(
+                  `[Auto-sync] Giao thất bại Shopee "${channel.shopName}": +${df.noticed} đơn chạm ngưỡng (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua) / ${df.scanned} đơn quét`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi quét giao thất bại gian "${channel.shopName}":`,
                 (err as Error).message
               );
             }

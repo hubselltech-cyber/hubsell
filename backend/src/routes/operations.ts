@@ -43,6 +43,7 @@ import {
   copilotConfigured,
   generateCopilotSuggestion,
 } from "../integrations/ai/copilot";
+import { effectiveDeliveryFailConfig } from "../integrations/shopee/delivery-fail";
 
 const router = Router();
 
@@ -53,6 +54,8 @@ router.use("/conversations", requirePermission("operations.chat"));
 router.use("/product-context", requirePermission("operations.chat"));
 router.use("/reviews", requirePermission("operations.reviews"));
 router.use("/copilot-suggest", requirePermission("operations.chat", "operations.reviews"));
+// Cứu đơn giao thất bại nằm trong màn Cấu hình kịch bản AI → cùng lá quyền.
+router.use("/delivery-fail", requirePermission("operations.ai-rules"));
 
 // ---------- Shape chuẩn hoá trả cho frontend ----------
 
@@ -1148,6 +1151,101 @@ router.post("/copilot-suggest", async (req: AuthRequest, res, next) => {
         typeof channelLabel === "string" && channelLabel.trim() ? channelLabel : null,
     });
     res.json(suggestion);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// CỨU ĐƠN GIAO THẤT BẠI — cấu hình + nhật ký (tab "Giao không thành công")
+//
+// Worker scanShopeeDeliveryFails (order-auto-sync nhịp giờ) là bên GHI notice;
+// ba route dưới chỉ đọc/ghi cấu hình theo CHỦ SHOP (req.ownerId — nhân viên
+// được tick lá operations.ai-rules thao tác trên cấu hình của chủ).
+// ============================================================
+
+router.get("/delivery-fail/config", async (req: AuthRequest, res, next) => {
+  try {
+    const row = await prisma.deliveryFailConfig.findUnique({
+      where: { ownerId: req.ownerId! },
+    });
+    // Trả bản HIỆU LỰC (template rỗng đã điền mặc định) — ô soạn thảo hiện
+    // đúng câu sẽ được gửi, không bắt người dùng đoán mặc định là gì.
+    res.json(effectiveDeliveryFailConfig(row));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/delivery-fail/config", async (req: AuthRequest, res, next) => {
+  try {
+    const { alertEnabled, autoChatEnabled, chatTemplate } = req.body ?? {};
+    if (
+      typeof alertEnabled !== "boolean" ||
+      typeof autoChatEnabled !== "boolean" ||
+      typeof chatTemplate !== "string"
+    ) {
+      res.status(400).json({ error: "Thiếu alertEnabled / autoChatEnabled / chatTemplate" });
+      return;
+    }
+    const data = {
+      alertEnabled,
+      autoChatEnabled,
+      chatTemplate: chatTemplate.trim().slice(0, 1000),
+    };
+    const row = await prisma.deliveryFailConfig.upsert({
+      where: { ownerId: req.ownerId! },
+      create: { ownerId: req.ownerId!, ...data },
+      update: data,
+    });
+    res.json(effectiveDeliveryFailConfig(row));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
+  try {
+    const notices = await prisma.deliveryFailNotice.findMany({
+      where: { ownerId: req.ownerId! },
+      orderBy: { detectedAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        failCount: true,
+        detectedAt: true,
+        chatStatus: true,
+        chatError: true,
+        sentMessage: true,
+        sentAt: true,
+        order: {
+          select: {
+            orderCode: true,
+            customerName: true,
+            shippingStatus: true,
+            returnStatus: true,
+            channel: { select: { shopName: true, channelName: true } },
+          },
+        },
+      },
+    });
+    res.json({
+      notices: notices.map((n) => ({
+        id: n.id,
+        orderCode: n.order.orderCode,
+        customerName: n.order.customerName,
+        shopName: n.order.channel.shopName,
+        channelName: n.order.channel.channelName,
+        shippingStatus: n.order.shippingStatus,
+        returnStatus: n.order.returnStatus,
+        failCount: n.failCount,
+        detectedAt: n.detectedAt,
+        chatStatus: n.chatStatus,
+        chatError: n.chatError,
+        sentMessage: n.sentMessage,
+        sentAt: n.sentAt,
+      })),
+    });
   } catch (err) {
     next(err);
   }

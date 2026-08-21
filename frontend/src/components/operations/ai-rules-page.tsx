@@ -5,6 +5,7 @@ import { BellRing, Bot, MessageSquare, RotateCcw, Save, Star } from "lucide-reac
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import { DeliveryFailTab } from "@/components/operations/delivery-fail-tab";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import {
   DEFAULT_AUTO_REPLY_STARS,
@@ -85,9 +86,26 @@ const STAR_SWITCH_ROWS: { star: StarLevel; dot: string; note?: string }[] = [
   { star: "1", dot: "🔴", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
 ];
 
+/** Hai tab của màn Cấu hình kịch bản AI (pill-tab tự làm — app chưa có ui/tabs). */
+type AiRulesTab = "reviews" | "delivery-fail";
+
+const TAB_ITEMS: { id: AiRulesTab; label: string }[] = [
+  { id: "reviews", label: "Phản hồi đánh giá" },
+  { id: "delivery-fail", label: "Giao không thành công" },
+];
+
 export function OperationsAiRulesPage() {
   const [rules, setRules] = useState(DEFAULT_RULES);
   const [tone, setTone] = useState("FRIENDLY");
+
+  // Tab đang mở. Deep-link ?tab=delivery-fail (chuông + thẻ Trung tâm điều
+  // hành trỏ tới) đọc ở effect — search param chỉ có phía client, đọc lúc
+  // render đầu sẽ lệch SSR/CSR.
+  const [tab, setTab] = useState<AiRulesTab>("reviews");
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    if (wanted === "delivery-fail") setTab("delivery-fail");
+  }, []);
 
   // ── Cờ tự động phản hồi theo số sao (CẤU HÌNH THẬT — reviews-page đọc) ──
   // Nạp bản đã lưu ở useEffect (tránh lệch SSR/CSR như templates bên dưới);
@@ -149,6 +167,29 @@ export function OperationsAiRulesPage() {
 
   return (
     <OperationsFrame>
+      {/* ===== THANH PILL-TAB: Phản hồi đánh giá | Giao không thành công ===== */}
+      <div className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+        {TAB_ITEMS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors",
+              tab === t.id
+                ? "bg-background text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "delivery-fail" ? (
+        <DeliveryFailTab />
+      ) : (
+        <>
       {/* ===== MẪU CÂU PHẢN HỒI ĐÁNH GIÁ (RANDOMIZER CHỐNG SPAM TRÙNG) ===== */}
       <Card>
         <CardHeader>
@@ -319,6 +360,8 @@ export function OperationsAiRulesPage() {
           </CardContent>
         </Card>
       </div>
+        </>
+      )}
     </OperationsFrame>
   );
 }

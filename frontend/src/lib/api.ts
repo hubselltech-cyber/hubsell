@@ -2933,6 +2933,53 @@ export function fetchOpsProductContext(params: {
 }
 
 // ============================================================
+// CỨU ĐƠN GIAO THẤT BẠI — tab "Giao không thành công" (Cấu hình kịch bản AI)
+// Worker backend quét Shopee mỗi giờ; frontend chỉ đọc/ghi cấu hình + nhật ký.
+// ============================================================
+
+export interface DeliveryFailConfigDTO {
+  alertEnabled: boolean;
+  autoChatEnabled: boolean;
+  /** Template hiệu lực — backend đã điền mặc định khi chủ shop để trống. */
+  chatTemplate: string;
+}
+
+export function fetchDeliveryFailConfig() {
+  return apiFetch<DeliveryFailConfigDTO>("/api/operations/delivery-fail/config");
+}
+
+export function saveDeliveryFailConfig(input: DeliveryFailConfigDTO) {
+  return apiFetch<DeliveryFailConfigDTO>("/api/operations/delivery-fail/config", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export type DeliveryFailChatStatus = "NONE" | "SENT" | "FAILED" | "SKIPPED";
+
+export interface DeliveryFailNoticeDTO {
+  id: string;
+  orderCode: string;
+  customerName: string;
+  shopName: string;
+  channelName: ChannelName;
+  shippingStatus: ShippingStatus;
+  returnStatus: ReturnStatus;
+  failCount: number;
+  detectedAt: string;
+  chatStatus: DeliveryFailChatStatus;
+  chatError: string | null;
+  sentMessage: string | null;
+  sentAt: string | null;
+}
+
+export function fetchDeliveryFailLog() {
+  return apiFetch<{ notices: DeliveryFailNoticeDTO[] }>(
+    "/api/operations/delivery-fail/log"
+  );
+}
+
+// ============================================================
 // MẠNG LƯỚI KOC & AFFILIATE — dữ liệu affiliate THẬT từ đối soát sàn
 // (Order.affiliateFee: Shopee AMS escrow / Lazada Finance API). Chi tiết
 // nguồn số xem backend/src/routes/koc.ts.

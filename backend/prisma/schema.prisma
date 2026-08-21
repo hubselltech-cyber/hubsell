@@ -1056,6 +1056,7 @@ model Order {
   items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
   invoiceLogs   InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
   lazadaSettlement LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
+  deliveryFailNotice DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -1713,4 +1714,61 @@ model AssistantQueryLog {
   @@index([ownerId, createdAt])
   @@index([outcome, createdAt])
   @@map("assistant_query_log")
+}
+
+// ============================================================
+// CỨU ĐƠN GIAO THẤT BẠI (delivery-fail, 21/08) — tab "Giao không thành công"
+// trong Cấu hình kịch bản AI: worker đếm mốc FAILED_DELIVERED trong
+// get_tracking_info Shopee, chạm ngưỡng 2 lượt thì phát cảnh báo + (tuỳ chọn)
+// tự nhắn khách qua cổng chat sẵn có.
+// ============================================================
+
+/// Kết quả auto-chat của một cảnh báo giao thất bại.
+enum DeliveryFailChatStatus {
+  NONE // chỉ cảnh báo — auto-chat đang tắt lúc phát hiện
+  SENT // đã gửi tin nhắn cho khách qua chat sàn
+  FAILED // sàn từ chối gửi (khách chặn, hết cửa sổ chat…) — KHÔNG tự retry
+  SKIPPED // đơn đã hủy/đang hoàn lúc phát hiện — nhắn khách không còn ý nghĩa
+}
+
+/// Cấu hình "Cứu đơn giao thất bại" — 1 dòng/chủ shop. Không có dòng = mặc
+/// định: cảnh báo BẬT, auto-chat TẮT, template mặc định trong code.
+model DeliveryFailConfig {
+  id      String @id @default(cuid())
+  ownerId String @unique
+  /// Bật chuông + thẻ Trung tâm điều hành khi phát hiện đơn chạm ngưỡng.
+  alertEnabled Boolean @default(true)
+  /// Tự nhắn khách qua chat sàn ngay khi phát hiện (cổng chờ nối chat —
+  /// mặc định TẮT, chủ shop tin thì bật).
+  autoChatEnabled Boolean @default(false)
+  /// Mẫu tin nhắn gửi khách. Rỗng = dùng template mặc định trong code.
+  /// Biến: {ten_khach} {ma_don} {ten_san_pham}.
+  chatTemplate String  @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("delivery_fail_config")
+}
+
+/// Một đơn ĐÃ chạm ngưỡng giao thất bại — orderId unique vừa là chống trùng
+/// (mỗi đơn cảnh báo đúng một lần, không đốt quota hỏi lại) vừa là nhật ký UI.
+model DeliveryFailNotice {
+  id      String @id @default(cuid())
+  ownerId String
+  orderId String @unique
+  /// Số mốc giao thất bại đếm được lúc phát hiện (≥ ngưỡng 2).
+  failCount  Int
+  detectedAt DateTime @default(now())
+
+  chatStatus DeliveryFailChatStatus @default(NONE)
+  /// Thông điệp lỗi sàn trả khi gửi chat thất bại — hiện trần cho chủ shop.
+  chatError String?
+  /// Nguyên văn tin đã gửi (audit — template có thể đổi sau này).
+  sentMessage String?
+  sentAt      DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, detectedAt])
+  @@map("delivery_fail_notices")
 }

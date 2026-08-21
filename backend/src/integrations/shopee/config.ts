@@ -128,6 +128,9 @@ export const SHOPEE_PATHS = {
   returnDetail: "/api/v2/returns/get_return_detail",
   /** Mã vận đơn CHIỀU ĐI của một đơn (order detail v2 không còn trả tracking). */
   trackingNumber: "/api/v2/logistics/get_tracking_number",
+  /** Hành trình vận chuyển CHIỀU ĐI của một đơn — nguồn đếm mốc giao thất bại
+   *  (tracking_info[].logistics_status = FAILED_DELIVERED, docs xác minh 21/08). */
+  trackingInfo: "/api/v2/logistics/get_tracking_info",
 } as const;
 
 /**
