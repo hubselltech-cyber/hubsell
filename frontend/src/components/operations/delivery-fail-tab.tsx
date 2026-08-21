@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BellRing, MessageSquare, PackageX, Save } from "lucide-react";
+import {
+  BellRing,
+  MessageSquare,
+  PackageCheck,
+  PackageX,
+  Save,
+  Wallet,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -13,8 +20,10 @@ import {
   type DeliveryFailConfigDTO,
   type DeliveryFailOutcome,
 } from "@/lib/api";
-import { formatDateTime, formatVND } from "@/lib/format";
+import { formatDateTime, formatNumber } from "@/lib/format";
 import { useApiQuery } from "@/lib/use-api-query";
+import { CHANNEL_META } from "@/lib/channel-meta";
+import { StatCard } from "@/components/dashboard/stat-card";
 import { HintIcon } from "@/components/finance/hint-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +34,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Money } from "@/components/ui/money";
 import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -34,8 +52,9 @@ import { cn } from "@/lib/utils";
  *
  * Worker backend quét Shopee mỗi giờ, đơn bị shipper báo giao thất bại 2 lượt
  * thì phát chuông + (tuỳ công tắc) tự nhắn khách qua cổng chat sẵn có. Tab này
- * chỉ là mặt cấu hình + nhật ký: 2 công tắc lưu ngay khi gạt, template chỉnh
- * xong bấm Lưu, bảng dưới là các đơn đã chạm ngưỡng.
+ * là mặt cấu hình + báo cáo: dải StatCard (cùng khuôn thẻ chỉ số Tổng quan),
+ * 2 công tắc lưu ngay khi gạt, mẫu tin chỉnh xong bấm Lưu, nhật ký dùng bộ
+ * Table quy chuẩn — mọi thứ ăn theo design system, không tự chế kiểu riêng.
  */
 
 const TEMPLATE_VARS = ["{ten_khach}", "{ma_don}", "{ten_san_pham}"] as const;
@@ -75,125 +94,135 @@ export function DeliveryFailTab() {
     refetchInterval: 5 * 60 * 1000,
   });
 
-  // Bản đang chỉnh trên màn — nạp từ server MỘT lần khi có data (không đè
-  // template người dùng đang gõ dở mỗi lượt refetch nền).
-  const [config, setConfig] = useState<DeliveryFailConfigDTO | null>(null);
+  // Tách BẢN SERVER (cfg — công tắc + template đã lưu) khỏi BẢN NHÁP template
+  // đang gõ: gạt công tắc chỉ lưu cờ kèm template ĐÃ LƯU, không âm thầm lưu
+  // luôn đoạn đang gõ dở; nút "Lưu mẫu tin" chỉ sáng khi nháp khác bản lưu.
+  const [cfg, setCfg] = useState<DeliveryFailConfigDTO | null>(null);
+  const [template, setTemplate] = useState("");
   const loadedRef = useRef(false);
   useEffect(() => {
     if (configQuery.data && !loadedRef.current) {
       loadedRef.current = true;
-      setConfig(configQuery.data);
+      setCfg(configQuery.data);
+      setTemplate(configQuery.data.chatTemplate);
     }
   }, [configQuery.data]);
 
   const [saving, setSaving] = useState(false);
+  const templateDirty = cfg !== null && template.trim() !== cfg.chatTemplate.trim();
 
-  async function persist(next: DeliveryFailConfigDTO, successMessage: string) {
+  /** Lưu một bản cấu hình đầy đủ; trả bản server đã chốt (null nếu lỗi). */
+  async function persist(
+    next: DeliveryFailConfigDTO,
+    successMessage: string
+  ): Promise<DeliveryFailConfigDTO | null> {
     setSaving(true);
     try {
       const saved = await saveDeliveryFailConfig(next);
-      setConfig(saved);
+      setCfg(saved);
       queryClient.setQueryData(QK_CONFIG, saved);
       toast.success(successMessage);
+      return saved;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không lưu được cấu hình");
+      return null;
     } finally {
       setSaving(false);
     }
   }
 
-  function toggleFlag(key: "alertEnabled" | "autoChatEnabled", value: boolean) {
-    if (!config) return;
-    const next = { ...config, [key]: value };
-    setConfig(next);
-    void persist(
-      next,
+  async function toggleFlag(key: "alertEnabled" | "autoChatEnabled", value: boolean) {
+    if (!cfg) return;
+    const before = cfg;
+    setCfg({ ...cfg, [key]: value }); // optimistic — switch nảy ngay
+    const saved = await persist(
+      { ...before, [key]: value },
       key === "alertEnabled"
         ? value
-          ? "Đã BẬT cảnh báo giao thất bại — áp dụng từ lượt quét kế tiếp (mỗi giờ)."
+          ? "Đã bật cảnh báo giao thất bại — áp dụng từ lượt quét kế tiếp (mỗi giờ)."
           : "Đã tắt cảnh báo giao thất bại."
         : value
-          ? "Đã BẬT tự nhắn khách khi phát hiện — dùng mẫu tin bên dưới."
+          ? "Đã bật tự nhắn khách — dùng mẫu tin bên dưới."
           : "Đã tắt tự nhắn khách (chỉ còn cảnh báo)."
     );
+    if (!saved) setCfg(before); // lỗi mạng → trả switch về trạng thái cũ
+  }
+
+  async function saveTemplate() {
+    if (!cfg) return;
+    const saved = await persist(
+      { ...cfg, chatTemplate: template },
+      template.trim()
+        ? "Đã lưu mẫu tin nhắn."
+        : "Đã quay về mẫu tin mặc định."
+    );
+    if (saved) setTemplate(saved.chatTemplate);
   }
 
   function insertVar(v: string) {
-    if (!config) return;
-    setConfig({ ...config, chatTemplate: `${config.chatTemplate.trimEnd()} ${v}` });
+    setTemplate((prev) => `${prev.trimEnd()} ${v}`.trimStart());
   }
 
   const notices = logQuery.data?.notices ?? [];
   const summary = logQuery.data?.summary;
   // Tỷ lệ cứu tính trên đơn ĐÃ NGÃ NGŨ (cứu + mất) — đơn đang giao chưa biết.
   const decided = (summary?.saved ?? 0) + (summary?.lost ?? 0);
-  const saveRate = summary && decided > 0 ? Math.round((summary.saved / decided) * 100) : null;
+  const saveRate =
+    summary && decided > 0 ? Math.round((summary.saved / decided) * 100) : null;
 
   return (
     <div className="space-y-5">
-      {/* ===== BÁO CÁO KẾT QUẢ CỨU ĐƠN (toàn bộ lịch sử cảnh báo) ===== */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card size="sm">
-          <CardContent>
-            <p className={TEXT_SUB}>Tổng đơn cảnh báo</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
-              {summary?.total ?? "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent>
-            <p className={cn(TEXT_SUB, "flex items-center gap-1.5")}>
-              Cứu được
-              <HintIcon
-                hint={
-                  <span>
-                    Đơn từng bị cảnh báo nhưng chốt <b>giao thành công, không
-                    hoàn</b>. Số tham khảo — không tách được phần shipper tự
-                    giao lại thành công dù shop không gọi khách.
-                  </span>
-                }
-              />
-            </p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-600">
-              {summary?.saved ?? "—"}
-              {saveRate !== null ? (
-                <span className="ml-1.5 text-sm font-medium text-emerald-700/70">
-                  ({saveRate}%)
-                </span>
-              ) : null}
-            </p>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent>
-            <p className={TEXT_SUB}>Mất đơn (hoàn/hủy)</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-red-600">
-              {summary?.lost ?? "—"}
-              {summary && summary.pending > 0 ? (
-                <span className="ml-1.5 text-sm font-medium text-slate-400">
-                  · {summary.pending} đang giao
-                </span>
-              ) : null}
-            </p>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent>
-            <p className={TEXT_SUB}>Doanh thu giữ lại</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
-              {summary ? formatVND(summary.savedRevenue) : "—"}
-            </p>
-          </CardContent>
-        </Card>
+      {/* ===== BÁO CÁO KẾT QUẢ CỨU ĐƠN — cùng khuôn thẻ chỉ số Tổng quan ===== */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Đơn được cảnh báo"
+          value={summary ? formatNumber(summary.total) : "—"}
+          icon={BellRing}
+          tone="neutral"
+          subtitle="Toàn bộ lịch sử — mỗi đơn cảnh báo một lần"
+        />
+        <StatCard
+          label="Cứu được"
+          value={summary ? formatNumber(summary.saved) : "—"}
+          icon={PackageCheck}
+          tone="positive"
+          colorValue
+          subtitle={
+            saveRate !== null
+              ? `Tỷ lệ cứu ${saveRate}% — giao thành công, không hoàn`
+              : "Giao thành công, không hoàn (số tham khảo)"
+          }
+        />
+        <StatCard
+          label="Mất đơn"
+          value={summary ? formatNumber(summary.lost) : "—"}
+          icon={PackageX}
+          tone="negative"
+          colorValue
+          subtitle={
+            summary && summary.pending > 0
+              ? `Hoàn hoặc hủy — còn ${formatNumber(summary.pending)} đơn đang giao lại`
+              : "Hoàn hoặc hủy sau cảnh báo"
+          }
+        />
+        <StatCard
+          label="Doanh thu giữ lại"
+          value={summary ? <Money value={summary.savedRevenue} /> : "—"}
+          icon={Wallet}
+          tone="positive"
+          subtitle="Tổng giá trị các đơn cứu được"
+        />
       </div>
+
       {/* ===== CẤU HÌNH: 2 CÔNG TẮC + MẪU TIN NHẮN =====
           (Tên + mô tả tính năng nằm ở nhãn tab — anh Trung chốt 22/08 bỏ khối
           header dài; ghi chú nợ tích hợp gói vào HintIcon cạnh switch chat.) */}
-      <Card className="border-violet-200">
+      <Card>
         <CardContent className="space-y-1">
-          <div className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
-            <BellRing className="mt-0.5 size-4.5 shrink-0 text-violet-600" />
+          <div className="flex items-start gap-3.5 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-50">
+              <BellRing className="size-5 text-violet-600" />
+            </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-900">
                 Cảnh báo cho chủ shop
@@ -204,15 +233,17 @@ export function DeliveryFailTab() {
               </p>
             </div>
             <Switch
-              checked={config?.alertEnabled ?? true}
-              disabled={!config || saving}
-              onCheckedChange={(v) => toggleFlag("alertEnabled", v)}
+              checked={cfg?.alertEnabled ?? true}
+              disabled={!cfg || saving}
+              onCheckedChange={(v) => void toggleFlag("alertEnabled", v)}
               aria-label="Bật/tắt cảnh báo giao thất bại"
             />
           </div>
 
-          <div className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
-            <MessageSquare className="mt-0.5 size-4.5 shrink-0 text-violet-600" />
+          <div className="flex items-start gap-3.5 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-50">
+              <MessageSquare className="size-5 text-violet-600" />
+            </div>
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                 Tự nhắn khách qua chat sàn
@@ -236,24 +267,28 @@ export function DeliveryFailTab() {
               </p>
             </div>
             <Switch
-              checked={config?.autoChatEnabled ?? false}
-              disabled={!config || saving}
-              onCheckedChange={(v) => toggleFlag("autoChatEnabled", v)}
+              checked={cfg?.autoChatEnabled ?? false}
+              disabled={!cfg || saving}
+              onCheckedChange={(v) => void toggleFlag("autoChatEnabled", v)}
               aria-label="Bật/tắt tự nhắn khách khi giao thất bại"
             />
           </div>
 
           {/* ----- Mẫu tin nhắn ----- */}
-          <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+          <div className="mt-1 space-y-2 rounded-lg border border-slate-200 bg-slate-50/50 p-3.5">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold text-slate-900">Mẫu tin nhắn gửi khách</p>
-              <div className="ml-auto flex flex-wrap gap-1.5">
+              <p className="text-sm font-semibold text-slate-900">
+                Mẫu tin nhắn gửi khách
+              </p>
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                <span className={TEXT_SUB}>Chèn biến:</span>
                 {TEMPLATE_VARS.map((v) => (
                   <button
                     key={v}
                     type="button"
                     onClick={() => insertVar(v)}
-                    className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-slate-700 transition-colors hover:bg-violet-100"
+                    disabled={!cfg}
+                    className="rounded-md border border-slate-200 bg-background px-1.5 py-0.5 font-mono text-[11px] text-slate-700 shadow-xs transition-colors hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                     title={`Chèn biến ${v} vào cuối mẫu`}
                   >
                     {v}
@@ -262,25 +297,23 @@ export function DeliveryFailTab() {
               </div>
             </div>
             <textarea
-              value={config?.chatTemplate ?? ""}
-              onChange={(e) =>
-                config && setConfig({ ...config, chatTemplate: e.target.value })
-              }
+              value={template}
+              onChange={(e) => setTemplate(e.target.value)}
               rows={3}
-              disabled={!config}
+              disabled={!cfg}
               aria-label="Mẫu tin nhắn gửi khách khi giao thất bại"
-              className="w-full rounded-lg border border-input bg-background p-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="w-full resize-y rounded-lg border border-input bg-background p-2.5 text-sm leading-relaxed shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
             />
             <div className="flex items-center gap-2">
               <p className={cn(TEXT_SUB, "flex-1")}>
-                Xoá trắng rồi Lưu để quay về mẫu mặc định.
+                {templateDirty
+                  ? "Mẫu tin có thay đổi chưa lưu."
+                  : "Xoá trắng rồi Lưu để quay về mẫu mặc định."}
               </p>
               <Button
                 size="sm"
-                disabled={!config || saving}
-                onClick={() =>
-                  config && void persist(config, "Đã lưu mẫu tin nhắn giao thất bại.")
-                }
+                disabled={!cfg || saving || !templateDirty}
+                onClick={() => void saveTemplate()}
               >
                 <Save className="size-4" />
                 Lưu mẫu tin
@@ -298,92 +331,112 @@ export function DeliveryFailTab() {
             Nhật ký đơn giao thất bại
           </CardTitle>
           <CardDescription>
-            Mỗi đơn chỉ cảnh báo một lần, mới nhất xếp trên. Cột trạng thái cho
-            biết hệ thống đã nhắn được khách hay chưa.
+            Mỗi đơn chỉ cảnh báo một lần, mới nhất xếp trên — bấm chuông thông
+            báo cũng dẫn về đây.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0 pb-0">
           {logQuery.loading ? (
-            <p className={TEXT_SUB}>Đang tải nhật ký…</p>
-          ) : notices.length === 0 ? (
-            <p className={TEXT_SUB}>
-              Chưa có đơn nào chạm ngưỡng 2 lần giao không thành công — tin tốt!
-              Danh sách sẽ tự cập nhật theo lượt quét mỗi giờ.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-slate-500">
-                    <th className="py-2 pr-3 font-medium">Đơn hàng</th>
-                    <th className="py-2 pr-3 font-medium">Khách</th>
-                    <th className="py-2 pr-3 font-medium">Gian</th>
-                    <th className="py-2 pr-3 text-center font-medium">Lượt hỏng</th>
-                    <th className="py-2 pr-3 font-medium">Phát hiện lúc</th>
-                    <th className="py-2 pr-3 font-medium">Kết quả</th>
-                    <th className="py-2 font-medium">Nhắn khách</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {notices.map((n) => {
-                    const meta = CHAT_STATUS_META[n.chatStatus];
-                    return (
-                      <tr key={n.id} className="border-b last:border-0 align-top">
-                        <td className="py-2.5 pr-3 font-mono text-xs font-medium text-slate-900">
-                          {n.orderCode}
-                        </td>
-                        <td className="py-2.5 pr-3">{n.customerName}</td>
-                        <td className="py-2.5 pr-3 text-slate-600">{n.shopName}</td>
-                        <td className="py-2.5 pr-3 text-center font-semibold tabular-nums text-red-600">
-                          {/* 0 = sàn kết luận thất bại nhưng không cho số lượt (Lazada) */}
-                          {n.failCount > 0 ? (
-                            n.failCount
-                          ) : (
-                            <span
-                              className="text-xs font-medium text-amber-700"
-                              title="Sàn báo giao không thành công — Lazada không cung cấp số lượt giao"
-                            >
-                              Sàn báo
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 pr-3 whitespace-nowrap tabular-nums text-slate-600">
-                          {formatDateTime(n.detectedAt)}
-                        </td>
-                        <td className="py-2.5 pr-3 whitespace-nowrap">
-                          <Badge
-                            className={cn("font-medium", OUTCOME_META[n.outcome].className)}
-                          >
-                            {OUTCOME_META[n.outcome].label}
-                          </Badge>
-                        </td>
-                        <td className="py-2.5">
-                          <Badge className={cn("font-medium", meta.className)}>
-                            {meta.label}
-                          </Badge>
-                          {n.chatStatus === "FAILED" && n.chatError ? (
-                            <p className="mt-1 max-w-64 text-xs text-red-600">
-                              {n.chatError}
-                            </p>
-                          ) : null}
-                          {n.chatStatus === "SKIPPED" && n.chatError ? (
-                            <p className="mt-1 text-xs text-slate-500">{n.chatError}</p>
-                          ) : null}
-                          {n.chatStatus === "SENT" && n.sentMessage ? (
-                            <p
-                              className="mt-1 max-w-64 truncate text-xs text-slate-500"
-                              title={n.sentMessage}
-                            >
-                              “{n.sentMessage}”
-                            </p>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            // Skeleton 3 dòng — giữ chiều cao ổn định, không nhảy layout
+            <div className="space-y-2 px-5 pb-5">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />
+              ))}
             </div>
+          ) : notices.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-5 pt-2 pb-10 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-emerald-50">
+                <PackageCheck className="size-6 text-emerald-500" />
+              </div>
+              <p className="text-sm font-medium text-slate-900">
+                Chưa có đơn nào giao thất bại
+              </p>
+              <p className={cn(TEXT_SUB, "max-w-sm")}>
+                Hệ thống đang canh mỗi giờ. Đơn chạm ngưỡng sẽ hiện ở đây kèm
+                chuông thông báo — anh chị không cần mở trang chờ.
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Đơn hàng</TableHead>
+                  <TableHead>Gian hàng</TableHead>
+                  <TableHead>Khách</TableHead>
+                  <TableHead className="text-center">Lượt hỏng</TableHead>
+                  <TableHead>Phát hiện lúc</TableHead>
+                  <TableHead>Kết quả</TableHead>
+                  <TableHead>Nhắn khách</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {notices.map((n) => {
+                  const chat = CHAT_STATUS_META[n.chatStatus];
+                  const outcome = OUTCOME_META[n.outcome];
+                  const channel = CHANNEL_META[n.channelName];
+                  return (
+                    <TableRow key={n.id}>
+                      <TableCell className="font-mono text-xs font-medium">
+                        {n.orderCode}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={channel.className}>
+                            {channel.label}
+                          </Badge>
+                          <span className="text-slate-600">{n.shopName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-slate-600">
+                        {n.customerName}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {/* 0 = sàn kết luận thất bại nhưng không cho số lượt (Lazada) */}
+                        {n.failCount > 0 ? (
+                          <span className="font-semibold tabular-nums text-red-600">
+                            {n.failCount}
+                          </span>
+                        ) : (
+                          <span
+                            className="text-xs font-medium text-amber-700"
+                            title="Sàn báo giao không thành công — Lazada không cung cấp số lượt giao"
+                          >
+                            Sàn báo
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-slate-600">
+                        {formatDateTime(n.detectedAt)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={outcome.className}>{outcome.label}</Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-normal">
+                        <Badge className={chat.className}>{chat.label}</Badge>
+                        {n.chatStatus === "FAILED" && n.chatError ? (
+                          <p className="mt-1 max-w-64 text-xs text-red-600">
+                            {n.chatError}
+                          </p>
+                        ) : null}
+                        {n.chatStatus === "SKIPPED" && n.chatError ? (
+                          <p className="mt-1 max-w-64 text-xs text-slate-500">
+                            {n.chatError}
+                          </p>
+                        ) : null}
+                        {n.chatStatus === "SENT" && n.sentMessage ? (
+                          <p
+                            className="mt-1 max-w-64 truncate text-xs text-slate-500"
+                            title={n.sentMessage}
+                          >
+                            “{n.sentMessage}”
+                          </p>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
