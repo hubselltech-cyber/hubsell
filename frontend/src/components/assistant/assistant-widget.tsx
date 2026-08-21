@@ -52,6 +52,8 @@ function AssistantAvatar({ className }: { className?: string }) {
   const uid = React.useId();
   const spark = `hb-spark-${uid}`;
   const orb = `hb-orb-${uid}`;
+  const halo = `hb-halo-${uid}`;
+  const shadow = `hb-shadow-${uid}`;
   return (
     <svg viewBox="0 0 48 48" aria-hidden="true" className={className}>
       <defs>
@@ -64,8 +66,27 @@ function AssistantAvatar({ className }: { className?: string }) {
           <stop offset="0%" stopColor="#17293f" />
           <stop offset="100%" stopColor="#050b16" />
         </radialGradient>
+        {/* Quầng sáng tỏa sau mũi tên — như được rọi đèn từ trong orb */}
+        <radialGradient id={halo} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+          <stop offset="60%" stopColor="#10b981" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+        </radialGradient>
+        <filter id={shadow} x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="0.8" stdDeviation="0.9" floodColor="#02100a" floodOpacity="0.55" />
+        </filter>
       </defs>
       <circle cx="24" cy="24" r="24" fill={`url(#${orb})`} />
+      <circle cx="25" cy="22.5" r="14.5" fill={`url(#${halo})`} />
+      {/* Phản quang mép trên — cảm giác quả cầu kính */}
+      <path
+        d="M8.5 14.5 A19 19 0 0 1 23.5 5.5"
+        fill="none"
+        stroke="#ffffff"
+        strokeOpacity="0.12"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
       <circle
         cx="24"
         cy="24"
@@ -76,13 +97,21 @@ function AssistantAvatar({ className }: { className?: string }) {
         strokeWidth="1.5"
       />
       {/* Mũi tên tăng trưởng nguyên bản của logo (ảnh 284x223, giữ tỷ lệ) */}
-      <image href="/assistant-arrow.png" x="9" y="12.4" width="30" height="23.6" />
-      {/* Sparkle nhỏ — điểm nhấn AI */}
-      <path
-        d="M14.5 11.5c.6 2.4 1.7 3.5 4.1 4.1-2.4.6-3.5 1.7-4.1 4.1-.6-2.4-1.7-3.5-4.1-4.1 2.4-.6 3.5-1.7 4.1-4.1Z"
-        fill="#6ee7a7"
+      <image
+        href="/assistant-arrow.png"
+        x="8.5"
+        y="11.9"
+        width="31.5"
+        height="24.7"
+        filter={`url(#${shadow})`}
       />
-      <circle cx="36.5" cy="31.5" r="1.5" fill="#34d399" opacity="0.9" />
+      {/* Sparkle nhỏ — điểm nhấn AI, nhấp nháy thở chậm cho avatar có sự sống */}
+      <path
+        d="M14 11c.6 2.4 1.7 3.5 4.1 4.1-2.4.6-3.5 1.7-4.1 4.1-.6-2.4-1.7-3.5-4.1-4.1 2.4-.6 3.5-1.7 4.1-4.1Z"
+        fill="#6ee7a7"
+        className="animate-[pulse_3s_ease-in-out_infinite] motion-reduce:animate-none"
+      />
+      <circle cx="36.5" cy="32" r="1.5" fill="#34d399" opacity="0.9" />
     </svg>
   );
 }
