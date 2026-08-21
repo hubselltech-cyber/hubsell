@@ -36,6 +36,7 @@ import {
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { getEscrowDetail } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 
 const router = Router();
@@ -2761,6 +2762,57 @@ router.get("/shopee-escrow-probe", requireAdmin, async (req: AuthRequest, res, n
       },
       escrow: data.response ?? null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// GET /api/finance/lazada-reverse-probe?orderSn=&daysBack= — đọc THÔ Reverse
+// Order API để đối chiếu (CHỈ ADMIN, gian của chính chủ, read-only). Thêm 20/08 khi
+// backfill Lazada scanned=0 dù có 3 đơn AWAITING thật — soi xem sàn trả gì.
+router.get("/lazada-reverse-probe", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const orderSn = typeof req.query.orderSn === "string" ? req.query.orderSn.trim() : "";
+    const daysBack = Math.min(180, Math.max(1, Number(req.query.daysBack) || 30));
+    const order = orderSn
+      ? await prisma.order.findFirst({
+          where: { orderCode: orderSn, channel: { channelName: ChannelName.LAZADA, userId: req.ownerId! } },
+          include: { channel: true },
+        })
+      : null;
+    const channel =
+      order?.channel ??
+      (await prisma.channel.findFirst({
+        where: {
+          userId: req.ownerId!,
+          channelName: ChannelName.LAZADA,
+          status: "ACTIVE",
+          refreshToken: { not: null },
+          ...(typeof req.query.channelId === "string" && req.query.channelId
+            ? { id: req.query.channelId }
+            : {}),
+        },
+      }));
+    if (!channel) {
+      res.status(404).json({ error: "Không thấy gian Lazada phù hợp" });
+      return;
+    }
+    const accessToken = await getValidLazadaAccessToken(channel);
+    const { getReverseOrders } = await import("../integrations/lazada/client");
+    const nowMs = Date.now();
+    const results: Record<string, unknown> = { shop: channel.shopName };
+    // (1) Không lọc gì — sàn trả gì thì thấy nấy.
+    results.noFilter = await getReverseOrders({ accessToken, pageNo: 1, pageSize: 10 });
+    // (2) Lọc theo biến động daysBack ngày.
+    results.byModified = await getReverseOrders({
+      accessToken,
+      pageNo: 1,
+      pageSize: 10,
+      modifiedFromMs: nowMs - daysBack * 86_400_000,
+      modifiedToMs: nowMs,
+    });
+    res.json(results);
   } catch (err) {
     next(err);
   }
