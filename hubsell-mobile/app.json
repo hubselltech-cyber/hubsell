@@ -44,7 +44,14 @@
           "cameraPermission": "Hubsell cần Camera để quét mã vận đơn trên kiện hàng hoàn."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Hubsell cần Micro để bạn hỏi Trợ lý bằng giọng nói thay vì gõ tay.",
+          "speechRecognitionPermission": "Hubsell dùng nhận dạng giọng nói của máy để chuyển câu hỏi của bạn thành chữ."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

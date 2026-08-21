@@ -15,7 +15,10 @@ export default function RootLayout() {
           <BiometricGate>
             {/* style auto: chữ status bar tự đảo theo scheme sáng/tối */}
             <StatusBar style="auto" />
-            <Stack screenOptions={{ headerShown: false }} />
+            <Stack screenOptions={{ headerShown: false }}>
+              {/* Trợ lý Hubsell — trượt lên dạng modal từ orb nổi ở Trang chủ */}
+              <Stack.Screen name="assistant" options={{ presentation: "modal" }} />
+            </Stack>
           </BiometricGate>
         </AuthProvider>
       </ThemeProvider>

@@ -20,6 +20,7 @@
     "expo-local-authentication": "~57.0.2",
     "expo-router": "~57.0.12",
     "expo-secure-store": "~57.0.1",
+    "expo-speech-recognition": "^56.0.1",
     "expo-splash-screen": "~57.0.6",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
@@ -42,6 +43,8 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "concurrently": "^10.0.4",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {

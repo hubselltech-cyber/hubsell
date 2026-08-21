@@ -1,7 +1,9 @@
 import React, { useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { hapticSelect } from "@/lib/haptics";
+import { hapticSelect, hapticTap } from "@/lib/haptics";
+import { AssistantOrb } from "@/components/AssistantOrb";
 import { OverviewPage } from "@/screens/OverviewPage";
 import { FinancePage } from "@/screens/FinancePage";
 import { WarehouseHubPage } from "@/screens/WarehouseHubPage";
@@ -19,6 +21,7 @@ const SECTIONS = ["Tổng quan", "Tài chính", "Kho"];
  */
 export default function AdminHome() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [page, setPage] = useState(0);
   const pagerRef = useRef<{ setPage: (i: number) => void } | null>(null);
 
@@ -86,6 +89,26 @@ export default function AdminHome() {
       ) : (
         <View style={{ flex: 1 }}>{pages[page]}</View>
       )}
+
+      {/* Orb Trợ lý Hubsell nổi — bấm là mở chat hỏi số liệu (nói hoặc gõ),
+          như bong bóng Intercom trên web. Chỉ Trang chủ, không che màn quét kho. */}
+      <Pressable
+        onPress={() => {
+          hapticTap();
+          router.push("/assistant");
+        }}
+        accessibilityLabel="Mở Trợ lý Hubsell"
+        className="absolute bottom-5 right-4 active:opacity-80"
+        style={{
+          shadowColor: "#10b981",
+          shadowOpacity: 0.45,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 3 },
+          elevation: 8,
+        }}
+      >
+        <AssistantOrb size={52} />
+      </Pressable>
     </View>
   );
 }

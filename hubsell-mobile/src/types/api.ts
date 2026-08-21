@@ -333,3 +333,27 @@ export interface ChannelListItem {
   shopName: string;
   status: string;
 }
+
+// ───────────────────────── Trợ lý Hubsell (hỏi số liệu vận hành) ─────────────────────────
+
+export interface AssistantAnswerRow {
+  label: string;
+  value: string;
+  /** pos = xanh (lãi), neg = đỏ (lỗ/cảnh báo). */
+  tone?: "pos" | "neg";
+}
+
+/** POST /api/assistant/ask — tầng luật trả số thật, cùng shape với web. */
+export interface AssistantReply {
+  /** answered = có số; clarify = hỏi lại bằng chip; miss = chưa hiểu (đã ghi
+   *  log để bồi luật); analysis = câu phân tích chờ tầng AI gói cao. */
+  outcome: "answered" | "clarify" | "miss" | "analysis";
+  text: string;
+  rows?: AssistantAnswerRow[];
+  /** Deep-link tới trang WEB quản trị — mobile chưa có màn tương ứng nên ẩn. */
+  link?: { href: string; label: string };
+  chips?: { intent: string; label: string }[];
+  suggestions?: string[];
+  /** Biểu đồ cột mini (báo cáo tuần/tháng) — doanh thu theo ngày. */
+  chart?: { caption: string; points: { label: string; value: number }[] };
+}
