@@ -2804,14 +2804,31 @@ router.get("/lazada-reverse-probe", requireAdmin, async (req: AuthRequest, res, 
     const results: Record<string, unknown> = { shop: channel.shopName };
     // (1) Không lọc gì — sàn trả gì thì thấy nấy.
     results.noFilter = await getReverseOrders({ accessToken, pageNo: 1, pageSize: 10 });
-    // (2) Lọc theo biến động daysBack ngày.
-    results.byModified = await getReverseOrders({
+    // (2) Lọc theo biến động daysBack ngày — thử CẢ hai đơn vị (docs nói ms
+    // nhưng data thật trả giây).
+    results.byModifiedMs = await getReverseOrders({
       accessToken,
       pageNo: 1,
       pageSize: 10,
       modifiedFromMs: nowMs - daysBack * 86_400_000,
       modifiedToMs: nowMs,
     });
+    results.byModifiedSec = await getReverseOrders({
+      accessToken,
+      pageNo: 1,
+      pageSize: 10,
+      modifiedFromMs: Math.floor((nowMs - daysBack * 86_400_000) / 1000),
+      modifiedToMs: Math.floor(nowMs / 1000),
+    });
+    // (3) Lọc thẳng theo đơn được hỏi.
+    if (order) {
+      results.byTradeOrder = await getReverseOrders({
+        accessToken,
+        pageNo: 1,
+        pageSize: 10,
+        tradeOrderId: order.orderCode,
+      });
+    }
     res.json(results);
   } catch (err) {
     next(err);

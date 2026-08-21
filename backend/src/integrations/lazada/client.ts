@@ -479,9 +479,13 @@ export interface LazadaReverseOrdersParams {
   /** Trang bắt đầu từ 1 (response example "page_no": "1"). */
   pageNo: number;
   pageSize?: number;
-  /** Lọc theo BIẾN ĐỘNG dòng hoàn — MILI-GIÂY. */
+  /** Lọc theo BIẾN ĐỘNG dòng hoàn — docs ghi "Milliseconds" nhưng DATA THẬT
+   *  trả GIÂY (probe 20/08: return_order_line_gmt_modified 1734669213);
+   *  đơn vị truyền vào do caller quyết qua giá trị. */
   modifiedFromMs?: number;
   modifiedToMs?: number;
+  /** Lọc thẳng theo MỘT đơn gốc (trade_order_id). */
+  tradeOrderId?: string;
 }
 
 /** DS yêu cầu hoàn/hủy của shop — trang kết quả + tổng để caller tự phân trang. */
@@ -502,6 +506,7 @@ export async function getReverseOrders(
       ...(params.modifiedToMs != null
         ? { ReverseOrderLineModifiedTimeRangeEnd: String(params.modifiedToMs) }
         : {}),
+      ...(params.tradeOrderId ? { trade_order_id: params.tradeOrderId } : {}),
     },
     "reverse/getreverseordersforseller",
     cfg
