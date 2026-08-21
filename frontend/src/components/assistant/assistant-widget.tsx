@@ -42,9 +42,11 @@ const CHIP_CLASS =
   "rounded-full border border-emerald-200 bg-card px-3 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50";
 
 /**
- * Avatar SVG theo logo: orb navy tối + vành gradient + sparkle AI 4 cánh tô
- * đúng dải mint→emerald của chữ H mũi tên. Vẽ inline vì logo-hubsell.png nền
- * trắng đặc (24bpp, không alpha) không đặt lên nền tối được.
+ * Avatar: orb navy tối + vành gradient + MŨI TÊN THẬT tách từ logo (chốt
+ * 21/08 — /assistant-arrow.png là đúng pixel mũi tên trong logo-hubsell.png,
+ * đã tách nền trắng + tách khỏi chữ H bằng script vùng liên thông; logo gốc
+ * 24bpp nền trắng đặc nên không đặt thẳng lên nền tối được). Sparkle nhỏ góc
+ * trên trái làm điểm nhấn AI, chấm xanh góc dưới phải cân bố cục.
  */
 function AssistantAvatar({ className }: { className?: string }) {
   const uid = React.useId();
@@ -53,7 +55,7 @@ function AssistantAvatar({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 48 48" aria-hidden="true" className={className}>
       <defs>
-        <linearGradient id={spark} x1="12%" y1="88%" x2="88%" y2="12%">
+        <linearGradient id={spark} x1="10%" y1="90%" x2="90%" y2="10%">
           <stop offset="0%" stopColor="#4ade80" />
           <stop offset="55%" stopColor="#2ee08d" />
           <stop offset="100%" stopColor="#059669" />
@@ -70,19 +72,17 @@ function AssistantAvatar({ className }: { className?: string }) {
         r="21.4"
         fill="none"
         stroke={`url(#${spark})`}
-        strokeOpacity="0.55"
-        strokeWidth="1.4"
+        strokeOpacity="0.6"
+        strokeWidth="1.5"
       />
-      {/* Sparkle chính — cạnh cong lõm kiểu tia AI */}
+      {/* Mũi tên tăng trưởng nguyên bản của logo (ảnh 284x223, giữ tỷ lệ) */}
+      <image href="/assistant-arrow.png" x="9" y="12.4" width="30" height="23.6" />
+      {/* Sparkle nhỏ — điểm nhấn AI */}
       <path
-        d="M23 12.5c1.55 6.9 4.9 10.25 11.8 11.8-6.9 1.55-10.25 4.9-11.8 11.8-1.55-6.9-4.9-10.25-11.8-11.8 6.9-1.55 10.25-4.9 11.8-11.8Z"
-        fill={`url(#${spark})`}
-      />
-      {/* Sparkle phụ nhỏ góc trên phải — điểm nhấn chuyển động đi lên như mũi tên logo */}
-      <path
-        d="M35.2 9.8c.68 2.75 1.97 4.04 4.72 4.72-2.75.68-4.04 1.97-4.72 4.72-.68-2.75-1.97-4.04-4.72-4.72 2.75-.68 4.04-1.97 4.72-4.72Z"
+        d="M14.5 11.5c.6 2.4 1.7 3.5 4.1 4.1-2.4.6-3.5 1.7-4.1 4.1-.6-2.4-1.7-3.5-4.1-4.1 2.4-.6 3.5-1.7 4.1-4.1Z"
         fill="#6ee7a7"
       />
+      <circle cx="36.5" cy="31.5" r="1.5" fill="#34d399" opacity="0.9" />
     </svg>
   );
 }
