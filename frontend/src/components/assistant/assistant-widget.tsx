@@ -19,7 +19,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Send, X } from "lucide-react";
+import { ArrowRight, Mic, Send, X } from "lucide-react";
 
 import {
   askAssistant,
@@ -157,6 +157,37 @@ function MiniBarChart({ points }: { points: { label: string; value: number }[] }
   );
 }
 
+/**
+ * ══ GIỌNG NÓI → CHỮ (chốt 21/08) ══
+ * Web Speech API của trình duyệt — nhận tiếng Việt (vi-VN) MIỄN PHÍ, 0 backend,
+ * đúng triết lý 0 đồng của tầng luật. Chrome/Edge/Safari có sẵn; Firefox chưa
+ * hỗ trợ → ẩn nút mic (khách vẫn gõ tay bình thường). Cần HTTPS/localhost và
+ * khách cấp quyền micro lần đầu.
+ */
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
+}
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+}
+
+function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 let msgSeq = 0;
 
 /** Hội thoại + trạng thái mở, sống xuyên remount (điều hướng) và F5. */
@@ -182,6 +213,23 @@ export function AssistantWidget() {
   const [msgs, setMsgs] = React.useState<Msg[]>(() => loadStored().msgs);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+
+  // ── Giọng nói: bấm mic → nghe (transcript hiện live trong ô input), nói
+  // xong (hoặc bấm mic lần nữa) → tự gửi câu hỏi. Hỗ trợ tính ở effect vì
+  // SSR không có window.
+  const [voiceSupported, setVoiceSupported] = React.useState(false);
+  const [listening, setListening] = React.useState(false);
+  const recRef = React.useRef<SpeechRecognitionLike | null>(null);
+  const loadingRef = React.useRef(loading);
+  loadingRef.current = loading;
+  React.useEffect(() => {
+    setVoiceSupported(getSpeechRecognitionCtor() !== null);
+    // Đóng panel/unmount giữa chừng thì hủy phiên nghe, không gửi vu vơ.
+    return () => {
+      recRef.current?.abort();
+      recRef.current = null;
+    };
+  }, []);
 
   // State khởi tạo từ sessionStorage (chỉ có ở client) nên HTML server ≠ client
   // khi F5 lúc panel đang mở → hydration error. Chữa tận gốc: khung hình đầu
@@ -271,6 +319,51 @@ export function AssistantWidget() {
     setOpen(true);
     void askRef.current({ question: q }, q);
   }, []);
+
+  function toggleVoice() {
+    // Đang nghe → bấm lần nữa = chốt câu (stop vẫn trả kết quả đã nghe rồi
+    // mới onend, nên câu nói dở vẫn được gửi).
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = "vi-VN";
+    rec.interimResults = true; // chữ hiện dần trong ô input cho có phản hồi
+    rec.continuous = false; // ngắt câu là xong — hỏi đáp từng câu, không đọc chính tả dài
+    let finalText = "";
+    rec.onresult = (e) => {
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      setInput(text);
+      if (e.results.length > 0 && e.results[e.results.length - 1].isFinal) {
+        finalText = text;
+      }
+    };
+    rec.onerror = () => {
+      // not-allowed / no-speech… — onend luôn bắn sau đó nên dọn dẹp ở onend
+      finalText = "";
+    };
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+      const q = finalText.trim();
+      if (!q) return; // không nghe được gì — giữ nguyên ô input cho gõ tiếp
+      if (loadingRef.current) {
+        // Trợ lý đang trả lời câu trước — giữ chữ trong ô, khách tự bấm gửi
+        setInput(q);
+        return;
+      }
+      setInput("");
+      void askRef.current({ question: q }, q);
+    };
+    recRef.current = rec;
+    setListening(true);
+    setInput("");
+    rec.start();
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -492,10 +585,26 @@ export function AssistantWidget() {
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
-          placeholder="Hỏi về lãi, đơn, tồn kho…"
+          placeholder={listening ? "Em đang nghe, anh/chị nói đi ạ…" : "Hỏi về lãi, đơn, tồn kho…"}
           maxLength={300}
           className="h-10 min-w-0 flex-1 rounded-lg border bg-transparent px-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/25"
         />
+        {voiceSupported && (
+          <button
+            type="button"
+            onClick={toggleVoice}
+            aria-label={listening ? "Dừng nghe và gửi" : "Hỏi bằng giọng nói"}
+            title={listening ? "Dừng nghe và gửi" : "Hỏi bằng giọng nói"}
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-lg border transition-all active:scale-95 motion-reduce:transition-none",
+              listening
+                ? "border-red-500 bg-red-500 text-white shadow-md shadow-red-500/30 animate-pulse motion-reduce:animate-none"
+                : "border-emerald-200 bg-card text-emerald-600 hover:bg-emerald-50"
+            )}
+          >
+            <Mic className="size-4" />
+          </button>
+        )}
         <button
           type="submit"
           aria-label="Gửi câu hỏi"
