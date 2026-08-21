@@ -51,7 +51,9 @@ export function DonutChart({
     <View className="items-center">
       <View style={{ width: size, height: size }}>
         <Svg width={size} height={size}>
-          <G rotation={-90} originX={size / 2} originY={size / 2}>
+          {/* rotate dạng chuỗi SVG chuẩn — prop rotation/origin bị RN-web dịch
+              thành attr transform-origin, React báo Invalid DOM property */}
+          <G transform={`rotate(-90 ${size / 2} ${size / 2})`}>
             <Circle
               cx={size / 2}
               cy={size / 2}
