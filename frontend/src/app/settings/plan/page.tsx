@@ -16,11 +16,10 @@
 // ============================================================
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Check,
-  CircleDollarSign,
   Clock,
   Gauge,
   ShoppingCart,
@@ -40,17 +39,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   ApiError,
   cancelMyPlanUpgradeRequest,
-  fetchMySubscriptionPayments,
   renewPackageWithWallet,
   requestPlanUpgrade,
   type BillingCycle,
@@ -72,12 +62,6 @@ const CYCLES: { value: BillingCycle; label: string; months: number; key: keyof M
 const CYCLE_LABEL: Record<BillingCycle, string> = Object.fromEntries(
   CYCLES.map((c) => [c.value, c.label])
 ) as Record<BillingCycle, string>;
-
-const METHOD_LABEL: Record<string, string> = {
-  BANK_TRANSFER: "Chuyển khoản",
-  WALLET: "Ví Hubsell",
-  GATEWAY: "Cổng thanh toán",
-};
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN");
@@ -148,10 +132,6 @@ function UsageBar({
 export default function SettingsPlanPage() {
   const qc = useQueryClient();
   const { data } = useMyPlan(true);
-  const { data: paymentsData } = useQuery({
-    queryKey: qk.mySubscriptionPayments(),
-    queryFn: fetchMySubscriptionPayments,
-  });
 
   // Kỳ đã chọn theo TỪNG gói (mặc định 1 tháng) — khách so giá kỳ dài tự do.
   const [cycleByPlan, setCycleByPlan] = useState<Record<string, BillingCycle>>({});
@@ -162,7 +142,6 @@ export default function SettingsPlanPage() {
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: qk.mySubscription() });
-    qc.invalidateQueries({ queryKey: qk.mySubscriptionPayments() });
   };
 
   const requestMutation = useMutation({
@@ -222,7 +201,7 @@ export default function SettingsPlanPage() {
   return (
     <SettingsShell
       title="Gói dịch vụ"
-      description="Gói đang dùng, mức sử dụng so với trần, chọn mua gói và lịch sử thanh toán."
+      description="Gói đang dùng, mức sử dụng so với trần và chọn mua gói."
     >
       {/* ===== Gói hiện tại + mức dùng ===== */}
       <Card className="shadow-sm">
@@ -498,61 +477,8 @@ export default function SettingsPlanPage() {
         </div>
       )}
 
-      {/* ===== Lịch sử thanh toán ===== */}
-      <Card className="shadow-sm">
-        <CardHeader className="border-b pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <CircleDollarSign className="size-5 text-slate-500" />
-            Lịch sử thanh toán
-          </CardTitle>
-        </CardHeader>
-        <CardContent className={paymentsData?.payments.length ? "p-0" : "pt-4"}>
-          {paymentsData === undefined ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Đang tải dữ liệu…
-            </p>
-          ) : paymentsData.payments.length === 0 ? (
-            <p className={TEXT_SUB}>
-              Chưa có thanh toán nào
-              {sub?.isTrial ? " — shop đang trong kỳ dùng thử miễn phí." : "."}
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Gói · kỳ mua</TableHead>
-                  <TableHead>Phương thức</TableHead>
-                  <TableHead className="text-right">Số tiền</TableHead>
-                  <TableHead>Ngày thanh toán</TableHead>
-                  <TableHead>Hạn dùng đến</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paymentsData.payments.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="text-sm">
-                      {p.planName}
-                      <p className="text-xs text-muted-foreground">{CYCLE_LABEL[p.cycle]}</p>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {METHOD_LABEL[p.method] ?? p.method}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
-                      {nf.format(p.amount)}₫
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">
-                      {fmtDate(p.occurredAt)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">
-                      {fmtDate(p.periodEnd)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {/* Lịch sử thanh toán CỐ TÌNH không hiển thị (anh Trung bỏ 22/08 khuya:
+          đừng nhắc khách họ đã mất tiền) — chứng từ chỉ xem ở HQ /admin/plans. */}
 
       {/* ===== Xác nhận trừ Ví — trừ tiền không được là một cú click nhầm ===== */}
       <Dialog open={walletBuy !== null} onOpenChange={(o) => !o && setWalletBuy(null)}>

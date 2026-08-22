@@ -23,7 +23,6 @@ import {
   fetchDashboardSummary,
   fetchFinanceAnalytics,
   fetchMySubscription,
-  fetchMySubscriptionPayments,
   fetchOrders,
   fetchProducts,
   fetchRealizedPnl,
@@ -126,10 +125,6 @@ const PREFETCHERS: Record<string, (qc: QueryClient) => void> = {
       queryKey: qk.mySubscription(),
       queryFn: fetchMySubscription,
       staleTime: 60_000,
-    });
-    qc.prefetchQuery({
-      queryKey: qk.mySubscriptionPayments(),
-      queryFn: fetchMySubscriptionPayments,
     });
   },
 

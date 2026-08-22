@@ -2827,22 +2827,8 @@ export function fetchMySubscription() {
   return apiFetch<MySubscriptionResponse>("/api/subscription/me");
 }
 
-/** Một dòng lịch sử thanh toán gói của chính shop (trang /settings/plan). */
-export interface MyPackagePayment {
-  id: string;
-  planName: string;
-  cycle: BillingCycle;
-  amount: number;
-  method: string;
-  periodStart: string;
-  periodEnd: string;
-  occurredAt: string;
-  note: string | null;
-}
-
-export function fetchMySubscriptionPayments() {
-  return apiFetch<{ payments: MyPackagePayment[] }>("/api/subscription/payments");
-}
+// Lịch sử thanh toán CỐ TÌNH không phơi phía khách (anh Trung bỏ 22/08 khuya:
+// đừng nhắc khách họ đã mất tiền) — chứng từ chỉ xem ở HQ /admin/plans.
 
 /** "Đăng ký mua" gói + kỳ — tạo/cập nhật yêu cầu để HQ liên hệ hướng dẫn
  * thanh toán (mỗi khách một yêu cầu đang chờ; gửi lại = đổi gói/kỳ). */

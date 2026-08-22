@@ -172,32 +172,8 @@ router.delete("/upgrade-request", requireAdmin, async (req: AuthRequest, res, ne
   }
 });
 
-// GET /api/subscription/payments — lịch sử thanh toán gói của CHÍNH shop
-// (trang /settings/plan). Chỉ chủ shop: chứng từ tài chính, nhân viên không xem.
-router.get("/payments", requireAdmin, async (req: AuthRequest, res, next) => {
-  try {
-    const payments = await prisma.packagePayment.findMany({
-      where: { userId: req.ownerId! },
-      orderBy: { occurredAt: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        planName: true,
-        cycle: true,
-        amount: true,
-        method: true,
-        periodStart: true,
-        periodEnd: true,
-        occurredAt: true,
-        note: true,
-      },
-    });
-    res.json({
-      payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+// Lịch sử thanh toán CỐ TÌNH không có endpoint phía khách (anh Trung bỏ
+// 22/08 khuya: đừng nhắc khách họ đã mất tiền) — chứng từ chỉ xem ở HQ
+// (/admin/plans, bảng "Thanh toán gần đây" + export kế toán).
 
 export default router;
