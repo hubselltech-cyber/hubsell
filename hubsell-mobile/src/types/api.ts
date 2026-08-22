@@ -184,6 +184,12 @@ export interface BreakdownItem {
   amount: number;
   percent: number;
   count?: number;
+  /**
+   * Bóc chi tiết bên trong khoản (22/08, mới có ở costs.items): giá vốn +
+   * Ads theo SÀN, chi phí nhập tay theo DANH MỤC; percent tính trên khoản
+   * cha. Backend cũ chưa trả → optional, UI tự ẩn.
+   */
+  items?: { key: string; label: string; amount: number; percent: number }[];
 }
 
 /**

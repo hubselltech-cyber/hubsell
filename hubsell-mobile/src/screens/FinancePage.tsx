@@ -377,7 +377,9 @@ export function FinancePage() {
             </Card>
           ) : null}
 
-          {/* CƠ CẤU CHI PHÍ — % từng khoản */}
+          {/* CƠ CẤU CHI PHÍ — donut (anh Trung chốt 22/08: tròn dễ nhìn hơn
+              thác chảy) + chú giải BÓC CHI TIẾT từng khoản: giá vốn/Ads theo
+              sàn, chi phí nhập tay theo danh mục (backend costs.items[].items) */}
           {analytics && analytics.costs.total > 0 ? (
             <Card className="mb-4 p-4">
               <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -386,15 +388,78 @@ export function FinancePage() {
               <DonutChart
                 centerLabel={compactMoney(analytics.costs.total)}
                 centerSub="tổng chi phí"
+                showLegend={false}
                 slices={analytics.costs.items
                   .filter((it) => it.amount > 0)
                   .map((it) => ({
                     label: it.label,
                     value: it.amount,
                     color: COST_COLOR[it.key] ?? "#cbd5e1",
-                    detail: compactMoney(it.amount),
                   }))}
               />
+              <View className="mt-4">
+                {analytics.costs.items
+                  .filter((it) => it.amount > 0)
+                  .map((it) => (
+                    <View
+                      key={it.key}
+                      className="border-t border-slate-100 py-2 dark:border-slate-800"
+                    >
+                      <View className="flex-row items-center gap-2">
+                        <View
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{
+                            backgroundColor: COST_COLOR[it.key] ?? "#cbd5e1",
+                          }}
+                        />
+                        <Text
+                          className="flex-1 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                          numberOfLines={1}
+                        >
+                          {it.label}
+                        </Text>
+                        <Text
+                          className="text-xs font-semibold text-slate-900 dark:text-slate-100"
+                          style={TABULAR}
+                        >
+                          {compactMoney(it.amount)}
+                        </Text>
+                        <Text
+                          className="w-10 text-right text-xs font-semibold text-slate-500 dark:text-slate-400"
+                          style={TABULAR}
+                        >
+                          {Math.round(it.percent)}%
+                        </Text>
+                      </View>
+                      {/* Dòng con bóc tách — % tính trên chính khoản cha */}
+                      {(it.items ?? []).map((sub) => (
+                        <View
+                          key={sub.key}
+                          className="mt-1 flex-row items-center gap-2 pl-[18px]"
+                        >
+                          <Text
+                            className="flex-1 text-[11px] text-slate-500 dark:text-slate-400"
+                            numberOfLines={1}
+                          >
+                            {sub.label}
+                          </Text>
+                          <Text
+                            className="text-[11px] text-slate-600 dark:text-slate-300"
+                            style={TABULAR}
+                          >
+                            {compactMoney(sub.amount)}
+                          </Text>
+                          <Text
+                            className="w-10 text-right text-[11px] text-slate-400 dark:text-slate-500"
+                            style={TABULAR}
+                          >
+                            {Math.round(sub.percent)}%
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+              </View>
             </Card>
           ) : null}
 

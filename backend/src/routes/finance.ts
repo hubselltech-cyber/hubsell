@@ -2270,7 +2270,12 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
       // phí, còn từng ngày đổ vào chuỗi 14 ngày cho khớp định nghĩa cột.
       prisma.adSpend.findMany({
         where: { channel: scope, ...(range ? { date: range } : {}) },
-        select: { date: true, amount: true },
+        select: {
+          date: true,
+          amount: true,
+          // Tên sàn để bóc chi tiết "Ads theo sàn" trong Cơ cấu chi phí
+          channel: { select: { channelName: true } },
+        },
       }),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
@@ -2374,6 +2379,55 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // + Chi phí quảng cáo sàn (AdSpend — sync tự động, tách khỏi khoản nhập tay).
     const totalCostColumn =
       cogsAll + variableExpenseTotal + fixedExpenseTotal + adsSpendTotal;
+
+    // BÓC CHI TIẾT TỪNG KHOẢN CHI PHÍ (anh Trung 22/08 — donut Cơ cấu chi phí
+    // trên app cần "chi tiết các loại"): giá vốn + Ads bóc theo SÀN, chi phí
+    // nhập tay bóc theo DANH MỤC; percent tính trên CHÍNH khoản cha đó.
+    const CHANNEL_VI: Record<string, string> = {
+      SHOPEE: "Shopee",
+      LAZADA: "Lazada",
+      TIKTOK: "TikTok",
+      OFFLINE: "Offline",
+    };
+    const EXPENSE_CATEGORY_VI: Record<string, string> = {
+      RENT: "Mặt bằng",
+      SALARY: "Lương nhân viên",
+      PACKAGING: "Đóng gói",
+      ADS: "Quảng cáo (nhập tay)",
+      OTHER: "Khác",
+    };
+    const sumInto = (m: Map<string, number>, k: string, v: number) =>
+      m.set(k, (m.get(k) ?? 0) + v);
+    const breakdownOf = (
+      sums: Map<string, number>,
+      labelOf: (k: string) => string,
+      parentTotal: number
+    ) =>
+      [...sums.entries()]
+        .filter(([, v]) => v > 0)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => ({
+          key: k,
+          label: labelOf(k),
+          amount: v,
+          percent: pct(v, parentTotal),
+        }));
+    const cogsByChannel = new Map<string, number>();
+    for (const r of activeRows) sumInto(cogsByChannel, r.channelName, r.costSnapshot);
+    const adsByChannel = new Map<string, number>();
+    for (const a of adSpendRows)
+      sumInto(adsByChannel, a.channel.channelName, Number(a.amount));
+    const variableByCategory = new Map<string, number>();
+    const fixedByCategory = new Map<string, number>();
+    for (const e of expenses) {
+      sumInto(
+        e.type === ExpenseType.FIXED ? fixedByCategory : variableByCategory,
+        e.category,
+        Number(e.amount)
+      );
+    }
+    const channelLabelOf = (k: string) => CHANNEL_VI[k] ?? k;
+    const categoryLabelOf = (k: string) => EXPENSE_CATEGORY_VI[k] ?? k;
 
     // --- CỘT 4: LỢI NHUẬN ---
     // Thực tế = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn ĐÃ QUYẾT TOÁN
@@ -2605,6 +2659,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Tiền vốn nhập hàng của các đơn trong kỳ (theo giá vốn đã cấu hình cho từng sản phẩm).",
               amount: cogsAll,
               percent: pct(cogsAll, totalCostColumn),
+              items: breakdownOf(cogsByChannel, channelLabelOf, cogsAll),
             },
             {
               key: "adsSpend",
@@ -2612,6 +2667,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Tiền quảng cáo đã tiêu trên sàn — hệ thống tự lấy về mỗi ngày, không cần nhập tay.",
               amount: adsSpendTotal,
               percent: pct(adsSpendTotal, totalCostColumn),
+              items: breakdownOf(adsByChannel, channelLabelOf, adsSpendTotal),
             },
             {
               key: "variable",
@@ -2619,6 +2675,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Chi phí phát sinh theo đơn bạn nhập ở Thu chi vận hành (đóng gói, book KOC…).",
               amount: variableExpenseTotal,
               percent: pct(variableExpenseTotal, totalCostColumn),
+              items: breakdownOf(variableByCategory, categoryLabelOf, variableExpenseTotal),
             },
             {
               key: "fixed",
@@ -2626,6 +2683,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               hint: "Chi phí hằng tháng bạn nhập ở Thu chi vận hành (mặt bằng, lương nhân sự…).",
               amount: fixedExpenseTotal,
               percent: pct(fixedExpenseTotal, totalCostColumn),
+              items: breakdownOf(fixedByCategory, categoryLabelOf, fixedExpenseTotal),
             },
           ],
         },
