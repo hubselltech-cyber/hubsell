@@ -16,6 +16,7 @@ import {
   type AuthRequest,
 } from "../auth";
 import { writeAuditLog } from "../platform-audit";
+import { vnMonthStart } from "../plan-enforcement";
 import {
   effectiveSubscriptionStatus,
   recordPackagePayment,
@@ -308,7 +309,8 @@ router.get(
           : {}),
       };
 
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Biên tháng theo GIỜ VIỆT NAM — Render chạy UTC, giờ máy lệch 7 tiếng.
+      const monthStart = vnMonthStart(now);
       const [subs, total, activeCount, trialingCount, expiringCount, expiredCount, monthAgg, recentPayments, upgradeRequests] =
         await Promise.all([
           prisma.subscription.findMany({

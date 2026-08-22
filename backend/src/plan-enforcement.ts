@@ -94,16 +94,34 @@ export function invalidatePlanState(ownerId: string): void {
   cache.delete(ownerId);
 }
 
+// ---- Lịch VIỆT NAM (UTC+7, không DST): Render chạy múi giờ UTC nên mọi phép
+// "tháng này/ngày này" dùng giờ máy sẽ lệch 7 tiếng quanh nửa đêm — đơn phát
+// sinh 17h-24h UTC ngày cuối tháng bị đếm nhầm sang tháng sau theo lịch VN. ----
+const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function vnView(d: Date): Date {
+  return new Date(d.getTime() + VN_OFFSET_MS); // đọc bằng getUTC* = giờ VN
+}
+
+/** Mốc 00:00 ngày MÙNG 1 THÁNG NÀY theo giờ Việt Nam (trả về Date UTC chuẩn). */
+export function vnMonthStart(now: Date): Date {
+  const vn = vnView(now);
+  return new Date(Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), 1) - VN_OFFSET_MS);
+}
+
 function monthKeyOf(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const vn = vnView(d);
+  return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function monthLabelOf(d: Date): string {
-  return `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  const vn = vnView(d);
+  return `${String(vn.getUTCMonth() + 1).padStart(2, "0")}/${vn.getUTCFullYear()}`;
 }
 
 function fmtDate(d: Date): string {
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const vn = vnView(d);
+  return `${String(vn.getUTCDate()).padStart(2, "0")}/${String(vn.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /**
@@ -126,7 +144,7 @@ export async function getOwnerPlanState(ownerId: string): Promise<OwnerPlanState
 
 async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = vnMonthStart(now);
   const monthKey = monthKeyOf(now);
 
   const [sub, channels, staff, ordersThisMonth] = await Promise.all([

@@ -10,8 +10,9 @@ import { Router } from "express";
 import { BillingCycle, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { requireAdmin, type AuthRequest } from "../auth";
+import { isMailerConfigured, sendMail } from "../mailer";
 import { getOwnerPlanState } from "../plan-enforcement";
-import { planPriceFor } from "../subscription-service";
+import { CYCLE_LABEL, planPriceFor } from "../subscription-service";
 
 const router = Router();
 
@@ -26,6 +27,54 @@ function paymentInfo() {
   const bankHolder = process.env.PLAN_PAYMENT_BANK_HOLDER?.trim();
   if (!bankName || !bankAccount || !bankHolder) return null;
   return { bankName, bankAccount, bankHolder };
+}
+
+/**
+ * BÁO HQ có yêu cầu mua/tư vấn mới — email tới mọi tài khoản điều hành nền
+ * tảng (khách bấm mua mà không ai biết là mất deal; HQ không có chuông nên
+ * email là kênh chạm tới điện thoại anh Trung). Fire-and-forget: lỗi SMTP hay
+ * chưa cấu hình đều không được làm hỏng yêu cầu của khách.
+ */
+async function notifyHqUpgradeRequest(input: {
+  customerName: string;
+  customerEmail: string | null;
+  contactPhone: string;
+  planName: string;
+  cycleLabel: string;
+  /** 0 = tư vấn báo giá riêng. */
+  listedPrice: number;
+}): Promise<void> {
+  try {
+    if (!isMailerConfigured()) return;
+    const admins = await prisma.user.findMany({
+      where: { isPlatformAdmin: true, email: { not: null } },
+      select: { email: true },
+    });
+    if (admins.length === 0) return;
+    const isConsult = input.listedPrice === 0;
+    const subject = isConsult
+      ? `[Hubsell] Yêu cầu TƯ VẤN ${input.planName}: ${input.customerName}`
+      : `[Hubsell] Yêu cầu MUA ${input.planName} (${input.cycleLabel}): ${input.customerName}`;
+    const html = `
+    <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <h2 style="margin:0 0 8px">${isConsult ? "Yêu cầu tư vấn gói" : "Yêu cầu mua gói"} mới</h2>
+      <p style="color:#444;margin:4px 0"><b>Khách:</b> ${input.customerName} (${input.customerEmail ?? "—"})</p>
+      <p style="color:#444;margin:4px 0"><b>SĐT liên hệ:</b> ${input.contactPhone}</p>
+      <p style="color:#444;margin:4px 0"><b>Gói:</b> ${input.planName}${isConsult ? " — báo giá riêng" : ` — ${input.cycleLabel}, giá niêm yết ${input.listedPrice.toLocaleString("vi-VN")}₫`}</p>
+      <p style="text-align:center;margin:24px 0">
+        <a href="https://app.hubsell.tech/admin/plans"
+           style="background:#18181b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block">
+          Mở hàng chờ xử lý
+        </a>
+      </p>
+      <p style="color:#888;font-size:13px">Gọi khách hướng dẫn thanh toán — tiền về thì Ghi nhận thanh toán, yêu cầu tự đóng.</p>
+    </div>`;
+    await Promise.allSettled(
+      admins.map((a) => sendMail({ to: a.email!, subject, html }))
+    );
+  } catch (err) {
+    console.error("[subscription] Báo HQ yêu cầu mua gói lỗi:", (err as Error).message);
+  }
 }
 
 router.get("/me", async (req: AuthRequest, res, next) => {
@@ -197,6 +246,20 @@ router.post("/upgrade-request", requireAdmin, async (req: AuthRequest, res, next
       : await prisma.planUpgradeRequest.create({
           data: { ...data, userId: req.ownerId! },
         });
+
+    // Báo HQ ngay (email) — không chờ, không để lỗi gửi mail chạm vào response.
+    const requester = await prisma.user.findUnique({
+      where: { id: req.ownerId! },
+      select: { fullName: true, email: true },
+    });
+    void notifyHqUpgradeRequest({
+      customerName: requester?.fullName ?? "Khách Hubsell",
+      customerEmail: requester?.email ?? null,
+      contactPhone,
+      planName: plan.name,
+      cycleLabel: CYCLE_LABEL[cycle],
+      listedPrice: price,
+    });
 
     res.status(existing ? 200 : 201).json({
       request: { ...request, listedPrice: Number(request.listedPrice) },
