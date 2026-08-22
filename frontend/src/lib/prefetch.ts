@@ -22,6 +22,8 @@ import {
   fetchChannels,
   fetchDashboardSummary,
   fetchFinanceAnalytics,
+  fetchMySubscription,
+  fetchMySubscriptionPayments,
   fetchOrders,
   fetchProducts,
   fetchRealizedPnl,
@@ -115,6 +117,19 @@ const PREFETCHERS: Record<string, (qc: QueryClient) => void> = {
     qc.prefetchQuery({
       queryKey: qk.products({ page: 1, pageSize: 10, search: "" }),
       queryFn: () => fetchProducts({ page: 1, pageSize: 10, search: "" }),
+    });
+  },
+
+  "/settings/plan": (qc) => {
+    // Cùng key với banner trần gói trong AppShell — thường đã ấm sẵn cache.
+    qc.prefetchQuery({
+      queryKey: qk.mySubscription(),
+      queryFn: fetchMySubscription,
+      staleTime: 60_000,
+    });
+    qc.prefetchQuery({
+      queryKey: qk.mySubscriptionPayments(),
+      queryFn: fetchMySubscriptionPayments,
     });
   },
 

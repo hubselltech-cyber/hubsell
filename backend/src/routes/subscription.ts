@@ -8,7 +8,7 @@
 
 import { Router } from "express";
 import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { requireAdmin, type AuthRequest } from "../auth";
 import { getOwnerPlanState } from "../plan-enforcement";
 
 const router = Router();
@@ -71,6 +71,34 @@ router.get("/me", async (req: AuthRequest, res, next) => {
         priceYearly: Number(p.priceYearly),
       })),
       payment: paymentInfo(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/subscription/payments — lịch sử thanh toán gói của CHÍNH shop
+// (trang /settings/plan). Chỉ chủ shop: chứng từ tài chính, nhân viên không xem.
+router.get("/payments", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const payments = await prisma.packagePayment.findMany({
+      where: { userId: req.ownerId! },
+      orderBy: { occurredAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        planName: true,
+        cycle: true,
+        amount: true,
+        method: true,
+        periodStart: true,
+        periodEnd: true,
+        occurredAt: true,
+        note: true,
+      },
+    });
+    res.json({
+      payments: payments.map((p) => ({ ...p, amount: Number(p.amount) })),
     });
   } catch (err) {
     next(err);

@@ -2799,6 +2799,23 @@ export function fetchMySubscription() {
   return apiFetch<MySubscriptionResponse>("/api/subscription/me");
 }
 
+/** Một dòng lịch sử thanh toán gói của chính shop (trang /settings/plan). */
+export interface MyPackagePayment {
+  id: string;
+  planName: string;
+  cycle: BillingCycle;
+  amount: number;
+  method: string;
+  periodStart: string;
+  periodEnd: string;
+  occurredAt: string;
+  note: string | null;
+}
+
+export function fetchMySubscriptionPayments() {
+  return apiFetch<{ payments: MyPackagePayment[] }>("/api/subscription/payments");
+}
+
 // ---------- Báo cáo nhà đầu tư (GĐ6 — chỉ chủ nền tảng) ----------
 
 export interface InvestorMonthPoint {

@@ -209,6 +209,10 @@ const NAV_ITEMS_BOTTOM: NavItem[] = [
     icon: "settings",
     adminOnly: true,
     children: [
+      // Gói dịch vụ đặt ĐẦU nhóm (GĐ2 22/08): mục duy nhất trong Cấu hình khách
+      // thật sự cần định kỳ — xem gói/trần/lịch sử thanh toán; chuông cảnh báo
+      // trần + popup nâng gói đều dẫn về đây.
+      { href: "/settings/plan", label: "Gói dịch vụ" },
       { href: "/settings/general", label: "Cấu hình chung" },
       // "Hóa đơn & Thuế" đã chuyển lên danh mục lớn riêng (route /invoicing/*);
       // /settings/tax cũ redirect sang đó để bookmark không chết.

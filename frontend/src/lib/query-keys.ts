@@ -17,6 +17,7 @@ export const qk = {
   // ----- Dùng chung -----
   channels: () => ["channels"] as const,
   mySubscription: () => ["my-subscription"] as const,
+  mySubscriptionPayments: () => ["my-subscription-payments"] as const,
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,

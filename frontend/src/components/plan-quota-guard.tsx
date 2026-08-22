@@ -379,7 +379,10 @@ export function UpgradePlanDialog({
 
         <p className="text-xs text-muted-foreground">
           Trong thời gian chờ nâng gói, đơn hàng và tồn kho vẫn được đồng bộ đầy đủ —
-          không mất dữ liệu nào.
+          không mất dữ liệu nào.{" "}
+          <Link href="/settings/plan" className="font-medium underline underline-offset-2">
+            Xem chi tiết gói &amp; lịch sử thanh toán
+          </Link>
         </p>
       </DialogContent>
     </Dialog>

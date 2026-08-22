@@ -229,21 +229,21 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
         type: "plan_quota",
         title: `Đã dùng ${Math.floor(ratio! * 100)}% trần đơn tháng ${monthLabel}`,
         body: `${base}. Nâng gói sớm để không gián đoạn khi shop tăng trưởng.`,
-        link: "/referral",
+        link: "/settings/plan",
       });
     } else if (targetLevel === 100) {
       void notify(ownerId, {
         type: "plan_quota",
         title: `Đã vượt trần đơn tháng ${monthLabel}`,
         body: `${base}. Đơn vẫn được đồng bộ đầy đủ; sau ${fmtDate(new Date(now.getTime() + ORDER_GRACE_DAYS * DAY_MS))} các tính năng nâng cao sẽ tạm khóa nếu chưa nâng gói.`,
-        link: "/referral",
+        link: "/settings/plan",
       });
     } else {
       void notify(ownerId, {
         type: "plan_quota",
         title: `Tính năng nâng cao đã tạm khóa (vượt trần đơn tháng ${monthLabel})`,
         body: `${base}. Đơn hàng + tồn kho vẫn đồng bộ ngầm, không mất dữ liệu — nâng gói là mở lại nguyên vẹn.`,
-        link: "/referral",
+        link: "/settings/plan",
       });
     }
   }
@@ -258,7 +258,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
       type: "plan_expiry",
       title: `Gói ${sub.plan.name}${sub.isTrial ? " (dùng thử)" : ""} hết hạn ngày ${fmtDate(periodEnd)}`,
       body: "Gia hạn/thanh toán trước ngày hết hạn để không gián đoạn các tính năng nâng cao.",
-      link: "/referral",
+      link: "/settings/plan",
     });
   }
   if (expired) {
@@ -268,7 +268,7 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
       body: expiryLocked
         ? "Các tính năng nâng cao đang tạm khóa. Đơn hàng + tồn kho vẫn đồng bộ ngầm — thanh toán là mở lại nguyên vẹn."
         : `Sau ngày ${fmtDate(expiryLockDeadline!)} các tính năng nâng cao sẽ tạm khóa nếu chưa gia hạn.`,
-      link: "/referral",
+      link: "/settings/plan",
     });
   }
 
