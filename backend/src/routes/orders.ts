@@ -104,22 +104,28 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const where = ordersWhere(req);
 
-    // GHIM ĐƠN HỎA TỐC CHỜ XỬ LÝ LÊN ĐẦU (anh Trung 19/08): đơn hỏa tốc còn
-    // PENDING phải luôn đứng trên mọi đơn khác dù ra đơn sớm hơn, để seller
-    // phát hiện và bàn giao vận chuyển ngay; sang PROCESSED thì trả về sắp
-    // theo thời gian như thường. Prisma không orderBy theo biểu thức được nên
-    // chia 2 nhóm — nhóm ghim (PENDING + hãng hỏa tốc) lấy trước, nhóm còn lại
-    // điền tiếp — và tự cắt trang trên tổng 2 nhóm để phân trang vẫn đúng.
+    // GHIM ĐƠN HỎA TỐC CHƯA BÀN GIAO LÊN ĐẦU (anh Trung 19/08, nới 22/08):
+    // đơn hỏa tốc phải đứng trên mọi đơn khác dù ra đơn sớm hơn, để seller
+    // phát hiện và bàn giao vận chuyển ngay; giữ ghim CẢ Chờ xử lý lẫn Đã xử
+    // lý (in vận đơn xong vẫn chưa ra khỏi tay mình) — chỉ nhả về thứ tự thời
+    // gian khi nhảy sang Đang giao. Prisma không orderBy theo biểu thức được
+    // nên chia 2 nhóm — nhóm ghim lấy trước, nhóm còn lại điền tiếp — và tự
+    // cắt trang trên tổng 2 nhóm để phân trang vẫn đúng.
+    const PINNED_STATUSES = [ShippingStatus.PENDING, ShippingStatus.PROCESSED];
     const pinnedWhere: Prisma.OrderWhereInput = {
-      AND: [where, { shippingStatus: ShippingStatus.PENDING }, expressShippingWhere()],
+      AND: [
+        where,
+        { shippingStatus: { in: PINNED_STATUSES } },
+        expressShippingWhere(),
+      ],
     };
-    // Phần bù: KHÔNG PENDING hoặc KHÔNG hỏa tốc (kể cả chưa có tên hãng).
+    // Phần bù: ĐÃ bàn giao trở đi hoặc KHÔNG hỏa tốc (kể cả chưa có tên hãng).
     const restWhere: Prisma.OrderWhereInput = {
       AND: [
         where,
         {
           OR: [
-            { shippingStatus: { not: ShippingStatus.PENDING } },
+            { shippingStatus: { notIn: PINNED_STATUSES } },
             notExpressShippingWhere(),
           ],
         },
