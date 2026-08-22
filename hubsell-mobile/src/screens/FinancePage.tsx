@@ -44,12 +44,19 @@ const CHANNEL_FILTERS: { key: string; label: string }[] = [
 ];
 
 /**
- * Màu cố định cho donut cơ cấu chi phí (khớp key backend). Giá vốn màu navy
- * đậm TÀNG HÌNH trên card tối → dark mode đổi sang trắng ngà (cùng chiêu với
- * màu TikTok trong useChannelColors).
+ * Màu cố định cho donut cơ cấu chi phí (khớp key backend) — gồm CẢ các loại
+ * sàn khấu trừ (gross.items) lẫn chi phí vận hành (costs.items), mỗi loại một
+ * màu riêng đủ phân biệt trên donut. Giá vốn màu navy đậm TÀNG HÌNH trên card
+ * tối → dark mode đổi sang trắng ngà (cùng chiêu màu TikTok useChannelColors).
  */
 const COST_COLOR_LIGHT: Record<string, string> = {
   cogs: "#0f172a",
+  platform: "#f43f5e",
+  platformTax: "#f97316",
+  voucher: "#eab308",
+  affiliate: "#ec4899",
+  shipping: "#14b8a6",
+  adWallet: "#a855f7",
   adsSpend: "#f59e0b",
   variable: "#6366f1",
   fixed: "#94a3b8",
@@ -104,6 +111,23 @@ export function FinancePage() {
   useEffect(() => {
     void load(range, channel);
   }, [range, channel, load]);
+
+  // CƠ CẤU CHI PHÍ GỘP ĐỦ LOẠI (anh Trung 22/08: chỉ giá vốn + ads là chưa đủ
+  // để seller thấy loại nào ăn nhiều): trộn các loại SÀN KHẤU TRỪ (phí nền
+  // tảng, thuế sàn, voucher, affiliate, chênh ship, nạp ví ads) với cột CHI
+  // PHÍ (giá vốn, ads, vận hành) thành một miếng bánh duy nhất, xếp giảm dần.
+  // Trợ giá từ sàn (amount ÂM — tiền được cộng ngược) KHÔNG vào donut, hiện
+  // dòng "+" riêng dưới chú giải.
+  const allCostItems = [
+    ...(analytics?.gross.items ?? []).filter(
+      (it) => it.key !== "subsidy" && it.amount > 0
+    ),
+    ...(analytics?.costs.items ?? []).filter((it) => it.amount > 0),
+  ].sort((a, b) => b.amount - a.amount);
+  const allCostTotal = allCostItems.reduce((s, it) => s + it.amount, 0);
+  const subsidyBack = analytics?.gross.items.find(
+    (it) => it.key === "subsidy" && it.amount < 0
+  );
 
   // Lọc sàn áp cả vào bảng tiền theo gian hàng (client-side — rows đã có sàn)
   const visibleCashRows = (cashRows ?? []).filter(
@@ -378,29 +402,29 @@ export function FinancePage() {
           ) : null}
 
           {/* CƠ CẤU CHI PHÍ — donut (anh Trung chốt 22/08: tròn dễ nhìn hơn
-              thác chảy) + chú giải BÓC CHI TIẾT từng khoản: giá vốn/Ads theo
-              sàn, chi phí nhập tay theo danh mục (backend costs.items[].items) */}
-          {analytics && analytics.costs.total > 0 ? (
+              thác chảy) gộp ĐỦ LOẠI phí sàn + chi phí, xếp từ khoản lớn nhất;
+              chú giải bóc chi tiết con: giá vốn/Ads theo sàn, nhập tay theo
+              danh mục (backend costs.items[].items) */}
+          {analytics && allCostTotal > 0 ? (
             <Card className="mb-4 p-4">
-              <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Cơ cấu chi phí
               </Text>
+              <Text className="mb-3 text-[11px] text-slate-400 dark:text-slate-500">
+                Gồm cả phí sàn khấu trừ · xếp từ khoản lớn nhất
+              </Text>
               <DonutChart
-                centerLabel={compactMoney(analytics.costs.total)}
+                centerLabel={compactMoney(allCostTotal)}
                 centerSub="tổng chi phí"
                 showLegend={false}
-                slices={analytics.costs.items
-                  .filter((it) => it.amount > 0)
-                  .map((it) => ({
-                    label: it.label,
-                    value: it.amount,
-                    color: COST_COLOR[it.key] ?? "#cbd5e1",
-                  }))}
+                slices={allCostItems.map((it) => ({
+                  label: it.label,
+                  value: it.amount,
+                  color: COST_COLOR[it.key] ?? "#cbd5e1",
+                }))}
               />
               <View className="mt-4">
-                {analytics.costs.items
-                  .filter((it) => it.amount > 0)
-                  .map((it) => (
+                {allCostItems.map((it) => (
                     <View
                       key={it.key}
                       className="border-t border-slate-100 py-2 dark:border-slate-800"
@@ -428,7 +452,9 @@ export function FinancePage() {
                           className="w-10 text-right text-xs font-semibold text-slate-500 dark:text-slate-400"
                           style={TABULAR}
                         >
-                          {Math.round(it.percent)}%
+                          {/* % tính lại trên TỔNG GỘP — it.percent backend
+                              tính trên mẫu số riêng từng cột thác nước */}
+                          {Math.round((it.amount / allCostTotal) * 100)}%
                         </Text>
                       </View>
                       {/* Dòng con bóc tách — % tính trên chính khoản cha */}
@@ -459,6 +485,22 @@ export function FinancePage() {
                       ))}
                     </View>
                   ))}
+                {/* Trợ giá sàn hoàn ngược — không phải chi phí nên đứng ngoài
+                    donut, hiện dấu + emerald cho khỏi hiểu nhầm bị trừ */}
+                {subsidyBack ? (
+                  <View className="flex-row items-center gap-2 border-t border-slate-100 py-2 dark:border-slate-800">
+                    <Ionicons name="add-circle-outline" size={13} color="#10b981" />
+                    <Text className="flex-1 text-xs text-slate-500 dark:text-slate-400">
+                      Trợ giá từ sàn (được cộng lại)
+                    </Text>
+                    <Text
+                      className="text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+                      style={TABULAR}
+                    >
+                      +{compactMoney(Math.abs(subsidyBack.amount))}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </Card>
           ) : null}
