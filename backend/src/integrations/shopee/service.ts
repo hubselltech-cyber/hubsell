@@ -12,6 +12,7 @@ import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { assertChannelSlot } from "../../plan-enforcement";
 import { carrierFromName } from "../../shipping";
 import {
   deductStockTx,
@@ -282,6 +283,22 @@ export async function handleShopeeCallback(
     select: { id: true },
   });
   if (clash) shopName = `${shopName} (${shopId.slice(-4)})`;
+
+  // Trần gian hàng của gói (GĐ2): upsert gộp create/update trong một call nên
+  // phải hỏi TRƯỚC — chỉ gian CHƯA TỒN TẠI (kết nối mới) mới tính vào trần,
+  // kết nối lại gian cũ luôn được qua. PlanLimitError nổi lên caller: route
+  // /shopee/connect trả 409, callback công khai redirect kèm message.
+  const existedBefore = await prisma.channel.findUnique({
+    where: {
+      userId_channelName_externalShopId: {
+        userId: ownerId,
+        channelName: ChannelName.SHOPEE,
+        externalShopId: shopId,
+      },
+    },
+    select: { id: true },
+  });
+  if (!existedBefore) await assertChannelSlot(ownerId);
 
   const saved = await prisma.channel.upsert({
     where: {

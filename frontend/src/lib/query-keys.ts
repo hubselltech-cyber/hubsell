@@ -16,6 +16,7 @@ import { rangeToQuery, type DateRange } from "./date-range";
 export const qk = {
   // ----- Dùng chung -----
   channels: () => ["channels"] as const,
+  mySubscription: () => ["my-subscription"] as const,
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,

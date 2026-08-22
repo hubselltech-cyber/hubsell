@@ -24,6 +24,12 @@ import { CommandPalette } from "@/components/command-palette";
 import { NavIcon } from "@/components/nav-icon";
 import { NotificationBell } from "@/components/notification-bell";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import {
+  PlanLockedScreen,
+  PlanQuotaBanner,
+  isPlanGatedPath,
+  useMyPlan,
+} from "@/components/plan-quota-guard";
 import { Button } from "@/components/ui/button";
 import { UserAvatarMenu } from "@/components/user-avatar-menu";
 import {
@@ -461,6 +467,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
   // Không gian điều hành Hubsell → thay trọn bộ menu bằng sidebar HQ.
   const hqWorkspace = isPlatformWorkspace(user);
+
+  // Trạng thái trần gói (GĐ2): nuôi banner cảnh báo + màn khóa tầng giá trị
+  // gia tăng. Nhân viên cũng cần (màn khóa phải giải thích được vì sao),
+  // khu HQ thì không — văn phòng công ty không có thuê bao.
+  const { data: planState } = useMyPlan(user !== null && !hqWorkspace);
+  const planLocked = planState !== undefined && !planState.exempt && planState.locked;
   const items = (hqWorkspace ? NAV_ITEMS_HQ : NAV_ITEMS)
     .filter(visible)
     .map(visibleChildren)
@@ -756,6 +768,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             xuống làm việc thì không án ngữ. */}
         {user && isAdmin(user) && !hqWorkspace && <ChannelDisconnectedBanner />}
 
+        {/* Dải cảnh báo trần gói (GĐ2) — cùng triết lý bám trạng thái; chỉ
+            chủ shop vì nhân viên không nâng gói được. */}
+        {user && isAdmin(user) && !hqWorkspace && <PlanQuotaBanner />}
+
         {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
             tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}
         <main className="w-full flex-1 px-4 py-5 md:px-6 md:py-6 lg:px-8">
@@ -766,7 +782,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             key={pathname}
             className="animate-page-enter motion-reduce:animate-none"
           >
-            {children}
+            {/* Màn khóa tầng giá trị gia tăng (GĐ2): backend đã chặn 403 ở
+                mount — lớp này chỉ để trang khóa hiện màn tử tế thay vì lỗi.
+                planState chưa về / lỗi mạng → render bình thường (fail-open,
+                cùng triết lý backend). */}
+            {planState && planLocked && !hqWorkspace && isPlanGatedPath(pathname) ? (
+              <PlanLockedScreen
+                data={planState}
+                isShopAdmin={user !== null && isAdmin(user)}
+              />
+            ) : (
+              children
+            )}
           </div>
         </main>
       </div>
@@ -782,7 +809,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Trợ lý Hubsell — bong bóng chat nổi mọi trang, sống xuyên chuyển trang
           (nằm NGOÀI khối key={pathname}). GĐ1 chỉ CHỦ SHOP shop thường, cùng
           điều kiện với chuông thông báo. */}
-      {user && isAdmin(user) && !hqWorkspace && <AssistantWidget />}
+      {/* planLocked: /api/assistant cũng bị khóa — giấu bong bóng thay vì để
+          khách chat vào tường lỗi 403; banner + màn khóa đã giải thích đủ. */}
+      {user && isAdmin(user) && !hqWorkspace && !planLocked && <AssistantWidget />}
     </div>
   );
 }

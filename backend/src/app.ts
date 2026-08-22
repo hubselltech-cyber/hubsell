@@ -32,6 +32,8 @@ import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
 import assistantRouter from "./routes/assistant";
+import subscriptionRouter from "./routes/subscription";
+import { requirePlanUnlocked } from "./plan-enforcement";
 import { notificationsRouter, notificationStream } from "./notifications";
 
 // ============================================================
@@ -128,16 +130,22 @@ export function createApp() {
   // ============================================================
   const adminOnly = requireRole(Role.ADMIN);
 
+  // GĐ2 CƯỠNG CHẾ TRẦN (22/08): requirePlanUnlocked khóa TẦNG GIÁ TRỊ GIA TĂNG
+  // (tài chính/thuế/trợ lý/quảng cáo/KOC) khi vượt ân hạn trần đơn hoặc gói hết
+  // hạn quá ân hạn. Nhóm SỐNG CÒN (dashboard/analytics/đơn/kho/kênh/nhân viên/
+  // referral) CỐ TÌNH không gắn — đơn + tồn kho không bao giờ ngừng đồng bộ,
+  // và /api/referral phải luôn mở vì đó là đường thanh toán bằng Ví để tự cứu.
   app.use("/api/dashboard", requireAuth, requirePermission("dashboard"), requireChannel, dashboardRouter);
   // /api/analytics phục vụ biểu đồ trang Tổng quan → đi cùng quyền dashboard.
   app.use("/api/analytics", requireAuth, requirePermission("dashboard"), requireChannel, analyticsRouter);
-  app.use("/api/expenses", requireAuth, requirePermission("finance.expenses"), requireChannel, expensesRouter);
+  app.use("/api/expenses", requireAuth, requirePermission("finance.expenses"), requirePlanUnlocked, requireChannel, expensesRouter);
   // Router finance chứa cả 2 route mà trang Kho/Vận hành cần (shipping-discrepancies,
   // orders-analysis) → cửa mount mở cho 3 nhóm quyền, từng route bên trong siết đúng lá.
   app.use(
     "/api/finance",
     requireAuth,
     requirePermission("finance", "warehouse.shipping-alerts", "operations.loss-orders"),
+    requirePlanUnlocked,
     requireChannel,
     financeRouter
   );
@@ -163,7 +171,7 @@ export function createApp() {
 
   // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — khóa "invoicing"
   // (nguyên khối cùng /api/tax: cấp Hóa đơn & Thuế là cấp trọn gói).
-  app.use("/api/invoice-config", requireAuth, requirePermission("invoicing"), invoiceConfigRouter);
+  app.use("/api/invoice-config", requireAuth, requirePermission("invoicing"), requirePlanUnlocked, invoiceConfigRouter);
 
   // Test sandbox MISA (Hóa đơn đầu vào + eSign) — chỉ Admin; trên production
   // router tự chặn 503 trừ khi bật MISA_SANDBOX_TEST_ENABLED=1 (xem file route).
@@ -172,20 +180,20 @@ export function createApp() {
   // Hóa đơn & Thuế: cấu hình Thuế bổ sung + Báo cáo thuế — khóa "invoicing".
   // Không gác requireChannel (giống invoice-config) để trang cấu hình thuế
   // vẫn mở được khi shop chưa nối gian nào.
-  app.use("/api/tax", requireAuth, requirePermission("invoicing"), taxRouter);
+  app.use("/api/tax", requireAuth, requirePermission("invoicing"), requirePlanUnlocked, taxRouter);
 
   // Trợ lý vận hành (CSKH đa kênh): chat + đánh giá + ngữ cảnh sản phẩm.
   // Cửa mount = có BẤT KỲ lá operations.* nào; route chat/reviews bên trong
   // router tự siết đúng lá của mình.
-  app.use("/api/operations", requireAuth, requirePermission("operations"), requireChannel, operationsRouter);
+  app.use("/api/operations", requireAuth, requirePermission("operations"), requirePlanUnlocked, requireChannel, operationsRouter);
 
   // Mạng lưới KOC & Affiliate: đọc dữ liệu affiliate THẬT từ đối soát sàn
   // (Order.affiliateFee). Mục nguyên khối trong cây phân quyền — khóa "koc".
-  app.use("/api/koc", requireAuth, requirePermission("koc"), requireChannel, kocRouter);
+  app.use("/api/koc", requireAuth, requirePermission("koc"), requirePlanUnlocked, requireChannel, kocRouter);
 
   // Trợ lý quảng cáo: cửa mount = có lá ads.* bất kỳ; nhánh /shopee bên trong
   // router siết đúng ads.shopee (tiktok/lazada hiện là preview mock phía FE).
-  app.use("/api/ads", requireAuth, requirePermission("ads"), requireChannel, adsRouter);
+  app.use("/api/ads", requireAuth, requirePermission("ads"), requirePlanUnlocked, requireChannel, adsRouter);
 
   // Affiliate Tiếp Thị & Ví Hubsell — referral của CHÍNH nền tảng (khác /api/koc).
   // Chỉ chủ shop; KHÔNG gác requireChannel: chưa kết nối gian vẫn giới thiệu được.
@@ -204,7 +212,11 @@ export function createApp() {
   // Trợ lý Hubsell (bong bóng chat hỏi số liệu vận hành — tầng luật): câu trả
   // lời chạm đủ mảng tài chính nên GĐ1 chỉ CHỦ SHOP, như chuông thông báo.
   // KHÔNG gác requireChannel: shop chưa nối gian vẫn chat được (số về 0).
-  app.use("/api/assistant", requireAuth, adminOnly, assistantRouter);
+  app.use("/api/assistant", requireAuth, adminOnly, requirePlanUnlocked, assistantRouter);
+
+  // Gói của tôi (phía khách) — mở cho MỌI vai trò đã đăng nhập: nhân viên cũng
+  // cần biết trạng thái gói của chủ shop để màn khóa giải thích được vì sao.
+  app.use("/api/subscription", requireAuth, subscriptionRouter);
 
   // Xử lý route không tồn tại
   app.use((_req, res) => {

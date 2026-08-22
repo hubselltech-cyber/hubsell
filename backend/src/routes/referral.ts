@@ -22,6 +22,7 @@ import {
   planPriceFor,
   recordPackagePaymentTx,
 } from "../subscription-service";
+import { invalidatePlanState } from "../plan-enforcement";
 
 const router = Router();
 
@@ -314,6 +315,9 @@ router.post("/renew", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Số dư Ví Hubsell không đủ để gia hạn gói này" });
       return;
     }
+
+    // Nâng gói/gia hạn bằng Ví phải mở khóa trần ngay — đừng chờ TTL cache.
+    invalidatePlanState(userId);
 
     // Gia hạn = thanh toán thành công → chảy tiếp 10% cho người giới thiệu tôi.
     await creditReferralCommission(userId, price);

@@ -1066,6 +1066,9 @@ model Order {
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
   @@unique([channelId, orderCode])
   @@index([channelId])
+  // Đếm "đơn phát sinh trong tháng" của trần gói (GĐ2 cưỡng chế) — createdAt
+  // là NGÀY SÀN (mọi luồng upsert đều override default), không phải ngày ghi DB.
+  @@index([channelId, createdAt])
 }
 
 /// Chi tiết dòng sản phẩm của một đơn hàng.
@@ -1760,6 +1763,17 @@ model Subscription {
   /// Kỳ hiện tại. currentPeriodEnd null = vô thời hạn.
   currentPeriodStart DateTime  @default(now())
   currentPeriodEnd   DateTime?
+  /// ---- Theo dõi TRẦN ĐƠN THÁNG (GĐ2 cưỡng chế, plan-enforcement.ts) ----
+  /// Tháng dương lịch "yyyy-MM" mà 2 cột dưới thuộc về — sang tháng tự reset
+  /// LÚC ĐỌC (không cron). Ghi lười: chỉ update khi trạng thái đổi.
+  quotaMonth String?
+  /// Thời điểm ĐẦU TIÊN chạm 100% trần đơn trong tháng — mốc tính ân hạn
+  /// 7 ngày trước khi khóa tầng giá trị gia tăng. Tụt dưới 100% (nâng gói/
+  /// sang tháng) thì xoá.
+  overQuotaSince DateTime?
+  /// Mốc chuông đã phát trong tháng (0/80/100/120) — chống spam thông báo
+  /// bền hơn cửa sổ dedupe 24h của notify().
+  quotaNotifiedLevel Int       @default(0)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

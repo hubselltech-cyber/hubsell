@@ -55,6 +55,11 @@ import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
 import { getEscrowDetail } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import {
+  assertChannelSlot,
+  invalidatePlanState,
+  respondPlanLimit,
+} from "../plan-enforcement";
 
 const router = Router();
 
@@ -184,6 +189,10 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Trần gian hàng của gói: chỉ chặn TẠO MỚI — nhánh kết nối lại ở trên đã
+    // return trước khi tới đây (grandfather: gian đang có không bao giờ bị đụng).
+    await assertChannelSlot(req.ownerId!);
+
     const channel = await prisma.channel.create({
       data: {
         userId: req.ownerId!,
@@ -194,8 +203,10 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
         feeRate: PLATFORM_FEE_RATE[name], // % phí sàn mặc định để tạm tính
       },
     });
+    invalidatePlanState(req.ownerId!);
     res.status(201).json(channel);
   } catch (err) {
+    if (respondPlanLimit(res, err)) return;
     next(err);
   }
 });
@@ -293,6 +304,24 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
     const accessExpireAt = expireToDate(token.access_token_expire_in);
     const refreshExpireAt = expireToDate(token.refresh_token_expire_in);
 
+    // Trần gian hàng của gói: đếm số gian MỚI trong lô vừa ủy quyền — gian đã
+    // có chỉ được cập nhật token (kết nối lại), không tính vào trần. Chặn CẢ
+    // LÔ trước khi ghi gì để không kết nối nửa vời.
+    const existingShopIds = new Set(
+      (
+        await prisma.channel.findMany({
+          where: {
+            userId: req.ownerId!,
+            channelName: ChannelName.TIKTOK,
+            externalShopId: { in: shops.map((s) => s.id) },
+          },
+          select: { externalShopId: true },
+        })
+      ).map((c) => c.externalShopId)
+    );
+    const newShopCount = shops.filter((s) => !existingShopIds.has(s.id)).length;
+    if (newShopCount > 0) await assertChannelSlot(req.ownerId!, newShopCount);
+
     // 3) Với mỗi gian: tạo mới hoặc cập nhật token (định danh theo externalShopId).
     const saved = [];
     for (const shop of shops) {
@@ -344,6 +373,8 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
       );
     }
 
+    if (newShopCount > 0) invalidatePlanState(req.ownerId!);
+
     // Không lộ token ra response — chỉ trả thông tin nhận diện gian.
     res.status(201).json({
       connected: saved.length,
@@ -356,6 +387,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
       })),
     });
   } catch (err) {
+    if (respondPlanLimit(res, err)) return;
     next(err);
   }
 });
@@ -433,8 +465,12 @@ router.post("/shopee/connect", requireAdmin, async (req: AuthRequest, res) => {
       shopId.trim(),
       typeof channelId === "string" && channelId ? channelId : undefined
     );
+    invalidatePlanState(req.ownerId!);
     res.json({ message: `Đã kết nối gian "${saved.shopName}"`, channel: saved });
   } catch (err) {
+    // Trần gói (service ném PlanLimitError khi gian là gian MỚI) → 409 có code
+    // riêng, đừng bọc thành 502 "lỗi phía Shopee".
+    if (respondPlanLimit(res, err)) return;
     // Lỗi phía Shopee (code hết hạn, chữ ký sai...) trả 502 kèm message gốc.
     res.status(502).json({ error: `Kết nối Shopee thất bại: ${(err as Error).message}` });
   }
@@ -502,8 +538,12 @@ router.post("/lazada/connect", requireAdmin, async (req: AuthRequest, res) => {
       code.trim(),
       typeof channelId === "string" && channelId ? channelId : undefined
     );
+    invalidatePlanState(req.ownerId!);
     res.json({ message: `Đã kết nối gian "${saved.shopName}"`, channel: saved });
   } catch (err) {
+    // Trần gói (service ném PlanLimitError khi gian là gian MỚI) → 409 có code
+    // riêng, đừng bọc thành 502 "lỗi phía Lazada".
+    if (respondPlanLimit(res, err)) return;
     // Lỗi phía Lazada (code hết hạn, chữ ký sai...) trả 502 kèm message gốc.
     res.status(502).json({ error: `Kết nối Lazada thất bại: ${(err as Error).message}` });
   }
@@ -831,6 +871,7 @@ router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next)
       // disconnectedAt mở đồng hồ 30 ngày ẩn gian khỏi bảng Phân bổ dòng tiền.
       data: { status: "DISCONNECTED", disconnectedAt: new Date() },
     });
+    invalidatePlanState(req.ownerId!); // trần gói chỉ đếm gian ACTIVE — trống một chỗ
     res.json(updated);
   } catch (err) {
     next(err);

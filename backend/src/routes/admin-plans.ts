@@ -324,7 +324,7 @@ router.get(
               currentPeriodEnd: true,
               createdAt: true,
               user: { select: { id: true, email: true, fullName: true } },
-              plan: { select: { id: true, code: true, name: true } },
+              plan: { select: { id: true, code: true, name: true, maxOrdersPerMonth: true } },
             },
           }),
           prisma.subscription.count({ where }),
@@ -366,6 +366,34 @@ router.get(
           }),
         ]);
 
+      // %TRẦN ĐƠN THÁNG của từng thuê bao đang hiển thị (GĐ2) — để HQ gọi
+      // khách chủ động mời nâng gói trước khi bị khóa. 1 findMany gian +
+      // 1 groupBy đơn cho cả trang, không N+1.
+      const ownerIds = [...new Set(subs.map((s) => s.user.id))];
+      const ownerChannels = ownerIds.length
+        ? await prisma.channel.findMany({
+            where: { userId: { in: ownerIds } },
+            select: { id: true, userId: true },
+          })
+        : [];
+      const channelOwner = new Map(ownerChannels.map((c) => [c.id, c.userId]));
+      const orderGroups = ownerChannels.length
+        ? await prisma.order.groupBy({
+            by: ["channelId"],
+            where: {
+              channelId: { in: ownerChannels.map((c) => c.id) },
+              createdAt: { gte: monthStart },
+            },
+            _count: { _all: true },
+          })
+        : [];
+      const ordersByOwner = new Map<string, number>();
+      for (const g of orderGroups) {
+        const owner = channelOwner.get(g.channelId);
+        if (!owner) continue;
+        ordersByOwner.set(owner, (ordersByOwner.get(owner) ?? 0) + g._count._all);
+      }
+
       res.json({
         summary: {
           active: activeCount,
@@ -379,7 +407,9 @@ router.get(
         subscriptions: subs.map((s) => ({
           id: s.id,
           user: s.user,
-          plan: s.plan,
+          plan: { id: s.plan.id, code: s.plan.code, name: s.plan.name },
+          ordersThisMonth: ordersByOwner.get(s.user.id) ?? 0,
+          orderLimit: s.plan.maxOrdersPerMonth,
           status: effectiveSubscriptionStatus(s),
           isTrial: s.isTrial,
           currentPeriodStart: s.currentPeriodStart,

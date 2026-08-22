@@ -6,6 +6,11 @@ import type { AuthRequest } from "../auth";
 import { sanitizePermissions } from "../permission-registry";
 import { sanitizeHqPermissions } from "../platform-permission-registry";
 import { writeAuditLog } from "../platform-audit";
+import {
+  assertStaffSlot,
+  invalidatePlanState,
+  respondPlanLimit,
+} from "../plan-enforcement";
 import { ensureOwnerUsername, USERNAME_REGEX } from "../username";
 
 /**
@@ -155,6 +160,10 @@ router.post("/", async (req: AuthRequest, res, next) => {
       return;
     }
 
+    // Trần nhân viên của gói: chỉ chặn TẠO MỚI — nhân viên đang có không bị
+    // đụng khi hạ gói (grandfather), sửa/xóa vẫn tự do.
+    await assertStaffSlot(req.ownerId!);
+
     // Chủ shop cũ chưa đặt username (đăng nhập email thuần) → tự sinh và lưu
     // luôn, vì username chủ là NỬA TRÁI của định dạng đăng nhập nhân viên.
     const owner = await prisma.user.findUniqueOrThrow({
@@ -191,8 +200,10 @@ router.post("/", async (req: AuthRequest, res, next) => {
       });
     }
 
+    invalidatePlanState(req.ownerId!);
     res.status(201).json(serializeStaff(staff, ownerUsername));
   } catch (err) {
+    if (respondPlanLimit(res, err)) return;
     next(err);
   }
 });
@@ -319,6 +330,7 @@ router.delete("/:id", async (req: AuthRequest, res, next) => {
       return;
     }
     await prisma.user.delete({ where: { id: staff.id } });
+    invalidatePlanState(req.ownerId!); // trống một slot nhân viên ngay lập tức
 
     // Ghi log SAU khi xoá, actorId là người xoá (target đã mất — chỉ còn nhãn).
     if (req.isPlatformAdmin) {

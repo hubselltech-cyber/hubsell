@@ -2611,6 +2611,10 @@ export interface PlatformSubscription {
   id: string;
   user: { id: string; email: string | null; fullName: string };
   plan: { id: string; code: string; name: string };
+  /** Đơn phát sinh THÁNG NÀY của mọi gian thuộc khách (GĐ2 cưỡng chế trần). */
+  ordersThisMonth: number;
+  /** Trần đơn/tháng của gói — null = không giới hạn. */
+  orderLimit: number | null;
   status: SubscriptionEffectiveStatus;
   /** Đang trong kỳ dùng thử (chưa từng trả tiền). */
   isTrial: boolean;
@@ -2735,6 +2739,64 @@ export interface PlatformMarketingResponse {
 
 export function fetchPlatformMarketing() {
   return apiFetch<PlatformMarketingResponse>("/api/admin/marketing");
+}
+
+// ---------- Gói của tôi (GĐ2 cưỡng chế trần — phía KHÁCH, mọi vai trò) ----------
+
+/** Trạng thái trần đơn tháng: ok → warn (≥80%) → over (≥100%, trong ân hạn)
+ * → locked (vượt ân hạn — tầng giá trị gia tăng tạm khóa). */
+export type OrderQuotaState = "ok" | "warn" | "over" | "locked";
+
+export interface MyPlanInfo {
+  id: string;
+  code: string;
+  name: string;
+  tier: number;
+  maxChannels: number | null;
+  maxOrdersPerMonth: number | null;
+  maxStaff: number | null;
+}
+
+export interface MyUpgradePlan extends MyPlanInfo {
+  priceMonthly: number;
+  priceQuarterly: number;
+  priceSemiannual: number;
+  priceYearly: number;
+}
+
+export interface MySubscriptionResponse {
+  /** Tài khoản điều hành nền tảng — FE ẩn banner/màn khóa. */
+  exempt: boolean;
+  /** false = khách cũ chưa được gán thuê bao → không giới hạn gì. */
+  hasSubscription: boolean;
+  plan: MyPlanInfo | null;
+  subscription: {
+    status: SubscriptionEffectiveStatus;
+    isTrial: boolean;
+    currentPeriodStart: string;
+    currentPeriodEnd: string | null;
+    daysLeft: number | null;
+  } | null;
+  usage: { channels: number; staff: number; ordersThisMonth: number };
+  orders: {
+    limit: number | null;
+    used: number;
+    ratio: number | null;
+    state: OrderQuotaState;
+    /** Hết ân hạn (khóa) sau mốc này — null khi chưa chạm 100%. */
+    graceDeadline: string | null;
+  };
+  expiry: { expired: boolean; lockDeadline: string | null; locked: boolean };
+  locked: boolean;
+  lockedReason: "ORDERS" | "EXPIRED" | null;
+  /** Các gói đang bán bậc cao hơn — nội dung bảng chọn của popup nâng gói. */
+  upgradePlans: MyUpgradePlan[];
+  /** STK nhận tiền (env backend) — null khi chưa cấu hình → FE mời liên hệ. */
+  payment: { bankName: string; bankAccount: string; bankHolder: string } | null;
+}
+
+export function fetchMySubscription() {
+  return apiFetch<MySubscriptionResponse>("/api/subscription/me");
 }
 
 // ---------- Báo cáo nhà đầu tư (GĐ6 — chỉ chủ nền tảng) ----------

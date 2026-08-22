@@ -795,6 +795,7 @@ export default function PlatformPlansPage() {
                     <TableRow>
                       <TableHead>Khách hàng</TableHead>
                       <TableHead>Gói</TableHead>
+                      <TableHead>Đơn tháng này</TableHead>
                       <TableHead>Kỳ hiện tại</TableHead>
                       <TableHead>Còn lại</TableHead>
                       <TableHead>Trạng thái</TableHead>
@@ -809,6 +810,29 @@ export default function PlatformPlansPage() {
                           <p className="text-xs text-muted-foreground">{s.user.email ?? "—"}</p>
                         </TableCell>
                         <TableCell className="text-sm font-medium">{s.plan.name}</TableCell>
+                        {/* %trần đơn/tháng (GĐ2): đỏ khi đã vượt, vàng từ 80% —
+                            gọi khách mời nâng gói TRƯỚC khi hệ thống tự khóa. */}
+                        <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                          {s.orderLimit != null ? (
+                            <span
+                              className={cn(
+                                "font-medium",
+                                s.ordersThisMonth >= s.orderLimit
+                                  ? "text-rose-600"
+                                  : s.ordersThisMonth >= s.orderLimit * 0.8
+                                    ? "text-amber-600"
+                                    : "text-muted-foreground"
+                              )}
+                            >
+                              {formatCount(s.ordersThisMonth)}/{formatCount(s.orderLimit)}{" "}
+                              ({Math.floor((s.ordersThisMonth / s.orderLimit) * 100)}%)
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              {formatCount(s.ordersThisMonth)}
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {s.currentPeriodEnd
                             ? `${formatDate(s.currentPeriodStart)} → ${formatDate(s.currentPeriodEnd)}`

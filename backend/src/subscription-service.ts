@@ -22,6 +22,7 @@ import {
   Prisma,
 } from "@prisma/client";
 import { prisma } from "./prisma";
+import { invalidatePlanState } from "./plan-enforcement";
 import { creditReferralCommission } from "./referral-wallet";
 
 type Tx = Prisma.TransactionClient;
@@ -235,6 +236,9 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
  */
 export async function recordPackagePayment(input: RecordPaymentInput) {
   const result = await prisma.$transaction((tx) => recordPackagePaymentTx(tx, input));
+  // Nâng gói/gia hạn phải MỞ KHÓA ngay ở request kế tiếp — đừng bắt khách vừa
+  // trả tiền chờ hết TTL cache trạng thái trần (GĐ2 cưỡng chế).
+  invalidatePlanState(input.userId);
   const amount = Number(result.payment.amount);
   if (amount > 0) {
     await creditReferralCommission(

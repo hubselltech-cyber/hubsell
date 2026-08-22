@@ -15,6 +15,7 @@ import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { CHANNEL_LABEL } from "../../mockMarketplace";
+import { assertChannelSlot } from "../../plan-enforcement";
 import { carrierFromName } from "../../shipping";
 import {
   deductStockTx,
@@ -264,6 +265,11 @@ export async function handleLazadaCallback(
     select: { id: true },
   });
   if (clash) shopName = `${shopName} (${shopId.slice(-4)})`;
+
+  // Trần gian hàng của gói (GĐ2): tới được đây nghĩa là gian MỚI (2 nhánh kết
+  // nối lại ở trên đã return) — hỏi trần trước khi tạo. PlanLimitError nổi lên
+  // caller: route /lazada/connect trả 409, callback công khai redirect kèm message.
+  await assertChannelSlot(ownerId);
 
   // KHÔNG gán feeRate % mặc định: từ chốt sổ đối soát 30-31/07, Lazada không
   // dùng phí ước % ở bất kỳ báo cáo nào — phí chỉ có từ sao kê Finance API.
