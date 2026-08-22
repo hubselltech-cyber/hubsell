@@ -14,9 +14,13 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes("--apply");
 
+// Thang gói anh Trung chốt 22/08: Beta (<300 đơn, FULL tính năng, 99k) là cửa
+// vào; TRÊN 300 đơn tách 2 gói Cơ bản / Nâng cao (khác nhau về TÍNH NĂNG —
+// giá/trần/danh sách tính năng chưa chốt, seed dạng NHÁP isActive=false để
+// anh điền dần trên /admin/plans, khách không nhìn thấy gói nháp).
 const BASIC = {
   code: "BASIC",
-  name: "Cơ bản",
+  name: "Beta",
   description:
     "Đầy đủ tính năng Hubsell cho shop dưới 300 đơn/tháng. Mọi tài khoản mới được dùng thử 14 ngày.",
   tier: 1,
@@ -31,6 +35,22 @@ const BASIC = {
   isActive: true,
   isDefault: true,
 };
+
+/** 2 gói NHÁP cho khách trên 300 đơn — chưa bán, chờ anh Trung chốt số. */
+const DRAFT_UPPER_PLANS = [
+  {
+    code: "STANDARD",
+    name: "Cơ bản",
+    description: "Trên 300 đơn/tháng — bộ tính năng chuẩn. NHÁP: chưa chốt giá/trần.",
+    tier: 2,
+  },
+  {
+    code: "ADVANCED",
+    name: "Nâng cao",
+    description: "Trên 300 đơn/tháng — đầy đủ tính năng cao cấp. NHÁP: chưa chốt giá/trần.",
+    tier: 3,
+  },
+];
 
 function trialEnd(days: number): Date {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -53,6 +73,18 @@ async function main() {
       where: { isDefault: true, id: { not: basic.id } },
       data: { isDefault: false },
     });
+  }
+
+  // Goi nhap tren 300 don: CHI TAO KHI CHUA CO — khong upsert de khoi de len
+  // gia/tinh nang anh Trung da tu dien tren /admin/plans.
+  for (const draft of DRAFT_UPPER_PLANS) {
+    const existing = await prisma.servicePlan.findUnique({ where: { code: draft.code } });
+    if (existing) {
+      console.log(`Goi ${draft.code} da co — giu nguyen.`);
+      continue;
+    }
+    console.log(`Se tao goi NHAP ${draft.code} (${draft.name}) — isActive=false.`);
+    if (APPLY) await prisma.servicePlan.create({ data: draft });
   }
 
   // Chuyen doi tu goi BETA doi dau (chi ton tai o DB da chay backfill ban cu).
