@@ -225,7 +225,7 @@ export default function SettingsPlanPage() {
       description="Gói đang dùng, mức sử dụng so với trần, chọn mua gói và lịch sử thanh toán."
     >
       {/* ===== Gói hiện tại + mức dùng ===== */}
-      <Card className="max-w-2xl shadow-sm">
+      <Card className="shadow-sm">
         <CardHeader className="border-b pb-3">
           <CardTitle className="flex flex-wrap items-center gap-2">
             <Gauge className="size-5 text-slate-500" />
@@ -276,24 +276,27 @@ export default function SettingsPlanPage() {
                   : "Shop đã vượt trần đơn quá ân hạn — các tính năng nâng cao đang tạm khóa. Đơn hàng và tồn kho vẫn được đồng bộ đầy đủ."}
               </div>
             )}
-            <UsageBar
-              label="Đơn hàng tháng này"
-              used={data.orders.used}
-              limit={data.orders.limit}
-              unit="đơn"
-            />
-            <UsageBar
-              label="Gian hàng đang hoạt động"
-              used={data.usage.channels}
-              limit={data.plan?.maxChannels ?? null}
-              unit="gian"
-            />
-            <UsageBar
-              label="Tài khoản nhân viên"
-              used={data.usage.staff}
-              limit={data.plan?.maxStaff ?? null}
-              unit="tài khoản"
-            />
+            {/* 3 thanh nằm ngang trên desktop — trang full-bleed không để trống sườn */}
+            <div className="grid gap-x-8 gap-y-4 md:grid-cols-3">
+              <UsageBar
+                label="Đơn hàng tháng này"
+                used={data.orders.used}
+                limit={data.orders.limit}
+                unit="đơn"
+              />
+              <UsageBar
+                label="Gian hàng đang hoạt động"
+                used={data.usage.channels}
+                limit={data.plan?.maxChannels ?? null}
+                unit="gian"
+              />
+              <UsageBar
+                label="Tài khoản nhân viên"
+                used={data.usage.staff}
+                limit={data.plan?.maxStaff ?? null}
+                unit="tài khoản"
+              />
+            </div>
             <p className={TEXT_SUB}>
               Trần đơn tính theo tháng dương lịch trên mọi gian hàng của shop. Vượt trần
               đơn vẫn được đồng bộ đầy đủ — chỉ các tính năng nâng cao tạm khóa sau thời
@@ -303,13 +306,15 @@ export default function SettingsPlanPage() {
         )}
       </Card>
 
-      {/* ===== Chọn gói & thanh toán ===== */}
+      {/* ===== Chọn gói & thanh toán — trình bày kiểu bảng giá SaaS (anh Trung
+          22/08 khuya: to, rõ, đẹp như đối thủ; nêu rõ 3 giới hạn dưới từng gói,
+          chưa đặt số = Không giới hạn; bậc 3 gắn Bán chạy nhất) ===== */}
       {data && data.upgradePlans.length > 0 && (
-        <div className="max-w-2xl space-y-3">
+        <div className="space-y-4">
           <div>
-            <p className="text-sm font-semibold">Chọn gói &amp; thanh toán</p>
+            <p className="text-base font-semibold">Chọn gói &amp; thanh toán</p>
             <p className={TEXT_SUB}>
-              Mọi gói đều đầy đủ tính năng — chỉ khác trần số đơn mỗi tháng. Chọn kỳ mua
+              Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua
               rồi bấm Đăng ký mua, Hubsell sẽ liên hệ hướng dẫn thanh toán.
             </p>
           </div>
@@ -345,21 +350,24 @@ export default function SettingsPlanPage() {
           )}
 
           {/* Quyền lợi chung — một lần cho mọi gói */}
-          <div className="rounded-lg border bg-muted/40 p-3">
-            <p className="text-sm font-medium">Mọi gói đều bao gồm toàn bộ tính năng</p>
-            <ul className="mt-2 grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
+          <div className="rounded-xl border bg-muted/40 p-4">
+            <p className="text-sm font-semibold">Mọi gói đều bao gồm toàn bộ tính năng</p>
+            <ul className="mt-2.5 grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
               {PLAN_FEATURES.map((f) => (
-                <li key={f} className="flex items-start gap-2 text-xs text-muted-foreground">
-                  <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                <li key={f} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
                   {f}
                 </li>
               ))}
             </ul>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 pt-2 md:grid-cols-2 xl:grid-cols-4">
             {data.upgradePlans.map((p) => {
               const isCurrent = p.id === data.plan?.id;
+              // Bậc 3 = gói "Bán chạy nhất" (anh Trung chốt 22/08) — theo tier
+              // nên đổi thang gói sau này không phải sửa code.
+              const isBestSeller = p.tier === 3;
               const cycle = cycleByPlan[p.id] ?? "MONTHLY";
               const price = priceOf(p, cycle);
               const months = CYCLES.find((c) => c.value === cycle)!.months;
@@ -368,25 +376,40 @@ export default function SettingsPlanPage() {
                   ? Math.round((1 - price / (p.priceMonthly * months)) * 100)
                   : 0;
               const walletEnough = wallet >= price && price > 0;
+              // 3 giới hạn nói RÕ dưới từng gói — chưa đặt số = Không giới hạn.
+              const limitRows = [
+                p.maxOrdersPerMonth != null
+                  ? `${nf.format(p.maxOrdersPerMonth)} đơn hàng/tháng`
+                  : "Không giới hạn đơn hàng",
+                p.maxChannels != null
+                  ? `${nf.format(p.maxChannels)} gian hàng`
+                  : "Không giới hạn gian hàng",
+                p.maxStaff != null
+                  ? `${nf.format(p.maxStaff)} tài khoản nhân viên`
+                  : "Không giới hạn nhân viên",
+                "Đầy đủ mọi tính năng Hubsell",
+              ];
               return (
                 <div
                   key={p.id}
                   className={cn(
-                    "relative flex flex-col rounded-xl border bg-card p-4 shadow-sm",
-                    isCurrent && "border-sky-300"
+                    "relative flex flex-col rounded-2xl border bg-card p-5 shadow-sm",
+                    isBestSeller
+                      ? "border-emerald-500 shadow-md ring-1 ring-emerald-500"
+                      : isCurrent && "border-sky-300"
                   )}
                 >
+                  {isBestSeller && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-sm">
+                      Bán chạy nhất
+                    </span>
+                  )}
                   {isCurrent && (
-                    <span className="absolute right-3 top-3 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300">
+                    <span className="absolute right-4 top-4 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300">
                       Đang dùng
                     </span>
                   )}
-                  <p className="text-sm font-semibold">{p.name}</p>
-                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">
-                    {p.maxOrdersPerMonth != null
-                      ? `Đến ${nf.format(p.maxOrdersPerMonth)} đơn/tháng`
-                      : "Không giới hạn đơn"}
-                  </p>
+                  <p className="text-lg font-bold">{p.name}</p>
 
                   {/* Chọn kỳ mua — chỉ hiện kỳ gói có bán (giá > 0) */}
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -409,18 +432,18 @@ export default function SettingsPlanPage() {
                     ))}
                   </div>
 
-                  <p className="mt-3 text-2xl font-bold tabular-nums">
+                  <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight">
                     {nf.format(price)}₫
-                    <span className="text-sm font-normal text-muted-foreground">
+                    <span className="text-sm font-medium text-muted-foreground">
                       /{CYCLE_LABEL[cycle]}
                     </span>
                   </p>
-                  <p className="min-h-4 text-xs tabular-nums text-muted-foreground">
+                  <p className="min-h-5 text-sm tabular-nums text-muted-foreground">
                     {months > 1 && (
                       <>
                         ≈ {nf.format(Math.round(price / months))}₫/tháng
                         {save >= 1 && (
-                          <span className="ml-1.5 font-medium text-emerald-600">
+                          <span className="ml-1.5 font-semibold text-emerald-600">
                             tiết kiệm {save}%
                           </span>
                         )}
@@ -428,25 +451,33 @@ export default function SettingsPlanPage() {
                     )}
                   </p>
 
-                  <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
+                  <ul className="mt-4 space-y-2.5 border-t pt-4">
+                    {limitRows.map((row) => (
+                      <li key={row} className="flex items-start gap-2.5 text-sm">
+                        <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                        {row}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="mt-auto space-y-2 pt-5">
                     <Button
-                      size="sm"
+                      className="w-full"
+                      variant={isBestSeller ? "default" : "outline"}
                       disabled={requestMutation.isPending}
-                      onClick={() =>
-                        requestMutation.mutate({ planId: p.id, cycle })
-                      }
+                      onClick={() => requestMutation.mutate({ planId: p.id, cycle })}
                     >
                       <ShoppingCart className="size-4" />
                       {isCurrent ? "Gia hạn gói này" : "Đăng ký mua"}
                     </Button>
                     {walletEnough && (
                       <Button
-                        size="sm"
-                        variant="outline"
+                        className="w-full"
+                        variant="ghost"
                         onClick={() => setWalletBuy({ plan: p, cycle })}
                       >
                         <Wallet className="size-4" />
-                        Trả bằng Ví
+                        Trả bằng Ví Hubsell
                       </Button>
                     )}
                   </div>
@@ -468,7 +499,7 @@ export default function SettingsPlanPage() {
       )}
 
       {/* ===== Lịch sử thanh toán ===== */}
-      <Card className="max-w-2xl shadow-sm">
+      <Card className="shadow-sm">
         <CardHeader className="border-b pb-3">
           <CardTitle className="flex items-center gap-2">
             <CircleDollarSign className="size-5 text-slate-500" />
