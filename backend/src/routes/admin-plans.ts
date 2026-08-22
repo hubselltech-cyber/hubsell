@@ -372,6 +372,7 @@ router.get(
             take: 50,
             select: {
               id: true,
+              planId: true,
               planName: true,
               cycle: true,
               listedPrice: true,

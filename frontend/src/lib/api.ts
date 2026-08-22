@@ -2642,6 +2642,8 @@ export interface PlatformPackagePayment {
  * listedPrice 0 = yêu cầu TƯ VẤN Enterprise (báo giá riêng). */
 export interface PlatformUpgradeRequest {
   id: string;
+  /** Gói khách chọn — điền sẵn dialog Ghi nhận thanh toán mở từ dòng yêu cầu. */
+  planId: string;
   planName: string;
   cycle: BillingCycle;
   listedPrice: number;

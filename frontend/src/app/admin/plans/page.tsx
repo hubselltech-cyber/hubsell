@@ -55,7 +55,6 @@ import {
   recordSubscriptionPayment,
   updatePlatformPlan,
   type BillingCycle,
-  type PlatformSubscription,
   type PlatformSubscriptionsResponse,
   type ServicePlan,
 } from "@/lib/api";
@@ -352,27 +351,41 @@ function PlanDialog({
 
 // ---------- Dialog GHI NHẬN THANH TOÁN ----------
 
+/** Đích ghi nhận thanh toán — mở từ dòng THUÊ BAO hoặc dòng YÊU CẦU MUA.
+ * Khách có thể CHƯA có thuê bao (nick test/khách cũ không gán gói gửi yêu cầu
+ * — phát hiện nhờ anh Trung test 22/08 khuya): backend upsert tự tạo, dialog
+ * không được đòi hỏi phải có dòng thuê bao trước. */
+interface PaymentTarget {
+  user: { id: string; email: string | null; fullName: string };
+  /** Gói chọn sẵn: gói hiện tại của khách, hoặc gói trong yêu cầu mua. */
+  defaultPlanId: string | null;
+  /** Kỳ chọn sẵn (yêu cầu mua có kỳ khách đã chọn). */
+  defaultCycle?: BillingCycle;
+}
+
 function PaymentDialog({
-  sub,
+  target,
   plans,
   onClose,
   onSaved,
 }: {
-  sub: PlatformSubscription;
+  target: PaymentTarget;
   plans: ServicePlan[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  // Gói chọn được: gói đang bán, HOẶC chính gói hiện tại của khách (gia hạn
-  // tiếp gói đã ngừng bán — grandfathering).
+  // Gói chọn được: gói đang bán, HOẶC gói mặc định của đích (gia hạn tiếp gói
+  // đã ngừng bán — grandfathering; deal Enterprise nháp cũng đi cửa này).
   const selectable = useMemo(
-    () => plans.filter((p) => p.isActive || p.id === sub.plan.id),
-    [plans, sub.plan.id]
+    () => plans.filter((p) => p.isActive || p.id === target.defaultPlanId),
+    [plans, target.defaultPlanId]
   );
   const [planId, setPlanId] = useState(
-    selectable.some((p) => p.id === sub.plan.id) ? sub.plan.id : selectable[0]?.id ?? ""
+    selectable.some((p) => p.id === target.defaultPlanId)
+      ? target.defaultPlanId!
+      : selectable[0]?.id ?? ""
   );
-  const [cycle, setCycle] = useState<BillingCycle>("MONTHLY");
+  const [cycle, setCycle] = useState<BillingCycle>(target.defaultCycle ?? "MONTHLY");
   const [amount, setAmount] = useState("");
   const [amountTouched, setAmountTouched] = useState(false);
   const [occurredAt, setOccurredAt] = useState(toDateInput(new Date()));
@@ -396,7 +409,7 @@ function PaymentDialog({
     }
     setSubmitting(true);
     try {
-      const result = await recordSubscriptionPayment(sub.user.id, {
+      const result = await recordSubscriptionPayment(target.user.id, {
         planId: selectedPlan.id,
         cycle,
         amount: value,
@@ -425,7 +438,7 @@ function PaymentDialog({
             Ghi nhận thanh toán
           </DialogTitle>
           <DialogDescription>
-            {sub.user.fullName} ({sub.user.email ?? "—"}) — một xác nhận tự sinh đủ:
+            {target.user.fullName} ({target.user.email ?? "—"}) — một xác nhận tự sinh đủ:
             gia hạn thuê bao, bút toán THU chờ hóa đơn trong sổ quỹ, và hoa hồng
             giới thiệu 10% (nếu khách được ai giới thiệu).
           </DialogDescription>
@@ -542,7 +555,7 @@ export default function PlatformPlansPage() {
   const [planDialog, setPlanDialog] = useState<
     { mode: "create" } | { mode: "edit"; plan: ServicePlan } | null
   >(null);
-  const [paymentFor, setPaymentFor] = useState<PlatformSubscription | null>(null);
+  const [paymentFor, setPaymentFor] = useState<PaymentTarget | null>(null);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
 
   // HQ hủy một yêu cầu mua khách gửi (khách đổi ý qua điện thoại) — chốt
@@ -797,14 +810,36 @@ export default function PlatformPlansPage() {
                           {formatDate(r.createdAt)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={cancellingRequestId === r.id}
-                            onClick={() => handleCancelRequest(r.id)}
-                          >
-                            Hủy yêu cầu
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            {/* Mở dialog với gói + kỳ khách ĐÃ CHỌN điền sẵn — chạy
+                                cả khi khách chưa có thuê bao (backend upsert tạo mới) */}
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                setPaymentFor({
+                                  user: {
+                                    id: r.user.id,
+                                    email: r.user.email,
+                                    fullName: r.user.fullName,
+                                  },
+                                  defaultPlanId: r.planId,
+                                  defaultCycle:
+                                    r.listedPrice === 0 ? undefined : r.cycle,
+                                })
+                              }
+                            >
+                              <CircleDollarSign className="size-4" />
+                              Ghi nhận thanh toán
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={cancellingRequestId === r.id}
+                              onClick={() => handleCancelRequest(r.id)}
+                            >
+                              Hủy yêu cầu
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -979,7 +1014,13 @@ export default function PlatformPlansPage() {
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="outline" size="sm" onClick={() => setPaymentFor(s)}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setPaymentFor({ user: s.user, defaultPlanId: s.plan.id })
+                            }
+                          >
                             <CircleDollarSign className="size-4" />
                             Ghi nhận thanh toán
                           </Button>
@@ -1062,7 +1103,7 @@ export default function PlatformPlansPage() {
         )}
         {paymentFor && data && (
           <PaymentDialog
-            sub={paymentFor}
+            target={paymentFor}
             plans={data.plans}
             onClose={() => setPaymentFor(null)}
             onSaved={reload}
