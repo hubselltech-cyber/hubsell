@@ -2,8 +2,10 @@
 // "Starter" — KHÔNG có gói miễn phí vĩnh viễn; mọi khách mới dùng thử 14 ngày,
 // hết thử là Starter 99k/tháng dưới 300 đơn FULL tính năng, vượt trần 300 đơn
 // bắt buộc nâng gói cao hơn):
-//   1. Upsert gói STARTER "Starter" (99k/tháng, 990k/năm ≈ tặng 2 tháng — sửa
-//      được trên /admin/plans), trần 300 đơn/tháng, trialDays 14, isDefault.
+//   1. Upsert gói STARTER "Starter" (99k/tháng; kỳ 3/6/12 tháng giá TUYẾN TÍNH
+//      — anh Trung chốt 22/08: ưu đãi kỳ dài chỉ dành cho bậc từ 3.000 đơn trở
+//      lên, 2 bậc thấp không chiết khấu; sửa được trên /admin/plans), trần 300
+//      đơn/tháng, trialDays 14, isDefault.
 //   2. Nếu còn gói mã cũ (BETA đời đầu / BASIC "Beta" bản seed trước): dời mọi
 //      thuê bao sang STARTER (mở lại kỳ dùng thử 14 ngày kể từ hôm chạy) rồi
 //      xoá gói cũ.
@@ -27,12 +29,13 @@ const STARTER = {
   description:
     "Đầy đủ tính năng Hubsell cho shop dưới 300 đơn/tháng — vượt trần cần nâng gói cao hơn. Mọi tài khoản mới được dùng thử 14 ngày.",
   tier: 1,
-  // Chiết khấu mua dài tăng dần (~6% / ~11% / ~17% = tặng 2 tháng) — sửa được
-  // trên /admin/plans; 0 = không bán kỳ đó.
+  // Kỳ dài giá TUYẾN TÍNH (= tháng × số tháng, KHÔNG chiết khấu — bán kỳ dài
+  // chỉ để khách/kế toán đỡ thao tác chuyển khoản hàng tháng khi chưa có cổng
+  // thanh toán). Sửa được trên /admin/plans; 0 = không bán kỳ đó.
   priceMonthly: 99_000,
-  priceQuarterly: 279_000,
-  priceSemiannual: 529_000,
-  priceYearly: 990_000,
+  priceQuarterly: 297_000,
+  priceSemiannual: 594_000,
+  priceYearly: 1_188_000,
   maxOrdersPerMonth: 300,
   trialDays: 14,
   isActive: true,
