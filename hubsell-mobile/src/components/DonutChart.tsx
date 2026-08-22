@@ -2,6 +2,7 @@ import React from "react";
 import { Text, View } from "react-native";
 import Svg, { Circle, G } from "react-native-svg";
 import { useColorScheme } from "nativewind";
+import { TABULAR } from "../theme/tokens";
 
 export interface GenericSlice {
   label: string;
@@ -71,7 +72,7 @@ export function DonutChart({
                 stroke={a.color}
                 strokeWidth={stroke}
                 fill="none"
-                strokeDasharray={`${Math.max(a.frac * c - 2, 0.5)} ${c}`}
+                strokeDasharray={`${Math.max(a.frac * c - 3, 0.5)} ${c}`}
                 strokeDashoffset={-a.offset * c}
                 strokeLinecap="butt"
               />
@@ -79,7 +80,12 @@ export function DonutChart({
           </G>
         </Svg>
         <View className="absolute inset-0 items-center justify-center">
-          <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">{centerLabel}</Text>
+          <Text
+            className="text-2xl font-bold text-slate-900 dark:text-slate-100"
+            style={TABULAR}
+          >
+            {centerLabel}
+          </Text>
           <Text className="text-[11px] text-slate-400 dark:text-slate-500">{centerSub}</Text>
         </View>
       </View>
@@ -96,9 +102,17 @@ export function DonutChart({
               {s.label}
             </Text>
             {s.detail ? (
-              <Text className="text-xs font-semibold text-slate-900 dark:text-slate-100">{s.detail}</Text>
+              <Text
+                className="text-xs font-semibold text-slate-900 dark:text-slate-100"
+                style={TABULAR}
+              >
+                {s.detail}
+              </Text>
             ) : null}
-            <Text className="w-10 text-right text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <Text
+              className="w-10 text-right text-xs font-semibold text-slate-500 dark:text-slate-400"
+              style={TABULAR}
+            >
               {total > 0 ? Math.round((Math.max(s.value, 0) / total) * 100) : 0}%
             </Text>
           </View>

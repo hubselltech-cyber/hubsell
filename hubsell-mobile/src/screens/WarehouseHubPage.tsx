@@ -21,6 +21,9 @@ import { Badge } from "@/components/Badge";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { hapticSelect, hapticTap } from "@/lib/haptics";
+import { Card } from "@/components/Card";
+import { ICON_TINT, TABULAR, type IconTint } from "@/theme/tokens";
+import { useColorScheme } from "nativewind";
 
 // Bộ lọc sàn — cùng thứ tự với tab Tin nhắn (chốt 13/08)
 const CHANNEL_FILTERS = ["", "SHOPEE", "TIKTOK", "LAZADA"] as const;
@@ -124,17 +127,25 @@ export function WarehouseHubPage() {
     }, 450);
   };
 
-  const tiles = [
-    { label: "Chờ về kho", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline" as const },
-    { label: "Chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline" as const },
-    { label: "Quá hạn ≥14 ngày", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline" as const },
-    { label: "Hàng hỏng chờ khiếu nại", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline" as const },
+  const tiles: {
+    label: string;
+    value: number;
+    color: string;
+    icon: "time-outline" | "archive-outline" | "alert-circle-outline" | "bandage-outline";
+    tint: IconTint;
+  }[] = [
+    { label: "Chờ về kho", value: summary?.AWAITING ?? 0, color: "text-amber-600 dark:text-amber-400", icon: "time-outline", tint: "amber" },
+    { label: "Chờ nhập kho", value: summary?.RECEIVED ?? 0, color: "text-sky-600 dark:text-sky-400", icon: "archive-outline", tint: "sky" },
+    { label: "Quá hạn ≥14 ngày", value: summary?.overdue ?? 0, color: "text-red-500 dark:text-red-400", icon: "alert-circle-outline", tint: "red" },
+    { label: "Hàng hỏng chờ khiếu nại", value: summary?.DAMAGED ?? 0, color: "text-red-500 dark:text-red-400", icon: "bandage-outline", tint: "red" },
   ];
+  const { colorScheme } = useColorScheme();
+  const dark = colorScheme === "dark";
 
   return (
     <ScrollView
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={() => load(1, false, true)} />
@@ -189,24 +200,42 @@ export function WarehouseHubPage() {
           </View>
 
           <View className="mb-3 flex-row flex-wrap gap-2">
-            {tiles.map((t) => (
-              <View
-                key={t.label}
-                className="w-[48%] flex-grow rounded-2xl bg-white dark:bg-slate-900 p-4"
-                style={{ elevation: 1 }}
-              >
-                <View className="mb-1 flex-row items-center gap-1.5">
-                  <Ionicons name={t.icon} size={14} color="#64748b" />
-                  <Text className="text-[11px] text-slate-500 dark:text-slate-400">{t.label}</Text>
-                </View>
-                <Text className={`text-2xl font-bold ${t.color}`}>{t.value}</Text>
-              </View>
-            ))}
+            {tiles.map((t) => {
+              const tint = ICON_TINT[t.tint];
+              return (
+                <Card key={t.label} className="w-[48%] flex-grow p-4">
+                  <View className="mb-1.5 flex-row items-center gap-2">
+                    <View
+                      className="h-6 w-6 items-center justify-center rounded-md"
+                      style={{ backgroundColor: dark ? tint.dark : tint.light }}
+                    >
+                      <Ionicons name={t.icon} size={13} color={tint.icon} />
+                    </View>
+                    <Text
+                      className="flex-1 text-[11px] text-slate-500 dark:text-slate-400"
+                      numberOfLines={1}
+                    >
+                      {t.label}
+                    </Text>
+                  </View>
+                  <Text className={`text-2xl font-bold ${t.color}`} style={TABULAR}>
+                    {t.value}
+                  </Text>
+                </Card>
+              );
+            })}
           </View>
 
+          {/* CTA quét — emerald đặc màu logo; bóng màu chỉ ăn iOS, Android
+              trên nền tối elevation thành quầng đen bẩn nên không dùng */}
           <Pressable
-            className="mb-4 flex-row items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 active:opacity-80"
-            style={{ elevation: 2 }}
+            className="mb-4 flex-row items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 active:opacity-85"
+            style={{
+              shadowColor: "#059669",
+              shadowOpacity: 0.35,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 5 },
+            }}
             onPress={() => {
               hapticTap();
               router.push("/(warehouse)/scan" as Href);
@@ -292,7 +321,7 @@ export function WarehouseHubPage() {
                   key={o.id}
                   // So le tối đa 6 dòng đầu — dòng tải thêm vào ngay không chờ
                   entering={FadeInDown.duration(220).delay(Math.min(idx, 6) * 40)}
-                  className="mb-2 flex-row gap-3 rounded-2xl bg-white dark:bg-slate-900 p-3"
+                  className="mb-2 flex-row gap-3 rounded-2xl border border-slate-900/5 bg-white p-3 dark:border-white/5 dark:bg-slate-900"
                   style={{ elevation: 1 }}
                 >
                   <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">

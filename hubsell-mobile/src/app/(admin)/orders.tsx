@@ -225,7 +225,10 @@ export default function OrdersScreen() {
       : item.items.slice(0, ITEMS_PREVIEW);
     const hiddenCount = item.items.length - ITEMS_PREVIEW;
     return (
-      <View className="mb-2.5 rounded-2xl bg-white dark:bg-slate-900 p-3" style={{ elevation: 1 }}>
+      <View
+        className="mb-2.5 rounded-2xl border border-slate-900/5 bg-white p-3 dark:border-white/5 dark:bg-slate-900"
+        style={{ elevation: 1 }}
+      >
         <View className="flex-row items-center justify-between gap-2">
           <Text
             className="flex-1 pr-1 text-[13px] font-semibold text-slate-900 dark:text-slate-100"
@@ -293,7 +296,10 @@ export default function OrdersScreen() {
               {item.trackingCode ? ` · ${item.trackingCode}` : ""}
             </Text>
           </View>
-          <Text className="text-[13px] font-bold text-slate-900 dark:text-slate-100">
+          <Text
+            className="text-[13px] font-bold text-slate-900 dark:text-slate-100"
+            style={{ fontVariant: ["tabular-nums"] }}
+          >
             {formatMoney(item.totalAmount)}
           </Text>
         </View>

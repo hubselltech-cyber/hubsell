@@ -25,6 +25,9 @@ import { hapticSelect } from "@/lib/haptics";
 import { ProfitBarChart } from "@/components/ProfitBarChart";
 import { useChannelColors } from "@/components/ChannelDonut";
 import { DonutChart } from "@/components/DonutChart";
+import { Card } from "@/components/Card";
+import { TABULAR } from "@/theme/tokens";
+import { useColorScheme } from "nativewind";
 
 /**
  * Trang TÀI CHÍNH — trang 2 của pager Trang chủ (chủ shop).
@@ -40,16 +43,27 @@ const CHANNEL_FILTERS: { key: string; label: string }[] = [
   { key: "TIKTOK", label: "TikTok" },
 ];
 
-/** Màu cố định cho donut cơ cấu chi phí (khớp key backend). */
-const COST_COLOR: Record<string, string> = {
+/**
+ * Màu cố định cho donut cơ cấu chi phí (khớp key backend). Giá vốn màu navy
+ * đậm TÀNG HÌNH trên card tối → dark mode đổi sang trắng ngà (cùng chiêu với
+ * màu TikTok trong useChannelColors).
+ */
+const COST_COLOR_LIGHT: Record<string, string> = {
   cogs: "#0f172a",
   adsSpend: "#f59e0b",
   variable: "#6366f1",
   fixed: "#94a3b8",
 };
+const COST_COLOR_DARK: Record<string, string> = {
+  ...COST_COLOR_LIGHT,
+  cogs: "#e2e8f0",
+};
 
 export function FinancePage() {
   const channelColors = useChannelColors();
+  const { colorScheme } = useColorScheme();
+  const COST_COLOR =
+    colorScheme === "dark" ? COST_COLOR_DARK : COST_COLOR_LIGHT;
   const [range, setRange] = useState<RangeKey>("30d");
   const [channel, setChannel] = useState("");
   const [summary, setSummary] = useState<PnlSummary | null>(null);
@@ -131,6 +145,20 @@ export function FinancePage() {
             ? "text-red-500 dark:text-red-400"
             : "text-emerald-600 dark:text-emerald-400"
           : "text-slate-900 dark:text-slate-100";
+    // Thanh tỷ lệ so với TỔNG GIÁ TRỊ SẢN PHẨM — liếc độ dài là thấy khoản
+    // nào đang ăn bao nhiêu phần miếng bánh, không cần đọc số
+    const frac = Math.min(
+      1,
+      Math.abs(amount) / Math.max(analytics?.gross.total ?? 0, 1)
+    );
+    const barColor =
+      tone === "minus"
+        ? "#f87171"
+        : tone === "result"
+          ? amount < 0
+            ? "#f87171"
+            : "#34d399"
+          : "#94a3b8";
     return (
       <View className="border-t border-slate-100 dark:border-slate-800">
         <Pressable
@@ -144,8 +172,14 @@ export function FinancePage() {
             {countHint ? (
               <Text className="text-[10px] text-slate-400 dark:text-slate-500">{countHint}</Text>
             ) : null}
+            <View className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              <View
+                className="h-full rounded-full"
+                style={{ width: `${Math.max(frac * 100, 1.5)}%`, backgroundColor: barColor }}
+              />
+            </View>
           </View>
-          <Text className={`text-[13px] font-bold ${amountColor}`}>
+          <Text className={`text-[13px] font-bold ${amountColor}`} style={TABULAR}>
             {tone === "minus" && amount > 0 ? "−" : ""}
             {compactMoney(amount)}
           </Text>
@@ -172,10 +206,14 @@ export function FinancePage() {
                   className={`text-xs font-semibold ${
                     it.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-slate-100"
                   }`}
+                  style={TABULAR}
                 >
                   {formatMoney(Math.abs(it.amount))}
                 </Text>
-                <Text className="w-12 text-right text-[10px] text-slate-400 dark:text-slate-500">
+                <Text
+                  className="w-12 text-right text-[10px] text-slate-400 dark:text-slate-500"
+                  style={TABULAR}
+                >
                   {Math.abs(it.percent).toFixed(1).replace(".", ",")}%
                 </Text>
               </View>
@@ -189,7 +227,7 @@ export function FinancePage() {
   return (
     <ScrollView
       className="flex-1 bg-slate-50 dark:bg-slate-950"
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -257,6 +295,7 @@ export function FinancePage() {
               label="Doanh thu"
               value={analytics?.revenue.total ?? 0}
               sub={`${analytics?.gross.orderCount ?? 0} đơn trong kỳ`}
+              tint="emerald"
             />
             <StatCard
               icon="trending-up-outline"
@@ -264,6 +303,7 @@ export function FinancePage() {
               value={analytics?.profit.total ?? 0}
               sub="Sau phí, giá vốn, vận hành"
               tone="signal"
+              tint="emerald"
             />
           </View>
           <View className="mb-4 flex-row gap-3">
@@ -272,18 +312,20 @@ export function FinancePage() {
               label="Đã về Bank"
               value={bankTotal}
               sub="30 ngày gần nhất"
+              tint="sky"
             />
             <StatCard
               icon="wallet-outline"
               label="Ví sàn"
               value={walletTotal}
               sub="Số dư thật trên sàn"
+              tint="violet"
             />
           </View>
 
           {/* THÁC NƯỚC CHI TIẾT — cùng số với web Báo cáo dòng tiền */}
           {analytics ? (
-            <View className="mb-4 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+            <Card className="mb-4 p-4">
               <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Chi tiết dòng tiền
               </Text>
@@ -332,12 +374,12 @@ export function FinancePage() {
                 tone="result"
                 items={analytics.profit.items}
               />
-            </View>
+            </Card>
           ) : null}
 
           {/* CƠ CẤU CHI PHÍ — % từng khoản */}
           {analytics && analytics.costs.total > 0 ? (
-            <View className="mb-4 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+            <Card className="mb-4 p-4">
               <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Cơ cấu chi phí
               </Text>
@@ -353,19 +395,19 @@ export function FinancePage() {
                     detail: compactMoney(it.amount),
                   }))}
               />
-            </View>
+            </Card>
           ) : null}
 
           {/* Biểu đồ Lãi/Lỗ theo ngày */}
-          <View className="mb-4 rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+          <Card className="mb-4 p-4">
             <Text className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Lãi/Lỗ theo ngày
             </Text>
             <ProfitBarChart data={summary?.daily ?? []} />
-          </View>
+          </Card>
 
           {/* Dòng tiền theo gian hàng */}
-          <View className="rounded-2xl bg-white dark:bg-slate-900 p-4" style={{ elevation: 2 }}>
+          <Card className="p-4">
             <Text className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Tiền theo gian hàng
             </Text>
@@ -387,10 +429,16 @@ export function FinancePage() {
                   </Text>
                 </View>
                 <View className="items-end">
-                  <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  <Text
+                    className="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                    style={TABULAR}
+                  >
                     Ví {r.walletBalance == null ? "—" : compactMoney(r.walletBalance)}
                   </Text>
-                  <Text className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <Text
+                    className="text-[11px] text-emerald-600 dark:text-emerald-400"
+                    style={TABULAR}
+                  >
                     Bank {compactMoney(r.withdrawn30d)}
                   </Text>
                 </View>
@@ -402,12 +450,15 @@ export function FinancePage() {
               </Text>
             ) : null}
             <View className="mt-2 border-t border-slate-200 dark:border-slate-700 pt-2">
-              <Text className="text-right text-[11px] text-slate-400 dark:text-slate-500">
+              <Text
+                className="text-right text-[11px] text-slate-400 dark:text-slate-500"
+                style={TABULAR}
+              >
                 Ví sàn: {formatMoney(walletTotal)} · Doanh thu dự kiến:{" "}
                 {formatMoney(expectedTotal)}
               </Text>
             </View>
-          </View>
+          </Card>
         </>
       )}
     </ScrollView>
