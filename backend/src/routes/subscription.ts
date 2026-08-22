@@ -30,12 +30,13 @@ router.get("/me", async (req: AuthRequest, res, next) => {
   try {
     const state = await getOwnerPlanState(req.ownerId!);
 
-    // Gói ĐANG BÁN bậc cao hơn gói hiện tại — nội dung bảng chọn của popup
-    // nâng gói. Chưa có thuê bao thì chào cả thang (trường hợp hiếm: khách cũ
-    // chưa backfill; họ không bị giới hạn nhưng vẫn được xem bảng giá).
+    // Gói ĐANG BÁN từ bậc hiện tại trở lên (gte, KỂ CẢ gói đang dùng — anh
+    // Trung 22/08: popup phải bày từng gói cho khách so sánh, card gói hiện
+    // tại gắn badge "Đang dùng" làm mốc đối chiếu). Chưa có thuê bao thì chào
+    // cả thang. FE nhận diện gói hiện tại qua id === plan.id.
     const upgradePlans = await prisma.servicePlan.findMany({
-      where: { isActive: true, ...(state.plan ? { tier: { gt: state.plan.tier } } : {}) },
-      orderBy: { tier: "asc" },
+      where: { isActive: true, ...(state.plan ? { tier: { gte: state.plan.tier } } : {}) },
+      orderBy: [{ tier: "asc" }, { priceMonthly: "asc" }],
       select: {
         id: true,
         code: true,

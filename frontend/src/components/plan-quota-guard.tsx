@@ -24,6 +24,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpCircle,
+  Check,
   Lock,
   TriangleAlert,
   Wallet,
@@ -272,6 +273,25 @@ export function PlanQuotaBanner() {
 
 // ─────────────────────────── POPUP NÂNG GÓI ───────────────────────────
 
+/** Quyền lợi chung — MỌI gói đều full tính năng (chốt 22/08), nên bày MỘT
+ * checklist dùng chung thay vì lặp 4 lần trên từng card; card chỉ nêu thứ
+ * thật sự khác nhau giữa các gói (trần đơn + giá). */
+const PLAN_FEATURES = [
+  "Đồng bộ đơn hàng & tồn kho Shopee, Lazada, TikTok",
+  "Báo cáo tài chính — lãi/lỗ thực theo đối soát sàn",
+  "Trợ lý quảng cáo: ROAS hòa vốn, cảnh báo cắt lỗ",
+  "Trợ lý vận hành & chat CSKH đa kênh",
+  "Cứu đơn giao thất bại, quản lý hoàn/trả",
+  "Phân quyền nhân viên, chuông cảnh báo & báo cáo tự động",
+];
+
+/** Các kỳ mua dài hiển thị trên card (kỳ 1 tháng đã là giá chính). */
+const CYCLE_ROWS = [
+  { months: 3, label: "3 tháng", key: "priceQuarterly" },
+  { months: 6, label: "6 tháng", key: "priceSemiannual" },
+  { months: 12, label: "12 tháng", key: "priceYearly" },
+] as const;
+
 export function UpgradePlanDialog({
   open,
   onOpenChange,
@@ -283,9 +303,22 @@ export function UpgradePlanDialog({
 }) {
   const { plan, orders, upgradePlans, payment } = data;
 
+  // "Đề xuất" = gói RẺ NHẤT đủ trần cho mức đơn hiện tại — nhưng CHỈ khi khách
+  // thật sự cần đổi gói (chưa có gói / gói hiện tại đã chật / đã hết hạn).
+  // Khách đang ổn với gói của mình thì không gạ nâng cấp.
+  const needsChange =
+    !plan || orders.state !== "ok" || data.expiry.expired || data.locked;
+  const recommendedId = needsChange
+    ? (upgradePlans.find(
+        (p) =>
+          p.id !== plan?.id &&
+          (p.maxOrdersPerMonth == null || p.maxOrdersPerMonth >= orders.used)
+      ) ?? upgradePlans[upgradePlans.length - 1])?.id
+    : undefined;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Nâng gói dịch vụ</DialogTitle>
           <DialogDescription>
@@ -309,34 +342,92 @@ export function UpgradePlanDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {upgradePlans.length > 0 ? (
-          <div className="space-y-2">
-            {upgradePlans.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between gap-3 rounded-lg border p-3"
+        {/* Quyền lợi chung — khách thấy NGAY mình nhận được gì trước khi so giá */}
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <p className="text-sm font-medium">Mọi gói đều bao gồm toàn bộ tính năng</p>
+          <ul className="mt-2 grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
+            {PLAN_FEATURES.map((f) => (
+              <li
+                key={f}
+                className="flex items-start gap-2 text-xs text-muted-foreground"
               >
-                <div className="min-w-0">
+                <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {upgradePlans.length > 0 ? (
+          <div className="grid gap-3 pt-1 sm:grid-cols-2">
+            {upgradePlans.map((p) => {
+              const isCurrent = p.id === plan?.id;
+              const isRecommended = p.id === recommendedId && !isCurrent;
+              const scopeLine = [
+                p.maxChannels != null
+                  ? `${nf.format(p.maxChannels)} gian hàng`
+                  : "Không giới hạn gian hàng",
+                p.maxStaff != null
+                  ? `${nf.format(p.maxStaff)} nhân viên`
+                  : "không giới hạn nhân viên",
+              ].join(" · ");
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "relative rounded-xl border bg-card p-4 shadow-sm",
+                    isRecommended && "border-emerald-500 ring-1 ring-emerald-500",
+                    isCurrent && "border-dashed opacity-90"
+                  )}
+                >
+                  {isRecommended && (
+                    <span className="absolute -top-2.5 left-4 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                      Đề xuất cho shop bạn
+                    </span>
+                  )}
+                  {isCurrent && (
+                    <span className="absolute right-3 top-3 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300">
+                      Đang dùng
+                    </span>
+                  )}
                   <p className="text-sm font-semibold">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">
                     {p.maxOrdersPerMonth != null
                       ? `Đến ${nf.format(p.maxOrdersPerMonth)} đơn/tháng`
                       : "Không giới hạn đơn"}
                   </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-sm font-semibold tabular-nums">
+                  <p className="mt-2 text-2xl font-bold tabular-nums">
                     {nf.format(p.priceMonthly)}₫
-                    <span className="text-xs font-normal text-muted-foreground">/tháng</span>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      /tháng
+                    </span>
                   </p>
-                  {p.priceYearly > 0 && (
-                    <p className="text-xs tabular-nums text-muted-foreground">
-                      Năm: {nf.format(p.priceYearly)}₫
-                    </p>
-                  )}
+                  {/* Kỳ dài kèm % tiết kiệm TÍNH TỪ DATA giá — bảng giá đổi là
+                      con số tự đúng, không hardcode chính sách chiết khấu */}
+                  <div className="mt-2 space-y-1 border-t pt-2 text-xs tabular-nums text-muted-foreground">
+                    {CYCLE_ROWS.filter((c) => p[c.key] > 0).map((c) => {
+                      const save = p.priceMonthly > 0
+                        ? Math.round((1 - p[c.key] / (p.priceMonthly * c.months)) * 100)
+                        : 0;
+                      return (
+                        <p key={c.key} className="flex justify-between gap-2">
+                          <span>{c.label}</span>
+                          <span>
+                            {nf.format(p[c.key])}₫
+                            {save >= 1 && (
+                              <span className="ml-1.5 font-medium text-emerald-600">
+                                −{save}%
+                              </span>
+                            )}
+                          </span>
+                        </p>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">{scopeLine}</p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
