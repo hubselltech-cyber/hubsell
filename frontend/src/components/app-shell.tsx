@@ -19,6 +19,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AssistantWidget } from "@/components/assistant/assistant-widget";
+import { ChannelDisconnectedBanner } from "@/components/channel-disconnected-banner";
 import { CommandPalette } from "@/components/command-palette";
 import { NavIcon } from "@/components/nav-icon";
 import { NotificationBell } from "@/components/notification-bell";
@@ -748,6 +749,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </header>
+
+        {/* Dải cảnh báo gian mất kết nối — bám TRẠNG THÁI nên không trôi như
+            chuông; chỉ chủ shop (nhân viên không nối lại được), khu HQ không
+            có gian sàn. Không sticky: đầu trang nào cũng thấy nhưng cuộn
+            xuống làm việc thì không án ngữ. */}
+        {user && isAdmin(user) && !hqWorkspace && <ChannelDisconnectedBanner />}
 
         {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
             tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}
