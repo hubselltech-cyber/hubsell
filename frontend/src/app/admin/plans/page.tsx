@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  cancelPlatformUpgradeRequest,
   createPlatformPlan,
   deletePlatformPlan,
   fetchPlatformPlans,
@@ -544,6 +545,22 @@ export default function PlatformPlansPage() {
   const [paymentFor, setPaymentFor] = useState<PlatformSubscription | null>(null);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
 
+  // HQ hủy một yêu cầu mua khách gửi (khách đổi ý qua điện thoại) — chốt
+  // thành công thì không cần nút: Ghi nhận thanh toán tự đóng yêu cầu.
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+  async function handleCancelRequest(id: string) {
+    setCancellingRequestId(id);
+    try {
+      await cancelPlatformUpgradeRequest(id);
+      toast.success("Đã hủy yêu cầu mua gói");
+      reload();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không hủy được yêu cầu");
+    } finally {
+      setCancellingRequestId(null);
+    }
+  }
+
   async function handleDeletePlan(plan: ServicePlan) {
     setDeletingPlanId(plan.id);
     try {
@@ -716,6 +733,78 @@ export default function PlatformPlansPage() {
         </div>
 
         <Separator />
+
+        {/* ===== Yêu cầu mua/nâng gói đang chờ (GĐ3) — hàng nóng nhất trang:
+            khách ĐÃ bấm mua và đang chờ được liên hệ hướng dẫn thanh toán.
+            Chốt xong bấm "Ghi nhận thanh toán" ở bảng thuê bao bên dưới là
+            yêu cầu tự đóng. ===== */}
+        {data && data.subs.upgradeRequests.length > 0 && (
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-semibold">
+                Yêu cầu mua gói đang chờ{" "}
+                <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">
+                  {data.subs.upgradeRequests.length}
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Khách tự bấm &ldquo;Đăng ký mua&rdquo; trên trang Gói dịch vụ — gọi/nhắn hướng
+                dẫn chuyển khoản, tiền về thì Ghi nhận thanh toán ở bảng thuê bao (yêu cầu
+                tự đóng).
+              </p>
+            </div>
+            <Card className="border-amber-300">
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Khách hàng</TableHead>
+                      <TableHead>Muốn mua</TableHead>
+                      <TableHead className="text-right">Giá niêm yết</TableHead>
+                      <TableHead>Gửi lúc</TableHead>
+                      <TableHead className="text-right">Thao tác</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.subs.upgradeRequests.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-sm">
+                          {r.user.fullName}
+                          <p className="text-xs text-muted-foreground">
+                            {r.user.email ?? "—"}
+                            {r.user.phone ? ` · ${r.user.phone}` : ""}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-sm font-medium">
+                          {r.planName}
+                          <p className="text-xs font-normal text-muted-foreground">
+                            Kỳ {CYCLE_LABEL[r.cycle]}
+                          </p>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
+                          {formatMoney(r.listedPrice)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {formatDate(r.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={cancellingRequestId === r.id}
+                            onClick={() => handleCancelRequest(r.id)}
+                          >
+                            Hủy yêu cầu
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* ===== Khối 2: Thuê bao ===== */}
         <div className="space-y-4">

@@ -309,7 +309,7 @@ router.get(
       };
 
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const [subs, total, activeCount, trialingCount, expiringCount, expiredCount, monthAgg, recentPayments] =
+      const [subs, total, activeCount, trialingCount, expiringCount, expiredCount, monthAgg, recentPayments, upgradeRequests] =
         await Promise.all([
           prisma.subscription.findMany({
             where,
@@ -362,6 +362,21 @@ router.get(
               note: true,
               confirmedByName: true,
               user: { select: { id: true, email: true, fullName: true } },
+            },
+          }),
+          // Yêu cầu mua/nâng gói khách tự gửi từ /settings/plan (GĐ3) — hàng
+          // nóng nhất trang: khách ĐANG CHỜ được liên hệ hướng dẫn thanh toán.
+          prisma.planUpgradeRequest.findMany({
+            where: { status: "PENDING" },
+            orderBy: { createdAt: "asc" }, // ai chờ lâu nhất lên đầu
+            take: 50,
+            select: {
+              id: true,
+              planName: true,
+              cycle: true,
+              listedPrice: true,
+              createdAt: true,
+              user: { select: { id: true, email: true, fullName: true, phone: true } },
             },
           }),
         ]);
@@ -420,7 +435,42 @@ router.get(
           createdAt: s.createdAt,
         })),
         recentPayments: recentPayments.map((p) => ({ ...p, amount: toNumber(p.amount) })),
+        upgradeRequests: upgradeRequests.map((r) => ({
+          ...r,
+          listedPrice: toNumber(r.listedPrice),
+        })),
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/upgrade-requests/:id/cancel — HQ hủy một yêu cầu mua đang
+// chờ (khách đổi ý qua điện thoại). Chốt thành công thì KHÔNG cần nút riêng:
+// "Ghi nhận thanh toán" tự đóng DONE mọi PENDING của khách.
+router.post(
+  "/upgrade-requests/:id/cancel",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const actor = await prisma.user.findUnique({
+        where: { id: req.userId! },
+        select: { fullName: true },
+      });
+      const updated = await prisma.planUpgradeRequest.updateMany({
+        where: { id: req.params.id, status: "PENDING" },
+        data: {
+          status: "CANCELLED",
+          resolvedAt: new Date(),
+          resolvedByName: actor?.fullName ?? "Hubsell HQ",
+        },
+      });
+      if (updated.count === 0) {
+        res.status(404).json({ error: "Yêu cầu không tồn tại hoặc đã được xử lý" });
+        return;
+      }
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

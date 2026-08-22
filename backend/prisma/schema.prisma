@@ -280,8 +280,9 @@ model User {
   withdrawalRequests WithdrawalRequest[]
 
   // Gói dịch vụ & thuê bao Hubsell (GĐ1 thương mại hóa) — chỉ chủ shop có.
-  subscription    Subscription?
-  packagePayments PackagePayment[]
+  subscription        Subscription?
+  packagePayments     PackagePayment[]
+  planUpgradeRequests PlanUpgradeRequest[]
 
   // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác + sổ quỹ).
   careProfile     PlatformCustomerCare?  @relation("CareCustomer")
@@ -1783,6 +1784,42 @@ model Subscription {
 
   @@index([currentPeriodEnd])
   @@map("subscriptions")
+}
+
+enum PlanUpgradeRequestStatus {
+  PENDING // khách vừa gửi — HQ liên hệ hướng dẫn thanh toán
+  DONE // đã chốt: recordPackagePaymentTx TỰ đóng mọi PENDING của khách khi ghi nhận thanh toán
+  CANCELLED // khách tự hủy, hoặc HQ hủy (khách đổi ý qua điện thoại)
+}
+
+/// YÊU CẦU MUA/NÂNG GÓI khách tự gửi từ trang /settings/plan (GĐ3) — cầu nối
+/// bán hàng khi CHƯA có cổng thanh toán/STK: khách chọn gói + kỳ rồi bấm
+/// "Đăng ký mua", HQ thấy trong /admin/plans và liên hệ hướng dẫn chuyển
+/// khoản; kế toán "Ghi nhận thanh toán" là yêu cầu tự chuyển DONE. Mỗi khách
+/// tối đa MỘT yêu cầu PENDING (gửi lại = cập nhật gói/kỳ trên yêu cầu cũ).
+/// planCode/planName/listedPrice là SNAPSHOT lúc gửi — bảng giá đổi sau đó
+/// thì HQ vẫn thấy đúng con số khách đã nhìn khi bấm mua.
+model PlanUpgradeRequest {
+  id       String       @id @default(cuid())
+  userId   String
+  planId   String
+  planCode String
+  planName String
+  cycle    BillingCycle
+  /// Giá niêm yết của (gói, kỳ) tại thời điểm gửi yêu cầu.
+  listedPrice Decimal                  @db.Decimal(14, 2)
+  status      PlanUpgradeRequestStatus @default(PENDING)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  resolvedAt  DateTime?
+  /// Ai đóng yêu cầu — snapshot tên (kế toán ghi nhận / "Khách tự hủy").
+  resolvedByName String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+  @@map("plan_upgrade_requests")
 }
 
 /// LỊCH SỬ THANH TOÁN GÓI — append-only, không sửa/xoá (chứng từ kế toán).

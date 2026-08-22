@@ -275,8 +275,9 @@ export function PlanQuotaBanner() {
 
 /** Quyền lợi chung — MỌI gói đều full tính năng (chốt 22/08), nên bày MỘT
  * checklist dùng chung thay vì lặp 4 lần trên từng card; card chỉ nêu thứ
- * thật sự khác nhau giữa các gói (trần đơn + giá). */
-const PLAN_FEATURES = [
+ * thật sự khác nhau giữa các gói (trần đơn + giá). Export cho /settings/plan
+ * dùng lại — một nguồn nội dung duy nhất. */
+export const PLAN_FEATURES = [
   "Đồng bộ đơn hàng & tồn kho Shopee, Lazada, TikTok",
   "Báo cáo tài chính — lãi/lỗ thực theo đối soát sàn",
   "Trợ lý quảng cáo: ROAS hòa vốn, cảnh báo cắt lỗ",
@@ -438,6 +439,15 @@ export function UpgradePlanDialog({
 
         <div className="rounded-lg border bg-muted/40 p-3 text-sm">
           <p className="font-medium">Cách thanh toán</p>
+          {/* Đường MUA chính: trang Gói dịch vụ có chọn kỳ + nút Đăng ký mua /
+              trả bằng Ví — popup này chỉ là bảng so sánh nhanh. */}
+          <Link
+            href="/settings/plan"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            <ArrowUpCircle className="size-4" />
+            Chọn gói &amp; đăng ký mua
+          </Link>
           {payment ? (
             <div className="mt-1 space-y-0.5 text-muted-foreground">
               <p>

@@ -207,6 +207,15 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
     },
   });
 
+  // Yêu cầu mua/nâng gói đang chờ (khách gửi từ /settings/plan) tự đóng khi
+  // thanh toán được ghi nhận — MỘT xác nhận khép luôn vòng bán hàng, HQ không
+  // phải dọn hàng đợi tay. Đóng mọi PENDING của khách: tiền đã về là yêu cầu
+  // cũ hết ý nghĩa dù khách chốt gói khác với gói đã đăng ký.
+  await tx.planUpgradeRequest.updateMany({
+    where: { userId: input.userId, status: "PENDING" },
+    data: { status: "DONE", resolvedAt: occurredAt, resolvedByName: confirmedByName },
+  });
+
   // Sổ quỹ: chỉ ghi khi có TIỀN THẬT vào (chuyển khoản/cổng). Thanh toán bằng
   // Ví Hubsell là bù trừ công nợ hoa hồng — không có dòng tiền vào quỹ, kế
   // toán dịch vụ xử lý từ export chứng từ PackagePayment, ghi IN sẽ SAI quỹ.

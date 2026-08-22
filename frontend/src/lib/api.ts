@@ -2638,6 +2638,16 @@ export interface PlatformPackagePayment {
   user: { id: string; email: string | null; fullName: string };
 }
 
+/** Yêu cầu mua/nâng gói khách gửi từ /settings/plan — chờ HQ liên hệ chốt. */
+export interface PlatformUpgradeRequest {
+  id: string;
+  planName: string;
+  cycle: BillingCycle;
+  listedPrice: number;
+  createdAt: string;
+  user: { id: string; email: string | null; fullName: string; phone: string | null };
+}
+
 export interface PlatformSubscriptionsResponse {
   summary: {
     active: number;
@@ -2650,6 +2660,13 @@ export interface PlatformSubscriptionsResponse {
   total: number;
   subscriptions: PlatformSubscription[];
   recentPayments: PlatformPackagePayment[];
+  upgradeRequests: PlatformUpgradeRequest[];
+}
+
+export function cancelPlatformUpgradeRequest(id: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/upgrade-requests/${id}/cancel`, {
+    method: "POST",
+  });
 }
 
 export function fetchPlatformPlans() {
@@ -2793,6 +2810,17 @@ export interface MySubscriptionResponse {
   upgradePlans: MyUpgradePlan[];
   /** STK nhận tiền (env backend) — null khi chưa cấu hình → FE mời liên hệ. */
   payment: { bankName: string; bankAccount: string; bankHolder: string } | null;
+  /** Yêu cầu mua đang chờ HQ liên hệ — chỉ trả cho CHỦ SHOP, null với nhân viên. */
+  pendingUpgradeRequest: {
+    id: string;
+    planId: string;
+    planName: string;
+    cycle: BillingCycle;
+    listedPrice: number;
+    createdAt: string;
+  } | null;
+  /** Số dư Ví Hubsell — chỉ trả cho CHỦ SHOP (null với nhân viên/chưa có ví). */
+  walletBalance: number | null;
 }
 
 export function fetchMySubscription() {
@@ -2814,6 +2842,21 @@ export interface MyPackagePayment {
 
 export function fetchMySubscriptionPayments() {
   return apiFetch<{ payments: MyPackagePayment[] }>("/api/subscription/payments");
+}
+
+/** "Đăng ký mua" gói + kỳ — tạo/cập nhật yêu cầu để HQ liên hệ hướng dẫn
+ * thanh toán (mỗi khách một yêu cầu đang chờ; gửi lại = đổi gói/kỳ). */
+export function requestPlanUpgrade(planId: string, cycle: BillingCycle) {
+  return apiFetch<{ request: NonNullable<MySubscriptionResponse["pendingUpgradeRequest"]> }>(
+    "/api/subscription/upgrade-request",
+    { method: "POST", body: JSON.stringify({ planId, cycle }) }
+  );
+}
+
+export function cancelMyPlanUpgradeRequest() {
+  return apiFetch<{ ok: true }>("/api/subscription/upgrade-request", {
+    method: "DELETE",
+  });
 }
 
 // ---------- Báo cáo nhà đầu tư (GĐ6 — chỉ chủ nền tảng) ----------

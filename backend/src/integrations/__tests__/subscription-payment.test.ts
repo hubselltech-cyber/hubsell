@@ -176,6 +176,33 @@ describe("recordPackagePayment — một hành động, 4 hệ quả", () => {
     expect(sub?.isTrial).toBe(false);
   });
 
+  it("ghi nhận thanh toán TỰ ĐÓNG yêu cầu mua gói đang chờ (GĐ3)", async () => {
+    const request = await prisma.planUpgradeRequest.create({
+      data: {
+        userId: payerId,
+        planId: planBId,
+        planCode: `TSTB${STAMP}`,
+        planName: "Test Pro",
+        cycle: "MONTHLY",
+        listedPrice: 499_000,
+      },
+    });
+    await recordPackagePayment({
+      userId: payerId,
+      planId: planBId,
+      cycle: "MONTHLY",
+      method: "BANK_TRANSFER",
+      occurredAt: new Date("2026-08-28T05:00:00Z"),
+      actorName: "Kế toán Test",
+    });
+    const closed = await prisma.planUpgradeRequest.findUniqueOrThrow({
+      where: { id: request.id },
+    });
+    expect(closed.status).toBe("DONE");
+    expect(closed.resolvedByName).toBe("Kế toán Test");
+    expect(closed.resolvedAt).not.toBeNull();
+  });
+
   it("thanh toán bằng VÍ: có chứng từ nhưng KHÔNG ghi sổ quỹ", async () => {
     const { payment } = await recordPackagePayment({
       userId: payerId,

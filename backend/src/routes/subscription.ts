@@ -7,9 +7,11 @@
 // ============================================================
 
 import { Router } from "express";
+import { BillingCycle, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { requireAdmin, type AuthRequest } from "../auth";
 import { getOwnerPlanState } from "../plan-enforcement";
+import { planPriceFor } from "../subscription-service";
 
 const router = Router();
 
@@ -29,6 +31,30 @@ function paymentInfo() {
 router.get("/me", async (req: AuthRequest, res, next) => {
   try {
     const state = await getOwnerPlanState(req.ownerId!);
+    const isShopAdmin = req.userRole === "ADMIN";
+
+    // Yêu cầu mua đang chờ + số dư Ví — nuôi khối "Chọn gói" của /settings/plan.
+    // Chỉ trả cho CHỦ SHOP: số dư ví và ý định mua gói là chuyện tiền nong của
+    // chủ, nhân viên gọi /me chỉ cần trạng thái khóa/trần.
+    const [pendingRequest, wallet] = isShopAdmin
+      ? await Promise.all([
+          prisma.planUpgradeRequest.findFirst({
+            where: { userId: req.ownerId!, status: "PENDING" },
+            select: {
+              id: true,
+              planId: true,
+              planName: true,
+              cycle: true,
+              listedPrice: true,
+              createdAt: true,
+            },
+          }),
+          prisma.hubsellWallet.findUnique({
+            where: { userId: req.ownerId! },
+            select: { balance: true },
+          }),
+        ])
+      : [null, null];
 
     // Gói ĐANG BÁN từ bậc hiện tại trở lên (gte, KỂ CẢ gói đang dùng — anh
     // Trung 22/08: popup phải bày từng gói cho khách so sánh, card gói hiện
@@ -72,7 +98,75 @@ router.get("/me", async (req: AuthRequest, res, next) => {
         priceYearly: Number(p.priceYearly),
       })),
       payment: paymentInfo(),
+      pendingUpgradeRequest: pendingRequest
+        ? { ...pendingRequest, listedPrice: Number(pendingRequest.listedPrice) }
+        : null,
+      walletBalance: wallet ? Number(wallet.balance) : null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/subscription/upgrade-request — khách bấm "Đăng ký mua" trên
+// /settings/plan: { planId, cycle }. Mỗi khách một yêu cầu PENDING — gửi lại
+// là CẬP NHẬT gói/kỳ trên yêu cầu cũ (khách đổi ý không đẻ hàng đợi rác).
+// HQ thấy trong /admin/plans; "Ghi nhận thanh toán" tự đóng DONE.
+router.post("/upgrade-request", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const { planId, cycle: cycleRaw } = req.body ?? {};
+    const cycle = (Object.values(BillingCycle) as string[]).includes(String(cycleRaw))
+      ? (cycleRaw as BillingCycle)
+      : null;
+    const plan =
+      typeof planId === "string" && planId
+        ? await prisma.servicePlan.findFirst({
+            where: { id: planId, isActive: true },
+          })
+        : null;
+    if (!plan || !cycle) {
+      res.status(400).json({ error: "Gói hoặc kỳ mua không hợp lệ" });
+      return;
+    }
+    const price = planPriceFor(plan, cycle);
+    if (price <= 0) {
+      res.status(400).json({ error: "Gói này không bán kỳ đã chọn" });
+      return;
+    }
+
+    const data = {
+      planId: plan.id,
+      planCode: plan.code,
+      planName: plan.name,
+      cycle,
+      listedPrice: new Prisma.Decimal(price),
+    };
+    const existing = await prisma.planUpgradeRequest.findFirst({
+      where: { userId: req.ownerId!, status: "PENDING" },
+      select: { id: true },
+    });
+    const request = existing
+      ? await prisma.planUpgradeRequest.update({ where: { id: existing.id }, data })
+      : await prisma.planUpgradeRequest.create({
+          data: { ...data, userId: req.ownerId! },
+        });
+
+    res.status(existing ? 200 : 201).json({
+      request: { ...request, listedPrice: Number(request.listedPrice) },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/subscription/upgrade-request — khách tự rút yêu cầu đang chờ.
+router.delete("/upgrade-request", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    await prisma.planUpgradeRequest.updateMany({
+      where: { userId: req.ownerId!, status: "PENDING" },
+      data: { status: "CANCELLED", resolvedAt: new Date(), resolvedByName: "Khách tự hủy" },
+    });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
