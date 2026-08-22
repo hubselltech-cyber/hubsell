@@ -8,27 +8,24 @@ export interface GenericSlice {
   label: string;
   value: number;
   color: string;
-  /** Dòng phụ bên phải chú giải (vd "12,3 tr" hoặc "13 đơn"). */
-  detail?: string;
 }
 
 /**
  * Donut dùng chung (strokeDasharray trên Circle — không cần lib chart).
- * Bố cục DỌC cho mobile: donut CĂN GIỮA, chú giải nằm dưới.
+ * CHỈ vẽ vòng + số tâm; chú giải do màn hình gọi tự render (Tổng quan cần
+ * danh sách sàn cố định, Tài chính cần bóc chi tiết con — legend chung 22/08
+ * không còn ai dùng nên đã gỡ).
  */
 export function DonutChart({
   slices,
   centerLabel,
   centerSub,
   size = 168,
-  showLegend = true,
 }: {
   slices: GenericSlice[];
   centerLabel: string;
   centerSub: string;
   size?: number;
-  /** false = chỉ vẽ donut, nơi gọi tự render danh sách cố định bên dưới. */
-  showLegend?: boolean;
 }) {
   const { colorScheme } = useColorScheme();
   // Vòng nền donut: slate-200 sáng / slate-700 tối (SVG không ăn class dark:)
@@ -89,36 +86,6 @@ export function DonutChart({
           <Text className="text-[11px] text-slate-400 dark:text-slate-500">{centerSub}</Text>
         </View>
       </View>
-
-      {!showLegend ? null : (
-      <View className="mt-4 w-full max-w-[280px]">
-        {slices.map((s) => (
-          <View key={s.label} className="mb-1.5 flex-row items-center gap-2">
-            <View
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: s.color }}
-            />
-            <Text className="flex-1 text-xs text-slate-600 dark:text-slate-300" numberOfLines={1}>
-              {s.label}
-            </Text>
-            {s.detail ? (
-              <Text
-                className="text-xs font-semibold text-slate-900 dark:text-slate-100"
-                style={TABULAR}
-              >
-                {s.detail}
-              </Text>
-            ) : null}
-            <Text
-              className="w-10 text-right text-xs font-semibold text-slate-500 dark:text-slate-400"
-              style={TABULAR}
-            >
-              {total > 0 ? Math.round((Math.max(s.value, 0) / total) * 100) : 0}%
-            </Text>
-          </View>
-        ))}
-      </View>
-      )}
     </View>
   );
 }

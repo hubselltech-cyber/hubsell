@@ -17,7 +17,7 @@ import { fetchMessages, sendImage, sendMessage } from "@/api/operations";
 import { ApiError } from "@/api/client";
 import type { OpsConversationDto, OpsMessageDto } from "@/types/api";
 import { CHANNEL_LABEL } from "@/lib/labels";
-import { useChannelColors } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/theme/channel-colors";
 import { useConversations } from "@/chat/ConversationsContext";
 
 // Thứ tự tab chốt với anh Trung 13/08: Shopee → TikTok → Lazada.

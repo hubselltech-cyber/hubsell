@@ -28,7 +28,7 @@ import type { PnlSummary, ReturnsSummaryResponse } from "@/types/api";
 import { rangeFor, yesterdayRange } from "@/lib/dates";
 import { compactMoney } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
-import { useChannelColors } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
 import { DeltaPill } from "@/components/DeltaPill";
 import { Card } from "@/components/Card";
@@ -296,7 +296,6 @@ export function OverviewPage({ goWarehouse }: { goWarehouse: () => void }) {
                 Tỷ trọng kênh hôm nay
               </Text>
               <DonutChart
-                showLegend={false}
                 size={150}
                 centerLabel={String(summary?.count ?? 0)}
                 centerSub="đơn hôm nay"

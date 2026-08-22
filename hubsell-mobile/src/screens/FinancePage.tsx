@@ -23,7 +23,7 @@ import { StatCard } from "@/components/StatCard";
 import { SegmentedTabs } from "@/components/SegmentedTabs";
 import { hapticSelect } from "@/lib/haptics";
 import { ProfitBarChart } from "@/components/ProfitBarChart";
-import { useChannelColors } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/theme/channel-colors";
 import { DonutChart } from "@/components/DonutChart";
 import { Card } from "@/components/Card";
 import { TABULAR } from "@/theme/tokens";
@@ -416,7 +416,6 @@ export function FinancePage() {
               <DonutChart
                 centerLabel={compactMoney(allCostTotal)}
                 centerSub="tổng chi phí"
-                showLegend={false}
                 slices={allCostItems.map((it) => ({
                   label: it.label,
                   value: it.amount,

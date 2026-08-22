@@ -31,7 +31,7 @@ import {
   RETURN_STATUS,
   SHIPPING_STATUS,
 } from "@/lib/labels";
-import { useChannelColors } from "@/components/ChannelDonut";
+import { useChannelColors } from "@/theme/channel-colors";
 import { ActiveChip, PickChip } from "@/components/FilterChips";
 import { isExpressShipping } from "@/lib/shipping";
 import { Badge } from "@/components/Badge";
