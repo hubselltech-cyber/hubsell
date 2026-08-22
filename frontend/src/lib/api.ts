@@ -2597,6 +2597,8 @@ export interface ServicePlan {
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
+  /** Tính năng của gói: {"modules": "all"} = full, hoặc {"modules": ["dashboard","finance","warehouse"]}. */
+  features: { modules?: "all" | string[] } | null;
   isActive: boolean;
   isDefault: boolean;
   /** Số ngày dùng thử cho tài khoản mới được gán gói này (0 = không dùng thử). */

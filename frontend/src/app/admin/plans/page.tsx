@@ -81,6 +81,30 @@ const CYCLE_LABEL: Record<BillingCycle, string> = Object.fromEntries(
   CYCLES.map((c) => [c.value, c.label])
 ) as Record<BillingCycle, string>;
 
+/** Nhãn tiếng Việt của các key module trong features.modules. */
+const MODULE_LABEL: Record<string, string> = {
+  dashboard: "Tổng quan",
+  orders: "Đơn hàng",
+  products: "Hàng hóa",
+  warehouse: "Kho",
+  finance: "Tài chính",
+  channels: "Kênh bán",
+  ads: "Trợ lý quảng cáo",
+  operations: "Trợ lý vận hành",
+  koc: "KOC & Affiliate",
+  invoicing: "Hóa đơn & Thuế",
+};
+
+/** Dòng mô tả tính năng của gói từ features.modules. */
+function featuresLabel(plan: ServicePlan): string | null {
+  const modules = plan.features?.modules;
+  if (modules === "all") return "Full tính năng";
+  if (Array.isArray(modules) && modules.length > 0) {
+    return `Chỉ gồm: ${modules.map((m) => MODULE_LABEL[m] ?? m).join(", ")}`;
+  }
+  return null;
+}
+
 /** Giá niêm yết của gói theo chu kỳ (0 = không bán kỳ đó). */
 function planPriceFor(plan: ServicePlan, cycle: BillingCycle): number {
   switch (cycle) {
@@ -667,6 +691,19 @@ export default function PlatformPlansPage() {
                       ].join(" · ")}
                       {p.trialDays > 0 && ` · Dùng thử ${p.trialDays} ngày`}
                     </p>
+
+                    {featuresLabel(p) && (
+                      <p
+                        className={cn(
+                          "text-xs",
+                          p.features?.modules === "all"
+                            ? "font-medium text-emerald-600"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        {featuresLabel(p)}
+                      </p>
+                    )}
 
                     <p className="text-xs font-medium">
                       {formatCount(p.subscriberCount)} thuê bao

@@ -38,6 +38,7 @@ const PLAN_SELECT = {
   maxChannels: true,
   maxOrdersPerMonth: true,
   maxStaff: true,
+  features: true,
   isActive: true,
   isDefault: true,
   trialDays: true,
@@ -58,6 +59,7 @@ function serializePlan(p: {
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
   maxStaff: number | null;
+  features: Prisma.JsonValue;
   isActive: boolean;
   isDefault: boolean;
   trialDays: number;
@@ -77,6 +79,7 @@ function serializePlan(p: {
     maxChannels: p.maxChannels,
     maxOrdersPerMonth: p.maxOrdersPerMonth,
     maxStaff: p.maxStaff,
+    features: p.features,
     isActive: p.isActive,
     isDefault: p.isDefault,
     trialDays: p.trialDays,

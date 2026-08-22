@@ -34,21 +34,29 @@ const BASIC = {
   trialDays: 14,
   isActive: true,
   isDefault: true,
+  // "all" = full tính năng. Khóa module theo mảng key là việc cưỡng chế GĐ2.
+  features: { modules: "all" },
 };
 
-/** 2 gói NHÁP cho khách trên 300 đơn — chưa bán, chờ anh Trung chốt số. */
+/**
+ * 2 gói cho khách trên 300 đơn (NHÁP — giá anh Trung điền sau trên /admin/plans).
+ * Tính năng anh Trung chốt 22/08: Cơ bản CHỈ Tổng quan + Tài chính + Kho;
+ * Nâng cao full. Key module khớp khu vực app, FE dịch nhãn.
+ */
 const DRAFT_UPPER_PLANS = [
   {
     code: "STANDARD",
     name: "Cơ bản",
-    description: "Trên 300 đơn/tháng — bộ tính năng chuẩn. NHÁP: chưa chốt giá/trần.",
+    description: "Trên 300 đơn/tháng — gồm Tổng quan, Tài chính, Kho. NHÁP: chưa chốt giá.",
     tier: 2,
+    features: { modules: ["dashboard", "finance", "warehouse"] },
   },
   {
     code: "ADVANCED",
     name: "Nâng cao",
-    description: "Trên 300 đơn/tháng — đầy đủ tính năng cao cấp. NHÁP: chưa chốt giá/trần.",
+    description: "Trên 300 đơn/tháng — đầy đủ toàn bộ tính năng Hubsell. NHÁP: chưa chốt giá.",
     tier: 3,
+    features: { modules: "all" },
   },
 ];
 
