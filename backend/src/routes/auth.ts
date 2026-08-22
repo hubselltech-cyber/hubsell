@@ -210,7 +210,7 @@ router.post("/register", async (req, res, next) => {
       select: PUBLIC_USER_SELECT,
     });
 
-    // Gán gói mặc định (Beta 0đ) — fire-and-forget, không chặn luồng đăng ký.
+    // Gán gói mặc định (Starter — dùng thử 14 ngày) — fire-and-forget, không chặn luồng đăng ký.
     void ensureDefaultSubscription(user.id);
 
     // Tài khoản vừa đăng ký luôn là chủ shop thường — không thuộc khu điều hành.
@@ -589,7 +589,7 @@ router.get("/google/callback", async (req, res) => {
             role: "ADMIN",
           },
         });
-        // Chủ shop mới qua Google cũng nhận gói mặc định (Beta 0đ).
+        // Chủ shop mới qua Google cũng nhận gói mặc định (Starter — dùng thử 14 ngày).
         void ensureDefaultSubscription(user.id);
       }
     }

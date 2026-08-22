@@ -302,8 +302,8 @@ export function FinanceTab({
       </Card>
 
       <p className="text-center text-xs text-muted-foreground">
-        Doanh thu gói cước sẽ xuất hiện ở đây khi Hubsell thương mại hóa — hiện
-        bảng giá còn ở giai đoạn Beta miễn phí.
+        Doanh thu gói cước xem tại trang Gói &amp; Thuê bao — mỗi lượt xác nhận
+        thanh toán tự sinh bút toán THU trong sổ quỹ này.
       </p>
 
       {processing && (

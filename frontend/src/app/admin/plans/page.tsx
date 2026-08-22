@@ -599,8 +599,8 @@ export default function PlatformPlansPage() {
             <Card>
               <CardContent>
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  Chưa có gói nào — chạy script backfill-beta-subscriptions để tạo
-                  gói Cơ bản 99k (dùng thử 14 ngày), hoặc bấm &ldquo;Thêm gói&rdquo;.
+                  Chưa có gói nào — chạy script backfill-starter-subscriptions để
+                  tạo gói Starter 99k (dùng thử 14 ngày), hoặc bấm &ldquo;Thêm gói&rdquo;.
                 </p>
               </CardContent>
             </Card>

@@ -72,7 +72,8 @@ export function addBillingPeriod(from: Date, cycle: BillingCycle): Date {
 
 /**
  * Trạng thái HIỂN THỊ của thuê bao — suy từ dữ liệu lúc đọc, không cần cron:
- * quá hạn (EXPIRED) khi currentPeriodEnd đã qua; null = vô thời hạn (Beta 0đ).
+ * quá hạn (EXPIRED) khi currentPeriodEnd đã qua; null = vô thời hạn (chỉ còn
+ * ở dữ liệu cũ — thang gói hiện hành Starter luôn có kỳ hạn/dùng thử).
  */
 export function effectiveSubscriptionStatus(sub: {
   status: string;

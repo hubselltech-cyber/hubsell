@@ -1207,7 +1207,7 @@ router.get("/investor-report", requirePlatformAdmin, async (_req, res, next) => 
         // MAU chỉ đáng tin sau khi cột lastActiveAt tích lũy đủ 30 ngày.
         trackedSince: "2026-08-13",
       },
-      revenue: { mrr: 0, arpu: 0, note: "Chưa thương mại hóa — Beta miễn phí" },
+      revenue: { mrr: 0, arpu: 0, note: "MRR/ARPU tính tự động ở GĐ sau — xem tạm Doanh thu gói tại /admin/plans" },
     });
   } catch (err) {
     next(err);
