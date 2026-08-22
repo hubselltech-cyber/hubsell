@@ -247,6 +247,9 @@ const NAV_ITEMS_HQ: NavItem[] = [
   // Khu của KẾ TOÁN: sổ quỹ + duyệt lệnh rút + nghĩa vụ hóa đơn — tách hẳn
   // trang riêng để Sale không bao giờ nhìn thấy sổ tiền.
   { href: "/admin/finance", label: "Kế toán", icon: "account_balance", perm: "hq.finance" },
+  // Bảng giá gói + thuê bao + ghi nhận thanh toán — cùng lá hq.finance (việc
+  // của kế toán); riêng SỬA bảng giá backend chỉ cho chủ nền tảng.
+  { href: "/admin/plans", label: "Gói dịch vụ", icon: "workspace_premium", perm: "hq.finance" },
   { href: "/admin/marketing", label: "Marketing", icon: "campaign", perm: "hq.marketing" },
   // Chỉ chủ nền tảng tạo/phân quyền nhân viên điều hành — nhân viên không thấy.
   { href: "/staff", label: "Nhân viên", icon: "group", adminOnly: true },
@@ -262,6 +265,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   // Khu điều hành Hubsell — các route con phải đứng TRƯỚC "/admin" (match tiền tố).
   { prefix: "/admin/customers", title: "Khách hàng đăng ký" },
   { prefix: "/admin/finance", title: "Kế toán nội bộ" },
+  { prefix: "/admin/plans", title: "Gói dịch vụ & Thuê bao" },
   { prefix: "/admin/marketing", title: "Marketing & Giới thiệu" },
   { prefix: "/admin/system", title: "Hệ thống & Kỹ thuật" },
   { prefix: "/admin", title: "Điều hành Hubsell" },

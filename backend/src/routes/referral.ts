@@ -9,7 +9,7 @@
 // ============================================================
 
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
+import { BillingCycle, PackagePaymentMethod, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import {
@@ -17,6 +17,7 @@ import {
   creditReferralCommission,
   ensureReferralCode,
 } from "../referral-wallet";
+import { recordPackagePaymentTx } from "../subscription-service";
 
 const router = Router();
 
@@ -26,15 +27,27 @@ const REFERRAL_LINK_BASE =
   process.env.REFERRAL_LINK_BASE ?? "https://hubsell.tech/register";
 
 /**
- * GÓI GIA HẠN (KHUNG DEMO — đồng bộ Feature Matrix trên landing, CHƯA thương
- * mại hóa). Khi có bảng giá thật chỉ cần sửa một chỗ này.
+ * GÓI GIA HẠN — từ 22/08 đọc BẢNG GIÁ THẬT (ServicePlan, admin quản trên
+ * /admin/plans): mỗi gói đang bán có giá > 0 sinh 2 lựa chọn (tháng/năm).
+ * id có cấu trúc "<planId>:<MONTHLY|YEARLY>" — /renew tách ngược lại.
  */
-const RENEWAL_PACKAGES = [
-  { id: "STARTER_1M", name: "Starter — 1 tháng", price: 199_000 },
-  { id: "STARTER_12M", name: "Starter — 12 tháng", price: 1_990_000 },
-  { id: "PRO_1M", name: "Professional — 1 tháng", price: 499_000 },
-  { id: "PRO_12M", name: "Professional — 12 tháng", price: 4_990_000 },
-] as const;
+async function listRenewalPackages() {
+  const plans = await prisma.servicePlan.findMany({
+    where: { isActive: true, OR: [{ priceMonthly: { gt: 0 } }, { priceYearly: { gt: 0 } }] },
+    orderBy: [{ tier: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, priceMonthly: true, priceYearly: true },
+  });
+  return plans.flatMap((p) => {
+    const out: { id: string; name: string; price: number }[] = [];
+    const monthly = Number(p.priceMonthly);
+    const yearly = Number(p.priceYearly);
+    if (monthly > 0)
+      out.push({ id: `${p.id}:MONTHLY`, name: `${p.name} — 1 tháng`, price: monthly });
+    if (yearly > 0)
+      out.push({ id: `${p.id}:YEARLY`, name: `${p.name} — 12 tháng`, price: yearly });
+    return out;
+  });
+}
 
 const toNumber = (d: Prisma.Decimal | null | undefined) =>
   d ? Number(d) : 0;
@@ -68,7 +81,7 @@ router.get("/summary", async (req: AuthRequest, res, next) => {
         /** Số dư khả dụng hiện tại của Ví Hubsell. */
         balance: toNumber(wallet?.balance),
       },
-      packages: RENEWAL_PACKAGES,
+      packages: await listRenewalPackages(),
       minWithdrawal: MIN_WITHDRAWAL_AMOUNT,
     });
   } catch (err) {
@@ -221,44 +234,75 @@ router.post("/withdraw", async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/referral/renew — DÙNG VÍ GIA HẠN GÓI (khung demo, chưa thương mại
-// hóa). Trừ thẳng số dư; và vì đây cũng là MỘT LƯỢT THANH TOÁN THÀNH CÔNG nên
+// POST /api/referral/renew — DÙNG VÍ GIA HẠN GÓI. Từ 22/08 chạy trên máy thuê
+// bao thật: trừ ví + ghi chứng từ PackagePayment (method WALLET — bù trừ công
+// nợ hoa hồng, KHÔNG ghi sổ quỹ vì không có tiền vào) + gia hạn Subscription,
+// tất cả trong MỘT transaction. Vẫn là một lượt thanh toán thành công nên
 // người đã giới thiệu TÔI (nếu có) tiếp tục nhận 10% — "hoa hồng vĩnh viễn".
 router.post("/renew", async (req: AuthRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const pkg = RENEWAL_PACKAGES.find((p) => p.id === req.body?.packageId);
-    if (!pkg) {
+    const [planId, cycleRaw] = String(req.body?.packageId ?? "").split(":");
+    const cycle = (Object.values(BillingCycle) as string[]).includes(cycleRaw)
+      ? (cycleRaw as BillingCycle)
+      : null;
+    const plan = planId
+      ? await prisma.servicePlan.findFirst({
+          where: { id: planId, isActive: true },
+          select: { id: true, name: true, priceMonthly: true, priceYearly: true },
+        })
+      : null;
+    if (!plan || !cycle) {
+      res.status(400).json({ error: "Gói gia hạn không hợp lệ" });
+      return;
+    }
+    const price = Number(cycle === BillingCycle.YEARLY ? plan.priceYearly : plan.priceMonthly);
+    if (price <= 0) {
       res.status(400).json({ error: "Gói gia hạn không hợp lệ" });
       return;
     }
 
-    const ok = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const deducted = await tx.hubsellWallet.updateMany({
-        where: { userId, balance: { gte: pkg.price } },
-        data: { balance: { decrement: pkg.price } },
+        where: { userId, balance: { gte: price } },
+        data: { balance: { decrement: price } },
       });
-      if (deducted.count !== 1) return false;
+      if (deducted.count !== 1) return null;
       await tx.walletTransaction.create({
         data: {
           userId,
           type: "PACKAGE_RENEWAL",
-          amount: -pkg.price,
-          note: `Gia hạn gói ${pkg.name} bằng Ví Hubsell`,
+          amount: -price,
+          note: `Gia hạn gói ${plan.name} bằng Ví Hubsell`,
         },
       });
-      return true;
+      return recordPackagePaymentTx(tx, {
+        userId,
+        planId: plan.id,
+        cycle,
+        amount: price,
+        method: PackagePaymentMethod.WALLET,
+        note: "Gia hạn bằng Ví Hubsell",
+      });
     });
 
-    if (!ok) {
+    if (!result) {
       res.status(400).json({ error: "Số dư Ví Hubsell không đủ để gia hạn gói này" });
       return;
     }
 
     // Gia hạn = thanh toán thành công → chảy tiếp 10% cho người giới thiệu tôi.
-    await creditReferralCommission(userId, pkg.price);
+    await creditReferralCommission(userId, price);
 
-    res.json({ ok: true, package: pkg, message: `Đã gia hạn ${pkg.name} thành công.` });
+    res.json({
+      ok: true,
+      package: { id: req.body?.packageId, name: plan.name, price },
+      subscription: {
+        currentPeriodEnd: result.subscription.currentPeriodEnd,
+        plan: plan.name,
+      },
+      message: `Đã gia hạn ${plan.name} thành công.`,
+    });
   } catch (err) {
     next(err);
   }

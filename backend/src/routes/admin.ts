@@ -14,6 +14,7 @@ import {
   type AuthRequest,
 } from "../auth";
 import { writeAuditLog } from "../platform-audit";
+import adminPlansRouter from "./admin-plans";
 
 // ============================================================
 // QUẢN TRỊ NỀN TẢNG (/api/admin) — chủ nền tảng (cờ isPlatformAdmin) và nhân
@@ -707,6 +708,7 @@ const LEDGER_SELECT = {
   occurredAt: true,
   createdByName: true,
   withdrawalRequestId: true,
+  packagePaymentId: true,
   customer: { select: { id: true, email: true, fullName: true } },
 } as const;
 
@@ -845,16 +847,28 @@ router.patch(
       const { note, invoiceStatus, invoiceNo, occurredAt, amount } = req.body ?? {};
       const entry = await prisma.platformLedgerEntry.findUnique({
         where: { id: req.params.id },
-        select: { id: true, withdrawalRequestId: true },
+        select: { id: true, withdrawalRequestId: true, packagePaymentId: true },
       });
       if (!entry) {
         res.status(404).json({ error: "Không tìm thấy bút toán" });
         return;
       }
-      const isAuto = entry.withdrawalRequestId !== null;
-      if (isAuto && (invoiceStatus !== undefined || invoiceNo !== undefined || occurredAt !== undefined || amount !== undefined)) {
+      if (
+        entry.withdrawalRequestId !== null &&
+        (invoiceStatus !== undefined || invoiceNo !== undefined || occurredAt !== undefined || amount !== undefined)
+      ) {
         res.status(400).json({
           error: "Bút toán tự sinh từ lệnh rút — chỉ sửa được diễn giải; nguồn sự thật là lệnh rút",
+        });
+        return;
+      }
+      // Bút toán thu phí gói tự sinh: số tiền/ngày theo chứng từ thanh toán,
+      // nhưng kế toán VẪN phải đánh dấu hóa đơn đã xuất được (nghĩa vụ hóa đơn
+      // nằm trên sổ) — nên chỉ khóa amount + occurredAt.
+      if (entry.packagePaymentId !== null && (occurredAt !== undefined || amount !== undefined)) {
+        res.status(400).json({
+          error:
+            "Bút toán tự sinh từ thanh toán gói — số tiền/ngày theo chứng từ thanh toán, chỉ sửa được diễn giải và hóa đơn",
         });
         return;
       }
@@ -928,6 +942,7 @@ router.delete(
           amount: true,
           note: true,
           withdrawalRequestId: true,
+          packagePaymentId: true,
         },
       });
       if (!entry) {
@@ -936,6 +951,10 @@ router.delete(
       }
       if (entry.withdrawalRequestId !== null) {
         res.status(400).json({ error: "Bút toán tự sinh từ lệnh rút — không xoá được" });
+        return;
+      }
+      if (entry.packagePaymentId !== null) {
+        res.status(400).json({ error: "Bút toán tự sinh từ thanh toán gói — không xoá được" });
         return;
       }
       await prisma.platformLedgerEntry.delete({ where: { id: entry.id } });
@@ -1221,5 +1240,8 @@ router.get("/audit-logs", requirePlatformAdmin, async (req, res, next) => {
     next(err);
   }
 });
+
+// Gói dịch vụ & thuê bao (GĐ1 thương mại hóa) — router con cùng cửa /api/admin.
+router.use(adminPlansRouter);
 
 export default router;

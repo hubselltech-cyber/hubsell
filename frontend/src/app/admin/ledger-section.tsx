@@ -78,6 +78,9 @@ function LedgerEntryDialog({
   const isEdit = entry !== null;
   // Bút toán tự sinh từ lệnh rút: nguồn sự thật là lệnh rút — chỉ sửa diễn giải.
   const autoLocked = isEdit && entry.withdrawalRequestId !== null;
+  // Bút toán tự sinh từ thanh toán gói: tiền/ngày theo chứng từ thanh toán —
+  // khóa lại, nhưng VẪN cho đánh dấu hóa đơn (nghĩa vụ hóa đơn nằm trên sổ).
+  const paymentLocked = isEdit && entry.packagePaymentId !== null;
 
   const [direction, setDirection] = useState<LedgerDirection>(
     entry?.direction ?? "IN"
@@ -113,7 +116,7 @@ function LedgerEntryDialog({
 
   async function handleSave() {
     const value = Math.floor(Number(amount));
-    if (!autoLocked && (!Number.isFinite(value) || value <= 0)) {
+    if (!autoLocked && !paymentLocked && (!Number.isFinite(value) || value <= 0)) {
       toast.error("Số tiền phải là số dương");
       return;
     }
@@ -124,12 +127,14 @@ function LedgerEntryDialog({
           note,
           ...(autoLocked
             ? {}
-            : {
-                amount: value,
-                occurredAt: new Date(`${occurredAt}T12:00:00`).toISOString(),
-                invoiceStatus,
-                invoiceNo,
-              }),
+            : paymentLocked
+              ? { invoiceStatus, invoiceNo }
+              : {
+                  amount: value,
+                  occurredAt: new Date(`${occurredAt}T12:00:00`).toISOString(),
+                  invoiceStatus,
+                  invoiceNo,
+                }),
         });
         toast.success("Đã cập nhật bút toán");
       } else {
@@ -165,11 +170,13 @@ function LedgerEntryDialog({
           <DialogDescription>
             {autoLocked
               ? "Bút toán tự sinh từ lệnh rút — chỉ sửa được diễn giải."
-              : "Khoản THU từ khách sẽ tự mang nghĩa vụ xuất hóa đơn (Chưa xuất) cho tới khi anh/chị điền số hóa đơn."}
+              : paymentLocked
+                ? "Bút toán tự sinh từ thanh toán gói — số tiền/ngày theo chứng từ; sửa được diễn giải và hóa đơn."
+                : "Khoản THU từ khách sẽ tự mang nghĩa vụ xuất hóa đơn (Chưa xuất) cho tới khi anh/chị điền số hóa đơn."}
           </DialogDescription>
         </DialogHeader>
 
-        {!autoLocked && (
+        {!autoLocked && !paymentLocked && (
           <>
             <div className="grid gap-2">
               <Label>Loại</Label>
@@ -493,7 +500,7 @@ export function LedgerSection({
                         >
                           <Pencil className="size-4" />
                         </Button>
-                        {e.withdrawalRequestId === null && (
+                        {e.withdrawalRequestId === null && e.packagePaymentId === null && (
                           <Button
                             variant="outline"
                             size="icon-sm"

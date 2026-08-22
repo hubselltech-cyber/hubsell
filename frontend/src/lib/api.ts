@@ -2522,6 +2522,9 @@ export interface PlatformLedgerEntry {
   createdByName: string;
   /** Khác null = bút toán TỰ SINH từ duyệt lệnh rút (không sửa tiền/xoá được). */
   withdrawalRequestId: string | null;
+  /** Khác null = bút toán TỰ SINH từ thanh toán gói (khóa tiền/ngày, cấm xoá —
+   *  nhưng VẪN sửa được trạng thái/số hóa đơn: nghĩa vụ hóa đơn nằm trên sổ). */
+  packagePaymentId: string | null;
   customer: { id: string; email: string | null; fullName: string } | null;
 }
 
@@ -2571,6 +2574,133 @@ export function updateLedgerEntry(
 export function deleteLedgerEntry(id: string) {
   return apiFetch<{ ok: true }>(`/api/admin/finance/ledger/${id}`, {
     method: "DELETE",
+  });
+}
+
+// ---------- Gói dịch vụ & Thuê bao (hq.finance; sửa bảng giá: chủ nền tảng) ----------
+
+export type BillingCycle = "MONTHLY" | "YEARLY";
+export type PackagePaymentMethod = "BANK_TRANSFER" | "WALLET" | "GATEWAY";
+export type SubscriptionEffectiveStatus = "ACTIVE" | "EXPIRED" | "CANCELLED";
+
+export interface ServicePlan {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  tier: number;
+  priceMonthly: number;
+  priceYearly: number;
+  maxChannels: number | null;
+  maxOrdersPerMonth: number | null;
+  maxStaff: number | null;
+  isActive: boolean;
+  isDefault: boolean;
+  createdAt: string;
+  subscriberCount: number;
+}
+
+export interface PlatformSubscription {
+  id: string;
+  user: { id: string; email: string | null; fullName: string };
+  plan: { id: string; code: string; name: string };
+  status: SubscriptionEffectiveStatus;
+  currentPeriodStart: string;
+  /** null = vô thời hạn (gói Beta 0đ). */
+  currentPeriodEnd: string | null;
+  daysLeft: number | null;
+  createdAt: string;
+}
+
+export interface PlatformPackagePayment {
+  id: string;
+  planName: string;
+  cycle: BillingCycle;
+  amount: number;
+  method: PackagePaymentMethod;
+  periodEnd: string;
+  occurredAt: string;
+  note: string | null;
+  confirmedByName: string;
+  user: { id: string; email: string | null; fullName: string };
+}
+
+export interface PlatformSubscriptionsResponse {
+  summary: {
+    active: number;
+    expiringSoon: number;
+    expired: number;
+    revenueThisMonth: number;
+    paymentsThisMonth: number;
+  };
+  total: number;
+  subscriptions: PlatformSubscription[];
+  recentPayments: PlatformPackagePayment[];
+}
+
+export function fetchPlatformPlans() {
+  return apiFetch<{ plans: ServicePlan[] }>("/api/admin/plans");
+}
+
+export interface PlanInput {
+  code?: string;
+  name?: string;
+  description?: string | null;
+  tier?: number;
+  priceMonthly?: number;
+  priceYearly?: number;
+  maxChannels?: number | null;
+  maxOrdersPerMonth?: number | null;
+  maxStaff?: number | null;
+  isActive?: boolean;
+  isDefault?: boolean;
+}
+
+export function createPlatformPlan(data: PlanInput) {
+  return apiFetch<{ plan: ServicePlan }>("/api/admin/plans", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updatePlatformPlan(id: string, data: PlanInput) {
+  return apiFetch<{ plan: ServicePlan }>(`/api/admin/plans/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deletePlatformPlan(id: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/plans/${id}`, { method: "DELETE" });
+}
+
+export function fetchPlatformSubscriptions(params?: {
+  filter?: "all" | "expiring" | "expired";
+  q?: string;
+}) {
+  const search = new URLSearchParams();
+  if (params?.filter && params.filter !== "all") search.set("filter", params.filter);
+  if (params?.q) search.set("q", params.q);
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return apiFetch<PlatformSubscriptionsResponse>(`/api/admin/subscriptions${suffix}`);
+}
+
+export function recordSubscriptionPayment(
+  userId: string,
+  data: {
+    planId: string;
+    cycle: BillingCycle;
+    amount?: number;
+    occurredAt?: string;
+    note?: string;
+  }
+) {
+  return apiFetch<{
+    payment: PlatformPackagePayment;
+    subscription: { id: string; currentPeriodEnd: string | null; status: string };
+  }>(`/api/admin/subscriptions/${userId}/payment`, {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 }
 

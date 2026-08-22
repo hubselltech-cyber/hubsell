@@ -279,6 +279,10 @@ model User {
   walletTransactions WalletTransaction[]
   withdrawalRequests WithdrawalRequest[]
 
+  // Gói dịch vụ & thuê bao Hubsell (GĐ1 thương mại hóa) — chỉ chủ shop có.
+  subscription    Subscription?
+  packagePayments PackagePayment[]
+
   // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác + sổ quỹ).
   careProfile     PlatformCustomerCare?  @relation("CareCustomer")
   careAssignments PlatformCustomerCare[] @relation("CareAssignee")
@@ -1579,6 +1583,10 @@ model PlatformLedgerEntry {
   customer   User?   @relation("LedgerCustomer", fields: [customerId], references: [id], onDelete: SetNull)
   /// Lệnh rút sinh ra bút toán này (chi hoa hồng) — null với bút toán ghi tay.
   withdrawalRequestId String? @unique
+  /// Khoản thanh toán gói sinh ra bút toán này (thu phí gói TỰ SINH khi kế toán
+  /// xác nhận đã nhận tiền) — null với bút toán ghi tay.
+  packagePaymentId String?         @unique
+  packagePayment   PackagePayment? @relation(fields: [packagePaymentId], references: [id], onDelete: SetNull)
   invoiceStatus       LedgerInvoiceStatus @default(NONE)
   invoiceNo           String?
   /// Ngày PHÁT SINH nghiệp vụ (kế toán chọn khi ghi tay — khác ngày nhập máy).
@@ -1671,6 +1679,122 @@ model WithdrawalRequest {
   @@index([userId, createdAt])
   @@index([status])
   @@map("withdrawal_requests")
+}
+
+// ============================================================
+// GÓI DỊCH VỤ & THUÊ BAO (GĐ1 thương mại hóa, 22/08/2026)
+//
+// Nguyên tắc: giá/giới hạn/tính năng của gói là DỮ LIỆU (admin sửa trên trang
+// /admin/plans), không phải code. Subscription + PackagePayment SNAPSHOT giá
+// và tên gói tại thời điểm thanh toán — đổi bảng giá không bao giờ vỡ lịch sử,
+// và "khách cũ giữ giá cũ" (grandfathering) chỉ là chuyện dữ liệu.
+// ============================================================
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE // đang hiệu lực (quá hạn = suy ra từ currentPeriodEnd lúc đọc, không cần cron)
+  CANCELLED
+}
+
+enum PackagePaymentMethod {
+  BANK_TRANSFER // chuyển khoản tay — kế toán xác nhận trên /admin/plans
+  WALLET // trừ Ví Hubsell (hoa hồng giới thiệu) — KHÔNG có tiền vào quỹ, không ghi sổ quỹ
+  GATEWAY // cổng thanh toán (chờ đăng ký khi có GPKD) — webhook ghi qua externalRef
+}
+
+/// BẢNG GIÁ GÓI HUBSELL — mỗi dòng một gói (Beta 0đ, Starter, Professional...).
+model ServicePlan {
+  id String @id @default(cuid())
+  /// Mã ngắn duy nhất (BETA/STARTER/PRO...) — bất biến sau khi tạo, dùng làm
+  /// snapshot trên PackagePayment nên không bao giờ đổi.
+  code        String  @unique
+  name        String
+  description String?
+  /// Bậc gói để so nâng/hạ cấp (0 = thấp nhất). Hai gói được phép cùng bậc.
+  tier         Int     @default(0)
+  priceMonthly Decimal @default(0) @db.Decimal(14, 2)
+  priceYearly  Decimal @default(0) @db.Decimal(14, 2)
+  /// Giới hạn sử dụng — null = không giới hạn. GĐ1 chỉ LƯU và hiển thị;
+  /// cưỡng chế (chặn mềm + mời nâng gói) là việc của GĐ2.
+  maxChannels       Int?
+  maxOrdersPerMonth Int?
+  maxStaff          Int?
+  /// Cờ tính năng của gói, vd {"adsAssistant": true} — code chỉ hỏi theo khóa,
+  /// thêm tính năng mới không cần migration.
+  features Json @default("{}")
+  /// Chỉ gói đang bán mới hiện cho khách chọn; gói tắt vẫn giữ nguyên cho
+  /// thuê bao cũ đang chạy (không bao giờ xoá gói đã có người dùng).
+  isActive Boolean @default(false)
+  /// Gói mặc định gán cho tài khoản chủ shop mới đăng ký (Beta 0đ) — tối đa
+  /// MỘT gói bật cờ này (route ghi tự tắt cờ ở các gói khác).
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("service_plans")
+}
+
+/// THUÊ BAO — mỗi chủ shop đúng MỘT dòng (gói hiện tại + kỳ hạn hiện tại).
+model Subscription {
+  id     String @id @default(cuid())
+  userId String @unique
+  planId String
+  status SubscriptionStatus @default(ACTIVE)
+  /// Kỳ hiện tại. currentPeriodEnd null = vô thời hạn (gói Beta 0đ).
+  currentPeriodStart DateTime  @default(now())
+  currentPeriodEnd   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     ServicePlan      @relation(fields: [planId], references: [id])
+  payments PackagePayment[]
+
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+/// LỊCH SỬ THANH TOÁN GÓI — append-only, không sửa/xoá (chứng từ kế toán).
+/// planCode/planName/amount là SNAPSHOT tại thời điểm thu — bảng giá đổi sau
+/// đó không ảnh hưởng. Xác nhận thanh toán TỰ SINH: gia hạn Subscription +
+/// bút toán THU sổ quỹ (trừ WALLET) + hoa hồng giới thiệu 10%.
+model PackagePayment {
+  id             String @id @default(cuid())
+  subscriptionId String
+  userId         String
+  planCode       String
+  planName       String
+  cycle          BillingCycle
+  /// Số tiền THỰC THU (kế toán sửa được lúc ghi nhận — khuyến mãi/thu lệch giá niêm yết).
+  amount Decimal              @db.Decimal(14, 2)
+  method PackagePaymentMethod
+  /// Kỳ hạn được cộng nhờ khoản thanh toán này.
+  periodStart DateTime
+  periodEnd   DateTime
+  /// Ngày THỰC NHẬN tiền (kế toán chọn — khớp sao kê ngân hàng).
+  occurredAt DateTime @default(now())
+  /// Mã giao dịch bên ngoài (webhook cổng thanh toán sau này) — unique chống
+  /// ghi trùng khi cổng bắn lặp.
+  externalRef String? @unique
+  note        String?
+  /// Ai xác nhận — snapshot tên để chứng từ còn đọc được khi tài khoản bị xoá.
+  confirmedById   String?
+  confirmedByName String
+  createdAt       DateTime @default(now())
+
+  subscription Subscription         @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntry  PlatformLedgerEntry?
+
+  @@index([userId, createdAt])
+  @@index([occurredAt])
+  @@map("package_payments")
 }
 
 /// THÔNG BÁO TRONG APP — chuông trên header (Tầng 3 kế hoạch UI).
