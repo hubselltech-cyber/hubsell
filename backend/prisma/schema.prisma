@@ -1692,6 +1692,8 @@ model WithdrawalRequest {
 
 enum BillingCycle {
   MONTHLY
+  QUARTERLY // 3 tháng
+  SEMIANNUAL // 6 tháng
   YEARLY
 }
 
@@ -1716,8 +1718,11 @@ model ServicePlan {
   description String?
   /// Bậc gói để so nâng/hạ cấp (0 = thấp nhất). Hai gói được phép cùng bậc.
   tier         Int     @default(0)
-  priceMonthly Decimal @default(0) @db.Decimal(14, 2)
-  priceYearly  Decimal @default(0) @db.Decimal(14, 2)
+  /// Giá theo kỳ — 0 = KHÔNG BÁN kỳ đó (khách chỉ thấy các kỳ có giá).
+  priceMonthly    Decimal @default(0) @db.Decimal(14, 2)
+  priceQuarterly  Decimal @default(0) @db.Decimal(14, 2)
+  priceSemiannual Decimal @default(0) @db.Decimal(14, 2)
+  priceYearly     Decimal @default(0) @db.Decimal(14, 2)
   /// Giới hạn sử dụng — null = không giới hạn. GĐ1 chỉ LƯU và hiển thị;
   /// cưỡng chế (chặn mềm + mời nâng gói) là việc của GĐ2.
   maxChannels       Int?

@@ -26,10 +26,47 @@ import { creditReferralCommission } from "./referral-wallet";
 
 type Tx = Prisma.TransactionClient;
 
-/** Cộng một chu kỳ vào mốc thời gian: MONTHLY +1 tháng, YEARLY +12 tháng. */
+/** Số tháng của từng chu kỳ mua. */
+export const CYCLE_MONTHS: Record<BillingCycle, number> = {
+  MONTHLY: 1,
+  QUARTERLY: 3,
+  SEMIANNUAL: 6,
+  YEARLY: 12,
+};
+
+/** Nhãn tiếng Việt của chu kỳ — dùng cho diễn giải sổ quỹ + danh sách gói. */
+export const CYCLE_LABEL: Record<BillingCycle, string> = {
+  MONTHLY: "1 tháng",
+  QUARTERLY: "3 tháng",
+  SEMIANNUAL: "6 tháng",
+  YEARLY: "12 tháng",
+};
+
+/** Giá niêm yết của gói theo chu kỳ (0 = không bán kỳ đó). */
+export function planPriceFor(
+  plan: {
+    priceMonthly: Prisma.Decimal | number;
+    priceQuarterly: Prisma.Decimal | number;
+    priceSemiannual: Prisma.Decimal | number;
+    priceYearly: Prisma.Decimal | number;
+  },
+  cycle: BillingCycle
+): number {
+  const raw =
+    cycle === BillingCycle.YEARLY
+      ? plan.priceYearly
+      : cycle === BillingCycle.SEMIANNUAL
+        ? plan.priceSemiannual
+        : cycle === BillingCycle.QUARTERLY
+          ? plan.priceQuarterly
+          : plan.priceMonthly;
+  return Number(raw);
+}
+
+/** Cộng một chu kỳ vào mốc thời gian (1/3/6/12 tháng). */
 export function addBillingPeriod(from: Date, cycle: BillingCycle): Date {
   const next = new Date(from);
-  next.setMonth(next.getMonth() + (cycle === BillingCycle.YEARLY ? 12 : 1));
+  next.setMonth(next.getMonth() + CYCLE_MONTHS[cycle]);
   return next;
 }
 
@@ -109,10 +146,7 @@ export interface RecordPaymentInput {
 export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) {
   const plan = await tx.servicePlan.findUniqueOrThrow({ where: { id: input.planId } });
 
-  const listPrice = Number(
-    input.cycle === BillingCycle.YEARLY ? plan.priceYearly : plan.priceMonthly
-  );
-  const amount = input.amount ?? listPrice;
+  const amount = input.amount ?? planPriceFor(plan, input.cycle);
   if (!Number.isFinite(amount) || amount < 0) {
     throw new Error("Số tiền thanh toán không hợp lệ");
   }
@@ -147,7 +181,7 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
     },
   });
 
-  const cycleLabel = input.cycle === BillingCycle.YEARLY ? "12 tháng" : "1 tháng";
+  const cycleLabel = CYCLE_LABEL[input.cycle];
   const confirmedByName =
     input.actorName ??
     (input.method === PackagePaymentMethod.WALLET ? "Hệ thống (Ví Hubsell)" : "Hệ thống");

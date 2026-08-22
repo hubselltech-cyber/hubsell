@@ -17,7 +17,11 @@ import {
   creditReferralCommission,
   ensureReferralCode,
 } from "../referral-wallet";
-import { recordPackagePaymentTx } from "../subscription-service";
+import {
+  CYCLE_LABEL,
+  planPriceFor,
+  recordPackagePaymentTx,
+} from "../subscription-service";
 
 const router = Router();
 
@@ -33,20 +37,33 @@ const REFERRAL_LINK_BASE =
  */
 async function listRenewalPackages() {
   const plans = await prisma.servicePlan.findMany({
-    where: { isActive: true, OR: [{ priceMonthly: { gt: 0 } }, { priceYearly: { gt: 0 } }] },
+    where: {
+      isActive: true,
+      OR: [
+        { priceMonthly: { gt: 0 } },
+        { priceQuarterly: { gt: 0 } },
+        { priceSemiannual: { gt: 0 } },
+        { priceYearly: { gt: 0 } },
+      ],
+    },
     orderBy: [{ tier: "asc" }, { createdAt: "asc" }],
-    select: { id: true, name: true, priceMonthly: true, priceYearly: true },
+    select: {
+      id: true,
+      name: true,
+      priceMonthly: true,
+      priceQuarterly: true,
+      priceSemiannual: true,
+      priceYearly: true,
+    },
   });
-  return plans.flatMap((p) => {
-    const out: { id: string; name: string; price: number }[] = [];
-    const monthly = Number(p.priceMonthly);
-    const yearly = Number(p.priceYearly);
-    if (monthly > 0)
-      out.push({ id: `${p.id}:MONTHLY`, name: `${p.name} — 1 tháng`, price: monthly });
-    if (yearly > 0)
-      out.push({ id: `${p.id}:YEARLY`, name: `${p.name} — 12 tháng`, price: yearly });
-    return out;
-  });
+  return plans.flatMap((p) =>
+    (Object.values(BillingCycle) as BillingCycle[]).flatMap((cycle) => {
+      const price = planPriceFor(p, cycle);
+      return price > 0
+        ? [{ id: `${p.id}:${cycle}`, name: `${p.name} — ${CYCLE_LABEL[cycle]}`, price }]
+        : [];
+    })
+  );
 }
 
 const toNumber = (d: Prisma.Decimal | null | undefined) =>
@@ -249,14 +266,21 @@ router.post("/renew", async (req: AuthRequest, res, next) => {
     const plan = planId
       ? await prisma.servicePlan.findFirst({
           where: { id: planId, isActive: true },
-          select: { id: true, name: true, priceMonthly: true, priceYearly: true },
+          select: {
+            id: true,
+            name: true,
+            priceMonthly: true,
+            priceQuarterly: true,
+            priceSemiannual: true,
+            priceYearly: true,
+          },
         })
       : null;
     if (!plan || !cycle) {
       res.status(400).json({ error: "Gói gia hạn không hợp lệ" });
       return;
     }
-    const price = Number(cycle === BillingCycle.YEARLY ? plan.priceYearly : plan.priceMonthly);
+    const price = planPriceFor(plan, cycle);
     if (price <= 0) {
       res.status(400).json({ error: "Gói gia hạn không hợp lệ" });
       return;

@@ -32,6 +32,8 @@ const PLAN_SELECT = {
   description: true,
   tier: true,
   priceMonthly: true,
+  priceQuarterly: true,
+  priceSemiannual: true,
   priceYearly: true,
   maxChannels: true,
   maxOrdersPerMonth: true,
@@ -50,6 +52,8 @@ function serializePlan(p: {
   description: string | null;
   tier: number;
   priceMonthly: Prisma.Decimal;
+  priceQuarterly: Prisma.Decimal;
+  priceSemiannual: Prisma.Decimal;
   priceYearly: Prisma.Decimal;
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
@@ -67,6 +71,8 @@ function serializePlan(p: {
     description: p.description,
     tier: p.tier,
     priceMonthly: toNumber(p.priceMonthly),
+    priceQuarterly: toNumber(p.priceQuarterly),
+    priceSemiannual: toNumber(p.priceSemiannual),
     priceYearly: toNumber(p.priceYearly),
     maxChannels: p.maxChannels,
     maxOrdersPerMonth: p.maxOrdersPerMonth,
@@ -96,7 +102,16 @@ function parsePlanBody(body: Record<string, unknown>, partial: boolean) {
   const description = str("description");
   if (description !== undefined) out.description = description || null;
 
-  const int = (key: "tier" | "priceMonthly" | "priceYearly" | "trialDays", min = 0) => {
+  const int = (
+    key:
+      | "tier"
+      | "priceMonthly"
+      | "priceQuarterly"
+      | "priceSemiannual"
+      | "priceYearly"
+      | "trialDays",
+    min = 0
+  ) => {
     if (body[key] === undefined) return;
     const v = Math.floor(Number(body[key]));
     if (!Number.isFinite(v) || v < min) errors.push(`Trường ${key} không hợp lệ`);
@@ -104,6 +119,8 @@ function parsePlanBody(body: Record<string, unknown>, partial: boolean) {
   };
   int("tier");
   int("priceMonthly");
+  int("priceQuarterly");
+  int("priceSemiannual");
   int("priceYearly");
   int("trialDays");
 

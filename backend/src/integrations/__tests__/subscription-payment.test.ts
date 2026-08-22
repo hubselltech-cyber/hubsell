@@ -78,9 +78,11 @@ afterAll(async () => {
 });
 
 describe("addBillingPeriod / effectiveSubscriptionStatus", () => {
-  it("cộng đúng 1 tháng / 12 tháng", () => {
+  it("cộng đúng 1 / 3 / 6 / 12 tháng", () => {
     const from = new Date("2026-08-22T12:00:00Z");
     expect(addBillingPeriod(from, "MONTHLY").toISOString()).toBe("2026-09-22T12:00:00.000Z");
+    expect(addBillingPeriod(from, "QUARTERLY").toISOString()).toBe("2026-11-22T12:00:00.000Z");
+    expect(addBillingPeriod(from, "SEMIANNUAL").toISOString()).toBe("2027-02-22T12:00:00.000Z");
     expect(addBillingPeriod(from, "YEARLY").toISOString()).toBe("2027-08-22T12:00:00.000Z");
   });
 

@@ -2579,7 +2579,7 @@ export function deleteLedgerEntry(id: string) {
 
 // ---------- Gói dịch vụ & Thuê bao (hq.finance; sửa bảng giá: chủ nền tảng) ----------
 
-export type BillingCycle = "MONTHLY" | "YEARLY";
+export type BillingCycle = "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "YEARLY";
 export type PackagePaymentMethod = "BANK_TRANSFER" | "WALLET" | "GATEWAY";
 export type SubscriptionEffectiveStatus = "ACTIVE" | "EXPIRED" | "CANCELLED";
 
@@ -2589,7 +2589,10 @@ export interface ServicePlan {
   name: string;
   description: string | null;
   tier: number;
+  /** Giá theo kỳ mua — 0 = không bán kỳ đó. */
   priceMonthly: number;
+  priceQuarterly: number;
+  priceSemiannual: number;
   priceYearly: number;
   maxChannels: number | null;
   maxOrdersPerMonth: number | null;
@@ -2653,6 +2656,8 @@ export interface PlanInput {
   description?: string | null;
   tier?: number;
   priceMonthly?: number;
+  priceQuarterly?: number;
+  priceSemiannual?: number;
   priceYearly?: number;
   maxChannels?: number | null;
   maxOrdersPerMonth?: number | null;

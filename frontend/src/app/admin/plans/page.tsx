@@ -70,6 +70,31 @@ const METHOD_LABEL: Record<string, string> = {
   GATEWAY: "Cổng thanh toán",
 };
 
+const CYCLES: { value: BillingCycle; label: string; months: number }[] = [
+  { value: "MONTHLY", label: "1 tháng", months: 1 },
+  { value: "QUARTERLY", label: "3 tháng", months: 3 },
+  { value: "SEMIANNUAL", label: "6 tháng", months: 6 },
+  { value: "YEARLY", label: "12 tháng", months: 12 },
+];
+
+const CYCLE_LABEL: Record<BillingCycle, string> = Object.fromEntries(
+  CYCLES.map((c) => [c.value, c.label])
+) as Record<BillingCycle, string>;
+
+/** Giá niêm yết của gói theo chu kỳ (0 = không bán kỳ đó). */
+function planPriceFor(plan: ServicePlan, cycle: BillingCycle): number {
+  switch (cycle) {
+    case "QUARTERLY":
+      return plan.priceQuarterly;
+    case "SEMIANNUAL":
+      return plan.priceSemiannual;
+    case "YEARLY":
+      return plan.priceYearly;
+    default:
+      return plan.priceMonthly;
+  }
+}
+
 /** "22/08/2026" — kỳ hạn chỉ cần ngày, không cần giờ. */
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN");
@@ -97,6 +122,8 @@ function PlanDialog({
   const [description, setDescription] = useState(plan?.description ?? "");
   const [tier, setTier] = useState(String(plan?.tier ?? 0));
   const [priceMonthly, setPriceMonthly] = useState(String(plan?.priceMonthly ?? 0));
+  const [priceQuarterly, setPriceQuarterly] = useState(String(plan?.priceQuarterly ?? 0));
+  const [priceSemiannual, setPriceSemiannual] = useState(String(plan?.priceSemiannual ?? 0));
   const [priceYearly, setPriceYearly] = useState(String(plan?.priceYearly ?? 0));
   const [maxChannels, setMaxChannels] = useState(plan?.maxChannels?.toString() ?? "");
   const [maxOrdersPerMonth, setMaxOrdersPerMonth] = useState(
@@ -121,6 +148,8 @@ function PlanDialog({
         description: description.trim() || null,
         tier: Math.floor(Number(tier)) || 0,
         priceMonthly: Math.floor(Number(priceMonthly)) || 0,
+        priceQuarterly: Math.floor(Number(priceQuarterly)) || 0,
+        priceSemiannual: Math.floor(Number(priceSemiannual)) || 0,
         priceYearly: Math.floor(Number(priceYearly)) || 0,
         maxChannels: limit(maxChannels),
         maxOrdersPerMonth: limit(maxOrdersPerMonth),
@@ -184,28 +213,33 @@ function PlanDialog({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="grid gap-2">
-            <Label>Bậc gói</Label>
-            <Input type="number" min={0} value={tier} onChange={(e) => setTier(e.target.value)} />
-          </div>
-          <div className="grid gap-2">
-            <Label>Giá tháng (₫)</Label>
-            <Input
-              type="number"
-              min={0}
-              value={priceMonthly}
-              onChange={(e) => setPriceMonthly(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label>Giá năm (₫)</Label>
-            <Input
-              type="number"
-              min={0}
-              value={priceYearly}
-              onChange={(e) => setPriceYearly(e.target.value)}
-            />
+        <div className="grid gap-2">
+          <Label>Bậc gói</Label>
+          <Input
+            type="number"
+            min={0}
+            className="w-24"
+            value={tier}
+            onChange={(e) => setTier(e.target.value)}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label>Giá theo kỳ mua (₫) — để 0 là không bán kỳ đó</Label>
+          <div className="grid grid-cols-2 gap-3">
+            {(
+              [
+                ["1 tháng", priceMonthly, setPriceMonthly],
+                ["3 tháng", priceQuarterly, setPriceQuarterly],
+                ["6 tháng", priceSemiannual, setPriceSemiannual],
+                ["12 tháng", priceYearly, setPriceYearly],
+              ] as [string, string, (v: string) => void][]
+            ).map(([label, value, setter]) => (
+              <div key={label} className="grid gap-1">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <Input type="number" min={0} value={value} onChange={(e) => setter(e.target.value)} />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -321,11 +355,7 @@ function PaymentDialog({
   const [submitting, setSubmitting] = useState(false);
 
   const selectedPlan = selectable.find((p) => p.id === planId) ?? null;
-  const listPrice = selectedPlan
-    ? cycle === "YEARLY"
-      ? selectedPlan.priceYearly
-      : selectedPlan.priceMonthly
-    : 0;
+  const listPrice = selectedPlan ? planPriceFor(selectedPlan, cycle) : 0;
   // Số tiền tự điền theo giá niêm yết — kế toán sửa tay khi thu lệch (khuyến mãi).
   const effectiveAmount = amountTouched ? amount : String(listPrice);
 
@@ -390,25 +420,20 @@ function PaymentDialog({
 
         <div className="grid gap-2">
           <Label>Chu kỳ</Label>
-          <div className="flex gap-1.5">
-            {(
-              [
-                ["MONTHLY", "1 tháng"],
-                ["YEARLY", "12 tháng"],
-              ] as [BillingCycle, string][]
-            ).map(([value, label]) => (
+          <div className="flex flex-wrap gap-1.5">
+            {CYCLES.map((c) => (
               <button
-                key={value}
+                key={c.value}
                 type="button"
-                onClick={() => setCycle(value)}
+                onClick={() => setCycle(c.value)}
                 className={cn(
                   "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
-                  cycle === value
+                  cycle === c.value
                     ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                     : "border-slate-200 text-slate-500 hover:border-slate-300"
                 )}
               >
-                {label}
+                {c.label}
               </button>
             ))}
           </div>
@@ -623,9 +648,11 @@ export default function PlatformPlansPage() {
                           "0₫"
                         )}
                       </p>
-                      {p.priceYearly > 0 && (
+                      {CYCLES.some((c) => c.months > 1 && planPriceFor(p, c.value) > 0) && (
                         <p className="text-xs text-muted-foreground">
-                          Trả năm: {formatMoney(p.priceYearly)}
+                          {CYCLES.filter((c) => c.months > 1 && planPriceFor(p, c.value) > 0)
+                            .map((c) => `${c.label}: ${formatMoney(planPriceFor(p, c.value))}`)
+                            .join(" · ")}
                         </p>
                       )}
                     </div>
@@ -844,9 +871,7 @@ export default function PlatformPlansPage() {
                         </TableCell>
                         <TableCell className="text-sm">
                           {p.planName}
-                          <p className="text-xs text-muted-foreground">
-                            {p.cycle === "YEARLY" ? "12 tháng" : "1 tháng"}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{CYCLE_LABEL[p.cycle]}</p>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {METHOD_LABEL[p.method] ?? p.method}

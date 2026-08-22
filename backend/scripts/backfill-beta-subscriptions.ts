@@ -20,7 +20,11 @@ const BASIC = {
   description:
     "Đầy đủ tính năng Hubsell cho shop dưới 300 đơn/tháng. Mọi tài khoản mới được dùng thử 14 ngày.",
   tier: 1,
+  // Chiết khấu mua dài tăng dần (~6% / ~11% / ~17% = tặng 2 tháng) — sửa được
+  // trên /admin/plans; 0 = không bán kỳ đó.
   priceMonthly: 99_000,
+  priceQuarterly: 279_000,
+  priceSemiannual: 529_000,
   priceYearly: 990_000,
   maxOrdersPerMonth: 300,
   trialDays: 14,
