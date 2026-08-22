@@ -772,17 +772,26 @@ export default function PlatformPlansPage() {
                           {r.user.fullName}
                           <p className="text-xs text-muted-foreground">
                             {r.user.email ?? "—"}
-                            {r.user.phone ? ` · ${r.user.phone}` : ""}
+                            {/* SĐT khách ĐỂ LẠI lúc gửi yêu cầu — ưu tiên gọi số này */}
+                            {(r.contactPhone ?? r.user.phone) && (
+                              <span className="font-semibold text-foreground">
+                                {" "}· {r.contactPhone ?? r.user.phone}
+                              </span>
+                            )}
                           </p>
                         </TableCell>
                         <TableCell className="text-sm font-medium">
                           {r.planName}
                           <p className="text-xs font-normal text-muted-foreground">
-                            Kỳ {CYCLE_LABEL[r.cycle]}
+                            {r.listedPrice === 0 ? "Tư vấn" : `Kỳ ${CYCLE_LABEL[r.cycle]}`}
                           </p>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
-                          {formatMoney(r.listedPrice)}
+                          {r.listedPrice === 0 ? (
+                            <span className="font-medium text-muted-foreground">Báo giá riêng</span>
+                          ) : (
+                            formatMoney(r.listedPrice)
+                          )}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                           {formatDate(r.createdAt)}

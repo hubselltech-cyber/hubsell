@@ -1807,7 +1807,11 @@ model PlanUpgradeRequest {
   planName String
   cycle    BillingCycle
   /// Giá niêm yết của (gói, kỳ) tại thời điểm gửi yêu cầu.
+  /// 0 = yêu cầu TƯ VẤN (Enterprise "Liên hệ báo giá") — HQ hiện "Báo giá riêng".
   listedPrice Decimal                  @db.Decimal(14, 2)
+  /// SĐT khách để lại khi gửi yêu cầu (anh Trung chốt 22/08 khuya: bắt buộc
+  /// để HQ gọi lại được) — snapshot riêng, không phụ thuộc khách đổi hồ sơ sau đó.
+  contactPhone String?
   status      PlanUpgradeRequestStatus @default(PENDING)
   createdAt   DateTime                 @default(now())
   updatedAt   DateTime                 @updatedAt

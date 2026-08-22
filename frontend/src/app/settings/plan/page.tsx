@@ -38,6 +38,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   ApiError,
   cancelMyPlanUpgradeRequest,
@@ -139,18 +141,36 @@ export default function SettingsPlanPage() {
   const [walletBuy, setWalletBuy] = useState<{ plan: MyUpgradePlan; cycle: BillingCycle } | null>(
     null
   );
+  // Bước "để lại SĐT" trước khi gửi yêu cầu mua/tư vấn (anh Trung 22/08 khuya:
+  // HQ phải gọi lại được) — điền sẵn SĐT hồ sơ, khách sửa được.
+  const [buyIntent, setBuyIntent] = useState<{
+    planId: string;
+    planName: string;
+    cycle?: BillingCycle;
+    price: number;
+    isConsult: boolean;
+  } | null>(null);
+  const [phone, setPhone] = useState("");
+
+  function openBuyDialog(intent: NonNullable<typeof buyIntent>) {
+    setPhone(data?.contactPhone ?? "");
+    setBuyIntent(intent);
+  }
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: qk.mySubscription() });
   };
 
   const requestMutation = useMutation({
-    mutationFn: ({ planId, cycle }: { planId: string; cycle: BillingCycle }) =>
-      requestPlanUpgrade(planId, cycle),
+    mutationFn: (p: { planId: string; cycle?: BillingCycle; contactPhone: string }) =>
+      requestPlanUpgrade(p),
     onSuccess: (res) => {
+      setBuyIntent(null);
       refresh();
       toast.success(
-        `Đã gửi yêu cầu mua gói ${res.request.planName} (${CYCLE_LABEL[res.request.cycle]}). Hubsell sẽ liên hệ hướng dẫn thanh toán.`
+        res.request.listedPrice === 0
+          ? `Đã gửi yêu cầu tư vấn gói ${res.request.planName}. Hubsell sẽ gọi lại cho bạn sớm nhất.`
+          : `Đã gửi yêu cầu mua gói ${res.request.planName} (${CYCLE_LABEL[res.request.cycle]}). Hubsell sẽ liên hệ hướng dẫn thanh toán.`
       );
     },
     onError: (err) =>
@@ -305,14 +325,22 @@ export default function SettingsPlanPage() {
                 <Clock className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">
-                    Đã gửi yêu cầu mua gói {pending.planName} — {CYCLE_LABEL[pending.cycle]} (
-                    <span className="tabular-nums">{nf.format(pending.listedPrice)}₫</span>)
+                    {pending.listedPrice === 0 ? (
+                      <>Đã gửi yêu cầu tư vấn gói {pending.planName}</>
+                    ) : (
+                      <>
+                        Đã gửi yêu cầu mua gói {pending.planName} — {CYCLE_LABEL[pending.cycle]} (
+                        <span className="tabular-nums">{nf.format(pending.listedPrice)}₫</span>)
+                      </>
+                    )}
                   </p>
                   <p className="mt-0.5 text-xs opacity-80">
                     Gửi lúc {fmtDate(pending.createdAt)}.{" "}
-                    {data.payment
-                      ? `Chuyển khoản tới ${data.payment.bankName} — STK ${data.payment.bankAccount} (${data.payment.bankHolder}), nội dung: HUBSELL + email đăng nhập. Gói mở ngay khi Hubsell xác nhận tiền về.`
-                      : "Hubsell sẽ liên hệ hướng dẫn thanh toán trong thời gian sớm nhất; gói mở ngay khi xác nhận tiền về."}
+                    {pending.listedPrice === 0
+                      ? "Hubsell sẽ gọi lại tư vấn và báo giá riêng cho shop của bạn."
+                      : data.payment
+                        ? `Chuyển khoản tới ${data.payment.bankName} — STK ${data.payment.bankAccount} (${data.payment.bankHolder}), nội dung: HUBSELL + email đăng nhập. Gói mở ngay khi Hubsell xác nhận tiền về.`
+                        : "Hubsell sẽ liên hệ hướng dẫn thanh toán trong thời gian sớm nhất; gói mở ngay khi xác nhận tiền về."}
                   </p>
                 </div>
                 <button
@@ -443,8 +471,15 @@ export default function SettingsPlanPage() {
                     <Button
                       className="w-full"
                       variant={isBestSeller ? "default" : "outline"}
-                      disabled={requestMutation.isPending}
-                      onClick={() => requestMutation.mutate({ planId: p.id, cycle })}
+                      onClick={() =>
+                        openBuyDialog({
+                          planId: p.id,
+                          planName: p.name,
+                          cycle,
+                          price,
+                          isConsult: false,
+                        })
+                      }
                     >
                       <ShoppingCart className="size-4" />
                       {isCurrent ? "Gia hạn gói này" : "Đăng ký mua"}
@@ -463,6 +498,53 @@ export default function SettingsPlanPage() {
                 </div>
               );
             })}
+
+            {/* Enterprise "Liên hệ báo giá" — bán bằng TƯ VẤN: khách để lại
+                SĐT, HQ gọi lại chốt trần đơn + giá riêng (anh Trung 22/08 khuya). */}
+            {data.enterprisePlan && (
+              <div className="relative flex flex-col rounded-2xl border border-slate-300 bg-card p-5 shadow-sm dark:border-slate-700">
+                <p className="text-lg font-bold">{data.enterprisePlan.name}</p>
+                <p className="mt-0.5 text-sm font-medium text-muted-foreground">
+                  Cho shop quy mô lớn / nhiều thương hiệu
+                </p>
+                <p className="mt-4 text-3xl font-extrabold tracking-tight">
+                  Báo giá riêng
+                </p>
+                <p className="min-h-5 text-sm text-muted-foreground">
+                  Theo quy mô vận hành của shop
+                </p>
+                <ul className="mt-4 space-y-2.5 border-t pt-4">
+                  {[
+                    "Trần đơn hàng theo thỏa thuận",
+                    "Không giới hạn gian hàng",
+                    "Không giới hạn nhân viên",
+                    "Đầy đủ tính năng + hỗ trợ triển khai riêng",
+                  ].map((row) => (
+                    <li key={row} className="flex items-start gap-2.5 text-sm">
+                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                      {row}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-auto pt-5">
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={() =>
+                      openBuyDialog({
+                        planId: data.enterprisePlan!.id,
+                        planName: data.enterprisePlan!.name,
+                        price: 0,
+                        isConsult: true,
+                      })
+                    }
+                  >
+                    <Clock className="size-4" />
+                    Đăng ký tư vấn
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {wallet > 0 && (
@@ -479,6 +561,79 @@ export default function SettingsPlanPage() {
 
       {/* Lịch sử thanh toán CỐ TÌNH không hiển thị (anh Trung bỏ 22/08 khuya:
           đừng nhắc khách họ đã mất tiền) — chứng từ chỉ xem ở HQ /admin/plans. */}
+
+      {/* ===== Để lại SĐT trước khi gửi yêu cầu mua/tư vấn — HQ phải gọi lại
+          được (anh Trung 22/08 khuya); điền sẵn SĐT hồ sơ, khách sửa được ===== */}
+      <Dialog open={buyIntent !== null} onOpenChange={(o) => !o && setBuyIntent(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {buyIntent?.isConsult ? "Đăng ký tư vấn" : "Đăng ký mua gói"}
+            </DialogTitle>
+            {buyIntent && (
+              <DialogDescription>
+                {buyIntent.isConsult ? (
+                  <>
+                    Gói <span className="font-medium text-foreground">{buyIntent.planName}</span> —
+                    Hubsell sẽ gọi lại tư vấn và báo giá riêng theo quy mô shop của bạn.
+                  </>
+                ) : (
+                  <>
+                    Gói <span className="font-medium text-foreground">{buyIntent.planName}</span> — kỳ{" "}
+                    {buyIntent.cycle ? CYCLE_LABEL[buyIntent.cycle] : ""} (
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {nf.format(buyIntent.price)}₫
+                    </span>
+                    ). Hubsell sẽ gọi lại hướng dẫn thanh toán, gói mở ngay khi xác nhận
+                    tiền về.
+                  </>
+                )}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!buyIntent) return;
+              requestMutation.mutate({
+                planId: buyIntent.planId,
+                cycle: buyIntent.cycle,
+                contactPhone: phone,
+              });
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="buy-phone">Số điện thoại liên hệ</Label>
+              <Input
+                id="buy-phone"
+                type="tel"
+                required
+                placeholder="VD: 0912 345 678"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Hubsell chỉ dùng số này để liên hệ về yêu cầu của bạn.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBuyIntent(null)}
+              >
+                Thôi
+              </Button>
+              <Button type="submit" size="sm" disabled={requestMutation.isPending}>
+                <ShoppingCart className="size-4" />
+                {requestMutation.isPending ? "Đang gửi…" : "Gửi yêu cầu"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== Xác nhận trừ Ví — trừ tiền không được là một cú click nhầm ===== */}
       <Dialog open={walletBuy !== null} onOpenChange={(o) => !o && setWalletBuy(null)}>

@@ -375,6 +375,7 @@ router.get(
               planName: true,
               cycle: true,
               listedPrice: true,
+              contactPhone: true,
               createdAt: true,
               user: { select: { id: true, email: true, fullName: true, phone: true } },
             },

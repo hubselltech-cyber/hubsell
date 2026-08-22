@@ -33,10 +33,11 @@ router.get("/me", async (req: AuthRequest, res, next) => {
     const state = await getOwnerPlanState(req.ownerId!);
     const isShopAdmin = req.userRole === "ADMIN";
 
-    // Yêu cầu mua đang chờ + số dư Ví — nuôi khối "Chọn gói" của /settings/plan.
-    // Chỉ trả cho CHỦ SHOP: số dư ví và ý định mua gói là chuyện tiền nong của
-    // chủ, nhân viên gọi /me chỉ cần trạng thái khóa/trần.
-    const [pendingRequest, wallet] = isShopAdmin
+    // Yêu cầu mua đang chờ + số dư Ví + SĐT hồ sơ (điền sẵn ô "để lại SĐT") —
+    // nuôi khối "Chọn gói" của /settings/plan. Chỉ trả cho CHỦ SHOP: số dư ví
+    // và ý định mua gói là chuyện tiền nong của chủ, nhân viên gọi /me chỉ cần
+    // trạng thái khóa/trần.
+    const [pendingRequest, wallet, ownerProfile] = isShopAdmin
       ? await Promise.all([
           prisma.planUpgradeRequest.findFirst({
             where: { userId: req.ownerId!, status: "PENDING" },
@@ -53,8 +54,19 @@ router.get("/me", async (req: AuthRequest, res, next) => {
             where: { userId: req.ownerId! },
             select: { balance: true },
           }),
+          prisma.user.findUnique({
+            where: { id: req.ownerId! },
+            select: { phone: true },
+          }),
         ])
-      : [null, null];
+      : [null, null, null];
+
+    // Gói Enterprise "Liên hệ báo giá" — hiện card khi gói tồn tại, KỂ CẢ đang
+    // nháp/giá 0: bán bằng tư vấn chứ không bằng bảng giá (anh Trung 22/08 khuya).
+    const enterprisePlan = await prisma.servicePlan.findUnique({
+      where: { code: "ENTERPRISE" },
+      select: { id: true, name: true },
+    });
 
     // Gói ĐANG BÁN từ bậc hiện tại trở lên (gte, KỂ CẢ gói đang dùng — anh
     // Trung 22/08: popup phải bày từng gói cho khách so sánh, card gói hiện
@@ -102,6 +114,8 @@ router.get("/me", async (req: AuthRequest, res, next) => {
         ? { ...pendingRequest, listedPrice: Number(pendingRequest.listedPrice) }
         : null,
       walletBalance: wallet ? Number(wallet.balance) : null,
+      contactPhone: ownerProfile?.phone ?? null,
+      enterprisePlan,
     });
   } catch (err) {
     next(err);
@@ -114,25 +128,57 @@ router.get("/me", async (req: AuthRequest, res, next) => {
 // HQ thấy trong /admin/plans; "Ghi nhận thanh toán" tự đóng DONE.
 router.post("/upgrade-request", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
-    const { planId, cycle: cycleRaw } = req.body ?? {};
-    const cycle = (Object.values(BillingCycle) as string[]).includes(String(cycleRaw))
-      ? (cycleRaw as BillingCycle)
-      : null;
+    const { planId, cycle: cycleRaw, contactPhone: phoneRaw } = req.body ?? {};
+
+    // SĐT liên hệ BẮT BUỘC (anh Trung 22/08 khuya: HQ phải gọi lại được).
+    // Nhận dạng dễ dãi: bỏ khoảng trắng/chấm/gạch, chấp nhận +84 lẫn 0.
+    const contactPhone =
+      typeof phoneRaw === "string" ? phoneRaw.replace(/[\s.\-()]/g, "") : "";
+    if (!/^\+?\d{8,15}$/.test(contactPhone)) {
+      res.status(400).json({ error: "Vui lòng để lại số điện thoại hợp lệ để Hubsell liên hệ" });
+      return;
+    }
+
     const plan =
       typeof planId === "string" && planId
-        ? await prisma.servicePlan.findFirst({
-            where: { id: planId, isActive: true },
-          })
+        ? await prisma.servicePlan.findUnique({ where: { id: planId } })
         : null;
-    if (!plan || !cycle) {
-      res.status(400).json({ error: "Gói hoặc kỳ mua không hợp lệ" });
+    if (!plan) {
+      res.status(400).json({ error: "Gói không hợp lệ" });
       return;
     }
-    const price = planPriceFor(plan, cycle);
-    if (price <= 0) {
-      res.status(400).json({ error: "Gói này không bán kỳ đã chọn" });
+
+    // Enterprise "Liên hệ báo giá": nhận yêu cầu TƯ VẤN kể cả khi gói đang
+    // nháp/giá 0 — bán bằng tư vấn, listedPrice 0 để HQ hiện "Báo giá riêng".
+    const isConsult = plan.code === "ENTERPRISE";
+    const cycle = (Object.values(BillingCycle) as string[]).includes(String(cycleRaw))
+      ? (cycleRaw as BillingCycle)
+      : isConsult
+        ? BillingCycle.MONTHLY
+        : null;
+    if (!cycle) {
+      res.status(400).json({ error: "Kỳ mua không hợp lệ" });
       return;
     }
+    const price = isConsult ? 0 : planPriceFor(plan, cycle);
+    if (!isConsult) {
+      if (!plan.isActive) {
+        res.status(400).json({ error: "Gói này hiện không mở bán" });
+        return;
+      }
+      if (price <= 0) {
+        res.status(400).json({ error: "Gói này không bán kỳ đã chọn" });
+        return;
+      }
+    }
+
+    // Tiện thể bồi hồ sơ CRM: tài khoản chưa có SĐT thì lưu luôn số vừa để lại.
+    prisma.user
+      .updateMany({
+        where: { id: req.ownerId!, OR: [{ phone: null }, { phone: "" }] },
+        data: { phone: contactPhone },
+      })
+      .catch(() => {});
 
     const data = {
       planId: plan.id,
@@ -140,6 +186,7 @@ router.post("/upgrade-request", requireAdmin, async (req: AuthRequest, res, next
       planName: plan.name,
       cycle,
       listedPrice: new Prisma.Decimal(price),
+      contactPhone,
     };
     const existing = await prisma.planUpgradeRequest.findFirst({
       where: { userId: req.ownerId!, status: "PENDING" },

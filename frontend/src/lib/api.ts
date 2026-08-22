@@ -2638,12 +2638,15 @@ export interface PlatformPackagePayment {
   user: { id: string; email: string | null; fullName: string };
 }
 
-/** Yêu cầu mua/nâng gói khách gửi từ /settings/plan — chờ HQ liên hệ chốt. */
+/** Yêu cầu mua/nâng gói khách gửi từ /settings/plan — chờ HQ liên hệ chốt.
+ * listedPrice 0 = yêu cầu TƯ VẤN Enterprise (báo giá riêng). */
 export interface PlatformUpgradeRequest {
   id: string;
   planName: string;
   cycle: BillingCycle;
   listedPrice: number;
+  /** SĐT khách để lại lúc gửi — ưu tiên số này khi gọi lại. */
+  contactPhone: string | null;
   createdAt: string;
   user: { id: string; email: string | null; fullName: string; phone: string | null };
 }
@@ -2821,6 +2824,10 @@ export interface MySubscriptionResponse {
   } | null;
   /** Số dư Ví Hubsell — chỉ trả cho CHỦ SHOP (null với nhân viên/chưa có ví). */
   walletBalance: number | null;
+  /** SĐT hồ sơ chủ shop — điền sẵn ô "để lại SĐT" khi đăng ký mua/tư vấn. */
+  contactPhone: string | null;
+  /** Gói Enterprise "Liên hệ báo giá" — card hiện khi gói tồn tại (kể cả nháp). */
+  enterprisePlan: { id: string; name: string } | null;
 }
 
 export function fetchMySubscription() {
@@ -2830,12 +2837,17 @@ export function fetchMySubscription() {
 // Lịch sử thanh toán CỐ TÌNH không phơi phía khách (anh Trung bỏ 22/08 khuya:
 // đừng nhắc khách họ đã mất tiền) — chứng từ chỉ xem ở HQ /admin/plans.
 
-/** "Đăng ký mua" gói + kỳ — tạo/cập nhật yêu cầu để HQ liên hệ hướng dẫn
- * thanh toán (mỗi khách một yêu cầu đang chờ; gửi lại = đổi gói/kỳ). */
-export function requestPlanUpgrade(planId: string, cycle: BillingCycle) {
+/** "Đăng ký mua" gói + kỳ (hoặc TƯ VẤN Enterprise — cycle bỏ trống) — tạo/cập
+ * nhật yêu cầu kèm SĐT BẮT BUỘC để HQ gọi lại (mỗi khách một yêu cầu đang chờ;
+ * gửi lại = đổi gói/kỳ). */
+export function requestPlanUpgrade(params: {
+  planId: string;
+  cycle?: BillingCycle;
+  contactPhone: string;
+}) {
   return apiFetch<{ request: NonNullable<MySubscriptionResponse["pendingUpgradeRequest"]> }>(
     "/api/subscription/upgrade-request",
-    { method: "POST", body: JSON.stringify({ planId, cycle }) }
+    { method: "POST", body: JSON.stringify(params) }
   );
 }
 
