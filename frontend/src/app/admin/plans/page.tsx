@@ -105,6 +105,7 @@ function PlanDialog({
   const [maxStaff, setMaxStaff] = useState(plan?.maxStaff?.toString() ?? "");
   const [isActive, setIsActive] = useState(plan?.isActive ?? false);
   const [isDefault, setIsDefault] = useState(plan?.isDefault ?? false);
+  const [trialDays, setTrialDays] = useState(String(plan?.trialDays ?? 0));
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSave() {
@@ -126,6 +127,7 @@ function PlanDialog({
         maxStaff: limit(maxStaff),
         isActive,
         isDefault,
+        trialDays: Math.floor(Number(trialDays)) || 0,
       };
       if (isEdit) {
         await updatePlatformPlan(plan.id, data);
@@ -240,6 +242,20 @@ function PlanDialog({
           </div>
         </div>
 
+        <div className="grid gap-2">
+          <Label>Số ngày dùng thử cho tài khoản mới</Label>
+          <Input
+            type="number"
+            min={0}
+            value={trialDays}
+            onChange={(e) => setTrialDays(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Chỉ có tác dụng với gói mặc định — khách mới được dùng thử ngần này
+            ngày rồi mới phải trả tiền. 0 = không dùng thử.
+          </p>
+        </div>
+
         <div className="grid gap-3 rounded-lg border p-3">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -254,7 +270,7 @@ function PlanDialog({
             <div>
               <p className="text-sm font-medium">Gói mặc định cho tài khoản mới</p>
               <p className="text-xs text-muted-foreground">
-                Chủ shop mới đăng ký tự vào gói này (Beta 0đ). Chỉ một gói giữ cờ.
+                Chủ shop mới đăng ký tự vào gói này kèm kỳ dùng thử. Chỉ một gói giữ cờ.
               </p>
             </div>
             <Switch checked={isDefault} onCheckedChange={setIsDefault} />
@@ -535,7 +551,7 @@ export default function PlatformPlansPage() {
               <CardContent>
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   Chưa có gói nào — chạy script backfill-beta-subscriptions để tạo
-                  gói Beta 0đ, hoặc bấm &ldquo;Thêm gói&rdquo;.
+                  gói Cơ bản 99k (dùng thử 14 ngày), hoặc bấm &ldquo;Thêm gói&rdquo;.
                 </p>
               </CardContent>
             </Card>
@@ -622,6 +638,7 @@ export default function PlatformPlansPage() {
                           : "Đơn ∞",
                         p.maxStaff != null ? `${p.maxStaff} nhân viên` : "Nhân viên ∞",
                       ].join(" · ")}
+                      {p.trialDays > 0 && ` · Dùng thử ${p.trialDays} ngày`}
                     </p>
 
                     <p className="text-xs font-medium">
@@ -678,7 +695,7 @@ export default function PlatformPlansPage() {
               <StatCard
                 label="Đang hiệu lực"
                 value={formatCount(summary.active)}
-                hint="Thuê bao còn hạn (gồm Beta vô thời hạn)"
+                hint={`Thuê bao còn hạn — ${formatCount(summary.trialing)} đang dùng thử`}
               />
               <StatCard
                 label="Sắp hết hạn"
@@ -706,7 +723,7 @@ export default function PlatformPlansPage() {
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   {committedQ || filter !== "all"
                     ? "Không có thuê bao nào khớp bộ lọc."
-                    : "Chưa có thuê bao nào — chạy script backfill để gán khách hiện có vào gói Beta."}
+                    : "Chưa có thuê bao nào — chạy script backfill để gán khách hiện có vào gói mặc định."}
                 </p>
               ) : data ? (
                 <Table>
@@ -756,16 +773,22 @@ export default function PlatformPlansPage() {
                             className={cn(
                               "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
                               s.status === "ACTIVE"
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                ? s.isTrial
+                                  ? "border-sky-200 bg-sky-50 text-sky-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
                                 : s.status === "EXPIRED"
                                   ? "border-rose-200 bg-rose-50 text-rose-700"
                                   : "border-slate-200 bg-slate-50 text-slate-600"
                             )}
                           >
                             {s.status === "ACTIVE"
-                              ? "Hiệu lực"
+                              ? s.isTrial
+                                ? "Dùng thử"
+                                : "Hiệu lực"
                               : s.status === "EXPIRED"
-                                ? "Quá hạn"
+                                ? s.isTrial
+                                  ? "Hết dùng thử"
+                                  : "Quá hạn"
                                 : "Đã hủy"}
                           </span>
                         </TableCell>

@@ -157,6 +157,23 @@ describe("recordPackagePayment — một hành động, 4 hệ quả", () => {
     expect(Number(payment.amount)).toBe(300_000);
   });
 
+  it("thanh toán đầu tiên KẾT THÚC kỳ dùng thử (hạ cờ isTrial)", async () => {
+    // Giả lập khách đang dùng thử 14 ngày (như ensureDefaultSubscription gán).
+    await prisma.subscription.update({
+      where: { userId: payerId },
+      data: { isTrial: true },
+    });
+    await recordPackagePayment({
+      userId: payerId,
+      planId: planBId,
+      cycle: "MONTHLY",
+      method: "BANK_TRANSFER",
+      occurredAt: new Date("2026-08-27T05:00:00Z"),
+    });
+    const sub = await prisma.subscription.findUnique({ where: { userId: payerId } });
+    expect(sub?.isTrial).toBe(false);
+  });
+
   it("thanh toán bằng VÍ: có chứng từ nhưng KHÔNG ghi sổ quỹ", async () => {
     const { payment } = await recordPackagePayment({
       userId: payerId,

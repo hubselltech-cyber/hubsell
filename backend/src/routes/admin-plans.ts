@@ -38,6 +38,7 @@ const PLAN_SELECT = {
   maxStaff: true,
   isActive: true,
   isDefault: true,
+  trialDays: true,
   createdAt: true,
   _count: { select: { subscriptions: true } },
 } as const;
@@ -55,6 +56,7 @@ function serializePlan(p: {
   maxStaff: number | null;
   isActive: boolean;
   isDefault: boolean;
+  trialDays: number;
   createdAt: Date;
   _count: { subscriptions: number };
 }) {
@@ -71,6 +73,7 @@ function serializePlan(p: {
     maxStaff: p.maxStaff,
     isActive: p.isActive,
     isDefault: p.isDefault,
+    trialDays: p.trialDays,
     createdAt: p.createdAt,
     subscriberCount: p._count.subscriptions,
   };
@@ -93,7 +96,7 @@ function parsePlanBody(body: Record<string, unknown>, partial: boolean) {
   const description = str("description");
   if (description !== undefined) out.description = description || null;
 
-  const int = (key: "tier" | "priceMonthly" | "priceYearly", min = 0) => {
+  const int = (key: "tier" | "priceMonthly" | "priceYearly" | "trialDays", min = 0) => {
     if (body[key] === undefined) return;
     const v = Math.floor(Number(body[key]));
     if (!Number.isFinite(v) || v < min) errors.push(`Trường ${key} không hợp lệ`);
@@ -102,6 +105,7 @@ function parsePlanBody(body: Record<string, unknown>, partial: boolean) {
   int("tier");
   int("priceMonthly");
   int("priceYearly");
+  int("trialDays");
 
   // Giới hạn: null/rỗng = không giới hạn.
   for (const key of ["maxChannels", "maxOrdersPerMonth", "maxStaff"] as const) {
@@ -285,7 +289,7 @@ router.get(
       };
 
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const [subs, total, activeCount, expiringCount, expiredCount, monthAgg, recentPayments] =
+      const [subs, total, activeCount, trialingCount, expiringCount, expiredCount, monthAgg, recentPayments] =
         await Promise.all([
           prisma.subscription.findMany({
             where,
@@ -295,6 +299,7 @@ router.get(
             select: {
               id: true,
               status: true,
+              isTrial: true,
               currentPeriodStart: true,
               currentPeriodEnd: true,
               createdAt: true,
@@ -308,6 +313,9 @@ router.get(
               status: "ACTIVE",
               OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gte: now } }],
             },
+          }),
+          prisma.subscription.count({
+            where: { status: "ACTIVE", isTrial: true, currentPeriodEnd: { gte: now } },
           }),
           prisma.subscription.count({
             where: { status: "ACTIVE", currentPeriodEnd: { gte: now, lte: soon } },
@@ -341,6 +349,7 @@ router.get(
       res.json({
         summary: {
           active: activeCount,
+          trialing: trialingCount,
           expiringSoon: expiringCount,
           expired: expiredCount,
           revenueThisMonth: toNumber(monthAgg._sum.amount),
@@ -352,6 +361,7 @@ router.get(
           user: s.user,
           plan: s.plan,
           status: effectiveSubscriptionStatus(s),
+          isTrial: s.isTrial,
           currentPeriodStart: s.currentPeriodStart,
           currentPeriodEnd: s.currentPeriodEnd,
           daysLeft: s.currentPeriodEnd

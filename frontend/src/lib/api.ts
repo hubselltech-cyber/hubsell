@@ -2596,6 +2596,8 @@ export interface ServicePlan {
   maxStaff: number | null;
   isActive: boolean;
   isDefault: boolean;
+  /** Số ngày dùng thử cho tài khoản mới được gán gói này (0 = không dùng thử). */
+  trialDays: number;
   createdAt: string;
   subscriberCount: number;
 }
@@ -2605,8 +2607,10 @@ export interface PlatformSubscription {
   user: { id: string; email: string | null; fullName: string };
   plan: { id: string; code: string; name: string };
   status: SubscriptionEffectiveStatus;
+  /** Đang trong kỳ dùng thử (chưa từng trả tiền). */
+  isTrial: boolean;
   currentPeriodStart: string;
-  /** null = vô thời hạn (gói Beta 0đ). */
+  /** null = vô thời hạn. */
   currentPeriodEnd: string | null;
   daysLeft: number | null;
   createdAt: string;
@@ -2628,6 +2632,7 @@ export interface PlatformPackagePayment {
 export interface PlatformSubscriptionsResponse {
   summary: {
     active: number;
+    trialing: number;
     expiringSoon: number;
     expired: number;
     revenueThisMonth: number;
@@ -2654,6 +2659,7 @@ export interface PlanInput {
   maxStaff?: number | null;
   isActive?: boolean;
   isDefault?: boolean;
+  trialDays?: number;
 }
 
 export function createPlatformPlan(data: PlanInput) {

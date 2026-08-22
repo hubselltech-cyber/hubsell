@@ -47,7 +47,8 @@ export function effectiveSubscriptionStatus(sub: {
 }
 
 /**
- * Gán gói MẶC ĐỊNH (Beta 0đ — cờ isDefault) cho chủ shop chưa có thuê bao.
+ * Gán gói MẶC ĐỊNH (cờ isDefault) cho chủ shop chưa có thuê bao — mở kỳ DÙNG
+ * THỬ theo trialDays của gói (0 = vô thời hạn, không tính là dùng thử).
  * Gọi fire-and-forget sau đăng ký; không có gói mặc định thì lặng lẽ thôi
  * (trước khi chạy backfill tạo gói, đăng ký vẫn phải hoạt động bình thường).
  */
@@ -60,11 +61,19 @@ export async function ensureDefaultSubscription(userId: string): Promise<void> {
     if (existing) return;
     const plan = await prisma.servicePlan.findFirst({
       where: { isDefault: true, isActive: true },
-      select: { id: true },
+      select: { id: true, trialDays: true },
     });
     if (!plan) return;
+    const trial = plan.trialDays > 0;
     await prisma.subscription.create({
-      data: { userId, planId: plan.id, currentPeriodEnd: null },
+      data: {
+        userId,
+        planId: plan.id,
+        isTrial: trial,
+        currentPeriodEnd: trial
+          ? new Date(Date.now() + plan.trialDays * 24 * 60 * 60 * 1000)
+          : null,
+      },
     });
   } catch (err) {
     // Không được làm gãy luồng đăng ký vì chuyện gán gói.
@@ -119,17 +128,20 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
   const periodStart = samePlanStillRunning ? existing.currentPeriodEnd! : occurredAt;
   const periodEnd = addBillingPeriod(periodStart, input.cycle);
 
+  // Thanh toán đầu tiên kết thúc kỳ dùng thử — hạ cờ isTrial.
   const subscription = await tx.subscription.upsert({
     where: { userId: input.userId },
     create: {
       userId: input.userId,
       planId: plan.id,
+      isTrial: false,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
     },
     update: {
       planId: plan.id,
       status: "ACTIVE",
+      isTrial: false,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
     },

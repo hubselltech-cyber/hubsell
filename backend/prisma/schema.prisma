@@ -1729,9 +1729,13 @@ model ServicePlan {
   /// Chỉ gói đang bán mới hiện cho khách chọn; gói tắt vẫn giữ nguyên cho
   /// thuê bao cũ đang chạy (không bao giờ xoá gói đã có người dùng).
   isActive Boolean @default(false)
-  /// Gói mặc định gán cho tài khoản chủ shop mới đăng ký (Beta 0đ) — tối đa
-  /// MỘT gói bật cờ này (route ghi tự tắt cờ ở các gói khác).
+  /// Gói mặc định gán cho tài khoản chủ shop mới đăng ký — tối đa MỘT gói bật
+  /// cờ này (route ghi tự tắt cờ ở các gói khác).
   isDefault Boolean  @default(false)
+  /// Số ngày DÙNG THỬ khi tài khoản mới được gán gói này (anh Trung chốt 22/08:
+  /// mọi khách mới đều dùng thử; 14/30 là DATA — đổi một ô số, không sửa code).
+  /// 0 = không có dùng thử (gán là tính tiền ngay / vô thời hạn nếu giá 0).
+  trialDays Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1746,7 +1750,9 @@ model Subscription {
   userId String @unique
   planId String
   status SubscriptionStatus @default(ACTIVE)
-  /// Kỳ hiện tại. currentPeriodEnd null = vô thời hạn (gói Beta 0đ).
+  /// Đang trong kỳ DÙNG THỬ (chưa từng trả tiền) — thanh toán đầu tiên hạ cờ.
+  isTrial Boolean @default(false)
+  /// Kỳ hiện tại. currentPeriodEnd null = vô thời hạn.
   currentPeriodStart DateTime  @default(now())
   currentPeriodEnd   DateTime?
   createdAt          DateTime  @default(now())
