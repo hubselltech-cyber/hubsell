@@ -110,11 +110,10 @@ export function standardConfigMissing(cfg: StandardInvoiceConfig): string[] {
   if (!cfg.clientId || !cfg.secretKey) missing.push("Client ID / Secret Key meInvoice");
   if (!cfg.invoicePattern) missing.push("Mẫu số hóa đơn (Pattern)");
   if (!cfg.invoiceSeries) missing.push("Ký hiệu hóa đơn (Serial)");
-  if (cfg.signMethod === "ESIGN_CLOUD") {
-    if (!cfg.esignClientId || !cfg.esignSecretKey || !cfg.esignUsername || !cfg.esignPassword) {
-      missing.push("Bộ khóa MISA eSign (ký nền)");
-    }
-  }
+  // 23/08: KHÔNG đòi bộ khóa eSign nữa — SignType 2 (HSM) được meInvoice ký
+  // nền server-side theo chứng thư gắn với tài khoản, đã xác nhận trên sandbox
+  // (phát hành thành công không cần eSign). Bộ eSign chỉ dùng cho luồng ký
+  // hash XML phía client (USB token/file) — nối sau nếu có shop cần.
   return missing;
 }
 
@@ -149,32 +148,103 @@ export async function testStandardConnection(cfg: StandardInvoiceConfig): Promis
   return { meinvoiceTokenLength: token.length, esignChecked };
 }
 
-/** Payload phát hành PascalCase theo mẫu v3 — sandbox chê trường nào sửa ở đây. */
+/** Ngày phát hành theo giờ VN (UTC+7), định dạng yyyy-MM-dd MISA yêu cầu. */
+function vnToday(): string {
+  return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * Payload phát hành ĐÚNG SPEC portal (API REFERENCE /invoice/publishing +
+ * cURL mẫu, đọc ngày 23/08/2026):
+ *
+ *   { SignType, InvoiceData: [ {hóa đơn...} ] }   ← bọc mảng, tối đa 30 HĐ/request
+ *
+ * Mỗi hóa đơn KHÔNG mang thông tin người bán (meInvoice tự lấy theo tài khoản
+ * của token); dòng hàng bắt buộc ItemType/SortOrder/LineNumber + bộ tiền OC
+ * (nguyên tệ); thuế suất truyền dạng CHUỖI "10%" (VATRateName); hóa đơn GTGT
+ * bắt buộc kèm khối tổng hợp TaxRateInfo gộp theo từng thuế suất.
+ *
+ * LƯU Ý: RefID là khóa chống trùng phía MISA — mỗi lần phát hành lại cùng đơn
+ * phải là hóa đơn nghiệp vụ mới (hủy/thay thế), không phải retry mù.
+ */
 export function buildStandardInvoicePayload(
   input: CreateInvoiceInput,
   cfg: StandardInvoiceConfig
 ) {
-  return {
-    RefID: input.orderCode, // mã đơn Hubsell — meInvoice lưu làm tham chiếu 2 chiều
-    TemplateNo: cfg.invoicePattern,
-    InvSeries: cfg.invoiceSeries,
-    SignType: misaSignType(cfg.signMethod), // 1 = USB token · 2 = HSM (eSign)
-    SellerTaxCode: cfg.taxCode,
-    SellerLegalName: cfg.companyName,
-    SellerAddress: cfg.companyAddress,
-    BuyerLegalName: input.buyerName,
-    BuyerTaxCode: input.buyerTaxCode ?? "",
-    TotalAmount: input.totalAmount,
-    OriginalInvoiceDetail: input.lines.map((l, i) => ({
-      ItemIndex: i + 1,
-      ItemName: l.name,
+  const details = input.lines.map((l, i) => {
+    const amount = l.unitPrice * l.quantity;
+    return {
+      ItemType: 1, // hàng hóa thường
+      SortOrder: i + 1,
+      LineNumber: i + 1,
       ItemCode: l.sku,
+      ItemName: l.name,
       Quantity: l.quantity,
       UnitPrice: l.unitPrice, // CHƯA thuế — cùng quy ước InvoiceLine.unitPrice
-      VATRate: l.vatRate,
-      VATAmount: Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
-      Amount: l.unitPrice * l.quantity,
-    })),
+      // Tiền VND, ExchangeRate = 1 → cột "quy đổi" (không hậu tố OC) bằng đúng
+      // cột nguyên tệ. Sandbox VALIDATE đủ cả 2 bộ (Invalid_[Invoice.TotalSale
+      // Amount] khi thiếu) dù cURL mẫu chỉ gửi bộ OC.
+      AmountOC: amount,
+      Amount: amount,
+      DiscountRate: 0,
+      DiscountAmountOC: 0,
+      DiscountAmount: 0,
+      AmountWithoutVATOC: amount,
+      AmountWithoutVAT: amount,
+      VATRateName: `${l.vatRate}%`,
+      VATAmountOC: Math.round((amount * l.vatRate) / 100),
+      VATAmount: Math.round((amount * l.vatRate) / 100),
+    };
+  });
+
+  // Tổng hợp thuế suất — gộp các dòng cùng VATRateName (bắt buộc với HĐ GTGT).
+  const byRate = new Map<string, { AmountWithoutVATOC: number; VATAmountOC: number }>();
+  for (const d of details) {
+    const agg = byRate.get(d.VATRateName) ?? { AmountWithoutVATOC: 0, VATAmountOC: 0 };
+    agg.AmountWithoutVATOC += d.AmountWithoutVATOC;
+    agg.VATAmountOC += d.VATAmountOC;
+    byRate.set(d.VATRateName, agg);
+  }
+
+  const totalWithoutVat = details.reduce((s, d) => s + d.AmountWithoutVATOC, 0);
+  const totalVat = details.reduce((s, d) => s + d.VATAmountOC, 0);
+
+  // Người mua: có MST → xuất theo đơn vị (BuyerLegalName bắt buộc kèm địa chỉ);
+  // khách lẻ → chỉ họ tên.
+  const buyer = input.buyerTaxCode
+    ? { BuyerLegalName: input.buyerName, BuyerTaxCode: input.buyerTaxCode }
+    : { BuyerFullName: input.buyerName };
+
+  return {
+    SignType: misaSignType(cfg.signMethod), // 2 = HSM ký nền · (1 = USB đi luồng khác)
+    InvoiceData: [
+      {
+        RefID: input.orderCode, // khóa chống trùng + tham chiếu 2 chiều
+        InvSeries: cfg.invoiceSeries,
+        InvTemplateNo: cfg.invoicePattern,
+        InvDate: vnToday(),
+        CurrencyCode: "VND",
+        ExchangeRate: 1,
+        IsInvoiceSummary: false,
+        PaymentMethodName: "TM/CK",
+        ...buyer,
+        TotalSaleAmountOC: totalWithoutVat,
+        TotalSaleAmount: totalWithoutVat,
+        TotalDiscountAmountOC: 0,
+        TotalDiscountAmount: 0,
+        TotalAmountWithoutVATOC: totalWithoutVat,
+        TotalAmountWithoutVAT: totalWithoutVat,
+        TotalVATAmountOC: totalVat,
+        TotalVATAmount: totalVat,
+        TotalAmountOC: totalWithoutVat + totalVat,
+        TotalAmount: totalWithoutVat + totalVat,
+        OriginalInvoiceDetail: details,
+        TaxRateInfo: [...byRate.entries()].map(([rate, agg]) => ({
+          VATRateName: rate,
+          ...agg,
+        })),
+      },
+    ],
   };
 }
 
@@ -202,16 +272,6 @@ export async function publishStandardInvoice(
   const missing = standardConfigMissing(cfg);
   if (missing.length > 0) {
     throw new Error(`Chưa đủ cấu hình phát hành kê khai — thiếu: ${missing.join(", ")}`);
-  }
-
-  // ESIGN_CLOUD: xác thực phiên ký nền TRƯỚC khi gửi — fail sớm còn hơn treo đơn.
-  if (cfg.signMethod === "ESIGN_CLOUD") {
-    await esignLogin({
-      clientId: cfg.esignClientId ?? undefined,
-      clientKey: cfg.esignSecretKey ?? undefined,
-      username: cfg.esignUsername ?? undefined,
-      password: cfg.esignPassword ?? undefined,
-    });
   }
 
   const token = await getMisaAccessToken(credsFromConfig(cfg));
@@ -245,11 +305,30 @@ export async function publishStandardInvoice(
     const code = pick(raw, "ErrorCode", "errorCode") ?? "?";
     throw new Error(`meInvoice từ chối phát hành: ErrorCode=${String(code)}`);
   }
-  const data = pick(raw, "Data", "data") ?? raw;
-  const invoiceNo = pick(data, "InvNo", "InvoiceNo", "InvoiceNumber");
-  const transactionId = pick(data, "TransactionID", "TransactionId", "RefID");
+
+  // Kết quả nằm ở publishInvoiceResult[] — MỖI hóa đơn một phần tử, thành công
+  // khi ErrorCode của phần tử = null. GOTCHA sandbox: các khối dữ liệu lồng
+  // (Data của /templates, publishInvoiceResult ở đây) có thể là JSON STRING
+  // lồng trong JSON — phải parse thêm một lần.
+  let results = pick(raw, "PublishInvoiceResult", "publishInvoiceResult");
+  if (typeof results === "string") {
+    try {
+      results = JSON.parse(results);
+    } catch {
+      /* giữ nguyên — rơi xuống nhánh đọc mềm bên dưới */
+    }
+  }
+  const first = Array.isArray(results) ? results[0] : results;
+  const perInvoiceError = pick(first, "ErrorCode", "errorCode");
+  if (perInvoiceError != null && perInvoiceError !== "") {
+    throw new Error(
+      `meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=${String(perInvoiceError)}`
+    );
+  }
+  const invoiceNo = pick(first, "InvNo", "InvoiceNo", "InvoiceNumber");
+  const transactionId = pick(first, "TransactionID", "TransactionId", "RefID");
   return {
-    invoiceNo: typeof invoiceNo === "string" ? invoiceNo : null,
+    invoiceNo: invoiceNo != null ? String(invoiceNo) : null,
     transactionId: typeof transactionId === "string" ? transactionId : null,
     raw,
   };
