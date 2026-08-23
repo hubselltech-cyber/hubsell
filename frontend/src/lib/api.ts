@@ -2369,6 +2369,50 @@ export function downloadInvoiceLogPdf(logId: string) {
   );
 }
 
+/** Một đơn trong HÀNG CHỜ xuất hóa đơn (đã giao thành công, chưa có hóa đơn). */
+export interface InvoiceQueueRowDTO {
+  orderCode: string;
+  customerName: string;
+  totalAmount: number;
+  orderedAt: string;
+  /** Sàn đã đối soát chưa — trigger của luồng tự động xuất. */
+  isSettled: boolean;
+  channelName: ChannelName;
+  shopName: string;
+  /** Số dòng hàng CHƯA liên kết sản phẩm kho — thuế suất sẽ áp 0%. */
+  unlinkedItems: number;
+}
+
+export interface InvoiceQueueResponse {
+  autoIssueEnabled: boolean;
+  total: number;
+  rows: InvoiceQueueRowDTO[];
+}
+
+export function fetchInvoiceQueue() {
+  return apiFetch<InvoiceQueueResponse>("/api/tax/invoice-queue");
+}
+
+/** Phát hành hàng loạt (tối đa 50/lần) — backend xử lý tuần tự từng đơn. */
+export function issueInvoicesBulk(orderCodes: string[]) {
+  return apiFetch<{
+    issued: number;
+    failed: number;
+    results: Array<{ orderCode: string; ok: boolean; invoiceNo?: string | null; error?: string }>;
+  }>("/api/tax/invoices/bulk", {
+    method: "POST",
+    body: JSON.stringify({ orderCodes }),
+  });
+}
+
+/** Bật/tắt tự động phát hành (worker quét đơn đã giao + đã đối soát). */
+export function setInvoiceAutoIssue(enabled: boolean) {
+  return apiFetch<{ autoIssueEnabled: boolean }>("/api/tax/auto-issue", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 // ============================================================
 // QUẢN TRỊ NỀN TẢNG (/api/admin) — chỉ tài khoản có isPlatformAdmin.
 // Đây là góc nhìn CHỦ NỀN TẢNG trên toàn hệ thống, không bó theo shop.

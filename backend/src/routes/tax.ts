@@ -10,8 +10,7 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
-import { getInvoiceProvider } from "../integrations/invoice";
-import type { InvoiceLine } from "../integrations/invoice";
+import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import {
   downloadInvoiceFiles,
   type StandardInvoiceConfig,
@@ -201,167 +200,167 @@ router.get("/report", async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/tax/invoices — PHÁT HÀNH hóa đơn điện tử cho một đơn hàng.
-// Body: { orderCode } (mã đơn trong tầm nhìn gian hàng của người gọi).
-//
-// Luồng: tìm đơn → dựng dòng hàng theo quy ước thuế của Hubsell (đơn giá bán
-// coi là CHƯA thuế, % lấy từ Product.vatRate, tên in hóa đơn ưu tiên
-// Product.taxName) → ghi InvoiceLog PENDING → gọi adapter NCC → cập nhật log
-// + audit InvoiceStatusHistory (source HUBSELL) + Order.einvoiceStatus.
-// Adapter không ném lỗi nghiệp vụ (trả FAILED + errorMessage) nên mọi kết quả
-// đều được ghi sổ — kể cả khi NCC từ chối.
+/**
+ * Chặn khách thường phát hành khi cấu hình đang trỏ MST sandbox của MISA —
+ * xuất nhầm là hóa đơn mang pháp nhân MISA(SANDBOX). Trả message lỗi hoặc
+ * null nếu được phép. Dùng chung cho route đơn lẻ + hàng loạt.
+ */
+async function sandboxTaxCodeBlocked(req: AuthRequest): Promise<string | null> {
+  const shopCfg = await prisma.invoiceConfig.findFirst({
+    where: { ownerId: req.ownerId!, channelId: null },
+    select: { taxCode: true },
+  });
+  if (shopCfg?.taxCode === MISA_SANDBOX_TAX_CODE && !isTaxPilotUser(req.userEmail)) {
+    return "MST đang cấu hình là MST sandbox của MISA (chỉ dùng để thử nghiệm nội bộ) — vui lòng nhập MST của chính shop.";
+  }
+  return null;
+}
+
+// POST /api/tax/invoices — PHÁT HÀNH hóa đơn cho MỘT đơn (lõi ở issue-order.ts).
 router.post("/invoices", async (req: AuthRequest, res, next) => {
   try {
-    const ownerId = req.ownerId!;
     const orderCode = String(req.body?.orderCode ?? "").trim();
     if (!orderCode) {
       res.status(400).json({ error: "Thiếu mã đơn hàng (orderCode)" });
       return;
     }
+    const blocked = await sandboxTaxCodeBlocked(req);
+    if (blocked) {
+      res.status(400).json({ error: blocked });
+      return;
+    }
+    const r = await issueInvoiceForOrder(req.ownerId!, channelScope(req), orderCode);
+    res.status(r.httpStatus).json({ log: r.log, error: r.error });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const order = await prisma.order.findFirst({
-      where: { orderCode, channel: channelScope(req) },
-      include: {
-        items: {
-          include: {
-            product: { select: { skuCode: true, taxName: true, vatRate: true } },
-          },
-        },
-      },
-    });
-    if (!order) {
-      res.status(404).json({ error: `Không tìm thấy đơn ${orderCode} trong phạm vi của bạn` });
+// POST /api/tax/invoices/bulk — phát hành HÀNG LOẠT từ hàng chờ.
+// Body: { orderCodes: string[] } (tối đa 50/lần). Xử lý TUẦN TỰ từng đơn theo
+// yêu cầu của MISA (số hóa đơn cấp liên tục theo ký hiệu — bắn song song là
+// dính InvoiceNumberNotCotinuous), đơn lỗi không chặn đơn sau.
+router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
+  try {
+    const raw = req.body?.orderCodes;
+    const orderCodes: string[] = Array.isArray(raw)
+      ? [...new Set(raw.map((c) => String(c).trim()).filter((c) => c !== ""))]
+      : [];
+    if (orderCodes.length === 0) {
+      res.status(400).json({ error: "Thiếu danh sách mã đơn (orderCodes)" });
       return;
     }
-    if (order.shippingStatus === ShippingStatus.CANCELLED) {
-      res.status(400).json({ error: "Đơn đã hủy — không phát hành hóa đơn" });
+    if (orderCodes.length > 50) {
+      res.status(400).json({ error: "Tối đa 50 đơn mỗi lần phát hành hàng loạt" });
       return;
     }
-    if (order.items.length === 0) {
-      res.status(400).json({ error: "Đơn không có dòng hàng nào để lên hóa đơn" });
+    const blocked = await sandboxTaxCodeBlocked(req);
+    if (blocked) {
+      res.status(400).json({ error: blocked });
       return;
     }
 
-    // Chống phát hành trùng: đơn đã có hóa đơn đang chờ/đã phát hành thì dừng
-    // (RefID phía MISA cũng chặn trùng, nhưng chặn sớm cho thông điệp rõ hơn).
-    const existing = await prisma.invoiceLog.findFirst({
-      where: {
-        ownerId,
+    const scope = channelScope(req);
+    const results: Array<{
+      orderCode: string;
+      ok: boolean;
+      invoiceNo?: string | null;
+      error?: string;
+    }> = [];
+    for (const orderCode of orderCodes) {
+      const r = await issueInvoiceForOrder(req.ownerId!, scope, orderCode);
+      results.push({
         orderCode,
-        status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
+        ok: r.ok,
+        invoiceNo: r.log?.invoiceNo ?? null,
+        error: r.error,
+      });
+    }
+    const issued = results.filter((r) => r.ok).length;
+    res.json({ issued, failed: results.length - issued, results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/tax/invoice-queue — HÀNG CHỜ XUẤT HÓA ĐƠN (học BigSeller): đơn ĐÃ
+// GIAO THÀNH CÔNG, chưa hủy, chưa có hóa đơn PENDING/ISSUED — tự nạp, seller
+// chỉ việc tick và bấm. Kèm cờ cấu hình tự động xuất để UI vẽ công tắc.
+router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const scope = channelScope(req);
+    const where = {
+      channel: scope,
+      shippingStatus: ShippingStatus.DELIVERED,
+      items: { some: {} },
+      invoiceLogs: {
+        none: { status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] } },
       },
-      select: { id: true, status: true, invoiceNo: true },
-    });
-    if (existing) {
-      res.status(409).json({
-        error:
-          existing.status === InvoiceLogStatus.ISSUED
-            ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
-            : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
-      });
-      return;
-    }
-
-    const provider = await getInvoiceProvider(ownerId, order.channelId);
-    if (!provider) {
-      res.status(400).json({
-        error:
-          "Chưa cấu hình nhà cung cấp hóa đơn (hoặc NCC chưa được hỗ trợ) — vào Kết nối & Xuất hóa đơn trước.",
-      });
-      return;
-    }
-
-    // MST sandbox của MISA chỉ dành cho tài khoản thí điểm — khách thường cấu
-    // hình nhầm sẽ xuất hóa đơn dưới pháp nhân MISA(SANDBOX), chặn tại đây.
-    const shopCfg = await prisma.invoiceConfig.findFirst({
-      where: { ownerId, channelId: null },
-      select: { taxCode: true },
-    });
-    if (
-      shopCfg?.taxCode === MISA_SANDBOX_TAX_CODE &&
-      !isTaxPilotUser(req.userEmail)
-    ) {
-      res.status(400).json({
-        error:
-          "MST đang cấu hình là MST sandbox của MISA (chỉ dùng để thử nghiệm nội bộ) — vui lòng nhập MST của chính shop.",
-      });
-      return;
-    }
-
-    // Dòng hàng theo quy ước InvoiceLine: unitPrice CHƯA thuế GTGT.
-    const lines: InvoiceLine[] = order.items.map((it) => ({
-      name: it.product?.taxName?.trim() || it.productName,
-      sku: it.product?.skuCode ?? it.channelSku,
-      quantity: it.quantity,
-      unitPrice: Number(it.price),
-      vatRate: it.product?.vatRate ?? 0,
-    }));
-    const vatTotal = lines.reduce(
-      (s, l) => s + Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
-      0
-    );
-    const totalAmount =
-      lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0) + vatTotal;
-
-    const log = await prisma.invoiceLog.create({
-      data: {
-        ownerId,
-        orderId: order.id,
-        orderCode,
-        provider: provider.name,
-        status: InvoiceLogStatus.PENDING,
-        totalAmount,
-        vatAmount: vatTotal,
-      },
-    });
-
-    const result = await provider.createInvoice({
-      orderCode,
-      buyerName: order.customerName,
-      lines,
-      totalAmount,
-    });
-
-    const issued = result.status === InvoiceLogStatus.ISSUED;
-    const [updated] = await prisma.$transaction([
-      prisma.invoiceLog.update({
-        where: { id: log.id },
-        data: {
-          status: result.status,
-          invoiceNo: result.invoiceNo ?? null,
-          transactionId: result.transactionId ?? null,
-          vatAmount: result.vatAmount ?? vatTotal,
-          errorMessage: result.errorMessage ?? null,
-          issuedAt: issued ? new Date() : null,
+    };
+    const [total, orders, cfg] = await Promise.all([
+      prisma.order.count({ where }),
+      prisma.order.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: {
+          orderCode: true,
+          customerName: true,
+          totalAmount: true,
+          createdAt: true,
+          isSettled: true,
+          channel: { select: { channelName: true, shopName: true } },
+          // Cảnh báo dòng hàng CHƯA LIÊN KẾT sản phẩm kho (thuế suất sẽ áp 0%).
+          items: { select: { productId: true } },
         },
       }),
-      prisma.invoiceStatusHistory.create({
-        data: {
-          invoiceLogId: log.id,
-          orderCode,
-          fromStatus: InvoiceLogStatus.PENDING,
-          toStatus: result.status,
-          source: "HUBSELL",
-          note: issued
-            ? `Phát hành qua ${provider.name}: số ${result.invoiceNo ?? "?"}, mã tra cứu ${result.transactionId ?? "?"}`
-            : result.errorMessage ?? null,
-        },
-      }),
-      prisma.order.update({
-        where: { id: order.id },
-        data: { einvoiceStatus: result.status },
+      prisma.invoiceConfig.findFirst({
+        where: { ownerId, channelId: null },
+        select: { autoIssueEnabled: true },
       }),
     ]);
-
-    res.status(issued ? 201 : 502).json({
-      log: {
-        ...updated,
-        totalAmount: Number(updated.totalAmount),
-        vatAmount: Number(updated.vatAmount),
-        platformTaxWithheld: Number(updated.platformTaxWithheld),
-      },
-      error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành"),
+    res.json({
+      autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
+      total,
+      rows: orders.map((o) => ({
+        orderCode: o.orderCode,
+        customerName: o.customerName,
+        totalAmount: Number(o.totalAmount),
+        orderedAt: o.createdAt,
+        isSettled: o.isSettled,
+        channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
+        unlinkedItems: o.items.filter((i) => i.productId === null).length,
+      })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/tax/auto-issue — bật/tắt TỰ ĐỘNG PHÁT HÀNH. Endpoint riêng thay vì
+// đi qua PUT /invoice-config (route đó ghi đè TOÀN BỘ form — gọi thiếu trường
+// là mất dữ liệu). Body: { enabled: boolean }.
+router.put("/auto-issue", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const enabled = req.body?.enabled === true;
+    const existing = await prisma.invoiceConfig.findFirst({
+      where: { ownerId, channelId: null },
+      select: { id: true },
+    });
+    if (!existing) {
+      res.status(400).json({
+        error: "Chưa có cấu hình hóa đơn — lưu trang Kết nối & Xuất hóa đơn trước.",
+      });
+      return;
+    }
+    await prisma.invoiceConfig.update({
+      where: { id: existing.id },
+      data: { autoIssueEnabled: enabled },
+    });
+    res.json({ autoIssueEnabled: enabled });
   } catch (err) {
     next(err);
   }

@@ -734,6 +734,11 @@ model InvoiceConfig {
   /// là giao diện — cờ này mới quyết định gọi bộ API nào).
   defaultInvoiceType InvoiceType @default(STANDARD)
 
+  /// TỰ ĐỘNG PHÁT HÀNH (23/08, học theo Salework): worker quét định kỳ, tự
+  /// xuất hóa đơn cho đơn ĐÃ GIAO THÀNH CÔNG + ĐÃ ĐỐI SOÁT chưa có hóa đơn.
+  /// Mặc định TẮT — chủ shop chủ động bật ở trang Kết nối & Xuất hóa đơn.
+  autoIssueEnabled Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

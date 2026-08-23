@@ -3,6 +3,7 @@ import fs from "fs";
 import http from "http";
 import https from "https";
 import { createApp } from "./app";
+import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
 import { startLogCleanupWorker } from "./log-cleanup";
 import { startOrderAutoSync } from "./order-auto-sync";
 import { startStockPushWorker } from "./integrations/stock-push-worker";
@@ -26,6 +27,9 @@ startLogCleanupWorker();
 startStockPushWorker();
 // Sáng thứ 2 đẩy báo cáo tuần trước qua chuông thông báo cho từng chủ shop.
 startWeeklyReportWorker();
+// Tự động phát hành hóa đơn cho đơn ĐÃ GIAO + ĐÃ ĐỐI SOÁT của shop bật cờ
+// autoIssueEnabled — ngủ hoàn toàn khi MISA_ALLOW_PUBLISH chưa bật.
+startInvoiceAutoIssueWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.
