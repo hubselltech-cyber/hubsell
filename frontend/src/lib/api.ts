@@ -2132,6 +2132,11 @@ export interface InvoiceConfigDTO {
   invoiceSeries: string; // Ký hiệu hóa đơn (VD "C26TAA")
   hasSecretKey: boolean;
   secretKeyMasked: string | null;
+  // Tài khoản meInvoice CỦA SHOP (multi-tenant 23/08) — quyết định pháp nhân
+  // trên hóa đơn; mật khẩu chỉ trả về dạng che.
+  meinvoiceUsername: string;
+  hasMeinvoicePassword: boolean;
+  meinvoicePasswordMasked: string | null;
   // (3) Chữ ký số MISA eSign
   signMethod: string; // USB_TOKEN | ESIGN_CLOUD
   esignClientId: string;
@@ -2180,6 +2185,8 @@ export function saveInvoiceConfig(input: {
   partnerCode?: string;
   clientId?: string;
   secretKey?: string;
+  meinvoiceUsername?: string;
+  meinvoicePassword?: string;
   customApiUrl?: string;
   invoicePattern?: string;
   invoiceSeries?: string;

@@ -70,6 +70,8 @@ type ShopConfig = {
   partnerCode: string | null;
   clientId: string | null;
   secretKey: string | null;
+  meinvoiceUsername: string | null;
+  meinvoicePassword: string | null;
   customApiUrl: string | null;
   invoicePattern: string | null;
   invoiceSeries: string | null;
@@ -102,6 +104,10 @@ function serializeConfig(c: ShopConfig | null) {
     invoiceSeries: c?.invoiceSeries ?? "",
     hasSecretKey: Boolean(c?.secretKey),
     secretKeyMasked: mask(c?.secretKey),
+    // Tài khoản meInvoice CỦA SHOP (multi-tenant 23/08) — mật khẩu chỉ trả che.
+    meinvoiceUsername: c?.meinvoiceUsername ?? "",
+    hasMeinvoicePassword: Boolean(c?.meinvoicePassword),
+    meinvoicePasswordMasked: mask(c?.meinvoicePassword),
     // (3) Chữ ký số eSign
     signMethod: c?.signMethod ?? "USB_TOKEN",
     esignClientId: c?.esignClientId ?? "",
@@ -188,6 +194,8 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       esignUsername,
       esignPassword,
       certSerial,
+      meinvoiceUsername,
+      meinvoicePassword,
       posProvider,
       posClientId,
       posSecretKey,
@@ -270,6 +278,9 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       invoicePattern: patternVal,
       invoiceSeries: seriesVal,
       secretKey: nextSecret(secretKey, existing?.secretKey ?? null),
+      // Tài khoản meInvoice của shop — mật khẩu theo luồng che/giữ-nguyên.
+      meinvoiceUsername: str(meinvoiceUsername),
+      meinvoicePassword: nextSecret(meinvoicePassword, existing?.meinvoicePassword ?? null),
       // (3) eSign
       signMethod,
       esignClientId: str(esignClientId),
@@ -320,19 +331,34 @@ router.post("/test-meinvoice", async (req: AuthRequest, res) => {
     }
     // Xoá cache để chắc chắn đăng nhập MỚI bằng đúng bộ khóa hiện tại.
     clearMisaTokenCache();
+    // Model multi-tenant 23/08: khóa app dùng chung (cột shop override được),
+    // còn bộ tài khoản meInvoice PHẢI của shop. Shop chưa nhập tài khoản thì
+    // rơi về bộ env (sandbox thí điểm) và nói rõ qua `source` — nút test là
+    // công cụ chẩn đoán, còn luồng PHÁT HÀNH thật không bao giờ fallback.
+    const usingShopAccount = Boolean(cfg?.meinvoiceUsername && cfg?.meinvoicePassword);
+    const clientId = cfg?.clientId ?? process.env.MISA_CLIENT_ID?.trim();
+    const clientSecret = cfg?.secretKey ?? process.env.MISA_CLIENT_SECRET?.trim();
     const creds =
-      cfg?.clientId && cfg?.secretKey
+      clientId && clientSecret
         ? {
-            clientId: cfg.clientId,
-            clientSecret: cfg.secretKey,
-            taxCode: cfg.taxCode ?? undefined,
+            clientId,
+            clientSecret,
+            taxCode: cfg?.taxCode ?? undefined,
+            ...(usingShopAccount
+              ? {
+                  username: cfg!.meinvoiceUsername!,
+                  password: cfg!.meinvoicePassword!,
+                }
+              : {}),
           }
-        : undefined; // undefined = misa-auth tự đọc env sandbox
+        : undefined; // undefined = misa-auth tự đọc trọn bộ env
     const token = await getMisaAccessToken(creds);
     res.json({
       ok: true,
-      source: creds ? "shop-config" : "env-sandbox",
-      message: `Kết nối meInvoice OK — đã lấy được Access Token (${token.length} ký tự).`,
+      source: usingShopAccount ? "shop-config" : "env-sandbox",
+      message: usingShopAccount
+        ? `Kết nối meInvoice OK bằng tài khoản của shop — đã lấy được Access Token (${token.length} ký tự).`
+        : `Kết nối meInvoice OK (đang dùng tài khoản sandbox hệ thống — nhập tài khoản meInvoice của shop để phát hành thật).`,
     });
   } catch (err) {
     res.status(502).json({ ok: false, error: (err as Error).message });

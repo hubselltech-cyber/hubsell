@@ -19,6 +19,14 @@ import type { AuthRequest } from "./auth";
 
 export const TAX_PILOT_EMAILS = new Set(["admin@hubsell.vn"]);
 
+/**
+ * MST tài khoản SANDBOX của MISA (dùng chung cho mọi bên tích hợp) — hóa đơn
+ * phát hành từ tài khoản này mang pháp nhân "CÔNG TY CỔ PHẦN MISA(SANDBOX)".
+ * Chỉ tài khoản thí điểm được cấu hình MST này; khách thường mà lọt vào là
+ * xuất hóa đơn dưới pháp nhân MISA — phải chặn từ route phát hành.
+ */
+export const MISA_SANDBOX_TAX_CODE = "0101243150-732";
+
 /** Tài khoản này có trong danh sách thí điểm Hóa đơn & Thuế không? */
 export function isTaxPilotUser(email: string | null | undefined): boolean {
   return !!email && TAX_PILOT_EMAILS.has(email.toLowerCase());

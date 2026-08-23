@@ -34,11 +34,24 @@ interface CachedToken {
   token: string;
   /** Epoch ms — sau mốc này phải đăng nhập lại. */
   expiresAt: number;
-  /** Cache theo clientId — đổi cặp khóa (shop khác) là đăng nhập lại. */
-  clientId: string;
 }
 
-let cached: CachedToken | null = null;
+/**
+ * Cache token THEO TỪNG BỘ ĐỊNH DANH (23/08 — multi-tenant): mọi shop dùng
+ * chung Client ID app Hubsell nhưng mỗi shop một tài khoản meInvoice riêng,
+ * nên khóa cache phải gồm cả MST + username — một ô duy nhất như bản cũ sẽ
+ * khiến hai shop giẫm token của nhau. Token MISA sống 14 ngày; TTL mặc định
+ * 30' là dè dặt nhưng an toàn khi response không nói hạn.
+ */
+const cache = new Map<string, CachedToken>();
+
+function cacheKey(creds: MisaAuthCredentials): string {
+  return [
+    creds.clientId,
+    creds.taxCode ?? process.env.MISA_TAX_CODE ?? "",
+    creds.username ?? process.env.MISA_USERNAME ?? "",
+  ].join("|");
+}
 
 /**
  * Base URL API meInvoice.
@@ -102,13 +115,11 @@ export async function getMisaAccessToken(
     );
   }
 
-  // Còn token của đúng clientId này và chưa tới hạn → dùng lại.
-  if (
-    cached &&
-    cached.clientId === effective.clientId &&
-    Date.now() < cached.expiresAt - TOKEN_SAFETY_MS
-  ) {
-    return cached.token;
+  // Còn token của đúng bộ định danh này và chưa tới hạn → dùng lại.
+  const key = cacheKey(effective);
+  const hit = cache.get(key);
+  if (hit && Date.now() < hit.expiresAt - TOKEN_SAFETY_MS) {
+    return hit.token;
   }
 
   const url = `${misaApiBase()}/invoice/token`;
@@ -168,15 +179,11 @@ export async function getMisaAccessToken(
     throw new Error(`MISA trả 200 nhưng không thấy token trong body: ${text.slice(0, 300)}`);
   }
 
-  cached = {
-    token,
-    clientId: effective.clientId,
-    expiresAt: Date.now() + ttlMs,
-  };
+  cache.set(key, { token, expiresAt: Date.now() + ttlMs });
   return token;
 }
 
 /** Cho test/CLI: xoá cache để lần gọi sau bắt buộc đăng nhập lại. */
 export function clearMisaTokenCache(): void {
-  cached = null;
+  cache.clear();
 }

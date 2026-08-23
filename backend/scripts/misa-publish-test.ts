@@ -29,6 +29,8 @@ const cfg: StandardInvoiceConfig = {
   companyAddress: "Tòa nhà Technosoft, Duy Tân, Cầu Giấy, Hà Nội",
   clientId: process.env.MISA_CLIENT_ID ?? null,
   secretKey: process.env.MISA_CLIENT_SECRET ?? null,
+  meinvoiceUsername: process.env.MISA_USERNAME ?? null,
+  meinvoicePassword: process.env.MISA_PASSWORD ?? null,
   invoicePattern: "1",
   invoiceSeries: "1K26TYY",
   signMethod: "ESIGN_CLOUD", // SignType 2 — HSM, meInvoice ký nền

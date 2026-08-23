@@ -39,6 +39,7 @@ import {
 } from "@/lib/api";
 import {
   HUBSELL_PARTNER_CODE,
+  MEINVOICE_SIGNUP_URL,
   INVOICE_FIELD_HINTS,
   INVOICE_PATTERN_RE,
   INVOICE_SERIES_RE,
@@ -169,6 +170,12 @@ export function InvoiceConfigSection({
   const [hasSecretKey, setHasSecretKey] = useState(false);
   const [secretMasked, setSecretMasked] = useState<string | null>(null);
   const [secretInput, setSecretInput] = useState("");
+  // Tài khoản meInvoice CỦA SHOP (multi-tenant 23/08) — mật khẩu theo luồng
+  // che/giữ-nguyên-khi-trống như mọi secret khác.
+  const [meinvoiceUsername, setMeinvoiceUsername] = useState("");
+  const [hasMeinvoicePassword, setHasMeinvoicePassword] = useState(false);
+  const [meinvoicePasswordMasked, setMeinvoicePasswordMasked] = useState<string | null>(null);
+  const [meinvoicePasswordInput, setMeinvoicePasswordInput] = useState("");
 
   // (3) Chữ ký số MISA eSign (sidebar, chỉ tab kê khai)
   const [signMethod, setSignMethod] = useState("USB_TOKEN");
@@ -226,6 +233,9 @@ export function InvoiceConfigSection({
         setInvoiceSeries(r.config.invoiceSeries);
         setHasSecretKey(r.config.hasSecretKey);
         setSecretMasked(r.config.secretKeyMasked);
+        setMeinvoiceUsername(r.config.meinvoiceUsername);
+        setHasMeinvoicePassword(r.config.hasMeinvoicePassword);
+        setMeinvoicePasswordMasked(r.config.meinvoicePasswordMasked);
         setSignMethod(r.config.signMethod);
         setEsignClientId(r.config.esignClientId);
         setEsignUsername(r.config.esignUsername);
@@ -299,6 +309,8 @@ export function InvoiceConfigSection({
         partnerCode: HUBSELL_PARTNER_CODE,
         clientId: clientId.trim(),
         secretKey: secretInput.trim() || undefined,
+        meinvoiceUsername: meinvoiceUsername.trim(),
+        meinvoicePassword: meinvoicePasswordInput.trim() || undefined,
         customApiUrl: customApiUrl.trim(),
         invoicePattern: invoicePattern.trim(),
         invoiceSeries: invoiceSeries.trim().toUpperCase(),
@@ -320,6 +332,9 @@ export function InvoiceConfigSection({
       setHasSecretKey(r.config.hasSecretKey);
       setSecretMasked(r.config.secretKeyMasked);
       setSecretInput("");
+      setHasMeinvoicePassword(r.config.hasMeinvoicePassword);
+      setMeinvoicePasswordMasked(r.config.meinvoicePasswordMasked);
+      setMeinvoicePasswordInput("");
       setHasEsignSecret(r.config.hasEsignSecretKey);
       setEsignSecretMasked(r.config.esignSecretKeyMasked);
       setEsignSecretInput("");
@@ -689,23 +704,47 @@ export function InvoiceConfigSection({
                             <Lock className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                           </div>
                         ) : f.secret ? (
-                          <Input
-                            id={`cred-${f.key}`}
-                            type="password"
-                            placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
-                            value={secretInput}
-                            onChange={(e) => setSecretInput(e.target.value)}
-                            className={INPUT_FOCUS}
-                          />
+                          // Hai secret khác cột: mật khẩu meInvoice của shop
+                          // và Client Secret của NCC — mỗi ô một luồng che riêng.
+                          f.key === "meinvoicePassword" ? (
+                            <Input
+                              id={`cred-${f.key}`}
+                              type="password"
+                              placeholder={secretPlaceholder(
+                                hasMeinvoicePassword,
+                                meinvoicePasswordMasked,
+                              )}
+                              value={meinvoicePasswordInput}
+                              onChange={(e) => setMeinvoicePasswordInput(e.target.value)}
+                              className={INPUT_FOCUS}
+                            />
+                          ) : (
+                            <Input
+                              id={`cred-${f.key}`}
+                              type="password"
+                              placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
+                              value={secretInput}
+                              onChange={(e) => setSecretInput(e.target.value)}
+                              className={INPUT_FOCUS}
+                            />
+                          )
                         ) : (
                           <Input
                             id={`cred-${f.key}`}
                             placeholder={f.placeholder}
-                            value={f.key === "customApiUrl" ? customApiUrl : clientId}
+                            value={
+                              f.key === "customApiUrl"
+                                ? customApiUrl
+                                : f.key === "meinvoiceUsername"
+                                  ? meinvoiceUsername
+                                  : clientId
+                            }
                             onChange={(e) =>
                               f.key === "customApiUrl"
                                 ? setCustomApiUrl(e.target.value)
-                                : setClientId(e.target.value)
+                                : f.key === "meinvoiceUsername"
+                                  ? setMeinvoiceUsername(e.target.value)
+                                  : setClientId(e.target.value)
                             }
                             className={INPUT_FOCUS}
                           />
@@ -713,6 +752,24 @@ export function InvoiceConfigSection({
                       </div>
                     ))}
                   </div>
+
+                  {provider === "MISA" && (
+                    <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-700">
+                      Hóa đơn phát hành trực tiếp từ{" "}
+                      <b>tài khoản meInvoice của shop</b> — dữ liệu hóa đơn và
+                      nghĩa vụ thuế thuộc quan hệ giữa shop với MISA, Hubsell
+                      chỉ là cầu nối kỹ thuật. Chưa có tài khoản?{" "}
+                      <a
+                        href={MEINVOICE_SIGNUP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold underline underline-offset-2"
+                      >
+                        Đăng ký meInvoice
+                      </a>{" "}
+                      rồi quay lại nhập tài khoản tại đây.
+                    </p>
+                  )}
 
                   {vendor.soon && (
                     <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">

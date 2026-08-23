@@ -91,8 +91,21 @@ export interface StandardInvoiceConfig {
   taxCode: string | null;
   companyName: string | null;
   companyAddress: string | null;
+  /**
+   * Khóa tích hợp — MẶC ĐỊNH DÙNG CHUNG khóa app Hubsell từ env
+   * (MISA_CLIENT_ID/SECRET); cột theo shop chỉ để override trường hợp đặc biệt.
+   * Khách KHÔNG phải đăng ký gì trên developer.misa.vn.
+   */
   clientId: string | null;
   secretKey: string | null;
+  /**
+   * TÀI KHOẢN meInvoice CỦA SHOP (multi-tenant 23/08): bộ {taxCode + username
+   * + password} quyết định hóa đơn phát hành dưới pháp nhân nào — bắt buộc
+   * theo shop, KHÔNG BAO GIỜ fallback env trong luồng phát hành (fallback là
+   * xuất nhầm hóa đơn dưới pháp nhân khác).
+   */
+  meinvoiceUsername: string | null;
+  meinvoicePassword: string | null;
   invoicePattern: string | null;
   invoiceSeries: string | null;
   signMethod: string;
@@ -108,7 +121,12 @@ export function standardConfigMissing(cfg: StandardInvoiceConfig): string[] {
   const missing: string[] = [];
   if (!cfg.taxCode) missing.push("Mã số thuế (MST)");
   if (!cfg.companyName) missing.push("Tên pháp nhân");
-  if (!cfg.clientId || !cfg.secretKey) missing.push("Client ID / Secret Key meInvoice");
+  // Tài khoản meInvoice CỦA SHOP — bắt buộc, quyết định pháp nhân trên hóa đơn.
+  if (!cfg.meinvoiceUsername || !cfg.meinvoicePassword) {
+    missing.push("Tài khoản meInvoice của shop (email/SĐT + mật khẩu)");
+  }
+  // Client ID/Secret KHÔNG bắt buộc theo shop — mặc định dùng khóa app Hubsell
+  // (env MISA_CLIENT_ID/SECRET); thiếu cả hai nơi thì getMisaAccessToken báo rõ.
   if (!cfg.invoicePattern) missing.push("Mẫu số hóa đơn (Pattern)");
   if (!cfg.invoiceSeries) missing.push("Ký hiệu hóa đơn (Serial)");
   // 23/08: KHÔNG đòi bộ khóa eSign nữa — SignType 2 (HSM) được meInvoice ký
@@ -118,12 +136,22 @@ export function standardConfigMissing(cfg: StandardInvoiceConfig): string[] {
   return missing;
 }
 
+/**
+ * Bộ credentials từ cấu hình shop: khóa app fallback env (dùng chung toàn
+ * Hubsell), còn bộ tài khoản {MST, username, password} lấy CHẶT từ shop —
+ * chuỗi rỗng thay vì undefined để buildAuthBody KHÔNG rơi về env (env chỉ dành
+ * cho script dev không truyền creds).
+ */
 function credsFromConfig(cfg: StandardInvoiceConfig): MisaAuthCredentials | undefined {
-  if (!cfg.clientId || !cfg.secretKey) return undefined; // fallback env sandbox
+  const clientId = cfg.clientId ?? process.env.MISA_CLIENT_ID?.trim();
+  const clientSecret = cfg.secretKey ?? process.env.MISA_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return undefined; // để getMisaAccessToken báo thiếu khóa
   return {
-    clientId: cfg.clientId,
-    clientSecret: cfg.secretKey,
-    taxCode: cfg.taxCode ?? undefined,
+    clientId,
+    clientSecret,
+    taxCode: cfg.taxCode ?? "",
+    username: cfg.meinvoiceUsername ?? "",
+    password: cfg.meinvoicePassword ?? "",
   };
 }
 
@@ -279,7 +307,10 @@ export async function publishStandardInvoice(
     throw new Error(`Chưa đủ cấu hình phát hành kê khai — thiếu: ${missing.join(", ")}`);
   }
 
-  const token = await getMisaAccessToken(credsFromConfig(cfg));
+  // Bộ khóa ĐÃ HÒA GIẢI (cột shop ?? khóa app env) — header ClientID phải dùng
+  // đúng bộ này, lấy thẳng cfg.clientId sẽ rỗng với shop dùng khóa app chung.
+  const creds = credsFromConfig(cfg);
+  const token = await getMisaAccessToken(creds);
   const url = `${misaApiBase()}${ENDPOINTS.publish}`;
   let res: Response;
   try {
@@ -287,7 +318,7 @@ export async function publishStandardInvoice(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ClientID: cfg.clientId ?? "",
+        ClientID: creds?.clientId ?? "",
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(buildStandardInvoicePayload(input, cfg)),

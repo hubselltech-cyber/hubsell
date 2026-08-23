@@ -17,7 +17,15 @@ export type InvoiceVendor = "MISA" | "VIETTEL" | "VNPT" | "BKAV" | "CUSTOM";
  * vẫn là một cặp định danh + bí mật, đổ chung vào clientId/secretKey).
  */
 export interface VendorCredentialField {
-  key: "partnerCode" | "clientId" | "secretKey" | "customApiUrl";
+  key:
+    | "partnerCode"
+    | "clientId"
+    | "secretKey"
+    | "customApiUrl"
+    // Tài khoản meInvoice CỦA SHOP (multi-tenant 23/08) — 2 cột riêng trong
+    // InvoiceConfig, không đổ chung vào clientId/secretKey.
+    | "meinvoiceUsername"
+    | "meinvoicePassword";
   label: string;
   placeholder?: string;
   /** true = ô password + luồng che/giữ-nguyên-khi-trống. */
@@ -39,12 +47,19 @@ export interface InvoiceVendorMeta {
 
 export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   {
+    // 23/08 — mô hình AFFILIATE (anh Trung chốt): shop đăng nhập bằng tài khoản
+    // meInvoice CỦA CHÍNH MÌNH → hóa đơn mang pháp nhân shop, Hubsell chỉ là
+    // cầu nối kỹ thuật + giới thiệu. Khóa app (Client ID/Secret) do Hubsell giữ
+    // ở server, khách KHÔNG thấy — hết cảnh bắt khách đi xin key ở portal dev.
     value: "MISA",
     label: "MISA meInvoice",
     credentialFields: [
-      { key: "partnerCode", label: "Mã đại lý ISV (Partner Code)", readOnly: true },
-      { key: "clientId", label: "Mã định danh (Client ID)", placeholder: "Client ID do MISA cấp" },
-      { key: "secretKey", label: "Khóa bảo mật (Client Secret)", secret: true },
+      {
+        key: "meinvoiceUsername",
+        label: "Tài khoản meInvoice của shop",
+        placeholder: "Email/SĐT đăng nhập meinvoice.vn",
+      },
+      { key: "meinvoicePassword", label: "Mật khẩu meInvoice", secret: true },
     ],
   },
   {
@@ -162,10 +177,18 @@ export function isCustomVendor(v: string): boolean {
 /**
  * Mã đối tác ISV của Hubsell với nhà cung cấp hóa đơn — CỐ ĐỊNH, không cho shop
  * sửa. Nhờ mã này mà mọi hóa đơn phát hành qua Hubsell được NCC ghi nhận thuộc
- * đại lý Hubsell (hưởng hoa hồng ISV). Trường Partner Code ở giao diện phải
- * read-only và luôn gửi đúng giá trị này khi lưu.
+ * đại lý Hubsell (hưởng hoa hồng ISV). 23/08: KHÔNG hiển thị trên form nữa
+ * (mô hình affiliate — khách không cần biết), nhưng vẫn gửi kèm khi lưu để
+ * NCC ghi nhận nguồn giới thiệu.
  */
 export const HUBSELL_PARTNER_CODE = "HUBSELL-ISV-2026";
+
+/**
+ * Link giới thiệu đăng ký meInvoice (mô hình AFFILIATE — anh Trung chốt 23/08:
+ * Hubsell chỉ giới thiệu hưởng hoa hồng, KHÔNG làm đại lý thu tiền/đối soát hộ
+ * khách). Khi có link affiliate chính thức từ MISA thì thay đúng MỘT chỗ này.
+ */
+export const MEINVOICE_SIGNUP_URL = "https://www.meinvoice.vn/dang-ky/";
 
 /** Phương thức ký số (giá trị lưu DB — backend validate đúng 2 giá trị này). */
 export const SIGN_METHODS = [

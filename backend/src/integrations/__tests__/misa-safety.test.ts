@@ -35,6 +35,8 @@ const FULL_STANDARD_CFG = {
   companyAddress: "Lai Xá, Hoài Đức, Hà Nội",
   clientId: "client-id",
   secretKey: "secret-key",
+  meinvoiceUsername: "shop@test.local",
+  meinvoicePassword: "matkhau-test",
   invoicePattern: "1",
   invoiceSeries: "1C26TAA",
   signMethod: "USB_TOKEN",

@@ -12,6 +12,7 @@ import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
 import { getInvoiceProvider } from "../integrations/invoice";
 import type { InvoiceLine } from "../integrations/invoice";
+import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../tax-pilot";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
 import { computePnlRow, fetchPnlOrders } from "./finance";
@@ -261,6 +262,23 @@ router.post("/invoices", async (req: AuthRequest, res, next) => {
       res.status(400).json({
         error:
           "Chưa cấu hình nhà cung cấp hóa đơn (hoặc NCC chưa được hỗ trợ) — vào Kết nối & Xuất hóa đơn trước.",
+      });
+      return;
+    }
+
+    // MST sandbox của MISA chỉ dành cho tài khoản thí điểm — khách thường cấu
+    // hình nhầm sẽ xuất hóa đơn dưới pháp nhân MISA(SANDBOX), chặn tại đây.
+    const shopCfg = await prisma.invoiceConfig.findFirst({
+      where: { ownerId, channelId: null },
+      select: { taxCode: true },
+    });
+    if (
+      shopCfg?.taxCode === MISA_SANDBOX_TAX_CODE &&
+      !isTaxPilotUser(req.userEmail)
+    ) {
+      res.status(400).json({
+        error:
+          "MST đang cấu hình là MST sandbox của MISA (chỉ dùng để thử nghiệm nội bộ) — vui lòng nhập MST của chính shop.",
       });
       return;
     }

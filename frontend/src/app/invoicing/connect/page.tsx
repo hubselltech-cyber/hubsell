@@ -67,19 +67,27 @@ export default function InvoicingConnectPage() {
       }
       description="Kết nối nhà cung cấp Hóa đơn điện tử (Multi-Vendor), chữ ký số, template và bật/tắt module."
     >
-      {!enabled && (
+      {enabled ? (
+        <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
+          <FlaskConical className="mt-0.5 size-5 shrink-0 text-amber-600" />
+          <div>
+            <p className="font-semibold">Đang thí điểm nội bộ</p>
+            <p className="mt-0.5 text-amber-700">
+              Hóa đơn phát hành từ <b>tài khoản meInvoice của shop</b> và được
+              gửi Cơ quan Thuế thật — trong giai đoạn thí điểm chỉ cấu hình
+              tài khoản sandbox do MISA cấp, tuyệt đối chưa nhập tài khoản
+              meInvoice thật.
+            </p>
+          </div>
+        </div>
+      ) : (
         <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-teal-200 bg-teal-50 p-3.5 text-sm text-teal-800">
           <FlaskConical className="mt-0.5 size-5 shrink-0 text-teal-600" />
           <div>
             <p className="font-semibold">Module đang ở chế độ Beta (Giữ chỗ)</p>
             <p className="mt-0.5 text-teal-700">
               Bạn có thể cấu hình trước nhà cung cấp và khóa kết nối, nhưng hệ
-              thống <b>chưa phát hành hóa đơn thật</b> — mọi thao tác chạy ở
-              Sandbox để an toàn cho dữ liệu. Tính năng sẽ mở khi bật cờ{" "}
-              <code className="rounded bg-teal-100 px-1 py-0.5 text-[12px]">
-                is_tax_module_enabled
-              </code>
-              .
+              thống <b>chưa phát hành hóa đơn thật</b>.
             </p>
           </div>
         </div>

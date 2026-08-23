@@ -14,7 +14,10 @@ export interface FeatureFlags {
 }
 
 export const FEATURE_FLAGS: FeatureFlags = {
-  is_tax_module_enabled: false,
+  // 23/08: BẬT — tích hợp MISA đã chạy thật (sandbox), form phải lưu được.
+  // Người ngoài thí điểm không vào được module (TAX_PILOT_EMAILS bên dưới +
+  // backend tax-pilot.ts) nên bật cờ này không mở gì cho khách thường.
+  is_tax_module_enabled: true,
 };
 
 export type FeatureFlag = keyof FeatureFlags;
