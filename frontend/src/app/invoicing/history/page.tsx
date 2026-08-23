@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { FileText, Loader2, ReceiptText, Scale, Wallet } from "lucide-react";
+import { Download, FileText, Loader2, ReceiptText, Scale, Wallet } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import {
   Table,
@@ -20,8 +19,8 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  downloadInvoiceLogPdf,
   fetchTaxReport,
-  issueInvoice,
   type InvoiceLogStatus,
   type TaxReportResponse,
 } from "@/lib/api";
@@ -101,30 +100,33 @@ export default function TaxHistoryPage() {
   const baseLabel =
     settings?.calculationBase === "REVENUE" ? "doanh thu" : "lợi nhuận";
 
-  // ---- Phát hành hóa đơn theo mã đơn (thí điểm MISA 23/08) ----
-  const [issueCode, setIssueCode] = useState("");
-  const [issuing, setIssuing] = useState(false);
-  const handleIssue = async () => {
-    const orderCode = issueCode.trim();
-    if (!orderCode || issuing) return;
-    setIssuing(true);
+  // ---- Tải PDF bản thể hiện (đã ký) của hóa đơn ĐÃ PHÁT HÀNH ----
+  // Hộp PHÁT HÀNH đã chuyển sang trang Kết nối & Xuất hóa đơn (anh Trung chốt
+  // 23/08) — trang này chỉ còn tra cứu + tải về.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const handleDownloadPdf = async (logId: string) => {
+    if (downloadingId) return;
+    setDownloadingId(logId);
     try {
-      const res = await issueInvoice(orderCode);
-      toast.success(
-        `Đã phát hành hóa đơn số ${res.log.invoiceNo ?? "?"} cho đơn ${orderCode}`
+      const r = await downloadInvoiceLogPdf(logId);
+      // base64 → blob → click ẩn: tải file ngay trong app, không mở tab mới.
+      const bytes = Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(
+        new Blob([bytes], { type: "application/pdf" })
       );
-      setIssueCode("");
-      void load(range);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = r.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
       toast.error(
         err instanceof ApiError && err.message
           ? err.message
-          : "Phát hành hóa đơn thất bại"
+          : "Không tải được PDF — thử lại sau"
       );
-      // NCC từ chối vẫn ghi một dòng FAILED vào nhật ký — tải lại để thấy.
-      void load(range);
     } finally {
-      setIssuing(false);
+      setDownloadingId(null);
     }
   };
 
@@ -213,50 +215,6 @@ export default function TaxHistoryPage() {
               </Card>
             </div>
 
-            {/* ===== PHÁT HÀNH HÓA ĐƠN (THÍ ĐIỂM) ===== */}
-            <Card className="shadow-sm">
-              <CardContent className="pt-5">
-                <div className="mb-1 flex items-center gap-2">
-                  <ReceiptText className="size-4 text-slate-500" />
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Phát hành hóa đơn cho đơn hàng
-                  </h3>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    Thí điểm
-                  </span>
-                </div>
-                <p className={cn(TEXT_SUB, "mb-3")}>
-                  Nhập mã đơn hàng để phát hành hóa đơn điện tử qua NCC đã cấu
-                  hình ở &quot;Kết nối &amp; Xuất hóa đơn&quot;. Dòng hàng lấy
-                  theo đơn, thuế suất theo từng sản phẩm (mặc định 0% nếu chưa
-                  khai), đơn giá bán coi là chưa gồm GTGT.
-                </p>
-                <div className="flex max-w-md gap-2">
-                  <Input
-                    value={issueCode}
-                    onChange={(e) => setIssueCode(e.target.value)}
-                    placeholder="Mã đơn hàng, VD 2508230ABCDEF"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleIssue();
-                    }}
-                  />
-                  <Button
-                    onClick={() => void handleIssue()}
-                    disabled={issuing || issueCode.trim() === ""}
-                  >
-                    {issuing ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        Đang phát hành…
-                      </>
-                    ) : (
-                      "Phát hành hóa đơn"
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
             {/* ===== NHẬT KÝ HÓA ĐƠN ĐIỆN TỬ ===== */}
             <Card className="shadow-sm">
               <CardContent className="pt-5">
@@ -272,10 +230,10 @@ export default function TaxHistoryPage() {
 
                 {(data?.logs.length ?? 0) === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">
-                    Chưa có hóa đơn nào được phát hành trong kỳ này. Khi module
-                    &quot;Kết nối &amp; Xuất hóa đơn&quot; hoạt động thật, mỗi
-                    lần phát hành/hủy hóa đơn sẽ ghi một dòng vào đây để đối
-                    soát.
+                    Chưa có hóa đơn nào trong kỳ này. Phát hành hóa đơn cho đơn
+                    hàng tại trang &quot;Kết nối &amp; Xuất hóa đơn&quot; — mỗi
+                    lần phát hành/hủy sẽ ghi một dòng vào đây để đối soát và
+                    tải PDF.
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -296,6 +254,7 @@ export default function TaxHistoryPage() {
                           <TableHead className="text-right">
                             Thuế sàn trích hộ
                           </TableHead>
+                          <TableHead className="text-right">Bản PDF</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -334,6 +293,26 @@ export default function TaxHistoryPage() {
                               </TableCell>
                               <TableCell className="text-right text-slate-600">
                                 <Money value={l.platformTaxWithheld} />
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {l.status === "ISSUED" && l.transactionId ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void handleDownloadPdf(l.id)}
+                                    disabled={downloadingId !== null}
+                                    title={`Mã tra cứu: ${l.transactionId} — tra công khai tại meinvoice.vn/tra-cuu`}
+                                  >
+                                    {downloadingId === l.id ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <Download className="size-3.5" />
+                                    )}
+                                    Tải
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
                               </TableCell>
                             </TableRow>
                           );

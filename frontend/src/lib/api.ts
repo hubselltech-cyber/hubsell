@@ -2314,6 +2314,8 @@ export interface InvoiceLogDTO {
   orderCode: string;
   provider: string;
   invoiceNo: string | null;
+  /** Mã tra cứu NCC cấp — nuôi nút Tải PDF + tra cứu công khai meinvoice.vn. */
+  transactionId: string | null;
   status: InvoiceLogStatus;
   totalAmount: number;
   vatAmount: number;
@@ -2358,6 +2360,13 @@ export function issueInvoice(orderCode: string) {
     method: "POST",
     body: JSON.stringify({ orderCode }),
   });
+}
+
+/** Tải bản thể hiện PDF (đã ký) của hóa đơn trong nhật ký — trả base64. */
+export function downloadInvoiceLogPdf(logId: string) {
+  return apiFetch<{ fileName: string; base64: string }>(
+    `/api/tax/invoices/${logId}/pdf`
+  );
 }
 
 // ============================================================

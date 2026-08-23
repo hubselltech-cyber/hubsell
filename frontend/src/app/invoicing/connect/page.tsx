@@ -4,6 +4,7 @@ import { CircleAlert, FlaskConical } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { InvoiceConfigSection } from "@/components/settings/invoice-config-section";
+import { InvoiceIssueCard } from "@/components/settings/invoice-issue-card";
 import {
   Tooltip,
   TooltipContent,
@@ -94,6 +95,10 @@ export default function InvoicingConnectPage() {
       )}
 
       <InvoiceConfigSection readOnlyPreview={!enabled} />
+
+      {/* Hộp XUẤT hóa đơn nằm ngay trang này (anh Trung chốt 23/08) — cấu hình
+          xong là phát hành được tại chỗ; Lịch sử chỉ để tra + tải PDF. */}
+      <InvoiceIssueCard />
     </SettingsShell>
   );
 }

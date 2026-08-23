@@ -12,6 +12,10 @@ import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
 import { getInvoiceProvider } from "../integrations/invoice";
 import type { InvoiceLine } from "../integrations/invoice";
+import {
+  downloadInvoiceFiles,
+  type StandardInvoiceConfig,
+} from "../integrations/invoice/misa-einvoice";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../tax-pilot";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
@@ -129,6 +133,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           orderCode: true,
           provider: true,
           invoiceNo: true,
+          transactionId: true, // mã tra cứu — nuôi nút Tải PDF + link tra cứu công khai
           status: true,
           totalAmount: true,
           vatAmount: true,
@@ -356,6 +361,53 @@ router.post("/invoices", async (req: AuthRequest, res, next) => {
         platformTaxWithheld: Number(updated.platformTaxWithheld),
       },
       error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành"),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/tax/invoices/:id/pdf — tải BẢN THỂ HIỆN PDF (đã ký) của một hóa đơn
+// ĐÃ PHÁT HÀNH trong nhật ký. Trả {fileName, base64} để FE tự tạo blob tải về
+// (giữ apiFetch JSON thuần, không phải stream). PDF lấy TƯƠI từ meInvoice mỗi
+// lần bấm — không cache file phía Hubsell.
+router.get("/invoices/:id/pdf", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const log = await prisma.invoiceLog.findFirst({
+      where: { id: req.params.id, ownerId },
+      select: { invoiceNo: true, transactionId: true, status: true, provider: true },
+    });
+    if (!log) {
+      res.status(404).json({ error: "Không tìm thấy hóa đơn trong nhật ký" });
+      return;
+    }
+    if (log.provider !== "MISA") {
+      res.status(400).json({ error: `NCC ${log.provider} chưa hỗ trợ tải PDF qua Hubsell.` });
+      return;
+    }
+    if (log.status !== InvoiceLogStatus.ISSUED || !log.transactionId) {
+      res.status(400).json({ error: "Hóa đơn chưa phát hành thành công — không có file để tải." });
+      return;
+    }
+
+    const cfg = await prisma.invoiceConfig.findFirst({
+      where: { ownerId, channelId: null },
+    });
+    const [file] = await downloadInvoiceFiles(
+      [log.transactionId],
+      "Pdf",
+      (cfg ?? undefined) as unknown as StandardInvoiceConfig | undefined
+    );
+    if (!file?.data || file.errorCode) {
+      res.status(502).json({
+        error: `meInvoice không trả được file (${file?.errorCode ?? "không có dữ liệu"}) — thử lại sau.`,
+      });
+      return;
+    }
+    res.json({
+      fileName: `hoa-don-${log.invoiceNo ?? log.transactionId}.pdf`,
+      base64: file.data,
     });
   } catch (err) {
     next(err);
