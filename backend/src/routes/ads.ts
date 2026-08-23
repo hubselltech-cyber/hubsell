@@ -183,7 +183,22 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           lossBeforeAds: it.margin != null && it.margin <= 0,
         };
       });
-      campaigns.sort((a, b) => b.spend - a.spend);
+      // Trạng thái trước, chi tiêu sau (anh Trung 23/08): "Đang chạy" là thứ
+      // seller cần soi ngay nên luôn trên đầu; campaign đã kết thúc dù từng
+      // tiêu nhiều cũng chỉ là lịch sử. Trạng thái lạ xếp cạnh "ended".
+      const statusRank: Record<string, number> = {
+        ongoing: 0,
+        scheduled: 1,
+        paused: 2,
+        ended: 3,
+        closed: 3,
+        deleted: 4,
+      };
+      campaigns.sort(
+        (a, b) =>
+          (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3) ||
+          b.spend - a.spend
+      );
 
       // ---- Chuỗi ngày cho biểu đồ (gộp mọi campaign) ----
       const seriesMap = new Map<string, { spend: number; broadGmv: number; directGmv: number }>();

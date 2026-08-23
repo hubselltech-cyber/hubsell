@@ -432,7 +432,8 @@ export function ShopeeAdsPage({
     return true;
   });
 
-  // Phân trang client-side: API trả trọn bộ (đã sort theo chi tiêu giảm dần),
+  // Phân trang client-side: API trả trọn bộ (đã sort trạng thái Đang chạy →
+  // Tạm dừng → Đã kết thúc, trong cùng trạng thái theo chi tiêu giảm dần),
   // bảng chỉ hiện PAGE_SIZE dòng một trang. Kẹp page khi dữ liệu co lại.
   const pageCount = Math.max(1, Math.ceil(visibleCampaigns.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
