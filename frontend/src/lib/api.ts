@@ -2327,6 +2327,18 @@ export function fetchTaxReport(params?: { from?: string; to?: string }) {
   return apiFetch<TaxReportResponse>(`/api/tax/report${suffix}`);
 }
 
+/**
+ * PHÁT HÀNH hóa đơn điện tử cho một đơn hàng (thí điểm MISA 23/08). Backend
+ * trả 201 khi NCC phát hành thành công, 502 kèm error khi NCC từ chối —
+ * apiFetch ném ApiError cho case sau, nơi gọi hiển thị message.
+ */
+export function issueInvoice(orderCode: string) {
+  return apiFetch<{ log: InvoiceLogDTO; error?: string }>("/api/tax/invoices", {
+    method: "POST",
+    body: JSON.stringify({ orderCode }),
+  });
+}
+
 // ============================================================
 // QUẢN TRỊ NỀN TẢNG (/api/admin) — chỉ tài khoản có isPlatformAdmin.
 // Đây là góc nhìn CHỦ NỀN TẢNG trên toàn hệ thống, không bó theo shop.

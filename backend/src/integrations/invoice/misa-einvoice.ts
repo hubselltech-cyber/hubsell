@@ -37,7 +37,8 @@ import type { CreateInvoiceInput } from "./types";
 const ENDPOINTS = {
   publish: "/invoice/publishing", // phát hành + xin cấp mã CQT
   templates: "/invoice/templates", // danh sách mẫu/ký hiệu đã đăng ký với CQT
-  status: "/invoice/status", // tra trạng thái hóa đơn
+  status: "/invoice/status", // tra trạng thái hóa đơn (body = mảng TransactionID)
+  download: "/invoice/Download", // tải PDF/XML (body = mảng TransactionID) — chữ D hoa theo tài liệu
 };
 
 /**
@@ -127,8 +128,10 @@ function credsFromConfig(cfg: StandardInvoiceConfig): MisaAuthCredentials | unde
 }
 
 /**
- * Kiểm tra kết nối luồng kê khai: lấy token meInvoice; nếu ký nền eSign thì
- * đăng nhập eSign luôn — hai hệ đều sống mới coi là sẵn sàng phát hành.
+ * Kiểm tra kết nối luồng kê khai: lấy token meInvoice. eSign chỉ thử đăng nhập
+ * khi shop THỰC SỰ điền bộ khóa eSign (ký nền SignType 2 là HSM meInvoice ký
+ * server-side, không bắt buộc eSign — xác nhận sandbox 23/08); điền dở dang
+ * vẫn báo lỗi để không tưởng nhầm đã cấu hình xong.
  */
 export async function testStandardConnection(cfg: StandardInvoiceConfig): Promise<{
   meinvoiceTokenLength: number;
@@ -136,7 +139,9 @@ export async function testStandardConnection(cfg: StandardInvoiceConfig): Promis
 }> {
   const token = await getMisaAccessToken(credsFromConfig(cfg));
   let esignChecked = false;
-  if (cfg.signMethod === "ESIGN_CLOUD") {
+  const hasAnyEsign =
+    cfg.esignClientId || cfg.esignSecretKey || cfg.esignUsername || cfg.esignPassword;
+  if (cfg.signMethod === "ESIGN_CLOUD" && hasAnyEsign) {
     await esignLogin({
       clientId: cfg.esignClientId ?? undefined,
       clientKey: cfg.esignSecretKey ?? undefined,
@@ -257,9 +262,9 @@ export interface StandardPublishResult {
 }
 
 /**
- * Phát hành một hóa đơn KÊ KHAI trên sandbox. Ký nền eSign (nếu ESIGN_CLOUD)
- * hiện mới XÁC THỰC phiên ký trước khi gửi — bước ký hash XML hóa đơn nối vào
- * sau khi kit sandbox xác nhận định dạng (một chỗ duy nhất: hàm này).
+ * Phát hành một hóa đơn KÊ KHAI (SignType 2 — HSM, meInvoice ký nền server-side
+ * theo chứng thư gắn với tài khoản; đã xác nhận trên sandbox 23/08, KHÔNG cần
+ * gọi eSign ở bước này).
  */
 export async function publishStandardInvoice(
   input: CreateInvoiceInput,
@@ -332,4 +337,155 @@ export async function publishStandardInvoice(
     transactionId: typeof transactionId === "string" ? transactionId : null,
     raw,
   };
+}
+
+// ============================================================
+// TRA CỨU & TẢI HÓA ĐƠN (spec portal đọc 23/08/2026)
+// ============================================================
+
+/** Gỡ lớp "JSON string lồng trong JSON" mà meInvoice hay trả ở khối dữ liệu. */
+function unwrapNestedJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * POST authorized tới meInvoice, trả JSON đã bóc envelope thô. Ném lỗi khi
+ * HTTP fail hoặc Success=false — thông điệp tiếng Việt cho nơi gọi hiển thị.
+ */
+async function misaPost(
+  path: string,
+  query: Record<string, string>,
+  body: unknown,
+  cfg?: StandardInvoiceConfig
+): Promise<unknown> {
+  const creds = cfg ? credsFromConfig(cfg) : undefined;
+  const token = await getMisaAccessToken(creds);
+  const clientId = creds?.clientId ?? process.env.MISA_CLIENT_ID ?? "";
+  const qs = new URLSearchParams(query).toString();
+  const url = `${misaApiBase()}${path}${qs ? `?${qs}` : ""}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ClientID: clientId,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(`Không gọi được ${url}: ${(err as Error).message}`);
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`meInvoice trả HTTP ${res.status} cho ${path}: ${text.slice(0, 300)}`);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    raw = text;
+  }
+  if (pick(raw, "Success", "success") === false) {
+    const code = pick(raw, "ErrorCode", "errorCode") ?? "?";
+    throw new Error(`meInvoice từ chối ${path}: ErrorCode=${String(code)}`);
+  }
+  return raw;
+}
+
+/** Trạng thái một hóa đơn từ /invoice/status — các trường đã đọc "mềm". */
+export interface MisaInvoiceStatusItem {
+  transactionId: string | null;
+  /** 1 = đã phát hành (tài liệu InvoiceStatus.PublishStatus). */
+  publishStatus: number | null;
+  /**
+   * Trạng thái gửi CQT — nghĩa KHÁC NHAU theo loại ký hiệu:
+   * không mã: 0 chưa gửi · 1 đã gửi · 2 CQT tiếp nhận · 3 không tiếp nhận · 4 lỗi;
+   * có mã   : 0 chờ cấp mã · 1 gửi lỗi · 2 đã cấp mã · 3 từ chối.
+   */
+  sendTaxStatus: number | null;
+  /** Hóa đơn đã bị xóa bỏ/hủy trên meInvoice. */
+  isDeleted: boolean;
+  raw: unknown;
+}
+
+/**
+ * Tra trạng thái theo danh sách TransactionID (mã tra cứu meInvoice trả khi
+ * phát hành). Body là MẢNG TRẦN các mã — không bọc object (spec 23/08).
+ */
+export async function getInvoiceStatuses(
+  transactionIds: string[],
+  cfg?: StandardInvoiceConfig
+): Promise<MisaInvoiceStatusItem[]> {
+  // Ký hiệu ký tự 2 = C → hóa đơn CÓ MÃ CQT (đổi cách đọc SendTaxStatus).
+  const withCode = cfg?.invoiceSeries?.charAt(1) === "C";
+  const raw = await misaPost(
+    ENDPOINTS.status,
+    { inputType: "1", invoiceWithCode: String(withCode), invoiceCalcu: "false" },
+    transactionIds,
+    cfg
+  );
+  const data = unwrapNestedJson(pick(raw, "Data", "data"));
+  const list = Array.isArray(data) ? data : data != null ? [data] : [];
+  return list.map((item) => {
+    const publishStatus = pick(item, "PublishStatus", "publishStatus");
+    const sendTaxStatus = pick(item, "SendTaxStatus", "sendTaxStatus");
+    const transactionId = pick(item, "TransactionID", "TransactionId");
+    return {
+      transactionId: typeof transactionId === "string" ? transactionId : null,
+      publishStatus: typeof publishStatus === "number" ? publishStatus : null,
+      sendTaxStatus: typeof sendTaxStatus === "number" ? sendTaxStatus : null,
+      isDeleted: pick(item, "IsDelete", "isDelete", "IsDeleted") === true,
+      raw: item,
+    };
+  });
+}
+
+/** Một file hóa đơn từ /invoice/Download. */
+export interface MisaInvoiceFile {
+  transactionId: string | null;
+  /** PDF: chuỗi base64 · XML: nội dung XML thô. */
+  data: string | null;
+  errorCode: string | null;
+}
+
+/**
+ * Tải file hóa đơn ĐÃ PHÁT HÀNH theo TransactionID. PDF từ HSM đã bao gồm
+ * chữ ký số — dùng làm bản thể hiện gửi khách.
+ */
+export async function downloadInvoiceFiles(
+  transactionIds: string[],
+  dataType: "Pdf" | "Xml",
+  cfg?: StandardInvoiceConfig
+): Promise<MisaInvoiceFile[]> {
+  const withCode = cfg?.invoiceSeries?.charAt(1) === "C";
+  const raw = await misaPost(
+    ENDPOINTS.download,
+    {
+      downloadDataType: dataType,
+      invoiceWithCode: String(withCode),
+      invoiceCalcu: "false",
+    },
+    transactionIds,
+    cfg
+  );
+  const data = unwrapNestedJson(pick(raw, "Data", "data"));
+  const list = Array.isArray(data) ? data : data != null ? [data] : [];
+  return list.map((item) => {
+    const transactionId = pick(item, "TransactionID", "TransactionId");
+    const fileData = pick(item, "data", "Data", "FileData");
+    const errorCode = pick(item, "ErrorCode", "errorCode");
+    return {
+      transactionId: typeof transactionId === "string" ? transactionId : null,
+      data: typeof fileData === "string" ? fileData : null,
+      errorCode:
+        errorCode != null && errorCode !== "" ? String(errorCode) : null,
+    };
+  });
 }

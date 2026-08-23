@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  InvoiceLogStatus,
   ShippingStatus,
   TaxCalculationBase,
   TaxFilterPeriod,
@@ -9,6 +10,8 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
+import { getInvoiceProvider } from "../integrations/invoice";
+import type { InvoiceLine } from "../integrations/invoice";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
 import { computePnlRow, fetchPnlOrders } from "./finance";
@@ -186,6 +189,155 @@ router.get("/report", async (req: AuthRequest, res, next) => {
         vatAmount: Number(l.vatAmount),
         platformTaxWithheld: Number(l.platformTaxWithheld),
       })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/tax/invoices — PHÁT HÀNH hóa đơn điện tử cho một đơn hàng.
+// Body: { orderCode } (mã đơn trong tầm nhìn gian hàng của người gọi).
+//
+// Luồng: tìm đơn → dựng dòng hàng theo quy ước thuế của Hubsell (đơn giá bán
+// coi là CHƯA thuế, % lấy từ Product.vatRate, tên in hóa đơn ưu tiên
+// Product.taxName) → ghi InvoiceLog PENDING → gọi adapter NCC → cập nhật log
+// + audit InvoiceStatusHistory (source HUBSELL) + Order.einvoiceStatus.
+// Adapter không ném lỗi nghiệp vụ (trả FAILED + errorMessage) nên mọi kết quả
+// đều được ghi sổ — kể cả khi NCC từ chối.
+router.post("/invoices", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const orderCode = String(req.body?.orderCode ?? "").trim();
+    if (!orderCode) {
+      res.status(400).json({ error: "Thiếu mã đơn hàng (orderCode)" });
+      return;
+    }
+
+    const order = await prisma.order.findFirst({
+      where: { orderCode, channel: channelScope(req) },
+      include: {
+        items: {
+          include: {
+            product: { select: { skuCode: true, taxName: true, vatRate: true } },
+          },
+        },
+      },
+    });
+    if (!order) {
+      res.status(404).json({ error: `Không tìm thấy đơn ${orderCode} trong phạm vi của bạn` });
+      return;
+    }
+    if (order.shippingStatus === ShippingStatus.CANCELLED) {
+      res.status(400).json({ error: "Đơn đã hủy — không phát hành hóa đơn" });
+      return;
+    }
+    if (order.items.length === 0) {
+      res.status(400).json({ error: "Đơn không có dòng hàng nào để lên hóa đơn" });
+      return;
+    }
+
+    // Chống phát hành trùng: đơn đã có hóa đơn đang chờ/đã phát hành thì dừng
+    // (RefID phía MISA cũng chặn trùng, nhưng chặn sớm cho thông điệp rõ hơn).
+    const existing = await prisma.invoiceLog.findFirst({
+      where: {
+        ownerId,
+        orderCode,
+        status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
+      },
+      select: { id: true, status: true, invoiceNo: true },
+    });
+    if (existing) {
+      res.status(409).json({
+        error:
+          existing.status === InvoiceLogStatus.ISSUED
+            ? `Đơn này đã có hóa đơn số ${existing.invoiceNo ?? "?"} — muốn phát hành lại phải hủy/thay thế trước.`
+            : "Đơn này đang có yêu cầu phát hành chờ xử lý.",
+      });
+      return;
+    }
+
+    const provider = await getInvoiceProvider(ownerId, order.channelId);
+    if (!provider) {
+      res.status(400).json({
+        error:
+          "Chưa cấu hình nhà cung cấp hóa đơn (hoặc NCC chưa được hỗ trợ) — vào Kết nối & Xuất hóa đơn trước.",
+      });
+      return;
+    }
+
+    // Dòng hàng theo quy ước InvoiceLine: unitPrice CHƯA thuế GTGT.
+    const lines: InvoiceLine[] = order.items.map((it) => ({
+      name: it.product?.taxName?.trim() || it.productName,
+      sku: it.product?.skuCode ?? it.channelSku,
+      quantity: it.quantity,
+      unitPrice: Number(it.price),
+      vatRate: it.product?.vatRate ?? 0,
+    }));
+    const vatTotal = lines.reduce(
+      (s, l) => s + Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
+      0
+    );
+    const totalAmount =
+      lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0) + vatTotal;
+
+    const log = await prisma.invoiceLog.create({
+      data: {
+        ownerId,
+        orderId: order.id,
+        orderCode,
+        provider: provider.name,
+        status: InvoiceLogStatus.PENDING,
+        totalAmount,
+        vatAmount: vatTotal,
+      },
+    });
+
+    const result = await provider.createInvoice({
+      orderCode,
+      buyerName: order.customerName,
+      lines,
+      totalAmount,
+    });
+
+    const issued = result.status === InvoiceLogStatus.ISSUED;
+    const [updated] = await prisma.$transaction([
+      prisma.invoiceLog.update({
+        where: { id: log.id },
+        data: {
+          status: result.status,
+          invoiceNo: result.invoiceNo ?? null,
+          transactionId: result.transactionId ?? null,
+          vatAmount: result.vatAmount ?? vatTotal,
+          errorMessage: result.errorMessage ?? null,
+          issuedAt: issued ? new Date() : null,
+        },
+      }),
+      prisma.invoiceStatusHistory.create({
+        data: {
+          invoiceLogId: log.id,
+          orderCode,
+          fromStatus: InvoiceLogStatus.PENDING,
+          toStatus: result.status,
+          source: "HUBSELL",
+          note: issued
+            ? `Phát hành qua ${provider.name}: số ${result.invoiceNo ?? "?"}, mã tra cứu ${result.transactionId ?? "?"}`
+            : result.errorMessage ?? null,
+        },
+      }),
+      prisma.order.update({
+        where: { id: order.id },
+        data: { einvoiceStatus: result.status },
+      }),
+    ]);
+
+    res.status(issued ? 201 : 502).json({
+      log: {
+        ...updated,
+        totalAmount: Number(updated.totalAmount),
+        vatAmount: Number(updated.vatAmount),
+        platformTaxWithheld: Number(updated.platformTaxWithheld),
+      },
+      error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành"),
     });
   } catch (err) {
     next(err);

@@ -40,6 +40,7 @@ import {
   setStoredUser,
   type AuthUser,
 } from "@/lib/api";
+import { isTaxPilotUser } from "@/lib/feature-flags";
 import {
   can,
   homePathFor,
@@ -90,6 +91,11 @@ export interface NavItem {
    * ẩn hẳn với mọi chủ shop thường. Backend vẫn chặn 403 độc lập với UI.
    */
   platformOnly?: boolean;
+  /**
+   * Mục đang THÍ ĐIỂM NỘI BỘ — chỉ hiện cho tài khoản trong TAX_PILOT_EMAILS
+   * (feature-flags.ts). Backend chặn 403 độc lập (backend/src/tax-pilot.ts).
+   */
+  pilotOnly?: boolean;
   children?: NavChild[];
 }
 
@@ -175,9 +181,11 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     // Hóa đơn & thuế — mục NGUYÊN KHỐI (khóa "invoicing"), thứ tự anh Trung chốt 08/08.
+    // 23/08: THÍ ĐIỂM MISA — pilotOnly chỉ hiện cho tài khoản trong TAX_PILOT_EMAILS.
     label: "Hóa đơn & Thuế",
     icon: "receipt_long",
     perm: "invoicing",
+    pilotOnly: true,
     children: [
       { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
       { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
@@ -459,6 +467,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     user !== null &&
     (!i.adminOnly || isAdmin(user)) &&
     (!i.platformOnly || user.isPlatformAdmin === true) &&
+    (!i.pilotOnly || isTaxPilotUser(user)) &&
     (!i.perm || can(user, i.perm));
   const visibleChildren = (i: NavItem): NavItem => {
     if (!i.children) return i;

@@ -6,7 +6,9 @@ import { FileText, Loader2, ReceiptText, Scale, Wallet } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import {
   Table,
@@ -19,6 +21,7 @@ import {
 import {
   ApiError,
   fetchTaxReport,
+  issueInvoice,
   type InvoiceLogStatus,
   type TaxReportResponse,
 } from "@/lib/api";
@@ -97,6 +100,33 @@ export default function TaxHistoryPage() {
   const settings = data?.settings;
   const baseLabel =
     settings?.calculationBase === "REVENUE" ? "doanh thu" : "lợi nhuận";
+
+  // ---- Phát hành hóa đơn theo mã đơn (thí điểm MISA 23/08) ----
+  const [issueCode, setIssueCode] = useState("");
+  const [issuing, setIssuing] = useState(false);
+  const handleIssue = async () => {
+    const orderCode = issueCode.trim();
+    if (!orderCode || issuing) return;
+    setIssuing(true);
+    try {
+      const res = await issueInvoice(orderCode);
+      toast.success(
+        `Đã phát hành hóa đơn số ${res.log.invoiceNo ?? "?"} cho đơn ${orderCode}`
+      );
+      setIssueCode("");
+      void load(range);
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError && err.message
+          ? err.message
+          : "Phát hành hóa đơn thất bại"
+      );
+      // NCC từ chối vẫn ghi một dòng FAILED vào nhật ký — tải lại để thấy.
+      void load(range);
+    } finally {
+      setIssuing(false);
+    }
+  };
 
   return (
     <SettingsShell
@@ -182,6 +212,50 @@ export default function TaxHistoryPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* ===== PHÁT HÀNH HÓA ĐƠN (THÍ ĐIỂM) ===== */}
+            <Card className="shadow-sm">
+              <CardContent className="pt-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <ReceiptText className="size-4 text-slate-500" />
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Phát hành hóa đơn cho đơn hàng
+                  </h3>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                    Thí điểm
+                  </span>
+                </div>
+                <p className={cn(TEXT_SUB, "mb-3")}>
+                  Nhập mã đơn hàng để phát hành hóa đơn điện tử qua NCC đã cấu
+                  hình ở &quot;Kết nối &amp; Xuất hóa đơn&quot;. Dòng hàng lấy
+                  theo đơn, thuế suất theo từng sản phẩm (mặc định 0% nếu chưa
+                  khai), đơn giá bán coi là chưa gồm GTGT.
+                </p>
+                <div className="flex max-w-md gap-2">
+                  <Input
+                    value={issueCode}
+                    onChange={(e) => setIssueCode(e.target.value)}
+                    placeholder="Mã đơn hàng, VD 2508230ABCDEF"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleIssue();
+                    }}
+                  />
+                  <Button
+                    onClick={() => void handleIssue()}
+                    disabled={issuing || issueCode.trim() === ""}
+                  >
+                    {issuing ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Đang phát hành…
+                      </>
+                    ) : (
+                      "Phát hành hóa đơn"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* ===== NHẬT KÝ HÓA ĐƠN ĐIỆN TỬ ===== */}
             <Card className="shadow-sm">

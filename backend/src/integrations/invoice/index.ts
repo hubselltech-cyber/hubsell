@@ -6,6 +6,8 @@
  * viết thêm một adapter + một dòng trong PROVIDER_FACTORIES.
  */
 
+import type { InvoiceConfig } from "@prisma/client";
+
 import { prisma } from "../../prisma";
 import { BkavInvoiceProvider } from "./bkav-provider";
 import { MisaInvoiceProvider } from "./misa-provider";
@@ -13,12 +15,15 @@ import type { InvoiceProvider, ProviderCredentials } from "./types";
 
 export * from "./types";
 
+// Factory nhận NGUYÊN ROW cấu hình + cặp khóa đã hòa giải theo gian hàng:
+// MISA cần đủ MST/ký hiệu/mẫu số để phát hành thật (23/08), BKAV giữ nguyên
+// khung credentials cũ.
 const PROVIDER_FACTORIES: Record<
   string,
-  (creds: ProviderCredentials) => InvoiceProvider
+  (shopConfig: InvoiceConfig, creds: ProviderCredentials) => InvoiceProvider
 > = {
-  MISA: (creds) => new MisaInvoiceProvider(creds),
-  BKAV: (creds) => new BkavInvoiceProvider(creds),
+  MISA: (shopConfig) => new MisaInvoiceProvider(shopConfig),
+  BKAV: (_shopConfig, creds) => new BkavInvoiceProvider(creds),
   // VIETTEL / VNPT / CUSTOM: chưa có adapter — getInvoiceProvider trả null,
   // nơi gọi hiển thị "NCC chưa được hỗ trợ" thay vì crash.
 };
@@ -45,7 +50,7 @@ export async function getInvoiceProvider(
   const factory = PROVIDER_FACTORIES[shopConfig.provider];
   if (!factory) return null;
 
-  return factory({
+  return factory(shopConfig, {
     clientId: shopConfig.clientId,
     secretKey: shopConfig.secretKey,
     apiKey: channelConfig?.apiKey ?? shopConfig.apiKey,

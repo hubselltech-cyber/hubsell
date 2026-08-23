@@ -23,3 +23,17 @@ export type FeatureFlag = keyof FeatureFlags;
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   return FEATURE_FLAGS[flag];
 }
+
+/**
+ * THÍ ĐIỂM MODULE HÓA ĐƠN & THUẾ (23/08/2026): tích hợp MISA mới thông sandbox,
+ * toàn module chỉ mở cho các tài khoản dưới đây để anh Trung theo dõi và test.
+ * MIRROR của backend/src/tax-pilot.ts — lớp chặn thật (403) nằm ở backend,
+ * đây chỉ là lớp ẩn menu/trang; sửa danh sách phải sửa CẢ HAI file.
+ */
+export const TAX_PILOT_EMAILS = ["admin@hubsell.vn"];
+
+/** Tài khoản (theo email đăng nhập) có trong thí điểm Hóa đơn & Thuế không? */
+export function isTaxPilotUser(user: { email?: string | null } | null): boolean {
+  const email = user?.email?.toLowerCase();
+  return !!email && TAX_PILOT_EMAILS.includes(email);
+}

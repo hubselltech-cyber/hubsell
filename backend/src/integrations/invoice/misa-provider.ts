@@ -1,69 +1,126 @@
 /**
- * ADAPTER MISA meInvoice — hiện chạy SANDBOX GIẢ LẬP.
+ * ADAPTER MISA meInvoice — GỌI API THẬT (nối 23/08/2026 sau khi thông sandbox).
  *
- * Khung code đã theo đúng luồng thật của meInvoice (đăng nhập lấy token bằng
- * clientId/secretKey → gọi API kèm mã đại lý ISV), nhưng CHƯA gọi HTTP thật vì
- * đang chờ hợp đồng đại lý + tài khoản sandbox từ MISA. Khi có tài khoản, chỉ
- * thay ruột 3 phương thức bằng fetch tới endpoint thật của meInvoice
- * (https://api.meinvoice.vn/api/v3) — chữ ký hàm giữ nguyên.
+ * Nhận NGUYÊN ROW InvoiceConfig của shop (không chỉ cặp khóa) vì phát hành cần
+ * đủ MST/ký hiệu/mẫu số/signMethod. Luồng hiện nối là KÊ KHAI (STANDARD,
+ * SignType 2 — HSM meInvoice ký nền); luồng máy tính tiền (POS) chưa nối —
+ * trả FAILED với lời nhắn rõ thay vì phát hành sai loại.
+ *
+ * Theo hợp đồng InvoiceProvider: KHÔNG ném lỗi nghiệp vụ — mọi từ chối/lỗi API
+ * (kể cả chốt an toàn MISA_ALLOW_PUBLISH của misa-safety.ts) trả về
+ * status FAILED + errorMessage để nơi gọi ghi InvoiceLog và hiển thị.
  */
 
 import { InvoiceLogStatus } from "@prisma/client";
+import {
+  downloadInvoiceFiles,
+  getInvoiceStatuses,
+  publishStandardInvoice,
+  standardConfigMissing,
+  type StandardInvoiceConfig,
+} from "./misa-einvoice";
 import type {
   CreateInvoiceInput,
   InvoiceProvider,
   InvoiceResult,
-  ProviderCredentials,
 } from "./types";
+
+/**
+ * Lát cắt InvoiceConfig adapter cần — khớp row Prisma, khai structural để
+ * test/dev truyền object thường không cần Prisma type.
+ */
+export interface MisaProviderConfig extends StandardInvoiceConfig {
+  defaultInvoiceType: string; // STANDARD | POS
+}
 
 export class MisaInvoiceProvider implements InvoiceProvider {
   readonly name = "MISA";
 
-  constructor(private creds: ProviderCredentials) {}
+  constructor(private cfg: MisaProviderConfig) {}
 
-  /** Chưa đủ clientId/secretKey thì mọi thao tác phải fail sớm với lời nhắn rõ. */
-  private missingCreds(): InvoiceResult | null {
-    if (!this.creds.clientId || !this.creds.secretKey) {
+  async createInvoice(input: CreateInvoiceInput): Promise<InvoiceResult> {
+    if (this.cfg.defaultInvoiceType === "POS") {
       return {
         status: InvoiceLogStatus.FAILED,
         errorMessage:
-          "Chưa cấu hình Client ID / Secret Key của MISA — vào Kết nối & Xuất hóa đơn để nhập.",
+          "Luồng hóa đơn máy tính tiền (POS) chưa được nối API — tạm chọn luồng Kê khai ở trang Kết nối & Xuất hóa đơn.",
       };
     }
-    return null;
+    const missing = standardConfigMissing(this.cfg);
+    if (missing.length > 0) {
+      return {
+        status: InvoiceLogStatus.FAILED,
+        errorMessage: `Chưa đủ cấu hình phát hành — thiếu: ${missing.join(", ")}. Vào Kết nối & Xuất hóa đơn để bổ sung.`,
+      };
+    }
+
+    try {
+      const result = await publishStandardInvoice(input, this.cfg);
+      const vatAmount = input.lines.reduce(
+        (s, l) => s + Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
+        0
+      );
+      return {
+        status: InvoiceLogStatus.ISSUED,
+        invoiceNo: result.invoiceNo ?? undefined,
+        transactionId: result.transactionId ?? undefined,
+        vatAmount,
+      };
+    } catch (err) {
+      return {
+        status: InvoiceLogStatus.FAILED,
+        errorMessage: (err as Error).message,
+      };
+    }
   }
 
-  async createInvoice(input: CreateInvoiceInput): Promise<InvoiceResult> {
-    const err = this.missingCreds();
-    if (err) return err;
-
-    // ---- SANDBOX: giả lập NCC phát hành thành công ngay ----
-    // Số hóa đơn theo mẫu ký hiệu 2026: C26T + AA-<số tăng dần giả lập>.
-    const vatAmount = input.lines.reduce(
-      (s, l) => s + (l.unitPrice * l.quantity * l.vatRate) / 100,
-      0
-    );
-    return {
-      status: InvoiceLogStatus.ISSUED,
-      invoiceNo: `C26TAA-${String(Date.now()).slice(-8)}`,
-      transactionId: `MISA-SBX-${input.orderCode}`,
-      vatAmount: Math.round(vatAmount),
-    };
-  }
-
+  /**
+   * meInvoice Open API CHƯA có endpoint hủy hóa đơn (khảo sát tài liệu portal
+   * 23/08/2026 — chỉ có sendemail/status/publishview/Download/voucher-paper/
+   * paging). Hủy phải thao tác trên app3.meinvoice.vn; trạng thái hủy sẽ về
+   * Hubsell qua webhook hoặc checkStatus (IsDelete=true).
+   */
   async cancelInvoice(
     transactionId: string,
     _reason: string
   ): Promise<InvoiceResult> {
-    const err = this.missingCreds();
-    if (err) return err;
-    return { status: InvoiceLogStatus.CANCELLED, transactionId };
+    return {
+      status: InvoiceLogStatus.FAILED,
+      transactionId,
+      errorMessage:
+        "meInvoice chưa hỗ trợ hủy hóa đơn qua API — vui lòng hủy trực tiếp trên meInvoice (app3.meinvoice.vn), Hubsell sẽ tự cập nhật trạng thái.",
+    };
   }
 
   async checkStatus(transactionId: string): Promise<InvoiceResult> {
-    const err = this.missingCreds();
-    if (err) return err;
-    // Sandbox không có kho trạng thái phía NCC — coi như đã phát hành.
-    return { status: InvoiceLogStatus.ISSUED, transactionId };
+    try {
+      const [item] = await getInvoiceStatuses([transactionId], this.cfg);
+      if (!item) {
+        return {
+          status: InvoiceLogStatus.FAILED,
+          transactionId,
+          errorMessage: "meInvoice không tìm thấy hóa đơn theo mã tra cứu này.",
+        };
+      }
+      if (item.isDeleted) {
+        return { status: InvoiceLogStatus.CANCELLED, transactionId };
+      }
+      if (item.publishStatus === 1) {
+        return { status: InvoiceLogStatus.ISSUED, transactionId };
+      }
+      return { status: InvoiceLogStatus.PENDING, transactionId };
+    } catch (err) {
+      return {
+        status: InvoiceLogStatus.FAILED,
+        transactionId,
+        errorMessage: (err as Error).message,
+      };
+    }
+  }
+
+  /** Tải bản thể hiện PDF (base64, đã ký HSM) — cho nút tải trên UI sau này. */
+  async downloadPdf(transactionId: string): Promise<string | null> {
+    const [file] = await downloadInvoiceFiles([transactionId], "Pdf", this.cfg);
+    return file?.errorCode ? null : (file?.data ?? null);
   }
 }

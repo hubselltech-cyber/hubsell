@@ -15,6 +15,9 @@ export interface AuthRequest extends Request {
   ownerId?: string; // id CHỦ SHOP — mọi dữ liệu đều thuộc về chủ shop.
   // Với Admin: ownerId = userId. Với Staff: ownerId = id của chủ shop.
   userRole?: Role;
+  // Email của CHÍNH người đăng nhập (null với nhân viên "chủ/nhânviên" không
+  // email) — dùng cho các cổng thí điểm theo tài khoản (vd module Hóa đơn & Thuế).
+  userEmail?: string | null;
   // Quản trị NỀN TẢNG Hubsell (cờ trên User, không thuộc enum Role) — chỉ dùng
   // để gác nhóm API /api/admin, không ảnh hưởng phân quyền dữ liệu shop.
   isPlatformAdmin?: boolean;
@@ -65,6 +68,7 @@ export async function requireAuth(
       where: { id: String(payload.sub) },
       select: {
         id: true,
+        email: true,
         role: true,
         ownerId: true,
         isPlatformAdmin: true,
@@ -90,6 +94,7 @@ export async function requireAuth(
     req.userId = user.id;
     req.ownerId = user.ownerId ?? user.id; // Nhân viên dùng chung dữ liệu của chủ shop
     req.userRole = user.role;
+    req.userEmail = user.email;
     req.isPlatformAdmin = user.isPlatformAdmin;
     req.permissions = user.permissions;
 
