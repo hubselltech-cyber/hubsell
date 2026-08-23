@@ -65,7 +65,7 @@ export default function InvoicingConnectPage() {
           </Tooltip>
         </span>
       }
-      description="Kết nối nhà cung cấp Hóa đơn điện tử (Multi-Vendor), chữ ký số, template và bật/tắt module."
+      description="Điền pháp nhân, nhập tài khoản meInvoice của shop và chọn ký hiệu — 3 bước là xuất được hóa đơn."
     >
       {enabled ? (
         <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">

@@ -12,8 +12,10 @@ import {
 import {
   INVOICE_PATTERN_RE,
   INVOICE_SERIES_RE,
+  listInvoiceTemplates,
   POS_SERIES_RE,
   TAX_CODE_RE,
+  type StandardInvoiceConfig,
 } from "../integrations/invoice/misa-einvoice";
 import {
   listPosMachines,
@@ -362,6 +364,30 @@ router.post("/test-meinvoice", async (req: AuthRequest, res) => {
     });
   } catch (err) {
     res.status(502).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// GET /api/invoice-config/templates — danh sách KÝ HIỆU hóa đơn tài khoản
+// meInvoice của shop đã đăng ký với CQT. Nuôi dropdown chọn ký hiệu trên UI
+// (seller không phải gõ tay chuỗi TT78). Shop chưa nhập tài khoản → rơi về bộ
+// env sandbox (thí điểm) — cùng triết lý nút Test; luồng PHÁT HÀNH thật vẫn
+// không bao giờ fallback.
+router.get("/templates", async (req: AuthRequest, res) => {
+  try {
+    const cfg = await findShopConfig(req.ownerId!);
+    if (cfg && cfg.provider !== "MISA") {
+      res.status(400).json({ error: `Đang chọn NCC ${cfg.provider} — chưa hỗ trợ tải ký hiệu.` });
+      return;
+    }
+    const usingShopAccount = Boolean(cfg?.meinvoiceUsername && cfg?.meinvoicePassword);
+    // Shop có tài khoản → dựng StandardInvoiceConfig từ row; chưa có → undefined
+    // để listInvoiceTemplates dùng trọn bộ env sandbox.
+    const templates = await listInvoiceTemplates(
+      usingShopAccount ? (cfg as unknown as StandardInvoiceConfig) : undefined
+    );
+    res.json({ templates, source: usingShopAccount ? "shop-config" : "env-sandbox" });
+  } catch (err) {
+    res.status(502).json({ error: (err as Error).message });
   }
 });
 

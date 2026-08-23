@@ -430,6 +430,63 @@ async function misaPost(
   return raw;
 }
 
+/** Một mẫu/ký hiệu hóa đơn shop đã đăng ký với CQT (từ /invoice/templates). */
+export interface MisaTemplateItem {
+  invSeries: string;
+  invTemplateNo: string;
+  templateName: string;
+}
+
+/**
+ * Kéo danh sách ký hiệu hóa đơn đã đăng ký CQT của tài khoản meInvoice — nuôi
+ * dropdown "chọn ký hiệu" trên UI (seller không phải gõ tay chuỗi TT78).
+ * Lọc bỏ mẫu Inactive. GOTCHA: Data là JSON string lồng trong JSON.
+ */
+export async function listInvoiceTemplates(
+  cfg?: StandardInvoiceConfig
+): Promise<MisaTemplateItem[]> {
+  const creds = cfg ? credsFromConfig(cfg) : undefined;
+  const token = await getMisaAccessToken(creds);
+  const clientId = creds?.clientId ?? process.env.MISA_CLIENT_ID ?? "";
+  const url = `${misaApiBase()}${ENDPOINTS.templates}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        ClientID: clientId,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (err) {
+    throw new Error(`Không gọi được ${url}: ${(err as Error).message}`);
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`meInvoice trả HTTP ${res.status} khi lấy mẫu hóa đơn: ${text.slice(0, 300)}`);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    raw = text;
+  }
+  if (pick(raw, "Success", "success") === false) {
+    const code = pick(raw, "ErrorCode", "errorCode") ?? "?";
+    throw new Error(`meInvoice từ chối trả mẫu hóa đơn: ErrorCode=${String(code)}`);
+  }
+  const data = unwrapNestedJson(pick(raw, "Data", "data"));
+  const list = Array.isArray(data) ? data : [];
+  return list
+    .filter((t) => pick(t, "Inactive", "inactive") !== true)
+    .map((t) => ({
+      invSeries: String(pick(t, "InvSeries", "invSeries") ?? ""),
+      invTemplateNo: String(pick(t, "InvTemplateNo", "invTemplateNo") ?? ""),
+      templateName: String(pick(t, "TemplateName", "templateName") ?? ""),
+    }))
+    .filter((t) => t.invSeries !== "");
+}
+
 /** Trạng thái một hóa đơn từ /invoice/status — các trường đã đọc "mềm". */
 export interface MisaInvoiceStatusItem {
   transactionId: string | null;

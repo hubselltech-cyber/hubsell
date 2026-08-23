@@ -2175,6 +2175,20 @@ export function fetchInvoiceConfig() {
   return apiFetch<InvoiceConfigResponse>("/api/invoice-config");
 }
 
+/** Một ký hiệu hóa đơn tài khoản meInvoice đã đăng ký với CQT. */
+export interface InvoiceTemplateDTO {
+  invSeries: string; // VD "1K26TYY"
+  invTemplateNo: string; // mẫu số, VD "1"
+  templateName: string; // VD "Hóa đơn GTGT - không mã - cơ bản"
+}
+
+/** Kéo danh sách ký hiệu từ meInvoice — nuôi dropdown chọn ký hiệu. */
+export function fetchInvoiceTemplates() {
+  return apiFetch<{ templates: InvoiceTemplateDTO[]; source: string }>(
+    "/api/invoice-config/templates"
+  );
+}
+
 /** Lưu cấu hình cấp shop. Các secret để trống = giữ nguyên khóa cũ. */
 export function saveInvoiceConfig(input: {
   taxCode?: string;
