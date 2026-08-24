@@ -58,6 +58,8 @@ interface StoredBuyerInfo {
 
 export interface ResolvedInvoiceBuyer {
   buyerName: string;
+  /** Người đặt hàng khi mua danh nghĩa công ty (dòng "Họ tên người mua hàng"). */
+  buyerContactName?: string;
   buyerTaxCode?: string;
   buyerAddress?: string;
   buyerEmail?: string;
@@ -81,6 +83,7 @@ export function resolveInvoiceBuyer(order: {
   if (order.invoiceRequestType === "COMPANY" && info.companyName) {
     return {
       buyerName: info.companyName,
+      buyerContactName: info.name,
       buyerTaxCode: info.companyTaxId,
       buyerAddress: info.companyAddress,
       buyerEmail: info.companyEmail,

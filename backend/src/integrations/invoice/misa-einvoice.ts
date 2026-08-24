@@ -251,7 +251,13 @@ export function buildStandardInvoicePayload(
   // meInvoice gửi hóa đơn thẳng về hộp thư người mua.
   const buyer = {
     ...(input.buyerTaxCode
-      ? { BuyerLegalName: input.buyerName, BuyerTaxCode: input.buyerTaxCode }
+      ? {
+          BuyerLegalName: input.buyerName,
+          BuyerTaxCode: input.buyerTaxCode,
+          // Người ĐẶT hàng danh nghĩa công ty → dòng "Họ tên người mua hàng"
+          // (Tên đơn vị đã là BuyerLegalName).
+          ...(input.buyerContactName ? { BuyerFullName: input.buyerContactName } : {}),
+        }
       : { BuyerFullName: input.buyerName }),
     ...(input.buyerAddress ? { BuyerAddress: input.buyerAddress } : {}),
     ...(input.buyerEmail ? { BuyerEmail: input.buyerEmail } : {}),

@@ -42,6 +42,8 @@ export interface CreateInvoiceInput {
   /** Mã đơn hàng nội bộ — NCC lưu làm số tham chiếu, dùng đối soát 2 chiều. */
   orderCode: string;
   buyerName: string;
+  /** Họ tên NGƯỜI ĐẶT khi mua danh nghĩa công ty — in dòng "Họ tên người mua hàng". */
+  buyerContactName?: string;
   /** MST người mua (công ty/hộ KD) hoặc số định danh cá nhân — trống với khách lẻ. */
   buyerTaxCode?: string;
   /** Địa chỉ người mua — bắt buộc kèm khi xuất theo đơn vị (BuyerLegalName). */

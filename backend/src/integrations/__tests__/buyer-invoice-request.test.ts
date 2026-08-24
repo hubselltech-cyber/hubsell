@@ -111,6 +111,7 @@ describe("resolveInvoiceBuyer — người mua in trên hóa đơn", () => {
       })
     ).toEqual({
       buyerName: "CONG TY TNHH ABC",
+      buyerContactName: "Nguoi dat", // người đặt in dòng "Họ tên người mua hàng"
       buyerTaxCode: "0101243150",
       buyerAddress: "1 Duy Tan",
       buyerEmail: "kt@abc.vn",
