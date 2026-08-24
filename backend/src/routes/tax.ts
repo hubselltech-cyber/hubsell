@@ -292,6 +292,11 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
 // đang chọn. Cờ `configured` cho UI nhắc sang tab Cấu hình khi chưa đủ điều
 // kiện phát hành (24/08 — hàng chờ chỉ dựa TRẠNG THÁI ĐƠN, đã bỏ cảnh báo
 // liên kết SKU kho theo chốt của anh Trung).
+//
+// PHÂN TRANG (24/08 chiều — anh Trung yêu cầu): ?page (từ 1) + ?pageSize
+// (20 | 50 | 100, mặc định 20). Sắp xếp ghim "khách cần hóa đơn" là ORDER BY
+// toàn cục nên đơn ghim luôn dồn về các trang đầu, không phụ thuộc trang.
+const QUEUE_PAGE_SIZES = new Set([20, 50, 100]);
 router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
@@ -306,19 +311,31 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
     };
     const settledParam =
       req.query.settled === "yes" ? true : req.query.settled === "no" ? false : undefined;
+    const pageSizeRaw = Number(req.query.pageSize);
+    const pageSize = QUEUE_PAGE_SIZES.has(pageSizeRaw) ? pageSizeRaw : 20;
+    const pageRaw = Number(req.query.page);
+    const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
     const [total, settledTotal, orders, cfg] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.count({ where: { ...where, isSettled: true } }),
       prisma.order.findMany({
         where: settledParam === undefined ? where : { ...where, isSettled: settledParam },
-        orderBy: { createdAt: "desc" },
-        take: 50,
+        // Đơn KHÁCH YÊU CẦU HÓA ĐƠN nổi lên đầu (khách đang chờ, hạn "ngày làm
+        // việc tiếp theo"), trong nhóm thì đơn mới trước.
+        orderBy: [
+          { invoiceRequestType: { sort: "asc", nulls: "last" } },
+          { createdAt: "desc" },
+        ],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
         select: {
           orderCode: true,
           customerName: true,
           totalAmount: true,
           createdAt: true,
           isSettled: true,
+          invoiceRequestType: true,
+          buyerInvoiceInfo: true,
           channel: { select: { channelName: true, shopName: true } },
         },
       }),
@@ -333,15 +350,38 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
       configured: Boolean(cfg?.invoiceSeries && cfg?.meinvoiceUsername),
       total,
       settledTotal,
-      rows: orders.map((o) => ({
-        orderCode: o.orderCode,
-        customerName: o.customerName,
-        totalAmount: Number(o.totalAmount),
-        orderedAt: o.createdAt,
-        isSettled: o.isSettled,
-        channelName: o.channel.channelName,
-        shopName: o.channel.shopName,
-      })),
+      page,
+      pageSize,
+      rows: orders.map((o) => {
+        // Gợi ý ngắn cho tooltip badge "Khách cần hóa đơn" — tên cty/khách +
+        // MST, KHÔNG gửi nguyên JSON info (email/địa chỉ không cần trên list).
+        const info = (o.buyerInvoiceInfo ?? {}) as {
+          name?: string;
+          taxId?: string;
+          nationalId?: string;
+          companyName?: string;
+          companyTaxId?: string;
+        };
+        const hintName = info.companyName ?? info.name;
+        const hintTax = info.companyTaxId ?? info.taxId ?? info.nationalId;
+        return {
+          orderCode: o.orderCode,
+          customerName: o.customerName,
+          totalAmount: Number(o.totalAmount),
+          orderedAt: o.createdAt,
+          isSettled: o.isSettled,
+          channelName: o.channel.channelName,
+          shopName: o.channel.shopName,
+          invoiceRequest: o.invoiceRequestType
+            ? {
+                type: o.invoiceRequestType,
+                hint: [hintName, hintTax ? `MST/ĐDCN ${hintTax}` : null]
+                  .filter(Boolean)
+                  .join(" · ") || null,
+              }
+            : null,
+        };
+      }),
     });
   } catch (err) {
     next(err);

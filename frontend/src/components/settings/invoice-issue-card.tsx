@@ -8,7 +8,11 @@
  *
  *   · TAB LỌC theo đối soát (Tất cả / Đã đối soát / Chờ đối soát) — lọc phía
  *     server, số đếm trên tab là số TOÀN hàng chờ nên không nhảy khi đổi tab.
- *   · Ô TÌM MÃ ĐƠN lọc nhanh trong 50 đơn đang hiện (client-side).
+ *   · PHÂN TRANG server-side cho cả 3 tab (24/08 chiều, anh Trung yêu cầu):
+ *     20 đơn/trang mặc định, chọn được 50/100, nút chuyển trang; đổi tab hoặc
+ *     đổi cỡ trang thì quay về trang 1. Đơn ghim "Cần HĐ" sắp ở tầng SQL nên
+ *     luôn dồn về các trang đầu.
+ *   · Ô TÌM MÃ ĐƠN lọc nhanh trong các đơn đang hiện trên trang (client-side).
  *   · THANH HÀNH ĐỘNG chỉ hiện KHI ĐÃ TICK: số đơn + tổng tiền + nút Xuất —
  *     không còn nút mờ (disabled) chiếm chỗ lúc chưa chọn gì.
  *   · Đã BỎ cảnh báo liên kết SKU kho sau mã đơn (chốt 24/08: hàng chờ chỉ
@@ -22,6 +26,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   ReceiptText,
   RefreshCcw,
@@ -44,6 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   fetchInvoiceQueue,
@@ -51,6 +58,7 @@ import {
   issueInvoicesBulk,
   setInvoiceAutoIssue,
   type InvoiceQueueFilter,
+  type InvoiceQueuePageSize,
   type InvoiceQueueResponse,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
@@ -64,6 +72,29 @@ function shortDate(iso: string): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
 }
 
+const INVOICE_REQUEST_TYPE_LABEL: Record<string, string> = {
+  PERSONAL: "cá nhân",
+  COMPANY: "công ty",
+  HOUSEHOLD: "hộ kinh doanh",
+};
+
+/** Badge "Cần HĐ" — khách đã điền form yêu cầu xuất hóa đơn trên sàn. */
+function InvoiceRequestBadge({
+  request,
+}: {
+  request: { type: string; hint: string | null };
+}) {
+  const typeLabel = INVOICE_REQUEST_TYPE_LABEL[request.type] ?? request.type;
+  return (
+    <span
+      title={`Khách yêu cầu xuất hóa đơn (${typeLabel})${request.hint ? ` — ${request.hint}` : ""}`}
+      className="inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+    >
+      Cần HĐ
+    </span>
+  );
+}
+
 export function InvoiceIssueCard({
   /** Mở tab Cấu hình kết nối (callout khi chưa cấu hình xong). */
   onOpenConfig,
@@ -73,34 +104,45 @@ export function InvoiceIssueCard({
   const [queue, setQueue] = useState<InvoiceQueueResponse | null>(null);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [filter, setFilter] = useState<InvoiceQueueFilter>("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<InvoiceQueuePageSize>(20);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); // đang xuất (lẻ hoặc hàng loạt)
   const [savingAuto, setSavingAuto] = useState(false);
   const [issueCode, setIssueCode] = useState("");
 
-  const loadQueue = useCallback(async (f: InvoiceQueueFilter) => {
-    setLoadingQueue(true);
-    try {
-      const r = await fetchInvoiceQueue(f);
-      setQueue(r);
-      // Bỏ tick những đơn đã rời hàng chờ / rời tab đang xem.
-      setSelected((prev) => {
-        const alive = new Set(r.rows.map((x) => x.orderCode));
-        return new Set([...prev].filter((c) => alive.has(c)));
-      });
-    } catch (err) {
-      if (!(err instanceof ApiError && err.status === 401)) {
-        toast.error("Không tải được hàng chờ xuất hóa đơn");
+  const loadQueue = useCallback(
+    async (f: InvoiceQueueFilter, p: number, ps: InvoiceQueuePageSize) => {
+      setLoadingQueue(true);
+      try {
+        const r = await fetchInvoiceQueue(f, p, ps);
+        // Trang trống vì đơn vừa rời hàng chờ (xuất hết trang cuối) → lùi một
+        // trang; effect [page] sẽ tự tải lại.
+        if (r.rows.length === 0 && p > 1) {
+          setPage(p - 1);
+          return;
+        }
+        setQueue(r);
+        // Bỏ tick những đơn đã rời hàng chờ / rời tab / rời trang đang xem.
+        setSelected((prev) => {
+          const alive = new Set(r.rows.map((x) => x.orderCode));
+          return new Set([...prev].filter((c) => alive.has(c)));
+        });
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 401)) {
+          toast.error("Không tải được hàng chờ xuất hóa đơn");
+        }
+      } finally {
+        setLoadingQueue(false);
       }
-    } finally {
-      setLoadingQueue(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
-    void loadQueue(filter);
-  }, [loadQueue, filter]);
+    void loadQueue(filter, page, pageSize);
+  }, [loadQueue, filter, page, pageSize]);
 
   async function handleToggleAuto(enabled: boolean) {
     setSavingAuto(true);
@@ -121,29 +163,39 @@ export function InvoiceIssueCard({
     }
   }
 
-  /** Xuất một danh sách mã đơn (dùng cho cả nút dòng lẫn thanh hàng loạt). */
+  /** Xuất một danh sách mã đơn (dùng cho cả nút dòng lẫn thanh hàng loạt).
+   *  Backend nhận tối đa 50 đơn/lần — trang 100 đơn tick hết thì chia lô 50
+   *  gọi tuần tự (MISA cấp số hóa đơn liên tục nên vẫn phải lần lượt). */
   async function issueMany(orderCodes: string[]) {
     if (orderCodes.length === 0 || busy) return;
     setBusy(true);
     try {
-      const r = await issueInvoicesBulk(orderCodes);
-      if (r.failed === 0) {
+      let issued = 0;
+      let failed = 0;
+      let firstErr: string | undefined;
+      for (let i = 0; i < orderCodes.length; i += 50) {
+        const r = await issueInvoicesBulk(orderCodes.slice(i, i + 50));
+        issued += r.issued;
+        failed += r.failed;
+        firstErr ??= r.results.find((x) => !x.ok)?.error ?? undefined;
+      }
+      if (failed === 0) {
         toast.success(
-          `Đã phát hành ${r.issued} hóa đơn — xem và tải PDF tại Lịch sử & Báo cáo thuế.`
+          `Đã phát hành ${issued} hóa đơn — xem và tải PDF tại Lịch sử & Báo cáo thuế.`
         );
       } else {
-        const firstErr = r.results.find((x) => !x.ok);
         toast.warning(
-          `Phát hành ${r.issued} hóa đơn, ${r.failed} đơn lỗi${firstErr?.error ? ` (${firstErr.error})` : ""} — chi tiết tại Lịch sử & Báo cáo thuế.`
+          `Phát hành ${issued} hóa đơn, ${failed} đơn lỗi${firstErr ? ` (${firstErr})` : ""} — chi tiết tại Lịch sử & Báo cáo thuế.`
         );
       }
-      void loadQueue(filter);
+      void loadQueue(filter, page, pageSize);
     } catch (err) {
       toast.error(
         err instanceof ApiError && err.message
           ? err.message
           : "Phát hành hóa đơn thất bại"
       );
+      void loadQueue(filter, page, pageSize);
     } finally {
       setBusy(false);
     }
@@ -159,21 +211,21 @@ export function InvoiceIssueCard({
         `Đã phát hành hóa đơn số ${res.log.invoiceNo ?? "?"} cho đơn ${orderCode}.`
       );
       setIssueCode("");
-      void loadQueue(filter);
+      void loadQueue(filter, page, pageSize);
     } catch (err) {
       toast.error(
         err instanceof ApiError && err.message
           ? err.message
           : "Phát hành hóa đơn thất bại"
       );
-      void loadQueue(filter);
+      void loadQueue(filter, page, pageSize);
     } finally {
       setBusy(false);
     }
   }
 
   const allRows = useMemo(() => queue?.rows ?? [], [queue]);
-  /** Lọc nhanh theo mã đơn trong 50 đơn đang hiện. */
+  /** Lọc nhanh theo mã đơn trong các đơn của trang đang hiện. */
   const rows = useMemo(() => {
     const q = search.trim().toUpperCase();
     if (!q) return allRows;
@@ -191,6 +243,15 @@ export function InvoiceIssueCard({
     { key: "yes", label: "Đã đối soát", count: settledTotal },
     { key: "no", label: "Chờ đối soát", count: total - settledTotal },
   ];
+
+  // Phân trang: tổng của TAB đang xem (suy từ total/settledTotal, không cần
+  // backend đếm thêm) → số trang; khoảng "từ–đến" hiển thị theo trang server
+  // trả (queue.page/pageSize) để không lệch lúc đang chuyển trang.
+  const filteredTotal =
+    filter === "all" ? total : filter === "yes" ? settledTotal : total - settledTotal;
+  const pageCount = Math.max(1, Math.ceil(filteredTotal / pageSize));
+  const rangeFrom = queue ? (queue.page - 1) * queue.pageSize + 1 : 0;
+  const rangeTo = queue ? (queue.page - 1) * queue.pageSize + allRows.length : 0;
 
   return (
     <Card className="shadow-sm">
@@ -263,7 +324,10 @@ export function InvoiceIssueCard({
                 key={t.key}
                 role="tab"
                 aria-selected={active}
-                onClick={() => setFilter(t.key)}
+                onClick={() => {
+                  setFilter(t.key);
+                  setPage(1); // đổi tab là bộ đơn khác — về trang đầu
+                }}
                 className={cn(
                   "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                   active
@@ -301,17 +365,12 @@ export function InvoiceIssueCard({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => void loadQueue(filter)}
+            onClick={() => void loadQueue(filter, page, pageSize)}
             disabled={loadingQueue}
           >
             <RefreshCcw className={cn("size-3.5", loadingQueue && "animate-spin")} />
             Làm mới
           </Button>
-          <span className={TEXT_SUB}>
-            {queue && allRows.length < (filter === "all" ? total : filter === "yes" ? settledTotal : total - settledTotal)
-              ? `Hiện ${allRows.length} đơn mới nhất`
-              : ""}
-          </span>
         </div>
 
         {/* ---- Thanh hành động hàng loạt — chỉ hiện khi đã tick ---- */}
@@ -425,7 +484,14 @@ export function InvoiceIssueCard({
                             {r.shopName}
                           </span>
                         </TableCell>
-                        <TableCell className="text-slate-600">{r.customerName}</TableCell>
+                        <TableCell className="text-slate-600">
+                          <span className="flex items-center gap-1.5">
+                            {r.customerName}
+                            {r.invoiceRequest && (
+                              <InvoiceRequestBadge request={r.invoiceRequest} />
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-slate-600">
                           {shortDate(r.orderedAt)}
                         </TableCell>
@@ -461,6 +527,51 @@ export function InvoiceIssueCard({
             </div>
           )}
         </div>
+
+        {/* ---- Phân trang (cả 3 tab) — ẩn khi đang lọc mã đơn client-side ---- */}
+        {queue !== null && filteredTotal > 0 && !search.trim() && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <span className={cn(TEXT_SUB, "tabular-nums")}>
+              Đơn {rangeFrom}–{rangeTo} / {filteredTotal}
+            </span>
+            <div className="flex items-center gap-2">
+              <NativeSelect
+                aria-label="Số đơn mỗi trang"
+                className="h-8 w-28 text-sm"
+                value={String(pageSize)}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value) as InvoiceQueuePageSize);
+                  setPage(1); // đổi cỡ trang thì khoảng đơn đổi hết — về trang đầu
+                }}
+              >
+                <option value="20">20 / trang</option>
+                <option value="50">50 / trang</option>
+                <option value="100">100 / trang</option>
+              </NativeSelect>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Trang trước"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loadingQueue}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className={cn(TEXT_SUB, "tabular-nums")}>
+                Trang {page}/{pageCount}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Trang kế tiếp"
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                disabled={page >= pageCount || loadingQueue}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ---- Xuất theo mã đơn ngoài danh sách ---- */}
         <div className="mt-4 border-t border-slate-100 pt-4">

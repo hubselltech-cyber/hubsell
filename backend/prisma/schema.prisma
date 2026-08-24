@@ -739,6 +739,11 @@ model InvoiceConfig {
   /// Mặc định TẮT — chủ shop chủ động bật ở trang Kết nối & Xuất hóa đơn.
   autoIssueEnabled Boolean @default(false)
 
+  /// % thuế suất GTGT MẶC ĐỊNH của shop (24/08 — anh Trung chốt: kho vật lý chỉ
+  /// quản số lượng, không bắt liên kết SKU để có thuế suất). Dòng hàng không có
+  /// Product.vatRate riêng sẽ dùng mức này khi lên hóa đơn: 0 / 5 / 8 / 10.
+  defaultVatRate Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1028,6 +1033,22 @@ model Order {
   /// danh sách đơn lọc "đã/chưa xuất hóa đơn" không phải join). NULL = chưa từng
   /// phát hành. Webhook MISA là nơi cập nhật chính.
   einvoiceStatus InvoiceLogStatus?
+
+  // ===== KHÁCH YÊU CẦU XUẤT HÓA ĐƠN (24/08 — Shopee get_buyer_invoice_info) =====
+  /// Loại hóa đơn khách chọn khi đặt trên sàn: PERSONAL | COMPANY | HOUSEHOLD.
+  /// NULL = khách không yêu cầu (đã hỏi sàn và sàn báo không có, hoặc chưa hỏi
+  /// — phân biệt bằng buyerInvoiceFetchedAt). Giữ lại cả sau khi che info để
+  /// badge/lịch sử vẫn biết đơn này từng có yêu cầu.
+  invoiceRequestType String?
+  /// Thông tin xuất hóa đơn khách cung cấp (tên/MST/email/địa chỉ — JSON chuẩn
+  /// hóa từ invoice_detail của sàn). Sàn ẨN thông tin sau 30 ngày kể từ đơn
+  /// hoàn thành nên phải kéo về sớm; phía Hubsell cron log-cleanup sẽ XÓA
+  /// (DbNull) sau khi hóa đơn phát hành 30 ngày hoặc sau 90 ngày không phát
+  /// hành — tuân thủ Luật bảo vệ dữ liệu cá nhân, data chỉ "ghé qua".
+  buyerInvoiceInfo Json?
+  /// Mốc đã hỏi sàn xong (kể cả kết quả "không yêu cầu") — chống hỏi lặp.
+  /// NULL + đơn DELIVERED = worker sẽ hỏi ở lượt quét tới.
+  buyerInvoiceFetchedAt DateTime?
   createdAt      DateTime @default(now())
 
   // ===== PHÍ SÀN 2 GIAI ĐOẠN =====

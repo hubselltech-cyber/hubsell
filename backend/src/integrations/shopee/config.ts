@@ -68,6 +68,8 @@ export const SHOPEE_PATHS = {
   orderList: "/api/v2/order/get_order_list",
   /** Chi tiết đơn theo order_sn (≤50 sn/lần). */
   orderDetail: "/api/v2/order/get_order_detail",
+  /** Thông tin XUẤT HÓA ĐƠN khách điền khi đặt (VN/TH/PH local seller, POST). */
+  buyerInvoiceInfo: "/api/v2/order/get_buyer_invoice_info",
   /** Danh sách item_id của shop (phân trang offset, lọc theo item_status). */
   itemList: "/api/v2/product/get_item_list",
   /** Thông tin cơ bản của item theo item_id (≤50 id/lần). */

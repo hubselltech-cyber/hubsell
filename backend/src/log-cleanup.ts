@@ -21,9 +21,14 @@
 // Cấu hình: LOG_CLEANUP_HOURS (mặc định 24; "0" = tắt).
 // ============================================================
 
+import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 
 const DEFAULT_INTERVAL_HOURS = 24;
+/** Thông tin xuất hóa đơn của khách: xóa sau khi HĐ phát hành ngần này ngày. */
+const BUYER_INFO_AFTER_ISSUED_DAYS = 30;
+/** ...hoặc sau ngần này ngày kể từ khi kéo về mà KHÔNG phát hành hóa đơn. */
+const BUYER_INFO_MAX_DAYS = 90;
 /** Job SUCCESS giữ ngần này ngày rồi xóa. */
 const RETENTION_DONE_DAYS = 7;
 /** Mọi dòng (kể cả FAILED/kẹt) quá ngần này ngày thì xóa hẳn. */
@@ -136,6 +141,50 @@ export async function runOnce(): Promise<void> {
         }),
       (ids) => prisma.inventorySyncAlert.deleteMany({ where: { id: { in: ids } } })
     );
+
+    // THÔNG TIN XUẤT HÓA ĐƠN của khách (Order.buyerInvoiceInfo — dữ liệu cá
+    // nhân theo Luật BVDLCN, chỉ "ghé qua" Hubsell để phục vụ phát hành):
+    //   · HĐ đã phát hành ≥30 ngày → bản đầy đủ đã nằm hợp pháp trên hóa đơn
+    //     tại NCC/CQT, bản lưu local xóa được.
+    //   · Kéo về ≥90 ngày mà không phát hành → hết giá trị sử dụng, xóa.
+    // GIỮ invoiceRequestType (không phải dữ liệu cá nhân) — badge/lịch sử vẫn
+    // biết đơn từng có yêu cầu. Xóa = set DbNull, tự rời khỏi filter nên vòng
+    // dọn sau không quét lại.
+    const buyerInfoWhere: Prisma.OrderWhereInput = {
+      buyerInvoiceInfo: { not: Prisma.DbNull },
+      OR: [
+        {
+          invoiceLogs: {
+            some: {
+              status: InvoiceLogStatus.ISSUED,
+              issuedAt: { lt: daysAgo(BUYER_INFO_AFTER_ISSUED_DAYS) },
+            },
+          },
+        },
+        { buyerInvoiceFetchedAt: { lt: daysAgo(BUYER_INFO_MAX_DAYS) } },
+      ],
+    };
+    let buyerInfoCleared = 0;
+    for (;;) {
+      const rows = await prisma.order.findMany({
+        where: buyerInfoWhere,
+        select: { id: true },
+        take: BATCH_SIZE,
+      });
+      if (rows.length === 0) break;
+      const { count } = await prisma.order.updateMany({
+        where: { id: { in: rows.map((r) => r.id) } },
+        data: { buyerInvoiceInfo: Prisma.DbNull },
+      });
+      buyerInfoCleared += count;
+      if (rows.length < BATCH_SIZE) break;
+      await sleep(BATCH_PAUSE_MS);
+    }
+    if (buyerInfoCleared > 0) {
+      console.log(
+        `[Log-cleanup] Thông tin xuất hóa đơn của khách: đã xóa ${buyerInfoCleared} đơn (HĐ phát hành ≥${BUYER_INFO_AFTER_ISSUED_DAYS} ngày hoặc quá ${BUYER_INFO_MAX_DAYS} ngày không dùng)`
+      );
+    }
   } catch (err) {
     console.error("[Log-cleanup] Lỗi vòng dọn:", err);
   } finally {

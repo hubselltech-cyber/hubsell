@@ -596,6 +596,64 @@ export async function getOrderBuyerUserId(
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
+// ---------- Thông tin XUẤT HÓA ĐƠN khách điền khi đặt hàng ----------
+
+/**
+ * invoice_detail thô của get_buyer_invoice_info — chỉ khai các trường VN dùng
+ * (TH/PH có thêm address_breakdown/company_branch… mình không đọc). Giá trị có
+ * thể BỊ CHE dạng "A****b" tùy trạng thái đơn — caller tự xử lý.
+ */
+export interface ShopeeBuyerInvoiceDetail {
+  name?: string;
+  email?: string;
+  tax_id?: string;
+  address?: string;
+  /** Số định danh cá nhân (VN, invoice_type = personal — field thêm 30/07/2026). */
+  national_id?: string;
+  company_name?: string;
+  company_email?: string;
+  company_tax_id?: string;
+  company_address?: string;
+}
+
+export interface ShopeeBuyerInvoiceItem {
+  order_sn: string;
+  /** "personal" | "company" | "household" — rỗng khi không có yêu cầu. */
+  invoice_type?: string;
+  invoice_detail?: ShopeeBuyerInvoiceDetail | null;
+  /** "receipt settings not found" = khách KHÔNG yêu cầu xuất hóa đơn. */
+  error?: string;
+}
+
+interface ShopeeBuyerInvoiceData extends ShopeeEnvelope {
+  /** Docs 24/08/2026: mảng nằm Ở GỐC response (không bọc trong `response`). */
+  invoice_info_list?: ShopeeBuyerInvoiceItem[];
+  response?: { invoice_info_list?: ShopeeBuyerInvoiceItem[] };
+}
+
+/**
+ * Thông tin xuất hóa đơn NGƯỜI MUA cung cấp lúc đặt hàng (VN/TH/PH local
+ * seller). Yêu cầu shop đã được Shopee MỞ tính năng (xác thực định danh +
+ * CSKH duyệt) — chưa mở thì API trả lỗi vùng/quyền ở envelope.
+ */
+export async function getBuyerInvoiceInfo(
+  accessToken: string,
+  shopId: string,
+  orderSns: string[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeBuyerInvoiceItem[]> {
+  if (orderSns.length === 0) return [];
+  const data = await callShopPost<ShopeeBuyerInvoiceData>(
+    SHOPEE_PATHS.buyerInvoiceInfo,
+    accessToken,
+    shopId,
+    { queries: orderSns.map((sn) => ({ order_sn: sn })) },
+    "get_buyer_invoice_info",
+    cfg
+  );
+  return data.invoice_info_list ?? data.response?.invoice_info_list ?? [];
+}
+
 // ---------- Kéo sản phẩm (Product API v2) ----------
 
 /** Các trạng thái item — get_item_list mặc định chỉ trả NORMAL, phải khai đủ. */

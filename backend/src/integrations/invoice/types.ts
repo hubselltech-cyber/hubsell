@@ -29,8 +29,12 @@ export interface CreateInvoiceInput {
   /** Mã đơn hàng nội bộ — NCC lưu làm số tham chiếu, dùng đối soát 2 chiều. */
   orderCode: string;
   buyerName: string;
-  /** MST người mua — trống với khách lẻ. */
+  /** MST người mua (công ty/hộ KD) hoặc số định danh cá nhân — trống với khách lẻ. */
   buyerTaxCode?: string;
+  /** Địa chỉ người mua — bắt buộc kèm khi xuất theo đơn vị (BuyerLegalName). */
+  buyerAddress?: string;
+  /** Email người mua — NCC gửi hóa đơn điện tử về địa chỉ này. */
+  buyerEmail?: string;
   lines: InvoiceLine[];
   /** Tổng tiền hàng đã gồm thuế (đối chiếu với tổng tính từ lines). */
   totalAmount: number;

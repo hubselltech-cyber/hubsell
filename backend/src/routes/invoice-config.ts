@@ -89,6 +89,7 @@ type ShopConfig = {
   posMachineId: string | null;
   posSeries: string | null;
   defaultInvoiceType: string;
+  defaultVatRate: number;
 };
 
 function serializeConfig(c: ShopConfig | null) {
@@ -128,6 +129,8 @@ function serializeConfig(c: ShopConfig | null) {
     hasPosSecretKey: Boolean(c?.posSecretKey),
     posSecretKeyMasked: mask(c?.posSecretKey),
     defaultInvoiceType: c?.defaultInvoiceType ?? "STANDARD",
+    // % thuế suất GTGT mặc định cho dòng hàng chưa khai riêng ở SKU (24/08).
+    defaultVatRate: c?.defaultVatRate ?? 0,
   };
 }
 
@@ -205,6 +208,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       posMachineId,
       posSeries,
       defaultInvoiceType,
+      defaultVatRate,
     } = req.body ?? {};
 
     if (typeof provider !== "string" || !PROVIDERS.includes(provider)) {
@@ -231,6 +235,20 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       (typeof defaultInvoiceType !== "string" || !INVOICE_TYPES.includes(defaultInvoiceType))
     ) {
       res.status(400).json({ error: "Luồng phát hành không hợp lệ (STANDARD | POS)" });
+      return;
+    }
+    // Thuế suất mặc định — tuỳ chọn (client cũ không gửi); có gửi thì phải là
+    // số nguyên 0..100 (UI chỉ đưa 0/5/8/10 nhưng backend không khóa cứng,
+    // phòng thuế suất đổi theo luật).
+    const vatRateVal =
+      defaultVatRate === undefined || defaultVatRate === null
+        ? undefined
+        : Number(defaultVatRate);
+    if (
+      vatRateVal !== undefined &&
+      (!Number.isInteger(vatRateVal) || vatRateVal < 0 || vatRateVal > 100)
+    ) {
+      res.status(400).json({ error: "Thuế suất mặc định không hợp lệ — số nguyên 0-100 (%)" });
       return;
     }
 
@@ -300,6 +318,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       ...(typeof defaultInvoiceType === "string"
         ? { defaultInvoiceType: defaultInvoiceType as "STANDARD" | "POS" }
         : {}),
+      ...(vatRateVal !== undefined ? { defaultVatRate: vatRateVal } : {}),
     };
 
     const saved = existing

@@ -39,6 +39,7 @@ import {
   backfillShopeeTrackingCodes,
   syncShopeeReturns,
 } from "./integrations/shopee/returns-sync";
+import { syncShopeeBuyerInvoiceRequests } from "./integrations/shopee/buyer-invoice";
 import { scanShopeeDeliveryFails } from "./integrations/shopee/delivery-fail";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
@@ -262,6 +263,22 @@ async function runOnce(): Promise<void> {
         } catch (err) {
           console.error(
             `[Auto-sync] Lỗi backfill vận đơn Shopee "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
+        // KHÁCH YÊU CẦU XUẤT HÓA ĐƠN (24/08): đơn vừa ĐÃ GIAO → hỏi
+        // get_buyer_invoice_info lưu thông tin người mua TRƯỚC khi Shopee ẩn
+        // (30 ngày). Gian chưa được mở tính năng → module tự backoff 24h.
+        try {
+          const inv = await syncShopeeBuyerInvoiceRequests(channel);
+          if (inv.requested > 0 || inv.maskedRetry > 0) {
+            console.log(
+              `[Auto-sync] Yêu cầu hóa đơn Shopee "${channel.shopName}": +${inv.requested} đơn khách cần hóa đơn, ${inv.none} không yêu cầu, ${inv.maskedRetry} còn che (${inv.scanned} đơn hỏi)`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi kéo yêu cầu hóa đơn Shopee "${channel.shopName}" (shop có thể chưa được mở tính năng):`,
             (err as Error).message
           );
         }

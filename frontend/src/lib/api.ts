@@ -2155,6 +2155,8 @@ export interface InvoiceConfigDTO {
   hasPosSecretKey: boolean;
   posSecretKeyMasked: string | null;
   defaultInvoiceType: string; // STANDARD | POS
+  /** % thuế suất GTGT mặc định cho dòng hàng chưa khai riêng ở SKU kho. */
+  defaultVatRate: number;
 }
 
 /** api_key riêng của một gian hàng (phục vụ đối soát hoa hồng theo shop). */
@@ -2216,6 +2218,7 @@ export function saveInvoiceConfig(input: {
   posMachineId?: string;
   posSeries?: string;
   defaultInvoiceType?: string;
+  defaultVatRate?: number;
 }) {
   return apiFetch<{ config: InvoiceConfigDTO }>("/api/invoice-config", {
     method: "PUT",
@@ -2379,10 +2382,15 @@ export interface InvoiceQueueRowDTO {
   isSettled: boolean;
   channelName: ChannelName;
   shopName: string;
+  /** Khách yêu cầu xuất hóa đơn khi đặt (Shopee) — null = không yêu cầu. */
+  invoiceRequest: { type: string; hint: string | null } | null;
 }
 
 /** Tab lọc hàng chờ theo trạng thái đối soát. */
 export type InvoiceQueueFilter = "all" | "yes" | "no";
+
+/** Cỡ trang hàng chờ backend chấp nhận — 20 là mặc định. */
+export type InvoiceQueuePageSize = 20 | 50 | 100;
 
 export interface InvoiceQueueResponse {
   autoIssueEnabled: boolean;
@@ -2392,12 +2400,20 @@ export interface InvoiceQueueResponse {
   total: number;
   /** Số đơn trong hàng chờ đã được sàn đối soát. */
   settledTotal: number;
+  /** Trang đang trả (từ 1) + cỡ trang backend đã áp. */
+  page: number;
+  pageSize: number;
   rows: InvoiceQueueRowDTO[];
 }
 
-export function fetchInvoiceQueue(settled: InvoiceQueueFilter = "all") {
-  const qs = settled === "all" ? "" : `?settled=${settled}`;
-  return apiFetch<InvoiceQueueResponse>(`/api/tax/invoice-queue${qs}`);
+export function fetchInvoiceQueue(
+  settled: InvoiceQueueFilter = "all",
+  page = 1,
+  pageSize: InvoiceQueuePageSize = 20
+) {
+  const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (settled !== "all") qs.set("settled", settled);
+  return apiFetch<InvoiceQueueResponse>(`/api/tax/invoice-queue?${qs}`);
 }
 
 /** Phát hành hàng loạt (tối đa 50/lần) — backend xử lý tuần tự từng đơn. */

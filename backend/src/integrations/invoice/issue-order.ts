@@ -43,6 +43,63 @@ export interface IssueOrderResult {
   };
 }
 
+/** JSON Order.buyerInvoiceInfo (chuẩn hóa bởi shopee/buyer-invoice.ts). */
+interface StoredBuyerInfo {
+  name?: string;
+  email?: string;
+  taxId?: string;
+  nationalId?: string;
+  address?: string;
+  companyName?: string;
+  companyTaxId?: string;
+  companyEmail?: string;
+  companyAddress?: string;
+}
+
+export interface ResolvedInvoiceBuyer {
+  buyerName: string;
+  buyerTaxCode?: string;
+  buyerAddress?: string;
+  buyerEmail?: string;
+}
+
+/**
+ * NGƯỜI MUA trên hóa đơn (24/08 — nối thông tin khách yêu cầu xuất hóa đơn):
+ *   · COMPANY   → tên công ty + MST công ty + địa chỉ/email công ty.
+ *   · PERSONAL / HOUSEHOLD → tên khách + MST (hộ KD) hoặc số định danh (cá
+ *     nhân — từ 07/2025 thay MST cá nhân) + địa chỉ/email khách điền.
+ *   · Khách KHÔNG yêu cầu → "Bán cho người tiêu dùng" theo Khoản 4 Phụ lục
+ *     NĐ 254/2026 (KHÔNG dùng customerName của sàn — tên bị che dạng "A**x",
+ *     in lên chứng từ CQT vừa xấu vừa vô nghĩa); mã đơn đã nằm ở RefID phía
+ *     NCC làm căn cứ giải trình.
+ */
+export function resolveInvoiceBuyer(order: {
+  invoiceRequestType: string | null;
+  buyerInvoiceInfo: unknown;
+}): ResolvedInvoiceBuyer {
+  const info = (order.buyerInvoiceInfo ?? {}) as StoredBuyerInfo;
+  if (order.invoiceRequestType === "COMPANY" && info.companyName) {
+    return {
+      buyerName: info.companyName,
+      buyerTaxCode: info.companyTaxId,
+      buyerAddress: info.companyAddress,
+      buyerEmail: info.companyEmail,
+    };
+  }
+  if (
+    (order.invoiceRequestType === "PERSONAL" || order.invoiceRequestType === "HOUSEHOLD") &&
+    info.name
+  ) {
+    return {
+      buyerName: info.name,
+      buyerTaxCode: info.taxId ?? info.nationalId,
+      buyerAddress: info.address,
+      buyerEmail: info.email,
+    };
+  }
+  return { buyerName: "Bán cho người tiêu dùng" };
+}
+
 /**
  * @param channelWhere Phạm vi gian hàng của người gọi — route truyền
  *        channelScope(req) (đã gồm giới hạn nhân viên), worker truyền
@@ -108,13 +165,22 @@ export async function issueInvoiceForOrder(
     };
   }
 
+  // THUẾ SUẤT MẶC ĐỊNH của shop (24/08 — kho vật lý chỉ quản số lượng, không
+  // bắt liên kết SKU): dòng hàng có Product.vatRate > 0 dùng số khai riêng;
+  // còn lại (chưa liên kết, hoặc liên kết nhưng chưa khai) dùng mức mặc định.
+  const cfg = await prisma.invoiceConfig.findFirst({
+    where: { ownerId, channelId: null },
+    select: { defaultVatRate: true },
+  });
+  const defaultVatRate = cfg?.defaultVatRate ?? 0;
+
   // Dòng hàng theo quy ước InvoiceLine: unitPrice CHƯA thuế GTGT.
   const lines: InvoiceLine[] = order.items.map((it) => ({
     name: it.product?.taxName?.trim() || it.productName,
     sku: it.product?.skuCode ?? it.channelSku,
     quantity: it.quantity,
     unitPrice: Number(it.price),
-    vatRate: it.product?.vatRate ?? 0,
+    vatRate: it.product?.vatRate ? it.product.vatRate : defaultVatRate,
   }));
   const vatTotal = lines.reduce(
     (s, l) => s + Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
@@ -136,7 +202,7 @@ export async function issueInvoiceForOrder(
 
   const result = await provider.createInvoice({
     orderCode,
-    buyerName: order.customerName,
+    ...resolveInvoiceBuyer(order),
     lines,
     totalAmount,
   });

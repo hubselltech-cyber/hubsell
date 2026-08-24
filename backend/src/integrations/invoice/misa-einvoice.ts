@@ -242,11 +242,17 @@ export function buildStandardInvoicePayload(
   const totalWithoutVat = details.reduce((s, d) => s + d.AmountWithoutVATOC, 0);
   const totalVat = details.reduce((s, d) => s + d.VATAmountOC, 0);
 
-  // Người mua: có MST → xuất theo đơn vị (BuyerLegalName bắt buộc kèm địa chỉ);
-  // khách lẻ → chỉ họ tên.
-  const buyer = input.buyerTaxCode
-    ? { BuyerLegalName: input.buyerName, BuyerTaxCode: input.buyerTaxCode }
-    : { BuyerFullName: input.buyerName };
+  // Người mua: có MST/số định danh → xuất theo đơn vị (BuyerLegalName kèm địa
+  // chỉ); khách lẻ → chỉ họ tên. Địa chỉ/email khách cung cấp (từ 24/08 kéo
+  // qua Shopee get_buyer_invoice_info) đính kèm khi có — BuyerEmail để
+  // meInvoice gửi hóa đơn thẳng về hộp thư người mua.
+  const buyer = {
+    ...(input.buyerTaxCode
+      ? { BuyerLegalName: input.buyerName, BuyerTaxCode: input.buyerTaxCode }
+      : { BuyerFullName: input.buyerName }),
+    ...(input.buyerAddress ? { BuyerAddress: input.buyerAddress } : {}),
+    ...(input.buyerEmail ? { BuyerEmail: input.buyerEmail } : {}),
+  };
 
   return {
     SignType: misaSignType(cfg.signMethod), // 2 = HSM ký nền · (1 = USB đi luồng khác)

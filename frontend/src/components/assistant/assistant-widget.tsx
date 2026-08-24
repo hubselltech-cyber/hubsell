@@ -221,7 +221,9 @@ export function AssistantWidget() {
   const [listening, setListening] = React.useState(false);
   const recRef = React.useRef<SpeechRecognitionLike | null>(null);
   const loadingRef = React.useRef(loading);
-  loadingRef.current = loading;
+  React.useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
   React.useEffect(() => {
     setVoiceSupported(getSpeechRecognitionCtor() !== null);
     // Đóng panel/unmount giữa chừng thì hủy phiên nghe, không gửi vu vơ.

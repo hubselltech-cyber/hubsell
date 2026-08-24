@@ -149,6 +149,8 @@ export function InvoiceConfigSection({
   const [invoiceSeries, setInvoiceSeries] = useState("");
   /** Danh sách ký hiệu kéo từ meInvoice — có là ô ký hiệu thành dropdown. */
   const [templates, setTemplates] = useState<InvoiceTemplateDTO[]>([]);
+  /** % thuế suất GTGT mặc định — áp cho dòng hàng chưa khai riêng ở SKU kho. */
+  const [defaultVatRate, setDefaultVatRate] = useState(0);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [hasSecretKey, setHasSecretKey] = useState(false);
   const [secretMasked, setSecretMasked] = useState<string | null>(null);
@@ -201,6 +203,7 @@ export function InvoiceConfigSection({
         setClientId(r.config.clientId);
         setCustomApiUrl(r.config.customApiUrl);
         setInvoiceSeries(r.config.invoiceSeries);
+        setDefaultVatRate(r.config.defaultVatRate ?? 0);
         setHasSecretKey(r.config.hasSecretKey);
         setSecretMasked(r.config.secretKeyMasked);
         setMeinvoiceUsername(r.config.meinvoiceUsername);
@@ -272,6 +275,7 @@ export function InvoiceConfigSection({
         // Mẫu số = ký tự đầu của ký hiệu (TT 78) — tự suy, không bắt seller nhập.
         invoicePattern: invoiceSeries.trim().charAt(0),
         invoiceSeries: invoiceSeries.trim().toUpperCase(),
+        defaultVatRate,
         esignClientId: esignClientId.trim(),
         esignSecretKey: esignSecretInput.trim() || undefined,
         esignUsername: esignUsername.trim(),
@@ -625,6 +629,28 @@ export function InvoiceConfigSection({
                     <p className={TEXT_SUB}>
                       Lưu tài khoản meInvoice rồi bấm &quot;Tải ký hiệu&quot; để
                       chọn đúng ký hiệu đã đăng ký với Cơ quan Thuế.
+                    </p>
+                  </div>
+
+                  {/* Thuế suất GTGT mặc định (24/08 — kho vật lý chỉ quản số
+                      lượng, không bắt liên kết SKU để có thuế suất): dòng hàng
+                      chưa khai riêng ở SKU kho sẽ lên hóa đơn với mức này. */}
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="inv-default-vat">Thuế suất GTGT mặc định</Label>
+                    <NativeSelect
+                      id="inv-default-vat"
+                      className="max-w-56"
+                      value={String(defaultVatRate)}
+                      onChange={(e) => setDefaultVatRate(Number(e.target.value))}
+                    >
+                      <option value="0">0% (không chịu thuế / hộ trực tiếp)</option>
+                      <option value="5">5%</option>
+                      <option value="8">8%</option>
+                      <option value="10">10%</option>
+                    </NativeSelect>
+                    <p className={TEXT_SUB}>
+                      Áp cho mọi dòng hàng trên hóa đơn; SKU nào đã khai thuế
+                      suất riêng trong Kho hàng thì ưu tiên số khai riêng.
                     </p>
                   </div>
                 </div>
