@@ -22,6 +22,10 @@ import { ReturnSolution, ReturnStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { notify } from "../../notifications";
 import {
+  maybeAutoAdjustOnPlatformReturn,
+  PLATFORM_RETURN_DONE_STATUSES,
+} from "../invoice/adjust-order";
+import {
   getReverseOrders,
   lazadaChannelSku,
   type LazadaReverseOrder,
@@ -333,6 +337,24 @@ export async function syncLazadaReturns(
           });
           result.itemsUpdated++;
         }
+      }
+    }
+
+    // TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH THEO SÀN (25/08, cùng khuôn Shopee): bắn
+    // đúng lần reverse_status CHUYỂN VÀO tập "hoàn đã chốt" (REFUND_SUCCESS /
+    // CANCEL_REFUND_ISSUED — luồng trả hàng RTM do lưới vét nhập kho gánh).
+    // Đặt SAU khi đã ghi itemReturns để hook đọc được số lượng trả mới nhất.
+    {
+      const prevStatus = order.platformReturnStatus ?? "";
+      const nextStatus =
+        (plan.data.platformReturnStatus !== undefined
+          ? plan.data.platformReturnStatus
+          : prevStatus) ?? "";
+      if (
+        PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
+        !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
+      ) {
+        maybeAutoAdjustOnPlatformReturn(channel.userId, order.id);
       }
     }
 

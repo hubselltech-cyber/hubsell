@@ -172,7 +172,7 @@ export function InvoiceIssueCard({
       setQueue((q) => (q ? { ...q, autoAdjustEnabled: r.autoAdjustEnabled } : q));
       toast.success(
         r.autoAdjustEnabled
-          ? "Đã BẬT tự động điều chỉnh — đơn hoàn nhập kho có hóa đơn sẽ được lập HĐ điều chỉnh giảm."
+          ? "Đã BẬT tự động điều chỉnh — sàn xác nhận hoàn là hóa đơn điều chỉnh giảm tự lập (một phần hay toàn bộ theo số sàn báo)."
           : "Đã tắt tự động điều chỉnh khi hoàn hàng."
       );
     } catch (err) {
@@ -315,15 +315,16 @@ export function InvoiceIssueCard({
                 />
               )}
             </div>
-            {/* Tự động ĐIỀU CHỈNH khi khách trả hàng (24/08 — TT 91/2026):
-                đơn hoàn nhập kho mà đã có hóa đơn → tự lập HĐ điều chỉnh giảm. */}
+            {/* Tự động ĐIỀU CHỈNH khi khách trả hàng (TT 91/2026): mốc THUẦN
+                THEO SÀN xác nhận hoàn (25/08 anh Trung chốt 2 lần — kho vật lý
+                chỉ kiểm soát nội bộ, KHÔNG dính luồng hóa đơn). */}
             <div className="flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2">
               <div className="mr-1">
                 <Label htmlFor="auto-adjust-toggle" className="cursor-pointer text-xs font-semibold">
                   Tự động điều chỉnh khi hoàn
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  Hàng hoàn nhập kho → HĐ điều chỉnh giảm
+                  Sàn xác nhận hoàn → HĐ điều chỉnh giảm
                 </p>
               </div>
               {savingAutoAdjust ? (

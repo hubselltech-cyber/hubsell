@@ -10,7 +10,12 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
-import { issueAdjustmentForOrder } from "../integrations/invoice/adjust-order";
+import {
+  decideScopeFromPlatformReturn,
+  issueAdjustmentForOrder,
+  PLATFORM_RETURN_DONE_STATUSES,
+  type AdjustmentScope,
+} from "../integrations/invoice/adjust-order";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import {
   downloadInvoiceFiles,
@@ -142,9 +147,91 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           issuedAt: true,
           createdAt: true,
           adjustmentForLogId: true, // ≠ null = hóa đơn ĐIỀU CHỈNH (tiền âm)
+          // Dữ liệu hoàn SÀN BÁO của đơn gốc — nuôi badge "Cần điều chỉnh" +
+          // lựa chọn "Theo dữ liệu sàn" trong hộp điều chỉnh.
+          order: {
+            select: {
+              platformReturnStatus: true,
+              platformRefundAmount: true,
+              items: { select: { returnedQuantity: true } },
+            },
+          },
         },
       }),
     ]);
+
+    // ---- Thống kê HÓA ĐƠN của kỳ (24/08 khuya — anh Trung yêu cầu thẻ tổng
+    // hợp xoay quanh hóa đơn thay vì toàn thuế sàn): tính bằng aggregate trên
+    // TOÀN KỲ, không cộng từ 200 dòng đang hiển thị kẻo lệch khi kỳ dài.
+    // Hóa đơn điều chỉnh mang TIỀN ÂM nên tổng gộp 2 nhóm = giá trị RÒNG.
+    const [issuedAgg, adjustedAgg, failedCount] = await Promise.all([
+      prisma.invoiceLog.aggregate({
+        where: {
+          ownerId,
+          createdAt: range,
+          status: InvoiceLogStatus.ISSUED,
+          adjustmentForLogId: null,
+        },
+        _count: true,
+        _sum: { totalAmount: true, vatAmount: true },
+      }),
+      prisma.invoiceLog.aggregate({
+        where: {
+          ownerId,
+          createdAt: range,
+          status: InvoiceLogStatus.ISSUED,
+          adjustmentForLogId: { not: null },
+        },
+        _count: true,
+        _sum: { totalAmount: true, vatAmount: true },
+      }),
+      prisma.invoiceLog.count({
+        where: { ownerId, createdAt: range, status: InvoiceLogStatus.FAILED },
+      }),
+    ]);
+    // Đếm "CẦN ĐIỀU CHỈNH" toàn kỳ: hóa đơn bán ISSUED mà đơn gốc đã được sàn
+    // chốt hoàn nhưng chưa có hóa đơn điều chỉnh nào (PENDING/ISSUED).
+    const needCandidates = await prisma.invoiceLog.findMany({
+      where: {
+        ownerId,
+        createdAt: range,
+        status: InvoiceLogStatus.ISSUED,
+        adjustmentForLogId: null,
+        order: {
+          platformReturnStatus: { in: [...PLATFORM_RETURN_DONE_STATUSES] },
+        },
+      },
+      select: { id: true },
+    });
+    const alreadyAdjusted = new Set(
+      needCandidates.length > 0
+        ? (
+            await prisma.invoiceLog.findMany({
+              where: {
+                adjustmentForLogId: { in: needCandidates.map((c) => c.id) },
+                status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
+              },
+              select: { adjustmentForLogId: true },
+            })
+          ).map((a) => a.adjustmentForLogId!)
+        : []
+    );
+
+    const invoiceSummary = {
+      issuedCount: issuedAgg._count,
+      adjustmentCount: adjustedAgg._count,
+      failedCount,
+      /** Số hóa đơn sàn đã chốt hoàn mà seller CHƯA điều chỉnh — phải xử lý. */
+      needsAdjustmentCount: needCandidates.filter((c) => !alreadyAdjusted.has(c.id)).length,
+      /** Tổng giá trị hóa đơn RÒNG của kỳ (hóa đơn bán − phần đã điều chỉnh). */
+      invoicedAmount:
+        Number(issuedAgg._sum.totalAmount ?? 0) + Number(adjustedAgg._sum.totalAmount ?? 0),
+      /** Thuế GTGT đầu ra RÒNG của kỳ. */
+      invoicedVat:
+        Number(issuedAgg._sum.vatAmount ?? 0) + Number(adjustedAgg._sum.vatAmount ?? 0),
+      /** Phần giá trị đã điều chỉnh giảm (số DƯƠNG để hiển thị). */
+      adjustedAmount: Math.abs(Number(adjustedAgg._sum.totalAmount ?? 0)),
+    };
 
     // Hóa đơn gốc nào TRONG TRANG này đã có điều chỉnh đang chờ/đã phát hành —
     // FE dựa vào để ẩn nút "Điều chỉnh giảm" (điều chỉnh có thể nằm ngoài kỳ
@@ -191,6 +278,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
 
     res.json({
       settings: serializeSettings(cfg),
+      invoiceSummary,
       summary: {
         orderCount: rows.length,
         settledCount,
@@ -205,13 +293,40 @@ router.get("/report", async (req: AuthRequest, res, next) => {
             ? grossRevenue
             : Math.max(0, profit),
       },
-      logs: logs.map((l) => ({
-        ...l,
-        totalAmount: Number(l.totalAmount),
-        vatAmount: Number(l.vatAmount),
-        platformTaxWithheld: Number(l.platformTaxWithheld),
-        hasAdjustment: adjustedIds.has(l.id),
-      })),
+      logs: logs
+        .map((l) => {
+          const { order, ...rest } = l;
+          const platformStatus = order?.platformReturnStatus ?? null;
+          const returnDone =
+            platformStatus !== null && PLATFORM_RETURN_DONE_STATUSES.has(platformStatus);
+          const hasAdjustment = adjustedIds.has(l.id);
+          return {
+            ...rest,
+            totalAmount: Number(l.totalAmount),
+            vatAmount: Number(l.vatAmount),
+            platformTaxWithheld: Number(l.platformTaxWithheld),
+            hasAdjustment,
+            // Sàn đã chốt hoàn mà hóa đơn bán chưa có điều chỉnh → seller phải xử lý.
+            needsAdjustment:
+              l.status === InvoiceLogStatus.ISSUED &&
+              !l.adjustmentForLogId &&
+              returnDone &&
+              !hasAdjustment,
+            returnInfo: returnDone
+              ? {
+                  platformStatus,
+                  refundAmount: Number(order?.platformRefundAmount ?? 0),
+                  returnedItems: (order?.items ?? []).reduce(
+                    (s, it) => s + (it.returnedQuantity ?? 0),
+                    0
+                  ),
+                }
+              : null,
+          };
+        })
+        // GHIM "cần điều chỉnh" lên đầu (anh Trung 25/08: nghìn hóa đơn/ngày
+        // phải lòi ngay vài tờ cần xử lý), còn lại giữ mới-nhất-trước.
+        .sort((a, b) => Number(b.needsAdjustment) - Number(a.needsAdjustment)),
     });
   } catch (err) {
     next(err);
@@ -466,9 +581,12 @@ router.put("/auto-adjust", async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/tax/invoices/:id/adjust — LẬP HÓA ĐƠN ĐIỀU CHỈNH GIẢM TOÀN BỘ cho
-// một hóa đơn ĐÃ PHÁT HÀNH (:id = InvoiceLog gốc). Dùng khi khách trả hàng
-// hoàn tiền (TT 91/2026 Đ.10 k.5c) — lõi ở adjust-order.ts.
+// POST /api/tax/invoices/:id/adjust — LẬP HÓA ĐƠN ĐIỀU CHỈNH GIẢM cho một hóa
+// đơn ĐÃ PHÁT HÀNH (:id = InvoiceLog gốc), khách trả hàng hoàn tiền (TT 91/2026
+// Đ.10 k.5c) — lõi ở adjust-order.ts. Body.mode:
+//   · "PLATFORM" — phạm vi THEO DỮ LIỆU SÀN (dòng trả/số tiền hoàn — một phần
+//     chính xác); sàn chưa báo gì thì 400 để seller chọn toàn bộ có chủ đích.
+//   · "FULL" (mặc định) — giảm toàn bộ.
 router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
   try {
     const blocked = await sandboxTaxCodeBlocked(req);
@@ -478,11 +596,40 @@ router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
     }
     const reason =
       String(req.body?.reason ?? "").trim() || "Khách trả hàng hoàn tiền";
+    const mode = req.body?.mode === "PLATFORM" ? "PLATFORM" : "FULL";
+
+    let scope: AdjustmentScope = { kind: "FULL" };
+    let finalReason = reason;
+    if (mode === "PLATFORM") {
+      const original = await prisma.invoiceLog.findFirst({
+        where: { id: req.params.id, ownerId: req.ownerId! },
+        select: { orderId: true, totalAmount: true },
+      });
+      if (!original?.orderId) {
+        res.status(400).json({ error: "Hóa đơn không còn gắn đơn gốc — chỉ điều chỉnh được toàn bộ." });
+        return;
+      }
+      const decided = await decideScopeFromPlatformReturn(
+        original.orderId,
+        Number(original.totalAmount)
+      );
+      if (!decided) {
+        res.status(400).json({
+          error:
+            "Sàn chưa báo dữ liệu hoàn cho đơn này (chưa có dòng hàng trả/số tiền hoàn) — chọn Giảm toàn bộ nếu chắc chắn.",
+        });
+        return;
+      }
+      scope = decided.scope;
+      finalReason = decided.reason;
+    }
+
     const r = await issueAdjustmentForOrder(
       req.ownerId!,
       channelScope(req),
       req.params.id,
-      reason
+      finalReason,
+      scope
     );
     res.status(r.httpStatus).json({ log: r.log, error: r.error });
   } catch (err) {

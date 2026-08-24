@@ -2330,6 +2330,15 @@ export interface InvoiceLogDTO {
   adjustmentForLogId: string | null;
   /** Hóa đơn gốc này đã có điều chỉnh đang chờ/đã phát hành chưa (ẩn nút). */
   hasAdjustment: boolean;
+  /** Sàn đã chốt hoàn mà chưa điều chỉnh — badge đỏ + ghim đầu bảng. */
+  needsAdjustment: boolean;
+  /** Dữ liệu hoàn sàn báo (chỉ có khi sàn đã chốt hoàn) — nuôi hộp điều chỉnh. */
+  returnInfo: {
+    platformStatus: string;
+    refundAmount: number;
+    /** Tổng số sản phẩm sàn báo khách trả (0 = khách giữ hàng, chỉ hoàn tiền). */
+    returnedItems: number;
+  } | null;
 }
 
 export interface TaxReportResponse {
@@ -2343,6 +2352,20 @@ export interface TaxReportResponse {
     platformTaxTotal: number;
     additionalTax: number;
     additionalTaxBase: number; // cơ sở tính (doanh thu hoặc lợi nhuận)
+  };
+  /** Thống kê HÓA ĐƠN của kỳ — aggregate toàn kỳ, không phải cộng từ 200 dòng. */
+  invoiceSummary: {
+    issuedCount: number;
+    adjustmentCount: number;
+    failedCount: number;
+    /** Số hóa đơn sàn đã chốt hoàn mà seller CHƯA điều chỉnh — cần xử lý. */
+    needsAdjustmentCount: number;
+    /** Giá trị hóa đơn RÒNG (hóa đơn bán − phần đã điều chỉnh giảm). */
+    invoicedAmount: number;
+    /** Thuế GTGT đầu ra RÒNG của kỳ. */
+    invoicedVat: number;
+    /** Phần giá trị đã điều chỉnh giảm (số dương). */
+    adjustedAmount: number;
   };
   logs: InvoiceLogDTO[];
 }
@@ -2451,13 +2474,19 @@ export function setInvoiceAutoAdjust(enabled: boolean) {
 }
 
 /**
- * Lập hóa đơn ĐIỀU CHỈNH GIẢM TOÀN BỘ cho một hóa đơn đã phát hành (khách trả
- * hàng hoàn tiền — TT 91/2026). logId = id dòng hóa đơn gốc trong nhật ký.
+ * Lập hóa đơn ĐIỀU CHỈNH GIẢM cho một hóa đơn đã phát hành (khách trả hàng
+ * hoàn tiền — TT 91/2026). logId = id dòng hóa đơn gốc trong nhật ký.
+ * mode "PLATFORM" = phạm vi theo dữ liệu hoàn sàn báo (một phần chính xác);
+ * "FULL" = giảm toàn bộ.
  */
-export function adjustInvoice(logId: string, reason?: string) {
+export function adjustInvoice(
+  logId: string,
+  mode: "PLATFORM" | "FULL",
+  reason?: string
+) {
   return apiFetch<{ log: InvoiceLogDTO; error?: string }>(
     `/api/tax/invoices/${logId}/adjust`,
-    { method: "POST", body: JSON.stringify({ reason }) }
+    { method: "POST", body: JSON.stringify({ mode, reason }) }
   );
 }
 

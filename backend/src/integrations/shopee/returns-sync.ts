@@ -24,6 +24,10 @@ import { notify } from "../../notifications";
 import { prisma } from "../../prisma";
 import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
 import {
+  maybeAutoAdjustOnPlatformReturn,
+  PLATFORM_RETURN_DONE_STATUSES,
+} from "../invoice/adjust-order";
+import {
   getOrderDetail,
   getReturnDetail,
   getReturnList,
@@ -413,6 +417,24 @@ export async function syncShopeeReturns(
 
     if (Object.keys(plan.data).length > 0) {
       await prisma.order.update({ where: { id: order.id }, data: plan.data });
+    }
+
+    // TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH THEO SÀN (25/08 — anh Trung chốt: mốc là
+    // sàn xác nhận hoàn, không chờ hàng về kho): bắn đúng lần trạng thái yêu
+    // cầu CHUYỂN VÀO tập "hoàn đã chốt". Fire-and-forget, hook tự kiểm công
+    // tắc + chống trùng — không chặn vòng sync.
+    {
+      const prevStatus = order.platformReturnStatus ?? "";
+      const nextStatus =
+        (plan.data.platformReturnStatus !== undefined
+          ? plan.data.platformReturnStatus
+          : prevStatus) ?? "";
+      if (
+        PLATFORM_RETURN_DONE_STATUSES.has(nextStatus) &&
+        !PLATFORM_RETURN_DONE_STATUSES.has(prevStatus)
+      ) {
+        maybeAutoAdjustOnPlatformReturn(channel.userId, order.id);
+      }
     }
 
     // TỰ CHỮA SỐ HOÀN SAO KÊ: đơn ĐÃ đối soát, yêu cầu hoàn đã ACCEPTED mà DB

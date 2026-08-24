@@ -8,6 +8,15 @@ import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import {
   Table,
@@ -97,26 +106,64 @@ export default function TaxHistoryPage() {
   }, [load, range]);
 
   const s = data?.summary;
+  const inv = data?.invoiceSummary;
   const settings = data?.settings;
   const baseLabel =
     settings?.calculationBase === "REVENUE" ? "doanh thu" : "lợi nhuận";
 
-  // ---- Lập HÓA ĐƠN ĐIỀU CHỈNH giảm toàn bộ (khách trả hàng — 24/08) ----
-  const [adjustingId, setAdjustingId] = useState<string | null>(null);
-  const handleAdjust = async (logId: string, invoiceNo: string | null) => {
-    if (adjustingId) return;
-    if (
-      !window.confirm(
-        `Lập hóa đơn ĐIỀU CHỈNH GIẢM TOÀN BỘ cho hóa đơn ${invoiceNo ?? ""}?\n` +
-          "Dùng khi khách trả hàng hoàn tiền — hóa đơn điều chỉnh ghi số âm, " +
-          "ký số và gửi Cơ quan Thuế như hóa đơn thường."
-      )
-    ) {
-      return;
+  // ---- Bộ lọc bảng nhật ký (24/08 khuya — anh Trung yêu cầu): lọc client-side
+  // trên các dòng đã tải của kỳ (server đã lọc theo khoảng ngày). ----
+  const [logFilter, setLogFilter] = useState<
+    "all" | "needs" | "issued" | "adjustment" | "problem"
+  >("all");
+  const [logSearch, setLogSearch] = useState("");
+  const filteredLogs = (data?.logs ?? []).filter((l) => {
+    if (logFilter === "needs" && !l.needsAdjustment) return false;
+    if (logFilter === "issued" && !(l.status === "ISSUED" && !l.adjustmentForLogId)) return false;
+    if (logFilter === "adjustment" && !l.adjustmentForLogId) return false;
+    if (logFilter === "problem" && l.status !== "FAILED" && l.status !== "CANCELLED") return false;
+    const q = logSearch.trim().toLowerCase();
+    if (q && !l.orderCode.toLowerCase().includes(q) && !(l.invoiceNo ?? "").toLowerCase().includes(q)) {
+      return false;
     }
-    setAdjustingId(logId);
+    return true;
+  });
+  const needsCount = inv?.needsAdjustmentCount ?? 0;
+  const FILTER_TABS = [
+    { key: "all", label: "Tất cả" },
+    { key: "needs", label: needsCount > 0 ? `Cần điều chỉnh (${needsCount})` : "Cần điều chỉnh" },
+    { key: "issued", label: "Hóa đơn bán" },
+    { key: "adjustment", label: "Điều chỉnh" },
+    { key: "problem", label: "Lỗi / Đã hủy" },
+  ] as const;
+
+  // ---- Lập HÓA ĐƠN ĐIỀU CHỈNH giảm toàn bộ (khách trả hàng — 24/08) ----
+  // Xác nhận bằng Dialog của hệ thống — window.confirm bị trình duyệt nhúng
+  // chặn im lặng (anh Trung bấm không thấy gì, 24/08 khuya).
+  const [adjustTarget, setAdjustTarget] = useState<{
+    id: string;
+    invoiceNo: string | null;
+    returnInfo: { platformStatus: string; refundAmount: number; returnedItems: number } | null;
+  } | null>(null);
+  // Phạm vi điều chỉnh: PLATFORM = theo dữ liệu hoàn sàn báo (một phần chính
+  // xác), FULL = giảm toàn bộ — mặc định theo sàn khi có dữ liệu.
+  const [adjustMode, setAdjustMode] = useState<"PLATFORM" | "FULL">("FULL");
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  const openAdjustDialog = (l: {
+    id: string;
+    invoiceNo: string | null;
+    returnInfo: { platformStatus: string; refundAmount: number; returnedItems: number } | null;
+  }) => {
+    setAdjustMode(l.returnInfo ? "PLATFORM" : "FULL");
+    setAdjustTarget({ id: l.id, invoiceNo: l.invoiceNo, returnInfo: l.returnInfo });
+  };
+  const performAdjust = async () => {
+    if (!adjustTarget || adjustingId) return;
+    const { id, invoiceNo } = adjustTarget;
+    setAdjustTarget(null);
+    setAdjustingId(id);
     try {
-      const r = await adjustInvoice(logId, "Khách trả hàng hoàn tiền");
+      const r = await adjustInvoice(id, adjustMode, "Khách trả hàng hoàn tiền");
       toast.success(
         `Đã lập hóa đơn điều chỉnh số ${r.log?.invoiceNo ?? "?"} cho hóa đơn ${invoiceNo ?? ""}.`
       );
@@ -182,20 +229,55 @@ export default function TaxHistoryPage() {
           </div>
         ) : (
           <>
-            {/* ===== TỔNG HỢP THUẾ CỦA KỲ ===== */}
+            {/* ===== TỔNG HỢP HÓA ĐƠN CỦA KỲ (làm lại 24/08 khuya — anh Trung:
+                thẻ phải xoay quanh HÓA ĐƠN; thuế sàn/thuế bổ sung gộp về dải
+                phụ bên dưới). Số RÒNG = hóa đơn điều chỉnh mang tiền âm tự trừ. ===== */}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Card className="shadow-sm">
                 <CardContent className="pt-5">
                   <p className={cn(TEXT_CARD_TITLE, "flex items-center gap-1.5")}>
+                    <FileText className="size-3.5" />
+                    Hóa đơn đã phát hành
+                  </p>
+                  <p className={cn(TEXT_HERO_NUMBER, "mt-1.5")}>
+                    {inv?.issuedCount ?? 0}
+                  </p>
+                  <p className={cn(TEXT_SUB, "mt-1")}>
+                    {inv?.adjustmentCount ? `${inv.adjustmentCount} điều chỉnh` : "Chưa có điều chỉnh"}
+                    {inv?.failedCount ? ` · ${inv.failedCount} lỗi` : ""}
+                    {needsCount > 0 && (
+                      <>
+                        {" "}·{" "}
+                        <button
+                          type="button"
+                          onClick={() => setLogFilter("needs")}
+                          className="font-semibold text-red-600 hover:underline"
+                        >
+                          {needsCount} cần điều chỉnh
+                        </button>
+                      </>
+                    )}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm">
+                <CardContent className="pt-5">
+                  <p className={cn(TEXT_CARD_TITLE, "flex items-center gap-1.5")}>
                     <Wallet className="size-3.5" />
-                    Doanh thu gốc chịu thuế
+                    Giá trị hóa đơn (ròng)
                   </p>
                   <p className={cn(TEXT_HERO_NUMBER, "mt-1.5")}>
-                    <Money value={s?.grossRevenue ?? 0} />
+                    <Money value={inv?.invoicedAmount ?? 0} />
                   </p>
                   <p className={cn(TEXT_SUB, "mt-1")}>
-                    {s?.orderCount ?? 0} đơn ({s?.settledCount ?? 0} đã quyết
-                    toán)
+                    {inv?.adjustedAmount ? (
+                      <>
+                        Đã trừ <Money value={inv.adjustedAmount} /> hoàn trả
+                      </>
+                    ) : (
+                      "Tổng tiền trên hóa đơn của kỳ"
+                    )}
                   </p>
                 </CardContent>
               </Card>
@@ -204,29 +286,13 @@ export default function TaxHistoryPage() {
                 <CardContent className="pt-5">
                   <p className={cn(TEXT_CARD_TITLE, "flex items-center gap-1.5")}>
                     <ReceiptText className="size-3.5" />
-                    Thuế sàn đã trích (thực)
+                    Thuế GTGT đầu ra
                   </p>
                   <p className={cn(TEXT_HERO_NUMBER, "mt-1.5")}>
-                    <Money value={s?.platformTaxActual ?? 0} />
+                    <Money value={inv?.invoicedVat ?? 0} />
                   </p>
                   <p className={cn(TEXT_SUB, "mt-1")}>
-                    Số sàn ĐÃ khấu trừ trên đơn quyết toán
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="shadow-sm">
-                <CardContent className="pt-5">
-                  <p className={cn(TEXT_CARD_TITLE, "flex items-center gap-1.5")}>
-                    <ReceiptText className="size-3.5" />
-                    Thuế sàn ước tính thêm
-                  </p>
-                  <p className={cn(TEXT_HERO_NUMBER, "mt-1.5")}>
-                    <Money value={s?.platformTaxEstimated ?? 0} />
-                  </p>
-                  <p className={cn(TEXT_SUB, "mt-1")}>
-                    {settings?.platformTaxPercent ?? 1.5}% trên đơn chưa quyết
-                    toán
+                    Bóc ngược từ giá bán, đã trừ điều chỉnh
                   </p>
                 </CardContent>
               </Card>
@@ -235,37 +301,73 @@ export default function TaxHistoryPage() {
                 <CardContent className="pt-5">
                   <p className={cn(TEXT_CARD_TITLE, "flex items-center gap-1.5")}>
                     <Scale className="size-3.5" />
-                    Thuế bổ sung ước tính
+                    Thuế sàn trích hộ
                   </p>
                   <p className={cn(TEXT_HERO_NUMBER, "mt-1.5")}>
-                    <Money value={s?.additionalTax ?? 0} />
+                    <Money value={s?.platformTaxTotal ?? 0} />
                   </p>
                   <p className={cn(TEXT_SUB, "mt-1")}>
-                    {settings?.customTaxPercent ?? 0}% trên {baseLabel} kỳ này
+                    Thực <Money value={s?.platformTaxActual ?? 0} /> + ước tính{" "}
+                    <Money value={s?.platformTaxEstimated ?? 0} />
                   </p>
                 </CardContent>
               </Card>
             </div>
 
+            {/* Dải phụ: số liệu nền tính từ ĐƠN HÀNG (không phải hóa đơn) —
+                giữ để đối chiếu nhưng không chiếm thẻ to. */}
+            <p className={cn(TEXT_SUB, "px-1")}>
+              Nền kỳ này: doanh thu chịu thuế <Money value={s?.grossRevenue ?? 0} />{" "}
+              trên {s?.orderCount ?? 0} đơn ({s?.settledCount ?? 0} đã quyết toán)
+              {(s?.additionalTax ?? 0) > 0 && (
+                <>
+                  {" "}· thuế bổ sung ước tính <Money value={s?.additionalTax ?? 0} /> (
+                  {settings?.customTaxPercent ?? 0}% trên {baseLabel})
+                </>
+              )}
+            </p>
+
             {/* ===== NHẬT KÝ HÓA ĐƠN ĐIỆN TỬ ===== */}
             <Card className="shadow-sm">
               <CardContent className="pt-5">
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   <FileText className="size-4 text-slate-500" />
                   <h3 className="text-sm font-semibold text-slate-900">
                     Nhật ký hóa đơn điện tử
                   </h3>
                   <span className={TEXT_SUB}>
-                    {data?.logs.length ?? 0} bản ghi trong kỳ
+                    {filteredLogs.length}/{data?.logs.length ?? 0} bản ghi trong kỳ
                   </span>
+                  <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                    {FILTER_TABS.map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setLogFilter(t.key)}
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                          logFilter === t.key
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                        )}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                    <Input
+                      value={logSearch}
+                      onChange={(e) => setLogSearch(e.target.value)}
+                      placeholder="Tìm mã đơn / số hóa đơn…"
+                      className="h-8 w-52 text-xs"
+                    />
+                  </div>
                 </div>
 
-                {(data?.logs.length ?? 0) === 0 ? (
+                {filteredLogs.length === 0 ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">
-                    Chưa có hóa đơn nào trong kỳ này. Phát hành hóa đơn cho đơn
-                    hàng tại trang &quot;Kết nối &amp; Xuất hóa đơn&quot; — mỗi
-                    lần phát hành/hủy sẽ ghi một dòng vào đây để đối soát và
-                    tải PDF.
+                    {(data?.logs.length ?? 0) === 0
+                      ? "Chưa có hóa đơn nào trong kỳ này. Phát hành hóa đơn cho đơn hàng tại trang “Kết nối & Xuất hóa đơn” — mỗi lần phát hành/hủy sẽ ghi một dòng vào đây để đối soát và tải PDF."
+                      : "Không có bản ghi nào khớp bộ lọc — đổi tab lọc hoặc xóa từ khóa tìm."}
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -290,7 +392,7 @@ export default function TaxHistoryPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {data!.logs.map((l) => {
+                        {filteredLogs.map((l) => {
                           const meta = STATUS_META[l.status];
                           return (
                             <TableRow key={l.id}>
@@ -311,6 +413,13 @@ export default function TaxHistoryPage() {
                                   {l.adjustmentForLogId && (
                                     <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-violet-700">
                                       Điều chỉnh
+                                    </span>
+                                  )}
+                                  {/* Sàn đã chốt hoàn mà chưa điều chỉnh — dòng
+                                      này được GHIM đầu bảng, seller phải xử lý. */}
+                                  {l.needsAdjustment && (
+                                    <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-red-700">
+                                      Cần điều chỉnh
                                     </span>
                                   )}
                                 </span>
@@ -363,10 +472,10 @@ export default function TaxHistoryPage() {
                                     !l.hasAdjustment && (
                                       <Button
                                         size="sm"
-                                        variant="outline"
-                                        onClick={() => void handleAdjust(l.id, l.invoiceNo)}
+                                        variant={l.needsAdjustment ? "default" : "outline"}
+                                        onClick={() => openAdjustDialog(l)}
                                         disabled={adjustingId !== null}
-                                        title="Khách trả hàng hoàn tiền — lập hóa đơn điều chỉnh giảm toàn bộ"
+                                        title="Khách trả hàng hoàn tiền — lập hóa đơn điều chỉnh giảm"
                                       >
                                         {adjustingId === l.id ? (
                                           <Loader2 className="size-3.5 animate-spin" />
@@ -390,6 +499,81 @@ export default function TaxHistoryPage() {
           </>
         )}
       </div>
+
+      {/* Hộp xác nhận lập HÓA ĐƠN ĐIỀU CHỈNH — Dialog hệ thống thay
+          window.confirm (bị trình duyệt nhúng nuốt im lặng). */}
+      <Dialog
+        open={adjustTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setAdjustTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Undo2 className="size-5 text-slate-500" />
+              Lập hóa đơn điều chỉnh giảm
+            </DialogTitle>
+            <DialogDescription>
+              Cho hóa đơn số <b>{adjustTarget?.invoiceNo ?? "?"}</b> — khách trả
+              hàng hoàn tiền. Hóa đơn điều chỉnh ghi số âm, tham chiếu hóa đơn
+              gốc, được ký số và gửi Cơ quan Thuế như hóa đơn thường.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Chọn PHẠM VI điều chỉnh (25/08 — anh Trung: hoàn một phần phải xử
+              lý được): theo dữ liệu sàn (một phần chính xác) hoặc toàn bộ. */}
+          <div className="grid gap-2">
+            <button
+              type="button"
+              disabled={!adjustTarget?.returnInfo}
+              onClick={() => setAdjustMode("PLATFORM")}
+              className={cn(
+                "rounded-lg border p-3 text-left text-sm transition-colors",
+                adjustMode === "PLATFORM"
+                  ? "border-slate-900 bg-slate-50"
+                  : "border-slate-200 hover:border-slate-300",
+                !adjustTarget?.returnInfo && "cursor-not-allowed opacity-50"
+              )}
+            >
+              <p className="font-semibold">Theo dữ liệu hoàn của sàn</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {adjustTarget?.returnInfo
+                  ? adjustTarget.returnInfo.returnedItems > 0
+                    ? `Sàn báo khách trả ${adjustTarget.returnInfo.returnedItems} sản phẩm — điều chỉnh đúng dòng hàng trả (một phần hay toàn bộ theo số sàn).`
+                    : `Khách giữ hàng, sàn hoàn ${adjustTarget.returnInfo.refundAmount.toLocaleString("vi-VN")}đ — giảm giá trị tương ứng.`
+                  : "Sàn chưa báo dữ liệu hoàn cho đơn này."}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjustMode("FULL")}
+              className={cn(
+                "rounded-lg border p-3 text-left text-sm transition-colors",
+                adjustMode === "FULL"
+                  ? "border-slate-900 bg-slate-50"
+                  : "border-slate-200 hover:border-slate-300"
+              )}
+            >
+              <p className="font-semibold">Giảm toàn bộ hóa đơn</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Âm nguyên giá trị hóa đơn — dùng khi khách trả toàn bộ đơn hoặc
+                sàn không có dữ liệu chi tiết.
+              </p>
+            </button>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustTarget(null)}>
+              Hủy
+            </Button>
+            <Button onClick={() => void performAdjust()}>
+              <Undo2 className="size-4" />
+              Lập hóa đơn điều chỉnh
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SettingsShell>
   );
 }
