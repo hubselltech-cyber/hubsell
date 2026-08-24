@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildInvoiceLines } from "../invoice/issue-order";
+import {
+  allocateOrderDiscount,
+  buildInvoiceLines,
+  invoiceLineName,
+} from "../invoice/issue-order";
 
 // ============================================================
 // BÓC NGƯỢC THUẾ GTGT TỪ GIÁ BÁN (24/08 — anh Trung chốt sau khảo sát
@@ -66,5 +70,78 @@ describe("buildInvoiceLines — bóc ngược thuế từ giá bán", () => {
     const invoiceTotal = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
     const customerPaid = items.reduce((s, it) => s + Math.round(it.price * it.quantity), 0);
     expect(invoiceTotal).toBe(customerPaid);
+  });
+});
+
+// ============================================================
+// CHIẾT KHẤU VOUCHER NGƯỜI BÁN (24/08 tối): voucher_from_seller Shopee giảm
+// thẳng số khách trả → phân bổ trừ vào từng dòng theo tỷ trọng, hóa đơn ghi
+// giá đã giảm (TT 219). Bất biến: Σ phần trừ = đúng số voucher (không lệch 1đ),
+// tổng hóa đơn = tổng khách trả − voucher.
+// ============================================================
+
+describe("allocateOrderDiscount — phân bổ chiết khấu cấp đơn", () => {
+  it("chia đúng tỷ trọng: 100k/50k trừ 30k → 20k/10k", () => {
+    expect(allocateOrderDiscount([100_000, 50_000], 30_000)).toEqual([20_000, 10_000]);
+  });
+
+  it("phần dư làm tròn dồn dòng tiền lớn, tổng phần trừ = đúng voucher", () => {
+    const cuts = allocateOrderDiscount([10_000, 10_000, 10_000], 100);
+    expect(cuts.reduce((s, c) => s + c, 0)).toBe(100);
+    expect(cuts).toEqual([34, 33, 33]);
+  });
+
+  it("voucher vượt tổng tiền hàng → kẹp về đúng tổng (không âm dòng)", () => {
+    const cuts = allocateOrderDiscount([30_000, 20_000], 999_999);
+    expect(cuts).toEqual([30_000, 20_000]);
+  });
+
+  it("voucher 0/âm hoặc đơn rỗng → không trừ gì", () => {
+    expect(allocateOrderDiscount([50_000], 0)).toEqual([0]);
+    expect(allocateOrderDiscount([50_000], -5)).toEqual([0]);
+    expect(allocateOrderDiscount([], 1_000)).toEqual([]);
+  });
+});
+
+describe("buildInvoiceLines — có chiết khấu voucher người bán", () => {
+  it("tổng hóa đơn = tổng khách trả TRỪ voucher, từng dòng vẫn khớp tuyệt đối", () => {
+    const items = [
+      { name: "A", sku: "A", quantity: 1, price: 200_000, vatRate: 8 },
+      { name: "B", sku: "B", quantity: 2, price: 50_000, vatRate: 10 },
+    ];
+    const lines = buildInvoiceLines(items, 0, 30_000);
+    const invoiceTotal = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
+    expect(invoiceTotal).toBe(300_000 - 30_000);
+    // Dòng A gross 200k trừ 20k = 180k; dòng B gross 100k trừ 10k = 90k.
+    expect(lines[0].amountWithoutVat + lines[0].vatAmount).toBe(180_000);
+    expect(lines[1].amountWithoutVat + lines[1].vatAmount).toBe(90_000);
+  });
+
+  it("không truyền voucher → hành vi y như cũ (mặc định 0)", () => {
+    const items = [{ name: "A", sku: "A", quantity: 1, price: 89_000, vatRate: 8 }];
+    expect(buildInvoiceLines(items, 0)).toEqual(buildInvoiceLines(items, 0, 0));
+  });
+});
+
+// ============================================================
+// TÊN HÀNG TRÊN HÓA ĐƠN — chặn dữ liệu bẩn (productName là URL ảnh, thấy ở
+// ~22 OrderItem Lazada trên HĐ test 00000062).
+// ============================================================
+
+describe("invoiceLineName — chặn tên bẩn", () => {
+  it("tên là URL http/https → thay bằng Hàng hóa mã SKU", () => {
+    expect(invoiceLineName("https://img.lazcdn.com/abc.jpg", "VD002")).toBe("Hàng hóa mã VD002");
+    expect(invoiceLineName("HTTP://x.y/z.png", "A1")).toBe("Hàng hóa mã A1");
+  });
+
+  it("tên rỗng/toàn khoảng trắng → thay bằng Hàng hóa mã SKU", () => {
+    expect(invoiceLineName("   ", "SKU9")).toBe("Hàng hóa mã SKU9");
+  });
+
+  it("tên bình thường giữ nguyên (kể cả có chữ http giữa câu)", () => {
+    expect(invoiceLineName("Ví Nam BOGESI Da PU", "VD002")).toBe("Ví Nam BOGESI Da PU");
+    expect(invoiceLineName("Sách hướng dẫn dùng https an toàn", "S1")).toBe(
+      "Sách hướng dẫn dùng https an toàn"
+    );
   });
 });

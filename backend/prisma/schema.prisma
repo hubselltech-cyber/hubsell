@@ -1067,6 +1067,11 @@ model Order {
   paymentFee      Decimal   @default(0) @db.Decimal(12, 2) // phí thanh toán
   affiliateFee    Decimal   @default(0) @db.Decimal(12, 2) // phí tiếp thị liên kết (Affiliate)
   sellerVoucher   Decimal   @default(0) @db.Decimal(12, 2) // voucher trợ giá do SHOP tự chịu
+  /// Riêng phần voucher NGƯỜI BÁN giảm THẲNG vào số khách trả đơn này
+  /// (voucher_from_seller Shopee) — KHÔNG gồm xu hoàn (khách vẫn trả đủ, xu
+  /// dùng đơn sau). Là số CHIẾT KHẤU trừ vào dòng hàng khi phát hành hóa đơn.
+  /// Lazada luôn 0: paid_price từng dòng ĐÃ trừ voucher người bán.
+  sellerDiscountVoucher Decimal @default(0) @db.Decimal(12, 2)
   // --- Phí vận chuyển & đối soát khiếu nại ---
   shippingFeeQuoted Decimal @default(0) @db.Decimal(12, 2) // phí ship SÀN BÁO lúc đặt đơn
   shippingFeeActual Decimal @default(0) @db.Decimal(12, 2) // phí ship THỰC TẾ sàn trừ khi quyết toán

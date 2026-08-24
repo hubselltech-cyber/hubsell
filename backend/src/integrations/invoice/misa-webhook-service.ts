@@ -24,6 +24,7 @@
 
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
+import { buildInvoiceLines } from "./issue-order";
 import {
   misaEventStatus,
   type MisaWebhookItem,
@@ -101,7 +102,7 @@ export async function processMisaWebhookEvent(
   // ---- 2) Đối soát thuế (chỉ có ý nghĩa khi hóa đơn phát hành/ký số) ----
   const reconcile =
     targetStatus === InvoiceLogStatus.ISSUED
-      ? await reconcileTax(log.orderId, payload)
+      ? await reconcileTax(log.orderId, Number(log.vatAmount), payload)
       : null;
 
   // Lệch thuế VƯỢT biên độ = TAX_MISMATCH → trạng thái cuối là LỖI (FAILED),
@@ -245,6 +246,7 @@ async function createLogFromOrder(
  */
 async function reconcileTax(
   orderId: string | null,
+  issuedVatAmount: number,
   payload: MisaWebhookPayload
 ): Promise<TaxReconcileResult> {
   const misaTotal = payload.Data.TotalVATAmount;
@@ -252,6 +254,18 @@ async function reconcileTax(
     return {
       vatAmountToWrite: null,
       note: "MISA không gửi TotalVATAmount — bỏ qua đối soát thuế.",
+      warning: false,
+    };
+  }
+
+  // MISA ký ĐÚNG số Hubsell đã gửi lúc phát hành → KHỚP, khỏi tính lại. Quan
+  // trọng cho hóa đơn xuất TAY trước đối soát: lúc đó sellerDiscountVoucher có
+  // thể chưa về (0), tính lại sau đối soát sẽ có voucher → lệch GIẢ dù chứng từ
+  // đúng y số đã phát hành.
+  if (misaTotal === issuedVatAmount) {
+    return {
+      vatAmountToWrite: misaTotal,
+      note: `Đối soát thuế KHỚP số đã phát hành: ${fmt(misaTotal)}.`,
       warning: false,
     };
   }
@@ -275,7 +289,10 @@ async function reconcileTax(
   // (issue-order), không thì shop dùng defaultVatRate > 0 sẽ lệch giả 100%.
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    select: { channel: { select: { userId: true } } },
+    select: {
+      sellerDiscountVoucher: true,
+      channel: { select: { userId: true } },
+    },
   });
   const cfg = order
     ? await prisma.invoiceConfig.findFirst({
@@ -285,14 +302,26 @@ async function reconcileTax(
     : null;
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
 
-  // ---- Số Hubsell: tính từng dòng CÙNG công thức bóc ngược với lúc phát hành
-  // (giá bán = giá ĐÃ GỒM thuế; thuế dòng = gross − round(gross×100/(100+%))).
+  // ---- Số Hubsell: GỌI CHUNG buildInvoiceLines của issue-order (kể cả phân bổ
+  // chiết khấu voucher người bán) — một công thức duy nhất cho cả phát hành lẫn
+  // đối soát, hết cảnh sửa nơi này quên nơi kia.
+  const lines = buildInvoiceLines(
+    items.map((it) => ({
+      name: it.productName,
+      sku: it.channelSku,
+      quantity: it.quantity,
+      price: Number(it.price),
+      vatRate: it.product?.vatRate ?? null,
+    })),
+    defaultVatRate,
+    Number(order?.sellerDiscountVoucher ?? 0)
+  );
   let hubsellTotal = 0;
   const bySku = new Map<string, { expectedTax: number; vatRate: number }>();
-  for (const it of items) {
-    const vatRate = it.product?.vatRate ? it.product.vatRate : defaultVatRate;
-    const gross = Math.round(Number(it.price) * it.quantity);
-    const expectedTax = gross - Math.round((gross * 100) / (100 + vatRate));
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const expectedTax = lines[i].vatAmount;
+    const vatRate = lines[i].vatRate;
     hubsellTotal += expectedTax;
     // Cho phép MISA tra theo SKU sàn lẫn SKU kho — hai hệ có thể in mã khác nhau.
     bySku.set(it.channelSku, { expectedTax, vatRate });

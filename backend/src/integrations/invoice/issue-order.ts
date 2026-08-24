@@ -115,23 +115,66 @@ export interface InvoiceLineSource {
 }
 
 /**
+ * TÊN HÀNG in trên hóa đơn — chặn dữ liệu bẩn từ sàn (24/08 tối, anh chốt):
+ * ~22 OrderItem Lazada có productName là URL ảnh, in lên chứng từ CQT vừa xấu
+ * vừa sai bản chất. Tên rỗng hoặc bắt đầu bằng http(s) → thay bằng
+ * "Hàng hóa mã <SKU>"; seller muốn tên đẹp thì khai taxName ở SKU kho (ưu tiên
+ * sẵn ở nơi gọi).
+ */
+export function invoiceLineName(rawName: string, sku: string): string {
+  const name = rawName.trim();
+  if (name === "" || /^https?:\/\//i.test(name)) return `Hàng hóa mã ${sku}`;
+  return name;
+}
+
+/**
+ * Phân bổ CHIẾT KHẤU cấp đơn (voucher người bán) vào từng dòng theo tỷ trọng
+ * tiền dòng — largest-first cho phần dư làm tròn để Σ phần trừ = ĐÚNG số
+ * chiết khấu (không lệch 1đ). Trả mảng số tiền trừ theo đúng thứ tự dòng.
+ */
+export function allocateOrderDiscount(
+  grosses: number[],
+  discount: number
+): number[] {
+  const totalGross = grosses.reduce((s, g) => s + g, 0);
+  const d = Math.min(Math.max(0, Math.round(discount)), totalGross);
+  if (d === 0 || totalGross === 0) return grosses.map(() => 0);
+  const cuts = grosses.map((g) => Math.floor((d * g) / totalGross));
+  let rem = d - cuts.reduce((s, c) => s + c, 0);
+  // Dồn phần dư mỗi dòng 1đ, dòng tiền lớn nhận trước (ổn định, dễ giải trình).
+  const byGrossDesc = grosses.map((g, i) => i).sort((a, b) => grosses[b] - grosses[a]);
+  for (let k = 0; rem > 0; k = (k + 1) % byGrossDesc.length) {
+    cuts[byGrossDesc[k]] += 1;
+    rem -= 1;
+  }
+  return cuts;
+}
+
+/**
  * BÓC NGƯỢC thuế GTGT từ giá bán (24/08 — anh Trung chốt sau khảo sát: Salework
  * cùng cách này, chuẩn kế toán TMĐT yêu cầu tổng hóa đơn = đúng số khách trả;
  * giá niêm yết sàn theo Luật Giá là giá đã gồm thuế):
- *   · gross (giá khách trả dòng) = price × quantity, làm tròn VND;
+ *   · gross (giá khách trả dòng) = price × quantity, làm tròn VND, TRỪ phần
+ *     chiết khấu cấp đơn được phân bổ (orderDiscount — voucher người bán Shopee;
+ *     giảm giá bán theo TT 219, hóa đơn ghi giá đã giảm);
  *   · amountWithoutVat = round(gross × 100 / (100 + thuế suất));
  *   · vatAmount = gross − amountWithoutVat  →  cộng lại LUÔN đúng gross,
  *     không lệch 1đ kiểu tính thuế độc lập rồi cộng lên.
  * unitPrice chỉ để IN đơn giá chưa thuế: SL=1 lấy đúng amountWithoutVat, SL>1
  * chia đều làm tròn 2 số lẻ (con số pháp lý vẫn là cặp amount/vat).
+ * ⚠️ Đối soát webhook (misa-webhook-service.reconcileTax) GỌI CHUNG hàm này —
+ * đổi công thức ở đây là đổi cả hai đầu, đúng chủ đích.
  */
 export function buildInvoiceLines(
   items: InvoiceLineSource[],
-  defaultVatRate: number
+  defaultVatRate: number,
+  orderDiscount = 0
 ): InvoiceLine[] {
-  return items.map((it) => {
+  const grosses = items.map((it) => Math.round(it.price * it.quantity));
+  const cuts = allocateOrderDiscount(grosses, orderDiscount);
+  return items.map((it, i) => {
     const vatRate = it.vatRate ? it.vatRate : defaultVatRate;
-    const gross = Math.round(it.price * it.quantity);
+    const gross = grosses[i] - cuts[i];
     const amountWithoutVat = Math.round((gross * 100) / (100 + vatRate));
     const vatAmount = gross - amountWithoutVat;
     const unitPrice =
@@ -225,16 +268,23 @@ export async function issueInvoiceForOrder(
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
 
   // Dòng hàng: giá bán sàn = giá ĐÃ GỒM thuế → bóc ngược (buildInvoiceLines);
-  // tổng hóa đơn vì thế luôn khớp đúng số khách trả cho phần hàng.
+  // tổng hóa đơn vì thế luôn khớp đúng số khách trả cho phần hàng. Voucher
+  // NGƯỜI BÁN cấp đơn (sellerDiscountVoucher — Shopee, có cả số ước tính trước
+  // đối soát) là chiết khấu thương mại: phân bổ trừ vào từng dòng, hóa đơn ghi
+  // giá đã giảm đúng TT 219; tên dòng chặn dữ liệu bẩn qua invoiceLineName.
   const lines: InvoiceLine[] = buildInvoiceLines(
-    order.items.map((it) => ({
-      name: it.product?.taxName?.trim() || it.productName,
-      sku: it.product?.skuCode ?? it.channelSku,
-      quantity: it.quantity,
-      price: Number(it.price),
-      vatRate: it.product?.vatRate ?? null,
-    })),
-    defaultVatRate
+    order.items.map((it) => {
+      const sku = it.product?.skuCode ?? it.channelSku;
+      return {
+        name: invoiceLineName(it.product?.taxName?.trim() || it.productName, sku),
+        sku,
+        quantity: it.quantity,
+        price: Number(it.price),
+        vatRate: it.product?.vatRate ?? null,
+      };
+    }),
+    defaultVatRate,
+    Number(order.sellerDiscountVoucher)
   );
   const vatTotal = lines.reduce((s, l) => s + l.vatAmount, 0);
   const totalAmount = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);

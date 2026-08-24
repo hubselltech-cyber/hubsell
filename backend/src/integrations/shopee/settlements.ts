@@ -109,6 +109,9 @@ export function mapShopeeEscrowFields(income: ShopeeOrderIncome) {
     // Trợ giá: SHOP chịu (voucher + xu shop hoàn) vs SÀN bù THẬT cho shop.
     sellerVoucher:
       n(income.voucher_from_seller) + n(income.seller_coin_cash_back),
+    // Riêng VOUCHER (không xu hoàn) — chiết khấu trừ vào hóa đơn (issue-order):
+    // voucher giảm thẳng số khách trả đơn này, xu hoàn thì khách vẫn trả đủ.
+    sellerDiscountVoucher: n(income.voucher_from_seller),
     // "Trợ giá Shopee" = shopee_discount — sàn giảm trực tiếp vào giá bán rồi
     // BÙ LẠI trong escrow (đơn 260728T943X8PX: +8.750 khớp payout từng đồng).
     // KHÔNG dùng voucher_from_shopee/coins: đó là tiền sàn bù cho NGƯỜI MUA,
