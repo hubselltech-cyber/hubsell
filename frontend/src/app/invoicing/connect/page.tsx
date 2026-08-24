@@ -76,14 +76,14 @@ export default function InvoicingConnectPage() {
     >
       {enabled ? (
         <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
-          <FlaskConical className="mt-0.5 size-5 shrink-0 text-amber-600" />
+          <CircleAlert className="mt-0.5 size-5 shrink-0 text-amber-600" />
           <div>
-            <p className="font-semibold">Đang thí điểm nội bộ</p>
+            <p className="font-semibold">Hóa đơn phát hành là chứng từ thật</p>
             <p className="mt-0.5 text-amber-700">
               Hóa đơn phát hành từ <b>tài khoản meInvoice của shop</b> và được
-              gửi Cơ quan Thuế thật — trong giai đoạn thí điểm chỉ cấu hình
-              tài khoản sandbox do MISA cấp, tuyệt đối chưa nhập tài khoản
-              meInvoice thật.
+              gửi <b>Cơ quan Thuế thật</b> — kiểm tra kỹ thông tin pháp nhân,
+              ký hiệu và thuế suất GTGT mặc định trước khi xuất hóa đơn đầu
+              tiên.
             </p>
           </div>
         </div>

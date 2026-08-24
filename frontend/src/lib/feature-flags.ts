@@ -14,9 +14,8 @@ export interface FeatureFlags {
 }
 
 export const FEATURE_FLAGS: FeatureFlags = {
-  // 23/08: BẬT — tích hợp MISA đã chạy thật (sandbox), form phải lưu được.
-  // Người ngoài thí điểm không vào được module (TAX_PILOT_EMAILS bên dưới +
-  // backend tax-pilot.ts) nên bật cờ này không mở gì cho khách thường.
+  // 23/08: BẬT — tích hợp MISA chạy thật. 24/08 tối: module MỞ THƯƠNG MẠI
+  // (đã gỡ thí điểm), quyền vào theo khóa "invoicing" + trần gói.
   is_tax_module_enabled: true,
 };
 
@@ -27,16 +26,6 @@ export function isFeatureEnabled(flag: FeatureFlag): boolean {
   return FEATURE_FLAGS[flag];
 }
 
-/**
- * THÍ ĐIỂM MODULE HÓA ĐƠN & THUẾ (23/08/2026): tích hợp MISA mới thông sandbox,
- * toàn module chỉ mở cho các tài khoản dưới đây để anh Trung theo dõi và test.
- * MIRROR của backend/src/tax-pilot.ts — lớp chặn thật (403) nằm ở backend,
- * đây chỉ là lớp ẩn menu/trang; sửa danh sách phải sửa CẢ HAI file.
- */
-export const TAX_PILOT_EMAILS = ["admin@hubsell.vn"];
-
-/** Tài khoản (theo email đăng nhập) có trong thí điểm Hóa đơn & Thuế không? */
-export function isTaxPilotUser(user: { email?: string | null } | null): boolean {
-  const email = user?.email?.toLowerCase();
-  return !!email && TAX_PILOT_EMAILS.includes(email);
-}
+// 24/08 tối: THÍ ĐIỂM Hóa đơn & Thuế ĐÃ GỠ (TAX_PILOT_EMAILS/isTaxPilotUser
+// xóa khỏi FE) — module mở thương mại theo quyền "invoicing" + trần gói như
+// mọi module; backend/src/tax-pilot.ts còn lại chỉ để chặn MST sandbox MISA.

@@ -12,8 +12,8 @@
 //
 // AN TOÀN nhiều lớp (hóa đơn là chứng từ CQT, không xóa được):
 //   • MISA_ALLOW_PUBLISH chưa bật → worker NGỦ HOÀN TOÀN (không tạo log FAILED).
-//   • Giai đoạn thí điểm: chỉ chạy cho shop có email trong TAX_PILOT_EMAILS.
-//   • Shop cấu hình MST sandbox mà không phải tài khoản thí điểm → bỏ qua.
+//   • 24/08 tối MỞ THƯƠNG MẠI: hết lọc thí điểm — mọi shop bật công tắc đều chạy;
+//     shop cấu hình MST sandbox mà không phải tài khoản nội bộ → bỏ qua.
 //   • Trần 20 hóa đơn/shop/lượt — sự cố cấu hình không thể xả trăm hóa đơn.
 //   • Xử lý TUẦN TỰ từng đơn (MISA cấp số liên tục theo ký hiệu).
 //
@@ -56,8 +56,6 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
     });
 
     for (const cfg of configs) {
-      // Thí điểm: chỉ chạy cho tài khoản trong danh sách (gỡ khi thương mại).
-      if (!isTaxPilotUser(cfg.owner.email)) continue;
       // Thiếu tài khoản meInvoice → phát hành chắc chắn fail, khỏi thử.
       if (!cfg.meinvoiceUsername || !cfg.meinvoicePassword) continue;
       // Khách thường trỏ MST sandbox → bỏ qua (cùng luật với route).

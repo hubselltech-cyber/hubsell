@@ -34,7 +34,6 @@ import adsRouter from "./routes/ads";
 import assistantRouter from "./routes/assistant";
 import subscriptionRouter from "./routes/subscription";
 import { requirePlanUnlocked } from "./plan-enforcement";
-import { requireTaxPilot } from "./tax-pilot";
 import { notificationsRouter, notificationStream } from "./notifications";
 
 // ============================================================
@@ -172,8 +171,9 @@ export function createApp() {
 
   // Cấu hình Hóa đơn điện tử & Chữ ký số (Multi-Vendor) — khóa "invoicing"
   // (nguyên khối cùng /api/tax: cấp Hóa đơn & Thuế là cấp trọn gói).
-  // 23/08: THÍ ĐIỂM — requireTaxPilot chỉ mở cho tài khoản trong tax-pilot.ts.
-  app.use("/api/invoice-config", requireAuth, requireTaxPilot, requirePermission("invoicing"), requirePlanUnlocked, invoiceConfigRouter);
+  // 24/08 tối: MỞ THƯƠNG MẠI — gỡ requireTaxPilot (thí điểm 23-24/08); chặn
+  // MST sandbox với khách thường vẫn nằm ở routes/tax.ts (sandboxTaxCodeBlocked).
+  app.use("/api/invoice-config", requireAuth, requirePermission("invoicing"), requirePlanUnlocked, invoiceConfigRouter);
 
   // Test sandbox MISA (Hóa đơn đầu vào + eSign) — chỉ Admin; trên production
   // router tự chặn 503 trừ khi bật MISA_SANDBOX_TEST_ENABLED=1 (xem file route).
@@ -182,8 +182,8 @@ export function createApp() {
   // Hóa đơn & Thuế: cấu hình Thuế bổ sung + Báo cáo thuế + PHÁT HÀNH hóa đơn
   // — khóa "invoicing". Không gác requireChannel (giống invoice-config) để
   // trang cấu hình thuế vẫn mở được khi shop chưa nối gian nào.
-  // 23/08: THÍ ĐIỂM — requireTaxPilot chỉ mở cho tài khoản trong tax-pilot.ts.
-  app.use("/api/tax", requireAuth, requireTaxPilot, requirePermission("invoicing"), requirePlanUnlocked, taxRouter);
+  // 24/08 tối: MỞ THƯƠNG MẠI — gỡ requireTaxPilot (thí điểm 23-24/08).
+  app.use("/api/tax", requireAuth, requirePermission("invoicing"), requirePlanUnlocked, taxRouter);
 
   // Trợ lý vận hành (CSKH đa kênh): chat + đánh giá + ngữ cảnh sản phẩm.
   // Cửa mount = có BẤT KỲ lá operations.* nào; route chat/reviews bên trong
