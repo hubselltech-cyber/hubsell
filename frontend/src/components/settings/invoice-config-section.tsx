@@ -10,12 +10,14 @@ import {
   FileSignature,
   Loader2,
   Lock,
+  Percent,
   PlugZap,
   Radio,
   Save,
   ShieldCheck,
 } from "lucide-react";
 
+import { HintIcon } from "@/components/finance/hint-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -638,27 +640,40 @@ export function InvoiceConfigSection({
                       chỗ nào khai 8-10% → mọi hóa đơn ra 0% là sai pháp lý
                       với DN khấu trừ. Dòng hàng chưa khai riêng ở SKU kho lên
                       hóa đơn với mức này. */}
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="inv-default-vat">Thuế suất GTGT mặc định</Label>
-                    <NativeSelect
-                      id="inv-default-vat"
-                      className="max-w-56"
-                      value={String(defaultVatRate)}
-                      onChange={(e) => setDefaultVatRate(Number(e.target.value))}
-                    >
-                      <option value="0">0% — hộ/cá nhân kinh doanh</option>
-                      <option value="5">5% — doanh nghiệp (hàng thiết yếu)</option>
-                      <option value="8">8% — doanh nghiệp (mức được giảm)</option>
-                      <option value="10">10% — doanh nghiệp (mức phổ thông)</option>
-                    </NativeSelect>
-                    <p className={TEXT_SUB}>
-                      Giá bán trên sàn được coi là <b>đã gồm thuế</b> — hệ thống
-                      tự tách ngược, tổng hóa đơn luôn đúng số khách trả.{" "}
-                      <b>Hộ/cá nhân kinh doanh</b> giữ 0% (sàn TMĐT khấu trừ và
-                      nộp thay); <b>doanh nghiệp</b> kê khai khấu trừ cần chọn
-                      đúng thuế suất hàng mình bán. SKU nào đã khai thuế suất
-                      riêng trong Kho hàng thì ưu tiên số khai riêng.
-                    </p>
+                  {/* Khối NỔI BẬT riêng (anh yêu cầu 24/08 tối) — box emerald
+                      tách khỏi các ô thường, chú thích dài chuyển vào tooltip. */}
+                  <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+                    <span className="rounded-xl bg-emerald-100 p-2.5 text-emerald-600">
+                      <Percent className="size-4" />
+                    </span>
+                    <div className="grid gap-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Label htmlFor="inv-default-vat">
+                          Thuế suất GTGT mặc định
+                        </Label>
+                        <HintIcon
+                          hint={
+                            <>
+                              Giá bán trên sàn <b>đã gồm thuế</b> — hệ thống tự
+                              tách VAT ra, tổng hóa đơn luôn đúng số khách trả.
+                              Hộ/cá nhân kinh doanh giữ 0%; doanh nghiệp chọn
+                              đúng thuế suất hàng mình bán.
+                            </>
+                          }
+                        />
+                      </span>
+                      <NativeSelect
+                        id="inv-default-vat"
+                        className="max-w-64"
+                        value={String(defaultVatRate)}
+                        onChange={(e) => setDefaultVatRate(Number(e.target.value))}
+                      >
+                        <option value="0">0% — hộ/cá nhân kinh doanh</option>
+                        <option value="5">5% — doanh nghiệp (hàng thiết yếu)</option>
+                        <option value="8">8% — doanh nghiệp (mức được giảm)</option>
+                        <option value="10">10% — doanh nghiệp (mức phổ thông)</option>
+                      </NativeSelect>
+                    </div>
                   </div>
                 </div>
               )}
