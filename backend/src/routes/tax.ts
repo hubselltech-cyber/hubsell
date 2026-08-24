@@ -10,6 +10,7 @@ import { prisma } from "../prisma";
 import type { AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
 import { parseDateRange } from "../date-range";
+import { issueAdjustmentForOrder } from "../integrations/invoice/adjust-order";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import {
   downloadInvoiceFiles,
@@ -140,9 +141,25 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           errorMessage: true,
           issuedAt: true,
           createdAt: true,
+          adjustmentForLogId: true, // ≠ null = hóa đơn ĐIỀU CHỈNH (tiền âm)
         },
       }),
     ]);
+
+    // Hóa đơn gốc nào TRONG TRANG này đã có điều chỉnh đang chờ/đã phát hành —
+    // FE dựa vào để ẩn nút "Điều chỉnh giảm" (điều chỉnh có thể nằm ngoài kỳ
+    // đang xem nên phải hỏi DB, không suy từ 200 dòng đang trả).
+    const adjustedIds = new Set(
+      (
+        await prisma.invoiceLog.findMany({
+          where: {
+            adjustmentForLogId: { in: logs.map((l) => l.id) },
+            status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] },
+          },
+          select: { adjustmentForLogId: true },
+        })
+      ).map((a) => a.adjustmentForLogId!)
+    );
 
     // ---- Thuế sàn TMĐT trích hộ ----
     // Đơn ĐÃ quyết toán: dùng số THỰC sàn đã khấu trừ (platformTax của dòng).
@@ -193,6 +210,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
         totalAmount: Number(l.totalAmount),
         vatAmount: Number(l.vatAmount),
         platformTaxWithheld: Number(l.platformTaxWithheld),
+        hasAdjustment: adjustedIds.has(l.id),
       })),
     });
   } catch (err) {
@@ -341,11 +359,17 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
       }),
       prisma.invoiceConfig.findFirst({
         where: { ownerId, channelId: null },
-        select: { autoIssueEnabled: true, invoiceSeries: true, meinvoiceUsername: true },
+        select: {
+          autoIssueEnabled: true,
+          autoAdjustEnabled: true,
+          invoiceSeries: true,
+          meinvoiceUsername: true,
+        },
       }),
     ]);
     res.json({
       autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
+      autoAdjustEnabled: cfg?.autoAdjustEnabled ?? false,
       // Đủ điều kiện phát hành tối thiểu: đã chọn ký hiệu + có tài khoản meInvoice.
       configured: Boolean(cfg?.invoiceSeries && cfg?.meinvoiceUsername),
       total,
@@ -410,6 +434,57 @@ router.put("/auto-issue", async (req: AuthRequest, res, next) => {
       data: { autoIssueEnabled: enabled },
     });
     res.json({ autoIssueEnabled: enabled });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/tax/auto-adjust — công tắc TỰ ĐỘNG LẬP HÓA ĐƠN ĐIỀU CHỈNH khi đơn
+// hoàn nhập kho (endpoint riêng như auto-issue — PUT /invoice-config ghi đè
+// toàn form, không dùng cho partial update).
+router.put("/auto-adjust", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const enabled = req.body?.enabled === true;
+    const existing = await prisma.invoiceConfig.findFirst({
+      where: { ownerId, channelId: null },
+      select: { id: true },
+    });
+    if (!existing) {
+      res.status(400).json({
+        error: "Chưa có cấu hình hóa đơn — lưu trang Kết nối & Xuất hóa đơn trước.",
+      });
+      return;
+    }
+    await prisma.invoiceConfig.update({
+      where: { id: existing.id },
+      data: { autoAdjustEnabled: enabled },
+    });
+    res.json({ autoAdjustEnabled: enabled });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/tax/invoices/:id/adjust — LẬP HÓA ĐƠN ĐIỀU CHỈNH GIẢM TOÀN BỘ cho
+// một hóa đơn ĐÃ PHÁT HÀNH (:id = InvoiceLog gốc). Dùng khi khách trả hàng
+// hoàn tiền (TT 91/2026 Đ.10 k.5c) — lõi ở adjust-order.ts.
+router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
+  try {
+    const blocked = await sandboxTaxCodeBlocked(req);
+    if (blocked) {
+      res.status(400).json({ error: blocked });
+      return;
+    }
+    const reason =
+      String(req.body?.reason ?? "").trim() || "Khách trả hàng hoàn tiền";
+    const r = await issueAdjustmentForOrder(
+      req.ownerId!,
+      channelScope(req),
+      req.params.id,
+      reason
+    );
+    res.status(r.httpStatus).json({ log: r.log, error: r.error });
   } catch (err) {
     next(err);
   }

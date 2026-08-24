@@ -245,6 +245,26 @@ export function buildStandardInvoicePayload(
   const totalWithoutVat = details.reduce((s, d) => s + d.AmountWithoutVATOC, 0);
   const totalVat = details.reduce((s, d) => s + d.VATAmountOC, 0);
 
+  // ---- HÓA ĐƠN ĐIỀU CHỈNH (khách trả hàng — TT 91/2026 Đ.10 k.5c) ----
+  // Khối tham chiếu hóa đơn gốc theo bảng "Thông tin đặc thù: HĐ thay thế/điều
+  // chỉnh" của tài liệu meInvoice: OrgInvTemplateNo = KÝ TỰ ĐẦU của ký hiệu,
+  // OrgInvSeries = phần còn lại. meInvoice TỰ IN dòng "Điều chỉnh cho hóa đơn
+  // Mẫu số... ký hiệu... số... ngày...: <InvoiceNote>" lên đầu thân hóa đơn từ
+  // khối này (verify sandbox HĐ 00000067) — ĐỪNG thêm dòng ghi chú ItemType 4
+  // nữa kẻo in lặp 2 lần.
+  const adj = input.adjustment;
+  const adjustmentFields = adj
+    ? {
+        ReferenceType: 2, // 1 = thay thế · 2 = điều chỉnh
+        OrgInvoiceType: 1, // hóa đơn điện tử NĐ 123 (nay NĐ 254)
+        OrgInvTemplateNo: adj.orgInvSeries.charAt(0),
+        OrgInvSeries: adj.orgInvSeries.slice(1),
+        OrgInvNo: adj.orgInvNo,
+        OrgInvDate: adj.orgInvDate,
+        InvoiceNote: adj.reason,
+      }
+    : {};
+
   // Người mua: có MST/số định danh → xuất theo đơn vị (BuyerLegalName kèm địa
   // chỉ); khách lẻ → chỉ họ tên. Địa chỉ/email khách cung cấp (từ 24/08 kéo
   // qua Shopee get_buyer_invoice_info) đính kèm khi có — BuyerEmail để
@@ -286,6 +306,7 @@ export function buildStandardInvoicePayload(
         TotalVATAmount: totalVat,
         TotalAmountOC: totalWithoutVat + totalVat,
         TotalAmount: totalWithoutVat + totalVat,
+        ...adjustmentFields,
         OriginalInvoiceDetail: details,
         TaxRateInfo: [...byRate.entries()].map(([rate, agg]) => ({
           VATRateName: rate,

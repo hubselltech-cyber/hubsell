@@ -738,6 +738,10 @@ model InvoiceConfig {
   /// xuất hóa đơn cho đơn ĐÃ GIAO THÀNH CÔNG + ĐÃ ĐỐI SOÁT chưa có hóa đơn.
   /// Mặc định TẮT — chủ shop chủ động bật ở trang Kết nối & Xuất hóa đơn.
   autoIssueEnabled Boolean @default(false)
+  /// TỰ ĐỘNG ĐIỀU CHỈNH (24/08, TT 91/2026 Đ.10 k.5c): đơn hoàn NHẬP KHO mà đã
+  /// có hóa đơn ISSUED → tự lập hóa đơn điều chỉnh GIẢM toàn bộ (số âm).
+  /// Mặc định TẮT — bật cạnh công tắc Tự động phát hành.
+  autoAdjustEnabled Boolean @default(false)
 
   /// % thuế suất GTGT MẶC ĐỊNH của shop (24/08 — anh Trung chốt: kho vật lý chỉ
   /// quản số lượng, không bắt liên kết SKU để có thuế suất). Dòng hàng không có
@@ -799,6 +803,15 @@ model InvoiceLog {
   invoiceNo String?
   /// Mã giao dịch phía NCC — dùng để checkStatus/cancelInvoice sau này.
   transactionId String?
+  /// Ký hiệu hóa đơn LÚC PHÁT HÀNH (VD "1K26TYY") — cần để tham chiếu hóa đơn
+  /// gốc khi lập hóa đơn điều chỉnh (shop có thể đổi ký hiệu trong config sau).
+  invoiceSeries String?
+  /// Snapshot InvoiceLine[] đã gửi NCC — hóa đơn điều chỉnh ghi ÂM đúng số ĐÃ
+  /// XUẤT (không dựng lại từ đơn kẻo lệch khi thuế suất/voucher đổi sau này).
+  lines Json?
+  /// Khác NULL = đây là HÓA ĐƠN ĐIỀU CHỈNH cho InvoiceLog gốc có id này
+  /// (totalAmount/vatAmount khi đó mang số ÂM — báo cáo cộng dồn tự trừ).
+  adjustmentForLogId String?
 
   status InvoiceLogStatus @default(PENDING)
 
@@ -823,6 +836,8 @@ model InvoiceLog {
   @@index([orderId])
   // Webhook MISA tra hóa đơn theo mã giao dịch NCC — cần index để worker không quét bảng.
   @@index([transactionId])
+  // Tra "hóa đơn gốc này đã có điều chỉnh chưa" khi lập/hiển thị.
+  @@index([adjustmentForLogId])
 }
 
 /// HÓA ĐƠN ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ "Xử lý hóa đơn đầu vào"

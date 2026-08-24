@@ -263,7 +263,7 @@ export async function issueInvoiceForOrder(
   // còn lại (chưa liên kết, hoặc liên kết nhưng chưa khai) dùng mức mặc định.
   const cfg = await prisma.invoiceConfig.findFirst({
     where: { ownerId, channelId: null },
-    select: { defaultVatRate: true },
+    select: { defaultVatRate: true, invoiceSeries: true },
   });
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
 
@@ -298,6 +298,10 @@ export async function issueInvoiceForOrder(
       status: InvoiceLogStatus.PENDING,
       totalAmount,
       vatAmount: vatTotal,
+      // Ký hiệu + snapshot dòng hàng LÚC PHÁT HÀNH — hóa đơn điều chỉnh sau
+      // này (khách trả hàng) ghi ÂM đúng số đã xuất, không dựng lại từ đơn.
+      invoiceSeries: cfg?.invoiceSeries ?? null,
+      lines: lines as unknown as Prisma.InputJsonValue,
     },
   });
 

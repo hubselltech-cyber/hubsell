@@ -23,6 +23,7 @@ import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
 import { enqueueStockPush } from "../integrations/inventory-push";
+import { maybeAutoAdjustOnReturn } from "../integrations/invoice/adjust-order";
 
 const router = Router();
 
@@ -509,6 +510,12 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
       result.restored.map((l) => l.productId),
       { source: `hủy đơn ${order.orderCode}` }
     );
+
+    // Đơn hủy sau khi LỠ xuất hóa đơn (hiếm) → pháp lý cũng là điều chỉnh
+    // giảm toàn bộ; helper tự bỏ qua nếu đơn chưa từng có hóa đơn.
+    if (result.restored.length > 0) {
+      maybeAutoAdjustOnReturn(req.ownerId!, order.id);
+    }
 
     res.json(result);
   } catch (err) {
@@ -1031,6 +1038,9 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
           return lines;
         });
         results.push({ orderCode: order.orderCode, restored });
+        // Nhập kho xong mà đơn từng xuất hóa đơn → tự lập hóa đơn điều chỉnh
+        // giảm nếu shop bật công tắc (fire-and-forget, không chặn lô).
+        maybeAutoAdjustOnReturn(req.ownerId!, order.id);
       } catch (err) {
         failed.push({
           orderCode: order.orderCode,
@@ -1165,6 +1175,13 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
       result.restored.map((l) => l.productId),
       { source: `nhận hàng hoàn — đơn ${order.orderCode}` }
     );
+
+    // Đơn hoàn đã NHẬP KHO mà từng xuất hóa đơn → tự lập hóa đơn điều chỉnh
+    // giảm (TT 91/2026 Đ.10 k.5c) nếu shop bật công tắc. Fire-and-forget —
+    // không chặn phản hồi cho thủ kho.
+    if (condition === "INTACT") {
+      maybeAutoAdjustOnReturn(req.ownerId!, order.id);
+    }
 
     res.json({
       order: result.order,

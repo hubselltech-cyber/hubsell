@@ -102,7 +102,12 @@ export async function processMisaWebhookEvent(
   // ---- 2) Đối soát thuế (chỉ có ý nghĩa khi hóa đơn phát hành/ký số) ----
   const reconcile =
     targetStatus === InvoiceLogStatus.ISSUED
-      ? await reconcileTax(log.orderId, Number(log.vatAmount), payload)
+      ? await reconcileTax(
+          log.orderId,
+          Number(log.vatAmount),
+          payload,
+          log.adjustmentForLogId !== null
+        )
       : null;
 
   // Lệch thuế VƯỢT biên độ = TAX_MISMATCH → trạng thái cuối là LỖI (FAILED),
@@ -247,7 +252,8 @@ async function createLogFromOrder(
 async function reconcileTax(
   orderId: string | null,
   issuedVatAmount: number,
-  payload: MisaWebhookPayload
+  payload: MisaWebhookPayload,
+  isAdjustment = false
 ): Promise<TaxReconcileResult> {
   const misaTotal = payload.Data.TotalVATAmount;
   if (misaTotal == null) {
@@ -267,6 +273,27 @@ async function reconcileTax(
       vatAmountToWrite: misaTotal,
       note: `Đối soát thuế KHỚP số đã phát hành: ${fmt(misaTotal)}.`,
       warning: false,
+    };
+  }
+
+  // HÓA ĐƠN ĐIỀU CHỈNH (số ÂM — khách trả hàng): số đúng là snapshot đã gửi
+  // lúc lập, KHÔNG so với dòng hàng đơn gốc (đơn gốc là số DƯƠNG, so là lệch
+  // giả 200%). Chỉ đối chiếu với số đã phát hành trong biên độ làm tròn.
+  if (isAdjustment) {
+    const adjDiff = Math.abs(misaTotal - issuedVatAmount);
+    if (adjDiff <= taxToleranceVnd()) {
+      return {
+        vatAmountToWrite: misaTotal,
+        note: `Đối soát HĐ điều chỉnh: lệch ${fmt(adjDiff)} trong biên độ — nhận số MISA ${fmt(misaTotal)}.`,
+        warning: false,
+      };
+    }
+    return {
+      vatAmountToWrite: null,
+      note:
+        `CẢNH BÁO LỆCH THUẾ HĐ điều chỉnh: MISA ${fmt(misaTotal)} ≠ số đã lập ` +
+        `${fmt(issuedVatAmount)} — giữ số Hubsell, cần kiểm tra.`,
+      warning: true,
     };
   }
 

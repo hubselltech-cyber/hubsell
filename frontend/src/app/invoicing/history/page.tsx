@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Download, FileText, Loader2, ReceiptText, Scale, Wallet } from "lucide-react";
+import { Download, FileText, Loader2, ReceiptText, Scale, Undo2, Wallet } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/date-range-picker";
@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  adjustInvoice,
   ApiError,
   downloadInvoiceLogPdf,
   fetchTaxReport,
@@ -99,6 +100,37 @@ export default function TaxHistoryPage() {
   const settings = data?.settings;
   const baseLabel =
     settings?.calculationBase === "REVENUE" ? "doanh thu" : "lợi nhuận";
+
+  // ---- Lập HÓA ĐƠN ĐIỀU CHỈNH giảm toàn bộ (khách trả hàng — 24/08) ----
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  const handleAdjust = async (logId: string, invoiceNo: string | null) => {
+    if (adjustingId) return;
+    if (
+      !window.confirm(
+        `Lập hóa đơn ĐIỀU CHỈNH GIẢM TOÀN BỘ cho hóa đơn ${invoiceNo ?? ""}?\n` +
+          "Dùng khi khách trả hàng hoàn tiền — hóa đơn điều chỉnh ghi số âm, " +
+          "ký số và gửi Cơ quan Thuế như hóa đơn thường."
+      )
+    ) {
+      return;
+    }
+    setAdjustingId(logId);
+    try {
+      const r = await adjustInvoice(logId, "Khách trả hàng hoàn tiền");
+      toast.success(
+        `Đã lập hóa đơn điều chỉnh số ${r.log?.invoiceNo ?? "?"} cho hóa đơn ${invoiceNo ?? ""}.`
+      );
+      void load(range);
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError && err.message
+          ? err.message
+          : "Không lập được hóa đơn điều chỉnh — thử lại sau"
+      );
+    } finally {
+      setAdjustingId(null);
+    }
+  };
 
   // ---- Tải PDF bản thể hiện (đã ký) của hóa đơn ĐÃ PHÁT HÀNH ----
   // Hộp PHÁT HÀNH đã chuyển sang trang Kết nối & Xuất hóa đơn (anh Trung chốt
@@ -272,7 +304,16 @@ export default function TaxHistoryPage() {
                                 {l.provider}
                               </TableCell>
                               <TableCell className="font-mono text-xs">
-                                {l.invoiceNo ?? "—"}
+                                <span className="inline-flex items-center gap-1.5">
+                                  {l.invoiceNo ?? "—"}
+                                  {/* Hóa đơn ĐIỀU CHỈNH (tiền âm — khách trả
+                                      hàng) đánh dấu rõ để không nhầm hóa đơn bán. */}
+                                  {l.adjustmentForLogId && (
+                                    <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-violet-700">
+                                      Điều chỉnh
+                                    </span>
+                                  )}
+                                </span>
                               </TableCell>
                               <TableCell>
                                 <span
@@ -295,24 +336,47 @@ export default function TaxHistoryPage() {
                                 <Money value={l.platformTaxWithheld} />
                               </TableCell>
                               <TableCell className="text-right">
-                                {l.status === "ISSUED" && l.transactionId ? (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => void handleDownloadPdf(l.id)}
-                                    disabled={downloadingId !== null}
-                                    title={`Mã tra cứu: ${l.transactionId} — tra công khai tại meinvoice.vn/tra-cuu`}
-                                  >
-                                    {downloadingId === l.id ? (
-                                      <Loader2 className="size-3.5 animate-spin" />
-                                    ) : (
-                                      <Download className="size-3.5" />
+                                <span className="inline-flex items-center gap-1.5">
+                                  {l.status === "ISSUED" && l.transactionId ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => void handleDownloadPdf(l.id)}
+                                      disabled={downloadingId !== null}
+                                      title={`Mã tra cứu: ${l.transactionId} — tra công khai tại meinvoice.vn/tra-cuu`}
+                                    >
+                                      {downloadingId === l.id ? (
+                                        <Loader2 className="size-3.5 animate-spin" />
+                                      ) : (
+                                        <Download className="size-3.5" />
+                                      )}
+                                      Tải
+                                    </Button>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">—</span>
+                                  )}
+                                  {/* Khách trả hàng hoàn tiền → lập HĐ điều chỉnh
+                                      GIẢM TOÀN BỘ (TT 91/2026); chỉ hiện trên hóa
+                                      đơn bán ĐÃ phát hành chưa có điều chỉnh. */}
+                                  {l.status === "ISSUED" &&
+                                    !l.adjustmentForLogId &&
+                                    !l.hasAdjustment && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => void handleAdjust(l.id, l.invoiceNo)}
+                                        disabled={adjustingId !== null}
+                                        title="Khách trả hàng hoàn tiền — lập hóa đơn điều chỉnh giảm toàn bộ"
+                                      >
+                                        {adjustingId === l.id ? (
+                                          <Loader2 className="size-3.5 animate-spin" />
+                                        ) : (
+                                          <Undo2 className="size-3.5" />
+                                        )}
+                                        Điều chỉnh
+                                      </Button>
                                     )}
-                                    Tải
-                                  </Button>
-                                ) : (
-                                  <span className="text-xs text-slate-400">—</span>
-                                )}
+                                </span>
                               </TableCell>
                             </TableRow>
                           );

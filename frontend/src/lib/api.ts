@@ -2326,6 +2326,10 @@ export interface InvoiceLogDTO {
   errorMessage: string | null;
   issuedAt: string | null;
   createdAt: string;
+  /** ≠ null = đây là HÓA ĐƠN ĐIỀU CHỈNH (tiền âm) cho InvoiceLog gốc có id này. */
+  adjustmentForLogId: string | null;
+  /** Hóa đơn gốc này đã có điều chỉnh đang chờ/đã phát hành chưa (ẩn nút). */
+  hasAdjustment: boolean;
 }
 
 export interface TaxReportResponse {
@@ -2394,6 +2398,8 @@ export type InvoiceQueuePageSize = 20 | 50 | 100;
 
 export interface InvoiceQueueResponse {
   autoIssueEnabled: boolean;
+  /** Tự động lập hóa đơn ĐIỀU CHỈNH giảm khi đơn hoàn nhập kho. */
+  autoAdjustEnabled: boolean;
   /** Đã đủ cấu hình tối thiểu để phát hành (ký hiệu + tài khoản meInvoice). */
   configured: boolean;
   /** Tổng TOÀN hàng chờ — không đổi theo tab lọc. */
@@ -2434,6 +2440,25 @@ export function setInvoiceAutoIssue(enabled: boolean) {
     method: "PUT",
     body: JSON.stringify({ enabled }),
   });
+}
+
+/** Bật/tắt tự động lập hóa đơn ĐIỀU CHỈNH giảm khi đơn hoàn nhập kho. */
+export function setInvoiceAutoAdjust(enabled: boolean) {
+  return apiFetch<{ autoAdjustEnabled: boolean }>("/api/tax/auto-adjust", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+/**
+ * Lập hóa đơn ĐIỀU CHỈNH GIẢM TOÀN BỘ cho một hóa đơn đã phát hành (khách trả
+ * hàng hoàn tiền — TT 91/2026). logId = id dòng hóa đơn gốc trong nhật ký.
+ */
+export function adjustInvoice(logId: string, reason?: string) {
+  return apiFetch<{ log: InvoiceLogDTO; error?: string }>(
+    `/api/tax/invoices/${logId}/adjust`,
+    { method: "POST", body: JSON.stringify({ reason }) }
+  );
 }
 
 // ============================================================

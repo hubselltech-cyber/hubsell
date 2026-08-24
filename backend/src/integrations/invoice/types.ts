@@ -37,6 +37,22 @@ export interface InvoiceLine {
   vatAmount: number;
 }
 
+/**
+ * Tham chiếu hóa đơn GỐC khi lập hóa đơn ĐIỀU CHỈNH (khách trả hàng hoàn tiền
+ * — điểm c khoản 5 Điều 10 TT 91/2026: người bán lập hóa đơn điều chỉnh ghi
+ * số ÂM, không hủy/không thay thế). Adapter tự tách mẫu số từ ký hiệu.
+ */
+export interface InvoiceAdjustmentRef {
+  /** Số hóa đơn gốc bị điều chỉnh (VD "00000066"). */
+  orgInvNo: string;
+  /** Ký hiệu ĐẦY ĐỦ 7 ký tự của hóa đơn gốc (VD "1K26TYY"). */
+  orgInvSeries: string;
+  /** Ngày phát hành hóa đơn gốc, định dạng yyyy-MM-dd. */
+  orgInvDate: string;
+  /** Lý do điều chỉnh — in vào ghi chú hóa đơn (VD "Khách trả hàng hoàn tiền"). */
+  reason: string;
+}
+
 /** Dữ liệu cần để phát hành một hóa đơn cho một đơn hàng. */
 export interface CreateInvoiceInput {
   /** Mã đơn hàng nội bộ — NCC lưu làm số tham chiếu, dùng đối soát 2 chiều. */
@@ -53,6 +69,11 @@ export interface CreateInvoiceInput {
   lines: InvoiceLine[];
   /** Tổng tiền hàng đã gồm thuế (đối chiếu với tổng tính từ lines). */
   totalAmount: number;
+  /**
+   * Có mặt = đây là hóa đơn ĐIỀU CHỈNH cho hóa đơn gốc bên trong (lines khi đó
+   * mang số ÂM); vắng mặt = hóa đơn phát hành thường.
+   */
+  adjustment?: InvoiceAdjustmentRef;
 }
 
 /** Kết quả một thao tác với NCC — dùng chung cho cả create/cancel/checkStatus. */

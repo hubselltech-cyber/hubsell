@@ -56,6 +56,7 @@ import {
   fetchInvoiceQueue,
   issueInvoice,
   issueInvoicesBulk,
+  setInvoiceAutoAdjust,
   setInvoiceAutoIssue,
   type InvoiceQueueFilter,
   type InvoiceQueuePageSize,
@@ -110,6 +111,7 @@ export function InvoiceIssueCard({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false); // đang xuất (lẻ hoặc hàng loạt)
   const [savingAuto, setSavingAuto] = useState(false);
+  const [savingAutoAdjust, setSavingAutoAdjust] = useState(false);
   const [issueCode, setIssueCode] = useState("");
 
   const loadQueue = useCallback(
@@ -160,6 +162,25 @@ export function InvoiceIssueCard({
       );
     } finally {
       setSavingAuto(false);
+    }
+  }
+
+  async function handleToggleAutoAdjust(enabled: boolean) {
+    setSavingAutoAdjust(true);
+    try {
+      const r = await setInvoiceAutoAdjust(enabled);
+      setQueue((q) => (q ? { ...q, autoAdjustEnabled: r.autoAdjustEnabled } : q));
+      toast.success(
+        r.autoAdjustEnabled
+          ? "Đã BẬT tự động điều chỉnh — đơn hoàn nhập kho có hóa đơn sẽ được lập HĐ điều chỉnh giảm."
+          : "Đã tắt tự động điều chỉnh khi hoàn hàng."
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Không lưu được cài đặt tự động"
+      );
+    } finally {
+      setSavingAutoAdjust(false);
     }
   }
 
@@ -273,25 +294,49 @@ export function InvoiceIssueCard({
               tick chọn rồi xuất, hoặc bật tự động.
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2">
-            <div className="mr-1">
-              <Label htmlFor="auto-issue-toggle" className="cursor-pointer text-xs font-semibold">
-                Tự động phát hành
-              </Label>
-              <p className="text-[11px] text-muted-foreground">
-                Khi đơn đã giao &amp; sàn đã đối soát
-              </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2">
+              <div className="mr-1">
+                <Label htmlFor="auto-issue-toggle" className="cursor-pointer text-xs font-semibold">
+                  Tự động phát hành
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Khi đơn đã giao &amp; sàn đã đối soát
+                </p>
+              </div>
+              {savingAuto ? (
+                <Loader2 className="size-4 animate-spin text-slate-400" />
+              ) : (
+                <Switch
+                  id="auto-issue-toggle"
+                  checked={queue?.autoIssueEnabled ?? false}
+                  onCheckedChange={(v) => void handleToggleAuto(v)}
+                  disabled={queue === null}
+                />
+              )}
             </div>
-            {savingAuto ? (
-              <Loader2 className="size-4 animate-spin text-slate-400" />
-            ) : (
-              <Switch
-                id="auto-issue-toggle"
-                checked={queue?.autoIssueEnabled ?? false}
-                onCheckedChange={(v) => void handleToggleAuto(v)}
-                disabled={queue === null}
-              />
-            )}
+            {/* Tự động ĐIỀU CHỈNH khi khách trả hàng (24/08 — TT 91/2026):
+                đơn hoàn nhập kho mà đã có hóa đơn → tự lập HĐ điều chỉnh giảm. */}
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2">
+              <div className="mr-1">
+                <Label htmlFor="auto-adjust-toggle" className="cursor-pointer text-xs font-semibold">
+                  Tự động điều chỉnh khi hoàn
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Hàng hoàn nhập kho → HĐ điều chỉnh giảm
+                </p>
+              </div>
+              {savingAutoAdjust ? (
+                <Loader2 className="size-4 animate-spin text-slate-400" />
+              ) : (
+                <Switch
+                  id="auto-adjust-toggle"
+                  checked={queue?.autoAdjustEnabled ?? false}
+                  onCheckedChange={(v) => void handleToggleAutoAdjust(v)}
+                  disabled={queue === null}
+                />
+              )}
+            </div>
           </div>
         </div>
 
