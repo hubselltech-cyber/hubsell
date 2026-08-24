@@ -56,10 +56,10 @@ export class MisaInvoiceProvider implements InvoiceProvider {
 
     try {
       const result = await publishStandardInvoice(input, this.cfg);
-      const vatAmount = input.lines.reduce(
-        (s, l) => s + Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
-        0
-      );
+      // Tiền thuế lấy THẲNG từ InvoiceLine.vatAmount (đã bóc ngược, đúng số
+      // in trên hóa đơn) — KHÔNG nhân lại unitPrice × SL × % (lệch 1đ làm tròn
+      // so với chứng từ, đã dính ở HĐ 00000060: log 14.298 vs PDF 14.299).
+      const vatAmount = input.lines.reduce((s, l) => s + l.vatAmount, 0);
       return {
         status: InvoiceLogStatus.ISSUED,
         invoiceNo: result.invoiceNo ?? undefined,

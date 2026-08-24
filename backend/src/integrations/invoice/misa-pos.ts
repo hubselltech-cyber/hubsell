@@ -170,8 +170,10 @@ export function buildPosInvoicePayload(input: CreateInvoiceInput, cfg: PosInvoic
       Quantity: l.quantity,
       UnitPrice: l.unitPrice,
       VATRate: l.vatRate,
-      VATAmount: Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
-      Amount: l.unitPrice * l.quantity,
+      // Số tiền lấy thẳng từ InvoiceLine đã bóc ngược thuế (quy ước 24/08) —
+      // không nhân lại từ unitPrice kẻo lệch làm tròn so với chứng từ.
+      VATAmount: l.vatAmount,
+      Amount: l.amountWithoutVat,
     })),
   };
 }
