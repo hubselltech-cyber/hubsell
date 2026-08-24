@@ -149,6 +149,8 @@ export function InvoiceConfigSection({
   const [invoiceSeries, setInvoiceSeries] = useState("");
   /** Danh sách ký hiệu kéo từ meInvoice — có là ô ký hiệu thành dropdown. */
   const [templates, setTemplates] = useState<InvoiceTemplateDTO[]>([]);
+  /** % thuế suất GTGT mặc định — áp cho dòng hàng chưa khai riêng ở SKU kho. */
+  const [defaultVatRate, setDefaultVatRate] = useState(0);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [hasSecretKey, setHasSecretKey] = useState(false);
   const [secretMasked, setSecretMasked] = useState<string | null>(null);
@@ -201,6 +203,7 @@ export function InvoiceConfigSection({
         setClientId(r.config.clientId);
         setCustomApiUrl(r.config.customApiUrl);
         setInvoiceSeries(r.config.invoiceSeries);
+        setDefaultVatRate(r.config.defaultVatRate ?? 0);
         setHasSecretKey(r.config.hasSecretKey);
         setSecretMasked(r.config.secretKeyMasked);
         setMeinvoiceUsername(r.config.meinvoiceUsername);
@@ -271,9 +274,8 @@ export function InvoiceConfigSection({
         customApiUrl: customApiUrl.trim(),
         // Mẫu số = ký tự đầu của ký hiệu (TT 78) — tự suy, không bắt seller nhập.
         invoicePattern: invoiceSeries.trim().charAt(0),
-        // defaultVatRate KHÔNG gửi — form seller đã ẩn ô này, backend giữ
-        // nguyên giá trị cũ (kế toán Hubsell chỉnh nội bộ khi cần).
         invoiceSeries: invoiceSeries.trim().toUpperCase(),
+        defaultVatRate,
         esignClientId: esignClientId.trim(),
         esignSecretKey: esignSecretInput.trim() || undefined,
         esignUsername: esignUsername.trim(),
@@ -630,12 +632,34 @@ export function InvoiceConfigSection({
                     </p>
                   </div>
 
-                  {/* Ô "Thuế suất GTGT mặc định" ĐÃ ẨN khỏi form seller (anh
-                      Trung chốt 24/08 tối): thuế đã bóc ngược tự động từ giá
-                      bán, seller nhỏ (hộ kê khai) mặc định 0% là đúng — cột
-                      InvoiceConfig.defaultVatRate + API vẫn sống cho kế toán
-                      Hubsell dùng nội bộ; seller là DN cần 8-10% thì khai thuế
-                      suất riêng theo SKU trong Kho hàng (vẫn được ưu tiên). */}
+                  {/* Thuế suất GTGT mặc định — HIỆN LẠI 24/08 (anh Trung đảo
+                      quyết định ẩn cùng ngày): sàn không trả thuế suất qua
+                      API nên seller là DN không liên kết SKU kho sẽ không còn
+                      chỗ nào khai 8-10% → mọi hóa đơn ra 0% là sai pháp lý
+                      với DN khấu trừ. Dòng hàng chưa khai riêng ở SKU kho lên
+                      hóa đơn với mức này. */}
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="inv-default-vat">Thuế suất GTGT mặc định</Label>
+                    <NativeSelect
+                      id="inv-default-vat"
+                      className="max-w-56"
+                      value={String(defaultVatRate)}
+                      onChange={(e) => setDefaultVatRate(Number(e.target.value))}
+                    >
+                      <option value="0">0% — hộ/cá nhân kinh doanh</option>
+                      <option value="5">5% — doanh nghiệp (hàng thiết yếu)</option>
+                      <option value="8">8% — doanh nghiệp (mức được giảm)</option>
+                      <option value="10">10% — doanh nghiệp (mức phổ thông)</option>
+                    </NativeSelect>
+                    <p className={TEXT_SUB}>
+                      Giá bán trên sàn được coi là <b>đã gồm thuế</b> — hệ thống
+                      tự tách ngược, tổng hóa đơn luôn đúng số khách trả.{" "}
+                      <b>Hộ/cá nhân kinh doanh</b> giữ 0% (sàn TMĐT khấu trừ và
+                      nộp thay); <b>doanh nghiệp</b> kê khai khấu trừ cần chọn
+                      đúng thuế suất hàng mình bán. SKU nào đã khai thuế suất
+                      riêng trong Kho hàng thì ưu tiên số khai riêng.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
