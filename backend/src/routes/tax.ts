@@ -286,6 +286,12 @@ router.post("/invoices/bulk", async (req: AuthRequest, res, next) => {
 // GET /api/tax/invoice-queue — HÀNG CHỜ XUẤT HÓA ĐƠN (học BigSeller): đơn ĐÃ
 // GIAO THÀNH CÔNG, chưa hủy, chưa có hóa đơn PENDING/ISSUED — tự nạp, seller
 // chỉ việc tick và bấm. Kèm cờ cấu hình tự động xuất để UI vẽ công tắc.
+//
+// Query ?settled=yes|no lọc theo trạng thái đối soát (UI tab lọc); total và
+// settledTotal luôn đếm trên TOÀN hàng chờ để số trên tab không nhảy theo tab
+// đang chọn. Cờ `configured` cho UI nhắc sang tab Cấu hình khi chưa đủ điều
+// kiện phát hành (24/08 — hàng chờ chỉ dựa TRẠNG THÁI ĐƠN, đã bỏ cảnh báo
+// liên kết SKU kho theo chốt của anh Trung).
 router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
@@ -298,10 +304,13 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         none: { status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] } },
       },
     };
-    const [total, orders, cfg] = await Promise.all([
+    const settledParam =
+      req.query.settled === "yes" ? true : req.query.settled === "no" ? false : undefined;
+    const [total, settledTotal, orders, cfg] = await Promise.all([
       prisma.order.count({ where }),
+      prisma.order.count({ where: { ...where, isSettled: true } }),
       prisma.order.findMany({
-        where,
+        where: settledParam === undefined ? where : { ...where, isSettled: settledParam },
         orderBy: { createdAt: "desc" },
         take: 50,
         select: {
@@ -311,18 +320,19 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
           createdAt: true,
           isSettled: true,
           channel: { select: { channelName: true, shopName: true } },
-          // Cảnh báo dòng hàng CHƯA LIÊN KẾT sản phẩm kho (thuế suất sẽ áp 0%).
-          items: { select: { productId: true } },
         },
       }),
       prisma.invoiceConfig.findFirst({
         where: { ownerId, channelId: null },
-        select: { autoIssueEnabled: true },
+        select: { autoIssueEnabled: true, invoiceSeries: true, meinvoiceUsername: true },
       }),
     ]);
     res.json({
       autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
+      // Đủ điều kiện phát hành tối thiểu: đã chọn ký hiệu + có tài khoản meInvoice.
+      configured: Boolean(cfg?.invoiceSeries && cfg?.meinvoiceUsername),
       total,
+      settledTotal,
       rows: orders.map((o) => ({
         orderCode: o.orderCode,
         customerName: o.customerName,
@@ -331,7 +341,6 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         isSettled: o.isSettled,
         channelName: o.channel.channelName,
         shopName: o.channel.shopName,
-        unlinkedItems: o.items.filter((i) => i.productId === null).length,
       })),
     });
   } catch (err) {

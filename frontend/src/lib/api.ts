@@ -2379,18 +2379,25 @@ export interface InvoiceQueueRowDTO {
   isSettled: boolean;
   channelName: ChannelName;
   shopName: string;
-  /** Số dòng hàng CHƯA liên kết sản phẩm kho — thuế suất sẽ áp 0%. */
-  unlinkedItems: number;
 }
+
+/** Tab lọc hàng chờ theo trạng thái đối soát. */
+export type InvoiceQueueFilter = "all" | "yes" | "no";
 
 export interface InvoiceQueueResponse {
   autoIssueEnabled: boolean;
+  /** Đã đủ cấu hình tối thiểu để phát hành (ký hiệu + tài khoản meInvoice). */
+  configured: boolean;
+  /** Tổng TOÀN hàng chờ — không đổi theo tab lọc. */
   total: number;
+  /** Số đơn trong hàng chờ đã được sàn đối soát. */
+  settledTotal: number;
   rows: InvoiceQueueRowDTO[];
 }
 
-export function fetchInvoiceQueue() {
-  return apiFetch<InvoiceQueueResponse>("/api/tax/invoice-queue");
+export function fetchInvoiceQueue(settled: InvoiceQueueFilter = "all") {
+  const qs = settled === "all" ? "" : `?settled=${settled}`;
+  return apiFetch<InvoiceQueueResponse>(`/api/tax/invoice-queue${qs}`);
 }
 
 /** Phát hành hàng loạt (tối đa 50/lần) — backend xử lý tuần tự từng đơn. */

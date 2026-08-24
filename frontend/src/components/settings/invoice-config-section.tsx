@@ -720,8 +720,8 @@ export function InvoiceConfigSection({
                   khoản xong nhớ bấm Lưu trước khi Test.
                 </li>
                 <li>
-                  Xuất hóa đơn cho đơn hàng tại trang{" "}
-                  <b>Lịch sử &amp; Báo cáo thuế</b>.
+                  Cấu hình xong, sang tab <b>Xuất hóa đơn</b>{" "}để phát hành;
+                  tra cứu &amp; tải PDF tại trang <b>Lịch sử &amp; Báo cáo thuế</b>.
                 </li>
                 <li>
                   <a

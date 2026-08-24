@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CircleAlert, FlaskConical } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
@@ -11,13 +12,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { cn } from "@/lib/utils";
 
 /**
  * KẾT NỐI & XUẤT HÓA ĐƠN — tích hợp Hóa đơn điện tử Multi-Vendor (MISA/BKAV).
  *
- * Chuyển từ Cấu hình → Hóa đơn & Thuế (đổi tên từ "Hóa đơn & Thuế" thành
- * "Kết nối & Xuất hóa đơn"); /settings/tax cũ redirect về đây. Nội dung 4 khối
- * giữ nguyên trong InvoiceConfigSection.
+ * BỐ CỤC 2 TAB (24/08, anh Trung yêu cầu khu thao tác phải gọn, không rối):
+ *   · "Xuất hóa đơn" (mặc định) — hàng chờ + công tắc tự động, việc dùng
+ *     HẰNG NGÀY nên đứng đầu.
+ *   · "Cấu hình kết nối" — form 3 bước InvoiceConfigSection, việc làm MỘT LẦN.
+ * Cả hai tab luôn mounted (ẩn bằng CSS) để form cấu hình không mất dữ liệu
+ * đang gõ dở khi chuyển qua lại.
  *
  * Toàn module nằm dưới feature flag `is_tax_module_enabled`. Mặc định TẮT: hiện
  * banner Beta và toàn bộ thao tác chạy ở chế độ Sandbox (không phát hành hóa đơn
@@ -28,6 +33,7 @@ import { isFeatureEnabled } from "@/lib/feature-flags";
  */
 export default function InvoicingConnectPage() {
   const enabled = isFeatureEnabled("is_tax_module_enabled");
+  const [tab, setTab] = useState<"issue" | "config">("issue");
 
   return (
     <SettingsShell
@@ -66,7 +72,7 @@ export default function InvoicingConnectPage() {
           </Tooltip>
         </span>
       }
-      description="Điền pháp nhân, nhập tài khoản meInvoice của shop và chọn ký hiệu — 3 bước là xuất được hóa đơn."
+      description="Xuất hóa đơn cho đơn đã giao ngay tại đây — kết nối meInvoice thiết lập một lần ở tab Cấu hình."
     >
       {enabled ? (
         <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
@@ -94,11 +100,46 @@ export default function InvoicingConnectPage() {
         </div>
       )}
 
-      <InvoiceConfigSection readOnlyPreview={!enabled} />
+      {/* ---- Tab: Xuất hóa đơn (thao tác hằng ngày) / Cấu hình kết nối ---- */}
+      <div
+        role="tablist"
+        aria-label="Khu vực Hóa đơn điện tử"
+        className="flex flex-wrap gap-1 border-b"
+      >
+        {(
+          [
+            { key: "issue", label: "Xuất hóa đơn" },
+            { key: "config", label: "Cấu hình kết nối" },
+          ] as const
+        ).map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+              )}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
 
       {/* Hộp XUẤT hóa đơn nằm ngay trang này (anh Trung chốt 23/08) — cấu hình
           xong là phát hành được tại chỗ; Lịch sử chỉ để tra + tải PDF. */}
-      <InvoiceIssueCard />
+      <div className={cn(tab !== "issue" && "hidden")}>
+        <InvoiceIssueCard onOpenConfig={() => setTab("config")} />
+      </div>
+      <div className={cn(tab !== "config" && "hidden")}>
+        <InvoiceConfigSection readOnlyPreview={!enabled} />
+      </div>
     </SettingsShell>
   );
 }
