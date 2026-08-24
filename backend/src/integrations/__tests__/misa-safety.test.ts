@@ -24,7 +24,15 @@ const INPUT: CreateInvoiceInput = {
   buyerName: "Khách lẻ",
   totalAmount: 110_000,
   lines: [
-    { name: "Áo thun", sku: "AT-01", quantity: 1, unitPrice: 100_000, vatRate: 10 },
+    {
+      name: "Áo thun",
+      sku: "AT-01",
+      quantity: 1,
+      unitPrice: 100_000,
+      vatRate: 10,
+      amountWithoutVat: 100_000,
+      vatAmount: 10_000,
+    },
   ],
 };
 

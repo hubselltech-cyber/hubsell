@@ -205,7 +205,10 @@ export function buildStandardInvoicePayload(
   cfg: StandardInvoiceConfig
 ) {
   const details = input.lines.map((l, i) => {
-    const amount = l.unitPrice * l.quantity;
+    // Số tiền lấy THẲNG từ InvoiceLine (đã bóc ngược thuế từ giá bán ở
+    // buildInvoiceLines — amountWithoutVat + vatAmount = đúng số khách trả);
+    // KHÔNG nhân lại unitPrice × quantity kẻo lệch làm tròn.
+    const amount = l.amountWithoutVat;
     return {
       ItemType: 1, // hàng hóa thường
       SortOrder: i + 1,
@@ -213,7 +216,7 @@ export function buildStandardInvoicePayload(
       ItemCode: l.sku,
       ItemName: l.name,
       Quantity: l.quantity,
-      UnitPrice: l.unitPrice, // CHƯA thuế — cùng quy ước InvoiceLine.unitPrice
+      UnitPrice: l.unitPrice, // đơn giá CHƯA thuế (chỉ để in — số pháp lý là amount/VAT)
       // Tiền VND, ExchangeRate = 1 → cột "quy đổi" (không hậu tố OC) bằng đúng
       // cột nguyên tệ. Sandbox VALIDATE đủ cả 2 bộ (Invalid_[Invoice.TotalSale
       // Amount] khi thiếu) dù cURL mẫu chỉ gửi bộ OC.
@@ -225,8 +228,8 @@ export function buildStandardInvoicePayload(
       AmountWithoutVATOC: amount,
       AmountWithoutVAT: amount,
       VATRateName: `${l.vatRate}%`,
-      VATAmountOC: Math.round((amount * l.vatRate) / 100),
-      VATAmount: Math.round((amount * l.vatRate) / 100),
+      VATAmountOC: l.vatAmount,
+      VATAmount: l.vatAmount,
     };
   });
 

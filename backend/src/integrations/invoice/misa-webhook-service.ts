@@ -232,9 +232,10 @@ async function createLogFromOrder(
  * ĐỐI SOÁT THUẾ — trái tim của module.
  *
  * Số Hubsell tự tính từ cấu hình thuế ĐỘC LẬP: mỗi OrderItem nối về Product
- * gốc lấy % thuế suất (Product.vatRate: 0/5/8/10 — mỗi mặt hàng một mức), tiền
- * thuế dòng = đơn giá × SL × %thuế (đơn giá CHƯA thuế, cùng quy ước
- * InvoiceLine.unitPrice khi phát hành). So với số MISA gửi về ở cả 2 mức:
+ * gốc lấy % thuế suất (Product.vatRate, fallback InvoiceConfig.defaultVatRate
+ * — cùng nguồn với lúc phát hành), tiền thuế dòng BÓC NGƯỢC từ giá bán đã gồm
+ * thuế (quy ước 24/08, cùng công thức buildInvoiceLines của issue-order.ts).
+ * So với số MISA gửi về ở cả 2 mức:
  *   · TỪNG DÒNG (khớp ItemCode ↔ SKU sàn / SKU kho) — bắt lệch làm tròn lẻ tẻ;
  *   · TỔNG (TotalVATAmount ↔ tổng Hubsell) — chốt cuối cùng.
  *
@@ -270,18 +271,33 @@ async function reconcileTax(
     include: { product: { select: { skuCode: true, vatRate: true } } },
   });
 
-  // ---- Số Hubsell: tính từng dòng theo Product.vatRate ----
+  // Thuế suất mặc định của shop — CÙNG nguồn fallback với lúc phát hành
+  // (issue-order), không thì shop dùng defaultVatRate > 0 sẽ lệch giả 100%.
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { channel: { select: { userId: true } } },
+  });
+  const cfg = order
+    ? await prisma.invoiceConfig.findFirst({
+        where: { ownerId: order.channel.userId, channelId: null },
+        select: { defaultVatRate: true },
+      })
+    : null;
+  const defaultVatRate = cfg?.defaultVatRate ?? 0;
+
+  // ---- Số Hubsell: tính từng dòng CÙNG công thức bóc ngược với lúc phát hành
+  // (giá bán = giá ĐÃ GỒM thuế; thuế dòng = gross − round(gross×100/(100+%))).
   let hubsellTotal = 0;
   const bySku = new Map<string, { expectedTax: number; vatRate: number }>();
   for (const it of items) {
-    const vatRate = it.product?.vatRate ?? 0;
-    const expectedTax = (Number(it.price) * it.quantity * vatRate) / 100;
+    const vatRate = it.product?.vatRate ? it.product.vatRate : defaultVatRate;
+    const gross = Math.round(Number(it.price) * it.quantity);
+    const expectedTax = gross - Math.round((gross * 100) / (100 + vatRate));
     hubsellTotal += expectedTax;
     // Cho phép MISA tra theo SKU sàn lẫn SKU kho — hai hệ có thể in mã khác nhau.
     bySku.set(it.channelSku, { expectedTax, vatRate });
     if (it.product?.skuCode) bySku.set(it.product.skuCode, { expectedTax, vatRate });
   }
-  hubsellTotal = Math.round(hubsellTotal);
 
   const tolerance = taxToleranceVnd();
   const lineNotes = reconcileLines(payload.Data.InvoiceItems, bySku, tolerance);

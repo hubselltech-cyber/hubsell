@@ -12,16 +12,29 @@
 
 import type { InvoiceLogStatus } from "@prisma/client";
 
-/** Một dòng hàng hóa trên hóa đơn. */
+/**
+ * Một dòng hàng hóa trên hóa đơn.
+ *
+ * QUY ƯỚC TIỀN (đổi 24/08 — anh Trung chốt BÓC NGƯỢC sau khảo sát Salework +
+ * chuẩn kế toán TMĐT): giá bán trên sàn là giá ĐÃ GỒM thuế GTGT (giá khách
+ * trả), nơi dựng dòng (issue-order.buildInvoiceLines) bóc ngược ra tiền chưa
+ * thuế + tiền thuế sao cho amountWithoutVat + vatAmount = ĐÚNG số khách trả
+ * từng dòng. Adapter NCC dùng THẲNG hai số này, không tự suy lại từ
+ * unitPrice × quantity (nhân lại là lệch làm tròn).
+ */
 export interface InvoiceLine {
   /** Tên hàng hóa IN TRÊN HÓA ĐƠN — ưu tiên Product.taxName, fallback tên bán. */
   name: string;
   sku: string;
   quantity: number;
-  /** Đơn giá CHƯA thuế GTGT. */
+  /** Đơn giá CHƯA thuế (bóc từ giá bán — có thể lẻ 2 số thập phân khi SL>1). */
   unitPrice: number;
-  /** % thuế suất GTGT đầu ra của dòng: 0 / 5 / 8 / 10 (theo Product.vatRate). */
+  /** % thuế suất GTGT đầu ra của dòng: 0 / 5 / 8 / 10 (SKU khai riêng, fallback defaultVatRate của shop). */
   vatRate: number;
+  /** Thành tiền CHƯA thuế của dòng (VND nguyên) — số liệu chính của payload. */
+  amountWithoutVat: number;
+  /** Tiền thuế GTGT dòng = giá khách trả − amountWithoutVat. */
+  vatAmount: number;
 }
 
 /** Dữ liệu cần để phát hành một hóa đơn cho một đơn hàng. */

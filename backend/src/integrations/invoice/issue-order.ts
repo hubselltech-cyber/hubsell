@@ -100,6 +100,53 @@ export function resolveInvoiceBuyer(order: {
   return { buyerName: "Bán cho người tiêu dùng" };
 }
 
+/** Đầu vào tối thiểu để dựng một dòng hóa đơn từ OrderItem. */
+export interface InvoiceLineSource {
+  name: string;
+  sku: string;
+  quantity: number;
+  /** Đơn giá BÁN trên sàn (giá khách trả, ĐÃ gồm thuế GTGT). */
+  price: number;
+  /** Thuế suất khai riêng ở SKU kho — null/0 = dùng defaultVatRate của shop. */
+  vatRate: number | null;
+}
+
+/**
+ * BÓC NGƯỢC thuế GTGT từ giá bán (24/08 — anh Trung chốt sau khảo sát: Salework
+ * cùng cách này, chuẩn kế toán TMĐT yêu cầu tổng hóa đơn = đúng số khách trả;
+ * giá niêm yết sàn theo Luật Giá là giá đã gồm thuế):
+ *   · gross (giá khách trả dòng) = price × quantity, làm tròn VND;
+ *   · amountWithoutVat = round(gross × 100 / (100 + thuế suất));
+ *   · vatAmount = gross − amountWithoutVat  →  cộng lại LUÔN đúng gross,
+ *     không lệch 1đ kiểu tính thuế độc lập rồi cộng lên.
+ * unitPrice chỉ để IN đơn giá chưa thuế: SL=1 lấy đúng amountWithoutVat, SL>1
+ * chia đều làm tròn 2 số lẻ (con số pháp lý vẫn là cặp amount/vat).
+ */
+export function buildInvoiceLines(
+  items: InvoiceLineSource[],
+  defaultVatRate: number
+): InvoiceLine[] {
+  return items.map((it) => {
+    const vatRate = it.vatRate ? it.vatRate : defaultVatRate;
+    const gross = Math.round(it.price * it.quantity);
+    const amountWithoutVat = Math.round((gross * 100) / (100 + vatRate));
+    const vatAmount = gross - amountWithoutVat;
+    const unitPrice =
+      it.quantity === 1
+        ? amountWithoutVat
+        : Math.round((amountWithoutVat / it.quantity) * 100) / 100;
+    return {
+      name: it.name,
+      sku: it.sku,
+      quantity: it.quantity,
+      unitPrice,
+      vatRate,
+      amountWithoutVat,
+      vatAmount,
+    };
+  });
+}
+
 /**
  * @param channelWhere Phạm vi gian hàng của người gọi — route truyền
  *        channelScope(req) (đã gồm giới hạn nhân viên), worker truyền
@@ -174,19 +221,20 @@ export async function issueInvoiceForOrder(
   });
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
 
-  // Dòng hàng theo quy ước InvoiceLine: unitPrice CHƯA thuế GTGT.
-  const lines: InvoiceLine[] = order.items.map((it) => ({
-    name: it.product?.taxName?.trim() || it.productName,
-    sku: it.product?.skuCode ?? it.channelSku,
-    quantity: it.quantity,
-    unitPrice: Number(it.price),
-    vatRate: it.product?.vatRate ? it.product.vatRate : defaultVatRate,
-  }));
-  const vatTotal = lines.reduce(
-    (s, l) => s + Math.round((l.unitPrice * l.quantity * l.vatRate) / 100),
-    0
+  // Dòng hàng: giá bán sàn = giá ĐÃ GỒM thuế → bóc ngược (buildInvoiceLines);
+  // tổng hóa đơn vì thế luôn khớp đúng số khách trả cho phần hàng.
+  const lines: InvoiceLine[] = buildInvoiceLines(
+    order.items.map((it) => ({
+      name: it.product?.taxName?.trim() || it.productName,
+      sku: it.product?.skuCode ?? it.channelSku,
+      quantity: it.quantity,
+      price: Number(it.price),
+      vatRate: it.product?.vatRate ?? null,
+    })),
+    defaultVatRate
   );
-  const totalAmount = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0) + vatTotal;
+  const vatTotal = lines.reduce((s, l) => s + l.vatAmount, 0);
+  const totalAmount = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
 
   const log = await prisma.invoiceLog.create({
     data: {

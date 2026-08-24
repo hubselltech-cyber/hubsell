@@ -649,8 +649,10 @@ export function InvoiceConfigSection({
                       <option value="10">10%</option>
                     </NativeSelect>
                     <p className={TEXT_SUB}>
-                      Áp cho mọi dòng hàng trên hóa đơn; SKU nào đã khai thuế
-                      suất riêng trong Kho hàng thì ưu tiên số khai riêng.
+                      Giá bán trên sàn được coi là <b>đã gồm thuế</b> — hệ thống
+                      tự tách ngược, tổng hóa đơn luôn đúng số khách trả. SKU
+                      nào đã khai thuế suất riêng trong Kho hàng thì ưu tiên số
+                      khai riêng.
                     </p>
                   </div>
                 </div>

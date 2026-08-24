@@ -96,13 +96,14 @@ describe("Webhook MISA meInvoice — luồng đẩy vào hàng đợi", () => {
     const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
 
     const txnId = `TEST-MISA-${fx.suffix}-1`;
-    // Hubsell tự tính thuế 2 × 100.000 × 10% = 20.000đ; MISA gửi 20.300đ —
-    // lệch 300đ do làm tròn, NẰM TRONG biên độ mặc định 500đ.
+    // Giá bán ĐÃ GỒM thuế (quy ước bóc ngược 24/08): gross 2 × 100.000 =
+    // 200.000đ → thuế Hubsell = 200.000 − round(200.000×100/110) = 18.182đ;
+    // MISA gửi 18.400đ — lệch 218đ do làm tròn, NẰM TRONG biên độ 500đ.
     const payload = buildPublishedPayload({
       transactionId: txnId,
       orderCode: order.orderCode,
-      totalAmount: 220300,
-      totalVatAmount: 20300,
+      totalAmount: 200000,
+      totalVatAmount: 18400,
     });
 
     const res = await postWebhook(payload);
@@ -175,8 +176,8 @@ describe("Webhook MISA meInvoice — worker, đối soát thuế và audit log",
     });
     expect(log.status).toBe(InvoiceLogStatus.ISSUED);
     expect(log.invoiceNo).toBeTruthy();
-    // Lệch 300đ ≤ biên độ 500đ → tự điều chỉnh theo số NCC (chứng từ pháp lý).
-    expect(Number(log.vatAmount)).toBe(20300);
+    // Lệch 218đ ≤ biên độ 500đ → tự điều chỉnh theo số NCC (chứng từ pháp lý).
+    expect(Number(log.vatAmount)).toBe(18400);
     expect(log.order?.einvoiceStatus).toBe(InvoiceLogStatus.ISSUED);
 
     expect(log.statusHistory).toHaveLength(1);
@@ -188,7 +189,7 @@ describe("Webhook MISA meInvoice — worker, đối soát thuế và audit log",
   it("lệch thuế VƯỢT biên độ → TAX_MISMATCH: hóa đơn FAILED, giữ số Hubsell, cảnh báo trong audit", async () => {
     const productId = await fx.createProduct(10);
     await prisma.product.update({ where: { id: productId }, data: { vatRate: 10 } });
-    const orderId = await fx.createOrder(productId, 1); // thuế Hubsell = 10.000đ
+    const orderId = await fx.createOrder(productId, 1); // gross 100.000đ → thuế Hubsell bóc ngược = 9.091đ
     const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
 
     const txnId = `TEST-MISA-${fx.suffix}-2`;
