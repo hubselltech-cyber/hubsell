@@ -34,6 +34,7 @@ import {
   getOrderBuyerUserId,
   getTrackingInfo,
   sendChatMessage,
+  sendChatOrderMessage,
   type ShopeeTrackingEvent,
 } from "./client";
 import { getValidShopeeAccessToken } from "./service";
@@ -283,6 +284,16 @@ export async function scanShopeeDeliveryFails(
           try {
             const buyerId = await getOrderBuyerUserId(accessToken, shopId, order.orderCode);
             if (!buyerId) throw new Error("Sàn không trả buyer_user_id của đơn");
+            // Thẻ đơn TRƯỚC, text SAU (bài học production 25/08): khách chưa
+            // từng chat với shop thì tin text trần bị chặn
+            // first_chat_without_order_info — tin đầu phải đính kèm đơn. Thẻ
+            // đơn lỗi vẫn thử text (hội thoại có sẵn thì text tự đi lọt).
+            await sendChatOrderMessage({
+              accessToken,
+              shopId,
+              toId: buyerId,
+              orderSn: order.orderCode,
+            }).catch(() => {});
             await sendChatMessage({ accessToken, shopId, toId: buyerId, text: message });
             chatStatus = DeliveryFailChatStatus.SENT;
             sentMessage = message;

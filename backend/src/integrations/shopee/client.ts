@@ -999,6 +999,31 @@ export async function sendChatMessage(
 }
 
 /**
+ * Gửi THẺ ĐƠN HÀNG (message_type "order" + order_sn) — khách thấy card đơn
+ * của chính họ trong chat. Vai trò then chốt (production 25/08): shop CHỦ ĐỘNG
+ * mở hội thoại MỚI với khách bằng tin text trần bị sàn chặn
+ * `first_chat_without_order_info` — tin đầu tiên phải đính kèm đơn; gửi thẻ
+ * đơn này TRƯỚC là mở được cửa, các tin text sau đi lọt.
+ */
+export async function sendChatOrderMessage(
+  params: { accessToken: string; shopId: string; toId: number; orderSn: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeSendMessageData> {
+  return callShopPost<ShopeeSendMessageData>(
+    SHOPEE_PATHS.chatSendMessage,
+    params.accessToken,
+    params.shopId,
+    {
+      to_id: params.toId,
+      message_type: "order",
+      content: { order_sn: params.orderSn },
+    },
+    "send_message",
+    cfg
+  );
+}
+
+/**
  * Gửi THẺ SẢN PHẨM chuẩn sàn (message_type "item" + item_id) — trên app Shopee
  * khách thấy đúng card sản phẩm bấm mua được, không phải link text.
  */
