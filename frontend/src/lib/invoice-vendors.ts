@@ -112,9 +112,15 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
       { key: "meinvoicePassword", label: "Mật khẩu meInvoice", secret: true },
     ],
   },
-  // 25/08 — 3 NCC từ khảo sát thương mại (EasyInvoice là đích anh Trung nhắm
-  // sau thương mại hóa; M-Invoice có sẵn cơ chế affiliate link; Mắt Bão có API
-  // + UAT công khai). Đều "soon": form nhảy đúng thuật ngữ, chưa phát hành thật.
+  // ⏳ CÁC NCC DƯỚI ĐÂY TÍCH HỢP SAU KHI THƯƠNG MẠI HÓA HUBSELL — chiến lược
+  // anh Trung chốt 25/08: dùng MISA (bên lớn nhất) làm mặt tiền tiếp thị lấy
+  // khách trước; có data khách rồi mới đem đàm phán hoa hồng/chiết khấu với
+  // từng bên này. Khi chốt xong một bên: bỏ cờ `soon` ở đây + rút tên khỏi
+  // COMING_SOON_PROVIDERS (backend/src/routes/invoice-config.ts) + viết adapter
+  // vào PROVIDER_FACTORIES (backend/src/integrations/invoice/index.ts).
+  // Khảo sát 25/08: EasyInvoice là đích nhắm chính (SoftDreams, đầu mối trong
+  // memory); M-Invoice có sẵn cơ chế affiliate link; Mắt Bão có API + UAT công
+  // khai. Đều "soon": form nhảy đúng thuật ngữ, ô nhập khóa, chưa phát hành thật.
   {
     value: "EASYINVOICE",
     label: "EasyInvoice (SoftDreams)",

@@ -47,6 +47,11 @@ const router = Router();
 const PROVIDERS = ["MISA", "EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
 // NCC chưa nối API — UI cho xem trước giao diện nhưng KHÔNG cho lưu (25/08 anh
 // Trung đổi từ "lưu cấu hình trước" sang khóa cứng). MISA/CUSTOM nằm ngoài.
+// ⏳ Các NCC này TÍCH HỢP SAU KHI THƯƠNG MẠI HÓA HUBSELL (chiến lược 25/08:
+// MISA tiếp thị lấy khách trước, có data mới đàm phán hoa hồng từng bên —
+// EasyInvoice là đích nhắm chính). Mở bên nào = rút khỏi đây + bỏ cờ `soon`
+// trong frontend/src/lib/invoice-vendors.ts + thêm adapter vào
+// PROVIDER_FACTORIES (integrations/invoice/index.ts).
 const COMING_SOON_PROVIDERS = ["EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV"];
 const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
