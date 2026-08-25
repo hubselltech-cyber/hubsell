@@ -43,10 +43,11 @@ import {
 
 const router = Router();
 
-// 25/08: thêm 3 NCC từ khảo sát thương mại (EasyInvoice/M-Invoice/Mắt Bão) —
-// mới ở mức LƯU cấu hình trước ("Sắp ra mắt" trên UI); phát hành/test/tải ký
-// hiệu vẫn chỉ MISA cho tới khi nối API từng nhà.
+// 25/08: thêm 3 NCC từ khảo sát thương mại (EasyInvoice/M-Invoice/Mắt Bão).
 const PROVIDERS = ["MISA", "EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
+// NCC chưa nối API — UI cho xem trước giao diện nhưng KHÔNG cho lưu (25/08 anh
+// Trung đổi từ "lưu cấu hình trước" sang khóa cứng). MISA/CUSTOM nằm ngoài.
+const COMING_SOON_PROVIDERS = ["EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV"];
 const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
 
@@ -216,6 +217,15 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
 
     if (typeof provider !== "string" || !PROVIDERS.includes(provider)) {
       res.status(400).json({ error: "Nhà cung cấp không hợp lệ" });
+      return;
+    }
+    // 25/08 (anh Trung): NCC "Sắp ra mắt" chỉ XEM TRƯỚC trên UI — chặn lưu cả
+    // ở đây (phòng gọi API thẳng), tránh provider trong DB trỏ sang NCC chưa có
+    // adapter làm auto-issue chết lặng. Mở NCC nào = rút khỏi danh sách này.
+    if (COMING_SOON_PROVIDERS.includes(provider)) {
+      res.status(400).json({
+        error: "Nhà cung cấp này đang Sắp ra mắt — chưa thể chọn làm NCC phát hành.",
+      });
       return;
     }
     if (typeof signMethod !== "string" || !SIGN_METHODS.includes(signMethod)) {

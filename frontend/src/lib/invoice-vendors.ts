@@ -66,7 +66,11 @@ export interface InvoiceVendorMeta {
   canFetchTemplates?: boolean;
   /** NCC tuỳ biến — cần nhập endpoint API riêng. */
   custom?: boolean;
-  /** Chưa tích hợp xong — hiển thị "(Sắp ra mắt)" nhưng vẫn cho cấu hình trước. */
+  /**
+   * Chưa tích hợp xong — hiển thị "(Sắp ra mắt)", chỉ XEM TRƯỚC giao diện:
+   * ô nhập mờ + khóa cứng, nút Lưu/Test khóa (25/08 anh Trung); backend cũng
+   * chặn lưu (COMING_SOON_PROVIDERS trong routes/invoice-config.ts).
+   */
   soon?: boolean;
   /** Bộ trường credential hiển thị khi chọn NCC này (Dynamic Form). */
   credentialFields: VendorCredentialField[];

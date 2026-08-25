@@ -467,8 +467,15 @@ export function InvoiceConfigSection({
                   {/* DYNAMIC FORM theo NCC — preset trường ở invoice-vendors.ts,
                       key map thẳng cột InvoiceConfig (mỗi NCC tối đa MỘT trường
                       secret, đổ vào secretKey). Thêm NCC = thêm preset, không
-                      đụng component này. */}
-                  <div className="grid gap-4 sm:grid-cols-2">
+                      đụng component này. NCC "Sắp ra mắt" (25/08 anh Trung):
+                      chỉ XEM TRƯỚC giao diện — ô nhập mờ + khóa cứng, mở lại
+                      khi tích hợp xong. */}
+                  <div
+                    className={cn(
+                      "grid gap-4 sm:grid-cols-2",
+                      vendor.soon && "pointer-events-none opacity-50",
+                    )}
+                  >
                     {vendor.credentialFields.map((f) => (
                       <div
                         key={f.key}
@@ -497,6 +504,7 @@ export function InvoiceConfigSection({
                             <Input
                               id={`cred-${f.key}`}
                               type="password"
+                              disabled={vendor.soon}
                               placeholder={secretPlaceholder(
                                 hasMeinvoicePassword,
                                 meinvoicePasswordMasked,
@@ -509,7 +517,14 @@ export function InvoiceConfigSection({
                             <Input
                               id={`cred-${f.key}`}
                               type="password"
-                              placeholder={secretPlaceholder(hasSecretKey, secretMasked)}
+                              disabled={vendor.soon}
+                              placeholder={
+                                // secretInput dùng chung cột secretKey — NCC soon
+                                // đừng lộ mask khóa đã lưu của NCC khác.
+                                vendor.soon
+                                  ? "Sắp ra mắt — chưa nhập được"
+                                  : secretPlaceholder(hasSecretKey, secretMasked)
+                              }
                               value={secretInput}
                               onChange={(e) => setSecretInput(e.target.value)}
                               className={INPUT_FOCUS}
@@ -518,6 +533,7 @@ export function InvoiceConfigSection({
                         ) : (
                           <Input
                             id={`cred-${f.key}`}
+                            disabled={vendor.soon}
                             placeholder={f.placeholder}
                             value={
                               f.key === "customApiUrl"
@@ -561,8 +577,9 @@ export function InvoiceConfigSection({
 
                   {vendor.soon && (
                     <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                      {vendor.label} đang <b>Sắp ra mắt</b> — cấu hình được lưu
-                      trước, hệ thống chưa phát hành hóa đơn thật qua NCC này.
+                      {vendor.label} đang <b>Sắp ra mắt</b> — bạn đang xem trước
+                      giao diện; các ô nhập sẽ mở khi Hubsell hoàn tất tích hợp
+                      với NCC này.
                     </p>
                   )}
 
@@ -570,12 +587,18 @@ export function InvoiceConfigSection({
                       meInvoice (đúng ký hiệu đã đăng ký CQT, seller không phải
                       thuộc chuỗi TT78); chưa tải được thì vẫn nhập tay. Mẫu số
                       tự suy từ ký tự đầu — không còn ô riêng. */}
-                  <div className="grid gap-1.5">
+                  <div
+                    className={cn(
+                      "grid gap-1.5",
+                      vendor.soon && "pointer-events-none opacity-50",
+                    )}
+                  >
                     <Label htmlFor="inv-series">Ký hiệu hóa đơn</Label>
                     <div className="flex flex-wrap items-center gap-2">
                       {templates.length > 0 ? (
                         <NativeSelect
                           id="inv-series"
+                          disabled={vendor.soon}
                           className="min-w-56 flex-1"
                           value={invoiceSeries}
                           onChange={(e) =>
@@ -598,10 +621,13 @@ export function InvoiceConfigSection({
                       ) : (
                         <Input
                           id="inv-series"
+                          disabled={vendor.soon}
                           placeholder={
-                            vendor.canFetchTemplates
-                              ? "Bấm Tải ký hiệu — hoặc nhập tay, VD 1C26TAA"
-                              : "Nhập ký hiệu đã đăng ký CQT, VD 1C26TAA"
+                            vendor.soon
+                              ? "Sắp ra mắt — chưa nhập được"
+                              : vendor.canFetchTemplates
+                                ? "Bấm Tải ký hiệu — hoặc nhập tay, VD 1C26TAA"
+                                : "Nhập ký hiệu đã đăng ký CQT, VD 1C26TAA"
                           }
                           value={invoiceSeries}
                           onChange={(e) =>
@@ -658,7 +684,12 @@ export function InvoiceConfigSection({
                       hóa đơn với mức này. */}
                   {/* Khối NỔI BẬT riêng (anh yêu cầu 24/08 tối) — box emerald
                       tách khỏi các ô thường, chú thích dài chuyển vào tooltip. */}
-                  <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+                  <div
+                    className={cn(
+                      "flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3",
+                      vendor.soon && "pointer-events-none opacity-50",
+                    )}
+                  >
                     <span className="rounded-xl bg-emerald-100 p-2.5 text-emerald-600">
                       <Percent className="size-4" />
                     </span>
@@ -680,6 +711,7 @@ export function InvoiceConfigSection({
                       </span>
                       <NativeSelect
                         id="inv-default-vat"
+                        disabled={vendor.soon}
                         className="max-w-64"
                         value={String(defaultVatRate)}
                         onChange={(e) => setDefaultVatRate(Number(e.target.value))}
@@ -699,11 +731,13 @@ export function InvoiceConfigSection({
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 onClick={handleSaveConfig}
-                disabled={savingConfig || readOnlyPreview}
+                disabled={savingConfig || readOnlyPreview || vendor.soon}
                 title={
                   readOnlyPreview
                     ? "Module đang ở chế độ Beta — khóa lưu để an toàn dữ liệu"
-                    : undefined
+                    : vendor.soon
+                      ? `${vendor.label} sắp ra mắt — chọn lại NCC đang hỗ trợ để lưu`
+                      : undefined
                 }
               >
                 {savingConfig ? (
@@ -717,7 +751,9 @@ export function InvoiceConfigSection({
                 <ShieldCheck className="size-3.5" />
                 {readOnlyPreview
                   ? "Beta — đã khóa lưu, chạy Sandbox."
-                  : "Mật khẩu để trống khi lưu = giữ nguyên khóa cũ."}
+                  : vendor.soon
+                    ? `${vendor.label} sắp ra mắt — chọn NCC đang hỗ trợ để lưu cấu hình.`
+                    : "Mật khẩu để trống khi lưu = giữ nguyên khóa cũ."}
               </p>
             </div>
           </div>
