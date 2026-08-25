@@ -174,15 +174,16 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    // Hóa đơn & thuế — mục NGUYÊN KHỐI (khóa "invoicing"), thứ tự anh Trung chốt 08/08.
+    // Hóa đơn & thuế — mục NGUYÊN KHỐI (khóa "invoicing"), thứ tự anh Trung
+    // chốt 08/08; 25/08 đảo "Thuế bổ sung" xuống cuối (dùng ít hơn Lịch sử).
     // 24/08 tối: MỞ THƯƠNG MẠI — hết thí điểm, hiện theo quyền "invoicing" như mọi mục.
     label: "Hóa đơn & Thuế",
     icon: "receipt_long",
     perm: "invoicing",
     children: [
       { href: "/invoicing/connect", label: "Kết nối & Xuất hóa đơn" },
-      { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
       { href: "/invoicing/history", label: "Lịch sử & Báo cáo thuế" },
+      { href: "/invoicing/tax-settings", label: "Thuế bổ sung" },
     ],
   },
   // "store" thay "storefront": nhà mái hiên có CỬA GIỮA (anh Trung 08/08).
