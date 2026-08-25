@@ -170,45 +170,47 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
   // Số ký tự đã "gõ" (tính trên chuỗi ghép mọi field) của bước có typing.
   const [typed, setTyped] = useState(0);
 
-  // THUYẾT MINH bằng giọng đọc trình duyệt (Web Speech API — Chrome có
-  // "Google Tiếng Việt", Edge có HoaiMy/NamMinh). Mặc định TẮT: trình duyệt
-  // chặn tự phát âm thanh khi chưa có thao tác người dùng, bấm nút loa = bật.
-  // Sau thương mại hoá muốn giọng thu chuyên nghiệp: thay speakStep bằng
-  // phát file mp3 theo bước, phần còn lại giữ nguyên.
+  // THUYẾT MINH bằng file MP3 thu sẵn giọng nữ Hoài My (vi-VN-HoaiMyNeural,
+  // sinh bởi scripts/generate-onboarding-voice.js) — mọi máy nghe MỘT giọng
+  // tiếng Việt chuẩn, không phụ thuộc giọng đọc cài trên trình duyệt (bản
+  // Web Speech API cũ đọc ngọng trên máy thiếu giọng Việt — anh Trung chê).
+  // Mặc định TẮT: trình duyệt chặn tự phát âm thanh khi chưa có thao tác
+  // người dùng, bấm nút loa = bật.
   const [voiceOn, setVoiceOn] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const speakingRef = useRef(false); // đang đọc dở
   const waitingRef = useRef(false); // pha zoom đã hết giờ, đang nán chờ đọc xong
 
-  useEffect(() => {
-    setVoiceSupported("speechSynthesis" in window);
-    return () => window.speechSynthesis?.cancel(); // unmount thì im lặng ngay
+  const stopSpeaking = useCallback(() => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    speakingRef.current = false;
   }, []);
 
-  const speakStep = useCallback((i: number) => {
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-    synth.cancel();
-    const s = TOUR_STEPS[i];
-    const u = new SpeechSynthesisUtterance(`Bước ${i + 1}. ${s.title}. ${s.desc}`);
-    u.lang = "vi-VN";
-    const viVoice = synth
-      .getVoices()
-      .find((v) => v.lang?.toLowerCase().startsWith("vi"));
-    if (viVoice) u.voice = viVoice;
-    speakingRef.current = true;
-    const done = () => {
-      speakingRef.current = false;
-      // Pha zoom đã hết giờ từ trước — đọc xong mới cho máy trạng thái đi tiếp.
-      if (waitingRef.current) {
-        waitingRef.current = false;
-        setPhase("reset");
-      }
-    };
-    u.onend = done;
-    u.onerror = done;
-    synth.speak(u);
-  }, []);
+  useEffect(() => stopSpeaking, [stopSpeaking]); // unmount thì im lặng ngay
+
+  const speakStep = useCallback(
+    (i: number) => {
+      stopSpeaking();
+      const a = new Audio(`/onboarding/voice/step-${i + 1}.mp3`);
+      audioRef.current = a;
+      speakingRef.current = true;
+      const done = () => {
+        if (audioRef.current !== a) return; // đã bị bước khác/nút tắt thay thế
+        speakingRef.current = false;
+        // Pha zoom hết giờ từ trước — đọc xong mới cho máy trạng thái đi tiếp.
+        if (waitingRef.current) {
+          waitingRef.current = false;
+          setPhase("reset");
+        }
+      };
+      a.onended = done;
+      a.onerror = done;
+      // play() bị chặn (chưa có thao tác người dùng) → coi như đọc xong, không treo.
+      a.play().catch(done);
+    },
+    [stopSpeaking]
+  );
 
   // Sang bước mới (hoặc vừa bật loa giữa chừng) → đọc lời bước đó;
   // tắt loa → ngắt ngay và thả máy trạng thái nếu đang nán chờ.
@@ -217,13 +219,12 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
       speakStep(step);
       return;
     }
-    window.speechSynthesis?.cancel();
-    speakingRef.current = false;
+    stopSpeaking();
     if (waitingRef.current) {
       waitingRef.current = false;
       setPhase("reset");
     }
-  }, [step, voiceOn, speakStep]);
+  }, [step, voiceOn, speakStep, stopSpeaking]);
 
   const current = TOUR_STEPS[step];
   const { target } = current;
@@ -245,8 +246,9 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
 
   // Máy trạng thái theo timeout — mỗi pha tự hẹn giờ chuyển pha kế tiếp.
   useEffect(() => {
-    // Đang thuyết minh mà pha zoom hết giờ → nán lại chờ đọc xong (onend sẽ
-    // đẩy sang reset); kèm phao 12s phòng engine giọng đọc treo không phát end.
+    // Đang thuyết minh mà pha zoom hết giờ → nán lại chờ đọc xong (onended sẽ
+    // đẩy sang reset); kèm phao 20s phòng audio treo không phát ended (file
+    // dài nhất ~11s).
     let safety: ReturnType<typeof setTimeout> | undefined;
     const zoomDone = () => {
       if (speakingRef.current) {
@@ -256,7 +258,7 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
             waitingRef.current = false;
             setPhase("reset");
           }
-        }, 12000);
+        }, 20000);
         return;
       }
       setPhase("reset");
@@ -403,23 +405,21 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
           Bước {step + 1}/{TOUR_STEPS.length}
         </div>
 
-        {/* Nút thuyết minh — ghim góc phải trên, chỉ hiện khi máy có giọng đọc */}
-        {voiceSupported && (
-          <button
-            type="button"
-            onClick={() => setVoiceOn((v) => !v)}
-            title={voiceOn ? "Tắt thuyết minh" : "Bật giọng đọc thuyết minh"}
-            aria-label={voiceOn ? "Tắt thuyết minh" : "Bật giọng đọc thuyết minh"}
-            className={cn(
-              "absolute right-3 top-3 flex size-8 items-center justify-center rounded-full shadow transition-colors",
-              voiceOn
-                ? "bg-primary text-primary-foreground"
-                : "bg-slate-900/85 text-white hover:bg-slate-900"
-            )}
-          >
-            {voiceOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
-          </button>
-        )}
+        {/* Nút thuyết minh — ghim góc phải trên */}
+        <button
+          type="button"
+          onClick={() => setVoiceOn((v) => !v)}
+          title={voiceOn ? "Tắt thuyết minh" : "Bật giọng đọc thuyết minh"}
+          aria-label={voiceOn ? "Tắt thuyết minh" : "Bật giọng đọc thuyết minh"}
+          className={cn(
+            "absolute right-3 top-3 flex size-8 items-center justify-center rounded-full shadow transition-colors",
+            voiceOn
+              ? "bg-primary text-primary-foreground"
+              : "bg-slate-900/85 text-white hover:bg-slate-900"
+          )}
+        >
+          {voiceOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+        </button>
       </div>
 
       {/* Chú thích bước hiện tại */}
