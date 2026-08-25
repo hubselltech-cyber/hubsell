@@ -6,7 +6,15 @@
  * API tương ứng vào đây mà không đụng tới giao diện.
  */
 
-export type InvoiceVendor = "MISA" | "VIETTEL" | "VNPT" | "BKAV" | "CUSTOM";
+export type InvoiceVendor =
+  | "MISA"
+  | "EASYINVOICE"
+  | "MINVOICE"
+  | "MATBAO"
+  | "VIETTEL"
+  | "VNPT"
+  | "BKAV"
+  | "CUSTOM";
 
 /**
  * MỘT TRƯỜNG CREDENTIAL của form cấu hình NCC (Dynamic Form theo vendor).
@@ -37,6 +45,25 @@ export interface VendorCredentialField {
 export interface InvoiceVendorMeta {
   value: InvoiceVendor;
   label: string;
+  /**
+   * BỘ NHẬN DIỆN theo NCC (25/08 — anh Trung: "chọn bên nào giao diện phải
+   * nhảy theo bên đó, đừng thuần thuật ngữ MISA"). Mọi câu chữ/link trên UI
+   * đọc từ đây thay vì hardcode — thêm NCC mới là điền đủ bộ này.
+   */
+  /** Tên DỊCH VỤ dùng trong câu chữ: "tài khoản {serviceName}", VD "meInvoice". */
+  serviceName: string;
+  /** Pháp nhân đứng sau — dùng khi nói về quan hệ phí/thuế: "phí trả thẳng cho {companyName}". */
+  companyName: string;
+  /** Link đăng ký tài khoản NCC (link affiliate khi đàm phán xong — thay đúng 1 chỗ). */
+  signupUrl?: string;
+  /** Trung tâm trợ giúp của NCC — bullet cuối box Hướng dẫn nhanh. */
+  helpUrl?: string;
+  /** Cổng tra cứu công khai hóa đơn của NCC. */
+  lookupUrl?: string;
+  /** Mô tả phương thức ký số của NCC — hiển thị dưới widget Trạng thái kết nối. */
+  signNote: string;
+  /** true = có API kéo danh sách ký hiệu về chọn (nút "Tải ký hiệu"). */
+  canFetchTemplates?: boolean;
   /** NCC tuỳ biến — cần nhập endpoint API riêng. */
   custom?: boolean;
   /** Chưa tích hợp xong — hiển thị "(Sắp ra mắt)" nhưng vẫn cho cấu hình trước. */
@@ -44,6 +71,17 @@ export interface InvoiceVendorMeta {
   /** Bộ trường credential hiển thị khi chọn NCC này (Dynamic Form). */
   credentialFields: VendorCredentialField[];
 }
+
+/** Ghi chú ký số dùng chung cho NCC chưa nối API — chốt câu chữ thật khi tích hợp. */
+const SIGN_NOTE_SOON =
+  "Phương thức ký số theo quy định của nhà cung cấp — chi tiết được chốt khi Hubsell mở tích hợp chính thức.";
+
+/**
+ * Link giới thiệu đăng ký meInvoice (mô hình AFFILIATE — anh Trung chốt 23/08:
+ * Hubsell chỉ giới thiệu hưởng hoa hồng, KHÔNG làm đại lý thu tiền/đối soát hộ
+ * khách). Khi có link affiliate chính thức từ MISA thì thay đúng MỘT chỗ này.
+ */
+export const MEINVOICE_SIGNUP_URL = "https://www.meinvoice.vn/dang-ky/";
 
 export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   {
@@ -53,6 +91,14 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
     // ở server, khách KHÔNG thấy — hết cảnh bắt khách đi xin key ở portal dev.
     value: "MISA",
     label: "MISA meInvoice",
+    serviceName: "meInvoice",
+    companyName: "MISA",
+    signupUrl: MEINVOICE_SIGNUP_URL,
+    helpUrl: "https://www.meinvoice.vn/tro-giup/",
+    lookupUrl: "https://www.meinvoice.vn/tra-cuu/",
+    signNote:
+      "Hóa đơn được ký nền tự động (HSM) theo chứng thư gắn với tài khoản meInvoice — không cần USB Token hay cấu hình gì thêm.",
+    canFetchTemplates: true,
     credentialFields: [
       {
         key: "meinvoiceUsername",
@@ -62,9 +108,70 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
       { key: "meinvoicePassword", label: "Mật khẩu meInvoice", secret: true },
     ],
   },
+  // 25/08 — 3 NCC từ khảo sát thương mại (EasyInvoice là đích anh Trung nhắm
+  // sau thương mại hóa; M-Invoice có sẵn cơ chế affiliate link; Mắt Bão có API
+  // + UAT công khai). Đều "soon": form nhảy đúng thuật ngữ, chưa phát hành thật.
+  {
+    value: "EASYINVOICE",
+    label: "EasyInvoice (SoftDreams)",
+    serviceName: "EasyInvoice",
+    companyName: "SoftDreams",
+    signupUrl: "https://easyinvoice.vn/",
+    helpUrl: "https://easyinvoice.vn/",
+    signNote: SIGN_NOTE_SOON,
+    soon: true,
+    credentialFields: [
+      {
+        key: "clientId",
+        label: "Tài khoản EasyInvoice của shop",
+        placeholder: "Tài khoản đăng nhập easyinvoice.vn",
+      },
+      { key: "secretKey", label: "Mật khẩu EasyInvoice", secret: true },
+    ],
+  },
+  {
+    value: "MINVOICE",
+    label: "M-Invoice",
+    serviceName: "M-Invoice",
+    companyName: "M-Invoice",
+    signupUrl: "https://minvoice.vn/",
+    helpUrl: "https://minvoice.vn/",
+    signNote: SIGN_NOTE_SOON,
+    soon: true,
+    credentialFields: [
+      {
+        key: "clientId",
+        label: "Tài khoản M-Invoice của shop",
+        placeholder: "Tài khoản đăng nhập minvoice.vn",
+      },
+      { key: "secretKey", label: "Mật khẩu M-Invoice", secret: true },
+    ],
+  },
+  {
+    value: "MATBAO",
+    label: "Mắt Bão Invoice",
+    serviceName: "Matbao-invoice",
+    companyName: "Mắt Bão",
+    signupUrl: "https://matbao.in/",
+    helpUrl: "https://matbao.in/",
+    signNote: SIGN_NOTE_SOON,
+    soon: true,
+    credentialFields: [
+      {
+        key: "clientId",
+        label: "Tài khoản Matbao-invoice của shop",
+        placeholder: "Tài khoản đăng nhập matbao.in",
+      },
+      { key: "secretKey", label: "Mật khẩu Matbao-invoice", secret: true },
+    ],
+  },
   {
     value: "VIETTEL",
     label: "Viettel SInvoice",
+    serviceName: "SInvoice",
+    companyName: "Viettel",
+    helpUrl: "https://www.sinvoice.com.vn/",
+    signNote: SIGN_NOTE_SOON,
     soon: true,
     credentialFields: [
       { key: "clientId", label: "Tài khoản API (Username)", placeholder: "Username SInvoice cấp" },
@@ -74,6 +181,9 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   {
     value: "VNPT",
     label: "VNPT Invoice",
+    serviceName: "VNPT Invoice",
+    companyName: "VNPT",
+    signNote: SIGN_NOTE_SOON,
     soon: true,
     credentialFields: [
       { key: "clientId", label: "Tài khoản dịch vụ (Account)", placeholder: "Account VNPT cấp" },
@@ -83,6 +193,9 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   {
     value: "BKAV",
     label: "Bkav eHoadon",
+    serviceName: "eHoadon",
+    companyName: "Bkav",
+    signNote: SIGN_NOTE_SOON,
     soon: true,
     credentialFields: [
       { key: "clientId", label: "Partner GUID", placeholder: "GUID Bkav cấp" },
@@ -92,6 +205,9 @@ export const INVOICE_VENDORS: InvoiceVendorMeta[] = [
   {
     value: "CUSTOM",
     label: "Khác (Custom API)",
+    serviceName: "nhà cung cấp tùy chỉnh",
+    companyName: "nhà cung cấp",
+    signNote: SIGN_NOTE_SOON,
     custom: true,
     credentialFields: [
       { key: "customApiUrl", label: "Endpoint API (Custom)", placeholder: "https://api.nhacungcap.vn/invoice" },
@@ -182,13 +298,6 @@ export function isCustomVendor(v: string): boolean {
  * NCC ghi nhận nguồn giới thiệu.
  */
 export const HUBSELL_PARTNER_CODE = "HUBSELL-ISV-2026";
-
-/**
- * Link giới thiệu đăng ký meInvoice (mô hình AFFILIATE — anh Trung chốt 23/08:
- * Hubsell chỉ giới thiệu hưởng hoa hồng, KHÔNG làm đại lý thu tiền/đối soát hộ
- * khách). Khi có link affiliate chính thức từ MISA thì thay đúng MỘT chỗ này.
- */
-export const MEINVOICE_SIGNUP_URL = "https://www.meinvoice.vn/dang-ky/";
 
 /** Phương thức ký số (giá trị lưu DB — backend validate đúng 2 giá trị này). */
 export const SIGN_METHODS = [

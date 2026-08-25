@@ -32,7 +32,6 @@ import {
 } from "@/lib/api";
 import {
   HUBSELL_PARTNER_CODE,
-  MEINVOICE_SIGNUP_URL,
   INVOICE_FIELD_HINTS,
   INVOICE_SERIES_RE,
   INVOICE_VENDORS,
@@ -328,8 +327,8 @@ export function InvoiceConfigSection({
       if (!silent) {
         toast.success(
           r.templates.length > 0
-            ? `Đã tải ${r.templates.length} ký hiệu từ meInvoice — chọn ở ô Ký hiệu hóa đơn.`
-            : "meInvoice chưa có ký hiệu nào — đăng ký mẫu hóa đơn với CQT trên meInvoice trước.",
+            ? `Đã tải ${r.templates.length} ký hiệu từ ${vendor.serviceName} — chọn ở ô Ký hiệu hóa đơn.`
+            : `${vendor.serviceName} chưa có ký hiệu nào — đăng ký mẫu hóa đơn với CQT trên ${vendor.serviceName} trước.`,
         );
       }
     } catch (err) {
@@ -337,7 +336,7 @@ export function InvoiceConfigSection({
         toast.error(
           err instanceof ApiError
             ? err.message
-            : "Không tải được ký hiệu — kiểm tra tài khoản meInvoice rồi thử lại",
+            : `Không tải được ký hiệu — kiểm tra tài khoản ${vendor.serviceName} rồi thử lại`,
         );
       }
     } finally {
@@ -447,9 +446,9 @@ export function InvoiceConfigSection({
                     desc="Hóa đơn phát hành từ tài khoản của chính shop."
                   />
 
-                  {/* Vendor Selector — 23/08 CHỈ hiện NCC đã nối thật (MISA);
-                      các NCC "sắp ra mắt"/Custom ẩn đi cho form gọn, registry
-                      invoice-vendors.ts giữ nguyên để mở lại sau. */}
+                  {/* Vendor Selector — 25/08 hiện CẢ NCC "Sắp ra mắt" (anh Trung:
+                      khung phải sẵn sàng cho mọi bên, chọn bên nào giao diện
+                      nhảy theo bên đó); chỉ Custom còn ẩn cho form gọn. */}
                   <div className="grid gap-1.5">
                     <Label htmlFor="inv-provider">Nhà cung cấp Hóa đơn</Label>
                     <NativeSelect
@@ -457,13 +456,11 @@ export function InvoiceConfigSection({
                       value={provider}
                       onChange={(e) => setProvider(e.target.value)}
                     >
-                      {INVOICE_VENDORS.filter((v) => !v.soon && !v.custom).map(
-                        (v) => (
-                          <option key={v.value} value={v.value}>
-                            {v.label}
-                          </option>
-                        ),
-                      )}
+                      {INVOICE_VENDORS.filter((v) => !v.custom).map((v) => (
+                        <option key={v.value} value={v.value}>
+                          {v.soon ? `${v.label} (Sắp ra mắt)` : v.label}
+                        </option>
+                      ))}
                     </NativeSelect>
                   </div>
 
@@ -543,19 +540,20 @@ export function InvoiceConfigSection({
                     ))}
                   </div>
 
-                  {provider === "MISA" && (
+                  {vendor.signupUrl && (
                     <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-700">
                       Hóa đơn phát hành trực tiếp từ{" "}
-                      <b>tài khoản meInvoice của shop</b> — dữ liệu hóa đơn và
-                      nghĩa vụ thuế thuộc quan hệ giữa shop với MISA, Hubsell
-                      chỉ là cầu nối kỹ thuật. Chưa có tài khoản?{" "}
+                      <b>tài khoản {vendor.serviceName} của shop</b> — dữ liệu
+                      hóa đơn và nghĩa vụ thuế thuộc quan hệ giữa shop với{" "}
+                      {vendor.companyName}, Hubsell chỉ là cầu nối kỹ thuật.
+                      Chưa có tài khoản?{" "}
                       <a
-                        href={MEINVOICE_SIGNUP_URL}
+                        href={vendor.signupUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-semibold underline underline-offset-2"
                       >
-                        Đăng ký meInvoice
+                        Đăng ký {vendor.serviceName}
                       </a>{" "}
                       rồi quay lại nhập tài khoản tại đây.
                     </p>
@@ -600,7 +598,11 @@ export function InvoiceConfigSection({
                       ) : (
                         <Input
                           id="inv-series"
-                          placeholder="Bấm Tải ký hiệu — hoặc nhập tay, VD 1C26TAA"
+                          placeholder={
+                            vendor.canFetchTemplates
+                              ? "Bấm Tải ký hiệu — hoặc nhập tay, VD 1C26TAA"
+                              : "Nhập ký hiệu đã đăng ký CQT, VD 1C26TAA"
+                          }
                           value={invoiceSeries}
                           onChange={(e) =>
                             setInvoiceSeries(e.target.value.toUpperCase())
@@ -613,24 +615,38 @@ export function InvoiceConfigSection({
                           )}
                         />
                       )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void loadTemplates()}
-                        disabled={loadingTemplates}
-                      >
-                        {loadingTemplates ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <DownloadCloud className="size-4" />
-                        )}
-                        Tải ký hiệu
-                      </Button>
+                      {/* Nút Tải ký hiệu chỉ hiện với NCC có API kéo ký hiệu —
+                          NCC khác nhập tay cho tới khi nối API. */}
+                      {vendor.canFetchTemplates && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void loadTemplates()}
+                          disabled={loadingTemplates}
+                        >
+                          {loadingTemplates ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <DownloadCloud className="size-4" />
+                          )}
+                          Tải ký hiệu
+                        </Button>
+                      )}
                     </div>
                     <FieldError msg={fieldErrors.invoiceSeries} />
                     <p className={TEXT_SUB}>
-                      Lưu tài khoản meInvoice rồi bấm &quot;Tải ký hiệu&quot; để
-                      chọn đúng ký hiệu đã đăng ký với Cơ quan Thuế.
+                      {vendor.canFetchTemplates ? (
+                        <>
+                          Lưu tài khoản {vendor.serviceName} rồi bấm &quot;Tải ký
+                          hiệu&quot; để chọn đúng ký hiệu đã đăng ký với Cơ quan
+                          Thuế.
+                        </>
+                      ) : (
+                        <>
+                          Nhập đúng ký hiệu đã đăng ký với Cơ quan Thuế trên{" "}
+                          {vendor.serviceName}.
+                        </>
+                      )}
                     </p>
                   </div>
 
@@ -728,7 +744,12 @@ export function InvoiceConfigSection({
                       size="sm"
                       variant="outline"
                       onClick={() => void handleTestMeinvoice()}
-                      disabled={testingMeinvoice}
+                      disabled={testingMeinvoice || vendor.soon}
+                      title={
+                        vendor.soon
+                          ? `${vendor.label} sắp ra mắt — chưa test được kết nối`
+                          : undefined
+                      }
                     >
                       {testingMeinvoice ? (
                         <Loader2 className="size-3.5 animate-spin" />
@@ -740,8 +761,7 @@ export function InvoiceConfigSection({
                   </span>
                 </div>
                 <p className={cn(TEXT_SUB, "mt-3 border-t border-slate-100 pt-3")}>
-                  Hóa đơn được ký nền tự động (HSM) theo chứng thư gắn với tài
-                  khoản meInvoice — không cần USB Token hay cấu hình gì thêm.
+                  {vendor.signNote}
                 </p>
               </div>
             </div>
@@ -753,16 +773,23 @@ export function InvoiceConfigSection({
                 tone="bg-teal-50 text-teal-600"
                 title="Hướng dẫn nhanh"
               />
+              {/* Nội dung nhảy theo NCC đang chọn — thuật ngữ/link đọc từ
+                  registry invoice-vendors.ts, không hardcode tên NCC nào. */}
               <ul className="mt-3 list-disc space-y-2 pl-4 text-xs leading-relaxed text-slate-600">
                 <li>
-                  <b>3 bước là xong:</b> điền pháp nhân → nhập tài khoản
-                  meInvoice → Lưu, rồi bấm Tải ký hiệu để chọn ký hiệu hóa đơn.
+                  <b>3 bước là xong:</b> điền pháp nhân → nhập tài khoản{" "}
+                  {vendor.serviceName} → Lưu
+                  {vendor.canFetchTemplates
+                    ? ", rồi bấm Tải ký hiệu để chọn ký hiệu hóa đơn."
+                    : ", rồi nhập ký hiệu hóa đơn đã đăng ký CQT."}
                 </li>
-                <li>
-                  <b>Chưa có tài khoản meInvoice?</b> Bấm link Đăng ký ngay
-                  trong form — phí hóa đơn trả trực tiếp cho MISA, Hubsell
-                  không thu thêm.
-                </li>
+                {vendor.signupUrl && (
+                  <li>
+                    <b>Chưa có tài khoản {vendor.serviceName}?</b> Bấm link Đăng
+                    ký ngay trong form — phí hóa đơn trả trực tiếp cho{" "}
+                    {vendor.companyName}, Hubsell không thu thêm.
+                  </li>
+                )}
                 <li>
                   <b>Test kết nối</b> dùng thông tin <b>đã lưu</b> — đổi tài
                   khoản xong nhớ bấm Lưu trước khi Test.
@@ -771,17 +798,19 @@ export function InvoiceConfigSection({
                   Cấu hình xong, sang tab <b>Xuất hóa đơn</b>{" "}để phát hành;
                   tra cứu &amp; tải PDF tại trang <b>Lịch sử &amp; Báo cáo thuế</b>.
                 </li>
-                <li>
-                  <a
-                    href="https://www.meinvoice.vn/tro-giup/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-medium text-teal-700 hover:underline"
-                  >
-                    Trung tâm trợ giúp MISA meInvoice
-                    <ExternalLink className="size-3" />
-                  </a>
-                </li>
+                {vendor.helpUrl && (
+                  <li>
+                    <a
+                      href={vendor.helpUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-medium text-teal-700 hover:underline"
+                    >
+                      Trung tâm trợ giúp {vendor.label}
+                      <ExternalLink className="size-3" />
+                    </a>
+                  </li>
+                )}
               </ul>
             </div>
           </div>

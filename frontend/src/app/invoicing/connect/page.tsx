@@ -72,7 +72,7 @@ export default function InvoicingConnectPage() {
           </Tooltip>
         </span>
       }
-      description="Xuất hóa đơn cho đơn đã giao ngay tại đây — kết nối meInvoice thiết lập một lần ở tab Cấu hình."
+      description="Xuất hóa đơn cho đơn đã giao ngay tại đây — kết nối nhà cung cấp hóa đơn thiết lập một lần ở tab Cấu hình."
     >
       {enabled ? (
         <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
@@ -80,10 +80,10 @@ export default function InvoicingConnectPage() {
           <div>
             <p className="font-semibold">Hóa đơn phát hành là chứng từ thật</p>
             <p className="mt-0.5 text-amber-700">
-              Hóa đơn phát hành từ <b>tài khoản meInvoice của shop</b> và được
-              gửi <b>Cơ quan Thuế thật</b> — kiểm tra kỹ thông tin pháp nhân,
-              ký hiệu và thuế suất GTGT mặc định trước khi xuất hóa đơn đầu
-              tiên.
+              Hóa đơn phát hành từ <b>tài khoản Hóa đơn điện tử của chính
+              shop</b> và được gửi <b>Cơ quan Thuế thật</b> — kiểm tra kỹ thông
+              tin pháp nhân, ký hiệu và thuế suất GTGT mặc định trước khi xuất
+              hóa đơn đầu tiên.
             </p>
           </div>
         </div>

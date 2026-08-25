@@ -43,7 +43,10 @@ import {
 
 const router = Router();
 
-const PROVIDERS = ["MISA", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
+// 25/08: thêm 3 NCC từ khảo sát thương mại (EasyInvoice/M-Invoice/Mắt Bão) —
+// mới ở mức LƯU cấu hình trước ("Sắp ra mắt" trên UI); phát hành/test/tải ký
+// hiệu vẫn chỉ MISA cho tới khi nối API từng nhà.
+const PROVIDERS = ["MISA", "EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "VNPT", "BKAV", "CUSTOM"];
 const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
 

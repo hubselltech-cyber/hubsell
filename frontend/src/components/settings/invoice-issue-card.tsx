@@ -345,8 +345,8 @@ export function InvoiceIssueCard({
         {queue !== null && !queue.configured && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
             <span>
-              Chưa đủ cấu hình để phát hành — cần <b>tài khoản meInvoice</b> và{" "}
-              <b>ký hiệu hóa đơn</b>.
+              Chưa đủ cấu hình để phát hành — cần <b>tài khoản nhà cung cấp
+              hóa đơn</b> và <b>ký hiệu hóa đơn</b>.
             </span>
             {onOpenConfig && (
               <Button size="sm" variant="outline" onClick={onOpenConfig}>
