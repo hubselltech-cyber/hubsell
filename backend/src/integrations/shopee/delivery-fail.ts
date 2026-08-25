@@ -64,10 +64,13 @@ export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/ai-rules?tab=delive
  * Template mặc định khi chủ shop chưa soạn (hoặc xoá trắng ô).
  * Biến: {ten_khach} {ma_don} {ten_san_pham}.
  */
+// "2 lần" là CHỦ Ý của anh Trung (chốt 25/08, sau khi hạ ngưỡng cảnh báo về
+// 1 lượt): giữ câu chữ gấp gáp để khách để ý điện thoại — đừng "sửa cho khớp
+// ngưỡng" lần nữa.
 export const DEFAULT_CHAT_TEMPLATE =
-  "Bạn ơi, bên vận chuyển vừa báo giao hàng không thành công cho đơn {ma_don}. " +
-  "Bạn vui lòng để ý điện thoại giúp shop ở lượt giao lại nhé, hoặc liên hệ " +
-  "CSKH của sàn để khiếu nại nếu shipper cố tình không giao hàng ạ!";
+  "Bạn ơi, bên vận chuyển báo giao 2 lần không thành công cho đơn {ma_don}. " +
+  "Bạn vui lòng để ý điện thoại giúp shop nhé, hoặc liên hệ CSKH của sàn để " +
+  "khiếu nại nếu shipper cố tình không giao hàng ạ!";
 
 /** orderId → lần hỏi tracking gần nhất (in-memory: mất khi restart, vô hại). */
 const lastAttemptAt = new Map<string, number>();
