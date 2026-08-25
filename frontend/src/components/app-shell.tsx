@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -427,6 +427,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     checkStatus();
   }, [checkStatus]);
 
+  // Chưa có gian hàng: refetch /me mỗi lần chuyển trang — người dùng vừa kết
+  // nối bên /channels xong điều hướng đi là hệ thống mở khoá ngay, không cần
+  // F5 (AppShell là layout bền, mount một lần cho cả phiên).
+  const hasChannelsRef = useRef(hasChannels);
+  useEffect(() => {
+    hasChannelsRef.current = hasChannels;
+  }, [hasChannels]);
+  useEffect(() => {
+    if (hasChannelsRef.current === false) checkStatus();
+  }, [pathname, checkStatus]);
+
   // Chủ shop rút quyền giữa phiên → apiFetch phát sự kiện này khi gặp 403
   // PERMISSION_DENIED. Refetch /me để sidebar cập nhật ngay theo quyền mới.
   useEffect(() => {
@@ -501,14 +512,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Chưa kết nối gian hàng → chặn toàn bộ, hiện màn hình onboarding.
-  // TRỪ khu điều hành Hubsell: văn phòng công ty không bao giờ liên kết sàn —
-  // không bỏ điều kiện này là chủ nền tảng bị màn "kết nối gian hàng" chặn đứng.
-  if (!hasChannels && !hqWorkspace) {
+  // Chưa kết nối gian hàng → chặn các trang khác, hiện màn chào mừng + hướng
+  // dẫn động rồi đưa sang /channels liên kết shop THẬT (đã bỏ nút tạo gian giả
+  // lập ở màn này). TRỪ:
+  //  - trang /channels (kể cả callback OAuth con): phải mở được thì mới kết
+  //    nối được — chặn nốt là người dùng không có đường nào thoát;
+  //  - khu điều hành Hubsell: văn phòng công ty không bao giờ liên kết sàn —
+  //    không bỏ điều kiện này là chủ nền tảng bị màn "kết nối gian hàng" chặn đứng.
+  const onConnectPage =
+    pathname === "/channels" || pathname.startsWith("/channels/");
+  if (!hasChannels && !hqWorkspace && !onConnectPage) {
     return (
       <OnboardingOverlay
         isAdmin={user?.role === "ADMIN"}
-        onConnected={checkStatus}
+        onGoConnect={() => router.replace("/channels")}
         onLogout={() => router.replace("/login")}
       />
     );
