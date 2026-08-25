@@ -33,8 +33,19 @@ const SEEN_KEY = "hubsell_onboarding_tour_seen";
 
 const IMG_EMPTY = "/onboarding/onboard-channels-empty.png";
 const IMG_DIALOG = "/onboarding/onboard-connect-dialog.png";
+// Trang uỷ quyền THẬT của Shopee (bản gốc ở guide-assets/shopee-oauth-login.png,
+// 960x1180 dọc — bước này hiển thị dạng contain, không phải ảnh do script chụp).
+const IMG_SHOPEE_OAUTH = "/onboarding/onboard-shopee-oauth.png";
+// Màn Confirm Authorization dựng lại theo ảnh thật (scripts/capture-shopee-confirm.js).
+const IMG_SHOPEE_CONFIRM = "/onboarding/onboard-shopee-confirm.png";
 const IMG_CONNECTED = "/onboarding/onboard-channel-connected.png";
-const ALL_IMAGES = [IMG_EMPTY, IMG_DIALOG, IMG_CONNECTED];
+const ALL_IMAGES = [
+  IMG_EMPTY,
+  IMG_DIALOG,
+  IMG_SHOPEE_OAUTH,
+  IMG_SHOPEE_CONFIRM,
+  IMG_CONNECTED,
+];
 
 type TourStep = {
   img: string;
@@ -44,6 +55,13 @@ type TourStep = {
   target: { x: number; y: number; w: number; h: number };
   /** Mức phóng to khi "camera" zoom vào mục tiêu. */
   zoom: number;
+  /** Ảnh dọc (trang uỷ quyền Shopee): hiển thị trọn trong khung thay vì phủ kín. */
+  fit?: "contain";
+  /**
+   * Mô phỏng GÕ PHÍM trong pha zoom: mỗi field là một ô trên ảnh (tọa độ %
+   * khung) được phủ nền trắng che placeholder rồi chữ hiện dần từng ký tự.
+   */
+  typing?: { box: { x: number; y: number; w: number; h: number }; text: string }[];
 };
 
 const TOUR_STEPS: TourStep[] = [
@@ -75,6 +93,38 @@ const TOUR_STEPS: TourStep[] = [
     target: { x: 58.3, y: 61.88, w: 12.29, h: 3.33 },
     zoom: 1.85,
   },
+  // 3 bước dưới diễn ra trên TRANG CHÍNH CHỦ của Shopee (ảnh thật trang
+  // "Đăng nhập để cấp quyền"). Tọa độ theo KHUNG 3:2 sau khi ảnh dọc
+  // 960x1180 được contain + căn giữa (ảnh chiếm 22.88%→77.12% bề ngang).
+  {
+    img: IMG_SHOPEE_OAUTH,
+    title: "Chọn khu vực Việt Nam",
+    desc: "Bạn được chuyển sang trang đăng nhập chính chủ của Shopee — đổi khu vực ở ô đầu tiên thành VN.",
+    target: { x: 35.25, y: 37.9, w: 8.4, h: 6.9 },
+    zoom: 1.6,
+    fit: "contain",
+    // Che chữ "SG" trong ảnh gốc bằng "VN" cho khớp lời hướng dẫn.
+    typing: [{ box: { x: 33.8, y: 37.9, w: 4.8, h: 6.9 }, text: "VN" }],
+  },
+  {
+    img: IMG_SHOPEE_OAUTH,
+    title: "Đăng nhập tài khoản Shopee của shop",
+    desc: "Điền tên đăng nhập và mật khẩu Shopee rồi bấm “Đăng Nhập” — bạn nhập trực tiếp trên trang Shopee, Hubsell không nhìn thấy mật khẩu.",
+    target: { x: 50, y: 42.6, w: 37.9, h: 16.3 },
+    zoom: 1.5,
+    fit: "contain",
+    typing: [
+      { box: { x: 54.2, y: 37.9, w: 29.5, h: 6.9 }, text: "shop_cua_ban" },
+      { box: { x: 50, y: 47.4, w: 37.9, h: 6.8 }, text: "••••••••••" },
+    ],
+  },
+  {
+    img: IMG_SHOPEE_CONFIRM,
+    title: "Xác nhận uỷ quyền cho Hubsell",
+    desc: "Shopee liệt kê các quyền Hubsell cần (sản phẩm, đơn hàng, thanh toán, khuyến mãi) — bấm “Confirm Authorization” để hoàn tất kết nối.",
+    target: { x: 24.86, y: 53.13, w: 23.33, h: 4.79 },
+    zoom: 1.8,
+  },
   {
     img: IMG_CONNECTED,
     title: "Đồng bộ đơn hàng",
@@ -92,13 +142,49 @@ const RESET_MS = 700;
 
 type Phase = "move" | "click" | "zoom" | "reset";
 
+/**
+ * Tâm zoom tự né mép: mục tiêu sát cạnh (menu Kênh bán sát trái, nút Kết nối
+ * gian hàng sát phải) mà lấy đúng tâm mục tiêu làm transform-origin thì sau khi
+ * phóng to sẽ bị cắt mất một nửa. Dịch origin vừa đủ để cả mục tiêu (kèm đệm)
+ * nằm trọn khung: điểm p sau scale quanh origin o nằm tại o + (p − o)·z.
+ */
+function zoomOrigin(t: TourStep["target"], zoom: number) {
+  const pad = 2.5;
+  const clampAxis = (center: number, half: number) => {
+    const lo = Math.max(0, center - half - pad);
+    const hi = Math.min(100, center + half + pad);
+    const maxO = (lo * zoom) / (zoom - 1); // mép trái/trên mục tiêu không tràn
+    const minO = (hi * zoom - 100) / (zoom - 1); // mép phải/dưới không tràn
+    if (minO > maxO) return center; // mục tiêu rộng hơn khung sau zoom — lấy tâm
+    return Math.min(Math.max(center, minO), maxO);
+  };
+  return { x: clampAxis(t.x, t.w / 2), y: clampAxis(t.y, t.h / 2) };
+}
+
 /** Trình phát hướng dẫn: ảnh thật + con trỏ ảo + thu phóng như video. */
 function TourPlayer({ onFinish }: { onFinish: () => void }) {
   const [step, setStep] = useState(0);
   const [phase, setPhase] = useState<Phase>("move");
+  // Số ký tự đã "gõ" (tính trên chuỗi ghép mọi field) của bước có typing.
+  const [typed, setTyped] = useState(0);
 
   const current = TOUR_STEPS[step];
   const { target } = current;
+  const origin = zoomOrigin(target, current.zoom);
+
+  useEffect(() => {
+    setTyped(0);
+  }, [step]);
+
+  // Gõ phím mô phỏng trong pha zoom — 85ms/ký tự, hết chuỗi thì tự dừng.
+  useEffect(() => {
+    if (phase !== "zoom" || !current.typing) return;
+    const total = current.typing.reduce((s, f) => s + f.text.length, 0);
+    const iv = setInterval(() => {
+      setTyped((t) => (t >= total ? t : t + 1));
+    }, 85);
+    return () => clearInterval(iv);
+  }, [phase, current]);
 
   // Máy trạng thái theo timeout — mỗi pha tự hẹn giờ chuyển pha kế tiếp.
   useEffect(() => {
@@ -133,12 +219,12 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
   return (
     <div className="space-y-4">
       {/* Khung "video" — tỉ lệ đúng ảnh chụp 1440x960 */}
-      <div className="relative aspect-[3/2] w-full overflow-hidden rounded-xl border bg-muted shadow-lg">
+      <div className="relative aspect-[3/2] w-full overflow-hidden rounded-xl border bg-muted shadow-lg [container-type:size]">
         <div
           className="absolute inset-0 transition-transform duration-700 ease-in-out"
           style={{
             transform: zoomed ? `scale(${current.zoom})` : "scale(1)",
-            transformOrigin: `${target.x}% ${target.y}%`,
+            transformOrigin: `${origin.x}% ${origin.y}%`,
           }}
         >
           {/* Chồng sẵn cả 3 ảnh, chỉ đổi opacity — không nháy trắng khi sang ảnh khác */}
@@ -151,7 +237,12 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
               unoptimized
               priority
               className={cn(
-                "object-cover transition-opacity duration-300",
+                "transition-opacity duration-300",
+                // Ảnh dọc của bước fit:"contain" hiển thị trọn (viền hai bên),
+                // ảnh app 1440x960 thì phủ kín khung như cũ.
+                TOUR_STEPS.some((s) => s.img === src && s.fit === "contain")
+                  ? "object-contain"
+                  : "object-cover",
                 src === current.img ? "opacity-100" : "opacity-0"
               )}
             />
@@ -170,6 +261,37 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
               height: `${target.h + 1.6}%`,
             }}
           />
+
+          {/* Ô nhập được "gõ" dần trong pha zoom: nền trắng che placeholder
+              của ảnh, chữ hiện từng ký tự + caret nhấp nháy. */}
+          {phase === "zoom" &&
+            (() => {
+              let offset = 0;
+              return (current.typing ?? []).map((f) => {
+                const start = offset;
+                offset += f.text.length;
+                const shown = f.text.slice(
+                  0,
+                  Math.max(0, Math.min(typed - start, f.text.length))
+                );
+                const active = typed >= start && typed < start + f.text.length;
+                return (
+                  <div
+                    key={f.text}
+                    className="absolute flex items-center rounded-sm bg-white pl-3 text-[2.9cqh] text-slate-700"
+                    style={{
+                      left: `${f.box.x - f.box.w / 2 + 0.5}%`,
+                      top: `${f.box.y - f.box.h / 2 + 0.9}%`,
+                      width: `${f.box.w - 1}%`,
+                      height: `${f.box.h - 1.8}%`,
+                    }}
+                  >
+                    {shown}
+                    {active && <span className="animate-pulse">|</span>}
+                  </div>
+                );
+              });
+            })()}
 
           {/* Gợn sóng lúc click */}
           {phase === "click" && (
