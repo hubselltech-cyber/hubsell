@@ -12,7 +12,7 @@
 
 import { Router } from "express";
 import multer from "multer";
-import { ChannelName, type Channel } from "@prisma/client";
+import { ChannelName, ReturnStatus, ShippingStatus, type Channel } from "@prisma/client";
 import { prisma } from "../prisma";
 import { requirePermission, type AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
@@ -20,6 +20,7 @@ import {
   getComments,
   getConversationList,
   getChatMessages,
+  getTrackingInfo,
   getItemBaseInfo,
   getModelList,
   replyComment,
@@ -45,6 +46,7 @@ import {
 } from "../integrations/ai/copilot";
 import {
   classifyDeliveryFailOutcome,
+  countFailedDeliveries,
   effectiveDeliveryFailConfig,
 } from "../integrations/shopee/delivery-fail";
 
@@ -1267,6 +1269,202 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
         sentAt: n.sentAt,
       })),
       summary,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// GET /delivery-fail/probe — DỤNG CỤ CHẨN ĐOÁN (chỉ ĐỌC, dùng tay 25/08).
+//
+// Trả lời hai câu hỏi khi chủ shop "đơn hoàn nhiều mà không thấy cảnh báo":
+//   1. THỰC ĐỊA: các đơn đã HOÀN/HỦY gần đây (mặc định 7 ngày, ?days= đổi
+//      được) — hành trình get_tracking_info của chúng có bao nhiêu mốc
+//      FAILED_DELIVERED? Sàn có dùng đúng enum như docs không? Nếu đa số đơn
+//      hoàn chỉ có 0-1 mốc thì ngưỡng 2 lượt của worker KHÔNG BAO GIỜ chạm.
+//   2. SỨC KHỎE VÒNG QUÉT: hiện có bao nhiêu đơn SHIPPING đủ điều kiện được
+//      hỏi tracking, bao nhiêu đơn đang giao mà THIẾU mã vận đơn (bị lọt
+//      lưới), cấu hình hiệu lực, tổng notice đã tạo.
+//
+// Tiết chế quota: tối đa 12 đơn/gian × số gian Shopee — một lần bấm tay,
+// không nằm trong nhịp worker nào.
+// ============================================================
+
+router.get("/delivery-fail/probe", async (req: AuthRequest, res, next) => {
+  try {
+    const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 30);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    // Đơn hủy không có mốc thời gian riêng (Order không có updatedAt) — dò
+    // theo createdAt nới gấp ba: đơn tạo rồi hủy vì giao thất bại gói gọn
+    // trong vài tuần.
+    const sinceWide = new Date(Date.now() - days * 3 * 24 * 60 * 60 * 1000);
+
+    const channels = await prisma.channel.findMany({
+      where: {
+        userId: req.ownerId!,
+        channelName: ChannelName.SHOPEE,
+        status: "ACTIVE",
+        refreshToken: { not: null },
+      },
+    });
+
+    const orders: {
+      shopName: string;
+      orderCode: string;
+      createdAt: Date;
+      shippingStatus: ShippingStatus;
+      returnStatus: ReturnStatus;
+      returnRequestedAt: Date | null;
+      hasTrackingCode: boolean;
+      failedDeliveredCount: number | null;
+      orderLevelStatus: string | null;
+      timeline: { time: string; status: string; desc: string }[] | null;
+      error: string | null;
+    }[] = [];
+    /** Tần suất từng giá trị logistics_status gặp trong MỌI hành trình — để
+     *  đối chiếu enum thật của sàn với enum docs mà worker đang đếm. */
+    const statusTally: Record<string, number> = {};
+    const failCountDist: Record<string, number> = {};
+
+    for (const channel of channels) {
+      const rows = await prisma.order.findMany({
+        where: {
+          channelId: channel.id,
+          OR: [
+            { returnRequestedAt: { gte: since } },
+            { returnStatus: { not: ReturnStatus.NONE }, createdAt: { gte: sinceWide } },
+            {
+              shippingStatus: ShippingStatus.CANCELLED,
+              trackingCode: { not: null },
+              createdAt: { gte: sinceWide },
+            },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        select: {
+          orderCode: true,
+          createdAt: true,
+          shippingStatus: true,
+          returnStatus: true,
+          returnRequestedAt: true,
+          trackingCode: true,
+        },
+      });
+      if (rows.length === 0) continue;
+
+      let accessToken: string;
+      let shopId: string;
+      try {
+        ({ accessToken, shopId } = await getValidShopeeAccessToken(channel));
+      } catch (err) {
+        for (const o of rows) {
+          orders.push({
+            shopName: channel.shopName,
+            orderCode: o.orderCode,
+            createdAt: o.createdAt,
+            shippingStatus: o.shippingStatus,
+            returnStatus: o.returnStatus,
+            returnRequestedAt: o.returnRequestedAt,
+            hasTrackingCode: !!o.trackingCode,
+            failedDeliveredCount: null,
+            orderLevelStatus: null,
+            timeline: null,
+            error: `Token gian lỗi: ${(err as Error).message}`,
+          });
+        }
+        continue;
+      }
+
+      for (const o of rows) {
+        try {
+          const info = await getTrackingInfo(accessToken, shopId, o.orderCode);
+          const events = info.response?.tracking_info ?? [];
+          for (const e of events) {
+            const s = String(e.logistics_status ?? "(trống)").toUpperCase();
+            statusTally[s] = (statusTally[s] ?? 0) + 1;
+          }
+          const fails = countFailedDeliveries(events);
+          failCountDist[String(fails)] = (failCountDist[String(fails)] ?? 0) + 1;
+          orders.push({
+            shopName: channel.shopName,
+            orderCode: o.orderCode,
+            createdAt: o.createdAt,
+            shippingStatus: o.shippingStatus,
+            returnStatus: o.returnStatus,
+            returnRequestedAt: o.returnRequestedAt,
+            hasTrackingCode: !!o.trackingCode,
+            failedDeliveredCount: fails,
+            orderLevelStatus: info.response?.logistics_status ?? null,
+            timeline: events.map((e) => ({
+              time: e.update_time
+                ? new Date(e.update_time * 1000).toISOString()
+                : "",
+              status: String(e.logistics_status ?? ""),
+              desc: String(e.description ?? "").slice(0, 120),
+            })),
+            error: info.error ? `${info.error}: ${info.message ?? ""}` : null,
+          });
+        } catch (err) {
+          orders.push({
+            shopName: channel.shopName,
+            orderCode: o.orderCode,
+            createdAt: o.createdAt,
+            shippingStatus: o.shippingStatus,
+            returnStatus: o.returnStatus,
+            returnRequestedAt: o.returnRequestedAt,
+            hasTrackingCode: !!o.trackingCode,
+            failedDeliveredCount: null,
+            orderLevelStatus: null,
+            timeline: null,
+            error: (err as Error).message,
+          });
+        }
+      }
+    }
+
+    // ---- Sức khỏe vòng quét hiện tại (đúng bộ lọc worker đang dùng) ----
+    const channelIds = channels.map((c) => c.id);
+    const scanWindow = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
+    const [scanCandidates, shippingNoTracking, noticeTotal, cfgRow] =
+      await Promise.all([
+        prisma.order.count({
+          where: {
+            channelId: { in: channelIds },
+            shippingStatus: ShippingStatus.SHIPPING,
+            trackingCode: { not: null },
+            createdAt: { gte: scanWindow },
+            deliveryFailNotice: null,
+          },
+        }),
+        prisma.order.count({
+          where: {
+            channelId: { in: channelIds },
+            shippingStatus: ShippingStatus.SHIPPING,
+            trackingCode: null,
+            createdAt: { gte: scanWindow },
+          },
+        }),
+        prisma.deliveryFailNotice.count({ where: { ownerId: req.ownerId! } }),
+        prisma.deliveryFailConfig.findUnique({ where: { ownerId: req.ownerId! } }),
+      ]);
+
+    res.json({
+      probedDays: days,
+      shops: channels.map((c) => c.shopName),
+      ordersProbed: orders.length,
+      /** Phân bố "đơn hoàn/hủy có N mốc FAILED_DELIVERED" — nếu dồn hết ở 0-1
+       *  thì ngưỡng 2 của worker không bao giờ chạm với hàng của shop này. */
+      failCountDistribution: failCountDist,
+      trackingStatusTally: statusTally,
+      scanHealth: {
+        scanCandidatesNow: scanCandidates,
+        shippingMissingTrackingCode: shippingNoTracking,
+        noticesEverCreated: noticeTotal,
+        effectiveConfig: effectiveDeliveryFailConfig(cfgRow),
+      },
+      orders,
     });
   } catch (err) {
     next(err);
