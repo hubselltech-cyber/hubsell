@@ -14,14 +14,41 @@ import {
 import { lazadaOrderDeliveryFailed } from "../lazada/delivery-fail";
 
 describe("countFailedDeliveries", () => {
-  it("đếm đúng số mốc FAILED_DELIVERED, bỏ qua mốc thường", () => {
+  it("đếm đúng số mốc FAILED_DELIVERED (enum docs), bỏ qua mốc thường", () => {
     expect(
       countFailedDeliveries([
-        { logistics_status: "PICKED_UP" },
+        { logistics_status: "PICKED_UP", description: "Đang giao hàng" },
         { logistics_status: "DELIVERY_PENDING" },
         { logistics_status: "FAILED_DELIVERED", description: "Khách không nghe máy" },
         { logistics_status: "DELIVERY_PENDING" },
         { logistics_status: "FAILED_DELIVERED", description: "Sai địa chỉ" },
+      ])
+    ).toBe(2);
+  });
+
+  // Hành trình THẬT trên production VN (probe 25/08, đơn DarkMan hoàn sau 2
+  // lượt): sàn KHÔNG phát enum FAILED_DELIVERED — lượt thất bại là câu tiếng
+  // Việt trong description dưới status PICKED_UP; mốc RETURN_INITIATED nhắc
+  // lại "vì giao hàng không thành công" là TỔNG KẾT, không phải lượt thứ ba.
+  it("đếm lượt thất bại qua DESCRIPTION tiếng Việt như production VN", () => {
+    expect(
+      countFailedDeliveries([
+        { logistics_status: "ORDER_CREATED", description: " Người bán đang chuẩn bị hàng" },
+        { logistics_status: "PICKED_UP", description: "Đơn vị vận chuyển lấy hàng thành công" },
+        { logistics_status: "PICKED_UP", description: "Đang giao hàng" },
+        {
+          logistics_status: "PICKED_UP",
+          description: "Giao hàng không thành công vì không thể liên hệ người nhận",
+        },
+        { logistics_status: "PICKED_UP", description: "Đã sắp xếp tài xế giao hàng" },
+        {
+          logistics_status: "PICKED_UP",
+          description: "Giao hàng không thành công vì người nhận từ chối nhận hàng",
+        },
+        {
+          logistics_status: "RETURN_INITIATED",
+          description: "Đơn hàng sẽ được hoàn trả vì giao hàng không thành công",
+        },
       ])
     ).toBe(2);
   });
@@ -31,14 +58,25 @@ describe("countFailedDeliveries", () => {
     expect(countFailedDeliveries([])).toBe(0);
   });
 
-  it("KHÔNG đếm các mốc thất bại khác lượt giao (pickup, hoàn, hủy)", () => {
+  it("KHÔNG đếm thất bại khâu LẤY hàng, mốc hoàn/hủy, câu tiếng Anh pickup", () => {
     expect(
       countFailedDeliveries([
         { logistics_status: "FAILED_PICKED_UP" },
+        { logistics_status: "PICKUP_PENDING", description: "Lấy hàng không thành công" },
         { logistics_status: "RETURN_STARTED" },
-        { logistics_status: "CANCELED" },
+        { logistics_status: "CANCELED", description: "Đơn vị vận chuyển thông báo đơn hàng đã bị hủy" },
+        { logistics_status: "PICKUP_PENDING", description: "Pickup failed" },
       ])
     ).toBe(0);
+  });
+
+  it("bắt biến thể 'giao lại' + câu tiếng Anh delivery failed", () => {
+    expect(
+      countFailedDeliveries([
+        { logistics_status: "PICKED_UP", description: "Giao lại không thành công" },
+        { logistics_status: "PICKED_UP", description: "Delivery attempt failed" },
+      ])
+    ).toBe(2);
   });
 });
 

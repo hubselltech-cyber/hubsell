@@ -50,7 +50,8 @@ import { cn } from "@/lib/utils";
 /**
  * TAB "CỨU ĐƠN GIAO THẤT BẠI" (anh Trung chốt tên 22/08).
  *
- * Worker backend quét Shopee mỗi giờ, đơn bị shipper báo giao thất bại 2 lượt
+ * Worker backend quét Shopee mỗi giờ, đơn bị shipper báo giao KHÔNG thành công
+ * (từ lượt đầu — 25/08 hạ ngưỡng: kiện SPX hay quay đầu ngay sau 1 lượt)
  * thì phát chuông + (tuỳ công tắc) tự nhắn khách qua cổng chat sẵn có. Tab này
  * là mặt cấu hình + báo cáo: dải StatCard (cùng khuôn thẻ chỉ số Tổng quan),
  * 2 công tắc lưu ngay khi gạt, mẫu tin chỉnh xong bấm Lưu, nhật ký dùng bộ

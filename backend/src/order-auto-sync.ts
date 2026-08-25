@@ -288,10 +288,19 @@ async function runOnce(): Promise<void> {
       if (settleSweep) {
         try {
           if (channel.channelName === ChannelName.LAZADA) {
-            const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
-            if (s.ordersUpdated > 0) {
-              console.log(
-                `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
+            // Bọc try riêng (25/08, cùng lý do nhánh Shopee): đối soát lỗi
+            // không được nuốt payout + campaign + auto-execute đứng sau.
+            try {
+              const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+              if (s.ordersUpdated > 0) {
+                console.log(
+                  `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi đối soát Lazada "${channel.shopName}":`,
+                (err as Error).message
               );
             }
             // Đợt CHI TIỀN về bank (payout theo kỳ sao kê) → WalletWithdrawal.
@@ -343,10 +352,20 @@ async function runOnce(): Promise<void> {
               );
             }
           } else if (channel.channelName === ChannelName.SHOPEE) {
-            const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
-            if (s.ordersUpdated > 0) {
-              console.log(
-                `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
+            // Bọc try riêng (25/08): trước đây đối soát ném lỗi là NUỐT luôn
+            // các luồng đứng sau trong khối nhịp giờ — gồm cả quét cứu đơn
+            // giao thất bại. Lỗi đối soát không được chặn cảnh báo cứu đơn.
+            try {
+              const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+              if (s.ordersUpdated > 0) {
+                console.log(
+                  `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
+                );
+              }
+            } catch (err) {
+              console.error(
+                `[Auto-sync] Lỗi đối soát Shopee "${channel.shopName}":`,
+                (err as Error).message
               );
             }
             // Chi phí quảng cáo theo ngày (Ads API) — lỗi riêng (thường là app
@@ -396,7 +415,8 @@ async function runOnce(): Promise<void> {
               );
             }
             // CỨU ĐƠN GIAO THẤT BẠI (nhịp giờ, 1 call/đơn có tiết chế): đếm
-            // mốc FAILED_DELIVERED trong get_tracking_info, chạm 2 lượt →
+            // lượt giao thất bại trong get_tracking_info (mẫu chữ description —
+            // enum docs không có thật trên production VN), chạm ngưỡng →
             // chuông + (tuỳ config) auto-chat. Lỗi riêng không chặn luồng khác.
             try {
               const df = await scanShopeeDeliveryFails(channel);

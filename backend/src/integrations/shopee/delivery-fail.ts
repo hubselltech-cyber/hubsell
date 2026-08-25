@@ -4,10 +4,18 @@
 // Vì sao phải polling: webhook Shopee không có sự kiện "giao thất bại từng
 // lượt" (chỉ 4 push code), còn logistics_status cấp ĐƠN chỉ nhảy sang
 // LOGISTICS_DELIVERY_FAILED khi đơn bị hủy hẳn — lúc đó đã muộn. Nguồn duy
-// nhất bắt sớm là đếm mốc FAILED_DELIVERED trong tracking_info[] (enum
-// TrackingLogisticsStatus, docs xác minh 21/08).
+// nhất bắt sớm là các mốc trong tracking_info[].
 //
-// Chạm ngưỡng 2 lượt → tạo DeliveryFailNotice (orderId unique = mỗi đơn cảnh
+// ⚠️ BÀI HỌC PROBE PRODUCTION 25/08 (route /delivery-fail/probe, 24 đơn
+// hoàn/hủy thật của ANO + DarkMan): Shopee VN KHÔNG dùng enum FAILED_DELIVERED
+// của docs — lượt giao thất bại nằm trong DESCRIPTION tiếng Việt ("Giao hàng
+// không thành công vì không thể liên hệ người nhận") dưới status chung chung
+// PICKED_UP; enum thật gặp được: ORDER_CREATED / PICKED_UP / DELIVERED /
+// PICKUP_PENDING / RETURN_INITIATED / RETURN_STARTED / RETURNED / CANCELED.
+// Bản đầu (21/08) đếm enum docs nên 0 cảnh báo vĩnh viễn. Giờ đếm CẢ HAI:
+// enum docs (phòng sàn đổi về chuẩn) + mẫu chữ trong description.
+//
+// Chạm ngưỡng 1 lượt → tạo DeliveryFailNotice (orderId unique = mỗi đơn cảnh
 // báo đúng MỘT lần, không hỏi lại sàn) → chuông cho chủ shop chủ động gọi
 // khách trước lượt giao cuối; autoChatEnabled thì nhắn thẳng khách qua cổng
 // chat sẵn có. Sàn từ chối gửi (khách chặn, hết cửa sổ chat) = kết quả bình
@@ -30,8 +38,17 @@ import {
 } from "./client";
 import { getValidShopeeAccessToken } from "./service";
 
-/** Số lượt giao thất bại từ mức này trở lên thì phát cảnh báo. */
-export const DELIVERY_FAIL_THRESHOLD = 2;
+/**
+ * Số lượt giao thất bại từ mức này trở lên thì phát cảnh báo.
+ *
+ * Hạ 2 → 1 theo số liệu probe 25/08: trong các đơn hoàn thật, kiện SPX quay
+ * đầu NGAY sau MỘT lượt thất bại (khách đổi địa chỉ / từ chối nhận — có đơn
+ * "Trả hàng thành công" chỉ 28 phút sau lượt giao hỏng); chờ đủ 2 lượt là
+ * không bao giờ kịp nói gì với khách. Lượt 1 vẫn đáng cảnh báo cả với đơn
+ * được giao lại: "không liên hệ được người nhận" hôm nay thì gọi khách ngay
+ * hôm nay, đừng phó mặc lượt giao lại ngày mai.
+ */
+export const DELIVERY_FAIL_THRESHOLD = 1;
 /** Chỉ quét đơn tạo trong N ngày gần nhất — kiện cũ hơn đã an bài. */
 const SCAN_WINDOW_DAYS = 21;
 /** Trần số đơn hỏi get_tracking_info mỗi lượt quét của MỘT gian. */
@@ -47,23 +64,50 @@ export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/ai-rules?tab=delive
  * Biến: {ten_khach} {ma_don} {ten_san_pham}.
  */
 export const DEFAULT_CHAT_TEMPLATE =
-  "Bạn ơi, bên vận chuyển báo giao 2 lần không thành công cho đơn {ma_don}. " +
-  "Bạn vui lòng để ý điện thoại giúp shop nhé, hoặc liên hệ CSKH của sàn để " +
-  "khiếu nại nếu shipper cố tình không giao hàng ạ!";
+  "Bạn ơi, bên vận chuyển vừa báo giao hàng không thành công cho đơn {ma_don}. " +
+  "Bạn vui lòng để ý điện thoại giúp shop ở lượt giao lại nhé, hoặc liên hệ " +
+  "CSKH của sàn để khiếu nại nếu shipper cố tình không giao hàng ạ!";
 
 /** orderId → lần hỏi tracking gần nhất (in-memory: mất khi restart, vô hại). */
 const lastAttemptAt = new Map<string, number>();
 
 // ---------- Phần THUẦN (không API, không DB) — có vitest ----------
 
-/** Mốc TrackingLogisticsStatus đánh dấu MỘT lượt giao thất bại. */
+/** Mốc TrackingLogisticsStatus đánh dấu MỘT lượt giao thất bại (enum DOCS —
+ *  production VN chưa từng thấy phát ra, giữ lại phòng sàn đổi về chuẩn). */
 const FAILED_EVENT_STATUSES = new Set(["FAILED_DELIVERED"]);
+
+/**
+ * Mẫu chữ "giao thất bại" trong description (nguồn THẬT trên production VN —
+ * probe 25/08): "Giao hàng không thành công vì …" nằm dưới status PICKED_UP.
+ * Bắt thêm biến thể "giao lại/phát hàng" + câu tiếng Anh phòng sàn đổi ngôn
+ * ngữ theo cài đặt shop.
+ */
+const FAILED_DESC_PATTERN =
+  /(giao|phát)\s*(hàng|lại)?\s*không\s*thành\s*công|delivery\s*(attempt\s*)?(failed|unsuccessful)/i;
+/**
+ * KHÔNG được đếm dù khớp mẫu trên:
+ *   · "Lấy hàng không thành công" — thất bại khâu LẤY hàng ở shop, không phải
+ *     lượt giao cho khách (gặp 10 lần trong probe).
+ *   · "Đơn hàng sẽ được hoàn trả vì giao hàng không thành công" — thông báo
+ *     TỔNG KẾT trên mốc RETURN_INITIATED, đếm vào là một lượt hóa hai.
+ */
+const FAILED_DESC_EXCLUDE = /lấy\s*hàng|hoàn\s*trả|pickup/i;
+/** Mốc thuộc hành trình HOÀN/HỦY — không phải lượt giao, khỏi soi description. */
+const NON_ATTEMPT_STATUS = /^(RETURN|CANCEL)/;
 
 /** Đếm số lượt giao thất bại trong hành trình vận chuyển của đơn. */
 export function countFailedDeliveries(events: ShopeeTrackingEvent[]): number {
   let n = 0;
   for (const e of events) {
-    if (FAILED_EVENT_STATUSES.has(String(e.logistics_status ?? "").toUpperCase())) n++;
+    const status = String(e.logistics_status ?? "").toUpperCase();
+    if (FAILED_EVENT_STATUSES.has(status)) {
+      n++;
+      continue;
+    }
+    if (NON_ATTEMPT_STATUS.test(status)) continue;
+    const desc = String(e.description ?? "");
+    if (FAILED_DESC_PATTERN.test(desc) && !FAILED_DESC_EXCLUDE.test(desc)) n++;
   }
   return n;
 }
