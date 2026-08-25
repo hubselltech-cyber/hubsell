@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   ArrowRight,
@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   Sparkles,
   Store,
+  Volume2,
+  VolumeX,
   Zap,
 } from "lucide-react";
 
@@ -168,6 +170,61 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
   // Số ký tự đã "gõ" (tính trên chuỗi ghép mọi field) của bước có typing.
   const [typed, setTyped] = useState(0);
 
+  // THUYẾT MINH bằng giọng đọc trình duyệt (Web Speech API — Chrome có
+  // "Google Tiếng Việt", Edge có HoaiMy/NamMinh). Mặc định TẮT: trình duyệt
+  // chặn tự phát âm thanh khi chưa có thao tác người dùng, bấm nút loa = bật.
+  // Sau thương mại hoá muốn giọng thu chuyên nghiệp: thay speakStep bằng
+  // phát file mp3 theo bước, phần còn lại giữ nguyên.
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const speakingRef = useRef(false); // đang đọc dở
+  const waitingRef = useRef(false); // pha zoom đã hết giờ, đang nán chờ đọc xong
+
+  useEffect(() => {
+    setVoiceSupported("speechSynthesis" in window);
+    return () => window.speechSynthesis?.cancel(); // unmount thì im lặng ngay
+  }, []);
+
+  const speakStep = useCallback((i: number) => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    synth.cancel();
+    const s = TOUR_STEPS[i];
+    const u = new SpeechSynthesisUtterance(`Bước ${i + 1}. ${s.title}. ${s.desc}`);
+    u.lang = "vi-VN";
+    const viVoice = synth
+      .getVoices()
+      .find((v) => v.lang?.toLowerCase().startsWith("vi"));
+    if (viVoice) u.voice = viVoice;
+    speakingRef.current = true;
+    const done = () => {
+      speakingRef.current = false;
+      // Pha zoom đã hết giờ từ trước — đọc xong mới cho máy trạng thái đi tiếp.
+      if (waitingRef.current) {
+        waitingRef.current = false;
+        setPhase("reset");
+      }
+    };
+    u.onend = done;
+    u.onerror = done;
+    synth.speak(u);
+  }, []);
+
+  // Sang bước mới (hoặc vừa bật loa giữa chừng) → đọc lời bước đó;
+  // tắt loa → ngắt ngay và thả máy trạng thái nếu đang nán chờ.
+  useEffect(() => {
+    if (voiceOn) {
+      speakStep(step);
+      return;
+    }
+    window.speechSynthesis?.cancel();
+    speakingRef.current = false;
+    if (waitingRef.current) {
+      waitingRef.current = false;
+      setPhase("reset");
+    }
+  }, [step, voiceOn, speakStep]);
+
   const current = TOUR_STEPS[step];
   const { target } = current;
   const origin = zoomOrigin(target, current.zoom);
@@ -188,10 +245,26 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
 
   // Máy trạng thái theo timeout — mỗi pha tự hẹn giờ chuyển pha kế tiếp.
   useEffect(() => {
+    // Đang thuyết minh mà pha zoom hết giờ → nán lại chờ đọc xong (onend sẽ
+    // đẩy sang reset); kèm phao 12s phòng engine giọng đọc treo không phát end.
+    let safety: ReturnType<typeof setTimeout> | undefined;
+    const zoomDone = () => {
+      if (speakingRef.current) {
+        waitingRef.current = true;
+        safety = setTimeout(() => {
+          if (waitingRef.current) {
+            waitingRef.current = false;
+            setPhase("reset");
+          }
+        }, 12000);
+        return;
+      }
+      setPhase("reset");
+    };
     const next: Record<Phase, { after: number; run: () => void }> = {
       move: { after: MOVE_MS, run: () => setPhase("click") },
       click: { after: CLICK_MS, run: () => setPhase("zoom") },
-      zoom: { after: ZOOM_MS, run: () => setPhase("reset") },
+      zoom: { after: ZOOM_MS, run: zoomDone },
       reset: {
         after: RESET_MS,
         run: () => {
@@ -205,10 +278,14 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
       },
     };
     const t = setTimeout(next[phase].run, next[phase].after);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      if (safety) clearTimeout(safety);
+    };
   }, [phase, step, onFinish]);
 
   const jumpTo = useCallback((i: number) => {
+    waitingRef.current = false; // nhảy bước thì bỏ mọi cữ chờ đọc của bước cũ
     setStep(i);
     setPhase("move");
   }, []);
@@ -325,6 +402,24 @@ function TourPlayer({ onFinish }: { onFinish: () => void }) {
         <div className="absolute left-3 top-3 rounded-full bg-slate-900/85 px-3 py-1 text-xs font-semibold text-white shadow">
           Bước {step + 1}/{TOUR_STEPS.length}
         </div>
+
+        {/* Nút thuyết minh — ghim góc phải trên, chỉ hiện khi máy có giọng đọc */}
+        {voiceSupported && (
+          <button
+            type="button"
+            onClick={() => setVoiceOn((v) => !v)}
+            title={voiceOn ? "Tắt thuyết minh" : "Bật giọng đọc thuyết minh"}
+            aria-label={voiceOn ? "Tắt thuyết minh" : "Bật giọng đọc thuyết minh"}
+            className={cn(
+              "absolute right-3 top-3 flex size-8 items-center justify-center rounded-full shadow transition-colors",
+              voiceOn
+                ? "bg-primary text-primary-foreground"
+                : "bg-slate-900/85 text-white hover:bg-slate-900"
+            )}
+          >
+            {voiceOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+          </button>
+        )}
       </div>
 
       {/* Chú thích bước hiện tại */}
