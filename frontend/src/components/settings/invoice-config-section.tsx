@@ -702,9 +702,11 @@ export function InvoiceConfigSection({
                           hint={
                             <>
                               Giá bán trên sàn <b>đã gồm thuế</b> — hệ thống tự
-                              tách VAT ra, tổng hóa đơn luôn đúng số khách trả.
-                              Hộ/cá nhân kinh doanh giữ 0%; doanh nghiệp chọn
-                              đúng thuế suất hàng mình bán.
+                              tách VAT ra, tổng hóa đơn luôn bằng đúng{" "}
+                              <b>tổng giá trị sản phẩm</b> của đơn (tiền hàng,
+                              không gồm phí ship thu hộ). Hộ/cá nhân kinh doanh
+                              giữ 0%; doanh nghiệp chọn đúng thuế suất hàng mình
+                              bán.
                             </>
                           }
                         />

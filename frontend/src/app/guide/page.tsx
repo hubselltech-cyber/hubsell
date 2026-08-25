@@ -7,6 +7,7 @@ import {
   Maximize2,
   Package,
   Presentation,
+  ReceiptText,
   Store,
   Wallet,
   type LucideIcon,
@@ -25,8 +26,9 @@ import { cn } from "@/lib/utils";
  *
  * Slide là các file tĩnh public/huong-dan-*.html (stage 16:9 tự co theo iframe,
  * CSS/JS dùng chung ở guide-assets/deck.css + deck.js). Ảnh chụp giao diện thật
- * tái tạo bằng frontend/scripts/capture-guide-assets.js (kênh bán) và
- * capture-warehouse-assets.js (hub Hàng hóa).
+ * tái tạo bằng frontend/scripts/capture-guide-assets.js (kênh bán),
+ * capture-warehouse-assets.js (hub Hàng hóa) và capture-invoice-assets.js
+ * (module Hóa đơn & Thuế).
  */
 
 interface GuideSection {
@@ -65,6 +67,15 @@ const SECTIONS: GuideSection[] = [
       "Đơn tự chảy về mỗi 10 phút, nhập giá vốn để tính lãi/lỗ thật, đối soát để biết từng đơn thực nhận bao nhiêu.",
     slides: 5,
     src: "/huong-dan-don-hang-doi-soat.html",
+  },
+  {
+    key: "invoicing",
+    icon: ReceiptText,
+    title: "Kết nối & Xuất hóa đơn điện tử",
+    description:
+      "Nối tài khoản meInvoice của shop một lần — đơn đã giao tick là ra hóa đơn gửi Cơ quan Thuế, hoặc bật tự động phát hành & tự điều chỉnh khi hoàn.",
+    slides: 8,
+    src: "/huong-dan-xuat-hoa-don.html",
   },
 ];
 

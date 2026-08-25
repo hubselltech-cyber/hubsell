@@ -206,7 +206,7 @@ export function buildStandardInvoicePayload(
 ) {
   const details = input.lines.map((l, i) => {
     // Số tiền lấy THẲNG từ InvoiceLine (đã bóc ngược thuế từ giá bán ở
-    // buildInvoiceLines — amountWithoutVat + vatAmount = đúng số khách trả);
+    // buildInvoiceLines — amountWithoutVat + vatAmount = đúng giá bán dòng hàng);
     // KHÔNG nhân lại unitPrice × quantity kẻo lệch làm tròn.
     const amount = l.amountWithoutVat;
     return {

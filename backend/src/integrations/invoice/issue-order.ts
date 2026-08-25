@@ -108,7 +108,7 @@ export interface InvoiceLineSource {
   name: string;
   sku: string;
   quantity: number;
-  /** Đơn giá BÁN trên sàn (giá khách trả, ĐÃ gồm thuế GTGT). */
+  /** Đơn giá BÁN trên sàn (ĐÃ gồm thuế GTGT). */
   price: number;
   /** Thuế suất khai riêng ở SKU kho — null/0 = dùng defaultVatRate của shop. */
   vatRate: number | null;
@@ -152,9 +152,11 @@ export function allocateOrderDiscount(
 
 /**
  * BÓC NGƯỢC thuế GTGT từ giá bán (24/08 — anh Trung chốt sau khảo sát: Salework
- * cùng cách này, chuẩn kế toán TMĐT yêu cầu tổng hóa đơn = đúng số khách trả;
+ * cùng cách này, chuẩn kế toán TMĐT yêu cầu tổng hóa đơn = đúng TỔNG GIÁ TRỊ
+ * SẢN PHẨM của đơn — tiền HÀNG sau giảm giá người bán, KHÔNG phải "số khách
+ * thanh toán" vốn gồm cả ship thu hộ/voucher sàn (anh chỉnh chữ 25/08);
  * giá niêm yết sàn theo Luật Giá là giá đã gồm thuế):
- *   · gross (giá khách trả dòng) = price × quantity, làm tròn VND, TRỪ phần
+ *   · gross (giá bán dòng hàng) = price × quantity, làm tròn VND, TRỪ phần
  *     chiết khấu cấp đơn được phân bổ (orderDiscount — voucher người bán Shopee;
  *     giảm giá bán theo TT 219, hóa đơn ghi giá đã giảm);
  *   · amountWithoutVat = round(gross × 100 / (100 + thuế suất));
@@ -268,7 +270,7 @@ export async function issueInvoiceForOrder(
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
 
   // Dòng hàng: giá bán sàn = giá ĐÃ GỒM thuế → bóc ngược (buildInvoiceLines);
-  // tổng hóa đơn vì thế luôn khớp đúng số khách trả cho phần hàng. Voucher
+  // tổng hóa đơn vì thế luôn khớp đúng TIỀN HÀNG của đơn (không ship thu hộ). Voucher
   // NGƯỜI BÁN cấp đơn (sellerDiscountVoucher — Shopee, có cả số ước tính trước
   // đối soát) là chiết khấu thương mại: phân bổ trừ vào từng dòng, hóa đơn ghi
   // giá đã giảm đúng TT 219; tên dòng chặn dữ liệu bẩn qua invoiceLineName.
