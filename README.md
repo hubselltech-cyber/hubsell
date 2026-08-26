@@ -51,10 +51,16 @@ hubsell/
 │       │       ├── expenses/       #   Chi phí vận hành (bảng + modal thêm nhanh)
 │       │       ├── ...             #   (loss-orders đã dời sang operations-assistant/, shipping-alerts sang warehouse/ — route cũ redirect)
 │       │       └── cost-prices/    #   Cấu hình Giá vốn (lọc theo sàn, nhập onBlur tự lưu)
-│       ├── components/
-│       │   ├── app-shell.tsx       # Khung chung: header + menu + đăng xuất
-│       │   ├── dashboard/          # Thẻ thống kê
-│       │   ├── products/           # Modal thêm SP, dialog nhập/xuất kho
+│       ├── components/             # (100% thư mục — sắp xếp 26/08/2026)
+│       │   ├── shell/              # Mount MỘT lần ở tầng app: app-shell, query-provider,
+│       │   │                       #   command-palette, notification-bell, user-avatar-menu,
+│       │   │                       #   nav-icon, banner mất kết nối, cưỡng chế trần gói
+│       │   ├── shared/             # Widget dùng chung nhiều trang: access-denied,
+│       │   │                       #   channel-filter, date-range-picker, refreshing
+│       │   ├── tour/               # Hệ tour động: guide-tour-player, onboarding-overlay
+│       │   ├── dashboard/ finance/ orders/ products/ ads/ koc/ operations/
+│       │   │   settings/ warehouse/ ...  # Component theo TÍNH NĂNG (domain)
+│       │   ├── data-table/         # DataTable dùng chung (cột ẩn/ghim/kéo, view đặt tên)
 │       │   └── ui/                 # Component shadcn/ui
 │       └── lib/
 │           ├── api.ts              # Lớp gọi API + quản lý token đăng nhập
