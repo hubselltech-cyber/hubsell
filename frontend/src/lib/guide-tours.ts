@@ -1,4 +1,4 @@
-import type { TourStep } from "@/components/guide-tour-player";
+import type { TourStep } from "@/components/tour/guide-tour-player";
 
 /**
  * DỮ LIỆU 4 TOUR HƯỚNG DẪN ĐỘNG — dùng bởi màn onboarding lần đầu đăng nhập

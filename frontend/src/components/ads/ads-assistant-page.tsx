@@ -24,8 +24,8 @@ import {
   YAxis,
 } from "recharts";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import {
   DEFAULT_ASSISTANT_CONFIG,
   DEFAULT_CAMPAIGN_OVERRIDES,

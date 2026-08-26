@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 import { Money } from "@/components/ui/money";
-import { Refreshing } from "@/components/refreshing";
+import { Refreshing } from "@/components/shared/refreshing";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { SkuCombobox } from "@/components/finance/sku-combobox";
 import { LinkOneDialog } from "@/components/mappings/link-one-dialog";

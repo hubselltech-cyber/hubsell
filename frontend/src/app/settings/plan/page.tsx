@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 
-import { PLAN_FEATURES, useMyPlan } from "@/components/plan-quota-guard";
+import { PLAN_FEATURES, useMyPlan } from "@/components/shell/plan-quota-guard";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

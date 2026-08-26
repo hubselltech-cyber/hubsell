@@ -20,16 +20,16 @@ import {
   YAxis,
 } from "recharts";
 
-import { AccessDenied } from "@/components/access-denied";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { can } from "@/lib/permissions";
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/shell/app-shell";
 import {
   ALL_CHANNELS,
   ChannelFilter,
   type ChannelFilterValue,
-} from "@/components/channel-filter";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Refreshing } from "@/components/refreshing";
+} from "@/components/shared/channel-filter";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { Refreshing } from "@/components/shared/refreshing";
 import {
   defaultRange,
   formatDayVN,

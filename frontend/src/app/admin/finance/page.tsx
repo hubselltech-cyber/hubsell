@@ -10,8 +10,8 @@
 
 import { useCallback, useState } from "react";
 
-import { AppShell } from "@/components/app-shell";
-import { AccessDenied } from "@/components/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { Separator } from "@/components/ui/separator";
 import {
   fetchPlatformFinance,

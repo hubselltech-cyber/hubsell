@@ -6,12 +6,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Receipt, Scale, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { can } from "@/lib/permissions";
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/shell/app-shell";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Refreshing } from "@/components/refreshing";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { Refreshing } from "@/components/shared/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";

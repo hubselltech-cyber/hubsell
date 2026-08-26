@@ -17,12 +17,12 @@ import {
 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import { Money } from "@/components/ui/money";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Refreshing } from "@/components/refreshing";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { Refreshing } from "@/components/shared/refreshing";
 import {
   formatRangeLabel,
   matchPreset,
@@ -60,7 +60,7 @@ import {
   ALL_CHANNELS,
   ChannelFilter,
   type ChannelFilterValue,
-} from "@/components/channel-filter";
+} from "@/components/shared/channel-filter";
 import { formatVND, formatNumber } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";

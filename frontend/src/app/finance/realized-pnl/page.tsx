@@ -14,10 +14,10 @@ import {
   TrendingDown,
 } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Refreshing } from "@/components/refreshing";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";

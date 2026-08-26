@@ -52,7 +52,7 @@ import {
   type SkuPnlResponse,
   type SkuPnlRow,
 } from "@/lib/api";
-import { Refreshing } from "@/components/refreshing";
+import { Refreshing } from "@/components/shared/refreshing";
 import type { DateRange } from "@/lib/date-range";
 import { formatVND, formatNumber } from "@/lib/format";
 import {

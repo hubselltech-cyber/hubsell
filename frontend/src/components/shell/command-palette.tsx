@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import { LogOut, Search } from "lucide-react";
 
-import { NavIcon } from "@/components/nav-icon";
+import { NavIcon } from "@/components/shell/nav-icon";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 // Chỉ import KIỂU từ app-shell (app-shell import ngược component này — import
 // type được xoá lúc biên dịch nên không tạo vòng phụ thuộc runtime).
-import type { NavItem } from "@/components/app-shell";
+import type { NavItem } from "@/components/shell/app-shell";
 
 /**
  * ══ COMMAND PALETTE (Ctrl+K / ⌘K) ══

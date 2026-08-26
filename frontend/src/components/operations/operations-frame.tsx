@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import { getStoredUser, getToken } from "@/lib/api";
 import { canAccessOperations } from "@/lib/permissions";
 

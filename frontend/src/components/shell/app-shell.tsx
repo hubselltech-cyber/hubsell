@@ -19,19 +19,19 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AssistantWidget } from "@/components/assistant/assistant-widget";
-import { ChannelDisconnectedBanner } from "@/components/channel-disconnected-banner";
-import { CommandPalette } from "@/components/command-palette";
-import { NavIcon } from "@/components/nav-icon";
-import { NotificationBell } from "@/components/notification-bell";
-import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import { ChannelDisconnectedBanner } from "@/components/shell/channel-disconnected-banner";
+import { CommandPalette } from "@/components/shell/command-palette";
+import { NavIcon } from "@/components/shell/nav-icon";
+import { NotificationBell } from "@/components/shell/notification-bell";
+import { OnboardingOverlay } from "@/components/tour/onboarding-overlay";
 import {
   PlanLockedScreen,
   PlanQuotaBanner,
   isPlanGatedPath,
   useMyPlan,
-} from "@/components/plan-quota-guard";
+} from "@/components/shell/plan-quota-guard";
 import { Button } from "@/components/ui/button";
-import { UserAvatarMenu } from "@/components/user-avatar-menu";
+import { UserAvatarMenu } from "@/components/shell/user-avatar-menu";
 import {
   ApiError,
   clearToken,

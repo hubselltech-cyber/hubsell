@@ -12,8 +12,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { AppShell } from "@/components/app-shell";
-import { TourPlayer } from "@/components/guide-tour-player";
+import { AppShell } from "@/components/shell/app-shell";
+import { TourPlayer } from "@/components/tour/guide-tour-player";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {

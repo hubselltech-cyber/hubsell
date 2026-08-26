@@ -24,8 +24,8 @@ import {
 
 import type { ColumnDef } from "@tanstack/react-table";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
 import { HintIcon } from "@/components/finance/hint-icon";
 import { StatCard } from "@/components/dashboard/stat-card";

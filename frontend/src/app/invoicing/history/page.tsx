@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Download, FileText, Loader2, ReceiptText, Scale, Undo2, Wallet } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
-import { DateRangePicker } from "@/components/date-range-picker";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {

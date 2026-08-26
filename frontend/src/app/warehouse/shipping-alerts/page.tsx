@@ -14,15 +14,15 @@ import {
   Truck,
 } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";
 import { MONEY_NEGATIVE, TEXT_NUMBER_MUTED } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Refreshing } from "@/components/refreshing";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { Refreshing } from "@/components/shared/refreshing";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -52,7 +52,7 @@ import {
   ChannelFilter,
   shopOnlyName,
   type ChannelFilterValue,
-} from "@/components/channel-filter";
+} from "@/components/shared/channel-filter";
 import { exportShippingDisputes } from "@/lib/excel";
 import { formatNumber, formatDateTime } from "@/lib/format";
 

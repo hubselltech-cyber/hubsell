@@ -20,12 +20,12 @@ import {
   X,
 } from "lucide-react";
 
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/shell/app-shell";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { OrderProductsCell } from "@/components/orders/order-products-cell";
 import { ReturnDialog } from "@/components/orders/return-dialog";
 import { ScanReturnBox } from "@/components/orders/scan-return-box";
-import { Refreshing } from "@/components/refreshing";
+import { Refreshing } from "@/components/shared/refreshing";
 import { ClaimDialog } from "@/components/warehouse/claim-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,7 +60,7 @@ import {
   ChannelFilter,
   shopOnlyName,
   type ChannelFilterValue,
-} from "@/components/channel-filter";
+} from "@/components/shared/channel-filter";
 import { formatDateTime, formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";

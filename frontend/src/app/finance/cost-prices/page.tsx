@@ -13,16 +13,16 @@ import {
   X,
 } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { can } from "@/lib/permissions";
-import { AppShell } from "@/components/app-shell";
+import { AppShell } from "@/components/shell/app-shell";
 import {
   CostPriceTable,
   type ProductGroup,
 } from "@/components/finance/cost-price-table";
 import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
-import { Refreshing } from "@/components/refreshing";
+import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

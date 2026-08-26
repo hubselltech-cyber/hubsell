@@ -14,14 +14,14 @@ import {
   TrendingDown,
 } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import {
   ALL_CHANNELS,
   ChannelFilter,
   shopOnlyName,
   type ChannelFilterValue,
-} from "@/components/channel-filter";
+} from "@/components/shared/channel-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";
@@ -34,8 +34,8 @@ import {
 } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Refreshing } from "@/components/refreshing";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
+import { Refreshing } from "@/components/shared/refreshing";
 import { SkuPnlTable } from "@/components/finance/sku-pnl-table";
 import { defaultRange, type DateRange } from "@/lib/date-range";
 import { Card, CardContent } from "@/components/ui/card";

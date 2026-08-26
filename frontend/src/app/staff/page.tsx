@@ -16,8 +16,8 @@ import {
   UserPlus,
 } from "lucide-react";
 
-import { AccessDenied } from "@/components/access-denied";
-import { AppShell } from "@/components/app-shell";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -59,7 +59,7 @@ import {
 } from "@/lib/permission-registry";
 import { canManageShop, isPlatformWorkspace } from "@/lib/permissions";
 import { toAsciiUsername } from "@/lib/username";
-import { shopLabel } from "@/components/channel-filter";
+import { shopLabel } from "@/components/shared/channel-filter";
 import { formatDateTime } from "@/lib/format";
 import { Label } from "@/components/ui/label";
 import { TEXT_SUB } from "@/lib/typography";

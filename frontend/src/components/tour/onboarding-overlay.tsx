@@ -13,7 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 
-import { TourPlayer } from "@/components/guide-tour-player";
+import { TourPlayer } from "@/components/tour/guide-tour-player";
 import { Button } from "@/components/ui/button";
 import { clearToken } from "@/lib/api";
 import { CHANNELS_TOUR } from "@/lib/guide-tours";
