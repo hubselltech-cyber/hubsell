@@ -1,33 +1,33 @@
 /**
- * Chụp ảnh GIAO DIỆN THẬT của trang Kênh bán cho màn HƯỚNG DẪN ĐỘNG sau đăng
- * nhập lần đầu (components/onboarding-overlay.tsx): con trỏ ảo chạy trên các
- * ảnh này, click + phóng to từng vùng thao tác như một video quay màn hình.
+ * Chá»¥p áº£nh GIAO DIá»†N THáº¬T cá»§a trang KÃªnh bÃ¡n cho mÃ n HÆ¯á»šNG DáºªN Äá»˜NG sau Ä‘Äƒng
+ * nháº­p láº§n Ä‘áº§u (components/onboarding-overlay.tsx): con trá» áº£o cháº¡y trÃªn cÃ¡c
+ * áº£nh nÃ y, click + phÃ³ng to tá»«ng vÃ¹ng thao tÃ¡c nhÆ° má»™t video quay mÃ n hÃ¬nh.
  *
- * Cùng cơ chế với capture-invoice-assets.js: mở frontend thật (localhost:3000)
- * bằng Chromium headless, chặn mọi request /api/* trả dữ liệu mẫu — render đúng
- * 100% giao diện production, tái lập được khi UI đổi.
+ * CÃ¹ng cÆ¡ cháº¿ vá»›i capture-invoice-assets.js: má»Ÿ frontend tháº­t (localhost:3000)
+ * báº±ng Chromium headless, cháº·n má»i request /api/* tráº£ dá»¯ liá»‡u máº«u â€” render Ä‘Ãºng
+ * 100% giao diá»‡n production, tÃ¡i láº­p Ä‘Æ°á»£c khi UI Ä‘á»•i.
  *
- * NGOÀI ẢNH, script còn in ra TỌA ĐỘ (% viewport) của từng nút mục tiêu —
- * copy khối JSON đó vào TOUR_STEPS trong onboarding-overlay.tsx mỗi lần chụp
- * lại, kẻo con trỏ chỉ trật chỗ.
+ * NGOÃ€I áº¢NH, script cÃ²n in ra Tá»ŒA Äá»˜ (% viewport) cá»§a tá»«ng nÃºt má»¥c tiÃªu â€”
+ * copy khá»‘i JSON Ä‘Ã³ vÃ o TOUR_STEPS trong onboarding-overlay.tsx má»—i láº§n chá»¥p
+ * láº¡i, káº»o con trá» chá»‰ tráº­t chá»—.
  */
 const { chromium } = require("playwright");
 const path = require("path");
 
-const OUT = "D:/Claude Code/frontend/public/onboarding";
+const OUT = "D:/Claude Code/Hubsell/frontend/public/onboarding";
 const VIEW = { width: 1440, height: 960 };
 
 const user = {
   id: "u1",
-  fullName: "Chủ shop",
+  fullName: "Chá»§ shop",
   email: "shop@hubsell.vn",
   role: "ADMIN",
   isPlatformAdmin: false,
   createdAt: "2026-06-01T00:00:00.000Z",
 };
 
-// Gian Shopee ĐÃ KẾT NỐI THẬT cho ảnh cuối (bước Đồng bộ đơn) — data demo
-// Sunny Closet trùng bộ ảnh landing/guide cho nhất quán.
+// Gian Shopee ÄÃƒ Káº¾T Ná»I THáº¬T cho áº£nh cuá»‘i (bÆ°á»›c Äá»“ng bá»™ Ä‘Æ¡n) â€” data demo
+// Sunny Closet trÃ¹ng bá»™ áº£nh landing/guide cho nháº¥t quÃ¡n.
 const connectedChannel = {
   id: "c1",
   channelName: "SHOPEE",
@@ -48,13 +48,13 @@ const connectedChannel = {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
     viewport: VIEW,
-    deviceScaleFactor: 2, // ảnh nét gấp đôi — bị phóng to tới ~2.2x trong tour
+    deviceScaleFactor: 2, // áº£nh nÃ©t gáº¥p Ä‘Ã´i â€” bá»‹ phÃ³ng to tá»›i ~2.2x trong tour
     locale: "vi-VN",
     ignoreHTTPSErrors: true,
   });
 
-  // Ảnh 1+2 cần danh sách gian RỖNG, ảnh 3 cần 1 gian Shopee đã nối —
-  // route đọc biến này nên chỉ cần đổi giá trị rồi reload.
+  // áº¢nh 1+2 cáº§n danh sÃ¡ch gian Rá»–NG, áº£nh 3 cáº§n 1 gian Shopee Ä‘Ã£ ná»‘i â€”
+  // route Ä‘á»c biáº¿n nÃ y nÃªn chá»‰ cáº§n Ä‘á»•i giÃ¡ trá»‹ rá»“i reload.
   let channelsPayload = [];
 
   await ctx.route("**/api/**", (route) => {
@@ -75,8 +75,8 @@ const connectedChannel = {
         headers: cors,
         body: JSON.stringify(o),
       });
-    // hasChannels: true để AppShell render app đầy đủ (sidebar là nhân vật
-    // chính của bước 1) — màn onboarding thật không chặn trang này nữa.
+    // hasChannels: true Ä‘á»ƒ AppShell render app Ä‘áº§y Ä‘á»§ (sidebar lÃ  nhÃ¢n váº­t
+    // chÃ­nh cá»§a bÆ°á»›c 1) â€” mÃ n onboarding tháº­t khÃ´ng cháº·n trang nÃ y ná»¯a.
     if (url.includes("/api/auth/me")) return json({ user, hasChannels: true });
     if (/\/api\/channels(\?|$)/.test(url)) return json(channelsPayload);
     if (url.includes("/api/notifications")) return json({ items: [], unread: 0 });
@@ -106,10 +106,10 @@ const connectedChannel = {
 
   const page = await ctx.newPage();
 
-  // % viewport của tâm + kích thước một element — nạp vào TOUR_STEPS.
+  // % viewport cá»§a tÃ¢m + kÃ­ch thÆ°á»›c má»™t element â€” náº¡p vÃ o TOUR_STEPS.
   const pct = async (locator) => {
     const b = await locator.boundingBox();
-    if (!b) throw new Error("Không lấy được boundingBox");
+    if (!b) throw new Error("KhÃ´ng láº¥y Ä‘Æ°á»£c boundingBox");
     const r = (v) => Math.round(v * 100) / 100;
     return {
       x: r(((b.x + b.width / 2) / VIEW.width) * 100),
@@ -120,35 +120,35 @@ const connectedChannel = {
   };
   const targets = {};
 
-  // ---- Ảnh 1: trang Kênh bán trống (sidebar + nút Kết nối gian hàng) ----
+  // ---- áº¢nh 1: trang KÃªnh bÃ¡n trá»‘ng (sidebar + nÃºt Káº¿t ná»‘i gian hÃ ng) ----
   await page.goto("http://localhost:3000/channels", { waitUntil: "domcontentloaded" });
-  const navLink = page.getByRole("link", { name: "Kênh bán" });
+  const navLink = page.getByRole("link", { name: "KÃªnh bÃ¡n" });
   await navLink.waitFor({ timeout: 30000 });
-  await page.getByText("Chưa kết nối gian hàng nào").waitFor();
-  await page.waitForTimeout(1200); // đợi font + icon nạp xong
+  await page.getByText("ChÆ°a káº¿t ná»‘i gian hÃ ng nÃ o").waitFor();
+  await page.waitForTimeout(1200); // Ä‘á»£i font + icon náº¡p xong
 
   targets.navChannels = await pct(navLink);
   targets.connectButton = await pct(
-    page.getByRole("button", { name: "Kết nối gian hàng" })
+    page.getByRole("button", { name: "Káº¿t ná»‘i gian hÃ ng" })
   );
   await page.screenshot({ path: path.join(OUT, "onboard-channels-empty.png") });
 
-  // ---- Ảnh 2: dialog Kết nối gian hàng (Shopee mặc định) ----
-  await page.getByRole("button", { name: "Kết nối gian hàng" }).click();
+  // ---- áº¢nh 2: dialog Káº¿t ná»‘i gian hÃ ng (Shopee máº·c Ä‘á»‹nh) ----
+  await page.getByRole("button", { name: "Káº¿t ná»‘i gian hÃ ng" }).click();
   const select = page.locator("#channel-select");
   await select.waitFor();
-  const oauthBtn = page.getByRole("button", { name: /Tiếp tục với Shopee/ });
+  const oauthBtn = page.getByRole("button", { name: /Tiáº¿p tá»¥c vá»›i Shopee/ });
   await oauthBtn.waitFor();
-  await page.waitForTimeout(500); // đợi animation mở dialog đứng yên
+  await page.waitForTimeout(500); // Ä‘á»£i animation má»Ÿ dialog Ä‘á»©ng yÃªn
 
   targets.platformSelect = await pct(select);
   targets.oauthButton = await pct(oauthBtn);
   await page.screenshot({ path: path.join(OUT, "onboard-connect-dialog.png") });
 
-  // ---- Ảnh 3: gian Shopee đã kết nối + nút Đồng bộ đơn ----
+  // ---- áº¢nh 3: gian Shopee Ä‘Ã£ káº¿t ná»‘i + nÃºt Äá»“ng bá»™ Ä‘Æ¡n ----
   channelsPayload = [connectedChannel];
   await page.goto("http://localhost:3000/channels", { waitUntil: "domcontentloaded" });
-  const syncBtn = page.getByRole("button", { name: "Đồng bộ đơn", exact: true });
+  const syncBtn = page.getByRole("button", { name: "Äá»“ng bá»™ Ä‘Æ¡n", exact: true });
   await syncBtn.waitFor({ timeout: 30000 });
   await page.waitForTimeout(1200);
 
@@ -157,7 +157,7 @@ const connectedChannel = {
 
   await browser.close();
   console.log("DONE: 3 anh da luu vao", OUT);
-  console.log("TOA DO MUC TIEU (% viewport) — dan vao TOUR_STEPS:");
+  console.log("TOA DO MUC TIEU (% viewport) â€” dan vao TOUR_STEPS:");
   console.log(JSON.stringify(targets, null, 2));
 })().catch((e) => {
   console.error("FAIL:", e.message);

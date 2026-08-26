@@ -1,18 +1,18 @@
 /**
- * Chụp ảnh GIAO DIỆN THẬT của hub Hàng hóa cho bộ slide "Quản lý kho".
+ * Chá»¥p áº£nh GIAO DIá»†N THáº¬T cá»§a hub HÃ ng hÃ³a cho bá»™ slide "Quáº£n lÃ½ kho".
  *
- * Cùng cơ chế với capture-guide-assets.js: mở frontend thật (localhost:3000)
- * bằng Chromium headless, chặn mọi request /api/* trả dữ liệu mẫu — render đúng
- * 100% giao diện production mà không cần backend hay đăng nhập thật.
+ * CÃ¹ng cÆ¡ cháº¿ vá»›i capture-guide-assets.js: má»Ÿ frontend tháº­t (localhost:3000)
+ * báº±ng Chromium headless, cháº·n má»i request /api/* tráº£ dá»¯ liá»‡u máº«u â€” render Ä‘Ãºng
+ * 100% giao diá»‡n production mÃ  khÃ´ng cáº§n backend hay Ä‘Äƒng nháº­p tháº­t.
  */
 const { chromium } = require("playwright");
 const path = require("path");
 
-const OUT = "D:/Claude Code/frontend/public/guide-assets";
+const OUT = "D:/Claude Code/Hubsell/frontend/public/guide-assets";
 
 const user = {
   id: "u1",
-  fullName: "Chủ shop",
+  fullName: "Chá»§ shop",
   email: "shop@hubsell.vn",
   role: "ADMIN",
   isPlatformAdmin: false,
@@ -36,11 +36,11 @@ const channels = [
   },
 ];
 
-// ===== Tab TỒN KHO: SKU kho với cột "Bán trên" đủ các trạng thái =====
+// ===== Tab Tá»’N KHO: SKU kho vá»›i cá»™t "BÃ¡n trÃªn" Ä‘á»§ cÃ¡c tráº¡ng thÃ¡i =====
 const products = [
   {
     id: "p1", skuCode: "BLT002-CAFE14",
-    productName: "Túi Xách Nam Nữ Công Sở ANO, Cặp Đựng Laptop 14, 15, 15.6 inch BLT002",
+    productName: "TÃºi XÃ¡ch Nam Ná»¯ CÃ´ng Sá»Ÿ ANO, Cáº·p Äá»±ng Laptop 14, 15, 15.6 inch BLT002",
     costPrice: 145000, sellingPrice: 279000, quantityInStock: 41, holdQuantity: 0,
     createdAt: "2026-08-01T00:00:00.000Z",
     channelLinks: [{ channelSku: "BLT002-CAFE14", channelName: "SHOPEE", shopName: "ANO Official Store" }],
@@ -48,7 +48,7 @@ const products = [
   },
   {
     id: "p2", skuCode: "ANOC01-LOGO",
-    productName: "Túi đeo chéo ANO CHIBI LOVE nhiều ngăn khóa chống thấm ANOC02",
+    productName: "TÃºi Ä‘eo chÃ©o ANO CHIBI LOVE nhiá»u ngÄƒn khÃ³a chá»‘ng tháº¥m ANOC02",
     costPrice: 98000, sellingPrice: 239000, quantityInStock: 1023, holdQuantity: 0,
     createdAt: "2026-08-01T00:00:00.000Z",
     channelLinks: [
@@ -59,7 +59,7 @@ const products = [
   },
   {
     id: "p3", skuCode: "AK001-GACON",
-    productName: "JumpSuit Hi.Bé, body áo khoác lông lót bông cho bé từ 3-10Kg AK001",
+    productName: "JumpSuit Hi.BÃ©, body Ã¡o khoÃ¡c lÃ´ng lÃ³t bÃ´ng cho bÃ© tá»« 3-10Kg AK001",
     costPrice: 62000, sellingPrice: 300000, quantityInStock: 68, holdQuantity: 3,
     createdAt: "2026-08-01T00:00:00.000Z",
     channelLinks: [{ channelSku: "AK001-GACON", channelName: "SHOPEE", shopName: "ANO Official Store" }],
@@ -67,7 +67,7 @@ const products = [
   },
   {
     id: "p4", skuCode: "AGN01-DEN",
-    productName: "Áo gió nam nữ 2 lớp chống tia UV, chống nước AGN",
+    productName: "Ão giÃ³ nam ná»¯ 2 lá»›p chá»‘ng tia UV, chá»‘ng nÆ°á»›c AGN",
     costPrice: 55000, sellingPrice: 149000, quantityInStock: 7, holdQuantity: 0,
     createdAt: "2026-08-01T00:00:00.000Z",
     channelLinks: [],
@@ -75,7 +75,7 @@ const products = [
   },
 ];
 
-// ===== Tab CHỜ LIÊN KẾT: sản phẩm sàn chưa nối =====
+// ===== Tab CHá»œ LIÃŠN Káº¾T: sáº£n pháº©m sÃ n chÆ°a ná»‘i =====
 const mkChannelProduct = (i, sku, name, price, channel) => ({
   id: `cp${i}`, channelSku: sku, productName: name, variantName: null,
   price, imageUrl: null, status: "ACTIVE", lastSyncedAt: "2026-08-15T13:00:00.000Z",
@@ -84,20 +84,20 @@ const mkChannelProduct = (i, sku, name, price, channel) => ({
   product: null,
 });
 const channelProducts = [
-  mkChannelProduct(1, "ANOC01-CHIBI", "Túi đeo chéo ANO CHIBI LOVE nhiều ngăn khóa chống thấm ANOC02", 350000, channels[0]),
-  mkChannelProduct(2, "ANOC02-LOVE", "Túi đeo chéo ANO CHIBI LOVE nhiều ngăn khóa chống thấm ANOC02", 239000, channels[0]),
-  mkChannelProduct(3, "ANT01-TRANG-L", "Áo thun nam nữ cotton ANO x XWEAR ANT01", 300000, channels[0]),
-  mkChannelProduct(4, "ANT01-TRANG-M", "Áo thun nam nữ cotton ANO x XWEAR ANT01", 300000, channels[0]),
-  mkChannelProduct(5, "BL003-DEN", "Balo da nam ANO chính hãng, [KT: 44*30*18cm] đựng laptop 15,6inch BL003", 530000, channels[0]),
-  mkChannelProduct(6, "BLT001", "Túi Xách Nam Nữ Công Sở REMOID Cặp Đựng Laptop 13 14 15 inch BLT001", 199000, channels[1]),
-  mkChannelProduct(7, "BLT002-CAFE15", "Túi Xách Nam Nữ Công Sở REMOID Cặp Đựng Laptop 13 14 15 inch BLT002", 199000, channels[1]),
+  mkChannelProduct(1, "ANOC01-CHIBI", "TÃºi Ä‘eo chÃ©o ANO CHIBI LOVE nhiá»u ngÄƒn khÃ³a chá»‘ng tháº¥m ANOC02", 350000, channels[0]),
+  mkChannelProduct(2, "ANOC02-LOVE", "TÃºi Ä‘eo chÃ©o ANO CHIBI LOVE nhiá»u ngÄƒn khÃ³a chá»‘ng tháº¥m ANOC02", 239000, channels[0]),
+  mkChannelProduct(3, "ANT01-TRANG-L", "Ão thun nam ná»¯ cotton ANO x XWEAR ANT01", 300000, channels[0]),
+  mkChannelProduct(4, "ANT01-TRANG-M", "Ão thun nam ná»¯ cotton ANO x XWEAR ANT01", 300000, channels[0]),
+  mkChannelProduct(5, "BL003-DEN", "Balo da nam ANO chÃ­nh hÃ£ng, [KT: 44*30*18cm] Ä‘á»±ng laptop 15,6inch BL003", 530000, channels[0]),
+  mkChannelProduct(6, "BLT001", "TÃºi XÃ¡ch Nam Ná»¯ CÃ´ng Sá»Ÿ REMOID Cáº·p Äá»±ng Laptop 13 14 15 inch BLT001", 199000, channels[1]),
+  mkChannelProduct(7, "BLT002-CAFE15", "TÃºi XÃ¡ch Nam Ná»¯ CÃ´ng Sá»Ÿ REMOID Cáº·p Äá»±ng Laptop 13 14 15 inch BLT002", 199000, channels[1]),
 ];
 
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
     viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: 2, // ảnh nét gấp đôi cho slide
+    deviceScaleFactor: 2, // áº£nh nÃ©t gáº¥p Ä‘Ã´i cho slide
     locale: "vi-VN",
     ignoreHTTPSErrors: true,
   });
@@ -147,26 +147,26 @@ const channelProducts = [
   const page = await ctx.newPage();
   await page.goto("http://localhost:3000/products", { waitUntil: "domcontentloaded" });
   await page.getByText("BLT002-CAFE14").first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(1200); // đợi font + icon nạp xong
+  await page.waitForTimeout(1200); // Ä‘á»£i font + icon náº¡p xong
 
-  // 1) Tab Tồn kho — bảng SKU kho + cột Bán trên + chip Đồng bộ sàn
+  // 1) Tab Tá»“n kho â€” báº£ng SKU kho + cá»™t BÃ¡n trÃªn + chip Äá»“ng bá»™ sÃ n
   await page.screenshot({ path: path.join(OUT, "products-inventory.png") });
 
-  // 2) Tab Chờ liên kết — danh mục sàn + hàng nút tự khớp / đồng bộ
-  await page.getByRole("button", { name: /^Chờ liên kết/ }).first().click();
+  // 2) Tab Chá» liÃªn káº¿t â€” danh má»¥c sÃ n + hÃ ng nÃºt tá»± khá»›p / Ä‘á»“ng bá»™
+  await page.getByRole("button", { name: /^Chá» liÃªn káº¿t/ }).first().click();
   await page.getByText("ANOC01-CHIBI").first().waitFor({ timeout: 30000 });
   await page.waitForTimeout(900);
   await page.screenshot({ path: path.join(OUT, "products-link-tab.png") });
 
-  // 3) Tick 2 dòng → thanh liên kết hàng loạt hiện dưới đáy
-  await page.getByLabel("Chọn ANOC01-CHIBI").check();
-  await page.getByLabel("Chọn ANOC02-LOVE").check();
+  // 3) Tick 2 dÃ²ng â†’ thanh liÃªn káº¿t hÃ ng loáº¡t hiá»‡n dÆ°á»›i Ä‘Ã¡y
+  await page.getByLabel("Chá»n ANOC01-CHIBI").check();
+  await page.getByLabel("Chá»n ANOC02-LOVE").check();
   await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(OUT, "products-bulk-bar.png") });
 
-  // 4) Dialog Cài đặt đồng bộ tồn kho
+  // 4) Dialog CÃ i Ä‘áº·t Ä‘á»“ng bá»™ tá»“n kho
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Cài đặt" }).click();
+  await page.getByRole("button", { name: "CÃ i Ä‘áº·t" }).click();
   await page.waitForTimeout(900);
   await page.screenshot({ path: path.join(OUT, "sync-settings-dialog.png") });
 

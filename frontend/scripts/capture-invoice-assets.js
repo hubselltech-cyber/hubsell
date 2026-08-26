@@ -1,31 +1,31 @@
 /**
- * Chụp ảnh GIAO DIỆN THẬT của module Hóa đơn & Thuế cho bộ slide hướng dẫn
- * "Kết nối & Xuất hóa đơn" (public/huong-dan-xuat-hoa-don.html).
+ * Chá»¥p áº£nh GIAO DIá»†N THáº¬T cá»§a module HÃ³a Ä‘Æ¡n & Thuáº¿ cho bá»™ slide hÆ°á»›ng dáº«n
+ * "Káº¿t ná»‘i & Xuáº¥t hÃ³a Ä‘Æ¡n" (public/huong-dan-xuat-hoa-don.html).
  *
- * Cùng cơ chế với capture-guide-assets.js: mở frontend thật (localhost:3000)
- * bằng Chromium headless, chặn mọi request /api/* và trả dữ liệu mẫu — render
- * đúng 100% giao diện production mà không cần backend hay tài khoản MISA thật.
+ * CÃ¹ng cÆ¡ cháº¿ vá»›i capture-guide-assets.js: má»Ÿ frontend tháº­t (localhost:3000)
+ * báº±ng Chromium headless, cháº·n má»i request /api/* vÃ  tráº£ dá»¯ liá»‡u máº«u â€” render
+ * Ä‘Ãºng 100% giao diá»‡n production mÃ  khÃ´ng cáº§n backend hay tÃ i khoáº£n MISA tháº­t.
  */
 const { chromium } = require("playwright");
 const path = require("path");
 
-const OUT = "D:/Claude Code/frontend/public/guide-assets";
+const OUT = "D:/Claude Code/Hubsell/frontend/public/guide-assets";
 
 const user = {
   id: "u1",
-  fullName: "Chủ shop",
+  fullName: "Chá»§ shop",
   email: "shop@hubsell.vn",
   role: "ADMIN",
   isPlatformAdmin: false,
   createdAt: "2026-06-01T00:00:00.000Z",
 };
 
-// Cấu hình hóa đơn MẪU — shop demo Sunny Closet (trùng bộ data demo landing),
-// đã điền đủ 3 bước để ảnh thể hiện trạng thái "cấu hình xong".
+// Cáº¥u hÃ¬nh hÃ³a Ä‘Æ¡n MáºªU â€” shop demo Sunny Closet (trÃ¹ng bá»™ data demo landing),
+// Ä‘Ã£ Ä‘iá»n Ä‘á»§ 3 bÆ°á»›c Ä‘á»ƒ áº£nh thá»ƒ hiá»‡n tráº¡ng thÃ¡i "cáº¥u hÃ¬nh xong".
 const invoiceConfig = {
   taxCode: "0109734512",
-  companyName: "HỘ KINH DOANH SUNNY CLOSET",
-  companyAddress: "123 Nguyễn Trãi, P. Thượng Đình, Q. Thanh Xuân, Hà Nội",
+  companyName: "Há»˜ KINH DOANH SUNNY CLOSET",
+  companyAddress: "123 Nguyá»…n TrÃ£i, P. ThÆ°á»£ng ÄÃ¬nh, Q. Thanh XuÃ¢n, HÃ  Ná»™i",
   provider: "MISA",
   partnerCode: "HUBSELL-ISV-2026",
   clientId: "",
@@ -36,7 +36,7 @@ const invoiceConfig = {
   secretKeyMasked: null,
   meinvoiceUsername: "sunnycloset@gmail.com",
   hasMeinvoicePassword: true,
-  meinvoicePasswordMasked: "su••••••et",
+  meinvoicePasswordMasked: "suâ€¢â€¢â€¢â€¢â€¢â€¢et",
   signMethod: "ESIGN_CLOUD",
   esignClientId: "",
   esignUsername: "",
@@ -56,23 +56,23 @@ const invoiceConfig = {
   defaultVatRate: 0,
 };
 
-// Ký hiệu kéo về từ meInvoice sau khi Test kết nối OK.
+// KÃ½ hiá»‡u kÃ©o vá» tá»« meInvoice sau khi Test káº¿t ná»‘i OK.
 const templates = [
-  { invSeries: "1C26TAA", invTemplateNo: "1", templateName: "Hóa đơn GTGT - có mã - cơ bản" },
-  { invSeries: "2C26TAB", invTemplateNo: "2", templateName: "Hóa đơn bán hàng - có mã" },
+  { invSeries: "1C26TAA", invTemplateNo: "1", templateName: "HÃ³a Ä‘Æ¡n GTGT - cÃ³ mÃ£ - cÆ¡ báº£n" },
+  { invSeries: "2C26TAB", invTemplateNo: "2", templateName: "HÃ³a Ä‘Æ¡n bÃ¡n hÃ ng - cÃ³ mÃ£" },
 ];
 
-// Hàng chờ xuất hóa đơn — đơn đã giao thành công, trộn 2 sàn, 2 đơn khách
-// "Cần HĐ", trộn đã/chưa đối soát cho đủ badge trên ảnh.
+// HÃ ng chá» xuáº¥t hÃ³a Ä‘Æ¡n â€” Ä‘Æ¡n Ä‘Ã£ giao thÃ nh cÃ´ng, trá»™n 2 sÃ n, 2 Ä‘Æ¡n khÃ¡ch
+// "Cáº§n HÄ", trá»™n Ä‘Ã£/chÆ°a Ä‘á»‘i soÃ¡t cho Ä‘á»§ badge trÃªn áº£nh.
 const queueRows = [
-  { orderCode: "2508190SNKXR7T", customerName: "Ngọc Anh", totalAmount: 356000, orderedAt: "2026-08-19T09:12:00.000Z", isSettled: true, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: { type: "COMPANY", hint: "MST 0312456789 — CTY TNHH Hoa Ban Mai" } },
-  { orderCode: "2508200QWE2MHA", customerName: "Trần Văn Hùng", totalAmount: 512000, orderedAt: "2026-08-20T14:03:00.000Z", isSettled: true, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: { type: "PERSONAL", hint: null } },
-  { orderCode: "2508210P1L9KDD", customerName: "Mai Phương", totalAmount: 189000, orderedAt: "2026-08-21T08:45:00.000Z", isSettled: true, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
-  { orderCode: "836512094817263", customerName: "Lê Thu Hà", totalAmount: 742000, orderedAt: "2026-08-21T19:27:00.000Z", isSettled: true, channelName: "LAZADA", shopName: "Sunny Kids", invoiceRequest: null },
-  { orderCode: "2508220MB4TQ8N", customerName: "Phạm Quốc Bảo", totalAmount: 268000, orderedAt: "2026-08-22T10:02:00.000Z", isSettled: false, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
-  { orderCode: "836512094911042", customerName: "Đỗ Minh Châu", totalAmount: 455000, orderedAt: "2026-08-22T16:40:00.000Z", isSettled: false, channelName: "LAZADA", shopName: "Sunny Kids", invoiceRequest: null },
-  { orderCode: "2508230XCV81LP", customerName: "Vũ Hải Yến", totalAmount: 320000, orderedAt: "2026-08-23T11:18:00.000Z", isSettled: false, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
-  { orderCode: "2508240ZTR55KM", customerName: "Bùi Anh Tuấn", totalAmount: 615000, orderedAt: "2026-08-24T09:55:00.000Z", isSettled: false, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
+  { orderCode: "2508190SNKXR7T", customerName: "Ngá»c Anh", totalAmount: 356000, orderedAt: "2026-08-19T09:12:00.000Z", isSettled: true, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: { type: "COMPANY", hint: "MST 0312456789 â€” CTY TNHH Hoa Ban Mai" } },
+  { orderCode: "2508200QWE2MHA", customerName: "Tráº§n VÄƒn HÃ¹ng", totalAmount: 512000, orderedAt: "2026-08-20T14:03:00.000Z", isSettled: true, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: { type: "PERSONAL", hint: null } },
+  { orderCode: "2508210P1L9KDD", customerName: "Mai PhÆ°Æ¡ng", totalAmount: 189000, orderedAt: "2026-08-21T08:45:00.000Z", isSettled: true, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
+  { orderCode: "836512094817263", customerName: "LÃª Thu HÃ ", totalAmount: 742000, orderedAt: "2026-08-21T19:27:00.000Z", isSettled: true, channelName: "LAZADA", shopName: "Sunny Kids", invoiceRequest: null },
+  { orderCode: "2508220MB4TQ8N", customerName: "Pháº¡m Quá»‘c Báº£o", totalAmount: 268000, orderedAt: "2026-08-22T10:02:00.000Z", isSettled: false, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
+  { orderCode: "836512094911042", customerName: "Äá»— Minh ChÃ¢u", totalAmount: 455000, orderedAt: "2026-08-22T16:40:00.000Z", isSettled: false, channelName: "LAZADA", shopName: "Sunny Kids", invoiceRequest: null },
+  { orderCode: "2508230XCV81LP", customerName: "VÅ© Háº£i Yáº¿n", totalAmount: 320000, orderedAt: "2026-08-23T11:18:00.000Z", isSettled: false, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
+  { orderCode: "2508240ZTR55KM", customerName: "BÃ¹i Anh Tuáº¥n", totalAmount: 615000, orderedAt: "2026-08-24T09:55:00.000Z", isSettled: false, channelName: "SHOPEE", shopName: "Sunny Closet", invoiceRequest: null },
 ];
 
 const queue = {
@@ -86,7 +86,7 @@ const queue = {
   rows: queueRows,
 };
 
-// Nhật ký hóa đơn cho trang Lịch sử & Báo cáo thuế.
+// Nháº­t kÃ½ hÃ³a Ä‘Æ¡n cho trang Lá»‹ch sá»­ & BÃ¡o cÃ¡o thuáº¿.
 const logBase = {
   provider: "MISA",
   platformTaxWithheld: 0,
@@ -138,12 +138,12 @@ const taxReport = {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
     viewport: { width: 1440, height: 960 },
-    deviceScaleFactor: 2, // ảnh nét gấp đôi cho slide
+    deviceScaleFactor: 2, // áº£nh nÃ©t gáº¥p Ä‘Ã´i cho slide
     locale: "vi-VN",
     ignoreHTTPSErrors: true,
   });
 
-  // Chặn toàn bộ API — kể cả preflight CORS (frontend gọi https://localhost:4000)
+  // Cháº·n toÃ n bá»™ API â€” ká»ƒ cáº£ preflight CORS (frontend gá»i https://localhost:4000)
   await ctx.route("**/api/**", (route) => {
     const req = route.request();
     const cors = {
@@ -163,9 +163,9 @@ const taxReport = {
         body: JSON.stringify(o),
       });
     if (url.includes("/api/auth/me")) return json({ user, hasChannels: true });
-    // AppShell gọi 3 API nền — trả đúng SHAPE để không vỡ trang:
-    // channels là MẢNG, notifications là {items,unread}, subscription exempt
-    // (ẩn banner trần gói khỏi ảnh chụp).
+    // AppShell gá»i 3 API ná»n â€” tráº£ Ä‘Ãºng SHAPE Ä‘á»ƒ khÃ´ng vá»¡ trang:
+    // channels lÃ  Máº¢NG, notifications lÃ  {items,unread}, subscription exempt
+    // (áº©n banner tráº§n gÃ³i khá»i áº£nh chá»¥p).
     if (/\/api\/channels(\?|$)/.test(url)) return json([]);
     if (url.includes("/api/notifications")) return json({ items: [], unread: 0 });
     if (url.includes("/api/subscription/me")) {
@@ -186,7 +186,7 @@ const taxReport = {
     }
     if (url.includes("/api/invoice-config/templates")) return json({ templates, source: "meinvoice" });
     if (url.includes("/api/invoice-config/test-meinvoice")) {
-      return json({ ok: true, message: "Kết nối meInvoice OK — tài khoản hợp lệ." });
+      return json({ ok: true, message: "Káº¿t ná»‘i meInvoice OK â€” tÃ i khoáº£n há»£p lá»‡." });
     }
     if (url.includes("/api/invoice-config")) return json({ config: invoiceConfig, channelKeys: [] });
     if (url.includes("/api/tax/invoice-queue")) return json(queue);
@@ -194,7 +194,7 @@ const taxReport = {
     return json({});
   });
 
-  // Gieo phiên đăng nhập trước khi trang chạy script
+  // Gieo phiÃªn Ä‘Äƒng nháº­p trÆ°á»›c khi trang cháº¡y script
   await ctx.addInitScript(([u]) => {
     localStorage.setItem("hubsell_token", "demo-token");
     localStorage.setItem("hubsell_user", JSON.stringify(u));
@@ -202,41 +202,41 @@ const taxReport = {
 
   const page = await ctx.newPage();
 
-  // ---- 1+2) Trang Kết nối & Xuất hóa đơn — tab Xuất hóa đơn (mặc định) ----
+  // ---- 1+2) Trang Káº¿t ná»‘i & Xuáº¥t hÃ³a Ä‘Æ¡n â€” tab Xuáº¥t hÃ³a Ä‘Æ¡n (máº·c Ä‘á»‹nh) ----
   await page.goto("http://localhost:3000/invoicing/connect", { waitUntil: "domcontentloaded" });
-  await page.getByRole("tab", { name: "Cấu hình kết nối" }).waitFor({ timeout: 30000 });
+  await page.getByRole("tab", { name: "Cáº¥u hÃ¬nh káº¿t ná»‘i" }).waitFor({ timeout: 30000 });
   await page.getByText("2508190SNKXR7T").waitFor();
-  await page.waitForTimeout(1200); // đợi font + icon nạp xong
+  await page.waitForTimeout(1200); // Ä‘á»£i font + icon náº¡p xong
 
-  // Ảnh 1: hàng chờ nguyên trạng (chưa tick)
+  // áº¢nh 1: hÃ ng chá» nguyÃªn tráº¡ng (chÆ°a tick)
   await page.screenshot({ path: path.join(OUT, "invoice-issue-tab.png") });
 
-  // Ảnh 2: tick 3 đơn đã đối soát → thanh hành động hàng loạt hiện ra
+  // áº¢nh 2: tick 3 Ä‘Æ¡n Ä‘Ã£ Ä‘á»‘i soÃ¡t â†’ thanh hÃ nh Ä‘á»™ng hÃ ng loáº¡t hiá»‡n ra
   for (const code of ["2508190SNKXR7T", "2508200QWE2MHA", "2508210P1L9KDD"]) {
-    await page.getByRole("checkbox", { name: `Chọn đơn ${code}` }).check();
+    await page.getByRole("checkbox", { name: `Chá»n Ä‘Æ¡n ${code}` }).check();
   }
-  await page.getByRole("button", { name: /Xuất 3 hóa đơn/ }).waitFor();
+  await page.getByRole("button", { name: /Xuáº¥t 3 hÃ³a Ä‘Æ¡n/ }).waitFor();
   await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(OUT, "invoice-issue-selected.png") });
 
-  // ---- 3) Tab Cấu hình kết nối — form 3 bước đã điền ----
-  await page.getByRole("tab", { name: "Cấu hình kết nối" }).click();
-  await page.getByText("1 · Thông tin Pháp nhân / Hộ kinh doanh").waitFor();
+  // ---- 3) Tab Cáº¥u hÃ¬nh káº¿t ná»‘i â€” form 3 bÆ°á»›c Ä‘Ã£ Ä‘iá»n ----
+  await page.getByRole("tab", { name: "Cáº¥u hÃ¬nh káº¿t ná»‘i" }).click();
+  await page.getByText("1 Â· ThÃ´ng tin PhÃ¡p nhÃ¢n / Há»™ kinh doanh").waitFor();
   await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(OUT, "invoice-config-tab.png") });
 
-  // ---- 4) Bấm Test → badge "Đã kết nối" + ký hiệu kéo về thành dropdown,
-  //      rồi cuộn xuống cuối form: ký hiệu + thuế suất GTGT + nút Lưu cấu hình ----
+  // ---- 4) Báº¥m Test â†’ badge "ÄÃ£ káº¿t ná»‘i" + kÃ½ hiá»‡u kÃ©o vá» thÃ nh dropdown,
+  //      rá»“i cuá»™n xuá»‘ng cuá»‘i form: kÃ½ hiá»‡u + thuáº¿ suáº¥t GTGT + nÃºt LÆ°u cáº¥u hÃ¬nh ----
   await page.getByRole("button", { name: "Test" }).click();
-  await page.getByText("Đã kết nối").waitFor();
-  // đợi toast sonner tự tắt để ảnh sạch
+  await page.getByText("ÄÃ£ káº¿t ná»‘i").waitFor();
+  // Ä‘á»£i toast sonner tá»± táº¯t Ä‘á»ƒ áº£nh sáº¡ch
   await page.waitForTimeout(4800);
-  await page.getByRole("button", { name: "Lưu cấu hình" }).scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: "LÆ°u cáº¥u hÃ¬nh" }).scrollIntoViewIfNeeded();
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT, "invoice-config-bottom.png") });
 
-  // ---- 5) Trang Lịch sử & Báo cáo thuế ----
-  // Nới viewport để bảng nhật ký hiện trọn cột thao tác (nút Tải PDF) bên phải.
+  // ---- 5) Trang Lá»‹ch sá»­ & BÃ¡o cÃ¡o thuáº¿ ----
+  // Ná»›i viewport Ä‘á»ƒ báº£ng nháº­t kÃ½ hiá»‡n trá»n cá»™t thao tÃ¡c (nÃºt Táº£i PDF) bÃªn pháº£i.
   await page.setViewportSize({ width: 1680, height: 960 });
   await page.goto("http://localhost:3000/invoicing/history", { waitUntil: "domcontentloaded" });
   await page.getByText("00000131").waitFor({ timeout: 30000 });
