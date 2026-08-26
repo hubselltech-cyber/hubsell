@@ -462,8 +462,11 @@ export async function processShopeeDeliveryTracking(
   }
 
   // ---- (4) NHẶT vé đến hạn — trần call cứng mỗi gian mỗi nhịp ----
+  // Mốc so sánh phải LẤY TƯƠI tại đây (không dùng nowDate đầu hàm): vé vừa
+  // phát ở bước 3 mang now() của DB — muộn hơn nowDate — nên lượt boot đầu
+  // tiên sẽ nhặt 0 vé và phí trọn một nhịp (quan sát production 26/08).
   const due = await prisma.deliveryTrackingTask.findMany({
-    where: { channelId: channel.id, nextRunAt: { lte: nowDate } },
+    where: { channelId: channel.id, nextRunAt: { lte: new Date() } },
     // Vé trễ hạn lâu nhất trước — quá tải thì cả hàng lùi dần, không ai bị bỏ đói.
     orderBy: { nextRunAt: "asc" },
     take: MAX_TRACKING_CALLS_PER_SWEEP,
