@@ -12,7 +12,13 @@
 
 import { Router } from "express";
 import multer from "multer";
-import { ChannelName, ReturnStatus, ShippingStatus, type Channel } from "@prisma/client";
+import {
+  ChannelName,
+  DeliveryFailChatStatus,
+  ReturnStatus,
+  ShippingStatus,
+  type Channel,
+} from "@prisma/client";
 import { prisma } from "../prisma";
 import { requirePermission, type AuthRequest } from "../auth";
 import { channelScope } from "../channel-filter";
@@ -1242,18 +1248,31 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
       where: { ownerId: req.ownerId! },
       select: {
         outcome: true,
+        chatStatus: true,
         order: {
           select: { shippingStatus: true, returnStatus: true, totalAmount: true },
         },
       },
     });
-    const summary = { total: all.length, saved: 0, lost: 0, pending: 0, savedRevenue: 0 };
+    const summary = {
+      total: all.length,
+      saved: 0,
+      lost: 0,
+      pending: 0,
+      savedRevenue: 0,
+      // Số đơn "cứu được" MÀ Hubsell thực sự đã nhắn khách — phần còn lại là
+      // shipper tự giao lại thành công (anh Trung 26/08: đừng nhận vơ công).
+      savedMessaged: 0,
+    };
     for (const n of all) {
       // Gộp: Order đã chốt thì thắng; Order còn mù (TO_CONFIRM_RECEIVE/SHIPPED)
       // thì lấy kết quả worker chốt từ tracking — hết cảnh 0-0 ảo (probe 26/08).
       const outcome = mergeDeliveryFailOutcome(classifyDeliveryFailOutcome(n.order), n.outcome);
       summary[outcome]++;
-      if (outcome === "saved") summary.savedRevenue += Number(n.order.totalAmount);
+      if (outcome === "saved") {
+        summary.savedRevenue += Number(n.order.totalAmount);
+        if (n.chatStatus === DeliveryFailChatStatus.SENT) summary.savedMessaged++;
+      }
     }
 
     res.json({
@@ -1508,7 +1527,7 @@ router.get("/delivery-fail/probe", async (req: AuthRequest, res, next) => {
     // ---- Sức khỏe vòng quét hiện tại (đúng bộ lọc worker đang dùng) ----
     const channelIds = channels.map((c) => c.id);
     const scanWindow = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
-    const [scanCandidates, shippingNoTracking, noticeTotal, cfgRow] =
+    const [scanCandidates, shippingNoTracking, noticeTotal, cfgRow, tasksByKind, tasksDueNow] =
       await Promise.all([
         prisma.order.count({
           where: {
@@ -1529,6 +1548,14 @@ router.get("/delivery-fail/probe", async (req: AuthRequest, res, next) => {
         }),
         prisma.deliveryFailNotice.count({ where: { ownerId: req.ownerId! } }),
         prisma.deliveryFailConfig.findUnique({ where: { ownerId: req.ownerId! } }),
+        prisma.deliveryTrackingTask.groupBy({
+          by: ["kind"],
+          where: { channelId: { in: channelIds } },
+          _count: { _all: true },
+        }),
+        prisma.deliveryTrackingTask.count({
+          where: { channelId: { in: channelIds }, nextRunAt: { lte: new Date() } },
+        }),
       ]);
 
     res.json({
@@ -1546,6 +1573,11 @@ router.get("/delivery-fail/probe", async (req: AuthRequest, res, next) => {
         shippingMissingTrackingCode: shippingNoTracking,
         noticesEverCreated: noticeTotal,
         effectiveConfig: effectiveDeliveryFailConfig(cfgRow),
+        /** Hàng đợi DeliveryTrackingTask (26/08): vé theo loại + vé đang đến hạn. */
+        queue: {
+          byKind: Object.fromEntries(tasksByKind.map((t) => [t.kind, t._count._all])),
+          dueNow: tasksDueNow,
+        },
       },
       orders,
     });

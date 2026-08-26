@@ -9,8 +9,11 @@ import {
   classifyOutcomeFromTracking,
   countFailedDeliveries,
   DEFAULT_CHAT_TEMPLATE,
+  DETECT_ACTIVE_INTERVAL_MS,
+  DETECT_IDLE_INTERVAL_MS,
   effectiveDeliveryFailConfig,
   mergeDeliveryFailOutcome,
+  nextDetectDelayMs,
   renderChatTemplate,
 } from "../shopee/delivery-fail";
 import { lazadaOrderDeliveryFailed } from "../lazada/delivery-fail";
@@ -211,6 +214,51 @@ describe("mergeDeliveryFailOutcome (Order chốt thắng, tracking lấp chỗ m
   it("Order đã chốt → thắng notice, kể cả SAVED bị lật thành lost khi khách mở hoàn sau giao", () => {
     expect(mergeDeliveryFailOutcome("lost", DeliveryFailOutcome.SAVED)).toBe("lost");
     expect(mergeDeliveryFailOutcome("saved", DeliveryFailOutcome.PENDING)).toBe("saved");
+  });
+});
+
+describe("nextDetectDelayMs (nhịp hỏi lại co giãn theo pha giao — hàng đợi 26/08)", () => {
+  const nowMs = 1_756_000_000_000; // mốc bất kỳ, chỉ cần nhất quán
+  const h = 60 * 60 * 1000;
+
+  it("đang đi giao (có PICKED_UP, hành trình còn nhúc nhích) → 20 phút", () => {
+    expect(
+      nextDetectDelayMs(
+        [
+          { logistics_status: "ORDER_CREATED", update_time: (nowMs - 30 * h) / 1000 },
+          { logistics_status: "PICKED_UP", update_time: (nowMs - 2 * h) / 1000 },
+        ],
+        nowMs
+      )
+    ).toBe(DETECT_ACTIVE_INTERVAL_MS);
+  });
+
+  it("chưa tới pha giao (chỉ ORDER_CREATED/PICKUP_PENDING) → 2 giờ", () => {
+    expect(
+      nextDetectDelayMs(
+        [
+          { logistics_status: "ORDER_CREATED", update_time: (nowMs - 1 * h) / 1000 },
+          { logistics_status: "PICKUP_PENDING", update_time: (nowMs - 0.5 * h) / 1000 },
+        ],
+        nowMs
+      )
+    ).toBe(DETECT_IDLE_INTERVAL_MS);
+    expect(nextDetectDelayMs([], nowMs)).toBe(DETECT_IDLE_INTERVAL_MS);
+  });
+
+  it("hành trình đứng im quá 48h (kẹt trung chuyển) → thưa lại 2 giờ", () => {
+    expect(
+      nextDetectDelayMs(
+        [{ logistics_status: "PICKED_UP", update_time: (nowMs - 72 * h) / 1000 }],
+        nowMs
+      )
+    ).toBe(DETECT_IDLE_INTERVAL_MS);
+  });
+
+  it("mốc thiếu update_time vẫn không vỡ — có PICKED_UP thì coi là đang giao", () => {
+    expect(nextDetectDelayMs([{ logistics_status: "PICKED_UP" }], nowMs)).toBe(
+      DETECT_ACTIVE_INTERVAL_MS
+    );
   });
 });
 

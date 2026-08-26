@@ -361,6 +361,7 @@ model Channel {
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
   stockPushJobs       StockPushJob[]       // hàng đợi đẩy tồn khả dụng lên gian này
+  deliveryTrackingTasks DeliveryTrackingTask[] // hàng đợi hỏi tracking cứu đơn giao thất bại
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
@@ -1114,6 +1115,7 @@ model Order {
   invoiceLogs   InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
   lazadaSettlement LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
   deliveryFailNotice DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
+  deliveryTrackingTask DeliveryTrackingTask? // vé xếp hàng hỏi tracking (cứu đơn giao thất bại)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -2000,6 +2002,39 @@ model DeliveryFailConfig {
   updatedAt    DateTime @updatedAt
 
   @@map("delivery_fail_config")
+}
+
+/// Loại việc trong hàng đợi hỏi tracking của Cứu đơn giao thất bại.
+enum DeliveryTrackingTaskKind {
+  DETECT // đơn SHIPPING chưa cảnh báo — dò lượt giao thất bại
+  OUTCOME // đơn ĐÃ cảnh báo — chốt kết quả cứu được / mất đơn
+}
+
+/// HÀNG ĐỢI hỏi get_tracking_info (26/08, cùng khuôn StockPushJob) — thay hai
+/// Map in-memory (mất khi restart) bằng vé bền trong DB: mỗi đơn MỘT vé
+/// (orderId unique), worker mỗi nhịp chỉ nhặt vé ĐẾN HẠN (nextRunAt) theo trần
+/// call/gian — lượng gọi API sàn bị chặn trên tuyệt đối dù có triệu đơn; nhịp
+/// hỏi lại từng đơn co giãn theo pha giao (đang đi giao 20', chưa tới pha giao
+/// thì thưa) nên real-time đúng chỗ cần mà không đốt quota chỗ không cần.
+model DeliveryTrackingTask {
+  id        String                   @id @default(cuid())
+  channelId String
+  orderId   String                   @unique
+  kind      DeliveryTrackingTaskKind
+  /// Hạn được hỏi tracking lần tới — worker chỉ nhặt vé nextRunAt <= now.
+  nextRunAt DateTime  @default(now())
+  lastRunAt DateTime?
+  /// Lỗi LIÊN TIẾP khi hỏi tracking (reset 0 khi thành công) — quá trần thì
+  /// bỏ vé (đơn tách kiện cần package_number là lỗi vĩnh viễn).
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, nextRunAt])
+  @@map("delivery_tracking_tasks")
 }
 
 /// Một đơn ĐÃ chạm ngưỡng giao thất bại — orderId unique vừa là chống trùng

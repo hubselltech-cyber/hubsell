@@ -3413,6 +3413,9 @@ export interface DeliveryFailSummaryDTO {
   pending: number;
   /** Tổng giá trị các đơn cứu được (doanh thu giữ lại, số tham khảo). */
   savedRevenue: number;
+  /** Số đơn cứu được MÀ đã nhắn khách qua chat sàn — phần Hubsell thực sự góp
+   *  tay; còn lại là shipper tự giao lại thành công (không nhận vơ công). */
+  savedMessaged: number;
 }
 
 export function fetchDeliveryFailLog() {

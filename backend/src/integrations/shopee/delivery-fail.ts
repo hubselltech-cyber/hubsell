@@ -21,15 +21,23 @@
 // chat sẵn có. Sàn từ chối gửi (khách chặn, hết cửa sổ chat) = kết quả bình
 // thường: ghi FAILED, KHÔNG tự retry — chủ shop nhắn tay, tránh spam.
 //
-// Tiết chế quota (1 call / 1 đơn): chỉ đơn SHIPPING có vận đơn ≤21 ngày, mỗi
-// lượt tối đa 200 đơn/gian, mỗi đơn nghỉ 20 phút giữa hai lần hỏi (in-memory,
-// mất khi restart — vô hại, cùng khuôn backfill vận đơn).
+// KIẾN TRÚC HÀNG ĐỢI (26/08, anh Trung chốt làm ngay trước thương mại hóa —
+// cùng khuôn StockPushJob của đồng bộ tồn kho): mỗi đơn cần theo dõi có MỘT
+// vé DeliveryTrackingTask bền trong DB (DETECT = dò lượt giao hỏng, OUTCOME =
+// chốt kết quả cứu/mất). Worker mỗi nhịp 10' chỉ: (1) dọn vé hết nghĩa vụ,
+// (2) phát vé cho đơn mới đủ điều kiện, (3) nhặt vé ĐẾN HẠN theo trần
+// call/gian. Lượng gọi API sàn vì thế bị CHẶN TRÊN tuyệt đối dù có triệu đơn
+// — quá tải thì vé xếp hàng chờ nhịp sau chứ không dồn call; nhịp hỏi lại co
+// giãn theo pha giao (đang đi giao 20' — real-time đúng chỗ cần; chưa tới pha
+// giao/hành trình đứng im thì 2h — không đốt quota chỗ không cần); restart
+// không mất trạng thái (trước đây 2 Map in-memory).
 // ============================================================
 
 import type { Channel } from "@prisma/client";
 import {
   DeliveryFailChatStatus,
   DeliveryFailOutcome as DbDeliveryFailOutcome,
+  DeliveryTrackingTaskKind,
   ReturnStatus,
   ShippingStatus,
 } from "@prisma/client";
@@ -55,20 +63,36 @@ import { getValidShopeeAccessToken } from "./service";
  * hôm nay, đừng phó mặc lượt giao lại ngày mai.
  */
 export const DELIVERY_FAIL_THRESHOLD = 1;
-/** Chỉ quét đơn tạo trong N ngày gần nhất — kiện cũ hơn đã an bài. */
+/** Chỉ phát vé cho đơn tạo trong N ngày gần nhất — kiện cũ hơn đã an bài. */
 const SCAN_WINDOW_DAYS = 21;
-/** Trần số đơn hỏi get_tracking_info mỗi lượt quét của MỘT gian. */
-const MAX_ORDERS_PER_SWEEP = 200;
+/** Vé của đơn quá N ngày (kể cả OUTCOME chưa chốt được) → bỏ, khỏi theo mãi. */
+const TASK_MAX_ORDER_AGE_DAYS = 45;
 /**
- * Một đơn nghỉ tối thiểu chừng này giữa hai lần hỏi. Hạ 6h → 20' (26/08, anh
- * Trung chốt "phần này phải real-time — chậm là bị hoàn ngay"): probe 25/08 có
- * kiện quay đầu chỉ 28 PHÚT sau lượt giao hỏng, cooldown 6h thì chuông reo khi
- * hàng đã lên xe về kho. 20' + nhịp quét 10' → phát hiện trong ~20-30' kể từ
- * lúc mốc thất bại xuất hiện. Quota trần: 200 đơn/gian × 6 nhịp/giờ = 1.200
- * call get_tracking_info/giờ/gian ở kịch bản xấu nhất — thực tế shop hiện
- * ~10-60 đơn SHIPPING nên chỉ vài chục call/nhịp, xa giới hạn sàn.
+ * TRẦN call get_tracking_info mỗi nhịp 10' của MỘT gian — chốt chặn quota khi
+ * thương mại hóa: gian đông đơn đến đâu cũng chỉ tốn tối đa 6 × trần call/giờ
+ * (hiện 360/giờ/gian), vé dư xếp hàng chờ nhịp sau theo nextRunAt cũ nhất
+ * trước (không đơn nào bị bỏ đói).
  */
-const ATTEMPT_COOLDOWN_MS = 20 * 60 * 1000;
+const MAX_TRACKING_CALLS_PER_SWEEP = 60;
+/**
+ * Nhịp hỏi lại theo PHA GIAO (26/08, anh Trung chốt "phải real-time — chậm là
+ * bị hoàn ngay"; probe 25/08 có kiện quay đầu chỉ 28 PHÚT sau lượt giao hỏng):
+ * đơn ĐANG trong pha giao (đã có mốc PICKED_UP, hành trình còn nhúc nhích
+ * ≤48h) hỏi mỗi 20' → phát hiện trong ~20-30'; đơn chưa tới pha giao hoặc
+ * hành trình đứng im lâu (kẹt kho trung chuyển...) thì 2h — lượt giao hỏng
+ * không thể xuất hiện ở pha đó, hỏi dày chỉ đốt quota.
+ */
+export const DETECT_ACTIVE_INTERVAL_MS = 20 * 60 * 1000;
+export const DETECT_IDLE_INTERVAL_MS = 2 * 60 * 60 * 1000;
+/** Hành trình không có mốc mới quá lâu thì coi là đứng im — hỏi thưa lại. */
+const DETECT_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+/** Nhịp chốt kết quả đơn đã cảnh báo — không cần real-time (chuông đã reo). */
+const OUTCOME_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Vé lỗi (sàn chập chờn, đơn tách kiện...) nghỉ 1h rồi thử lại. */
+const TASK_ERROR_BACKOFF_MS = 60 * 60 * 1000;
+/** Lỗi liên tiếp quá N lần → bỏ vé (đơn tách kiện cần package_number là lỗi
+ *  vĩnh viễn — thử mãi chỉ đốt quota; đơn thường lỗi mạng sẽ reset khi qua). */
+const MAX_TASK_ERROR_STREAK = 8;
 
 /** Deep-link về tab Giao không thành công (Cấu hình kịch bản AI). */
 export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/ai-rules?tab=delivery-fail";
@@ -84,9 +108,6 @@ export const DEFAULT_CHAT_TEMPLATE =
   "Bạn ơi, bên vận chuyển báo giao 2 lần không thành công cho đơn {ma_don}. " +
   "Bạn vui lòng để ý điện thoại giúp shop nhé, hoặc liên hệ CSKH của sàn để " +
   "khiếu nại nếu shipper cố tình không giao hàng ạ!";
-
-/** orderId → lần hỏi tracking gần nhất (in-memory: mất khi restart, vô hại). */
-const lastAttemptAt = new Map<string, number>();
 
 // ---------- Phần THUẦN (không API, không DB) — có vitest ----------
 
@@ -226,6 +247,29 @@ export function mergeDeliveryFailOutcome(
   return "pending";
 }
 
+/**
+ * Bao lâu nữa mới hỏi lại tracking của một vé DETECT — co giãn theo pha giao:
+ * 20' khi kiện ĐANG đi giao (có mốc PICKED_UP và hành trình còn nhúc nhích
+ * trong 48h), 2h khi chưa tới pha giao (mới tạo đơn, chờ lấy hàng) hoặc hành
+ * trình đứng im lâu. Lượt giao thất bại chỉ có thể xuất hiện ở pha đang giao
+ * — dồn quota vào đúng đó là cách giữ real-time mà không phình số call.
+ */
+export function nextDetectDelayMs(events: ShopeeTrackingEvent[], nowMs: number): number {
+  const inDelivery = events.some(
+    (e) => String(e.logistics_status ?? "").toUpperCase() === "PICKED_UP"
+  );
+  if (!inDelivery) return DETECT_IDLE_INTERVAL_MS;
+  let latestMs = 0;
+  for (const e of events) {
+    const t = Number(e.update_time ?? 0) * 1000;
+    if (t > latestMs) latestMs = t;
+  }
+  if (latestMs > 0 && nowMs - latestMs > DETECT_STALE_AFTER_MS) {
+    return DETECT_IDLE_INTERVAL_MS;
+  }
+  return DETECT_ACTIVE_INTERVAL_MS;
+}
+
 /** Cấu hình HIỆU LỰC: chưa có dòng DB = cảnh báo BẬT, auto-chat TẮT. */
 export interface EffectiveDeliveryFailConfig {
   alertEnabled: boolean;
@@ -244,77 +288,284 @@ export function effectiveDeliveryFailConfig(
   };
 }
 
-// ---------- Vòng quét (gọi từ order-auto-sync, MỖI nhịp 10 phút) ----------
+// ---------- HÀNG ĐỢI hỏi tracking (gọi từ order-auto-sync, MỖI nhịp 10 phút) ----------
 
-export interface ScanDeliveryFailsResult {
-  /** Số đơn đã hỏi get_tracking_info lượt này. */
-  scanned: number;
+export interface DeliveryTrackingQueueResult {
+  /** Vé mới phát lượt này (đơn mới vào diện theo dõi + notice mồ côi vé). */
+  enqueued: number;
+  /** Vé dọn đi (đơn đã an bài / rời cửa sổ theo dõi). */
+  cleaned: number;
+  /** Số call get_tracking_info đã tốn lượt này (≤ MAX_TRACKING_CALLS_PER_SWEEP). */
+  ran: number;
   /** Số đơn MỚI chạm ngưỡng → tạo cảnh báo. */
   noticed: number;
   chatSent: number;
   chatFailed: number;
   chatSkipped: number;
+  /** Kết quả chốt được lượt này (gồm cả chốt RẺ theo trạng thái đơn, 0 call). */
+  saved: number;
+  lost: number;
 }
 
 /**
- * Quét một gian Shopee: đơn đang giao chưa có cảnh báo → đếm mốc thất bại →
- * chạm ngưỡng thì tạo notice + chuông + (tuỳ config) auto-chat. Idempotent
- * nhờ orderId unique; lỗi một đơn không chặn các đơn còn lại.
+ * Một nhịp hàng đợi của MỘT gian: chốt rẻ theo Order → dọn vé → phát vé mới →
+ * nhặt vé ĐẾN HẠN theo trần call → hỏi tracking → cảnh báo / chốt kết quả /
+ * hẹn lại theo pha giao. Idempotent toàn tuyến (orderId unique ở cả vé lẫn
+ * notice, createMany skipDuplicates); lỗi một vé không chặn vé còn lại.
  */
-export async function scanShopeeDeliveryFails(
+export async function processShopeeDeliveryTracking(
   channel: Channel
-): Promise<ScanDeliveryFailsResult> {
-  const result: ScanDeliveryFailsResult = {
-    scanned: 0,
+): Promise<DeliveryTrackingQueueResult> {
+  const result: DeliveryTrackingQueueResult = {
+    enqueued: 0,
+    cleaned: 0,
+    ran: 0,
     noticed: 0,
     chatSent: 0,
     chatFailed: 0,
     chatSkipped: 0,
+    saved: 0,
+    lost: 0,
   };
 
   const ownerId = channel.userId;
   const cfg = effectiveDeliveryFailConfig(
     await prisma.deliveryFailConfig.findUnique({ where: { ownerId } })
   );
-  // Cả cảnh báo lẫn auto-chat đều tắt → khỏi đốt quota.
+  // Cả cảnh báo lẫn auto-chat đều tắt → vé nằm im, không đốt quota.
   if (!cfg.alertEnabled && !cfg.autoChatEnabled) return result;
 
-  const candidates = await prisma.order.findMany({
+  const nowDate = new Date();
+
+  // ---- (1) CHỐT RẺ theo trạng thái Order (0 call API): sync đơn / Returns
+  // API đã biết trước (hủy, dính luồng hoàn, DELIVERED) thì lấy luôn —
+  // set-based updateMany, triệu notice cũng chỉ tốn 2 query có index.
+  const [lostByOrder, savedByOrder] = await prisma.$transaction([
+    prisma.deliveryFailNotice.updateMany({
+      where: {
+        outcome: DbDeliveryFailOutcome.PENDING,
+        order: {
+          channelId: channel.id,
+          OR: [
+            { shippingStatus: ShippingStatus.CANCELLED },
+            { returnStatus: { not: ReturnStatus.NONE } },
+          ],
+        },
+      },
+      data: {
+        outcome: DbDeliveryFailOutcome.LOST,
+        outcomeAt: nowDate,
+        outcomeNote: "Theo trạng thái đơn trong hệ thống",
+      },
+    }),
+    prisma.deliveryFailNotice.updateMany({
+      where: {
+        outcome: DbDeliveryFailOutcome.PENDING,
+        order: {
+          channelId: channel.id,
+          shippingStatus: ShippingStatus.DELIVERED,
+          returnStatus: ReturnStatus.NONE,
+        },
+      },
+      data: {
+        outcome: DbDeliveryFailOutcome.SAVED,
+        outcomeAt: nowDate,
+        outcomeNote: "Theo trạng thái đơn trong hệ thống",
+      },
+    }),
+  ]);
+  result.lost += lostByOrder.count;
+  result.saved += savedByOrder.count;
+
+  // ---- (2) DỌN vé hết nghĩa vụ (0 call API) ----
+  const cleaned = await prisma.deliveryTrackingTask.deleteMany({
+    where: {
+      channelId: channel.id,
+      OR: [
+        // Vé dò mà đơn đã rời SHIPPING (an bài — không có notice thì chẳng còn
+        // gì để ghi) hoặc đã có cảnh báo bằng lối khác (đua vé cũ).
+        {
+          kind: DeliveryTrackingTaskKind.DETECT,
+          order: {
+            OR: [
+              { shippingStatus: { not: ShippingStatus.SHIPPING } },
+              { deliveryFailNotice: { isNot: null } },
+            ],
+          },
+        },
+        // Vé chốt kết quả mà notice đã chốt (kể cả vừa chốt rẻ ở bước 1).
+        {
+          kind: DeliveryTrackingTaskKind.OUTCOME,
+          order: {
+            deliveryFailNotice: { is: { outcome: { not: DbDeliveryFailOutcome.PENDING } } },
+          },
+        },
+        // Vé chốt kết quả mồ côi (notice bị xoá).
+        { kind: DeliveryTrackingTaskKind.OUTCOME, order: { deliveryFailNotice: null } },
+        // Đơn quá cũ — thôi theo, khỏi nuôi vé mãi mãi.
+        {
+          order: {
+            createdAt: {
+              lt: new Date(nowDate.getTime() - TASK_MAX_ORDER_AGE_DAYS * 24 * 60 * 60 * 1000),
+            },
+          },
+        },
+      ],
+    },
+  });
+  result.cleaned = cleaned.count;
+
+  // ---- (3) PHÁT VÉ mới (0 call API) ----
+  const newcomers = await prisma.order.findMany({
     where: {
       channelId: channel.id,
       shippingStatus: ShippingStatus.SHIPPING,
       trackingCode: { not: null },
-      createdAt: { gte: new Date(Date.now() - SCAN_WINDOW_DAYS * 24 * 60 * 60 * 1000) },
+      createdAt: { gte: new Date(nowDate.getTime() - SCAN_WINDOW_DAYS * 24 * 60 * 60 * 1000) },
       deliveryFailNotice: null,
+      deliveryTrackingTask: null,
     },
-    orderBy: { createdAt: "desc" },
+    select: { id: true },
+    take: 2000,
+  });
+  if (newcomers.length > 0) {
+    const created = await prisma.deliveryTrackingTask.createMany({
+      data: newcomers.map((o) => ({
+        channelId: channel.id,
+        orderId: o.id,
+        kind: DeliveryTrackingTaskKind.DETECT,
+      })),
+      skipDuplicates: true,
+    });
+    result.enqueued += created.count;
+  }
+  // Notice còn PENDING mà không có vé (đơn nâng cấp từ bản trước hàng đợi,
+  // hoặc vé lỗi dai bị bỏ) → phát vé OUTCOME để còn chốt được kết quả.
+  const orphanNotices = await prisma.deliveryFailNotice.findMany({
+    where: {
+      outcome: DbDeliveryFailOutcome.PENDING,
+      order: { channelId: channel.id, deliveryTrackingTask: null },
+    },
+    select: { orderId: true },
+    take: 2000,
+  });
+  if (orphanNotices.length > 0) {
+    const created = await prisma.deliveryTrackingTask.createMany({
+      data: orphanNotices.map((n) => ({
+        channelId: channel.id,
+        orderId: n.orderId,
+        kind: DeliveryTrackingTaskKind.OUTCOME,
+      })),
+      skipDuplicates: true,
+    });
+    result.enqueued += created.count;
+  }
+
+  // ---- (4) NHẶT vé đến hạn — trần call cứng mỗi gian mỗi nhịp ----
+  const due = await prisma.deliveryTrackingTask.findMany({
+    where: { channelId: channel.id, nextRunAt: { lte: nowDate } },
+    // Vé trễ hạn lâu nhất trước — quá tải thì cả hàng lùi dần, không ai bị bỏ đói.
+    orderBy: { nextRunAt: "asc" },
+    take: MAX_TRACKING_CALLS_PER_SWEEP,
     select: {
       id: true,
-      orderCode: true,
-      customerName: true,
-      shippingStatus: true,
-      returnStatus: true,
-      items: { select: { productName: true } },
+      kind: true,
+      attempts: true,
+      order: {
+        select: {
+          id: true,
+          orderCode: true,
+          customerName: true,
+          shippingStatus: true,
+          returnStatus: true,
+          items: { select: { productName: true } },
+          deliveryFailNotice: { select: { id: true } },
+        },
+      },
     },
-    // Lấy dư để trừ hao số đơn đang trong thời gian nghỉ giữa hai lần hỏi.
-    take: MAX_ORDERS_PER_SWEEP * 3,
   });
-
-  const now = Date.now();
-  const due = candidates
-    .filter((o) => now - (lastAttemptAt.get(o.id) ?? 0) > ATTEMPT_COOLDOWN_MS)
-    .slice(0, MAX_ORDERS_PER_SWEEP);
   if (due.length === 0) return result;
 
   const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
 
-  for (const order of due) {
-    lastAttemptAt.set(order.id, now);
+  const settleNotice = async (
+    noticeId: string,
+    outcome: Exclude<DeliveryFailOutcome, "pending">,
+    note: string
+  ) => {
+    await prisma.deliveryFailNotice.update({
+      where: { id: noticeId },
+      data: {
+        outcome:
+          outcome === "saved" ? DbDeliveryFailOutcome.SAVED : DbDeliveryFailOutcome.LOST,
+        outcomeAt: new Date(),
+        outcomeNote: note.slice(0, 200),
+      },
+    });
+    if (outcome === "saved") result.saved++;
+    else result.lost++;
+  };
+
+  for (const task of due) {
+    const order = task.order;
     try {
       const info = await getTrackingInfo(accessToken, shopId, order.orderCode);
-      result.scanned++;
-      const fails = countFailedDeliveries(info.response?.tracking_info ?? []);
-      if (fails < DELIVERY_FAIL_THRESHOLD) continue;
+      result.ran++;
+      const events = info.response?.tracking_info ?? [];
+      const trackedOutcome = classifyOutcomeFromTracking(
+        info.response?.logistics_status,
+        events
+      );
+
+      // ---- Vé OUTCOME: chỉ chốt kết quả ----
+      if (task.kind === DeliveryTrackingTaskKind.OUTCOME) {
+        const noticeId = order.deliveryFailNotice?.id;
+        if (!noticeId || trackedOutcome !== "pending") {
+          if (noticeId && trackedOutcome !== "pending") {
+            await settleNotice(
+              noticeId,
+              trackedOutcome,
+              `Sàn báo ${info.response?.logistics_status ?? "?"}`
+            );
+          }
+          await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+        } else {
+          await prisma.deliveryTrackingTask.update({
+            where: { id: task.id },
+            data: {
+              nextRunAt: new Date(Date.now() + OUTCOME_INTERVAL_MS),
+              lastRunAt: new Date(),
+              attempts: 0,
+            },
+          });
+        }
+        continue;
+      }
+
+      // ---- Vé DETECT: dò lượt giao thất bại ----
+      if (trackedOutcome === "saved") {
+        // Giao xong mà chưa từng có lượt hỏng — hết việc, khỏi cảnh báo.
+        await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+        continue;
+      }
+      const fails = countFailedDeliveries(events);
+      if (fails < DELIVERY_FAIL_THRESHOLD) {
+        if (trackedOutcome === "lost") {
+          // Quay đầu KHÔNG qua lượt giao hỏng (hủy giữa đường...) — không phải
+          // việc của cảnh báo giao thất bại; sync đơn sẽ tự ghi nhận trạng thái.
+          await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+        } else {
+          await prisma.deliveryTrackingTask.update({
+            where: { id: task.id },
+            data: {
+              nextRunAt: new Date(Date.now() + nextDetectDelayMs(events, Date.now())),
+              lastRunAt: new Date(),
+              attempts: 0,
+            },
+          });
+        }
+        continue;
+      }
 
       // ---- Auto-chat (cổng chờ: mặc định TẮT, bật là nối cổng chat sẵn có) ----
       let chatStatus: DeliveryFailChatStatus = DeliveryFailChatStatus.NONE;
@@ -322,7 +573,9 @@ export async function scanShopeeDeliveryFails(
       let sentMessage: string | null = null;
       let sentAt: Date | null = null;
       if (cfg.autoChatEnabled) {
-        const skip = chatSkipReason(order);
+        // Tracking đã báo quay đầu thì khỏi nhắn "để ý điện thoại nhận hàng".
+        const skip =
+          trackedOutcome === "lost" ? "Kiện đã quay đầu" : chatSkipReason(order);
         if (skip) {
           chatStatus = DeliveryFailChatStatus.SKIPPED;
           chatError = skip;
@@ -367,12 +620,37 @@ export async function scanShopeeDeliveryFails(
           chatError,
           sentMessage,
           sentAt,
+          // Tracking đã nói kiện quay đầu → chốt LOST ngay từ lúc sinh notice.
+          ...(trackedOutcome === "lost"
+            ? {
+                outcome: DbDeliveryFailOutcome.LOST,
+                outcomeAt: new Date(),
+                outcomeNote: `Sàn báo ${info.response?.logistics_status ?? "?"}`.slice(0, 200),
+              }
+            : {}),
         },
       });
       result.noticed++;
+      if (trackedOutcome === "lost") result.lost++;
       if (chatStatus === DeliveryFailChatStatus.SENT) result.chatSent++;
       if (chatStatus === DeliveryFailChatStatus.FAILED) result.chatFailed++;
       if (chatStatus === DeliveryFailChatStatus.SKIPPED) result.chatSkipped++;
+
+      // Vé chuyển vai: LOST thì hết việc; còn lại thành vé OUTCOME chờ chốt
+      // cứu được / mất đơn (6h/lần).
+      if (trackedOutcome === "lost") {
+        await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+      } else {
+        await prisma.deliveryTrackingTask.update({
+          where: { id: task.id },
+          data: {
+            kind: DeliveryTrackingTaskKind.OUTCOME,
+            nextRunAt: new Date(Date.now() + OUTCOME_INTERVAL_MS),
+            lastRunAt: new Date(),
+            attempts: 0,
+          },
+        });
+      }
 
       // Chuông NGAY từng đơn (không đợi mở Dashboard) — cửa sổ hành động ngắn:
       // thường chỉ còn một lượt giao cuối trước khi kiện quay đầu.
@@ -389,115 +667,33 @@ export async function scanShopeeDeliveryFails(
         });
       }
     } catch (err) {
-      // Lỗi một đơn (đơn tách kiện cần package_number, sàn chập chờn…) không
-      // được chặn các đơn còn lại của lượt quét.
+      // Lỗi một vé (đơn tách kiện cần package_number, sàn chập chờn…) không
+      // được chặn các vé còn lại: nghỉ 1h thử lại, lỗi dai quá trần thì bỏ vé
+      // (đơn tách kiện là lỗi vĩnh viễn — nuôi vé chỉ đốt quota).
+      const streak = task.attempts + 1;
       console.warn(
-        `[Delivery-fail] Chưa đọc được hành trình đơn ${order.orderCode}:`,
+        `[Delivery-fail] Vé đơn ${order.orderCode} lỗi lần ${streak}:`,
         (err as Error).message
       );
-    }
-  }
-
-  return result;
-}
-
-// ---------- Vòng CHỐT KẾT QUẢ đơn đã cảnh báo (gọi mỗi nhịp, tiết chế 6h/đơn) ----------
-
-/** Một notice PENDING hỏi lại tracking tối đa mỗi 6h — kết quả không cần
- *  real-time như phát hiện (chuông đã reo từ trước), chỉ cần thẻ số đúng. */
-const OUTCOME_RECHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
-const MAX_OUTCOME_CHECKS_PER_SWEEP = 40;
-/** noticeId → lần hỏi tracking gần nhất (in-memory, mất khi restart — vô hại). */
-const lastOutcomeCheckAt = new Map<string, number>();
-
-export interface RefreshOutcomesResult {
-  checked: number;
-  saved: number;
-  lost: number;
-}
-
-/**
- * Chốt kết quả các notice còn PENDING của một gian: Order đã chốt (hủy/hoàn/
- * DELIVERED) thì lấy luôn không tốn API; còn mù thì hỏi get_tracking_info.
- * Sinh ra từ probe 26/08: 8/12 notice production đã có kết quả trên sàn
- * (7 giao xong + 1 quay đầu) mà thẻ Cứu được/Mất đơn vẫn 0-0 vì Order chưa đổi.
- */
-export async function refreshShopeeDeliveryFailOutcomes(
-  channel: Channel
-): Promise<RefreshOutcomesResult> {
-  const result: RefreshOutcomesResult = { checked: 0, saved: 0, lost: 0 };
-
-  const pending = await prisma.deliveryFailNotice.findMany({
-    where: {
-      outcome: DbDeliveryFailOutcome.PENDING,
-      order: { channelId: channel.id },
-    },
-    select: {
-      id: true,
-      order: {
-        select: {
-          orderCode: true,
-          shippingStatus: true,
-          returnStatus: true,
-        },
-      },
-    },
-  });
-  if (pending.length === 0) return result;
-
-  const settle = async (
-    noticeId: string,
-    outcome: Exclude<DeliveryFailOutcome, "pending">,
-    note: string
-  ) => {
-    await prisma.deliveryFailNotice.update({
-      where: { id: noticeId },
-      data: {
-        outcome:
-          outcome === "saved" ? DbDeliveryFailOutcome.SAVED : DbDeliveryFailOutcome.LOST,
-        outcomeAt: new Date(),
-        outcomeNote: note.slice(0, 200),
-      },
-    });
-    if (outcome === "saved") result.saved++;
-    else result.lost++;
-  };
-
-  // Lượt RẺ trước: Order trong DB đã tự chốt (sync đơn/Returns API đi trước).
-  const stillBlind: typeof pending = [];
-  for (const n of pending) {
-    const db = classifyDeliveryFailOutcome(n.order);
-    if (db === "pending") {
-      stillBlind.push(n);
-      continue;
-    }
-    await settle(n.id, db, "Theo trạng thái đơn trong hệ thống");
-  }
-  if (stillBlind.length === 0) return result;
-
-  const now = Date.now();
-  const due = stillBlind
-    .filter((n) => now - (lastOutcomeCheckAt.get(n.id) ?? 0) > OUTCOME_RECHECK_COOLDOWN_MS)
-    .slice(0, MAX_OUTCOME_CHECKS_PER_SWEEP);
-  if (due.length === 0) return result;
-
-  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-  for (const n of due) {
-    lastOutcomeCheckAt.set(n.id, now);
-    try {
-      const info = await getTrackingInfo(accessToken, shopId, n.order.orderCode);
-      result.checked++;
-      const outcome = classifyOutcomeFromTracking(
-        info.response?.logistics_status,
-        info.response?.tracking_info ?? []
-      );
-      if (outcome === "pending") continue;
-      await settle(n.id, outcome, `Sàn báo ${info.response?.logistics_status ?? "?"}`);
-    } catch (err) {
-      console.warn(
-        `[Delivery-fail] Chưa chốt được kết quả đơn ${n.order.orderCode}:`,
-        (err as Error).message
-      );
+      try {
+        if (streak >= MAX_TASK_ERROR_STREAK) {
+          await prisma.deliveryTrackingTask.delete({ where: { id: task.id } });
+          console.warn(
+            `[Delivery-fail] Bỏ vé đơn ${order.orderCode} sau ${streak} lần lỗi liên tiếp`
+          );
+        } else {
+          await prisma.deliveryTrackingTask.update({
+            where: { id: task.id },
+            data: {
+              attempts: streak,
+              nextRunAt: new Date(Date.now() + TASK_ERROR_BACKOFF_MS),
+              lastRunAt: new Date(),
+            },
+          });
+        }
+      } catch {
+        // Vé biến mất giữa chừng (dọn đua) — kệ, nhịp sau tự cân bằng lại.
+      }
     }
   }
 

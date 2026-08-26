@@ -40,10 +40,7 @@ import {
   syncShopeeReturns,
 } from "./integrations/shopee/returns-sync";
 import { syncShopeeBuyerInvoiceRequests } from "./integrations/shopee/buyer-invoice";
-import {
-  refreshShopeeDeliveryFailOutcomes,
-  scanShopeeDeliveryFails,
-} from "./integrations/shopee/delivery-fail";
+import { processShopeeDeliveryTracking } from "./integrations/shopee/delivery-fail";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -285,39 +282,22 @@ async function runOnce(): Promise<void> {
             (err as Error).message
           );
         }
-        // CỨU ĐƠN GIAO THẤT BẠI — chuyển từ nhịp giờ sang MỖI NHỊP (26/08,
-        // anh Trung chốt "phải real-time — chậm là bị hoàn ngay"; probe 25/08
-        // có kiện quay đầu 28 phút sau lượt giao hỏng). Tiết chế nằm trong
-        // scanShopeeDeliveryFails (cooldown 20'/đơn + trần 200 đơn/lượt).
-        // Đếm lượt giao thất bại trong get_tracking_info (mẫu chữ description
-        // — enum docs không có thật trên production VN), chạm ngưỡng →
-        // chuông + (tuỳ config) auto-chat. Lỗi riêng không chặn luồng khác.
+        // CỨU ĐƠN GIAO THẤT BẠI — HÀNG ĐỢI DeliveryTrackingTask (26/08, cùng
+        // khuôn StockPushJob theo yêu cầu anh Trung "làm luôn trước thương mại
+        // hóa"): một call gộp dọn vé → phát vé → nhặt vé đến hạn theo TRẦN
+        // call/gian/nhịp (real-time 20' cho đơn đang đi giao, thưa dần chỗ
+        // khác; chốt kết quả cứu/mất trong cùng hàng đợi). Lỗi riêng không
+        // chặn luồng khác.
         try {
-          const df = await scanShopeeDeliveryFails(channel);
-          if (df.noticed > 0) {
+          const df = await processShopeeDeliveryTracking(channel);
+          if (df.noticed > 0 || df.saved > 0 || df.lost > 0) {
             console.log(
-              `[Auto-sync] Giao thất bại Shopee "${channel.shopName}": +${df.noticed} đơn chạm ngưỡng (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua) / ${df.scanned} đơn quét`
+              `[Auto-sync] Cứu đơn Shopee "${channel.shopName}": +${df.noticed} cảnh báo (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua), +${df.saved} cứu được, +${df.lost} mất đơn — ${df.ran} call tracking, +${df.enqueued} vé mới, ${df.cleaned} vé dọn`
             );
           }
         } catch (err) {
           console.error(
-            `[Auto-sync] Lỗi quét giao thất bại gian "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-        // CHỐT KẾT QUẢ các đơn đã cảnh báo (26/08 — probe: 8/12 notice đã có
-        // kết quả trên sàn mà thẻ Cứu được/Mất đơn vẫn 0-0 vì Order nằm
-        // TO_CONFIRM_RECEIVE/SHIPPED). Tiết chế 6h/notice nằm trong hàm.
-        try {
-          const oc = await refreshShopeeDeliveryFailOutcomes(channel);
-          if (oc.saved > 0 || oc.lost > 0) {
-            console.log(
-              `[Auto-sync] Kết quả cứu đơn Shopee "${channel.shopName}": +${oc.saved} cứu được, +${oc.lost} mất đơn (${oc.checked} đơn hỏi tracking)`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi chốt kết quả cứu đơn gian "${channel.shopName}":`,
+            `[Auto-sync] Lỗi hàng đợi cứu đơn gian "${channel.shopName}":`,
             (err as Error).message
           );
         }

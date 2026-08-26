@@ -189,8 +189,10 @@ export function DeliveryFailTab() {
           tone="positive"
           colorValue
           subtitle={
+            // Trung thực với công của mình (anh Trung 26/08): tách rõ phần đã
+            // nhắn khách — phần còn lại là shipper tự giao lại thành công.
             saveRate !== null
-              ? `Tỷ lệ cứu ${saveRate}% — giao thành công, không hoàn`
+              ? `Tỷ lệ cứu ${saveRate}% — đã nhắn khách ${formatNumber(summary?.savedMessaged ?? 0)}/${formatNumber(summary?.saved ?? 0)} đơn`
               : "Giao thành công, không hoàn (số tham khảo)"
           }
         />
