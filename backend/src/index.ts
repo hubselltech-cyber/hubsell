@@ -3,12 +3,12 @@ import fs from "fs";
 import http from "http";
 import https from "https";
 import { createApp } from "./app";
-import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";
-import { startLogCleanupWorker } from "./log-cleanup";
-import { startOrderAutoSync } from "./order-auto-sync";
+import { startInvoiceAutoIssueWorker } from "./workers/invoice-auto-issue";
+import { startLogCleanupWorker } from "./workers/log-cleanup";
+import { startOrderAutoSync } from "./workers/order-auto-sync";
 import { startStockPushWorker } from "./integrations/stock-push-worker";
-import { startTokenRefreshWorker } from "./token-refresh";
-import { startWeeklyReportWorker } from "./weekly-report";
+import { startTokenRefreshWorker } from "./workers/token-refresh";
+import { startWeeklyReportWorker } from "./workers/weekly-report";
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();

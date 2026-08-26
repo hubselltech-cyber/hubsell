@@ -9,8 +9,8 @@
 
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ShippingStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
-import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { prisma } from "../../lib/prisma";
+import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
 import { expireToDate } from "./config";
 import {

@@ -20,7 +20,7 @@
 
 import crypto from "crypto";
 import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import type { MisaWebhookPayload } from "./misa-webhook";
 import { processMisaWebhookEvent } from "./misa-webhook-service";
 

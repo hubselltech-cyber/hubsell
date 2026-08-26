@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "./prisma";
-import type { AuthRequest } from "./auth";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
 
 /**
  * NHẬT KÝ THAO TÁC KHU ĐIỀU HÀNH (PlatformAuditLog) — ghi mọi thao tác GHI

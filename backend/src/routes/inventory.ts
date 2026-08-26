@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { InventoryLogType, Role } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
 import { syncShopeeStockForProducts } from "../integrations/shopee/inventory-sync";
 import {
   countPendingJobs,

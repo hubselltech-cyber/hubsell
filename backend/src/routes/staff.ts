@@ -1,17 +1,17 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { sanitizePermissions } from "../permission-registry";
-import { sanitizeHqPermissions } from "../platform-permission-registry";
-import { writeAuditLog } from "../platform-audit";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { sanitizePermissions } from "../config/permission-registry";
+import { sanitizeHqPermissions } from "../config/platform-permission-registry";
+import { writeAuditLog } from "../services/platform-audit";
 import {
   assertStaffSlot,
   invalidatePlanState,
   respondPlanLimit,
-} from "../plan-enforcement";
-import { ensureOwnerUsername, USERNAME_REGEX } from "../username";
+} from "../services/plan-enforcement";
+import { ensureOwnerUsername, USERNAME_REGEX } from "../lib/username";
 
 /**
  * QUẢN LÝ NHÂN VIÊN (chỉ chủ shop — mount gác adminOnly ở app.ts).

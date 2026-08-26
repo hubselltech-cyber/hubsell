@@ -19,7 +19,7 @@ import crypto from "crypto";
 import type { Server } from "http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
 import { getShopeeWebhookUrl } from "../shopee/webhook";
 import {

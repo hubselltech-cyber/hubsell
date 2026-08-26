@@ -35,7 +35,7 @@
  */
 
 import { Prisma } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 
 const TOKEN_SAFETY_MS = 60 * 1000;
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000;

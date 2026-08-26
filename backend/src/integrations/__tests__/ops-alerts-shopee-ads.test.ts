@@ -17,7 +17,7 @@ import {
   estimateAdsWalletHoursLeft,
   groupShopeeAdsScenarios,
   type ShopeeAdsCampaignSignal,
-} from "../../ops-alerts";
+} from "../../services/ops-alerts";
 
 const ZERO: AssistantWindowMetrics = { spend: 0, clicks: 0, broadOrder: 0, broadGmv: 0 };
 

@@ -13,8 +13,8 @@
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
-import { runOnce } from "../../log-cleanup";
+import { prisma } from "../../lib/prisma";
+import { runOnce } from "../../workers/log-cleanup";
 import { createStockFixture, type StockFixture } from "./fixtures";
 
 const daysAgo = (d: number) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);

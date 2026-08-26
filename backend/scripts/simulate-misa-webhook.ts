@@ -31,7 +31,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import type { MisaWebhookPayload } from "../src/integrations/invoice/misa-webhook";
 
 const CASE_FILES: Record<string, string> = {

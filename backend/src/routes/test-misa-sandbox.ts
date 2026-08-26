@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import type { AuthRequest } from "../auth";
+import type { AuthRequest } from "../middleware/auth";
 import {
   esignConfigFromEnv,
   esignLogin,

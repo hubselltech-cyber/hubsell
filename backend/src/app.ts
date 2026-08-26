@@ -8,7 +8,7 @@ import {
   requirePermission,
   requirePlatformPermission,
   requireRole,
-} from "./auth";
+} from "./middleware/auth";
 import adminRouter from "./routes/admin";
 import authRouter from "./routes/auth";
 import analyticsRouter from "./routes/analytics";
@@ -33,8 +33,8 @@ import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
 import assistantRouter from "./routes/assistant";
 import subscriptionRouter from "./routes/subscription";
-import { requirePlanUnlocked } from "./plan-enforcement";
-import { notificationsRouter, notificationStream } from "./notifications";
+import { requirePlanUnlocked } from "./services/plan-enforcement";
+import { notificationsRouter, notificationStream } from "./services/notifications";
 
 // ============================================================
 // CORS — ALLOWLIST thay cho mở toang (beta multi-user).

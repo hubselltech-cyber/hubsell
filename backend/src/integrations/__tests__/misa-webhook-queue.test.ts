@@ -19,7 +19,7 @@ import "./load-env";
 import type { Server } from "http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { InvoiceLogStatus, WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
 import { misaEventStatus } from "../invoice/misa-webhook";
 import {

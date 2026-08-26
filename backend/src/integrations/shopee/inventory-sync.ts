@@ -18,7 +18,7 @@
 
 import { ChannelName, StockSyncStatus, WebhookJobStatus } from "@prisma/client";
 import type { Channel } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { availableToPush } from "../inventory-push";
 import {
   getItemBaseInfo,

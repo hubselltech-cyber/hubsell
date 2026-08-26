@@ -17,9 +17,9 @@
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
-import { prisma } from "./prisma";
-import { isShopeeConfigured } from "./integrations/shopee/config";
-import { getValidShopeeAccessToken } from "./integrations/shopee/service";
+import { prisma } from "../lib/prisma";
+import { isShopeeConfigured } from "../integrations/shopee/config";
+import { getValidShopeeAccessToken } from "../integrations/shopee/service";
 
 const DEFAULT_INTERVAL_MIN = 30;
 /** Coi là "sắp hết hạn" khi access_token còn dưới ngưỡng này. */

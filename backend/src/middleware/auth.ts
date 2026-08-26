@@ -1,9 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
-import { prisma } from "./prisma";
-import { hasPermission } from "./permission-registry";
-import { hasHqPermission } from "./platform-permission-registry";
+import { prisma } from "../lib/prisma";
+import { hasPermission } from "../config/permission-registry";
+import { hasHqPermission } from "../config/platform-permission-registry";
 
 // Khóa bí mật để ký token. Ở môi trường thật PHẢI đặt trong biến môi trường.
 const JWT_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";

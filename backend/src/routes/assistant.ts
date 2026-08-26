@@ -25,15 +25,15 @@ import {
   TransactionDirection,
 } from "@prisma/client";
 
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { channelScope, type ChannelScope } from "../channel-filter";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { channelScope, type ChannelScope } from "../lib/channel-filter";
 import {
   BUSINESS_TZ_OFFSET_MS,
   businessDayStart,
   toBusinessDateKey,
   type DateRangeFilter,
-} from "../date-range";
+} from "../lib/date-range";
 import { computePnlRow, fetchPnlOrders } from "./finance";
 import {
   assistantDecisionActive,

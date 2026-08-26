@@ -6,9 +6,9 @@ import {
   FundSourceType,
   TransactionDirection,
 } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { parseDateRange } from "../date-range";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { parseDateRange } from "../lib/date-range";
 
 // ============================================================
 // THU CHI VẬN HÀNH (OperatingExpense — giờ chứa CẢ thu lẫn chi)

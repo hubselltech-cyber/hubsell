@@ -1,14 +1,14 @@
 import { Router } from "express";
 import { ReturnStatus, ShippingStatus, TransactionDirection } from "@prisma/client";
-import { prisma } from "../prisma";
-import { canSeeFinancials, type AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
   businessDayStart,
   dateKeyLabel,
   parseDateRange,
   toBusinessDateKey,
-} from "../date-range";
-import { channelScope, hasChannelFilter } from "../channel-filter";
+} from "../lib/date-range";
+import { channelScope, hasChannelFilter } from "../lib/channel-filter";
 // NGUỒN SỐ GỐC dùng chung (SSOT): mọi con số tiền của Tổng quan là SUM các
 // trường computePnlRow — không tự tính totalAmount/InventoryLog riêng nữa
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì

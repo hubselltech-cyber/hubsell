@@ -41,8 +41,8 @@ import {
   ReturnStatus,
   ShippingStatus,
 } from "@prisma/client";
-import { notify } from "../../notifications";
-import { prisma } from "../../prisma";
+import { notify } from "../../services/notifications";
+import { prisma } from "../../lib/prisma";
 import {
   getOrderBuyerUserId,
   getTrackingInfo,

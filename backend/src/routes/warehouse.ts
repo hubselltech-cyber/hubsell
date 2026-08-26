@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { channelScope } from "../channel-filter";
-import { attachItemImages } from "../item-images";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { channelScope } from "../lib/channel-filter";
+import { attachItemImages } from "../services/item-images";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import {

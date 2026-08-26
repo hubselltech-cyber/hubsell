@@ -23,7 +23,7 @@
  */
 
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { buildInvoiceLines } from "./issue-order";
 import {
   misaEventStatus,

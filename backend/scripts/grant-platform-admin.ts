@@ -12,7 +12,7 @@
 // Muốn chạy trên PRODUCTION: đặt tạm DATABASE_URL của Supabase trước lệnh,
 // hoặc dùng thẳng SQL trong migration 20260806200000 + UPDATE tay.
 // ============================================================
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const email = process.argv[2]?.trim().toLowerCase();

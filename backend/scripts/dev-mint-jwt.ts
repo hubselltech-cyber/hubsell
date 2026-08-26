@@ -4,8 +4,8 @@
 // .env; không phải lỗ hổng — ai có hai thứ đó vốn đã toàn quyền.
 // Chạy: npx tsx scripts/dev-mint-jwt.ts
 import "dotenv/config";
-import { signToken } from "../src/auth";
-import { prisma } from "../src/prisma";
+import { signToken } from "../src/middleware/auth";
+import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const user =

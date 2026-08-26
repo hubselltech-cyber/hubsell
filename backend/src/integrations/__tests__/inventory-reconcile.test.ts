@@ -14,7 +14,7 @@
 import "./load-env";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { createStockFixture, type StockFixture } from "./fixtures";
 
 vi.mock("../shopee/client", async (importOriginal) => {

@@ -8,7 +8,7 @@
 
 import type { InvoiceConfig } from "@prisma/client";
 
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { BkavInvoiceProvider } from "./bkav-provider";
 import { MisaInvoiceProvider } from "./misa-provider";
 import type { InvoiceProvider, ProviderCredentials } from "./types";

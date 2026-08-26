@@ -20,7 +20,7 @@
 
 import { ChannelName, StockPushStatus, StockSyncStatus } from "@prisma/client";
 import type { StockPushJob } from "@prisma/client";
-import { prisma } from "../prisma";
+import { prisma } from "../lib/prisma";
 import { availableToPush } from "./inventory-push";
 import {
   createSyncAlert,

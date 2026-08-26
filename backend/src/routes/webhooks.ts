@@ -1,12 +1,12 @@
 import { Router, type Request } from "express";
 import { InventoryLogType } from "@prisma/client";
-import { prisma } from "../prisma";
-import { findMarketplaceProduct, PLATFORM_FEE_RATE } from "../mockMarketplace";
+import { prisma } from "../lib/prisma";
+import { findMarketplaceProduct, PLATFORM_FEE_RATE } from "../marketplace/mockMarketplace";
 import {
   randomCarrierFor,
   randomPhone,
   randomTrackingCode,
-} from "../shipping";
+} from "../services/shipping";
 import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { verifyWebhookSignature } from "../integrations/tiktok/client";
 import {

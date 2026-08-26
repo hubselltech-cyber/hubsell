@@ -2,7 +2,7 @@
 // với tiền tố TEST- + hậu tố thời gian (không đụng dữ liệu người dùng), dọn
 // sạch bằng cách xoá User (mọi bảng con Cascade theo).
 import { ChannelName } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 
 export interface StockFixture {
   userId: string;

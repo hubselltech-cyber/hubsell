@@ -4,7 +4,7 @@
 // bản này lấy trang MỚI nhất theo đúng mẹo smart của routes/operations.ts:
 // gọi 2 biến thể (latest | older + next_timestamp_nano=now) rồi chọn biến
 // thể có mốc thời gian mới hơn.
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";
 import {
   getConversationList,

@@ -1,17 +1,17 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { prisma } from "../prisma";
-import { requireAuth, signToken, type AuthRequest } from "../auth";
-import { formatE164 } from "../phone";
-import { isMailerConfigured, resetPasswordEmailHtml, sendMail } from "../mailer";
+import { prisma } from "../lib/prisma";
+import { requireAuth, signToken, type AuthRequest } from "../middleware/auth";
+import { formatE164 } from "../lib/phone";
+import { isMailerConfigured, resetPasswordEmailHtml, sendMail } from "../lib/mailer";
 import {
   buildGoogleAuthorizeUrl,
   exchangeGoogleCode,
   isGoogleConfigured,
   signGoogleState,
   verifyGoogleState,
-} from "../google-oauth";
+} from "../services/google-oauth";
 import {
   decodeOauthStateOrigin as decodeShopeeStateOrigin,
   handleShopeeCallback,
@@ -22,9 +22,9 @@ import {
   handleLazadaCallback,
   verifyOauthState as verifyLazadaOauthState,
 } from "../integrations/lazada/service";
-import { findReferrerByCode } from "../referral-wallet";
-import { ensureDefaultSubscription } from "../subscription-service";
-import { generateUsername, normalizeUsername } from "../username";
+import { findReferrerByCode } from "../services/referral-wallet";
+import { ensureDefaultSubscription } from "../services/subscription-service";
+import { generateUsername, normalizeUsername } from "../lib/username";
 
 const router = Router();
 

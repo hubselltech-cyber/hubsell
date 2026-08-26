@@ -20,9 +20,9 @@
 
 import type { Channel } from "@prisma/client";
 import { ChannelName, ReturnSolution, ReturnStatus } from "@prisma/client";
-import { notify } from "../../notifications";
-import { prisma } from "../../prisma";
-import { PLATFORM_FEE_RATE } from "../../mockMarketplace";
+import { notify } from "../../services/notifications";
+import { prisma } from "../../lib/prisma";
+import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import {
   maybeAutoAdjustOnPlatformReturn,
   PLATFORM_RETURN_DONE_STATUSES,

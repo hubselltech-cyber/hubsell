@@ -13,7 +13,7 @@
 // đúng một hàm này là hoa hồng tự chảy.
 // ============================================================
 
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 
 /** Tỷ lệ hoa hồng affiliate — 10% trên mọi lượt thanh toán thành công. */
 export const REFERRAL_COMMISSION_RATE = 0.1;

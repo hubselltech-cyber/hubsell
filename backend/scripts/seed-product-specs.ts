@@ -1,5 +1,5 @@
 // Gán thử material/care/sizeChart cho SP kho đầu tiên (test product-context).
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const p = await prisma.product.findFirst();

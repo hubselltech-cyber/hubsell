@@ -25,9 +25,9 @@
 // ============================================================
 
 import type { NextFunction, Response } from "express";
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 import { notify } from "./notifications";
-import type { AuthRequest } from "./auth";
+import type { AuthRequest } from "../middleware/auth";
 
 // ---- Ngưỡng (đề xuất 22/08, anh Trung chưa phán khác — đổi số tại đây) ----
 /** Chạm mốc này bắt đầu cảnh báo vàng + chuông. */

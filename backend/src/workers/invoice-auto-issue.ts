@@ -22,11 +22,11 @@
 
 import { InvoiceLogStatus, ShippingStatus } from "@prisma/client";
 
-import { issueInvoiceForOrder } from "./integrations/invoice/issue-order";
-import { isPublishAllowed } from "./integrations/invoice/misa-safety";
-import { notify } from "./notifications";
-import { prisma } from "./prisma";
-import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "./tax-pilot";
+import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
+import { isPublishAllowed } from "../integrations/invoice/misa-safety";
+import { notify } from "../services/notifications";
+import { prisma } from "../lib/prisma";
+import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
 /** Trần hóa đơn mỗi shop mỗi lượt quét — chống xả hàng loạt khi cấu hình sai. */

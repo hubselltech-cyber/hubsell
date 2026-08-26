@@ -19,9 +19,9 @@ import {
   ShippingStatus,
   type Channel,
 } from "@prisma/client";
-import { prisma } from "../prisma";
-import { requirePermission, type AuthRequest } from "../auth";
-import { channelScope } from "../channel-filter";
+import { prisma } from "../lib/prisma";
+import { requirePermission, type AuthRequest } from "../middleware/auth";
+import { channelScope } from "../lib/channel-filter";
 import {
   getComments,
   getConversationList,

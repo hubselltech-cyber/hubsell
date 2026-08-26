@@ -6,7 +6,7 @@
  * Chạy:  npx tsx prisma/backfill-settlement.ts
  */
 import { PrismaClient } from "@prisma/client";
-import { PLATFORM_FEE_RATE, mockSettlement } from "../src/mockMarketplace";
+import { PLATFORM_FEE_RATE, mockSettlement } from "../src/marketplace/mockMarketplace";
 
 const prisma = new PrismaClient();
 

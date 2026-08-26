@@ -1,7 +1,7 @@
 // Test tay Review API Lazada — chạy: npx tsx scripts/test-lazada-review.ts
 // Gọi ĐÚNG MỘT lượt /review/seller/list cho 1 item của shop Hi.Bé để xem
 // response thô (phân biệt rate limit thật với thiếu quyền đội lốt).
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { getValidLazadaAccessToken } from "../src/integrations/lazada/service";
 import { getLazadaConfig, LAZADA_ENDPOINTS, LAZADA_PATHS } from "../src/integrations/lazada/config";
 import { signLazada } from "../src/integrations/lazada/client";

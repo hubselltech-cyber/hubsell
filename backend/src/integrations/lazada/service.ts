@@ -13,10 +13,10 @@
 import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
-import { CHANNEL_LABEL } from "../../mockMarketplace";
-import { assertChannelSlot } from "../../plan-enforcement";
-import { carrierFromName } from "../../shipping";
+import { prisma } from "../../lib/prisma";
+import { CHANNEL_LABEL } from "../../marketplace/mockMarketplace";
+import { assertChannelSlot } from "../../services/plan-enforcement";
+import { carrierFromName } from "../../services/shipping";
 import {
   deductStockTx,
   holdStockTx,

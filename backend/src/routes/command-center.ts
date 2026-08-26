@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { scanOpsAlerts } from "../ops-alerts";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { scanOpsAlerts } from "../services/ops-alerts";
 
 /**
  * TRUNG TÂM ĐIỀU HÀNH (Command Center) — lưu trạng thái người dùng thao tác.

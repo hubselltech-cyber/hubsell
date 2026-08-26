@@ -21,8 +21,8 @@ import type { Response } from "express";
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
-import { prisma } from "./prisma";
-import type { AuthRequest } from "./auth";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
 
 // Cùng secret với auth.ts (stream không đi qua requireAuth được — xem dưới)
 const JWT_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";

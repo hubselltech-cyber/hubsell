@@ -19,8 +19,8 @@
 
 import type { Channel } from "@prisma/client";
 import { DeliveryFailChatStatus } from "@prisma/client";
-import { notify } from "../../notifications";
-import { prisma } from "../../prisma";
+import { notify } from "../../services/notifications";
+import { prisma } from "../../lib/prisma";
 import {
   DELIVERY_FAIL_TAB_HREF,
   effectiveDeliveryFailConfig,

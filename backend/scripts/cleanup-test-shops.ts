@@ -22,7 +22,7 @@
 
 import "dotenv/config";
 import { ChannelName } from "@prisma/client";
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 
 const APPLY = process.argv.includes("--apply");
 const extraIdsArg = process.argv[process.argv.indexOf("--ids") + 1];

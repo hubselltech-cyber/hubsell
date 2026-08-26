@@ -9,14 +9,14 @@
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import {
   PlanLimitError,
   assertChannelSlot,
   assertStaffSlot,
   getOwnerPlanState,
   invalidatePlanState,
-} from "../../plan-enforcement";
+} from "../../services/plan-enforcement";
 
 const STAMP = Date.now();
 const DAY_MS = 24 * 60 * 60 * 1000;

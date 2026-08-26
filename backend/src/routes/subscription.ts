@@ -8,11 +8,11 @@
 
 import { Router } from "express";
 import { BillingCycle, Prisma } from "@prisma/client";
-import { prisma } from "../prisma";
-import { requireAdmin, type AuthRequest } from "../auth";
-import { isMailerConfigured, sendMail } from "../mailer";
-import { getOwnerPlanState } from "../plan-enforcement";
-import { CYCLE_LABEL, planPriceFor } from "../subscription-service";
+import { prisma } from "../lib/prisma";
+import { requireAdmin, type AuthRequest } from "../middleware/auth";
+import { isMailerConfigured, sendMail } from "../lib/mailer";
+import { getOwnerPlanState } from "../services/plan-enforcement";
+import { CYCLE_LABEL, planPriceFor } from "../services/subscription-service";
 
 const router = Router();
 

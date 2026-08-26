@@ -18,7 +18,7 @@
 
 import crypto from "crypto";
 import { WebhookJobStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { SHOPEE_PUSH_CODE, type ShopeePushPayload } from "./webhook";
 import {
   dispatchShopeeWebhookEvent,

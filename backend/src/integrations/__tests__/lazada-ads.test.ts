@@ -17,7 +17,7 @@ import {
   buildShopeeAdsAssistantAlerts,
   groupShopeeAdsScenarios,
   type ShopeeAdsCampaignSignal,
-} from "../../ops-alerts";
+} from "../../services/ops-alerts";
 
 describe("lazAdsNum — parser số liệu Sponsored Solutions", () => {
   it("đổi chuỗi '-' (metric trống của Lazada, thấy trong probe thật) về 0", () => {

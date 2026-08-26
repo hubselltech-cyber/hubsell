@@ -9,7 +9,7 @@
 // ============================================================
 
 import crypto from "crypto";
-import { getBackendBaseUrl } from "../../backend-url";
+import { getBackendBaseUrl } from "../../lib/backend-url";
 import { getShopeeConfig } from "./config";
 
 // ---------- 1. Xác thực chữ ký ----------

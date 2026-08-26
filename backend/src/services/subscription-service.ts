@@ -21,7 +21,7 @@ import {
   PackagePaymentMethod,
   Prisma,
 } from "@prisma/client";
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 import { invalidatePlanState } from "./plan-enforcement";
 import { creditReferralCommission } from "./referral-wallet";
 

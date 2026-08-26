@@ -15,7 +15,7 @@
 
 import crypto from "crypto";
 import type { Channel } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { getLazadaConfig, type LazadaConfig } from "./config";
 import { getMultipleOrderItems, getOrder } from "./client";
 import { getValidLazadaAccessToken, upsertLazadaOrderTx } from "./service";

@@ -14,10 +14,10 @@
 // Tắt bằng env WEEKLY_REPORT_OFF=1 (mặc định bật).
 // ============================================================
 
-import { prisma } from "./prisma";
-import { notify } from "./notifications";
-import { businessDayStart, BUSINESS_TZ_OFFSET_MS } from "./date-range";
-import { buildPeriodReport, fmtDayLabel, lastWeekRange } from "./routes/assistant";
+import { prisma } from "../lib/prisma";
+import { notify } from "../services/notifications";
+import { businessDayStart, BUSINESS_TZ_OFFSET_MS } from "../lib/date-range";
+import { buildPeriodReport, fmtDayLabel, lastWeekRange } from "../routes/assistant";
 
 /** Giờ VN sớm nhất trong ngày thứ 2 được phép gửi. */
 const SEND_FROM_HOUR_VN = 8;

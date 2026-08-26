@@ -19,7 +19,7 @@
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { deductStockTx, holdStockTx } from "../order-stock";
 import { createStockFixture, type StockFixture } from "./fixtures";
 

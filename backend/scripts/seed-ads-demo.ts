@@ -17,7 +17,7 @@
 // Xóa:  npx tsx scripts/seed-ads-demo.ts [--platform lazada] --clean
 // ============================================================
 
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 
 async function main() {
   const clean = process.argv.includes("--clean");

@@ -10,7 +10,7 @@
 
 import "dotenv/config";
 import crypto from "crypto";
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { getShopeeConfig } from "../src/integrations/shopee/config";
 import { signShop } from "../src/integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";

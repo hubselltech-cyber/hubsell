@@ -2,8 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { Prisma, InventoryLogType } from "@prisma/client";
-import { prisma } from "../prisma";
-import { canSeeFinancials, type AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import { enqueueStockPush } from "../integrations/inventory-push";
 
 const router = Router();

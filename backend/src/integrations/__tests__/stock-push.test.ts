@@ -14,7 +14,7 @@
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName, StockPushStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { availableToPush, enqueueStockPush } from "../inventory-push";
 import { upsertLazadaOrderTx } from "../lazada/service";
 import type { LazadaOrder, LazadaOrderItem } from "../lazada/client";

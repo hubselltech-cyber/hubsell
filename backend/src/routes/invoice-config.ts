@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Response } from "express";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
 import {
   clearMisaTokenCache,
   getMisaAccessToken,

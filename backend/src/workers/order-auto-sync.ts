@@ -23,31 +23,31 @@
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
-import { prisma } from "./prisma";
-import { isShopeeConfigured } from "./integrations/shopee/config";
-import { syncShopeeOrders } from "./integrations/shopee/service";
+import { prisma } from "../lib/prisma";
+import { isShopeeConfigured } from "../integrations/shopee/config";
+import { syncShopeeOrders } from "../integrations/shopee/service";
 import {
   syncShopeePendingEscrowEstimates,
   syncShopeeSettlements,
-} from "./integrations/shopee/settlements";
-import { syncShopeeAdsSpend } from "./integrations/shopee/ads-spend";
-import { syncShopeeAdsCampaigns } from "./integrations/shopee/ads-campaigns";
-import { syncLazadaAdsCampaigns } from "./integrations/lazada/ads-campaigns";
-import { runAdsAutoExecute } from "./integrations/shopee/ads-auto-execute";
-import { syncShopeeWithdrawals } from "./integrations/shopee/wallet";
+} from "../integrations/shopee/settlements";
+import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
+import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
+import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
+import { runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
+import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
   backfillShopeeTrackingCodes,
   syncShopeeReturns,
-} from "./integrations/shopee/returns-sync";
-import { syncShopeeBuyerInvoiceRequests } from "./integrations/shopee/buyer-invoice";
-import { processShopeeDeliveryTracking } from "./integrations/shopee/delivery-fail";
-import { isLazadaConfigured } from "./integrations/lazada/config";
+} from "../integrations/shopee/returns-sync";
+import { syncShopeeBuyerInvoiceRequests } from "../integrations/shopee/buyer-invoice";
+import { processShopeeDeliveryTracking } from "../integrations/shopee/delivery-fail";
+import { isLazadaConfigured } from "../integrations/lazada/config";
 import {
   syncLazadaOrders,
   syncLazadaSettlements,
-} from "./integrations/lazada/service";
-import { syncLazadaPayouts } from "./integrations/lazada/payouts";
-import { syncLazadaReturns } from "./integrations/lazada/returns-sync";
+} from "../integrations/lazada/service";
+import { syncLazadaPayouts } from "../integrations/lazada/payouts";
+import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
 
 const DEFAULT_INTERVAL_MIN = 10;
 /**

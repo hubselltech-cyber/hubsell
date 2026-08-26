@@ -16,7 +16,7 @@
 
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { getBackendBaseUrl } from "./backend-url";
+import { getBackendBaseUrl } from "../lib/backend-url";
 
 const STATE_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
 

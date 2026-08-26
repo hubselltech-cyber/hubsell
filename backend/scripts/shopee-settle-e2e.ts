@@ -10,7 +10,7 @@
 // Chạy: npx tsx scripts/shopee-settle-e2e.ts   (DB dev; dữ liệu TEST- tự dọn)
 // ============================================================
 
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { mapShopeeEscrowToOrder } from "../src/integrations/shopee/settlements";
 import { computePnlRow, fetchPnlOrders } from "../src/routes/finance";
 

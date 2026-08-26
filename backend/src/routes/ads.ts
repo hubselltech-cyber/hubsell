@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ChannelName } from "@prisma/client";
-import { prisma } from "../prisma";
-import { requirePermission, type AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import { requirePermission, type AuthRequest } from "../middleware/auth";
 import {
   editManualProductAdsRaw,
   getAdsTotalBalance,

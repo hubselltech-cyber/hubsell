@@ -2,7 +2,7 @@
 // từng gian Shopee còn token — chỉ ĐỌC (escrow_list/detail), không ghi gì nếu
 // sàn không báo đơn giải ngân. Mục đích: biết sandbox có hỗ trợ API này không
 // TRƯỚC khi deploy production.
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { syncShopeeSettlements } from "../src/integrations/shopee/settlements";
 
 async function main() {

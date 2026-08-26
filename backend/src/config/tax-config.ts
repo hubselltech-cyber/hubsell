@@ -19,7 +19,7 @@
  */
 
 import { TaxCalculationBase, TaxFilterPeriod } from "@prisma/client";
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 
 /** Thuế sàn TMĐT khấu trừ tại nguồn — luật hiện hành ấn định 1.5%. */
 export const PLATFORM_TAX_RATE = 0.015;

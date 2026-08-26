@@ -7,16 +7,16 @@ import {
   ReturnStatus,
   ShippingStatus,
 } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { mockSettlement } from "../mockMarketplace";
-import { channelScope } from "../channel-filter";
-import { attachItemImages } from "../item-images";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { mockSettlement } from "../marketplace/mockMarketplace";
+import { channelScope } from "../lib/channel-filter";
+import { attachItemImages } from "../services/item-images";
 import {
   expressShippingWhere,
   isExpressShipping,
   notExpressShippingWhere,
-} from "../shipping";
+} from "../services/shipping";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";

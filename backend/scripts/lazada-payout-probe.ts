@@ -6,7 +6,7 @@
 // ============================================================
 
 import "dotenv/config";
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { getPayoutStatus } from "../src/integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../src/integrations/lazada/service";
 

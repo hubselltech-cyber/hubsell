@@ -15,7 +15,7 @@
 
 import type { Channel } from "@prisma/client";
 import { WithdrawalSource } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { getWalletTransactionList, type ShopeeWalletTxn } from "./client";
 import { getValidShopeeAccessToken } from "./service";
 

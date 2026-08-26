@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 
 /**
  * GẮN ẢNH CHO DÒNG HÀNG CỦA ĐƠN.

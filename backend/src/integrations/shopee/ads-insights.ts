@@ -22,7 +22,7 @@ import {
   type AdsCampaign,
   type AdsCampaignDailyPerf,
 } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
 import {
   ASSISTANT_WINDOWS,

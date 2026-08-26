@@ -16,22 +16,22 @@
 
 import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
 import { notify } from "./notifications";
-import { prisma } from "./prisma";
-import { computePnlRow, fetchPnlOrders } from "./routes/finance";
+import { prisma } from "../lib/prisma";
+import { computePnlRow, fetchPnlOrders } from "../routes/finance";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
   vnDateKey,
-} from "./integrations/shopee/ads-insights";
-import type { AssistantTrigger } from "./integrations/shopee/ads-assistant-rules";
-import { getAdsTotalBalance } from "./integrations/shopee/client";
-import { getValidShopeeAccessToken } from "./integrations/shopee/service";
-import { getAdsCampaignList, lazAdsNum } from "./integrations/lazada/client";
-import { getValidLazadaAccessToken } from "./integrations/lazada/service";
+} from "../integrations/shopee/ads-insights";
+import type { AssistantTrigger } from "../integrations/shopee/ads-assistant-rules";
+import { getAdsTotalBalance } from "../integrations/shopee/client";
+import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { getAdsCampaignList, lazAdsNum } from "../integrations/lazada/client";
+import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import {
   DELIVERY_FAIL_TAB_HREF,
   effectiveDeliveryFailConfig,
-} from "./integrations/shopee/delivery-fail";
+} from "../integrations/shopee/delivery-fail";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

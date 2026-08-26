@@ -6,7 +6,7 @@
 //   A. Phân trang SÂU bằng offset xem tin con có bao giờ lộ ra không.
 //   B. Gọi get_message với offset = đúng id tin con / id bundle xem trang trả
 //      về có chứa tin con không.
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";
 import {
   getConversationList,

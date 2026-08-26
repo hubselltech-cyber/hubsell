@@ -7,13 +7,13 @@ import {
   Prisma,
   WebhookJobStatus,
 } from "@prisma/client";
-import { prisma } from "../prisma";
+import { prisma } from "../lib/prisma";
 import {
   requirePlatformAdmin,
   requirePlatformPermission,
   type AuthRequest,
-} from "../auth";
-import { writeAuditLog } from "../platform-audit";
+} from "../middleware/auth";
+import { writeAuditLog } from "../services/platform-audit";
 import adminPlansRouter from "./admin-plans";
 
 // ============================================================

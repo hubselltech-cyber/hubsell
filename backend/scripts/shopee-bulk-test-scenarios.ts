@@ -22,8 +22,8 @@ import {
   ReturnStatus,
   ShippingDisputeStatus,
 } from "@prisma/client";
-import { prisma } from "../src/prisma";
-import { PLATFORM_FEE_RATE } from "../src/mockMarketplace";
+import { prisma } from "../src/lib/prisma";
+import { PLATFORM_FEE_RATE } from "../src/marketplace/mockMarketplace";
 import { upsertShopeeOrderTx } from "../src/integrations/shopee/service";
 import type { ShopeeOrderDetail } from "../src/integrations/shopee/client";
 

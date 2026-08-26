@@ -21,7 +21,7 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import {
   getAdsAdgroupList,
   getAdsCampaignList,

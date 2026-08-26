@@ -11,7 +11,7 @@
 // sandbox local dùng trick hosts http://hubsell.tech).
 // ============================================================
 
-import { getBackendBaseUrl } from "../../backend-url";
+import { getBackendBaseUrl } from "../../lib/backend-url";
 
 export interface ShopeeConfig {
   /** partner_id của app (giữ dạng chuỗi để ghép chữ ký / query). */

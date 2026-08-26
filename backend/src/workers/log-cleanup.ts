@@ -22,7 +22,7 @@
 // ============================================================
 
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 
 const DEFAULT_INTERVAL_HOURS = 24;
 /** Thông tin xuất hóa đơn của khách: xóa sau khi HĐ phát hành ngần này ngày. */

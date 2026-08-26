@@ -63,26 +63,42 @@ hubsell/
 │
 ├── backend/                        # Máy chủ API — cổng 4000
 │   ├── prisma/
-│   │   ├── schema.prisma           # 9 bảng: User, Channel, Product, Order, OrderItem, InventoryLog, ProductMapping, OperatingExpense, StaffChannel
-│   │   ├── migrations/             # Lịch sử thay đổi cấu trúc DB
+│   │   ├── schema.prisma           # Toàn bộ schema DB (User/Channel/Order/kho/gói thuê bao/hóa đơn...)
+│   │   ├── migrations/             # Lịch sử thay đổi cấu trúc DB — tự áp khi deploy (migrate deploy)
 │   │   └── seed.ts                 # Dữ liệu mẫu (admin@hubsell.vn / hubsell123)
-│   └── src/
-│       ├── index.ts                # Điểm khởi động server
-│       ├── app.ts                  # Khai báo route + middleware
-│       ├── auth.ts                 # JWT: ký token + middleware requireAuth
-│       ├── prisma.ts               # Kết nối Prisma dùng chung
-│       └── routes/
-│           ├── auth.ts             # /api/auth: register, login, me
-│           ├── dashboard.ts        # /api/dashboard/summary
-│           ├── products.ts         # /api/products: GET (phân trang+tìm kiếm), POST, PATCH
-│           ├── inventory.ts        # /api/inventory: adjust (transaction), logs
-│           ├── orders.ts           # /api/orders: lọc, phân trang, đổi trạng thái, hủy → hoàn kho
-│           ├── analytics.ts        # /api/analytics: doanh thu, giá vốn, lợi nhuận, biểu đồ — chỉ Admin
-│           ├── finance.ts          # /api/finance: analytics, orders-analysis (đơn lỗ), expenses — chỉ Admin
-│           ├── channels.ts         # /api/channels: kết nối, ngắt, danh mục sàn
-│           ├── mappings.ts         # /api/mappings: nối SKU sàn ↔ SP gốc
-│           └── webhooks.ts         # /api/webhooks/mock-order: nhận đơn từ sàn
-│       └── mockMarketplace.ts      # Danh mục sản phẩm sàn giả lập
+│   ├── scripts/                    # Công cụ vận hành 1 lần: probe API sàn, seed demo, migration local...
+│   └── src/                        # (sắp xếp theo VAI TRÒ — 26/08/2026)
+│       ├── index.ts                # Điểm khởi động server + kích các worker nền
+│       ├── app.ts                  # Khai báo Express app: gắn route + middleware
+│       ├── middleware/
+│       │   └── auth.ts             # JWT: ký token, requireAuth, phân quyền chủ/nhân viên/HQ
+│       ├── lib/                    # Hạ tầng + tiện ích thuần (không nghiệp vụ)
+│       │   ├── prisma.ts           # Kết nối Prisma dùng chung
+│       │   ├── mailer.ts           # Gửi email (nodemailer)
+│       │   └── ...                 # backend-url, channel-filter, date-range, phone, username
+│       ├── config/                 # Registry/cấu hình tĩnh
+│       │   ├── permission-registry.ts          # Cây phân quyền nhân viên (khóa lá)
+│       │   ├── platform-permission-registry.ts # Phân quyền khu điều hành HQ
+│       │   └── tax-config.ts       # Nguồn công thức thuế DUY NHẤT (bóc ngược VAT từ giá bán)
+│       ├── services/               # Nghiệp vụ gọi từ routes (google-oauth, notifications,
+│       │                           #   ops-alerts, plan-enforcement, subscription-service,
+│       │                           #   referral-wallet, tax-pilot, platform-audit, item-images...)
+│       ├── workers/                # MỌI tiến trình nền chạy theo nhịp
+│       │   ├── order-auto-sync.ts  # Quét đơn Shopee/Lazada 10' + đối soát + cứu đơn giao thất bại
+│       │   ├── token-refresh.ts    # Cron lưới an toàn refresh token Shopee
+│       │   ├── invoice-auto-issue.ts # Tự xuất hóa đơn điện tử 15'
+│       │   ├── weekly-report.ts    # Báo cáo tuần đẩy chuông sáng thứ 2
+│       │   └── log-cleanup.ts      # Dọn log theo chính sách 7/30 ngày
+│       ├── routes/                 # 25 file route = 25 nhóm endpoint /api/* (auth, orders,
+│       │                           #   products, finance, tax, subscription, admin/HQ, webhooks...)
+│       ├── integrations/           # Tích hợp sàn THẬT — mỗi sàn một thư mục
+│       │   ├── shopee/             # OAuth, đơn, đối soát, ads, hoàn trả, chat, hóa đơn người mua
+│       │   ├── lazada/             # OAuth, đơn, settlements Finance API, ads, reverse
+│       │   ├── tiktok/             # OAuth + đồng bộ đơn/đối soát (chờ data thật)
+│       │   ├── invoice/            # Hóa đơn điện tử MISA meInvoice (issue-order là lõi dùng chung)
+│       │   ├── ai/                 # AI Copilot (gác chờ thương mại hóa)
+│       │   └── ...                 # inventory-push, stock-push-worker: queue đẩy tồn kho lên sàn
+│       └── marketplace/            # Lớp trừu tượng sàn + adapter + mockMarketplace (giả lập)
 │
 ├── docker-compose.yml              # PostgreSQL qua Docker (tuỳ chọn, hiện dùng native)
 ├── start-backend.bat               # Bấm đúp chạy backend
@@ -440,7 +456,7 @@ AWAITING ──quét, hàng nguyên vẹn──▶ RECEIVED_INTACT   (cộng l�
 
 Mọi trang báo cáo đều có bộ chọn ngày ở góc phải trên, cạnh nút Làm mới. Dùng chung một component và một quy ước query param, nên module đối soát mới sau này chỉ cần cắm vào là chạy.
 
-**Quy ước API:** mọi endpoint báo cáo nhận `?from=yyyy-mm-dd&to=yyyy-mm-dd`. Backend dùng `parseDateRange(req.query)` (`backend/src/date-range.ts`) — trả `undefined` khi không lọc, truyền thẳng vào Prisma `where: { createdAt: range }`. Đơn hàng lọc theo `createdAt`, chi phí theo `expenseDate`.
+**Quy ước API:** mọi endpoint báo cáo nhận `?from=yyyy-mm-dd&to=yyyy-mm-dd`. Backend dùng `parseDateRange(req.query)` (`backend/src/lib/date-range.ts`) — trả `undefined` khi không lọc, truyền thẳng vào Prisma `where: { createdAt: range }`. Đơn hàng lọc theo `createdAt`, chi phí theo `expenseDate`.
 
 **Ba cái bẫy đã xử lý sẵn** (đừng tự viết lại logic ngày):
 - `to` phải lấy đến **23:59:59.999**, cắt ở 00:00 là mất trọn ngày cuối.
@@ -563,7 +579,7 @@ cd frontend && npm run dev:https    # → https://localhost:3000
 
 Các tính năng có thể bổ sung ở những giai đoạn tới:
 
-- **Tích hợp API sàn thật** (Shopee / TikTok Shop / Lazada) thay cho lớp giả lập trong `backend/src/mockMarketplace.ts`.
+- **Tích hợp API sàn thật** (Shopee / TikTok Shop / Lazada) thay cho lớp giả lập trong `backend/src/marketplace/mockMarketplace.ts`.
 - **Sửa / Xoá sản phẩm** trực tiếp trên giao diện; **trang Lịch sử kho** xem toàn bộ `InventoryLog`.
 - **UI Quản lý nhân viên** (chủ shop thêm/khoá tài khoản Staff qua giao diện thay vì API).
 - **Xuất báo cáo** (Excel/PDF), lọc theo khoảng thời gian.

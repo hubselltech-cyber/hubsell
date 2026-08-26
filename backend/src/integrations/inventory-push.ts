@@ -17,7 +17,7 @@
 // ============================================================
 
 import { ChannelName, StockPushStatus } from "@prisma/client";
-import { prisma } from "../prisma";
+import { prisma } from "../lib/prisma";
 
 /** Các sàn đã có chiều ĐẨY tồn. TikTok chưa có product-sync (ChannelProduct
  *  không có externalId) nên chưa đẩy được — bổ sung khi làm product pull TikTok. */

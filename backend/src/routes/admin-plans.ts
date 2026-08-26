@@ -9,18 +9,18 @@
 
 import { Router } from "express";
 import { BillingCycle, PackagePaymentMethod, Prisma } from "@prisma/client";
-import { prisma } from "../prisma";
+import { prisma } from "../lib/prisma";
 import {
   requirePlatformAdmin,
   requirePlatformPermission,
   type AuthRequest,
-} from "../auth";
-import { writeAuditLog } from "../platform-audit";
-import { vnMonthStart } from "../plan-enforcement";
+} from "../middleware/auth";
+import { writeAuditLog } from "../services/platform-audit";
+import { vnMonthStart } from "../services/plan-enforcement";
 import {
   effectiveSubscriptionStatus,
   recordPackagePayment,
-} from "../subscription-service";
+} from "../services/subscription-service";
 
 const router = Router();
 

@@ -8,12 +8,12 @@
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import {
   addBillingPeriod,
   effectiveSubscriptionStatus,
   recordPackagePayment,
-} from "../../subscription-service";
+} from "../../services/subscription-service";
 
 const STAMP = Date.now();
 const payerEmail = `test-subpay-${STAMP}@hubsell.test`;

@@ -24,7 +24,7 @@
 
 import type { Channel, Prisma } from "@prisma/client";
 import { ShippingStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { getBuyerInvoiceInfo, type ShopeeBuyerInvoiceItem } from "./client";
 import { getValidShopeeAccessToken } from "./service";
 

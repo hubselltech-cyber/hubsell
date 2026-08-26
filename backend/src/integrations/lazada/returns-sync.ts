@@ -19,8 +19,8 @@
 
 import type { Channel } from "@prisma/client";
 import { ReturnSolution, ReturnStatus } from "@prisma/client";
-import { prisma } from "../../prisma";
-import { notify } from "../../notifications";
+import { prisma } from "../../lib/prisma";
+import { notify } from "../../services/notifications";
 import {
   maybeAutoAdjustOnPlatformReturn,
   PLATFORM_RETURN_DONE_STATUSES,

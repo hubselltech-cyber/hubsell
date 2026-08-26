@@ -10,19 +10,19 @@
 
 import { Router } from "express";
 import { BillingCycle, PackagePaymentMethod, Prisma } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
 import {
   MIN_WITHDRAWAL_AMOUNT,
   creditReferralCommission,
   ensureReferralCode,
-} from "../referral-wallet";
+} from "../services/referral-wallet";
 import {
   CYCLE_LABEL,
   planPriceFor,
   recordPackagePaymentTx,
-} from "../subscription-service";
-import { invalidatePlanState } from "../plan-enforcement";
+} from "../services/subscription-service";
+import { invalidatePlanState } from "../services/plan-enforcement";
 
 const router = Router();
 

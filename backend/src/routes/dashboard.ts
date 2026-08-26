@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { prisma } from "../prisma";
-import { canSeeFinancials, type AuthRequest } from "../auth";
-import { channelScope } from "../channel-filter";
+import { prisma } from "../lib/prisma";
+import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
+import { channelScope } from "../lib/channel-filter";
 
 const router = Router();
 

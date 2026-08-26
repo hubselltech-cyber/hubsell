@@ -3,7 +3,7 @@
 // hỏi bot trong webchat) không, và content của chúng nằm ở field nào?
 // Cách làm: quét hội thoại mới nhất của từng gian, tally message_type, in
 // NGUYÊN VĂN JSON mọi tin có type lạ (ngoài danh sách app đã render được).
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { getValidShopeeAccessToken } from "../src/integrations/shopee/service";
 import {
   getConversationList,

@@ -6,10 +6,10 @@ import {
   TaxFilterPeriod,
 } from "@prisma/client";
 
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
-import { channelScope } from "../channel-filter";
-import { parseDateRange } from "../date-range";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
+import { channelScope } from "../lib/channel-filter";
+import { parseDateRange } from "../lib/date-range";
 import {
   decideScopeFromPlatformReturn,
   issueAdjustmentForOrder,
@@ -21,7 +21,7 @@ import {
   downloadInvoiceFiles,
   type StandardInvoiceConfig,
 } from "../integrations/invoice/misa-einvoice";
-import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../tax-pilot";
+import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
 import { computePnlRow, fetchPnlOrders } from "./finance";
@@ -30,7 +30,7 @@ import {
   getShopTaxConfig,
   PLATFORM_TAX_RATE,
   platformTaxOn,
-} from "../tax-config";
+} from "../config/tax-config";
 
 /**
  * MODULE HÓA ĐƠN & THUẾ — cấu hình "Thuế bổ sung" + báo cáo đối soát thuế.

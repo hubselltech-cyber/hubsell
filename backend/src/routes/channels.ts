@@ -1,13 +1,13 @@
 import { Router, type Response } from "express";
 import crypto from "crypto";
 import { ChannelName } from "@prisma/client";
-import { prisma } from "../prisma";
-import { requireAdmin, type AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import {
   CHANNEL_LABEL,
   PLATFORM_FEE_RATE,
   TOKEN_PREFIX,
-} from "../mockMarketplace";
+} from "../marketplace/mockMarketplace";
 import {
   buildAuthorizeUrl,
   expireToDate,
@@ -59,7 +59,7 @@ import {
   assertChannelSlot,
   invalidatePlanState,
   respondPlanLimit,
-} from "../plan-enforcement";
+} from "../services/plan-enforcement";
 
 const router = Router();
 

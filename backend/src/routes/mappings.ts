@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ChannelName, InventoryLogType, Prisma } from "@prisma/client";
-import { prisma } from "../prisma";
-import type { AuthRequest } from "../auth";
+import { prisma } from "../lib/prisma";
+import type { AuthRequest } from "../middleware/auth";
 
 const router = Router();
 

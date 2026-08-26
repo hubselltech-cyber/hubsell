@@ -18,7 +18,7 @@
  */
 
 import { ChannelName } from "@prisma/client";
-import type { AuthRequest } from "./auth";
+import type { AuthRequest } from "../middleware/auth";
 
 export interface ChannelScope {
   userId: string;

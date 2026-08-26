@@ -29,7 +29,7 @@
 // ============================================================
 
 import { ChannelName, Prisma, type Channel } from "@prisma/client";
-import { prisma } from "../../prisma";
+import { prisma } from "../../lib/prisma";
 import { editManualProductAdsRaw } from "./client";
 import { getValidShopeeAccessToken } from "./service";
 import {

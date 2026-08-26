@@ -7,7 +7,7 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
-import { MOCK_CATALOG, mockImageFor } from "../../mockMarketplace";
+import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
 import type { MarketplaceProductAdapter, NormalizedChannelProduct } from "../types";
 
 export const mockProductAdapter: MarketplaceProductAdapter = {

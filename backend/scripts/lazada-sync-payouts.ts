@@ -5,7 +5,7 @@
 // ============================================================
 
 import "dotenv/config";
-import { prisma } from "../src/prisma";
+import { prisma } from "../src/lib/prisma";
 import { syncLazadaPayouts } from "../src/integrations/lazada/payouts";
 
 (async () => {

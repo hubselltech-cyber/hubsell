@@ -1,7 +1,7 @@
 # TIẾN ĐỘ DỰ ÁN HUBSELL
 
 ## 🔜 Định hướng phiên sau (Next)
-- [ ] **Trung tâm điều hành — Đợt 3 (làm cả thể khi TikTok Shop cấp API):** triển khai theo KHUNG ĐẶC TẢ đã viết sẵn cuối phần detector trong `backend/src/ops-alerts.ts` — (7) khách bom hàng `customer-refusal` (dữ liệu `Order.customerPhone` + đơn CANCELLED đã có sẵn), (8) mở rộng `ads-spike` cho Lazada/TikTok (cần client API chi ads theo ngày của 2 sàn), (9) `tax-error` lỗi hóa đơn/ký số (chờ module Invoicing chạy thương mại). Khung OpsAlert/UI dùng chung — chỉ cần viết detector rồi thêm vào mảng `detectors`.
+- [ ] **Trung tâm điều hành — Đợt 3 (làm cả thể khi TikTok Shop cấp API):** triển khai theo KHUNG ĐẶC TẢ đã viết sẵn cuối phần detector trong `backend/src/services/ops-alerts.ts` — (7) khách bom hàng `customer-refusal` (dữ liệu `Order.customerPhone` + đơn CANCELLED đã có sẵn), (8) mở rộng `ads-spike` cho Lazada/TikTok (cần client API chi ads theo ngày của 2 sàn), (9) `tax-error` lỗi hóa đơn/ký số (chờ module Invoicing chạy thương mại). Khung OpsAlert/UI dùng chung — chỉ cần viết detector rồi thêm vào mảng `detectors`.
 - [ ] **Module theo dõi lệnh rút ví → ngân hàng:** để cột "Tiền đã thu về" (bảng Cash Flow) có số THẬT thay vì giữ chỗ 0đ.
 - [ ] **Cắm dữ liệu thật cho các cột giữ chỗ** ở bảng Shopee/TikTok (thuế, Flash Sale, chiết khấu PVC, SFR/VAT, trợ giá VC, nạp ví QC…) khi có luồng đồng bộ đối soát từ sàn.
 - [ ] Tiếp tục nghiệp vụ Hóa đơn/Thuế thật (xem mục dưới): tính VAT đầu ra động theo `vatRate` từng SKU; adapter gọi API NCC; đối soát hoa hồng đại lý theo `partnerCode`/`apiKey`.
