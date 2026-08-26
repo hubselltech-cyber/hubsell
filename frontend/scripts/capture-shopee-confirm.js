@@ -1,21 +1,21 @@
 /**
- * Dá»±ng láº¡i mÃ n "Confirm Authorization" cá»§a Shopee Open Platform báº±ng HTML rá»“i
- * chá»¥p thÃ nh áº£nh cho bÆ°á»›c 7 cá»§a tour onboarding (onboarding-overlay.tsx).
+ * Dựng lại màn "Confirm Authorization" của Shopee Open Platform bằng HTML rồi
+ * chụp thành ảnh cho bước 7 của tour onboarding (onboarding-overlay.tsx).
  *
- * VÃ¬ sao dá»±ng láº¡i thay vÃ¬ chá»¥p tháº­t: trang nÃ y chá»‰ hiá»‡n SAU KHI Ä‘Äƒng nháº­p
- * seller tháº­t/sandbox â€” áº£nh chá»¥p tháº­t (anh Trung cung cáº¥p 25/08) lá»™ shop
- * DarkMan/hieuxachtay nÃªn dá»±ng báº£n trung tÃ­nh "shop_cua_ban" (khá»›p tÃªn gÃµ á»Ÿ
- * bÆ°á»›c Ä‘Äƒng nháº­p), layout + cÃ¢u chá»¯ bÃ¡m sÃ¡t áº£nh tháº­t tá»«ng dÃ²ng.
+ * Vì sao dựng lại thay vì chụp thật: trang này chỉ hiện SAU KHI đăng nhập
+ * seller thật/sandbox — ảnh chụp thật (anh Trung cung cấp 25/08) lộ shop
+ * DarkMan/hieuxachtay nên dựng bản trung tính "shop_cua_ban" (khớp tên gõ ở
+ * bước đăng nhập), layout + câu chữ bám sát ảnh thật từng dòng.
  *
- * Script tá»± chá»©a, KHÃ”NG cáº§n dev server. In ra tá»a Ä‘á»™ % nÃºt Confirm Ä‘á»ƒ dÃ¡n
- * vÃ o TOUR_STEPS.
+ * Script tự chứa, KHÔNG cần dev server. In ra tọa độ % nút Confirm để dán
+ * vào TOUR_STEPS.
  */
 const { chromium } = require("playwright");
 const path = require("path");
 const fs = require("fs");
 
 const OUT = "D:/Claude Code/Hubsell/frontend/public/onboarding";
-// NhÃºng data URI: trang setContent (origin about:blank) bá»‹ Chromium cháº·n file://
+// Nhúng data URI: trang setContent (origin about:blank) bị Chromium chặn file://
 const LOGO = `data:image/png;base64,${fs
   .readFileSync("D:/Claude Code/Hubsell/frontend/public/logo-hubsell.png")
   .toString("base64")}`;
