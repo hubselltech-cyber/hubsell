@@ -587,7 +587,10 @@ export default function DashboardPage() {
           />
           <StatCard
             label="Đơn hàng"
-            value={analytics ? formatNumber(analytics.orderCount) : "—"}
+            // Rổ ĐƠN PHÁT SINH (loại hủy & hoàn/trả) — khớp caption "tính trên
+            // N đơn" của khối; tổng kèm hủy đã có phễu vận hành bên dưới lo
+            // (anh Trung 26/08: thẻ 20 đơn cạnh caption 19 đơn là tự mâu thuẫn).
+            value={analytics ? formatNumber(analytics.activeOrderCount) : "—"}
             icon={ShoppingCart}
             valueClassName={HERO_SIZE}
             sparkline={
@@ -595,8 +598,8 @@ export default function DashboardPage() {
                 ? {
                     data: sparkOrders,
                     tone: deltaTone(
-                      analytics.orderCount,
-                      analytics.previous?.orderCount
+                      analytics.activeOrderCount,
+                      analytics.previous?.activeOrderCount
                     ),
                   }
                 : undefined
@@ -604,8 +607,8 @@ export default function DashboardPage() {
             subtitle={
               analytics && (
                 <DeltaChip
-                  current={analytics.orderCount}
-                  previous={analytics.previous?.orderCount ?? null}
+                  current={analytics.activeOrderCount}
+                  previous={analytics.previous?.activeOrderCount ?? null}
                   compareLabel={compareLabel}
                 />
               )

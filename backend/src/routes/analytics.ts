@@ -32,7 +32,9 @@ const RETURNING_SET = new Set<ReturnStatus>(RETURNING_IN.in);
 // import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
 /**
- * Đếm số đơn (MỌI trạng thái) theo NGÀY GIỜ VN trong [gte, lte]. Chỉ kéo cột
+ * Đếm số đơn PHÁT SINH (loại đơn hủy & đang hoàn/trả — CÙNG rổ với doanh thu,
+ * anh Trung 26/08: thẻ Đơn hàng 20 mà caption "tính trên 19 đơn" là tự mâu
+ * thuẫn trong một khối) theo NGÀY GIỜ VN trong [gte, lte]. Chỉ kéo cột
  * createdAt, cửa sổ luôn bị chặn ≤ 90 ngày bởi nơi gọi nên không lo phình.
  */
 async function countOrdersByDay(
@@ -41,7 +43,12 @@ async function countOrdersByDay(
   lte: Date
 ): Promise<Map<string, number>> {
   const rows = await prisma.order.findMany({
-    where: { channel: scope, createdAt: { gte, lte } },
+    where: {
+      channel: scope,
+      createdAt: { gte, lte },
+      shippingStatus: { not: ShippingStatus.CANCELLED },
+      returnStatus: { notIn: RETURNING_IN.in },
+    },
     select: { createdAt: true },
   });
   const map = new Map<string, number>();
@@ -258,9 +265,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
       chartStart = new Date(chartEnd.getTime() - (MAX_POINTS - 1) * DAY_MS);
     }
 
-    // SỐ ĐƠN THEO NGÀY — đếm MỌI trạng thái (kể cả hủy) cho khớp thẻ "Đơn hàng"
-    // (orderCount bên dưới cũng đếm mọi trạng thái). Chỉ kéo createdAt trong
-    // đúng khung trục X (≤ 90 ngày) nên nhẹ, không phụ thuộc "xem toàn bộ".
+    // SỐ ĐƠN THEO NGÀY — rổ ĐƠN PHÁT SINH (loại hủy & hoàn/trả) cho khớp thẻ
+    // "Đơn hàng" + caption "tính trên N đơn phát sinh"; tổng MỌI trạng thái đã
+    // có phễu vận hành lo. Chỉ kéo createdAt trong đúng khung trục X (≤ 90
+    // ngày) nên nhẹ, không phụ thuộc "xem toàn bộ".
     const ordersMap = await countOrdersByDay(
       scope,
       chartStart,
@@ -412,15 +420,21 @@ router.get("/", async (req: AuthRequest, res, next) => {
               where: { channel: scope, createdAt: prevRange },
             }),
           ]);
-          const prevRevenue = prevRows
+          const prevActive = prevRows
             .map(computePnlRow)
             .filter(
               (r) =>
                 r.shippingStatus !== ShippingStatus.CANCELLED &&
                 !RETURNING_SET.has(r.returnStatus)
-            )
-            .reduce((s, r) => s + r.revenueGross, 0);
-          return { totalRevenue: prevRevenue, orderCount: cnt };
+            );
+          const prevRevenue = prevActive.reduce((s, r) => s + r.revenueGross, 0);
+          // activeOrderCount = rổ đơn phát sinh (khớp thẻ Đơn hàng); orderCount
+          // mọi trạng thái giữ lại cho ai cần so tổng phễu.
+          return {
+            totalRevenue: prevRevenue,
+            orderCount: cnt,
+            activeOrderCount: prevActive.length,
+          };
         })()
       : null;
 

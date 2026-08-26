@@ -834,7 +834,9 @@ export interface AnalyticsResponse {
     RETURNING: number;
   };
   /** Số liệu kỳ trước liền kề (cùng độ dài) để tính tăng/giảm. null khi không lọc ngày. */
-  previous: { totalRevenue: number; orderCount: number } | null;
+  /** activeOrderCount = rổ đơn PHÁT SINH kỳ trước (khớp thẻ Đơn hàng — so
+   *  cùng rổ mới ra % thật); orderCount mọi trạng thái giữ cho tương thích. */
+  previous: { totalRevenue: number; orderCount: number; activeOrderCount: number } | null;
   /** Đang lọc 1 gian hàng ⇒ chi phí vận hành vẫn là của TOÀN SHOP. */
   operatingExpenseIsShopWide: boolean;
 }
