@@ -1,5 +1,5 @@
 // ============================================================
-// CỨU ĐƠN GIAO THẤT BẠI — quét Shopee get_tracking_info theo nhịp GIỜ
+// CỨU ĐƠN GIAO THẤT BẠI — quét Shopee get_tracking_info theo nhịp 10 PHÚT
 //
 // Vì sao phải polling: webhook Shopee không có sự kiện "giao thất bại từng
 // lượt" (chỉ 4 push code), còn logistics_status cấp ĐƠN chỉ nhảy sang
@@ -22,7 +22,7 @@
 // thường: ghi FAILED, KHÔNG tự retry — chủ shop nhắn tay, tránh spam.
 //
 // Tiết chế quota (1 call / 1 đơn): chỉ đơn SHIPPING có vận đơn ≤21 ngày, mỗi
-// lượt tối đa 200 đơn/gian, mỗi đơn nghỉ 6 giờ giữa hai lần hỏi (in-memory,
+// lượt tối đa 200 đơn/gian, mỗi đơn nghỉ 20 phút giữa hai lần hỏi (in-memory,
 // mất khi restart — vô hại, cùng khuôn backfill vận đơn).
 // ============================================================
 
@@ -54,8 +54,16 @@ export const DELIVERY_FAIL_THRESHOLD = 1;
 const SCAN_WINDOW_DAYS = 21;
 /** Trần số đơn hỏi get_tracking_info mỗi lượt quét của MỘT gian. */
 const MAX_ORDERS_PER_SWEEP = 200;
-/** Một đơn nghỉ tối thiểu chừng này giữa hai lần hỏi (shipper ~1 lượt/ngày). */
-const ATTEMPT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+/**
+ * Một đơn nghỉ tối thiểu chừng này giữa hai lần hỏi. Hạ 6h → 20' (26/08, anh
+ * Trung chốt "phần này phải real-time — chậm là bị hoàn ngay"): probe 25/08 có
+ * kiện quay đầu chỉ 28 PHÚT sau lượt giao hỏng, cooldown 6h thì chuông reo khi
+ * hàng đã lên xe về kho. 20' + nhịp quét 10' → phát hiện trong ~20-30' kể từ
+ * lúc mốc thất bại xuất hiện. Quota trần: 200 đơn/gian × 6 nhịp/giờ = 1.200
+ * call get_tracking_info/giờ/gian ở kịch bản xấu nhất — thực tế shop hiện
+ * ~10-60 đơn SHIPPING nên chỉ vài chục call/nhịp, xa giới hạn sàn.
+ */
+const ATTEMPT_COOLDOWN_MS = 20 * 60 * 1000;
 
 /** Deep-link về tab Giao không thành công (Cấu hình kịch bản AI). */
 export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/ai-rules?tab=delivery-fail";
@@ -196,7 +204,7 @@ export function effectiveDeliveryFailConfig(
   };
 }
 
-// ---------- Vòng quét (gọi từ order-auto-sync, nhịp giờ) ----------
+// ---------- Vòng quét (gọi từ order-auto-sync, MỖI nhịp 10 phút) ----------
 
 export interface ScanDeliveryFailsResult {
   /** Số đơn đã hỏi get_tracking_info lượt này. */

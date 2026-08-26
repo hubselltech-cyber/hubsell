@@ -282,6 +282,26 @@ async function runOnce(): Promise<void> {
             (err as Error).message
           );
         }
+        // CỨU ĐƠN GIAO THẤT BẠI — chuyển từ nhịp giờ sang MỖI NHỊP (26/08,
+        // anh Trung chốt "phải real-time — chậm là bị hoàn ngay"; probe 25/08
+        // có kiện quay đầu 28 phút sau lượt giao hỏng). Tiết chế nằm trong
+        // scanShopeeDeliveryFails (cooldown 20'/đơn + trần 200 đơn/lượt).
+        // Đếm lượt giao thất bại trong get_tracking_info (mẫu chữ description
+        // — enum docs không có thật trên production VN), chạm ngưỡng →
+        // chuông + (tuỳ config) auto-chat. Lỗi riêng không chặn luồng khác.
+        try {
+          const df = await scanShopeeDeliveryFails(channel);
+          if (df.noticed > 0) {
+            console.log(
+              `[Auto-sync] Giao thất bại Shopee "${channel.shopName}": +${df.noticed} đơn chạm ngưỡng (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua) / ${df.scanned} đơn quét`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi quét giao thất bại gian "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
       }
 
       // --- Đối soát phí thật (Lazada + Shopee, theo nhịp giờ) ---
@@ -411,23 +431,6 @@ async function runOnce(): Promise<void> {
             } catch (err) {
               console.error(
                 `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-            // CỨU ĐƠN GIAO THẤT BẠI (nhịp giờ, 1 call/đơn có tiết chế): đếm
-            // lượt giao thất bại trong get_tracking_info (mẫu chữ description —
-            // enum docs không có thật trên production VN), chạm ngưỡng →
-            // chuông + (tuỳ config) auto-chat. Lỗi riêng không chặn luồng khác.
-            try {
-              const df = await scanShopeeDeliveryFails(channel);
-              if (df.noticed > 0) {
-                console.log(
-                  `[Auto-sync] Giao thất bại Shopee "${channel.shopName}": +${df.noticed} đơn chạm ngưỡng (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua) / ${df.scanned} đơn quét`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi quét giao thất bại gian "${channel.shopName}":`,
                 (err as Error).message
               );
             }

@@ -1424,6 +1424,82 @@ router.get("/delivery-fail/probe", async (req: AuthRequest, res, next) => {
       }
     }
 
+    // ---- ĐỐI CHIẾU đơn ĐÃ CẢNH BÁO còn "pending" với sàn (thêm 26/08) ----
+    // DB nói SHIPPING/chưa hoàn → hỏi lại get_tracking_info: nếu hành trình đã
+    // có mốc RETURN*/CANCEL* (kiện quay đầu — order_status Shopee vẫn nằm
+    // SHIPPED một thời gian dài nên vòng sync đơn KHÔNG thấy) hoặc DELIVERED
+    // thì đó là ca "sàn đã báo mà hệ thống chưa cập nhật" — thứ ba thẻ số
+    // "Cứu được/Mất đơn" đang thiếu.
+    const pendingNotices = await prisma.deliveryFailNotice.findMany({
+      where: {
+        ownerId: req.ownerId!,
+        order: {
+          shippingStatus: ShippingStatus.SHIPPING,
+          returnStatus: ReturnStatus.NONE,
+        },
+      },
+      orderBy: { detectedAt: "desc" },
+      take: 20,
+      select: {
+        detectedAt: true,
+        order: {
+          select: { orderCode: true, channelId: true, channel: { select: { shopName: true } } },
+        },
+      },
+    });
+    const noticeAudit: {
+      orderCode: string;
+      shopName: string;
+      detectedAt: Date;
+      orderLevelStatus: string | null;
+      lastMilestone: { time: string; status: string; desc: string } | null;
+      verdict: string;
+    }[] = [];
+    const tokenByChannel = new Map<string, { accessToken: string; shopId: string }>();
+    for (const n of pendingNotices) {
+      const channel = channels.find((c) => c.id === n.order.channelId);
+      if (!channel) continue;
+      try {
+        let tok = tokenByChannel.get(channel.id);
+        if (!tok) {
+          tok = await getValidShopeeAccessToken(channel);
+          tokenByChannel.set(channel.id, tok);
+        }
+        const info = await getTrackingInfo(tok.accessToken, tok.shopId, n.order.orderCode);
+        const events = info.response?.tracking_info ?? [];
+        const statuses = events.map((e) => String(e.logistics_status ?? "").toUpperCase());
+        const last = events[events.length - 1];
+        const verdict = statuses.some((s) => /^(RETURN|CANCEL)/.test(s))
+          ? "SÀN ĐÃ BÁO HOÀN/HỦY — DB chưa cập nhật"
+          : statuses.includes("DELIVERED")
+            ? "SÀN BÁO ĐÃ GIAO — DB chưa cập nhật"
+            : "Đang giao (khớp DB)";
+        noticeAudit.push({
+          orderCode: n.order.orderCode,
+          shopName: n.order.channel.shopName,
+          detectedAt: n.detectedAt,
+          orderLevelStatus: info.response?.logistics_status ?? null,
+          lastMilestone: last
+            ? {
+                time: last.update_time ? new Date(last.update_time * 1000).toISOString() : "",
+                status: String(last.logistics_status ?? ""),
+                desc: String(last.description ?? "").slice(0, 120),
+              }
+            : null,
+          verdict,
+        });
+      } catch (err) {
+        noticeAudit.push({
+          orderCode: n.order.orderCode,
+          shopName: n.order.channel.shopName,
+          detectedAt: n.detectedAt,
+          orderLevelStatus: null,
+          lastMilestone: null,
+          verdict: `Lỗi đọc hành trình: ${(err as Error).message}`,
+        });
+      }
+    }
+
     // ---- Sức khỏe vòng quét hiện tại (đúng bộ lọc worker đang dùng) ----
     const channelIds = channels.map((c) => c.id);
     const scanWindow = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000);
@@ -1458,6 +1534,8 @@ router.get("/delivery-fail/probe", async (req: AuthRequest, res, next) => {
        *  thì ngưỡng 2 của worker không bao giờ chạm với hàng của shop này. */
       failCountDistribution: failCountDist,
       trackingStatusTally: statusTally,
+      /** Đơn đã cảnh báo mà DB còn "pending" — sàn nói gì bây giờ? */
+      noticeAudit,
       scanHealth: {
         scanCandidatesNow: scanCandidates,
         shippingMissingTrackingCode: shippingNoTracking,
