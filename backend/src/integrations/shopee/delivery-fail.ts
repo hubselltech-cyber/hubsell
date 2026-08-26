@@ -27,7 +27,12 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
-import { DeliveryFailChatStatus, ReturnStatus, ShippingStatus } from "@prisma/client";
+import {
+  DeliveryFailChatStatus,
+  DeliveryFailOutcome as DbDeliveryFailOutcome,
+  ReturnStatus,
+  ShippingStatus,
+} from "@prisma/client";
 import { notify } from "../../notifications";
 import { prisma } from "../../prisma";
 import {
@@ -183,6 +188,41 @@ export function classifyDeliveryFailOutcome(order: {
     return "lost";
   }
   if (order.shippingStatus === ShippingStatus.DELIVERED) return "saved";
+  return "pending";
+}
+
+/**
+ * Chốt kết quả từ HÀNH TRÌNH VẬN CHUYỂN (nguồn sự thật sớm nhất — probe 26/08):
+ * đơn giao xong Shopee để order_status TO_CONFIRM_RECEIVE (mình map SHIPPING)
+ * nhiều ngày, kiện quay đầu thì order_status đứng im ở SHIPPED — chỉ tracking
+ * mới nói thật. LOST xét TRƯỚC saved: đơn giao xong rồi khách trả thì mốc
+ * RETURN* nằm SAU mốc DELIVERED, phải ra lost.
+ */
+export function classifyOutcomeFromTracking(
+  orderLevelStatus: string | null | undefined,
+  events: ShopeeTrackingEvent[]
+): DeliveryFailOutcome {
+  const statuses = events.map((e) => String(e.logistics_status ?? "").toUpperCase());
+  const top = String(orderLevelStatus ?? "").toUpperCase();
+  if (statuses.some((s) => NON_ATTEMPT_STATUS.test(s)) || /RETURN|CANCEL/.test(top)) {
+    return "lost";
+  }
+  if (statuses.includes("DELIVERED") || top === "LOGISTICS_DELIVERY_DONE") return "saved";
+  return "pending";
+}
+
+/**
+ * Kết quả HIỂN THỊ = trạng thái Order (nếu đã chốt hủy/hoàn/DELIVERED — luôn
+ * thắng, kể cả khi notice đã lưu SAVED mà khách trả hàng sau đó) ⊕ kết quả
+ * worker chốt từ tracking (khi Order còn mù vì TO_CONFIRM_RECEIVE/SHIPPED).
+ */
+export function mergeDeliveryFailOutcome(
+  dbOutcome: DeliveryFailOutcome,
+  stored: DbDeliveryFailOutcome
+): DeliveryFailOutcome {
+  if (dbOutcome !== "pending") return dbOutcome;
+  if (stored === DbDeliveryFailOutcome.SAVED) return "saved";
+  if (stored === DbDeliveryFailOutcome.LOST) return "lost";
   return "pending";
 }
 
@@ -353,6 +393,109 @@ export async function scanShopeeDeliveryFails(
       // được chặn các đơn còn lại của lượt quét.
       console.warn(
         `[Delivery-fail] Chưa đọc được hành trình đơn ${order.orderCode}:`,
+        (err as Error).message
+      );
+    }
+  }
+
+  return result;
+}
+
+// ---------- Vòng CHỐT KẾT QUẢ đơn đã cảnh báo (gọi mỗi nhịp, tiết chế 6h/đơn) ----------
+
+/** Một notice PENDING hỏi lại tracking tối đa mỗi 6h — kết quả không cần
+ *  real-time như phát hiện (chuông đã reo từ trước), chỉ cần thẻ số đúng. */
+const OUTCOME_RECHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const MAX_OUTCOME_CHECKS_PER_SWEEP = 40;
+/** noticeId → lần hỏi tracking gần nhất (in-memory, mất khi restart — vô hại). */
+const lastOutcomeCheckAt = new Map<string, number>();
+
+export interface RefreshOutcomesResult {
+  checked: number;
+  saved: number;
+  lost: number;
+}
+
+/**
+ * Chốt kết quả các notice còn PENDING của một gian: Order đã chốt (hủy/hoàn/
+ * DELIVERED) thì lấy luôn không tốn API; còn mù thì hỏi get_tracking_info.
+ * Sinh ra từ probe 26/08: 8/12 notice production đã có kết quả trên sàn
+ * (7 giao xong + 1 quay đầu) mà thẻ Cứu được/Mất đơn vẫn 0-0 vì Order chưa đổi.
+ */
+export async function refreshShopeeDeliveryFailOutcomes(
+  channel: Channel
+): Promise<RefreshOutcomesResult> {
+  const result: RefreshOutcomesResult = { checked: 0, saved: 0, lost: 0 };
+
+  const pending = await prisma.deliveryFailNotice.findMany({
+    where: {
+      outcome: DbDeliveryFailOutcome.PENDING,
+      order: { channelId: channel.id },
+    },
+    select: {
+      id: true,
+      order: {
+        select: {
+          orderCode: true,
+          shippingStatus: true,
+          returnStatus: true,
+        },
+      },
+    },
+  });
+  if (pending.length === 0) return result;
+
+  const settle = async (
+    noticeId: string,
+    outcome: Exclude<DeliveryFailOutcome, "pending">,
+    note: string
+  ) => {
+    await prisma.deliveryFailNotice.update({
+      where: { id: noticeId },
+      data: {
+        outcome:
+          outcome === "saved" ? DbDeliveryFailOutcome.SAVED : DbDeliveryFailOutcome.LOST,
+        outcomeAt: new Date(),
+        outcomeNote: note.slice(0, 200),
+      },
+    });
+    if (outcome === "saved") result.saved++;
+    else result.lost++;
+  };
+
+  // Lượt RẺ trước: Order trong DB đã tự chốt (sync đơn/Returns API đi trước).
+  const stillBlind: typeof pending = [];
+  for (const n of pending) {
+    const db = classifyDeliveryFailOutcome(n.order);
+    if (db === "pending") {
+      stillBlind.push(n);
+      continue;
+    }
+    await settle(n.id, db, "Theo trạng thái đơn trong hệ thống");
+  }
+  if (stillBlind.length === 0) return result;
+
+  const now = Date.now();
+  const due = stillBlind
+    .filter((n) => now - (lastOutcomeCheckAt.get(n.id) ?? 0) > OUTCOME_RECHECK_COOLDOWN_MS)
+    .slice(0, MAX_OUTCOME_CHECKS_PER_SWEEP);
+  if (due.length === 0) return result;
+
+  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  for (const n of due) {
+    lastOutcomeCheckAt.set(n.id, now);
+    try {
+      const info = await getTrackingInfo(accessToken, shopId, n.order.orderCode);
+      result.checked++;
+      const outcome = classifyOutcomeFromTracking(
+        info.response?.logistics_status,
+        info.response?.tracking_info ?? []
+      );
+      if (outcome === "pending") continue;
+      await settle(n.id, outcome, `Sàn báo ${info.response?.logistics_status ?? "?"}`);
+    } catch (err) {
+      console.warn(
+        `[Delivery-fail] Chưa chốt được kết quả đơn ${n.order.orderCode}:`,
         (err as Error).message
       );
     }

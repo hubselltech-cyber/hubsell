@@ -40,7 +40,10 @@ import {
   syncShopeeReturns,
 } from "./integrations/shopee/returns-sync";
 import { syncShopeeBuyerInvoiceRequests } from "./integrations/shopee/buyer-invoice";
-import { scanShopeeDeliveryFails } from "./integrations/shopee/delivery-fail";
+import {
+  refreshShopeeDeliveryFailOutcomes,
+  scanShopeeDeliveryFails,
+} from "./integrations/shopee/delivery-fail";
 import { isLazadaConfigured } from "./integrations/lazada/config";
 import {
   syncLazadaOrders,
@@ -299,6 +302,22 @@ async function runOnce(): Promise<void> {
         } catch (err) {
           console.error(
             `[Auto-sync] Lỗi quét giao thất bại gian "${channel.shopName}":`,
+            (err as Error).message
+          );
+        }
+        // CHỐT KẾT QUẢ các đơn đã cảnh báo (26/08 — probe: 8/12 notice đã có
+        // kết quả trên sàn mà thẻ Cứu được/Mất đơn vẫn 0-0 vì Order nằm
+        // TO_CONFIRM_RECEIVE/SHIPPED). Tiết chế 6h/notice nằm trong hàm.
+        try {
+          const oc = await refreshShopeeDeliveryFailOutcomes(channel);
+          if (oc.saved > 0 || oc.lost > 0) {
+            console.log(
+              `[Auto-sync] Kết quả cứu đơn Shopee "${channel.shopName}": +${oc.saved} cứu được, +${oc.lost} mất đơn (${oc.checked} đơn hỏi tracking)`
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[Auto-sync] Lỗi chốt kết quả cứu đơn gian "${channel.shopName}":`,
             (err as Error).message
           );
         }

@@ -2,13 +2,15 @@
 // template, luật bỏ qua auto-chat, cấu hình hiệu lực mặc định.
 
 import { describe, expect, it } from "vitest";
-import { ReturnStatus, ShippingStatus } from "@prisma/client";
+import { DeliveryFailOutcome, ReturnStatus, ShippingStatus } from "@prisma/client";
 import {
   chatSkipReason,
   classifyDeliveryFailOutcome,
+  classifyOutcomeFromTracking,
   countFailedDeliveries,
   DEFAULT_CHAT_TEMPLATE,
   effectiveDeliveryFailConfig,
+  mergeDeliveryFailOutcome,
   renderChatTemplate,
 } from "../shopee/delivery-fail";
 import { lazadaOrderDeliveryFailed } from "../lazada/delivery-fail";
@@ -147,6 +149,68 @@ describe("classifyDeliveryFailOutcome (báo cáo Kết quả cứu đơn)", () =
         returnStatus: ReturnStatus.NONE,
       })
     ).toBe("pending");
+  });
+});
+
+describe("classifyOutcomeFromTracking (chốt kết quả từ hành trình — probe 26/08)", () => {
+  // Ca THẬT production 26/08: đơn giao xong nhưng Order còn SHIPPING vì
+  // TO_CONFIRM_RECEIVE — sàn nói LOGISTICS_DELIVERY_DONE ở tầng đơn.
+  it("orderLevel LOGISTICS_DELIVERY_DONE hoặc mốc DELIVERED = saved", () => {
+    expect(
+      classifyOutcomeFromTracking("LOGISTICS_DELIVERY_DONE", [
+        { logistics_status: "PICKED_UP", description: "Đang giao hàng" },
+      ])
+    ).toBe("saved");
+    expect(
+      classifyOutcomeFromTracking("LOGISTICS_PICKUP_DONE", [
+        { logistics_status: "DELIVERED", description: "Giao hàng thành công" },
+      ])
+    ).toBe("saved");
+  });
+
+  it("mốc RETURN*/CANCEL* trong hành trình = lost — kể cả khi ĐÃ có DELIVERED trước đó", () => {
+    expect(
+      classifyOutcomeFromTracking("LOGISTICS_PICKUP_DONE", [
+        {
+          logistics_status: "PICKED_UP",
+          description: "Giao hàng không thành công vì không thể liên hệ người nhận",
+        },
+        { logistics_status: "RETURN_INITIATED", description: "Đơn hàng sẽ được hoàn trả" },
+      ])
+    ).toBe("lost");
+    expect(
+      classifyOutcomeFromTracking(null, [
+        { logistics_status: "DELIVERED" },
+        { logistics_status: "RETURN_STARTED" },
+      ])
+    ).toBe("lost");
+    expect(classifyOutcomeFromTracking("LOGISTICS_CANCELLED", [])).toBe("lost");
+  });
+
+  it("còn trên đường (chỉ PICKED_UP, kể cả có lượt thất bại) = pending", () => {
+    expect(
+      classifyOutcomeFromTracking("LOGISTICS_PICKUP_DONE", [
+        { logistics_status: "PICKED_UP", description: "Đã sắp xếp tài xế giao hàng" },
+        {
+          logistics_status: "PICKED_UP",
+          description: "Giao hàng không thành công vì người nhận từ chối nhận hàng",
+        },
+      ])
+    ).toBe("pending");
+    expect(classifyOutcomeFromTracking(undefined, [])).toBe("pending");
+  });
+});
+
+describe("mergeDeliveryFailOutcome (Order chốt thắng, tracking lấp chỗ mù)", () => {
+  it("Order còn pending → lấy kết quả worker chốt từ tracking", () => {
+    expect(mergeDeliveryFailOutcome("pending", DeliveryFailOutcome.SAVED)).toBe("saved");
+    expect(mergeDeliveryFailOutcome("pending", DeliveryFailOutcome.LOST)).toBe("lost");
+    expect(mergeDeliveryFailOutcome("pending", DeliveryFailOutcome.PENDING)).toBe("pending");
+  });
+
+  it("Order đã chốt → thắng notice, kể cả SAVED bị lật thành lost khi khách mở hoàn sau giao", () => {
+    expect(mergeDeliveryFailOutcome("lost", DeliveryFailOutcome.SAVED)).toBe("lost");
+    expect(mergeDeliveryFailOutcome("saved", DeliveryFailOutcome.PENDING)).toBe("saved");
   });
 });
 

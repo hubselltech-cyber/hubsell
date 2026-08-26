@@ -48,6 +48,7 @@ import {
   classifyDeliveryFailOutcome,
   countFailedDeliveries,
   effectiveDeliveryFailConfig,
+  mergeDeliveryFailOutcome,
 } from "../integrations/shopee/delivery-fail";
 
 const router = Router();
@@ -1219,6 +1220,7 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
         id: true,
         failCount: true,
         detectedAt: true,
+        outcome: true,
         chatStatus: true,
         chatError: true,
         sentMessage: true,
@@ -1239,6 +1241,7 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
     const all = await prisma.deliveryFailNotice.findMany({
       where: { ownerId: req.ownerId! },
       select: {
+        outcome: true,
         order: {
           select: { shippingStatus: true, returnStatus: true, totalAmount: true },
         },
@@ -1246,7 +1249,9 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
     });
     const summary = { total: all.length, saved: 0, lost: 0, pending: 0, savedRevenue: 0 };
     for (const n of all) {
-      const outcome = classifyDeliveryFailOutcome(n.order);
+      // Gộp: Order đã chốt thì thắng; Order còn mù (TO_CONFIRM_RECEIVE/SHIPPED)
+      // thì lấy kết quả worker chốt từ tracking — hết cảnh 0-0 ảo (probe 26/08).
+      const outcome = mergeDeliveryFailOutcome(classifyDeliveryFailOutcome(n.order), n.outcome);
       summary[outcome]++;
       if (outcome === "saved") summary.savedRevenue += Number(n.order.totalAmount);
     }
@@ -1260,7 +1265,7 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
         channelName: n.order.channel.channelName,
         shippingStatus: n.order.shippingStatus,
         returnStatus: n.order.returnStatus,
-        outcome: classifyDeliveryFailOutcome(n.order),
+        outcome: mergeDeliveryFailOutcome(classifyDeliveryFailOutcome(n.order), n.outcome),
         failCount: n.failCount,
         detectedAt: n.detectedAt,
         chatStatus: n.chatStatus,

@@ -1973,6 +1973,16 @@ enum DeliveryFailChatStatus {
   SKIPPED // đơn đã hủy/đang hoàn lúc phát hiện — nhắn khách không còn ý nghĩa
 }
 
+/// Kết quả CHỐT của một đơn từng cảnh báo giao thất bại — worker tự chốt từ
+/// hành trình vận chuyển (probe 26/08: KHÔNG dựa được vào Order.shippingStatus
+/// vì đơn giao xong nằm TO_CONFIRM_RECEIVE→SHIPPING nhiều ngày, kiện quay đầu
+/// thì order_status Shopee đứng im ở SHIPPED — thẻ Cứu được/Mất đơn toàn 0 ảo).
+enum DeliveryFailOutcome {
+  PENDING // còn trên đường — chờ lượt giao lại
+  SAVED // sàn xác nhận giao thành công — đơn được cứu
+  LOST // hành trình đã có mốc HOÀN/HỦY — kiện quay đầu
+}
+
 /// Cấu hình "Cứu đơn giao thất bại" — 1 dòng/chủ shop. Không có dòng = mặc
 /// định: cảnh báo BẬT, auto-chat TẮT, template mặc định trong code.
 model DeliveryFailConfig {
@@ -2003,6 +2013,12 @@ model DeliveryFailNotice {
   detectedAt DateTime @default(now())
 
   chatStatus DeliveryFailChatStatus @default(NONE)
+  /// Kết quả chốt từ tracking (worker re-check định kỳ); đơn hủy/hoàn theo
+  /// trạng thái Order vẫn thắng khi hiển thị (mergeDeliveryFailOutcome).
+  outcome   DeliveryFailOutcome @default(PENDING)
+  outcomeAt DateTime?
+  /// Mốc sàn tại thời điểm chốt (audit — vd "LOGISTICS_DELIVERY_DONE").
+  outcomeNote String?
   /// Thông điệp lỗi sàn trả khi gửi chat thất bại — hiện trần cho chủ shop.
   chatError String?
   /// Nguyên văn tin đã gửi (audit — template có thể đổi sau này).
