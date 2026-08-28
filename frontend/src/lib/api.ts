@@ -2620,6 +2620,68 @@ export function updateCustomerCare(
   );
 }
 
+// ---------- Lead tư vấn từ landing (hq.customers) ----------
+
+/** Vòng đời lead tư vấn — khớp enum ConsultLeadStatus backend. */
+export type ConsultLeadStatus = "NEW" | "CONTACTED" | "CONVERTED" | "DROPPED";
+
+export interface ConsultLeadRow {
+  id: string;
+  name: string;
+  email: string;
+  /** Đã chuẩn hóa E.164 lúc nhận form ("+84965863292"). */
+  phone: string;
+  /** "pricing-enterprise" (card Enterprise) | "floating-consult" (dock nổi). */
+  source: string;
+  status: ConsultLeadStatus;
+  note: string | null;
+  assignee: { id: string; fullName: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Tài khoản match theo email/SĐT — null = khách chưa đăng ký. Gói ở đây là
+   *  gói THẬT hiện tại (Subscription), không phải gói khách hỏi tư vấn. */
+  account: {
+    userId: string;
+    fullName: string;
+    registeredAt: string;
+    planCode: string | null;
+    planName: string | null;
+    isTrial: boolean;
+  } | null;
+}
+
+export interface ConsultLeadsResponse {
+  total: number;
+  /** Tổng lead đang NEW toàn hệ (không theo bộ lọc) — badge tab. */
+  newCount: number;
+  page: number;
+  pageSize: number;
+  leads: ConsultLeadRow[];
+}
+
+export function fetchConsultLeads(params?: {
+  page?: number;
+  pageSize?: number;
+  status?: ConsultLeadStatus;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.status) qs.set("status", params.status);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<ConsultLeadsResponse>(`/api/admin/consult-leads${suffix}`);
+}
+
+export function updateConsultLead(
+  id: string,
+  data: { status?: ConsultLeadStatus; assigneeId?: string | null; note?: string }
+) {
+  return apiFetch<{ lead: ConsultLeadRow }>(`/api/admin/consult-leads/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 // ---------- Kế toán nội bộ (hq.finance) ----------
 
 export interface PlatformWithdrawalRow {

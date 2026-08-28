@@ -8,7 +8,12 @@ import { Loader2, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ApiError, getToken, type PlatformCareStatus } from "@/lib/api";
+import {
+  ApiError,
+  getToken,
+  type ConsultLeadStatus,
+  type PlatformCareStatus,
+} from "@/lib/api";
 
 /**
  * Hook nạp dữ liệu chuẩn của một trang /admin/*: gọi `fetcher` (bọc useCallback
@@ -142,3 +147,34 @@ export const CARE_STATUS_META: Record<
 };
 
 export const CARE_STATUSES = Object.keys(CARE_STATUS_META) as PlatformCareStatus[];
+
+/** Nhãn + màu huy hiệu cho từng trạng thái LEAD TƯ VẤN từ landing. */
+export const LEAD_STATUS_META: Record<
+  ConsultLeadStatus,
+  { label: string; className: string }
+> = {
+  NEW: {
+    label: "Chưa gọi",
+    className: "border-orange-200 bg-orange-50 text-orange-700",
+  },
+  CONTACTED: {
+    label: "Đang tư vấn",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+  },
+  CONVERTED: {
+    label: "Đã chốt",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  DROPPED: {
+    label: "Không chốt",
+    className: "border-slate-200 bg-slate-50 text-slate-500",
+  },
+};
+
+export const LEAD_STATUSES = Object.keys(LEAD_STATUS_META) as ConsultLeadStatus[];
+
+/** Nhãn nguồn lead — khách bấm nút nào trên landing. */
+export const LEAD_SOURCE_LABEL: Record<string, string> = {
+  "pricing-enterprise": "Bảng giá — Enterprise",
+  "floating-consult": "Nút tư vấn nổi",
+};

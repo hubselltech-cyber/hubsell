@@ -21,6 +21,7 @@ import channelsRouter from "./routes/channels";
 import inventoryRouter from "./routes/inventory";
 import mappingsRouter from "./routes/mappings";
 import webhooksRouter from "./routes/webhooks";
+import publicRouter from "./routes/public";
 import staffRouter from "./routes/staff";
 import financeRouter from "./routes/finance";
 import commandCenterRouter from "./routes/command-center";
@@ -106,6 +107,10 @@ export function createApp() {
   app.use("/api/webhook", webhooksRouter);
   // Dạng /v1 — URL đăng ký với MISA meInvoice: /v1/webhooks/misa-meinvoice.
   app.use("/v1/webhooks", webhooksRouter);
+
+  // Form public từ landing hubsell.tech (lead "Đăng ký tư vấn") — tự phòng thủ
+  // bằng rate-limit + honeypot bên trong, không JWT.
+  app.use("/api/public", publicRouter);
 
   // ============================================================
   // PHÂN QUYỀN 3 LỚP (mô hình cây phân quyền 10/08)

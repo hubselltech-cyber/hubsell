@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  ConsultLeadStatus,
   LedgerDirection,
   LedgerInvoiceStatus,
   LedgerSource,
@@ -400,6 +401,174 @@ router.patch(
       });
 
       res.json({ care });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
+// LEAD TƯ VẤN từ landing (lá hq.customers — cùng khu làm việc của Sale).
+// Gói khách CHỐT không nằm ở lead: nguồn sự thật là PackagePayment lúc kế
+// toán "Ghi nhận thanh toán" trên /admin/plans. Ở đây chỉ MATCH lead ↔ tài
+// khoản theo email/SĐT để sale thấy "lead này đã đăng ký, đang gói nào".
+// ============================================================
+
+// GET /api/admin/consult-leads?status=&page=&pageSize=
+router.get(
+  "/consult-leads",
+  requirePlatformPermission("hq.customers"),
+  async (req, res, next) => {
+    try {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+      const statusRaw = String(req.query.status ?? "");
+      const status = (Object.values(ConsultLeadStatus) as string[]).includes(statusRaw)
+        ? (statusRaw as ConsultLeadStatus)
+        : undefined;
+      const where = status ? { status } : {};
+
+      const [total, newCount, leads] = await Promise.all([
+        prisma.consultLead.count({ where }),
+        prisma.consultLead.count({ where: { status: ConsultLeadStatus.NEW } }),
+        prisma.consultLead.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: { assignee: { select: { id: true, fullName: true } } },
+        }),
+      ]);
+
+      // Match lead ↔ tài khoản đã đăng ký theo email HOẶC SĐT (lead.phone đã
+      // chuẩn hóa E.164 lúc nhận nên so thẳng với User.phone được).
+      const emails = [...new Set(leads.map((l) => l.email))];
+      const phones = [...new Set(leads.map((l) => l.phone))];
+      const accounts = leads.length
+        ? await prisma.user.findMany({
+            where: {
+              ownerId: null,
+              OR: [{ email: { in: emails } }, { phone: { in: phones } }],
+            },
+            select: {
+              id: true,
+              email: true,
+              phone: true,
+              fullName: true,
+              createdAt: true,
+              subscription: {
+                select: {
+                  isTrial: true,
+                  status: true,
+                  plan: { select: { code: true, name: true } },
+                },
+              },
+            },
+          })
+        : [];
+      const byEmail = new Map(accounts.map((u) => [u.email?.toLowerCase(), u]));
+      const byPhone = new Map(accounts.filter((u) => u.phone).map((u) => [u.phone, u]));
+
+      res.json({
+        total,
+        newCount,
+        page,
+        pageSize,
+        leads: leads.map((l) => {
+          const acc = byEmail.get(l.email.toLowerCase()) ?? byPhone.get(l.phone) ?? null;
+          return {
+            id: l.id,
+            name: l.name,
+            email: l.email,
+            phone: l.phone,
+            source: l.source,
+            status: l.status,
+            note: l.note,
+            assignee: l.assignee,
+            createdAt: l.createdAt,
+            updatedAt: l.updatedAt,
+            account: acc
+              ? {
+                  userId: acc.id,
+                  fullName: acc.fullName,
+                  registeredAt: acc.createdAt,
+                  planCode: acc.subscription?.plan.code ?? null,
+                  planName: acc.subscription?.plan.name ?? null,
+                  isTrial: acc.subscription?.isTrial ?? false,
+                }
+              : null,
+          };
+        }),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PATCH /api/admin/consult-leads/:id — { status?, assigneeId?, note? } (trường
+// vắng mặt giữ nguyên; assigneeId null = bỏ phân công). Ghi PlatformAuditLog.
+router.patch(
+  "/consult-leads/:id",
+  requirePlatformPermission("hq.customers"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { status, assigneeId, note } = req.body ?? {};
+
+      const lead = await prisma.consultLead.findUnique({ where: { id: req.params.id } });
+      if (!lead) {
+        res.status(404).json({ error: "Không tìm thấy lead này" });
+        return;
+      }
+      if (
+        status !== undefined &&
+        !(Object.values(ConsultLeadStatus) as string[]).includes(status)
+      ) {
+        res.status(400).json({ error: "Trạng thái lead không hợp lệ" });
+        return;
+      }
+      if (note !== undefined && note !== null && typeof note !== "string") {
+        res.status(400).json({ error: "Ghi chú không hợp lệ" });
+        return;
+      }
+      if (assigneeId !== undefined && assigneeId !== null) {
+        const assignee = await prisma.user.findFirst({
+          where: {
+            id: String(assigneeId),
+            OR: [{ id: req.ownerId! }, { ownerId: req.ownerId! }],
+          },
+          select: { id: true },
+        });
+        if (!assignee) {
+          res.status(400).json({ error: "Người phụ trách không thuộc đội điều hành" });
+          return;
+        }
+      }
+
+      const noteValue =
+        note === undefined ? undefined : note === null || note.trim() === "" ? null : note.trim();
+      const updated = await prisma.consultLead.update({
+        where: { id: lead.id },
+        data: {
+          ...(status !== undefined ? { status: status as ConsultLeadStatus } : {}),
+          ...(assigneeId !== undefined ? { assigneeId: assigneeId as string | null } : {}),
+          ...(noteValue !== undefined ? { note: noteValue } : {}),
+        },
+        include: { assignee: { select: { id: true, fullName: true } } },
+      });
+
+      await writeAuditLog(req, {
+        action: "lead.update",
+        targetLabel: `${lead.name} (${lead.email})`,
+        detail: {
+          leadId: lead.id,
+          ...(status !== undefined ? { status } : {}),
+          ...(assigneeId !== undefined ? { assigneeId } : {}),
+          ...(noteValue !== undefined ? { note: noteValue } : {}),
+        },
+      });
+
+      res.json({ lead: updated });
     } catch (err) {
       next(err);
     }
