@@ -9,8 +9,8 @@
 // Cố ý KHÔNG có số liệu tiền nong nào ở đây (đó là khu Kế toán).
 // ============================================================
 
-import { useCallback, useState } from "react";
-import { HeartHandshake, PhoneCall } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { HeartHandshake, PhoneCall, Search } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -36,7 +36,7 @@ import {
   type PlatformUserRow,
   type PlatformUsersResponse,
 } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CareDialog } from "../care-dialog";
 import { LeadDialog } from "../lead-dialog";
@@ -66,6 +66,16 @@ export default function PlatformCustomersPage() {
   const [page, setPage] = useState(1);
   const [careFilter, setCareFilter] = useState<"" | PlatformCareStatus>("");
   const [careFor, setCareFor] = useState<PlatformUserRow | null>(null);
+  // Ô tìm nhanh: gõ xong 400ms mới gọi API (debounce), đổi từ khóa về trang 1.
+  const [qInput, setQInput] = useState("");
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(qInput.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [qInput]);
   const [leadPage, setLeadPage] = useState(1);
   const [leadFilter, setLeadFilter] = useState<"" | ConsultLeadStatus>("");
   const [leadFor, setLeadFor] = useState<ConsultLeadRow | null>(null);
@@ -78,6 +88,7 @@ export default function PlatformCustomersPage() {
         page,
         pageSize: 20,
         careStatus: careFilter || undefined,
+        q: q || undefined,
       }),
       fetchConsultLeads({
         page: leadPage,
@@ -87,7 +98,7 @@ export default function PlatformCustomersPage() {
       fetchHqStaff(),
     ]);
     return { users, leads, members: staff.members };
-  }, [page, careFilter, leadPage, leadFilter]);
+  }, [page, careFilter, q, leadPage, leadFilter]);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
 
   if (denied) {
@@ -151,28 +162,39 @@ export default function PlatformCustomersPage() {
 
         {tab === "customers" ? (
           <>
-            {/* Lọc theo trạng thái chăm sóc */}
-            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
-              {([["", "Tất cả"]] as [string, string][])
-                .concat(CARE_STATUSES.map((s) => [s, CARE_STATUS_META[s].label]))
-                .map(([value, label]) => (
-                  <button
-                    key={value || "all"}
-                    type="button"
-                    onClick={() => {
-                      setCareFilter(value as "" | PlatformCareStatus);
-                      setPage(1);
-                    }}
-                    className={cn(
-                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                      careFilter === value
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+            {/* Lọc theo trạng thái chăm sóc + tìm nhanh */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-card p-1">
+              <div className="flex flex-wrap items-center gap-1">
+                {([["", "Tất cả"]] as [string, string][])
+                  .concat(CARE_STATUSES.map((s) => [s, CARE_STATUS_META[s].label]))
+                  .map(([value, label]) => (
+                    <button
+                      key={value || "all"}
+                      type="button"
+                      onClick={() => {
+                        setCareFilter(value as "" | PlatformCareStatus);
+                        setPage(1);
+                      }}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                        careFilter === value
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+              </div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={qInput}
+                  onChange={(e) => setQInput(e.target.value)}
+                  placeholder="Tìm tên, email, SĐT…"
+                  className="h-8 w-52 rounded-md border border-slate-200 bg-background pl-8 pr-2 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-ring focus:ring-2 focus:ring-ring/30"
+                />
+              </div>
             </div>
 
             <Card>
@@ -194,6 +216,8 @@ export default function PlatformCustomersPage() {
                           <TableHead>Chủ shop</TableHead>
                           <TableHead>Liên hệ</TableHead>
                           <TableHead>Quy mô</TableHead>
+                          <TableHead>Gói</TableHead>
+                          <TableHead>Đã thu</TableHead>
                           <TableHead>Hoạt động gần nhất</TableHead>
                           <TableHead>Trạng thái</TableHead>
                           <TableHead>Phụ trách</TableHead>
@@ -228,6 +252,61 @@ export default function PlatformCustomersPage() {
                                 {formatCount(u.channelCount)} gian ·{" "}
                                 {formatCount(u.productCount)} SP ·{" "}
                                 {formatCount(u.orderCount)} đơn
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {/* Nhảy theo Subscription — kế toán ghi nhận
+                                    thanh toán bên Gói dịch vụ là đổi ở đây */}
+                                {u.plan ? (
+                                  (() => {
+                                    const end = u.plan.currentPeriodEnd
+                                      ? new Date(u.plan.currentPeriodEnd)
+                                      : null;
+                                    const expired = end !== null && end.getTime() < Date.now();
+                                    return (
+                                      <>
+                                        <span
+                                          className={cn(
+                                            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                            u.plan.isTrial
+                                              ? "border-sky-200 bg-sky-50 text-sky-700"
+                                              : "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                          )}
+                                        >
+                                          {u.plan.name}
+                                          {u.plan.isTrial ? " · dùng thử" : ""}
+                                        </span>
+                                        <p
+                                          className={cn(
+                                            "mt-1 text-xs",
+                                            expired
+                                              ? "font-medium text-rose-600"
+                                              : "text-muted-foreground"
+                                          )}
+                                        >
+                                          {end
+                                            ? `${expired ? "Hết hạn" : "Đến"} ${end.toLocaleDateString("vi-VN")}`
+                                            : "Vô thời hạn"}
+                                        </p>
+                                      </>
+                                    );
+                                  })()
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm">
+                                {u.paidTotal > 0 ? (
+                                  <>
+                                    <p className="font-semibold tabular-nums">
+                                      {formatVND(u.paidTotal)}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatCount(u.paidCount)} lần thanh toán
+                                    </p>
+                                  </>
+                                ) : (
+                                  <span className="text-muted-foreground">Chưa thu</span>
+                                )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                                 {u.lastOrderAt ? formatDateTime(u.lastOrderAt) : "—"}

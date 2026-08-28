@@ -206,12 +206,30 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
     const careStatus = (Object.values(PlatformCareStatus) as string[]).includes(careRaw)
       ? (careRaw as PlatformCareStatus)
       : undefined;
+    // Tìm nhanh theo tên / email / SĐT / username — thương mại hóa vài trăm
+    // khách thì sale không thể lật trang tay tìm người.
+    const q = String(req.query.q ?? "").trim();
     const where: Prisma.UserWhereInput = {
       ownerId: null,
       ...(careStatus
         ? careStatus === PlatformCareStatus.NEW
           ? { OR: [{ careProfile: null }, { careProfile: { status: careStatus } }] }
           : { careProfile: { status: careStatus } }
+        : {}),
+      ...(q
+        ? {
+            AND: [
+              {
+                OR: [
+                  { fullName: { contains: q, mode: "insensitive" } },
+                  { email: { contains: q, mode: "insensitive" } },
+                  { username: { contains: q, mode: "insensitive" } },
+                  // SĐT lưu E.164 (+84…) — khách gõ "0965" vẫn phải trúng.
+                  { phone: { contains: q.replace(/^0/, "") } },
+                ],
+              },
+            ],
+          }
         : {}),
     };
 
@@ -243,9 +261,33 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
               assignee: { select: { id: true, fullName: true } },
             },
           },
+          // Gói hiện tại — kế toán "Ghi nhận thanh toán" bên /admin/plans là
+          // cột này tự nhảy theo (Subscription là nguồn sự thật duy nhất).
+          subscription: {
+            select: {
+              isTrial: true,
+              currentPeriodEnd: true,
+              plan: { select: { code: true, name: true } },
+            },
+          },
         },
       }),
     ]);
+
+    // Tổng tiền ĐÃ THU của từng khách (mọi PackagePayment) — căn cứ tính hoa
+    // hồng sale. MỘT groupBy cho cả trang, không N+1.
+    const paidAgg = await prisma.packagePayment.groupBy({
+      by: ["userId"],
+      where: { userId: { in: users.map((u) => u.id) } },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+    const paidByUser = new Map(
+      paidAgg.map((p) => [
+        p.userId,
+        { total: Number(p._sum.amount ?? 0), count: p._count._all },
+      ])
+    );
 
     // Đơn không gắn thẳng user mà qua Channel → đếm bằng MỘT groupBy theo
     // channelId rồi cộng dồn về từng shop, thay vì N+1 truy vấn con.
@@ -294,6 +336,16 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
         orderCount: ordersByUser.get(u.id) ?? 0,
         lastOrderAt: lastOrderByUser.get(u.id) ?? null,
         care: u.careProfile,
+        plan: u.subscription
+          ? {
+              code: u.subscription.plan.code,
+              name: u.subscription.plan.name,
+              isTrial: u.subscription.isTrial,
+              currentPeriodEnd: u.subscription.currentPeriodEnd,
+            }
+          : null,
+        paidTotal: paidByUser.get(u.id)?.total ?? 0,
+        paidCount: paidByUser.get(u.id)?.count ?? 0,
       })),
     });
   } catch (err) {

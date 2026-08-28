@@ -2576,6 +2576,17 @@ export interface PlatformUserRow {
   /** Đơn gần nhất trên mọi gian của shop — tín hiệu "còn hoạt động". */
   lastOrderAt: string | null;
   care: PlatformCareInfo | null;
+  /** Gói hiện tại — nhảy theo mỗi lần kế toán ghi nhận thanh toán bên /admin/plans. */
+  plan: {
+    code: string;
+    name: string;
+    isTrial: boolean;
+    /** null = vô thời hạn. */
+    currentPeriodEnd: string | null;
+  } | null;
+  /** Tổng tiền gói ĐÃ THU của khách này (mọi lần thanh toán) — căn cứ hoa hồng sale. */
+  paidTotal: number;
+  paidCount: number;
 }
 
 export interface PlatformUsersResponse {
@@ -2589,11 +2600,14 @@ export function fetchPlatformUsers(params?: {
   page?: number;
   pageSize?: number;
   careStatus?: PlatformCareStatus;
+  /** Tìm nhanh theo tên / email / SĐT / username. */
+  q?: string;
 }) {
   const qs = new URLSearchParams();
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params?.careStatus) qs.set("careStatus", params.careStatus);
+  if (params?.q) qs.set("q", params.q);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<PlatformUsersResponse>(`/api/admin/users${suffix}`);
 }
