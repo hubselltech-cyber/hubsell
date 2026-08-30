@@ -84,7 +84,13 @@ export function KocTopProducts({
               <TableHead className="text-right">
                 <span className="inline-flex items-center gap-1">
                   Hoa hồng
-                  <HintIcon hint="Hoa hồng affiliate cấp ĐƠN phân bổ về SKU theo tỷ trọng giá trị dòng hàng — sàn không trả phí theo dòng nên đây là số ước lượng." />
+                  <HintIcon hint="Tổng hoa hồng affiliate của SKU trong kỳ. Sàn chỉ báo hoa hồng cấp ĐƠN nên số này được phân bổ về SKU theo tỷ trọng giá trị dòng hàng — ước lượng sát, không phải số sàn kê từng dòng." />
+                </span>
+              </TableHead>
+              <TableHead className="text-right">
+                <span className="inline-flex items-center gap-1">
+                  Hoa hồng / SP bán
+                  <HintIcon hint="Bình quân MỖI SẢN PHẨM bán ra qua kênh affiliate mất bao nhiêu tiền hoa hồng (= tổng hoa hồng ÷ số lượng bán). Đem so với LÃI GỘP mỗi sản phẩm: nếu hoa hồng/SP xấp xỉ hoặc vượt lãi gộp/SP thì đẩy SKU này qua KOC là đang bán hộ sàn — cân nhắc hạ % hoa hồng hoặc đổi SKU khác." />
                 </span>
               </TableHead>
               <TableHead className="w-24 text-right">Tỷ lệ hoàn</TableHead>
@@ -121,6 +127,16 @@ export function KocTopProducts({
                       value={p.commission}
                       className={cn(TEXT_NUMBER_STRONG, "text-red-500")}
                     />
+                    <p className={TEXT_SUB}>
+                      {p.commissionRate.toLocaleString("vi-VN")}% GMV
+                    </p>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Money
+                      value={p.commissionPerUnit}
+                      className={cn(TEXT_NUMBER_STRONG, "text-red-500")}
+                    />
+                    <p className={TEXT_SUB}>/ sản phẩm</p>
                   </TableCell>
                   <TableCell
                     className={cn(
@@ -138,7 +154,7 @@ export function KocTopProducts({
             {products.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="py-8 text-center text-sm text-muted-foreground"
                 >
                   {q.loading

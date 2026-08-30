@@ -713,6 +713,12 @@ router.get("/top-products", async (req: AuthRequest, res, next) => {
         refundedAmount: Math.round(p.refundedAmount),
         netRevenue: Math.round(p.gmv - p.refundedAmount),
         refundRate: p.orders > 0 ? Math.round((p.refundedOrders / p.orders) * 1000) / 10 : 0,
+        // "Mỗi sản phẩm mất bao nhiêu tiền hoa hồng" (yêu cầu chủ shop 30/08):
+        // bình quân 1 đơn vị bán ra qua affiliate tốn bao nhiêu đ hoa hồng —
+        // số để so với LÃI GỘP/SP khi quyết định đẩy mẫu/booking SKU nào.
+        commissionPerUnit: p.quantity > 0 ? Math.round(p.commission / p.quantity) : 0,
+        // % hoa hồng thực trên GMV của SKU (cùng phân bổ ước lượng).
+        commissionRate: p.gmv > 0 ? Math.round((p.commission / p.gmv) * 1000) / 10 : 0,
       }));
 
     res.json({ days, sampledOrders: orders.length, products });

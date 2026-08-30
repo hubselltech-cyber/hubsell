@@ -3822,6 +3822,10 @@ export interface KocTopProduct {
   refundedAmount: number;
   netRevenue: number;
   refundRate: number;
+  /** Bình quân 1 sản phẩm bán ra qua affiliate mất bao nhiêu đ hoa hồng. */
+  commissionPerUnit: number;
+  /** % hoa hồng thực trên GMV của SKU. */
+  commissionRate: number;
 }
 
 export function fetchKocTopProducts(params?: {
