@@ -518,7 +518,7 @@ export async function upsertShopeeOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true },
+    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true, deliveredAt: true },
   });
 
   if (existing) {
@@ -528,6 +528,11 @@ export async function upsertShopeeOrderTx(
         shippingStatus,
         paymentStatus,
         totalAmount,
+        // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
+        // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
+        ...(shippingStatus === ShippingStatus.DELIVERED && !existing.deliveredAt
+          ? { deliveredAt: new Date() }
+          : {}),
         // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
         ...(carrier && !existing.carrier ? { carrier } : {}),
         // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
@@ -578,6 +583,9 @@ export async function upsertShopeeOrderTx(
       platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
       paymentStatus,
       shippingStatus,
+      // Đơn backfill về đã DELIVERED sẵn: mốc giao = lúc đồng bộ (muộn hơn
+      // thực tế → phép đếm quá hạn chỉ thận trọng hơn, không báo oan).
+      ...(shippingStatus === ShippingStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
       ...(carrier ? { carrier } : {}),
       ...(order.shipping_carrier
         ? { shippingCarrierName: order.shipping_carrier }

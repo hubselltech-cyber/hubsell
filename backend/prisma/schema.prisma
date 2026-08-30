@@ -111,6 +111,14 @@ enum ShippingDisputeStatus {
   DA_DOI_SOAT    // sàn đã đối soát/hoàn tiền xong
 }
 
+/// Trạng thái xử lý một khoản "sàn trả THIẾU" (rổ #2 trang Kiểm toán phí sàn)
+enum FeeAuditStatus {
+  CHO_XU_LY      // phát hiện lệch, chưa ai đụng
+  DANG_KHIEU_NAI // đã gửi khiếu nại sàn, chờ phản hồi
+  DA_XU_LY       // sàn đã bù tiền / giải thích thỏa đáng
+  BO_QUA         // chủ shop xác nhận không đòi (số nhỏ, có lý do...)
+}
+
 /// Cơ sở tính của % thuế bổ sung — chủ shop chọn thẳng trên trang Thuế bổ
 /// sung (đã bỏ khái niệm "đối tượng chịu thuế" trung gian):
 ///   PROFIT  → % nhân với LỢI NHUẬN trước thuế của kỳ (kiểu dự phòng TNDN)
@@ -1097,6 +1105,21 @@ model Order {
   shippingDisputeStatus ShippingDisputeStatus @default(CHO_KHIEU_NAI)
   platformSubsidy Decimal   @default(0) @db.Decimal(12, 2) // trợ giá từ SÀN (giảm chi phí cho shop)
   actualPayout    Decimal   @default(0) @db.Decimal(12, 2) // tiền thực nhận về ví
+  // --- KIỂM TOÁN PHÍ SÀN (trang /finance/fee-audit, 30/08) ---
+  /// Snapshot số escrow ƯỚC TÍNH CỦA CHÍNH SÀN trước giải ngân (Shopee
+  /// get_escrow_detail cho đơn chưa payout — cùng số màn "Doanh thu ước tính"
+  /// Seller Center). syncShopeeSettlements KHÔNG ghi đè cột này: giữ làm MẪU SỐ
+  /// so với actualPayout lúc quyết toán. NULL = sàn không cấp số ước tính
+  /// (Lazada không có API này — đúng triết lý "không bịa số", không soi mò).
+  expectedPayout  Decimal?  @db.Decimal(12, 2)
+  /// = max(expectedPayout − actualPayout, 0), GHI MỘT LẦN lúc quyết toán.
+  /// Tách cột thay vì tính lúc query vì Prisma không so được 2 cột trong where.
+  payoutShortfall Decimal   @default(0) @db.Decimal(12, 2)
+  payoutAuditStatus FeeAuditStatus @default(CHO_XU_LY) // xử lý khoản trả thiếu
+  /// Mốc GIAO THÀNH CÔNG — ghi khi shippingStatus chuyển sang DELIVERED. Đơn
+  /// backfill cũ nhận mốc lúc đồng bộ (muộn hơn thực tế) → phép đếm "quá hạn
+  /// chưa trả tiền" chỉ THẬN TRỌNG hơn chứ không báo oan.
+  deliveredAt     DateTime?
   // --- Bóc tách quyết toán CHI TIẾT (chỉ hiển thị ở Lãi/Lỗ Thực Hiện) ---
   // Các khoản này nằm NGOÀI công thức netRevenue dùng chung: trợ giá VC là bóc
   // tách nội bộ của phí ship (đã gói trong shippingFeeDiff), còn ví QC/thuế là
@@ -1125,6 +1148,9 @@ model Order {
   // Đếm "đơn phát sinh trong tháng" của trần gói (GĐ2 cưỡng chế) — createdAt
   // là NGÀY SÀN (mọi luồng upsert đều override default), không phải ngày ghi DB.
   @@index([channelId, createdAt])
+  // Kiểm toán phí sàn rổ #3 ("giao xong quá hạn sàn chưa trả") + cột
+  // pendingSettle của Báo cáo dòng tiền cùng lọc theo cặp này.
+  @@index([channelId, isSettled])
 }
 
 /// Chi tiết dòng sản phẩm của một đơn hàng.

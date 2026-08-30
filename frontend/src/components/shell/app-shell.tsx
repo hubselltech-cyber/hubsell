@@ -106,6 +106,11 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { href: "/finance/analytics", label: "Báo cáo dòng tiền", perm: "finance.analytics" },
       { href: "/finance/realized-pnl", label: "Lãi/Lỗ Thực Hiện", perm: "finance.realized-pnl" },
+      // Kiểm toán phí sàn (30/08): 3 rổ tiền mất sau đối soát — truy thu ship /
+      // sàn trả thiếu / quá hạn chưa trả. Đứng cạnh Lãi/Lỗ vì cùng nghiệp vụ
+      // đối soát, khác mục đích: Lãi/Lỗ trả lời "lời bao nhiêu", Kiểm toán trả
+      // lời "sàn có trừ sai/thiếu đồng nào không".
+      { href: "/finance/fee-audit", label: "Kiểm toán phí sàn", perm: "finance.fee-audit" },
       { href: "/finance/expenses", label: "Thu chi vận hành", perm: "finance.expenses" },
       { href: "/finance/cost-prices", label: "Cấu hình Giá vốn", perm: "finance.cost-prices" },
     ],
@@ -299,6 +304,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/settings", title: "Cấu hình hệ thống" },
   { prefix: "/finance/analytics", title: "Báo cáo dòng tiền" },
   { prefix: "/finance/realized-pnl", title: "Lãi/Lỗ Thực Hiện" },
+  { prefix: "/finance/fee-audit", title: "Kiểm toán phí sàn" },
   { prefix: "/finance/expenses", title: "Thu chi vận hành" },
   { prefix: "/operations-assistant/loss-orders", title: "Cảnh báo & P&L Sản phẩm" },
   { prefix: "/finance/cost-prices", title: "Cấu hình Giá vốn" },

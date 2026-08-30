@@ -31,6 +31,7 @@ export const PERMISSION_TREE: PermissionNode[] = [
     children: [
       { key: "finance.analytics", label: "Báo cáo dòng tiền" },
       { key: "finance.realized-pnl", label: "Lãi/Lỗ Thực Hiện" },
+      { key: "finance.fee-audit", label: "Kiểm toán phí sàn" },
       { key: "finance.expenses", label: "Thu chi vận hành" },
       { key: "finance.cost-prices", label: "Cấu hình Giá vốn" },
     ],
@@ -126,6 +127,7 @@ export const PERMISSION_PRESETS: {
       "dashboard",
       "finance.analytics",
       "finance.realized-pnl",
+      "finance.fee-audit",
       "finance.expenses",
       "finance.cost-prices",
       "invoicing",
@@ -208,6 +210,7 @@ export const HOME_PRIORITY: { key: string; path: string }[] = [
   { key: "operations.ai-rules", path: "/operations-assistant/ai-rules" },
   { key: "finance.analytics", path: "/finance/analytics" },
   { key: "finance.realized-pnl", path: "/finance/realized-pnl" },
+  { key: "finance.fee-audit", path: "/finance/fee-audit" },
   { key: "finance.expenses", path: "/finance/expenses" },
   { key: "finance.cost-prices", path: "/finance/cost-prices" },
   { key: "ads.tiktok", path: "/ads/tiktok" },

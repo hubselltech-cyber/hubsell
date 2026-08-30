@@ -206,7 +206,7 @@ export async function syncShopeeSettlements(
   for (const [orderSn, releasedAt] of released) {
     const order = await prisma.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
-      select: { id: true },
+      select: { id: true, expectedPayout: true },
     });
     if (!order) {
       result.ordersNotFound++;
@@ -218,9 +218,21 @@ export async function syncShopeeSettlements(
       const income = detail.response?.order_income;
       if (!income) continue;
 
+      // KIỂM TOÁN PHÍ SÀN rổ #2 "sàn trả thiếu": so số ước tính CỦA CHÍNH SÀN
+      // (snapshot expectedPayout ghi trước giải ngân) với escrow_amount cuối.
+      // Đơn CÓ hoàn tiền (seller_return_refund ≠ 0) bị loại: payout tụt vì
+      // khách hoàn là CHÍNH ĐÁNG, không phải sàn trừ thiếu — báo là báo oan.
+      // Ghi một lần lúc quyết toán; chạy lặp idempotent ra cùng số.
+      const expected = order.expectedPayout === null ? null : Number(order.expectedPayout);
+      const hasRefund = Math.abs(n(income.seller_return_refund)) > 0;
+      const payoutShortfall =
+        expected !== null && !hasRefund
+          ? Math.max(expected - n(income.escrow_amount), 0)
+          : 0;
+
       await prisma.order.update({
         where: { id: order.id },
-        data: mapShopeeEscrowToOrder(income, releasedAt),
+        data: { ...mapShopeeEscrowToOrder(income, releasedAt), payoutShortfall },
       });
       result.ordersUpdated++;
     } catch (err) {
@@ -298,7 +310,13 @@ export async function syncShopeePendingEscrowEstimates(
 
       await prisma.order.update({
         where: { id: order.id },
-        data: mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
+        data: {
+          ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
+          // Snapshot MẪU SỐ cho Kiểm toán phí sàn: số escrow ước tính mới nhất
+          // của chính Shopee. syncShopeeSettlements KHÔNG ghi đè cột này —
+          // khi giải ngân thật sẽ so nó với escrow_amount cuối (payoutShortfall).
+          expectedPayout: n(income.escrow_amount),
+        },
       });
       result.updated++;
     } catch (err) {
@@ -339,7 +357,11 @@ export async function syncShopeeEscrowEstimateForOrder(
 
   await prisma.order.update({
     where: { id: order.id },
-    data: mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
+    data: {
+      ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
+      // Snapshot mẫu số Kiểm toán phí sàn — cùng lý do với vòng quét ước tính.
+      expectedPayout: n(income.escrow_amount),
+    },
   });
   return true;
 }

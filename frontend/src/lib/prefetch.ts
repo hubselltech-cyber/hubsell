@@ -21,11 +21,13 @@ import {
   fetchAnalytics,
   fetchChannels,
   fetchDashboardSummary,
+  fetchFeeAudit,
   fetchFinanceAnalytics,
   fetchMySubscription,
   fetchOrders,
   fetchProducts,
   fetchRealizedPnl,
+  fetchShippingDiscrepancies,
   fetchWarehouseReturns,
   type ChannelFilterQuery,
 } from "./api";
@@ -109,6 +111,35 @@ const PREFETCHERS: Record<string, (qc: QueryClient) => void> = {
           pageSize: 20,
         }),
     });
+  },
+
+  "/finance/fee-audit": (qc) => {
+    // Trang mở mặc định tab "ship" nhưng query fee-audit (summary 3 rổ + items
+    // payout) LUÔN chạy với tham số ghim mặc định — chép đúng auditParams khởi
+    // tạo của trang. Trang không lọc ngày (khoản chưa xử lý nào cũng đáng thấy).
+    qc.prefetchQuery({
+      queryKey: qk.feeAudit({
+        tab: "payout",
+        page: 1,
+        pageSize: 20,
+        status: "",
+        channel: channelFilterToQuery(ALL),
+      }),
+      queryFn: () =>
+        fetchFeeAudit({ tab: "payout", page: 1, pageSize: 20, channel: ALL }),
+    });
+    // Bảng của tab "ship" mặc định — rổ #1 dùng chung endpoint Đối soát phí ship.
+    qc.prefetchQuery({
+      queryKey: qk.shippingDiscrepancies({
+        page: 1,
+        pageSize: 20,
+        status: "",
+        channel: channelFilterToQuery(ALL),
+      }),
+      queryFn: () =>
+        fetchShippingDiscrepancies({ page: 1, pageSize: 20, channel: ALL }),
+    });
+    prefetchChannels(qc);
   },
 
   "/products": (qc) => {

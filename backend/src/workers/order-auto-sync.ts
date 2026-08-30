@@ -47,6 +47,7 @@ import {
   syncLazadaSettlements,
 } from "../integrations/lazada/service";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
+import { scanOpsAlerts } from "../services/ops-alerts";
 import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
 
 const DEFAULT_INTERVAL_MIN = 10;
@@ -458,6 +459,12 @@ async function runOnce(): Promise<void> {
             (err as Error).message
           );
         }
+        // KIỂM TOÁN PHÍ SÀN (30/08): quét cảnh báo NGAY SAU nhịp đối soát —
+        // detectFeeAudit (sàn trả thiếu / quá hạn chưa trả) cần chạy cả khi
+        // không ai mở Dashboard thì chuông mới chủ động. scanOpsAlerts tự
+        // throttle 10'/chủ shop + notify tự chống trùng 24h, gọi ở đây không
+        // spam; hàm không bao giờ ném lỗi nên không cần try riêng.
+        await scanOpsAlerts(channel.userId);
       }
 
       // Giãn cách trước khi sang gian kế tiếp (gian cuối không cần chờ).

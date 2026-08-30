@@ -14,7 +14,13 @@
 // cần cron riêng. Mọi lỗi được nuốt: quét hỏng không được làm vỡ Dashboard.
 // ============================================================
 
-import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
+import {
+  ChannelName,
+  FeeAuditStatus,
+  ReturnStatus,
+  ShippingDisputeStatus,
+  ShippingStatus,
+} from "@prisma/client";
 import { notify } from "./notifications";
 import { prisma } from "../lib/prisma";
 import { computePnlRow, fetchPnlOrders } from "../routes/finance";
@@ -273,6 +279,99 @@ async function detectShippingFeeDiff(ownerId: string): Promise<DetectedAlert[]> 
       },
     },
   ];
+}
+
+// ── Ngưỡng Kiểm toán phí sàn (đồng bộ với routes/finance.ts — sửa là sửa CẢ HAI) ──
+/** Khoản sàn trả thiếu dưới mức này coi là lệch vặt, không báo. */
+const FEE_AUDIT_SHORTFALL_MIN = 1_000;
+/** Rổ "quá hạn chưa trả": quá N ngày từ mốc giao thành công. */
+const FEE_AUDIT_PENDING_DAYS = 7;
+/** Đơn cũ chưa có mốc giao — đếm từ ngày đặt với biên rộng hơn hẳn. */
+const FEE_AUDIT_FALLBACK_DAYS = 21;
+/** Trần tuổi đơn của rổ "quá hạn chưa trả" — đơn cổ hơn cửa sổ đối soát 90
+ *  ngày của worker thì sàn không còn sao kê để giải ngân, báo là báo oan. */
+const FEE_AUDIT_MAX_AGE_DAYS = 90;
+
+/**
+ * KIỂM TOÁN PHÍ SÀN (rổ #2 + #3 — rổ #1 truy thu ship đã có detectShippingFeeDiff):
+ *   · "sàn trả THIẾU": payout thật thấp hơn số ước tính CỦA CHÍNH SÀN đã snapshot
+ *     trước giải ngân (payoutShortfall, ghi ở syncShopeeSettlements), còn CHO_XU_LY.
+ *   · "giao xong QUÁ HẠN chưa trả": đơn DELIVERED không hoàn, chưa isSettled,
+ *     quá hạn từ mốc giao — chỉ soi Shopee/Lazada (sàn có luồng đối soát thật).
+ */
+async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
+  const alerts: DetectedAlert[] = [];
+
+  const shortAgg = await prisma.order.aggregate({
+    where: {
+      channel: { userId: ownerId },
+      payoutShortfall: { gte: FEE_AUDIT_SHORTFALL_MIN },
+      payoutAuditStatus: FeeAuditStatus.CHO_XU_LY,
+      createdAt: { gte: daysAgo(SHIPPING_WINDOW_DAYS) },
+    },
+    _count: { _all: true },
+    _sum: { payoutShortfall: true },
+  });
+  if (shortAgg._count._all > 0) {
+    const total = Number(shortAgg._sum.payoutShortfall ?? 0);
+    alerts.push({
+      type: "fee-audit-shortfall",
+      dedupeKey: "rolling-30d",
+      tag: "finance",
+      severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
+      title: `${shortAgg._count._all} đơn sàn trả THIẾU so với số sàn tự ước tính — tổng ${vnd(total)}`,
+      summary: `Số tiền giải ngân thực tế thấp hơn số Shopee tự ước tính trước đó trên ${shortAgg._count._all} đơn (đã loại đơn hoàn tiền). Mở Kiểm toán phí sàn xem chênh từng đơn và gửi khiếu nại.`,
+      payload: {
+        kind: "navigate",
+        href: "/finance/fee-audit?tab=payout",
+        label: "Mở Kiểm toán phí sàn",
+      },
+    });
+  }
+
+  const now = Date.now();
+  const pendingRows = await prisma.order.findMany({
+    where: {
+      channel: {
+        userId: ownerId,
+        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+      },
+      isSettled: false,
+      shippingStatus: ShippingStatus.DELIVERED,
+      returnStatus: ReturnStatus.NONE,
+      // Trần tuổi đứng NGOÀI OR — cả hai nhánh đều phải trong cửa sổ 90 ngày.
+      createdAt: { gte: daysAgo(FEE_AUDIT_MAX_AGE_DAYS) },
+      OR: [
+        { deliveredAt: { lt: new Date(now - FEE_AUDIT_PENDING_DAYS * DAY_MS) } },
+        {
+          deliveredAt: null,
+          createdAt: { lt: new Date(now - FEE_AUDIT_FALLBACK_DAYS * DAY_MS) },
+        },
+      ],
+    },
+    select: { expectedPayout: true, totalAmount: true },
+  });
+  if (pendingRows.length > 0) {
+    const total = pendingRows.reduce(
+      (s, o) => s + Number(o.expectedPayout ?? o.totalAmount),
+      0
+    );
+    alerts.push({
+      type: "fee-audit-pending",
+      dedupeKey: "overdue",
+      tag: "finance",
+      severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
+      title: `${pendingRows.length} đơn giao xong đã lâu mà sàn CHƯA trả tiền — ${vnd(total)} đang treo`,
+      summary: `Đơn giao thành công quá ${FEE_AUDIT_PENDING_DAYS} ngày nhưng chưa thấy sàn giải ngân. Kiểm tra ví sàn/đối soát — tiền treo lâu có thể là đơn bị sàn giữ lại hoặc lỗi đối soát.`,
+      payload: {
+        kind: "navigate",
+        href: "/finance/fee-audit?tab=pending",
+        label: "Mở Kiểm toán phí sàn",
+      },
+    });
+  }
+
+  return alerts;
 }
 
 /**
@@ -869,6 +968,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectDisconnectedChannels,
       detectLossOrders,
       detectShippingFeeDiff,
+      detectFeeAudit,
       detectSyncStalled,
       detectAdsSpike,
       detectShopeeAdsAssistant,

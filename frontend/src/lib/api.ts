@@ -1545,6 +1545,82 @@ export function updateShippingDisputeStatus(
   );
 }
 
+// ----- Kiểm toán phí sàn (trang /finance/fee-audit) -----
+// Rổ #1 (truy thu ship) tái dùng fetchShippingDiscrepancies phía trên — một
+// nguồn số với trang Đối soát phí ship của kho, chỉ khác góc nhìn.
+
+export type FeeAuditStatus = "CHO_XU_LY" | "DANG_KHIEU_NAI" | "DA_XU_LY" | "BO_QUA";
+
+export interface FeeAuditSummary {
+  /** Rổ #1 — truy thu phí ship (shippingFeeDiff). Số tiền trả DƯƠNG. */
+  ship: { orders: number; totalMissing: number; pendingCount: number };
+  /** Rổ #2 — sàn trả thiếu so với số CHÍNH SÀN tự ước tính (chỉ Shopee). */
+  payout: { orders: number; totalMissing: number; pendingCount: number };
+  /** Rổ #3 — giao xong quá hạn sàn chưa giải ngân. */
+  pending: { orders: number; totalWaiting: number };
+}
+
+export interface FeeAuditPayoutItem {
+  id: string;
+  orderCode: string;
+  channelName: ChannelName;
+  shopName: string;
+  settledAt: string | null;
+  expectedPayout: number; // số sàn tự ước tính trước giải ngân
+  actualPayout: number; // số thật về ví
+  shortfall: number; // DƯƠNG = sàn trả thiếu bấy nhiêu
+  status: FeeAuditStatus;
+}
+
+export interface FeeAuditPendingItem {
+  id: string;
+  orderCode: string;
+  channelName: ChannelName;
+  shopName: string;
+  createdAt: string;
+  deliveredAt: string | null;
+  amountWaiting: number; // ước tính của sàn nếu có, không thì giá trị đơn
+  daysWaiting: number;
+  /** false = đơn cũ chưa có mốc giao, số ngày tính từ ngày đặt (thận trọng hơn). */
+  sinceDelivered: boolean;
+}
+
+export type FeeAuditResponse = {
+  summary: FeeAuditSummary;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+} & (
+  | { tab: "payout"; items: FeeAuditPayoutItem[] }
+  | { tab: "pending"; items: FeeAuditPendingItem[] }
+);
+
+export function fetchFeeAudit(params: {
+  tab: "payout" | "pending";
+  page?: number;
+  pageSize?: number;
+  channel?: ChannelFilterQuery;
+  status?: string;
+  range?: DateRange;
+}) {
+  const qs = new URLSearchParams({
+    tab: params.tab,
+    ...rangeToQuery(params.range),
+    ...channelFilterToQuery(params.channel),
+  });
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params.status) qs.set("status", params.status);
+  return apiFetch<FeeAuditResponse>(`/api/finance/fee-audit?${qs.toString()}`);
+}
+
+export function updateFeeAuditStatus(orderId: string, status: FeeAuditStatus) {
+  return apiFetch<{ id: string; orderCode: string; status: FeeAuditStatus }>(
+    `/api/finance/fee-audit/${orderId}/status`,
+    { method: "PATCH", body: JSON.stringify({ status }) }
+  );
+}
+
 // ----- Cấu hình giá vốn theo SKU -----
 
 export type SkuChannelFilter = "all" | "shopee" | "tiktok" | "lazada" | "offline";

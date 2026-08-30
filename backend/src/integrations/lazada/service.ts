@@ -672,7 +672,7 @@ export async function upsertLazadaOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true, trackingCode: true },
+    select: { id: true, returnStatus: true, returnRequestedAt: true, carrier: true, trackingCode: true, deliveredAt: true },
   });
 
   if (existing) {
@@ -682,6 +682,11 @@ export async function upsertLazadaOrderTx(
         shippingStatus,
         paymentStatus,
         totalAmount,
+        // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
+        // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
+        ...(shippingStatus === ShippingStatus.DELIVERED && !existing.deliveredAt
+          ? { deliveredAt: new Date() }
+          : {}),
         // Điền vận chuyển khi có dữ liệu mới — sàn cấp vận đơn SAU khi tạo đơn
         // nên bản ghi cũ thường trống; không ghi đè bằng giá trị rỗng.
         ...(trackingCode && trackingCode !== existing.trackingCode
@@ -735,6 +740,9 @@ export async function upsertLazadaOrderTx(
       // ghi khi sàn trả số thật qua syncLazadaSettlements.
       paymentStatus,
       shippingStatus,
+      // Đơn backfill về đã DELIVERED sẵn: mốc giao = lúc đồng bộ (muộn hơn
+      // thực tế → phép đếm quá hạn chỉ thận trọng hơn, không báo oan).
+      ...(shippingStatus === ShippingStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
       ...(trackingCode ? { trackingCode } : {}),
       ...(carrier ? { carrier } : {}),
       ...(rawProvider ? { shippingCarrierName: rawProvider } : {}),

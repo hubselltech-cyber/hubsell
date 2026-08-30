@@ -35,6 +35,10 @@ export const qk = {
     ] as const,
   realizedPnl: (params: Record<string, unknown>) =>
     ["realized-pnl", params] as const,
+  feeAudit: (params: Record<string, unknown>) => ["fee-audit", params] as const,
+  /** Rổ #1 Kiểm toán phí sàn + trang Đối soát phí ship của kho dùng chung. */
+  shippingDiscrepancies: (params: Record<string, unknown>) =>
+    ["shipping-discrepancies", params] as const,
   cashFlow: () => ["cash-flow"] as const,
   expenses: (range?: DateRange) => ["expenses", rangeToQuery(range)] as const,
 

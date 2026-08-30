@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import {
   ChannelName,
   ExpenseType,
+  FeeAuditStatus,
   Prisma,
   ReturnSolution,
   ReturnStatus,
@@ -59,8 +60,12 @@ router.use("/sync-products", requirePermission("finance.cost-prices"));
 router.use("/cost-prices", requirePermission("finance.cost-prices"));
 router.use("/update-cost", requirePermission("finance.cost-prices", "finance.realized-pnl"));
 router.use("/update-cost-bulk", requirePermission("finance.cost-prices", "finance.realized-pnl"));
-// Đối soát phí ship (trang /warehouse/shipping-alerts — nghiệp vụ kho vận)
-router.use("/shipping-discrepancies", requirePermission("warehouse.shipping-alerts"));
+// Đối soát phí ship (trang /warehouse/shipping-alerts — nghiệp vụ kho vận).
+// Mở thêm cho finance.fee-audit: rổ #1 trang Kiểm toán phí sàn tái dùng đúng
+// cặp endpoint này (một nguồn số, hai góc nhìn kho/tài chính — không nhân bản).
+router.use("/shipping-discrepancies", requirePermission("warehouse.shipping-alerts", "finance.fee-audit"));
+// Kiểm toán phí sàn (trang /finance/fee-audit)
+router.use("/fee-audit", requirePermission("finance.fee-audit"));
 // Cảnh báo & P&L Sản phẩm (trang /operations-assistant/loss-orders) — cũng là
 // dữ liệu lãi/lỗ nên mở cho cả người có quyền Lãi/Lỗ Thực Hiện.
 router.use("/orders-analysis", requirePermission("operations.loss-orders", "finance.realized-pnl"));
@@ -1613,6 +1618,259 @@ router.patch(
     }
   }
 );
+
+// ============================================================
+// KIỂM TOÁN PHÍ SÀN — trang /finance/fee-audit (30/08/2026)
+//
+// Ba rổ tiền mất, mỗi rổ một nguồn số THẬT (không bịa từ % ước lượng):
+//   #1 Truy thu phí ship — shippingFeeDiff (tái dùng GET/PATCH
+//      /shipping-discrepancies phía trên; trang Kiểm toán chỉ đọc thêm summary).
+//   #2 Sàn trả THIẾU — payoutShortfall = số ước tính CỦA CHÍNH SÀN (snapshot
+//      expectedPayout trước giải ngân) − escrow thật lúc quyết toán. Chỉ có ở
+//      Shopee: Lazada không cấp API số ước tính, mà "sổ đối soát không bịa số"
+//      thì thiếu mẫu số là không buộc tội — không soi mò.
+//   #3 Giao xong QUÁ HẠN sàn chưa trả — DELIVERED, không hoàn, chưa isSettled,
+//      quá hạn từ mốc giao (đơn cũ trước migration chưa có mốc giao thì đếm
+//      từ ngày đặt với biên rộng hơn hẳn — thà muộn còn hơn báo oan).
+// ============================================================
+
+/** Lệch payout dưới ngưỡng này coi là làm tròn/lệch vặt — không báo. */
+const PAYOUT_SHORTFALL_MIN = 1_000;
+/** Rổ #3: có mốc giao → quá 7 ngày chưa giải ngân là đáng hỏi (Shopee thường trả 3–5 ngày sau giao). */
+const PENDING_DELIVERED_DAYS = 7;
+/** Đơn cũ chưa có mốc giao → đếm từ ngày đặt, chừa hẳn 21 ngày cho trọn chặng giao. */
+const PENDING_FALLBACK_DAYS = 21;
+/** Rổ #3 chỉ soi đơn đặt trong 90 ngày — trùng cửa sổ worker quét đối soát
+ *  (daysBack=90). Đơn cổ hơn (backfill lịch sử, kết nối muộn) nằm ngoài tầm
+ *  sao kê của sàn nên mãi mãi "chưa isSettled": smoke test 30/08 dính 717 đơn
+ *  Lazada từ 2023 báo oan 71,9tr — ngoài cửa sổ này sàn cũng hết đường đòi. */
+const PENDING_MAX_AGE_DAYS = 90;
+/** Rổ #3 chỉ soi sàn ĐÃ có luồng đối soát thật chạy — TikTok chưa có, báo là báo oan. */
+const SETTLING_CHANNELS: ChannelName[] = [ChannelName.SHOPEE, ChannelName.LAZADA];
+
+const FEE_AUDIT_STATUSES: FeeAuditStatus[] = [
+  FeeAuditStatus.CHO_XU_LY,
+  FeeAuditStatus.DANG_KHIEU_NAI,
+  FeeAuditStatus.DA_XU_LY,
+  FeeAuditStatus.BO_QUA,
+];
+
+/** where rổ #2 — khoản sàn trả thiếu đáng kể (kèm bộ lọc trạng thái nếu có). */
+function payoutShortfallWhere(req: AuthRequest): Prisma.OrderWhereInput {
+  const statusKey =
+    typeof req.query.status === "string" ? req.query.status.toUpperCase() : "";
+  return {
+    channel: channelScope(req),
+    payoutShortfall: { gte: PAYOUT_SHORTFALL_MIN },
+    createdAt: parseDateRange(req.query),
+    ...(FEE_AUDIT_STATUSES.includes(statusKey as FeeAuditStatus)
+      ? { payoutAuditStatus: statusKey as FeeAuditStatus }
+      : {}),
+  };
+}
+
+/** where rổ #3 — giao thành công quá hạn mà sàn chưa giải ngân. */
+function pendingSettleWhere(req: AuthRequest): Prisma.OrderWhereInput {
+  const scope = channelScope(req);
+  // Thu hẹp về sàn có luồng đối soát; người dùng lọc sàn ngoài danh sách → rỗng
+  // (đè id bằng {in: []}) thay vì âm thầm mở rộng ra sàn khác.
+  const channel: Prisma.ChannelWhereInput =
+    scope.channelName === undefined
+      ? { ...scope, channelName: { in: SETTLING_CHANNELS } }
+      : SETTLING_CHANNELS.includes(scope.channelName)
+        ? scope
+        : { ...scope, id: { in: [] as string[] } };
+  const now = Date.now();
+  return {
+    channel,
+    isSettled: false,
+    shippingStatus: ShippingStatus.DELIVERED,
+    // Đơn đang hoàn/đã hoàn: tiền không về là chính đáng — thuộc trang Đối soát
+    // đơn hoàn, không phải rổ này.
+    returnStatus: ReturnStatus.NONE,
+    // Trần tuổi đơn đứng NGOÀI OR: cả hai nhánh đều phải nằm trong cửa sổ.
+    createdAt: { gte: new Date(now - PENDING_MAX_AGE_DAYS * 86_400_000) },
+    OR: [
+      { deliveredAt: { lt: new Date(now - PENDING_DELIVERED_DAYS * 86_400_000) } },
+      {
+        deliveredAt: null,
+        createdAt: { lt: new Date(now - PENDING_FALLBACK_DAYS * 86_400_000) },
+      },
+    ],
+  };
+}
+
+// GET /api/finance/fee-audit?tab=payout|pending&page&pageSize&channel&status&from&to
+// Trả summary CẢ BA rổ (thẻ KPI đầu trang) + items của tab đang xem. Riêng tab
+// "ship" frontend gọi thẳng GET /shipping-discrepancies có sẵn — không nhân bản.
+// Mọi số tiền trong summary trả DƯƠNG (= số tiền liên quan), frontend tự tô sắc.
+router.get("/fee-audit", async (req: AuthRequest, res, next) => {
+  try {
+    const tab = req.query.tab === "pending" ? "pending" : "payout";
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+
+    const shipWhere: Prisma.OrderWhereInput = {
+      channel: channelScope(req),
+      shippingFeeDiff: { gt: 0 },
+      createdAt: parseDateRange(req.query),
+    };
+    const payoutWhere = payoutShortfallWhere(req);
+    const pendingWhere = pendingSettleWhere(req);
+
+    const [shipAgg, shipOpen, payoutAgg, payoutOpen, pendingRows] =
+      await Promise.all([
+        prisma.order.aggregate({
+          where: shipWhere,
+          _count: { _all: true },
+          _sum: { shippingFeeDiff: true },
+        }),
+        prisma.order.count({
+          where: {
+            ...shipWhere,
+            shippingDisputeStatus: ShippingDisputeStatus.CHO_KHIEU_NAI,
+          },
+        }),
+        prisma.order.aggregate({
+          where: payoutWhere,
+          _count: { _all: true },
+          _sum: { payoutShortfall: true },
+        }),
+        prisma.order.count({
+          where: { ...payoutWhere, payoutAuditStatus: FeeAuditStatus.CHO_XU_LY },
+        }),
+        // Rổ #3 nhỏ (đơn kẹt), lấy trọn để cộng "tiền đang treo" =
+        // expectedPayout (ước tính của sàn) nếu có, không thì giá trị đơn.
+        prisma.order.findMany({
+          where: pendingWhere,
+          select: { expectedPayout: true, totalAmount: true },
+        }),
+      ]);
+
+    const summary = {
+      ship: {
+        orders: shipAgg._count._all,
+        totalMissing: Number(shipAgg._sum.shippingFeeDiff ?? 0),
+        pendingCount: shipOpen,
+      },
+      payout: {
+        orders: payoutAgg._count._all,
+        totalMissing: Number(payoutAgg._sum.payoutShortfall ?? 0),
+        pendingCount: payoutOpen,
+      },
+      pending: {
+        orders: pendingRows.length,
+        totalWaiting: pendingRows.reduce(
+          (s, o) => s + Number(o.expectedPayout ?? o.totalAmount),
+          0
+        ),
+      },
+    };
+
+    if (tab === "payout") {
+      const [total, rows] = await Promise.all([
+        prisma.order.count({ where: payoutWhere }),
+        prisma.order.findMany({
+          where: payoutWhere,
+          orderBy: [{ payoutShortfall: "desc" }, { settledAt: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: { channel: { select: { channelName: true, shopName: true } } },
+        }),
+      ]);
+      res.json({
+        summary,
+        tab,
+        page,
+        pageSize,
+        pageCount: Math.ceil(total / pageSize),
+        items: rows.map((o) => ({
+          id: o.id,
+          orderCode: o.orderCode,
+          channelName: o.channel.channelName,
+          shopName: o.channel.shopName,
+          settledAt: o.settledAt,
+          expectedPayout: Number(o.expectedPayout ?? 0),
+          actualPayout: Number(o.actualPayout),
+          shortfall: Number(o.payoutShortfall),
+          status: o.payoutAuditStatus,
+        })),
+      });
+      return;
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.order.count({ where: pendingWhere }),
+      prisma.order.findMany({
+        where: pendingWhere,
+        // Kẹt lâu nhất lên đầu — deliveredAt null (đơn cũ) coi như lâu nhất.
+        orderBy: [{ deliveredAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { channel: { select: { channelName: true, shopName: true } } },
+      }),
+    ]);
+    res.json({
+      summary,
+      tab,
+      page,
+      pageSize,
+      pageCount: Math.ceil(total / pageSize),
+      items: rows.map((o) => {
+        const since = o.deliveredAt ?? o.createdAt;
+        return {
+          id: o.id,
+          orderCode: o.orderCode,
+          channelName: o.channel.channelName,
+          shopName: o.channel.shopName,
+          createdAt: o.createdAt,
+          deliveredAt: o.deliveredAt,
+          amountWaiting: Number(o.expectedPayout ?? o.totalAmount),
+          // Mốc đếm hiển thị để chủ shop biết "kẹt bao lâu rồi"; đơn cũ không
+          // có mốc giao dùng ngày đặt (FE chú thích "tính từ ngày đặt").
+          daysWaiting: Math.floor((Date.now() - since.getTime()) / 86_400_000),
+          sinceDelivered: o.deliveredAt !== null,
+        };
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/finance/fee-audit/:id/status — đổi trạng thái xử lý khoản trả thiếu
+router.patch("/fee-audit/:id/status", async (req: AuthRequest, res, next) => {
+  try {
+    const { status } = req.body ?? {};
+    if (!FEE_AUDIT_STATUSES.includes(status)) {
+      res.status(400).json({
+        error: `Trạng thái không hợp lệ. Chọn: ${FEE_AUDIT_STATUSES.join(", ")}`,
+      });
+      return;
+    }
+
+    const order = await prisma.order.findFirst({
+      where: { id: req.params.id, channel: { userId: req.ownerId! } },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+      return;
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: { payoutAuditStatus: status as FeeAuditStatus },
+    });
+
+    res.json({
+      id: updated.id,
+      orderCode: updated.orderCode,
+      status: updated.payoutAuditStatus,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // POST /api/finance/sync-products — QUÉT SẢN PHẨM TỪ CÁC SÀN ĐÃ KẾT NỐI.
 // Với mỗi gian ACTIVE, gọi marketplace/product-sync (Adapter Pattern): registry
