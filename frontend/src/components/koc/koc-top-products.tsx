@@ -129,9 +129,14 @@ export function KocTopProducts({
                           <ImageIcon className="size-4" />
                         </div>
                       )}
-                      <div className="min-w-0">
+                      {/* max-w cứng để truncate có hiệu lực — cell bảng auto
+                          giãn theo nội dung nên chỉ min-w-0 là không cắt được.
+                          Tên đầy đủ vẫn xem được qua tooltip khi di chuột. */}
+                      <div className="min-w-0 max-w-[300px]">
                         <p className="font-mono text-sm text-slate-900">{p.channelSku}</p>
-                        <p className={cn(TEXT_SUB, "truncate")}>{p.productName}</p>
+                        <p className={cn(TEXT_SUB, "truncate")} title={p.productName}>
+                          {p.productName}
+                        </p>
                       </div>
                     </div>
                   </TableCell>
