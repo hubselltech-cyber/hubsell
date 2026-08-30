@@ -43,7 +43,9 @@ export const qk = {
   expenses: (range?: DateRange) => ["expenses", rangeToQuery(range)] as const,
 
   // ----- Sổ KOC -----
-  kocPartners: (days: number) => ["koc-partners", days] as const,
+  kocPartners: (params: Record<string, unknown>) => ["koc-partners", params] as const,
+  kocTopProducts: (params: Record<string, unknown>) =>
+    ["koc-top-products", params] as const,
   kocSamples: (params: Record<string, unknown>) => ["koc-samples", params] as const,
   kocExpenses: () => ["koc-expenses"] as const,
 

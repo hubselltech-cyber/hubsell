@@ -12,7 +12,8 @@ import {
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
-import { channelScope } from "../lib/channel-filter";
+import { channelScope, readChannelName } from "../lib/channel-filter";
+import { parseDateRange } from "../lib/date-range";
 import { computePnlRow } from "./finance";
 import { parseLazadaAmount } from "../integrations/lazada/service";
 
@@ -45,6 +46,28 @@ function sinceFromQuery(req: AuthRequest): { days: number; since: Date } {
   return { days, since: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
 }
 
+/**
+ * Bộ lọc thời gian hợp nhất: ưu tiên cặp `?from=&to=` chuẩn của mọi trang báo
+ * cáo (DateRangePicker — yêu cầu chủ shop 30/08: bộ lọc KOC phải giống bên
+ * Tài chính/Tổng quan); không có thì rơi về `?days=` để tương thích ngược.
+ */
+function resolveRange(req: AuthRequest): {
+  filter: Prisma.DateTimeFilter;
+  days: number;
+} {
+  const range = parseDateRange(req.query);
+  if (range) {
+    // lte = 23:59:59.999 ngày cuối → +1ms rồi chia là ra đúng số ngày lịch.
+    const days = Math.max(
+      1,
+      Math.ceil((range.lte.getTime() + 1 - range.gte.getTime()) / 86_400_000)
+    );
+    return { filter: range, days };
+  }
+  const { days, since } = sinceFromQuery(req);
+  return { filter: { gte: since }, days };
+}
+
 /** Trạng thái hoàn được coi là "đơn hoàn" khi tính tỷ lệ hoàn affiliate. */
 const RETURN_STATUSES: ReturnStatus[] = Object.values(ReturnStatus).filter(
   (s) => s !== ReturnStatus.NONE
@@ -57,7 +80,7 @@ const RETURN_STATUSES: ReturnStatus[] = Object.values(ReturnStatus).filter(
 // đang có dữ liệu, nguồn nào đang chờ.
 // ------------------------------------------------------------
 router.get("/summary", async (req: AuthRequest, res) => {
-  const { days, since } = sinceFromQuery(req);
+  const { days, filter: createdFilter } = resolveRange(req);
 
   // Mọi gian trong tầm nhìn (kể cả gian chưa có đơn affiliate) — để báo cáo
   // được cả trạng thái kết nối, không chỉ những gian có số.
@@ -83,7 +106,7 @@ router.get("/summary", async (req: AuthRequest, res) => {
   const affiliateWhere: Prisma.OrderWhereInput = {
     channel: channelScope(req),
     affiliateFee: { gt: 0 },
-    createdAt: { gte: since },
+    createdAt: createdFilter,
   };
 
   // Gộp theo GIAN HÀNG: GMV, số đơn, hoa hồng, tiền đã hoàn.
@@ -160,7 +183,7 @@ router.get("/summary", async (req: AuthRequest, res) => {
     netRevenue: platforms.reduce((a, p) => a + p.affiliate.netRevenue, 0),
   };
 
-  res.json({ days, since, platforms, shops, total });
+  res.json({ days, since: createdFilter.gte ?? null, platforms, shops, total });
 });
 
 // ------------------------------------------------------------
@@ -169,14 +192,14 @@ router.get("/summary", async (req: AuthRequest, res) => {
 // cho các con số tổng hợp ở /summary.
 // ------------------------------------------------------------
 router.get("/orders", async (req: AuthRequest, res) => {
-  const { days, since } = sinceFromQuery(req);
+  const { days, filter: createdFilter } = resolveRange(req);
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
 
   const where: Prisma.OrderWhereInput = {
     channel: channelScope(req),
     affiliateFee: { gt: 0 },
-    createdAt: { gte: since },
+    createdAt: createdFilter,
   };
 
   const [total, orders] = await Promise.all([
@@ -442,19 +465,20 @@ const str = (v: unknown, fallback = ""): string =>
 router.get("/partners", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
-    const raw = Number(req.query.days);
-    const days = Number.isFinite(raw) ? Math.min(365, Math.max(1, Math.round(raw))) : 90;
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { days, filter: createdFilter } = resolveRange(req);
+    // Lọc theo sàn (?channelName=): đơn lọc qua channelScope; hồ sơ KOC lọc
+    // theo platform để chi phí mẫu/booking của KOC sàn khác không lẫn vào.
+    const channelName = readChannelName(req);
 
-    const [partners, sampleGroups, expenseGroups, orders, unattributed] =
+    const [partners, sampleGroups, expenseGroups, orders, unattributed, lastImport] =
       await Promise.all([
         prisma.kocPartner.findMany({
-          where: { ownerId },
+          where: { ownerId, ...(channelName ? { platform: channelName } : {}) },
           orderBy: { createdAt: "asc" },
         }),
         prisma.kocSampleShipment.groupBy({
           by: ["kocId", "status"],
-          where: { ownerId, exportedAt: { gte: since } },
+          where: { ownerId, exportedAt: createdFilter },
           _count: { _all: true },
           _sum: { cost: true },
         }),
@@ -462,26 +486,32 @@ router.get("/partners", async (req: AuthRequest, res, next) => {
         // Net-ROI phải nhìn thấy trước khi tiền rời két.
         prisma.kocExpense.groupBy({
           by: ["kocId"],
-          where: { ownerId, createdAt: { gte: since }, kocId: { not: null } },
+          where: { ownerId, createdAt: createdFilter, kocId: { not: null } },
           _sum: { amount: true },
         }),
         // Đơn ĐÃ gán KOC trong kỳ — include đủ shape cho computePnlRow.
         prisma.order.findMany({
           where: {
-            channel: { userId: ownerId },
+            channel: channelScope(req),
             kocAttribution: { ownerId },
-            createdAt: { gte: since },
+            createdAt: createdFilter,
           },
           include: { ...PNL_INCLUDE, kocAttribution: { select: { kocId: true } } },
           take: 5000, // trần an toàn — cùng lý do channel-detail
         }),
         prisma.order.count({
           where: {
-            channel: { userId: ownerId },
+            channel: channelScope(req),
             affiliateFee: { gt: 0 },
             kocAttribution: null,
-            createdAt: { gte: since },
+            createdAt: createdFilter,
           },
+        }),
+        // Lần import file báo cáo gần nhất — UI nhắc "X ngày chưa import".
+        prisma.kocOrderAttribution.findFirst({
+          where: { ownerId },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
         }),
       ]);
 
@@ -596,7 +626,96 @@ router.get("/partners", async (req: AuthRequest, res, next) => {
       // Đơn affiliate sàn xác nhận nhưng CHƯA biết của KOC nào — mồi nhắc
       // seller import file báo cáo chuyển đổi.
       unattributedOrders: unattributed,
+      lastImportAt: lastImport?.createdAt ?? null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ------------------------------------------------------------
+// GET /api/koc/top-products?from&to&channelName&channelId
+// SẢN PHẨM HIỆU QUẢ QUA KÊNH AFFILIATE (yêu cầu chủ shop 30/08): gom dòng
+// hàng của mọi đơn affiliate trong kỳ, đa sàn. Hoa hồng + tiền hoàn cấp ĐƠN
+// được PHÂN BỔ về dòng theo tỷ trọng giá trị (ước lượng — sàn không trả phí
+// theo dòng; cùng công thức topSkus của /channel-detail, ghi chú rõ trên UI).
+// ------------------------------------------------------------
+router.get("/top-products", async (req: AuthRequest, res, next) => {
+  try {
+    const { days, filter: createdFilter } = resolveRange(req);
+    const orders = await prisma.order.findMany({
+      where: {
+        channel: channelScope(req),
+        affiliateFee: { gt: 0 },
+        createdAt: createdFilter,
+      },
+      select: {
+        totalAmount: true,
+        affiliateFee: true,
+        refundedAmount: true,
+        returnStatus: true,
+        channel: { select: { channelName: true } },
+        items: {
+          select: { channelSku: true, productName: true, quantity: true, price: true },
+        },
+      },
+      take: 5000, // trần an toàn — tổng hợp trên mẫu lớn nhất 5000 đơn gần nhất
+    });
+
+    const bySku = new Map<
+      string,
+      {
+        channelSku: string;
+        productName: string;
+        channelName: ChannelName;
+        quantity: number;
+        orders: number;
+        refundedOrders: number;
+        gmv: number;
+        commission: number;
+        refundedAmount: number;
+      }
+    >();
+    for (const o of orders) {
+      const lineTotal = o.items.reduce((s, it) => s + Number(it.price) * it.quantity, 0);
+      const isRefund = RETURN_STATUSES.includes(o.returnStatus);
+      for (const it of o.items) {
+        const lineGmv = Number(it.price) * it.quantity;
+        const share = lineTotal > 0 ? lineGmv / lineTotal : 0;
+        const e = bySku.get(it.channelSku) ?? {
+          channelSku: it.channelSku,
+          productName: it.productName,
+          channelName: o.channel.channelName,
+          quantity: 0,
+          orders: 0,
+          refundedOrders: 0,
+          gmv: 0,
+          commission: 0,
+          refundedAmount: 0,
+        };
+        e.quantity += it.quantity;
+        e.orders += 1;
+        if (isRefund) e.refundedOrders += 1;
+        e.gmv += lineGmv;
+        e.commission += Number(o.affiliateFee) * share;
+        e.refundedAmount += Number(o.refundedAmount) * share;
+        bySku.set(it.channelSku, e);
+      }
+    }
+
+    const products = [...bySku.values()]
+      .sort((a, b) => b.gmv - a.gmv)
+      .slice(0, 20)
+      .map((p) => ({
+        ...p,
+        gmv: Math.round(p.gmv),
+        commission: Math.round(p.commission),
+        refundedAmount: Math.round(p.refundedAmount),
+        netRevenue: Math.round(p.gmv - p.refundedAmount),
+        refundRate: p.orders > 0 ? Math.round((p.refundedOrders / p.orders) * 1000) / 10 : 0,
+      }));
+
+    res.json({ days, sampledOrders: orders.length, products });
   } catch (err) {
     next(err);
   }

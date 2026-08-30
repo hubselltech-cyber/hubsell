@@ -67,8 +67,8 @@ export default function KocExpensesPage() {
     queryFn: fetchKocExpenses,
   });
   const partnersQ = useApiQuery({
-    queryKey: qk.kocPartners(90),
-    queryFn: () => fetchKocPartners(90),
+    queryKey: qk.kocPartners({}),
+    queryFn: () => fetchKocPartners(),
   });
   const invalidate = useInvalidate();
   const reload = () => invalidate(["koc-expenses"], ["koc-partners"]);

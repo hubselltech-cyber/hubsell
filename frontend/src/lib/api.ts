@@ -3629,9 +3629,19 @@ export interface KocSummaryDTO {
   };
 }
 
-/** Tổng hợp affiliate thật theo sàn/gian trong `days` ngày gần nhất. */
-export function fetchKocSummary(days = 30) {
-  return apiFetch<KocSummaryDTO>(`/api/koc/summary?days=${days}`);
+/** Tổng hợp affiliate thật theo sàn/gian — nhận bộ lọc chuẩn Sàn→Gian→Kỳ
+ *  (yêu cầu 30/08: đồng bộ bộ lọc với Tài chính/Tổng quan). */
+export function fetchKocSummary(params?: {
+  channel?: ChannelFilterQuery;
+  range?: DateRange;
+  days?: number;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params?.range),
+    ...channelFilterToQuery(params?.channel),
+  });
+  if (!params?.range) qs.set("days", String(params?.days ?? 30));
+  return apiFetch<KocSummaryDTO>(`/api/koc/summary?${qs.toString()}`);
 }
 
 /** Một đơn affiliate thật (sàn đã trừ hoa hồng) trong /api/koc/orders. */
@@ -3660,16 +3670,18 @@ export interface KocOrdersDTO {
 /** Danh sách đơn affiliate thật, phân trang. */
 export function fetchKocAffiliateOrders(params: {
   days?: number;
+  range?: DateRange;
   page?: number;
   pageSize?: number;
   channel?: ChannelFilterQuery;
 }) {
   const q = new URLSearchParams({
-    days: String(params.days ?? 30),
     page: String(params.page ?? 1),
     pageSize: String(params.pageSize ?? 20),
+    ...rangeToQuery(params.range),
     ...channelFilterToQuery(params.channel),
   });
+  if (!params.range) q.set("days", String(params.days ?? 30));
   return apiFetch<KocOrdersDTO>(`/api/koc/orders?${q}`);
 }
 
@@ -3778,10 +3790,53 @@ export interface KocPartnersResponse {
   attributedOrders: number;
   /** Đơn affiliate sàn xác nhận nhưng CHƯA gán KOC — nhắc import file AMS. */
   unattributedOrders: number;
+  /** Lần import file báo cáo chuyển đổi gần nhất — nhắc kỳ import kế tiếp. */
+  lastImportAt: string | null;
 }
 
-export function fetchKocPartners(days = 90) {
-  return apiFetch<KocPartnersResponse>(`/api/koc/partners?days=${days}`);
+export function fetchKocPartners(params?: {
+  channel?: ChannelFilterQuery;
+  range?: DateRange;
+  days?: number;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params?.range),
+    ...channelFilterToQuery(params?.channel),
+  });
+  if (!params?.range) qs.set("days", String(params?.days ?? 90));
+  return apiFetch<KocPartnersResponse>(`/api/koc/partners?${qs.toString()}`);
+}
+
+// ----- Sản phẩm hiệu quả qua kênh affiliate -----
+
+export interface KocTopProduct {
+  channelSku: string;
+  productName: string;
+  channelName: ChannelName;
+  quantity: number;
+  orders: number;
+  refundedOrders: number;
+  gmv: number;
+  /** Phân bổ từ hoa hồng cấp đơn theo tỷ trọng dòng — ước lượng. */
+  commission: number;
+  refundedAmount: number;
+  netRevenue: number;
+  refundRate: number;
+}
+
+export function fetchKocTopProducts(params?: {
+  channel?: ChannelFilterQuery;
+  range?: DateRange;
+  days?: number;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params?.range),
+    ...channelFilterToQuery(params?.channel),
+  });
+  if (!params?.range) qs.set("days", String(params?.days ?? 30));
+  return apiFetch<{ days: number; sampledOrders: number; products: KocTopProduct[] }>(
+    `/api/koc/top-products?${qs.toString()}`
+  );
 }
 
 export function createKocPartner(data: {

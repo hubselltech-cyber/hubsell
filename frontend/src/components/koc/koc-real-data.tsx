@@ -38,6 +38,8 @@ import {
   type KocAffiliateOrderDTO,
   type KocSummaryDTO,
 } from "@/lib/api";
+import type { ChannelFilterValue } from "@/components/shared/channel-filter";
+import { formatRangeLabel, type DateRange } from "@/lib/date-range";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import {
   TABLE_HEAD_EMPHASIS,
@@ -59,9 +61,15 @@ import { cn } from "@/lib/utils";
  * vẫn là preview chờ nguồn attribution (TikTok Affiliate API khi có shop thật).
  */
 
-const RANGE_DAYS = 30;
-
-export function KocRealData() {
+export function KocRealData({
+  channel,
+  range,
+}: {
+  /** Bộ lọc Sàn → Gian dùng chung cả trang (từ Tổng quan KOC). */
+  channel: ChannelFilterValue;
+  /** Kỳ báo cáo dùng chung — cùng khuôn Tài chính/Tổng quan. */
+  range: DateRange;
+}) {
   const [summary, setSummary] = useState<KocSummaryDTO | null>(null);
   const [orders, setOrders] = useState<KocAffiliateOrderDTO[]>([]);
   const [ordersTotal, setOrdersTotal] = useState(0);
@@ -69,24 +77,27 @@ export function KocRealData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (pageNo: number) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [sum, ord] = await Promise.all([
-        fetchKocSummary(RANGE_DAYS),
-        fetchKocAffiliateOrders({ days: RANGE_DAYS, page: pageNo, pageSize: 10 }),
-      ]);
-      setSummary(sum);
-      setOrders(ord.orders);
-      setOrdersTotal(ord.total);
-      setPage(ord.page);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không kết nối được máy chủ");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (pageNo: number) => {
+      try {
+        setLoading(true);
+        setError(null);
+        const [sum, ord] = await Promise.all([
+          fetchKocSummary({ channel, range }),
+          fetchKocAffiliateOrders({ channel, range, page: pageNo, pageSize: 10 }),
+        ]);
+        setSummary(sum);
+        setOrders(ord.orders);
+        setOrdersTotal(ord.total);
+        setPage(ord.page);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Không kết nối được máy chủ");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [channel, range]
+  );
 
   useEffect(() => {
     load(1);
@@ -142,7 +153,7 @@ export function KocRealData() {
           value={<Money value={total.gmv} />}
           icon={TrendingUp}
           tone="info"
-          subtitle={`${formatNumber(total.orders)} đơn affiliate · ${summary.days} ngày`}
+          subtitle={`${formatNumber(total.orders)} đơn affiliate · ${formatRangeLabel(range)}`}
         />
         <StatCard
           label="Doanh thu ròng thực tế"
@@ -278,7 +289,7 @@ export function KocRealData() {
           <CardTitle className="flex items-center gap-2">
             <ShoppingBag className="size-4.5 text-violet-600" />
             Đơn hàng affiliate thật ({formatNumber(ordersTotal)} đơn ·{" "}
-            {summary.days} ngày)
+            {formatRangeLabel(range)})
           </CardTitle>
           <CardDescription>
             Đơn sàn đã trừ hoa hồng tiếp thị liên kết khi quyết toán — nguồn số
@@ -348,8 +359,8 @@ export function KocRealData() {
                     colSpan={6}
                     className="py-8 text-center text-sm text-muted-foreground"
                   >
-                    Chưa có đơn affiliate nào được sàn quyết toán trong{" "}
-                    {summary.days} ngày gần nhất.
+                    Chưa có đơn affiliate nào được sàn quyết toán trong kỳ đã
+                    chọn.
                   </TableCell>
                 </TableRow>
               )}

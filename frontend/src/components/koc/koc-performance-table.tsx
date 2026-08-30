@@ -52,12 +52,15 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  channelFilterToQuery,
   createKocPartner,
   fetchKocPartners,
   updateKocPartner,
   type ChannelName,
   type KocPartnerRow,
 } from "@/lib/api";
+import type { ChannelFilterValue } from "@/components/shared/channel-filter";
+import { formatDayVN, rangeToQuery, type DateRange } from "@/lib/date-range";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { formatNumber } from "@/lib/format";
@@ -102,8 +105,6 @@ const RATING_META: Record<
   },
 };
 
-/** Kỳ mặc định của bảng — khớp tham số backend (90 ngày). */
-const PARTNER_DAYS = 90;
 
 function AddKocDialog({
   open,
@@ -227,8 +228,14 @@ function AddKocDialog({
   );
 }
 
-export function KocPerformanceTable() {
-  const [platform, setPlatform] = useState<string>("ALL");
+export function KocPerformanceTable({
+  channel,
+  range,
+}: {
+  /** Bộ lọc Sàn → Gian dùng chung cả trang — thay cho select sàn nội bộ cũ. */
+  channel: ChannelFilterValue;
+  range: DateRange;
+}) {
   const [rating, setRating] = useState<RatingFilter>("ALL");
   const [sampleFor, setSampleFor] = useState<string | null>(null);
   const [bookingFor, setBookingFor] = useState<string | null>(null);
@@ -236,8 +243,11 @@ export function KocPerformanceTable() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const q = useApiQuery({
-    queryKey: qk.kocPartners(PARTNER_DAYS),
-    queryFn: () => fetchKocPartners(PARTNER_DAYS),
+    queryKey: qk.kocPartners({
+      ...rangeToQuery(range),
+      channel: channelFilterToQuery(channel),
+    }),
+    queryFn: () => fetchKocPartners({ channel, range }),
   });
   const invalidate = useInvalidate();
   const reload = () => invalidate(["koc-partners"], ["koc-samples"], ["koc-expenses"]);
@@ -246,15 +256,12 @@ export function KocPerformanceTable() {
   const rows = useMemo(
     () =>
       partners
-        .filter((k) => {
-          if (platform !== "ALL" && k.platform !== platform) return false;
-          if (rating !== "ALL" && !k.stats.ratings.includes(rating)) return false;
-          return true;
-        })
+        .filter((k) => rating === "ALL" || k.stats.ratings.includes(rating))
         .sort((a, b) => b.stats.netProfit - a.stats.netProfit),
-    [partners, platform, rating]
+    [partners, rating]
   );
   const unattributed = q.data?.unattributedOrders ?? 0;
+  const lastImportAt = q.data?.lastImportAt ?? null;
 
   async function changeStatus(k: KocPartnerRow, status: KocPartnerRow["status"]) {
     setBusyId(k.id);
@@ -284,21 +291,14 @@ export function KocPerformanceTable() {
             <CardDescription>
               Lãi ròng THẬT sau mọi phí sàn + tiền mẫu + booking của từng KOC —
               số hoa hồng lấy từ đối soát, danh tính theo đơn lấy từ file Báo
-              cáo chuyển đổi TTLK (kỳ {PARTNER_DAYS} ngày gần nhất).
+              cáo chuyển đổi TTLK (theo bộ lọc kỳ/sàn trên đầu trang).
+              {" "}
+              {lastImportAt
+                ? `Import gần nhất: ${formatDayVN(new Date(lastImportAt))} — chỉ cần import 1–2 lần/tuần, số tiền vẫn tự chảy từ đối soát hằng giờ.`
+                : "Chưa import file lần nào."}
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <NativeSelect
-              className="w-40"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              aria-label="Lọc theo sàn"
-            >
-              <option value="ALL">Tất cả sàn</option>
-              <option value="TIKTOK">TikTok Shop</option>
-              <option value="SHOPEE">Shopee</option>
-              <option value="LAZADA">Lazada</option>
-            </NativeSelect>
             <NativeSelect
               className="w-44"
               value={rating}
