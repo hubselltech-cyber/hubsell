@@ -3810,6 +3810,8 @@ export function fetchKocPartners(params?: {
 // ----- Sản phẩm hiệu quả qua kênh affiliate -----
 
 export interface KocTopProduct {
+  /** Ảnh SKU — URL từ CDN sàn (ChannelProduct) hoặc kho vật lý; null = không có. */
+  imageUrl: string | null;
   channelSku: string;
   productName: string;
   channelName: ChannelName;
@@ -3832,15 +3834,24 @@ export function fetchKocTopProducts(params?: {
   channel?: ChannelFilterQuery;
   range?: DateRange;
   days?: number;
+  page?: number;
+  pageSize?: number;
 }) {
   const qs = new URLSearchParams({
+    page: String(params?.page ?? 1),
+    pageSize: String(params?.pageSize ?? 10),
     ...rangeToQuery(params?.range),
     ...channelFilterToQuery(params?.channel),
   });
   if (!params?.range) qs.set("days", String(params?.days ?? 30));
-  return apiFetch<{ days: number; sampledOrders: number; products: KocTopProduct[] }>(
-    `/api/koc/top-products?${qs.toString()}`
-  );
+  return apiFetch<{
+    days: number;
+    sampledOrders: number;
+    total: number;
+    page: number;
+    pageSize: number;
+    products: KocTopProduct[];
+  }>(`/api/koc/top-products?${qs.toString()}`);
 }
 
 export function createKocPartner(data: {

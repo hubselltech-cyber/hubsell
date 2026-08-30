@@ -643,6 +643,8 @@ router.get("/partners", async (req: AuthRequest, res, next) => {
 router.get("/top-products", async (req: AuthRequest, res, next) => {
   try {
     const { days, filter: createdFilter } = resolveRange(req);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 10));
     const orders = await prisma.order.findMany({
       where: {
         channel: channelScope(req),
@@ -703,10 +705,35 @@ router.get("/top-products", async (req: AuthRequest, res, next) => {
       }
     }
 
-    const products = [...bySku.values()]
-      .sort((a, b) => b.gmv - a.gmv)
-      .slice(0, 20)
+    const sorted = [...bySku.values()].sort((a, b) => b.gmv - a.gmv);
+    const pageRows = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+    // Ảnh SKU: CHỈ tra cho trang đang xem (≤50 dòng) — DB chỉ lưu URL ảnh
+    // (chuỗi ~100 ký tự), ảnh thật trình duyệt tải thẳng từ CDN sàn nên báo
+    // cáo có ảnh KHÔNG làm nặng database. Ưu tiên ảnh sàn (ChannelProduct),
+    // rơi về ảnh kho vật lý khi SKU đã liên kết.
+    const imageBySku = new Map<string, string>();
+    if (pageRows.length > 0) {
+      const cps = await prisma.channelProduct.findMany({
+        where: {
+          channel: channelScope(req),
+          channelSku: { in: pageRows.map((p) => p.channelSku) },
+        },
+        select: {
+          channelSku: true,
+          imageUrl: true,
+          product: { select: { imageUrl: true } },
+        },
+      });
+      for (const cp of cps) {
+        const url = cp.imageUrl || cp.product?.imageUrl;
+        if (url && !imageBySku.has(cp.channelSku)) imageBySku.set(cp.channelSku, url);
+      }
+    }
+
+    const products = pageRows
       .map((p) => ({
+        imageUrl: imageBySku.get(p.channelSku) ?? null,
         ...p,
         gmv: Math.round(p.gmv),
         commission: Math.round(p.commission),
@@ -721,7 +748,14 @@ router.get("/top-products", async (req: AuthRequest, res, next) => {
         commissionRate: p.gmv > 0 ? Math.round((p.commission / p.gmv) * 1000) / 10 : 0,
       }));
 
-    res.json({ days, sampledOrders: orders.length, products });
+    res.json({
+      days,
+      sampledOrders: orders.length,
+      total: sorted.length,
+      page,
+      pageSize,
+      products,
+    });
   } catch (err) {
     next(err);
   }

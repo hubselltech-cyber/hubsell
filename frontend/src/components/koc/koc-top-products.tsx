@@ -1,6 +1,9 @@
 "use client";
 
-import { PackageSearch } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ImageIcon, PackageSearch } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 
 import { kocPlatformMeta } from "@/components/koc/koc-data";
 import { HintIcon } from "@/components/finance/hint-icon";
@@ -43,6 +46,8 @@ import { cn } from "@/lib/utils";
  * theo tỷ trọng giá trị dòng (sàn không trả phí theo dòng — ước lượng, có
  * ghi chú) — dùng để chọn SKU nên đẩy mẫu/booking tiếp.
  */
+const PAGE_SIZE = 10;
+
 export function KocTopProducts({
   channel,
   range,
@@ -50,14 +55,22 @@ export function KocTopProducts({
   channel: ChannelFilterValue;
   range: DateRange;
 }) {
+  const [page, setPage] = useState(1);
+  // Đổi bộ lọc sàn/kỳ thì quay về trang 1 — tránh đứng ở trang không tồn tại.
+  useEffect(() => {
+    setPage(1);
+  }, [channel, range]);
   const q = useApiQuery({
     queryKey: qk.kocTopProducts({
       ...rangeToQuery(range),
       channel: channelFilterToQuery(channel),
+      page,
     }),
-    queryFn: () => fetchKocTopProducts({ channel, range }),
+    queryFn: () => fetchKocTopProducts({ channel, range, page, pageSize: PAGE_SIZE }),
   });
   const products = q.data?.products ?? [];
+  const total = q.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <Card>
@@ -102,8 +115,25 @@ export function KocTopProducts({
               return (
                 <TableRow key={`${p.channelName}-${p.channelSku}`}>
                   <TableCell>
-                    <p className="font-mono text-sm text-slate-900">{p.channelSku}</p>
-                    <p className={TEXT_SUB}>{p.productName}</p>
+                    <div className="flex items-center gap-3">
+                      {p.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.imageUrl}
+                          alt={p.productName}
+                          loading="lazy"
+                          className="size-9 shrink-0 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                          <ImageIcon className="size-4" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm text-slate-900">{p.channelSku}</p>
+                        <p className={cn(TEXT_SUB, "truncate")}>{p.productName}</p>
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={meta.badgeClass}>
@@ -165,6 +195,29 @@ export function KocTopProducts({
             )}
           </TableBody>
         </Table>
+        {pageCount > 1 && (
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <span className={TEXT_SUB}>
+              {formatNumber(total)} SKU · trang {page}/{pageCount}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1 || q.refreshing}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Trước
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= pageCount || q.refreshing}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Sau
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
