@@ -282,6 +282,9 @@ model User {
   // Hóa đơn ĐẦU VÀO đồng bộ từ MISA meInvoice (dịch vụ Xử lý hóa đơn đầu vào).
   inputInvoices InputInvoice[]
 
+  // Sổ KOC — mạng lưới creator của chủ shop (module /koc-marketing).
+  kocPartners KocPartner[]
+
   // Ví Hubsell & Affiliate Tiếp Thị.
   hubsellWallet      HubsellWallet?
   walletTransactions WalletTransaction[]
@@ -937,6 +940,7 @@ model Product {
   inventoryLogs InventoryLog[]
   channelProducts ChannelProduct[]
   orderItems    OrderItem[]
+  kocSamples    KocSampleShipment[] // phiếu hàng mẫu KOC xuất từ SKU này
 
   @@unique([userId, skuCode]) // mỗi user không trùng mã SKU
   @@index([userId])
@@ -1140,6 +1144,7 @@ model Order {
   lazadaSettlement LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
   deliveryFailNotice DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
   deliveryTrackingTask DeliveryTrackingTask? // vé xếp hàng hỏi tracking (cứu đơn giao thất bại)
+  kocAttribution KocOrderAttribution? // đơn affiliate quy cho KOC nào (Sổ KOC)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -2126,4 +2131,149 @@ model DeliveryFailNotice {
 
   @@index([ownerId, detectedAt])
   @@map("delivery_fail_notices")
+}
+
+// ---------- SỔ KOC — MẠNG LƯỚI KOC & AFFILIATE (nhịp 1, 30/08/2026) ----------
+//
+// Thay tầng mock của /koc-marketing bằng bảng thật. Nguyên tắc tách 2 nguồn số
+// giữ nguyên như thiết kế cũ (frontend/src/components/koc/koc-data.ts):
+//   1. SÀN đổ về  : hoa hồng thật từng đơn (Order.affiliateFee, đối soát) +
+//      danh tính KOC theo đơn qua IMPORT file "Báo cáo chuyển đổi" TTLK người
+//      bán (KocOrderAttribution) — API seller không trả danh tính creator.
+//   2. SELLER nhập: phiếu hàng mẫu (KocSampleShipment) + chi booking (KocExpense).
+// Net-ROI/lãi ròng từng KOC là chỉ số DẪN XUẤT tính ở backend (routes/koc.ts,
+// dựa computePnlRow) — không bảng nào lưu số dẫn xuất.
+// KHÁC HOÀN TOÀN cụm "Affiliate Tiếp Thị" (referral của chính Hubsell).
+
+/// Trạng thái hợp tác với một KOC
+enum KocPartnerStatus {
+  ACTIVE      // đang hợp tác
+  PAUSED      // tạm dừng
+  BLACKLISTED // bùng mẫu / vi phạm — chặn tạo phiếu mẫu mới
+}
+
+/// Vòng đời phiếu hàng mẫu. "Quá hạn" KHÔNG phải một trạng thái — suy từ
+/// WAITING + now > postDeadlineAt (đỡ cần job chuyển trạng thái, không bao
+/// giờ lệch đồng hồ); BURNED là xác nhận CỦA CHỦ SHOP sau khi quá hạn.
+enum KocSampleStatus {
+  WAITING // đã gửi mẫu, chờ KOC lên bài
+  POSTED  // đã đăng content (kèm link nếu có)
+  BURNED  // chủ shop xác nhận bùng — mất mẫu
+}
+
+enum KocExpenseKind {
+  BOOKING      // booking lẻ một KOC
+  MCN_CONTRACT // hợp đồng MCN trọn gói
+}
+
+enum KocExpenseState {
+  PAID    // đã chi
+  PENDING // chưa chi (dueDate = hạn thanh toán)
+}
+
+/// Hồ sơ một KOC trong mạng lưới của chủ shop
+model KocPartner {
+  id        String           @id @default(cuid())
+  ownerId   String
+  name      String
+  /// Handle kênh — "@linhchi.daily"; trống nếu chưa rõ
+  handle    String           @default("")
+  /// Sàn hoạt động chính (badge hiển thị) — KOC đa sàn chọn sàn chủ lực
+  platform  ChannelName      @default(SHOPEE)
+  followers Int              @default(0)
+  /// Liên hệ (SĐT/Zalo/email) — seller tự nhập, phục vụ chính họ
+  contact   String           @default("")
+  note      String           @default("")
+  status    KocPartnerStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+
+  owner        User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  samples      KocSampleShipment[]
+  expenses     KocExpense[]
+  attributions KocOrderAttribution[]
+
+  // Import file AMS auto-tạo KOC theo tên đối tác — unique để chạy lặp idempotent.
+  @@unique([ownerId, name])
+  @@index([ownerId, status])
+  @@map("koc_partners")
+}
+
+/// Phiếu xuất hàng mẫu cho KOC
+model KocSampleShipment {
+  id          String          @id @default(cuid())
+  ownerId     String
+  kocId       String
+  /// SKU kho vật lý nếu chọn từ kho (trừ tồn + ghi InventoryLog EXPORT);
+  /// NULL = mẫu ngoài kho (nhập tay tên + giá trị)
+  productId   String?
+  sku         String          @default("")
+  productName String
+  qty         Int
+  /// Giá vốn/đơn vị TẠI THỜI ĐIỂM XUẤT — chốt cứng, đổi giá vốn sau không làm
+  /// lệch chi phí mẫu lịch sử
+  unitCost    Decimal         @default(0) @db.Decimal(12, 2)
+  cost        Decimal         @default(0) @db.Decimal(12, 2)
+  exportedAt  DateTime        @default(now())
+  /// Hạn lên bài — mặc định +14 ngày theo chuẩn Sample Integrity TikTok, cho sửa
+  postDeadlineAt DateTime
+  status      KocSampleStatus @default(WAITING)
+  postedAt    DateTime?
+  /// Link content khi POSTED — bằng chứng nghiệm thu seeding
+  contentUrl  String          @default("")
+  /// Phiếu này có trừ kho vật lý lúc xuất không (để biết đường hoàn tác)
+  deductedStock Boolean       @default(false)
+  note        String          @default("")
+
+  koc     KocPartner @relation(fields: [kocId], references: [id], onDelete: Cascade)
+  product Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, status, postDeadlineAt])
+  @@map("koc_sample_shipments")
+}
+
+/// Khoản chi booking/hợp đồng MCN cho KOC — bảng RIÊNG, KHÔNG tự ghi sang
+/// Thu chi vận hành (seller có thể đã nhập bên đó — tự ghi là đếm đôi chi phí;
+/// UI ghi chú rõ, tích hợp 2 sổ để nhịp sau khi có ý kiến người dùng thật).
+model KocExpense {
+  id           String          @id @default(cuid())
+  ownerId      String
+  /// NULL = khoản không gắn 1 KOC cụ thể (hợp đồng MCN nhiều KOC)
+  kocId        String?
+  /// Tên hiển thị khi không gắn KOC ("MCN VieNetwork (5 KOC)")
+  displayName  String          @default("")
+  contractCode String          @default("")
+  kind         KocExpenseKind  @default(BOOKING)
+  amount       Decimal         @db.Decimal(14, 2)
+  /// PENDING = hạn thanh toán; PAID = ngày đã chi
+  dueDate      DateTime?
+  state        KocExpenseState @default(PAID)
+  note         String          @default("")
+  createdAt    DateTime        @default(now())
+
+  koc KocPartner? @relation(fields: [kocId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, state])
+  @@map("koc_expenses")
+}
+
+/// Cầu nối ĐƠN HÀNG ↔ KOC — nguồn danh tính duy nhất hiện có là file "Báo cáo
+/// chuyển đổi" TTLK người bán (xuất từ web Seller Center) hoặc gán tay.
+/// orderId UNIQUE: attribution last-click, 1 đơn thuộc đúng 1 KOC.
+model KocOrderAttribution {
+  id         String   @id @default(cuid())
+  ownerId    String
+  orderId    String   @unique
+  kocId      String
+  /// AMS_IMPORT (từ file) | MANUAL (gán tay)
+  source     String   @default("AMS_IMPORT")
+  /// Hoa hồng theo file sàn — đối chiếu với Order.affiliateFee từ đối soát
+  commission Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+
+  order Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  koc   KocPartner @relation(fields: [kocId], references: [id], onDelete: Cascade)
+
+  @@index([kocId])
+  @@index([ownerId])
+  @@map("koc_order_attributions")
 }

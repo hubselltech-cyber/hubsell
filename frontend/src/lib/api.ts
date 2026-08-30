@@ -3730,6 +3730,243 @@ export function fetchKocChannelDetail(
   );
 }
 
+// ----- SỔ KOC (nhịp 1) — hồ sơ KOC + hàng mẫu + booking + import AMS -----
+
+export type KocPartnerStatus = "ACTIVE" | "PAUSED" | "BLACKLISTED";
+export type KocSampleStatus = "WAITING" | "POSTED" | "BURNED";
+export type KocExpenseKind = "BOOKING" | "MCN_CONTRACT";
+export type KocExpenseState = "PAID" | "PENDING";
+
+/** Số dẫn xuất trong kỳ của một KOC — TÍNH Ở BACKEND (SSOT), FE chỉ render. */
+export interface KocPartnerStats {
+  orders: number;
+  gmv: number;
+  commission: number;
+  refundedOrders: number;
+  refundedAmount: number;
+  refundRate: number;
+  netRevenue: number;
+  sampleCost: number;
+  sampleCount: number;
+  samplesWaiting: number;
+  samplesOverdue: number;
+  samplesBurned: number;
+  bookingFee: number;
+  totalCost: number;
+  /** Σ lãi ròng thật các đơn (computePnlRow) − booking − tiền mẫu. */
+  netProfit: number;
+  roi: number;
+  ratings: ("STAR" | "LOSS" | "HIGH_REFUND")[];
+}
+
+export interface KocPartnerRow {
+  id: string;
+  name: string;
+  handle: string;
+  platform: ChannelName;
+  followers: number;
+  contact: string;
+  note: string;
+  status: KocPartnerStatus;
+  createdAt: string;
+  stats: KocPartnerStats;
+}
+
+export interface KocPartnersResponse {
+  days: number;
+  partners: KocPartnerRow[];
+  attributedOrders: number;
+  /** Đơn affiliate sàn xác nhận nhưng CHƯA gán KOC — nhắc import file AMS. */
+  unattributedOrders: number;
+}
+
+export function fetchKocPartners(days = 90) {
+  return apiFetch<KocPartnersResponse>(`/api/koc/partners?days=${days}`);
+}
+
+export function createKocPartner(data: {
+  name: string;
+  handle?: string;
+  platform?: ChannelName;
+  followers?: number;
+  contact?: string;
+  note?: string;
+}) {
+  return apiFetch<{ id: string }>(`/api/koc/partners`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateKocPartner(
+  id: string,
+  data: Partial<{
+    name: string;
+    handle: string;
+    followers: number;
+    contact: string;
+    note: string;
+    status: KocPartnerStatus;
+  }>
+) {
+  return apiFetch<{ id: string }>(`/api/koc/partners/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface KocSampleRow {
+  id: string;
+  kocId: string;
+  kocName: string;
+  kocStatus: KocPartnerStatus;
+  platform: ChannelName;
+  sku: string;
+  productName: string;
+  qty: number;
+  unitCost: number;
+  cost: number;
+  exportedAt: string;
+  postDeadlineAt: string;
+  status: KocSampleStatus;
+  postedAt: string | null;
+  contentUrl: string;
+  deductedStock: boolean;
+  note: string;
+  /** WAITING + quá hạn lên bài — backend tính sẵn. */
+  overdue: boolean;
+}
+
+export function fetchKocSamples(params?: { status?: string; overdue?: boolean }) {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.overdue) qs.set("overdue", "1");
+  return apiFetch<{ samples: KocSampleRow[] }>(`/api/koc/samples?${qs.toString()}`);
+}
+
+export function createKocSample(data: {
+  kocId: string;
+  productId?: string;
+  productName?: string;
+  sku?: string;
+  qty: number;
+  unitCost?: number;
+  deadlineDays?: number;
+  deductStock?: boolean;
+  note?: string;
+}) {
+  return apiFetch<{ id: string }>(`/api/koc/samples`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateKocSample(
+  id: string,
+  data: Partial<{
+    status: KocSampleStatus;
+    contentUrl: string;
+    postDeadlineAt: string;
+    note: string;
+    /** Kèm status BURNED: đưa luôn KOC vào danh sách đen. */
+    blacklist: boolean;
+  }>
+) {
+  return apiFetch<{ id: string }>(`/api/koc/samples/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface KocExpenseRow {
+  id: string;
+  kocId: string | null;
+  kocName: string;
+  platform: ChannelName | null;
+  contractCode: string;
+  kind: KocExpenseKind;
+  amount: number;
+  dueDate: string | null;
+  state: KocExpenseState;
+  note: string;
+  createdAt: string;
+}
+
+export function fetchKocExpenses() {
+  return apiFetch<{ expenses: KocExpenseRow[] }>(`/api/koc/expenses`);
+}
+
+export function createKocExpense(data: {
+  kocId?: string;
+  displayName?: string;
+  contractCode?: string;
+  kind: KocExpenseKind;
+  amount: number;
+  dueDate?: string;
+  state: KocExpenseState;
+  note?: string;
+}) {
+  return apiFetch<{ id: string }>(`/api/koc/expenses`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateKocExpense(
+  id: string,
+  data: Partial<{
+    amount: number;
+    state: KocExpenseState;
+    contractCode: string;
+    note: string;
+    dueDate: string;
+  }>
+) {
+  return apiFetch<{ id: string }>(`/api/koc/expenses/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteKocExpense(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/koc/expenses/${id}`, { method: "DELETE" });
+}
+
+export interface AmsImportResult {
+  totalRows: number;
+  validRows: number;
+  matched: number;
+  unmatchedCount: number;
+  unmatchedOrders: string[];
+  partnersCreated: number;
+  errors: { row: number; message: string }[];
+  columns: { order: string; partner: string; commission: string | null };
+}
+
+/** Upload file "Báo cáo chuyển đổi" TTLK người bán — nguồn danh tính KOC theo
+ *  đơn duy nhất hiện có. Đi FormData nên KHÔNG qua apiFetch (Content-Type). */
+export async function importAmsReport(file: File): Promise<AmsImportResult> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_URL}/api/koc/import-ams`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let message = `Import thất bại (HTTP ${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // body không phải JSON — giữ thông điệp mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json();
+}
+
 // ----- Affiliate Tiếp Thị & Ví Hubsell (referral của CHÍNH Hubsell) -----
 //
 // KHÁC hoàn toàn module KOC & Marketing phía trên (đo Net-ROI creator cho chủ

@@ -1,8 +1,20 @@
 import { Router } from "express";
-import { ChannelName, Prisma, ReturnStatus } from "@prisma/client";
+import multer from "multer";
+import * as XLSX from "xlsx";
+import {
+  ChannelName,
+  KocExpenseKind,
+  KocExpenseState,
+  KocPartnerStatus,
+  KocSampleStatus,
+  Prisma,
+  ReturnStatus,
+} from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { channelScope } from "../lib/channel-filter";
+import { computePnlRow } from "./finance";
+import { parseLazadaAmount } from "../integrations/lazada/service";
 
 const router = Router();
 
@@ -382,6 +394,793 @@ router.get("/channel-detail", async (req: AuthRequest, res) => {
     series,
     topSkus,
   });
+});
+
+// ============================================================
+// SỔ KOC (nhịp 1, 30/08/2026) — HỒ SƠ KOC + HÀNG MẪU + BOOKING + ATTRIBUTION
+//
+// Thay tầng mock của /koc-marketing bằng CRUD thật trên 4 bảng koc_*.
+// Danh tính KOC theo đơn KHÔNG có trong API sàn — nguồn duy nhất là file
+// "Báo cáo chuyển đổi" TTLK người bán (xuất web Seller Center) qua
+// POST /import-ams, hoặc gán tay. Lãi ròng từng KOC tính bằng computePnlRow
+// (SSOT tài chính) trên tập đơn đã attribution — không bịa từ % lãi gộp.
+// ============================================================
+
+/** Ngưỡng badge — giữ đúng ngưỡng thiết kế cũ ở frontend koc-data.ts. */
+const KOC_REFUND_WARN_PCT = 15;
+const KOC_STAR_ROI = 3;
+/** Hạn lên bài mặc định của phiếu mẫu — theo chuẩn Sample Integrity (14 ngày). */
+const SAMPLE_DEADLINE_DAYS_DEFAULT = 14;
+
+/** include đủ quan hệ để computePnlRow bóc số — CHÉP ĐÚNG shape PnlOrder
+ *  của routes/finance.ts (structural typing: thừa field không sao, thiếu là vỡ). */
+const PNL_INCLUDE = {
+  channel: { select: { channelName: true, shopName: true } },
+  items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
+  inventoryLogs: {
+    where: { changeQuantity: { lt: 0 } },
+    include: { product: { select: { costPrice: true } } },
+  },
+  lazadaSettlement: true,
+} satisfies Prisma.OrderInclude;
+
+const PARTNER_STATUSES = Object.values(KocPartnerStatus);
+const EXPENSE_KINDS = Object.values(KocExpenseKind);
+const EXPENSE_STATES = Object.values(KocExpenseState);
+
+/** Chuỗi từ body — trim, rơi về mặc định khi không phải string. */
+const str = (v: unknown, fallback = ""): string =>
+  typeof v === "string" ? v.trim() : fallback;
+
+// ------------------------------------------------------------
+// GET /api/koc/partners?days=90
+// Danh sách KOC kèm TOÀN BỘ số dẫn xuất trong kỳ (SSOT tính ở đây — FE chỉ
+// render): đơn/GMV/hoa hồng từ attribution, lãi ròng thật Σ profitAfterTax,
+// chi mẫu + booking, Net-ROI, badge. Kèm số đơn affiliate CHƯA gán KOC để UI
+// nhắc import file báo cáo chuyển đổi.
+// ------------------------------------------------------------
+router.get("/partners", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const raw = Number(req.query.days);
+    const days = Number.isFinite(raw) ? Math.min(365, Math.max(1, Math.round(raw))) : 90;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const [partners, sampleGroups, expenseGroups, orders, unattributed] =
+      await Promise.all([
+        prisma.kocPartner.findMany({
+          where: { ownerId },
+          orderBy: { createdAt: "asc" },
+        }),
+        prisma.kocSampleShipment.groupBy({
+          by: ["kocId", "status"],
+          where: { ownerId, exportedAt: { gte: since } },
+          _count: { _all: true },
+          _sum: { cost: true },
+        }),
+        // Chi booking tính CẢ PENDING: hợp đồng đã ký là chi phí đã cam kết —
+        // Net-ROI phải nhìn thấy trước khi tiền rời két.
+        prisma.kocExpense.groupBy({
+          by: ["kocId"],
+          where: { ownerId, createdAt: { gte: since }, kocId: { not: null } },
+          _sum: { amount: true },
+        }),
+        // Đơn ĐÃ gán KOC trong kỳ — include đủ shape cho computePnlRow.
+        prisma.order.findMany({
+          where: {
+            channel: { userId: ownerId },
+            kocAttribution: { ownerId },
+            createdAt: { gte: since },
+          },
+          include: { ...PNL_INCLUDE, kocAttribution: { select: { kocId: true } } },
+          take: 5000, // trần an toàn — cùng lý do channel-detail
+        }),
+        prisma.order.count({
+          where: {
+            channel: { userId: ownerId },
+            affiliateFee: { gt: 0 },
+            kocAttribution: null,
+            createdAt: { gte: since },
+          },
+        }),
+      ]);
+
+    // Gom số mẫu / chi phí / đơn theo kocId.
+    const now = Date.now();
+    const sampleByKoc = new Map<
+      string,
+      { cost: number; count: number; waiting: number; burned: number }
+    >();
+    for (const g of sampleGroups) {
+      const e = sampleByKoc.get(g.kocId) ?? { cost: 0, count: 0, waiting: 0, burned: 0 };
+      e.cost += Number(g._sum.cost ?? 0);
+      e.count += g._count._all;
+      if (g.status === KocSampleStatus.WAITING) e.waiting += g._count._all;
+      if (g.status === KocSampleStatus.BURNED) e.burned += g._count._all;
+      sampleByKoc.set(g.kocId, e);
+    }
+    // Mẫu QUÁ HẠN suy diễn (WAITING + quá deadline) — đếm riêng vì groupBy
+    // không lồng được điều kiện thời gian theo dòng.
+    const overdueGroups = await prisma.kocSampleShipment.groupBy({
+      by: ["kocId"],
+      where: {
+        ownerId,
+        status: KocSampleStatus.WAITING,
+        postDeadlineAt: { lt: new Date(now) },
+      },
+      _count: { _all: true },
+    });
+    const overdueByKoc = new Map(overdueGroups.map((g) => [g.kocId, g._count._all]));
+
+    const bookingByKoc = new Map(
+      expenseGroups.map((g) => [g.kocId as string, Number(g._sum.amount ?? 0)])
+    );
+
+    const orderStats = new Map<
+      string,
+      { orders: number; gmv: number; commission: number; refundedOrders: number; refundedAmount: number; netProfit: number }
+    >();
+    for (const o of orders) {
+      const kocId = o.kocAttribution?.kocId;
+      if (!kocId) continue;
+      const row = computePnlRow(o);
+      const e =
+        orderStats.get(kocId) ??
+        { orders: 0, gmv: 0, commission: 0, refundedOrders: 0, refundedAmount: 0, netProfit: 0 };
+      e.orders += 1;
+      e.gmv += Number(o.totalAmount);
+      e.commission += Number(o.affiliateFee);
+      if (o.returnStatus !== ReturnStatus.NONE) e.refundedOrders += 1;
+      e.refundedAmount += row.refundedAmount;
+      // Lãi ròng THẬT của đơn (payout − giá vốn) — hoa hồng/phí sàn đã net
+      // trong payout, KHÔNG trừ hoa hồng lần hai.
+      e.netProfit += row.profitAfterTax;
+      orderStats.set(kocId, e);
+    }
+
+    const items = partners.map((p) => {
+      const os = orderStats.get(p.id) ?? {
+        orders: 0, gmv: 0, commission: 0, refundedOrders: 0, refundedAmount: 0, netProfit: 0,
+      };
+      const smp = sampleByKoc.get(p.id) ?? { cost: 0, count: 0, waiting: 0, burned: 0 };
+      const bookingFee = bookingByKoc.get(p.id) ?? 0;
+      const netRevenue = os.gmv - os.refundedAmount;
+      const totalCost = os.commission + bookingFee + smp.cost;
+      // Lợi nhuận ròng của mối hợp tác = Σ lãi thật các đơn − booking − mẫu.
+      const netProfit = Math.round(os.netProfit - bookingFee - smp.cost);
+      const refundRate = os.orders > 0 ? (os.refundedOrders / os.orders) * 100 : 0;
+      const roi = totalCost > 0 ? netRevenue / totalCost : 0;
+      // Badge cùng luật thiết kế cũ: cảnh báo đè khen; khen cần cả lãi + ROI.
+      const ratings: string[] = [];
+      if (os.orders > 0 || totalCost > 0) {
+        if (netProfit < 0) ratings.push("LOSS");
+        if (refundRate > KOC_REFUND_WARN_PCT) ratings.push("HIGH_REFUND");
+        if (ratings.length === 0 && netProfit > 0 && roi >= KOC_STAR_ROI) ratings.push("STAR");
+      }
+      return {
+        id: p.id,
+        name: p.name,
+        handle: p.handle,
+        platform: p.platform,
+        followers: p.followers,
+        contact: p.contact,
+        note: p.note,
+        status: p.status,
+        createdAt: p.createdAt,
+        stats: {
+          orders: os.orders,
+          gmv: Math.round(os.gmv),
+          commission: Math.round(os.commission),
+          refundedOrders: os.refundedOrders,
+          refundedAmount: Math.round(os.refundedAmount),
+          refundRate: Math.round(refundRate * 10) / 10,
+          netRevenue: Math.round(netRevenue),
+          sampleCost: Math.round(smp.cost),
+          sampleCount: smp.count,
+          samplesWaiting: smp.waiting,
+          samplesOverdue: overdueByKoc.get(p.id) ?? 0,
+          samplesBurned: smp.burned,
+          bookingFee: Math.round(bookingFee),
+          totalCost: Math.round(totalCost),
+          netProfit,
+          roi: Math.round(roi * 100) / 100,
+          ratings,
+        },
+      };
+    });
+
+    res.json({
+      days,
+      partners: items,
+      attributedOrders: orders.length,
+      // Đơn affiliate sàn xác nhận nhưng CHƯA biết của KOC nào — mồi nhắc
+      // seller import file báo cáo chuyển đổi.
+      unattributedOrders: unattributed,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/koc/partners — thêm KOC vào mạng lưới
+router.post("/partners", async (req: AuthRequest, res, next) => {
+  try {
+    const name = str(req.body?.name);
+    if (!name) {
+      res.status(400).json({ error: "Tên KOC không được để trống" });
+      return;
+    }
+    const platformRaw = str(req.body?.platform).toUpperCase();
+    const platform =
+      platformRaw in ChannelName && platformRaw !== "OFFLINE"
+        ? (platformRaw as ChannelName)
+        : ChannelName.SHOPEE;
+    const followers = Math.max(0, Math.round(Number(req.body?.followers) || 0));
+    try {
+      const created = await prisma.kocPartner.create({
+        data: {
+          ownerId: req.ownerId!,
+          name,
+          handle: str(req.body?.handle),
+          platform,
+          followers,
+          contact: str(req.body?.contact),
+          note: str(req.body?.note),
+        },
+      });
+      res.status(201).json(created);
+    } catch (err) {
+      // Trùng unique (ownerId, name) — nói thẳng thay vì 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        res.status(409).json({ error: `Đã có KOC tên "${name}" trong mạng lưới` });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/koc/partners/:id — sửa hồ sơ / đổi trạng thái (kể cả BLACKLISTED)
+router.patch("/partners/:id", async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.kocPartner.findFirst({
+      where: { id: req.params.id, ownerId: req.ownerId! },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Không tìm thấy KOC" });
+      return;
+    }
+    const b = req.body ?? {};
+    const statusRaw = str(b.status).toUpperCase();
+    const updated = await prisma.kocPartner.update({
+      where: { id: existing.id },
+      data: {
+        ...(typeof b.name === "string" && b.name.trim() ? { name: b.name.trim() } : {}),
+        ...(typeof b.handle === "string" ? { handle: b.handle.trim() } : {}),
+        ...(typeof b.contact === "string" ? { contact: b.contact.trim() } : {}),
+        ...(typeof b.note === "string" ? { note: b.note.trim() } : {}),
+        ...(Number.isFinite(Number(b.followers))
+          ? { followers: Math.max(0, Math.round(Number(b.followers))) }
+          : {}),
+        ...(PARTNER_STATUSES.includes(statusRaw as KocPartnerStatus)
+          ? { status: statusRaw as KocPartnerStatus }
+          : {}),
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      res.status(409).json({ error: "Tên KOC này đã tồn tại trong mạng lưới" });
+      return;
+    }
+    next(err);
+  }
+});
+
+// ------------------------------------------------------------
+// HÀNG MẪU — phiếu xuất có DEADLINE lên bài (chống bùng mẫu)
+// ------------------------------------------------------------
+
+// GET /api/koc/samples?status=&overdue=1
+router.get("/samples", async (req: AuthRequest, res, next) => {
+  try {
+    const statusRaw = str(req.query.status as string).toUpperCase();
+    const overdueOnly = req.query.overdue === "1";
+    const where: Prisma.KocSampleShipmentWhereInput = {
+      ownerId: req.ownerId!,
+      ...(Object.values(KocSampleStatus).includes(statusRaw as KocSampleStatus)
+        ? { status: statusRaw as KocSampleStatus }
+        : {}),
+      ...(overdueOnly
+        ? { status: KocSampleStatus.WAITING, postDeadlineAt: { lt: new Date() } }
+        : {}),
+    };
+    const samples = await prisma.kocSampleShipment.findMany({
+      where,
+      orderBy: [{ status: "asc" }, { postDeadlineAt: "asc" }],
+      include: { koc: { select: { id: true, name: true, platform: true, status: true } } },
+      take: 500,
+    });
+    const now = Date.now();
+    res.json({
+      samples: samples.map((s) => ({
+        id: s.id,
+        kocId: s.kocId,
+        kocName: s.koc.name,
+        kocStatus: s.koc.status,
+        platform: s.koc.platform,
+        sku: s.sku,
+        productName: s.productName,
+        qty: s.qty,
+        unitCost: Number(s.unitCost),
+        cost: Number(s.cost),
+        exportedAt: s.exportedAt,
+        postDeadlineAt: s.postDeadlineAt,
+        status: s.status,
+        postedAt: s.postedAt,
+        contentUrl: s.contentUrl,
+        deductedStock: s.deductedStock,
+        note: s.note,
+        overdue: s.status === KocSampleStatus.WAITING && s.postDeadlineAt.getTime() < now,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/koc/samples — tạo phiếu xuất mẫu (tùy chọn trừ kho vật lý)
+router.post("/samples", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const b = req.body ?? {};
+    const qty = Math.round(Number(b.qty));
+    if (!Number.isFinite(qty) || qty < 1) {
+      res.status(400).json({ error: "Số lượng mẫu phải từ 1 trở lên" });
+      return;
+    }
+    const koc = await prisma.kocPartner.findFirst({
+      where: { id: str(b.kocId), ownerId },
+    });
+    if (!koc) {
+      res.status(404).json({ error: "Không tìm thấy KOC" });
+      return;
+    }
+    if (koc.status === KocPartnerStatus.BLACKLISTED) {
+      res.status(400).json({
+        error: `"${koc.name}" đang trong danh sách đen (bùng mẫu) — bỏ chặn ở hồ sơ KOC trước khi gửi tiếp`,
+      });
+      return;
+    }
+
+    const deadlineDays = Math.min(
+      90,
+      Math.max(1, Math.round(Number(b.deadlineDays) || SAMPLE_DEADLINE_DAYS_DEFAULT))
+    );
+    const exportedAt = new Date();
+    const postDeadlineAt = new Date(exportedAt.getTime() + deadlineDays * 86_400_000);
+
+    // Mẫu từ KHO VẬT LÝ: chốt giá vốn tại thời điểm xuất + (tùy chọn) trừ tồn.
+    const productId = str(b.productId) || null;
+    if (productId) {
+      const product = await prisma.product.findFirst({
+        where: { id: productId, userId: ownerId },
+      });
+      if (!product) {
+        res.status(404).json({ error: "Không tìm thấy sản phẩm trong kho" });
+        return;
+      }
+      const unitCost = Number(product.costPrice);
+      const deductStock = b.deductStock !== false; // mặc định TRỪ kho
+      if (deductStock && product.quantityInStock < qty) {
+        res.status(400).json({
+          error: `Kho chỉ còn ${product.quantityInStock} — không đủ ${qty} mẫu`,
+        });
+        return;
+      }
+      const created = await prisma.$transaction(async (tx) => {
+        const shipment = await tx.kocSampleShipment.create({
+          data: {
+            ownerId,
+            kocId: koc.id,
+            productId: product.id,
+            sku: product.skuCode,
+            productName: product.productName,
+            qty,
+            unitCost,
+            cost: unitCost * qty,
+            exportedAt,
+            postDeadlineAt,
+            deductedStock: deductStock,
+            note: str(b.note),
+          },
+        });
+        if (deductStock) {
+          await tx.product.update({
+            where: { id: product.id },
+            data: { quantityInStock: { decrement: qty } },
+          });
+          await tx.inventoryLog.create({
+            data: {
+              productId: product.id,
+              changeQuantity: -qty,
+              type: "EXPORT",
+              reason: `Xuất hàng mẫu KOC "${koc.name}" (Sổ KOC)`,
+            },
+          });
+        }
+        return shipment;
+      });
+      res.status(201).json(created);
+      return;
+    }
+
+    // Mẫu NGOÀI kho (không link SKU): nhập tay tên + giá trị.
+    const productName = str(b.productName);
+    if (!productName) {
+      res.status(400).json({ error: "Chọn SKU kho hoặc nhập tên sản phẩm mẫu" });
+      return;
+    }
+    const unitCost = Math.max(0, Math.round(Number(b.unitCost) || 0));
+    const created = await prisma.kocSampleShipment.create({
+      data: {
+        ownerId,
+        kocId: koc.id,
+        productName,
+        sku: str(b.sku),
+        qty,
+        unitCost,
+        cost: unitCost * qty,
+        exportedAt,
+        postDeadlineAt,
+        note: str(b.note),
+      },
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/koc/samples/:id — nghiệm thu: đã đăng (kèm link) / bùng (kèm tùy
+// chọn cho KOC vào danh sách đen) / sửa hạn.
+router.patch("/samples/:id", async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.kocSampleShipment.findFirst({
+      where: { id: req.params.id, ownerId: req.ownerId! },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Không tìm thấy phiếu mẫu" });
+      return;
+    }
+    const b = req.body ?? {};
+    const statusRaw = str(b.status).toUpperCase();
+    const nextStatus = Object.values(KocSampleStatus).includes(
+      statusRaw as KocSampleStatus
+    )
+      ? (statusRaw as KocSampleStatus)
+      : undefined;
+    const deadline = b.postDeadlineAt ? new Date(String(b.postDeadlineAt)) : undefined;
+
+    const updated = await prisma.kocSampleShipment.update({
+      where: { id: existing.id },
+      data: {
+        ...(nextStatus ? { status: nextStatus } : {}),
+        ...(nextStatus === KocSampleStatus.POSTED
+          ? { postedAt: existing.postedAt ?? new Date() }
+          : {}),
+        ...(typeof b.contentUrl === "string" ? { contentUrl: b.contentUrl.trim() } : {}),
+        ...(typeof b.note === "string" ? { note: b.note.trim() } : {}),
+        ...(deadline && !Number.isNaN(deadline.getTime())
+          ? { postDeadlineAt: deadline }
+          : {}),
+      },
+    });
+
+    // Đánh dấu BÙNG kèm blacklist=true → khóa luôn KOC (chặn phiếu mẫu mới).
+    if (nextStatus === KocSampleStatus.BURNED && b.blacklist === true) {
+      await prisma.kocPartner.update({
+        where: { id: existing.kocId },
+        data: { status: KocPartnerStatus.BLACKLISTED },
+      });
+    }
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ------------------------------------------------------------
+// CHI PHÍ BOOKING & HỢP ĐỒNG MCN — bảng riêng, KHÔNG tự ghi sang Thu chi
+// vận hành (tránh đếm đôi khi seller đã nhập bên đó; UI ghi chú rõ).
+// ------------------------------------------------------------
+
+router.get("/expenses", async (req: AuthRequest, res, next) => {
+  try {
+    const expenses = await prisma.kocExpense.findMany({
+      where: { ownerId: req.ownerId! },
+      orderBy: [{ state: "desc" }, { dueDate: "asc" }, { createdAt: "desc" }],
+      include: { koc: { select: { name: true, platform: true } } },
+      take: 500,
+    });
+    res.json({
+      expenses: expenses.map((e) => ({
+        id: e.id,
+        kocId: e.kocId,
+        kocName: e.koc?.name ?? e.displayName,
+        platform: e.koc?.platform ?? null,
+        contractCode: e.contractCode,
+        kind: e.kind,
+        amount: Number(e.amount),
+        dueDate: e.dueDate,
+        state: e.state,
+        note: e.note,
+        createdAt: e.createdAt,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/expenses", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const b = req.body ?? {};
+    const amount = Math.round(Number(b.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: "Số tiền phải lớn hơn 0" });
+      return;
+    }
+    const kocId = str(b.kocId) || null;
+    if (kocId) {
+      const koc = await prisma.kocPartner.findFirst({ where: { id: kocId, ownerId } });
+      if (!koc) {
+        res.status(404).json({ error: "Không tìm thấy KOC" });
+        return;
+      }
+    } else if (!str(b.displayName)) {
+      res.status(400).json({ error: "Chọn KOC hoặc nhập tên đơn vị nhận (MCN...)" });
+      return;
+    }
+    const kindRaw = str(b.kind).toUpperCase();
+    const stateRaw = str(b.state).toUpperCase();
+    const dueDate = b.dueDate ? new Date(String(b.dueDate)) : null;
+    const created = await prisma.kocExpense.create({
+      data: {
+        ownerId,
+        kocId,
+        displayName: str(b.displayName),
+        contractCode: str(b.contractCode),
+        kind: EXPENSE_KINDS.includes(kindRaw as KocExpenseKind)
+          ? (kindRaw as KocExpenseKind)
+          : KocExpenseKind.BOOKING,
+        amount,
+        dueDate: dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null,
+        state: EXPENSE_STATES.includes(stateRaw as KocExpenseState)
+          ? (stateRaw as KocExpenseState)
+          : KocExpenseState.PAID,
+        note: str(b.note),
+      },
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/expenses/:id", async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.kocExpense.findFirst({
+      where: { id: req.params.id, ownerId: req.ownerId! },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Không tìm thấy khoản chi" });
+      return;
+    }
+    const b = req.body ?? {};
+    const stateRaw = str(b.state).toUpperCase();
+    const amount = Number(b.amount);
+    const dueDate = b.dueDate ? new Date(String(b.dueDate)) : undefined;
+    const updated = await prisma.kocExpense.update({
+      where: { id: existing.id },
+      data: {
+        ...(Number.isFinite(amount) && amount > 0 ? { amount: Math.round(amount) } : {}),
+        ...(EXPENSE_STATES.includes(stateRaw as KocExpenseState)
+          ? { state: stateRaw as KocExpenseState }
+          : {}),
+        ...(typeof b.contractCode === "string" ? { contractCode: b.contractCode.trim() } : {}),
+        ...(typeof b.note === "string" ? { note: b.note.trim() } : {}),
+        ...(dueDate && !Number.isNaN(dueDate.getTime()) ? { dueDate } : {}),
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/expenses/:id", async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.kocExpense.findFirst({
+      where: { id: req.params.id, ownerId: req.ownerId! },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Không tìm thấy khoản chi" });
+      return;
+    }
+    await prisma.kocExpense.delete({ where: { id: existing.id } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ------------------------------------------------------------
+// POST /api/koc/import-ams — IMPORT FILE "BÁO CÁO CHUYỂN ĐỔI" TTLK NGƯỜI BÁN
+//
+// File xuất từ web Seller Center (Hệ thống TTLK dành cho Người bán) có hoa
+// hồng TỪNG ĐƠN kèm đối tác chia sẻ link. Đây là nguồn danh tính KOC-theo-đơn
+// DUY NHẤT hiện có (API seller không trả). Cột được dò linh hoạt theo nhiều
+// alias vì sàn có thể đổi tên cột — dò không ra thì báo thẳng tên cột đã thấy.
+// Idempotent: chạy lại cùng file → upsert cùng kết quả.
+// ------------------------------------------------------------
+
+const uploadAms = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(xlsx|xls|csv)$/i.test(file.originalname)) cb(null, true);
+    else cb(new Error("Chỉ chấp nhận file Excel (.xlsx/.xls) hoặc .csv"));
+  },
+});
+
+router.post("/import-ams", uploadAms.single("file"), async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    if (!req.file) {
+      res.status(400).json({ error: "Chưa chọn file báo cáo để tải lên" });
+      return;
+    }
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) {
+      res.status(400).json({ error: "File không có sheet dữ liệu nào" });
+      return;
+    }
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    if (rows.length === 0) {
+      res.status(400).json({ error: "File không có dòng dữ liệu nào" });
+      return;
+    }
+
+    // Dò cột theo alias, không phân biệt hoa thường (cùng khuôn import giá vốn).
+    const keys = Object.keys(rows[0]);
+    const findKey = (...aliases: string[]): string | null => {
+      for (const alias of aliases) {
+        const hit = keys.find(
+          (k) => k.trim().toLowerCase() === alias.trim().toLowerCase()
+        );
+        if (hit) return hit;
+      }
+      // Vòng 2: khớp "chứa" — file sàn hay kèm chú thích trong tên cột.
+      for (const alias of aliases) {
+        const hit = keys.find((k) =>
+          k.trim().toLowerCase().includes(alias.trim().toLowerCase())
+        );
+        if (hit) return hit;
+      }
+      return null;
+    };
+
+    const orderKey = findKey(
+      "Mã đơn hàng", "Order ID", "OrderID", "order_id", "Mã đơn", "order_sn", "Order SN", "ID đơn hàng"
+    );
+    const partnerKey = findKey(
+      "Tên đăng nhập đối tác", "Tên đối tác", "Đối tác", "Tên đăng nhập",
+      "Username", "Affiliate", "Creator", "KOC", "Người chia sẻ", "Sub_id", "Sub ID"
+    );
+    const commissionKey = findKey(
+      "Tổng hoa hồng", "Hoa hồng ước tính", "Hoa hồng", "Commission", "Est. Commission", "Phí hoa hồng"
+    );
+    if (!orderKey || !partnerKey) {
+      res.status(400).json({
+        error:
+          `Không nhận diện được cột ${!orderKey ? "MÃ ĐƠN HÀNG" : "ĐỐI TÁC/KOC"} trong file. ` +
+          `Các cột thấy được: ${keys.slice(0, 15).join(", ")}`,
+      });
+      return;
+    }
+
+    // Bóc dòng hợp lệ.
+    const parsed: { orderCode: string; partner: string; commission: number }[] = [];
+    const errors: { row: number; message: string }[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const excelRow = i + 2;
+      const orderCode = String(rows[i][orderKey] ?? "").trim();
+      const partner = String(rows[i][partnerKey] ?? "").trim();
+      if (!orderCode && !partner) continue; // dòng trống
+      if (!orderCode || !partner) {
+        errors.push({ row: excelRow, message: "Thiếu mã đơn hoặc tên đối tác" });
+        continue;
+      }
+      const commission = commissionKey
+        ? Math.max(0, Math.round(parseLazadaAmount(rows[i][commissionKey])))
+        : 0;
+      parsed.push({ orderCode, partner, commission });
+    }
+    if (parsed.length === 0) {
+      res.status(400).json({ error: "Không có dòng hợp lệ nào trong file", errors });
+      return;
+    }
+
+    // Khớp đơn trong phạm vi shop (mã đơn sàn trùng nhau giữa 2 gian là cực
+    // hiếm — lấy đơn đầu khớp).
+    const dbOrders = await prisma.order.findMany({
+      where: {
+        channel: { userId: ownerId },
+        orderCode: { in: [...new Set(parsed.map((p) => p.orderCode))] },
+      },
+      select: { id: true, orderCode: true, channel: { select: { channelName: true } } },
+    });
+    const orderByCode = new Map(dbOrders.map((o) => [o.orderCode, o]));
+
+    // Auto-tạo hồ sơ KOC theo tên đối tác (idempotent nhờ unique ownerId+name).
+    const partnerNames = [...new Set(parsed.map((p) => p.partner))];
+    let partnersCreated = 0;
+    const partnerIdByName = new Map<string, string>();
+    for (const name of partnerNames) {
+      const firstOrder = parsed.find((p) => p.partner === name && orderByCode.has(p.orderCode));
+      const platform = firstOrder
+        ? orderByCode.get(firstOrder.orderCode)!.channel.channelName
+        : ChannelName.SHOPEE;
+      const existing = await prisma.kocPartner.findUnique({
+        where: { ownerId_name: { ownerId, name } },
+      });
+      if (existing) {
+        partnerIdByName.set(name, existing.id);
+      } else {
+        const created = await prisma.kocPartner.create({
+          data: { ownerId, name, platform, note: "Tự tạo từ file báo cáo chuyển đổi TTLK" },
+        });
+        partnersCreated++;
+        partnerIdByName.set(name, created.id);
+      }
+    }
+
+    // Upsert attribution từng đơn.
+    let matched = 0;
+    const unmatchedOrders: string[] = [];
+    for (const p of parsed) {
+      const order = orderByCode.get(p.orderCode);
+      if (!order) {
+        if (unmatchedOrders.length < 50) unmatchedOrders.push(p.orderCode);
+        continue;
+      }
+      const kocId = partnerIdByName.get(p.partner)!;
+      await prisma.kocOrderAttribution.upsert({
+        where: { orderId: order.id },
+        create: { ownerId, orderId: order.id, kocId, commission: p.commission },
+        update: { kocId, commission: p.commission },
+      });
+      matched++;
+    }
+
+    res.json({
+      totalRows: rows.length,
+      validRows: parsed.length,
+      matched,
+      unmatchedCount: parsed.length - matched,
+      unmatchedOrders,
+      partnersCreated,
+      errors,
+      columns: { order: orderKey, partner: partnerKey, commission: commissionKey },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

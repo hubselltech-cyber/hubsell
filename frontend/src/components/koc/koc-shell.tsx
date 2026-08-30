@@ -13,10 +13,10 @@ import { canAccessKocMarketing } from "@/lib/permissions";
  * VỎ CHUNG CỦA 5 TRANG /koc-marketing/*
  *
  * Gom 3 việc lặp lại để từng trang chỉ còn lo nội dung:
- *   1. Guard đăng nhập + quyền (chỉ ADMIN — chi phí booking/ROI là dữ liệu
- *      tài chính, cùng luật với nhóm Quản lý Tài chính).
- *   2. Banner trạng thái PREVIEW — toàn module đang là mock, chờ nối
- *      Affiliate API từng sàn (cùng khuôn với Trợ lý quảng cáo /ads/*).
+ *   1. Guard đăng nhập + quyền "koc" (ADMIN mặc định qua; nhân viên cần được
+ *      tick lá "Mạng lưới KOC & Marketing" — lớp chặn thật ở backend).
+ *   2. Banner trạng thái module (Sổ KOC đã lên số thật 30/08 — hoa hồng từ
+ *      đối soát, danh tính KOC theo đơn từ file Báo cáo chuyển đổi TTLK).
  *   3. AppShell (sidebar + header).
  */
 export function KocShell({ children }: { children: React.ReactNode }) {

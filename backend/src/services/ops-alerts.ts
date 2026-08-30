@@ -17,6 +17,7 @@
 import {
   ChannelName,
   FeeAuditStatus,
+  KocSampleStatus,
   ReturnStatus,
   ShippingDisputeStatus,
   ShippingStatus,
@@ -372,6 +373,40 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
   }
 
   return alerts;
+}
+
+/**
+ * SỔ KOC — BÙNG MẪU: phiếu hàng mẫu đã gửi, quá hạn lên bài (postDeadlineAt)
+ * mà KOC vẫn im lặng. Mỗi phiếu quá hạn là tiền mẫu (giá vốn + ship) đang có
+ * nguy cơ mất trắng — nhắc chủ shop đòi bài hoặc đánh dấu bùng + blacklist.
+ */
+async function detectKocSampleOverdue(ownerId: string): Promise<DetectedAlert[]> {
+  const overdue = await prisma.kocSampleShipment.findMany({
+    where: {
+      ownerId,
+      status: KocSampleStatus.WAITING,
+      postDeadlineAt: { lt: new Date() },
+    },
+    select: { cost: true },
+  });
+  if (overdue.length === 0) return [];
+  const total = overdue.reduce((s, x) => s + Number(x.cost), 0);
+  return [
+    {
+      type: "koc-sample-overdue",
+      dedupeKey: "overdue",
+      tag: "finance",
+      severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
+      title: `${overdue.length} KOC quá hạn chưa đăng bài sau khi nhận mẫu — ${vnd(total)} tiền mẫu đang treo`,
+      summary:
+        "Hàng mẫu đã gửi nhưng quá hạn lên bài mà chưa thấy content. Nhắn đòi bài sớm, hoặc đánh dấu BÙNG để đưa KOC vào danh sách đen — lần sau hệ thống tự chặn gửi mẫu.",
+      payload: {
+        kind: "navigate",
+        href: "/koc-marketing/samples?overdue=1",
+        label: "Mở Sổ hàng mẫu",
+      },
+    },
+  ];
 }
 
 /**
@@ -969,6 +1004,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectLossOrders,
       detectShippingFeeDiff,
       detectFeeAudit,
+      detectKocSampleOverdue,
       detectSyncStalled,
       detectAdsSpike,
       detectShopeeAdsAssistant,
