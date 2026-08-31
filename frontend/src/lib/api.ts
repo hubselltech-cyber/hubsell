@@ -2894,6 +2894,27 @@ export function deleteLedgerEntry(id: string) {
   });
 }
 
+// ---------- Checklist Lịch thuế (hq.finance) ----------
+
+export interface TaxCheckItem {
+  itemKey: string;
+  doneAt: string;
+  doneByName: string;
+}
+
+export function fetchTaxChecklist() {
+  return apiFetch<{ items: TaxCheckItem[] }>(
+    "/api/admin/finance/tax-checklist"
+  );
+}
+
+export function setTaxCheckItem(itemKey: string, done: boolean) {
+  return apiFetch<{ item: TaxCheckItem | null }>(
+    `/api/admin/finance/tax-checklist/${itemKey}`,
+    { method: "PUT", body: JSON.stringify({ done }) }
+  );
+}
+
 // ---------- Gói dịch vụ & Thuê bao (hq.finance; sửa bảng giá: chủ nền tảng) ----------
 
 export type BillingCycle = "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "YEARLY";

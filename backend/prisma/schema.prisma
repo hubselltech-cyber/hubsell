@@ -1725,6 +1725,20 @@ model PlatformLedgerEntry {
   @@map("platform_ledger_entries")
 }
 
+/// Checklist thủ tục thuế của CHÍNH công ty Hubsell (tab Lịch thuế /admin/finance).
+/// Mỗi dòng = một mốc ĐÃ XỬ LÝ (xóa dòng = bỏ đánh dấu); itemKey khớp dữ liệu
+/// tĩnh trong frontend tax-calendar-section.tsx. Snapshot tên người đánh dấu
+/// để lịch sử còn đọc được khi tài khoản bị xoá (cùng lý do PlatformLedgerEntry).
+model PlatformTaxCheckItem {
+  id         String   @id @default(cuid())
+  itemKey    String   @unique
+  doneAt     DateTime @default(now())
+  doneById   String?
+  doneByName String
+
+  @@map("platform_tax_check_items")
+}
+
 enum WalletTxnType {
   COMMISSION      // +10% hoa hồng khi người được giới thiệu thanh toán thành công
   PACKAGE_RENEWAL // − trừ ví để gia hạn gói Hubsell

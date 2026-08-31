@@ -1196,6 +1196,78 @@ router.delete(
 );
 
 // ============================================================
+// CHECKLIST LỊCH THUẾ (tab Lịch thuế /admin/finance — lá hq.finance):
+// đánh dấu từng mốc thủ tục thuế của CHÍNH công ty Hubsell là đã xử lý.
+// Danh mục mốc là dữ liệu TĨNH phía frontend; backend chỉ giữ trạng thái
+// theo itemKey để mọi người trong HQ cùng thấy (không lưu localStorage).
+// ============================================================
+
+const TAX_CHECK_KEY_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
+
+// GET /api/admin/finance/tax-checklist — toàn bộ mốc đã đánh dấu.
+router.get(
+  "/finance/tax-checklist",
+  requirePlatformPermission("hq.finance"),
+  async (_req, res, next) => {
+    try {
+      const items = await prisma.platformTaxCheckItem.findMany({
+        select: { itemKey: true, doneAt: true, doneByName: true },
+      });
+      res.json({ items });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PUT /api/admin/finance/tax-checklist/:itemKey — body { done: boolean }.
+// done=true upsert (bấm lại không nhân đôi), done=false xoá dấu.
+router.put(
+  "/finance/tax-checklist/:itemKey",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const itemKey = req.params.itemKey;
+      if (!TAX_CHECK_KEY_RE.test(itemKey)) {
+        res.status(400).json({ error: "Mã mốc không hợp lệ" });
+        return;
+      }
+      const done = req.body?.done === true;
+      if (done) {
+        const actor = await prisma.user.findUnique({
+          where: { id: req.userId! },
+          select: { fullName: true },
+        });
+        const item = await prisma.platformTaxCheckItem.upsert({
+          where: { itemKey },
+          create: {
+            itemKey,
+            doneById: req.userId!,
+            doneByName: actor?.fullName ?? "(không rõ)",
+          },
+          update: {},
+          select: { itemKey: true, doneAt: true, doneByName: true },
+        });
+        await writeAuditLog(req, {
+          action: "taxcal.check",
+          detail: { itemKey },
+        });
+        res.json({ item });
+        return;
+      }
+      await prisma.platformTaxCheckItem.deleteMany({ where: { itemKey } });
+      await writeAuditLog(req, {
+        action: "taxcal.uncheck",
+        detail: { itemKey },
+      });
+      res.json({ item: null });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
 // MARKETING & GIỚI THIỆU (GĐ4 — lá hq.marketing): hiệu quả chương trình
 // "Kiếm Tiền Cùng Hubsell" trên toàn hệ thống — dữ liệu THẬT từ ReferralTree
 // (User.referredById) + sổ cái hoa hồng.
