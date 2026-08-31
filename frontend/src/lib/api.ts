@@ -2842,6 +2842,8 @@ export interface PlatformLedgerEntry {
   /** Khác null = bút toán TỰ SINH từ thanh toán gói (khóa tiền/ngày, cấm xoá —
    *  nhưng VẪN sửa được trạng thái/số hóa đơn: nghĩa vụ hóa đơn nằm trên sổ). */
   packagePaymentId: string | null;
+  /** TransactionID meInvoice khi khoản thu xuất HĐĐT qua API — có = tải được PDF. */
+  einvoiceTransactionId: string | null;
   customer: { id: string; email: string | null; fullName: string } | null;
 }
 
@@ -2912,6 +2914,96 @@ export function setTaxCheckItem(itemKey: string, done: boolean) {
   return apiFetch<{ item: TaxCheckItem | null }>(
     `/api/admin/finance/tax-checklist/${itemKey}`,
     { method: "PUT", body: JSON.stringify({ done }) }
+  );
+}
+
+// ---------- HĐĐT của chính Hubsell (bán gói — tab Sổ quỹ HQ) ----------
+
+export interface HqInvoiceConfig {
+  id: string;
+  taxCode: string | null;
+  companyName: string | null;
+  companyAddress: string | null;
+  invoicePattern: string | null;
+  invoiceSeries: string | null;
+  meinvoiceUsername: string | null;
+  signMethod: string;
+  esignClientId: string | null;
+  esignUsername: string | null;
+  certSerial: string | null;
+  vatMode: string;
+  hasMeinvoicePassword: boolean;
+  hasEsignSecretKey: boolean;
+  hasEsignPassword: boolean;
+}
+
+export interface HqInvoiceConfigResponse {
+  config: HqInvoiceConfig;
+  /** Danh sách trường còn thiếu để phát hành được — [] = sẵn sàng. */
+  missing: string[];
+  /** Chốt an toàn MISA_ALLOW_PUBLISH trên server đã bật chưa. */
+  publishAllowed: boolean;
+}
+
+export function fetchHqInvoiceConfig() {
+  return apiFetch<HqInvoiceConfigResponse>("/api/admin/finance/invoice-config");
+}
+
+export function updateHqInvoiceConfig(data: {
+  taxCode?: string;
+  companyName?: string;
+  companyAddress?: string;
+  invoicePattern?: string;
+  invoiceSeries?: string;
+  meinvoiceUsername?: string;
+  /** Chuỗi rỗng = GIỮ mật khẩu cũ. */
+  meinvoicePassword?: string;
+  signMethod?: string;
+  esignClientId?: string;
+  esignSecretKey?: string;
+  esignUsername?: string;
+  esignPassword?: string;
+  certSerial?: string;
+  vatMode?: string;
+}) {
+  return apiFetch<HqInvoiceConfigResponse>("/api/admin/finance/invoice-config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function testHqInvoiceConnection() {
+  return apiFetch<{ ok: true; meinvoiceTokenLength: number }>(
+    "/api/admin/finance/invoice-config/test",
+    { method: "POST" }
+  );
+}
+
+export function issueHqInvoice(
+  ledgerEntryId: string,
+  data: {
+    buyerName: string;
+    buyerTaxCode?: string;
+    buyerAddress?: string;
+    buyerEmail?: string;
+    itemName: string;
+  }
+) {
+  return apiFetch<{
+    entry: PlatformLedgerEntry;
+    invoiceNo: string | null;
+    transactionId: string | null;
+    /** true = phát hành đã nhận nhưng meInvoice chưa cấp số (cấp trễ). */
+    pendingNumber: boolean;
+  }>(`/api/admin/finance/ledger/${ledgerEntryId}/issue-invoice`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function downloadHqInvoicePdf(ledgerEntryId: string) {
+  return apiFetch<{ fileName: string; base64: string }>(
+    `/api/admin/finance/ledger/${ledgerEntryId}/invoice-pdf`
   );
 }
 

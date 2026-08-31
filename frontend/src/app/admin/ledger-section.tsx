@@ -13,6 +13,8 @@ import {
   Loader2,
   NotebookPen,
   Pencil,
+  ReceiptText,
+  Settings2,
   Trash2,
 } from "lucide-react";
 
@@ -49,6 +51,11 @@ import {
 import { exportLedgerToExcel } from "@/lib/excel";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import {
+  HqInvoiceConfigDialog,
+  HqInvoicePdfButton,
+  HqIssueInvoiceDialog,
+} from "./hq-invoice";
 import { StatCard, formatCount, formatMoney } from "./shared";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -323,6 +330,8 @@ export function LedgerSection({
     { mode: "create" } | { mode: "edit"; entry: PlatformLedgerEntry } | null
   >(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [invoiceConfigOpen, setInvoiceConfigOpen] = useState(false);
+  const [issueEntry, setIssueEntry] = useState<PlatformLedgerEntry | null>(null);
 
   async function handleDelete(entry: PlatformLedgerEntry) {
     setDeletingId(entry.id);
@@ -366,6 +375,14 @@ export function LedgerSection({
           <Button variant="outline" onClick={handleExport} disabled={loading}>
             <FileSpreadsheet className="size-4" />
             Xuất Excel
+          </Button>
+          <Button
+            variant="outline"
+            title="Cấu hình meInvoice của Hubsell (xuất HĐĐT bán gói)"
+            onClick={() => setInvoiceConfigOpen(true)}
+          >
+            <Settings2 className="size-4" />
+            meInvoice
           </Button>
           <Button onClick={() => setDialog({ mode: "create" })}>
             <NotebookPen className="size-4" />
@@ -475,16 +492,31 @@ export function LedgerSection({
                       {e.invoiceStatus === "NONE" ? (
                         <span className="text-sm text-muted-foreground">—</span>
                       ) : e.invoiceStatus === "PENDING" ? (
-                        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                          Chưa xuất
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                            Chưa xuất
+                          </span>
+                          {e.direction === "IN" && (
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              title="Xuất hóa đơn điện tử qua meInvoice"
+                              onClick={() => setIssueEntry(e)}
+                            >
+                              <ReceiptText className="size-4" />
+                            </Button>
+                          )}
+                        </div>
                       ) : (
-                        <span
-                          className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"
-                          title={e.invoiceNo ?? undefined}
-                        >
-                          Đã xuất{e.invoiceNo ? ` · ${e.invoiceNo}` : ""}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"
+                            title={e.invoiceNo ?? undefined}
+                          >
+                            Đã xuất{e.invoiceNo ? ` · ${e.invoiceNo}` : ""}
+                          </span>
+                          {e.einvoiceTransactionId && <HqInvoicePdfButton entry={e} />}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
@@ -531,6 +563,18 @@ export function LedgerSection({
           entry={dialog.mode === "edit" ? dialog.entry : null}
           onClose={() => setDialog(null)}
           onSaved={onChanged}
+        />
+      )}
+
+      {invoiceConfigOpen && (
+        <HqInvoiceConfigDialog onClose={() => setInvoiceConfigOpen(false)} />
+      )}
+
+      {issueEntry && (
+        <HqIssueInvoiceDialog
+          entry={issueEntry}
+          onClose={() => setIssueEntry(null)}
+          onIssued={onChanged}
         />
       )}
     </div>

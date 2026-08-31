@@ -1714,6 +1714,9 @@ model PlatformLedgerEntry {
   packagePayment   PackagePayment? @relation(fields: [packagePaymentId], references: [id], onDelete: SetNull)
   invoiceStatus       LedgerInvoiceStatus @default(NONE)
   invoiceNo           String?
+  /// TransactionID meInvoice khi khoản thu này được xuất HĐĐT qua API (tab Sổ
+  /// quỹ HQ) — giữ để tải PDF/tra trạng thái; null với hóa đơn đánh dấu tay.
+  einvoiceTransactionId String?
   /// Ngày PHÁT SINH nghiệp vụ (kế toán chọn khi ghi tay — khác ngày nhập máy).
   occurredAt DateTime @default(now())
   /// Ai ghi bút toán — snapshot tên để sổ còn đọc được khi tài khoản bị xoá.
@@ -1729,6 +1732,38 @@ model PlatformLedgerEntry {
 /// Mỗi dòng = một mốc ĐÃ XỬ LÝ (xóa dòng = bỏ đánh dấu); itemKey khớp dữ liệu
 /// tĩnh trong frontend tax-calendar-section.tsx. Snapshot tên người đánh dấu
 /// để lịch sử còn đọc được khi tài khoản bị xoá (cùng lý do PlatformLedgerEntry).
+/// Cấu hình meInvoice của CHÍNH công ty Hubsell (xuất HĐĐT khi bán gói — tab
+/// Sổ quỹ HQ). SINGLETON: luôn findFirst/upsert bản ghi duy nhất. Khóa app
+/// MISA_CLIENT_ID/SECRET vẫn dùng chung từ env như tenant; bộ tài khoản
+/// meInvoice ở đây quyết định pháp nhân Hubsell trên hóa đơn. Trống toàn bộ
+/// cho tới khi công ty có GPKD + hợp đồng meInvoice (chờ 09/2026).
+model PlatformInvoiceConfig {
+  id             String  @id @default(cuid())
+  taxCode        String?
+  companyName    String?
+  companyAddress String?
+  /// Mẫu số (1 = HĐ GTGT) + ký hiệu 7 ký tự (VD "1C26THB") — regex dùng chung
+  /// INVOICE_PATTERN_RE/INVOICE_SERIES_RE của misa-einvoice.ts.
+  invoicePattern    String?
+  invoiceSeries     String?
+  meinvoiceUsername String?
+  meinvoicePassword String?
+  /// USB_TOKEN | ESIGN_CLOUD — mặc định ký nền HSM như tenant đã verify sandbox.
+  signMethod     String  @default("ESIGN_CLOUD")
+  esignClientId  String?
+  esignSecretKey String?
+  esignUsername  String?
+  esignPassword  String?
+  certSerial     String?
+  /// Thuế suất GTGT dòng dịch vụ gói: "KCT" | "0" | "5" | "8" | "10".
+  /// Mặc định KCT — dịch vụ phần mềm thuộc đối tượng KHÔNG chịu thuế GTGT
+  /// (chờ kế toán dịch vụ xác nhận khi thương mại hóa).
+  vatMode   String   @default("KCT")
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_invoice_config")
+}
+
 model PlatformTaxCheckItem {
   id         String   @id @default(cuid())
   itemKey    String   @unique

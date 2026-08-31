@@ -54,6 +54,19 @@ export function misaSignType(signMethod: string): number {
   return signMethod === "ESIGN_CLOUD" ? MISA_SIGN_TYPE.ESIGN_CLOUD : MISA_SIGN_TYPE.USB_TOKEN;
 }
 
+/**
+ * VATRateName meInvoice từ vatRate số của InvoiceLine. Hai giá trị âm là quy
+ * ước MỞ RỘNG cho dòng không tính thuế (tài liệu meInvoice nhận chuỗi đặc biệt
+ * thay vì "n%"): -1 = "KCT" (không chịu thuế — VD dịch vụ phần mềm, luồng HQ
+ * bán gói), -2 = "KKKNT" (không kê khai nộp thuế). Luồng tenant không sinh số
+ * âm (Product.vatRate chỉ 0/5/8/10) nên hành vi cũ giữ nguyên.
+ */
+export function misaVatRateName(vatRate: number): string {
+  if (vatRate === -1) return "KCT";
+  if (vatRate === -2) return "KKKNT";
+  return `${vatRate}%`;
+}
+
 // ============================================================
 // VALIDATE THEO TT 78/2021 — nguồn regex DUY NHẤT, route + UI cùng dùng.
 // ============================================================
@@ -227,7 +240,7 @@ export function buildStandardInvoicePayload(
       DiscountAmount: 0,
       AmountWithoutVATOC: amount,
       AmountWithoutVAT: amount,
-      VATRateName: `${l.vatRate}%`,
+      VATRateName: misaVatRateName(l.vatRate),
       VATAmountOC: l.vatAmount,
       VATAmount: l.vatAmount,
     };

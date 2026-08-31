@@ -15,6 +15,22 @@ import {
   type AuthRequest,
 } from "../middleware/auth";
 import { writeAuditLog } from "../services/platform-audit";
+import {
+  INVOICE_PATTERN_RE,
+  INVOICE_SERIES_RE,
+  TAX_CODE_RE,
+  downloadInvoiceFiles,
+  publishStandardInvoice,
+  standardConfigMissing,
+  testStandardConnection,
+} from "../integrations/invoice/misa-einvoice";
+import {
+  buildHqInvoiceInput,
+  hqStandardConfig,
+  isHqVatMode,
+  type HqVatMode,
+} from "../integrations/invoice/issue-hq";
+import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import adminPlansRouter from "./admin-plans";
 
 // ============================================================
@@ -926,6 +942,7 @@ const LEDGER_SELECT = {
   note: true,
   invoiceStatus: true,
   invoiceNo: true,
+  einvoiceTransactionId: true,
   occurredAt: true,
   createdByName: true,
   withdrawalRequestId: true,
@@ -1261,6 +1278,290 @@ router.put(
         detail: { itemKey },
       });
       res.json({ item: null });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
+// HĐĐT CỦA CHÍNH HUBSELL (tab Sổ quỹ HQ): cấu hình meInvoice công ty (singleton
+// platform_invoice_config — CHỈ chủ nền tảng vì chứa mật khẩu) + xuất hóa đơn
+// cho bút toán THU (hq.finance). Tầng client meInvoice tái dùng của tenant;
+// chốt an toàn MISA_ALLOW_PUBLISH vẫn gác publish như mọi luồng khác.
+// ============================================================
+
+/** Bản ghi cấu hình duy nhất (tạo rỗng nếu chưa có). */
+async function hqInvoiceConfigRow() {
+  const row = await prisma.platformInvoiceConfig.findFirst();
+  return row ?? prisma.platformInvoiceConfig.create({ data: {} });
+}
+
+/** Che trường mật — GET không bao giờ trả mật khẩu, chỉ báo đã lưu hay chưa. */
+function maskHqInvoiceConfig(row: Awaited<ReturnType<typeof hqInvoiceConfigRow>>) {
+  const { meinvoicePassword, esignSecretKey, esignPassword, ...rest } = row;
+  return {
+    ...rest,
+    hasMeinvoicePassword: Boolean(meinvoicePassword),
+    hasEsignSecretKey: Boolean(esignSecretKey),
+    hasEsignPassword: Boolean(esignPassword),
+  };
+}
+
+// GET /api/admin/finance/invoice-config — cấu hình (đã che mật khẩu) + trạng
+// thái sẵn sàng. Mở cho hq.finance để dialog xuất HĐ biết thiếu gì; sửa/test
+// vẫn chỉ chủ nền tảng.
+router.get(
+  "/finance/invoice-config",
+  requirePlatformPermission("hq.finance"),
+  async (_req, res, next) => {
+    try {
+      const row = await hqInvoiceConfigRow();
+      res.json({
+        config: maskHqInvoiceConfig(row),
+        missing: standardConfigMissing(hqStandardConfig(row)),
+        publishAllowed: isPublishAllowed(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PUT /api/admin/finance/invoice-config — cập nhật. Trường mật khẩu chỉ ghi đè
+// khi gửi chuỗi KHÔNG rỗng (form để trống = giữ giá trị cũ).
+router.put(
+  "/finance/invoice-config",
+  requirePlatformAdmin,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const b = req.body ?? {};
+      const text = (v: unknown) =>
+        typeof v === "string" ? v.trim() || null : undefined;
+
+      const taxCode = text(b.taxCode);
+      if (taxCode && !TAX_CODE_RE.test(taxCode)) {
+        res.status(400).json({ error: "MST không hợp lệ (10/12/13 số)" });
+        return;
+      }
+      const invoicePattern = text(b.invoicePattern);
+      if (invoicePattern && !INVOICE_PATTERN_RE.test(invoicePattern)) {
+        res.status(400).json({ error: "Mẫu số không hợp lệ (1/2/5/6)" });
+        return;
+      }
+      const invoiceSeries = text(b.invoiceSeries)?.toUpperCase();
+      if (invoiceSeries && !INVOICE_SERIES_RE.test(invoiceSeries)) {
+        res.status(400).json({ error: 'Ký hiệu không hợp lệ (7 ký tự, VD "1C26THB")' });
+        return;
+      }
+      if (b.signMethod !== undefined && !["USB_TOKEN", "ESIGN_CLOUD"].includes(b.signMethod)) {
+        res.status(400).json({ error: "signMethod không hợp lệ" });
+        return;
+      }
+      if (b.vatMode !== undefined && !isHqVatMode(b.vatMode)) {
+        res.status(400).json({ error: "vatMode không hợp lệ (KCT/0/5/8/10)" });
+        return;
+      }
+
+      const row = await hqInvoiceConfigRow();
+      const secret = (v: unknown) =>
+        typeof v === "string" && v.trim() ? v.trim() : undefined;
+      const updated = await prisma.platformInvoiceConfig.update({
+        where: { id: row.id },
+        data: {
+          taxCode,
+          companyName: text(b.companyName),
+          companyAddress: text(b.companyAddress),
+          invoicePattern,
+          invoiceSeries,
+          meinvoiceUsername: text(b.meinvoiceUsername),
+          meinvoicePassword: secret(b.meinvoicePassword),
+          signMethod: b.signMethod,
+          esignClientId: text(b.esignClientId),
+          esignSecretKey: secret(b.esignSecretKey),
+          esignUsername: text(b.esignUsername),
+          esignPassword: secret(b.esignPassword),
+          certSerial: text(b.certSerial),
+          vatMode: b.vatMode,
+        },
+      });
+      await writeAuditLog(req, {
+        action: "hq-invoice.config-update",
+        detail: { taxCode: updated.taxCode, invoiceSeries: updated.invoiceSeries },
+      });
+      res.json({
+        config: maskHqInvoiceConfig(updated),
+        missing: standardConfigMissing(hqStandardConfig(updated)),
+        publishAllowed: isPublishAllowed(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/invoice-config/test — thử lấy token meInvoice.
+router.post(
+  "/finance/invoice-config/test",
+  requirePlatformAdmin,
+  async (_req, res, next) => {
+    try {
+      const row = await hqInvoiceConfigRow();
+      const result = await testStandardConnection(hqStandardConfig(row));
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(502).json({
+        error: `Kết nối meInvoice thất bại: ${(err as Error).message}`,
+      });
+    }
+  }
+);
+
+// POST /api/admin/finance/ledger/:id/issue-invoice — xuất HĐĐT cho bút toán
+// THU. Body: { buyerName, buyerTaxCode?, buyerAddress?, buyerEmail?, itemName }.
+// Số tiền hóa đơn = ĐÚNG amount của bút toán (không cho sửa lệch sổ).
+router.post(
+  "/finance/ledger/:id/issue-invoice",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const entry = await prisma.platformLedgerEntry.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          direction: true,
+          amount: true,
+          invoiceStatus: true,
+          einvoiceTransactionId: true,
+        },
+      });
+      if (!entry) {
+        res.status(404).json({ error: "Không tìm thấy bút toán" });
+        return;
+      }
+      if (entry.direction !== LedgerDirection.IN) {
+        res.status(400).json({ error: "Chỉ xuất hóa đơn cho khoản THU" });
+        return;
+      }
+      if (entry.invoiceStatus === LedgerInvoiceStatus.ISSUED) {
+        res.status(400).json({ error: "Khoản thu này đã có hóa đơn" });
+        return;
+      }
+
+      const buyerName =
+        typeof req.body?.buyerName === "string" ? req.body.buyerName.trim() : "";
+      const itemName =
+        typeof req.body?.itemName === "string" ? req.body.itemName.trim() : "";
+      if (!buyerName || !itemName) {
+        res.status(400).json({ error: "Thiếu tên người mua hoặc nội dung dòng hóa đơn" });
+        return;
+      }
+      const buyerTaxCode =
+        typeof req.body?.buyerTaxCode === "string" ? req.body.buyerTaxCode.trim() : "";
+      if (buyerTaxCode && !TAX_CODE_RE.test(buyerTaxCode)) {
+        res.status(400).json({ error: "MST người mua không hợp lệ" });
+        return;
+      }
+
+      const row = await hqInvoiceConfigRow();
+      const cfg = hqStandardConfig(row);
+      const missing = standardConfigMissing(cfg);
+      if (missing.length > 0) {
+        res.status(400).json({
+          error: `Chưa cấu hình meInvoice của Hubsell — thiếu: ${missing.join(", ")}`,
+        });
+        return;
+      }
+
+      const input = buildHqInvoiceInput({
+        refId: `HQLEDGER-${entry.id}`,
+        buyerName,
+        buyerTaxCode,
+        buyerAddress:
+          typeof req.body?.buyerAddress === "string" ? req.body.buyerAddress.trim() : "",
+        buyerEmail:
+          typeof req.body?.buyerEmail === "string" ? req.body.buyerEmail.trim() : "",
+        itemName,
+        amount: toNumber(entry.amount),
+        vatMode: row.vatMode as HqVatMode,
+      });
+
+      let published;
+      try {
+        published = await publishStandardInvoice(input, cfg);
+      } catch (err) {
+        res.status(502).json({ error: (err as Error).message });
+        return;
+      }
+
+      // meInvoice có thể cấp số trễ (webhook) — khi đó giữ PENDING kèm
+      // TransactionID, kế toán tra trên meInvoice rồi điền số tay vào bút toán.
+      const issued = Boolean(published.invoiceNo);
+      const updated = await prisma.platformLedgerEntry.update({
+        where: { id: entry.id },
+        data: {
+          einvoiceTransactionId: published.transactionId,
+          ...(issued
+            ? {
+                invoiceStatus: LedgerInvoiceStatus.ISSUED,
+                invoiceNo: published.invoiceNo,
+              }
+            : {}),
+        },
+        select: LEDGER_SELECT,
+      });
+      await writeAuditLog(req, {
+        action: "hq-invoice.issue",
+        detail: {
+          ledgerEntryId: entry.id,
+          buyerName,
+          amount: toNumber(entry.amount),
+          invoiceNo: published.invoiceNo,
+          transactionId: published.transactionId,
+        },
+      });
+      res.json({
+        entry: { ...updated, amount: toNumber(updated.amount) },
+        invoiceNo: published.invoiceNo,
+        transactionId: published.transactionId,
+        pendingNumber: !issued,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /api/admin/finance/ledger/:id/invoice-pdf — bản thể hiện PDF (đã ký).
+router.get(
+  "/finance/ledger/:id/invoice-pdf",
+  requirePlatformPermission("hq.finance"),
+  async (req, res, next) => {
+    try {
+      const entry = await prisma.platformLedgerEntry.findUnique({
+        where: { id: req.params.id },
+        select: { invoiceNo: true, einvoiceTransactionId: true },
+      });
+      if (!entry?.einvoiceTransactionId) {
+        res.status(400).json({ error: "Bút toán chưa có hóa đơn xuất qua API" });
+        return;
+      }
+      const row = await hqInvoiceConfigRow();
+      const [file] = await downloadInvoiceFiles(
+        [entry.einvoiceTransactionId],
+        "Pdf",
+        hqStandardConfig(row)
+      );
+      if (!file?.data || file.errorCode) {
+        res.status(502).json({
+          error: `meInvoice không trả được file (${file?.errorCode ?? "không có dữ liệu"}) — thử lại sau.`,
+        });
+        return;
+      }
+      res.json({
+        fileName: `hoa-don-${entry.invoiceNo ?? entry.einvoiceTransactionId}.pdf`,
+        base64: file.data,
+      });
     } catch (err) {
       next(err);
     }
