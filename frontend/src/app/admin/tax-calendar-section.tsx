@@ -301,11 +301,12 @@ function eventStatus(due: string, done: boolean, todayIso: string): DueStatus {
 }
 
 function statusLabel(st: DueStatus, due: string, todayIso: string): string {
-  if (st === "done") return "Đã xử lý";
+  if (st === "done") return "✓ Đã xử lý";
   if (st === "overdue") return "QUÁ HẠN";
   const diff = daysUntil(due, todayIso);
   if (diff === 0) return "HẠN HÔM NAY";
-  return `Còn ${diff} ngày`;
+  if (st === "soon") return `Cận hạn · còn ${diff} ngày`;
+  return `Sắp tới · còn ${diff} ngày`;
 }
 
 // ---------- Component ----------
@@ -596,7 +597,7 @@ export function TaxCalendarSection() {
                                   "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
                                   check
                                     ? "border-slate-200 bg-card text-slate-500 hover:bg-slate-50"
-                                    : "border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700",
+                                    : "border-slate-200 bg-card text-slate-600 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700",
                                   (!interactable || saving === e.key) &&
                                     "cursor-not-allowed opacity-50"
                                 )}
@@ -609,7 +610,7 @@ export function TaxCalendarSection() {
                                 ) : (
                                   <>
                                     <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                    Đã xử lý
+                                    Đánh dấu đã xử lý
                                   </>
                                 )}
                               </button>
