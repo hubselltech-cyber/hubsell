@@ -450,7 +450,7 @@ export default function FeeAuditPage() {
         header: () => (
           <span className="inline-flex items-center gap-1">
             Trả thiếu
-            <HintIcon hint="So TỪNG LOẠI PHÍ với số chính sàn ước tính: chỉ tính phần phí bị thu VƯỢT lời hứa. Khoản chỉ chốt lúc quyết toán (hoa hồng Tiếp thị liên kết, thuế thu hộ, voucher shop tự chi) và đơn có hoàn tiền KHÔNG bị tính oan — hover dòng phụ để xem chênh từng loại." />
+            <HintIcon hint="So TỪNG LOẠI PHÍ với số chính sàn ước tính: chỉ tính phần phí bị thu VƯỢT lời hứa. Khoản chỉ chốt lúc quyết toán (hoa hồng Tiếp thị liên kết, thuế thu hộ, voucher shop tự chi) và đơn có hoàn tiền không bị tính. Đây là NGHI VẤN cần đối chiếu — mở chi tiết quyết toán đơn trên Seller Center kiểm tra lại trước khi gửi khiếu nại." />
           </span>
         ),
         cell: ({ row }) => (
@@ -579,7 +579,7 @@ export default function FeeAuditPage() {
             title={
               <span className="inline-flex items-center gap-1">
                 Sàn trả thiếu
-                <HintIcon hint="Tiền giải ngân thật thấp hơn số CHÍNH SÀN tự ước tính trước đó (đã loại đơn hoàn tiền). Mới theo dõi được Shopee — Lazada không cấp API số ước tính nên không soi mò." />
+                <HintIcon hint="Tiền giải ngân thật thấp hơn số CHÍNH SÀN tự ước tính, so theo từng loại phí (đã loại đơn hoàn tiền và khoản chỉ chốt lúc quyết toán). Đây là nghi vấn cần đối chiếu trên Seller Center trước khi khiếu nại. Mới theo dõi được Shopee — Lazada không cấp API số ước tính nên không soi mò." />
               </span>
             }
             value={<Money value={summary?.payout.totalMissing ?? 0} />}
@@ -797,6 +797,11 @@ export default function FeeAuditPage() {
             chỉ phí bị thu vượt lời hứa mới bị tính; hoa hồng Tiếp thị liên kết,
             thuế thu hộ, voucher shop tự chi và đơn hoàn tiền không bị báo oan.
             Lazada chưa có vì sàn không cấp API số ước tính.
+          </p>
+          <p>
+            · Con số rổ này là <b>nghi vấn để đối chiếu</b>, chưa phải kết luận:
+            hãy mở chi tiết quyết toán đơn trên Seller Center kiểm tra khớp chênh
+            từng loại phí trước khi gửi khiếu nại cho sàn.
           </p>
           <p>
             · Cảnh báo tự đẩy lên chuông thông báo sau mỗi nhịp đối soát (mỗi

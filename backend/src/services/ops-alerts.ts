@@ -320,8 +320,10 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
       dedupeKey: "rolling-30d",
       tag: "finance",
       severity: total >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
-      title: `${shortAgg._count._all} đơn sàn trả THIẾU so với số sàn tự ước tính — tổng ${vnd(total)}`,
-      summary: `Số tiền giải ngân thực tế thấp hơn số Shopee tự ước tính trước đó trên ${shortAgg._count._all} đơn (đã loại đơn hoàn tiền). Mở Kiểm toán phí sàn xem chênh từng đơn và gửi khiếu nại.`,
+      // Giọng NGHI VẤN, không phải kết luận (chốt 01/09): xúi seller khiếu nại
+      // sai một lần là mất niềm tin cả radar — hướng dẫn đối chiếu trước.
+      title: `${shortAgg._count._all} đơn nghi sàn trả thiếu so với số sàn tự ước tính — tổng ${vnd(total)}`,
+      summary: `Tiền giải ngân thực tế thấp hơn số Shopee tự ước tính trên ${shortAgg._count._all} đơn, so theo từng loại phí (đã loại đơn hoàn tiền và khoản chỉ chốt lúc quyết toán). Mở Kiểm toán phí sàn xem chênh từng loại phí, đối chiếu chi tiết quyết toán trên Seller Center rồi hãy quyết định khiếu nại.`,
       payload: {
         kind: "navigate",
         href: "/finance/fee-audit?tab=payout",
