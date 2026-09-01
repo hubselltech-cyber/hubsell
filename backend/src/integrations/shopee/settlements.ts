@@ -14,7 +14,7 @@
 // ============================================================
 
 import type { Channel } from "@prisma/client";
-import { ShippingStatus } from "@prisma/client";
+import { Prisma, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import {
   getEscrowDetail,
@@ -141,6 +141,245 @@ export function mapShopeeEscrowFields(income: ShopeeOrderIncome) {
   };
 }
 
+// ============================================================
+// KIỂM TOÁN "SÀN TRẢ THIẾU" — DIFF TỪNG THÀNH PHẦN (01/09/2026)
+//
+// Bài học đơn 26082480K9AARJ: so TỔNG expectedPayout − escrow thì mọi khoản
+// chỉ chốt lúc quyết toán (hoa hồng affiliate AMS, phí sàn đẻ mới sau này...)
+// đều thành cáo buộc oan. Đổi luật: chụp NGUYÊN BẢN order_income ước tính làm
+// mẫu số, lúc quyết toán diff từng thành phần —
+//   · Phí CÓ mẫu số ước tính mà thu vượt / trợ giá HỨA mà bù thiếu → lời hứa
+//     vỡ của chính sàn, buộc tội được.
+//   · Khoản chỉ chốt lúc giải ngân hoặc shop tự chi → ghi nhận, KHÔNG buộc tội.
+//   · Phần chênh không bóc tách được (trường lạ ngoài danh mục) → "thiếu mẫu
+//     số thì không kết luận" — cùng triết lý đã chốt với Lazada. Sàn thêm
+//     loại phí mới thì nó rơi vào đây: im lặng theo dõi thay vì báo oan.
+// ============================================================
+
+/** Bản income đã ép về map số thuần — dạng chung cho snapshot lẫn diff. */
+type IncomeSnapshot = Record<string, number>;
+
+/** Đọc một trường của snapshot, thiếu/NaN về 0 (cùng tinh thần hàm n). */
+const gv = (inc: IncomeSnapshot, key: string): number =>
+  Number(inc[key] ?? 0) || 0;
+
+/**
+ * Chụp các trường SỐ của order_income (bỏ mảng/object lồng — không dùng để
+ * diff). Ghi vào Order.expectedIncome mỗi lần ước tính; bản mới nhất trước
+ * giải ngân chính là "lời hứa" gần nhất của sàn.
+ */
+export function snapshotIncome(income: ShopeeOrderIncome): IncomeSnapshot {
+  const out: IncomeSnapshot = {};
+  for (const [key, value] of Object.entries(income)) {
+    if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
+  }
+  return out;
+}
+
+/** Một dòng diff ước tính ↔ quyết toán — lưu payoutShortfallDetail, FE hiển thị. */
+export interface ShortfallDetailItem {
+  key: string;
+  label: string;
+  expected: number;
+  actual: number;
+  /** Tiền shop NHẬN THIẾU vì thành phần này so với ước tính (âm = nhận dư). */
+  lost: number;
+  /** true = tính vào payoutShortfall ("sàn trả thiếu" thật, đáng khiếu nại). */
+  accused: boolean;
+  note?: string;
+}
+
+interface IncomeComponent {
+  key: string;
+  label: string;
+  read: (inc: IncomeSnapshot) => number;
+  /** "fee": quyết toán CAO hơn ước tính là mất tiền; "subsidy": THẤP hơn là mất. */
+  direction: "fee" | "subsidy";
+  /** false = khoản chính đáng/chốt-muộn: ghi vào detail nhưng không buộc tội. */
+  accusable: boolean;
+  note?: string;
+}
+
+/** Ship shop THỰC CHỊU — GIỮ KHỚP công thức shipBorne trong mapShopeeEscrowFields. */
+const shipBorneOf = (inc: IncomeSnapshot): number =>
+  Math.max(
+    gv(inc, "actual_shipping_fee") -
+      (gv(inc, "buyer_paid_shipping_fee") +
+        gv(inc, "shopee_shipping_rebate") +
+        gv(inc, "shipping_fee_discount_from_3pl")),
+    0
+  );
+
+/**
+ * Danh mục thành phần diff. Trường của order_income KHÔNG có mặt ở đây (kể cả
+ * trường tương lai sàn thêm) tự rơi vào dòng "chênh chưa bóc tách" không buộc
+ * tội — thêm loại phí mới chỉ việc bổ sung một dòng, không sửa thuật toán.
+ */
+const INCOME_COMPONENTS: IncomeComponent[] = [
+  // — Phí sàn CÓ trong ước tính: thu vượt là lời hứa vỡ → buộc tội —
+  {
+    key: "commission_fee",
+    label: "Phí cố định (hoa hồng sàn)",
+    read: (i) => gv(i, "commission_fee"),
+    direction: "fee",
+    accusable: true,
+  },
+  {
+    key: "service_fee",
+    label: "Phí Dịch Vụ (Freeship/Voucher Xtra)",
+    read: (i) => gv(i, "service_fee"),
+    direction: "fee",
+    accusable: true,
+  },
+  {
+    // Cùng luật chống đếm đôi seller/credit của mapShopeeEscrowFields.
+    key: "transaction_fee",
+    label: "Phí xử lý giao dịch",
+    read: (i) => {
+      const seller = gv(i, "seller_transaction_fee");
+      return seller > 0 ? seller : gv(i, "credit_card_transaction_fee");
+    },
+    direction: "fee",
+    accusable: true,
+  },
+  {
+    key: "piship_fee",
+    label: "Phí dịch vụ PiShip",
+    read: (i) => gv(i, "shipping_seller_protection_fee_amount"),
+    direction: "fee",
+    accusable: true,
+  },
+  {
+    key: "delivery_protection_fee",
+    label: "Phí bảo hiểm giao hàng",
+    read: (i) => gv(i, "delivery_seller_protection_fee_premium_amount"),
+    direction: "fee",
+    accusable: true,
+  },
+  // — Trợ giá sàn HỨA bù vào payout: bù thiếu cũng là mất tiền → buộc tội —
+  {
+    key: "shopee_discount",
+    label: "Trợ giá Shopee vào giá bán",
+    read: (i) => gv(i, "shopee_discount"),
+    direction: "subsidy",
+    accusable: true,
+  },
+  // — Khoản chính đáng / chỉ chốt lúc quyết toán: KHÔNG buộc tội —
+  {
+    key: "ams_fee",
+    label: "Phí hoa hồng Tiếp thị liên kết (AMS)",
+    read: (i) => gv(i, "order_ams_commission_fee"),
+    direction: "fee",
+    accusable: false,
+    note: "Hoa hồng affiliate chỉ chốt lúc quyết toán — chi phí thuê KOC/affiliate của shop, không phải sàn trả thiếu.",
+  },
+  {
+    key: "campaign_fee",
+    label: "Phí chương trình khuyến mãi",
+    read: (i) => gv(i, "campaign_fee"),
+    direction: "fee",
+    accusable: false,
+    note: "Phí chương trình shop tự đăng ký với sàn.",
+  },
+  {
+    key: "seller_voucher",
+    label: "Voucher/xu do shop chịu",
+    read: (i) => gv(i, "voucher_from_seller") + gv(i, "seller_coin_cash_back"),
+    direction: "fee",
+    accusable: false,
+    note: "Khuyến mãi shop tự chi cho khách — không phải phí sàn.",
+  },
+  {
+    key: "shipping",
+    label: "Phí vận chuyển shop chịu",
+    read: shipBorneOf,
+    direction: "fee",
+    accusable: false,
+    note: "Đã theo dõi riêng ở rổ Truy thu phí ship — không tính đôi.",
+  },
+  {
+    key: "tax",
+    label: "Thuế sàn thu hộ (GTGT + TNCN)",
+    read: (i) =>
+      gv(i, "escrow_tax") +
+      gv(i, "withholding_tax") +
+      gv(i, "withholding_vat_tax") +
+      gv(i, "withholding_pit_tax"),
+    direction: "fee",
+    accusable: false,
+    note: "Thuế thu hộ theo giá trị quyết toán — nghĩa vụ thuế, không khiếu nại sàn được.",
+  },
+  {
+    key: "selling_price",
+    label: "Giá bán ghi nhận",
+    read: (i) => gv(i, "order_selling_price"),
+    direction: "subsidy",
+    accusable: false,
+    note: "Giá trị hàng thay đổi (điều chỉnh/hủy một phần) — không phải phí sàn.",
+  },
+];
+
+export interface PayoutAuditResult {
+  shortfall: number;
+  detail: ShortfallDetailItem[] | null;
+}
+
+/**
+ * So bản income ước tính ↔ quyết toán theo TỪNG THÀNH PHẦN.
+ * payoutShortfall = tổng phần mất của các thành phần buộc-tội-được, chặn trần
+ * bằng mức tụt escrow thật (các thành phần rẻ đi bù trừ cho thành phần đắt lên
+ * — không thể "trả thiếu" nhiều hơn số tiền thực sự hụt).
+ */
+export function computePayoutShortfall(
+  expected: IncomeSnapshot | null,
+  final: IncomeSnapshot
+): PayoutAuditResult {
+  if (!expected) return { shortfall: 0, detail: null };
+  const gap = gv(expected, "escrow_amount") - gv(final, "escrow_amount");
+  // Nhận đủ hoặc dư so với sàn hứa → không có gì để soi.
+  if (gap <= 0) return { shortfall: 0, detail: null };
+
+  const detail: ShortfallDetailItem[] = [];
+  let explained = 0;
+  let accusedTotal = 0;
+  for (const c of INCOME_COMPONENTS) {
+    const exp = c.read(expected);
+    const act = c.read(final);
+    const lost = c.direction === "fee" ? act - exp : exp - act;
+    if (lost === 0) continue;
+    explained += lost;
+    const accused = c.accusable && lost > 0;
+    if (accused) accusedTotal += lost;
+    detail.push({
+      key: c.key,
+      label: c.label,
+      expected: exp,
+      actual: act,
+      lost,
+      accused,
+      ...(c.note ? { note: c.note } : {}),
+    });
+  }
+
+  // Phần chênh KHÔNG bóc tách được theo thành phần đã biết — chỗ "sàn đẻ loại
+  // phí mới" rơi vào: ghi nhận để theo dõi, không buộc tội (thiếu mẫu số thì
+  // không kết luận). Ngưỡng 1đ chỉ để nuốt sai số làm tròn.
+  const residual = gap - explained;
+  if (Math.abs(residual) >= 1) {
+    detail.push({
+      key: "unexplained",
+      label: "Chênh lệch chưa bóc tách được",
+      expected: 0,
+      actual: 0,
+      lost: residual,
+      accused: false,
+      note: "Phần chênh nằm ở trường ngoài danh mục theo dõi — ghi lại để soi thêm, không buộc tội khi thiếu mẫu số.",
+    });
+  }
+
+  return { shortfall: Math.min(accusedTotal, gap), detail };
+}
+
 /**
  * Kéo đối soát thật của MỘT gian Shopee: escrow_list (đơn đã giải ngân trong
  * daysBack ngày) → escrow_detail từng đơn → ghi cột GĐ2 của Order.
@@ -206,7 +445,15 @@ export async function syncShopeeSettlements(
   for (const [orderSn, releasedAt] of released) {
     const order = await prisma.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderSn } },
-      select: { id: true, expectedPayout: true },
+      // affiliateFee: mẫu số phí AMS cho chế độ tương thích bên dưới — chỉ
+      // còn là GIÁ TRỊ ƯỚC TÍNH khi đơn CHƯA settle (isSettled phân xử).
+      select: {
+        id: true,
+        expectedPayout: true,
+        expectedIncome: true,
+        affiliateFee: true,
+        isSettled: true,
+      },
     });
     if (!order) {
       result.ordersNotFound++;
@@ -218,21 +465,50 @@ export async function syncShopeeSettlements(
       const income = detail.response?.order_income;
       if (!income) continue;
 
-      // KIỂM TOÁN PHÍ SÀN rổ #2 "sàn trả thiếu": so số ước tính CỦA CHÍNH SÀN
-      // (snapshot expectedPayout ghi trước giải ngân) với escrow_amount cuối.
-      // Đơn CÓ hoàn tiền (seller_return_refund ≠ 0) bị loại: payout tụt vì
-      // khách hoàn là CHÍNH ĐÁNG, không phải sàn trừ thiếu — báo là báo oan.
+      // KIỂM TOÁN PHÍ SÀN rổ #2 "sàn trả thiếu": diff snapshot ước tính CỦA
+      // CHÍNH SÀN với bản quyết toán, TỪNG THÀNH PHẦN (computePayoutShortfall
+      // — chỉ buộc tội phí có mẫu số bị thu vượt, khoản chốt-muộn như hoa hồng
+      // AMS không thành cáo buộc). Đơn CÓ hoàn tiền (seller_return_refund ≠ 0)
+      // bị loại: payout tụt vì khách hoàn là CHÍNH ĐÁNG, báo là báo oan.
       // Ghi một lần lúc quyết toán; chạy lặp idempotent ra cùng số.
-      const expected = order.expectedPayout === null ? null : Number(order.expectedPayout);
       const hasRefund = Math.abs(n(income.seller_return_refund)) > 0;
-      const payoutShortfall =
-        expected !== null && !hasRefund
-          ? Math.max(expected - n(income.escrow_amount), 0)
-          : 0;
+      const expectedSnap =
+        order.expectedIncome && typeof order.expectedIncome === "object"
+          ? (order.expectedIncome as IncomeSnapshot)
+          : null;
+      let audit: PayoutAuditResult = { shortfall: 0, detail: null };
+      if (!hasRefund) {
+        if (expectedSnap) {
+          audit = computePayoutShortfall(expectedSnap, snapshotIncome(income));
+        } else if (order.expectedPayout !== null) {
+          // CHẾ ĐỘ TƯƠNG THÍCH — đơn chụp ước tính trước bản diff thành phần:
+          // chỉ có tổng expectedPayout, trừ tay được đúng thủ phạm báo oan đã
+          // biết là phí AMS. Mẫu số AMS: đơn CHƯA settle thì cột affiliateFee
+          // còn là số ước tính; đơn ĐÃ settle (worker quét lặp cửa sổ 90 ngày)
+          // cột đã bị ghi đè số thật — coi ước tính là 0 (AMS vốn chỉ chốt lúc
+          // quyết toán), kẻo amsDelta tự triệt tiêu và số oan sống lại mỗi giờ.
+          const estimatedAms = order.isSettled ? 0 : Number(order.affiliateFee);
+          const amsDelta = Math.max(
+            n(income.order_ams_commission_fee) - estimatedAms,
+            0
+          );
+          audit.shortfall = Math.max(
+            Number(order.expectedPayout) - n(income.escrow_amount) - amsDelta,
+            0
+          );
+        }
+      }
 
       await prisma.order.update({
         where: { id: order.id },
-        data: { ...mapShopeeEscrowToOrder(income, releasedAt), payoutShortfall },
+        data: {
+          ...mapShopeeEscrowToOrder(income, releasedAt),
+          payoutShortfall: audit.shortfall,
+          payoutShortfallDetail:
+            audit.detail === null
+              ? Prisma.DbNull
+              : (audit.detail as unknown as Prisma.InputJsonValue),
+        },
       });
       result.ordersUpdated++;
     } catch (err) {
@@ -313,9 +589,10 @@ export async function syncShopeePendingEscrowEstimates(
         data: {
           ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
           // Snapshot MẪU SỐ cho Kiểm toán phí sàn: số escrow ước tính mới nhất
-          // của chính Shopee. syncShopeeSettlements KHÔNG ghi đè cột này —
-          // khi giải ngân thật sẽ so nó với escrow_amount cuối (payoutShortfall).
+          // của chính Shopee + NGUYÊN BẢN các trường số (diff từng thành phần
+          // lúc quyết toán). syncShopeeSettlements KHÔNG ghi đè hai cột này.
           expectedPayout: n(income.escrow_amount),
+          expectedIncome: snapshotIncome(income),
         },
       });
       result.updated++;
@@ -361,6 +638,7 @@ export async function syncShopeeEscrowEstimateForOrder(
       ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
       // Snapshot mẫu số Kiểm toán phí sàn — cùng lý do với vòng quét ước tính.
       expectedPayout: n(income.escrow_amount),
+      expectedIncome: snapshotIncome(income),
     },
   });
   return true;

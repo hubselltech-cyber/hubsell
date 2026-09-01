@@ -45,7 +45,7 @@ import {
   shopOnlyName,
   type ChannelFilterValue,
 } from "@/components/shared/channel-filter";
-import { HintIcon } from "@/components/finance/hint-icon";
+import { HintIcon, HintText } from "@/components/finance/hint-icon";
 import { Money } from "@/components/ui/money";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -61,6 +61,7 @@ import {
   type FeeAuditPayoutItem,
   type FeeAuditPendingItem,
   type FeeAuditStatus,
+  type PayoutShortfallDetailItem,
   type ShippingDiscrepancy,
   type ShippingDisputeStatus,
 } from "@/lib/api";
@@ -159,6 +160,55 @@ function OrderCell({
         {shop && <> · {shop}</>}
       </p>
     </>
+  );
+}
+
+/**
+ * Dòng phụ "trả thiếu VÌ ĐÂU" dưới số tiền — liệt kê các loại phí bị thu vượt
+ * so với chính sàn ước tính; hover ra bảng diff đầy đủ, kể cả khoản KHÔNG bị
+ * buộc tội (hoa hồng affiliate, thuế thu hộ...) để chủ shop hiểu vì sao số
+ * "trả thiếu" nhỏ hơn mức tụt tổng. Đơn cũ tính theo chế độ tương thích không
+ * có bảng diff → không hiện gì.
+ */
+function ShortfallBreakdown({
+  detail,
+}: {
+  detail: PayoutShortfallDetailItem[] | null;
+}) {
+  if (!detail || detail.length === 0) return null;
+  const accused = detail.filter((d) => d.accused);
+  if (accused.length === 0) return null;
+  return (
+    <HintText
+      className="mt-1 block max-w-64 truncate"
+      hint={
+        <div className="space-y-1">
+          {detail.map((d) => (
+            <p key={d.key}>
+              <b>{d.label}</b>
+              {d.expected !== 0 || d.actual !== 0 ? (
+                <>
+                  {" "}
+                  {formatNumber(d.expected)} → {formatNumber(d.actual)}
+                </>
+              ) : null}{" "}
+              ({d.lost > 0 ? "+" : ""}
+              {formatNumber(d.lost)} đ)
+              {!d.accused && (
+                <span className="opacity-80">
+                  {" "}
+                  — không tính{d.note ? `: ${d.note}` : ""}
+                </span>
+              )}
+            </p>
+          ))}
+        </div>
+      }
+    >
+      {accused
+        .map((d) => `${d.label} +${formatNumber(d.lost)}`)
+        .join(" · ")}
+    </HintText>
   );
 }
 
@@ -400,13 +450,16 @@ export default function FeeAuditPage() {
         header: () => (
           <span className="inline-flex items-center gap-1">
             Trả thiếu
-            <HintIcon hint="Sàn tự ước tính − thực nhận. Đơn có hoàn tiền cho khách đã được LOẠI khỏi rổ này (payout tụt vì hoàn là chính đáng) — còn lại là chênh đáng mang đi hỏi sàn." />
+            <HintIcon hint="So TỪNG LOẠI PHÍ với số chính sàn ước tính: chỉ tính phần phí bị thu VƯỢT lời hứa. Khoản chỉ chốt lúc quyết toán (hoa hồng Tiếp thị liên kết, thuế thu hộ, voucher shop tự chi) và đơn có hoàn tiền KHÔNG bị tính oan — hover dòng phụ để xem chênh từng loại." />
           </span>
         ),
         cell: ({ row }) => (
-          <span className={cn("font-semibold", MONEY_NEGATIVE)}>
-            <Money value={row.original.shortfall} negative />
-          </span>
+          <>
+            <span className={cn("font-semibold", MONEY_NEGATIVE)}>
+              <Money value={row.original.shortfall} negative />
+            </span>
+            <ShortfallBreakdown detail={row.original.detail} />
+          </>
         ),
       },
       {
@@ -740,9 +793,10 @@ export default function FeeAuditPage() {
           </p>
           <p>
             · Rổ <b>Sàn trả thiếu</b> so số giải ngân thật với số{" "}
-            <b>chính Shopee tự ước tính</b> trước đó; đơn có hoàn tiền cho khách
-            được loại để không báo oan. Lazada chưa có vì sàn không cấp API số
-            ước tính.
+            <b>chính Shopee tự ước tính</b> trước đó, bóc theo <b>từng loại phí</b>:
+            chỉ phí bị thu vượt lời hứa mới bị tính; hoa hồng Tiếp thị liên kết,
+            thuế thu hộ, voucher shop tự chi và đơn hoàn tiền không bị báo oan.
+            Lazada chưa có vì sàn không cấp API số ước tính.
           </p>
           <p>
             · Cảnh báo tự đẩy lên chuông thông báo sau mỗi nhịp đối soát (mỗi

@@ -1116,9 +1116,21 @@ model Order {
   /// so với actualPayout lúc quyết toán. NULL = sàn không cấp số ước tính
   /// (Lazada không có API này — đúng triết lý "không bịa số", không soi mò).
   expectedPayout  Decimal?  @db.Decimal(12, 2)
-  /// = max(expectedPayout − actualPayout, 0), GHI MỘT LẦN lúc quyết toán.
-  /// Tách cột thay vì tính lúc query vì Prisma không so được 2 cột trong where.
+  /// Snapshot NGUYÊN BẢN các trường số của order_income ước tính — chụp cùng
+  /// lúc expectedPayout. Cho phép diff TỪNG THÀNH PHẦN lúc quyết toán: phí có
+  /// mẫu số mà thu vượt mới buộc tội, khoản chỉ chốt lúc giải ngân (hoa hồng
+  /// affiliate AMS, phí sàn đẻ mới...) tự rơi vào rổ "không buộc tội" — hết
+  /// báo oan kiểu đơn 26082480K9AARJ (01/09). NULL = đơn ước tính trước bản
+  /// nâng cấp → quyết toán chạy chế độ tương thích (chỉ trừ được phí AMS).
+  expectedIncome  Json?
+  /// Kết quả buộc tội "sàn trả thiếu", GHI MỘT LẦN lúc quyết toán: tổng các
+  /// thành phần phí CÓ mẫu số ước tính bị thu vượt (computePayoutShortfall),
+  /// chặn trần bằng mức tụt escrow thật. Tách cột thay vì tính lúc query vì
+  /// Prisma không so được 2 cột trong where.
   payoutShortfall Decimal   @default(0) @db.Decimal(12, 2)
+  /// Bảng diff từng thành phần (ShortfallDetailItem[]) ghi cùng payoutShortfall
+  /// — FE hiện "trả thiếu vì đâu", khoản không buộc tội giữ lại để theo dõi.
+  payoutShortfallDetail Json?
   payoutAuditStatus FeeAuditStatus @default(CHO_XU_LY) // xử lý khoản trả thiếu
   /// Mốc GIAO THÀNH CÔNG — ghi khi shippingStatus chuyển sang DELIVERED. Đơn
   /// backfill cũ nhận mốc lúc đồng bộ (muộn hơn thực tế) → phép đếm "quá hạn

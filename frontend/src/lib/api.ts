@@ -1560,6 +1560,19 @@ export interface FeeAuditSummary {
   pending: { orders: number; totalWaiting: number };
 }
 
+/** Một dòng diff ước tính ↔ quyết toán của rổ "sàn trả thiếu". */
+export interface PayoutShortfallDetailItem {
+  key: string;
+  label: string;
+  expected: number;
+  actual: number;
+  /** Tiền shop nhận thiếu vì thành phần này so với ước tính (âm = nhận dư). */
+  lost: number;
+  /** true = tính vào số "trả thiếu"; false = khoản chính đáng, chỉ ghi nhận. */
+  accused: boolean;
+  note?: string;
+}
+
 export interface FeeAuditPayoutItem {
   id: string;
   orderCode: string;
@@ -1569,6 +1582,8 @@ export interface FeeAuditPayoutItem {
   expectedPayout: number; // số sàn tự ước tính trước giải ngân
   actualPayout: number; // số thật về ví
   shortfall: number; // DƯƠNG = sàn trả thiếu bấy nhiêu
+  /** Diff từng thành phần — null với đơn tính theo chế độ tương thích cũ. */
+  detail: PayoutShortfallDetailItem[] | null;
   status: FeeAuditStatus;
 }
 

@@ -1793,6 +1793,9 @@ router.get("/fee-audit", async (req: AuthRequest, res, next) => {
           expectedPayout: Number(o.expectedPayout ?? 0),
           actualPayout: Number(o.actualPayout),
           shortfall: Number(o.payoutShortfall),
+          // Bảng diff từng thành phần (ghi lúc quyết toán) — FE hiện "trả
+          // thiếu VÌ ĐÂU". null = đơn tính theo chế độ tương thích cũ.
+          detail: o.payoutShortfallDetail ?? null,
           status: o.payoutAuditStatus,
         })),
       });
