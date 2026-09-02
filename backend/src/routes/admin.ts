@@ -829,6 +829,8 @@ router.post(
           data: {
             direction: LedgerDirection.OUT,
             source: LedgerSource.REFERRAL_PAYOUT,
+            expenseCategory: "REFERRAL",
+            paymentMethod: "BANK",
             amount: wr.amount,
             note: `Chi trả hoa hồng giới thiệu — ${wr.bankName} · ${wr.bankAccountNumber}${noteValue ? ` (${noteValue})` : ""}`,
             customerId: wr.user.id,
@@ -947,8 +949,39 @@ const LEDGER_SELECT = {
   createdByName: true,
   withdrawalRequestId: true,
   packagePaymentId: true,
+  expenseCategory: true,
+  vendorName: true,
+  vendorTaxCode: true,
+  inputInvoiceNo: true,
+  paymentMethod: true,
+  recurringExpenseId: true,
   customer: { select: { id: true, email: true, fullName: true } },
 } as const;
+
+// Khoản mục CHI hợp lệ — nhãn hiển thị nằm ở frontend (hq-expense-categories.ts),
+// backend chỉ giữ bộ key để validate. REFERRAL không ghi tay được (tự sinh từ
+// duyệt lệnh rút, cùng lý do chặn source REFERRAL_PAYOUT).
+const HQ_EXPENSE_CATEGORY_KEYS = [
+  "RENT",
+  "SALARY",
+  "INSURANCE",
+  "SOFTWARE",
+  "MARKETING",
+  "BANK_FEE",
+  "TAX_FEE",
+  "EQUIPMENT",
+  "REFERRAL",
+  "OTHER_EXPENSE",
+] as const;
+
+/** Khoản mục hiển thị/tổng hợp của một bút toán CHI (dòng cũ chưa phân loại
+ *  + chi hoa hồng tự sinh đời đầu vẫn lên đúng nhóm). */
+function ledgerExpenseCategory(e: { expenseCategory: string | null; source: LedgerSource }): string {
+  if (e.expenseCategory) return e.expenseCategory;
+  return e.source === LedgerSource.REFERRAL_PAYOUT ? "REFERRAL" : "OTHER_EXPENSE";
+}
+
+const HQ_PAYMENT_METHODS = ["BANK", "CASH"] as const;
 
 /** Khoảng thời gian [đầu tháng, đầu tháng sau) từ chuỗi "YYYY-MM". */
 function monthRange(raw: unknown): { month: string; start: Date; end: Date } {
@@ -966,22 +999,62 @@ router.get(
   async (req, res, next) => {
     try {
       const { month, start, end } = monthRange(req.query.month);
-      const entries = await prisma.platformLedgerEntry.findMany({
-        where: { occurredAt: { gte: start, lt: end } },
-        orderBy: { occurredAt: "desc" },
-        select: LEDGER_SELECT,
-      });
+      const [entries, recurringList] = await Promise.all([
+        prisma.platformLedgerEntry.findMany({
+          where: { occurredAt: { gte: start, lt: end } },
+          orderBy: { occurredAt: "desc" },
+          select: LEDGER_SELECT,
+        }),
+        prisma.platformRecurringExpense.findMany({
+          where: { active: true },
+          orderBy: [{ dayOfMonth: "asc" }, { createdAt: "asc" }],
+        }),
+      ]);
       let totalIn = 0;
       let totalOut = 0;
       let pendingInvoices = 0;
+      // Cơ cấu CHI theo khoản mục trong tháng — để kế toán thấy tiền ra nằm ở
+      // đâu (thuê VP / lương / phần mềm...) thay vì một cục "Khoản khác".
+      const byCategory = new Map<string, number>();
       for (const e of entries) {
         if (e.direction === LedgerDirection.IN) totalIn += toNumber(e.amount);
-        else totalOut += toNumber(e.amount);
+        else {
+          totalOut += toNumber(e.amount);
+          const key = ledgerExpenseCategory(e);
+          byCategory.set(key, (byCategory.get(key) ?? 0) + toNumber(e.amount));
+        }
         if (e.invoiceStatus === LedgerInvoiceStatus.PENDING) pendingInvoices += 1;
       }
+      // Checklist chi phí cố định của THÁNG ĐANG XEM: mỗi danh mục ghép với bút
+      // toán đã ghi trong tháng (nếu có) — chưa ghi thì frontend nhắc.
+      const loggedByRecurring = new Map<string, (typeof entries)[number]>();
+      for (const e of entries) {
+        if (e.recurringExpenseId && !loggedByRecurring.has(e.recurringExpenseId)) {
+          loggedByRecurring.set(e.recurringExpenseId, e);
+        }
+      }
+      const recurring = recurringList.map((r) => {
+        const logged = loggedByRecurring.get(r.id);
+        return {
+          id: r.id,
+          name: r.name,
+          category: r.category,
+          vendorName: r.vendorName,
+          expectedAmount: toNumber(r.expectedAmount),
+          dayOfMonth: r.dayOfMonth,
+          note: r.note,
+          loggedEntry: logged
+            ? { id: logged.id, amount: toNumber(logged.amount), occurredAt: logged.occurredAt }
+            : null,
+        };
+      });
       res.json({
         month,
         totals: { in: totalIn, out: totalOut, net: totalIn - totalOut, pendingInvoices },
+        byCategory: [...byCategory.entries()]
+          .map(([key, out]) => ({ key, out }))
+          .sort((a, b) => b.out - a.out),
+        recurring,
         entries: entries.map((e) => ({ ...e, amount: toNumber(e.amount) })),
       });
     } catch (err) {
@@ -992,15 +1065,32 @@ router.get(
 
 // POST /api/admin/finance/ledger — GHI TAY một bút toán (phiếu thu/chi).
 // Body: { direction, source, amount, note?, customerEmail?, occurredAt?,
-//         invoiceStatus?, invoiceNo? }
+//         invoiceStatus?, invoiceNo?,
+//         // riêng phiếu CHI (direction=OUT):
+//         expenseCategory?, vendorName?, vendorTaxCode?, inputInvoiceNo?,
+//         paymentMethod?, recurringExpenseId? }
 // REFERRAL_PAYOUT không ghi tay được — nguồn đó chỉ tự sinh từ duyệt lệnh rút.
 router.post(
   "/finance/ledger",
   requirePlatformPermission("hq.finance"),
   async (req: AuthRequest, res, next) => {
     try {
-      const { direction, source, amount, note, customerEmail, occurredAt, invoiceStatus, invoiceNo } =
-        req.body ?? {};
+      const {
+        direction,
+        source,
+        amount,
+        note,
+        customerEmail,
+        occurredAt,
+        invoiceStatus,
+        invoiceNo,
+        expenseCategory,
+        vendorName,
+        vendorTaxCode,
+        inputInvoiceNo,
+        paymentMethod,
+        recurringExpenseId,
+      } = req.body ?? {};
 
       if (!(Object.values(LedgerDirection) as string[]).includes(direction)) {
         res.status(400).json({ error: "Chiều dòng tiền không hợp lệ (IN/OUT)" });
@@ -1042,6 +1132,42 @@ router.post(
           ? LedgerInvoiceStatus.PENDING
           : LedgerInvoiceStatus.NONE;
 
+      // Khoản mục + chứng từ đầu vào — chỉ có nghĩa với phiếu CHI.
+      const isOut = direction === LedgerDirection.OUT;
+      let category: string | null = null;
+      if (isOut) {
+        if (
+          expenseCategory !== undefined &&
+          (!(HQ_EXPENSE_CATEGORY_KEYS as readonly string[]).includes(expenseCategory) ||
+            expenseCategory === "REFERRAL")
+        ) {
+          res.status(400).json({ error: "Khoản mục chi không hợp lệ" });
+          return;
+        }
+        category = expenseCategory ?? "OTHER_EXPENSE";
+      }
+      if (
+        paymentMethod !== undefined &&
+        !(HQ_PAYMENT_METHODS as readonly string[]).includes(paymentMethod)
+      ) {
+        res.status(400).json({ error: "Hình thức thanh toán không hợp lệ (BANK/CASH)" });
+        return;
+      }
+      let recurringId: string | null = null;
+      if (isOut && typeof recurringExpenseId === "string" && recurringExpenseId) {
+        const recurring = await prisma.platformRecurringExpense.findUnique({
+          where: { id: recurringExpenseId },
+          select: { id: true },
+        });
+        if (!recurring) {
+          res.status(400).json({ error: "Không tìm thấy khoản chi cố định này" });
+          return;
+        }
+        recurringId = recurring.id;
+      }
+      const cleanText = (v: unknown) =>
+        typeof v === "string" && v.trim() ? v.trim() : null;
+
       const actor = await prisma.user.findUnique({
         where: { id: req.userId! },
         select: { fullName: true },
@@ -1057,6 +1183,12 @@ router.post(
           invoiceStatus: invStatus,
           invoiceNo:
             typeof invoiceNo === "string" && invoiceNo.trim() ? invoiceNo.trim() : null,
+          expenseCategory: category,
+          vendorName: isOut ? cleanText(vendorName) : null,
+          vendorTaxCode: isOut ? cleanText(vendorTaxCode) : null,
+          inputInvoiceNo: isOut ? cleanText(inputInvoiceNo) : null,
+          paymentMethod: isOut ? ((paymentMethod as string | undefined) ?? "BANK") : null,
+          recurringExpenseId: recurringId,
           createdById: req.userId!,
           createdByName: actor?.fullName ?? "(không rõ)",
         },
@@ -1066,7 +1198,14 @@ router.post(
       await writeAuditLog(req, {
         action: "ledger.create",
         targetUserId: customerId,
-        detail: { direction, source, amount: value, note: entry.note, occurredAt: when.toISOString() },
+        detail: {
+          direction,
+          source,
+          amount: value,
+          note: entry.note,
+          occurredAt: when.toISOString(),
+          expenseCategory: category,
+        },
       });
       res.status(201).json({ entry: { ...entry, amount: toNumber(entry.amount) } });
     } catch (err) {
@@ -1082,18 +1221,40 @@ router.patch(
   requirePlatformPermission("hq.finance"),
   async (req: AuthRequest, res, next) => {
     try {
-      const { note, invoiceStatus, invoiceNo, occurredAt, amount } = req.body ?? {};
+      const {
+        note,
+        invoiceStatus,
+        invoiceNo,
+        occurredAt,
+        amount,
+        expenseCategory,
+        vendorName,
+        vendorTaxCode,
+        inputInvoiceNo,
+        paymentMethod,
+      } = req.body ?? {};
       const entry = await prisma.platformLedgerEntry.findUnique({
         where: { id: req.params.id },
-        select: { id: true, withdrawalRequestId: true, packagePaymentId: true },
+        select: { id: true, direction: true, withdrawalRequestId: true, packagePaymentId: true },
       });
       if (!entry) {
         res.status(404).json({ error: "Không tìm thấy bút toán" });
         return;
       }
+      const expenseFieldTouched =
+        expenseCategory !== undefined ||
+        vendorName !== undefined ||
+        vendorTaxCode !== undefined ||
+        inputInvoiceNo !== undefined ||
+        paymentMethod !== undefined;
+      // Khoản mục/chứng từ đầu vào chỉ tồn tại trên phiếu CHI ghi tay.
+      if (expenseFieldTouched && entry.direction !== LedgerDirection.OUT) {
+        res.status(400).json({ error: "Khoản mục chi chỉ áp dụng cho phiếu CHI" });
+        return;
+      }
       if (
         entry.withdrawalRequestId !== null &&
-        (invoiceStatus !== undefined || invoiceNo !== undefined || occurredAt !== undefined || amount !== undefined)
+        (invoiceStatus !== undefined || invoiceNo !== undefined || occurredAt !== undefined || amount !== undefined || expenseFieldTouched)
       ) {
         res.status(400).json({
           error: "Bút toán tự sinh từ lệnh rút — chỉ sửa được diễn giải; nguồn sự thật là lệnh rút",
@@ -1146,6 +1307,28 @@ router.patch(
         }
         patch.amount = value;
       }
+      if (expenseCategory !== undefined) {
+        if (
+          !(HQ_EXPENSE_CATEGORY_KEYS as readonly string[]).includes(expenseCategory) ||
+          expenseCategory === "REFERRAL"
+        ) {
+          res.status(400).json({ error: "Khoản mục chi không hợp lệ" });
+          return;
+        }
+        patch.expenseCategory = expenseCategory;
+      }
+      if (paymentMethod !== undefined) {
+        if (!(HQ_PAYMENT_METHODS as readonly string[]).includes(paymentMethod)) {
+          res.status(400).json({ error: "Hình thức thanh toán không hợp lệ (BANK/CASH)" });
+          return;
+        }
+        patch.paymentMethod = paymentMethod;
+      }
+      const patchText = (v: unknown) =>
+        typeof v === "string" && v.trim() ? v.trim() : null;
+      if (vendorName !== undefined) patch.vendorName = patchText(vendorName);
+      if (vendorTaxCode !== undefined) patch.vendorTaxCode = patchText(vendorTaxCode);
+      if (inputInvoiceNo !== undefined) patch.inputInvoiceNo = patchText(inputInvoiceNo);
 
       const updated = await prisma.platformLedgerEntry.update({
         where: { id: entry.id },
@@ -1204,6 +1387,176 @@ router.delete(
           amount: toNumber(entry.amount),
           note: entry.note,
         },
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
+// CHI PHÍ CỐ ĐỊNH HÀNG THÁNG (tab Sổ quỹ HQ — lá hq.finance): danh mục các
+// khoản chi lặp lại (thuê VP, lương, bảo hiểm, phần mềm AI...). Chỉ là
+// DANH MỤC NHẮC — trạng thái đã chi/chưa chi của từng tháng suy ra từ bút
+// toán có recurringExpenseId trong tháng đó (trả kèm GET /finance/ledger).
+// ============================================================
+
+/** Đọc + validate body danh mục chi cố định (dùng chung POST/PATCH). */
+function parseRecurringBody(body: Record<string, unknown>, partial: boolean) {
+  const out: {
+    name?: string;
+    category?: string;
+    vendorName?: string | null;
+    expectedAmount?: number;
+    dayOfMonth?: number;
+    note?: string | null;
+    active?: boolean;
+  } = {};
+  const { name, category, vendorName, expectedAmount, dayOfMonth, note, active } = body;
+  if (name !== undefined || !partial) {
+    if (typeof name !== "string" || !name.trim()) return { error: "Tên khoản chi không được trống" };
+    out.name = name.trim();
+  }
+  if (category !== undefined || !partial) {
+    if (
+      typeof category !== "string" ||
+      !(HQ_EXPENSE_CATEGORY_KEYS as readonly string[]).includes(category) ||
+      category === "REFERRAL"
+    ) {
+      return { error: "Khoản mục chi không hợp lệ" };
+    }
+    out.category = category;
+  }
+  if (expectedAmount !== undefined || !partial) {
+    const value = Math.floor(Number(expectedAmount));
+    if (!Number.isFinite(value) || value <= 0) return { error: "Số tiền dự kiến phải là số dương" };
+    out.expectedAmount = value;
+  }
+  if (dayOfMonth !== undefined || !partial) {
+    const day = Math.floor(Number(dayOfMonth ?? 5));
+    if (!Number.isFinite(day) || day < 1 || day > 28) {
+      return { error: "Hạn chi hàng tháng phải từ ngày 1 đến 28" };
+    }
+    out.dayOfMonth = day;
+  }
+  if (vendorName !== undefined) {
+    out.vendorName = typeof vendorName === "string" && vendorName.trim() ? vendorName.trim() : null;
+  }
+  if (note !== undefined) {
+    out.note = typeof note === "string" && note.trim() ? note.trim() : null;
+  }
+  if (active !== undefined) {
+    if (typeof active !== "boolean") return { error: "Trạng thái active không hợp lệ" };
+    out.active = active;
+  }
+  return { data: out };
+}
+
+// GET /api/admin/finance/recurring-expenses — toàn bộ danh mục (kể cả tạm ngưng).
+router.get(
+  "/finance/recurring-expenses",
+  requirePlatformPermission("hq.finance"),
+  async (_req, res, next) => {
+    try {
+      const items = await prisma.platformRecurringExpense.findMany({
+        orderBy: [{ active: "desc" }, { dayOfMonth: "asc" }, { createdAt: "asc" }],
+      });
+      res.json({
+        items: items.map((r) => ({ ...r, expectedAmount: toNumber(r.expectedAmount) })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/finance/recurring-expenses — thêm một khoản chi cố định.
+router.post(
+  "/finance/recurring-expenses",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = parseRecurringBody(req.body ?? {}, false);
+      if ("error" in parsed) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      const item = await prisma.platformRecurringExpense.create({
+        data: {
+          name: parsed.data.name!,
+          category: parsed.data.category!,
+          expectedAmount: parsed.data.expectedAmount!,
+          dayOfMonth: parsed.data.dayOfMonth!,
+          vendorName: parsed.data.vendorName ?? null,
+          note: parsed.data.note ?? null,
+        },
+      });
+      await writeAuditLog(req, {
+        action: "ledger.recurring.create",
+        detail: { name: item.name, category: item.category, expectedAmount: toNumber(item.expectedAmount) },
+      });
+      res.status(201).json({ item: { ...item, expectedAmount: toNumber(item.expectedAmount) } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PATCH /api/admin/finance/recurring-expenses/:id — sửa / tạm ngưng (active=false).
+router.patch(
+  "/finance/recurring-expenses/:id",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const existing = await prisma.platformRecurringExpense.findUnique({
+        where: { id: req.params.id },
+        select: { id: true },
+      });
+      if (!existing) {
+        res.status(404).json({ error: "Không tìm thấy khoản chi cố định" });
+        return;
+      }
+      const parsed = parseRecurringBody(req.body ?? {}, true);
+      if ("error" in parsed) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
+      const item = await prisma.platformRecurringExpense.update({
+        where: { id: existing.id },
+        data: parsed.data,
+      });
+      await writeAuditLog(req, {
+        action: "ledger.recurring.update",
+        detail: JSON.parse(JSON.stringify({ id: existing.id, ...req.body })),
+      });
+      res.json({ item: { ...item, expectedAmount: toNumber(item.expectedAmount) } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// DELETE /api/admin/finance/recurring-expenses/:id — xoá hẳn khỏi danh mục.
+// Bút toán đã ghi KHÔNG mất gì: khoản mục/NCC đã copy lên từng bút toán,
+// FK recurringExpenseId chỉ SetNull.
+router.delete(
+  "/finance/recurring-expenses/:id",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const existing = await prisma.platformRecurringExpense.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, name: true },
+      });
+      if (!existing) {
+        res.status(404).json({ error: "Không tìm thấy khoản chi cố định" });
+        return;
+      }
+      await prisma.platformRecurringExpense.delete({ where: { id: existing.id } });
+      await writeAuditLog(req, {
+        action: "ledger.recurring.delete",
+        detail: { name: existing.name },
       });
       res.json({ ok: true });
     } catch (err) {

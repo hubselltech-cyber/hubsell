@@ -1726,6 +1726,22 @@ model PlatformLedgerEntry {
   packagePayment   PackagePayment? @relation(fields: [packagePaymentId], references: [id], onDelete: SetNull)
   invoiceStatus       LedgerInvoiceStatus @default(NONE)
   invoiceNo           String?
+  /// Khoản mục CHI — key trong danh mục HQ_EXPENSE_CATEGORIES (RENT/SALARY/
+  /// INSURANCE/SOFTWARE...). Chỉ có nghĩa với direction=OUT; null với khoản
+  /// chi cũ = hiển thị "Chi khác". Cố ý là String (không enum DB) để thêm
+  /// khoản mục sau này không phải migration.
+  expenseCategory String?
+  /// Chứng từ ĐẦU VÀO của khoản chi — để kế toán dịch vụ lên bảng kê mua vào:
+  /// nhà cung cấp + MST + số hóa đơn đầu vào + hình thức thanh toán (BANK/CASH
+  /// — tiền mặt ≥5tr không được khấu trừ thuế nên UI cảnh báo).
+  vendorName     String?
+  vendorTaxCode  String?
+  inputInvoiceNo String?
+  paymentMethod  String?
+  /// Khoản chi cố định sinh ra bút toán này (kế toán bấm "Ghi ngay" trên
+  /// checklist tháng) — SetNull khi xoá danh mục, dữ liệu đã copy lên bút toán.
+  recurringExpenseId String?
+  recurringExpense   PlatformRecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
   /// TransactionID meInvoice khi khoản thu này được xuất HĐĐT qua API (tab Sổ
   /// quỹ HQ) — giữ để tải PDF/tra trạng thái; null với hóa đơn đánh dấu tay.
   einvoiceTransactionId String?
@@ -1737,7 +1753,32 @@ model PlatformLedgerEntry {
   createdAt     DateTime @default(now())
 
   @@index([occurredAt])
+  @@index([recurringExpenseId])
   @@map("platform_ledger_entries")
+}
+
+/// Chi phí CỐ ĐỊNH hàng tháng của CHÍNH công ty Hubsell (thuê VP, lương, bảo
+/// hiểm, phần mềm AI...) — là DANH MỤC NHẮC trên tab Sổ quỹ HQ, KHÔNG tự sinh
+/// bút toán: số tiền thật mỗi tháng phải theo chứng từ, kế toán bấm "Ghi ngay"
+/// để prefill phiếu chi rồi tự sửa số. expectedAmount chỉ để gợi ý.
+model PlatformRecurringExpense {
+  id   String @id @default(cuid())
+  name String
+  /// Khoản mục chi — cùng bộ key với PlatformLedgerEntry.expenseCategory.
+  category   String
+  vendorName String?
+  /// Số tiền DỰ KIẾN hàng tháng — chỉ để prefill phiếu chi.
+  expectedAmount Decimal @db.Decimal(14, 2)
+  /// Hạn chi hàng tháng (1–28) — checklist tô "Quá hạn" khi qua ngày này.
+  dayOfMonth Int     @default(5)
+  note       String?
+  active     Boolean @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  entries PlatformLedgerEntry[]
+
+  @@map("platform_recurring_expenses")
 }
 
 /// Checklist thủ tục thuế của CHÍNH công ty Hubsell (tab Lịch thuế /admin/finance).

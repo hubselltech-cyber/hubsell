@@ -3,12 +3,17 @@
 // SỔ QUỸ NỘI BỘ (GĐ5) — khối trung tâm của trang Kế toán: mỗi dòng một khoản
 // tiền vào/ra của CHÍNH công ty Hubsell theo tháng. Chi hoa hồng tự sinh từ
 // duyệt lệnh rút; thu phí gói/khoản khác kế toán ghi tay. Mỗi khoản THU mang
-// nghĩa vụ hóa đơn (Chưa xuất → Đã xuất kèm số HĐ). Xuất Excel đúng layout
-// sổ thu/chi để nộp cho kế toán dịch vụ kê khai thuế.
+// nghĩa vụ hóa đơn (Chưa xuất → Đã xuất kèm số HĐ). Mỗi khoản CHI mang KHOẢN
+// MỤC (thuê VP/lương/bảo hiểm/phần mềm...) + chứng từ đầu vào (NCC, MST, số
+// HĐ, CK/TM) — kế toán dịch vụ nhìn sổ là lên được bảng kê, không phải bới
+// diễn giải. Chi phí CỐ ĐỊNH hàng tháng có checklist nhắc + "Ghi ngay" prefill
+// (không tự sinh bút toán — số thật phải theo chứng từ từng tháng). Xuất Excel
+// đúng layout sổ thu/chi kèm sheet tổng hợp khoản mục để nộp kê khai thuế.
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
+  CalendarClock,
   FileSpreadsheet,
   Loader2,
   NotebookPen,
@@ -41,8 +46,15 @@ import {
 import {
   ApiError,
   createLedgerEntry,
+  createRecurringExpense,
   deleteLedgerEntry,
+  deleteRecurringExpense,
+  fetchRecurringExpenses,
   updateLedgerEntry,
+  updateRecurringExpense,
+  type HqPaymentMethod,
+  type HqRecurringExpense,
+  type HqRecurringStatusRow,
   type LedgerDirection,
   type LedgerInvoiceStatus,
   type PlatformLedgerEntry,
@@ -51,6 +63,12 @@ import {
 import { exportLedgerToExcel } from "@/lib/excel";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import {
+  CASH_DEDUCT_LIMIT,
+  HQ_EXPENSE_CATEGORIES,
+  HQ_EXPENSE_CATEGORY_LABEL,
+  displayExpenseCategory,
+} from "./hq-expense-categories";
 import {
   HqInvoiceConfigDialog,
   HqInvoicePdfButton,
@@ -72,13 +90,25 @@ function toDateInput(iso: string): string {
 
 // ---------- Dialog phiếu thu/chi (ghi tay) + sửa bút toán ----------
 
+/** Prefill phiếu CHI từ checklist chi cố định ("Ghi ngay"). */
+export interface LedgerEntryPreset {
+  amount: number;
+  note: string;
+  expenseCategory: string;
+  vendorName: string | null;
+  recurringExpenseId: string;
+}
+
 function LedgerEntryDialog({
   entry,
+  preset,
   onClose,
   onSaved,
 }: {
   /** Có entry = SỬA; không có = GHI MỚI. */
   entry: PlatformLedgerEntry | null;
+  /** Chỉ dùng khi GHI MỚI — prefill phiếu chi cố định. */
+  preset?: LedgerEntryPreset | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -90,23 +120,41 @@ function LedgerEntryDialog({
   const paymentLocked = isEdit && entry.packagePaymentId !== null;
 
   const [direction, setDirection] = useState<LedgerDirection>(
-    entry?.direction ?? "IN"
+    entry?.direction ?? (preset ? "OUT" : "IN")
   );
   const [source, setSource] = useState<"SUBSCRIPTION" | "OTHER">(
-    entry?.source === "OTHER" ? "OTHER" : "SUBSCRIPTION"
+    entry ? (entry.source === "OTHER" ? "OTHER" : "SUBSCRIPTION") : preset ? "OTHER" : "SUBSCRIPTION"
   );
-  const [amount, setAmount] = useState(entry ? String(entry.amount) : "");
+  const [amount, setAmount] = useState(
+    entry ? String(entry.amount) : preset ? String(preset.amount) : ""
+  );
   const [occurredAt, setOccurredAt] = useState(
     entry ? toDateInput(entry.occurredAt) : toDateInput(new Date().toISOString())
   );
   const [customerEmail, setCustomerEmail] = useState(
     entry?.customer?.email ?? ""
   );
-  const [note, setNote] = useState(entry?.note ?? "");
+  const [note, setNote] = useState(entry?.note ?? preset?.note ?? "");
   const [invoiceStatus, setInvoiceStatus] = useState<LedgerInvoiceStatus>(
-    entry?.invoiceStatus ?? "PENDING"
+    entry ? entry.invoiceStatus : preset ? "NONE" : "PENDING"
   );
   const [invoiceNo, setInvoiceNo] = useState(entry?.invoiceNo ?? "");
+  // Khoản mục + chứng từ đầu vào của phiếu CHI.
+  const [expenseCategory, setExpenseCategory] = useState(
+    entry
+      ? entry.direction === "OUT"
+        ? displayExpenseCategory(entry)
+        : "OTHER_EXPENSE"
+      : preset?.expenseCategory ?? "OTHER_EXPENSE"
+  );
+  const [vendorName, setVendorName] = useState(
+    entry?.vendorName ?? preset?.vendorName ?? ""
+  );
+  const [vendorTaxCode, setVendorTaxCode] = useState(entry?.vendorTaxCode ?? "");
+  const [inputInvoiceNo, setInputInvoiceNo] = useState(entry?.inputInvoiceNo ?? "");
+  const [paymentMethod, setPaymentMethod] = useState<HqPaymentMethod>(
+    entry?.paymentMethod ?? "BANK"
+  );
   const [submitting, setSubmitting] = useState(false);
 
   // Đổi chiều dòng tiền lúc GHI MỚI → nguồn & nghĩa vụ hóa đơn đổi theo cho hợp lý.
@@ -121,12 +169,28 @@ function LedgerEntryDialog({
     }
   }, [direction, isEdit]);
 
+  const isOut = direction === "OUT";
+  const categoryHint = HQ_EXPENSE_CATEGORIES.find((c) => c.key === expenseCategory)?.hint;
+  // Luật GTGT: mua vào ≥5tr trả tiền mặt là mất quyền khấu trừ — nhắc ngay lúc ghi.
+  const cashWarning =
+    isOut && paymentMethod === "CASH" && Math.floor(Number(amount)) >= CASH_DEDUCT_LIMIT;
+
   async function handleSave() {
     const value = Math.floor(Number(amount));
     if (!autoLocked && !paymentLocked && (!Number.isFinite(value) || value <= 0)) {
       toast.error("Số tiền phải là số dương");
       return;
     }
+    // Trường phiếu CHI — chỉ gửi khi bút toán là chiều OUT (backend chặn chiều IN).
+    const expenseFields = isOut
+      ? {
+          expenseCategory,
+          vendorName: vendorName.trim() || undefined,
+          vendorTaxCode: vendorTaxCode.trim() || undefined,
+          inputInvoiceNo: inputInvoiceNo.trim() || undefined,
+          paymentMethod,
+        }
+      : {};
     setSubmitting(true);
     try {
       if (isEdit) {
@@ -141,6 +205,7 @@ function LedgerEntryDialog({
                   occurredAt: new Date(`${occurredAt}T12:00:00`).toISOString(),
                   invoiceStatus,
                   invoiceNo,
+                  ...expenseFields,
                 }),
         });
         toast.success("Đã cập nhật bút toán");
@@ -154,6 +219,8 @@ function LedgerEntryDialog({
           occurredAt: new Date(`${occurredAt}T12:00:00`).toISOString(),
           invoiceStatus,
           invoiceNo: invoiceNo.trim() || undefined,
+          recurringExpenseId: preset?.recurringExpenseId,
+          ...expenseFields,
         });
         toast.success(direction === "IN" ? "Đã ghi phiếu thu" : "Đã ghi phiếu chi");
       }
@@ -214,18 +281,35 @@ function LedgerEntryDialog({
               </div>
             </div>
 
-            {!isEdit && (
+            {!isEdit && !isOut && (
               <div className="grid gap-2">
                 <Label>Nguồn</Label>
                 <NativeSelect
                   value={source}
                   onChange={(e) => setSource(e.target.value as "SUBSCRIPTION" | "OTHER")}
                 >
-                  {direction === "IN" && (
-                    <option value="SUBSCRIPTION">Thu phí gói dịch vụ</option>
-                  )}
+                  <option value="SUBSCRIPTION">Thu phí gói dịch vụ</option>
                   <option value="OTHER">Khoản khác</option>
                 </NativeSelect>
+              </div>
+            )}
+
+            {isOut && (
+              <div className="grid gap-2">
+                <Label>Khoản mục chi</Label>
+                <NativeSelect
+                  value={expenseCategory}
+                  onChange={(e) => setExpenseCategory(e.target.value)}
+                >
+                  {HQ_EXPENSE_CATEGORIES.filter((c) => !c.autoOnly).map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {categoryHint && (
+                  <p className="text-xs text-muted-foreground">{categoryHint}</p>
+                )}
               </div>
             )}
 
@@ -250,7 +334,72 @@ function LedgerEntryDialog({
               </div>
             </div>
 
-            {!isEdit && (
+            {isOut && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Nhà cung cấp / người nhận</Label>
+                    <Input
+                      placeholder="vd: Cty CP ABC"
+                      value={vendorName}
+                      onChange={(e) => setVendorName(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>MST nhà cung cấp</Label>
+                    <Input
+                      placeholder="vd: 0101234567"
+                      value={vendorTaxCode}
+                      onChange={(e) => setVendorTaxCode(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Số HĐ đầu vào (nếu có)</Label>
+                    <Input
+                      placeholder="vd: 1C26TAB-102"
+                      value={inputInvoiceNo}
+                      onChange={(e) => setInputInvoiceNo(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Hình thức thanh toán</Label>
+                    <div className="flex gap-1.5">
+                      {(
+                        [
+                          ["BANK", "Chuyển khoản"],
+                          ["CASH", "Tiền mặt"],
+                        ] as [HqPaymentMethod, string][]
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setPaymentMethod(value)}
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+                            paymentMethod === value
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-slate-200 text-slate-500 hover:border-slate-300"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {cashWarning && (
+                  <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    Khoản mua từ 5 triệu trả TIỀN MẶT sẽ không được khấu trừ thuế
+                    GTGT / tính chi phí được trừ — nên chuyển khoản từ tài khoản
+                    công ty.
+                  </p>
+                )}
+              </>
+            )}
+
+            {!isEdit && !isOut && (
               <div className="grid gap-2">
                 <Label>Email khách hàng (nếu có)</Label>
                 <Input
@@ -311,6 +460,442 @@ function LedgerEntryDialog({
   );
 }
 
+// ---------- Checklist chi phí cố định hàng tháng ----------
+
+/** Trạng thái một khoản cố định trong THÁNG đang xem. */
+function recurringStatus(
+  row: HqRecurringStatusRow,
+  month: string
+): { label: string; tone: "done" | "late" | "wait" | "future" } {
+  if (row.loggedEntry) return { label: "Đã chi", tone: "done" };
+  const now = new Date();
+  const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  if (month < current) return { label: "Chưa ghi sổ", tone: "late" };
+  if (month > current) return { label: "Chưa tới kỳ", tone: "future" };
+  if (now.getDate() > row.dayOfMonth)
+    return { label: `Quá hạn (ngày ${row.dayOfMonth})`, tone: "late" };
+  return { label: `Hạn ngày ${row.dayOfMonth}`, tone: "wait" };
+}
+
+const RECURRING_TONE_CLASS: Record<string, string> = {
+  done: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  late: "border-rose-200 bg-rose-50 text-rose-700",
+  wait: "border-amber-300 bg-amber-50 text-amber-700",
+  future: "border-slate-200 bg-slate-50 text-slate-500",
+};
+
+function RecurringPanel({
+  rows,
+  month,
+  onLog,
+  onManage,
+}: {
+  rows: HqRecurringStatusRow[];
+  month: string;
+  onLog: (preset: LedgerEntryPreset) => void;
+  onManage: () => void;
+}) {
+  const totalExpected = rows.reduce((s, r) => s + r.expectedAmount, 0);
+  const pending = rows.filter((r) => !r.loggedEntry).length;
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <CalendarClock className="size-4" />
+            Chi phí cố định tháng {month.slice(5)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {rows.length === 0
+              ? "Khai một lần các khoản lặp hàng tháng (thuê VP, lương, bảo hiểm, phần mềm…) — mỗi tháng chỉ việc bấm ghi."
+              : pending === 0
+                ? `Đủ ${rows.length}/${rows.length} khoản đã ghi sổ — dự kiến ${formatMoney(totalExpected)}/tháng.`
+                : `Còn ${pending}/${rows.length} khoản chưa ghi — dự kiến ${formatMoney(totalExpected)}/tháng.`}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onManage}>
+          <Settings2 className="size-4" />
+          Danh mục
+        </Button>
+      </div>
+      {rows.length > 0 && (
+        <div className="divide-y divide-slate-100">
+          {rows.map((r) => {
+            const st = recurringStatus(r, month);
+            return (
+              <div key={r.id} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{r.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {HQ_EXPENSE_CATEGORY_LABEL[r.category] ?? r.category}
+                    {r.vendorName ? ` · ${r.vendorName}` : ""}
+                  </p>
+                </div>
+                <p className="whitespace-nowrap text-sm font-semibold tabular-nums">
+                  {formatMoney(r.loggedEntry ? r.loggedEntry.amount : r.expectedAmount)}
+                  {!r.loggedEntry && (
+                    <span className="font-normal text-muted-foreground"> dự kiến</span>
+                  )}
+                </p>
+                <span
+                  className={cn(
+                    "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                    RECURRING_TONE_CLASS[st.tone]
+                  )}
+                >
+                  {st.label}
+                </span>
+                {!r.loggedEntry && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      onLog({
+                        amount: r.expectedAmount,
+                        note: `${r.name} — tháng ${month.slice(5)}/${month.slice(0, 4)}`,
+                        expenseCategory: r.category,
+                        vendorName: r.vendorName,
+                        recurringExpenseId: r.id,
+                      })
+                    }
+                  >
+                    Ghi ngay
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------- Cơ cấu chi theo khoản mục ----------
+
+function CategoryBreakdown({
+  byCategory,
+  totalOut,
+  month,
+}: {
+  byCategory: { key: string; out: number }[];
+  totalOut: number;
+  month: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+        <div>
+          <p className="text-sm font-semibold">Cơ cấu chi tháng {month.slice(5)}</p>
+          <p className="text-xs text-muted-foreground">
+            Tiền ra gom theo khoản mục — đúng nhóm kế toán cần khi kê khai.
+          </p>
+        </div>
+        {byCategory.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Tháng này chưa có khoản chi nào.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {byCategory.map((c) => {
+              const pct = totalOut > 0 ? Math.round((c.out / totalOut) * 100) : 0;
+              return (
+                <div key={c.key}>
+                  <div className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="truncate">
+                      {HQ_EXPENSE_CATEGORY_LABEL[c.key] ?? c.key}
+                    </span>
+                    <span className="whitespace-nowrap font-semibold tabular-nums">
+                      {formatMoney(c.out)}
+                      <span className="ml-1 font-normal text-muted-foreground">{pct}%</span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-rose-400/80"
+                      style={{ width: `${Math.max(pct, 2)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------- Dialog quản lý danh mục chi cố định ----------
+
+const EMPTY_RECURRING_FORM = {
+  id: null as string | null,
+  name: "",
+  category: "RENT",
+  expectedAmount: "",
+  dayOfMonth: "5",
+  vendorName: "",
+  note: "",
+};
+
+function RecurringManageDialog({
+  onClose,
+  onChanged,
+}: {
+  onClose: () => void;
+  /** Gọi khi danh mục thay đổi — trang ngoài refetch để checklist cập nhật. */
+  onChanged: () => void;
+}) {
+  const [items, setItems] = useState<HqRecurringExpense[] | null>(null);
+  const [form, setForm] = useState(EMPTY_RECURRING_FORM);
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function reload() {
+    try {
+      const res = await fetchRecurringExpenses();
+      setItems(res.items);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không tải được danh mục");
+    }
+  }
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  async function handleSubmit() {
+    const value = Math.floor(Number(form.expectedAmount));
+    if (!form.name.trim()) {
+      toast.error("Nhập tên khoản chi (vd: Thuê văn phòng)");
+      return;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      toast.error("Số tiền dự kiến phải là số dương");
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        category: form.category,
+        expectedAmount: value,
+        dayOfMonth: Math.floor(Number(form.dayOfMonth)) || 5,
+        vendorName: form.vendorName.trim() || undefined,
+        note: form.note.trim() || undefined,
+      };
+      if (form.id) {
+        await updateRecurringExpense(form.id, payload);
+        toast.success("Đã cập nhật khoản chi cố định");
+      } else {
+        await createRecurringExpense(payload);
+        toast.success("Đã thêm khoản chi cố định");
+      }
+      setForm(EMPTY_RECURRING_FORM);
+      await reload();
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không lưu được");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggle(item: HqRecurringExpense) {
+    setBusyId(item.id);
+    try {
+      await updateRecurringExpense(item.id, { active: !item.active });
+      await reload();
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không cập nhật được");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(item: HqRecurringExpense) {
+    setBusyId(item.id);
+    try {
+      await deleteRecurringExpense(item.id);
+      toast.success("Đã xoá khỏi danh mục — bút toán đã ghi không bị ảnh hưởng");
+      await reload();
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không xoá được");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarClock className="size-5" />
+            Danh mục chi phí cố định hàng tháng
+          </DialogTitle>
+          <DialogDescription>
+            Khai một lần — mỗi tháng checklist sẽ nhắc và bấm &ldquo;Ghi ngay&rdquo;
+            là ra phiếu chi điền sẵn. Số tiền ở đây chỉ là DỰ KIẾN, số thật sửa
+            lúc ghi theo chứng từ.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 rounded-lg border border-slate-200/80 p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label>Tên khoản chi</Label>
+              <Input
+                placeholder="vd: Thuê văn phòng tầng 3"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Khoản mục</Label>
+              <NativeSelect
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
+                {HQ_EXPENSE_CATEGORIES.filter((c) => !c.autoOnly).map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="grid gap-2">
+              <Label>Dự kiến (₫/tháng)</Label>
+              <Input
+                type="number"
+                min={1}
+                placeholder="vd: 8000000"
+                value={form.expectedAmount}
+                onChange={(e) => setForm({ ...form, expectedAmount: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Hạn chi (ngày 1–28)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={28}
+                value={form.dayOfMonth}
+                onChange={(e) => setForm({ ...form, dayOfMonth: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Nhà cung cấp</Label>
+              <Input
+                placeholder="vd: Chủ nhà A"
+                value={form.vendorName}
+                onChange={(e) => setForm({ ...form, vendorName: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex items-end gap-3">
+            <div className="grid flex-1 gap-2">
+              <Label>Ghi chú</Label>
+              <Input
+                placeholder="vd: HĐ thuê số 12/2026, hết hạn 31/12"
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+              />
+            </div>
+            {form.id && (
+              <Button
+                variant="outline"
+                onClick={() => setForm(EMPTY_RECURRING_FORM)}
+                disabled={saving}
+              >
+                Huỷ sửa
+              </Button>
+            )}
+            <Button onClick={handleSubmit} disabled={saving}>
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              {form.id ? "Lưu thay đổi" : "Thêm khoản chi"}
+            </Button>
+          </div>
+        </div>
+
+        {items === null ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Đang tải…</p>
+        ) : items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Chưa có khoản chi cố định nào — thêm khoản đầu tiên ở trên.
+          </p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {items.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className={cn("truncate text-sm font-medium", !item.active && "text-muted-foreground line-through")}>
+                    {item.name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {HQ_EXPENSE_CATEGORY_LABEL[item.category] ?? item.category} · hạn
+                    ngày {item.dayOfMonth}
+                    {item.vendorName ? ` · ${item.vendorName}` : ""}
+                  </p>
+                </div>
+                <p className="whitespace-nowrap text-sm font-semibold tabular-nums">
+                  {formatMoney(item.expectedAmount)}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busyId === item.id}
+                  onClick={() =>
+                    setForm({
+                      id: item.id,
+                      name: item.name,
+                      category: item.category,
+                      expectedAmount: String(item.expectedAmount),
+                      dayOfMonth: String(item.dayOfMonth),
+                      vendorName: item.vendorName ?? "",
+                      note: item.note ?? "",
+                    })
+                  }
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busyId === item.id}
+                  title={item.active ? "Tạm ngưng (không nhắc nữa)" : "Bật nhắc lại"}
+                  onClick={() => handleToggle(item)}
+                >
+                  {item.active ? "Tạm ngưng" : "Bật lại"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-red-500"
+                  disabled={busyId === item.id}
+                  title="Xoá khỏi danh mục (bút toán đã ghi giữ nguyên)"
+                  onClick={() => handleDelete(item)}
+                >
+                  {busyId === item.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------- Khối Sổ quỹ ----------
 
 export function LedgerSection({
@@ -327,10 +912,13 @@ export function LedgerSection({
   onChanged: () => void;
 }) {
   const [dialog, setDialog] = useState<
-    { mode: "create" } | { mode: "edit"; entry: PlatformLedgerEntry } | null
+    | { mode: "create"; preset?: LedgerEntryPreset }
+    | { mode: "edit"; entry: PlatformLedgerEntry }
+    | null
   >(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [invoiceConfigOpen, setInvoiceConfigOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
   const [issueEntry, setIssueEntry] = useState<PlatformLedgerEntry | null>(null);
 
   async function handleDelete(entry: PlatformLedgerEntry) {
@@ -416,6 +1004,22 @@ export function LedgerSection({
         </div>
       )}
 
+      {data && (
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          <RecurringPanel
+            rows={data.recurring}
+            month={data.month}
+            onLog={(preset) => setDialog({ mode: "create", preset })}
+            onManage={() => setRecurringOpen(true)}
+          />
+          <CategoryBreakdown
+            byCategory={data.byCategory}
+            totalOut={data.totals.out}
+            month={data.month}
+          />
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
           {loading && !data ? (
@@ -463,8 +1067,13 @@ export function LedgerSection({
                       <p className="truncate" title={e.note ?? undefined}>
                         {e.note ?? SOURCE_LABEL[e.source] ?? e.source}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {SOURCE_LABEL[e.source] ?? e.source}
+                      <p className="truncate text-xs text-muted-foreground">
+                        {e.direction === "OUT"
+                          ? HQ_EXPENSE_CATEGORY_LABEL[displayExpenseCategory(e)]
+                          : SOURCE_LABEL[e.source] ?? e.source}
+                        {e.direction === "OUT" && e.paymentMethod === "CASH"
+                          ? " · Tiền mặt"
+                          : ""}
                       </p>
                     </TableCell>
                     <TableCell className="text-sm">
@@ -473,6 +1082,18 @@ export function LedgerSection({
                           {e.customer.fullName}
                           <p className="text-xs text-muted-foreground">
                             {e.customer.email}
+                          </p>
+                        </>
+                      ) : e.vendorName ? (
+                        <>
+                          {e.vendorName}
+                          <p className="text-xs text-muted-foreground">
+                            {[
+                              e.vendorTaxCode ? `MST ${e.vendorTaxCode}` : null,
+                              e.inputInvoiceNo ? `HĐ ${e.inputInvoiceNo}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "Nhà cung cấp"}
                           </p>
                         </>
                       ) : (
@@ -561,8 +1182,16 @@ export function LedgerSection({
       {dialog && (
         <LedgerEntryDialog
           entry={dialog.mode === "edit" ? dialog.entry : null}
+          preset={dialog.mode === "create" ? dialog.preset ?? null : null}
           onClose={() => setDialog(null)}
           onSaved={onChanged}
+        />
+      )}
+
+      {recurringOpen && (
+        <RecurringManageDialog
+          onClose={() => setRecurringOpen(false)}
+          onChanged={onChanged}
         />
       )}
 

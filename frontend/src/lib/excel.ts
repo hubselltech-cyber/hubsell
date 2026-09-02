@@ -18,6 +18,10 @@ import {
 } from "@/lib/api";
 import { toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
 import type { DateRange } from "@/lib/date-range";
+import {
+  HQ_EXPENSE_CATEGORY_LABEL,
+  displayExpenseCategory,
+} from "@/app/admin/hq-expense-categories";
 
 // Chuyển "yyyy-...T..." → "hh:mm dd/mm/yyyy" cho dễ đọc trong Excel
 function toDateTimeText(value: string): string {
@@ -372,21 +376,35 @@ const LEDGER_INVOICE_LABEL: Record<string, string> = {
 /**
  * Xuất sổ quỹ một tháng ra Excel — layout sổ thu/chi quen thuộc của kế toán:
  * hai cột Tiền vào / Tiền ra tách riêng + dòng TỔNG CỘNG cuối sổ, kèm cột
- * nghĩa vụ hóa đơn để rà khoản thu nào chưa xuất.
+ * nghĩa vụ hóa đơn (thu) và khoản mục + chứng từ đầu vào (chi: NCC, MST,
+ * số HĐ, CK/TM). Sheet 2 "Chi theo khoan muc" tổng hợp tiền ra theo khoản
+ * mục — kế toán dịch vụ lấy thẳng số lên tờ khai.
  */
 export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: string) {
   const rows: Record<string, string | number>[] = entries.map((e) => ({
     "Ngày phát sinh": toDateTimeText(e.occurredAt),
     Loại: e.direction === "IN" ? "THU" : "CHI",
-    Nguồn: LEDGER_SOURCE_LABEL[e.source] ?? e.source,
+    "Khoản mục":
+      e.direction === "OUT"
+        ? HQ_EXPENSE_CATEGORY_LABEL[displayExpenseCategory(e)] ?? ""
+        : LEDGER_SOURCE_LABEL[e.source] ?? e.source,
     "Diễn giải": e.note ?? "",
-    "Khách hàng / Người nhận": e.customer
+    "Khách hàng / NCC": e.customer
       ? `${e.customer.fullName}${e.customer.email ? ` (${e.customer.email})` : ""}`
-      : "",
+      : e.vendorName ?? "",
+    "MST NCC": e.vendorTaxCode ?? "",
     "Tiền vào": e.direction === "IN" ? e.amount : "",
     "Tiền ra": e.direction === "OUT" ? e.amount : "",
+    "Hình thức TT":
+      e.direction === "OUT"
+        ? e.paymentMethod === "CASH"
+          ? "Tiền mặt"
+          : e.paymentMethod === "BANK"
+            ? "Chuyển khoản"
+            : ""
+        : "",
     "Hóa đơn": LEDGER_INVOICE_LABEL[e.invoiceStatus] ?? e.invoiceStatus,
-    "Số hóa đơn": e.invoiceNo ?? "",
+    "Số hóa đơn": e.direction === "IN" ? e.invoiceNo ?? "" : e.inputInvoiceNo ?? "",
     "Người ghi": e.createdByName,
   }));
 
@@ -399,22 +417,42 @@ export function exportLedgerToExcel(entries: PlatformLedgerEntry[], month: strin
   rows.push({
     "Ngày phát sinh": "TỔNG CỘNG",
     Loại: "",
-    Nguồn: "",
+    "Khoản mục": "",
     "Diễn giải": `Chênh lệch: ${totalIn - totalOut}`,
-    "Khách hàng / Người nhận": "",
+    "Khách hàng / NCC": "",
+    "MST NCC": "",
     "Tiền vào": totalIn,
     "Tiền ra": totalOut,
+    "Hình thức TT": "",
     "Hóa đơn": "",
     "Số hóa đơn": "",
     "Người ghi": "",
   });
 
-  downloadSheet(
-    rows,
-    [20, 8, 24, 44, 32, 14, 14, 12, 16, 20],
-    `So quy ${month}`,
-    `hubsell_so_quy_${month}.xlsx`
-  );
+  // Sheet 2: tiền ra gom theo khoản mục — đúng nhóm chi phí khi kê khai.
+  const byCategory = new Map<string, number>();
+  for (const e of entries) {
+    if (e.direction !== "OUT") continue;
+    const key = displayExpenseCategory(e);
+    byCategory.set(key, (byCategory.get(key) ?? 0) + e.amount);
+  }
+  const categoryRows = [...byCategory.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, out]) => ({
+      "Khoản mục": HQ_EXPENSE_CATEGORY_LABEL[key] ?? key,
+      "Tiền ra": out,
+      "Tỷ trọng (%)": totalOut > 0 ? Math.round((out / totalOut) * 1000) / 10 : 0,
+    }));
+  categoryRows.push({ "Khoản mục": "TỔNG CHI", "Tiền ra": totalOut, "Tỷ trọng (%)": 100 });
+
+  const wb = XLSX.utils.book_new();
+  const wsLedger = XLSX.utils.json_to_sheet(rows);
+  wsLedger["!cols"] = [20, 8, 30, 44, 32, 14, 14, 14, 14, 12, 16, 20].map((w) => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, wsLedger, `So quy ${month}`);
+  const wsCategory = XLSX.utils.json_to_sheet(categoryRows);
+  wsCategory["!cols"] = [36, 16, 14].map((w) => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, wsCategory, "Chi theo khoan muc");
+  XLSX.writeFile(wb, `hubsell_so_quy_${month}.xlsx`);
 }
 
 // ---------- BÁO CÁO NHÀ ĐẦU TƯ (khu điều hành, chỉ chủ nền tảng) ----------

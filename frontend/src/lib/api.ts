@@ -2859,12 +2859,53 @@ export interface PlatformLedgerEntry {
   packagePaymentId: string | null;
   /** TransactionID meInvoice khi khoản thu xuất HĐĐT qua API — có = tải được PDF. */
   einvoiceTransactionId: string | null;
+  /** Khoản mục CHI (key HQ_EXPENSE_CATEGORIES) — null với khoản thu/dòng cũ. */
+  expenseCategory: string | null;
+  /** Chứng từ đầu vào của phiếu CHI — cho bảng kê mua vào của kế toán. */
+  vendorName: string | null;
+  vendorTaxCode: string | null;
+  inputInvoiceNo: string | null;
+  paymentMethod: HqPaymentMethod | null;
+  recurringExpenseId: string | null;
   customer: { id: string; email: string | null; fullName: string } | null;
+}
+
+export type HqPaymentMethod = "BANK" | "CASH";
+
+/** Danh mục một khoản chi cố định hàng tháng (thuê VP, lương, phần mềm...). */
+export interface HqRecurringExpense {
+  id: string;
+  name: string;
+  category: string;
+  vendorName: string | null;
+  /** Số tiền DỰ KIẾN — chỉ để prefill phiếu chi, số thật theo chứng từ. */
+  expectedAmount: number;
+  /** Hạn chi hàng tháng (1–28). */
+  dayOfMonth: number;
+  note: string | null;
+  active: boolean;
+}
+
+/** Dòng checklist chi cố định của THÁNG đang xem trong GET /finance/ledger. */
+export interface HqRecurringStatusRow {
+  id: string;
+  name: string;
+  category: string;
+  vendorName: string | null;
+  expectedAmount: number;
+  dayOfMonth: number;
+  note: string | null;
+  /** Bút toán đã ghi trong tháng — null = tháng này CHƯA chi khoản này. */
+  loggedEntry: { id: string; amount: number; occurredAt: string } | null;
 }
 
 export interface PlatformLedgerResponse {
   month: string;
   totals: { in: number; out: number; net: number; pendingInvoices: number };
+  /** Cơ cấu CHI theo khoản mục trong tháng, giảm dần theo tiền. */
+  byCategory: { key: string; out: number }[];
+  /** Checklist chi phí cố định của tháng đang xem (chỉ danh mục active). */
+  recurring: HqRecurringStatusRow[];
   entries: PlatformLedgerEntry[];
 }
 
@@ -2882,6 +2923,13 @@ export function createLedgerEntry(data: {
   occurredAt?: string;
   invoiceStatus?: LedgerInvoiceStatus;
   invoiceNo?: string;
+  /** Các trường phiếu CHI (direction=OUT). */
+  expenseCategory?: string;
+  vendorName?: string;
+  vendorTaxCode?: string;
+  inputInvoiceNo?: string;
+  paymentMethod?: HqPaymentMethod;
+  recurringExpenseId?: string;
 }) {
   return apiFetch<{ entry: PlatformLedgerEntry }>("/api/admin/finance/ledger", {
     method: "POST",
@@ -2897,6 +2945,11 @@ export function updateLedgerEntry(
     invoiceNo?: string;
     occurredAt?: string;
     amount?: number;
+    expenseCategory?: string;
+    vendorName?: string;
+    vendorTaxCode?: string;
+    inputInvoiceNo?: string;
+    paymentMethod?: HqPaymentMethod;
   }
 ) {
   return apiFetch<{ entry: PlatformLedgerEntry }>(
@@ -2907,6 +2960,52 @@ export function updateLedgerEntry(
 
 export function deleteLedgerEntry(id: string) {
   return apiFetch<{ ok: true }>(`/api/admin/finance/ledger/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ---------- Chi phí cố định hàng tháng (hq.finance) ----------
+
+export function fetchRecurringExpenses() {
+  return apiFetch<{ items: HqRecurringExpense[] }>(
+    "/api/admin/finance/recurring-expenses"
+  );
+}
+
+export function createRecurringExpense(data: {
+  name: string;
+  category: string;
+  expectedAmount: number;
+  dayOfMonth: number;
+  vendorName?: string;
+  note?: string;
+}) {
+  return apiFetch<{ item: HqRecurringExpense }>(
+    "/api/admin/finance/recurring-expenses",
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+export function updateRecurringExpense(
+  id: string,
+  data: {
+    name?: string;
+    category?: string;
+    expectedAmount?: number;
+    dayOfMonth?: number;
+    vendorName?: string | null;
+    note?: string | null;
+    active?: boolean;
+  }
+) {
+  return apiFetch<{ item: HqRecurringExpense }>(
+    `/api/admin/finance/recurring-expenses/${id}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+export function deleteRecurringExpense(id: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/finance/recurring-expenses/${id}`, {
     method: "DELETE",
   });
 }
