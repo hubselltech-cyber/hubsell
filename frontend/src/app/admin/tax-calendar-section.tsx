@@ -12,6 +12,9 @@
 //  - NĐ 125/2020/NĐ-CP: khung phạt chậm nộp tờ khai
 // Kịch bản: hoạt động từ ~09/2026, năm tài chính = năm dương lịch, năm đầu
 // kê khai GTGT/TNCN theo QUÝ (quyền mặc định của DN mới thành lập).
+// Thuế NHÀ THẦU (trả Anthropic/Render/Supabase... hàng tháng) không có mốc
+// ngày cố định trong năm đầu (10 ngày kể từ từng lần trả / ngày 20 tháng sau
+// nếu đăng ký khai tháng) → nằm ở card riêng cuối trang + thủ tục một lần.
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -242,6 +245,18 @@ const ONE_TIME_STEPS: {
     title: "Khai trình sử dụng lao động + đăng ký BHXH trong 30 ngày kể từ ký HĐLĐ",
     note: "Từ đó phát sinh nghĩa vụ hằng tháng: BHXH + kinh phí công đoàn 2%.",
   },
+  {
+    key: "gpkd-nha-thau-lan-dau",
+    when: "Lần đầu trả tiền NCC nước ngoài",
+    title: "Khai thuế nhà thầu lần đầu (Anthropic, Render, Supabase, Vercel…)",
+    note: "Tờ khai 01/NTNN trên eTax trong 10 NGÀY kể từ ngày thanh toán. Trả đều hàng tháng → nhân dịp này đăng ký khai THEO THÁNG cho đỡ vụn (chi tiết ở card Thuế nhà thầu cuối trang).",
+  },
+  {
+    key: "gpkd-billing-mst",
+    when: "Trước kỳ thanh toán tới",
+    title: "Sửa billing các NCC ngoại về tên công ty + MST + thẻ công ty",
+    note: "Invoice Stripe/Anthropic đứng tên cá nhân là chi phí bị loại khi quyết toán — sửa trong trang Billing của từng dịch vụ, một lần là xong.",
+  },
 ];
 
 // ---------- Helpers ----------
@@ -438,8 +453,10 @@ export function TaxCalendarSection() {
             nghiệp mới). Lệ phí môn bài đã <b>bãi bỏ từ 01/01/2026</b> (NQ
             198/2025/QH15) — không phải khai, không phải nộp. Thời hạn theo NĐ
             252/2026/NĐ-CP; hạn trùng ngày nghỉ tự lùi sang ngày làm việc kế
-            tiếp. Dấu tick lưu chung cho cả HQ — ai xử lý xong thì đánh dấu,
-            người khác nhìn vào biết ngay.
+            tiếp. Riêng <b>thuế nhà thầu</b> (trả Anthropic/Render/Supabase…
+            hàng tháng) không có ngày cố định — hạn bám theo từng lần thanh
+            toán, xem card cuối trang. Dấu tick lưu chung cho cả HQ — ai xử lý
+            xong thì đánh dấu, người khác nhìn vào biết ngay.
           </p>
         </CardContent>
       </Card>
@@ -691,17 +708,66 @@ export function TaxCalendarSection() {
         </div>
       </section>
 
+      {/* ===== Thuế nhà thầu — nghĩa vụ tháng nào cũng phát sinh ===== */}
+      <Card size="sm" className="border-sky-200/80">
+        <CardContent>
+          <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <RefreshCcw className="h-4 w-4 text-sky-600" />
+            Thuế nhà thầu — nộp thay NCC nước ngoài (Claude, Render, Supabase…)
+          </p>
+          <ul className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
+            <li>
+              Phát sinh <b>mỗi lần công ty trả tiền dịch vụ cho NCC nước ngoài</b>{" "}
+              — với Hubsell là hàng tháng (AI, server, domain). Đây là nghĩa vụ
+              lặp lớn nhất KHÔNG có mốc cố định trên timeline ở trên.
+            </li>
+            <li>
+              Mức kê phổ biến cho SaaS: <b>5% GTGT + 5% TNDN</b> theo diện dịch
+              vụ. Mình chịu thuế thay (NCC nhận đủ tiền) nên phải gross-up:{" "}
+              <b>doanh thu tính thuế = số tiền đã trả ÷ 0,95 ÷ 0,95</b>. Ví dụ
+              trả 2.600.000₫ (gói Max $100) → nộp thay ≈ <b>288.000₫</b> (144k
+              GTGT + 144k TNDN).
+            </li>
+            <li>
+              Hạn nộp tờ khai 01/NTNN + tiền thuế: <b>10 ngày</b> kể từ ngày
+              thanh toán (khai từng lần). Trả đều hàng tháng → đăng ký khai{" "}
+              <b>theo tháng</b>, hạn <b>ngày 20 tháng sau</b> — gom mọi NCC vào
+              một tờ khai.
+            </li>
+            <li>
+              Doanh thu bán gói Hubsell thuộc diện không chịu GTGT → phần GTGT
+              nộp thay <b>không được khấu trừ</b>, hạch toán hết vào chi phí.
+            </li>
+            <li>
+              Bộ chứng từ mỗi tháng: invoice PDF của NCC + chứng từ chuyển tiền
+              + giấy nộp thuế eTax — lưu cùng thư mục với phiếu chi khoản mục
+              &ldquo;Phần mềm &amp; hạ tầng&rdquo; bên tab Sổ quỹ.
+            </li>
+            <li className="text-slate-500">
+              ⚠️ Có trường phái coi phí bản quyền phần mềm là 10% TNDN + miễn
+              GTGT — số tiền nhỏ nên chênh lệch không đáng kể; khi thuê kế toán
+              dịch vụ nhờ họ chốt lại một lần.
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
+
       {/* ===== Nghĩa vụ lặp + lời dặn ===== */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card size="sm">
           <CardContent>
             <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
               <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-              Nghĩa vụ lặp hằng tháng (khi có lao động)
+              Nghĩa vụ lặp hằng tháng
             </p>
             <ul className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-slate-600">
               <li>
-                Đóng BHXH, BHYT, BHTN: chậm nhất <b>ngày cuối cùng của tháng</b>.
+                Thuế nhà thầu (nếu đã đăng ký khai theo tháng): tờ khai + tiền
+                chậm nhất <b>ngày 20 tháng sau</b> — xem card phía trên.
+              </li>
+              <li>
+                Khi có lao động — đóng BHXH, BHYT, BHTN: chậm nhất{" "}
+                <b>ngày cuối cùng của tháng</b>.
               </li>
               <li>
                 Kinh phí công đoàn 2% quỹ lương đóng BHXH: cùng hạn với BHXH —
@@ -712,7 +778,8 @@ export function TaxCalendarSection() {
                 <b>không</b> còn báo cáo tình hình sử dụng hóa đơn định kỳ.
               </li>
               <li>
-                Năm đầu không có nghĩa vụ khai thuế theo tháng (đã chọn kỳ quý).
+                Năm đầu không có nghĩa vụ khai GTGT/TNCN theo tháng (đã chọn kỳ
+                quý).
               </li>
             </ul>
           </CardContent>
