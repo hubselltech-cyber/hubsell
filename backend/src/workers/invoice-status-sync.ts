@@ -7,9 +7,12 @@
 // Hệ quả kế toán: tờ bị CQT từ chối vẫn nằm ISSUED → VAT đầu ra đếm cả tờ
 // vô hiệu; tờ đã xóa bên NCC vẫn tính vào báo cáo.
 //
-// Nhịp 30 phút, mỗi shop MISA có tài khoản meInvoice:
+// Nhịp 12 GIỜ (anh Trung chốt 03/09: không cấp thiết tới mức 30 phút — hóa đơn
+// có mã rồi gần như không đổi; giãn nhịp để không đè DB/NCC), mỗi shop MISA có
+// tài khoản meInvoice:
 //   • Chọn log PENDING/ISSUED lập trong 30 ngày, chưa kiểm hoặc đến hạn kiểm
-//     lại (ACCEPTED: 24h/lần bắt hủy muộn; còn lại: 1h/lần tới khi kết luận).
+//     lại (ACCEPTED: chỉ kiểm lại trong 7 ngày đầu để bắt xóa muộn, sau đó
+//     coi là chốt; còn lại: mỗi lượt tới khi có kết luận).
 //   • Hỏi /invoice/status theo lô 50 (tách lô có mã / không mã vì cách đọc
 //     SendTaxStatus khác nhau — xem cqt-status.ts).
 //   • IsDelete=true          → status CANCELLED + audit + Order.einvoiceStatus.
@@ -20,12 +23,13 @@
 //                              anh Trung chốt 03/09).
 //
 // Chỉ ĐỌC phía NCC — không đi qua chốt MISA_ALLOW_PUBLISH (không sinh chứng từ).
-// Cấu hình: INVOICE_STATUS_SYNC_MINUTES (mặc định 30; "0" = tắt worker).
+// Cấu hình: INVOICE_STATUS_SYNC_MINUTES (mặc định 720 = 12h; "0" = tắt worker).
 // ============================================================
 
 import { InvoiceLogStatus, type InvoiceConfig } from "@prisma/client";
 
 import {
+  CQT_ACCEPTED_WATCH_MS,
   CQT_RECHECK_MS,
   CQT_WATCH_WINDOW_MS,
   mapCqtStatus,
@@ -39,7 +43,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { notify } from "../services/notifications";
 
-const DEFAULT_INTERVAL_MINUTES = 30;
+const DEFAULT_INTERVAL_MINUTES = 12 * 60;
 /** Trần log kiểm mỗi shop mỗi lượt — shop nghìn hóa đơn/ngày vẫn xoay hết trong vài nhịp. */
 const MAX_PER_OWNER_PER_RUN = 200;
 /** Cỡ lô gửi /invoice/status (body là mảng TransactionID). */
@@ -237,9 +241,11 @@ export async function runInvoiceStatusSyncOnce(): Promise<void> {
             createdAt: { gt: new Date(t - CQT_WATCH_WINDOW_MS) },
             OR: [
               { cqtCheckedAt: null },
+              // Đã có mã: chỉ kiểm lại trong 7 ngày đầu (bắt xóa muộn), sau đó thôi.
               {
                 cqtStatus: "ACCEPTED",
                 cqtCheckedAt: { lt: new Date(t - CQT_RECHECK_MS.ACCEPTED) },
+                createdAt: { gt: new Date(t - CQT_ACCEPTED_WATCH_MS) },
               },
               {
                 cqtStatus: { not: "ACCEPTED" },
@@ -333,8 +339,8 @@ export function startInvoiceStatusSyncWorker(): void {
     console.log("[CQT-sync] Worker TẮT (INVOICE_STATUS_SYNC_MINUTES=0)");
     return;
   }
-  // Lượt đầu chờ 5 phút — sau auto-issue (3 phút) để hóa đơn vừa phát hành
-  // được kiểm ngay trong lượt đầu.
+  // Lượt đầu chờ 5 phút sau khi server lên (sau auto-issue 3 phút) — deploy
+  // lại là có một lượt kiểm ngay, còn lại theo nhịp 12h.
   setTimeout(() => void runInvoiceStatusSyncOnce(), 5 * 60 * 1000);
   setInterval(() => void runInvoiceStatusSyncOnce(), minutes * 60 * 1000);
   console.log(`[CQT-sync] Worker chạy nhịp ${minutes} phút`);

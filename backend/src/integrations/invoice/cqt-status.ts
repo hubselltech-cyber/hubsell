@@ -66,13 +66,20 @@ export function seriesHasTaxCode(invoiceSeries: string | null | undefined): bool
 }
 
 /**
- * Bao lâu thì hỏi lại NCC về một hóa đơn — ACCEPTED chỉ cần kiểm 1 lần/ngày
- * (bắt hủy/xóa muộn), còn lại kiểm mỗi giờ tới khi có kết luận.
+ * Bao lâu thì hỏi lại NCC về một hóa đơn — ACCEPTED tối đa 1 lần/ngày (bắt
+ * hủy/xóa muộn), còn lại mỗi lượt worker tới khi có kết luận. Worker chạy
+ * nhịp 12h nên thực tế = mỗi lượt.
  */
 export const CQT_RECHECK_MS: Record<"ACCEPTED" | "OTHER", number> = {
   ACCEPTED: 24 * 60 * 60 * 1000,
   OTHER: 60 * 60 * 1000,
 };
 
-/** Chỉ theo dõi hóa đơn lập trong cửa sổ này — cũ hơn coi như đã chốt. */
+/** Chỉ theo dõi hóa đơn CHƯA kết luận lập trong cửa sổ này — cũ hơn coi như chốt. */
 export const CQT_WATCH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Hóa đơn ĐÃ CÓ MÃ chỉ kiểm lại trong 7 ngày đầu (cơ chế hủy đã bãi bỏ, tờ có
+ * mã gần như không đổi) — mỗi tờ tốn ~3 lần hỏi NCC trọn đời thay vì ~33.
+ */
+export const CQT_ACCEPTED_WATCH_MS = 7 * 24 * 60 * 60 * 1000;
