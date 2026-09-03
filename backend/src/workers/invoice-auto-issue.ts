@@ -9,6 +9,9 @@
 //   • Chưa có hóa đơn PENDING/ISSUED, và KHÔNG có bản ghi hóa đơn nào trong
 //     24h gần nhất — đơn vừa FAILED sẽ được thử lại tối đa 1 lần/ngày thay vì
 //     spam NCC mỗi 15 phút.
+//   • KHÔNG có hóa đơn CANCELLED (03/09): seller đã chủ động hủy/xóa trên NCC
+//     (worker invoice-status-sync phát hiện) — xuất lại hay không là quyết
+//     định của seller (làm tay ở hàng chờ), máy không tự xuất đè.
 //
 // AN TOÀN nhiều lớp (hóa đơn là chứng từ CQT, không xóa được):
 //   • MISA_ALLOW_PUBLISH chưa bật → worker NGỦ HOÀN TOÀN (không tạo log FAILED).
@@ -73,7 +76,15 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
           invoiceLogs: {
             none: {
               OR: [
-                { status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] } },
+                {
+                  status: {
+                    in: [
+                      InvoiceLogStatus.PENDING,
+                      InvoiceLogStatus.ISSUED,
+                      InvoiceLogStatus.CANCELLED,
+                    ],
+                  },
+                },
                 { createdAt: { gt: retryCutoff } },
               ],
             },

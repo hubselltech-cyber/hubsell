@@ -29,6 +29,7 @@ import {
   allocateOrderDiscount,
   resolveInvoiceBuyer,
   type IssueOrderResult,
+  type ResolvedInvoiceBuyer,
 } from "./issue-order";
 import { isPublishAllowed } from "./misa-safety";
 import type { InvoiceLine } from "./types";
@@ -248,6 +249,18 @@ export async function issueAdjustmentForOrder(
   });
   const refId = `${original.orderCode}-DC${priorAttempts + 1}`;
 
+  // Người mua in lại đúng như hóa đơn gốc: ưu tiên snapshot trên log gốc, rơi
+  // về đơn (thông tin khách yêu cầu xuất HĐ có thể đã bị cron BVDLCN xóa sau
+  // 30/90 ngày — khi đó "Bán cho người tiêu dùng", chấp nhận được vì hóa đơn
+  // điều chỉnh tham chiếu số HĐ gốc).
+  const buyer: ResolvedInvoiceBuyer = original.order
+    ? resolveInvoiceBuyer(original.order)
+    : { buyerName: "Bán cho người tiêu dùng" };
+  if (original.buyerName) {
+    buyer.buyerName = original.buyerName;
+    if (original.buyerTaxCode) buyer.buyerTaxCode = original.buyerTaxCode;
+  }
+
   const log = await prisma.invoiceLog.create({
     data: {
       ownerId,
@@ -260,15 +273,10 @@ export async function issueAdjustmentForOrder(
       invoiceSeries: cfg?.invoiceSeries ?? orgSeries,
       lines: lines as unknown as Prisma.InputJsonValue,
       adjustmentForLogId: original.id,
+      buyerName: buyer.buyerName,
+      buyerTaxCode: buyer.buyerTaxCode ?? null,
     },
   });
-
-  // Người mua in lại đúng như hóa đơn gốc (thông tin khách yêu cầu xuất HĐ có
-  // thể đã bị cron BVDLCN xóa sau 30/90 ngày — khi đó rơi về "Bán cho người
-  // tiêu dùng", chấp nhận được vì hóa đơn điều chỉnh tham chiếu số HĐ gốc).
-  const buyer = original.order
-    ? resolveInvoiceBuyer(original.order)
-    : { buyerName: "Bán cho người tiêu dùng" };
 
   const result = await provider.createInvoice({
     orderCode: refId,

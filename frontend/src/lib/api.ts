@@ -2405,11 +2405,25 @@ export function saveTaxSettings(input: {
 
 export type InvoiceLogStatus = "PENDING" | "ISSUED" | "CANCELLED" | "FAILED";
 
+/**
+ * Trạng thái phía CƠ QUAN THUẾ (worker invoice-status-sync kéo từ NCC, 03/09):
+ * WAITING chờ cấp mã · SEND_ERROR gửi CQT lỗi · ACCEPTED đã cấp mã/tiếp nhận ·
+ * REJECTED từ chối (tờ chưa hợp lệ — đã loại khỏi tổng VAT). null = chưa kiểm.
+ */
+export type CqtStatus = "WAITING" | "SEND_ERROR" | "ACCEPTED" | "REJECTED";
+
 export interface InvoiceLogDTO {
   id: string;
   orderCode: string;
   provider: string;
   invoiceNo: string | null;
+  /** Ký hiệu lúc phát hành (ký tự 2: C = có mã CQT, K = không mã). */
+  invoiceSeries: string | null;
+  cqtStatus: CqtStatus | null;
+  cqtCheckedAt: string | null;
+  /** Snapshot người mua lúc lập — null với hóa đơn đời trước 03/09. */
+  buyerName: string | null;
+  buyerTaxCode: string | null;
   /** Mã tra cứu NCC cấp — nuôi nút Tải PDF + tra cứu công khai meinvoice.vn. */
   transactionId: string | null;
   status: InvoiceLogStatus;
@@ -2459,8 +2473,64 @@ export interface TaxReportResponse {
     invoicedVat: number;
     /** Phần giá trị đã điều chỉnh giảm (số dương). */
     adjustedAmount: number;
+    /** Tờ CQT TỪ CHỐI — không hợp lệ, đã loại khỏi tổng trên. */
+    cqtRejectedCount: number;
+    /** Tờ đang chờ CQT cấp mã / gửi CQT lỗi. */
+    cqtWaitingCount: number;
+    /** Tờ ISSUED chưa được worker kiểm lần nào. */
+    cqtUncheckedCount: number;
+    /** Tờ đã hủy/xóa trong kỳ. */
+    cancelledCount: number;
+  };
+  /**
+   * ĐỐI CHIẾU SÓT của kỳ (03/09): đếm trên ĐƠN theo ngày giao — kỳ này giao
+   * xong bao nhiêu đơn, bao nhiêu đã có hóa đơn, sót bao nhiêu, quá hạn bao nhiêu.
+   */
+  coverage: {
+    deliveredCount: number;
+    invoicedCount: number;
+    missingCount: number;
+    /** Chưa có hóa đơn và đã giao quá `overdueHours` giờ. */
+    overdueCount: number;
+    overdueHours: number;
   };
   logs: InvoiceLogDTO[];
+}
+
+/** Một dòng BẢNG KÊ HÓA ĐƠN BÁN RA — tự đủ dữ liệu để đối chiếu với CQT. */
+export interface InvoiceRegisterRowDTO {
+  id: string;
+  issuedAt: string;
+  invoiceSeries: string | null;
+  invoiceNo: string | null;
+  transactionId: string | null;
+  kind: "SALE" | "ADJUSTMENT";
+  adjustsInvoiceNo: string | null;
+  adjustsInvoiceSeries: string | null;
+  orderCode: string;
+  channelName: ChannelName | null;
+  shopName: string | null;
+  buyerName: string | null;
+  buyerTaxCode: string | null;
+  amountWithoutVat: number;
+  vatAmount: number;
+  totalAmount: number;
+  vatRates: number[];
+  status: InvoiceLogStatus;
+  cqtStatus: CqtStatus | null;
+}
+
+/** Bảng kê bán ra theo NGÀY LẬP (không giới hạn 200 dòng của /report; trần 5000). */
+export function fetchInvoiceRegister(params?: { from?: string; to?: string }) {
+  const qs = new URLSearchParams();
+  if (params?.from && params?.to) {
+    qs.set("from", params.from);
+    qs.set("to", params.to);
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<{ rows: InvoiceRegisterRowDTO[]; truncated: boolean }>(
+    `/api/tax/invoices/register${suffix}`
+  );
 }
 
 export function fetchTaxReport(params?: { from?: string; to?: string }) {
@@ -2498,6 +2568,9 @@ export interface InvoiceQueueRowDTO {
   customerName: string;
   totalAmount: number;
   orderedAt: string;
+  deliveredAt: string | null;
+  /** Đã giao quá 48h mà chưa có hóa đơn — quá mốc "ngày làm việc tiếp theo". */
+  overdue: boolean;
   /** Sàn đã đối soát chưa — trigger của luồng tự động xuất. */
   isSettled: boolean;
   channelName: ChannelName;
@@ -2522,6 +2595,9 @@ export interface InvoiceQueueResponse {
   total: number;
   /** Số đơn trong hàng chờ đã được sàn đối soát. */
   settledTotal: number;
+  /** Số đơn trong hàng chờ đã giao quá `overdueHours` giờ (quá hạn lập hóa đơn). */
+  overdueTotal: number;
+  overdueHours: number;
   /** Trang đang trả (từ 1) + cỡ trang backend đã áp. */
   page: number;
   pageSize: number;

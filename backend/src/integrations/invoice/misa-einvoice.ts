@@ -549,6 +549,8 @@ export interface MisaInvoiceStatusItem {
   sendTaxStatus: number | null;
   /** Hóa đơn đã bị xóa bỏ/hủy trên meInvoice. */
   isDeleted: boolean;
+  /** Số hóa đơn (nếu NCC trả kèm) — bù cho log PENDING chưa nhận webhook. */
+  invoiceNo: string | null;
   raw: unknown;
 }
 
@@ -574,11 +576,18 @@ export async function getInvoiceStatuses(
     const publishStatus = pick(item, "PublishStatus", "publishStatus");
     const sendTaxStatus = pick(item, "SendTaxStatus", "sendTaxStatus");
     const transactionId = pick(item, "TransactionID", "TransactionId");
+    const invNo = pick(item, "InvNo", "InvoiceNo", "InvoiceNumber", "invNo");
     return {
       transactionId: typeof transactionId === "string" ? transactionId : null,
       publishStatus: typeof publishStatus === "number" ? publishStatus : null,
       sendTaxStatus: typeof sendTaxStatus === "number" ? sendTaxStatus : null,
       isDeleted: pick(item, "IsDelete", "isDelete", "IsDeleted") === true,
+      invoiceNo:
+        typeof invNo === "string" && invNo.trim() !== ""
+          ? invNo.trim()
+          : typeof invNo === "number"
+            ? String(invNo).padStart(8, "0")
+            : null,
       raw: item,
     };
   });

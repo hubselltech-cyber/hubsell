@@ -837,6 +837,19 @@ model InvoiceLog {
   errorMessage String? // lý do khi status = FAILED
   issuedAt     DateTime? // thời điểm NCC phát hành thành công
 
+  /// Trạng thái phía CƠ QUAN THUẾ do worker invoice-status-sync kéo từ NCC
+  /// (03/09): WAITING (chờ cấp mã / chưa gửi) · SEND_ERROR (gửi CQT lỗi) ·
+  /// ACCEPTED (đã cấp mã / CQT tiếp nhận) · REJECTED (CQT từ chối — hóa đơn
+  /// KHÔNG hợp lệ, loại khỏi VAT đầu ra tới khi seller gửi lại trên NCC).
+  /// NULL = chưa kiểm lần nào.
+  cqtStatus    String?
+  cqtCheckedAt DateTime? // lần cuối worker hỏi NCC — nhịp kiểm lại tính từ đây
+
+  /// Snapshot NGƯỜI MUA lúc phát hành — bảng kê bán ra phải tự đủ dữ liệu
+  /// (Order.buyerInvoiceInfo bị cron BVDLCN xóa sau 30/90 ngày).
+  buyerName    String?
+  buyerTaxCode String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -846,6 +859,8 @@ model InvoiceLog {
   statusHistory InvoiceStatusHistory[] // audit log — mỗi lần đổi trạng thái một dòng
 
   @@index([ownerId, createdAt])
+  // Báo cáo/bảng kê theo NGÀY LẬP hóa đơn (kỳ kê khai) — không theo ngày tạo log.
+  @@index([ownerId, issuedAt])
   @@index([orderId])
   // Webhook MISA tra hóa đơn theo mã giao dịch NCC — cần index để worker không quét bảng.
   @@index([transactionId])

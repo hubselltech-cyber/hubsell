@@ -290,6 +290,7 @@ export async function issueInvoiceForOrder(
   );
   const vatTotal = lines.reduce((s, l) => s + l.vatAmount, 0);
   const totalAmount = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
+  const buyer = resolveInvoiceBuyer(order);
 
   const log = await prisma.invoiceLog.create({
     data: {
@@ -304,12 +305,16 @@ export async function issueInvoiceForOrder(
       // này (khách trả hàng) ghi ÂM đúng số đã xuất, không dựng lại từ đơn.
       invoiceSeries: cfg?.invoiceSeries ?? null,
       lines: lines as unknown as Prisma.InputJsonValue,
+      // Snapshot người mua — bảng kê bán ra tự đủ dữ liệu sau khi cron BVDLCN
+      // xóa Order.buyerInvoiceInfo.
+      buyerName: buyer.buyerName,
+      buyerTaxCode: buyer.buyerTaxCode ?? null,
     },
   });
 
   const result = await provider.createInvoice({
     orderCode,
-    ...resolveInvoiceBuyer(order),
+    ...buyer,
     lines,
     totalAmount,
   });

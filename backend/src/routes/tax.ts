@@ -48,6 +48,34 @@ import {
 
 const router = Router();
 
+/**
+ * ĐƠN QUÁ HẠN LẬP HÓA ĐƠN (03/09): NĐ 254/2026 — hóa đơn bán hàng qua sàn lập
+ * chậm nhất NGÀY LÀM VIỆC TIẾP THEO sau khi giao thành công. Lấy 48h cho
+ * rộng (cuối tuần/ngày lễ không xét), đơn giao xong quá mốc này mà chưa có
+ * hóa đơn thì cắm cờ đỏ ở hàng chờ + đếm vào thẻ "Sót/Quá hạn" của báo cáo.
+ */
+export const INVOICE_OVERDUE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Cửa sổ lọc nhật ký theo KỲ KÊ KHAI = ngày LẬP hóa đơn (issuedAt); bản ghi
+ * chưa lập (PENDING/FAILED không có issuedAt) rơi về ngày tạo. Trước 03/09
+ * lọc theo createdAt — tờ điều chỉnh lập tháng sau bị tính vào tháng trước.
+ */
+function logPeriodWhere(range: ReturnType<typeof parseDateRange>) {
+  if (!range) return {};
+  return { OR: [{ issuedAt: range }, { issuedAt: null, createdAt: range }] };
+}
+
+/** Chỉ hóa đơn ĐÃ lập trong kỳ (cho aggregate ISSUED). */
+function issuedInRange(range: ReturnType<typeof parseDateRange>) {
+  return range ? { issuedAt: range } : {};
+}
+
+/** Loại tờ bị CQT TỪ CHỐI khỏi mọi tổng — chưa hợp lệ tới khi gửi lại. */
+const NOT_CQT_REJECTED = {
+  OR: [{ cqtStatus: null }, { cqtStatus: { not: "REJECTED" } }],
+};
+
 const CALCULATION_BASES = Object.values(TaxCalculationBase);
 const FILTER_PERIODS = Object.values(TaxFilterPeriod);
 
@@ -123,14 +151,15 @@ router.get("/report", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
     const range = parseDateRange(req.query);
+    const scope = channelScope(req);
 
     const [cfg, pnlOrders, logs] = await Promise.all([
       getShopTaxConfig(ownerId),
       // Đơn trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính (đơn hủy
       // lọc ở vòng dưới; cùng trần an toàn 2000 đơn của fetchPnlOrders).
-      fetchPnlOrders(channelScope(req), range),
+      fetchPnlOrders(scope, range),
       prisma.invoiceLog.findMany({
-        where: { ownerId, createdAt: range },
+        where: { ownerId, ...logPeriodWhere(range) },
         orderBy: { createdAt: "desc" },
         take: 200,
         select: {
@@ -138,8 +167,13 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           orderCode: true,
           provider: true,
           invoiceNo: true,
+          invoiceSeries: true,
           transactionId: true, // mã tra cứu — nuôi nút Tải PDF + link tra cứu công khai
           status: true,
+          cqtStatus: true, // trạng thái phía CQT do worker invoice-status-sync kéo
+          cqtCheckedAt: true,
+          buyerName: true,
+          buyerTaxCode: true,
           totalAmount: true,
           vatAmount: true,
           platformTaxWithheld: true,
@@ -164,13 +198,22 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     // hợp xoay quanh hóa đơn thay vì toàn thuế sàn): tính bằng aggregate trên
     // TOÀN KỲ, không cộng từ 200 dòng đang hiển thị kẻo lệch khi kỳ dài.
     // Hóa đơn điều chỉnh mang TIỀN ÂM nên tổng gộp 2 nhóm = giá trị RÒNG.
-    const [issuedAgg, adjustedAgg, failedCount] = await Promise.all([
+    // 03/09: kỳ = NGÀY LẬP (issuedAt), tờ CQT từ chối KHÔNG vào tổng.
+    const [
+      issuedAgg,
+      adjustedAgg,
+      failedCount,
+      cqtRejectedCount,
+      cqtWaitingCount,
+      cqtUncheckedCount,
+      cancelledCount,
+    ] = await Promise.all([
       prisma.invoiceLog.aggregate({
         where: {
           ownerId,
-          createdAt: range,
           status: InvoiceLogStatus.ISSUED,
           adjustmentForLogId: null,
+          AND: [issuedInRange(range), NOT_CQT_REJECTED],
         },
         _count: true,
         _sum: { totalAmount: true, vatAmount: true },
@@ -178,9 +221,9 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       prisma.invoiceLog.aggregate({
         where: {
           ownerId,
-          createdAt: range,
           status: InvoiceLogStatus.ISSUED,
           adjustmentForLogId: { not: null },
+          AND: [issuedInRange(range), NOT_CQT_REJECTED],
         },
         _count: true,
         _sum: { totalAmount: true, vatAmount: true },
@@ -188,13 +231,80 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       prisma.invoiceLog.count({
         where: { ownerId, createdAt: range, status: InvoiceLogStatus.FAILED },
       }),
+      prisma.invoiceLog.count({
+        where: {
+          ownerId,
+          status: InvoiceLogStatus.ISSUED,
+          cqtStatus: "REJECTED",
+          ...issuedInRange(range),
+        },
+      }),
+      prisma.invoiceLog.count({
+        where: {
+          ownerId,
+          status: InvoiceLogStatus.ISSUED,
+          cqtStatus: { in: ["WAITING", "SEND_ERROR"] },
+          ...issuedInRange(range),
+        },
+      }),
+      prisma.invoiceLog.count({
+        where: {
+          ownerId,
+          status: InvoiceLogStatus.ISSUED,
+          cqtStatus: null,
+          ...issuedInRange(range),
+        },
+      }),
+      prisma.invoiceLog.count({
+        where: { ownerId, status: InvoiceLogStatus.CANCELLED, ...logPeriodWhere(range) },
+      }),
     ]);
+
+    // ---- ĐỐI CHIẾU SÓT (03/09 — kế toán trưởng hỏi "kỳ này bao nhiêu đơn
+    // giao xong, bao nhiêu tờ, sót bao nhiêu"): đếm trên ĐƠN theo ngày giao
+    // (deliveredAt), cùng phạm vi gian của người xem. Đơn cũ chưa có
+    // deliveredAt (trước khi cột này được ghi) không vào phép đếm — nói rõ
+    // trên UI là "theo ngày giao".
+    const overdueCutoff = new Date(Date.now() - INVOICE_OVERDUE_MS);
+    const deliveredWhere = {
+      channel: scope,
+      shippingStatus: ShippingStatus.DELIVERED,
+      items: { some: {} },
+      deliveredAt: range ?? { not: null },
+    };
+    const noInvoice = {
+      invoiceLogs: {
+        none: { status: { in: [InvoiceLogStatus.PENDING, InvoiceLogStatus.ISSUED] } },
+      },
+    };
+    const [deliveredCount, missingCount, overdueCount] = await Promise.all([
+      prisma.order.count({ where: deliveredWhere }),
+      prisma.order.count({ where: { ...deliveredWhere, ...noInvoice } }),
+      prisma.order.count({
+        where: {
+          ...deliveredWhere,
+          ...noInvoice,
+          AND: [{ deliveredAt: { lt: overdueCutoff } }],
+        },
+      }),
+    ]);
+    const coverage = {
+      /** Đơn giao thành công trong kỳ (theo ngày giao). */
+      deliveredCount,
+      /** Trong đó đã có hóa đơn (đang chờ NCC hoặc đã phát hành). */
+      invoicedCount: deliveredCount - missingCount,
+      /** Chưa có hóa đơn — còn nằm ở hàng chờ. */
+      missingCount,
+      /** Chưa có hóa đơn VÀ đã giao quá 48h — vi phạm mốc "ngày làm việc tiếp theo". */
+      overdueCount,
+      overdueHours: INVOICE_OVERDUE_MS / 3_600_000,
+    };
     // Đếm "CẦN ĐIỀU CHỈNH" toàn kỳ: hóa đơn bán ISSUED mà đơn gốc đã được sàn
     // chốt hoàn nhưng chưa có hóa đơn điều chỉnh nào (PENDING/ISSUED).
     const needCandidates = await prisma.invoiceLog.findMany({
       where: {
         ownerId,
-        createdAt: range,
+        ...issuedInRange(range),
         status: InvoiceLogStatus.ISSUED,
         adjustmentForLogId: null,
         order: {
@@ -231,6 +341,14 @@ router.get("/report", async (req: AuthRequest, res, next) => {
         Number(issuedAgg._sum.vatAmount ?? 0) + Number(adjustedAgg._sum.vatAmount ?? 0),
       /** Phần giá trị đã điều chỉnh giảm (số DƯƠNG để hiển thị). */
       adjustedAmount: Math.abs(Number(adjustedAgg._sum.totalAmount ?? 0)),
+      /** Tờ đã ký nhưng CQT TỪ CHỐI — không hợp lệ, đã loại khỏi tổng trên. */
+      cqtRejectedCount,
+      /** Tờ đang chờ CQT cấp mã / gửi CQT lỗi (worker sẽ kiểm lại). */
+      cqtWaitingCount,
+      /** Tờ ISSUED chưa được worker kiểm lần nào. */
+      cqtUncheckedCount,
+      /** Tờ đã hủy/xóa (trên NCC hoặc qua webhook) trong kỳ. */
+      cancelledCount,
     };
 
     // Hóa đơn gốc nào TRONG TRANG này đã có điều chỉnh đang chờ/đã phát hành —
@@ -279,6 +397,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     res.json({
       settings: serializeSettings(cfg),
       invoiceSummary,
+      coverage,
       summary: {
         orderCount: rows.length,
         settledCount,
@@ -448,9 +567,12 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
     const pageSize = QUEUE_PAGE_SIZES.has(pageSizeRaw) ? pageSizeRaw : 20;
     const pageRaw = Number(req.query.page);
     const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
-    const [total, settledTotal, orders, cfg] = await Promise.all([
+    const overdueCutoff = new Date(Date.now() - INVOICE_OVERDUE_MS);
+    const [total, settledTotal, overdueTotal, orders, cfg] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.count({ where: { ...where, isSettled: true } }),
+      // Đã giao quá 48h mà chưa có hóa đơn — vi phạm mốc lập hóa đơn (03/09).
+      prisma.order.count({ where: { ...where, deliveredAt: { lt: overdueCutoff } } }),
       prisma.order.findMany({
         where: settledParam === undefined ? where : { ...where, isSettled: settledParam },
         // Đơn KHÁCH YÊU CẦU HÓA ĐƠN nổi lên đầu (khách đang chờ, hạn "ngày làm
@@ -466,6 +588,7 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
           customerName: true,
           totalAmount: true,
           createdAt: true,
+          deliveredAt: true,
           isSettled: true,
           invoiceRequestType: true,
           buyerInvoiceInfo: true,
@@ -489,6 +612,8 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
       configured: Boolean(cfg?.invoiceSeries && cfg?.meinvoiceUsername),
       total,
       settledTotal,
+      overdueTotal,
+      overdueHours: INVOICE_OVERDUE_MS / 3_600_000,
       page,
       pageSize,
       rows: orders.map((o) => {
@@ -508,6 +633,9 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
           customerName: o.customerName,
           totalAmount: Number(o.totalAmount),
           orderedAt: o.createdAt,
+          deliveredAt: o.deliveredAt,
+          // Giao xong quá 48h chưa có hóa đơn → badge đỏ "Quá hạn".
+          overdue: o.deliveredAt !== null && o.deliveredAt < overdueCutoff,
           isSettled: o.isSettled,
           channelName: o.channel.channelName,
           shopName: o.channel.shopName,
@@ -632,6 +760,101 @@ router.post("/invoices/:id/adjust", async (req: AuthRequest, res, next) => {
       scope
     );
     res.status(r.httpStatus).json({ log: r.log, error: r.error });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/tax/invoices/register?from&to — BẢNG KÊ HÓA ĐƠN BÁN RA của kỳ
+ * (03/09): mọi tờ ĐÃ LẬP (ISSUED + CANCELLED có số) theo NGÀY LẬP, không
+ * giới hạn 200 dòng như /report (trần 5000 — nói rõ `truncated` nếu chạm).
+ * Kế toán dùng để đối chiếu với dữ liệu trên cổng hoadondientu.gdt.gov.vn
+ * trước khi nộp tờ khai; FE dựng Excel từ JSON này (lib/excel.ts).
+ * Mỗi dòng tự đủ: ký hiệu, số, ngày lập, người mua + MST (snapshot lúc lập),
+ * tiền chưa thuế / thuế / tổng, thuế suất, loại (bán / điều chỉnh cho số…),
+ * trạng thái NCC + CQT, mã tra cứu.
+ */
+const REGISTER_MAX_ROWS = 5000;
+router.get("/invoices/register", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const range = parseDateRange(req.query);
+    const logs = await prisma.invoiceLog.findMany({
+      where: {
+        ownerId,
+        status: { in: [InvoiceLogStatus.ISSUED, InvoiceLogStatus.CANCELLED] },
+        invoiceNo: { not: null },
+        ...issuedInRange(range),
+      },
+      orderBy: [{ issuedAt: "asc" }, { createdAt: "asc" }],
+      take: REGISTER_MAX_ROWS,
+      select: {
+        id: true,
+        issuedAt: true,
+        createdAt: true,
+        invoiceSeries: true,
+        invoiceNo: true,
+        transactionId: true,
+        adjustmentForLogId: true,
+        orderCode: true,
+        buyerName: true,
+        buyerTaxCode: true,
+        totalAmount: true,
+        vatAmount: true,
+        lines: true,
+        status: true,
+        cqtStatus: true,
+        order: {
+          select: { channel: { select: { channelName: true, shopName: true } } },
+        },
+      },
+    });
+
+    // Số hóa đơn GỐC cho các tờ điều chỉnh (có thể nằm ngoài kỳ → hỏi DB).
+    const origIds = logs.map((l) => l.adjustmentForLogId).filter((x): x is string => !!x);
+    const origMap = new Map(
+      origIds.length > 0
+        ? (
+            await prisma.invoiceLog.findMany({
+              where: { id: { in: origIds } },
+              select: { id: true, invoiceNo: true, invoiceSeries: true },
+            })
+          ).map((o) => [o.id, o])
+        : []
+    );
+
+    const rows = logs.map((l) => {
+      const lines = Array.isArray(l.lines) ? (l.lines as Array<{ vatRate?: unknown }>) : [];
+      const rates = [...new Set(lines.map((x) => Number(x.vatRate)).filter((n) => Number.isFinite(n)))]
+        .sort((a, b) => a - b);
+      const orig = l.adjustmentForLogId ? origMap.get(l.adjustmentForLogId) : undefined;
+      const total = Number(l.totalAmount);
+      const vat = Number(l.vatAmount);
+      return {
+        id: l.id,
+        issuedAt: l.issuedAt ?? l.createdAt,
+        invoiceSeries: l.invoiceSeries,
+        invoiceNo: l.invoiceNo,
+        transactionId: l.transactionId,
+        kind: l.adjustmentForLogId ? "ADJUSTMENT" : "SALE",
+        adjustsInvoiceNo: orig?.invoiceNo ?? null,
+        adjustsInvoiceSeries: orig?.invoiceSeries ?? null,
+        orderCode: l.orderCode,
+        channelName: l.order?.channel.channelName ?? null,
+        shopName: l.order?.channel.shopName ?? null,
+        buyerName: l.buyerName,
+        buyerTaxCode: l.buyerTaxCode,
+        amountWithoutVat: total - vat,
+        vatAmount: vat,
+        totalAmount: total,
+        /** Các thuế suất xuất hiện trên tờ (VD [0] hoặc [8, 10]); rỗng với log đời trước snapshot. */
+        vatRates: rates,
+        status: l.status,
+        cqtStatus: l.cqtStatus,
+      };
+    });
+    res.json({ rows, truncated: logs.length >= REGISTER_MAX_ROWS });
   } catch (err) {
     next(err);
   }

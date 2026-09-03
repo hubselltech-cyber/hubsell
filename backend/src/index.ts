@@ -4,6 +4,7 @@ import http from "http";
 import https from "https";
 import { createApp } from "./app";
 import { startInvoiceAutoIssueWorker } from "./workers/invoice-auto-issue";
+import { startInvoiceStatusSyncWorker } from "./workers/invoice-status-sync";
 import { startLogCleanupWorker } from "./workers/log-cleanup";
 import { startOrderAutoSync } from "./workers/order-auto-sync";
 import { startStockPushWorker } from "./integrations/stock-push-worker";
@@ -30,6 +31,9 @@ startWeeklyReportWorker();
 // Tự động phát hành hóa đơn cho đơn ĐÃ GIAO + ĐÃ ĐỐI SOÁT của shop bật cờ
 // autoIssueEnabled — ngủ hoàn toàn khi MISA_ALLOW_PUBLISH chưa bật.
 startInvoiceAutoIssueWorker();
+// Đồng bộ trạng thái CƠ QUAN THUẾ + phát hiện hóa đơn bị hủy/xóa trên NCC —
+// meInvoice không có webhook, phải hỏi /invoice/status theo nhịp.
+startInvoiceStatusSyncWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

@@ -10,6 +10,7 @@ import {
   type PnlDetailRow,
   type PnlItemLine,
   type InvestorReportResponse,
+  type InvoiceRegisterRowDTO,
   type PlatformLedgerEntry,
   type Product,
   type ReconciliationStatus,
@@ -569,5 +570,62 @@ export function downloadCostPriceTemplate() {
     [22, 16],
     "Mau gia von",
     "hubsell_mau_nhap_gia_von.xlsx"
+  );
+}
+
+// ---------- BẢNG KÊ HÓA ĐƠN BÁN RA (module Hóa đơn & Thuế, 03/09) ----------
+
+const CQT_LABEL: Record<string, string> = {
+  WAITING: "Chờ CQT",
+  SEND_ERROR: "Gửi CQT lỗi",
+  ACCEPTED: "CQT đã cấp mã / tiếp nhận",
+  REJECTED: "CQT TỪ CHỐI",
+};
+
+/** "yyyy-...T..." → "dd/mm/yyyy" (ngày lập hóa đơn trên bảng kê). */
+function toDateOnlyText(value: string): string {
+  const d = new Date(value);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/**
+ * Xuất bảng kê hóa đơn bán ra của kỳ — cột theo thói quen kế toán đối chiếu
+ * với cổng hoadondientu.gdt.gov.vn (ký hiệu, số, ngày, người mua, MST, tiền
+ * chưa thuế / thuế / tổng). Tờ điều chỉnh mang số ÂM, ghi rõ điều chỉnh cho số nào.
+ */
+export function exportInvoiceRegisterToExcel(
+  rows: InvoiceRegisterRowDTO[],
+  rangeLabel: string
+) {
+  const data = rows.map((r, i) => ({
+    STT: i + 1,
+    "Ngày lập": toDateOnlyText(r.issuedAt),
+    "Ký hiệu": r.invoiceSeries ?? "",
+    "Số hóa đơn": r.invoiceNo ?? "",
+    Loại:
+      r.kind === "ADJUSTMENT"
+        ? `Điều chỉnh cho ${[r.adjustsInvoiceSeries, r.adjustsInvoiceNo].filter(Boolean).join(" ")}`.trim()
+        : "Bán hàng",
+    "Mã đơn": r.orderCode,
+    "Sàn / Gian hàng": [r.channelName ? CHANNEL_LABEL[r.channelName] ?? r.channelName : "", r.shopName ?? ""]
+      .filter(Boolean)
+      .join(" · "),
+    "Người mua": r.buyerName ?? "",
+    "MST / Số định danh người mua": r.buyerTaxCode ?? "",
+    "Thuế suất": r.vatRates.map((x) => `${x}%`).join(" / "),
+    "Tiền chưa thuế": r.amountWithoutVat,
+    "Tiền thuế GTGT": r.vatAmount,
+    "Tổng tiền": r.totalAmount,
+    "Trạng thái NCC": r.status === "CANCELLED" ? "Đã hủy" : "Đã phát hành",
+    "Cơ quan Thuế": r.cqtStatus ? CQT_LABEL[r.cqtStatus] ?? r.cqtStatus : "Chưa kiểm",
+    "Mã tra cứu": r.transactionId ?? "",
+  }));
+  const safeLabel = rangeLabel.replace(/[^0-9a-zA-Z]+/g, "-").replace(/^-|-$/g, "");
+  downloadSheet(
+    data,
+    [5, 12, 10, 12, 26, 20, 22, 30, 18, 12, 14, 14, 14, 14, 24, 16],
+    "Bang ke ban ra",
+    `bang-ke-hoa-don-ban-ra_${safeLabel || "ky"}_${fileStamp()}.xlsx`
   );
 }

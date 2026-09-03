@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -92,6 +93,18 @@ function InvoiceRequestBadge({
       className="inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
     >
       Cần HĐ
+    </span>
+  );
+}
+
+/** Badge "Quá hạn" — giao xong quá 48h chưa có hóa đơn (NĐ 254: chậm nhất ngày làm việc tiếp theo). */
+function OverdueBadge({ hours }: { hours: number }) {
+  return (
+    <span
+      title={`Đã giao quá ${hours} giờ mà chưa lập hóa đơn — quá mốc "ngày làm việc tiếp theo" (NĐ 254/2026)`}
+      className="inline-flex shrink-0 items-center rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+    >
+      Quá hạn
     </span>
   );
 }
@@ -357,6 +370,18 @@ export function InvoiceIssueCard({
           </div>
         )}
 
+        {/* ---- Cảnh báo đơn QUÁ HẠN lập hóa đơn (03/09) ---- */}
+        {queue !== null && queue.overdueTotal > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>
+              {/* Chuỗi template để Turbopack không nuốt khoảng trắng sau {số} ("48giờ"). */}
+              <b>{`${queue.overdueTotal} đơn`}</b>
+              {` đã giao quá ${queue.overdueHours} giờ mà chưa có hóa đơn — quá mốc "ngày làm việc tiếp theo" của NĐ 254/2026. Xuất ngay hoặc bật tự động.`}
+            </span>
+          </div>
+        )}
+
         {/* ---- Tab lọc theo đối soát ---- */}
         <div
           role="tablist"
@@ -522,7 +547,12 @@ export function InvoiceIssueCard({
                             }
                           />
                         </TableCell>
-                        <TableCell className="font-medium">{r.orderCode}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="flex items-center gap-1.5">
+                            {r.orderCode}
+                            {r.overdue && <OverdueBadge hours={queue?.overdueHours ?? 48} />}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <span
                             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}
