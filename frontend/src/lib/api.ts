@@ -1127,8 +1127,6 @@ export interface SyncChannel {
 export interface SyncSettings {
   channels: SyncChannel[];
   enabledCount: number;
-  /** Có ít nhất một gian đang bật — nuôi chip header. */
-  autoSyncEnabled: boolean;
   safetyStockDefault: number;
   initialStockMode: InitialStockMode;
   /** Ngưỡng cảnh báo sắp hết hàng mặc định toàn shop — 0 = tắt. */

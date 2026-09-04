@@ -1496,10 +1496,8 @@ model ShopSyncSetting {
   id     String @id @default(cuid())
   userId String @unique
 
-  /// ⚠️ CŨ (trước 05/09): switch tự động toàn shop. Đã thay bằng
-  /// Channel.stockSyncEnabled theo TỪNG GIAN (migration đã chép cờ sang gian).
-  /// Cột giữ lại để deploy chồng lấn không vỡ — code KHÔNG đọc nữa; dọn ở đợt sau.
-  autoSyncEnabled Boolean @default(false)
+  /// (Switch tự động toàn shop `autoSyncEnabled` đã bỏ 05/09 — thay bằng
+  /// Channel.stockSyncEnabled theo TỪNG GIAN; migration đã chép cờ sang gian.)
 
   /// Tồn an toàn MẶC ĐỊNH toàn shop — SKU nào không đặt riêng
   /// (Product.safetyStock = null) thì dùng số này.
@@ -1545,7 +1543,7 @@ model StockPushJob {
   /// Tồn khả dụng TRƯỚC biến động đầu tiên (snapshot lúc enqueue lần đầu) —
   /// chỉ phục vụ cột "số cũ" của InventorySyncLog; số đẩy luôn đọc mới nhất.
   oldAvailable Int?
-  /// true = người dùng chủ động bấm sync (bỏ qua switch autoSyncEnabled).
+  /// true = người dùng chủ động bấm sync (bỏ qua cờ stockSyncEnabled của gian).
   forced       Boolean @default(false)
   /// Nguồn biến động để ghi vào log (vd "webhook Shopee đơn X", "nhập kho tay").
   source       String?

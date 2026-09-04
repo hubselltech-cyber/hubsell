@@ -512,8 +512,6 @@ router.get("/sync-settings", async (req: AuthRequest, res, next) => {
     res.json({
       channels,
       enabledCount,
-      /// Tương thích chip header: "đang đồng bộ" = có ít nhất một gian bật.
-      autoSyncEnabled: enabledCount > 0,
       safetyStockDefault: setting?.safetyStockDefault ?? 0,
       initialStockMode: (setting?.initialStockMode ?? "SUM") as InitialStockMode,
       lowStockDefault: setting?.lowStockDefault ?? 0,
