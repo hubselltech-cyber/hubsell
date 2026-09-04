@@ -262,15 +262,26 @@ export default function ProductsHubPage() {
 
   const columns = useMemo(
     () => [
+      // Cả khối làm việc phải nằm gọn một màn hình (anh Trung 05/09): SKU và
+      // tên CẮT NGẮN, rê chuột hiện đầy đủ — không kéo thanh trượt đi kéo lại.
       columnHelper.accessor("skuCode", {
         header: "Mã SKU",
         cell: (info) => (
-          <span className="font-mono text-sm font-medium">{info.getValue()}</span>
+          <span
+            className="block max-w-[8rem] truncate font-mono text-sm font-medium"
+            title={info.getValue()}
+          >
+            {info.getValue()}
+          </span>
         ),
       }),
       columnHelper.accessor("productName", {
         header: "Tên sản phẩm",
-        cell: (info) => <span>{info.getValue()}</span>,
+        cell: (info) => (
+          <span className="block max-w-[13rem] truncate" title={info.getValue()}>
+            {info.getValue()}
+          </span>
+        ),
       }),
       ...(seesCost
         ? [
@@ -462,34 +473,37 @@ export default function ProductsHubPage() {
       }),
       columnHelper.display({
         id: "actions",
-        header: () => <div className="text-center">Nhập / Xuất kho</div>,
+        header: () => <div className="text-center">Nhập · Xuất</div>,
+        // Nút icon (rê chuột có chú thích) để bảng vừa một màn hình 1366 không cuộn ngang.
         cell: ({ row }) => (
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-1">
             <Button
               variant="outline"
               size="sm"
-              className="text-emerald-700 hover:bg-emerald-50"
+              className="h-8 w-8 p-0 text-emerald-700 hover:bg-emerald-50"
+              title={`Nhập kho ${row.original.skuCode}`}
+              aria-label={`Nhập kho ${row.original.skuCode}`}
               onClick={() => setAdjusting({ product: row.original, type: "IMPORT" })}
             >
               <ArrowDownToLine className="size-4" />
-              Nhập
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="text-rose-700 hover:bg-rose-50"
+              className="h-8 w-8 p-0 text-rose-700 hover:bg-rose-50"
+              title={`Xuất kho ${row.original.skuCode}`}
+              aria-label={`Xuất kho ${row.original.skuCode}`}
               disabled={row.original.quantityInStock === 0}
               onClick={() => setAdjusting({ product: row.original, type: "EXPORT" })}
             >
               <ArrowUpFromLine className="size-4" />
-              Xuất
             </Button>
             {isAdmin && (
               <Button
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  "px-2",
+                  "h-8 px-1.5",
                   row.original.isLowStock ? "text-amber-700" : "text-muted-foreground"
                 )}
                 title="Ngưỡng cảnh báo sắp hết hàng & tồn an toàn của SKU"
