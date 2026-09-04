@@ -59,7 +59,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-slate-900">
+        <span className="text-sm text-slate-900">
           {message.author}
         </span>
         {!system && (

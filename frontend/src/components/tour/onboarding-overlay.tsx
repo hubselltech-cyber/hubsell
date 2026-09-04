@@ -106,7 +106,7 @@ export function OnboardingOverlay({
               </div>
               <p className="text-lg font-semibold">Bạn đã sẵn sàng!</p>
               <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                Vào trang <span className="font-medium text-foreground">Kênh bán</span>,
+                Vào trang <span className="text-foreground">Kênh bán</span>,
                 bấm “Kết nối gian hàng” rồi uỷ quyền trên sàn — đơn hàng sẽ tự
                 đồng bộ về ngay sau đó.
               </p>
@@ -140,7 +140,7 @@ export function OnboardingOverlay({
           // Nhân viên không thể tự kết nối gian hàng
           <div className="rounded-2xl border bg-background p-8 text-center shadow-sm">
             <Store className="mx-auto mb-3 size-10 text-muted-foreground" />
-            <p className="font-medium">Cửa hàng chưa kết nối gian hàng nào</p>
+            <p>Cửa hàng chưa kết nối gian hàng nào</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Vui lòng liên hệ Chủ shop để kết nối gian hàng trước khi bắt đầu
               làm việc.

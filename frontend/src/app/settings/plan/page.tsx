@@ -90,7 +90,7 @@ function UsageBar({
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm">{label}</p>
         <p className="text-sm tabular-nums text-muted-foreground">
           {ratio === null ? (
             <>
@@ -324,7 +324,7 @@ export default function SettingsPlanPage() {
               <div className="flex items-start gap-2.5">
                 <Clock className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">
+                  <p>
                     {pending.listedPrice === 0 ? (
                       <>Đã gửi yêu cầu tư vấn gói {pending.planName}</>
                     ) : (
@@ -441,7 +441,7 @@ export default function SettingsPlanPage() {
 
                   <p className="mt-4 text-3xl font-extrabold tabular-nums tracking-tight">
                     {nf.format(price)}₫
-                    <span className="text-sm font-medium text-muted-foreground">
+                    <span className="text-sm text-muted-foreground">
                       /{CYCLE_LABEL[cycle]}
                     </span>
                   </p>
@@ -504,7 +504,7 @@ export default function SettingsPlanPage() {
             {data.enterprisePlan && (
               <div className="relative flex flex-col rounded-2xl border border-slate-300 bg-card p-5 shadow-sm dark:border-slate-700">
                 <p className="text-lg font-bold">{data.enterprisePlan.name}</p>
-                <p className="mt-0.5 text-sm font-medium text-muted-foreground">
+                <p className="mt-0.5 text-sm text-muted-foreground">
                   Cho shop quy mô lớn / nhiều thương hiệu
                 </p>
                 <p className="mt-4 text-3xl font-extrabold tracking-tight">
@@ -574,12 +574,12 @@ export default function SettingsPlanPage() {
               <DialogDescription>
                 {buyIntent.isConsult ? (
                   <>
-                    Gói <span className="font-medium text-foreground">{buyIntent.planName}</span> —
+                    Gói <span className="text-foreground">{buyIntent.planName}</span> —
                     Hubsell sẽ gọi lại tư vấn và báo giá riêng theo quy mô shop của bạn.
                   </>
                 ) : (
                   <>
-                    Gói <span className="font-medium text-foreground">{buyIntent.planName}</span> — kỳ{" "}
+                    Gói <span className="text-foreground">{buyIntent.planName}</span> — kỳ{" "}
                     {buyIntent.cycle ? CYCLE_LABEL[buyIntent.cycle] : ""} (
                     <span className="font-semibold tabular-nums text-foreground">
                       {nf.format(buyIntent.price)}₫
@@ -648,7 +648,7 @@ export default function SettingsPlanPage() {
                 </span>{" "}
                 từ Ví (số dư{" "}
                 <span className="tabular-nums">{nf.format(wallet)}₫</span>) để mua gói{" "}
-                <span className="font-medium text-foreground">{walletBuy.plan.name}</span> kỳ{" "}
+                <span className="text-foreground">{walletBuy.plan.name}</span> kỳ{" "}
                 {CYCLE_LABEL[walletBuy.cycle]}. Gói có hiệu lực ngay sau khi trừ.
               </DialogDescription>
             )}

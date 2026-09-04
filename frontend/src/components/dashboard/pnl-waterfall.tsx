@@ -310,7 +310,7 @@ export function PnlWaterfallFooter({
   const margin = gross > 0 ? Math.round((net / gross) * 1000) / 10 : null;
   return (
     <div className="mt-2 flex items-baseline justify-between gap-3 border-t pt-3">
-      <span className="text-sm font-medium text-slate-900">
+      <span className="text-sm text-slate-900">
         Lợi nhuận ròng
         {margin !== null && (
           <span className={cn(TEXT_SUB, "ml-2 font-normal")}>

@@ -67,7 +67,7 @@ export function ActivityFeed({
             // khi có lỗi phát sinh (lỗi kết nối API hóa đơn, lỗi ký số…).
             <div className="flex flex-col items-center gap-2 px-4 pt-10 text-center">
               <FlaskConical className="size-8 text-teal-500" />
-              <p className="text-sm font-medium text-slate-600">
+              <p className="text-sm text-slate-600">
                 Tính năng đối soát Thuế tự động đang được thiết lập (Beta)
               </p>
               <p className="max-w-xs text-xs text-slate-400">
@@ -118,7 +118,7 @@ function FeedRow({ item }: { item: ActivityItem }) {
 function DayDivider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 pt-2 pb-1 first:pt-1">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <span className="text-[11px] font-medium text-slate-400">
         {label}
       </span>
       <span className="h-px flex-1 bg-slate-100" />

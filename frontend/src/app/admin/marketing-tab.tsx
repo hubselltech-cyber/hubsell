@@ -79,7 +79,7 @@ export function MarketingTab({
                       {i + 1}
                     </TableCell>
                     <TableCell>
-                      <p className="text-sm font-medium">{r.fullName}</p>
+                      <p className="text-sm">{r.fullName}</p>
                       <p className="text-xs text-muted-foreground">{r.email}</p>
                     </TableCell>
                     <TableCell className="font-mono text-sm">

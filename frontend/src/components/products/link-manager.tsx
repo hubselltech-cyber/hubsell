@@ -580,7 +580,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                                 </div>
                               )}
                               <div className="min-w-0">
-                                <p className="truncate font-medium">
+                                <p className="truncate">
                                   {r.productName}
                                 </p>
                                 <p className={cn(TEXT_SUB, "font-mono")}>

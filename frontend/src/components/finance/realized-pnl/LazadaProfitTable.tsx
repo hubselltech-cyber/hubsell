@@ -250,7 +250,7 @@ export function LazadaProfitTable({
                 />
                 {/* Thông tin đơn */}
                 <td className={cn(cell, BLOCK.info)}>
-                  <span className="font-medium text-slate-800">{b.orderCode}</span>
+                  <span className="text-slate-900">{b.orderCode}</span>
                   {b.missingCostPrice && (
                     <span className="mt-0.5 block text-[11px] text-amber-600">
                       Chưa nhập giá vốn
@@ -285,7 +285,7 @@ export function LazadaProfitTable({
 
                 {/* Giá trị đơn hàng — [Giá trị sản phẩm] thô */}
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
-                  <Amount value={orderValue} tone="font-medium text-slate-800" />
+                  <Amount value={orderValue} tone="text-slate-900" />
                 </td>
 
                 {/* Chi tiết phí vận chuyển — số CÓ DẤU nguyên bản */}

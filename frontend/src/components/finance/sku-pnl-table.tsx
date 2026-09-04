@@ -398,7 +398,7 @@ export function SkuPnlTable({
                               </div>
                             )}
                             <div className="min-w-0">
-                              <p className="flex items-center gap-1.5 font-medium">
+                              <p className="flex items-center gap-1.5">
                                 {isTop && (
                                   <Crown className="size-4 shrink-0 text-amber-500" />
                                 )}
@@ -429,7 +429,7 @@ export function SkuPnlTable({
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className={cn(CELL_PAD, "text-right font-medium")}>
+                        <TableCell className={cn(CELL_PAD, "text-right")}>
                           {formatNumber(row.quantitySold)}
                         </TableCell>
 
@@ -642,7 +642,7 @@ export function SkuPnlTable({
                   </span>
                 </div>
                 <div className="flex justify-between border-t pt-2">
-                  <span className="font-medium">Lợi nhuận cuối cùng của shop</span>
+                  <span>Lợi nhuận cuối cùng của shop</span>
                   <span
                     className={cn(
                       "text-base font-bold",

@@ -254,7 +254,7 @@ export default function ProductsHubPage() {
       }),
       columnHelper.accessor("productName", {
         header: "Tên sản phẩm",
-        cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+        cell: (info) => <span>{info.getValue()}</span>,
       }),
       ...(seesCost
         ? [
@@ -272,7 +272,7 @@ export default function ProductsHubPage() {
         header: () => <div className="text-right">Giá bán</div>,
         cell: (info) => (
           <div className="text-right">
-            <Money value={info.getValue()} className="font-medium text-slate-900" />
+            <Money value={info.getValue()} className="text-slate-900" />
           </div>
         ),
       }),

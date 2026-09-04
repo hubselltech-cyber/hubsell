@@ -861,7 +861,7 @@ export default function ChannelsPage() {
                               </span>
                               <span
                                 className={cn(
-                                  "inline-flex shrink-0 items-center gap-1.5 text-xs font-medium",
+                                  "inline-flex shrink-0 items-center gap-1.5 text-xs",
                                   active ? "text-emerald-500" : "text-zinc-400"
                                 )}
                               >

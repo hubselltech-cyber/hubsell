@@ -65,19 +65,19 @@
   --channel-offline: #10b981;
   --channel-other: #8b5cf6;
   --background: oklch(0.984 0.003 247.858); /* slate-50  #F8FAFC */
-  --foreground: oklch(0.208 0.042 265.755); /* slate-900 */
+  --foreground: oklch(0.2 0.022 265.8); /* slate-900 */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.208 0.042 265.755);
+  --card-foreground: oklch(0.2 0.022 265.8);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.208 0.042 265.755);
-  --primary: oklch(0.208 0.042 265.755); /* slate-900 — Monochrome mặc định */
+  --popover-foreground: oklch(0.2 0.022 265.8);
+  --primary: oklch(0.2 0.022 265.8); /* slate-900 — Monochrome mặc định */
   --primary-foreground: oklch(0.984 0.003 247.858);
   --secondary: oklch(0.968 0.007 247.896); /* slate-100 */
-  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --secondary-foreground: oklch(0.2 0.022 265.8);
   --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417); /* slate-500 */
+  --muted-foreground: oklch(0.55 0.026 257.4); /* slate-500 */
   --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
+  --accent-foreground: oklch(0.2 0.022 265.8);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.929 0.013 255.508); /* slate-200 */
   --input: oklch(0.929 0.013 255.508);
@@ -104,8 +104,8 @@
   /* Trạng thái ACTIVE của menu sidebar — đổi theo theme (xem khối data-theme
      bên dưới). Mặc định = Monochrome: nền slate-100, chữ + vạch neo slate-900. */
   --sidebar-active-bg: oklch(0.968 0.007 247.896); /* slate-100 */
-  --sidebar-active-text: oklch(0.208 0.042 265.755); /* slate-900 */
-  --sidebar-active-border: oklch(0.208 0.042 265.755);
+  --sidebar-active-text: oklch(0.2 0.022 265.8); /* slate-900 */
+  --sidebar-active-border: oklch(0.2 0.022 265.8);
 }
 
 /*
@@ -123,12 +123,12 @@
 /* Giao diện chính: Tối giản Monochrome (trùng :root — khai báo tường minh
    để html[data-theme="monochrome"] luôn đúng kể cả khi :root đổi sau này) */
 html[data-theme="monochrome"] {
-  --primary: oklch(0.208 0.042 265.755); /* slate-900 */
+  --primary: oklch(0.2 0.022 265.8); /* slate-900 */
   --primary-foreground: oklch(0.984 0.003 247.858);
   --ring: oklch(0.704 0.04 256.788); /* slate-400 */
   --sidebar-active-bg: oklch(0.968 0.007 247.896); /* slate-100 */
-  --sidebar-active-text: oklch(0.208 0.042 265.755); /* slate-900 */
-  --sidebar-active-border: oklch(0.208 0.042 265.755);
+  --sidebar-active-text: oklch(0.2 0.022 265.8); /* slate-900 */
+  --sidebar-active-border: oklch(0.2 0.022 265.8);
 }
 
 /* Tùy chọn 2: Cyber Indigo (phong cách công nghệ) */
@@ -164,6 +164,21 @@ html[data-theme="emerald"] {
  * Cả hai đều phải kèm motion-reduce:animate-none ở nơi sử dụng.
  */
 @theme {
+  /*
+   * THANG CHỮ SLATE BỚT NGẢ XANH (04/09/2026, đo theo YouTube Studio).
+   * Studio dùng đen trung tính #0f0f0f / xám #606060 nên chữ "ra đen"; slate
+   * gốc của Tailwind có chroma ~0.042 làm chữ chính hơi xanh xám, nhìn "đục"
+   * trên nền trắng. Chỉ hạ CHROMA của 5 bậc dùng cho CHỮ (500→900), giữ hue
+   * và độ sáng gần nguyên để mọi tint/viền/nền slate-50..300 vẫn ấm mắt như
+   * cũ. Dark mode định nghĩa lại thang này trong .dark bên dưới, không ảnh
+   * hưởng. Giá trị gốc Tailwind ghi cạnh để so.
+   */
+  --color-slate-500: oklch(0.55 0.026 257.4); /* gốc 0.554 0.046 */
+  --color-slate-600: oklch(0.44 0.026 257.3); /* gốc 0.446 0.043 */
+  --color-slate-700: oklch(0.36 0.026 257.3); /* gốc 0.372 0.044 */
+  --color-slate-800: oklch(0.27 0.024 260.0); /* gốc 0.279 0.041 */
+  --color-slate-900: oklch(0.2 0.022 265.8); /* gốc 0.208 0.042 */
+
   --animate-dialog-pop: dialog-pop 0.22s cubic-bezier(0.22, 1.35, 0.36, 1);
   --animate-page-enter: page-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 

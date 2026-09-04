@@ -88,7 +88,7 @@ export function AuditTab({
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateTime(log.createdAt)}
                     </TableCell>
-                    <TableCell className="text-sm font-medium">
+                    <TableCell className="text-sm">
                       {log.actorName}
                     </TableCell>
                     <TableCell className="text-sm">

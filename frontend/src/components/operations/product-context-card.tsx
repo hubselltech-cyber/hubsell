@@ -162,7 +162,7 @@ export function ProductContextCard({
         </span>
         <span className="mx-1.5 text-slate-300">|</span>
         <span className="text-slate-500">Kho vật lý:</span>{" "}
-        <span className="font-medium text-slate-700">
+        <span className="text-slate-900">
           {totalPhysical === null ? "— (chưa liên kết)" : totalPhysical}
         </span>
       </p>
@@ -195,7 +195,7 @@ export function ProductContextCard({
       {/* Bảng quy đổi size */}
       {product.sizeChart.length > 0 && (
         <div>
-          <p className={cn(TEXT_SUB, "mb-1.5 font-medium uppercase tracking-wide")}>
+          <p className={cn(TEXT_SUB, "mb-1.5 font-medium")}>
             Bảng size
           </p>
           <div className="overflow-hidden rounded-lg border">
@@ -232,7 +232,7 @@ export function ProductContextCard({
           (SP thật chưa đồng bộ chi tiết) thì ẩn hẳn khối, không vẽ bảng rỗng. */}
       {variants.length > 0 && (
       <div>
-        <p className={cn(TEXT_SUB, "mb-1.5 font-medium uppercase tracking-wide")}>
+        <p className={cn(TEXT_SUB, "mb-1.5 font-medium")}>
           Tồn trên sàn {channelLabel}
         </p>
         <div className="overflow-hidden rounded-lg border">
@@ -250,7 +250,7 @@ export function ProductContextCard({
             <tbody>
               {colors.map((c) => (
                 <tr key={c} className="border-t">
-                  <td className="px-2 py-1.5 font-medium text-slate-900">{c}</td>
+                  <td className="px-2 py-1.5 text-slate-900">{c}</td>
                   {sizes.map((s) => {
                     const v = variantOf(c, s);
                     const qty = v?.channelStock ?? null;

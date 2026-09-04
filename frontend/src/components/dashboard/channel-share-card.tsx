@@ -49,7 +49,7 @@ function LegendTile({ row, pct }: { row: ChannelRow; pct: number }) {
     <div className="min-w-0">
       <p
         className={cn(
-          "flex items-center gap-1.5 text-sm font-medium",
+          "flex items-center gap-1.5 text-sm",
           idle ? "text-slate-500" : "text-slate-900",
         )}
       >
@@ -261,7 +261,7 @@ export function ChannelShareCard({
                         "mt-0.5 leading-none sm:text-3xl xl:text-[2rem]",
                       )}
                     />
-                    <span className={cn(TEXT_SUB, "mt-1.5 font-medium")}>
+                    <span className={cn(TEXT_SUB, "mt-1.5")}>
                       {slices.length} kênh hoạt động
                     </span>
                   </>

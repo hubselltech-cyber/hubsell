@@ -189,7 +189,7 @@ function RuleCard({
         <p className={cn("text-sm font-semibold", colorClass)}>
           {title}
           {note && (
-            <span className="ml-2 text-xs font-medium text-slate-500">
+            <span className="ml-2 text-xs text-slate-500">
               {note}
             </span>
           )}
@@ -276,7 +276,7 @@ export function AssistantRuleFields({
         hint="Video tổng đẹp nhưng vài ngày gần đây bão hòa sẽ lộ khi soi khung thời gian ngắn."
       >
         <ConditionRow>
-          <span className="font-medium text-slate-600">
+          <span className="text-slate-600">
             Tính số liệu trên khung
           </span>
           <WindowSelect
@@ -395,7 +395,7 @@ export function AssistantRuleFields({
         hint="Trợ lý KHÔNG tự loại nhóm này — chỉ gắn cờ chờ Seller quyết định giữ lại hay loại trừ."
       >
         <ConditionRow>
-          <span className="font-medium text-slate-600">
+          <span className="text-slate-600">
             Tính số liệu trên khung
           </span>
           <WindowSelect

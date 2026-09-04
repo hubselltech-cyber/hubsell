@@ -482,7 +482,7 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
                             <Megaphone className="size-4.5" />
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-slate-900">
+                            <p className="truncate text-sm text-slate-900">
                               {c.name}
                             </p>
                             <p className="text-xs text-slate-500">
@@ -538,7 +538,7 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
                 <TableBody>
                   {campaigns.map((c) => (
                     <TableRow key={c.id}>
-                      <TableCell className="font-medium text-slate-900">
+                      <TableCell className="text-slate-900">
                         {c.name}
                       </TableCell>
                       <TableCell>
@@ -675,7 +675,7 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
                   <TableBody>
                     {campaigns.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="font-medium text-slate-900">
+                        <TableCell className="text-slate-900">
                           {c.name}
                         </TableCell>
                         <TableCell className="text-right">

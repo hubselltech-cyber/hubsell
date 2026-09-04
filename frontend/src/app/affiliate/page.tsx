@@ -173,7 +173,7 @@ function StatCard({
             <Icon className="size-5" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-slate-500">
+            <p className="truncate text-sm text-slate-500">
               {label}
             </p>
             <div className={cn(TEXT_BIG_NUMBER, "mt-0.5")}>{children}</div>
@@ -472,7 +472,7 @@ function FriendsTable({ history }: { history: ReferralHistory | null }) {
               {rows.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    <p className="font-medium text-slate-800">{r.fullName}</p>
+                    <p className="text-slate-900">{r.fullName}</p>
                     <p className={TEXT_SUB}>{r.email}</p>
                   </TableCell>
                   <TableCell className="text-sm text-slate-600">
@@ -607,7 +607,7 @@ function WithdrawalsTable({ history }: { history: ReferralHistory | null }) {
                   {formatDateTime(w.createdAt)}
                 </TableCell>
                 <TableCell>
-                  <p className="text-sm font-medium text-slate-800">
+                  <p className="text-sm text-slate-900">
                     {w.bankName} — {w.bankAccountNumber}
                   </p>
                   <p className={TEXT_SUB}>{w.bankAccountName}</p>
@@ -696,7 +696,7 @@ function RenewDialog({
                   !affordable && "cursor-not-allowed opacity-45"
                 )}
               >
-                <span className="text-sm font-medium text-slate-800">
+                <span className="text-sm text-slate-900">
                   {p.name}
                 </span>
                 <span className="text-sm font-semibold">

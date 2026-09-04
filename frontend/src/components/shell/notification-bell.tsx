@@ -158,7 +158,7 @@ export function NotificationBell() {
                   )}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-slate-900">
+                  <span className="block text-sm text-slate-900">
                     {n.title}
                   </span>
                   {n.body && (

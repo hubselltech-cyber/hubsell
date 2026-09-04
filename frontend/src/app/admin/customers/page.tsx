@@ -233,7 +233,7 @@ export default function PlatformCustomersPage() {
                                 {formatDateTime(u.createdAt)}
                               </TableCell>
                               <TableCell>
-                                <p className="text-sm font-medium">{u.fullName}</p>
+                                <p className="text-sm">{u.fullName}</p>
                                 {u.username && (
                                   <p className="font-mono text-xs text-muted-foreground">
                                     @{u.username}
@@ -441,7 +441,7 @@ export default function PlatformCustomersPage() {
                                 {formatDateTime(l.createdAt)}
                               </TableCell>
                               <TableCell>
-                                <p className="text-sm font-medium">{l.name}</p>
+                                <p className="text-sm">{l.name}</p>
                               </TableCell>
                               <TableCell className="text-sm">
                                 {l.email}

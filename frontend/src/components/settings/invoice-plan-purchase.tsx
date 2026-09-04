@@ -363,7 +363,7 @@ function TransferRow({
   return (
     <div className="flex items-center justify-between gap-2 text-sm">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="flex min-w-0 items-center gap-0.5 text-right font-medium">
+      <span className="flex min-w-0 items-center gap-0.5 text-right">
         <span className="truncate">{value}</span>
         {copyValue !== undefined && (
           <CopyButton value={copyValue} label={label.toLowerCase()} />
@@ -533,7 +533,7 @@ export function InvoicePlanPurchaseSection() {
                     <Loader2
                       className={cn("size-8 animate-spin", brand.spinner)}
                     />
-                    <p className={cn("text-sm font-medium", brand.text)}>
+                    <p className={cn("text-sm", brand.text)}>
                       Hệ thống đang kiểm tra giao dịch tự động từ ngân hàng của
                       bạn...
                     </p>

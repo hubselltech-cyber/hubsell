@@ -373,7 +373,7 @@ export default function CostPricesPage() {
               // Không tìm thấy kết quả khớp bộ lọc
               <div className="py-12 text-center">
                 <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
-                <p className="font-medium">Không tìm thấy SKU nào phù hợp</p>
+                <p>Không tìm thấy SKU nào phù hợp</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Thử đổi từ khoá tìm kiếm hoặc chọn lại trạng thái giá vốn.
                 </p>

@@ -42,7 +42,7 @@ function Line({ line }: { line: OrderItemLine }) {
     <div className="flex items-center gap-2.5">
       <Thumb line={line} />
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{line.productName}</p>
+        <p className="truncate">{line.productName}</p>
         <p className={cn(TEXT_SUB, "truncate font-mono")}>{line.channelSku}</p>
       </div>
       <span className="shrink-0 font-semibold tabular-nums">×{line.quantity}</span>

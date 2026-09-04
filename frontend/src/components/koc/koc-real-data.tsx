@@ -177,7 +177,7 @@ export function KocOrdersPanel({ channel, range }: KocFilterProps) {
                   return (
                     <TableRow key={s.channelId}>
                       <TableCell>
-                        <p className="font-medium text-slate-900">{s.shopName}</p>
+                        <p className="text-slate-900">{s.shopName}</p>
                         <p className={TEXT_SUB}>
                           {meta?.label ?? s.channelName}
                           {s.externalShopId ? ` · ID ${s.externalShopId}` : ""}

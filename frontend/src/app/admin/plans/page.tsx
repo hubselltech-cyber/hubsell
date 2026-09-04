@@ -317,7 +317,7 @@ function PlanDialog({
         <div className="grid gap-3 rounded-lg border p-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Đang bán</p>
+              <p className="text-sm">Đang bán</p>
               <p className="text-xs text-muted-foreground">
                 Tắt = gói nháp/ngừng bán — thuê bao cũ vẫn chạy bình thường.
               </p>
@@ -326,7 +326,7 @@ function PlanDialog({
           </div>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Gói mặc định cho tài khoản mới</p>
+              <p className="text-sm">Gói mặc định cho tài khoản mới</p>
               <p className="text-xs text-muted-foreground">
                 Chủ shop mới đăng ký tự vào gói này kèm kỳ dùng thử. Chỉ một gói giữ cờ.
               </p>
@@ -735,7 +735,7 @@ export default function PlatformPlansPage() {
                       </p>
                     )}
 
-                    <p className="text-xs font-medium">
+                    <p className="text-xs">
                       {formatCount(p.subscriberCount)} thuê bao
                     </p>
                   </CardContent>
@@ -793,7 +793,7 @@ export default function PlatformPlansPage() {
                             )}
                           </p>
                         </TableCell>
-                        <TableCell className="text-sm font-medium">
+                        <TableCell className="text-sm">
                           {r.planName}
                           <p className="text-xs font-normal text-muted-foreground">
                             {r.listedPrice === 0 ? "Tư vấn" : `Kỳ ${CYCLE_LABEL[r.cycle]}`}
@@ -801,7 +801,7 @@ export default function PlatformPlansPage() {
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
                           {r.listedPrice === 0 ? (
-                            <span className="font-medium text-muted-foreground">Báo giá riêng</span>
+                            <span className="text-muted-foreground">Báo giá riêng</span>
                           ) : (
                             formatMoney(r.listedPrice)
                           )}
@@ -942,14 +942,14 @@ export default function PlatformPlansPage() {
                           {s.user.fullName}
                           <p className="text-xs text-muted-foreground">{s.user.email ?? "—"}</p>
                         </TableCell>
-                        <TableCell className="text-sm font-medium">{s.plan.name}</TableCell>
+                        <TableCell className="text-sm">{s.plan.name}</TableCell>
                         {/* %trần đơn/tháng (GĐ2): đỏ khi đã vượt, vàng từ 80% —
                             gọi khách mời nâng gói TRƯỚC khi hệ thống tự khóa. */}
                         <TableCell className="whitespace-nowrap text-sm tabular-nums">
                           {s.orderLimit != null ? (
                             <span
                               className={cn(
-                                "font-medium",
+                                "",
                                 s.ordersThisMonth >= s.orderLimit
                                   ? "text-rose-600"
                                   : s.ordersThisMonth >= s.orderLimit * 0.8

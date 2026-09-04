@@ -108,7 +108,7 @@ export function LinkOneDialog({
             </div>
           )}
           <div className="min-w-0">
-            <p className="truncate font-medium">{item.productName}</p>
+            <p className="truncate">{item.productName}</p>
             <p className={cn(TEXT_SUB, "font-mono")}>{item.channelSku}</p>
             <p className={TEXT_SUB}>
               {meta.label} · {item.channel.shopName}

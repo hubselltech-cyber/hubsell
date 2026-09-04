@@ -145,7 +145,7 @@ export function ShopeeProfitTable({
                 />
                 {/* Thông tin đơn */}
                 <td className={cn(cell, BLOCK.info)}>
-                  <span className="font-medium text-slate-800">{b.orderCode}</span>
+                  <span className="text-slate-900">{b.orderCode}</span>
                   {b.missingCostPrice && (
                     <span className="mt-0.5 block text-[11px] text-amber-600">
                       Chưa nhập giá vốn
@@ -174,7 +174,7 @@ export function ShopeeProfitTable({
 
                 {/* Doanh thu & trợ giá */}
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
-                  <Amount value={r.revenueGross} tone="font-medium text-slate-800" />
+                  <Amount value={r.revenueGross} tone="text-slate-900" />
                 </td>
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
                   <Amount value={r.shopeeSubsidy} tone="text-emerald-700" />

@@ -447,7 +447,7 @@ export function InvoiceIssueCard({
         {/* ---- Thanh hành động hàng loạt — chỉ hiện khi đã tick ---- */}
         {selected.size > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2">
-            <span className="text-sm font-medium text-slate-800">
+            <span className="text-sm text-slate-900">
               Đã chọn {selected.size} đơn ·{" "}
               <Money value={selectedSum} className="font-semibold" />
             </span>
@@ -547,7 +547,7 @@ export function InvoiceIssueCard({
                             }
                           />
                         </TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell>
                           <span className="flex items-center gap-1.5">
                             {r.orderCode}
                             {r.overdue && <OverdueBadge hours={queue?.overdueHours ?? 48} />}

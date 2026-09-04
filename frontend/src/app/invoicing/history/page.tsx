@@ -627,7 +627,7 @@ export default function TaxHistoryPage() {
                                 {/* Kỳ kê khai theo NGÀY LẬP; tờ chưa lập (lỗi/chờ) hiện ngày tạo. */}
                                 {formatDateTime(l.issuedAt ?? l.createdAt)}
                               </TableCell>
-                              <TableCell className="font-medium">
+                              <TableCell>
                                 {l.orderCode}
                                 {l.buyerName && (
                                   <p

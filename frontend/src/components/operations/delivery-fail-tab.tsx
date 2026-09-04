@@ -351,7 +351,7 @@ export function DeliveryFailTab() {
               <div className="flex size-12 items-center justify-center rounded-full bg-emerald-50">
                 <PackageCheck className="size-6 text-emerald-500" />
               </div>
-              <p className="text-sm font-medium text-slate-900">
+              <p className="text-sm text-slate-900">
                 Chưa có đơn nào giao thất bại
               </p>
               <p className={cn(TEXT_SUB, "max-w-sm")}>

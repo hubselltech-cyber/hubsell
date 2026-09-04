@@ -113,7 +113,7 @@ export function InvoiceStatusPanel({
               status === "error" ? "text-rose-500" : "text-slate-500"
             )}
           />
-          <span className="text-sm font-medium text-slate-700">
+          <span className="text-sm text-slate-900">
             Hóa đơn điện tử (HĐĐT)
           </span>
         </div>

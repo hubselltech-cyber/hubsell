@@ -230,7 +230,7 @@ export function KocChannelPage({ platform }: { platform: ChannelKey }) {
           <CardContent className="flex items-center gap-3 py-8 text-sm">
             <CloudOff className="size-5 shrink-0 text-slate-400" />
             <div>
-              <p className="font-medium text-slate-900">
+              <p className="text-slate-900">
                 Chưa đọc được dữ liệu affiliate {meta.label}
               </p>
               <p className={TEXT_SUB}>{error ?? "Không rõ nguyên nhân"}</p>
@@ -321,7 +321,7 @@ export function KocChannelPage({ platform }: { platform: ChannelKey }) {
               {detail.totals.orders === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-10 text-center">
                   <PackageSearch className="size-8 text-slate-300" />
-                  <p className="text-sm font-medium text-slate-900">
+                  <p className="text-sm text-slate-900">
                     Chưa phát sinh đơn affiliate trong {detail.days} ngày gần nhất
                   </p>
                   <p className={cn(TEXT_SUB, "max-w-md")}>
@@ -410,7 +410,7 @@ export function KocChannelPage({ platform }: { platform: ChannelKey }) {
                   {detail.shops.map((s) => (
                     <TableRow key={s.channelId}>
                       <TableCell>
-                        <p className="font-medium text-slate-900">{s.shopName}</p>
+                        <p className="text-slate-900">{s.shopName}</p>
                         <p className={TEXT_SUB}>
                           {s.externalShopId
                             ? `ID ${s.externalShopId}`

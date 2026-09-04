@@ -112,7 +112,7 @@ export const BLOCK = {
  * Cả hai đệm dọc py-3 cho thoáng.
  */
 export const HEADER_GROUP =
-  "border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-bold uppercase tracking-wide";
+ "border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold";
 export const HEADER_COL =
   "border-b-2 border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-500";
 

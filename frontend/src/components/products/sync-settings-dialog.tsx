@@ -218,7 +218,7 @@ export function SyncSettingsDialog({
             <div className="rounded-lg border p-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium">
+                  <p className="text-sm">
                     Tự động đồng bộ — {autoSync ? "đang BẬT" : "đang TẮT"}
                   </p>
                   <p className={TEXT_SUB}>
@@ -268,7 +268,7 @@ export function SyncSettingsDialog({
             {/* ===== TỒN AN TOÀN + SYNC TAY ===== */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-lg border p-3">
-                <p className="text-sm font-medium">Tồn an toàn mặc định</p>
+                <p className="text-sm">Tồn an toàn mặc định</p>
                 <p className={cn(TEXT_SUB, "mt-0.5")}>
                   Số giữ lại KHÔNG bán trên sàn cho mọi SKU — đệm chống bán
                   vượt. Đặt riêng từng SKU ở tab Tồn kho.
@@ -295,7 +295,7 @@ export function SyncSettingsDialog({
               </div>
 
               <div className="rounded-lg border p-3">
-                <p className="text-sm font-medium">Đẩy lại toàn bộ ngay</p>
+                <p className="text-sm">Đẩy lại toàn bộ ngay</p>
                 <p className={cn(TEXT_SUB, "mt-0.5")}>
                   Ghi đè tồn hiện tại lên MỌI SKU đã liên kết — dùng sau kiểm
                   kho hoặc khi nghi tồn sàn lệch.
@@ -322,7 +322,7 @@ export function SyncSettingsDialog({
             {/* ===== NHẬT KÝ GẦN NHẤT ===== */}
             <div className="rounded-lg border">
               <div className="flex items-center justify-between border-b px-3 py-2">
-                <p className="text-sm font-medium">Nhật ký đồng bộ gần nhất</p>
+                <p className="text-sm">Nhật ký đồng bộ gần nhất</p>
                 <Button variant="ghost" size="sm" onClick={() => loadLogs()}>
                   <RefreshCw className="size-4" />
                   Làm mới

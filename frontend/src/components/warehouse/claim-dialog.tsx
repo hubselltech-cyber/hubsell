@@ -138,7 +138,7 @@ export function ClaimDialog({
         {/* Lý do hư hỏng ghi lúc nhận hàng — bằng chứng để đối chiếu */}
         {order.returnNote && (
           <div className="rounded-lg border bg-muted/40 p-3">
-            <p className={cn(TEXT_SUB, "font-medium uppercase")}>
+            <p className={cn(TEXT_SUB, "font-medium")}>
               Tình trạng ghi nhận khi nhận hàng
             </p>
             <p className="mt-1 text-sm">{order.returnNote}</p>

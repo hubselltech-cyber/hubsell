@@ -213,7 +213,7 @@ export default function KocSamplesPage() {
                 return (
                   <TableRow key={s.id}>
                     <TableCell>
-                      <p className="font-medium text-slate-900">{s.kocName}</p>
+                      <p className="text-slate-900">{s.kocName}</p>
                       <p className={TEXT_SUB}>{platform.label}</p>
                     </TableCell>
                     <TableCell>

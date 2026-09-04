@@ -511,7 +511,7 @@ export function TaxCalendarSection() {
                     </div>
                     <p
                       className={cn(
-                        "mt-1 text-sm font-medium",
+                        "mt-1 text-sm",
                         check && "text-muted-foreground line-through decoration-emerald-400/60"
                       )}
                     >

@@ -253,7 +253,7 @@ export function ShopeeAssistantModal({
                 )}
                 {live && live.adgroups.length > 0 && (
                   <div className="min-w-0 overflow-x-auto">
-                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
                       Sản phẩm trong chiến dịch
                     </p>
                     <table className="w-full text-sm">
@@ -271,7 +271,7 @@ export function ShopeeAssistantModal({
                         {live.adgroups.slice(0, 10).map((g) => (
                           <tr key={g.adgroupId} className="border-b last:border-0">
                             <td className="max-w-56 py-1.5 pr-3">
-                              <span className="block truncate font-medium text-slate-900">
+                              <span className="block truncate text-slate-900">
                                 {g.name || `#${g.itemId}`}
                               </span>
                               <span className="text-xs text-slate-500">
@@ -319,7 +319,7 @@ export function ShopeeAssistantModal({
                 )}
                 {live && live.keywords.length > 0 && (
                   <div className="min-w-0 overflow-x-auto">
-                    <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
                       Từ khóa (tiêu nhiều xếp trước) — từ khóa đỏ đang đốt tiền
                     </p>
                     <table className="w-full text-sm">
@@ -350,7 +350,7 @@ export function ShopeeAssistantModal({
                               )}
                             >
                               <td className="max-w-52 py-1.5 pr-3">
-                                <span className="block truncate font-medium text-slate-900">
+                                <span className="block truncate text-slate-900">
                                   {k.keyword}
                                 </span>
                                 <span className="block truncate text-xs text-slate-500">
@@ -809,7 +809,7 @@ export function ShopeeActionLogCard({
                           month: "2-digit",
                         })}
                       </td>
-                      <td className="max-w-56 truncate py-2.5 pr-3 font-medium text-slate-900">
+                      <td className="max-w-56 truncate py-2.5 pr-3 text-slate-900">
                         {l.campaignName}
                       </td>
                       <td className="py-2.5 pr-3">

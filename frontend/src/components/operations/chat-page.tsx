@@ -861,7 +861,7 @@ export function OperationsChatPage() {
             />
             <button
               type="button"
-              className="text-sm font-medium text-slate-900"
+              className="text-sm text-slate-900"
               onClick={() => toggleAutoReply(!autoReply)}
             >
               🤖 Auto trả lời tin mới
@@ -924,7 +924,7 @@ export function OperationsChatPage() {
             {isReal && !activeReal ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
                 <MessagesSquare className="size-10 text-slate-300" />
-                <p className="text-sm font-medium text-slate-900">
+                <p className="text-sm text-slate-900">
                   Chưa có khách nào nhắn tin
                 </p>
                 <p className={TEXT_SUB}>
@@ -1083,7 +1083,7 @@ export function OperationsChatPage() {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-900">
+                          <p className="line-clamp-2 text-sm leading-snug text-slate-900">
                             {product.name}
                           </p>
                           <div className="mt-0.5 flex flex-wrap items-center gap-2">
@@ -1168,7 +1168,7 @@ export function OperationsChatPage() {
                 <Bot className="mt-0.5 size-4.5 shrink-0 text-violet-600" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                    <p className="text-xs font-medium text-violet-700">
                       AI Copilot gợi ý
                     </p>
                     {copilotPinned && (

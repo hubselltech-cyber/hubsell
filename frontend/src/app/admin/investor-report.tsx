@@ -88,7 +88,7 @@ function RetentionCohorts({ retention }: { retention: InvestorReportResponse["re
         <tbody>
           {retention.map((c) => (
             <tr key={c.month} className="border-t">
-              <td className="py-1.5 pr-3 font-medium">{c.label}</td>
+              <td className="py-1.5 pr-3">{c.label}</td>
               <td className="px-2 py-1.5 text-center text-muted-foreground">
                 {formatCount(c.size)}
               </td>

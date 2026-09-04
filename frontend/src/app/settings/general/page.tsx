@@ -55,7 +55,7 @@ export default function SettingsGeneralPage() {
             <div key={r.label} className="flex items-start gap-3 py-3">
               <r.icon className="mt-0.5 size-4 shrink-0 text-slate-400" />
               <div>
-                <p className="text-sm font-medium text-slate-800">{r.label}</p>
+                <p className="text-sm text-slate-900">{r.label}</p>
                 <p className={TEXT_SUB}>{r.hint}</p>
               </div>
             </div>

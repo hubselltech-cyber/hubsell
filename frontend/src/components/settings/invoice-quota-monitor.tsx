@@ -58,7 +58,7 @@ function StatCard({
 }) {
   return (
     <div className="rounded-lg border bg-card p-4">
-      <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {icon}
         {label}
       </p>

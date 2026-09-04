@@ -132,7 +132,7 @@ export function TiktokProfitTable({
                 />
                 {/* Thông tin đơn */}
                 <td className={cn(cell, BLOCK.info)}>
-                  <span className="font-medium text-slate-800">{b.orderCode}</span>
+                  <span className="text-slate-900">{b.orderCode}</span>
                   {b.missingCostPrice && (
                     <span className="mt-0.5 block text-[11px] text-amber-600">
                       Chưa nhập giá vốn
@@ -167,7 +167,7 @@ export function TiktokProfitTable({
 
                 {/* Doanh thu & giảm giá */}
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
-                  <Amount value={r.revenueGross} tone="font-medium text-slate-800" />
+                  <Amount value={r.revenueGross} tone="text-slate-900" />
                 </td>
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
                   <Amount value={r.platformDiscount} tone="text-emerald-700" />
@@ -175,7 +175,7 @@ export function TiktokProfitTable({
                 <td className={cn(cell, BLOCK.revenue, "text-right")}>
                   <Deduction value={r.sellerDiscount} tone="text-emerald-700" />
                 </td>
-                <td className={cn(cell, BLOCK.revenue, "text-right font-medium text-slate-800")}>
+                <td className={cn(cell, BLOCK.revenue, "text-right text-slate-900")}>
                   <Amount value={r.revenueAfterDiscount} />
                 </td>
 
@@ -220,7 +220,7 @@ export function TiktokProfitTable({
                 </td>
 
                 {/* Hiệu quả kinh doanh */}
-                <td className={cn(cell, BLOCK.result, "text-right font-medium text-slate-800")}>
+                <td className={cn(cell, BLOCK.result, "text-right text-slate-900")}>
                   <Amount value={r.estRevenue} />
                 </td>
                 <td className={cn(cell, BLOCK.result, "text-right")}>

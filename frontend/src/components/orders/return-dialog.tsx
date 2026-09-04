@@ -112,7 +112,7 @@ export function ReturnDialog({
 
         {/* Danh sách hàng cần đối chiếu với kiện đang cầm trên tay */}
         <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
-          <p className={cn(TEXT_SUB, "font-medium uppercase")}>
+          <p className={cn(TEXT_SUB, "font-medium")}>
             Đối chiếu {formatNumber(lines.length)} mặt hàng
           </p>
           {lines.length === 0 ? (
@@ -135,7 +135,7 @@ export function ReturnDialog({
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{l.productName}</p>
+                  <p className="truncate text-sm">{l.productName}</p>
                   <p className={cn(TEXT_SUB, "font-mono")}>{l.channelSku}</p>
                 </div>
                 <span className="shrink-0 font-semibold tabular-nums">

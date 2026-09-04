@@ -93,7 +93,7 @@ export function DateRangePicker({
             className={cn("gap-2 font-normal", className)}
           >
             <CalendarDays className="size-4 text-muted-foreground" />
-            <span className="font-medium">{formatRangeLabel(value)}</span>
+            <span>{formatRangeLabel(value)}</span>
             <ChevronDown className="size-3.5 text-muted-foreground" />
           </Button>
         }
@@ -103,7 +103,7 @@ export function DateRangePicker({
         <div className="flex flex-col sm:flex-row">
           {/* ── Cột trái: phím chọn nhanh ── */}
           <div className="flex shrink-0 flex-col gap-0.5 border-b p-2 sm:w-40 sm:border-r sm:border-b-0">
-            <p className={cn(TEXT_SUB, "px-2 pt-1 pb-2 font-medium uppercase")}>
+            <p className={cn(TEXT_SUB, "px-2 pt-1 pb-2 font-medium")}>
               Chọn nhanh
             </p>
             {RANGE_PRESETS.map((preset) => {

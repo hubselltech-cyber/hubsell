@@ -123,7 +123,7 @@ export function ImportExcelDialog({ onImported }: { onImported: () => void }) {
             )}
           >
             <FileSpreadsheet className="size-9 text-emerald-500" />
-            <p className="text-sm font-medium">
+            <p className="text-sm">
               Kéo thả file Excel vào đây, hoặc bấm để chọn
             </p>
             <p className="text-xs text-muted-foreground">
@@ -141,7 +141,7 @@ export function ImportExcelDialog({ onImported }: { onImported: () => void }) {
           <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
             <FileSpreadsheet className="size-8 shrink-0 text-emerald-500" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{file.name}</p>
+              <p className="truncate text-sm">{file.name}</p>
               <p className="text-xs text-muted-foreground">
                 {(file.size / 1024).toFixed(1)} KB
               </p>

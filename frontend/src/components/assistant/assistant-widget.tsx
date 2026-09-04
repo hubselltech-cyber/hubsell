@@ -512,7 +512,7 @@ export function AssistantWidget() {
               {/* Biểu đồ cột mini — doanh thu theo ngày của báo cáo tuần/tháng */}
               {m.reply?.chart && m.reply.chart.points.length > 1 && (
                 <div className="mt-2 rounded-lg border bg-card p-2.5">
-                  <p className="mb-1.5 text-[11px] font-medium text-slate-500">
+                  <p className="mb-1.5 text-[11px] text-slate-500">
                     {m.reply.chart.caption}
                   </p>
                   <MiniBarChart points={m.reply.chart.points} />

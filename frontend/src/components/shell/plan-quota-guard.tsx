@@ -325,7 +325,7 @@ export function UpgradePlanDialog({
           <DialogDescription>
             {plan ? (
               <>
-                Đang dùng gói <span className="font-medium text-foreground">{plan.name}</span>
+                Đang dùng gói <span className="text-foreground">{plan.name}</span>
                 {orders.limit != null && (
                   <>
                     {" "}— tháng này đã có{" "}
@@ -345,7 +345,7 @@ export function UpgradePlanDialog({
 
         {/* Quyền lợi chung — khách thấy NGAY mình nhận được gì trước khi so giá */}
         <div className="rounded-lg border bg-muted/40 p-3">
-          <p className="text-sm font-medium">Mọi gói đều bao gồm toàn bộ tính năng</p>
+          <p className="text-sm">Mọi gói đều bao gồm toàn bộ tính năng</p>
           <ul className="mt-2 grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
             {PLAN_FEATURES.map((f) => (
               <li
@@ -392,7 +392,7 @@ export function UpgradePlanDialog({
                     </span>
                   )}
                   <p className="text-sm font-semibold">{p.name}</p>
-                  <p className="mt-0.5 text-xs font-medium text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {p.maxOrdersPerMonth != null
                       ? `Đến ${nf.format(p.maxOrdersPerMonth)} đơn/tháng`
                       : "Không giới hạn đơn"}
@@ -438,7 +438,7 @@ export function UpgradePlanDialog({
         )}
 
         <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-          <p className="font-medium">Cách thanh toán</p>
+          <p>Cách thanh toán</p>
           {/* Đường MUA chính: trang Gói dịch vụ có chọn kỳ + nút Đăng ký mua /
               trả bằng Ví — popup này chỉ là bảng so sánh nhanh. */}
           <Link
@@ -451,7 +451,7 @@ export function UpgradePlanDialog({
           {payment ? (
             <div className="mt-1 space-y-0.5 text-muted-foreground">
               <p>
-                Chuyển khoản tới <span className="font-medium text-foreground">{payment.bankName}</span>{" "}
+                Chuyển khoản tới <span className="text-foreground">{payment.bankName}</span>{" "}
                 — STK{" "}
                 <span className="font-semibold tabular-nums text-foreground">
                   {payment.bankAccount}
@@ -459,7 +459,7 @@ export function UpgradePlanDialog({
                 ({payment.bankHolder}).
               </p>
               <p>
-                Nội dung: <span className="font-medium text-foreground">HUBSELL + email đăng nhập</span>.
+                Nội dung: <span className="text-foreground">HUBSELL + email đăng nhập</span>.
                 Gói mở ngay khi Hubsell xác nhận tiền về.
               </p>
             </div>
@@ -532,7 +532,7 @@ export function PlanLockedScreen({
             {expired ? "Gia hạn / nâng gói" : "Xem gói & nâng cấp"}
           </Button>
         ) : (
-          <p className="text-sm font-medium">
+          <p className="text-sm">
             Liên hệ chủ shop để {expired ? "gia hạn" : "nâng"} gói dịch vụ.
           </p>
         )}

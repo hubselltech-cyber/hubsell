@@ -204,7 +204,7 @@ export function SkuCombobox({
             // mà khuyên "đổi từ khoá" thì người dùng tưởng chức năng hỏng.
             <div className="px-3 py-6 text-center">
               <PackageSearch className="mx-auto mb-2 size-6 text-muted-foreground" />
-              <p className="text-sm font-medium">
+              <p className="text-sm">
                 {products.length === 0
                   ? "Kho vật lý chưa có SKU nào"
                   : "Không tìm thấy sản phẩm nào"}
@@ -243,7 +243,7 @@ export function SkuCombobox({
                     <span className={cn(TEXT_SUB, "block font-mono")}>
                       {p.skuCode}
                     </span>
-                    <span className={cn(TEXT_BODY, "block truncate font-medium")}>
+                    <span className={cn(TEXT_BODY, "block truncate")}>
                       {p.productName}
                     </span>
                   </span>

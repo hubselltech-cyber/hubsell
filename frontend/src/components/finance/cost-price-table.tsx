@@ -348,7 +348,7 @@ function QuickFill({
         <PopoverContent align="end" className="w-80">
           <div className="space-y-3">
             <div>
-              <p className="text-sm font-medium">
+              <p className="text-sm">
                 Ghi đè giá vốn của {overwriting.length} phân loại?
               </p>
               <p className={TEXT_SUB}>
@@ -478,7 +478,7 @@ function ChildRow(props: RowProps) {
           <span className="shrink-0 text-muted-foreground">└</span>
           {/* Truncate để tên phân loại dài không kéo tràn ngang cả bảng */}
           <span
-            className="min-w-0 truncate font-medium"
+            className="min-w-0 truncate"
             title={label ?? item.variantName ?? item.sku}
           >
             {label ?? item.variantName ?? item.sku}
@@ -495,7 +495,7 @@ function ChildRow(props: RowProps) {
       <TableCell>
         <CostCell {...props} />
       </TableCell>
-      <TableCell className="truncate text-right font-medium">
+      <TableCell className="truncate text-right">
         {formatVND(item.sellingPrice)}
       </TableCell>
     </TableRow>
@@ -524,7 +524,7 @@ function SingleRow(props: RowProps) {
               <ImageIcon className="size-4" />
             </div>
           )}
-          <p className="min-w-0 truncate font-medium" title={item.productName}>
+          <p className="min-w-0 truncate" title={item.productName}>
             {item.productName}
           </p>
         </div>
@@ -539,7 +539,7 @@ function SingleRow(props: RowProps) {
       <TableCell>
         <CostCell {...props} />
       </TableCell>
-      <TableCell className="truncate text-right font-medium">
+      <TableCell className="truncate text-right">
         {formatVND(item.sellingPrice)}
       </TableCell>
     </TableRow>

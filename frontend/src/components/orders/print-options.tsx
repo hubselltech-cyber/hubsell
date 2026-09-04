@@ -88,7 +88,7 @@ export function PrintOptionsFields({
         }}
       />
       <span className="grid gap-0.5 text-sm">
-        <span className="font-medium">{title}</span>
+        <span>{title}</span>
         <span className="text-xs text-muted-foreground">{hint}</span>
       </span>
     </label>

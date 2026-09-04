@@ -769,7 +769,7 @@ export default function StaffPage() {
                       <UserRound className="size-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="flex flex-wrap items-center gap-2 font-medium">
+                      <p className="flex flex-wrap items-center gap-2">
                         {s.fullName}
                         <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 font-mono text-xs font-medium text-sky-700">
                           {s.loginName ?? s.email}

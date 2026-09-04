@@ -960,7 +960,7 @@ function ProductBreakevenTab({
         header: "Sản phẩm",
         cell: ({ row }) => (
           <>
-            <p className="max-w-72 truncate text-sm font-medium text-slate-900">
+            <p className="max-w-72 truncate text-sm text-slate-900">
               {row.original.productName}
             </p>
             <p className="text-xs text-slate-500">
@@ -1294,7 +1294,7 @@ function buildCampaignColumns(
         const c = row.original;
         return (
           <>
-            <p className="max-w-64 truncate text-sm font-medium text-slate-900">
+            <p className="max-w-64 truncate text-sm text-slate-900">
               {c.name || `Chiến dịch #${c.campaignId}`}
             </p>
             <p className="text-xs text-slate-500">

@@ -408,7 +408,7 @@ export default function OrdersPage() {
         header: "Khách hàng",
         cell: ({ row }) => (
           <>
-            <p className="font-medium">{row.original.customerName}</p>
+            <p>{row.original.customerName}</p>
             <p className={cn(TEXT_SUB, "font-mono")}>
               {row.original.customerPhone ?? "—"}
             </p>
@@ -445,7 +445,7 @@ export default function OrdersPage() {
                   </p>
                 </>
               ) : (
-                <p className="font-medium">{carrierShort(o.carrier)}</p>
+                <p>{carrierShort(o.carrier)}</p>
               )}
               <p className={cn(TEXT_SUB, "font-mono")}>
                 {o.trackingCode ?? "—"}
@@ -463,7 +463,7 @@ export default function OrdersPage() {
           <>
             <Money
               value={row.original.totalAmount}
-              className="font-medium text-slate-900"
+              className="text-slate-900"
             />
             <span className={cn(TEXT_SUB, "block")}>
               {PAYMENT_META[row.original.paymentStatus]?.label ??
@@ -730,7 +730,7 @@ export default function OrdersPage() {
                   dõi luồng đi của đơn. */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium">Cần nhận hàng hoàn về kho?</p>
+                  <p>Cần nhận hàng hoàn về kho?</p>
                   <p className={cn(TEXT_SUB, "mt-0.5")}>
                     Việc quét mã và cộng lại tồn kho nằm ở trang Đối soát đơn
                     hoàn thuộc phân hệ Quản lý Kho.

@@ -526,7 +526,7 @@ function RecurringPanel({
             return (
               <div key={r.id} className="flex items-center gap-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{r.name}</p>
+                  <p className="truncate text-sm">{r.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
                     {HQ_EXPENSE_CATEGORY_LABEL[r.category] ?? r.category}
                     {r.vendorName ? ` · ${r.vendorName}` : ""}
@@ -834,7 +834,7 @@ function RecurringManageDialog({
             {items.map((item) => (
               <div key={item.id} className="flex items-center gap-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className={cn("truncate text-sm font-medium", !item.active && "text-muted-foreground line-through")}>
+                  <p className={cn("truncate text-sm", !item.active && "text-muted-foreground line-through")}>
                     {item.name}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">

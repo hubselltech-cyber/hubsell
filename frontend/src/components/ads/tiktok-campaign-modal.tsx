@@ -204,7 +204,7 @@ function OptimizeStat({
         <p className="text-xl font-semibold tracking-tight text-slate-900 tabular-nums">
           {formatNumber(count)}
         </p>
-        <p className="truncate text-xs font-medium text-slate-700">{label}</p>
+        <p className="truncate text-xs text-slate-900">{label}</p>
         <p className="truncate text-[11px] text-slate-500">{hint}</p>
       </div>
     </div>
@@ -537,7 +537,7 @@ export function TiktokCampaignModal({
                 return (
                   <TableRow key={video.id} className={cn(dimmed && "opacity-55")}>
                     <TableCell>
-                      <p className="font-medium text-slate-900">{video.title}</p>
+                      <p className="text-slate-900">{video.title}</p>
                       <p className="text-xs text-slate-500">
                         ID bài đăng: {video.postId}
                       </p>

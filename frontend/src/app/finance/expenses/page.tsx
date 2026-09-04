@@ -222,7 +222,7 @@ export default function FinanceExpensesPage() {
                     return (
                       <TableRow key={e.id}>
                         <TableCell>
-                          <p className="font-medium">{e.name}</p>
+                          <p>{e.name}</p>
                           {e.note && (
                             <p className="text-xs text-muted-foreground">{e.note}</p>
                           )}

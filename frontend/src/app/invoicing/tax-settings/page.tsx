@@ -273,7 +273,7 @@ export default function TaxSettingsPage() {
             <CardContent className="space-y-3 pt-5">
               <div className="flex items-center justify-between gap-4 rounded-lg border bg-slate-50 p-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">
+                  <p className="text-sm text-slate-900">
                     GTGT 1% + TNCN 0.5% trên doanh thu gốc của đơn
                   </p>
                   <p className={cn(TEXT_SUB, "mt-0.5")}>

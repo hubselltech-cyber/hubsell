@@ -82,7 +82,7 @@ export function TiktokAssistantConfigTab({
               onCheckedChange={(enabled) => onChange({ ...config, enabled })}
               aria-label="Bật trợ lý tối ưu tự động"
             />
-            <span className="text-sm font-medium text-slate-700">
+            <span className="text-sm text-slate-900">
               {config.enabled ? "Đang bật" : "Đang tắt"}
             </span>
           </label>

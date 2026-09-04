@@ -141,7 +141,7 @@ export function UserAvatarMenu({
         aria-label="Mở menu tài khoản"
       >
         <UserAvatarCircle user={user} className="size-8" iconClassName="size-4" />
-        <span className="hidden text-sm font-medium sm:inline">
+        <span className="hidden text-sm sm:inline">
           {user.fullName}
         </span>
         <span
@@ -161,7 +161,7 @@ export function UserAvatarMenu({
             iconClassName="size-6"
           />
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{user.fullName}</p>
+            <p className="truncate text-sm">{user.fullName}</p>
             <p className="truncate text-xs text-muted-foreground">
               {user.email ?? user.staffUsername ?? user.username}
             </p>

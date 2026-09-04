@@ -186,7 +186,7 @@ export default function KocExpensesPage() {
                     <TableCell className="font-mono text-sm text-slate-900">
                       {e.contractCode || "—"}
                     </TableCell>
-                    <TableCell className="font-medium text-slate-900">
+                    <TableCell className="text-slate-900">
                       {e.kocName || "—"}
                     </TableCell>
                     <TableCell>

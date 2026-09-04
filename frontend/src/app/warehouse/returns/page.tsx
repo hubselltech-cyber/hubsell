@@ -607,7 +607,7 @@ export default function WarehouseReturnsPage() {
                           </TableCell>
 
                           <TableCell>
-                            <p className="font-medium">{o.customerName}</p>
+                            <p>{o.customerName}</p>
                             <p className={cn(TEXT_SUB, "font-mono")}>
                               {o.customerPhone ?? "—"}
                             </p>
@@ -618,7 +618,7 @@ export default function WarehouseReturnsPage() {
                           </TableCell>
 
                           <TableCell>
-                            <p className="font-medium">{carrierShort(o.carrier)}</p>
+                            <p>{carrierShort(o.carrier)}</p>
                             <p className={cn(TEXT_SUB, "font-mono")}>
                               {o.trackingCode ?? "—"}
                             </p>

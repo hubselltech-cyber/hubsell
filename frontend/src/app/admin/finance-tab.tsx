@@ -171,7 +171,7 @@ function WithdrawalTable({
               {formatDateTime(w.createdAt)}
             </TableCell>
             <TableCell>
-              <p className="text-sm font-medium">{w.user.fullName}</p>
+              <p className="text-sm">{w.user.fullName}</p>
               <p className="text-xs text-muted-foreground">{w.user.email}</p>
             </TableCell>
             <TableCell className="whitespace-nowrap text-right font-semibold">

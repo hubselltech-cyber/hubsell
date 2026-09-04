@@ -249,7 +249,7 @@ export default function LossOrdersPage() {
                     const meta = CHANNEL_META[o.channelName as ChannelName];
                     return (
                       <TableRow key={o.id}>
-                        <TableCell className="font-medium">
+                        <TableCell>
                           <span className="flex items-center gap-1.5">
                             {o.isLoss && (
                               <AlertTriangle className="size-4 shrink-0 text-rose-500" />

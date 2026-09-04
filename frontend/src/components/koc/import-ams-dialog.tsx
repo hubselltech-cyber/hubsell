@@ -113,7 +113,7 @@ export function ImportAmsDialog({ onDone }: { onDone: () => void }) {
           {file ? (
             <div className="flex items-center gap-2 text-sm">
               <FileSpreadsheet className="size-5 text-emerald-600" />
-              <span className="font-medium">{file.name}</span>
+              <span>{file.name}</span>
               <button
                 type="button"
                 aria-label="Gỡ file"

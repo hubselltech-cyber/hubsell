@@ -330,7 +330,7 @@ export function CashFlowTable() {
                           >
                             {meta.label}
                           </span>
-                          <span className="font-medium text-slate-800">
+                          <span className="text-slate-900">
                             {r.shopName}
                           </span>
                           {r.disconnected && (
@@ -345,7 +345,7 @@ export function CashFlowTable() {
                           )}
                         </span>
                       </td>
-                      <td className={cn(cell, "text-right font-medium text-slate-800")}>
+                      <td className={cn(cell, "text-right text-slate-900")}>
                         <Cash value={r.inTransit} />
                       </td>
                       <td className={cn(cell, "text-right font-medium text-amber-700")}>
@@ -367,7 +367,7 @@ export function CashFlowTable() {
                           </span>
                         )}
                       </td>
-                      <td className={cn(cell, "text-right font-medium text-slate-800")}>
+                      <td className={cn(cell, "text-right text-slate-900")}>
                         <Cash value={r.withdrawn30d} />
                       </td>
                       <td className={cn(cell, "pr-6 text-right font-semibold text-slate-900")}>

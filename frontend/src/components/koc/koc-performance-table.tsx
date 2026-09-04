@@ -350,7 +350,7 @@ export function KocPerformanceTable({
               return (
                 <TableRow key={k.id} className={cn(k.status === "PAUSED" && "opacity-55")}>
                   <TableCell>
-                    <p className="font-medium text-slate-900">{k.name}</p>
+                    <p className="text-slate-900">{k.name}</p>
                     <p className={TEXT_SUB}>
                       {k.handle || "—"}
                       {k.followers > 0 && <> · {formatNumber(k.followers)} followers</>}

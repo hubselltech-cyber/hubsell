@@ -73,7 +73,7 @@ function Field({
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0">
       <span className="text-sm text-slate-500">{label}</span>
-      <span className="text-sm font-medium text-slate-900">{children}</span>
+      <span className="text-sm text-slate-900">{children}</span>
     </div>
   );
 }
@@ -138,7 +138,7 @@ function RestockForm({
               return (
                 <tr key={v.sku} className="border-t border-slate-100">
                   <td className="px-3 py-2">
-                    <span className="block font-medium text-slate-900">
+                    <span className="block text-slate-900">
                       {v.variantName}
                     </span>
                     <span className="block font-mono text-xs text-slate-400">
@@ -637,7 +637,7 @@ function RoasForm({
             )}
           >
             <span>
-              <span className="block text-sm font-medium text-slate-900">
+              <span className="block text-sm text-slate-900">
                 {opt.label}
               </span>
               <span className="block text-xs text-slate-500">{opt.note}</span>

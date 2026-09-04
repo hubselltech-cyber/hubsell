@@ -545,7 +545,7 @@ function ColumnsMenu<TData>({
         }
       />
       <PopoverContent align="end" className="w-72 gap-1 p-2">
-        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+        <p className="px-2 py-1 text-xs text-muted-foreground">
           Hiện / ẩn, ghim và sắp vị trí cột
         </p>
         {cols.map((col, index) => {
@@ -668,7 +668,7 @@ function ViewsMenu({
         }
       />
       <PopoverContent align="end" className="w-72 gap-1 p-2">
-        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+        <p className="px-2 py-1 text-xs text-muted-foreground">
           Chế độ xem đã lưu (cột + bộ lọc)
         </p>
         {views.length === 0 && (
