@@ -133,6 +133,24 @@ export const SHOPEE_PATHS = {
   /** Hành trình vận chuyển CHIỀU ĐI của một đơn — nguồn đếm mốc giao thất bại
    *  (tracking_info[].logistics_status = FAILED_DELIVERED, docs xác minh 21/08). */
   trackingInfo: "/api/v2/logistics/get_tracking_info",
+
+  // ── SẮP XẾP VẬN CHUYỂN + VẬN ĐƠN (Logistics API — GHI, 04/09/2026) ──
+  // Luồng chuẩn của sàn: get_shipping_parameter (địa chỉ lấy hàng + khung giờ)
+  // → ship_order (đơn READY_TO_SHIP → PROCESSED, sàn cấp mã vận đơn) →
+  // get_shipping_document_parameter (loại phiếu khả dụng) → create_shipping_document
+  // → get_shipping_document_result (READY?) → download_shipping_document (PDF A6).
+  /** Tham số cần để sắp xếp vận chuyển cho MỘT đơn: info_needed + pickup/dropoff. */
+  shippingParameter: "/api/v2/logistics/get_shipping_parameter",
+  /** Sắp xếp vận chuyển (POST) — KHÔNG hoàn tác được, chỉ gọi sau khi seller xác nhận. */
+  shipOrder: "/api/v2/logistics/ship_order",
+  /** Loại vận đơn khả dụng/khuyến nghị cho từng đơn (POST, ≤50 đơn). */
+  shippingDocumentParameter: "/api/v2/logistics/get_shipping_document_parameter",
+  /** Yêu cầu sàn dựng file vận đơn (POST, ≤50 đơn, bất đồng bộ). */
+  createShippingDocument: "/api/v2/logistics/create_shipping_document",
+  /** Trạng thái dựng file: READY / PROCESSING / FAILED (POST). */
+  shippingDocumentResult: "/api/v2/logistics/get_shipping_document_result",
+  /** Tải file vận đơn PDF (POST, trả BINARY chứ không phải JSON). */
+  downloadShippingDocument: "/api/v2/logistics/download_shipping_document",
 } as const;
 
 /**

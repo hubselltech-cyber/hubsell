@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import {
   Carrier,
   ChannelName,
@@ -13,10 +13,19 @@ import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
 import { attachItemImages } from "../services/item-images";
 import {
+  CARRIER_LABEL,
   expressShippingWhere,
   isExpressShipping,
   notExpressShippingWhere,
 } from "../services/shipping";
+import {
+  buildPickListPdf,
+  getFulfillmentAdapter,
+  mergePdfParts,
+  readFulfillDefaults,
+  type FulfillChoice,
+  type FulfillOrderRef,
+} from "../services/fulfillment";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
@@ -516,214 +525,411 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
   }
 });
 
+// ============================================================
+// XỬ LÝ ĐƠN TẬP TRUNG — chuẩn bị hàng THẬT qua API sàn + in vận đơn (04/09/2026)
+//
+// Trước 04/09 ba nút BulkBar chỉ đổi trạng thái trong DB (placeholder thời demo)
+// — anh Trung phát hiện trên prod: bấm "chuẩn bị" mà Shopee vẫn im, phiếu in
+// không có mã vạch nên shipper không quét được. Giờ:
+//   shipping-options → hỏi sàn phương án (pickup/dropoff, địa chỉ, khung giờ)
+//   confirm          → ship_order / pack+rts THẬT, sàn OK mới ghi PROCESSED
+//   labels           → PDF vận đơn CHÍNH CHỦ của sàn + phiếu nhặt hàng Hubsell,
+//                      ghép thành một file A6 in một lượt
+// Mọi việc gọi sàn nằm trong services/fulfillment/* theo adapter từng sàn.
+// ============================================================
+
+const BULK_MAX = 200;
+
+/** Đọc + kiểm mảng orderIds trong body; trả null khi đã trả lỗi cho client. */
+function readBulkOrderIds(
+  req: AuthRequest,
+  res: express.Response,
+  max = BULK_MAX
+): string[] | null {
+  const { orderIds } = req.body ?? {};
+  if (!Array.isArray(orderIds) || orderIds.length === 0) {
+    res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
+    return null;
+  }
+  if (!orderIds.every((id) => typeof id === "string" && id)) {
+    res.status(400).json({ error: "orderIds phải là mảng chuỗi" });
+    return null;
+  }
+  if (orderIds.length > max) {
+    res.status(400).json({ error: `Tối đa ${max} đơn mỗi lần xử lý` });
+    return null;
+  }
+  return orderIds as string[];
+}
+
+const CHANNEL_LABEL: Record<ChannelName, string> = {
+  SHOPEE: "Shopee",
+  LAZADA: "Lazada",
+  TIKTOK: "TikTok",
+  OFFLINE: "Offline",
+};
+
+function toFulfillRef(o: {
+  id: string;
+  orderCode: string;
+  trackingCode: string | null;
+  platformPackageId: string | null;
+}): FulfillOrderRef {
+  return {
+    id: o.id,
+    orderCode: o.orderCode,
+    trackingCode: o.trackingCode,
+    platformPackageId: o.platformPackageId,
+  };
+}
+
+/** Đọc lựa chọn sắp xếp vận chuyển theo gian từ body (phòng thủ với dữ liệu lạ). */
+function readChoices(raw: unknown): Record<string, FulfillChoice> {
+  const out: Record<string, FulfillChoice> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [channelId, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== "object") continue;
+    const c = v as Record<string, unknown>;
+    if (c.method !== "PICKUP" && c.method !== "DROPOFF") continue;
+    out[channelId] = {
+      method: c.method,
+      addressId: typeof c.addressId === "string" ? c.addressId : undefined,
+      pickupTimeId: typeof c.pickupTimeId === "string" ? c.pickupTimeId : undefined,
+      branchId: typeof c.branchId === "string" ? c.branchId : undefined,
+    };
+  }
+  return out;
+}
+
 /**
- * POST /api/orders/bulk/confirm — "Xác nhận & chuẩn bị hàng" cho nhiều đơn.
- * Body: { orderIds: string[] }
+ * POST /api/orders/bulk/shipping-options — hỏi sàn phương án vận chuyển cho
+ * các gian có đơn đang chọn. Body: { orderIds }
  *
- * Chờ xử lý → ĐÃ XỬ LÝ (không nhảy thẳng sang Đang giao).
- * Đây là mốc chống đóng gói lặp: đơn đã xác nhận nằm riêng một nhóm, nhân viên
- * khác nhìn vào biết ngay đơn nào đang được gói, đơn nào chưa ai đụng tới.
- * Việc bàn giao cho shipper là bước RIÊNG (bulk/handover) vì hai việc này cách
- * nhau vài tiếng trong thực tế.
+ * Trả một nhóm mỗi gian: mode PLATFORM (sàn cho chọn/không cần chọn), INTERNAL
+ * (kênh offline — chỉ đổi trạng thái), UNSUPPORTED (TikTok đang giữ chỗ),
+ * ERROR (không hỏi được sàn — thường do gian mất kết nối). Hộp thoại "Chuẩn bị
+ * hàng" dựng form từ đây, điền sẵn lựa chọn lần trước của gian.
+ */
+router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
+  try {
+    const orderIds = readBulkOrderIds(req, res);
+    if (!orderIds) return;
+
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: orderIds },
+        channel: channelScope(req),
+        shippingStatus: ShippingStatus.PENDING,
+      },
+      select: {
+        id: true,
+        orderCode: true,
+        trackingCode: true,
+        platformPackageId: true,
+        channelId: true,
+        channel: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const groups = new Map<string, { channel: (typeof orders)[number]["channel"]; orders: typeof orders }>();
+    for (const o of orders) {
+      const g = groups.get(o.channelId) ?? { channel: o.channel, orders: [] };
+      g.orders.push(o);
+      groups.set(o.channelId, g);
+    }
+
+    const result = await Promise.all(
+      [...groups.values()].map(async ({ channel, orders: list }) => {
+        const base = {
+          channelId: channel.id,
+          channelName: channel.channelName,
+          shopName: channel.shopName,
+          orderCount: list.length,
+          defaults: readFulfillDefaults(channel.fulfillmentSettings),
+          methods: [] as string[],
+          pickupAddresses: [] as unknown[],
+          dropoffBranches: [] as unknown[],
+          note: undefined as string | undefined,
+        };
+        const adapter = getFulfillmentAdapter(channel.channelName);
+        if (!adapter) {
+          return { ...base, mode: "INTERNAL", note: "Kênh offline — chỉ ghi nhận đã chuẩn bị trong Hubsell" };
+        }
+        if (!adapter.supported) {
+          const opts = await adapter.getShippingOptions(channel, toFulfillRef(list[0]));
+          return { ...base, mode: "UNSUPPORTED", note: opts.note };
+        }
+        try {
+          const opts = await adapter.getShippingOptions(channel, toFulfillRef(list[0]));
+          return { ...base, ...opts, mode: "PLATFORM" };
+        } catch (err) {
+          return {
+            ...base,
+            mode: "ERROR",
+            note: err instanceof Error ? err.message : "Không hỏi được sàn",
+          };
+        }
+      })
+    );
+
+    res.json({ groups: result, pendingCount: orders.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/bulk/confirm — "Chuẩn bị hàng" THẬT cho nhiều đơn.
+ * Body: { orderIds: string[], choices?: { [channelId]: FulfillChoice } }
  *
- * Ở bản có tích hợp thật, đây là chỗ gọi API sàn để báo "đã đóng gói xong,
- * mời shipper tới lấy". Khi nối API thật, thêm lời gọi ra sàn ngay trước
- * transaction; phần còn lại giữ nguyên.
+ * Với sàn có adapter: gọi sàn từng đơn (ship_order / pack+rts); sàn OK mới
+ * ghi PROCESSED + packedAt + mã vận đơn/kiện. Sàn từ chối thì đơn ở nguyên
+ * Chờ xử lý kèm lý do — không "giả vờ đã xử lý". Kênh offline: đổi trạng thái
+ * nội bộ như cũ. Lựa chọn của từng gian được lưu làm mặc định lần sau.
  *
- * Bỏ qua có chọn lọc thay vì fail cả mẻ: chọn 50 đơn mà 1 đơn đã hủy thì báo
- * riêng đơn đó, 49 đơn còn lại vẫn phải chạy — bắt làm lại từ đầu là hành
- * người dùng.
+ * Bỏ qua có chọn lọc thay vì fail cả mẻ: 50 đơn mà 1 đơn hỏng thì báo riêng
+ * đơn đó, 49 đơn còn lại vẫn chạy.
  */
 router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
   try {
-    const { orderIds } = req.body ?? {};
-    if (!Array.isArray(orderIds) || orderIds.length === 0) {
-      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
-      return;
-    }
-    if (!orderIds.every((id) => typeof id === "string" && id)) {
-      res.status(400).json({ error: "orderIds phải là mảng chuỗi" });
-      return;
-    }
-    if (orderIds.length > 200) {
-      res.status(400).json({ error: "Tối đa 200 đơn mỗi lần xử lý" });
-      return;
-    }
+    const orderIds = readBulkOrderIds(req, res);
+    if (!orderIds) return;
+    const choices = readChoices(req.body?.choices);
 
     const orders = await prisma.order.findMany({
-      where: {
-        id: { in: orderIds },
-        channel: { userId: req.ownerId! },
-        ...(req.allowedChannelIds
-          ? { channelId: { in: req.allowedChannelIds } }
-          : {}),
+      where: { id: { in: orderIds }, channel: channelScope(req) },
+      select: {
+        id: true,
+        orderCode: true,
+        shippingStatus: true,
+        trackingCode: true,
+        platformPackageId: true,
+        channelId: true,
+        channel: true,
       },
-      select: { id: true, orderCode: true, shippingStatus: true },
     });
 
     const found = new Set(orders.map((o) => o.id));
     const skipped: { orderCode: string; reason: string }[] = [];
-    const ready: string[] = [];
+    const failed: { orderCode: string; reason: string }[] = [];
+    const notes: { orderCode: string; note: string }[] = [];
+    const ready: typeof orders = [];
 
     for (const o of orders) {
-      if (o.shippingStatus === ShippingStatus.PENDING) ready.push(o.id);
+      if (o.shippingStatus === ShippingStatus.PENDING) ready.push(o);
       else if (o.shippingStatus === ShippingStatus.CANCELLED)
         skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
-      else
-        skipped.push({
-          orderCode: o.orderCode,
-          reason: "Đơn đã rời trạng thái Chờ xử lý",
-        });
+      else skipped.push({ orderCode: o.orderCode, reason: "Đơn đã rời trạng thái Chờ xử lý" });
     }
-    // Id không tra ra đơn nào = không thuộc shop hoặc ngoài phạm vi kênh
-    const missing = orderIds.filter((id: string) => !found.has(id));
-    for (const id of missing) {
+    for (const id of orderIds.filter((x) => !found.has(x))) {
       skipped.push({ orderCode: id, reason: "Không tìm thấy hoặc ngoài quyền" });
     }
 
     if (ready.length === 0) {
       res.status(409).json({
-        error: "Không có đơn nào ở trạng thái Chờ xử lý để xác nhận",
+        error: "Không có đơn nào ở trạng thái Chờ xử lý để chuẩn bị",
         confirmed: 0,
+        confirmedIds: [],
         skipped,
+        failed,
       });
       return;
     }
 
-    await prisma.order.updateMany({
-      where: { id: { in: ready } },
-      data: { shippingStatus: ShippingStatus.PROCESSED, packedAt: new Date() },
-    });
+    const groups = new Map<string, typeof ready>();
+    for (const o of ready) {
+      groups.set(o.channelId, [...(groups.get(o.channelId) ?? []), o]);
+    }
 
-    res.json({ confirmed: ready.length, skipped });
+    const confirmedIds: string[] = [];
+    const markProcessed = async (
+      id: string,
+      extra: { trackingCode?: string | null; platformPackageId?: string | null } = {}
+    ) => {
+      await prisma.order.update({
+        where: { id },
+        data: {
+          shippingStatus: ShippingStatus.PROCESSED,
+          packedAt: new Date(),
+          ...(extra.trackingCode ? { trackingCode: extra.trackingCode } : {}),
+          ...(extra.platformPackageId ? { platformPackageId: extra.platformPackageId } : {}),
+        },
+      });
+      confirmedIds.push(id);
+    };
+
+    // Các gian chạy song song, trong một gian chạy TUẦN TỰ (đỡ dồn rate-limit
+    // và để lỗi token của gian hiện ra một lần thay vì 50 lần).
+    await Promise.all(
+      [...groups.values()].map(async (list) => {
+        const channel = list[0].channel;
+        const adapter = getFulfillmentAdapter(channel.channelName);
+        if (!adapter) {
+          for (const o of list) await markProcessed(o.id);
+          return;
+        }
+        if (!adapter.supported) {
+          const r = await adapter.arrangeShipment(channel, toFulfillRef(list[0]), { method: "PICKUP" });
+          for (const o of list) failed.push({ orderCode: o.orderCode, reason: r.error ?? "Sàn chưa hỗ trợ" });
+          return;
+        }
+        const choice: FulfillChoice =
+          choices[channel.id] ?? readFulfillDefaults(channel.fulfillmentSettings) ?? { method: "PICKUP" };
+        if (choices[channel.id]) {
+          // Lưu mặc định (bỏ khung giờ — đổi theo ngày)
+          await prisma.channel.update({
+            where: { id: channel.id },
+            data: {
+              fulfillmentSettings: {
+                method: choice.method,
+                ...(choice.addressId ? { addressId: choice.addressId } : {}),
+                ...(choice.branchId ? { branchId: choice.branchId } : {}),
+              },
+            },
+          });
+        }
+        for (const o of list) {
+          const r = await adapter.arrangeShipment(channel, toFulfillRef(o), choice);
+          if (r.ok) {
+            await markProcessed(o.id, { trackingCode: r.trackingCode, platformPackageId: r.packageId });
+            if (r.note) notes.push({ orderCode: o.orderCode, note: r.note });
+          } else {
+            failed.push({ orderCode: o.orderCode, reason: r.error ?? "Sàn từ chối" });
+          }
+        }
+      })
+    );
+
+    res.json({ confirmed: confirmedIds.length, confirmedIds, skipped, failed, notes });
   } catch (err) {
     next(err);
   }
 });
 
 /**
- * POST /api/orders/bulk/handover — "Bàn giao vận chuyển" cho nhiều đơn.
- * Body: { orderIds: string[] }
+ * POST /api/orders/bulk/labels — in vận đơn + phiếu nhặt hàng.
+ * Body: { orderIds: string[], labels?: boolean (mặc định true), pickList?: boolean (mặc định true) }
  *
- * Đã xử lý → ĐANG GIAO. Tách riêng khỏi bước xác nhận vì trong thực tế shop
- * gói hàng buổi sáng nhưng shipper chiều mới tới lấy; gộp hai bước làm một thì
- * đơn nằm trong kho vẫn bị hiển thị là đang trên đường giao.
- */
-router.post("/bulk/handover", async (req: AuthRequest, res, next) => {
-  try {
-    const { orderIds } = req.body ?? {};
-    if (!Array.isArray(orderIds) || orderIds.length === 0) {
-      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
-      return;
-    }
-    if (!orderIds.every((id) => typeof id === "string" && id)) {
-      res.status(400).json({ error: "orderIds phải là mảng chuỗi" });
-      return;
-    }
-    if (orderIds.length > 200) {
-      res.status(400).json({ error: "Tối đa 200 đơn mỗi lần xử lý" });
-      return;
-    }
-
-    const orders = await prisma.order.findMany({
-      where: {
-        id: { in: orderIds },
-        channel: { userId: req.ownerId! },
-        ...(req.allowedChannelIds
-          ? { channelId: { in: req.allowedChannelIds } }
-          : {}),
-      },
-      select: { id: true, orderCode: true, shippingStatus: true },
-    });
-
-    const found = new Set(orders.map((o) => o.id));
-    const skipped: { orderCode: string; reason: string }[] = [];
-    const ready: string[] = [];
-
-    for (const o of orders) {
-      if (o.shippingStatus === ShippingStatus.PROCESSED) ready.push(o.id);
-      else if (o.shippingStatus === ShippingStatus.PENDING)
-        skipped.push({
-          orderCode: o.orderCode,
-          reason: "Chưa xác nhận chuẩn bị hàng",
-        });
-      else if (o.shippingStatus === ShippingStatus.CANCELLED)
-        skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
-      else
-        skipped.push({ orderCode: o.orderCode, reason: "Đơn đã bàn giao rồi" });
-    }
-    for (const id of orderIds.filter((x: string) => !found.has(x))) {
-      skipped.push({ orderCode: id, reason: "Không tìm thấy hoặc ngoài quyền" });
-    }
-
-    if (ready.length === 0) {
-      res.status(409).json({
-        error: "Không có đơn nào ở trạng thái Đã xử lý để bàn giao",
-        confirmed: 0,
-        skipped,
-      });
-      return;
-    }
-
-    await prisma.order.updateMany({
-      where: { id: { in: ready } },
-      data: { shippingStatus: ShippingStatus.SHIPPING },
-    });
-
-    res.json({ confirmed: ready.length, skipped });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * POST /api/orders/bulk/labels — lấy dữ liệu in phiếu giao hàng cho nhiều đơn.
- * Body: { orderIds: string[] }
+ * Trả MỘT file PDF (application/pdf): với từng đơn theo thứ tự chọn, trang vận
+ * đơn CHÍNH CHỦ của sàn rồi tới phiếu nhặt hàng Hubsell (khổ A6 cả hai). Đơn
+ * nào sàn chưa cấp vận đơn thì vẫn có phiếu nhặt hàng; danh sách lỗi gửi kèm
+ * header X-Hubsell-Labels (base64 JSON) để giao diện báo đúng đơn nào thiếu.
  *
- * ⚠️ Đây là phiếu giao hàng do HUBSELL tự dựng từ dữ liệu đơn, KHÔNG phải file
- * vận đơn PDF chính thức của sàn. Muốn lấy phiếu chính chủ của Shopee/TikTok
- * thì phải có tích hợp API thật với quyền in vận đơn — chưa làm được ở bản này.
+ * CỐ Ý KHÔNG đánh dấu đã in ở đây — endpoint chỉ ĐỌC. Đánh dấu nằm ở
+ * /bulk/mark-printed, frontend gọi SAU khi hộp thoại in đã mở: đánh dấu sớm
+ * mà trình duyệt chặn pop-up là đơn rơi khỏi nhóm "Chưa in" dù chưa có tờ nào.
  */
 router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
   try {
-    const { orderIds } = req.body ?? {};
-    if (!Array.isArray(orderIds) || orderIds.length === 0) {
-      res.status(400).json({ error: "Chưa chọn đơn hàng nào" });
-      return;
-    }
-    if (orderIds.length > 200) {
-      res.status(400).json({ error: "Tối đa 200 phiếu mỗi lần in" });
+    const orderIds = readBulkOrderIds(req, res);
+    if (!orderIds) return;
+    const wantLabels = req.body?.labels !== false;
+    const wantPickList = req.body?.pickList !== false;
+    if (!wantLabels && !wantPickList) {
+      res.status(400).json({ error: "Phải chọn in vận đơn hoặc phiếu nhặt hàng" });
       return;
     }
 
-    const orders = await prisma.order.findMany({
-      where: {
-        id: { in: orderIds },
-        channel: { userId: req.ownerId! },
-        ...(req.allowedChannelIds
-          ? { channelId: { in: req.allowedChannelIds } }
-          : {}),
-      },
-      orderBy: { createdAt: "desc" },
+    const rows = await prisma.order.findMany({
+      where: { id: { in: orderIds }, channel: channelScope(req) },
       include: {
-        channel: { select: { channelName: true, shopName: true } },
-        items: {
-          select: { productName: true, channelSku: true, quantity: true },
-        },
+        channel: true,
+        items: { select: { productName: true, channelSku: true, quantity: true } },
       },
     });
-
-    if (orders.length === 0) {
+    if (rows.length === 0) {
       res.status(404).json({ error: "Không tìm thấy đơn hàng nào" });
       return;
     }
+    // Giữ đúng thứ tự seller chọn trên bảng
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const orders = orderIds.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
 
-    // CỐ Ý KHÔNG đánh dấu đã in ở đây. Endpoint này chỉ ĐỌC.
-    // Việc đánh dấu nằm ở /bulk/mark-printed, do frontend gọi SAU khi cửa sổ in
-    // đã mở thành công. Nếu đánh dấu ngay tại đây, trình duyệt chặn pop-up là
-    // đơn bị ghi "đã in" trong khi chẳng có tờ phiếu nào ra giấy — kho sẽ bỏ
-    // sót đúng những đơn đó vì chúng đã rơi khỏi nhóm "Chưa in".
-    res.json({ labels: orders });
+    const labelPdfs = new Map<string, Buffer>();
+    const failed: { orderCode: string; reason: string }[] = [];
+
+    if (wantLabels) {
+      const groups = new Map<string, typeof orders>();
+      for (const o of orders) {
+        if (o.shippingStatus !== ShippingStatus.PROCESSED && o.shippingStatus !== ShippingStatus.SHIPPING) {
+          failed.push({
+            orderCode: o.orderCode,
+            reason:
+              o.shippingStatus === ShippingStatus.PENDING
+                ? "Chưa chuẩn bị hàng — sàn chưa cấp vận đơn"
+                : "Đơn không ở trạng thái in được vận đơn",
+          });
+          continue;
+        }
+        groups.set(o.channelId, [...(groups.get(o.channelId) ?? []), o]);
+      }
+      await Promise.all(
+        [...groups.values()].map(async (list) => {
+          const channel = list[0].channel;
+          const adapter = getFulfillmentAdapter(channel.channelName);
+          if (!adapter) return; // offline: không có vận đơn sàn, chỉ phiếu nhặt
+          try {
+            const r = await adapter.fetchLabels(channel, list.map(toFulfillRef));
+            for (const [id, pdf] of r.pdfs) labelPdfs.set(id, pdf);
+            for (const f of r.failed) failed.push({ orderCode: f.orderCode, reason: f.reason });
+            // Mã vận đơn/kiện khám phá được trong lúc lấy phiếu → lưu lại
+            for (const [id, d] of r.discovered) {
+              await prisma.order.update({
+                where: { id },
+                data: {
+                  ...(d.trackingCode ? { trackingCode: d.trackingCode } : {}),
+                  ...(d.packageId ? { platformPackageId: d.packageId } : {}),
+                },
+              });
+              const o = byId.get(id);
+              if (o && d.trackingCode) o.trackingCode = d.trackingCode;
+            }
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : "Không lấy được vận đơn từ sàn";
+            for (const o of list) failed.push({ orderCode: o.orderCode, reason });
+          }
+        })
+      );
+    }
+
+    const parts = [];
+    for (const o of orders) {
+      const label = labelPdfs.get(o.id) ?? null;
+      const pickList = wantPickList
+        ? await buildPickListPdf({
+            orderCode: o.orderCode,
+            channelLabel: CHANNEL_LABEL[o.channel.channelName] ?? o.channel.channelName,
+            shopName: o.channel.shopName,
+            trackingCode: o.trackingCode,
+            carrierLabel: o.carrier ? CARRIER_LABEL[o.carrier] : o.shippingCarrierName || "Chưa gán",
+            isExpress: isExpressShipping(o.shippingCarrierName),
+            createdAt: o.createdAt,
+            items: o.items.map((i) => ({ sku: i.channelSku, name: i.productName, quantity: i.quantity })),
+          })
+        : null;
+      if (label || pickList) parts.push({ label, pickList });
+    }
+    if (parts.length === 0) {
+      res.status(409).json({ error: "Không có phiếu nào để in", failed });
+      return;
+    }
+
+    const merged = await mergePdfParts(parts);
+    // id các đơn KHÔNG có vận đơn sàn trong file — frontend không đánh dấu đã in
+    const failedCodes = new Set(failed.map((f) => f.orderCode));
+    const summary = {
+      orders: orders.length,
+      labels: labelPdfs.size,
+      pages: merged.pages,
+      broken: merged.broken,
+      failed,
+      failedIds: orders.filter((o) => failedCodes.has(o.orderCode)).map((o) => o.id),
+    };
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="hubsell-phieu-${orders.length}-don.pdf"`);
+    res.setHeader("X-Hubsell-Labels", Buffer.from(JSON.stringify(summary), "utf8").toString("base64"));
+    res.send(merged.pdf);
   } catch (err) {
     next(err);
   }

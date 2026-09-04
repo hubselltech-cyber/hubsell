@@ -1239,3 +1239,144 @@ export async function getSellerInfo(
   );
   return data.data ?? {};
 }
+
+// ============================================================
+// SẮP XẾP VẬN CHUYỂN + VẬN ĐƠN (Fulfillment API mới — GHI, 04/09/2026)
+//
+// Lazada không có bước "chọn pickup/dropoff" qua API: cách lấy hàng quyết định
+// bởi cài đặt gian trên Seller Center. Hubsell chỉ pack → RTS → tải PDF.
+// Hình dạng response đọc PHÒNG THỦ vì tài liệu open.lazada.com không fetch
+// được từ máy dev — lần chạy thật đầu tiên log nguyên văn để đối chiếu.
+// ============================================================
+
+export interface LazadaPackItemResult {
+  order_item_id?: number | string;
+  package_id?: string;
+  tracking_number?: string;
+  shipment_provider?: string;
+  /** "0" = thành công; khác 0 kèm msg là lỗi cấp dòng hàng. */
+  item_err_code?: string | number;
+  msg?: string;
+}
+
+export interface LazadaPackOrderResult {
+  order_id?: number | string;
+  order_item_list?: LazadaPackItemResult[];
+}
+
+/**
+ * Bóc một khoá khỏi response Fulfillment API — sàn bọc KHÔNG nhất quán: probe
+ * thật 04/09 (document/get, Hi.Bé) trả `result` ở TẦNG NGOÀI CÙNG
+ * ({result:{data:{pdf_url,file},success:true},code:"0"}), không nằm trong `data`
+ * như Order API cũ. Dò lần lượt mọi tầng hay gặp thay vì đoán một hình dạng.
+ */
+function pickLazadaResult<T>(raw: unknown, key: string): T | undefined {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : undefined);
+  const data = obj(r.data);
+  const result = obj(r.result) ?? obj(data?.result);
+  const candidates = [r, data, result, obj(result?.data), obj(data?.data)];
+  for (const c of candidates) {
+    if (c && c[key] !== undefined) return c[key] as T;
+  }
+  return undefined;
+}
+
+/** Sàn báo lỗi nghiệp vụ ở lớp result (success=false) dù envelope code="0". */
+function ensureLazadaResultOk(raw: unknown, ctx: string): void {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const data = r.data && typeof r.data === "object" ? (r.data as Record<string, unknown>) : undefined;
+  const result = (r.result ?? data?.result) as Record<string, unknown> | undefined;
+  if (result && (result.success === false || result.success === "false")) {
+    const msg =
+      (result.error_msg as string) ||
+      (result.errorMsg as string) ||
+      (result.message as string) ||
+      "không rõ";
+    throw new Error(`Lazada ${ctx} lỗi: ${msg}`);
+  }
+}
+
+/**
+ * Đóng gói (pending → packed). Sàn cấp package_id + tracking_number ngay.
+ * shipping_allocate_type TFS = sàn tự chọn hãng (local seller VN); ≤20 đơn/lần.
+ */
+export async function packOrders(
+  accessToken: string,
+  orders: { orderId: number | string; orderItemIds: (number | string)[] }[],
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaPackOrderResult[]> {
+  const packReq = {
+    delivery_type: "dropship",
+    shipping_allocate_type: "TFS",
+    pack_order_list: orders.map((o) => ({
+      order_id: o.orderId,
+      order_item_list: o.orderItemIds.map((id) => ({ order_item_id: id })),
+    })),
+  };
+  const raw = await callLazadaPost<LazadaEnvelope & { data?: unknown }>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.fulfillPack,
+    { access_token: accessToken, packReq: JSON.stringify(packReq) },
+    "order/fulfill/pack",
+    cfg
+  );
+  console.log("[lazada.pack] raw:", JSON.stringify(raw).slice(0, 1500));
+  ensureLazadaResultOk(raw, "order/fulfill/pack");
+  return pickLazadaResult<LazadaPackOrderResult[]>(raw, "pack_order_list") ?? [];
+}
+
+/** Sẵn sàng giao (packed → ready_to_ship) cho các kiện đã pack. */
+export async function readyToShipPackages(
+  accessToken: string,
+  packageIds: string[],
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<void> {
+  const readyToShipReq = { packages: packageIds.map((id) => ({ package_id: id })) };
+  const raw = await callLazadaPost<LazadaEnvelope & { data?: unknown }>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.packageRts,
+    { access_token: accessToken, readyToShipReq: JSON.stringify(readyToShipReq) },
+    "order/package/rts",
+    cfg
+  );
+  console.log("[lazada.rts] raw:", JSON.stringify(raw).slice(0, 1500));
+  ensureLazadaResultOk(raw, "order/package/rts");
+}
+
+export interface LazadaPackageDocument {
+  /** Link PDF sống ~10 phút (ưu tiên). */
+  pdfUrl?: string;
+  /** Nội dung base64 (một số thị trường trả thẳng file). */
+  file?: string;
+  mimeType?: string;
+}
+
+/** Tải vận đơn của các kiện (≤20 kiện/lần) dạng PDF. */
+export async function getPackageDocument(
+  accessToken: string,
+  packageIds: string[],
+  cfg: LazadaConfig = getLazadaConfig()
+): Promise<LazadaPackageDocument> {
+  const getDocumentReq = {
+    doc_type: "PDF",
+    print_item_list: false,
+    packages: packageIds.map((id) => ({ package_id: id })),
+  };
+  const raw = await callLazada<LazadaEnvelope & { data?: unknown }>(
+    LAZADA_ENDPOINTS.api,
+    LAZADA_PATHS.packageDocumentGet,
+    { access_token: accessToken, getDocumentReq: JSON.stringify(getDocumentReq) },
+    "order/package/document/get",
+    cfg
+  );
+  ensureLazadaResultOk(raw, "order/package/document/get");
+  // Ưu tiên pdf_url; fallback file base64 (bóc ở mọi tầng bọc)
+  const pdfUrl = pickLazadaResult<string>(raw, "pdf_url");
+  const file = pickLazadaResult<string>(raw, "file");
+  const mimeType = pickLazadaResult<string>(raw, "mime_type");
+  if (!pdfUrl && !file) {
+    console.log("[lazada.document] raw:", JSON.stringify(raw).slice(0, 1500));
+  }
+  return { pdfUrl, file, mimeType };
+}

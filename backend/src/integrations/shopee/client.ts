@@ -1667,3 +1667,247 @@ export async function getAdsTotalBalance(
     cfg
   );
 }
+
+// ============================================================
+// SẮP XẾP VẬN CHUYỂN + VẬN ĐƠN (Logistics API — GHI, 04/09/2026)
+//
+// Đây là nhóm endpoint GHI đầu tiên của Shopee ngoài update_stock/ads. ship_order
+// KHÔNG hoàn tác được: seller bấm nhầm là kiện đó đã "chờ shipper" trên sàn.
+// Mọi lời gọi đi qua services/fulfillment/shopee.ts — route không gọi thẳng.
+// ============================================================
+
+export interface ShopeePickupTimeSlot {
+  /** Ngày lấy hàng (Unix giây, 00:00 giờ địa phương). */
+  date?: number;
+  /** Khung giờ dạng chữ sàn trả ("9:00-18:00"). */
+  time_text?: string;
+  pickup_time_id?: string;
+  flags?: string[];
+}
+
+export interface ShopeePickupAddress {
+  address_id: number;
+  region?: string;
+  state?: string;
+  city?: string;
+  district?: string;
+  town?: string;
+  address?: string;
+  zipcode?: string;
+  /** Cờ sàn gắn cho địa chỉ: DEFAULT_ADDRESS / PICKUP_ADDRESS / RETURN_ADDRESS. */
+  address_flag?: string[];
+  time_slot_list?: ShopeePickupTimeSlot[];
+}
+
+export interface ShopeeDropoffBranch {
+  branch_id: number;
+  region?: string;
+  state?: string;
+  city?: string;
+  district?: string;
+  town?: string;
+  address?: string;
+  zipcode?: string;
+}
+
+/**
+ * Tham số sắp xếp vận chuyển của MỘT đơn. `info_needed` cho biết phương thức
+ * nào khả dụng (có khoá = được phép) và cần điền trường gì:
+ *   pickup: ["address_id","pickup_time_id"] · dropoff: [] hoặc ["branch_id"…]
+ */
+export interface ShopeeShippingParameter {
+  info_needed?: { pickup?: string[]; dropoff?: string[]; non_integrated?: string[] };
+  pickup?: { address_list?: ShopeePickupAddress[] };
+  dropoff?: {
+    branch_list?: ShopeeDropoffBranch[];
+    slug_list?: { slug?: string; slug_name?: string }[];
+  };
+}
+
+interface ShopeeShippingParameterData extends ShopeeEnvelope {
+  response?: ShopeeShippingParameter;
+}
+
+/** Tham số sắp xếp vận chuyển cho một đơn (địa chỉ lấy hàng, khung giờ, bưu cục). */
+export async function getShippingParameter(
+  accessToken: string,
+  shopId: string,
+  orderSn: string,
+  packageNumber?: string | null,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeShippingParameter> {
+  const data = await callShopGet<ShopeeShippingParameterData>(
+    SHOPEE_PATHS.shippingParameter,
+    accessToken,
+    shopId,
+    [["order_sn", orderSn], ...(packageNumber ? [["package_number", packageNumber] as [string, string]] : [])],
+    "get_shipping_parameter",
+    cfg
+  );
+  return data.response ?? {};
+}
+
+export interface ShopeeShipOrderBody {
+  order_sn: string;
+  package_number?: string;
+  pickup?: { address_id: number; pickup_time_id?: string };
+  dropoff?: { branch_id?: number; sender_real_name?: string; tracking_number?: string; slug?: string };
+  non_integrated?: { tracking_number?: string };
+}
+
+/**
+ * Sắp xếp vận chuyển (READY_TO_SHIP → PROCESSED). Thành công = envelope không
+ * có error; sàn cấp mã vận đơn sau đó (get_tracking_number có thể trống vài giây).
+ */
+export async function shipOrder(
+  accessToken: string,
+  shopId: string,
+  body: ShopeeShipOrderBody,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<void> {
+  await callShopPost<ShopeeEnvelope>(
+    SHOPEE_PATHS.shipOrder,
+    accessToken,
+    shopId,
+    body as unknown as Record<string, unknown>,
+    "ship_order",
+    cfg
+  );
+}
+
+export type ShopeeShippingDocumentType =
+  | "NORMAL_AIR_WAYBILL"
+  | "THERMAL_AIR_WAYBILL"
+  | "NORMAL_JOB_AIR_WAYBILL"
+  | "THERMAL_JOB_AIR_WAYBILL";
+
+export interface ShopeeDocumentParameterRow {
+  order_sn: string;
+  package_number?: string;
+  suggest_shipping_document_type?: string;
+  selectable_shipping_document_type?: string[];
+  fail_error?: string;
+  fail_message?: string;
+}
+
+interface ShopeeDocumentParameterData extends ShopeeEnvelope {
+  response?: { result_list?: ShopeeDocumentParameterRow[] };
+}
+
+/** Loại vận đơn khả dụng/khuyến nghị cho từng đơn (≤50 đơn/lần). */
+export async function getShippingDocumentParameter(
+  accessToken: string,
+  shopId: string,
+  orders: { order_sn: string; package_number?: string }[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeDocumentParameterRow[]> {
+  const data = await callShopPost<ShopeeDocumentParameterData>(
+    SHOPEE_PATHS.shippingDocumentParameter,
+    accessToken,
+    shopId,
+    { order_list: orders },
+    "get_shipping_document_parameter",
+    cfg
+  );
+  return data.response?.result_list ?? [];
+}
+
+export interface ShopeeDocumentResultRow {
+  order_sn: string;
+  package_number?: string;
+  /** READY / PROCESSING / FAILED */
+  status?: string;
+  fail_error?: string;
+  fail_message?: string;
+}
+
+interface ShopeeDocumentResultData extends ShopeeEnvelope {
+  response?: { result_list?: ShopeeDocumentResultRow[] };
+}
+
+/** Yêu cầu sàn dựng file vận đơn (bất đồng bộ; ≤50 đơn/lần). */
+export async function createShippingDocument(
+  accessToken: string,
+  shopId: string,
+  orders: {
+    order_sn: string;
+    package_number?: string;
+    tracking_number?: string;
+    shipping_document_type?: ShopeeShippingDocumentType | string;
+  }[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeDocumentResultRow[]> {
+  const data = await callShopPost<ShopeeDocumentResultData>(
+    SHOPEE_PATHS.createShippingDocument,
+    accessToken,
+    shopId,
+    { order_list: orders },
+    "create_shipping_document",
+    cfg
+  );
+  return data.response?.result_list ?? [];
+}
+
+/** Trạng thái dựng file vận đơn của từng đơn. */
+export async function getShippingDocumentResult(
+  accessToken: string,
+  shopId: string,
+  orders: {
+    order_sn: string;
+    package_number?: string;
+    shipping_document_type?: ShopeeShippingDocumentType | string;
+  }[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeDocumentResultRow[]> {
+  const data = await callShopPost<ShopeeDocumentResultData>(
+    SHOPEE_PATHS.shippingDocumentResult,
+    accessToken,
+    shopId,
+    { order_list: orders },
+    "get_shipping_document_result",
+    cfg
+  );
+  return data.response?.result_list ?? [];
+}
+
+/**
+ * Tải file vận đơn PDF. Khác mọi endpoint khác: thành công trả BINARY
+ * (application/pdf), lỗi mới trả JSON — nên không đi qua callShopPost.
+ */
+export async function downloadShippingDocument(
+  accessToken: string,
+  shopId: string,
+  documentType: ShopeeShippingDocumentType | string,
+  orders: { order_sn: string; package_number?: string }[],
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<Buffer> {
+  const path = SHOPEE_PATHS.downloadShippingDocument;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShop(cfg.partnerKey, cfg.partnerId, path, timestamp, accessToken, shopId);
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    access_token: accessToken,
+    shop_id: shopId,
+    sign,
+  }).toString();
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ shipping_document_type: documentType, order_list: orders }),
+  });
+  const contentType = res.headers.get("content-type") ?? "";
+  const buf = Buffer.from(await res.arrayBuffer());
+  // PDF bắt đầu bằng "%PDF" — kiểm cả nội dung phòng sàn trả content-type lạ
+  if (contentType.includes("pdf") || buf.subarray(0, 4).toString("latin1") === "%PDF") {
+    return buf;
+  }
+  let json: ShopeeEnvelope = {};
+  try {
+    json = JSON.parse(buf.toString("utf8")) as ShopeeEnvelope;
+  } catch {
+    throw new Error(`Shopee download_shipping_document trả dữ liệu lạ (${contentType || "không rõ"})`);
+  }
+  ensureOk(json, "download_shipping_document");
+  throw new Error("Shopee download_shipping_document không trả file PDF");
+}

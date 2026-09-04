@@ -75,6 +75,9 @@ export function createApp() {
         // ném lỗi sẽ rơi vào error-handler thành 500 gây nhiễu log.
         callback(null, !origin || allowedOrigins.has(origin));
       },
+      // Header tóm tắt in vận đơn (đơn nào thiếu phiếu) phải lộ ra cho frontend
+      // đọc — mặc định CORS chỉ cho đọc vài header chuẩn.
+      exposedHeaders: ["X-Hubsell-Labels", "Content-Disposition"],
     })
   );
   // Giữ lại THÂN REQUEST THÔ (req.rawBody) khi parse JSON — webhook TikTok phải

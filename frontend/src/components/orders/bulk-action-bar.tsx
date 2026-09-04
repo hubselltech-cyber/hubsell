@@ -2,20 +2,13 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, PackageCheck, Printer, Truck } from "lucide-react";
+import { Loader2, PackageCheck, Printer } from "lucide-react";
 
 import { BulkBar } from "@/components/data-table/bulk-bar";
 import { Button } from "@/components/ui/button";
-import {
-  ApiError,
-  bulkConfirmOrders,
-  bulkHandoverOrders,
-  fetchOrderLabels,
-  markOrdersPrinted,
-  type Order,
-} from "@/lib/api";
+import { ApiError, type Order } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
-import { printOrderLabels } from "@/lib/print-labels";
+import { ArrangeShipmentDialog, printLabels } from "@/components/orders/arrange-shipment-dialog";
 
 /**
  * THANH XỬ LÝ HÀNG LOẠT
@@ -24,9 +17,9 @@ import { printOrderLabels } from "@/lib/print-labels";
  * bảng vì shop soát đơn thường cuộn xuống giữa danh sách rồi mới tích — nút ở
  * trên đầu thì phải cuộn ngược lên mới bấm được.
  *
- * Ba nút bám đúng ba bước của quy trình kho:
- *   Chờ xử lý --[Xác nhận & chuẩn bị]--> Đã xử lý --[Bàn giao]--> Đang giao
- *                                          ↑ in phiếu ở bước này
+ * Hai nút bám đúng hai bước thật của kho (04/09 — bỏ "Bàn giao": Shopee không
+ * có API bàn giao, trạng thái Đang giao do sàn phát khi shipper quét kiện):
+ *   Chờ xử lý --[Chuẩn bị hàng: sàn sắp xếp vận chuyển]--> Đã xử lý --[In vận đơn]
  * Mỗi nút hiện sẵn SỐ ĐƠN THỰC SỰ xử lý được và tự khoá khi bằng 0, để không ai
  * bấm xong mới biết "đã bỏ qua 8 đơn".
  */
@@ -41,134 +34,64 @@ export function BulkActionBar({
   /** Gọi sau khi xử lý xong để trang tải lại danh sách */
   onDone: () => void;
 }) {
-  const [busy, setBusy] = React.useState<"confirm" | "handover" | "print" | null>(
-    null
-  );
+  const [busy, setBusy] = React.useState<"print" | null>(null);
+  const [arrangeOpen, setArrangeOpen] = React.useState(false);
 
   const packable = selected.filter((o) => o.shippingStatus === "PENDING");
-  const handoverable = selected.filter((o) => o.shippingStatus === "PROCESSED");
+  // Vận đơn sàn chỉ có sau khi chuẩn bị; đơn Chờ xử lý vẫn in được phiếu nhặt
+  const withLabel = selected.filter(
+    (o) => o.shippingStatus === "PROCESSED" || o.shippingStatus === "SHIPPING"
+  );
   // Đơn đã in rồi mà chọn in lại — cảnh báo trước để tránh in trùng cả xấp
   const reprinting = selected.filter((o) => o.labelPrintedAt !== null);
 
-  async function run(
-    kind: "confirm" | "handover",
-    ids: string[],
-    verb: string
-  ) {
-    setBusy(kind);
-    try {
-      const res =
-        kind === "confirm"
-          ? await bulkConfirmOrders(ids)
-          : await bulkHandoverOrders(ids);
-      const extra =
-        res.skipped.length > 0 ? ` · bỏ qua ${res.skipped.length} đơn` : "";
-      toast.success(`Đã ${verb} ${formatNumber(res.confirmed)} đơn${extra}`, {
-        duration: 6000,
-      });
-      onClear();
-      onDone();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : `Không ${verb} được`);
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function handlePrint() {
     setBusy("print");
-    const ids = selected.map((o) => o.id);
     try {
-      // Bước 1 — LẤY dữ liệu (chỉ đọc, chưa đánh dấu gì).
-      // Lấy lại từ máy chủ thay vì dùng dữ liệu đang có trên bảng: đảm bảo phiếu
-      // in ra là số liệu mới nhất và có đủ chi tiết dòng hàng.
-      const res = await fetchOrderLabels(ids);
-
-      // Bước 2 — MỞ cửa sổ in.
-      const opened = printOrderLabels(res.labels);
-      if (!opened) {
-        toast.error(
-          "Trình duyệt đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi bấm lại."
-        );
-        return; // chưa in được thì KHÔNG đánh dấu, đơn vẫn nằm ở nhóm "Chưa in"
+      let includePickList = true;
+      try {
+        includePickList = localStorage.getItem("hubsell.fulfill.pickList") !== "0";
+      } catch {
+        // storage bị chặn — mặc định kèm phiếu nhặt
       }
-
-      // Bước 3 — chỉ khi in thành công mới đánh dấu ĐÃ IN.
-      // Thứ tự này là chủ đích: đánh dấu sớm hơn thì lúc pop-up bị chặn, đơn
-      // rơi khỏi nhóm "Chưa in" mà chẳng có tờ phiếu nào — kho sẽ bỏ sót đúng
-      // những đơn đó.
-      const marked = await markOrdersPrinted(ids);
-      toast.success(
-        `Đã mở ${formatNumber(res.labels.length)} phiếu để in` +
-          (marked.markedPrinted > 0
-            ? ` · đánh dấu ĐÃ IN cho ${marked.markedPrinted} đơn`
-            : ""),
-        { duration: 6000 }
+      await printLabels(
+        selected.map((o) => o.id),
+        includePickList
       );
       onClear();
       onDone(); // tải lại để nhãn "Đã in" hiện ngay
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "Không lấy được dữ liệu phiếu"
-      );
+      toast.error(err instanceof ApiError ? err.message : "Không lấy được vận đơn");
     } finally {
       setBusy(null);
     }
   }
 
-  // Khung thanh (đếm + bỏ chọn) đã tách về data-table/bulk-bar.tsx dùng chung
-  // cho mọi bảng — ở đây chỉ còn ba nút nghiệp vụ của quy trình kho.
   return (
-    <BulkBar
-      count={selected.length}
-      unitLabel="đơn"
-      subtitle={
-        reprinting.length > 0
-          ? `${formatNumber(reprinting.length)} đơn đã in phiếu trước đó`
-          : "Chưa đơn nào được in phiếu"
-      }
-      onClear={onClear}
-    >
+    <>
+      <BulkBar
+        count={selected.length}
+        unitLabel="đơn"
+        subtitle={
+          reprinting.length > 0
+            ? `${formatNumber(reprinting.length)} đơn đã in phiếu trước đó`
+            : "Chưa đơn nào được in phiếu"
+        }
+        onClear={onClear}
+      >
         <Button
           size="sm"
           variant="secondary"
-          onClick={() =>
-            run("confirm", packable.map((o) => o.id), "xác nhận chuẩn bị")
-          }
+          onClick={() => setArrangeOpen(true)}
           disabled={busy !== null || packable.length === 0}
           title={
             packable.length === 0
-              ? "Chỉ đơn đang Chờ xử lý mới xác nhận chuẩn bị hàng được"
-              : undefined
+              ? "Chỉ đơn đang Chờ xử lý mới chuẩn bị hàng được"
+              : "Báo sàn sắp xếp vận chuyển (như bấm Chuẩn bị hàng trên Seller Center) rồi in vận đơn"
           }
         >
-          {busy === "confirm" ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <PackageCheck className="size-4" />
-          )}
-          Xác nhận chuẩn bị ({formatNumber(packable.length)})
-        </Button>
-
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() =>
-            run("handover", handoverable.map((o) => o.id), "bàn giao")
-          }
-          disabled={busy !== null || handoverable.length === 0}
-          title={
-            handoverable.length === 0
-              ? "Chỉ đơn Đã xử lý mới bàn giao cho đơn vị vận chuyển được"
-              : undefined
-          }
-        >
-          {busy === "handover" ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Truck className="size-4" />
-          )}
-          Bàn giao ({formatNumber(handoverable.length)})
+          <PackageCheck className="size-4" />
+          Chuẩn bị hàng ({formatNumber(packable.length)})
         </Button>
 
         <Button
@@ -176,13 +99,12 @@ export function BulkActionBar({
           variant="secondary"
           onClick={handlePrint}
           disabled={busy !== null}
-          // Làm rõ đây là phiếu NỘI BỘ để kho soạn hàng, tách hẳn khỏi hóa đơn
-          // điện tử pháp lý (HĐĐT) — tránh nhân viên kho thao tác nhầm.
           title={
-            "In Phiếu đóng gói / Phiếu bán hàng cho kho soạn hàng — độc lập với hóa đơn điện tử (HĐĐT)." +
-            (reprinting.length > 0
-              ? ` ${reprinting.length} đơn đã in trước đó.`
-              : "")
+            "In vận đơn chính chủ của sàn (A6, có mã vạch/QR) kèm phiếu nhặt hàng Hubsell." +
+            (withLabel.length < selected.length
+              ? ` ${selected.length - withLabel.length} đơn chưa chuẩn bị chỉ có phiếu nhặt hàng.`
+              : "") +
+            (reprinting.length > 0 ? ` ${reprinting.length} đơn đã in trước đó.` : "")
           }
         >
           {busy === "print" ? (
@@ -190,9 +112,20 @@ export function BulkActionBar({
           ) : (
             <Printer className="size-4" />
           )}
-          In phiếu đóng gói
-          {reprinting.length > 0 && ` (${formatNumber(reprinting.length)} in lại)`}
+          In vận đơn ({formatNumber(withLabel.length)})
+          {reprinting.length > 0 && ` · ${formatNumber(reprinting.length)} in lại`}
         </Button>
-    </BulkBar>
+      </BulkBar>
+
+      <ArrangeShipmentDialog
+        open={arrangeOpen}
+        onOpenChange={setArrangeOpen}
+        orders={packable}
+        onDone={() => {
+          onClear();
+          onDone();
+        }}
+      />
+    </>
   );
 }

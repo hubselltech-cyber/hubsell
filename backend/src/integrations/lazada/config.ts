@@ -61,6 +61,17 @@ export const LAZADA_PATHS = {
    *  chiều hoàn. Đối chiếu docs open.lazada.com 19/08/2026. */
   reverseOrders: "/reverse/getreverseordersforseller",
 
+  // ── SẮP XẾP VẬN CHUYỂN + VẬN ĐƠN (Fulfillment API mới, GHI — 04/09/2026) ──
+  // Luồng: /order/fulfill/pack (pending → packed, sàn cấp package_id + tracking)
+  // → /order/package/rts (packed → ready_to_ship) → /order/package/document/get
+  // (PDF vận đơn, pdf_url sống 10 phút). Bộ API cũ /order/pack, /order/rts,
+  // /order/document/get đã bị sàn khai tử. Tên tham số JSON (packReq /
+  // readyToShipReq / getDocumentReq) đối chiếu SDK chính hãng — hình dạng
+  // response đọc PHÒNG THỦ + log nguyên văn lần đầu chạy thật.
+  fulfillPack: "/order/fulfill/pack",
+  packageRts: "/order/package/rts",
+  packageDocumentGet: "/order/package/document/get",
+
   // ── Trợ lý vận hành (CSKH) — path đã ĐỐI CHIẾU tài liệu open.lazada.com 07/08/2026 ──
   /** Đánh giá của MỘT sản phẩm (item_id BẮT BUỘC — Lazada không có list toàn shop). */
   reviewList: "/review/seller/list",

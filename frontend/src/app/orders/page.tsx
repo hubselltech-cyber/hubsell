@@ -498,6 +498,20 @@ export default function OrdersPage() {
                   Đã in phiếu
                 </span>
               )}
+              {/* Đơn đã sắp xếp vận chuyển mà chưa in — kho nhìn là biết còn
+                  việc, khỏi phải mở bộ lọc con (anh Trung 04/09) */}
+              {!o.labelPrintedAt && o.shippingStatus === "PROCESSED" && (
+                <span
+                  className={cn(
+                    TEXT_SUB,
+                    "mt-1 flex items-center justify-center gap-1 text-amber-600"
+                  )}
+                  title="Đã chuẩn bị hàng nhưng chưa in vận đơn"
+                >
+                  <Printer className="size-3 shrink-0" />
+                  Chưa in phiếu
+                </span>
+              )}
               {/* Tình trạng hàng hoàn — chỉ hiện khi đơn có hoàn */}
               {o.returnStatus !== "NONE" && RETURN_META[o.returnStatus] && (
                 <span

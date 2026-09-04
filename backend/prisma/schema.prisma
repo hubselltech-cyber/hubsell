@@ -357,6 +357,12 @@ model Channel {
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
   // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.
   feeRate     Decimal     @default(0) @db.Decimal(5, 4)
+
+  /// Lựa chọn SẮP XẾP VẬN CHUYỂN mặc định của gian (04/09): phương thức
+  /// pickup/dropoff + address_id + branch_id lần gần nhất seller chọn khi bấm
+  /// "Chuẩn bị hàng". Lần sau mở hộp thoại là điền sẵn — seller nhỏ thao tác
+  /// 1 chạm. Hình dạng: { method, addressId?, branchId? } (xem fulfillment/types).
+  fulfillmentSettings Json?
   createdAt   DateTime    @default(now())
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -987,6 +993,10 @@ model Order {
   // cùng soát đơn thì người sau nhìn vào biết ngay phiếu đã được in, khỏi in
   // lại và gói lại đơn người khác đang làm.
   labelPrintedAt DateTime?
+  /// Mã KIỆN phía sàn sau khi sắp xếp vận chuyển (Lazada package_id "FP...",
+  /// TikTok package id). Lazada cần mã này để RTS + tải vận đơn; Shopee dùng
+  /// order_sn nên để null. Không có = chưa sắp xếp qua Hubsell (sẽ hỏi lại sàn).
+  platformPackageId String?
 
   // Số DÒNG HÀNG của đơn (đếm OrderItem, không phải tổng số lượng).
   // Lưu sẵn ở đây thay vì đếm quan hệ mỗi lần truy vấn, vì Prisma không lọc

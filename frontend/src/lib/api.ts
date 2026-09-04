@@ -1193,33 +1193,118 @@ export function fetchOrders(params: {
   return apiFetch<OrderListResponse>(`/api/orders?${qs.toString()}`);
 }
 
-interface BulkResult {
+// ===== XỬ LÝ ĐƠN TẬP TRUNG (04/09): chuẩn bị hàng THẬT qua API sàn + in vận đơn =====
+
+export type FulfillMethod = "PICKUP" | "DROPOFF";
+
+/** Lựa chọn sắp xếp vận chuyển của seller cho MỘT gian trong hộp thoại Chuẩn bị hàng. */
+export interface FulfillChoice {
+  method: FulfillMethod;
+  addressId?: string;
+  pickupTimeId?: string;
+  branchId?: string;
+}
+
+export interface ShippingOptionSlot {
+  id: string;
+  label: string;
+}
+
+export interface ShippingOptionAddress {
+  id: string;
+  label: string;
+  isDefault: boolean;
+  timeSlots: ShippingOptionSlot[];
+}
+
+export interface ShippingOptionGroup {
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  orderCount: number;
+  /** PLATFORM: gọi sàn thật · INTERNAL: kênh offline · UNSUPPORTED: sàn giữ chỗ · ERROR: không hỏi được sàn */
+  mode: "PLATFORM" | "INTERNAL" | "UNSUPPORTED" | "ERROR";
+  methods: FulfillMethod[];
+  pickupAddresses: ShippingOptionAddress[];
+  dropoffBranches: ShippingOptionSlot[];
+  note?: string;
+  defaults: { method: FulfillMethod; addressId?: string; branchId?: string } | null;
+}
+
+/** Hỏi sàn phương án vận chuyển cho các gian có đơn đang chọn (chỉ đơn Chờ xử lý). */
+export function fetchShippingOptions(orderIds: string[]) {
+  return apiFetch<{ groups: ShippingOptionGroup[]; pendingCount: number }>(
+    "/api/orders/bulk/shipping-options",
+    { method: "POST", body: JSON.stringify({ orderIds }) }
+  );
+}
+
+export interface BulkConfirmResult {
   confirmed: number;
+  confirmedIds: string[];
   skipped: { orderCode: string; reason: string }[];
+  /** Sàn từ chối — đơn ở nguyên Chờ xử lý kèm lý do. */
+  failed: { orderCode: string; reason: string }[];
+  notes?: { orderCode: string; note: string }[];
 }
 
-/** Xác nhận & chuẩn bị hàng cho nhiều đơn (Chờ xử lý → Đã xử lý). */
-export function bulkConfirmOrders(orderIds: string[]) {
-  return apiFetch<BulkResult>("/api/orders/bulk/confirm", {
+/** Chuẩn bị hàng THẬT (ship_order / pack+rts) cho nhiều đơn — sàn OK mới thành Đã xử lý. */
+export function bulkConfirmOrders(orderIds: string[], choices?: Record<string, FulfillChoice>) {
+  return apiFetch<BulkConfirmResult>("/api/orders/bulk/confirm", {
     method: "POST",
-    body: JSON.stringify({ orderIds }),
+    body: JSON.stringify({ orderIds, choices }),
   });
 }
 
-/** Bàn giao cho đơn vị vận chuyển (Đã xử lý → Đang giao). */
-export function bulkHandoverOrders(orderIds: string[]) {
-  return apiFetch<BulkResult>("/api/orders/bulk/handover", {
-    method: "POST",
-    body: JSON.stringify({ orderIds }),
-  });
+export interface LabelSummary {
+  orders: number;
+  labels: number;
+  pages: number;
+  broken: number;
+  failed: { orderCode: string; reason: string }[];
+  /** id các đơn không có vận đơn sàn trong file — không đánh dấu đã in. */
+  failedIds: string[];
 }
 
-/** Lấy dữ liệu dựng phiếu giao hàng cho nhiều đơn để in một lượt. */
-export function fetchOrderLabels(orderIds: string[]) {
-  return apiFetch<{ labels: Order[] }>("/api/orders/bulk/labels", {
+/**
+ * Tải MỘT file PDF gồm vận đơn chính chủ của sàn + phiếu nhặt hàng Hubsell (A6).
+ * Tóm tắt (đơn nào thiếu vận đơn) nằm ở header X-Hubsell-Labels (base64 JSON).
+ */
+export async function fetchOrderLabelsPdf(
+  orderIds: string[],
+  opts: { labels: boolean; pickList: boolean }
+): Promise<{ blob: Blob; summary: LabelSummary | null }> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/api/orders/bulk/labels`, {
     method: "POST",
-    body: JSON.stringify({ orderIds }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ orderIds, labels: opts.labels, pickList: opts.pickList }),
   });
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  let summary: LabelSummary | null = null;
+  const raw = res.headers.get("X-Hubsell-Labels");
+  if (raw) {
+    try {
+      const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+      summary = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      summary = null;
+    }
+  }
+  return { blob: await res.blob(), summary };
 }
 
 /**
