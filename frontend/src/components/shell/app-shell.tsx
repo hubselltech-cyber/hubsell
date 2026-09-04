@@ -51,6 +51,19 @@ import { themeBaseIsSystem } from "@/lib/theme";
 import { TEXT_PAGE_TITLE } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
+// ===== KIỂU DÁNG MỤC SIDEBAR — đo theo YouTube Studio 04/09/2026 =====
+// Studio: mục cao 40px, chữ 14px, CHƯA chọn = weight 400 màu chữ chính (đen
+// đủ, không xám), ĐANG chọn = weight 500 + pill nền + icon đổ đầy; hover dùng
+// đúng nền của mục đang chọn. Chỉ nhích MỘT bậc weight từ nền 400 nên mắt đọc
+// ra ngay; bản cũ 500→600 trên nền slate-700 là "đậm với đậm hơn", cả cột
+// sidebar nặng đều nhau nên nhìn phẳng. Icon 24px; sidebar nới 240→256px (bằng Studio) để nhãn dài không gãy dòng.
+const NAV_ITEM_BASE =
+  "relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm leading-6 transition-colors";
+const NAV_ITEM_IDLE =
+  "font-normal text-foreground hover:bg-sidebar-active-bg";
+const NAV_ITEM_ACTIVE_TEXT = "font-medium text-sidebar-active-text";
+
+
 interface NavChild {
   href: string;
   label: string;
@@ -559,14 +572,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               // text-left: button mặc định canh GIỮA — nhãn dài xuống
               // 2 dòng (vd "Quản lý Tài chính" trên drawer hẹp) sẽ bị
               // canh giữa lộn xộn nếu không ép canh trái.
-              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors",
-              // Chưa chọn vẫn để chữ/icon ĐẬM MÀU (slate-700) chứ không
-              // xám nhạt — học YouTube Studio: cả sidebar sắc nét, trạng
-              // thái active phân biệt bằng pill + icon đổ đầy chứ không
-              // phải bằng cách dìm màu phần còn lại.
-              groupActive
-                ? "font-semibold text-sidebar-active-text"
-                : "font-medium text-slate-700 hover:bg-muted hover:text-foreground",
+              NAV_ITEM_BASE,
+              groupActive ? NAV_ITEM_ACTIVE_TEXT : NAV_ITEM_IDLE,
               // Nhóm đang CỤP mà chứa trang hiện hành → nhận pill nền y
               // như mục thường (hết cảnh active "nửa vời" chỉ đậm chữ);
               // lúc XOÈ thì nhường pill cho mục con đang chọn bên dưới,
@@ -596,8 +603,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className={cn(
                       "relative block rounded-lg px-3 py-2 text-sm transition-colors",
                       childActive
-                        ? "bg-sidebar-active-bg font-semibold text-sidebar-active-text"
-                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                        ? "bg-sidebar-active-bg font-medium text-sidebar-active-text"
+                        : "font-normal text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
                     {/* Vạch neo thị giác — nét dọc mảnh sát cạnh trái của mục đang chọn */}
@@ -631,11 +638,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onMouseEnter={() => prefetch(item.href!)}
         onFocus={() => prefetch(item.href!)}
         className={cn(
-          "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-          // Chưa chọn để slate-700 sắc màu (xem chú thích ở nút nhóm).
+          NAV_ITEM_BASE,
           active
-            ? "bg-sidebar-active-bg font-semibold text-sidebar-active-text"
-            : "font-medium text-slate-700 hover:bg-muted hover:text-foreground"
+            ? cn("bg-sidebar-active-bg", NAV_ITEM_ACTIVE_TEXT)
+            : NAV_ITEM_IDLE
         )}
       >
         {/* Kiểu YouTube Studio: mục active = pill nền + icon FILLED
@@ -676,7 +682,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </Link>
 
-        <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
           {items.map(renderNavItem)}
         </nav>
 
@@ -684,7 +690,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             trên đẩy khối này xuống), kẻ phân cách tách hẳn khỏi khu làm việc.
             Vai trò không thấy mục nào (SALES/WAREHOUSE) thì ẩn luôn đường kẻ. */}
         {bottomItems.length > 0 && (
-          <div className="space-y-1.5 border-t px-3 py-3">
+          <div className="space-y-0.5 border-t px-3 py-3">
             {bottomItems.map(renderNavItem)}
           </div>
         )}
@@ -702,7 +708,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ===== SIDEBAR DỌC BÊN TRÁI (desktop) ===== */}
       {/* Nền trắng của sidebar tự tách khỏi nền slate-50 của trang; viền phải
           làm mờ đi để ranh giới tinh tế thay vì một nét xám cứng. */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-slate-200/60 bg-card md:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-200/60 bg-card md:flex">
         {sidebarInner}
       </aside>
 
@@ -722,7 +728,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* ===== KHU VỰC BÊN PHẢI: HEADER + NỘI DUNG ===== */}
-      <div className="flex min-h-screen flex-col md:pl-60">
+      <div className="flex min-h-screen flex-col md:pl-64">
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b bg-card/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 md:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button
