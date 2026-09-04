@@ -167,6 +167,9 @@ describe("Double-Check tồn kho sau update_stock (sàn ghi trễ)", () => {
       where: { channelId: fx.channelId, channelSku, resolvedAt: null },
     });
     expect(alert).not.toBeNull();
-    expect(alert!.message).toContain("Đối soát tồn kho");
+    // Dòng 1 = việc cần làm cho seller; chi tiết đối soát nằm sau "\n".
+    const [plain, detail] = alert!.message.split("\n");
+    expect(plain).toContain("Đẩy lại");
+    expect(detail).toContain("đối soát 3 lượt vẫn chưa khớp");
   });
 });

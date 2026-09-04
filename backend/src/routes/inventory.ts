@@ -226,6 +226,20 @@ router.patch("/sync-alerts/:id/resolve", async (req: AuthRequest, res, next) => 
   }
 });
 
+// PATCH /api/inventory/sync-alerts/resolve-all — "Đã xử lý tất cả": seller
+// quyết định bỏ qua cả loạt (vd 100 SKU cùng một nguyên nhân đã tự hết).
+router.patch("/sync-alerts/resolve-all", async (req: AuthRequest, res, next) => {
+  try {
+    const r = await prisma.inventorySyncAlert.updateMany({
+      where: { resolvedAt: null, channel: syncChannelScope(req) },
+      data: { resolvedAt: new Date() },
+    });
+    res.json({ resolved: r.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/inventory/sync-alerts/:id/force-sync — nút [Cập nhật tồn] trên thẻ
 // cảnh báo của Trung tâm điều hành: ĐÈ trực tiếp tồn khả dụng chuẩn từ Hubsell
 // lên sàn cho SKU của cảnh báo (đẩy tới MỌI gian Shopee đang liên kết SKU đó),

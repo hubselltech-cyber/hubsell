@@ -62,11 +62,11 @@ function syncAlertToOps(a: InventorySyncAlert): OpsAlert {
     tag: "channel", // nhãn [SÀN]
     severity: "high",
     title: a.channelSku
-      ? `Cập nhật tồn kho Shopee thất bại — SKU ${a.channelSku}`
-      : `Đồng bộ Shopee gặp sự cố — ${a.shopName}`,
-    summary: a.channelSku
-      ? `Cập nhật tồn kho Shopee cho SKU ${a.channelSku} thất bại sau 3 lần thử lại (lệch tồn giữa sàn và hệ thống) — gian "${a.shopName}".`
-      : a.message,
+      ? `Chưa đẩy được tồn SKU ${a.channelSku} lên "${a.shopName}"`
+      : `Gian "${a.shopName}" đang không đồng bộ được`,
+    // Dòng 1 của lời cảnh báo = việc cần làm (backend đã dịch ra tiếng người);
+    // chi tiết kỹ thuật sau "\n" không đưa lên thẻ.
+    summary: a.message.split("\n")[0],
     actionLabel: "Cập nhật tồn",
     action: {
       kind: "force-sync-stock",

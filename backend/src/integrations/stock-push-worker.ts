@@ -27,8 +27,15 @@ import { availableToPush, registerStockPushKick } from "./inventory-push";
 import {
   createSyncAlert,
   parseShopeeExternalId,
+  resolveShopeeLocationId,
+  resolveSyncAlerts,
   scheduleStockVerification,
 } from "./shopee/inventory-sync";
+import {
+  classifyStockPushFailure,
+  describeChannelFailure,
+  describeStockPushFailure,
+} from "../services/sync-alert-text";
 import { updateShopeeStock } from "./shopee/client";
 import { getValidShopeeAccessToken } from "./shopee/service";
 import { updateLazadaSellableStock } from "./lazada/client";
@@ -155,7 +162,7 @@ async function processChannelJobs(
       where: { id: { in: claimed.map((j) => j.id) } },
     });
     await createSyncAlert(channel.id, {
-      message: `Không đồng bộ được tồn kho lên gian "${channel.shopName}": ${msg}. Kiểm tra kết nối/uỷ quyền lại gian hàng.`,
+      message: describeChannelFailure(channel.shopName, msg),
     });
     return;
   }
@@ -216,14 +223,37 @@ async function processChannelJobs(
           await prisma.stockPushJob.deleteMany({ where: { id: job.id } });
           continue;
         }
-        await updateShopeeStock(
-          shopeeAuth.accessToken,
-          shopeeAuth.shopId,
-          ids.itemId,
-          pushValue,
-          ids.modelId,
-          mapping.channelStockLocationId
-        );
+        try {
+          await updateShopeeStock(
+            shopeeAuth.accessToken,
+            shopeeAuth.shopId,
+            ids.itemId,
+            pushValue,
+            ids.modelId,
+            mapping.channelStockLocationId
+          );
+        } catch (err) {
+          // Shop nhiều kho báo thiếu location_id → tự đọc kho đang giữ hàng,
+          // lưu lại cho các lần sau rồi đẩy lại NGAY một lượt (tự chữa lành,
+          // seller không phải làm gì).
+          const raw = (err as Error).message;
+          if (classifyStockPushFailure(raw) !== "multi-warehouse") throw err;
+          const locationId = await resolveShopeeLocationId(shopeeAuth, ids);
+          if (!locationId) throw err;
+          await prisma.channelProduct.updateMany({
+            where: { channelId, channelSku: job.channelSku },
+            data: { channelStockLocationId: locationId },
+          });
+          await sleep(PACE_MS);
+          await updateShopeeStock(
+            shopeeAuth.accessToken,
+            shopeeAuth.shopId,
+            ids.itemId,
+            pushValue,
+            ids.modelId,
+            locationId
+          );
+        }
         // 200 OK chưa chắc sàn đã ghi — hẹn giờ Double-Check đọc lại tồn.
         await scheduleStockVerification(channel, {
           kind: "stock-verify",
@@ -257,6 +287,8 @@ async function processChannelJobs(
       });
 
       await writeSyncLog(job, pushValue, true);
+      // Đẩy được rồi → cảnh báo lệch tồn cũ của SKU này tự đóng.
+      await resolveSyncAlerts(channelId, job.channelSku);
       // Chỉ xóa khi job VẪN là RUNNING của mình — enqueue mới trong lúc đẩy đã
       // reset về PENDING thì giữ lại cho lượt sau (đẩy lại số mới, vô hại).
       await prisma.stockPushJob.deleteMany({
@@ -294,7 +326,12 @@ async function handleJobFailure(
   await writeSyncLog(job, pushValue, false, `sau ${attempt} lần thử — lỗi: ${message}`);
   await createSyncAlert(job.channelId, {
     channelSku: job.channelSku,
-    message: `Đẩy tồn kho SKU ${job.channelSku} lên gian "${shopName}" thất bại sau ${MAX_ATTEMPTS} lần thử: ${message}. Tồn trên sàn đang LỆCH (đúng phải là ${pushValue}) — cần chỉnh tay để tránh bán vượt/bị phạt.`,
+    message: describeStockPushFailure({
+      raw: message,
+      shopName,
+      channelSku: job.channelSku,
+      expected: pushValue,
+    }),
   });
   await prisma.stockPushJob.deleteMany({
     where: { id: job.id, status: StockPushStatus.RUNNING },

@@ -336,6 +336,7 @@ export interface InventorySyncAlert {
   shopName: string;
   channelSku: string | null;
   orderSn: string | null;
+  /** Dòng 1 = chuyện gì + cần làm gì (tiếng người); sau "\n" = chi tiết kỹ thuật. */
   message: string;
   createdAt: string;
   /** Tồn khả dụng HIỆN TẠI của SKU trên Hubsell — số chuẩn nút "Cập nhật tồn" sẽ đè lên sàn. */
@@ -1093,6 +1094,13 @@ export function fetchSyncAlerts() {
 /** Đánh dấu một cảnh báo lệch tồn là đã xử lý tay xong. */
 export function resolveSyncAlert(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/inventory/sync-alerts/${id}/resolve`, {
+    method: "PATCH",
+  });
+}
+
+/** "Đã xử lý tất cả" — đóng mọi cảnh báo lệch tồn đang mở trong phạm vi gian được phép. */
+export function resolveAllSyncAlerts() {
+  return apiFetch<{ resolved: number }>("/api/inventory/sync-alerts/resolve-all", {
     method: "PATCH",
   });
 }

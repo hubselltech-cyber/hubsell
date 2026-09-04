@@ -24,9 +24,14 @@ import {
   getItemBaseInfo,
   getModelList,
   shopeeSellerStock,
+  shopeeStockLocationId,
   updateShopeeStock,
 } from "./client";
 import { getValidShopeeAccessToken } from "./service";
+import {
+  describeChannelFailure,
+  describeStockPushFailure,
+} from "../../services/sync-alert-text";
 
 /** Số lần thử đẩy tồn cho MỘT SKU (1 lần đầu + 2 lần retry). */
 const SYNC_MAX_ATTEMPTS = 3;
@@ -170,7 +175,7 @@ export async function syncShopeeStockForProducts(
         }
         await createSyncAlert(channel.id, {
           orderSn: req.orderSn,
-          message: `Không đồng bộ được tồn kho lên gian "${channel.shopName}": ${msg}. Kiểm tra kết nối/uỷ quyền lại gian hàng.`,
+          message: describeChannelFailure(channel.shopName, msg),
         });
         continue;
       }
@@ -240,7 +245,12 @@ export async function syncShopeeStockForProducts(
           await createSyncAlert(channel.id, {
             channelSku: mp.channelSku,
             orderSn: req.orderSn,
-            message: `Đẩy tồn kho SKU ${mp.channelSku} lên gian "${channel.shopName}" thất bại sau ${SYNC_MAX_ATTEMPTS} lần thử: ${lastError}. Tồn trên sàn đang LỆCH (đúng phải là ${pushValue}) — cần chỉnh tay để tránh bán vượt/bị phạt.`,
+            message: describeStockPushFailure({
+              raw: lastError,
+              shopName: channel.shopName,
+              channelSku: mp.channelSku,
+              expected: pushValue,
+            }),
           });
         }
       }
@@ -286,6 +296,8 @@ async function recordSyncResult(
   } catch (err) {
     console.error("[Inventory Sync] Không ghi được InventorySyncLog:", err);
   }
+  // Đẩy được rồi → cảnh báo lệch tồn cũ của SKU này tự đóng.
+  if (result.ok) await resolveSyncAlerts(channelId, channelSku);
 
   console.log(
     `[Inventory Sync] [${new Date().toISOString()}] - [${channelSku}] - [cũ ${oldQty}] - [mới ${newQty}] - [${result.ok ? "Thành công" : "Thất bại"}]${result.error ? ` — ${result.error}` : ""}`
@@ -421,6 +433,22 @@ export async function createSyncAlert(
   data: { channelSku?: string; orderSn?: string; message: string }
 ): Promise<void> {
   try {
+    // MỘT cảnh báo cho mỗi (gian × SKU) đang mở: lượt đẩy sau lại fail thì làm
+    // mới nội dung + mốc giờ thay vì đẻ thêm dòng (100 SKU = 100 thẻ, không phải 300).
+    const existing = data.channelSku
+      ? await prisma.inventorySyncAlert.findFirst({
+          where: { channelId, channelSku: data.channelSku, resolvedAt: null },
+          select: { id: true },
+        })
+      : null;
+    if (existing) {
+      await prisma.inventorySyncAlert.update({
+        where: { id: existing.id },
+        data: { message: data.message, orderSn: data.orderSn ?? null, createdAt: new Date() },
+      });
+      return;
+    }
+
     await prisma.inventorySyncAlert.create({
       data: {
         channelId,
@@ -435,20 +463,51 @@ export async function createSyncAlert(
       select: { userId: true, shopName: true, channelName: true },
     });
     if (channel) {
-      // Nhãn sàn theo gian thật — hàm này giờ phục vụ cả Shopee lẫn Lazada.
-      const platform =
-        channel.channelName === ChannelName.LAZADA ? "Lazada" : "Shopee";
+      // Dòng thời gian vận hành: lấy DÒNG 1 của lời cảnh báo (tiếng người),
+      // bỏ chi tiết kỹ thuật sau "\n".
+      const plain = data.message.split("\n")[0];
       await prisma.opsActivity.create({
         data: {
           ownerId: channel.userId,
           tag: "channel", // nhãn [SÀN] trên Trung tâm điều hành
-          message: data.channelSku
-            ? `⚠️ Cập nhật tồn kho ${platform} cho SKU ${data.channelSku} (${channel.shopName}) thất bại sau 3 lần thử lại — lệch tồn giữa sàn và hệ thống.`
-            : `⚠️ Đồng bộ ${platform} với gian "${channel.shopName}" gặp sự cố — xem cảnh báo trên Trung tâm điều hành.`,
+          message: `⚠️ ${plain}`,
         },
       });
     }
   } catch (err) {
     console.error("[Inventory Sync] Không tạo được InventorySyncAlert:", err);
   }
+}
+
+/**
+ * Đẩy tồn THÀNH CÔNG cho (gian × SKU) → mọi cảnh báo lệch tồn đang mở của SKU
+ * đó tự đóng: seller không phải bấm "Đã xử lý" cho lỗi đã tự hết.
+ */
+export async function resolveSyncAlerts(channelId: string, channelSku: string): Promise<void> {
+  try {
+    await prisma.inventorySyncAlert.updateMany({
+      where: { channelId, channelSku, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    });
+  } catch (err) {
+    console.error("[Inventory Sync] Không tự đóng được cảnh báo:", err);
+  }
+}
+
+/**
+ * Shop Shopee khai nhiều kho ("multi warehouse") thì update_stock bắt buộc kèm
+ * location_id. Đọc lại stock_info_v2 của item/model để chọn kho đang giữ hàng
+ * (shopeeStockLocationId) — worker gọi khi sàn báo thiếu location rồi đẩy lại.
+ */
+export async function resolveShopeeLocationId(
+  auth: { accessToken: string; shopId: string },
+  ids: { itemId: number; modelId?: number }
+): Promise<string | null> {
+  if (ids.modelId) {
+    const models = await getModelList(auth.accessToken, auth.shopId, ids.itemId);
+    const m = models.find((x) => x.model_id === ids.modelId);
+    return shopeeStockLocationId(m?.stock_info_v2);
+  }
+  const infos = await getItemBaseInfo(auth.accessToken, auth.shopId, [ids.itemId]);
+  return shopeeStockLocationId(infos[0]?.stock_info_v2);
 }

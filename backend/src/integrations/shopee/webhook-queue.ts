@@ -33,6 +33,10 @@ import {
   type StockVerifyPayload,
 } from "./inventory-sync";
 import { enqueueStockPush } from "../inventory-push";
+import {
+  describeChannelFailure,
+  describeStockPushFailure,
+} from "../../services/sync-alert-text";
 
 /** Tổng số lần thử một job (1 lần đầu + 2 lần retry). */
 const MAX_ATTEMPTS = 3;
@@ -296,10 +300,21 @@ async function finishVerifyAttempt(
     data: { status: WebhookJobStatus.FAILED, lastError: reason },
   });
   if (payload) {
+    const shopName =
+      (
+        await prisma.channel.findUnique({
+          where: { id: payload.channelId },
+          select: { shopName: true },
+        })
+      )?.shopName ?? "Shopee";
     await createSyncAlert(payload.channelId, {
       channelSku: payload.channelSku,
       orderSn: payload.orderSn,
-      message: `Đối soát tồn kho SKU ${payload.channelSku} thất bại sau ${MAX_ATTEMPTS} lượt kiểm tra chéo: ${reason}. Tồn trên sàn nhiều khả năng ĐANG LỆCH với Hubsell — kiểm tra và chỉnh tay trên Seller Center.`,
+      message: describeStockPushFailure({
+        raw: `đối soát ${MAX_ATTEMPTS} lượt vẫn chưa khớp: ${reason}`,
+        shopName,
+        channelSku: payload.channelSku,
+      }),
     });
   }
 }
@@ -314,7 +329,10 @@ async function alertJobFailed(
   if (!channel) return; // shop chưa nối Hubsell — không có chỗ treo cảnh báo
   await createSyncAlert(channel.id, {
     orderSn: orderSn ?? undefined,
-    message: `Xử lý sự kiện Shopee${orderSn ? ` (đơn ${orderSn})` : ""} thất bại sau ${MAX_ATTEMPTS} lần thử: ${message}. Tồn kho/đơn hàng có thể đang LỆCH với sàn — kiểm tra và đồng bộ tay.`,
+    message: describeChannelFailure(
+      channel.shopName,
+      `sự kiện Shopee${orderSn ? ` đơn ${orderSn}` : ""} xử lý thất bại sau ${MAX_ATTEMPTS} lần: ${message}`
+    ),
   });
 }
 

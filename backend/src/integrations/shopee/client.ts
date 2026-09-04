@@ -747,14 +747,22 @@ export interface ShopeeStockInfoV2 {
  * tồn (để tầng gọi phân biệt "không đọc được" với "tồn = 0").
  */
 /**
- * location_id kho của SKU khi Shopee trả ĐÚNG MỘT địa điểm có mã — đẩy tồn phải
- * gửi kèm. Nhiều địa điểm (shop đa kho) → null: chưa hỗ trợ chia tồn theo kho,
- * update_stock sẽ báo lỗi rõ ràng thay vì đẩy sai kho.
+ * location_id kho của SKU để gửi kèm update_stock. Shop khai địa điểm kho trên
+ * Shopee ("multi warehouse") thì thiếu location là sàn từ chối. Hubsell chỉ có
+ * MỘT kho nên chọn địa điểm ĐANG GIỮ NHIỀU HÀNG NHẤT (thường là kho thật, các
+ * địa điểm còn lại là địa chỉ lấy hàng để 0); bằng nhau thì lấy địa điểm đầu.
+ * Không có location nào → null (kho mặc định).
  */
 export function shopeeStockLocationId(info?: ShopeeStockInfoV2): string | null {
-  const list = info?.seller_stock ?? [];
-  const withId = list.filter((s) => typeof s.location_id === "string" && s.location_id);
-  return withId.length === 1 ? withId[0].location_id! : null;
+  const list = (info?.seller_stock ?? []).filter(
+    (s) => typeof s.location_id === "string" && s.location_id
+  );
+  if (list.length === 0) return null;
+  let best = list[0];
+  for (const s of list) {
+    if ((Number(s.stock) || 0) > (Number(best.stock) || 0)) best = s;
+  }
+  return best.location_id!;
 }
 
 export function shopeeSellerStock(info?: ShopeeStockInfoV2): number | null {
