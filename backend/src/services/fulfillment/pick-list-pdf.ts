@@ -250,12 +250,13 @@ function drawFooter(ctx: Ctx, page: PDFPage, order: PickListOrder, isLast: boole
       page.drawText(note, { x: MARGIN + 110, y: y - 10, size: 6.5, font: regular, color: INK });
     }
     // Lời mời referral — 2 dòng đỏ, dòng đầu đậm
-    const promo1 = "Giới thiệu Hubsell cho shop bạn — nhận 10% hoa hồng vĩnh viễn.";
-    const promo2 = "Chi tiết tại mục Kiếm Tiền Cùng Hubsell trong ứng dụng.";
-    page.drawText(wrapText(promo1, bold, 6.8, CONTENT_W)[0] ?? promo1, {
+    // Câu chữ anh Trung chốt 04/09: dòng đậm ngắn gọn, ai quan tâm đọc dòng dưới
+    const promo1 = 'NHẬN NGAY 10% HOA HỒNG "VĨNH VIỄN"';
+    const promo2 = "Giới thiệu Hubsell cho shop bạn · Chi tiết tại mục Kiếm Tiền Cùng Hubsell.";
+    page.drawText(wrapText(promo1, bold, 7.5, CONTENT_W)[0] ?? promo1, {
       x: MARGIN,
       y: MARGIN + 17,
-      size: 6.8,
+      size: 7.5,
       font: bold,
       color: PROMO,
     });
