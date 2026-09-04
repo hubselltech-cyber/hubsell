@@ -1,5 +1,5 @@
 // ============================================================
-// PHIẾU NHẶT HÀNG HUBSELL — khổ A6, chuẩn chung mọi sàn (04/09/2026)
+// PHIẾU XUẤT HÀNG HUBSELL (phiếu nhặt hàng cho kho) — khổ A6, chuẩn chung mọi sàn (04/09/2026)
 //
 // Đây là tờ cho KHO: mã đơn có mã vạch để quét đóng gói/tra cứu, gian hàng,
 // vận đơn, hãng, cờ hỏa tốc, và danh sách SKU cần nhặt. KHÔNG phải vận đơn —
@@ -130,99 +130,105 @@ interface Ctx {
   bold: PDFFont;
 }
 
-/** Vẽ header cố định của phiếu; trả về y hiện tại sau header. */
+/**
+ * Vẽ header cố định của phiếu; trả về y hiện tại sau header.
+ * Nén gọn (anh Trung 04/09 sau khi test đơn thật): mã vạch thấp, thông tin
+ * vận chuyển gói 2 dòng nhỏ — nhường chỗ cho bảng SKU khi đơn nhiều sản phẩm.
+ */
 function drawHeader(ctx: Ctx, page: PDFPage, order: PickListOrder, pageNo: number, pageCount: number): number {
   const { regular, bold } = ctx;
   let y = A6_HEIGHT - MARGIN;
 
-  page.drawText("PHIẾU NHẶT HÀNG", { x: MARGIN, y: y - 8, size: 8, font: bold, color: MUTED });
+  page.drawText("PHIẾU XUẤT HÀNG", { x: MARGIN, y: y - 7, size: 7, font: bold, color: MUTED });
   const right = pageCount > 1 ? `Hubsell · trang ${pageNo}/${pageCount}` : "Hubsell";
   page.drawText(right, {
-    x: A6_WIDTH - MARGIN - regular.widthOfTextAtSize(right, 7),
-    y: y - 8,
-    size: 7,
+    x: A6_WIDTH - MARGIN - regular.widthOfTextAtSize(right, 6.5),
+    y: y - 7,
+    size: 6.5,
     font: regular,
     color: MUTED,
   });
-  y -= 20;
+  y -= 13;
 
   const shop = `${order.channelLabel} · ${order.shopName}`;
-  page.drawText(wrapText(shop, bold, 9.5, CONTENT_W)[0] ?? shop, {
+  page.drawText(wrapText(shop, bold, 8.5, CONTENT_W)[0] ?? shop, {
     x: MARGIN,
-    y: y - 9,
-    size: 9.5,
+    y: y - 8,
+    size: 8.5,
     font: bold,
     color: INK,
   });
-  y -= 16;
+  y -= 13;
 
-  // Mã đơn + mã vạch (chỉ trang đầu mới vẽ mã vạch to; trang sau vẽ chữ)
+  // Mã đơn + mã vạch (trang đầu mới vẽ mã vạch; trang sau chỉ chữ)
+  page.drawText(order.orderCode, { x: MARGIN, y: y - 12, size: 13, font: bold, color: INK });
+  if (order.isExpress) {
+    const tag = "HỎA TỐC";
+    const tw = bold.widthOfTextAtSize(tag, 7.5);
+    page.drawRectangle({
+      x: A6_WIDTH - MARGIN - tw - 10,
+      y: y - 13,
+      width: tw + 10,
+      height: 12,
+      color: EXPRESS,
+    });
+    page.drawText(tag, {
+      x: A6_WIDTH - MARGIN - tw - 5,
+      y: y - 9.8,
+      size: 7.5,
+      font: bold,
+      color: rgb(1, 1, 1),
+    });
+  }
+  y -= 17;
   if (pageNo === 1) {
-    page.drawText(order.orderCode, { x: MARGIN, y: y - 14, size: 15, font: bold, color: INK });
-    if (order.isExpress) {
-      const tag = "HỎA TỐC";
-      const tw = bold.widthOfTextAtSize(tag, 8);
-      page.drawRectangle({
-        x: A6_WIDTH - MARGIN - tw - 10,
-        y: y - 15,
-        width: tw + 10,
-        height: 13,
-        color: EXPRESS,
-      });
-      page.drawText(tag, {
-        x: A6_WIDTH - MARGIN - tw - 5,
-        y: y - 11.5,
-        size: 8,
-        font: bold,
-        color: rgb(1, 1, 1),
-      });
-    }
-    y -= 22;
-    drawBarcode(page, order.orderCode, MARGIN, y, CONTENT_W, 36);
-    y -= 36 + 4;
-    const codeW = regular.widthOfTextAtSize(order.orderCode, 7);
+    drawBarcode(page, order.orderCode, MARGIN, y, CONTENT_W, 26);
+    y -= 26 + 2;
+    const codeW = regular.widthOfTextAtSize(order.orderCode, 6);
     page.drawText(order.orderCode, {
       x: MARGIN + (CONTENT_W - codeW) / 2,
-      y: y - 6,
-      size: 7,
+      y: y - 5,
+      size: 6,
       font: regular,
       color: MUTED,
     });
-    y -= 14;
-  } else {
-    page.drawText(order.orderCode, { x: MARGIN, y: y - 11, size: 12, font: bold, color: INK });
-    y -= 18;
+    y -= 10;
   }
 
-  // Dòng vận chuyển
+  // Vận chuyển: 2 dòng nhỏ
   const meta = [
-    `Vận đơn: ${order.trackingCode ?? "chưa có"}`,
-    `ĐVVC: ${order.carrierLabel}`,
+    `Vận đơn: ${order.trackingCode ?? "chưa có"} · ${order.carrierLabel}`,
     `Đặt: ${fmtDateTime(order.createdAt)}`,
   ];
   for (const line of meta) {
-    page.drawText(line, { x: MARGIN, y: y - 8, size: 8, font: regular, color: INK });
-    y -= 11;
+    page.drawText(wrapText(line, regular, 7, CONTENT_W)[0] ?? line, {
+      x: MARGIN,
+      y: y - 7,
+      size: 7,
+      font: regular,
+      color: INK,
+    });
+    y -= 9;
   }
-  y -= 4;
+  y -= 3;
   page.drawLine({ start: { x: MARGIN, y }, end: { x: A6_WIDTH - MARGIN, y }, thickness: 0.8, color: INK });
-  y -= 4;
+  y -= 3;
 
   // Tiêu đề bảng
-  page.drawText("SKU / SẢN PHẨM", { x: MARGIN, y: y - 7, size: 6.5, font: bold, color: MUTED });
+  page.drawText("SKU / SẢN PHẨM", { x: MARGIN, y: y - 6, size: 6, font: bold, color: MUTED });
   page.drawText("SL", {
-    x: A6_WIDTH - MARGIN - bold.widthOfTextAtSize("SL", 6.5),
-    y: y - 7,
-    size: 6.5,
+    x: A6_WIDTH - MARGIN - bold.widthOfTextAtSize("SL", 6),
+    y: y - 6,
+    size: 6,
     font: bold,
     color: MUTED,
   });
-  y -= 11;
+  y -= 9;
   page.drawLine({ start: { x: MARGIN, y }, end: { x: A6_WIDTH - MARGIN, y }, thickness: 0.4, color: LINE });
   return y - 2;
 }
 
-const FOOTER_H = 30;
+const FOOTER_H = 22;
 
 function drawFooter(ctx: Ctx, page: PDFPage, order: PickListOrder, isLast: boolean) {
   const { regular, bold } = ctx;
@@ -231,25 +237,28 @@ function drawFooter(ctx: Ctx, page: PDFPage, order: PickListOrder, isLast: boole
   if (isLast) {
     const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
     const total = `Tổng ${totalQty} món · ${order.items.length} dòng`;
-    page.drawText(total, { x: MARGIN, y: y - 11, size: 8.5, font: bold, color: INK });
+    page.drawText(total, { x: MARGIN, y: y - 10, size: 8, font: bold, color: INK });
     if (order.note) {
-      const note = wrapText(`Ghi chú: ${order.note}`, regular, 7, CONTENT_W)[0];
-      page.drawText(note, { x: MARGIN, y: y - 21, size: 7, font: regular, color: INK });
+      const note = wrapText(`Ghi chú: ${order.note}`, regular, 6.5, CONTENT_W - 110)[0];
+      page.drawText(note, { x: MARGIN + 110, y: y - 10, size: 6.5, font: regular, color: INK });
     }
+  } else {
+    page.drawText("(tiếp trang sau)", { x: MARGIN, y: y - 10, size: 7, font: regular, color: MUTED });
   }
   y = MARGIN;
   page.drawText("Phiếu nội bộ cho kho — không phải vận đơn. Dán vận đơn của sàn ngoài kiện.", {
     x: MARGIN,
     y,
-    size: 5.8,
+    size: 5.5,
     font: regular,
     color: MUTED,
   });
 }
 
 /**
- * Dựng PDF phiếu nhặt hàng cho MỘT đơn (thường 1 trang A6; đơn nhiều SKU tự
- * sang trang). Trả về bytes PDF để merge-pdf ghép sau vận đơn của sàn.
+ * Dựng PDF phiếu xuất hàng cho MỘT đơn (thường 1 trang A6; đơn nhiều SKU tự
+ * sang trang, header ghi "trang x/y"). Trả về bytes PDF để merge-pdf ghép sau
+ * vận đơn của sàn.
  */
 export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array> {
   const fonts = loadFonts();
@@ -259,14 +268,14 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
   const bold = await doc.embedFont(fonts.bold, { subset: true });
   const ctx: Ctx = { doc, regular, bold };
 
-  const ROW_SIZE = 8;
-  const LINE_H = 10;
-  const qtyColW = 30;
+  const ROW_SIZE = 7.5;
+  const LINE_H = 9;
+  const qtyColW = 26;
   const nameW = CONTENT_W - qtyColW - 4;
 
-  // Chuẩn bị dòng: mỗi item = 1 dòng SKU (đậm) + tối đa 2 dòng tên
+  // Mỗi item = 1 dòng SKU (đậm, cùng hàng với SL) + tối đa 2 dòng tên
   const rows = order.items.map((it) => {
-    const nameLines = wrapText(it.name || "(không tên)", regular, ROW_SIZE, nameW).slice(0, 2);
+    const nameLines = wrapText(it.name || "(không tên)", regular, ROW_SIZE, CONTENT_W).slice(0, 2);
     const skuLine = wrapText(it.sku || "—", bold, ROW_SIZE, nameW)[0] ?? "—";
     return { skuLine, nameLines, qty: it.quantity, height: LINE_H * (1 + nameLines.length) + 3 };
   });
@@ -274,7 +283,8 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
   // Phân trang trước để header in "trang x/y"
   const pages: (typeof rows)[] = [];
   {
-    // Chiều cao khả dụng: đo bằng cách vẽ thử header lên trang tạm
+    // Chiều cao khả dụng của trang đầu (có mã vạch) — trang sau rộng hơn chút,
+    // dùng số trang đầu cho cả hai để đơn giản và an toàn.
     const probe = doc.addPage([A6_WIDTH, A6_HEIGHT]);
     const startY = drawHeader(ctx, probe, order, 1, 1);
     doc.removePage(doc.getPageCount() - 1);
@@ -300,9 +310,9 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
       page.drawText(r.skuLine, { x: MARGIN, y: y - ROW_SIZE, size: ROW_SIZE, font: bold, color: INK });
       const qty = `×${r.qty}`;
       page.drawText(qty, {
-        x: A6_WIDTH - MARGIN - bold.widthOfTextAtSize(qty, 10),
+        x: A6_WIDTH - MARGIN - bold.widthOfTextAtSize(qty, 9.5),
         y: y - ROW_SIZE - 1,
-        size: 10,
+        size: 9.5,
         font: bold,
         color: INK,
       });

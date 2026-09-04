@@ -16,6 +16,11 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import {
+  PrintOptionsFields,
+  readPrintOptions,
+  type PrintOptions,
+} from "@/components/orders/print-options";
+import {
   ApiError,
   bulkConfirmOrders,
   fetchOrderLabelsPdf,
@@ -44,7 +49,6 @@ import { cn } from "@/lib/utils";
  */
 
 const PREF_PRINT_AFTER = "hubsell.fulfill.printAfter";
-const PREF_PICK_LIST = "hubsell.fulfill.pickList";
 
 function readPref(key: string, fallback: boolean): boolean {
   try {
@@ -102,14 +106,14 @@ export function ArrangeShipmentDialog({
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<"confirm" | "print" | null>(null);
   const [printAfter, setPrintAfter] = React.useState(true);
-  const [pickList, setPickList] = React.useState(true);
+  const [printOpts, setPrintOpts] = React.useState<PrintOptions>({ labels: true, pickList: false });
 
   const orderIds = React.useMemo(() => orders.map((o) => o.id), [orders]);
 
   React.useEffect(() => {
     if (!open) return;
     setPrintAfter(readPref(PREF_PRINT_AFTER, true));
-    setPickList(readPref(PREF_PICK_LIST, true));
+    setPrintOpts(readPrintOptions());
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -172,9 +176,9 @@ export function ArrangeShipmentDialog({
       }
       for (const n of res.notes ?? []) toast.info(`${n.orderCode}: ${n.note}`, { duration: 7000 });
 
-      if (printAfter && res.confirmedIds.length > 0) {
+      if (printAfter && (printOpts.labels || printOpts.pickList) && res.confirmedIds.length > 0) {
         setBusy("print");
-        await printLabels(res.confirmedIds, pickList);
+        await printLabels(res.confirmedIds, printOpts);
       }
       onOpenChange(false);
       onDone();
@@ -226,11 +230,11 @@ export function ArrangeShipmentDialog({
           </div>
         )}
 
-        <div className="space-y-2 border-t pt-3">
+        <div className="space-y-3 border-t pt-3">
           <label className="flex items-center justify-between gap-3 text-sm">
             <span className="flex items-center gap-2">
               <Printer className="size-4 text-muted-foreground" />
-              In vận đơn ngay sau khi sàn xác nhận (khổ A6)
+              In ngay sau khi sàn xác nhận (khổ A6)
             </span>
             <Switch
               checked={printAfter}
@@ -240,17 +244,7 @@ export function ArrangeShipmentDialog({
               }}
             />
           </label>
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">Kèm phiếu nhặt hàng Hubsell cho kho</span>
-            <Switch
-              checked={pickList}
-              disabled={!printAfter}
-              onCheckedChange={(v) => {
-                setPickList(v);
-                writePref(PREF_PICK_LIST, v);
-              }}
-            />
-          </label>
+          {printAfter && <PrintOptionsFields value={printOpts} onChange={setPrintOpts} />}
         </div>
 
         <div className="flex items-center justify-between gap-2">
@@ -416,37 +410,40 @@ function MethodPill({ active, onClick, label }: { active: boolean; onClick: () =
 }
 
 /**
- * Lấy PDF vận đơn + phiếu nhặt cho các đơn rồi mở hộp thoại in; chỉ đánh dấu
- * ĐÃ IN khi hộp thoại mở được và đơn có phiếu (đơn sàn chưa cấp vận đơn giữ
- * nguyên "Chưa in" để kho không bỏ sót). Dùng chung cho hộp thoại và BulkBar.
+ * Lấy PDF theo lựa chọn (vận đơn sàn / phiếu xuất hàng) rồi mở hộp thoại in.
+ * Chỉ đánh dấu ĐÃ IN khi có in vận đơn và hộp thoại mở được; đơn sàn chưa cấp
+ * vận đơn giữ nguyên "Chưa in" để kho không bỏ sót. Dùng chung cho hộp thoại
+ * Chuẩn bị hàng và BulkBar.
  */
-export async function printLabels(orderIds: string[], includePickList: boolean): Promise<void> {
-  const { blob, summary } = await fetchOrderLabelsPdf(orderIds, { labels: true, pickList: includePickList });
+export async function printLabels(orderIds: string[], opts: PrintOptions): Promise<void> {
+  const { blob, summary } = await fetchOrderLabelsPdf(orderIds, opts);
   const opened = printPdfBlob(blob);
   if (!opened) {
     toast.error("Trình duyệt đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi bấm In lại.");
     return;
   }
-  const failedCodes = new Set((summary?.failed ?? []).map((f) => f.orderCode));
-  if (failedCodes.size > 0) {
-    const list = (summary?.failed ?? [])
+  const failed = summary?.failed ?? [];
+  if (opts.labels && failed.length > 0) {
+    const list = failed
       .slice(0, 3)
       .map((f) => `${f.orderCode}: ${f.reason}`)
       .join("; ");
     toast.warning(
-      `${failedCodes.size} đơn chưa có vận đơn của sàn — ${list}${failedCodes.size > 3 ? "…" : ""}`,
+      `${failed.length} đơn chưa có vận đơn của sàn — ${list}${failed.length > 3 ? "…" : ""}`,
       { duration: 9000 }
     );
   }
-  // Đơn sàn chưa cấp vận đơn giữ nguyên "Chưa in" — chỉ đánh dấu đơn có phiếu thật
-  const failedIds = new Set(summary?.failedIds ?? []);
-  const printable = orderIds.filter((id) => !failedIds.has(id));
-  const marked =
-    printable.length > 0 ? await markOrdersPrinted(printable) : { markedPrinted: 0 };
+  let markedPrinted = 0;
+  if (opts.labels) {
+    // Chỉ in phiếu xuất hàng thì KHÔNG tính là đã in vận đơn
+    const failedIds = new Set(summary?.failedIds ?? []);
+    const printable = orderIds.filter((id) => !failedIds.has(id));
+    if (printable.length > 0) markedPrinted = (await markOrdersPrinted(printable)).markedPrinted;
+  }
   toast.success(
     `Đã mở ${formatNumber(summary?.pages ?? 0)} trang để in` +
-      (summary ? ` · ${formatNumber(summary.labels)} vận đơn sàn` : "") +
-      (marked.markedPrinted > 0 ? ` · đánh dấu ĐÃ IN ${marked.markedPrinted} đơn` : ""),
+      (summary && opts.labels ? ` · ${formatNumber(summary.labels)} vận đơn sàn` : "") +
+      (markedPrinted > 0 ? ` · đánh dấu ĐÃ IN ${markedPrinted} đơn` : ""),
     { duration: 6000 }
   );
 }

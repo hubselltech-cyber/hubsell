@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError, type Order } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { ArrangeShipmentDialog, printLabels } from "@/components/orders/arrange-shipment-dialog";
+import { PrintOptionsDialog } from "@/components/orders/print-options";
 
 /**
  * THANH XỬ LÝ HÀNG LOẠT
@@ -36,6 +37,7 @@ export function BulkActionBar({
 }) {
   const [busy, setBusy] = React.useState<"print" | null>(null);
   const [arrangeOpen, setArrangeOpen] = React.useState(false);
+  const [printOpen, setPrintOpen] = React.useState(false);
 
   const packable = selected.filter((o) => o.shippingStatus === "PENDING");
   // Vận đơn sàn chỉ có sau khi chuẩn bị; đơn Chờ xử lý vẫn in được phiếu nhặt
@@ -45,18 +47,12 @@ export function BulkActionBar({
   // Đơn đã in rồi mà chọn in lại — cảnh báo trước để tránh in trùng cả xấp
   const reprinting = selected.filter((o) => o.labelPrintedAt !== null);
 
-  async function handlePrint() {
+  async function handlePrint(opts: { labels: boolean; pickList: boolean }) {
     setBusy("print");
     try {
-      let includePickList = true;
-      try {
-        includePickList = localStorage.getItem("hubsell.fulfill.pickList") !== "0";
-      } catch {
-        // storage bị chặn — mặc định kèm phiếu nhặt
-      }
       await printLabels(
         selected.map((o) => o.id),
-        includePickList
+        opts
       );
       onClear();
       onDone(); // tải lại để nhãn "Đã in" hiện ngay
@@ -97,12 +93,12 @@ export function BulkActionBar({
         <Button
           size="sm"
           variant="secondary"
-          onClick={handlePrint}
-          disabled={busy !== null}
+          onClick={() => setPrintOpen(true)}
+          disabled={busy !== null || selected.length === 0}
           title={
-            "In vận đơn chính chủ của sàn (A6, có mã vạch/QR) kèm phiếu nhặt hàng Hubsell." +
+            "Chọn in vận đơn chính chủ của sàn (A6, có mã vạch/QR) và/hoặc phiếu xuất hàng Hubsell." +
             (withLabel.length < selected.length
-              ? ` ${selected.length - withLabel.length} đơn chưa chuẩn bị chỉ có phiếu nhặt hàng.`
+              ? ` ${selected.length - withLabel.length} đơn chưa chuẩn bị chỉ có phiếu xuất hàng.`
               : "") +
             (reprinting.length > 0 ? ` ${reprinting.length} đơn đã in trước đó.` : "")
           }
@@ -112,10 +108,18 @@ export function BulkActionBar({
           ) : (
             <Printer className="size-4" />
           )}
-          In vận đơn ({formatNumber(withLabel.length)})
+          In phiếu ({formatNumber(selected.length)})
           {reprinting.length > 0 && ` · ${formatNumber(reprinting.length)} in lại`}
         </Button>
       </BulkBar>
+
+      <PrintOptionsDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        count={selected.length}
+        withoutLabel={selected.length - withLabel.length}
+        onConfirm={handlePrint}
+      />
 
       <ArrangeShipmentDialog
         open={arrangeOpen}
