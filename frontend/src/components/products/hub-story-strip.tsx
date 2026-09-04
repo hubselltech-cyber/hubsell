@@ -107,36 +107,11 @@ export function HubStoryStrip() {
         {snapshot(99, true)}
       </div>
 
-      {/* Ba ý — ý 2 là trọng tâm */}
-      <ol className="grid gap-2 pr-6 text-sm md:grid-cols-3">
-        <li className="flex gap-2">
-          <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-            1
-          </span>
-          <span>
-            Một <b>SKU kho</b> là một sản phẩm thật. Bán trên bao nhiêu shop cũng chỉ có{" "}
-            <b>một</b> số tồn.
-          </span>
-        </li>
-        <li className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900">
-          <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-200 text-xs font-medium text-amber-900">
-            2
-          </span>
-          <span>
-            <b>Cùng một sản phẩm trên nhiều shop thì đặt CÙNG MÃ SKU trên sàn.</b> Trùng
-            mã là Hubsell tự khớp về đúng SKU kho; khác mã thì phải nối tay và dễ nhầm.
-          </span>
-        </li>
-        <li className="flex gap-2">
-          <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-            3
-          </span>
-          <span>
-            Nhập kho thêm 100, mọi shop cùng lên. Số trên mọi shop luôn bằng{" "}
-            <b>Có thể bán</b> của kho.
-          </span>
-        </li>
-      </ol>
+      {/* Một dòng duy nhất — điều quan trọng nhất (sơ đồ đã kể phần còn lại) */}
+      <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-900">
+        <b>Cùng một sản phẩm bán trên nhiều shop: đặt cùng mã SKU trên sàn</b> để Hubsell
+        tự khớp về một SKU kho. Khác mã thì phải nối tay và dễ nhầm.
+      </p>
     </div>
   );
 }
