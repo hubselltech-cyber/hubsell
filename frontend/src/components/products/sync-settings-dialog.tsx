@@ -531,6 +531,12 @@ export function SyncSettingsDialog({
                             trăm SKU chưa từng kéo danh mục có thể mất 1-2 phút — đừng đóng
                             hộp thoại. Không đụng SKU đã nối.
                           </p>
+                          <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+                            <b>Mẹo quan trọng:</b> cùng một sản phẩm bán trên nhiều shop thì
+                            đặt <b>cùng mã SKU</b> trên mọi shop. Trùng mã là Hubsell tự gom về
+                            một SKU kho; khác mã sẽ sinh SKU kho riêng cho từng shop và tồn
+                            không dùng chung.
+                          </p>
                           <div className="flex justify-end gap-2">
                             <Button
                               variant="outline"

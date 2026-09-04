@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-table";
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
   ArrowUpFromLine,
   BellRing,
   CheckCircle2,
@@ -24,6 +25,7 @@ import {
   Search,
   Settings2,
   Sparkles,
+  Warehouse,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +35,7 @@ import { Money } from "@/components/ui/money";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
+import { HubStoryStrip } from "@/components/products/hub-story-strip";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
@@ -386,43 +389,67 @@ export default function ProductsHubPage() {
               <span className={TEXT_SUB}>Chưa nối</span>
             );
           }
-          // Gom theo sàn: "Shopee ×2", "Lazada"…
-          const bySite = new Map<string, number>();
-          for (const l of links) {
-            bySite.set(l.channelName, (bySite.get(l.channelName) ?? 0) + 1);
-          }
+          // MỖI GIAN MỘT CHIP "tên shop + số đang hiện": nhìn một dòng là thấy
+          // gian nào đang cùng số với kho (xanh), gian nào lệch/đẩy fail (đỏ),
+          // gian nào chưa bật (xám). Câu chuyện "mọi gian cùng một số" nằm ngay đây.
+          const available = row.original.availableToSell ?? 0;
           return (
             <button
               type="button"
               onClick={() => toggleExpand(row.original)}
               className="flex flex-wrap items-center gap-1.5 text-left"
-              title="Bấm để xem chi tiết từng gian"
+              title="Bấm để xem sơ đồ kho ↔ từng gian"
             >
-              {[...bySite].map(([site, n]) => {
-                const meta = CHANNEL_META[site as keyof typeof CHANNEL_META];
+              {links.map((l) => {
+                const meta = CHANNEL_META[l.channelName];
+                const state = l.state ?? "unknown";
+                const num =
+                  state === "pending"
+                    ? available
+                    : l.channelStock === null || l.channelStock === undefined
+                      ? null
+                      : l.channelStock;
+                const tone =
+                  state === "match"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : state === "mismatch" || state === "alert"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : state === "pending"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-slate-200 bg-slate-50 text-slate-600";
+                const hint =
+                  state === "match"
+                    ? "đang cùng số với kho"
+                    : state === "mismatch"
+                      ? `sàn đang ${formatNumber(num ?? 0)}, kho muốn ${formatNumber(available)}`
+                      : state === "alert"
+                        ? "đẩy tồn thất bại — xem cảnh báo"
+                        : state === "pending"
+                          ? "đang đẩy số mới lên sàn"
+                          : state === "off"
+                            ? "gian chưa bật đồng bộ — số này là của sàn"
+                            : "sàn chưa trả số / chưa hỗ trợ";
                 return (
                   <span
-                    key={site}
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta?.className ?? ""}`}
+                    key={`${l.channelName}:${l.channelSku}`}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums",
+                      tone
+                    )}
+                    title={`${meta?.label ?? l.channelName} · ${l.shopName} · SKU sàn ${l.channelSku} — ${hint}`}
                   >
-                    {meta?.label ?? site}
-                    {n > 1 ? ` ×${n}` : ""}
+                    <span className="max-w-24 truncate">{l.shopName}</span>
+                    {state === "pending" ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : state === "match" ? (
+                      <CheckCircle2 className="size-3" />
+                    ) : state === "mismatch" || state === "alert" ? (
+                      <XCircle className="size-3" />
+                    ) : null}
+                    {num === null ? "?" : formatNumber(num)}
                   </span>
                 );
               })}
-              {(row.original.hasSyncAlert || row.original.stockMismatch) && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
-                  title={
-                    row.original.hasSyncAlert
-                      ? "Đẩy tồn lên sàn thất bại — xem cảnh báo phía trên"
-                      : "Số trên sàn khác Có thể bán — đối soát định kỳ sẽ tự đẩy lại"
-                  }
-                >
-                  <XCircle className="size-3" />
-                  lệch tồn
-                </span>
-              )}
               <ChevronDown
                 className={cn(
                   "size-4 text-muted-foreground transition-transform",
@@ -490,6 +517,161 @@ export default function ProductsHubPage() {
   const colCount = table.getAllColumns().length;
 
   /** Chi tiết liên kết của dòng đang bung. */
+  /**
+   * SƠ ĐỒ KHO ↔ GIAN (dòng bung): thẻ Kho bên trái với "Có thể bán" to + công
+   * thức, mũi tên hai chiều, bên phải mỗi gian một thẻ cùng cỡ số. Gian lệch tô
+   * đỏ và có nút xử lý ngay tại chỗ. Câu chốt một dòng ở dưới — seller nhìn là
+   * hiểu "mọi gian cùng một số", không phải ghép chữ.
+   */
+  function renderHubDiagram(product: Product, detail: ProductChannelLink[]) {
+    const qty = product.quantityInStock;
+    const held = product.holdQuantity ?? 0;
+    const safety = product.safetyStockEffective ?? 0;
+    const available = product.availableToSell ?? Math.max(0, qty - held - safety);
+    const skuUpper = product.skuCode.trim().toUpperCase();
+
+    return (
+      <div className="space-y-2">
+        <div className="grid items-center gap-2 md:grid-cols-[11rem_2.5rem_minmax(0,1fr)]">
+          {/* Thẻ KHO */}
+          <div className="rounded-lg border bg-background px-3 py-2.5 text-center">
+            <div className={cn(TEXT_SUB, "flex items-center justify-center gap-1")}>
+              <Warehouse className="size-3.5" />
+              Kho Hubsell
+            </div>
+            <div className="text-2xl font-semibold tabular-nums leading-tight">
+              {formatNumber(available)}
+            </div>
+            <div className={TEXT_SUB}>có thể bán</div>
+            <div className={cn(TEXT_SUB, "mt-1 tabular-nums")}>
+              {formatNumber(qty)} tồn − {formatNumber(held)} giữ − {formatNumber(safety)} an toàn
+            </div>
+          </div>
+          <div className="hidden justify-center text-muted-foreground md:flex">
+            <ArrowLeftRight className="size-5" />
+          </div>
+
+          {/* Thẻ TỪNG GIAN */}
+          <div className="grid gap-1.5">
+            {detail.map((l) => {
+              const meta = CHANNEL_META[l.channelName];
+              const bad = l.state === "mismatch" || l.state === "alert";
+              const off = l.state === "off";
+              const differentSku = l.channelSku.trim().toUpperCase() !== skuUpper;
+              const num =
+                l.state === "pending" ? l.expected : l.channelStock === null ? null : l.channelStock;
+              return (
+                <div
+                  key={l.id}
+                  className={cn(
+                    "flex flex-wrap items-center gap-2 rounded-md border px-3 py-1.5 text-sm",
+                    bad
+                      ? "border-red-200 bg-red-50/60"
+                      : off
+                        ? "border-dashed bg-background"
+                        : "bg-background"
+                  )}
+                >
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta?.className ?? ""}`}
+                  >
+                    {meta?.label ?? l.channelName}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {l.shopName}
+                    <span className="ml-2 font-mono text-xs text-muted-foreground">{l.channelSku}</span>
+                    {differentSku && (
+                      <span
+                        className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
+                        title="SKU trên sàn khác mã SKU kho — vẫn chạy được vì đã nối tay, nhưng đặt CÙNG MÃ trên mọi shop thì Hubsell tự khớp, không lo nối nhầm."
+                      >
+                        khác mã kho
+                      </span>
+                    )}
+                    {!l.channelActive && (
+                      <span className={cn(TEXT_SUB, "ml-2")}>(gian đã ngắt)</span>
+                    )}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-base font-semibold tabular-nums",
+                      bad ? "text-red-700" : off ? "text-muted-foreground" : "text-foreground"
+                    )}
+                  >
+                    {num === null ? "?" : formatNumber(num)}
+                  </span>
+                  {l.state === "match" ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+                      <CheckCircle2 className="size-3.5" />
+                      khớp
+                    </span>
+                  ) : l.state === "pending" ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+                      <Loader2 className="size-3.5 animate-spin" />
+                      đang đẩy
+                    </span>
+                  ) : l.state === "mismatch" ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
+                      <XCircle className="size-3.5" />
+                      lệch, kho muốn {formatNumber(l.expected)}
+                    </span>
+                  ) : l.state === "alert" ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700">
+                      <XCircle className="size-3.5" />
+                      đẩy thất bại — xem cảnh báo
+                    </span>
+                  ) : off ? (
+                    <span className={cn(TEXT_SUB, "text-xs")}>chưa bật đồng bộ</span>
+                  ) : (
+                    <span className={cn(TEXT_SUB, "text-xs")}>
+                      {l.pushable ? "sàn chưa trả số" : "sàn chưa hỗ trợ đẩy tồn"}
+                    </span>
+                  )}
+                  {isAdmin && off && l.pushable && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setSyncOpen(true)}
+                    >
+                      Bật gian này
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleUnlinkOne(l, product.id)}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-red-600 hover:underline"
+                    >
+                      <Link2Off className="size-3" />
+                      gỡ nối
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => jumpToLinks(product.skuCode)}
+                className="inline-flex items-center gap-1 self-start text-xs text-primary underline-offset-2 hover:underline"
+              >
+                <Link2 className="size-3" />
+                Nối thêm gian cho SKU này
+              </button>
+            )}
+          </div>
+        </div>
+        <p className={cn(TEXT_SUB, "flex items-center gap-1.5")}>
+          <ArrowLeftRight className="size-3.5" />
+          Gian nào bán 1 chiếc, kho và mọi gian còn lại cùng trừ 1. Nhập kho, mọi gian
+          cùng lên. Cùng một sản phẩm trên nhiều shop thì đặt cùng mã SKU để Hubsell tự
+          khớp.
+        </p>
+      </div>
+    );
+  }
+
   function renderExpanded(product: Product) {
     const detail = linkDetails[product.id];
     return (
@@ -501,90 +683,7 @@ export default function ProductsHubPage() {
               Đang tải chi tiết liên kết…
             </p>
           ) : (
-            <div className="space-y-1.5 border-l-2 border-border pl-4">
-              {detail.map((l) => {
-                const meta = CHANNEL_META[l.channelName];
-                return (
-                  <div key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${meta?.className ?? ""}`}
-                    >
-                      {meta?.label ?? l.channelName}
-                    </span>
-                    <span className="text-muted-foreground">{l.shopName}</span>
-                    <span className="font-mono text-xs">{l.channelSku}</span>
-                    {/* Số sàn đang giữ vs Có thể bán Hubsell — một chữ trạng
-                        thái từ backend (state). Không vẽ số ảo: sàn chưa từng
-                        trả số thì nói thẳng. */}
-                    {l.state === "alert" ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
-                        <XCircle className="size-3.5" />
-                        lệch tồn — xem cảnh báo phía trên
-                      </span>
-                    ) : l.state === "pending" ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-amber-700">
-                        <Loader2 className="size-3.5 animate-spin" />
-                        đang đẩy {formatNumber(l.expected)}
-                      </span>
-                    ) : l.state === "match" ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
-                        <CheckCircle2 className="size-3.5" />
-                        sàn đang {formatNumber(l.channelStock ?? 0)} · khớp
-                      </span>
-                    ) : l.state === "mismatch" ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
-                        <XCircle className="size-3.5" />
-                        sàn đang {formatNumber(l.channelStock ?? 0)} ≠ Hubsell{" "}
-                        {formatNumber(l.expected)}
-                      </span>
-                    ) : l.state === "off" ? (
-                      <span className={cn(TEXT_SUB, "text-xs")}>
-                        gian chưa bật đồng bộ
-                        {l.channelStock !== null
-                          ? ` · sàn đang ${formatNumber(l.channelStock)}`
-                          : ""}
-                      </span>
-                    ) : (
-                      <span className={cn(TEXT_SUB, "text-xs")}>
-                        {l.pushable ? "sàn chưa trả số tồn" : "sàn chưa hỗ trợ đẩy tồn"}
-                      </span>
-                    )}
-                    {l.lastSync?.status === "SUCCESS" && l.state !== "pending" && (
-                      <span className={cn(TEXT_SUB, "text-xs")}>
-                        đẩy lần cuối{" "}
-                        {new Date(l.lastSync.at).toLocaleTimeString("vi-VN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    )}
-                    {!l.channelActive && (
-                      <span className={cn(TEXT_SUB, "text-xs")}>(gian đã ngắt)</span>
-                    )}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => handleUnlinkOne(l, product.id)}
-                        className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-red-600 hover:underline"
-                      >
-                        <Link2Off className="size-3" />
-                        gỡ nối
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => jumpToLinks(product.skuCode)}
-                  className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
-                >
-                  <Link2 className="size-3" />
-                  Nối thêm gian cho SKU này
-                </button>
-              )}
-            </div>
+            renderHubDiagram(product, detail)
           )}
         </TableCell>
       </TableRow>
@@ -696,6 +795,9 @@ export default function ProductsHubPage() {
                 <ProductFormDialog onCreated={load} />
               </div>
             </div>
+
+            {/* Dải kể chuyện: 1 SKU kho ↔ nhiều gian, đặt CÙNG MÃ SKU (đóng được) */}
+            <HubStoryStrip />
 
             {/* Cảnh báo lệch tồn với sàn — chỉ hiện khi có cảnh báo chưa xử lý */}
             <SyncAlertBanner />

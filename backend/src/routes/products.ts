@@ -198,12 +198,34 @@ router.get("/", async (req: AuthRequest, res, next) => {
           // Cảnh báo sắp hết hàng: ngưỡng đang áp (riêng ?? shop) + cờ đang dưới ngưỡng.
           lowStockThresholdEffective: effectiveLowStockThreshold(p, lowStockDefault),
           isLowStock: isLowStock(p, lowStockDefault),
-          channelLinks: channelProducts.map((c) => ({
-            channelSku: c.channelSku,
-            channelName: c.channel.channelName,
-            shopName: c.channel.shopName,
-            stockSyncEnabled: c.channel.stockSyncEnabled,
-          })),
+          // Mỗi gian một chip "tên shop + số đang hiện + trạng thái" — kể được
+          // câu chuyện "mọi gian cùng một số" ngay trên bảng, không cần bung.
+          channelLinks: channelProducts.map((c) => {
+            const pushable =
+              Boolean(c.externalId) && PUSHABLE_CHANNELS.includes(c.channel.channelName);
+            const key = `${c.channelId}:${c.channelSku}`;
+            const state = !pushable
+              ? "unknown"
+              : alertSkus.has(c.channelSku)
+                ? "alert"
+                : pendingKeys.has(key)
+                  ? "pending"
+                  : !c.channel.stockSyncEnabled
+                    ? "off"
+                    : c.channelStock === null
+                      ? "unknown"
+                      : c.channelStock === availableToSell
+                        ? "match"
+                        : "mismatch";
+            return {
+              channelSku: c.channelSku,
+              channelName: c.channel.channelName,
+              shopName: c.channel.shopName,
+              stockSyncEnabled: c.channel.stockSyncEnabled,
+              channelStock: c.channelStock,
+              state,
+            };
+          }),
           hasSyncAlert: channelProducts.some((c) => alertSkus.has(c.channelSku)),
           stockMismatch,
         };

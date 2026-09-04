@@ -249,6 +249,9 @@ export interface Product {
     channelName: ChannelName;
     shopName: string;
     stockSyncEnabled?: boolean;
+    /** Số sàn đang hiện (lần đẩy/đọc gần nhất) — chip "DarkMan 479". */
+    channelStock?: number | null;
+    state?: ChannelStockState;
   }[];
   /** Có SKU sàn đang LỆCH TỒN chưa xử lý (InventorySyncAlert mở). */
   hasSyncAlert?: boolean;
