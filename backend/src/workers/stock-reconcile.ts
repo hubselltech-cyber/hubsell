@@ -7,7 +7,7 @@
 // nguyên lý "mọi gian luôn cùng một số" thành cơ chế TỰ CHỮA LÀNH:
 //
 //   mỗi nhịp, với từng gian ĐANG BẬT đồng bộ:
-//     1. kéo tồn thật từ sàn (syncChannelProducts → ChannelProduct.channelStock)
+//     1. đọc tồn thật từ sàn cho SKU đã nối (refreshLinkedChannelStock → channelStock)
 //     2. so từng SKU đã liên kết với "có thể bán" của Hubsell
 //     3. SKU lệch → xếp job đẩy lại (hàng đợi + retry + cảnh báo sẵn có)
 //     4. ghi bookkeeping lên Channel (lastStockReconcileAt / Mismatch) cho UI
@@ -27,7 +27,7 @@ import {
   getSafetyStockDefault,
   PUSHABLE_CHANNELS,
 } from "../integrations/inventory-push";
-import { syncChannelProducts } from "../marketplace/product-sync";
+import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 
 const DEFAULT_HOURS = 6;
 const FIRST_RUN_DELAY_MS = 10 * 60 * 1000;
@@ -108,8 +108,16 @@ export async function reconcileChannelStock(
   channel: Channel,
   source: string
 ): Promise<ReconcileResult> {
-  // 1. Tồn thật trên sàn — cùng đường với nút "Đồng bộ từ sàn" (không đụng liên kết).
-  await syncChannelProducts(channel);
+  // 1. Tồn thật trên sàn — CHỈ cho SKU đã nối (kéo nguyên danh mục mỗi 6h là
+  //    dính rate limit Shopee với shop vài trăm SKU). Không có gì nối → về sớm.
+  const r = await refreshLinkedChannelStock(channel);
+  if (r.refreshed === 0 && r.missing === 0) {
+    await prisma.channel.update({
+      where: { id: channel.id },
+      data: { lastStockReconcileAt: new Date(), lastStockReconcileMismatch: 0 },
+    });
+    return { scanned: 0, mismatched: 0, queued: 0, samples: [] };
+  }
 
   // 2. So từng SKU đã liên kết. Bỏ qua SKU đang có job chờ đẩy — số sàn sắp
   //    đổi, so bây giờ là lệch giả.

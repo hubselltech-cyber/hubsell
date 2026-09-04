@@ -12,7 +12,7 @@ import {
   getSafetyStockDefault,
   PUSHABLE_CHANNELS,
 } from "../integrations/inventory-push";
-import { syncChannelProducts } from "../marketplace/product-sync";
+import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
 
@@ -540,11 +540,38 @@ router.post("/sync-channels/:id/preview", async (req: AuthRequest, res, next) =>
       return;
     }
 
-    // Đọc tồn sàn mới nhất — số cũ trong DB có thể đã lệch vì bán/sửa tay trên sàn.
+    // Chưa nối SKU nào thì không có gì để so — trả sớm, KHÔNG gọi sàn (kéo
+    // nguyên danh mục 300-400 SKU cho một màn trống là dính rate limit vô ích).
+    const linkedCount = await prisma.channelProduct.count({
+      where: {
+        channelId: channel.id,
+        productId: { not: null },
+        externalId: { not: null },
+        status: "ACTIVE",
+      },
+    });
+    if (linkedCount === 0) {
+      const unlinked = await prisma.channelProduct.count({
+        where: { channelId: channel.id, productId: null, status: "ACTIVE" },
+      });
+      res.json({
+        channel: { id: channel.id, channelName: channel.channelName, shopName: channel.shopName },
+        refreshed: false,
+        refreshError: null,
+        safetyStockDefault: await getSafetyStockDefault(req.ownerId!),
+        summary: { total: 0, match: 0, up: 0, down: 0, unknown: 0, willZero: 0, unlinked },
+        items: [],
+        truncated: false,
+      });
+      return;
+    }
+
+    // Đọc tồn sàn mới nhất CHỈ cho SKU đã nối — số cũ trong DB có thể đã lệch
+    // vì bán/sửa tay trên sàn. Lỗi (token/rate limit) thì vẫn hiện số cũ + báo rõ.
     let refreshed = true;
     let refreshError: string | null = null;
     try {
-      await syncChannelProducts(channel);
+      await refreshLinkedChannelStock(channel);
     } catch (err) {
       refreshed = false;
       refreshError = err instanceof Error ? err.message : "Không đọc được tồn sàn";

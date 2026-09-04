@@ -26,6 +26,9 @@ import type { MarketplaceProductAdapter, NormalizedChannelProduct } from "../typ
 const ITEM_LIST_PAGE = 100; // Shopee cho tối đa 100 item/lần get_item_list
 const BASE_INFO_BATCH = 50; // tối đa 50 item_id/lần get_item_base_info
 const MAX_PAGES = 200; // chốt chặn phân trang vô tận
+/** Giãn nhịp giữa hai call chi tiết/model trong cùng một lượt kéo (né rate limit). */
+const PACE_MS = 250;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- TRANSFORMER (Shopee → chuẩn Hubsell) ----------
 
@@ -114,13 +117,17 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
     const uniqueIds = Array.from(new Set(itemIds));
     if (uniqueIds.length === 0) return [];
 
-    // (3) Lấy chi tiết theo lô ≤50 + model → chuẩn hoá.
+    // (3) Lấy chi tiết theo lô ≤50 + model → chuẩn hoá. Giãn nhịp giữa các
+    // call (shop 300-400 SKU = hàng trăm get_model_list) để né error_rate_limit;
+    // client còn tự retry khi vẫn bị chặn.
     const normalized: NormalizedChannelProduct[] = [];
     for (let i = 0; i < uniqueIds.length; i += BASE_INFO_BATCH) {
       const ids = uniqueIds.slice(i, i + BASE_INFO_BATCH);
+      if (i > 0) await sleep(PACE_MS);
       const infos = await getItemBaseInfo(accessToken, shopId, ids);
       for (const info of infos) {
         if (info.has_model) {
+          await sleep(PACE_MS);
           const models = await getModelList(accessToken, shopId, info.item_id);
           if (models.length > 0) {
             for (const m of models) normalized.push(transformModel(info, m));

@@ -128,6 +128,36 @@ function ensureOk<T extends ShopeeEnvelope>(json: T, ctx: string): T {
   return json;
 }
 
+/** Số lần thử lại khi Shopee trả error_rate_limit (1 lần đầu + 3 retry). */
+const RATE_LIMIT_MAX_ATTEMPTS = 4;
+/** Chờ trước retry đầu; các lần sau nhân đôi (1.5s → 3s → 6s). */
+const RATE_LIMIT_BASE_DELAY_MS = 1500;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isRateLimitError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /error_rate_limit|rate limit|too many requests/i.test(msg);
+}
+
+/**
+ * Tự thử lại khi Shopee chặn rate limit (error_rate_limit — hay gặp khi kéo
+ * danh mục lớn: get_item_base_info/get_model_list dồn dập). Lỗi khác ném ngay.
+ * Áp cho MỌI shop API GET/POST nên adapter/worker không phải tự xử từng chỗ.
+ */
+async function withRateLimitRetry<T>(ctx: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isRateLimitError(err) || attempt >= RATE_LIMIT_MAX_ATTEMPTS) throw err;
+      const wait = RATE_LIMIT_BASE_DELAY_MS * 2 ** (attempt - 1);
+      console.warn(`[Shopee] ${ctx} bị rate limit — chờ ${wait}ms rồi thử lại (${attempt}/${RATE_LIMIT_MAX_ATTEMPTS})`);
+      await sleep(wait);
+    }
+  }
+}
+
 // ---------- Gọi PUBLIC API (POST, ký partner_id+path+timestamp) ----------
 
 async function callPublicPost<T extends ShopeeEnvelope>(
@@ -207,8 +237,10 @@ async function callShopGet<T extends ShopeeEnvelope>(
     ...extraParams.map(([k, v]) => [k, String(v)] as [string, string]),
   ];
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
-  return ensureOk((await res.json()) as T, ctx);
+  return withRateLimitRetry(ctx, async () => {
+    const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
+    return ensureOk((await res.json()) as T, ctx);
+  });
 }
 
 /**
@@ -232,12 +264,14 @@ async function callShopPost<T extends ShopeeEnvelope>(
     shop_id: shopId,
     sign,
   }).toString();
-  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+  return withRateLimitRetry(ctx, async () => {
+    const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return ensureOk((await res.json()) as T, ctx);
   });
-  return ensureOk((await res.json()) as T, ctx);
 }
 
 /** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */

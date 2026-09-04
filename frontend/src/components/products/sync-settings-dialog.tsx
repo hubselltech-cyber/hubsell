@@ -654,6 +654,28 @@ function PreviewPanel({
 
   const s = preview.summary;
   const changes = s.up + s.down;
+
+  // Chưa nối SKU nào: không có gì để so, chỉ đường sang tab Chờ liên kết.
+  if (s.total === 0) {
+    return (
+      <div className="mx-3 mb-3 space-y-2 rounded-md border bg-muted/30 p-3">
+        <p className="flex items-start gap-1.5 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <span>
+            Gian này chưa có SKU sàn nào nối về kho nên chưa có gì để đồng bộ.
+            {s.unlinked > 0
+              ? ` Đang có ${formatNumber(s.unlinked)} SKU sàn chờ nối — sang tab Chờ liên kết bấm "Tự khớp" hoặc "Tạo SKU kho" rồi quay lại bật.`
+              : ' Bấm "Đồng bộ từ sàn" ở tab Chờ liên kết để kéo danh mục về trước.'}
+          </span>
+        </p>
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={onCancel} disabled={enabling}>
+            Đóng
+          </Button>
+        </div>
+      </div>
+    );
+  }
   const stateLabel = (it: SyncPreview["items"][number]) =>
     it.state === "match"
       ? "khớp"
