@@ -36,6 +36,7 @@ import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
 import { HubStoryStrip } from "@/components/products/hub-story-strip";
+import { InlineStockEditor } from "@/components/products/inline-stock-editor";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
@@ -305,44 +306,16 @@ export default function ProductsHubPage() {
       }),
       columnHelper.accessor("quantityInStock", {
         header: () => <div className="text-center">Tồn kho</div>,
-        cell: (info) => {
-          const qty = info.getValue();
-          const held = info.row.original.holdQuantity ?? 0;
-          // Màu theo NGƯỠNG CẢNH BÁO của SKU (riêng ?? shop) — không còn số cứng.
-          const low = info.row.original.isLowStock ?? false;
-          const threshold = info.row.original.lowStockThresholdEffective ?? 0;
-          return (
-            <div
-              className="text-center"
-              title={
-                threshold > 0
-                  ? `Ngưỡng cảnh báo sắp hết: ${formatNumber(threshold)}`
-                  : "Chưa đặt ngưỡng cảnh báo sắp hết hàng"
-              }
-            >
-              <span
-                className={cn(
-                  "inline-flex min-w-12 items-center justify-center rounded-full border px-2.5 py-0.5 text-sm font-semibold",
-                  qty - held <= 0
-                    ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : low
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                )}
-              >
-                {formatNumber(qty)}
-              </span>
-              {held > 0 && (
-                <p className="mt-1 text-xs text-amber-600">Giữ {formatNumber(held)}</p>
-              )}
-              {low && qty - held > 0 && (
-                <p className="mt-0.5 text-xs font-medium text-amber-700">
-                  ≤ ngưỡng {formatNumber(threshold)}
-                </p>
-              )}
-            </div>
-          );
-        },
+        // Bấm vào số là sửa trực tiếp (Enter lưu) — màu theo ngưỡng cảnh báo của SKU.
+        cell: ({ row }) => (
+          <InlineStockEditor
+            product={row.original}
+            low={row.original.isLowStock ?? false}
+            threshold={row.original.lowStockThresholdEffective ?? 0}
+            editable
+            onSaved={load}
+          />
+        ),
       }),
       // ===== CÓ THỂ BÁN — số Hubsell đẩy lên MỌI gian đã nối (trung tâm điều
       // tiết): tồn − đang giữ − tồn an toàn. Đây là con số khách phải tin. =====

@@ -2366,6 +2366,17 @@ export function adjustInventory(data: {
   );
 }
 
+/**
+ * SỬA TỒN TRỰC TIẾP trên bảng: gửi số MỚI, server tự tính chênh lệch với tồn
+ * hiện tại (khoá dòng), ghi log nhập/xuất rồi đẩy Có thể bán lên các gian đã nối.
+ */
+export function setInventoryQuantity(productId: string, quantity: number) {
+  return apiFetch<{ product: Product; log: InventoryLog | null; delta: number }>(
+    "/api/inventory/set",
+    { method: "POST", body: JSON.stringify({ productId, quantity }) }
+  );
+}
+
 // ----- Trung tâm điều hành (Command Center) -----
 //
 // Chỉ lưu các THAY ĐỔI do người dùng tạo (đã xử lý / chat / nhật ký). Cảnh báo

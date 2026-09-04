@@ -101,6 +101,69 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
   }
 });
 
+// POST /api/inventory/set — SỬA TỒN TRỰC TIẾP trên bảng (anh Trung 05/09: gõ số
+// mới ngay ô Tồn kho thay vì mở hộp Nhập/Xuất). Body: { productId, quantity }.
+// Server tự tính chênh lệch so với tồn HIỆN TẠI (khoá dòng) → ghi log IMPORT/
+// EXPORT như thao tác tay, rồi đẩy Có thể bán mới lên các gian đã nối.
+router.post("/set", async (req: AuthRequest, res, next) => {
+  try {
+    const { productId, quantity, reason } = req.body ?? {};
+    if (typeof productId !== "string" || productId.length === 0) {
+      res.status(400).json({ error: "Thiếu mã sản phẩm" });
+      return;
+    }
+    const target = Number(quantity);
+    if (!Number.isInteger(target) || target < 0) {
+      res.status(400).json({ error: "Tồn kho phải là số nguyên không âm" });
+      return;
+    }
+    if (reason !== undefined && typeof reason !== "string") {
+      res.status(400).json({ error: "Lý do không hợp lệ" });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        { id: string; quantityInStock: number }[]
+      >`SELECT "id", "quantityInStock" FROM "Product" WHERE "id" = ${productId} AND "userId" = ${req.ownerId!} FOR UPDATE`;
+      const product = rows[0];
+      if (!product) {
+        throw Object.assign(new Error("Không tìm thấy sản phẩm"), { statusCode: 404 });
+      }
+      const delta = target - product.quantityInStock;
+      if (delta === 0) return { product, log: null, delta };
+
+      const updated = await tx.product.update({
+        where: { id: productId },
+        data: { quantityInStock: target },
+      });
+      const log = await tx.inventoryLog.create({
+        data: {
+          productId,
+          changeQuantity: delta,
+          type: delta > 0 ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
+          reason:
+            reason?.trim() ||
+            `Sửa tồn trực tiếp trên bảng: ${product.quantityInStock} → ${target}`,
+        },
+      });
+      return { product: updated, log, delta };
+    });
+
+    if (result.delta !== 0) {
+      await enqueueStockPush([productId], { source: "sửa tồn trực tiếp trên bảng" });
+    }
+    res.json(result);
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
+    next(err);
+  }
+});
+
 // GET /api/inventory/logs?productId=... — Lịch sử xuất nhập kho của một sản phẩm
 router.get("/logs", async (req: AuthRequest, res, next) => {
   try {
