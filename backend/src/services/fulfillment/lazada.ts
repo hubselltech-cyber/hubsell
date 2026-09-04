@@ -6,9 +6,9 @@
 // pack (1 call/đơn, chấp nhận được vì Lazada ít đơn hơn Shopee nhiều).
 // Kiểm chứng thật 04/09 (gian Hi.Bé, đơn 527599097428756): /order/package/
 // document/get trả {result:{data:{pdf_url,file,doc_type}}} và pdf_url tải được
-// PDF 265KB không cần đăng nhập → đường in vận đơn ĐÃ CHẠY THẬT. pack + rts
-// CHƯA có đơn pending để thử — đơn Lazada đầu tiên qua Hubsell phải soi log
-// backend ([lazada.pack]/[lazada.rts] in raw) để đối chiếu hình dạng response.
+// PDF 265KB không cần đăng nhập → đường in vận đơn ĐÃ CHẠY THẬT. pack lần đầu
+// (đơn 528594675928756) bị "argument type mismatch" vì gửi order_item_list dạng
+// object/chuỗi — sàn cần MẢNG SỐ (đã sửa ở client.packOrders).
 // ============================================================
 
 import type { Channel } from "@prisma/client";

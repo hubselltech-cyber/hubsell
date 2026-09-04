@@ -1306,12 +1306,17 @@ export async function packOrders(
   orders: { orderId: number | string; orderItemIds: (number | string)[] }[],
   cfg: LazadaConfig = getLazadaConfig()
 ): Promise<LazadaPackOrderResult[]> {
+  // Đối chiếu ví dụ docs (mirror developer.alibaba.com, 04/09) SAU khi sàn trả
+  // "UnsupportedParamMapping — argument type mismatch" ở đơn thật đầu tiên:
+  // order_id và order_item_list là SỐ (Long), order_item_list là MẢNG SỐ chứ
+  // không phải mảng object. Gửi chuỗi/object là lệch kiểu.
+  const num = (v: number | string) => (typeof v === "number" ? v : Number(v));
   const packReq = {
     delivery_type: "dropship",
     shipping_allocate_type: "TFS",
     pack_order_list: orders.map((o) => ({
-      order_id: o.orderId,
-      order_item_list: o.orderItemIds.map((id) => ({ order_item_id: id })),
+      order_id: num(o.orderId),
+      order_item_list: o.orderItemIds.map(num),
     })),
   };
   const raw = await callLazadaPost<LazadaEnvelope & { data?: unknown }>(
