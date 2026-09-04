@@ -10,6 +10,7 @@ import {
   getSafetyStockDefault,
   PUSHABLE_CHANNELS,
 } from "../integrations/inventory-push";
+import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 
 const router = Router();
 
@@ -148,7 +149,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — HAI query
     // cho cả trang: cảnh báo mở (đẩy fail) + job đang chờ (lệch tạm, sắp khớp).
     const pageSkus = items.flatMap((p) => p.channelProducts.map((c) => c.channelSku));
-    const [openAlerts, pendingJobs, safetyDefault] = await Promise.all([
+    const [openAlerts, pendingJobs, safetyDefault, lowStockDefault] = await Promise.all([
       pageSkus.length
         ? prisma.inventorySyncAlert.findMany({
             where: {
@@ -166,6 +167,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
           })
         : [],
       getSafetyStockDefault(req.ownerId!),
+      prisma.shopSyncSetting
+        .findUnique({ where: { userId: req.ownerId! }, select: { lowStockDefault: true } })
+        .then((s) => s?.lowStockDefault ?? 0),
     ]);
     const alertSkus = new Set(openAlerts.map((a) => a.channelSku));
     const pendingKeys = new Set(pendingJobs.map((j) => `${j.channelId}:${j.channelSku}`));
@@ -191,6 +195,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
           ...hideCost(core, seesFinancials),
           availableToSell,
           safetyStockEffective: p.safetyStock ?? safetyDefault,
+          // Cảnh báo sắp hết hàng: ngưỡng đang áp (riêng ?? shop) + cờ đang dưới ngưỡng.
+          lowStockThresholdEffective: effectiveLowStockThreshold(p, lowStockDefault),
+          isLowStock: isLowStock(p, lowStockDefault),
           channelLinks: channelProducts.map((c) => ({
             channelSku: c.channelSku,
             channelName: c.channel.channelName,
@@ -207,6 +214,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       pageCount: Math.ceil(total / pageSize),
       costPriceHidden: !seesFinancials,
       safetyStockDefault: safetyDefault,
+      lowStockDefault,
     });
   } catch (err) {
     next(err);
@@ -548,7 +556,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
 
     // ── Tồn an toàn per-SKU (Đồng bộ tồn kho đa sàn) — null/rỗng = dùng mặc
     // định toàn shop (ShopSyncSetting.safetyStockDefault) ──
-    const { safetyStock } = req.body ?? {};
+    const { safetyStock, lowStockThreshold } = req.body ?? {};
     if (safetyStock !== undefined) {
       if (safetyStock === null || safetyStock === "") {
         data.safetyStock = null;
@@ -561,12 +569,29 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         data.safetyStock = n;
       }
     }
+    // ── Ngưỡng cảnh báo sắp hết hàng per-SKU — null/rỗng = mặc định shop, 0 = tắt ──
+    if (lowStockThreshold !== undefined) {
+      if (lowStockThreshold === null || lowStockThreshold === "") {
+        data.lowStockThreshold = null;
+      } else {
+        const n = Number(lowStockThreshold);
+        if (!Number.isInteger(n) || n < 0) {
+          res.status(400).json({ error: "Ngưỡng cảnh báo phải là số nguyên không âm" });
+          return;
+        }
+        data.lowStockThreshold = n;
+      }
+    }
 
     const updated = await prisma.product.update({ where: { id }, data });
 
     // Đổi tồn an toàn làm đổi TỒN KHẢ DỤNG → đẩy số mới lên các sàn đã liên kết.
-    if (safetyStock !== undefined) {
-      await enqueueStockPush([id], { source: "đổi tồn an toàn của SKU" });
+    // Đổi ngưỡng cảnh báo → cùng cửa đó kiểm tra lại ngưỡng ngay (mở/đóng thẻ).
+    if (safetyStock !== undefined || lowStockThreshold !== undefined) {
+      await enqueueStockPush([id], {
+        source:
+          safetyStock !== undefined ? "đổi tồn an toàn của SKU" : "đổi ngưỡng cảnh báo của SKU",
+      });
     }
 
     res.json(updated);

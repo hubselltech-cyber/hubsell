@@ -39,6 +39,12 @@ import {
   DELIVERY_FAIL_TAB_HREF,
   effectiveDeliveryFailConfig,
 } from "../integrations/shopee/delivery-fail";
+import {
+  buildLowStockAlert,
+  effectiveLowStockThreshold,
+  isLowStock,
+  LOW_STOCK_ALERT_TYPE,
+} from "./low-stock";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -178,6 +184,84 @@ async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
     });
   }
   return alerts;
+}
+
+/**
+ * SẮP HẾT HÀNG THEO NGƯỠNG (05/09): chủ shop đặt ngưỡng (riêng SKU hoặc mặc
+ * định shop); tồn khả dụng ≤ ngưỡng → mỗi SKU một thẻ (dedupeKey = productId),
+ * nhập thêm vượt ngưỡng là scan tự AUTO_CLOSED. Đường sự kiện checkLowStock()
+ * bên dưới báo ngay; detector này là lưới an toàn + dọn thẻ. Ngưỡng 0 = tắt.
+ */
+async function detectLowStock(ownerId: string): Promise<DetectedAlert[]> {
+  const setting = await prisma.shopSyncSetting.findUnique({
+    where: { userId: ownerId },
+    select: { lowStockDefault: true },
+  });
+  const shopDefault = setting?.lowStockDefault ?? 0;
+  const products = await prisma.product.findMany({
+    where: {
+      userId: ownerId,
+      // Không có ngưỡng riêng và shop không đặt mặc định → không gì để quét.
+      ...(shopDefault > 0 ? {} : { lowStockThreshold: { gt: 0 } }),
+    },
+    select: {
+      id: true,
+      skuCode: true,
+      productName: true,
+      quantityInStock: true,
+      holdQuantity: true,
+      lowStockThreshold: true,
+    },
+  });
+  return products
+    .filter((p) => isLowStock(p, shopDefault))
+    .map((p) => buildLowStockAlert(p, effectiveLowStockThreshold(p, shopDefault)));
+}
+
+/**
+ * ĐƯỜNG SỰ KIỆN cảnh báo sắp hết hàng — gọi sau MỖI biến động kho (qua cửa
+ * enqueueStockPush) với đúng các SKU vừa đổi: rơi qua ngưỡng → mở/tái mở thẻ
+ * + chuông NGAY; vượt lên trên ngưỡng → đóng thẻ ngay. Cùng công thức với
+ * detector nên vòng quét sau không "cãi" lại. Best-effort, không ném.
+ */
+export async function checkLowStock(productIds: string[]): Promise<void> {
+  try {
+    const ids = [...new Set(productIds)].filter(Boolean);
+    if (ids.length === 0) return;
+    const products = await prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        userId: true,
+        skuCode: true,
+        productName: true,
+        quantityInStock: true,
+        holdQuantity: true,
+        lowStockThreshold: true,
+      },
+    });
+    if (products.length === 0) return;
+    const ownerIds = [...new Set(products.map((p) => p.userId))];
+    const settings = await prisma.shopSyncSetting.findMany({
+      where: { userId: { in: ownerIds } },
+      select: { userId: true, lowStockDefault: true },
+    });
+    const defaultByOwner = new Map(settings.map((s) => [s.userId, s.lowStockDefault]));
+
+    for (const p of products) {
+      const shopDefault = defaultByOwner.get(p.userId) ?? 0;
+      if (isLowStock(p, shopDefault)) {
+        await applyDetectedAlert(
+          p.userId,
+          buildLowStockAlert(p, effectiveLowStockThreshold(p, shopDefault))
+        );
+      } else {
+        await closeOpsAlert(p.userId, LOW_STOCK_ALERT_TYPE, p.id);
+      }
+    }
+  } catch (err) {
+    console.error("[Ops-alerts] checkLowStock lỗi:", (err as Error).message);
+  }
 }
 
 /**
@@ -988,6 +1072,65 @@ async function logAlertActivity(ownerId: string, a: DetectedAlert): Promise<void
   });
 }
 
+type OpsAlertRow = NonNullable<Awaited<ReturnType<typeof prisma.opsAlert.findFirst>>>;
+
+/**
+ * Hoà giải MỘT điều kiện phát hiện được với bảng OpsAlert (dùng chung cho vòng
+ * quét lẫn đường sự kiện): chưa có → tạo OPEN + nhật ký + chuông; AUTO_CLOSED
+ * → tái mở như mới; OPEN/RESOLVED → chỉ cập nhật nội dung (RESOLVED giữ ẩn).
+ * `row` truyền sẵn khi vòng quét đã tải cả bảng; bỏ trống thì tự tra.
+ */
+export async function applyDetectedAlert(
+  ownerId: string,
+  d: DetectedAlert,
+  row?: OpsAlertRow | null
+): Promise<void> {
+  const existing =
+    row === undefined
+      ? await prisma.opsAlert.findUnique({
+          where: { ownerId_type_dedupeKey: { ownerId, type: d.type, dedupeKey: d.dedupeKey } },
+        })
+      : row;
+  const content = {
+    tag: d.tag,
+    severity: d.severity,
+    title: d.title,
+    summary: d.summary,
+    payload: JSON.stringify(d.payload),
+  };
+
+  if (!existing) {
+    await prisma.opsAlert.create({
+      data: { ownerId, type: d.type, dedupeKey: d.dedupeKey, ...content },
+    });
+    await logAlertActivity(ownerId, d);
+  } else if (existing.status === "AUTO_CLOSED") {
+    // Điều kiện TÁI PHÁT sau khi đã hết → mở lại như cảnh báo mới
+    // (createdAt mới để nhãn "Mới" và thứ tự phản ánh đúng lần tái phát).
+    await prisma.opsAlert.update({
+      where: { id: existing.id },
+      data: { ...content, status: "OPEN", createdAt: new Date(), resolvedAt: null },
+    });
+    await logAlertActivity(ownerId, d);
+  } else {
+    // OPEN: cập nhật số liệu mới nhất. RESOLVED: cũng cập nhật nội dung
+    // nhưng giữ trạng thái ẩn — tôn trọng tick "Đã xử lý" của chủ shop.
+    await prisma.opsAlert.update({ where: { id: existing.id }, data: content });
+  }
+}
+
+/** Điều kiện đã hết → AUTO_CLOSED (cả bản OPEN lẫn RESOLVED). Không có bản ghi thì thôi. */
+export async function closeOpsAlert(
+  ownerId: string,
+  type: string,
+  dedupeKey: string
+): Promise<void> {
+  await prisma.opsAlert.updateMany({
+    where: { ownerId, type, dedupeKey, status: { not: "AUTO_CLOSED" } },
+    data: { status: "AUTO_CLOSED" },
+  });
+}
+
 /**
  * Quét toàn bộ detector cho một chủ shop rồi hoà giải với bảng OpsAlert.
  * Throttle 10 phút/owner (bỏ qua bằng force=true). KHÔNG BAO GIỜ ném lỗi.
@@ -1002,6 +1145,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
     const detected: DetectedAlert[] = [];
     const detectors = [
       detectStockouts,
+      detectLowStock,
       detectDisconnectedChannels,
       detectLossOrders,
       detectShippingFeeDiff,
@@ -1025,33 +1169,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
     const desired = new Set(detected.map((d) => `${d.type}|${d.dedupeKey}`));
 
     for (const d of detected) {
-      const row = byKey.get(`${d.type}|${d.dedupeKey}`);
-      const content = {
-        tag: d.tag,
-        severity: d.severity,
-        title: d.title,
-        summary: d.summary,
-        payload: JSON.stringify(d.payload),
-      };
-
-      if (!row) {
-        await prisma.opsAlert.create({
-          data: { ownerId, type: d.type, dedupeKey: d.dedupeKey, ...content },
-        });
-        await logAlertActivity(ownerId, d);
-      } else if (row.status === "AUTO_CLOSED") {
-        // Điều kiện TÁI PHÁT sau khi đã hết → mở lại như cảnh báo mới
-        // (createdAt mới để nhãn "Mới" và thứ tự phản ánh đúng lần tái phát).
-        await prisma.opsAlert.update({
-          where: { id: row.id },
-          data: { ...content, status: "OPEN", createdAt: new Date(), resolvedAt: null },
-        });
-        await logAlertActivity(ownerId, d);
-      } else {
-        // OPEN: cập nhật số liệu mới nhất. RESOLVED: cũng cập nhật nội dung
-        // nhưng giữ trạng thái ẩn — tôn trọng tick "Đã xử lý" của chủ shop.
-        await prisma.opsAlert.update({ where: { id: row.id }, data: content });
-      }
+      await applyDetectedAlert(ownerId, d, byKey.get(`${d.type}|${d.dedupeKey}`) ?? null);
     }
 
     // Điều kiện đã hết → tự đóng (cả bản OPEN lẫn RESOLVED).

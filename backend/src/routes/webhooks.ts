@@ -23,6 +23,7 @@ import {
   enqueueShopeeWebhook,
   startShopeeWebhookWorker,
 } from "../integrations/shopee/webhook-queue";
+import { enqueueStockPush } from "../integrations/inventory-push";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import {
   findLazadaChannelsBySellerId,
@@ -335,6 +336,12 @@ router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
 
     // 4) Upsert đơn + trừ/hoàn kho (idempotent) trong một transaction.
     const result = await processTiktokOrderEvent(channel, orderId);
+    // Kho biến động → đẩy "có thể bán" mới lên Shopee/Lazada đã nối cùng SKU
+    // + kiểm tra ngưỡng sắp hết hàng (trước 05/09 đơn TikTok trừ kho nhưng
+    // KHÔNG đẩy sang sàn khác — lỗ hổng bán vượt chéo sàn).
+    if (result.productIds?.length) {
+      await enqueueStockPush(result.productIds, { source: `webhook TikTok đơn ${orderId}` });
+    }
     res.status(200).json({ ok: true, orderId, ...result });
   } catch (err) {
     // Lỗi TẠM THỜI khi gọi API TikTok/DB → 500 để TikTok gửi lại sau.

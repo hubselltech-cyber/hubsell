@@ -237,6 +237,12 @@ export interface Product {
   availableToSell?: number;
   /** Tồn an toàn đang áp cho SKU (riêng hoặc mặc định toàn shop). */
   safetyStockEffective?: number;
+  /** Ngưỡng cảnh báo sắp hết hàng riêng SKU — null/vắng = dùng mặc định shop, 0 = tắt. */
+  lowStockThreshold?: number | null;
+  /** Ngưỡng đang áp (riêng ?? mặc định shop); 0 = không cảnh báo. */
+  lowStockThresholdEffective?: number;
+  /** Tồn khả dụng (tồn − giữ) đang ≤ ngưỡng cảnh báo. */
+  isLowStock?: boolean;
   /** Tóm tắt các SKU sàn đã nối (cột "Bán trên" của hub Hàng hóa). */
   channelLinks?: {
     channelSku: string;
@@ -280,6 +286,20 @@ export interface ProductChannelLink {
   hasAlert: boolean;
 }
 
+/**
+ * Cài đặt riêng của một SKU kho: tồn an toàn + ngưỡng cảnh báo sắp hết hàng.
+ * null = quay về dùng mặc định toàn shop.
+ */
+export function updateProductStockSettings(
+  productId: string,
+  data: { safetyStock?: number | null; lowStockThreshold?: number | null }
+) {
+  return apiFetch<Product>(`/api/products/${productId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 /** Các SKU sàn đã nối vào một sản phẩm kho + trạng thái đẩy tồn gần nhất. */
 export function fetchProductChannelLinks(productId: string) {
   return apiFetch<ProductChannelLink[]>(
@@ -293,6 +313,9 @@ export interface ProductListResponse {
   page: number;
   pageSize: number;
   pageCount: number;
+  /** Mặc định toàn shop — gợi ý placeholder cho hộp cài đặt riêng từng SKU. */
+  safetyStockDefault?: number;
+  lowStockDefault?: number;
 }
 
 export interface InventoryLog {
@@ -1097,6 +1120,8 @@ export interface SyncSettings {
   autoSyncEnabled: boolean;
   safetyStockDefault: number;
   initialStockMode: InitialStockMode;
+  /** Ngưỡng cảnh báo sắp hết hàng mặc định toàn shop — 0 = tắt. */
+  lowStockDefault: number;
   updatedAt: string | null;
   /** Số job đang chờ trong hàng đợi đẩy tồn — vẽ tiến độ sau khi sync tay. */
   pendingJobs: number;
@@ -1111,10 +1136,12 @@ export function fetchSyncSettings() {
 export function updateSyncSettings(data: {
   safetyStockDefault?: number;
   initialStockMode?: InitialStockMode;
+  lowStockDefault?: number;
 }) {
   return apiFetch<{
     safetyStockDefault: number;
     initialStockMode: InitialStockMode;
+    lowStockDefault: number;
     queued: number;
   }>("/api/inventory/sync-settings", {
     method: "PUT",

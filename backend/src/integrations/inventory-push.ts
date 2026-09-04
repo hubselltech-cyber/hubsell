@@ -96,6 +96,14 @@ export async function enqueueStockPush(
     const ids = [...new Set(productIds)].filter(Boolean);
     if (ids.length === 0) return result;
 
+    // CẢNH BÁO SẮP HẾT HÀNG đi cùng cửa này (mọi biến động kho đều qua đây, kể
+    // cả SKU chưa nối sàn): rơi qua ngưỡng → chuông + thẻ điều hành ngay.
+    // Import động để không kéo cả cụm detector điều hành vào luồng đơn hàng
+    // lúc nạp module; best-effort, không chờ, không ném.
+    void import("../services/ops-alerts")
+      .then((m) => m.checkLowStock(ids))
+      .catch((err) => console.error("[Low-stock] Không kiểm tra được ngưỡng:", err));
+
     const mappings = await prisma.channelProduct.findMany({
       where: {
         productId: { in: ids },

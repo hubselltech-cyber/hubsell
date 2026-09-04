@@ -946,6 +946,12 @@ model Product {
   /// toàn shop (ShopSyncSetting.safetyStockDefault). Tồn đẩy lên sàn =
   /// max(0, quantityInStock − holdQuantity − safetyStock).
   safetyStock     Int?
+
+  /// NGƯỠNG CẢNH BÁO SẮP HẾT HÀNG riêng của SKU (05/09): tồn khả dụng
+  /// (quantityInStock − holdQuantity) rơi xuống ≤ ngưỡng → chuông + thẻ
+  /// Trung tâm điều hành (OpsAlert "low-stock", tự đóng khi nhập thêm).
+  /// NULL = dùng mặc định toàn shop (ShopSyncSetting.lowStockDefault); 0 = tắt.
+  lowStockThreshold Int?
   imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
 
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
@@ -1504,6 +1510,10 @@ model ShopSyncSetting {
   ///   MAX  = lấy số lớn nhất một gian (các gian đang cùng niêm yết MỘT lô hàng)
   ///   NONE = không gieo, chủ shop tự nhập tồn rồi bấm Sync
   initialStockMode String @default("SUM")
+
+  /// NGƯỠNG CẢNH BÁO SẮP HẾT HÀNG mặc định toàn shop — SKU không đặt riêng
+  /// (Product.lowStockThreshold = null) dùng số này. 0 = tắt cảnh báo.
+  lowStockDefault Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

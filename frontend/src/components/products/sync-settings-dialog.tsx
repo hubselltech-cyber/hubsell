@@ -89,6 +89,8 @@ export function SyncSettingsDialog({
   const [channels, setChannels] = useState<SyncChannel[]>([]);
   const [safetyStock, setSafetyStock] = useState("0");
   const [savedSafety, setSavedSafety] = useState(0);
+  const [lowStock, setLowStock] = useState("0");
+  const [savedLowStock, setSavedLowStock] = useState(0);
   const [initialMode, setInitialMode] = useState<InitialStockMode>("SUM");
   const [pending, setPending] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -125,6 +127,8 @@ export function SyncSettingsDialog({
     setChannels(s.channels);
     setSafetyStock(String(s.safetyStockDefault));
     setSavedSafety(s.safetyStockDefault);
+    setLowStock(String(s.lowStockDefault));
+    setSavedLowStock(s.lowStockDefault);
     setInitialMode(s.initialStockMode);
     setPending(s.pendingJobs);
     notify(s.channels, s.pendingJobs);
@@ -285,12 +289,15 @@ export function SyncSettingsDialog({
   async function saveSettings(data: {
     safetyStockDefault?: number;
     initialStockMode?: InitialStockMode;
+    lowStockDefault?: number;
   }) {
     setSaving(true);
     try {
       const r = await updateSyncSettings(data);
       setSavedSafety(r.safetyStockDefault);
       setSafetyStock(String(r.safetyStockDefault));
+      setSavedLowStock(r.lowStockDefault);
+      setLowStock(String(r.lowStockDefault));
       setInitialMode(r.initialStockMode);
       const pend = pending + r.queued;
       if (r.queued > 0) {
@@ -343,7 +350,17 @@ export function SyncSettingsDialog({
     }
   }
 
+  function handleSaveLowStock() {
+    const n = Number(lowStock);
+    if (!Number.isInteger(n) || n < 0) {
+      toast.error("Ngưỡng cảnh báo phải là số nguyên không âm (0 = tắt)");
+      return;
+    }
+    void saveSettings({ lowStockDefault: n });
+  }
+
   const safetyDirty = Number(safetyStock) !== savedSafety;
+  const lowStockDirty = Number(lowStock) !== savedLowStock;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -504,6 +521,36 @@ export function SyncSettingsDialog({
                     Sync ngay toàn bộ
                   </Button>
                 </div>
+              </div>
+            </div>
+
+            {/* ===== NGƯỠNG CẢNH BÁO SẮP HẾT HÀNG ===== */}
+            <div className="rounded-lg border p-3">
+              <p className="text-sm">Ngưỡng cảnh báo sắp hết hàng (mặc định)</p>
+              <p className={cn(TEXT_SUB, "mt-0.5")}>
+                Tồn khả dụng (tồn − đang giữ) của SKU rơi xuống ≤ số này là báo
+                chuông và đẩy thẻ lên Trung tâm điều hành; nhập kho vượt ngưỡng
+                thì thẻ tự đóng. Đặt riêng từng SKU bằng nút chuông ở tab Tồn kho.
+                0 = tắt.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={lowStock}
+                  onChange={(e) => setLowStock(e.target.value)}
+                  className="w-24"
+                  aria-label="Ngưỡng cảnh báo sắp hết hàng mặc định"
+                />
+                <span className={TEXT_SUB}>chiếc/SKU</span>
+                <Button
+                  size="sm"
+                  onClick={handleSaveLowStock}
+                  disabled={saving || !lowStockDirty}
+                >
+                  Lưu
+                </Button>
               </div>
             </div>
 

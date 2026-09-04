@@ -443,6 +443,8 @@ export interface OrderEventResult {
   inventory: StockOutcome; // kết quả tác động tồn kho
   deducted?: number;
   restored?: number;
+  /** SKU kho vừa biến động — route webhook đẩy tồn mới lên các sàn khác + kiểm tra ngưỡng. */
+  productIds?: string[];
 }
 
 /**
@@ -478,6 +480,7 @@ export async function processTiktokOrderEvent(
         orderStatus: order.order_status,
         inventory: r.outcome,
         restored: r.restored,
+        productIds: r.productIds,
       };
     }
 
@@ -489,6 +492,7 @@ export async function processTiktokOrderEvent(
         orderStatus: order.order_status,
         inventory: d.outcome,
         deducted: d.deducted,
+        productIds: d.productIds,
       };
     }
 

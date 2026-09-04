@@ -14,6 +14,7 @@ import {
 } from "../integrations/inventory-push";
 import { syncChannelProducts } from "../marketplace/product-sync";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
+import { scanOpsAlerts } from "../services/ops-alerts";
 
 const router = Router();
 
@@ -420,7 +421,12 @@ router.get("/sync-settings", async (req: AuthRequest, res, next) => {
     const [setting, channels, pendingJobs] = await Promise.all([
       prisma.shopSyncSetting.findUnique({
         where: { userId: req.ownerId! },
-        select: { safetyStockDefault: true, initialStockMode: true, updatedAt: true },
+        select: {
+          safetyStockDefault: true,
+          initialStockMode: true,
+          lowStockDefault: true,
+          updatedAt: true,
+        },
       }),
       listSyncChannels(req.ownerId!),
       countPendingJobs(req.ownerId!),
@@ -433,6 +439,7 @@ router.get("/sync-settings", async (req: AuthRequest, res, next) => {
       autoSyncEnabled: enabledCount > 0,
       safetyStockDefault: setting?.safetyStockDefault ?? 0,
       initialStockMode: (setting?.initialStockMode ?? "SUM") as InitialStockMode,
+      lowStockDefault: setting?.lowStockDefault ?? 0,
       updatedAt: setting?.updatedAt ?? null,
       pendingJobs,
     });
@@ -441,19 +448,28 @@ router.get("/sync-settings", async (req: AuthRequest, res, next) => {
   }
 });
 
-// PUT /api/inventory/sync-settings — Body: { safetyStockDefault?, initialStockMode? }
+// PUT /api/inventory/sync-settings — Body: { safetyStockDefault?, initialStockMode?, lowStockDefault? }
 // Đổi tồn an toàn mặc định → "có thể bán" đổi hàng loạt → xếp job đẩy lại cho
-// các gian ĐANG BẬT (gian tắt không bị đụng).
+// các gian ĐANG BẬT (gian tắt không bị đụng). Đổi ngưỡng cảnh báo mặc định →
+// quét lại thẻ sắp hết hàng ngay.
 router.put("/sync-settings", async (req: AuthRequest, res, next) => {
   try {
     if (!requireShopOwner(req, res)) return;
-    const { safetyStockDefault, initialStockMode } = req.body ?? {};
+    const { safetyStockDefault, initialStockMode, lowStockDefault } = req.body ?? {};
 
     let safety: number | undefined;
     if (safetyStockDefault !== undefined) {
       safety = Number(safetyStockDefault);
       if (!Number.isInteger(safety) || safety < 0) {
         res.status(400).json({ error: "Tồn an toàn phải là số nguyên không âm" });
+        return;
+      }
+    }
+    let lowStock: number | undefined;
+    if (lowStockDefault !== undefined) {
+      lowStock = Number(lowStockDefault);
+      if (!Number.isInteger(lowStock) || lowStock < 0) {
+        res.status(400).json({ error: "Ngưỡng cảnh báo phải là số nguyên không âm (0 = tắt)" });
         return;
       }
     }
@@ -468,18 +484,20 @@ router.put("/sync-settings", async (req: AuthRequest, res, next) => {
 
     const before = await prisma.shopSyncSetting.findUnique({
       where: { userId: req.ownerId! },
-      select: { safetyStockDefault: true },
+      select: { safetyStockDefault: true, lowStockDefault: true },
     });
     const updated = await prisma.shopSyncSetting.upsert({
       where: { userId: req.ownerId! },
       update: {
         ...(safety !== undefined ? { safetyStockDefault: safety } : {}),
         ...(mode !== undefined ? { initialStockMode: mode } : {}),
+        ...(lowStock !== undefined ? { lowStockDefault: lowStock } : {}),
       },
       create: {
         userId: req.ownerId!,
         safetyStockDefault: safety ?? 0,
         initialStockMode: mode ?? "SUM",
+        lowStockDefault: lowStock ?? 0,
       },
     });
 
@@ -493,10 +511,16 @@ router.put("/sync-settings", async (req: AuthRequest, res, next) => {
         })
       ).queued;
     }
+    // Ngưỡng mặc định đổi → thẻ sắp hết hàng của mọi SKU dùng mặc định phải
+    // mở/đóng lại ngay, không chờ vòng quét 10'.
+    if (lowStock !== undefined && lowStock !== (before?.lowStockDefault ?? 0)) {
+      await scanOpsAlerts(req.ownerId!, true);
+    }
 
     res.json({
       safetyStockDefault: updated.safetyStockDefault,
       initialStockMode: updated.initialStockMode as InitialStockMode,
+      lowStockDefault: updated.lowStockDefault,
       queued,
     });
   } catch (err) {

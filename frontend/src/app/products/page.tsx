@@ -11,6 +11,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  BellRing,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -31,6 +32,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { Money } from "@/components/ui/money";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
+import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
@@ -71,7 +73,6 @@ import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 10;
-const LOW_STOCK_THRESHOLD = 10;
 
 const columnHelper = createColumnHelper<Product>();
 
@@ -120,6 +121,8 @@ export default function ProductsHubPage() {
     product: Product;
     type: "IMPORT" | "EXPORT";
   } | null>(null);
+  // SKU đang mở hộp cài đặt riêng (ngưỡng cảnh báo + tồn an toàn).
+  const [skuSettings, setSkuSettings] = useState<Product | null>(null);
 
   // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
   // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
@@ -176,6 +179,12 @@ export default function ProductsHubPage() {
     }
     if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
       setSyncOpen(true);
+    }
+    // Deep-link từ thẻ cảnh báo sắp hết hàng / chuông: ?search=SKU mở đúng dòng.
+    const q = params.get("search")?.trim();
+    if (q) {
+      setSearchInput(q);
+      setSearch(q);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -285,14 +294,24 @@ export default function ProductsHubPage() {
         cell: (info) => {
           const qty = info.getValue();
           const held = info.row.original.holdQuantity ?? 0;
+          // Màu theo NGƯỠNG CẢNH BÁO của SKU (riêng ?? shop) — không còn số cứng.
+          const low = info.row.original.isLowStock ?? false;
+          const threshold = info.row.original.lowStockThresholdEffective ?? 0;
           return (
-            <div className="text-center">
+            <div
+              className="text-center"
+              title={
+                threshold > 0
+                  ? `Ngưỡng cảnh báo sắp hết: ${formatNumber(threshold)}`
+                  : "Chưa đặt ngưỡng cảnh báo sắp hết hàng"
+              }
+            >
               <span
                 className={cn(
                   "inline-flex min-w-12 items-center justify-center rounded-full border px-2.5 py-0.5 text-sm font-semibold",
-                  qty === 0
+                  qty - held <= 0
                     ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : qty < LOW_STOCK_THRESHOLD
+                    : low
                       ? "border-amber-200 bg-amber-50 text-amber-700"
                       : "border-emerald-200 bg-emerald-50 text-emerald-700"
                 )}
@@ -301,6 +320,11 @@ export default function ProductsHubPage() {
               </span>
               {held > 0 && (
                 <p className="mt-1 text-xs text-amber-600">Giữ {formatNumber(held)}</p>
+              )}
+              {low && qty - held > 0 && (
+                <p className="mt-0.5 text-xs font-medium text-amber-700">
+                  ≤ ngưỡng {formatNumber(threshold)}
+                </p>
               )}
             </div>
           );
@@ -433,6 +457,21 @@ export default function ProductsHubPage() {
               <ArrowUpFromLine className="size-4" />
               Xuất
             </Button>
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "px-2",
+                  row.original.isLowStock ? "text-amber-700" : "text-muted-foreground"
+                )}
+                title="Ngưỡng cảnh báo sắp hết hàng & tồn an toàn của SKU"
+                aria-label={`Cài đặt SKU ${row.original.skuCode}`}
+                onClick={() => setSkuSettings(row.original)}
+              >
+                <BellRing className="size-4" />
+              </Button>
+            )}
           </div>
         ),
       }),
@@ -791,6 +830,22 @@ export default function ProductsHubPage() {
             if (!open) setAdjusting(null);
           }}
           onDone={load}
+        />
+      )}
+
+      {/* Cài đặt riêng một SKU: ngưỡng cảnh báo sắp hết hàng + tồn an toàn */}
+      {skuSettings && (
+        <SkuSettingsDialog
+          product={skuSettings}
+          shopDefaults={{
+            safetyStock: productsQ.data?.safetyStockDefault ?? 0,
+            lowStock: productsQ.data?.lowStockDefault ?? 0,
+          }}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setSkuSettings(null);
+          }}
+          onSaved={load}
         />
       )}
 
