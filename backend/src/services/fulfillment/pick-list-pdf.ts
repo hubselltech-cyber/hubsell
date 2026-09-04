@@ -228,8 +228,15 @@ function drawHeader(ctx: Ctx, page: PDFPage, order: PickListOrder, pageNo: numbe
   return y - 2;
 }
 
-const FOOTER_H = 22;
+const FOOTER_H = 40;
+const PROMO = rgb(0.8, 0.12, 0.12);
 
+/**
+ * Chân phiếu: dòng tổng, LỜI MỜI REFERRAL màu đỏ (anh Trung 04/09 — tận dụng
+ * tờ phiếu kho: người đọc là chủ shop/nhân viên, nói thẳng với họ "giới thiệu
+ * cho shop bạn", chương trình Kiếm Tiền Cùng Hubsell 10% vĩnh viễn), rồi dòng
+ * lưu ý xám. Lời mời chỉ in ở trang cuối của đơn để không lặp.
+ */
 function drawFooter(ctx: Ctx, page: PDFPage, order: PickListOrder, isLast: boolean) {
   const { regular, bold } = ctx;
   let y = MARGIN + FOOTER_H;
@@ -242,6 +249,23 @@ function drawFooter(ctx: Ctx, page: PDFPage, order: PickListOrder, isLast: boole
       const note = wrapText(`Ghi chú: ${order.note}`, regular, 6.5, CONTENT_W - 110)[0];
       page.drawText(note, { x: MARGIN + 110, y: y - 10, size: 6.5, font: regular, color: INK });
     }
+    // Lời mời referral — 2 dòng đỏ, dòng đầu đậm
+    const promo1 = "Giới thiệu Hubsell cho shop bạn — nhận 10% hoa hồng vĩnh viễn.";
+    const promo2 = "Chi tiết tại mục Kiếm Tiền Cùng Hubsell trong ứng dụng.";
+    page.drawText(wrapText(promo1, bold, 6.8, CONTENT_W)[0] ?? promo1, {
+      x: MARGIN,
+      y: MARGIN + 17,
+      size: 6.8,
+      font: bold,
+      color: PROMO,
+    });
+    page.drawText(wrapText(promo2, regular, 6.3, CONTENT_W)[0] ?? promo2, {
+      x: MARGIN,
+      y: MARGIN + 9,
+      size: 6.3,
+      font: regular,
+      color: PROMO,
+    });
   } else {
     page.drawText("(tiếp trang sau)", { x: MARGIN, y: y - 10, size: 7, font: regular, color: MUTED });
   }
