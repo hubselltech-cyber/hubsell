@@ -96,6 +96,7 @@ export const lazadaFulfillment: FulfillmentAdapter = {
         ok: true,
         packageId: packageIds[0],
         trackingCode: lines.find((l) => l.tracking_number)?.tracking_number ?? null,
+        carrierName: lines.find((l) => l.shipment_provider)?.shipment_provider ?? null,
         note: packageIds.length > 1 ? `Sàn tách ${packageIds.length} kiện` : undefined,
       };
     } catch (err) {

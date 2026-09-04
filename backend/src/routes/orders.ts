@@ -14,6 +14,7 @@ import { channelScope } from "../lib/channel-filter";
 import { attachItemImages } from "../services/item-images";
 import {
   CARRIER_LABEL,
+  carrierFromName,
   expressShippingWhere,
   isExpressShipping,
   notExpressShippingWhere,
@@ -745,8 +746,11 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
     const confirmedIds: string[] = [];
     const markProcessed = async (
       id: string,
-      extra: { trackingCode?: string | null; platformPackageId?: string | null } = {}
+      extra: { trackingCode?: string | null; platformPackageId?: string | null; carrierName?: string | null } = {}
     ) => {
+      // Hãng sàn gán lúc sắp xếp (Lazada trả ngay shipment_provider) — ghi luôn
+      // để phiếu xuất hàng in ngay sau đó không bị "Chưa gán"; sync sau vẫn đè.
+      const carrier = extra.carrierName ? carrierFromName(extra.carrierName) : null;
       await prisma.order.update({
         where: { id },
         data: {
@@ -754,6 +758,8 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
           packedAt: new Date(),
           ...(extra.trackingCode ? { trackingCode: extra.trackingCode } : {}),
           ...(extra.platformPackageId ? { platformPackageId: extra.platformPackageId } : {}),
+          ...(extra.carrierName ? { shippingCarrierName: extra.carrierName } : {}),
+          ...(carrier ? { carrier } : {}),
         },
       });
       confirmedIds.push(id);
@@ -792,7 +798,11 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
         for (const o of list) {
           const r = await adapter.arrangeShipment(channel, toFulfillRef(o), choice);
           if (r.ok) {
-            await markProcessed(o.id, { trackingCode: r.trackingCode, platformPackageId: r.packageId });
+            await markProcessed(o.id, {
+              trackingCode: r.trackingCode,
+              platformPackageId: r.packageId,
+              carrierName: r.carrierName,
+            });
             if (r.note) notes.push({ orderCode: o.orderCode, note: r.note });
           } else {
             failed.push({ orderCode: o.orderCode, reason: r.error ?? "Sàn từ chối" });

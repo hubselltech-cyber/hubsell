@@ -59,6 +59,8 @@ export interface ArrangeResult {
   trackingCode?: string | null;
   /** Mã kiện phía sàn (Lazada package_id / TikTok package id). */
   packageId?: string | null;
+  /** Tên hãng vận chuyển sàn gán ngay khi sắp xếp (Lazada shipment_provider). */
+  carrierName?: string | null;
   /** Lý do lỗi, đã dịch sang tiếng người — hiện thẳng cho seller. */
   error?: string;
   /** Adapter tự đổi phương thức so với lựa chọn (vd sàn chỉ cho pickup). */
