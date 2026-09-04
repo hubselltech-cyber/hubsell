@@ -27,7 +27,7 @@ const ITEM_LIST_PAGE = 100; // Shopee cho tối đa 100 item/lần get_item_list
 const BASE_INFO_BATCH = 50; // tối đa 50 item_id/lần get_item_base_info
 const MAX_PAGES = 200; // chốt chặn phân trang vô tận
 /** Giãn nhịp giữa hai call chi tiết/model trong cùng một lượt kéo (né rate limit). */
-const PACE_MS = 250;
+const PACE_MS = 150;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- TRANSFORMER (Shopee → chuẩn Hubsell) ----------

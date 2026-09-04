@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ScanSearch,
   ShieldAlert,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ import {
   fetchSyncPending,
   fetchSyncSettings,
   previewChannelSync,
+  quickLinkChannel,
   reconcileChannelSync,
   setChannelSyncEnabled,
   syncAllStock,
@@ -101,6 +103,9 @@ export function SyncSettingsDialog({
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [preview, setPreview] = useState<SyncPreview | "loading" | null>(null);
   const [enabling, setEnabling] = useState(false);
+  // Nối nhanh: gian đang hỏi xác nhận / gian đang chạy.
+  const [quickLinkAskId, setQuickLinkAskId] = useState<string | null>(null);
+  const [quickLinkBusyId, setQuickLinkBusyId] = useState<string | null>(null);
 
   const [logs, setLogs] = useState<InventorySyncLog[]>([]);
 
@@ -245,6 +250,39 @@ export function SyncSettingsDialog({
       return;
     }
     void disable(channel);
+  }
+
+  /**
+   * NỐI NHANH một gian: backend kéo danh mục nếu chưa có → tự khớp trùng mã →
+   * tạo SKU kho cho phần còn lại. Xong thì mở luôn màn so sánh để bật tiếp —
+   * chủ shop đi một mạch, không phải sang tab Chờ liên kết.
+   */
+  async function runQuickLink(channel: SyncChannel) {
+    setQuickLinkAskId(null);
+    setQuickLinkBusyId(channel.id);
+    closePreview();
+    try {
+      const r = await quickLinkChannel(channel.id);
+      const parts: string[] = [];
+      if (r.pulled) parts.push(`kéo ${formatNumber(r.pulled.scanned)} SKU từ sàn`);
+      if (r.matched) parts.push(`tự khớp ${formatNumber(r.matched)}`);
+      if (r.createdProducts) parts.push(`tạo mới ${formatNumber(r.createdProducts)} SKU kho`);
+      if (r.reusedProducts) parts.push(`nối vào ${formatNumber(r.reusedProducts)} SKU có sẵn`);
+      toast.success(
+        `"${channel.shopName}": ${parts.length ? parts.join(", ") : "không có gì mới"} — ${formatNumber(r.linkedTotal)} SKU đã nối${
+          r.stillUnlinked ? `, còn ${formatNumber(r.stillUnlinked)} chưa nối (thiếu mã SKU)` : ""
+        }.`,
+        { duration: 8000 }
+      );
+      await loadSettings();
+      if (r.linkedTotal > 0) {
+        await openPreview({ ...channel, linkedCount: r.linkedTotal });
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Nối nhanh thất bại — thử lại sau ít phút");
+    } finally {
+      setQuickLinkBusyId(null);
+    }
   }
 
   async function handleReconcile(channel: SyncChannel) {
@@ -428,6 +466,25 @@ export function SyncSettingsDialog({
                               : ""}
                           </p>
                         </div>
+                        {!c.stockSyncEnabled && (
+                          <Button
+                            variant={c.linkedCount === 0 ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => {
+                              closePreview();
+                              setQuickLinkAskId(quickLinkAskId === c.id ? null : c.id);
+                            }}
+                            disabled={quickLinkBusyId !== null || !c.connected}
+                            title="Kéo danh mục (nếu chưa có) → tự khớp trùng mã → tạo SKU kho cho phần còn lại"
+                          >
+                            {quickLinkBusyId === c.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Sparkles className="size-4" />
+                            )}
+                            Nối SKU nhanh
+                          </Button>
+                        )}
                         {c.stockSyncEnabled && (
                           <Button
                             variant="ghost"
@@ -460,6 +517,42 @@ export function SyncSettingsDialog({
                         />
                       </div>
 
+                      {quickLinkAskId === c.id && (
+                        <div className="mx-3 mb-3 space-y-2 rounded-md border bg-muted/30 p-3">
+                          <p className="text-sm">
+                            Nối nhanh <b>{c.shopName}</b> theo 3 bước: kéo danh mục từ sàn
+                            (nếu chưa có) → tự khớp SKU sàn <b>trùng mã</b> với SKU kho có
+                            sẵn → phần còn lại tạo SKU kho mới từ tên/ảnh/giá trên sàn rồi
+                            nối luôn.
+                          </p>
+                          <p className={TEXT_SUB}>
+                            SKU kho tạo mới nhận tồn ban đầu theo cách gieo bên dưới (đang
+                            chọn: {INITIAL_MODE_LABEL[initialMode].toLowerCase()}). Shop vài
+                            trăm SKU chưa từng kéo danh mục có thể mất 1-2 phút — đừng đóng
+                            hộp thoại. Không đụng SKU đã nối.
+                          </p>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setQuickLinkAskId(null)}
+                            >
+                              Để sau
+                            </Button>
+                            <Button size="sm" onClick={() => void runQuickLink(c)}>
+                              <Sparkles className="size-4" />
+                              Chạy nối nhanh
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {quickLinkBusyId === c.id && (
+                        <p className={cn(TEXT_SUB, "flex items-center gap-2 px-3 pb-3")}>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          Đang nối nhanh {c.shopName}… (kéo danh mục → tự khớp → tạo SKU kho)
+                        </p>
+                      )}
+
                       {isPreviewing && (
                         <PreviewPanel
                           channel={c}
@@ -467,6 +560,10 @@ export function SyncSettingsDialog({
                           enabling={enabling}
                           onCancel={closePreview}
                           onConfirm={() => void confirmEnable(c)}
+                          onQuickLink={() => {
+                            closePreview();
+                            setQuickLinkAskId(c.id);
+                          }}
                         />
                       )}
                     </div>
@@ -636,12 +733,14 @@ function PreviewPanel({
   enabling,
   onCancel,
   onConfirm,
+  onQuickLink,
 }: {
   channel: SyncChannel;
   preview: SyncPreview | "loading" | null;
   enabling: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  onQuickLink: () => void;
 }) {
   if (!preview || preview === "loading") {
     return (
@@ -664,13 +763,19 @@ function PreviewPanel({
           <span>
             Gian này chưa có SKU sàn nào nối về kho nên chưa có gì để đồng bộ.
             {s.unlinked > 0
-              ? ` Đang có ${formatNumber(s.unlinked)} SKU sàn chờ nối — sang tab Chờ liên kết bấm "Tự khớp" hoặc "Tạo SKU kho" rồi quay lại bật.`
-              : ' Bấm "Đồng bộ từ sàn" ở tab Chờ liên kết để kéo danh mục về trước.'}
+              ? ` Đang có ${formatNumber(s.unlinked)} SKU sàn chờ nối.`
+              : " Chưa kéo danh mục từ sàn."}{" "}
+            Bấm <b>Nối SKU nhanh</b>: hệ thống tự khớp trùng mã và tạo SKU kho cho
+            phần còn lại, xong quay lại đây bật.
           </span>
         </p>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={enabling}>
             Đóng
+          </Button>
+          <Button size="sm" onClick={onQuickLink} disabled={enabling}>
+            <Sparkles className="size-4" />
+            Nối SKU nhanh
           </Button>
         </div>
       </div>

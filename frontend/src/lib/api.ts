@@ -1202,6 +1202,27 @@ export function setChannelSyncEnabled(channelId: string, enabled: boolean) {
   );
 }
 
+/**
+ * NỐI NHANH một gian (một cú bấm từ dialog Cài đặt đồng bộ): kéo danh mục nếu
+ * chưa có → tự khớp trùng mã → tạo SKU kho cho phần còn lại rồi nối. Có thể
+ * mất 1-2 phút với shop vài trăm SKU chưa từng kéo danh mục.
+ */
+export function quickLinkChannel(channelId: string) {
+  return apiFetch<{
+    channel: { id: string; shopName: string; channelName: ChannelName };
+    pulled: { scanned: number; created: number } | null;
+    matched: number;
+    createdProducts: number;
+    reusedProducts: number;
+    linked: number;
+    linkedTotal: number;
+    stillUnlinked: number;
+  }>("/api/mappings/quick-link", {
+    method: "POST",
+    body: JSON.stringify({ channelId }),
+  });
+}
+
 /** "Đối soát ngay" một gian: đọc tồn sàn, SKU lệch thì xếp đẩy lại (gian đang bật). */
 export function reconcileChannelSync(channelId: string) {
   return apiFetch<{
