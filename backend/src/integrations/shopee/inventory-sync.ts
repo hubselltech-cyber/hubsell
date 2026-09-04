@@ -55,6 +55,8 @@ export interface StockVerifyPayload {
   productId: string;
   itemId: number;
   modelId?: number;
+  /** location_id kho Shopee của SKU (nếu sàn khai) — đẩy lại phải gửi kèm. */
+  locationId?: string;
   orderSn?: string;
 }
 
@@ -134,6 +136,7 @@ export async function syncShopeeStockForProducts(
         channelSku: true,
         externalId: true,
         productId: true,
+        channelStockLocationId: true,
         channel: true,
       },
     });
@@ -197,7 +200,8 @@ export async function syncShopeeStockForProducts(
               auth.shopId,
               ids.itemId,
               pushValue,
-              ids.modelId
+              ids.modelId,
+              mp.channelStockLocationId
             );
             ok = true;
           } catch (err) {
@@ -393,7 +397,14 @@ export async function verifyStockPush(
   if (actual === expected) return { outcome: "match", expected, actual };
 
   // Sàn ghi trễ / lệch thật → đẩy lại số đúng ngay, worker sẽ kiểm tra tiếp.
-  await updateShopeeStock(accessToken, shopId, payload.itemId, expected, payload.modelId);
+  await updateShopeeStock(
+    accessToken,
+    shopId,
+    payload.itemId,
+    expected,
+    payload.modelId,
+    payload.locationId ?? null
+  );
   return { outcome: "mismatch", expected, actual };
 }
 

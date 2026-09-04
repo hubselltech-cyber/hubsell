@@ -157,7 +157,7 @@ async function drain(): Promise<void> {
         // Kho biến động → xếp job đẩy tồn khả dụng mới lên MỌI gian đã liên
         // kết (Shopee lẫn Lazada) vào hàng đợi đa sàn. Chỉ 1 upsert/SKU-gian,
         // worker stock-push-worker tự đẩy + retry + log + cảnh báo; switch
-        // autoSyncEnabled của chủ shop được tôn trọng ngay ở cửa enqueue.
+        // stockSyncEnabled của TỪNG GIAN được tôn trọng ngay ở cửa enqueue.
         if (stockSync) {
           await enqueueStockPush(stockSync.productIds, {
             source: stockSync.orderSn

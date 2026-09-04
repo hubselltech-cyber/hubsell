@@ -4,7 +4,12 @@ import * as XLSX from "xlsx";
 import { Prisma, InventoryLogType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
-import { enqueueStockPush } from "../integrations/inventory-push";
+import {
+  availableToPush,
+  enqueueStockPush,
+  getSafetyStockDefault,
+  PUSHABLE_CHANNELS,
+} from "../integrations/inventory-push";
 
 const router = Router();
 
@@ -127,41 +132,73 @@ router.get("/", async (req: AuthRequest, res, next) => {
         include: {
           channelProducts: {
             select: {
+              channelId: true,
               channelSku: true,
-              channel: { select: { channelName: true, shopName: true } },
+              externalId: true,
+              channelStock: true,
+              channel: {
+                select: { channelName: true, shopName: true, stockSyncEnabled: true },
+              },
             },
           },
         },
       }),
     ]);
 
-    // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — MỘT query
-    // cho cả trang, nuôi badge đỏ trên cột Bán trên.
+    // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — HAI query
+    // cho cả trang: cảnh báo mở (đẩy fail) + job đang chờ (lệch tạm, sắp khớp).
     const pageSkus = items.flatMap((p) => p.channelProducts.map((c) => c.channelSku));
-    const openAlerts = pageSkus.length
-      ? await prisma.inventorySyncAlert.findMany({
-          where: {
-            resolvedAt: null,
-            channelSku: { in: pageSkus },
-            channel: { userId: req.ownerId! },
-          },
-          select: { channelSku: true },
-        })
-      : [];
+    const [openAlerts, pendingJobs, safetyDefault] = await Promise.all([
+      pageSkus.length
+        ? prisma.inventorySyncAlert.findMany({
+            where: {
+              resolvedAt: null,
+              channelSku: { in: pageSkus },
+              channel: { userId: req.ownerId! },
+            },
+            select: { channelSku: true },
+          })
+        : [],
+      pageSkus.length
+        ? prisma.stockPushJob.findMany({
+            where: { channelSku: { in: pageSkus }, channel: { userId: req.ownerId! } },
+            select: { channelId: true, channelSku: true },
+          })
+        : [],
+      getSafetyStockDefault(req.ownerId!),
+    ]);
     const alertSkus = new Set(openAlerts.map((a) => a.channelSku));
+    const pendingKeys = new Set(pendingJobs.map((j) => `${j.channelId}:${j.channelSku}`));
 
     const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => {
         const { channelProducts, ...core } = p;
+        // "CÓ THỂ BÁN" = số Hubsell đẩy lên mọi gian — cột chính của hub.
+        const availableToSell = availableToPush(p, safetyDefault);
+        // Lệch với số sàn đang giữ (theo lần đẩy/đọc gần nhất) ở gian ĐANG BẬT
+        // đồng bộ, và không có job chờ đẩy → lệch thật, cần nhìn tới.
+        const stockMismatch = channelProducts.some(
+          (c) =>
+            c.channel.stockSyncEnabled &&
+            c.externalId &&
+            PUSHABLE_CHANNELS.includes(c.channel.channelName) &&
+            c.channelStock !== null &&
+            c.channelStock !== availableToSell &&
+            !pendingKeys.has(`${c.channelId}:${c.channelSku}`)
+        );
         return {
           ...hideCost(core, seesFinancials),
+          availableToSell,
+          safetyStockEffective: p.safetyStock ?? safetyDefault,
           channelLinks: channelProducts.map((c) => ({
             channelSku: c.channelSku,
             channelName: c.channel.channelName,
             shopName: c.channel.shopName,
+            stockSyncEnabled: c.channel.stockSyncEnabled,
           })),
           hasSyncAlert: channelProducts.some((c) => alertSkus.has(c.channelSku)),
+          stockMismatch,
         };
       }),
       total,
@@ -169,6 +206,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       pageSize,
       pageCount: Math.ceil(total / pageSize),
       costPriceHidden: !seesFinancials,
+      safetyStockDefault: safetyDefault,
     });
   } catch (err) {
     next(err);
@@ -183,12 +221,13 @@ router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
   try {
     const product = await prisma.product.findFirst({
       where: { id: req.params.id, userId: req.ownerId! },
-      select: { id: true },
+      select: { id: true, quantityInStock: true, holdQuantity: true, safetyStock: true },
     });
     if (!product) {
       res.status(404).json({ error: "Không tìm thấy sản phẩm" });
       return;
     }
+    const expected = availableToPush(product, await getSafetyStockDefault(req.ownerId!));
 
     const links = await prisma.channelProduct.findMany({
       where: { productId: product.id },
@@ -198,13 +237,24 @@ router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
         channelSku: true,
         productName: true,
         externalId: true,
-        channel: { select: { channelName: true, shopName: true, status: true } },
+        channelStock: true,
+        lastSyncedAt: true,
+        channel: {
+          select: { channelName: true, shopName: true, status: true, stockSyncEnabled: true },
+        },
       },
       orderBy: [{ channel: { channelName: "asc" } }, { channelSku: "asc" }],
     });
 
-    // Lượt đẩy tồn gần nhất + cờ lệch của TỪNG SKU sàn — hai query cho cả cụm.
+    // Lượt đẩy tồn gần nhất + cờ lệch + job chờ của TỪNG SKU sàn — ba query cho cả cụm.
     const skus = links.map((l) => l.channelSku);
+    const pendingJobs = skus.length
+      ? await prisma.stockPushJob.findMany({
+          where: { channelSku: { in: skus }, channel: { userId: req.ownerId! } },
+          select: { channelId: true, channelSku: true },
+        })
+      : [];
+    const pendingKeys = new Set(pendingJobs.map((j) => `${j.channelId}:${j.channelSku}`));
     const [logs, alerts] = skus.length
       ? await Promise.all([
           prisma.inventorySyncLog.findMany({
@@ -244,6 +294,26 @@ router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
       links.map((l) => {
         const key = `${l.channelId}:${l.channelSku}`;
         const last = latestByKey.get(key);
+        const pushable = Boolean(l.externalId) && l.channel.channelName !== "TIKTOK";
+        const hasAlert = alertKeys.has(key);
+        // Trạng thái khớp của gian với "có thể bán" Hubsell — một chữ cho UI:
+        //   off      = gian chưa bật đồng bộ (số sàn là của sàn, không so)
+        //   pending  = đang có job chờ đẩy (sắp khớp)
+        //   alert    = đẩy thất bại, cảnh báo đang mở
+        //   match / mismatch / unknown (sàn chưa từng trả số)
+        const state = !pushable
+          ? "unknown"
+          : hasAlert
+            ? "alert"
+            : pendingKeys.has(key)
+              ? "pending"
+              : !l.channel.stockSyncEnabled
+                ? "off"
+                : l.channelStock === null
+                  ? "unknown"
+                  : l.channelStock === expected
+                    ? "match"
+                    : "mismatch";
         return {
           id: l.id,
           channelSku: l.channelSku,
@@ -252,7 +322,14 @@ router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
           shopName: l.channel.shopName,
           channelActive: l.channel.status === "ACTIVE",
           /// Sàn này có đẩy tồn được không (TikTok chưa có externalId thì không).
-          pushable: Boolean(l.externalId) && l.channel.channelName !== "TIKTOK",
+          pushable,
+          stockSyncEnabled: l.channel.stockSyncEnabled,
+          /// Tồn sàn theo lần đẩy/đọc gần nhất + mốc đọc (null = chưa từng biết).
+          channelStock: l.channelStock,
+          channelStockAt: l.lastSyncedAt,
+          /// Số Hubsell muốn sàn giữ ("có thể bán").
+          expected,
+          state,
           lastSync: last
             ? {
                 status: last.status,
@@ -260,7 +337,7 @@ router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
                 at: last.createdAt,
               }
             : null,
-          hasAlert: alertKeys.has(key),
+          hasAlert,
         };
       })
     );

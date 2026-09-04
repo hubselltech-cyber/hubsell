@@ -3,10 +3,11 @@
 //
 //   1. CÔNG THỨC TỒN KHẢ DỤNG: available = max(0, tồn − hold − tồn an toàn);
 //      safetyStock per-SKU đè lên mặc định toàn shop.
-//   2. HÀNG ĐỢI ĐẨY TỒN: switch autoSyncEnabled gác ở cửa enqueue (mặc định
-//      TẮT → biến động tự động không sinh job; force vẫn qua); job GỘP theo
-//      (channelId, channelSku) — 10 biến động liên tiếp chỉ còn 1 job và giữ
-//      nguyên oldAvailable của biến động đầu.
+//   2. HÀNG ĐỢI ĐẨY TỒN: cờ Channel.stockSyncEnabled THEO GIAN gác ở cửa
+//      enqueue (mặc định TẮT → biến động tự động không sinh job; force vẫn
+//      qua); job GỘP theo (channelId, channelSku) — 10 biến động liên tiếp chỉ
+//      còn 1 job và giữ nguyên oldAvailable của biến động đầu; channelIds
+//      giới hạn job về đúng gian được chỉ định.
 //   3. TRỪ KHO ĐƠN LAZADA (upsertLazadaOrderTx): unpaid → HOLD, pending →
 //      TRỪ thật, canceled → hoàn; vòng quét 10' đẩy lại cùng đơn không trừ
 //      trùng (idempotent nhờ mốc trên Order — dùng chung lõi order-stock).
@@ -69,10 +70,18 @@ describe("enqueueStockPush — switch autoSync + gộp job", () => {
     await prisma.stockPushJob.deleteMany({ where: { channelId: fx.channelId } });
   });
 
-  it("bật autoSync: sinh job; nhiều biến động GỘP còn một job, giữ oldAvailable đầu", async () => {
-    await prisma.shopSyncSetting.create({
-      data: { userId: fx.userId, autoSyncEnabled: true, safetyStockDefault: 0 },
+  it("bật đồng bộ GIAN: sinh job; nhiều biến động GỘP còn một job, giữ oldAvailable đầu", async () => {
+    await prisma.channel.update({
+      where: { id: fx.channelId },
+      data: { stockSyncEnabled: true, stockSyncEnabledAt: new Date() },
     });
+
+    // channelIds trỏ gian khác → không sinh job cho gian này.
+    const elsewhere = await enqueueStockPush([productId], {
+      source: "gian khác",
+      channelIds: ["khong-ton-tai"],
+    });
+    expect(elsewhere.queued).toBe(0);
 
     const first = await enqueueStockPush([productId], { source: "biến động 1" });
     expect(first.queued).toBe(1);

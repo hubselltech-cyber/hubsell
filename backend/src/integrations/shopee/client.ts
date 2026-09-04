@@ -712,6 +712,17 @@ export interface ShopeeStockInfoV2 {
  * update_stock (cũng là seller_stock). Trả null nếu payload không có dữ liệu
  * tồn (để tầng gọi phân biệt "không đọc được" với "tồn = 0").
  */
+/**
+ * location_id kho của SKU khi Shopee trả ĐÚNG MỘT địa điểm có mã — đẩy tồn phải
+ * gửi kèm. Nhiều địa điểm (shop đa kho) → null: chưa hỗ trợ chia tồn theo kho,
+ * update_stock sẽ báo lỗi rõ ràng thay vì đẩy sai kho.
+ */
+export function shopeeStockLocationId(info?: ShopeeStockInfoV2): string | null {
+  const list = info?.seller_stock ?? [];
+  const withId = list.filter((s) => typeof s.location_id === "string" && s.location_id);
+  return withId.length === 1 ? withId[0].location_id! : null;
+}
+
 export function shopeeSellerStock(info?: ShopeeStockInfoV2): number | null {
   if (!info) return null;
   const list = info.seller_stock;
@@ -816,6 +827,8 @@ export async function updateShopeeStock(
   itemId: number,
   stock: number,
   modelId?: number,
+  /** location_id kho Shopee của SKU (shop có khai địa điểm kho) — null = kho mặc định. */
+  locationId?: string | null,
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<void> {
   const data = await callShopPost<ShopeeUpdateStockData>(
@@ -827,8 +840,9 @@ export async function updateShopeeStock(
       stock_list: [
         {
           model_id: modelId ?? 0,
-          // seller_stock: tồn của kho mặc định (không khai location_id).
-          seller_stock: [{ stock }],
+          // seller_stock: kèm location_id khi sàn đã khai địa điểm kho cho SKU
+          // (shop nhiều kho từ chối update không có location); kho mặc định bỏ trống.
+          seller_stock: [locationId ? { location_id: locationId, stock } : { stock }],
         },
       ],
     },

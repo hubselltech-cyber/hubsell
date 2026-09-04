@@ -181,8 +181,12 @@ router.post("/link", async (req: AuthRequest, res, next) => {
  * mỗi lần "Đồng bộ từ sàn"). Nhờ vậy shop mới liên kết xong là số kho khớp ngay
  * với sàn, không có biến động nào bị đẩy ngược lên sàn — vận hành không gián đoạn.
  *
- * Tồn ban đầu = TỔNG tồn của mọi gian ACTIVE (chốt của anh Trung 15/08: mỗi
- * gian được xem là một phần hàng riêng, cộng lại mới ra tổng tồn thật của SKU).
+ * Tồn ban đầu tính theo ShopSyncSetting.initialStockMode (Cài đặt đồng bộ):
+ *   SUM  (mặc định, chốt 15/08): TỔNG tồn mọi gian ACTIVE — mỗi gian là một
+ *        phần hàng riêng, cộng lại mới ra tổng tồn thật của SKU.
+ *   MAX: số LỚN NHẤT của một gian — các gian đang cùng niêm yết MỘT lô hàng
+ *        (cộng tổng sẽ đếm trùng rồi đẩy số ảo lên mọi gian → bán vượt).
+ *   NONE: không gieo — chủ shop tự nhập tồn rồi bấm Sync.
  * Chỉ đụng sản phẩm tồn 0: số tồn người dùng đã nhập tay là chân lý, không bao
  * giờ ghi đè. KHÔNG enqueue đẩy tồn — số vừa lấy TỪ sàn, đẩy lại chỉ tốn quota.
  *
@@ -195,6 +199,13 @@ async function seedInitialStockFromChannel(
   const seeded = new Map<string, number>();
   const ids = [...new Set(productIds)].filter(Boolean);
   if (ids.length === 0) return seeded;
+
+  const setting = await prisma.shopSyncSetting.findUnique({
+    where: { userId: ownerId },
+    select: { initialStockMode: true },
+  });
+  const mode = setting?.initialStockMode ?? "SUM";
+  if (mode === "NONE") return seeded;
 
   const bare = await prisma.product.findMany({
     where: { id: { in: ids }, userId: ownerId, quantityInStock: 0 },
@@ -209,13 +220,18 @@ async function seedInitialStockFromChannel(
       },
     });
     if (rows.length === 0) continue;
-    const qty = rows.reduce((sum, r) => sum + (r.channelStock ?? 0), 0);
+    const qty =
+      mode === "MAX"
+        ? Math.max(...rows.map((r) => r.channelStock ?? 0))
+        : rows.reduce((sum, r) => sum + (r.channelStock ?? 0), 0);
     if (qty <= 0) continue;
 
     // Ghi rõ từng gian góp bao nhiêu để sổ kho tự giải thích được con số tổng.
-    const detail = rows
-      .map((r) => `${r.channel.shopName}: ${r.channelStock ?? 0}`)
-      .join(" + ");
+    const detail =
+      (mode === "MAX" ? "lớn nhất một gian: " : "tổng các gian: ") +
+      rows
+        .map((r) => `${r.channel.shopName}: ${r.channelStock ?? 0}`)
+        .join(mode === "MAX" ? " | " : " + ");
 
     await prisma.$transaction([
       prisma.product.update({
@@ -227,7 +243,7 @@ async function seedInitialStockFromChannel(
           productId: p.id,
           changeQuantity: qty,
           type: InventoryLogType.SYNC,
-          reason: `Đồng bộ lần đầu khi liên kết: tổng tồn các gian trên sàn (${detail})`,
+          reason: `Đồng bộ lần đầu khi liên kết: tồn trên sàn (${detail})`,
         },
       }),
     ]);

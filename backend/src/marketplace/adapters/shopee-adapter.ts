@@ -16,6 +16,7 @@ import {
   getModelList,
   shopeeChannelSku,
   shopeeSellerStock,
+  shopeeStockLocationId,
   type ShopeeItemBaseInfo,
   type ShopeeModel,
 } from "../../integrations/shopee/client";
@@ -45,6 +46,7 @@ function transformItem(info: ShopeeItemBaseInfo): NormalizedChannelProduct {
     externalId: String(info.item_id),
     itemSku: info.item_sku?.trim() || null,
     channelStock: shopeeSellerStock(info.stock_info_v2),
+    channelStockLocationId: shopeeStockLocationId(info.stock_info_v2),
     status: shopeeStatusToNorm(info.item_status),
   };
 }
@@ -71,6 +73,7 @@ function transformModel(
     externalId: `${info.item_id}-${model.model_id}`,
     itemSku: info.item_sku?.trim() || null,
     channelStock: shopeeSellerStock(model.stock_info_v2),
+    channelStockLocationId: shopeeStockLocationId(model.stock_info_v2),
     status: shopeeStatusToNorm(info.item_status),
   };
 }

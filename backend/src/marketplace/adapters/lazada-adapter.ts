@@ -53,6 +53,7 @@ function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelP
     itemSku: null, // Lazada không có SKU tổng cấp item — SellerSku nằm ở từng skus[]
     // Tồn trên sàn: Lazada trả `quantity` ở cấp biến thể; thiếu trường = null.
     channelStock: typeof s.quantity === "number" ? s.quantity : null,
+    channelStockLocationId: null, // Lazada VN: sellable update không theo kho
     status: lazadaStatusToNorm(p.status, s.Status),
   };
 }

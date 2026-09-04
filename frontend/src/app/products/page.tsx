@@ -34,7 +34,10 @@ import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
-import { SyncSettingsDialog } from "@/components/products/sync-settings-dialog";
+import {
+  SyncSettingsDialog,
+  type SyncHeaderState,
+} from "@/components/products/sync-settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -105,10 +108,7 @@ export default function ProductsHubPage() {
 
   // Trạng thái đồng bộ cho chip header (chỉ chủ shop).
   const [syncOpen, setSyncOpen] = useState(false);
-  const [syncState, setSyncState] = useState<{
-    autoSyncEnabled: boolean;
-    pending: number;
-  } | null>(null);
+  const [syncState, setSyncState] = useState<SyncHeaderState | null>(null);
 
   // Dòng đang bung + cache chi tiết liên kết theo productId.
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -160,7 +160,11 @@ export default function ProductsHubPage() {
     if (isAdmin) {
       fetchSyncSettings()
         .then((s) =>
-          setSyncState({ autoSyncEnabled: s.autoSyncEnabled, pending: s.pendingJobs })
+          setSyncState({
+            enabledCount: s.enabledCount,
+            totalChannels: s.channels.length,
+            pending: s.pendingJobs,
+          })
         )
         .catch(() => {});
     }
@@ -296,9 +300,39 @@ export default function ProductsHubPage() {
                 {formatNumber(qty)}
               </span>
               {held > 0 && (
-                <p className="mt-1 text-xs text-amber-600">
-                  Giữ {formatNumber(held)} · khả dụng {formatNumber(qty - held)}
-                </p>
+                <p className="mt-1 text-xs text-amber-600">Giữ {formatNumber(held)}</p>
+              )}
+            </div>
+          );
+        },
+      }),
+      // ===== CÓ THỂ BÁN — số Hubsell đẩy lên MỌI gian đã nối (trung tâm điều
+      // tiết): tồn − đang giữ − tồn an toàn. Đây là con số khách phải tin. =====
+      columnHelper.display({
+        id: "availableToSell",
+        header: () => <div className="text-center">Có thể bán</div>,
+        cell: ({ row }) => {
+          const p = row.original;
+          const qty = p.quantityInStock;
+          const held = p.holdQuantity ?? 0;
+          const safety = p.safetyStockEffective ?? 0;
+          const available = p.availableToSell ?? Math.max(0, qty - held - safety);
+          const linked = (p.channelLinks ?? []).length > 0;
+          return (
+            <div
+              className="text-center"
+              title={`Tồn ${formatNumber(qty)} − giữ ${formatNumber(held)} − an toàn ${formatNumber(safety)} = ${formatNumber(available)}${linked ? " — số này được đẩy lên mọi gian đã nối" : ""}`}
+            >
+              <span
+                className={cn(
+                  "text-sm font-semibold tabular-nums",
+                  available === 0 ? "text-rose-700" : "text-foreground"
+                )}
+              >
+                {formatNumber(available)}
+              </span>
+              {safety > 0 && (
+                <p className="mt-0.5 text-xs text-muted-foreground">an toàn {formatNumber(safety)}</p>
               )}
             </div>
           );
@@ -352,8 +386,15 @@ export default function ProductsHubPage() {
                   </span>
                 );
               })}
-              {row.original.hasSyncAlert && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+              {(row.original.hasSyncAlert || row.original.stockMismatch) && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
+                  title={
+                    row.original.hasSyncAlert
+                      ? "Đẩy tồn lên sàn thất bại — xem cảnh báo phía trên"
+                      : "Số trên sàn khác Có thể bán — đối soát định kỳ sẽ tự đẩy lại"
+                  }
+                >
                   <XCircle className="size-3" />
                   lệch tồn
                 </span>
@@ -433,33 +474,49 @@ export default function ProductsHubPage() {
                     </span>
                     <span className="text-muted-foreground">{l.shopName}</span>
                     <span className="font-mono text-xs">{l.channelSku}</span>
-                    {/* Trạng thái đẩy tồn gần nhất — Shopee còn được đối soát
-                        đọc lại; Lazada hiển thị "đã đẩy lúc" (sàn không cho đọc
-                        nhanh), tuyệt đối không vẽ số ảo. */}
-                    {l.hasAlert ? (
+                    {/* Số sàn đang giữ vs Có thể bán Hubsell — một chữ trạng
+                        thái từ backend (state). Không vẽ số ảo: sàn chưa từng
+                        trả số thì nói thẳng. */}
+                    {l.state === "alert" ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
                         <XCircle className="size-3.5" />
                         lệch tồn — xem cảnh báo phía trên
                       </span>
-                    ) : l.lastSync ? (
-                      l.lastSync.status === "SUCCESS" ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
-                          <CheckCircle2 className="size-3.5" />
-                          đã đẩy {formatNumber(l.lastSync.newQuantity)} lúc{" "}
-                          {new Date(l.lastSync.at).toLocaleTimeString("vi-VN", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                          <XCircle className="size-3.5" />
-                          lượt đẩy gần nhất thất bại
-                        </span>
-                      )
+                    ) : l.state === "pending" ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+                        <Loader2 className="size-3.5 animate-spin" />
+                        đang đẩy {formatNumber(l.expected)}
+                      </span>
+                    ) : l.state === "match" ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+                        <CheckCircle2 className="size-3.5" />
+                        sàn đang {formatNumber(l.channelStock ?? 0)} · khớp
+                      </span>
+                    ) : l.state === "mismatch" ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                        <XCircle className="size-3.5" />
+                        sàn đang {formatNumber(l.channelStock ?? 0)} ≠ Hubsell{" "}
+                        {formatNumber(l.expected)}
+                      </span>
+                    ) : l.state === "off" ? (
+                      <span className={cn(TEXT_SUB, "text-xs")}>
+                        gian chưa bật đồng bộ
+                        {l.channelStock !== null
+                          ? ` · sàn đang ${formatNumber(l.channelStock)}`
+                          : ""}
+                      </span>
                     ) : (
                       <span className={cn(TEXT_SUB, "text-xs")}>
-                        {l.pushable ? "chưa đẩy tồn lần nào" : "sàn chưa hỗ trợ đẩy tồn"}
+                        {l.pushable ? "sàn chưa trả số tồn" : "sàn chưa hỗ trợ đẩy tồn"}
+                      </span>
+                    )}
+                    {l.lastSync?.status === "SUCCESS" && l.state !== "pending" && (
+                      <span className={cn(TEXT_SUB, "text-xs")}>
+                        đẩy lần cuối{" "}
+                        {new Date(l.lastSync.at).toLocaleTimeString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </span>
                     )}
                     {!l.channelActive && (
@@ -541,13 +598,19 @@ export default function ProductsHubPage() {
                 <span
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
-                    syncState.autoSyncEnabled
+                    syncState.enabledCount > 0
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                       : "border-slate-200 bg-slate-50 text-slate-600"
                   )}
+                  title="Số gian đang bật đồng bộ tồn / tổng gian Shopee+Lazada đang nối"
                 >
                   <CloudUpload className="size-3.5" />
-                  Đồng bộ sàn: {syncState.autoSyncEnabled ? "BẬT" : "TẮT"}
+                  Đồng bộ sàn:{" "}
+                  {syncState.totalChannels === 0
+                    ? "chưa có gian"
+                    : syncState.enabledCount === 0
+                      ? "TẮT"
+                      : `${syncState.enabledCount}/${syncState.totalChannels} gian`}
                   {syncState.pending > 0 && (
                     <span className="flex items-center gap-1">
                       · <Loader2 className="size-3 animate-spin" />

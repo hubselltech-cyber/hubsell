@@ -143,7 +143,7 @@ export const WAREHOUSE_TOUR: GuideTour = {
     {
       img: `${GT}/kho-sync-dialog.png`,
       title: "Bật đồng bộ tồn kho lên sàn",
-      desc: "Bấm “Cài đặt” → gạt “Tự động đồng bộ”: mọi biến động kho tự đẩy tồn mới lên mọi gian. Chỉ bật khi số tồn trong Hubsell đã đúng; muốn đẩy lại một lần, bấm “Sync ngay toàn bộ”.",
+      desc: "Bấm “Cài đặt” → gạt công tắc của từng gian: Hubsell đọc tồn thật trên sàn, đặt cạnh số “Có thể bán” để bạn duyệt trước rồi mới bật. Từ đó mọi biến động kho tự đẩy lên gian, mỗi 6 giờ hệ thống còn tự đối soát và sửa lệch.",
       target: { x: 70.07, y: 39.43, w: 2.5, h: 2.08 },
       zoom: 2,
     },

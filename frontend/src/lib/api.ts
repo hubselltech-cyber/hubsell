@@ -230,11 +230,34 @@ export interface Product {
   /** Tồn an toàn riêng của SKU — null/vắng = dùng mặc định toàn shop. */
   safetyStock?: number | null;
   createdAt: string;
+  /**
+   * "CÓ THỂ BÁN" = tồn − đang giữ − tồn an toàn: số Hubsell đẩy lên MỌI gian
+   * đã nối. Cột chính của hub Hàng hóa (mô hình trung tâm điều tiết).
+   */
+  availableToSell?: number;
+  /** Tồn an toàn đang áp cho SKU (riêng hoặc mặc định toàn shop). */
+  safetyStockEffective?: number;
   /** Tóm tắt các SKU sàn đã nối (cột "Bán trên" của hub Hàng hóa). */
-  channelLinks?: { channelSku: string; channelName: ChannelName; shopName: string }[];
+  channelLinks?: {
+    channelSku: string;
+    channelName: ChannelName;
+    shopName: string;
+    stockSyncEnabled?: boolean;
+  }[];
   /** Có SKU sàn đang LỆCH TỒN chưa xử lý (InventorySyncAlert mở). */
   hasSyncAlert?: boolean;
+  /** Số sàn đang giữ ≠ có thể bán ở gian đang bật đồng bộ (không có job chờ). */
+  stockMismatch?: boolean;
 }
+
+/** Trạng thái khớp tồn của MỘT gian với "có thể bán" Hubsell. */
+export type ChannelStockState =
+  | "off" // gian chưa bật đồng bộ
+  | "pending" // đang có job chờ đẩy
+  | "alert" // đẩy thất bại, cảnh báo mở
+  | "match"
+  | "mismatch"
+  | "unknown";
 
 /** Chi tiết MỘT liên kết sàn của sản phẩm kho — dòng bung của hub Hàng hóa. */
 export interface ProductChannelLink {
@@ -246,6 +269,13 @@ export interface ProductChannelLink {
   channelActive: boolean;
   /** Sàn này có đẩy tồn được không (TikTok chưa có product-sync thì không). */
   pushable: boolean;
+  stockSyncEnabled: boolean;
+  /** Tồn sàn theo lần đẩy/đọc gần nhất (null = chưa từng biết). */
+  channelStock: number | null;
+  channelStockAt: string | null;
+  /** Số Hubsell muốn sàn giữ ("có thể bán"). */
+  expected: number;
+  state: ChannelStockState;
   lastSync: { status: "SUCCESS" | "FAILED"; newQuantity: number; at: string } | null;
   hasAlert: boolean;
 }
@@ -1041,11 +1071,32 @@ export function resolveSyncAlert(id: string) {
   });
 }
 
-// ----- Cấu hình Đồng bộ tồn kho đa sàn (trang /warehouse/sync) -----
+// ----- Cấu hình Đồng bộ tồn kho đa sàn — THEO TỪNG GIAN (dialog hub Hàng hóa) -----
+
+/** Cách gieo tồn ban đầu khi nối SKU sàn vào SKU kho tồn 0. */
+export type InitialStockMode = "SUM" | "MAX" | "NONE";
+
+/** Một gian Shopee/Lazada đang hoạt động + trạng thái đồng bộ tồn của nó. */
+export interface SyncChannel {
+  id: string;
+  channelName: ChannelName;
+  shopName: string;
+  connected: boolean;
+  stockSyncEnabled: boolean;
+  stockSyncEnabledAt: string | null;
+  /** Số SKU sàn của gian đã nối về kho (số dòng sẽ được đẩy). */
+  linkedCount: number;
+  lastReconcileAt: string | null;
+  lastReconcileMismatch: number | null;
+}
 
 export interface SyncSettings {
+  channels: SyncChannel[];
+  enabledCount: number;
+  /** Có ít nhất một gian đang bật — nuôi chip header. */
   autoSyncEnabled: boolean;
   safetyStockDefault: number;
+  initialStockMode: InitialStockMode;
   updatedAt: string | null;
   /** Số job đang chờ trong hàng đợi đẩy tồn — vẽ tiến độ sau khi sync tay. */
   pendingJobs: number;
@@ -1055,20 +1106,83 @@ export function fetchSyncSettings() {
   return apiFetch<SyncSettings>("/api/inventory/sync-settings");
 }
 
-/** Lưu cấu hình; backend tự xếp job sync lại toàn bộ khi vừa bật switch
- *  hoặc đổi tồn an toàn lúc đang bật — `queued` là số job đã xếp. */
+/** Lưu tồn an toàn mặc định / cách gieo tồn; đổi tồn an toàn thì backend xếp
+ *  job đẩy lại cho các gian đang bật — `queued` là số job đã xếp. */
 export function updateSyncSettings(data: {
-  autoSyncEnabled?: boolean;
   safetyStockDefault?: number;
+  initialStockMode?: InitialStockMode;
 }) {
   return apiFetch<{
-    autoSyncEnabled: boolean;
     safetyStockDefault: number;
+    initialStockMode: InitialStockMode;
     queued: number;
   }>("/api/inventory/sync-settings", {
     method: "PUT",
     body: JSON.stringify(data),
   });
+}
+
+/** Một dòng của màn so sánh trước khi bật đồng bộ một gian. */
+export interface SyncPreviewItem {
+  channelSku: string;
+  channelProductName: string;
+  skuCode: string;
+  productName: string;
+  quantityInStock: number;
+  holdQuantity: number;
+  safetyStock: number;
+  /** Số Hubsell sẽ đẩy ("có thể bán"). */
+  hubsell: number;
+  /** Số đang có trên sàn (vừa đọc lại) — null = sàn không trả. */
+  onChannel: number | null;
+  /** up = Hubsell cao hơn sàn; down = Hubsell thấp hơn (nguy hiểm nếu về 0). */
+  state: "match" | "up" | "down" | "unknown";
+  pending: boolean;
+}
+
+export interface SyncPreview {
+  channel: { id: string; channelName: ChannelName; shopName: string };
+  /** false = không đọc được sàn lúc này, số sàn là số cũ trong DB. */
+  refreshed: boolean;
+  refreshError: string | null;
+  safetyStockDefault: number;
+  summary: {
+    total: number;
+    match: number;
+    up: number;
+    down: number;
+    unknown: number;
+    /** SKU sẽ bị đẩy về 0 dù sàn còn hàng — kho Hubsell chưa nhập tồn. */
+    willZero: number;
+    unlinked: number;
+  };
+  items: SyncPreviewItem[];
+  truncated: boolean;
+}
+
+/** Màn so sánh: đọc tồn thật từ sàn rồi đặt cạnh số Hubsell sẽ đẩy (không ghi gì). */
+export function previewChannelSync(channelId: string) {
+  return apiFetch<SyncPreview>(`/api/inventory/sync-channels/${channelId}/preview`, {
+    method: "POST",
+  });
+}
+
+/** Bật/tắt đồng bộ tồn cho MỘT gian; bật thì backend đẩy toàn bộ SKU đã nối của gian. */
+export function setChannelSyncEnabled(channelId: string, enabled: boolean) {
+  return apiFetch<{ id: string; stockSyncEnabled: boolean; queued: number }>(
+    `/api/inventory/sync-channels/${channelId}`,
+    { method: "PUT", body: JSON.stringify({ enabled }) }
+  );
+}
+
+/** "Đối soát ngay" một gian: đọc tồn sàn, SKU lệch thì xếp đẩy lại (gian đang bật). */
+export function reconcileChannelSync(channelId: string) {
+  return apiFetch<{
+    scanned: number;
+    mismatched: number;
+    queued: number;
+    samples: { channelSku: string; hubsell: number; onChannel: number }[];
+  }>(`/api/inventory/sync-channels/${channelId}/reconcile`, { method: "POST" });
 }
 
 /** Nút [Sync ngay toàn bộ] — đẩy lại tồn mọi SKU đã liên kết, bất kể switch. */

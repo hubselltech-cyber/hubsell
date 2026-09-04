@@ -363,6 +363,18 @@ model Channel {
   /// "Chuẩn bị hàng". Lần sau mở hộp thoại là điền sẵn — seller nhỏ thao tác
   /// 1 chạm. Hình dạng: { method, addressId?, branchId? } (xem fulfillment/types).
   fulfillmentSettings Json?
+
+  // ── ĐỒNG BỘ TỒN KHO THEO TỪNG GIAN (05/09 — thay switch toàn shop) ──
+  /// BẬT = Hubsell là nguồn chuẩn tồn của gian này: mọi biến động kho tự đẩy
+  /// "có thể bán" lên gian + worker đối soát định kỳ tự sửa lệch. TẮT (mặc
+  /// định) = chỉ nút [Sync ngay toàn bộ] mới đẩy. Bật qua màn so sánh trước
+  /// (Cài đặt đồng bộ) — không backfill, không bật hộ.
+  stockSyncEnabled   Boolean   @default(false)
+  stockSyncEnabledAt DateTime?
+  /// Bookkeeping worker đối soát tồn (stock-reconcile): lần chạy gần nhất +
+  /// số SKU phát hiện lệch phải đẩy lại (0 = khớp hết). null = chưa chạy.
+  lastStockReconcileAt       DateTime?
+  lastStockReconcileMismatch Int?
   createdAt   DateTime    @default(now())
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1249,6 +1261,10 @@ model ChannelProduct {
   /// Lazada quantity). NULL = sàn không trả số / chưa đồng bộ lại từ khi có cột.
   /// Dùng cho "đồng bộ lần đầu lấy tồn theo sàn" khi liên kết SKU kho tồn 0.
   channelStock Int?
+  /// location_id kho Shopee (stock_info_v2.seller_stock[].location_id) khi sàn
+  /// trả ĐÚNG MỘT địa điểm — update_stock phải gửi kèm để không bị từ chối.
+  /// NULL = sàn không khai location (kho mặc định) hoặc Lazada/TikTok.
+  channelStockLocationId String?
   status      ChannelProductStatus @default(ACTIVE)
   lastSyncedAt DateTime? // lần cuối kéo về từ sàn
   createdAt   DateTime @default(now())
@@ -1474,15 +1490,20 @@ model ShopSyncSetting {
   id     String @id @default(cuid())
   userId String @unique
 
-  /// BẬT thì mọi biến động kho (đơn sàn, nhập/xuất tay, nhập hàng hoàn...) tự
-  /// đẩy tồn khả dụng lên các gian đã liên kết SKU. TẮT (mặc định) thì chỉ nút
-  /// [Sync ngay toàn bộ] và force-sync theo cảnh báo mới đẩy — an toàn cho shop
-  /// mới chưa nhập đúng tồn kho vật lý (tránh ghi đè tồn sàn bằng số 0).
+  /// ⚠️ CŨ (trước 05/09): switch tự động toàn shop. Đã thay bằng
+  /// Channel.stockSyncEnabled theo TỪNG GIAN (migration đã chép cờ sang gian).
+  /// Cột giữ lại để deploy chồng lấn không vỡ — code KHÔNG đọc nữa; dọn ở đợt sau.
   autoSyncEnabled Boolean @default(false)
 
   /// Tồn an toàn MẶC ĐỊNH toàn shop — SKU nào không đặt riêng
   /// (Product.safetyStock = null) thì dùng số này.
   safetyStockDefault Int @default(0)
+
+  /// CÁCH GIEO TỒN BAN ĐẦU khi nối SKU sàn vào sản phẩm kho đang tồn 0:
+  ///   SUM  = cộng tồn mọi gian (mỗi gian là phần hàng riêng — mặc định, chốt 15/08)
+  ///   MAX  = lấy số lớn nhất một gian (các gian đang cùng niêm yết MỘT lô hàng)
+  ///   NONE = không gieo, chủ shop tự nhập tồn rồi bấm Sync
+  initialStockMode String @default("SUM")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -8,6 +8,8 @@
 // Nguyên tắc:
 //   · TÁCH BIỆT: request/webhook chỉ enqueue rồi trả ngay; mọi cuộc gọi API
 //     sàn nằm ở đây, lỗi sàn không bao giờ lan ngược về luồng đơn hàng/UI.
+//   · ĐÁNH THỨC NGAY: enqueue xong là kick drain() (không chờ nhịp poll 5s) —
+//     gian A bán 1 thì B, C, D nhận số mới trong ~1s; poll chỉ là lưới an toàn.
 //   · Gom job theo GIAN: mỗi gian lấy access_token một lần; các call trong một
 //     gian giãn nhịp PACE_MS để né rate-limit (Lazada 901 "retry next second").
 //   · Retry: tối đa MAX_ATTEMPTS lần/job, backoff nhân đôi qua nextRetryAt —
@@ -21,7 +23,7 @@
 import { ChannelName, StockPushStatus, StockSyncStatus } from "@prisma/client";
 import type { StockPushJob } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { availableToPush } from "./inventory-push";
+import { availableToPush, registerStockPushKick } from "./inventory-push";
 import {
   createSyncAlert,
   parseShopeeExternalId,
@@ -40,18 +42,29 @@ const MAX_ATTEMPTS = 3;
 const BASE_RETRY_MS = 30_000;
 /** Giãn nhịp giữa hai call API trong CÙNG một gian — né rate-limit khi sync loạt. */
 const PACE_MS = 400;
+/** Trễ nhỏ sau kick để nhiều enqueue liên tiếp (một đơn nhiều SKU) gộp một lượt. */
+const KICK_DELAY_MS = 300;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let started = false;
 let draining = false;
+let kickTimer: NodeJS.Timeout | null = null;
 
 export function startStockPushWorker(): void {
   if (started) return;
   started = true;
   console.log(
-    "[Stock-push] BẬT — worker đẩy tồn đa sàn (Shopee + Lazada), quét hàng đợi mỗi 5s"
+    "[Stock-push] BẬT — worker đẩy tồn đa sàn (Shopee + Lazada): đánh thức ngay khi có job, poll lưới an toàn mỗi 5s"
   );
+  registerStockPushKick(() => {
+    if (kickTimer) return; // đã hẹn — gộp
+    kickTimer = setTimeout(() => {
+      kickTimer = null;
+      void drain();
+    }, KICK_DELAY_MS);
+    kickTimer.unref();
+  });
   // unref: timer không giữ process sống khi server tắt.
   setInterval(() => void drain(), POLL_INTERVAL_MS).unref();
 }
@@ -147,11 +160,12 @@ async function processChannelJobs(
     return;
   }
 
-  // Switch + tồn an toàn của CHỦ gian — một lần cho cả loạt.
+  // Tồn an toàn mặc định của CHỦ gian — một lần cho cả loạt.
   const setting = await prisma.shopSyncSetting.findUnique({
     where: { userId: channel.userId },
-    select: { autoSyncEnabled: true, safetyStockDefault: true },
+    select: { safetyStockDefault: true },
   });
+  const safetyDefault = setting?.safetyStockDefault ?? 0;
 
   let first = true;
   for (const job of claimed) {
@@ -159,8 +173,9 @@ async function processChannelJobs(
     if (!first) await sleep(PACE_MS);
     first = false;
 
-    // Chủ shop vừa TẮT auto-sync giữa chừng → job tự động (không forced) hủy êm.
-    if (!job.forced && !setting?.autoSyncEnabled) {
+    // Chủ shop vừa TẮT đồng bộ gian này giữa chừng → job tự động (không forced)
+    // hủy êm; job forced (sync tay) vẫn đi tiếp vì là ý chí người dùng.
+    if (!job.forced && !channel.stockSyncEnabled) {
       await prisma.stockPushJob.deleteMany({ where: { id: job.id } });
       continue;
     }
@@ -170,7 +185,12 @@ async function processChannelJobs(
       where: {
         channelId_channelSku: { channelId, channelSku: job.channelSku },
       },
-      select: { externalId: true, productId: true, channelSku: true },
+      select: {
+        externalId: true,
+        productId: true,
+        channelSku: true,
+        channelStockLocationId: true,
+      },
     });
     if (!mapping?.productId || !mapping.externalId) {
       // SKU đã bị gỡ liên kết / mapping mất — không còn gì để đẩy.
@@ -186,7 +206,7 @@ async function processChannelJobs(
       continue;
     }
 
-    const pushValue = availableToPush(product, setting?.safetyStockDefault ?? 0);
+    const pushValue = availableToPush(product, safetyDefault);
 
     try {
       if (channel.channelName === ChannelName.SHOPEE && shopeeAuth) {
@@ -201,7 +221,8 @@ async function processChannelJobs(
           shopeeAuth.shopId,
           ids.itemId,
           pushValue,
-          ids.modelId
+          ids.modelId,
+          mapping.channelStockLocationId
         );
         // 200 OK chưa chắc sàn đã ghi — hẹn giờ Double-Check đọc lại tồn.
         await scheduleStockVerification(channel, {
@@ -211,6 +232,7 @@ async function processChannelJobs(
           productId: mapping.productId,
           itemId: ids.itemId,
           modelId: ids.modelId,
+          locationId: mapping.channelStockLocationId ?? undefined,
         });
       } else if (channel.channelName === ChannelName.LAZADA && lazadaToken) {
         // externalId Lazada dạng "itemId-skuId" (lazada-adapter).
@@ -226,6 +248,13 @@ async function processChannelJobs(
           quantity: pushValue,
         });
       }
+
+      // Sàn đã nhận số mới → ghi luôn "tồn sàn" = số vừa đẩy để UI/đối soát
+      // so khớp ngay, không phải chờ lần kéo sản phẩm kế tiếp.
+      await prisma.channelProduct.updateMany({
+        where: { channelId, channelSku: job.channelSku },
+        data: { channelStock: pushValue },
+      });
 
       await writeSyncLog(job, pushValue, true);
       // Chỉ xóa khi job VẪN là RUNNING của mình — enqueue mới trong lúc đẩy đã

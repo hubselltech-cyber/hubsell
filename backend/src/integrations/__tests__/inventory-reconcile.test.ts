@@ -143,7 +143,8 @@ describe("Double-Check tồn kho sau update_stock (sàn ghi trễ)", () => {
       "999",
       ITEM_ID,
       5,
-      undefined
+      undefined,
+      null // location_id: SKU không khai địa điểm kho → kho mặc định
     );
 
     const job = await verifyJob();

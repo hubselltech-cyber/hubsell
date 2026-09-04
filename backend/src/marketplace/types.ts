@@ -31,6 +31,8 @@ export interface NormalizedChannelProduct {
   itemSku: string | null;
   /** Tồn kho người bán ĐANG CÓ TRÊN SÀN — null nếu sàn không trả số. */
   channelStock: number | null;
+  /** location_id kho Shopee của SKU (đúng một địa điểm) — null với sàn khác/kho mặc định. */
+  channelStockLocationId: string | null;
   /** ACTIVE = đang bán; DELISTED = đã gỡ/ẩn/khoá. */
   status: "ACTIVE" | "DELISTED";
 }

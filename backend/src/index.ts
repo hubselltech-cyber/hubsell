@@ -8,6 +8,7 @@ import { startInvoiceStatusSyncWorker } from "./workers/invoice-status-sync";
 import { startLogCleanupWorker } from "./workers/log-cleanup";
 import { startOrderAutoSync } from "./workers/order-auto-sync";
 import { startStockPushWorker } from "./integrations/stock-push-worker";
+import { startStockReconcileWorker } from "./workers/stock-reconcile";
 import { startTokenRefreshWorker } from "./workers/token-refresh";
 import { startWeeklyReportWorker } from "./workers/weekly-report";
 
@@ -26,6 +27,9 @@ startLogCleanupWorker();
 // Worker đẩy tồn khả dụng đa sàn (Shopee + Lazada) — tiêu thụ hàng đợi bền
 // stock_push_jobs do mọi luồng biến động kho enqueue vào.
 startStockPushWorker();
+// Đối soát tồn sàn ↔ Hubsell mỗi 6h cho gian đang bật đồng bộ — tự đẩy lại
+// SKU lệch (sửa tay trên sàn, đẩy fail, sàn ghi trễ) thay vì chờ biến động sau.
+startStockReconcileWorker();
 // Sáng thứ 2 đẩy báo cáo tuần trước qua chuông thông báo cho từng chủ shop.
 startWeeklyReportWorker();
 // Tự động phát hành hóa đơn cho đơn ĐÃ GIAO + ĐÃ ĐỐI SOÁT của shop bật cờ
