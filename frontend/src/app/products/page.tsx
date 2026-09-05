@@ -215,26 +215,31 @@ export default function ProductsHubPage() {
     }
   }
 
-  /** Bung/cụp một dòng; lần đầu bung thì tải chi tiết liên kết (lazy + cache). */
-  const toggleExpand = useCallback(
-    (product: Product) => {
-      setExpandedId((cur) => (cur === product.id ? null : product.id));
-      if (linkDetails[product.id]) return;
-      setLinkDetails((prev) => ({ ...prev, [product.id]: "loading" }));
-      fetchProductChannelLinks(product.id)
-        .then((links) =>
-          setLinkDetails((prev) => ({ ...prev, [product.id]: links }))
-        )
-        .catch(() =>
-          setLinkDetails((prev) => {
-            const next = { ...prev };
-            delete next[product.id];
-            return next;
-          })
-        );
-    },
-    [linkDetails]
-  );
+  /** Bung/cụp một dòng — chi tiết liên kết do effect bên dưới tải. */
+  const toggleExpand = useCallback((product: Product) => {
+    setExpandedId((cur) => (cur === product.id ? null : product.id));
+  }, []);
+
+  // Dòng đang bung mà chưa có chi tiết (lần đầu bung, HOẶC cache vừa bị load()
+  // xoá sau khi nối/gỡ gian ở tab Chờ liên kết) → tải lại. Trước đây chỉ tải
+  // lúc bấm bung nên sau khi nối thêm gian rồi quay về, dòng treo spinner
+  // "Đang tải chi tiết liên kết…" vô hạn cho tới khi cụp/bung lại.
+  useEffect(() => {
+    if (!expandedId || linkDetails[expandedId]) return;
+    const id = expandedId;
+    setLinkDetails((prev) => ({ ...prev, [id]: "loading" }));
+    fetchProductChannelLinks(id)
+      .then((links) => setLinkDetails((prev) => ({ ...prev, [id]: links })))
+      .catch(() => {
+        toast.error("Không tải được chi tiết liên kết — thử bung lại dòng");
+        setExpandedId((cur) => (cur === id ? null : cur));
+        setLinkDetails((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      });
+  }, [expandedId, linkDetails]);
 
   async function handleUnlinkOne(link: ProductChannelLink, productId: string) {
     try {
