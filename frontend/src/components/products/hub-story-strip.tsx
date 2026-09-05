@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, ArrowRight, ShoppingBag, Store, Warehouse } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Lightbulb, ShoppingBag, Store, Warehouse } from "lucide-react";
 
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -87,10 +87,14 @@ export function HubStoryStrip() {
         {snapshot(99, true)}
       </div>
 
-      {/* Một dòng duy nhất — điều quan trọng nhất (sơ đồ đã kể phần còn lại) */}
-      <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200/70">
-        <b>Cùng một sản phẩm bán trên nhiều shop: đặt cùng mã SKU trên sàn</b> để Hubsell
-        tự khớp về một SKU kho. Khác mã thì phải nối tay và dễ nhầm.
+      {/* Chú thích mờ, không nền không viền (anh Trung 06/09: dải vàng chướng
+          mắt) — ý "cùng mã SKU" đã được nhắc lại ở bước 2 và hộp Tự khớp. */}
+      <p className={cn(TEXT_SUB, "flex items-start gap-1.5 px-1")}>
+        <Lightbulb className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          Cùng một sản phẩm bán trên nhiều shop thì đặt <b className="font-medium text-foreground/80">cùng mã SKU</b> trên
+          sàn để Hubsell tự khớp về một SKU kho. Khác mã thì phải nối tay.
+        </span>
       </p>
     </div>
   );
