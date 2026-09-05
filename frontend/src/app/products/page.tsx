@@ -771,23 +771,6 @@ export default function ProductsHubPage() {
           {isAdmin && tabButton("links", "Sản phẩm trên sàn", unlinkedCount)}
         </div>
 
-        {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) =====
-            Cách bảng bên dưới một khoảng lớn hơn nhịp thường để hai khối tách tông. */}
-        <div className="pb-2">
-        <SetupGuide
-          isAdmin={isAdmin}
-          productTotal={total}
-          ready={guideReady && !productsQ.loading}
-          channels={channels}
-          counts={counts}
-          syncState={syncState}
-          onSynced={loadCounts}
-          onOpenOneClick={() => setOneClickOpen(true)}
-          onOpenLinks={() => jumpToLinks()}
-          onOpenSync={() => setSyncOpen(true)}
-        />
-        </div>
-
         {tab === "links" && isAdmin ? (
           <LinkManager
             key={linkSeed ?? "all"}
@@ -799,6 +782,25 @@ export default function ProductsHubPage() {
           />
         ) : (
           <>
+            {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) =====
+                CHỈ ở tab Tồn kho (anh Trung 06/09: tab Sản phẩm trên sàn là chỗ làm
+                việc chi tiết, không kể chuyện hai lần). Cách bảng bên dưới một
+                khoảng lớn hơn nhịp thường để hai khối tách tông. */}
+            <div className="pb-2">
+              <SetupGuide
+                isAdmin={isAdmin}
+                productTotal={total}
+                ready={guideReady && !productsQ.loading}
+                channels={channels}
+                counts={counts}
+                syncState={syncState}
+                onSynced={loadCounts}
+                onOpenOneClick={() => setOneClickOpen(true)}
+                onOpenLinks={() => jumpToLinks()}
+                onOpenSync={() => setSyncOpen(true)}
+              />
+            </div>
+
             {/* ===== TẦNG 2: BẢNG LÀM VIỆC — thanh công cụ + cảnh báo + bảng ===== */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <form onSubmit={handleSearch} className="flex w-full max-w-md gap-2">
