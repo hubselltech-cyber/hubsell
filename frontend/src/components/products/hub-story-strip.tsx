@@ -1,45 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowLeftRight, ArrowRight, ShoppingBag, Store, Warehouse, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, ShoppingBag, Store, Warehouse } from "lucide-react";
 
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-const DISMISS_KEY = "hubsell_hub_story_dismissed_v2";
-
 /**
- * DẢI KỂ CHUYỆN của hub Hàng hóa (anh Trung 05/09: "trình bày phải kể được câu
- * chuyện thì seller mới dễ làm việc"). Câu chuyện chung cho MỌI seller nên dùng
- * Shop A / B / C và số tròn, không dùng tên shop thật:
+ * DẢI KỂ CHUYỆN — NGUYÊN LÝ KHO TRUNG TÂM (anh Trung 05/09: "trình bày phải kể
+ * được câu chuyện thì seller mới dễ làm việc"; 06/09: bắt buộc giữ, đưa cả vào
+ * tài liệu hướng dẫn). Câu chuyện chung cho MỌI seller nên dùng Shop A / B / C
+ * và số tròn, không dùng tên shop thật:
  *
  *   [Kho 100 ↔ A 100 · B 100 · C 100]  →  Shop A bán 1 đơn  →  [Kho 99 ↔ A 99 · B 99 · C 99]
  *
- * Ba ý bên dưới, ý số 2 là trọng tâm: CÙNG MỘT SẢN PHẨM trên nhiều shop thì đặt
- * CÙNG MÃ SKU — Hubsell tự khớp, khác mã là phải nối tay. Đóng được (localStorage).
+ * Câu chốt bên dưới là điều quan trọng nhất: CÙNG MỘT SẢN PHẨM trên nhiều shop
+ * thì đặt CÙNG MÃ SKU — Hubsell tự khớp, khác mã là phải nối tay.
+ *
+ * Thuần trình bày, không tự đóng/mở: khối Thiết lập kho (setup-guide.tsx) quyết
+ * định khi nào hiện, seller luôn có đường xem lại.
  */
 export function HubStoryStrip() {
-  const [hidden, setHidden] = useState(true);
-
-  useEffect(() => {
-    try {
-      setHidden(localStorage.getItem(DISMISS_KEY) === "1");
-    } catch {
-      setHidden(false);
-    }
-  }, []);
-
-  if (hidden) return null;
-
-  function dismiss() {
-    setHidden(true);
-    try {
-      localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      // không lưu được thì lần sau hiện lại — vô hại
-    }
-  }
-
   /** Một trạng thái "kho ↔ 3 shop" — trước và sau khi Shop A bán 1 đơn. */
   const snapshot = (qty: number, after: boolean) => (
     <div
@@ -79,18 +59,9 @@ export function HubStoryStrip() {
   );
 
   return (
-    <div className="relative space-y-3 rounded-lg border bg-muted/30 p-4">
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label="Đóng phần giới thiệu"
-        className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <X className="size-4" />
-      </button>
-
+    <div className="space-y-3">
       {/* Sơ đồ: trước → Shop A bán 1 đơn → sau (kho và mọi shop cùng trừ 1) */}
-      <div className="grid items-center gap-2 pr-6 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)]">
+      <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)]">
         {snapshot(100, false)}
         <div className="flex flex-col items-center justify-center gap-1 text-center">
           <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900">

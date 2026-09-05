@@ -138,7 +138,7 @@ const NAV_ITEMS: NavItem[] = [
       // GIỮ NGUYÊN đường dẫn /products — đây chỉ là gom nhóm ở tầng menu, đổi
       // route sẽ làm hỏng link cũ và bookmark của người dùng mà chẳng được gì.
       // HUB "HÀNG HÓA" (chốt 15/08): gộp Kho vật lý + Liên kết sản phẩm + Đồng
-      // bộ tồn kho vào MỘT trang — tab Tồn kho / Chờ liên kết + dialog Cài đặt
+      // bộ tồn kho vào MỘT trang — tab Tồn kho / Sản phẩm trên sàn + dialog Cài đặt
       // đồng bộ. Route cũ /mappings, /warehouse/sync redirect về đây.
       { href: "/products", label: "Hàng hóa", perm: "warehouse.products" },
       { href: "/warehouse/returns", label: "Đối soát đơn hoàn", perm: "warehouse.returns" },
@@ -206,7 +206,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   // "store" thay "storefront": nhà mái hiên có CỬA GIỮA (anh Trung 08/08).
   { href: "/channels", label: "Kênh bán", icon: "store", adminOnly: true },
-  // "Liên kết sản phẩm" đã GỘP vào hub Hàng hóa (tab Chờ liên kết) — /mappings
+  // "Liên kết sản phẩm" đã GỘP vào hub Hàng hóa (tab Sản phẩm trên sàn) — /mappings
   // redirect về /products?tab=links, không còn mục sidebar riêng.
   { href: "/staff", label: "Nhân viên", icon: "group", adminOnly: true },
 ];

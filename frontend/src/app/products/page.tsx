@@ -17,13 +17,11 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CloudUpload,
   Download,
   Link2,
   Link2Off,
   Loader2,
   Search,
-  Settings2,
   Sparkles,
   Warehouse,
   XCircle,
@@ -35,7 +33,8 @@ import { Money } from "@/components/ui/money";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { AdjustStockDialog } from "@/components/products/adjust-stock-dialog";
 import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
-import { HubStoryStrip } from "@/components/products/hub-story-strip";
+import { SetupGuide, type ChannelProductCounts } from "@/components/products/setup-guide";
+import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
@@ -58,12 +57,14 @@ import {
 import {
   ApiError,
   fetchChannelProducts,
+  fetchChannels,
   fetchProductChannelLinks,
   fetchProducts,
   fetchSyncSettings,
   getStoredUser,
   getToken,
   unlinkChannelProducts,
+  type Channel,
   type Product,
   type ProductChannelLink,
 } from "@/lib/api";
@@ -84,14 +85,17 @@ type HubTab = "inventory" | "links";
 
 /**
  * HUB "HÀNG HÓA" — một trang cho toàn bộ vòng đời hàng hóa của seller, thay ba
- * trang cũ (Kho vật lý / Liên kết sản phẩm / Đồng bộ tồn kho):
+ * trang cũ (Kho vật lý / Liên kết sản phẩm / Đồng bộ tồn kho). Sắp xếp BA TẦNG
+ * từ trên xuống (anh Trung 06/09: seller mới phải biết bắt đầu từ đâu):
  *
- *   · Tab TỒN KHO: bảng SKU kho + cột "Bán trên" (các gian đã nối, badge lệch
- *     tồn) — bấm dòng bung ra từng SKU sàn với lượt đẩy tồn gần nhất, gỡ nối/
- *     nối thêm ngay tại chỗ.
- *   · Tab CHỜ LIÊN KẾT (chỉ chủ shop): trình quản lý liên kết + nút một cú bấm
- *     "Tự khớp + tạo SKU toàn bộ".
- *   · ĐỒNG BỘ là nút chứ không phải trang: chip BẬT/TẮT + dialog cài đặt.
+ *   1. NGUYÊN LÝ + VIỆC PHẢI LÀM — khối "Kho trung tâm Hubsell" (setup-guide):
+ *      dải kể chuyện Kho ↔ Shop A/B/C rồi 3 bước (kéo SP từ sàn → nối SKU →
+ *      bật đồng bộ), mỗi bước một nút. Tự thu gọn khi đã xong.
+ *   2. BẢNG LÀM VIỆC — tab TỒN KHO: bảng SKU kho + cột "Bán trên" (các gian đã
+ *      nối, badge lệch tồn) — bấm dòng bung sơ đồ kho ↔ từng gian, gỡ nối/nối
+ *      thêm tại chỗ. Cảnh báo lệch tồn ngay trên bảng, chỉ hiện khi có lỗi.
+ *   3. Tab SẢN PHẨM TRÊN SÀN (chỉ chủ shop): tầng đệm ChannelProduct để nối tay
+ *      từng dòng / theo lô; cùng một hộp "Tự khớp + tạo SKU" với bước 2.
  *
  * Route cũ /mappings và /warehouse/sync redirect về đây (?tab=links / ?sync=1).
  */
@@ -100,7 +104,7 @@ export default function ProductsHubPage() {
   const isAdmin = canManageShop(getStoredUser());
 
   const [tab, setTab] = useState<HubTab>("inventory");
-  // Từ khoá mồi cho tab Chờ liên kết khi bấm "Nối thêm gian" từ một SKU.
+  // Từ khoá mồi cho tab Sản phẩm trên sàn khi bấm "Nối thêm gian" từ một SKU.
   const [linkSeed, setLinkSeed] = useState<string | undefined>(undefined);
 
   const [page, setPage] = useState(1);
@@ -108,10 +112,18 @@ export default function ProductsHubPage() {
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  // Số SP sàn chưa nối — nuôi badge tab + banner gợi ý (chỉ chủ shop).
-  const [unlinkedCount, setUnlinkedCount] = useState(0);
+  // Số liệu nuôi khối Thiết lập kho + badge tab (chỉ chủ shop): đếm SP sàn,
+  // gian hàng đang hoạt động. `guideReady` = đã tải xong lượt đầu để khối quyết
+  // định bung/thu, tránh nháy.
+  const [counts, setCounts] = useState<ChannelProductCounts | null>(null);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [guideReady, setGuideReady] = useState(!isAdmin);
+  const unlinkedCount = counts?.unlinked ?? 0;
 
-  // Trạng thái đồng bộ cho chip header (chỉ chủ shop).
+  // Hộp "Tự khớp + tạo SKU" — mở từ bước 2 hoặc từ dòng trống của bảng.
+  const [oneClickOpen, setOneClickOpen] = useState(false);
+
+  // Trạng thái đồng bộ tồn theo gian (chỉ chủ shop) — bước 3 + header khối.
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncState, setSyncState] = useState<SyncHeaderState | null>(null);
 
@@ -148,13 +160,29 @@ export default function ProductsHubPage() {
     invalidate(["products"]);
   }, [invalidate]);
 
-  const loadUnlinkedCount = useCallback(async () => {
+  /** Đếm SP sàn (all/linked/unlinked) — badge tab + bước 1, 2 của khối thiết lập. */
+  const loadCounts = useCallback(async () => {
     if (!isAdmin) return;
     try {
       const res = await fetchChannelProducts({ page: 1, pageSize: 1 });
-      setUnlinkedCount(res.counts.unlinked);
+      setCounts(res.counts);
     } catch {
       // chưa có kênh / lỗi mạng — badge để 0, không chặn trang
+    }
+  }, [isAdmin]);
+
+  /** Trạng thái đồng bộ tồn theo gian — bước 3 + header khối thiết lập. */
+  const loadSyncState = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const s = await fetchSyncSettings();
+      setSyncState({
+        enabledCount: s.enabledCount,
+        totalChannels: s.channels.length,
+        pending: s.pendingJobs,
+      });
+    } catch {
+      // không có thì bước 3 hiện "Đang kiểm tra…", không chặn trang
     }
   }, [isAdmin]);
 
@@ -163,17 +191,16 @@ export default function ProductsHubPage() {
   }, [router]);
 
   useEffect(() => {
-    loadUnlinkedCount();
     if (isAdmin) {
-      fetchSyncSettings()
-        .then((s) =>
-          setSyncState({
-            enabledCount: s.enabledCount,
-            totalChannels: s.channels.length,
-            pending: s.pendingJobs,
-          })
-        )
-        .catch(() => {});
+      // Tải song song ba nguồn của khối thiết lập rồi mới cho khối quyết định
+      // bung/thu — tránh nháy "bung rồi thu" khi seller đã xong.
+      Promise.allSettled([
+        loadCounts(),
+        loadSyncState(),
+        fetchChannels()
+          .then((cs) => setChannels(cs.filter((c) => c.status === "ACTIVE")))
+          .catch(() => {}),
+      ]).then(() => setGuideReady(true));
     }
     // Route cũ redirect về kèm query: ?tab=links mở tab liên kết, ?sync=1 mở
     // dialog cài đặt. Đọc một lần lúc mount — không cần useSearchParams.
@@ -221,7 +248,7 @@ export default function ProductsHubPage() {
   }, []);
 
   // Dòng đang bung mà chưa có chi tiết (lần đầu bung, HOẶC cache vừa bị load()
-  // xoá sau khi nối/gỡ gian ở tab Chờ liên kết) → tải lại. Trước đây chỉ tải
+  // xoá sau khi nối/gỡ gian ở tab Sản phẩm trên sàn) → tải lại. Trước đây chỉ tải
   // lúc bấm bung nên sau khi nối thêm gian rồi quay về, dòng treo spinner
   // "Đang tải chi tiết liên kết…" vô hạn cho tới khi cụp/bung lại.
   useEffect(() => {
@@ -251,7 +278,7 @@ export default function ProductsHubPage() {
         return next;
       });
       load();
-      loadUnlinkedCount();
+      loadCounts();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không gỡ được");
     }
@@ -738,46 +765,25 @@ export default function ProductsHubPage() {
   return (
     <AppShell>
       <div className="space-y-5">
-        {/* ===== THANH TAB + TRẠNG THÁI ĐỒNG BỘ ===== */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {tabButton("inventory", "Tồn kho")}
-            {isAdmin && tabButton("links", "Chờ liên kết", unlinkedCount)}
-          </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2">
-              {syncState && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
-                    syncState.enabledCount > 0
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 bg-slate-50 text-slate-600"
-                  )}
-                  title="Số gian đang bật đồng bộ tồn / tổng gian Shopee+Lazada đang nối"
-                >
-                  <CloudUpload className="size-3.5" />
-                  Đồng bộ sàn:{" "}
-                  {syncState.totalChannels === 0
-                    ? "chưa có gian"
-                    : syncState.enabledCount === 0
-                      ? "TẮT"
-                      : `${syncState.enabledCount}/${syncState.totalChannels} gian`}
-                  {syncState.pending > 0 && (
-                    <span className="flex items-center gap-1">
-                      · <Loader2 className="size-3 animate-spin" />
-                      {formatNumber(syncState.pending)}
-                    </span>
-                  )}
-                </span>
-              )}
-              <Button variant="outline" size="sm" onClick={() => setSyncOpen(true)}>
-                <Settings2 className="size-4" />
-                Cài đặt
-              </Button>
-            </div>
-          )}
+        {/* ===== THANH TAB ===== */}
+        <div className="flex items-center gap-2">
+          {tabButton("inventory", "Tồn kho")}
+          {isAdmin && tabButton("links", "Sản phẩm trên sàn", unlinkedCount)}
         </div>
+
+        {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) ===== */}
+        <SetupGuide
+          isAdmin={isAdmin}
+          productTotal={total}
+          ready={guideReady && !productsQ.loading}
+          channels={channels}
+          counts={counts}
+          syncState={syncState}
+          onSynced={loadCounts}
+          onOpenOneClick={() => setOneClickOpen(true)}
+          onOpenLinks={() => jumpToLinks()}
+          onOpenSync={() => setSyncOpen(true)}
+        />
 
         {tab === "links" && isAdmin ? (
           <LinkManager
@@ -785,17 +791,27 @@ export default function ProductsHubPage() {
             initialSearch={linkSeed}
             onChanged={() => {
               load();
-              loadUnlinkedCount();
+              loadCounts();
             }}
           />
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <p className="text-muted-foreground">
-                SKU nội bộ, tồn kho{seesCost ? " và giá vốn" : ""} (
-                {formatNumber(total)} sản phẩm) — cột “Bán trên” cho biết mỗi SKU
-                đang nối những gian nào.
-              </p>
+            {/* ===== TẦNG 2: BẢNG LÀM VIỆC — thanh công cụ + cảnh báo + bảng ===== */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <form onSubmit={handleSearch} className="flex w-full max-w-md gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" variant="secondary">
+                  Tìm kiếm
+                </Button>
+              </form>
               <div className="flex flex-wrap items-center gap-2">
                 <ImportExcelDialog onImported={load} />
                 <Button variant="outline" onClick={handleExport} disabled={exporting}>
@@ -810,44 +826,8 @@ export default function ProductsHubPage() {
               </div>
             </div>
 
-            {/* Dải kể chuyện: 1 SKU kho ↔ nhiều gian, đặt CÙNG MÃ SKU (đóng được) */}
-            <HubStoryStrip />
-
-            {/* Cảnh báo lệch tồn với sàn — chỉ hiện khi có cảnh báo chưa xử lý */}
+            {/* Cảnh báo lệch tồn với sàn — việc vận hành, chỉ hiện khi có lỗi chưa xử lý */}
             <SyncAlertBanner />
-
-            {/* Gợi ý xử lý SP sàn chưa nối — dẫn thẳng sang tab Chờ liên kết */}
-            {isAdmin && unlinkedCount > 0 && (
-              <button
-                type="button"
-                onClick={() => jumpToLinks()}
-                className="flex w-full items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-primary/10"
-              >
-                <Sparkles className="size-4 shrink-0 text-primary" />
-                <span>
-                  Còn <b>{formatNumber(unlinkedCount)}</b> sản phẩm trên sàn chưa
-                  nối về kho — sang tab <b>Chờ liên kết</b> để tự khớp hoặc tạo
-                  SKU một cú bấm.
-                </span>
-                <ChevronRight className="ml-auto size-4 shrink-0 text-muted-foreground" />
-              </button>
-            )}
-
-            {/* Thanh tìm kiếm */}
-            <form onSubmit={handleSearch} className="flex max-w-md gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="Tìm theo mã SKU hoặc tên sản phẩm…"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                />
-              </div>
-              <Button type="submit" variant="secondary">
-                Tìm kiếm
-              </Button>
-            </form>
 
             <Card>
               <CardContent className="p-0">
@@ -858,11 +838,33 @@ export default function ProductsHubPage() {
                     Đang tải dữ liệu…
                   </p>
                 ) : items.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    {search
-                      ? `Không tìm thấy sản phẩm nào khớp với "${search}".`
-                      : "Chưa có sản phẩm nào. Bấm “Thêm sản phẩm mới” để bắt đầu."}
-                  </p>
+                  // Dòng trống nói đúng việc kế tiếp theo ngữ cảnh: có hàng sàn
+                  // chưa nối thì chỉ lên bước 2, không bảo "thêm tay" cho seller
+                  // đã có vài trăm sản phẩm trên Shopee.
+                  <div className="space-y-3 py-10 text-center text-sm text-muted-foreground">
+                    {search ? (
+                      <p>Không tìm thấy sản phẩm nào khớp với &quot;{search}&quot;.</p>
+                    ) : isAdmin && unlinkedCount > 0 ? (
+                      <>
+                        <p>
+                          Kho chưa có SKU nào, nhưng đang có{" "}
+                          <b className="text-foreground">{formatNumber(unlinkedCount)}</b> sản
+                          phẩm trên sàn chưa nối về. Nối là có kho ngay, tồn lấy theo sàn.
+                        </p>
+                        <Button size="sm" onClick={() => setOneClickOpen(true)}>
+                          <Sparkles className="size-3.5" />
+                          Tự khớp + tạo SKU
+                        </Button>
+                      </>
+                    ) : isAdmin && channels.length === 0 ? (
+                      <p>
+                        Chưa có sản phẩm nào. Nối gian hàng để kéo sản phẩm từ sàn về (bước 1
+                        phía trên), hoặc bấm “Thêm sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                      </p>
+                    ) : (
+                      <p>Chưa có sản phẩm nào. Bấm “Thêm sản phẩm mới” hoặc nhập Excel để bắt đầu.</p>
+                    )}
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -971,6 +973,20 @@ export default function ProductsHubPage() {
           open={syncOpen}
           onOpenChange={setSyncOpen}
           onStateChange={setSyncState}
+        />
+      )}
+
+      {/* Bước 2 "Tự khớp + tạo SKU" — cùng hộp với tab Sản phẩm trên sàn */}
+      {isAdmin && (
+        <OneClickLinkDialog
+          open={oneClickOpen}
+          onOpenChange={setOneClickOpen}
+          unlinkedCount={unlinkedCount}
+          onDone={() => {
+            load();
+            loadCounts();
+            loadSyncState();
+          }}
         />
       )}
     </AppShell>

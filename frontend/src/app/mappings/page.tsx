@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 /**
- * Trang Liên kết sản phẩm đã GỘP vào hub Hàng hóa (tab "Chờ liên kết") —
+ * Trang Liên kết sản phẩm đã GỘP vào hub Hàng hóa (tab "Sản phẩm trên sàn") —
  * route cũ giữ lại làm redirect để bookmark/link nội bộ không gãy.
  */
 export default function MappingsRedirect() {

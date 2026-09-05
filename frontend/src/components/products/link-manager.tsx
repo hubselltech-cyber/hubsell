@@ -14,7 +14,6 @@ import {
   PackageSearch,
   Search,
   Sparkles,
-  Wand2,
   X,
 } from "lucide-react";
 
@@ -23,16 +22,9 @@ import { Refreshing } from "@/components/shared/refreshing";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { SkuCombobox } from "@/components/finance/sku-combobox";
 import { LinkOneDialog } from "@/components/mappings/link-one-dialog";
+import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
@@ -45,7 +37,6 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
-  autoMatchMappings,
   createProductsFromMappings,
   fetchChannelProducts,
   fetchChannels,
@@ -81,12 +72,13 @@ interface LinkManagerProps {
 }
 
 /**
- * TRÌNH QUẢN LÝ LIÊN KẾT SÀN — tab "Chờ liên kết" của hub Hàng hóa.
+ * TRÌNH QUẢN LÝ LIÊN KẾT SÀN — tab "Sản phẩm trên sàn" của hub Hàng hóa.
  *
  * Nguyên trang /mappings cũ chuyển thành component: đọc tầng đệm ChannelProduct,
  * tích nhiều dòng nối chung về một SKU gốc. CHỈ chủ shop (hub đã gác, API cũng
- * chặn adminOnly độc lập). Kèm nút "Tự khớp + tạo SKU toàn bộ" một cú bấm cho
- * seller mới: tự khớp trùng mã trước, phần còn lại tạo SKU kho rồi nối luôn.
+ * chặn adminOnly độc lập). Nút "Tự khớp + tạo SKU" mở CÙNG hộp thoại với bước 2
+ * của khối Thiết lập kho (one-click-link-dialog) — một cửa vào duy nhất, trong
+ * hộp mới chọn mức "chỉ tự khớp trùng mã" hay "tự khớp + tạo SKU còn lại".
  */
 export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
   const router = useRouter();
@@ -250,34 +242,6 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     }
   }
 
-  // Tự khớp SKU sàn chưa liên kết vào kho theo trùng mã (đang lọc gian nào thì
-  // chỉ chạy trong gian đó). Không đụng những dòng đã nối tay.
-  const [autoMatching, setAutoMatching] = useState(false);
-  async function handleAutoMatch() {
-    setAutoMatching(true);
-    try {
-      const r = await autoMatchMappings(channelFilter || undefined);
-      if (r.matched === 0) {
-        toast.info(
-          `Không có SKU nào trùng mã với kho (đã quét ${formatNumber(r.scanned)} dòng chưa liên kết).`
-        );
-      } else {
-        toast.success(
-          `Tự khớp xong: nối ${formatNumber(r.matched)} SKU sàn vào ${formatNumber(r.products)} sản phẩm kho.` +
-            (r.seededProducts > 0
-              ? ` ${formatNumber(r.seededProducts)} SKU tồn 0 đã lấy tồn theo sàn.`
-              : ""),
-          { duration: 6000 }
-        );
-      }
-      afterChange();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không tự khớp được");
-    } finally {
-      setAutoMatching(false);
-    }
-  }
-
   // Tạo sản phẩm kho từ các dòng sàn đã chọn (chỉ dòng CHƯA liên kết) rồi nối luôn.
   const selectedUnlinked = selected.filter((s) => !s.productId);
   async function handleCreateProducts() {
@@ -306,56 +270,8 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
     }
   }
 
-  // ===== MỘT CÚ BẤM cho seller mới: tự khớp toàn bộ, phần còn lại tạo SKU =====
+  // ===== MỘT CỬA VÀO: hộp "Tự khớp + tạo SKU" dùng chung với khối Thiết lập kho =====
   const [oneClickOpen, setOneClickOpen] = useState(false);
-  const [oneClickBusy, setOneClickBusy] = useState(false);
-  const [oneClickProgress, setOneClickProgress] = useState("");
-  async function handleOneClick() {
-    setOneClickBusy(true);
-    try {
-      // (1) Tự khớp trùng mã trước — liên kết đúng nhất, không đẻ SKU thừa.
-      setOneClickProgress("Đang tự khớp SKU trùng mã…");
-      const matched = await autoMatchMappings();
-
-      // (2) Phần còn lại: gom id chưa liên kết rồi tạo SKU kho theo lô ≤200.
-      let created = 0;
-      let reused = 0;
-      let linked = 0;
-      for (;;) {
-        const pageRes = await fetchChannelProducts({
-          linked: "no",
-          page: 1, // luôn trang 1 — mỗi lô xử lý xong thì dòng rơi khỏi bộ lọc
-          pageSize: 100,
-        });
-        if (pageRes.items.length === 0) break;
-        setOneClickProgress(
-          `Đang tạo SKU kho — còn ${formatNumber(pageRes.counts.unlinked)} sản phẩm sàn…`
-        );
-        const r = await createProductsFromMappings(pageRes.items.map((i) => i.id));
-        created += r.createdProducts;
-        reused += r.reusedProducts;
-        linked += r.linked;
-        // Không tiến thêm được nữa (dòng lỗi/thiếu mã SKU) — dừng để khỏi lặp vô hạn.
-        if (r.linked === 0) break;
-      }
-
-      toast.success(
-        `Xong: tự khớp ${formatNumber(matched.matched)} SKU, tạo mới ${formatNumber(created)} SKU kho` +
-          (reused > 0 ? ` (dùng lại ${formatNumber(reused)})` : "") +
-          `, nối thêm ${formatNumber(linked)} sản phẩm sàn.`,
-        { duration: 8000 }
-      );
-      setOneClickOpen(false);
-      setSelectedIds(new Set());
-      afterChange();
-      loadAllProducts();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không xử lý hết được");
-    } finally {
-      setOneClickBusy(false);
-      setOneClickProgress("");
-    }
-  }
 
   // Dropdown 2 chỉ hiện các gian thuộc sàn đang chọn ở Dropdown 1; chưa chọn sàn
   // thì hiện tất cả.
@@ -389,26 +305,13 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
             để đơn từ bất kỳ shop nào cũng trừ đúng tồn kho.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Một cú bấm: tự khớp toàn bộ + phần còn lại tạo SKU kho nối luôn */}
+            {/* Một cửa vào: hộp thoại cho chọn "chỉ tự khớp" hay "tự khớp + tạo SKU" */}
             {counts.unlinked > 0 && (
               <Button onClick={() => setOneClickOpen(true)} disabled={loading}>
                 <Sparkles className="size-4" />
-                Tự khớp + tạo SKU toàn bộ
+                Tự khớp + tạo SKU
               </Button>
             )}
-            {/* Nối tự động các SKU sàn trùng mã với kho — một phát ăn cả loạt */}
-            <Button
-              variant="outline"
-              onClick={handleAutoMatch}
-              disabled={autoMatching || loading}
-            >
-              {autoMatching ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Wand2 className="size-4" />
-              )}
-              Tự khớp SKU
-            </Button>
             {/* Đang lọc theo một gian hàng thì chỉ đồng bộ gian đó */}
             <SyncChannelProductsButton
               channelId={channelFilter || undefined}
@@ -776,42 +679,17 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
         onDone={afterChange}
       />
 
-      {/* ===== XÁC NHẬN MỘT CÚ BẤM ===== */}
-      <Dialog open={oneClickOpen} onOpenChange={(o) => !oneClickBusy && setOneClickOpen(o)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="size-5 text-primary" />
-              Tự xử lý {formatNumber(counts.unlinked)} sản phẩm chưa liên kết?
-            </DialogTitle>
-            <DialogDescription>
-              Hệ thống sẽ làm hai bước: (1) tự khớp các SKU sàn TRÙNG MÃ với kho
-              hiện có; (2) phần còn lại tạo SKU kho mới từ chính dữ liệu sàn
-              (tên/ảnh/giá) rồi nối luôn. Tồn ban đầu lấy theo số đang có trên
-              sàn — SKU nào sàn không trả số thì tồn 0, chỉnh tay sau.
-            </DialogDescription>
-          </DialogHeader>
-          {oneClickProgress && (
-            <p className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
-              <Loader2 className="size-4 animate-spin" />
-              {oneClickProgress}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOneClickOpen(false)}
-              disabled={oneClickBusy}
-            >
-              Để sau
-            </Button>
-            <Button onClick={handleOneClick} disabled={oneClickBusy}>
-              {oneClickBusy ? <Loader2 className="size-4 animate-spin" /> : null}
-              Chạy ngay
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ===== HỘP "TỰ KHỚP + TẠO SKU" (dùng chung với bước 2 khối Thiết lập kho) ===== */}
+      <OneClickLinkDialog
+        open={oneClickOpen}
+        onOpenChange={setOneClickOpen}
+        unlinkedCount={counts.unlinked}
+        onDone={() => {
+          setSelectedIds(new Set());
+          afterChange();
+          loadAllProducts(); // combobox phải thấy ngay các SKU kho vừa sinh
+        }}
+      />
     </>
   );
 }

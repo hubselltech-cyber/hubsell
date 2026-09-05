@@ -255,7 +255,7 @@ export function SyncSettingsDialog({
   /**
    * NỐI NHANH một gian: backend kéo danh mục nếu chưa có → tự khớp trùng mã →
    * tạo SKU kho cho phần còn lại. Xong thì mở luôn màn so sánh để bật tiếp —
-   * chủ shop đi một mạch, không phải sang tab Chờ liên kết.
+   * chủ shop đi một mạch, không phải sang tab Sản phẩm trên sàn.
    */
   async function runQuickLink(channel: SyncChannel) {
     setQuickLinkAskId(null);
@@ -370,7 +370,7 @@ export function SyncSettingsDialog({
       const r = await syncAllStock();
       if (r.queued === 0) {
         toast.info(
-          "Chưa có SKU sàn nào liên kết với kho — sang tab Chờ liên kết để nối trước."
+          "Chưa có SKU sàn nào liên kết với kho — sang tab Sản phẩm trên sàn để nối trước."
         );
       } else {
         const pend = pending + r.queued;
@@ -760,7 +760,7 @@ function PreviewPanel({
   const s = preview.summary;
   const changes = s.up + s.down;
 
-  // Chưa nối SKU nào: không có gì để so, chỉ đường sang tab Chờ liên kết.
+  // Chưa nối SKU nào: không có gì để so, chỉ đường sang tab Sản phẩm trên sàn.
   if (s.total === 0) {
     return (
       <div className="mx-3 mb-3 space-y-2 rounded-md border bg-muted/30 p-3">

@@ -115,14 +115,14 @@ export const WAREHOUSE_TOUR: GuideTour = {
     {
       img: `${GT}/kho-links.png`,
       title: "Kéo danh mục sản phẩm từ sàn về",
-      desc: "Mở tab “Chờ liên kết” rồi bấm “Đồng bộ từ sàn” — sản phẩm của mọi gian đã kết nối được kéo về đây, kèm cả giá bán và tồn kho trên sàn.",
+      desc: "Mở tab “Sản phẩm trên sàn” rồi bấm “Đồng bộ từ sàn” (hoặc bước 1 của khối Thiết lập kho) — sản phẩm của mọi gian đã kết nối được kéo về đây, kèm cả giá bán và tồn kho trên sàn.",
       target: { x: 49.77, y: 20.79, w: 10.13, h: 3.33 },
       zoom: 2,
     },
     {
       img: `${GT}/kho-links.png`,
       title: "Nối toàn bộ bằng MỘT cú bấm",
-      desc: "Bấm “Tự khớp + tạo SKU toàn bộ”: SKU trùng mã tự nối vào kho, phần còn lại hệ thống tạo SKU kho mới rồi nối luôn — tồn kho ban đầu tự lấy theo số trên sàn.",
+      desc: "Bấm “Tự khớp + tạo SKU” rồi chọn “Tự khớp + tạo SKU còn lại”: SKU trùng mã tự nối vào kho, phần còn lại hệ thống tạo SKU kho mới rồi nối luôn — tồn kho ban đầu tự lấy theo số trên sàn.",
       target: { x: 26.67, y: 20.79, w: 15.55, h: 3.33 },
       zoom: 2,
     },
