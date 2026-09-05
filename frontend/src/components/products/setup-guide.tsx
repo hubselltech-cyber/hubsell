@@ -125,14 +125,23 @@ export function SetupGuide({
     }
   }
 
-  const stepCircle = (n: number, done: boolean) => (
+  // Bước ĐANG CẦN LÀM = bước đầu tiên chưa xong. Chỉ bước này nổi (viền + nền
+  // màu chủ đạo), bước đã xong và bước chưa tới lùi lại — mắt seller rơi thẳng
+  // vào việc phải làm thay vì ba hộp bằng nhau (anh Trung 06/09 chê phẳng).
+  const nextStepNo = !step1Done ? 1 : !step2Done ? 2 : !step3Done ? 3 : 0;
+
+  const stepCircle = (n: number, state: "done" | "active" | "later") => (
     <span
       className={cn(
-        "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-        done ? "bg-emerald-600 text-white" : "bg-primary text-primary-foreground"
+        "inline-flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+        state === "done"
+          ? "bg-emerald-600 text-white"
+          : state === "active"
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "bg-muted text-muted-foreground"
       )}
     >
-      {done ? <Check className="size-3.5" /> : n}
+      {state === "done" ? <Check className="size-4" /> : n}
     </span>
   );
 
@@ -142,21 +151,46 @@ export function SetupGuide({
     title: string,
     status: React.ReactNode,
     action: React.ReactNode
-  ) => (
-    <div
-      className={cn(
-        "flex flex-col gap-2 rounded-lg border bg-background p-3",
-        done && "border-emerald-200"
-      )}
-    >
-      <div className="flex items-center gap-2">
-        {stepCircle(n, done)}
-        <span className="text-sm font-medium">{title}</span>
+  ) => {
+    const state: "done" | "active" | "later" = done
+      ? "done"
+      : n === nextStepNo
+        ? "active"
+        : "later";
+    return (
+      <div
+        className={cn(
+          "flex flex-col gap-2.5 rounded-xl p-4",
+          state === "active"
+            ? "bg-primary/5 ring-2 ring-primary/40 shadow-sm"
+            : state === "done"
+              ? "bg-emerald-50/50 ring-1 ring-emerald-200/60"
+              : "bg-transparent ring-1 ring-foreground/10 opacity-80"
+        )}
+      >
+        <div className="flex items-center gap-2.5">
+          {stepCircle(n, state)}
+          <span
+            className={cn(
+              "text-[15px] font-semibold leading-tight",
+              state === "later" && "text-muted-foreground"
+            )}
+          >
+            {title}
+          </span>
+        </div>
+        <p
+          className={cn(
+            "min-h-10 text-[13px] leading-snug",
+            state === "active" ? "text-foreground/80" : "text-muted-foreground"
+          )}
+        >
+          {status}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">{action}</div>
       </div>
-      <p className={cn(TEXT_SUB, "min-h-8 leading-snug")}>{status}</p>
-      <div className="flex flex-wrap items-center gap-2">{action}</div>
-    </div>
-  );
+    );
+  };
 
   // ===== BƯỚC 1: KÉO SẢN PHẨM TỪ SÀN VỀ =====
   const step1 = stepCard(
@@ -247,11 +281,20 @@ export function SetupGuide({
   );
 
   return (
-    <div className="rounded-lg border bg-muted/30">
+    // Thẻ nổi (bóng nhẹ) + dải tiêu đề nhuộm màu chủ đạo, thân là nền lõm nhạt:
+    // khối này KHÁC TÔNG với bảng bên dưới nên không còn cảm giác phẳng.
+    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
       {/* ===== HEADER: luôn hiện ===== */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
-        <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
-          <Warehouse className="size-4 text-primary" />
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3",
+          open ? "bg-primary/[0.06]" : "bg-primary/[0.03]"
+        )}
+      >
+        <span className="inline-flex items-center gap-2 text-[15px] font-semibold">
+          <span className="inline-flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Warehouse className="size-4" />
+          </span>
           Kho trung tâm Hubsell
         </span>
 
@@ -321,10 +364,10 @@ export function SetupGuide({
 
       {/* ===== THÂN: nguyên lý → 3 bước ===== */}
       {open && (
-        <div className="space-y-4 border-t px-4 py-4">
+        <div className="space-y-4 border-t bg-muted/30 px-4 py-4">
           <HubStoryStrip />
           {isAdmin && (
-            <div className="grid gap-2 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
               {step1}
               {step2}
               {step3}

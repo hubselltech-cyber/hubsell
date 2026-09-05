@@ -771,7 +771,9 @@ export default function ProductsHubPage() {
           {isAdmin && tabButton("links", "Sản phẩm trên sàn", unlinkedCount)}
         </div>
 
-        {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) ===== */}
+        {/* ===== TẦNG 1: NGUYÊN LÝ + 3 BƯỚC THIẾT LẬP (tự thu gọn khi xong) =====
+            Cách bảng bên dưới một khoảng lớn hơn nhịp thường để hai khối tách tông. */}
+        <div className="pb-2">
         <SetupGuide
           isAdmin={isAdmin}
           productTotal={total}
@@ -784,6 +786,7 @@ export default function ProductsHubPage() {
           onOpenLinks={() => jumpToLinks()}
           onOpenSync={() => setSyncOpen(true)}
         />
+        </div>
 
         {tab === "links" && isAdmin ? (
           <LinkManager
