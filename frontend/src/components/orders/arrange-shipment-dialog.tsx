@@ -23,6 +23,7 @@ import {
 import {
   ApiError,
   bulkConfirmOrders,
+  fetchLabelReadiness,
   fetchOrderLabelsPdf,
   fetchShippingOptions,
   markOrdersPrinted,
@@ -46,6 +47,13 @@ import { cn } from "@/lib/utils";
  *
  * Sau khi sàn OK, mặc định mở luôn hộp thoại in vận đơn A6 (anh Trung chốt);
  * ai muốn in sau thì tắt công tắc — trạng thái nhớ trong localStorage.
+ *
+ * 05/09 — ĐỢI SÀN CẤP VẬN ĐƠN rồi mới in: Shopee nhận ship_order xong nhưng
+ * cấp tracking_number trễ vài giây tới vài chục giây. Trước đây xin PDF ngay
+ * nên đơn chưa có mã bị rơi khỏi file (chuẩn bị 4 đơn, in ra 1). Nay sau khi
+ * sàn nhận, hộp thoại hỏi /bulk/label-readiness mỗi 2,5s, hiện "đã cấp x/y",
+ * đủ rồi mới xin PDF MỘT lần; quá 45s vẫn thiếu thì in phần có, đơn thiếu ở
+ * nguyên "Chưa in phiếu" kèm thông báo rõ để in lại sau.
  */
 
 const PREF_PRINT_AFTER = "hubsell.fulfill.printAfter";
@@ -104,7 +112,8 @@ export function ArrangeShipmentDialog({
   const [groups, setGroups] = React.useState<ShippingOptionGroup[]>([]);
   const [choices, setChoices] = React.useState<Record<string, FulfillChoice>>({});
   const [error, setError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState<"confirm" | "print" | null>(null);
+  const [busy, setBusy] = React.useState<"confirm" | "wait" | "print" | null>(null);
+  const [waitProgress, setWaitProgress] = React.useState<{ ready: number; total: number } | null>(null);
   const [printAfter, setPrintAfter] = React.useState(true);
   const [printOpts, setPrintOpts] = React.useState<PrintOptions>({ labels: true, pickList: false });
 
@@ -177,6 +186,10 @@ export function ArrangeShipmentDialog({
       for (const n of res.notes ?? []) toast.info(`${n.orderCode}: ${n.note}`, { duration: 7000 });
 
       if (printAfter && (printOpts.labels || printOpts.pickList) && res.confirmedIds.length > 0) {
+        if (printOpts.labels) {
+          setBusy("wait");
+          await waitForLabelsReady(res.confirmedIds, setWaitProgress);
+        }
         setBusy("print");
         await printLabels(res.confirmedIds, printOpts);
       }
@@ -186,8 +199,18 @@ export function ArrangeShipmentDialog({
       toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
     } finally {
       setBusy(null);
+      setWaitProgress(null);
     }
   }
+
+  const busyLabel =
+    busy === "wait"
+      ? waitProgress
+        ? `Sàn đã cấp vận đơn ${formatNumber(waitProgress.ready)}/${formatNumber(waitProgress.total)}…`
+        : "Đang chờ sàn cấp vận đơn…"
+      : busy === "print"
+        ? "Đang lấy vận đơn…"
+        : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
@@ -261,7 +284,7 @@ export function ArrangeShipmentDialog({
               ) : (
                 <PackageCheck className="size-4" />
               )}
-              {busy === "print" ? "Đang lấy vận đơn…" : `Chuẩn bị ${formatNumber(runnableCount)} đơn`}
+              {busyLabel ?? `Chuẩn bị ${formatNumber(runnableCount)} đơn`}
             </Button>
           </div>
         </div>
@@ -407,6 +430,55 @@ function MethodPill({ active, onClick, label }: { active: boolean; onClick: () =
       {label}
     </button>
   );
+}
+
+/** Hỏi sàn mỗi nhịp này tới khi mọi đơn có vận đơn. */
+const READY_POLL_MS = 2500;
+/** Hết kiên nhẫn sau ~45s — in phần đã có, phần thiếu báo rõ để in lại sau. */
+const READY_MAX_MS = 45_000;
+
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * ĐỢI sàn cấp vận đơn cho đủ các đơn vừa chuẩn bị (hoặc tới trần thời gian).
+ * Trả về id còn thiếu sau khi hết kiên nhẫn (rỗng = đủ). Lỗi mạng ở một nhịp
+ * không làm hỏng cả luồng — nhịp sau hỏi lại.
+ */
+export async function waitForLabelsReady(
+  orderIds: string[],
+  onProgress?: (p: { ready: number; total: number }) => void
+): Promise<{ id: string; orderCode: string; reason?: string }[]> {
+  const total = orderIds.length;
+  const started = Date.now();
+  let pending = orderIds;
+  let lastWaiting: { id: string; orderCode: string; reason?: string }[] = [];
+  onProgress?.({ ready: 0, total });
+  for (;;) {
+    try {
+      const r = await fetchLabelReadiness(pending);
+      lastWaiting = r.waiting;
+      const waitingIds = new Set(r.waiting.map((w) => w.id));
+      pending = pending.filter((id) => waitingIds.has(id));
+      onProgress?.({ ready: total - pending.length, total });
+      if (pending.length === 0) return [];
+    } catch {
+      // nhịp này lỗi (mạng/máy chủ) — giữ nguyên pending, thử lại nhịp sau
+    }
+    if (Date.now() - started >= READY_MAX_MS) break;
+    await wait(READY_POLL_MS);
+  }
+  if (lastWaiting.length > 0) {
+    const list = lastWaiting
+      .slice(0, 3)
+      .map((w) => w.orderCode)
+      .join(", ");
+    toast.warning(
+      `${formatNumber(lastWaiting.length)} đơn sàn vẫn chưa cấp vận đơn (${list}${lastWaiting.length > 3 ? "…" : ""}) — ` +
+        `đơn giữ nguyên "Chưa in phiếu", lọc Chưa in rồi bấm In sau ít phút.`,
+      { duration: 10_000 }
+    );
+  }
+  return lastWaiting;
 }
 
 /**

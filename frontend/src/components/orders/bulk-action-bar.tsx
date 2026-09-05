@@ -8,7 +8,11 @@ import { BulkBar } from "@/components/data-table/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { ApiError, type Order } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
-import { ArrangeShipmentDialog, printLabels } from "@/components/orders/arrange-shipment-dialog";
+import {
+  ArrangeShipmentDialog,
+  printLabels,
+  waitForLabelsReady,
+} from "@/components/orders/arrange-shipment-dialog";
 import { PrintOptionsDialog } from "@/components/orders/print-options";
 
 /**
@@ -49,7 +53,21 @@ export function BulkActionBar({
 
   async function handlePrint(opts: { labels: boolean; pickList: boolean }) {
     setBusy("print");
+    const toastId = toast.loading("Đang chuẩn bị phiếu in…");
     try {
+      // Đơn vừa chuẩn bị mà tắt "in ngay" có thể chưa có mã vận đơn → đợi sàn
+      // cấp đủ trước khi xin PDF, y như hộp thoại Chuẩn bị hàng.
+      if (opts.labels) {
+        const needWait = withLabel.filter((o) => !o.trackingCode).map((o) => o.id);
+        if (needWait.length > 0) {
+          await waitForLabelsReady(needWait, (p) =>
+            toast.loading(`Sàn đã cấp vận đơn ${formatNumber(p.ready)}/${formatNumber(p.total)}…`, {
+              id: toastId,
+            })
+          );
+        }
+      }
+      toast.loading("Đang lấy vận đơn…", { id: toastId });
       await printLabels(
         selected.map((o) => o.id),
         opts
@@ -59,6 +77,7 @@ export function BulkActionBar({
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không lấy được vận đơn");
     } finally {
+      toast.dismiss(toastId);
       setBusy(null);
     }
   }

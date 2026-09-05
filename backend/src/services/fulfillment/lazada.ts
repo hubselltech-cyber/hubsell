@@ -27,6 +27,7 @@ import {
   type FulfillOrderRef,
   type FulfillmentAdapter,
   type LabelFetchResult,
+  type LabelReadiness,
 } from "./types";
 
 const PACKABLE = new Set(["pending", "repacked"]);
@@ -102,6 +103,34 @@ export const lazadaFulfillment: FulfillmentAdapter = {
     } catch (err) {
       return { ok: false, error: errMessage(err) };
     }
+  },
+
+  /**
+   * Lazada cấp package_id + mã vận đơn ngay lúc pack/RTS nên gần như luôn sẵn;
+   * đơn thiếu package_id (pack ở Seller Center, chưa sync) thì tra lại một lần.
+   */
+  async probeLabelReadiness(channel, orders): Promise<LabelReadiness> {
+    const out: LabelReadiness = { ready: [], waiting: [], discovered: new Map() };
+    const missing = orders.filter((o) => !o.platformPackageId);
+    for (const o of orders) if (o.platformPackageId) out.ready.push(o.id);
+    if (missing.length === 0) return out;
+    const accessToken = await getValidLazadaAccessToken(channel);
+    for (const o of missing) {
+      try {
+        const items = await orderItemsOf(accessToken, o.orderCode);
+        const found = items.find((it) => it.package_id)?.package_id;
+        if (found) {
+          const tracking = (items.find((it) => it.tracking_code)?.tracking_code as string) ?? null;
+          out.ready.push(o.id);
+          out.discovered.set(o.id, { packageId: String(found), trackingCode: tracking });
+        } else {
+          out.waiting.push({ orderId: o.id, orderCode: o.orderCode, reason: "Sàn chưa tạo kiện cho đơn" });
+        }
+      } catch (err) {
+        out.waiting.push({ orderId: o.id, orderCode: o.orderCode, reason: errMessage(err) });
+      }
+    }
+    return out;
   },
 
   async fetchLabels(channel, orders): Promise<LabelFetchResult> {

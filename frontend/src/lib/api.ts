@@ -1427,6 +1427,26 @@ export function bulkConfirmOrders(orderIds: string[], choices?: Record<string, F
   });
 }
 
+export interface LabelReadinessResult {
+  /** id đơn đã sẵn vận đơn (hoặc không cần đợi: offline, chưa chuẩn bị…). */
+  ready: string[];
+  /** Sàn chưa cấp mã — hỏi lại sau vài giây. */
+  waiting: { id: string; orderCode: string; reason?: string }[];
+  /** Không hỏi được sàn cho gian này — vẫn in, /bulk/labels sẽ báo rõ. */
+  failed: { orderCode: string; reason: string }[];
+}
+
+/**
+ * Sàn đã cấp vận đơn cho đơn nào? Gọi lặp sau "Chuẩn bị hàng" tới khi waiting
+ * rỗng rồi mới xin PDF — Shopee cấp mã vận đơn trễ vài giây sau ship_order.
+ */
+export function fetchLabelReadiness(orderIds: string[]) {
+  return apiFetch<LabelReadinessResult>("/api/orders/bulk/label-readiness", {
+    method: "POST",
+    body: JSON.stringify({ orderIds }),
+  });
+}
+
 export interface LabelSummary {
   orders: number;
   labels: number;

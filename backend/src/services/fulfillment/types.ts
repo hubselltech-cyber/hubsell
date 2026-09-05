@@ -83,6 +83,24 @@ export interface LabelFetchResult {
   failed: { orderId: string; orderCode: string; reason: string }[];
 }
 
+/**
+ * Kết quả hỏi "sàn đã cấp vận đơn cho đơn này chưa?" (05/09).
+ *
+ * Sàn KHÔNG cấp mã vận đơn ngay lúc ship_order — Shopee mất vài giây tới vài
+ * chục giây mới có tracking_number, còn tải PDF thì phải có mã đó. Trước 05/09
+ * Hubsell xin PDF ngay sau khi sàn nhận → đơn nào sàn chưa kịp cấp mã bị rơi
+ * khỏi file in (chuẩn bị 4 đơn, in ra 1). Giao diện dùng bước này để ĐỢI cho
+ * đủ rồi mới xin PDF một lần.
+ */
+export interface LabelReadiness {
+  /** id đơn đã có đủ dữ liệu để tải vận đơn. */
+  ready: string[];
+  /** Đơn sàn chưa cấp — hỏi lại sau vài giây. */
+  waiting: { orderId: string; orderCode: string; reason?: string }[];
+  /** Mã vận đơn/kiện khám phá được trong lúc hỏi → route lưu lại. */
+  discovered: Map<string, { trackingCode?: string | null; packageId?: string | null }>;
+}
+
 export interface FulfillmentAdapter {
   channelName: ChannelName;
   /** false = mới giữ chỗ, route báo "sắp hỗ trợ" thay vì gọi. */
@@ -91,8 +109,18 @@ export interface FulfillmentAdapter {
   getShippingOptions(channel: Channel, sample: FulfillOrderRef): Promise<AdapterShippingOptions>;
   /** Sắp xếp vận chuyển THẬT cho một đơn. Không ném — trả ok=false kèm lý do. */
   arrangeShipment(channel: Channel, order: FulfillOrderRef, choice: FulfillChoice): Promise<ArrangeResult>;
+  /**
+   * Hỏi sàn đơn nào đã sẵn vận đơn (rẻ, không dựng file). Không cài = coi như
+   * sẵn ngay (kênh offline / sàn cấp mã ngay lúc sắp xếp).
+   */
+  probeLabelReadiness?(channel: Channel, orders: FulfillOrderRef[]): Promise<LabelReadiness>;
   /** Tải vận đơn PDF chính chủ cho nhiều đơn của cùng gian. */
   fetchLabels(channel: Channel, orders: FulfillOrderRef[]): Promise<LabelFetchResult>;
+}
+
+/** Lỗi sàn kiểu "chưa sẵn" — đợi rồi hỏi lại được, không phải lỗi thật. */
+export function isNotReadyError(text: string): boolean {
+  return /not.?ready|not.?exist|not.?found|pending|processing|in.?progress|try.?again|later/i.test(text);
 }
 
 /** Rút thông báo lỗi tiếng người từ Error/unknown. */

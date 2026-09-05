@@ -32,7 +32,9 @@ import {
   type FulfillOrderRef,
   type FulfillmentAdapter,
   type LabelFetchResult,
+  type LabelReadiness,
   type ShippingOptionAddress,
+  isNotReadyError,
 } from "./types";
 
 const PREFERRED_DOC = "THERMAL_AIR_WAYBILL"; // khổ A6 máy in nhiệt
@@ -40,6 +42,12 @@ const FALLBACK_DOC = "NORMAL_AIR_WAYBILL";
 const POLL_TRIES = 8;
 const POLL_DELAY_MS = 1200;
 const BATCH = 50; // trần order_list của các endpoint document
+/** Đợi sàn cấp tracking_number ngay trong lúc lấy phiếu: 3 vòng × 2s (giao
+ *  diện đã đợi trước ở bước probe, đây chỉ là lưới đỡ khi in tay). */
+const TRACKING_ROUNDS = 3;
+const TRACKING_DELAY_MS = 2000;
+/** Sàn báo "chưa sẵn" khi dựng vận đơn → thử lại một lần sau khoảng này. */
+const CREATE_RETRY_DELAY_MS = 2500;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -165,6 +173,37 @@ export const shopeeFulfillment: FulfillmentAdapter = {
     }
   },
 
+  /**
+   * Sàn đã cấp tracking_number chưa? Chỉ gọi get_tracking_number cho đơn còn
+   * thiếu mã — rẻ, không dựng file. Lỗi kiểu "chưa có" (kể cả sàn ném lỗi) đều
+   * coi là ĐANG CHỜ để giao diện hỏi lại; chỉ lỗi thật (token hỏng…) mới
+   * dừng sớm bằng cách ném ra ngoài cho route xử.
+   */
+  async probeLabelReadiness(channel, orders): Promise<LabelReadiness> {
+    const out: LabelReadiness = { ready: [], waiting: [], discovered: new Map() };
+    const missing = orders.filter((o) => !o.trackingCode);
+    for (const o of orders) if (o.trackingCode) out.ready.push(o.id);
+    if (missing.length === 0) return out;
+
+    const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+    for (const o of missing) {
+      try {
+        const tracking = await getTrackingNumber(accessToken, shopId, o.orderCode);
+        if (tracking) {
+          out.ready.push(o.id);
+          out.discovered.set(o.id, { trackingCode: tracking });
+        } else {
+          out.waiting.push({ orderId: o.id, orderCode: o.orderCode, reason: "Sàn chưa cấp mã vận đơn" });
+        }
+      } catch (err) {
+        const msg = errMessage(err);
+        if (!isNotReadyError(msg)) throw err;
+        out.waiting.push({ orderId: o.id, orderCode: o.orderCode, reason: msg });
+      }
+    }
+    return out;
+  },
+
   async fetchLabels(channel, orders): Promise<LabelFetchResult> {
     const result: LabelFetchResult = { pdfs: new Map(), discovered: new Map(), failed: [] };
     const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
@@ -172,25 +211,42 @@ export const shopeeFulfillment: FulfillmentAdapter = {
     const fail = (o: FulfillOrderRef, reason: string) =>
       result.failed.push({ orderId: o.id, orderCode: o.orderCode, reason });
 
-    // (1) Đảm bảo mã vận đơn — create_shipping_document cần tracking_number
+    // (1) Đảm bảo mã vận đơn — create_shipping_document cần tracking_number.
+    // Đơn vừa ship_order có thể chưa có mã: hỏi lại vài vòng thay vì bỏ ngay
+    // (đây là lý do "chuẩn bị 4 in được 1" trước 05/09).
     const ready: { order: FulfillOrderRef; tracking: string }[] = [];
+    let missing: FulfillOrderRef[] = [];
     for (const o of orders) {
-      let tracking = o.trackingCode;
-      if (!tracking) {
-        try {
-          tracking = await getTrackingNumber(accessToken, shopId, o.orderCode);
-        } catch (err) {
-          fail(o, `Không lấy được mã vận đơn: ${errMessage(err)}`);
-          continue;
-        }
-        if (tracking) result.discovered.set(o.id, { trackingCode: tracking });
-      }
-      if (!tracking) {
-        fail(o, "Sàn chưa cấp mã vận đơn — đợi ít phút rồi in lại");
-        continue;
-      }
-      ready.push({ order: o, tracking });
+      if (o.trackingCode) ready.push({ order: o, tracking: o.trackingCode });
+      else missing.push(o);
     }
+    const lastReason = new Map<string, string>();
+    for (let round = 0; round < TRACKING_ROUNDS && missing.length > 0; round++) {
+      if (round > 0) await sleep(TRACKING_DELAY_MS);
+      const still: FulfillOrderRef[] = [];
+      for (const o of missing) {
+        try {
+          const tracking = await getTrackingNumber(accessToken, shopId, o.orderCode);
+          if (tracking) {
+            result.discovered.set(o.id, { trackingCode: tracking });
+            ready.push({ order: o, tracking });
+          } else {
+            lastReason.set(o.id, "Sàn chưa cấp mã vận đơn — đợi ít phút rồi in lại");
+            still.push(o);
+          }
+        } catch (err) {
+          const msg = errMessage(err);
+          lastReason.set(o.id, `Không lấy được mã vận đơn: ${msg}`);
+          if (isNotReadyError(msg)) still.push(o);
+          else fail(o, `Không lấy được mã vận đơn: ${msg}`);
+        }
+      }
+      missing = still;
+    }
+    for (const o of missing) fail(o, lastReason.get(o.id) ?? "Sàn chưa cấp mã vận đơn — đợi ít phút rồi in lại");
+    // Giữ thứ tự seller chọn (đơn có mã sẵn và đơn vừa lấy mã trộn nhau)
+    const position = new Map(orders.map((o, i) => [o.id, i]));
+    ready.sort((a, b) => (position.get(a.order.id) ?? 0) - (position.get(b.order.id) ?? 0));
 
     for (let i = 0; i < ready.length; i += BATCH) {
       const chunk = ready.slice(i, i + BATCH);
@@ -224,31 +280,47 @@ export const shopeeFulfillment: FulfillmentAdapter = {
       const toCreate = chunk.filter((c) => docType.has(c.order.orderCode));
       if (toCreate.length === 0) continue;
 
-      // (3) Yêu cầu dựng file — đã dựng rồi sàn báo lỗi "exist" thì coi như xong
-      try {
-        const rows = await createShippingDocument(
-          accessToken,
-          shopId,
-          toCreate.map((c) => ({
-            order_sn: c.order.orderCode,
-            tracking_number: c.tracking,
-            shipping_document_type: docType.get(c.order.orderCode),
-          }))
-        );
-        for (const r of rows) {
-          if (!r.fail_error) continue;
-          const text = `${r.fail_error} ${r.fail_message ?? ""}`.toLowerCase();
-          if (text.includes("exist") || text.includes("already")) continue;
-          const o = byCode.get(r.order_sn);
-          if (o) {
+      // (3) Yêu cầu dựng file — đã dựng rồi sàn báo lỗi "exist" thì coi như xong.
+      // Sàn báo "chưa sẵn" (đơn vừa ship_order xong) → đợi rồi thử lại MỘT lần
+      // cho riêng các đơn đó thay vì loại khỏi file in.
+      let createList = toCreate;
+      for (let attempt = 0; attempt < 2 && createList.length > 0; attempt++) {
+        if (attempt > 0) await sleep(CREATE_RETRY_DELAY_MS);
+        const retry: typeof toCreate = [];
+        try {
+          const rows = await createShippingDocument(
+            accessToken,
+            shopId,
+            createList.map((c) => ({
+              order_sn: c.order.orderCode,
+              tracking_number: c.tracking,
+              shipping_document_type: docType.get(c.order.orderCode),
+            }))
+          );
+          for (const r of rows) {
+            if (!r.fail_error) continue;
+            const text = `${r.fail_error} ${r.fail_message ?? ""}`.toLowerCase();
+            if (text.includes("exist") || text.includes("already")) continue;
+            const o = byCode.get(r.order_sn);
+            if (!o) continue;
+            const item = createList.find((c) => c.order.orderCode === r.order_sn);
+            if (attempt === 0 && item && isNotReadyError(text)) {
+              retry.push(item);
+              continue;
+            }
             fail(o, r.fail_message || r.fail_error);
             docType.delete(r.order_sn);
           }
+        } catch (err) {
+          for (const c of createList) {
+            fail(c.order, `Sàn không dựng được vận đơn: ${errMessage(err)}`);
+            docType.delete(c.order.orderCode);
+          }
+          break;
         }
-      } catch (err) {
-        for (const c of toCreate) fail(c.order, `Sàn không dựng được vận đơn: ${errMessage(err)}`);
-        continue;
+        createList = retry;
       }
+      if (!toCreate.some((c) => docType.has(c.order.orderCode))) continue;
 
       // (4) Chờ sàn dựng xong
       let pending = toCreate.filter((c) => docType.has(c.order.orderCode));

@@ -542,6 +542,10 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 const BULK_MAX = 200;
 
 /** Đọc + kiểm mảng orderIds trong body; trả null khi đã trả lỗi cho client. */
+/** Nhịp giữa hai lần ship_order/pack cùng gian trong một mẻ Chuẩn bị hàng. */
+const ARRANGE_GAP_MS = 300;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 function readBulkOrderIds(
   req: AuthRequest,
   res: express.Response,
@@ -795,7 +799,10 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
             },
           });
         }
-        for (const o of list) {
+        for (const [idx, o] of list.entries()) {
+          // Nhịp nhỏ giữa hai đơn cùng gian: sàn nhận từng đơn rõ ràng, không dồn
+          // rate-limit khi mẻ 50 đơn (chậm thêm ~0,3s/đơn — người dùng không cảm nhận).
+          if (idx > 0) await sleep(ARRANGE_GAP_MS);
           const r = await adapter.arrangeShipment(channel, toFulfillRef(o), choice);
           if (r.ok) {
             await markProcessed(o.id, {
@@ -812,6 +819,86 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
     );
 
     res.json({ confirmed: confirmedIds.length, confirmedIds, skipped, failed, notes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/orders/bulk/label-readiness — sàn đã cấp vận đơn cho đơn nào? (05/09)
+ * Body: { orderIds: string[] }
+ *
+ * Bước ĐỢI giữa "Chuẩn bị hàng" và "In": ship_order xong, Shopee cần vài giây
+ * tới vài chục giây mới có tracking_number; xin PDF ngay là đơn chưa có mã bị
+ * rơi khỏi file in. Giao diện gọi endpoint này mỗi ~2,5s tới khi waiting rỗng
+ * (hoặc hết kiên nhẫn ~45s) rồi mới gọi /bulk/labels MỘT lần cho cả mẻ.
+ *
+ * Chỉ hỏi sàn cho đơn còn thiếu mã (rẻ); mã khám phá được ghi luôn vào Order.
+ * Đơn không ở trạng thái in được / kênh offline / sàn giữ chỗ → coi là "ready"
+ * để không chặn mẻ — /bulk/labels sẽ báo lý do đúng cho từng đơn đó.
+ */
+router.post("/bulk/label-readiness", async (req: AuthRequest, res, next) => {
+  try {
+    const orderIds = readBulkOrderIds(req, res);
+    if (!orderIds) return;
+
+    const rows = await prisma.order.findMany({
+      where: { id: { in: orderIds }, channel: channelScope(req) },
+      select: {
+        id: true,
+        orderCode: true,
+        shippingStatus: true,
+        trackingCode: true,
+        platformPackageId: true,
+        channelId: true,
+        channel: true,
+      },
+    });
+
+    const ready: string[] = [];
+    const waiting: { id: string; orderCode: string; reason?: string }[] = [];
+    const failed: { orderCode: string; reason: string }[] = [];
+    const groups = new Map<string, typeof rows>();
+    for (const o of rows) {
+      const printable =
+        o.shippingStatus === ShippingStatus.PROCESSED || o.shippingStatus === ShippingStatus.SHIPPING;
+      const adapter = getFulfillmentAdapter(o.channel.channelName);
+      if (!printable || !adapter || !adapter.supported || !adapter.probeLabelReadiness) {
+        ready.push(o.id);
+        continue;
+      }
+      groups.set(o.channelId, [...(groups.get(o.channelId) ?? []), o]);
+    }
+
+    await Promise.all(
+      [...groups.values()].map(async (list) => {
+        const channel = list[0].channel;
+        const adapter = getFulfillmentAdapter(channel.channelName)!;
+        try {
+          const r = await adapter.probeLabelReadiness!(channel, list.map(toFulfillRef));
+          ready.push(...r.ready);
+          for (const w of r.waiting) waiting.push({ id: w.orderId, orderCode: w.orderCode, reason: w.reason });
+          for (const [id, d] of r.discovered) {
+            await prisma.order.update({
+              where: { id },
+              data: {
+                ...(d.trackingCode ? { trackingCode: d.trackingCode } : {}),
+                ...(d.packageId ? { platformPackageId: d.packageId } : {}),
+              },
+            });
+          }
+        } catch (err) {
+          // Lỗi cả gian (token hỏng…) — không chặn mẻ, /bulk/labels sẽ báo rõ
+          const reason = err instanceof Error ? err.message : "Không hỏi được sàn";
+          for (const o of list) {
+            ready.push(o.id);
+            failed.push({ orderCode: o.orderCode, reason });
+          }
+        }
+      })
+    );
+
+    res.json({ ready, waiting, failed });
   } catch (err) {
     next(err);
   }
