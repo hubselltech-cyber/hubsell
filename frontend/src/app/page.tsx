@@ -721,7 +721,7 @@ export default function DashboardPage() {
         {seesFinancials && <CommandCenter />}
 
         <p className="text-center text-xs text-muted-foreground">
-          Hubsell · Giai đoạn 4 — Báo cáo tài chính & Phân quyền
+          Hoàng Sa - Trường Sa là của Việt Nam
         </p>
       </div>
     </AppShell>
