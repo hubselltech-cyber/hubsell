@@ -12,7 +12,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { HubStoryStrip } from "@/components/products/hub-story-strip";
 import { AppShell } from "@/components/shell/app-shell";
 import { TourPlayer } from "@/components/tour/guide-tour-player";
 import { Button } from "@/components/ui/button";
@@ -47,12 +46,6 @@ interface GuideSection {
   tour: GuideTour;
   /** Bộ slide chi tiết (deck HTML cũ) — mở ở tab mới. */
   deckSrc: string;
-  /**
-   * Khối NGUYÊN LÝ đặt trên tour (anh Trung 06/09: dải kể chuyện kho trung tâm
-   * bắt buộc có trong tài liệu hướng dẫn, cùng một component với hub Hàng hóa
-   * nên sửa một chỗ là khớp cả hai).
-   */
-  intro?: { title: string; body: React.ReactNode };
 }
 
 const SECTIONS: GuideSection[] = [
@@ -70,13 +63,9 @@ const SECTIONS: GuideSection[] = [
     icon: Package,
     title: "Quản lý kho & liên kết sản phẩm",
     description:
-      "Kéo sản phẩm từ sàn về, nối SKU vào một kho duy nhất — tồn ban đầu tự lấy theo sàn, rồi bật đồng bộ tồn ngược lên mọi gian.",
+      "Nguyên lý kho trung tâm trước, rồi 3 bước thiết lập: kéo sản phẩm từ sàn về, nối SKU vào một kho duy nhất, bật đồng bộ tồn lên mọi gian.",
     tour: WAREHOUSE_TOUR,
     deckSrc: "/huong-dan-quan-ly-kho.html",
-    intro: {
-      title: "Nguyên lý: một kho trung tâm điều khiển mọi gian",
-      body: <HubStoryStrip />,
-    },
   },
   {
     key: "finance",
@@ -175,12 +164,6 @@ function GuideAccordionItem({
               Bản slide chi tiết
             </Button>
           </div>
-          {section.intro && (
-            <div className="border-b bg-muted/20 px-4 py-4">
-              <p className="mb-3 text-sm font-semibold text-slate-800">{section.intro.title}</p>
-              {section.intro.body}
-            </div>
-          )}
           <div className="mx-auto max-w-3xl px-4 py-5">
             <TourPlayer
               steps={section.tour.steps}

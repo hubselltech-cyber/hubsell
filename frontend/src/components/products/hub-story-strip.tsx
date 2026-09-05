@@ -67,10 +67,14 @@ export function HubStoryStrip() {
     </div>
   );
 
+  // data-tour: mốc cho scripts/capture-guide-tour-assets.js lấy tọa độ tour kho.
   return (
     <div className="space-y-3">
       {/* Sơ đồ: trước → Shop A bán 1 đơn → sau (kho và mọi shop cùng trừ 1) */}
-      <div className="grid items-center gap-3 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)]">
+      <div
+        data-tour="hub-story"
+        className="grid items-center gap-3 md:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1fr)]"
+      >
         {snapshot(100, false)}
         <div className="flex flex-col items-center justify-center gap-1 text-center">
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">
@@ -89,7 +93,7 @@ export function HubStoryStrip() {
 
       {/* Chú thích mờ, không nền không viền (anh Trung 06/09: dải vàng chướng
           mắt) — ý "cùng mã SKU" đã được nhắc lại ở bước 2 và hộp Tự khớp. */}
-      <p className={cn(TEXT_SUB, "flex items-start gap-1.5 px-1")}>
+      <p data-tour="hub-sku-hint" className={cn(TEXT_SUB, "flex items-start gap-1.5 px-1")}>
         <Lightbulb className="mt-0.5 size-3.5 shrink-0" />
         <span>
           Cùng một sản phẩm bán trên nhiều shop thì đặt <b className="font-medium text-foreground/80">cùng mã SKU</b> trên

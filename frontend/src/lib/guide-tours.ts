@@ -104,48 +104,67 @@ const GT = "/guide-assets/tour";
 
 export const WAREHOUSE_TOUR: GuideTour = {
   voiceDir: "/guide-assets/voice/kho",
+  // 06/09 làm lại theo hub Hàng hóa 3 tầng (anh Trung: "từ đầu phải nói về
+  // nguyên lý"): 2 bước nguyên lý → 3 bước thiết lập (khối Kho trung tâm tự
+  // chuyển bước giữa các ảnh) → nối tay → kết quả. Ảnh + tọa độ từ
+  // scripts/capture-guide-tour-assets.js kho; lời đọc generate-guide-voice.js kho.
   steps: [
     {
-      img: `${GT}/kho-inventory.png`,
-      title: "Mở “Quản lý Kho” → “Hàng hóa”",
-      desc: "Toàn bộ sản phẩm và tồn kho nằm ở đây — một kho duy nhất cho mọi gian hàng.",
-      target: { x: 9.58, y: 31.98, w: 12.36, h: 3.75 },
+      img: `${GT}/kho-guide-start.png`,
+      title: "Nguyên lý: một kho trung tâm cho mọi gian",
+      desc: "Mở “Quản lý Kho” → “Hàng hóa”. Khối đầu trang kể nguyên lý: kho Hubsell là trung tâm, mọi gian luôn hiện cùng một số “Có thể bán”. Shop A bán 1 đơn thì kho và Shop B, C cùng trừ 1; nhập kho thì mọi gian cùng lên.",
+      target: { x: 58.89, y: 27.81, w: 75.42, h: 11.46 },
+      zoom: 1.2,
+    },
+    {
+      img: `${GT}/kho-guide-start.png`,
+      title: "Đặt cùng mã SKU trên mọi shop",
+      desc: "Cùng một sản phẩm bán trên nhiều shop thì đặt cùng mã SKU trên sàn — Hubsell tự khớp về một SKU kho. Khác mã thì phải nối tay và dễ nhầm.",
+      target: { x: 58.89, y: 35.63, w: 75.42, h: 1.67 },
+      zoom: 1.8,
+    },
+    {
+      img: `${GT}/kho-guide-start.png`,
+      title: "Bước 1: Kéo sản phẩm từ sàn về",
+      desc: "Bấm “Kéo sản phẩm về” — danh mục của mọi gian đã kết nối được kéo về, kèm giá bán và tồn trên sàn. Sàn có hàng mới thì bấm lại.",
+      target: { x: 27.46, y: 50.42, w: 10.33, h: 2.92 },
+      zoom: 2,
+    },
+    {
+      img: `${GT}/kho-guide-link.png`,
+      title: "Bước 2: Nối về SKU kho",
+      desc: "Khối tự chuyển sang bước 2 và cho biết còn bao nhiêu sản phẩm sàn chưa nối. Bấm “Tự khớp + tạo SKU”.",
+      target: { x: 53.09, y: 50.42, w: 10.77, h: 2.92 },
+      zoom: 2,
+    },
+    {
+      img: `${GT}/kho-oneclick-dialog.png`,
+      title: "Chọn mức nối",
+      desc: "SKU sàn trùng mã tự nối vào kho. Chọn “Tự khớp + tạo SKU còn lại” để Hubsell tạo SKU kho cho phần còn lại từ chính dữ liệu sàn — tồn ban đầu lấy theo số trên sàn.",
+      target: { x: 54.68, y: 60.47, w: 15.09, h: 3.33 },
       zoom: 1.9,
-    },
-    {
-      img: `${GT}/kho-links.png`,
-      title: "Kéo danh mục sản phẩm từ sàn về",
-      desc: "Mở tab “Sản phẩm trên sàn” rồi bấm “Đồng bộ từ sàn” (hoặc bước 1 của khối Thiết lập kho) — sản phẩm của mọi gian đã kết nối được kéo về đây, kèm cả giá bán và tồn kho trên sàn.",
-      target: { x: 49.77, y: 20.79, w: 10.13, h: 3.33 },
-      zoom: 2,
-    },
-    {
-      img: `${GT}/kho-links.png`,
-      title: "Nối toàn bộ bằng MỘT cú bấm",
-      desc: "Bấm “Tự khớp + tạo SKU” rồi chọn “Tự khớp + tạo SKU còn lại”: SKU trùng mã tự nối vào kho, phần còn lại hệ thống tạo SKU kho mới rồi nối luôn — tồn kho ban đầu tự lấy theo số trên sàn.",
-      target: { x: 26.67, y: 20.79, w: 15.55, h: 3.33 },
-      zoom: 2,
     },
     {
       img: `${GT}/kho-bulk.png`,
       title: "Nối tay theo lô — khi muốn tự quyết",
-      desc: "Tick các dòng cùng một mẫu → thanh công cụ hiện dưới đáy: chọn SKU gốc rồi bấm “Liên kết”, hoặc “Tạo SKU kho” cho hàng chưa có trong kho.",
+      desc: "Tab “Sản phẩm trên sàn”: tick các dòng cùng một mẫu → thanh công cụ hiện dưới đáy, chọn SKU gốc rồi bấm “Liên kết”, hoặc “Tạo SKU kho”.",
       target: { x: 50, y: 95.83, w: 100, h: 8.33 },
       zoom: 1.5,
     },
     {
-      img: `${GT}/kho-inventory.png`,
-      title: "Tab Tồn kho: một nguồn số duy nhất",
-      desc: "Cột “Bán trên” cho biết mỗi SKU đang nối những gian nào — đơn từ gian nào về cũng trừ chung một tồn kho. Nhập / xuất hàng ngay trên từng dòng.",
-      target: { x: 46.61, y: 16.12, w: 55.44, h: 2.67 },
-      zoom: 1.5,
+      img: `${GT}/kho-sync-dialog.png`,
+      title: "Bước 3: So số rồi bật đồng bộ từng gian",
+      desc: "Bấm “Bật đồng bộ” → gạt công tắc của gian: Hubsell đọc tồn thật trên sàn, đặt cạnh số “Có thể bán” để bạn duyệt. Bấm “Bật & đẩy” — từ đó kho đổi số là mọi gian đổi theo, mỗi 6 giờ tự đối soát.",
+      // Cả màn so số (bảng SKU + nút Bật & đẩy) — đo tay trên kho-sync-dialog.png.
+      target: { x: 50, y: 38, w: 54, h: 24 },
+      zoom: 1.45,
     },
     {
-      img: `${GT}/kho-sync-dialog.png`,
-      title: "Bật đồng bộ tồn kho lên sàn",
-      desc: "Bấm “Cài đặt” → gạt công tắc của từng gian: Hubsell đọc tồn thật trên sàn, đặt cạnh số “Có thể bán” để bạn duyệt trước rồi mới bật. Từ đó mọi biến động kho tự đẩy lên gian, mỗi 6 giờ hệ thống còn tự đối soát và sửa lệch.",
-      target: { x: 70.07, y: 39.43, w: 2.5, h: 2.08 },
-      zoom: 2,
+      img: `${GT}/kho-inventory.png`,
+      title: "Xong: khối thu gọn, bảng là việc hằng ngày",
+      desc: "Đã thiết lập, khối tự thu thành một dòng. Cột “Bán trên” cho biết mỗi SKU đang nối những gian nào — đơn từ gian nào về cũng trừ chung một tồn kho.",
+      target: { x: 82.51, y: 33.88, w: 10.96, h: 5.05 },
+      zoom: 1.7,
     },
   ],
 };

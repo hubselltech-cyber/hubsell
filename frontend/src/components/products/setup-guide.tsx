@@ -159,6 +159,7 @@ export function SetupGuide({
         : "later";
     return (
       <div
+        data-tour={`setup-step-${n}`}
         className={cn(
           "flex flex-col gap-2.5 rounded-xl p-4",
           state === "active"
@@ -283,7 +284,7 @@ export function SetupGuide({
   return (
     // Thẻ nổi (bóng nhẹ) + dải tiêu đề nhuộm màu chủ đạo, thân là nền lõm nhạt:
     // khối này KHÁC TÔNG với bảng bên dưới nên không còn cảm giác phẳng.
-    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+    <div data-tour="setup-guide" className="overflow-hidden rounded-xl border bg-card shadow-sm">
       {/* ===== HEADER: luôn hiện ===== */}
       <div
         className={cn(

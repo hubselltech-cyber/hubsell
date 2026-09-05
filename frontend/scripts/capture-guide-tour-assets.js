@@ -9,6 +9,14 @@
  *
  * In ra TỌA ĐỘ % của từng mục tiêu — dán vào lib/guide-tours.ts mỗi lần
  * chụp lại, kẻo con trỏ ảo chỉ trật chỗ.
+ *
+ * Chạy: node scripts/capture-guide-tour-assets.js [kho|donhang|hoadon]
+ * (không truyền = chụp cả 3). Cần frontend dev server ở localhost:3000; KHÔNG
+ * cần backend — mọi /api/* bị chặn trả mock.
+ *
+ * TOUR KHO (làm lại 06/09 theo hub Hàng hóa 3 tầng): mock có TRẠNG THÁI thay
+ * đổi giữa các ảnh (chưa kéo SP → đã kéo, chưa nối → đã nối, chưa bật → đã bật)
+ * để khối "Kho trung tâm Hubsell" tự chuyển bước; mục tiêu lấy qua data-tour.
  */
 const { chromium } = require("playwright");
 const path = require("path");
@@ -44,7 +52,7 @@ const products = [
     productName: "Túi Xách Nữ Công Sở Sunny, Cặp Đựng Laptop 14, 15.6 inch BLT002",
     costPrice: 145000, sellingPrice: 279000, quantityInStock: 41, holdQuantity: 0,
     createdAt: "2026-08-01T00:00:00.000Z",
-    channelLinks: [{ channelSku: "BLT002-CAFE14", channelName: "SHOPEE", shopName: "Sunny Closet" }],
+    channelLinks: [{ channelSku: "BLT002-CAFE14", channelName: "SHOPEE", shopName: "Sunny Closet", state: "match", channelStock: 41 }],
     hasSyncAlert: false,
   },
   {
@@ -52,7 +60,7 @@ const products = [
     productName: "Túi đeo chéo Sunny CHIBI nhiều ngăn khóa chống thấm SNC02",
     costPrice: 98000, sellingPrice: 239000, quantityInStock: 1023, holdQuantity: 0,
     createdAt: "2026-08-01T00:00:00.000Z",
-    channelLinks: [{ channelSku: "SNC01-LOGO", channelName: "SHOPEE", shopName: "Sunny Closet" }],
+    channelLinks: [{ channelSku: "SNC01-LOGO", channelName: "SHOPEE", shopName: "Sunny Closet", state: "match", channelStock: 1023 }],
     hasSyncAlert: false,
   },
   {
@@ -60,7 +68,7 @@ const products = [
     productName: "JumpSuit bé yêu, body áo khoác lông lót bông cho bé 3-10Kg AK001",
     costPrice: 62000, sellingPrice: 300000, quantityInStock: 68, holdQuantity: 3,
     createdAt: "2026-08-01T00:00:00.000Z",
-    channelLinks: [{ channelSku: "AK001-GACON", channelName: "SHOPEE", shopName: "Sunny Closet" }],
+    channelLinks: [{ channelSku: "AK001-GACON", channelName: "SHOPEE", shopName: "Sunny Closet", state: "match", channelStock: 65 }],
     hasSyncAlert: false,
   },
   {
@@ -170,6 +178,36 @@ const taxReport = {
   logs: invoiceLogs,
 };
 
+// ===== TRẠNG THÁI KHO thay đổi giữa các ảnh của tour kho =====
+// fresh: gian đã nối, chưa kéo SP → bước 1 sáng.  pulled: đã kéo, còn 54 chưa
+// nối → bước 2.  linked: nối hết, chưa bật đồng bộ → bước 3.  done: đã bật.
+const syncChannel = (enabled) => ({
+  id: "c1", channelName: "SHOPEE", shopName: "Sunny Closet", connected: true,
+  stockSyncEnabled: enabled, stockSyncEnabledAt: enabled ? "2026-09-06T09:00:00.000Z" : null,
+  linkedCount: 0, lastReconcileAt: enabled ? "2026-09-06T12:00:00.000Z" : null,
+  lastReconcileMismatch: enabled ? 0 : null,
+});
+const WH_STATES = {
+  fresh: { products: [], counts: { all: 0, linked: 0, unlinked: 0 }, cps: [], enabled: false, linkedCount: 0 },
+  pulled: { products, counts: { all: 96, linked: 42, unlinked: 54 }, cps: channelProducts, enabled: false, linkedCount: 42 },
+  linked: { products, counts: { all: 96, linked: 96, unlinked: 0 }, cps: [], enabled: false, linkedCount: 96 },
+  done: { products, counts: { all: 96, linked: 96, unlinked: 0 }, cps: [], enabled: true, linkedCount: 96 },
+};
+let wh = WH_STATES.pulled;
+const syncPreview = () => ({
+  channel: { id: "c1", channelName: "SHOPEE", shopName: "Sunny Closet" },
+  refreshed: true, refreshError: null, safetyStockDefault: 0,
+  summary: { total: 96, match: 91, up: 3, down: 2, unknown: 0, willZero: 0, unlinked: 0 },
+  items: [
+    { channelSku: "BLT002-CAFE14", channelProductName: "Túi Xách Nữ Công Sở Sunny BLT002", skuCode: "BLT002-CAFE14", productName: "Túi Xách Nữ Công Sở Sunny BLT002", quantityInStock: 41, holdQuantity: 0, safetyStock: 0, hubsell: 41, onChannel: 38, state: "up", pending: false },
+    { channelSku: "AK001-GACON", channelProductName: "JumpSuit bé yêu AK001", skuCode: "AK001-GACON", productName: "JumpSuit bé yêu AK001", quantityInStock: 68, holdQuantity: 3, safetyStock: 0, hubsell: 65, onChannel: 70, state: "down", pending: false },
+    { channelSku: "SNC01-LOGO", channelProductName: "Túi đeo chéo Sunny CHIBI SNC02", skuCode: "SNC01-LOGO", productName: "Túi đeo chéo Sunny CHIBI SNC02", quantityInStock: 1023, holdQuantity: 0, safetyStock: 0, hubsell: 1023, onChannel: 1023, state: "match", pending: false },
+  ],
+  truncated: false,
+});
+
+const ONLY = process.argv[2]; // kho | donhang | hoadon | undefined
+
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({
@@ -202,19 +240,27 @@ const taxReport = {
         locked: false, lockedReason: null, upgradePlans: [], payment: null, pendingUpgradeRequest: null,
       });
     }
-    // Hàng hóa
+    // Hàng hóa (trạng thái wh đổi giữa các ảnh của tour kho)
     if (url.includes("/api/inventory/sync-settings"))
-      return json({ autoSyncEnabled: false, safetyStockDefault: 0, updatedAt: null, pendingJobs: 0 });
+      return json({
+        channels: [{ ...syncChannel(wh.enabled), linkedCount: wh.linkedCount }],
+        enabledCount: wh.enabled ? 1 : 0, safetyStockDefault: 0, initialStockMode: "MAX",
+        lowStockDefault: 0, updatedAt: null, pendingJobs: 0,
+      });
+    if (url.includes("/api/inventory/sync-channels/") && url.endsWith("/preview")) return json(syncPreview());
     if (url.includes("/api/inventory/sync-alerts")) return json([]);
     if (url.includes("/api/inventory/sync-logs")) return json([]);
     if (url.includes("/api/inventory/sync-pending")) return json({ pending: 0 });
     if (url.includes("/channel-links")) return json([]);
     if (url.includes("/api/products"))
-      return json({ items: products, total: products.length, page: 1, pageSize: 10, pageCount: 1 });
+      return json({
+        items: wh.products, total: wh.products.length, page: 1, pageSize: 10,
+        pageCount: wh.products.length ? 1 : 0, safetyStockDefault: 0, lowStockDefault: 0,
+      });
     if (url.includes("/api/mappings"))
       return json({
-        items: channelProducts, total: 96, page: 1, pageSize: 20, pageCount: 5,
-        counts: { all: 96, linked: 42, unlinked: 54 },
+        items: wh.cps, total: wh.counts.all, page: 1, pageSize: 20,
+        pageCount: wh.cps.length ? 5 : 0, counts: wh.counts,
       });
     // Đơn hàng
     if (url.includes("/api/orders")) return json(orderList);
@@ -266,42 +312,85 @@ const taxReport = {
   const targets = { kho: {}, donhang: {}, hoadon: {} };
 
   // ================= TOUR KHO =================
-  await page.goto("http://localhost:3000/products", { waitUntil: "domcontentloaded" });
-  await page.getByText("BLT002-CAFE14").first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(1200);
+  // Mốc data-tour do hub Hàng hóa gắn sẵn (hub-story-strip.tsx, setup-guide.tsx).
+  const tour = (name) => page.locator('[data-tour="' + name + '"]');
+  const gotoProducts = async (state, waitText) => {
+    wh = WH_STATES[state];
+    await page.goto("http://localhost:3000/products", { waitUntil: "domcontentloaded" });
+    await page.getByText(waitText).first().waitFor({ timeout: 30000 });
+    await page.waitForTimeout(1200);
+  };
+  if (!ONLY || ONLY === "kho") {
+    // Khối thiết lập luôn BUNG khi chụp (xóa lựa chọn thu gọn nếu có)
+    await page.addInitScript(() => localStorage.removeItem("hubsell_hub_guide_open"));
 
-  // Ảnh 1: tab Tồn kho
-  targets.kho.navProducts = await pct(page.getByRole("link", { name: "Hàng hóa" }));
-  targets.kho.colSellOn = await pct(page.getByText("Bán trên").first());
-  targets.kho.btnSettings = await pct(page.getByRole("button", { name: "Cài đặt" }));
-  await page.screenshot({ path: path.join(OUT, "kho-inventory.png") });
+    // Ảnh 1: trạng thái MỚI — gian đã nối, chưa kéo SP (bước 1 sáng): nguyên lý + cùng mã + bước 1
+    await gotoProducts("fresh", "Kho trung tâm Hubsell");
+    targets.kho.navProducts = await pct(page.getByRole("link", { name: "Hàng hóa" }));
+    targets.kho.story = await pct(tour("hub-story"));
+    targets.kho.skuHint = await pct(tour("hub-sku-hint"));
+    targets.kho.step1Btn = await pct(tour("setup-step-1").getByRole("button", { name: "Kéo sản phẩm về" }));
+    await page.screenshot({ path: path.join(OUT, "kho-guide-start.png") });
 
-  // Ảnh 2: tab Chờ liên kết
-  await page.getByRole("button", { name: /^Chờ liên kết/ }).first().click();
-  await page.getByText("SNC01-CHIBI").first().waitFor({ timeout: 30000 });
-  await page.waitForTimeout(900);
-  targets.kho.tabLinks = await pct(page.getByRole("button", { name: /^Chờ liên kết/ }).first());
-  targets.kho.btnSyncFromChannels = await pct(page.getByRole("button", { name: "Đồng bộ từ sàn" }).first());
-  targets.kho.btnAutoAll = await pct(page.getByRole("button", { name: "Tự khớp + tạo SKU toàn bộ" }));
-  await page.screenshot({ path: path.join(OUT, "kho-links.png") });
+    // Ảnh 2: ĐÃ KÉO, còn 54 chưa nối (bước 2 sáng) → nút Tự khớp + tạo SKU
+    await gotoProducts("pulled", "BLT002-CAFE14");
+    const step2Btn = tour("setup-step-2").getByRole("button", { name: "Tự khớp + tạo SKU" });
+    targets.kho.step2Btn = await pct(step2Btn);
+    await page.screenshot({ path: path.join(OUT, "kho-guide-link.png") });
 
-  // Ảnh 3: tick 2 dòng → thanh liên kết hàng loạt
-  await page.getByLabel("Chọn SNC01-CHIBI").check();
-  await page.getByLabel("Chọn SNC02-LOVE").check();
-  await page.waitForTimeout(600);
-  targets.kho.bulkBar = await pct(page.getByLabel("Liên kết hàng loạt"));
-  await page.screenshot({ path: path.join(OUT, "kho-bulk.png") });
+    // Ảnh 3: hộp Tự khớp + tạo SKU (2 mức)
+    await step2Btn.click();
+    const fullBtn = page.getByRole("button", { name: "Tự khớp + tạo SKU còn lại" });
+    await fullBtn.waitFor({ timeout: 10000 });
+    await page.waitForTimeout(700);
+    targets.kho.dialogFullBtn = await pct(fullBtn);
+    targets.kho.dialogMatchBtn = await pct(page.getByRole("button", { name: "Chỉ tự khớp trùng mã" }));
+    await page.screenshot({ path: path.join(OUT, "kho-oneclick-dialog.png") });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
 
-  // Ảnh 4: dialog Cài đặt đồng bộ tồn
-  await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Cài đặt" }).click();
-  await page.getByText("Tự động đồng bộ").first().waitFor();
-  await page.waitForTimeout(900);
-  targets.kho.switchAutoSync = await pct(page.getByLabel("Bật/tắt tự động đồng bộ tồn kho"));
-  targets.kho.btnSyncAll = await pct(page.getByRole("button", { name: "Sync ngay toàn bộ" }));
-  await page.screenshot({ path: path.join(OUT, "kho-sync-dialog.png") });
+    // Ảnh 4: tab Sản phẩm trên sàn — tick 2 dòng → thanh liên kết hàng loạt (nối tay)
+    const tabLinks = page.getByRole("button", { name: /^Sản phẩm trên sàn/ }).first();
+    targets.kho.tabLinks = await pct(tabLinks);
+    await tabLinks.click();
+    await page.getByText("SNC01-CHIBI").first().waitFor({ timeout: 30000 });
+    await page.waitForTimeout(900);
+    await page.getByLabel("Chọn SNC01-CHIBI").check();
+    await page.getByLabel("Chọn SNC02-LOVE").check();
+    await page.waitForTimeout(600);
+    targets.kho.bulkBar = await pct(page.getByLabel("Liên kết hàng loạt"));
+    await page.screenshot({ path: path.join(OUT, "kho-bulk.png") });
+
+    // Ảnh 5: ĐÃ NỐI HẾT, chưa bật đồng bộ (bước 3 sáng) → nút Bật đồng bộ
+    await gotoProducts("linked", "BLT002-CAFE14");
+    const step3Btn = tour("setup-step-3").getByRole("button", { name: "Bật đồng bộ" });
+    targets.kho.step3Btn = await pct(step3Btn);
+    await page.screenshot({ path: path.join(OUT, "kho-guide-sync.png") });
+
+    // Ảnh 6: dialog đồng bộ — gạt công tắc gian → màn so số → nút Bật & đẩy
+    await step3Btn.click();
+    const sw = page.getByLabel("Bật/tắt đồng bộ tồn cho Sunny Closet");
+    await sw.waitFor({ timeout: 10000 });
+    await page.waitForTimeout(600);
+    targets.kho.switchShop = await pct(sw);
+    await sw.click();
+    const enableBtn = page.getByRole("button", { name: /^Bật & đẩy/ });
+    await enableBtn.waitFor({ timeout: 10000 });
+    await page.waitForTimeout(800);
+    targets.kho.btnEnable = await pct(enableBtn);
+    await page.screenshot({ path: path.join(OUT, "kho-sync-dialog.png") });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+
+    // Ảnh 7: ĐÃ XONG — khối tự thu thành một dòng "Đã thiết lập", bảng là việc chính
+    await gotoProducts("done", "BLT002-CAFE14");
+    targets.kho.guideHeader = await pct(tour("setup-guide"));
+    targets.kho.colSellOn = await pct(page.getByText("Bán trên").first());
+    await page.screenshot({ path: path.join(OUT, "kho-inventory.png") });
+  }
 
   // ================= TOUR ĐƠN HÀNG =================
+  if (!ONLY || ONLY === "donhang") {
   // Ảnh 1: trang Đơn hàng
   await page.goto("http://localhost:3000/orders", { waitUntil: "domcontentloaded" });
   await page.getByText("2508250SNKXR7T").first().waitFor({ timeout: 30000 });
@@ -329,8 +418,10 @@ const taxReport = {
     page.getByRole("link", { name: "Lãi/Lỗ Thực Hiện" })
   );
   await page.screenshot({ path: path.join(OUT, "dh-costs.png") });
+  }
 
   // ================= TOUR HÓA ĐƠN =================
+  if (!ONLY || ONLY === "hoadon") {
   // Ảnh 1: tab Cấu hình kết nối (form đã điền)
   await page.goto("http://localhost:3000/invoicing/connect", { waitUntil: "domcontentloaded" });
   await page.getByRole("tab", { name: "Cấu hình kết nối" }).waitFor({ timeout: 30000 });
@@ -373,9 +464,10 @@ const taxReport = {
   await page.waitForTimeout(1200);
   targets.hoadon.btnDownload = await pct(page.getByRole("button", { name: "Tải", exact: true }).first());
   await page.screenshot({ path: path.join(OUT, "hd-history.png") });
+  }
 
   await browser.close();
-  console.log("DONE: 8 anh da luu vao", OUT);
+  console.log("DONE: anh da luu vao", OUT);
   console.log("TOA DO MUC TIEU (% viewport) — dan vao lib/guide-tours.ts:");
   console.log(JSON.stringify(targets, null, 2));
 })().catch((e) => {

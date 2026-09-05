@@ -866,6 +866,11 @@ export default function ProductsHubPage() {
                         Chưa có sản phẩm nào. Nối gian hàng để kéo sản phẩm từ sàn về (bước 1
                         phía trên), hoặc bấm “Thêm sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
                       </p>
+                    ) : isAdmin && (counts?.all ?? 0) === 0 ? (
+                      <p>
+                        Chưa có sản phẩm nào. Bấm “Kéo sản phẩm về” ở bước 1 phía trên để lấy
+                        hàng từ gian đã nối, hoặc “Thêm sản phẩm mới” / nhập Excel nếu bán ngoài sàn.
+                      </p>
                     ) : (
                       <p>Chưa có sản phẩm nào. Bấm “Thêm sản phẩm mới” hoặc nhập Excel để bắt đầu.</p>
                     )}
