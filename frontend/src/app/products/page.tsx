@@ -378,64 +378,86 @@ export default function ProductsHubPage() {
               <span className={TEXT_SUB}>Chưa nối</span>
             );
           }
-          // MỖI GIAN MỘT CHIP "tên shop + số đang hiện": nhìn một dòng là thấy
-          // gian nào đang cùng số với kho (xanh), gian nào lệch/đẩy fail (đỏ),
-          // gian nào chưa bật (xám). Câu chuyện "mọi gian cùng một số" nằm ngay đây.
+          // MỖI SÀN MỘT CHIP "Shopee ×3": seller lớn 10 gian vẫn tối đa 3 chip,
+          // không bao giờ xuống dòng. Màu chip = trạng thái XẤU NHẤT trong nhóm
+          // (đỏ có gian lệch/đẩy fail, vàng đang đẩy, xanh mọi gian khớp, xám
+          // chưa bật). Tên từng shop + số từng gian đã có ở dòng bung bên dưới
+          // (anh Trung chốt 05/09: cột chỉ cần vậy, không thêm gì).
           const available = row.original.availableToSell ?? 0;
+          const RANK: Record<string, number> = {
+            alert: 5, mismatch: 4, pending: 3, off: 2, unknown: 1, match: 0,
+          };
+          const groups = new Map<string, typeof links>();
+          for (const l of links) {
+            const g = groups.get(l.channelName) ?? [];
+            g.push(l);
+            groups.set(l.channelName, g);
+          }
+          const ORDER = ["SHOPEE", "LAZADA", "TIKTOK"];
+          const ordered = [...groups.entries()].sort(
+            (a, b) => (ORDER.indexOf(a[0]) + 99) % 100 - ((ORDER.indexOf(b[0]) + 99) % 100)
+          );
           return (
             <button
               type="button"
               onClick={() => toggleExpand(row.original)}
-              className="flex flex-wrap items-center gap-1.5 text-left"
+              className="flex flex-nowrap items-center gap-1.5 text-left"
               title="Bấm để xem sơ đồ kho ↔ từng gian"
             >
-              {links.map((l) => {
-                const meta = CHANNEL_META[l.channelName];
-                const state = l.state ?? "unknown";
-                const num =
-                  state === "pending"
-                    ? available
-                    : l.channelStock === null || l.channelStock === undefined
-                      ? null
-                      : l.channelStock;
+              {ordered.map(([channelName, group]) => {
+                const meta = CHANNEL_META[channelName as keyof typeof CHANNEL_META];
+                const worst = group.reduce(
+                  (acc, l) => ((RANK[l.state ?? "unknown"] ?? 1) > (RANK[acc] ?? 1) ? (l.state ?? "unknown") : acc),
+                  "match" as string
+                );
                 const tone =
-                  state === "match"
+                  worst === "match"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : state === "mismatch" || state === "alert"
+                    : worst === "mismatch" || worst === "alert"
                       ? "border-red-200 bg-red-50 text-red-700"
-                      : state === "pending"
+                      : worst === "pending"
                         ? "border-amber-200 bg-amber-50 text-amber-800"
                         : "border-slate-200 bg-slate-50 text-slate-600";
-                const hint =
-                  state === "match"
-                    ? "đang cùng số với kho"
-                    : state === "mismatch"
-                      ? `sàn đang ${formatNumber(num ?? 0)}, kho muốn ${formatNumber(available)}`
-                      : state === "alert"
-                        ? "đẩy tồn thất bại — xem cảnh báo"
-                        : state === "pending"
-                          ? "đang đẩy số mới lên sàn"
-                          : state === "off"
-                            ? "gian chưa bật đồng bộ — số này là của sàn"
-                            : "sàn chưa trả số / chưa hỗ trợ";
+                const lines = group.map((l) => {
+                  const st = l.state ?? "unknown";
+                  const num =
+                    st === "pending"
+                      ? available
+                      : l.channelStock === null || l.channelStock === undefined
+                        ? null
+                        : l.channelStock;
+                  const hint =
+                    st === "match"
+                      ? "khớp"
+                      : st === "mismatch"
+                        ? `lệch, kho muốn ${formatNumber(available)}`
+                        : st === "alert"
+                          ? "đẩy thất bại"
+                          : st === "pending"
+                            ? "đang đẩy"
+                            : st === "off"
+                              ? "chưa bật đồng bộ"
+                              : "sàn chưa trả số";
+                  return `${l.shopName}: ${num === null ? "?" : formatNumber(num)} (${hint})`;
+                });
                 return (
                   <span
-                    key={`${l.channelName}:${l.channelSku}`}
+                    key={channelName}
                     className={cn(
                       "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums",
                       tone
                     )}
-                    title={`${meta?.label ?? l.channelName} · ${l.shopName} · SKU sàn ${l.channelSku} — ${hint}`}
+                    title={`${meta?.label ?? channelName} — ${group.length} gian\n${lines.join("\n")}`}
                   >
-                    <span className="max-w-24 truncate">{l.shopName}</span>
-                    {state === "pending" ? (
+                    {meta?.label ?? channelName}
+                    <span className="opacity-70">×{group.length}</span>
+                    {worst === "pending" ? (
                       <Loader2 className="size-3 animate-spin" />
-                    ) : state === "match" ? (
+                    ) : worst === "match" ? (
                       <CheckCircle2 className="size-3" />
-                    ) : state === "mismatch" || state === "alert" ? (
+                    ) : worst === "mismatch" || worst === "alert" ? (
                       <XCircle className="size-3" />
                     ) : null}
-                    {num === null ? "?" : formatNumber(num)}
                   </span>
                 );
               })}
