@@ -22,6 +22,7 @@ import {
   type StandardInvoiceConfig,
 } from "../integrations/invoice/misa-einvoice";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
+import { buildTaxDeclaration, parseDeclarationPeriod } from "../services/tax-declaration";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
 import { computePnlRow, fetchPnlOrders } from "./finance";
@@ -153,7 +154,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    const [cfg, pnlOrders, logs] = await Promise.all([
+    const [cfg, pnlOrders, logs, invoiceCfg] = await Promise.all([
       getShopTaxConfig(ownerId),
       // Đơn trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính (đơn hủy
       // lọc ở vòng dưới; cùng trần an toàn 2000 đơn của fetchPnlOrders).
@@ -192,7 +193,14 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           },
         },
       }),
+      // Thuế suất GTGT mặc định > 0 = shop khai là DOANH NGHIỆP khấu trừ →
+      // sàn KHÔNG khấu trừ 1,5% (NĐ 252 chỉ áp hộ/cá nhân) → không ước tính.
+      prisma.invoiceConfig.findFirst({
+        where: { ownerId, channelId: null },
+        select: { defaultVatRate: true },
+      }),
     ]);
+    const businessShop = (invoiceCfg?.defaultVatRate ?? 0) > 0;
 
     // ---- Thống kê HÓA ĐƠN của kỳ (24/08 khuya — anh Trung yêu cầu thẻ tổng
     // hợp xoay quanh hóa đơn thay vì toàn thuế sàn): tính bằng aggregate trên
@@ -391,7 +399,9 @@ router.get("/report", async (req: AuthRequest, res, next) => {
         estimateBase += r.platformRevenue; // doanh thu thực tế (sau voucher)
       }
     }
-    const platformTaxEstimated = platformTaxOn(estimateBase);
+    // 07/09: shop doanh nghiệp không bị sàn khấu trừ → ước tính = 0 (số thật
+    // của đơn đã đối soát vẫn giữ — nếu sàn có trừ nhầm thì seller thấy để đi sửa hồ sơ thuế).
+    const platformTaxEstimated = businessShop ? 0 : platformTaxOn(estimateBase);
     const additionalTax = additionalTaxOn({ grossRevenue, profit }, cfg);
 
     res.json({
@@ -405,6 +415,8 @@ router.get("/report", async (req: AuthRequest, res, next) => {
         platformTaxActual, // sàn ĐÃ trích (số quyết toán thật)
         platformTaxEstimated, // ước tính cho phần đơn chưa quyết toán
         platformTaxTotal: platformTaxActual + platformTaxEstimated,
+        // true = shop khai thuế suất doanh nghiệp → không ước 1,5% cho đơn chưa đối soát
+        platformTaxEstimateSkipped: businessShop,
         additionalTax, // thuế bổ sung ước tính theo cấu hình
         // Cơ sở tính thuế bổ sung để UI chú thích đúng ("trên doanh thu/lợi nhuận")
         additionalTaxBase:
@@ -447,6 +459,26 @@ router.get("/report", async (req: AuthRequest, res, next) => {
         // phải lòi ngay vài tờ cần xử lý), còn lại giữ mới-nhất-trước.
         .sort((a, b) => Number(b.needsAdjustment) - Number(a.needsAdjustment)),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/tax/declaration?year=2026&quarter=3 — SỐ LIỆU KÊ KHAI KỲ (07/09):
+ * doanh thu tính thuế + số sàn đã khấu trừ nộp thay, gom theo SÀN, kèm hạn
+ * nộp và lũy kế năm so với ngưỡng 1 tỷ. quarter bỏ trống = cả năm. Thay cho
+ * việc seller tải báo cáo thuế từng Seller Center rồi cộng tay mỗi quý.
+ * KHÔNG gán chỉ tiêu tờ khai (xem chú thích đầu services/tax-declaration.ts).
+ */
+router.get("/declaration", async (req: AuthRequest, res, next) => {
+  try {
+    const period = parseDeclarationPeriod(req.query);
+    if (!period) {
+      res.status(400).json({ error: "Kỳ không hợp lệ — year=YYYY, quarter=1..4 hoặc bỏ trống (cả năm)" });
+      return;
+    }
+    res.json(await buildTaxDeclaration(req.ownerId!, channelScope(req), period));
   } catch (err) {
     next(err);
   }

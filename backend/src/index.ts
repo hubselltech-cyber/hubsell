@@ -11,6 +11,7 @@ import { startStockPushWorker } from "./integrations/stock-push-worker";
 import { startStockReconcileWorker } from "./workers/stock-reconcile";
 import { startTokenRefreshWorker } from "./workers/token-refresh";
 import { startWeeklyReportWorker } from "./workers/weekly-report";
+import { startTaxDeadlineReminderWorker } from "./workers/tax-deadline-reminder";
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
@@ -38,6 +39,9 @@ startInvoiceAutoIssueWorker();
 // Đồng bộ trạng thái CƠ QUAN THUẾ + phát hiện hóa đơn bị hủy/xóa trên NCC —
 // meInvoice không có webhook, phải hỏi /invoice/status theo nhịp.
 startInvoiceStatusSyncWorker();
+// Nhắc hạn kê khai thuế quý (7 ngày + 1 ngày trước hạn) qua chuông cho shop
+// có đơn trong quý vừa hết — chỉ nhắc + dẫn tới số liệu, không nộp thay.
+startTaxDeadlineReminderWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

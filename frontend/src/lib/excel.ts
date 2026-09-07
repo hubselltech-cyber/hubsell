@@ -11,6 +11,8 @@ import {
   type PnlItemLine,
   type InvestorReportResponse,
   type InvoiceRegisterRowDTO,
+  type TaxDeclarationResponse,
+  type TaxDeclarationRowDTO,
   type PlatformLedgerEntry,
   type Product,
   type ReconciliationStatus,
@@ -627,5 +629,49 @@ export function exportInvoiceRegisterToExcel(
     [5, 12, 10, 12, 26, 20, 22, 30, 18, 12, 14, 14, 14, 14, 24, 16],
     "Bang ke ban ra",
     `bang-ke-hoa-don-ban-ra_${safeLabel || "ky"}_${fileStamp()}.xlsx`
+  );
+}
+
+// ---------- SỐ LIỆU KÊ KHAI KỲ (07/09) ----------
+
+/**
+ * Xuất bảng số liệu kê khai của kỳ: mỗi sàn một dòng + dòng TỔNG, đúng các
+ * cột seller cần khi điền 01/CNKD (hộ) / 01/GTGT (DN). Cố ý KHÔNG ghi "chỉ
+ * tiêu số mấy" — seller/kế toán tự đối chiếu với mẫu tờ khai đang dùng.
+ */
+export function exportTaxDeclarationToExcel(d: TaxDeclarationResponse) {
+  const toRow = (label: string, r: TaxDeclarationRowDTO): Record<string, string | number> => ({
+    "Sàn": label,
+    "Số đơn": r.orderCount,
+    "Đã đối soát": r.settledCount,
+    "Chưa đối soát": r.unsettledCount,
+    "Tiền hàng": r.grossRevenue,
+    "Giảm giá người bán": r.sellerVoucher,
+    "Hoàn trả khách": r.refundedAmount,
+    "Doanh thu tính thuế": r.taxableRevenue,
+    "Trong đó chưa đối soát": r.unsettledTaxableRevenue,
+    "Sàn đã khấu trừ (thật)": r.taxWithheldActual,
+    "Sàn ước khấu trừ (chưa đối soát)": r.taxWithheldEstimated,
+  });
+  const rows = d.rows.map((r) => toRow(CHANNEL_LABEL[r.channelName] ?? r.channelName, r));
+  rows.push(toRow("TỔNG", d.total));
+  rows.push({
+    "Sàn": `Ghi chú: kỳ ${d.period.label}, cắt theo ngày tạo đơn giờ VN; doanh thu tính thuế = tiền hàng − giảm giá người bán − hoàn (không trừ phí sàn/ship). Số khấu trừ thật chỉ có ở đơn đã đối soát; tách GTGT/TNCN theo tỷ lệ 1% : 0,5% (ước chia) — chứng từ khấu trừ sàn cấp là số chính thức. Hạn nộp: ${d.period.deadline.label}.`,
+    "Số đơn": "",
+    "Đã đối soát": "",
+    "Chưa đối soát": "",
+    "Tiền hàng": "",
+    "Giảm giá người bán": "",
+    "Hoàn trả khách": "",
+    "Doanh thu tính thuế": "",
+    "Trong đó chưa đối soát": "",
+    "Sàn đã khấu trừ (thật)": "",
+    "Sàn ước khấu trừ (chưa đối soát)": "",
+  });
+  downloadSheet(
+    rows,
+    [16, 8, 11, 12, 15, 17, 15, 18, 20, 20, 26],
+    "So lieu ke khai",
+    `so-lieu-ke-khai-thue_${d.period.key}_${fileStamp()}.xlsx`
   );
 }

@@ -2744,6 +2744,8 @@ export interface TaxReportResponse {
     platformTaxActual: number; // sàn ĐÃ trích (số quyết toán thật)
     platformTaxEstimated: number; // ước tính cho phần đơn chưa quyết toán
     platformTaxTotal: number;
+    /** true = shop khai thuế suất doanh nghiệp → sàn không khấu trừ, không ước 1,5%. */
+    platformTaxEstimateSkipped?: boolean;
     additionalTax: number;
     additionalTaxBase: number; // cơ sở tính (doanh thu hoặc lợi nhuận)
   };
@@ -2828,6 +2830,56 @@ export function fetchTaxReport(params?: { from?: string; to?: string }) {
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<TaxReportResponse>(`/api/tax/report${suffix}`);
+}
+
+// ---------- SỐ LIỆU KÊ KHAI KỲ (07/09) ----------
+
+/** Một dòng theo sàn trong bảng số liệu kê khai. */
+export interface TaxDeclarationRowDTO {
+  channelName: "SHOPEE" | "LAZADA" | "TIKTOK" | "OFFLINE";
+  orderCount: number;
+  settledCount: number;
+  unsettledCount: number;
+  grossRevenue: number;
+  sellerVoucher: number;
+  refundedAmount: number;
+  /** Doanh thu tính thuế = tiền hàng − giảm giá người bán − hoàn. */
+  taxableRevenue: number;
+  unsettledTaxableRevenue: number;
+  /** Sàn đã khấu trừ nộp thay — số thật của đơn đã đối soát. */
+  taxWithheldActual: number;
+  /** Số sàn ước tính cho đơn chưa đối soát. */
+  taxWithheldEstimated: number;
+}
+
+export interface TaxDeclarationResponse {
+  period: {
+    year: number;
+    quarter: 1 | 2 | 3 | 4 | null;
+    key: string;
+    label: string;
+    from: string;
+    to: string;
+    deadline: { date: string; label: string; description: string; daysLeft: number };
+  };
+  rows: TaxDeclarationRowDTO[];
+  total: TaxDeclarationRowDTO & { withheldSplit: { vat: number; pit: number } };
+  annual: {
+    year: number;
+    taxableRevenueToDate: number;
+    threshold: number;
+    tier: { tier: 1 | 2 | 3 | 4; label: string; obligation: string; nextThreshold: number | null };
+    percentOfThreshold: number;
+    truncated: boolean;
+  };
+  truncated: boolean;
+}
+
+/** Số liệu kê khai của một kỳ: quarter bỏ trống = cả năm. */
+export function fetchTaxDeclaration(params: { year: number; quarter: number | null }) {
+  const qs = new URLSearchParams({ year: String(params.year) });
+  qs.set("quarter", params.quarter ? String(params.quarter) : "all");
+  return apiFetch<TaxDeclarationResponse>(`/api/tax/declaration?${qs.toString()}`);
 }
 
 /**

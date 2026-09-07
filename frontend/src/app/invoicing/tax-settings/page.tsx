@@ -277,10 +277,11 @@ export default function TaxSettingsPage() {
                     GTGT 1% + TNCN 0.5% trên doanh thu gốc của đơn
                   </p>
                   <p className={cn(TEXT_SUB, "mt-0.5")}>
-                    Sàn TMĐT tự trích trước khi giải ngân (luật TMĐT hiện
-                    hành). Hubsell coi đây là <b>khoản phí cứng giảm trừ doanh
-                    thu</b>{" "}
-                    khi tính P&amp;L — không cần thao tác gì thêm.
+                    Sàn TMĐT khấu trừ nộp thay cho <b>hộ / cá nhân kinh doanh</b>{" "}
+                    trước khi giải ngân (NĐ 252/2026, Điều 43–44). Doanh nghiệp
+                    tự kê khai, sàn không trừ. Hubsell coi đây là{" "}
+                    <b>khoản phí cứng giảm trừ doanh thu</b> khi tính P&amp;L —
+                    không cần thao tác gì thêm.
                   </p>
                 </div>
                 {/* bg-primary thay bg-slate-900 cứng: dark mode primary tự lật
@@ -292,7 +293,9 @@ export default function TaxSettingsPage() {
               <p className={TEXT_SUB}>
                 Đơn <b>đã quyết toán</b> dùng số thuế sàn trích THẬT từ dữ liệu
                 giải ngân; đơn <b>chưa quyết toán</b> tạm ước tính theo{" "}
-                {platformTaxPercent}% để báo cáo không bị hụt.
+                {platformTaxPercent}% để báo cáo không bị hụt. Shop đã chọn thuế
+                suất GTGT doanh nghiệp ở trang Kết nối &amp; Xuất hóa đơn thì
+                không ước tính khoản này.
               </p>
             </CardContent>
           </Card>

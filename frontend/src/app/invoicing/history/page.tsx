@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { TaxDeclarationCard } from "@/components/invoicing/tax-declaration-card";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Button } from "@/components/ui/button";
@@ -404,12 +405,26 @@ export default function TaxHistoryPage() {
                     <Money value={s?.platformTaxTotal ?? 0} />
                   </p>
                   <p className={cn(TEXT_SUB, "mt-1")}>
-                    Thực <Money value={s?.platformTaxActual ?? 0} /> + ước tính{" "}
-                    <Money value={s?.platformTaxEstimated ?? 0} />
+                    {s?.platformTaxEstimateSkipped ? (
+                      <>
+                        Thực <Money value={s?.platformTaxActual ?? 0} /> · không ước tính (doanh
+                        nghiệp — sàn không khấu trừ)
+                      </>
+                    ) : (
+                      <>
+                        Thực <Money value={s?.platformTaxActual ?? 0} /> + ước tính{" "}
+                        <Money value={s?.platformTaxEstimated ?? 0} />
+                      </>
+                    )}
                   </p>
                 </CardContent>
               </Card>
             </div>
+
+            {/* ===== SỐ LIỆU KÊ KHAI KỲ (07/09) — hộ kinh doanh là đa số khách:
+                doanh thu tính thuế + sàn đã khấu trừ theo từng sàn, chọn quý
+                riêng (không theo khoảng ngày của trang), hạn nộp, ngưỡng 1 tỷ. ===== */}
+            <TaxDeclarationCard />
 
             {/* ===== ĐỐI CHIẾU SÓT + CƠ QUAN THUẾ (03/09) — trả lời 3 câu của kế
                 toán: kỳ này giao bao nhiêu đơn / đã lập bao nhiêu tờ / sót & quá

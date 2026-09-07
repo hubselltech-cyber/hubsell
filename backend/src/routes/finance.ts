@@ -326,6 +326,18 @@ type PnlOrder = Prisma.OrderGetPayload<{
   };
 }>;
 
+/** Quan hệ đi kèm của tập đơn SSOT — dùng chung cho bản có trần và bản phân trang. */
+const PNL_INCLUDE = {
+  channel: { select: { channelName: true, shopName: true } },
+  items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
+  inventoryLogs: {
+    where: { changeQuantity: { lt: 0 } },
+    include: { product: { select: { costPrice: true } } },
+  },
+  // Sao kê quyết toán chi tiết Lazada — bảng tab Lazada đọc số thật từ đây.
+  lazadaSettlement: true,
+} satisfies Prisma.OrderInclude;
+
 /** TẬP ĐƠN ĐẦU VÀO dùng chung: cùng WHERE, cùng include, cùng trần an toàn.
  * EXPORT cho Tổng quan (/api/analytics) + cash-flow dùng chung SSOT. */
 export function fetchPnlOrders(
@@ -340,18 +352,40 @@ export function fetchPnlOrders(
       ...(shippingStatus ? { shippingStatus } : {}),
     },
     orderBy: { createdAt: "desc" },
-    include: {
-      channel: { select: { channelName: true, shopName: true } },
-      items: { include: { product: { select: { skuCode: true, imageUrl: true } } } },
-      inventoryLogs: {
-        where: { changeQuantity: { lt: 0 } },
-        include: { product: { select: { costPrice: true } } },
-      },
-      // Sao kê quyết toán chi tiết Lazada — bảng tab Lazada đọc số thật từ đây.
-      lazadaSettlement: true,
-    },
+    include: PNL_INCLUDE,
     take: 2000, // trần an toàn — báo cáo theo khoảng ngày thường nằm dưới mức này
   });
+}
+
+/**
+ * Bản PHÂN TRANG của fetchPnlOrders cho báo cáo theo KỲ KÊ KHAI (quý/năm —
+ * 07/09): cùng WHERE + include SSOT nhưng cuộn cursor theo id, không dính
+ * trần 2.000 đơn (một quý của shop 1.000 đơn/tháng đã vượt trần, số kê khai
+ * mà thiếu đơn là sai nghĩa vụ). `max` là phanh an toàn cuối cùng — chạm
+ * thì trả `truncated` để UI bảo thu hẹp kỳ, không im lặng cắt.
+ */
+export async function fetchPnlOrdersAll(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  opts: { pageSize?: number; max?: number } = {}
+): Promise<{ orders: PnlOrder[]; truncated: boolean }> {
+  const pageSize = opts.pageSize ?? 1000;
+  const max = opts.max ?? 20_000;
+  const orders: PnlOrder[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await prisma.order.findMany({
+      where: { channel: scope, createdAt: range },
+      orderBy: { id: "asc" },
+      include: PNL_INCLUDE,
+      take: pageSize,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    orders.push(...page);
+    if (page.length < pageSize) return { orders, truncated: false };
+    if (orders.length >= max) return { orders, truncated: true };
+    cursor = page[page.length - 1].id;
+  }
 }
 
 /** Dòng Lãi/Lỗ đã bóc số của một đơn — đơn vị số liệu gốc của mọi báo cáo. */
