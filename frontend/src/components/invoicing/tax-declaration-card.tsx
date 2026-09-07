@@ -145,8 +145,9 @@ export function TaxDeclarationCard() {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Bề rộng phải chứa được chữ 16px ở màn 2xl — w-28 từng cắt "Năm 2026" thành "Năm 202" (anh Trung soi prod 07/09). */}
             <NativeSelect
-              className="w-28"
+              className="w-36"
               value={period.year}
               onChange={(e) => setPeriod((p) => ({ ...p, year: Number(e.target.value) }))}
               aria-label="Năm"
@@ -158,7 +159,7 @@ export function TaxDeclarationCard() {
               ))}
             </NativeSelect>
             <NativeSelect
-              className="w-28"
+              className="w-32"
               value={period.quarter ?? "all"}
               onChange={(e) =>
                 setPeriod((p) => ({
