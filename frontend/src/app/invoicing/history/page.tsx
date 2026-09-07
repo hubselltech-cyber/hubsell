@@ -128,6 +128,11 @@ function formatDateTime(iso: string): string {
 }
 
 export default function TaxHistoryPage() {
+  // 2 TAB (anh Trung 07/09 tối: một trang 3 tầng quá rối) — "Kê khai thuế"
+  // (số liệu kỳ, việc hằng quý của hộ KD — đa số khách) mặc định; "Lịch sử
+  // hóa đơn" giữ nguyên thẻ + đối chiếu + nhật ký + bảng kê theo khoảng ngày.
+  // Cả hai luôn mounted, ẩn bằng CSS để đổi tab không tải lại số.
+  const [tab, setTab] = useState<"declaration" | "invoices">("declaration");
   const [range, setRange] = useState<DateRange>(() => defaultRange());
   const [data, setData] = useState<TaxReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -294,9 +299,49 @@ export default function TaxHistoryPage() {
   return (
     <SettingsShell
       title="Lịch sử & Báo cáo thuế"
-      description="Đối soát thuế sàn TMĐT trích hộ và nhật ký hóa đơn điện tử theo kỳ."
+      description="Số liệu kê khai theo quý và nhật ký hóa đơn điện tử — mỗi việc một tab."
     >
       <div className="space-y-6">
+        <div
+          role="tablist"
+          aria-label="Báo cáo thuế"
+          className="flex flex-wrap gap-1 border-b"
+        >
+          {(
+            [
+              { key: "declaration", label: "Kê khai thuế" },
+              { key: "invoices", label: "Lịch sử hóa đơn" },
+            ] as const
+          ).map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                )}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ===== TAB KÊ KHAI THUẾ (07/09): doanh thu tính thuế + sàn đã khấu
+            trừ theo từng sàn, chọn quý riêng, hạn nộp, ngưỡng 1 tỷ. ===== */}
+        <div className={cn(tab !== "declaration" && "hidden")}>
+          <TaxDeclarationCard />
+        </div>
+
+        {/* ===== TAB LỊCH SỬ HÓA ĐƠN: thẻ tổng hợp + đối chiếu + nhật ký, theo
+            khoảng ngày lập hóa đơn. ===== */}
+        <div className={cn("space-y-6", tab !== "invoices" && "hidden")}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className={TEXT_SUB}>
             Kỳ tính theo <b>ngày lập hóa đơn</b>; số liệu nền tính trên đơn có doanh thu trong kỳ (loại đơn hủy).
@@ -420,11 +465,6 @@ export default function TaxHistoryPage() {
                 </CardContent>
               </Card>
             </div>
-
-            {/* ===== SỐ LIỆU KÊ KHAI KỲ (07/09) — hộ kinh doanh là đa số khách:
-                doanh thu tính thuế + sàn đã khấu trừ theo từng sàn, chọn quý
-                riêng (không theo khoảng ngày của trang), hạn nộp, ngưỡng 1 tỷ. ===== */}
-            <TaxDeclarationCard />
 
             {/* ===== ĐỐI CHIẾU SÓT + CƠ QUAN THUẾ (03/09) — trả lời 3 câu của kế
                 toán: kỳ này giao bao nhiêu đơn / đã lập bao nhiêu tờ / sót & quá
@@ -780,6 +820,7 @@ export default function TaxHistoryPage() {
             </Card>
           </>
         )}
+        </div>
       </div>
 
       {/* Hộp xác nhận lập HÓA ĐƠN ĐIỀU CHỈNH — Dialog hệ thống thay
