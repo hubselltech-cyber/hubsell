@@ -2863,8 +2863,6 @@ export interface TaxDeclarationResponse {
     quarter: 1 | 2 | 3 | 4 | null;
     key: string;
     label: string;
-    from: string;
-    to: string;
     deadline: { date: string; label: string; description: string; daysLeft: number };
   };
   rows: TaxDeclarationRowDTO[];
@@ -2873,7 +2871,7 @@ export interface TaxDeclarationResponse {
     year: number;
     taxableRevenueToDate: number;
     threshold: number;
-    tier: { tier: 1 | 2 | 3 | 4; label: string; obligation: string; nextThreshold: number | null };
+    tier: { tier: 1 | 2 | 3 | 4; label: string; obligation: string };
     percentOfThreshold: number;
     truncated: boolean;
   };

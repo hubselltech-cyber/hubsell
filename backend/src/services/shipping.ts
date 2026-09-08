@@ -99,7 +99,8 @@ export const EXPRESS_KEYWORDS = [
  * Từ khoá GIAO TRONG NGÀY (Shopee "Trong Ngày", TikTok "Giao Trong Ngày /
  * Sameday") — KHÔNG phải hỏa tốc (anh Trung chốt 08/09): không badge đỏ,
  * không ghim đầu bảng, không vào bộ lọc Hỏa tốc; chỉ chú thích dưới tên hãng.
- * Web/mobile chép tay cùng danh sách.
+ * Web chép tay cùng danh sách (frontend/src/lib/shipping.ts); mobile chưa hiện
+ * chú thích này nên chưa chép.
  */
 export const SAME_DAY_KEYWORDS = [
   "trong ngày",

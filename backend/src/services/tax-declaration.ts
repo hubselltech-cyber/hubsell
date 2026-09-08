@@ -25,7 +25,6 @@ import { ChannelName, ShippingStatus } from "@prisma/client";
 import {
   HOUSEHOLD_TAX_FREE_THRESHOLD,
   householdTier,
-  PLATFORM_PIT_RATE,
   PLATFORM_TAX_RATE,
   PLATFORM_VAT_RATE,
   type HouseholdTierInfo,
@@ -176,14 +175,6 @@ export interface DeclarationChannelRow {
   taxWithheldEstimated: number;
 }
 
-/** Bản đồ tên sàn → nhãn hiển thị dùng trong chuông/Excel. */
-export const CHANNEL_LABEL: Record<ChannelName, string> = {
-  SHOPEE: "Shopee",
-  LAZADA: "Lazada",
-  TIKTOK: "TikTok Shop",
-  OFFLINE: "Bán ngoài sàn",
-};
-
 function emptyRow(channelName: ChannelName): DeclarationChannelRow {
   return {
     channelName,
@@ -286,8 +277,6 @@ export interface TaxDeclarationResult {
   period: DeclarationPeriod & {
     key: string;
     label: string;
-    from: string;
-    to: string;
     deadline: { date: string; label: string; description: string; daysLeft: number };
   };
   rows: DeclarationChannelRow[];
@@ -350,8 +339,6 @@ export async function buildTaxDeclaration(
       ...period,
       key: periodKey(period),
       label: periodLabel(period),
-      from: range.gte.toISOString(),
-      to: range.lte.toISOString(),
       deadline: {
         date: deadline.date.toISOString(),
         label: deadline.label,
@@ -385,8 +372,3 @@ export async function ownersWithOrdersIn(range: DateRangeFilter): Promise<string
   });
   return [...new Set(rows.map((r) => r.channel.userId))];
 }
-
-/** Dùng cho chuông/tooltip: 1.5% → "1% GTGT + 0,5% TNCN". */
-export const PLATFORM_TAX_SPLIT_LABEL = `${PLATFORM_VAT_RATE * 100}% GTGT + ${String(
-  PLATFORM_PIT_RATE * 100
-).replace(".", ",")}% TNCN`;

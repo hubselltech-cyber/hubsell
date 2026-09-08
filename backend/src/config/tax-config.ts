@@ -27,10 +27,8 @@ import { prisma } from "../lib/prisma";
 
 /** Thuế sàn TMĐT khấu trừ tại nguồn — NĐ 252/2026 ấn định 1% GTGT + 0.5% TNCN với hàng hóa. */
 export const PLATFORM_TAX_RATE = 0.015;
-/** Phần GTGT trong 1.5% sàn khấu trừ (hàng hóa). */
+/** Phần GTGT trong 1.5% sàn khấu trừ (hàng hóa); phần còn lại 0.5% là TNCN. */
 export const PLATFORM_VAT_RATE = 0.01;
-/** Phần TNCN trong 1.5% sàn khấu trừ (hàng hóa, cá nhân cư trú). */
-export const PLATFORM_PIT_RATE = 0.005;
 
 // ============================================================
 // NGƯỠNG DOANH THU HỘ / CÁ NHÂN KINH DOANH — NĐ 68/2026/NĐ-CP, sửa bởi
@@ -60,8 +58,6 @@ export interface HouseholdTierInfo {
   label: string;
   /** Nghĩa vụ kê khai tóm tắt của nhóm. */
   obligation: string;
-  /** Ngưỡng kế tiếp (null ở nhóm cuối). */
-  nextThreshold: number | null;
 }
 
 /**
@@ -76,7 +72,6 @@ export function householdTier(annualRevenue: number): HouseholdTierInfo {
       label: "Nhóm 1 (≤ 1 tỷ/năm)",
       obligation:
         "Miễn GTGT + TNCN. Chỉ gửi thông báo doanh thu năm (mẫu 01/TKN-CNKD) trước 31/01 năm sau; không bắt buộc hóa đơn điện tử.",
-      nextThreshold: HOUSEHOLD_TAX_FREE_THRESHOLD,
     };
   }
   if (r <= HOUSEHOLD_TIER2_MAX) {
@@ -85,7 +80,6 @@ export function householdTier(annualRevenue: number): HouseholdTierInfo {
       label: "Nhóm 2 (1 – 3 tỷ/năm)",
       obligation:
         "Kê khai theo QUÝ (mẫu 01/CNKD): GTGT 1% + TNCN 0,5% trên doanh thu (hoặc chọn 15% lợi nhuận). Bắt buộc hóa đơn điện tử.",
-      nextThreshold: HOUSEHOLD_TIER2_MAX,
     };
   }
   if (r <= HOUSEHOLD_TIER3_MAX) {
@@ -94,14 +88,12 @@ export function householdTier(annualRevenue: number): HouseholdTierInfo {
       label: "Nhóm 3 (3 – 50 tỷ/năm)",
       obligation:
         "Kê khai theo QUÝ, TNCN 17% trên thu nhập; bắt buộc hóa đơn điện tử và sổ sách kế toán.",
-      nextThreshold: HOUSEHOLD_TIER3_MAX,
     };
   }
   return {
     tier: 4,
     label: "Nhóm 4 (> 50 tỷ/năm)",
     obligation: "Kê khai theo THÁNG, TNCN 20% trên thu nhập; chế độ kế toán như doanh nghiệp.",
-    nextThreshold: null,
   };
 }
 

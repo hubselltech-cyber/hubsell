@@ -129,7 +129,6 @@ describe("phân nhóm hộ kinh doanh theo NĐ 68/141/2026", () => {
     expect(householdTier(1_000_000_001).tier).toBe(2);
     expect(householdTier(HOUSEHOLD_TIER2_MAX + 1).tier).toBe(3);
     expect(householdTier(60_000_000_000).tier).toBe(4);
-    expect(householdTier(60_000_000_000).nextThreshold).toBeNull();
   });
 });
 

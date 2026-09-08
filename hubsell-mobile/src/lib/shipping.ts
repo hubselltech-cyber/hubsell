@@ -21,20 +21,3 @@ export function isExpressShipping(name?: string | null): boolean {
     s.includes("green sm")
   );
 }
-
-/**
- * Đơn GIAO TRONG NGÀY (Shopee "Trong Ngày", TikTok "Giao Trong Ngày/Sameday")
- * — KHÔNG phải hỏa tốc (anh Trung chốt 08/09): chỉ chú thích dưới tên hãng.
- * Chép tay từ backend SAME_DAY_KEYWORDS.
- */
-export function isSameDayShipping(name?: string | null): boolean {
-  const s = (name ?? "").toLowerCase();
-  if (!s.trim() || isExpressShipping(s)) return false;
-  return (
-    s.includes("trong ngày") ||
-    s.includes("trong ngay") ||
-    s.includes("same day") ||
-    s.includes("sameday") ||
-    s.includes("same-day")
-  );
-}

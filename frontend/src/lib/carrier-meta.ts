@@ -17,7 +17,7 @@ export const CARRIER_META: Record<Carrier, { label: string; short: string }> = {
 };
 
 /** Giá trị đặc biệt của bộ lọc: nhóm HỎA TỐC mọi sàn (backend lọc theo tên hãng nguyên văn). */
-export const EXPRESS_FILTER_VALUE = "EXPRESS";
+const EXPRESS_FILTER_VALUE = "EXPRESS";
 
 export const CARRIER_OPTIONS: { value: Carrier | typeof EXPRESS_FILTER_VALUE; label: string }[] = [
   // Đứng đầu vì là nhóm kho cần soi trước nhất (anh Trung 08/09): gom SPX

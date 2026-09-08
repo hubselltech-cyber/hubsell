@@ -30,7 +30,7 @@ import {
 } from "../services/tax-declaration";
 
 /** Các mốc nhắc trước hạn (ngày). */
-export const REMIND_DAYS_BEFORE = [7, 1] as const;
+const REMIND_DAYS_BEFORE = [7, 1] as const;
 const SEND_FROM_HOUR_VN = 8;
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const FIRST_RUN_DELAY_MS = 3 * 60 * 1000;
