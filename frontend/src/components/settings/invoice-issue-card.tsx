@@ -613,7 +613,7 @@ export function InvoiceIssueCard({
             <div className="flex items-center gap-2">
               <NativeSelect
                 aria-label="Số đơn mỗi trang"
-                className="h-8 w-28 text-sm"
+                className="h-8 w-32 text-sm"
                 value={String(pageSize)}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value) as InvoiceQueuePageSize);

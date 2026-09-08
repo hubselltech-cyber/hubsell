@@ -592,7 +592,7 @@ export function ShopeeAdsPage({
         )}
 
         {/* ===== THẺ TỔNG QUAN ===== */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <StatCard
             label="Chi phí Ads"
             value={<Money value={summary?.spend ?? 0} />}
@@ -732,7 +732,7 @@ export function ShopeeAdsPage({
                     setPage(0);
                   }}
                   aria-label="Lọc trạng thái chiến dịch"
-                  className="w-36"
+                  className="w-40"
                 >
                   <option value="">Mọi trạng thái</option>
                   <option value="ongoing">Đang chạy</option>

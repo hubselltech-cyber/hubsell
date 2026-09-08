@@ -132,7 +132,7 @@ export function BreakdownCard({
       key: item.key,
       label: (
         <>
-          <span className="truncate">{item.label}</span>
+          <span className="min-w-0">{item.label}</span>
           <HintIcon hint={item.hint} />
         </>
       ),

@@ -813,7 +813,7 @@ export default function OrdersPage() {
           />
 
           <NativeSelect
-            className="w-52"
+            className="w-56"
             aria-label="Lọc theo đơn vị vận chuyển"
             value={carrierFilter}
             onChange={(e) => {

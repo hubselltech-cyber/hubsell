@@ -399,7 +399,7 @@ export function AdsAssistantPage({ platform }: { platform: AdsPlatform }) {
         {/* ===== TAB 1: TỔNG QUAN CHIẾN DỊCH ===== */}
         {tab === "overview" && (
           <div className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
               <StatCard
                 label="Chi phí Ads"
                 value={<Money value={overview.spend} />}

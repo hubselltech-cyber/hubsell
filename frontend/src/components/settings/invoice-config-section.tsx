@@ -714,7 +714,7 @@ export function InvoiceConfigSection({
                       <NativeSelect
                         id="inv-default-vat"
                         disabled={vendor.soon}
-                        className="max-w-64"
+                        className="max-w-72"
                         value={String(defaultVatRate)}
                         onChange={(e) => setDefaultVatRate(Number(e.target.value))}
                       >
@@ -773,7 +773,7 @@ export function InvoiceConfigSection({
 
               <div className="mt-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm text-slate-700">
+                  <span className="min-w-0 text-sm text-slate-700">
                     {vendor.label}
                   </span>
                   <span className="flex items-center gap-2">

@@ -301,7 +301,7 @@ export default function ProductsHubPage() {
         header: "Mã SKU",
         cell: (info) => (
           <span
-            className="block max-w-[8rem] truncate font-mono text-sm font-medium"
+            className="block max-w-[8rem] truncate font-mono text-sm font-medium 2xl:max-w-[14rem]"
             title={info.getValue()}
           >
             {info.getValue()}
@@ -311,7 +311,7 @@ export default function ProductsHubPage() {
       columnHelper.accessor("productName", {
         header: "Tên sản phẩm",
         cell: (info) => (
-          <span className="block max-w-[13rem] truncate" title={info.getValue()}>
+          <span className="block max-w-[13rem] truncate 2xl:max-w-[26rem]" title={info.getValue()}>
             {info.getValue()}
           </span>
         ),
