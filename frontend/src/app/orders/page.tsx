@@ -52,7 +52,7 @@ import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { exportAllOrders } from "@/lib/excel";
 import { CARRIER_OPTIONS, carrierShort } from "@/lib/carrier-meta";
-import { isExpressShipping } from "@/lib/shipping";
+import { isExpressShipping, isSameDayShipping } from "@/lib/shipping";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import {
   ALL_CHANNELS,
@@ -445,7 +445,14 @@ export default function OrdersPage() {
                   </p>
                 </>
               ) : (
-                <p>{carrierShort(o.carrier)}</p>
+                <>
+                  <p>{carrierShort(o.carrier)}</p>
+                  {/* GIAO TRONG NGÀY ≠ hỏa tốc (anh Trung 08/09): không badge đỏ,
+                      chỉ nhắc nhỏ để kho biết phải bàn giao trong buổi. */}
+                  {isSameDayShipping(o.shippingCarrierName) ? (
+                    <p className="text-[11px] font-medium text-amber-700">Giao trong ngày</p>
+                  ) : null}
+                </>
               )}
               <p className={cn(TEXT_SUB, "font-mono")}>
                 {o.trackingCode ?? "—"}

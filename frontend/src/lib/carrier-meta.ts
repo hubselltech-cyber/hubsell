@@ -22,7 +22,7 @@ export const EXPRESS_FILTER_VALUE = "EXPRESS";
 export const CARRIER_OPTIONS: { value: Carrier | typeof EXPRESS_FILTER_VALUE; label: string }[] = [
   // Đứng đầu vì là nhóm kho cần soi trước nhất (anh Trung 08/09): gom SPX
   // Instant, Grab, Ahamove, be… của mọi sàn, không phải chọn từng hãng.
-  { value: EXPRESS_FILTER_VALUE, label: "⚡ Hỏa tốc (mọi sàn)" },
+  { value: EXPRESS_FILTER_VALUE, label: "⚡ Hỏa tốc" },
   ...(Object.keys(CARRIER_META) as Carrier[]).map((value) => ({
     value,
     label: CARRIER_META[value].label,

@@ -64,10 +64,12 @@ export function carrierFromName(name?: string | null): Carrier | null {
  *                SPX Instant, GrabExpress, beDelivery, Ahamove, Xanh SM (Green SM);
  *                kênh "Trong Ngày" (từ 29/08/2025): SPX Express + Ahamove — riêng
  *                SPX Express chỉ bắt được khi tên kênh "Trong Ngày" đi kèm.
- *   TikTok VN  — "Hỏa tốc (Instant)": Ahamove, BeDelivery; "Giao Trong Ngày
- *                (Sameday)" từ Q2/2026: Ahamove, BeDelivery, J&T (J&T chỉ bắt
- *                được qua delivery_option_name — TikTok service ghi tên này vào
- *                shippingCarrierName cùng shipping_provider).
+ *   TikTok VN  — "Hỏa tốc (Instant)": tài liệu gốc KHÔNG nêu tên hãng (kiểm
+ *                lại 08/09); "Giao Trong Ngày (Sameday)" từ Q2/2026: Ahamove +
+ *                J&T Express — anh Trung chốt 08/09: GIAO TRONG NGÀY KHÔNG PHẢI
+ *                HỎA TỐC, chỉ hiện chú thích "Giao trong ngày" dưới tên hãng
+ *                (isSameDayShipping). TikTok service ghi delivery_option_name
+ *                vào shippingCarrierName cùng shipping_provider để bắt được.
  *   Lazada VN  — "Giao Hàng Hỏa Tốc" nội thành HN/HCM/ĐN; API không có cờ, chỉ
  *                shipment_provider; LEX ngừng giao chặng cuối 31/03/2026 nên
  *                KHÔNG coi "LEX"/"Lazada Express" là hỏa tốc.
@@ -77,18 +79,13 @@ export function carrierFromName(name?: string | null): Carrier | null {
  *  Web (frontend/src/lib/shipping.ts) và mobile (hubsell-mobile/src/lib/shipping.ts)
  *  CHÉP TAY danh sách này — sửa đây phải sửa cả hai. */
 export const EXPRESS_KEYWORDS = [
-  // Tên kênh/phương thức
+  // Tên kênh/phương thức (giao trong VÀI GIỜ)
   "hỏa tốc",
   "hoả tốc",
   "hoa toc",
   "instant",
   "siêu tốc",
   "sieu toc",
-  "trong ngày",
-  "trong ngay",
-  "same day",
-  "sameday",
-  "same-day",
   // Hãng giao tức thời (Shopee + TikTok)
   "ahamove",
   "grab",
@@ -98,10 +95,32 @@ export const EXPRESS_KEYWORDS = [
   "green sm",
 ] as const;
 
+/**
+ * Từ khoá GIAO TRONG NGÀY (Shopee "Trong Ngày", TikTok "Giao Trong Ngày /
+ * Sameday") — KHÔNG phải hỏa tốc (anh Trung chốt 08/09): không badge đỏ,
+ * không ghim đầu bảng, không vào bộ lọc Hỏa tốc; chỉ chú thích dưới tên hãng.
+ * Web/mobile chép tay cùng danh sách.
+ */
+export const SAME_DAY_KEYWORDS = [
+  "trong ngày",
+  "trong ngay",
+  "same day",
+  "sameday",
+  "same-day",
+] as const;
+
 export function isExpressShipping(name?: string | null): boolean {
   const s = (name ?? "").toLowerCase();
   if (!s.trim()) return false;
   return EXPRESS_KEYWORDS.some((k) => s.includes(k));
+}
+
+/** Đơn GIAO TRONG NGÀY (không tính hỏa tốc). Tên vừa "Hỏa Tốc" vừa "Trong Ngày"
+ *  (tên cũ Shopee trước 16/12/2025) thì hỏa tốc thắng — hàm này trả false. */
+export function isSameDayShipping(name?: string | null): boolean {
+  const s = (name ?? "").toLowerCase();
+  if (!s.trim() || isExpressShipping(s)) return false;
+  return SAME_DAY_KEYWORDS.some((k) => s.includes(k));
 }
 
 /**
