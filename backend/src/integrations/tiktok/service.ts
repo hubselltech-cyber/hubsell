@@ -10,6 +10,7 @@
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { carrierFromName } from "../../services/shipping";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
@@ -231,6 +232,15 @@ async function upsertOrderTx(
   const customerName = order.recipient_address?.name?.trim() || "Khách TikTok";
   const customerPhone = order.recipient_address?.phone_number?.trim() || null;
   const trackingCode = order.tracking_number?.trim() || null;
+  // Tên PHƯƠNG THỨC + hãng nguyên văn — nguồn bắt hỏa tốc: "Hỏa tốc"/"Giao Trong
+  // Ngày" nằm ở delivery_option_name, hãng có thể là J&T giao thường. Ghi ghép
+  // "phương thức · hãng" để cùng luật EXPRESS_KEYWORDS với Shopee/Lazada
+  // (khảo sát 08/09/2026 — chuỗi VN thật chưa có trong docs, soi log khi nối shop thật).
+  const carrierName =
+    [order.delivery_option_name?.trim(), order.shipping_provider?.trim()]
+      .filter(Boolean)
+      .join(" · ") || null;
+  const carrier = carrierFromName(order.shipping_provider);
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
@@ -245,6 +255,8 @@ async function upsertOrderTx(
         paymentStatus,
         totalAmount,
         ...(trackingCode ? { trackingCode } : {}),
+        // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
+        ...(carrierName ? { shippingCarrierName: carrierName } : {}),
       },
     });
     await backfillOrderItemImagesTx(tx, existing.id, aggregateLineItems(order));
@@ -281,6 +293,8 @@ async function upsertOrderTx(
       paymentStatus,
       shippingStatus,
       trackingCode,
+      ...(carrier ? { carrier } : {}),
+      ...(carrierName ? { shippingCarrierName: carrierName } : {}),
       itemCount: lines.length,
       createdAt: order.create_time ? new Date(order.create_time * 1000) : undefined,
     },

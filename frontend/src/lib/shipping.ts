@@ -14,12 +14,16 @@ export function isExpressShipping(name?: string | null): boolean {
     s.includes("instant") ||
     s.includes("siêu tốc") ||
     s.includes("sieu toc") ||
+    s.includes("trong ngày") ||
+    s.includes("trong ngay") ||
+    s.includes("same day") ||
+    s.includes("sameday") ||
+    s.includes("same-day") ||
     s.includes("ahamove") ||
     s.includes("grab") ||
     s.includes("bedelivery") ||
     s.includes("be delivery") ||
-    s.includes("trong ngày") ||
-    s.includes("trong ngay") ||
-    s.includes("same day")
+    s.includes("xanh sm") ||
+    s.includes("green sm")
   );
 }

@@ -267,6 +267,14 @@ export interface TikTokOrder {
   recipient_address?: { name?: string; phone_number?: string };
   tracking_number?: string;
   shipping_provider?: string;
+  shipping_provider_id?: string;
+  /** Tên phương thức giao người mua chọn ("Hỏa tốc", "Giao Trong Ngày"…) — docs
+   *  ghi "for display purposes only", nhưng là nguồn DUY NHẤT nhận diện hỏa
+   *  tốc khi hãng là J&T giao thường (Giao Trong Ngày TikTok từ Q2/2026). */
+  delivery_option_name?: string;
+  delivery_option_id?: string;
+  /** TIKTOK | SELLER | TIKTOK_DIGITAL */
+  shipping_type?: string;
   line_items?: TikTokLineItem[];
 }
 

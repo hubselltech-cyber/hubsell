@@ -53,27 +53,49 @@ export function carrierFromName(name?: string | null): Carrier | null {
 }
 
 /**
- * Đơn HỎA TỐC (giao trong ngày/vài giờ) — nhận từ TÊN HÃNG nguyên văn sàn trả.
- * Shopee giao hỏa tốc qua đối tác tức thời (AhaMove/Grab/be) hoặc ghi thẳng
- * "Hỏa Tốc"/"Instant". KHÔNG dùng từ "express" trần — "SPX Express" là
- * giao THƯỜNG, dính từ khoá này là báo đỏ oan cả sàn.
+ * Đơn HỎA TỐC (giao trong ngày/vài giờ) — nhận từ TÊN HÃNG / PHƯƠNG THỨC
+ * nguyên văn sàn trả. KHÔNG sàn nào có cờ boolean "hỏa tốc" trong API (khảo
+ * sát tài liệu chính thức 08/09/2026, chi tiết memory hubsell-hoa-toc-carriers),
+ * nên so tên là cách duy nhất. KHÔNG dùng từ "express"/"spx" trần — "SPX
+ * Express", "J&T Express" là giao THƯỚNG; Shopee nói rõ SPX Instant ≠ SPX Express.
+ *
+ * Danh mục hãng hỏa tốc theo sàn (08/09/2026):
+ *   Shopee VN  — kênh "Hỏa Tốc" (≤4h) + "Hỏa Tốc - Ưu Tiên" (≤1h, từ 16/01/2026):
+ *                SPX Instant, GrabExpress, beDelivery, Ahamove, Xanh SM (Green SM);
+ *                kênh "Trong Ngày" (từ 29/08/2025): SPX Express + Ahamove — riêng
+ *                SPX Express chỉ bắt được khi tên kênh "Trong Ngày" đi kèm.
+ *   TikTok VN  — "Hỏa tốc (Instant)": Ahamove, BeDelivery; "Giao Trong Ngày
+ *                (Sameday)" từ Q2/2026: Ahamove, BeDelivery, J&T (J&T chỉ bắt
+ *                được qua delivery_option_name — TikTok service ghi tên này vào
+ *                shippingCarrierName cùng shipping_provider).
+ *   Lazada VN  — "Giao Hàng Hỏa Tốc" nội thành HN/HCM/ĐN; API không có cờ, chỉ
+ *                shipment_provider; LEX ngừng giao chặng cuối 31/03/2026 nên
+ *                KHÔNG coi "LEX"/"Lazada Express" là hỏa tốc.
  */
 /** Từ khoá nhận diện hỏa tốc — DÙNG CHUNG cho isExpressShipping() lẫn mảnh
- *  where Prisma (expressShippingWhere) để nhận diện ở JS và ở DB không lệch. */
+ *  where Prisma (expressShippingWhere) để nhận diện ở JS và ở DB không lệch.
+ *  Web (frontend/src/lib/shipping.ts) và mobile (hubsell-mobile/src/lib/shipping.ts)
+ *  CHÉP TAY danh sách này — sửa đây phải sửa cả hai. */
 export const EXPRESS_KEYWORDS = [
+  // Tên kênh/phương thức
   "hỏa tốc",
   "hoả tốc",
   "hoa toc",
   "instant",
   "siêu tốc",
   "sieu toc",
+  "trong ngày",
+  "trong ngay",
+  "same day",
+  "sameday",
+  "same-day",
+  // Hãng giao tức thời (Shopee + TikTok)
   "ahamove",
   "grab",
   "bedelivery",
   "be delivery",
-  "trong ngày",
-  "trong ngay",
-  "same day",
+  "xanh sm",
+  "green sm",
 ] as const;
 
 export function isExpressShipping(name?: string | null): boolean {
