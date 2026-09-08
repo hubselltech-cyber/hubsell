@@ -96,7 +96,7 @@ export function ChannelFilter({
           // mặc định cắt thành "Tất cả gian Shope" ở chữ 16px (anh Trung soi
           // prod 07/09). Local chỉ 1 gian/sàn nên ô này không hiện, script quét
           // không bắt được — đặt sàn dưới 224px cho mọi nơi gọi.
-          className={cn(className, "min-w-56")}
+          className={cn(className, "w-auto min-w-44 max-w-80 shrink-0")}
           aria-label="Lọc theo gian hàng"
           value={value.channelId}
           onChange={(e) =>

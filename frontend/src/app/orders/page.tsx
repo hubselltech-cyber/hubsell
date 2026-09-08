@@ -813,7 +813,10 @@ export default function OrdersPage() {
           />
 
           <NativeSelect
-            className="w-56"
+            // w-auto: thẻ select gốc tự đo option dài nhất — hết đoán bề rộng
+            // theo font (w-52 rồi w-56 vẫn cắt "Tất cả đơn vị vận chuyển" trên
+            // máy anh Trung 08/09 vì font thật rộng hơn font headless em đo).
+            className="w-auto shrink-0"
             aria-label="Lọc theo đơn vị vận chuyển"
             value={carrierFilter}
             onChange={(e) => {
