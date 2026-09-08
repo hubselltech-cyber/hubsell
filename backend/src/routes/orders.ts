@@ -72,7 +72,9 @@ function ordersWhere(req: AuthRequest): Prisma.OrderWhereInput {
   return {
       channel: channelScope(req),
       ...(isStatus(shippingStatus) ? { shippingStatus } : {}),
-      ...(isCarrier(carrier) ? { carrier } : {}),
+      // "EXPRESS" = nhóm HỎA TỐC mọi sàn (anh Trung 08/09): lọc theo tên hãng
+      // nguyên văn qua expressShippingWhere — cùng luật với badge ⚡ và ghim đầu bảng.
+      ...(carrier === "EXPRESS" ? expressShippingWhere() : isCarrier(carrier) ? { carrier } : {}),
       ...(printed === "yes"
         ? { labelPrintedAt: { not: null } }
         : printed === "no"
@@ -151,6 +153,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
           channelSku: true,
           quantity: true,
           price: true,
+          imageUrl: true, // ảnh chụp từ payload đơn của sàn (08/09)
           // Ảnh lấy từ sản phẩm gốc để bảng hiện thumbnail; sản phẩm đã bị
           // xoá thì productId là null nên phải cho phép thiếu.
           product: { select: { imageUrl: true } },
@@ -1116,6 +1119,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
           channelSku: true,
           quantity: true,
           price: true,
+          imageUrl: true,
           product: { select: { imageUrl: true } },
         },
       },

@@ -10,6 +10,7 @@
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { backfillOrderItemImagesTx } from "../order-item-images";
 import { PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { deductStockTx, restoreStockTx, type StockOutcome } from "../order-stock";
 import { expireToDate } from "./config";
@@ -107,20 +108,23 @@ function mapShippingStatus(tiktokStatus?: string): ShippingStatus {
 function aggregateLineItems(order: TikTokOrder) {
   const agg = new Map<
     string,
-    { channelSku: string; productName: string; price: number; quantity: number }
+    { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
   >();
   for (const li of order.line_items ?? []) {
     const sku = li.seller_sku || li.sku_id || li.id;
     const qty = li.quantity ?? 1;
+    const imageUrl = li.sku_image?.trim() || null;
     const existing = agg.get(sku);
     if (existing) {
       existing.quantity += qty;
+      if (!existing.imageUrl && imageUrl) existing.imageUrl = imageUrl;
     } else {
       agg.set(sku, {
         channelSku: sku,
         productName: li.product_name ?? sku,
         price: Number(li.sale_price ?? 0) || 0,
         quantity: qty,
+        imageUrl,
       });
     }
   }
@@ -243,6 +247,7 @@ async function upsertOrderTx(
         ...(trackingCode ? { trackingCode } : {}),
       },
     });
+    await backfillOrderItemImagesTx(tx, existing.id, aggregateLineItems(order));
     return { orderId: existing.id, created: false, itemsCreated: 0 };
   }
 
@@ -291,6 +296,7 @@ async function upsertOrderTx(
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,
+        imageUrl: line.imageUrl,
         // Đã nối kho → giá vốn sản phẩm gốc; chưa nối → giá vốn cấp SKU sàn.
         costPriceAtSale: String(mp?.product?.costPrice ?? mp?.costPrice ?? 0),
       },

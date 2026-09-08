@@ -19,7 +19,10 @@ import { cn } from "@/lib/utils";
  */
 
 function Thumb({ line }: { line: OrderItemLine }) {
-  const url = line.product?.imageUrl;
+  // 08/09: đọc ảnh PHẲNG backend đã chọn (listing sàn / payload đơn / kho gốc).
+  // Trước đó chỉ đọc product.imageUrl nên SKU chưa nối kho luôn hiện icon rỗng
+  // dù backend đã có ảnh sàn — mobile đọc đúng, web thì sót (anh Trung soi 08/09).
+  const url = line.imageUrl ?? line.product?.imageUrl;
   if (!url) {
     return (
       <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">

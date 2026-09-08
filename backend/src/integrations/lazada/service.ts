@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { backfillOrderItemImagesTx } from "../order-item-images";
 import { CHANNEL_LABEL } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
 import { carrierFromName } from "../../services/shipping";
@@ -419,7 +420,7 @@ function pickLazadaStatus(statuses?: string[]): string | undefined {
 function aggregateLazadaItems(items: LazadaOrderItem[]) {
   const agg = new Map<
     string,
-    { channelSku: string; productName: string; price: number; quantity: number }
+    { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
   >();
   for (const it of items) {
     const sku = lazadaChannelSku({
@@ -430,9 +431,12 @@ function aggregateLazadaItems(items: LazadaOrderItem[]) {
     });
     const price = Number(it.paid_price ?? it.item_price ?? 0) || 0;
     const name = [it.name, it.variation].filter(Boolean).join(" - ") || sku;
+    const imageUrl = it.product_main_image?.toString().trim() || null;
     const ex = agg.get(sku);
-    if (ex) ex.quantity += 1;
-    else agg.set(sku, { channelSku: sku, productName: name, price, quantity: 1 });
+    if (ex) {
+      ex.quantity += 1;
+      if (!ex.imageUrl && imageUrl) ex.imageUrl = imageUrl;
+    } else agg.set(sku, { channelSku: sku, productName: name, price, quantity: 1, imageUrl });
   }
   return [...agg.values()];
 }
@@ -708,6 +712,7 @@ export async function upsertLazadaOrderTx(
       },
     });
     await writeShipDetail(existing.id);
+    await backfillOrderItemImagesTx(tx, existing.id, aggregateLazadaItems(items));
     const stockSync = await applyLazadaStockTx(tx, existing.id, repStatus);
     return { created: false, itemsCreated: 0, stockSync };
   }
@@ -762,6 +767,7 @@ export async function upsertLazadaOrderTx(
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,
+        imageUrl: line.imageUrl,
         // Đã nối kho → giá vốn sản phẩm gốc; chưa nối → giá vốn cấp SKU sàn.
         costPriceAtSale: String(mp?.product?.costPrice ?? mp?.costPrice ?? 0),
       },

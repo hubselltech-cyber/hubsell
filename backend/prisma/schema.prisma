@@ -1225,6 +1225,11 @@ model OrderItem {
   quantity        Int
   price           Decimal @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
   costPriceAtSale Decimal @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
+  /// Ảnh dòng hàng LẤY TỪ PAYLOAD ĐƠN của sàn lúc đồng bộ (Shopee image_info,
+  /// Lazada product_main_image, TikTok sku_image) — 08/09: trước đó ảnh chỉ tra
+  /// ChannelProduct (đồng bộ danh mục bằng tay) nên gian chưa đồng bộ danh mục
+  /// là cả bảng đơn trống ảnh. Đơn cũ được điền bù mỗi lần đơn được quét lại.
+  imageUrl        String?
   /// HOÀN/TRẢ CẤP DÒNG SKU (kịch bản trả 1 vài SP trong đơn nhiều SP):
   /// số lượng bị khách trả của riêng dòng này — 0 = dòng không bị trả.
   returnedQuantity Int @default(0)

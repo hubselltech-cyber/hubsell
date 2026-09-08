@@ -390,6 +390,11 @@ export interface OrderItemLine {
   channelSku: string;
   quantity: number;
   price: string | number;
+  /**
+   * Ảnh PHẲNG backend đã chọn sẵn (listing sàn → payload đơn → kho gốc) —
+   * đọc trường này trước; `product.imageUrl` chỉ là fallback cho web cũ.
+   */
+  imageUrl?: string | null;
   /** Ảnh sản phẩm gốc — null khi sản phẩm đã bị xoá hoặc chưa có ảnh */
   product?: { imageUrl: string | null } | null;
 }

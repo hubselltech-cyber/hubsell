@@ -16,9 +16,18 @@ export const CARRIER_META: Record<Carrier, { label: string; short: string }> = {
   KHAC: { label: "Hãng khác / shop tự giao", short: "Khác" },
 };
 
-export const CARRIER_OPTIONS = (Object.keys(CARRIER_META) as Carrier[]).map(
-  (value) => ({ value, label: CARRIER_META[value].label })
-);
+/** Giá trị đặc biệt của bộ lọc: nhóm HỎA TỐC mọi sàn (backend lọc theo tên hãng nguyên văn). */
+export const EXPRESS_FILTER_VALUE = "EXPRESS";
+
+export const CARRIER_OPTIONS: { value: Carrier | typeof EXPRESS_FILTER_VALUE; label: string }[] = [
+  // Đứng đầu vì là nhóm kho cần soi trước nhất (anh Trung 08/09): gom SPX
+  // Instant, Grab, Ahamove, be… của mọi sàn, không phải chọn từng hãng.
+  { value: EXPRESS_FILTER_VALUE, label: "⚡ Hỏa tốc (mọi sàn)" },
+  ...(Object.keys(CARRIER_META) as Carrier[]).map((value) => ({
+    value,
+    label: CARRIER_META[value].label,
+  })),
+];
 
 /** Nhãn an toàn cho đơn chưa được gán hãng vận chuyển. */
 export function carrierLabel(carrier: Carrier | null): string {

@@ -13,6 +13,7 @@ import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
+import { backfillOrderItemImagesTx } from "../order-item-images";
 import { carrierFromName } from "../../services/shipping";
 import {
   deductStockTx,
@@ -381,7 +382,7 @@ function shopeeReturnStatus(status?: string): ReturnStatus | null {
 function aggregateShopeeItems(order: ShopeeOrderDetail) {
   const agg = new Map<
     string,
-    { channelSku: string; productName: string; price: number; quantity: number }
+    { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
   >();
   for (const it of order.item_list ?? []) {
     // Cùng hàm sinh khoá với đồng bộ sản phẩm → đơn luôn khớp đúng ChannelProduct,
@@ -395,12 +396,16 @@ function aggregateShopeeItems(order: ShopeeOrderDetail) {
     const qty = it.model_quantity_purchased ?? 1;
     const price = Number(it.model_discounted_price ?? it.model_original_price ?? 0) || 0;
     const name = [it.item_name, it.model_name].filter(Boolean).join(" - ") || sku;
+    const imageUrl = it.image_info?.image_url?.trim() || null;
     const ex = agg.get(sku);
-    if (ex) ex.quantity += qty;
-    else agg.set(sku, { channelSku: sku, productName: name, price, quantity: qty });
+    if (ex) {
+      ex.quantity += qty;
+      if (!ex.imageUrl && imageUrl) ex.imageUrl = imageUrl;
+    } else agg.set(sku, { channelSku: sku, productName: name, price, quantity: qty, imageUrl });
   }
   return [...agg.values()];
 }
+
 
 export interface SyncShopeeOrdersOptions {
   /** Lấy đơn tạo trong bao nhiêu ngày gần nhất. Mặc định 90 (chia cửa sổ 15 ngày). */
@@ -553,6 +558,7 @@ export async function upsertShopeeOrderTx(
           : {}),
       },
     });
+    await backfillOrderItemImagesTx(tx, existing.id, aggregateShopeeItems(order));
     return { created: false, itemsCreated: 0 };
   }
 
@@ -606,6 +612,7 @@ export async function upsertShopeeOrderTx(
         productName: line.productName,
         quantity: line.quantity,
         price: line.price,
+        imageUrl: line.imageUrl,
         // Đã nối kho → giá vốn sản phẩm gốc; chưa nối → giá vốn cấp SKU sàn.
         costPriceAtSale: String(mp?.product?.costPrice ?? mp?.costPrice ?? 0),
       },

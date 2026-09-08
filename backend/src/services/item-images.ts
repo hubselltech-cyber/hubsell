@@ -15,6 +15,8 @@ import { prisma } from "../lib/prisma";
 
 interface ItemWithProduct {
   channelSku: string | null;
+  /** Ảnh lưu từ payload đơn của sàn (08/09) — có khi gian chưa đồng bộ danh mục. */
+  imageUrl?: string | null;
   product: { imageUrl: string | null } | null;
 }
 
@@ -56,8 +58,10 @@ export async function attachItemImages<
     ...o,
     items: o.items.map((it) => ({
       ...it,
+      // Thứ tự: ảnh listing sàn (mới nhất) → ảnh chụp từ payload đơn → ảnh kho gốc
       imageUrl:
         (it.channelSku ? map.get(`${o.channelId}:${it.channelSku}`) : undefined) ??
+        it.imageUrl ??
         it.product?.imageUrl ??
         null,
     })),

@@ -344,6 +344,8 @@ export interface ShopeeOrderItem {
   model_quantity_purchased?: number;
   model_discounted_price?: number;
   model_original_price?: number;
+  /** Ảnh phân loại/sản phẩm — get_order_detail trả kèm trong item_list. */
+  image_info?: { image_url?: string };
 }
 
 /**
