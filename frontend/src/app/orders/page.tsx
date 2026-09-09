@@ -472,7 +472,15 @@ export default function OrdersPage() {
               value={row.original.totalAmount}
               className="text-slate-900"
             />
-            <span className={cn(TEXT_SUB, "block")}>
+            {/* Chưa thanh toán tô đỏ nhẹ để nhìn bảng là biết đơn đang chờ khách trả
+                tiền, chưa chuẩn bị được (anh Trung chốt 09/09: không tách chip/tab). */}
+            <span
+              className={cn(
+                TEXT_SUB,
+                "block",
+                row.original.paymentStatus === "UNPAID" && "text-rose-500 dark:text-rose-400"
+              )}
+            >
               {PAYMENT_META[row.original.paymentStatus]?.label ??
                 row.original.paymentStatus}
             </span>
