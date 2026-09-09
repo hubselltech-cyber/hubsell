@@ -13,6 +13,14 @@ import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import { isMailerConfigured, sendMail } from "../lib/mailer";
 import { getOwnerPlanState } from "../services/plan-enforcement";
 import { CYCLE_LABEL, planPriceFor } from "../services/subscription-service";
+import {
+  cancelCheckout,
+  CheckoutError,
+  createCheckout,
+  findOpenCheckout,
+  gatewayInfo,
+  getCheckoutStatus,
+} from "../services/gateway-checkout";
 
 const router = Router();
 
@@ -86,7 +94,7 @@ router.get("/me", async (req: AuthRequest, res, next) => {
     // nuôi khối "Chọn gói" của /settings/plan. Chỉ trả cho CHỦ SHOP: số dư ví
     // và ý định mua gói là chuyện tiền nong của chủ, nhân viên gọi /me chỉ cần
     // trạng thái khóa/trần.
-    const [pendingRequest, wallet, ownerProfile] = isShopAdmin
+    const [pendingRequest, wallet, ownerProfile, openCheckout] = isShopAdmin
       ? await Promise.all([
           prisma.planUpgradeRequest.findFirst({
             where: { userId: req.ownerId!, status: "PENDING" },
@@ -107,8 +115,10 @@ router.get("/me", async (req: AuthRequest, res, next) => {
             where: { id: req.ownerId! },
             select: { phone: true },
           }),
+          // Đơn cổng đang chờ (QR còn hạn) — khách quay lại trang là mở lại được.
+          findOpenCheckout(req.ownerId!),
         ])
-      : [null, null, null];
+      : [null, null, null, null];
 
     // Gói Enterprise "Liên hệ báo giá" — hiện card khi gói tồn tại, KỂ CẢ đang
     // nháp/giá 0: bán bằng tư vấn chứ không bằng bảng giá (anh Trung 22/08 khuya).
@@ -159,6 +169,10 @@ router.get("/me", async (req: AuthRequest, res, next) => {
         priceYearly: Number(p.priceYearly),
       })),
       payment: paymentInfo(),
+      // Cổng thanh toán (payOS) — null khi chưa đặt PAYOS_* trên Render → FE
+      // giữ luồng "Đăng ký mua → HQ liên hệ".
+      gateway: gatewayInfo(),
+      openCheckout,
       pendingUpgradeRequest: pendingRequest
         ? { ...pendingRequest, listedPrice: Number(pendingRequest.listedPrice) }
         : null,
@@ -266,6 +280,65 @@ router.post("/upgrade-request", requireAdmin, async (req: AuthRequest, res, next
     });
   } catch (err) {
     next(err);
+  }
+});
+
+// ============================================================
+// THANH TOÁN QUA CỔNG payOS (09/09) — khách tự trả, gói mở ngay khi tiền về.
+//   POST   /checkout                 { planId, cycle } → link + QR
+//   GET    /checkout/:orderCode      trạng thái (FE poll 3s; tự hỏi payOS khi webhook lạc)
+//   POST   /checkout/:orderCode/cancel
+// Chỉ CHỦ SHOP (requireAdmin) — tiền nong của chủ.
+// ============================================================
+function sendCheckoutError(res: import("express").Response, err: unknown, next: import("express").NextFunction) {
+  if (err instanceof CheckoutError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  next(err);
+}
+
+router.post("/checkout", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const { planId, cycle: cycleRaw } = req.body ?? {};
+    const cycle = (Object.values(BillingCycle) as string[]).includes(String(cycleRaw))
+      ? (cycleRaw as BillingCycle)
+      : null;
+    if (typeof planId !== "string" || !planId || !cycle) {
+      res.status(400).json({ error: "Gói hoặc kỳ mua không hợp lệ" });
+      return;
+    }
+    const buyer = await prisma.user.findUnique({
+      where: { id: req.ownerId! },
+      select: { fullName: true, email: true, phone: true },
+    });
+    const checkout = await createCheckout({
+      userId: req.ownerId!,
+      planId,
+      cycle,
+      buyer: { name: buyer?.fullName, email: buyer?.email, phone: buyer?.phone },
+    });
+    res.status(201).json({ checkout });
+  } catch (err) {
+    sendCheckoutError(res, err, next);
+  }
+});
+
+router.get("/checkout/:orderCode", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const checkout = await getCheckoutStatus(req.ownerId!, String(req.params.orderCode));
+    res.json({ checkout });
+  } catch (err) {
+    sendCheckoutError(res, err, next);
+  }
+});
+
+router.post("/checkout/:orderCode/cancel", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const checkout = await cancelCheckout(req.ownerId!, String(req.params.orderCode));
+    res.json({ checkout });
+  } catch (err) {
+    sendCheckoutError(res, err, next);
   }
 });
 

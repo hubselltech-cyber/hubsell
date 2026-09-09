@@ -43,6 +43,8 @@ import {
   enqueueMisaWebhook,
   startMisaWebhookWorker,
 } from "../integrations/invoice/misa-webhook-queue";
+import { getPayosConfig, verifyPayosWebhook } from "../integrations/payos/client";
+import { handlePayosWebhook } from "../services/gateway-checkout";
 
 const router = Router();
 
@@ -545,5 +547,54 @@ router.post(
     }
   }
 );
+
+// ============================================================
+// WEBHOOK payOS — cổng thu tiền gói Hubsell (09/09). URL đăng ký trên
+// my.payos.vn (hoặc scripts/payos-confirm-webhook.ts): /api/webhooks/payos.
+//   · Không có đơn khớp orderCode → 200 ignored (payOS gọi thử với orderCode
+//     giả khi đăng ký URL; đơn lạ thì cũng chẳng có gì để làm).
+//   · Có đơn → BẮT BUỘC chữ ký HMAC đúng, sai → 401 (giả mạo không mở được gói).
+//   · Xử lý ĐỒNG BỘ (một khoản/giây là nhiều với thuê bao) — lỗi DB trả 500
+//     để payOS retry; idempotent nhờ trạng thái PAID + externalRef unique.
+// ============================================================
+router.post("/payos", async (req, res) => {
+  const cfg = getPayosConfig();
+  if (!cfg) {
+    res.status(503).json({ success: false, error: "Cổng payOS chưa cấu hình" });
+    return;
+  }
+  const body = req.body as { data?: { orderCode?: unknown } } | undefined;
+  const rawCode = body?.data?.orderCode;
+  const orderCode =
+    typeof rawCode === "number" && Number.isSafeInteger(rawCode)
+      ? rawCode
+      : typeof rawCode === "string" && /^\d{1,19}$/.test(rawCode)
+        ? Number(rawCode)
+        : null;
+  if (orderCode === null) {
+    res.status(200).json({ success: true, ignored: true, reason: "no orderCode" });
+    return;
+  }
+  const exists = await prisma.gatewayPaymentOrder.findUnique({
+    where: { orderCode: BigInt(orderCode) },
+    select: { id: true },
+  });
+  if (!exists) {
+    res.status(200).json({ success: true, ignored: true, reason: "unknown order" });
+    return;
+  }
+  if (!verifyPayosWebhook(req.body, cfg.checksumKey)) {
+    console.warn("[payOS] Webhook chữ ký SAI cho đơn", orderCode);
+    res.status(401).json({ success: false, error: "Chữ ký webhook không hợp lệ" });
+    return;
+  }
+  try {
+    const result = await handlePayosWebhook(req.body);
+    res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    console.error("[payOS] Xử lý webhook lỗi:", (err as Error).message);
+    res.status(500).json({ success: false, error: "Xử lý webhook lỗi — payOS sẽ gửi lại" });
+  }
+});
 
 export default router;

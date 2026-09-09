@@ -294,6 +294,7 @@ model User {
   subscription        Subscription?
   packagePayments     PackagePayment[]
   planUpgradeRequests PlanUpgradeRequest[]
+  gatewayOrders       GatewayPaymentOrder[]
 
   // Khu điều hành Hubsell (CRM nội bộ + nhật ký thao tác + sổ quỹ).
   careProfile        PlatformCustomerCare?  @relation("CareCustomer")
@@ -2106,6 +2107,63 @@ model PlanUpgradeRequest {
   @@index([status, createdAt])
   @@index([userId, status])
   @@map("plan_upgrade_requests")
+}
+
+enum GatewayOrderStatus {
+  PENDING // link đã tạo, chờ khách chuyển khoản
+  PAID // cổng báo tiền về — thuê bao đã gia hạn (recordPackagePayment)
+  CANCELLED // khách/hệ thống hủy link
+  EXPIRED // quá hạn link mà không có tiền về
+  MISMATCH // tiền về nhưng lệch số tiền — KHÔNG kích hoạt, HQ xử lý tay
+}
+
+/// ĐƠN THANH TOÁN QUA CỔNG (payOS, 09/09/2026) — mỗi lần khách bấm "Thanh toán
+/// ngay" trên /settings/plan là MỘT dòng: orderCode gửi sang cổng ↔ (khách, gói,
+/// kỳ, số tiền) snapshot. Webhook/poll tìm lại theo orderCode rồi gọi
+/// recordPackagePayment (method GATEWAY, externalRef = mã giao dịch cổng) —
+/// vẫn là MỘT lõi ghi nhận thanh toán, 4 hệ quả tự sinh như chuyển khoản tay.
+model GatewayPaymentOrder {
+  id String @id @default(cuid())
+  /// Nhà cung cấp cổng: PAYOS (adapter mỏng — đổi SePay sau này thêm giá trị mới).
+  provider String @default("PAYOS")
+  /// orderCode số nguyên gửi sang cổng — unique, ≤ 2^53 (payOS yêu cầu số).
+  orderCode BigInt @unique
+  userId    String
+  /// Yêu cầu mua đi kèm (nếu có) — recordPackagePaymentTx tự đóng mọi PENDING của khách.
+  requestId String?
+  planId    String
+  planCode  String
+  planName  String
+  cycle     BillingCycle
+  /// Số tiền PHẢI THU (giá niêm yết snapshot) — webhook lệch số này → MISMATCH.
+  amount Decimal            @db.Decimal(14, 2)
+  status GatewayOrderStatus @default(PENDING)
+  /// Link/QR do cổng cấp — FE render lại khi khách mở lại trang.
+  paymentLinkId String?
+  checkoutUrl   String?
+  qrCode        String?
+  expiresAt     DateTime?
+  /// Tài khoản NHẬN TIỀN cổng trả về (bin ngân hàng + STK + chủ TK) — FE bày
+  /// khối "chuyển khoản thủ công" kèm nút sao chép cho khách không quét được QR.
+  bankBin           String?
+  bankAccountNumber String?
+  bankAccountName   String?
+  /// Khi PAID: mã giao dịch ngân hàng (reference) + số tiền thực nhận + thời điểm.
+  gatewayReference String?
+  paidAmount       Decimal?  @db.Decimal(14, 2)
+  paidAt           DateTime?
+  /// Chứng từ thanh toán sinh ra (PackagePayment.id) khi PAID.
+  packagePaymentId String?
+  /// Payload webhook thô cuối cùng — chẩn đoán khi khách kêu "đã chuyển mà chưa mở".
+  lastWebhook Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([status, expiresAt])
+  @@map("gateway_payment_orders")
 }
 
 /// LỊCH SỬ THANH TOÁN GÓI — append-only, không sửa/xoá (chứng từ kế toán).

@@ -243,8 +243,20 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
  * Bản đầy đủ: tự mở transaction + cộng hoa hồng giới thiệu 10% sau khi chốt
  * (mọi lượt thanh toán thành công đều tính — "hoa hồng vĩnh viễn").
  */
-export async function recordPackagePayment(input: RecordPaymentInput) {
-  const result = await prisma.$transaction((tx) => recordPackagePaymentTx(tx, input));
+export async function recordPackagePayment(
+  input: RecordPaymentInput,
+  /**
+   * Việc phụ chạy CÙNG transaction sau khi ghi nhận (VD cổng thanh toán đánh
+   * dấu đơn PAID + gắn packagePaymentId) — lỗi ở đây là hủy cả ghi nhận, không
+   * để chứng từ và trạng thái đơn cổng lệch nhau.
+   */
+  alsoInTx?: (tx: Tx, result: Awaited<ReturnType<typeof recordPackagePaymentTx>>) => Promise<void>
+) {
+  const result = await prisma.$transaction(async (tx) => {
+    const r = await recordPackagePaymentTx(tx, input);
+    if (alsoInTx) await alsoInTx(tx, r);
+    return r;
+  });
   // Nâng gói/gia hạn phải MỞ KHÓA ngay ở request kế tiếp — đừng bắt khách vừa
   // trả tiền chờ hết TTL cache trạng thái trần (GĐ2 cưỡng chế).
   invalidatePlanState(input.userId);

@@ -13,21 +13,26 @@
 //   3) Lịch sử thanh toán.
 // Khi có STK (env PLAN_PAYMENT_BANK_*), khối yêu-cầu-đã-gửi tự hiện hướng
 // dẫn chuyển khoản — không cần sửa code.
+//   4) 09/09: CỔNG payOS — backend có PAYOS_* thì /me trả gateway ≠ null →
+//      nút chính đổi thành "Thanh toán ngay" (QR VietQR, gói mở khi tiền về);
+//      "Đăng ký mua" lùi xuống làm đường phụ cho khách cần người hỗ trợ.
 // ============================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Check,
   Clock,
   Gauge,
+  QrCode,
   ShoppingCart,
   Wallet,
   X,
 } from "lucide-react";
 
 import { PLAN_FEATURES, useMyPlan } from "@/components/shell/plan-quota-guard";
+import { GatewayCheckoutDialog } from "@/components/settings/gateway-checkout-dialog";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,9 +48,12 @@ import { Label } from "@/components/ui/label";
 import {
   ApiError,
   cancelMyPlanUpgradeRequest,
+  createPlanCheckout,
+  fetchPlanCheckout,
   renewPackageWithWallet,
   requestPlanUpgrade,
   type BillingCycle,
+  type GatewayCheckout,
   type MyUpgradePlan,
 } from "@/lib/api";
 import { qk } from "@/lib/query-keys";
@@ -152,6 +160,23 @@ export default function SettingsPlanPage() {
   } | null>(null);
   const [phone, setPhone] = useState("");
 
+  // Hộp thoại QR payOS đang mở (null = đóng).
+  const [checkout, setCheckout] = useState<GatewayCheckout | null>(null);
+
+  // Quay lại từ returnUrl của payOS (?checkout=<orderCode>) → mở lại hộp
+  // thoại đúng đơn để khách thấy kết quả; đọc window thay vì useSearchParams
+  // để khỏi bọc Suspense cho cả trang.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("checkout");
+    if (!code) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    fetchPlanCheckout(code)
+      .then((res) => setCheckout(res.checkout))
+      .catch(() => {});
+  }, []);
+
   function openBuyDialog(intent: NonNullable<typeof buyIntent>) {
     setPhone(data?.contactPhone ?? "");
     setBuyIntent(intent);
@@ -187,6 +212,18 @@ export default function SettingsPlanPage() {
       toast.error(err instanceof ApiError ? err.message : "Hủy yêu cầu thất bại — thử lại sau."),
   });
 
+  const checkoutMutation = useMutation({
+    mutationFn: (p: { planId: string; cycle: BillingCycle }) => createPlanCheckout(p),
+    onSuccess: (res) => {
+      setCheckout(res.checkout);
+      refresh();
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : "Không tạo được mã thanh toán — thử lại sau."
+      ),
+  });
+
   const walletMutation = useMutation({
     mutationFn: (p: { planId: string; cycle: BillingCycle }) =>
       renewPackageWithWallet(`${p.planId}:${p.cycle}`),
@@ -204,6 +241,8 @@ export default function SettingsPlanPage() {
   const sub = data?.subscription ?? null;
   const pending = data?.pendingUpgradeRequest ?? null;
   const wallet = data?.walletBalance ?? 0;
+  const gateway = data?.gateway ?? null;
+  const openCheckout = data?.openCheckout ?? null;
   const statusBadge =
     sub === null
       ? null
@@ -313,10 +352,26 @@ export default function SettingsPlanPage() {
           <div>
             <p className="text-base font-semibold">Chọn gói &amp; thanh toán</p>
             <p className={TEXT_SUB}>
-              Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua
-              rồi bấm Đăng ký mua, Hubsell sẽ liên hệ hướng dẫn thanh toán.
+              {gateway
+                ? "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua rồi bấm Thanh toán ngay: quét QR bằng app ngân hàng, gói mở ngay khi tiền về."
+                : "Mọi gói đều đầy đủ tính năng — chỉ khác giới hạn sử dụng. Chọn kỳ mua rồi bấm Đăng ký mua, Hubsell sẽ liên hệ hướng dẫn thanh toán."}
             </p>
           </div>
+
+          {/* Mã QR đang chờ (khách đóng hộp thoại rồi quay lại) — mở lại được */}
+          {openCheckout && checkout === null && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+              <QrCode className="size-4 shrink-0" />
+              <p className="min-w-0 flex-1">
+                Bạn có mã thanh toán đang chờ cho gói {openCheckout.planName} —{" "}
+                {CYCLE_LABEL[openCheckout.cycle]} (
+                <span className="tabular-nums">{nf.format(openCheckout.amount)}₫</span>).
+              </p>
+              <Button size="sm" variant="outline" onClick={() => setCheckout(openCheckout)}>
+                Mở lại mã QR
+              </Button>
+            </div>
+          )}
 
           {/* Yêu cầu đang chờ — bám trạng thái, kèm hướng dẫn chuyển khoản khi có STK */}
           {pending && (
@@ -468,9 +523,24 @@ export default function SettingsPlanPage() {
                   </ul>
 
                   <div className="mt-auto space-y-2 pt-5">
+                    {gateway && (
+                      <Button
+                        className="w-full"
+                        variant={isBestSeller ? "default" : "outline"}
+                        disabled={checkoutMutation.isPending}
+                        onClick={() => checkoutMutation.mutate({ planId: p.id, cycle })}
+                      >
+                        <QrCode className="size-4" />
+                        {checkoutMutation.isPending
+                          ? "Đang tạo mã…"
+                          : isCurrent
+                            ? "Gia hạn — thanh toán ngay"
+                            : "Thanh toán ngay"}
+                      </Button>
+                    )}
                     <Button
-                      className="w-full"
-                      variant={isBestSeller ? "default" : "outline"}
+                      className={cn("w-full", gateway && "h-auto whitespace-normal py-2 text-muted-foreground")}
+                      variant={gateway ? "ghost" : isBestSeller ? "default" : "outline"}
                       onClick={() =>
                         openBuyDialog({
                           planId: p.id,
@@ -482,7 +552,11 @@ export default function SettingsPlanPage() {
                       }
                     >
                       <ShoppingCart className="size-4" />
-                      {isCurrent ? "Gia hạn gói này" : "Đăng ký mua"}
+                      {gateway
+                        ? "Nhờ Hubsell hỗ trợ mua"
+                        : isCurrent
+                          ? "Gia hạn gói này"
+                          : "Đăng ký mua"}
                     </Button>
                     {walletEnough && (
                       <Button
@@ -634,6 +708,19 @@ export default function SettingsPlanPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ===== QR payOS — quét là gói mở khi tiền về (09/09) ===== */}
+      <GatewayCheckoutDialog
+        checkout={checkout}
+        onClose={() => {
+          setCheckout(null);
+          refresh();
+        }}
+        onRetry={(planId, cycle) => {
+          setCheckout(null);
+          checkoutMutation.mutate({ planId, cycle });
+        }}
+      />
 
       {/* ===== Xác nhận trừ Ví — trừ tiền không được là một cú click nhầm ===== */}
       <Dialog open={walletBuy !== null} onOpenChange={(o) => !o && setWalletBuy(null)}>

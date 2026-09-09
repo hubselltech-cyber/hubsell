@@ -3795,6 +3795,10 @@ export interface MySubscriptionResponse {
   upgradePlans: MyUpgradePlan[];
   /** STK nhận tiền (env backend) — null khi chưa cấu hình → FE mời liên hệ. */
   payment: { bankName: string; bankAccount: string; bankHolder: string } | null;
+  /** Cổng thanh toán tự động (payOS) — null khi backend chưa đặt PAYOS_* → ẩn nút "Thanh toán ngay". */
+  gateway: { provider: "PAYOS"; label: string } | null;
+  /** Đơn cổng đang chờ (QR còn hạn) của chủ shop — mở lại được khi quay lại trang. */
+  openCheckout: GatewayCheckout | null;
   /** Yêu cầu mua đang chờ HQ liên hệ — chỉ trả cho CHỦ SHOP, null với nhân viên. */
   pendingUpgradeRequest: {
     id: string;
@@ -3837,6 +3841,54 @@ export function cancelMyPlanUpgradeRequest() {
   return apiFetch<{ ok: true }>("/api/subscription/upgrade-request", {
     method: "DELETE",
   });
+}
+
+// ---------- Thanh toán gói qua cổng payOS (09/09) ----------
+
+export type GatewayCheckoutStatus = "PENDING" | "PAID" | "CANCELLED" | "EXPIRED" | "MISMATCH";
+
+export interface GatewayCheckout {
+  /** orderCode gửi sang cổng — chuỗi số (BigInt phía backend). */
+  orderCode: string;
+  status: GatewayCheckoutStatus;
+  planId: string;
+  planCode: string;
+  planName: string;
+  cycle: BillingCycle;
+  amount: number;
+  /** Trang thanh toán hosted của payOS — dự phòng khi khách không quét được QR. */
+  checkoutUrl: string | null;
+  /** Chuỗi VietQR (EMV) — render bằng qrcode.react. */
+  qrCode: string | null;
+  /** Nội dung chuyển khoản khi khách chuyển tay. */
+  transferContent: string;
+  /** Tài khoản nhận tiền cổng cấp cho đơn này — bày kèm nút sao chép. */
+  bank: { bin: string; name: string | null; accountNumber: string; accountName: string } | null;
+  expiresAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+/** Tạo (hoặc dùng lại) link + QR thanh toán cho (gói, kỳ). */
+export function createPlanCheckout(params: { planId: string; cycle: BillingCycle }) {
+  return apiFetch<{ checkout: GatewayCheckout }>("/api/subscription/checkout", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+/** Trạng thái đơn — poll khi QR đang mở; backend tự hỏi payOS nếu webhook lạc. */
+export function fetchPlanCheckout(orderCode: string) {
+  return apiFetch<{ checkout: GatewayCheckout }>(
+    `/api/subscription/checkout/${encodeURIComponent(orderCode)}`
+  );
+}
+
+export function cancelPlanCheckout(orderCode: string) {
+  return apiFetch<{ checkout: GatewayCheckout }>(
+    `/api/subscription/checkout/${encodeURIComponent(orderCode)}/cancel`,
+    { method: "POST" }
+  );
 }
 
 // ---------- Báo cáo nhà đầu tư (GĐ6 — chỉ chủ nền tảng) ----------
