@@ -162,7 +162,7 @@ const NAV_ITEMS: NavItem[] = [
         label: "Cảnh báo & P&L Sản phẩm",
         perm: "operations.loss-orders",
       },
-      { href: "/operations-assistant/ai-rules", label: "Cấu hình kịch bản AI", perm: "operations.ai-rules" },
+      { href: "/operations-assistant/ai-rules", label: "Cấu hình tự động hóa", perm: "operations.ai-rules" },
     ],
   },
   {
@@ -324,7 +324,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/warehouse/shipping-alerts", title: "Đối soát phí vận chuyển" },
   { prefix: "/operations-assistant/chat", title: "Trợ lý Chat CSKH" },
   { prefix: "/operations-assistant/reviews", title: "Phản hồi đánh giá đa kênh" },
-  { prefix: "/operations-assistant/ai-rules", title: "Cấu hình kịch bản AI" },
+  { prefix: "/operations-assistant/ai-rules", title: "Cấu hình tự động hóa CSKH" },
   { prefix: "/koc-marketing/overview", title: "Tổng quan Net-ROI Đa kênh" },
   { prefix: "/koc-marketing/tiktok", title: "TikTok Affiliate & MCN" },
   { prefix: "/koc-marketing/shopee", title: "Shopee Affiliate (AMS)" },

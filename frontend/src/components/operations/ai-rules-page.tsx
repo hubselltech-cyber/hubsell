@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, Bot, MessageSquare, RotateCcw, Save, Star } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Bot, RotateCcw, Save, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { DeliveryFailTab } from "@/components/operations/delivery-fail-tab";
@@ -33,57 +32,22 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * CẤU HÌNH KỊCH BẢN AI — MÀN HÌNH MOCKUP (PREVIEW)
+ * CẤU HÌNH TỰ ĐỘNG HÓA CSKH
  *
- * Nơi bật/tắt từng kịch bản tự động hoá CSKH và chỉnh giọng điệu thương hiệu.
- * Trạng thái chỉ nằm trong state client (mock) — khi làm thật sẽ lưu vào
- * cấu hình theo user, cùng khuôn với Trợ lý quảng cáo TikTok.
+ * Hai tab: (1) Phản hồi đánh giá — bộ mẫu câu theo số sao + công tắc tự động
+ * gửi từng mức sao (trang Phản hồi đánh giá đọc và gửi thật lên sàn);
+ * (2) Cứu đơn giao thất bại. 09/09/2026: bỏ danh sách "kịch bản AI" và khối
+ * "giọng điệu thương hiệu" — chúng chỉ là công tắc mock trong state client,
+ * không nối vào đâu; production không bày công tắc không có tác dụng.
  */
-
-interface AiRule {
-  id: string;
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  enabled: boolean;
-}
-
-// Rule "tự động trả lời 5 sao" (mock) đã được THAY bằng khối 5 công tắc theo
-// số sao phía trên — cấu hình THẬT, trang Phản hồi đánh giá đọc và tự gửi.
-const DEFAULT_RULES: AiRule[] = [
-  {
-    id: "classify-bad",
-    icon: Bot,
-    title: "Phân loại lỗi đánh giá 1–3 sao",
-    description:
-      "AI phân tích nội dung đánh giá xấu và gắn nhãn nguyên nhân (Vận chuyển / Hàng vỡ / Chất lượng SP) kèm câu trả lời gợi ý — luôn chờ người duyệt trước khi gửi.",
-    enabled: true,
-  },
-  {
-    id: "chat-copilot",
-    icon: MessageSquare,
-    title: "AI Copilot trong khung chat",
-    description:
-      "Gợi ý câu trả lời theo ngữ cảnh hội thoại và đơn hàng liên quan; nhân viên bấm một nút để dùng.",
-    enabled: true,
-  },
-  {
-    id: "alert-bad-review",
-    icon: BellRing,
-    title: "Cảnh báo đánh giá tiêu cực",
-    description:
-      "Đánh giá 1–2 sao vừa xuất hiện sẽ bắn thông báo ngay cho đội CSKH để xử lý trong giờ vàng.",
-    enabled: false,
-  },
-];
 
 /** Thứ tự hiển thị + chấm màu mức độ rủi ro khi bật tự động từng mức sao. */
 const STAR_SWITCH_ROWS: { star: StarLevel; dot: string; note?: string }[] = [
-  { star: "5", dot: "🟢" },
-  { star: "4", dot: "🟢" },
-  { star: "3", dot: "🟡", note: "Nên duyệt tay nếu shop hay có khiếu nại." },
-  { star: "2", dot: "🔴", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
-  { star: "1", dot: "🔴", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
+  { star: "5", dot: "bg-emerald-500" },
+  { star: "4", dot: "bg-emerald-500" },
+  { star: "3", dot: "bg-amber-400", note: "Nên duyệt tay nếu shop hay có khiếu nại." },
+  { star: "2", dot: "bg-red-500", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
+  { star: "1", dot: "bg-red-500", note: "Rủi ro: đánh giá xấu thường cần câu trả lời riêng." },
 ];
 
 /** Hai tab của màn Cấu hình kịch bản AI (pill-tab tự làm — app chưa có ui/tabs). */
@@ -95,9 +59,6 @@ const TAB_ITEMS: { id: AiRulesTab; label: string }[] = [
 ];
 
 export function OperationsAiRulesPage() {
-  const [rules, setRules] = useState(DEFAULT_RULES);
-  const [tone, setTone] = useState("FRIENDLY");
-
   // Tab đang mở. Deep-link ?tab=delivery-fail (chuông + thẻ Trung tâm điều
   // hành trỏ tới) đọc ở effect — search param chỉ có phía client, đọc lúc
   // render đầu sẽ lệch SSR/CSR.
@@ -155,10 +116,6 @@ export function OperationsAiRulesPage() {
     setTemplates(DEFAULT_REPLY_TEMPLATES);
     saveReplyTemplates(DEFAULT_REPLY_TEMPLATES);
     toast.success("Đã khôi phục bộ mẫu câu mặc định.");
-  }
-
-  function toggleRule(id: string, enabled: boolean) {
-    setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled } : r)));
   }
 
   // 5 ô mẫu của mức sao đang chỉnh (đắp chuỗi rỗng cho đủ 5 ô)
@@ -254,8 +211,7 @@ export function OperationsAiRulesPage() {
         </CardContent>
       </Card>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        {/* ----- DANH SÁCH KỊCH BẢN ----- */}
+      <div>
         <div className="space-y-3">
           {/* ===== 5 CÔNG TẮC TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (CẤU HÌNH THẬT) =====
               Thay cho rule mock "tự động trả lời 5 sao" cũ: bật mức nào thì
@@ -270,8 +226,8 @@ export function OperationsAiRulesPage() {
               <CardDescription>
                 Bật mức sao nào, hệ thống tự gửi phản hồi <b>thật</b> sang sàn cho
                 đánh giá mới ở mức đó. Hiệu lực khi trang Phản hồi đánh giá đang
-                mở (tự quét đánh giá mới 5 phút/lần); mức đang tắt vẫn được AI
-                soạn sẵn câu trả lời chờ nhân viên duyệt.
+                mở (tự quét đánh giá mới 5 phút/lần); mức đang tắt vẫn được soạn
+                sẵn câu trả lời chờ nhân viên duyệt.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-1">
@@ -280,14 +236,14 @@ export function OperationsAiRulesPage() {
                   key={star}
                   className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50"
                 >
-                  <span className="mt-0.5 text-sm leading-none">{dot}</span>
+                  <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", dot)} aria-hidden />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-900">
                       Tự động trả lời Đánh giá {star} sao
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Khi bật, AI sẽ tự chọn 1 mẫu câu trong bộ mẫu [{star} sao] để
-                      gửi phản hồi trực tiếp sang sàn.
+                      Khi bật, hệ thống tự chọn 1 mẫu câu trong bộ mẫu [{star} sao]
+                      để gửi phản hồi trực tiếp sang sàn.
                       {note ? <span className="text-amber-700"> {note}</span> : null}
                     </p>
                   </div>
@@ -301,64 +257,7 @@ export function OperationsAiRulesPage() {
               ))}
             </CardContent>
           </Card>
-
-          {rules.map((rule) => (
-            <Card key={rule.id}>
-              <CardContent className="flex items-start gap-3.5 py-4">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-50">
-                  <rule.icon className="size-5 text-violet-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {rule.title}
-                  </p>
-                  <p className="mt-0.5 text-sm text-slate-600">
-                    {rule.description}
-                  </p>
-                </div>
-                <Switch
-                  checked={rule.enabled}
-                  onCheckedChange={(v) => toggleRule(rule.id, v)}
-                  aria-label={`Bật/tắt: ${rule.title}`}
-                />
-              </CardContent>
-            </Card>
-          ))}
         </div>
-
-        {/* ----- GIỌNG ĐIỆU THƯƠNG HIỆU ----- */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Giọng điệu thương hiệu</CardTitle>
-            <CardDescription>
-              AI dùng giọng điệu này cho mọi câu trả lời tự động và gợi ý.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <NativeSelect
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-              aria-label="Chọn giọng điệu"
-            >
-              <option value="FRIENDLY">Thân thiện, gần gũi (mặc định)</option>
-              <option value="FORMAL">Trang trọng, chuyên nghiệp</option>
-              <option value="PLAYFUL">Trẻ trung, có emoji</option>
-            </NativeSelect>
-            <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-3 text-sm text-slate-900">
-              {tone === "FORMAL"
-                ? "Kính chào Quý khách, chúng tôi chân thành cảm ơn Quý khách đã tin tưởng lựa chọn sản phẩm của cửa hàng…"
-                : tone === "PLAYFUL"
-                  ? "Hihi cảm ơn bạn iu đã ủng hộ shop nha 🥰 Có gì cần cứ nhắn shop liền nè!"
-                  : "Chào bạn, shop cảm ơn bạn đã tin tưởng và ủng hộ ạ! Có bất kỳ điều gì cần hỗ trợ bạn cứ nhắn shop ngay nha."}
-            </div>
-            <p className={TEXT_SUB}>
-              Xem trước cách AI mở đầu câu trả lời với giọng điệu đã chọn.
-            </p>
-            <Button className="w-full" disabled>
-              Lưu cấu hình (chờ nối API)
-            </Button>
-          </CardContent>
-        </Card>
       </div>
         </>
       )}

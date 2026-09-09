@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChevronDown,
-  FlaskConical,
   Loader2,
   MessagesSquare,
   Package,
@@ -29,17 +28,14 @@ import {
   buildInjectedContext,
   GENERIC_CHAT_FALLBACK,
   productInfoFromContext,
-  SAMPLE_QUESTIONS,
 } from "@/components/operations/copilot-engine";
 import {
   channelMeta,
-  MOCK_CONVERSATIONS,
-  MOCK_PRODUCTS,
   MOCK_STOCK_SOURCE_PREFERENCE,
-  type MockConversation,
   type MockProductInfo,
   type OpsChannel,
 } from "@/components/operations/mock-data";
+import { humanizeChannelError } from "@/components/operations/channel-error";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { ProductContextCard } from "@/components/operations/product-context-card";
 import { Badge } from "@/components/ui/badge";
@@ -73,8 +69,9 @@ import { cn } from "@/lib/utils";
  *     gửi tin đi thẳng API sàn qua backend /api/operations/*. Ngữ cảnh sản phẩm
  *     cho AI lấy TỪ SÀN (mô tả + thuộc tính + tồn live) — Kho vật lý chỉ còn
  *     là fallback thông số.
- *   · demo — chưa có dữ liệu thật (chưa uỷ quyền, sàn lỗi, hoặc chưa ai nhắn):
- *     rơi về bộ mock cũ để màn hình vẫn trình diễn được đầy đủ luồng.
+ *   · Không có hội thoại (chưa uỷ quyền, sàn lỗi, chưa ai nhắn) → empty state
+ *     trung thực. 09/09/2026: BỎ hẳn chế độ demo/mock — production không còn
+ *     hội thoại giả đứng cạnh khách thật.
  *
  * AI COPILOT chạy 2 tầng:
  *   1. Hội thoại THẬT → gọi Claude API qua /api/operations/copilot-suggest
@@ -83,7 +80,7 @@ import { cn } from "@/lib/utils";
  *      luật copilot-engine.ts. Chat KHÔNG BAO GIỜ phụ thuộc AI để hoạt động.
  */
 
-type ChatMode = "loading" | "real" | "demo";
+type ChatMode = "loading" | "real";
 
 /** Khoá localStorage nhớ trạng thái nút Auto trả lời giữa các phiên. */
 const AUTO_REPLY_KEY = "hubsell_ops_chat_autoreply";
@@ -161,10 +158,6 @@ export function OperationsChatPage() {
   const [productQuery, setProductQuery] = useState("");
   const [productLoading, setProductLoading] = useState(false);
 
-  // ── Chế độ DEMO (bộ mock cũ) ──
-  const [demoConvs, setDemoConvs] = useState<MockConversation[]>(MOCK_CONVERSATIONS);
-  const [activeDemoId, setActiveDemoId] = useState(MOCK_CONVERSATIONS[0].id);
-
   // ── Dùng chung ──
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -239,7 +232,7 @@ export function OperationsChatPage() {
           buyerId: c.buyerId,
           text: GENERIC_CHAT_FALLBACK,
         });
-        toast.success(`🤖 Auto đã trả lời ${c.customer}.`);
+        toast.success(`Đã tự động trả lời ${c.customer}.`);
       } catch {
         // gian lỗi quyền/token — bỏ qua, tin kế tiếp (key mới) sẽ thử lại
       }
@@ -264,25 +257,22 @@ export function OperationsChatPage() {
           );
           setMode("real");
           void maybeAutoReply(r.conversations);
-        } else if (r.channelCount > 0) {
-          // ĐÃ liên kết gian thật → tuyệt đối không đổ hội thoại demo trông
-          // như thật (từng gây hiểu nhầm nick giả là khách thật). Inbox trống
-          // thì hiện đúng trạng thái trống; KHÔNG xoá realConvs đang có — lượt
-          // poll lỗi thoáng qua trả 0 hội thoại không được phép quét sạch UI.
+        } else {
+          // Inbox trống hoặc chưa liên kết gian nào → empty state trung thực.
+          // KHÔNG xoá realConvs đang có — lượt poll lỗi thoáng qua trả 0 hội
+          // thoại không được phép quét sạch UI.
           setMode("real");
-        } else if (opts?.initial) {
-          setMode("demo");
         }
       } catch (err) {
         if (opts?.initial) {
           // 401 đã bị OperationsFrame đẩy về /login; lỗi khác (NO_CHANNEL,
-          // mạng, backend tắt) → demo để trang vẫn dùng được.
+          // mạng, backend tắt) → empty state kèm dòng lỗi tiếng người.
           if (err instanceof ApiError && err.status !== 401) {
             setChannelErrors([
               { channelId: "", shopName: "Hệ thống", message: err.message },
             ]);
           }
-          setMode("demo");
+          setMode("real");
         }
         // Poll nền lỗi thoáng qua → giữ nguyên dữ liệu đang có, lượt sau thử lại
       }
@@ -294,7 +284,7 @@ export function OperationsChatPage() {
     void refreshConversations({ initial: true });
   }, [refreshConversations]);
 
-  // Polling inbox mỗi 30s — chạy cả ở chế độ demo để có khách nhắn là bắt được
+  // Polling inbox mỗi 30s
   useEffect(() => {
     if (mode === "loading") return;
     const iv = setInterval(() => void refreshConversations(), 30_000);
@@ -302,7 +292,6 @@ export function OperationsChatPage() {
   }, [mode, refreshConversations]);
 
   const activeReal = realConvs.find((c) => c.id === activeRealId) ?? null;
-  const activeDemo = demoConvs.find((c) => c.id === activeDemoId) ?? demoConvs[0];
 
   // ── Nạp tin nhắn + ngữ cảnh SP của hội thoại thật đang mở ──
   const loadRealMessages = useCallback(
@@ -402,20 +391,13 @@ export function OperationsChatPage() {
   // ── Ghim SKU làm bối cảnh CHÍNH cho AI Copilot (nút ✨ trên widget Cột 3)
   // — thắng sản phẩm suy ra từ hội thoại; đổi hội thoại là bỏ ghim. ──
   const [copilotPinned, setCopilotPinned] = useState<MockProductInfo | null>(null);
-  useEffect(() => setCopilotPinned(null), [activeRealId, activeDemoId]);
+  useEffect(() => setCopilotPinned(null), [activeRealId]);
 
   // ── Hợp nhất dữ liệu cho phần render ──
   const isReal = mode === "real";
   const product: MockProductInfo | undefined =
-    copilotPinned ??
-    (isReal
-      ? realProduct ?? undefined
-      : activeDemo.productSku
-        ? MOCK_PRODUCTS[activeDemo.productSku]
-        : undefined);
-  const activeChannel: OpsChannel = isReal
-    ? (activeReal?.channelName ?? "SHOPEE")
-    : activeDemo.channel;
+    copilotPinned ?? realProduct ?? undefined;
+  const activeChannel: OpsChannel = activeReal?.channelName ?? "SHOPEE";
 
   /**
    * Gửi thẻ sản phẩm cho khách:
@@ -486,35 +468,32 @@ export function OperationsChatPage() {
   function handleLoadToCopilot() {
     if (!product) return;
     setCopilotPinned(product);
-    toast.success(`✨ AI Copilot sẽ tư vấn theo ${product.sku} trong hội thoại này.`);
+    toast.success(`Gợi ý trả lời sẽ bám theo ${product.sku} trong hội thoại này.`);
   }
 
   // Câu khách nhắn gần nhất — đầu vào chung cho cả engine luật lẫn LLM thật
   const lastCustomerText = useMemo(() => {
-    const raw = isReal
-      ? [...(activeReal ? realMessages[activeReal.id] ?? [] : [])]
-          .reverse()
-          .find((m) => m && !m.fromShop)?.text ?? ""
-      : [...activeDemo.messages].reverse().find((m) => m.from === "CUSTOMER")?.text ??
-        "";
+    const raw =
+      [...(activeReal ? realMessages[activeReal.id] ?? [] : [])]
+        .reverse()
+        .find((m) => m && !m.fromShop)?.text ?? "";
     return typeof raw === "string" ? raw : "";
-  }, [isReal, activeReal, realMessages, activeDemo]);
+  }, [activeReal, realMessages]);
 
   const ruleSuggestion = useMemo(() => {
     // Bọc TOÀN BỘ đường sinh gợi ý: một payload dị (text undefined, chart
     // hỏng…) làm engine ném lỗi thì copilot rơi về câu chung, chat KHÔNG sập.
     try {
-      const fallback = isReal ? GENERIC_CHAT_FALLBACK : activeDemo.aiSuggestion;
       return buildAiSuggestion(
         product,
         lastCustomerText,
-        fallback,
+        GENERIC_CHAT_FALLBACK,
         MOCK_STOCK_SOURCE_PREFERENCE
       );
     } catch {
       return { text: GENERIC_CHAT_FALLBACK, intent: "GENERAL" as const };
     }
-  }, [isReal, activeDemo, product, lastCustomerText]);
+  }, [product, lastCustomerText]);
 
   // ── AI Copilot THẬT (Claude API) — chỉ hội thoại thật ──
   // Debounce 400ms + đánh số lượt gọi để vứt kết quả cũ về muộn; backend trả
@@ -559,33 +538,6 @@ export function OperationsChatPage() {
   async function handleSend() {
     const text = draft.trim();
     if (!text || sending) return;
-    if (!isReal) {
-      // Nối tin vào khung chat như thật — chỉ toast mà không hiện bong bóng
-      // khiến người dùng tưởng gửi thất bại
-      const convId = activeDemo.id;
-      setDemoConvs((prev) =>
-        prev.map((c) =>
-          c.id === convId
-            ? {
-                ...c,
-                lastMessage: text,
-                messages: [
-                  ...c.messages,
-                  {
-                    id: `sent-${c.messages.length + 1}`,
-                    from: "SHOP" as const,
-                    text,
-                    time: "Vừa xong",
-                  },
-                ],
-              }
-            : c
-        )
-      );
-      setDraft("");
-      toast.success("Đã gửi tin nhắn (demo — chưa nối gian hàng thật).");
-      return;
-    }
     if (!activeReal) return;
     setSending(true);
     try {
@@ -659,65 +611,7 @@ export function OperationsChatPage() {
     }
   }
 
-  /** Giả lập khách nhắn (CHỈ demo) — engine sinh gợi ý mới ngay; đang bật
-   *  Auto trả lời thì shop tự nhắn lại sau ~1 giây, demo đúng luồng thật. */
-  function simulateCustomer(text: string) {
-    const convId = activeDemo.id;
-    setDemoConvs((prev) =>
-      prev.map((c) =>
-        c.id === convId
-          ? {
-              ...c,
-              lastMessage: text,
-              messages: [
-                ...c.messages,
-                {
-                  id: `sim-${c.messages.length + 1}`,
-                  from: "CUSTOMER" as const,
-                  text,
-                  time: "Vừa xong",
-                },
-              ],
-            }
-          : c
-      )
-    );
-
-    if (!autoReplyRef.current) return;
-    const demoProduct = activeDemo.productSku
-      ? MOCK_PRODUCTS[activeDemo.productSku]
-      : undefined;
-    const reply = buildAiSuggestion(
-      demoProduct,
-      text,
-      activeDemo.aiSuggestion,
-      MOCK_STOCK_SOURCE_PREFERENCE
-    ).text;
-    setTimeout(() => {
-      setDemoConvs((prev) =>
-        prev.map((c) =>
-          c.id === convId
-            ? {
-                ...c,
-                lastMessage: reply,
-                messages: [
-                  ...c.messages,
-                  {
-                    id: `auto-${c.messages.length + 1}`,
-                    from: "SHOP" as const,
-                    text: reply,
-                    time: "Vừa xong",
-                  },
-                ],
-              }
-            : c
-        )
-      );
-      toast.success("🤖 Auto đã trả lời khách (demo).");
-    }, 900);
-  }
-
-  // ── View model danh sách hội thoại (chung 2 chế độ) ──
+  // ── View model danh sách hội thoại ──
   // needsReply (nghiệp vụ "Chưa trả lời"): tin CUỐI CÙNG là của KHÁCH → ca này
   // đang chờ shop. Với hội thoại thật chưa tải tin nhắn thì dùng unread > 0
   // (sàn báo có tin chưa đọc = chắc chắn khách vừa nhắn).
@@ -743,25 +637,7 @@ export function OperationsChatPage() {
           toggleStar: () => toggleFlag(c.id, "starred"),
         };
       })
-    : demoConvs.map((c) => {
-        const flags = convFlags[c.id] ?? {};
-        const last = c.messages[c.messages.length - 1];
-        return {
-          key: c.id,
-          customer: c.customer,
-          channel: c.channel,
-          lastMessage: c.lastMessage,
-          time: c.time,
-          unread: c.unread,
-          active: c.id === activeDemoId,
-          pinned: flags.pinned === true,
-          starred: flags.starred === true,
-          needsReply: last ? last.from === "CUSTOMER" : false,
-          select: () => setActiveDemoId(c.id),
-          togglePin: () => toggleFlag(c.id, "pinned"),
-          toggleStar: () => toggleFlag(c.id, "starred"),
-        };
-      });
+    : [];
 
   // Lọc (sàn → trạng thái → tìm kiếm) rồi GHIM LÊN ĐẦU — sort ổn định nên
   // trong từng nhóm vẫn giữ thứ tự tin mới nhất trước
@@ -794,25 +670,18 @@ export function OperationsChatPage() {
           itemId: m.itemId ?? null,
           imageUrl: m.imageUrl ?? null,
         }))
-    : activeDemo.messages.map((m) => ({
-        key: m.id,
-        fromShop: m.from === "SHOP",
-        text: m.text,
-        time: m.time,
-        itemId: null as string | null,
-        imageUrl: null as string | null,
-      }));
+    : [];
 
-  const headerCustomer = isReal ? activeReal?.customer ?? "" : activeDemo.customer;
-  const headerShop = isReal ? activeReal?.shopName ?? "" : activeDemo.shop;
-  const activeKey = isReal ? activeReal?.id ?? null : activeDemoId;
+  const headerCustomer = activeReal?.customer ?? "";
+  const headerShop = activeReal?.shopName ?? "";
+  const activeKey = activeReal?.id ?? null;
   const activeFlags = (activeKey && convFlags[activeKey]) || {};
 
   // Khung chat đậu ở tin mới nhất khi ĐỔI hội thoại hoặc khi người dùng đang
   // ở gần đáy mà có tin mới. Đang kéo LÊN đọc tin cũ thì giữ nguyên vị trí —
   // polling 15s/tin mới không được giật người dùng xuống đáy nữa.
   useEffect(() => {
-    const key = isReal ? activeRealId : activeDemoId;
+    const key = activeRealId;
     const convChanged = prevActiveKeyRef.current !== key;
     prevActiveKeyRef.current = key;
     const box = messagesBoxRef.current;
@@ -820,7 +689,7 @@ export function OperationsChatPage() {
       !box || box.scrollHeight - box.scrollTop - box.clientHeight < 120;
     if (convChanged || nearBottom)
       messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messageItems.length, activeRealId, activeDemoId, isReal]);
+  }, [messageItems.length, activeRealId]);
 
   if (mode === "loading") {
     return (
@@ -840,17 +709,7 @@ export function OperationsChatPage() {
       {/* ===== NHÃN NGUỒN DỮ LIỆU + CÔNG TẮC AUTO + TRẠNG THÁI TỪNG GIAN ===== */}
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Badge
-            variant="outline"
-            className={
-              isReal
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-violet-200 bg-violet-50 text-violet-700"
-            }
-          >
-            {isReal ? "Dữ liệu thật từ sàn" : "Demo — chưa có hội thoại thật"}
-          </Badge>
-          {/* Công tắc auto trả lời — dùng được ở cả hai chế độ.
+          {/* Công tắc auto trả lời.
               KHÔNG bọc <label>: label dội thêm một click vào control con làm
               switch bật-rồi-tắt trong một lần bấm; chữ bên cạnh tự xử lý click. */}
           <div className="flex items-center gap-2">
@@ -864,7 +723,7 @@ export function OperationsChatPage() {
               className="text-sm text-slate-900"
               onClick={() => toggleAutoReply(!autoReply)}
             >
-              🤖 Auto trả lời tin mới
+              Tự động trả lời tin mới
             </button>
           </div>
           {autoReply && (
@@ -876,22 +735,22 @@ export function OperationsChatPage() {
         {/* Trạng thái từng gian: phân biệt rõ "lỗi" với "OK nhưng 0 hội thoại" */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {channelStats.map((s) => (
-            <span key={s.channelId} className={cn(TEXT_SUB, "text-emerald-600")}>
-              ✓ {s.shopName} ({channelMeta(s.channelName).label}): kết nối OK —{" "}
-              {s.count} hội thoại
+            <span key={s.channelId} className={TEXT_SUB}>
+              {s.shopName} ({channelMeta(s.channelName).label}) · {s.count} hội thoại
             </span>
           ))}
-          {channelErrors.map((e) => (
-            <span key={`${e.channelId}-${e.message}`} className={cn(TEXT_SUB, "text-amber-700")}>
-              ⚠️ {e.shopName}: {e.message}
-            </span>
-          ))}
-          {!isReal && channelStats.length > 0 && (
-            <span className={TEXT_SUB}>
-              Inbox tự làm mới mỗi 30 giây — có khách nhắn là chuyển sang dữ liệu
-              thật, không cần tải lại trang.
-            </span>
-          )}
+          {channelErrors.map((e) => {
+            const h = humanizeChannelError(e, "chat");
+            return (
+              <span
+                key={`${e.channelId}-${e.message}`}
+                className={cn(TEXT_SUB, "text-amber-700")}
+                title={h.detail}
+              >
+                {h.text}
+              </span>
+            );
+          })}
         </div>
       </div>
 
@@ -908,7 +767,7 @@ export function OperationsChatPage() {
             statusFilter={chatStatusFilter}
             onStatusFilter={setChatStatusFilter}
             emptyText={
-              isReal && rawConvItems.length === 0
+              rawConvItems.length === 0
                 ? "Chưa có khách nào nhắn tin tới gian hàng."
                 : undefined
             }
@@ -921,7 +780,7 @@ export function OperationsChatPage() {
           <div className="flex min-h-0 min-w-0 flex-col">
             {/* Gian thật đã liên kết nhưng CHƯA có khách nhắn → empty state
                 trung thực, không đổ hội thoại demo trông như thật nữa */}
-            {isReal && !activeReal ? (
+            {!activeReal ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
                 <MessagesSquare className="size-10 text-slate-300" />
                 <p className="text-sm text-slate-900">
@@ -946,12 +805,6 @@ export function OperationsChatPage() {
                 </p>
               </div>
               <div className="ml-auto flex items-center gap-1.5">
-                {!isReal && activeDemo.orderCode && (
-                  <Badge variant="outline" className="gap-1">
-                    <Package className="size-3" />
-                    Đơn {activeDemo.orderCode}
-                  </Badge>
-                )}
                 {/* Ghim / Theo dõi hội thoại đang mở */}
                 {activeKey && (
                   <>
@@ -1142,26 +995,6 @@ export function OperationsChatPage() {
               <div ref={messagesEndRef} aria-hidden />
             </div>
 
-            {/* Thanh giả lập khách nhắn — CHỈ demo */}
-            {!isReal && (
-              <div className="flex flex-wrap items-center gap-1.5 border-t bg-muted/40 px-4 py-2">
-                <span className={cn(TEXT_SUB, "flex items-center gap-1")}>
-                  <FlaskConical className="size-3.5" />
-                  Giả lập khách nhắn:
-                </span>
-                {SAMPLE_QUESTIONS.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => simulateCustomer(q)}
-                    className="rounded-full border bg-card px-2.5 py-1 text-xs text-slate-700 transition-colors hover:border-violet-300 hover:text-violet-700"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* Widget AI Copilot */}
             <div className="border-t bg-violet-50/60 px-4 py-3">
               <div className="flex items-start gap-2.5">
@@ -1169,14 +1002,14 @@ export function OperationsChatPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-xs font-medium text-violet-700">
-                      AI Copilot gợi ý
+                      Gợi ý trả lời
                     </p>
                     {copilotPinned && (
                       <Badge
                         variant="outline"
                         className="border-violet-300 bg-violet-100 font-mono text-violet-700"
                       >
-                        📌 {copilotPinned.sku}
+                        Ghim {copilotPinned.sku}
                       </Badge>
                     )}
                     {/* Nguồn gợi ý: Claude API thật / đang sinh — không badge = engine luật */}
@@ -1185,7 +1018,7 @@ export function OperationsChatPage() {
                         variant="outline"
                         className="border-violet-300 bg-violet-100 text-violet-700"
                       >
-                        <Sparkles className="size-3" /> Claude AI
+                        <Sparkles className="size-3" /> Gợi ý AI
                       </Badge>
                     ) : (
                       llmLoading && (

@@ -360,6 +360,8 @@ export function ShopeeAdsPage({
   );
 
   const assistant = data?.assistant ?? null;
+  // Cả kỳ không có đồng chi phí/GMV nào → nói thẳng thay vì vẽ trục "4 ₫, 3 ₫…".
+  const seriesEmpty = series.length > 0 && series.every((p) => !p.spend && !p.broadGmv);
 
   async function decideCampaign(decision: ShopeeAssistantDecision) {
     const campaign = data?.campaigns.find((c) => c.id === detailId);
@@ -647,6 +649,12 @@ export function ShopeeAdsPage({
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {seriesEmpty ? (
+                <div className="flex h-40 items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                  Chưa có chi tiêu quảng cáo trong {daysLabel(days)} — bật chiến
+                  dịch trên Shopee rồi bấm Đồng bộ để xem biểu đồ.
+                </div>
+              ) : (
               <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={series}>
@@ -696,6 +704,7 @@ export function ShopeeAdsPage({
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </CardContent>
           </Card>
         )}

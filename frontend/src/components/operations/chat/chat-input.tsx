@@ -106,7 +106,7 @@ export function ChatInput({
           title="Đổ câu gợi ý của AI Copilot vào ô nhập"
         >
           <Sparkles className="size-4" />
-          Dùng gợi ý AI
+          Dùng gợi ý
         </Button>
         <Button
           size="sm"

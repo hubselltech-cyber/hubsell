@@ -130,10 +130,21 @@ export function SyncAlertBanner() {
               className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-rose-100 bg-card p-3"
             >
               <div className="min-w-0 flex-1">
-                <p className="text-sm text-slate-800">{plain}</p>
+                {/* Câu giải thích đã nằm ở tiêu đề khối — từng dòng chỉ nêu
+                    SKU nào, gian nào; cảnh báo cấp gian (không có SKU) mới
+                    in nguyên câu của backend. */}
+                <p className="text-sm text-slate-900">
+                  {alert.channelSku ? (
+                    <>
+                      SKU <span className="font-medium">{alert.channelSku}</span> →{" "}
+                      {alert.shopName}
+                    </>
+                  ) : (
+                    plain
+                  )}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {alert.shopName}
-                  {alert.channelSku ? ` · SKU ${alert.channelSku}` : ""}
+                  {alert.channelSku ? "" : alert.shopName}
                   {alert.hubsellAvailable !== null
                     ? ` · Hubsell muốn ${formatNumber(alert.hubsellAvailable)}`
                     : ""}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Activity, ShieldCheck } from "lucide-react";
+import { Activity } from "lucide-react";
 
 import {
   Card,
@@ -11,7 +11,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import {
   fetchCommandCenterState,
   fetchSyncAlerts,
@@ -29,16 +28,10 @@ import { AlertCard } from "./alert-card";
 import { ActionModal } from "./action-modal";
 import { ActivityFeed } from "./activity-feed";
 import { ChatDrawer } from "./chat-drawer";
-import {
-  MOCK_ACTIVITY,
-  MOCK_ALERTS,
-  MOCK_CHAT,
-  nextId,
-} from "./mock-service";
+import { nextId } from "./mock-service";
 import {
   canAct,
   canView,
-  OPS_ROLES,
   ROLE_META,
   visibleTags,
   type ActivityItem,
@@ -111,18 +104,12 @@ function opsDtoToAlert(dto: OpsAlertDTO): OpsAlert {
   };
 }
 
-/** Gom seed chat theo alertId để tra cứu nhanh. */
-function seedChat(): Record<string, ChatMessage[]> {
-  const map: Record<string, ChatMessage[]> = {};
-  for (const m of MOCK_CHAT) (map[m.alertId] ??= []).push(m);
-  return map;
-}
-
-// ─────────── HỢP NHẤT SEED (mock) VỚI DỮ LIỆU ĐÃ LƯU Ở BACKEND ───────────
+// ─────────── DỮ LIỆU ĐÃ LƯU Ở BACKEND ───────────
 //
-// Cảnh báo + tin/nhật ký "mồi" là nội dung demo cố định, sống ở frontend. Backend
-// chỉ trả về những gì NGƯỜI DÙNG tạo thêm. Khi load/F5 ta ghép hai nguồn lại để
-// vừa giữ khung demo, vừa khôi phục đúng thao tác đã lưu.
+// 09/09/2026: bỏ hẳn bộ thẻ/chat/nhật ký "mồi" (MOCK_ALERTS/MOCK_CHAT/
+// MOCK_ACTIVITY) và bộ chuyển vai trò giả lập — khối này giờ CHỈ hiện cảnh báo
+// thật (đồng bộ tồn Shopee + bảng OpsAlert) và những gì người dùng đã thao tác.
+// Production không còn thẻ trình diễn nào đứng cạnh sự cố thật.
 
 function chatDtoToMessage(dto: OpsChatDTO): ChatMessage {
   return {
@@ -135,9 +122,9 @@ function chatDtoToMessage(dto: OpsChatDTO): ChatMessage {
   };
 }
 
-/** seed chat + tin đã lưu (đã lưu xếp sau seed, theo thứ tự thời gian tăng dần). */
+/** Tin đã lưu gom theo alertId (thứ tự thời gian tăng dần). */
 function mergeChat(persisted: OpsChatDTO[]): Record<string, ChatMessage[]> {
-  const map = seedChat();
+  const map: Record<string, ChatMessage[]> = {};
   for (const dto of persisted) {
     (map[dto.alertId] ??= []).push(chatDtoToMessage(dto));
   }
@@ -148,18 +135,17 @@ function activityDtoToItem(dto: OpsActivityDTO): ActivityItem {
   return { id: dto.id, tag: dto.tag as AlertTag, message: dto.message, at: dto.at };
 }
 
-/** nhật ký đã lưu + seed, sắp mới nhất lên đầu (đã lưu có mốc thật nên tự lên trên). */
+/** Nhật ký đã lưu, sắp mới nhất lên đầu. */
 function mergeActivities(persisted: OpsActivityDTO[]): ActivityItem[] {
-  return [...persisted.map(activityDtoToItem), ...MOCK_ACTIVITY].sort((a, b) =>
-    b.at.localeCompare(a.at)
-  );
+  return persisted.map(activityDtoToItem).sort((a, b) => b.at.localeCompare(a.at));
 }
 
 export function CommandCenter() {
   const router = useRouter();
-  // Vai trò vận hành giả lập — bộ chuyển ở góc để thử nghiệm RBAC.
-  const [role, setRole] = useState<OpsRole>("ADMIN");
-  // Cảnh báo THẬT từ luồng đồng bộ tồn Shopee — đứng cạnh các thẻ demo.
+  // Vai trò vận hành: khối này chỉ hiện với chủ shop (seesFinancials) nên cố
+  // định ADMIN; phân quyền nhân viên thật nằm ở cây quyền auth, không ở đây.
+  const role: OpsRole = "ADMIN";
+  // Cảnh báo THẬT từ luồng đồng bộ tồn Shopee.
   const [syncAlerts, setSyncAlerts] = useState<OpsAlert[]>([]);
   // Cảnh báo THẬT từ bảng OpsAlert (detector cháy hàng / mất kết nối / đơn lỗ /
   // chênh phí ship) — backend tự đóng khi điều kiện hết.
@@ -167,14 +153,14 @@ export function CommandCenter() {
   // Mốc lần mở TRƯỚC — cảnh báo phát sinh sau mốc này được gắn nhãn "Mới".
   const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Set<string>>(new Set());
-  const [chat, setChat] = useState<Record<string, ChatMessage[]>>(seedChat);
-  const [activities, setActivities] = useState<ActivityItem[]>(MOCK_ACTIVITY);
+  const [chat, setChat] = useState<Record<string, ChatMessage[]>>({});
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [activityFilter, setActivityFilter] = useState<AlertTag | "all">("all");
   const [openAlertId, setOpenAlertId] = useState<string | null>(null);
   // Cảnh báo đang mở pop-up xử lý nhanh
   const [actionAlertId, setActionAlertId] = useState<string | null>(null);
 
-  // Nạp trạng thái đã lưu (đã xử lý / chat / nhật ký) rồi ghép vào seed demo.
+  // Nạp trạng thái đã lưu (đã xử lý / chat / nhật ký / cảnh báo OpsAlert).
   // Cũng dùng để hoà giải lại khi một thao tác ghi backend thất bại.
   const reloadState = useCallback(async () => {
     try {
@@ -185,7 +171,7 @@ export function CommandCenter() {
       setOpsAlerts((s.opsAlerts ?? []).map(opsDtoToAlert));
       setLastSeenAt(s.lastSeenAt ?? null);
     } catch {
-      // Không tải được thì giữ nguyên seed đang hiển thị — không làm vỡ Dashboard.
+      // Không tải được thì giữ nguyên danh sách đang hiển thị — không làm vỡ Dashboard.
     }
   }, []);
 
@@ -194,7 +180,7 @@ export function CommandCenter() {
       const list = await fetchSyncAlerts();
       setSyncAlerts(list.map(syncAlertToOps));
     } catch {
-      // Lỗi tải cảnh báo thật không được làm vỡ khối demo — giữ danh sách cũ.
+      // Lỗi tải cảnh báo tồn không được làm vỡ khối — giữ danh sách cũ.
     }
   }, []);
 
@@ -209,22 +195,17 @@ export function CommandCenter() {
 
   const tags = visibleTags(role);
 
-  // Cảnh báo thật đứng TRƯỚC thẻ demo (cùng khuôn OpsAlert, lọc RBAC như nhau).
-  const allAlerts = [...syncAlerts, ...opsAlerts, ...MOCK_ALERTS];
+  const allAlerts = [...syncAlerts, ...opsAlerts];
 
   /** Cảnh báo phát sinh SAU lần mở trước → nhãn "Mới" (mốc null = lần đầu, bỏ qua). */
   const isNewAlert = (a: OpsAlert) =>
     lastSeenAt !== null && a.createdAt > lastSeenAt;
 
-  // Cảnh báo trong tầm nhìn của vai trò: chưa xử lý lên trước, rồi THẬT trước
-  // DEMO (sự cố thật luôn đứng trên thẻ trình diễn bất kể mức độ), rồi mức độ.
+  // Chưa xử lý lên trước, rồi mức độ, rồi mới nhất.
   const alerts = allAlerts.filter((a) => canView(role, a.tag)).sort((a, b) => {
     const byResolved =
       Number(resolved.has(a.id)) - Number(resolved.has(b.id));
     if (byResolved !== 0) return byResolved;
-    const byDemo =
-      Number(a.id.startsWith("al-")) - Number(b.id.startsWith("al-"));
-    if (byDemo !== 0) return byDemo;
     const bySev = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
     if (bySev !== 0) return bySev;
     return b.createdAt.localeCompare(a.createdAt);
@@ -403,49 +384,21 @@ export function CommandCenter() {
 
   return (
     <section className="space-y-3">
-      {/* Đầu khối: tiêu đề + bộ chuyển vai trò giả lập */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-            Trung tâm điều hành
-          </h2>
-          <p className="text-sm text-slate-500">
-            Cảnh báo &amp; nhật ký vận hành, lọc theo vai trò phụ trách.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="hidden items-center gap-1 text-xs text-slate-400 sm:flex">
-            <ShieldCheck className="size-3.5" /> Vai trò (demo)
-          </span>
-          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
-            {OPS_ROLES.map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRole(r)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  role === r
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                )}
-              >
-                {ROLE_META[r].label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Đầu khối */}
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          Trung tâm điều hành
+        </h2>
+        <p className="text-sm text-slate-500">
+          Sự cố cần xử lý từ đồng bộ tồn, đơn hàng và kết nối sàn — kèm nhật ký
+          ai đã làm gì.
+        </p>
       </div>
 
       {/* Split view 70/30 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[7fr_3fr] lg:items-stretch">
-        {/* CỘT TRÁI — bảng cảnh báo. pt-0 để dải accent gradient nằm sát mép
-            trên; overflow-hidden sẵn có của Card cắt dải màu ôm khít góc bo. */}
-        <Card className="flex flex-col pt-0 lg:h-[560px]">
-          <div
-            aria-hidden
-            className="h-1 w-full shrink-0 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-500"
-          />
+        {/* CỘT TRÁI — bảng cảnh báo */}
+        <Card className="flex flex-col lg:h-[560px]">
           <CardHeader className="border-b border-slate-100 pb-3">
             <CardTitle className="flex items-center gap-2">
               Cảnh báo cần xử lý
@@ -459,7 +412,8 @@ export function CommandCenter() {
           <CardContent className="flex-1 space-y-3 overflow-y-auto">
             {alerts.length === 0 ? (
               <p className="pt-16 text-center text-sm text-slate-400">
-                Không có cảnh báo nào thuộc phạm vi của vai trò này.
+                Không có sự cố nào cần xử lý — các gian hàng đang đồng bộ bình
+                thường.
               </p>
             ) : (
               alerts.map((a) => (

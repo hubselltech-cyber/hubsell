@@ -230,12 +230,12 @@ function PipelineStrip({ pipeline }: { pipeline: AnalyticsResponse["pipeline"] }
         {/* Nhóm cảnh báo — chỉ nhuộm màu khi thật sự có đơn cần xử lý */}
         <div className="ml-auto flex items-center gap-1 border-l border-slate-200 pl-2">
           <PipelineStep
-            label="⚠️ Hoàn / Trả hàng"
+            label="Hoàn / Trả hàng"
             count={pipeline.RETURNING}
             countClassName={pipeline.RETURNING > 0 ? "text-amber-600" : ""}
           />
           <PipelineStep
-            label="🚫 Đơn hủy"
+            label="Đơn hủy"
             count={pipeline.CANCELLED}
             countClassName={pipeline.CANCELLED > 0 ? "text-red-500" : ""}
           />

@@ -88,11 +88,18 @@ function ConnectDialog({
   existing,
   onDone,
   initialLazadaCode,
+  allowTiktok,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   existing: Channel[];
   onDone: () => void;
+  /**
+   * TikTok Shop mới chạy sandbox nội bộ (chưa có hàng đợi webhook, chưa test
+   * dữ liệu thật) — chỉ quản trị nền tảng được chọn; khách thấy "sắp ra mắt",
+   * nhất quán với landing.
+   */
+  allowTiktok: boolean;
   /** Code Lazada do callback Render bật về (?lazada=code) — điền sẵn vào ô. */
   initialLazadaCode?: string;
 }) {
@@ -218,11 +225,15 @@ function ConnectDialog({
               value={channelName}
               onChange={(e) => setChannelName(e.target.value as ChannelName)}
             >
-              {CONNECTABLE.map((n) => (
-                <option key={n} value={n}>
-                  {CHANNEL_META[n].label}
-                </option>
-              ))}
+              {CONNECTABLE.map((n) => {
+                const soon = n === "TIKTOK" && !allowTiktok;
+                return (
+                  <option key={n} value={n} disabled={soon}>
+                    {CHANNEL_META[n].label}
+                    {soon ? " (sắp ra mắt)" : ""}
+                  </option>
+                );
+              })}
             </NativeSelect>
             {usedNames.size > 0 && (
               <p className={TEXT_SUB}>
@@ -569,6 +580,9 @@ export default function ChannelsPage() {
   // Code Lazada do callback Render bật về máy dev (?lazada=code&code=...)
   const [lazadaPrefill, setLazadaPrefill] = useState<string | null>(null);
   const [mockFor, setMockFor] = useState<Channel | null>(null);
+  // Quản trị nền tảng mới thấy công cụ thử nghiệm (Giả lập đơn, nối TikTok
+  // sandbox) — khách thường không bao giờ thấy nút "giả lập" trên production.
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [denied, setDenied] = useState(false);
   // Khoá nút khi đang đồng bộ — giá trị dạng `${channelId}:orders|settlements`.
@@ -622,6 +636,7 @@ export default function ChannelsPage() {
       setLoading(false);
       return;
     }
+    setPlatformAdmin(getStoredUser()?.isPlatformAdmin === true);
     load();
   }, [load, router]);
 
@@ -951,7 +966,7 @@ export default function ChannelsPage() {
                                       </Button>
                                     )}
                                   </>
-                                ) : (
+                                ) : platformAdmin ? (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -964,7 +979,7 @@ export default function ChannelsPage() {
                                     <Zap className="size-3.5" />
                                     Giả lập đơn
                                   </Button>
-                                )}
+                                ) : null}
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -1009,6 +1024,7 @@ export default function ChannelsPage() {
       </div>
 
       <ConnectDialog
+        allowTiktok={platformAdmin}
         open={connectOpen}
         onOpenChange={(o) => {
           setConnectOpen(o);

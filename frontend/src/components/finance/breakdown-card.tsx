@@ -114,7 +114,14 @@ export function BreakdownCard({
       </>
     ) : undefined;
 
-  const rows: DashboardCardItem[] = items.map((item) => {
+  // Kỳ không phát sinh voucher/chênh ship/nạp ví… thì 4-5 dòng "− 0 ₫ 0%" chỉ
+  // làm loãng thẻ. Gom các khoản khấu trừ bằng 0 thành MỘT dòng (từ 2 khoản
+  // trở lên), tên từng khoản nằm trong tooltip.
+  const zeroItems = itemsAreDeductions ? items.filter((i) => i.amount === 0) : [];
+  const collapseZero = zeroItems.length >= 2;
+  const shownItems = collapseZero ? items.filter((i) => i.amount !== 0) : items;
+
+  const rows: DashboardCardItem[] = shownItems.map((item) => {
     // Khoản trợ giá (amount âm trong nhóm khấu trừ) là khoản được CỘNG lại
     const isCredit = itemsAreDeductions && item.amount < 0;
 
@@ -157,6 +164,26 @@ export function BreakdownCard({
       tone: rowTone,
     };
   });
+  if (collapseZero) {
+    rows.push({
+      key: "__zero-deductions",
+      label: (
+        <>
+          <span className="min-w-0">{formatNumber(zeroItems.length)} khoản khác</span>
+          <HintIcon
+            hint={`Không phát sinh trong kỳ: ${zeroItems.map((i) => i.label).join(", ")}.`}
+          />
+        </>
+      ),
+      value: (
+        <>
+          − <Money value={0} />
+        </>
+      ),
+      note: "0%",
+      tone: "neutral",
+    });
+  }
 
   return (
     <DashboardCard

@@ -780,8 +780,12 @@ export default function FeeAuditPage() {
           </div>
         )}
 
-        {/* ── Chú thích nguồn số — cùng tinh thần bảng Lãi/Lỗ ── */}
-        <div className={cn(TEXT_SUB, "space-y-1")}>
+        {/* ── Chú thích nguồn số — gập lại, mở khi cần (09/09: bớt chữ dưới bảng) ── */}
+        <details className={cn(TEXT_SUB, "group")}>
+          <summary className="cursor-pointer select-none text-slate-500 hover:text-slate-900">
+            Số liệu lấy từ đâu và nên đọc thế nào
+          </summary>
+          <div className="mt-2 space-y-1">
           <p>
             · Mọi con số lấy từ <b>đối soát thật</b> của sàn (escrow Shopee, sao
             kê Finance Lazada) — trang này không ước lượng gì từ % phí kênh.
@@ -807,7 +811,8 @@ export default function FeeAuditPage() {
             · Cảnh báo tự đẩy lên chuông thông báo sau mỗi nhịp đối soát (mỗi
             giờ) — không cần mở trang này canh.
           </p>
-        </div>
+          </div>
+        </details>
       </div>
     </AppShell>
   );

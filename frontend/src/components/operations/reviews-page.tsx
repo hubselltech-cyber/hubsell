@@ -18,8 +18,6 @@ import {
 } from "@/components/operations/copilot-engine";
 import {
   channelMeta,
-  MOCK_REVIEWS,
-  MOCK_SHOPS,
   REVIEW_TAG_META,
   type OpsChannel,
   type ReviewTag,
@@ -31,6 +29,7 @@ import {
   saveAutoRepliedIds,
   toStarLevel,
 } from "@/components/operations/reply-templates";
+import { humanizeChannelError } from "@/components/operations/channel-error";
 import { OperationsFrame } from "@/components/operations/operations-frame";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -61,9 +60,9 @@ import { cn } from "@/lib/utils";
  *     ngay" và bulk 5 sao GỬI THẬT lên sàn (Shopee reply_comment / Lazada
  *     reply/add). Câu gợi ý sinh rule-based theo nhãn phân loại (thay bằng
  *     LLM thật sau — hợp đồng giữ nguyên).
- *   · demo — chưa có dữ liệu thật: bộ mock cũ, thao tác chỉ đổi state client.
+ *   · Không có đánh giá → empty state (09/09/2026: bỏ hẳn bộ mock/demo).
  *
- * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (cấu hình ở trang Cấu hình kịch bản AI):
+ * TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO (cấu hình ở trang Cấu hình tự động hóa):
  *   trang tự quét đánh giá mới 5 phút/lần; đánh giá THẬT chưa trả lời ở mức
  *   sao đang BẬT cờ autoReplyStars → tự bốc mẫu random + GỬI THẬT lên sàn,
  *   đánh dấu badge "AI Auto"; mức đang TẮT giữ trạng thái chờ duyệt tay (ô
@@ -74,19 +73,19 @@ import { cn } from "@/lib/utils";
  * Bố cục 2 cột: feed đánh giá (trái) + AI Reply Builder sticky (phải).
  */
 
-type PageMode = "loading" | "real" | "demo";
+type PageMode = "loading" | "real";
 type ChannelFilter = "ALL" | "SHOPEE" | "LAZADA" | "TIKTOK";
 type StarFilter = "ALL" | "1" | "2" | "3" | "4" | "5";
 type StatusFilter = "ALL" | "UNREPLIED" | "REPLIED";
 /** WITH_COMMENT = có chữ/ảnh; RATING_ONLY = khách chỉ chấm sao. */
 type ContentFilter = "ALL" | "WITH_COMMENT" | "RATING_ONLY";
 
-/** Dòng đánh giá hợp nhất cho render — demo và real cùng đổ về đây. */
+/** Dòng đánh giá cho render. */
 interface ReviewRow {
   id: string;
   customer: string;
   channel: OpsChannel;
-  /** Khoá lọc gian hàng: demo = shopId mock, real = channelId. */
+  /** Khoá lọc gian hàng = channelId. */
   shopKey: string;
   shopLabel: string;
   /** Tên shop trần (không kèm tên sàn) — đổ vào biến {TEN_SHOP} của mẫu câu. */
@@ -126,29 +125,6 @@ function StarRow({ rating }: { rating: number }) {
       ))}
     </span>
   );
-}
-
-/** Map MOCK_REVIEWS → ReviewRow (chế độ demo). */
-function demoRows(): ReviewRow[] {
-  return MOCK_REVIEWS.map((r) => {
-    const label = MOCK_SHOPS.find((s) => s.id === r.shopId)?.label ?? r.shopId;
-    return {
-    id: r.id,
-    customer: r.customer,
-    channel: r.channel,
-    shopKey: r.shopId,
-    shopLabel: label,
-    // "Shopee — DarkMan Store" → "DarkMan Store"
-    shopName: label.split("—").pop()?.trim() ?? label,
-    productName: r.product,
-    rating: r.rating,
-    content: r.content,
-    replied: r.replied,
-    createdAt: r.createdAt,
-    tag: r.tag,
-    aiSuggestion: r.aiSuggestion,
-    };
-  });
 }
 
 export function OperationsReviewsPage() {
@@ -214,16 +190,14 @@ export function OperationsReviewsPage() {
         );
         setMode("real");
       } else if (initial) {
-        setRows(demoRows());
-        setMode("demo");
+        setMode("real");
       }
     } catch (err) {
       if (initial) {
         if (err instanceof ApiError && err.status !== 401) {
           setChannelErrors([{ channelId: "", shopName: "Hệ thống", message: err.message }]);
         }
-        setRows(demoRows());
-        setMode("demo");
+        setMode("real");
       } // lượt quét định kỳ lỗi → im lặng, giữ dữ liệu cũ chờ nhịp sau
     } finally {
       loadingRef.current = false;
@@ -236,7 +210,6 @@ export function OperationsReviewsPage() {
     return () => clearInterval(timer);
   }, [loadReviews]);
 
-  const isReal = mode === "real";
 
   // Tuỳ chọn lọc gian hàng dựng từ chính dữ liệu đang hiển thị, THU HẸP theo
   // sàn đang chọn (chọn Shopee thì dropdown shop chỉ còn shop Shopee)
@@ -309,7 +282,7 @@ export function OperationsReviewsPage() {
 
   // ── ENGINE TỰ ĐỘNG PHẢN HỒI THEO SỐ SAO ──────────────────────────────────
   // Chạy sau mỗi lượt quét (rows đổi): lọc đánh giá THẬT chưa trả lời ở mức
-  // sao đang BẬT trong cấu hình (trang Cấu hình kịch bản AI) và chưa có trong
+  // sao đang BẬT trong cấu hình (trang Cấu hình tự động hóa) và chưa có trong
   // sổ chống trùng → bốc mẫu random đúng mức sao, GỬI THẬT lên sàn TUẦN TỰ
   // (rate limit Lazada tính toàn app), xong đánh dấu replied + badge AI Auto.
   // Mức sao đang TẮT không đụng tới — giữ "Chưa trả lời" chờ CSKH duyệt tay.
@@ -377,13 +350,6 @@ export function OperationsReviewsPage() {
 
   async function sendReply() {
     if (!selected || sendingReply) return;
-    if (!isReal) {
-      markReplied(new Set([selected.id]));
-      setSelectedId(null);
-      setDraft("");
-      toast.success(`Đã gửi phản hồi tới ${selected.customer} (demo).`);
-      return;
-    }
     setSendingReply(true);
     try {
       await replyOpsReview({
@@ -404,13 +370,6 @@ export function OperationsReviewsPage() {
 
   async function bulkAutoReply() {
     if (bulkTargets.length === 0 || bulkRunning) return;
-    if (!isReal) {
-      markReplied(new Set(bulkTargets.map((r) => r.id)));
-      toast.success(
-        `AI đã tự động trả lời ${formatNumber(bulkTargets.length)} đánh giá 5 sao (demo).`
-      );
-      return;
-    }
     // GỬI THẬT lên sàn — chạy TUẦN TỰ cho nhẹ rate limit; gom kết quả cuối.
     setBulkRunning(true);
     let ok = 0;
@@ -456,21 +415,18 @@ export function OperationsReviewsPage() {
     <OperationsFrame>
       {/* ===== NHÃN NGUỒN DỮ LIỆU + LỖI TỪNG GIAN ===== */}
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className={
-            isReal
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-violet-200 bg-violet-50 text-violet-700"
-          }
-        >
-          {isReal ? "Dữ liệu thật từ sàn" : "Demo — chưa có đánh giá thật"}
-        </Badge>
-        {channelErrors.map((e) => (
-          <span key={`${e.channelId}-${e.message}`} className={cn(TEXT_SUB, "text-amber-700")}>
-            ⚠️ {e.shopName}: {e.message}
-          </span>
-        ))}
+        {channelErrors.map((e) => {
+          const h = humanizeChannelError(e, "reviews");
+          return (
+            <span
+              key={`${e.channelId}-${e.message}`}
+              className={cn(TEXT_SUB, "text-amber-700")}
+              title={h.detail}
+            >
+              {h.text}
+            </span>
+          );
+        })}
       </div>
 
       {/* ===== THẺ THỐNG KÊ TỔNG QUAN ===== */}
@@ -480,7 +436,7 @@ export function OperationsReviewsPage() {
           value={`${fiveStarRate.toFixed(1).replace(".", ",")}%`}
           icon={Star}
           tone="positive"
-          subtitle={isReal ? "Trên dữ liệu đã tải" : "30 ngày gần nhất (demo)"}
+          subtitle="Trên dữ liệu đã tải"
         />
         <StatCard
           label="Chưa trả lời"
@@ -651,11 +607,11 @@ export function OperationsReviewsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Bot className="size-4.5 text-violet-600" />
-                AI Reply Builder
+                Soạn phản hồi
               </CardTitle>
               <CardDescription>
                 Chọn một đánh giá bên trái — AI soạn sẵn câu trả lời CSKH, bạn sửa
-                lại hoặc gửi thẳng{isReal ? " lên sàn" : ""}.
+                lại hoặc gửi thẳng lên sàn.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -724,12 +680,12 @@ export function OperationsReviewsPage() {
                 onClick={bulkAutoReply}
               >
                 {bulkRunning && <Loader2 className="size-4 animate-spin" />}
-                🤖 Tự động trả lời hàng loạt {formatNumber(bulkTargets.length)} đánh giá 5 sao
+                Tự động trả lời hàng loạt {formatNumber(bulkTargets.length)} đánh giá 5 sao
               </Button>
               <p className={cn(TEXT_SUB, "text-center")}>
-                Nút bấm tay này chỉ áp dụng cho đánh giá 5 sao chưa trả lời
-                {isReal ? " — gửi THẬT lên sàn" : ""}. Muốn hệ thống TỰ gửi theo
-                từng mức sao, bật công tắc ở trang Cấu hình kịch bản AI.
+                Nút này chỉ áp dụng cho đánh giá 5 sao chưa trả lời — gửi thẳng
+                lên sàn. Muốn hệ thống tự gửi theo từng mức sao, bật công tắc ở
+                trang Cấu hình tự động hóa.
               </p>
             </CardContent>
           </Card>
