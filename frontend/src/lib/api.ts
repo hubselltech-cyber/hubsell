@@ -1407,9 +1407,27 @@ export interface ShippingOptionGroup {
   defaults: { method: FulfillMethod; addressId?: string; branchId?: string } | null;
 }
 
+export interface ExcludedOrder {
+  orderCode: string;
+  reason: string;
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+}
+
+export interface ShippingOptionsResult {
+  groups: ShippingOptionGroup[];
+  /** Số đơn Chờ xử lý còn trong DB (đã trừ đơn khách chưa thanh toán). */
+  pendingCount: number;
+  /** Đơn bị loại trước khi hỏi sàn — hiện tại chỉ có lý do khách chưa thanh toán. */
+  excluded: ExcludedOrder[];
+  /** Số đơn khách chưa thanh toán trong lựa chọn (09/09) — hộp thoại báo thẳng. */
+  unpaidCount: number;
+}
+
 /** Hỏi sàn phương án vận chuyển cho các gian có đơn đang chọn (chỉ đơn Chờ xử lý). */
 export function fetchShippingOptions(orderIds: string[]) {
-  return apiFetch<{ groups: ShippingOptionGroup[]; pendingCount: number }>(
+  return apiFetch<ShippingOptionsResult>(
     "/api/orders/bulk/shipping-options",
     { method: "POST", body: JSON.stringify({ orderIds }) }
   );

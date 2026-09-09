@@ -26,6 +26,8 @@ import {
   readFulfillDefaults,
   type FulfillChoice,
   type FulfillOrderRef,
+  UNPAID_REASON,
+  humanizeArrangeError,
 } from "../services/fulfillment";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
@@ -547,6 +549,8 @@ const BULK_MAX = 200;
 /** Đọc + kiểm mảng orderIds trong body; trả null khi đã trả lỗi cho client. */
 /** Nhịp giữa hai lần ship_order/pack cùng gian trong một mẻ Chuẩn bị hàng. */
 const ARRANGE_GAP_MS = 300;
+/** Số đơn mẫu tối đa thử khi hỏi sàn phương án vận chuyển cho một gian. */
+const SAMPLE_TRIES = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function readBulkOrderIds(
@@ -623,7 +627,7 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
     const orderIds = readBulkOrderIds(req, res);
     if (!orderIds) return;
 
-    const orders = await prisma.order.findMany({
+    const pendingRows = await prisma.order.findMany({
       where: {
         id: { in: orderIds },
         channel: channelScope(req),
@@ -632,6 +636,7 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
       select: {
         id: true,
         orderCode: true,
+        paymentStatus: true,
         trackingCode: true,
         platformPackageId: true,
         channelId: true,
@@ -639,6 +644,21 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Đơn KHÁCH CHƯA THANH TOÁN: sàn không cho sắp xếp vận chuyển (Seller
+    // Center xếp ở "Chờ xác nhận") — loại ngay ở đây, không hỏi sàn, báo thẳng
+    // cho hộp thoại. Sự cố 09/09: 5 đơn UNPAID lọt vào mẻ, sàn trả lỗi tiếng
+    // Anh "package is not ready to be shipped", chủ shop tưởng Hubsell sót đơn.
+    const excluded = pendingRows
+      .filter((o) => o.paymentStatus === "UNPAID")
+      .map((o) => ({
+        orderCode: o.orderCode,
+        reason: UNPAID_REASON,
+        channelId: o.channelId,
+        channelName: o.channel.channelName,
+        shopName: o.channel.shopName,
+      }));
+    const orders = pendingRows.filter((o) => o.paymentStatus !== "UNPAID");
 
     const groups = new Map<string, { channel: (typeof orders)[number]["channel"]; orders: typeof orders }>();
     for (const o of orders) {
@@ -668,20 +688,28 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
           const opts = await adapter.getShippingOptions(channel, toFulfillRef(list[0]));
           return { ...base, mode: "UNSUPPORTED", note: opts.note };
         }
-        try {
-          const opts = await adapter.getShippingOptions(channel, toFulfillRef(list[0]));
-          return { ...base, ...opts, mode: "PLATFORM" };
-        } catch (err) {
-          return {
-            ...base,
-            mode: "ERROR",
-            note: err instanceof Error ? err.message : "Không hỏi được sàn",
-          };
+        // Hỏi sàn bằng một đơn mẫu; đơn mẫu bị sàn từ chối (vừa được sắp xếp
+        // trên Seller Center, đơn lạ…) thì thử đơn kế tiếp thay vì đánh lỗi cả
+        // gian — trước 09/09 một đơn hỏng là cả gian "sẽ bỏ qua".
+        let lastError = "Không hỏi được sàn";
+        for (const sample of list.slice(0, SAMPLE_TRIES)) {
+          try {
+            const opts = await adapter.getShippingOptions(channel, toFulfillRef(sample));
+            return { ...base, ...opts, mode: "PLATFORM" };
+          } catch (err) {
+            lastError = humanizeArrangeError(err instanceof Error ? err.message : lastError);
+          }
         }
+        return { ...base, mode: "ERROR", note: lastError };
       })
     );
 
-    res.json({ groups: result, pendingCount: orders.length });
+    res.json({
+      groups: result,
+      pendingCount: orders.length,
+      excluded,
+      unpaidCount: excluded.length,
+    });
   } catch (err) {
     next(err);
   }
@@ -711,6 +739,7 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
         id: true,
         orderCode: true,
         shippingStatus: true,
+        paymentStatus: true,
         trackingCode: true,
         platformPackageId: true,
         channelId: true,
@@ -725,8 +754,11 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
     const ready: typeof orders = [];
 
     for (const o of orders) {
-      if (o.shippingStatus === ShippingStatus.PENDING) ready.push(o);
-      else if (o.shippingStatus === ShippingStatus.CANCELLED)
+      if (o.shippingStatus === ShippingStatus.PENDING) {
+        // Khách chưa thanh toán → sàn không nhận ship_order; loại trước, không gọi sàn.
+        if (o.paymentStatus === "UNPAID") skipped.push({ orderCode: o.orderCode, reason: UNPAID_REASON });
+        else ready.push(o);
+      } else if (o.shippingStatus === ShippingStatus.CANCELLED)
         skipped.push({ orderCode: o.orderCode, reason: "Đơn đã hủy" });
       else skipped.push({ orderCode: o.orderCode, reason: "Đơn đã rời trạng thái Chờ xử lý" });
     }
@@ -735,8 +767,12 @@ router.post("/bulk/confirm", async (req: AuthRequest, res, next) => {
     }
 
     if (ready.length === 0) {
+      const unpaid = skipped.filter((s) => s.reason === UNPAID_REASON).length;
       res.status(409).json({
-        error: "Không có đơn nào ở trạng thái Chờ xử lý để chuẩn bị",
+        error:
+          unpaid > 0 && unpaid === skipped.length
+            ? `Loại ${unpaid} đơn chưa chuẩn bị vì khách chưa thanh toán — sàn chưa cho sắp xếp vận chuyển`
+            : "Không có đơn nào ở trạng thái Chờ xử lý để chuẩn bị",
         confirmed: 0,
         confirmedIds: [],
         skipped,

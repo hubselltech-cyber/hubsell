@@ -34,6 +34,7 @@ import {
   type LabelFetchResult,
   type LabelReadiness,
   type ShippingOptionAddress,
+  humanizeArrangeError,
   isNotReadyError,
 } from "./types";
 
@@ -169,7 +170,7 @@ export const shopeeFulfillment: FulfillmentAdapter = {
       }
       return { ok: true, trackingCode, note: built.note };
     } catch (err) {
-      return { ok: false, error: errMessage(err) };
+      return { ok: false, error: humanizeArrangeError(errMessage(err)) };
     }
   },
 

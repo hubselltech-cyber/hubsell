@@ -118,6 +118,32 @@ export interface FulfillmentAdapter {
   fetchLabels(channel: Channel, orders: FulfillOrderRef[]): Promise<LabelFetchResult>;
 }
 
+/**
+ * Lý do loại đơn KHÁCH CHƯA THANH TOÁN khỏi mẻ Chuẩn bị hàng (09/09/2026).
+ * Sàn không cho sắp xếp vận chuyển đơn UNPAID (Seller Center xếp ở "Chờ xác
+ * nhận"); Hubsell biết sẵn paymentStatus nên loại trước, không gọi sàn để rồi
+ * nhận lỗi tiếng Anh khó hiểu. Anh Trung chốt: không tách tab, chỉ báo thẳng.
+ */
+export const UNPAID_REASON = "Khách chưa thanh toán — sàn chưa cho chuẩn bị";
+
+/**
+ * Dịch lỗi sàn hay gặp khi sắp xếp vận chuyển sang tiếng người. Lỗi lạ giữ
+ * nguyên để còn tra được.
+ */
+export function humanizeArrangeError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("ready to be shipped") || m.includes("package is not ready")) {
+    return "Sàn báo đơn chưa sẵn sàng giao — thường do khách chưa thanh toán hoặc đơn đã được sắp xếp vận chuyển trên Seller Center rồi";
+  }
+  if (m.includes("already") && (m.includes("ship") || m.includes("arrange"))) {
+    return "Đơn đã được sắp xếp vận chuyển trên sàn rồi";
+  }
+  if (m.includes("invalid_access_token") || m.includes("error_auth") || m.includes("token")) {
+    return "Gian mất kết nối với sàn — vào Kênh bán để kết nối lại";
+  }
+  return message;
+}
+
 /** Lỗi sàn kiểu "chưa sẵn" — đợi rồi hỏi lại được, không phải lỗi thật. */
 export function isNotReadyError(text: string): boolean {
   return /not.?ready|not.?exist|not.?found|pending|processing|in.?progress|try.?again|later/i.test(text);

@@ -27,6 +27,8 @@ import {
   fetchOrderLabelsPdf,
   fetchShippingOptions,
   markOrdersPrinted,
+  type ChannelName,
+  type ExcludedOrder,
   type FulfillChoice,
   type Order,
   type ShippingOptionGroup,
@@ -110,6 +112,8 @@ export function ArrangeShipmentDialog({
 }) {
   const [loading, setLoading] = React.useState(false);
   const [groups, setGroups] = React.useState<ShippingOptionGroup[]>([]);
+  /** Đơn khách chưa thanh toán bị loại trước khi hỏi sàn (09/09) — báo thẳng, không tách tab. */
+  const [excluded, setExcluded] = React.useState<ExcludedOrder[]>([]);
   const [choices, setChoices] = React.useState<Record<string, FulfillChoice>>({});
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<"confirm" | "wait" | "print" | null>(null);
@@ -127,10 +131,12 @@ export function ArrangeShipmentDialog({
     setLoading(true);
     setError(null);
     setGroups([]);
+    setExcluded([]);
     fetchShippingOptions(orderIds)
       .then((res) => {
         if (cancelled) return;
         setGroups(res.groups);
+        setExcluded(res.excluded ?? []);
         const init: Record<string, FulfillChoice> = {};
         for (const g of res.groups) {
           if (g.mode === "PLATFORM" && g.methods.length > 0) init[g.channelId] = initialChoice(g);
@@ -175,7 +181,13 @@ export function ArrangeShipmentDialog({
               .map((f) => `${f.orderCode} (${f.reason})`)
               .join("; ")}${res.failed.length > 3 ? "…" : ""}`
           : "";
-      const skippedText = res.skipped.length > 0 ? ` · bỏ qua ${res.skipped.length}` : "";
+      // Đơn khách chưa thanh toán nói riêng — đó là câu chủ shop cần nghe
+      // ("sót đơn" sáng 09/09 thực ra là 5 đơn chưa thanh toán).
+      const unpaid = res.skipped.filter((s) => /chưa thanh toán/i.test(s.reason)).length;
+      const otherSkipped = res.skipped.length - unpaid;
+      const skippedText =
+        (unpaid > 0 ? ` · loại ${unpaid} đơn vì khách chưa thanh toán` : "") +
+        (otherSkipped > 0 ? ` · bỏ qua ${otherSkipped}` : "");
       if (res.confirmed > 0) {
         toast.success(`Đã chuẩn bị ${formatNumber(res.confirmed)} đơn trên sàn${skippedText}${failedText}`, {
           duration: 8000,
@@ -214,7 +226,10 @@ export function ArrangeShipmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Cột flex có trần chiều cao theo màn hình: vùng gian co giãn (min-h-0)
+          nên tiêu đề và hai nút LUÔN nhìn thấy dù 20 gian hay laptop 1280×720;
+          trước 09/09 hộp thoại cao hơn viewport, điện thoại 375×812 mất tiêu đề. */}
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Chuẩn bị hàng · {formatNumber(orders.length)} đơn</DialogTitle>
           <DialogDescription>
@@ -236,12 +251,13 @@ export function ArrangeShipmentDialog({
         )}
 
         {!loading && !error && (
-          <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
-            {groups.length === 0 && (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            {groups.length === 0 && excluded.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 Không có đơn nào đang Chờ xử lý trong lựa chọn.
               </p>
             )}
+            {excluded.length > 0 && <UnpaidNotice excluded={excluded} />}
             {groups.map((g) => (
               <GroupCard
                 key={g.channelId}
@@ -253,7 +269,7 @@ export function ArrangeShipmentDialog({
           </div>
         )}
 
-        <div className="space-y-3 border-t pt-3">
+        <div className="shrink-0 space-y-3 border-t pt-3">
           <label className="flex items-center justify-between gap-3 text-sm">
             <span className="flex items-center gap-2">
               <Printer className="size-4 text-muted-foreground" />
@@ -270,9 +286,12 @@ export function ArrangeShipmentDialog({
           {printAfter && <PrintOptionsFields value={printOpts} onChange={setPrintOpts} />}
         </div>
 
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {blockedCount > 0 && `${formatNumber(blockedCount)} đơn sẽ bỏ qua (xem ghi chú)`}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          {/* Điện thoại: ghi chú chiếm trọn một dòng trên hai nút, không bị ép thành 3 dòng */}
+          <span className="basis-full text-xs text-muted-foreground sm:basis-auto sm:flex-1">
+            {blockedCount + excluded.length > 0 &&
+              `${formatNumber(blockedCount + excluded.length)} đơn sẽ bỏ qua` +
+                (excluded.length > 0 ? ` (${formatNumber(excluded.length)} chưa thanh toán)` : " (xem ghi chú)")}
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy !== null}>
@@ -290,6 +309,61 @@ export function ArrangeShipmentDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Từ số shop này trở lên thì gom một dòng thay vì liệt kê từng shop (anh Trung chốt 09/09). */
+const UNPAID_SHOP_LIST_MAX = 5;
+
+/**
+ * Khối báo đơn KHÁCH CHƯA THANH TOÁN bị loại khỏi mẻ. Nằm ngay trên các gian,
+ * cùng vùng seller đang nhìn. Ít shop: liệt kê từng shop kèm số đơn; nhiều
+ * shop (≥ UNPAID_SHOP_LIST_MAX): một dòng tổng để hộp thoại không dài ra.
+ */
+function UnpaidNotice({ excluded }: { excluded: ExcludedOrder[] }) {
+  const shops = React.useMemo(() => {
+    const m = new Map<string, { shopName: string; channelName: ChannelName; count: number }>();
+    for (const e of excluded) {
+      const cur = m.get(e.channelId);
+      if (cur) cur.count += 1;
+      else m.set(e.channelId, { shopName: e.shopName, channelName: e.channelName, count: 1 });
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count);
+  }, [excluded]);
+  const many = shops.length >= UNPAID_SHOP_LIST_MAX;
+
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-800">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">
+          {many
+            ? `Có ${formatNumber(excluded.length)} đơn của ${formatNumber(shops.length)} shop khách chưa thanh toán — đã loại khỏi mẻ này`
+            : `Loại ${formatNumber(excluded.length)} đơn chưa chuẩn bị vì khách chưa thanh toán`}
+        </p>
+        {!many && (
+          <ul className="mt-1.5 flex flex-wrap gap-1.5">
+            {shops.map((s) => (
+              <li
+                key={`${s.channelName}-${s.shopName}`}
+                // max-w-full + min-w-0 để tên shop dài bị cắt bằng "…" thay vì
+                // tràn khỏi khung vàng (bắt được trên màn 375 với tên ~60 chữ)
+                className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md border border-amber-200 bg-background px-2 py-0.5 text-xs"
+              >
+                <span className={cn("shrink-0 rounded px-1 text-[10px]", CHANNEL_META[s.channelName].className)}>
+                  {CHANNEL_META[s.channelName].label}
+                </span>
+                <span className="min-w-0 truncate text-foreground">{s.shopName}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">· {formatNumber(s.count)} đơn</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-1 text-xs text-amber-700">
+          Sàn chỉ cho sắp xếp vận chuyển sau khi khách trả tiền — đơn tự chuẩn bị được khi sàn báo đã thanh toán.
+        </p>
+      </div>
+    </div>
   );
 }
 
