@@ -1059,6 +1059,11 @@ router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
           {
             channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
             status: "ACTIVE",
+            // Chỉ gian đã ủy quyền API thật (có refreshToken). Gian thủ công /
+            // gian demo không có token thì gọi sàn kiểu gì cũng lỗi "chưa uỷ
+            // quyền" → hiện dòng đỏ vô nghĩa dưới bảng; số dư của nó là số nhập
+            // tay, giữ nguyên.
+            refreshToken: { not: null },
           },
         ],
       },

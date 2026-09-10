@@ -69,11 +69,25 @@ type AgingLevel = "unknown" | "ok" | "warning" | "overdue";
  * Không biết mốc bắt đầu thì trả null — thà nói "chưa rõ" còn hơn đưa ra một
  * con số mà chủ shop mang đi khiếu nại bưu cục.
  */
-function agingOf(requestedAt: Date | null): {
+function agingOf(
+  requestedAt: Date | null,
+  /** Mốc hàng đã về tay (đã quét nhận) — có thì đồng hồ dừng tại đó. */
+  receivedAt: Date | null = null
+): {
   daysWaiting: number | null;
   agingLevel: AgingLevel;
 } {
   if (!requestedAt) return { daysWaiting: null, agingLevel: "unknown" };
+  // Hàng đã về tay: số ngày = thời gian kiện đi đường THẬT, không còn là "chờ"
+  // → không bao giờ là quá hạn (trước đây đơn đã nhập kho 40 ngày trước vẫn
+  // bị tô đỏ "Chưa về tay" vì đồng hồ tính tới hôm nay).
+  if (receivedAt) {
+    const travelled = Math.max(
+      0,
+      Math.floor((receivedAt.getTime() - requestedAt.getTime()) / (24 * 60 * 60 * 1000))
+    );
+    return { daysWaiting: travelled, agingLevel: "ok" };
+  }
   const days = Math.floor(
     (Date.now() - requestedAt.getTime()) / (24 * 60 * 60 * 1000)
   );
@@ -195,7 +209,13 @@ router.get("/returns", async (req: AuthRequest, res, next) => {
     // Gắn ảnh dòng hàng: SP kho gốc → fallback ảnh ChannelProduct
     const rowsWithImages = await attachItemImages(rows);
     res.json({
-      items: rowsWithImages.map((o) => ({ ...o, ...agingOf(o.returnRequestedAt) })),
+      items: rowsWithImages.map((o) => ({
+        ...o,
+        ...agingOf(
+          o.returnRequestedAt,
+          o.returnStatus === ReturnStatus.AWAITING ? null : o.returnedAt
+        ),
+      })),
       total,
       page,
       pageSize,

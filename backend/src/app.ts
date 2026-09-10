@@ -64,8 +64,38 @@ function buildAllowedOrigins(): Set<string> {
   return origins;
 }
 
+/** Host chạy dev tại máy — không phát HSTS cho các host này (xem chú thích trong createApp). */
+export function isLocalHost(hostname: string | undefined): boolean {
+  const h = (hostname ?? "").toLowerCase();
+  // Không rõ host (request thiếu Host) → coi như dev, không phát HSTS cho an toàn.
+  return (
+    h === "" || h === "localhost" || h === "127.0.0.1" || h === "::1" || h.endsWith(".localhost")
+  );
+}
+
 export function createApp() {
   const app = express();
+
+  // ============================================================
+  // HEADER BẢO MẬT HTTP (hồ sơ ISV Shopee: URL live phải TLS ≥1.2 + xếp hạng
+  // bảo mật "A"). Frontend trên Vercel đã tự phát HSTS; backend Render thì
+  // chưa — SSL Labs 10/09/2026 chấm A (thiếu HSTS thì không lên A+) và lộ
+  // "X-Powered-By: Express". Không kéo thêm helmet chỉ vì 4 header.
+  //
+  // HSTS CHỈ phát khi host không phải localhost: HSTS ghi nhớ theo HOST, bỏ qua
+  // cổng — backend https://localhost:4000 mà phát HSTS thì trình duyệt ép cả
+  // http://localhost:3000 (frontend dev) lên https → vỡ môi trường dev.
+  // ============================================================
+  app.disable("x-powered-by");
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    if (!isLocalHost(req.hostname)) {
+      res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+    }
+    next();
+  });
 
   const allowedOrigins = buildAllowedOrigins();
   app.use(

@@ -2,15 +2,16 @@
 // mật khẩu (nạp vào localStorage hubsell_token — xem memory
 // hubsell-local-test-chrome). Chỉ có nghĩa với DB local + JWT_SECRET trong
 // .env; không phải lỗ hổng — ai có hai thứ đó vốn đã toàn quyền.
-// Chạy: npx tsx scripts/dev-mint-jwt.ts
+// Chạy: npx tsx scripts/dev-mint-jwt.ts [--email=reviewer@hubsell.vn]
 import "dotenv/config";
 import { signToken } from "../src/middleware/auth";
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
+  const emailArg = process.argv.find((a) => a.startsWith("--email="))?.slice(8);
   const user =
-    (await prisma.user.findUnique({ where: { email: "admin@hubsell.vn" } })) ??
-    (await prisma.user.findFirst({ where: { role: "ADMIN" } }));
+    (await prisma.user.findUnique({ where: { email: emailArg ?? "admin@hubsell.vn" } })) ??
+    (emailArg ? null : await prisma.user.findFirst({ where: { role: "ADMIN" } }));
   if (!user) throw new Error("Không có user ADMIN nào trong DB local");
   const token = signToken(user.id);
   console.log(
