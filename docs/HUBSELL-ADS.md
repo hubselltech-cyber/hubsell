@@ -91,3 +91,26 @@ channelId` về `localhost:3000/ads/shopee?hubsell_ads=code`, FE gọi
   DISCONNECTED, gỡ liên kết.
 - Migration `20260910150000_channel_app_auth_hubsell_ads` — Render tự áp khi deploy;
   local đã chạy qua `scripts/apply-migration-local.ts` 10/09.
+
+### Đã chạy thật trên SANDBOX tối 10/09/2026 (app tạo ngay, không đợi ISV)
+
+App **Hubsell Ads** đã tạo trên Console: category **Ads Service**, Test Partner ID
+**1243985**, Test Redirect URL Domain `https://hubsell-backend-sg.onrender.com`.
+Key sandbox chỉ nằm trong `backend/.env` local (`HUBSELL_ADS_ENV=sandbox`,
+`HUBSELL_ADS_REDIRECT_URI` trỏ Render để trạm trung chuyển bật code về local).
+
+| Bước | Kết quả |
+|---|---|
+| Chữ ký partner 1243985 | Sandbox trả `invalid_code` cho code giả → key + host đúng |
+| Ủy quyền shop sandbox 227774404 (OpenSANDBOX) | Trang `open.sandbox…/auth` hiện app Hubsell Ads → Confirm → Render relay → local đổi code → ChannelAppAuth ACTIVE |
+| Ads API bằng token Hubsell Ads | `get_shop_info`, `get_total_balance`, `get_all_cpc_ads_daily_performance` đều `error:""` (số 0 vì sandbox không có ads) — danh sách quyền trống trên trang ủy quyền KHÔNG ảnh hưởng |
+| Ép refresh | access_token đổi, refresh_token xoay, hạn mới ghi DB |
+
+Ghi chú: link luồng CŨ (`auth_partner` ký sign) trên sandbox bấm đăng nhập đứng
+im khi link đã quá 5 phút, không báo gì; link luồng MỚI (`/auth`) chạy ổn. Gian
+test local `Sandbox Hubsell Ads` (channel `cmtvlfq5o0001trf0pi4wqsy5`, user
+demo@hubsell.tech). Script tạm sinh link / probe / trạm bắt code nằm ở
+`.claude-tmp/tools/_tmp_hubsell_ads_{probe,catcher}.ts` (gitignore).
+
+Còn lại sau ISV duyệt: nộp Go-Live app Hubsell Ads, lấy Partner ID/Key **Live**
+→ env Render, bỏ `HUBSELL_ADS_ENV`, 3 shop nhà ủy quyền lại trên trang Trợ lý.
