@@ -10,11 +10,11 @@ seller ngoài ủy quyền; lên ISV thì app 2040029 tự đổi thành ERP Sys
 
 | # | Shopee yêu cầu | Hiện trạng 10/09 | Việc còn lại |
 |---|---|---|---|
-| 1 | Registered business — nộp giấy tờ doanh nghiệp hợp lệ | GCN ĐKDN Công ty TNHH Công nghệ Hubsell được chấp thuận 09/09/2026 | Tải bản GCN điện tử (PDF) từ dangkykinhdoanh.gov.vn; ghi lại mã số DN |
+| 1 | Registered business — nộp giấy tờ doanh nghiệp hợp lệ | GCN ĐKDN Công ty TNHH Công nghệ Hubsell được chấp thuận 09/09/2026 | Mã số DN 0111626360; tải bản GCN điện tử (PDF) từ dangkykinhdoanh.gov.vn |
 | 2 | Sản phẩm đã LIVE, có tích hợp TMĐT sẵn, nhận diện được qua tài khoản trial | app.hubsell.tech live từ 31/07; 3 shop Shopee thật + 2 Lazada đang chạy | Seed tài khoản reviewer bằng `backend/scripts/seed-isv-reviewer.ts` (xem mục 3) |
 | 3 | Không có hoạt động đáng ngờ (bán tài khoản xuyên biên giới, kéo listing ra ngoài Shopee) | Không có | Khai rõ trong mô tả dịch vụ |
 | 4 | Nộp URL live + tài khoản trial mở ĐỦ tính năng | reviewer@hubsell.vn từng nộp 31/07 (data mock cũ, gói không rõ) | Seed lại: gói Business 12 tháng, 45 ngày đơn, đủ module |
-| 5 | URL https, TLS ≥ 1.2, xếp hạng bảo mật "A" | SSL Labs 10/09: app.hubsell.tech **A+**, hubsell.tech **A+**, backend Render **A** (thiếu HSTS); TLS 1.2 + 1.3 | Backend đã thêm HSTS + 3 header bảo mật (commit này) → chấm lại sau deploy |
+| 5 | URL https, TLS ≥ 1.2, xếp hạng bảo mật "A" | SSL Labs 10/09: app.hubsell.tech **A+**, hubsell.tech **A+**, backend Render **A+** (chấm lại 10/09 sau deploy HSTS 64b440e); TLS 1.2 + 1.3 | Xong |
 | 6 | Thời gian duyệt | 10 ngày làm việc | Nộp xong theo dõi email tài khoản dev + Console → Go to Profile |
 
 ## 2. Đánh đổi khi app đổi thành ERP System (phải quyết TRƯỚC khi nộp)
@@ -80,7 +80,7 @@ Gợi ý câu trả lời "Why…" (≤ 200 ký tự):
 Điền tiếng Anh, giữ nhất quán với hồ sơ Go-Live 31/07.
 
 **Company name:** HUBSELL TECHNOLOGY COMPANY LIMITED (CÔNG TY TNHH CÔNG NGHỆ HUBSELL)
-**Business registration no. / Tax code:** <mã số DN trên GCN>
+**Business registration no. / Tax code:** 0111626360
 **Country / Region:** Vietnam
 **Registered address:** No. 5k1, Lane 5, TT75, Tong Cuc II, Ministry of National Defence, Kim Chung Residential Group, Hoai Duc Commune, Hanoi, Vietnam
 **Legal representative:** Nguyen Trung Hieu — Director
