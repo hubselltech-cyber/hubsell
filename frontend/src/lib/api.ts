@@ -2195,6 +2195,51 @@ export function connectShopeeCode(
   );
 }
 
+// ---------- Hubsell Ads — app Ads Service riêng trên Shopee (10/09/2026) ----------
+//
+// Shopee cấp quyền theo từng app; app chính mất Ads API khi lên ISV nên gian
+// phải ủy quyền THÊM cho app "Hubsell Ads". Token nằm bảng riêng phía backend,
+// không đụng token app chính của gian. Backend chưa bật (required=false) thì
+// FE không hiện gì — Trợ lý chạy bằng app chính như cũ.
+
+export interface HubsellAdsLinkStatus {
+  app: "Hubsell Ads";
+  /** false = backend chưa bật app Ads riêng → không cần ủy quyền thêm. */
+  required: boolean;
+  status: "ACTIVE" | "DISCONNECTED" | "NOT_LINKED";
+  externalShopId: string | null;
+  linkedAt: string | null;
+  refreshTokenExpireAt: string | null;
+}
+
+export function fetchHubsellAdsStatus(channelId: string) {
+  return apiFetch<HubsellAdsLinkStatus>(
+    `/api/hubsell-ads/status?channelId=${encodeURIComponent(channelId)}`
+  );
+}
+
+/** URL trang ủy quyền Shopee cho app Hubsell Ads — link hết hạn ~5', xin lúc bấm. */
+export function getHubsellAdsAuthUrl(channelId: string) {
+  return apiFetch<{ url: string }>(
+    `/api/hubsell-ads/auth-url?channelId=${encodeURIComponent(channelId)}`
+  );
+}
+
+/** Dev local: đổi code + shop_id Render bật về (?hubsell_ads=code) lấy token Hubsell Ads. */
+export function connectHubsellAdsCode(code: string, shopId: string, channelId: string) {
+  return apiFetch<{ message: string; link: { channelId: string; shopName: string } }>(
+    "/api/hubsell-ads/connect",
+    { method: "POST", body: JSON.stringify({ code, shopId, channelId }) }
+  );
+}
+
+export function unlinkHubsellAds(channelId: string) {
+  return apiFetch<{ message: string }>(
+    `/api/hubsell-ads/link?channelId=${encodeURIComponent(channelId)}`,
+    { method: "DELETE" }
+  );
+}
+
 /**
  * Lấy URL trang uỷ quyền Lazada. Callback đăng ký trên App Console là backend
  * RENDER (Lazada bắt https) nên khi chạy LOCAL, người dùng mở URL này ở tab
@@ -5070,6 +5115,8 @@ export interface ShopeeAdsDashboard {
   selectedChannelId: string | null;
   days: number;
   wallet: { balance: number } | null;
+  /** Liên kết app Hubsell Ads của gian đang chọn — null với Lazada / không có gian. */
+  adsApp: HubsellAdsLinkStatus | null;
   assistant: ShopeeAssistantSummary | null;
   summary: ShopeeAdsSummary | null;
   campaigns: ShopeeAdsCampaignRow[];

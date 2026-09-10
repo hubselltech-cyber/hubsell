@@ -22,7 +22,7 @@ import {
   type ShopeeAdsCampaignPerfEntry,
   type ShopeeAdsCampaignRef,
 } from "./client";
-import { getValidShopeeAccessToken } from "./service";
+import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { fromShopeeDate, toShopeeDate } from "./ads-spend";
 
 export interface SyncShopeeAdsCampaignsOptions {
@@ -59,7 +59,9 @@ export async function syncShopeeAdsCampaigns(
   channel: Channel,
   opts: SyncShopeeAdsCampaignsOptions = {}
 ): Promise<SyncShopeeAdsCampaignsResult> {
-  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  // Quyền Ads API đi qua điểm chốt Hubsell Ads (app Ads riêng; fallback app
+  // chính khi chưa cấu hình) — cfg quyết định partner nào ký chữ ký.
+  const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
   const daysBack = opts.daysBack ?? 30;
 
   const result: SyncShopeeAdsCampaignsResult = {
@@ -72,13 +74,10 @@ export async function syncShopeeAdsCampaigns(
   const refs: ShopeeAdsCampaignRef[] = [];
   const PAGE = 100;
   for (let offset = 0; ; offset += PAGE) {
-    const page = await getAdsCampaignIdList({
-      accessToken,
-      shopId,
-      adType: "all",
-      offset,
-      limit: PAGE,
-    });
+    const page = await getAdsCampaignIdList(
+      { accessToken, shopId, adType: "all", offset, limit: PAGE },
+      cfg
+    );
     const list = page.response?.campaign_list ?? [];
     refs.push(...list);
     if (!page.response?.has_next_page || list.length === 0) break;
@@ -98,12 +97,15 @@ export async function syncShopeeAdsCampaigns(
   // Map id sàn → id dòng DB để bước 3 ghi hiệu suất không phải query lại.
   const rowIdByCampaignId = new Map<string, string>();
   for (const ids of chunk(allIds, 100)) {
-    const setting = await getAdsCampaignSettingInfo({
-      accessToken,
-      shopId,
-      campaignIds: ids,
-      infoTypeList: "1,3", // 1 = common info, 3 = auto bidding (roas_target)
-    });
+    const setting = await getAdsCampaignSettingInfo(
+      {
+        accessToken,
+        shopId,
+        campaignIds: ids,
+        infoTypeList: "1,3", // 1 = common info, 3 = auto bidding (roas_target)
+      },
+      cfg
+    );
     for (const entry of setting.response?.campaign_list ?? []) {
       if (entry.campaign_id == null) continue;
       const campaignId = String(entry.campaign_id);
@@ -141,13 +143,16 @@ export async function syncShopeeAdsCampaigns(
   // Chỉ hỏi hiệu suất những campaign đã upsert được (có dòng DB để treo perf).
   const perfIds = [...rowIdByCampaignId.keys()];
   for (const ids of chunk(perfIds, 100)) {
-    const perf = await getAdsCampaignDailyPerformance({
-      accessToken,
-      shopId,
-      campaignIds: ids,
-      startDate: toShopeeDate(start),
-      endDate: toShopeeDate(end),
-    });
+    const perf = await getAdsCampaignDailyPerformance(
+      {
+        accessToken,
+        shopId,
+        campaignIds: ids,
+        startDate: toShopeeDate(start),
+        endDate: toShopeeDate(end),
+      },
+      cfg
+    );
     for (const entry of unwrapPerfCampaignList(perf.response)) {
       if (entry.campaign_id == null) continue;
       const rowId = rowIdByCampaignId.get(String(entry.campaign_id));

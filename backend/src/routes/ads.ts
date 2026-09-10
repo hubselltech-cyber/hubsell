@@ -6,7 +6,7 @@ import {
   editManualProductAdsRaw,
   getAdsTotalBalance,
 } from "../integrations/shopee/client";
-import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
 import {
   MARGIN_WINDOW_DAYS,
@@ -91,7 +91,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         select: { id: true, shopName: true, externalShopId: true },
       });
       if (channels.length === 0) {
-        res.json({ channels: [], selectedChannelId: null, days: 7, wallet: null, summary: null, campaigns: [], series: [] });
+        res.json({ channels: [], selectedChannelId: null, days: 7, wallet: null, adsApp: null, summary: null, campaigns: [], series: [] });
         return;
       }
 
@@ -241,12 +241,15 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // làm hỏng dashboard). Lazada GĐ sau: cờ adAccountBalanceStatus từ
       // searchCampaignList sẽ thành cảnh báo "ví cạn" thay số dư tuyệt đối. ----
       let wallet: { balance: number } | null = null;
+      // Trạng thái liên kết app Hubsell Ads của gian (null với Lazada) — FE
+      // hiện màn mời ủy quyền khi app Ads riêng đã bật mà gian chưa nối.
+      const adsApp = platform === "shopee" ? await getHubsellAdsLinkStatus(selected.id) : null;
       if (platform === "shopee") {
         try {
           const channel = await prisma.channel.findUnique({ where: { id: selected.id } });
           if (channel) {
-            const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-            const bal = await getAdsTotalBalance({ accessToken, shopId });
+            const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+            const bal = await getAdsTotalBalance({ accessToken, shopId }, cfg);
             const balance = Number(bal.response?.total_balance);
             if (Number.isFinite(balance)) wallet = { balance };
           }
@@ -270,6 +273,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         selectedChannelId: selected.id,
         days,
         wallet,
+        adsApp,
         assistant: {
           config: assistantConfig,
           counts,
@@ -637,14 +641,17 @@ router.post("/shopee/write-probe", async (req: AuthRequest, res, next) => {
       res.status(404).json({ error: "Không tìm thấy gian Shopee" });
       return;
     }
-    const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-    const raw = await editManualProductAdsRaw({
-      accessToken,
-      shopId,
-      campaignId,
-      editAction,
-      referenceId: `probe-${campaignId}-${Date.now()}`,
-    });
+    const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+    const raw = await editManualProductAdsRaw(
+      {
+        accessToken,
+        shopId,
+        campaignId,
+        editAction,
+        referenceId: `probe-${campaignId}-${Date.now()}`,
+      },
+      cfg
+    );
     res.json({ probe: { campaignId, editAction }, shopeeResponse: raw });
   } catch (err) {
     next(err);

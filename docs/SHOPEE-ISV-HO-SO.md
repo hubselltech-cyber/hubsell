@@ -112,5 +112,7 @@ Gợi ý câu trả lời "Why…" (≤ 200 ký tự):
 1. Console: kiểm tra app 2040029 đã đổi thành ERP System; nếu chưa, gửi ticket nhờ đổi.
 2. Thử liên kết một shop mới từ trình duyệt sạch qua nút "Kết nối Shopee" trong app (không cần phiên Console dev nữa).
 3. Bật lại `SHOPEE_AUTH_FLOW=new` nếu muốn dùng link ủy quyền mới (luồng cũ vẫn chạy).
-4. Tạo app Ads Service + xin đường Chat qua AM/BD (mục 2).
+4. Tạo app Ads Service tên **Hubsell Ads** + nộp Go-Live cho app đó — code đã sẵn
+   10/09 (module `integrations/hubsell-ads/`, bật bằng env `HUBSELL_ADS_*`), quy
+   trình Console + luồng seller trong `docs/HUBSELL-ADS.md`. Chat vẫn xin qua AM/BD (mục 2).
 5. Chấm lại SSL Labs backend sau deploy HSTS (mục tiêu A+).

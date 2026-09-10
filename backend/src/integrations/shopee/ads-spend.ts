@@ -16,7 +16,7 @@ import {
   getAdsDailyPerformance,
   type ShopeeAdsDailyPerformance,
 } from "./client";
-import { getValidShopeeAccessToken } from "./service";
+import { resolveShopeeAdsAccess } from "../hubsell-ads";
 
 export interface SyncShopeeAdsSpendOptions {
   /** Lấy chi tiêu N ngày gần nhất. Mặc định 30. */
@@ -45,18 +45,23 @@ export async function syncShopeeAdsSpend(
   channel: Channel,
   opts: SyncShopeeAdsSpendOptions = {}
 ): Promise<SyncShopeeAdsSpendResult> {
-  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  // Quyền Ads API đi qua điểm chốt Hubsell Ads (app Ads riêng; fallback app
+  // chính khi chưa cấu hình) — cfg quyết định partner nào ký chữ ký.
+  const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
   const daysBack = opts.daysBack ?? 30;
 
   const end = new Date();
   const start = new Date(end.getTime() - (daysBack - 1) * 24 * 60 * 60 * 1000);
 
-  const data = await getAdsDailyPerformance({
-    accessToken,
-    shopId,
-    startDate: toShopeeDate(start),
-    endDate: toShopeeDate(end),
-  });
+  const data = await getAdsDailyPerformance(
+    {
+      accessToken,
+      shopId,
+      startDate: toShopeeDate(start),
+      endDate: toShopeeDate(end),
+    },
+    cfg
+  );
 
   // Parse phòng thủ: response có thể là mảng thẳng hoặc bọc performance_list.
   const raw = data.response;

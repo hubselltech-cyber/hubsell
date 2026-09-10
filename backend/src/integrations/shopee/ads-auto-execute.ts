@@ -31,7 +31,7 @@
 import { ChannelName, Prisma, type Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { editManualProductAdsRaw } from "./client";
-import { getValidShopeeAccessToken } from "./service";
+import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import {
   lazAdsWriteOk,
   updateAdsCampaignSwitchRaw,
@@ -107,15 +107,13 @@ async function makePauser(
       };
     };
   }
-  const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
+  // Ghi lên sàn cũng đi qua điểm chốt Hubsell Ads (cùng partner với luồng đọc).
+  const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
   return async (campaignId, referenceId) => {
-    const raw = await editManualProductAdsRaw({
-      accessToken,
-      shopId,
-      campaignId,
-      editAction: "pause",
-      referenceId,
-    });
+    const raw = await editManualProductAdsRaw(
+      { accessToken, shopId, campaignId, editAction: "pause", referenceId },
+      cfg
+    );
     const ok = !raw.error || raw.error === "";
     return { ok, error: ok ? null : `${raw.error}: ${raw.message ?? ""}` };
   };

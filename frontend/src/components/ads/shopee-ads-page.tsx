@@ -25,6 +25,7 @@ import {
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { AccessDenied } from "@/components/shared/access-denied";
+import { HubsellAdsLink } from "@/components/ads/hubsell-ads-link";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
 import { HintIcon } from "@/components/finance/hint-icon";
@@ -338,6 +339,12 @@ export function ShopeeAdsPage({
   }
 
   const summary = data?.summary ?? null;
+  // Hubsell Ads (app Ads riêng) đã bật mà gian chưa nối → chưa gọi được Ads
+  // API: khoá nút Đồng bộ, khối HubsellAdsLink bên dưới mời kết nối.
+  const adsApp = data?.adsApp ?? null;
+  const adsLinked = !adsApp?.required || adsApp.status === "ACTIVE";
+  const selectedShopName =
+    data?.channels.find((c) => c.id === channelId)?.shopName ?? "";
   const wallet = data?.wallet ?? null;
 
   // Cảnh báo ví ads sắp cạn: dưới 2 ngày chi tiêu trung bình của kỳ đang xem.
@@ -500,7 +507,8 @@ export function ShopeeAdsPage({
               variant="outline"
               size="sm"
               onClick={() => void runSync()}
-              disabled={syncing || !channelId}
+              disabled={syncing || !channelId || !adsLinked}
+              title={adsLinked ? undefined : "Kết nối Hubsell Ads trước khi đồng bộ"}
             >
               <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
               {syncing ? "Đang đồng bộ…" : "Đồng bộ"}
@@ -515,6 +523,16 @@ export function ShopeeAdsPage({
           <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
             {error}
           </div>
+        )}
+
+        {/* ===== HUBSELL ADS — ủy quyền app Ads riêng (chỉ hiện khi backend đã bật) ===== */}
+        {platform === "shopee" && channelId && (
+          <HubsellAdsLink
+            channelId={channelId}
+            shopName={selectedShopName}
+            status={adsApp}
+            onChanged={() => void load(channelId, days)}
+          />
         )}
 
         {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}

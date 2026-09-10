@@ -20,6 +20,7 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { refreshExpiringHubsellAdsTokens } from "../integrations/hubsell-ads";
 
 const DEFAULT_INTERVAL_MIN = 30;
 /** Coi là "sắp hết hạn" khi access_token còn dưới ngưỡng này. */
@@ -57,6 +58,23 @@ export async function runOnce(): Promise<void> {
   running = true;
 
   try {
+    await refreshMainAppTokens();
+    // Token app Hubsell Ads (bảng ChannelAppAuth) — cùng ngưỡng/nhịp/jitter,
+    // chạy SAU app chính; tự bỏ qua khi Hubsell Ads chưa cấu hình.
+    await refreshExpiringHubsellAdsTokens({
+      expiringSoonMs: EXPIRING_SOON_MS,
+      staggerMs: () => STAGGER_BASE_MS + Math.random() * STAGGER_JITTER_MS,
+    });
+  } catch (err) {
+    console.error("[Token-refresh] Lỗi vòng quét:", err);
+  } finally {
+    running = false;
+  }
+}
+
+/** Token app CHÍNH trên Channel (đơn/kho/tài chính). */
+async function refreshMainAppTokens(): Promise<void> {
+  {
     if (!isShopeeConfigured()) return;
 
     const now = new Date();
@@ -112,9 +130,5 @@ export async function runOnce(): Promise<void> {
       // Giãn cách + jitter giữa các shop — không bắn refresh đồng loạt.
       await sleep(STAGGER_BASE_MS + Math.random() * STAGGER_JITTER_MS);
     }
-  } catch (err) {
-    console.error("[Token-refresh] Lỗi vòng quét:", err);
-  } finally {
-    running = false;
   }
 }

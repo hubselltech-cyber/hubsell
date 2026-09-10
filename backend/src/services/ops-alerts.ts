@@ -32,7 +32,7 @@ import {
 } from "../integrations/shopee/ads-insights";
 import type { AssistantTrigger } from "../integrations/shopee/ads-assistant-rules";
 import { getAdsTotalBalance } from "../integrations/shopee/client";
-import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { getAdsCampaignList, lazAdsNum } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import {
@@ -926,8 +926,10 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
           );
         }
       } else if (channel) {
-        const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
-        const bal = await getAdsTotalBalance({ accessToken, shopId });
+        // Quyền Ads API qua điểm chốt Hubsell Ads (gian chưa nối app Ads → ném,
+        // catch bên dưới nuốt — không có số dư thì thẻ ví không hiện).
+        const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+        const bal = await getAdsTotalBalance({ accessToken, shopId }, cfg);
         const balance = Number(bal.response?.total_balance);
         if (Number.isFinite(balance)) {
           wallet = {

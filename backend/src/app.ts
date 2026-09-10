@@ -32,6 +32,7 @@ import operationsRouter from "./routes/operations";
 import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
+import { hubsellAdsCallbackRouter, hubsellAdsRouter } from "./routes/hubsell-ads";
 import assistantRouter from "./routes/assistant";
 import subscriptionRouter from "./routes/subscription";
 import { requirePlanUnlocked } from "./services/plan-enforcement";
@@ -129,6 +130,10 @@ export function createApp() {
       version: process.env.RENDER_GIT_COMMIT ?? "dev",
     });
   });
+
+  // Callback OAuth của app Hubsell Ads (công khai, Shopee redirect về) — mount
+  // TRƯỚC /api/auth để không lẫn với các callback trong authRouter.
+  app.use("/api/auth/hubsell-ads", hubsellAdsCallbackRouter);
 
   // Đăng nhập / đăng ký (công khai)
   app.use("/api/auth", authRouter);
@@ -235,6 +240,11 @@ export function createApp() {
   // Trợ lý quảng cáo: cửa mount = có lá ads.* bất kỳ; nhánh /shopee bên trong
   // router siết đúng ads.shopee (tiktok/lazada hiện là preview mock phía FE).
   app.use("/api/ads", requireAuth, requirePermission("ads"), requirePlanUnlocked, requireChannel, adsRouter);
+
+  // Hubsell Ads — ủy quyền app Ads Service riêng cho gian Shopee (chỉ chủ shop;
+  // nghiệp vụ ở integrations/hubsell-ads/). Chưa đặt env HUBSELL_ADS_* thì
+  // Trợ lý quảng cáo vẫn chạy bằng app chính, các route này chỉ báo chưa cấu hình.
+  app.use("/api/hubsell-ads", requireAuth, adminOnly, hubsellAdsRouter);
 
   // Affiliate Tiếp Thị & Ví Hubsell — referral của CHÍNH nền tảng (khác /api/koc).
   // Chỉ chủ shop; KHÔNG gác requireChannel: chưa kết nối gian vẫn giới thiệu được.

@@ -393,6 +393,7 @@ model Channel {
   inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
   stockPushJobs       StockPushJob[]       // hàng đợi đẩy tồn khả dụng lên gian này
   deliveryTrackingTasks DeliveryTrackingTask[] // hàng đợi hỏi tracking cứu đơn giao thất bại
+  appAuths        ChannelAppAuth[] // ủy quyền cho app phụ của Hubsell trên cùng gian (Hubsell Ads)
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
@@ -2302,6 +2303,46 @@ enum DeliveryTrackingTaskKind {
 /// call/gian — lượng gọi API sàn bị chặn trên tuyệt đối dù có triệu đơn; nhịp
 /// hỏi lại từng đơn co giãn theo pha giao (đang đi giao 20', chưa tới pha giao
 /// thì thưa) nên real-time đúng chỗ cần mà không đốt quota chỗ không cần.
+// ============================================================
+// ỦY QUYỀN APP PHỤ TRÊN CÙNG GIAN — "HUBSELL ADS" (10/09/2026)
+//
+// Shopee cấp quyền theo TỪNG APP: app chính (ERP System, sau khi lên ISV) mất
+// Ads API, nên Trợ lý quảng cáo phải chạy trên app "Hubsell Ads" (loại Ads
+// Service) với partner_id/partner_key riêng. Token của Shopee gắn với cặp
+// (partner_id, shop_id) → cùng một gian phải ủy quyền THÊM cho Hubsell Ads,
+// và bộ token đó sống độc lập với token app chính trên Channel (refresh
+// riêng, hết hạn riêng). Bảng này giữ token app phụ theo (channelId, app);
+// mai sau Chat API tách app cũng chỉ thêm một giá trị enum.
+// ============================================================
+
+enum ChannelAppKind {
+  HUBSELL_ADS
+}
+
+model ChannelAppAuth {
+  id        String         @id @default(cuid())
+  channelId String
+  channel   Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  app       ChannelAppKind
+  /// shop_id Shopee trả ở callback — luôn phải trùng Channel.externalShopId
+  /// (callback đối chiếu trước khi đổi code, tránh ghi token nhầm gian).
+  externalShopId String
+  accessToken  String
+  refreshToken String
+  accessTokenExpireAt  DateTime
+  /// refresh_token Shopee sống 30 ngày kể từ lần rotate gần nhất.
+  refreshTokenExpireAt DateTime
+  /// ACTIVE | DISCONNECTED (refresh_token chết / sàn thu hồi → cần ủy quyền lại)
+  status         String    @default("ACTIVE")
+  disconnectedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([channelId, app])
+  @@index([app, status, accessTokenExpireAt])
+  @@map("channel_app_auths")
+}
+
 model DeliveryTrackingTask {
   id        String                   @id @default(cuid())
   channelId String

@@ -34,6 +34,10 @@ import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
 import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
 import { runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
+import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubsell-ads";
+
+/** Gian đã log "bỏ qua Ads vì chưa nối Hubsell Ads" — log một lần, không lặp mỗi nhịp. */
+const adsSkipLogged = new Set<string>();
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
   backfillShopeeTrackingCodes,
@@ -388,9 +392,21 @@ async function runOnce(): Promise<void> {
                 (err as Error).message
               );
             }
+            // Ba luồng Ads (chi phí ngày, campaign, Trợ lý tự thực thi) chỉ chạy
+            // khi gian có quyền Ads API: app Hubsell Ads đã bật mà gian chưa ủy
+            // quyền thì bỏ qua lặng lẽ — UI Trợ lý quảng cáo đã mời kết nối,
+            // không cần đẻ 3 dòng lỗi mỗi nhịp 10 phút.
+            const adsReady = await hasShopeeAdsAccess(channel.id);
+            if (!adsReady && !adsSkipLogged.has(channel.id)) {
+              adsSkipLogged.add(channel.id);
+              console.log(
+                `[Auto-sync] Bỏ qua Ads gian "${channel.shopName}": chưa ủy quyền ${HUBSELL_ADS_APP_LABEL}`
+              );
+            }
+            if (adsReady) adsSkipLogged.delete(channel.id);
             // Chi phí quảng cáo theo ngày (Ads API) — lỗi riêng (thường là app
             // chưa được bật quyền Ads) không được chặn các luồng khác.
-            try {
+            if (adsReady) try {
               const ads = await syncShopeeAdsSpend(channel, { daysBack: 30 });
               if (ads.daysUpserted > 0) {
                 console.log(
@@ -405,7 +421,7 @@ async function runOnce(): Promise<void> {
             }
             // Chiến dịch quảng cáo + hiệu suất ngày (Trợ lý quảng cáo GĐ1,
             // read-only) — lỗi riêng không được chặn các luồng khác.
-            try {
+            if (adsReady) try {
               const camp = await syncShopeeAdsCampaigns(channel, { daysBack: 30 });
               if (camp.campaignsUpserted > 0) {
                 console.log(
@@ -421,7 +437,7 @@ async function runOnce(): Promise<void> {
             // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập ghi
             // sổ; live chỉ bật sau probe). Chạy SAU sync campaign để đánh giá
             // trên số mới nhất; lỗi riêng không chặn luồng khác.
-            try {
+            if (adsReady) try {
               const act = await runAdsAutoExecute(channel);
               if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
                 console.log(
