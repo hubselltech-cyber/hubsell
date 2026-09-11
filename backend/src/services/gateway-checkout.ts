@@ -78,7 +78,7 @@ function toView(o: OrderRow): CheckoutView {
     amount: Number(o.amount),
     checkoutUrl: o.checkoutUrl,
     qrCode: o.qrCode,
-    transferContent: buildPayosDescription(o.planCode),
+    transferContent: o.description ?? buildPayosDescription(o.planCode),
     bank:
       o.bankBin && o.bankAccountNumber
         ? {
@@ -156,11 +156,17 @@ export async function createCheckout(input: {
   });
 
   const expiresAt = new Date(now.getTime() + LINK_TTL_MINUTES * 60_000);
-  const description = buildPayosDescription(plan.code);
 
   // orderCode unique — trúng số (cực hiếm) thì thử lại vài lần.
   for (let attempt = 0; attempt < 3; attempt++) {
     const orderCode = generateOrderCode();
+    // Nội dung CK = tiền tố sản phẩm (env) + mã gói [+ đuôi mã đơn khi TK đã
+    // liên kết, trần 25 ký tự] — lưu vào dòng để FE bày đúng chuỗi đã gửi.
+    const description = buildPayosDescription(plan.code, {
+      prefix: cfg.transferPrefix,
+      maxLen: cfg.descriptionMaxLen,
+      orderCode,
+    });
     try {
       // Giữ chỗ trong DB TRƯỚC khi gọi payOS: webhook không bao giờ tới trước dòng.
       const row = await prisma.gatewayPaymentOrder.create({
@@ -173,6 +179,7 @@ export async function createCheckout(input: {
           planName: plan.name,
           cycle: input.cycle,
           amount: new Prisma.Decimal(amount),
+          description,
           expiresAt,
         },
       });

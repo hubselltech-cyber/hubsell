@@ -18,6 +18,14 @@
 // Cấu hình (Render): PAYOS_CLIENT_ID / PAYOS_API_KEY / PAYOS_CHECKSUM_KEY
 // (lấy ở my.payos.vn → Kênh thanh toán). Thiếu bất kỳ khóa nào = cổng TẮT:
 // /me trả gateway=null, FE quay về luồng "Đăng ký mua → HQ liên hệ".
+//
+// TÁI DÙNG CHO SẢN PHẨM KHÁC (anh Trung chốt 11/09/2026 — vd Hubtax): file này
+// KHÔNG chứa chữ nào riêng của Hubsell. Nhận diện sản phẩm nằm ở 2 chỗ env:
+//   · Kênh thanh toán riêng trên my.payos.vn → bộ 3 khóa riêng (cách 1).
+//   · PAYOS_TRANSFER_PREFIX ("HS" Hubsell, "HT" Hubtax…) in vào nội dung
+//     chuyển khoản → lọc sao kê ngân hàng theo tiền tố (cách 2).
+// Chép nguyên thư mục integrations/payos + đặt env là sản phẩm mới chạy.
+// Checklist: docs/PAYOS-KENH-THANH-TOAN.md
 // ============================================================
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -33,6 +41,37 @@ export interface PayosConfig {
   checksumKey: string;
   /** Mã đối tác chương trình "Đối tác tích hợp" (tùy chọn, 100đ/giao dịch cho dev). */
   partnerCode: string | null;
+  /** Tiền tố nhận diện sản phẩm trong nội dung chuyển khoản (PAYOS_TRANSFER_PREFIX). */
+  transferPrefix: string;
+  /** Trần ký tự nội dung chuyển khoản: 9 khi TK chưa liên kết, 25 khi đã liên kết. */
+  descriptionMaxLen: number;
+}
+
+/** Tùy chọn dựng nội dung chuyển khoản — đọc được cả khi cổng chưa có khóa. */
+export interface PayosDescriptionOptions {
+  prefix: string;
+  maxLen: number;
+}
+
+export const PAYOS_DESCRIPTION_MIN = 9;
+export const PAYOS_DESCRIPTION_MAX = 25;
+const DEFAULT_TRANSFER_PREFIX = "HS";
+
+/**
+ * PAYOS_TRANSFER_PREFIX: 1-4 ký tự chữ/số không dấu (mặc định "HS").
+ * PAYOS_DESCRIPTION_MAX: 9 (mặc định, an toàn với TK chưa liên kết) … 25 (TK
+ * đã liên kết payOS) — giá trị ngoài khoảng bị kẹp về khoảng.
+ */
+export function getPayosDescriptionOptions(
+  env: NodeJS.ProcessEnv = process.env
+): PayosDescriptionOptions {
+  const rawPrefix = (env.PAYOS_TRANSFER_PREFIX ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const prefix = rawPrefix ? rawPrefix.slice(0, 4) : DEFAULT_TRANSFER_PREFIX;
+  const rawLen = Number.parseInt(env.PAYOS_DESCRIPTION_MAX ?? "", 10);
+  const maxLen = Number.isFinite(rawLen)
+    ? Math.min(PAYOS_DESCRIPTION_MAX, Math.max(PAYOS_DESCRIPTION_MIN, rawLen))
+    : PAYOS_DESCRIPTION_MIN;
+  return { prefix, maxLen };
 }
 
 export function getPayosConfig(): PayosConfig | null {
@@ -40,11 +79,14 @@ export function getPayosConfig(): PayosConfig | null {
   const apiKey = process.env.PAYOS_API_KEY?.trim();
   const checksumKey = process.env.PAYOS_CHECKSUM_KEY?.trim();
   if (!clientId || !apiKey || !checksumKey) return null;
+  const desc = getPayosDescriptionOptions();
   return {
     clientId,
     apiKey,
     checksumKey,
     partnerCode: process.env.PAYOS_PARTNER_CODE?.trim() || null,
+    transferPrefix: desc.prefix,
+    descriptionMaxLen: desc.maxLen,
   };
 }
 
@@ -367,10 +409,28 @@ export function generateOrderCode(now: number = Date.now()): number {
 
 /**
  * Nội dung chuyển khoản hiện trên app ngân hàng của khách. payOS tự ghép mã
- * nhận diện phía trước; phần mình đặt giới hạn 9 ký tự (mức an toàn với mọi
- * kiểu tài khoản), không dấu, không ký tự đặc biệt.
+ * nhận diện của họ phía trước; phần mình đặt = "<TIỀN TỐ> <MÃ GÓI> [<8 số cuối
+ * mã đơn>]", không dấu, không ký tự đặc biệt, cắt về `maxLen`:
+ *   · maxLen 9 (TK chưa liên kết): "HS GROWTH", "HS BUSINE" — chỉ tiền tố + gói.
+ *   · maxLen 25 (TK đã liên kết): "HS BUSINESS 45678901" — thêm đuôi mã đơn
+ *     để nhìn sao kê là biết đơn nào; đuôi chỉ ghép khi còn chỗ.
+ * Tiền tố là thứ phân biệt sản phẩm trên sao kê khi nhiều sản phẩm cùng nhận
+ * tiền vào một tài khoản (Hubsell "HS", Hubtax "HT"…).
  */
-export function buildPayosDescription(planCode: string): string {
+export function buildPayosDescription(
+  planCode: string,
+  opts: Partial<PayosDescriptionOptions> & { orderCode?: number | bigint | string } = {}
+): string {
+  const env = getPayosDescriptionOptions();
+  const prefix = (opts.prefix ?? env.prefix).replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const maxLen = Math.min(
+    PAYOS_DESCRIPTION_MAX,
+    Math.max(PAYOS_DESCRIPTION_MIN, opts.maxLen ?? env.maxLen)
+  );
   const code = planCode.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  return `HS ${code}`.slice(0, 9).trim();
+  const base = `${prefix} ${code}`.slice(0, maxLen).trim();
+  if (opts.orderCode === undefined) return base;
+  const tail = String(opts.orderCode).replace(/\D/g, "").slice(-8);
+  const withTail = `${prefix} ${code} ${tail}`;
+  return withTail.length <= maxLen && tail.length > 0 ? withTail : base;
 }

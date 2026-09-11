@@ -7,6 +7,7 @@ import {
   createSignatureFromObj,
   createSignatureOfPaymentRequest,
   generateOrderCode,
+  getPayosDescriptionOptions,
   verifyPayosWebhook,
 } from "../payos/client";
 import { parsePayosTime } from "../../services/gateway-checkout";
@@ -99,11 +100,45 @@ describe("tiện ích nghiệp vụ", () => {
     expect(a).toBeLessThan(1_757_400_000_001_000);
   });
 
-  it("buildPayosDescription: ≤ 9 ký tự, không ký tự lạ", () => {
+  it("buildPayosDescription: mặc định ≤ 9 ký tự, tiền tố HS, không ký tự lạ", () => {
     expect(buildPayosDescription("GROWTH")).toBe("HS GROWTH");
     expect(buildPayosDescription("BUSINESS")).toBe("HS BUSINE");
     expect(buildPayosDescription("pro-1")).toBe("HS PRO1");
     expect(buildPayosDescription("BUSINESS").length).toBeLessThanOrEqual(9);
+    // 9 ký tự thì KHÔNG còn chỗ cho đuôi mã đơn → vẫn chỉ tiền tố + gói.
+    expect(buildPayosDescription("GROWTH", { orderCode: 1757400000000123 })).toBe("HS GROWTH");
+  });
+
+  it("buildPayosDescription: TK đã liên kết (25 ký tự) → đủ tên gói + đuôi 8 số mã đơn", () => {
+    expect(buildPayosDescription("BUSINESS", { maxLen: 25, orderCode: 1757400000000123 })).toBe(
+      "HS BUSINESS 00000123"
+    );
+    expect(buildPayosDescription("BUSINESS", { maxLen: 25 })).toBe("HS BUSINESS");
+    expect(buildPayosDescription("ENTERPRISE", { maxLen: 25, orderCode: "1757400000000123" })).toBe(
+      "HS ENTERPRISE 00000123"
+    );
+    // Vượt 25 thì bị kẹp về 25; dưới 9 bị kẹp lên 9.
+    expect(buildPayosDescription("BUSINESS", { maxLen: 99 }).length).toBeLessThanOrEqual(25);
+    expect(buildPayosDescription("BUSINESS", { maxLen: 1 })).toBe("HS BUSINE");
+  });
+
+  it("buildPayosDescription: tiền tố sản phẩm khác (Hubtax HT) phân biệt được trên sao kê", () => {
+    expect(buildPayosDescription("GROWTH", { prefix: "HT" })).toBe("HT GROWTH");
+    expect(buildPayosDescription("GROWTH", { prefix: "ht-x", maxLen: 25, orderCode: 99 })).toBe(
+      "HTX GROWTH 99"
+    );
+  });
+
+  it("getPayosDescriptionOptions: đọc env, mặc định HS/9, kẹp 9..25, lọc ký tự lạ", () => {
+    expect(getPayosDescriptionOptions({})).toEqual({ prefix: "HS", maxLen: 9 });
+    expect(
+      getPayosDescriptionOptions({ PAYOS_TRANSFER_PREFIX: "ht", PAYOS_DESCRIPTION_MAX: "25" })
+    ).toEqual({ prefix: "HT", maxLen: 25 });
+    expect(getPayosDescriptionOptions({ PAYOS_DESCRIPTION_MAX: "40" }).maxLen).toBe(25);
+    expect(getPayosDescriptionOptions({ PAYOS_DESCRIPTION_MAX: "3" }).maxLen).toBe(9);
+    expect(getPayosDescriptionOptions({ PAYOS_DESCRIPTION_MAX: "abc" }).maxLen).toBe(9);
+    expect(getPayosDescriptionOptions({ PAYOS_TRANSFER_PREFIX: "h.u.b.t.a.x" }).prefix).toBe("HUBT");
+    expect(getPayosDescriptionOptions({ PAYOS_TRANSFER_PREFIX: "--" }).prefix).toBe("HS");
   });
 
   it("parsePayosTime: giờ VN không múi giờ → UTC-7h; chuỗi lạ → không NaN", () => {

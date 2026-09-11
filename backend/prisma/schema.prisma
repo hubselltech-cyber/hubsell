@@ -2139,6 +2139,10 @@ model GatewayPaymentOrder {
   /// Số tiền PHẢI THU (giá niêm yết snapshot) — webhook lệch số này → MISMATCH.
   amount Decimal            @db.Decimal(14, 2)
   status GatewayOrderStatus @default(PENDING)
+  /// Nội dung chuyển khoản ĐÃ GỬI sang cổng (tiền tố sản phẩm + mã gói [+ đuôi
+  /// mã đơn]) — FE bày đúng chuỗi này, không dựng lại (env tiền tố/độ dài có
+  /// thể đổi giữa lúc tạo và lúc khách mở lại). Null = đơn cũ trước 11/09/2026.
+  description   String?
   /// Link/QR do cổng cấp — FE render lại khi khách mở lại trang.
   paymentLinkId String?
   checkoutUrl   String?
