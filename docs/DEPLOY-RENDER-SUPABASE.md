@@ -93,7 +93,7 @@ Biến chỉnh nhịp worker quét sàn (workers/order-auto-sync.ts):
 | `AUTO_SYNC_MINUTES` | 10 | Nhịp gốc tầng NHANH (đơn/hoàn/cứu đơn); `0` = tắt |
 | `AUTO_SYNC_MAX_MINUTES` | 60 | Trần giãn nhịp cho gian im ắng (×2 mỗi lượt không biến động) |
 | `AUTO_SYNC_CONCURRENCY` | 3 | Số gian xử lý song song trong một worker |
-| `ADS_SYNC_HOURS` | 24 | Nhịp tầng ADS (chi phí + campaign + Trợ lý); trang Ads mở mà số cũ >30' tự nudge |
+| `ADS_SYNC_HOURS` | 6 | Nhịp tầng ADS (chi phí + campaign + Trợ lý); trang Ads mở mà số cũ >30' tự nudge |
 
 Local: PowerShell `$env:HUBSELL_ROLE="worker"; npm run dev` chạy riêng worker;
 không đặt gì = `all` như trước.

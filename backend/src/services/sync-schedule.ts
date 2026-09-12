@@ -53,3 +53,36 @@ export async function nudgeAdsSyncIfStale(channelId: string, now = Date.now()): 
     return false;
   }
 }
+
+/** Hai lần bấm Làm mới cách nhau dưới ngưỡng này → không kéo lại (chống spam quota). */
+export const ADS_REFRESH_MIN_GAP_MS = 2 * 60 * 1000;
+
+export interface AdsRefreshResult {
+  /** true = đã kéo hạn về ngay, worker sẽ chạy trong ≤1 nhịp (20s) + thời gian kéo. */
+  queued: boolean;
+  /** Mốc số ads hiện có (FE so sánh để biết lượt mới đã xong). */
+  adsSyncedAt: string | null;
+  message: string;
+}
+
+/**
+ * Seller bấm "Làm mới" trên trang Trợ lý quảng cáo: kéo hạn ads về ngay để
+ * worker chạy (không gọi API sàn trong request). Chống spam: số vừa cập nhật
+ * <2' thì trả queued=false kèm mốc, FE hiện "vừa cập nhật".
+ */
+export async function requestAdsRefresh(channelId: string, now = Date.now()): Promise<AdsRefreshResult> {
+  const ch = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { lastAdsSyncAt: true, nextAdsSyncAt: true },
+  });
+  if (!ch) return { queued: false, adsSyncedAt: null, message: "Không tìm thấy gian" };
+  const adsSyncedAt = ch.lastAdsSyncAt?.toISOString() ?? null;
+  if (ch.lastAdsSyncAt && now - ch.lastAdsSyncAt.getTime() < ADS_REFRESH_MIN_GAP_MS) {
+    return { queued: false, adsSyncedAt, message: "Số quảng cáo vừa được cập nhật, thử lại sau ít phút" };
+  }
+  // Đã đến hạn (worker sắp/đang kéo) thì không cần ghi thêm.
+  if (!ch.nextAdsSyncAt || ch.nextAdsSyncAt.getTime() > now) {
+    await prisma.channel.update({ where: { id: channelId }, data: { nextAdsSyncAt: new Date(now) } });
+  }
+  return { queued: true, adsSyncedAt, message: "Đang kéo số mới từ sàn, bảng sẽ tự cập nhật trong khoảng một phút" };
+}

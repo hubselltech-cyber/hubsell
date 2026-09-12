@@ -5123,6 +5123,25 @@ export interface ShopeeAdsDashboard {
   series: { date: string; spend: number; broadGmv: number; directGmv: number }[];
   /** true = số ads cũ >30', worker đang kéo tươi — FE tự nạp lại sau ~45s (12/09). */
   adsRefreshing?: boolean;
+  /** Mốc số ads hiện có (ISO) — nút Làm mới so mốc này để biết lượt kéo mới xong. */
+  adsSyncedAt?: string | null;
+}
+
+export interface AdsRefreshResult {
+  queued: boolean;
+  adsSyncedAt: string | null;
+  message: string;
+}
+
+/**
+ * Nút LÀM MỚI (12/09): yêu cầu worker kéo số ads ngay (không gọi sàn trong
+ * request). Chống spam 2' phía backend → queued=false kèm message.
+ */
+export function requestAdsRefresh(channelId: string, platform: AdsPlatform = "shopee") {
+  return apiFetch<AdsRefreshResult>(`/api/ads/${platform}/refresh`, {
+    method: "POST",
+    body: JSON.stringify({ channelId }),
+  });
 }
 
 /** Sàn của Trợ lý quảng cáo dữ liệu thật — backend đăng ký cùng bộ route cho cả hai. */

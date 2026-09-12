@@ -118,7 +118,7 @@ Còn lại sau ISV duyệt: nộp Go-Live app Hubsell Ads, lấy Partner ID/Key 
 ## Nhịp đồng bộ số ads (12/09/2026 — thiết kế cho hàng chục ngàn gian)
 
 - Tầng ADS trong worker quét theo lịch TỪNG GIAN (`Channel.nextAdsSyncAt`),
-  mặc định **mỗi 24h** (`ADS_SYNC_HOURS`), cửa sổ **7 ngày** (sàn còn chỉnh số
+  mặc định **mỗi 6h** (`ADS_SYNC_HOURS`, 12/09 anh Trung muốn ads tươi hơn), cửa sổ **7 ngày** (sàn còn chỉnh số
   vài ngày đầu). Lần đầu / vừa nối (lại) Hubsell Ads → `adsBackfillPending`
   = true → lượt kế kéo lùi **30 ngày** ngay (callback OAuth gọi `markAdsBackfill`).
 - Mở trang Trợ lý quảng cáo: backend `GET /api/ads/:platform` gọi
@@ -126,6 +126,6 @@ Còn lại sau ISV duyệt: nộp Go-Live app Hubsell Ads, lấy Partner ID/Key 
   `adsRefreshing: true`; FE tự nạp lại nền sau 45s. Không gọi API sàn trong
   request (web/worker tách vai).
 - Gian chưa ủy quyền Hubsell Ads (khi app đã bật) bỏ qua tầng ADS lặng lẽ,
-  hạn vẫn được đẩy lên 24h để không bị nhặt lại mỗi nhịp.
+  hạn vẫn được đẩy lên nhịp kế để không bị nhặt lại mỗi nhịp.
 - Trợ lý tự thực thi chạy ngay SAU sync ads trong cùng tầng → nhịp đánh giá
-  = nhịp ads (24h). Muốn dày hơn khi bật live: hạ `ADS_SYNC_HOURS`.
+  = nhịp ads (6h). Muốn dày hơn khi bật live: hạ `ADS_SYNC_HOURS`.

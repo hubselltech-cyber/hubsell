@@ -50,7 +50,7 @@ import {
   getStoredUser,
   getToken,
   saveShopeeAssistantConfig,
-  syncShopeeAdsCampaigns,
+  requestAdsRefresh,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
   type ShopeeAssistantConfig,
@@ -332,21 +332,46 @@ export function ShopeeAdsPage({
     void load(channelId, d);
   }
 
+  // LÀM MỚI (12/09): không gọi sàn trong request — backend kéo hạn ads của gian
+  // về ngay, worker chạy đủ chi phí + campaign + Trợ lý. Trang poll nền mỗi 8s
+  // tới khi mốc adsSyncedAt đổi (tối đa ~3 phút) rồi báo "Đã cập nhật".
+  const REFRESH_POLL_MS = 8_000;
+  const REFRESH_POLL_MAX = 22;
   async function runSync() {
     if (!channelId || syncing) return;
     setSyncing(true);
     setSyncNote(null);
     try {
-      const res = await syncShopeeAdsCampaigns(channelId);
-      setSyncNote(
-        `Đã đồng bộ ${formatNumber(res.campaignsUpserted)} chiến dịch, ${formatNumber(res.perfDaysUpserted)} dòng hiệu suất ngày.`
-      );
-      await load(channelId, days);
+      const res = await requestAdsRefresh(channelId, platform);
+      if (!res.queued) {
+        setSyncNote(res.message);
+        await load(channelId, days, { silent: true });
+        return;
+      }
+      setSyncNote("Đang kéo số mới từ sàn, bảng sẽ tự cập nhật trong khoảng một phút…");
+      const before = res.adsSyncedAt;
+      for (let i = 0; i < REFRESH_POLL_MAX; i++) {
+        await new Promise((r) => setTimeout(r, REFRESH_POLL_MS));
+        const fresh = await fetchShopeeAdsDashboard({ channelId, days, platform });
+        if (fresh.adsSyncedAt && fresh.adsSyncedAt !== before) {
+          setData(fresh);
+          setSyncNote(`Đã cập nhật số quảng cáo lúc ${formatSyncTime(fresh.adsSyncedAt)}.`);
+          return;
+        }
+      }
+      setSyncNote("Sàn phản hồi chậm — số sẽ tự cập nhật khi worker kéo xong, anh/chị có thể mở lại trang sau ít phút.");
     } catch (err) {
-      setSyncNote(`Đồng bộ lỗi: ${(err as Error).message}`);
+      setSyncNote(`Làm mới lỗi: ${(err as Error).message}`);
     } finally {
       setSyncing(false);
     }
+  }
+
+  function formatSyncTime(iso: string): string {
+    const d = new Date(iso);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    const hm = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    return sameDay ? hm : `${hm} ${d.toLocaleDateString("vi-VN")}`;
   }
 
   const summary = data?.summary ?? null;
@@ -514,15 +539,20 @@ export function ShopeeAdsPage({
                 </button>
               ))}
             </div>
+            {data?.adsSyncedAt && (
+              <span className="text-xs text-muted-foreground tabular-nums" title="Lần kéo số quảng cáo từ sàn gần nhất">
+                Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
+              </span>
+            )}
             <Button
               variant="outline"
               size="sm"
               onClick={() => void runSync()}
               disabled={syncing || !channelId || !adsLinked}
-              title={adsLinked ? undefined : "Kết nối Hubsell Ads trước khi đồng bộ"}
+              title={adsLinked ? "Kéo số chi phí + chiến dịch mới nhất từ sàn" : "Kết nối Hubsell Ads trước khi làm mới"}
             >
               <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-              {syncing ? "Đang đồng bộ…" : "Đồng bộ"}
+              {syncing ? "Đang làm mới…" : "Làm mới"}
             </Button>
           </div>
         </div>
@@ -681,7 +711,7 @@ export function ShopeeAdsPage({
               {seriesEmpty ? (
                 <div className="flex h-40 items-center justify-center px-4 text-center text-sm text-muted-foreground">
                   Chưa có chi tiêu quảng cáo trong {daysLabel(days)} — bật chiến
-                  dịch trên Shopee rồi bấm Đồng bộ để xem biểu đồ.
+                  dịch trên Shopee rồi bấm Làm mới để xem biểu đồ.
                 </div>
               ) : (
               <div className="h-72 w-full">
@@ -802,12 +832,12 @@ export function ShopeeAdsPage({
             ) : campaigns.length === 0 && !loading ? (
               <div className="py-10 text-center">
                 <p className="text-sm text-muted-foreground">
-                  Chưa có dữ liệu chiến dịch. Bấm Đồng bộ để kéo từ {meta.label}{" "}
+                  Chưa có dữ liệu chiến dịch. Bấm Làm mới để kéo từ {meta.label}{" "}
                   về (worker cũng tự chạy mỗi giờ).
                 </p>
                 <Button className="mt-4" onClick={() => void runSync()} disabled={syncing}>
                   <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-                  Đồng bộ ngay
+                  Làm mới ngay
                 </Button>
               </div>
             ) : visibleCampaigns.length === 0 && !loading ? (

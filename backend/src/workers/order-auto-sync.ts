@@ -18,7 +18,7 @@
 //   · nextHourlySyncAt — tầng NHỊP GIỜ: đối soát phí thật (Escrow/Finance),
 //                        payout/rút ví, quét cảnh báo điều hành.
 //   · nextAdsSyncAt    — tầng ADS: chi phí ngày + campaign + Trợ lý tự thực
-//                        thi. Mặc định 24h (ADS_SYNC_HOURS), cửa sổ 7 ngày;
+//                        thi. Mặc định 6h (ADS_SYNC_HOURS, anh Trung 12/09 "ads tươi hơn"), cửa sổ 7 ngày;
 //                        lần đầu / vừa nối Hubsell Ads kéo lùi 30 ngày
 //                        (adsBackfillPending). Trang Trợ lý quảng cáo mở mà
 //                        số cũ >30' thì nudge hạn về "ngay" (services/sync-schedule.ts).
@@ -75,7 +75,7 @@ const DEFAULT_MAX_INTERVAL_MIN = 60;
 /** Tầng nhịp giờ. */
 const HOURLY_INTERVAL_MIN = 60;
 /** Tầng ads (giờ). */
-const DEFAULT_ADS_INTERVAL_HOURS = 24;
+const DEFAULT_ADS_INTERVAL_HOURS = 6;
 /** Số gian xử lý SONG SONG tối đa trong một worker. */
 const DEFAULT_CONCURRENCY = 3;
 /** Nhịp nhặt vé (ms). */

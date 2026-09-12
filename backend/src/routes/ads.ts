@@ -7,7 +7,7 @@ import {
   getAdsTotalBalance,
 } from "../integrations/shopee/client";
 import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
-import { nudgeAdsSyncIfStale } from "../services/sync-schedule";
+import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
 import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
 import {
   MARGIN_WINDOW_DAYS,
@@ -270,8 +270,15 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       }
 
       // Số ads cũ >30' → nudge worker kéo tươi (không gọi API sàn trong request);
-      // FE thấy adsRefreshing thì tự nạp lại sau ~45s.
-      const adsRefreshing = await nudgeAdsSyncIfStale(selected.id);
+      // FE thấy adsRefreshing thì tự nạp lại sau ~45s. adsSyncedAt = mốc số
+      // hiện có — nút Làm mới so mốc này để biết lượt kéo mới đã xong.
+      const [adsRefreshing, schedule] = await Promise.all([
+        nudgeAdsSyncIfStale(selected.id),
+        prisma.channel.findUnique({
+          where: { id: selected.id },
+          select: { lastAdsSyncAt: true },
+        }),
+      ]);
 
       res.json({
         channels,
@@ -280,6 +287,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         wallet,
         adsApp,
         adsRefreshing,
+        adsSyncedAt: schedule?.lastAdsSyncAt?.toISOString() ?? null,
         assistant: {
           config: assistantConfig,
           counts,
@@ -357,6 +365,34 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         create: { channelId: channel.id, config: jsonConfig },
       });
       res.json({ message: "Đã lưu cấu hình Trợ lý", config: normalized });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/{sàn}/refresh — nút LÀM MỚI (12/09): seller chủ động kéo số
+  // ads. KHÔNG gọi sàn trong request — kéo hạn ads của gian về ngay, worker
+  // chạy đủ chi phí + campaign + Trợ lý trong ≤1 nhịp; FE so adsSyncedAt để
+  // biết xong. Chống spam 2' (services/sync-schedule.ts). Body: { channelId }.
+  router.post(`/${platform}/refresh`, async (req: AuthRequest, res, next) => {
+    try {
+      const channelId = String((req.body as { channelId?: unknown })?.channelId ?? "");
+      const channel = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName, status: "ACTIVE" },
+        select: { id: true },
+      });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      if (platform === "shopee") {
+        const link = await getHubsellAdsLinkStatus(channel.id);
+        if (link.required && link.status !== "ACTIVE") {
+          res.status(409).json({ error: "Gian chưa kết nối Hubsell Ads — kết nối trước khi làm mới" });
+          return;
+        }
+      }
+      res.json(await requestAdsRefresh(channel.id));
     } catch (err) {
       next(err);
     }
