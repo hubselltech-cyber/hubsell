@@ -548,6 +548,8 @@ model AdsActionLog {
   adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
 
   @@index([channelId, createdAt])
+  /// Thống kê toàn nền tảng theo ngày (HQ Sức khỏe / stats) — không quét cả bảng.
+  @@index([createdAt])
   @@index([adsCampaignId, createdAt])
 }
 
@@ -2579,4 +2581,38 @@ model ApiThrottleState {
   updatedAt   DateTime  @updatedAt
 
   @@map("api_throttle_states")
+}
+
+/// SỨC KHỎE HQ (docs/HQ-SUC-KHOE.md, 12/09/2026): ảnh chụp số liệu mỗi giờ để
+/// vẽ xu hướng 30 ngày + dự báo ngày chạm mốc. Giữ 90 ngày (log-cleanup).
+model PlatformHealthSnapshot {
+  id            String   @id @default(cuid())
+  takenAt       DateTime @default(now())
+  /// Vài cột số hay vẽ — đọc nhanh không cần parse JSON.
+  channels      Int      @default(0)
+  owners        Int      @default(0)
+  ordersPerDay  Int      @default(0)
+  dbSizeMb      Int      @default(0)
+  ramMb         Int      @default(0)
+  overdueFast   Int      @default(0)
+  /// Toàn bộ metrics 3 lớp (growth/worker/infra) — services/platform-health.ts.
+  metrics       Json
+
+  @@index([takenAt])
+  @@map("platform_health_snapshots")
+}
+
+/// Trạng thái từng mốc timeline sức chứa (config/capacity-plan.ts): chạm lúc nào,
+/// anh Trung tick "đã làm" lúc nào. Mỗi mốc một dòng, tạo lười khi chạm/tick.
+model PlatformCapacityMilestone {
+  key        String    @id
+  reachedAt  DateTime?
+  /// Đã nhắc "sắp chạm" lần gần nhất (chống nhắc lặp mỗi ngày).
+  warnedAt   DateTime?
+  doneAt     DateTime?
+  doneBy     String?
+  note       String?
+  updatedAt  DateTime  @updatedAt
+
+  @@map("platform_capacity_milestones")
 }

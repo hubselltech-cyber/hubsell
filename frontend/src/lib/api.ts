@@ -4030,6 +4030,108 @@ export interface PlatformWebhookLogsResponse {
   logs: PlatformWebhookLogRow[];
 }
 
+// ---------- HQ Sức khỏe (docs/HQ-SUC-KHOE.md) ----------
+
+export type HealthLevel = "ok" | "warn" | "crit";
+
+export interface HealthSignal {
+  key: string;
+  label: string;
+  value: string;
+  level: HealthLevel;
+  hint?: string;
+}
+
+export interface CapacityMilestoneDto {
+  key: string;
+  title: string;
+  conditions: { metric: string; gte: number }[];
+  upgrades: { what: string; usdPerMonth: number }[];
+  checklist: string[];
+  note?: string;
+}
+
+export interface HealthTimelineItem {
+  milestone: CapacityMilestoneDto;
+  reached: boolean;
+  reachedAt: string | null;
+  doneAt: string | null;
+  doneBy: string | null;
+  note: string | null;
+  progress: { metric: string; label: string; current: number; target: number }[];
+}
+
+export interface PlatformHealthResponse {
+  metrics: {
+    takenAt: string;
+    growth: {
+      ownersTotal: number;
+      ownersActive30d: number;
+      ownersNew7d: number;
+      channelsActive: number;
+      channelsByPlatform: Record<string, number>;
+      channelsAds: number;
+      channelsDisconnected: number;
+      ordersTotal: number;
+      ordersPerDay7d: number;
+      ordersPeakDay30d: number;
+      webhooksPerDay7d: number;
+    };
+    worker: {
+      overdueFast15: number;
+      overdueFast60: number;
+      overduePulse: number;
+      lockedStale: number;
+      webhookPending: number;
+      webhookOldestMin: number | null;
+      misaPending: number;
+      stockPushPending: number;
+      deliveryOverdue: number;
+      breakersPaused: string[];
+      breakerTrips24h: number;
+      syncStalled: number;
+      adsAuthDisconnected: number;
+    };
+    infra: {
+      dbSizeMb: number | null;
+      dbTopTables: { table: string; mb: number }[];
+      dbConnections: number | null;
+      dbMaxConnections: number | null;
+      ramMb: number;
+      heapMb: number;
+      uptimeSec: number;
+      role: string;
+      nodeVersion: string;
+      gitSha: string | null;
+      plan: { webPlan: string; workerPlan: string; dbPlan: string; webRamMb: number; workerRamMb: number; dbSizeMb: number; dbMaxConnections: number; monthlyUsd: number };
+      dbPct: number | null;
+      ramPct: number;
+      connPct: number | null;
+    };
+  };
+  signals: HealthSignal[];
+  suggestions: string[];
+  timeline: {
+    current: CapacityMilestoneDto;
+    next: CapacityMilestoneDto | null;
+    nextEta: { days: number | null; by: { metric: string; gte: number } | null } | null;
+    trendsPerDay: Partial<Record<string, number | null>>;
+    milestones: HealthTimelineItem[];
+  };
+  trends: Record<"channels" | "owners" | "ordersPerDay" | "dbSizeMb", { t: number; v: number }[]>;
+}
+
+export function fetchPlatformHealth() {
+  return apiFetch<PlatformHealthResponse>("/api/admin/health");
+}
+
+export function markPlatformMilestone(key: string, done: boolean, note?: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/health/milestones/${encodeURIComponent(key)}/${done ? "done" : "undone"}`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
 export function fetchPlatformWebhookLogs(params?: {
   source?: PlatformWebhookSource;
   status?: string;

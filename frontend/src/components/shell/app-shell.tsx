@@ -289,6 +289,9 @@ const NAV_ITEMS_HQ_BOTTOM: NavItem[] = [
   // Khu kỹ thuật: nhật ký webhook (lá hq.webhooks) + nhật ký thao tác (chỉ
   // chủ nền tảng — trang tự ẩn phần này với nhân viên).
   { href: "/admin/system", label: "Hệ thống", icon: "admin_panel_settings", perm: "hq.webhooks" },
+  // Radar sức chứa + timeline nâng cấp (docs/HQ-SUC-KHOE.md) — "làm sao anh nhớ
+  // lên 1.000 gian mà nâng cấp": việc nhớ là của hệ thống, không phải của người.
+  { href: "/admin/health", label: "Sức khỏe", icon: "monitor_heart", perm: "hq.health" },
 ];
 
 // Tiêu đề trang hiển thị trên Header, suy ra từ đường dẫn hiện tại
@@ -299,6 +302,7 @@ const PAGE_TITLES: { prefix: string; title: string }[] = [
   { prefix: "/admin/plans", title: "Gói dịch vụ & Thuê bao" },
   { prefix: "/admin/marketing", title: "Marketing & Giới thiệu" },
   { prefix: "/admin/system", title: "Hệ thống & Kỹ thuật" },
+  { prefix: "/admin/health", title: "Sức khỏe nền tảng" },
   { prefix: "/admin", title: "Điều hành Hubsell" },
   { prefix: "/guide", title: "Hướng dẫn sử dụng" },
   { prefix: "/orders", title: "Quản lý đơn hàng" },

@@ -32,6 +32,7 @@ import {
 } from "../integrations/invoice/issue-hq";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import adminPlansRouter from "./admin-plans";
+import adminHealthRouter from "./admin-health";
 
 // ============================================================
 // QUẢN TRỊ NỀN TẢNG (/api/admin) — chủ nền tảng (cờ isPlatformAdmin) và nhân
@@ -2190,5 +2191,7 @@ router.get("/audit-logs", requirePlatformAdmin, async (req, res, next) => {
 
 // Gói dịch vụ & thuê bao (GĐ1 thương mại hóa) — router con cùng cửa /api/admin.
 router.use(adminPlansRouter);
+// Sức khỏe nền tảng (radar sức chứa + timeline nâng cấp) — cùng cửa /api/admin.
+router.use(adminHealthRouter);
 
 export default router;

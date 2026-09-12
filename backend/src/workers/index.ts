@@ -31,6 +31,7 @@ import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
 import { startShopeeWebhookWorker } from "../integrations/shopee/webhook-queue";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
+import { startHealthWatchWorker } from "./health-watch";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -75,4 +76,6 @@ export function startAllWorkers(): void {
   startTaxDeadlineReminderWorker();
   // Bồi đơn cho tài khoản trial reviewer ISV (tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0).
   startReviewerDemoTopupWorker();
+  // Radar sức chứa HQ: dấu hiệu 10', snapshot + mốc 60', dự báo 8h — email platform admin.
+  startHealthWatchWorker();
 }

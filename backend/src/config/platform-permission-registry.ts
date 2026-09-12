@@ -25,6 +25,7 @@ export const HQ_PERMISSION_TREE: PermissionNode[] = [
   { key: "hq.finance", label: "Kế toán nội bộ" },
   { key: "hq.marketing", label: "Marketing & Giới thiệu" },
   { key: "hq.webhooks", label: "Nhật ký Webhook" },
+  { key: "hq.health", label: "Sức khỏe nền tảng" },
 ];
 
 /** Mọi khóa LÁ hợp lệ của cây HQ. */
@@ -83,8 +84,8 @@ export const HQ_PERMISSION_PRESETS: {
   {
     key: "HQ_TECH",
     label: "Kỹ thuật vận hành",
-    description: "Tổng quan hệ thống và nhật ký webhook — theo dõi sức khỏe nền tảng.",
-    permissions: ["hq.overview", "hq.webhooks"],
+    description: "Tổng quan hệ thống, nhật ký webhook và radar sức khỏe/sức chứa nền tảng.",
+    permissions: ["hq.overview", "hq.webhooks", "hq.health"],
   },
   {
     key: "HQ_MANAGER",

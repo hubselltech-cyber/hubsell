@@ -142,6 +142,18 @@ export async function runOnce(): Promise<void> {
       (ids) => prisma.inventorySyncAlert.deleteMany({ where: { id: { in: ids } } })
     );
 
+    // Snapshot sức khỏe HQ (mỗi giờ) — giữ 90 ngày là đủ vẽ xu hướng + dự báo.
+    await deleteInBatches(
+      "PlatformHealthSnapshot",
+      (take) =>
+        prisma.platformHealthSnapshot.findMany({
+          where: { takenAt: { lt: daysAgo(90) } },
+          select: { id: true },
+          take,
+        }),
+      (ids) => prisma.platformHealthSnapshot.deleteMany({ where: { id: { in: ids } } })
+    );
+
     // THÔNG TIN XUẤT HÓA ĐƠN của khách (Order.buyerInvoiceInfo — dữ liệu cá
     // nhân theo Luật BVDLCN, chỉ "ghé qua" Hubsell để phục vụ phát hành):
     //   · HĐ đã phát hành ≥30 ngày → bản đầy đủ đã nằm hợp pháp trên hóa đơn
