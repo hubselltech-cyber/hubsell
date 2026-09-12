@@ -833,7 +833,7 @@ export function ShopeeAdsPage({
               <div className="py-10 text-center">
                 <p className="text-sm text-muted-foreground">
                   Chưa có dữ liệu chiến dịch. Bấm Làm mới để kéo từ {meta.label}{" "}
-                  về (worker cũng tự chạy mỗi giờ).
+                  về (Hubsell cũng tự kiểm tra mỗi 30 phút khi campaign đang chạy).
                 </p>
                 <Button className="mt-4" onClick={() => void runSync()} disabled={syncing}>
                   <RefreshCw className={cn("size-4", syncing && "animate-spin")} />

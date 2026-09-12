@@ -1,7 +1,9 @@
 // Hàm thuần của lịch quét theo gian (12/09): bậc giãn nhịp, jitter, tầng đến hạn,
 // vai tiến trình. Không chạm DB / API sàn.
 import { afterEach, describe, expect, it } from "vitest";
-import { dueTiers, nextFastSchedule, withJitter } from "../order-auto-sync";
+import { ChannelName } from "@prisma/client";
+import { dueTiers, nextFastSchedule, nextPulseDelayMin, withJitter } from "../order-auto-sync";
+import { ADS_CADENCE } from "../../config/ads-cadence";
 import { resolveHubsellRole } from "../index";
 
 const cadence = { baseMin: 10, maxMin: 60 };
@@ -45,11 +47,9 @@ describe("withJitter", () => {
 describe("dueTiers", () => {
   const now = Date.parse("2026-09-12T10:00:00Z");
   it("null = chưa từng chạy = đến hạn mọi tầng", () => {
-    expect(dueTiers({ nextFastSyncAt: null, nextHourlySyncAt: null, nextAdsSyncAt: null }, now)).toEqual({
-      fast: true,
-      hourly: true,
-      ads: true,
-    });
+    expect(
+      dueTiers({ nextFastSyncAt: null, nextHourlySyncAt: null, nextAdsSyncAt: null, nextAdsPulseAt: null }, now)
+    ).toEqual({ fast: true, hourly: true, ads: true, pulse: true });
   });
   it("chỉ tầng có hạn ≤ now mới đến hạn", () => {
     expect(
@@ -58,10 +58,11 @@ describe("dueTiers", () => {
           nextFastSyncAt: new Date(now + 60_000),
           nextHourlySyncAt: new Date(now),
           nextAdsSyncAt: new Date(now + 1),
+          nextAdsPulseAt: new Date(now - 1),
         },
         now
       )
-    ).toEqual({ fast: false, hourly: true, ads: false });
+    ).toEqual({ fast: false, hourly: true, ads: false, pulse: true });
   });
 });
 
@@ -80,5 +81,27 @@ describe("resolveHubsellRole", () => {
     expect(resolveHubsellRole()).toBe("web");
     process.env.HUBSELL_ROLE = "banana";
     expect(resolveHubsellRole()).toBe("all");
+  });
+});
+
+describe("nextPulseDelayMin — hạn xung ads (tầng A)", () => {
+  const base = { channelName: ChannelName.SHOPEE, adsReady: true, liveCampaigns: 3, spentRecently: true, foundNew: false };
+  it("đang tiêu tiền → PULSE_MIN (Shopee 30')", () => {
+    expect(nextPulseDelayMin(base)).toBe(ADS_CADENCE.PULSE_MIN);
+  });
+  it("Lazada đang tiêu tiền → PULSE_LAZADA_MIN (60' tới khi có quota)", () => {
+    expect(nextPulseDelayMin({ ...base, channelName: ChannelName.LAZADA })).toBe(ADS_CADENCE.PULSE_LAZADA_MIN);
+  });
+  it("có campaign chạy nhưng 2 ngày không chi → giãn PULSE_IDLE_MIN", () => {
+    expect(nextPulseDelayMin({ ...base, spentRecently: false })).toBe(ADS_CADENCE.PULSE_IDLE_MIN);
+  });
+  it("không campaign chạy, không thấy mới → xung nhẹ PULSE_NO_CAMPAIGN_MIN", () => {
+    expect(nextPulseDelayMin({ ...base, liveCampaigns: 0, spentRecently: false })).toBe(ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN);
+  });
+  it("vừa thấy campaign mới → về nhịp gốc ngay dù DB chưa có campaign chạy", () => {
+    expect(nextPulseDelayMin({ ...base, liveCampaigns: 0, spentRecently: false, foundNew: true })).toBe(ADS_CADENCE.PULSE_MIN);
+  });
+  it("chưa ủy quyền Ads API → xung nhẹ, không gọi sàn", () => {
+    expect(nextPulseDelayMin({ ...base, adsReady: false })).toBe(ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN);
   });
 });

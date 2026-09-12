@@ -409,6 +409,11 @@ model Channel {
   adsBackfillPending Boolean @default(false)
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
   syncBackoffLevel Int      @default(0)
+  /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.
+  nextAdsPulseAt   DateTime?
+  /// Số dư ví ads sàn báo ở xung gần nhất (Shopee: total_balance; Lazada: 0 = cờ hết tiền, null = không rõ).
+  adsWalletBalance   Decimal?  @db.Decimal(14, 2)
+  adsWalletSyncedAt  DateTime?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
   syncLockedAt     DateTime?
 
@@ -420,6 +425,7 @@ model Channel {
   @@unique([userId, channelName, externalShopId])
   @@index([userId])
   @@index([status, nextFastSyncAt])
+  @@index([status, nextAdsPulseAt])
 }
 
 /// CHI PHÍ QUẢNG CÁO SÀN theo NGÀY của một gian hàng — sync READ-ONLY từ Ads
@@ -2558,4 +2564,19 @@ model KocOrderAttribution {
   @@index([kocId])
   @@index([ownerId])
   @@map("koc_order_attributions")
+}
+
+/// Cầu dao gọi API sàn THEO APP (services/api-budget.ts, 12/09/2026): sàn báo vượt
+/// trần theo partner → pausedUntil, mọi tiến trình đọc trước khi gọi Ads API.
+model ApiThrottleState {
+  /// Khóa app: "shopee:<partner_id>" | "lazada:<app_key>"
+  app         String    @id
+  pausedUntil DateTime?
+  /// Bậc nghỉ liên tiếp (5 phút × 2^level, trần 60 phút); về 0 sau 2h không trip.
+  level       Int       @default(0)
+  reason      String?
+  tripCount   Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+
+  @@map("api_throttle_states")
 }

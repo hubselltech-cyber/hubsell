@@ -77,7 +77,7 @@ Env đầy đủ (xem `backend/.env.example`): `HUBSELL_ADS_PARTNER_ID`,
 3. Callback đối chiếu `shop_id` với gian đích **trước khi đổi code** (đăng nhập
    nhầm shop khác sẽ báo lỗi rõ, không ghi token nhầm gian), lưu ChannelAppAuth,
    redirect về `/ads/shopee?hubsell_ads=connected`.
-4. Worker auto-sync bắt đầu kéo chi phí/campaign trong nhịp 10' kế tiếp.
+4. Worker nhặt vé trong ≤20s → XUNG ads kéo cấu hình + số hôm nay + ví ngay; lịch sử 30 ngày ở lượt kế (adsBackfillPending).
 5. Hết hạn refresh (30 ngày không gia hạn được) → dải vàng "kết nối lại".
 
 Dev local: callback đăng ký là domain Render → Render bật `code + shop_id +
@@ -115,17 +115,27 @@ demo@hubsell.tech). Script tạm sinh link / probe / trạm bắt code nằm ở
 Còn lại sau ISV duyệt: nộp Go-Live app Hubsell Ads, lấy Partner ID/Key **Live**
 → env Render, bỏ `HUBSELL_ADS_ENV`, 3 shop nhà ủy quyền lại trên trang Trợ lý.
 
-## Nhịp đồng bộ số ads (12/09/2026 — thiết kế cho hàng chục ngàn gian)
+## Nhịp đồng bộ số ads (12/09/2026 — thiết kế 3 tầng, docs/ADS-NHIP-CANH-BAO.md)
 
-- Tầng ADS trong worker quét theo lịch TỪNG GIAN (`Channel.nextAdsSyncAt`),
-  mặc định **mỗi 6h** (`ADS_SYNC_HOURS`, 12/09 anh Trung muốn ads tươi hơn), cửa sổ **7 ngày** (sàn còn chỉnh số
-  vài ngày đầu). Lần đầu / vừa nối (lại) Hubsell Ads → `adsBackfillPending`
-  = true → lượt kế kéo lùi **30 ngày** ngay (callback OAuth gọi `markAdsBackfill`).
-- Mở trang Trợ lý quảng cáo: backend `GET /api/ads/:platform` gọi
-  `nudgeAdsSyncIfStale` — số cũ >30' thì kéo `nextAdsSyncAt` về ngay, trả
-  `adsRefreshing: true`; FE tự nạp lại nền sau 45s. Không gọi API sàn trong
-  request (web/worker tách vai).
-- Gian chưa ủy quyền Hubsell Ads (khi app đã bật) bỏ qua tầng ADS lặng lẽ,
-  hạn vẫn được đẩy lên nhịp kế để không bị nhặt lại mỗi nhịp.
-- Trợ lý tự thực thi chạy ngay SAU sync ads trong cùng tầng → nhịp đánh giá
-  = nhịp ads (6h). Muốn dày hơn khi bật live: hạ `ADS_SYNC_HOURS`.
+Nguồn nhịp duy nhất: `backend/src/config/ads-cadence.ts`.
+
+- **Tầng A — XUNG** (`ads-pulse.ts` 2 sàn, worker `runAdsPulseTier`): mỗi **30'**
+  Shopee (`ADS_PULSE_MINUTES`) / **60'** Lazada (`ADS_PULSE_LAZADA_MINUTES`, tới khi có
+  quota app ISV) cho gian **đang tiêu tiền** (campaign chạy + chi trong 2 ngày).
+  Kéo cấu hình campaign (trạng thái/ngân sách/ROAS mục tiêu, campaign mới), số
+  **hôm nay**, chi tiêu cấp shop hôm nay và **ví ads → ghi DB**. Ngay sau xung:
+  Trợ lý tự thực thi + quét cảnh báo → chuông "cắn tiền"/"ví cạn" trong ≤30' +
+  độ trễ báo cáo của sàn. Gian có campaign nhưng 2 ngày không chi → 120'; gian đã
+  nối Ads nhưng chưa có campaign → xung nhẹ 1 call/120' (thấy campaign mới là xung
+  đủ ngay).
+- **Tầng B — LỊCH SỬ** (`runAdsTier`): mỗi **6h** (`ADS_SYNC_HOURS`) kéo lại **7
+  ngày** (sàn chỉnh số muộn). Lần đầu / vừa nối Hubsell Ads → `adsBackfillPending`
+  → 30 ngày trọn bộ (id list + cấu hình + perf).
+- **Tầng C — VAN AN TOÀN** (`services/api-budget.ts`): token bucket **3 call/s
+  mỗi app** (`ADS_APP_QPS`) cho mọi path `/api/v2/ads/` và `/sponsor/`; cầu dao
+  chung trong DB (`api_throttle_states`) đóng 5'→60' khi sàn báo vượt trần theo
+  app (`ads.rate_limit.exceed_partner_api`/`exceed_api`/HTTP 429), **không retry**;
+  vượt theo shop chỉ lùi gian đó 15'.
+- Mở trang Trợ lý mà số cũ >30' → nudge **xung** (`nudgeAdsSyncIfStale`), FE nạp lại
+  sau 45s. Nút **Làm mới** → `POST /api/ads/:platform/refresh` cũng kích xung
+  (chống spam 2'). Ví ads trên trang và detector đều **đọc DB** (không còn gọi sống).

@@ -19,7 +19,7 @@
 //      API) — về mặt code, live ghi NGUYÊN VĂN lỗi sàn vào sổ làm tư liệu.
 //   2. Idempotency: referenceId "pause-{campaignRowId}-{yyyy-mm-dd}" unique
 //      trong AdsActionLog → mỗi campaign tối đa 1 hành động/ngày, sweep chạy
-//      lặp mỗi giờ không bắn trùng (P2002 = đã hành động, bỏ qua êm).
+//      lặp mỗi xung ads (30') không bắn trùng (P2002 = đã hành động, bỏ qua êm).
 //   3. Quota maxActionsPerDay per-gian (đệm dưới giới hạn sàn ~10 thao tác/
 //      item/ngày) — ưu tiên campaign ĐANG TIÊU NHIỀU nhất trước (cắt chỗ chảy
 //      máu to trước khi hết quota).

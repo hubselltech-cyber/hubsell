@@ -11,6 +11,7 @@
 // ============================================================
 
 import crypto from "crypto";
+import { withApiBudget } from "../../services/api-budget";
 import {
   getShopeeConfig,
   SHOPEE_AUTH_URLS,
@@ -130,6 +131,30 @@ function ensureOk<T extends ShopeeEnvelope>(json: T, ctx: string): T {
 
 /** Số lần thử lại khi Shopee trả error_rate_limit (1 lần đầu + 3 retry). */
 const RATE_LIMIT_MAX_ATTEMPTS = 4;
+
+// ---------- Van an toàn Ads API theo app (services/api-budget.ts, 12/09) ----------
+
+/** Path nhóm Ads API — chỉ nhóm này có 3 mã rate limit riêng partner/shop/global. */
+function isAdsPath(path: string): boolean {
+  return path.startsWith("/api/v2/ads/");
+}
+
+/** Khóa cầu dao/bucket theo app ký chữ ký (app chính hay Hubsell Ads). */
+function adsAppKey(cfg: ShopeeConfig): string {
+  return `shopee:${cfg.partnerId}`;
+}
+
+/**
+ * Phân loại lỗi rate limit của Ads API theo tầng (docs Shopee, xem
+ * memory hubsell-api-quota-san): partner/global → đóng cầu dao, KHÔNG retry
+ * (FAQ 570: retry dồn dập = khóa app); shop → chỉ gian đó lùi lịch.
+ */
+export function classifyShopeeAdsRateLimit(err: unknown): "partner" | "shop" | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/exceed_partner_api|exceed_api[^_a-z]|exceed_api$|HTTP 429/i.test(msg)) return "partner";
+  if (/exceed_shop_api/i.test(msg)) return "shop";
+  return null;
+}
 /** Chờ trước retry đầu; các lần sau nhân đôi (1.5s → 3s → 6s). */
 const RATE_LIMIT_BASE_DELAY_MS = 1500;
 
@@ -137,6 +162,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function isRateLimitError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
+  // Mã rate limit của nhóm Ads (ads.rate_limit.*) KHÔNG retry ở đây — van an
+  // toàn theo app xử (đóng cầu dao / lùi gian), retry dồn là thứ Shopee cấm.
+  if (classifyShopeeAdsRateLimit(err)) return false;
   return /error_rate_limit|rate limit|too many requests/i.test(msg);
 }
 
@@ -237,10 +265,13 @@ async function callShopGet<T extends ShopeeEnvelope>(
     ...extraParams.map(([k, v]) => [k, String(v)] as [string, string]),
   ];
   const qs = new URLSearchParams(params).toString();
-  return withRateLimitRetry(ctx, async () => {
-    const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
-    return ensureOk((await res.json()) as T, ctx);
-  });
+  const call = () =>
+    withRateLimitRetry(ctx, async () => {
+      const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
+      if (res.status === 429) throw new Error(`Shopee ${ctx} lỗi: HTTP 429 — vượt trần gọi API`);
+      return ensureOk((await res.json()) as T, ctx);
+    });
+  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit) : call();
 }
 
 /**
@@ -264,14 +295,17 @@ async function callShopPost<T extends ShopeeEnvelope>(
     shop_id: shopId,
     sign,
   }).toString();
-  return withRateLimitRetry(ctx, async () => {
-    const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+  const call = () =>
+    withRateLimitRetry(ctx, async () => {
+      const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 429) throw new Error(`Shopee ${ctx} lỗi: HTTP 429 — vượt trần gọi API`);
+      return ensureOk((await res.json()) as T, ctx);
     });
-    return ensureOk((await res.json()) as T, ctx);
-  });
+  return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit) : call();
 }
 
 /** Lấy thông tin gian hàng (tên, khu vực...) để hiển thị. */

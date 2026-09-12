@@ -15,9 +15,11 @@
 // → số của một ngày "nở" dần suốt 30 ngày sau. Vì vậy MỖI lượt sync refresh
 // trọn cửa sổ daysBack chứ không sync kiểu "chỉ ngày mới" (idempotent, ghi đè).
 //
-// Ngân sách API: ~10.000 call/ngày/app. Mỗi sweep ≈ 1 (campaign list) + ≤50
-// (adgroup, có chọn lọc) + 30×trang (report ngày) — 2 shop chạy mỗi giờ vẫn
-// dưới 1/4 ngân sách. Lỗi ném lên caller (worker try-catch riêng từng gian).
+// Ngân sách API: code cũ ghi ~10.000 call/ngày/app (nguồn CHƯA xác minh —
+// memory hubsell-api-quota-san, phải hỏi Lazada quota app ISV). Lượt LỊCH SỬ
+// (6h) ≈ 1 (campaign list) + ≤50 (adgroup) + 7×trang (report ngày); XUNG 60'
+// (ads-pulse.ts) chỉ 2 call. Mọi call đi qua van an toàn services/api-budget.ts.
+// Lỗi ném lên caller (worker try-catch riêng từng gian).
 // ============================================================
 
 import type { Channel } from "@prisma/client";
@@ -44,14 +46,14 @@ export interface SyncLazadaAdsCampaignsResult {
 }
 
 /** "YYYY-MM-DD" của N ngày trước theo GIỜ VN (ngày của sàn; server chạy UTC). */
-function vnDateStr(daysAgo: number): string {
+export function vnDateStr(daysAgo: number): string {
   return new Date(Date.now() + 7 * 3600_000 - daysAgo * 86_400_000)
     .toISOString()
     .slice(0, 10);
 }
 
 /** "YYYY-MM-DD" → Date 00:00 UTC — cùng quy ước cột @db.Date với Shopee. */
-function dateFromStr(s: string): Date {
+export function dateFromStr(s: string): Date {
   return new Date(`${s}T00:00:00.000Z`);
 }
 
@@ -69,6 +71,25 @@ export function deriveStatus(c: LazadaAdsCampaign, todayVn: string): string {
   const start = (c.startDate ?? "").trim();
   if (start && start > todayVn) return "scheduled";
   return "ongoing";
+}
+
+/** Cột AdsCampaign tính từ một dòng searchCampaignList — dùng chung tầng B + xung. */
+export function lazadaCampaignData(c: LazadaAdsCampaign, todayVn: string) {
+  const dailyBudget = lazAdsNum(c.dailyBudget);
+  const end = (c.endDate ?? "").trim();
+  const start = (c.startDate ?? "").trim();
+  return {
+    name: c.campaignName ?? "",
+    status: deriveStatus(c, todayVn),
+    // -1 = không giới hạn → 0 theo quy ước cột budget (0 = không giới hạn).
+    budget: dailyBudget > 0 ? dailyBudget : 0,
+    startTime: /^\d{4}-\d{2}-\d{2}$/.test(start) ? dateFromStr(start) : null,
+    // Năm ≥ 3000 là "không hẹn ngày tắt" của Lazada → NULL cùng nghĩa Shopee.
+    endTime:
+      /^\d{4}-\d{2}-\d{2}$/.test(end) && end < "3000-01-01"
+        ? dateFromStr(end)
+        : null,
+  };
 }
 
 export async function syncLazadaAdsCampaigns(
@@ -110,22 +131,8 @@ export async function syncLazadaAdsCampaigns(
   for (const c of campaigns) {
     if (c.campaignId == null) continue;
     const campaignId = String(c.campaignId);
-    const status = deriveStatus(c, todayVn);
-    const dailyBudget = lazAdsNum(c.dailyBudget);
-    const end = (c.endDate ?? "").trim();
-    const start = (c.startDate ?? "").trim();
-    const data = {
-      name: c.campaignName ?? "",
-      status,
-      // -1 = không giới hạn → 0 theo quy ước cột budget (0 = không giới hạn).
-      budget: dailyBudget > 0 ? dailyBudget : 0,
-      startTime: /^\d{4}-\d{2}-\d{2}$/.test(start) ? dateFromStr(start) : null,
-      // Năm ≥ 3000 là "không hẹn ngày tắt" của Lazada → NULL cùng nghĩa Shopee.
-      endTime:
-        /^\d{4}-\d{2}-\d{2}$/.test(end) && end < "3000-01-01"
-          ? dateFromStr(end)
-          : null,
-    };
+    const data = lazadaCampaignData(c, todayVn);
+    const status = data.status;
     const row = await prisma.adsCampaign.upsert({
       where: { channelId_campaignId: { channelId: channel.id, campaignId } },
       update: data,

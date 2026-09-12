@@ -5114,7 +5114,8 @@ export interface ShopeeAdsDashboard {
   channels: { id: string; shopName: string; externalShopId: string | null }[];
   selectedChannelId: string | null;
   days: number;
-  wallet: { balance: number } | null;
+  /** Ví ads đọc từ DB — xung ads ghi mỗi 30 phút (syncedAt = lần đọc gần nhất). */
+  wallet: { balance: number; syncedAt?: string | null } | null;
   /** Liên kết app Hubsell Ads của gian đang chọn — null với Lazada / không có gian. */
   adsApp: HubsellAdsLinkStatus | null;
   assistant: ShopeeAssistantSummary | null;

@@ -1,6 +1,6 @@
 # Nhịp đồng bộ & cảnh báo quảng cáo — thiết kế 3 tầng (12/09/2026)
 
-Trạng thái: **BẢN THIẾT KẾ CHỜ ANH TRUNG CHỐT, CHƯA CODE.** Viết sau khi đọc lại
+Trạng thái: **ĐÃ CODE 12/09 tối** (anh Trung chốt xung Shopee 30'; Lazada 60' và ví đọc DB theo đề xuất). Bản gốc dưới đây giữ nguyên làm căn cứ; mục 10 ghi những gì đã làm khác so với thiết kế. Viết sau khi đọc lại
 toàn bộ module ads (rules, insights, executor, ops-alerts, sync 2 sàn, FE) và
 tra tài liệu Shopee trong Console. Mục tiêu: một lần quyết định có tính toán,
 không đổi số lung tung nữa.
@@ -231,3 +231,53 @@ Mỗi bước một commit, không gộp.
 1. Xung Shopee **30'** (đề xuất) — hay 15' nếu đo lag cho phép.
 2. Lazada mặc định **xung 60'** tới khi có quota ISV — chấp nhận cảnh báo Lazada chậm hơn Shopee.
 3. Ví ads chuyển sang **đọc từ DB** (tươi ≤30') thay vì gọi sống mỗi lần mở trang.
+
+---
+
+## 10. Đã code (12/09 tối) — khác biệt so với thiết kế
+
+- **Xung Shopee 5 call** thay vì 4: thêm `get_all_cpc_ads_daily_performance` cho
+  HÔM NAY để `AdSpend` (báo cáo dòng tiền + detector ads-spike cũ) cùng tươi.
+  Tải Shopee/gian/ngày = 5×48 + 8 = **248** (3.000 gian ≈ 8,6 QPS trung bình).
+- Files: `config/ads-cadence.ts` (nguồn nhịp), `services/api-budget.ts` (bucket +
+  cầu dao `ApiThrottleState`), `integrations/shopee/ads-pulse.ts`,
+  `integrations/lazada/ads-pulse.ts`, `ads-campaigns.ts` tách 3 bước dùng lại +
+  `syncShopeeAdsPerfWindow`, worker `runAdsPulseTier` / `runAdsTier` (lịch sử),
+  `sync-schedule.ts` nudge/Làm mới → xung, ví đọc DB ở `ops-alerts.ts` + `routes/ads.ts`.
+- Cột Channel mới: `nextAdsPulseAt`, `adsWalletBalance`, `adsWalletSyncedAt`
+  (migration 20260912233000); bảng `api_throttle_states` (20260912230000).
+- Client: mã `ads.rate_limit.exceed_partner_api` / `exceed_api` / HTTP 429 → đóng
+  cầu dao, KHÔNG retry; `exceed_shop_api` → lùi gian 15'. Retry cũ (3 lần) chỉ
+  còn cho `error_rate_limit` của API đơn/kho.
+- Chưa làm: đo lag báo cáo sàn (mục 6.3) — đọc từ log `[Ads-pulse]` trên Render
+  sau deploy; endpoint theo giờ vẫn để dành. Ticket quota Shopee/Lazada: nháp ở
+  mục 11, anh Trung gửi.
+
+## 11. Nháp ticket hỏi quota (anh gửi, câu trả lời lưu memory hubsell-api-quota-san)
+
+**Shopee (Console → Raise Ticket, kèm lúc nộp Go-Live app Hubsell Ads):**
+
+> Subject: Rate limit thresholds for Ads API (partner-level / shop-level)
+>
+> We are an ISV (ERP System app partner_id 2040029, Ads Service app "Hubsell Ads")
+> preparing to serve thousands of Vietnamese sellers. The Ads API error codes
+> list ads.rate_limit.exceed_partner_api, exceed_shop_api and exceed_api but the
+> thresholds are not documented. Could you share: (1) the per-partner and
+> per-shop limits (requests per second / per minute / per day) for
+> get_product_level_campaign_id_list, get_product_level_campaign_setting_info,
+> get_product_campaign_daily_performance, get_all_cpc_ads_daily_performance and
+> get_total_balance; (2) whether these limits differ between an Ads Service app
+> and an ERP System app; (3) whether limits can be raised for approved ISVs and
+> the process to request it. We currently plan ≤5 calls per shop every 30
+> minutes for shops with active campaigns, throttled to 3 requests/second per
+> app with automatic back-off on any rate-limit error.
+
+**Lazada (Open Platform → ticket, khi tạo app ISV mới):**
+
+> Subject: API call quota for Sponsored Solutions (ads) endpoints — ISV app
+>
+> Our app (Hubsell, App Key 140639, ERP System category approved 11/09/2026) will
+> serve thousands of sellers. Please confirm the daily/per-second call quota per
+> app for sponsor/solutions/campaign/searchCampaignList,
+> report/getDiscoveryReportCampaign and adgroup/searchAdgroupList, whether the
+> quota is per app or per seller, and how an ISV can request a higher quota.

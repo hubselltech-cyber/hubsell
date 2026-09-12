@@ -2,10 +2,7 @@ import { Router } from "express";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
-import {
-  editManualProductAdsRaw,
-  getAdsTotalBalance,
-} from "../integrations/shopee/client";
+import { editManualProductAdsRaw } from "../integrations/shopee/client";
 import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
 import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
@@ -241,22 +238,21 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // ---- Số dư ví ads real-time — mới có nguồn Shopee (gọi sống, lỗi không
       // làm hỏng dashboard). Lazada GĐ sau: cờ adAccountBalanceStatus từ
       // searchCampaignList sẽ thành cảnh báo "ví cạn" thay số dư tuyệt đối. ----
-      let wallet: { balance: number } | null = null;
+      let wallet: { balance: number; syncedAt: string | null } | null = null;
       // Trạng thái liên kết app Hubsell Ads của gian (null với Lazada) — FE
       // hiện màn mời ủy quyền khi app Ads riêng đã bật mà gian chưa nối.
       const adsApp = platform === "shopee" ? await getHubsellAdsLinkStatus(selected.id) : null;
-      if (platform === "shopee") {
-        try {
-          const channel = await prisma.channel.findUnique({ where: { id: selected.id } });
-          if (channel) {
-            const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
-            const bal = await getAdsTotalBalance({ accessToken, shopId }, cfg);
-            const balance = Number(bal.response?.total_balance);
-            if (Number.isFinite(balance)) wallet = { balance };
-          }
-        } catch {
-          wallet = null; // app chưa có quyền / token lỗi — dashboard vẫn hiển thị
-        }
+      // Ví ads ĐỌC TỪ DB (xung ads ghi mỗi 30', docs/ADS-NHIP-CANH-BAO.md) — hết
+      // gọi sống mỗi lần mở trang; mở trang mà cũ >30' đã có nudge xung bên dưới.
+      const schedule = await prisma.channel.findUnique({
+        where: { id: selected.id },
+        select: { lastAdsSyncAt: true, adsWalletBalance: true, adsWalletSyncedAt: true },
+      });
+      if (platform === "shopee" && schedule?.adsWalletBalance != null) {
+        wallet = {
+          balance: Number(schedule.adsWalletBalance),
+          syncedAt: schedule.adsWalletSyncedAt?.toISOString() ?? null,
+        };
       }
 
       // ---- Tổng hợp Trợ lý cho banner: chỉ đếm cảnh báo CHƯA được chủ shop quyết ----
@@ -272,13 +268,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // Số ads cũ >30' → nudge worker kéo tươi (không gọi API sàn trong request);
       // FE thấy adsRefreshing thì tự nạp lại sau ~45s. adsSyncedAt = mốc số
       // hiện có — nút Làm mới so mốc này để biết lượt kéo mới đã xong.
-      const [adsRefreshing, schedule] = await Promise.all([
-        nudgeAdsSyncIfStale(selected.id),
-        prisma.channel.findUnique({
-          where: { id: selected.id },
-          select: { lastAdsSyncAt: true },
-        }),
-      ]);
+      const adsRefreshing = await nudgeAdsSyncIfStale(selected.id);
 
       res.json({
         channels,

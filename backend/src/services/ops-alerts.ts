@@ -23,18 +23,14 @@ import {
   ShippingStatus,
 } from "@prisma/client";
 import { notify } from "./notifications";
+import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
 import { computePnlRow, fetchPnlOrders } from "../routes/finance";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
-  vnDateKey,
 } from "../integrations/shopee/ads-insights";
 import type { AssistantTrigger } from "../integrations/shopee/ads-assistant-rules";
-import { getAdsTotalBalance } from "../integrations/shopee/client";
-import { resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
-import { getAdsCampaignList, lazAdsNum } from "../integrations/lazada/client";
-import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import {
   DELIVERY_FAIL_TAB_HREF,
   effectiveDeliveryFailConfig,
@@ -72,8 +68,8 @@ const ADS_ORDER_GROWTH_OK = 1.2;
 const SYNC_STALL_THRESHOLD = 3;
 
 // ── Ngưỡng Trợ lý quảng cáo Shopee (verdict rule engine GĐ2 → Trung tâm điều hành) ──
-/** Ví ads dự kiến cạn dưới mức này (giờ) thì phát cảnh báo Low Balance. */
-const ADS_WALLET_LOW_HOURS = 24;
+/** Ví ads dự kiến cạn dưới mức này (giờ) thì phát cảnh báo Low Balance — nguồn config/ads-cadence.ts. */
+const ADS_WALLET_LOW_HOURS = ADS_CADENCE.WALLET_LOW_HOURS;
 
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
 
@@ -535,8 +531,8 @@ async function detectSyncStalled(ownerId: string): Promise<DetectedAlert[]> {
 }
 
 /**
- * ADS ĐỘT BIẾN NHƯNG CHUYỂN ĐỔI THẤP: chi ads Shopee (bảng AdSpend, sync mỗi
- * giờ) của ngày gần nhất ≥ 1.5× trung bình 7 ngày trước, nhưng số đơn trong
+ * ADS ĐỘT BIẾN NHƯNG CHUYỂN ĐỔI THẤP: chi ads Shopee (bảng AdSpend, xung ads ghi
+ * hôm nay mỗi 30') của ngày gần nhất ≥ 1.5× trung bình 7 ngày trước, nhưng số đơn trong
  * ngày KHÔNG tăng tương ứng. Hubsell chưa điều khiển được ads sàn nên nút xử
  * lý là link mở Seller Center để seller tự kiểm tra chiến dịch.
  */
@@ -857,7 +853,7 @@ export function buildLazadaAdsWalletEmptyAlert(shop: {
 
 /**
  * DETECTOR: quét verdict Trợ lý quảng cáo của từng gian Shopee/Lazada ACTIVE
- * đã có dữ liệu campaign (sync mỗi giờ bởi order-auto-sync). Mỗi gian tối đa
+ * đã có dữ liệu campaign (xung ads 30'/60' + lịch sử 6h của order-auto-sync bởi order-auto-sync). Mỗi gian tối đa
  * MỘT call sống ra sàn (Shopee: số dư ví; Lazada: cờ ví trên trang đầu
  * searchCampaignList) — lỗi quyền/token → bỏ qua êm, 3 kịch bản campaign vẫn chạy.
  */
@@ -900,54 +896,30 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
       }));
     const groups = groupShopeeAdsScenarios(signals);
 
-    // ---- Ví ads — call sống duy nhất/gian (throttle vòng quét gánh tần suất) ----
+    // ---- Ví ads — ĐỌC TỪ DB (xung ads ghi mỗi 30'/60', docs/ADS-NHIP-CANH-BAO.md).
+    // Trước 12/09 là call sống mỗi lượt quét; nay 0 call ở đây, số dư tươi
+    // ≤ nhịp xung và cùng độ tươi với spendToday (ước "còn N giờ" hết lệch). ----
     let wallet: { balance: number; hoursLeft: number | null } | null = null;
     let lazadaWalletEmpty = false;
-    try {
-      const channel = await prisma.channel.findUnique({ where: { id: ch.id } });
-      if (channel && isLazada) {
-        // Lazada không có API số dư — đọc CỜ adAccountBalanceStatus (0 = hết
-        // số dư) trên trang đầu searchCampaignList. Chỉ soi khi còn campaign
-        // đang bật: ví cạn mà chẳng có gì chạy thì không cần réo còi.
-        if (signals.length > 0) {
-          const accessToken = await getValidLazadaAccessToken(channel);
-          const page = await getAdsCampaignList({
-            accessToken,
-            startDate: vnDateKey(30),
-            endDate: vnDateKey(0),
-            pageNo: 1,
-            pageSize: 100,
-          });
-          lazadaWalletEmpty = page.campaigns.some(
-            (c) =>
-              lazAdsNum(c.campaignSwitchStatus) === 1 &&
-              c.adAccountBalanceStatus != null &&
-              lazAdsNum(c.adAccountBalanceStatus) === 0
-          );
-        }
-      } else if (channel) {
-        // Quyền Ads API qua điểm chốt Hubsell Ads (gian chưa nối app Ads → ném,
-        // catch bên dưới nuốt — không có số dư thì thẻ ví không hiện).
-        const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
-        const bal = await getAdsTotalBalance({ accessToken, shopId }, cfg);
-        const balance = Number(bal.response?.total_balance);
-        if (Number.isFinite(balance)) {
-          wallet = {
-            balance,
-            hoursLeft: estimateAdsWalletHoursLeft({
-              balance,
-              spendToday: signals.reduce((s, c) => s + c.spendToday, 0),
-              hoursElapsedToday: hoursElapsedTodayVN(),
-              avgDailySpend7d: insights.items.reduce(
-                (s, it) => s + it.avgDailySpend7d,
-                0
-              ),
-            }),
-          };
-        }
-      }
-    } catch {
-      // App chưa có quyền ví / token lỗi — không chặn 3 kịch bản còn lại.
+    const walletRow = await prisma.channel.findUnique({
+      where: { id: ch.id },
+      select: { adsWalletBalance: true, adsWalletSyncedAt: true },
+    });
+    const balance = walletRow?.adsWalletBalance != null ? Number(walletRow.adsWalletBalance) : null;
+    if (isLazada) {
+      // Lazada không có API số dư — xung ghi 0 khi cờ adAccountBalanceStatus
+      // báo hết tiền trên campaign đang bật; chỉ réo còi khi còn campaign chạy.
+      lazadaWalletEmpty = signals.length > 0 && balance === 0;
+    } else if (balance != null && Number.isFinite(balance)) {
+      wallet = {
+        balance,
+        hoursLeft: estimateAdsWalletHoursLeft({
+          balance,
+          spendToday: signals.reduce((s, c) => s + c.spendToday, 0),
+          hoursElapsedToday: hoursElapsedTodayVN(),
+          avgDailySpend7d: insights.items.reduce((s, it) => s + it.avgDailySpend7d, 0),
+        }),
+      };
     }
 
     alerts.push(

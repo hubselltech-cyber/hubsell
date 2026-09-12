@@ -93,7 +93,10 @@ Biến chỉnh nhịp worker quét sàn (workers/order-auto-sync.ts):
 | `AUTO_SYNC_MINUTES` | 10 | Nhịp gốc tầng NHANH (đơn/hoàn/cứu đơn); `0` = tắt |
 | `AUTO_SYNC_MAX_MINUTES` | 60 | Trần giãn nhịp cho gian im ắng (×2 mỗi lượt không biến động) |
 | `AUTO_SYNC_CONCURRENCY` | 3 | Số gian xử lý song song trong một worker |
-| `ADS_SYNC_HOURS` | 6 | Nhịp tầng ADS (chi phí + campaign + Trợ lý); trang Ads mở mà số cũ >30' tự nudge |
+| `ADS_PULSE_MINUTES` | 30 | XUNG ads Shopee: cấu hình + số hôm nay + ví cho gian đang chi → độ trễ cảnh báo cắn tiền |
+| `ADS_PULSE_LAZADA_MINUTES` | 60 | XUNG ads Lazada (tới khi có quota app ISV) |
+| `ADS_SYNC_HOURS` | 6 | Tầng LỊCH SỬ ads: kéo lại 7 ngày cho số sàn chỉnh muộn |
+| `ADS_APP_QPS` | 3 | Trần call/giây mỗi app cho Ads API (token bucket + cầu dao DB) |
 
 Local: PowerShell `$env:HUBSELL_ROLE="worker"; npm run dev` chạy riêng worker;
 không đặt gì = `all` như trước.

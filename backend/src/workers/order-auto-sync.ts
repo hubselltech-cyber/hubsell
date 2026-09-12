@@ -66,6 +66,12 @@ import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
 import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK } from "../services/sync-schedule";
+import { ADS_CADENCE } from "../config/ads-cadence";
+import { isApiBudgetError } from "../services/api-budget";
+import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
+import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
+import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
+import { vnDateKey } from "../integrations/shopee/ads-insights";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -74,8 +80,8 @@ const DEFAULT_INTERVAL_MIN = 10;
 const DEFAULT_MAX_INTERVAL_MIN = 60;
 /** Tầng nhịp giờ. */
 const HOURLY_INTERVAL_MIN = 60;
-/** Tầng ads (giờ). */
-const DEFAULT_ADS_INTERVAL_HOURS = 6;
+/** Tầng ads LỊCH SỬ (giờ) — nguồn duy nhất config/ads-cadence.ts. */
+const DEFAULT_ADS_INTERVAL_HOURS = ADS_CADENCE.FULL_HOURS;
 /** Số gian xử lý SONG SONG tối đa trong một worker. */
 const DEFAULT_CONCURRENCY = 3;
 /** Nhịp nhặt vé (ms). */
@@ -151,15 +157,38 @@ export function withJitter(ms: number, rand: () => number = Math.random): number
 
 /** Tầng nào đến hạn với một gian tại thời điểm `now` (null = chưa từng chạy = đến hạn). */
 export function dueTiers(
-  ch: Pick<Channel, "nextFastSyncAt" | "nextHourlySyncAt" | "nextAdsSyncAt">,
+  ch: Pick<Channel, "nextFastSyncAt" | "nextHourlySyncAt" | "nextAdsSyncAt" | "nextAdsPulseAt">,
   now: number
-): { fast: boolean; hourly: boolean; ads: boolean } {
+): { fast: boolean; hourly: boolean; ads: boolean; pulse: boolean } {
   const due = (d: Date | null) => !d || d.getTime() <= now;
   return {
     fast: due(ch.nextFastSyncAt),
     hourly: due(ch.nextHourlySyncAt),
     ads: due(ch.nextAdsSyncAt),
+    pulse: due(ch.nextAdsPulseAt),
   };
+}
+
+/**
+ * Hạn XUNG ads kế tiếp (phút) — tầng A docs/ADS-NHIP-CANH-BAO.md. Hàm thuần:
+ *   · không có quyền Ads API / không campaign chạy và không thấy campaign mới
+ *     → xung nhẹ PULSE_NO_CAMPAIGN_MIN (1 call);
+ *   · có campaign chạy nhưng 2 ngày không chi → PULSE_IDLE_MIN;
+ *   · đang tiêu tiền hoặc vừa thấy campaign mới → PULSE_MIN (Lazada: PULSE_LAZADA_MIN).
+ */
+export function nextPulseDelayMin(input: {
+  channelName: ChannelName;
+  adsReady: boolean;
+  liveCampaigns: number;
+  spentRecently: boolean;
+  foundNew: boolean;
+}): number {
+  if (!input.adsReady) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
+  const base =
+    input.channelName === ChannelName.LAZADA ? ADS_CADENCE.PULSE_LAZADA_MIN : ADS_CADENCE.PULSE_MIN;
+  if (input.foundNew) return base;
+  if (input.liveCampaigns === 0) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
+  return input.spentRecently ? base : ADS_CADENCE.PULSE_IDLE_MIN;
 }
 
 // ---------- Trạng thái worker ----------
@@ -200,13 +229,13 @@ export function startOrderAutoSync(): void {
     baseMin: min,
     maxMin: Math.max(min, envNumber("AUTO_SYNC_MAX_MINUTES", DEFAULT_MAX_INTERVAL_MIN)),
   };
-  adsIntervalHours = envNumber("ADS_SYNC_HOURS", DEFAULT_ADS_INTERVAL_HOURS);
+  adsIntervalHours = DEFAULT_ADS_INTERVAL_HOURS;
   concurrency = Math.max(1, Math.trunc(envNumber("AUTO_SYNC_CONCURRENCY", DEFAULT_CONCURRENCY)));
 
   setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void tick(), TICK_MS).unref();
   console.log(
-    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), song song ${concurrency} gian`
+    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', XUNG ads Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), song song ${concurrency} gian, trần ${ADS_CADENCE.APP_QPS} call/s mỗi app Ads`
   );
 }
 
@@ -234,6 +263,8 @@ async function tick(): Promise<void> {
               { nextFastSyncAt: { lte: now } },
               { nextHourlySyncAt: { lte: now } },
               { nextAdsSyncAt: { lte: now } },
+              { nextAdsPulseAt: null },
+              { nextAdsPulseAt: { lte: now } },
             ],
           },
         ],
@@ -265,6 +296,7 @@ async function processChannel(channel: Channel): Promise<void> {
   const tiers = dueTiers(channel, startedAt);
   let changed = false;
   let adsSynced = false;
+  let pulse: { delayMin: number; synced: boolean } | null = null;
 
   try {
     if (channel.channelName === ChannelName.SHOPEE && !isShopeeConfigured()) return;
@@ -273,6 +305,8 @@ async function processChannel(channel: Channel): Promise<void> {
     // Tầng nhanh chạy MỌI lượt (rẻ, idempotent) — gian được nhặt vì tầng giờ/ads
     // đến hạn thì tiện vét luôn; cửa sổ sâu khi trùng nhịp giờ.
     changed = await runFastTier(channel, { deep: tiers.hourly });
+    // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
+    if (tiers.pulse) pulse = await runAdsPulseTier(channel);
     if (tiers.hourly) await runHourlyTier(channel);
     if (tiers.ads) adsSynced = await runAdsTier(channel);
   } catch (err) {
@@ -280,6 +314,7 @@ async function processChannel(channel: Channel): Promise<void> {
   } finally {
     const now = Date.now();
     const fast = nextFastSchedule(channel.syncBackoffLevel, changed, cadence);
+    const adsFresh = adsSynced || pulse?.synced === true;
     await prisma.channel
       .update({
         where: { id: channel.id },
@@ -293,7 +328,11 @@ async function processChannel(channel: Channel): Promise<void> {
           ...(tiers.ads
             ? { nextAdsSyncAt: new Date(now + withJitter(adsIntervalHours * 60 * 60 * 1000)) }
             : {}),
-          ...(adsSynced ? { lastAdsSyncAt: new Date(now), adsBackfillPending: false } : {}),
+          ...(pulse
+            ? { nextAdsPulseAt: new Date(now + withJitter(pulse.delayMin * 60 * 1000)) }
+            : {}),
+          ...(adsFresh ? { lastAdsSyncAt: new Date(now) } : {}),
+          ...(adsSynced ? { adsBackfillPending: false } : {}),
         },
       })
       .catch((err) =>
@@ -525,53 +564,14 @@ async function runHourlyTier(channel: Channel): Promise<void> {
 }
 
 // ============================================================
-// TẦNG ADS — chi phí ngày + campaign + Trợ lý tự thực thi.
-// Trả về true nếu đã kéo được số ads (để ghi lastAdsSyncAt / hạ cờ backfill).
+// TẦNG A — XUNG ADS (docs/ADS-NHIP-CANH-BAO.md): cấu hình campaign + số HÔM NAY
+// + ví → rồi Trợ lý tự thực thi + quét cảnh báo NGAY. Đây là nhịp quyết định
+// độ trễ cảnh báo "cắn tiền" / "ví cạn" (30' Shopee, 60' Lazada).
+// Trả về hạn xung kế tiếp (phút) + có kéo được số hay không.
 // ============================================================
-async function runAdsTier(channel: Channel): Promise<boolean> {
-  // Lần đầu (chưa từng sync) hoặc vừa nối Hubsell Ads → kéo lùi 30 ngày; các
-  // lượt sau chỉ 7 ngày — sàn còn chỉnh số vài ngày đầu, xa hơn không đổi.
-  const daysBack =
-    channel.adsBackfillPending || !channel.lastAdsSyncAt ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;
-
-  if (channel.channelName === ChannelName.LAZADA) {
-    let synced = false;
-    // Chiến dịch + hiệu suất ngày (Trợ lý quảng cáo Lazada, read-only Sponsored Solutions).
-    try {
-      const camp = await syncLazadaAdsCampaigns(channel, { daysBack });
-      synced = true;
-      if (camp.campaignsUpserted > 0) {
-        console.log(
-          `[Auto-sync] Campaign Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[Auto-sync] Lỗi sync campaign Ads Lazada "${channel.shopName}":`,
-        (err as Error).message
-      );
-    }
-    // GĐ3 Lazada — Trợ lý tự thực thi (mặc định OFF). Chạy SAU sync campaign.
-    try {
-      const act = await runAdsAutoExecute(channel);
-      if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
-        console.log(
-          `[Auto-sync] Trợ lý Ads Lazada "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[Auto-sync] Lỗi Trợ lý tự thực thi Lazada "${channel.shopName}":`,
-        (err as Error).message
-      );
-    }
-    return synced;
-  }
-
-  // ---------- Shopee: chỉ khi gian có quyền Ads API ----------
-  // App Hubsell Ads đã bật mà gian chưa ủy quyền thì bỏ qua lặng lẽ — UI Trợ lý
-  // quảng cáo đã mời kết nối, không cần đẻ 3 dòng lỗi mỗi lượt.
-  const adsReady = await hasShopeeAdsAccess(channel.id);
+async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; synced: boolean }> {
+  const isLazada = channel.channelName === ChannelName.LAZADA;
+  const adsReady = isLazada ? true : await hasShopeeAdsAccess(channel.id);
   if (!adsReady) {
     if (!adsSkipLogged.has(channel.id)) {
       adsSkipLogged.add(channel.id);
@@ -579,55 +579,167 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
         `[Auto-sync] Bỏ qua Ads gian "${channel.shopName}": chưa ủy quyền ${HUBSELL_ADS_APP_LABEL}`
       );
     }
-    return false;
+    return {
+      delayMin: nextPulseDelayMin({
+        channelName: channel.channelName,
+        adsReady: false,
+        liveCampaigns: 0,
+        spentRecently: false,
+        foundNew: false,
+      }),
+      synced: false,
+    };
   }
   adsSkipLogged.delete(channel.id);
 
+  // Chế độ xung theo DB (không gọi sàn): có campaign chạy? có chi trong 2 ngày?
+  const [liveCampaigns, recentSpend] = await Promise.all([
+    prisma.adsCampaign.count({ where: { channelId: channel.id, status: "ongoing" } }),
+    prisma.adsCampaignDailyPerf.findFirst({
+      where: {
+        adsCampaign: { channelId: channel.id },
+        date: { gte: new Date(`${vnDateKey(1)}T00:00:00.000Z`) },
+        expense: { gt: 0 },
+      },
+      select: { id: true },
+    }),
+  ]);
+  const spentRecently = recentSpend != null;
+
+  let foundNew = false;
   let synced = false;
-  // Chi phí quảng cáo theo ngày (Ads API).
+  try {
+    if (isLazada) {
+      const r = await pulseLazadaAds(channel);
+      synced = true;
+      console.log(
+        `[Ads-pulse] Lazada "${channel.shopName}": ${r.campaignsUpserted} campaign, ${r.perfTodayUpserted} dòng hôm nay${r.walletEmpty ? ", VÍ HẾT TIỀN" : ""}`
+      );
+    } else {
+      const r = await pulseShopeeAds(channel, { light: liveCampaigns === 0 });
+      foundNew = r.newCampaigns > 0;
+      synced = r.mode === "full";
+      if (r.mode === "full") {
+        console.log(
+          `[Ads-pulse] Shopee "${channel.shopName}": ${r.liveCampaigns} campaign sống (${r.newCampaigns} mới), ${r.perfTodayUpserted} dòng hôm nay, ví ${r.walletBalance ?? "?"}`
+        );
+      }
+    }
+  } catch (err) {
+    if (isApiBudgetError(err)) {
+      // Van an toàn: app đang bị cầu dao / vượt trần → lùi gian, KHÔNG retry.
+      console.warn(`[Ads-pulse] "${channel.shopName}" lùi lịch (${err.scope}): ${err.message}`);
+      return { delayMin: err.scope === "shop_rate_limit" ? 15 : ADS_CADENCE.PULSE_MIN, synced: false };
+    }
+    console.error(`[Ads-pulse] Lỗi xung gian "${channel.shopName}":`, (err as Error).message);
+  }
+
+  if (synced) {
+    // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập; live sau probe)
+    // đánh giá ngay trên số vừa kéo, rồi quét cảnh báo để chuông kêu trong nhịp này.
+    try {
+      const act = await runAdsAutoExecute(channel);
+      if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
+        console.log(
+          `[Auto-sync] Trợ lý Ads ${isLazada ? "Lazada " : ""}"${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
+        (err as Error).message
+      );
+    }
+    await scanOpsAlerts(channel.userId);
+  }
+
+  return {
+    delayMin: nextPulseDelayMin({
+      channelName: channel.channelName,
+      adsReady: true,
+      liveCampaigns,
+      spentRecently,
+      foundNew,
+    }),
+    synced,
+  };
+}
+
+// ============================================================
+// TẦNG B — ADS LỊCH SỬ: kéo lại cửa sổ 7 ngày (sàn chỉnh số muộn); lần đầu /
+// vừa nối Hubsell Ads kéo trọn 30 ngày (id list + cấu hình + perf). Không có
+// gì seller "cần tức thì" ở đây — xung (tầng A) đã lo cấu hình + hôm nay + ví.
+// Trả về true nếu đã kéo được số (ghi lastAdsSyncAt / hạ cờ backfill).
+// ============================================================
+async function runAdsTier(channel: Channel): Promise<boolean> {
+  const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
+  const daysBack = backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;
+
+  if (channel.channelName === ChannelName.LAZADA) {
+    // Lazada: adgroup (itemIds) chỉ có ở lượt này; report từng ngày cửa sổ daysBack.
+    try {
+      const camp = await syncLazadaAdsCampaigns(channel, { daysBack });
+      if (camp.campaignsUpserted > 0) {
+        console.log(
+          `[Auto-sync] Lịch sử Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
+        );
+      }
+      return true;
+    } catch (err) {
+      if (isApiBudgetError(err)) {
+        console.warn(`[Auto-sync] Lịch sử Ads Lazada "${channel.shopName}" lùi lịch: ${err.message}`);
+      } else {
+        console.error(`[Auto-sync] Lỗi lịch sử Ads Lazada "${channel.shopName}":`, (err as Error).message);
+      }
+      return false;
+    }
+  }
+
+  // ---------- Shopee: chỉ khi gian có quyền Ads API ----------
+  if (!(await hasShopeeAdsAccess(channel.id))) return false;
+
+  let synced = false;
   try {
     const ads = await syncShopeeAdsSpend(channel, { daysBack });
     synced = true;
-    if (ads.daysUpserted > 0) {
-      console.log(
-        `[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`
-      );
+    if (ads.daysUpserted > 0 && backfill) {
+      console.log(`[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`);
     }
   } catch (err) {
+    if (isApiBudgetError(err)) {
+      console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
+      return false;
+    }
     console.error(
       `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
       (err as Error).message
     );
   }
-  // Chiến dịch + hiệu suất ngày (Trợ lý quảng cáo GĐ1, read-only).
   try {
-    const camp = await syncShopeeAdsCampaigns(channel, { daysBack });
-    synced = true;
-    if (camp.campaignsUpserted > 0) {
+    if (backfill) {
+      const camp = await syncShopeeAdsCampaigns(channel, { daysBack });
+      synced = true;
       console.log(
-        `[Auto-sync] Campaign Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
+        `[Auto-sync] Backfill Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
       );
+    } else {
+      const w = await syncShopeeAdsPerfWindow(channel, daysBack);
+      synced = true;
+      if (w.perfDaysUpserted > 0) {
+        console.log(
+          `[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}": ${w.campaigns} campaign, ${w.perfDaysUpserted} dòng hiệu suất ${daysBack} ngày`
+        );
+      }
     }
   } catch (err) {
-    console.error(
-      `[Auto-sync] Lỗi sync campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
-      (err as Error).message
-    );
-  }
-  // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập ghi sổ; live chỉ
-  // bật sau probe). Chạy SAU sync campaign để đánh giá trên số mới nhất.
-  try {
-    const act = await runAdsAutoExecute(channel);
-    if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
-      console.log(
-        `[Auto-sync] Trợ lý Ads "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+    if (isApiBudgetError(err)) {
+      console.warn(`[Auto-sync] Lịch sử Ads Shopee "${channel.shopName}" lùi lịch: ${err.message}`);
+    } else {
+      console.error(
+        `[Auto-sync] Lỗi lịch sử campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+        (err as Error).message
       );
     }
-  } catch (err) {
-    console.error(
-      `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
-      (err as Error).message
-    );
   }
   return synced;
 }

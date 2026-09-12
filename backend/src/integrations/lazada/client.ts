@@ -12,6 +12,7 @@
 // ============================================================
 
 import crypto from "crypto";
+import { withApiBudget } from "../../services/api-budget";
 import {
   getLazadaConfig,
   LAZADA_ADS_BIZ_CODE,
@@ -120,8 +121,32 @@ async function callLazada<T extends LazadaEnvelope>(
   };
   const sign = signLazada(cfg.appSecret, path, all);
   const qs = new URLSearchParams({ ...all, sign }).toString();
-  const res = await fetch(`${host}${path}?${qs}`, { method: "GET" });
-  return ensureOk((await res.json()) as T, ctx);
+  const call = async () => {
+    const res = await fetch(`${host}${path}?${qs}`, { method: "GET" });
+    if (res.status === 429) throw new Error(`Lazada ${ctx} lỗi: HTTP 429 — vượt trần gọi API`);
+    return ensureOk((await res.json()) as T, ctx);
+  };
+  // Van an toàn theo app cho Sponsored Solutions (Ads) — services/api-budget.ts.
+  return isLazadaAdsPath(path)
+    ? withApiBudget(`lazada:${cfg.appKey}`, call, classifyLazadaAdsRateLimit)
+    : call();
+}
+
+/** Path nhóm quảng cáo Lazada (Sponsored Solutions). */
+function isLazadaAdsPath(path: string): boolean {
+  return path.includes("/sponsor/");
+}
+
+/**
+ * Lazada không tách mã theo tầng rõ như Shopee: "ApiCallLimit"/"call limit"
+ * là trần theo app (quota ngày) → đóng cầu dao; 901 "retry in the next
+ * second" là nghẽn thoáng theo shop → chỉ lùi gian.
+ */
+export function classifyLazadaAdsRateLimit(err: unknown): "partner" | "shop" | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/ApiCallLimit|CallLimit|call limit|rate limit|too many|HTTP 429/i.test(msg)) return "partner";
+  if (/(^|[^0-9])901([^0-9]|$)/.test(msg)) return "shop";
+  return null;
 }
 
 /**
