@@ -19,6 +19,11 @@
  *
  * Idempotent: chạy lại là xóa user cũ (cascade toàn bộ data) rồi seed mới.
  *
+ * Sau seed, worker src/workers/reviewer-demo-topup.ts (mỗi 30 phút trên
+ * backend) tự bồi đơn hôm nay + già hóa đơn cũ theo vòng đời thật nên KHÔNG
+ * cần seed lại định kỳ; phí đối soát của worker dùng cùng công thức mục 6 —
+ * sửa tỷ lệ phí ở đây thì sửa cả settlementFees() bên đó.
+ *
  *   # Local (DATABASE_URL trong .env)
  *   npx tsx scripts/seed-isv-reviewer.ts --password=<mật khẩu>
  *

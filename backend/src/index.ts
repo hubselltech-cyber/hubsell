@@ -12,6 +12,7 @@ import { startStockReconcileWorker } from "./workers/stock-reconcile";
 import { startTokenRefreshWorker } from "./workers/token-refresh";
 import { startWeeklyReportWorker } from "./workers/weekly-report";
 import { startTaxDeadlineReminderWorker } from "./workers/tax-deadline-reminder";
+import { startReviewerDemoTopupWorker } from "./workers/reviewer-demo-topup";
 
 const PORT = Number(process.env.PORT) || 4000;
 const app = createApp();
@@ -42,6 +43,9 @@ startInvoiceStatusSyncWorker();
 // Nhắc hạn kê khai thuế quý (7 ngày + 1 ngày trước hạn) qua chuông cho shop
 // có đơn trong quý vừa hết — chỉ nhắc + dẫn tới số liệu, không nộp thay.
 startTaxDeadlineReminderWorker();
+// Bồi đơn + già hóa đơn cho tài khoản trial reviewer ISV (gian demo không token)
+// để người duyệt mở lúc nào cũng thấy shop đang sống; tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0.
+startReviewerDemoTopupWorker();
 
 // ============================================================
 // HTTP mặc định; bật HTTPS khi có SSL_KEY_FILE + SSL_CERT_FILE trỏ tới cert hợp lệ.

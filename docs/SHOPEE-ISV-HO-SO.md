@@ -51,6 +51,20 @@ $env:DATABASE_URL='postgresql://postgres.<ref>:<mật khẩu đã encode>@aws-0-
 npx tsx scripts/seed-isv-reviewer.ts --production --password=<mật khẩu mới>
 ```
 
+- **Giữ tài khoản luôn "sống" trong lúc chờ duyệt (12/09/2026):** seed neo
+  ngày theo lúc chạy nên 2-3 ngày sau Tổng quan hiện "hôm nay 0 đơn" (anh Trung
+  đã nhìn nhầm tài khoản này tưởng shop thật ngừng cập nhật). Worker
+  `src/workers/reviewer-demo-topup.ts` chạy mỗi 30 phút trên backend: bồi đơn
+  hôm nay theo giờ đã trôi (khung 7h30-22h30 VN, nhịp = trung bình 7 ngày trước
+  ×~1,02/tuần), bù trọn ngày trống trong 7 ngày gần nhất, già hóa đơn theo vòng
+  đời thật (PENDING 3h → PROCESSED 10h → SHIPPING 1,5-3,5 ngày → DELIVERED 1-2
+  ngày → đối soát; ~2,5% hoàn, 5% hủy), ads + chi phí vận hành trong ngày.
+  Chỉ đụng gian của đúng email và gian KHÔNG có refreshToken/externalShopId
+  (không bao giờ sinh đơn giả lên gian thật). Env: `REVIEWER_DEMO_TOPUP_MINUTES`
+  (mặc định 30, `0` = tắt), `REVIEWER_DEMO_EMAIL`. Chạy tay một lượt:
+  `npx tsx scripts/reviewer-demo-topup-once.ts --production`. **Có kết quả ISV
+  thì đặt `REVIEWER_DEMO_TOPUP_MINUTES=0` trên Render** (hoặc giữ nếu còn dùng
+  tài khoản này cho Lazada ISV / TikTok).
 - Trước khi nộp: đăng nhập app.hubsell.tech bằng tài khoản này, đi 1 vòng
   Tổng quan → Đơn hàng → Hàng hóa → Dòng tiền → Hoàn → Gói để chắc không còn
   chữ demo/mock; chạy `scripts/cleanup-ops-demo.ts --apply` (production) để
