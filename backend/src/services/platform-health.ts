@@ -15,6 +15,7 @@ import {
   HEALTH_THRESHOLDS as T,
   METRIC_LABEL,
   levelFor,
+  isMilestoneReachedOrPassed,
   locateOnTimeline,
   milestoneEta,
   slopePerDay,
@@ -349,7 +350,7 @@ export async function buildTimeline(m: HealthMetrics): Promise<TimelineView> {
   const stateByKey = new Map(states.map((s) => [s.key, s] as const));
   const milestones = CAPACITY_MILESTONES.map((ms) => {
     const st = stateByKey.get(ms.key);
-    const reached = ms.conditions.length === 0 || ms.conditions.some((c) => g[c.metric] >= c.gte);
+    const reached = isMilestoneReachedOrPassed(ms, g);
     return {
       milestone: ms,
       reached,

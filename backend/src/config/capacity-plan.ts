@@ -110,9 +110,12 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
   },
   {
     key: "M1",
-    title: "20 gian / 50 chủ shop — tách worker, lên gói trả phí",
+    title: "20 gian / 500 đơn-ngày — tách worker, lên gói trả phí",
+    // Anh Trung 12/09: "một khách ngày vài nghìn đơn là cũng chết dở" → mọi mốc
+    // đều phải có điều kiện ĐƠN/NGÀY, chạm 1 trong 2 (gian HOẶC đơn) là đủ.
     conditions: [
       { metric: "channels", gte: 20 },
+      { metric: "ordersPerDay", gte: 500 },
       { metric: "owners", gte: 50 },
       { metric: "dbPct", gte: 60 },
     ],
@@ -141,7 +144,6 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
       "AUTO_SYNC_CONCURRENCY=6 trên worker",
       "Upsert hiệu suất ads theo lô (createMany/onConflict) thay từng dòng",
       "Webhook Lazada vào hàng đợi bền như Shopee",
-      "Cảnh báo vận hành gửi email/Telegram (không chỉ chuông)",
       "Rà index Order(channelId, createdAt), OrderItem(orderId)",
     ],
   },
@@ -186,8 +188,11 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
   },
   {
     key: "M5",
-    title: "5.000 gian — tách worker theo sàn, APM",
-    conditions: [{ metric: "channels", gte: 5000 }],
+    title: "5.000 gian / 100.000 đơn-ngày — tách worker theo sàn, APM",
+    conditions: [
+      { metric: "channels", gte: 5000 },
+      { metric: "ordersPerDay", gte: 100000 },
+    ],
     upgrades: [{ what: "Nhiều instance web + worker theo sàn; APM (Sentry/Datadog)", usdPerMonth: 400 }],
     checklist: [
       "Worker riêng cho Shopee / Lazada / TikTok, rate limit theo tenant",
@@ -196,8 +201,11 @@ export const CAPACITY_MILESTONES: CapacityMilestone[] = [
   },
   {
     key: "M6",
-    title: "10.000 gian — tách đọc/ghi, partition theo tháng",
-    conditions: [{ metric: "channels", gte: 10000 }],
+    title: "10.000 gian / 300.000 đơn-ngày — tách đọc/ghi, partition theo tháng",
+    conditions: [
+      { metric: "channels", gte: 10000 },
+      { metric: "ordersPerDay", gte: 300000 },
+    ],
     upgrades: [{ what: "Postgres partition Order/OrderItem theo tháng; DB đọc/ghi tách", usdPerMonth: 1500 }],
     checklist: ["Kiến trúc lại đơn/kho theo shard", "SRE trực 24/7"],
   },
@@ -215,20 +223,22 @@ export function isMilestoneReached(m: CapacityMilestone, g: GrowthMetrics): bool
 }
 
 /**
- * Mốc "đang ở" = mốc cao nhất đã chạm; mốc kế tiếp = mốc đầu tiên chưa chạm.
- * Mốc chỉ tính theo thứ tự mảng (M0 luôn chạm).
+ * Mốc "đang ở" = mốc CAO NHẤT đã chạm (chạm mốc cao thì các mốc thấp coi như
+ * đã chạm — một khách 3.000 đơn/ngày với 5 gian đứng ở M2 dù M1 tính theo gian
+ * chưa tới); mốc kế tiếp = mốc ngay sau mốc đang ở.
  */
 export function locateOnTimeline(g: GrowthMetrics): { current: CapacityMilestone; next: CapacityMilestone | null } {
-  let current = CAPACITY_MILESTONES[0];
-  let next: CapacityMilestone | null = null;
-  for (const m of CAPACITY_MILESTONES) {
-    if (isMilestoneReached(m, g)) current = m;
-    else {
-      next = m;
-      break;
-    }
-  }
-  return { current, next };
+  let idx = 0;
+  CAPACITY_MILESTONES.forEach((m, i) => {
+    if (isMilestoneReached(m, g)) idx = i;
+  });
+  return { current: CAPACITY_MILESTONES[idx], next: CAPACITY_MILESTONES[idx + 1] ?? null };
+}
+
+/** Mốc này coi như đã chạm nếu chính nó HOẶC bất kỳ mốc cao hơn đã chạm. */
+export function isMilestoneReachedOrPassed(m: CapacityMilestone, g: GrowthMetrics): boolean {
+  const i = CAPACITY_MILESTONES.findIndex((x) => x.key === m.key);
+  return CAPACITY_MILESTONES.slice(i).some((x) => isMilestoneReached(x, g));
 }
 
 /** Điểm dữ liệu theo ngày cho hồi quy (t = ngày, v = giá trị). */

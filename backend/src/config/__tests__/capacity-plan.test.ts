@@ -19,11 +19,23 @@ describe("timeline mốc", () => {
     expect(current.key).toBe("M0");
     expect(next?.key).toBe("M1");
   });
-  it("chạm mốc khi BẤT KỲ điều kiện đúng — 25 gian đủ M1 dù chủ shop ít", () => {
+  it("chạm mốc khi BẤT KỲ điều kiện đúng — 25 gian đủ M1 dù chủ shop ít; 600 đơn/ngày với 3 gian cũng đủ M1", () => {
     const m1 = CAPACITY_MILESTONES.find((m) => m.key === "M1")!;
     expect(isMilestoneReached(m1, { ...base, channels: 25 })).toBe(true);
+    expect(isMilestoneReached(m1, { ...base, ordersPerDay: 600 })).toBe(true);
     expect(isMilestoneReached(m1, { ...base, dbPct: 65 })).toBe(true);
     expect(isMilestoneReached(m1, base)).toBe(false);
+  });
+  it("mọi mốc ≥M1 đều có điều kiện đơn/ngày (một khách vài nghìn đơn không bị bỏ sót)", () => {
+    for (const m of CAPACITY_MILESTONES.slice(1)) {
+      expect(m.conditions.some((c) => c.metric === "ordersPerDay")).toBe(true);
+      expect(m.conditions.some((c) => c.metric === "channels")).toBe(true);
+    }
+  });
+  it("một khách 3.000 đơn/ngày với 5 gian → đứng ở M2 (mốc cao kéo mốc thấp), kế tiếp M3", () => {
+    const { current, next } = locateOnTimeline({ ...base, channels: 5, ordersPerDay: 3000 });
+    expect(current.key).toBe("M2");
+    expect(next?.key).toBe("M3");
   });
   it("mốc đang ở = mốc cao nhất đã chạm theo thứ tự; 120 gian → M2, kế M3", () => {
     const { current, next } = locateOnTimeline({ ...base, channels: 120, owners: 200 });

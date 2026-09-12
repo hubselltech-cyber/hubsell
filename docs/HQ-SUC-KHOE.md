@@ -56,14 +56,18 @@ Trạng thái mốc lưu `platform_capacity_milestones` {reachedAt, doneAt, done
 | Mốc | Chạm khi (một trong) | Nâng gói | Việc phải làm |
 |---|---|---|---|
 | **M0 Khởi động** (nay) | — | Render Free web, Supabase Free | ISV duyệt; 2 ticket quota; gỡ liên kết trùng ở nick test (giữ admin@hubsell.vn) |
-| **M1 20 gian / 50 chủ shop** | gian ≥ 20 hoặc chủ shop ≥ 50 hoặc DB ≥ 60% gói | Render Starter web ($7) + **Background Worker** Starter ($7) + Supabase Pro ($25) | HUBSELL_ROLE=worker/web; `connection_limit` trong DATABASE_URL; bật backup hàng ngày Supabase; đặt ADS_APP_QPS theo số Shopee trả lời |
+| **M1 20 gian / 500 đơn-ngày** | gian ≥ 20 **hoặc đơn/ngày ≥ 500** hoặc chủ shop ≥ 50 hoặc DB ≥ 60% gói | Render Starter web ($7) + **Background Worker** Starter ($7) + Supabase Pro ($25) | HUBSELL_ROLE=worker/web; `connection_limit` trong DATABASE_URL; bật backup hàng ngày Supabase; đặt ADS_APP_QPS theo số Shopee trả lời |
 | **M2 100 gian / 2.000 đơn/ngày** | gian ≥ 100 hoặc đơn/ngày ≥ 2.000 hoặc RAM ≥ 80% | Worker Standard 2GB ($25) | AUTO_SYNC_CONCURRENCY 6; upsert perf ads theo lô; webhook Lazada vào hàng đợi; cảnh báo vận hành ra email/Telegram; rà index Order/OrderItem |
 | **M3 500 gian / 10.000 đơn/ngày** | gian ≥ 500 hoặc đơn/ngày ≥ 10.000 hoặc kết nối ≥ 80% hoặc DB ≥ 70% | Supabase compute Small→Medium (+$60…), web Standard | 2 worker instance (bucket/breaker qua DB đã sẵn); retention đơn 1 năm + rollup tháng; log cleanup 7 ngày; Redis (Render Key Value) cho token bucket toàn cục |
 | **M4 1.000 gian / 30.000 đơn/ngày** | gian ≥ 1.000 hoặc đơn/ngày ≥ 30.000 | Supabase Team + read replica; worker Pro | Báo cáo/P&L đọc từ replica; queue riêng (pg-boss) thay setInterval; SLA + người trực; Lazada ads có điều kiện nếu quota không nâng |
-| **M5 5.000 gian** | gian ≥ 5.000 | Multi-instance web + worker theo sàn | Tách worker theo sàn/tenant; giám sát APM; rate limit theo tenant |
-| **M6 10.000 gian** | gian ≥ 10.000 | DB đọc/ghi tách, Postgres partition theo tháng | Kiến trúc lại đơn/kho theo shard; SRE trực 24/7 |
+| **M5 5.000 gian / 100.000 đơn-ngày** | gian ≥ 5.000 hoặc đơn/ngày ≥ 100.000 | Multi-instance web + worker theo sàn | Tách worker theo sàn/tenant; giám sát APM; rate limit theo tenant |
+| **M6 10.000 gian / 300.000 đơn-ngày** | gian ≥ 10.000 hoặc đơn/ngày ≥ 300.000 | DB đọc/ghi tách, Postgres partition theo tháng | Kiến trúc lại đơn/kho theo shard; SRE trực 24/7 |
 
 Con số chi phí là giá niêm yết Render/Supabase 09/2026, ghi trong config để sửa.
+
+**Nguyên tắc (anh Trung 12/09): mọi mốc chạm khi GIAN hoặc ĐƠN/NGÀY tới ngưỡng — một
+khách vài nghìn đơn/ngày với ít gian vẫn kéo hệ thống lên đúng mốc. Chạm mốc cao
+thì các mốc thấp coi như đã chạm.**
 
 **Dự báo ngày chạm:** hồi quy tuyến tính 30 snapshot ngày gần nhất (gian, chủ
 shop, đơn/ngày, DB MB) → ETA cho từng điều kiện của mốc kế tiếp; lấy ETA sớm
