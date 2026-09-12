@@ -45,7 +45,7 @@ lặng lẽ (log một lần). Cron `token-refresh.ts` quét thêm bảng Channe
 | Env `HUBSELL_ADS_PARTNER_ID/KEY` | Hành vi |
 |---|---|
 | **Chưa đặt** (production hôm nay) | Trợ lý quảng cáo chạy bằng token app chính như trước. UI không hiện gì mới. |
-| **Đã đặt** | Mọi gian Shopee PHẢI ủy quyền Hubsell Ads. Chưa nối → thẻ mời kết nối, nút Đồng bộ khóa, worker bỏ qua nhánh ads của gian đó. |
+| **Đã đặt** | Mọi gian Shopee PHẢI ủy quyền Hubsell Ads. Chưa nối → thẻ mời kết nối, nút Làm mới khóa, worker bỏ qua xung ads của gian đó. |
 
 Env đầy đủ (xem `backend/.env.example`): `HUBSELL_ADS_PARTNER_ID`,
 `HUBSELL_ADS_PARTNER_KEY`, `HUBSELL_ADS_ENV` (bỏ trống = theo `SHOPEE_ENV`;
