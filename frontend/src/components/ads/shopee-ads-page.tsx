@@ -376,7 +376,7 @@ export function ShopeeAdsPage({
 
   const summary = data?.summary ?? null;
   // Hubsell Ads (app Ads riêng) đã bật mà gian chưa nối → chưa gọi được Ads
-  // API: khoá nút Đồng bộ, khối HubsellAdsLink bên dưới mời kết nối.
+  // API: khoá nút Làm mới, khối HubsellAdsLink bên dưới mời kết nối.
   const adsApp = data?.adsApp ?? null;
   const adsLinked = !adsApp?.required || adsApp.status === "ACTIVE";
   const selectedShopName =
