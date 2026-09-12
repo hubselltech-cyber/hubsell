@@ -41,6 +41,3 @@ export const ADS_CADENCE = {
   /** Trần call/giây của MỖI app cho nhóm Ads API — thận trọng tới khi Shopee trả lời ticket. */
   APP_QPS: envNum("ADS_APP_QPS", 3),
 } as const;
-
-/** Chữ hiển thị cho seller (FE/docs) — đổi nhịp là đổi một chỗ. */
-export const ADS_CADENCE_LABEL = `Hubsell tự kiểm tra mỗi ${ADS_CADENCE.PULSE_MIN} phút khi campaign đang chạy`;

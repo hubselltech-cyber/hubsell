@@ -36,8 +36,8 @@ router.use("/lazada", requirePermission("ads.lazada"));
 // GET /api/ads/{shopee|lazada}?channelId=&days=7|30
 //
 // HAI SÀN DÙNG CHUNG toàn bộ handler (bảng AdsCampaign/DailyPerf trung lập
-// sàn, lõi ads-insights nhận channelName) — chỉ khác: ví ads real-time hiện
-// mới có nguồn Shopee (Lazada đọc cờ adAccountBalanceStatus, GĐ sau).
+// sàn, lõi ads-insights nhận channelName) — chỉ khác: ví ads (đọc từ DB, xung
+// ads ghi mỗi 30') hiện mới có số dư Shopee; Lazada chỉ có cờ hết tiền.
 //
 // Điểm khác biệt so với Seller Center: mỗi campaign được gắn thêm ROAS HÒA VỐN
 // tính từ P&L THẬT của chính các SKU trong campaign (giá vốn + phí sàn đã đối

@@ -1758,7 +1758,7 @@ router.put(
 router.post(
   "/finance/invoice-config/test",
   requirePlatformAdmin,
-  async (_req, res, next) => {
+  async (_req, res) => {
     try {
       const row = await hqInvoiceConfigRow();
       const result = await testStandardConnection(hqStandardConfig(row));

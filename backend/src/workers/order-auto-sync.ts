@@ -17,11 +17,16 @@
 //                        tốn quota mỗi 10'.
 //   · nextHourlySyncAt — tầng NHỊP GIỜ: đối soát phí thật (Escrow/Finance),
 //                        payout/rút ví, quét cảnh báo điều hành.
-//   · nextAdsSyncAt    — tầng ADS: chi phí ngày + campaign + Trợ lý tự thực
-//                        thi. Mặc định 6h (ADS_SYNC_HOURS, anh Trung 12/09 "ads tươi hơn"), cửa sổ 7 ngày;
-//                        lần đầu / vừa nối Hubsell Ads kéo lùi 30 ngày
-//                        (adsBackfillPending). Trang Trợ lý quảng cáo mở mà
-//                        số cũ >30' thì nudge hạn về "ngay" (services/sync-schedule.ts).
+//   · nextAdsPulseAt   — tầng XUNG ADS (docs/ADS-NHIP-CANH-BAO.md): cấu hình
+//                        campaign + số HÔM NAY + ví, mỗi 30' Shopee / 60' Lazada
+//                        cho gian đang tiêu tiền (im ắng 120'; chưa có campaign
+//                        xung nhẹ 1 call). Ngay sau xung: Trợ lý tự thực thi +
+//                        quét cảnh báo → độ trễ cảnh báo "cắn tiền"/"ví cạn".
+//   · nextAdsSyncAt    — tầng ADS LỊCH SỬ: kéo lại 7 ngày mỗi 6h (sàn chỉnh số
+//                        muộn); lần đầu / vừa nối Hubsell Ads kéo trọn 30 ngày
+//                        (adsBackfillPending). Nhịp: config/ads-cadence.ts.
+//                        Trang Trợ lý mở mà số cũ >30' hoặc bấm Làm mới → nudge
+//                        XUNG về "ngay" (services/sync-schedule.ts).
 //
 // Vòng đời một vé: tick 20s nhặt gian ĐẾN HẠN (bất kỳ tầng nào) chưa ai cầm,
 // CLAIM bằng UPDATE có điều kiện trên syncLockedAt (nhiều worker không nhặt

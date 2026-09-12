@@ -5266,21 +5266,6 @@ export function fetchShopeeAdsDashboard(params: {
   );
 }
 
-export interface SyncAdsCampaignsResult {
-  message: string;
-  campaignsFound: number;
-  campaignsUpserted: number;
-  perfDaysUpserted: number;
-}
-
-/** Kéo chiến dịch quảng cáo + hiệu suất 30 ngày từ Shopee (read-only). */
-export function syncShopeeAdsCampaigns(channelId: string) {
-  return apiFetch<SyncAdsCampaignsResult>(
-    `/api/channels/${channelId}/sync-ads-campaigns`,
-    { method: "POST" }
-  );
-}
-
 /** Lưu luật Trợ lý riêng của một gian (backend normalize trước khi lưu). */
 export function saveShopeeAssistantConfig(
   channelId: string,
