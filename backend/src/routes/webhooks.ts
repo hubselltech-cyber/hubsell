@@ -19,10 +19,7 @@ import {
   verifyShopeeWebhookSignature,
   type ShopeePushPayload,
 } from "../integrations/shopee/webhook";
-import {
-  enqueueShopeeWebhook,
-  startShopeeWebhookWorker,
-} from "../integrations/shopee/webhook-queue";
+import { enqueueShopeeWebhook } from "../integrations/shopee/webhook-queue";
 import { enqueueStockPush } from "../integrations/inventory-push";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import {
@@ -39,20 +36,15 @@ import {
   verifyMisaWebhookSignature,
   type MisaWebhookPayload,
 } from "../integrations/invoice/misa-webhook";
-import {
-  enqueueMisaWebhook,
-  startMisaWebhookWorker,
-} from "../integrations/invoice/misa-webhook-queue";
+import { enqueueMisaWebhook } from "../integrations/invoice/misa-webhook-queue";
 import { getPayosConfig, verifyPayosWebhook } from "../integrations/payos/client";
 import { handlePayosWebhook } from "../services/gateway-checkout";
 
 const router = Router();
 
-// Khởi động worker xử lý hàng đợi webhook Shopee (1 lần lúc nạp module):
-// nhặt lại job dở dang sau restart + quét job đến hạn retry theo nhịp.
-startShopeeWebhookWorker();
-// Worker hàng đợi webhook MISA meInvoice — cùng cơ chế, hàng đợi riêng.
-startMisaWebhookWorker();
+// Route này CHỈ ENQUEUE vào hàng đợi bền (DB). Worker tiêu thụ hàng đợi
+// (Shopee + MISA) khởi động ở workers/index.ts theo vai HUBSELL_ROLE (12/09) —
+// tiến trình web thuần không chạy worker nữa.
 
 // Loại sự kiện webhook của TikTok Shop (trường `type`, dạng số).
 // Ta chỉ xử lý ORDER_STATUS_CHANGE; các loại khác ack 200 và bỏ qua.

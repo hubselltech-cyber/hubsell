@@ -11,6 +11,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { withDbLock } from "../../lib/db-lock";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
 import { backfillOrderItemImagesTx } from "../order-item-images";
@@ -117,9 +118,12 @@ export interface ShopeeAccessContext {
  * refresh (dùng một lần) — hai luồng (webhook + cron sync) cùng refresh một shop
  * thì luồng đến sau cầm refresh_token đã chết → invalid_refresh_token, chủ shop
  * phải uỷ quyền lại. Map giữ promise refresh đang chạy của từng channel: luồng
- * đến sau chờ chung kết quả thay vì bắn thêm request. Khóa trong-process là đủ
- * vì backend chạy MỘT instance Render; nếu sau này scale ngang phải chuyển sang
- * khóa DB (SELECT ... FOR UPDATE) hoặc Redis.
+ * đến sau chờ chung kết quả thay vì bắn thêm request.
+ *
+ * 12/09/2026 — HAI TẦNG KHÓA: Map trong RAM chỉ gom luồng CÙNG tiến trình
+ * (rẻ, không tốn kết nối DB); thân refresh chạy thêm dưới khóa advisory
+ * Postgres theo gian (lib/db-lock.ts) để nhiều tiến trình (web + worker, 2
+ * worker) không đua rotate refresh_token của cùng một gian.
  */
 const refreshInFlight = new Map<string, Promise<ShopeeAccessContext>>();
 
@@ -166,38 +170,42 @@ async function refreshShopeeTokenLocked(
   channelId: string,
   minTtlMs: number
 ): Promise<ShopeeAccessContext> {
-  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
-  if (!channel?.apiToken || !channel.refreshToken || !channel.externalShopId) {
-    throw new Error("Gian hàng chưa uỷ quyền Shopee (thiếu token/shop_id)");
-  }
+  // Khóa advisory theo gian: tiến trình khác đang refresh cùng gian thì đứng
+  // chờ ở đây; vào được rồi đọc lại bằng `tx` — token có thể đã mới.
+  return withDbLock(`shopee-token:${channelId}`, async (tx) => {
+    const channel = await tx.channel.findUnique({ where: { id: channelId } });
+    if (!channel?.apiToken || !channel.refreshToken || !channel.externalShopId) {
+      throw new Error("Gian hàng chưa uỷ quyền Shopee (thiếu token/shop_id)");
+    }
 
-  const now = Date.now();
-  const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
-  if (accessExp - now > minTtlMs) {
-    return { accessToken: channel.apiToken, shopId: channel.externalShopId };
-  }
+    const now = Date.now();
+    const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
+    if (accessExp - now > minTtlMs) {
+      return { accessToken: channel.apiToken, shopId: channel.externalShopId };
+    }
 
-  const refreshExp = channel.refreshTokenExpireAt?.getTime() ?? 0;
-  if (refreshExp && refreshExp < now) {
-    throw new Error("Phiên uỷ quyền Shopee đã hết hạn (refresh_token). Vui lòng kết nối lại.");
-  }
+    const refreshExp = channel.refreshTokenExpireAt?.getTime() ?? 0;
+    if (refreshExp && refreshExp < now) {
+      throw new Error("Phiên uỷ quyền Shopee đã hết hạn (refresh_token). Vui lòng kết nối lại.");
+    }
 
-  const t = await refreshAccessToken(channel.refreshToken, channel.externalShopId);
-  if (!t.access_token || !t.refresh_token) {
-    throw new Error("Shopee không trả token khi refresh");
-  }
-  await prisma.channel.update({
-    where: { id: channel.id },
-    data: {
-      apiToken: t.access_token,
-      refreshToken: t.refresh_token,
-      // Number(): expire_in là GIÂY, phòng API trả chuỗi — cộng thẳng chuỗi vào
-      // timestamp sẽ ra Invalid Date và Prisma từ chối ghi cột DateTime.
-      accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
-      refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
-    },
+    const t = await refreshAccessToken(channel.refreshToken, channel.externalShopId);
+    if (!t.access_token || !t.refresh_token) {
+      throw new Error("Shopee không trả token khi refresh");
+    }
+    await tx.channel.update({
+      where: { id: channel.id },
+      data: {
+        apiToken: t.access_token,
+        refreshToken: t.refresh_token,
+        // Number(): expire_in là GIÂY, phòng API trả chuỗi — cộng thẳng chuỗi vào
+        // timestamp sẽ ra Invalid Date và Prisma từ chối ghi cột DateTime.
+        accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
+        refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
+      },
+    });
+    return { accessToken: t.access_token, shopId: channel.externalShopId };
   });
-  return { accessToken: t.access_token, shopId: channel.externalShopId };
 }
 
 // ---------- Xử lý callback: đổi token + lưu Channel ----------

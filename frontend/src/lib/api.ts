@@ -5121,6 +5121,8 @@ export interface ShopeeAdsDashboard {
   summary: ShopeeAdsSummary | null;
   campaigns: ShopeeAdsCampaignRow[];
   series: { date: string; spend: number; broadGmv: number; directGmv: number }[];
+  /** true = số ads cũ >30', worker đang kéo tươi — FE tự nạp lại sau ~45s (12/09). */
+  adsRefreshing?: boolean;
 }
 
 /** Sàn của Trợ lý quảng cáo dữ liệu thật — backend đăng ký cùng bộ route cho cả hai. */

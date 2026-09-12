@@ -1,19 +1,34 @@
 // ============================================================
-// TỰ ĐỘNG ĐỒNG BỘ ĐA SÀN THEO NHỊP (polling) — LƯỚI AN TOÀN CẠNH WEBHOOK
+// TỰ ĐỘNG ĐỒNG BỘ ĐA SÀN THEO LỊCH TỪNG GIAN — LƯỚI AN TOÀN CẠNH WEBHOOK
 //
-// Phủ MỌI gian đang hoạt động, không ai phải bấm tay:
-//   · ĐƠN HÀNG (Shopee + Lazada): quét mỗi nhịp (mặc định 10 phút, cửa sổ
-//     2 ngày gần nhất, upsert idempotent — chạy lặp vô hại).
-//   · PHÍ ƯỚC TÍNH Shopee (đơn chờ đối soát): MỖI NHỊP với cửa sổ hẹp — P&L
-//     đơn mới có phí tạm tính trong ≤1 nhịp (webhook còn kéo ngay khi có sự
-//     kiện đơn); nhịp giờ mở rộng cửa sổ vét đơn tồn.
-//   · ĐỐI SOÁT PHÍ THẬT (Lazada Finance API + Shopee Escrow API): chạy MỖI
-//     GIỜ (mỗi SETTLE_EVERY_SWEEPS nhịp) với cửa sổ 7 ngày — sao kê đổi chậm,
-//     quét dày chỉ tốn quota (10k call/ngày); backfill sâu 90 ngày vẫn dùng
-//     nút "Đồng bộ đối soát" tay.
-//   · ĐỢT CHI TIỀN VỀ BANK (Shopee rút ví + Lazada payout, từ 08/08): cùng
-//     nhịp giờ, cửa sổ 30 ngày → WalletWithdrawal (SYNC) — cột "Doanh thu về
-//     Ngân hàng" của bảng Phân bổ dòng tiền tự động, hết bấm tay.
+// 12/09/2026 — ĐẠI TU cho quy mô thương mại (hàng chục ngàn gian, nhiều
+// worker, không gián đoạn seller). Trước đây là MỘT vòng for tuần tự qua mọi
+// gian mỗi 10 phút: lên vài nghìn gian thì gian cuối danh sách chờ hàng giờ,
+// và hai worker sẽ quét trùng. Nay mỗi gian là MỘT VÉ có hạn riêng trên
+// Channel (khuôn StockPushJob / DeliveryTrackingTask):
+//
+//   · nextFastSyncAt   — tầng NHANH: đơn (Shopee+Lazada), phí ước tính Shopee,
+//                        đơn hoàn 2 sàn, backfill vận đơn, yêu cầu hóa đơn,
+//                        hàng đợi cứu đơn. Nhịp gốc AUTO_SYNC_MINUTES (10'),
+//                        GIÃN DẦN ×2 khi lượt quét không thấy biến động
+//                        (gian im ắng) tới trần AUTO_SYNC_MAX_MINUTES (60'),
+//                        có biến động là về nhịp gốc. Webhook lo real-time,
+//                        tầng này chỉ vét sót → gian vắng khách không đáng
+//                        tốn quota mỗi 10'.
+//   · nextHourlySyncAt — tầng NHỊP GIỜ: đối soát phí thật (Escrow/Finance),
+//                        payout/rút ví, quét cảnh báo điều hành.
+//   · nextAdsSyncAt    — tầng ADS: chi phí ngày + campaign + Trợ lý tự thực
+//                        thi. Mặc định 24h (ADS_SYNC_HOURS), cửa sổ 7 ngày;
+//                        lần đầu / vừa nối Hubsell Ads kéo lùi 30 ngày
+//                        (adsBackfillPending). Trang Trợ lý quảng cáo mở mà
+//                        số cũ >30' thì nudge hạn về "ngay" (services/sync-schedule.ts).
+//
+// Vòng đời một vé: tick 20s nhặt gian ĐẾN HẠN (bất kỳ tầng nào) chưa ai cầm,
+// CLAIM bằng UPDATE có điều kiện trên syncLockedAt (nhiều worker không nhặt
+// trùng), chạy các tầng đến hạn SONG SONG tối đa AUTO_SYNC_CONCURRENCY gian,
+// xong ghi hạn kế tiếp + nhả khóa. Worker chết giữa chừng → khóa cũ >15' coi
+// như mồ côi, gian được nhặt lại. Mọi sync đều upsert idempotent nên chạy
+// lặp vô hại.
 //
 // TikTok cố ý đứng ngoài: gian hiện tại là mock sandbox không token, webhook
 // TikTok thật đã có đường riêng — thêm vào đây khi nối shop TikTok thật.
@@ -22,7 +37,7 @@
 // thích cũ). Mặc định 10; "0" = tắt toàn bộ.
 // ============================================================
 
-import { ChannelName } from "@prisma/client";
+import { ChannelName, type Channel } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { syncShopeeOrders } from "../integrations/shopee/service";
@@ -35,9 +50,6 @@ import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
 import { runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
 import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubsell-ads";
-
-/** Gian đã log "bỏ qua Ads vì chưa nối Hubsell Ads" — log một lần, không lặp mỗi nhịp. */
-const adsSkipLogged = new Set<string>();
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
   backfillShopeeTrackingCodes,
@@ -53,8 +65,30 @@ import {
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
+import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK } from "../services/sync-schedule";
+
+// ---------- Cấu hình nhịp ----------
 
 const DEFAULT_INTERVAL_MIN = 10;
+/** Trần giãn nhịp tầng nhanh cho gian im ắng (phút). */
+const DEFAULT_MAX_INTERVAL_MIN = 60;
+/** Tầng nhịp giờ. */
+const HOURLY_INTERVAL_MIN = 60;
+/** Tầng ads (giờ). */
+const DEFAULT_ADS_INTERVAL_HOURS = 24;
+/** Số gian xử lý SONG SONG tối đa trong một worker. */
+const DEFAULT_CONCURRENCY = 3;
+/** Nhịp nhặt vé (ms). */
+const TICK_MS = 20 * 1000;
+/** Chạy lượt đầu sớm sau khi boot để không phải đợi trọn một nhịp. */
+const FIRST_RUN_DELAY_MS = 15 * 1000;
+/** Khóa vé cũ hơn ngưỡng này = worker cầm vé đã chết → nhặt lại. */
+const LOCK_STALE_MS = 15 * 60 * 1000;
+/** Jitter ±15% trên mọi hạn kế tiếp — gian không bao giờ đồng loạt đến hạn cùng giây. */
+const JITTER_RATIO = 0.15;
+
+// ---------- Cửa sổ quét (giữ nguyên từ bản vòng for) ----------
+
 /**
  * Quét đơn có BIẾN ĐỘNG trong N ngày gần nhất (trục update_time, từ 09/08).
  * Trục update phủ cả đơn mới tạo LẪN đơn cũ vừa đổi trạng thái — đặc biệt đơn
@@ -65,15 +99,13 @@ const ORDERS_DAYS_BACK = 2;
 /**
  * Cửa sổ quét YÊU CẦU HOÀN Shopee (Returns API, trục update_time). Yêu cầu hoàn
  * trên đơn COMPLETED không đổi order_status nên quét đơn ở trên KHÔNG thấy —
- * đây là luồng duy nhất bắt được chúng. Mỗi nhịp quét hẹp; nhịp giờ quét sâu
- * hơn để vét yêu cầu đổi trạng thái muộn (thêm tracking, bị hủy...).
+ * đây là luồng duy nhất bắt được chúng. Lượt thường quét hẹp; lượt trùng nhịp
+ * giờ quét sâu hơn để vét yêu cầu đổi trạng thái muộn (thêm tracking, bị hủy...).
  */
 const RETURNS_DAYS_BACK = 2;
 const RETURNS_DAYS_BACK_DEEP = 7;
-/** Mỗi nhịp điền tối đa N mã vận đơn chiều đi còn trống (get_tracking_number). */
+/** Mỗi lượt điền tối đa N mã vận đơn chiều đi còn trống (get_tracking_number). */
 const TRACKING_BACKFILL_PER_SWEEP = 30;
-/** Đối soát (Lazada + Shopee) chạy 1 lần mỗi N nhịp (10' × 6 = mỗi giờ). */
-const SETTLE_EVERY_SWEEPS = 6;
 /** Cửa sổ sao kê cho lượt đối soát tự động — đơn thường quyết toán trong vài ngày. */
 const SETTLE_DAYS_BACK = 7;
 /**
@@ -82,27 +114,74 @@ const SETTLE_DAYS_BACK = 7;
  * 30 ngày; upsert idempotent theo (channelId, externalTxnId) nên quét lặp vô hại.
  */
 const PAYOUT_DAYS_BACK = 30;
-/** Chạy lượt đầu sớm sau khi boot để không phải đợi trọn một nhịp. */
-const FIRST_RUN_DELAY_MS = 15 * 1000;
+
+// ---------- Hàm thuần (export cho vitest) ----------
+
+export interface SyncCadence {
+  baseMin: number;
+  maxMin: number;
+}
+
 /**
- * Giãn cách giữa hai gian liên tiếp trong một lượt quét (+ jitter ngẫu nhiên).
- * Nhiều shop cùng kết nối qua MỘT partner_id: bắn API cho cả chục shop trong
- * cùng một giây, đều tăm tắp mỗi nhịp, là pattern máy móc dễ lọt vào thuật toán
- * quét bất thường của sàn. Tuần tự + jitter làm nhịp gọi tự nhiên hơn, đổi lại
- * mỗi lượt quét dài thêm vài chục giây — vô hại với worker nền.
+ * Hạn quét NHANH kế tiếp theo bậc giãn: có biến động → về bậc 0 (nhịp gốc);
+ * không → bậc +1, nhịp ×2 tới trần maxMin (bậc không tăng thêm khi đã chạm
+ * trần — tránh số lớn vô nghĩa). `rand` để test truyền số cố định.
  */
-const CHANNEL_STAGGER_BASE_MS = 2000;
-const CHANNEL_STAGGER_JITTER_MS = 3000;
+export function nextFastSchedule(
+  level: number,
+  changed: boolean,
+  cadence: SyncCadence,
+  rand: () => number = Math.random
+): { delayMs: number; level: number } {
+  let next = changed ? 0 : Math.max(0, level) + 1;
+  let minutes = Math.min(cadence.maxMin, cadence.baseMin * 2 ** next);
+  if (minutes >= cadence.maxMin) {
+    // bậc nhỏ nhất đạt trần
+    next = Math.max(0, Math.ceil(Math.log2(cadence.maxMin / cadence.baseMin)));
+    minutes = cadence.maxMin;
+  }
+  return { delayMs: withJitter(minutes * 60 * 1000, rand), level: next };
+}
+
+/** Cộng jitter ±JITTER_RATIO để các gian không đồng loạt đến hạn. */
+export function withJitter(ms: number, rand: () => number = Math.random): number {
+  const factor = 1 + (rand() * 2 - 1) * JITTER_RATIO;
+  return Math.round(ms * factor);
+}
+
+/** Tầng nào đến hạn với một gian tại thời điểm `now` (null = chưa từng chạy = đến hạn). */
+export function dueTiers(
+  ch: Pick<Channel, "nextFastSyncAt" | "nextHourlySyncAt" | "nextAdsSyncAt">,
+  now: number
+): { fast: boolean; hourly: boolean; ads: boolean } {
+  const due = (d: Date | null) => !d || d.getTime() <= now;
+  return {
+    fast: due(ch.nextFastSyncAt),
+    hourly: due(ch.nextHourlySyncAt),
+    ads: due(ch.nextAdsSyncAt),
+  };
+}
+
+// ---------- Trạng thái worker ----------
 
 let started = false;
-let running = false;
-let sweepCount = 0;
+/** Gian đang được worker NÀY xử lý — không nhặt lại trong lúc chạy. */
+const inFlight = new Set<string>();
+/** Gian đã log "bỏ qua Ads vì chưa nối Hubsell Ads" — log một lần, không lặp mỗi lượt. */
+const adsSkipLogged = new Set<string>();
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+let cadence: SyncCadence = { baseMin: DEFAULT_INTERVAL_MIN, maxMin: DEFAULT_MAX_INTERVAL_MIN };
+let adsIntervalHours = DEFAULT_ADS_INTERVAL_HOURS;
+let concurrency = DEFAULT_CONCURRENCY;
+
+function envNumber(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
 
 /**
- * Khởi động worker (gọi 1 lần từ index.ts — KHÔNG gọi trong test, kẻo test
- * gọi API sàn thật). Timer unref để không giữ process sống khi server tắt.
+ * Khởi động worker (gọi 1 lần từ workers/index.ts — KHÔNG gọi trong test, kẻo
+ * test gọi API sàn thật). Timer unref để không giữ process sống khi server tắt.
  */
 export function startOrderAutoSync(): void {
   if (started) return;
@@ -117,380 +196,438 @@ export function startOrderAutoSync(): void {
     console.log("[Auto-sync] TẮT (AUTO_SYNC_MINUTES=0)");
     return;
   }
+  cadence = {
+    baseMin: min,
+    maxMin: Math.max(min, envNumber("AUTO_SYNC_MAX_MINUTES", DEFAULT_MAX_INTERVAL_MIN)),
+  };
+  adsIntervalHours = envNumber("ADS_SYNC_HOURS", DEFAULT_ADS_INTERVAL_HOURS);
+  concurrency = Math.max(1, Math.trunc(envNumber("AUTO_SYNC_CONCURRENCY", DEFAULT_CONCURRENCY)));
 
-  setTimeout(() => void runOnce(), FIRST_RUN_DELAY_MS).unref();
-  setInterval(() => void runOnce(), min * 60 * 1000).unref();
+  setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
+  setInterval(() => void tick(), TICK_MS).unref();
   console.log(
-    `[Auto-sync] BẬT — quét đơn Shopee+Lazada mỗi ${min} phút; đối soát phí Lazada+Shopee mỗi ${
-      min * SETTLE_EVERY_SWEEPS
-    } phút`
+    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), song song ${concurrency} gian`
   );
 }
 
-/** Một lượt quét tất cả gian ACTIVE. Chống chạy chồng bằng cờ `running`. */
-async function runOnce(): Promise<void> {
-  if (running) return;
-  running = true;
-  sweepCount++;
-  // Lượt đầu sau boot chạy CẢ đối soát — restart giữa đêm không làm trễ nhịp giờ.
-  const settleSweep = sweepCount === 1 || sweepCount % SETTLE_EVERY_SWEEPS === 0;
-
+/**
+ * Một nhịp: nhặt gian đến hạn (bất kỳ tầng) chưa ai cầm, claim, chạy nền.
+ * Chỉ lấy đúng số chỗ trống — không đọc cả bảng.
+ */
+async function tick(): Promise<void> {
+  const free = concurrency - inFlight.size;
+  if (free <= 0) return;
   try {
-    const channels = await prisma.channel.findMany({
+    const now = new Date();
+    const stale = new Date(now.getTime() - LOCK_STALE_MS);
+    const candidates = await prisma.channel.findMany({
       where: {
         channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
         status: "ACTIVE",
         refreshToken: { not: null },
+        ...(inFlight.size > 0 ? { id: { notIn: [...inFlight] } } : {}),
+        AND: [
+          { OR: [{ syncLockedAt: null }, { syncLockedAt: { lt: stale } }] },
+          {
+            OR: [
+              { nextFastSyncAt: null },
+              { nextFastSyncAt: { lte: now } },
+              { nextHourlySyncAt: { lte: now } },
+              { nextAdsSyncAt: { lte: now } },
+            ],
+          },
+        ],
       },
+      // Gian chưa từng chạy (null) lên trước, rồi gian trễ hạn lâu nhất.
+      orderBy: { nextFastSyncAt: { sort: "asc", nulls: "first" } },
+      take: free,
     });
 
-    for (const channel of channels) {
-      // --- Đơn hàng ---
-      try {
-        if (channel.channelName === ChannelName.SHOPEE) {
-          if (!isShopeeConfigured()) continue;
-          const r = await syncShopeeOrders(channel, {
-            daysBack: ORDERS_DAYS_BACK,
-            timeRangeField: "update_time",
-          });
-          if (r.created > 0) {
-            console.log(
-              `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
-            );
-          }
-        } else {
-          if (!isLazadaConfigured()) continue;
-          const r = await syncLazadaOrders(channel, {
-            daysBack: ORDERS_DAYS_BACK,
-            byUpdateTime: true,
-          });
-          if (r.created > 0) {
-            console.log(
-              `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
-            );
-          }
-        }
-        // Đồng bộ đơn OK → reset bộ đếm lỗi (nguồn cảnh báo "sàn trễ đồng bộ"
-        // tự đóng). Best-effort: lỗi ghi bookkeeping không được chặn vòng quét.
-        await prisma.channel
-          .update({
-            where: { id: channel.id },
-            data: { lastSyncAt: new Date(), lastSyncError: null, syncFailCount: 0 },
-          })
-          .catch(() => {});
-      } catch (err) {
-        // Lỗi một gian (token hết hạn, sàn chập chờn) không được chặn gian khác.
-        const message = (err as Error).message;
-        console.error(`[Auto-sync] Lỗi đồng bộ đơn gian "${channel.shopName}":`, message);
-        // Đếm nhịp lỗi LIÊN TIẾP — detector Trung tâm điều hành báo khi ≥ 3.
-        await prisma.channel
-          .update({
-            where: { id: channel.id },
-            data: { lastSyncError: message, syncFailCount: { increment: 1 } },
-          })
-          .catch(() => {});
-      }
-
-      // --- Phí ƯỚC TÍNH Shopee cho đơn chờ đối soát: chạy MỖI NHỊP (không chờ
-      // nhịp giờ như trước — chủ shop 06/08: phí đơn mới hiện chậm) nhưng cửa
-      // sổ hẹp bằng cửa sổ quét đơn; đơn tồn cũ hơn đã có lượt đối soát mỗi giờ
-      // (SETTLE_DAYS_BACK ngày) vét. isSettled vẫn false — giữ nhãn "chờ đối soát".
-      if (channel.channelName === ChannelName.SHOPEE && isShopeeConfigured()) {
-        try {
-          const est = await syncShopeePendingEscrowEstimates(channel, {
-            daysBack: settleSweep ? SETTLE_DAYS_BACK : ORDERS_DAYS_BACK,
-          });
-          if (est.updated > 0) {
-            console.log(
-              `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-      }
-
-      // --- ĐƠN HOÀN Lazada (Reverse Order API) — cùng nhịp với Shopee bên
-      // dưới: đọc số của sàn (giải pháp hoàn, tiền hoàn, SKU trả, tracking
-      // chiều hoàn) cho Lãi/Lỗ + danh sách kho. Lỗi riêng không chặn luồng khác.
-      if (channel.channelName === ChannelName.LAZADA && isLazadaConfigured()) {
-        try {
-          const ret = await syncLazadaReturns(channel, {
-            daysBack: settleSweep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
-          });
-          if (ret.flagged > 0 || ret.unflagged > 0 || ret.itemsUpdated > 0) {
-            console.log(
-              `[Auto-sync] Đơn hoàn Lazada "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.itemsUpdated} dòng SKU trả (${ret.scanned} yêu cầu)`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi quét đơn hoàn Lazada "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-      }
-
-      // --- ĐƠN HOÀN Shopee (Returns API) — chạy MỖI NHỊP để trang Đối soát
-      // đơn hoàn gần real-time không cần ai bấm tay. Đây là nguồn duy nhất
-      // thấy yêu cầu Trả hàng/Hoàn tiền trên đơn đã COMPLETED, kèm mã vận đơn
-      // CHIỀU HOÀN cho kho quét. Lỗi riêng không chặn các luồng khác.
-      if (channel.channelName === ChannelName.SHOPEE && isShopeeConfigured()) {
-        try {
-          const ret = await syncShopeeReturns(channel, {
-            daysBack: settleSweep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
-          });
-          if (ret.flagged > 0 || ret.unflagged > 0 || ret.trackingSaved > 0) {
-            console.log(
-              `[Auto-sync] Đơn hoàn Shopee "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ (yêu cầu hủy), ${ret.trackingSaved} mã vận đơn hoàn, ${ret.ordersFetched} đơn cũ kéo mới`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi quét đơn hoàn Shopee "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-        // Điền dần mã vận đơn CHIỀU ĐI còn trống (đơn cũ trước bản vá này) —
-        // có tiết chế quota, ưu tiên đơn mới; kho quét kiện quay đầu cần mã này.
-        try {
-          const bf = await backfillShopeeTrackingCodes(channel, {
-            limit: TRACKING_BACKFILL_PER_SWEEP,
-          });
-          if (bf.saved > 0) {
-            console.log(
-              `[Auto-sync] Vận đơn Shopee "${channel.shopName}": điền ${bf.saved}/${bf.checked} mã còn trống`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi backfill vận đơn Shopee "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-        // KHÁCH YÊU CẦU XUẤT HÓA ĐƠN (24/08): đơn vừa ĐÃ GIAO → hỏi
-        // get_buyer_invoice_info lưu thông tin người mua TRƯỚC khi Shopee ẩn
-        // (30 ngày). Gian chưa được mở tính năng → module tự backoff 24h.
-        try {
-          const inv = await syncShopeeBuyerInvoiceRequests(channel);
-          if (inv.requested > 0 || inv.maskedRetry > 0) {
-            console.log(
-              `[Auto-sync] Yêu cầu hóa đơn Shopee "${channel.shopName}": +${inv.requested} đơn khách cần hóa đơn, ${inv.none} không yêu cầu, ${inv.maskedRetry} còn che (${inv.scanned} đơn hỏi)`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi kéo yêu cầu hóa đơn Shopee "${channel.shopName}" (shop có thể chưa được mở tính năng):`,
-            (err as Error).message
-          );
-        }
-        // CỨU ĐƠN GIAO THẤT BẠI — HÀNG ĐỢI DeliveryTrackingTask (26/08, cùng
-        // khuôn StockPushJob theo yêu cầu anh Trung "làm luôn trước thương mại
-        // hóa"): một call gộp dọn vé → phát vé → nhặt vé đến hạn theo TRẦN
-        // call/gian/nhịp (real-time 20' cho đơn đang đi giao, thưa dần chỗ
-        // khác; chốt kết quả cứu/mất trong cùng hàng đợi). Lỗi riêng không
-        // chặn luồng khác.
-        try {
-          const df = await processShopeeDeliveryTracking(channel);
-          if (df.noticed > 0 || df.saved > 0 || df.lost > 0) {
-            console.log(
-              `[Auto-sync] Cứu đơn Shopee "${channel.shopName}": +${df.noticed} cảnh báo (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua), +${df.saved} cứu được, +${df.lost} mất đơn — ${df.ran} call tracking, +${df.enqueued} vé mới, ${df.cleaned} vé dọn`
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi hàng đợi cứu đơn gian "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-      }
-
-      // --- Đối soát phí thật (Lazada + Shopee, theo nhịp giờ) ---
-      if (settleSweep) {
-        try {
-          if (channel.channelName === ChannelName.LAZADA) {
-            // Bọc try riêng (25/08, cùng lý do nhánh Shopee): đối soát lỗi
-            // không được nuốt payout + campaign + auto-execute đứng sau.
-            try {
-              const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
-              if (s.ordersUpdated > 0) {
-                console.log(
-                  `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi đối soát Lazada "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-            // Đợt CHI TIỀN về bank (payout theo kỳ sao kê) → WalletWithdrawal.
-            // Lỗi riêng không được chặn các luồng khác (cùng luật với Ads).
-            try {
-              const po = await syncLazadaPayouts(channel, {
-                daysBack: PAYOUT_DAYS_BACK,
-              });
-              if (po.created > 0 || po.updated > 0) {
-                console.log(
-                  `[Auto-sync] Payout Lazada "${channel.shopName}": +${po.created} đợt mới, ${po.updated} cập nhật`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi sync payout Lazada "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-            // Chiến dịch quảng cáo + hiệu suất ngày (Trợ lý quảng cáo Lazada
-            // GĐ1, read-only Sponsored Solutions) — lỗi riêng không chặn luồng.
-            try {
-              const camp = await syncLazadaAdsCampaigns(channel, { daysBack: 30 });
-              if (camp.campaignsUpserted > 0) {
-                console.log(
-                  `[Auto-sync] Campaign Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi sync campaign Ads Lazada "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-            // GĐ3 Lazada — Trợ lý tự thực thi (mặc định OFF; cùng executor và
-            // quy trình bật live với Shopee). Chạy SAU sync campaign; lỗi riêng
-            // không chặn luồng khác.
-            try {
-              const act = await runAdsAutoExecute(channel);
-              if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
-                console.log(
-                  `[Auto-sync] Trợ lý Ads Lazada "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi Trợ lý tự thực thi Lazada "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-          } else if (channel.channelName === ChannelName.SHOPEE) {
-            // Bọc try riêng (25/08): trước đây đối soát ném lỗi là NUỐT luôn
-            // các luồng đứng sau trong khối nhịp giờ — gồm cả quét cứu đơn
-            // giao thất bại. Lỗi đối soát không được chặn cảnh báo cứu đơn.
-            try {
-              const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
-              if (s.ordersUpdated > 0) {
-                console.log(
-                  `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi đối soát Shopee "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-            // Ba luồng Ads (chi phí ngày, campaign, Trợ lý tự thực thi) chỉ chạy
-            // khi gian có quyền Ads API: app Hubsell Ads đã bật mà gian chưa ủy
-            // quyền thì bỏ qua lặng lẽ — UI Trợ lý quảng cáo đã mời kết nối,
-            // không cần đẻ 3 dòng lỗi mỗi nhịp 10 phút.
-            const adsReady = await hasShopeeAdsAccess(channel.id);
-            if (!adsReady && !adsSkipLogged.has(channel.id)) {
-              adsSkipLogged.add(channel.id);
-              console.log(
-                `[Auto-sync] Bỏ qua Ads gian "${channel.shopName}": chưa ủy quyền ${HUBSELL_ADS_APP_LABEL}`
-              );
-            }
-            if (adsReady) adsSkipLogged.delete(channel.id);
-            // Chi phí quảng cáo theo ngày (Ads API) — lỗi riêng (thường là app
-            // chưa được bật quyền Ads) không được chặn các luồng khác.
-            if (adsReady) try {
-              const ads = await syncShopeeAdsSpend(channel, { daysBack: 30 });
-              if (ads.daysUpserted > 0) {
-                console.log(
-                  `[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
-                (err as Error).message
-              );
-            }
-            // Chiến dịch quảng cáo + hiệu suất ngày (Trợ lý quảng cáo GĐ1,
-            // read-only) — lỗi riêng không được chặn các luồng khác.
-            if (adsReady) try {
-              const camp = await syncShopeeAdsCampaigns(channel, { daysBack: 30 });
-              if (camp.campaignsUpserted > 0) {
-                console.log(
-                  `[Auto-sync] Campaign Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi sync campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
-                (err as Error).message
-              );
-            }
-            // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập ghi
-            // sổ; live chỉ bật sau probe). Chạy SAU sync campaign để đánh giá
-            // trên số mới nhất; lỗi riêng không chặn luồng khác.
-            if (adsReady) try {
-              const act = await runAdsAutoExecute(channel);
-              if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
-                console.log(
-                  `[Auto-sync] Trợ lý Ads "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
-                (err as Error).message
-              );
-            }
-            // Lệnh RÚT VÍ về bank (get_wallet_transaction_list, read-only) →
-            // WalletWithdrawal. Lỗi riêng (app chưa bật quyền Payment/ví) không
-            // được chặn các luồng khác.
-            try {
-              const wd = await syncShopeeWithdrawals(channel, {
-                daysBack: PAYOUT_DAYS_BACK,
-              });
-              if (wd.created > 0 || wd.updated > 0) {
-                console.log(
-                  `[Auto-sync] Rút ví Shopee "${channel.shopName}": +${wd.created} lệnh mới, ${wd.updated} cập nhật`
-                );
-              }
-            } catch (err) {
-              console.error(
-                `[Auto-sync] Lỗi sync rút ví Shopee "${channel.shopName}" (app có thể chưa bật quyền ví):`,
-                (err as Error).message
-              );
-            }
-          }
-        } catch (err) {
-          console.error(
-            `[Auto-sync] Lỗi đối soát gian "${channel.shopName}":`,
-            (err as Error).message
-          );
-        }
-        // KIỂM TOÁN PHÍ SÀN (30/08): quét cảnh báo NGAY SAU nhịp đối soát —
-        // detectFeeAudit (sàn trả thiếu / quá hạn chưa trả) cần chạy cả khi
-        // không ai mở Dashboard thì chuông mới chủ động. scanOpsAlerts tự
-        // throttle 10'/chủ shop + notify tự chống trùng 24h, gọi ở đây không
-        // spam; hàm không bao giờ ném lỗi nên không cần try riêng.
-        await scanOpsAlerts(channel.userId);
-      }
-
-      // Giãn cách trước khi sang gian kế tiếp (gian cuối không cần chờ).
-      if (channel !== channels[channels.length - 1]) {
-        await sleep(CHANNEL_STAGGER_BASE_MS + Math.random() * CHANNEL_STAGGER_JITTER_MS);
-      }
+    for (const c of candidates) {
+      // CLAIM: chỉ thành công nếu syncLockedAt còn đúng như lúc đọc — worker
+      // khác vừa cầm thì count = 0, bỏ qua êm.
+      const claimed = await prisma.channel.updateMany({
+        where: { id: c.id, syncLockedAt: c.syncLockedAt },
+        data: { syncLockedAt: now },
+      });
+      if (claimed.count === 0) continue;
+      inFlight.add(c.id);
+      void processChannel({ ...c, syncLockedAt: now }).finally(() => inFlight.delete(c.id));
     }
   } catch (err) {
-    console.error("[Auto-sync] Lỗi vòng quét:", err);
-  } finally {
-    running = false;
+    console.error("[Auto-sync] Lỗi nhặt vé:", (err as Error).message);
   }
+}
+
+/** Chạy các tầng đến hạn cho MỘT gian rồi ghi hạn kế tiếp + nhả khóa. */
+async function processChannel(channel: Channel): Promise<void> {
+  const startedAt = Date.now();
+  const tiers = dueTiers(channel, startedAt);
+  let changed = false;
+  let adsSynced = false;
+
+  try {
+    if (channel.channelName === ChannelName.SHOPEE && !isShopeeConfigured()) return;
+    if (channel.channelName === ChannelName.LAZADA && !isLazadaConfigured()) return;
+
+    // Tầng nhanh chạy MỌI lượt (rẻ, idempotent) — gian được nhặt vì tầng giờ/ads
+    // đến hạn thì tiện vét luôn; cửa sổ sâu khi trùng nhịp giờ.
+    changed = await runFastTier(channel, { deep: tiers.hourly });
+    if (tiers.hourly) await runHourlyTier(channel);
+    if (tiers.ads) adsSynced = await runAdsTier(channel);
+  } catch (err) {
+    console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
+  } finally {
+    const now = Date.now();
+    const fast = nextFastSchedule(channel.syncBackoffLevel, changed, cadence);
+    await prisma.channel
+      .update({
+        where: { id: channel.id },
+        data: {
+          syncLockedAt: null,
+          nextFastSyncAt: new Date(now + fast.delayMs),
+          syncBackoffLevel: fast.level,
+          ...(tiers.hourly
+            ? { nextHourlySyncAt: new Date(now + withJitter(HOURLY_INTERVAL_MIN * 60 * 1000)) }
+            : {}),
+          ...(tiers.ads
+            ? { nextAdsSyncAt: new Date(now + withJitter(adsIntervalHours * 60 * 60 * 1000)) }
+            : {}),
+          ...(adsSynced ? { lastAdsSyncAt: new Date(now), adsBackfillPending: false } : {}),
+        },
+      })
+      .catch((err) =>
+        console.error(`[Auto-sync] Không ghi được lịch gian "${channel.shopName}":`, (err as Error).message)
+      );
+  }
+}
+
+// ============================================================
+// TẦNG NHANH — đơn, phí ước tính, đơn hoàn, vận đơn, hóa đơn, cứu đơn.
+// Trả về true nếu lượt quét đơn thấy biến động (để tính bậc giãn nhịp).
+// ============================================================
+async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<boolean> {
+  let changed = false;
+
+  // --- Đơn hàng ---
+  try {
+    if (channel.channelName === ChannelName.SHOPEE) {
+      const r = await syncShopeeOrders(channel, {
+        daysBack: ORDERS_DAYS_BACK,
+        timeRangeField: "update_time",
+      });
+      changed = r.created > 0 || r.updated > 0;
+      if (r.created > 0) {
+        console.log(
+          `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
+        );
+      }
+    } else {
+      const r = await syncLazadaOrders(channel, {
+        daysBack: ORDERS_DAYS_BACK,
+        byUpdateTime: true,
+      });
+      changed = r.created > 0 || r.updated > 0;
+      if (r.created > 0) {
+        console.log(
+          `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
+        );
+      }
+    }
+    // Đồng bộ đơn OK → reset bộ đếm lỗi (nguồn cảnh báo "sàn trễ đồng bộ"
+    // tự đóng). Best-effort: lỗi ghi bookkeeping không được chặn lượt quét.
+    await prisma.channel
+      .update({
+        where: { id: channel.id },
+        data: { lastSyncAt: new Date(), lastSyncError: null, syncFailCount: 0 },
+      })
+      .catch(() => {});
+  } catch (err) {
+    // Lỗi một gian (token hết hạn, sàn chập chờn) không được chặn gian khác.
+    const message = (err as Error).message;
+    console.error(`[Auto-sync] Lỗi đồng bộ đơn gian "${channel.shopName}":`, message);
+    // Đếm lượt lỗi LIÊN TIẾP — detector Trung tâm điều hành báo khi ≥ 3.
+    await prisma.channel
+      .update({
+        where: { id: channel.id },
+        data: { lastSyncError: message, syncFailCount: { increment: 1 } },
+      })
+      .catch(() => {});
+    // Gian lỗi coi như "có biến động": giữ nhịp gốc để phục hồi nhanh khi sàn ổn lại.
+    changed = true;
+  }
+
+  if (channel.channelName === ChannelName.LAZADA) {
+    // --- ĐƠN HOÀN Lazada (Reverse Order API) — đọc số của sàn (giải pháp hoàn,
+    // tiền hoàn, SKU trả, tracking chiều hoàn) cho Lãi/Lỗ + danh sách kho.
+    try {
+      const ret = await syncLazadaReturns(channel, {
+        daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
+      });
+      if (ret.flagged > 0 || ret.unflagged > 0 || ret.itemsUpdated > 0) {
+        console.log(
+          `[Auto-sync] Đơn hoàn Lazada "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.itemsUpdated} dòng SKU trả (${ret.scanned} yêu cầu)`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Auto-sync] Lỗi quét đơn hoàn Lazada "${channel.shopName}":`,
+        (err as Error).message
+      );
+    }
+    return changed;
+  }
+
+  // ---------- Shopee ----------
+
+  // --- Phí ƯỚC TÍNH cho đơn chờ đối soát: chạy MỌI lượt (chủ shop 06/08: phí
+  // đơn mới hiện chậm) nhưng cửa sổ hẹp; lượt trùng nhịp giờ vét rộng hơn.
+  // isSettled vẫn false — giữ nhãn "chờ đối soát".
+  try {
+    const est = await syncShopeePendingEscrowEstimates(channel, {
+      daysBack: opts.deep ? SETTLE_DAYS_BACK : ORDERS_DAYS_BACK,
+    });
+    if (est.updated > 0) {
+      console.log(
+        `[Auto-sync] Ước tính phí Shopee "${channel.shopName}": ${est.updated}/${est.scanned} đơn chờ đối soát nhận số tạm tính`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi ước tính phí gian "${channel.shopName}":`,
+      (err as Error).message
+    );
+  }
+
+  // --- ĐƠN HOÀN Shopee (Returns API) — nguồn duy nhất thấy yêu cầu Trả
+  // hàng/Hoàn tiền trên đơn đã COMPLETED, kèm mã vận đơn CHIỀU HOÀN cho kho quét.
+  try {
+    const ret = await syncShopeeReturns(channel, {
+      daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
+    });
+    if (ret.flagged > 0 || ret.unflagged > 0 || ret.trackingSaved > 0) {
+      console.log(
+        `[Auto-sync] Đơn hoàn Shopee "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ (yêu cầu hủy), ${ret.trackingSaved} mã vận đơn hoàn, ${ret.ordersFetched} đơn cũ kéo mới`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi quét đơn hoàn Shopee "${channel.shopName}":`,
+      (err as Error).message
+    );
+  }
+  // Điền dần mã vận đơn CHIỀU ĐI còn trống — có tiết chế quota, ưu tiên đơn mới.
+  try {
+    const bf = await backfillShopeeTrackingCodes(channel, { limit: TRACKING_BACKFILL_PER_SWEEP });
+    if (bf.saved > 0) {
+      console.log(
+        `[Auto-sync] Vận đơn Shopee "${channel.shopName}": điền ${bf.saved}/${bf.checked} mã còn trống`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi backfill vận đơn Shopee "${channel.shopName}":`,
+      (err as Error).message
+    );
+  }
+  // KHÁCH YÊU CẦU XUẤT HÓA ĐƠN (24/08): đơn vừa ĐÃ GIAO → hỏi get_buyer_invoice_info
+  // lưu thông tin người mua TRƯỚC khi Shopee ẩn (30 ngày). Gian chưa mở tính năng → module tự backoff 24h.
+  try {
+    const inv = await syncShopeeBuyerInvoiceRequests(channel);
+    if (inv.requested > 0 || inv.maskedRetry > 0) {
+      console.log(
+        `[Auto-sync] Yêu cầu hóa đơn Shopee "${channel.shopName}": +${inv.requested} đơn khách cần hóa đơn, ${inv.none} không yêu cầu, ${inv.maskedRetry} còn che (${inv.scanned} đơn hỏi)`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi kéo yêu cầu hóa đơn Shopee "${channel.shopName}" (shop có thể chưa được mở tính năng):`,
+      (err as Error).message
+    );
+  }
+  // CỨU ĐƠN GIAO THẤT BẠI — hàng đợi DeliveryTrackingTask (26/08): một call gộp
+  // dọn vé → phát vé → nhặt vé đến hạn theo TRẦN call/gian/nhịp.
+  try {
+    const df = await processShopeeDeliveryTracking(channel);
+    if (df.noticed > 0 || df.saved > 0 || df.lost > 0) {
+      console.log(
+        `[Auto-sync] Cứu đơn Shopee "${channel.shopName}": +${df.noticed} cảnh báo (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua), +${df.saved} cứu được, +${df.lost} mất đơn — ${df.ran} call tracking, +${df.enqueued} vé mới, ${df.cleaned} vé dọn`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi hàng đợi cứu đơn gian "${channel.shopName}":`,
+      (err as Error).message
+    );
+  }
+  return changed;
+}
+
+// ============================================================
+// TẦNG NHỊP GIỜ — đối soát phí thật, payout/rút ví, cảnh báo điều hành.
+// ============================================================
+async function runHourlyTier(channel: Channel): Promise<void> {
+  if (channel.channelName === ChannelName.LAZADA) {
+    // Bọc try riêng (25/08): đối soát lỗi không được nuốt payout đứng sau.
+    try {
+      const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      if (s.ordersUpdated > 0) {
+        console.log(
+          `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi đối soát Lazada "${channel.shopName}":`, (err as Error).message);
+    }
+    // Đợt CHI TIỀN về bank (payout theo kỳ sao kê) → WalletWithdrawal.
+    try {
+      const po = await syncLazadaPayouts(channel, { daysBack: PAYOUT_DAYS_BACK });
+      if (po.created > 0 || po.updated > 0) {
+        console.log(
+          `[Auto-sync] Payout Lazada "${channel.shopName}": +${po.created} đợt mới, ${po.updated} cập nhật`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi sync payout Lazada "${channel.shopName}":`, (err as Error).message);
+    }
+  } else if (channel.channelName === ChannelName.SHOPEE) {
+    // Bọc try riêng (25/08): đối soát ném lỗi không được nuốt rút ví + cảnh báo.
+    try {
+      const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      if (s.ordersUpdated > 0) {
+        console.log(
+          `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi đối soát Shopee "${channel.shopName}":`, (err as Error).message);
+    }
+    // Lệnh RÚT VÍ về bank (get_wallet_transaction_list, read-only) → WalletWithdrawal.
+    try {
+      const wd = await syncShopeeWithdrawals(channel, { daysBack: PAYOUT_DAYS_BACK });
+      if (wd.created > 0 || wd.updated > 0) {
+        console.log(
+          `[Auto-sync] Rút ví Shopee "${channel.shopName}": +${wd.created} lệnh mới, ${wd.updated} cập nhật`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Auto-sync] Lỗi sync rút ví Shopee "${channel.shopName}" (app có thể chưa bật quyền ví):`,
+        (err as Error).message
+      );
+    }
+  }
+
+  // KIỂM TOÁN PHÍ SÀN (30/08): quét cảnh báo NGAY SAU đối soát — detectFeeAudit
+  // cần chạy cả khi không ai mở Dashboard thì chuông mới chủ động. scanOpsAlerts
+  // tự throttle 10'/chủ shop + notify chống trùng 24h; hàm không bao giờ ném lỗi.
+  await scanOpsAlerts(channel.userId);
+}
+
+// ============================================================
+// TẦNG ADS — chi phí ngày + campaign + Trợ lý tự thực thi.
+// Trả về true nếu đã kéo được số ads (để ghi lastAdsSyncAt / hạ cờ backfill).
+// ============================================================
+async function runAdsTier(channel: Channel): Promise<boolean> {
+  // Lần đầu (chưa từng sync) hoặc vừa nối Hubsell Ads → kéo lùi 30 ngày; các
+  // lượt sau chỉ 7 ngày — sàn còn chỉnh số vài ngày đầu, xa hơn không đổi.
+  const daysBack =
+    channel.adsBackfillPending || !channel.lastAdsSyncAt ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;
+
+  if (channel.channelName === ChannelName.LAZADA) {
+    let synced = false;
+    // Chiến dịch + hiệu suất ngày (Trợ lý quảng cáo Lazada, read-only Sponsored Solutions).
+    try {
+      const camp = await syncLazadaAdsCampaigns(channel, { daysBack });
+      synced = true;
+      if (camp.campaignsUpserted > 0) {
+        console.log(
+          `[Auto-sync] Campaign Ads Lazada "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Auto-sync] Lỗi sync campaign Ads Lazada "${channel.shopName}":`,
+        (err as Error).message
+      );
+    }
+    // GĐ3 Lazada — Trợ lý tự thực thi (mặc định OFF). Chạy SAU sync campaign.
+    try {
+      const act = await runAdsAutoExecute(channel);
+      if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
+        console.log(
+          `[Auto-sync] Trợ lý Ads Lazada "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Auto-sync] Lỗi Trợ lý tự thực thi Lazada "${channel.shopName}":`,
+        (err as Error).message
+      );
+    }
+    return synced;
+  }
+
+  // ---------- Shopee: chỉ khi gian có quyền Ads API ----------
+  // App Hubsell Ads đã bật mà gian chưa ủy quyền thì bỏ qua lặng lẽ — UI Trợ lý
+  // quảng cáo đã mời kết nối, không cần đẻ 3 dòng lỗi mỗi lượt.
+  const adsReady = await hasShopeeAdsAccess(channel.id);
+  if (!adsReady) {
+    if (!adsSkipLogged.has(channel.id)) {
+      adsSkipLogged.add(channel.id);
+      console.log(
+        `[Auto-sync] Bỏ qua Ads gian "${channel.shopName}": chưa ủy quyền ${HUBSELL_ADS_APP_LABEL}`
+      );
+    }
+    return false;
+  }
+  adsSkipLogged.delete(channel.id);
+
+  let synced = false;
+  // Chi phí quảng cáo theo ngày (Ads API).
+  try {
+    const ads = await syncShopeeAdsSpend(channel, { daysBack });
+    synced = true;
+    if (ads.daysUpserted > 0) {
+      console.log(
+        `[Auto-sync] Chi phí Ads Shopee "${channel.shopName}": ${ads.daysUpserted} ngày chi tiêu`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi sync Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+      (err as Error).message
+    );
+  }
+  // Chiến dịch + hiệu suất ngày (Trợ lý quảng cáo GĐ1, read-only).
+  try {
+    const camp = await syncShopeeAdsCampaigns(channel, { daysBack });
+    synced = true;
+    if (camp.campaignsUpserted > 0) {
+      console.log(
+        `[Auto-sync] Campaign Ads Shopee "${channel.shopName}": ${camp.campaignsUpserted} chiến dịch, ${camp.perfDaysUpserted} dòng hiệu suất ngày`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi sync campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
+      (err as Error).message
+    );
+  }
+  // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập ghi sổ; live chỉ
+  // bật sau probe). Chạy SAU sync campaign để đánh giá trên số mới nhất.
+  try {
+    const act = await runAdsAutoExecute(channel);
+    if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
+      console.log(
+        `[Auto-sync] Trợ lý Ads "${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[Auto-sync] Lỗi Trợ lý tự thực thi gian "${channel.shopName}":`,
+      (err as Error).message
+    );
+  }
+  return synced;
 }

@@ -7,6 +7,7 @@ import {
   getAdsTotalBalance,
 } from "../integrations/shopee/client";
 import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
+import { nudgeAdsSyncIfStale } from "../services/sync-schedule";
 import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
 import {
   MARGIN_WINDOW_DAYS,
@@ -268,12 +269,17 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         else if (c.assistant.verdict === "review") counts.review++;
       }
 
+      // Số ads cũ >30' → nudge worker kéo tươi (không gọi API sàn trong request);
+      // FE thấy adsRefreshing thì tự nạp lại sau ~45s.
+      const adsRefreshing = await nudgeAdsSyncIfStale(selected.id);
+
       res.json({
         channels,
         selectedChannelId: selected.id,
         days,
         wallet,
         adsApp,
+        adsRefreshing,
         assistant: {
           config: assistantConfig,
           counts,

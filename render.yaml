@@ -14,6 +14,32 @@
 # DISCONNECT + service Oregon hubsell-backend đã XÓA — file này chỉ còn là
 # khuôn dựng lại hạ tầng khi cần (đúng tên + region Singapore bên dưới).
 services:
+  # ---- (12/09) WORKER NỀN RIÊNG — Background Worker, KHÔNG mở cổng HTTP ----
+  # Cùng repo/cùng build với web; chỉ khác HUBSELL_ROLE=worker. Env sàn/MISA/
+  # DB phải KHAI Y HỆT service web (worker gọi API sàn + ghi DB). Cách lên:
+  #   1) Dashboard → New → Background Worker → repo này, rootDir backend,
+  #      copy toàn bộ env từ hubsell-backend-sg rồi thêm HUBSELL_ROLE=worker.
+  #   2) Khi worker chạy ổn (log [Role] worker + [Auto-sync] BẬT) → đặt
+  #      HUBSELL_ROLE=web trên service web để web ngừng chạy worker trùng.
+  # Chưa có service này thì web chạy vai all như cũ — không đổi hành vi.
+  - type: worker
+    name: hubsell-worker-sg
+    runtime: node
+    plan: starter # Background Worker không có gói free; đợi anh Trung nâng gói sau ISV
+    region: singapore
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    # migrate deploy idempotent (Prisma tự khóa) — worker lên trước web vẫn khớp schema.
+    startCommand: npx prisma migrate deploy && npm run start
+    envVars:
+      - key: HUBSELL_ROLE
+        value: worker
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      # ...và toàn bộ env sàn/MISA/APP_FRONTEND_URL giống service web (sync: false).
+
   - type: web
     name: hubsell-backend-sg
     runtime: node
@@ -61,6 +87,8 @@ services:
         sync: false
       - key: SHOPEE_ENV
         value: production
+      - key: HUBSELL_ROLE # all (mặc định) | web (khi đã có hubsell-worker-sg) | worker
+        value: all
       - key: AUTO_SYNC_MINUTES # tự quét đơn Shopee+Lazada mỗi N phút, đối soát Lazada mỗi 6N phút ("0" = tắt)
         value: "10"
       # ---- Lazada Open Platform (đã cấu hình tay trên Dashboard từ 28/07 —

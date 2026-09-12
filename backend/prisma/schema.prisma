@@ -395,6 +395,23 @@ model Channel {
   deliveryTrackingTasks DeliveryTrackingTask[] // hàng đợi hỏi tracking cứu đơn giao thất bại
   appAuths        ChannelAppAuth[] // ủy quyền cho app phụ của Hubsell trên cùng gian (Hubsell Ads)
 
+  // ── LỊCH QUÉT THEO TỪNG GIAN của worker auto-sync (12/09/2026, thay vòng
+  // for tuần tự qua mọi gian — chịu tải hàng chục ngàn gian, nhiều worker) ──
+  /// Hạn quét NHANH kế tiếp (đơn, hoàn, cứu đơn). null = đến hạn ngay (gian mới/boot).
+  nextFastSyncAt   DateTime?
+  /// Hạn quét NHỊP GIỜ kế tiếp (đối soát phí, payout, rút ví, cảnh báo điều hành).
+  nextHourlySyncAt DateTime?
+  /// Hạn quét ADS kế tiếp (chi phí ngày + campaign + Trợ lý tự thực thi) — mặc định 24h.
+  nextAdsSyncAt    DateTime?
+  /// Lần sync ads xong gần nhất — trang Trợ lý quảng cáo mở mà cũ >30' thì nudge worker.
+  lastAdsSyncAt    DateTime?
+  /// Nối Hubsell Ads (hoặc lần đầu) → lượt ads kế tiếp kéo lùi 30 ngày thay vì 7.
+  adsBackfillPending Boolean @default(false)
+  /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
+  syncBackoffLevel Int      @default(0)
+  /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
+  syncLockedAt     DateTime?
+
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
   /// sàn — callback OAuth upsert theo khóa này nên bấm "Liên kết" bao nhiêu lần
@@ -402,6 +419,7 @@ model Channel {
   /// mock không có externalShopId vẫn tạo thoải mái).
   @@unique([userId, channelName, externalShopId])
   @@index([userId])
+  @@index([status, nextFastSyncAt])
 }
 
 /// CHI PHÍ QUẢNG CÁO SÀN theo NGÀY của một gian hàng — sync READ-ONLY từ Ads

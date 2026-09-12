@@ -18,6 +18,7 @@
 import jwt from "jsonwebtoken";
 import { ChannelAppKind, ChannelName } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { markAdsBackfill } from "../../services/sync-schedule";
 import { getShopeeAuthFlow } from "../shopee/config";
 import { buildAuthorizeUrl, buildLegacyAuthorizeUrl, getAccessToken } from "../shopee/client";
 import { HUBSELL_ADS_APP_LABEL, getHubsellAdsConfig } from "./config";
@@ -137,6 +138,9 @@ export async function handleHubsellAdsCallback(
     update: data,
     create: { channelId: channel.id, app: ChannelAppKind.HUBSELL_ADS, ...data },
   });
+  // Vừa nối (lại) → worker kéo lùi 30 ngày ads ngay lượt kế (12/09), seller
+  // không phải chờ nhịp ngày hay bấm tay.
+  await markAdsBackfill(channel.id);
   return { channelId: channel.id, shopName: channel.shopName, externalShopId: shopId };
 }
 

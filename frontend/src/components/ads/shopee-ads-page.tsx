@@ -247,9 +247,12 @@ export function ShopeeAdsPage({
     if (!can(getStoredUser(), meta.perm)) setDenied(true);
   }, [router, meta.perm]);
 
-  const load = useCallback(async (cid: string, d: number) => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (cid: string, d: number, opts?: { silent?: boolean }) => {
+    // silent: nạp lại nền sau khi worker kéo tươi — không nháy spinner, không xóa bảng đang xem.
+    if (!opts?.silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetchShopeeAdsDashboard({
         channelId: cid || undefined,
@@ -259,9 +262,9 @@ export function ShopeeAdsPage({
       setData(res);
       if (res.selectedChannelId) setChannelId(res.selectedChannelId);
     } catch (err) {
-      setError((err as Error).message);
+      if (!opts?.silent) setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [platform]);
 
@@ -270,6 +273,14 @@ export function ShopeeAdsPage({
     // channelId đổi qua chính load() (server chọn gian đầu) — chỉ nghe người dùng đổi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Số ads cũ >30' → backend đã nudge worker kéo tươi (12/09); nạp lại nền
+  // sau 45s để bảng tự cập nhật mà seller không phải F5. Dừng khi số đã tươi.
+  useEffect(() => {
+    if (!data?.adsRefreshing) return;
+    const t = setTimeout(() => void load(channelId, days, { silent: true }), 45_000);
+    return () => clearTimeout(t);
+  }, [data?.adsRefreshing, channelId, days, load]);
 
   // Nạp bảng hòa vốn SP khi mở tab (hoặc đổi gian trong lúc đang ở tab).
   useEffect(() => {

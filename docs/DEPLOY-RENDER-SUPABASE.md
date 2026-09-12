@@ -56,6 +56,48 @@ ngrok/tunnel gì ở local.
   tạm đặt `NODE_ENV=development` trên Render để tắt kiểm tra (chấp nhận rủi ro
   môi trường test), hoặc giữ production và chờ MISA cấp — code đã sẵn cả hai.
 
+## Bước 2b — Tách worker nền ra service riêng (HUBSELL_ROLE, từ 12/09/2026)
+
+Backend có 3 vai, chọn bằng env `HUBSELL_ROLE`:
+
+| Vai | Chạy gì | Dùng khi |
+|---|---|---|
+| `all` (mặc định) | API + SSE + toàn bộ worker nền trong MỘT tiến trình | Hôm nay (1 service web), local dev |
+| `web` | Chỉ API + SSE. Webhook chỉ **enqueue** vào hàng đợi DB | Khi đã có service worker riêng |
+| `worker` | Chỉ worker nền, KHÔNG mở cổng HTTP | Render **Background Worker** |
+
+Vì sao tách: deploy/restart web không cắt ngang lượt quét sàn; lượt quét nặng
+không làm API của seller chậm; scale worker độc lập. Mọi hàng đợi (webhook
+Shopee/MISA, đẩy tồn, cứu đơn, lịch quét theo gian) đều bền trong DB và claim
+bằng UPDATE có điều kiện → chạy 2 worker song song vẫn không xử lý trùng.
+Refresh token 3 sàn khóa bằng `pg_advisory_xact_lock` theo gian (lib/db-lock.ts)
+nên nhiều tiến trình không đua rotate refresh_token.
+
+Thứ tự lên (không gián đoạn seller):
+
+1. Dashboard → **New → Background Worker** → repo này, `rootDir` = `backend`,
+   region Singapore, build/start giống service web (mẫu trong `render.yaml`,
+   service `hubsell-worker-sg`). Background Worker **không có gói free**.
+2. Copy TOÀN BỘ env từ `hubsell-backend-sg` sang worker (DB, sàn, MISA,
+   APP_FRONTEND_URL...) rồi thêm `HUBSELL_ROLE=worker`.
+3. Xem log worker có `[Role] Tiến trình chạy vai "worker"` + `[Auto-sync] BẬT`
+   + các dòng `[Auto-sync] ...` theo gian.
+4. Lúc đó mới đặt `HUBSELL_ROLE=web` trên service web (web ngừng chạy worker
+   trùng). Chuông SSE vẫn gần real-time nhờ cầu DB→SSE 10s trong web
+   (services/notifications.ts).
+
+Biến chỉnh nhịp worker quét sàn (workers/order-auto-sync.ts):
+
+| Env | Mặc định | Ý nghĩa |
+|---|---|---|
+| `AUTO_SYNC_MINUTES` | 10 | Nhịp gốc tầng NHANH (đơn/hoàn/cứu đơn); `0` = tắt |
+| `AUTO_SYNC_MAX_MINUTES` | 60 | Trần giãn nhịp cho gian im ắng (×2 mỗi lượt không biến động) |
+| `AUTO_SYNC_CONCURRENCY` | 3 | Số gian xử lý song song trong một worker |
+| `ADS_SYNC_HOURS` | 24 | Nhịp tầng ADS (chi phí + campaign + Trợ lý); trang Ads mở mà số cũ >30' tự nudge |
+
+Local: PowerShell `$env:HUBSELL_ROLE="worker"; npm run dev` chạy riêng worker;
+không đặt gì = `all` như trước.
+
 ## Bước 3 — Khai URL webhook vào trang quản trị MISA Sandbox
 
 1. Đăng nhập trang quản trị meInvoice Sandbox (tài khoản MISA cấp kèm kit).

@@ -114,3 +114,18 @@ demo@hubsell.tech). Script tạm sinh link / probe / trạm bắt code nằm ở
 
 Còn lại sau ISV duyệt: nộp Go-Live app Hubsell Ads, lấy Partner ID/Key **Live**
 → env Render, bỏ `HUBSELL_ADS_ENV`, 3 shop nhà ủy quyền lại trên trang Trợ lý.
+
+## Nhịp đồng bộ số ads (12/09/2026 — thiết kế cho hàng chục ngàn gian)
+
+- Tầng ADS trong worker quét theo lịch TỪNG GIAN (`Channel.nextAdsSyncAt`),
+  mặc định **mỗi 24h** (`ADS_SYNC_HOURS`), cửa sổ **7 ngày** (sàn còn chỉnh số
+  vài ngày đầu). Lần đầu / vừa nối (lại) Hubsell Ads → `adsBackfillPending`
+  = true → lượt kế kéo lùi **30 ngày** ngay (callback OAuth gọi `markAdsBackfill`).
+- Mở trang Trợ lý quảng cáo: backend `GET /api/ads/:platform` gọi
+  `nudgeAdsSyncIfStale` — số cũ >30' thì kéo `nextAdsSyncAt` về ngay, trả
+  `adsRefreshing: true`; FE tự nạp lại nền sau 45s. Không gọi API sàn trong
+  request (web/worker tách vai).
+- Gian chưa ủy quyền Hubsell Ads (khi app đã bật) bỏ qua tầng ADS lặng lẽ,
+  hạn vẫn được đẩy lên 24h để không bị nhặt lại mỗi nhịp.
+- Trợ lý tự thực thi chạy ngay SAU sync ads trong cùng tầng → nhịp đánh giá
+  = nhịp ads (24h). Muốn dày hơn khi bật live: hạ `ADS_SYNC_HOURS`.

@@ -16,6 +16,7 @@
 
 import { ChannelAppKind, type Channel, type ChannelAppAuth } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { withDbLock } from "../../lib/db-lock";
 import { getShopeeConfig, type ShopeeConfig } from "../shopee/config";
 import { refreshAccessToken } from "../shopee/client";
 import { getValidShopeeAccessToken } from "../shopee/service";
@@ -114,46 +115,60 @@ export async function getValidHubsellAdsAccessToken(
   return job;
 }
 
-/** Thân refresh trong khóa: đọc lại DB (double-check) rồi mới gọi Shopee. */
+/**
+ * Thân refresh trong khóa: đọc lại DB (double-check) rồi mới gọi Shopee.
+ * Chạy dưới khóa advisory Postgres theo gian (12/09) — tiến trình khác cùng
+ * refresh phải xếp hàng, vào rồi thấy token đã mới thì dùng luôn.
+ *
+ * markDisconnected nằm ngoài transaction: hạ DISCONNECTED phải ĐƯỢC GHI cả khi
+ * ta ném lỗi ngay sau đó (ném trong transaction là rollback mất luôn dấu hạ).
+ */
 async function refreshLocked(authId: string, minTtlMs: number): Promise<AccessCtx> {
-  const auth = await prisma.channelAppAuth.findUnique({ where: { id: authId } });
-  if (!auth) throw new HubsellAdsNotLinkedError("", "not_linked");
-  if (auth.status !== "ACTIVE") throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
-
-  const now = Date.now();
-  if (auth.accessTokenExpireAt.getTime() - now > minTtlMs) {
-    return { accessToken: auth.accessToken, shopId: auth.externalShopId };
-  }
-  if (auth.refreshTokenExpireAt.getTime() < now) {
-    await markDisconnected(auth);
-    throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
-  }
-
-  let t;
+  let disconnect: ChannelAppAuth | null = null;
   try {
-    t = await refreshAccessToken(auth.refreshToken, auth.externalShopId, getHubsellAdsConfig());
-  } catch (err) {
-    // refresh_token bị sàn từ chối (đã rotate mất / seller thu hồi) → refresh
-    // lại cũng vô ích: đánh dấu cần ủy quyền lại để UI nhắc đúng chỗ.
-    if (/invalid_refresh_token|error_auth|invalid_token/i.test((err as Error).message)) {
-      await markDisconnected(auth);
-      throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
-    }
-    throw err;
+    return await withDbLock(`hubsell-ads-token:${authId}`, async (tx) => {
+      const auth = await tx.channelAppAuth.findUnique({ where: { id: authId } });
+      if (!auth) throw new HubsellAdsNotLinkedError("", "not_linked");
+      if (auth.status !== "ACTIVE") throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
+
+      const now = Date.now();
+      if (auth.accessTokenExpireAt.getTime() - now > minTtlMs) {
+        return { accessToken: auth.accessToken, shopId: auth.externalShopId };
+      }
+      if (auth.refreshTokenExpireAt.getTime() < now) {
+        disconnect = auth;
+        throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
+      }
+
+      let t;
+      try {
+        t = await refreshAccessToken(auth.refreshToken, auth.externalShopId, getHubsellAdsConfig());
+      } catch (err) {
+        // refresh_token bị sàn từ chối (đã rotate mất / seller thu hồi) → refresh
+        // lại cũng vô ích: đánh dấu cần ủy quyền lại để UI nhắc đúng chỗ.
+        if (/invalid_refresh_token|error_auth|invalid_token/i.test((err as Error).message)) {
+          disconnect = auth;
+          throw new HubsellAdsNotLinkedError(auth.channelId, "expired");
+        }
+        throw err;
+      }
+      if (!t.access_token || !t.refresh_token) {
+        throw new Error(`Shopee không trả token khi refresh ${HUBSELL_ADS_APP_LABEL}`);
+      }
+      await tx.channelAppAuth.update({
+        where: { id: auth.id },
+        data: {
+          accessToken: t.access_token,
+          refreshToken: t.refresh_token,
+          accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
+          refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
+        },
+      });
+      return { accessToken: t.access_token, shopId: auth.externalShopId };
+    });
+  } finally {
+    if (disconnect) await markDisconnected(disconnect);
   }
-  if (!t.access_token || !t.refresh_token) {
-    throw new Error(`Shopee không trả token khi refresh ${HUBSELL_ADS_APP_LABEL}`);
-  }
-  await prisma.channelAppAuth.update({
-    where: { id: auth.id },
-    data: {
-      accessToken: t.access_token,
-      refreshToken: t.refresh_token,
-      accessTokenExpireAt: new Date(now + Number(t.expire_in ?? 0) * 1000),
-      refreshTokenExpireAt: new Date(now + REFRESH_TOKEN_TTL_MS),
-    },
-  });
-  return { accessToken: t.access_token, shopId: auth.externalShopId };
 }
 
 async function markDisconnected(auth: ChannelAppAuth): Promise<void> {

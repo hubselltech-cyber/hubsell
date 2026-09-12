@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { withDbLock } from "../../lib/db-lock";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import { CHANNEL_LABEL } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
@@ -124,26 +125,52 @@ export async function getValidLazadaAccessToken(channel: Channel): Promise<strin
     throw new Error("Gian hàng chưa uỷ quyền Lazada (thiếu token)");
   }
 
-  const now = Date.now();
   const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
-  if (accessExp - now > REFRESH_BUFFER_MS) {
+  if (accessExp - Date.now() > REFRESH_BUFFER_MS) {
     return channel.apiToken;
   }
 
-  const refreshExp = channel.refreshTokenExpireAt?.getTime() ?? 0;
-  if (refreshExp && refreshExp < now) {
-    throw new Error("Phiên uỷ quyền Lazada đã hết hạn (refresh_token). Vui lòng kết nối lại.");
-  }
-
-  const t = await refreshToken(channel.refreshToken);
-  if (!t.access_token || !t.refresh_token) {
-    throw new Error("Lazada không trả token khi refresh");
-  }
-  await prisma.channel.update({
-    where: { id: channel.id },
-    data: tokenFields(t, now),
+  // Hai tầng khóa như Shopee (12/09): Map gom luồng cùng tiến trình, khóa
+  // advisory DB chặn tiến trình khác đua rotate refresh_token cùng gian.
+  const inFlight = refreshInFlight.get(channel.id);
+  if (inFlight) return inFlight;
+  const job = refreshLazadaTokenLocked(channel.id).finally(() => {
+    refreshInFlight.delete(channel.id);
   });
-  return t.access_token;
+  refreshInFlight.set(channel.id, job);
+  return job;
+}
+
+const refreshInFlight = new Map<string, Promise<string>>();
+
+/** Thân refresh trong khóa: đọc lại DB (double-check) rồi mới gọi Lazada. */
+async function refreshLazadaTokenLocked(channelId: string): Promise<string> {
+  return withDbLock(`lazada-token:${channelId}`, async (tx) => {
+    const channel = await tx.channel.findUnique({ where: { id: channelId } });
+    if (!channel?.apiToken || !channel.refreshToken) {
+      throw new Error("Gian hàng chưa uỷ quyền Lazada (thiếu token)");
+    }
+    const now = Date.now();
+    const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
+    if (accessExp - now > REFRESH_BUFFER_MS) {
+      return channel.apiToken;
+    }
+
+    const refreshExp = channel.refreshTokenExpireAt?.getTime() ?? 0;
+    if (refreshExp && refreshExp < now) {
+      throw new Error("Phiên uỷ quyền Lazada đã hết hạn (refresh_token). Vui lòng kết nối lại.");
+    }
+
+    const t = await refreshToken(channel.refreshToken);
+    if (!t.access_token || !t.refresh_token) {
+      throw new Error("Lazada không trả token khi refresh");
+    }
+    await tx.channel.update({
+      where: { id: channel.id },
+      data: tokenFields(t, now),
+    });
+    return t.access_token;
+  });
 }
 
 /** Các cột token của Channel tính từ payload token Lazada. */

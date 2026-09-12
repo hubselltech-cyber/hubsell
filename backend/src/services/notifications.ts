@@ -74,20 +74,85 @@ export async function notify(ownerId: string, input: NotifyInput): Promise<void>
       },
     });
 
-    const set = clients.get(ownerId);
-    if (set && set.size > 0) {
-      const payload = `data: ${JSON.stringify(row)}\n\n`;
-      for (const res of set) {
-        try {
-          res.write(payload);
-        } catch {
-          set.delete(res);
-        }
-      }
-    }
+    pushToClients(row);
   } catch (err) {
     console.error("[notifications] notify lỗi:", (err as Error).message);
   }
+}
+
+/** Đẩy một bản ghi tới mọi tab đang mở của chủ shop (không có tab → bỏ qua). */
+function pushToClients(row: { id: string; ownerId: string }): void {
+  const set = clients.get(row.ownerId);
+  if (!set || set.size === 0) return;
+  pushedRecently.set(row.id, Date.now());
+  const payload = `data: ${JSON.stringify(row)}\n\n`;
+  for (const res of set) {
+    try {
+      res.write(payload);
+    } catch {
+      set.delete(res);
+    }
+  }
+}
+
+// ─────────────────────────── CẦU SSE LIÊN TIẾN TRÌNH ───────────────────────────
+//
+// 12/09/2026 — worker nền có thể chạy ở TIẾN TRÌNH KHÁC (HUBSELL_ROLE=worker):
+// notify() bên đó ghi DB nhưng không thấy `clients` của web. Cầu này chạy ở
+// tiến trình web: theo nhịp, hỏi DB thông báo MỚI của đúng những chủ shop
+// đang mở SSE (không quét cả bảng) rồi đẩy xuống. Tab đóng hết = không query.
+// Chi phí tỉ lệ với số trình duyệt đang mở, không phải số shop.
+//
+// Vai "all" (web + worker chung tiến trình): notify() đã đẩy thẳng và ghi id
+// vào pushedRecently → cầu bỏ qua, không đẩy đôi.
+
+/** Nhịp hỏi DB của cầu (ms). Chuông vẫn poll REST 60s nên đây chỉ là "gần real-time". */
+const SSE_BRIDGE_TICK_MS = 10_000;
+/** id đã đẩy trực tiếp gần đây (chống đẩy đôi ở vai all) — dọn sau 2 phút. */
+const pushedRecently = new Map<string, number>();
+const PUSHED_TTL_MS = 2 * 60 * 1000;
+
+let bridgeStarted = false;
+
+/** Khởi động cầu SSE (gọi 1 lần ở index.ts, vai web/all). Timer unref. */
+export function startNotificationSseBridge(): void {
+  if (bridgeStarted) return;
+  bridgeStarted = true;
+  // Mốc "đã xem tới đâu": chỉ đẩy thông báo tạo SAU lúc cầu khởi động.
+  let since = new Date();
+  let ticking = false;
+
+  setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    void (async () => {
+      try {
+        const now = Date.now();
+        for (const [id, at] of pushedRecently) {
+          if (now - at > PUSHED_TTL_MS) pushedRecently.delete(id);
+        }
+        const owners = [...clients.keys()];
+        if (owners.length === 0) {
+          since = new Date();
+          return;
+        }
+        const rows = await prisma.notification.findMany({
+          where: { ownerId: { in: owners }, createdAt: { gt: since } },
+          orderBy: { createdAt: "asc" },
+          take: 200,
+        });
+        for (const row of rows) {
+          if (row.createdAt > since) since = row.createdAt;
+          if (pushedRecently.has(row.id)) continue;
+          pushToClients(row);
+        }
+      } catch (err) {
+        console.error("[notifications] cầu SSE lỗi:", (err as Error).message);
+      } finally {
+        ticking = false;
+      }
+    })();
+  }, SSE_BRIDGE_TICK_MS).unref();
 }
 
 // ─────────────────────────── SSE STREAM ───────────────────────────
