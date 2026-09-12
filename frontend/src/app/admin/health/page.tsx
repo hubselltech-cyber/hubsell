@@ -74,7 +74,7 @@ export default function AdminHealthPage() {
     <AppShell>
       <div className="space-y-6">
         <AdminPageHeader
-          description="Radar sức chứa: đang ở đâu trên đường tăng trưởng, sắp chạm mốc nào, phải nâng gì. Worker kiểm tra mỗi 10 phút và email khi có dấu hiệu đỏ hoặc chạm mốc."
+          description="Radar sức chứa: đang ở đâu trên đường tăng trưởng, sắp chạm mốc nào, phải nâng gì. Số liệu tính tươi mỗi lần mở trang; worker chụp ảnh 2 lần/ngày để vẽ xu hướng và dự báo."
           loading={loading}
           onReload={reload}
         />
@@ -82,6 +82,34 @@ export default function AdminHealthPage() {
 
         {m && data && (
           <>
+            {/* ---- Dải trạng thái: vượt ngưỡng là đỏ lên ngay đầu trang ---- */}
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm",
+                worst === "crit"
+                  ? "border-red-300 bg-red-50 text-red-800"
+                  : worst === "warn"
+                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              )}
+            >
+              <span className={cn("size-3 rounded-full", LEVEL_META[worst].dot)} />
+              <span className="font-semibold">
+                {worst === "crit"
+                  ? "VƯỢT NGƯỠNG — cần xử lý"
+                  : worst === "warn"
+                    ? "Có dấu hiệu cần chú ý"
+                    : "Hệ thống trong ngưỡng"}
+              </span>
+              <span className="text-xs opacity-80">
+                {data.signals.filter((s) => s.level !== "ok").map((s) => s.label).join(" · ") ||
+                  `Đang ở ${data.timeline.current.key}${data.timeline.next ? `, kế tiếp ${data.timeline.next.key}` : ""}`}
+              </span>
+              <span className="ml-auto text-xs opacity-70">
+                Số tươi lúc {new Date(m.takenAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+
             {/* ---- KPI hôm nay ---- */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <StatCard
@@ -248,7 +276,7 @@ export default function AdminHealthPage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">Xu hướng 30 ngày</CardTitle>
-                    <CardDescription>Snapshot cuối mỗi ngày; cần ≥7 ngày để dự báo.</CardDescription>
+                    <CardDescription>Snapshot cuối mỗi ngày (worker chụp 2 lần/ngày); cần ≥7 ngày để dự báo.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {(
@@ -278,7 +306,7 @@ export default function AdminHealthPage() {
                                 </LineChart>
                               </ResponsiveContainer>
                             ) : (
-                              <p className="text-xs text-muted-foreground">Chưa đủ dữ liệu — worker chụp mỗi giờ.</p>
+                              <p className="text-xs text-muted-foreground">Chưa đủ dữ liệu — worker chụp 2 lần/ngày.</p>
                             )}
                           </div>
                         </div>

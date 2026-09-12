@@ -76,6 +76,6 @@ export function startAllWorkers(): void {
   startTaxDeadlineReminderWorker();
   // Bồi đơn cho tài khoản trial reviewer ISV (tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0).
   startReviewerDemoTopupWorker();
-  // Radar sức chứa HQ: dấu hiệu 10', snapshot + mốc 60', dự báo 8h — email platform admin.
+  // Radar sức chứa HQ: snapshot + kiểm mốc 2 lần/ngày (chỉ ghi DB, trang HQ tự đỏ).
   startHealthWatchWorker();
 }

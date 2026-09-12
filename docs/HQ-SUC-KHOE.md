@@ -115,15 +115,16 @@ cần quyền trên Supabase (role thường được phép); nếu bị chặn 
 
 ## 7. Đã code (12/09 khuya) — khác biệt so với thiết kế
 
-- **Kênh cảnh báo = EMAIL** tới mọi user `isPlatformAdmin` (khu HQ không có chuông —
-  app-shell tắt bell cho hqWorkspace; `notify()` vẫn ghi DB để lịch sử). Cần SMTP_*
-  trên Render, chưa có thì worker chỉ log `[Health]`. Tắt worker: `HEALTH_WATCH_OFF=1`.
+- **KHÔNG email, KHÔNG chuông** (anh Trung chốt 12/09 khuya: "làm trong HQ để anh theo
+  dõi, chạm ngưỡng thì báo đỏ lên là được"). Mục 4 ở trên chỉ là thiết kế ban đầu,
+  đã bỏ. Worker chỉ chụp snapshot **2 lần/ngày** (anh chốt "cho nhẹ") + ghi reachedAt mốc vừa chạm; trang có dải
+  trạng thái đầu trang đỏ/vàng/xanh theo dấu hiệu. Tắt worker: `HEALTH_WATCH_OFF=1`.
 - Files: `config/capacity-plan.ts` (gói đang dùng CURRENT_INFRA + ngưỡng + 7 mốc M0–M6
   + hàm thuần, test 9 ca), `services/platform-health.ts` (collector 3 lớp, mọi truy
   vấn bọc `safe()` — bảng thiếu/quyền pg_* bị chặn không vỡ trang), `workers/
   health-watch.ts` (10'/60'/08h VN), `routes/admin-health.ts` (GET /api/admin/health,
   POST /health/milestones/:key/done|undone → audit `health.milestone.*`), FE
-  `frontend/src/app/admin/health/page.tsx` (KPI 6 ô, gợi ý, timeline dọc tick được,
+  `frontend/src/app/admin/health/page.tsx` (dải trạng thái đỏ/vàng/xanh, KPI 6 ô, gợi ý, timeline dọc tick được,
   dấu hiệu, sparkline 30 ngày, bảng lớn nhất).
 - Bảng mới: `platform_health_snapshots` (dọn >90 ngày ở log-cleanup),
   `platform_capacity_milestones`; thêm index `Order(createdAt)` cho thống kê toàn
