@@ -73,6 +73,11 @@ const MAX_CREATE_PER_RUN = 120;
 /** Bồi bù ngày trống tối đa ngần này ngày về trước. */
 const BACKFILL_DAYS = 7;
 const MIN_DAILY_TARGET = 30;
+/** Tỷ lệ đơn Shopee mục tiêu (như seed) và ngưỡng lệch phải cân lại. */
+const SHOPEE_SHARE = 0.64;
+const SHOPEE_SHARE_MIN = 0.45;
+const SHOPEE_SHARE_MAX = 0.85;
+const REBALANCE_MIN_ORDERS = 20;
 
 const FIRST = ["Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Vũ", "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương"];
 const LAST = ["Minh Anh", "Thu Hà", "Quốc Bảo", "Ngọc Lan", "Văn Hùng", "Thảo Vy", "Đức Long", "Kim Ngân", "Gia Hân", "Hải Yến", "Tuấn Kiệt", "Phương Linh", "Bảo Châu", "Anh Thư"];
@@ -90,12 +95,23 @@ const LAZADA_CARRIERS: { carrier: Carrier; name: string }[] = [
 ];
 
 // ---------- ngẫu nhiên tất định (băm chuỗi → [0,1)) ----------
+/**
+ * FNV-1a + bước trộn cuối (fmix32 của MurmurHash3). FNV-1a trần với các khóa
+ * chỉ khác nhau ký tự cuối ("2026-09-12#0", "#1", "#2"…) cho giá trị CHỤM
+ * sát nhau (sự cố 12/09: 60 đơn liền nhau cùng rơi vào nhánh Lazada) —
+ * fmix32 khuếch tán mọi bit nên khóa kề nhau vẫn ra số độc lập.
+ */
 function fnv1a(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
   return h >>> 0;
 }
 /** Số [0,1) ổn định theo (khóa, nhãn) — cùng đơn cùng câu hỏi luôn cùng đáp án. */
@@ -165,6 +181,7 @@ export interface TopupSummary {
   settled: number;
   returnsOpened: number;
   returnsClosed: number;
+  rebalanced: number;
   dailyTarget: number;
   todayCount: number;
 }
@@ -196,7 +213,8 @@ export function startReviewerDemoTopupWorker(): void {
         console.log(
           `[Reviewer-demo] ${s.email}: +${s.created} đơn (hôm nay ${s.todayCount}/${s.dailyTarget}) · ` +
             `xử lý ${s.processed} · giao ${s.shipped} · hủy ${s.cancelled} · đã giao ${s.delivered} · ` +
-            `đối soát ${s.settled} · hoàn mở ${s.returnsOpened}/đóng ${s.returnsClosed}`
+            `đối soát ${s.settled} · hoàn mở ${s.returnsOpened}/đóng ${s.returnsClosed}` +
+            (s.rebalanced ? ` · cân lại sàn ${s.rebalanced}` : "")
         );
       }
     } catch (e) {
@@ -253,12 +271,13 @@ export async function runReviewerDemoTopup(opts: { email: string; now?: Date }):
 
   const summary: TopupSummary = {
     email, created: 0, processed: 0, shipped: 0, cancelled: 0, delivered: 0,
-    settled: 0, returnsOpened: 0, returnsClosed: 0, dailyTarget: 0, todayCount: 0,
+    settled: 0, returnsOpened: 0, returnsClosed: 0, rebalanced: 0, dailyTarget: 0, todayCount: 0,
   };
 
   // Tạo TRƯỚC, già hóa SAU: đơn bù cho ngày trống được kéo ngay về đúng
   // trạng thái theo tuổi trong cùng lượt (mỗi bậc già hóa truy vấn lại DB).
   await topupOrders(channelIds, channels, products, now, summary);
+  await rebalanceChannels(channelIds, channels, now, summary);
   const payoutByChannel = new Map<string, number>();
   await ageOrders(channelIds, channels, now, summary, payoutByChannel);
   await upsertDailyCosts(user.id, channels, now);
@@ -488,7 +507,7 @@ async function createOrdersForDay(
 
   for (let i = 0; i < count; i++) {
     const key = `${dateKey}#${seqOffset + i}`;
-    const useShopee = lazada == null || (shopee != null && hashUnit(key, "chan") < 0.64);
+    const useShopee = lazada == null || (shopee != null && hashUnit(key, "chan") < SHOPEE_SHARE);
     const channel = (useShopee ? shopee : lazada)!;
     const isShopee = channel.channelName === ChannelName.SHOPEE;
 
@@ -531,6 +550,64 @@ async function createOrdersForDay(
       },
     });
     s.created++;
+  }
+}
+
+// ============================================================
+// 2b) CÂN LẠI TỶ LỆ SÀN — tự chữa ngày đã lỡ lệch (chỉ đơn do worker tạo)
+// ============================================================
+const WORKER_CODE_RE = /^(\d{15}|\d{6}[0-9A-Z]{8})$/;
+
+async function rebalanceChannels(channelIds: string[], channels: DemoChannel[], now: Date, s: TopupSummary) {
+  const shopee = channels.find((c) => c.channelName === ChannelName.SHOPEE);
+  const lazada = channels.find((c) => c.channelName === ChannelName.LAZADA);
+  if (!shopee || !lazada) return;
+
+  const todayStart = vnMidnightUtc(now);
+  const rows = await prisma.order.findMany({
+    where: { channelId: { in: channelIds }, createdAt: { gte: new Date(todayStart.getTime() - BACKFILL_DAYS * DAY_MS) } },
+    select: { id: true, channelId: true, orderCode: true, createdAt: true, isSettled: true, totalAmount: true, trackingCode: true, returnTrackingCode: true },
+  });
+  const byDay = new Map<string, typeof rows>();
+  for (const o of rows) {
+    if (!WORKER_CODE_RE.test(o.orderCode)) continue; // đơn seed giữ nguyên
+    const k = vnDateKey(o.createdAt);
+    (byDay.get(k) ?? byDay.set(k, []).get(k)!).push(o);
+  }
+
+  for (const [, orders] of byDay) {
+    if (orders.length < REBALANCE_MIN_ORDERS) continue;
+    const shopeeCount = orders.filter((o) => o.channelId === shopee.id).length;
+    const share = shopeeCount / orders.length;
+    if (share >= SHOPEE_SHARE_MIN && share <= SHOPEE_SHARE_MAX) continue;
+
+    const wantShopee = Math.round(orders.length * SHOPEE_SHARE);
+    const toShopee = wantShopee > shopeeCount;
+    const pool = orders
+      .filter((o) => o.channelId === (toShopee ? lazada.id : shopee.id))
+      .sort((a, b) => hashUnit(a.id, "flip") - hashUnit(b.id, "flip"))
+      .slice(0, Math.abs(wantShopee - shopeeCount));
+    const target = toShopee ? shopee : lazada;
+    const targetIsShopee = toShopee;
+
+    for (const o of pool) {
+      const carrierPick = hashPick(o.id, "carrier", targetIsShopee ? SHOPEE_CARRIERS : LAZADA_CARRIERS);
+      await prisma.order.update({
+        where: { id: o.id },
+        data: {
+          channelId: target.id,
+          orderCode: orderCodeFor(o.id, o.createdAt, targetIsShopee),
+          carrier: carrierPick.carrier,
+          shippingCarrierName: carrierPick.name,
+          ...(o.trackingCode ? { trackingCode: trackingCodeFor(o.id, targetIsShopee) } : {}),
+          ...(o.returnTrackingCode
+            ? { returnTrackingCode: o.returnTrackingCode.replace(/^(SPXVN|LEXVN)/, targetIsShopee ? "SPXVN" : "LEXVN") }
+            : {}),
+          ...(o.isSettled ? settlementFees(o.id, target.channelName, num(o.totalAmount)) : {}),
+        },
+      });
+      s.rebalanced++;
+    }
   }
 }
 

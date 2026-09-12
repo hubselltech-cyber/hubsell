@@ -35,7 +35,7 @@ async function main() {
   }
   console.log(
     `✅ +${s.created} đơn (hôm nay ${s.todayCount}/${s.dailyTarget}) · xử lý ${s.processed} · giao ${s.shipped} · hủy ${s.cancelled}` +
-      ` · đã giao ${s.delivered} · đối soát ${s.settled} · hoàn mở ${s.returnsOpened}/đóng ${s.returnsClosed}`
+      ` · đã giao ${s.delivered} · đối soát ${s.settled} · hoàn mở ${s.returnsOpened}/đóng ${s.returnsClosed} · cân lại sàn ${s.rebalanced}`
   );
 
   const u = await prisma.user.findUnique({ where: { email }, select: { channels: { select: { id: true } } } });
@@ -44,6 +44,11 @@ async function main() {
     SELECT to_char("createdAt" + interval '7 hour', 'YYYY-MM-DD') AS d, count(*) AS n
     FROM "Order" WHERE "channelId" = ANY(${ids}) GROUP BY 1 ORDER BY 1 DESC LIMIT 5`;
   console.log("Đơn 5 ngày gần nhất: " + rows.map((r) => `${r.d}=${r.n}`).join(" · "));
+  const mix = await prisma.$queryRaw<{ d: string; c: string; n: bigint }[]>`
+    SELECT to_char(o."createdAt" + interval '7 hour', 'YYYY-MM-DD') AS d, ch."channelName"::text AS c, count(*) AS n
+    FROM "Order" o JOIN "Channel" ch ON ch.id = o."channelId"
+    WHERE o."channelId" = ANY(${ids}) AND o."createdAt" >= now() - interval '3 day' GROUP BY 1, 2 ORDER BY 1 DESC, 2`;
+  console.log("Tỷ lệ sàn 3 ngày: " + mix.map((r) => `${r.d} ${r.c}=${r.n}`).join(" · "));
   const st = await prisma.order.groupBy({ by: ["shippingStatus"], where: { channelId: { in: ids } }, _count: true });
   console.log("Trạng thái: " + st.map((r) => `${r.shippingStatus}=${r._count}`).join(" · "));
 }

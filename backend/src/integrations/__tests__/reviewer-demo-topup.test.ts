@@ -10,8 +10,11 @@
 //      hoàn AWAITING 8 ngày → về kho (returnedAt) ở một công đoạn hợp lệ.
 //   2. Bồi đơn hôm nay đúng tỷ lệ giờ đã trôi, chạy lại KHÔNG tạo thêm
 //      (idempotent theo mục tiêu), mã đơn không trùng, AdSpend hôm nay có dòng.
-//   3. Gian có refreshToken (gian thật) → worker bỏ qua hoàn toàn (trả null).
-//   4. Email không tồn tại → null.
+//   3. Ngày bù có cả 2 sàn theo tỷ lệ ~64/36; ngày -2 cắm 30 đơn kiểu worker
+//      toàn Lazada (sự cố băm 12/09) → tự cân lại về ≥55% Shopee, đổi mã đơn
+//      + hãng vận chuyển theo sàn mới; đơn seed (mã khác khuôn) không bị đụng.
+//   4. Gian có refreshToken (gian thật) → worker bỏ qua hoàn toàn (trả null).
+//   5. Email không tồn tại → null.
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -88,6 +91,14 @@ beforeAll(async () => {
   await seedOrder("processed-old", lazadaId, { createdAt: ago(20 * HOUR), packedAt: ago(12 * HOUR), shippingStatus: ShippingStatus.PROCESSED, trackingCode: "X" });
   await seedOrder("shipping-old", shopeeId, { createdAt: ago(3.5 * DAY), packedAt: ago(3.5 * DAY), shippingStatus: ShippingStatus.SHIPPING, trackingCode: "X" });
   await seedOrder("delivered-unsettled", lazadaId, { createdAt: ago(6 * DAY), shippingStatus: ShippingStatus.DELIVERED, deliveredAt: ago(3 * DAY), isSettled: false, totalAmount: 400_000 });
+  // Ngày -2: 30 đơn kiểu worker (mã 15 số) dồn hết Lazada → phải được cân lại.
+  for (let i = 0; i < 30; i++) {
+    await seedOrder(`skew-${i}`, lazadaId, {
+      orderCode: `${100_000_000_000_000 + i * 7919}`,
+      createdAt: ago(2 * DAY + (i % 12) * HOUR),
+      shippingStatus: ShippingStatus.SHIPPING, packedAt: ago(2 * DAY), trackingCode: `LEXVN0${i}`,
+    });
+  }
   await seedOrder("return-awaiting", shopeeId, {
     createdAt: ago(14 * DAY), shippingStatus: ShippingStatus.DELIVERED, deliveredAt: ago(11 * DAY), isSettled: true,
     returnStatus: ReturnStatus.AWAITING, returnRequestedAt: ago(8 * DAY),
@@ -153,6 +164,26 @@ describe("runReviewerDemoTopup", () => {
     expect(day4.length).toBe(30);
     expect(day4.every((o) => o.shippingStatus !== ShippingStatus.PENDING)).toBe(true);
     expect(day4.filter((o) => o.shippingStatus === ShippingStatus.DELIVERED).length).toBeGreaterThan(20);
+    const day4Shopee = day4.filter((o) => o.channelId === shopeeId).length / day4.length;
+    expect(day4Shopee).toBeGreaterThanOrEqual(0.4);
+    expect(day4Shopee).toBeLessThanOrEqual(0.85);
+
+    // Ngày -2 lệch 100% Lazada → cân lại: ≥55% Shopee, mã đơn Shopee đúng khuôn, mã vận đơn đổi tiền tố.
+    const skew = await prisma.order.findMany({ where: { id: { in: Object.entries(seeded).filter(([k]) => k.startsWith("skew-")).map(([, id]) => id) } } });
+    const skewShopee = skew.filter((o) => o.channelId === shopeeId);
+    expect(skewShopee.length / skew.length).toBeGreaterThanOrEqual(0.55);
+    expect(skewShopee.length / skew.length).toBeLessThanOrEqual(0.75);
+    for (const o of skewShopee) {
+      expect(o.orderCode).toMatch(/^\d{6}[0-9A-Z]{8}$/);
+      expect(o.trackingCode).toMatch(/^SPXVN0/);
+      expect(["SPX Express", "Giao Hàng Nhanh", "J&T Express"]).toContain(o.shippingCarrierName);
+    }
+    expect(s!.rebalanced).toBe(skewShopee.length);
+    // Đơn seed (mã TEST-…) không bị cân: lịch sử ngày -1 vẫn 5 Shopee / 5 Lazada.
+    const day1Start = vnMidnightUtc(ago(1 * DAY));
+    const day1 = await prisma.order.findMany({ where: { channelId: { in: [shopeeId, lazadaId] }, orderCode: { startsWith: "TEST-" }, createdAt: { gte: day1Start, lt: new Date(day1Start.getTime() + DAY) } } });
+    expect(day1.filter((o) => o.channelId === shopeeId).length).toBe(5);
+
     // Ngày -5 vẫn đủ 10 (không bị "bù" đè lên ngày có đơn).
     const day5Start = vnMidnightUtc(ago(5 * DAY));
     expect(await prisma.order.count({ where: { channelId: { in: [shopeeId, lazadaId] }, createdAt: { gte: day5Start, lt: new Date(day5Start.getTime() + DAY) } } })).toBe(10);
