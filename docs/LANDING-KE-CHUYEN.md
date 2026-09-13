@@ -1,5 +1,19 @@
 # Landing kể chuyện — mạch mới (13/09/2026)
 
+> ★ CHỐT CUỐI 13/09 khuya (anh Trung): "bản cũ đang sử dụng tốt hơn" → GIỮ bố cục cũ, chỉ
+> (1) rút chữ, (2) thay mock bằng ẢNH APP THẬT. ✅ Cả hai ĐÃ XONG trên nhánh `landing-got`
+> (hubsell-landing, từ master, CHƯA PUSH — lên prod sau khi ISV Shopee duyệt):
+> - Rút chữ: mỗi chốt 1 câu + 3 gạch tiêu đề (TourCopy slice 3, desc không render), lưới vệ
+>   tinh/pain/trust rút, AI/mobile chip, bảng so sánh giá vào <details>. 3.744 → 2.951 chữ.
+> - Ảnh thật: `public/screens/tour-{pnl,returns,shipping,ads,rescue,invoice}.webp` qua
+>   component `AppShot` (tour.tsx); khối 01 = ảnh nhân vật A + màn "Cảnh báo & P&L sản phẩm".
+> - Pipeline tái lập: backend `npx tsx scripts/seed-landing-demo.ts && npx tsx
+>   scripts/seed-landing-tour.ts` (DB local) → chạy backend 4000 + frontend 3000 →
+>   hubsell-landing `node scripts/capture-tour.mjs` (RAW=1 để dò khung; tên màn làm tham số).
+> - Gotcha headless: body font ra Times (var --font-sans không resolve) và Base UI Switch không
+>   vẽ data-checked → script vá CSS; DB local phải áp đủ migration (13/09 áp 27 cái thiếu).
+> Nhánh `landing-ke-chuyen` (bản kể chuyện 10 khối) giữ làm kho tham khảo, không dùng.
+
 > 🏗️ 13/09 tối: ĐÃ DỰNG XONG TRÊN NHÁNH LOCAL `landing-ke-chuyen` (repo hubsell-landing,
 > commit đầu nhánh), CHƯA PUSH — anh Trung chốt "đợi ISV Shopee duyệt xong mới lên", rồi đổi
 > ý "làm local trước, xem ok không". Xem local: `git checkout landing-ke-chuyen` + `npm run dev`.
