@@ -54,6 +54,11 @@ function buildAllowedOrigins(): Set<string> {
   const origins = new Set<string>([
     "https://hubsell.tech",
     "https://www.hubsell.tech",
+    // Tên miền .vn (đăng ký 09/2026, chạy song song .tech cho tới khi chuyển hẳn
+    // sau ISV Shopee). Chưa kích hoạt DNS thì origin này chỉ nằm chờ, vô hại.
+    "https://hubsell.vn",
+    "https://www.hubsell.vn",
+    "https://app.hubsell.vn",
     "http://localhost:3000",
     "https://localhost:3000",
   ]);
