@@ -46,7 +46,7 @@ export function channelMeta(channel: string): { label: string; badgeClass: strin
 /** Gian hàng demo — trùng tên các shop thật đã kết nối cho đỡ giả. */
 export const MOCK_SHOPS: { id: string; label: string; channel: OpsChannel }[] = [
   { id: "shopee-darkman", label: "Shopee — DarkMan Store", channel: "SHOPEE" },
-  { id: "lazada-hibe", label: "Lazada — Hi.Bé Store", channel: "LAZADA" },
+  { id: "lazada-hibe", label: "Lazada — Shop Nguyen Van A", channel: "LAZADA" },
   { id: "lazada-darkman", label: "Lazada — DarkMan Store", channel: "LAZADA" },
   { id: "tiktok-darkman", label: "TikTok Shop — DarkMan", channel: "TIKTOK" },
 ];
@@ -117,7 +117,7 @@ export const MOCK_REVIEWS: MockReview[] = [
     customer: "Minh Đức",
     shopId: "lazada-hibe",
     channel: "LAZADA",
-    product: "Bình sữa PPSU Hi.Bé 240ml",
+    product: "Bình sữa PPSU 240ml",
     rating: 2,
     content:
       "Hộp bị móp một góc, thân bình có vết trầy. May là ruột bên trong không sao nhưng làm quà tặng thì hết đẹp.",
@@ -160,7 +160,7 @@ export const MOCK_REVIEWS: MockReview[] = [
     customer: "Hải Yến",
     shopId: "lazada-hibe",
     channel: "LAZADA",
-    product: "Set 5 khăn sữa sợi tre Hi.Bé",
+    product: "Set 5 khăn sữa sợi tre",
     rating: 3,
     content:
       "Khăn mềm nhưng màu thực tế nhạt hơn hình nhiều, hơi hụt hẫng. Chất ổn trong tầm giá.",
@@ -246,14 +246,14 @@ export const MOCK_REVIEWS: MockReview[] = [
     customer: "Bảo Ngọc",
     shopId: "lazada-hibe",
     channel: "LAZADA",
-    product: "Gặm nướu silicone Hi.Bé",
+    product: "Gặm nướu silicone",
     rating: 5,
     content: "Hàng chính hãng, có tem đầy đủ, bé nhà mình thích lắm.",
     tag: "SATISFIED",
     replied: true,
     createdAt: "3 ngày trước",
     aiSuggestion:
-      "Cảm ơn Bảo Ngọc! Hi.Bé cam kết 100% hàng chính hãng có tem kiểm định. Chúc bé và gia đình thật nhiều sức khỏe ạ!",
+      "Cảm ơn Bảo Ngọc! Shop cam kết 100% hàng chính hãng có tem kiểm định. Chúc bé và gia đình thật nhiều sức khỏe ạ!",
   },
   {
     id: "rv-12",
@@ -398,7 +398,7 @@ export const MOCK_PRODUCTS: Record<string, MockProductInfo> = {
   },
   "HB-BS-240": {
     sku: "HB-BS-240",
-    name: "Bình sữa PPSU Hi.Bé 240ml",
+    name: "Bình sữa PPSU 240ml",
     imageClass: "from-sky-400 to-blue-600",
     material: "Nhựa PPSU chịu nhiệt 180°C, núm silicone y tế",
     care: "Tiệt trùng nước sôi/máy UV, thay núm định kỳ 3 tháng",
@@ -505,7 +505,7 @@ export const MOCK_CONVERSATIONS: MockConversation[] = [
     id: "cv-03",
     customer: "Lê Hoàng Anh",
     channel: "LAZADA",
-    shop: "Hi.Bé Store",
+    shop: "Shop Nguyen Van A",
     lastMessage: "Cho mình đổi từ màu hồng sang màu xanh được không?",
     time: "1 giờ",
     unread: 0,
