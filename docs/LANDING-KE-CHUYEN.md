@@ -1,4 +1,14 @@
-# Landing kể chuyện — mạch mới (đề xuất 13/09/2026, chờ anh Trung duyệt)
+# Landing kể chuyện — mạch mới (13/09/2026)
+
+> 🏗️ 13/09 tối: ĐÃ DỰNG XONG TRÊN NHÁNH LOCAL `landing-ke-chuyen` (repo hubsell-landing,
+> commit đầu nhánh), CHƯA PUSH — anh Trung chốt "đợi ISV Shopee duyệt xong mới lên", rồi đổi
+> ý "làm local trước, xem ok không". Xem local: `git checkout landing-ke-chuyen` + `npm run dev`.
+> Kết quả đo 1440px: 15.636px / 3.744 chữ → 12.942px / 2.375 chữ, ảnh 4 → 8.
+> Khác đề xuất ban đầu: KHÔNG có khối "Bằng chứng" (chưa có khách thật), waterfall 8 bậc
+> thay bằng thẻ "sàn báo 128,4 → còn 42,3" đè lên ảnh nhân vật A; pain.tsx + trust.tsx cũ
+> không còn dùng nhưng giữ file (waterfall SVG có thể tái dùng).
+> Việc còn lại sau khi anh duyệt: (1) merge + push sau ISV; (2) 2 buổi seed + chụp app thật
+> thay 4 mock (OrdersVisual, ReturnsVisual, AdsVisual, TaxVisual); (3) sinh 2 cảnh nhân vật A.
 
 Anh Trung: seller vào trang hiện tại thấy bối rối; muốn "nhìn phát hiểu ngay sản phẩm gì,
 bán cái gì, giúp ích gì", kể chuyện chứ không khoe mẽ. Tham khảo cách Sapo làm.
