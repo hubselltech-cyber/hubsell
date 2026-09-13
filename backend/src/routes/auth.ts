@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
@@ -25,8 +25,28 @@ import {
 import { findReferrerByCode } from "../services/referral-wallet";
 import { ensureDefaultSubscription } from "../services/subscription-service";
 import { generateUsername, normalizeUsername } from "../lib/username";
+import { PRIVACY_VERSION, TERMS_VERSION, type TermsAcceptanceSource } from "../lib/legal";
 
 const router = Router();
+
+// ---------- Bằng chứng đồng ý Điều khoản (hợp đồng điện tử click-wrap) ----------
+// Render đứng sau proxy → IP thật nằm ở phần tử đầu x-forwarded-for.
+function clientIp(req: Request): string | null {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+  return first || req.ip || null;
+}
+
+function termsAcceptanceData(req: Request, userId: string, source: TermsAcceptanceSource) {
+  return {
+    userId,
+    termsVersion: TERMS_VERSION,
+    privacyVersion: PRIVACY_VERSION,
+    source,
+    ip: clientIp(req),
+    userAgent: String(req.headers["user-agent"] ?? "").slice(0, 512) || null,
+  };
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // ISO 3166-1 alpha-2 (VN, US, TH...). Chỉ kiểm dạng — danh mục đầy đủ ở FE.
@@ -132,7 +152,17 @@ router.post("/register", async (req, res, next) => {
       countryCode,
       phoneNumber,
       referralCode,
+      acceptTerms,
     } = req.body ?? {};
+
+    // Chặn ở tầng API chứ không chỉ FE: không có đồng ý thì không có hợp đồng,
+    // không có hợp đồng thì không có căn cứ thu phí/khóa gói về sau.
+    if (acceptTerms !== true) {
+      res.status(400).json({
+        error: "Bạn cần đồng ý Điều khoản dịch vụ và Chính sách bảo mật để tạo tài khoản",
+      });
+      return;
+    }
 
     // Kiểm tra dữ liệu đầu vào
     if (typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
@@ -196,18 +226,26 @@ router.post("/register", async (req, res, next) => {
     // Mã sai/không tồn tại thì BỎ QUA trong im lặng — không được chặn đăng ký.
     const referrer = await findReferrerByCode(referralCode);
 
-    const user = await prisma.user.create({
-      data: {
-        email: normalizedEmail,
-        username: uname.value ?? (await generateUsername(normalizedEmail)),
-        passwordHash,
-        fullName: fullName.trim(),
-        country: normalizedCountry,
-        phone: phoneE164,
-        role: "ADMIN",
-        referredById: referrer?.id ?? null,
-      },
-      select: PUBLIC_USER_SELECT,
+    // Tạo user + dòng log đồng ý trong CÙNG transaction: không bao giờ có tài
+    // khoản mà thiếu bằng chứng đồng ý điều khoản.
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: normalizedEmail,
+          username: uname.value ?? (await generateUsername(normalizedEmail)),
+          passwordHash,
+          fullName: fullName.trim(),
+          country: normalizedCountry,
+          phone: phoneE164,
+          role: "ADMIN",
+          referredById: referrer?.id ?? null,
+        },
+        select: PUBLIC_USER_SELECT,
+      });
+      await tx.termsAcceptance.create({
+        data: termsAcceptanceData(req, created.id, "register_form"),
+      });
+      return created;
     });
 
     // Gán gói mặc định (Starter — dùng thử 14 ngày) — fire-and-forget, không chặn luồng đăng ký.
@@ -534,7 +572,7 @@ router.post("/reset-password", async (req, res, next) => {
 // ============================================================
 
 // GET /api/auth/google — chuyển hướng sang trang chọn tài khoản Google.
-router.get("/google", (_req, res) => {
+router.get("/google", (req, res) => {
   if (!isGoogleConfigured()) {
     res.status(503).json({
       error:
@@ -542,7 +580,11 @@ router.get("/google", (_req, res) => {
     });
     return;
   }
-  res.redirect(buildGoogleAuthorizeUrl(signGoogleState()));
+  // ?entry=register khi bấm từ form Tạo tài khoản (đã tick ô đồng ý); mặc định
+  // login. Ký vào state để callback biết ghi nguồn đồng ý nào — query string
+  // không đi qua Google nên phải nhét vào state.
+  const entry = req.query.entry === "register" ? "register" : "login";
+  res.redirect(buildGoogleAuthorizeUrl(signGoogleState(entry)));
 });
 
 // GET /api/auth/google/callback — Google redirect về kèm ?code=&state=.
@@ -557,7 +599,8 @@ router.get("/google/callback", async (req, res) => {
   try {
     const code = typeof req.query.code === "string" ? req.query.code : "";
     const state = typeof req.query.state === "string" ? req.query.state : "";
-    if (!code || !verifyGoogleState(state)) {
+    const stateInfo = code ? verifyGoogleState(state) : null;
+    if (!stateInfo) {
       fail("Phiên đăng nhập Google không hợp lệ hoặc đã hết hạn");
       return;
     }
@@ -579,15 +622,28 @@ router.get("/google/callback", async (req, res) => {
           data: { googleId: profile.sub },
         });
       } else {
-        user = await prisma.user.create({
-          data: {
-            email: profile.email,
-            username: await generateUsername(profile.email),
-            googleId: profile.sub,
-            fullName: profile.name,
-            passwordHash: await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10),
-            role: "ADMIN",
-          },
+        // Tài khoản MỚI qua Google: ghi log đồng ý cùng transaction. Nguồn
+        // phân biệt tick tay (form đăng ký) với đồng ý ngầm (dòng "Bằng việc
+        // tiếp tục..." dưới nút Google ở form đăng nhập).
+        const source: TermsAcceptanceSource =
+          stateInfo.entry === "register" ? "google_register" : "google_login";
+        const username = await generateUsername(profile.email);
+        const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+        user = await prisma.$transaction(async (tx) => {
+          const created = await tx.user.create({
+            data: {
+              email: profile.email,
+              username,
+              googleId: profile.sub,
+              fullName: profile.name,
+              passwordHash,
+              role: "ADMIN",
+            },
+          });
+          await tx.termsAcceptance.create({
+            data: termsAcceptanceData(req, created.id, source),
+          });
+          return created;
         });
         // Chủ shop mới qua Google cũng nhận gói mặc định (Starter — dùng thử 14 ngày).
         void ensureDefaultSubscription(user.id);

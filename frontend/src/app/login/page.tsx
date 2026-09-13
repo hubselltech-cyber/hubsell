@@ -28,7 +28,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { PhoneInput } from "@/components/auth/phone-input";
-import { SocialAuthButtons } from "@/components/auth/social-buttons";
+import { LegalLink, SocialAuthButtons } from "@/components/auth/social-buttons";
+import { PRIVACY_URL, TERMS_URL } from "@/lib/legal";
 import {
   login,
   register as apiRegister,
@@ -71,6 +72,11 @@ const registerSchema = z
       .regex(/^\d{6,15}$/, "Vui lòng nhập số điện thoại hợp lệ (6-15 chữ số)"),
     password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
     confirmPassword: z.string(),
+    // Click-wrap: tick = giao kết hợp đồng điện tử (Luật GDĐT 2023 Đ.34-35).
+    // Backend từ chối nếu thiếu; FE chặn sớm để báo đúng chỗ.
+    acceptTerms: z.boolean().refine((v) => v === true, {
+      message: "Bạn cần đồng ý Điều khoản dịch vụ và Chính sách bảo mật",
+    }),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Mật khẩu nhập lại không khớp",
@@ -190,8 +196,10 @@ function RegisterForm({
       phone: "",
       password: "",
       confirmPassword: "",
+      acceptTerms: false,
     },
   });
+  const termsAccepted = form.watch("acceptTerms");
 
   // Kiểm tra TRÙNG TÊN ĐĂNG NHẬP ngay khi gõ (debounce 450ms) — username là
   // unique toàn hệ thống (nền của định dạng nhân viên "chủ/nhânviên") nên báo
@@ -235,6 +243,7 @@ function RegisterForm({
         country: values.country,
         phoneNumber: values.phone,
         referralCode: referralCode ?? undefined,
+        acceptTerms: true,
       });
       setToken(res.token);
       setStoredUser(res.user);
@@ -369,11 +378,46 @@ function RegisterForm({
             </FormItem>
           )}
         />
+        <FormField
+          control={form.control}
+          name="acceptTerms"
+          render={({ field }) => (
+            <FormItem>
+              <label className="flex cursor-pointer items-start gap-2.5 text-sm leading-snug">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 size-4 shrink-0 accent-primary"
+                  checked={field.value}
+                  onChange={(e) => field.onChange(e.target.checked)}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                />
+                <span className="text-muted-foreground">
+                  Tôi đã đọc và đồng ý với{" "}
+                  <LegalLink href={TERMS_URL}>Điều khoản dịch vụ</LegalLink> và{" "}
+                  <LegalLink href={PRIVACY_URL}>Chính sách bảo mật</LegalLink> của Hubsell.
+                </span>
+              </label>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting && <Loader2 className="size-4 animate-spin" />}
           Tạo tài khoản
         </Button>
-        <SocialAuthButtons />
+        {/* Google từ form đăng ký cũng phải qua ô tick — chưa tick thì báo tại ô
+            thay vì bay sang Google rồi tạo tài khoản không có đồng ý rõ ràng. */}
+        <SocialAuthButtons
+          entry="register"
+          disabled={!termsAccepted}
+          onBlocked={() =>
+            form.setError("acceptTerms", {
+              message: "Bạn cần đồng ý Điều khoản dịch vụ và Chính sách bảo mật",
+            })
+          }
+        />
       </form>
     </Form>
   );

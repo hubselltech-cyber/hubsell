@@ -303,9 +303,37 @@ model User {
   ledgerEntries      PlatformLedgerEntry[]  @relation("LedgerCustomer")
   consultAssignments ConsultLead[]          @relation("ConsultLeadAssignee")
 
+  // Bằng chứng đồng ý Điều khoản dịch vụ + Chính sách bảo mật (hợp đồng điện tử).
+  termsAcceptances TermsAcceptance[]
+
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
   @@unique([ownerId, staffUsername])
+}
+
+/// LOG ĐỒNG Ý ĐIỀU KHOẢN — bằng chứng hợp đồng điện tử click-wrap (Luật Giao
+/// dịch điện tử 2023 Đ.34-35). Mỗi lần khách đồng ý là MỘT DÒNG, không sửa,
+/// không xoá (chỉ mất khi xoá tài khoản): sau này đổi điều khoản bắt khách
+/// đồng ý lại thì thêm dòng mới, dòng cũ vẫn chứng minh bản trước đã được chấp
+/// nhận. Phiên bản lấy từ src/lib/legal.ts (= ngày "Cập nhật lần cuối" trên
+/// hubsell.tech/terms và /privacy).
+model TermsAcceptance {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Bản Điều khoản dịch vụ đã đồng ý (vd "2026-09-10").
+  termsVersion   String
+  /// Bản Chính sách bảo mật đã đồng ý.
+  privacyVersion String
+  /// register_form | google_register | google_login — xem TermsAcceptanceSource.
+  source String
+  /// IP đầu tiên trong x-forwarded-for (Render đứng sau proxy) — null nếu không có.
+  ip        String?
+  /// User-Agent trình duyệt lúc đồng ý — cắt 512 ký tự.
+  userAgent String?
+  acceptedAt DateTime @default(now())
+
+  @@index([userId, acceptedAt])
 }
 
 /// Kênh bán hàng đã kết nối (Shopee, Lazada, TikTok, Offline)

@@ -33,20 +33,25 @@ export function getGoogleRedirectUri(): string {
 
 // ---------- State chống CSRF (JWT ngắn hạn, cùng cơ chế các sàn) ----------
 
-export function signGoogleState(): string {
+/** Nút Google được bấm từ form nào — quyết định nguồn ghi log đồng ý điều khoản. */
+export type GoogleEntry = "login" | "register";
+
+export function signGoogleState(entry: GoogleEntry = "login"): string {
   return jwt.sign(
-    { purpose: "google_oauth", nonce: crypto.randomBytes(8).toString("hex") },
+    { purpose: "google_oauth", entry, nonce: crypto.randomBytes(8).toString("hex") },
     STATE_SECRET,
     { expiresIn: "10m" }
   );
 }
 
-export function verifyGoogleState(token: string): boolean {
+/** Trả entry đã ký trong state, hoặc null nếu state giả/hết hạn. */
+export function verifyGoogleState(token: string): { entry: GoogleEntry } | null {
   try {
     const payload = jwt.verify(token, STATE_SECRET) as jwt.JwtPayload;
-    return payload.purpose === "google_oauth";
+    if (payload.purpose !== "google_oauth") return null;
+    return { entry: payload.entry === "register" ? "register" : "login" };
   } catch {
-    return false;
+    return null;
   }
 }
 

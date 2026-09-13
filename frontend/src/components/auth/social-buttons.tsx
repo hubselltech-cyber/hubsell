@@ -7,8 +7,11 @@
 // mắt" — nút chết trên màn hình đầu tiên là dấu hiệu sản phẩm chưa xong, và
 // GitHub không có nghĩa gì với chủ shop. Khi nào nối thật thì thêm lại nút.
 
+import type { ReactNode } from "react";
+
 import { Button } from "@/components/ui/button";
 import { googleAuthUrl } from "@/lib/api";
+import { PRIVACY_URL, TERMS_URL } from "@/lib/legal";
 
 function GoogleIcon() {
   return (
@@ -21,7 +24,17 @@ function GoogleIcon() {
   );
 }
 
-export function SocialAuthButtons() {
+export function SocialAuthButtons({
+  entry = "login",
+  disabled = false,
+  onBlocked,
+}: {
+  /** Form chứa nút — backend ghi nguồn đồng ý điều khoản theo đây. */
+  entry?: "login" | "register";
+  /** Form đăng ký chưa tick đồng ý → nút vẫn bấm được nhưng gọi onBlocked thay vì đi Google. */
+  disabled?: boolean;
+  onBlocked?: () => void;
+}) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
@@ -33,11 +46,42 @@ export function SocialAuthButtons() {
         type="button"
         variant="outline"
         className="w-full"
-        onClick={() => window.location.assign(googleAuthUrl())}
+        aria-disabled={disabled}
+        onClick={() => {
+          if (disabled) {
+            onBlocked?.();
+            return;
+          }
+          window.location.assign(googleAuthUrl(entry));
+        }}
       >
         <GoogleIcon />
         Tiếp tục với Google
       </Button>
+      {/* Form đăng nhập: người chưa có tài khoản bấm Google sẽ được tạo mới —
+          dòng này là đồng ý ngầm (backend ghi nguồn google_login). Form đăng
+          ký đã có ô tick riêng nên không lặp lại. */}
+      {entry === "login" && (
+        <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
+          Bằng việc tiếp tục với Google, bạn đồng ý{" "}
+          <LegalLink href={TERMS_URL}>Điều khoản dịch vụ</LegalLink> và{" "}
+          <LegalLink href={PRIVACY_URL}>Chính sách bảo mật</LegalLink> của Hubsell.
+        </p>
+      )}
     </div>
+  );
+}
+
+/** Link tài liệu pháp lý mở tab mới — dùng chung ô tick đăng ký và dòng dưới nút Google. */
+export function LegalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-medium text-primary underline-offset-2 hover:underline"
+    >
+      {children}
+    </a>
   );
 }

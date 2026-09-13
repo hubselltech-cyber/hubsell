@@ -945,6 +945,8 @@ export function register(data: {
   phoneNumber?: string;
   /** Mã giới thiệu Affiliate (?ref= trên link) — sai/thiếu không chặn đăng ký. */
   referralCode?: string;
+  /** Đã tick đồng ý Điều khoản dịch vụ + Chính sách bảo mật — backend từ chối nếu không true. */
+  acceptTerms: true;
 }) {
   return apiFetch<AuthResponse>("/api/auth/register", {
     method: "POST",
@@ -968,9 +970,13 @@ export function resetPassword(token: string, newPassword: string) {
   });
 }
 
-/** URL bắt đầu luồng đăng nhập Google (redirect cả trang sang backend). */
-export function googleAuthUrl(): string {
-  return `${API_URL}/api/auth/google`;
+/**
+ * URL bắt đầu luồng đăng nhập Google (redirect cả trang sang backend).
+ * entry="register" khi bấm từ form Tạo tài khoản đã tick đồng ý điều khoản —
+ * backend ghi nguồn đồng ý tương ứng cho tài khoản mới.
+ */
+export function googleAuthUrl(entry: "login" | "register" = "login"): string {
+  return `${API_URL}/api/auth/google?entry=${entry}`;
 }
 
 /** Người dùng TỰ đổi mật khẩu của chính mình (phải xác nhận mật khẩu hiện tại). */
