@@ -12,7 +12,7 @@
 >   hubsell-landing `node scripts/capture-tour.mjs` (RAW=1 để dò khung; tên màn làm tham số).
 > - Gotcha headless: body font ra Times (var --font-sans không resolve) và Base UI Switch không
 >   vẽ data-checked → script vá CSS; DB local phải áp đủ migration (13/09 áp 27 cái thiếu).
-> Nhánh `landing-ke-chuyen` (bản kể chuyện 10 khối) giữ làm kho tham khảo, không dùng.
+> 14/09: ĐÃ PUSH & LIVE (dd56254). Bản kể chuyện 10 khối KHÔNG dùng — nhánh đã xóa, còn tag local `archive/landing-ke-chuyen` trong repo landing nếu cần xem lại (không push).
 
 > 🏗️ 13/09 tối: ĐÃ DỰNG XONG TRÊN NHÁNH LOCAL `landing-ke-chuyen` (repo hubsell-landing,
 > commit đầu nhánh), CHƯA PUSH — anh Trung chốt "đợi ISV Shopee duyệt xong mới lên", rồi đổi
