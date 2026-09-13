@@ -720,9 +720,11 @@ export default function DashboardPage() {
             (cách ly lỗi). Chỉ hiện với chủ shop — nhân viên xem Dashboard rút gọn. */}
         {seesFinancials && <CommandCenter />}
 
+        {/* Tạm ẩn theo yêu cầu anh Trung 13/09/2026 — mở lại khi cần.
         <p className="text-center text-xs text-muted-foreground">
           Hoàng Sa - Trường Sa là của Việt Nam
         </p>
+        */}
       </div>
     </AppShell>
   );
