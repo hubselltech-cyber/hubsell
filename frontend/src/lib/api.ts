@@ -5090,6 +5090,48 @@ export function resumeShopeeAdsCampaign(
   );
 }
 
+/** Một lần máy ĐỊNH tạm dừng (diễn tập) + kết quả những ngày sau đó. */
+export interface AdsScorecardRow {
+  campaignRowId: string;
+  campaignId: string;
+  name: string;
+  at: string;
+  reasons: string[];
+  spendAfter: number;
+  gmvAfter: number;
+  ordersAfter: number;
+  roasAfter: number | null;
+  breakevenRoas: number | null;
+  /** right = vẫn lỗ (máy đúng); wrong = sau đó ROAS đạt (máy sai, chạy thật sẽ tự bật lại); pending = chưa đủ số. */
+  outcome: "right" | "wrong" | "pending";
+}
+
+/** BẢNG ĐIỂM Trợ lý quảng cáo (bước 6, 14/09): máy phán đúng/sai trên số của chính shop. */
+export interface AdsAssistantScorecard {
+  mode: "off" | "dry_run" | "live";
+  days: number;
+  planned: {
+    count: number;
+    right: number;
+    wrong: number;
+    pending: number;
+    /** Tiền các campaign máy phán đúng đã tiêu tiếp sau ngày phán — lẽ ra tiết kiệm được. */
+    savingsIfLive: number;
+    rows: AdsScorecardRow[];
+  };
+  live: { paused: number; resumed: number; resumedByOwner: number; failed: number; overridden: number };
+}
+
+export function fetchAdsAssistantScorecard(
+  channelId: string,
+  days: number,
+  platform: "shopee" | "lazada" = "shopee"
+) {
+  return apiFetch<AdsAssistantScorecard>(
+    `/api/ads/${platform}/assistant-scorecard?channelId=${encodeURIComponent(channelId)}&days=${days}`
+  );
+}
+
 export function fetchShopeeAdsActionLog(
   channelId: string,
   limit = 50,

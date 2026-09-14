@@ -45,6 +45,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import {
   decideShopeeAdsCampaign,
+  fetchAdsAssistantScorecard,
   fetchShopeeAdsDashboard,
   fetchShopeeProductBreakeven,
   getStoredUser,
@@ -52,6 +53,7 @@ import {
   saveShopeeAssistantConfig,
   requestAdsRefresh,
   resumeShopeeAdsCampaign,
+  type AdsAssistantScorecard,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
   type ShopeeAssistantConfig,
@@ -237,6 +239,27 @@ export function ShopeeAdsPage({
   // ----- Trợ lý (GĐ2): modal chi tiết + lọc cần-xử-lý + lưu cấu hình -----
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
+  // Bảng điểm Trợ lý (bước 6, 14/09): máy phán đúng/sai trên số của chính gian —
+  // nạp riêng, không chặn dashboard; nạp lại khi số ads đổi mốc.
+  const [scorecard, setScorecard] = useState<AdsAssistantScorecard | null>(null);
+  const adsSyncedAtKey = data?.adsSyncedAt ?? null;
+  useEffect(() => {
+    if (!channelId) {
+      setScorecard(null);
+      return;
+    }
+    let alive = true;
+    fetchAdsAssistantScorecard(channelId, days, platform)
+      .then((s) => {
+        if (alive) setScorecard(s);
+      })
+      .catch(() => {
+        if (alive) setScorecard(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [channelId, days, platform, adsSyncedAtKey]);
   const [savingConfig, setSavingConfig] = useState(false);
   const [onlyNeedsAction, setOnlyNeedsAction] = useState(
     () => searchParams.get("needs_action") === "1"
@@ -688,6 +711,20 @@ export function ShopeeAdsPage({
             </p>
           </div>
         )}
+
+        {/* ===== BẢNG ĐIỂM TRỢ LÝ (bước 6): máy phán đúng/sai trên số của chính gian ===== */}
+        {scorecard &&
+          (scorecard.planned.count > 0 ||
+            scorecard.live.paused +
+              scorecard.live.resumed +
+              scorecard.live.resumedByOwner +
+              scorecard.live.failed >
+              0) && (
+            <AssistantScorecardCard
+              data={scorecard}
+              onGoConfig={() => setTab("config")}
+            />
+          )}
 
         {/* ===== THẺ TỔNG QUAN ===== */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
@@ -1381,6 +1418,132 @@ function ProductBreakevenTab({
   );
 }
 
+
+/**
+ * BẢNG ĐIỂM TRỢ LÝ (bước 6 sự cố 14/09/2026) — "máy phán đúng hay sai trong
+ * chính shop của bạn". Diễn tập: mỗi lần máy ĐỊNH dừng, nhìn tiếp những ngày
+ * sau: vẫn lỗ = máy đúng (tiền tiêu tiếp lẽ ra tiết kiệm được), ROAS đạt = máy
+ * sai (chạy thật máy cũng tự bật lại). Seller tự thấy rồi mới gạt chế độ Thật.
+ */
+const SCORECARD_OUTCOME: Record<
+  AdsAssistantScorecard["planned"]["rows"][number]["outcome"],
+  { label: string; className: string }
+> = {
+  right: { label: "Máy đúng — vẫn lỗ", className: "bg-emerald-500 text-white" },
+  wrong: { label: "Máy sai — ROAS đã đạt, chạy thật sẽ tự bật lại", className: "bg-amber-100 text-amber-700" },
+  pending: { label: "Chưa đủ số", className: "bg-slate-100 text-slate-500" },
+};
+
+function AssistantScorecardCard({
+  data,
+  onGoConfig,
+}: {
+  data: AdsAssistantScorecard;
+  onGoConfig: () => void;
+}) {
+  const p = data.planned;
+  const l = data.live;
+  const dry = data.mode === "dry_run";
+  const liveTotal = l.paused + l.resumed + l.resumedByOwner + l.failed;
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>
+              {dry ? `Trợ lý diễn tập ${data.days} ngày qua` : `Trợ lý đã làm gì ${data.days} ngày qua`}
+            </CardTitle>
+            <CardDescription className="mt-1.5">
+              {dry
+                ? "Máy chỉ ghi sổ, chưa gọi sàn. Nhìn số của chính gian để quyết có giao quyền cho máy hay không."
+                : "Mọi lệnh có căn cứ trong Sổ hành động; chiến dịch máy dừng bật lại được bằng một cú bấm."}
+            </CardDescription>
+          </div>
+          {dry && p.right > 0 && (
+            <Button size="sm" onClick={onGoConfig}>
+              Gạt sang chế độ Thật
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {p.count > 0 && (
+          <p className="text-sm text-slate-700">
+            Nếu bật chế độ Thật, Hubsell đã tạm dừng <b>{formatNumber(p.count)}</b> chiến
+            dịch. Máy đúng <b className="text-emerald-600">{formatNumber(p.right)}</b>, sai{" "}
+            <b className="text-amber-600">{formatNumber(p.wrong)}</b>, chưa đủ số{" "}
+            {formatNumber(p.pending)}. Tiền lẽ ra tiết kiệm được:{" "}
+            <b className="tabular-nums">{formatVND(p.savingsIfLive)}</b>.
+          </p>
+        )}
+        {liveTotal > 0 && (
+          <div className="grid gap-3 sm:grid-cols-4">
+            {[
+              { label: "Máy đã tạm dừng", value: l.paused, tone: "text-red-600" },
+              { label: "Máy tự bật lại", value: l.resumed, tone: "text-emerald-600" },
+              { label: "Anh/chị bật lại", value: l.resumedByOwner + l.overridden, tone: "text-violet-600" },
+              { label: "Sàn từ chối", value: l.failed, tone: "text-amber-600" },
+            ].map((t) => (
+              <div key={t.label} className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">{t.label}</p>
+                <p className={cn("text-2xl font-semibold tabular-nums", t.tone)}>
+                  {formatNumber(t.value)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+        {p.rows.length > 0 && (
+          <div className="min-w-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">Chiến dịch</th>
+                  <th className="py-2 pr-3 font-medium">Máy định dừng lúc</th>
+                  <th className="py-2 pr-3 text-right font-medium">Tiêu thêm sau đó</th>
+                  <th className="py-2 pr-3 text-right font-medium">ROAS sau đó / hòa vốn</th>
+                  <th className="py-2 font-medium">Kết luận</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.rows.map((r) => {
+                  const o = SCORECARD_OUTCOME[r.outcome];
+                  return (
+                    <tr key={r.campaignRowId} className="border-b last:border-0 align-top">
+                      <td className="max-w-64 truncate py-2.5 pr-3 text-slate-900" title={r.reasons.join(" ")}>
+                        {r.name || `#${r.campaignId}`}
+                      </td>
+                      <td className="whitespace-nowrap py-2.5 pr-3 tabular-nums text-slate-600">
+                        {new Date(r.at).toLocaleString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          day: "2-digit",
+                          month: "2-digit",
+                        })}
+                      </td>
+                      <td className="py-2.5 pr-3 text-right tabular-nums">
+                        {formatVND(r.spendAfter)}
+                        <span className="block text-xs text-muted-foreground">
+                          {formatNumber(r.ordersAfter)} đơn
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-3 text-right tabular-nums">
+                        {formatRoas(r.roasAfter)} / {formatRoas(r.breakevenRoas)}
+                      </td>
+                      <td className="py-2.5">
+                        <Badge className={o.className}>{o.label}</Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 /**
  * ĐỊNH NGHĨA CỘT bảng Chiến dịch cho DataTable (Tầng 2) — factory theo sàn vì

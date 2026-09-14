@@ -22,6 +22,7 @@ import {
 } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import { resumeCampaignByOwner } from "../integrations/shopee/ads-auto-execute";
+import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
 import { scanOpsAlerts } from "../services/ops-alerts";
 
 const router = Router();
@@ -413,6 +414,48 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         }
       }
       res.json(await requestAdsRefresh(channel.id));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/ads/{sàn}/assistant-scorecard?channelId=&days=7 — BẢNG ĐIỂM Trợ lý
+  // (bước 6, 14/09): máy phán đúng/sai trong N ngày qua trên số của chính shop
+  // (diễn tập → nhìn tiếp những ngày sau) + đếm hành động thật. Thuần đọc.
+  router.get(`/${platform}/assistant-scorecard`, async (req: AuthRequest, res, next) => {
+    try {
+      const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+      const channel = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName },
+        select: { id: true },
+      });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const daysRaw = Number(req.query.days);
+      const days = Number.isFinite(daysRaw) ? Math.min(30, Math.max(1, Math.trunc(daysRaw))) : 7;
+      const insights = await computeChannelAdsInsights({
+        id: channel.id,
+        userId: req.ownerId!,
+        channelName,
+      });
+      const logs = await prisma.adsActionLog.findMany({
+        where: { channelId: channel.id, createdAt: { gte: startOfDaysAgo(days) } },
+        select: {
+          id: true,
+          adsCampaignId: true,
+          action: true,
+          mode: true,
+          status: true,
+          reasons: true,
+          createdAt: true,
+        },
+      });
+      res.json({
+        mode: insights.config.autoExecute.mode,
+        ...buildAssistantScorecard(logs, insights.items, insights.config, days),
+      });
     } catch (err) {
       next(err);
     }

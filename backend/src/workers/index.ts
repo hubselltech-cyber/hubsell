@@ -27,6 +27,7 @@ import { startStockPushWorker } from "../integrations/stock-push-worker";
 import { startStockReconcileWorker } from "./stock-reconcile";
 import { startTokenRefreshWorker } from "./token-refresh";
 import { startWeeklyReportWorker } from "./weekly-report";
+import { startAdsDailySummaryWorker } from "./ads-daily-summary";
 import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
@@ -69,6 +70,8 @@ export function startAllWorkers(): void {
   startStockReconcileWorker();
   // Sáng thứ 2 đẩy báo cáo tuần qua chuông cho từng chủ shop.
   startWeeklyReportWorker();
+  // Tóm tắt cuối ngày Trợ lý quảng cáo (bước 6 sự cố 14/09) — chuông 20h VN.
+  startAdsDailySummaryWorker();
   // Tự phát hành hóa đơn cho đơn ĐÃ GIAO + ĐÃ ĐỐI SOÁT (ngủ khi chưa bật MISA).
   startInvoiceAutoIssueWorker();
   // Đồng bộ trạng thái CQT của hóa đơn (meInvoice không có webhook).

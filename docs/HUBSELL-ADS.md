@@ -160,6 +160,16 @@ lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. 
    gian rơi vào xung nhẹ mãi, cấu hình không bao giờ đọc lại (tầng B chỉ kéo perf).
    Nay xung nhẹ chỉ khi không còn campaign chạy/tạm dừng/hẹn giờ nào; gian còn cờ
    Hubsell giữ nhịp PULSE_MIN để tự bật lại / hòa giải cờ kịp thời.
+7. **Bước 6 — niềm tin trước khi gạt live** (`ads-scorecard.ts`, thuần):
+   `GET /api/ads/:platform/assistant-scorecard?channelId=&days=` → card "Trợ lý diễn
+   tập N ngày qua" trên trang Trợ lý: mỗi lần máy ĐỊNH dừng (dry_run) nhìn tiếp những
+   ngày SAU (perf theo ngày, bỏ ngày phán): vẫn lỗ = máy đúng + tiền tiêu tiếp là
+   "lẽ ra tiết kiệm được"; ROAS đạt = máy sai (chạy thật máy tự bật lại); <20k chưa
+   kết luận. Kèm 4 ô đếm hành động thật (dừng / máy bật / người bật / sàn từ chối) và
+   nút "Gạt sang chế độ Thật" khi máy đúng ≥1. Worker `ads-daily-summary.ts`: 20h VN
+   gom Sổ hành động trong ngày của chủ shop thành MỘT chuông
+   "🤖 Trợ lý quảng cáo hôm nay: dừng X, bật lại Y, diễn tập Z", ngày không có gì thì
+   im; tắt `ADS_DAILY_SUMMARY_OFF=1`.
 5. FE: nhãn **"Hubsell tạm dừng"** (tím, tooltip lý do + giờ) thay "Tạm dừng" khi
    có cờ; modal có nút **Bật lại ngay**; Sổ hành động phân biệt pause/resume/
    OVERRIDDEN; thẻ Trung tâm điều hành kind `ads-resume` gọi API bật lại từ thẻ.
