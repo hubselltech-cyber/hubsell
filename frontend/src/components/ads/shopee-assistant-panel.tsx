@@ -25,6 +25,8 @@ import { Switch } from "@/components/ui/switch";
 import {
   fetchLazadaCampaignLiveDetail,
   fetchShopeeAdsActionLog,
+  type AdsAssistantScorecard,
+  type AdsScorecardRow,
   type LazadaCampaignLiveDetail,
   type ShopeeAdsActionLogRow,
   type ShopeeAdsCampaignRow,
@@ -758,15 +760,35 @@ function actionStatusMeta(l: ShopeeAdsActionLogRow): { label: string; className:
   return ACTION_STATUS_META[l.status] ?? { label: l.status, className: "bg-slate-100 text-slate-500" };
 }
 
+/** Kết luận nhìn từ những ngày SAU lần máy định dừng (bảng điểm, bước 6 14/09). */
+const SCORECARD_OUTCOME: Record<
+  AdsScorecardRow["outcome"],
+  { label: string; className: string }
+> = {
+  right: { label: "Máy đúng — vẫn lỗ", className: "bg-emerald-500 text-white" },
+  wrong: { label: "Máy sai — ROAS đã đạt, chạy thật sẽ tự bật lại", className: "bg-amber-100 text-amber-700" },
+  pending: { label: "Chưa đủ số", className: "bg-slate-100 text-slate-500" },
+};
+
 export function ShopeeActionLogCard({
   channelId,
   platform = "shopee",
+  scorecard = null,
 }: {
   channelId: string;
   platform?: "shopee" | "lazada";
+  /** Bảng điểm N ngày qua (anh Trung 14/09: gộp vào Sổ hành động, không tách card riêng ở Tổng quan). */
+  scorecard?: AdsAssistantScorecard | null;
 }) {
   const [logs, setLogs] = useState<ShopeeAdsActionLogRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const outcomeByCampaign = new Map(
+    (scorecard?.planned.rows ?? []).map((r) => [r.campaignRowId, r] as const)
+  );
+  const liveTotal = scorecard
+    ? scorecard.live.paused + scorecard.live.resumed + scorecard.live.resumedByOwner + scorecard.live.failed
+    : 0;
+  const showSummary = !!scorecard && (scorecard.planned.count > 0 || liveTotal > 0);
 
   const load = async () => {
     if (!channelId) return;
@@ -791,12 +813,12 @@ export function ShopeeActionLogCard({
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle>Sổ hành động của Trợ lý</CardTitle>
+            <CardTitle>Sổ hành động &amp; bảng điểm Trợ lý</CardTitle>
             <CardDescription className="mt-1.5">
               Mọi lần Trợ lý định (diễn tập) hoặc đã (thật) tạm dừng / bật lại
-              chiến dịch — kèm căn cứ tại thời điểm đó. Chiến dịch Trợ lý dừng sẽ
-              tự bật lại khi ROAS đạt; anh/chị bật lại trên Seller Center thì Trợ
-              lý coi là ván mới và theo dõi lại từ đầu.
+              chiến dịch — kèm căn cứ lúc đó và kết luận nhìn từ những ngày sau:
+              vẫn lỗ là máy đúng, ROAS đạt là máy sai (chạy thật máy tự bật lại).
+              Anh/chị bật lại trên Seller Center thì Trợ lý coi là ván mới.
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -804,7 +826,48 @@ export function ShopeeActionLogCard({
           </Button>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {showSummary && scorecard && (
+          <div className="space-y-3 rounded-lg border bg-slate-50 p-3.5">
+            {scorecard.planned.count > 0 && (
+              <p className="text-sm text-slate-700">
+                {scorecard.days} ngày qua, nếu bật chế độ Thật thì Hubsell đã tạm dừng{" "}
+                <b>{formatNumber(scorecard.planned.count)}</b> chiến dịch. Máy đúng{" "}
+                <b className="text-emerald-600">{formatNumber(scorecard.planned.right)}</b>, sai{" "}
+                <b className="text-amber-600">{formatNumber(scorecard.planned.wrong)}</b>, chưa đủ
+                số {formatNumber(scorecard.planned.pending)}. Tiền lẽ ra tiết kiệm được:{" "}
+                <b className="tabular-nums">{formatVND(scorecard.planned.savingsIfLive)}</b>.
+                {scorecard.mode === "dry_run" && scorecard.planned.right > 0 && (
+                  <span className="text-slate-500">
+                    {" "}
+                    Thấy máy phán đúng thì gạt sang chế độ Thật ở khối Tự thực thi phía trên.
+                  </span>
+                )}
+              </p>
+            )}
+            {liveTotal > 0 && (
+              <div className="grid gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Máy đã tạm dừng", value: scorecard.live.paused, tone: "text-red-600" },
+                  { label: "Máy tự bật lại", value: scorecard.live.resumed, tone: "text-emerald-600" },
+                  {
+                    label: "Anh/chị bật lại",
+                    value: scorecard.live.resumedByOwner + scorecard.live.overridden,
+                    tone: "text-violet-600",
+                  },
+                  { label: "Sàn từ chối", value: scorecard.live.failed, tone: "text-amber-600" },
+                ].map((t) => (
+                  <div key={t.label} className="rounded-lg border bg-white p-3">
+                    <p className="text-xs text-muted-foreground">{t.label}</p>
+                    <p className={cn("text-2xl font-semibold tabular-nums", t.tone)}>
+                      {formatNumber(t.value)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {logs.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             Chưa có hành động nào. Bật chế độ &quot;Diễn tập&quot; ở trên để xem
@@ -857,6 +920,25 @@ export function ShopeeActionLogCard({
                         {l.reasons.map((r, i) => (
                           <p key={i}>• {r}</p>
                         ))}
+                        {(() => {
+                          // Kết luận nhìn từ những ngày SAU — chỉ với lần máy ĐỊNH dừng (diễn tập).
+                          const oc =
+                            l.action === "pause" && l.status === "PLANNED"
+                              ? outcomeByCampaign.get(l.adsCampaignId)
+                              : undefined;
+                          if (!oc) return null;
+                          const meta = SCORECARD_OUTCOME[oc.outcome];
+                          return (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                              <Badge className={meta.className}>{meta.label}</Badge>
+                              <span className="tabular-nums text-slate-500">
+                                Sau đó: tiêu thêm {formatVND(oc.spendAfter)} ({formatNumber(oc.ordersAfter)} đơn),
+                                ROAS {oc.roasAfter != null ? `${oc.roasAfter.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x` : "—"} / hòa vốn{" "}
+                                {oc.breakevenRoas != null ? `${oc.breakevenRoas.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x` : "—"}
+                              </span>
+                            </div>
+                          );
+                        })()}
                         {l.error && (
                           <p className="mt-1 text-red-600">Lỗi sàn: {l.error}</p>
                         )}

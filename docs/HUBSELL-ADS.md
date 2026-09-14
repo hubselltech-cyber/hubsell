@@ -161,12 +161,13 @@ lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. 
    Nay xung nhẹ chỉ khi không còn campaign chạy/tạm dừng/hẹn giờ nào; gian còn cờ
    Hubsell giữ nhịp PULSE_MIN để tự bật lại / hòa giải cờ kịp thời.
 7. **Bước 6 — niềm tin trước khi gạt live** (`ads-scorecard.ts`, thuần):
-   `GET /api/ads/:platform/assistant-scorecard?channelId=&days=` → card "Trợ lý diễn
-   tập N ngày qua" trên trang Trợ lý: mỗi lần máy ĐỊNH dừng (dry_run) nhìn tiếp những
+   `GET /api/ads/:platform/assistant-scorecard?channelId=&days=` → GỘP vào "Sổ hành
+   động & bảng điểm Trợ lý" trong tab Cấu hình Trợ lý (anh Trung 14/09: tab Tổng quan
+   là nơi thao tác bảng campaign, không chen card; shop trăm campaign vẫn gọn): mỗi lần máy ĐỊNH dừng (dry_run) nhìn tiếp những
    ngày SAU (perf theo ngày, bỏ ngày phán): vẫn lỗ = máy đúng + tiền tiêu tiếp là
    "lẽ ra tiết kiệm được"; ROAS đạt = máy sai (chạy thật máy tự bật lại); <20k chưa
-   kết luận. Kèm 4 ô đếm hành động thật (dừng / máy bật / người bật / sàn từ chối) và
-   nút "Gạt sang chế độ Thật" khi máy đúng ≥1. Worker `ads-daily-summary.ts`: 20h VN
+   kết luận. Kèm 4 ô đếm hành động thật (dừng / máy bật / người bật / sàn từ chối); từng dòng
+   diễn tập trong sổ có badge kết luận + "sau đó: tiêu thêm X, ROAS Y / hòa vốn Z". Worker `ads-daily-summary.ts`: 20h VN
    gom Sổ hành động trong ngày của chủ shop thành MỘT chuông
    "🤖 Trợ lý quảng cáo hôm nay: dừng X, bật lại Y, diễn tập Z", ngày không có gì thì
    im; tắt `ADS_DAILY_SUMMARY_OFF=1`.

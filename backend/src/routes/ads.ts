@@ -564,6 +564,7 @@ function registerActionLog(platform: AdsPlatformKey) {
       res.json({
         logs: rows.map((r) => ({
           id: r.id,
+          adsCampaignId: r.adsCampaignId,
           campaignName:
             r.adsCampaign.name || `Chiến dịch #${r.adsCampaign.campaignId}`,
           action: r.action,

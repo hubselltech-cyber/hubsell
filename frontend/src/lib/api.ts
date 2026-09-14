@@ -5066,6 +5066,8 @@ export interface ShopeeAssistantConfig {
 /** Một dòng SỔ HÀNH ĐỘNG của Trợ lý (GĐ3). */
 export interface ShopeeAdsActionLogRow {
   id: string;
+  /** id dòng AdsCampaign — nối với bảng điểm (kết luận máy đúng/sai sau đó). */
+  adsCampaignId: string;
   campaignName: string;
   /** pause = tạm dừng; resume = bật lại (máy khi ROAS đạt, hoặc seller bấm trong Hubsell). */
   action: "pause" | "resume" | string;
