@@ -17,6 +17,7 @@ import { getAdsCampaignList, getAdsCampaignReport, lazAdsNum, type LazadaAdsCamp
 import { getValidLazadaAccessToken } from "./service";
 import { dateFromStr, deriveStatus, lazadaCampaignData, vnDateStr } from "./ads-campaigns";
 import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
+import { reconcileHubsellPauseFlags } from "../shopee/ads-pause-flag";
 
 export interface LazadaAdsPulseResult {
   campaignsFound: number;
@@ -64,6 +65,8 @@ export async function pulseLazadaAds(channel: Channel): Promise<LazadaAdsPulseRe
     rowIdByCampaignId.set(campaignId, row.id);
     result.campaignsUpserted++;
   }
+  // Người bật lại trên Seller Center campaign Hubsell đã dừng → xóa cờ, ván mới.
+  await reconcileHubsellPauseFlags(channel.id);
 
   // Cờ ví: chỉ có nghĩa khi còn campaign đang bật.
   result.walletEmpty = campaigns.some(

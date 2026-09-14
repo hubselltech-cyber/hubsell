@@ -115,6 +115,47 @@ demo@hubsell.tech). Script tạm sinh link / probe / trạm bắt code nằm ở
 Còn lại sau ISV duyệt: nộp Go-Live app Hubsell Ads, lấy Partner ID/Key **Live**
 → env Render, bỏ `HUBSELL_ADS_ENV`, 3 shop nhà ủy quyền lại trên trang Trợ lý.
 
+## Trợ lý tự thực thi — máy làm gì cũng phải nói, và đảo lại được (14/09/2026)
+
+**Sự cố:** 07:05 sáng 14/09 executor (mode live, gian ANO) tạm dừng campaign "Túi Đeo
+Chéo Nam" đang lời (ROAS 7 ngày 19x) vì cửa sổ Hôm nay ROAS 4,96x < hòa vốn 6,63x
+khi mới tiêu hơn 20.000₫ — đơn broad Shopee về trễ vài giờ (chiều cùng ngày 8,98x).
+Seller không nhận được chuông, thẻ điều hành hay nhật ký nào (vòng quét chạy SAU
+khi dừng nên rule engine hết verdict, máy tự xóa dấu vết). Sổ hành động ghi đúng
+lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. Anh Trung chốt cùng ngày:
+
+1. **Ngưỡng tiền gác cả hai nhánh Quy tắc 1** (`hard.zeroOrderSpend7d`, mặc định
+   150.000₫): 0 đơn hay ROAS dưới hòa vốn đều phải tiêu đủ mức này; cửa sổ Hôm nay
+   đòi ĐỦ (không nhân 0,2), 3d ×0,5, 30d ×1,5 (`WINDOW_MONEY_SCALE`). Chưa đủ tiền
+   → badge "Ổn" kèm ghi chú "chưa kết luận, đơn về trễ". Seller tự chỉnh mức này.
+2. **Máy trạng thái nguồn dừng** (`ads-pause-flag.ts`, cột `AdsCampaign.hubsellPaused*`):
+
+   | Ai vừa thao tác | Trạng thái | Máy được làm gì |
+   |---|---|---|
+   | Hubsell dừng | tắt, có cờ | chỉ **bật lại** khi ROAS cửa sổ đã kích ≥ hòa vốn × `review.dangerFactor` |
+   | Người dừng (Seller Center / sàn tự tắt) | tắt, không cờ | **không bao giờ** bật lại |
+   | Người bật lại (dù ai tắt trước) | chạy, cờ xóa, `cycle+1` = ván mới | đủ quyền như campaign mới, kể cả tắt lại cùng ngày |
+
+   Sync (Shopee `upsertShopeeCampaignSettings`, Lazada xung + lịch sử) thấy campaign
+   còn cờ mà sàn báo chạy → `reconcileHubsellPauseFlags`: xóa cờ, sổ ghi
+   `OVERRIDDEN` ("Seller đã bật lại"), nhật ký ADS. Khóa chống lặp theo VÁN:
+   `{pause|resume}-{rowId}-{ngày}-c{cycle}`. Máy tự bật lại hôm nào thì hôm đó không
+   tắt lại (`hubsellResumedOn`) — một vòng dừng/bật mỗi campaign mỗi ngày.
+3. **Thông báo:** detector `detectAdsAutoActions` (ops-alerts.ts) sinh thẻ từ CỜ +
+   SỔ HÀNH ĐỘNG hôm nay, không từ verdict: `ads-auto-paused` (high, nút **Bật lại**
+   gọi sàn thật, payload kind `ads-resume`), `ads-auto-planned` (diễn tập),
+   `ads-auto-failed` (sàn từ chối, lỗi nguyên văn), `ads-auto-resumed`. Thẻ mới →
+   chuông + nhật ký qua `applyDetectedAlert`; worker ép `scanOpsAlerts(owner, true)`
+   ngay sau lượt máy có hành động. Thẻ tự đóng khi cờ hết / qua ngày.
+4. **Bật lại:** máy (`shouldAutoResume`, live) hoặc seller bấm trong Hubsell
+   (`POST /api/ads/:platform/campaigns/:id/resume` → `resumeCampaignByOwner`, sổ
+   mode `manual`). Shopee `edit_manual_product_ads` edit_action `resume` — enum
+   xác minh trong docs chính thức (start/pause/resume/stop/delete/change_*);
+   `pause` đã chạy thật 21/08 + 14/09. Lazada `updateCampaign switchStatus=1`.
+5. FE: nhãn **"Hubsell tạm dừng"** (tím, tooltip lý do + giờ) thay "Tạm dừng" khi
+   có cờ; modal có nút **Bật lại ngay**; Sổ hành động phân biệt pause/resume/
+   OVERRIDDEN; thẻ Trung tâm điều hành kind `ads-resume` gọi API bật lại từ thẻ.
+
 ## Nhịp đồng bộ số ads (12/09/2026 — thiết kế 3 tầng, docs/ADS-NHIP-CANH-BAO.md)
 
 Nguồn nhịp duy nhất: `backend/src/config/ads-cadence.ts`.

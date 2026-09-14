@@ -91,9 +91,17 @@ export interface DetectedAlert {
   severity: "high" | "medium" | "low";
   title: string;
   summary: string;
-  /** ActionParams cho nút xử lý phía frontend — hiện là deep-link nội bộ.
+  /** ActionParams cho nút xử lý phía frontend — deep-link nội bộ, hoặc
+   *  "ads-resume" = nút Bật lại chiến dịch Trợ lý đã dừng (gọi sàn thật).
    *  `source` = nhãn sàn phát sinh cảnh báo (badge "Shopee"/"TikTok"… trên thẻ). */
-  payload: { kind: "navigate"; href: string; label: string; source?: string };
+  payload: {
+    kind: "navigate" | "ads-resume";
+    href: string;
+    label: string;
+    source?: string;
+    campaignRowId?: string;
+    platform?: "shopee" | "lazada";
+  };
 }
 
 // ─────────────────────────── DETECTORS ───────────────────────────
@@ -1026,6 +1034,219 @@ async function detectDeliveryFailed(ownerId: string): Promise<DetectedAlert[]> {
 //     · Nguồn: Order.einvoiceStatus = FAILED + bảng nhật ký webhook MISA.
 //     · tag "tax", KE_TOAN thao tác; action navigate `/invoicing/history`.
 
+// ─────────────── TRỢ LÝ QUẢNG CÁO ĐÃ HÀNH ĐỘNG — MÁY LÀM GÌ CŨNG PHẢI NÓI ───────────────
+//
+// Sự cố 14/09/2026: executor live dừng campaign ANO lúc 07:05 mà chuông, thẻ
+// điều hành, nhật ký đều im — vòng quét chạy SAU khi dừng, campaign đã "paused"
+// nên rule engine hết verdict, máy tự xóa dấu vết của mình. Detector này lấy
+// nguồn từ CỜ Hubsell + SỔ HÀNH ĐỘNG hôm nay (không phải verdict) nên thẻ sống
+// đúng bằng thời gian máy đang giữ tắt / hành động còn trong ngày, rồi tự đóng.
+
+/** Mốc 00:00 hôm nay theo giờ VN. */
+function startOfVnToday(): Date {
+  const key = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  return new Date(`${key}T00:00:00+07:00`);
+}
+
+function vnTimeText(d: Date): string {
+  return d.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
+}
+
+const ADS_WINDOW_LABEL: Record<string, string> = {
+  today: "hôm nay",
+  "3d": "3 ngày",
+  "7d": "7 ngày",
+  "30d": "30 ngày",
+};
+
+export interface AdsAutoActionAlertInput {
+  campaignRowId: string;
+  campaignId: string;
+  campaignName: string;
+  channelId: string;
+  shopName: string;
+  platform: AdsAlertPlatform;
+}
+
+/** Thẻ "Trợ lý ĐÃ tạm dừng" — THUẦN, vitest đánh thẳng. Sống chừng nào cờ Hubsell còn. */
+export function buildAdsAutoPausedAlert(
+  c: AdsAutoActionAlertInput,
+  pausedAt: Date,
+  window: string,
+  reasons: string[],
+  dangerFactor: number
+): DetectedAlert {
+  const name = c.campaignName || `#${c.campaignId}`;
+  const href = `${c.platform.path}?channelId=${c.channelId}&campaign_id=${encodeURIComponent(c.campaignId)}`;
+  return {
+    type: "ads-auto-paused",
+    dedupeKey: c.campaignRowId,
+    tag: "ads",
+    severity: "high",
+    title: `Trợ lý đã tạm dừng chiến dịch "${name}" — gian "${c.shopName}"`,
+    summary:
+      `Lúc ${vnTimeText(pausedAt)}. ${reasons.join(" ")} ` +
+      `Hubsell sẽ tự bật lại khi ROAS cửa sổ ${ADS_WINDOW_LABEL[window] ?? window} vượt hòa vốn × ${dangerFactor}. ` +
+      `Muốn chạy ngay: bấm Bật lại. Không muốn Trợ lý đụng chiến dịch này nữa: bấm Bỏ qua cảnh báo trong trang Trợ lý quảng cáo, hoặc tắt Quy tắc tương ứng.`,
+    payload: {
+      kind: "ads-resume",
+      href,
+      label: "Bật lại chiến dịch",
+      source: c.platform.label,
+      campaignRowId: c.campaignRowId,
+      platform: c.platform.path.endsWith("lazada") ? "lazada" : "shopee",
+    },
+  };
+}
+
+/** Thẻ cho hành động ghi sổ HÔM NAY: diễn tập / sàn từ chối / máy đã bật lại — THUẦN. */
+export function buildAdsActionLogAlert(
+  c: AdsAutoActionAlertInput,
+  log: { action: string; mode: string; status: string; reasons: string; error: string | null; createdAt: Date }
+): DetectedAlert | null {
+  const name = c.campaignName || `#${c.campaignId}`;
+  const href = `${c.platform.path}?channelId=${c.channelId}&campaign_id=${encodeURIComponent(c.campaignId)}`;
+  const reasons = log.reasons ? log.reasons.split("\n").filter(Boolean).join(" ") : "";
+  const base = {
+    dedupeKey: c.campaignRowId,
+    tag: "ads" as const,
+    payload: {
+      kind: "navigate" as const,
+      href,
+      label: "Xem căn cứ",
+      source: c.platform.label,
+    },
+  };
+  if (log.mode === "dry_run" && log.status === "PLANNED" && log.action === "pause") {
+    return {
+      ...base,
+      type: "ads-auto-planned",
+      severity: "medium",
+      title: `Diễn tập: Trợ lý ĐỊNH tạm dừng chiến dịch "${name}" — gian "${c.shopName}"`,
+      summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons} Chế độ diễn tập không gọi sàn — thấy Trợ lý phán đúng thì gạt sang chế độ Thật trong tab Cấu hình để Trợ lý tự làm.`,
+    };
+  }
+  if (log.status === "FAILED" && log.mode !== "manual") {
+    return {
+      ...base,
+      type: "ads-auto-failed",
+      severity: "high",
+      title: `Trợ lý không ${log.action === "resume" ? "bật lại" : "tạm dừng"} được chiến dịch "${name}" — ${c.platform.label} từ chối`,
+      summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons} Lỗi sàn: ${log.error ?? "không kèm lý do"}. Kiểm tra trên Seller Center rồi thao tác tay nếu cần.`,
+    };
+  }
+  if (log.action === "resume" && log.status === "SUCCESS" && log.mode === "live") {
+    return {
+      ...base,
+      type: "ads-auto-resumed",
+      severity: "low",
+      title: `Trợ lý đã bật lại chiến dịch "${name}" — ROAS đã đạt — gian "${c.shopName}"`,
+      summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons}`,
+    };
+  }
+  return null;
+}
+
+/** DETECTOR: cờ Hubsell đang giữ tắt + sổ hành động hôm nay của mọi gian Shopee/Lazada. */
+async function detectAdsAutoActions(ownerId: string): Promise<DetectedAlert[]> {
+  const alerts: DetectedAlert[] = [];
+  const platformOf = (channelName: ChannelName) =>
+    channelName === ChannelName.LAZADA ? ADS_ALERT_LAZADA : ADS_ALERT_SHOPEE;
+
+  const flagged = await prisma.adsCampaign.findMany({
+    where: { channel: { userId: ownerId }, hubsellPausedAt: { not: null } },
+    select: {
+      id: true,
+      campaignId: true,
+      name: true,
+      channelId: true,
+      hubsellPausedAt: true,
+      hubsellPauseLogId: true,
+      hubsellPauseWindow: true,
+      channel: { select: { shopName: true, channelName: true } },
+    },
+  });
+  if (flagged.length > 0) {
+    const logIds = flagged.map((r) => r.hubsellPauseLogId).filter((x): x is string => !!x);
+    const logs = await prisma.adsActionLog.findMany({
+      where: { id: { in: logIds } },
+      select: { id: true, reasons: true },
+    });
+    const reasonsById = new Map(logs.map((l) => [l.id, l.reasons.split("\n").filter(Boolean)]));
+    const configs = await prisma.adsAssistantConfig.findMany({
+      where: { channelId: { in: [...new Set(flagged.map((r) => r.channelId))] } },
+      select: { channelId: true, config: true },
+    });
+    const dangerByChannel = new Map(
+      configs.map((c) => {
+        const raw = c.config as { review?: { dangerFactor?: unknown } } | null;
+        const n = Number(raw?.review?.dangerFactor);
+        return [c.channelId, Number.isFinite(n) && n > 0 ? n : 1.1];
+      })
+    );
+    for (const r of flagged) {
+      alerts.push(
+        buildAdsAutoPausedAlert(
+          {
+            campaignRowId: r.id,
+            campaignId: r.campaignId,
+            campaignName: r.name,
+            channelId: r.channelId,
+            shopName: r.channel.shopName,
+            platform: platformOf(r.channel.channelName),
+          },
+          r.hubsellPausedAt!,
+          r.hubsellPauseWindow,
+          reasonsById.get(r.hubsellPauseLogId ?? "") ?? [],
+          dangerByChannel.get(r.channelId) ?? 1.1
+        )
+      );
+    }
+  }
+
+  const logsToday = await prisma.adsActionLog.findMany({
+    where: {
+      channel: { userId: ownerId },
+      createdAt: { gte: startOfVnToday() },
+      OR: [
+        { status: "PLANNED" },
+        { status: "FAILED" },
+        { action: "resume", status: "SUCCESS", mode: "live" },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      adsCampaign: { select: { id: true, campaignId: true, name: true, channelId: true } },
+      channel: { select: { shopName: true, channelName: true } },
+    },
+  });
+  const seen = new Set<string>();
+  for (const l of logsToday) {
+    const key = `${l.adsCampaignId}|${l.status}|${l.action}`;
+    if (seen.has(key)) continue; // mỗi campaign một thẻ mỗi loại — dòng mới nhất
+    seen.add(key);
+    const alert = buildAdsActionLogAlert(
+      {
+        campaignRowId: l.adsCampaign.id,
+        campaignId: l.adsCampaign.campaignId,
+        campaignName: l.adsCampaign.name,
+        channelId: l.adsCampaign.channelId,
+        shopName: l.channel.shopName,
+        platform: platformOf(l.channel.channelName),
+      },
+      l
+    );
+    if (alert) alerts.push(alert);
+  }
+  return alerts;
+}
+
 // ─────────────────────────── HOÀ GIẢI & THROTTLE ───────────────────────────
 
 const lastScanAt = new Map<string, number>();
@@ -1128,6 +1349,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectSyncStalled,
       detectAdsSpike,
       detectShopeeAdsAssistant,
+      detectAdsAutoActions,
       detectDeliveryFailed,
     ];
     for (const detect of detectors) {

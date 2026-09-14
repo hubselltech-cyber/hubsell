@@ -53,7 +53,7 @@ import {
 import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
 import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
-import { runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
+import { autoExecuteTouched, runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
 import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
@@ -642,12 +642,16 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
   if (synced) {
     // GĐ3 — Trợ lý tự thực thi (mặc định OFF; dry_run = diễn tập; live sau probe)
     // đánh giá ngay trên số vừa kéo, rồi quét cảnh báo để chuông kêu trong nhịp này.
+    let actionTouched = false;
     try {
       const act = await runAdsAutoExecute(channel);
-      if (act.mode !== "off" && (act.planned || act.executed || act.failed)) {
+      if (act.mode !== "off" && autoExecuteTouched(act)) {
         console.log(
-          `[Auto-sync] Trợ lý Ads ${isLazada ? "Lazada " : ""}"${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.failed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
+          `[Auto-sync] Trợ lý Ads ${isLazada ? "Lazada " : ""}"${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.resumed} bật lại, ${act.failed + act.resumeFailed} lỗi, ${act.skippedDone} đã làm hôm nay, ${act.skippedQuota} chạm quota`
         );
+        // Máy vừa làm gì → ép quét cảnh báo NGAY (bỏ throttle 10') để chuông + thẻ
+        // Trung tâm điều hành lên trong cùng nhịp (sự cố 14/09: dừng mà im lặng).
+        actionTouched = true;
       }
     } catch (err) {
       console.error(
@@ -655,7 +659,7 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
         (err as Error).message
       );
     }
-    await scanOpsAlerts(channel.userId);
+    await scanOpsAlerts(channel.userId, actionTouched);
   }
 
   return {

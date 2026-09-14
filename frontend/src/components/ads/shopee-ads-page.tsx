@@ -51,6 +51,7 @@ import {
   getToken,
   saveShopeeAssistantConfig,
   requestAdsRefresh,
+  resumeShopeeAdsCampaign,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
   type ShopeeAssistantConfig,
@@ -427,6 +428,23 @@ export function ShopeeAdsPage({
       await load(channelId, days);
     } catch (err) {
       setSyncNote(`Ghi nhận quyết định lỗi: ${(err as Error).message}`);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
+  /** Bật lại NGAY campaign Trợ lý đã tạm dừng — lệnh thật lên sàn (sự cố 14/09). */
+  async function resumeCampaign() {
+    const campaign = data?.campaigns.find((c) => c.id === detailId);
+    if (!campaign || deciding) return;
+    setDeciding(true);
+    try {
+      await resumeShopeeAdsCampaign(campaign.id, platform);
+      setDetailId(null);
+      setSyncNote(`Đã bật lại chiến dịch "${campaign.name}" trên ${meta.label}.`);
+      await load(channelId, days);
+    } catch (err) {
+      setSyncNote(`Bật lại lỗi: ${(err as Error).message}`);
     } finally {
       setDeciding(false);
     }
@@ -983,6 +1001,7 @@ export function ShopeeAdsPage({
         <ShopeeAssistantModal
           campaign={detailCampaign}
           onDecide={(d) => void decideCampaign(d)}
+          onResume={() => void resumeCampaign()}
           onClose={() => setDetailId(null)}
           deciding={deciding}
           platform={platform}
@@ -1408,13 +1427,24 @@ function buildCampaignColumns(
       header: "Trạng thái",
       cell: ({ row }) => {
         const c = row.original;
-        const status = STATUS_META[c.status] ?? {
-          label: c.status || "—",
-          className: "bg-slate-100 text-slate-500",
-        };
+        // Cờ nguồn dừng (14/09): Trợ lý dừng thì nói rõ là Hubsell, kèm lý do +
+        // giờ trong tooltip; "Tạm dừng" trơn = người hoặc sàn tắt.
+        const status = c.hubsellPause
+          ? {
+              label: "Hubsell tạm dừng",
+              className: "bg-violet-600 text-white",
+              title: `Trợ lý tạm dừng lúc ${new Date(c.hubsellPause.at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}. ${c.hubsellPause.reasons.join(" ")} Sẽ tự bật lại khi ROAS đạt; bấm vào dòng để bật lại ngay.`,
+            }
+          : {
+              label: STATUS_META[c.status]?.label ?? (c.status || "—"),
+              className: STATUS_META[c.status]?.className ?? "bg-slate-100 text-slate-500",
+              title: undefined as string | undefined,
+            };
         return (
           <div className="flex flex-col items-start gap-1">
-            <Badge className={status.className}>{status.label}</Badge>
+            <Badge className={status.className} title={status.title}>
+              {status.label}
+            </Badge>
             {c.lossBeforeAds && (
               <Badge variant="outline" className="border-rose-300 text-rose-600">
                 SKU lỗ trước ads

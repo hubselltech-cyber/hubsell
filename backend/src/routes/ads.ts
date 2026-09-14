@@ -21,6 +21,8 @@ import {
   updateAdsCampaignSwitchRaw,
 } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
+import { resumeCampaignByOwner } from "../integrations/shopee/ads-auto-execute";
+import { scanOpsAlerts } from "../services/ops-alerts";
 
 const router = Router();
 
@@ -115,6 +117,21 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       const shopMargin = insights.shop.margin;
       const shopBreakeven = insights.shop.breakevenRoas;
 
+      // Lý do lệnh dừng của Hubsell (cho nhãn "Hubsell tạm dừng" + tooltip) —
+      // một query cho mọi campaign đang cắm cờ.
+      const pauseLogIds = insights.items
+        .map((it) => it.row.hubsellPauseLogId)
+        .filter((x): x is string => !!x);
+      const pauseLogs = pauseLogIds.length
+        ? await prisma.adsActionLog.findMany({
+            where: { id: { in: pauseLogIds } },
+            select: { id: true, reasons: true },
+          })
+        : [];
+      const pauseReasons = new Map(
+        pauseLogs.map((l) => [l.id, l.reasons.split("\n").filter(Boolean)])
+      );
+
       // ---- Lớp HIỂN THỊ: cắt cửa sổ ?days + trải phẳng cho FE ----
       const campaigns = insights.items.map((it) => {
         const c = it.row;
@@ -179,6 +196,14 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           estProfit,
           // margin ≤ 0: SKU này đang LỖ ngay cả trước ads — cảnh báo riêng.
           lossBeforeAds: it.margin != null && it.margin <= 0,
+          // Cờ nguồn dừng (14/09): khác null = chính Trợ lý Hubsell đã tạm dừng.
+          hubsellPause: c.hubsellPausedAt
+            ? {
+                at: c.hubsellPausedAt,
+                window: c.hubsellPauseWindow,
+                reasons: pauseReasons.get(c.hubsellPauseLogId ?? "") ?? [],
+              }
+            : null,
         };
       });
       // Trạng thái trước, chi tiêu sau (anh Trung 23/08): "Đang chạy" là thứ
@@ -388,6 +413,38 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         }
       }
       res.json(await requestAdsRefresh(channel.id));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/{sàn}/campaigns/:id/resume — chủ shop BẬT LẠI ngay trong
+  // Hubsell một campaign Trợ lý đã tạm dừng (nút trên thẻ Trung tâm điều hành
+  // và bảng chiến dịch). Lệnh GHI THẬT lên sàn, không qua luật, không phụ
+  // thuộc mode; chỉ campaign đang cắm cờ Hubsell (người tắt → bật trên sàn).
+  router.post(`/${platform}/campaigns/:id/resume`, async (req: AuthRequest, res, next) => {
+    try {
+      const campaign = await prisma.adsCampaign.findFirst({
+        where: { id: req.params.id, channel: { userId: req.ownerId!, channelName } },
+        select: { id: true, channelId: true },
+      });
+      if (!campaign) {
+        res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+        return;
+      }
+      const channel = await prisma.channel.findUnique({ where: { id: campaign.channelId } });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const out = await resumeCampaignByOwner(channel, campaign.id);
+      if (!out.ok) {
+        res.status(409).json({ error: out.error ?? `${label} từ chối lệnh bật lại` });
+        return;
+      }
+      // Thẻ "Trợ lý đã tạm dừng" đóng ngay, không đợi lượt quét kế.
+      await scanOpsAlerts(req.ownerId!, true);
+      res.json({ message: "Đã bật lại chiến dịch", status: out.status });
     } catch (err) {
       next(err);
     }

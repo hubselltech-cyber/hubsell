@@ -33,6 +33,7 @@ import {
 } from "./client";
 import { getValidLazadaAccessToken } from "./service";
 import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
+import { reconcileHubsellPauseFlags } from "../shopee/ads-pause-flag";
 
 export interface SyncLazadaAdsCampaignsOptions {
   /** Lấy hiệu suất N ngày gần nhất. Mặc định 30 (bằng cửa sổ attribution). */
@@ -143,6 +144,8 @@ export async function syncLazadaAdsCampaigns(
     statusByCampaignId.set(campaignId, status);
     result.campaignsUpserted++;
   }
+  // Người bật lại trên Seller Center campaign Hubsell đã dừng → xóa cờ, ván mới.
+  await reconcileHubsellPauseFlags(channel.id);
 
   // ---- 3 (chạy trước 2 để biết campaign nào có chi tiêu). Hiệu suất theo
   // ngày: report từng ngày của cửa sổ daysBack, chỉ ghi dòng có số liệu ----

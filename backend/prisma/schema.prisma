@@ -504,6 +504,16 @@ model AdsCampaign {
   assistantDecisionVerdict String    @default("")
   assistantDecisionAt      DateTime?
 
+  /// CỜ NGUỒN DỪNG (sự cố 14/09/2026 — máy trạng thái anh Trung chốt):
+  ///   Hubsell dừng  → hubsellPausedAt ≠ null → máy CHỈ được bật lại khi ROAS đạt.
+  ///   Người dừng    → không cờ           → máy KHÔNG BAO GIỜ bật lại.
+  ///   Người bật lại → sync thấy ongoing  → xóa cờ, cycle+1 = VÁN MỚI, máy đủ quyền như campaign mới.
+  hubsellPausedAt    DateTime?
+  hubsellPauseLogId  String? /// dòng AdsActionLog của lệnh dừng — tra lý do/giờ
+  hubsellPauseWindow String    @default("") /// cửa sổ luật đã kích (today|3d|7d|30d) — xét bật lại trên đúng cửa sổ này
+  hubsellPauseCycle  Int       @default(0) /// số ván — nằm trong referenceId chống lặp; tăng mỗi lần người/máy bật lại
+  hubsellResumedOn   String    @default("") /// "YYYY-MM-DD" (VN) máy tự bật lại gần nhất — hôm đó không tắt lại nữa (1 vòng/ngày)
+
   lastSyncedAt  DateTime  @updatedAt
   createdAt     DateTime  @default(now())
 

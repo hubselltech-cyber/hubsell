@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ExternalLink, PlayCircle, ShieldCheck, SlidersHorizontal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,7 @@ function liveRoasText(v: number | null): string {
 export function ShopeeAssistantModal({
   campaign,
   onDecide,
+  onResume,
   onClose,
   deciding,
   platform = "shopee",
@@ -116,6 +117,8 @@ export function ShopeeAssistantModal({
 }: {
   campaign: ShopeeAdsCampaignRow | null;
   onDecide: (decision: ShopeeAssistantDecision) => void;
+  /** Bật lại ngay campaign Trợ lý đã tạm dừng (lệnh thật lên sàn). */
+  onResume?: () => void;
   onClose: () => void;
   deciding: boolean;
   platform?: "shopee" | "lazada";
@@ -413,6 +416,18 @@ export function ShopeeAssistantModal({
                 <ExternalLink className="size-4" />
                 Mở Seller Center
               </Button>
+              {campaign.hubsellPause && onResume && (
+                <Button
+                  size="sm"
+                  className="bg-violet-600 text-white hover:bg-violet-700"
+                  disabled={deciding}
+                  onClick={onResume}
+                  title="Gửi lệnh bật lại thật lên sàn ngay — Trợ lý coi đây là quyết định của anh/chị."
+                >
+                  <PlayCircle className="size-4" />
+                  Bật lại ngay
+                </Button>
+              )}
               {actionable && !a.decisionActive && (
                 <>
                   <Button
@@ -726,7 +741,22 @@ const ACTION_STATUS_META: Record<string, { label: string; className: string }> =
   PENDING: { label: "Đang gửi", className: "bg-slate-100 text-slate-500" },
   SUCCESS: { label: "Đã tạm dừng", className: "bg-emerald-500 text-white" },
   FAILED: { label: "Sàn từ chối", className: "bg-red-100 text-red-700" },
+  /** Seller bật lại trên Seller Center sau khi Hubsell dừng → ván mới (14/09). */
+  OVERRIDDEN: { label: "Seller đã bật lại", className: "bg-violet-100 text-violet-700" },
 };
+
+/** Nhãn trạng thái theo LOẠI hành động — lệnh bật lại có cùng status nhưng nghĩa khác. */
+function actionStatusMeta(l: ShopeeAdsActionLogRow): { label: string; className: string } {
+  if (l.action === "resume") {
+    if (l.status === "SUCCESS")
+      return {
+        label: l.mode === "manual" ? "Seller bật lại (Hubsell)" : "Máy đã bật lại",
+        className: "bg-emerald-500 text-white",
+      };
+    if (l.status === "PLANNED") return { label: "Diễn tập bật lại", className: "bg-sky-100 text-sky-700" };
+  }
+  return ACTION_STATUS_META[l.status] ?? { label: l.status, className: "bg-slate-100 text-slate-500" };
+}
 
 export function ShopeeActionLogCard({
   channelId,
@@ -763,8 +793,10 @@ export function ShopeeActionLogCard({
           <div>
             <CardTitle>Sổ hành động của Trợ lý</CardTitle>
             <CardDescription className="mt-1.5">
-              Mọi lần Trợ lý định (diễn tập) hoặc đã (thật) tạm dừng chiến dịch —
-              kèm căn cứ tại thời điểm đó. Tối đa 1 hành động/chiến dịch/ngày.
+              Mọi lần Trợ lý định (diễn tập) hoặc đã (thật) tạm dừng / bật lại
+              chiến dịch — kèm căn cứ tại thời điểm đó. Chiến dịch Trợ lý dừng sẽ
+              tự bật lại khi ROAS đạt; anh/chị bật lại trên Seller Center thì Trợ
+              lý coi là ván mới và theo dõi lại từ đầu.
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -791,14 +823,13 @@ export function ShopeeActionLogCard({
               </thead>
               <tbody>
                 {logs.map((l) => {
-                  const meta = ACTION_STATUS_META[l.status] ?? {
-                    label: l.status,
-                    className: "bg-slate-100 text-slate-500",
-                  };
+                  const meta = actionStatusMeta(l);
                   const verdictMeta =
                     l.verdict in VERDICT_META
                       ? VERDICT_META[l.verdict as keyof typeof VERDICT_META]
-                      : null;
+                      : l.verdict === "roas_recovered"
+                        ? { label: "ROAS đã đạt lại", className: "" }
+                        : null;
                   return (
                     <tr key={l.id} className="border-b last:border-0 align-top">
                       <td className="whitespace-nowrap py-2.5 pr-3 tabular-nums text-slate-600">

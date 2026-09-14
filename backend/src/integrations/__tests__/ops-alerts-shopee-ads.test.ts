@@ -293,3 +293,61 @@ describe("buildShopeeAdsAssistantAlerts", () => {
     ]);
   });
 });
+
+// ---------- 14/09/2026: máy làm gì cũng phải nói — thẻ từ cờ Hubsell + sổ hành động ----------
+import { buildAdsActionLogAlert, buildAdsAutoPausedAlert } from "../../services/ops-alerts";
+
+const CAMP = {
+  campaignRowId: "row1",
+  campaignId: "112233",
+  campaignName: "Túi Đeo Chéo Nam ANO",
+  channelId: "ch1",
+  shopName: "ANO Official Store",
+  platform: { label: "Shopee", path: "/ads/shopee" },
+};
+
+describe("buildAdsAutoPausedAlert — thẻ 'Trợ lý đã tạm dừng' sống chừng nào cờ còn", () => {
+  it("nút Bật lại (kind ads-resume) + deep-link campaign + lối thoát cho seller", () => {
+    const a = buildAdsAutoPausedAlert(
+      CAMP,
+      new Date("2026-09-14T00:05:54Z"),
+      "today",
+      ["Cửa sổ hôm nay: ROAS 4,96x dưới ngưỡng nguy hiểm 6,3x."],
+      1.1
+    );
+    expect(a.type).toBe("ads-auto-paused");
+    expect(a.dedupeKey).toBe("row1");
+    expect(a.severity).toBe("high");
+    expect(a.title).toContain("Trợ lý đã tạm dừng");
+    expect(a.summary).toContain("07:05");
+    expect(a.summary).toContain("Bỏ qua cảnh báo");
+    expect(a.payload.kind).toBe("ads-resume");
+    expect(a.payload.campaignRowId).toBe("row1");
+    expect(a.payload.platform).toBe("shopee");
+    expect(a.payload.href).toContain("campaign_id=112233");
+  });
+});
+
+describe("buildAdsActionLogAlert — diễn tập / sàn từ chối / máy bật lại", () => {
+  const base = { reasons: "Lý do A\nLý do B", error: null, createdAt: new Date() };
+  it("dry_run PLANNED → thẻ diễn tập (medium, deep-link)", () => {
+    const a = buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "dry_run", status: "PLANNED" });
+    expect(a?.type).toBe("ads-auto-planned");
+    expect(a?.payload.kind).toBe("navigate");
+    expect(a?.summary).toContain("Lý do A Lý do B");
+  });
+  it("live FAILED → thẻ sàn từ chối kèm lỗi nguyên văn", () => {
+    const a = buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "live", status: "FAILED", error: "ads.edit.invalid_action" });
+    expect(a?.type).toBe("ads-auto-failed");
+    expect(a?.summary).toContain("ads.edit.invalid_action");
+  });
+  it("live resume SUCCESS → thẻ đã bật lại (low)", () => {
+    const a = buildAdsActionLogAlert(CAMP, { ...base, action: "resume", mode: "live", status: "SUCCESS" });
+    expect(a?.type).toBe("ads-auto-resumed");
+    expect(a?.severity).toBe("low");
+  });
+  it("seller bấm Bật lại trong Hubsell (manual) hay pause SUCCESS live → không thêm thẻ (đã có thẻ cờ)", () => {
+    expect(buildAdsActionLogAlert(CAMP, { ...base, action: "resume", mode: "manual", status: "SUCCESS" })).toBeNull();
+    expect(buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "live", status: "SUCCESS" })).toBeNull();
+  });
+});

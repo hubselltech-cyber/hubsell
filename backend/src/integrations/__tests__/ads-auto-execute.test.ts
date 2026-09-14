@@ -108,3 +108,101 @@ describe("normalizeAssistantConfig — khối autoExecute (GĐ3)", () => {
     ).toEqual({ mode: "off", maxActionsPerDay: 5 });
   });
 });
+
+// ---------- 14/09/2026: cờ nguồn dừng + tự bật lại (máy trạng thái anh Trung chốt) ----------
+import { shouldAutoResume } from "../shopee/ads-auto-execute";
+
+function mkFlagged(opts: {
+  id: string;
+  status?: string;
+  pausedAt?: Date | null;
+  window?: string;
+  todayRoas?: { spend: number; gmv: number };
+  breakeven?: number | null;
+  resumedOn?: string;
+}): CampaignInsight {
+  const base = mkInsight({ id: opts.id, status: opts.status ?? "paused" });
+  (base.row as unknown as Record<string, unknown>).hubsellPausedAt =
+    opts.pausedAt === undefined ? new Date() : opts.pausedAt;
+  (base.row as unknown as Record<string, unknown>).hubsellPauseWindow = opts.window ?? "today";
+  (base.row as unknown as Record<string, unknown>).hubsellPauseCycle = 0;
+  (base.row as unknown as Record<string, unknown>).hubsellResumedOn = opts.resumedOn ?? "";
+  if (opts.todayRoas) {
+    base.windows.today = {
+      spend: opts.todayRoas.spend,
+      clicks: 10,
+      broadOrder: 2,
+      broadGmv: opts.todayRoas.gmv,
+    };
+  }
+  (base as unknown as Record<string, unknown>).breakevenRoas =
+    opts.breakeven === undefined ? 6.63 : opts.breakeven;
+  return base;
+}
+
+describe("shouldAutoResume — máy chỉ bật lại campaign CHÍNH máy đã dừng", () => {
+  const config = normalizeAssistantConfig(null); // dangerFactor 1.1
+
+  it("TÁI HIỆN chiều 14/09: cờ Hubsell, ROAS hôm nay 8,98x > 6,63×1,1 = 7,29x → bật lại", () => {
+    const r = shouldAutoResume(
+      mkFlagged({ id: "a", todayRoas: { spend: 59_934, gmv: 538_000 } }),
+      config
+    );
+    expect(r.ok).toBe(true);
+    expect(r.window).toBe("today");
+    expect(r.reason).toContain("bật lại");
+  });
+
+  it("ROAS mới 4,96x < 7,29x → giữ tạm dừng", () => {
+    const r = shouldAutoResume(
+      mkFlagged({ id: "a", todayRoas: { spend: 25_000, gmv: 124_000 } }),
+      config
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("NGƯỜI tắt (không cờ) → không bao giờ bật lại dù ROAS rất đẹp", () => {
+    const r = shouldAutoResume(
+      mkFlagged({ id: "a", pausedAt: null, todayRoas: { spend: 10_000, gmv: 900_000 } }),
+      config
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("campaign đã chạy lại (người bật) → không xét bật", () => {
+    const r = shouldAutoResume(
+      mkFlagged({ id: "a", status: "ongoing", todayRoas: { spend: 10_000, gmv: 900_000 } }),
+      config
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("chưa có hòa vốn → không bật (không đoán)", () => {
+    const r = shouldAutoResume(
+      mkFlagged({ id: "a", breakeven: null, todayRoas: { spend: 10_000, gmv: 900_000 } }),
+      config
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("xét đúng cửa sổ đã kích lệnh dừng (3d chứ không phải hôm nay)", () => {
+    const it3 = mkFlagged({ id: "a", window: "3d", todayRoas: { spend: 10_000, gmv: 900_000 } });
+    it3.windows["3d"] = { spend: 100_000, clicks: 40, broadOrder: 2, broadGmv: 200_000 }; // 2x
+    const r = shouldAutoResume(it3, config);
+    expect(r.window).toBe("3d");
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("selectAutoActionCandidates — một vòng dừng/bật mỗi ngày", () => {
+  it("máy vừa tự bật lại hôm nay → hôm nay không tắt lại dù verdict pause_now", () => {
+    const today = "2026-09-14";
+    const it = mkFlagged({ id: "a", status: "ongoing", pausedAt: null, resumedOn: today });
+    (it as unknown as { assessment: { verdict: string; reasons: string[] } }).assessment = {
+      verdict: "pause_now",
+      reasons: [],
+    };
+    expect(selectAutoActionCandidates([it], today)).toHaveLength(0);
+    expect(selectAutoActionCandidates([it], "2026-09-15")).toHaveLength(1);
+  });
+});

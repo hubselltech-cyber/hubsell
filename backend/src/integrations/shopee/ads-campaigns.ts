@@ -29,6 +29,7 @@ import {
 } from "./client";
 import { resolveShopeeAdsAccess, type ShopeeAdsAccess } from "../hubsell-ads";
 import { fromShopeeDate, toShopeeDate } from "./ads-spend";
+import { reconcileHubsellPauseFlags } from "./ads-pause-flag";
 
 export interface SyncShopeeAdsCampaignsOptions {
   /** Lấy hiệu suất N ngày gần nhất. Mặc định 30. */
@@ -138,6 +139,9 @@ export async function upsertShopeeCampaignSettings(
       rowIdByCampaignId.set(campaignId, row.id);
     }
   }
+  // Campaign Hubsell đã dừng mà sàn báo đang chạy = người bật lại → xóa cờ,
+  // ván mới (máy trạng thái 14/09, ads-pause-flag.ts).
+  await reconcileHubsellPauseFlags(channel.id);
   return rowIdByCampaignId;
 }
 

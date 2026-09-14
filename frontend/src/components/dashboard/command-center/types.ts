@@ -90,6 +90,17 @@ export type ActionParams =
    */
   | { kind: "navigate"; href: string }
   /**
+   * CẢNH BÁO THẬT "Trợ lý quảng cáo đã tạm dừng chiến dịch": nút [Bật lại]
+   * gọi lệnh bật lại THẬT lên sàn ngay từ thẻ (seller đảo quyết định của máy
+   * trong một cú bấm — sự cố 14/09/2026). href = trang campaign để xem căn cứ.
+   */
+  | {
+      kind: "ads-resume";
+      href: string;
+      campaignRowId: string;
+      platform: "shopee" | "lazada";
+    }
+  /**
    * CẢNH BÁO THẬT từ luồng đồng bộ tồn Shopee (không phải mock): đẩy tồn thất
    * bại sau 3 lần retry + 3 lượt đối soát. Nút [Cập nhật tồn] gọi API
    * force-sync ĐÈ tồn chuẩn Hubsell lên sàn — hành động thật, không giả lập.

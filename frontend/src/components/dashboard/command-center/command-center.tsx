@@ -18,6 +18,7 @@ import {
   postCommandCenterSeen,
   resolveCommandCenterOpsAlert,
   resolveSyncAlert,
+  resumeShopeeAdsCampaign,
   setCommandCenterResolved,
   type InventorySyncAlert,
   type OpsActivityDTO,
@@ -34,6 +35,7 @@ import {
   canView,
   ROLE_META,
   visibleTags,
+  type ActionParams,
   type ActivityItem,
   type AlertTag,
   type ChatBody,
@@ -84,12 +86,26 @@ const UI_TAGS: AlertTag[] = ["inventory", "finance", "channel", "ads", "tax"];
 
 function opsDtoToAlert(dto: OpsAlertDTO): OpsAlert {
   const p = dto.payload as
-    | { kind?: string; href?: string; label?: string; source?: string }
+    | {
+        kind?: string;
+        href?: string;
+        label?: string;
+        source?: string;
+        campaignRowId?: string;
+        platform?: string;
+      }
     | null;
-  const action =
-    p?.kind === "navigate" && typeof p.href === "string"
-      ? ({ kind: "navigate", href: p.href } as const)
-      : ({ kind: "confirm", description: dto.summary } as const);
+  const action: ActionParams =
+    p?.kind === "ads-resume" && typeof p.campaignRowId === "string" && typeof p.href === "string"
+      ? {
+          kind: "ads-resume",
+          href: p.href,
+          campaignRowId: p.campaignRowId,
+          platform: p.platform === "lazada" ? "lazada" : "shopee",
+        }
+      : p?.kind === "navigate" && typeof p.href === "string"
+        ? ({ kind: "navigate", href: p.href } as const)
+        : ({ kind: "confirm", description: dto.summary } as const);
   return {
     id: `ops-${dto.id}`,
     tag: UI_TAGS.includes(dto.tag as AlertTag) ? (dto.tag as AlertTag) : "channel",
@@ -243,6 +259,20 @@ export function CommandCenter() {
 
   /** Bấm nút xử lý: deep-link thì điều hướng thẳng, còn lại mở pop-up. */
   function handleAction(a: OpsAlert) {
+    if (a.action.kind === "ads-resume") {
+      // Bật lại THẬT campaign Trợ lý quảng cáo đã tạm dừng — một cú bấm đảo
+      // quyết định của máy (sự cố 14/09). Backend đóng thẻ ngay khi sàn nhận.
+      const { campaignRowId, platform } = a.action;
+      toast.promise(resumeShopeeAdsCampaign(campaignRowId, platform), {
+        loading: "Đang gửi lệnh bật lại lên sàn…",
+        success: (r) => {
+          reloadState();
+          return r.message || "Đã bật lại chiến dịch";
+        },
+        error: (err: Error) => err.message || "Sàn từ chối lệnh bật lại",
+      });
+      return;
+    }
     if (a.action.kind === "navigate") {
       if (/^https?:\/\//.test(a.action.href)) {
         // Link NGOÀI (VD Shopee Seller Center) — mở tab mới, giữ nguyên Dashboard.

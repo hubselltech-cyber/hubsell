@@ -5067,13 +5067,27 @@ export interface ShopeeAssistantConfig {
 export interface ShopeeAdsActionLogRow {
   id: string;
   campaignName: string;
-  action: string; // "pause"
-  mode: "dry_run" | "live";
+  /** pause = tạm dừng; resume = bật lại (máy khi ROAS đạt, hoặc seller bấm trong Hubsell). */
+  action: "pause" | "resume" | string;
+  /** manual = seller bấm nút trong Hubsell (không qua luật). */
+  mode: "dry_run" | "live" | "manual";
   verdict: string;
   reasons: string[];
-  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED";
+  /** OVERRIDDEN = seller đã bật lại trên Seller Center sau khi Hubsell dừng (ván mới). */
+  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED" | "OVERRIDDEN";
   error: string | null;
   createdAt: string;
+}
+
+/** Seller bật lại NGAY từ Hubsell một campaign do Trợ lý tạm dừng (gọi lệnh thật lên sàn). */
+export function resumeShopeeAdsCampaign(
+  campaignRowId: string,
+  platform: "shopee" | "lazada" = "shopee"
+) {
+  return apiFetch<{ message: string; status: string }>(
+    `/api/ads/${platform}/campaigns/${campaignRowId}/resume`,
+    { method: "POST" }
+  );
 }
 
 export function fetchShopeeAdsActionLog(
@@ -5214,6 +5228,9 @@ export interface ShopeeAdsCampaignRow {
   /** Lãi/lỗ ước tính trong kỳ = GMV broad × biên lãi − chi phí ads (cùng rổ đơn với ROAS). */
   estProfit: number | null;
   lossBeforeAds: boolean;
+  /** Khác null = chính Trợ lý Hubsell đã tạm dừng campaign này (chưa ai bật lại):
+   *  nhãn "Hubsell tạm dừng" + nút Bật lại. null = đang chạy, hoặc người/sàn tắt. */
+  hubsellPause: { at: string; window: string; reasons: string[] } | null;
 }
 
 export interface ShopeeAdsSummary {
