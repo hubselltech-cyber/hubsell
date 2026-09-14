@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { lazAdsNum, lazAdsWriteOk } from "../lazada/client";
 import { deriveStatus } from "../lazada/ads-campaigns";
+import { lazadaAdSpendByDay } from "../lazada/ads-spend";
 import { deriveLazadaItemSku, pnlRowsForMargin } from "../shopee/ads-insights";
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import {
@@ -200,5 +201,29 @@ describe("thẻ cảnh báo điều hành mang nhãn Lazada", () => {
     const payload = alert.payload as { href: string; source: string };
     expect(payload.href).toBe("/ads/lazada?channelId=ch3");
     expect(payload.source).toBe("Lazada");
+  });
+});
+
+describe("lazadaAdSpendByDay — chi phí ads toàn gian theo ngày (AdSpend, 14/09)", () => {
+  const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
+  const rows = [
+    { date: d("2026-09-13"), expense: 120000 },
+    { date: d("2026-09-13"), expense: "80000.5" },
+    { date: d("2026-09-14"), expense: 50000 },
+    { date: d("2026-09-14"), expense: 0 },
+    { date: d("2026-09-01"), expense: 999 }, // ngoài cửa sổ → bỏ
+  ];
+  const keys = ["2026-09-12", "2026-09-13", "2026-09-14"];
+
+  it("cộng expense của mọi campaign trong cùng ngày; ngày không có dòng ghi 0", () => {
+    const out = lazadaAdSpendByDay(rows, keys, false);
+    expect(out.map((x) => x.amount)).toEqual([0, 200000.5, 50000]);
+    expect(out[1].date.toISOString()).toBe("2026-09-13T00:00:00.000Z");
+  });
+
+  it("gian trả tiền ads qua doanh thu (sao kê đã có Phí Discovery tài trợ) → toàn 0, không tính đúp", () => {
+    const out = lazadaAdSpendByDay(rows, keys, true);
+    expect(out.map((x) => x.amount)).toEqual([0, 0, 0]);
+    expect(out).toHaveLength(3);
   });
 });

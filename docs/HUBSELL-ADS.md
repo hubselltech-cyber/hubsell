@@ -139,3 +139,12 @@ Nguồn nhịp duy nhất: `backend/src/config/ads-cadence.ts`.
 - Mở trang Trợ lý mà số cũ >30' → nudge **xung** (`nudgeAdsSyncIfStale`), FE nạp lại
   sau 45s. Nút **Làm mới** → `POST /api/ads/:platform/refresh` cũng kích xung
   (chống spam 2'). Ví ads trên trang và detector đều **đọc DB** (không còn gọi sống).
+- **Lazada ngang Shopee (14/09/2026):** (a) trang Trợ lý Lazada hiện **dải đỏ "ví hết
+  số dư"** từ cờ `adAccountBalanceStatus` (xung ghi `adsWalletBalance = 0`, route trả
+  `walletEmpty`) — cùng sự kiện với thẻ ví cạn ở Trung tâm điều hành; (b) **chi phí ads
+  Lazada vào bảng `AdSpend`** (`lazada/ads-spend.ts`, gọi sau xung 1 ngày + lịch sử 7/30
+  ngày, chỉ DB): tổng `expense` chiến dịch theo ngày, vì Lazada không có API chi tiêu cấp
+  shop đã probe. **Chống tính đúp:** gian trả tiền ads bằng cách **trừ vào doanh thu** có
+  dòng "Phí Discovery tài trợ" (`feeSponsoredDiscovery`) trong sao kê 90 ngày → AdSpend
+  ghi 0 (P&L từng đơn đã gánh). Báo cáo dòng tiền / Tổng quan / Trợ lý hỏi đáp từ đây
+  thấy chi phí ads Lazada như Shopee.

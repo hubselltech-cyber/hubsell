@@ -32,6 +32,7 @@ import {
   type LazadaAdsCampaign,
 } from "./client";
 import { getValidLazadaAccessToken } from "./service";
+import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
 
 export interface SyncLazadaAdsCampaignsOptions {
   /** Lấy hiệu suất N ngày gần nhất. Mặc định 30 (bằng cửa sổ attribution). */
@@ -209,6 +210,11 @@ export async function syncLazadaAdsCampaigns(
       if (page.rows.length < 100) break;
     }
   }
+
+  // Chi phí ads toàn gian theo ngày → AdSpend (Báo cáo dòng tiền / Tổng quan
+  // cùng nguồn với Shopee; ads-spend.ts tự chặn tính đúp gian trả tiền ads
+  // qua doanh thu). Chỉ DB, không thêm call sàn.
+  await syncLazadaAdsSpendFromPerf(channel.id, { daysBack });
 
   // Vá adType/placement học được từ report (searchCampaignList không có).
   for (const [campaignId, meta] of metaByCampaignId) {

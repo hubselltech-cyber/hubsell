@@ -5,7 +5,8 @@
 //   1. searchCampaignList (mọi trang) → trạng thái/ngân sách/tên/ngày TƯƠI +
 //      campaign mới + CỜ VÍ (adAccountBalanceStatus = 0 trên campaign đang bật
 //      = hết tiền) → Channel.adsWalletBalance = 0, còn tiền → null.
-//   2. getDiscoveryReportCampaign HÔM NAY (useRtTable) → dòng today.
+//   2. getDiscoveryReportCampaign HÔM NAY (useRtTable) → dòng today
+//      → rồi AdSpend hôm nay (ads-spend.ts, chỉ DB) cho Báo cáo dòng tiền.
 //
 // Không gọi adgroup ở đây (itemIds đổi chậm) — tầng B lo.
 // ============================================================
@@ -15,6 +16,7 @@ import { prisma } from "../../lib/prisma";
 import { getAdsCampaignList, getAdsCampaignReport, lazAdsNum, type LazadaAdsCampaign } from "./client";
 import { getValidLazadaAccessToken } from "./service";
 import { dateFromStr, deriveStatus, lazadaCampaignData, vnDateStr } from "./ads-campaigns";
+import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
 
 export interface LazadaAdsPulseResult {
   campaignsFound: number;
@@ -115,6 +117,8 @@ export async function pulseLazadaAds(channel: Channel): Promise<LazadaAdsPulseRe
       }
       if (page.rows.length < 100) break;
     }
+    // Chi phí ads HÔM NAY của gian → AdSpend (cùng độ tươi với Shopee; chỉ DB).
+    await syncLazadaAdsSpendFromPerf(channel.id, { daysBack: 1 });
   }
   return result;
 }

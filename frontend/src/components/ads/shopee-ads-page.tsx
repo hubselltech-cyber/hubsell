@@ -105,6 +105,9 @@ const PLATFORM_META: Record<
      *  Trung tâm điều hành (Shopee cam / Lazada chàm / TikTok đen) để seller
      *  liếc màu là biết đang thao tác cho sàn nào (góp ý anh Trung 12/08). */
     badgeClass: string;
+    /** Ghi chú nguồn "tổng chi ads toàn shop" (bảng AdSpend) — Shopee lấy số
+     *  cấp shop từ sàn, Lazada cộng từ chiến dịch (không có API cấp shop). */
+    adSpendLabel: string;
   }
 > = {
   shopee: {
@@ -118,6 +121,7 @@ const PLATFORM_META: Record<
     marginBasisHint:
       "Biên lãi tính cả đơn chờ đối soát — phí trên các đơn này đã là số ước tính của chính Shopee.",
     badgeClass: "border-orange-200 bg-orange-50 text-orange-600",
+    adSpendLabel: "Tổng chi ads toàn shop (số cấp shop từ Shopee, gồm cả ads ngoài campaign sản phẩm)",
   },
   lazada: {
     label: "Lazada",
@@ -130,6 +134,8 @@ const PLATFORM_META: Record<
     marginBasisHint:
       "Biên lãi CHỈ tính các đơn Lazada ĐÃ đối soát (có sao kê phí thật) — đơn chưa đối soát bị loại vì sàn chưa báo phí, tính vào sẽ làm hòa vốn thấp giả tạo.",
     badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-600",
+    adSpendLabel:
+      "Tổng chi ads toàn gian đưa vào Báo cáo dòng tiền (cộng từ chiến dịch Sponsored Solutions; gian trả tiền ads bằng cách trừ vào doanh thu thì phí đã nằm trong sao kê từng đơn, không cộng lần hai)",
   },
 };
 
@@ -651,6 +657,19 @@ export function ShopeeAdsPage({
             </p>
           </div>
         )}
+        {/* Lazada không có API số dư — sàn chỉ báo cờ HẾT TIỀN trên campaign
+            đang bật (xung 60' ghi DB). Cùng sự kiện với thẻ "ví cạn" ở Trung
+            tâm điều hành, hiện tại chỗ seller đang nhìn. */}
+        {data?.walletEmpty && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+            <Wallet className="mt-0.5 size-5 shrink-0 text-red-500" />
+            <p>
+              <b>Ví {meta.label} Ads đã hết số dư</b> — các chiến dịch đang bật
+              không thể hiển thị cho tới khi nạp thêm tiền vào ví Ads trên
+              Seller Center. Nạp xong, bấm Làm mới để Hubsell kiểm tra lại.
+            </p>
+          </div>
+        )}
 
         {/* ===== THẺ TỔNG QUAN ===== */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
@@ -925,7 +944,7 @@ export function ShopeeAdsPage({
                 vốn — nhập đủ giá vốn để ROAS hòa vốn chính xác hơn.
               </span>
             )}{" "}
-            Tổng chi ads toàn shop (AdSpend): {formatVND(summary.adSpendTotal)}.
+            {meta.adSpendLabel}: {formatVND(summary.adSpendTotal)}.
           </p>
         )}
           </>

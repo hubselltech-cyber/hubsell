@@ -235,10 +235,12 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         { spend: 0, broadOrder: 0, broadGmv: 0, directOrder: 0, directGmv: 0, estProfit: 0 }
       );
 
-      // ---- Số dư ví ads real-time — mới có nguồn Shopee (gọi sống, lỗi không
-      // làm hỏng dashboard). Lazada GĐ sau: cờ adAccountBalanceStatus từ
-      // searchCampaignList sẽ thành cảnh báo "ví cạn" thay số dư tuyệt đối. ----
+      // ---- Ví ads: Shopee có SỐ DƯ; Lazada không có API số dư, chỉ có cờ
+      // adAccountBalanceStatus trên searchCampaignList — xung ghi
+      // adsWalletBalance = 0 khi hết tiền trên campaign đang bật (null = còn
+      // tiền/không rõ) → `walletEmpty` cho dải đỏ trên trang (14/09). ----
       let wallet: { balance: number; syncedAt: string | null } | null = null;
+      let walletEmpty = false;
       // Trạng thái liên kết app Hubsell Ads của gian (null với Lazada) — FE
       // hiện màn mời ủy quyền khi app Ads riêng đã bật mà gian chưa nối.
       const adsApp = platform === "shopee" ? await getHubsellAdsLinkStatus(selected.id) : null;
@@ -253,6 +255,8 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           balance: Number(schedule.adsWalletBalance),
           syncedAt: schedule.adsWalletSyncedAt?.toISOString() ?? null,
         };
+      } else if (platform === "lazada" && schedule?.adsWalletBalance != null) {
+        walletEmpty = Number(schedule.adsWalletBalance) === 0;
       }
 
       // ---- Tổng hợp Trợ lý cho banner: chỉ đếm cảnh báo CHƯA được chủ shop quyết ----
@@ -275,6 +279,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         selectedChannelId: selected.id,
         days,
         wallet,
+        walletEmpty,
         adsApp,
         adsRefreshing,
         adsSyncedAt: schedule?.lastAdsSyncAt?.toISOString() ?? null,

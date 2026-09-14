@@ -249,6 +249,9 @@ Mỗi bước một commit, không gộp.
 - Client: mã `ads.rate_limit.exceed_partner_api` / `exceed_api` / HTTP 429 → đóng
   cầu dao, KHÔNG retry; `exceed_shop_api` → lùi gian 15'. Retry cũ (3 lần) chỉ
   còn cho `error_rate_limit` của API đơn/kho.
+- 14/09: Lazada thêm `AdSpend` theo ngày từ tổng perf chiến dịch (`lazada/ads-spend.ts`,
+  0 call sàn, chặn tính đúp gian trả tiền ads qua doanh thu — xem HUBSELL-ADS.md) và
+  dải đỏ "ví hết số dư" trên trang Trợ lý Lazada (`walletEmpty` từ cờ sàn).
 - Chưa làm: đo lag báo cáo sàn (mục 6.3) — đọc từ log `[Ads-pulse]` trên Render
   sau deploy; endpoint theo giờ vẫn để dành. Ticket quota Shopee/Lazada: nháp ở
   mục 11, anh Trung gửi.
