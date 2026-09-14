@@ -789,6 +789,11 @@ export function ShopeeActionLogCard({
 }) {
   const [logs, setLogs] = useState<ShopeeAdsActionLogRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // Phân trang 20 dòng/trang (anh Trung 14/09) — sổ nạp tối đa 100 dòng gần nhất.
+  const LOG_PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(logs.length / LOG_PAGE_SIZE));
+  const pagedLogs = logs.slice(page * LOG_PAGE_SIZE, (page + 1) * LOG_PAGE_SIZE);
   const outcomeByCampaign = new Map(
     (scorecard?.planned.rows ?? []).map((r) => [r.campaignRowId, r] as const)
   );
@@ -801,8 +806,9 @@ export function ShopeeActionLogCard({
     if (!channelId) return;
     setLoading(true);
     try {
-      const res = await fetchShopeeAdsActionLog(channelId, 50, platform);
+      const res = await fetchShopeeAdsActionLog(channelId, 100, platform);
       setLogs(res.logs);
+      setPage(0);
     } catch {
       // gian chưa có sổ / lỗi mạng — bảng rỗng là đủ thông tin
     } finally {
@@ -894,7 +900,7 @@ export function ShopeeActionLogCard({
                 </tr>
               </thead>
               <tbody>
-                {logs.map((l) => {
+                {pagedLogs.map((l) => {
                   const meta = actionStatusMeta(l);
                   const verdictMeta =
                     l.verdict in VERDICT_META
@@ -961,6 +967,31 @@ export function ShopeeActionLogCard({
                 })}
               </tbody>
             </table>
+            {pageCount > 1 && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  Trang {page + 1}/{pageCount} · {formatNumber(logs.length)} dòng gần nhất
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  >
+                    Trang trước
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= pageCount - 1}
+                    onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
