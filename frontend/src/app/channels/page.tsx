@@ -285,39 +285,12 @@ function ConnectDialog({
                 Tên gian hàng sẽ được lấy tự động từ{" "}
                 {CHANNEL_META[channelName].label} sau khi uỷ quyền.
               </p>
-              {/* App ISV Lazada (14/09/2026): Authorized Policy "Allow subscribers
-                  to authorize" — seller phải có đơn đặt gói Hubsell trên Service
-                  Marketplace. Theo thông báo "Authorization Upgrade" (open.lazada.com
-                  docId=1989): seller CHƯA có gói bấm link ủy quyền sẽ được Lazada TỰ
-                  chuyển sang trang gói để đặt (₫0) rồi mới ủy quyền — không cần khách
-                  làm bước riêng (Salework cũng đi 1 nút như vậy). Ở đây chỉ dặn trước
-                  khách sẽ thấy gì; link gói để tham khảo / gia hạn. */}
-              {isLazada && lazadaSubscribeUrl && (
-                <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
-                  <p className="font-medium text-slate-900">
-                    Bấm <b>Tiếp tục với Lazada</b>, trên trang Lazada chọn Site{" "}
-                    <b>Vietnam</b> rồi “Use Seller Login”.
-                  </p>
-                  <p>
-                    Gian chưa đăng ký gói <b>Hubsell Miễn phí</b> sẽ được Lazada tự đưa
-                    sang trang gói (₫0): chọn phiên bản “Hubsell Miễn phí”, chu kỳ “Nửa
-                    năm”, bấm <b>Sử dụng được phép</b> → <b>Xác nhận</b> →{" "}
-                    <b>Được phép sử dụng dịch vụ</b>. Về lại Hubsell, nếu được hỏi thì
-                    bấm <b>Đổi code lấy token</b> là xong.
-                  </p>
-                  <p className={TEXT_SUB}>
-                    Gói có kỳ 6 tháng — Hubsell nhắc gia hạn trước hạn 14 / 7 / 1 ngày.{" "}
-                    <a
-                      href={lazadaSubscribeUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 underline underline-offset-2"
-                    >
-                      Xem trang gói trên Lazada <ExternalLink className="size-3" />
-                    </a>
-                  </p>
-                </div>
-              )}
+              {/* App ISV Lazada (14/09/2026): seller chưa có gói Hubsell trên Service
+                  Marketplace được Lazada TỰ đưa sang trang gói (₫0) rồi mới ủy quyền
+                  (thông báo "Authorization Upgrade" docId=1989) — khách chỉ cần bấm
+                  một nút, KHÔNG hướng dẫn thêm gì ở đây (anh Trung 14/09: khách cần
+                  đơn giản). Link gói chỉ dùng cho nút Gia hạn trên thẻ gian + gợi ý
+                  khi lỗi. */}
               {/* Lazada mở uỷ quyền ở tab mới → quay lại đây dán code đổi token.
                   Với app ISV chỉ hiện ô này khi đã mở trang ủy quyền hoặc có code
                   chờ sẵn (callback bật về) — không làm rối 2 bước ở trên. */}
