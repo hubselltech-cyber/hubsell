@@ -151,7 +151,9 @@ lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. 
    (`POST /api/ads/:platform/campaigns/:id/resume` → `resumeCampaignByOwner`, sổ
    mode `manual`). Shopee `edit_manual_product_ads` edit_action `resume` — enum
    xác minh trong docs chính thức (start/pause/resume/stop/delete/change_*);
-   `pause` đã chạy thật 21/08 + 14/09. Lazada `updateCampaign switchStatus=1`.
+   `pause` đã chạy thật 21/08 + 14/09; `resume` ĐÃ BẮN THẬT 14/09 21h50 qua write-probe
+   trên campaign ANO 55242573 (resume → error "" → pause lại → error ""). Lazada
+   `updateCampaign switchStatus=1` (chưa bắn thật).
 6. **Xung nhẹ không được khóa gian có campaign tạm dừng** (bug tìm ra 14/09 tối:
    ANO 15:28 bật lại trên Seller Center, 18:02+ Hubsell vẫn ghi "Tạm dừng"): xung
    nhẹ từng chạy khi DB "0 campaign ĐANG CHẠY" → campaign cuối cùng vừa bị dừng là
