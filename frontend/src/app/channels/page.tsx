@@ -114,9 +114,9 @@ function ConnectDialog({
   existing: Channel[];
   onDone: () => void;
   /**
-   * Link đăng ký gói Hubsell trên Lazada Service Marketplace — khác null khi
-   * backend cầm app ISV (seller PHẢI đăng ký gói trước rồi mới ủy quyền được);
-   * null = app in-house, luồng 1 bước như cũ.
+   * Link gói Hubsell trên Lazada Service Marketplace — khác null khi backend
+   * cầm app ISV (Lazada kiểm đơn đặt gói lúc ủy quyền, tự đưa seller sang
+   * trang gói nếu chưa có); null = app in-house, không nhắc gì thêm.
    */
   lazadaSubscribeUrl: string | null;
   /**
@@ -222,7 +222,7 @@ function ConnectDialog({
         // của app ISV thay vì để khách đọc mã lỗi khô.
         toast.error(msg, {
           description:
-            "Nếu gian này chưa đăng ký gói Hubsell Miễn phí trên Lazada Service Marketplace, hãy làm bước 1 rồi bấm Tiếp tục với Lazada lần nữa.",
+            "Nếu Lazada vừa đưa bạn qua trang đăng ký gói Hubsell Miễn phí, hãy hoàn tất Xác nhận → Được phép sử dụng dịch vụ rồi bấm Tiếp tục với Lazada lần nữa.",
           duration: 10_000,
         });
       } else {
@@ -286,37 +286,35 @@ function ConnectDialog({
                 {CHANNEL_META[channelName].label} sau khi uỷ quyền.
               </p>
               {/* App ISV Lazada (14/09/2026): Authorized Policy "Allow subscribers
-                  to authorize" — seller phải đăng ký gói trên Service Marketplace
-                  trước, rồi mới ủy quyền được. Gói free VN không hiện công khai,
-                  chỉ tới được qua link phân phối riêng này. */}
+                  to authorize" — seller phải có đơn đặt gói Hubsell trên Service
+                  Marketplace. Theo thông báo "Authorization Upgrade" (open.lazada.com
+                  docId=1989): seller CHƯA có gói bấm link ủy quyền sẽ được Lazada TỰ
+                  chuyển sang trang gói để đặt (₫0) rồi mới ủy quyền — không cần khách
+                  làm bước riêng (Salework cũng đi 1 nút như vậy). Ở đây chỉ dặn trước
+                  khách sẽ thấy gì; link gói để tham khảo / gia hạn. */}
               {isLazada && lazadaSubscribeUrl && (
                 <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
                   <p className="font-medium text-slate-900">
-                    Lazada yêu cầu 2 bước (miễn phí, chỉ làm một lần mỗi kỳ):
+                    Bấm <b>Tiếp tục với Lazada</b>, trên trang Lazada chọn Site{" "}
+                    <b>Vietnam</b> rồi “Use Seller Login”.
                   </p>
-                  <ol className="list-decimal space-y-1.5 pl-5">
-                    <li>
-                      Đăng ký gói <b>Hubsell Miễn phí</b> trên Lazada Service
-                      Marketplace bằng tài khoản Seller Center của gian này: chọn
-                      phiên bản “Hubsell Miễn phí”, chu kỳ “Nửa năm”, bấm{" "}
-                      <b>Sử dụng được phép</b> rồi <b>Xác nhận</b>.{" "}
-                      <a
-                        href={lazadaSubscribeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-medium text-sky-700 underline underline-offset-2"
-                      >
-                        Mở trang đăng ký <ExternalLink className="size-3.5" />
-                      </a>
-                    </li>
-                    <li>
-                      Quay lại đây bấm <b>Tiếp tục với Lazada</b> để ủy quyền (trên
-                      trang Lazada chọn Site <b>Vietnam</b> rồi “Use Seller Login”).
-                    </li>
-                  </ol>
+                  <p>
+                    Gian chưa đăng ký gói <b>Hubsell Miễn phí</b> sẽ được Lazada tự đưa
+                    sang trang gói (₫0): chọn phiên bản “Hubsell Miễn phí”, chu kỳ “Nửa
+                    năm”, bấm <b>Sử dụng được phép</b> → <b>Xác nhận</b> →{" "}
+                    <b>Được phép sử dụng dịch vụ</b>. Về lại Hubsell, nếu được hỏi thì
+                    bấm <b>Đổi code lấy token</b> là xong.
+                  </p>
                   <p className={TEXT_SUB}>
-                    Gói có kỳ 6 tháng — Hubsell sẽ nhắc gia hạn trước hạn 14 / 7 / 1
-                    ngày; hết kỳ đơn ngừng đồng bộ tới khi ủy quyền lại.
+                    Gói có kỳ 6 tháng — Hubsell nhắc gia hạn trước hạn 14 / 7 / 1 ngày.{" "}
+                    <a
+                      href={lazadaSubscribeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 underline underline-offset-2"
+                    >
+                      Xem trang gói trên Lazada <ExternalLink className="size-3" />
+                    </a>
                   </p>
                 </div>
               )}
@@ -765,8 +763,9 @@ export default function ChannelsPage() {
       fetchLazadaConnectInfo()
         .then((i) => {
           if (!i.subscribeUrl) return;
-          toast.info("Gian Lazada phải đăng ký gói Hubsell Miễn phí trên Service Marketplace trước khi ủy quyền", {
-            description: "Bấm Kết nối gian hàng → Lazada để xem hướng dẫn 2 bước.",
+          toast.info("Gian Lazada cần có gói Hubsell Miễn phí trên Service Marketplace để ủy quyền", {
+            description:
+              "Bấm Kết nối gian hàng → Lazada; nếu Lazada đưa sang trang gói thì bấm Sử dụng được phép → Xác nhận rồi ủy quyền tiếp.",
             duration: 12_000,
           });
         })
