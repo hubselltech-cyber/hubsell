@@ -210,3 +210,58 @@ describe("normalizeAssistantConfig — vá bản lưu cũ", () => {
     expect(out.spike.dayMultiple).toBe(3);
   });
 });
+
+describe("Q1 — NGƯỠNG TIỀN gác cả nhánh ROAS (sự cố 14/09/2026)", () => {
+  it("TÁI HIỆN 07:05 14/09: hôm nay mới tiêu 25k, ROAS 4,96x < hòa vốn 6,63x → KHÔNG pause_now, healthy kèm ghi chú chờ", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { today: { spend: 25_000, clicks: 15, broadOrder: 1, broadGmv: 124_000 } },
+        { breakeven: 6.63 }
+      )
+    );
+    expect(out.verdict).toBe("healthy");
+    expect(out.reasons.join(" ")).toContain("ngưỡng can thiệp");
+    expect(out.reasons.join(" ")).toContain("về trễ");
+  });
+
+  it("hôm nay tiêu ĐỦ ngưỡng (150k, không nhân 0,2) mà ROAS vẫn dưới hòa vốn → pause_now ở cửa sổ hôm nay", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { today: { spend: 160_000, clicks: 60, broadOrder: 3, broadGmv: 400_000 } }, // roas 2.5 < 3.8
+        { breakeven: 4 }
+      )
+    );
+    expect(out.verdict).toBe("pause_now");
+    expect(out.window).toBe("today");
+    expect(out.triggers).toEqual(["below_breakeven"]);
+  });
+
+  it("hôm nay tiêu 120k < 150k mà 0 đơn → cũng chưa phán (cùng ngưỡng cho cả hai nhánh)", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput({ today: { spend: 120_000, clicks: 50, broadOrder: 0, broadGmv: 0 } })
+    );
+    expect(out.verdict).toBe("healthy");
+  });
+
+  it("cửa sổ 7 ngày: tiêu 120k (< 150k) ROAS thấp → chưa phán; 160k → pause_now", () => {
+    const low = evaluateShopeeCampaign(
+      mkInput({ "7d": { spend: 120_000, clicks: 60, broadOrder: 2, broadGmv: 200_000 } })
+    );
+    expect(low.verdict).toBe("healthy");
+    const enough = evaluateShopeeCampaign(
+      mkInput({ "7d": { spend: 160_000, clicks: 60, broadOrder: 2, broadGmv: 200_000 } })
+    );
+    expect(enough.verdict).toBe("pause_now");
+  });
+
+  it("seller hạ ngưỡng xuống 20k → campaign nhỏ lại bị xét như trước (quyền của seller)", () => {
+    const out = evaluateShopeeCampaign(
+      mkInput(
+        { today: { spend: 25_000, clicks: 15, broadOrder: 1, broadGmv: 124_000 } },
+        { breakeven: 6.63 }
+      ),
+      cfg((c) => (c.hard.zeroOrderSpend7d = 20_000))
+    );
+    expect(out.verdict).toBe("pause_now");
+  });
+});

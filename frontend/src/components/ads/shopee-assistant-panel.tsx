@@ -635,12 +635,12 @@ export function ShopeeAssistantConfigCard({
             </RuleBlock>
             <RuleBlock
               title="Quy tắc 1 — Loại thẳng"
-              hint="Tiêu lớn mà 0 đơn, hoặc ROAS tụt dưới hòa vốn × hệ số → đề xuất tạm dừng ngay."
+              hint="Tiêu quá mức cho phép mà 0 đơn, hoặc ROAS tụt dưới hòa vốn × hệ số → đề xuất tạm dừng ngay. Trong ngày, đơn từ quảng cáo về trễ vài giờ nên máy chỉ kết luận khi đã tiêu đủ mức này."
               enabled={draft.hard.enabled}
               onToggle={(v) => patch("hard", { enabled: v })}
             >
               <NumberField
-                label="Tiêu ≥ (7 ngày) mà 0 đơn"
+                label="Mức tiêu tối đa cho phép thử (0 đơn hoặc ROAS dưới hòa vốn)"
                 value={draft.hard.zeroOrderSpend7d}
                 onChange={(v) => patch("hard", { zeroOrderSpend7d: v })}
                 suffix="₫"

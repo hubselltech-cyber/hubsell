@@ -41,6 +41,23 @@ const WINDOW_FLOOR_SCALE: Record<AssistantWindowKey, number> = {
   "30d": 1.5,
 };
 
+/**
+ * NGƯỠNG TIỀN của Q1 (hard.zeroOrderSpend7d) theo cửa sổ — SỰ CỐ 14/09/2026:
+ * Trợ lý live dừng campaign ANO đang lời lúc 07:05 vì ROAS "hôm nay" 4,96x
+ * dưới hòa vốn khi mới tiêu hơn 20.000₫ — sàn dữ liệu ×0,2 cho phép phán xét
+ * quá sớm trong khi đơn broad Shopee về trễ hàng giờ (chiều cùng ngày 8,98x).
+ * Anh Trung chốt: (1) ngưỡng tiền gác CẢ HAI nhánh Q1 (0 đơn lẫn dưới hòa
+ * vốn), (2) cửa sổ HÔM NAY đòi ĐỦ số tiền seller đặt, không nhân 0,2 — "bạn cho
+ * phép mỗi campaign đốt tối đa X để thử; quá X mà chưa có lãi thì máy mới can
+ * thiệp". 3d giữ 0,5 để vẫn bắt bão hòa sớm; 30d 1,5 như sàn dữ liệu.
+ */
+const WINDOW_MONEY_SCALE: Record<AssistantWindowKey, number> = {
+  today: 1,
+  "3d": 0.5,
+  "7d": 1,
+  "30d": 1.5,
+};
+
 export interface AssistantWindowMetrics {
   spend: number;
   clicks: number;
@@ -91,7 +108,9 @@ export interface ShopeeAssistantConfig {
   enabled: boolean;
   /** Lớp sàn dữ liệu — ngưỡng chuẩn cửa sổ 7 ngày, cửa sổ khác tự scale. */
   floor: { minSpend7d: number; minClicks7d: number };
-  /** Q1 — loại thẳng. breakevenFactor <1 chừa vùng đệm quanh hòa vốn cho Q2. */
+  /** Q1 — loại thẳng. zeroOrderSpend7d = NGƯỠNG TIỀN gác cả hai nhánh (0 đơn
+   *  lẫn dưới hòa vốn; tên giữ vì tương thích bản lưu) — hôm nay đòi đủ, cửa sổ
+   *  khác scale WINDOW_MONEY_SCALE. breakevenFactor <1 chừa vùng đệm cho Q2. */
   hard: { enabled: boolean; zeroOrderSpend7d: number; breakevenFactor: number };
   /** Q2 — vùng vàng: hòa vốn×breakevenFactor ≤ ROAS < hòa vốn×dangerFactor. */
   review: { enabled: boolean; dangerFactor: number };
@@ -249,26 +268,37 @@ export function evaluateShopeeCampaign(
     reasons: string[];
     triggers: AssistantTrigger[];
   } | null = null;
+  // Cửa sổ dưới hòa vốn nhưng CHƯA tiêu đủ ngưỡng tiền → không phán, chỉ ghi
+  // chú để badge "Ổn" vẫn nói thật vì sao chưa kết luận (đơn về trễ).
+  const underMoneyNotes: string[] = [];
   if (config.hard.enabled) {
     for (const k of eligible) {
       const w = windows[k];
       const roas = windowRoas(w);
       const reasons: string[] = [];
       const triggers: AssistantTrigger[] = [];
-      const zeroFloor = config.hard.zeroOrderSpend7d * WINDOW_FLOOR_SCALE[k];
-      if (w.spend >= zeroFloor && w.broadOrder === 0) {
+      const moneyGate = config.hard.zeroOrderSpend7d * WINDOW_MONEY_SCALE[k];
+      const belowBreakeven =
+        breakevenRoas != null &&
+        roas != null &&
+        roas < breakevenRoas * config.hard.breakevenFactor;
+      if (w.spend < moneyGate) {
+        if (belowBreakeven) {
+          underMoneyNotes.push(
+            `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas!)} đang dưới hòa vốn ${roasTxt(breakevenRoas!)} nhưng mới tiêu ${vnd(w.spend)} (ngưỡng can thiệp ${vnd(moneyGate)}) — chưa kết luận, đơn từ quảng cáo thường về trễ vài giờ.`
+          );
+        }
+        continue; // chưa tiêu đủ tiền seller cho phép → Q1 không được phán ở cửa sổ này
+      }
+      if (w.broadOrder === 0) {
         reasons.push(
           `Cửa sổ ${WINDOW_LABEL[k]}: tiêu ${vnd(w.spend)} mà KHÔNG có đơn nào.`
         );
         triggers.push("zero_order");
       }
-      if (
-        breakevenRoas != null &&
-        roas != null &&
-        roas < breakevenRoas * config.hard.breakevenFactor
-      ) {
+      if (belowBreakeven) {
         reasons.push(
-          `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas)} dưới ngưỡng nguy hiểm ${roasTxt(breakevenRoas * config.hard.breakevenFactor)} (hòa vốn ${roasTxt(breakevenRoas)} × ${config.hard.breakevenFactor}) — mỗi đồng ads đang lỗ thật.`
+          `Cửa sổ ${WINDOW_LABEL[k]}: ROAS ${roasTxt(roas!)} dưới ngưỡng nguy hiểm ${roasTxt(breakevenRoas! * config.hard.breakevenFactor)} (hòa vốn ${roasTxt(breakevenRoas!)} × ${config.hard.breakevenFactor}) — mỗi đồng ads đang lỗ thật, đã tiêu ${vnd(w.spend)} vượt ngưỡng can thiệp ${vnd(moneyGate)}.`
         );
         triggers.push("below_breakeven");
       }
@@ -329,5 +359,5 @@ export function evaluateShopeeCampaign(
     return { verdict: "review", window: reviewHit.window, reasons: reviewHit.reasons };
   }
 
-  return { verdict: "healthy", reasons: [] };
+  return { verdict: "healthy", reasons: underMoneyNotes };
 }
