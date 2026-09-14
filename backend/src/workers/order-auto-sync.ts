@@ -179,7 +179,9 @@ export function dueTiers(
  *   · không có quyền Ads API / không campaign chạy và không thấy campaign mới
  *     → xung nhẹ PULSE_NO_CAMPAIGN_MIN (1 call);
  *   · có campaign chạy nhưng 2 ngày không chi → PULSE_IDLE_MIN;
- *   · đang tiêu tiền hoặc vừa thấy campaign mới → PULSE_MIN (Lazada: PULSE_LAZADA_MIN).
+ *   · đang tiêu tiền hoặc vừa thấy campaign mới → PULSE_MIN (Lazada: PULSE_LAZADA_MIN);
+ *   · còn campaign do HUBSELL tạm dừng → PULSE_MIN (14/09): phải đọc lại cấu hình
+ *     + số nhanh để tự bật lại khi ROAS đạt / thấy người bật lại kịp thời.
  */
 export function nextPulseDelayMin(input: {
   channelName: ChannelName;
@@ -187,11 +189,12 @@ export function nextPulseDelayMin(input: {
   liveCampaigns: number;
   spentRecently: boolean;
   foundNew: boolean;
+  hubsellPaused?: boolean;
 }): number {
   if (!input.adsReady) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
   const base =
     input.channelName === ChannelName.LAZADA ? ADS_CADENCE.PULSE_LAZADA_MIN : ADS_CADENCE.PULSE_MIN;
-  if (input.foundNew) return base;
+  if (input.foundNew || input.hubsellPaused) return base;
   if (input.liveCampaigns === 0) return ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN;
   return input.spentRecently ? base : ADS_CADENCE.PULSE_IDLE_MIN;
 }
@@ -598,8 +601,17 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
   adsSkipLogged.delete(channel.id);
 
   // Chế độ xung theo DB (không gọi sàn): có campaign chạy? có chi trong 2 ngày?
-  const [liveCampaigns, recentSpend] = await Promise.all([
+  // `watching` = campaign còn đáng theo dõi (chạy/tạm dừng/hẹn giờ). SỰ CỐ 14/09:
+  // xung nhẹ từng khóa theo "0 campaign ĐANG CHẠY" → gian mà campaign cuối cùng
+  // vừa bị (máy/người) tạm dừng rơi vào xung nhẹ mãi, cấu hình không bao giờ
+  // được đọc lại → seller bật lại trên Seller Center mà Hubsell vẫn ghi "Tạm
+  // dừng" (ANO 15:28→18:02+), và cờ Hubsell không bao giờ được hòa giải.
+  const [liveCampaigns, watching, hubsellPausedCount, recentSpend] = await Promise.all([
     prisma.adsCampaign.count({ where: { channelId: channel.id, status: "ongoing" } }),
+    prisma.adsCampaign.count({
+      where: { channelId: channel.id, status: { in: ["ongoing", "paused", "scheduled"] } },
+    }),
+    prisma.adsCampaign.count({ where: { channelId: channel.id, hubsellPausedAt: { not: null } } }),
     prisma.adsCampaignDailyPerf.findFirst({
       where: {
         adsCampaign: { channelId: channel.id },
@@ -610,6 +622,7 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
     }),
   ]);
   const spentRecently = recentSpend != null;
+  const hubsellPaused = hubsellPausedCount > 0;
 
   let foundNew = false;
   let synced = false;
@@ -621,7 +634,9 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
         `[Ads-pulse] Lazada "${channel.shopName}": ${r.campaignsUpserted} campaign, ${r.perfTodayUpserted} dòng hôm nay${r.walletEmpty ? ", VÍ HẾT TIỀN" : ""}`
       );
     } else {
-      const r = await pulseShopeeAds(channel, { light: liveCampaigns === 0 });
+      // Xung nhẹ CHỈ khi DB không còn campaign nào đáng theo dõi — campaign tạm
+      // dừng vẫn phải đọc lại cấu hình để thấy người bật lại.
+      const r = await pulseShopeeAds(channel, { light: watching === 0 });
       foundNew = r.newCampaigns > 0;
       synced = r.mode === "full";
       if (r.mode === "full") {
@@ -669,6 +684,7 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
       liveCampaigns,
       spentRecently,
       foundNew,
+      hubsellPaused,
     }),
     synced,
   };

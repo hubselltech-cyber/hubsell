@@ -104,4 +104,9 @@ describe("nextPulseDelayMin — hạn xung ads (tầng A)", () => {
   it("chưa ủy quyền Ads API → xung nhẹ, không gọi sàn", () => {
     expect(nextPulseDelayMin({ ...base, adsReady: false })).toBe(ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN);
   });
+  it("SỰ CỐ 14/09: còn campaign do Hubsell tạm dừng → giữ PULSE_MIN dù 0 campaign chạy (để tự bật lại / thấy người bật lại)", () => {
+    expect(
+      nextPulseDelayMin({ ...base, liveCampaigns: 0, spentRecently: false, hubsellPaused: true })
+    ).toBe(ADS_CADENCE.PULSE_MIN);
+  });
 });
