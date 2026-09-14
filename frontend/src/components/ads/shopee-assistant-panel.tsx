@@ -912,7 +912,11 @@ export function ShopeeActionLogCard({
                           month: "2-digit",
                         })}
                       </td>
-                      <td className="max-w-56 truncate py-2.5 pr-3 text-slate-900">
+                      {/* Tên cắt ngắn + tooltip tên đầy đủ khi rê chuột (anh Trung 14/09) */}
+                      <td
+                        className="max-w-44 truncate py-2.5 pr-3 text-slate-900"
+                        title={l.campaignName}
+                      >
                         {l.campaignName}
                       </td>
                       <td className="py-2.5 pr-3">
