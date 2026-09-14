@@ -19,6 +19,7 @@ import { Card } from "@/components/ui/card";
 import {
   CHANNELS_TOUR,
   INVOICE_TOUR,
+  LAZADA_TOUR,
   ORDERS_TOUR,
   WAREHOUSE_TOUR,
   type GuideTour,
@@ -44,8 +45,8 @@ interface GuideSection {
   title: string;
   description: string;
   tour: GuideTour;
-  /** Bộ slide chi tiết (deck HTML cũ) — mở ở tab mới. */
-  deckSrc: string;
+  /** Bộ slide chi tiết (deck HTML cũ) — mở ở tab mới; tour mới không có deck. */
+  deckSrc?: string;
 }
 
 const SECTIONS: GuideSection[] = [
@@ -57,6 +58,14 @@ const SECTIONS: GuideSection[] = [
       "Kết nối Shopee / Lazada / TikTok Shop về Hubsell — làm 1 lần cho mỗi gian, mất chưa tới 2 phút.",
     tour: CHANNELS_TOUR,
     deckSrc: "/huong-dan-lien-ket-gian-hang.html",
+  },
+  {
+    key: "lazada",
+    icon: Store,
+    title: "Kết nối gian hàng Lazada",
+    description:
+      "15 bước đầy đủ: ủy quyền trên Lazada, đăng ký gói Hubsell Miễn phí 0đ theo yêu cầu của Lazada (chỉ lần đầu), rồi quay về Hubsell đổi code lấy token.",
+    tour: LAZADA_TOUR,
   },
   {
     key: "warehouse",
@@ -154,15 +163,17 @@ function GuideAccordionItem({
               Hướng dẫn tự chạy như video — bấm nút loa để nghe thuyết minh,
               bấm chấm tròn để nhảy bước.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={<a href={section.deckSrc} target="_blank" rel="noopener" />}
-            >
-              <ExternalLink className="size-3.5" />
-              Bản slide chi tiết
-            </Button>
+            {section.deckSrc && (
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={<a href={section.deckSrc} target="_blank" rel="noopener" />}
+              >
+                <ExternalLink className="size-3.5" />
+                Bản slide chi tiết
+              </Button>
+            )}
           </div>
           <div className="mx-auto max-w-3xl px-4 py-5">
             <TourPlayer

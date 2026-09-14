@@ -12,7 +12,7 @@
  * generate-onboarding-voice.js: truyền câu qua --file UTF-8 (qua --text argv
  * bị NoAudioReceived), dịch vụ flaky nên retry 4 lượt + nghỉ giữa các call.
  *
- * Chạy: node scripts/generate-guide-voice.js [kho|donhang|hoadon]
+ * Chạy: node scripts/generate-guide-voice.js [kho|donhang|hoadon|lazada]
  * (không truyền = sinh cả 3 tour).
  */
 const { spawnSync } = require("child_process");
@@ -50,6 +50,24 @@ const TOURS = {
     "Bước 5. Tab Xuất hóa đơn liệt kê các đơn đã giao thành công. Tick những đơn cần xuất rồi bấm nút — hóa đơn được phát hành và gửi Cơ quan Thuế.",
     "Bước 6. Gạt Tự động phát hành: đơn giao thành công và đã đối soát tự ra hóa đơn. Tự động điều chỉnh khi hoàn lo nốt phần hàng trả lại.",
     "Bước 7. Trang Lịch sử và Báo cáo thuế lưu mọi hóa đơn đã phát hành — bấm Tải để lấy bản PDF đã ký.",
+  ],
+  // 14/09/2026 — tour Kết nối Lazada (app ISV, 15 bước, luồng thật đã kiểm chứng bằng Hi.Bé).
+  lazada: [
+    "Bước một. Trong thanh điều hướng bên trái, chọn Kênh bán, nơi quản lý mọi gian hàng của bạn.",
+    "Bước hai. Bấm Kết nối gian hàng ở góc phải phía trên. Một tài khoản Hubsell nối được nhiều gian Lazada.",
+    "Bước ba. Trong ô Sàn thương mại, chọn Lazada. Tên gian hàng sẽ được lấy tự động sau khi ủy quyền, không cần nhập.",
+    "Bước bốn. Bấm Tiếp tục với Lazada. Hubsell mở trang ủy quyền chính chủ của Lazada ở tab mới. Bạn thao tác trên trang Lazada, Hubsell không nhìn thấy mật khẩu.",
+    "Bước năm. Trang Lazada Open Platform mặc định chọn Singapore. Bấm ô Site và chọn Vietnam. Chọn sai nước sẽ đăng nhập nhầm sang Seller Center Singapore.",
+    "Bước sáu. Bấm Use Seller Login. Lazada mở trang đăng nhập Seller Center Việt Nam ở tab mới.",
+    "Bước bảy. Nhập số điện thoại hoặc email và mật khẩu Seller Center của shop rồi bấm Đăng nhập. Nếu trình duyệt đang đăng nhập sẵn shop khác, hãy đăng xuất trước để nối đúng gian.",
+    "Bước tám. Lần đầu kết nối, Lazada đưa bạn sang trang gói dịch vụ Hubsell. Đây là quy định của Lazada cho mọi phần mềm: shop phải có gói trước khi ủy quyền. Gói Hubsell giá không đồng. Chọn phiên bản Hubsell Miễn phí và chu kỳ Nửa năm. Shop đã có gói thì Lazada bỏ qua bước này và tự quay về Hubsell.",
+    "Bước chín. Bấm Sử dụng được phép, nút xanh dưới phần chu kỳ. Chưa chọn phiên bản và chu kỳ thì Lazada hiện cảnh báo vàng.",
+    "Bước mười. Trang Xác nhận đơn hàng: tick Đang đồng ý và ký kết Term of use, rồi bấm Xác nhận. Đơn không đồng, không phải thanh toán gì.",
+    "Bước mười một. Đặt hàng thành công. Lazada vẽ sẵn ba bước: bấm nút, bấm dùng dịch vụ, rồi đồng ý. Bấm Được phép sử dụng dịch vụ. Nút này chỉ mở trang Dịch vụ đã mua, chưa phải ủy quyền, đừng dừng ở đây.",
+    "Bước mười hai. Trang Dịch vụ đã mua liệt kê gói vừa đặt kèm ngày hết hạn. Bấm Dịch vụ sử dụng trên thẻ Hubsell. Đây mới là bước ủy quyền.",
+    "Bước mười ba. Hộp thoại xin phép truyền dữ liệu gian hàng sang Hubsell. Tick ô đã đọc kỹ và đồng ý, rồi bấm Đồng ý. Lazada tự mở tab mới về Hubsell.",
+    "Bước mười bốn. Hubsell mở sẵn hộp Kết nối gian hàng với code ủy quyền đã điền. Bấm Đổi code lấy token để gắn gian vào tài khoản. Nếu tab này chưa đăng nhập Hubsell, hãy đăng nhập rồi bấm Kết nối gian hàng, chọn Lazada lần nữa, Lazada sẽ cho qua ngay.",
+    "Bước mười lăm. Gian Lazada đã Đang hoạt động, thẻ gian hiện kỳ dịch vụ đến ngày hết gói. Đơn tự chảy về mỗi mười phút, muốn kéo ngay bấm Đồng bộ đơn. Trước khi hết kỳ nửa năm, Hubsell sẽ nhắc bạn bấm Gia hạn, cũng không đồng, rồi ủy quyền lại.",
   ],
 };
 

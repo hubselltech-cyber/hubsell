@@ -275,3 +275,133 @@ export const INVOICE_TOUR: GuideTour = {
     },
   ],
 };
+
+// ============ TOUR 5: KẾT NỐI GIAN HÀNG LAZADA (app ISV — 14/09/2026) ============
+
+/**
+ * Luồng THẬT đã kiểm chứng bằng shop Hi.Bé 14/09/2026: app ISV Lazada bắt seller
+ * có gói "Hubsell Miễn phí" (₫0, kỳ nửa năm) trên Service Marketplace. Shop chưa
+ * có gói thì sau khi đăng nhập Lazada TỰ đưa sang trang gói → 3 bước trên
+ * Marketplace → ủy quyền → Lazada mở TAB MỚI về Hubsell kèm code (không state)
+ * → popup điền sẵn code → "Đổi code lấy token". Shop đã có gói: Lazada bỏ qua
+ * phần gói, ủy quyền xong tự quay về Hubsell luôn.
+ *
+ * Ảnh + tọa độ: scripts/capture-lazada-tour-assets.js (màn Hubsell mock qua
+ * Playwright; màn Lazada chụp thật từ Chrome đăng nhập Hi.Bé, khung 1440x960).
+ * Giọng: scripts/generate-guide-voice.js lazada. Quay MP4: render-tour-video.js.
+ */
+export const LAZADA_TOUR: GuideTour = {
+  voiceDir: "/guide-assets/voice/lazada",
+  steps: [
+    {
+      img: `${GT}/lz-channels.png`,
+      title: "Mở menu “Kênh bán”",
+      desc: "Trong thanh điều hướng bên trái, chọn Kênh bán — nơi quản lý mọi gian hàng của bạn.",
+      target: { x: 8.85, y: 48.85, w: 16.04, h: 4.17 },
+      zoom: 1.9,
+    },
+    {
+      img: `${GT}/lz-channels.png`,
+      title: "Bấm “Kết nối gian hàng”",
+      desc: "Nút ở góc phải phía trên. Một tài khoản Hubsell nối được nhiều gian Lazada.",
+      target: { x: 92.21, y: 10.83, w: 11.13, h: 3.33 },
+      zoom: 2,
+    },
+    {
+      img: `${GT}/lz-dialog.png`,
+      title: "Chọn sàn “Lazada”",
+      desc: "Trong ô Sàn thương mại, chọn Lazada. Tên gian hàng sẽ được lấy tự động sau khi ủy quyền, không cần nhập.",
+      target: { x: 50, y: 47.29, w: 28.89, h: 3.75 },
+      zoom: 1.7,
+    },
+    {
+      img: `${GT}/lz-dialog.png`,
+      title: "Bấm “Tiếp tục với Lazada”",
+      desc: "Hubsell mở trang ủy quyền chính chủ của Lazada ở tab mới. Bạn thao tác trên trang Lazada, Hubsell không nhìn thấy mật khẩu.",
+      target: { x: 58.39, y: 63.54, w: 12.1, h: 3.33 },
+      zoom: 1.85,
+    },
+    {
+      img: `${GT}/lz-auth.png`,
+      title: "Đổi ô Site thành “Vietnam”",
+      desc: "Trang Lazada Open Platform mặc định chọn Singapore — bấm ô Site và chọn Vietnam. Chọn sai nước sẽ đăng nhập nhầm Seller Center Singapore.",
+      target: { x: 70.25, y: 35.9, w: 28, h: 2.9 },
+      zoom: 1.7,
+      typing: [{ box: { x: 70.25, y: 35.9, w: 28, h: 2.9 }, text: "Vietnam" }],
+    },
+    {
+      img: `${GT}/lz-auth.png`,
+      title: "Bấm “Use Seller Login”",
+      desc: "Lazada mở trang đăng nhập Seller Center Việt Nam ở tab mới.",
+      target: { x: 70.25, y: 41.1, w: 28, h: 3.9 },
+      zoom: 1.7,
+    },
+    {
+      img: `${GT}/lz-seller-login.png`,
+      title: "Đăng nhập tài khoản Seller Center của shop",
+      desc: "Nhập số điện thoại hoặc email và mật khẩu Seller Center rồi bấm Đăng nhập. Nếu trình duyệt đang đăng nhập sẵn shop khác, hãy đăng xuất trước để nối đúng gian.",
+      target: { x: 79.86, y: 38.85, w: 29.17, h: 4.17 },
+      zoom: 1.6,
+      typing: [
+        { box: { x: 79.86, y: 25.52, w: 29.03, h: 3.96 }, text: "0912 345 678" },
+        { box: { x: 78.89, y: 31.35, w: 27.08, h: 3.96 }, text: "••••••••••" },
+      ],
+    },
+    {
+      img: `${GT}/lz-marketplace.png`,
+      title: "Lazada đưa sang trang gói Hubsell Miễn phí (chỉ lần đầu)",
+      desc: "Lazada yêu cầu mọi shop đăng ký gói dịch vụ trước khi ủy quyền cho phần mềm. Gói Hubsell giá 0đ — chọn phiên bản “Hubsell Miễn phí” và chu kỳ “Nửa năm”. Shop đã có gói thì Lazada bỏ qua bước này và tự quay về Hubsell.",
+      target: { x: 37.5, y: 46.1, w: 10.5, h: 9 },
+      zoom: 1.6,
+    },
+    {
+      img: `${GT}/lz-marketplace.png`,
+      title: "Bấm “Sử dụng được phép”",
+      desc: "Nút xanh dưới phần chu kỳ — chưa chọn phiên bản và chu kỳ thì Lazada hiện cảnh báo vàng.",
+      target: { x: 36, y: 56.75, w: 16.6, h: 4.2 },
+      zoom: 1.7,
+    },
+    {
+      img: `${GT}/lz-order-confirm.png`,
+      title: "Tick đồng ý điều khoản rồi “Xác nhận”",
+      desc: "Trang Xác nhận đơn hàng của Marketplace: tick “Đang đồng ý và ký kết Term of use” rồi bấm Xác nhận. Đơn 0đ, không phải thanh toán gì.",
+      target: { x: 84.81, y: 54.58, w: 9.56, h: 4.58 },
+      zoom: 1.7,
+    },
+    {
+      img: `${GT}/lz-order-success.png`,
+      title: "Đặt hàng thành công → bấm “Được phép sử dụng dịch vụ”",
+      desc: "Lazada vẽ sẵn 3 bước: bấm nút này, bấm dùng dịch vụ, rồi đồng ý. Nút chỉ mở trang Dịch vụ đã mua, chưa phải ủy quyền — đừng dừng ở đây.",
+      target: { x: 40.05, y: 64.6, w: 15.2, h: 4.2 },
+      zoom: 1.7,
+    },
+    {
+      img: `${GT}/lz-subscribed.png`,
+      title: "Bấm “Dịch vụ sử dụng” trên thẻ Hubsell",
+      desc: "Trang Dịch vụ đã mua liệt kê gói vừa đặt kèm ngày hết hạn. Bấm “Dịch vụ sử dụng” — đây mới là bước ủy quyền.",
+      target: { x: 37.2, y: 54, w: 7.6, h: 3.4 },
+      zoom: 1.8,
+    },
+    {
+      img: `${GT}/lz-agree-modal.png`,
+      title: "Tick “đã đọc kỹ và đồng ý” rồi “Đồng ý”",
+      desc: "Hộp thoại xin phép truyền dữ liệu gian hàng sang Hubsell. Tick ô đồng ý rồi bấm Đồng ý — Lazada tự mở tab mới về Hubsell.",
+      target: { x: 49.2, y: 65.5, w: 55, h: 12 },
+      zoom: 1.45,
+    },
+    {
+      img: `${GT}/lz-dialog-code.png`,
+      title: "Về Hubsell: bấm “Đổi code lấy token”",
+      desc: "Hubsell mở sẵn hộp Kết nối gian hàng với code ủy quyền đã điền. Bấm Đổi code lấy token để gắn gian vào tài khoản. Nếu tab này chưa đăng nhập Hubsell, hãy đăng nhập rồi bấm Kết nối gian hàng → Lazada lần nữa, Lazada sẽ cho qua ngay.",
+      target: { x: 58.62, y: 68.23, w: 11.65, h: 3.33 },
+      zoom: 1.85,
+    },
+    {
+      img: `${GT}/lz-connected.png`,
+      title: "Gian Lazada “Đang hoạt động” — bấm “Đồng bộ đơn”",
+      desc: "Thẻ gian hiện Kỳ dịch vụ đến ngày hết gói. Đơn tự chảy về mỗi 10 phút; muốn kéo ngay bấm Đồng bộ đơn. Trước khi hết kỳ nửa năm Hubsell sẽ nhắc bạn bấm Gia hạn (cũng 0đ) rồi ủy quyền lại.",
+      target: { x: 73.19, y: 50.94, w: 8.24, h: 2.92 },
+      zoom: 1.95,
+    },
+  ],
+};

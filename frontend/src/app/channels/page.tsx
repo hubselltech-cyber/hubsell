@@ -11,6 +11,7 @@ import {
   Link2,
   Loader2,
   Pencil,
+  PlayCircle,
   PlugZap,
   Plus,
   RefreshCw,
@@ -67,6 +68,8 @@ import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
+import { TourDialog } from "@/components/tour/tour-dialog";
+import { CHANNELS_TOUR, LAZADA_TOUR, type GuideTour } from "@/lib/guide-tours";
 
 const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
@@ -75,6 +78,27 @@ const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 // shop_id/seller_id với gian này để không ghi token nhầm gian khác.
 const RECONNECT_SHOPEE_KEY = "shopee_reconnect_channel_id";
 const RECONNECT_LAZADA_KEY = "lazada_reconnect_channel_id";
+
+/**
+ * Tour hướng dẫn kết nối theo sàn (14/09/2026, anh Trung yêu cầu sau khi tự
+ * lạc ở luồng gói Lazada): nút kín đáo trên đầu khối sàn + link trong hộp
+ * Kết nối gian hàng mở TourDialog ngay tại chỗ. Sàn chưa có tour thì không hiện.
+ */
+const PLATFORM_TOUR: Partial<
+  Record<ChannelName, { tour: GuideTour; title: string; description: string }>
+> = {
+  SHOPEE: {
+    tour: CHANNELS_TOUR,
+    title: "Hướng dẫn kết nối gian hàng Shopee",
+    description: "8 bước từ bấm Kết nối gian hàng tới khi đơn Shopee đổ về.",
+  },
+  LAZADA: {
+    tour: LAZADA_TOUR,
+    title: "Hướng dẫn kết nối gian hàng Lazada",
+    description:
+      "15 bước đầy đủ: ủy quyền trên Lazada, đăng ký gói Hubsell Miễn phí (0đ) theo yêu cầu của Lazada, rồi quay về Hubsell.",
+  },
+};
 const RECONNECT_TIKTOK_KEY = "tiktok_reconnect_channel_id";
 
 // Che bớt token cho gọn mắt: shp_41ef08…
@@ -108,6 +132,7 @@ function ConnectDialog({
   initialLazadaCode,
   lazadaSubscribeUrl,
   allowTiktok,
+  onShowGuide,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -127,6 +152,8 @@ function ConnectDialog({
   allowTiktok: boolean;
   /** Code Lazada do callback Render bật về (?lazada=code) — điền sẵn vào ô. */
   initialLazadaCode?: string;
+  /** Mở tour hướng dẫn từng bước của sàn đang chọn (đóng hộp này trước). */
+  onShowGuide?: (platform: ChannelName) => void;
 }) {
   const [channelName, setChannelName] = useState<ChannelName>(CONNECTABLE[0]);
   const [shopName, setShopName] = useState("");
@@ -285,6 +312,16 @@ function ConnectDialog({
                 Tên gian hàng sẽ được lấy tự động từ{" "}
                 {CHANNEL_META[channelName].label} sau khi uỷ quyền.
               </p>
+              {onShowGuide && PLATFORM_TOUR[channelName] && (
+                <button
+                  type="button"
+                  onClick={() => onShowGuide(channelName)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  <PlayCircle className="size-3.5" />
+                  Xem hướng dẫn từng bước
+                </button>
+              )}
               {/* App ISV Lazada (14/09/2026): seller chưa có gói Hubsell trên Service
                   Marketplace được Lazada TỰ đưa sang trang gói (₫0) rồi mới ủy quyền
                   (thông báo "Authorization Upgrade" docId=1989) — khách chỉ cần bấm
@@ -621,6 +658,8 @@ export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectOpen, setConnectOpen] = useState(false);
+  // Sàn đang mở tour hướng dẫn kết nối (TourDialog) — null = đóng.
+  const [tourFor, setTourFor] = useState<ChannelName | null>(null);
   // Code Lazada do callback Render bật về máy dev (?lazada=code&code=...)
   const [lazadaPrefill, setLazadaPrefill] = useState<string | null>(null);
   // Link đăng ký gói Hubsell trên Lazada Service Marketplace (app ISV) — null
@@ -925,6 +964,18 @@ export default function ChannelsPage() {
                           ({formatNumber(activeCount)} đang hoạt động)
                         </span>
                       )}
+                      {PLATFORM_TOUR[platform] && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="ml-auto text-muted-foreground"
+                          onClick={() => setTourFor(platform)}
+                          data-tour={`guide-${platform.toLowerCase()}`}
+                        >
+                          <PlayCircle className="size-4" />
+                          Hướng dẫn kết nối
+                        </Button>
+                      )}
                     </CardTitle>
                   </CardHeader>
 
@@ -1134,6 +1185,15 @@ export default function ChannelsPage() {
         </p>
       </div>
 
+      <TourDialog
+        open={tourFor !== null}
+        onOpenChange={(o) => {
+          if (!o) setTourFor(null);
+        }}
+        tour={tourFor ? (PLATFORM_TOUR[tourFor]?.tour ?? null) : null}
+        title={tourFor ? (PLATFORM_TOUR[tourFor]?.title ?? "") : ""}
+        description={tourFor ? PLATFORM_TOUR[tourFor]?.description : undefined}
+      />
       <ConnectDialog
         allowTiktok={platformAdmin}
         open={connectOpen}
@@ -1145,6 +1205,10 @@ export default function ChannelsPage() {
         onDone={load}
         initialLazadaCode={lazadaPrefill ?? undefined}
         lazadaSubscribeUrl={lazadaSubscribeUrl}
+        onShowGuide={(p) => {
+          setConnectOpen(false);
+          setTourFor(p);
+        }}
       />
       {mockFor && (
         <MockOrderDialog

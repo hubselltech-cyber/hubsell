@@ -69,6 +69,8 @@ export function TourPlayer({
   voiceDir,
   onFinish,
   alt = "Hướng dẫn sử dụng Hubsell",
+  stepZoomMs,
+  onStepChange,
 }: {
   steps: TourStep[];
   /** Thư mục chứa step-N.mp3 thuyết minh — bỏ trống thì ẩn nút loa. */
@@ -79,6 +81,14 @@ export function TourPlayer({
    */
   onFinish?: () => void;
   alt?: string;
+  /**
+   * Độ dài pha zoom TỪNG BƯỚC (ms) thay cho mặc định — dùng khi quay MP4
+   * (scripts/render-tour-video.js): giọng đọc không phát trong trình quay nên
+   * phải nán đúng bằng độ dài file MP3 rồi ghép âm bằng ffmpeg sau.
+   */
+  stepZoomMs?: number[];
+  /** Gọi mỗi khi sang bước (kể cả bước 1 lúc mount) — script quay MP4 lấy mốc thời gian. */
+  onStepChange?: (index: number) => void;
 }) {
   const [step, setStep] = useState(0);
   const [phase, setPhase] = useState<Phase>("move");
@@ -153,7 +163,8 @@ export function TourPlayer({
 
   useEffect(() => {
     setTyped(0);
-  }, [step]);
+    onStepChange?.(step);
+  }, [step, onStepChange]);
 
   // Gõ phím mô phỏng trong pha zoom — 85ms/ký tự, hết chuỗi thì tự dừng.
   useEffect(() => {
@@ -188,7 +199,7 @@ export function TourPlayer({
     const next: Record<Phase, { after: number; run: () => void }> = {
       move: { after: MOVE_MS, run: () => setPhase("click") },
       click: { after: CLICK_MS, run: () => setPhase("zoom") },
-      zoom: { after: ZOOM_MS, run: zoomDone },
+      zoom: { after: stepZoomMs?.[step] ?? ZOOM_MS, run: zoomDone },
       reset: {
         after: RESET_MS,
         run: () => {
@@ -207,7 +218,7 @@ export function TourPlayer({
       clearTimeout(t);
       if (safety) clearTimeout(safety);
     };
-  }, [phase, step, steps.length, onFinish, done]);
+  }, [phase, step, steps.length, onFinish, done, stepZoomMs]);
 
   const jumpTo = useCallback((i: number) => {
     waitingRef.current = false; // nhảy bước thì bỏ mọi cữ chờ đọc của bước cũ
