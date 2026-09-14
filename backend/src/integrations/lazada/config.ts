@@ -157,3 +157,32 @@ export function buildAuthorizeUrl(
 export function isLazadaConfigured(): boolean {
   return Boolean(process.env.LAZADA_APP_KEY && process.env.LAZADA_APP_SECRET);
 }
+
+// ---------- App ISV + Service Marketplace (14/09/2026) ----------
+//
+// App ISV "Hubsell" 142085 (category ERP System) Online với Authorized Policy
+// "Allow subscribers to authorize": seller PHẢI đăng ký gói dịch vụ Hubsell trên
+// Lazada Service Marketplace trước, rồi mới ủy quyền được; token sống theo
+// "Ordering Cycle" (kỳ đăng ký 6 tháng). Gói free của VN không hiện công khai
+// trên marketplace — chỉ tới được qua link phân phối riêng dưới đây.
+//
+// App in-house 140639 (dev local) không cần bước này → luồng FE giữ 1 bước
+// khi getLazadaSubscribeUrl() trả null.
+
+/** App Key của app ISV — link đăng ký gói mặc định chỉ bật khi backend cầm app này. */
+const LAZADA_ISV_APP_KEY = "142085";
+
+/** Link phân phối SKU "Hubsell Miễn phí" (Service management → tab Vietnam → Free SKU link). */
+const LAZADA_ISV_SUBSCRIBE_URL =
+  "https://marketplace.lazada.vn/web/detail.html?articleCode=FW_GOODS-1000034551&itemCode=FW_GOODS-1000034551-1";
+
+/**
+ * Link seller mở để đăng ký gói Hubsell trên Service Marketplace (bước 1 trước
+ * khi ủy quyền). Ghi đè bằng env LAZADA_SERVICE_SUBSCRIBE_URL (đổi SKU/gói sau
+ * này không cần sửa code); null = app in-house, không cần đăng ký.
+ */
+export function getLazadaSubscribeUrl(): string | null {
+  const override = process.env.LAZADA_SERVICE_SUBSCRIBE_URL?.trim();
+  if (override) return override;
+  return process.env.LAZADA_APP_KEY === LAZADA_ISV_APP_KEY ? LAZADA_ISV_SUBSCRIBE_URL : null;
+}

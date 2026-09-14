@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
+  CalendarClock,
+  ExternalLink,
   KeyRound,
   Link2,
   Loader2,
@@ -46,6 +48,7 @@ import {
   disconnectChannel,
   fetchChannelProducts,
   fetchChannels,
+  fetchLazadaConnectInfo,
   getLazadaAuthUrl,
   getShopeeAuthUrl,
   getStoredUser,
@@ -80,6 +83,21 @@ function maskToken(token: string | null): string {
   return token.slice(0, 10) + "…" + token.slice(-4);
 }
 
+/**
+ * Hạn KỲ DỊCH VỤ của gian Lazada (app ISV, 14/09/2026): token sống theo kỳ
+ * seller đăng ký gói Hubsell trên Service Marketplace (6 tháng). Lấy mốc muộn
+ * nhất của hai hạn token — cùng cách tính với worker nhắc gia hạn ở backend.
+ */
+function lazadaCycleEnd(c: Channel): Date | null {
+  const a = c.accessTokenExpireAt ? new Date(c.accessTokenExpireAt).getTime() : 0;
+  const r = c.refreshTokenExpireAt ? new Date(c.refreshTokenExpireAt).getTime() : 0;
+  const m = Math.max(a, r);
+  return m > 0 ? new Date(m) : null;
+}
+
+/** Trong vòng này thì tô vàng + hiện nút Gia hạn trên thẻ gian Lazada. */
+const LAZADA_RENEW_SOON_DAYS = 30;
+
 // ---------- Dialog: Kết nối gian hàng ----------
 
 function ConnectDialog({
@@ -88,12 +106,19 @@ function ConnectDialog({
   existing,
   onDone,
   initialLazadaCode,
+  lazadaSubscribeUrl,
   allowTiktok,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   existing: Channel[];
   onDone: () => void;
+  /**
+   * Link đăng ký gói Hubsell trên Lazada Service Marketplace — khác null khi
+   * backend cầm app ISV (seller PHẢI đăng ký gói trước rồi mới ủy quyền được);
+   * null = app in-house, luồng 1 bước như cũ.
+   */
+  lazadaSubscribeUrl: string | null;
   /**
    * TikTok Shop mới chạy sandbox nội bộ (chưa có hàng đợi webhook, chưa test
    * dữ liệu thật) — chỉ quản trị nền tảng được chọn; khách thấy "sắp ra mắt",
@@ -191,7 +216,18 @@ function ConnectDialog({
       onOpenChange(false);
       onDone();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
+      const msg = err instanceof ApiError ? err.message : "Không kết nối được máy chủ";
+      if (isLazada && lazadaSubscribeUrl) {
+        // Lazada không nói rõ "chưa đăng ký gói" — nhắc nguyên nhân hay gặp nhất
+        // của app ISV thay vì để khách đọc mã lỗi khô.
+        toast.error(msg, {
+          description:
+            "Nếu gian này chưa đăng ký gói Hubsell Miễn phí trên Lazada Service Marketplace, hãy làm bước 1 rồi bấm Tiếp tục với Lazada lần nữa.",
+          duration: 10_000,
+        });
+      } else {
+        toast.error(msg);
+      }
       setSubmitting(false);
     }
   }
@@ -249,8 +285,45 @@ function ConnectDialog({
                 Tên gian hàng sẽ được lấy tự động từ{" "}
                 {CHANNEL_META[channelName].label} sau khi uỷ quyền.
               </p>
-              {/* Lazada mở uỷ quyền ở tab mới → quay lại đây dán code đổi token. */}
-              {isLazada && (
+              {/* App ISV Lazada (14/09/2026): Authorized Policy "Allow subscribers
+                  to authorize" — seller phải đăng ký gói trên Service Marketplace
+                  trước, rồi mới ủy quyền được. Gói free VN không hiện công khai,
+                  chỉ tới được qua link phân phối riêng này. */}
+              {isLazada && lazadaSubscribeUrl && (
+                <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                  <p className="font-medium text-slate-900">
+                    Lazada yêu cầu 2 bước (miễn phí, chỉ làm một lần mỗi kỳ):
+                  </p>
+                  <ol className="list-decimal space-y-1.5 pl-5">
+                    <li>
+                      Đăng ký gói <b>Hubsell Miễn phí</b> trên Lazada Service
+                      Marketplace bằng tài khoản Seller Center của gian này: chọn
+                      phiên bản “Hubsell Miễn phí”, chu kỳ “Nửa năm”, bấm{" "}
+                      <b>Sử dụng được phép</b> rồi <b>Xác nhận</b>.{" "}
+                      <a
+                        href={lazadaSubscribeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-sky-700 underline underline-offset-2"
+                      >
+                        Mở trang đăng ký <ExternalLink className="size-3.5" />
+                      </a>
+                    </li>
+                    <li>
+                      Quay lại đây bấm <b>Tiếp tục với Lazada</b> để ủy quyền (trên
+                      trang Lazada chọn Site <b>Vietnam</b> rồi “Use Seller Login”).
+                    </li>
+                  </ol>
+                  <p className={TEXT_SUB}>
+                    Gói có kỳ 6 tháng — Hubsell sẽ nhắc gia hạn trước hạn 14 / 7 / 1
+                    ngày; hết kỳ đơn ngừng đồng bộ tới khi ủy quyền lại.
+                  </p>
+                </div>
+              )}
+              {/* Lazada mở uỷ quyền ở tab mới → quay lại đây dán code đổi token.
+                  Với app ISV chỉ hiện ô này khi đã mở trang ủy quyền hoặc có code
+                  chờ sẵn (callback bật về) — không làm rối 2 bước ở trên. */}
+              {isLazada && (!lazadaSubscribeUrl || lazadaCode.trim() || lazadaAuthOpened) && (
                 <div className="grid gap-2">
                   <Label htmlFor="lazada-code">Code uỷ quyền</Label>
                   <Input
@@ -579,6 +652,9 @@ export default function ChannelsPage() {
   const [connectOpen, setConnectOpen] = useState(false);
   // Code Lazada do callback Render bật về máy dev (?lazada=code&code=...)
   const [lazadaPrefill, setLazadaPrefill] = useState<string | null>(null);
+  // Link đăng ký gói Hubsell trên Lazada Service Marketplace (app ISV) — null
+  // khi backend chạy app in-house; dùng cho popup 2 bước + nút Gia hạn trên thẻ.
+  const [lazadaSubscribeUrl, setLazadaSubscribeUrl] = useState<string | null>(null);
   const [mockFor, setMockFor] = useState<Channel | null>(null);
   // Quản trị nền tảng mới thấy công cụ thử nghiệm (Giả lập đơn, nối TikTok
   // sandbox) — khách thường không bao giờ thấy nút "giả lập" trên production.
@@ -638,6 +714,10 @@ export default function ChannelsPage() {
     }
     setPlatformAdmin(getStoredUser()?.isPlatformAdmin === true);
     load();
+    // Tiện ích phụ — lỗi (mạng, 403) thì lặng lẽ, trang vẫn dùng bình thường.
+    fetchLazadaConnectInfo()
+      .then((i) => setLazadaSubscribeUrl(i.subscribeUrl))
+      .catch(() => {});
   }, [load, router]);
 
   // Sau khi Shopee uỷ quyền, backend redirect về /channels?shopee=connected|error.
@@ -677,13 +757,33 @@ export default function ChannelsPage() {
       toast.success(`Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}`);
     } else if (lazada === "error") {
       sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
-      toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`);
+      toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`, {
+        duration: 10_000,
+      });
+      // App ISV: nguyên nhân hay gặp nhất là gian chưa đăng ký gói — nhắc kèm
+      // hướng dẫn (chỉ khi backend thật sự chạy app ISV).
+      fetchLazadaConnectInfo()
+        .then((i) => {
+          if (!i.subscribeUrl) return;
+          toast.info("Gian Lazada phải đăng ký gói Hubsell Miễn phí trên Service Marketplace trước khi ủy quyền", {
+            description: "Bấm Kết nối gian hàng → Lazada để xem hướng dẫn 2 bước.",
+            duration: 12_000,
+          });
+        })
+        .catch(() => {});
     } else if (lazada === "code" && params.get("code")) {
-      // Callback Render bật code uỷ quyền về máy dev — mở dialog với code điền
-      // sẵn, người dùng chỉ cần bấm nút hoàn tất (backend local đổi code lấy token).
+      // Callback bật code uỷ quyền về đây thay vì tự đổi token: (a) dev local —
+      // callback Render không verify được state ký ở local; (b) ủy quyền khởi
+      // phát từ phía Lazada (nút "use service" trên Service Marketplace) không
+      // có state → backend không biết chủ shop. Cả hai: mở dialog với code điền
+      // sẵn, người dùng bấm hoàn tất → đổi token bằng JWT của chính họ.
       setLazadaPrefill(params.get("code"));
       setConnectOpen(true);
-      toast.info("Đã nhận code uỷ quyền Lazada — bấm “Đổi code lấy token” để hoàn tất.");
+      toast.info(
+        params.get("via") === "marketplace"
+          ? "Lazada đã ủy quyền xong — bấm “Đổi code lấy token” để gắn gian vào tài khoản Hubsell này."
+          : "Đã nhận code uỷ quyền Lazada — bấm “Đổi code lấy token” để hoàn tất."
+      );
     }
     window.history.replaceState({}, "", "/channels");
   }, []);
@@ -911,6 +1011,45 @@ export default function ChannelsPage() {
                               {formatNumber(c.matchedProductCount ?? 0)} SP sàn đã
                               khớp SKU
                             </p>
+                            {/* Lazada app ISV: token sống theo kỳ đăng ký gói 6 tháng —
+                                hiện hạn kỳ, sắp hết thì tô vàng + nút Gia hạn (mở trang
+                                đăng ký; gia hạn xong phải ủy quyền lại qua Kết nối gian hàng). */}
+                            {c.channelName === "LAZADA" &&
+                              c.apiConnected &&
+                              lazadaSubscribeUrl &&
+                              (() => {
+                                const end = lazadaCycleEnd(c);
+                                if (!end) return null;
+                                const daysLeft = Math.ceil(
+                                  (end.getTime() - Date.now()) / 86_400_000
+                                );
+                                const soon = daysLeft <= LAZADA_RENEW_SOON_DAYS;
+                                return (
+                                  <p
+                                    className={cn(
+                                      TEXT_SUB,
+                                      "flex flex-wrap items-center gap-x-1.5",
+                                      soon && "text-amber-600"
+                                    )}
+                                  >
+                                    <CalendarClock className="size-3 shrink-0" />
+                                    {daysLeft < 0
+                                      ? `Hết kỳ dịch vụ ${end.toLocaleDateString("vi-VN")}`
+                                      : `Kỳ dịch vụ đến ${end.toLocaleDateString("vi-VN")}`}
+                                    {soon && (
+                                      <a
+                                        href={lazadaSubscribeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title="Đăng ký lại gói Hubsell Miễn phí trên Lazada, rồi bấm Kết nối gian hàng → Lazada để ủy quyền lại"
+                                        className="inline-flex items-center gap-0.5 font-medium underline underline-offset-2"
+                                      >
+                                        Gia hạn <ExternalLink className="size-3" />
+                                      </a>
+                                    )}
+                                  </p>
+                                );
+                              })()}
                           </div>
 
                           <div className="ml-auto flex flex-wrap gap-2">
@@ -1033,6 +1172,7 @@ export default function ChannelsPage() {
         existing={channels}
         onDone={load}
         initialLazadaCode={lazadaPrefill ?? undefined}
+        lazadaSubscribeUrl={lazadaSubscribeUrl}
       />
       {mockFor && (
         <MockOrderDialog

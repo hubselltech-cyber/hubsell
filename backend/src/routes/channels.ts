@@ -25,6 +25,7 @@ import {
 import {
   isLazadaConfigured,
   buildAuthorizeUrl as buildLazadaAuthorizeUrl,
+  getLazadaSubscribeUrl,
 } from "../integrations/lazada/config";
 import {
   signOauthState as signLazadaState,
@@ -108,7 +109,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
           refreshToken: _rt,
           shopCipher: _sc,
           accessTokenExpireAt,
-          refreshTokenExpireAt: _rte,
+          refreshTokenExpireAt,
           apiToken,
           ...safe
         } = c;
@@ -120,6 +121,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
           // Shopee thì không — nhưng cả hai đều có refreshToken khi nối thật).
           apiConnected: Boolean(c.refreshToken),
           accessTokenExpireAt,
+          // Hạn ủy quyền (ngày, không phải secret) — Lazada app ISV: token sống
+          // theo kỳ đăng ký dịch vụ 6 tháng, FE hiện "Kỳ dịch vụ đến…" + nút Gia hạn.
+          refreshTokenExpireAt,
           matchedProductCount: matchedByChannel.get(c.id) ?? 0,
         };
       })
@@ -485,6 +489,17 @@ router.post("/shopee/connect", requireAdmin, async (req: AuthRequest, res) => {
 // ============================================================
 
 // GET /api/channels/lazada/auth-url — trả URL trang uỷ quyền Lazada.
+// GET /api/channels/lazada/connect-info — thông tin cho popup Kết nối Lazada.
+// `subscribeUrl` khác null = app ISV: seller phải đăng ký gói Hubsell trên Lazada
+// Service Marketplace (bước 1) rồi mới ủy quyền được (bước 2). App in-house
+// (dev local) → null, FE giữ luồng 1 bước như cũ.
+router.get("/lazada/connect-info", requireAdmin, (_req: AuthRequest, res) => {
+  res.json({
+    configured: isLazadaConfigured(),
+    subscribeUrl: getLazadaSubscribeUrl(),
+  });
+});
+
 router.get("/lazada/auth-url", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     if (!isLazadaConfigured()) {

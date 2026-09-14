@@ -28,6 +28,7 @@ import { startStockReconcileWorker } from "./stock-reconcile";
 import { startTokenRefreshWorker } from "./token-refresh";
 import { startWeeklyReportWorker } from "./weekly-report";
 import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
+import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
 import { startShopeeWebhookWorker } from "../integrations/shopee/webhook-queue";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
@@ -74,6 +75,8 @@ export function startAllWorkers(): void {
   startInvoiceStatusSyncWorker();
   // Nhắc hạn kê khai thuế quý qua chuông.
   startTaxDeadlineReminderWorker();
+  // Nhắc gia hạn kỳ dịch vụ Lazada (app ISV: token sống theo kỳ đăng ký 6 tháng).
+  startLazadaRenewalReminderWorker();
   // Bồi đơn cho tài khoản trial reviewer ISV (tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0).
   startReviewerDemoTopupWorker();
   // Radar sức chứa HQ: snapshot + kiểm mốc 2 lần/ngày (chỉ ghi DB, trang HQ tự đỏ).

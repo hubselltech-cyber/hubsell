@@ -2102,6 +2102,8 @@ export interface Channel {
   apiConnected?: boolean;
   /** Thời điểm access_token hết hạn (ISO) — chỉ có khi nối API thật. */
   accessTokenExpireAt?: string | null;
+  /** Hạn ủy quyền (ISO). Lazada app ISV: = ngày hết KỲ DỊCH VỤ 6 tháng, cần gia hạn. */
+  refreshTokenExpireAt?: string | null;
   _count?: { orders: number; channelProducts: number };
   /** Số sản phẩm sàn đã khớp mã SKU về kho gốc (productId != null). */
   matchedProductCount?: number;
@@ -2256,6 +2258,20 @@ export function getLazadaAuthUrl(reconnectChannelId?: string) {
     ? `?channelId=${encodeURIComponent(reconnectChannelId)}`
     : "";
   return apiFetch<{ url: string }>(`/api/channels/lazada/auth-url${qs}`);
+}
+
+/**
+ * Thông tin cho popup Kết nối Lazada. `subscribeUrl` khác null = backend cầm
+ * app ISV: seller phải đăng ký gói Hubsell trên Lazada Service Marketplace
+ * (bước 1, miễn phí) rồi mới ủy quyền được (bước 2). null = app in-house.
+ */
+export interface LazadaConnectInfo {
+  configured: boolean;
+  subscribeUrl: string | null;
+}
+
+export function fetchLazadaConnectInfo() {
+  return apiFetch<LazadaConnectInfo>("/api/channels/lazada/connect-info");
 }
 
 /** Gian Lazada vừa kết nối (không chứa token). */

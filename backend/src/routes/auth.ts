@@ -751,7 +751,14 @@ router.get("/lazada/callback", async (req, res) => {
     const state = typeof req.query.state === "string" ? req.query.state : "";
 
     if (!code) {
-      done({ lazada: "error", msg: "Thiếu code từ Lazada" });
+      // Lazada từ chối ngay ở trang ủy quyền (vd seller chưa đăng ký gói với app
+      // ISV) có thể trả ?error=&error_description= thay vì code — đưa nguyên văn
+      // về FE, FE kèm hướng dẫn đăng ký gói.
+      const err =
+        (typeof req.query.error_description === "string" && req.query.error_description) ||
+        (typeof req.query.error === "string" && req.query.error) ||
+        "";
+      done({ lazada: "error", msg: err ? `Lazada từ chối ủy quyền: ${err}` : "Thiếu code từ Lazada" });
       return;
     }
 
@@ -769,9 +776,22 @@ router.get("/lazada/callback", async (req, res) => {
       return;
     }
 
-    const st = state ? verifyLazadaOauthState(state) : null;
+    // KHÔNG CÓ STATE = ủy quyền khởi phát TỪ PHÍA LAZADA (nút "use service" trên
+    // Service Marketplace sau khi seller đăng ký gói, hoặc Console app ISV) —
+    // Lazada nhảy thẳng về callback này mà không qua Hubsell nên không biết chủ
+    // shop là ai. Không ném lỗi: bật code về trang Kênh bán, FE (đang đăng nhập)
+    // mở popup với code điền sẵn, người dùng bấm xác nhận → đổi token bằng JWT
+    // của chính họ (cùng đường /api/channels/lazada/connect của dev local).
+    // Trình duyệt chưa đăng nhập Hubsell → trang login không giữ query, code
+    // (sống ngắn) mất — FE nhắc bấm Kết nối gian hàng lại từ Hubsell là xong.
+    if (!state) {
+      done({ lazada: "code", code, via: "marketplace" });
+      return;
+    }
+
+    const st = verifyLazadaOauthState(state);
     if (!st) {
-      done({ lazada: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ" });
+      done({ lazada: "error", msg: "Phiên uỷ quyền hết hạn hoặc không hợp lệ — hãy bấm Kết nối gian hàng lại từ Hubsell" });
       return;
     }
 
