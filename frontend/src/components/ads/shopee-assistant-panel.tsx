@@ -749,6 +749,13 @@ const ACTION_STATUS_META: Record<string, { label: string; className: string }> =
 
 /** Nhãn trạng thái theo LOẠI hành động — lệnh bật lại có cùng status nhưng nghĩa khác. */
 function actionStatusMeta(l: ShopeeAdsActionLogRow): { label: string; className: string } {
+  // Thao tác NGOÀI Hubsell nhìn thấy khi đồng bộ (anh Trung 14/09: ghi để sổ là
+  // dòng thời gian đầy đủ, khách "tự nhiên tắt" là thấy ngay ai tắt).
+  if (l.mode === "marketplace") {
+    return l.action === "resume"
+      ? { label: "Bật trên sàn", className: "bg-slate-200 text-slate-700" }
+      : { label: "Tắt trên sàn", className: "bg-slate-200 text-slate-700" };
+  }
   if (l.action === "resume") {
     if (l.status === "SUCCESS")
       return {
@@ -818,7 +825,9 @@ export function ShopeeActionLogCard({
               Mọi lần Trợ lý định (diễn tập) hoặc đã (thật) tạm dừng / bật lại
               chiến dịch — kèm căn cứ lúc đó và kết luận nhìn từ những ngày sau:
               vẫn lỗ là máy đúng, ROAS đạt là máy sai (chạy thật máy tự bật lại).
-              Anh/chị bật lại trên Seller Center thì Trợ lý coi là ván mới.
+              Thao tác tắt/bật trên Seller Center cũng được ghi (&quot;Tắt trên sàn&quot;,
+              &quot;Bật trên sàn&quot;) để dòng thời gian đầy đủ — Hubsell không can
+              thiệp các dòng đó. Anh/chị bật lại trên Seller Center thì Trợ lý coi là ván mới.
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>

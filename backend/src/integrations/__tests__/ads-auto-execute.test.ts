@@ -206,3 +206,27 @@ describe("selectAutoActionCandidates — một vòng dừng/bật mỗi ngày", 
     expect(selectAutoActionCandidates([it], "2026-09-15")).toHaveLength(1);
   });
 });
+
+// ---------- 14/09 tối: ghi sổ thao tác NGOÀI Hubsell ("Tắt/Bật trên sàn") ----------
+import { marketplaceChangeKind } from "../shopee/ads-pause-flag";
+
+describe("marketplaceChangeKind — sổ là dòng thời gian đầy đủ, kể cả thao tác trên sàn", () => {
+  it("chạy → tạm dừng, không cờ Hubsell → 'Tắt trên sàn', ghi rõ Hubsell không can thiệp", () => {
+    const k = marketplaceChangeKind("ongoing", "paused", false);
+    expect(k?.action).toBe("pause");
+    expect(k?.reasons).toContain("Tắt trên sàn");
+    expect(k?.reasons).toContain("KHÔNG can thiệp");
+  });
+  it("chạy → tạm dừng mà Hubsell vừa cắm cờ → không ghi (đã có dòng lệnh dừng của máy)", () => {
+    expect(marketplaceChangeKind("ongoing", "paused", true)).toBeNull();
+  });
+  it("tạm dừng → chạy: người bật trên sàn (có cờ = sau khi máy dừng, ván mới)", () => {
+    expect(marketplaceChangeKind("paused", "ongoing", false)?.reasons).toContain("Bật trên sàn");
+    expect(marketplaceChangeKind("paused", "ongoing", true)?.reasons).toContain("ván mới");
+  });
+  it("campaign mới thấy lần đầu / không đổi / đổi loại khác → không ghi", () => {
+    expect(marketplaceChangeKind(undefined, "paused", false)).toBeNull();
+    expect(marketplaceChangeKind("paused", "paused", false)).toBeNull();
+    expect(marketplaceChangeKind("ongoing", "ended", false)).toBeNull();
+  });
+});

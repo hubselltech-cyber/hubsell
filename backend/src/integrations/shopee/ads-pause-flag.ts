@@ -60,6 +60,70 @@ export async function reconcileHubsellPauseFlags(channelId: string): Promise<Rec
   return { overridden: resumedByHuman.length };
 }
 
+/** Chế độ ghi sổ cho thao tác NGOÀI Hubsell — đối chứng khiếu nại (anh Trung 14/09). */
+export const MARKETPLACE_LOG_MODE = "marketplace";
+
+/**
+ * Phân loại một lần đổi trạng thái campaign nhìn thấy khi đồng bộ — THUẦN:
+ * chạy → tạm dừng mà không phải Hubsell dừng = "Tắt trên sàn"; tạm dừng → chạy =
+ * "Bật trên sàn" (nếu Hubsell đang giữ tắt thì là người bật lại sau khi máy
+ * dừng). null = không đáng ghi (đổi loại khác, hoặc chính Hubsell vừa ghi paused).
+ */
+export function marketplaceChangeKind(
+  prevStatus: string | undefined,
+  nextStatus: string,
+  hubsellPaused: boolean
+): { action: "pause" | "resume"; reasons: string } | null {
+  if (!prevStatus || prevStatus === nextStatus) return null;
+  if (prevStatus === "ongoing" && nextStatus === "paused") {
+    if (hubsellPaused) return null; // Hubsell vừa dừng — đã có dòng riêng
+    return {
+      action: "pause",
+      reasons:
+        "Tắt trên sàn — thao tác trên Seller Center hoặc sàn tự tắt (hết ví, hết hàng, vi phạm…). Hubsell KHÔNG can thiệp. Ghi nhận lúc đồng bộ, thao tác thật có thể sớm hơn tới một nhịp.",
+    };
+  }
+  if (prevStatus === "paused" && nextStatus === "ongoing") {
+    return {
+      action: "resume",
+      reasons: hubsellPaused
+        ? "Bật lại trên sàn sau khi Trợ lý tạm dừng — Trợ lý coi là ván mới, theo dõi lại từ đầu."
+        : "Bật trên sàn — thao tác trên Seller Center. Hubsell KHÔNG can thiệp.",
+    };
+  }
+  return null;
+}
+
+/**
+ * Ghi sổ thao tác NGOÀI Hubsell khi đồng bộ thấy trạng thái đổi. Không gọi sàn,
+ * không tính vào quota máy (mode marketplace), không tạo thẻ/chuông — chỉ để
+ * Sổ hành động là DÒNG THỜI GIAN ĐẦY ĐỦ: khách khiếu nại "tự nhiên tắt" là thấy
+ * ngay dòng "Tắt trên sàn" hay "Trợ lý tạm dừng".
+ */
+export async function recordMarketplaceStatusChange(input: {
+  channelId: string;
+  rowId: string;
+  prevStatus: string | undefined;
+  nextStatus: string;
+  hubsellPaused: boolean;
+}): Promise<boolean> {
+  const kind = marketplaceChangeKind(input.prevStatus, input.nextStatus, input.hubsellPaused);
+  if (!kind) return false;
+  await prisma.adsActionLog.create({
+    data: {
+      channelId: input.channelId,
+      adsCampaignId: input.rowId,
+      action: kind.action,
+      mode: MARKETPLACE_LOG_MODE,
+      verdict: "",
+      reasons: kind.reasons,
+      referenceId: `mkt-${input.rowId}-${Date.now()}`,
+      status: "OBSERVED",
+    },
+  });
+  return true;
+}
+
 /** Xóa cờ + mở ván mới (dùng chung cho người bật lại, máy bật lại, seller bấm Bật lại trong Hubsell). */
 export async function clearHubsellPauseFlag(
   rowId: string,

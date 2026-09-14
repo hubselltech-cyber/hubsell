@@ -33,7 +33,7 @@ import {
 } from "./client";
 import { getValidLazadaAccessToken } from "./service";
 import { syncLazadaAdsSpendFromPerf } from "./ads-spend";
-import { reconcileHubsellPauseFlags } from "../shopee/ads-pause-flag";
+import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "../shopee/ads-pause-flag";
 
 export interface SyncLazadaAdsCampaignsOptions {
   /** Lấy hiệu suất N ngày gần nhất. Mặc định 30 (bằng cửa sổ attribution). */
@@ -129,6 +129,12 @@ export async function syncLazadaAdsCampaigns(
   if (campaigns.length === 0) return result;
 
   const rowIdByCampaignId = new Map<string, string>();
+  // Trạng thái TRƯỚC khi đồng bộ — ghi sổ "Tắt/Bật trên sàn" (thao tác ngoài Hubsell).
+  const prevRows = await prisma.adsCampaign.findMany({
+    where: { channelId: channel.id },
+    select: { campaignId: true, status: true, hubsellPausedAt: true },
+  });
+  const prevByCampaignId = new Map(prevRows.map((r) => [r.campaignId, r] as const));
   const statusByCampaignId = new Map<string, string>();
   for (const c of campaigns) {
     if (c.campaignId == null) continue;
@@ -141,6 +147,13 @@ export async function syncLazadaAdsCampaigns(
       create: { channelId: channel.id, campaignId, ...data },
     });
     rowIdByCampaignId.set(campaignId, row.id);
+    await recordMarketplaceStatusChange({
+      channelId: channel.id,
+      rowId: row.id,
+      prevStatus: prevByCampaignId.get(campaignId)?.status,
+      nextStatus: data.status,
+      hubsellPaused: prevByCampaignId.get(campaignId)?.hubsellPausedAt != null,
+    });
     statusByCampaignId.set(campaignId, status);
     result.campaignsUpserted++;
   }

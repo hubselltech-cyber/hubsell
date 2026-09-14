@@ -125,7 +125,7 @@ export function buildAssistantScorecard(
 
   const live = { paused: 0, resumed: 0, resumedByOwner: 0, failed: 0, overridden: 0 };
   for (const l of logs) {
-    if (l.mode === "dry_run") continue;
+    if (l.mode === "dry_run" || l.mode === "marketplace") continue;
     if (l.status === "FAILED") live.failed++;
     else if (l.status === "OVERRIDDEN") live.overridden++;
     else if (l.status === "SUCCESS" && l.action === "pause") live.paused++;
@@ -167,6 +167,7 @@ export function buildDailyDigest(
     if (!arr.includes(name)) arr.push(name);
   };
   for (const l of logs) {
+    if (l.mode === "marketplace") continue; // thao tác trên sàn — không phải việc máy
     const name = l.campaignName || `#${l.adsCampaignId}`;
     if (l.status === "FAILED" && l.mode !== "manual") push(d.failed, name);
     else if (l.status === "PLANNED" && l.action === "pause") push(d.planned, name);

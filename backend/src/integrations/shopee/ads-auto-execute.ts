@@ -51,7 +51,7 @@ import {
   type AssistantWindowKey,
   type ShopeeAssistantConfig,
 } from "./ads-assistant-rules";
-import { clearHubsellPauseFlag } from "./ads-pause-flag";
+import { clearHubsellPauseFlag, MARKETPLACE_LOG_MODE } from "./ads-pause-flag";
 
 /** Verdict nào thì được phép hành động (v1: chỉ hai loại chắc tay nhất). */
 const ACTIONABLE_VERDICTS = new Set(["pause_now", "spike"]);
@@ -299,7 +299,7 @@ export async function runAdsAutoExecute(
   // tính (FAILED cũng là một lần thao tác về phía sàn ở mode live).
   const startOfVnToday = new Date(`${todayKey}T00:00:00+07:00`);
   let usedToday = await prisma.adsActionLog.count({
-    where: { channelId: channel.id, createdAt: { gte: startOfVnToday } },
+    where: { channelId: channel.id, createdAt: { gte: startOfVnToday }, mode: { not: MARKETPLACE_LOG_MODE } },
   });
 
   // Token chỉ cần cho mode live — lấy MỘT lần ngoài vòng lặp (theo sàn).

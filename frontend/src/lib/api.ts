@@ -5071,12 +5071,14 @@ export interface ShopeeAdsActionLogRow {
   campaignName: string;
   /** pause = tạm dừng; resume = bật lại (máy khi ROAS đạt, hoặc seller bấm trong Hubsell). */
   action: "pause" | "resume" | string;
-  /** manual = seller bấm nút trong Hubsell (không qua luật). */
-  mode: "dry_run" | "live" | "manual";
+  /** manual = seller bấm nút trong Hubsell (không qua luật); marketplace = thao tác
+   *  trên Seller Center/sàn tự làm, Hubsell chỉ ghi nhận khi đồng bộ (không can thiệp). */
+  mode: "dry_run" | "live" | "manual" | "marketplace";
   verdict: string;
   reasons: string[];
-  /** OVERRIDDEN = seller đã bật lại trên Seller Center sau khi Hubsell dừng (ván mới). */
-  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED" | "OVERRIDDEN";
+  /** OVERRIDDEN = seller đã bật lại trên Seller Center sau khi Hubsell dừng (ván mới);
+   *  OBSERVED = dòng ghi nhận thao tác trên sàn. */
+  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED" | "OVERRIDDEN" | "OBSERVED";
   error: string | null;
   createdAt: string;
 }

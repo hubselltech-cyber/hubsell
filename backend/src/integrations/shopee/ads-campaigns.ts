@@ -29,7 +29,7 @@ import {
 } from "./client";
 import { resolveShopeeAdsAccess, type ShopeeAdsAccess } from "../hubsell-ads";
 import { fromShopeeDate, toShopeeDate } from "./ads-spend";
-import { reconcileHubsellPauseFlags } from "./ads-pause-flag";
+import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "./ads-pause-flag";
 
 export interface SyncShopeeAdsCampaignsOptions {
   /** Lấy hiệu suất N ngày gần nhất. Mặc định 30. */
@@ -100,6 +100,12 @@ export async function upsertShopeeCampaignSettings(
 ): Promise<Map<string, string>> {
   const { accessToken, shopId, cfg } = access;
   const rowIdByCampaignId = new Map<string, string>();
+  // Trạng thái TRƯỚC khi đồng bộ — để ghi sổ "Tắt/Bật trên sàn" (thao tác ngoài Hubsell).
+  const prevRows = await prisma.adsCampaign.findMany({
+    where: { channelId: channel.id, campaignId: { in: ids } },
+    select: { campaignId: true, status: true, hubsellPausedAt: true },
+  });
+  const prevByCampaignId = new Map(prevRows.map((r) => [r.campaignId, r] as const));
   for (const batch of chunk(ids, 100)) {
     const setting = await getAdsCampaignSettingInfo(
       {
@@ -137,6 +143,14 @@ export async function upsertShopeeCampaignSettings(
         create: { channelId: channel.id, campaignId, ...data },
       });
       rowIdByCampaignId.set(campaignId, row.id);
+      const prev = prevByCampaignId.get(campaignId);
+      await recordMarketplaceStatusChange({
+        channelId: channel.id,
+        rowId: row.id,
+        prevStatus: prev?.status,
+        nextStatus: data.status,
+        hubsellPaused: prev?.hubsellPausedAt != null,
+      });
     }
   }
   // Campaign Hubsell đã dừng mà sàn báo đang chạy = người bật lại → xóa cờ,

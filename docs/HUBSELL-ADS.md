@@ -171,6 +171,14 @@ lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. 
    gom Sổ hành động trong ngày của chủ shop thành MỘT chuông
    "🤖 Trợ lý quảng cáo hôm nay: dừng X, bật lại Y, diễn tập Z", ngày không có gì thì
    im; tắt `ADS_DAILY_SUMMARY_OFF=1`.
+8. **Sổ = dòng thời gian đầy đủ** (anh Trung 14/09 tối, giảm khiếu nại "tự nhiên tắt"):
+   mỗi lượt đồng bộ so trạng thái trước/sau; chạy→tạm dừng không do Hubsell → dòng
+   **"Tắt trên sàn"**, tạm dừng→chạy → **"Bật trên sàn"** (`recordMarketplaceStatusChange`,
+   mode `marketplace`, status `OBSERVED`, ghi rõ "Hubsell KHÔNG can thiệp, ghi nhận lúc
+   đồng bộ"). Không tính quota máy, không lên bảng điểm/chuông. Khách khiếu nại: hỏi tên
+   gian + campaign + khoảng giờ, mở sổ là thấy ai tắt; đối chiếu Lịch sử hoạt động
+   Seller Center nếu cần. Chưa làm (chờ khiếu nại thật): lưu request_id Shopee,
+   write-probe ghi sổ, trang tra cứu bên HQ.
 5. FE: nhãn **"Hubsell tạm dừng"** (tím, tooltip lý do + giờ) thay "Tạm dừng" khi
    có cờ; modal có nút **Bật lại ngay**; Sổ hành động phân biệt pause/resume/
    OVERRIDDEN; thẻ Trung tâm điều hành kind `ads-resume` gọi API bật lại từ thẻ.
