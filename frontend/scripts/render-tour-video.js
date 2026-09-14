@@ -93,7 +93,9 @@ const durationSec = (file) =>
   const expectedMs = hold.reduce((s, h) => s + MOVE_MS + CLICK_MS + h + 700, 0) + 15000;
   await page.waitForFunction(() => window.__tourDone === true, null, { timeout: expectedMs + 60000 });
   await page.waitForTimeout(TAIL_MS);
-  const stepTimes = await page.evaluate(() => window.__stepTimes || []);
+  // Mảng thưa theo chỉ số bước (trang render giữ mốc ĐẦU TIÊN của mỗi bước).
+  const stepTimes = await page.evaluate(() => Array.from(window.__stepTimes || [], (t) => t ?? null));
+  if (stepTimes.some((t) => t == null)) throw new Error("Thiếu mốc bước: " + JSON.stringify(stepTimes));
   await ctx.close(); // ghi xong video
   await browser.close();
   const webm = fs.readdirSync(tmp).map((f) => path.join(tmp, f)).find((f) => f.endsWith(".webm"));

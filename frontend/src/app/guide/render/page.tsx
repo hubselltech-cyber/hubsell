@@ -60,8 +60,13 @@ export default function TourRenderPage() {
     w.__startTour = () => setStarted(true);
   }, []);
 
-  const onStepChange = useCallback(() => {
-    (window as RenderWindow).__stepTimes?.push(performance.now());
+  // Ghi mốc THEO CHỈ SỐ BƯỚC, giữ lần đầu: React dev mode gọi effect 2 lần lúc
+  // mount (StrictMode) và HMR có thể mount lại player → nếu chỉ push theo thứ
+  // tự sẽ dư mốc, lệch tiếng cả video.
+  const onStepChange = useCallback((i: number) => {
+    const w = window as RenderWindow;
+    if (!w.__stepTimes) w.__stepTimes = [];
+    if (w.__stepTimes[i] === undefined) w.__stepTimes[i] = performance.now();
   }, []);
   const onFinish = useCallback(() => {
     (window as RenderWindow).__tourDone = true;
