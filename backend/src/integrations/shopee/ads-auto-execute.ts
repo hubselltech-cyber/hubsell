@@ -71,7 +71,6 @@ export interface AutoExecuteResult {
   resumeFailed: number; // live: bật lại bị sàn từ chối
 }
 
-const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}₫`;
 const roasTxt = (n: number) => `${n.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
 
 /**
@@ -449,4 +448,3 @@ export function autoExecuteTouched(r: AutoExecuteResult): boolean {
   return r.planned + r.executed + r.failed + r.resumed + r.resumeFailed > 0;
 }
 
-export { vnd as formatVndForAds };

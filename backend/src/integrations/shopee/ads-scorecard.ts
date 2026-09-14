@@ -21,8 +21,8 @@ export interface ScorecardLog {
   id: string;
   adsCampaignId: string;
   action: string; // pause | resume
-  mode: string; // dry_run | live | manual
-  status: string; // PLANNED | SUCCESS | FAILED | OVERRIDDEN | PENDING
+  mode: string; // dry_run | live | manual | marketplace (thao tác trên sàn, chỉ ghi nhận)
+  status: string; // PLANNED | SUCCESS | FAILED | OVERRIDDEN | PENDING | OBSERVED
   reasons: string;
   createdAt: Date;
 }
