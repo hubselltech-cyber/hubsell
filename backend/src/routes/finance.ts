@@ -32,6 +32,7 @@ import {
 import {
   additionalTaxOn,
   getShopTaxConfig,
+  type ShopTaxConfig,
   PLATFORM_TAX_RATE,
 } from "../config/tax-config";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
@@ -715,6 +716,84 @@ export function computeReturnLoss(r: PnlRow) {
   };
 }
 
+/**
+ * TỔNG KẾT KỲ của bảng Lãi/Lỗ — HÀM THUẦN (test được, không DB).
+ *
+ * CHỐT ANH TRUNG 15/09 "số liệu phải tin cậy": MỌI trục (thẻ KPI, cột ngày,
+ * theo sàn, bộ lọc Lợi nhuận âm) dùng ĐÚNG MỘT cột lợi nhuận với bảng chi
+ * tiết = profitAfterTax = tiền sàn trả về ví − giá vốn (đơn chờ đối soát: số
+ * sàn ước tính). Trước đây tổng kết dùng `profit` (doanh thu ước tính từ cột
+ * phí − giá vốn) → đơn hoàn bị trừ phí ảo, KPI lệch bảng; đồng thời trừ thuế
+ * sàn thêm lần nữa dù payout đã net thuế (lỗi kép từ 05/08 b3310fd).
+ *   - totalProfit        = Σ profitAfterTax (đã trừ phí & thuế sàn)
+ *   - totalPlatformTax   = Σ thuế sàn thu hộ — CHỈ để hiển thị "trong đó",
+ *                          KHÔNG trừ lại.
+ *   - additionalTax      = thuế bổ sung theo cấu hình shop (trên doanh thu
+ *                          hoặc lợi nhuận) — khoản ngoài sàn nên trừ riêng.
+ *   - totalProfitAfterTax = totalProfit − additionalTax.
+ * Bất biến: Σ daily.profit = Σ byPlatform.profit = totalProfit.
+ */
+export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
+  const byPlatform: Record<
+    string,
+    { count: number; profit: number; returnCount: number; returnLoss: number }
+  > = {};
+  const returnLoss = { total: 0, costLoss: 0, platformKept: 0, refundLoss: 0 };
+  const dayAgg = new Map<
+    string,
+    { profit: number; returnLoss: number; orderCount: number; returnCount: number }
+  >();
+  let totalProfit = 0;
+  let totalGrossRevenue = 0;
+  let totalPlatformTax = 0;
+  for (const r of rows) {
+    const profit = r.profitAfterTax;
+    totalProfit += profit;
+    totalGrossRevenue += r.revenueGross;
+    totalPlatformTax += r.platformTax;
+    const rl = computeReturnLoss(r);
+    const b = (byPlatform[r.channelName] ??= {
+      count: 0,
+      profit: 0,
+      returnCount: 0,
+      returnLoss: 0,
+    });
+    b.count += 1;
+    b.profit += profit;
+    const key = toBusinessDateKey(r.createdAt);
+    const d =
+      dayAgg.get(key) ??
+      { profit: 0, returnLoss: 0, orderCount: 0, returnCount: 0 };
+    d.profit += profit;
+    d.orderCount += 1;
+    if (r.returnType !== null) {
+      b.returnCount += 1;
+      b.returnLoss += rl.total;
+      returnLoss.total += rl.total;
+      returnLoss.costLoss += rl.costLoss;
+      returnLoss.platformKept += rl.platformKept;
+      returnLoss.refundLoss += rl.refundLoss;
+      d.returnCount += 1;
+      d.returnLoss += rl.total;
+    }
+    dayAgg.set(key, d);
+  }
+  const additionalTax = additionalTaxOn(
+    { grossRevenue: totalGrossRevenue, profit: totalProfit },
+    taxCfg
+  );
+  return {
+    byPlatform,
+    returnLoss,
+    dayAgg,
+    totalProfit,
+    totalGrossRevenue,
+    totalPlatformTax,
+    additionalTax,
+    totalProfitAfterTax: totalProfit - additionalTax,
+  };
+}
+
 // ============================================================
 // LÃI/LỖ THỰC HIỆN — CHI TIẾT TỪNG ĐƠN THEO SÀN (Shopee / TikTok / Lazada)
 // Trả về "detail row" GIÀU trường (superset) kèm dòng sản phẩm; frontend tách
@@ -757,12 +836,13 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         ? computedRows.filter((r) => r.returnType !== null)
         : computedRows;
 
-    // Bộ lọc nhanh "Lợi nhuận âm": chỉ giữ đơn LỖ (profit < 0). Áp trước khi
-    // phân trang & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
+    // Bộ lọc nhanh "Lợi nhuận âm": chỉ giữ đơn LỖ theo ĐÚNG cột lợi nhuận bảng
+    // hiển thị (profitAfterTax = tiền về ví − giá vốn). Áp trước khi phân trang
+    // & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
     const lossOnly =
       req.query.lossOnly === "true" || req.query.lossOnly === "1";
     const lossFiltered = lossOnly
-      ? allRows.filter((r) => r.profit < 0)
+      ? allRows.filter((r) => r.profitAfterTax < 0)
       : allRows;
 
     // Tìm kiếm theo MÃ ĐƠN (contains, không phân biệt hoa thường) — áp trước
@@ -775,47 +855,13 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       ? lossFiltered.filter((r) => r.orderCode.toLowerCase().includes(search))
       : lossFiltered;
 
-    // ===== TÓM TẮT THEO SÀN + THẤT THU ĐƠN HOÀN + CHUỖI NGÀY =====
-    // (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại) — nuôi dashboard
-    // "Tổng quan Lợi nhuận": mỗi dòng bóc thất thu đúng MỘT lần rồi cộng dồn
-    // song song vào 3 trục: theo sàn, tổng kỳ, theo ngày.
-    const byPlatform: Record<
-      string,
-      { count: number; profit: number; returnCount: number; returnLoss: number }
-    > = {};
-    const returnLoss = { total: 0, costLoss: 0, platformKept: 0, refundLoss: 0 };
-    const dayAgg = new Map<
-      string,
-      { profit: number; returnLoss: number; orderCount: number; returnCount: number }
-    >();
-    for (const r of filtered) {
-      const rl = computeReturnLoss(r);
-      const b = (byPlatform[r.channelName] ??= {
-        count: 0,
-        profit: 0,
-        returnCount: 0,
-        returnLoss: 0,
-      });
-      b.count += 1;
-      b.profit += r.profit;
-      const key = toBusinessDateKey(r.createdAt);
-      const d =
-        dayAgg.get(key) ??
-        { profit: 0, returnLoss: 0, orderCount: 0, returnCount: 0 };
-      d.profit += r.profit;
-      d.orderCount += 1;
-      if (r.returnType !== null) {
-        b.returnCount += 1;
-        b.returnLoss += rl.total;
-        returnLoss.total += rl.total;
-        returnLoss.costLoss += rl.costLoss;
-        returnLoss.platformKept += rl.platformKept;
-        returnLoss.refundLoss += rl.refundLoss;
-        d.returnCount += 1;
-        d.returnLoss += rl.total;
-      }
-      dayAgg.set(key, d);
-    }
+    // ===== TÓM TẮT THEO SÀN + THẤT THU ĐƠN HOÀN + CHUỖI NGÀY + TỔNG KỲ =====
+    // (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại) — hàm thuần
+    // summarizePnlRows, mọi trục cùng MỘT cột lợi nhuận với bảng.
+    const {
+      byPlatform, returnLoss, dayAgg,
+      totalProfit, totalPlatformTax, additionalTax, totalProfitAfterTax,
+    } = summarizePnlRows(filtered, taxCfg);
 
     // Trục ngày liền mạch (lấp ngày trống = 0) cho biểu đồ Lãi/Lỗ & Tỷ lệ hoàn.
     // Mốc đầu/cuối là 00:00 GIỜ VN (businessDayStart); không lọc ngày → 30
@@ -859,17 +905,6 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     const start = (page - 1) * pageSize;
     const rows = filtered.slice(start, start + pageSize);
 
-    // Tổng thuế của kỳ (trên toàn bộ đơn khớp lọc, không chỉ trang hiện tại).
-    // platformTax = số THẬT sàn trích của đơn đã quyết toán (đơn chờ đối soát
-    // = 0 — không ước tính); profit ở đây CHƯA trừ thuế nên trừ không sợ trùng.
-    const totalProfit = filtered.reduce((s, r) => s + r.profit, 0);
-    const totalGrossRevenue = filtered.reduce((s, r) => s + r.revenueGross, 0);
-    const totalPlatformTax = filtered.reduce((s, r) => s + r.platformTax, 0);
-    const additionalTax = additionalTaxOn(
-      { grossRevenue: totalGrossRevenue, profit: totalProfit },
-      taxCfg
-    );
-
     res.json({
       rows,
       page,
@@ -888,10 +923,12 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         // — nuôi dashboard "Tổng quan Lợi nhuận" phía frontend.
         returnLoss,
         daily,
+        // Lợi nhuận = Σ profitAfterTax (tiền về ví − giá vốn) — ĐÃ net phí &
+        // thuế sàn trong payout; totalPlatformTax chỉ để hiển thị "trong đó".
         totalProfit,
         totalPlatformTax,
         additionalTax,
-        totalProfitAfterTax: totalProfit - totalPlatformTax - additionalTax,
+        totalProfitAfterTax,
         taxSettings: {
           calculationBase: taxCfg.calculationBase,
           platformTaxPercent: PLATFORM_TAX_RATE * 100,

@@ -13,8 +13,10 @@ import {
   ReturnSolution,
   ReturnStatus,
   ShippingStatus,
+  TaxCalculationBase,
 } from "@prisma/client";
-import { computePnlRow, computeReturnLoss, returnGoodsRecovered } from "../../routes/finance";
+import { computePnlRow, computeReturnLoss, returnGoodsRecovered, summarizePnlRows } from "../../routes/finance";
+import { DEFAULT_TAX_CONFIG } from "../../config/tax-config";
 
 type PnlOrder = Parameters<typeof computePnlRow>[0];
 const D = (n: number) => new Prisma.Decimal(n);
@@ -389,6 +391,55 @@ describe("computeReturnLoss — 3 khoản thất thu lấy từ chính dòng Lã
   it("đơn bán bình thường: toàn 0", () => {
     const rl = computeReturnLoss(computePnlRow(mkOrder()));
     expect(rl).toEqual({ costLoss: 0, platformKept: 0, refundLoss: 0, total: 0 });
+  });
+});
+
+describe("summarizePnlRows — tổng kết kỳ cùng MỘT cột lợi nhuận với bảng (anh Trung 15/09: số liệu phải tin cậy)", () => {
+  const rows = [
+    computePnlRow(mkOrder({ id: "a", orderCode: "A" })), // đơn thường đã đối soát, ví 176.081
+    computePnlRow(mkOrder({ id: "b", orderCode: "B", channel: { channelName: ChannelName.LAZADA, shopName: "Hi.Bé" }, createdAt: new Date("2026-08-11") })),
+    computePnlRow(mkOrder({ // hoàn cả đơn, ví âm 2.700, hàng chưa về
+      id: "c", orderCode: "C", returnStatus: ReturnStatus.AWAITING, returnSolution: ReturnSolution.RETURN_REFUND,
+      platformReturnStatus: "PROCESSING", refundedAmount: D(269000), actualPayout: D(-2700), createdAt: new Date("2026-08-11"),
+    })),
+    computePnlRow(mkOrder({ id: "d", orderCode: "D", isSettled: false, actualPayout: D(0), fixedFee: D(0), serviceFee: D(0), sellerProtectionFee: D(0), taxWithheld: D(0) })), // chờ đối soát, chưa có số sàn
+  ];
+  const sumProfitAfterTax = rows.reduce((s, r) => s + r.profitAfterTax, 0);
+  const sumPlatformTax = rows.reduce((s, r) => s + r.platformTax, 0);
+
+  it("thẻ KPI = Σ cột Lợi nhuận (profitAfterTax) của bảng, KHÔNG trừ thuế sàn lần hai", () => {
+    const sm = summarizePnlRows(rows, DEFAULT_TAX_CONFIG);
+    expect(sm.totalProfit).toBe(sumProfitAfterTax);
+    expect(sm.totalPlatformTax).toBe(sumPlatformTax);
+    expect(sm.additionalTax).toBe(0);
+    expect(sm.totalProfitAfterTax).toBe(sumProfitAfterTax); // thuế sàn đã net trong payout
+    // Đơn hoàn C: profitAfterTax = −2.700 − 131.000; cột phí 92.919 KHÔNG bị trừ ảo.
+    expect(rows[2].profitAfterTax).toBe(-2700 - 131000);
+  });
+
+  it("Σ cột ngày = Σ theo sàn = tổng kỳ (bất biến 3 trục)", () => {
+    const sm = summarizePnlRows(rows, DEFAULT_TAX_CONFIG);
+    const dailySum = [...sm.dayAgg.values()].reduce((s, d) => s + d.profit, 0);
+    const platformSum = Object.values(sm.byPlatform).reduce((s, b) => s + b.profit, 0);
+    expect(dailySum).toBeCloseTo(sm.totalProfit, 6);
+    expect(platformSum).toBeCloseTo(sm.totalProfit, 6);
+    expect(sm.byPlatform.SHOPEE.count + sm.byPlatform.LAZADA.count).toBe(4);
+  });
+
+  it("thất thu đơn hoàn gộp đúng 3 khoản và khớp −profitAfterTax của đơn hoàn toàn bộ", () => {
+    const sm = summarizePnlRows(rows, DEFAULT_TAX_CONFIG);
+    expect(sm.returnLoss.costLoss).toBe(131000);
+    expect(sm.returnLoss.platformKept).toBe(2700);
+    expect(sm.returnLoss.refundLoss).toBe(0);
+    expect(sm.returnLoss.total).toBe(-rows[2].profitAfterTax);
+    expect(sm.byPlatform.SHOPEE.returnCount).toBe(1);
+    expect(sm.byPlatform.SHOPEE.returnLoss).toBe(sm.returnLoss.total);
+  });
+
+  it("thuế bổ sung theo cấu hình shop trừ riêng, đúng một lần", () => {
+    const sm = summarizePnlRows(rows, { ...DEFAULT_TAX_CONFIG, customTaxRate: 0.2, calculationBase: TaxCalculationBase.PROFIT });
+    expect(sm.additionalTax).toBeCloseTo(Math.max(0, sumProfitAfterTax) * 0.2, 6);
+    expect(sm.totalProfitAfterTax).toBeCloseTo(sumProfitAfterTax - sm.additionalTax, 6);
   });
 });
 

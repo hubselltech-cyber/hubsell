@@ -38,16 +38,16 @@ export interface ShopeeProfitRow {
   estRevenue: number; // Doanh thu ước tính
   revenueFromShopee: number; // Doanh thu từ Shopee
   costSnapshot: number; // Chi phí giá vốn
-  profit: number; // Doanh thu từ Shopee − Giá vốn
+  profit: number; // Doanh thu từ Shopee − Giá vốn (= profitAfterTax backend)
 }
 
 export function toShopeeRow(r: PnlDetailRow): ShopeeProfitRow {
-  // Doanh thu từ Shopee: ưu tiên số sàn báo về ví (escrow thật hoặc ước tính
-  // của chính sàn) — KỂ CẢ ÂM: đơn hoàn tiền 100% escrow = −2.700 (PiShip),
-  // trước đây điều kiện "> 0" làm rơi về doanh thu ước tính → đơn đã hoàn hiện
-  // lãi nguyên giá bán (anh Trung 20/08). Chưa có số của sàn (0) thì mới lấy
-  // doanh thu ròng sau phí.
-  const revenueFromShopee = r.actualPayout !== 0 ? r.actualPayout : r.netRevenue;
+  // Doanh thu từ Shopee = platformRevenue của backend (SSOT computePnlRow):
+  // số sàn báo về ví (escrow thật hoặc ước tính của chính sàn) — KỂ CẢ ÂM: đơn
+  // hoàn tiền 100% escrow = −2.700 (PiShip) (anh Trung 20/08). Chưa có số của
+  // sàn thì backend rơi về doanh thu − tiền hoàn. Lợi nhuận = profitAfterTax
+  // để bảng, thẻ KPI, biểu đồ ngày, bộ lọc Lợi nhuận âm cùng MỘT số (15/09).
+  const revenueFromShopee = r.platformRevenue;
   return {
     base: r,
     revenueGross: r.revenueGross,
@@ -68,7 +68,7 @@ export function toShopeeRow(r: PnlDetailRow): ShopeeProfitRow {
     estRevenue: r.netRevenue,
     revenueFromShopee,
     costSnapshot: r.costSnapshot,
-    profit: revenueFromShopee - r.costSnapshot,
+    profit: r.profitAfterTax,
   };
 }
 
@@ -98,7 +98,7 @@ export interface TiktokProfitRow {
   // Hiệu quả kinh doanh
   estRevenue: number; // Doanh thu ước tính
   costSnapshot: number; // Chi phí giá vốn
-  profit: number; // Doanh thu ước tính − Giá vốn
+  profit: number; // Lợi nhuận = profitAfterTax backend (cùng cột với mọi sàn)
 }
 
 export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
@@ -123,6 +123,6 @@ export function toTiktokRow(r: PnlDetailRow): TiktokProfitRow {
     taxVat: r.taxWithheld,
     estRevenue: r.netRevenue,
     costSnapshot: r.costSnapshot,
-    profit: r.netRevenue - r.costSnapshot,
+    profit: r.profitAfterTax,
   };
 }
