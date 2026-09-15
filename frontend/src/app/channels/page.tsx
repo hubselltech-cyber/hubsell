@@ -822,14 +822,20 @@ export default function ChannelsPage() {
   // MẶC ĐỊNH của sàn → kích hoạt nhầm gian trùng tên (vd shop Test Lazada) và
   // cấp token ảo, còn gian cần nối thì không được đụng tới.
   async function handleReconnect(c: Channel) {
-    const isRealOAuth =
-      (c.channelName === "SHOPEE" ||
-        c.channelName === "LAZADA" ||
-        c.channelName === "TIKTOK") &&
-      Boolean(c.apiConnected || c.externalShopId);
+    const isOAuthPlatform =
+      c.channelName === "SHOPEE" ||
+      c.channelName === "LAZADA" ||
+      c.channelName === "TIKTOK";
+    // Gian đã từng nối OAuth thật → kết nối lại ĐÚNG gian đó (id ký vào state).
+    // Gian sàn nhưng chưa từng có token thật (di sản giả lập `shp_…` thời chưa
+    // OAuth) → vẫn đi ủy quyền trên sàn nhưng KHÔNG trỏ gian cũ: sàn sẽ tạo
+    // gian mới mang shop ID thật, gian ảo giữ trạng thái đã ngắt. Backend từ
+    // 15/09/2026 không còn cấp token giả lập cho chủ shop thường.
+    const isRealOAuth = isOAuthPlatform && Boolean(c.apiConnected || c.externalShopId);
+    const targetId = isRealOAuth ? c.id : undefined;
     try {
-      if (!isRealOAuth) {
-        // Gian giả lập/thủ công: giữ luồng cũ, nhưng trỏ ĐÚNG gian theo tên
+      if (!isOAuthPlatform) {
+        // Gian OFFLINE/thủ công: cấp lại token nội bộ, trỏ ĐÚNG gian theo tên
         // hiện tại (bỏ trống shopName từng khiến server dò theo tên mặc định).
         await connectChannel(c.channelName, c.shopName);
         toast.success(
@@ -841,21 +847,24 @@ export default function ChannelsPage() {
       if (c.channelName === "TIKTOK") {
         const { url, state } = await getTiktokAuthUrl();
         sessionStorage.setItem("tiktok_oauth_state", state);
-        sessionStorage.setItem(RECONNECT_TIKTOK_KEY, c.id);
+        if (targetId) sessionStorage.setItem(RECONNECT_TIKTOK_KEY, targetId);
+        else sessionStorage.removeItem(RECONNECT_TIKTOK_KEY);
         window.location.assign(url);
         return;
       }
       if (c.channelName === "SHOPEE") {
-        const { url } = await getShopeeAuthUrl(c.id);
-        sessionStorage.setItem(RECONNECT_SHOPEE_KEY, c.id);
+        const { url } = await getShopeeAuthUrl(targetId);
+        if (targetId) sessionStorage.setItem(RECONNECT_SHOPEE_KEY, targetId);
+        else sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
         window.location.assign(url);
         return;
       }
       // LAZADA: mở trang uỷ quyền ở tab mới (callback nằm trên Render). Gian
       // đích đã được ký vào state; nhớ thêm vào sessionStorage cho luồng dev
       // local phải dán code tay.
-      const { url } = await getLazadaAuthUrl(c.id);
-      sessionStorage.setItem(RECONNECT_LAZADA_KEY, c.id);
+      const { url } = await getLazadaAuthUrl(targetId);
+      if (targetId) sessionStorage.setItem(RECONNECT_LAZADA_KEY, targetId);
+      else sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
       window.open(url, "_blank", "noopener");
       toast.info(
         `Đang mở trang uỷ quyền Lazada cho gian "${c.shopName}" — hãy đăng nhập ĐÚNG tài khoản Lazada của gian này.`

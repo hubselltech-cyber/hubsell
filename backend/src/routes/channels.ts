@@ -133,9 +133,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/channels — kết nối một gian hàng ảo (giả lập OAuth với sàn).
-// Ở bản thật: bước này sẽ chuyển hướng người dùng sang trang uỷ quyền của
-// Shopee/TikTok rồi nhận access token. Ở đây ta sinh token giả lập ngay.
+// POST /api/channels — tạo gian hàng KHÔNG qua OAuth.
+// Chủ shop thường chỉ được tạo gian OFFLINE (bán ngoài sàn). Shopee/Lazada/
+// TikTok bắt buộc đi luồng ủy quyền thật (/shopee/auth-url, /lazada/auth-url,
+// /tiktok/auth-url) — token giả lập `shp_/laz_/ttk_` (di sản thời chưa có
+// OAuth) chỉ còn dành cho QUẢN TRỊ NỀN TẢNG để demo/giả lập đơn; 15/09/2026
+// phát hiện tài khoản test cũ trên production còn gian Shopee ảo "Đang hoạt
+// động" 0 đơn gây hiểu lầm nên bịt lại.
 router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { channelName, shopName } = req.body ?? {};
@@ -146,6 +150,12 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
       return;
     }
     const name = channelName as ChannelName;
+    if (name !== ChannelName.OFFLINE && !req.isPlatformAdmin) {
+      res.status(403).json({
+        error: `Gian ${CHANNEL_LABEL[name]} phải kết nối bằng cách ủy quyền trên sàn. Bấm "Kết nối gian hàng" và chọn ${CHANNEL_LABEL[name]}.`,
+      });
+      return;
+    }
 
     // Tên gian hàng là thứ phân biệt hai shop trên cùng một sàn. Không có tên
     // thì lấy tên sàn làm mặc định (trường hợp shop chỉ có một gian).
