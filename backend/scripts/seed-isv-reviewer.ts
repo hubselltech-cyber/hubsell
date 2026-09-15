@@ -19,10 +19,9 @@
  *
  * Idempotent: chạy lại là xóa user cũ (cascade toàn bộ data) rồi seed mới.
  *
- * Sau seed, worker src/workers/reviewer-demo-topup.ts (mỗi 30 phút trên
- * backend) tự bồi đơn hôm nay + già hóa đơn cũ theo vòng đời thật nên KHÔNG
- * cần seed lại định kỳ; phí đối soát của worker dùng cùng công thức mục 6 —
- * sửa tỷ lệ phí ở đây thì sửa cả settlementFees() bên đó.
+ * Seed neo ngày theo lúc chạy nên vài ngày sau Tổng quan sẽ "hôm nay 0 đơn";
+ * worker bồi đơn tự động đã gỡ 15/09/2026 (ISV Shopee duyệt xong) — cần tài
+ * khoản "sống" lại thì chạy lại seed.
  *
  *   # Local (DATABASE_URL trong .env)
  *   npx tsx scripts/seed-isv-reviewer.ts --password=<mật khẩu>
