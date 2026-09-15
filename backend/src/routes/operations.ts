@@ -1249,6 +1249,7 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
       select: {
         outcome: true,
         chatStatus: true,
+        failCount: true,
         order: {
           select: { shippingStatus: true, returnStatus: true, totalAmount: true },
         },
@@ -1263,8 +1264,16 @@ router.get("/delivery-fail/log", async (req: AuthRequest, res, next) => {
       // Số đơn "cứu được" MÀ Hubsell thực sự đã nhắn khách — phần còn lại là
       // shipper tự giao lại thành công (anh Trung 26/08: đừng nhận vơ công).
       savedMessaged: 0,
+      // Phân bố SỐ LƯỢT giao hỏng thực tế (worker đếm lại mỗi lần hỏi sàn —
+      // anh Trung 15/09) để quan sát tỷ lệ 1/2/3+ lượt; unknown = sàn không
+      // cho số lượt (Lazada, failCount 0).
+      failCounts: { one: 0, two: 0, threePlus: 0, unknown: 0 },
     };
     for (const n of all) {
+      if (n.failCount <= 0) summary.failCounts.unknown++;
+      else if (n.failCount === 1) summary.failCounts.one++;
+      else if (n.failCount === 2) summary.failCounts.two++;
+      else summary.failCounts.threePlus++;
       // Gộp: Order đã chốt thì thắng; Order còn mù (TO_CONFIRM_RECEIVE/SHIPPED)
       // thì lấy kết quả worker chốt từ tracking — hết cảnh 0-0 ảo (probe 26/08).
       const outcome = mergeDeliveryFailOutcome(classifyDeliveryFailOutcome(n.order), n.outcome);

@@ -496,9 +496,9 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
   // dọn vé → phát vé → nhặt vé đến hạn theo TRẦN call/gian/nhịp.
   try {
     const df = await processShopeeDeliveryTracking(channel);
-    if (df.noticed > 0 || df.saved > 0 || df.lost > 0) {
+    if (df.noticed > 0 || df.saved > 0 || df.lost > 0 || df.recounted > 0) {
       console.log(
-        `[Auto-sync] Cứu đơn Shopee "${channel.shopName}": +${df.noticed} cảnh báo (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua), +${df.saved} cứu được, +${df.lost} mất đơn — ${df.ran} call tracking, +${df.enqueued} vé mới, ${df.cleaned} vé dọn`
+        `[Auto-sync] Cứu đơn Shopee "${channel.shopName}": +${df.noticed} cảnh báo (${df.chatSent} đã nhắn khách, ${df.chatFailed} sàn từ chối, ${df.chatSkipped} bỏ qua), +${df.saved} cứu được, +${df.lost} mất đơn, ${df.recounted} đếm lại lượt hỏng — ${df.ran} call tracking, +${df.enqueued} vé mới, ${df.cleaned} vé dọn`
       );
     }
   } catch (err) {

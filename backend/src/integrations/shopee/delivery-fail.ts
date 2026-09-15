@@ -305,6 +305,8 @@ export interface DeliveryTrackingQueueResult {
   /** Kết quả chốt được lượt này (gồm cả chốt RẺ theo trạng thái đơn, 0 call). */
   saved: number;
   lost: number;
+  /** Cảnh báo được ĐẾM LẠI số lượt hỏng (tăng so với lúc phát hiện). */
+  recounted: number;
 }
 
 /**
@@ -326,6 +328,7 @@ export async function processShopeeDeliveryTracking(
     chatSkipped: 0,
     saved: 0,
     lost: 0,
+    recounted: 0,
   };
 
   const ownerId = channel.userId;
@@ -482,7 +485,7 @@ export async function processShopeeDeliveryTracking(
           shippingStatus: true,
           returnStatus: true,
           items: { select: { productName: true } },
-          deliveryFailNotice: { select: { id: true } },
+          deliveryFailNotice: { select: { id: true, failCount: true } },
         },
       },
     },
@@ -520,9 +523,25 @@ export async function processShopeeDeliveryTracking(
         events
       );
 
-      // ---- Vé OUTCOME: chỉ chốt kết quả ----
+      // ---- Vé OUTCOME: chốt kết quả + ĐẾM LẠI số lượt hỏng ----
+      // Chốt anh Trung 15/09: cảnh báo vẫn phát ngay lượt 1 (kịp nhắn khách),
+      // nhưng cột "Lượt hỏng" phải phản ánh ĐỦ số lượt giao không thành công
+      // thực tế của đơn — mỗi lần hỏi tracking (đã tốn call sẵn) đếm lại và
+      // nâng failCount nếu tăng; vừa cho seller nắm thực tế, vừa có số liệu
+      // (failCountDistribution) để quan sát tỷ lệ 1/2/3 lượt mà cải thiện.
       if (task.kind === DeliveryTrackingTaskKind.OUTCOME) {
-        const noticeId = order.deliveryFailNotice?.id;
+        const notice = order.deliveryFailNotice;
+        const noticeId = notice?.id;
+        if (notice) {
+          const failsNow = countFailedDeliveries(events);
+          if (failsNow > notice.failCount) {
+            await prisma.deliveryFailNotice.update({
+              where: { id: notice.id },
+              data: { failCount: failsNow },
+            });
+            result.recounted++;
+          }
+        }
         if (!noticeId || trackedOutcome !== "pending") {
           if (noticeId && trackedOutcome !== "pending") {
             await settleNotice(

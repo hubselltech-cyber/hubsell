@@ -180,7 +180,13 @@ export function DeliveryFailTab() {
           value={summary ? formatNumber(summary.total) : "—"}
           icon={BellRing}
           tone="neutral"
-          subtitle="Toàn bộ lịch sử — mỗi đơn cảnh báo một lần"
+          subtitle={
+            // Phân bố lượt hỏng thực tế (anh Trung 15/09): cảnh báo phát ngay
+            // lượt 1, số lượt vẫn đếm tiếp để biết bao nhiêu đơn hỏng 2-3 lần.
+            summary?.failCounts && summary.total > 0
+              ? `Giao hỏng 1 lượt ${formatNumber(summary.failCounts.one)} · 2 lượt ${formatNumber(summary.failCounts.two)} · từ 3 lượt ${formatNumber(summary.failCounts.threePlus)}${summary.failCounts.unknown > 0 ? ` · sàn không cho số ${formatNumber(summary.failCounts.unknown)}` : ""}`
+              : "Toàn bộ lịch sử — mỗi đơn cảnh báo một lần"
+          }
         />
         <StatCard
           label="Cứu được"
@@ -366,7 +372,12 @@ export function DeliveryFailTab() {
                   <TableHead>Đơn hàng</TableHead>
                   <TableHead>Gian hàng</TableHead>
                   <TableHead>Khách</TableHead>
-                  <TableHead className="text-center">Lượt hỏng</TableHead>
+                  <TableHead
+                    className="text-center"
+                    title="Số lượt giao không thành công thực tế của đơn — cảnh báo phát ngay lượt 1, số này tiếp tục được cập nhật mỗi lần hỏi sàn cho tới khi đơn có kết quả"
+                  >
+                    Lượt hỏng
+                  </TableHead>
                   <TableHead>Phát hiện lúc</TableHead>
                   <TableHead>Kết quả</TableHead>
                   <TableHead>Nhắn khách</TableHead>

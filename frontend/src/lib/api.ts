@@ -4456,6 +4456,9 @@ export interface DeliveryFailSummaryDTO {
   /** Số đơn cứu được MÀ đã nhắn khách qua chat sàn — phần Hubsell thực sự góp
    *  tay; còn lại là shipper tự giao lại thành công (không nhận vơ công). */
   savedMessaged: number;
+  /** Phân bố số lượt giao hỏng thực tế của các đơn đã cảnh báo (đếm lại liên
+   *  tục tới khi có kết quả); unknown = sàn không cho số lượt (Lazada). */
+  failCounts: { one: number; two: number; threePlus: number; unknown: number };
 }
 
 export function fetchDeliveryFailLog() {
