@@ -40,8 +40,6 @@ import { qk } from "@/lib/query-keys";
 import { useApiQuery } from "@/lib/use-api-query";
 import { exportPnlRows, exportRealizedPnl } from "@/lib/excel";
 import { formatNumber } from "@/lib/format";
-import { Money } from "@/components/ui/money";
-import { moneyTone, TEXT_CARD_TITLE, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 type PnlTab = "overview" | "shopee" | "tiktok" | "lazada";
@@ -344,66 +342,6 @@ export default function RealizedPnlPage() {
             </Button>
           </div>
         </div>
-
-        {/* ===== TỔNG HỢP LỢI NHUẬN & THUẾ CỦA KỲ =====
-            Trên TOÀN BỘ đơn khớp lọc (mọi trang). Lợi nhuận = Σ cột "Lợi nhuận"
-            của bảng (tiền về ví − giá vốn) — payout của sàn ĐÃ net phí & thuế
-            sàn, nên thuế sàn chỉ hiện "trong đó", KHÔNG trừ thêm lần nữa
-            (sửa 15/09: trước đây trừ kép). Thuế bổ sung theo cấu hình shop là
-            khoản ngoài sàn → trừ riêng.
-            Chỉ hiện ở TAB SÀN CON — tab Tổng quan có bộ thẻ điều hành riêng. */}
-        {tab !== "overview" && summary && summary.count > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="shadow-sm">
-              <CardContent className="px-4 py-3">
-                <p className={TEXT_CARD_TITLE}>Lợi nhuận (đã trừ phí &amp; thuế sàn)</p>
-                <p
-                  className={cn(
-                    "mt-1 text-lg font-semibold tracking-tight",
-                    moneyTone(summary.totalProfit)
-                  )}
-                >
-                  <Money value={summary.totalProfit} />
-                </p>
-                <p className={cn(TEXT_SUB, "mt-1")}>= tổng cột Lợi nhuận của bảng</p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm">
-              <CardContent className="px-4 py-3">
-                <p className={TEXT_CARD_TITLE}>
-                  Trong đó thuế sàn TMĐT ({summary.taxSettings.platformTaxPercent}%)
-                </p>
-                <p className="mt-1 text-lg font-semibold tracking-tight text-slate-600">
-                  <Money value={summary.totalPlatformTax} />
-                </p>
-                <p className={cn(TEXT_SUB, "mt-1")}>sàn đã khấu trừ trước khi trả ví</p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm">
-              <CardContent className="px-4 py-3">
-                <p className={TEXT_CARD_TITLE}>
-                  Thuế bổ sung ({summary.taxSettings.customTaxPercent}%)
-                </p>
-                <p className="mt-1 text-lg font-semibold tracking-tight text-slate-600">
-                  − <Money value={summary.additionalTax} />
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm">
-              <CardContent className="px-4 py-3">
-                <p className={TEXT_CARD_TITLE}>Lợi nhuận ròng sau thuế bổ sung</p>
-                <p
-                  className={cn(
-                    "mt-1 text-lg font-semibold tracking-tight",
-                    moneyTone(summary.totalProfitAfterTax)
-                  )}
-                >
-                  <Money value={summary.totalProfitAfterTax} />
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
 
         {/* ===== NỘI DUNG THEO TAB =====
             Tab "Tổng quan" = dashboard báo cáo (đọc NGUYÊN summary — số của
