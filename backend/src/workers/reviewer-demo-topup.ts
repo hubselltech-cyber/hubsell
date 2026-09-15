@@ -67,6 +67,10 @@ const RETURN_REQUEST_DAYS: [number, number] = [1, 3];
 const RETURN_TRANSIT_DAYS: [number, number] = [2, 7];
 /** Chỉ xét phát sinh hoàn cho đơn giao trong ngần này ngày (seed đã tự rải hoàn cho đơn cũ hơn). */
 const RETURN_LOOKBACK_DAYS = 6;
+/** Tỷ lệ đơn hoàn kiểu "chỉ hoàn tiền một phần, khách giữ hàng" (còn lại: trả hàng cả đơn). */
+const RETURN_PARTIAL_REFUND_SHARE = 0.3;
+/** Trần đơn hoàn cũ được vá sao kê mỗi nhịp (đơn seed trước 15/09 còn ví dương). */
+const RETURN_BACKFILL_PER_RUN = 200;
 
 /** Trần đơn tạo mỗi nhịp — server ngủ lâu thì bồi dần vài nhịp, không dội một cục. */
 const MAX_CREATE_PER_RUN = 120;
@@ -82,6 +86,7 @@ const REBALANCE_MIN_ORDERS = 20;
 const FIRST = ["Nguyễn", "Trần", "Lê", "Phạm", "Hoàng", "Vũ", "Đặng", "Bùi", "Đỗ", "Hồ", "Ngô", "Dương"];
 const LAST = ["Minh Anh", "Thu Hà", "Quốc Bảo", "Ngọc Lan", "Văn Hùng", "Thảo Vy", "Đức Long", "Kim Ngân", "Gia Hân", "Hải Yến", "Tuấn Kiệt", "Phương Linh", "Bảo Châu", "Anh Thư"];
 const RETURN_NOTES = ["Khách đổi ý", "Sai size", "Không đúng mô tả", "Giao chậm, khách hủy nhận"];
+const PARTIAL_REFUND_NOTES = ["Hàng lỗi nhẹ, khách giữ hàng", "Thiếu phụ kiện, đền bù một phần", "Móp hộp, hỗ trợ giảm giá"];
 const SHOPEE_CARRIERS: { carrier: Carrier; name: string }[] = [
   { carrier: Carrier.SPX, name: "SPX Express" },
   { carrier: Carrier.SPX, name: "SPX Express" },
@@ -170,6 +175,26 @@ export function settlementFees(orderId: string, channel: ChannelName, actualReve
     shippingFeeQuoted, shippingFeeActual, shippingFeeDiff, platformSubsidy, actualPayout,
   };
 }
+type SettlementFees = ReturnType<typeof settlementFees>;
+
+/**
+ * SAO KÊ CỦA ĐƠN TRẢ HÀNG CẢ ĐƠN — giống escrow thật (ca 26081266V7GRHG: ví
+ * −2.700 chỉ còn PiShip): sàn hoàn toàn bộ tiền hàng cho khách nên KHÔNG thu
+ * phí cố định/thanh toán/dịch vụ/affiliate/thuế; shop chỉ mất PiShip + phần
+ * ship chênh lệch, ~40% đơn gánh thêm cước trả hàng 15-25k → ví ÂM đúng bằng
+ * số đó. Trước 15/09 worker giữ ví dương cho đơn hoàn → donut "Bóc tách thất
+ * thu" của reviewer chỉ có 1 lát (anh Trung chốt sửa 15/09).
+ */
+export function returnSettlement(orderId: string, fees: SettlementFees): SettlementFees {
+  const returnShip = hashUnit(orderId, "retshipborne") < 0.4 ? roundTo(hashBetween(orderId, "retship", 15_000, 25_000), 500) : 0;
+  const kept = fees.sellerProtectionFee + fees.shippingFeeDiff + returnShip;
+  return { ...fees, fixedFee: 0, paymentFee: 0, serviceFee: 0, affiliateFee: 0, taxWithheld: 0, actualPayout: -kept };
+}
+
+/** Số tiền hoàn một phần (khách giữ hàng): 15-40% giá trị đơn, tròn nghìn. */
+export function partialRefundAmount(orderId: string, totalAmount: number): number {
+  return Math.max(1_000, roundTo(totalAmount * hashBetween(orderId, "partref", 0.15, 0.4), 1_000));
+}
 
 export interface TopupSummary {
   email: string;
@@ -181,6 +206,8 @@ export interface TopupSummary {
   settled: number;
   returnsOpened: number;
   returnsClosed: number;
+  /** Đơn hoàn cũ được vá sao kê (ví dương → ví âm) trong nhịp này. */
+  returnsBackfilled: number;
   rebalanced: number;
   dailyTarget: number;
   todayCount: number;
@@ -213,7 +240,7 @@ export function startReviewerDemoTopupWorker(): void {
         console.log(
           `[Reviewer-demo] ${s.email}: +${s.created} đơn (hôm nay ${s.todayCount}/${s.dailyTarget}) · ` +
             `xử lý ${s.processed} · giao ${s.shipped} · hủy ${s.cancelled} · đã giao ${s.delivered} · ` +
-            `đối soát ${s.settled} · hoàn mở ${s.returnsOpened}/đóng ${s.returnsClosed}` +
+            `đối soát ${s.settled} · hoàn mở ${s.returnsOpened}/đóng ${s.returnsClosed}/vá ${s.returnsBackfilled}` +
             (s.rebalanced ? ` · cân lại sàn ${s.rebalanced}` : "")
         );
       }
@@ -271,7 +298,7 @@ export async function runReviewerDemoTopup(opts: { email: string; now?: Date }):
 
   const summary: TopupSummary = {
     email, created: 0, processed: 0, shipped: 0, cancelled: 0, delivered: 0,
-    settled: 0, returnsOpened: 0, returnsClosed: 0, rebalanced: 0, dailyTarget: 0, todayCount: 0,
+    settled: 0, returnsOpened: 0, returnsClosed: 0, returnsBackfilled: 0, rebalanced: 0, dailyTarget: 0, todayCount: 0,
   };
 
   // Tạo TRƯỚC, già hóa SAU: đơn bù cho ngày trống được kéo ngay về đúng
@@ -290,7 +317,7 @@ export async function runReviewerDemoTopup(opts: { email: string; now?: Date }):
       data: {
         lastSyncAt: now,
         walletBalanceSyncedAt: now,
-        ...(payout > 0 ? { walletBalance: { increment: payout } } : {}),
+        ...(payout !== 0 ? { walletBalance: { increment: payout } } : {}),
         ...(hashUnit(vnDateKey(now), ch.id) < 0.5 ? { lastStockReconcileAt: now } : {}),
       },
     });
@@ -358,13 +385,16 @@ async function ageOrders(
   // DELIVERED chưa đối soát → sàn giải ngân sau 1 (Shopee) / 2 (Lazada) ngày.
   const unsettled = await prisma.order.findMany({
     where: { channelId: { in: channelIds }, shippingStatus: ShippingStatus.DELIVERED, isSettled: false, deliveredAt: { lte: new Date(now.getTime() - SETTLE_DAYS.SHOPEE * DAY_MS) } },
-    select: { id: true, channelId: true, deliveredAt: true, totalAmount: true },
+    select: { id: true, channelId: true, deliveredAt: true, totalAmount: true, returnSolution: true, refundedAmount: true },
   });
   for (const o of unsettled) {
     const ch = isShopee(o.channelId) ? ChannelName.SHOPEE : ChannelName.LAZADA;
     const settledAt = new Date(o.deliveredAt!.getTime() + SETTLE_DAYS[ch] * DAY_MS);
     if (settledAt > now) continue;
-    const fees = settlementFees(o.id, ch, num(o.totalAmount));
+    let fees = settlementFees(o.id, ch, num(o.totalAmount));
+    // Đơn đã phát sinh hoàn TRƯỚC khi sàn giải ngân → sao kê ra số đã trừ hoàn.
+    if (o.returnSolution === ReturnSolution.RETURN_REFUND) fees = returnSettlement(o.id, fees);
+    else if (o.returnSolution === ReturnSolution.REFUND_ONLY) fees = { ...fees, actualPayout: fees.actualPayout - num(o.refundedAmount) };
     await prisma.order.update({ where: { id: o.id }, data: { isSettled: true, settledAt, ...fees } });
     payoutByChannel.set(o.channelId, (payoutByChannel.get(o.channelId) ?? 0) + fees.actualPayout);
     s.settled++;
@@ -376,27 +406,68 @@ async function ageOrders(
       channelId: { in: channelIds }, shippingStatus: ShippingStatus.DELIVERED, returnStatus: ReturnStatus.NONE,
       deliveredAt: { gte: new Date(now.getTime() - RETURN_LOOKBACK_DAYS * DAY_MS), lte: new Date(now.getTime() - RETURN_REQUEST_DAYS[0] * DAY_MS) },
     },
-    select: { id: true, channelId: true, deliveredAt: true, totalAmount: true },
+    select: { id: true, channelId: true, deliveredAt: true, totalAmount: true, isSettled: true, actualPayout: true },
   });
   for (const o of recentDelivered) {
     if (hashUnit(o.id, "return") >= RETURN_RATE) continue;
     const returnRequestedAt = new Date(o.deliveredAt!.getTime() + hashBetween(o.id, "retreq", RETURN_REQUEST_DAYS[0], RETURN_REQUEST_DAYS[1]) * DAY_MS);
     if (returnRequestedAt > now) continue;
+    const ch = isShopee(o.channelId) ? ChannelName.SHOPEE : ChannelName.LAZADA;
+
+    // ~30%: CHỈ HOÀN TIỀN MỘT PHẦN, khách giữ hàng — như luồng thật (returns-sync):
+    // returnStatus giữ NONE (không có kiện về), chỉ có returnSolution + số hoàn.
+    if (hashUnit(o.id, "retkind") < RETURN_PARTIAL_REFUND_SHARE) {
+      const refund = partialRefundAmount(o.id, num(o.totalAmount));
+      await prisma.order.update({
+        where: { id: o.id },
+        data: {
+          returnSolution: ReturnSolution.REFUND_ONLY, platformReturnStatus: "ACCEPTED", returnRequestedAt,
+          refundedAmount: refund, platformRefundAmount: refund,
+          returnNote: hashPick(o.id, "partnote", PARTIAL_REFUND_NOTES),
+          // Đã giải ngân rồi → sàn trừ lại tiền hoàn ở ví (chưa thì bước đối soát tự trừ).
+          ...(o.isSettled ? { actualPayout: { decrement: refund } } : {}),
+        },
+      });
+      if (o.isSettled) payoutByChannel.set(o.channelId, (payoutByChannel.get(o.channelId) ?? 0) - refund);
+      s.returnsOpened++;
+      continue;
+    }
+
     const refund = num(o.totalAmount);
+    // Đã giải ngân trước khi hoàn → sao kê đảo lại: hoàn phí, ví âm phần shop gánh.
+    const settledFix = o.isSettled ? returnSettlement(o.id, settlementFees(o.id, ch, refund)) : null;
+    if (settledFix) payoutByChannel.set(o.channelId, (payoutByChannel.get(o.channelId) ?? 0) + settledFix.actualPayout - num(o.actualPayout));
     await prisma.$transaction([
       prisma.order.update({
         where: { id: o.id },
         data: {
           returnStatus: ReturnStatus.AWAITING, returnSolution: ReturnSolution.RETURN_REFUND, returnRequestedAt,
-          refundedAmount: refund, platformRefundAmount: refund,
+          refundedAmount: refund, platformRefundAmount: refund, platformReturnStatus: "ACCEPTED",
           returnTrackingCode: `${isShopee(o.channelId) ? "SPXVN" : "LEXVN"}R${fnv1a(o.id).toString().slice(0, 9)}`,
           returnNote: hashPick(o.id, "retnote", RETURN_NOTES),
+          ...(settledFix ?? {}),
         },
       }),
       // returnedQuantity = quantity: SQL thuần vì Prisma không cho gán cột = cột khác.
       prisma.$executeRaw`UPDATE "OrderItem" SET "returnedQuantity" = "quantity" WHERE "orderId" = ${o.id}`,
     ]);
     s.returnsOpened++;
+  }
+
+  // VÁ đơn trả hàng cả đơn đã đối soát mà ví vẫn DƯƠNG (seed + worker trước
+  // 15/09): đưa về sao kê thật của đơn hoàn. Idempotent — vá xong ví âm/0 thì
+  // không khớp điều kiện nữa. Rải theo nhịp để không dội một cục.
+  const legacyReturns = await prisma.order.findMany({
+    where: { channelId: { in: channelIds }, returnSolution: ReturnSolution.RETURN_REFUND, isSettled: true, actualPayout: { gt: 0 } },
+    select: { id: true, channelId: true, totalAmount: true, actualPayout: true },
+    take: RETURN_BACKFILL_PER_RUN,
+  });
+  for (const o of legacyReturns) {
+    const ch = isShopee(o.channelId) ? ChannelName.SHOPEE : ChannelName.LAZADA;
+    const fix = returnSettlement(o.id, settlementFees(o.id, ch, num(o.totalAmount)));
+    await prisma.order.update({ where: { id: o.id }, data: fix });
+    payoutByChannel.set(o.channelId, (payoutByChannel.get(o.channelId) ?? 0) + fix.actualPayout - num(o.actualPayout));
+    s.returnsBackfilled++;
   }
 
   // Hoàn đang chờ → kiện về kho sau 2-7 ngày, rải đủ công đoạn.

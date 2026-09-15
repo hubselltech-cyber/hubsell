@@ -18,9 +18,12 @@
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ChannelName, Prisma, ReturnStatus, ShippingStatus } from "@prisma/client";
+import { ChannelName, Prisma, ReturnSolution, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { runReviewerDemoTopup, dailyTarget, dayProgress, vnMidnightUtc } from "../../workers/reviewer-demo-topup";
+import {
+  runReviewerDemoTopup, dailyTarget, dayProgress, vnMidnightUtc,
+  settlementFees, returnSettlement, partialRefundAmount,
+} from "../../workers/reviewer-demo-topup";
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -103,6 +106,14 @@ beforeAll(async () => {
     createdAt: ago(14 * DAY), shippingStatus: ShippingStatus.DELIVERED, deliveredAt: ago(11 * DAY), isSettled: true,
     returnStatus: ReturnStatus.AWAITING, returnRequestedAt: ago(8 * DAY),
   });
+  // Đơn hoàn kiểu CŨ (trước 15/09): trả hàng cả đơn nhưng sao kê vẫn ví dương
+  // + đủ phí → worker phải vá về sao kê thật của đơn hoàn (phí 0, ví âm).
+  await seedOrder("return-legacy", shopeeId, {
+    createdAt: ago(20 * DAY), shippingStatus: ShippingStatus.DELIVERED, deliveredAt: ago(17 * DAY), isSettled: true,
+    returnStatus: ReturnStatus.RECEIVED_INTACT, returnSolution: ReturnSolution.RETURN_REFUND, returnRequestedAt: ago(15 * DAY),
+    returnedAt: ago(12 * DAY), refundedAmount: 300_000, platformRefundAmount: 300_000, totalAmount: 300_000,
+    fixedFee: 12_000, serviceFee: 18_000, actualPayout: 250_000,
+  });
 });
 
 afterAll(async () => {
@@ -124,6 +135,33 @@ describe("hàm thuần", () => {
   });
 });
 
+describe("sao kê đơn hoàn (chốt 15/09: ví âm như escrow thật)", () => {
+  it("returnSettlement: phí sàn về 0, ví âm đúng phần shop gánh (PiShip + ship chênh + cước trả hàng nếu có)", () => {
+    const fees = settlementFees("order-A", ChannelName.SHOPEE, 300_000);
+    const rs = returnSettlement("order-A", fees);
+    expect(rs.fixedFee).toBe(0);
+    expect(rs.paymentFee).toBe(0);
+    expect(rs.serviceFee).toBe(0);
+    expect(rs.taxWithheld).toBe(0);
+    expect(rs.actualPayout).toBeLessThanOrEqual(-(fees.sellerProtectionFee + fees.shippingFeeDiff));
+    expect(rs.actualPayout).toBeGreaterThanOrEqual(-(fees.sellerProtectionFee + fees.shippingFeeDiff + 25_000));
+    expect(returnSettlement("order-A", fees)).toEqual(rs); // tất định
+  });
+  it("partialRefundAmount: 15-40% giá trị đơn, tròn nghìn, tất định", () => {
+    const r = partialRefundAmount("order-B", 500_000);
+    expect(r).toBeGreaterThanOrEqual(75_000);
+    expect(r).toBeLessThanOrEqual(200_000);
+    expect(r % 1_000).toBe(0);
+    expect(partialRefundAmount("order-B", 500_000)).toBe(r);
+  });
+});
+
+/** Tổng tiền về ví (actualPayout) của các đơn ĐÃ đối soát trong gian. */
+async function settledPayoutSum(channelId: string): Promise<number> {
+  const agg = await prisma.order.aggregate({ where: { channelId, isSettled: true }, _sum: { actualPayout: true } });
+  return Number(agg._sum.actualPayout ?? 0);
+}
+
 describe("runReviewerDemoTopup", () => {
   it("email không tồn tại → null", async () => {
     expect(await runReviewerDemoTopup({ email: `khong-co-${suffix}@hubsell.test`, now: NOW })).toBeNull();
@@ -131,6 +169,7 @@ describe("runReviewerDemoTopup", () => {
 
   it("già hóa đúng bậc + bồi đơn theo giờ đã trôi + ads hôm nay", async () => {
     const walletBefore = Number((await prisma.channel.findUniqueOrThrow({ where: { id: lazadaId } })).walletBalance);
+    const settledPayoutBefore = await settledPayoutSum(lazadaId);
     const s = await runReviewerDemoTopup({ email: EMAIL, now: NOW });
     expect(s).not.toBeNull();
 
@@ -154,9 +193,12 @@ describe("runReviewerDemoTopup", () => {
     expect(Number(settled.fixedFee)).toBe(Math.round(400_000 * 0.03)); // Lazada 3%
     expect(Number(settled.actualPayout)).toBeGreaterThan(0);
     expect(Number(settled.actualPayout)).toBeLessThan(400_000);
-    // Ví Lazada cộng ít nhất tiền đối soát của đơn này (đơn bù ngày -4 có thể cùng về ví).
+    // BẤT BIẾN VÍ: mọi lần ví đổi (đối soát cộng, đơn hoàn trừ/đảo sao kê) đều
+    // đi kèm đúng một thay đổi actualPayout của đơn đã đối soát → biến động ví
+    // = biến động tổng tiền về ví của các đơn đã đối soát trong gian.
     const walletAfter = Number((await prisma.channel.findUniqueOrThrow({ where: { id: lazadaId } })).walletBalance);
-    expect(walletAfter - walletBefore).toBeGreaterThanOrEqual(Number(settled.actualPayout) - 1);
+    const settledPayoutAfter = await settledPayoutSum(lazadaId);
+    expect(Math.abs((walletAfter - walletBefore) - (settledPayoutAfter - settledPayoutBefore))).toBeLessThanOrEqual(1);
 
     // Ngày -4 trống → được bù trọn ngày (mục tiêu sàn 30) và đã già hóa qua PENDING.
     const day4Start = vnMidnightUtc(ago(4 * DAY));
@@ -191,6 +233,13 @@ describe("runReviewerDemoTopup", () => {
     const ret = await get("return-awaiting");
     expect(ret.returnStatus).not.toBe(ReturnStatus.AWAITING);
     expect(ret.returnedAt).not.toBeNull();
+
+    // Đơn hoàn cũ ví dương → đã vá: phí 0, ví âm, trạng thái kho giữ nguyên.
+    const legacy = await get("return-legacy");
+    expect(Number(legacy.actualPayout)).toBeLessThan(0);
+    expect(Number(legacy.fixedFee)).toBe(0);
+    expect(Number(legacy.serviceFee)).toBe(0);
+    expect(legacy.returnStatus).toBe(ReturnStatus.RECEIVED_INTACT);
 
     // Bồi đơn: mục tiêu ≥30 (trung bình 10/ngày chạm sàn), 15h → ~50% mục tiêu.
     expect(s!.dailyTarget).toBe(30);
