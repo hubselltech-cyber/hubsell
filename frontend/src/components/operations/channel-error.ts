@@ -38,6 +38,15 @@ export function humanizeChannelError(
   const what = feature === "chat" ? "hội thoại" : "đánh giá";
   const scope = feature === "chat" ? "tin nhắn" : "đánh giá";
 
+  // 15/09/2026: app Hubsell lên ISV (ERP System) → Shopee thu hồi Chat API,
+  // sàn trả error_api_permission. Đã gửi ticket xin cấp lại; nói thẳng cho
+  // chủ shop biết là chuyện giữa Hubsell và sàn, không phải lỗi gian của họ.
+  if (platform === "Shopee" && lower.includes("error_api_permission")) {
+    return {
+      text: `${e.shopName}: Shopee tạm chưa cấp quyền chat cho Hubsell (ứng dụng đối tác) — đã gửi yêu cầu cấp quyền, hộp thư Shopee sẽ mở lại khi sàn duyệt. Đơn hàng, kho, đối soát không ảnh hưởng.`,
+      detail: raw,
+    };
+  }
   if (
     lower.includes("insufficientpermission") ||
     lower.includes("does not have permission") ||

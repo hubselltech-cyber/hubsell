@@ -12,6 +12,7 @@
 
 import crypto from "crypto";
 import { withApiBudget } from "../../services/api-budget";
+import { assertShopeeChatAllowed, withShopeeChatGate } from "./chat-gate";
 import {
   getShopeeConfig,
   SHOPEE_AUTH_URLS,
@@ -938,6 +939,9 @@ export async function updateShopeeStock(
 }
 
 // ---------- Chat với người mua (SellerChat API) ----------
+// 15/09/2026: MỌI hàm dưới đây đi qua withShopeeChatGate (chat-gate.ts) — app ISV
+// ERP System không có Chat API, sàn trả error_api_permission; cổng khóa 6h sau
+// lần 403 đầu để khỏi rải lỗi lên log sàn, hết TTL tự thử lại.
 // Path theo tài liệu Shopee OpenAPI v2 (module sellerchat). Module này có thể
 // cần bật quyền riêng trên Console — lỗi permission nổi nguyên văn lên tầng gọi.
 
@@ -986,23 +990,25 @@ export async function getConversationList(
   },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeConversationListData> {
-  return callShopGet<ShopeeConversationListData>(
-    SHOPEE_PATHS.chatConversationList,
-    params.accessToken,
-    params.shopId,
-    [
-      ["direction", params.direction ?? "latest"],
-      ["type", "all"],
-      ["page_size", params.pageSize ?? 25],
-      ...(params.nextTimestampNano
-        ? ([["next_timestamp_nano", params.nextTimestampNano]] as [string, string][])
-        : []),
-      ...(params.nextConversationId
-        ? ([["conversation_id", params.nextConversationId]] as [string, string][])
-        : []),
-    ],
-    "get_conversation_list",
-    cfg
+  return withShopeeChatGate(() =>
+    callShopGet<ShopeeConversationListData>(
+      SHOPEE_PATHS.chatConversationList,
+      params.accessToken,
+      params.shopId,
+      [
+        ["direction", params.direction ?? "latest"],
+        ["type", "all"],
+        ["page_size", params.pageSize ?? 25],
+        ...(params.nextTimestampNano
+          ? ([["next_timestamp_nano", params.nextTimestampNano]] as [string, string][])
+          : []),
+        ...(params.nextConversationId
+          ? ([["conversation_id", params.nextConversationId]] as [string, string][])
+          : []),
+      ],
+      "get_conversation_list",
+      cfg
+    )
   );
 }
 
@@ -1050,17 +1056,19 @@ export async function getChatMessages(
   },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeChatMessagesData> {
-  return callShopGet<ShopeeChatMessagesData>(
-    SHOPEE_PATHS.chatMessages,
-    params.accessToken,
-    params.shopId,
-    [
-      ["conversation_id", params.conversationId],
-      ["page_size", params.pageSize ?? 25],
-      ...(params.offset ? ([["offset", params.offset]] as [string, string][]) : []),
-    ],
-    "get_message",
-    cfg
+  return withShopeeChatGate(() =>
+    callShopGet<ShopeeChatMessagesData>(
+      SHOPEE_PATHS.chatMessages,
+      params.accessToken,
+      params.shopId,
+      [
+        ["conversation_id", params.conversationId],
+        ["page_size", params.pageSize ?? 25],
+        ...(params.offset ? ([["offset", params.offset]] as [string, string][]) : []),
+      ],
+      "get_message",
+      cfg
+    )
   );
 }
 
@@ -1076,17 +1084,19 @@ export async function sendChatMessage(
   params: { accessToken: string; shopId: string; toId: number; text: string },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeSendMessageData> {
-  return callShopPost<ShopeeSendMessageData>(
-    SHOPEE_PATHS.chatSendMessage,
-    params.accessToken,
-    params.shopId,
-    {
-      to_id: params.toId,
-      message_type: "text",
-      content: { text: params.text },
-    },
-    "send_message",
-    cfg
+  return withShopeeChatGate(() =>
+    callShopPost<ShopeeSendMessageData>(
+      SHOPEE_PATHS.chatSendMessage,
+      params.accessToken,
+      params.shopId,
+      {
+        to_id: params.toId,
+        message_type: "text",
+        content: { text: params.text },
+      },
+      "send_message",
+      cfg
+    )
   );
 }
 
@@ -1101,17 +1111,19 @@ export async function sendChatOrderMessage(
   params: { accessToken: string; shopId: string; toId: number; orderSn: string },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeSendMessageData> {
-  return callShopPost<ShopeeSendMessageData>(
-    SHOPEE_PATHS.chatSendMessage,
-    params.accessToken,
-    params.shopId,
-    {
-      to_id: params.toId,
-      message_type: "order",
-      content: { order_sn: params.orderSn },
-    },
-    "send_message",
-    cfg
+  return withShopeeChatGate(() =>
+    callShopPost<ShopeeSendMessageData>(
+      SHOPEE_PATHS.chatSendMessage,
+      params.accessToken,
+      params.shopId,
+      {
+        to_id: params.toId,
+        message_type: "order",
+        content: { order_sn: params.orderSn },
+      },
+      "send_message",
+      cfg
+    )
   );
 }
 
@@ -1123,17 +1135,19 @@ export async function sendChatItemMessage(
   params: { accessToken: string; shopId: string; toId: number; itemId: number },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeSendMessageData> {
-  return callShopPost<ShopeeSendMessageData>(
-    SHOPEE_PATHS.chatSendMessage,
-    params.accessToken,
-    params.shopId,
-    {
-      to_id: params.toId,
-      message_type: "item",
-      content: { item_id: params.itemId },
-    },
-    "send_message",
-    cfg
+  return withShopeeChatGate(() =>
+    callShopPost<ShopeeSendMessageData>(
+      SHOPEE_PATHS.chatSendMessage,
+      params.accessToken,
+      params.shopId,
+      {
+        to_id: params.toId,
+        message_type: "item",
+        content: { item_id: params.itemId },
+      },
+      "send_message",
+      cfg
+    )
   );
 }
 
@@ -1165,6 +1179,7 @@ export async function uploadChatImage(
   },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<string> {
+  assertShopeeChatAllowed();
   const path = SHOPEE_PATHS.chatUploadImage;
   const timestamp = Math.floor(Date.now() / 1000);
   const sign = signShop(
@@ -1209,17 +1224,19 @@ export async function sendChatImageMessage(
   params: { accessToken: string; shopId: string; toId: number; imageUrl: string },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeSendMessageData> {
-  return callShopPost<ShopeeSendMessageData>(
-    SHOPEE_PATHS.chatSendMessage,
-    params.accessToken,
-    params.shopId,
-    {
-      to_id: params.toId,
-      message_type: "image",
-      content: { image_url: params.imageUrl },
-    },
-    "send_message",
-    cfg
+  return withShopeeChatGate(() =>
+    callShopPost<ShopeeSendMessageData>(
+      SHOPEE_PATHS.chatSendMessage,
+      params.accessToken,
+      params.shopId,
+      {
+        to_id: params.toId,
+        message_type: "image",
+        content: { image_url: params.imageUrl },
+      },
+      "send_message",
+      cfg
+    )
   );
 }
 

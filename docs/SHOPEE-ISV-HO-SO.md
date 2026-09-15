@@ -119,3 +119,12 @@ Gợi ý câu trả lời "Why…" (≤ 200 ký tự):
    10/09 (module `integrations/hubsell-ads/`, bật bằng env `HUBSELL_ADS_*`), quy
    trình Console + luồng seller trong `docs/HUBSELL-ADS.md`. Chat vẫn xin qua AM/BD (mục 2).
 5. Chấm lại SSL Labs backend sau deploy HSTS (mục tiêu A+).
+6. **Chat API (15/09/2026):** ngay khi app thành ERP System, mọi call
+   `/api/v2/sellerchat/*` trả 403 `error_api_permission` (Console → API Access
+   Log). Loại app "Customer Service" đã ngừng cấp cho bên thứ ba từ 18/11/2024,
+   cấp mới chỉ qua Account Manager. Đã gửi ticket xin quyền (Enquiry
+   2099855634883350588). Trong lúc chờ: `integrations/shopee/chat-gate.ts` khóa
+   gọi chat 6h sau lần 403 đầu (env `SHOPEE_CHAT_DENIED_TTL_MINUTES`), Trợ lý
+   vận hành hiện dòng "Shopee tạm chưa cấp quyền chat cho Hubsell", Cứu đơn ghi
+   SKIPPED lý do rõ (cảnh báo chuông vẫn chạy). Sàn cấp quyền là tự thông,
+   không cần deploy.

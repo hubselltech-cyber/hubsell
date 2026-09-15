@@ -51,6 +51,7 @@ import {
   type ShopeeTrackingEvent,
 } from "./client";
 import { getValidShopeeAccessToken } from "./service";
+import { isShopeeChatPermissionError, shopeeChatDeniedUntil } from "./chat-gate";
 
 /**
  * Số lượt giao thất bại từ mức này trở lên thì phát cảnh báo.
@@ -178,6 +179,10 @@ export function renderChatTemplate(template: string, vars: ChatTemplateVars): st
  * Đơn đã hủy hoặc đang trong luồng hoàn thì lời nhắn "để ý điện thoại nhận
  * hàng" không còn ý nghĩa, gửi chỉ làm khách rối.
  */
+/** Lý do SKIPPED khi Shopee chưa cấp Chat API cho app ISV (chờ ticket). */
+export const CHAT_PERMISSION_SKIP_REASON =
+  "Shopee chưa cấp quyền chat cho Hubsell (app đối tác) — đã gửi yêu cầu cấp quyền; cảnh báo vẫn chạy, cần thì nhắn khách tay";
+
 export function chatSkipReason(order: {
   shippingStatus: ShippingStatus;
   returnStatus: ReturnStatus;
@@ -596,8 +601,15 @@ export async function processShopeeDeliveryTracking(
       let sentAt: Date | null = null;
       if (cfg.autoChatEnabled) {
         // Tracking đã báo quay đầu thì khỏi nhắn "để ý điện thoại nhận hàng".
+        // Sàn thu hồi Chat API (app ISV/ERP System, 15/09/2026): ghi SKIPPED lý
+        // do rõ thay vì FAILED "Sàn từ chối" — cảnh báo chuông vẫn đã phát,
+        // chủ shop nhắn tay nếu cần. Cổng đang khóa thì khỏi gọi sàn.
         const skip =
-          trackedOutcome === "lost" ? "Kiện đã quay đầu" : chatSkipReason(order);
+          trackedOutcome === "lost"
+            ? "Kiện đã quay đầu"
+            : shopeeChatDeniedUntil()
+              ? CHAT_PERMISSION_SKIP_REASON
+              : chatSkipReason(order);
         if (skip) {
           chatStatus = DeliveryFailChatStatus.SKIPPED;
           chatError = skip;
@@ -625,10 +637,16 @@ export async function processShopeeDeliveryTracking(
             sentMessage = message;
             sentAt = new Date();
           } catch (err) {
-            // Khách chặn shop / hết cửa sổ chat / thiếu quyền sellerchat — kết
-            // quả bình thường, ghi trần cho chủ shop biết mà nhắn tay.
-            chatStatus = DeliveryFailChatStatus.FAILED;
-            chatError = (err as Error).message;
+            if (isShopeeChatPermissionError(err)) {
+              // Không phải khách/shop từ chối — là sàn chưa cấp quyền cho app.
+              chatStatus = DeliveryFailChatStatus.SKIPPED;
+              chatError = CHAT_PERMISSION_SKIP_REASON;
+            } else {
+              // Khách chặn shop / hết cửa sổ chat — kết quả bình thường, ghi
+              // trần cho chủ shop biết mà nhắn tay.
+              chatStatus = DeliveryFailChatStatus.FAILED;
+              chatError = (err as Error).message;
+            }
           }
         }
       }
