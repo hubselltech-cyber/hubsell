@@ -496,7 +496,7 @@ export function computePnlRow(o: PnlOrder) {
   const totalQuantity = o.items.reduce((s, it) => s + it.quantity, 0);
   const returnedQuantity = o.items.reduce((s, it) => s + it.returnedQuantity, 0);
   // Giá vốn (tại thời điểm bán) của RIÊNG phần hàng bị trả — mẫu số để tính
-  // "giá vốn mất/hỏng" của đơn trả MỘT PHẦN (computeReturnLoss).
+  // "giá vốn chưa thu hồi" của đơn trả MỘT PHẦN (computeReturnLoss).
   const returnedCostAtSale = o.items.reduce(
     (s, it) => s + it.returnedQuantity * Number(it.costPriceAtSale),
     0
@@ -673,40 +673,46 @@ export function computePnlRow(o: PnlOrder) {
 }
 
 /**
- * BÓC 3 KHOẢN THẤT THU của MỘT đơn hoàn/trả (đơn thường → toàn 0):
- *   - feeLoss : phí sàn + thuế sàn KHÔNG được hoàn lại dù đơn đã trả
- *     (fixed/payment/service/PiShip/affiliate/thuế — số THẬT từ sao kê; đơn
- *     hoàn chưa quyết toán mọi bucket = 0, đúng nguyên tắc không bịa phí %).
- *   - shipLoss: phí ship shop gánh cho vòng đi + vòng hoàn (chênh lệch VC
- *     shop chịu; Lazada đã đối soát cộng thêm dòng "Phí VC trả hàng" sao kê).
- *   - costLoss: giá vốn hàng mất/hỏng — phần vốn KHÔNG thu hồi được:
- *     hoàn tiền 100% khách giữ hàng / hoàn cả đơn → costSnapshot (đã trừ phần
- *     restock); trả một phần → vốn phần trả − phần đã nhập lại kho; hoàn tiền
- *     một phần khách giữ hàng → 0 (hàng vẫn bán, chỉ giảm doanh thu).
- * Tổng 3 khoản = "Tiền thất thu do đơn hoàn" trên dashboard Tổng quan.
+ * BÓC 3 KHOẢN THẤT THU của MỘT đơn hoàn/trả (đơn thường → toàn 0).
+ *
+ * CHỐT ANH TRUNG 15/09: KHÔNG SUY DIỄN — mọi khoản phải là số đã nằm sẵn
+ * trong dòng Lãi/Lỗ thực hiện của đơn. Bản cũ cộng các CỘT PHÍ của đơn rồi
+ * coi là "phí sàn không hoàn" — sai, vì đơn hoàn sau giải ngân sàn có thể
+ * trả lại phí bằng dòng điều chỉnh kỳ sau mà cột phí của đơn vẫn là số gốc.
+ *   - costLoss    : GIÁ VỐN CHƯA THU HỒI — hoàn tiền 100% khách giữ hàng /
+ *     hoàn cả đơn → costSnapshot (đã trừ phần hàng về kho); trả một phần →
+ *     vốn phần trả − phần đã nhập lại kho; hoàn tiền một phần khách giữ hàng
+ *     → 0 (hàng vẫn bán).
+ *   - platformKept: TIỀN SÀN GIỮ LẠI — phần ví bị ÂM trên sao kê của đơn
+ *     (actualPayout < 0), tức tiền thật sàn đã trừ mà không trả lại: gộp phí
+ *     sàn + phí vận chuyển sàn trừ, KHÔNG tách vì sao kê chỉ cho tổng. Đơn
+ *     chưa quyết toán: actualPayout là số sàn ƯỚC TÍNH nếu đã sync, chưa có
+ *     thì 0 (chờ đối soát) — đúng nguyên tắc không bịa phí.
+ *   - refundLoss  : HOÀN TIỀN KHÁCH GIỮ HÀNG — đơn hoàn MỘT PHẦN không trả
+ *     hàng: số tiền hoàn theo sàn/sao kê là thiệt hại thật (bán được hàng
+ *     nhưng thu thiếu), bản cũ bỏ rơi khoản này.
+ * Đơn hoàn TOÀN BỘ (ví âm): costLoss + platformKept = −profitAfterTax của
+ * chính dòng đó trong bảng Lãi/Lỗ → thẻ KPI khớp bảng từng đồng.
  */
 export function computeReturnLoss(r: PnlRow) {
   if (r.returnType === null) {
-    return { feeLoss: 0, shipLoss: 0, costLoss: 0, total: 0 };
+    return { costLoss: 0, platformKept: 0, refundLoss: 0, total: 0 };
   }
-  const feeLoss =
-    r.feeFixedPayment +
-    r.feeService +
-    r.feeSellerProtection +
-    r.feeAffiliate +
-    r.platformTax;
-  // Lazada: shipFeeReturn mang DẤU NGUYÊN BẢN sao kê (âm = sàn trừ tiền shop).
-  const lazadaReturnShip = r.lazada
-    ? Math.abs(Math.min(Number(r.lazada.shipFeeReturn), 0))
-    : 0;
-  const shipLoss = Math.max(r.shippingFeeDiff, 0) + lazadaReturnShip;
   let costLoss = 0;
   if (r.returnType === "REFUND_ONLY" || r.returnType === "FULL_RETURN") {
     costLoss = Math.max(r.costSnapshot, 0);
   } else if (r.returnType === "PARTIAL_RETURN") {
     costLoss = Math.max(r.returnedCostAtSale - r.recoveredCost, 0);
   }
-  return { feeLoss, shipLoss, costLoss, total: feeLoss + shipLoss + costLoss };
+  const platformKept = Math.max(-r.actualPayout, 0);
+  const refundLoss =
+    r.returnType === "PARTIAL_REFUND" ? Math.max(r.refundedAmount, 0) : 0;
+  return {
+    costLoss,
+    platformKept,
+    refundLoss,
+    total: costLoss + platformKept + refundLoss,
+  };
 }
 
 // ============================================================
@@ -777,7 +783,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       string,
       { count: number; profit: number; returnCount: number; returnLoss: number }
     > = {};
-    const returnLoss = { total: 0, feeLoss: 0, shipLoss: 0, costLoss: 0 };
+    const returnLoss = { total: 0, costLoss: 0, platformKept: 0, refundLoss: 0 };
     const dayAgg = new Map<
       string,
       { profit: number; returnLoss: number; orderCount: number; returnCount: number }
@@ -802,9 +808,9 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         b.returnCount += 1;
         b.returnLoss += rl.total;
         returnLoss.total += rl.total;
-        returnLoss.feeLoss += rl.feeLoss;
-        returnLoss.shipLoss += rl.shipLoss;
         returnLoss.costLoss += rl.costLoss;
+        returnLoss.platformKept += rl.platformKept;
+        returnLoss.refundLoss += rl.refundLoss;
         d.returnCount += 1;
         d.returnLoss += rl.total;
       }

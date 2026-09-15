@@ -131,7 +131,7 @@ export interface PnlSummary {
   totalNetRevenue: number;
   returnCount: number;
   totalRefunded: number;
-  returnLoss: { total: number; feeLoss: number; shipLoss: number; costLoss: number };
+  returnLoss: { total: number; costLoss: number; platformKept: number; refundLoss: number };
   daily: PnlDailyPoint[];
   totalProfit: number;
   totalPlatformTax: number;

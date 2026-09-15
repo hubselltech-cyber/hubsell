@@ -9,7 +9,8 @@
  *   - Khối 1: Lãi/Lỗ & Tỷ lệ hoàn theo ngày (cột tiền trục trái, line % trục phải).
  *   - Khối 2: So sánh 3 sàn về đơn hoàn (3 biểu đồ nhỏ CÙNG đơn vị — không
  *     trộn tiền/%/số đơn lên một trục cho đỡ nói dối thị giác).
- *   - Khối 3: Donut bóc tách thất thu thành 3 khoản (vốn mất · ship hoàn · phí sàn).
+ *   - Khối 3: Donut bóc tách thất thu thành 3 khoản (vốn chưa thu hồi · tiền
+ *     sàn giữ lại · hoàn tiền khách giữ hàng), mỗi khoản có tooltip giải thích.
  *
  * Toàn bộ số liệu lấy NGUYÊN KHỐI từ summary của /api/finance/realized-pnl
  * (SSOT computePnlRow + computeReturnLoss) — component này KHÔNG tự tính lại
@@ -39,6 +40,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
+import { HintIcon } from "@/components/finance/hint-icon";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import type { ChannelName, RealizedPnlSummary } from "@/lib/api";
@@ -50,8 +52,9 @@ import { cn } from "@/lib/utils";
 // 3 sàn so sánh cố định (spec dashboard) — OFFLINE không có khái niệm "hoàn sàn".
 const PLATFORMS: ChannelName[] = ["SHOPEE", "TIKTOK", "LAZADA"];
 
-// Màu 3 lát donut thất thu: vốn mất (đỏ — nặng nhất) · ship hoàn · phí sàn.
-const LOSS_COLORS = { cost: "#ef4444", ship: "#f59e0b", fee: "#64748b" };
+// Màu 3 lát donut thất thu: vốn chưa thu hồi (đỏ — nặng nhất) · tiền sàn giữ
+// lại · hoàn tiền khách giữ hàng.
+const LOSS_COLORS = { cost: "#ef4444", kept: "#64748b", refund: "#f59e0b" };
 
 /** Rút gọn tiền trên trục biểu đồ: 1.2tr / 350k. */
 function compactVND(v: number): string {
@@ -97,12 +100,61 @@ export function OverviewDashboard({ summary }: { summary: RealizedPnlSummary }) 
 
   // Phòng hộ lệch pha deploy: frontend (Vercel) có thể lên trước backend
   // (Render) vài phút — summary cũ chưa có 2 trường mới thì hiện 0 thay vì vỡ.
-  const loss = summary.returnLoss ?? { total: 0, feeLoss: 0, shipLoss: 0, costLoss: 0 };
+  const loss = {
+    total: summary.returnLoss?.total ?? 0,
+    costLoss: summary.returnLoss?.costLoss ?? 0,
+    platformKept: summary.returnLoss?.platformKept ?? 0,
+    refundLoss: summary.returnLoss?.refundLoss ?? 0,
+  };
   const daily = summary.daily ?? [];
+  // Tên + lời giải thích (tooltip) của 3 khoản — BÁM ĐÚNG computeReturnLoss ở
+  // backend, không hứa hơn những gì công thức thật đang tính.
   const donutData = [
-    { key: "cost", name: "Giá vốn hàng mất/hỏng", value: loss.costLoss, color: LOSS_COLORS.cost },
-    { key: "ship", name: "Phí ship hoàn 2 chiều", value: loss.shipLoss, color: LOSS_COLORS.ship },
-    { key: "fee", name: "Phí & thuế sàn không hoàn", value: loss.feeLoss, color: LOSS_COLORS.fee },
+    {
+      key: "cost",
+      name: "Giá vốn hàng chưa thu hồi",
+      value: loss.costLoss,
+      color: LOSS_COLORS.cost,
+      hint: (
+        <>
+          <b>Tiền vốn của món hàng shop đã bỏ ra nhưng chưa lấy lại được.</b>
+          <br />
+          Gồm: khách được hoàn tiền nhưng giữ hàng · hàng trả về bị hỏng/mất ·
+          hàng đang trên đường về, chưa nhập kho. Khi kho quét nhận hàng nguyên
+          vẹn, khoản này tự giảm đúng phần vốn thu hồi được.
+        </>
+      ),
+    },
+    {
+      key: "kept",
+      name: "Tiền sàn giữ lại",
+      value: loss.platformKept,
+      color: LOSS_COLORS.kept,
+      hint: (
+        <>
+          <b>Tiền sàn đã trừ của đơn hoàn mà không trả lại shop.</b>
+          <br />
+          Là phần ví bị âm trên sao kê của đơn, gồm cả phí sàn lẫn phí vận
+          chuyển sàn trừ (sao kê chỉ cho tổng, không tách). Lấy đúng số sàn ghi,
+          không ước tính. Đơn hoàn chưa quyết toán thì dùng số sàn ước tính nếu
+          có, chưa có thì tạm = 0.
+        </>
+      ),
+    },
+    {
+      key: "refund",
+      name: "Hoàn tiền khách giữ hàng",
+      value: loss.refundLoss,
+      color: LOSS_COLORS.refund,
+      hint: (
+        <>
+          <b>Tiền trả lại khách khi khách giữ hàng, chỉ hoàn một phần.</b>
+          <br />
+          Hàng vẫn bán được nhưng shop thu thiếu đúng số tiền này (ví dụ đền
+          bù hàng lỗi nhẹ, thiếu phụ kiện). Lấy theo số sàn báo hoặc sao kê.
+        </>
+      ),
+    },
   ];
   const lossShare = (v: number) => (loss.total > 0 ? (v / loss.total) * 100 : 0);
 
@@ -135,7 +187,7 @@ export function OverviewDashboard({ summary }: { summary: RealizedPnlSummary }) 
               − <Money value={loss.total} />
             </p>
             <p className={cn(TEXT_SUB, "mt-1")}>
-              vốn mất + ship hoàn + phí sàn không hoàn
+              vốn chưa thu hồi + tiền sàn giữ lại + hoàn tiền khách giữ hàng
             </p>
           </CardContent>
         </Card>
@@ -285,7 +337,8 @@ export function OverviewDashboard({ summary }: { summary: RealizedPnlSummary }) 
           <CardHeader>
             <CardTitle>Bóc tách nguyên nhân thất thu</CardTitle>
             <CardDescription>
-              Tổng thất thu đơn hoàn phân rã thành 3 khoản cấu thành.
+              Tổng thất thu đơn hoàn phân rã thành 3 khoản. Rê chuột vào dấu ?
+              để xem cách tính từng khoản.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -331,6 +384,7 @@ export function OverviewDashboard({ summary }: { summary: RealizedPnlSummary }) 
                     >
                       <LegendDot color={d.color}>
                         <span className="text-slate-600">{d.name}</span>
+                        <HintIcon hint={d.hint} />
                       </LegendDot>
                       <span className="font-medium tabular-nums text-slate-900">
                         {formatVND(d.value)}

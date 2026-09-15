@@ -300,6 +300,98 @@ describe("computePnlRow — 4 kịch bản hoàn/trả", () => {
   });
 });
 
+describe("computeReturnLoss — 3 khoản thất thu lấy từ chính dòng Lãi/Lỗ (chốt anh Trung 15/09, không suy diễn)", () => {
+  it("hoàn cả đơn ĐÃ quyết toán, ví âm 2.700 (PiShip), hàng chưa về: vốn chưa thu hồi 131k + sàn giữ 2.700 = đúng lỗ của dòng", () => {
+    const r = computePnlRow(
+      mkOrder({
+        returnStatus: ReturnStatus.AWAITING,
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformReturnStatus: "PROCESSING",
+        refundedAmount: D(269000),
+        actualPayout: D(-2700),
+      })
+    );
+    const rl = computeReturnLoss(r);
+    expect(rl.costLoss).toBe(131000);
+    expect(rl.platformKept).toBe(2700);
+    expect(rl.refundLoss).toBe(0);
+    expect(rl.total).toBe(133700);
+    // Khớp bảng Lãi/Lỗ từng đồng: thất thu = −Lợi nhuận thực tế của dòng.
+    expect(rl.total).toBe(-r.profitAfterTax);
+  });
+
+  it("hoàn cả đơn, hàng ĐÃ về kho, ví âm 2.700: chỉ còn tiền sàn giữ lại", () => {
+    const r = computePnlRow(
+      mkOrder({
+        returnStatus: ReturnStatus.AWAITING,
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        returnDeliveredAt: new Date(),
+        platformReturnStatus: "ACCEPTED",
+        refundedAmount: D(269000),
+        actualPayout: D(-2700),
+      })
+    );
+    const rl = computeReturnLoss(r);
+    expect(rl.costLoss).toBe(0);
+    expect(rl.platformKept).toBe(2700);
+    expect(rl.total).toBe(2700);
+    expect(rl.total).toBe(-r.profitAfterTax);
+  });
+
+  it("KHÔNG SUY DIỄN: cột phí của đơn vẫn 92.919 nhưng sàn trả lại hết (ví = 0) → tiền sàn giữ lại = 0, không cộng cột phí", () => {
+    const r = computePnlRow(
+      mkOrder({
+        returnSolution: ReturnSolution.REFUND_ONLY,
+        returnDeliveredAt: new Date(),
+        refundedAmount: D(269000),
+        isSettled: true,
+        actualPayout: D(0),
+      })
+    );
+    const rl = computeReturnLoss(r);
+    expect(r.feeFixedPayment + r.feeService + r.feeSellerProtection + r.platformTax).toBe(FEES);
+    expect(rl.platformKept).toBe(0);
+  });
+
+  it("hoàn MỘT PHẦN khách giữ hàng: thất thu = đúng tiền hoàn 50k, không tính vốn, không tính phí bán hàng bình thường", () => {
+    const r = computePnlRow(
+      mkOrder({
+        returnSolution: ReturnSolution.REFUND_ONLY,
+        platformRefundAmount: D(50000),
+        platformReturnStatus: "ACCEPTED",
+      })
+    );
+    const rl = computeReturnLoss(r);
+    expect(r.returnType).toBe("PARTIAL_REFUND");
+    expect(rl.refundLoss).toBe(50000);
+    expect(rl.costLoss).toBe(0);
+    expect(rl.platformKept).toBe(0);
+    expect(rl.total).toBe(50000);
+  });
+
+  it("đơn hoàn CHƯA quyết toán, sàn chưa ước tính (ví 0): tiền sàn giữ lại tạm 0, chỉ vốn chưa thu hồi", () => {
+    const r = computePnlRow(
+      mkOrder({
+        returnStatus: ReturnStatus.AWAITING,
+        returnSolution: ReturnSolution.RETURN_REFUND,
+        platformRefundAmount: D(269000),
+        platformReturnStatus: "PROCESSING",
+        isSettled: false,
+        actualPayout: D(0),
+      })
+    );
+    const rl = computeReturnLoss(r);
+    expect(rl.platformKept).toBe(0);
+    expect(rl.costLoss).toBe(131000);
+    expect(rl.total).toBe(-r.profitAfterTax);
+  });
+
+  it("đơn bán bình thường: toàn 0", () => {
+    const rl = computeReturnLoss(computePnlRow(mkOrder()));
+    expect(rl).toEqual({ costLoss: 0, platformKept: 0, refundLoss: 0, total: 0 });
+  });
+});
+
 describe("computePnlRow — đơn hủy giao thất bại quay về (ca thật 26081266V7GRHG, anh Trung 20/08)", () => {
   it("sàn hủy vì hư hỏng khi vận chuyển, kiện hoàn về người gửi, escrow trả khách full, chỉ PiShip 2.700: lỗ đúng 2.700, không mất 131.000 vốn", () => {
     const r = computePnlRow(

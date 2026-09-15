@@ -673,15 +673,17 @@ export interface LazadaSettlementDetail {
 }
 
 /**
- * Bóc tách THẤT THU do đơn hoàn của kỳ (xem computeReturnLoss backend):
- * feeLoss = phí + thuế sàn không hoàn lại; shipLoss = ship hoàn 2 chiều shop
- * gánh; costLoss = giá vốn hàng mất/hỏng không thu hồi. total = tổng 3 khoản.
+ * Bóc tách THẤT THU do đơn hoàn của kỳ (xem computeReturnLoss backend — chốt
+ * 15/09: chỉ số đã có trong dòng Lãi/Lỗ của đơn, không suy diễn):
+ * costLoss = giá vốn chưa thu hồi; platformKept = tiền sàn giữ lại (ví âm trên
+ * sao kê, gộp phí + ship); refundLoss = hoàn tiền khách giữ hàng (hoàn một
+ * phần). total = tổng 3 khoản.
  */
 export interface ReturnLossBreakdown {
   total: number;
-  feeLoss: number;
-  shipLoss: number;
   costLoss: number;
+  platformKept: number;
+  refundLoss: number;
 }
 
 /** Một điểm ngày trên biểu đồ Lãi/Lỗ & Tỷ lệ hoàn (ngày trống = 0). */
