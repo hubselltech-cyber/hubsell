@@ -82,6 +82,12 @@ describe("mapTiktokBreakdownToSettlement — dòng ORDER 202501", () => {
     expect(detail.feeAffiliate).toBe(-11760);
     expect(detail.taxVat).toBe(-1204);
     expect(detail.taxPit).toBe(-400);
+    // Payload thật 16/09 trả GTGT 1% dưới vat_amount → cũng vào Thuế GTGT
+    const alt = mapTiktokBreakdownToSettlement([
+      { ...ORDER_LINE, fee_tax_breakdown: { fee: {}, tax: { vat_amount: "-2350", pit_amount: "-1175" } } },
+    ]);
+    expect(alt.detail.taxVat).toBe(-2350);
+    expect(alt.detail.taxOther).toBe(0);
     expect(detail.settlementAmount).toBe(232200);
     expect(detail.adjustmentTypes).toBeNull();
   });

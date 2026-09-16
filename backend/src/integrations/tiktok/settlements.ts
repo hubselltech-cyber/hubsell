@@ -105,7 +105,26 @@ const FEE_KNOWN = new Set([
   // PIT khấu trừ từ hoa hồng creator (unsettled 202507) đã nằm trong before_pit
   "pit_withheld_from_ads_commission_amount",
 ]);
-const TAX_KNOWN = new Set(["local_vat_amount", "pit_amount"]);
+const TAX_KNOWN = new Set(["local_vat_amount", "vat_amount", "pit_amount"]);
+
+/**
+ * Tên trường + giá trị KHÁC 0 của khối phí/thuế một dòng — ghi log MỘT lần mỗi
+ * lượt đồng bộ để đối chiếu tên phí thật với bảng mapping (logShape chỉ in tên
+ * cấp 2, không tới fee/tax). Export để tái dùng ở công cụ tra bản kê thô.
+ */
+export function describeTiktokFeeTax(line: TikTokTxBreakdown): string {
+  const show = (label: string, m: TikTokAmountMap | undefined) =>
+    `${label}=[${Object.entries(m ?? {})
+      .filter(([, v]) => typeof v !== "object" && n(v) !== 0)
+      .map(([k, v]) => `${k}:${v}`)
+      .join(",")}]`;
+  return [
+    show("fee", line.fee_tax_breakdown?.fee),
+    show("tax", line.fee_tax_breakdown?.tax),
+    show("ship", line.shipping_cost_breakdown),
+    show("revenue", line.revenue_breakdown),
+  ].join(" ");
+}
 /** Phụ phí logistics sàn trừ (ngoài cước chính/ship hoàn) — gom cột shipOther. */
 const SHIP_OTHER = [
   "signature_confirmation_fee_amount",
@@ -217,7 +236,10 @@ export function mapTiktokBreakdownToSettlement(lines: TikTokTxBreakdown[]): {
   const feeAffiliatePartner = sumKey(fee, "affiliate_partner_commission_amount");
   const feeGmvMax = sumKey(fee, "gmv_max_ad_fee_amount") + sumKey(fee, "gmv_max_coupon_fee");
   const feeTaxAmount = total(lines, "fee_tax_amount");
-  const taxVat = sumKey(tax, "local_vat_amount");
+  // GTGT sàn nộp hộ: docs 202501 ghi local_vat_amount (đơn nội địa) nhưng payload
+  // thật and.not.or 16/09 trả 1% doanh thu dưới tên khác (rơi vào taxOther) →
+  // nhận cả vat_amount; đơn VN không có VAT xuyên biên giới nên không đếm đôi.
+  const taxVat = sumKey(tax, "local_vat_amount") + sumKey(tax, "vat_amount");
   const taxPit = sumKey(tax, "pit_amount");
   const taxOther = sumRest(tax, TAX_KNOWN);
   // CHỐT CHẶN: phí chưa có cột = phần dư của fee_tax_amount sau khi bóc mọi

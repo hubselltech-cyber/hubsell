@@ -758,11 +758,30 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
     if (channel.channelName === ChannelName.TIKTOK) {
       const tiktok = await requireTiktokChannel(req, res);
       if (!tiktok) return;
-      // Tay = BACKFILL toàn bộ theo cửa sổ 30 ngày từ đơn cũ nhất + số ước
-      // tính của sàn cho đơn đang chờ (cùng khuôn nút Shopee).
-      const summary = await syncTiktokSettlements(tiktok);
-      const estimates = await syncTiktokUnsettledEstimates(tiktok);
-      res.json({ message: "Đồng bộ đối soát TikTok xong", ...summary, estimates });
+      // Tay = bản kê 60 ngày gần nhất (?full=1 → từ đơn cũ nhất, quét theo cửa
+      // sổ 30 ngày, nặng API) + số ước tính của sàn cho đơn đang chờ (cùng
+      // khuôn nút Shopee). ?mode=estimates chỉ chạy phần ước tính.
+      const mode = req.query.mode === "estimates" ? "estimates" : req.query.mode === "settlements" ? "settlements" : "all";
+      const full = req.query.full === "1" || req.query.full === "true";
+      const summary =
+        mode === "estimates"
+          ? null
+          : await syncTiktokSettlements(
+              tiktok,
+              full ? {} : { since: new Date(Date.now() - 60 * 86_400_000) }
+            );
+      // Lỗi phần ước tính không được làm hỏng kết quả bản kê thật đã ghi.
+      let estimates: Awaited<ReturnType<typeof syncTiktokUnsettledEstimates>> | null = null;
+      let estimatesError: string | null = null;
+      if (mode !== "settlements") {
+        try {
+          estimates = await syncTiktokUnsettledEstimates(tiktok);
+        } catch (err) {
+          estimatesError = (err as Error).message;
+          console.error(`[TikTok] Lỗi ước tính unsettled "${tiktok.shopName}":`, estimatesError);
+        }
+      }
+      res.json({ message: "Đồng bộ đối soát TikTok xong", ...(summary ?? {}), estimates, estimatesError });
       return;
     }
 

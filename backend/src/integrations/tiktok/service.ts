@@ -27,6 +27,7 @@ import {
   type TikTokTxBreakdown,
 } from "./client";
 import {
+  describeTiktokFeeTax,
   groupTiktokLinesByOrder,
   mapTiktokBreakdownToSettlement,
   parseEstimatedSettlement,
@@ -573,6 +574,12 @@ export async function syncTiktokSettlements(
           if (!txShapeLogged && lines[0]) {
             txShapeLogged = true;
             logShape("giao dịch bản kê 202501", lines[0]);
+            // Tên trường phí/thuế THẬT khác 0 của dòng ORDER đầu tiên — đối
+            // chiếu bảng mapping (tắt TIKTOK_SHAPE_LOG=0 khi xong).
+            const orderLine = lines.find((l) => l.type === "ORDER") ?? lines[0];
+            if (process.env.TIKTOK_SHAPE_LOG !== "0") {
+              console.log(`[TikTok] Phí/thuế thật dòng ${orderLine.order_id ?? "?"}: ${describeTiktokFeeTax(orderLine)}`);
+            }
           }
           const { byOrder: grouped, unlinked } = groupTiktokLinesByOrder(lines);
           result.unlinked += unlinked;
@@ -712,16 +719,43 @@ export async function syncTiktokUnsettledEstimates(
   let shapeLogged = false;
   const byOrder = new Map<string, TikTokTxBreakdown[]>();
 
+  // THANG DỰ PHÒNG tham số: lượt chạy thật 16/09 trả 36009003 "Internal error"
+  // (docs unsettled còn mới, mẫu query ghi sort_field lạ). Trang đầu thử lần
+  // lượt: đủ ge+lt → chỉ ge → không lọc thời gian; biến thể nào qua được thì
+  // giữ cho các trang sau và ghi log để soi.
+  const variants: { label: string; ge?: number; lt?: number }[] = [
+    { label: "ge+lt", ge: searchTimeGe, lt: nowSec },
+    { label: "ge", ge: searchTimeGe },
+    { label: "không lọc thời gian" },
+  ];
+  let variantIdx = 0;
   let pageToken: string | undefined;
   do {
-    const data = await fetchUnsettledTransactions({
-      accessToken,
-      shopCipher,
-      searchTimeGe,
-      searchTimeLt: nowSec,
-      pageSize: 100,
-      pageToken,
-    });
+    let data: Awaited<ReturnType<typeof fetchUnsettledTransactions>> | undefined;
+    for (; variantIdx < variants.length; variantIdx++) {
+      const v = variants[variantIdx];
+      try {
+        data = await fetchUnsettledTransactions({
+          accessToken,
+          shopCipher,
+          searchTimeGe: v.ge,
+          searchTimeLt: v.lt,
+          pageSize: 100,
+          pageToken,
+        });
+        if (variantIdx > 0 && !pageToken) {
+          console.log(`[TikTok] Unsettled "${channel.shopName}": dùng biến thể tham số "${v.label}"`);
+        }
+        break;
+      } catch (err) {
+        const msg = (err as Error).message;
+        // Chỉ đổi biến thể khi sàn báo lỗi nội bộ ở TRANG ĐẦU; lỗi khác (rate
+        // limit, token…) hoặc lỗi giữa chừng thì ném ra để nơi gọi ghi nhận.
+        if (!msg.includes("36009003") || pageToken || variantIdx === variants.length - 1) throw err;
+        console.warn(`[TikTok] Unsettled "${channel.shopName}": biến thể "${v.label}" bị 36009003, thử biến thể kế`);
+      }
+    }
+    if (!data) break;
     result.pages++;
     const lines = data.transactions ?? [];
     if (!shapeLogged && lines[0]) {
