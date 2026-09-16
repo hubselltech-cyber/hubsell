@@ -22,6 +22,7 @@ import {
   syncTiktokOrders,
   syncTiktokSettlements,
   syncTiktokUnsettledEstimates,
+  compareTiktokStatementVersions,
 } from "../integrations/tiktok/service";
 import {
   isLazadaConfigured,
@@ -761,6 +762,15 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
       // Tay = bản kê 60 ngày gần nhất (?full=1 → từ đơn cũ nhất, quét theo cửa
       // sổ 30 ngày, nặng API) + số ước tính của sàn cho đơn đang chờ (cùng
       // khuôn nút Shopee). ?mode=estimates chỉ chạy phần ước tính.
+      // ?mode=compare — chẩn đoán read-only: so mã đơn bản kê 202309 vs 202501.
+      if (req.query.mode === "compare") {
+        const diff = await compareTiktokStatementVersions(tiktok, {
+          daysBack: Number(req.query.daysBack) || 3,
+          maxStatements: Number(req.query.max) || 3,
+        });
+        res.json({ message: "So sánh bản kê 202309 vs 202501", diff });
+        return;
+      }
       const mode = req.query.mode === "estimates" ? "estimates" : req.query.mode === "settlements" ? "settlements" : "all";
       const full = req.query.full === "1" || req.query.full === "true";
       const summary =
