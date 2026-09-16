@@ -99,7 +99,7 @@ export function PrintOptionsFields({
       {row(
         "pickList",
         "Phiếu xuất hàng",
-        "Phiếu A6 của Hubsell cho kho nhặt hàng: mã đơn có mã vạch, SKU và số lượng. Nên bật với đơn nhiều sản phẩm."
+        "Phiếu A6 của Hubsell cho kho nhặt hàng: mã đơn có mã vạch, SKU và số lượng. Nên bật với đơn nhiều sản phẩm (vận đơn TikTok đã in sẵn danh sách sản phẩm)."
       )}
     </div>
   );

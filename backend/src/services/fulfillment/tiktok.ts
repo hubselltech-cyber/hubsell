@@ -8,8 +8,13 @@
 //      khung giờ LSP tới lấy (pickup).
 //   3. POST /packages/{id}/ship { handover_method: PICKUP|DROP_OFF, pickup_slot? }
 //   4. GET /packages/{id} → tracking_number + hãng (sàn cấp ngay hoặc vài giây).
-//   5. GET /packages/{id}/shipping_documents?document_type=SHIPPING_LABEL&
-//      document_size=A6 → doc_url PDF (chỉ kiện "TikTok Shipping" đã ship).
+//   5. GET /packages/{id}/shipping_documents?document_type=
+//      SHIPPING_LABEL_AND_PACKING_SLIP&document_size=A6 → doc_url PDF (chỉ
+//      kiện "TikTok Shipping" đã ship). 16/09 anh Trung test đơn thật: tem
+//      SHIPPING_LABEL trần KHÔNG có danh sách sản phẩm, còn Seller Center in
+//      bản gộp tem + phiếu đóng gói → Hubsell xin bản gộp như sàn, sàn từ chối
+//      (LSP không hỗ trợ) mới lùi về tem trần. Shop bán ngành 1 món/đơn nhờ đó
+//      không cần in thêm phiếu xuất hàng Hubsell.
 //
 // Hộp thoại chung của 3 sàn hỏi pickup/dropoff + địa chỉ + khung giờ: TikTok
 // không cho chọn địa chỉ qua API (cài ở Seller Center) → một "địa chỉ" giả
@@ -97,6 +102,33 @@ async function resolvePackageId(auth: Auth, order: FulfillOrderRef): Promise<str
   const details = await getOrderDetail({ ...auth, orderIds: [order.orderCode] });
   const id = details[0]?.packages?.[0]?.id?.trim();
   return id || null;
+}
+
+/** Thứ tự xin vận đơn: bản gộp tem + danh sách sản phẩm (như Seller Center)
+ *  trước, tem trần sau — sàn/LSP nào không hỗ trợ bản gộp thì vẫn ra tem. */
+export const TIKTOK_LABEL_DOC_TYPES = ["SHIPPING_LABEL_AND_PACKING_SLIP", "SHIPPING_LABEL"] as const;
+
+/** Vận đơn PDF của một kiện: thử từng loại phiếu theo TIKTOK_LABEL_DOC_TYPES,
+ *  trả PDF đầu tiên tải được; null nếu loại nào cũng không ra file. */
+export async function fetchTikTokLabelPdf(auth: Auth, packageId: string): Promise<Buffer | null> {
+  let lastErr: unknown = null;
+  for (const documentType of TIKTOK_LABEL_DOC_TYPES) {
+    try {
+      const doc = await getShippingDocument({ ...auth, packageId, documentType });
+      const url = doc.doc_url?.trim();
+      const pdf = url ? await fetchPdf(url) : null;
+      if (pdf) return pdf;
+      lastErr = null; // sàn trả lời nhưng không có file — thử loại phiếu kế
+    } catch (err) {
+      // Kiện chưa ship/chưa sẵn: đổi loại phiếu không cứu được → ném ngay.
+      if (isNotReadyError(errMessage(err))) throw err;
+      lastErr = err;
+      console.warn(`[fulfillment.tiktok] shipping_documents ${documentType} kiện ${packageId}:`, errMessage(err));
+    }
+  }
+  // Loại phiếu cuối cùng cũng bị sàn từ chối → ném để route ghi đúng lý do.
+  if (lastErr) throw lastErr;
+  return null;
 }
 
 /** Tải một URL, trả Buffer nếu đúng là PDF; null nếu lỗi/không phải PDF. */
@@ -259,9 +291,7 @@ export const tiktokFulfillment: FulfillmentAdapter = {
           continue;
         }
         if (!o.platformPackageId) result.discovered.set(o.id, { packageId });
-        const doc = await getShippingDocument({ ...auth, packageId });
-        const url = doc.doc_url?.trim();
-        const pdf = url ? await fetchPdf(url) : null;
+        const pdf = await fetchTikTokLabelPdf(auth, packageId);
         if (!pdf) {
           throw new Error("sàn không trả file PDF vận đơn (kiện chưa ship hoặc shop tự giao) — in tạm từ Seller Center");
         }
