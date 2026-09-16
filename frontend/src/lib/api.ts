@@ -2175,6 +2175,8 @@ export interface ChannelProduct {
   status: "ACTIVE" | "DELISTED";
   lastSyncedAt: string | null;
   createdAt: string;
+  /** ID sản phẩm phía sàn (TikTok 17…, Shopee item_id, Lazada item_id); null khi sàn chưa cấp. */
+  externalId?: string | null;
   /** null = CHƯA liên kết về kho gốc */
   productId: string | null;
   channel: { id: string; channelName: ChannelName; shopName: string };

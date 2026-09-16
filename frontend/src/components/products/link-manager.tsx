@@ -488,6 +488,14 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
                                 </p>
                                 <p className={cn(TEXT_SUB, "font-mono")}>
                                   {r.channelSku}
+                                  {r.externalId ? (
+                                    <span
+                                      className="ml-2 text-muted-foreground/70"
+                                      title="ID sản phẩm trên sàn"
+                                    >
+                                      ID sàn {r.externalId}
+                                    </span>
+                                  ) : null}
                                 </p>
                               </div>
                             </div>

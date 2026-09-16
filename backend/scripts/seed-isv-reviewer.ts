@@ -80,6 +80,13 @@ const pick = <T,>(arr: readonly T[]) => arr[Math.floor(rnd() * arr.length)];
 const between = (lo: number, hi: number) => lo + rnd() * (hi - lo);
 const roundTo = (v: number, step: number) => Math.round(v / step) * step;
 
+/** Chuỗi n chữ số ngẫu nhiên (giữ dạng string để không mất độ chính xác). */
+function digits(n: number): string {
+  let out = "";
+  for (let i = 0; i < n; i++) out += Math.floor(rnd() * 10);
+  return out;
+}
+
 const DAY_MS = 86_400_000;
 const VN_OFFSET_MS = 7 * 3600_000;
 
@@ -251,7 +258,8 @@ async function main() {
           productName: p.productName,
           price: p.sellingPrice,
           costPrice: p.costPrice,
-          externalId: String(100_000_000 + Math.floor(rnd() * 899_999_999)),
+          // ID sản phẩm giống sàn thật: TikTok 19 số bắt đầu 17…, Shopee/Lazada 9-10 số.
+          externalId: ch.id === tiktok.id ? `17${digits(17)}` : String(100_000_000 + Math.floor(rnd() * 899_999_999)),
           channelStock: p.quantityInStock,
           status: "ACTIVE",
           lastSyncedAt: new Date(),
@@ -289,7 +297,7 @@ async function main() {
       const orderCode = isShopee
         ? `2609${orderSeq}SPVN`
         : isTiktok
-          ? `58609${String(orderSeq).padStart(6, "0")}${Math.floor(rnd() * 900 + 100)}`
+          ? `58609${String(orderSeq).padStart(7, "0")}${digits(6)}` // 18 số như đơn TikTok thật (5860…)
           : `LZD26${orderSeq}`;
 
       const lineCount = rnd() < 0.7 ? 1 : rnd() < 0.8 ? 2 : 3;
