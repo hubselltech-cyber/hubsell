@@ -80,6 +80,17 @@ function parseSlotId(id?: string): { start_time: number; end_time: number } | nu
   return { start_time: Number(m[1]), end_time: Number(m[2]) };
 }
 
+/** Sàn từ chối vì app THIẾU SCOPE (code 105005 — 16/09: handover_time_slots
+ *  không nằm trong Fulfillment Basic). Khi đó bỏ khung giờ, vẫn ship theo
+ *  phương thức; ship package/shipping_documents thuộc scope cơ bản. */
+function isScopeError(err: unknown): boolean {
+  const m = errMessage(err).toLowerCase();
+  return m.includes("105005") || m.includes("access scope") || m.includes("permission");
+}
+
+const NO_SLOT_NOTE =
+  "TikTok lấy hàng tại địa chỉ gian đã cài trên Seller Center; app Hubsell chưa có quyền đọc khung giờ (sàn tự xếp khung gần nhất).";
+
 /** Kiện của đơn: đã lưu thì dùng, chưa thì hỏi lại chi tiết đơn (packages[0]). */
 async function resolvePackageId(auth: Auth, order: FulfillOrderRef): Promise<string | null> {
   if (order.platformPackageId) return order.platformPackageId;
@@ -116,7 +127,26 @@ export const tiktokFulfillment: FulfillmentAdapter = {
         note: "Sàn chưa tạo kiện cho đơn mẫu — TikTok sẽ tự sắp xếp theo cài đặt gian trên Seller Center.",
       };
     }
-    const slots = await getHandoverTimeSlots({ ...auth, packageId });
+    let slots: Awaited<ReturnType<typeof getHandoverTimeSlots>>;
+    try {
+      slots = await getHandoverTimeSlots({ ...auth, packageId });
+    } catch (err) {
+      if (!isScopeError(err)) throw err;
+      // Không đọc được khung giờ → vẫn cho chọn phương thức, không có khung giờ.
+      return {
+        methods: ["PICKUP", "DROPOFF"],
+        pickupAddresses: [
+          {
+            id: DEFAULT_ADDRESS_ID,
+            label: "Địa chỉ lấy hàng của gian (cài trên TikTok Seller Center)",
+            isDefault: true,
+            timeSlots: [],
+          },
+        ],
+        dropoffBranches: [],
+        note: NO_SLOT_NOTE,
+      };
+    }
     const methods: FulfillMethod[] = [];
     if (slots.can_pickup !== false) methods.push("PICKUP");
     if (slots.drop_off_option) methods.push("DROPOFF");
@@ -150,13 +180,19 @@ export const tiktokFulfillment: FulfillmentAdapter = {
       let handoverMethod: "PICKUP" | "DROP_OFF" = choice.method === "DROPOFF" ? "DROP_OFF" : "PICKUP";
       let pickupSlot = handoverMethod === "PICKUP" ? parseSlotId(choice.pickupTimeId) ?? undefined : undefined;
       if (handoverMethod === "PICKUP" && !pickupSlot) {
-        // Seller không chọn khung giờ → lấy khung sớm nhất sàn còn mở.
-        const slots = await getHandoverTimeSlots({ ...auth, packageId });
-        const first = (slots.handover_time_slots ?? []).map(slotOf).find(Boolean);
-        pickupSlot = first ? parseSlotId(first.id) ?? undefined : undefined;
-        if (!pickupSlot && slots.drop_off_option) {
-          handoverMethod = "DROP_OFF";
-          note = "Sàn không còn khung giờ lấy hàng — chuyển sang tự mang ra bưu cục";
+        // Seller không chọn khung giờ → lấy khung sớm nhất sàn còn mở. App thiếu
+        // scope đọc khung giờ → ship không kèm pickup_slot (sàn tự xếp).
+        try {
+          const slots = await getHandoverTimeSlots({ ...auth, packageId });
+          const first = (slots.handover_time_slots ?? []).map(slotOf).find(Boolean);
+          pickupSlot = first ? parseSlotId(first.id) ?? undefined : undefined;
+          if (!pickupSlot && slots.drop_off_option) {
+            handoverMethod = "DROP_OFF";
+            note = "Sàn không còn khung giờ lấy hàng — chuyển sang tự mang ra bưu cục";
+          }
+        } catch (err) {
+          if (!isScopeError(err)) throw err;
+          note = "Sàn tự xếp khung giờ lấy hàng (app chưa có quyền đọc khung giờ)";
         }
       }
       await shipPackage({ ...auth, packageId, handoverMethod, pickupSlot });
