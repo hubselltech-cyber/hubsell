@@ -219,6 +219,8 @@ export async function syncTiktokOrders(
     : { createTimeGe: fromSec, createTimeLt: toSec };
   const maxPages = opts.maxPages ?? MAX_PAGES;
   let shapeLogged = false;
+  let windowMinUpdate = 0;
+  let windowMaxUpdate = 0;
 
   // % phí tạm tính (GĐ1) khi đơn chưa được đối soát — số thật thay sau ở settlement.
   const feeRate =
@@ -251,6 +253,10 @@ export async function syncTiktokOrders(
         shapeLogged = true;
         logShape("đơn (orders/search)", o);
       }
+      if (o.update_time) {
+        if (!windowMinUpdate || o.update_time < windowMinUpdate) windowMinUpdate = o.update_time;
+        if (o.update_time > windowMaxUpdate) windowMaxUpdate = o.update_time;
+      }
       // Đồng bộ lô CỐ Ý không trừ kho (chỉ upsert), nên mỗi đơn một transaction nhẹ.
       const outcome = await prisma.$transaction((tx) =>
         upsertOrderTx(tx, channel, o, feeRate)
@@ -265,6 +271,15 @@ export async function syncTiktokOrders(
 
     pageToken = data.next_page_token || undefined;
   } while (pageToken && result.pages < maxPages);
+
+  // KIỂM CỬA SỔ (16/09): lượt quét update_time 2 ngày trả về 261/262 đơn — nghi
+  // sàn bỏ qua update_time_ge. Ghi min/max update_time của lô so với cửa sổ để
+  // đối chiếu; ngoài cửa sổ → cần đổi sang lọc phía Hubsell. Tắt TIKTOK_SHAPE_LOG=0.
+  if (opts.byUpdateTime && result.fetched > 0 && process.env.TIKTOK_SHAPE_LOG !== "0") {
+    console.log(
+      `[TikTok] Cửa sổ update_time ${new Date(fromSec * 1000).toISOString()} → ${new Date(toSec * 1000).toISOString()}: ${result.fetched} đơn, update_time thấp nhất ${windowMinUpdate ? new Date(windowMinUpdate * 1000).toISOString() : "?"}, cao nhất ${windowMaxUpdate ? new Date(windowMaxUpdate * 1000).toISOString() : "?"}`
+    );
+  }
 
   return result;
 }
