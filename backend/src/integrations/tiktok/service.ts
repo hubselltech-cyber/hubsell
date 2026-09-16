@@ -85,6 +85,15 @@ export async function getValidAccessToken(channel: Channel): Promise<AccessConte
 
 // ---------- Ánh xạ trạng thái đơn TikTok → vòng đời của Hubsell ----------
 
+/**
+ * Trạng thái đơn: payload orders/search & orders detail đặt ở `status` (đối
+ * chiếu thật 16/09/2026); bản nháp cũ đọc `order_status` nên 261 đơn đầu tiên
+ * về đều thành PENDING — giữ fallback để webhook/docs cũ không vỡ.
+ */
+export function tiktokOrderStatus(order: Pick<TikTokOrder, "status" | "order_status">): string | undefined {
+  return order.status ?? order.order_status;
+}
+
 function mapShippingStatus(tiktokStatus?: string): ShippingStatus {
   switch (tiktokStatus) {
     case "UNPAID":
@@ -116,6 +125,9 @@ function aggregateLineItems(order: TikTokOrder) {
     const sku = li.seller_sku || li.sku_id || li.id;
     const qty = li.quantity ?? 1;
     const imageUrl = li.sku_image?.trim() || null;
+    // "Tên sản phẩm - Tên phân loại" như Shopee (item_name - model_name).
+    const name =
+      [li.product_name?.trim(), li.sku_name?.trim()].filter(Boolean).join(" - ") || sku;
     const existing = agg.get(sku);
     if (existing) {
       existing.quantity += qty;
@@ -123,7 +135,7 @@ function aggregateLineItems(order: TikTokOrder) {
     } else {
       agg.set(sku, {
         channelSku: sku,
-        productName: li.product_name ?? sku,
+        productName: name,
         price: Number(li.sale_price ?? 0) || 0,
         quantity: qty,
         imageUrl,
@@ -266,11 +278,30 @@ async function upsertOrderTx(
 ): Promise<{ orderId: string; created: boolean; itemsCreated: number }> {
   const orderCode = order.id;
   const totalAmount = Number(order.payment?.total_amount ?? 0) || 0;
-  const shippingStatus = mapShippingStatus(order.order_status);
-  const paymentStatus = order.order_status === "UNPAID" ? "UNPAID" : "PAID";
-  const customerName = order.recipient_address?.name?.trim() || "Khách TikTok";
+  const status = tiktokOrderStatus(order);
+  const shippingStatus = mapShippingStatus(status);
+  const paymentStatus = status === "UNPAID" ? "UNPAID" : "PAID";
+  const customerName =
+    order.recipient_address?.name?.trim() ||
+    [order.recipient_address?.first_name, order.recipient_address?.last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim() ||
+    "Khách TikTok";
   const customerPhone = order.recipient_address?.phone_number?.trim() || null;
   const trackingCode = order.tracking_number?.trim() || null;
+  // Kiện hàng đầu tiên — id cho API in vận đơn/bàn giao (fulfillment packages).
+  const packageId = order.packages?.[0]?.id?.trim() || null;
+  // Các khoản tài chính (phí ship, voucher shop, trợ giá sàn) CỐ Ý chưa điền ở
+  // upsert: Shopee/Lazada điền các cột đó từ SAO KÊ quyết toán, công thức P&L
+  // dùng chung phải đọc lại trước khi gắn số của payment TikTok vào.
+  // Mốc giao thành công theo SÀN (delivery_time) — chính xác hơn "lúc đồng bộ".
+  const deliveredAt =
+    shippingStatus === ShippingStatus.DELIVERED
+      ? order.delivery_time
+        ? new Date(order.delivery_time * 1000)
+        : new Date()
+      : null;
   // Tên PHƯƠNG THỨC + hãng nguyên văn — nguồn bắt hỏa tốc: "Hỏa tốc"/"Giao Trong
   // Ngày" nằm ở delivery_option_name, hãng có thể là J&T giao thường. Ghi ghép
   // "phương thức · hãng" để cùng luật EXPRESS_KEYWORDS với Shopee/Lazada
@@ -283,7 +314,7 @@ async function upsertOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true },
+    select: { id: true, carrier: true, deliveredAt: true },
   });
 
   if (existing) {
@@ -294,6 +325,11 @@ async function upsertOrderTx(
         paymentStatus,
         totalAmount,
         ...(trackingCode ? { trackingCode } : {}),
+        ...(packageId ? { platformPackageId: packageId } : {}),
+        // Mốc GIAO THÀNH CÔNG ghi MỘT lần (Kiểm toán phí sàn rổ #3 đếm từ đây).
+        ...(deliveredAt && !existing.deliveredAt ? { deliveredAt } : {}),
+        // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
+        ...(carrier && !existing.carrier ? { carrier } : {}),
         // Tên hãng NGUYÊN VĂN là dữ kiện sàn — luôn cập nhật (nguồn bắt hỏa tốc)
         ...(carrierName ? { shippingCarrierName: carrierName } : {}),
       },
@@ -332,6 +368,8 @@ async function upsertOrderTx(
       paymentStatus,
       shippingStatus,
       trackingCode,
+      ...(packageId ? { platformPackageId: packageId } : {}),
+      ...(deliveredAt ? { deliveredAt } : {}),
       ...(carrier ? { carrier } : {}),
       ...(carrierName ? { shippingCarrierName: carrierName } : {}),
       itemCount: lines.length,
@@ -544,28 +582,29 @@ export async function processTiktokOrderEvent(
       ? Number(channel.feeRate)
       : PLATFORM_FEE_RATE[ChannelName.TIKTOK];
 
+  const status = tiktokOrderStatus(order);
   return prisma.$transaction(async (tx) => {
     const up = await upsertOrderTx(tx, channel, order, feeRate);
 
     // Quyết định tác động tồn kho theo trạng thái TikTok.
-    if (order.order_status === "CANCELLED") {
+    if (status === "CANCELLED") {
       const r = await restoreStockTx(tx, up.orderId, "webhook TikTok");
       return {
         found: true,
         created: up.created,
-        orderStatus: order.order_status,
+        orderStatus: status,
         inventory: r.outcome,
         restored: r.restored,
         productIds: r.productIds,
       };
     }
 
-    if (shouldDeductStock(order.order_status)) {
+    if (shouldDeductStock(status)) {
       const d = await deductStockTx(tx, up.orderId, "webhook TikTok");
       return {
         found: true,
         created: up.created,
-        orderStatus: order.order_status,
+        orderStatus: status,
         inventory: d.outcome,
         deducted: d.deducted,
         productIds: d.productIds,
@@ -576,7 +615,7 @@ export async function processTiktokOrderEvent(
     return {
       found: true,
       created: up.created,
-      orderStatus: order.order_status,
+      orderStatus: status,
       inventory: "none",
     };
   });

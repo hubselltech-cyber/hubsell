@@ -231,46 +231,119 @@ export async function getAuthorizedShops(
 // ============================================================
 // KÉO ĐƠN HÀNG (Order API 202309)
 //
-// LƯU Ý: tên trường bên dưới theo tài liệu TikTok Shop 202309. Do app đang ở
-// môi trường local/Draft, hãy đối chiếu lại payload thật khi chạy end-to-end —
-// parser phía service dùng optional chaining nên payload lệch nhẹ không vỡ.
+// Tên trường ĐÃ ĐỐI CHIẾU với payload thật của shop and.not.or ngày 16/09/2026
+// (log "[TikTok] Hình dạng đơn"): trạng thái nằm ở `status` (KHÔNG phải
+// `order_status` như bản nháp theo docs); mỗi line_item là MỘT đơn vị (không có
+// quantity); phí ship/giảm giá nằm trong `payment`; kiện hàng ở `packages`.
 // ============================================================
 
-/** Một dòng hàng trong đơn TikTok. Ở 202309 mỗi phần tử thường là MỘT đơn vị. */
+/** Một dòng hàng trong đơn TikTok — 202309 mỗi phần tử là MỘT đơn vị. */
 export interface TikTokLineItem {
   id: string;
   product_id?: string;
   product_name?: string;
   sku_id?: string;
   seller_sku?: string;
+  /** Tên phân loại ("Đen, XL") — ghép sau tên sản phẩm như model_name Shopee. */
+  sku_name?: string;
+  sku_type?: string;
   sku_image?: string;
   /** Giá bán một đơn vị (chuỗi số). */
   sale_price?: string;
   original_price?: string;
+  seller_discount?: string;
+  platform_discount?: string;
   currency?: string;
-  /** Có ở một số phiên bản; vắng thì coi mỗi line_item = 1 đơn vị. */
+  /** Trạng thái riêng của dòng (UNPAID/AWAITING_SHIPMENT/…/CANCELLED). */
+  display_status?: string;
+  package_id?: string;
+  package_status?: string;
+  tracking_number?: string;
+  shipping_provider_id?: string;
+  shipping_provider_name?: string;
+  is_gift?: boolean;
+  /** Không có trong payload thật 16/09 — giữ để tương thích nếu sàn thêm sau. */
   quantity?: number;
+}
+
+export interface TikTokOrderPayment {
+  currency?: string;
+  /** Khách trả tổng cộng (đã gồm ship, trừ giảm giá). */
+  total_amount?: string;
+  sub_total?: string;
+  original_total_product_price?: string;
+  /** Phí ship khách trả sau giảm. */
+  shipping_fee?: string;
+  original_shipping_fee?: string;
+  shipping_fee_seller_discount?: string;
+  shipping_fee_platform_discount?: string;
+  shipping_fee_cofunded_discount?: string;
+  /** Giảm giá do SHOP chịu (voucher shop) / do SÀN chịu. */
+  seller_discount?: string;
+  platform_discount?: string;
+  tax?: string;
+}
+
+export interface TikTokRecipientAddress {
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  full_address?: string;
+  address_detail?: string;
+  address_line1?: string;
+  postal_code?: string;
+  region_code?: string;
+  district_info?: { address_level_name?: string; address_name?: string; address_level?: string }[];
 }
 
 export interface TikTokOrder {
   id: string;
+  /** Trạng thái đơn — TÊN THẬT là `status` (UNPAID / ON_HOLD / AWAITING_SHIPMENT /
+   *  AWAITING_COLLECTION / PARTIALLY_SHIPPING / IN_TRANSIT / DELIVERED /
+   *  COMPLETED / CANCELLED). `order_status` chỉ có trong payload WEBHOOK. */
+  status?: string;
   order_status?: string;
   create_time?: number; // Unix seconds
   update_time?: number;
   paid_time?: number;
-  payment?: {
-    total_amount?: string;
-    currency?: string;
-    sub_total?: string;
-    original_total_product_price?: string;
-  };
-  recipient_address?: { name?: string; phone_number?: string };
+  delivery_time?: number;
+  collection_time?: number;
+  rts_time?: number;
+  /** Hạn SÀN bắt bàn giao (Unix seconds) — quá là đơn bị hủy/phạt. */
+  shipping_due_time?: number;
+  collection_due_time?: number;
+  rts_sla_time?: number;
+  tts_sla_time?: number;
+  cancel_order_sla_time?: number;
+  cancel_reason?: string;
+  cancel_time?: number;
+  cancellation_initiator?: string;
+  payment?: TikTokOrderPayment;
+  payment_method_name?: string;
+  is_cod?: boolean;
+  is_on_hold_order?: boolean;
+  is_sample_order?: boolean;
+  is_replacement_order?: boolean;
+  buyer_message?: string;
+  buyer_email?: string;
+  user_id?: string;
+  recipient_address?: TikTokRecipientAddress;
   tracking_number?: string;
   shipping_provider?: string;
-  /** Tên phương thức giao người mua chọn ("Hỏa tốc", "Giao Trong Ngày"…) — docs
-   *  ghi "for display purposes only", nhưng là nguồn DUY NHẤT nhận diện hỏa
-   *  tốc khi hãng là J&T giao thường (Giao Trong Ngày TikTok từ Q2/2026). */
+  shipping_provider_id?: string;
+  /** "TIKTOK" = sàn điều vận (platform logistics) / "SELLER" = shop tự giao. */
+  shipping_type?: string;
+  fulfillment_type?: string;
+  /** Tên phương thức giao người mua chọn ("Standard shipping", "Hỏa tốc",
+   *  "Giao Trong Ngày"…) — nguồn DUY NHẤT nhận diện hỏa tốc khi hãng là J&T
+   *  giao thường (payload thật 16/09: "Standard shipping" + "J&T Express"). */
   delivery_option_name?: string;
+  delivery_option_id?: string;
+  delivery_type?: string;
+  warehouse_id?: string;
+  /** Kiện hàng — id dùng cho API in vận đơn (fulfillment/202309/packages). */
+  packages?: { id: string }[];
   line_items?: TikTokLineItem[];
 }
 
@@ -453,7 +526,13 @@ export async function fetchStatementTransactions(
   params: FetchStatementTransactionsParams,
   cfg: TikTokConfig = getTikTokConfig()
 ): Promise<TikTokStatementTransactionData> {
-  const query: Record<string, string | number> = { page_size: params.pageSize ?? 50 };
+  // sort_field BẮT BUỘC (lỗi thật 36009004 ngày 16/09: "SortField is a required
+  // field") — sắp theo thời điểm tạo đơn để phân trang ổn định.
+  const query: Record<string, string | number> = {
+    page_size: params.pageSize ?? 50,
+    sort_field: "order_create_time",
+    sort_order: "DESC",
+  };
   if (params.pageToken) query.page_token = params.pageToken;
 
   return callApi<TikTokStatementTransactionData>(

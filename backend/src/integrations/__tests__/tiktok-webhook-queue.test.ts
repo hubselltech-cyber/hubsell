@@ -78,7 +78,7 @@ function mockOrder(orderId: string, status: string, qty: number) {
   vi.mocked(getOrderDetail).mockResolvedValue([
     {
       id: orderId,
-      order_status: status,
+      status, // tên thật của trường trạng thái (đối chiếu payload 16/09)
       create_time: Math.floor(Date.now() / 1000),
       payment: { total_amount: String(150000 * qty), currency: "VND" },
       recipient_address: { name: "Khách test", phone_number: "0900000000" },
