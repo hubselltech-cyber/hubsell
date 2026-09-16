@@ -62,7 +62,7 @@ interface SetupGuideProps {
  *
  *   Bước 1  Kéo sản phẩm từ sàn về      xong khi có ≥1 sản phẩm sàn
  *   Bước 2  Nối về SKU kho              xong khi không còn sản phẩm sàn chưa nối
- *   Bước 3  Bật đồng bộ tồn từng gian   xong khi mọi gian Shopee/Lazada đã bật
+ *   Bước 3  Bật đồng bộ tồn từng gian   xong khi mọi gian Shopee/Lazada/TikTok đã bật
  *
  * Header luôn hiện (tóm tắt số + nút Cài đặt đồng bộ + nút thu/bung). Thân khối
  * mặc định BUNG khi chưa xong, THU khi đã xong; seller tự bấm thì nhớ lựa chọn
@@ -107,7 +107,7 @@ export function SetupGuide({
 
   const step1Done = all > 0;
   const step2Done = all > 0 && unlinked === 0;
-  // Không có gian Shopee/Lazada nào (vd chỉ TikTok) thì không có gì để bật.
+  // Không có gian sàn nào đang hoạt động thì không có gì để bật.
   const step3Done = totalSync > 0 ? enabled === totalSync : step2Done;
   const doneCount = [step1Done, step2Done, step3Done].filter(Boolean).length;
   const complete = isAdmin ? doneCount === 3 : true;
@@ -261,8 +261,8 @@ export function SetupGuide({
       ? "Đang kiểm tra…"
       : totalSync === 0
         ? channelCount === 0
-          ? "Nối gian Shopee / Lazada rồi bật ở đây."
-          : "Chưa có gian Shopee / Lazada nào. TikTok Shop sẽ hỗ trợ đẩy tồn sau."
+          ? "Nối gian Shopee / Lazada / TikTok Shop rồi bật ở đây."
+          : "Chưa có gian Shopee / Lazada / TikTok Shop nào đang hoạt động."
         : enabled === 0
           ? "Chưa bật gian nào, số Có thể bán chưa được đẩy lên sàn. Bật từng gian sau khi so số."
           : enabled < totalSync

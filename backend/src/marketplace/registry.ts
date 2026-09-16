@@ -10,12 +10,13 @@ import { ChannelName } from "@prisma/client";
 import type { MarketplaceProductAdapter } from "./types";
 import { shopeeProductAdapter } from "./adapters/shopee-adapter";
 import { lazadaProductAdapter } from "./adapters/lazada-adapter";
+import { tiktokProductAdapter } from "./adapters/tiktok-adapter";
 import { mockProductAdapter } from "./adapters/mock-adapter";
 
 /**
  * Trả về adapter sản phẩm cho một gian:
- *   - Shopee/Lazada đã uỷ quyền API thật (có refresh_token) → adapter thật.
- *   - Còn lại (gian mock cũ, TikTok chưa có adapter SP) → adapter mock.
+ *   - Shopee/Lazada/TikTok đã uỷ quyền API thật (có refresh_token) → adapter thật.
+ *   - Còn lại (gian mock cũ không token) → adapter mock.
  *
  * Nhờ kiểm `refreshToken`, các gian MOCK cũ (không có token) vẫn chạy mock
  * → dữ liệu demo trên UI được giữ nguyên, chỉ gian nối thật mới kéo API thật.
@@ -26,6 +27,9 @@ export function getProductAdapter(channel: Channel): MarketplaceProductAdapter {
   }
   if (channel.channelName === ChannelName.LAZADA && channel.refreshToken) {
     return lazadaProductAdapter;
+  }
+  if (channel.channelName === ChannelName.TIKTOK && channel.refreshToken && channel.shopCipher) {
+    return tiktokProductAdapter;
   }
   return mockProductAdapter;
 }

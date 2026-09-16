@@ -276,7 +276,7 @@ export interface ProductChannelLink {
   channelName: ChannelName;
   shopName: string;
   channelActive: boolean;
-  /** Sàn này có đẩy tồn được không (TikTok chưa có product-sync thì không). */
+  /** Sàn này có đẩy tồn được không (SKU đã có externalId của sàn). */
   pushable: boolean;
   stockSyncEnabled: boolean;
   /** Tồn sàn theo lần đẩy/đọc gần nhất (null = chưa từng biết). */
@@ -1123,7 +1123,7 @@ export function resolveAllSyncAlerts() {
 /** Cách gieo tồn ban đầu khi nối SKU sàn vào SKU kho tồn 0. */
 export type InitialStockMode = "SUM" | "MAX" | "NONE";
 
-/** Một gian Shopee/Lazada đang hoạt động + trạng thái đồng bộ tồn của nó. */
+/** Một gian Shopee/Lazada/TikTok đang hoạt động + trạng thái đồng bộ tồn của nó. */
 export interface SyncChannel {
   id: string;
   channelName: ChannelName;

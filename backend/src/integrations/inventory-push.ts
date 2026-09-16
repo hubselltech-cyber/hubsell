@@ -29,6 +29,7 @@ import { prisma } from "../lib/prisma";
 export const PUSHABLE_CHANNELS: ChannelName[] = [
   ChannelName.SHOPEE,
   ChannelName.LAZADA,
+  ChannelName.TIKTOK, // 16/09/2026: adapter sản phẩm + inventory/update theo kho
 ];
 
 export interface StockFields {

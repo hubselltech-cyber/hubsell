@@ -40,6 +40,8 @@ import { updateShopeeStock } from "./shopee/client";
 import { getValidShopeeAccessToken } from "./shopee/service";
 import { updateLazadaSellableStock } from "./lazada/client";
 import { getValidLazadaAccessToken } from "./lazada/service";
+import { getWarehouses, updateTiktokInventory } from "./tiktok/client";
+import { getValidAccessToken as getValidTiktokAccessToken } from "./tiktok/service";
 
 const POLL_INTERVAL_MS = 5_000;
 const BATCH_SIZE = 30;
@@ -62,7 +64,7 @@ export function startStockPushWorker(): void {
   if (started) return;
   started = true;
   console.log(
-    "[Stock-push] BẬT — worker đẩy tồn đa sàn (Shopee + Lazada): đánh thức ngay khi có job, poll lưới an toàn mỗi 5s"
+    "[Stock-push] BẬT — worker đẩy tồn đa sàn (Shopee + Lazada + TikTok): đánh thức ngay khi có job, poll lưới an toàn mỗi 5s"
   );
   registerStockPushKick(() => {
     if (kickTimer) return; // đã hẹn — gộp
@@ -141,11 +143,16 @@ async function processChannelJobs(
   // của syncShopeeStockForProducts).
   let shopeeAuth: { accessToken: string; shopId: string } | null = null;
   let lazadaToken: string | null = null;
+  let tiktokAuth: { accessToken: string; shopCipher: string } | null = null;
+  // Kho bán hàng mặc định TikTok — tra MỘT lần cho cả loạt job của gian.
+  let tiktokDefaultWarehouse: string | null | undefined;
   try {
     if (channel.channelName === ChannelName.SHOPEE) {
       shopeeAuth = await getValidShopeeAccessToken(channel);
     } else if (channel.channelName === ChannelName.LAZADA) {
       lazadaToken = await getValidLazadaAccessToken(channel);
+    } else if (channel.channelName === ChannelName.TIKTOK) {
+      tiktokAuth = await getValidTiktokAccessToken(channel);
     } else {
       // Sàn chưa hỗ trợ chiều đẩy (job rác) — dọn.
       await prisma.stockPushJob.deleteMany({
@@ -275,6 +282,39 @@ async function processChannelJobs(
           accessToken: lazadaToken,
           itemId,
           skuId,
+          quantity: pushValue,
+        });
+      } else if (channel.channelName === ChannelName.TIKTOK && tiktokAuth) {
+        // externalId TikTok dạng "productId-skuId" (tiktok-adapter). Tồn ghi
+        // theo KHO: dùng warehouse adapter đã lưu, thiếu thì tra kho bán hàng
+        // mặc định của shop một lần rồi lưu lại cho các lần sau.
+        const [productId, skuId] = mapping.externalId.split("-");
+        if (!productId || !skuId) {
+          await prisma.stockPushJob.deleteMany({ where: { id: job.id } });
+          continue;
+        }
+        let warehouseId = mapping.channelStockLocationId;
+        if (!warehouseId) {
+          if (tiktokDefaultWarehouse === undefined) {
+            const list = await getWarehouses(tiktokAuth);
+            const sales = list.filter(
+              (w) => (w.effect_status ?? "ENABLED").toUpperCase() === "ENABLED" &&
+                (w.type ?? "SALES_WAREHOUSE").toUpperCase() === "SALES_WAREHOUSE"
+            );
+            tiktokDefaultWarehouse = (sales.find((w) => w.is_default) ?? sales[0])?.id ?? null;
+          }
+          warehouseId = tiktokDefaultWarehouse;
+          if (!warehouseId) throw new Error("Không tìm thấy kho bán hàng TikTok của gian (logistics/warehouses)");
+          await prisma.channelProduct.updateMany({
+            where: { channelId, channelSku: job.channelSku },
+            data: { channelStockLocationId: warehouseId },
+          });
+        }
+        await updateTiktokInventory({
+          ...tiktokAuth,
+          productId,
+          skuId,
+          warehouseId,
           quantity: pushValue,
         });
       }

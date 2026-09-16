@@ -324,7 +324,7 @@ router.get("/:id/channel-links", async (req: AuthRequest, res, next) => {
       links.map((l) => {
         const key = `${l.channelId}:${l.channelSku}`;
         const last = latestByKey.get(key);
-        const pushable = Boolean(l.externalId) && l.channel.channelName !== "TIKTOK";
+        const pushable = Boolean(l.externalId);
         const hasAlert = alertKeys.has(key);
         // Trạng thái khớp của gian với "có thể bán" Hubsell — một chữ cho UI:
         //   off      = gian chưa bật đồng bộ (số sàn là của sàn, không so)

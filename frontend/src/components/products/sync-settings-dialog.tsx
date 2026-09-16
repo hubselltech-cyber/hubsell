@@ -435,7 +435,7 @@ export function SyncSettingsDialog({
               </div>
               {channels.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  Chưa có gian Shopee/Lazada nào đang hoạt động — kết nối gian ở
+                  Chưa có gian Shopee/Lazada/TikTok nào đang hoạt động — kết nối gian ở
                   mục Kênh bán hàng trước.
                 </p>
               ) : (
