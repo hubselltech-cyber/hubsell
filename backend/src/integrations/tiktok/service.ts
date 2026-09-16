@@ -23,7 +23,9 @@ import {
   getOrderDetail,
   refreshAccessToken,
   type TikTokOrder,
+  type TikTokStatementTransaction,
 } from "./client";
+import { mapTiktokTransactionsToOrder } from "./settlements";
 
 // Làm mới token khi còn dưới 5 phút là hết hạn — chừa biên an toàn cho các call
 // nối tiếp trong cùng một lượt đồng bộ, tránh token hết hạn giữa chừng.
@@ -298,9 +300,11 @@ async function upsertOrderTx(
   const trackingCode = order.tracking_number?.trim() || null;
   // Kiện hàng đầu tiên — id cho API in vận đơn/bàn giao (fulfillment packages).
   const packageId = order.packages?.[0]?.id?.trim() || null;
-  // Các khoản tài chính (phí ship, voucher shop, trợ giá sàn) CỐ Ý chưa điền ở
-  // upsert: Shopee/Lazada điền các cột đó từ SAO KÊ quyết toán, công thức P&L
-  // dùng chung phải đọc lại trước khi gắn số của payment TikTok vào.
+  // Trợ giá SÀN lúc đặt đơn (payment.platform_discount — TikTok bù lại phần giảm
+  // giá do sàn tài trợ khi giải ngân, cùng nghĩa platform_discount_amount của bản
+  // kê) → P&L ước tính real-time; số thật ghi đè khi đối soát. Voucher SHOP
+  // KHÔNG ghi: OrderItem.price = sale_price đã trừ giảm giá shop (tránh trừ đôi).
+  const platformSubsidy = Number(order.payment?.platform_discount ?? 0) || 0;
   // Mốc giao thành công theo SÀN (delivery_time) — chính xác hơn "lúc đồng bộ".
   const deliveredAt =
     shippingStatus === ShippingStatus.DELIVERED
@@ -320,8 +324,10 @@ async function upsertOrderTx(
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
-    select: { id: true, carrier: true, deliveredAt: true },
+    select: { id: true, carrier: true, deliveredAt: true, isSettled: true },
   });
+  // Đơn đã đối soát: số bản kê là sự thật, đồng bộ lô không ghi đè cột tài chính.
+  const existingSettled = existing?.isSettled === true;
 
   if (existing) {
     await tx.order.update({
@@ -330,6 +336,7 @@ async function upsertOrderTx(
         shippingStatus,
         paymentStatus,
         totalAmount,
+        ...(existingSettled ? {} : { platformSubsidy }),
         ...(trackingCode ? { trackingCode } : {}),
         ...(packageId ? { platformPackageId: packageId } : {}),
         // Mốc GIAO THÀNH CÔNG ghi MỘT lần (Kiểm toán phí sàn rổ #3 đếm từ đây).
@@ -374,6 +381,7 @@ async function upsertOrderTx(
       paymentStatus,
       shippingStatus,
       trackingCode,
+      platformSubsidy,
       ...(packageId ? { platformPackageId: packageId } : {}),
       ...(deliveredAt ? { deliveredAt } : {}),
       ...(carrier ? { carrier } : {}),
@@ -422,9 +430,9 @@ export interface SyncSettlementsResult {
  * (isSettled/actualPayout/serviceFee...). Gom TẤT CẢ giao dịch của cùng một đơn
  * trong lượt chạy rồi GHI ĐÈ (không cộng dồn) — chạy lại vẫn ra đúng một kết quả.
  *
- * TikTok trả phí gộp (fee_amount); ta dồn vào serviceFee làm "phí sàn thực tế" —
- * đủ để bảng Cash Flow tính đúng tiền về ví (actualPayout). Bóc tách chi tiết
- * từng loại phí để sau khi có nguồn dữ liệu chi tiết hơn.
+ * Giao dịch bản kê là bản PHẲNG có đủ hoa hồng/phí giao dịch/affiliate/ship/thuế
+ * (đối chiếu thật 16/09) → bóc vào cùng bộ cột với Shopee qua
+ * mapTiktokTransactionsToOrder (tiktok/settlements.ts); settledAt = statement_time.
  */
 export async function syncTiktokSettlements(
   channel: Channel,
@@ -446,11 +454,9 @@ export async function syncTiktokSettlements(
     pages: 0,
   };
 
-  // Gom theo order_id trong toàn bộ lượt chạy để cập nhật mỗi đơn đúng một lần.
-  const byOrder = new Map<
-    string,
-    { settlement: number; fee: number; time?: number }
-  >();
+  // Gom MỌI giao dịch theo order_id trong toàn bộ lượt chạy để cập nhật mỗi
+  // đơn đúng một lần (ORDER + REFUND + ADJUSTMENT của cùng đơn cộng lại).
+  const byOrder = new Map<string, { trxs: TikTokStatementTransaction[]; time?: number }>();
 
   let stPageToken: string | undefined;
   do {
@@ -489,10 +495,10 @@ export async function syncTiktokSettlements(
           }
           if (!trx.order_id) continue;
           result.transactions++;
-          const acc = byOrder.get(trx.order_id) ?? { settlement: 0, fee: 0 };
-          acc.settlement += Number(trx.settlement_amount ?? 0) || 0;
-          acc.fee += Math.abs(Number(trx.fee_amount ?? 0) || 0); // phí là số âm → lấy trị tuyệt đối
-          acc.time = trx.order_create_time ?? st.statement_time ?? acc.time;
+          const acc = byOrder.get(trx.order_id) ?? { trxs: [] };
+          acc.trxs.push(trx);
+          // Mốc QUYẾT TOÁN = thời điểm bản kê (statement_time), không phải ngày tạo đơn.
+          acc.time = st.statement_time ?? st.payment_time ?? acc.time;
           byOrder.set(trx.order_id, acc);
         }
 
@@ -518,8 +524,7 @@ export async function syncTiktokSettlements(
       data: {
         isSettled: true,
         settledAt: acc.time ? new Date(acc.time * 1000) : new Date(),
-        serviceFee: acc.fee, // dồn toàn bộ phí sàn thực tế vào đây
-        actualPayout: acc.settlement,
+        ...mapTiktokTransactionsToOrder(acc.trxs),
       },
     });
     result.ordersUpdated++;

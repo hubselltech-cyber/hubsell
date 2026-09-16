@@ -63,15 +63,16 @@ const SAVED_EXCLUDE = /không\s*thành\s*công|unsuccessful|failed|attempt/i;
 const IN_DELIVERY_PATTERN =
   /out\s*for\s*delivery|đang\s*giao|picked\s*up|đã\s*lấy\s*hàng|in\s*transit|đang\s*vận\s*chuyển|delivering/i;
 
+/** Payload thật 16/09: {action_code, description, update_time_millis} — ghép cả action_code. */
 function descOf(e: TikTokTrackingEvent): string {
-  return `${e.description ?? ""} ${e.tracking_event_type ?? ""}`.trim();
+  return `${e.description ?? ""} ${e.tracking_event_type ?? ""} ${e.action_code ?? ""}`.trim();
 }
 
 /** Đếm số lượt giao thất bại trong hành trình vận chuyển của đơn TikTok. */
 export function countTiktokFailedDeliveries(events: TikTokTrackingEvent[]): number {
   let n = 0;
   for (const e of events) {
-    const type = String(e.tracking_event_type ?? "");
+    const type = `${e.tracking_event_type ?? ""} ${e.action_code ?? ""}`.trim();
     const desc = String(e.description ?? "");
     if (FAILED_EVENT_TYPES.test(type) && !FAILED_DESC_EXCLUDE.test(type)) {
       n++;

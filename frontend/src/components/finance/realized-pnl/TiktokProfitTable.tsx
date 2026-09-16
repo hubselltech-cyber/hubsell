@@ -235,9 +235,10 @@ export function TiktokProfitTable({
         </tbody>
       </table>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
-        Cột chiết khấu PVC, Flash Sale, xử lý đơn &amp; SFR, Thuế &amp; VAT đang{" "}
-        <b>giữ chỗ (0₫)</b> — sẽ cắm số thật khi có luồng đồng bộ đối soát TikTok
-        Shop.
+        Số phí, ship, thuế và tiền về lấy từ <b>bản kê giải ngân TikTok</b> (đồng
+        bộ mỗi giờ; đơn chưa đối soát hiện số ước tính từ API đơn). Cột Flash
+        Sale, xử lý đơn &amp; SFR, chiết khấu PVC bởi người bán chưa có nguồn từ
+        sàn nên tạm <b>0₫</b>.
       </p>
     </div>
   );

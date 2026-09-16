@@ -435,6 +435,9 @@ export async function getOrderDetail(
 // (chi tiết TỪNG ĐƠN trong một bản kê, có order_id + settlement_amount).
 // ============================================================
 
+/** Bản kê giải ngân — payload thật 16/09: {id, statement_time, payment_status,
+ *  payment_id, payment_time, settlement/revenue/fee/adjustment/shipping_cost/
+ *  net_sales_amount, currency}. */
 export interface TikTokStatement {
   id: string;
   statement_time?: number; // Unix seconds
@@ -443,7 +446,11 @@ export interface TikTokStatement {
   revenue_amount?: string;
   fee_amount?: string;
   adjustment_amount?: string;
-  payment_status?: string;
+  shipping_cost_amount?: string;
+  net_sales_amount?: string;
+  payment_status?: string; // SETTLED | PAID | PROCESSING …
+  payment_id?: string;
+  payment_time?: number;
 }
 
 export interface TikTokStatementListData {
@@ -452,20 +459,42 @@ export interface TikTokStatementListData {
   statements?: TikTokStatement[];
 }
 
+/**
+ * Giao dịch bản kê — payload THẬT 16/09/2026 là bản PHẲNG ~60 trường *_amount
+ * (chuỗi số, phí mang dấu ÂM). Chỉ khai các trường parser dùng; phần còn lại
+ * qua index signature. Bóc cột ở tiktok/settlements.ts.
+ */
 export interface TikTokStatementTransaction {
   id?: string;
   order_id?: string;
   order_create_time?: number;
+  /** ORDER | REFUND | ADJUSTMENT | SAMPLE_SHIPPING_FEE … */
   type?: string;
   currency?: string;
-  /** Doanh thu ghi nhận cho đơn (chuỗi số). */
   revenue_amount?: string;
-  /** Phí TikTok khấu trừ — thường là số ÂM. */
+  /** Tổng phí TikTok khấu trừ — số ÂM. */
   fee_amount?: string;
   shipping_cost_amount?: string;
-  /** Tiền THỰC NHẬN về ví cho đơn này. */
+  /** Tiền THỰC NHẬN về ví cho giao dịch này (có dấu). */
   settlement_amount?: string;
   adjustment_amount?: string;
+  platform_commission_amount?: string;
+  referral_fee_amount?: string;
+  transaction_fee_amount?: string;
+  sfp_service_fee_amount?: string;
+  affiliate_commission_amount?: string;
+  affiliate_ads_commission_amount?: string;
+  affiliate_partner_commission_amount?: string;
+  platform_discount_amount?: string;
+  seller_discount_amount?: string;
+  customer_paid_shipping_fee_amount?: string;
+  actual_shipping_fee_amount?: string;
+  shipping_fee_subsidy_amount?: string;
+  platform_shipping_fee_discount_amount?: string;
+  customer_refund_amount?: string;
+  pit_amount?: string;
+  iva_vat_amount?: string;
+  [k: string]: unknown;
 }
 
 export interface TikTokStatementTransactionData {
@@ -735,6 +764,8 @@ export async function searchReturns(
 export interface TikTokTrackingEvent {
   update_time_millis?: number;
   description?: string;
+  /** Mã hành động của mốc (payload thật 16/09 có trường này thay tracking_event_type). */
+  action_code?: string;
   tracking_event_type?: string;
   [k: string]: unknown;
 }
