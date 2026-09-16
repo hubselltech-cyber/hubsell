@@ -5,6 +5,33 @@
 
 ---
 
+## Phiên 16/09/2026 tối — Vận đơn TikTok có danh sách SP + nộp lại xét duyệt app TikTok + đăng ký TikTok Marketing API
+
+### Vận đơn TikTok (d0be52f)
+- Anh in thử đơn thật: tem `SHIPPING_LABEL` trần không có danh sách sản phẩm như bản Seller Center in. Adapter `fulfillment/tiktok.ts` nay xin `SHIPPING_LABEL_AND_PACKING_SLIP` trước, sàn/hãng từ chối mới lùi về tem trần (`fetchTikTokLabelPdf`, +6 test). Anh in lại prod xác nhận OK — shop bán 1 món/đơn không cần in thêm phiếu xuất hàng Hubsell.
+
+### Xét duyệt app TikTok Shop bị từ chối → nộp lại (e7e1d10)
+- Lý do sàn: ảnh/video không thấy dữ liệu TikTok (mã đơn phải 18 số đầu 57/58, ID sản phẩm đầu 17) — bộ ảnh cũ lấy từ tour Shopee/Lazada chung.
+- Sửa: tab "Sản phẩm trên sàn" hiện `ID sàn <externalId>` cạnh SKU (route `/api/mappings` vốn đã trả externalId); seed reviewer sinh mã đơn TikTok 18 số `5860…` + externalId `17…` (19 số); script `scripts/fix-reviewer-tiktok-ids.ts` (xem trước / `--apply`) chữa tại chỗ 1.072 đơn + 12 SKU của gian "Hubsell Demo Store" trên prod — anh đã chạy.
+- Đã nộp lại ~22h55 với 5 ảnh anh tự chụp + video anh quay (ffmpeg cắt bỏ thanh Chrome/taskbar), hướng dẫn kiểm thử EN 498/500. Chờ 10-12 ngày. Bài học: ảnh/video nộp sàn KHÔNG chụp qua Chrome đang bật tiện ích Claude (icon/con trỏ cam lẫn vào).
+
+### Chat API Shopee — đóng hẳn
+- Shopee trả lời ticket: từ 18/11/2024 Chat API chỉ cấp cho app loại Seller, KHÔNG cấp cho ISV/Third-party. Anh chốt hoãn xử lý (ẩn chat Shopee / deep link / chuyển trọng tâm chat sang TikTok), gom làm khi app TikTok được duyệt.
+
+### TikTok Marketing API (GMV Max) — khảo sát + đăng ký
+- GMV Max có API đầy đủ ở hệ riêng business-api.tiktok.com (không phải TikTok Shop Partner API): report từng video `/gmv_max/report/get/`, loại/khôi phục video `/campaign/gmv_max/creative/update/`, bật tắt campaign `/campaign/status/update/`. Chi tiết endpoint + điều kiện Business Center ghi trong memory `hubsell-tiktok-gmv-max-api`.
+- Đã đăng ký developer (CÔNG TY TNHH CÔNG NGHỆ HUBSELL, dev@hubsell.tech, Technology Company) + tạo app "Hubsell" (Pending): redirect `https://app.hubsell.tech/ads/tiktok/callback`, scope chỉ đọc + loại video (Ad account information, GMV Max › Store management + Identity and video, Reporting › GMV Max reports). Chưa xin nhóm Campaign (tắt/bật campaign).
+
+### Landing (repo hubsell-landing, a086e5a)
+- Thêm TikTok Shop vào bullet 5 gói bảng giá, hero, meta SEO/OG, khối tour.
+
+### 🔜 Còn lại
+1. Kết quả xét duyệt app TikTok Shop (≈26-28/09): duyệt → and.not.or ủy quyền lại, 11 scope hiệu lực; tắt worker reviewer-demo-topup.
+2. App ID/Secret TikTok Marketing API về dev@hubsell.tech → module `integrations/tiktok-ads/` + nút "Kết nối TikTok Ads" → T1 với TKQC nhà.
+3. Chat Shopee: chọn hướng khi làm chat TikTok.
+
+---
+
 ## Phiên 06/08/2026 — Fix re-connect + dọn sandbox + webhook Lazada + nâng cấp Auth toàn diện
 
 ### Fix bug "Kết nối lại" gian hàng (c1d7983) — nguyên nhân KHÁC giả định ban đầu
