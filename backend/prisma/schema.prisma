@@ -1507,8 +1507,9 @@ model MisaWebhookLog {
 /// nối shop thật.
 model TiktokWebhookLog {
   id        String @id @default(cuid())
-  /// Loại sự kiện TikTok (trường `type`): 1 đơn đổi trạng thái, 3 kiện hàng,
-  /// 5 thu hồi ủy quyền, 11 hủy đơn, 12 hoàn/trả.
+  /// Loại sự kiện TikTok (trường `type`, bảng Console 16/09): 1 đơn đổi trạng
+  /// thái, 2 hoàn lại (bản cũ), 3 đổi địa chỉ, 4 kiện hàng, 6 thu hồi ủy quyền,
+  /// 7 ủy quyền hết hạn, 11 hủy đơn, 12 hoàn/trả.
   eventType Int
   shopId    String
   /// Mã đơn TikTok trong payload (sự kiện đơn hàng) — tra soát + khóa làn theo đơn.

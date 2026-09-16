@@ -7,7 +7,7 @@
 // upsert đơn, trừ kho) chạy thật trên DB dev. Kiểm 5 hành vi:
 //
 //   1. Chữ ký sai → 401, không ghi gì.
-//   2. Sự kiện ngoài phạm vi (type 4 sản phẩm) → 200 ignored, hàng đợi trống.
+//   2. Sự kiện ngoài phạm vi (type 5 sản phẩm) → 200 ignored, hàng đợi trống.
 //   3. Đơn AWAITING_SHIPMENT: ack 200 nhanh, job SUCCESS, Order tạo mới,
 //      tồn kho SKU đã liên kết bị trừ đúng số lượng.
 //   4. Gửi lại Y NGUYÊN body → duplicate, hàng đợi vẫn 1 dòng, kho không trừ đôi.
@@ -167,9 +167,9 @@ describe("Webhook TikTok Shop — hàng đợi bền", () => {
     expect(await prisma.tiktokWebhookLog.count({ where: { orderId: "BAD-SIG" } })).toBe(0);
   });
 
-  it("sự kiện ngoài phạm vi (type 4 sản phẩm) → ack 200 ignored, không vào hàng đợi", async () => {
+  it("sự kiện ngoài phạm vi (type 5 sản phẩm) → ack 200 ignored, không vào hàng đợi", async () => {
     const res = await postWebhook({
-      type: 4,
+      type: 5,
       shop_id: SHOP_ID,
       timestamp: 1,
       data: { product_id: "p1", status: "ACTIVATE" },

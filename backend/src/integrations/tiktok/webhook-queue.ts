@@ -35,23 +35,37 @@ import { createSyncAlert } from "../shopee/inventory-sync";
 import { describeChannelFailure } from "../../services/sync-alert-text";
 
 /**
- * Loại sự kiện webhook TikTok Shop (trường `type`, dạng số) mà Hubsell quan tâm.
- * Mọi sự kiện ĐƠN HÀNG (1/3/11/12) xử lý CÙNG MỘT CÁCH: kéo lại chi tiết đơn
- * rồi upsert + tác động kho — nên hoãn/hủy/hoàn đều về đúng trạng thái sàn.
+ * Loại sự kiện webhook TikTok Shop (trường `type`, dạng số) — ĐỐI CHIẾU bảng
+ * "Quản lý webhook" trên Console app Hubsell 16/09/2026 (bản nháp theo docs
+ * trước đó sai số: kiện hàng là 4 không phải 3, thu hồi ủy quyền là 6 không
+ * phải 5). Mọi sự kiện ĐƠN HÀNG xử lý CÙNG MỘT CÁCH: kéo lại chi tiết đơn rồi
+ * upsert + tác động kho — nên hoãn/hủy/hoàn/đổi địa chỉ đều về đúng trạng thái sàn.
  */
 export const TIKTOK_WEBHOOK_TYPE = {
   ORDER_STATUS_CHANGE: 1,
-  PACKAGE_UPDATE: 3,
-  SELLER_DEAUTHORIZATION: 5,
+  /** "Cập nhật trạng thái hoàn lại" (hủy/chỉ hoàn tiền/trả hàng — bản cũ). */
+  REVERSE_STATUS_UPDATE: 2,
+  RECIPIENT_ADDRESS_UPDATE: 3,
+  PACKAGE_UPDATE: 4,
+  PRODUCT_STATUS_CHANGE: 5,
+  SELLER_DEAUTHORIZATION: 6,
+  AUTHORIZATION_EXPIRE: 7,
   CANCELLATION_STATUS_CHANGE: 11,
   RETURN_STATUS_CHANGE: 12,
+  NEW_CONVERSATION: 13,
 } as const;
 
 const ORDER_EVENT_TYPES: readonly number[] = [
   TIKTOK_WEBHOOK_TYPE.ORDER_STATUS_CHANGE,
+  TIKTOK_WEBHOOK_TYPE.REVERSE_STATUS_UPDATE,
+  TIKTOK_WEBHOOK_TYPE.RECIPIENT_ADDRESS_UPDATE,
   TIKTOK_WEBHOOK_TYPE.PACKAGE_UPDATE,
   TIKTOK_WEBHOOK_TYPE.CANCELLATION_STATUS_CHANGE,
   TIKTOK_WEBHOOK_TYPE.RETURN_STATUS_CHANGE,
+];
+const AUTH_EVENT_TYPES: readonly number[] = [
+  TIKTOK_WEBHOOK_TYPE.SELLER_DEAUTHORIZATION,
+  TIKTOK_WEBHOOK_TYPE.AUTHORIZATION_EXPIRE,
 ];
 
 export interface TiktokWebhookPayload {
@@ -90,7 +104,7 @@ export function classifyTiktokEvent(
   payload: TiktokWebhookPayload
 ): "order" | "auth" | null {
   const type = Number(payload.type);
-  if (type === TIKTOK_WEBHOOK_TYPE.SELLER_DEAUTHORIZATION) return "auth";
+  if (AUTH_EVENT_TYPES.includes(type)) return "auth";
   if (ORDER_EVENT_TYPES.includes(type)) return "order";
   return null;
 }
