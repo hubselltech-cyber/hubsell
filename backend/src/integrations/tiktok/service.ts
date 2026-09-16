@@ -18,14 +18,19 @@ import { expireToDate } from "./config";
 import {
   fetchOrders,
   fetchSettlements,
-  fetchStatementTransactions,
+  fetchStatementTransactionsV2,
+  fetchUnsettledTransactions,
   getAuthorizedShops,
   getOrderDetail,
   refreshAccessToken,
   type TikTokOrder,
-  type TikTokStatementTransaction,
+  type TikTokTxBreakdown,
 } from "./client";
-import { mapTiktokTransactionsToOrder } from "./settlements";
+import {
+  groupTiktokLinesByOrder,
+  mapTiktokBreakdownToSettlement,
+  parseEstimatedSettlement,
+} from "./settlements";
 
 // Làm mới token khi còn dưới 5 phút là hết hạn — chừa biên an toàn cho các call
 // nối tiếp trong cùng một lượt đồng bộ, tránh token hết hạn giữa chừng.
@@ -457,26 +462,35 @@ async function upsertOrderTx(
 
 export interface SyncSettlementsOptions {
   maxPages?: number;
-  /** Chỉ quét bản kê N ngày gần nhất — worker giờ dùng cửa sổ hẹp; tay = tất cả. */
+  /** Chỉ quét bản kê N ngày gần nhất — worker giờ dùng cửa sổ hẹp. */
   daysBack?: number;
+  /**
+   * Không có daysBack = BACKFILL toàn bộ: quét từ mốc này (mặc định = ngày tạo
+   * đơn TikTok cũ nhất của gian, tối thiểu 01/01/2025) tới nay, theo từng cửa
+   * sổ 30 ngày statement_time_ge/lt. Get Statements KHÔNG truyền mốc chỉ trả
+   * cửa sổ gần (đối chiếu prod 16/09: T6-T8 trắng dù quét "tất cả").
+   */
+  since?: Date;
 }
 
 export interface SyncSettlementsResult {
   statements: number; // số bản kê quét qua
   transactions: number; // số dòng giao dịch đọc được
   ordersUpdated: number; // số Order được cập nhật quyết toán
-  ordersNotFound: number; // giao dịch có order_id nhưng đơn chưa đồng bộ về
+  ordersNotFound: number; // dòng có order_id nhưng đơn chưa đồng bộ về
+  unlinked: number; // dòng cấp shop không gắn đơn (phạt, ship mẫu, nạp ví ads…)
+  windows: number; // số cửa sổ thời gian đã quét
   pages: number;
 }
 
+const SETTLE_WINDOW_DAYS = 30;
+const SETTLE_BACKFILL_FLOOR = Date.UTC(2025, 0, 1) / 1000; // API 202501/202507 chỉ có dữ liệu từ đây
+
 /**
- * Kéo đối soát/dòng tiền thật từ TikTok và cập nhật số quyết toán cho từng Order
- * (isSettled/actualPayout/serviceFee...). Gom TẤT CẢ giao dịch của cùng một đơn
- * trong lượt chạy rồi GHI ĐÈ (không cộng dồn) — chạy lại vẫn ra đúng một kết quả.
- *
- * Giao dịch bản kê là bản PHẲNG có đủ hoa hồng/phí giao dịch/affiliate/ship/thuế
- * (đối chiếu thật 16/09) → bóc vào cùng bộ cột với Shopee qua
- * mapTiktokTransactionsToOrder (tiktok/settlements.ts); settledAt = statement_time.
+ * Kéo bản kê giải ngân THẬT (Finance API 202501, có breakdown đặt tên) và ghi
+ * cho từng Order: sao kê chi tiết TiktokOrderSettlement (số có dấu) + cột gộp
+ * GĐ2 (isSettled/actualPayout/phí…). Gom MỌI dòng của cùng đơn trong lượt chạy
+ * rồi GHI ĐÈ — chạy lại vẫn ra đúng một kết quả.
  */
 export async function syncTiktokSettlements(
   channel: Channel,
@@ -484,74 +498,100 @@ export async function syncTiktokSettlements(
 ): Promise<SyncSettlementsResult> {
   const { accessToken, shopCipher } = await getValidAccessToken(channel);
   const maxPages = opts.maxPages ?? MAX_PAGES;
-  const statementTimeGe = opts.daysBack
-    ? Math.floor(Date.now() / 1000) - opts.daysBack * 24 * 60 * 60
-    : undefined;
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  // Cửa sổ quét: nhịp giờ = [now − daysBack, now]; backfill = từng lát 30 ngày.
+  const windows: { ge: number; lt: number }[] = [];
+  if (opts.daysBack) {
+    windows.push({ ge: nowSec - opts.daysBack * 86_400, lt: nowSec });
+  } else {
+    let start = opts.since ? Math.floor(opts.since.getTime() / 1000) : undefined;
+    if (!start) {
+      const oldest = await prisma.order.findFirst({
+        where: { channelId: channel.id },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      });
+      start = oldest ? Math.floor(oldest.createdAt.getTime() / 1000) : nowSec - 90 * 86_400;
+    }
+    start = Math.max(start, SETTLE_BACKFILL_FLOOR);
+    for (let ge = start; ge < nowSec; ge += SETTLE_WINDOW_DAYS * 86_400) {
+      windows.push({ ge, lt: Math.min(ge + SETTLE_WINDOW_DAYS * 86_400, nowSec + 60) });
+    }
+  }
+
   let stShapeLogged = false;
   let txShapeLogged = false;
-
   const result: SyncSettlementsResult = {
     statements: 0,
     transactions: 0,
     ordersUpdated: 0,
     ordersNotFound: 0,
+    unlinked: 0,
+    windows: windows.length,
     pages: 0,
   };
 
-  // Gom MỌI giao dịch theo order_id trong toàn bộ lượt chạy để cập nhật mỗi
-  // đơn đúng một lần (ORDER + REFUND + ADJUSTMENT của cùng đơn cộng lại).
-  const byOrder = new Map<string, { trxs: TikTokStatementTransaction[]; time?: number }>();
+  // Gom MỌI dòng theo đơn trong toàn bộ lượt chạy (ORDER + REFUND + điều chỉnh
+  // gắn đơn cộng lại; đơn có dòng ở 2 bản kê khác ngày vẫn về một chỗ).
+  const byOrder = new Map<string, { lines: TikTokTxBreakdown[]; time?: number; statementId?: string }>();
 
-  let stPageToken: string | undefined;
-  do {
-    const list = await fetchSettlements({
-      accessToken,
-      shopCipher,
-      statementTimeGe,
-      pageSize: PAGE_SIZE,
-      pageToken: stPageToken,
-    });
-    result.pages++;
+  for (const w of windows) {
+    let stPageToken: string | undefined;
+    let stPages = 0;
+    do {
+      const list = await fetchSettlements({
+        accessToken,
+        shopCipher,
+        statementTimeGe: w.ge,
+        statementTimeLt: w.lt,
+        pageSize: PAGE_SIZE,
+        pageToken: stPageToken,
+      });
+      result.pages++;
+      stPages++;
 
-    for (const st of list.statements ?? []) {
-      result.statements++;
-      if (!stShapeLogged) {
-        stShapeLogged = true;
-        logShape("bản kê (statements)", st);
-      }
-
-      let txPageToken: string | undefined;
-      let txPages = 0;
-      do {
-        const txData = await fetchStatementTransactions({
-          accessToken,
-          shopCipher,
-          statementId: st.id,
-          pageSize: PAGE_SIZE,
-          pageToken: txPageToken,
-        });
-        txPages++;
-
-        for (const trx of txData.statement_transactions ?? []) {
-          if (!txShapeLogged) {
-            txShapeLogged = true;
-            logShape("giao dịch bản kê (statement_transactions)", trx);
-          }
-          if (!trx.order_id) continue;
-          result.transactions++;
-          const acc = byOrder.get(trx.order_id) ?? { trxs: [] };
-          acc.trxs.push(trx);
-          // Mốc QUYẾT TOÁN = thời điểm bản kê (statement_time), không phải ngày tạo đơn.
-          acc.time = st.statement_time ?? st.payment_time ?? acc.time;
-          byOrder.set(trx.order_id, acc);
+      for (const st of list.statements ?? []) {
+        result.statements++;
+        if (!stShapeLogged) {
+          stShapeLogged = true;
+          logShape("bản kê (statements)", st);
         }
 
-        txPageToken = txData.next_page_token || undefined;
-      } while (txPageToken && txPages < maxPages);
-    }
+        let txPageToken: string | undefined;
+        let txPages = 0;
+        do {
+          const txData = await fetchStatementTransactionsV2({
+            accessToken,
+            shopCipher,
+            statementId: st.id,
+            pageSize: 100,
+            pageToken: txPageToken,
+          });
+          txPages++;
+          const lines = txData.transactions ?? [];
+          if (!txShapeLogged && lines[0]) {
+            txShapeLogged = true;
+            logShape("giao dịch bản kê 202501", lines[0]);
+          }
+          const { byOrder: grouped, unlinked } = groupTiktokLinesByOrder(lines);
+          result.unlinked += unlinked;
+          for (const [orderId, ls] of grouped) {
+            result.transactions += ls.length;
+            const acc = byOrder.get(orderId) ?? { lines: [] };
+            acc.lines.push(...ls);
+            // Mốc QUYẾT TOÁN = thời điểm bản kê (statement_time), không phải ngày tạo đơn.
+            acc.time = st.statement_time ?? st.payment_time ?? acc.time;
+            acc.statementId = st.id;
+            byOrder.set(orderId, acc);
+          }
+          txPageToken = txData.next_page_token || undefined;
+        } while (txPageToken && txPages < maxPages);
+      }
 
-    stPageToken = list.next_page_token || undefined;
-  } while (stPageToken && result.pages < maxPages);
+      stPageToken = list.next_page_token || undefined;
+    } while (stPageToken && stPages < maxPages);
+  }
 
   // Áp số quyết toán vào từng Order đã đồng bộ về trước đó.
   for (const [orderId, acc] of byOrder) {
@@ -563,27 +603,165 @@ export async function syncTiktokSettlements(
       result.ordersNotFound++;
       continue;
     }
-    const cols = mapTiktokTransactionsToOrder(acc.trxs);
-    await prisma.order.update({
-      where: { id: order.id },
-      data: {
-        isSettled: true,
-        settledAt: acc.time ? new Date(acc.time * 1000) : new Date(),
-        ...cols,
-        // Phần ship shop chịu trên TikTok là CHÍNH SÁCH (phí ship người bán /
-        // SFP), không phải sàn trừ nhầm → giữ làm chi phí trong P&L nhưng
-        // không đưa vào rổ "Truy thu phí ship" (chỉ đổi khi còn CHO_KHIEU_NAI —
-        // seller đã bấm khiếu nại thì tôn trọng).
-        ...(cols.shippingFeeDiff > 0 && order.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
-          ? { shippingDisputeStatus: ShippingDisputeStatus.DA_DOI_SOAT }
-          : {}),
-      },
+    const settledAt = acc.time ? new Date(acc.time * 1000) : new Date();
+    await writeTiktokSettlement(order, acc.lines, {
+      estimated: false,
+      settledAt,
+      statementId: acc.statementId,
+    });
+    result.ordersUpdated++;
+  }
+
+  if (result.ordersNotFound > 0 || result.unlinked > 0) {
+    console.log(
+      `[TikTok] Đối soát "${channel.shopName}": ${result.ordersUpdated} đơn ghi số thật, ${result.ordersNotFound} mã đơn trên bản kê chưa có trong Hubsell, ${result.unlinked} dòng cấp shop không gắn đơn (${result.statements} bản kê / ${result.windows} cửa sổ)`
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Ghi bản kê của MỘT đơn: sao kê chi tiết (có dấu) + cột gộp Order. Dùng cho
+ * cả bản kê đã quyết toán (estimated=false: đặt isSettled/settledAt) và số ước
+ * tính unsettled (estimated=true: KHÔNG đụng isSettled, ghi expectedPayout làm
+ * mẫu số Kiểm toán phí sàn như Shopee).
+ */
+async function writeTiktokSettlement(
+  order: { id: string; shippingDisputeStatus: ShippingDisputeStatus },
+  lines: TikTokTxBreakdown[],
+  meta: {
+    estimated: boolean;
+    settledAt?: Date;
+    statementId?: string;
+    estimatedSettlementAt?: Date | null;
+    unsettledReason?: string | null;
+  }
+): Promise<void> {
+  const { detail, order: cols } = mapTiktokBreakdownToSettlement(lines);
+  const detailData = {
+    ...detail,
+    estimated: meta.estimated,
+    statementId: meta.statementId ?? null,
+    estimatedSettlementAt: meta.estimatedSettlementAt ?? null,
+    unsettledReason: meta.unsettledReason ?? null,
+    settledAt: meta.estimated ? null : meta.settledAt ?? null,
+  };
+  await prisma.tiktokOrderSettlement.upsert({
+    where: { orderId: order.id },
+    create: { orderId: order.id, ...detailData },
+    update: detailData,
+  });
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      ...cols,
+      ...(meta.estimated
+        ? { expectedPayout: cols.actualPayout }
+        : { isSettled: true, settledAt: meta.settledAt ?? new Date() }),
+      // Phần ship shop chịu trên TikTok là CHÍNH SÁCH (phí ship người bán /
+      // SFP), không phải sàn trừ nhầm → giữ làm chi phí trong P&L nhưng
+      // không đưa vào rổ "Truy thu phí ship" (chỉ đổi khi còn CHO_KHIEU_NAI —
+      // seller đã bấm khiếu nại thì tôn trọng).
+      ...(!meta.estimated &&
+      cols.shippingFeeDiff > 0 &&
+      order.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
+        ? { shippingDisputeStatus: ShippingDisputeStatus.DA_DOI_SOAT }
+        : {}),
+    },
+  });
+}
+
+export interface SyncUnsettledOptions {
+  maxPages?: number;
+  /** Chỉ đơn tạo trong N ngày gần nhất (search_time_ge) — mặc định 45. */
+  daysBack?: number;
+}
+
+export interface SyncUnsettledResult {
+  transactions: number;
+  ordersUpdated: number;
+  ordersNotFound: number;
+  skippedSettled: number; // đơn đã có bản kê thật → không cho số ước tính ghi đè
+  unlinked: number;
+  pages: number;
+}
+
+/**
+ * SỐ ƯỚC TÍNH CỦA CHÍNH SÀN cho đơn CHƯA quyết toán (Get Unsettled Transactions
+ * 202507) → cùng bộ cột với bản kê thật, isSettled giữ false làm nhãn "chờ đối
+ * soát". Cùng vai trò syncShopeePendingEscrowEstimates — không tự ước % phí.
+ */
+export async function syncTiktokUnsettledEstimates(
+  channel: Channel,
+  opts: SyncUnsettledOptions = {}
+): Promise<SyncUnsettledResult> {
+  const { accessToken, shopCipher } = await getValidAccessToken(channel);
+  const maxPages = opts.maxPages ?? MAX_PAGES;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const searchTimeGe = Math.max(nowSec - (opts.daysBack ?? 45) * 86_400, SETTLE_BACKFILL_FLOOR);
+
+  const result: SyncUnsettledResult = {
+    transactions: 0,
+    ordersUpdated: 0,
+    ordersNotFound: 0,
+    skippedSettled: 0,
+    unlinked: 0,
+    pages: 0,
+  };
+  let shapeLogged = false;
+  const byOrder = new Map<string, TikTokTxBreakdown[]>();
+
+  let pageToken: string | undefined;
+  do {
+    const data = await fetchUnsettledTransactions({
+      accessToken,
+      shopCipher,
+      searchTimeGe,
+      searchTimeLt: nowSec,
+      pageSize: 100,
+      pageToken,
+    });
+    result.pages++;
+    const lines = data.transactions ?? [];
+    if (!shapeLogged && lines[0]) {
+      shapeLogged = true;
+      logShape("giao dịch chưa quyết toán 202507", lines[0]);
+    }
+    const { byOrder: grouped, unlinked } = groupTiktokLinesByOrder(lines);
+    result.unlinked += unlinked;
+    for (const [orderId, ls] of grouped) {
+      result.transactions += ls.length;
+      byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), ...ls]);
+    }
+    pageToken = data.next_page_token || undefined;
+  } while (pageToken && result.pages < maxPages);
+
+  for (const [orderId, lines] of byOrder) {
+    const order = await prisma.order.findUnique({
+      where: { channelId_orderCode: { channelId: channel.id, orderCode: orderId } },
+      select: { id: true, shippingDisputeStatus: true, isSettled: true },
+    });
+    if (!order) {
+      result.ordersNotFound++;
+      continue;
+    }
+    if (order.isSettled) {
+      result.skippedSettled++;
+      continue;
+    }
+    const first = lines.find((l) => l.type === "ORDER") ?? lines[0];
+    await writeTiktokSettlement(order, lines, {
+      estimated: true,
+      estimatedSettlementAt: parseEstimatedSettlement(first?.estimated_settlement),
+      unsettledReason: first?.unsettled_reason ?? null,
     });
     result.ordersUpdated++;
   }
 
   return result;
 }
+
 
 // ============================================================
 // WEBHOOK THỜI GIAN THỰC — đơn mới / đổi trạng thái → upsert + trừ/hoàn kho

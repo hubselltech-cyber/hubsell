@@ -633,6 +633,58 @@ export interface PnlDetailRow {
    * (âm = sàn trừ, dương = ghi có). null với đơn sàn khác / chưa đối soát.
    */
   lazada: LazadaSettlementDetail | null;
+  /**
+   * BẢN KÊ CHI TIẾT TIKTOK — số CÓ DẤU nguyên bản từ Finance API 202501 (đã
+   * quyết toán) hoặc Get Unsettled Transactions 202507 (estimated = true: số
+   * ước tính của chính sàn). null với đơn sàn khác / chưa có dòng nào.
+   */
+  tiktok: TiktokSettlementDetail | null;
+}
+
+/** Tên cột = tên phí TikTok Shop VN (chốt 16/09/2026); âm = sàn trừ, dương = ghi có. */
+export interface TiktokSettlementDetail {
+  estimated: boolean;
+  estimatedSettlementAt: string | null;
+  unsettledReason: string | null;
+  adjustmentTypes: string | null;
+  // Doanh thu
+  grossSales: number; // Giá gốc sản phẩm
+  sellerDiscount: number; // Chiết khấu của nhà bán hàng
+  refundGross: number; // Doanh thu hoàn trả
+  sellerDiscountRefund: number;
+  revenueAmount: number; // Tổng phụ sau chiết khấu của nhà bán hàng
+  platformDiscount: number; // Chiết khấu nền tảng (sàn chịu)
+  customerRefund: number;
+  // Phí vận chuyển
+  shipActual: number; // Phí vận chuyển thực tế
+  shipCustomerPaid: number; // Phí vận chuyển của khách hàng
+  shipPlatformDiscount: number; // Chiết khấu phí vận chuyển của nền tảng
+  shipSubsidy: number; // Trợ cấp phí vận chuyển
+  shipSellerDiscount: number; // Chiết khấu phí vận chuyển của nhà bán hàng
+  shipReturn: number; // Phí vận chuyển trả hàng thực tế
+  shipOther: number;
+  shipReimbursement: number;
+  shippingCost: number; // Phí vận chuyển của nhà bán hàng (ròng)
+  // Phí
+  feeCommission: number; // Phí hoa hồng nền tảng
+  feeTransaction: number; // Phí giao dịch
+  feeOrderProcessing: number; // Phí xử lý đơn hàng
+  feeSfp: number; // Phí dịch vụ Freeship Xtra
+  feeVoucherXtra: number; // Phí dịch vụ Voucher Xtra
+  feeFlashSale: number; // Phí dịch vụ Flash Sale
+  feeAffiliate: number; // Hoa hồng affiliate
+  feeAffiliateAds: number; // Hoa hồng quảng cáo affiliate
+  feeAffiliatePartner: number; // Hoa hồng cho đối tác affiliate
+  feeGmvMax: number; // Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  feeOther: number; // Phí khác của nền tảng
+  feeTaxAmount: number;
+  // Thuế
+  taxVat: number; // Thuế GTGT khấu trừ
+  taxPit: number; // Thuế TNCN khấu trừ
+  taxOther: number;
+  // Điều chỉnh & kết quả
+  adjustmentAmount: number;
+  settlementAmount: number; // Số tiền quyết toán
 }
 
 /** Bộ cột sao kê chi tiết Lazada (xem model LazadaOrderSettlement phía backend). */

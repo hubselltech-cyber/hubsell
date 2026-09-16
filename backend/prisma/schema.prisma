@@ -1263,6 +1263,7 @@ model Order {
   items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
   invoiceLogs   InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
   lazadaSettlement LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
+  tiktokSettlement TiktokOrderSettlement? // bản kê chi tiết TikTok (đã quyết toán hoặc ước tính của sàn)
   deliveryFailNotice DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
   deliveryTrackingTask DeliveryTrackingTask? // vé xếp hàng hỏi tracking (cứu đơn giao thất bại)
   kocAttribution KocOrderAttribution? // đơn affiliate quy cho KOC nào (Sổ KOC)
@@ -1727,6 +1728,75 @@ model LazadaOrderSettlement {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("lazada_order_settlements")
+}
+
+/// BẢN KÊ TIKTOK CHI TIẾT — mỗi đơn TikTok MỘT dòng, số CÓ DẤU NGUYÊN BẢN từ
+/// Finance API (bản kê đã quyết toán 202501, hoặc ƯỚC TÍNH CỦA SÀN từ Get
+/// Unsettled Transactions 202507 khi estimated = true). Tên cột = tên phí
+/// TikTok Shop VN (chốt anh Trung 16/09/2026); số GỘP vẫn ghi về cột GĐ2 của
+/// Order cho công thức dùng chung. Nguồn sự thật là bản kê — đồng bộ ghi đè.
+model TiktokOrderSettlement {
+  id      String @id @default(cuid())
+  orderId String @unique
+
+  /// true = số ước tính (đơn chưa quyết toán), false = bản kê đã quyết toán.
+  estimated Boolean @default(false)
+  statementId String?
+  /// Unsettled: mốc quyết toán dự kiến sàn báo (chỉ khi sàn trả unix time).
+  estimatedSettlementAt DateTime?
+  unsettledReason String?
+
+  // ===== DOANH THU (revenue_breakdown) =====
+  grossSales           Decimal @default(0) @db.Decimal(12, 2) /// Giá gốc sản phẩm (subtotal_before_discount)
+  sellerDiscount       Decimal @default(0) @db.Decimal(12, 2) /// Chiết khấu của nhà bán hàng (âm)
+  refundGross          Decimal @default(0) @db.Decimal(12, 2) /// Doanh thu hoàn trả (âm)
+  sellerDiscountRefund Decimal @default(0) @db.Decimal(12, 2) /// CK người bán được trả lại khi hoàn
+  revenueAmount        Decimal @default(0) @db.Decimal(12, 2) /// Tổng phụ sau chiết khấu của nhà bán hàng (revenue_amount)
+  platformDiscount     Decimal @default(0) @db.Decimal(12, 2) /// Chiết khấu nền tảng (sàn chịu, tham chiếu)
+  customerRefund       Decimal @default(0) @db.Decimal(12, 2) /// Tiền khách thật nhận lại (tham chiếu)
+
+  // ===== PHÍ VẬN CHUYỂN (shipping_cost_breakdown) =====
+  shipActual           Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển thực tế (âm)
+  shipCustomerPaid     Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển của khách hàng
+  shipPlatformDiscount Decimal @default(0) @db.Decimal(12, 2) /// Chiết khấu phí vận chuyển của nền tảng
+  shipSubsidy          Decimal @default(0) @db.Decimal(12, 2) /// Trợ cấp phí vận chuyển
+  shipSellerDiscount   Decimal @default(0) @db.Decimal(12, 2) /// Chiết khấu phí vận chuyển của nhà bán hàng
+  shipReturn           Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển trả hàng thực tế (âm)
+  shipOther            Decimal @default(0) @db.Decimal(12, 2) /// Phụ phí logistics khác (ký nhận, bảo hiểm…)
+  shipReimbursement    Decimal @default(0) @db.Decimal(12, 2) /// Sàn bồi hoàn ship (giao thất bại, trả hàng…)
+  shippingCost         Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển của nhà bán hàng (ròng)
+
+  // ===== PHÍ (fee_tax_breakdown.fee) — tên theo TikTok Shop VN =====
+  feeCommission        Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng nền tảng
+  feeTransaction       Decimal @default(0) @db.Decimal(12, 2) /// Phí giao dịch
+  feeOrderProcessing   Decimal @default(0) @db.Decimal(12, 2) /// Phí xử lý đơn hàng (vn_fix_infrastructure_fee)
+  feeSfp               Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Freeship Xtra (SFP)
+  feeVoucherXtra       Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Voucher Xtra
+  feeFlashSale         Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Flash Sale
+  feeAffiliate         Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng affiliate
+  feeAffiliateAds      Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
+  feeAffiliatePartner  Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng cho đối tác affiliate
+  feeGmvMax            Decimal @default(0) @db.Decimal(12, 2) /// Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  feeOther             Decimal @default(0) @db.Decimal(12, 2) /// Phí khác của nền tảng (chốt chặn)
+  feeTaxAmount         Decimal @default(0) @db.Decimal(12, 2) /// fee_tax_amount — tổng phí + thuế sàn ghi
+
+  // ===== THUẾ (fee_tax_breakdown.tax) =====
+  taxVat               Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT khấu trừ
+  taxPit               Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN khấu trừ
+  taxOther             Decimal @default(0) @db.Decimal(12, 2) /// Sắc thuế khác (chốt chặn)
+
+  // ===== ĐIỀU CHỈNH & KẾT QUẢ =====
+  adjustmentAmount     Decimal @default(0) @db.Decimal(12, 2) /// Khoản điều chỉnh gắn đơn (có dấu)
+  adjustmentTypes      String? /// Loại điều chỉnh TikTok ghi (nối bằng ",")
+  settlementAmount     Decimal @default(0) @db.Decimal(12, 2) /// Số tiền quyết toán (tiền về ví)
+  settledAt            DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("tiktok_order_settlements")
 }
 
 // ---------- AFFILIATE TIẾP THỊ & VÍ HUBSELL ----------

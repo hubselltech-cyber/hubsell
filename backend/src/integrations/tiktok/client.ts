@@ -510,6 +510,7 @@ export interface FetchSettlementsParams {
   statementTimeLt?: number;
   pageSize?: number;
   pageToken?: string;
+  sortOrder?: "ASC" | "DESC";
 }
 
 /**
@@ -523,6 +524,8 @@ export async function fetchSettlements(
   const query: Record<string, string | number> = {
     page_size: params.pageSize ?? 50,
     sort_field: "statement_time",
+    // Mới nhất trước: cửa sổ đối soát theo nhịp chỉ cần vài bản kê gần nhất.
+    sort_order: params.sortOrder ?? "DESC",
   };
   if (params.statementTimeGe) query.statement_time_ge = params.statementTimeGe;
   if (params.statementTimeLt) query.statement_time_lt = params.statementTimeLt;
@@ -583,26 +586,168 @@ export async function fetchStatementTransactions(
 // đối chiếu qua log "[TikTok] Hình dạng" khi chạy thật — parser phòng thủ).
 // ============================================================
 
-export interface TikTokOrderStatementTransaction extends TikTokStatementTransaction {
-  revenue_breakdown?: Record<string, string | undefined>;
-  fee_breakdown?: Record<string, string | undefined>;
-  shipping_cost_breakdown?: Record<string, string | undefined>;
+/** Bản đồ "tên trường → chuỗi số có dấu" của một khối breakdown (docs 202501/202507);
+ *  khối con (supplementary_component) lồng cùng kiểu. */
+export type TikTokAmountMap = { [k: string]: string | TikTokAmountMap | undefined };
+
+/**
+ * GIAO DỊCH BẢN KÊ BẢN 202501 — CÓ BREAKDOWN ĐẶT TÊN (docs Get Transactions by
+ * Statement 202501, tải JSON docs 16/09/2026): mỗi dòng = ORDER | REFUND |
+ * RESERVE | <loại điều chỉnh>; số CÓ DẤU (âm = sàn trừ shop). Cùng khuôn với
+ * dòng của Get Unsettled Transactions 202507 (chỉ khác tiền tố `est_` ở các
+ * tổng) nên parser tiktok/settlements.ts đọc chung.
+ *   revenue_breakdown      : subtotal_before_discount / seller_discount / refund_* …
+ *   shipping_cost_breakdown: actual_shipping_fee / customer_paid_shipping_fee /
+ *                            shipping_fee_discount / return_shipping_fee … +
+ *                            supplementary_component (platform_shipping_fee_discount,
+ *                            shipping_fee_subsidy, seller_shipping_fee_discount…)
+ *   fee_tax_breakdown.fee  : platform_commission / transaction_fee /
+ *                            vn_fix_infrastructure_fee / sfp_service_fee /
+ *                            voucher_xtra / flash_sales / affiliate_* / gmv_max_* …
+ *   fee_tax_breakdown.tax  : local_vat_amount / pit_amount (GTGT + TNCN sàn nộp hộ) …
+ *   supplementary_component: platform_discount_amount / customer_refund_amount
+ *                            (chỉ có ở bản kê đã quyết toán; tham chiếu, không
+ *                            cộng vào settlement)
+ */
+export interface TikTokTxBreakdown {
+  id?: string;
+  /** ORDER | REFUND | RESERVE | SHIPPING_FEE_ADJUSTMENT | PLATFORM_PENALTY … */
+  type?: string;
+  status?: string;
+  currency?: string;
+  order_id?: string;
+  order_create_time?: number;
+  order_delivery_time?: number;
+  adjustment_id?: string;
+  /** Đơn liên quan của dòng điều chỉnh (dòng điều chỉnh không có order_id). */
+  adjustment_order_id?: string;
+  settlement_amount?: string;
+  revenue_amount?: string;
+  shipping_cost_amount?: string;
+  fee_tax_amount?: string;
+  adjustment_amount?: string;
+  // Bản unsettled 202507 dùng tiền tố est_ cho các tổng
+  est_settlement_amount?: string;
+  est_revenue_amount?: string;
+  est_shipping_cost_amount?: string;
+  est_fee_tax_amount?: string;
+  est_adjustment_amount?: string;
+  /** Unsettled: mốc quyết toán dự kiến — unix giây (đã giao) hoặc chuỗi "x days after delivery". */
+  estimated_settlement?: string;
+  unsettled_reason?: string;
+  revenue_breakdown?: TikTokAmountMap;
+  shipping_cost_breakdown?: TikTokAmountMap;
+  fee_tax_breakdown?: { fee?: TikTokAmountMap; tax?: TikTokAmountMap };
+  supplementary_component?: TikTokAmountMap;
   [k: string]: unknown;
 }
 
-export async function getOrderStatementTransactions(
+export interface TikTokStatementTransactionsV2Data {
+  next_page_token?: string;
+  id?: string;
+  create_time?: number;
+  status?: string;
+  currency?: string;
+  total_settlement_amount?: string;
+  total_count?: number;
+  transactions?: TikTokTxBreakdown[];
+}
+
+/**
+ * GET /finance/202501/statements/{statement_id}/statement_transactions — dòng
+ * giao dịch của MỘT bản kê, có breakdown đặt tên (thay bản 202309 phẳng).
+ * sort_field bắt buộc (chỉ nhận order_create_time), page_size tối đa 100.
+ */
+export async function fetchStatementTransactionsV2(
+  params: FetchStatementTransactionsParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokStatementTransactionsV2Data> {
+  const query: Record<string, string | number> = {
+    page_size: params.pageSize ?? 100,
+    sort_field: "order_create_time",
+    sort_order: "DESC",
+  };
+  if (params.pageToken) query.page_token = params.pageToken;
+  return callApi<TikTokStatementTransactionsV2Data>(
+    {
+      path: `/finance/202501/statements/${params.statementId}/statement_transactions`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+    },
+    cfg
+  );
+}
+
+/**
+ * GET /finance/202501/orders/{order_id}/statement_transactions — bản kê THEO
+ * ĐƠN, chi tiết tới từng SKU. Dùng cho công cụ tra bản kê thô (HQ) để đối
+ * chiếu từng số với mapping; luồng đồng bộ dùng bản theo statement ở trên.
+ */
+export async function getOrderStatementTransactionsV2(
   params: { accessToken: string; shopCipher: string; orderId: string },
   cfg: TikTokConfig = getTikTokConfig()
-): Promise<TikTokOrderStatementTransaction[]> {
-  const data = await callApi<{ statement_transactions?: TikTokOrderStatementTransaction[] }>(
+): Promise<Record<string, unknown>> {
+  return callApi<Record<string, unknown>>(
     {
-      path: `/finance/202309/orders/${params.orderId}/statement_transactions`,
+      path: `/finance/202501/orders/${params.orderId}/statement_transactions`,
       accessToken: params.accessToken,
       shopCipher: params.shopCipher,
     },
     cfg
   );
-  return data.statement_transactions ?? [];
+}
+
+// ============================================================
+// GIAO DỊCH CHƯA QUYẾT TOÁN (Finance API 202507 — unsettled)
+//
+// GET /finance/202507/orders/unsettled: MỌI đơn/điều chỉnh chưa quyết toán kèm
+// breakdown phí ƯỚC TÍNH CỦA CHÍNH SÀN (docs: "estimated amount, subject to
+// change before settlement"). Đây là nguồn số cho đơn "chờ đối soát" — cùng
+// vai trò get_escrow_detail của Shopee, KHÔNG tự ước % phí. Chỉ có giao dịch
+// tạo sau 01/01/2025; đơn quyết toán xong tự biến mất khỏi API này.
+// ============================================================
+
+export interface FetchUnsettledParams {
+  accessToken: string;
+  shopCipher: string;
+  /** Lọc theo thời điểm tạo giao dịch (unix giây). Bỏ trống → từ 01/01/2025. */
+  searchTimeGe?: number;
+  searchTimeLt?: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+
+export interface TikTokUnsettledData {
+  next_page_token?: string;
+  total_count?: number;
+  sum_est_settlement_amount?: string;
+  sum_est_revenue_amount?: string;
+  sum_est_fee_amount?: string;
+  transactions?: TikTokTxBreakdown[];
+}
+
+export async function fetchUnsettledTransactions(
+  params: FetchUnsettledParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokUnsettledData> {
+  const query: Record<string, string | number> = {
+    page_size: params.pageSize ?? 100,
+    sort_field: "order_create_time",
+    sort_order: "DESC",
+  };
+  if (params.searchTimeGe) query.search_time_ge = params.searchTimeGe;
+  if (params.searchTimeLt) query.search_time_lt = params.searchTimeLt;
+  if (params.pageToken) query.page_token = params.pageToken;
+  return callApi<TikTokUnsettledData>(
+    {
+      path: "/finance/202507/orders/unsettled",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+    },
+    cfg
+  );
 }
 
 // ============================================================

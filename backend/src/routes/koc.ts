@@ -445,6 +445,7 @@ const PNL_INCLUDE = {
     include: { product: { select: { costPrice: true } } },
   },
   lazadaSettlement: true,
+  tiktokSettlement: true,
 } satisfies Prisma.OrderInclude;
 
 const PARTNER_STATUSES = Object.values(KocPartnerStatus);

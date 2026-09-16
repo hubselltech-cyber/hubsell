@@ -19,7 +19,7 @@ import {
   type ShippingDiscrepancy,
   type SkuProduct,
 } from "@/lib/api";
-import { toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
+import { TIKTOK_COLUMNS, toShopeeRow, toTiktokRow } from "@/lib/pnl-mappers";
 import type { DateRange } from "@/lib/date-range";
 import {
   HQ_EXPENSE_CATEGORY_LABEL,
@@ -274,42 +274,28 @@ export function exportShopeePnlToExcel(rows: PnlDetailRow[]) {
   );
 }
 
-/** Xuất Excel theo layout cột TikTok Shop (đúng bảng đang xem). */
+/** Xuất Excel theo layout cột TikTok Shop — đủ MỌI cột của TIKTOK_COLUMNS (bảng có thể ẩn cột trống). */
 export function exportTiktokPnlToExcel(rows: PnlDetailRow[]) {
   const data = rows.map(toTiktokRow).map((r) => ({
     "Mã đơn": r.base.orderCode,
     "Trạng thái": SHIPPING_LABEL[r.base.shippingStatus] ?? r.base.shippingStatus,
+    "Nguồn số": r.provisional ? "Tạm tính (API đơn)" : r.estimated ? "Sàn ước tính (chờ đối soát)" : "Bản kê đã quyết toán",
     Shop: r.base.shopName,
     "Ngày tạo": toDateTimeText(r.base.createdAt),
     "Ngày gửi ĐVVC": r.base.shippedAt ? toDateTimeText(r.base.shippedAt) : "",
     "Khách hàng": r.base.customerName,
     "Chi tiết sản phẩm": pnlItemsText(r.base.items),
-    "Tổng giá trị SP": r.revenueGross,
-    "Chiết khấu của sàn": r.platformDiscount,
-    "Chiết khấu người bán": -r.sellerDiscount,
-    "Tổng SP sau chiết khấu": r.revenueAfterDiscount,
-    "PVC trước chiết khấu": r.shipBeforeDiscount,
-    "CK PVC bởi sàn": -r.shipDiscountPlatform,
-    "CK PVC bởi người bán": -r.shipDiscountSeller,
-    "PVC sau chiết khấu": r.shipAfterDiscount,
-    "PVC thực tế": r.shipActual,
-    "Chênh lệch PVC": -r.shipDiff,
-    "Phí cố định & GD": -r.feeFixedTransaction,
-    "Phí dịch vụ SFP & Xtra": -r.feeServiceSfpXtra,
-    "Phí Flash Sale": -r.feeFlashSale,
-    "Phí Tiếp thị LK": -r.feeAffiliate,
-    "Phí xử lý đơn & SFR": -r.feeOrderProcessingSfr,
-    "Thuế & VAT": -r.taxVat,
-    "Doanh thu ước tính": r.estRevenue,
-    "Chi phí giá vốn": -r.costSnapshot,
-    "LỢI NHUẬN THỰC TẾ": r.profit,
+    ...Object.fromEntries(
+      TIKTOK_COLUMNS.map((c) => [
+        c.label,
+        c.key === "costSnapshot" ? -Number(r[c.key]) : Number(r[c.key]),
+      ])
+    ),
+    "Loại điều chỉnh": r.adjustmentTypes ?? "",
   }));
   downloadSheet(
     data,
-    [
-      22, 14, 22, 18, 18, 20, 40, 16, 16, 16, 18, 16, 14, 16, 16, 14, 14, 16, 18,
-      14, 14, 16, 14, 18, 16, 18,
-    ],
+    [22, 14, 22, 22, 18, 18, 20, 40, ...TIKTOK_COLUMNS.map(() => 18), 24],
     "Loi nhuan TikTok",
     `hubsell_loinhuan_tiktok_${fileStamp()}.xlsx`
   );

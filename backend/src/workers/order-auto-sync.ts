@@ -69,6 +69,7 @@ import { isTikTokConfigured } from "../integrations/tiktok/config";
 import {
   syncTiktokOrders,
   syncTiktokSettlements,
+  syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
 import { syncTiktokReturns } from "../integrations/tiktok/returns-sync";
 import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
@@ -129,6 +130,8 @@ const RETURNS_DAYS_BACK_DEEP = 7;
 const TRACKING_BACKFILL_PER_SWEEP = 30;
 /** Cửa sổ sao kê cho lượt đối soát tự động — đơn thường quyết toán trong vài ngày. */
 const SETTLE_DAYS_BACK = 7;
+/** Đơn TikTok chưa quyết toán: quét đơn tạo trong 45 ngày (vòng đời giao + trả hàng). */
+const UNSETTLED_DAYS_BACK = 45;
 /**
  * Cửa sổ quét ĐỢT CHI TIỀN về bank (Shopee rút ví / Lazada payout) — payout
  * chốt theo tuần và trạng thái có thể đổi muộn (unpaid → paid), nên quét rộng
@@ -614,6 +617,18 @@ async function runHourlyTier(channel: Channel): Promise<void> {
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi đối soát TikTok "${channel.shopName}":`, (err as Error).message);
+    }
+    // Số ƯỚC TÍNH CỦA SÀN cho đơn chưa quyết toán (Get Unsettled Transactions
+    // 202507) → P&L real-time không bịa % (cùng vai trò escrow ước tính Shopee).
+    try {
+      const u = await syncTiktokUnsettledEstimates(channel, { daysBack: UNSETTLED_DAYS_BACK });
+      if (u.ordersUpdated > 0) {
+        console.log(
+          `[Auto-sync] Ước tính TikTok "${channel.shopName}": ${u.ordersUpdated} đơn chờ đối soát nhận số sàn ước tính (${u.transactions} dòng, ${u.ordersNotFound} chưa có đơn)`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi ước tính unsettled TikTok "${channel.shopName}":`, (err as Error).message);
     }
     // Đợt CHI TIỀN về bank (payments) → WalletWithdrawal, cùng cột với Lazada payout.
     try {

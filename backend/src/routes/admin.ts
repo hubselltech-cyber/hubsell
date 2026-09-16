@@ -33,6 +33,8 @@ import {
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import adminPlansRouter from "./admin-plans";
 import adminHealthRouter from "./admin-health";
+import { getValidAccessToken as getTiktokAccessToken } from "../integrations/tiktok/service";
+import { getOrderStatementTransactionsV2 } from "../integrations/tiktok/client";
 
 // ============================================================
 // QUẢN TRỊ NỀN TẢNG (/api/admin) — chủ nền tảng (cờ isPlatformAdmin) và nhân
@@ -2233,5 +2235,59 @@ router.get("/audit-logs", requirePlatformAdmin, async (req, res, next) => {
 router.use(adminPlansRouter);
 // Sức khỏe nền tảng (radar sức chứa + timeline nâng cấp) — cùng cửa /api/admin.
 router.use(adminHealthRouter);
+
+// ============================================================
+// TRA BẢN KÊ TIKTOK THÔ THEO ĐƠN (16/09/2026) — công cụ đối chiếu mapping:
+// gọi thẳng Finance API 202501 theo order_id (chi tiết tới SKU) và trả kèm
+// dòng TiktokOrderSettlement + cột gộp Order đã ghi, để so từng số với tên
+// phí trước khi tin bảng Lãi/Lỗ. Chỉ platform admin; read-only.
+// GET /api/admin/tiktok/settlement-raw?orderCode=586...
+// ============================================================
+router.get("/tiktok/settlement-raw", requirePlatformAdmin, async (req, res, next) => {
+  try {
+    const orderCode = String(req.query.orderCode ?? "").trim();
+    if (!orderCode) {
+      res.status(400).json({ error: "Thiếu orderCode (mã đơn TikTok)" });
+      return;
+    }
+    const order = await prisma.order.findFirst({
+      where: { orderCode, channel: { channelName: "TIKTOK" } },
+      include: { channel: true, tiktokSettlement: true },
+    });
+    if (!order) {
+      res.status(404).json({ error: "Không tìm thấy đơn TikTok với mã này trong Hubsell" });
+      return;
+    }
+    const { accessToken, shopCipher } = await getTiktokAccessToken(order.channel);
+    const raw = await getOrderStatementTransactionsV2({ accessToken, shopCipher, orderId: orderCode });
+    res.json({
+      orderCode,
+      shopName: order.channel.shopName,
+      raw, // nguyên văn sàn trả (revenue/shipping/fee_tax breakdown từng SKU)
+      mapped: order.tiktokSettlement, // dòng sao kê chi tiết Hubsell đã bóc
+      orderColumns: {
+        isSettled: order.isSettled,
+        settledAt: order.settledAt,
+        fixedFee: order.fixedFee,
+        paymentFee: order.paymentFee,
+        serviceFee: order.serviceFee,
+        affiliateFee: order.affiliateFee,
+        sellerVoucher: order.sellerVoucher,
+        platformSubsidy: order.platformSubsidy,
+        shippingFeeQuoted: order.shippingFeeQuoted,
+        shippingFeeActual: order.shippingFeeActual,
+        shipSubsidyPlatform: order.shipSubsidyPlatform,
+        shipSubsidyShop: order.shipSubsidyShop,
+        shippingFeeDiff: order.shippingFeeDiff,
+        taxWithheld: order.taxWithheld,
+        refundedAmount: order.refundedAmount,
+        actualPayout: order.actualPayout,
+        expectedPayout: order.expectedPayout,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

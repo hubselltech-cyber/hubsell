@@ -325,6 +325,7 @@ type PnlOrder = Prisma.OrderGetPayload<{
     items: { include: { product: { select: { skuCode: true; imageUrl: true } } } };
     inventoryLogs: { include: { product: { select: { costPrice: true } } } };
     lazadaSettlement: true;
+    tiktokSettlement: true;
   };
 }>;
 
@@ -338,6 +339,8 @@ const PNL_INCLUDE = {
   },
   // Sao kê quyết toán chi tiết Lazada — bảng tab Lazada đọc số thật từ đây.
   lazadaSettlement: true,
+  // Bản kê chi tiết TikTok (đã quyết toán / ước tính của sàn) — tab TikTok.
+  tiktokSettlement: true,
 } satisfies Prisma.OrderInclude;
 
 /** TẬP ĐƠN ĐẦU VÀO dùng chung: cùng WHERE, cùng include, cùng trần an toàn.
@@ -420,6 +423,18 @@ export function computePnlRow(o: PnlOrder) {
       revenueGross += sellerVoucher; // trả cột "Giá trị đơn hàng" về giá gốc
     }
   }
+  // TIKTOK (16/09/2026): khi đã có bản kê chi tiết (thật hoặc ước tính của
+  // sàn), "Giá trị đơn hàng" = GIÁ GỐC SẢN PHẨM (subtotal_before_discount) và
+  // voucher shop = Chiết khấu của nhà bán hàng — đúng cách TikTok tính hoa hồng
+  // (giá gốc − CK nhà bán hàng). Trước đó OrderItem.price = sale_price đã trừ
+  // cả CK shop lẫn CK nền tảng nên gross/voucher đều là 0 giả. Tổng sau cấn
+  // trừ không đổi: revenue_amount của sàn = giá gốc − CK shop (đã gồm phần sàn
+  // bù chiết khấu nền tảng, nên platformSubsidy của Order cố ý = 0 ở mapper).
+  const tt = o.channel.channelName === "TIKTOK" ? o.tiktokSettlement : null;
+  if (tt && Number(tt.grossSales) > 0) {
+    revenueGross = Number(tt.grossSales);
+    sellerVoucher = Math.abs(Number(tt.sellerDiscount));
+  }
 
   // Gộp phí theo bucket cột. CẬP NHẬT QUYẾT ĐỊNH CHỦ SHOP 05/08: bảng Lãi/Lỗ
   // hiển thị REAL-TIME — đơn CHƯA quyết toán dùng SỐ ƯỚC TÍNH CỦA CHÍNH SHOPEE
@@ -432,7 +447,11 @@ export function computePnlRow(o: PnlOrder) {
   // mapShopeeEscrowToOrder. Sàn khác chưa có nguồn → luôn 0.
   const feeSellerProtection = Number(o.sellerProtectionFee);
   const feeAffiliate = Number(o.affiliateFee);
-  const platformSubsidy = Number(o.platformSubsidy);
+  // Trợ giá sàn chỉ có nghĩa khi ĐI KÈM số "Tổng tiền" của sàn (escrow thật /
+  // ước tính). Đơn mới chỉ có trợ giá từ API đơn hàng mà chưa có payout thì
+  // cộng vào là bóc tách lệch (Tổng quan 16/09: donut "Khấu trừ khác" 293.470đ
+  // trong khi Tổng chi phí 0đ — toàn bộ từ platform_discount đơn TikTok chờ).
+  const platformSubsidy = Number(o.actualPayout) !== 0 ? Number(o.platformSubsidy) : 0;
   const shippingFeeDiff = Number(o.shippingFeeDiff);
 
   // Thuế sàn TMĐT của đơn: số THẬT sàn trích (đã quyết toán) hoặc số sàn ƯỚC
@@ -670,6 +689,31 @@ export function computePnlRow(o: PnlOrder) {
             ] as const
           ).map((k) => [k, Number(o.lazadaSettlement![k])])
         )
+      : null,
+    // BẢN KÊ CHI TIẾT TIKTOK — số CÓ DẤU nguyên bản (bản kê 202501 hoặc ước
+    // tính unsettled 202507, phân biệt qua estimated). Tab TikTok dùng số này.
+    tiktok: o.tiktokSettlement
+      ? {
+          estimated: o.tiktokSettlement.estimated,
+          estimatedSettlementAt: o.tiktokSettlement.estimatedSettlementAt,
+          unsettledReason: o.tiktokSettlement.unsettledReason,
+          adjustmentTypes: o.tiktokSettlement.adjustmentTypes,
+          ...Object.fromEntries(
+            (
+              [
+                "grossSales", "sellerDiscount", "refundGross", "sellerDiscountRefund",
+                "revenueAmount", "platformDiscount", "customerRefund",
+                "shipActual", "shipCustomerPaid", "shipPlatformDiscount", "shipSubsidy",
+                "shipSellerDiscount", "shipReturn", "shipOther", "shipReimbursement",
+                "shippingCost",
+                "feeCommission", "feeTransaction", "feeOrderProcessing", "feeSfp",
+                "feeVoucherXtra", "feeFlashSale", "feeAffiliate", "feeAffiliateAds",
+                "feeAffiliatePartner", "feeGmvMax", "feeOther", "feeTaxAmount",
+                "taxVat", "taxPit", "taxOther", "adjustmentAmount", "settlementAmount",
+              ] as const
+            ).map((k) => [k, Number(o.tiktokSettlement![k])])
+          ),
+        }
       : null,
   };
 }

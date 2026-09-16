@@ -21,6 +21,7 @@ import {
 import {
   syncTiktokOrders,
   syncTiktokSettlements,
+  syncTiktokUnsettledEstimates,
 } from "../integrations/tiktok/service";
 import {
   isLazadaConfigured,
@@ -757,8 +758,11 @@ router.post("/:id/sync-settlements", requireAdmin, async (req: AuthRequest, res)
     if (channel.channelName === ChannelName.TIKTOK) {
       const tiktok = await requireTiktokChannel(req, res);
       if (!tiktok) return;
+      // Tay = BACKFILL toàn bộ theo cửa sổ 30 ngày từ đơn cũ nhất + số ước
+      // tính của sàn cho đơn đang chờ (cùng khuôn nút Shopee).
       const summary = await syncTiktokSettlements(tiktok);
-      res.json({ message: "Đồng bộ đối soát TikTok xong", ...summary });
+      const estimates = await syncTiktokUnsettledEstimates(tiktok);
+      res.json({ message: "Đồng bộ đối soát TikTok xong", ...summary, estimates });
       return;
     }
 
