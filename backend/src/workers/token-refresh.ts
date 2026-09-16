@@ -20,6 +20,8 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
+import { isTikTokConfigured } from "../integrations/tiktok/config";
+import { getValidAccessToken as getValidTiktokAccessToken } from "../integrations/tiktok/service";
 import { refreshExpiringHubsellAdsTokens } from "../integrations/hubsell-ads";
 
 const DEFAULT_INTERVAL_MIN = 30;
@@ -74,6 +76,7 @@ export async function runOnce(): Promise<void> {
 
 /** Token app CHÍNH trên Channel (đơn/kho/tài chính). */
 async function refreshMainAppTokens(): Promise<void> {
+  await refreshTiktokTokens();
   {
     if (!isShopeeConfigured()) return;
 
@@ -129,6 +132,52 @@ async function refreshMainAppTokens(): Promise<void> {
 
       // Giãn cách + jitter giữa các shop — không bắn refresh đồng loạt.
       await sleep(STAGGER_BASE_MS + Math.random() * STAGGER_JITTER_MS);
+    }
+  }
+}
+
+/**
+ * TikTok Shop (16/09/2026): access_token sống 7 ngày, refresh_token 30 ngày —
+ * gian im ắng (không webhook, không quét) vẫn phải được refresh chủ động, nếu
+ * không refresh_token chết là chủ shop phải ủy quyền lại. Cùng khuôn Shopee:
+ * refresh_token đã hết hạn → DISCONNECTED (không xóa token), còn thì refresh
+ * qua đường lazy dùng chung với ngưỡng TTL của cron.
+ */
+async function refreshTiktokTokens(): Promise<void> {
+  if (!isTikTokConfigured()) return;
+  const soon = new Date(Date.now() + EXPIRING_SOON_MS);
+  const channels = await prisma.channel.findMany({
+    where: {
+      channelName: ChannelName.TIKTOK,
+      status: "ACTIVE",
+      refreshToken: { not: null },
+      shopCipher: { not: null },
+      OR: [{ accessTokenExpireAt: null }, { accessTokenExpireAt: { lt: soon } }],
+    },
+    orderBy: { accessTokenExpireAt: "asc" },
+  });
+  for (const channel of channels) {
+    const refreshExp = channel.refreshTokenExpireAt?.getTime() ?? 0;
+    if (refreshExp && refreshExp < Date.now()) {
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: { status: "DISCONNECTED", disconnectedAt: new Date() },
+      });
+      console.warn(
+        `[Token-refresh] Gian TikTok "${channel.shopName}" (shop ${channel.externalShopId}) hết hạn uỷ quyền → DISCONNECTED, cần kết nối lại`
+      );
+      continue;
+    }
+    try {
+      await getValidTiktokAccessToken(channel, EXPIRING_SOON_MS);
+      console.log(
+        `[Token-refresh] Đã làm mới token gian TikTok "${channel.shopName}" (shop ${channel.externalShopId})`
+      );
+    } catch (err) {
+      console.error(
+        `[Token-refresh] Lỗi refresh gian TikTok "${channel.shopName}":`,
+        (err as Error).message
+      );
     }
   }
 }

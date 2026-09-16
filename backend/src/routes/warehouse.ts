@@ -16,6 +16,12 @@ import {
 } from "../integrations/lazada/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
+import { isTikTokConfigured } from "../integrations/tiktok/config";
+import { syncTiktokOrders } from "../integrations/tiktok/service";
+import {
+  syncTiktokReturns,
+  type SyncTiktokReturnsResult,
+} from "../integrations/tiktok/returns-sync";
 
 const router = Router();
 
@@ -258,7 +264,7 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
       where: {
         userId: req.ownerId!,
         ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
-        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
         status: "ACTIVE",
         refreshToken: { not: null },
       },
@@ -282,10 +288,21 @@ router.post("/returns/sync", async (req: AuthRequest, res, next) => {
       const warnings: string[] = [];
       const shopeeResults: Array<{ shop: string } & SyncShopeeReturnsResult> = [];
       const lazadaResults: Array<{ shop: string } & SyncLazadaReturnsResult> = [];
+      const tiktokResults: Array<{ shop: string } & SyncTiktokReturnsResult> = [];
       let anyOk = false;
       for (const channel of realChannels) {
         try {
-          if (channel.channelName === ChannelName.SHOPEE) {
+          if (channel.channelName === ChannelName.TIKTOK) {
+            if (!isTikTokConfigured()) continue;
+            await syncTiktokOrders(channel, { daysBack: SYNC_RETURNS_DAYS_BACK, byUpdateTime: true });
+            // Return & Refund API — số của sàn về yêu cầu hoàn (giải pháp,
+            // tiền hoàn, SKU trả, tracking chiều hoàn); ?returnsDaysBack= dùng chung.
+            const tret = await syncTiktokReturns(channel, { daysBack: returnsDaysBack });
+            tiktokResults.push({ shop: channel.shopName, ...tret });
+            console.log(
+              `[Returns sync] Gian TikTok "${channel.shopName}" (${returnsDaysBack} ngày): ${tret.scanned} yêu cầu, +${tret.flagged} chờ về tay, ${tret.unflagged} hạ cờ, ${tret.itemsUpdated} dòng SKU trả`
+            );
+          } else if (channel.channelName === ChannelName.SHOPEE) {
             if (!isShopeeConfigured()) continue;
             await syncShopeeOrders(channel, {
               daysBack: SYNC_RETURNS_DAYS_BACK,

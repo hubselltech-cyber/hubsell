@@ -70,6 +70,8 @@ import {
   syncTiktokOrders,
   syncTiktokSettlements,
 } from "../integrations/tiktok/service";
+import { syncTiktokReturns } from "../integrations/tiktok/returns-sync";
+import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
 import {
   syncLazadaOrders,
   syncLazadaSettlements,
@@ -433,6 +435,30 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
     changed = true;
   }
 
+  if (channel.channelName === ChannelName.TIKTOK) {
+    // --- ĐƠN HOÀN / HỦY TikTok (Return & Refund API) — số của sàn cho Lãi/Lỗ
+    // + danh sách kho.
+    try {
+      const ret = await syncTiktokReturns(channel, {
+        daysBack: opts.deep ? RETURNS_DAYS_BACK_DEEP : RETURNS_DAYS_BACK,
+      });
+      if (ret.flagged > 0 || ret.unflagged > 0 || ret.itemsUpdated > 0) {
+        console.log(
+          `[Auto-sync] Đơn hoàn TikTok "${channel.shopName}": +${ret.flagged} chờ về tay, ${ret.unflagged} hạ cờ, ${ret.itemsUpdated} dòng SKU trả (${ret.scanned} yêu cầu)`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Auto-sync] Lỗi đồng bộ đơn hoàn TikTok "${channel.shopName}":`,
+        (err as Error).message
+      );
+    }
+    // Các khối dưới (phí ước tính escrow, tracking backfill, hóa đơn người mua,
+    // cứu đơn) là API riêng của Shopee — TikTok dừng ở đây. Cứu đơn TikTok
+    // (tracking API) làm ở đợt sau cùng khuôn vé DeliveryTrackingTask.
+    return changed;
+  }
+
   if (channel.channelName === ChannelName.LAZADA) {
     // --- ĐƠN HOÀN Lazada (Reverse Order API) — đọc số của sàn (giải pháp hoàn,
     // tiền hoàn, SKU trả, tracking chiều hoàn) cho Lãi/Lỗ + danh sách kho.
@@ -577,6 +603,17 @@ async function runHourlyTier(channel: Channel): Promise<void> {
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi đối soát TikTok "${channel.shopName}":`, (err as Error).message);
+    }
+    // Đợt CHI TIỀN về bank (payments) → WalletWithdrawal, cùng cột với Lazada payout.
+    try {
+      const po = await syncTiktokPayouts(channel, { daysBack: PAYOUT_DAYS_BACK });
+      if (po.created > 0 || po.updated > 0) {
+        console.log(
+          `[Auto-sync] Payout TikTok "${channel.shopName}": +${po.created} đợt mới, ${po.updated} cập nhật`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi sync payout TikTok "${channel.shopName}":`, (err as Error).message);
     }
   } else if (channel.channelName === ChannelName.SHOPEE) {
     // Bọc try riêng (25/08): đối soát ném lỗi không được nuốt rút ví + cảnh báo.

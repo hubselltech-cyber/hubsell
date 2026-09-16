@@ -65,6 +65,7 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
       orders24h,
       shopeeWebhookByStatus,
       misaWebhookByStatus,
+      tiktokWebhookByStatus,
     ] = await Promise.all([
       // Chủ shop = tài khoản gốc (ownerId null); nhân viên tính riêng.
       prisma.user.count({ where: { ownerId: null } }),
@@ -81,6 +82,7 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
       }),
       prisma.shopeeWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
       prisma.misaWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
+      prisma.tiktokWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
     ]);
 
     res.json({
@@ -97,6 +99,10 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
       orders: { total: totalOrders, last24h: orders24h },
       webhooks: {
         shopee: shopeeWebhookByStatus.map((s) => ({
+          status: s.status,
+          count: s._count._all,
+        })),
+        tiktok: tiktokWebhookByStatus.map((s) => ({
           status: s.status,
           count: s._count._all,
         })),
@@ -644,13 +650,14 @@ router.patch(
   }
 );
 
-// GET /api/admin/webhook-logs?source=shopee|misa&status=&page=&pageSize=
+// GET /api/admin/webhook-logs?source=shopee|tiktok|misa&status=&page=&pageSize=
 // Nhật ký webhook toàn hệ thống (mới nhất trước). Lazada xử lý trực tiếp
 // không ghi bảng log nên chưa có ở đây. Không trả payload (nặng) — chỉ metadata
 // đủ để tra soát; cần soi payload thì tra DB theo id.
 router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req, res, next) => {
   try {
-    const source = req.query.source === "misa" ? "misa" : "shopee";
+    const source =
+      req.query.source === "misa" ? "misa" : req.query.source === "tiktok" ? "tiktok" : "shopee";
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const statusRaw = String(req.query.status ?? "");
@@ -683,6 +690,39 @@ router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req
         }),
       ]);
       res.json({ source, total, page, pageSize, logs });
+      return;
+    }
+
+    if (source === "tiktok") {
+      const where = status ? { status } : {};
+      const [total, logs] = await Promise.all([
+        prisma.tiktokWebhookLog.count({ where }),
+        prisma.tiktokWebhookLog.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          select: {
+            id: true,
+            eventType: true,
+            shopId: true,
+            orderId: true,
+            status: true,
+            attempts: true,
+            lastError: true,
+            processedAt: true,
+            createdAt: true,
+          },
+        }),
+      ]);
+      // Cùng hình dạng dòng Shopee (eventCode/orderSn) để FE HQ vẽ chung một bảng.
+      res.json({
+        source,
+        total,
+        page,
+        pageSize,
+        logs: logs.map((l) => ({ ...l, eventCode: l.eventType, orderSn: l.orderId })),
+      });
       return;
     }
 

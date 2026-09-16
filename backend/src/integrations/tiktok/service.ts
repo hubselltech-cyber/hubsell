@@ -45,7 +45,10 @@ export interface AccessContext {
  * Ném lỗi rõ ràng khi gian chưa uỷ quyền hoặc refresh_token đã hết hạn (buộc
  * chủ shop uỷ quyền lại) — để lỗi không lặng lẽ biến thành chữ ký/401 khó truy.
  */
-export async function getValidAccessToken(channel: Channel): Promise<AccessContext> {
+export async function getValidAccessToken(
+  channel: Channel,
+  bufferMs: number = REFRESH_BUFFER_MS
+): Promise<AccessContext> {
   if (channel.channelName !== ChannelName.TIKTOK) {
     throw new Error("Gian hàng này không phải TikTok Shop");
   }
@@ -56,8 +59,9 @@ export async function getValidAccessToken(channel: Channel): Promise<AccessConte
   const now = Date.now();
   const accessExp = channel.accessTokenExpireAt?.getTime() ?? 0;
 
-  // Còn hạn dư dả → dùng luôn token hiện có.
-  if (accessExp - now > REFRESH_BUFFER_MS) {
+  // Còn hạn dư dả → dùng luôn token hiện có (cron truyền ngưỡng lớn hơn để
+  // refresh chủ động).
+  if (accessExp - now > bufferMs) {
     return { accessToken: channel.apiToken, shopCipher: channel.shopCipher };
   }
 
@@ -168,10 +172,12 @@ function logShape(label: string, sample: unknown): void {
     v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v as object).join(",") : String(v);
   const first = (v: unknown) => (Array.isArray(v) && v.length ? v[0] : undefined);
   const parts = [`keys=[${Object.keys(o).join(",")}]`];
-  if ("payment" in o) parts.push(`payment=[${keys(o.payment)}]`);
-  if ("recipient_address" in o) parts.push(`recipient_address=[${keys(o.recipient_address)}]`);
-  if ("line_items" in o) parts.push(`line_item=[${keys(first(o.line_items))}]`);
-  if ("packages" in o) parts.push(`package=[${keys(first(o.packages))}]`);
+  // Mọi trường con là object / mảng object → in tên trường cấp 2 (bóc tách
+  // phí bản kê, payment, line_items… mà không cần biết trước tên).
+  for (const [k, v] of Object.entries(o)) {
+    const inner = Array.isArray(v) ? first(v) : v;
+    if (inner && typeof inner === "object") parts.push(`${k}=[${keys(inner)}]`);
+  }
   const show = [
     "order_status", "status", "delivery_option_name", "shipping_provider",
     "shipping_type", "payment_status", "type",

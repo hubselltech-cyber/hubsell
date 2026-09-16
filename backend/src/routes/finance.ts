@@ -37,6 +37,7 @@ import {
 } from "../config/tax-config";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
+import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
 
 const router = Router();
 
@@ -1056,11 +1057,13 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
       const inTransit = inTransitByChannel.get(c.id) ?? 0;
       const pendingSettle = pendingSettleByChannel.get(c.id) ?? 0;
       // Số dư ví theo sàn: Shopee = số đã sync; Lazada = Σ sao kê chưa chi;
-      // TikTok/Offline = null (frontend hiển thị "—", không phải 0).
+      // TikTok = Σ đợt chi tiền đang PROCESSING (payments API, sync ghi
+      // PENDING — cùng bản chất "tiền sàn đang giữ" như Lazada, 16/09/2026);
+      // Offline = null (frontend hiển thị "—", không phải 0).
       let walletBalance: number | null = null;
       if (c.channelName === ChannelName.SHOPEE && c.walletBalance != null) {
         walletBalance = Number(c.walletBalance);
-      } else if (c.channelName === ChannelName.LAZADA) {
+      } else if (c.channelName === ChannelName.LAZADA || c.channelName === ChannelName.TIKTOK) {
         walletBalance = pendingByChannel.get(c.id) ?? 0;
       }
       return {
@@ -1100,7 +1103,7 @@ router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
           // Chỉ gian ACTIVE — gian đã ngắt gọi API chỉ sinh lỗi token gây nhiễu
           // cảnh báo (số của nó đóng băng có chủ đích cho tới khi bị ẩn/nối lại).
           {
-            channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+            channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
             status: "ACTIVE",
             // Chỉ gian đã ủy quyền API thật (có refreshToken). Gian thủ công /
             // gian demo không có token thì gọi sàn kiểu gì cũng lỗi "chưa uỷ
@@ -1117,6 +1120,8 @@ router.post("/cash-flow/refresh", async (req: AuthRequest, res, next) => {
       try {
         if (ch.channelName === ChannelName.SHOPEE) {
           await syncShopeeWithdrawals(ch, { daysBack: 30 });
+        } else if (ch.channelName === ChannelName.TIKTOK) {
+          await syncTiktokPayouts(ch, { daysBack: 30 });
         } else {
           await syncLazadaPayouts(ch, { daysBack: 30 });
         }
@@ -1727,8 +1732,8 @@ const PENDING_FALLBACK_DAYS = 21;
  *  sao kê của sàn nên mãi mãi "chưa isSettled": smoke test 30/08 dính 717 đơn
  *  Lazada từ 2023 báo oan 71,9tr — ngoài cửa sổ này sàn cũng hết đường đòi. */
 const PENDING_MAX_AGE_DAYS = 90;
-/** Rổ #3 chỉ soi sàn ĐÃ có luồng đối soát thật chạy — TikTok chưa có, báo là báo oan. */
-const SETTLING_CHANNELS: ChannelName[] = [ChannelName.SHOPEE, ChannelName.LAZADA];
+/** Rổ #3 chỉ soi sàn ĐÃ có luồng đối soát thật chạy (TikTok từ 16/09/2026: bản kê statements mỗi giờ). */
+const SETTLING_CHANNELS: ChannelName[] = [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK];
 
 const FEE_AUDIT_STATUSES: FeeAuditStatus[] = [
   FeeAuditStatus.CHO_XU_LY,

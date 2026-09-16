@@ -130,7 +130,10 @@ export async function collectGrowth(): Promise<GrowthLayer> {
         distinct: ["channelId"],
         select: { channelId: true },
       }), []),
-      safe("shopeeWebhookLog.count", prisma.shopeeWebhookLog.count({ where: { createdAt: { gte: d7 } } }), 0),
+      safe("webhookLog.count", Promise.all([
+        prisma.shopeeWebhookLog.count({ where: { createdAt: { gte: d7 } } }),
+        prisma.tiktokWebhookLog.count({ where: { createdAt: { gte: d7 } } }),
+      ]).then(([a, b]) => a + b), 0),
       // Chủ shop hoạt động = có đơn 30 ngày (qua gian).
       safe("channel.findMany", prisma.channel.findMany({
         where: { orders: { some: { createdAt: { gte: d30 } } } },
@@ -176,9 +179,9 @@ export async function collectWorker(): Promise<WorkerLayer> {
   const syncable = {
     status: "ACTIVE" as const,
     refreshToken: { not: null },
-    channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+    channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
   };
-  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected] =
+  const [overdueFast15, overdueFast60, overduePulse, lockedStale, webhookPending, oldest, misaPending, stockPushPending, deliveryOverdue, breakers, syncStalled, adsAuthDisconnected, tiktokPending, tiktokOldest] =
     await Promise.all([
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t15 } } }), 0),
       safe("channel.count", prisma.channel.count({ where: { ...syncable, syncLockedAt: null, nextFastSyncAt: { lt: t60 } } }), 0),
@@ -196,15 +199,25 @@ export async function collectWorker(): Promise<WorkerLayer> {
       safe("apiThrottleState.findMany", prisma.apiThrottleState.findMany(), []),
       safe("channel.count", prisma.channel.count({ where: { status: "ACTIVE", syncFailCount: { gte: 3 } } }), 0),
       safe("channelAppAuth.count", prisma.channelAppAuth.count({ where: { status: "DISCONNECTED" } }), 0),
+      safe("tiktokWebhookLog.count", prisma.tiktokWebhookLog.count({ where: { status: WebhookJobStatus.PENDING } }), 0),
+      safe("tiktokWebhookLog.findFirst", prisma.tiktokWebhookLog.findFirst({
+        where: { status: WebhookJobStatus.PENDING },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      }), null),
     ]);
   const d24 = now - DAY_MS;
+  // Hàng đợi webhook sàn = Shopee + TikTok gộp (cùng khuôn, cùng SLA).
+  const oldestAny = [oldest, tiktokOldest]
+    .filter((x): x is { createdAt: Date } => Boolean(x))
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0] ?? null;
   return {
     overdueFast15,
     overdueFast60,
     overduePulse,
     lockedStale,
-    webhookPending,
-    webhookOldestMin: oldest ? Math.round((now - oldest.createdAt.getTime()) / 60000) : null,
+    webhookPending: webhookPending + tiktokPending,
+    webhookOldestMin: oldestAny ? Math.round((now - oldestAny.createdAt.getTime()) / 60000) : null,
     misaPending,
     stockPushPending,
     deliveryOverdue,

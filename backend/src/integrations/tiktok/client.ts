@@ -545,3 +545,454 @@ export async function fetchStatementTransactions(
     cfg
   );
 }
+
+// ============================================================
+// BẢN KÊ THEO ĐƠN (Finance API 202309) — bóc tách phí từng đơn
+//
+// GET /finance/202309/orders/{order_id}/statement_transactions: trả các dòng
+// giao dịch của MỘT đơn kèm breakdown doanh thu / phí / ship (tên trường con
+// đối chiếu qua log "[TikTok] Hình dạng" khi chạy thật — parser phòng thủ).
+// ============================================================
+
+export interface TikTokOrderStatementTransaction extends TikTokStatementTransaction {
+  revenue_breakdown?: Record<string, string | undefined>;
+  fee_breakdown?: Record<string, string | undefined>;
+  shipping_cost_breakdown?: Record<string, string | undefined>;
+  [k: string]: unknown;
+}
+
+export async function getOrderStatementTransactions(
+  params: { accessToken: string; shopCipher: string; orderId: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokOrderStatementTransaction[]> {
+  const data = await callApi<{ statement_transactions?: TikTokOrderStatementTransaction[] }>(
+    {
+      path: `/finance/202309/orders/${params.orderId}/statement_transactions`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+    },
+    cfg
+  );
+  return data.statement_transactions ?? [];
+}
+
+// ============================================================
+// ĐỢT CHI TIỀN VỀ NGÂN HÀNG (Finance API 202309 — payments)
+//
+// GET /finance/202309/payments: mỗi dòng = một lần TikTok chuyển tiền về tài
+// khoản ngân hàng của shop (status PROCESSING/PAID/FAILED). Read-only.
+// ============================================================
+
+export interface TikTokPayment {
+  id: string;
+  create_time?: number; // Unix seconds
+  paid_time?: number;
+  status?: string; // PROCESSING | PAID | FAILED
+  amount?: { value?: string; currency?: string };
+  settlement_amount?: { value?: string; currency?: string };
+  reserve_amount?: { value?: string; currency?: string };
+  payment_amount_before_exchange?: { value?: string; currency?: string };
+  bank_account?: string;
+  [k: string]: unknown;
+}
+
+export interface FetchPaymentsParams {
+  accessToken: string;
+  shopCipher: string;
+  createTimeGe?: number;
+  createTimeLt?: number;
+  pageSize?: number;
+  pageToken?: string;
+}
+
+export async function fetchPayments(
+  params: FetchPaymentsParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<{ payments: TikTokPayment[]; next_page_token?: string }> {
+  const query: Record<string, string | number> = {
+    page_size: params.pageSize ?? 50,
+    sort_field: "create_time",
+    sort_order: "DESC",
+  };
+  if (params.createTimeGe) query.create_time_ge = params.createTimeGe;
+  if (params.createTimeLt) query.create_time_lt = params.createTimeLt;
+  if (params.pageToken) query.page_token = params.pageToken;
+  return callApi<{ payments?: TikTokPayment[]; next_page_token?: string }>(
+    {
+      path: "/finance/202309/payments",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+    },
+    cfg
+  ).then((d) => ({ payments: d.payments ?? [], next_page_token: d.next_page_token }));
+}
+
+// ============================================================
+// HOÀN / TRẢ (Return & Refund API 202309) — READ-ONLY
+//
+// POST /return_refund/202309/returns/search: yêu cầu hoàn/trả của shop (khách
+// mở sau khi nhận hàng hoặc đang giao). Mỗi return_line_item = MỘT đơn vị
+// hàng (cùng quy ước line_items của đơn). Enum return_status theo docs:
+// RETURN_OR_REFUND_REQUEST_PENDING, REFUND_OR_RETURN_REQUEST_REJECT,
+// AWAITING_BUYER_SHIP, BUYER_SHIPPED_ITEM, REJECT_RECEIVE_PACKAGE,
+// RETURN_OR_REFUND_REQUEST_SUCCESS, RETURN_OR_REFUND_REQUEST_CANCEL,
+// RETURN_OR_REFUND_REQUEST_COMPLETE, REPLACEMENT_REQUEST_PENDING… — tầng
+// returns-sync chỉ nhận diện CHẾT qua REJECT/CANCEL, XONG qua SUCCESS/COMPLETE.
+// ============================================================
+
+export interface TikTokRefundAmount {
+  currency?: string;
+  refund_total?: string;
+  refund_subtotal?: string;
+  refund_shipping_fee?: string;
+  refund_tax?: string;
+  [k: string]: unknown;
+}
+
+export interface TikTokReturnLineItem {
+  return_line_item_id?: string;
+  order_line_item_id?: string;
+  sku_id?: string;
+  seller_sku?: string;
+  product_name?: string;
+  sku_name?: string;
+  product_image?: { url?: string };
+  refund_amount?: TikTokRefundAmount;
+  [k: string]: unknown;
+}
+
+export interface TikTokReturnOrder {
+  return_id: string;
+  order_id?: string;
+  /** REFUND | RETURN_AND_REFUND | REPLACEMENT */
+  return_type?: string;
+  return_status?: string;
+  return_reason?: string;
+  return_reason_text?: string;
+  /** BUYER | SELLER | SYSTEM — ai mở yêu cầu. */
+  role?: string;
+  create_time?: number;
+  update_time?: number;
+  refund_amount?: TikTokRefundAmount;
+  return_line_items?: TikTokReturnLineItem[];
+  return_tracking_number?: string;
+  return_provider_name?: string;
+  return_provider_id?: string;
+  shipment_type?: string;
+  [k: string]: unknown;
+}
+
+export interface SearchReturnsParams {
+  accessToken: string;
+  shopCipher: string;
+  updateTimeGe?: number;
+  updateTimeLt?: number;
+  createTimeGe?: number;
+  createTimeLt?: number;
+  orderIds?: string[];
+  pageSize?: number;
+  pageToken?: string;
+}
+
+export async function searchReturns(
+  params: SearchReturnsParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<{ return_orders: TikTokReturnOrder[]; next_page_token?: string }> {
+  const query: Record<string, string | number> = {
+    page_size: params.pageSize ?? 50,
+    sort_field: "update_time",
+    sort_order: "DESC",
+  };
+  if (params.pageToken) query.page_token = params.pageToken;
+  const body: Record<string, unknown> = {};
+  if (params.updateTimeGe) body.update_time_ge = params.updateTimeGe;
+  if (params.updateTimeLt) body.update_time_lt = params.updateTimeLt;
+  if (params.createTimeGe) body.create_time_ge = params.createTimeGe;
+  if (params.createTimeLt) body.create_time_lt = params.createTimeLt;
+  if (params.orderIds?.length) body.order_ids = params.orderIds;
+  const d = await callApi<{ return_orders?: TikTokReturnOrder[]; next_page_token?: string }>(
+    {
+      method: "POST",
+      path: "/return_refund/202309/returns/search",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+      body,
+    },
+    cfg
+  );
+  return { return_orders: d.return_orders ?? [], next_page_token: d.next_page_token };
+}
+
+// ============================================================
+// THEO DÕI HÀNH TRÌNH GIAO (Fulfillment API 202309)
+//
+// GET /fulfillment/202309/orders/{order_id}/tracking: mốc vận chuyển của đơn
+// (mô tả + thời điểm ms). Nguồn bắt "giao thất bại từng lượt" cho Cứu đơn.
+// ============================================================
+
+export interface TikTokTrackingEvent {
+  update_time_millis?: number;
+  description?: string;
+  tracking_event_type?: string;
+  [k: string]: unknown;
+}
+
+export async function getOrderTracking(
+  params: { accessToken: string; shopCipher: string; orderId: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokTrackingEvent[]> {
+  const d = await callApi<{ tracking?: TikTokTrackingEvent[] }>(
+    {
+      path: `/fulfillment/202309/orders/${params.orderId}/tracking`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+    },
+    cfg
+  );
+  return d.tracking ?? [];
+}
+
+// ============================================================
+// KIỆN HÀNG — SẮP XẾP VẬN CHUYỂN + VẬN ĐƠN (Fulfillment API 202309)
+// ============================================================
+
+export interface TikTokPackageDetail {
+  package_id?: string;
+  package_status?: string;
+  tracking_number?: string;
+  shipping_provider_id?: string;
+  shipping_provider_name?: string;
+  order_line_item_ids?: string[];
+  orders?: { id?: string; skus?: { id?: string; quantity?: number }[] }[];
+  create_time?: number;
+  update_time?: number;
+  [k: string]: unknown;
+}
+
+export async function getPackageDetail(
+  params: { accessToken: string; shopCipher: string; packageId: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokPackageDetail> {
+  return callApi<TikTokPackageDetail>(
+    {
+      path: `/fulfillment/202309/packages/${params.packageId}`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+    },
+    cfg
+  );
+}
+
+export interface TikTokHandoverSlot {
+  start_time?: number;
+  end_time?: number;
+  avaliable?: boolean;
+  available?: boolean;
+  [k: string]: unknown;
+}
+
+/** Khung giờ LSP tới lấy hàng cho một kiện (pickup). */
+export async function getHandoverTimeSlots(
+  params: { accessToken: string; shopCipher: string; packageId: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<{ can_pickup?: boolean; drop_off_option?: boolean; handover_time_slots?: TikTokHandoverSlot[] }> {
+  return callApi(
+    {
+      path: `/fulfillment/202309/packages/${params.packageId}/handover_time_slots`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+    },
+    cfg
+  );
+}
+
+/**
+ * Sắp xếp vận chuyển cho MỘT kiện: PICKUP (LSP tới lấy, kèm khung giờ) hoặc
+ * DROP_OFF (seller tự mang ra bưu cục). Sàn cấp tracking_number ngay hoặc vài
+ * giây sau — adapter probe lại qua getPackageDetail.
+ */
+export async function shipPackage(
+  params: {
+    accessToken: string;
+    shopCipher: string;
+    packageId: string;
+    handoverMethod: "PICKUP" | "DROP_OFF";
+    pickupSlot?: { start_time: number; end_time: number };
+  },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<Record<string, unknown>> {
+  const body: Record<string, unknown> = { handover_method: params.handoverMethod };
+  if (params.pickupSlot) body.pickup_slot = params.pickupSlot;
+  return callApi<Record<string, unknown>>(
+    {
+      method: "POST",
+      path: `/fulfillment/202309/packages/${params.packageId}/ship`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      body,
+    },
+    cfg
+  );
+}
+
+/** Vận đơn PDF chính chủ của sàn (A6) — chỉ kiện "TikTok Shipping" đã ship. */
+export async function getShippingDocument(
+  params: {
+    accessToken: string;
+    shopCipher: string;
+    packageId: string;
+    documentType?: "SHIPPING_LABEL" | "PACKING_SLIP" | "SHIPPING_LABEL_AND_PACKING_SLIP";
+    documentSize?: "A5" | "A6";
+  },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<{ doc_url?: string; [k: string]: unknown }> {
+  return callApi(
+    {
+      path: `/fulfillment/202309/packages/${params.packageId}/shipping_documents`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query: {
+        document_type: params.documentType ?? "SHIPPING_LABEL",
+        document_size: params.documentSize ?? "A6",
+      },
+    },
+    cfg
+  );
+}
+
+// ============================================================
+// SẢN PHẨM & TỒN KHO (Product API 202309)
+//
+// POST /product/202309/products/search: danh sách sản phẩm + SKU (seller_sku,
+// giá, tồn theo kho). GET /product/202309/products/{id}: chi tiết đủ ảnh +
+// thuộc tính phân loại. POST /product/202309/products/{id}/inventory/update:
+// ghi tồn TUYỆT ĐỐI theo (sku, warehouse). GET /logistics/202309/warehouses:
+// kho bán hàng của shop (mặc định = kho đẩy tồn).
+// ============================================================
+
+export interface TikTokProductSku {
+  id: string;
+  seller_sku?: string;
+  price?: { sale_price?: string; tax_exclusive_price?: string; currency?: string; [k: string]: unknown };
+  inventory?: { warehouse_id?: string; quantity?: number }[];
+  sales_attributes?: { id?: string; name?: string; value_id?: string; value_name?: string; sku_img?: { url?: string } }[];
+  [k: string]: unknown;
+}
+
+export interface TikTokProduct {
+  id: string;
+  title?: string;
+  status?: string; // ACTIVATE | DEACTIVATE | ... (docs 202309: ALL/DRAFT/PENDING/FAILED/ACTIVATE/SELLER_DEACTIVATED/PLATFORM_DEACTIVATED/FREEZE/DELETED)
+  skus?: TikTokProductSku[];
+  main_images?: { url?: string; urls?: string[]; thumb_urls?: string[] }[];
+  create_time?: number;
+  update_time?: number;
+  [k: string]: unknown;
+}
+
+export interface SearchProductsParams {
+  accessToken: string;
+  shopCipher: string;
+  /** Lọc trạng thái — bỏ trống = tất cả. */
+  status?: string;
+  pageSize?: number;
+  pageToken?: string;
+}
+
+export async function searchProducts(
+  params: SearchProductsParams,
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<{ products: TikTokProduct[]; next_page_token?: string; total_count?: number }> {
+  const query: Record<string, string | number> = { page_size: params.pageSize ?? 100 };
+  if (params.pageToken) query.page_token = params.pageToken;
+  const body: Record<string, unknown> = {};
+  if (params.status) body.status = params.status;
+  const d = await callApi<{ products?: TikTokProduct[]; next_page_token?: string; total_count?: number }>(
+    {
+      method: "POST",
+      path: "/product/202309/products/search",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      query,
+      body,
+    },
+    cfg
+  );
+  return { products: d.products ?? [], next_page_token: d.next_page_token, total_count: d.total_count };
+}
+
+export async function getProduct(
+  params: { accessToken: string; shopCipher: string; productId: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokProduct> {
+  return callApi<TikTokProduct>(
+    {
+      path: `/product/202309/products/${params.productId}`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+    },
+    cfg
+  );
+}
+
+export interface TikTokWarehouse {
+  id: string;
+  name?: string;
+  effect_status?: string; // ENABLED | DISABLED
+  type?: string; // SALES_WAREHOUSE | RETURN_WAREHOUSE
+  sub_type?: string; // DOMESTIC_WAREHOUSE | ...
+  is_default?: boolean;
+  [k: string]: unknown;
+}
+
+export async function getWarehouses(
+  params: { accessToken: string; shopCipher: string },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<TikTokWarehouse[]> {
+  const d = await callApi<{ warehouses?: TikTokWarehouse[] }>(
+    {
+      path: "/logistics/202309/warehouses",
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+    },
+    cfg
+  );
+  return d.warehouses ?? [];
+}
+
+/**
+ * Ghi tồn TUYỆT ĐỐI cho một SKU tại một kho. Sàn trả code=0 khi nhận; lỗi
+ * (SKU không thuộc sản phẩm, kho sai, thiếu quyền) ném Error để worker retry
+ * theo lịch riêng.
+ */
+export async function updateTiktokInventory(
+  params: {
+    accessToken: string;
+    shopCipher: string;
+    productId: string;
+    skuId: string;
+    warehouseId: string;
+    quantity: number;
+  },
+  cfg: TikTokConfig = getTikTokConfig()
+): Promise<void> {
+  await callApi(
+    {
+      method: "POST",
+      path: `/product/202309/products/${params.productId}/inventory/update`,
+      accessToken: params.accessToken,
+      shopCipher: params.shopCipher,
+      body: {
+        skus: [
+          {
+            id: params.skuId,
+            inventory: [{ warehouse_id: params.warehouseId, quantity: Math.max(0, Math.trunc(params.quantity)) }],
+          },
+        ],
+      },
+    },
+    cfg
+  );
+}

@@ -357,6 +357,11 @@ export const PLATFORM_RETURN_DONE_STATUSES = new Set([
   "CANCEL_REFUND_ISSUED",
   "RTM_RECEIVE_ITEM",
   "RTW_REFUND_PENDING",
+  // TikTok (return_status, Return & Refund API 202309 — 16/09/2026):
+  // RETURN_OR_REFUND_REQUEST_SUCCESS = sàn đã duyệt hoàn tiền/trả hàng;
+  // RETURN_OR_REFUND_REQUEST_COMPLETE = yêu cầu khép lại (tiền đã về khách).
+  "RETURN_OR_REFUND_REQUEST_SUCCESS",
+  "RETURN_OR_REFUND_REQUEST_COMPLETE",
 ]);
 
 /**

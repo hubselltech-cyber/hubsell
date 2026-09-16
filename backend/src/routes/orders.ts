@@ -34,6 +34,8 @@ import { syncShopeeOrders } from "../integrations/shopee/service";
 import { syncShopeeReturns } from "../integrations/shopee/returns-sync";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import { syncLazadaOrders } from "../integrations/lazada/service";
+import { isTikTokConfigured } from "../integrations/tiktok/config";
+import { syncTiktokOrders } from "../integrations/tiktok/service";
 import { enqueueStockPush } from "../integrations/inventory-push";
 
 const router = Router();
@@ -1207,7 +1209,7 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
           where: {
             userId: req.ownerId!,
             ...(req.allowedChannelIds ? { id: { in: req.allowedChannelIds } } : {}),
-            channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+            channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
             status: "ACTIVE",
             refreshToken: { not: null },
           },
@@ -1224,6 +1226,9 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
                   timeRangeField: "update_time",
                 });
                 await syncShopeeReturns(channel, { daysBack: 7 });
+              } else if (channel.channelName === ChannelName.TIKTOK) {
+                if (!isTikTokConfigured()) continue;
+                await syncTiktokOrders(channel, { daysBack: 2, byUpdateTime: true });
               } else {
                 if (!isLazadaConfigured()) continue;
                 await syncLazadaOrders(channel, { daysBack: 2, byUpdateTime: true });

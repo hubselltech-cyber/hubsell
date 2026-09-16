@@ -96,7 +96,7 @@ export async function runOnce(): Promise<void> {
     const doneBefore = daysAgo(RETENTION_DONE_DAYS);
     const maxBefore = daysAgo(RETENTION_MAX_DAYS);
 
-    // Hàng đợi webhook Shopee/MISA — cùng cấu trúc, cùng chính sách.
+    // Hàng đợi webhook Shopee/TikTok/MISA — cùng cấu trúc, cùng chính sách.
     const webhookWhere = {
       OR: [
         { status: "SUCCESS" as const, createdAt: { lt: doneBefore } },
@@ -108,6 +108,12 @@ export async function runOnce(): Promise<void> {
       (take) =>
         prisma.shopeeWebhookLog.findMany({ where: webhookWhere, select: { id: true }, take }),
       (ids) => prisma.shopeeWebhookLog.deleteMany({ where: { id: { in: ids } } })
+    );
+    await deleteInBatches(
+      "tiktok_webhook_logs",
+      (take) =>
+        prisma.tiktokWebhookLog.findMany({ where: webhookWhere, select: { id: true }, take }),
+      (ids) => prisma.tiktokWebhookLog.deleteMany({ where: { id: { in: ids } } })
     );
     await deleteInBatches(
       "misa_webhook_logs",

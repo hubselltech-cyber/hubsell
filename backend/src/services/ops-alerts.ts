@@ -425,7 +425,7 @@ async function detectFeeAudit(ownerId: string): Promise<DetectedAlert[]> {
     where: {
       channel: {
         userId: ownerId,
-        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
       },
       isSettled: false,
       shippingStatus: ShippingStatus.DELIVERED,
