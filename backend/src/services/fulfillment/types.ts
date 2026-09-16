@@ -138,6 +138,11 @@ export function humanizeArrangeError(message: string): string {
   if (m.includes("already") && (m.includes("ship") || m.includes("arrange"))) {
     return "Đơn đã được sắp xếp vận chuyển trên sàn rồi";
   }
+  // Thiếu QUYỀN API (scope) xét TRƯỚC "token": TikTok trả "access token doesn't
+  // have the required permission" — không phải mất kết nối, là app chưa xin scope.
+  if (m.includes("permission") || m.includes("scope") || m.includes("not authorized")) {
+    return `Sàn chưa cấp quyền API này cho Hubsell — cần xin thêm scope rồi ủy quyền lại gian (${message})`;
+  }
   if (m.includes("invalid_access_token") || m.includes("error_auth") || m.includes("token")) {
     return "Gian mất kết nối với sàn — vào Kênh bán để kết nối lại";
   }

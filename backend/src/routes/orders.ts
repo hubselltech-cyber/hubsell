@@ -699,7 +699,14 @@ router.post("/bulk/shipping-options", async (req: AuthRequest, res, next) => {
             const opts = await adapter.getShippingOptions(channel, toFulfillRef(sample));
             return { ...base, ...opts, mode: "PLATFORM" };
           } catch (err) {
-            lastError = humanizeArrangeError(err instanceof Error ? err.message : lastError);
+            const raw = err instanceof Error ? err.message : String(err);
+            // Ghi lỗi THÔ của sàn (UI chỉ hiện bản dịch tiếng người) để tra
+            // soát — 16/09 TikTok báo "mất kết nối" mà không biết sàn từ chối vì gì.
+            console.warn(
+              `[Fulfillment] Hỏi phương án vận chuyển gian "${channel.shopName}" (${channel.channelName}) đơn ${sample.orderCode} lỗi:`,
+              raw
+            );
+            lastError = humanizeArrangeError(raw);
           }
         }
         return { ...base, mode: "ERROR", note: lastError };
