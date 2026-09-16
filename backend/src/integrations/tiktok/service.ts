@@ -211,8 +211,11 @@ export async function syncTiktokOrders(
   const { accessToken, shopCipher } = await getValidAccessToken(channel);
 
   const nowSec = Math.floor(Date.now() / 1000);
+  // Mặc định 120 ngày (không phải 90): đơn tạo sát mép 90 ngày được lượt đầu
+  // kéo về rồi rơi khỏi cửa sổ ở lượt sau, trạng thái cũ kẹt mãi (16/09: 4 đơn
+  // 18/06 kẹt "chờ xử lý"). Thêm một tháng đệm để lượt bấm tay vét hết.
   const fromSec =
-    opts.createTimeGe ?? nowSec - (opts.daysBack ?? 90) * 24 * 60 * 60;
+    opts.createTimeGe ?? nowSec - (opts.daysBack ?? 120) * 24 * 60 * 60;
   const toSec = opts.createTimeLt ?? nowSec;
   const maxPages = opts.maxPages ?? MAX_PAGES;
 
