@@ -37,10 +37,12 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
   for (const p of products) {
     const data = {
       productName: p.productName,
-      variantName: p.variantName,
       price: p.price,
-      imageUrl: p.imageUrl,
       externalId: p.externalId,
+      // Ảnh/phân loại: adapter không đọc được (TikTok products/search không trả
+      // ảnh, chỉ chi tiết từng SP mới có) → giữ giá trị cũ thay vì xóa trắng.
+      ...(p.imageUrl !== null ? { imageUrl: p.imageUrl } : {}),
+      ...(p.variantName !== null ? { variantName: p.variantName } : {}),
       itemSku: p.itemSku,
       // Tồn sàn chỉ ghi đè khi adapter ĐỌC ĐƯỢC số — null giữ nguyên giá trị cũ
       // (sàn không trả số không có nghĩa là hết hàng).

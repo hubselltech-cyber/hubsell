@@ -14,6 +14,7 @@
 
 import type { Channel } from "@prisma/client";
 import {
+  getProduct,
   searchProducts,
   type TikTokProduct,
   type TikTokProductSku,
@@ -23,6 +24,17 @@ import type { MarketplaceProductAdapter, NormalizedChannelProduct } from "../typ
 
 const PRODUCTS_PAGE = 100;
 const MAX_PAGES = 200; // chốt chặn phân trang vô tận
+/**
+ * products/search (payload thật 16/09) KHÔNG trả ảnh lẫn tên phân loại — chỉ
+ * GET /products/{id} mới có main_images + sales_attributes. Mỗi lượt kéo bổ
+ * sung chi tiết cho tối đa N sản phẩm chưa có (giãn nhịp), cache theo
+ * (id, update_time) trong tiến trình → vài lượt là đủ ảnh cả danh mục mà
+ * không dồn hàng trăm call một lúc.
+ */
+const DETAIL_PER_RUN = 60;
+const DETAIL_PACE_MS = 150;
+const detailCache = new Map<string, { updateTime: number; product: TikTokProduct }>();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Sinh KHOÁ SKU CHUẨN cho một biến thể TikTok — DÙNG CHUNG cho đồng bộ sản
@@ -78,6 +90,19 @@ export function transformTiktokSku(p: TikTokProduct, s: TikTokProductSku): Norma
   };
 }
 
+/** Ghép sales_attributes (ảnh SKU + tên phân loại) từ chi tiết vào SKU của search theo id. */
+function mergeSkuAttributes(
+  base: TikTokProductSku[] | undefined,
+  detail: TikTokProductSku[] | undefined
+): TikTokProductSku[] | undefined {
+  if (!base || !detail?.length) return base;
+  const byId = new Map(detail.map((s) => [String(s.id), s]));
+  return base.map((s) => {
+    const d = byId.get(String(s.id));
+    return d ? { ...s, sales_attributes: s.sales_attributes ?? d.sales_attributes } : s;
+  });
+}
+
 export const tiktokProductAdapter: MarketplaceProductAdapter = {
   name: "tiktok",
 
@@ -102,6 +127,28 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
       }
       pageToken = r.next_page_token || undefined;
     } while (pageToken && page < MAX_PAGES);
+
+    // Bổ sung chi tiết (ảnh + phân loại) cho sản phẩm chưa có trong cache.
+    let detailCalls = 0;
+    for (const p of products) {
+      const cached = detailCache.get(p.id);
+      if (cached && cached.updateTime === (p.update_time ?? 0)) {
+        p.main_images = p.main_images ?? cached.product.main_images;
+        p.skus = mergeSkuAttributes(p.skus, cached.product.skus);
+        continue;
+      }
+      if (detailCalls >= DETAIL_PER_RUN) continue;
+      detailCalls++;
+      try {
+        if (detailCalls > 1) await sleep(DETAIL_PACE_MS);
+        const d = await getProduct({ accessToken, shopCipher, productId: p.id });
+        detailCache.set(p.id, { updateTime: p.update_time ?? 0, product: d });
+        p.main_images = p.main_images ?? d.main_images;
+        p.skus = mergeSkuAttributes(p.skus, d.skus);
+      } catch (err) {
+        console.warn(`[TikTok] Không đọc được chi tiết sản phẩm ${p.id}:`, (err as Error).message);
+      }
+    }
 
     const normalized: NormalizedChannelProduct[] = [];
     for (const p of products) {
