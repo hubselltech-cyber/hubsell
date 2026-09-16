@@ -1,12 +1,14 @@
 /**
  * TÀI KHOẢN TRIAL CHO ĐỘI XÉT DUYỆT ISV (Shopee Third-party Partner Platform,
- * sau này dùng lại cho Lazada ISV / TikTok Partner).
+ * Lazada ISV, TikTok Partner — 16/09/2026 thêm gian TikTok Demo khi nộp
+ * "Xét duyệt ứng dụng" TikTok: reviewer đăng nhập thấy đủ 3 sàn có số, luồng
+ * OAuth thì tự ủy quyền shop test của họ).
  *
  * Shopee yêu cầu (developer-guide/12, cập nhật 19/07/2026): "Submit live
  * versions of (a) your business product's URL, (b) trial account login details
  * and enable ALL features for Shopee's testing purposes". Tài khoản này vì thế:
  *   · gói BUSINESS trả phí 12 tháng (không trial, không trần, mở mọi module);
- *   · 2 gian Shopee + Lazada trạng thái ACTIVE, KHÔNG có token (không gọi API
+ *   · 3 gian Shopee + Lazada + TikTok trạng thái ACTIVE, KHÔNG có token (không gọi API
  *     sàn — worker auto-sync chỉ quét gian có refreshToken nên bỏ qua);
  *   · ~45 ngày đơn hàng ĐẸP (nhịp tăng, cuối tuần cao, đủ trạng thái, có
  *     hoàn/trả ở mọi công đoạn), 12 SKU kho nối đủ 2 gian, chi phí vận hành,
@@ -111,6 +113,14 @@ const LAZADA_CARRIERS: { carrier: Carrier; name: string }[] = [
   { carrier: Carrier.GHN, name: "Giao Hàng Nhanh" },
   { carrier: Carrier.BEST, name: "BEST Express" },
 ];
+// TikTok VN: J&T là hãng nền tảng chính; tên ghi "phương thức · hãng" như
+// parser thật (delivery_option_name · shipping_provider) để bộ lọc Hỏa tốc bắt được.
+const TIKTOK_CARRIERS: { carrier: Carrier; name: string }[] = [
+  { carrier: Carrier.JT, name: "Standard shipping · J&T Express" },
+  { carrier: Carrier.JT, name: "Standard shipping · J&T Express" },
+  { carrier: Carrier.NINJA_VAN, name: "Standard shipping · Ninja Van" },
+  { carrier: Carrier.KHAC, name: "Hỏa tốc · Instant - Ahamove" },
+];
 
 function isLocalDb(url: string) {
   return /localhost|127\.0\.0\.1/.test(url);
@@ -180,13 +190,13 @@ async function main() {
     },
   });
 
-  // ---- 4) Kênh bán: Shopee + Lazada (TikTok "sắp ra mắt", cố ý không có) ----
+  // ---- 4) Kênh bán: Shopee + Lazada + TikTok (TikTok mở 16/09/2026) ----
   // apiToken theo đúng khuôn gian thủ công của app (TOKEN_PREFIX + hex) để
   // trang Kênh bán hiện "shp_…" thay vì cảnh báo "chưa có API Token"; KHÔNG
   // đặt refreshToken → apiConnected=false, worker auto-sync/refresh token/làm
   // mới ví đều bỏ qua gian này (không gọi sàn với token giả).
   const fakeToken = (prefix: string) => `${prefix}_${randomBytes(20).toString("hex")}`;
-  const [shopee, lazada] = await Promise.all([
+  const [shopee, lazada, tiktok] = await Promise.all([
     prisma.channel.create({
       data: {
         userId: user.id, channelName: ChannelName.SHOPEE, shopName: SHOP_NAME,
@@ -207,14 +217,32 @@ async function main() {
         lastStockReconcileAt: new Date(Date.now() - 2 * 3600_000), lastStockReconcileMismatch: 0,
       },
     }),
+    prisma.channel.create({
+      data: {
+        userId: user.id, channelName: ChannelName.TIKTOK, shopName: SHOP_NAME,
+        externalShopName: SHOP_NAME, apiToken: fakeToken("ttk"),
+        status: "ACTIVE", lastSyncAt: new Date(),
+        // Ví sàn TikTok = Σ đợt chi tiền đang xử lý (WalletWithdrawal PENDING) — seed bên dưới.
+        stockSyncEnabled: true, stockSyncEnabledAt: new Date(Date.now() - 20 * DAY_MS),
+        lastStockReconcileAt: new Date(Date.now() - 2 * 3600_000), lastStockReconcileMismatch: 0,
+      },
+    }),
   ]);
+  // Đợt chi tiền TikTok về bank (payments API): 1 đang xử lý (= "ví sàn"), 2 đã về.
+  await prisma.walletWithdrawal.createMany({
+    data: [
+      { channelId: tiktok.id, amount: 8_960_000, status: "PENDING", source: "SYNC", externalTxnId: `TTK-PAY-${Date.now()}-1`, transactionTime: new Date(Date.now() - 1 * DAY_MS), note: "Đợt chi tiền TikTok đang xử lý" },
+      { channelId: tiktok.id, amount: 11_240_000, status: "SUCCESS", source: "SYNC", externalTxnId: `TTK-PAY-${Date.now()}-2`, transactionTime: new Date(Date.now() - 8 * DAY_MS), note: "Đợt chi tiền TikTok" },
+      { channelId: tiktok.id, amount: 9_780_000, status: "SUCCESS", source: "SYNC", externalTxnId: `TTK-PAY-${Date.now()}-3`, transactionTime: new Date(Date.now() - 15 * DAY_MS), note: "Đợt chi tiền TikTok" },
+    ],
+  });
 
   // ---- 5) Sản phẩm kho + SKU trên từng gian nối về kho ----
   const products: { id: string; skuCode: string; costPrice: number; sellingPrice: number; productName: string; stock: number }[] = [];
   for (const p of PRODUCTS) {
     const row = await prisma.product.create({ data: { ...p, userId: user.id } });
     products.push({ id: row.id, skuCode: p.skuCode, costPrice: p.costPrice, sellingPrice: p.sellingPrice, productName: p.productName, stock: p.quantityInStock });
-    for (const ch of [shopee, lazada]) {
+    for (const ch of [shopee, lazada, tiktok]) {
       await prisma.channelProduct.create({
         data: {
           channelId: ch.id,
@@ -253,10 +281,16 @@ async function main() {
     const count = Math.round(between(48, 58) * weekendBoost * growth * dayShare);
 
     for (let i = 0; i < count; i++) {
-      const isShopee = rnd() < 0.64;
-      const channel = isShopee ? shopee : lazada;
+      const rc = rnd();
+      const isShopee = rc < 0.5;
+      const isTiktok = !isShopee && rc < 0.77;
+      const channel = isShopee ? shopee : isTiktok ? tiktok : lazada;
       orderSeq += 1 + Math.floor(rnd() * 3);
-      const orderCode = isShopee ? `2609${orderSeq}SPVN` : `LZD26${orderSeq}`;
+      const orderCode = isShopee
+        ? `2609${orderSeq}SPVN`
+        : isTiktok
+          ? `58609${String(orderSeq).padStart(6, "0")}${Math.floor(rnd() * 900 + 100)}`
+          : `LZD26${orderSeq}`;
 
       const lineCount = rnd() < 0.7 ? 1 : rnd() < 0.8 ? 2 : 3;
       const lines: { p: (typeof products)[number]; qty: number }[] = [];
@@ -279,11 +313,12 @@ async function main() {
       const sellerVoucher = rnd() < 0.3 ? roundTo(gross * between(0.02, 0.06), 500) : 0;
       const actualRevenue = gross - sellerVoucher;
 
-      // Quyết toán: đơn DELIVERED từ 3 ngày tuổi (Shopee ~3 ngày, Lazada ~5 ngày)
-      const settled = delivered && d >= (isShopee ? 3 : 5);
-      const fixedFee = settled ? Math.round(actualRevenue * (isShopee ? 0.04 : 0.03)) : 0;
-      const paymentFee = settled ? Math.round(actualRevenue * (isShopee ? 0.045 : 0.0245)) : 0;
-      const serviceFee = settled ? Math.round(actualRevenue * (isShopee ? 0.06 : 0.05)) : 0;
+      // Quyết toán: đơn DELIVERED từ 3 ngày tuổi (Shopee ~3 ngày, TikTok ~4, Lazada ~5)
+      const settled = delivered && d >= (isShopee ? 3 : isTiktok ? 4 : 5);
+      // TikTok VN: hoa hồng ~4%, phí giao dịch ~5%, phí dịch vụ SFP ~4%.
+      const fixedFee = settled ? Math.round(actualRevenue * (isShopee ? 0.04 : isTiktok ? 0.04 : 0.03)) : 0;
+      const paymentFee = settled ? Math.round(actualRevenue * (isShopee ? 0.045 : isTiktok ? 0.05 : 0.0245)) : 0;
+      const serviceFee = settled ? Math.round(actualRevenue * (isShopee ? 0.06 : isTiktok ? 0.04 : 0.05)) : 0;
       const sellerProtectionFee = settled && isShopee ? Math.round(actualRevenue * 0.005) : 0;
       const affiliateFee = settled && rnd() < 0.22 ? Math.round(actualRevenue * 0.03) : 0;
       const taxWithheld = settled ? Math.round(actualRevenue * 0.015) : 0;
@@ -324,12 +359,12 @@ async function main() {
           returnStatus === ReturnStatus.AWAITING
             ? null
             : new Date(returnRequestedAt.getTime() + between(2, 7) * DAY_MS);
-        returnTrackingCode = `${isShopee ? "SPXVN" : "LEXVN"}R${orderSeq}${Math.floor(rnd() * 90 + 10)}`;
+        returnTrackingCode = `${isShopee ? "SPXVN" : isTiktok ? "JTR" : "LEXVN"}R${orderSeq}${Math.floor(rnd() * 90 + 10)}`;
         returnNote = pick(["Khách đổi ý", "Sai size", "Không đúng mô tả", "Giao chậm, khách hủy nhận"]);
         returnOrders++;
       }
 
-      const carrierPick = isShopee ? pick(SHOPEE_CARRIERS) : pick(LAZADA_CARRIERS);
+      const carrierPick = isShopee ? pick(SHOPEE_CARRIERS) : isTiktok ? pick(TIKTOK_CARRIERS) : pick(LAZADA_CARRIERS);
       const order = await prisma.order.create({
         data: {
           channelId: channel.id,
@@ -352,14 +387,16 @@ async function main() {
           deliveredAt,
           packedAt: shippingStatus === ShippingStatus.PENDING ? null : new Date(createdAt.getTime() + between(0.5, 6) * 3600_000),
           isSettled: settled,
-          settledAt: settled ? new Date(deliveredAt!.getTime() + (isShopee ? 1 : 2) * DAY_MS) : null,
+          settledAt: settled ? new Date(deliveredAt!.getTime() + (isShopee ? 1 : isTiktok ? 1.5 : 2) * DAY_MS) : null,
           fixedFee, paymentFee, serviceFee, sellerProtectionFee, affiliateFee,
           sellerVoucher, taxWithheld, platformSubsidy,
           shippingFeeQuoted, shippingFeeActual, shippingFeeDiff,
           actualPayout: cancelled ? 0 : actualPayout,
           carrier: carrierPick.carrier,
           shippingCarrierName: carrierPick.name,
-          trackingCode: shippingStatus === ShippingStatus.PENDING ? null : `${isShopee ? "SPXVN0" : "LEXVN0"}${orderSeq}${Math.floor(rnd() * 90 + 10)}`,
+          trackingCode: shippingStatus === ShippingStatus.PENDING ? null : `${isShopee ? "SPXVN0" : isTiktok ? "8619" : "LEXVN0"}${orderSeq}${Math.floor(rnd() * 90 + 10)}`,
+          // Kiện TikTok (packages[0].id) — nút In vận đơn/Chuẩn bị hàng đọc trường này.
+          ...(isTiktok && shippingStatus !== ShippingStatus.PENDING ? { platformPackageId: `1160${orderSeq}${Math.floor(rnd() * 900 + 100)}` } : {}),
         },
       });
       await prisma.orderItem.createMany({
@@ -416,7 +453,7 @@ async function main() {
   }
 
   console.log(
-    `✅ Seed reviewer xong: ${totalOrders} đơn / ${DAYS} ngày (${returnOrders} đơn hoàn), 2 gian, ${products.length} SKU nối đủ 2 sàn (${((Date.now() - t0) / 1000).toFixed(1)}s)`
+    `✅ Seed reviewer xong: ${totalOrders} đơn / ${DAYS} ngày (${returnOrders} đơn hoàn), 3 gian (Shopee/TikTok/Lazada), ${products.length} SKU nối đủ 3 sàn (${((Date.now() - t0) / 1000).toFixed(1)}s)`
   );
   console.log(`   Đăng nhập: ${EMAIL}${PASSWORD ? " / " + PASSWORD : " (mật khẩu giữ nguyên)"} · gói ${plan.name} tới ${new Date(Date.now() + 345 * DAY_MS).toLocaleDateString("vi-VN")}`);
 }
