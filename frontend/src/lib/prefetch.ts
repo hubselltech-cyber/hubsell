@@ -116,7 +116,8 @@ const PREFETCHERS: Record<string, (qc: QueryClient) => void> = {
   "/finance/fee-audit": (qc) => {
     // Trang mở mặc định tab "ship" nhưng query fee-audit (summary 3 rổ + items
     // payout) LUÔN chạy với tham số ghim mặc định — chép đúng auditParams khởi
-    // tạo của trang. Trang không lọc ngày (khoản chưa xử lý nào cũng đáng thấy).
+    // tạo của trang. Mặc định KHÔNG lọc ngày (range null → không có from/to,
+    // khoản chưa xử lý nào cũng đáng thấy) — key phải khớp trang lúc mới mở.
     qc.prefetchQuery({
       queryKey: qk.feeAudit({
         tab: "payout",

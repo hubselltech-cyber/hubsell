@@ -38,6 +38,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { AccessDenied } from "@/components/shared/access-denied";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import {
   ALL_CHANNELS,
@@ -65,6 +66,7 @@ import {
   type ShippingDiscrepancy,
   type ShippingDisputeStatus,
 } from "@/lib/api";
+import { rangeToQuery, type DateRange } from "@/lib/date-range";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { can } from "@/lib/permissions";
@@ -221,6 +223,9 @@ export default function FeeAuditPage() {
     useState<ChannelFilterValue>(ALL_CHANNELS);
   const [shipStatus, setShipStatus] = useState("");
   const [payoutStatus, setPayoutStatus] = useState("");
+  /** Khoảng NGÀY ĐẶT đơn. null = toàn bộ (mặc định — sổ việc chưa xong không
+   *  được giấu khoản cũ); chọn khoảng thì cả 3 thẻ KPI lẫn bảng đều theo. */
+  const [range, setRange] = useState<DateRange | null>(null);
   /** Đơn đang chờ PATCH trạng thái — khóa đúng một ô select thay vì cả bảng. */
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -250,16 +255,20 @@ export default function FeeAuditPage() {
     pageSize: onAuditTab ? pageSize : 20,
     status: tab === "payout" ? payoutStatus : "",
   };
+  // range null → rangeToQuery(undefined) = {} để key trùng với prefetch hover.
+  const rangeKey = rangeToQuery(range ?? undefined);
   const auditQ = useApiQuery({
     queryKey: qk.feeAudit({
       ...auditParams,
       channel: channelFilterToQuery(channelFilter),
+      ...rangeKey,
     }),
     queryFn: () =>
       fetchFeeAudit({
         ...auditParams,
         status: auditParams.status || undefined,
         channel: channelFilter,
+        range: range ?? undefined,
       }),
     enabled: allowed,
   });
@@ -271,6 +280,7 @@ export default function FeeAuditPage() {
       pageSize,
       status: shipStatus,
       channel: channelFilterToQuery(channelFilter),
+      ...rangeKey,
     }),
     queryFn: () =>
       fetchShippingDiscrepancies({
@@ -278,6 +288,7 @@ export default function FeeAuditPage() {
         pageSize,
         status: shipStatus || undefined,
         channel: channelFilter,
+        range: range ?? undefined,
       }),
     enabled: allowed && tab === "ship",
   });
@@ -666,6 +677,15 @@ export default function FeeAuditPage() {
                 setChannelFilter(v);
                 setPage(1);
               }}
+            />
+            <DateRangePicker
+              allowAll
+              value={range}
+              onChange={(r) => {
+                setRange(r);
+                setPage(1);
+              }}
+              disabled={loading}
             />
             <Button
               variant="outline"

@@ -32,33 +32,56 @@ import { cn } from "@/lib/utils";
  *  - Bấm phím nhanh  → áp dụng NGAY và đóng popover.
  *  - Chọn lịch tay   → bấm ngày đầu (chưa áp dụng), bấm ngày cuối mới áp dụng.
  *    Đang chọn dở mà đóng popover thì huỷ, giữ nguyên khoảng cũ.
+ *
+ * `allowAll`: trang có bản chất "sổ việc chưa xong" (Kiểm toán phí sàn) cần
+ * xem TOÀN BỘ mặc định — bật cờ này thì value nhận thêm `null` = không lọc
+ * ngày, cột chọn nhanh có thêm phím "Toàn bộ thời gian". Trang báo cáo thường
+ * không truyền cờ, kiểu dữ liệu giữ nguyên DateRange.
  */
-export function DateRangePicker({
-  value,
-  onChange,
-  disabled,
-  className,
-}: {
-  value: DateRange;
-  onChange: (range: DateRange) => void;
+type DateRangePickerProps = {
   disabled?: boolean;
   className?: string;
-}) {
+} & (
+  | {
+      allowAll?: false;
+      value: DateRange;
+      onChange: (range: DateRange) => void;
+    }
+  | {
+      allowAll: true;
+      value: DateRange | null;
+      onChange: (range: DateRange | null) => void;
+    }
+);
+
+const ALL_TIME_LABEL = "Toàn bộ thời gian";
+
+export function DateRangePicker(props: DateRangePickerProps) {
+  const { disabled, className } = props;
+  const value = props.value;
+  const allowAll = props.allowAll === true;
   const [open, setOpen] = React.useState(false);
   // Khoảng đang chọn dở trong lịch — tách khỏi `value` để chưa chọn xong
   // thì dữ liệu phía dưới chưa bị tải lại lung tung.
   const [draft, setDraft] = React.useState<DayPickerRange | undefined>();
 
-  const activePreset = matchPreset(value);
+  const activePreset = value ? matchPreset(value) : undefined;
+  // Lịch mở ở tháng của ngày kết thúc (hoặc hôm nay khi đang xem toàn bộ).
+  const anchor = value?.to ?? new Date();
 
   // Mở popover thì nạp lại khoảng hiện hành làm điểm xuất phát
   function handleOpenChange(next: boolean) {
-    if (next) setDraft({ from: value.from, to: value.to });
+    if (next) setDraft(value ? { from: value.from, to: value.to } : undefined);
     setOpen(next);
   }
 
-  function applyRange(range: DateRange) {
-    onChange(range);
+  function emit(range: DateRange | null) {
+    if (props.allowAll === true) props.onChange(range);
+    else if (range) props.onChange(range);
+  }
+
+  function applyRange(range: DateRange | null) {
+    emit(range);
     setOpen(false);
   }
 
@@ -93,7 +116,7 @@ export function DateRangePicker({
             className={cn("gap-2 font-normal", className)}
           >
             <CalendarDays className="size-4 text-muted-foreground" />
-            <span>{formatRangeLabel(value)}</span>
+            <span>{value ? formatRangeLabel(value) : ALL_TIME_LABEL}</span>
             <ChevronDown className="size-3.5 text-muted-foreground" />
           </Button>
         }
@@ -106,6 +129,19 @@ export function DateRangePicker({
             <p className={cn(TEXT_SUB, "px-2 pt-1 pb-2 font-medium")}>
               Chọn nhanh
             </p>
+            {allowAll && (
+              <Button
+                variant={value === null ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "justify-start font-normal",
+                  value === null && "font-medium"
+                )}
+                onClick={() => applyRange(null)}
+              >
+                {ALL_TIME_LABEL}
+              </Button>
+            )}
             {RANGE_PRESETS.map((preset) => {
               const active = activePreset?.key === preset.key;
               return (
@@ -134,11 +170,7 @@ export function DateRangePicker({
               defaultMonth={
                 // Mở ra ở tháng của ngày bắt đầu, nhưng lùi 1 tháng để tháng
                 // chứa ngày kết thúc nằm ở khung bên phải
-                new Date(
-                  value.to.getFullYear(),
-                  value.to.getMonth() - 1,
-                  1
-                )
+                new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1)
               }
               selected={draft}
               onSelect={handleCalendarSelect}

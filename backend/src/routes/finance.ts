@@ -1812,6 +1812,14 @@ function pendingSettleWhere(req: AuthRequest): Prisma.OrderWhereInput {
         ? scope
         : { ...scope, id: { in: [] as string[] } };
   const now = Date.now();
+  // Bộ lọc ngày của trang (from/to theo ngày đặt) GIAO với cửa sổ 90 ngày:
+  // người dùng chọn khoảng cũ hơn 90 ngày vẫn không mở rộng tầm soi.
+  const floor = new Date(now - PENDING_MAX_AGE_DAYS * 86_400_000);
+  const range = parseDateRange(req.query);
+  const createdAt: Prisma.DateTimeFilter = {
+    gte: range && range.gte > floor ? range.gte : floor,
+    ...(range ? { lte: range.lte } : {}),
+  };
   return {
     channel,
     isSettled: false,
@@ -1820,7 +1828,7 @@ function pendingSettleWhere(req: AuthRequest): Prisma.OrderWhereInput {
     // đơn hoàn, không phải rổ này.
     returnStatus: ReturnStatus.NONE,
     // Trần tuổi đơn đứng NGOÀI OR: cả hai nhánh đều phải nằm trong cửa sổ.
-    createdAt: { gte: new Date(now - PENDING_MAX_AGE_DAYS * 86_400_000) },
+    createdAt,
     OR: [
       { deliveredAt: { lt: new Date(now - PENDING_DELIVERED_DAYS * 86_400_000) } },
       {
