@@ -131,7 +131,6 @@ function ConnectDialog({
   onDone,
   initialLazadaCode,
   lazadaSubscribeUrl,
-  allowTiktok,
   onShowGuide,
 }: {
   open: boolean;
@@ -144,12 +143,6 @@ function ConnectDialog({
    * trang gói nếu chưa có); null = app in-house, không nhắc gì thêm.
    */
   lazadaSubscribeUrl: string | null;
-  /**
-   * TikTok Shop mới chạy sandbox nội bộ (chưa có hàng đợi webhook, chưa test
-   * dữ liệu thật) — chỉ quản trị nền tảng được chọn; khách thấy "sắp ra mắt",
-   * nhất quán với landing.
-   */
-  allowTiktok: boolean;
   /** Code Lazada do callback Render bật về (?lazada=code) — điền sẵn vào ô. */
   initialLazadaCode?: string;
   /** Mở tour hướng dẫn từng bước của sàn đang chọn (đóng hộp này trước). */
@@ -288,15 +281,13 @@ function ConnectDialog({
               value={channelName}
               onChange={(e) => setChannelName(e.target.value as ChannelName)}
             >
-              {CONNECTABLE.map((n) => {
-                const soon = n === "TIKTOK" && !allowTiktok;
-                return (
-                  <option key={n} value={n} disabled={soon}>
-                    {CHANNEL_META[n].label}
-                    {soon ? " (sắp ra mắt)" : ""}
-                  </option>
-                );
-              })}
+              {/* TikTok mở cho mọi chủ shop từ 16/09/2026 (ISV TikTok đã duyệt,
+                  hàng đợi webhook đã có) — anh Trung chốt bỏ khóa "sắp ra mắt". */}
+              {CONNECTABLE.map((n) => (
+                <option key={n} value={n}>
+                  {CHANNEL_META[n].label}
+                </option>
+              ))}
             </NativeSelect>
             {usedNames.size > 0 && (
               <p className={TEXT_SUB}>
@@ -1204,7 +1195,6 @@ export default function ChannelsPage() {
         description={tourFor ? PLATFORM_TOUR[tourFor]?.description : undefined}
       />
       <ConnectDialog
-        allowTiktok={platformAdmin}
         open={connectOpen}
         onOpenChange={(o) => {
           setConnectOpen(o);
