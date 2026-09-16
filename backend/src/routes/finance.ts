@@ -2598,6 +2598,123 @@ router.post(
   }
 );
 
+// ============================================================
+// THẺ "TỔNG GIÁ TRỊ SẢN PHẨM" — BÓC KHẤU TRỪ SÀN (hàm THUẦN, vitest đánh thẳng)
+//
+// Đẳng thức thác nước (chốt chủ shop 31/07, làm khớp từng đồng 16/09/2026):
+//   Tổng giá trị SP − Tổng khấu trừ = Doanh thu (Σ platformRevenue)
+// đúng cho MỌI bộ lọc (gộp sàn / từng sàn / từng gian) vì mọi dòng đều SUM từ
+// cùng tập dòng computePnlRow. Hai dòng bổ sung 16/09 (đối chiếu TikTok 30
+// ngày lệch 9,88 triệu):
+//   - "Tiền hoàn trả khách": đơn hoàn/trả vẫn còn tính doanh thu — Lãi/Lỗ đã
+//     trừ (refundedAmount) nhưng thác nước trước đây không có dòng này.
+//   - "Lệch quyết toán khác": phần dư = (giá trị SP − Σ dòng đã bóc) − Doanh
+//     thu — đơn hoàn quá doanh thu bị kẹp về 0, tiền về ví lệch số ước tính,
+//     khoản sàn chưa bóc cột. Dương = sàn giữ thêm, âm = sàn trả thêm.
+// ============================================================
+export function computeGrossDeductions(activeRows: PnlRow[]) {
+  const sum = (pick: (r: PnlRow) => number) => activeRows.reduce((s, r) => s + pick(r), 0);
+  const grossValue = sum((r) => r.revenueGross);
+  const actualRevenueTotal = sum((r) => r.platformRevenue);
+  // Phí nền tảng = CĐ + thanh toán + dịch vụ + PiShip (bảo hiểm giao hàng).
+  const feePlatform = sum((r) => r.feeFixedPayment + r.feeService + r.feeSellerProtection);
+  const feeAffiliate = sum((r) => r.feeAffiliate);
+  const platformTaxTotal = sum((r) => r.platformTax);
+  const feeSellerVoucher = sum((r) => r.sellerVoucher);
+  const feeShippingDiff = sum((r) => r.shippingFeeDiff);
+  const adWalletTotal = sum((r) => r.adWalletTopup);
+  const platformSubsidyTotal = sum((r) => r.platformSubsidy);
+  const feeRefund = sum((r) => r.refundedAmount);
+  const named =
+    feePlatform + feeAffiliate + platformTaxTotal + feeSellerVoucher +
+    feeShippingDiff + adWalletTotal + feeRefund - platformSubsidyTotal;
+  // Tổng khấu trừ = đúng hiệu số hai thẻ → đẳng thức luôn đóng; phần chưa bóc
+  // được cột nào nằm ở dòng "Lệch quyết toán khác".
+  const totalDeduction = grossValue - actualRevenueTotal;
+  const feeOther = totalDeduction - named;
+  const percent = (v: number) => pct(v, grossValue);
+  const items = [
+    {
+      key: "platform",
+      label: "Phí nền tảng",
+      hint: "Phí sàn thu trên mỗi đơn. Shopee: phí cố định, thanh toán, dịch vụ, PiShip. TikTok: phí hoa hồng, phí giao dịch, phí xử lý đơn hàng, phí dịch vụ Voucher/Freeship Xtra. Lazada: phí cố định, thanh toán, hoa hồng, Freeship Max…",
+      amount: feePlatform,
+      percent: percent(feePlatform),
+    },
+    {
+      key: "affiliate",
+      label: "Phí tiếp thị liên kết",
+      hint: "Hoa hồng trả cho người giới thiệu đơn (cộng tác viên, KOL, affiliate/quảng cáo affiliate).",
+      amount: feeAffiliate,
+      percent: percent(feeAffiliate),
+    },
+    {
+      key: "platformTax",
+      label: "Thuế sàn TMĐT (GTGT + TNCN)",
+      hint: "Thuế sàn khấu trừ hộ nhà nước (GTGT 1% + TNCN 0,5% với hộ kinh doanh/cá nhân), trừ thẳng vào tiền hàng trước khi trả về shop.",
+      amount: platformTaxTotal,
+      percent: percent(platformTaxTotal),
+    },
+    {
+      key: "voucher",
+      label: "Voucher trợ giá của shop",
+      hint: "Giảm giá cho khách do shop tự chịu. Shopee: voucher + xu shop hoàn; TikTok: Giảm giá của người bán; Lazada: giảm giá từ cửa hàng. Không gồm phần sàn tài trợ.",
+      amount: feeSellerVoucher,
+      percent: percent(feeSellerVoucher),
+    },
+    {
+      key: "shipping",
+      label: "Chênh lệch phí vận chuyển",
+      hint: "Phần ship shop thực chịu: cước thật cao hơn khách trả + sàn trợ (TikTok: Phí vận chuyển của người bán).",
+      amount: feeShippingDiff,
+      percent: percent(feeShippingDiff),
+    },
+    {
+      key: "refund",
+      label: "Tiền hoàn trả khách",
+      hint: "Tiền sàn trả lại khách trên đơn hoàn/trả vẫn còn tính trong Tổng giá trị SP (số thật từ bản kê; đơn hoàn chưa chốt lấy số sàn báo). Đơn hủy không tính ở đây.",
+      amount: feeRefund,
+      percent: percent(feeRefund),
+    },
+    {
+      key: "adWallet",
+      label: "Nạp ví quảng cáo",
+      hint: "Tiền sàn giữ lại từ đơn hàng để nạp vào ví quảng cáo của shop (Shopee).",
+      amount: adWalletTotal,
+      percent: percent(adWalletTotal),
+    },
+    {
+      key: "subsidy",
+      label: "Trợ giá từ sàn",
+      hint: "Tiền sàn hỗ trợ thêm cho shop — được cộng ngược lại (dấu +).",
+      amount: platformSubsidyTotal === 0 ? 0 : -platformSubsidyTotal, // âm vì làm giảm khấu trừ
+      percent: platformSubsidyTotal === 0 ? 0 : -percent(platformSubsidyTotal),
+    },
+    {
+      key: "other",
+      label: "Lệch quyết toán khác",
+      hint: "Phần còn lại để Tổng giá trị SP − Khấu trừ = Doanh thu khớp từng đồng: đơn hoàn nhiều hơn doanh thu (kẹp về 0), tiền về ví lệch số sàn ước tính, khoản sàn chưa bóc cột. Dương = sàn giữ thêm, âm = sàn trả thêm.",
+      amount: feeOther,
+      percent: percent(feeOther),
+    },
+  ];
+  return {
+    grossValue,
+    actualRevenueTotal,
+    totalDeduction,
+    feePlatform,
+    feeAffiliate,
+    platformTaxTotal,
+    feeSellerVoucher,
+    feeShippingDiff,
+    adWalletTotal,
+    platformSubsidyTotal,
+    feeRefund,
+    feeOther,
+    items,
+  };
+}
+
 // GET /api/finance/analytics — 3 chỉ số chính + chuỗi Doanh thu vs Tổng chi phí theo ngày.
 // Mọi số tiền trả về là SỐ ĐẦY ĐỦ (không viết tắt).
 router.get("/analytics", async (req: AuthRequest, res, next) => {
@@ -2709,47 +2826,15 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const settledPayout = sumBy(settledRows, (r) => r.actualPayout); // đã về ví
     const pendingNetRevenue = sumBy(pendingRows, (r) => r.netRevenue); // chờ về
 
-    // --- CỘT 1: TỔNG GIÁ TRỊ SẢN PHẨM = Σ cột "Doanh thu gốc" của Lãi/Lỗ ---
-    // Mang TOÀN BỘ khấu trừ của sàn (phí + thuế + voucher + chênh lệch VC −
-    // trợ giá) để: Giá trị sản phẩm − Tổng khấu trừ = thẻ DOANH THU (thác
-    // nước 4 thẻ, chốt chủ shop 31/07).
-    const grossValue = sumBy(activeRows, (r) => r.revenueGross);
-    // Phí nền tảng = CĐ + thanh toán + dịch vụ + PiShip (bảo hiểm giao hàng).
-    const feePlatform = sumBy(
-      activeRows,
-      (r) => r.feeFixedPayment + r.feeService + r.feeSellerProtection
-    );
-    const feeAffiliate = sumBy(activeRows, (r) => r.feeAffiliate);
-    const feeSellerVoucher = sumBy(activeRows, (r) => r.sellerVoucher);
-    // Từ 05/08 các bucket SUM trên TOÀN BỘ đơn hoạt động: đơn chờ quyết toán
-    // đã mang SỐ ƯỚC TÍNH CỦA CHÍNH SHOPEE (syncShopeePendingEscrowEstimates,
-    // chưa sync = 0) — SUM cả hai nhóm thì thác nước Giá trị SP − Khấu trừ =
-    // thẻ Doanh thu mới khớp từng đồng với platformRevenue mới của đơn chờ.
-    const feeShippingDiff = sumBy(activeRows, (r) => r.shippingFeeDiff);
-    const platformSubsidyTotal = sumBy(activeRows, (r) => r.platformSubsidy);
-    const adWalletTotal = sumBy(activeRows, (r) => r.adWalletTopup);
-    // Thuế sàn TMĐT = Σ cột "Thuế sàn" (platformTax): số THẬT (đơn quyết toán)
-    // + số sàn ước tính (đơn chờ) — là một DÒNG KHẤU TRỪ của thẻ Tổng giá trị
-    // SP, không thuộc Chi phí.
+    // --- CỘT 1 & 2: TỔNG GIÁ TRỊ SẢN PHẨM, KHẤU TRỪ, DOANH THU THỰC TẾ ---
+    // Hàm thuần computeGrossDeductions: Giá trị SP − Tổng khấu trừ = Doanh thu
+    // (Σ platformRevenue = "Tổng tiền" sàn báo) khớp từng đồng mọi bộ lọc.
+    const gd = computeGrossDeductions(activeRows);
+    const { grossValue, totalDeduction, actualRevenueTotal } = gd;
+    // Thuế sàn TMĐT tách THẬT (đơn quyết toán) / ƯỚC TÍNH (đơn chờ) cho khối Thuế.
     const platformTaxActual = sumBy(settledRows, (r) => r.platformTax);
     const platformTaxEstimated = sumBy(pendingRows, (r) => r.platformTax);
     const platformTaxTotal = platformTaxActual + platformTaxEstimated;
-
-    const totalDeduction =
-      feePlatform +
-      feeAffiliate +
-      platformTaxTotal +
-      feeSellerVoucher +
-      feeShippingDiff +
-      adWalletTotal -
-      platformSubsidyTotal;
-
-    // --- CỘT 2: DOANH THU THỰC TẾ = Σ platformRevenue ("Tổng tiền" sàn báo):
-    // đơn đã quyết toán = actualPayout (tiền THẬT về ví, đã cấn trừ hết
-    // phí/thuế/xu); đơn chờ = số từ API đơn hàng (tạm tính). Phí & thuế sàn
-    // KHÔNG nằm ở cột Chi phí nữa — chúng là khấu trừ của thẻ Tổng giá trị SP;
-    // nhờ vậy: Giá trị SP − Khấu trừ = Doanh thu, Doanh thu − Chi phí = LN.
-    const actualRevenueTotal = sumBy(activeRows, (r) => r.platformRevenue);
     const settledActualRevenue = sumBy(settledRows, (r) => r.platformRevenue);
     const pendingActualRevenue = sumBy(pendingRows, (r) => r.platformRevenue);
     const cancelledValue = sumBy(cancelledRows, (r) => r.revenueGross);
@@ -2949,57 +3034,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         gross: {
           total: grossValue,
           orderCount: activeRows.length,
-          items: [
-            {
-              key: "platform",
-              label: "Phí nền tảng",
-              hint: "Các loại phí sàn thu trên mỗi đơn: phí cố định, phí dịch vụ, phí thanh toán.",
-              amount: feePlatform,
-              percent: pct(feePlatform, grossValue),
-            },
-            {
-              key: "affiliate",
-              label: "Phí tiếp thị liên kết",
-              hint: "Hoa hồng trả cho người giới thiệu đơn (cộng tác viên, KOL).",
-              amount: feeAffiliate,
-              percent: pct(feeAffiliate, grossValue),
-            },
-            {
-              key: "platformTax",
-              label: "Thuế sàn TMĐT (GTGT + TNCN)",
-              hint: "Thuế sàn thu hộ nhà nước, trừ thẳng vào tiền hàng trước khi trả về shop.",
-              amount: platformTaxTotal,
-              percent: pct(platformTaxTotal, grossValue),
-            },
-            {
-              key: "voucher",
-              label: "Voucher trợ giá của shop",
-              hint: "Tiền giảm giá cho khách do shop tự chịu (không phải sàn tài trợ).",
-              amount: feeSellerVoucher,
-              percent: pct(feeSellerVoucher, grossValue),
-            },
-            {
-              key: "shipping",
-              label: "Chênh lệch phí vận chuyển",
-              hint: "Phí ship thực tế cao hơn phí đã thu của khách — sàn trừ phần chênh vào shop.",
-              amount: feeShippingDiff,
-              percent: pct(feeShippingDiff, grossValue),
-            },
-            {
-              key: "adWallet",
-              label: "Nạp ví quảng cáo",
-              hint: "Tiền sàn giữ lại từ đơn hàng để nạp vào ví quảng cáo của shop.",
-              amount: adWalletTotal,
-              percent: pct(adWalletTotal, grossValue),
-            },
-            {
-              key: "subsidy",
-              label: "Trợ giá từ sàn",
-              hint: "Tiền sàn hỗ trợ thêm cho shop — được cộng ngược lại (dấu +).",
-              amount: -platformSubsidyTotal, // âm vì làm giảm khấu trừ
-              percent: -pct(platformSubsidyTotal, grossValue),
-            },
-          ],
+          items: gd.items,
           totalDeduction,
         },
 

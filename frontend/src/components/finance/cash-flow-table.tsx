@@ -214,7 +214,7 @@ export function CashFlowTable() {
     },
     {
       label: "Số dư Ví sàn",
-      tip: "Số tiền đang nằm trong ví trên sàn — đọc thẳng từ sàn nên là số thật. Sàn nào không có ví giữ tiền thì hiện dấu —.",
+      tip: "Tiền sàn đang giữ, đọc thẳng từ sàn. Shopee: số dư ví; Lazada: kỳ sao kê đã chốt nhưng chưa chi; TikTok: các đợt chi tiền đã tạo nhưng chưa chuyển về ngân hàng (0 khi sàn đã trả hết). Sàn không có ví giữ tiền thì hiện dấu —.",
     },
     {
       label: "Về Ngân hàng (30 ngày)",

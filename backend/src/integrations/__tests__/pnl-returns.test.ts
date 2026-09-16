@@ -15,7 +15,7 @@ import {
   ShippingStatus,
   TaxCalculationBase,
 } from "@prisma/client";
-import { computePnlRow, computeReturnLoss, returnGoodsRecovered, summarizePnlRows } from "../../routes/finance";
+import { computeGrossDeductions, computePnlRow, computeReturnLoss, returnGoodsRecovered, summarizePnlRows } from "../../routes/finance";
 import { DEFAULT_TAX_CONFIG } from "../../config/tax-config";
 
 type PnlOrder = Parameters<typeof computePnlRow>[0];
@@ -491,5 +491,43 @@ describe("computePnlRow — Lazada sau khi nối Reverse Order API (20/08)", () 
     );
     expect(r.refundedAmount).toBe(0);
     expect(r.refundSource).toBeNull();
+  });
+});
+
+describe("computeGrossDeductions — thác nước Báo cáo dòng tiền đóng từng đồng (16/09/2026)", () => {
+  const rows = [
+    computePnlRow(mkOrder({ id: "a", orderCode: "A" })), // đã đối soát, ví 176.081
+    computePnlRow(mkOrder({ // hoàn tiền một phần khách giữ hàng: doanh thu còn tính, refund 100k
+      id: "b", orderCode: "B", returnSolution: ReturnSolution.REFUND_ONLY, refundedAmount: D(100000), actualPayout: D(76081),
+    })),
+    computePnlRow(mkOrder({ // hoàn cả đơn, ví âm — refund > doanh thu, platformRevenue kẹp theo payout
+      id: "c", orderCode: "C", returnStatus: ReturnStatus.AWAITING, returnSolution: ReturnSolution.RETURN_REFUND,
+      platformReturnStatus: "PROCESSING", refundedAmount: D(269000), actualPayout: D(-2700),
+    })),
+    computePnlRow(mkOrder({ id: "d", orderCode: "D", isSettled: false, actualPayout: D(0), fixedFee: D(0), serviceFee: D(0), sellerProtectionFee: D(0), taxWithheld: D(0) })), // chờ, chưa có số sàn
+    computePnlRow(mkOrder({ id: "e", orderCode: "E", platformSubsidy: D(8750), actualPayout: D(184831) })), // sàn trợ giá
+  ];
+
+  it("Tổng giá trị SP − Tổng khấu trừ = Σ Doanh thu trên sàn, mọi tập đơn", () => {
+    const g = computeGrossDeductions(rows);
+    expect(g.grossValue - g.totalDeduction).toBeCloseTo(g.actualRevenueTotal, 6);
+    expect(g.actualRevenueTotal).toBeCloseTo(rows.reduce((s, r) => s + r.platformRevenue, 0), 6);
+    // Σ các dòng khấu trừ (kể cả trợ giá âm và lệch khác) = Tổng khấu trừ
+    const itemSum = g.items.reduce((s, i) => s + i.amount, 0);
+    expect(itemSum).toBeCloseTo(g.totalDeduction, 6);
+  });
+
+  it("dòng Tiền hoàn trả khách = Σ refundedAmount; trợ giá mang dấu âm", () => {
+    const g = computeGrossDeductions(rows);
+    expect(g.items.find((i) => i.key === "refund")?.amount).toBe(100000 + 269000);
+    expect(g.items.find((i) => i.key === "subsidy")?.amount).toBe(-8750);
+  });
+
+  it("lọc riêng một tập con (một gian) vẫn đóng đẳng thức — không phụ thuộc bộ lọc", () => {
+    const sub = computeGrossDeductions(rows.slice(1, 3));
+    expect(sub.grossValue - sub.totalDeduction).toBeCloseTo(sub.actualRevenueTotal, 6);
+    const empty = computeGrossDeductions([]);
+    expect(empty.totalDeduction).toBe(0);
+    for (const i of empty.items) expect(i.amount).toBe(0);
   });
 });
