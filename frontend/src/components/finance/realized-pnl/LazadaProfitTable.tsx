@@ -11,6 +11,8 @@ import {
   BLOCK,
   HEADER_COL,
   HEADER_GROUP,
+  PNL_STICKY_HEAD,
+  PNL_TABLE_SCROLLER,
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
@@ -124,12 +126,13 @@ export function LazadaProfitTable({
 }: { rows: PnlDetailRow[] } & PnlSelection) {
   const minWidth = 900 + (SHIP_COLS.length + PLATFORM_COLS.length + TAX_COLS.length + 5) * 118;
   return (
-    <div className="overflow-x-auto">
+    <div>
+    <div className={PNL_TABLE_SCROLLER}>
       <table
         className="w-full border-separate border-spacing-0 text-sm"
         style={{ minWidth }}
       >
-        <thead>
+        <thead className={PNL_STICKY_HEAD}>
           {/* Tầng nhóm block */}
           <tr>
             <SelectAllTh
@@ -378,6 +381,7 @@ export function LazadaProfitTable({
           })}
         </tbody>
       </table>
+    </div>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
         Bảng này là <b>sổ đối soát với sàn</b>. <b>Giá trị đơn hàng</b> = [Giá
         trị sản phẩm] thô — không phải doanh thu. <b>Doanh thu ước tính</b> =

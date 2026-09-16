@@ -18,6 +18,8 @@ import {
   Deduction,
   HEADER_COL,
   HEADER_GROUP,
+  PNL_STICKY_HEAD,
+  PNL_TABLE_SCROLLER,
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
@@ -105,12 +107,13 @@ export function TiktokProfitTable({
   const minWidth = 1180 + cols.length * 128;
 
   return (
-    <div className="overflow-x-auto">
+    <div>
+    <div className={PNL_TABLE_SCROLLER}>
       <table
         className="w-full border-separate border-spacing-0 text-sm"
         style={{ minWidth }}
       >
-        <thead>
+        <thead className={PNL_STICKY_HEAD}>
           {/* Tầng nhóm block */}
           <tr>
             <SelectAllTh
@@ -273,6 +276,7 @@ export function TiktokProfitTable({
           })}
         </tbody>
       </table>
+    </div>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
         Tên cột đúng theo TikTok Shop; số lấy từ <b>bản kê TikTok</b> (Finance
         API 202501, đồng bộ mỗi giờ). Đơn chờ đối soát hiện <b>số ước tính của

@@ -111,6 +111,17 @@ export const BLOCK = {
  * - HEADER_COL:   tầng dưới (tên cột) — border-bottom đậm ngăn cách với dữ liệu.
  * Cả hai đệm dọc py-3 cho thoáng.
  */
+/**
+ * KHUNG CUỘN của bảng (anh Trung 16/09/2026): bảng cuộn TRONG hộp cao tối đa
+ * gần bằng màn hình → tiêu đề 2 tầng bám trên khi kéo dọc (thead sticky) và
+ * thanh cuộn ngang luôn nằm ở đáy hộp, trong tầm mắt, không phải kéo xuống
+ * cuối trang mới thấy. Dùng chung 3 bảng Shopee/TikTok/Lazada.
+ */
+export const PNL_TABLE_SCROLLER =
+  "overflow-auto max-h-[calc(100dvh-9rem)] overscroll-contain";
+/** thead bám đỉnh hộp cuộn; ô tiêu đề đã có nền bg-slate-50 nên che được dữ liệu bên dưới. */
+export const PNL_STICKY_HEAD = "sticky top-0 z-20";
+
 export const HEADER_GROUP =
  "border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-semibold";
 export const HEADER_COL =

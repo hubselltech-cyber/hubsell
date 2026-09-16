@@ -13,6 +13,8 @@ import {
   Deduction,
   HEADER_COL,
   HEADER_GROUP,
+  PNL_STICKY_HEAD,
+  PNL_TABLE_SCROLLER,
   PNL_STATUS_LABEL,
   ProductLines,
   ProfitCell,
@@ -42,9 +44,10 @@ export function ShopeeProfitTable({
   const data = rows.map(toShopeeRow);
 
   return (
-    <div className="overflow-x-auto">
+    <div>
+    <div className={PNL_TABLE_SCROLLER}>
       <table className="w-full min-w-[1940px] border-separate border-spacing-0 text-sm">
-        <thead>
+        <thead className={PNL_STICKY_HEAD}>
           {/* Tầng nhóm block — tiêu đề nhóm căn giữa trên các cột con */}
           <tr>
             <SelectAllTh
@@ -242,6 +245,7 @@ export function ShopeeProfitTable({
           })}
         </tbody>
       </table>
+    </div>
       <p className={cn(TEXT_SUB, "px-3 py-2")}>
         Đơn <b>đã đối soát</b> nhận số thật từ Escrow API (Đồng bộ đối soát) —
         mỗi loại phí về đúng cột của nó. Riêng cột{" "}
