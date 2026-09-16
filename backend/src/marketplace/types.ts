@@ -50,5 +50,13 @@ export interface MarketplaceProductAdapter {
    * Kéo TOÀN BỘ sản phẩm của gian (đã tự phân trang + tự refresh token) và trả
    * về danh sách đã chuẩn hoá. Ném lỗi nếu gọi API thất bại.
    */
-  fetchProducts(channel: Channel): Promise<NormalizedChannelProduct[]>;
+  fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<NormalizedChannelProduct[]>;
+}
+
+export interface FetchProductsOptions {
+  /**
+   * false = chỉ cần danh mục + tồn (worker tồn kho), adapter bỏ các call bổ
+   * sung ảnh/phân loại tốn quota (TikTok GET products/{id}). Mặc định true.
+   */
+  details?: boolean;
 }

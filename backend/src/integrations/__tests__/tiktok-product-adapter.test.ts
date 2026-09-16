@@ -9,6 +9,7 @@
 // ============================================================
 import { describe, expect, it } from "vitest";
 import {
+  pickDetailTargets,
   tiktokChannelSku,
   tiktokStatusToNorm,
   transformTiktokSku,
@@ -73,5 +74,36 @@ describe("tiktok-adapter transformTiktokSku", () => {
     expect(row.imageUrl).toBe("https://img/p2.jpg");
     expect(row.status).toBe("DELISTED");
     expect(row.channelSku).toBe("S2");
+  });
+
+  it("ảnh SKU theo shape thật 202309 (sku_img.urls[], không có url) được ưu tiên trước ảnh chính", () => {
+    const row = transformTiktokSku(
+      { id: "P3", title: "Túi", status: "ACTIVATE", main_images: [{ urls: ["https://img/main.jpg"] }] },
+      {
+        id: "S3",
+        seller_sku: "TUI-DEN",
+        price: { sale_price: "99000" },
+        sales_attributes: [
+          { name: "Màu", value_name: "Đen", sku_img: { uri: "x", urls: ["https://img/sku-den.jpg"], thumb_urls: ["https://img/t.jpg"] } },
+        ],
+      }
+    );
+    expect(row.imageUrl).toBe("https://img/sku-den.jpg");
+    expect(row.variantName).toBe("Đen");
+  });
+});
+
+describe("tiktok-adapter pickDetailTargets", () => {
+  const P = (id: string) => ({ id });
+
+  it("sản phẩm CHƯA có ảnh trong DB lên trước, đã có xếp sau, cắt theo trần", () => {
+    const products = [P("1"), P("2"), P("3"), P("4"), P("5")];
+    const enriched = new Set(["1", "2"]);
+    expect(pickDetailTargets(products, enriched, 4).map((p) => p.id)).toEqual(["3", "4", "5", "1"]);
+  });
+
+  it("trần nhỏ hơn số chưa có ảnh → chỉ lấy phần chưa có, không đụng phần đã có", () => {
+    const products = [P("1"), P("2"), P("3")];
+    expect(pickDetailTargets(products, new Set(["1"]), 1).map((p) => p.id)).toEqual(["2"]);
   });
 });

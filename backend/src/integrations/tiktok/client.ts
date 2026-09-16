@@ -986,7 +986,15 @@ export interface TikTokProductSku {
   seller_sku?: string;
   price?: { sale_price?: string; tax_exclusive_price?: string; currency?: string; [k: string]: unknown };
   inventory?: { warehouse_id?: string; quantity?: number }[];
-  sales_attributes?: { id?: string; name?: string; value_id?: string; value_name?: string; sku_img?: { url?: string } }[];
+  // sku_img theo docs 202309 là {uri, urls[], thumb_urls[], width, height} — KHÔNG có `url`
+  // (giữ `url` phòng sàn đổi shape). main_images cùng shape.
+  sales_attributes?: {
+    id?: string;
+    name?: string;
+    value_id?: string;
+    value_name?: string;
+    sku_img?: { url?: string; uri?: string; urls?: string[]; thumb_urls?: string[] };
+  }[];
   [k: string]: unknown;
 }
 
