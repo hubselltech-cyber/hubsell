@@ -18,7 +18,6 @@ import { expireToDate } from "./config";
 import {
   fetchOrders,
   fetchSettlements,
-  fetchStatementTransactions,
   fetchStatementTransactionsV2,
   fetchUnsettledTransactions,
   getAuthorizedShops,
@@ -840,86 +839,6 @@ export async function syncTiktokUnsettledEstimates(
   return result;
 }
 
-
-/**
- * CHẨN ĐOÁN (16/09/2026): so mã đơn của cùng một bản kê giữa API 202309 (phẳng)
- * và 202501 (breakdown) — prod thấy 41 đơn (đa số HỦY) được bản 202309 ghi
- * "đã đối soát" nhưng lượt quét 202501 không thấy. Trả về từng bản kê: số dòng
- * mỗi bản + mã đơn/loại chỉ có ở một bên. Read-only, gọi qua nút đối soát
- * ?mode=compare.
- */
-export async function compareTiktokStatementVersions(
-  channel: Channel,
-  opts: { daysBack?: number; maxStatements?: number } = {}
-): Promise<
-  {
-    statementId: string;
-    statementTime?: number;
-    lines309: number;
-    lines501: number;
-    only309: { orderId: string; type?: string }[];
-    only501: { orderId: string; type?: string }[];
-  }[]
-> {
-  const { accessToken, shopCipher } = await getValidAccessToken(channel);
-  const nowSec = Math.floor(Date.now() / 1000);
-  const list = await fetchSettlements({
-    accessToken,
-    shopCipher,
-    statementTimeGe: nowSec - (opts.daysBack ?? 3) * 86_400,
-    statementTimeLt: nowSec,
-    pageSize: 10,
-  });
-  // Đối chiếu DANH SÁCH bản kê có/không lọc mốc thời gian: nghi lọc ge/lt bỏ
-  // bản kê đang MỞ (payment_status PROCESSING) mà bản không lọc vẫn trả.
-  const unfiltered = await fetchSettlements({ accessToken, shopCipher, pageSize: 10 });
-  const brief = (l: typeof list) =>
-    (l.statements ?? []).map((s) => ({
-      id: s.id,
-      time: s.statement_time ? new Date(s.statement_time * 1000).toISOString() : null,
-      status: s.payment_status,
-      settlement: s.settlement_amount,
-    }));
-  console.log(
-    `[TikTok] Bản kê CÓ lọc ge/lt: ${JSON.stringify(brief(list))} | KHÔNG lọc: ${JSON.stringify(brief(unfiltered))}`
-  );
-  const out = [];
-  for (const st of (list.statements ?? []).slice(0, opts.maxStatements ?? 3)) {
-    const ids309 = new Map<string, string | undefined>();
-    const ids501 = new Map<string, string | undefined>();
-    let token: string | undefined;
-    let n309 = 0;
-    do {
-      const d = await fetchStatementTransactions({ accessToken, shopCipher, statementId: st.id, pageSize: 50, pageToken: token });
-      for (const t of d.statement_transactions ?? []) {
-        n309++;
-        const key = t.order_id || (t as Record<string, unknown>).adjustment_order_id;
-        if (key && key !== "0") ids309.set(String(key), t.type);
-      }
-      token = d.next_page_token || undefined;
-    } while (token);
-    token = undefined;
-    let n501 = 0;
-    do {
-      const d = await fetchStatementTransactionsV2({ accessToken, shopCipher, statementId: st.id, pageSize: 100, pageToken: token });
-      for (const t of d.transactions ?? []) {
-        n501++;
-        const key = t.order_id || t.adjustment_order_id;
-        if (key && key !== "0") ids501.set(String(key), t.type);
-      }
-      token = d.next_page_token || undefined;
-    } while (token);
-    out.push({
-      statementId: st.id,
-      statementTime: st.statement_time,
-      lines309: n309,
-      lines501: n501,
-      only309: [...ids309].filter(([k]) => !ids501.has(k)).map(([orderId, type]) => ({ orderId, type })),
-      only501: [...ids501].filter(([k]) => !ids309.has(k)).map(([orderId, type]) => ({ orderId, type })),
-    });
-  }
-  return out;
-}
 
 // ============================================================
 // WEBHOOK THỜI GIAN THỰC — đơn mới / đổi trạng thái → upsert + trừ/hoàn kho

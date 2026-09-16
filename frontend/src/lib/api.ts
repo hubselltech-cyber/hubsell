@@ -2397,6 +2397,18 @@ export interface SyncSettlementsResult {
   ordersUpdated: number;
   ordersNotFound: number;
   pages: number;
+  /** TikTok: dòng cấp shop không gắn đơn + số cửa sổ thời gian đã quét. */
+  unlinked?: number;
+  windows?: number;
+  /** TikTok/Shopee: kết quả lượt ước tính cho đơn chờ đối soát (null nếu lỗi). */
+  estimates?: {
+    transactions?: number;
+    ordersUpdated: number;
+    ordersNotFound?: number;
+    skippedSettled?: number;
+    pages?: number;
+  } | null;
+  estimatesError?: string | null;
 }
 
 /** Kéo đối soát thật từ TikTok Shop → cập nhật số quyết toán từng đơn (Cash Flow). */

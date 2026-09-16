@@ -204,7 +204,7 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 
 - **Tự refresh token** — `getValidAccessToken()` được gọi TRƯỚC mọi call API: nếu `access_token` còn <5 phút là hết hạn thì tự `refreshAccessToken()` rồi lưu token mới xuống DB; `refresh_token` hết hạn thì báo lỗi buộc uỷ quyền lại.
 - **Đồng bộ đơn** — kéo đơn (mặc định 90 ngày gần nhất), phân trang qua `next_page_token`, **upsert idempotent** theo `(channelId, orderCode)` (migration thêm unique index). Map trạng thái TikTok → vòng đời Hubsell; snapshot giá vốn qua mapping SKU. *Không* trừ tồn kho khi đồng bộ lô (tránh sai kho/không idempotent).
-- **Đồng bộ đối soát** — kéo `statements` → `statement_transactions`, gom theo `order_id`, cập nhật `isSettled` / `actualPayout` / `serviceFee` cho từng đơn → bảng Cash Flow & Lãi/Lỗ Thực Hiện chạy bằng số thật.
+- **Đồng bộ đối soát** — kéo `statements` (202309, quét theo cửa sổ 30 ngày `statement_time_ge/lt`, mốc cuối nới +2 ngày vì sàn bỏ bản kê mới nhất khi `lt = now`) → `statement_transactions` bản **202501** có breakdown đặt tên (revenue / shipping_cost / fee_tax) → gom theo `order_id` (+ `adjustment_order_id` cho dòng điều chỉnh) rồi GHI ĐÈ: bảng `tiktok_order_settlements` (số có dấu, mỗi cột = một trường API, tên theo Seller Center "Phân tích quyết toán") + cột gộp GĐ2 của `Order`. Đơn chưa quyết toán lấy **số ước tính của chính sàn** từ `Get Unsettled Transactions` 202507 (chỉ gửi `search_time_ge`, gửi thêm `lt` sàn báo 36009003). Nút Đồng bộ đối soát: mặc định 60 ngày, `?full=1` toàn bộ lịch sử, `?mode=estimates|settlements`.
 
 **Webhook real-time** (`POST /api/webhooks/tiktok`, cấu hình URL trong Partner Center):
 
@@ -225,7 +225,7 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 
 > ⚠️ **Chạy local:** Redirect của TikTok là **https** nên cả frontend lẫn backend phải chạy HTTPS bằng cert tự ký dùng chung — xem [🔒 Chạy HTTPS ở local](#-chạy-https-ở-local-test-oauth--webhook-tiktok). App ở trạng thái **Draft** chỉ uỷ quyền được bằng tài khoản shop test/của chính bạn.
 >
-> 🔎 **Cần đối chiếu payload thật:** tên trường trong `TikTokOrder` / `TikTokStatementTransaction` theo tài liệu 202309; parser dùng optional chaining nên lệch nhẹ không vỡ, nhưng hãy kiểm lại khi chạy end-to-end. TikTok trả **phí gộp** (`fee_amount`) → hiện dồn vào `serviceFee`; khi có nguồn chi tiết hơn thì bóc tách từng loại phí.
+> ✅ **Đã đối chiếu payload thật (16/09/2026, shop and.not.or):** bản kê 202501 khớp từng đồng với màn "Phân tích quyết toán" Seller Center (đơn 585964373854029014: hoa hồng, phí giao dịch, phí xử lý đơn 3.000đ, Voucher Xtra, GTGT 1%, TNCN 0,5%, tổng quyết toán). GTGT về dưới `vat_amount` (không phải `local_vat_amount` như docs). Tra bản kê thô theo đơn: `GET /api/admin/tiktok/settlement-raw?orderCode=` (platform admin).
 >
 > 🔜 **Chưa làm:** lịch tự động đồng bộ (cron) thay vì bấm tay; bóc tách chi tiết từng loại phí đối soát (hiện dồn vào `serviceFee`).
 

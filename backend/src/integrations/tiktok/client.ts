@@ -459,48 +459,6 @@ export interface TikTokStatementListData {
   statements?: TikTokStatement[];
 }
 
-/**
- * Giao dịch bản kê — payload THẬT 16/09/2026 là bản PHẲNG ~60 trường *_amount
- * (chuỗi số, phí mang dấu ÂM). Chỉ khai các trường parser dùng; phần còn lại
- * qua index signature. Bóc cột ở tiktok/settlements.ts.
- */
-export interface TikTokStatementTransaction {
-  id?: string;
-  order_id?: string;
-  order_create_time?: number;
-  /** ORDER | REFUND | ADJUSTMENT | SAMPLE_SHIPPING_FEE … */
-  type?: string;
-  currency?: string;
-  revenue_amount?: string;
-  /** Tổng phí TikTok khấu trừ — số ÂM. */
-  fee_amount?: string;
-  shipping_cost_amount?: string;
-  /** Tiền THỰC NHẬN về ví cho giao dịch này (có dấu). */
-  settlement_amount?: string;
-  adjustment_amount?: string;
-  platform_commission_amount?: string;
-  referral_fee_amount?: string;
-  transaction_fee_amount?: string;
-  sfp_service_fee_amount?: string;
-  affiliate_commission_amount?: string;
-  affiliate_ads_commission_amount?: string;
-  affiliate_partner_commission_amount?: string;
-  platform_discount_amount?: string;
-  seller_discount_amount?: string;
-  customer_paid_shipping_fee_amount?: string;
-  actual_shipping_fee_amount?: string;
-  shipping_fee_subsidy_amount?: string;
-  platform_shipping_fee_discount_amount?: string;
-  customer_refund_amount?: string;
-  pit_amount?: string;
-  iva_vat_amount?: string;
-  [k: string]: unknown;
-}
-
-export interface TikTokStatementTransactionData {
-  next_page_token?: string;
-  statement_transactions?: TikTokStatementTransaction[];
-}
 
 export interface FetchSettlementsParams {
   accessToken: string;
@@ -515,7 +473,7 @@ export interface FetchSettlementsParams {
 
 /**
  * Kéo danh sách bản kê giải ngân (statements). Từng bản kê sau đó được bóc chi
- * tiết theo đơn qua {@link fetchStatementTransactions}.
+ * tiết theo đơn qua {@link fetchStatementTransactionsV2} (bản 202501).
  */
 export async function fetchSettlements(
   params: FetchSettlementsParams,
@@ -550,33 +508,6 @@ export interface FetchStatementTransactionsParams {
   pageToken?: string;
 }
 
-/**
- * Bóc chi tiết TỪNG ĐƠN trong một bản kê — đây là nơi có `order_id` +
- * `settlement_amount` để cập nhật số quyết toán thực tế cho từng Order.
- */
-export async function fetchStatementTransactions(
-  params: FetchStatementTransactionsParams,
-  cfg: TikTokConfig = getTikTokConfig()
-): Promise<TikTokStatementTransactionData> {
-  // sort_field BẮT BUỘC (lỗi thật 36009004 ngày 16/09: "SortField is a required
-  // field") — sắp theo thời điểm tạo đơn để phân trang ổn định.
-  const query: Record<string, string | number> = {
-    page_size: params.pageSize ?? 50,
-    sort_field: "order_create_time",
-    sort_order: "DESC",
-  };
-  if (params.pageToken) query.page_token = params.pageToken;
-
-  return callApi<TikTokStatementTransactionData>(
-    {
-      path: `/finance/202309/statements/${params.statementId}/statement_transactions`,
-      accessToken: params.accessToken,
-      shopCipher: params.shopCipher,
-      query,
-    },
-    cfg
-  );
-}
 
 // ============================================================
 // BẢN KÊ THEO ĐƠN (Finance API 202309) — bóc tách phí từng đơn
