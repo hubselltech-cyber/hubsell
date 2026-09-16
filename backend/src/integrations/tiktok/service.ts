@@ -860,8 +860,21 @@ export async function compareTiktokStatementVersions(
     shopCipher,
     statementTimeGe: nowSec - (opts.daysBack ?? 3) * 86_400,
     statementTimeLt: nowSec,
-    pageSize: opts.maxStatements ?? 3,
+    pageSize: 10,
   });
+  // Đối chiếu DANH SÁCH bản kê có/không lọc mốc thời gian: nghi lọc ge/lt bỏ
+  // bản kê đang MỞ (payment_status PROCESSING) mà bản không lọc vẫn trả.
+  const unfiltered = await fetchSettlements({ accessToken, shopCipher, pageSize: 10 });
+  const brief = (l: typeof list) =>
+    (l.statements ?? []).map((s) => ({
+      id: s.id,
+      time: s.statement_time ? new Date(s.statement_time * 1000).toISOString() : null,
+      status: s.payment_status,
+      settlement: s.settlement_amount,
+    }));
+  console.log(
+    `[TikTok] Bản kê CÓ lọc ge/lt: ${JSON.stringify(brief(list))} | KHÔNG lọc: ${JSON.stringify(brief(unfiltered))}`
+  );
   const out = [];
   for (const st of (list.statements ?? []).slice(0, opts.maxStatements ?? 3)) {
     const ids309 = new Map<string, string | undefined>();
