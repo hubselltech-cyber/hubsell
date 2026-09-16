@@ -8,7 +8,7 @@
 // ============================================================
 
 import type { Channel, Prisma } from "@prisma/client";
-import { ChannelName, ShippingStatus } from "@prisma/client";
+import { ChannelName, ShippingDisputeStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { carrierFromName } from "../../services/shipping";
 import { backfillOrderItemImagesTx } from "../order-item-images";
@@ -214,10 +214,21 @@ export async function syncTiktokOrders(
   const fromSec =
     opts.createTimeGe ?? nowSec - (opts.daysBack ?? 90) * 24 * 60 * 60;
   const toSec = opts.createTimeLt ?? nowSec;
-  const timeFilter = opts.byUpdateTime
-    ? { updateTimeGe: fromSec, updateTimeLt: toSec }
-    : { createTimeGe: fromSec, createTimeLt: toSec };
   const maxPages = opts.maxPages ?? MAX_PAGES;
+
+  // Quét theo create_time (đồng bộ tay 90 ngày) CẮT LÁT 15 ngày, mỗi lát có trần
+  // trang riêng — shop and.not.or 90 ngày = 2.719 đơn vượt trần 50 trang × 50
+  // (16/09: lượt đầu dừng ở 2.500, ~200 đơn cũ nhất giữ trạng thái sai). Quét
+  // update_time (worker 2 ngày) giữ một lát.
+  const SLICE_SEC = 15 * 24 * 60 * 60;
+  const slices: { from: number; to: number }[] = [];
+  if (opts.byUpdateTime || toSec - fromSec <= SLICE_SEC) {
+    slices.push({ from: fromSec, to: toSec });
+  } else {
+    for (let to = toSec; to > fromSec; to -= SLICE_SEC) {
+      slices.push({ from: Math.max(fromSec, to - SLICE_SEC), to });
+    }
+  }
   let shapeLogged = false;
   let windowMinUpdate = 0;
   let windowMaxUpdate = 0;
@@ -236,6 +247,11 @@ export async function syncTiktokOrders(
     pages: 0,
   };
 
+  for (const slice of slices) {
+  const timeFilter = opts.byUpdateTime
+    ? { updateTimeGe: slice.from, updateTimeLt: slice.to }
+    : { createTimeGe: slice.from, createTimeLt: slice.to };
+  let slicePages = 0;
   let pageToken: string | undefined;
   do {
     const data = await fetchOrders({
@@ -246,6 +262,7 @@ export async function syncTiktokOrders(
       pageToken,
     });
     result.pages++;
+    slicePages++;
 
     for (const o of data.orders ?? []) {
       result.fetched++;
@@ -270,7 +287,8 @@ export async function syncTiktokOrders(
     }
 
     pageToken = data.next_page_token || undefined;
-  } while (pageToken && result.pages < maxPages);
+  } while (pageToken && slicePages < maxPages);
+  }
 
   // KIỂM CỬA SỔ (16/09): lượt quét update_time 2 ngày trả về 261/262 đơn — nghi
   // sàn bỏ qua update_time_ge. Ghi min/max update_time của lô so với cửa sổ để
@@ -528,18 +546,26 @@ export async function syncTiktokSettlements(
   for (const [orderId, acc] of byOrder) {
     const order = await prisma.order.findUnique({
       where: { channelId_orderCode: { channelId: channel.id, orderCode: orderId } },
-      select: { id: true },
+      select: { id: true, shippingDisputeStatus: true },
     });
     if (!order) {
       result.ordersNotFound++;
       continue;
     }
+    const cols = mapTiktokTransactionsToOrder(acc.trxs);
     await prisma.order.update({
       where: { id: order.id },
       data: {
         isSettled: true,
         settledAt: acc.time ? new Date(acc.time * 1000) : new Date(),
-        ...mapTiktokTransactionsToOrder(acc.trxs),
+        ...cols,
+        // Phần ship shop chịu trên TikTok là CHÍNH SÁCH (phí ship người bán /
+        // SFP), không phải sàn trừ nhầm → giữ làm chi phí trong P&L nhưng
+        // không đưa vào rổ "Truy thu phí ship" (chỉ đổi khi còn CHO_KHIEU_NAI —
+        // seller đã bấm khiếu nại thì tôn trọng).
+        ...(cols.shippingFeeDiff > 0 && order.shippingDisputeStatus === ShippingDisputeStatus.CHO_KHIEU_NAI
+          ? { shippingDisputeStatus: ShippingDisputeStatus.DA_DOI_SOAT }
+          : {}),
       },
     });
     result.ordersUpdated++;
