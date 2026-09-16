@@ -261,10 +261,9 @@ export function DeliveryFailTab() {
                 <HintIcon
                   hint={
                     <span>
-                      Nợ tích hợp chờ làm: <b>Lazada</b> mới dừng ở cảnh báo —
-                      sàn chưa có API cho shop chủ động nhắn nên chưa tự gửi tin
-                      được; <b>TikTok Shop</b> chưa nối cảnh báo (chờ API). Sàn
-                      mở API là cắm thêm vào đây.
+                      <b>Lazada</b> và <b>TikTok Shop</b> mới dừng ở cảnh báo —
+                      Lazada chưa có API cho shop chủ động nhắn khách, TikTok
+                      Hubsell chưa nối API chat; sàn mở là cắm thêm vào đây.
                     </span>
                   }
                 />

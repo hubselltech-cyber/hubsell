@@ -82,6 +82,8 @@ export const CHANNEL_LABEL: Record<ChannelName, string> = {
 
 /** Nhãn NGẮN của hãng vận chuyển — cho chip lọc chật chỗ trên mobile. */
 export const CARRIER_SHORT: Record<string, string> = {
+  // Nhóm HỎA TỐC mọi sàn (backend lọc theo tên hãng nguyên văn) — đứng đầu như web.
+  EXPRESS: "⚡ Hỏa tốc",
   SPX: "SPX",
   GHTK: "GHTK",
   GHN: "GHN",
@@ -94,6 +96,7 @@ export const CARRIER_SHORT: Record<string, string> = {
 
 /** Nhãn hãng vận chuyển — CHÉP TAY từ frontend/src/lib/carrier-meta.ts. */
 export const CARRIER_LABEL: Record<string, string> = {
+  EXPRESS: "Hỏa tốc (mọi sàn)",
   SPX: "SPX Express",
   GHTK: "Giao Hàng Tiết Kiệm",
   GHN: "Giao Hàng Nhanh",

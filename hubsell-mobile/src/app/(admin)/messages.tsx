@@ -246,11 +246,11 @@ export default function MessagesScreen() {
         <View className="mx-4 mt-6 items-center rounded-2xl bg-white dark:bg-slate-900 p-6" style={{ elevation: 1 }}>
           <Ionicons name="chatbubbles-outline" size={36} color="#94a3b8" />
           <Text className="mt-3 text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
-            TikTok Shop chưa mở API chat
+            Hubsell chưa nối chat TikTok Shop
           </Text>
           <Text className="mt-1 text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Hubsell sẽ bổ sung ngay khi sàn hỗ trợ. Tạm thời anh/chị trả lời
-            khách trong app TikTok Seller.
+            Đơn hàng, tồn kho và đối soát TikTok đã đồng bộ; phần chat sẽ nối
+            sau. Tạm thời anh/chị trả lời khách trong app TikTok Seller.
           </Text>
         </View>
       ) : loading ? (

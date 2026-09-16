@@ -990,7 +990,7 @@ async function detectDeliveryFailed(ownerId: string): Promise<DetectedAlert[]> {
       severity: notices.length >= 5 ? "high" : "medium",
       title: `${notices.length} đơn giao KHÔNG thành công — nguy cơ kiện quay đầu`,
       summary:
-        `${DELIVERY_FAIL_WINDOW_DAYS} ngày qua: ${head}${more} bị báo giao thất bại (Shopee: shipper hỏng 2 lượt; Lazada: sàn kết luận giao không thành công).` +
+        `${DELIVERY_FAIL_WINDOW_DAYS} ngày qua: ${head}${more} bị báo giao thất bại (Shopee/TikTok: shipper báo lượt giao hỏng; Lazada: sàn kết luận giao không thành công).` +
         (sent > 0 ? ` Đã tự nhắn khách ${sent} đơn qua chat sàn.` : "") +
         " Chủ động gọi khách để cứu đơn — kiện quay đầu là mất phí ship 2 chiều.",
       payload: {

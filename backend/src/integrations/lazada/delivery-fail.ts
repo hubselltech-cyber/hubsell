@@ -13,8 +13,8 @@
 //     do cho chủ shop khỏi tưởng hệ thống quên gửi.
 //
 // Dùng chung bảng DeliveryFailNotice + cấu hình + thẻ điều hành với Shopee
-// (helper cấu hình sống ở integrations/shopee/delivery-fail.ts — nơi tính
-// năng ra đời; tách file core riêng khi có sàn thứ ba).
+// (helper cấu hình + hằng số sống ở integrations/shopee/delivery-fail.ts — nơi
+// tính năng ra đời; nhánh TikTok (tiktok/delivery-fail.ts) dùng chung qua export).
 // ============================================================
 
 import type { Channel } from "@prisma/client";

@@ -65,16 +65,16 @@ import { isShopeeChatPermissionError, shopeeChatDeniedUntil } from "./chat-gate"
  */
 export const DELIVERY_FAIL_THRESHOLD = 1;
 /** Chỉ phát vé cho đơn tạo trong N ngày gần nhất — kiện cũ hơn đã an bài. */
-const SCAN_WINDOW_DAYS = 21;
+export const SCAN_WINDOW_DAYS = 21;
 /** Vé của đơn quá N ngày (kể cả OUTCOME chưa chốt được) → bỏ, khỏi theo mãi. */
-const TASK_MAX_ORDER_AGE_DAYS = 45;
+export const TASK_MAX_ORDER_AGE_DAYS = 45;
 /**
  * TRẦN call get_tracking_info mỗi nhịp 10' của MỘT gian — chốt chặn quota khi
  * thương mại hóa: gian đông đơn đến đâu cũng chỉ tốn tối đa 6 × trần call/giờ
  * (hiện 360/giờ/gian), vé dư xếp hàng chờ nhịp sau theo nextRunAt cũ nhất
  * trước (không đơn nào bị bỏ đói).
  */
-const MAX_TRACKING_CALLS_PER_SWEEP = 60;
+export const MAX_TRACKING_CALLS_PER_SWEEP = 60;
 /**
  * Nhịp hỏi lại theo PHA GIAO (26/08, anh Trung chốt "phải real-time — chậm là
  * bị hoàn ngay"; probe 25/08 có kiện quay đầu chỉ 28 PHÚT sau lượt giao hỏng):
@@ -88,12 +88,12 @@ export const DETECT_IDLE_INTERVAL_MS = 2 * 60 * 60 * 1000;
 /** Hành trình không có mốc mới quá lâu thì coi là đứng im — hỏi thưa lại. */
 const DETECT_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 /** Nhịp chốt kết quả đơn đã cảnh báo — không cần real-time (chuông đã reo). */
-const OUTCOME_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const OUTCOME_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** Vé lỗi (sàn chập chờn, đơn tách kiện...) nghỉ 1h rồi thử lại. */
-const TASK_ERROR_BACKOFF_MS = 60 * 60 * 1000;
+export const TASK_ERROR_BACKOFF_MS = 60 * 60 * 1000;
 /** Lỗi liên tiếp quá N lần → bỏ vé (đơn tách kiện cần package_number là lỗi
  *  vĩnh viễn — thử mãi chỉ đốt quota; đơn thường lỗi mạng sẽ reset khi qua). */
-const MAX_TASK_ERROR_STREAK = 8;
+export const MAX_TASK_ERROR_STREAK = 8;
 
 /** Deep-link về tab Giao không thành công (Cấu hình kịch bản AI). */
 export const DELIVERY_FAIL_TAB_HREF = "/operations-assistant/ai-rules?tab=delivery-fail";

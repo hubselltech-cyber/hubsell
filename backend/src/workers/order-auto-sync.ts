@@ -71,6 +71,7 @@ import {
   syncTiktokSettlements,
 } from "../integrations/tiktok/service";
 import { syncTiktokReturns } from "../integrations/tiktok/returns-sync";
+import { processTiktokDeliveryTracking } from "../integrations/tiktok/delivery-fail";
 import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
 import {
   syncLazadaOrders,
@@ -453,9 +454,19 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
         (err as Error).message
       );
     }
-    // Các khối dưới (phí ước tính escrow, tracking backfill, hóa đơn người mua,
-    // cứu đơn) là API riêng của Shopee — TikTok dừng ở đây. Cứu đơn TikTok
-    // (tracking API) làm ở đợt sau cùng khuôn vé DeliveryTrackingTask.
+    // --- CỨU ĐƠN GIAO THẤT BẠI (tracking API, cùng khuôn vé DeliveryTrackingTask).
+    try {
+      const df = await processTiktokDeliveryTracking(channel);
+      if (df.noticed > 0 || df.saved > 0 || df.lost > 0 || df.recounted > 0) {
+        console.log(
+          `[Auto-sync] Cứu đơn TikTok "${channel.shopName}": +${df.noticed} cảnh báo (${df.chatSkipped} chưa nhắn — TikTok chưa nối chat), +${df.saved} cứu được, +${df.lost} mất đơn, ${df.recounted} đếm lại — ${df.ran} call tracking, +${df.enqueued} vé mới, ${df.cleaned} vé dọn`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi hàng đợi cứu đơn TikTok "${channel.shopName}":`, (err as Error).message);
+    }
+    // Các khối dưới (phí ước tính escrow, tracking backfill, hóa đơn người mua)
+    // là API riêng của Shopee — TikTok dừng ở đây.
     return changed;
   }
 
