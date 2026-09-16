@@ -117,9 +117,17 @@ function mapShippingStatus(tiktokStatus?: string): ShippingStatus {
     case "CANCELLED":
       return ShippingStatus.CANCELLED;
     default:
+      // Trạng thái lạ → PENDING (an toàn: kho không bỏ sót đơn) nhưng ghi log MỘT
+      // lần mỗi giá trị để bổ sung bảng ánh xạ (16/09: 3 đơn 18/06 kẹt "chờ xử
+      // lý" dù Seller Center không có — nghi trạng thái ngoài docs).
+      if (tiktokStatus && !unknownStatusLogged.has(tiktokStatus)) {
+        unknownStatusLogged.add(tiktokStatus);
+        console.warn(`[TikTok] Trạng thái đơn LẠ chưa ánh xạ: ${JSON.stringify(tiktokStatus)} → tạm PENDING`);
+      }
       return ShippingStatus.PENDING;
   }
 }
+const unknownStatusLogged = new Set<string>();
 
 /** Gộp line_items theo SKU người bán, cộng dồn số lượng (202309 tách theo đơn vị). */
 function aggregateLineItems(order: TikTokOrder) {
