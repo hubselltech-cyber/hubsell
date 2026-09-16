@@ -19,6 +19,7 @@ import {
   fetchOrders,
   fetchSettlements,
   fetchStatementTransactions,
+  getAuthorizedShops,
   getOrderDetail,
   refreshAccessToken,
   type TikTokOrder,
@@ -524,6 +525,44 @@ export async function processTiktokOrderEvent(
       inventory: "none",
     };
   });
+}
+
+/**
+ * SỰ KIỆN THU HỒI ỦY QUYỀN (webhook type 5 — SELLER_DEAUTHORIZATION). Không tin
+ * mù payload: gọi lại sàn xem token còn thao tác được gian này không (cùng
+ * cách Shopee: processShopeeAuthorizationEvent). Còn → giữ ACTIVE; mất → ghi
+ * DISCONNECTED + disconnectedAt (banner đỏ "gian mất kết nối" trên UI). Chỉ
+ * ghi khi trạng thái ĐỔI THẬT để không reset mốc disconnectedAt mỗi sự kiện.
+ */
+export async function processTiktokAuthorizationEvent(
+  shopId: string
+): Promise<{ status: string } | null> {
+  const channel = await prisma.channel.findFirst({
+    where: {
+      channelName: ChannelName.TIKTOK,
+      externalShopId: shopId,
+      refreshToken: { not: null },
+    },
+  });
+  if (!channel) return null;
+
+  let ok = false;
+  try {
+    const { accessToken } = await getValidAccessToken(channel);
+    const shops = await getAuthorizedShops(accessToken);
+    ok = shops.some((s) => s.id === shopId);
+  } catch {
+    ok = false;
+  }
+
+  const status = ok ? "ACTIVE" : "DISCONNECTED";
+  if (channel.status !== status) {
+    await prisma.channel.update({
+      where: { id: channel.id },
+      data: { status, disconnectedAt: ok ? null : new Date() },
+    });
+  }
+  return { status };
 }
 
 /**

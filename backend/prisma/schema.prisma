@@ -1498,6 +1498,37 @@ model MisaWebhookLog {
   @@map("misa_webhook_logs")
 }
 
+/// HÀNG ĐỢI BỀN WEBHOOK TIKTOK SHOP (16/09/2026) — cùng khuôn shopee_webhook_logs.
+/// Route /api/webhooks/tiktok CHỈ verify chữ ký + INSERT một dòng rồi ack 200;
+/// worker nền (tiktok/webhook-queue.ts) kéo chi tiết đơn từ sàn, upsert +
+/// trừ/hoàn kho, lỗi retry 3 lần giãn cách nhân đôi, hết lượt → FAILED + cảnh báo.
+/// Trước 16/09 route xử lý ĐỒNG BỘ trong request: restart giữa chừng là mất
+/// sự kiện, sàn retry thì trùng — anh Trung chốt 05/09 phải có queue trước khi
+/// nối shop thật.
+model TiktokWebhookLog {
+  id        String @id @default(cuid())
+  /// Loại sự kiện TikTok (trường `type`): 1 đơn đổi trạng thái, 3 kiện hàng,
+  /// 5 thu hồi ủy quyền, 11 hủy đơn, 12 hoàn/trả.
+  eventType Int
+  shopId    String
+  /// Mã đơn TikTok trong payload (sự kiện đơn hàng) — tra soát + khóa làn theo đơn.
+  orderId   String?
+  /// SHA-256 của RAW body — chống trùng bền khi TikTok gửi lại y nguyên.
+  bodyHash  String @unique
+  /// Payload JSON nguyên văn (stringify) — worker đọc lại để xử lý.
+  payload   String
+  status    WebhookJobStatus @default(PENDING)
+  attempts  Int @default(0)
+  nextRetryAt DateTime?
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
+  @@index([orderId])
+  @@map("tiktok_webhook_logs")
+}
+
 /// AUDIT LOG hóa đơn điện tử — mỗi dòng = MỘT lần trạng thái hóa đơn thay đổi
 /// (từ webhook MISA hay thao tác trong Hubsell). Giai đoạn test Sandbox soi
 /// bảng này để chứng minh sự kiện đã chạy đúng thứ tự; về sau là chứng cứ đối

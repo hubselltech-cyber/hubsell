@@ -10,9 +10,11 @@ import {
 import { isTikTokConfigured } from "../integrations/tiktok/config";
 import { verifyWebhookSignature } from "../integrations/tiktok/client";
 import {
-  findTiktokChannelByShopId,
-  processTiktokOrderEvent,
-} from "../integrations/tiktok/service";
+  classifyTiktokEvent,
+  enqueueTiktokWebhook,
+  tiktokPayloadOrderId,
+  type TiktokWebhookPayload,
+} from "../integrations/tiktok/webhook-queue";
 import { isShopeeConfigured } from "../integrations/shopee/config";
 import {
   SHOPEE_PUSH_CODE,
@@ -20,7 +22,6 @@ import {
   type ShopeePushPayload,
 } from "../integrations/shopee/webhook";
 import { enqueueShopeeWebhook } from "../integrations/shopee/webhook-queue";
-import { enqueueStockPush } from "../integrations/inventory-push";
 import { isLazadaConfigured } from "../integrations/lazada/config";
 import {
   findLazadaChannelsBySellerId,
@@ -43,12 +44,8 @@ import { handlePayosWebhook } from "../services/gateway-checkout";
 const router = Router();
 
 // Route này CHỈ ENQUEUE vào hàng đợi bền (DB). Worker tiêu thụ hàng đợi
-// (Shopee + MISA) khởi động ở workers/index.ts theo vai HUBSELL_ROLE (12/09) —
-// tiến trình web thuần không chạy worker nữa.
-
-// Loại sự kiện webhook của TikTok Shop (trường `type`, dạng số).
-// Ta chỉ xử lý ORDER_STATUS_CHANGE; các loại khác ack 200 và bỏ qua.
-const TIKTOK_ORDER_STATUS_CHANGE = 1;
+// (Shopee + TikTok + MISA) khởi động ở workers/index.ts theo vai HUBSELL_ROLE
+// (12/09) — tiến trình web thuần không chạy worker nữa.
 
 interface MockOrderItem {
   channelSku: string;
@@ -279,68 +276,53 @@ router.post("/mock-order", async (req, res, next) => {
 // ============================================================
 // POST /api/webhooks/tiktok — WEBHOOK THẬT TỪ TIKTOK SHOP
 //
-// TikTok gọi vào đây khi đơn đổi trạng thái (event ORDER_STATUS_CHANGE). Endpoint
-// CÔNG KHAI (không JWT) — an toàn dựa vào CHỮ KÝ trên body, không phải phiên đăng
-// nhập. Trả 200 nhanh cho các trường hợp không cần xử lý để TikTok khỏi gửi lại;
-// chỉ trả 5xx khi gặp lỗi TẠM THỜI (đáng để TikTok thử lại).
+// TikTok gọi vào đây khi đơn đổi trạng thái / hủy / hoàn / kiện hàng / thu hồi
+// ủy quyền. Endpoint CÔNG KHAI (không JWT) — an toàn dựa vào CHỮ KÝ trên body
+// thô (Authorization = HMAC-SHA256(app_secret, app_key + raw body)).
 //
-// Payload (rút gọn): { type, shop_id, timestamp, data: { order_id, order_status } }
+// Từ 16/09/2026 route CHỈ verify chữ ký + ghi vào HÀNG ĐỢI BỀN (một INSERT)
+// rồi ack 200; worker tiktok/webhook-queue.ts kéo chi tiết đơn, upsert,
+// trừ/hoàn kho, retry khi lỗi tạm thời. Trước đó xử lý đồng bộ trong request:
+// restart giữa chừng là mất sự kiện, sàn gửi lại thì trùng.
+//
+// Payload (rút gọn): { type, tts_notification_id, shop_id, timestamp,
+//                      data: { order_id, order_status, ... } }
 // ============================================================
 router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
+  // Chưa cấu hình app thì không thể xác thực chữ ký → từ chối, tránh nhận giả.
+  if (!isTikTokConfigured()) {
+    res.status(503).json({ error: "TikTok Shop chưa được cấu hình trên máy chủ" });
+    return;
+  }
+
+  // 1) XÁC THỰC CHỮ KÝ trên body thô. Thiếu rawBody (không thể verify) coi như sai.
+  const raw = req.rawBody;
+  const signature = req.header("authorization") ?? undefined;
+  if (!raw || !verifyWebhookSignature(raw.toString("utf8"), signature)) {
+    res.status(401).json({ error: "Chữ ký webhook không hợp lệ" });
+    return;
+  }
+
+  // 2) Ngoài phạm vi (sản phẩm, chat, ping…) hay thiếu định danh → ack luôn
+  //    cho TikTok khỏi gửi lại vô ích.
+  const payload = (req.body ?? {}) as TiktokWebhookPayload;
+  const kind = classifyTiktokEvent(payload);
+  const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
+  if (!kind || !shopId || (kind === "order" && !tiktokPayloadOrderId(payload))) {
+    res.status(200).json({ ok: true, ignored: true, type: payload.type });
+    return;
+  }
+
+  // 3) Ghi vào hàng đợi bền rồi ack 200; worker nền xử lý sau. Dedup bền theo
+  //    hash raw body chặn bản gửi lại y nguyên; sự kiện lọt lưới vẫn an toàn
+  //    nhờ mỗi job kéo lại trạng thái mới nhất từ sàn + upsert idempotent.
   try {
-    // Chưa cấu hình app thì không thể xác thực chữ ký → từ chối, tránh xử lý giả.
-    if (!isTikTokConfigured()) {
-      res.status(503).json({ error: "TikTok Shop chưa được cấu hình trên máy chủ" });
-      return;
-    }
-
-    // 1) XÁC THỰC CHỮ KÝ trên body thô (chống fake request).
-    const raw = req.rawBody?.toString("utf8") ?? JSON.stringify(req.body ?? {});
-    const signature = req.header("authorization") ?? undefined;
-    if (!verifyWebhookSignature(raw, signature)) {
-      res.status(401).json({ error: "Chữ ký webhook không hợp lệ" });
-      return;
-    }
-
-    const body = (req.body ?? {}) as {
-      type?: number;
-      shop_id?: string;
-      data?: { order_id?: string; order_status?: string };
-    };
-
-    // 2) Chỉ xử lý sự kiện đổi trạng thái đơn; loại khác (ping, sản phẩm…) ack luôn.
-    if (Number(body.type) !== TIKTOK_ORDER_STATUS_CHANGE) {
-      res.status(200).json({ ok: true, ignored: true, type: body.type });
-      return;
-    }
-
-    const shopId = String(body.shop_id ?? "");
-    const orderId = String(body.data?.order_id ?? "");
-    if (!shopId || !orderId) {
-      res.status(200).json({ ok: true, ignored: true, reason: "thiếu shop_id/order_id" });
-      return;
-    }
-
-    // 3) Tìm gian hàng theo shop_id (đã ký nên tin được). Không thấy → ack.
-    const channel = await findTiktokChannelByShopId(shopId);
-    if (!channel) {
-      res.status(200).json({ ok: true, ignored: true, reason: "shop chưa kết nối Hubsell" });
-      return;
-    }
-
-    // 4) Upsert đơn + trừ/hoàn kho (idempotent) trong một transaction.
-    const result = await processTiktokOrderEvent(channel, orderId);
-    // Kho biến động → đẩy "có thể bán" mới lên Shopee/Lazada đã nối cùng SKU
-    // + kiểm tra ngưỡng sắp hết hàng (trước 05/09 đơn TikTok trừ kho nhưng
-    // KHÔNG đẩy sang sàn khác — lỗ hổng bán vượt chéo sàn).
-    if (result.productIds?.length) {
-      await enqueueStockPush(result.productIds, { source: `webhook TikTok đơn ${orderId}` });
-    }
-    res.status(200).json({ ok: true, orderId, ...result });
+    const { queued, duplicate } = await enqueueTiktokWebhook(raw, payload);
+    res.status(200).json({ ok: true, type: payload.type, queued, duplicate });
   } catch (err) {
-    // Lỗi TẠM THỜI khi gọi API TikTok/DB → 500 để TikTok gửi lại sau.
-    console.error("[Webhook TikTok]", err);
-    res.status(500).json({ error: (err as Error).message });
+    // Không ghi nổi vào hàng đợi (DB sự cố) → 500 để TikTok tự gửi lại sau.
+    console.error("[Webhook TikTok] Không ghi được vào hàng đợi:", err);
+    res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
   }
 });
 

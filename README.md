@@ -141,7 +141,7 @@ hubsell/
 | POST | `/api/mappings` | Tạo/đổi liên kết (upsert) | 🔒 JWT |
 | DELETE | `/api/mappings/:id` | Gỡ liên kết | 🔒 JWT |
 | POST | `/api/webhooks/mock-order` | Webhook giả lập nhận đơn từ sàn: tra mapping → tạo Order + trừ kho + log SYNC (transaction) | 🔑 Token kênh |
-| POST | `/api/webhooks/tiktok` | **[TikTok thật]** Webhook `ORDER_STATUS_CHANGE`: verify chữ ký → lấy chi tiết đơn → upsert + trừ/hoàn kho (idempotent) | 🔑 Chữ ký HMAC |
+| POST | `/api/webhooks/tiktok` | **[TikTok thật]** Webhook đơn hàng (type 1/3/11/12) + thu hồi ủy quyền (5): verify chữ ký → ghi hàng đợi bền `tiktok_webhook_logs` → ack; worker lấy chi tiết đơn → upsert + trừ/hoàn kho (idempotent, retry 3) | 🔑 Chữ ký HMAC |
 | PATCH | `/api/orders/:id/status` | Đổi trạng thái vận chuyển; CANCELLED → tự hoàn kho + ghi log (transaction) | 🔒 JWT |
 | GET | `/api/analytics` | Doanh thu / Giá vốn / Lợi nhuận gộp / **Chi phí HĐ / Lợi nhuận thuần**, biểu đồ | 🔒 Chỉ Admin |
 | GET/POST/DELETE | `/api/expenses` | Quản lý chi phí hoạt động (mặt bằng, lương, đóng gói, quảng cáo) | 🔒 Chỉ Admin |
@@ -209,8 +209,8 @@ TIKTOK_REDIRECT_URI="https://localhost:3000/channels/tiktok/callback"
 **Webhook real-time** (`POST /api/webhooks/tiktok`, cấu hình URL trong Partner Center):
 
 1. **Verify chữ ký** — `verifyWebhookSignature()` tính `HMAC-SHA256(app_key + rawBody, app_secret)` so khớp header `Authorization` (hằng-thời-gian). Body thô lấy từ `req.rawBody` (giữ lại ở `express.json({ verify })`) vì serialize lại là sai chữ ký. Thiếu/sai chữ ký → **401**.
-2. **Chỉ xử lý** event `ORDER_STATUS_CHANGE` (type 1); loại khác ack **200** để TikTok khỏi gửi lại.
-3. Payload chỉ có `order_id` + trạng thái → gọi `getOrderDetail()` lấy đủ line_items → `processTiktokOrderEvent()` **upsert đơn + tác động tồn kho** trong một transaction.
+2. **Nhận** sự kiện đơn hàng type 1 (đổi trạng thái) / 3 (kiện hàng) / 11 (hủy) / 12 (hoàn trả) và type 5 (thu hồi ủy quyền); loại khác ack **200** để TikTok khỏi gửi lại.
+3. **Hàng đợi bền** (16/09/2026, `integrations/tiktok/webhook-queue.ts`, bảng `tiktok_webhook_logs`): route chỉ INSERT một dòng rồi ack 200; worker nền (khởi động ở `workers/index.ts`) chạy 3 làn song song (env `TIKTOK_WEBHOOK_LANES`), cùng một đơn không chạy 2 làn, claim job bằng UPDATE có điều kiện, retry 3 lần giãn cách 30s→60s, hết lượt → FAILED + cảnh báo `InventorySyncAlert`; job PROCESSING mồ côi trả về PENDING lúc boot; unique `bodyHash` chặn bản gửi lại y nguyên. Mỗi job gọi `getOrderDetail()` lấy trạng thái **mới nhất** (không tin trạng thái trong payload) → `processTiktokOrderEvent()` **upsert đơn + tác động tồn kho** trong một transaction → `enqueueStockPush` đẩy tồn mới sang gian khác. Type 5 → `processTiktokAuthorizationEvent()` gọi lại sàn kiểm token, mất → gian DISCONNECTED.
 4. **Tồn kho idempotent**: đơn đã chốt/chờ giao → trừ kho một lần (mốc `stockDeductedAt`, `decrement` nguyên tử, cho phép âm để phơi bày bán vượt kho); đơn `CANCELLED` → hoàn kho một lần (mốc `stockRestoredAt`, mirror luồng hủy đơn thủ công). Webhook đẩy lại nhiều lần cũng không trừ/hoàn double.
 
 **Bảo mật:** `Channel` thêm `refreshToken`, `shopCipher`, `accessTokenExpireAt`, `refreshTokenExpireAt`, `externalShopName` — **không bao giờ trả `refreshToken`/`shopCipher` ra API** (`GET /api/channels` đã lọc; chỉ phơi cờ `apiConnected`).

@@ -31,6 +31,7 @@ import { startAdsDailySummaryWorker } from "./ads-daily-summary";
 import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
 import { startShopeeWebhookWorker } from "../integrations/shopee/webhook-queue";
+import { startTiktokWebhookWorker } from "../integrations/tiktok/webhook-queue";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
 import { startHealthWatchWorker } from "./health-watch";
 
@@ -51,9 +52,10 @@ export function startAllWorkers(): void {
   if (started) return;
   started = true;
 
-  // Hàng đợi webhook Shopee + MISA: nhặt lại job dở dang sau restart, quét
-  // job đến hạn retry theo nhịp. Web chỉ enqueue — tiêu thụ ở đây.
+  // Hàng đợi webhook Shopee + TikTok + MISA: nhặt lại job dở dang sau restart,
+  // quét job đến hạn retry theo nhịp. Web chỉ enqueue — tiêu thụ ở đây.
   startShopeeWebhookWorker();
+  startTiktokWebhookWorker();
   startMisaWebhookWorker();
   // Worker quét sàn theo LỊCH TỪNG GIAN (đơn, đối soát, ads) — claim vé theo
   // gian, song song có trần, giãn nhịp gian im ắng.
