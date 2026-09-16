@@ -21,9 +21,9 @@
  *
  * Idempotent: chạy lại là xóa user cũ (cascade toàn bộ data) rồi seed mới.
  *
- * Seed neo ngày theo lúc chạy nên vài ngày sau Tổng quan sẽ "hôm nay 0 đơn";
- * worker bồi đơn tự động đã gỡ 15/09/2026 (ISV Shopee duyệt xong) — cần tài
- * khoản "sống" lại thì chạy lại seed.
+ * Seed neo ngày theo lúc chạy; worker bồi đơn (workers/reviewer-demo-topup.ts,
+ * khôi phục 16/09/2026 cho đợt Xét duyệt app TikTok) giữ tài khoản "sống"
+ * hàng ngày trên cả 3 gian — tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0 khi xong.
  *
  *   # Local (DATABASE_URL trong .env)
  *   npx tsx scripts/seed-isv-reviewer.ts --password=<mật khẩu>
