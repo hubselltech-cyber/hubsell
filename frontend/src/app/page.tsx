@@ -272,7 +272,11 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "ads", label: "Quảng cáo Ads (nhập tay)", amount: adsExpense, color: "#8b5cf6" },
     { key: "varops", label: "Chi phí Biến đổi Vận hành", amount: analytics.operatingVariableExpense, color: "#10b981" },
     { key: "fixops", label: "Chi phí Cố định Vận hành", amount: analytics.operatingFixedExpense, color: "#a16207" },
-  ].filter((s) => s.amount > 0);
+  ].filter((s) => s.amount !== 0);
+  // Khoản ÂM (sàn ghi có: trợ giá, bồi hoàn, hoàn phí) không vẽ lát nhưng VẪN
+  // trừ vào tổng — tâm donut khớp thẻ "Tổng Chi phí" từng đồng (16/09: trước
+  // đây lọc bỏ khoản âm nên donut cao hơn thẻ đúng bằng phần sàn bù lại).
+  const slices = segments.filter((s) => s.amount > 0);
   const total = segments.reduce((sum, s) => sum + s.amount, 0);
 
   return (
@@ -297,7 +301,7 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={segments}
+                    data={slices}
                     dataKey="amount"
                     nameKey="label"
                     innerRadius="62%"
@@ -305,7 +309,7 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
                     paddingAngle={2}
                     strokeWidth={0}
                   >
-                    {segments.map((s) => (
+                    {slices.map((s) => (
                       <Cell key={s.key} fill={s.color} />
                     ))}
                   </Pie>
@@ -339,10 +343,16 @@ function CostStructure({ analytics }: { analytics: AnalyticsResponse }) {
                     />
                     <span className="min-w-0 flex-1 truncate text-sm text-slate-900">
                       {s.label}
+                      {s.amount < 0 && (
+                        <span className={cn(TEXT_SUB, "ml-1")}>(sàn bù lại)</span>
+                      )}
                     </span>
                     <Money
                       value={s.amount}
-                      className="shrink-0 text-right text-sm text-slate-600"
+                      className={cn(
+                        "shrink-0 text-right text-sm",
+                        s.amount < 0 ? "text-emerald-600" : "text-slate-600"
+                      )}
                     />
                     <span className="w-12 shrink-0 text-right text-sm font-semibold text-slate-900">
                       {pct}%

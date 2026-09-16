@@ -716,6 +716,8 @@ export interface FetchUnsettledParams {
   searchTimeLt?: number;
   pageSize?: number;
   pageToken?: string;
+  /** undefined = không gửi sort_order (sàn mặc định ASC). */
+  sortOrder?: "ASC" | "DESC";
 }
 
 export interface TikTokUnsettledData {
@@ -734,8 +736,8 @@ export async function fetchUnsettledTransactions(
   const query: Record<string, string | number> = {
     page_size: params.pageSize ?? 100,
     sort_field: "order_create_time",
-    sort_order: "DESC",
   };
+  if (params.sortOrder) query.sort_order = params.sortOrder;
   if (params.searchTimeGe) query.search_time_ge = params.searchTimeGe;
   if (params.searchTimeLt) query.search_time_lt = params.searchTimeLt;
   if (params.pageToken) query.page_token = params.pageToken;

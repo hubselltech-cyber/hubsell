@@ -723,36 +723,71 @@ export async function syncTiktokUnsettledEstimates(
   // (docs unsettled còn mới, mẫu query ghi sort_field lạ). Trang đầu thử lần
   // lượt: đủ ge+lt → chỉ ge → không lọc thời gian; biến thể nào qua được thì
   // giữ cho các trang sau và ghi log để soi.
-  const variants: { label: string; ge?: number; lt?: number }[] = [
-    { label: "ge+lt", ge: searchTimeGe, lt: nowSec },
+  // Lượt thật 16/09 (and.not.or): gửi cả search_time_ge + search_time_lt → sàn
+  // báo 36009003 "Internal error"; CHỈ search_time_ge thì chạy (payload est_*
+  // đúng docs). Thứ tự thử: ge → ge+lt → không lọc. Trang sau bị 36009003 thì
+  // thử lại tối đa 2 lần rồi DỪNG ÊM (giữ số đã lấy), không ném lỗi.
+  const variants: { label: string; ge?: number; lt?: number; sortOrder?: "ASC" | "DESC"; pageSize?: number }[] = [
     { label: "ge", ge: searchTimeGe },
+    { label: "ge+lt", ge: searchTimeGe, lt: nowSec },
     { label: "không lọc thời gian" },
+    { label: "ge, size 20, sort mặc định", ge: searchTimeGe, pageSize: 20, sortOrder: undefined },
   ];
   let variantIdx = 0;
   let pageToken: string | undefined;
+  let truncated = false;
   do {
     let data: Awaited<ReturnType<typeof fetchUnsettledTransactions>> | undefined;
-    for (; variantIdx < variants.length; variantIdx++) {
-      const v = variants[variantIdx];
-      try {
-        data = await fetchUnsettledTransactions({
-          accessToken,
-          shopCipher,
-          searchTimeGe: v.ge,
-          searchTimeLt: v.lt,
-          pageSize: 100,
-          pageToken,
-        });
-        if (variantIdx > 0 && !pageToken) {
-          console.log(`[TikTok] Unsettled "${channel.shopName}": dùng biến thể tham số "${v.label}"`);
+    if (!pageToken) {
+      for (; variantIdx < variants.length; variantIdx++) {
+        const v = variants[variantIdx];
+        try {
+          data = await fetchUnsettledTransactions({
+            accessToken,
+            shopCipher,
+            searchTimeGe: v.ge,
+            searchTimeLt: v.lt,
+            pageSize: v.pageSize ?? 100,
+            sortOrder: "sortOrder" in v ? v.sortOrder : "DESC",
+          });
+          if (variantIdx > 0) {
+            console.log(`[TikTok] Unsettled "${channel.shopName}": dùng biến thể tham số "${v.label}"`);
+          }
+          break;
+        } catch (err) {
+          const msg = (err as Error).message;
+          // Chỉ đổi biến thể khi sàn báo lỗi nội bộ; lỗi khác (rate limit,
+          // token…) ném ra để nơi gọi ghi nhận.
+          if (!msg.includes("36009003") || variantIdx === variants.length - 1) throw err;
+          console.warn(`[TikTok] Unsettled "${channel.shopName}": biến thể "${v.label}" bị 36009003, thử biến thể kế`);
         }
-        break;
-      } catch (err) {
-        const msg = (err as Error).message;
-        // Chỉ đổi biến thể khi sàn báo lỗi nội bộ ở TRANG ĐẦU; lỗi khác (rate
-        // limit, token…) hoặc lỗi giữa chừng thì ném ra để nơi gọi ghi nhận.
-        if (!msg.includes("36009003") || pageToken || variantIdx === variants.length - 1) throw err;
-        console.warn(`[TikTok] Unsettled "${channel.shopName}": biến thể "${v.label}" bị 36009003, thử biến thể kế`);
+      }
+    } else {
+      const v = variants[variantIdx];
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          data = await fetchUnsettledTransactions({
+            accessToken,
+            shopCipher,
+            searchTimeGe: v.ge,
+            searchTimeLt: v.lt,
+            pageSize: v.pageSize ?? 100,
+            sortOrder: "sortOrder" in v ? v.sortOrder : "DESC",
+            pageToken,
+          });
+          break;
+        } catch (err) {
+          const msg = (err as Error).message;
+          if (!msg.includes("36009003")) throw err;
+          if (attempt === 2) {
+            truncated = true;
+            console.warn(
+              `[TikTok] Unsettled "${channel.shopName}": trang ${result.pages + 1} bị 36009003 sau 3 lần, dừng — giữ ${result.transactions} dòng đã lấy`
+            );
+          } else {
+            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+          }
+        }
       }
     }
     if (!data) break;
@@ -769,7 +804,7 @@ export async function syncTiktokUnsettledEstimates(
       byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), ...ls]);
     }
     pageToken = data.next_page_token || undefined;
-  } while (pageToken && result.pages < maxPages);
+  } while (pageToken && !truncated && result.pages < maxPages);
 
   for (const [orderId, lines] of byOrder) {
     const order = await prisma.order.findUnique({
