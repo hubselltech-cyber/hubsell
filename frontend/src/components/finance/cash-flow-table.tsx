@@ -353,8 +353,8 @@ export function CashFlowTable() {
                       </td>
                       <td className={cn(cell, "text-right font-medium text-emerald-700")}>
                         {r.walletBalance == null ? (
-                          // Sàn không có ví giữ tiền (TikTok/Offline) hoặc chưa
-                          // sync được số dư — "—" chứ không phải 0đ.
+                          // Sàn không có ví giữ tiền (Offline) hoặc chưa sync
+                          // được số dư — "—" chứ không phải 0đ.
                           <span
                             className="text-slate-400"
                             title="Sàn không có ví giữ tiền hoặc chưa đồng bộ được số dư"

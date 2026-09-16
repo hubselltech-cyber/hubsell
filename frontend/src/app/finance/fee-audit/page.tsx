@@ -592,7 +592,7 @@ export default function FeeAuditPage() {
             title={
               <span className="inline-flex items-center gap-1">
                 Chờ sàn trả tiền
-                <HintIcon hint="Đơn giao thành công (không hoàn) đã quá hạn mà sàn chưa giải ngân đồng nào — tiền của anh đang nằm bên sàn. Chỉ tính Shopee/Lazada (sàn Hubsell đã đối soát thật)." />
+                <HintIcon hint="Đơn giao thành công (không hoàn) đã quá hạn mà sàn chưa giải ngân đồng nào — tiền của anh đang nằm bên sàn. Chỉ tính Shopee/Lazada/TikTok Shop (sàn Hubsell đã đối soát thật)." />
               </span>
             }
             value={<Money value={summary?.pending.totalWaiting ?? 0} />}
@@ -788,7 +788,8 @@ export default function FeeAuditPage() {
           <div className="mt-2 space-y-1">
           <p>
             · Mọi con số lấy từ <b>đối soát thật</b> của sàn (escrow Shopee, sao
-            kê Finance Lazada) — trang này không ước lượng gì từ % phí kênh.
+            kê Finance Lazada, bản kê giải ngân TikTok Shop) — trang này không ước
+            lượng gì từ % phí kênh.
           </p>
           <p>
             · Rổ <b>Truy thu phí ship</b> dùng chung nguồn số với trang &ldquo;Đối
@@ -800,7 +801,7 @@ export default function FeeAuditPage() {
             <b>chính Shopee tự ước tính</b> trước đó, bóc theo <b>từng loại phí</b>:
             chỉ phí bị thu vượt lời hứa mới bị tính; hoa hồng Tiếp thị liên kết,
             thuế thu hộ, voucher shop tự chi và đơn hoàn tiền không bị báo oan.
-            Lazada chưa có vì sàn không cấp API số ước tính.
+            Lazada và TikTok Shop chưa có vì sàn không cấp API số ước tính.
           </p>
           <p>
             · Con số rổ này là <b>nghi vấn để đối chiếu</b>, chưa phải kết luận:

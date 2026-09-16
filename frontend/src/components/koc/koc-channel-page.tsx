@@ -108,9 +108,8 @@ const CHANNEL_INFO: Record<
     source:
       "Khi shop thật uỷ quyền, phí affiliate sẽ đổ vào cùng đường ống đối soát (statement transactions) — khung trang này tự hiện số, không cần sửa code.",
     limits: [
-      "Chưa thử nghiệm được sandbox — đang đợi phía TikTok.",
-      "TikTok Affiliate API (danh tính creator, Open/Target Plan) cần app được duyệt scope Affiliate.",
-      "Gian 'Tiktok' hiện tại trong hệ thống là giả lập (chưa OAuth thật).",
+      "Phí affiliate lấy từ bản kê giải ngân (statement transactions) — chỉ có sau khi đơn được TikTok đối soát.",
+      "TikTok Affiliate API (danh tính creator, Open/Target Plan) cần app được duyệt scope Affiliate — Hubsell chưa xin scope này.",
     ],
   },
 };
@@ -172,23 +171,16 @@ export function KocChannelPage({ platform }: { platform: ChannelKey }) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Hourglass className="size-4.5 text-violet-600" />
-              Cổng chờ TikTok Shop — chưa kích hoạt được, đang đợi phía TikTok
+              Cổng chờ TikTok Shop — phí affiliate theo đơn đã nối, danh tính
+              creator chờ scope Affiliate
             </CardTitle>
             <CardDescription>
-              Khung số liệu bên dưới đã nối sẵn vào cùng đường ống API với
-              Shopee/Lazada. Hoàn thành 3 bước sau là số tự chảy vào, không cần
-              sửa code:
+              Khung số liệu bên dưới nối cùng đường ống đối soát với
+              Shopee/Lazada. Hai bước sau quyết định số hiện ra:
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm">
-              <li className="flex items-start gap-2">
-                <CircleDashed className="mt-0.5 size-4 shrink-0 text-amber-500" />
-                <span>
-                  <b>Thử nghiệm sandbox TikTok Shop</b> — chưa thực hiện được,
-                  đang đợi phía TikTok mở môi trường thử nghiệm cho app.
-                </span>
-              </li>
               <li className="flex items-start gap-2">
                 {hasRealShop ? (
                   <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
@@ -200,7 +192,7 @@ export function KocChannelPage({ platform }: { platform: ChannelKey }) {
                   <a href="/channels" className="font-medium text-violet-700 underline">
                     Kênh bán
                   </a>{" "}
-                  — gian &quot;Tiktok&quot; hiện tại là giả lập, chưa OAuth thật.
+                  — app Hubsell đã là đối tác ISV TikTok Shop, ủy quyền mất một phút.
                 </span>
               </li>
               <li className="flex items-start gap-2">

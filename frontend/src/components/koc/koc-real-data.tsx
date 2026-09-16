@@ -110,7 +110,7 @@ export function KocKpiCards({ channel, range }: KocFilterProps) {
         icon={BadgePercent}
         tone="negative"
         colorValue
-        subtitle="Shopee AMS + Lazada tiếp thị liên kết"
+        subtitle="Shopee AMS + Lazada + TikTok Affiliate (theo đối soát sàn)"
       />
       <StatCard
         label="Net ROI (trên hoa hồng)"

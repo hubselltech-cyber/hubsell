@@ -473,7 +473,9 @@ export function OperationsReviewsPage() {
             <option value="ALL">Tất cả sàn</option>
             <option value="SHOPEE">Shopee</option>
             <option value="LAZADA">Lazada</option>
-            <option value="TIKTOK">TikTok Shop</option>
+            <option value="TIKTOK" disabled>
+              TikTok Shop (sắp có)
+            </option>
           </NativeSelect>
           <NativeSelect
             className="w-full sm:w-60"

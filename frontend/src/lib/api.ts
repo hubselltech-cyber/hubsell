@@ -779,8 +779,9 @@ export interface CashFlowRow {
   inTransit: number;
   /** Doanh thu chờ đối soát: đơn đã giao nhưng sàn chưa quyết toán. */
   pendingSettle: number;
-  /** Số dư Ví sàn THẬT (Shopee: API ví; Lazada: sao kê đã chốt chưa chi).
-   *  null = sàn không có ví / chưa sync được — hiển thị "—", không phải 0. */
+  /** Số dư Ví sàn THẬT (Shopee: API ví; Lazada: sao kê đã chốt chưa chi;
+   *  TikTok: đợt chi tiền đang xử lý). null = sàn không có ví / chưa sync
+   *  được — hiển thị "—", không phải 0. */
   walletBalance: number | null;
   /** Mốc đồng bộ số dư ví (ISO) — chỉ Shopee có; null với các sàn còn lại. */
   walletSyncedAt: string | null;
@@ -799,7 +800,7 @@ export function fetchCashFlow() {
   return apiFetch<CashFlowResponse>("/api/finance/cash-flow");
 }
 
-/** Kéo số dư ví/kỳ chi tiền mới nhất từ sàn (Shopee + Lazada) trước khi GET lại bảng. */
+/** Kéo số dư ví/kỳ chi tiền mới nhất từ sàn (Shopee + Lazada + TikTok) trước khi GET lại bảng. */
 export function refreshCashFlow() {
   return apiFetch<{ synced: number; errors: string[] }>(
     "/api/finance/cash-flow/refresh",
@@ -3104,6 +3105,7 @@ export interface PlatformStats {
   orders: { total: number; last24h: number };
   webhooks: {
     shopee: { status: string; count: number }[];
+    tiktok: { status: string; count: number }[];
     misa: { status: string; count: number }[];
   };
 }
@@ -4026,7 +4028,7 @@ export function fetchPlatformAuditLogs(params?: { page?: number; pageSize?: numb
   return apiFetch<PlatformAuditLogsResponse>(`/api/admin/audit-logs${suffix}`);
 }
 
-export type PlatformWebhookSource = "shopee" | "misa";
+export type PlatformWebhookSource = "shopee" | "tiktok" | "misa";
 
 /** Một dòng nhật ký webhook toàn hệ thống — trường khác nhau theo nguồn. */
 export interface PlatformWebhookLogRow {

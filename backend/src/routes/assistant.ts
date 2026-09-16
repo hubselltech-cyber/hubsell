@@ -768,7 +768,11 @@ const INTENTS: IntentDef[] = [
         });
       }
       const adsHref =
-        topChannel?.name === ChannelName.LAZADA ? "/ads/lazada" : "/ads/shopee";
+        topChannel?.name === ChannelName.LAZADA
+          ? "/ads/lazada"
+          : topChannel?.name === ChannelName.TIKTOK
+            ? "/ads/tiktok"
+            : "/ads/shopee";
       return {
         outcome: "answered",
         text:

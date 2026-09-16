@@ -2,7 +2,7 @@
 
 // ============================================================
 // HỆ THỐNG & KỸ THUẬT (/admin/system): khu kỹ thuật của khu điều hành —
-//  - Nhật ký Webhook (lá hq.webhooks): hàng đợi webhook Shopee/MISA toàn hệ thống
+//  - Nhật ký Webhook (lá hq.webhooks): hàng đợi webhook Shopee/TikTok/MISA toàn hệ thống
 //  - Nhật ký thao tác (CHỈ chủ nền tảng): sổ giám sát đội điều hành — người bị
 //    giám sát không tự soát sổ, nên không có lá quyền nào mở được phần này.
 // ============================================================
@@ -151,9 +151,9 @@ export default function PlatformSystemPage() {
         ) : (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-              {/* Chọn nguồn: Shopee / MISA (Lazada xử lý trực tiếp, chưa ghi log) */}
+              {/* Chọn nguồn: Shopee / TikTok / MISA (Lazada xử lý trực tiếp, chưa ghi log) */}
               <div className="flex items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
-                {(["shopee", "misa"] as const).map((s) => (
+                {(["shopee", "tiktok", "misa"] as const).map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -168,7 +168,7 @@ export default function PlatformSystemPage() {
                         : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                     )}
                   >
-                    {s === "shopee" ? "Shopee" : "MISA"}
+                    {s === "shopee" ? "Shopee" : s === "tiktok" ? "TikTok" : "MISA"}
                   </button>
                 ))}
               </div>
