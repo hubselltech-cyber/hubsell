@@ -537,6 +537,8 @@ export async function syncTiktokSettlements(
   // Gom MỌI dòng theo đơn trong toàn bộ lượt chạy (ORDER + REFUND + điều chỉnh
   // gắn đơn cộng lại; đơn có dòng ở 2 bản kê khác ngày vẫn về một chỗ).
   const byOrder = new Map<string, { lines: TikTokTxBreakdown[]; time?: number; statementId?: string }>();
+  // Cửa sổ nới mốc cuối 2 ngày nên có thể chồng lấn → mỗi bản kê chỉ bóc MỘT lần.
+  const seenStatements = new Set<string>();
 
   for (const w of windows) {
     let stPageToken: string | undefined;
@@ -546,7 +548,11 @@ export async function syncTiktokSettlements(
         accessToken,
         shopCipher,
         statementTimeGe: w.ge,
-        statementTimeLt: w.lt,
+        // ĐỐI CHIẾU THẬT 16/09: statement_time_lt = now làm sàn BỎ bản kê mới
+        // nhất (sinh 00:00 UTC hôm nay, đã SETTLED) — sàn so mốc với CUỐI kỳ
+        // của bản kê (docs: "lt = any time on Oct 11" cho bản kê tới Oct 10).
+        // Nới thêm 2 ngày; trùng lặp giữa cửa sổ đã có seenStatements chặn.
+        statementTimeLt: w.lt + 2 * 86_400,
         pageSize: PAGE_SIZE,
         pageToken: stPageToken,
       });
@@ -554,6 +560,8 @@ export async function syncTiktokSettlements(
       stPages++;
 
       for (const st of list.statements ?? []) {
+        if (seenStatements.has(st.id)) continue;
+        seenStatements.add(st.id);
         result.statements++;
         if (!stShapeLogged) {
           stShapeLogged = true;
