@@ -9,8 +9,10 @@
 //
 // Enum return_status theo docs 202309 (đối chiếu lại bằng log hình dạng khi
 // shop and.not.or có yêu cầu hoàn thật): nhận diện CHẾT qua REJECT/CANCEL,
-// XONG qua SUCCESS/COMPLETE. Không có trường "kiện đã về tay seller" đáng tin
-// → KHÔNG ghi returnDeliveredAt — giá vốn chỉ thu hồi khi kho quét nhận.
+// XONG qua SUCCESS/COMPLETE. Với yêu cầu TRẢ HÀNG, sàn chỉ chuyển SUCCESS/
+// COMPLETE sau khi kiện đã về seller (đối chiếu thật 16/09: yêu cầu
+// RETURN_AND_REFUND ở RETURN_OR_REFUND_REQUEST_COMPLETE) → ghi returnDeliveredAt
+// = update_time để P&L thu hồi giá vốn như Shopee LOGISTICS_DELIVERY_DONE.
 //
 // An toàn dữ liệu: trục returnStatus CHỈ đổi NONE ↔ AWAITING; đơn kho đã xử
 // lý (RECEIVED trở đi) tuyệt đối không đụng. Hủy đơn (cancellations) nằm trên
@@ -59,6 +61,12 @@ export function tiktokRefundOf(ro: TikTokReturnOrder): number {
   );
 }
 
+/** Trạng thái sàn = kiện trả đã về tay seller (chỉ áp cho giải pháp TRẢ HÀNG). */
+export function isTiktokReturnDelivered(status?: string | null): boolean {
+  const s = (status ?? "").toUpperCase();
+  return s.endsWith("_SUCCESS") || s.endsWith("_COMPLETE");
+}
+
 /** Trạng thái hoàn hiện tại của đơn — phần planner cần nhìn (mirror Lazada). */
 export interface TiktokReturnFlagState {
   returnStatus: ReturnStatus;
@@ -67,6 +75,7 @@ export interface TiktokReturnFlagState {
   returnSolution?: ReturnSolution | null;
   platformRefundAmount?: number;
   platformReturnStatus?: string | null;
+  returnDeliveredAt?: Date | null;
 }
 
 export interface TiktokReturnUpdatePlan {
@@ -77,10 +86,13 @@ export interface TiktokReturnUpdatePlan {
     returnSolution?: ReturnSolution | null;
     platformRefundAmount?: number;
     platformReturnStatus?: string | null;
+    returnDeliveredAt?: Date | null;
   };
   flagged: boolean;
   unflagged: boolean;
   trackingSaved: boolean;
+  /** Vừa ghi mốc kiện hoàn về tay theo sàn. */
+  delivered: boolean;
   /** Số lượng trả theo seller_sku (mỗi return_line_item = 1 đơn vị) — null =
    *  không có dữ liệu; map RỖNG khi chỉ hoàn tiền. */
   itemReturns: Map<string, number> | null;
@@ -102,6 +114,7 @@ export function planTiktokReturnUpdate(
     flagged: false,
     unflagged: false,
     trackingSaved: false,
+    delivered: false,
     itemReturns: null,
   };
 
@@ -162,6 +175,13 @@ export function planTiktokReturnUpdate(
   if (refund !== (order.platformRefundAmount ?? 0)) plan.data.platformRefundAmount = refund;
   if (status !== (order.platformReturnStatus ?? null)) plan.data.platformReturnStatus = status;
 
+  // Kiện trả đã về tay theo sàn (SUCCESS/COMPLETE của yêu cầu TRẢ HÀNG) — ghi
+  // MỘT lần; kho quét nhận sau vẫn là mốc vật lý riêng (returnStatus).
+  if (!refundOnly && !order.returnDeliveredAt && isTiktokReturnDelivered(status)) {
+    plan.data.returnDeliveredAt = new Date(toMs(newest.update_time) || nowMs);
+    plan.delivered = true;
+  }
+
   const map = new Map<string, number>();
   if (!refundOnly) {
     for (const ro of alive) {
@@ -182,6 +202,8 @@ export interface SyncTiktokReturnsResult {
   flagged: number;
   unflagged: number;
   trackingSaved: number;
+  /** Số đơn vừa ghi mốc kiện hoàn về tay theo sàn. */
+  delivered: number;
   itemsUpdated: number;
   ordersNotFound: number;
 }
@@ -210,6 +232,7 @@ export async function syncTiktokReturns(
     flagged: 0,
     unflagged: 0,
     trackingSaved: 0,
+    delivered: 0,
     itemsUpdated: 0,
     ordersNotFound: 0,
   };
@@ -263,6 +286,7 @@ export async function syncTiktokReturns(
         returnSolution: true,
         platformRefundAmount: true,
         platformReturnStatus: true,
+        returnDeliveredAt: true,
         items: { select: { id: true, channelSku: true, returnedQuantity: true } },
       },
     });
@@ -280,12 +304,14 @@ export async function syncTiktokReturns(
         returnSolution: order.returnSolution,
         platformRefundAmount: Number(order.platformRefundAmount),
         platformReturnStatus: order.platformReturnStatus,
+        returnDeliveredAt: order.returnDeliveredAt,
       },
       nowMs
     );
     if (plan.flagged) result.flagged++;
     if (plan.unflagged) result.unflagged++;
     if (plan.trackingSaved) result.trackingSaved++;
+    if (plan.delivered) result.delivered++;
 
     if (Object.keys(plan.data).length > 0) {
       await prisma.order.update({ where: { id: order.id }, data: plan.data });

@@ -117,6 +117,31 @@ describe("planTiktokReturnUpdate", () => {
     expect(plan.itemReturns?.get("SKU-B")).toBe(1);
   });
 
+  it("trả hàng đã COMPLETE → ghi mốc kiện về tay (returnDeliveredAt) một lần", () => {
+    const plan = planTiktokReturnUpdate(
+      [ro({ return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE", update_time: 1_759_999_000 })],
+      NONE,
+      NOW
+    );
+    expect(plan.delivered).toBe(true);
+    expect(plan.data.returnDeliveredAt?.getTime()).toBe(1_759_999_000 * 1000);
+    // Đã có mốc → không ghi lại
+    const again = planTiktokReturnUpdate(
+      [ro({ return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE" })],
+      { ...NONE, returnDeliveredAt: new Date(1) },
+      NOW
+    );
+    expect(again.delivered).toBe(false);
+    expect(again.data.returnDeliveredAt).toBeUndefined();
+    // Chỉ hoàn tiền → không có kiện về, không ghi mốc
+    const refundOnly = planTiktokReturnUpdate(
+      [ro({ return_type: "REFUND", return_status: "RETURN_OR_REFUND_REQUEST_COMPLETE" })],
+      NONE,
+      NOW
+    );
+    expect(refundOnly.delivered).toBe(false);
+  });
+
   it("idempotent: trạng thái đã khớp → không ghi gì", () => {
     const plan = planTiktokReturnUpdate(
       [ro({})],
