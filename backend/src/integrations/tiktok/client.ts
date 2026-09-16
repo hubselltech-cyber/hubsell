@@ -286,6 +286,10 @@ export interface FetchOrdersParams {
   /** Lọc theo thời gian tạo đơn (Unix seconds). */
   createTimeGe?: number;
   createTimeLt?: number;
+  /** Lọc theo thời gian CẬP NHẬT (Unix seconds) — worker quét tự động dùng trục
+   *  này để bắt cả đơn cũ vừa đổi trạng thái (hủy/hoàn), như Shopee/Lazada. */
+  updateTimeGe?: number;
+  updateTimeLt?: number;
   pageSize?: number;
   /** Con trỏ phân trang TikTok trả về ở lần gọi trước. */
   pageToken?: string;
@@ -305,6 +309,8 @@ export async function fetchOrders(
   const body: Record<string, unknown> = {};
   if (params.createTimeGe) body.create_time_ge = params.createTimeGe;
   if (params.createTimeLt) body.create_time_lt = params.createTimeLt;
+  if (params.updateTimeGe) body.update_time_ge = params.updateTimeGe;
+  if (params.updateTimeLt) body.update_time_lt = params.updateTimeLt;
 
   return callApi<TikTokOrderSearchData>(
     {
@@ -397,6 +403,9 @@ export interface TikTokStatementTransactionData {
 export interface FetchSettlementsParams {
   accessToken: string;
   shopCipher: string;
+  /** Chỉ lấy bản kê từ mốc này (Unix seconds) — worker giờ quét cửa sổ hẹp. */
+  statementTimeGe?: number;
+  statementTimeLt?: number;
   pageSize?: number;
   pageToken?: string;
 }
@@ -413,6 +422,8 @@ export async function fetchSettlements(
     page_size: params.pageSize ?? 50,
     sort_field: "statement_time",
   };
+  if (params.statementTimeGe) query.statement_time_ge = params.statementTimeGe;
+  if (params.statementTimeLt) query.statement_time_lt = params.statementTimeLt;
   if (params.pageToken) query.page_token = params.pageToken;
 
   return callApi<TikTokStatementListData>(

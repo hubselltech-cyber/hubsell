@@ -137,7 +137,37 @@ export interface SyncOrdersOptions {
   /** Chỉ lấy đơn tạo từ mốc này (Unix seconds). Mặc định 90 ngày gần nhất. */
   createTimeGe?: number;
   createTimeLt?: number;
+  /** Cửa sổ N ngày gần nhất (thay cho createTimeGe) — worker quét tự động. */
+  daysBack?: number;
+  /** true = lọc theo update_time (bắt đơn cũ vừa đổi trạng thái) thay vì create_time. */
+  byUpdateTime?: boolean;
   maxPages?: number;
+}
+
+/**
+ * Ghi log HÌNH DẠNG payload thật (tên trường, không giá trị khách) — một lần
+ * mỗi lượt đồng bộ, để đối chiếu parser với dữ liệu thật khi nối shop
+ * (kế hoạch 16/09/2026). Tắt bằng TIKTOK_SHAPE_LOG=0 khi đã chốt.
+ */
+function logShape(label: string, sample: unknown): void {
+  if (process.env.TIKTOK_SHAPE_LOG === "0" || !sample || typeof sample !== "object") return;
+  const o = sample as Record<string, unknown>;
+  const keys = (v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v as object).join(",") : String(v);
+  const first = (v: unknown) => (Array.isArray(v) && v.length ? v[0] : undefined);
+  const parts = [`keys=[${Object.keys(o).join(",")}]`];
+  if ("payment" in o) parts.push(`payment=[${keys(o.payment)}]`);
+  if ("recipient_address" in o) parts.push(`recipient_address=[${keys(o.recipient_address)}]`);
+  if ("line_items" in o) parts.push(`line_item=[${keys(first(o.line_items))}]`);
+  if ("packages" in o) parts.push(`package=[${keys(first(o.packages))}]`);
+  const show = [
+    "order_status", "status", "delivery_option_name", "shipping_provider",
+    "shipping_type", "payment_status", "type",
+  ];
+  for (const k of show) {
+    if (k in o) parts.push(`${k}=${JSON.stringify(o[k])}`);
+  }
+  console.log(`[TikTok] Hình dạng ${label}: ${parts.join(" ")}`);
 }
 
 export interface SyncOrdersResult {
@@ -161,9 +191,14 @@ export async function syncTiktokOrders(
   const { accessToken, shopCipher } = await getValidAccessToken(channel);
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const createTimeGe = opts.createTimeGe ?? nowSec - 90 * 24 * 60 * 60;
-  const createTimeLt = opts.createTimeLt ?? nowSec;
+  const fromSec =
+    opts.createTimeGe ?? nowSec - (opts.daysBack ?? 90) * 24 * 60 * 60;
+  const toSec = opts.createTimeLt ?? nowSec;
+  const timeFilter = opts.byUpdateTime
+    ? { updateTimeGe: fromSec, updateTimeLt: toSec }
+    : { createTimeGe: fromSec, createTimeLt: toSec };
   const maxPages = opts.maxPages ?? MAX_PAGES;
+  let shapeLogged = false;
 
   // % phí tạm tính (GĐ1) khi đơn chưa được đối soát — số thật thay sau ở settlement.
   const feeRate =
@@ -184,8 +219,7 @@ export async function syncTiktokOrders(
     const data = await fetchOrders({
       accessToken,
       shopCipher,
-      createTimeGe,
-      createTimeLt,
+      ...timeFilter,
       pageSize: PAGE_SIZE,
       pageToken,
     });
@@ -193,6 +227,10 @@ export async function syncTiktokOrders(
 
     for (const o of data.orders ?? []) {
       result.fetched++;
+      if (!shapeLogged) {
+        shapeLogged = true;
+        logShape("đơn (orders/search)", o);
+      }
       // Đồng bộ lô CỐ Ý không trừ kho (chỉ upsert), nên mỗi đơn một transaction nhẹ.
       const outcome = await prisma.$transaction((tx) =>
         upsertOrderTx(tx, channel, o, feeRate)
@@ -323,6 +361,8 @@ async function upsertOrderTx(
 
 export interface SyncSettlementsOptions {
   maxPages?: number;
+  /** Chỉ quét bản kê N ngày gần nhất — worker giờ dùng cửa sổ hẹp; tay = tất cả. */
+  daysBack?: number;
 }
 
 export interface SyncSettlementsResult {
@@ -348,6 +388,11 @@ export async function syncTiktokSettlements(
 ): Promise<SyncSettlementsResult> {
   const { accessToken, shopCipher } = await getValidAccessToken(channel);
   const maxPages = opts.maxPages ?? MAX_PAGES;
+  const statementTimeGe = opts.daysBack
+    ? Math.floor(Date.now() / 1000) - opts.daysBack * 24 * 60 * 60
+    : undefined;
+  let stShapeLogged = false;
+  let txShapeLogged = false;
 
   const result: SyncSettlementsResult = {
     statements: 0,
@@ -368,6 +413,7 @@ export async function syncTiktokSettlements(
     const list = await fetchSettlements({
       accessToken,
       shopCipher,
+      statementTimeGe,
       pageSize: PAGE_SIZE,
       pageToken: stPageToken,
     });
@@ -375,6 +421,10 @@ export async function syncTiktokSettlements(
 
     for (const st of list.statements ?? []) {
       result.statements++;
+      if (!stShapeLogged) {
+        stShapeLogged = true;
+        logShape("bản kê (statements)", st);
+      }
 
       let txPageToken: string | undefined;
       let txPages = 0;
@@ -389,6 +439,10 @@ export async function syncTiktokSettlements(
         txPages++;
 
         for (const trx of txData.statement_transactions ?? []) {
+          if (!txShapeLogged) {
+            txShapeLogged = true;
+            logShape("giao dịch bản kê (statement_transactions)", trx);
+          }
           if (!trx.order_id) continue;
           result.transactions++;
           const acc = byOrder.get(trx.order_id) ?? { settlement: 0, fee: 0 };
@@ -483,6 +537,7 @@ export async function processTiktokOrderEvent(
   if (!order) {
     return { found: false, created: false, inventory: "none" };
   }
+  logShape("đơn (webhook → orders detail)", order);
 
   const feeRate =
     Number(channel.feeRate) > 0

@@ -35,8 +35,10 @@
 // như mồ côi, gian được nhặt lại. Mọi sync đều upsert idempotent nên chạy
 // lặp vô hại.
 //
-// TikTok cố ý đứng ngoài: gian hiện tại là mock sandbox không token, webhook
-// TikTok thật đã có đường riêng — thêm vào đây khi nối shop TikTok thật.
+// TikTok vào vòng quét từ 16/09/2026 (shop nhà and.not.or đã ủy quyền app ISV):
+// tầng nhanh quét đơn theo update_time + tầng giờ đối soát; KHÔNG có tầng ads
+// (Ads TikTok chưa làm) — hạn xung/ads của gian TikTok được đẩy xa để không
+// bị nhặt mỗi tick.
 //
 // Cấu hình: AUTO_SYNC_MINUTES (ưu tiên) hoặc SHOPEE_AUTO_SYNC_MINUTES (tương
 // thích cũ). Mặc định 10; "0" = tắt toàn bộ.
@@ -63,6 +65,11 @@ import {
 import { syncShopeeBuyerInvoiceRequests } from "../integrations/shopee/buyer-invoice";
 import { processShopeeDeliveryTracking } from "../integrations/shopee/delivery-fail";
 import { isLazadaConfigured } from "../integrations/lazada/config";
+import { isTikTokConfigured } from "../integrations/tiktok/config";
+import {
+  syncTiktokOrders,
+  syncTiktokSettlements,
+} from "../integrations/tiktok/service";
 import {
   syncLazadaOrders,
   syncLazadaSettlements,
@@ -125,6 +132,8 @@ const SETTLE_DAYS_BACK = 7;
  * 30 ngày; upsert idempotent theo (channelId, externalTxnId) nên quét lặp vô hại.
  */
 const PAYOUT_DAYS_BACK = 30;
+/** Gian TikTok không có tầng ads: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
+const TIKTOK_NO_ADS_MIN = 24 * 60;
 
 // ---------- Hàm thuần (export cho vitest) ----------
 
@@ -259,7 +268,7 @@ async function tick(): Promise<void> {
     const stale = new Date(now.getTime() - LOCK_STALE_MS);
     const candidates = await prisma.channel.findMany({
       where: {
-        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA] },
+        channelName: { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
         status: "ACTIVE",
         refreshToken: { not: null },
         ...(inFlight.size > 0 ? { id: { notIn: [...inFlight] } } : {}),
@@ -309,14 +318,21 @@ async function processChannel(channel: Channel): Promise<void> {
   try {
     if (channel.channelName === ChannelName.SHOPEE && !isShopeeConfigured()) return;
     if (channel.channelName === ChannelName.LAZADA && !isLazadaConfigured()) return;
+    if (channel.channelName === ChannelName.TIKTOK && !isTikTokConfigured()) return;
+    const isTiktok = channel.channelName === ChannelName.TIKTOK;
 
     // Tầng nhanh chạy MỌI lượt (rẻ, idempotent) — gian được nhặt vì tầng giờ/ads
     // đến hạn thì tiện vét luôn; cửa sổ sâu khi trùng nhịp giờ.
     changed = await runFastTier(channel, { deep: tiers.hourly });
     // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
-    if (tiers.pulse) pulse = await runAdsPulseTier(channel);
+    // TikTok chưa có Ads: chỉ ghi hạn xa (nextAdsPulseAt null = đến hạn mỗi tick).
+    if (tiers.pulse) {
+      pulse = isTiktok
+        ? { delayMin: TIKTOK_NO_ADS_MIN, synced: false }
+        : await runAdsPulseTier(channel);
+    }
     if (tiers.hourly) await runHourlyTier(channel);
-    if (tiers.ads) adsSynced = await runAdsTier(channel);
+    if (tiers.ads && !isTiktok) adsSynced = await runAdsTier(channel);
   } catch (err) {
     console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
   } finally {
@@ -367,6 +383,19 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
+        );
+      }
+    } else if (channel.channelName === ChannelName.TIKTOK) {
+      // Trục update_time như hai sàn kia — bắt cả đơn cũ vừa hủy/hoàn. Đồng bộ
+      // lô KHÔNG trừ kho (webhook lo); chỉ upsert trạng thái/tiền/vận đơn.
+      const r = await syncTiktokOrders(channel, {
+        daysBack: ORDERS_DAYS_BACK,
+        byUpdateTime: true,
+      });
+      changed = r.created > 0 || r.updated > 0;
+      if (r.created > 0) {
+        console.log(
+          `[Auto-sync] TikTok "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
         );
       }
     } else {
@@ -536,6 +565,18 @@ async function runHourlyTier(channel: Channel): Promise<void> {
       }
     } catch (err) {
       console.error(`[Auto-sync] Lỗi sync payout Lazada "${channel.shopName}":`, (err as Error).message);
+    }
+  } else if (channel.channelName === ChannelName.TIKTOK) {
+    // Bản kê giải ngân TikTok 7 ngày gần nhất → số phí/tiền về thật cho từng đơn.
+    try {
+      const s = await syncTiktokSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      if (s.ordersUpdated > 0) {
+        console.log(
+          `[Auto-sync] Đối soát TikTok "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng bản kê)`
+        );
+      }
+    } catch (err) {
+      console.error(`[Auto-sync] Lỗi đối soát TikTok "${channel.shopName}":`, (err as Error).message);
     }
   } else if (channel.channelName === ChannelName.SHOPEE) {
     // Bọc try riêng (25/08): đối soát ném lỗi không được nuốt rút ví + cảnh báo.
