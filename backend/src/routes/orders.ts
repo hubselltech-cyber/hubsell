@@ -620,7 +620,7 @@ function readChoices(raw: unknown): Record<string, FulfillChoice> {
  * các gian có đơn đang chọn. Body: { orderIds }
  *
  * Trả một nhóm mỗi gian: mode PLATFORM (sàn cho chọn/không cần chọn), INTERNAL
- * (kênh offline — chỉ đổi trạng thái), UNSUPPORTED (TikTok đang giữ chỗ),
+ * (kênh offline — chỉ đổi trạng thái), UNSUPPORTED (sàn chưa có adapter),
  * ERROR (không hỏi được sàn — thường do gian mất kết nối). Hộp thoại "Chuẩn bị
  * hàng" dựng form từ đây, điền sẵn lựa chọn lần trước của gian.
  */
