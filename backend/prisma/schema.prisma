@@ -309,6 +309,7 @@ model User {
   // Bảng giá vốn tự nhập (tab Mapping giá vốn).
   costPriceRules CostPriceRule[]
   costConflictDismissals CostConflictDismissal[]
+  tiktokAdsAuths         TiktokAdsAuth[]
 
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
@@ -427,6 +428,7 @@ model Channel {
   stockPushJobs       StockPushJob[]       // hàng đợi đẩy tồn khả dụng lên gian này
   deliveryTrackingTasks DeliveryTrackingTask[] // hàng đợi hỏi tracking cứu đơn giao thất bại
   appAuths        ChannelAppAuth[] // ủy quyền cho app phụ của Hubsell trên cùng gian (Hubsell Ads)
+  tiktokAdsStoreLink TiktokAdsStoreLink? // TKQC TikTok (Marketing API) đang chạy GMV Max cho gian này
 
   // ── LỊCH QUÉT THEO TỪNG GIAN của worker auto-sync (12/09/2026, thay vòng
   // for tuần tự qua mọi gian — chịu tải hàng chục ngàn gian, nhiều worker) ──
@@ -2612,6 +2614,62 @@ model ChannelAppAuth {
   @@unique([channelId, app])
   @@index([app, status, accessTokenExpireAt])
   @@map("channel_app_auths")
+}
+
+/// MỘT LẦN ỦY QUYỀN TIKTOK MARKETING API của một chủ shop (17/09/2026).
+/// Khác ChannelAppAuth ở bản chất: thứ được ủy quyền là NGƯỜI DÙNG TikTok for
+/// Business, không phải gian. Một token thấy NHIỀU tài khoản quảng cáo, mỗi
+/// TKQC thấy NHIỀU shop — kể cả shop của seller KHÁC (người chạy quảng cáo
+/// thuê). Vì vậy token chỉ là "chìa khóa"; quyền xem số của shop nào do
+/// TiktokAdsStoreLink quyết định, và link chỉ được tạo cho gian TikTok mà
+/// chính chủ shop này đã nối app chính (store_id = Channel.externalShopId).
+/// Cùng một người chạy thuê ủy quyền cho nhiều chủ shop trên Hubsell = nhiều
+/// dòng độc lập, KHÔNG unique theo advertiser.
+/// access_token dài hạn: không hết hạn, không refresh; chết khi bị hủy ủy quyền.
+model TiktokAdsAuth {
+  id            String   @id @default(cuid())
+  userId        String // chủ shop (ownerId)
+  accessToken   String
+  /// advertiser_id token truy cập được, nối dấu phẩy — chỉ để tra cứu/hiển thị.
+  advertiserIds String   @default("")
+  /// ACTIVE | REVOKED (sàn báo token chết → cần ủy quyền lại)
+  status        String   @default("ACTIVE")
+  revokedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links TiktokAdsStoreLink[]
+
+  @@index([userId])
+  @@map("tiktok_ads_auths")
+}
+
+/// GIAN TIKTOK ↔ TÀI KHOẢN QUẢNG CÁO chạy GMV Max cho gian đó. Mỗi shop TikTok
+/// chỉ có MỘT TKQC độc quyền GMV Max (exclusive_authorized_advertiser_info) nên
+/// một gian tối đa một link. Hubsell tự dò cặp này sau khi ủy quyền — chủ shop
+/// không phải chọn gì.
+model TiktokAdsStoreLink {
+  id             String    @id @default(cuid())
+  channelId      String    @unique
+  authId         String
+  advertiserId   String
+  advertiserName String    @default("")
+  /// store_id phía Marketing API (= Channel.externalShopId của gian).
+  storeId        String
+  /// ACTIVE | NO_ACCESS (TKQC mất quyền shop / shop đổi TKQC độc quyền)
+  status         String    @default("ACTIVE")
+  lastSyncedAt   DateTime?
+  lastSyncError  String    @default("")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  channel Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  auth    TiktokAdsAuth @relation(fields: [authId], references: [id], onDelete: Cascade)
+
+  @@index([authId])
+  @@index([status, lastSyncedAt])
+  @@map("tiktok_ads_store_links")
 }
 
 model DeliveryTrackingTask {

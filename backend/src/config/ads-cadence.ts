@@ -22,6 +22,8 @@ export const ADS_CADENCE = {
   PULSE_MIN: envNum("ADS_PULSE_MINUTES", 30),
   /** Xung Lazada (phút) — 60 tới khi có quota app ISV (code ghi ~10k call/ngày/app). */
   PULSE_LAZADA_MIN: envNum("ADS_PULSE_LAZADA_MINUTES", 60),
+  /** Xung TikTok GMV Max (phút) — 1 call/lượt; số của sàn vốn trễ nên 60 là đủ. */
+  PULSE_TIKTOK_MIN: envNum("ADS_PULSE_TIKTOK_MINUTES", 60),
   /** Gian có campaign chạy nhưng 2 ngày không chi → xung giãn (phút). */
   PULSE_IDLE_MIN: 120,
   /** Gian đã nối Ads API nhưng chưa có campaign nào chạy → xung nhẹ 1 call (phút). */

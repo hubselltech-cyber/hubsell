@@ -26,6 +26,11 @@ export const qk = {
   // ----- Đơn hàng -----
   orders: (params: Record<string, unknown>) => ["orders", params] as const,
 
+  // ----- Quảng cáo TikTok (GMV Max) -----
+  tiktokAds: (params: Record<string, unknown>) => ["tiktok-ads", params] as const,
+  tiktokAdsVideos: (campaignRowId: string, days: number) =>
+    ["tiktok-ads-videos", campaignRowId, days] as const,
+
   // ----- Tài chính -----
   financeAnalytics: (range?: DateRange, channel?: ChannelFilterQuery) =>
     [

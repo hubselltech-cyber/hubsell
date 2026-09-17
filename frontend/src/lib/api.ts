@@ -2483,6 +2483,142 @@ export function unlinkHubsellAds(channelId: string) {
   );
 }
 
+// ---------- TikTok Ads — tài khoản quảng cáo TikTok Marketing API (GMV Max, 17/09/2026) ----------
+//
+// Hệ riêng của TikTok: thứ được ủy quyền là TÀI KHOẢN QUẢNG CÁO, không phải gian.
+// Một tài khoản quảng cáo có thể chạy cho nhiều shop của nhiều seller (người chạy
+// thuê) — backend tự dò và CHỈ nối gian TikTok của chính chủ shop này.
+
+export interface TiktokAdsLinkStatus {
+  /** false = backend chưa đặt TIKTOK_ADS_* → trang hiện "sắp ra mắt". */
+  configured: boolean;
+  linked: boolean;
+  /** REVOKED = token chết (bị hủy ủy quyền); NO_ACCESS = tài khoản quảng cáo mất quyền shop. */
+  status: "ACTIVE" | "NO_ACCESS" | "REVOKED" | null;
+  advertiserName: string | null;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+}
+
+export function fetchTiktokAdsStatus(channelId: string) {
+  return apiFetch<TiktokAdsLinkStatus>(
+    `/api/tiktok-ads/status?channelId=${encodeURIComponent(channelId)}`
+  );
+}
+
+/** invite=true: link sống 7 ngày để gửi cho người giữ tài khoản quảng cáo (chạy thuê). */
+export function getTiktokAdsAuthUrl(invite = false) {
+  return apiFetch<{ url: string }>(`/api/tiktok-ads/auth-url${invite ? "?invite=1" : ""}`);
+}
+
+export interface TiktokAdsConnectResult {
+  kind: "self" | "invite";
+  linked: { channelId: string; shopName: string; advertiserName: string }[];
+  skipped: { shopName: string; reason: string }[];
+}
+
+/** Trang /ads/tiktok/callback gọi — công khai, danh tính chủ shop nằm trong state đã ký. */
+export function connectTiktokAds(authCode: string, state: string) {
+  return apiFetch<TiktokAdsConnectResult>("/api/auth/tiktok-ads/connect", {
+    method: "POST",
+    body: JSON.stringify({ authCode, state }),
+  });
+}
+
+export function unlinkTiktokAds(channelId: string) {
+  return apiFetch<{ message: string }>(
+    `/api/tiktok-ads/link?channelId=${encodeURIComponent(channelId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export interface TiktokAdsCampaignRow {
+  id: string;
+  campaignId: string;
+  name: string;
+  status: "ongoing" | "paused" | string;
+  /** target_roi = đặt ROI mục tiêu; max_delivery = phân phối tối đa (không có mục tiêu). */
+  biddingMethod: string;
+  roasTarget: number | null;
+  budget: number;
+  spend: number;
+  orders: number;
+  gmv: number;
+  roi: number | null;
+  costPerOrder: number | null;
+  belowTarget: boolean;
+}
+
+export interface TiktokAdsDashboard {
+  configured: boolean;
+  channels: { id: string; shopName: string }[];
+  selectedChannelId: string | null;
+  days: number;
+  link: Omit<TiktokAdsLinkStatus, "configured"> | null;
+  summary: {
+    spend: number;
+    orders: number;
+    gmv: number;
+    roi: number | null;
+    costPerOrder: number | null;
+    liveCampaigns: number;
+    belowTargetCount: number;
+  } | null;
+  campaigns: TiktokAdsCampaignRow[];
+  series: { date: string; spend: number; gmv: number; orders: number }[];
+  adsRefreshing: boolean;
+  adsSyncedAt: string | null;
+}
+
+export function fetchTiktokAdsDashboard(params: { channelId?: string; days?: number }) {
+  const qs = new URLSearchParams();
+  if (params.channelId) qs.set("channelId", params.channelId);
+  if (params.days) qs.set("days", String(params.days));
+  const q = qs.toString();
+  return apiFetch<TiktokAdsDashboard>(`/api/ads/tiktok${q ? `?${q}` : ""}`);
+}
+
+export interface TiktokAdsVideoRow {
+  spuId: string;
+  videoId: string;
+  deliveryStatus: string;
+  cost: number;
+  orders: number;
+  gmv: number;
+  impressions: number;
+  clicks: number;
+  roi: number | null;
+  noOrder: boolean;
+}
+
+export interface TiktokAdsCampaignVideos {
+  campaign: { id: string; campaignId: string; name: string };
+  days: number;
+  products: { spuId: string; name: string; cost: number; orders: number; gmv: number }[];
+  videos: TiktokAdsVideoRow[];
+  totals: {
+    videoCount: number;
+    spendingCount: number;
+    videoSpend: number;
+    noOrderCount: number;
+    noOrderSpend: number;
+  };
+}
+
+/** Soi SỐNG từ TikTok (2–3 call) — không có trong DB, mở hộp mới gọi. */
+export function fetchTiktokAdsCampaignVideos(campaignRowId: string, days: number) {
+  return apiFetch<TiktokAdsCampaignVideos>(
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?days=${days}`
+  );
+}
+
+export function requestTiktokAdsRefresh(channelId: string) {
+  return apiFetch<AdsRefreshResult>("/api/ads/tiktok/refresh", {
+    method: "POST",
+    body: JSON.stringify({ channelId }),
+  });
+}
+
 /**
  * Lấy URL trang uỷ quyền Lazada. Callback đăng ký trên App Console là backend
  * RENDER (Lazada bắt https) nên khi chạy LOCAL, người dùng mở URL này ở tab

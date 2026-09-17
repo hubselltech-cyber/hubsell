@@ -36,9 +36,10 @@
 // lặp vô hại.
 //
 // TikTok vào vòng quét từ 16/09/2026 (shop nhà and.not.or đã ủy quyền app ISV):
-// tầng nhanh quét đơn theo update_time + tầng giờ đối soát; KHÔNG có tầng ads
-// (Ads TikTok chưa làm) — hạn xung/ads của gian TikTok được đẩy xa để không
-// bị nhặt mỗi tick.
+// tầng nhanh quét đơn theo update_time + tầng giờ đối soát. Tầng ads (17/09/2026):
+// chỉ gian ĐÃ NỐI tài khoản quảng cáo TikTok Marketing API (TiktokAdsStoreLink)
+// mới kéo số GMV Max — chỉ đọc, không executor; gian chưa nối thì hạn xung/ads
+// đẩy xa để không bị nhặt mỗi tick (nối xong markAdsBackfill kéo hạn về ngay).
 //
 // Cấu hình: AUTO_SYNC_MINUTES (ưu tiên) hoặc SHOPEE_AUTO_SYNC_MINUTES (tương
 // thích cũ). Mặc định 10; "0" = tắt toàn bộ.
@@ -89,6 +90,8 @@ import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
 import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
 import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
 import { vnDateKey } from "../integrations/shopee/ads-insights";
+import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
+import { syncTiktokAdsCampaigns } from "../integrations/tiktok-ads/sync";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -139,7 +142,7 @@ const UNSETTLED_DAYS_BACK = 45;
  * 30 ngày; upsert idempotent theo (channelId, externalTxnId) nên quét lặp vô hại.
  */
 const PAYOUT_DAYS_BACK = 30;
-/** Gian TikTok không có tầng ads: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
+/** Gian TikTok CHƯA nối quảng cáo: hạn xung/ads đẩy xa 1 ngày (chỉ để không nhặt mỗi tick). */
 const TIKTOK_NO_ADS_MIN = 24 * 60;
 
 // ---------- Hàm thuần (export cho vitest) ----------
@@ -332,14 +335,11 @@ async function processChannel(channel: Channel): Promise<void> {
     // đến hạn thì tiện vét luôn; cửa sổ sâu khi trùng nhịp giờ.
     changed = await runFastTier(channel, { deep: tiers.hourly });
     // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
-    // TikTok chưa có Ads: chỉ ghi hạn xa (nextAdsPulseAt null = đến hạn mỗi tick).
     if (tiers.pulse) {
-      pulse = isTiktok
-        ? { delayMin: TIKTOK_NO_ADS_MIN, synced: false }
-        : await runAdsPulseTier(channel);
+      pulse = isTiktok ? await runTiktokAdsPulse(channel) : await runAdsPulseTier(channel);
     }
     if (tiers.hourly) await runHourlyTier(channel);
-    if (tiers.ads && !isTiktok) adsSynced = await runAdsTier(channel);
+    if (tiers.ads) adsSynced = isTiktok ? await runTiktokAdsTier(channel) : await runAdsTier(channel);
   } catch (err) {
     console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
   } finally {
@@ -801,6 +801,49 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
 // gì seller "cần tức thì" ở đây — xung (tầng A) đã lo cấu hình + hôm nay + ví.
 // Trả về true nếu đã kéo được số (ghi lastAdsSyncAt / hạ cờ backfill).
 // ============================================================
+// ============================================================
+// ADS TIKTOK (GMV Max — TikTok Marketing API, CHỈ ĐỌC). Xung = hôm nay + hôm
+// qua (1 call); lịch sử = cửa sổ 7 ngày / 30 ngày khi vừa nối (1 call). Không
+// ví, không executor, không ghi AdSpend (phí GMV Max đã trừ trong quyết toán
+// đơn — xem integrations/tiktok-ads/sync.ts).
+// ============================================================
+async function runTiktokAdsPulse(channel: Channel): Promise<{ delayMin: number; synced: boolean }> {
+  if (!isTiktokAdsConfigured()) return { delayMin: TIKTOK_NO_ADS_MIN, synced: false };
+  try {
+    const r = await syncTiktokAdsCampaigns(channel, { daysBack: 2 });
+    if (!r.linked) return { delayMin: TIKTOK_NO_ADS_MIN, synced: false };
+    const delayMin =
+      r.liveCampaigns === 0
+        ? ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN
+        : r.spentRecently
+          ? ADS_CADENCE.PULSE_TIKTOK_MIN
+          : ADS_CADENCE.PULSE_IDLE_MIN;
+    return { delayMin, synced: true };
+  } catch (err) {
+    console.error(`[Auto-sync] Xung ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message);
+    return { delayMin: ADS_CADENCE.PULSE_IDLE_MIN, synced: false };
+  }
+}
+
+async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
+  if (!isTiktokAdsConfigured()) return false;
+  const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
+  try {
+    const r = await syncTiktokAdsCampaigns(channel, {
+      daysBack: backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK,
+    });
+    if (r.linked && r.campaignsUpserted > 0) {
+      console.log(
+        `[Auto-sync] "${channel.shopName}" ads TikTok: ${r.campaignsUpserted} campaign GMV Max, ${r.perfDaysUpserted} dòng ngày`
+      );
+    }
+    return r.linked;
+  } catch (err) {
+    console.error(`[Auto-sync] Ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message);
+    return false;
+  }
+}
+
 async function runAdsTier(channel: Channel): Promise<boolean> {
   const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
   const daysBack = backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK;

@@ -33,6 +33,8 @@ import kocRouter from "./routes/koc";
 import referralRouter from "./routes/referral";
 import adsRouter from "./routes/ads";
 import { hubsellAdsCallbackRouter, hubsellAdsRouter } from "./routes/hubsell-ads";
+import { tiktokAdsPublicRouter, tiktokAdsRouter } from "./routes/tiktok-ads";
+import { adsTiktokRouter } from "./routes/ads-tiktok";
 import assistantRouter from "./routes/assistant";
 import subscriptionRouter from "./routes/subscription";
 import { requirePlanUnlocked } from "./services/plan-enforcement";
@@ -139,6 +141,9 @@ export function createApp() {
   // Callback OAuth của app Hubsell Ads (công khai, Shopee redirect về) — mount
   // TRƯỚC /api/auth để không lẫn với các callback trong authRouter.
   app.use("/api/auth/hubsell-ads", hubsellAdsCallbackRouter);
+  // TikTok Ads — trang FE /ads/tiktok/callback gọi vào sau khi TikTok trả auth_code
+  // (công khai: người ủy quyền có thể là người chạy quảng cáo thuê, danh tính ở state đã ký).
+  app.use("/api/auth/tiktok-ads", tiktokAdsPublicRouter);
 
   // Đăng nhập / đăng ký (công khai)
   app.use("/api/auth", authRouter);
@@ -244,12 +249,18 @@ export function createApp() {
 
   // Trợ lý quảng cáo: cửa mount = có lá ads.* bất kỳ; nhánh /shopee bên trong
   // router siết đúng ads.shopee (tiktok/lazada hiện là preview mock phía FE).
+  // Quảng cáo TikTok (GMV Max — TikTok Marketing API): router riêng, mount TRƯỚC /api/ads.
+  app.use("/api/ads/tiktok", requireAuth, requirePermission("ads.tiktok"), requirePlanUnlocked, requireChannel, adsTiktokRouter);
   app.use("/api/ads", requireAuth, requirePermission("ads"), requirePlanUnlocked, requireChannel, adsRouter);
 
   // Hubsell Ads — ủy quyền app Ads Service riêng cho gian Shopee (chỉ chủ shop;
   // nghiệp vụ ở integrations/hubsell-ads/). Chưa đặt env HUBSELL_ADS_* thì
   // Trợ lý quảng cáo vẫn chạy bằng app chính, các route này chỉ báo chưa cấu hình.
   app.use("/api/hubsell-ads", requireAuth, adminOnly, hubsellAdsRouter);
+
+  // TikTok Ads — ủy quyền tài khoản quảng cáo TikTok Marketing API (GMV Max) cho
+  // gian TikTok đã nối app chính. Chưa đặt env TIKTOK_ADS_* thì chỉ báo chưa cấu hình.
+  app.use("/api/tiktok-ads", requireAuth, adminOnly, tiktokAdsRouter);
 
   // Affiliate Tiếp Thị & Ví Hubsell — referral của CHÍNH nền tảng (khác /api/koc).
   // Chỉ chủ shop; KHÔNG gác requireChannel: chưa kết nối gian vẫn giới thiệu được.
