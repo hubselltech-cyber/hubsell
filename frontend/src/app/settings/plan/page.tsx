@@ -14,7 +14,7 @@
 // Khi có STK (env PLAN_PAYMENT_BANK_*), khối yêu-cầu-đã-gửi tự hiện hướng
 // dẫn chuyển khoản — không cần sửa code.
 //   4) 09/09: CỔNG payOS — backend có PAYOS_* thì /me trả gateway ≠ null →
-//      nút chính đổi thành "Thanh toán ngay" (17/09: sang trang thanh toán payOS, gói mở khi tiền về);
+//      nút chính đổi thành "Thanh toán ngay" (17/09: popup nhúng trang thanh toán payOS, gói mở khi tiền về);
 //      "Đăng ký mua" lùi xuống làm đường phụ cho khách cần người hỗ trợ.
 // ============================================================
 
@@ -160,36 +160,10 @@ export default function SettingsPlanPage() {
   } | null>(null);
   const [phone, setPhone] = useState("");
 
-  // Hộp thoại kết quả/dự phòng của đơn payOS đang mở (null = đóng).
+  // Hộp thoại thanh toán payOS đang mở (null = đóng). 17/09 khuya: anh Trung thử
+  // bản chuyển hẳn sang pay.payos.vn rồi chốt "làm popup là đẹp nhất" → hộp thoại
+  // NHÚNG trang thanh toán của payOS (xem gateway-checkout-dialog.tsx).
   const [checkout, setCheckout] = useState<GatewayCheckout | null>(null);
-  // Đang chuyển sang trang thanh toán payOS — giữ nút ở trạng thái chờ tới khi rời trang.
-  const [redirecting, setRedirecting] = useState(false);
-
-  // Khách bấm Back từ trang payOS: trình duyệt khôi phục trang từ bfcache kèm
-  // nguyên state → phải nhả cờ kẻo nút kẹt ở "Đang mở trang thanh toán…".
-  useEffect(() => {
-    const onShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        setRedirecting(false);
-        qc.invalidateQueries({ queryKey: qk.mySubscription() });
-      }
-    };
-    window.addEventListener("pageshow", onShow);
-    return () => window.removeEventListener("pageshow", onShow);
-  }, [qc]);
-
-  // 17/09 (anh Trung chốt sau giao dịch thật đầu tiên): đơn đang chờ thì đưa khách
-  // sang TRANG THANH TOÁN CỦA payOS (logo VietQR/Napas/MB, họ tự bảo trì) thay vì
-  // hộp thoại QR tự vẽ; payOS trả khách về ?checkout=<orderCode> (effect bên dưới)
-  // → hộp thoại hiện kết quả. Hộp thoại QR chỉ còn là dự phòng khi thiếu checkoutUrl.
-  function goToCheckout(c: GatewayCheckout) {
-    if (c.status === "PENDING" && c.checkoutUrl) {
-      setRedirecting(true);
-      window.location.assign(c.checkoutUrl);
-      return;
-    }
-    setCheckout(c);
-  }
 
   // Quay lại từ returnUrl của payOS (?checkout=<orderCode>) → mở lại hộp
   // thoại đúng đơn để khách thấy kết quả; đọc window thay vì useSearchParams
@@ -243,8 +217,8 @@ export default function SettingsPlanPage() {
   const checkoutMutation = useMutation({
     mutationFn: (p: { planId: string; cycle: BillingCycle }) => createPlanCheckout(p),
     onSuccess: (res) => {
+      setCheckout(res.checkout);
       refresh();
-      goToCheckout(res.checkout);
     },
     onError: (err) =>
       toast.error(
@@ -386,7 +360,7 @@ export default function SettingsPlanPage() {
             </p>
           </div>
 
-          {/* Đơn payOS đang chờ (khách rời trang thanh toán rồi quay lại) — đi tiếp được */}
+          {/* Đơn payOS đang chờ (khách đóng popup rồi quay lại) — đi tiếp được */}
           {openCheckout && checkout === null && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
               <QrCode className="size-4 shrink-0" />
@@ -395,12 +369,7 @@ export default function SettingsPlanPage() {
                 {CYCLE_LABEL[openCheckout.cycle]} (
                 <span className="tabular-nums">{nf.format(openCheckout.amount)}₫</span>).
               </p>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={redirecting}
-                onClick={() => goToCheckout(openCheckout)}
-              >
+              <Button size="sm" variant="outline" onClick={() => setCheckout(openCheckout)}>
                 Tiếp tục thanh toán
               </Button>
             </div>
@@ -560,11 +529,11 @@ export default function SettingsPlanPage() {
                       <Button
                         className="w-full"
                         variant={isBestSeller ? "default" : "outline"}
-                        disabled={checkoutMutation.isPending || redirecting}
+                        disabled={checkoutMutation.isPending}
                         onClick={() => checkoutMutation.mutate({ planId: p.id, cycle })}
                       >
                         <QrCode className="size-4" />
-                        {checkoutMutation.isPending || redirecting
+                        {checkoutMutation.isPending
                           ? "Đang mở trang thanh toán…"
                           : isCurrent
                             ? "Gia hạn — thanh toán ngay"

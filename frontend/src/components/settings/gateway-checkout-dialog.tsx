@@ -11,9 +11,21 @@
 // bị lật ở dark mode), chữ trắng; ngoài ra chỉ số tiền tô xanh. Poll trạng thái 3s/lần khi đang mở (backend tự
 // hỏi payOS nếu webhook lạc), PAID → màn "Thành công" + làm mới gói; hết
 // hạn/hủy → cho tạo mã mới. Không có sandbox payOS: test bằng tiền thật số nhỏ.
+//
+// ★ 17/09 khuya — NHÚNG TRANG THANH TOÁN payOS: anh so với trang của payOS (logo
+// VietQR PRO / Napas 247 / MB, QR gắn logo) và chốt "dùng của họ, làm popup là đẹp
+// nhất". Đơn đang chờ có checkoutUrl → hộp thoại bày <iframe> chính trang
+// pay.payos.vn/web/<id> (họ không chặn nhúng). KHÔNG dùng chế độ embedded/iframe
+// chính thức (thư viện payos-checkout: /embedded/… hoặc ?iframe=true + postMessage)
+// vì thử thật 17/09 cả hai đều trả "Thông tin truyền lên không hợp lệ". Kết quả lấy
+// từ 2 nguồn của chính mình: (1) vòng poll 3s bên dưới; (2) lần `load` THỨ HAI của
+// iframe = payOS vừa chuyển khung sang returnUrl/cancelUrl → gỡ iframe ngay (khỏi
+// lồng app trong app), hỏi trạng thái liền. Màn QR tự vẽ bên dưới là DỰ PHÒNG: không
+// có checkoutUrl, khách bấm "Dùng mã QR của Hubsell", hoặc khung đã rời payOS mà đơn
+// vẫn PENDING.
 // ============================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -133,7 +145,7 @@ export function GatewayCheckoutDialog({
   const orderCode = checkout?.orderCode ?? null;
 
   // Poll trạng thái — dừng khi đã chốt (PAID/CANCELLED/EXPIRED/MISMATCH).
-  const { data } = useQuery({
+  const { data, refetch } = useQuery({
     queryKey: ["plan-checkout", orderCode],
     queryFn: () => fetchPlanCheckout(orderCode!),
     enabled: orderCode !== null,
@@ -145,6 +157,30 @@ export function GatewayCheckoutDialog({
     refetchIntervalInBackground: true,
   });
   const current = data?.checkout ?? checkout;
+
+  // Khung nhúng payOS — trạng thái gắn với TỪNG đơn (đổi đơn là tính lại từ đầu):
+  //   own    = khách chọn / buộc phải dùng màn QR tự vẽ
+  //   left   = khung đã rời trang payOS (load lần 2) → đang hỏi kết quả
+  const [frame, setFrame] = useState<{ code: string | null; own: boolean; left: boolean }>({
+    code: null,
+    own: false,
+    left: false,
+  });
+  const frameState = frame.code === orderCode ? frame : { code: orderCode, own: false, left: false };
+  const frameLoads = useRef<{ code: string | null; n: number }>({ code: null, n: 0 });
+
+  function onFrameLoad() {
+    if (frameLoads.current.code !== orderCode) frameLoads.current = { code: orderCode, n: 0 };
+    frameLoads.current.n += 1;
+    if (frameLoads.current.n < 2) return;
+    setFrame({ code: orderCode, own: false, left: true });
+    refetch().then((r) => {
+      // Rời payOS mà đơn vẫn chờ (khách bấm link lạ trong khung…) → về màn QR tự vẽ.
+      if (r.data?.checkout.status === "PENDING") {
+        setFrame({ code: orderCode, own: true, left: false });
+      }
+    });
+  }
 
   // Đếm ngược hạn QR — nhắc khách quét trước khi mã chết.
   const [now, setNow] = useState(() => Date.now());
@@ -178,14 +214,26 @@ export function GatewayCheckoutDialog({
   if (!current) return null;
   const expiresIn = current.expiresAt ? new Date(current.expiresAt).getTime() - now : null;
   const isPending = current.status === "PENDING";
+  const embedded = isPending && !!current.checkoutUrl && !frameState.own;
   const amountStr = `${nf.format(current.amount)}₫`;
 
   return (
     <Dialog open={checkout !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className={cn(isPending ? "max-h-[90vh] overflow-y-auto sm:max-w-[min(46rem,calc(100%-2rem))]" : "sm:max-w-md")}
+        className={cn(
+          embedded
+            ? "gap-0 overflow-hidden p-0 sm:max-w-[min(68rem,calc(100%-2rem))]"
+            : isPending
+              ? "max-h-[90vh] overflow-y-auto sm:max-w-[min(46rem,calc(100%-2rem))]"
+              : "sm:max-w-md"
+        )}
       >
-        <DialogHeader className={cn(isPending && "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5")}>
+        <DialogHeader
+          className={cn(
+            isPending && "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5",
+            embedded && "border-b px-4 py-3 pr-12"
+          )}
+        >
           {isPending && (
             <span className="row-span-2 flex size-10 items-center justify-center rounded-xl bg-emerald-500 text-white">
               <QrCode className="size-5" />
@@ -214,7 +262,48 @@ export function GatewayCheckoutDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {isPending && (
+        {embedded && (
+          <>
+            {frameState.left ? (
+              <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Đang kiểm tra kết quả thanh toán…
+              </div>
+            ) : (
+              <iframe
+                key={current.orderCode}
+                src={current.checkoutUrl!}
+                title="Trang thanh toán payOS"
+                allow="clipboard-write"
+                onLoad={onFrameLoad}
+                className="block h-[min(46rem,calc(90vh-7rem))] w-full border-0 bg-white"
+              />
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2.5 text-xs text-muted-foreground">
+              <span className="hidden items-center gap-1.5 sm:flex">
+                <Loader2 className="size-3 animate-spin" /> Gói tự mở trong vài giây sau khi tiền về
+              </span>
+              <span className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="underline-offset-2 hover:underline"
+                  onClick={() => setFrame({ code: orderCode, own: true, left: false })}
+                >
+                  Dùng mã QR của Hubsell
+                </button>
+                <a
+                  href={current.checkoutUrl!}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                >
+                  <ExternalLink className="size-3" /> Mở tab mới
+                </a>
+              </span>
+            </div>
+          </>
+        )}
+
+        {isPending && !embedded && (
           <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)]">
             {/* ===== Tấm QR ===== */}
             <div className="flex flex-col items-center rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 px-5 py-5 text-center text-white">
