@@ -306,6 +306,9 @@ model User {
   // Bằng chứng đồng ý Điều khoản dịch vụ + Chính sách bảo mật (hợp đồng điện tử).
   termsAcceptances TermsAcceptance[]
 
+  // Bảng giá vốn tự nhập (tab Mapping giá vốn).
+  costPriceRules CostPriceRule[]
+
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
   @@unique([ownerId, staffUsername])
@@ -1415,6 +1418,32 @@ model ChannelProduct {
   @@unique([channelId, channelSku]) // 1 SKU sàn chỉ nối vào tối đa 1 sản phẩm gốc
   @@index([productId])
   @@index([channelId])
+}
+
+/// BẢNG GIÁ VỐN TỰ NHẬP (tab "Mapping giá vốn", 17/09/2026): chủ shop khai
+/// "mã → giá vốn" MỘT LẦN rồi áp cho mọi gian, mọi sàn.
+///
+/// Đây là KHUÔN, KHÔNG phải nguồn giá vốn thứ ba: P&L và đồng bộ đơn không bao
+/// giờ đọc bảng này. Khi áp, giá ghi xuống hai nơi cũ (Product.costPrice nếu SKU
+/// đã nối kho, ChannelProduct.costPrice nếu chưa). Lưu lại để SKU mới đồng bộ về
+/// sau tự được điền giá (chỉ ô trống) — xem lib/cost-mapping.ts.
+///
+/// `code` là mã SKU đầy đủ HOẶC mã mẫu (tiền tố): "TBSA01" khớp "TBSA01-Vàng-XXL".
+model CostPriceRule {
+  id        String   @id @default(cuid())
+  userId    String // chủ shop (ownerId)
+  /// Đã chuẩn hoá bằng normalizeSkuCode: trim + NFC + UPPERCASE.
+  code      String
+  costPrice Decimal  @db.Decimal(12, 2)
+  /// Ghi chú gợi nhớ của chủ shop ("Áo thun basic") — không tham gia khớp.
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, code])
+  @@map("cost_price_rules")
 }
 
 /// Sản phẩm còn bán trên sàn hay đã bị gỡ niêm yết.

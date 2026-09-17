@@ -561,6 +561,42 @@ export function downloadCostPriceTemplate() {
   );
 }
 
+/** File mẫu cho BẢNG GIÁ TỰ NHẬP (tab Mapping giá vốn): mã mẫu lẫn mã đầy đủ. */
+export function downloadCostRuleTemplate() {
+  const rows = [
+    { "Mã": "TBSA01", "Giá vốn": 52000, "Ghi chú": "Mã mẫu — áp cho mọi TBSA01-màu-size" },
+    { "Mã": "TBSA01-Vàng-XXL", "Giá vốn": 55000, "Ghi chú": "Mã đầy đủ — thắng mã mẫu" },
+  ];
+  downloadSheet(rows, [24, 14, 44], "Bang gia von", "hubsell_mau_bang_gia_von.xlsx");
+}
+
+/**
+ * Xuất các SKU KHÔNG KHỚP mã nào khi mapping. Cột "Mã" + "Giá vốn" đúng khuôn
+ * file nhập bảng giá — điền giá rồi nhập ngược lại là khép vòng, không gõ lại mã.
+ */
+export function exportUnmatchedCostSkus(
+  items: {
+    sku: string;
+    productName: string;
+    variantName: string | null;
+    channelName: string;
+    shopName: string;
+  }[]
+) {
+  const rows = items.map((i) => ({
+    "Mã": i.sku,
+    "Giá vốn": "",
+    "Ghi chú": i.variantName ? `${i.productName} — ${i.variantName}` : i.productName,
+    "Gian hàng": `${CHANNEL_LABEL[i.channelName] ?? i.channelName} · ${i.shopName}`,
+  }));
+  downloadSheet(
+    rows,
+    [26, 14, 50, 28],
+    "Chua khop",
+    `hubsell_sku_chua_khop_gia_von_${fileStamp()}.xlsx`
+  );
+}
+
 // ---------- BẢNG KÊ HÓA ĐƠN BÁN RA (module Hóa đơn & Thuế, 03/09) ----------
 
 const CQT_LABEL: Record<string, string> = {

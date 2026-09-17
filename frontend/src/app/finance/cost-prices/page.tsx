@@ -16,6 +16,7 @@ import {
 import { AccessDenied } from "@/components/shared/access-denied";
 import { can } from "@/lib/permissions";
 import { AppShell } from "@/components/shell/app-shell";
+import { CostMappingTab } from "@/components/finance/cost-mapping-tab";
 import {
   CostPriceTable,
   type ProductGroup,
@@ -51,6 +52,13 @@ const STATUS_OPTIONS: { value: CostStatusFilter; label: string }[] = [
   { value: "filled", label: "Đã nhập giá vốn" },
 ];
 
+// Hai tab của trang: nhập từng SKU, hoặc mapping một lần cho mọi gian
+const PAGE_TABS = [
+  { key: "entry", label: "Nhập giá vốn" },
+  { key: "mapping", label: "Mapping giá vốn" },
+] as const;
+type PageTab = (typeof PAGE_TABS)[number]["key"];
+
 // Các tab lọc theo sàn
 const TABS: { key: SkuChannelFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
@@ -62,6 +70,7 @@ const TABS: { key: SkuChannelFilter; label: string }[] = [
 
 export default function CostPricesPage() {
   const router = useRouter();
+  const [pageTab, setPageTab] = useState<PageTab>("entry");
   const [channel, setChannel] = useState<SkuChannelFilter>("all");
   const [items, setItems] = useState<SkuProduct[]>([]);
   const [missingCount, setMissingCount] = useState(0);
@@ -239,166 +248,195 @@ export default function CostPricesPage() {
           lợi nhuận và cảnh báo đơn lỗ.
         </p>
 
-        {/* Tabs lọc theo sàn + nút Đồng bộ từ sàn */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            {TABS.map((t) => (
+        {/* ===== HAI TAB CỦA TRANG (khuôn tablist giống Trợ lý quảng cáo) ===== */}
+        <div role="tablist" className="flex flex-wrap gap-1 border-b">
+          {PAGE_TABS.map((t) => {
+            const active = pageTab === t.key;
+            return (
               <button
                 key={t.key}
-                type="button"
-                onClick={() => setChannel(t.key)}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setPageTab(t.key)}
                 className={cn(
-                  "rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
-                  channel === t.key
-                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                    : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                  "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
                 )}
               >
                 {t.label}
               </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              disabled={loading || filteredItems.length === 0}
-            >
-              <Download className="size-4" />
-              Xuất file Excel
-            </Button>
-
-            <ImportCostDialog onImported={load} />
-
-            {/* Giữ nút ở đây để đang duyệt tài chính mà thiếu SKU thì đồng
-                bộ tại chỗ. Dùng chung component với trang Sản phẩm. */}
-            <SyncChannelProductsButton onSynced={load} />
-          </div>
+            );
+          })}
         </div>
 
-        {/* Cảnh báo còn SKU chưa nhập giá vốn */}
-        {!loading && missingCount > 0 && (
-          <Card className="border-amber-300 bg-amber-50/70">
-            <CardContent className="flex items-center gap-3 p-4 text-sm">
-              <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-              <p className="text-amber-800">
-                Còn <b>{formatNumber(missingCount)}</b> SKU chưa nhập giá vốn — báo
-                cáo lợi nhuận của các đơn chứa SKU này sẽ chưa chính xác.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {pageTab === "mapping" && <CostMappingTab onApplied={load} />}
 
-        {/* ===== THANH BỘ LỌC NÂNG CAO ===== */}
-        {!loading && items.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Ô tìm kiếm real-time */}
-            <div className="relative min-w-64 flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9 pr-9"
-                placeholder="Tìm theo tên sản phẩm hoặc mã SKU…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              {search && (
+        {/* Tab nhập chỉ ẨN chứ không tháo ra — sang Mapping rồi quay lại thì nhóm
+            đang xổ, bộ lọc, ô đang gõ dở vẫn còn nguyên. */}
+        <div className={cn("space-y-6", pageTab !== "entry" && "hidden")}>
+          {/* Tabs lọc theo sàn + nút Đồng bộ từ sàn */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              {TABS.map((t) => (
                 <button
+                  key={t.key}
                   type="button"
-                  onClick={() => setSearch("")}
-                  aria-label="Xoá từ khoá"
-                  className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setChannel(t.key)}
+                  className={cn(
+                    "rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+                    channel === t.key
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
                 >
-                  <X className="size-4" />
+                  {t.label}
                 </button>
-              )}
+              ))}
             </div>
 
-            {/* Lọc theo trạng thái giá vốn */}
-            <NativeSelect
-              className="w-52"
-              aria-label="Lọc theo trạng thái giá vốn"
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as CostStatusFilter)
-              }
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </NativeSelect>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleExport}
+                disabled={loading || filteredItems.length === 0}
+              >
+                <Download className="size-4" />
+                Xuất file Excel
+              </Button>
 
-            {/* Số kết quả đang hiển thị */}
-            {isFiltering && (
-              <p className="text-sm text-muted-foreground">
-                Hiển thị <b>{formatNumber(filteredItems.length)}</b>/
-                {formatNumber(items.length)} SKU
-              </p>
-            )}
+              <ImportCostDialog onImported={load} />
+
+              {/* Giữ nút ở đây để đang duyệt tài chính mà thiếu SKU thì đồng
+                  bộ tại chỗ. Dùng chung component với trang Sản phẩm. */}
+              <SyncChannelProductsButton onSynced={load} />
+            </div>
           </div>
-        )}
 
-        <Card>
-          <CardContent className="p-0">
-            {/* Chỉ thay bảng bằng chữ "đang tải" ở LẦN ĐẦU. Mỗi lần lưu giá vốn
-                đều gọi load() lại; nếu tháo bảng ra thì component mất trạng thái
-                và mọi nhóm đang xổ sẽ tự thu lại — xổ nhóm, gõ giá, vừa rời ô là
-                nhóm sập xuống, không thao tác tiếp được. */}
-            {loading && items.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                Đang tải danh sách SKU…
-              </p>
-            ) : items.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
-                <PackageSearch className="mx-auto mb-2 size-8" />
-                Không có SKU nào ở kênh này. Hãy liên kết sản phẩm ở trang “Liên kết
-                SP” trước, hoặc bấm “Đồng bộ từ sàn”.
-              </div>
-            ) : filteredItems.length === 0 && statusFilter === "missing" ? (
-              // Empty state đặc biệt: đã nhập đủ giá vốn cho tất cả sản phẩm
-              <div className="py-16 text-center">
-                <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-teal-100">
-                  <CheckCircle2 className="size-9 text-teal-600" />
-                </div>
-                <p className="text-lg font-semibold text-teal-700">
-                  Tuyệt vời! Toàn bộ sản phẩm của bạn đã được cấu hình giá vốn.
+          {/* Cảnh báo còn SKU chưa nhập giá vốn */}
+          {!loading && missingCount > 0 && (
+            <Card className="border-amber-300 bg-amber-50/70">
+              <CardContent className="flex items-center gap-3 p-4 text-sm">
+                <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+                <p className="text-amber-800">
+                  Còn <b>{formatNumber(missingCount)}</b> SKU chưa nhập giá vốn — báo
+                  cáo lợi nhuận của các đơn chứa SKU này sẽ chưa chính xác.
                 </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Báo cáo lợi nhuận và cảnh báo đơn lỗ giờ đã chính xác.
-                </p>
-              </div>
-            ) : filteredItems.length === 0 ? (
-              // Không tìm thấy kết quả khớp bộ lọc
-              <div className="py-12 text-center">
-                <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
-                <p>Không tìm thấy SKU nào phù hợp</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Thử đổi từ khoá tìm kiếm hoặc chọn lại trạng thái giá vốn.
-                </p>
-              </div>
-            ) : (
-              <Refreshing active={loading}>
-                <CostPriceTable
-                  groups={groups}
-                  drafts={drafts}
-                  onDraftChange={(skuId, digits) =>
-                    setDrafts((d) => ({ ...d, [skuId]: digits }))
-                  }
-                  onVariantBlur={handleBlur}
-                  savingId={savingId}
-                  savedId={savedId}
-                  onBulkApplied={load}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ===== THANH BỘ LỌC NÂNG CAO ===== */}
+          {!loading && items.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Ô tìm kiếm real-time */}
+              <div className="relative min-w-64 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9 pr-9"
+                  placeholder="Tìm theo tên sản phẩm hoặc mã SKU…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
-              </Refreshing>
-            )}
-          </CardContent>
-        </Card>
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Xoá từ khoá"
+                    className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Hubsell Finance · Cấu hình Giá vốn — nhập xong bấm ra ngoài ô là tự động lưu
-        </p>
+              {/* Lọc theo trạng thái giá vốn */}
+              <NativeSelect
+                className="w-52"
+                aria-label="Lọc theo trạng thái giá vốn"
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as CostStatusFilter)
+                }
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </NativeSelect>
+
+              {/* Số kết quả đang hiển thị */}
+              {isFiltering && (
+                <p className="text-sm text-muted-foreground">
+                  Hiển thị <b>{formatNumber(filteredItems.length)}</b>/
+                  {formatNumber(items.length)} SKU
+                </p>
+              )}
+            </div>
+          )}
+
+          <Card>
+            <CardContent className="p-0">
+              {/* Chỉ thay bảng bằng chữ "đang tải" ở LẦN ĐẦU. Mỗi lần lưu giá vốn
+                  đều gọi load() lại; nếu tháo bảng ra thì component mất trạng thái
+                  và mọi nhóm đang xổ sẽ tự thu lại — xổ nhóm, gõ giá, vừa rời ô là
+                  nhóm sập xuống, không thao tác tiếp được. */}
+              {loading && items.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Đang tải danh sách SKU…
+                </p>
+              ) : items.length === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  <PackageSearch className="mx-auto mb-2 size-8" />
+                  Không có SKU nào ở kênh này. Hãy liên kết sản phẩm ở trang “Liên kết
+                  SP” trước, hoặc bấm “Đồng bộ từ sàn”.
+                </div>
+              ) : filteredItems.length === 0 && statusFilter === "missing" ? (
+                // Empty state đặc biệt: đã nhập đủ giá vốn cho tất cả sản phẩm
+                <div className="py-16 text-center">
+                  <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-teal-100">
+                    <CheckCircle2 className="size-9 text-teal-600" />
+                  </div>
+                  <p className="text-lg font-semibold text-teal-700">
+                    Tuyệt vời! Toàn bộ sản phẩm của bạn đã được cấu hình giá vốn.
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Báo cáo lợi nhuận và cảnh báo đơn lỗ giờ đã chính xác.
+                  </p>
+                </div>
+              ) : filteredItems.length === 0 ? (
+                // Không tìm thấy kết quả khớp bộ lọc
+                <div className="py-12 text-center">
+                  <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
+                  <p>Không tìm thấy SKU nào phù hợp</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Thử đổi từ khoá tìm kiếm hoặc chọn lại trạng thái giá vốn.
+                  </p>
+                </div>
+              ) : (
+                <Refreshing active={loading}>
+                  <CostPriceTable
+                    groups={groups}
+                    drafts={drafts}
+                    onDraftChange={(skuId, digits) =>
+                      setDrafts((d) => ({ ...d, [skuId]: digits }))
+                    }
+                    onVariantBlur={handleBlur}
+                    savingId={savingId}
+                    savedId={savedId}
+                    onBulkApplied={load}
+                  />
+                </Refreshing>
+              )}
+            </CardContent>
+          </Card>
+
+          <p className="text-center text-xs text-muted-foreground">
+            Hubsell Finance · Cấu hình Giá vốn — nhập xong bấm ra ngoài ô là tự động lưu
+          </p>
+        </div>
       </div>
     </AppShell>
   );

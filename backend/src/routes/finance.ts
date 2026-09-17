@@ -16,6 +16,8 @@ import {
 import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
+import { applyChannelCostPrice, applyCostPrice } from "../lib/cost-price";
+import costMappingRouter from "./cost-mapping";
 import {
   businessDayStart,
   dateKeyLabel,
@@ -60,6 +62,8 @@ router.use("/sku-pnl", requirePermission("finance.realized-pnl"));
 router.use("/sku-products", requirePermission("finance.cost-prices"));
 router.use("/sync-products", requirePermission("finance.cost-prices"));
 router.use("/cost-prices", requirePermission("finance.cost-prices"));
+// Tab "Mapping giá vốn": bảng giá tự nhập + xem trước/áp dụng (routes/cost-mapping.ts).
+router.use("/cost-prices", costMappingRouter);
 router.use("/update-cost", requirePermission("finance.cost-prices", "finance.realized-pnl"));
 router.use("/update-cost-bulk", requirePermission("finance.cost-prices", "finance.realized-pnl"));
 // Đối soát phí ship (trang /warehouse/shipping-alerts — nghiệp vụ kho vận).
@@ -2097,43 +2101,6 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
   }
 });
 
-/**
- * Đặt giá vốn cho các sản phẩm gốc, ĐỒNG THỜI vá lại các dòng hàng đã bán mà
- * lúc bán chưa biết giá vốn.
- *
- * OrderItem.costPriceAtSale là ảnh chụp giá vốn tại thời điểm bán — cố ý đóng
- * băng để giá nhập đổi về sau không làm sai lệch báo cáo cũ. Nhưng giá trị 0
- * KHÔNG phải một ảnh chụp hợp lệ, nó nghĩa là "lúc đó chưa ai nhập giá vốn".
- * Để nguyên thì mã đó mãi mãi bị đánh dấu "chưa nhập giá vốn" trong P&L dù chủ
- * shop vừa nhập xong, và lãi/lỗ của nó vẫn sai.
- *
- * Nên chỉ vá đúng những dòng đang là 0. Dòng đã có số thật thì tuyệt đối không
- * đụng vào — đó mới là lịch sử cần giữ.
- */
-async function applyCostPrice(
-  productIds: string[],
-  cost: number,
-  ownerId: string
-): Promise<{ products: number; backfilledOrderLines: number }> {
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.product.updateMany({
-      where: { id: { in: productIds }, userId: ownerId },
-      data: { costPrice: cost },
-    });
-
-    const backfilled = await tx.orderItem.updateMany({
-      where: {
-        productId: { in: productIds },
-        costPriceAtSale: 0,
-        order: { channel: { userId: ownerId } },
-      },
-      data: { costPriceAtSale: cost },
-    });
-
-    return { products: updated.count, backfilledOrderLines: backfilled.count };
-  });
-}
-
 // PATCH /api/finance/update-cost — cập nhật giá vốn cho một SKU.
 // Body: { sku_id, cost_price } — sku_id là id ChannelProduct hoặc id Product.
 // Hoặc:  { sku_code, cost_price } — dùng cho popup nhập nhanh ở bảng SKU P&L,
@@ -2247,60 +2214,6 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
-
-/**
- * Đặt giá vốn cho các SKU SÀN CHƯA LIÊN KẾT KHO, đồng thời vá lại dòng hàng đã
- * bán của đúng (gian, mã SKU) đó mà lúc bán chưa có giá vốn (snapshot = 0).
- *
- * Song song với applyCostPrice của sản phẩm gốc: cùng nguyên tắc "0 không phải
- * ảnh chụp hợp lệ" — chỉ vá dòng đang 0, dòng có số thật là lịch sử, không đụng.
- */
-async function applyChannelCostPrice(
-  channelProductIds: string[],
-  cost: number,
-  ownerId: string
-): Promise<{
-  updated: number;
-  backfilledOrderLines: number;
-  sample: { productName: string } | null;
-}> {
-  const cps = await prisma.channelProduct.findMany({
-    where: {
-      id: { in: channelProductIds },
-      productId: null,
-      channel: { userId: ownerId },
-    },
-    select: { id: true, channelId: true, channelSku: true, productName: true },
-  });
-  if (cps.length === 0) return { updated: 0, backfilledOrderLines: 0, sample: null };
-
-  return prisma.$transaction(async (tx) => {
-    await tx.channelProduct.updateMany({
-      where: { id: { in: cps.map((c) => c.id) } },
-      data: { costPrice: cost },
-    });
-
-    let backfilled = 0;
-    for (const cp of cps) {
-      const r = await tx.orderItem.updateMany({
-        where: {
-          channelSku: cp.channelSku,
-          costPriceAtSale: 0,
-          productId: null, // dòng đã nối kho thì giá vốn theo sản phẩm gốc
-          order: { channelId: cp.channelId },
-        },
-        data: { costPriceAtSale: cost },
-      });
-      backfilled += r.count;
-    }
-
-    return {
-      updated: cps.length,
-      backfilledOrderLines: backfilled,
-      sample: { productName: cps[0].productName },
-    };
-  });
-}
 
 /**
  * Đổi danh sách sku_id (id ChannelProduct HOẶC id Product) thành danh sách

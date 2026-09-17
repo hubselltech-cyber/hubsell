@@ -6,13 +6,16 @@
 //
 // Nguyên tắc bất di bất dịch (giữ từ luồng cũ):
 //   - TUYỆT ĐỐI không đụng `productId` (liên kết do người dùng cấu hình).
-//   - TUYỆT ĐỐI không đụng giá vốn (costPrice thuộc Product, do chủ shop nhập).
+//   - TUYỆT ĐỐI không GHI ĐÈ giá vốn chủ shop đã nhập. Ngoại lệ duy nhất: SKU
+//     VỪA TẠO MỚI, còn trống giá, được tự điền theo bảng giá tự nhập / SKU trùng
+//     mã ở gian khác của chính chủ shop (lib/cost-mapping.ts, 17/09).
 //   - SKU không còn thấy trên sàn → đánh DELISTED (giữ lịch sử, không xoá).
 // ============================================================
 
 import type { Channel } from "@prisma/client";
 import { ChannelProductStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { autoFillCostForNewSkus } from "../lib/cost-mapping";
 import { getProductAdapter } from "./registry";
 
 export interface ProductSyncResult {
@@ -20,6 +23,7 @@ export interface ProductSyncResult {
   created: number; // số ChannelProduct tạo mới
   updated: number; // số ChannelProduct cập nhật
   delisted: number; // số SKU cũ không còn → đánh DELISTED
+  costAutoFilled: number; // số SKU mới được tự điền giá vốn theo mã
 }
 
 /**
@@ -33,6 +37,7 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
 
   let created = 0;
   let updated = 0;
+  const createdIds: string[] = [];
 
   for (const p of products) {
     const data = {
@@ -65,9 +70,11 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
       await prisma.channelProduct.update({ where: { id: existing.id }, data });
       updated++;
     } else {
-      await prisma.channelProduct.create({
+      const row = await prisma.channelProduct.create({
         data: { channelId: channel.id, channelSku: p.channelSku, ...data },
+        select: { id: true },
       });
+      createdIds.push(row.id);
       created++;
     }
   }
@@ -83,10 +90,19 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
     data: { status: ChannelProductStatus.DELISTED },
   });
 
+  // Tự điền giá vốn là tiện ích — hỏng thì danh mục vẫn phải đồng bộ xong.
+  let costAutoFilled = 0;
+  try {
+    costAutoFilled = await autoFillCostForNewSkus(channel.userId, createdIds);
+  } catch (err) {
+    console.error(`[product-sync] tự điền giá vốn lỗi (gian ${channel.id}):`, err);
+  }
+
   return {
     scanned: products.length,
     created,
     updated,
     delisted: delistedResult.count,
+    costAutoFilled,
   };
 }

@@ -2122,6 +2122,159 @@ export function updateCostPriceBySku(skuCode: string, costPrice: number) {
   });
 }
 
+// ----- Mapping giá vốn (tab thứ hai của trang Cấu hình Giá vốn) -----
+
+/** Một dòng của bảng giá tự nhập — `code` là mã SKU đầy đủ hoặc mã mẫu (tiền tố). */
+export interface CostPriceRule {
+  id: string;
+  code: string;
+  costPrice: string;
+  label: string | null;
+  /** Số SKU trên mọi gian mà mã này đang nhận — 0 thường là gõ sai mã. */
+  matchedSkus: number;
+}
+
+export interface CostMappingTarget {
+  skuId: string;
+  channelId: string;
+  channelName: ChannelName;
+  shopName: string;
+  sku: string;
+  productName: string;
+  variantName: string | null;
+  imageUrl: string | null;
+  productId: string | null;
+  currentCost: number;
+}
+
+/**
+ * MỘT MÃ SKU gộp trên mọi gian.
+ * suggest = các gian đã có giá thống nhất một giá, còn gian trống · conflict =
+ * các gian đang lệch giá · missing = chưa gian nào có giá · complete = đủ & khớp.
+ */
+export interface CostSkuGroup {
+  code: string;
+  productName: string;
+  variantName: string | null;
+  imageUrl: string | null;
+  entries: CostMappingTarget[];
+  status: "suggest" | "conflict" | "missing" | "complete";
+  suggestedCost: number | null;
+}
+
+export interface CostSkuGroupList {
+  totals: {
+    codes: number;
+    suggest: number;
+    conflict: number;
+    missing: number;
+    complete: number;
+    /** Tổng số ô trống sẽ được điền nếu bấm "Điền tất cả". */
+    suggestEmptySlots: number;
+  };
+  groups: CostSkuGroup[];
+}
+
+export interface CostMappingRow extends CostMappingTarget {
+  newCost: number;
+  matchedCode: string;
+  matchKind: "exact" | "prefix";
+  /** fill = sẽ điền ô trống · conflict = đang có giá khác · ambiguous = một SP kho khớp ra nhiều giá */
+  status: "fill" | "conflict" | "ambiguous";
+}
+
+export interface CostMappingPreview {
+  counts: {
+    matched: number;
+    fill: number;
+    same: number;
+    conflict: number;
+    ambiguous: number;
+    unmatched: number;
+  };
+  rows: CostMappingRow[];
+  /** Không khớp mã nào VÀ đang thiếu giá vốn. */
+  unmatched: CostMappingTarget[];
+}
+
+export function fetchCostPriceRules() {
+  return apiFetch<{ totalSkus: number; coveredSkus: number; rules: CostPriceRule[] }>(
+    "/api/finance/cost-prices/rules"
+  );
+}
+
+export function saveCostPriceRule(code: string, costPrice: number, label?: string | null) {
+  return apiFetch<Omit<CostPriceRule, "matchedSkus">>("/api/finance/cost-prices/rules", {
+    method: "PUT",
+    body: JSON.stringify({ code, costPrice, label: label ?? "" }),
+  });
+}
+
+export function deleteCostPriceRule(id: string) {
+  return apiFetch<{ deleted: number }>(`/api/finance/cost-prices/rules/${id}`, {
+    method: "DELETE",
+  });
+}
+
+/** Nhập bảng giá tự nhập từ Excel (cột: Mã, Giá vốn, Ghi chú). */
+export async function importCostPriceRulesExcel(
+  file: File
+): Promise<{ saved: number; totalRows: number; errors: { row: number; message: string }[] }> {
+  const token = getToken();
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${API_URL}/api/finance/cost-prices/rules/import`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json();
+}
+
+export function previewCostRules() {
+  return apiFetch<CostMappingPreview>("/api/finance/cost-prices/rules/preview", {
+    method: "POST",
+  });
+}
+
+export function applyCostRules(overwriteSkuIds: string[]) {
+  return apiFetch<{ filled: number; overwritten: number; backfilledOrderLines: number }>(
+    "/api/finance/cost-prices/rules/apply",
+    { method: "POST", body: JSON.stringify({ overwriteSkuIds }) }
+  );
+}
+
+export function fetchCostSkuGroups() {
+  return apiFetch<CostSkuGroupList>("/api/finance/cost-prices/mapping/skus");
+}
+
+/** Nút "Điền tất cả": mọi mã đã có giá ở một gian → điền ô trống ở gian khác. */
+export function fillSuggestedCosts(codes?: string[]) {
+  return apiFetch<{ codes: number; filledSkus: number; backfilledOrderLines: number }>(
+    "/api/finance/cost-prices/mapping/fill-suggested",
+    { method: "POST", body: JSON.stringify({ codes }) }
+  );
+}
+
+/** Nút "Áp dụng cho tất cả gian": đặt MỘT giá cho (các) mã trên mọi gian. */
+export function setCostForSkuCodes(codes: string[], costPrice: number) {
+  return apiFetch<{ updatedSkus: number; shops: number; backfilledOrderLines: number }>(
+    "/api/finance/cost-prices/mapping/set-cost",
+    { method: "POST", body: JSON.stringify({ codes, costPrice }) }
+  );
+}
+
 export function fetchFinanceAnalytics(range?: DateRange, channel?: ChannelFilterQuery) {
   return apiFetch<FinanceAnalytics>(
     withRange("/api/finance/analytics", range, channel)
