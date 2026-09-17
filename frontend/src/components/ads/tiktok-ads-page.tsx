@@ -6,8 +6,11 @@
 // Khác Shopee/Lazada ở gốc: thứ được nối là TÀI KHOẢN QUẢNG CÁO (có thể do
 // người chạy thuê giữ, chạy cho nhiều shop của nhiều seller) — backend tự dò và
 // chỉ nối gian TikTok của chính chủ shop. Trang này:
-//   · bảng "gian → tài khoản quảng cáo": mỗi gian một dòng, nút Kết nối đứng
-//     ngay sau tên gian (3 gian có thể là 3 tài khoản quảng cáo khác nhau)
+//   · tab "Kết nối": bảng "gian → tài khoản quảng cáo", mỗi gian một dòng, nút
+//     Kết nối đứng ngay sau tên gian (3 gian có thể là 3 tài khoản quảng cáo
+//     khác nhau). Tách tab riêng (anh Trung 17/09): kết nối là việc MỘT LẦN, bày
+//     chung thì khách nhiều gian bị rối cả trang. Chưa nối gian nào → mở thẳng
+//     tab này; đã nối → mở Tổng quan, gian chưa nối chỉ còn con số vàng trên tab.
 //   · đã nối    → thẻ số + biểu đồ + bảng campaign (ROI thực so ROI mục tiêu),
 //                 bấm một campaign để soi video tiêu tiền không ra đơn.
 // Chưa có ROAS hòa vốn: lợi nhuận đơn TikTok đã trừ phí GMV Max trong quyết
@@ -31,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   fetchTiktokAdsDashboard,
@@ -163,6 +167,8 @@ export function TiktokAdsPage() {
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<TiktokAdsCampaignRow | null>(null);
+  // null = chưa tự chọn tab → mặc định theo tình trạng kết nối (xem `tab` bên dưới).
+  const [tabPick, setTabPick] = useState<"overview" | "connect" | null>(null);
 
   useEffect(() => setAllowed(can(getStoredUser(), "ads.tiktok")), []);
 
@@ -179,7 +185,7 @@ export function TiktokAdsPage() {
   // Gian đang chọn chưa nối mà có gian khác đã nối → nhảy sang gian có số.
   useEffect(() => {
     if (!data || linked) return;
-    const firstOk = data.channels.find((c) => c.ads?.status === "ACTIVE");
+    const firstOk = data.channels.find((c) => c.ads?.status === "ACTIVE") ?? data.channels.find((c) => c.ads != null);
     if (firstOk && firstOk.id !== selectedId) setChannelId(firstOk.id);
   }, [data, linked, selectedId]);
 
@@ -235,6 +241,12 @@ export function TiktokAdsPage() {
     );
   }
 
+  // Gian đã có kết nối quảng cáo (kể cả đang hỏng — vẫn còn số cũ để xem).
+  const adsChannels = (data?.channels ?? []).filter((c) => c.ads != null);
+  // Gian còn phải làm gì đó ở tab Kết nối: chưa nối hoặc kết nối hỏng.
+  const pendingCount = (data?.channels ?? []).filter((c) => c.ads?.status !== "ACTIVE").length;
+  const tab = tabPick ?? (adsChannels.length > 0 ? "overview" : "connect");
+
   const summary = data?.summary ?? null;
   const campaigns = data?.campaigns ?? [];
   const noChannel = !!data && data.channels.length === 0;
@@ -254,8 +266,21 @@ export function TiktokAdsPage() {
               Số thật từ TikTok: chiến dịch nào đang dưới mục tiêu, video nào tiêu tiền mà không ra đơn.
             </p>
           </div>
-          {linked && (
+          {tab === "overview" && linked && (
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              {/* Chỉ liệt kê gian ĐÃ nối quảng cáo — gian chưa nối nằm ở tab Kết nối. */}
+              <NativeSelect
+                value={selectedId}
+                onChange={(e) => setChannelId(e.target.value)}
+                aria-label="Chọn gian hàng TikTok"
+                className="w-52"
+              >
+                {adsChannels.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.shopName}
+                  </option>
+                ))}
+              </NativeSelect>
               <div className="flex overflow-hidden rounded-lg border">
                 {DAY_PRESETS.map((p) => (
                   <button
@@ -309,10 +334,47 @@ export function TiktokAdsPage() {
           </Card>
         )}
 
+        {data?.configured && !noChannel && (
+          <div role="tablist" className="flex flex-wrap gap-1 border-b">
+            {(
+              [
+                { key: "overview", label: "Tổng quan chiến dịch", chip: 0 },
+                { key: "connect", label: "Kết nối tài khoản quảng cáo", chip: pendingCount },
+              ] as const
+            ).map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTabPick(t.key)}
+                  className={cn(
+                    "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                    active
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                  )}
+                >
+                  {t.label}
+                  {t.chip > 0 && (
+                    <span
+                      className="rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-semibold text-white tabular-nums"
+                      title="Số gian chưa kết nối quảng cáo hoặc cần kết nối lại"
+                    >
+                      {formatNumber(t.chip)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* ===== GIAN HÀNG → TÀI KHOẢN QUẢNG CÁO (anh Trung 17/09): mỗi gian có thể
             chạy ads bằng một tài khoản TikTok khác nhau → mỗi gian MỘT DÒNG, tên
             gian đứng ngay trước nút để khách biết mình đang nối cho gian nào. ===== */}
-        {data?.configured && !noChannel && (
+        {data?.configured && !noChannel && tab === "connect" && (
           <Card>
             <CardHeader>
               <CardTitle>Tài khoản quảng cáo của từng gian</CardTitle>
@@ -326,11 +388,10 @@ export function TiktokAdsPage() {
                 {data.channels.map((c) => {
                   const ok = c.ads?.status === "ACTIVE";
                   const broken = c.ads != null && !ok;
-                  const viewing = ok && c.id === selectedId;
                   return (
                     <li
                       key={c.id}
-                      className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", viewing && "bg-slate-50")}
+                      className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
                     >
                       <span className="w-full truncate text-sm font-semibold text-slate-900 sm:w-56" title={c.shopName}>
                         {c.shopName}
@@ -342,13 +403,16 @@ export function TiktokAdsPage() {
                             <span className="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />
                             <span className="truncate">{c.ads?.advertiserName || "Đã kết nối"}</span>
                           </span>
-                          {viewing ? (
-                            <Badge className="bg-slate-100 text-slate-500">Đang xem</Badge>
-                          ) : (
-                            <Button size="sm" variant="outline" onClick={() => setChannelId(c.id)}>
-                              Xem số
-                            </Button>
-                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setChannelId(c.id);
+                              setTabPick("overview");
+                            }}
+                          >
+                            Xem số
+                          </Button>
                         </>
                       ) : (
                         <>
@@ -378,8 +442,37 @@ export function TiktokAdsPage() {
           </Card>
         )}
 
-        {linked && (
+        {data?.configured && !noChannel && tab === "overview" && !linked && (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+              <div className="flex size-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                <Megaphone className="size-6" />
+              </div>
+              <p className="text-base font-semibold text-slate-900">Chưa có gian nào kết nối quảng cáo</p>
+              <p className={cn(TEXT_SUB, "max-w-md")}>Kết nối tài khoản quảng cáo TikTok của gian để xem số GMV Max tại đây.</p>
+              <Button onClick={() => setTabPick("connect")}>
+                <Link2 className="size-4" />
+                Kết nối tài khoản quảng cáo
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {tab === "overview" && linked && (
           <>
+            {linkBroken && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+                <span>
+                  {data?.link?.status === "NO_ACCESS" && data.link.lastSyncError
+                    ? data.link.lastSyncError
+                    : "Kết nối quảng cáo của gian đã hết hiệu lực (tài khoản TikTok đã hủy ủy quyền)."}{" "}
+                  Số bên dưới dừng ở lần cập nhật cuối.
+                </span>
+                <Button size="sm" variant="outline" onClick={() => setTabPick("connect")}>
+                  Kết nối lại
+                </Button>
+              </div>
+            )}
             {waiting && campaigns.length === 0 && (
               <p className="text-sm text-muted-foreground">Đang kéo số 30 ngày từ TikTok, bảng sẽ tự hiện sau ít giây…</p>
             )}
