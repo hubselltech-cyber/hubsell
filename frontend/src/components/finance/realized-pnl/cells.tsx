@@ -118,7 +118,9 @@ export const BLOCK = {
  * cuối trang mới thấy. Dùng chung 3 bảng Shopee/TikTok/Lazada.
  */
 export const PNL_TABLE_SCROLLER =
-  "overflow-auto max-h-[calc(100dvh-9rem)] overscroll-contain";
+  // KHÔNG overscroll-contain (17/09): nó chặn cuộn lan ra trang — con trỏ trên bảng mà bảng hết chỗ
+  // cuộn thì lăn chuột đứng im (anh Trung: "không mượt"; đã bỏ ở DataTable 6b49f1b, nay bỏ nốt ở đây).
+  "overflow-auto max-h-[calc(100dvh-9rem)]";
 /** thead bám đỉnh hộp cuộn; ô tiêu đề đã có nền bg-slate-50 nên che được dữ liệu bên dưới. */
 export const PNL_STICKY_HEAD = "sticky top-0 z-20";
 
