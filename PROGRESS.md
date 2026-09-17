@@ -5,6 +5,16 @@
 
 ---
 
+## Phiên 17/09/2026 tối — CỔNG THANH TOÁN payOS BẬT PRODUCTION (giao dịch thật đầu tiên)
+
+- Có tài khoản MB doanh nghiệp **55995995995**; anh liên kết payOS, tạo kênh Hubsell, đặt 8 env Render (5 `PAYOS_*` + 3 `PLAN_PAYMENT_BANK_*`), dán webhook. Thứ tự bắt buộc: env TRƯỚC rồi mới dán webhook (chưa có khóa `/api/webhooks/payos` trả 503).
+- Giao dịch thật đầu tiên: shop nhà mua Starter tháng 99.000₫ (đơn 1789625317834836) → tiền về → gói gán 17/9–17/10/2026, payOS ghi 1 đơn (gói giao dịch 1/500), nội dung CK đủ `HS STARTER 17834836`.
+- payOS cấp **tài khoản định danh** (VQRQAMB…) cho QR chứ không hiện 55995995995 → landing `/payment` in STK + giải thích số định danh, khuyên khách đối chiếu TÊN chủ tài khoản (landing 02065aa).
+- **c0e116d:** anh so hộp thoại QR tự vẽ với trang của payOS và chốt dùng trang payOS → `goToCheckout` chuyển cùng tab sang `checkoutUrl`; payOS trả về `?checkout=` thì `GatewayCheckoutDialog` hiện Thành công/Đã hủy; dải vàng "Tiếp tục thanh toán"; nhả cờ `redirecting` khi bfcache. Hộp thoại QR (đã dựng lại một lớp + xanh thương hiệu) giữ làm dự phòng. Nội dung CK tay đổi "email" → "số điện thoại" (app ngân hàng không gõ được @).
+- 🔜 Còn: 1 đơn thật kiểm luồng redirect trên prod; HQ gán Business cho shop nhà (đang Starter 300 đơn, tháng này 1.372 đơn → khóa tính năng nâng cao); kiểm HQ Kế toán có dòng thu; in STK vào hợp đồng SaaS.
+
+---
+
 ## Phiên 17/09/2026 — App Hubsell Ads LIVE + Trợ lý quảng cáo Shopee đợt A, D (chốt tạm, phần còn lại gác)
 
 ### App Hubsell Ads (Ads Service, Live Partner 2044679) chạy thật
