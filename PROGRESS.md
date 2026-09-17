@@ -5,7 +5,7 @@
 
 ---
 
-## Phiên 17/09/2026 khuya — Tab "MAPPING GIÁ VỐN": nhập giá một lần cho mọi gian, mọi sàn
+## Phiên 17/09/2026 khuya — Tab "MAPPING GIÁ VỐN": nhập giá một lần cho mọi gian, mọi sàn (✅ ANH CHỐT XONG PHẦN NÀY)
 
 - **Vì sao:** tab Nhập giá vốn tách theo từng gian → 1 mẫu 10 phân loại × 10 shop × 3 sàn là cả trăm ô phải gõ. Anh Trung chốt nhiệm vụ của tab mới: (1) **tự phát hiện** SKU đã có giá ở một gian → đề xuất mapping sang gian còn lại; (2) seller **tìm SKU, nhập một lần**, có nút áp cho mọi gian. Bản đầu em làm kiểu "chọn gian nguồn → áp cả gian" đã bị bác — đừng quay lại hướng đó.
 - **a5fdeed:** trang Cấu hình Giá vốn thêm tablist *Nhập giá vốn / Mapping giá vốn* (tab nhập chỉ ẨN, không tháo, để giữ ô đang gõ). Tab Mapping: **mỗi MÃ SKU một dòng gộp mọi gian** (mã chuẩn hoá trim + NFC + IN HOA — NFC vì các sàn trả dấu tiếng Việt khác dạng; CHỈ khớp theo mã, không bao giờ theo tên). 4 trạng thái: *đề xuất điền* / *lệch giá giữa các gian* (không đoán — bấm chip giá của gian đúng) / *chưa có giá* / *đã đủ*. Dải xanh "Hubsell phát hiện N mã…" + MỘT nút **Điền tất cả** (chỉ điền ô trống). Mỗi dòng: ô giá + **Áp dụng N gian**; dòng mẫu cha: **Giá vốn chung + Áp dụng cả mẫu**. Ghi đè giá khác phải qua popover liệt kê nơi bị đè. Máy chủ luôn tính lại, không tin số client.
@@ -15,7 +15,8 @@
 - **Gợi ý tại chỗ (anh chốt làm luôn):** lưu giá ở tab *Nhập giá vốn* (từng ô hoặc "Giá vốn chung") mà mã đó còn ở gian khác chưa có giá → toast kèm nút **Áp dụng N ô trống** ngay tại chỗ (`update-cost`/`update-cost-bulk` trả thêm `siblings`, nút gọi `fill-suggested { codes }`); gian khác đang mang giá KHÁC thì toast dẫn sang tab Mapping. Khách không cần biết có tab Mapping vẫn được nhắc.
 - **Lệch giá: ghi đè hoặc giữ nguyên, chọn xong KHÔNG nhắc lại:** dòng lệch giá có thêm "Giữ giá riêng từng gian, không nhắc nữa" → bảng mới `cost_conflict_dismissals` (migration `20260917233000`); mã đã giữ nguyên thôi tính là lệch giá (đủ giá = Đã đủ, còn gian trống = Chưa có giá), thôi gợi ý tại chỗ; có nút "Nhắc lại"; đặt một giá chung cho mã đó là tự xoá quyết định cũ. 8 test.
 - Anh chốt: khách đặt mã SKU không kỷ luật thì khách tự đi mà kỷ luật — Hubsell KHÔNG làm khớp theo tên / khớp mờ.
-- 🔜 Còn: anh xem prod — dải xanh báo bao nhiêu mã = tỷ lệ trùng mã THẬT giữa Shopee/TikTok/Lazada (local chỉ có 2 gian Lazada khác thương hiệu nên chưa đo được; mã sàn tự sinh kiểu `1407J225` không khớp được, ghép lâu dài khác mã = trang Liên kết SP); thử phím Enter trong ô giá; bố cục chip khi shop ≥5 gian.
+- **d61d10f — thẳng cột ô nhập (anh soi prod thấy lộn xộn):** ô "Giá vốn chung" (dòng cha) và "Nhập giá vốn" (dòng con) giờ thẳng một cột — thứ đứng sau ô nhập (nút Áp dụng / dấu tick) chiếm khe rộng CỐ ĐỊNH (`ACTION_SLOT`), tiêu đề cột canh theo mép ô nhập. Ô cha cùng họ vàng nhưng đậm hơn một bậc, CHỈ khi mẫu còn phân loại thiếu giá (vàng = còn thiếu giá vốn), đủ giá thì trung tính. Tab Mapping sửa cùng bệnh (nút dài ngắn khác nhau → khe 8.5rem). Quy tắc cho bảng sau này: ô nhập nhiều tầng phải chung mép, phần đuôi để trong khe cố định.
+- ✅ Đóng phần này 17/09 (a5fdeed → dc5d040 → 1bed861 → d61d10f, tree sạch, data test local đã dọn). Chỉ còn việc QUAN SÁT khi có dịp, không phải việc treo: dải xanh trên prod báo bao nhiêu mã (= tỷ lệ trùng mã thật giữa Shopee/TikTok/Lazada), phím Enter trong ô giá, bố cục chip khi shop ≥5 gian. Bảng giá theo mã mẫu nếu ít khách dùng thì cân nhắc gỡ.
 
 ---
 
