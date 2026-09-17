@@ -5,6 +5,28 @@
 
 ---
 
+## Phiên 17/09/2026 — App Hubsell Ads LIVE + Trợ lý quảng cáo Shopee đợt A, D (chốt tạm, phần còn lại gác)
+
+### App Hubsell Ads (Ads Service, Live Partner 2044679) chạy thật
+- Shopee duyệt Go-Live. Env Render lần đầu dán NHẦM partner app chính (2040029) — bắt được qua `id` trong state trang đăng nhập Shopee trước khi ủy quyền; sửa đúng `HUBSELL_ADS_PARTNER_ID/KEY` Live, không đặt `HUBSELL_ADS_ENV`. Bẫy Render: thêm biến trùng tên báo "Duplicate key" → sửa tại chỗ dòng cũ.
+- ANO nối 09:55, xung ads chạy sau 50 giây bằng key Live (ví 54.510 → 33.382₫, số 16–17/09 về). **DarkMan chưa nối.**
+- Giao diện ủy quyền (72ad21b): bỏ thẻ to → MỘT nút cạnh "Làm mới" (cam Kết nối / vàng Kết nối lại / xám "✓ Hubsell Ads · Gỡ"); "Cập nhật lúc" dời xuống mép phải hàng tab; thẻ Trung tâm điều hành + chuông `ads-app-not-linked` / `ads-app-expired` cho gian ĐANG chạy ads mà chưa nối (`detectHubsellAdsLinkGaps`).
+- Callback nới (cbf4be7): đăng nhập tài khoản gian Shopee KHÁC của cùng chủ shop thì nối luôn gian đó; chỉ chặn khi shop_id không thuộc gian nào của chủ shop.
+- Anh chốt định hướng: khách phải dùng TRỌN Hubsell, Ads chỉ gắn trên gian đã nối app chính — không làm luồng Ads-only.
+
+### Khảo sát đủ 26 endpoint Ads API + lộ trình 4 đợt → `docs/ADS-SHOPEE-KHAI-THAC-API.md`
+- **Đợt A (809fbef) — mục tiêu ROAS trên sàn thấp hơn hòa vốn:** `assessRoasTarget` thuần; cột "Mục tiêu" đỏ/vàng, dải vàng đếm campaign, khối cảnh báo + nút "Nâng lên X" trong modal (`POST campaigns/:id/roas-target` → `change_roas_target`, sổ mode manual), cột "Đang đặt" ở tab hòa vốn SP. 0 call sàn mới.
+- **Đợt D (2b36391 → 09bf776 → e32a57c) — tab "Gợi ý chạy ads" (chỉ Shopee):** bộ chấm thuần 3 tầng `ads-recommend.ts` (cổng loại → điểm → đề xuất 3 mức mục tiêu + ngân sách chặn trần), hộp thoại căn cứ + MỘT nút "Tạo chiến dịch"; bảng mới `ads_item_signals` + `AdsCampaign.createdByHubsellAt/hubsellProposal` (migration 20260917140000); đồng bộ tín hiệu thật của sàn (`ads-item-signals.ts`: nền 1 lần/ngày trong worker, nút "Lấy số của sàn", tự lấy riêng SP khi mở hộp thoại); route đọc thử.
+- **Probe thật trên ANO chỉnh 4 chỗ khác tài liệu:** `views` không phải trọn đời (→ tỉ lệ chuyển đổi = số bán 30 ngày Hubsell ÷ views); `ongoing_ad_type_list` thật là `no_ongoing_promotion`; ngân sách tối thiểu sàn 100.000₫/ngày; `max_budget` 9999999999 = không giới hạn. ANO 65/67 SP đang bán thiếu giá vốn → cả bảng "Chưa nên" → thêm dải nhắc + nút sang Cấu hình Giá vốn.
+- DataTable thêm `stickyHeader` (bảng cuộn trong hộp, tiêu đề bám dính, thanh ngang luôn thấy) cho 3 bảng ads; bỏ `overscroll-contain` ở DataTable (6b49f1b) và Lãi/Lỗ thực hiện (7a5ff1a) vì lăn chuột đứng im khi bảng hết chỗ cuộn — anh thử tay xác nhận mượt hơn.
+
+### 🔜 Gác lại (anh chốt: khách yêu cầu thì làm) — đủ 14 mục ở `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 7
+1. Hai lệnh ghi chưa bắn sống: `create_manual_product_ads` (cần 1 SP ANO có giá vốn), `change_roas_target`.
+2. Từ khóa gợi ý của sàn trả rỗng (thử `input_keyword`); đợt B (hạ ngân sách trước khi tắt + cờ ví tự nạp); đợt C (bảng từ khóa); GMS/GMV Max cấp shop.
+3. DarkMan nối Hubsell Ads; nhập giá vốn ANO để bảng gợi ý có nội dung.
+
+---
+
 ## Phiên 16/09/2026 tối — Vận đơn TikTok có danh sách SP + nộp lại xét duyệt app TikTok + đăng ký TikTok Marketing API
 
 ### Vận đơn TikTok (d0be52f)

@@ -100,9 +100,10 @@ export const SHOPEE_PATHS = {
   adsCampaignHourlyPerf: "/api/v2/ads/get_product_campaign_hourly_performance",
   /** Số dư ví quảng cáo real-time. */
   adsTotalBalance: "/api/v2/ads/get_total_balance",
-  /** GĐ3 — endpoint GHI DUY NHẤT: sửa Manual Product Ads (edit_action pause...).
-   *  ⚠ enum edit_action CHƯA xác minh từ docs — chỉ gọi ở mode live sau khi
-   *  probe trên shop thật xác nhận; mọi lệnh đều ghi sổ AdsActionLog. */
+  /** GĐ3 — sửa Manual Product Ads. Enum edit_action đã đọc docs 14/09 (start|pause|resume|stop|
+   *  delete|change_budget|change_duration|change_smart_creative|change_location|
+   *  change_enhanced_cpc|change_roas_target). Đã bắn SỐNG: pause, resume (14/09). Chưa bắn sống:
+   *  change_roas_target (đợt A, nút "Nâng lên"). Mọi lệnh đều ghi sổ AdsActionLog. */
   adsEditManualProductAds: "/api/v2/ads/edit_manual_product_ads",
   /** ĐỢT D — tạo campaign 1 SP (đấu thầu tự động theo ROAS mục tiêu). CHƯA probe sống. */
   adsCreateManualProductAds: "/api/v2/ads/create_manual_product_ads",

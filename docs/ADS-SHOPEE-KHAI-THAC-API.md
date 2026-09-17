@@ -7,8 +7,9 @@ code đang chạy production. Góc nhìn: thiết kế như senior + tính toán
 chạy ads chuyên nghiệp — chỉ đề xuất việc đổi ra tiền cho seller, có số call
 cụ thể.
 
-Trạng thái: **BẢN THAM MƯU** — anh Trung duyệt từng đợt rồi mới code (bài học
-14/09: đụng luật Trợ lý phải tính rõ một lần trước).
+Trạng thái (chốt cuối phiên 17/09/2026): **ĐỢT A + ĐỢT D ĐÃ LÊN PRODUCTION**; đợt B, C và các
+việc treo của D **GÁC LẠI** theo chốt của anh Trung ("khách yêu cầu thì làm thêm sau") — danh sách đầy
+đủ ở **mục 7**. Bản gốc tham mưu giữ nguyên bên dưới làm căn cứ.
 
 ---
 
@@ -277,3 +278,52 @@ rồi mới chốt ngưỡng cổng và trọng số.
 - **Thực tế ANO:** 65/67 SP đang bán thiếu giá vốn → cả bảng "Chưa nên" với lý do "Nhập giá vốn" (đúng: hòa vốn 1,6–1,8x
   là ảo). Thêm dải vàng "N sản phẩm đang bán chưa có giá vốn" + nút sang /finance/cost-prices. Thiếu giá vốn xét theo
   chính dòng hàng của SP (>20% lượng bán), không theo cờ cấp đơn.
+
+---
+
+## 7. VIỆC GÁC LẠI — làm khi khách yêu cầu (chốt 17/09/2026)
+
+Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên khi mở lại.
+
+### Từ đợt D (Gợi ý chạy ads) — đã live, còn treo
+1. **Lệnh tạo chiến dịch chưa bắn sống.** `createCampaignFromRecommendation` →
+   `create_manual_product_ads` viết theo docs. Bước đầu: nhập giá vốn cho 1 SP ANO bán chạy để qua cổng →
+   bấm "Tạo chiến dịch" với ngân sách tối thiểu 100k → soi Sổ hành động + Seller Center → dừng campaign test.
+2. **Từ khóa gợi ý trả rỗng** cho mọi SP ANO (gọi không kèm `input_keyword`) → yếu tố Cầu + Giá click đang
+   chấm trung tính. Bước đầu: probe lại với `input_keyword` = 2–3 chữ đầu tên SP; có số thì nối vào
+   `syncAdsItemProposal`.
+3. **Rút gọn giao diện cho seller nhỏ** (đã trình, anh chốt "như hiện tại ok"): bảng 4 cột, ẩn mặc định 5 cột
+   số, "Chưa nên" gom sau ô đếm, hộp thoại gấp Điều kiện/Chấm điểm sau "Xem căn cứ". Làm khi khách kêu rối.
+4. **Chấm lại gợi ý đúng/sai:** `AdsCampaign.createdByHubsellAt + hubsellProposal` đã ghi sẵn lúc tạo —
+   chưa có màn hình so "đề xuất lúc tạo" với "kết quả 14 ngày sau".
+5. **DarkMan chưa nối Hubsell Ads** (việc của anh, 1 phút trên trang Trợ lý quảng cáo).
+
+### Từ đợt A (Mục tiêu ROAS đang lỗ) — đã live, còn treo
+6. **`change_roas_target` chưa bắn sống.** Nút "Nâng lên X" gọi lệnh thật; lần bấm đầu trên campaign đấu
+   thầu tự động của ANO/DarkMan là lần xác minh (lỗi sàn ghi nguyên văn vào Sổ hành động).
+7. **Máy tự nâng mục tiêu** (executor) chưa làm — chỉ làm sau khi việc 6 xác minh OK và anh chốt luật.
+
+### Đợt B — chưa code
+8. **Hạ ngân sách trước, tắt sau** (`change_budget`, nấc `cut_budget` trong executor; campaign không giới hạn
+   ngân sách mà lỗ thì đặt trần trước). Cần probe `change_budget` + mở rộng cờ Hubsell ghi ngân sách gốc
+   (campaign tạo từ Hubsell đã có số gốc trong `hubsellProposal`).
+9. **Cờ ví tự nạp** (`get_shop_toggle_info`, +1 call/xung): ví cạn mà không tự nạp → báo đỏ; đã bật tự nạp →
+   hạ mức. Cắt cảnh báo ví cạn giả.
+
+### Đợt C — chưa code
+10. **Bảng từ khóa đã chọn trong modal campaign thủ công** (`setting_info` info_type 2, 0 call thêm) — chỉ
+    đọc, ghi rõ Shopee không cấp hiệu suất từng từ khóa.
+11. **Sửa từ khóa/giá thầu** (`edit_manual_product_ad_keywords`) — chỉ làm khi có seller thật dùng bảng đọc.
+
+### Khác
+12. **GMS = GMV Max cấp shop:** chi tiêu GMS hiện KHÔNG vào bảng chiến dịch (chỉ nằm trong tổng chi cấp shop).
+    Bước đầu: probe `check_create_gms_product_campaign_eligibility` trên 3 shop nhà. Đây cũng là nơi duy nhất
+    tính được hòa vốn theo đúng rổ ads (có `get_gms_item_performance` từng SP).
+13. **Trần gọi API theo app:** ticket Shopee 2098790879624904785 chờ vòng 2; khi qua ~800 gian chạy ads phải
+    có số thật để nâng `ADS_APP_QPS` (hiện 3 call/s).
+14. **Thẻ nhắc trong tour kết nối Shopee** ("có chạy quảng cáo thì sang Trợ lý bấm Kết nối Hubsell Ads") — anh
+    chốt không cần ("có hiện là được rồi").
+
+Công cụ sẵn có khi mở lại: route đọc thử `GET /api/ads/shopee/recommendations/probe?channelId=&itemId=`,
+`POST /api/ads/shopee/write-probe`, seed demo `npx tsx scripts/seed-ads-demo.ts [--many] [--clean]` (6 kịch bản
+gợi ý + ca mục tiêu dưới hòa vốn), cách soi UI local ghi trong memory `hubsell-local-test-chrome`.

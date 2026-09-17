@@ -45,6 +45,12 @@ export function isAdBlockedStatus(list: string[] | undefined): boolean {
   return (list ?? []).some((s) => /block|ban|sold|delete|unlist|violat/i.test(s));
 }
 
+/** Probe ANO 17/09: sàn trả max_budget = 9999999999 nghĩa là "không giới hạn" → coi như không có trần. */
+function finiteBudget(raw: unknown): number | null {
+  const v = Number(raw) || 0;
+  return v > 0 && v < 1_000_000_000 ? v : null;
+}
+
 /** Gộp từ khóa gợi ý thành 2 số: tổng lượt tìm và giá thầu trung bình CÓ TRỌNG SỐ lượt tìm. */
 export function summarizeKeywords(
   list: Array<{ search_volume?: number; suggested_bid?: number }>
@@ -120,8 +126,7 @@ export async function syncAdsItemProposal(
       Object.assign(data, {
         budgetMin: Number(b.response?.budget?.min_budget) || null,
         budgetRecommended: Number(b.response?.budget?.recommended_budget) || null,
-        // Probe ANO 17/09: sàn trả max_budget = 9999999999 nghĩa là "không giới hạn" → bỏ.
-        budgetMax: ((v) => (v > 0 && v < 1_000_000_000 ? v : null))(Number(b.response?.budget?.max_budget) || 0),
+        budgetMax: finiteBudget(b.response?.budget?.max_budget),
       });
     } catch (err) {
       if (isApiBudgetError(err)) throw err;

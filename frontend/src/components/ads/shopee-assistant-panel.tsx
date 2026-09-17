@@ -190,8 +190,8 @@ export function ShopeeAssistantModal({
           </DialogTitle>
           <DialogDescription>
             Đánh giá của Trợ lý dựa trên hiệu suất thật + ROAS hòa vốn của chính
-            SKU trong chiến dịch. Trợ lý không tự thao tác — anh/chị quyết trên
-            Seller Center rồi ghi nhận lại tại đây.
+            SKU trong chiến dịch. Mọi lệnh Hubsell gửi lên sàn đều ghi vào Sổ hành
+            động; việc khác anh/chị làm trên Seller Center rồi ghi nhận lại tại đây.
           </DialogDescription>
         </DialogHeader>
 

@@ -82,8 +82,9 @@ import { cn } from "@/lib/utils";
  * (backend /api/ads/{shopee|lazada} trả payload y hệt — bảng AdsCampaign trung
  * lập sàn). Tên file/component giữ "Shopee" vì Shopee đặt nền và để không xáo
  * import đang chạy production; PLATFORM_META gom mọi khác biệt nhãn/quyền.
- * Khác biệt chức năng duy nhất: ví ads + Tự thực thi GĐ3 + Sổ hành động mới có
- * ở Shopee (Lazada chờ GĐ3 riêng — đừng hiện switch không có gì chạy phía sau).
+ * Khác biệt chức năng giữa hai sàn (17/09/2026): Shopee có SỐ DƯ ví ads, Lazada chỉ có
+ * cờ hết tiền; chỉ Shopee có nút Kết nối Hubsell Ads, tab "Gợi ý chạy ads" (đợt D) và nút
+ * "Nâng mục tiêu ROAS" (đợt A). Tự thực thi + Sổ hành động dùng chung hai sàn.
  *
  * Khác Seller Center một điểm ăn tiền: mỗi chiến dịch có thêm ROAS HÒA VỐN
  * tính từ P&L thật của chính SKU trong chiến dịch (giá vốn + phí sàn đã đối

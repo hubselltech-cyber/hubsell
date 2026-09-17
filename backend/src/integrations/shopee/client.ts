@@ -1718,10 +1718,10 @@ export interface ShopeeAdsTotalBalanceData extends ShopeeEnvelope {
 }
 
 /**
- * GĐ3 — LỆNH GHI DUY NHẤT của Trợ lý: sửa Manual Product Ads.
+ * GĐ3 — sửa Manual Product Ads (pause / resume / change_roas_target…).
  * Trả NGUYÊN VĂN envelope (KHÔNG ensureOk) — caller tự đọc error/message để
- * ghi sổ AdsActionLog và học enum edit_action (docs không công bố, đang xác
- * minh bằng probe). reference_id chống double-fire phía sàn.
+ * ghi sổ AdsActionLog kèm lỗi sàn nguyên văn. reference_id chống double-fire
+ * phía sàn (sàn từ chối reference trùng → mỗi lệnh một mã).
  */
 export async function editManualProductAdsRaw(
   params: {
