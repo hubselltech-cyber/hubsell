@@ -2049,6 +2049,9 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
 
     let created = 0;
     let updated = 0;
+    // SKU mới được tự điền giá vốn theo mã (lib/cost-mapping.ts) — báo ra để chủ
+    // shop biết, không tự điền im lặng.
+    let costAutoFilled = 0;
     const perChannel: {
       channelId: string;
       channelName: ChannelName;
@@ -2072,6 +2075,7 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
         const r = await syncChannelProducts(channel);
         created += r.created;
         updated += r.updated;
+        costAutoFilled += r.costAutoFilled;
         perChannel.push({
           channelId: channel.id,
           channelName: channel.channelName,
@@ -2095,7 +2099,7 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
       }
     }
 
-    res.json({ created, updated, perChannel });
+    res.json({ created, updated, costAutoFilled, perChannel });
   } catch (err) {
     next(err);
   }

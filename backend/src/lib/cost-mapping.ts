@@ -309,13 +309,11 @@ export async function listSkuGroups(ownerId: string) {
  * NÚT "ĐIỀN TẤT CẢ": mọi mã đang ở trạng thái suggest → điền ô trống bằng giá
  * các gian khác đã thống nhất. Không bao giờ chạm ô đã có giá.
  */
-export async function fillSuggested(ownerId: string, onlyCodes?: string[]) {
-  const only = onlyCodes ? new Set(onlyCodes.map(normalizeSkuCode)) : null;
+export async function fillSuggested(ownerId: string) {
   const rows: { skuId: string; productId: string | null; newCost: number }[] = [];
   let codes = 0;
   for (const g of groupSkusByCode(await loadTargets(ownerId))) {
     if (g.status !== "suggest" || g.suggestedCost === null) continue;
-    if (only && !only.has(g.code)) continue;
     codes++;
     for (const e of g.entries) {
       if (e.currentCost <= 0) {
@@ -358,16 +356,13 @@ export async function buildRulesPlan(ownerId: string): Promise<MappingPlan> {
   return planMapping(await loadTargets(ownerId), buildRuleMatcher(rules));
 }
 
-export async function applyRules(
-  ownerId: string,
-  overwrite: { all: boolean; skuIds: string[] }
-) {
+export async function applyRules(ownerId: string, overwriteSkuIds: string[]) {
   const plan = await buildRulesPlan(ownerId);
-  const allowed = new Set(overwrite.skuIds);
+  const allowed = new Set(overwriteSkuIds);
   const chosen = plan.rows.filter(
     (r) =>
       r.status === "fill" ||
-      (r.status === "conflict" && (overwrite.all || allowed.has(r.skuId)))
+      (r.status === "conflict" && allowed.has(r.skuId))
   );
   const result = await writeRows(ownerId, chosen);
   return {

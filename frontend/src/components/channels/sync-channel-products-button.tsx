@@ -52,7 +52,10 @@ export function SyncChannelProductsButton({
         );
       }
       toast.success(
-        `Đồng bộ xong: thêm mới ${formatNumber(res.created)} sản phẩm sàn, cập nhật ${formatNumber(res.updated)}.`,
+        `Đồng bộ xong: thêm mới ${formatNumber(res.created)} sản phẩm sàn, cập nhật ${formatNumber(res.updated)}.` +
+          (res.costAutoFilled
+            ? ` Tự điền giá vốn cho ${formatNumber(res.costAutoFilled)} SKU mới trùng mã.`
+            : ""),
         { duration: 6000 }
       );
     } catch (err) {

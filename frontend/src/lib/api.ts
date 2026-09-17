@@ -2032,6 +2032,8 @@ export function syncProductsFromChannels(channelId?: string) {
   return apiFetch<{
     created: number;
     updated: number;
+    /** Số SKU mới được tự điền giá vốn vì trùng mã với bảng giá / gian khác. */
+    costAutoFilled?: number;
     perChannel: {
       channelId: string;
       channelName: ChannelName;
@@ -2260,10 +2262,10 @@ export function fetchCostSkuGroups() {
 }
 
 /** Nút "Điền tất cả": mọi mã đã có giá ở một gian → điền ô trống ở gian khác. */
-export function fillSuggestedCosts(codes?: string[]) {
+export function fillSuggestedCosts() {
   return apiFetch<{ codes: number; filledSkus: number; backfilledOrderLines: number }>(
     "/api/finance/cost-prices/mapping/fill-suggested",
-    { method: "POST", body: JSON.stringify({ codes }) }
+    { method: "POST" }
   );
 }
 

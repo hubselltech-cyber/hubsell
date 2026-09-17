@@ -3,14 +3,14 @@
 // dưới tiền tố /api/finance/cost-prices (quyền finance.cost-prices đã siết ở đó).
 //
 //   GET    /mapping/skus            mỗi MÃ SKU một dòng, gộp mọi gian + trạng thái đề xuất
-//   POST   /mapping/fill-suggested  nút "Điền tất cả"      { codes? }
+//   POST   /mapping/fill-suggested  nút "Điền tất cả"
 //   POST   /mapping/set-cost        nút "Áp dụng mọi gian" { codes[], costPrice }
 //   GET    /rules                   bảng giá tự nhập + độ phủ
 //   PUT    /rules                   thêm / sửa MỘT mã      { code, costPrice, label? }
 //   DELETE /rules/:id
 //   POST   /rules/import            nhập bảng giá từ Excel (cột: Mã | Giá vốn | Ghi chú)
 //   POST   /rules/preview
-//   POST   /rules/apply             { overwriteAll?, overwriteSkuIds? }
+//   POST   /rules/apply             { overwriteSkuIds? }
 //
 // Logic khớp mã + ghi giá nằm ở lib/cost-mapping.ts.
 // ============================================================
@@ -220,12 +220,7 @@ router.post("/rules/preview", async (req: AuthRequest, res, next) => {
 
 router.post("/rules/apply", async (req: AuthRequest, res, next) => {
   try {
-    res.json(
-      await applyRules(req.ownerId!, {
-        all: req.body?.overwriteAll === true,
-        skuIds: readIdList(req.body?.overwriteSkuIds) ?? [],
-      })
-    );
+    res.json(await applyRules(req.ownerId!, readIdList(req.body?.overwriteSkuIds) ?? []));
   } catch (err) {
     if (!sendMappingError(err, res)) next(err);
   }
@@ -243,7 +238,7 @@ router.get("/mapping/skus", async (req: AuthRequest, res, next) => {
 
 router.post("/mapping/fill-suggested", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await fillSuggested(req.ownerId!, readIdList(req.body?.codes)));
+    res.json(await fillSuggested(req.ownerId!));
   } catch (err) {
     next(err);
   }
