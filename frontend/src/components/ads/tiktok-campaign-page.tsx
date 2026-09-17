@@ -42,7 +42,6 @@ import { AppShell } from "@/components/shell/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -74,21 +73,29 @@ type QuickFilter = "all" | "noOrder" | "belowTarget" | "learning" | "excluded";
 const rowKey = (v: TiktokAdsVideoRow) => `${v.spuId}-${v.videoId}`;
 // SẮP XẾP NGAY TẠI TIÊU ĐỀ CỘT (anh Trung 17/09, thay ô chọn ở lề phải): bấm một
 // cột = cao → thấp, bấm lần nữa = thấp → cao. Bằng nhau thì video tốn tiền hơn lên trước.
-type SortKey = "cost" | "orders" | "gmv" | "ctr" | "cvr" | "roi";
+type SortKey = "cost" | "orders" | "cpa" | "gmv" | "roi" | "ctr" | "cvr";
 type SortDir = "desc" | "asc";
 
-const SORT_COLUMNS: { key: SortKey; label: string }[] = [
+// Thứ tự cột (anh Trung 17/09): tiền và đơn trước — Chi phí · Đơn · Chi phí/đơn (CPA, đứng sát
+// hai con số sinh ra nó) · Doanh thu · ROI; hai cột TỶ LỆ % dồn về cuối bên phải.
+const SORT_COLUMNS: { key: SortKey; label: string; hint?: string }[] = [
   { key: "cost", label: "Chi phí" },
   { key: "orders", label: "Đơn" },
+  { key: "cpa", label: "Chi phí / đơn", hint: "CPA = chi phí quảng cáo ÷ số đơn. Video chưa ra đơn thì chưa tính được." },
   { key: "gmv", label: "Doanh thu" },
+  { key: "roi", label: "ROI" },
   { key: "ctr", label: "Tỷ lệ bấm" },
   { key: "cvr", label: "Chuyển đổi" },
-  { key: "roi", label: "ROI" },
 ];
 
-const SORT_VALUE: Record<SortKey, (v: TiktokAdsVideoRow) => number> = {
+/** Chi phí mỗi đơn; null = chưa ra đơn nên chưa tính được. */
+const videoCpa = (v: TiktokAdsVideoRow): number | null => (v.orders > 0 ? v.cost / v.orders : null);
+
+/** null = không có giá trị (CPA của video chưa ra đơn) → LUÔN xếp cuối, dù đang cao→thấp hay thấp→cao. */
+const SORT_VALUE: Record<SortKey, (v: TiktokAdsVideoRow) => number | null> = {
   cost: (v) => v.cost,
   orders: (v) => v.orders,
+  cpa: videoCpa,
   gmv: (v) => v.gmv,
   ctr: (v) => v.ctr,
   cvr: (v) => v.cvr,
@@ -120,7 +127,6 @@ export function TiktokCampaignPage() {
   const fromKey = toDateKey(range.from);
   const toKey = toDateKey(range.to);
   const [quick, setQuick] = useState<QuickFilter>("all");
-  const [minCost, setMinCost] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "cost", dir: "desc" });
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
@@ -171,10 +177,8 @@ export function TiktokCampaignPage() {
   };
 
   const rows = useMemo(() => {
-    const min = Number(minCost) || 0;
     const list = (quick === "excluded" ? excludedRows : spending).filter((v) => {
       if (quick === "excluded") return true;
-      if (v.cost < min) return false;
       if (quick === "noOrder") return v.noOrder;
       if (quick === "belowTarget") return target != null && v.orders > 0 && v.roi != null && v.roi < target;
       if (quick === "learning") return v.deliveryStatus === "LEARNING";
@@ -182,8 +186,13 @@ export function TiktokCampaignPage() {
     });
     const val = SORT_VALUE[sort.key];
     const sign = sort.dir === "desc" ? -1 : 1;
-    return [...list].sort((a, b) => sign * (val(a) - val(b)) || b.cost - a.cost);
-  }, [spending, excludedRows, quick, minCost, sort, target]);
+    return [...list].sort((a, b) => {
+      const x = val(a);
+      const y = val(b);
+      if (x == null || y == null) return x == null && y == null ? b.cost - a.cost : x == null ? 1 : -1;
+      return sign * (x - y) || b.cost - a.cost;
+    });
+  }, [spending, excludedRows, quick, sort, target]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -391,21 +400,6 @@ export function TiktokCampaignPage() {
                     </span>
                   </button>
                 ))}
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <label className="flex items-center gap-2 text-sm text-slate-500">
-                  Chi phí từ
-                  <CurrencyInput
-                    value={minCost}
-                    onValueChange={(v) => {
-                      setMinCost(v);
-                      setPage(0);
-                    }}
-                    placeholder="0"
-                    className="h-8 w-28"
-                    aria-label="Chỉ hiện video có chi phí từ"
-                  />
-                </label>
-              </div>
             </div>
 
             {pickedRows.length > 0 && (
@@ -449,7 +443,7 @@ export function TiktokCampaignPage() {
 
             {pageRows.length > 0 && (
               <div className={cn("min-w-0 rounded-lg border", PNL_TABLE_SCROLLER)}>
-                <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+                <table className="w-full min-w-[980px] border-separate border-spacing-0 text-sm">
                   <thead className={PNL_STICKY_HEAD}>
                     <tr className={cn(TEXT_TABLE_HEAD, "text-left")}>
                       {canAct && (
@@ -481,7 +475,9 @@ export function TiktokCampaignPage() {
                                 setPage(0);
                               }}
                               title={
-                                active
+                                col.hint && !active
+                                  ? col.hint
+                                  : active
                                   ? sort.dir === "desc"
                                     ? "Đang xếp cao → thấp. Bấm để xếp thấp → cao"
                                     : "Đang xếp thấp → cao. Bấm để xếp cao → thấp"
@@ -594,13 +590,20 @@ export function TiktokCampaignPage() {
                             {formatNumber(v.orders)}
                           </td>
                           <td className="px-3 py-2 text-right">
+                            {videoCpa(v) == null ? (
+                              <span className="text-slate-400">—</span>
+                            ) : (
+                              <Money value={videoCpa(v) as number} className="text-slate-900" />
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">
                             <Money value={v.gmv} className="text-slate-900" />
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtPct(v.ctr)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtPct(v.cvr)}</td>
                           <td className={cn("px-3 py-2 text-right", TEXT_NUMBER_STRONG, bad ? "text-red-500" : "text-slate-900")}>
                             {fmtRoi(v.roi)}
                           </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtPct(v.ctr)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtPct(v.cvr)}</td>
                         </tr>
                       );
                     })}
