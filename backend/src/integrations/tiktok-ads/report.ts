@@ -158,6 +158,8 @@ export interface GmvMaxVideoRow {
 
 /** Trạng thái video còn được sàn phân phối / đang học — chỉ nhóm này mới đáng soi. */
 export const GMV_MAX_LIVE_VIDEO_STATUSES = ["DELIVERING", "LEARNING", "IN_QUEUE"];
+/** Video đã bị loại thủ công khỏi campaign — đưa lại được bất cứ lúc nào. */
+export const GMV_MAX_EXCLUDED_STATUS = "EXCLUDED";
 
 /**
  * Video của các SPU trong MỘT campaign, cộng dồn khoảng ngày. Một campaign thật

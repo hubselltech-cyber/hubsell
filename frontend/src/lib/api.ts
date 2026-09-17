@@ -2601,6 +2601,19 @@ export interface TiktokAdsVideoRow {
   cvr: number;
   roi: number | null;
   noOrder: boolean;
+  /** Đã bị loại khỏi chiến dịch (khôi phục được). */
+  excluded: boolean;
+  /** Lệnh vừa gửi, TikTok chưa áp dụng xong (~20 phút). */
+  pending: "REMOVE" | "ADD" | null;
+}
+
+export interface TiktokAdsVideoActionLog {
+  id: string;
+  action: "exclude_video" | "restore_video";
+  status: "SUCCESS" | "FAILED";
+  error: string | null;
+  videoIds: string[];
+  createdAt: string;
 }
 
 export interface TiktokAdsCampaignVideos {
@@ -2621,9 +2634,11 @@ export interface TiktokAdsCampaignVideos {
   days: number;
   products: { spuId: string; name: string; cost: number; orders: number; gmv: number }[];
   videos: TiktokAdsVideoRow[];
+  actions: TiktokAdsVideoActionLog[];
   totals: {
     videoCount: number;
     spendingCount: number;
+    excludedCount: number;
     videoSpend: number;
     noOrderCount: number;
     noOrderSpend: number;
@@ -2634,6 +2649,18 @@ export interface TiktokAdsCampaignVideos {
 export function fetchTiktokAdsCampaignVideos(campaignRowId: string, days: number) {
   return apiFetch<TiktokAdsCampaignVideos>(
     `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?days=${days}`
+  );
+}
+
+/** LOẠI (REMOVE) / KHÔI PHỤC (ADD) video khỏi chiến dịch — lệnh ghi lên TikTok, chỉ chủ shop. */
+export function sendTiktokAdsVideoAction(
+  campaignRowId: string,
+  action: "REMOVE" | "ADD",
+  items: { videoId: string; spuId: string; cost: number; orders: number }[]
+) {
+  return apiFetch<{ ok: true; count: number; message: string }>(
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/action`,
+    { method: "POST", body: JSON.stringify({ action, items }) }
   );
 }
 

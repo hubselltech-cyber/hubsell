@@ -170,3 +170,40 @@ export async function getGmvMaxReport(
   });
   return { list: data.list ?? [], page_info: data.page_info };
 }
+
+// ---------- GHI: loại / khôi phục video trong campaign GMV Max ----------
+
+export type GmvMaxCreativeAction = "REMOVE" | "ADD";
+
+/** Docs: tối đa 400 video mỗi lượt gọi (tổng 10.000 video loại / campaign). */
+export const GMV_MAX_CREATIVE_BATCH = 400;
+
+/**
+ * Loại (REMOVE) hoặc đưa lại (ADD) video trong một campaign GMV Max. Điều kiện
+ * của sàn: campaign đang BẬT; Product GMV Max phải để chế độ sàn tự chọn video
+ * (product_video_specific_type = AUTO_SELECTION — Hubsell không đọc được cờ này
+ * vì chưa xin nhóm quyền Campaign, sai thì sàn trả lỗi). Sàn KHÔNG trả kết quả
+ * từng video; trạng thái mới (EXCLUDED) chỉ thấy trong report sau ~20 phút.
+ */
+export async function updateGmvMaxCreatives(
+  accessToken: string,
+  input: {
+    advertiserId: string;
+    campaignId: string;
+    action: GmvMaxCreativeAction;
+    items: { itemId: string; spuIds: string[] }[];
+  }
+): Promise<void> {
+  const path = "/campaign/gmv_max/creative/update/";
+  const res = await fetch(`${TIKTOK_ADS_API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Access-Token": accessToken, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      advertiser_id: input.advertiserId,
+      campaign_id: input.campaignId,
+      action: input.action,
+      item_list: input.items.map((x) => ({ item_id: x.itemId, spu_id_list: x.spuIds })),
+    }),
+  });
+  await unwrap<Record<string, never>>(path, res);
+}

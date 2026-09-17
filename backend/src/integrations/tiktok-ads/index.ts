@@ -8,11 +8,14 @@ export {
   type TiktokAdsConfig,
 } from "./config";
 export {
+  GMV_MAX_CREATIVE_BATCH,
   TiktokAdsApiError,
   exchangeTiktokAdsAuthCode,
   getGmvMaxReport,
   getGmvMaxStores,
   getTiktokAdsAdvertisers,
+  updateGmvMaxCreatives,
+  type GmvMaxCreativeAction,
   type GmvMaxReportPage,
   type GmvMaxReportQuery,
   type GmvMaxReportRow,

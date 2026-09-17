@@ -12,12 +12,20 @@
 // bìa + kênh + caption lấy từ oEmbed công khai của TikTok, CHỈ cho ~20 video
 // của trang đang xem — ảnh là phần phụ, thiếu thì dòng vẫn hiện mã + link.
 // Lọc/sắp xếp/phân trang chạy phía trình duyệt trên tập đã tải (vài chục dòng).
+//
+// LOẠI VIDEO (thủ công, chỉ chủ shop): tick chọn → Loại khỏi chiến dịch → xác
+// nhận. TikTok áp dụng sau ~20 phút và không trả kết quả từng video, nên dòng
+// vừa thao tác mang nhãn "Đang chờ TikTok áp dụng" (đọc từ sổ hành động) và
+// không tick lại được. Video đã loại nằm ở chip "Đã loại", khôi phục bằng đúng
+// cách đó. Chiến dịch đang tắt thì sàn không cho thao tác → ẩn ô tick.
 // ============================================================
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ExternalLink, ImageOff } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
@@ -25,16 +33,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
+  ApiError,
   fetchTiktokAdsCampaignVideos,
   fetchTiktokVideoMeta,
   getStoredUser,
+  sendTiktokAdsVideoAction,
   type TiktokAdsVideoRow,
 } from "@/lib/api";
 import { formatNumber, formatVND } from "@/lib/format";
-import { can } from "@/lib/permissions";
+import { can, isAdmin } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
 import { TEXT_NUMBER_STRONG, TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
@@ -53,7 +64,9 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   IN_QUEUE: { label: "Chờ thử", className: "bg-slate-100 text-slate-500" },
 };
 
-type QuickFilter = "all" | "noOrder" | "belowTarget" | "learning";
+type QuickFilter = "all" | "noOrder" | "belowTarget" | "learning" | "excluded";
+
+const rowKey = (v: TiktokAdsVideoRow) => `${v.spuId}-${v.videoId}`;
 type SortKey = "cost" | "orders" | "roi" | "ctr" | "cvr";
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -82,8 +95,17 @@ export function TiktokCampaignPage() {
   const [minCost, setMinCost] = useState("");
   const [sort, setSort] = useState<SortKey>("cost");
   const [page, setPage] = useState(0);
+  const queryClient = useQueryClient();
+  const [owner, setOwner] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => setAllowed(can(getStoredUser(), "ads.tiktok")), []);
+  useEffect(() => {
+    const u = getStoredUser();
+    setAllowed(can(u, "ads.tiktok"));
+    setOwner(isAdmin(u));
+  }, []);
 
   const q = useApiQuery({
     queryKey: qk.tiktokAdsVideos(campaignRowId, days),
@@ -96,18 +118,22 @@ export function TiktokCampaignPage() {
   const target = c?.roasTarget ?? null;
 
   // Chỉ video CÓ tiêu tiền mới đáng soi; phần còn lại sàn chưa phân phối đồng nào.
-  const spending = useMemo(() => (data?.videos ?? []).filter((v) => v.cost > 0), [data?.videos]);
+  const spending = useMemo(() => (data?.videos ?? []).filter((v) => v.cost > 0 && !v.excluded), [data?.videos]);
+  // Video đã loại: hiện TẤT CẢ (kể cả không còn chi phí trong khoảng ngày) để còn khôi phục được.
+  const excludedRows = useMemo(() => (data?.videos ?? []).filter((v) => v.excluded), [data?.videos]);
   const isBelowTarget = (v: TiktokAdsVideoRow) => target != null && v.orders > 0 && v.roi != null && v.roi < target;
   const counts = {
     all: spending.length,
     noOrder: spending.filter((v) => v.noOrder).length,
     belowTarget: spending.filter(isBelowTarget).length,
     learning: spending.filter((v) => v.deliveryStatus === "LEARNING").length,
+    excluded: excludedRows.length,
   };
 
   const rows = useMemo(() => {
     const min = Number(minCost) || 0;
-    const list = spending.filter((v) => {
+    const list = (quick === "excluded" ? excludedRows : spending).filter((v) => {
+      if (quick === "excluded") return true;
       if (v.cost < min) return false;
       if (quick === "noOrder") return v.noOrder;
       if (quick === "belowTarget") return target != null && v.orders > 0 && v.roi != null && v.roi < target;
@@ -122,7 +148,7 @@ export function TiktokCampaignPage() {
       cvr: (a, b) => a.cvr - b.cvr || b.cost - a.cost,
     };
     return [...list].sort(by[sort]);
-  }, [spending, quick, minCost, sort, target]);
+  }, [spending, excludedRows, quick, minCost, sort, target]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -136,6 +162,58 @@ export function TiktokCampaignPage() {
     staleTime: 60 * 60_000,
   });
   const meta = metaQ.data?.items ?? {};
+
+  // Sàn chỉ cho loại/khôi phục khi chiến dịch đang bật; nhân viên chỉ xem.
+  const canAct = owner && c?.status === "ongoing";
+  const restoring = quick === "excluded";
+  const pickable = (v: TiktokAdsVideoRow) => canAct && v.pending == null;
+  const pickedRows = rows.filter((v) => picked.has(rowKey(v)) && pickable(v));
+  const pagePickable = pageRows.filter(pickable);
+  const allPagePicked = pagePickable.length > 0 && pagePickable.every((v) => picked.has(rowKey(v)));
+
+  function togglePick(v: TiktokAdsVideoRow) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowKey(v))) next.delete(rowKey(v));
+      else next.add(rowKey(v));
+      return next;
+    });
+  }
+  function togglePage() {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const v of pagePickable) {
+        if (allPagePicked) next.delete(rowKey(v));
+        else next.add(rowKey(v));
+      }
+      return next;
+    });
+  }
+  function changeQuick(k: QuickFilter) {
+    setQuick(k);
+    setPage(0);
+    setPicked(new Set()); // Loại và Khôi phục là hai lệnh khác nhau — không mang lựa chọn qua chip khác.
+  }
+
+  async function runAction() {
+    if (pickedRows.length === 0) return;
+    setSending(true);
+    try {
+      const r = await sendTiktokAdsVideoAction(
+        campaignRowId,
+        restoring ? "ADD" : "REMOVE",
+        pickedRows.map((v) => ({ videoId: v.videoId, spuId: v.spuId, cost: v.cost, orders: v.orders }))
+      );
+      toast.success(r.message);
+      setPicked(new Set());
+      setConfirmOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh lên TikTok");
+    } finally {
+      setSending(false);
+    }
+  }
 
   if (allowed === false || q.denied) {
     return (
@@ -155,6 +233,7 @@ export function TiktokCampaignPage() {
     { key: "noOrder", label: "Chưa ra đơn", count: counts.noOrder },
     { key: "belowTarget", label: "Có đơn, ROI dưới mục tiêu", count: counts.belowTarget, hidden: target == null },
     { key: "learning", label: "Đang học", count: counts.learning },
+    { key: "excluded", label: "Đã loại", count: counts.excluded, hidden: counts.excluded === 0 },
   ];
 
   return (
@@ -259,10 +338,7 @@ export function TiktokCampaignPage() {
                 .map((x) => (
                   <button
                     key={x.key}
-                    onClick={() => {
-                      setQuick(x.key);
-                      setPage(0);
-                    }}
+                    onClick={() => changeQuick(x.key)}
                     className={cn(
                       "rounded-full border px-3 py-1 text-sm font-medium transition-colors",
                       quick === x.key
@@ -308,6 +384,36 @@ export function TiktokCampaignPage() {
               </div>
             </div>
 
+            {pickedRows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-sm text-slate-900">
+                  Đã chọn <span className="font-semibold tabular-nums">{formatNumber(pickedRows.length)}</span> video
+                  {!restoring && (
+                    <span className="text-slate-500">
+                      {" "}
+                      · đã tiêu {formatVND(pickedRows.reduce((s, v) => s + v.cost, 0))} trong {days === 1 ? "hôm nay" : `${days} ngày`}
+                    </span>
+                  )}
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+                    Bỏ chọn
+                  </Button>
+                  {restoring ? (
+                    <Button size="sm" onClick={() => setConfirmOpen(true)}>
+                      <RotateCcw className="size-4" />
+                      Khôi phục vào chiến dịch
+                    </Button>
+                  ) : (
+                    <Button size="sm" className="bg-red-600 text-white hover:bg-red-700" onClick={() => setConfirmOpen(true)}>
+                      <Trash2 className="size-4" />
+                      Loại khỏi chiến dịch
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {!data && !q.error && campaignRowId && (
               <p className="py-12 text-center text-sm text-muted-foreground">Đang đọc số từ TikTok…</p>
             )}
@@ -322,6 +428,17 @@ export function TiktokCampaignPage() {
                 <table className="w-full min-w-[860px] text-sm">
                   <thead className="bg-slate-50">
                     <tr className={cn(TEXT_TABLE_HEAD, "text-left")}>
+                      {canAct && (
+                        <th className="w-10 px-3 py-2">
+                          <input
+                            type="checkbox"
+                            className="size-4 cursor-pointer accent-slate-900"
+                            checked={allPagePicked}
+                            onChange={togglePage}
+                            aria-label="Chọn tất cả video của trang này"
+                          />
+                        </th>
+                      )}
                       <th className="px-3 py-2 font-medium">Video</th>
                       <th className="px-3 py-2 font-medium">Trạng thái</th>
                       <th className="px-3 py-2 text-right font-medium">Chi phí</th>
@@ -339,7 +456,19 @@ export function TiktokCampaignPage() {
                       const bad = v.noOrder || isBelowTarget(v);
                       const href = `https://www.tiktok.com/@${m?.author ?? ""}/video/${v.videoId}`;
                       return (
-                        <tr key={`${v.spuId}-${v.videoId}`} className={cn("border-t", v.noOrder && "bg-rose-50/60")}>
+                        <tr key={rowKey(v)} className={cn("border-t", v.noOrder && !v.excluded && "bg-rose-50/60")}>
+                          {canAct && (
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                className="size-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                                checked={picked.has(rowKey(v))}
+                                disabled={!pickable(v)}
+                                onChange={() => togglePick(v)}
+                                aria-label={`Chọn video ${v.videoId}`}
+                              />
+                            </td>
+                          )}
                           <td className="px-3 py-2">
                             <a href={href} target="_blank" rel="noreferrer" className="group flex items-center gap-3" title="Mở video trên TikTok">
                               <span className="flex h-16 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 text-slate-400">
@@ -367,7 +496,18 @@ export function TiktokCampaignPage() {
                             </a>
                           </td>
                           <td className="px-3 py-2">
-                            <Badge className={st?.className ?? "bg-slate-100 text-slate-500"}>{st?.label ?? v.deliveryStatus}</Badge>
+                            {v.pending ? (
+                              <Badge
+                                className="bg-amber-100 text-amber-700"
+                                title="Lệnh đã gửi lên TikTok. Sàn cần khoảng 20 phút để áp dụng."
+                              >
+                                {v.pending === "REMOVE" ? "Đang chờ TikTok loại" : "Đang chờ TikTok khôi phục"}
+                              </Badge>
+                            ) : v.excluded ? (
+                              <Badge className="bg-slate-100 text-slate-500">Đã loại</Badge>
+                            ) : (
+                              <Badge className={st?.className ?? "bg-slate-100 text-slate-500"}>{st?.label ?? v.deliveryStatus}</Badge>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <Money value={v.cost} className="text-slate-900" />
@@ -412,9 +552,70 @@ export function TiktokCampaignPage() {
                 )}
               </div>
             )}
+            {owner && c && c.status !== "ongoing" && (
+              <p className={TEXT_SUB}>Chiến dịch đang tạm dừng — TikTok chỉ cho loại hoặc khôi phục video khi chiến dịch đang bật.</p>
+            )}
           </CardContent>
         </Card>
+
+        {/* ===== LỊCH SỬ THAO TÁC VIDEO ===== */}
+        {(data?.actions.length ?? 0) > 0 && (
+          <Card>
+            <CardContent className="space-y-2 py-4">
+              <p className="text-sm font-semibold text-slate-900">Lịch sử loại / khôi phục video</p>
+              <ul className="divide-y divide-slate-200/80 text-sm">
+                {data?.actions.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                    <span className="w-32 shrink-0 tabular-nums text-slate-500">
+                      {new Date(a.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
+                    </span>
+                    <span className="text-slate-900">
+                      {a.action === "exclude_video" ? "Loại" : "Khôi phục"} {formatNumber(a.videoIds.length)} video
+                    </span>
+                    {a.status === "SUCCESS" ? (
+                      <Badge className="bg-emerald-50 text-emerald-700">Đã gửi lên TikTok</Badge>
+                    ) : (
+                      <Badge className="bg-rose-50 text-red-500" title={a.error ?? undefined}>
+                        TikTok từ chối
+                      </Badge>
+                    )}
+                    {a.status === "FAILED" && a.error && <span className="w-full text-xs text-red-500">{a.error}</span>}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      <Dialog open={confirmOpen} onOpenChange={(open) => !sending && setConfirmOpen(open)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {restoring ? "Khôi phục" : "Loại"} {formatNumber(pickedRows.length)} video {restoring ? "vào" : "khỏi"} chiến dịch{" "}
+              {c?.name}?
+            </DialogTitle>
+            <DialogDescription>
+              {restoring
+                ? "TikTok sẽ đưa các video này trở lại chiến dịch và có thể phân phối tiếp."
+                : "TikTok sẽ ngừng dùng các video này để quảng cáo trong chiến dịch. Video trên kênh không bị ảnh hưởng."}{" "}
+              Lệnh có hiệu lực sau khoảng 20 phút{restoring ? "." : " và khôi phục được bất cứ lúc nào ở mục Đã loại."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={sending}>
+              Hủy
+            </Button>
+            <Button
+              onClick={() => void runAction()}
+              disabled={sending}
+              className={restoring ? undefined : "bg-red-600 text-white hover:bg-red-700"}
+            >
+              {sending ? "Đang gửi…" : restoring ? "Khôi phục" : "Loại video"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
