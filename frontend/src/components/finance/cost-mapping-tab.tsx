@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  dismissCostConflict,
   fetchCostSkuGroups,
   fillSuggestedCosts,
   setCostForSkuCodes,
@@ -217,8 +218,8 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
               <AlertTriangle className="size-5 shrink-0 text-amber-600" />
               <p>
                 <b className="tabular-nums">{formatNumber(totals.conflict)}</b> mã SKU đang có giá
-                vốn khác nhau giữa các gian — Hubsell không tự chọn, bạn bấm vào giá đúng rồi áp
-                dụng.
+                vốn khác nhau giữa các gian — bấm vào giá đúng rồi áp dụng, hoặc chọn giữ nguyên
+                nếu bạn cố ý để giá riêng từng gian.
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setStatus("conflict")}>
@@ -517,7 +518,7 @@ function SkuRow({
   const agreed =
     sku.status === "suggest"
       ? sku.suggestedCost
-      : sku.status === "complete"
+      : sku.status === "complete" && !sku.conflictDismissed
         ? sku.entries[0].currentCost
         : null;
   const initial = agreed ? String(agreed) : "";
@@ -532,6 +533,19 @@ function SkuRow({
     .map((e) => ({ key: e.skuId, text: shopLabel(e), from: e.currentCost }));
   // Mã hiển thị giữ nguyên cách viết của chủ shop; mã chuẩn hoá (IN HOA) chỉ để khớp.
   const displaySku = sku.entries[0].sku;
+  const [deciding, setDeciding] = React.useState(false);
+  async function decide(dismissed: boolean) {
+    setDeciding(true);
+    try {
+      await dismissCostConflict(sku.code, dismissed);
+      await onSaved();
+    } catch (err) {
+      toast.error(errorMessage(err, "Không lưu được lựa chọn"));
+    } finally {
+      setDeciding(false);
+    }
+  }
+
   const label = child
     ? variantLabel(sku.productName) || sku.variantName || displaySku
     : sku.productName;
@@ -565,6 +579,30 @@ function SkuRow({
           entries={sku.entries}
           onPick={sku.status === "conflict" ? (c) => setDraft(String(c)) : undefined}
         />
+        {/* Lệch giá: ghi đè (bấm chip → Áp dụng) HOẶC giữ nguyên — chọn xong không nhắc lại */}
+        {sku.status === "conflict" && (
+          <button
+            type="button"
+            disabled={deciding}
+            onClick={() => decide(true)}
+            className="mt-1.5 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+          >
+            Giữ giá riêng từng gian, không nhắc nữa
+          </button>
+        )}
+        {sku.conflictDismissed && (
+          <p className={cn(TEXT_SUB, "mt-1.5")}>
+            Giá riêng từng gian (bạn đã chọn giữ nguyên) ·{" "}
+            <button
+              type="button"
+              disabled={deciding}
+              onClick={() => decide(false)}
+              className="font-medium underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              Nhắc lại
+            </button>
+          </p>
+        )}
       </TableCell>
       <TableCell>
         <form
@@ -576,7 +614,13 @@ function SkuRow({
               "w-32 text-right tabular-nums",
               sku.status === "missing" && "border-amber-400 bg-amber-50"
             )}
-            placeholder={sku.status === "conflict" ? "Chọn giá đúng" : "Nhập giá vốn"}
+            placeholder={
+              sku.status === "conflict"
+                ? "Chọn giá đúng"
+                : sku.conflictDismissed
+                  ? "Giá chung mới"
+                  : "Nhập giá vốn"
+            }
             aria-label={`Giá vốn của mã ${sku.code} cho mọi gian`}
             value={draft}
             onValueChange={setDraft}

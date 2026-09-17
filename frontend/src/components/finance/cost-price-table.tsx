@@ -29,6 +29,7 @@ import {
   ApiError,
   updateSkuCostPriceBulk,
   type ChannelName,
+  type CostSiblings,
   type SkuProduct,
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
@@ -67,8 +68,8 @@ interface CostPriceTableProps {
   onVariantBlur: (item: SkuProduct) => void;
   savingId: string | null;
   savedId: string | null;
-  /** Gọi sau khi áp giá hàng loạt để tải lại dữ liệu */
-  onBulkApplied: () => void;
+  /** Gọi sau khi áp giá hàng loạt để tải lại dữ liệu (+ gợi ý áp cho gian khác) */
+  onBulkApplied: (siblings?: CostSiblings | null) => void;
 }
 
 export function CostPriceTable({
@@ -165,7 +166,7 @@ function ParentRow({
   open: boolean;
   onToggle: () => void;
   onExpand: () => void;
-  onBulkApplied: () => void;
+  onBulkApplied: (siblings?: CostSiblings | null) => void;
 }) {
   const missing = group.variants.filter((v) => Number(v.costPrice) <= 0).length;
   // Khoảng GIÁ BÁN của các phân loại — hiển thị đúng dưới cột Giá bán
@@ -266,7 +267,7 @@ function QuickFill({
 }: {
   group: ProductGroup;
   onExpand: () => void;
-  onApplied: () => void;
+  onApplied: (siblings?: CostSiblings | null) => void;
 }) {
   const [digits, setDigits] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -294,7 +295,7 @@ function QuickFill({
       setDigits("");
       setConfirming(false);
       onExpand(); // xổ nhóm ra để thấy ngay kết quả vừa áp
-      onApplied();
+      onApplied(res.siblings);
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Không áp dụng được giá vốn"

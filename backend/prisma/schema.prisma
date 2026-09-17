@@ -308,6 +308,7 @@ model User {
 
   // Bảng giá vốn tự nhập (tab Mapping giá vốn).
   costPriceRules CostPriceRule[]
+  costConflictDismissals CostConflictDismissal[]
 
   // Tên đăng nhập nhân viên unique THEO TỪNG SHOP, không unique toàn hệ thống —
   // SaaS đa tenant: shop A có "kho01" không được chặn shop B tạo "kho01".
@@ -1444,6 +1445,24 @@ model CostPriceRule {
 
   @@unique([userId, code])
   @@map("cost_price_rules")
+}
+
+/// Chủ shop đã xem một mã SKU LỆCH GIÁ VỐN giữa các gian và chọn "giữ nguyên,
+/// không nhắc nữa" (giá khác nhau có chủ đích — vd hàng Lazada đóng gói khác).
+/// Có dòng ở đây thì tab Mapping giá vốn thôi coi mã đó là việc cần xử lý và tab
+/// Nhập giá vốn thôi gợi ý áp giá sang gian khác. Đặt một giá chung cho mã đó
+/// (nút Áp dụng N gian) là xoá dòng này.
+model CostConflictDismissal {
+  id        String   @id @default(cuid())
+  userId    String // chủ shop (ownerId)
+  /// Mã SKU đã chuẩn hoá bằng normalizeSkuCode.
+  code      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, code])
+  @@map("cost_conflict_dismissals")
 }
 
 /// Sản phẩm còn bán trên sàn hay đã bị gỡ niêm yết.

@@ -2055,9 +2055,21 @@ export interface CostImportResult {
   errors: { row: number; message: string }[];
 }
 
+/**
+ * Các mã vừa nhập giá còn nằm ở gian khác: `fillable` ô trống trên `fillShops`
+ * gian điền được ngay (gọi fillSuggestedCosts(fillCodes)); `conflicting` mã có
+ * gian đang mang giá KHÁC — phải sang tab Mapping để chọn.
+ */
+export interface CostSiblings {
+  fillCodes: string[];
+  fillable: number;
+  fillShops: number;
+  conflicting: number;
+}
+
 /** Áp một giá vốn cho nhiều SKU cùng lúc (nút "áp dụng cho mọi phân loại"). */
 export function updateSkuCostPriceBulk(skuIds: string[], costPrice: number) {
-  return apiFetch<{ updated: number; costPrice: string }>(
+  return apiFetch<{ updated: number; costPrice: string; siblings?: CostSiblings | null }>(
     "/api/finance/update-cost-bulk",
     {
       method: "PATCH",
@@ -2104,6 +2116,7 @@ interface UpdateCostResult {
    * lãi/lỗ cũ hết sai.
    */
   backfilledOrderLines: number;
+  siblings?: CostSiblings | null;
 }
 
 export function updateSkuCostPrice(skuId: string, costPrice: number) {
@@ -2162,6 +2175,8 @@ export interface CostSkuGroup {
   entries: CostMappingTarget[];
   status: "suggest" | "conflict" | "missing" | "complete";
   suggestedCost: number | null;
+  /** Các gian lệch giá nhưng chủ shop đã chọn "giữ nguyên, không nhắc nữa". */
+  conflictDismissed: boolean;
 }
 
 export interface CostSkuGroupList {
@@ -2262,10 +2277,18 @@ export function fetchCostSkuGroups() {
 }
 
 /** Nút "Điền tất cả": mọi mã đã có giá ở một gian → điền ô trống ở gian khác. */
-export function fillSuggestedCosts() {
+export function fillSuggestedCosts(codes?: string[]) {
   return apiFetch<{ codes: number; filledSkus: number; backfilledOrderLines: number }>(
     "/api/finance/cost-prices/mapping/fill-suggested",
-    { method: "POST" }
+    { method: "POST", body: JSON.stringify({ codes }) }
+  );
+}
+
+/** Mã đang lệch giá giữa các gian: giữ nguyên & thôi nhắc (true) hoặc nhắc lại (false). */
+export function dismissCostConflict(code: string, dismissed: boolean) {
+  return apiFetch<{ code: string; dismissed: boolean }>(
+    "/api/finance/cost-prices/mapping/dismiss-conflict",
+    { method: "POST", body: JSON.stringify({ code, dismissed }) }
   );
 }
 

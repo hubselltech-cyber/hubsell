@@ -3,7 +3,8 @@
 // dưới tiền tố /api/finance/cost-prices (quyền finance.cost-prices đã siết ở đó).
 //
 //   GET    /mapping/skus            mỗi MÃ SKU một dòng, gộp mọi gian + trạng thái đề xuất
-//   POST   /mapping/fill-suggested  nút "Điền tất cả"
+//   POST   /mapping/fill-suggested  nút "Điền tất cả"      { codes? — chỉ các mã vừa nhập }
+//   POST   /mapping/dismiss-conflict  giữ lệch giá, không nhắc nữa { code, dismissed }
 //   POST   /mapping/set-cost        nút "Áp dụng mọi gian" { codes[], costPrice }
 //   GET    /rules                   bảng giá tự nhập + độ phủ
 //   PUT    /rules                   thêm / sửa MỘT mã      { code, costPrice, label? }
@@ -29,6 +30,7 @@ import {
   listSkuGroups,
   MappingInputError,
   normalizeSkuCode,
+  setConflictDismissed,
   setCostForCodes,
 } from "../lib/cost-mapping";
 
@@ -238,9 +240,18 @@ router.get("/mapping/skus", async (req: AuthRequest, res, next) => {
 
 router.post("/mapping/fill-suggested", async (req: AuthRequest, res, next) => {
   try {
-    res.json(await fillSuggested(req.ownerId!));
+    res.json(await fillSuggested(req.ownerId!, readIdList(req.body?.codes)));
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/mapping/dismiss-conflict", async (req: AuthRequest, res, next) => {
+  try {
+    const code = typeof req.body?.code === "string" ? req.body.code : "";
+    res.json(await setConflictDismissed(req.ownerId!, code, req.body?.dismissed !== false));
+  } catch (err) {
+    if (!sendMappingError(err, res)) next(err);
   }
 });
 

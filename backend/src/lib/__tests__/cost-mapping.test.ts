@@ -135,4 +135,28 @@ describe("groupSkusByCode", () => {
     // Tên đại diện lấy từ gian ĐÃ CÓ GIÁ
     expect(groups[0].productName).toBe("Áo A (gian 1)");
   });
+
+  it("mã lệch giá đã chọn giữ nguyên thì thôi là conflict — đủ giá = complete, còn gian trống = missing", () => {
+    const targets = [
+      target({ skuId: "1", sku: "B2", currentCost: 50 }),
+      target({ skuId: "2", sku: "B2", channelId: "ch2", currentCost: 60 }),
+      target({ skuId: "3", sku: "E5", currentCost: 50 }),
+      target({ skuId: "4", sku: "E5", channelId: "ch2", currentCost: 60 }),
+      target({ skuId: "5", sku: "E5", channelId: "ch3" }),
+      // Cờ giữ nguyên trên mã KHÔNG lệch giá thì vô hại: vẫn đề xuất bình thường
+      target({ skuId: "6", sku: "F6", currentCost: 70 }),
+      target({ skuId: "7", sku: "F6", channelId: "ch2" }),
+    ];
+    expect(groupSkusByCode(targets).map((g) => g.status)).toEqual([
+      "conflict",
+      "conflict",
+      "suggest",
+    ]);
+    const kept = groupSkusByCode(targets, new Set(["B2", "E5", "F6"]));
+    expect(kept.map((g) => [g.code, g.status, g.conflictDismissed, g.suggestedCost])).toEqual([
+      ["B2", "complete", true, null],
+      ["E5", "missing", true, null],
+      ["F6", "suggest", false, 70],
+    ]);
+  });
 });

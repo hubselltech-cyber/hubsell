@@ -17,6 +17,7 @@ import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
 import { applyChannelCostPrice, applyCostPrice } from "../lib/cost-price";
+import { findCostSiblings } from "../lib/cost-mapping";
 import costMappingRouter from "./cost-mapping";
 import {
   businessDayStart,
@@ -2105,6 +2106,15 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * Mã vừa nhập giá còn nằm ở gian nào khác chưa có giá? Trả kèm response để tab
+ * Nhập giá vốn gợi ý "áp luôn cho N gian" ngay tại chỗ. Chỉ có nghĩa khi lưu theo
+ * sku_id (popup SKU P&L lưu theo sku_code vốn đã áp cho mọi gian trùng mã).
+ */
+function siblingsOf(skuId: unknown, ownerId: string) {
+  return typeof skuId === "string" && skuId ? findCostSiblings(ownerId, [skuId]) : null;
+}
+
 // PATCH /api/finance/update-cost — cập nhật giá vốn cho một SKU.
 // Body: { sku_id, cost_price } — sku_id là id ChannelProduct hoặc id Product.
 // Hoặc:  { sku_code, cost_price } — dùng cho popup nhập nhanh ở bảng SKU P&L,
@@ -2197,6 +2207,7 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
         // Số dòng hàng đã bán được vá lại giá vốn — để giao diện nói rõ với chủ
         // shop rằng báo cáo của các đơn cũ vừa được tính lại.
         backfilledOrderLines,
+        siblings: await siblingsOf(skuId, req.ownerId!),
       });
       return;
     }
@@ -2213,6 +2224,7 @@ router.patch("/update-cost", async (req: AuthRequest, res, next) => {
       productName: sample?.productName ?? "",
       costPrice: String(cost),
       backfilledOrderLines,
+      siblings: await siblingsOf(skuId, req.ownerId!),
     });
   } catch (err) {
     next(err);
@@ -2311,6 +2323,7 @@ router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
       updated: productIds.size + updatedUnlinked,
       costPrice: String(cost),
       backfilledOrderLines,
+      siblings: await findCostSiblings(req.ownerId!, skuIds),
     });
   } catch (err) {
     next(err);

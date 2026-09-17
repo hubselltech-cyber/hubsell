@@ -31,9 +31,11 @@ import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   fetchSkuProducts,
+  fillSuggestedCosts,
   getStoredUser,
   getToken,
   updateSkuCostPrice,
+  type CostSiblings,
   type SkuChannelFilter,
   type SkuProduct,
 } from "@/lib/api";
@@ -178,6 +180,37 @@ export default function CostPricesPage() {
     load();
   }, [load, router]);
 
+  /**
+   * Vừa lưu giá cho một mã mà mã đó còn nằm ở gian khác → gợi ý áp luôn TẠI CHỖ,
+   * khách không phải nhớ sang tab Mapping. Chỉ điền ô TRỐNG; gian đang mang giá
+   * khác thì dẫn sang tab Mapping để khách tự quyết (ghi đè hoặc giữ nguyên).
+   */
+  function offerSiblings(siblings: CostSiblings | null | undefined, what: string) {
+    if (!siblings) return;
+    if (siblings.fillable > 0) {
+      toast(`${what} còn ở ${formatNumber(siblings.fillShops)} gian khác chưa có giá vốn`, {
+        duration: 12000,
+        action: {
+          label: `Áp dụng ${formatNumber(siblings.fillable)} ô trống`,
+          onClick: async () => {
+            try {
+              const r = await fillSuggestedCosts(siblings.fillCodes);
+              toast.success(`Đã điền giá vốn cho ${formatNumber(r.filledSkus)} ô ở các gian khác`);
+              load();
+            } catch (err) {
+              toast.error(err instanceof ApiError ? err.message : "Không áp dụng được");
+            }
+          },
+        },
+      });
+    } else if (siblings.conflicting > 0) {
+      toast.warning(`${what} đang có giá vốn khác ở gian khác`, {
+        duration: 12000,
+        action: { label: "Xem ở Mapping", onClick: () => setPageTab("mapping") },
+      });
+    }
+  }
+
   // Tự động lưu khi người dùng nhập xong và click ra ngoài ô input
   async function handleBlur(item: SkuProduct) {
     const raw = (drafts[item.skuId] ?? "").trim();
@@ -207,8 +240,9 @@ export default function CostPricesPage() {
 
     setSavingId(item.skuId);
     try {
-      await updateSkuCostPrice(item.skuId, value);
+      const res = await updateSkuCostPrice(item.skuId, value);
       toast.success(`Đã cập nhật giá vốn — ${item.sku}: ${formatVND(value)}`);
+      offerSiblings(res.siblings, `Mã ${item.sku}`);
       setSavedId(item.skuId);
       setTimeout(() => setSavedId(null), 2000);
       // Cập nhật lại danh sách (một sản phẩm gốc có thể gắn nhiều SKU sàn)
@@ -426,7 +460,10 @@ export default function CostPricesPage() {
                     onVariantBlur={handleBlur}
                     savingId={savingId}
                     savedId={savedId}
-                    onBulkApplied={load}
+                    onBulkApplied={(siblings) => {
+                    load();
+                    offerSiblings(siblings, "Các mã vừa nhập");
+                  }}
                   />
                 </Refreshing>
               )}

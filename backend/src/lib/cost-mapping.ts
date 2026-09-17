@@ -53,6 +53,10 @@ export interface MappingTarget {
  * conflict = các gian đang có giá KHÁC NHAU — không đoán, chủ shop chọn
  * missing  = chưa gian nào có giá
  * complete = mọi gian đã cùng một giá
+ *
+ * Mã lệch giá mà chủ shop đã chọn "giữ nguyên, không nhắc nữa" KHÔNG còn là
+ * conflict: đủ giá thì complete, còn gian trống thì missing (giá khác nhau có
+ * chủ đích nên không có giá nào để đề xuất cho gian trống).
  */
 export type SkuGroupStatus = "suggest" | "conflict" | "missing" | "complete";
 
@@ -67,9 +71,14 @@ export interface SkuGroup {
   status: SkuGroupStatus;
   /** Chỉ có khi status = suggest. */
   suggestedCost: number | null;
+  /** Các gian đang lệch giá và chủ shop đã chọn giữ nguyên. */
+  conflictDismissed: boolean;
 }
 
-export function groupSkusByCode(targets: MappingTarget[]): SkuGroup[] {
+export function groupSkusByCode(
+  targets: MappingTarget[],
+  dismissedCodes: ReadonlySet<string> = new Set()
+): SkuGroup[] {
   const byCode = new Map<string, MappingTarget[]>();
   for (const t of targets) {
     const code = normalizeSkuCode(t.sku);
@@ -83,14 +92,19 @@ export function groupSkusByCode(targets: MappingTarget[]): SkuGroup[] {
   for (const [code, entries] of byCode) {
     const costs = new Set(entries.filter((e) => e.currentCost > 0).map((e) => e.currentCost));
     const hasEmpty = entries.some((e) => e.currentCost <= 0);
+    const conflictDismissed = costs.size > 1 && dismissedCodes.has(code);
     const status: SkuGroupStatus =
       costs.size === 0
         ? "missing"
-        : costs.size > 1
-          ? "conflict"
-          : hasEmpty
-            ? "suggest"
-            : "complete";
+        : conflictDismissed
+          ? hasEmpty
+            ? "missing"
+            : "complete"
+          : costs.size > 1
+            ? "conflict"
+            : hasEmpty
+              ? "suggest"
+              : "complete";
     const face =
       entries.find((e) => e.currentCost > 0 && e.imageUrl) ??
       entries.find((e) => e.currentCost > 0) ??
@@ -104,6 +118,7 @@ export function groupSkusByCode(targets: MappingTarget[]): SkuGroup[] {
       entries,
       status,
       suggestedCost: status === "suggest" ? [...costs][0] : null,
+      conflictDismissed,
     });
   }
   return groups.sort((a, b) => a.code.localeCompare(b.code));
@@ -292,8 +307,19 @@ async function writeRows(
 
 // ---------- 1 + 2. Gộp theo mã: đề xuất + đặt giá một lần ----------
 
+async function loadGroups(ownerId: string): Promise<SkuGroup[]> {
+  const [targets, dismissed] = await Promise.all([
+    loadTargets(ownerId),
+    prisma.costConflictDismissal.findMany({
+      where: { userId: ownerId },
+      select: { code: true },
+    }),
+  ]);
+  return groupSkusByCode(targets, new Set(dismissed.map((d) => d.code)));
+}
+
 export async function listSkuGroups(ownerId: string) {
-  const groups = groupSkusByCode(await loadTargets(ownerId));
+  const groups = await loadGroups(ownerId);
   const totals = { codes: groups.length, suggest: 0, conflict: 0, missing: 0, complete: 0 };
   let suggestEmptySlots = 0;
   for (const g of groups) {
@@ -308,12 +334,16 @@ export async function listSkuGroups(ownerId: string) {
 /**
  * NÚT "ĐIỀN TẤT CẢ": mọi mã đang ở trạng thái suggest → điền ô trống bằng giá
  * các gian khác đã thống nhất. Không bao giờ chạm ô đã có giá.
+ * `onlyCodes` = gợi ý "áp luôn cho N gian khác" ngay sau khi lưu giá ở tab Nhập
+ * giá vốn — chỉ điền cho đúng các mã vừa nhập.
  */
-export async function fillSuggested(ownerId: string) {
+export async function fillSuggested(ownerId: string, onlyCodes?: string[]) {
+  const only = onlyCodes ? new Set(onlyCodes.map(normalizeSkuCode)) : null;
   const rows: { skuId: string; productId: string | null; newCost: number }[] = [];
   let codes = 0;
-  for (const g of groupSkusByCode(await loadTargets(ownerId))) {
+  for (const g of await loadGroups(ownerId)) {
     if (g.status !== "suggest" || g.suggestedCost === null) continue;
+    if (only && !only.has(g.code)) continue;
     codes++;
     for (const e of g.entries) {
       if (e.currentCost <= 0) {
@@ -339,11 +369,60 @@ export async function setCostForCodes(ownerId: string, codes: string[], cost: nu
     .filter((t) => t.currentCost !== cost)
     .map((t) => ({ skuId: t.skuId, productId: t.productId, newCost: cost }));
   const r = await writeRows(ownerId, rows);
+  // Mã đã về một giá chung → quyết định "giữ lệch giá" cũ (nếu có) hết nghĩa.
+  await prisma.costConflictDismissal.deleteMany({
+    where: { userId: ownerId, code: { in: [...wanted] } },
+  });
   return {
     updatedSkus: r.updatedSkus,
     shops: new Set(hit.map((t) => t.channelId)).size,
     backfilledOrderLines: r.backfilledOrderLines,
   };
+}
+
+/** "Giữ nguyên, không nhắc nữa" cho một mã đang lệch giá — hoặc bật nhắc lại. */
+export async function setConflictDismissed(ownerId: string, rawCode: string, dismissed: boolean) {
+  const code = normalizeSkuCode(rawCode);
+  if (!code) throw new MappingInputError("Thiếu mã SKU");
+  if (dismissed) {
+    await prisma.costConflictDismissal.upsert({
+      where: { userId_code: { userId: ownerId, code } },
+      create: { userId: ownerId, code },
+      update: {},
+    });
+  } else {
+    await prisma.costConflictDismissal.deleteMany({ where: { userId: ownerId, code } });
+  }
+  return { code, dismissed };
+}
+
+/**
+ * Vừa lưu giá vốn cho vài SKU ở tab Nhập giá vốn → các mã đó còn nằm ở gian nào
+ * khác? Trả về để giao diện gợi ý "áp luôn" tại chỗ, khỏi phải nhớ sang tab
+ * Mapping. `fillable` = ô trống điền được ngay (mã đang ở trạng thái suggest);
+ * `conflicting` = số mã có gian đang mang giá KHÁC, cần chủ shop quyết ở tab
+ * Mapping. Mã đã chọn "giữ lệch giá" thì không gợi ý gì.
+ */
+export async function findCostSiblings(ownerId: string, skuIds: string[]) {
+  const ids = new Set(skuIds);
+  const fillCodes: string[] = [];
+  const shops = new Set<string>();
+  let fillable = 0;
+  let conflicting = 0;
+  for (const g of await loadGroups(ownerId)) {
+    if (!g.entries.some((e) => ids.has(e.skuId))) continue;
+    if (g.status === "suggest") {
+      fillCodes.push(g.code);
+      for (const e of g.entries) {
+        if (e.currentCost > 0) continue;
+        fillable++;
+        shops.add(e.channelId);
+      }
+    } else if (g.status === "conflict") {
+      conflicting++;
+    }
+  }
+  return { fillCodes, fillable, fillShops: shops.size, conflicting };
 }
 
 // ---------- 3. Bảng giá tự nhập ----------
