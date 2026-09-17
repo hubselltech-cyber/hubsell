@@ -18,16 +18,23 @@
 // vừa thao tác mang nhãn "Đang chờ TikTok áp dụng" (đọc từ sổ hành động) và
 // không tick lại được. Video đã loại nằm ở chip "Đã loại", khôi phục bằng đúng
 // cách đó. Chiến dịch đang tắt thì sàn không cho thao tác → ẩn ô tick.
+//
+// BẢNG TRONG HỘP (anh Trung 18/09, cùng khuôn trang Lãi/Lỗ thực hiện): bảng
+// cuộn dọc + ngang NGAY TRONG hộp cao gần bằng màn hình, tiêu đề cột bám đỉnh
+// hộp; chọn 20/50/100 dòng mỗi trang. Dùng chung 2 hằng PNL_* để hai trang
+// luôn cư xử giống nhau (kể cả việc KHÔNG overscroll-contain — bẫy lăn chuột).
+// Ảnh bìa hỏi theo lô 20 video để trang 100 dòng không dồn một lượt gọi lớn.
 // ============================================================
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AccessDenied } from "@/components/shared/access-denied";
+import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { AppShell } from "@/components/shell/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,7 +84,10 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: "cvr", label: "Tỷ lệ chuyển đổi thấp nhất" },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZES = [20, 50, 100];
+/** Backend nhận tối đa 24 id mỗi lượt hỏi ảnh bìa. */
+const META_CHUNK = 20;
+const TH = "whitespace-nowrap bg-slate-50 px-3 py-2 font-medium";
 
 const fmtRoi = (v: number | null) => (v == null ? "—" : v.toLocaleString("vi-VN", { maximumFractionDigits: 2 }));
 const fmtPct = (v: number) => `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`;
@@ -95,6 +105,7 @@ export function TiktokCampaignPage() {
   const [minCost, setMinCost] = useState("");
   const [sort, setSort] = useState<SortKey>("cost");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const queryClient = useQueryClient();
   const [owner, setOwner] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -150,18 +161,29 @@ export function TiktokCampaignPage() {
     return [...list].sort(by[sort]);
   }, [spending, excludedRows, quick, minCost, sort, target]);
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  const pageRows = rows.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
-  const pageIds = pageRows.map((v) => v.videoId);
+  const pageRows = rows.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
-  const metaQ = useApiQuery({
-    queryKey: qk.tiktokVideoMeta(pageIds),
-    queryFn: () => fetchTiktokVideoMeta(pageIds),
-    enabled: pageIds.length > 0,
-    staleTime: 60 * 60_000,
+  // Ảnh bìa + kênh theo LÔ 20 video: ảnh hiện dần từ trên xuống, lô nào hỏng thì chỉ lô đó thiếu ảnh.
+  const metaChunks = useMemo(() => {
+    const ids = pageRows.map((v) => v.videoId);
+    const out: string[][] = [];
+    for (let i = 0; i < ids.length; i += META_CHUNK) out.push(ids.slice(i, i + META_CHUNK));
+    return out;
+  }, [pageRows]);
+  const metaQs = useQueries({
+    queries: metaChunks.map((ids) => ({
+      queryKey: qk.tiktokVideoMeta(ids),
+      queryFn: () => fetchTiktokVideoMeta(ids),
+      staleTime: 60 * 60_000,
+    })),
   });
-  const meta = metaQ.data?.items ?? {};
+  const meta = Object.assign({}, ...metaQs.map((x) => x.data?.items ?? {})) as Record<
+    string,
+    { author: string; caption: string; thumbnailUrl: string }
+  >;
+  const metaLoading = metaQs.some((x) => x.isPending);
 
   // Sàn chỉ cho loại/khôi phục khi chiến dịch đang bật; nhân viên chỉ xem.
   const canAct = owner && c?.status === "ongoing";
@@ -424,12 +446,12 @@ export function TiktokCampaignPage() {
             )}
 
             {pageRows.length > 0 && (
-              <div className="min-w-0 overflow-x-auto rounded-lg border">
-                <table className="w-full min-w-[860px] text-sm">
-                  <thead className="bg-slate-50">
+              <div className={cn("min-w-0 rounded-lg border", PNL_TABLE_SCROLLER)}>
+                <table className="w-full min-w-[860px] border-separate border-spacing-0 text-sm">
+                  <thead className={PNL_STICKY_HEAD}>
                     <tr className={cn(TEXT_TABLE_HEAD, "text-left")}>
                       {canAct && (
-                        <th className="w-10 px-3 py-2">
+                        <th className="w-10 border-b border-slate-200 bg-slate-50 px-3 py-2">
                           <input
                             type="checkbox"
                             className="size-4 cursor-pointer accent-slate-900"
@@ -439,14 +461,14 @@ export function TiktokCampaignPage() {
                           />
                         </th>
                       )}
-                      <th className="px-3 py-2 font-medium">Video</th>
-                      <th className="px-3 py-2 font-medium">Trạng thái</th>
-                      <th className="px-3 py-2 text-right font-medium">Chi phí</th>
-                      <th className="px-3 py-2 text-right font-medium">Đơn</th>
-                      <th className="px-3 py-2 text-right font-medium">Doanh thu</th>
-                      <th className="px-3 py-2 text-right font-medium">Tỷ lệ bấm</th>
-                      <th className="px-3 py-2 text-right font-medium">Chuyển đổi</th>
-                      <th className="px-3 py-2 text-right font-medium">ROI</th>
+                      <th className={cn(TH, "border-b border-slate-200")}>Video</th>
+                      <th className={cn(TH, "border-b border-slate-200")}>Trạng thái</th>
+                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Chi phí</th>
+                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Đơn</th>
+                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Doanh thu</th>
+                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Tỷ lệ bấm</th>
+                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Chuyển đổi</th>
+                      <th className={cn(TH, "border-b border-slate-200 text-right")}>ROI</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -456,7 +478,7 @@ export function TiktokCampaignPage() {
                       const bad = v.noOrder || isBelowTarget(v);
                       const href = `https://www.tiktok.com/@${m?.author ?? ""}/video/${v.videoId}`;
                       return (
-                        <tr key={rowKey(v)} className={cn("border-t", v.noOrder && !v.excluded && "bg-rose-50/60")}>
+                        <tr key={rowKey(v)} className={cn("[&>td]:border-b [&>td]:border-slate-200/80", v.noOrder && !v.excluded && "bg-rose-50/60")}>
                           {canAct && (
                             <td className="px-3 py-2">
                               <input
@@ -485,7 +507,7 @@ export function TiktokCampaignPage() {
                                   <ExternalLink className="size-3.5 shrink-0 text-slate-400" />
                                 </span>
                                 <span className="block max-w-72 truncate text-xs text-slate-500">
-                                  {m?.caption || (metaQ.loading ? "Đang lấy thông tin video…" : `Mã video ${v.videoId}`)}
+                                  {m?.caption || (metaLoading ? "Đang lấy thông tin video…" : `Mã video ${v.videoId}`)}
                                 </span>
                                 {data && data.products.length > 1 && (
                                   <span className="block max-w-72 truncate text-xs text-slate-400">
@@ -533,24 +555,41 @@ export function TiktokCampaignPage() {
 
             {rows.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className={TEXT_SUB}>
-                  {formatNumber(rows.length)} video khớp bộ lọc · chi phí từng video TikTok cập nhật trễ tới 11 giờ, ROI gồm
-                  cả đơn tự nhiên.
-                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Hiển thị</span>
+                  <NativeSelect
+                    className="w-20"
+                    aria-label="Số dòng mỗi trang"
+                    value={String(pageSize)}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(0);
+                    }}
+                  >
+                    {PAGE_SIZES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <span className="text-sm text-muted-foreground">
+                    dòng/trang · {formatNumber(rows.length)} video · trang {safePage + 1}/{pageCount}
+                  </span>
+                </div>
                 {pageCount > 1 && (
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>
                       Trước
                     </Button>
-                    <span className="text-sm tabular-nums text-slate-500">
-                      {safePage + 1} / {pageCount}
-                    </span>
                     <Button size="sm" variant="outline" disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>
                       Sau
                     </Button>
                   </div>
                 )}
               </div>
+            )}
+            {rows.length > 0 && (
+              <p className={TEXT_SUB}>Chi phí từng video TikTok cập nhật trễ tới 11 giờ; ROI gồm cả đơn tự nhiên.</p>
             )}
             {owner && c && c.status !== "ongoing" && (
               <p className={TEXT_SUB}>Chiến dịch đang tạm dừng — TikTok chỉ cho loại hoặc khôi phục video khi chiến dịch đang bật.</p>
