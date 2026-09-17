@@ -5245,6 +5245,8 @@ export interface AdsRecommendationsResponse {
   rows: AdsRecommendationRow[];
   counts: Record<AdsRecommendTier, number>;
   signalsSyncedAt: string | null;
+  /** Số SP đang bán bị loại chỉ vì thiếu giá vốn. */
+  missingCostCount?: number;
   safeRoasFactor: number;
 }
 

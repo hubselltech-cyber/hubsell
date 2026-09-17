@@ -370,6 +370,19 @@ export function AdsRecommendTab({
               ))}
             </div>
 
+            {(data.missingCostCount ?? 0) > 0 && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="min-w-0 flex-1">
+                  <b>{formatNumber(data.missingCostCount ?? 0)} sản phẩm đang bán chưa có giá vốn</b> nên
+                  Hubsell chưa dám gợi ý: thiếu giá vốn thì biên lãi ảo cao, hòa vốn ảo thấp, chạy ads
+                  theo số đó là lỗ mà không biết. Nhập giá vốn là gợi ý mở ngay.
+                </p>
+                <Button size="sm" variant="outline" onClick={() => (window.location.href = "/finance/cost-prices")}>
+                  Nhập giá vốn
+                </Button>
+              </div>
+            )}
+
             {!data.signalsSyncedAt && (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
                 <p className="min-w-0 flex-1">

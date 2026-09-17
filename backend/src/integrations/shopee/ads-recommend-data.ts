@@ -58,6 +58,8 @@ export interface ChannelAdsRecommendations {
   counts: Record<RecommendTier, number>;
   /** Lần đồng bộ tín hiệu sàn gần nhất; null = chưa từng. */
   signalsSyncedAt: string | null;
+  /** Số SP ĐANG BÁN (có đơn 30 ngày) bị loại chỉ vì thiếu giá vốn — dải nhắc trên đầu tab. */
+  missingCostCount: number;
   safeRoasFactor: number;
 }
 
@@ -152,6 +154,7 @@ export async function computeChannelAdsRecommendations(
     signals.map((s) => ({ units30d: sales.get(s.itemId)?.units30d ?? 0, views: s.views }))
   );
 
+  let missingCostCount = 0;
   const rows: AdsRecommendationRow[] = breakeven.rows.map((b) => {
     const g = byItem.get(b.itemId);
     const sg = signalByItem.get(b.itemId) ?? null;
@@ -179,13 +182,15 @@ export async function computeChannelAdsRecommendations(
           kwAvgBid: num(sg.kwAvgBid),
         }
       : null;
+    const missingCost = sale ? sale.unitsNoCost / Math.max(1, sale.units30d) > 0.2 : false;
+    if (missingCost && !b.runningAds) missingCostCount++;
     const result = recommendAdsForItem({
       itemId: b.itemId,
       price: g?.price ?? 0,
       margin: b.margin,
       marginOrders: b.orders,
       // Quá 20% lượng bán không có giá vốn thì biên lãi không tin được.
-      missingCost: sale ? sale.unitsNoCost / Math.max(1, sale.units30d) > 0.2 : false,
+      missingCost,
       revenue30d: b.revenue,
       units30d: sale?.units30d ?? 0,
       units7d: sale?.units7d ?? 0,
@@ -228,7 +233,13 @@ export async function computeChannelAdsRecommendations(
     (max, s) => (s.baseSyncedAt && (!max || s.baseSyncedAt > max) ? s.baseSyncedAt : max),
     null
   );
-  return { rows, counts, signalsSyncedAt: lastSync?.toISOString() ?? null, safeRoasFactor: breakeven.safeRoasFactor };
+  return {
+    rows,
+    counts,
+    signalsSyncedAt: lastSync?.toISOString() ?? null,
+    missingCostCount,
+    safeRoasFactor: breakeven.safeRoasFactor,
+  };
 }
 
 // ---------- Lệnh tạo chiến dịch từ gợi ý ----------
