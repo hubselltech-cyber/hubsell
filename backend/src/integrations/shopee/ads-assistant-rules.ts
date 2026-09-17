@@ -361,3 +361,42 @@ export function evaluateShopeeCampaign(
 
   return { verdict: "healthy", reasons: underMoneyNotes };
 }
+
+// ============================================================
+// ĐỢT A (17/09/2026) — MỤC TIÊU ROAS TRÊN SÀN so với HÒA VỐN THẬT
+//
+// Campaign đấu thầu tự động mang `roas_target` seller đặt trên Seller Center.
+// Đặt THẤP HƠN hòa vốn = ra lệnh cho Shopee tối ưu về đúng mức lỗ: sàn sẽ
+// "đạt mục tiêu" mà shop vẫn mất tiền. Đây KHÔNG phải ngưỡng tay (bài học
+// 10/08) — là so số seller đã đặt với số hòa vốn tính từ P&L.
+//   below = mục tiêu < hòa vốn            → đang lỗ theo thiết kế
+//   tight = hòa vốn ≤ mục tiêu < hòa vốn × dangerFactor → vùng vàng, lãi mỏng
+//   ok    = từ vùng an toàn trở lên
+//   null  = campaign không đặt mục tiêu (đấu thầu thủ công) hoặc chưa có hòa vốn
+// safeTarget = hòa vốn × dangerFactor, làm tròn LÊN 0,1 (Shopee nhận 1 số lẻ).
+// ============================================================
+
+export type RoasTargetStatus = "below" | "tight" | "ok";
+
+export interface RoasTargetCheck {
+  status: RoasTargetStatus;
+  target: number;
+  breakevenRoas: number;
+  /** Mục tiêu nên đặt = hòa vốn × dangerFactor, làm tròn lên 0,1. */
+  safeTarget: number;
+}
+
+export function assessRoasTarget(input: {
+  roasTarget: number | null | undefined;
+  breakevenRoas: number | null | undefined;
+  dangerFactor: number;
+}): RoasTargetCheck | null {
+  const target = Number(input.roasTarget);
+  const be = Number(input.breakevenRoas);
+  if (!(target > 0) || !(be > 0)) return null;
+  const factor = input.dangerFactor > 0 ? input.dangerFactor : 1;
+  const safeTarget = Math.ceil(be * factor * 10 - 1e-9) / 10;
+  const status: RoasTargetStatus =
+    target < be ? "below" : target < be * factor ? "tight" : "ok";
+  return { status, target, breakevenRoas: be, safeTarget };
+}

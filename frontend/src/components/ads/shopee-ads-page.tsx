@@ -53,6 +53,7 @@ import {
   saveShopeeAssistantConfig,
   requestAdsRefresh,
   resumeShopeeAdsCampaign,
+  setShopeeAdsRoasTarget,
   type AdsAssistantScorecard,
   type ShopeeAdsCampaignRow,
   type ShopeeAdsDashboard,
@@ -456,6 +457,23 @@ export function ShopeeAdsPage({
     }
   }
 
+  /** Đợt A: nâng mục tiêu ROAS của campaign đang mở modal — lệnh thật lên sàn. */
+  async function setRoasTarget(target: number) {
+    const campaign = data?.campaigns.find((c) => c.id === detailId);
+    if (!campaign || deciding) return;
+    setDeciding(true);
+    try {
+      const r = await setShopeeAdsRoasTarget(campaign.id, target, platform);
+      setDetailId(null);
+      setSyncNote(`${r.message} — chiến dịch "${campaign.name}".`);
+      await load(channelId, days);
+    } catch (err) {
+      setSyncNote(`Đổi mục tiêu ROAS lỗi: ${(err as Error).message}`);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
   /** Bật lại NGAY campaign Trợ lý đã tạm dừng — lệnh thật lên sàn (sự cố 14/09). */
   async function resumeCampaign() {
     const campaign = data?.campaigns.find((c) => c.id === detailId);
@@ -694,6 +712,22 @@ export function ShopeeAdsPage({
             </Button>
           </div>
         )}
+        {/* ===== ĐỢT A: campaign ĐANG CHẠY đặt mục tiêu ROAS dưới hòa vốn ===== */}
+        {(assistant?.targetBelowCount ?? 0) > 0 && (
+          <div className="flex flex-wrap items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
+            <Target className="mt-0.5 size-5 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">
+                {formatNumber(assistant?.targetBelowCount ?? 0)} chiến dịch đang đặt mục tiêu ROAS
+                thấp hơn hòa vốn
+              </p>
+              <p className="mt-0.5 text-amber-700">
+                {meta.label} sẽ tối ưu về đúng mức mục tiêu — đạt mục tiêu vẫn lỗ. Xem
+                cột Mục tiêu (đỏ), bấm vào dòng để nâng lên mức an toàn ngay tại đây.
+              </p>
+            </div>
+          </div>
+        )}
         {walletLow && wallet && (
           <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
             <Wallet className="mt-0.5 size-5 shrink-0 text-amber-600" />
@@ -926,6 +960,7 @@ export function ShopeeAdsPage({
                   rowClassName={campaignRowDanger}
                   striped={false}
                   headerEmphasis
+                  stickyHeader
                   toolbar={`${formatNumber(visibleCampaigns.length)} chiến dịch khớp bộ lọc`}
                   viewExtras={{
                     get: () => ({ search, statusFilter, onlyNeedsAction }),
@@ -1031,6 +1066,7 @@ export function ShopeeAdsPage({
           campaign={detailCampaign}
           onDecide={(d) => void decideCampaign(d)}
           onResume={() => void resumeCampaign()}
+          onSetTarget={(t) => void setRoasTarget(t)}
           onClose={() => setDetailId(null)}
           deciding={deciding}
           platform={platform}
@@ -1274,6 +1310,39 @@ function ProductBreakevenTab({
         ),
       },
       {
+        id: "targetSet",
+        size: 120,
+        meta: { label: "Đang đặt", align: "right" },
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            Đang đặt
+            <HintIcon hint="ROAS mục tiêu THẤP NHẤT đang đặt trên các chiến dịch đấu thầu tự động đang chạy có sản phẩm này. Đỏ = thấp hơn hòa vốn của chính sản phẩm." />
+          </span>
+        ),
+        cell: ({ row }) => {
+          const chk = row.original.roasTargetCheck;
+          if (!chk) return <span className="text-slate-400">—</span>;
+          const tone =
+            chk.status === "below"
+              ? "text-red-600"
+              : chk.status === "tight"
+                ? "text-amber-600"
+                : "text-slate-700";
+          return (
+            <span
+              className={cn("tabular-nums font-medium", tone)}
+              title={
+                chk.status === "below"
+                  ? `Thấp hơn hòa vốn ${formatRoas(chk.breakevenRoas)} — nên đặt ≥ ${formatRoas(chk.safeTarget)}`
+                  : undefined
+              }
+            >
+              {formatRoas(chk.target)}
+            </span>
+          );
+        },
+      },
+      {
         id: "ads",
         size: 110,
         meta: { label: "Ads" },
@@ -1348,6 +1417,7 @@ function ProductBreakevenTab({
               }
               striped={false}
               headerEmphasis
+              stickyHeader
               toolbar={`${formatNumber(rows.length)} sản phẩm khớp bộ lọc`}
               viewExtras={{
                 get: () => ({ search }),
@@ -1588,6 +1658,39 @@ function buildCampaignColumns(
           )}
         </span>
       ),
+    },
+    {
+      id: "roasTarget",
+      size: 120,
+      meta: { label: "Mục tiêu", align: "right" },
+      header: () => (
+        <span className="inline-flex items-center gap-1">
+          Mục tiêu
+          <HintIcon hint="ROAS mục tiêu anh/chị đặt trên sàn cho chiến dịch đấu thầu tự động — sàn tối ưu về đúng mức này. Đỏ = thấp hơn hòa vốn (đạt mục tiêu vẫn lỗ), vàng = trên hòa vốn nhưng chưa tới vùng an toàn. Đấu thầu thủ công không có mục tiêu." />
+        </span>
+      ),
+      cell: ({ row }) => {
+        const c = row.original;
+        if (c.roasTarget == null) return <span className="text-slate-400">—</span>;
+        const chk = c.roasTargetCheck;
+        const tone =
+          chk?.status === "below"
+            ? "text-red-600"
+            : chk?.status === "tight"
+              ? "text-amber-600"
+              : "text-slate-700";
+        const title =
+          chk?.status === "below"
+            ? `Mục tiêu ${formatRoas(chk.target)} thấp hơn hòa vốn ${formatRoas(chk.breakevenRoas)} — đạt mục tiêu vẫn lỗ. Nên đặt ≥ ${formatRoas(chk.safeTarget)}.`
+            : chk?.status === "tight"
+              ? `Mục tiêu ${formatRoas(chk.target)} trên hòa vốn ${formatRoas(chk.breakevenRoas)} nhưng chưa tới vùng an toàn ${formatRoas(chk.safeTarget)} — lãi mỏng.`
+              : undefined;
+        return (
+          <span className={cn(TEXT_NUMBER_STRONG, tone)} title={title}>
+            {formatRoas(c.roasTarget)}
+          </span>
+        );
+      },
     },
     {
       id: "estProfit",

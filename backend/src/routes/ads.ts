@@ -21,7 +21,10 @@ import {
   updateAdsCampaignSwitchRaw,
 } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
-import { resumeCampaignByOwner } from "../integrations/shopee/ads-auto-execute";
+import {
+  resumeCampaignByOwner,
+  setRoasTargetByOwner,
+} from "../integrations/shopee/ads-auto-execute";
 import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
 import { scanOpsAlerts } from "../services/ops-alerts";
 
@@ -194,6 +197,8 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           marginSource: it.marginSource,
           marginOrders: it.marginOrders,
           breakevenRoas: it.breakevenRoas,
+          // Đợt A: mục tiêu ROAS trên sàn so với hòa vốn (below/tight/ok | null).
+          roasTargetCheck: it.roasTargetCheck,
           estProfit,
           // margin ≤ 0: SKU này đang LỖ ngay cả trước ads — cảnh báo riêng.
           lossBeforeAds: it.margin != null && it.margin <= 0,
@@ -287,6 +292,10 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
 
       // ---- Tổng hợp Trợ lý cho banner: chỉ đếm cảnh báo CHƯA được chủ shop quyết ----
       const counts = { spike: 0, pauseNow: 0, grace: 0, review: 0 };
+      // Đợt A: campaign ĐANG CHẠY đặt mục tiêu ROAS dưới hòa vốn — dải riêng trên trang.
+      const targetBelowCount = campaigns.filter(
+        (c) => c.status === "ongoing" && c.roasTargetCheck?.status === "below"
+      ).length;
       for (const c of campaigns) {
         if (c.assistant.decisionActive) continue;
         if (c.assistant.verdict === "spike") counts.spike++;
@@ -313,6 +322,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           config: assistantConfig,
           counts,
           needsAction: counts.spike + counts.pauseNow + counts.review,
+          targetBelowCount,
         },
         summary: {
           ...totals,
@@ -488,6 +498,40 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // Thẻ "Trợ lý đã tạm dừng" đóng ngay, không đợi lượt quét kế.
       await scanOpsAlerts(req.ownerId!, true);
       res.json({ message: "Đã bật lại chiến dịch", status: out.status });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/{sàn}/campaigns/:id/roas-target — ĐỢT A (17/09): chủ shop nâng
+  // mục tiêu ROAS của campaign đấu thầu tự động ngay trong Hubsell. Lệnh GHI THẬT
+  // (change_roas_target), ghi sổ mode manual. Body: { roasTarget }. Chỉ Shopee.
+  router.post(`/${platform}/campaigns/:id/roas-target`, async (req: AuthRequest, res, next) => {
+    try {
+      const roasTarget = Number((req.body as { roasTarget?: unknown })?.roasTarget);
+      if (!Number.isFinite(roasTarget) || roasTarget <= 0) {
+        res.status(400).json({ error: "Thiếu roasTarget (số dương)" });
+        return;
+      }
+      const campaign = await prisma.adsCampaign.findFirst({
+        where: { id: req.params.id, channel: { userId: req.ownerId!, channelName } },
+        select: { id: true, channelId: true },
+      });
+      if (!campaign) {
+        res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+        return;
+      }
+      const channel = await prisma.channel.findUnique({ where: { id: campaign.channelId } });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const out = await setRoasTargetByOwner(channel, campaign.id, roasTarget);
+      if (!out.ok) {
+        res.status(409).json({ error: out.error ?? `${label} từ chối lệnh đổi mục tiêu` });
+        return;
+      }
+      res.json({ message: `Đã đặt mục tiêu ROAS ${out.roasTarget}x trên ${label}`, roasTarget: out.roasTarget });
     } catch (err) {
       next(err);
     }

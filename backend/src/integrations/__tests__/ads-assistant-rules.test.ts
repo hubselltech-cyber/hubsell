@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHOPEE_ASSISTANT_CONFIG,
+  assessRoasTarget,
   evaluateShopeeCampaign,
   normalizeAssistantConfig,
   type AssistantCampaignInput,
@@ -263,5 +264,27 @@ describe("Q1 — NGƯỠNG TIỀN gác cả nhánh ROAS (sự cố 14/09/2026)",
       cfg((c) => (c.hard.zeroOrderSpend7d = 20_000))
     );
     expect(out.verdict).toBe("pause_now");
+  });
+});
+
+// ---------- Đợt A (17/09): mục tiêu ROAS trên sàn so với hòa vốn ----------
+
+describe("assessRoasTarget", () => {
+  it("mục tiêu dưới hòa vốn → below, mục tiêu an toàn = hòa vốn × factor làm tròn lên 0,1", () => {
+    const r = assessRoasTarget({ roasTarget: 4, breakevenRoas: 6.63, dangerFactor: 1.1 });
+    expect(r?.status).toBe("below");
+    expect(r?.safeTarget).toBe(7.3); // 6,63 × 1,1 = 7,293 → 7,3
+  });
+  it("giữa hòa vốn và vùng an toàn → tight; từ vùng an toàn → ok", () => {
+    expect(assessRoasTarget({ roasTarget: 7, breakevenRoas: 6.63, dangerFactor: 1.1 })?.status).toBe("tight");
+    expect(assessRoasTarget({ roasTarget: 7.3, breakevenRoas: 6.63, dangerFactor: 1.1 })?.status).toBe("ok");
+  });
+  it("không đặt mục tiêu / chưa có hòa vốn → null (không phán)", () => {
+    expect(assessRoasTarget({ roasTarget: null, breakevenRoas: 6.63, dangerFactor: 1.1 })).toBeNull();
+    expect(assessRoasTarget({ roasTarget: 0, breakevenRoas: 6.63, dangerFactor: 1.1 })).toBeNull();
+    expect(assessRoasTarget({ roasTarget: 5, breakevenRoas: null, dangerFactor: 1.1 })).toBeNull();
+  });
+  it("làm tròn không bị lỗi số thực: 5 × 1,1 = 5,5 đúng 5,5 chứ không 5,6", () => {
+    expect(assessRoasTarget({ roasTarget: 5.5, breakevenRoas: 5, dangerFactor: 1.1 })?.safeTarget).toBe(5.5);
   });
 });

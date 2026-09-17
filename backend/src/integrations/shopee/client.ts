@@ -1728,8 +1728,13 @@ export async function editManualProductAdsRaw(
     accessToken: string;
     shopId: string;
     campaignId: number | string;
-    editAction: string; // "pause" | ... (enum chưa xác minh)
+    /** Enum xác minh docs 14/09: start|pause|resume|stop|delete|change_budget|
+     *  change_duration|change_smart_creative|change_location|change_enhanced_cpc|
+     *  change_roas_target. */
+    editAction: string;
     referenceId: string;
+    /** Kèm khi editAction = change_roas_target (Shopee lấy 1 số lẻ). */
+    roasTarget?: number;
   },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeEnvelope & { response?: unknown }> {
@@ -1757,6 +1762,7 @@ export async function editManualProductAdsRaw(
       reference_id: params.referenceId,
       campaign_id: Number(params.campaignId),
       edit_action: params.editAction,
+      ...(params.roasTarget != null ? { roas_target: params.roasTarget } : {}),
     }),
   });
   return (await res.json()) as ShopeeEnvelope & { response?: unknown };

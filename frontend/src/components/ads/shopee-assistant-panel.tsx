@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, PlayCircle, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ExternalLink, PlayCircle, ShieldCheck, SlidersHorizontal, Target } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,6 +112,7 @@ export function ShopeeAssistantModal({
   campaign,
   onDecide,
   onResume,
+  onSetTarget,
   onClose,
   deciding,
   platform = "shopee",
@@ -121,6 +122,8 @@ export function ShopeeAssistantModal({
   onDecide: (decision: ShopeeAssistantDecision) => void;
   /** Bật lại ngay campaign Trợ lý đã tạm dừng (lệnh thật lên sàn). */
   onResume?: () => void;
+  /** Đợt A: nâng mục tiêu ROAS trên sàn lên `target` (lệnh thật, chỉ Shopee). */
+  onSetTarget?: (target: number) => void;
   onClose: () => void;
   deciding: boolean;
   platform?: "shopee" | "lazada";
@@ -231,6 +234,51 @@ export function ShopeeAssistantModal({
                     <li key={i}>{r}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Đợt A: mục tiêu ROAS trên sàn so với hòa vốn thật */}
+            {campaign.roasTargetCheck && campaign.roasTargetCheck.status !== "ok" && (
+              <div
+                className={cn(
+                  "flex flex-wrap items-start gap-3 rounded-lg border p-3 text-sm",
+                  campaign.roasTargetCheck.status === "below"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-amber-200 bg-amber-50 text-amber-800"
+                )}
+              >
+                <Target className="mt-0.5 size-5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">
+                    {campaign.roasTargetCheck.status === "below"
+                      ? "Mục tiêu ROAS đang đặt thấp hơn hòa vốn"
+                      : "Mục tiêu ROAS chưa tới vùng an toàn"}
+                  </p>
+                  <p className="mt-0.5">
+                    Trên sàn đang đặt <b>{liveRoasText(campaign.roasTargetCheck.target)}</b>, hòa vốn
+                    của SKU trong chiến dịch là <b>{liveRoasText(campaign.roasTargetCheck.breakevenRoas)}</b>.{" "}
+                    {campaign.roasTargetCheck.status === "below"
+                      ? "Sàn tối ưu về đúng mục tiêu nên đạt mục tiêu vẫn mất tiền."
+                      : "Đạt mục tiêu chỉ vừa đủ hòa vốn, chưa có lãi thật."}{" "}
+                    Nên đặt từ <b>{liveRoasText(campaign.roasTargetCheck.safeTarget)}</b>.
+                  </p>
+                </div>
+                {platform === "shopee" && onSetTarget && (
+                  <Button
+                    size="sm"
+                    disabled={deciding}
+                    onClick={() => onSetTarget(campaign.roasTargetCheck?.safeTarget ?? 0)}
+                    title="Gửi lệnh đổi mục tiêu ROAS thật lên Shopee ngay — ghi vào Sổ hành động."
+                    className={
+                      campaign.roasTargetCheck.status === "below"
+                        ? "bg-red-600 text-white hover:bg-red-700"
+                        : "bg-amber-600 text-white hover:bg-amber-700"
+                    }
+                  >
+                    <Target className="size-4" />
+                    Nâng lên {liveRoasText(campaign.roasTargetCheck.safeTarget)}
+                  </Button>
+                )}
               </div>
             )}
 

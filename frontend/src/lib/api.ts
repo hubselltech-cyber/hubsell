@@ -5167,6 +5167,18 @@ export function resumeShopeeAdsCampaign(
   );
 }
 
+/** Đợt A: chủ shop nâng mục tiêu ROAS của campaign đấu thầu tự động (lệnh thật lên sàn, chỉ Shopee). */
+export function setShopeeAdsRoasTarget(
+  campaignRowId: string,
+  roasTarget: number,
+  platform: "shopee" | "lazada" = "shopee"
+) {
+  return apiFetch<{ message: string; roasTarget: number }>(
+    `/api/ads/${platform}/campaigns/${campaignRowId}/roas-target`,
+    { method: "POST", body: JSON.stringify({ roasTarget }) }
+  );
+}
+
 /** Một lần máy ĐỊNH tạm dừng (diễn tập) + kết quả những ngày sau đó. */
 export interface AdsScorecardRow {
   campaignRowId: string;
@@ -5284,6 +5296,8 @@ export interface ShopeeProductBreakevenRow {
   breakevenRoas: number | null;
   lossBeforeAds: boolean;
   runningAds: boolean;
+  /** Đợt A: mục tiêu ROAS thấp nhất đang đặt trên campaign chạy có SP này. */
+  roasTargetCheck: RoasTargetCheck | null;
 }
 
 export interface ShopeeProductBreakevenResponse {
@@ -5313,6 +5327,16 @@ export interface ShopeeAssistantSummary {
   counts: { spike: number; pauseNow: number; grace: number; review: number };
   /** spike + pauseNow + review chưa được quyết — số trên banner. */
   needsAction: number;
+  /** Đợt A: số campaign đang chạy đặt mục tiêu ROAS dưới hòa vốn. */
+  targetBelowCount?: number;
+}
+
+export interface RoasTargetCheck {
+  status: "below" | "tight" | "ok";
+  target: number;
+  breakevenRoas: number;
+  /** Mục tiêu nên đặt = hòa vốn × hệ số an toàn, làm tròn lên 0,1. */
+  safeTarget: number;
 }
 
 export interface ShopeeAdsCampaignRow {
@@ -5344,6 +5368,9 @@ export interface ShopeeAdsCampaignRow {
   marginSource: "campaign" | "shop" | null;
   marginOrders: number;
   breakevenRoas: number | null;
+  /** Đợt A: mục tiêu ROAS seller đặt trên sàn so với hòa vốn. null = không đặt
+   *  (đấu thầu thủ công) hoặc chưa có hòa vốn. below = đang lỗ theo thiết kế. */
+  roasTargetCheck: RoasTargetCheck | null;
   /** Lãi/lỗ ước tính trong kỳ = GMV broad × biên lãi − chi phí ads (cùng rổ đơn với ROAS). */
   estProfit: number | null;
   lossBeforeAds: boolean;

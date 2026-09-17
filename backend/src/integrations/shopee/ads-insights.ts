@@ -26,9 +26,11 @@ import { prisma } from "../../lib/prisma";
 import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
 import {
   ASSISTANT_WINDOWS,
+  assessRoasTarget,
   evaluateShopeeCampaign,
   normalizeAssistantConfig,
   type AssistantAssessment,
+  type RoasTargetCheck,
   type AssistantWindowKey,
   type AssistantWindowMetrics,
   type ShopeeAssistantConfig,
@@ -141,6 +143,8 @@ export interface CampaignInsight {
   marginOrders: number;
   breakevenRoas: number | null;
   assessment: AssistantAssessment;
+  /** Đợt A: mục tiêu ROAS seller đặt trên sàn so với hòa vốn (null = không đặt / chưa có hòa vốn). */
+  roasTargetCheck: RoasTargetCheck | null;
 }
 
 /**
@@ -274,6 +278,11 @@ export async function computeChannelAdsInsights(
       marginOrders: useOwn ? own.orders : shopMarginBase.orders,
       breakevenRoas,
       assessment,
+      roasTargetCheck: assessRoasTarget({
+        roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null,
+        breakevenRoas,
+        dangerFactor: config.review.dangerFactor,
+      }),
     };
   });
 
@@ -319,6 +328,8 @@ export interface ProductBreakevenRow {
   lossBeforeAds: boolean;
   /** Sản phẩm đang nằm trong ít nhất một campaign đang chạy. */
   runningAds: boolean;
+  /** Đợt A: mục tiêu ROAS thấp nhất đang đặt trên campaign chạy có SP này so với hòa vốn. */
+  roasTargetCheck: RoasTargetCheck | null;
 }
 
 export interface ChannelProductBreakeven {
@@ -364,16 +375,25 @@ export async function computeChannelProductBreakeven(
     }),
     prisma.adsCampaign.findMany({
       where: { channelId: channel.id },
-      select: { status: true, itemIds: true },
+      select: { status: true, itemIds: true, roasTarget: true },
     }),
     prisma.adsAssistantConfig.findUnique({ where: { channelId: channel.id } }),
   ]);
   const config = normalizeAssistantConfig(configRow?.config);
 
   const ongoingItemIds = new Set<string>();
+  // Đợt A: mục tiêu ROAS THẤP NHẤT đang đặt trên campaign chạy có chứa SP.
+  const targetByItemId = new Map<string, number>();
   for (const c of campaignRows) {
     if (c.status !== "ongoing" || !c.itemIds) continue;
-    for (const id of c.itemIds.split(",")) ongoingItemIds.add(id);
+    const target = c.roasTarget != null ? Number(c.roasTarget) : 0;
+    for (const id of c.itemIds.split(",")) {
+      ongoingItemIds.add(id);
+      if (target > 0) {
+        const prev = targetByItemId.get(id);
+        if (prev == null || target < prev) targetByItemId.set(id, target);
+      }
+    }
   }
 
   // Gom SKU theo item_id — giữ tên/SKU tổng của dòng đầu tiên có dữ liệu.
@@ -431,6 +451,11 @@ export async function computeChannelProductBreakeven(
       breakevenRoas: margin != null && margin > 0 ? 1 / margin : null,
       lossBeforeAds: margin != null && margin <= 0,
       runningAds: ongoingItemIds.has(itemId),
+      roasTargetCheck: assessRoasTarget({
+        roasTarget: targetByItemId.get(itemId) ?? null,
+        breakevenRoas: margin != null && margin > 0 ? 1 / margin : null,
+        dangerFactor: config.review.dangerFactor,
+      }),
     };
   });
   // Doanh thu lớn đứng trước — SP chưa có đơn chìm xuống đáy.

@@ -448,3 +448,74 @@ export function autoExecuteTouched(r: AutoExecuteResult): boolean {
   return r.planned + r.executed + r.failed + r.resumed + r.resumeFailed > 0;
 }
 
+
+/**
+ * ĐỢT A (17/09) — CHỦ SHOP NÂNG MỤC TIÊU ROAS ngay trong Hubsell cho campaign
+ * đấu thầu tự động đang đặt mục tiêu dưới hòa vốn. Lệnh thật lên sàn
+ * (edit_manual_product_ads change_roas_target — enum có trong docs, xác minh
+ * sống bằng chính lần bấm đầu), ghi sổ mode "manual" như Bật lại. Chỉ Shopee.
+ */
+export async function setRoasTargetByOwner(
+  channel: Channel,
+  rowId: string,
+  roasTarget: number
+): Promise<ActOutcome & { roasTarget: number }> {
+  const target = Math.round(roasTarget * 10) / 10; // Shopee lấy 1 số lẻ
+  if (channel.channelName !== ChannelName.SHOPEE) {
+    return { ok: false, error: "Đổi mục tiêu ROAS trong Hubsell mới hỗ trợ Shopee.", roasTarget: target };
+  }
+  if (!(target > 0) || target > 999) {
+    return { ok: false, error: "Mục tiêu ROAS phải là số dương (ví dụ 7,3).", roasTarget: target };
+  }
+  const row = await prisma.adsCampaign.findFirst({ where: { id: rowId, channelId: channel.id } });
+  if (!row) return { ok: false, error: "Không tìm thấy chiến dịch", roasTarget: target };
+  if (row.biddingMethod !== "auto") {
+    return {
+      ok: false,
+      error: "Chiến dịch này đấu thầu thủ công (không có mục tiêu ROAS) — chỉnh giá thầu trên Seller Center.",
+      roasTarget: target,
+    };
+  }
+  const prev = row.roasTarget != null ? Number(row.roasTarget) : null;
+  const referenceId = `roas-${row.id}-manual-${Date.now()}`;
+  const log = await prisma.adsActionLog.create({
+    data: {
+      channelId: channel.id,
+      adsCampaignId: row.id,
+      action: "change_roas_target",
+      mode: "manual",
+      verdict: "",
+      reasons: `Chủ shop đổi mục tiêu ROAS ${prev != null ? `${prev}x` : "(chưa đặt)"} → ${target}x trong Hubsell.`,
+      referenceId,
+      status: "PENDING",
+    },
+  });
+  let outcome: ActOutcome;
+  try {
+    const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+    const raw = await editManualProductAdsRaw(
+      { accessToken, shopId, campaignId: row.campaignId, editAction: "change_roas_target", referenceId, roasTarget: target },
+      cfg
+    );
+    const ok = !raw.error || raw.error === "";
+    outcome = { ok, error: ok ? null : `${raw.error}: ${raw.message ?? ""}` };
+  } catch (err) {
+    outcome = { ok: false, error: String((err as Error).message).slice(0, 1000) };
+  }
+  await prisma.adsActionLog.update({
+    where: { id: log.id },
+    data: { status: outcome.ok ? "SUCCESS" : "FAILED", error: outcome.error?.slice(0, 1000) ?? null },
+  });
+  if (outcome.ok) {
+    // Ghi ngay để bảng đổi màu tức thì; xung 30' kế sẽ đọc lại từ sàn xác nhận.
+    await prisma.adsCampaign.update({ where: { id: row.id }, data: { roasTarget: target } });
+    await prisma.opsActivity.create({
+      data: {
+        ownerId: channel.userId,
+        tag: "ads",
+        message: `🎯 Chủ shop nâng mục tiêu ROAS chiến dịch "${row.name || `#${row.campaignId}`}" (gian "${channel.shopName}") ${prev != null ? `${prev}x` : "—"} → ${target}x ngay trong Hubsell.`,
+      },
+    });
+  }
+  return { ...outcome, roasTarget: target };
+}

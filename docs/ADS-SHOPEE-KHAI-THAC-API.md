@@ -66,6 +66,18 @@ Marketing, Ads Service…" — app Hubsell Ads gọi được hết, không cầ
 
 ### Đợt A (1 buổi, KHÔNG call mới, không SQL) — "Mục tiêu ROAS đang lỗ"
 
+> **17/09 trưa — ĐÃ CODE trên local, anh Trung xem trước khi push.** Hàm thuần
+> `assessRoasTarget` (ads-assistant-rules.ts: below / tight / ok, safeTarget = hòa
+> vốn × dangerFactor làm tròn LÊN 0,1) gắn vào `CampaignInsight.roasTargetCheck` và
+> `ProductBreakevenRow.roasTargetCheck` (mục tiêu THẤP NHẤT trên campaign chạy có SP).
+> UI: cột **Mục tiêu** (đỏ/vàng) cạnh Hòa vốn, dải vàng "N chiến dịch đặt mục tiêu
+> dưới hòa vốn", khối đỏ trong modal + nút **Nâng lên X**, cột **Đang đặt** ở tab hòa
+> vốn SP. Lệnh: `POST /api/ads/shopee/campaigns/:id/roas-target` →
+> `setRoasTargetByOwner` (edit_manual_product_ads `change_roas_target`, sổ mode
+> manual, chỉ campaign biddingMethod auto). ⚠️ `change_roas_target` CHƯA probe sống —
+> lần bấm đầu trên campaign thật là lần xác minh; lỗi sàn ghi nguyên văn vào sổ.
+> Tự thực thi (executor) cho việc này chưa làm — chờ probe OK + anh chốt.
+
 - **Luật Q5 — ROAS mục tiêu dưới hòa vốn**: campaign `biddingMethod = auto` có
   `roasTarget` > 0 và `roasTarget < breakeven × dangerFactor` → badge vàng riêng
   "Mục tiêu đang lỗ" + căn cứ: "Shopee được lệnh tối ưu về ROAS 4x, hòa vốn của
