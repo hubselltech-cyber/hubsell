@@ -71,6 +71,12 @@ const FILTERS: { key: StatusFilter; label: string }[] = [
 /** Số mẫu (dòng cha) vẽ mỗi lượt — shop nghìn mã không dựng cả nghìn ô nhập một lúc. */
 const PAGE_SIZE = 100;
 
+/**
+ * Nút áp dụng dài ngắn khác nhau ("Lưu" / "Áp dụng 12 gian" / "Áp dụng cả mẫu") —
+ * cho vào khe rộng cố định để ô nhập của mọi dòng thẳng một cột.
+ */
+const ACTION_SLOT = "w-[8.5rem] shrink-0";
+
 interface ProductBucket {
   key: string;
   name: string;
@@ -283,13 +289,15 @@ export function CostMappingTab({ onApplied }: { onApplied: () => void }) {
             </div>
           ) : (
             <Refreshing active={loading}>
-              <Table className="min-w-[56rem] table-fixed">
+              <Table className="min-w-[58rem] table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[30%]">Sản phẩm</TableHead>
                     <TableHead className="w-[15%]">Mã SKU</TableHead>
                     <TableHead>Gian hàng đang bán mã này</TableHead>
-                    <TableHead className="w-72 text-right">Giá vốn cho mọi gian</TableHead>
+                    <TableHead className="w-80 pr-[9.875rem] text-right">
+                      Giá vốn cho mọi gian
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -382,50 +390,52 @@ function ApplyButton({
 
   // Popover CHỈ mở qua handleClick (khi thật sự có ô bị ghi đè) — trigger tự bật thì bỏ qua.
   return (
-    <Popover open={confirming} onOpenChange={(o) => !o && setConfirming(false)}>
-      <PopoverTrigger
-        disabled={disabled || saving}
-        render={
-          <Button
-            type="submit" // Enter trong ô giá = bấm nút này
-            size="sm"
-            variant={primary ? "default" : "secondary"}
-            className="shrink-0"
-            onClick={handleClick}
-          >
-            {saving ? <Loader2 className="size-4 animate-spin" /> : label}
-          </Button>
-        }
-      />
-      <PopoverContent align="end" className="w-80">
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm">Ghi đè giá vốn ở {overwriting.length} nơi?</p>
-            <p className={TEXT_SUB}>Các nơi dưới đây đang có giá vốn khác {formatVND(cost)}.</p>
-          </div>
-          <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg bg-muted/50 p-2">
-            {overwriting.map((o) => (
-              <li key={o.key} className="text-xs">
-                <span className="font-medium">{o.text}</span>
-                <span className="ml-1.5 text-amber-700">
-                  {formatVND(o.from)} → {formatVND(cost)}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className={cn(TEXT_SUB, "text-amber-700")}>⚠ Thao tác này không hoàn tác được.</p>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setConfirming(false)} disabled={saving}>
-              Huỷ
+    <div className={ACTION_SLOT}>
+      <Popover open={confirming} onOpenChange={(o) => !o && setConfirming(false)}>
+        <PopoverTrigger
+          disabled={disabled || saving}
+          render={
+            <Button
+              type="submit" // Enter trong ô giá = bấm nút này
+              size="sm"
+              variant={primary ? "default" : "secondary"}
+              className="w-full"
+              onClick={handleClick}
+            >
+              {saving ? <Loader2 className="size-4 animate-spin" /> : label}
             </Button>
-            <Button size="sm" onClick={apply} disabled={saving}>
-              {saving && <Loader2 className="size-4 animate-spin" />}
-              Ghi đè tất cả
-            </Button>
+          }
+        />
+        <PopoverContent align="end" className="w-80">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm">Ghi đè giá vốn ở {overwriting.length} nơi?</p>
+              <p className={TEXT_SUB}>Các nơi dưới đây đang có giá vốn khác {formatVND(cost)}.</p>
+            </div>
+            <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg bg-muted/50 p-2">
+              {overwriting.map((o) => (
+                <li key={o.key} className="text-xs">
+                  <span className="font-medium">{o.text}</span>
+                  <span className="ml-1.5 text-amber-700">
+                    {formatVND(o.from)} → {formatVND(cost)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className={cn(TEXT_SUB, "text-amber-700")}>⚠ Thao tác này không hoàn tác được.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirming(false)} disabled={saving}>
+                Huỷ
+              </Button>
+              <Button size="sm" onClick={apply} disabled={saving}>
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                Ghi đè tất cả
+              </Button>
+            </div>
           </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 
@@ -729,7 +739,11 @@ function BucketRow({
           onSubmit={(e) => e.preventDefault()}
         >
           <CurrencyInput
-            className="w-32 text-right tabular-nums"
+            className={cn(
+              "w-32 text-right tabular-nums",
+              emptySlots > 0 &&
+                "border-amber-500 bg-amber-100/70 font-medium placeholder:text-amber-800"
+            )}
             placeholder="Giá vốn chung"
             aria-label={`Giá vốn chung cho mọi phân loại của ${bucket.name} trên mọi gian`}
             value={draft}

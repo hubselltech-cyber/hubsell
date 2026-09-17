@@ -53,6 +53,16 @@ import { variantLabel } from "@/lib/variant-group";
  * từng phân loại, không bị gộp hay tính trung bình.
  */
 
+/**
+ * Ô nhập của dòng cha ("Giá vốn chung") và dòng con ("Nhập giá vốn") phải THẲNG
+ * MỘT CỘT. Muốn vậy thứ đứng sau ô nhập — nút "Áp dụng" ở dòng cha, dấu tick /
+ * vòng xoay ở dòng con — phải chiếm cùng một bề rộng cố định, không thì nút dài
+ * đẩy ô dòng cha lệch sang trái so với dòng con.
+ */
+const ACTION_SLOT = "flex w-[4.75rem] shrink-0 items-center";
+/** Tiêu đề cột canh phải theo mép Ô NHẬP chứ không theo mép ô bảng (chừa chỗ ACTION_SLOT). */
+const COST_HEAD = "w-64 pr-[6.125rem] text-right";
+
 export interface ProductGroup {
   key: string;
   /** Tên mẫu hàng (đã cắt đuôi phân loại) */
@@ -104,7 +114,7 @@ export function CostPriceTable({
           <TableHead className="w-[40%]">Sản phẩm</TableHead>
           <TableHead className="w-[13%]">Mã SKU</TableHead>
           <TableHead className="w-[19%]">Kênh bán</TableHead>
-          <TableHead className="w-60 text-right">Giá vốn (VNĐ)</TableHead>
+          <TableHead className={COST_HEAD}>Giá vốn (VNĐ)</TableHead>
           <TableHead className="text-right">Giá bán</TableHead>
         </TableRow>
       </TableHeader>
@@ -276,6 +286,10 @@ function QuickFill({
   const cost = Number(digits);
   const valid = digits !== "" && !Number.isNaN(cost) && cost > 0;
 
+  // Vàng = "còn thiếu giá vốn" (cùng nghĩa với ô dòng con); dòng cha đậm hơn một
+  // bậc vì là ô nhập cho CẢ MẪU. Mẫu đã đủ giá thì về trung tính.
+  const missing = group.variants.some((v) => Number(v.costPrice) <= 0);
+
   // Những phân loại đang có giá vốn KHÁC sẽ bị ghi đè — đây là chỗ mất dữ liệu
   const overwriting = group.variants.filter((v) => {
     const c = Number(v.costPrice);
@@ -317,7 +331,10 @@ function QuickFill({
     <div className="flex items-center justify-end gap-1.5">
       {/* Placeholder ngắn để không bị cắt chữ trong ô w-32; nghĩa đầy đủ ở aria-label */}
       <CurrencyInput
-        className="w-32 text-right tabular-nums"
+        className={cn(
+          "w-32 text-right tabular-nums",
+          missing && "border-amber-500 bg-amber-100/70 font-medium placeholder:text-amber-800"
+        )}
         placeholder="Giá vốn chung"
         aria-label={`Nhập nhanh giá vốn cho tất cả phân loại của ${group.name}`}
         value={digits}
@@ -327,65 +344,67 @@ function QuickFill({
         }}
       />
 
-      <Popover open={confirming} onOpenChange={setConfirming}>
-        <PopoverTrigger
-          disabled={!valid || saving}
-          render={
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={handleClick}
-              title={
-                valid
-                  ? `Áp giá vốn này cho cả ${group.variants.length} phân loại`
-                  : "Nhập giá vốn trước khi áp dụng"
-              }
-            >
-              {saving ? <Loader2 className="size-4 animate-spin" /> : "Áp dụng"}
-            </Button>
-          }
-        />
-
-        <PopoverContent align="end" className="w-80">
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm">
-                Ghi đè giá vốn của {overwriting.length} phân loại?
-              </p>
-              <p className={TEXT_SUB}>
-                Các mã dưới đây đang có giá vốn khác {formatVND(cost)}.
-              </p>
-            </div>
-            <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg bg-muted/50 p-2">
-              {overwriting.map((v) => (
-                <li key={v.skuId} className="text-xs">
-                  <span className="font-mono font-medium">{v.sku}</span>
-                  <span className="ml-1.5 text-amber-700">
-                    {formatVND(Number(v.costPrice))} → {formatVND(cost)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className={cn(TEXT_SUB, "text-amber-700")}>
-              ⚠ Thao tác này không hoàn tác được.
-            </p>
-            <div className="flex justify-end gap-2">
+      <div className={ACTION_SLOT}>
+        <Popover open={confirming} onOpenChange={setConfirming}>
+          <PopoverTrigger
+            disabled={!valid || saving}
+            render={
               <Button
-                variant="outline"
                 size="sm"
-                onClick={() => setConfirming(false)}
-                disabled={saving}
+                variant="secondary"
+                onClick={handleClick}
+                title={
+                  valid
+                    ? `Áp giá vốn này cho cả ${group.variants.length} phân loại`
+                    : "Nhập giá vốn trước khi áp dụng"
+                }
               >
-                Huỷ
+                {saving ? <Loader2 className="size-4 animate-spin" /> : "Áp dụng"}
               </Button>
-              <Button size="sm" onClick={apply} disabled={saving}>
-                {saving && <Loader2 className="size-4 animate-spin" />}
-                Ghi đè tất cả
-              </Button>
+            }
+          />
+
+          <PopoverContent align="end" className="w-80">
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm">
+                  Ghi đè giá vốn của {overwriting.length} phân loại?
+                </p>
+                <p className={TEXT_SUB}>
+                  Các mã dưới đây đang có giá vốn khác {formatVND(cost)}.
+                </p>
+              </div>
+              <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg bg-muted/50 p-2">
+                {overwriting.map((v) => (
+                  <li key={v.skuId} className="text-xs">
+                    <span className="font-mono font-medium">{v.sku}</span>
+                    <span className="ml-1.5 text-amber-700">
+                      {formatVND(Number(v.costPrice))} → {formatVND(cost)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className={cn(TEXT_SUB, "text-amber-700")}>
+                ⚠ Thao tác này không hoàn tác được.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirming(false)}
+                  disabled={saving}
+                >
+                  Huỷ
+                </Button>
+                <Button size="sm" onClick={apply} disabled={saving}>
+                  {saving && <Loader2 className="size-4 animate-spin" />}
+                  Ghi đè tất cả
+                </Button>
+              </div>
             </div>
-          </div>
-        </PopoverContent>
-      </Popover>
+          </PopoverContent>
+        </Popover>
+      </div>
     </div>
   );
 }
@@ -423,13 +442,13 @@ function CostCell({
         onValueChange={(d) => onDraftChange(item.skuId, d)}
         onBlur={() => onVariantBlur(item)}
       />
-      {savingId === item.skuId ? (
-        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-      ) : savedId === item.skuId ? (
-        <Check className="size-4 shrink-0 text-emerald-500" />
-      ) : (
-        <span className="size-4 shrink-0" />
-      )}
+      <span className={ACTION_SLOT}>
+        {savingId === item.skuId ? (
+          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        ) : savedId === item.skuId ? (
+          <Check className="size-4 text-emerald-500" />
+        ) : null}
+      </span>
     </div>
   );
 }
