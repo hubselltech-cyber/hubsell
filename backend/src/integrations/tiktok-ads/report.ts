@@ -12,6 +12,35 @@
 
 import { getGmvMaxReport, type GmvMaxReportRow } from "./client";
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+/** Probe 17/09/2026: report KHÔNG có chiều thời gian (tầng sản phẩm / video) nhận khoảng dài tới 366 ngày. */
+export const GMV_MAX_MAX_RANGE_DAYS = 366;
+
+const shiftDay = (dateKey: string, days: number): string =>
+  new Date(Date.parse(`${dateKey}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Khoảng ngày hợp lệ cho report tầng sản phẩm/video, tính theo ngày của sàn (VN).
+ * Ưu tiên from/to (bộ lọc thời gian chuẩn của app); thiếu hoặc sai định dạng thì
+ * lùi `fallbackDays` ngày tính cả hôm nay. Kẹp: to ≤ hôm nay, from ≤ to, dài tối
+ * đa GMV_MAX_MAX_RANGE_DAYS. Hàm thuần — `today` truyền vào để test được.
+ */
+export function clampGmvMaxRange(
+  input: { from?: unknown; to?: unknown; fallbackDays: number },
+  today: string
+): { startDate: string; endDate: string } {
+  const from = typeof input.from === "string" && DATE_KEY.test(input.from) ? input.from : "";
+  const to = typeof input.to === "string" && DATE_KEY.test(input.to) ? input.to : "";
+  if (!from || !to) {
+    const days = Math.min(GMV_MAX_MAX_RANGE_DAYS, Math.max(1, Math.trunc(input.fallbackDays) || 1));
+    return { startDate: shiftDay(today, -(days - 1)), endDate: today };
+  }
+  const endDate = to > today ? today : to;
+  const floor = shiftDay(endDate, -(GMV_MAX_MAX_RANGE_DAYS - 1));
+  const startDate = from > endDate ? endDate : from < floor ? floor : from;
+  return { startDate, endDate };
+}
+
 const PAGE_SIZE = 1000;
 /** Chặn vòng phân trang vô hạn nếu sàn trả total_page bất thường. */
 const MAX_PAGES = 20;
@@ -49,28 +78,6 @@ async function fetchAllPages(
     if (!r.page_info || page >= r.page_info.total_page) break;
   }
   return rows;
-}
-
-export interface GmvMaxStoreDay {
-  /** YYYY-MM-DD */
-  date: string;
-  cost: number;
-  orders: number;
-  gmv: number;
-}
-
-/** Tổng chi GMV Max (Product + LIVE) của shop theo ngày — nguồn cho AdSpend. */
-export async function fetchGmvMaxStoreDaily(s: Scope): Promise<GmvMaxStoreDay[]> {
-  const rows = await fetchAllPages(s, {
-    dimensions: ["advertiser_id", "stat_time_day"],
-    metrics: ["cost", "orders", "gross_revenue"],
-  });
-  return rows.map((r) => ({
-    date: (r.dimensions.stat_time_day ?? "").slice(0, 10),
-    cost: num(r.metrics.cost),
-    orders: num(r.metrics.orders),
-    gmv: num(r.metrics.gross_revenue),
-  }));
 }
 
 export interface GmvMaxCampaignDay {

@@ -40,8 +40,18 @@ import {
 } from "../integrations/tiktok-ads";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import {
+  VIDEO_ACTIONS,
+  VIDEO_ACTION_EXCLUDE,
+  VIDEO_ACTION_RESTORE,
+  VIDEO_VERDICT_MANUAL,
+  buildVideoActionReasons,
+  parseVideoActionReasons,
+  videoActionNote,
+} from "../integrations/tiktok-ads/action-log";
+import {
   GMV_MAX_EXCLUDED_STATUS,
   GMV_MAX_LIVE_VIDEO_STATUSES,
+  clampGmvMaxRange,
   fetchGmvMaxCampaignProducts,
   fetchGmvMaxCampaignVideos,
 } from "../integrations/tiktok-ads/report";
@@ -52,30 +62,6 @@ export const adsTiktokRouter = Router();
 function parseDays(raw: unknown): number {
   const n = Number(raw);
   return Number.isFinite(n) ? Math.min(30, Math.max(1, Math.trunc(n))) : 7;
-}
-
-const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
-/** Probe 17/09/2026: tầng video nhận khoảng dài tới 366 ngày (không có chiều thời gian thì không bị trần 30 ngày). */
-const MAX_RANGE_DAYS = 366;
-
-/**
- * Khoảng ngày của trang soi video: ưu tiên from/to (bộ lọc thời gian chuẩn của
- * app — YYYY-MM-DD theo ngày VN), không có thì lùi `days` ngày như link cũ.
- * Kẹp: to ≤ hôm nay, from ≤ to, dài tối đa MAX_RANGE_DAYS.
- */
-function parseRange(query: Record<string, unknown>): { startDate: string; endDate: string } {
-  const today = vnDateStr(0);
-  const from = typeof query.from === "string" && DATE_KEY.test(query.from) ? query.from : "";
-  const to = typeof query.to === "string" && DATE_KEY.test(query.to) ? query.to : "";
-  if (!from || !to) {
-    const days = parseDays(query.days);
-    return { startDate: vnDateStr(days - 1), endDate: today };
-  }
-  const endDate = to > today ? today : to;
-  let startDate = from > endDate ? endDate : from;
-  const floor = new Date(Date.parse(`${endDate}T00:00:00Z`) - (MAX_RANGE_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
-  if (startDate < floor) startDate = floor;
-  return { startDate, endDate };
 }
 
 async function ownedTiktokChannels(ownerId: string) {
@@ -205,14 +191,13 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
 
 /** Sàn cần ~20 phút để đổi trạng thái video; quá mốc này coi như lệnh đã ngấm (hoặc đã hỏng). */
 const PENDING_WINDOW_MS = 30 * 60 * 1000;
-const VIDEO_LINE = /^#(\d+) /;
 
 /** videoId → hành động còn đang chờ sàn áp dụng, đọc từ sổ hành động gần đây của campaign. */
 async function pendingVideoActions(adsCampaignId: string): Promise<Map<string, "REMOVE" | "ADD">> {
   const logs = await prisma.adsActionLog.findMany({
     where: {
       adsCampaignId,
-      action: { in: ["exclude_video", "restore_video"] },
+      action: { in: VIDEO_ACTIONS },
       status: "SUCCESS",
       createdAt: { gte: new Date(Date.now() - PENDING_WINDOW_MS) },
     },
@@ -221,9 +206,8 @@ async function pendingVideoActions(adsCampaignId: string): Promise<Map<string, "
   });
   const out = new Map<string, "REMOVE" | "ADD">();
   for (const l of logs) {
-    for (const line of l.reasons.split("\n")) {
-      const m = VIDEO_LINE.exec(line);
-      if (m) out.set(m[1], l.action === "exclude_video" ? "REMOVE" : "ADD");
+    for (const v of parseVideoActionReasons(l.reasons).videos) {
+      out.set(v.videoId, l.action === VIDEO_ACTION_EXCLUDE ? "REMOVE" : "ADD");
     }
   }
   return out;
@@ -258,7 +242,10 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       res.status(409).json({ error: "Gian chưa kết nối quảng cáo TikTok hoặc kết nối đã hết hiệu lực." });
       return;
     }
-    const period = parseRange(req.query as Record<string, unknown>);
+    const period = clampGmvMaxRange(
+      { from: req.query.from, to: req.query.to, fallbackDays: parseDays(req.query.days) },
+      vnDateStr(0)
+    );
     const range = {
       accessToken: scope.accessToken,
       advertiserId: scope.advertiserId,
@@ -279,7 +266,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       const pending = await pendingVideoActions(campaign.id);
       // Sổ thao tác video của chiến dịch (10 lệnh gần nhất) — hiện ngay dưới bảng.
       const logs = await prisma.adsActionLog.findMany({
-        where: { adsCampaignId: campaign.id, action: { in: ["exclude_video", "restore_video"] } },
+        where: { adsCampaignId: campaign.id, action: { in: VIDEO_ACTIONS } },
         orderBy: { createdAt: "desc" },
         take: 10,
         select: { id: true, action: true, verdict: true, status: true, error: true, reasons: true, createdAt: true },
@@ -328,18 +315,9 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           action: l.action,
           status: l.status,
           error: l.error,
-          /** manual = chủ shop tự bấm; khác manual = Trợ lý tự động (kèm căn cứ ở `grounds`). */
-          source: l.verdict === "manual" ? "manual" : "auto",
-          // Mỗi dòng "#<videoId> · <ghi chú lúc thao tác>" → tách mã video + ghi chú.
-          videos: l.reasons
-            .split("\n")
-            .map((x) => {
-              const m = VIDEO_LINE.exec(x);
-              return m ? { videoId: m[1], note: x.slice(m[0].length).replace(/^·\s*/, "").trim() } : null;
-            })
-            .filter((x): x is { videoId: string; note: string } => x !== null),
-          /** Căn cứ của lệnh TỰ ĐỘNG (các dòng không mở đầu bằng #mã video); lệnh thủ công để trống. */
-          grounds: l.reasons.split("\n").filter((x) => x.trim() && !VIDEO_LINE.test(x)),
+          /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
+          source: l.verdict === VIDEO_VERDICT_MANUAL ? "manual" : "auto",
+          ...parseVideoActionReasons(l.reasons),
           createdAt: l.createdAt,
         })),
         totals: {
@@ -410,13 +388,12 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
     const logBase = {
       channelId: campaign.channelId,
       adsCampaignId: campaign.id,
-      action: action === "REMOVE" ? "exclude_video" : "restore_video",
+      action: action === "REMOVE" ? VIDEO_ACTION_EXCLUDE : VIDEO_ACTION_RESTORE,
       mode: "live",
-      verdict: "manual",
-      // Mỗi dòng mở đầu "#<videoId> " — pendingVideoActions đọc lại từ đây.
-      reasons: [...bySpu.entries()]
-        .map(([id, v]) => `#${id} · chi ${Math.round(v.cost).toLocaleString("vi-VN")}đ · ${v.orders} đơn`)
-        .join("\n"),
+      verdict: VIDEO_VERDICT_MANUAL,
+      reasons: buildVideoActionReasons(
+        [...bySpu.entries()].map(([videoId, v]) => ({ videoId, note: videoActionNote(v.cost, v.orders) }))
+      ),
       referenceId: `ttv-${campaign.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     };
     try {

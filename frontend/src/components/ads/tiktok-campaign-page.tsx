@@ -6,9 +6,9 @@
 // lọc thời gian CHUẨN của app — DateRangePicker: phím nhanh + lịch chọn tay.)
 //
 // Màn làm việc chính của Quảng cáo TikTok: tìm video tiêu tiền mà không hiệu
-// quả (bước sau: tick chọn → Loại video). Trang riêng thay cho hộp thoại vì
-// cần chỗ cho ảnh bìa, bộ lọc, sắp xếp, phân trang, và địa chỉ gửi được cho
-// người chạy quảng cáo.
+// quả rồi loại khỏi chiến dịch. Trang riêng (không phải hộp thoại) vì cần chỗ
+// cho ảnh bìa, lọc nhanh, sắp xếp theo cột, phân trang, và một địa chỉ gửi
+// được cho người chạy quảng cáo.
 //
 // Dữ liệu: số đọc SỐNG từ báo cáo GMV Max (nhóm video sàn còn phân phối); ảnh
 // bìa + kênh + caption lấy từ oEmbed công khai của TikTok, CHỈ cho ~20 video
@@ -35,6 +35,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
@@ -107,8 +108,6 @@ const PAGE_SIZES = [20, 50, 100];
 const META_CHUNK = 20;
 const TH = "whitespace-nowrap bg-slate-50 px-3 py-2 font-medium";
 
-const fmtRoi = (v: number | null) => (v == null ? "—" : v.toLocaleString("vi-VN", { maximumFractionDigits: 2 }));
-const fmtPct = (v: number) => `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`;
 
 export function TiktokCampaignPage() {
   const router = useRouter();
@@ -312,14 +311,14 @@ export function TiktokCampaignPage() {
             </h1>
             {c && (
               <p className="text-sm text-muted-foreground">
-                {target != null ? `ROI mục tiêu ${fmtRoi(target)}` : "Phân phối tối đa"} · ROI thực{" "}
+                {target != null ? `ROI mục tiêu ${formatRoi(target)}` : "Phân phối tối đa"} · ROI thực{" "}
                 <span
                   className={cn(
                     "font-semibold tabular-nums",
                     target != null && campaignRoi != null && campaignRoi < target ? "text-red-500" : "text-slate-900"
                   )}
                 >
-                  {fmtRoi(campaignRoi)}
+                  {formatRoi(campaignRoi)}
                 </span>{" "}
                 · chi {formatVND(c.spend)} · {formatNumber(c.orders)} đơn
               </p>
@@ -600,10 +599,10 @@ export function TiktokCampaignPage() {
                             <Money value={v.gmv} className="text-slate-900" />
                           </td>
                           <td className={cn("px-3 py-2 text-right", TEXT_NUMBER_STRONG, bad ? "text-red-500" : "text-slate-900")}>
-                            {fmtRoi(v.roi)}
+                            {formatRoi(v.roi)}
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtPct(v.ctr)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{fmtPct(v.cvr)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{formatPct(v.ctr)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-slate-500">{formatPct(v.cvr)}</td>
                         </tr>
                       );
                     })}

@@ -103,7 +103,7 @@ async function cmdRun(days: number) {
     log[`advertiser_${adv.advertiser_id}`] = advLog;
 
     const stores = await step(advLog, "stores", () => getGmvMaxStores(accessToken, adv.advertiser_id));
-    const storeList = ((stores?.store_list ?? stores?.list ?? []) as Record<string, unknown>[]) || [];
+    const storeList = stores ?? [];
     if (storeList.length === 0) console.log("  (store/list không trả gian nào)");
 
     for (const s of storeList) {

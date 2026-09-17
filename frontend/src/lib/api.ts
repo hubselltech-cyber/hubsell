@@ -2489,21 +2489,14 @@ export function unlinkHubsellAds(channelId: string) {
 // Một tài khoản quảng cáo có thể chạy cho nhiều shop của nhiều seller (người chạy
 // thuê) — backend tự dò và CHỈ nối gian TikTok của chính chủ shop này.
 
+/** Trạng thái kết nối quảng cáo của gian ĐANG XEM (trả kèm trong TiktokAdsDashboard.link). */
 export interface TiktokAdsLinkStatus {
-  /** false = backend chưa đặt TIKTOK_ADS_* → trang hiện "sắp ra mắt". */
-  configured: boolean;
   linked: boolean;
   /** REVOKED = token chết (bị hủy ủy quyền); NO_ACCESS = tài khoản quảng cáo mất quyền shop. */
   status: "ACTIVE" | "NO_ACCESS" | "REVOKED" | null;
   advertiserName: string | null;
   lastSyncedAt: string | null;
   lastSyncError: string | null;
-}
-
-export function fetchTiktokAdsStatus(channelId: string) {
-  return apiFetch<TiktokAdsLinkStatus>(
-    `/api/tiktok-ads/status?channelId=${encodeURIComponent(channelId)}`
-  );
 }
 
 /** invite=true: link sống 7 ngày để gửi cho người giữ tài khoản quảng cáo (chạy thuê). */
@@ -2528,13 +2521,6 @@ export function connectTiktokAds(authCode: string, state: string) {
   });
 }
 
-export function unlinkTiktokAds(channelId: string) {
-  return apiFetch<{ message: string }>(
-    `/api/tiktok-ads/link?channelId=${encodeURIComponent(channelId)}`,
-    { method: "DELETE" }
-  );
-}
-
 export interface TiktokAdsCampaignRow {
   id: string;
   campaignId: string;
@@ -2553,6 +2539,7 @@ export interface TiktokAdsCampaignRow {
 }
 
 export interface TiktokAdsDashboard {
+  /** false = backend chưa đặt TIKTOK_ADS_* → trang hiện "sắp ra mắt". */
   configured: boolean;
   channels: {
     id: string;
@@ -2562,7 +2549,7 @@ export interface TiktokAdsDashboard {
   }[];
   selectedChannelId: string | null;
   days: number;
-  link: Omit<TiktokAdsLinkStatus, "configured"> | null;
+  link: TiktokAdsLinkStatus | null;
   summary: {
     spend: number;
     orders: number;

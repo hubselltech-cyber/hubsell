@@ -21,7 +21,7 @@
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { dateFromStr, vnDateStr } from "../lazada/ads-campaigns";
-import { TiktokAdsApiError, getGmvMaxStores } from "./client";
+import { TiktokAdsApiError, getGmvMaxStores, type GmvMaxStore } from "./client";
 import { fetchGmvMaxCampaignDaily } from "./report";
 
 /** 40105 = access token sai hoặc đã bị thu hồi (docs Appendix - Return codes). */
@@ -104,10 +104,9 @@ export async function verifyTiktokAdsLink(channelId: string): Promise<TiktokAdsL
   });
   if (!link || link.status !== "ACTIVE" || link.auth.status !== "ACTIVE") return "skipped";
 
-  let stores: { store_id?: string; exclusive_authorized_advertiser_info?: { advertiser_id?: string; advertiser_name?: string } }[];
+  let stores: GmvMaxStore[];
   try {
-    const data = await getGmvMaxStores(link.auth.accessToken, link.advertiserId);
-    stores = (data.store_list ?? []) as typeof stores;
+    stores = await getGmvMaxStores(link.auth.accessToken, link.advertiserId);
   } catch (err) {
     await recordTiktokAdsFailure(link.id, err);
     return "skipped";

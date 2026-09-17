@@ -44,8 +44,8 @@ import { scanOpsAlerts } from "../services/ops-alerts";
 const router = Router();
 
 // Siết quyền theo LÁ: mount app.ts chỉ kiểm "có lá ads.* bất kỳ", từng nhánh
-// sàn bó đúng lá của nó. TikTok hiện là preview mock phía FE, có API thật thì
-// thêm router.use tương ứng tại đây.
+// sàn bó đúng lá của nó. TikTok (GMV Max) khác bản chất nên có router riêng —
+// routes/ads-tiktok.ts, mount /api/ads/tiktok TRƯỚC router này.
 router.use("/shopee", requirePermission("ads.shopee"));
 router.use("/lazada", requirePermission("ads.lazada"));
 

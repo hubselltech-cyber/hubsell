@@ -25,6 +25,7 @@ import { ArrowRight, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingU
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
+import { formatRoi } from "@/components/ads/tiktok-ads-format";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
@@ -57,11 +58,6 @@ const DAY_PRESETS: { label: string; value: number }[] = [
 ];
 
 const daysLabel = (days: number) => (days === 1 ? "hôm nay" : `${days} ngày`);
-
-export function formatRoi(v: number | null): string {
-  if (v == null) return "—";
-  return v.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
-}
 
 const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
   {

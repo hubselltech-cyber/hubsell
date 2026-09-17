@@ -73,13 +73,6 @@ export function verifyTiktokAdsState(
   }
 }
 
-interface StoreRow {
-  store_id?: string;
-  store_name?: string;
-  is_gmv_max_available?: boolean;
-  exclusive_authorized_advertiser_info?: { advertiser_id?: string; advertiser_name?: string };
-}
-
 export interface TiktokAdsLinkedStore {
   channelId: string;
   shopName: string;
@@ -169,8 +162,8 @@ export async function linkTiktokAdsStores(
     SCAN_CONCURRENCY,
     () => exclusiveOf.size === byStoreId.size,
     async (adv) => {
-      const data = await getGmvMaxStores(accessToken, adv.advertiser_id).catch(() => null);
-      for (const s of ((data?.store_list ?? []) as StoreRow[])) {
+      const stores = await getGmvMaxStores(accessToken, adv.advertiser_id).catch(() => []);
+      for (const s of stores) {
         const storeId = String(s.store_id ?? "");
         if (!byStoreId.has(storeId)) continue; // shop của seller khác → bỏ qua hoàn toàn
         seen.add(storeId);

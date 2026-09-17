@@ -262,7 +262,7 @@ export function startOrderAutoSync(): void {
   setTimeout(() => void tick(), FIRST_RUN_DELAY_MS).unref();
   setInterval(() => void tick(), TICK_MS).unref();
   console.log(
-    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', XUNG ads Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), song song ${concurrency} gian, trần ${ADS_CADENCE.APP_QPS} call/s mỗi app Ads`
+    `[Auto-sync] BẬT — lịch theo gian: quét nhanh ${cadence.baseMin}' (giãn tới ${cadence.maxMin}' khi im ắng), nhịp giờ ${HOURLY_INTERVAL_MIN}', XUNG ads Shopee ${ADS_CADENCE.PULSE_MIN}' / Lazada ${ADS_CADENCE.PULSE_LAZADA_MIN}' / TikTok ${ADS_CADENCE.PULSE_TIKTOK_MIN}' cho gian đang chi (im ắng ${ADS_CADENCE.PULSE_IDLE_MIN}'), lịch sử ads mỗi ${adsIntervalHours}h (cửa sổ ${ADS_SYNC_DAYS_BACK} ngày, lần đầu ${ADS_BACKFILL_DAYS}), song song ${concurrency} gian, trần ${ADS_CADENCE.APP_QPS} call/s mỗi app Ads`
   );
 }
 

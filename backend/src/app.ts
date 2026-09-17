@@ -248,7 +248,7 @@ export function createApp() {
   app.use("/api/koc", requireAuth, requirePermission("koc"), requirePlanUnlocked, requireChannel, kocRouter);
 
   // Trợ lý quảng cáo: cửa mount = có lá ads.* bất kỳ; nhánh /shopee bên trong
-  // router siết đúng ads.shopee (tiktok/lazada hiện là preview mock phía FE).
+  // router siết đúng lá từng sàn (Shopee/Lazada ở đây; TikTok có router riêng ngay trên).
   // Quảng cáo TikTok (GMV Max — TikTok Marketing API): router riêng, mount TRƯỚC /api/ads.
   app.use("/api/ads/tiktok", requireAuth, requirePermission("ads.tiktok"), requirePlanUnlocked, requireChannel, adsTiktokRouter);
   app.use("/api/ads", requireAuth, requirePermission("ads"), requirePlanUnlocked, requireChannel, adsRouter);

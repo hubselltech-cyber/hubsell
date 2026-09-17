@@ -5,8 +5,9 @@
 //   · Xác thực bằng header `Access-Token`.
 //   · GET: tham số mảng/đối tượng truyền dạng CHUỖI JSON trên query
 //     (store_ids=["..."], filtering={...}).
-//   · HTTP luôn 200; lỗi nằm ở `code` ≠ 0 trong thân (40001 tham số sai,
-//     40002 thiếu quyền, 40105 token chết, 40100 quá nhịp...).
+//   · HTTP luôn 200; lỗi nằm ở `code` ≠ 0 trong thân. Đã gặp thật: 40002 = tham số
+//     / metric không hợp lệ (vd xin metric thuộc tính khi có ≥2 chiều ID, auth_code
+//     sai); theo docs: 40105 = token sai hoặc đã bị thu hồi, 40100 = quá nhịp.
 // Hạn mức Basic: 8 QPS / 240 QPM / 80k QPD mỗi app.
 // ============================================================
 
@@ -112,14 +113,26 @@ export async function getTiktokAdsAdvertisers(
 
 // ---------- GMV Max ----------
 
-/** Shop TikTok mà tài khoản quảng cáo chạy GMV Max được — trả thô, T1 còn xác minh khuôn. */
-export async function getGmvMaxStores(
-  accessToken: string,
-  advertiserId: string
-): Promise<Record<string, unknown>> {
-  return adsGet<Record<string, unknown>>("/gmv_max/store/list/", accessToken, {
+/** Một shop trong /gmv_max/store/list/ (khuôn đã xác minh bằng probe 17/09/2026). */
+export interface GmvMaxStore {
+  /** = shop id của TikTok Shop API (Channel.externalShopId) — đã kiểm khớp trên prod. */
+  store_id: string;
+  store_name?: string;
+  /** Mã shop dạng "VNLCTWWLT3". */
+  store_code?: string;
+  /** true CHỈ với tài khoản quảng cáo đang giữ quyền độc quyền GMV Max của shop. */
+  is_gmv_max_available?: boolean;
+  store_authorized_bc_id?: string;
+  /** Tài khoản quảng cáo DUY NHẤT được chạy GMV Max cho shop (vắng = shop chưa cấp cho ai). */
+  exclusive_authorized_advertiser_info?: { advertiser_id?: string; advertiser_name?: string };
+}
+
+/** Các shop TikTok mà một tài khoản quảng cáo nhìn thấy — gồm cả shop nó KHÔNG được chạy GMV Max. */
+export async function getGmvMaxStores(accessToken: string, advertiserId: string): Promise<GmvMaxStore[]> {
+  const data = await adsGet<{ store_list?: GmvMaxStore[] }>("/gmv_max/store/list/", accessToken, {
     advertiser_id: advertiserId,
   });
+  return data.store_list ?? [];
 }
 
 export interface GmvMaxReportQuery {
@@ -148,10 +161,7 @@ export interface GmvMaxReportPage {
 
 /**
  * Báo cáo GMV Max — gồm cả campaign tạo từ Seller Center lẫn Ads Manager.
- * Ba tầng dùng cho việc tìm video kém:
- *   campaign: dimensions ["campaign_id"], filtering {gmv_max_promotion_types:["PRODUCT"]}
- *   sản phẩm: ["campaign_id","item_group_id"], filtering {campaign_ids:[...]}
- *   video:    ["campaign_id","item_group_id","item_id"], filtering {campaign_ids, item_group_ids}
+ * Hàm mỏng — ba tầng campaign → sản phẩm → video và các bẫy của từng tầng nằm ở report.ts.
  */
 export async function getGmvMaxReport(
   accessToken: string,

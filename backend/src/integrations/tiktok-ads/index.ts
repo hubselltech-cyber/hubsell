@@ -19,6 +19,7 @@ export {
   type GmvMaxReportPage,
   type GmvMaxReportQuery,
   type GmvMaxReportRow,
+  type GmvMaxStore,
   type TiktokAdsAdvertiser,
   type TiktokAdsTokenResult,
 } from "./client";

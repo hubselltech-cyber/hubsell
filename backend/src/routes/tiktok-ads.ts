@@ -2,9 +2,10 @@
 // ROUTES TIKTOK ADS — ỦY QUYỀN TÀI KHOẢN QUẢNG CÁO (TikTok Marketing API)
 //
 // Hai router:
-//   · tiktokAdsRouter        — /api/tiktok-ads/* (JWT + ADMIN): trạng thái, xin
-//                              URL ủy quyền (tự bấm / link gửi người chạy quảng
-//                              cáo), gỡ kết nối.
+//   · tiktokAdsRouter        — /api/tiktok-ads/* (JWT + ADMIN): xin URL ủy quyền
+//                              theo GIAN ĐÍCH (tự bấm / link gửi người chạy quảng
+//                              cáo), gỡ kết nối. Trạng thái từng gian do
+//                              GET /api/ads/tiktok trả (routes/ads-tiktok.ts).
 //   · tiktokAdsPublicRouter  — /api/auth/tiktok-ads/connect (CÔNG KHAI): trang
 //                              FE /ads/tiktok/callback gọi sau khi TikTok trả
 //                              auth_code. Công khai vì người bấm ủy quyền có
@@ -21,7 +22,6 @@ import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import {
   buildTiktokAdsAuthorizeUrl,
   connectTiktokAds,
-  getTiktokAdsLinkStatus,
   isTiktokAdsConfigured,
   signTiktokAdsState,
   unlinkTiktokAds,
@@ -32,25 +32,7 @@ import {
 
 export const tiktokAdsRouter = Router();
 
-// GET /api/tiktok-ads/status?channelId= — trạng thái kết nối quảng cáo của gian.
-tiktokAdsRouter.get("/status", requireAdmin, async (req: AuthRequest, res, next) => {
-  try {
-    const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
-    const channel = await prisma.channel.findFirst({
-      where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.TIKTOK },
-      select: { id: true },
-    });
-    if (!channel) {
-      res.status(404).json({ error: "Không tìm thấy gian TikTok" });
-      return;
-    }
-    res.json({ configured: isTiktokAdsConfigured(), ...(await getTiktokAdsLinkStatus(channel.id)) });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/tiktok-ads/auth-url?invite=1 — URL trang ủy quyền TikTok for Business.
+// GET /api/tiktok-ads/auth-url?channelId=&invite=1 — URL trang ủy quyền TikTok for Business.
 // invite=1: link sống 7 ngày để chủ shop gửi cho người giữ tài khoản quảng cáo.
 tiktokAdsRouter.get("/auth-url", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
