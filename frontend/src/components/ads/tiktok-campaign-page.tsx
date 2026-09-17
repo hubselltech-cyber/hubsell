@@ -30,7 +30,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -111,6 +111,17 @@ export function TiktokCampaignPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyVideoId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+    } catch {
+      toast.error("Trình duyệt không cho sao chép. Hãy bôi đen mã video rồi Ctrl+C.");
+    }
+  }
 
   useEffect(() => {
     const u = getStoredUser();
@@ -492,30 +503,57 @@ export function TiktokCampaignPage() {
                             </td>
                           )}
                           <td className="px-3 py-2">
-                            <a href={href} target="_blank" rel="noreferrer" className="group flex items-center gap-3" title="Mở video trên TikTok">
-                              <span className="flex h-16 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 text-slate-400">
+                            <div className="flex items-center gap-3">
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Mở video trên TikTok"
+                                className="flex h-16 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 text-slate-400"
+                              >
                                 {m?.thumbnailUrl ? (
                                   // eslint-disable-next-line @next/next/no-img-element -- ảnh CDN TikTok có hạn, không qua tối ưu ảnh của Next
                                   <img src={m.thumbnailUrl} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-full object-cover" />
                                 ) : (
                                   <ImageOff className="size-4" />
                                 )}
-                              </span>
-                              <span className="min-w-0">
-                                <span className="flex items-center gap-1 text-sm text-slate-900 group-hover:underline">
-                                  <span className="truncate">{m?.author ? `@${m.author}` : v.videoId}</span>
+                              </a>
+                              <div className="min-w-0">
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Mở video trên TikTok"
+                                  className="flex items-center gap-1 text-sm text-slate-900 hover:underline"
+                                >
+                                  <span className="truncate">{m?.author ? `@${m.author}` : "Video TikTok"}</span>
                                   <ExternalLink className="size-3.5 shrink-0 text-slate-400" />
-                                </span>
-                                <span className="block max-w-72 truncate text-xs text-slate-500">
-                                  {m?.caption || (metaLoading ? "Đang lấy thông tin video…" : `Mã video ${v.videoId}`)}
-                                </span>
+                                </a>
+                                <p className="max-w-72 truncate text-xs text-slate-500">
+                                  {m?.caption || (metaLoading ? "Đang lấy thông tin video…" : "Không lấy được tên video")}
+                                </p>
+                                {/* Mã video LUÔN hiện + sao chép một chạm (anh Trung 18/09): cần để tra trên
+                                    Seller Center / gửi người chạy quảng cáo; bôi đen 19 chữ số trong bảng rất khó. */}
+                                <button
+                                  type="button"
+                                  onClick={() => void copyVideoId(v.videoId)}
+                                  title="Sao chép mã video"
+                                  className="group mt-0.5 inline-flex items-center gap-1 rounded text-xs tabular-nums text-slate-500 hover:text-slate-900"
+                                >
+                                  {v.videoId}
+                                  {copiedId === v.videoId ? (
+                                    <Check className="size-3.5 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="size-3.5 text-slate-400 group-hover:text-slate-900" />
+                                  )}
+                                </button>
                                 {data && data.products.length > 1 && (
-                                  <span className="block max-w-72 truncate text-xs text-slate-400">
+                                  <p className="max-w-72 truncate text-xs text-slate-400">
                                     {data.products.find((p) => p.spuId === v.spuId)?.name}
-                                  </span>
+                                  </p>
                                 )}
-                              </span>
-                            </a>
+                              </div>
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             {v.pending ? (
