@@ -150,6 +150,10 @@ export interface GmvMaxVideoRow {
   gmv: number;
   impressions: number;
   clicks: number;
+  /** Tỷ lệ bấm quảng cáo (%) — ad_click_rate của sàn. */
+  ctr: number;
+  /** Tỷ lệ chuyển đổi sau bấm (%) — ad_conversion_rate của sàn. */
+  cvr: number;
 }
 
 /** Trạng thái video còn được sàn phân phối / đang học — chỉ nhóm này mới đáng soi. */
@@ -173,7 +177,7 @@ export async function fetchGmvMaxCampaignVideos(
       dimensions: ["campaign_id", "item_group_id", "item_id"],
       metrics: [
         "creative_delivery_status", "cost", "orders", "gross_revenue",
-        "product_impressions", "product_clicks",
+        "product_impressions", "product_clicks", "ad_click_rate", "ad_conversion_rate",
       ],
       filtering: {
         campaign_ids: [campaignId],
@@ -191,6 +195,9 @@ export async function fetchGmvMaxCampaignVideos(
         gmv: num(r.metrics.gross_revenue),
         impressions: num(r.metrics.product_impressions),
         clicks: num(r.metrics.product_clicks),
+        // Probe 17/09: sàn trả SẴN phần trăm dạng số trần ("1.92" = 1,92% — khớp 279 bấm / 14.518 lượt xem).
+        ctr: num(r.metrics.ad_click_rate),
+        cvr: num(r.metrics.ad_conversion_rate),
       });
     }
   }

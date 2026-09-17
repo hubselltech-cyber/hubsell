@@ -30,6 +30,7 @@ export const qk = {
   tiktokAds: (params: Record<string, unknown>) => ["tiktok-ads", params] as const,
   tiktokAdsVideos: (campaignRowId: string, days: number) =>
     ["tiktok-ads-videos", campaignRowId, days] as const,
+  tiktokVideoMeta: (ids: string[]) => ["tiktok-video-meta", ids.join(",")] as const,
 
   // ----- Tài chính -----
   financeAnalytics: (range?: DateRange, channel?: ChannelFilterQuery) =>

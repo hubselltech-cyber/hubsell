@@ -26,7 +26,6 @@ import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { toast } from "sonner";
 
 import { AccessDenied } from "@/components/shared/access-denied";
-import { TiktokCampaignVideosDialog } from "@/components/ads/tiktok-campaign-videos-dialog";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -166,7 +165,6 @@ export function TiktokAdsPage() {
   const [days, setDays] = useState(7);
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [detail, setDetail] = useState<TiktokAdsCampaignRow | null>(null);
   // null = chưa tự chọn tab → mặc định theo tình trạng kết nối (xem `tab` bên dưới).
   const [tabPick, setTabPick] = useState<"overview" | "connect" | null>(null);
 
@@ -557,7 +555,7 @@ export function TiktokAdsPage() {
                 <CardTitle>Chiến dịch GMV Max</CardTitle>
                 <CardDescription className="mt-1.5">
                   ROI thực <span className="text-red-500">đỏ</span> là đang thấp hơn ROI mục tiêu đã đặt trên TikTok. Bấm
-                  một chiến dịch để xem video nào đang tiêu tiền mà không ra đơn.
+                  một chiến dịch để soi từng video: video nào đang tiêu tiền mà không ra đơn.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -572,7 +570,7 @@ export function TiktokAdsPage() {
                       columns={CAMPAIGN_COLUMNS}
                       data={campaigns}
                       getRowId={(c) => c.id}
-                      onRowClick={(c) => setDetail(c)}
+                      onRowClick={(c) => router.push(`/ads/tiktok/campaign?id=${c.id}&days=${days}`)}
                       striped={false}
                       headerEmphasis
                       stickyHeader
@@ -586,7 +584,6 @@ export function TiktokAdsPage() {
         )}
       </div>
 
-      <TiktokCampaignVideosDialog campaign={detail} days={days} onClose={() => setDetail(null)} />
     </AppShell>
   );
 }

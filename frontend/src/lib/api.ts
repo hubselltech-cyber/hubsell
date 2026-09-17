@@ -2595,12 +2595,29 @@ export interface TiktokAdsVideoRow {
   gmv: number;
   impressions: number;
   clicks: number;
+  /** Tỷ lệ bấm quảng cáo, đơn vị % (1.92 = 1,92%). */
+  ctr: number;
+  /** Tỷ lệ chuyển đổi sau bấm, đơn vị %. */
+  cvr: number;
   roi: number | null;
   noOrder: boolean;
 }
 
 export interface TiktokAdsCampaignVideos {
-  campaign: { id: string; campaignId: string; name: string };
+  campaign: {
+    id: string;
+    campaignId: string;
+    name: string;
+    shopName: string;
+    channelId: string;
+    status: string;
+    biddingMethod: string;
+    roasTarget: number | null;
+    /** Cộng dồn khoảng ngày đang xem (từ tầng sản phẩm của báo cáo). */
+    spend: number;
+    orders: number;
+    gmv: number;
+  };
   days: number;
   products: { spuId: string; name: string; cost: number; orders: number; gmv: number }[];
   videos: TiktokAdsVideoRow[];
@@ -2617,6 +2634,22 @@ export interface TiktokAdsCampaignVideos {
 export function fetchTiktokAdsCampaignVideos(campaignRowId: string, days: number) {
   return apiFetch<TiktokAdsCampaignVideos>(
     `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?days=${days}`
+  );
+}
+
+export interface TiktokVideoMeta {
+  videoId: string;
+  /** @handle kênh đăng (không kèm @). */
+  author: string;
+  authorName: string;
+  caption: string;
+  thumbnailUrl: string;
+}
+
+/** Ảnh bìa + kênh + caption cho video của trang đang xem (≤24 id). Thiếu id = TikTok không cho. */
+export function fetchTiktokVideoMeta(videoIds: string[]) {
+  return apiFetch<{ items: Record<string, TiktokVideoMeta> }>(
+    `/api/ads/tiktok/video-meta?ids=${videoIds.join(",")}`
   );
 }
 

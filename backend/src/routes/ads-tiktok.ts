@@ -7,6 +7,7 @@
 //
 //   GET  /                       — tổng quan: campaign + số theo ngày (đọc DB, worker kéo)
 //   GET  /campaigns/:id/videos   — soi SỐNG sản phẩm → video của một campaign
+//   GET  /video-meta?ids=        — ảnh bìa + kênh + caption (oEmbed công khai, có nhớ đệm)
 //   POST /refresh                — nút Làm mới (kéo hạn xung về ngay)
 //
 // Cách ly: mọi truy vấn đi qua gian của req.ownerId + TiktokAdsStoreLink của
@@ -31,6 +32,7 @@ import {
   fetchGmvMaxCampaignProducts,
   fetchGmvMaxCampaignVideos,
 } from "../integrations/tiktok-ads/report";
+import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
 
 export const adsTiktokRouter = Router();
 
@@ -173,7 +175,16 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         id: String(req.params.id),
         channel: { userId: req.ownerId!, channelName: ChannelName.TIKTOK },
       },
-      select: { id: true, campaignId: true, name: true, channelId: true },
+      select: {
+        id: true,
+        campaignId: true,
+        name: true,
+        channelId: true,
+        status: true,
+        roasTarget: true,
+        biddingMethod: true,
+        channel: { select: { shopName: true } },
+      },
     });
     if (!campaign) {
       res.status(404).json({ error: "Không tìm thấy chiến dịch" });
@@ -211,7 +222,19 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       const videoSpend = rows.reduce((s, v) => s + v.cost, 0);
       const noOrder = rows.filter((v) => v.noOrder);
       res.json({
-        campaign: { id: campaign.id, campaignId: campaign.campaignId, name: campaign.name },
+        campaign: {
+          id: campaign.id,
+          campaignId: campaign.campaignId,
+          name: campaign.name,
+          shopName: campaign.channel.shopName,
+          channelId: campaign.channelId,
+          status: campaign.status,
+          biddingMethod: campaign.biddingMethod,
+          roasTarget: campaign.roasTarget != null ? Number(campaign.roasTarget) : null,
+          spend: products.reduce((s, x) => s + x.cost, 0),
+          orders: products.reduce((s, x) => s + x.orders, 0),
+          gmv: products.reduce((s, x) => s + x.gmv, 0),
+        },
         days,
         products,
         videos: rows,
@@ -227,6 +250,21 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       await recordTiktokAdsFailure(scope.linkId, err);
       res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Ảnh bìa + kênh + caption cho các video của TRANG ĐANG XEM (≤24 id/lượt).
+// Không gắn với gian nào: dữ liệu công khai của TikTok, chỉ cần đã qua cổng quyền ads.tiktok.
+adsTiktokRouter.get("/video-meta", async (req: AuthRequest, res, next) => {
+  try {
+    const ids = String(req.query.ids ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, VIDEO_META_MAX_IDS);
+    res.json({ items: await getTiktokVideoMeta(ids) });
   } catch (err) {
     next(err);
   }
