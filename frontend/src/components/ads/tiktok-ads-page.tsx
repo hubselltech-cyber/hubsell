@@ -341,9 +341,12 @@ export function TiktokAdsPage() {
 
         {linked && linkBroken && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+            {/* NO_ACCESS: shop đổi tài khoản quảng cáo / người chạy thuê — backend ghi sẵn lý do kèm tên tài khoản mới. */}
             <span>
-              Kết nối quảng cáo của gian đã hết hiệu lực (tài khoản TikTok đã hủy ủy quyền). Số bên dưới dừng ở lần
-              cập nhật cuối.
+              {data?.link?.status === "NO_ACCESS" && data.link.lastSyncError
+                ? data.link.lastSyncError
+                : "Kết nối quảng cáo của gian đã hết hiệu lực (tài khoản TikTok đã hủy ủy quyền)."}{" "}
+              Số bên dưới dừng ở lần cập nhật cuối.
             </span>
             <Button size="sm" variant="outline" onClick={() => void openAuthorize(false)} disabled={connecting}>
               Kết nối lại

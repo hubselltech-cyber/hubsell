@@ -91,7 +91,7 @@ import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
 import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
 import { vnDateKey } from "../integrations/shopee/ads-insights";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
-import { syncTiktokAdsCampaigns } from "../integrations/tiktok-ads/sync";
+import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -829,6 +829,12 @@ async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
   if (!isTiktokAdsConfigured()) return false;
   const backfill = channel.adsBackfillPending || !channel.lastAdsSyncAt;
   try {
+    // Tài khoản quảng cáo TikTok là thực thể rời shop — kiểm lại ai đang giữ
+    // quyền GMV Max của gian TRƯỚC khi kéo số (đổi người chạy thuê → tự chuyển / báo).
+    const check = await verifyTiktokAdsLink(channel.id);
+    if (check === "switched" || check === "no_access") {
+      console.log(`[Auto-sync] "${channel.shopName}" ads TikTok: tài khoản quảng cáo của gian đã đổi (${check})`);
+    }
     const r = await syncTiktokAdsCampaigns(channel, {
       daysBack: backfill ? ADS_BACKFILL_DAYS : ADS_SYNC_DAYS_BACK,
     });

@@ -21,7 +21,7 @@
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { dateFromStr, vnDateStr } from "../lazada/ads-campaigns";
-import { TiktokAdsApiError } from "./client";
+import { TiktokAdsApiError, getGmvMaxStores } from "./client";
 import { fetchGmvMaxCampaignDaily } from "./report";
 
 /** 40105 = access token sai hoặc đã bị thu hồi (docs Appendix - Return codes). */
@@ -74,6 +74,75 @@ export async function recordTiktokAdsFailure(linkId: string, err: unknown): Prom
       data: { lastSyncError: message },
     })
     .catch(() => {});
+}
+
+export type TiktokAdsLinkCheck = "ok" | "switched" | "no_access" | "skipped";
+
+/**
+ * KIỂM LẠI "AI ĐANG CHẠY GMV MAX CHO GIAN NÀY" (anh Trung 17/09/2026). Khác
+ * Shopee — quyền ads gắn chết vào shop — ở TikTok tài khoản quảng cáo là thực
+ * thể RỜI: chủ shop đổi người chạy thuê / chuyển quyền độc quyền GMV Max sang
+ * tài khoản khác bất cứ lúc nào. Không kiểm thì Hubsell cứ đọc tài khoản cũ, số
+ * lặng lẽ về 0. Một call store/list mỗi lượt lịch sử (6h):
+ *   · tài khoản độc quyền vẫn là cái đang nối            → ok
+ *   · đã đổi sang tài khoản KHÁC mà token này cũng thấy   → tự chuyển link
+ *   · đã đổi sang tài khoản token không thấy / mất quyền  → NO_ACCESS kèm lý do
+ *     nói thẳng tên tài khoản mới để chủ shop biết phải nhờ ai ủy quyền lại.
+ * Lỗi mạng/lỗi sàn tạm thời → skipped, không đổi gì.
+ */
+export async function verifyTiktokAdsLink(channelId: string): Promise<TiktokAdsLinkCheck> {
+  const link = await prisma.tiktokAdsStoreLink.findUnique({
+    where: { channelId },
+    select: {
+      id: true,
+      status: true,
+      advertiserId: true,
+      advertiserName: true,
+      storeId: true,
+      auth: { select: { accessToken: true, status: true, advertiserIds: true } },
+    },
+  });
+  if (!link || link.status !== "ACTIVE" || link.auth.status !== "ACTIVE") return "skipped";
+
+  let stores: { store_id?: string; exclusive_authorized_advertiser_info?: { advertiser_id?: string; advertiser_name?: string } }[];
+  try {
+    const data = await getGmvMaxStores(link.auth.accessToken, link.advertiserId);
+    stores = (data.store_list ?? []) as typeof stores;
+  } catch (err) {
+    await recordTiktokAdsFailure(link.id, err);
+    return "skipped";
+  }
+
+  const store = stores.find((x) => String(x.store_id ?? "") === link.storeId);
+  const ex = store?.exclusive_authorized_advertiser_info;
+  const exId = ex?.advertiser_id ? String(ex.advertiser_id) : "";
+  if (exId === link.advertiserId) return "ok";
+
+  const noAccess = async (reason: string): Promise<TiktokAdsLinkCheck> => {
+    await prisma.tiktokAdsStoreLink.update({
+      where: { id: link.id },
+      data: { status: "NO_ACCESS", lastSyncError: reason },
+    });
+    return "no_access";
+  };
+  if (!store) {
+    return noAccess(
+      `Tài khoản quảng cáo "${link.advertiserName || link.advertiserId}" không còn quyền quảng cáo cho gian này trên TikTok.`
+    );
+  }
+  if (!exId) {
+    return noAccess("Gian hiện không cấp quyền chạy GMV Max cho tài khoản quảng cáo nào trên TikTok.");
+  }
+  if (link.auth.advertiserIds.split(",").includes(exId)) {
+    await prisma.tiktokAdsStoreLink.update({
+      where: { id: link.id },
+      data: { advertiserId: exId, advertiserName: ex?.advertiser_name ?? "", lastSyncError: "" },
+    });
+    return "switched";
+  }
+  return noAccess(
+    `Gian đã chuyển quyền chạy GMV Max sang tài khoản quảng cáo "${ex?.advertiser_name || exId}". Hãy kết nối lại bằng tài khoản TikTok quản lý tài khoản quảng cáo đó.`
+  );
 }
 
 export interface SyncTiktokAdsResult {

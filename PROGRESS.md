@@ -5,7 +5,7 @@
 
 ---
 
-## Phiên 17/09/2026 tối — Quảng cáo TikTok GMV Max: app Marketing API được duyệt → probe T1 → GĐ1 (CHƯA commit/push)
+## Phiên 17/09/2026 tối — Quảng cáo TikTok GMV Max: app Marketing API được duyệt → probe T1 → GĐ1 (ĐÃ PUSH df30bbc + bản vá kiểm lại tài khoản quảng cáo)
 
 - **App "Hubsell" trên TikTok Marketing API được duyệt** (App ID 7686282112950747157, scope chỉ đọc + loại video). Probe thật bằng TKQC nhà: 1 lần ủy quyền = token thấy 5 tài khoản quảng cáo, mỗi tài khoản thấy nhiều shop; chỉ tài khoản ĐỘC QUYỀN GMV Max của shop (`exclusive_authorized_advertiser_info`) mới có số; report gồm cả campaign tạo từ Seller Center; 1 campaign thật có 1.779 video.
 - **Anh Trung lưu ý:** một tài khoản quảng cáo chạy cho rất nhiều shop, kể cả nhiều seller (người chạy quảng cáo thuê). Thiết kế theo đó: token chỉ là chìa khóa (bảng `tiktok_ads_auths`, theo chủ shop, KHÔNG unique theo advertiser); quyền xem số do `tiktok_ads_store_links` quyết định và link CHỈ tạo cho gian TikTok chủ shop đã nối app chính (store_id = Channel.externalShopId — bằng chứng sở hữu). Shop seller khác trong cùng token: không lưu, không gọi report. Không dò ra gian nào → không giữ token. Người giữ tài khoản quảng cáo có thể không phải chủ shop → link ủy quyền gửi đi được (state ký 7 ngày) + callback công khai nhận diện bằng state. Migration `20260917235000_tiktok_ads_auth` (Render tự migrate deploy).
@@ -14,6 +14,7 @@
 - **Gotcha API:** metric thuộc tính (tên SP, tên video...) lỗi 40002 khi dimensions có ≥2 chiều ID → tầng video không bao giờ có tên, UI hiện mã + link `tiktok.com/@/video/{id}`; chi phí video trễ tới 11h; ROI gộp đơn tự nhiên.
 - **Frontend:** `/ads/tiktok` thay trang "sắp ra mắt" (`components/ads/tiktok-ads-page.tsx`): chưa nối = MỘT nút Kết nối + dòng nhỏ "Người khác giữ tài khoản quảng cáo? Sao chép link gửi họ"; đã nối = 4 thẻ số + biểu đồ + bảng campaign (ROI thực đỏ khi dưới ROI mục tiêu) + hộp soi video tiêu tiền không ra đơn. `/ads/tiktok/callback` = trang nhận auth_code (không đòi đăng nhập; có trạm chuyển tiếp về localhost cho dev). Backend chưa đặt env thì trang tự hiện lại "sắp ra mắt".
 - **Đã kiểm local bằng số thật** (gian giả mang store_id thật, đã xóa sau khi thử): dò link 0,9s, đồng bộ 30 ngày 20 campaign/120 dòng trong 2s; tsc BE+FE sạch, eslint sạch, 464 test pass.
+- **Tài khoản quảng cáo TikTok là thực thể RỜI shop (anh Trung nhắc 17/09, khác Shopee — quyền ads gắn chết vào shop):** ngoài việc ủy quyền bằng tài khoản bất kỳ + link mời, thêm `verifyTiktokAdsLink` chạy mỗi lượt lịch sử 6h (1 call store/list): shop đổi người chạy thuê / chuyển quyền độc quyền GMV Max → tài khoản mới nằm trong token thì TỰ chuyển link, không thì NO_ACCESS kèm lý do nêu tên tài khoản mới, trang hiện dải đỏ + nút Kết nối lại. Đã thử thật cả hai nhánh bằng token nhà.
 - **Việc còn lại để lên prod:** (1) anh đặt `TIKTOK_ADS_APP_ID` + `TIKTOK_ADS_SECRET` trên Render; (2) commit + push; (3) anh bấm Kết nối trên prod bằng TKQC nhà → xác minh store_id = externalShopId của gian and.not.or thật (local không có gian TikTok nên chưa so được; lệch thì khớp dự phòng bằng store_code). **GĐ2:** tên/ảnh video (`/gmv_max/video/get`), luật + nút loại video (`/campaign/gmv_max/creative/update`, scope đã có), ROAS hòa vốn TikTok.
 
 ---
