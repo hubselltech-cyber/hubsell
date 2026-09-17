@@ -85,9 +85,10 @@ export interface HubsellAdsLinkResult {
 }
 
 /**
- * Đổi code → token của app Hubsell Ads rồi ghi vào ChannelAppAuth của gian đích.
- * Đối chiếu shop_id TRƯỚC khi đổi code (code chỉ dùng được một lần): trình
- * duyệt có thể đang đăng nhập sẵn tài khoản Shopee của gian khác.
+ * Đổi code → token của app Hubsell Ads rồi ghi vào ChannelAppAuth của gian có
+ * shop_id vừa ủy quyền. Gian đích (channelId) chỉ là gợi ý: trình duyệt có thể
+ * đang đăng nhập sẵn tài khoản của gian khác CÙNG chủ shop → nối gian đó luôn;
+ * shop_id lạ (không của chủ shop này) mới chặn, và chặn TRƯỚC khi đổi code.
  */
 export async function handleHubsellAdsCallback(
   ownerId: string,
@@ -108,13 +109,25 @@ export async function handleHubsellAdsCallback(
         `trang Kênh bán trước, rồi mới ủy quyền ${HUBSELL_ADS_APP_LABEL}.`
     );
   }
+  // Tài khoản vừa ủy quyền là gian Shopee KHÁC của cùng chủ shop (anh Trung 17/09:
+  // chọn DarkMan mà đăng nhập ANO) → nối luôn cho gian đó, không bắt làm lại.
+  // Chỉ chặn khi shop_id không thuộc gian nào của chủ shop này (đăng nhập nhầm
+  // tài khoản người khác) — chặn TRƯỚC khi đổi code vì code chỉ dùng được một lần.
+  let target = channel;
   if (channel.externalShopId !== shopId) {
-    throw new Error(
-      `Tài khoản Shopee vừa uỷ quyền (shop ID: ${shopId}) không trùng với gian ` +
-        `"${channel.shopName}" (shop ID: ${channel.externalShopId}). Hãy đăng xuất Shopee ` +
-        `trên trình duyệt, đăng nhập đúng tài khoản của gian này rồi bấm Kết nối ` +
-        `${HUBSELL_ADS_APP_LABEL} lại.`
-    );
+    const sibling = await prisma.channel.findFirst({
+      where: { userId: ownerId, channelName: ChannelName.SHOPEE, externalShopId: shopId },
+      select: { id: true, shopName: true, externalShopId: true },
+    });
+    if (!sibling) {
+      throw new Error(
+        `Tài khoản Shopee vừa uỷ quyền (shop ID: ${shopId}) không thuộc gian Shopee nào ` +
+          `của anh/chị trên Hubsell (đang chọn "${channel.shopName}", shop ID ` +
+          `${channel.externalShopId}). Hãy đăng xuất Shopee trên trình duyệt, đăng nhập ` +
+          `đúng tài khoản của gian rồi bấm Kết nối ${HUBSELL_ADS_APP_LABEL} lại.`
+      );
+    }
+    target = sibling;
   }
 
   const token = await getAccessToken(code, shopId, getHubsellAdsConfig());
@@ -134,14 +147,14 @@ export async function handleHubsellAdsCallback(
     disconnectedAt: null,
   };
   await prisma.channelAppAuth.upsert({
-    where: { channelId_app: { channelId: channel.id, app: ChannelAppKind.HUBSELL_ADS } },
+    where: { channelId_app: { channelId: target.id, app: ChannelAppKind.HUBSELL_ADS } },
     update: data,
-    create: { channelId: channel.id, app: ChannelAppKind.HUBSELL_ADS, ...data },
+    create: { channelId: target.id, app: ChannelAppKind.HUBSELL_ADS, ...data },
   });
   // Vừa nối (lại) → worker kéo lùi 30 ngày ads ngay lượt kế (12/09), seller
   // không phải chờ nhịp ngày hay bấm tay.
-  await markAdsBackfill(channel.id);
-  return { channelId: channel.id, shopName: channel.shopName, externalShopId: shopId };
+  await markAdsBackfill(target.id);
+  return { channelId: target.id, shopName: target.shopName, externalShopId: shopId };
 }
 
 /** Gỡ ủy quyền Hubsell Ads khỏi một gian (xoá token; app chính không bị ảnh hưởng). */

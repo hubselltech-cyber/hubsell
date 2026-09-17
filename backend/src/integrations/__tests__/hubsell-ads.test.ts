@@ -104,13 +104,44 @@ describe("Hubsell Ads đã cấu hình", () => {
     expect(st.status).toBe("NOT_LINKED");
   });
 
-  it("callback: shop_id lệch gian đích → chặn TRƯỚC khi đốt code", async () => {
+  it("callback: shop_id KHÔNG thuộc gian nào của chủ shop → chặn TRƯỚC khi đốt code", async () => {
     configureHubsellAds(true);
     await expect(
       handleHubsellAdsCallback(fx.userId, "code-1", "123456", fx.channelId)
-    ).rejects.toThrow(/không trùng/);
+    ).rejects.toThrow(/không thuộc gian Shopee nào/);
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(await authRow()).toBeNull();
+  });
+
+  it("callback: shop_id là gian Shopee KHÁC của cùng chủ shop → nối luôn gian đó (17/09)", async () => {
+    configureHubsellAds(true);
+    const sibling = await prisma.channel.create({
+      data: {
+        userId: fx.userId,
+        channelName: "SHOPEE",
+        shopName: "Gian thứ hai",
+        externalShopId: `8${Date.now()}`,
+        status: "ACTIVE",
+      },
+    });
+    try {
+      vi.mocked(getAccessToken).mockResolvedValue({
+        access_token: "ads-access-sib",
+        refresh_token: "ads-refresh-sib",
+        expire_in: 14400,
+      });
+      // Đang chọn gian gốc nhưng đăng nhập tài khoản gian thứ hai.
+      const r = await handleHubsellAdsCallback(fx.userId, "code-sib", sibling.externalShopId!, fx.channelId);
+      expect(r.channelId).toBe(sibling.id);
+      expect(r.shopName).toBe("Gian thứ hai");
+      expect(await authRow()).toBeNull(); // gian gốc KHÔNG bị ghi nhầm
+      const sibRow = await prisma.channelAppAuth.findUnique({
+        where: { channelId_app: { channelId: sibling.id, app: ChannelAppKind.HUBSELL_ADS } },
+      });
+      expect(sibRow?.accessToken).toBe("ads-access-sib");
+    } finally {
+      await prisma.channel.delete({ where: { id: sibling.id } });
+    }
   });
 
   it("callback khớp shop_id → ghi ChannelAppAuth bằng cfg Hubsell Ads, resolve dùng partner riêng", async () => {

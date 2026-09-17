@@ -83,9 +83,11 @@ Env đầy đủ (xem `backend/.env.example`): `HUBSELL_ADS_PARTNER_ID`,
 1. Trang Trợ lý quảng cáo Shopee → chọn gian → thẻ "Kết nối Hubsell Ads" → bấm.
 2. Shopee mở trang ủy quyền (luồng legacy `auth_partner` như app chính, cùng
    cờ `SHOPEE_AUTH_FLOW`). Seller đăng nhập đúng tài khoản gian → Đồng ý.
-3. Callback đối chiếu `shop_id` với gian đích **trước khi đổi code** (đăng nhập
-   nhầm shop khác sẽ báo lỗi rõ, không ghi token nhầm gian), lưu ChannelAppAuth,
-   redirect về `/ads/shopee?hubsell_ads=connected`.
+3. Callback đối chiếu `shop_id` **trước khi đổi code**: trùng gian đang chọn → nối
+   gian đó; là gian Shopee **khác của cùng chủ shop** (17/09: chọn DarkMan mà đăng
+   nhập ANO) → nối luôn gian kia, trang mở đúng gian vừa nối; shop_id không thuộc
+   gian nào của chủ shop → báo lỗi rõ, không ghi token. Lưu ChannelAppAuth, redirect
+   về `/ads/shopee?hubsell_ads=connected&channelId=<gian vừa nối>`.
 4. Worker nhặt vé trong ≤20s → XUNG ads kéo cấu hình + số hôm nay + ví ngay; lịch sử 30 ngày ở lượt kế (adsBackfillPending).
 5. Hết hạn refresh (30 ngày không gia hạn được) → dải vàng "kết nối lại".
 
