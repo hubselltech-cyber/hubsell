@@ -2612,7 +2612,11 @@ export interface TiktokAdsVideoActionLog {
   action: "exclude_video" | "restore_video";
   status: "SUCCESS" | "FAILED";
   error: string | null;
-  videoIds: string[];
+  /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
+  source: "manual" | "auto";
+  /** Từng video của lệnh + ghi chú số liệu lúc thao tác ("chi 90.377đ · 0 đơn"). */
+  videos: { videoId: string; note: string }[];
+  grounds: string[];
   createdAt: string;
 }
 
@@ -2631,7 +2635,9 @@ export interface TiktokAdsCampaignVideos {
     orders: number;
     gmv: number;
   };
-  days: number;
+  /** Khoảng ngày backend đã dùng (YYYY-MM-DD, đã kẹp ≤ hôm nay). */
+  from: string;
+  to: string;
   products: { spuId: string; name: string; cost: number; orders: number; gmv: number }[];
   videos: TiktokAdsVideoRow[];
   actions: TiktokAdsVideoActionLog[];
@@ -2646,9 +2652,9 @@ export interface TiktokAdsCampaignVideos {
 }
 
 /** Soi SỐNG từ TikTok (2–3 call) — không có trong DB, mở hộp mới gọi. */
-export function fetchTiktokAdsCampaignVideos(campaignRowId: string, days: number) {
+export function fetchTiktokAdsCampaignVideos(campaignRowId: string, range: { from: string; to: string }) {
   return apiFetch<TiktokAdsCampaignVideos>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?days=${days}`
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?from=${range.from}&to=${range.to}`
   );
 }
 

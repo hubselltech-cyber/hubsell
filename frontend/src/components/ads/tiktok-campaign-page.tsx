@@ -2,6 +2,8 @@
 
 // ============================================================
 // TRANG SOI VIDEO CỦA MỘT CHIẾN DỊCH GMV MAX — /ads/tiktok/campaign?id=…&days=…
+// (days chỉ là khoảng KHỞI ĐẦU mang từ trang Tổng quan sang; trong trang dùng bộ
+// lọc thời gian CHUẨN của app — DateRangePicker: phím nhanh + lịch chọn tay.)
 //
 // Màn làm việc chính của Quảng cáo TikTok: tìm video tiêu tiền mà không hiệu
 // quả (bước sau: tick chọn → Loại video). Trang riêng thay cho hộp thoại vì
@@ -19,7 +21,7 @@
 // không tick lại được. Video đã loại nằm ở chip "Đã loại", khôi phục bằng đúng
 // cách đó. Chiến dịch đang tắt thì sàn không cho thao tác → ẩn ô tick.
 //
-// BẢNG TRONG HỘP (anh Trung 18/09, cùng khuôn trang Lãi/Lỗ thực hiện): bảng
+// BẢNG TRONG HỘP (anh Trung 17/09, cùng khuôn trang Lãi/Lỗ thực hiện): bảng
 // cuộn dọc + ngang NGAY TRONG hộp cao gần bằng màn hình, tiêu đề cột bám đỉnh
 // hộp; chọn 20/50/100 dòng mỗi trang. Dùng chung 2 hằng PNL_* để hai trang
 // luôn cư xử giống nhau (kể cả việc KHÔNG overscroll-contain — bẫy lăn chuột).
@@ -34,6 +36,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, 
 import { toast } from "sonner";
 
 import { AccessDenied } from "@/components/shared/access-denied";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { AppShell } from "@/components/shell/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +54,7 @@ import {
   sendTiktokAdsVideoAction,
   type TiktokAdsVideoRow,
 } from "@/lib/api";
+import { formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can, isAdmin } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
@@ -58,12 +62,6 @@ import { TEXT_NUMBER_STRONG, TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography"
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
-const DAY_PRESETS = [
-  { label: "Hôm nay", value: 1 },
-  { label: "7 ngày", value: 7 },
-  { label: "14 ngày", value: 14 },
-  { label: "30 ngày", value: 30 },
-];
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   DELIVERING: { label: "Đang phân phối", className: "bg-emerald-50 text-emerald-700" },
@@ -74,7 +72,7 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
 type QuickFilter = "all" | "noOrder" | "belowTarget" | "learning" | "excluded";
 
 const rowKey = (v: TiktokAdsVideoRow) => `${v.spuId}-${v.videoId}`;
-// SẮP XẾP NGAY TẠI TIÊU ĐỀ CỘT (anh Trung 18/09, thay ô chọn ở lề phải): bấm một
+// SẮP XẾP NGAY TẠI TIÊU ĐỀ CỘT (anh Trung 17/09, thay ô chọn ở lề phải): bấm một
 // cột = cao → thấp, bấm lần nữa = thấp → cao. Bằng nhau thì video tốn tiền hơn lên trước.
 type SortKey = "cost" | "orders" | "gmv" | "ctr" | "cvr" | "roi";
 type SortDir = "desc" | "asc";
@@ -110,10 +108,17 @@ export function TiktokCampaignPage() {
   const searchParams = useSearchParams();
   const campaignRowId = searchParams.get("id") ?? "";
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [days, setDays] = useState(() => {
+  const [range, setRange] = useState<DateRange>(() => {
     const d = Number(searchParams.get("days"));
-    return DAY_PRESETS.some((p) => p.value === d) ? d : 7;
+    const days = [1, 7, 14, 30].includes(d) ? d : 7;
+    const to = new Date();
+    to.setHours(0, 0, 0, 0);
+    const from = new Date(to);
+    from.setDate(from.getDate() - (days - 1));
+    return { from, to };
   });
+  const fromKey = toDateKey(range.from);
+  const toKey = toDateKey(range.to);
   const [quick, setQuick] = useState<QuickFilter>("all");
   const [minCost, setMinCost] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "cost", dir: "desc" });
@@ -143,8 +148,8 @@ export function TiktokCampaignPage() {
   }, []);
 
   const q = useApiQuery({
-    queryKey: qk.tiktokAdsVideos(campaignRowId, days),
-    queryFn: () => fetchTiktokAdsCampaignVideos(campaignRowId, days),
+    queryKey: qk.tiktokAdsVideos(campaignRowId, fromKey, toKey),
+    queryFn: () => fetchTiktokAdsCampaignVideos(campaignRowId, { from: fromKey, to: toKey }),
     enabled: allowed === true && campaignRowId !== "",
     staleTime: 5 * 60_000,
   });
@@ -311,22 +316,15 @@ export function TiktokCampaignPage() {
               </p>
             )}
           </div>
-          <div className="ml-auto flex overflow-hidden rounded-lg border">
-            {DAY_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                onClick={() => {
-                  setDays(p.value);
-                  setPage(0);
-                }}
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium transition-colors",
-                  days === p.value ? "bg-primary text-primary-foreground" : "bg-card text-slate-600 hover:bg-muted"
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
+          <div className="ml-auto">
+            <DateRangePicker
+              value={range}
+              onChange={(r) => {
+                setRange(r);
+                setPage(0);
+                setPicked(new Set());
+              }}
+            />
           </div>
         </div>
 
@@ -417,7 +415,7 @@ export function TiktokCampaignPage() {
                   {!restoring && (
                     <span className="text-slate-500">
                       {" "}
-                      · đã tiêu {formatVND(pickedRows.reduce((s, v) => s + v.cost, 0))} trong {days === 1 ? "hôm nay" : `${days} ngày`}
+                      · đã tiêu {formatVND(pickedRows.reduce((s, v) => s + v.cost, 0))} trong {formatRangeLabel(range).toLowerCase()}
                     </span>
                   )}
                 </span>
@@ -552,7 +550,7 @@ export function TiktokCampaignPage() {
                                 <p className="max-w-72 truncate text-xs text-slate-500">
                                   {m?.caption || (metaLoading ? "Đang lấy thông tin video…" : "Không lấy được tên video")}
                                 </p>
-                                {/* Mã video LUÔN hiện + sao chép một chạm (anh Trung 18/09): cần để tra trên
+                                {/* Mã video LUÔN hiện + sao chép một chạm (anh Trung 17/09): cần để tra trên
                                     Seller Center / gửi người chạy quảng cáo; bôi đen 19 chữ số trong bảng rất khó. */}
                                 <button
                                   type="button"
@@ -655,30 +653,70 @@ export function TiktokCampaignPage() {
           </CardContent>
         </Card>
 
-        {/* ===== LỊCH SỬ THAO TÁC VIDEO ===== */}
+        {/* ===== LỊCH SỬ THAO TÁC VIDEO — từng lệnh: giờ, lý do (thủ công / tự động + căn cứ),
+            kết quả sàn, và MÃ từng video kèm số liệu lúc thao tác (anh Trung 17/09). ===== */}
         {(data?.actions.length ?? 0) > 0 && (
           <Card>
             <CardContent className="space-y-2 py-4">
               <p className="text-sm font-semibold text-slate-900">Lịch sử loại / khôi phục video</p>
               <ul className="divide-y divide-slate-200/80 text-sm">
-                {data?.actions.map((a) => (
-                  <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                    <span className="w-32 shrink-0 tabular-nums text-slate-500">
-                      {new Date(a.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
-                    </span>
-                    <span className="text-slate-900">
-                      {a.action === "exclude_video" ? "Loại" : "Khôi phục"} {formatNumber(a.videoIds.length)} video
-                    </span>
-                    {a.status === "SUCCESS" ? (
-                      <Badge className="bg-emerald-50 text-emerald-700">Đã gửi lên TikTok</Badge>
-                    ) : (
-                      <Badge className="bg-rose-50 text-red-500" title={a.error ?? undefined}>
-                        TikTok từ chối
-                      </Badge>
-                    )}
-                    {a.status === "FAILED" && a.error && <span className="w-full text-xs text-red-500">{a.error}</span>}
-                  </li>
-                ))}
+                {data?.actions.map((a) => {
+                  const removing = a.action === "exclude_video";
+                  return (
+                    <li key={a.id} className="space-y-1.5 py-3">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="w-28 shrink-0 tabular-nums text-slate-500">
+                          {new Date(a.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
+                        </span>
+                        <span className="font-medium text-slate-900">
+                          {removing ? "Loại" : "Khôi phục"} {formatNumber(a.videos.length)} video
+                        </span>
+                        <Badge className={a.source === "manual" ? "bg-slate-100 text-slate-500" : "bg-violet-50 text-violet-700"}>
+                          {a.source === "manual"
+                            ? removing
+                              ? "Loại thủ công"
+                              : "Khôi phục thủ công"
+                            : removing
+                              ? "Trợ lý tự động loại"
+                              : "Trợ lý tự động khôi phục"}
+                        </Badge>
+                        {a.status === "SUCCESS" ? (
+                          <Badge className="bg-emerald-50 text-emerald-700">Đã gửi lên TikTok</Badge>
+                        ) : (
+                          <Badge className="bg-rose-50 text-red-500">TikTok từ chối</Badge>
+                        )}
+                      </div>
+                      {a.grounds.length > 0 && (
+                        <ul className="space-y-0.5 text-xs text-slate-500 sm:pl-[7.75rem]">
+                          {a.grounds.map((g, i) => (
+                            <li key={i}>Căn cứ: {g}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <ul className="space-y-0.5 sm:pl-[7.75rem]">
+                        {a.videos.map((x) => (
+                          <li key={x.videoId} className="flex flex-wrap items-center gap-x-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => void copyVideoId(x.videoId)}
+                              title="Sao chép mã video"
+                              className="group inline-flex items-center gap-1 tabular-nums text-slate-900 hover:underline"
+                            >
+                              {x.videoId}
+                              {copiedId === x.videoId ? (
+                                <Check className="size-3.5 text-emerald-500" />
+                              ) : (
+                                <Copy className="size-3.5 text-slate-400 group-hover:text-slate-900" />
+                              )}
+                            </button>
+                            {x.note && <span className="text-slate-500">{x.note}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                      {a.status === "FAILED" && a.error && <p className="text-xs text-red-500 sm:pl-[7.75rem]">{a.error}</p>}
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>

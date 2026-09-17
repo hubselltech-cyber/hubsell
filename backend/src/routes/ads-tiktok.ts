@@ -54,6 +54,30 @@ function parseDays(raw: unknown): number {
   return Number.isFinite(n) ? Math.min(30, Math.max(1, Math.trunc(n))) : 7;
 }
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+/** Probe 17/09/2026: tầng video nhận khoảng dài tới 366 ngày (không có chiều thời gian thì không bị trần 30 ngày). */
+const MAX_RANGE_DAYS = 366;
+
+/**
+ * Khoảng ngày của trang soi video: ưu tiên from/to (bộ lọc thời gian chuẩn của
+ * app — YYYY-MM-DD theo ngày VN), không có thì lùi `days` ngày như link cũ.
+ * Kẹp: to ≤ hôm nay, from ≤ to, dài tối đa MAX_RANGE_DAYS.
+ */
+function parseRange(query: Record<string, unknown>): { startDate: string; endDate: string } {
+  const today = vnDateStr(0);
+  const from = typeof query.from === "string" && DATE_KEY.test(query.from) ? query.from : "";
+  const to = typeof query.to === "string" && DATE_KEY.test(query.to) ? query.to : "";
+  if (!from || !to) {
+    const days = parseDays(query.days);
+    return { startDate: vnDateStr(days - 1), endDate: today };
+  }
+  const endDate = to > today ? today : to;
+  let startDate = from > endDate ? endDate : from;
+  const floor = new Date(Date.parse(`${endDate}T00:00:00Z`) - (MAX_RANGE_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  if (startDate < floor) startDate = floor;
+  return { startDate, endDate };
+}
+
 async function ownedTiktokChannels(ownerId: string) {
   return prisma.channel.findMany({
     where: { userId: ownerId, channelName: ChannelName.TIKTOK, status: "ACTIVE" },
@@ -234,13 +258,12 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       res.status(409).json({ error: "Gian chưa kết nối quảng cáo TikTok hoặc kết nối đã hết hiệu lực." });
       return;
     }
-    const days = parseDays(req.query.days);
+    const period = parseRange(req.query as Record<string, unknown>);
     const range = {
       accessToken: scope.accessToken,
       advertiserId: scope.advertiserId,
       storeId: scope.storeId,
-      startDate: vnDateStr(days - 1),
-      endDate: vnDateStr(0),
+      ...period,
     };
 
     try {
@@ -259,7 +282,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         where: { adsCampaignId: campaign.id, action: { in: ["exclude_video", "restore_video"] } },
         orderBy: { createdAt: "desc" },
         take: 10,
-        select: { id: true, action: true, status: true, error: true, reasons: true, createdAt: true },
+        select: { id: true, action: true, verdict: true, status: true, error: true, reasons: true, createdAt: true },
       });
       // Thẻ sản phẩm (item_id -1) không phải video — không loại được, bỏ khỏi bảng soi.
       const rows = videos
@@ -296,7 +319,8 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           orders: products.reduce((s, x) => s + x.orders, 0),
           gmv: products.reduce((s, x) => s + x.gmv, 0),
         },
-        days,
+        from: period.startDate,
+        to: period.endDate,
         products,
         videos: rows,
         actions: logs.map((l) => ({
@@ -304,7 +328,18 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           action: l.action,
           status: l.status,
           error: l.error,
-          videoIds: l.reasons.split("\n").map((x) => VIDEO_LINE.exec(x)?.[1]).filter(Boolean),
+          /** manual = chủ shop tự bấm; khác manual = Trợ lý tự động (kèm căn cứ ở `grounds`). */
+          source: l.verdict === "manual" ? "manual" : "auto",
+          // Mỗi dòng "#<videoId> · <ghi chú lúc thao tác>" → tách mã video + ghi chú.
+          videos: l.reasons
+            .split("\n")
+            .map((x) => {
+              const m = VIDEO_LINE.exec(x);
+              return m ? { videoId: m[1], note: x.slice(m[0].length).replace(/^·\s*/, "").trim() } : null;
+            })
+            .filter((x): x is { videoId: string; note: string } => x !== null),
+          /** Căn cứ của lệnh TỰ ĐỘNG (các dòng không mở đầu bằng #mã video); lệnh thủ công để trống. */
+          grounds: l.reasons.split("\n").filter((x) => x.trim() && !VIDEO_LINE.test(x)),
           createdAt: l.createdAt,
         })),
         totals: {

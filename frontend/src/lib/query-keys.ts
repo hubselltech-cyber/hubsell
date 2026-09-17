@@ -28,8 +28,8 @@ export const qk = {
 
   // ----- Quảng cáo TikTok (GMV Max) -----
   tiktokAds: (params: Record<string, unknown>) => ["tiktok-ads", params] as const,
-  tiktokAdsVideos: (campaignRowId: string, days: number) =>
-    ["tiktok-ads-videos", campaignRowId, days] as const,
+  tiktokAdsVideos: (campaignRowId: string, from: string, to: string) =>
+    ["tiktok-ads-videos", campaignRowId, from, to] as const,
   tiktokVideoMeta: (ids: string[]) => ["tiktok-video-meta", ids.join(",")] as const,
 
   // ----- Tài chính -----
