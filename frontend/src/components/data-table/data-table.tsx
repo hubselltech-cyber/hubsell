@@ -81,7 +81,9 @@ declare module "@tanstack/react-table" {
 
 /** id cột checkbox nội bộ — không xuất hiện trong menu Cột. */
 /** Khung cuộn khi stickyHeader: cao tối đa gần màn hình, cuộn cả 2 chiều trong hộp. */
-const DT_STICKY_SCROLLER = "max-h-[calc(100dvh-9rem)] overflow-auto overscroll-contain";
+// KHÔNG gắn overscroll-contain (17/09): nó chặn cuộn lan ra trang — con trỏ nằm trên bảng mà bảng
+// đã hết chỗ cuộn thì lăn chuột đứng im, phải rê ra ngoài mới cuộn tiếp được (anh Trung: "không mượt").
+const DT_STICKY_SCROLLER = "max-h-[calc(100dvh-9rem)] overflow-auto";
 
 const SELECT_COL_ID = "__select";
 
