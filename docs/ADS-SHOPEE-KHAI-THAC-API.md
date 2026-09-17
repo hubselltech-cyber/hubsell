@@ -261,3 +261,19 @@ rồi mới chốt ngưỡng cổng và trọng số.
   ngưỡng cổng "khả thi" và trọng số "dư địa".
 - **CHƯA xác minh sống:** `create_manual_product_ads` (lần bấm Tạo chiến dịch đầu tiên trên gian thật), 5 endpoint
   đọc ở trên (probe), enum `item_status_list`.
+
+### Kết quả probe thật trên ANO (17/09 ~12h20, prod) — đã chỉnh code theo
+- `get_item_extra_info`: OK. **`views` KHÔNG phải trọn đời** (SP 870 lượt bán trọn đời mà views 2.464) → tỉ lệ chuyển
+  đổi tự nhiên = số bán 30 ngày của Hubsell ÷ views; trên ANO ra 1,9–5,6% (hợp lý).
+- `get_product_recommended_roi_target`: OK, vd lower 6,8 / exact 9,8 / upper 11,8; 30 ứng viên ANO đều quanh 6–11x.
+- `get_create_product_ad_budget_suggestion`: đơn vị ₫; **min_budget = 100.000₫/ngày**, recommended ~249k,
+  `max_budget = 9999999999` = không giới hạn (bỏ). Mức tối thiểu 100k thường cao hơn "mức thử an toàn" của SP nhỏ →
+  ghi chú ngân sách nói thẳng điều đó.
+- `get_recommended_item_list`: mảng phẳng, ANO 27 SP; `item_status_list` thấy "normal";
+  `ongoing_ad_type_list` thật là `"product_ads"` | `"no_ongoing_promotion"` (gạch dưới — bản đầu lọc sai, đã sửa);
+  `sku_tag_list` rỗng ở mẫu.
+- `get_recommended_keyword_list`: **trả 0 từ khóa** cho mọi SP ANO đã thử (không kèm `input_keyword`) → yếu tố Cầu và
+  Giá click đang ở mức trung tính. Việc treo: thử gọi kèm `input_keyword` = vài chữ đầu tên SP.
+- **Thực tế ANO:** 65/67 SP đang bán thiếu giá vốn → cả bảng "Chưa nên" với lý do "Nhập giá vốn" (đúng: hòa vốn 1,6–1,8x
+  là ảo). Thêm dải vàng "N sản phẩm đang bán chưa có giá vốn" + nút sang /finance/cost-prices. Thiếu giá vốn xét theo
+  chính dòng hàng của SP (>20% lượng bán), không theo cờ cấp đơn.
