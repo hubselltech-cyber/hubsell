@@ -30,7 +30,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -74,15 +74,28 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
 type QuickFilter = "all" | "noOrder" | "belowTarget" | "learning" | "excluded";
 
 const rowKey = (v: TiktokAdsVideoRow) => `${v.spuId}-${v.videoId}`;
-type SortKey = "cost" | "orders" | "roi" | "ctr" | "cvr";
+// SẮP XẾP NGAY TẠI TIÊU ĐỀ CỘT (anh Trung 18/09, thay ô chọn ở lề phải): bấm một
+// cột = cao → thấp, bấm lần nữa = thấp → cao. Bằng nhau thì video tốn tiền hơn lên trước.
+type SortKey = "cost" | "orders" | "gmv" | "ctr" | "cvr" | "roi";
+type SortDir = "desc" | "asc";
 
-const SORTS: { key: SortKey; label: string }[] = [
-  { key: "cost", label: "Chi phí cao nhất" },
-  { key: "orders", label: "Nhiều đơn nhất" },
-  { key: "roi", label: "ROI thấp nhất" },
-  { key: "ctr", label: "Tỷ lệ bấm thấp nhất" },
-  { key: "cvr", label: "Tỷ lệ chuyển đổi thấp nhất" },
+const SORT_COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "cost", label: "Chi phí" },
+  { key: "orders", label: "Đơn" },
+  { key: "gmv", label: "Doanh thu" },
+  { key: "ctr", label: "Tỷ lệ bấm" },
+  { key: "cvr", label: "Chuyển đổi" },
+  { key: "roi", label: "ROI" },
 ];
+
+const SORT_VALUE: Record<SortKey, (v: TiktokAdsVideoRow) => number> = {
+  cost: (v) => v.cost,
+  orders: (v) => v.orders,
+  gmv: (v) => v.gmv,
+  ctr: (v) => v.ctr,
+  cvr: (v) => v.cvr,
+  roi: (v) => v.roi ?? 0,
+};
 
 const PAGE_SIZES = [20, 50, 100];
 /** Backend nhận tối đa 24 id mỗi lượt hỏi ảnh bìa. */
@@ -103,7 +116,7 @@ export function TiktokCampaignPage() {
   });
   const [quick, setQuick] = useState<QuickFilter>("all");
   const [minCost, setMinCost] = useState("");
-  const [sort, setSort] = useState<SortKey>("cost");
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "cost", dir: "desc" });
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const queryClient = useQueryClient();
@@ -162,14 +175,9 @@ export function TiktokCampaignPage() {
       if (quick === "learning") return v.deliveryStatus === "LEARNING";
       return true;
     });
-    const by: Record<SortKey, (a: TiktokAdsVideoRow, b: TiktokAdsVideoRow) => number> = {
-      cost: (a, b) => b.cost - a.cost,
-      orders: (a, b) => b.orders - a.orders || b.cost - a.cost,
-      roi: (a, b) => (a.roi ?? 0) - (b.roi ?? 0) || b.cost - a.cost,
-      ctr: (a, b) => a.ctr - b.ctr || b.cost - a.cost,
-      cvr: (a, b) => a.cvr - b.cvr || b.cost - a.cost,
-    };
-    return [...list].sort(by[sort]);
+    const val = SORT_VALUE[sort.key];
+    const sign = sort.dir === "desc" ? -1 : 1;
+    return [...list].sort((a, b) => sign * (val(a) - val(b)) || b.cost - a.cost);
   }, [spending, excludedRows, quick, minCost, sort, target]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -399,21 +407,6 @@ export function TiktokCampaignPage() {
                     aria-label="Chỉ hiện video có chi phí từ"
                   />
                 </label>
-                <NativeSelect
-                  value={sort}
-                  onChange={(e) => {
-                    setSort(e.target.value as SortKey);
-                    setPage(0);
-                  }}
-                  aria-label="Sắp xếp video"
-                  className="w-60"
-                >
-                  {SORTS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label}
-                    </option>
-                  ))}
-                </NativeSelect>
               </div>
             </div>
 
@@ -474,12 +467,39 @@ export function TiktokCampaignPage() {
                       )}
                       <th className={cn(TH, "border-b border-slate-200")}>Video</th>
                       <th className={cn(TH, "border-b border-slate-200")}>Trạng thái</th>
-                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Chi phí</th>
-                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Đơn</th>
-                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Doanh thu</th>
-                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Tỷ lệ bấm</th>
-                      <th className={cn(TH, "border-b border-slate-200 text-right")}>Chuyển đổi</th>
-                      <th className={cn(TH, "border-b border-slate-200 text-right")}>ROI</th>
+                      {SORT_COLUMNS.map((col) => {
+                        const active = sort.key === col.key;
+                        const Icon = !active ? ArrowUpDown : sort.dir === "desc" ? ArrowDown : ArrowUp;
+                        return (
+                          <th
+                            key={col.key}
+                            className={cn(TH, "border-b border-slate-200 text-right")}
+                            aria-sort={active ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSort(active ? { key: col.key, dir: sort.dir === "desc" ? "asc" : "desc" } : { key: col.key, dir: "desc" });
+                                setPage(0);
+                              }}
+                              title={
+                                active
+                                  ? sort.dir === "desc"
+                                    ? "Đang xếp cao → thấp. Bấm để xếp thấp → cao"
+                                    : "Đang xếp thấp → cao. Bấm để xếp cao → thấp"
+                                  : `Xếp theo ${col.label.toLowerCase()}, cao → thấp`
+                              }
+                              className={cn(
+                                "inline-flex items-center gap-1 font-medium hover:text-slate-900",
+                                active && "text-slate-900"
+                              )}
+                            >
+                              {col.label}
+                              <Icon className={cn("size-3.5", active ? "text-slate-900" : "text-slate-400")} />
+                            </button>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
