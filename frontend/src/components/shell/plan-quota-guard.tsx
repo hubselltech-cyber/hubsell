@@ -459,7 +459,7 @@ export function UpgradePlanDialog({
                 ({payment.bankHolder}).
               </p>
               <p>
-                Nội dung: <span className="text-foreground">HUBSELL + email đăng nhập</span>.
+                Nội dung: <span className="text-foreground">HUBSELL + số điện thoại của bạn</span>.
                 Gói mở ngay khi Hubsell xác nhận tiền về.
               </p>
             </div>

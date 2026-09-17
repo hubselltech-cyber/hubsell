@@ -27,12 +27,22 @@ chuỗi này, đổi env sau đó không làm lệch đơn đang chờ.
 
 ## Việc làm khi MB liên kết xong (Hubsell)
 
-1. my.payos.vn → Kênh thanh toán → tạo kênh **Hubsell** (chọn tài khoản MB) → lấy 3 khóa.
-2. Render → env: `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`,
-   `PAYOS_TRANSFER_PREFIX=HS`, `PAYOS_DESCRIPTION_MAX=25`.
-3. `npx tsx scripts/payos-confirm-webhook.ts https://hubsell-backend-sg.onrender.com/api/webhooks/payos`
-4. Test 1 giao dịch thật số nhỏ (payOS không có sandbox) → kiểm tra sao kê MB thấy
-   nội dung `…HS <GÓI> <8 số>` và HQ Kế toán có dòng thu kèm mã GD ngân hàng.
+Tài khoản nhận tiền (có từ 17/09/2026): **MB — 55995995995 — CÔNG TY TNHH CÔNG NGHỆ HUBSELL**.
+
+1. my.payos.vn → Ngân hàng → liên kết tài khoản MB 55995995995 (đăng nhập BIZ MBBank + OTP, anh tự làm).
+2. my.payos.vn → Kênh thanh toán → tạo kênh **Hubsell** (chọn tài khoản MB vừa liên kết), ô Webhook URL **để trống**. Lấy 3 khóa.
+3. Render → hubsell-backend-sg → Environment, thêm 8 biến rồi Save (Render tự deploy lại, chờ Live):
+   `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_TRANSFER_PREFIX=HS`, `PAYOS_DESCRIPTION_MAX=25`,
+   `PLAN_PAYMENT_BANK_NAME=MB Bank (Ngân hàng Quân đội)`, `PLAN_PAYMENT_BANK_ACCOUNT=55995995995`,
+   `PLAN_PAYMENT_BANK_HOLDER=CONG TY TNHH CONG NGHE HUBSELL`.
+4. SAU KHI Render Live (chưa có khóa thì webhook trả 503, payOS sẽ từ chối URL): quay lại kênh Hubsell → sửa kênh →
+   dán Webhook URL `https://hubsell-backend-sg.onrender.com/api/webhooks/payos` → Lưu (payOS gọi thử, backend trả 200).
+   Cách khác: đặt 3 khóa vào `backend/.env` local rồi chạy
+   `npx tsx scripts/payos-confirm-webhook.ts https://hubsell-backend-sg.onrender.com/api/webhooks/payos`.
+5. Test 1 giao dịch thật số nhỏ (payOS không có sandbox): gói nháp không mua được qua cổng, nên mua gói Starter kỳ tháng (99.000₫, tiền về chính tài khoản công ty)
+   bằng tài khoản thử → kiểm tra sao kê MB thấy nội dung `…HS <GÓI> <8 số>`, gói mở trong vài giây,
+   HQ Kế toán có dòng thu kèm mã GD ngân hàng.
+
 
 ## Việc làm khi có sản phẩm thứ hai (vd Hubtax)
 

@@ -25,9 +25,12 @@ import {
 const router = Router();
 
 /**
- * Số tài khoản nhận tiền nâng gói — CỔNG CHỜ (anh Trung chưa đưa STK 22/08):
+ * Số tài khoản nhận tiền nâng gói (đường CHUYỂN KHOẢN TAY, song song cổng payOS):
  * đủ 3 biến env thì popup nâng gói hiện hướng dẫn chuyển khoản, chưa đặt thì
- * FE hiện lời mời liên hệ. Thêm STK sau này = đặt env trên Render, không sửa code.
+ * FE hiện lời mời liên hệ. 17/09/2026 đã có TK MB doanh nghiệp 55995995995 —
+ * giá trị đặt ở env Render (xem .env.example), trùng số in ở trang /payment landing.
+ * Nội dung CK hướng dẫn khách ghi SĐT chứ không ghi email: app ngân hàng không
+ * cho gõ ký tự @.
  */
 function paymentInfo() {
   const bankName = process.env.PLAN_PAYMENT_BANK_NAME?.trim();

@@ -2,10 +2,13 @@
 
 // ============================================================
 // HỘP THOẠI THANH TOÁN QUA CỔNG payOS (09/09) — chuẩn trang thanh toán VietQR
-// (anh Trung 09/09 tối: "kỳ vọng như khi đi mua hàng"): khối Chi tiết đơn hàng
-// + mã đơn để đối soát, QR bên trái, thông tin chuyển khoản thủ công bên phải
-// (ngân hàng / chủ TK / STK / số tiền / nội dung — mỗi dòng có Sao chép), lưu ý
-// nhập đúng số tiền & nội dung. Poll trạng thái 3s/lần khi đang mở (backend tự
+// (anh Trung 09/09 tối: "kỳ vọng như khi đi mua hàng"). 18/09 dựng lại sau khi
+// anh xem bản thật chê xấu: MỘT lớp, không hộp lồng hộp — trái là tấm QR nền
+// mờ (số tiền to + trạng thái chờ + đếm ngược), phải là tóm tắt đơn rồi các
+// dòng chuyển khoản tay (nhãn trái, giá trị phải, nút chép dạng icon). Mã đơn
+// chỉ hiện MỘT lần ở dòng mô tả. Anh góp ý tiếp "thiếu màu, popup chìm vào nền" →
+// tấm QR + chip tiêu đề dùng xanh thương hiệu ĐẶC (emerald 500→600, hai bậc không
+// bị lật ở dark mode), chữ trắng; ngoài ra chỉ số tiền tô xanh. Poll trạng thái 3s/lần khi đang mở (backend tự
 // hỏi payOS nếu webhook lạc), PAID → màn "Thành công" + làm mới gói; hết
 // hạn/hủy → cho tạo mã mới. Không có sandbox payOS: test bằng tiền thật số nhỏ.
 // ============================================================
@@ -19,10 +22,9 @@ import {
   Clock,
   Copy,
   ExternalLink,
-  Landmark,
   Loader2,
+  QrCode,
   RefreshCw,
-  ScanLine,
   XCircle,
 } from "lucide-react";
 
@@ -68,43 +70,50 @@ async function copyText(label: string, value: string) {
   }
 }
 
-/** Một dòng thông tin chuyển khoản: nhãn nhỏ, giá trị đậm, nút Sao chép. */
+/** Một dòng thông tin chuyển khoản: nhãn trái, giá trị phải, nút chép dạng icon. */
 function InfoRow({
   label,
   value,
   copy,
-  highlight,
+  strong,
+  accent,
+  hint,
 }: {
   label: string;
   value: string;
   /** Có nút sao chép — chuỗi sẽ chép (mặc định = value). */
   copy?: string | true;
-  highlight?: boolean;
+  /** Hai dòng khách phải nhập đúng (số tiền, nội dung) — đậm hơn phần còn lại. */
+  strong?: boolean;
+  /** Tô xanh thương hiệu — chỉ dùng cho số tiền. */
+  accent?: boolean;
+  hint?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2">
-      <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p
-          className={cn(
-            "truncate text-sm font-semibold tabular-nums",
-            highlight && "text-base text-emerald-700 dark:text-emerald-400"
-          )}
-        >
-          {value}
-        </p>
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <p className="shrink-0 pt-1 text-sm text-muted-foreground">{label}</p>
+      <div className="flex min-w-0 items-start gap-1">
+        <div className="min-w-0 pt-1 text-right">
+          <p className={cn("break-words text-sm tabular-nums", strong && "font-semibold", accent && "text-emerald-700")}>{value}</p>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
+        {copy ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="-mr-1.5 shrink-0 text-muted-foreground"
+            title={`Sao chép ${label.toLowerCase()}`}
+            aria-label={`Sao chép ${label.toLowerCase()}`}
+            onClick={() => copyText(label.toLowerCase(), copy === true ? value : copy)}
+          >
+            <Copy className="size-3.5" />
+          </Button>
+        ) : (
+          // Giữ chỗ bằng đúng bề ngang nút chép (size-7 trừ -mr-1.5) để cột giá trị thẳng hàng.
+          <span className="w-[1.375rem] shrink-0" />
+        )}
       </div>
-      {copy && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 shrink-0 gap-1 px-2 text-xs"
-          onClick={() => copyText(label.toLowerCase(), copy === true ? value : copy)}
-        >
-          <Copy className="size-3" /> Sao chép
-        </Button>
-      )}
     </div>
   );
 }
@@ -173,8 +182,15 @@ export function GatewayCheckoutDialog({
 
   return (
     <Dialog open={checkout !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className={cn(isPending ? "sm:max-w-3xl" : "sm:max-w-md")}>
-        <DialogHeader>
+      <DialogContent
+        className={cn(isPending ? "max-h-[90vh] overflow-y-auto sm:max-w-[min(46rem,calc(100%-2rem))]" : "sm:max-w-md")}
+      >
+        <DialogHeader className={cn(isPending && "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5")}>
+          {isPending && (
+            <span className="row-span-2 flex size-10 items-center justify-center rounded-xl bg-emerald-500 text-white">
+              <QrCode className="size-5" />
+            </span>
+          )}
           <DialogTitle>
             {current.status === "PAID"
               ? "Thanh toán thành công"
@@ -187,120 +203,116 @@ export function GatewayCheckoutDialog({
           <DialogDescription>
             Gói <span className="text-foreground">{current.planName}</span> — kỳ{" "}
             {CYCLE_LABEL[current.cycle]} · Mã đơn{" "}
-            <span className="font-mono text-foreground">{current.orderCode}</span>
+            <button
+              type="button"
+              title="Sao chép mã đơn"
+              className="tabular-nums text-foreground underline-offset-2 hover:underline"
+              onClick={() => copyText("mã đơn", current.orderCode)}
+            >
+              {current.orderCode}
+            </button>
           </DialogDescription>
         </DialogHeader>
 
         {isPending && (
-          <div className="space-y-4">
-            {/* ===== Chi tiết đơn hàng ===== */}
-            <div className="rounded-xl border">
-              <div className="flex items-center justify-between border-b px-4 py-2.5">
-                <p className="text-sm font-semibold">Chi tiết đơn hàng</p>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                  onClick={() => copyText("mã đơn", current.orderCode)}
-                >
-                  Mã đơn {current.orderCode}
-                </button>
-              </div>
-              <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-                <div>
-                  <p className="font-medium">
-                    Gói {current.planName} — {CYCLE_LABEL[current.cycle]}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Thuê bao phần mềm Hubsell × 1</p>
-                </div>
-                <p className="tabular-nums">{amountStr}</p>
-              </div>
-              <div className="flex items-center justify-between border-t px-4 py-2.5">
-                <p className="text-sm font-semibold">Tổng cộng</p>
-                <p className="text-lg font-bold tabular-nums">{amountStr}</p>
-              </div>
-            </div>
-
-            {/* ===== Quét QR | Chuyển khoản thủ công ===== */}
-            <div className="rounded-xl border">
-              <p className="flex items-center gap-2 border-b px-4 py-2.5 text-sm text-muted-foreground">
-                <ScanLine className="size-4 shrink-0" />
-                Mở app ngân hàng bất kỳ để <b className="text-foreground">quét mã VietQR</b> hoặc{" "}
-                <b className="text-foreground">chuyển khoản</b> đúng số tiền, nội dung bên dưới.
-              </p>
-              <div className="grid gap-4 p-4 md:grid-cols-[auto_1fr]">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="rounded-xl border bg-white p-3 shadow-sm">
-                    {current.qrCode ? (
-                      <QRCodeSVG value={current.qrCode} size={208} level="M" includeMargin={false} />
-                    ) : (
-                      <div className="flex size-[208px] items-center justify-center text-sm text-muted-foreground">
-                        <Loader2 className="mr-2 size-4 animate-spin" /> Đang tạo mã…
-                      </div>
-                    )}
+          <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)]">
+            {/* ===== Tấm QR ===== */}
+            <div className="flex flex-col items-center rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 px-5 py-5 text-center text-white">
+              <div className="rounded-lg bg-white p-3 shadow-lg shadow-emerald-900/20">
+                {current.qrCode ? (
+                  <QRCodeSVG value={current.qrCode} size={184} level="M" includeMargin={false} />
+                ) : (
+                  <div className="flex size-[184px] items-center justify-center text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 size-4 animate-spin" /> Đang tạo mã…
                   </div>
-                  <p className="text-[11px] text-muted-foreground">VietQR · Napas 247 · qua payOS</p>
-                  {current.checkoutUrl && (
-                    <a
-                      href={current.checkoutUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-                    >
-                      <ExternalLink className="size-3" /> Mở trang thanh toán payOS
-                    </a>
-                  )}
-                </div>
-
-                <div className="divide-y">
-                  <div className="flex items-center gap-2 py-2">
-                    <Landmark className="size-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Ngân hàng</p>
-                      <p className="text-sm font-semibold">
-                        {current.bank?.name ?? (current.bank ? `BIN ${current.bank.bin}` : "Đang lấy thông tin…")}
-                      </p>
-                    </div>
-                  </div>
-                  {current.bank && (
-                    <>
-                      <InfoRow label="Chủ tài khoản" value={current.bank.accountName || "—"} />
-                      <InfoRow label="Số tài khoản" value={current.bank.accountNumber} copy />
-                    </>
-                  )}
-                  <InfoRow label="Số tiền" value={amountStr} copy={String(current.amount)} highlight />
-                  <InfoRow label="Nội dung chuyển khoản" value={current.transferContent} copy />
-                </div>
-              </div>
-              <p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
-                <b className="text-foreground">Lưu ý:</b> nhập chính xác số tiền{" "}
-                <b className="text-foreground">{amountStr}</b> và nội dung{" "}
-                <b className="text-foreground">{current.transferContent}</b> khi chuyển tay. Gói tự mở
-                trong vài giây sau khi tiền về; Hubsell lưu mã đơn và mã giao dịch ngân hàng để đối soát.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Loader2 className="size-3.5 animate-spin" /> Đang chờ tiền về…
-                {expiresIn !== null && (
-                  <span
-                    className={cn(
-                      "ml-2 inline-flex items-center gap-1 tabular-nums",
-                      expiresIn < 5 * 60_000 ? "text-rose-600" : ""
-                    )}
-                  >
-                    <Clock className="size-3.5" /> mã còn hiệu lực {fmtCountdown(expiresIn)}
-                  </span>
                 )}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={cancelMutation.isPending}
-                onClick={() => cancelMutation.mutate(current.orderCode)}
-              >
-                Hủy
-              </Button>
+              </div>
+              <p className="mt-4 text-2xl font-semibold tabular-nums">{amountStr}</p>
+              <p className="mt-0.5 text-sm text-white/85">Quét bằng app ngân hàng</p>
+              <p className="mt-4 flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm ring-1 ring-inset ring-white/25">
+                <Loader2 className="size-3.5 animate-spin" /> Đang chờ tiền về
+              </p>
+              {expiresIn !== null && (
+                <p
+                  className={cn(
+                    "mt-1.5 flex items-center gap-1 text-xs tabular-nums text-white/85",
+                    // Nền xanh đặc: chữ đỏ không đọc được — sắp hết hạn thì đổi sang viên đỏ chữ trắng.
+                    expiresIn < 5 * 60_000 && "rounded-full bg-red-500 px-2 py-0.5 font-medium text-white"
+                  )}
+                >
+                  <Clock className="size-3" /> Mã còn hiệu lực {fmtCountdown(expiresIn)}
+                </p>
+              )}
+            </div>
+
+            {/* ===== Tóm tắt đơn + chuyển khoản tay ===== */}
+            <div className="flex min-w-0 flex-col">
+              <div className="flex items-baseline justify-between gap-4 border-b pb-3">
+                <div className="min-w-0">
+                  <p className="text-sm">
+                    Gói {current.planName} · {CYCLE_LABEL[current.cycle]}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Thuê bao phần mềm Hubsell</p>
+                </div>
+                <p className="shrink-0 text-sm tabular-nums">{amountStr}</p>
+              </div>
+
+              <p className="mt-3 text-sm text-muted-foreground">Hoặc chuyển khoản theo thông tin sau</p>
+              <div className="mt-1">
+                <InfoRow
+                  label="Ngân hàng"
+                  value={
+                    current.bank?.name ??
+                    (current.bank ? `BIN ${current.bank.bin}` : "Đang lấy thông tin…")
+                  }
+                />
+                {current.bank && (
+                  <>
+                    <InfoRow label="Chủ tài khoản" value={current.bank.accountName || "—"} />
+                    {/* Cổng cấp tài khoản định danh (có chữ) riêng cho từng đơn — nói rõ để
+                        khách khỏi ngờ vì khác số tài khoản công ty in ở trang chính sách. */}
+                    <InfoRow
+                      label="Số tài khoản"
+                      value={current.bank.accountNumber}
+                      copy
+                      hint={
+                        /\D/.test(current.bank.accountNumber)
+                          ? "Tài khoản định danh cấp riêng cho đơn này"
+                          : undefined
+                      }
+                    />
+                  </>
+                )}
+                <InfoRow label="Số tiền" value={amountStr} copy={String(current.amount)} strong accent />
+                <InfoRow label="Nội dung" value={current.transferContent} copy strong />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Chuyển tay cần nhập đúng số tiền và nội dung. Gói tự mở trong vài giây sau khi tiền về.
+              </p>
+
+              <div className="mt-auto flex items-center justify-between gap-2 pt-4">
+                {current.checkoutUrl ? (
+                  <a
+                    href={current.checkoutUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    <ExternalLink className="size-3" /> Mở trang thanh toán payOS
+                  </a>
+                ) : (
+                  <span />
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={cancelMutation.isPending}
+                  onClick={() => cancelMutation.mutate(current.orderCode)}
+                >
+                  Hủy mã này
+                </Button>
+              </div>
             </div>
           </div>
         )}
