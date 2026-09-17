@@ -5,6 +5,17 @@
 
 ---
 
+## Phiên 17/09/2026 khuya — Tab "MAPPING GIÁ VỐN": nhập giá một lần cho mọi gian, mọi sàn
+
+- **Vì sao:** tab Nhập giá vốn tách theo từng gian → 1 mẫu 10 phân loại × 10 shop × 3 sàn là cả trăm ô phải gõ. Anh Trung chốt nhiệm vụ của tab mới: (1) **tự phát hiện** SKU đã có giá ở một gian → đề xuất mapping sang gian còn lại; (2) seller **tìm SKU, nhập một lần**, có nút áp cho mọi gian. Bản đầu em làm kiểu "chọn gian nguồn → áp cả gian" đã bị bác — đừng quay lại hướng đó.
+- **a5fdeed:** trang Cấu hình Giá vốn thêm tablist *Nhập giá vốn / Mapping giá vốn* (tab nhập chỉ ẨN, không tháo, để giữ ô đang gõ). Tab Mapping: **mỗi MÃ SKU một dòng gộp mọi gian** (mã chuẩn hoá trim + NFC + IN HOA — NFC vì các sàn trả dấu tiếng Việt khác dạng; CHỈ khớp theo mã, không bao giờ theo tên). 4 trạng thái: *đề xuất điền* / *lệch giá giữa các gian* (không đoán — bấm chip giá của gian đúng) / *chưa có giá* / *đã đủ*. Dải xanh "Hubsell phát hiện N mã…" + MỘT nút **Điền tất cả** (chỉ điền ô trống). Mỗi dòng: ô giá + **Áp dụng N gian**; dòng mẫu cha: **Giá vốn chung + Áp dụng cả mẫu**. Ghi đè giá khác phải qua popover liệt kê nơi bị đè. Máy chủ luôn tính lại, không tin số client.
+- **Bảng giá theo mã mẫu** (bảng mới `cost_price_rules`, migration `20260917210000`): `TBSA01` khớp `TBSA01-Vàng-XXL` (tiền tố phải dừng ở dấu ngăn cách, mã dài thắng mã ngắn) + nhập Excel + xuất SKU chưa khớp đúng khuôn file nhập. Là KHUÔN, không phải nguồn giá vốn thứ ba — khi áp vẫn ghi xuống `Product.costPrice` / `ChannelProduct.costPrice`. Thu gọn ở cuối tab.
+- **Tự điền khi đồng bộ:** SKU vừa tạo, chưa nối kho, trống giá → lấy theo bảng giá, không có thì theo SKU trùng mã ở gian khác (chỉ khi các gian thống nhất một giá). Thông báo "Đồng bộ xong" nói rõ số SKU được tự điền (dc5d040).
+- **Kỹ thuật:** `lib/cost-mapping.ts` (phần thuần có 7 test vitest) · `lib/cost-price.ts` = `applyCostPrice`/`applyChannelCostPrice` tách khỏi `finance.ts`, vá đơn cũ gom theo GIAN thay vì lặp từng SKU trong transaction · `routes/cost-mapping.ts` gắn dưới `/api/finance/cost-prices` (`mapping/skus`, `mapping/fill-suggested`, `mapping/set-cost`, `rules*`).
+- 🔜 Còn: anh xem prod — dải xanh báo bao nhiêu mã = tỷ lệ trùng mã THẬT giữa Shopee/TikTok/Lazada (local chỉ có 2 gian Lazada khác thương hiệu nên chưa đo được; mã sàn tự sinh kiểu `1407J225` không khớp được, ghép lâu dài khác mã = trang Liên kết SP); thử phím Enter trong ô giá; bố cục chip khi shop ≥5 gian. Ý để dành: gợi ý "áp cho N gian khác?" ngay tại ô nhập của tab Nhập giá vốn.
+
+---
+
 ## Phiên 17/09/2026 tối — CỔNG THANH TOÁN payOS BẬT PRODUCTION (giao dịch thật đầu tiên)
 
 - Có tài khoản MB doanh nghiệp **55995995995**; anh liên kết payOS, tạo kênh Hubsell, đặt 8 env Render (5 `PAYOS_*` + 3 `PLAN_PAYMENT_BANK_*`), dán webhook. Thứ tự bắt buộc: env TRƯỚC rồi mới dán webhook (chưa có khóa `/api/webhooks/payos` trả 503).
