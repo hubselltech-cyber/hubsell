@@ -1768,6 +1768,159 @@ export async function editManualProductAdsRaw(
   return (await res.json()) as ShopeeEnvelope & { response?: unknown };
 }
 
+// ---------- ĐỢT D — TÍN HIỆU THỊ TRƯỜNG cho Gợi ý chạy ads (READ-ONLY, 17/09/2026) ----------
+// Field theo docs open.shopee.com đọc 17/09; shape thật xác nhận bằng route probe
+// trước khi tin — các hàm *Raw trả nguyên envelope để probe in ra.
+
+export interface ShopeeItemExtraInfo {
+  item_id: number;
+  sale?: number;
+  views?: number;
+  likes?: number;
+  rating_star?: number;
+  comment_count?: number;
+}
+
+/** Lượt bán / lượt xem / sao / số đánh giá của nhiều item (≤50 id/lần) — app CHÍNH. */
+export async function getItemExtraInfoRaw(
+  accessToken: string,
+  shopId: string,
+  itemIds: Array<number | string>,
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: { item_list?: ShopeeItemExtraInfo[] } }> {
+  return callShopGet(
+    SHOPEE_PATHS.itemExtraInfo,
+    accessToken,
+    shopId,
+    [["item_id_list", itemIds.join(",")]],
+    "get_item_extra_info",
+    cfg
+  );
+}
+
+export interface ShopeeAdsRecommendedItem {
+  item_id: number;
+  item_status_list?: string[];
+  sku_tag_list?: string[];
+  ongoing_ad_type_list?: string[];
+}
+
+export async function getAdsRecommendedItemListRaw(
+  params: { accessToken: string; shopId: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: ShopeeAdsRecommendedItem[] | { item_list?: ShopeeAdsRecommendedItem[] } }> {
+  return callShopGet(SHOPEE_PATHS.adsRecommendedItemList, params.accessToken, params.shopId, [], "get_recommended_item_list", cfg);
+}
+
+export interface ShopeeRoiBound {
+  value?: number;
+  percentile?: number;
+}
+
+export async function getAdsRecommendedRoiTargetRaw(
+  params: { accessToken: string; shopId: string; itemId: string | number; referenceId: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: { lower_bound?: ShopeeRoiBound; exact?: ShopeeRoiBound; upper_bound?: ShopeeRoiBound } }> {
+  return callShopGet(
+    SHOPEE_PATHS.adsRecommendedRoiTarget,
+    params.accessToken,
+    params.shopId,
+    [
+      ["reference_id", params.referenceId],
+      ["item_id", String(params.itemId)],
+    ],
+    "get_product_recommended_roi_target",
+    cfg
+  );
+}
+
+export async function getAdsBudgetSuggestionRaw(
+  params: { accessToken: string; shopId: string; itemId: string | number; referenceId: string; roasTarget: number },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: { budget?: { recommended_budget?: number; min_budget?: number; max_budget?: number } } }> {
+  return callShopGet(
+    SHOPEE_PATHS.adsBudgetSuggestion,
+    params.accessToken,
+    params.shopId,
+    [
+      ["reference_id", params.referenceId],
+      ["product_selection", "manual"],
+      ["campaign_placement", "all"],
+      ["bidding_method", "auto"],
+      ["roas_target", String(params.roasTarget)],
+      ["item_id", String(params.itemId)],
+    ],
+    "get_create_product_ad_budget_suggestion",
+    cfg
+  );
+}
+
+export interface ShopeeSuggestedKeyword {
+  keyword?: string;
+  quality_score?: number;
+  search_volume?: number;
+  suggested_bid?: number;
+}
+
+export async function getAdsRecommendedKeywordListRaw(
+  params: { accessToken: string; shopId: string; itemId: string | number },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: { suggested_keywords?: ShopeeSuggestedKeyword[] } }> {
+  return callShopGet(
+    SHOPEE_PATHS.adsRecommendedKeywordList,
+    params.accessToken,
+    params.shopId,
+    [["item_id", String(params.itemId)]],
+    "get_recommended_keyword_list",
+    cfg
+  );
+}
+
+/**
+ * ĐỢT D — TẠO Manual Product Ads cho MỘT sản phẩm (docs v2.ads.create_manual_product_ads).
+ * Trả NGUYÊN VĂN envelope như editManualProductAdsRaw — caller ghi sổ + đọc lỗi sàn.
+ * Hubsell chỉ dùng đấu thầu tự động theo roas_target (không gửi từ khóa/vị trí).
+ */
+export async function createManualProductAdsRaw(
+  params: {
+    accessToken: string;
+    shopId: string;
+    referenceId: string;
+    itemId: string | number;
+    budget: number;
+    /** "DD-MM-YYYY" — không hẹn ngày tắt thì start phải là hôm nay. */
+    startDate: string;
+    biddingMethod: "auto" | "manual";
+    roasTarget?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: unknown }> {
+  const path = SHOPEE_PATHS.adsCreateManualProductAds;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShop(cfg.partnerKey, cfg.partnerId, path, timestamp, params.accessToken, params.shopId);
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    access_token: params.accessToken,
+    shop_id: params.shopId,
+    sign,
+  }).toString();
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      reference_id: params.referenceId,
+      budget: params.budget,
+      start_date: params.startDate,
+      end_date: "",
+      bidding_method: params.biddingMethod,
+      item_id: Number(params.itemId),
+      ...(params.roasTarget != null ? { roas_target: params.roasTarget } : {}),
+    }),
+  });
+  return (await res.json()) as ShopeeEnvelope & { response?: unknown };
+}
+
 /** Số dư ví quảng cáo real-time (read-only) — cảnh báo sắp hết tiền ads. */
 export async function getAdsTotalBalance(
   params: { accessToken: string; shopId: string },

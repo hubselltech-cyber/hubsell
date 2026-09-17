@@ -57,6 +57,7 @@ import { syncShopeeAdsCampaigns } from "../integrations/shopee/ads-campaigns";
 import { syncLazadaAdsCampaigns } from "../integrations/lazada/ads-campaigns";
 import { autoExecuteTouched, runAdsAutoExecute } from "../integrations/shopee/ads-auto-execute";
 import { HUBSELL_ADS_APP_LABEL, hasShopeeAdsAccess } from "../integrations/hubsell-ads";
+import { adsItemSignalsDue, syncShopeeAdsItemSignals } from "../integrations/shopee/ads-item-signals";
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import {
   backfillShopeeTrackingCodes,
@@ -868,6 +869,24 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
         `[Auto-sync] Lỗi lịch sử campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
         (err as Error).message
       );
+    }
+  }
+  // ĐỢT D: tín hiệu thị trường cho tab Gợi ý chạy ads — 1 lần/ngày/gian, ăn theo lượt
+  // lịch sử (6h) nên không thêm lịch riêng. Lỗi ở đây không được làm hỏng lượt ads.
+  if (synced) {
+    try {
+      if (await adsItemSignalsDue(channel.id)) {
+        const r = await syncShopeeAdsItemSignals(channel);
+        console.log(
+          `[Ads-signals] "${channel.shopName}": ${r.extraInfo}/${r.items} SP có lượt xem, ${r.recommended} SP sàn gợi ý, ${r.proposals} ứng viên đủ số${r.errors.length ? ` · lỗi: ${r.errors.slice(0, 3).join(" | ")}` : ""}`
+        );
+      }
+    } catch (err) {
+      if (isApiBudgetError(err)) {
+        console.warn(`[Ads-signals] "${channel.shopName}" lùi lịch: ${err.message}`);
+      } else {
+        console.error(`[Ads-signals] Lỗi "${channel.shopName}":`, (err as Error).message);
+      }
     }
   }
   return synced;

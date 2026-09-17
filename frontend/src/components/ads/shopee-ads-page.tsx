@@ -25,6 +25,7 @@ import {
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { AccessDenied } from "@/components/shared/access-denied";
+import { AdsRecommendTab } from "@/components/ads/ads-recommend-tab";
 import { HubsellAdsLink } from "@/components/ads/hubsell-ads-link";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
@@ -224,7 +225,7 @@ export function ShopeeAdsPage({
   );
   // Tab trong trang (khuôn giống trang TikTok): dashboard / bảng hòa vốn SP /
   // cấu hình Trợ lý.
-  const [tab, setTab] = useState<"overview" | "breakeven" | "config">("overview");
+  const [tab, setTab] = useState<"overview" | "recommend" | "breakeven" | "config">("overview");
   // Bảng ROAS hòa vốn theo SP — nạp lười khi mở tab, cache theo gian đang chọn.
   const [breakeven, setBreakeven] = useState<{
     channelId: string;
@@ -574,7 +575,9 @@ export function ShopeeAdsPage({
             <p className="text-sm text-muted-foreground">{meta.description}</p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            {(data?.channels.length ?? 0) > 1 && (
+            {/* Luôn hiện ô chọn gian (kể cả tài khoản một gian) — seller phải thấy mình đang
+                xem gian nào; mọi tab bên dưới, gồm Gợi ý chạy ads, ăn theo ô này (anh Trung 17/09). */}
+            {(data?.channels.length ?? 0) >= 1 && (
               <NativeSelect
                 value={channelId}
                 onChange={(e) => changeChannel(e.target.value)}
@@ -642,6 +645,10 @@ export function ShopeeAdsPage({
           {(
             [
               { key: "overview", label: "Tổng quan chiến dịch" },
+              // Đợt D (17/09): gợi ý SP nên chạy ads + tạo chiến dịch một nút — chỉ Shopee.
+              ...(platform === "shopee"
+                ? ([{ key: "recommend", label: "Gợi ý chạy ads" }] as const)
+                : []),
               { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
               { key: "config", label: "Cấu hình Trợ lý Tự động" },
             ] as const
@@ -1033,6 +1040,19 @@ export function ShopeeAdsPage({
         )}
 
         {/* ===== TAB ROAS HÒA VỐN THEO SẢN PHẨM ===== */}
+        {tab === "recommend" && platform === "shopee" && (
+          <AdsRecommendTab
+            channelId={channelId}
+            noChannel={noChannel}
+            adsLinked={adsLinked}
+            onCreated={(msg) => {
+              setSyncNote(msg);
+              setTab("overview");
+              void load(channelId, days);
+            }}
+          />
+        )}
+
         {tab === "breakeven" && (
           <ProductBreakevenTab
             data={breakeven?.data ?? null}

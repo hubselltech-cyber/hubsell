@@ -185,3 +185,79 @@ trần thật từ Shopee (ticket 2098790879624904785 đang chờ vòng 2).
 5. Kiểm: log Render `[Ads-pulse]` gian đó, thẻ Trung tâm điều hành tự đóng,
    ví ads hiện số. Xong 3 shop thì tắt sandbox local (`backend/.env`
    HUBSELL_ADS_* sandbox giữ cho dev, không ảnh hưởng prod).
+
+---
+
+## 6. Đợt D — mô hình gợi ý "SP nào nên chạy ads, đặt thế nào" (bản tham mưu 17/09, anh Trung chọn làm D trước)
+
+Nguyên lý người chạy ads: **ROAS = giá trị đơn × tỉ lệ chuyển đổi ÷ giá mỗi click**, còn
+**lãi = ROAS × biên lãi − 1**. CTR KHÔNG nằm trong công thức lãi — nó chỉ quyết định lượng hiển thị
+và điểm chất lượng, là chỉ số CHẨN ĐOÁN sau khi chạy (ảnh bìa/tiêu đề), không phải tiêu chí chọn SP
+(SP chưa chạy thì chưa có CTR; CTR tự nhiên API không cấp).
+
+**Nguồn số đã xác minh docs:** biên lãi/hòa vốn (P&L Hubsell) · tồn kho + tốc độ bán (Hubsell) ·
+`product.get_item_extra_info` (app chính, 50 SP/call: sale, views, likes, rating_star, comment_count)
+· `ads.get_recommended_item_list` (tag best selling/best ROI/top search, trạng thái đủ điều kiện,
+loại ads đang chạy) · `ads.get_product_recommended_roi_target` (lower p80 / exact p50 / upper p20 —
+dải ROAS của quảng cáo tương tự trên sàn) · `ads.get_create_product_ad_budget_suggestion` ·
+`ads.get_recommended_keyword_list` (search_volume 30 ngày, quality_score, suggested_bid) · lịch sử
+campaign 1-SP của chính item trong AdsCampaignDailyPerf.
+
+### Tầng 1 — CỔNG LOẠI (trượt một cổng = không gợi ý, nói rõ vì sao + việc cần làm trước)
+1. **Hòa vốn khả thi so với thị trường:** hòa vốn × hệ số an toàn > `upper_bound` của Shopee → mức
+   ROAS cần có cao hơn cả nhóm 20% khắt khe nhất trên sàn → "chưa chạy được có lãi, xem lại giá/giá vốn".
+2. **Biên lãi tin được:** có giá vốn, ≥ 5 đơn P&L 30 ngày (không thì dùng biên shop + gắn cờ).
+3. **Tồn kho:** đủ ≥ 14 ngày bán ở tốc độ hiện tại × 1,5 (ads đẩy lượng; hết hàng giữa chừng mất thứ hạng).
+4. **Sàn cho phép:** item không bị khóa/hết hàng, chưa chạy loại ads tương ứng.
+5. **Bằng chứng xã hội:** ≥ 10 đánh giá và ≥ 4,5 sao; SP mới → "gom đánh giá trước" (click đắt mà không ai dám mua).
+
+### Tầng 2 — ĐIỂM XẾP HẠNG (SP qua cổng; hiện thành 3 mức Nên chạy ngay / Thử nhỏ / Chưa nên, kèm lý do)
+| Yếu tố | Cách đo | Vai trò |
+|---|---|---|
+| **Dư địa lãi** | ROAS thị trường (`exact`) ÷ hòa vốn của SP | trọng số lớn nhất — trả lời thẳng "chạy có lãi không" bằng số của sàn, không bằng hằng số tự chế |
+| **Sức chuyển đổi tự nhiên** | sale ÷ views, SO VỚI TRUNG VỊ CỦA CHÍNH SHOP | SP tự nó bán được thì click ads mới ra đơn; chỉ dùng tương đối (views trọn đời nhiễu với SP lâu năm) |
+| **Cầu** | tổng search_volume top từ khóa gợi ý + tag top search | trần lưu lượng — cầu thấp thì ROAS đẹp cũng không ra tiền |
+| **Giá click chịu được** | suggested_bid trung bình so với giá bán × biên lãi × CVR tương đối | click đắt hơn mức SP gánh nổi → hạ hạng |
+| **Đà bán** | tốc độ 7 ngày so với 30 ngày | đang lên thì ads khuếch đại, đang rơi thì ads không cứu |
+| **Lịch sử ads của chính SP** | ROAS 30 ngày của campaign 1-SP cũ vs hòa vốn | bằng chứng mạnh nhất — ĐÈ mọi ước tính ở trên |
+
+### Tầng 3 — CẤU HÌNH ĐỀ XUẤT (form một nút)
+- Đấu thầu **tự động theo ROAS mục tiêu** (seller nhỏ không quản từ khóa; lợi thế của Hubsell là biết đúng mục tiêu).
+- 3 mức mục tiêu: **Đẩy số** = hòa vốn × hệ số an toàn · **Cân bằng** = giữa mức an toàn và `exact` (mặc định) ·
+  **Giữ lãi** = `exact`. Không bao giờ dưới mức an toàn.
+- Ngân sách ngày = gợi ý của Shopee, CHẶN TRẦN bởi (a) tiền thử tối đa 7 ngày ≤ 10% lãi 30 ngày của SP,
+  (b) lượng hàng còn trong kho; không thấp hơn `min_budget` của sàn.
+- Tạo xong: Trợ lý gác bằng luật hiện có (ngưỡng tiền, dưới hòa vốn, tự dừng/bật lại).
+
+### Code chờ cho B/C
+- C: phần ĐỌC `get_recommended_keyword_list` được kéo vào D làm đầu vào (cầu + giá click); phần hiện/sửa từ khóa vẫn gác.
+- B: đứng độc lập, không cần code giữ chỗ. Chỗ chờ DUY NHẤT nên làm ngay trong D: campaign tạo từ Hubsell ghi
+  nguồn tạo + ảnh chụp đề xuất lúc tạo (mục tiêu, ngân sách, điểm) → B biết ngân sách gốc, và có dữ liệu chấm
+  "gợi ý đúng/sai" như bảng điểm diễn tập.
+
+### Chi phí call
+Nền: `recommended_item_list` 1 call/gian/ngày + `item_extra_info` 1 call/50 SP/ngày (app chính). Khi seller mở
+thẻ một SP: ROI target + budget suggestion + keyword list = 3 call, cache 24h. Tạo campaign: 1 call ghi.
+
+### Bước 0 trước khi code
+Probe ĐỌC trên gian ANO (đã nối Hubsell Ads 17/09): `recommended_item_list`, và với 3 SP bán chạy:
+ROI target + budget suggestion + keyword list → xem dải số thật (đặc biệt dải ROAS so với hòa vốn thật của ANO)
+rồi mới chốt ngưỡng cổng và trọng số.
+
+### Trạng thái code đợt D (17/09 chiều — local, chờ anh Trung chốt push)
+- **Khung + bộ chấm:** `ads-recommend.ts` (thuần, 13 test) · `ads-recommend-data.ts` (gom DB + lệnh tạo) · tab
+  `ads-recommend-tab.tsx` (4 ô lọc, bảng stickyHeader, hộp thoại Điều kiện / Chấm điểm / 3 mức mục tiêu + ngân sách +
+  MỘT nút). Bảng mới `ads_item_signals` + 2 cột `AdsCampaign.createdByHubsellAt/hubsellProposal`
+  (migration `20260917140000_ads_item_signals`, Render tự `migrate deploy`).
+- **Pha 2 — số thật của sàn:** `ads-item-signals.ts`: lượt NỀN 1 lần/ngày/gian ăn theo lượt lịch sử ads của worker
+  (`adsItemSignalsDue`), gồm extra_info (app chính, 50 SP/call) + recommended_item_list + 3 call/SP cho TOP 30 ứng
+  viên (biên lãi dương, chưa chạy ads, doanh thu lớn nhất). Nút **"Lấy / Cập nhật số của sàn"** trên tab
+  (`POST recommendations/sync`, chạy nền, FE hỏi lại 10s/lần, chống bấm dồn 10'). Mở hộp thoại một SP chưa có dải
+  ROAS → tự lấy riêng SP đó (`POST recommendations/refresh-item`, 3 call) rồi chấm lại.
+- **Bước 0 — probe đọc thuần** (sau khi lên prod, đăng nhập app rồi mở URL này trên trình duyệt):
+  `GET /api/ads/shopee/recommendations/probe?channelId=<gian ANO>&itemId=<item_id SP bán chạy>` → in nguyên văn 5
+  endpoint. Việc cần soi: shape thật của `recommended_item_list` (mảng hay bọc `item_list`), giá trị thật của
+  `item_status_list`, dải ROI so với hòa vốn thật của ANO, đơn vị `suggested_bid`/`budget` (₫). Chốt xong mới tin
+  ngưỡng cổng "khả thi" và trọng số "dư địa".
+- **CHƯA xác minh sống:** `create_manual_product_ads` (lần bấm Tạo chiến dịch đầu tiên trên gian thật), 5 endpoint
+  đọc ở trên (probe), enum `item_status_list`.

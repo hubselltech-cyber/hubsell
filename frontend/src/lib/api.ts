@@ -5179,6 +5179,111 @@ export function setShopeeAdsRoasTarget(
   );
 }
 
+// ---------- ĐỢT D (17/09/2026): GỢI Ý CHẠY ADS theo sản phẩm ----------
+
+export type AdsRecommendTier = "run_now" | "test_small" | "not_yet" | "running";
+
+export interface AdsRecommendGate {
+  key: "margin" | "feasible" | "stock" | "allowed" | "social";
+  ok: boolean;
+  text: string;
+  todo?: string;
+}
+
+export interface AdsRecommendFactor {
+  key: "headroom" | "cvr" | "demand" | "cpc" | "momentum" | "history";
+  label: string;
+  points: number;
+  max: number;
+  text: string;
+}
+
+export interface AdsRecommendProposal {
+  /** Đẩy số = mức an toàn · Cân bằng = giữa · Giữ lãi = ROAS thị trường. */
+  targets: { push: number; balanced: number; keep: number };
+  recommended: "push" | "balanced" | "keep";
+  dailyBudget: number;
+  budgetNote: string;
+  maxTestSpend7d: number;
+}
+
+export interface AdsRecommendationRow {
+  itemId: string;
+  productName: string;
+  itemSku: string | null;
+  imageUrl: string | null;
+  price: number;
+  tier: AdsRecommendTier;
+  score: number;
+  margin: number | null;
+  breakevenRoas: number | null;
+  safeRoas: number | null;
+  /** ROAS thị trường của sàn ÷ hòa vốn của SP. */
+  headroom: number | null;
+  organicCvr: number | null;
+  daysOfCover: number | null;
+  orders30d: number;
+  revenue30d: number;
+  units30d: number;
+  stockAvailable: number | null;
+  headline: string;
+  gates: AdsRecommendGate[];
+  factors: AdsRecommendFactor[];
+  proposal: AdsRecommendProposal | null;
+  market: {
+    ratingStar: number | null;
+    commentCount: number | null;
+    tags: string[];
+    roiLower: number | null;
+    roiExact: number | null;
+    roiUpper: number | null;
+    kwSearchVolume: number | null;
+  } | null;
+}
+
+export interface AdsRecommendationsResponse {
+  rows: AdsRecommendationRow[];
+  counts: Record<AdsRecommendTier, number>;
+  signalsSyncedAt: string | null;
+  safeRoasFactor: number;
+}
+
+export function fetchAdsRecommendations(channelId: string, platform: "shopee" | "lazada" = "shopee") {
+  return apiFetch<AdsRecommendationsResponse>(
+    `/api/ads/${platform}/recommendations?channelId=${encodeURIComponent(channelId)}`
+  );
+}
+
+/** Nút "Cập nhật số của sàn": chạy lượt nền tín hiệu thị trường ở backend, trả ngay. */
+export function syncAdsRecommendationSignals(channelId: string) {
+  return apiFetch<{ started: boolean; running: boolean }>(`/api/ads/shopee/recommendations/sync`, {
+    method: "POST",
+    body: JSON.stringify({ channelId }),
+  });
+}
+
+/** Lấy số của sàn cho MỘT sản phẩm (3 call) rồi trả lại cả bảng gợi ý đã chấm lại. */
+export function refreshAdsRecommendationItem(channelId: string, itemId: string, safeRoas: number | null) {
+  return apiFetch<AdsRecommendationsResponse>(`/api/ads/shopee/recommendations/refresh-item`, {
+    method: "POST",
+    body: JSON.stringify({ channelId, itemId, safeRoas }),
+  });
+}
+
+/** Tạo chiến dịch 1 SP từ gợi ý — lệnh thật lên sàn (chỉ Shopee). */
+export function createAdsCampaignFromRecommendation(input: {
+  channelId: string;
+  itemId: string;
+  roasTarget: number;
+  dailyBudget: number;
+  snapshot: Record<string, unknown>;
+}) {
+  return apiFetch<{ message: string; campaignId: string }>(
+    `/api/ads/shopee/recommendations/create`,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
 /** Một lần máy ĐỊNH tạm dừng (diễn tập) + kết quả những ngày sau đó. */
 export interface AdsScorecardRow {
   campaignRowId: string;

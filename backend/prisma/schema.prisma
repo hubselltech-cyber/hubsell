@@ -415,6 +415,7 @@ model Channel {
   operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
   adSpends        AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
   adsCampaigns    AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
+  adsItemSignals  AdsItemSignal[] // tín hiệu thị trường theo SP cho Gợi ý chạy ads (đợt D)
   adsAssistantConfig AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
   adsActionLogs   AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
   inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
@@ -514,6 +515,12 @@ model AdsCampaign {
   hubsellPauseCycle  Int       @default(0) /// số ván — nằm trong referenceId chống lặp; tăng mỗi lần người/máy bật lại
   hubsellResumedOn   String    @default("") /// "YYYY-MM-DD" (VN) máy tự bật lại gần nhất — hôm đó không tắt lại nữa (1 vòng/ngày)
 
+  /// ĐỢT D (17/09/2026): campaign TẠO TỪ HUBSELL (nút "Chạy ads SP này") — ghi
+  /// nguồn tạo + ảnh chụp đề xuất lúc tạo (mục tiêu, ngân sách, điểm, lý do) để
+  /// sau này chấm gợi ý đúng/sai và để nấc hạ ngân sách (đợt B) biết số gốc.
+  createdByHubsellAt DateTime?
+  hubsellProposal    Json?
+
   lastSyncedAt  DateTime  @updatedAt
   createdAt     DateTime  @default(now())
 
@@ -589,6 +596,52 @@ model AdsActionLog {
   /// Thống kê toàn nền tảng theo ngày (HQ Sức khỏe / stats) — không quét cả bảng.
   @@index([createdAt])
   @@index([adsCampaignId, createdAt])
+}
+
+/// TÍN HIỆU THỊ TRƯỜNG THEO SẢN PHẨM cho "Gợi ý chạy ads" (đợt D 17/09/2026).
+/// Trang gợi ý CHỈ ĐỌC bảng này (không gọi sàn trong request — cùng nguyên tắc
+/// với ví ads/xung). Hai nhịp ghi:
+///   · nền (1 lần/ngày): product.get_item_extra_info (app chính, 50 SP/call) +
+///     ads.get_recommended_item_list (Hubsell Ads, 1 call/gian)
+///   · theo SP khi seller mở thẻ (cache 24h): ROI target + budget suggestion +
+///     recommended keywords (3 call).
+model AdsItemSignal {
+  id        String @id @default(cuid())
+  channelId String
+  itemId    String // item_id phía sàn
+
+  sale         Int? // lượt bán trọn đời
+  views        Int? // lượt xem trang SP trọn đời
+  likes        Int?
+  ratingStar   Decimal? @db.Decimal(3, 2)
+  commentCount Int?
+
+  shopeeTags     String  @default("") // "best selling,best ROI,top search"
+  adBlocked      Boolean @default(false) // item_status_list báo không đủ điều kiện ads
+  ongoingAdTypes String  @default("") // "search ads,discovery ads"
+
+  roiLower Decimal? @db.Decimal(8, 2) // percentile 80 — cạnh tranh hơn 80% ads tương tự
+  roiExact Decimal? @db.Decimal(8, 2) // percentile 50
+  roiUpper Decimal? @db.Decimal(8, 2) // percentile 20
+
+  budgetMin         Decimal? @db.Decimal(14, 2)
+  budgetRecommended Decimal? @db.Decimal(14, 2)
+  budgetMax         Decimal? @db.Decimal(14, 2)
+
+  kwSearchVolume Int? // tổng lượt tìm 30 ngày của các từ khóa Shopee gợi ý
+  kwAvgBid       Decimal? @db.Decimal(12, 2) // giá thầu gợi ý trung bình (có trọng số lượt tìm)
+  kwCount        Int?
+
+  baseSyncedAt     DateTime?
+  proposalSyncedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, itemId])
+  @@index([channelId])
+  @@map("ads_item_signals")
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.

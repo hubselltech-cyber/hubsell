@@ -26,6 +26,19 @@ import {
   setRoasTargetByOwner,
 } from "../integrations/shopee/ads-auto-execute";
 import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
+import {
+  computeChannelAdsRecommendations,
+  createCampaignFromRecommendation,
+} from "../integrations/shopee/ads-recommend-data";
+import {
+  probeAdsItemSignals,
+  syncAdsItemProposal,
+  syncShopeeAdsItemSignals,
+} from "../integrations/shopee/ads-item-signals";
+
+/** Gian đang chạy lượt nền tín hiệu do nút bấm (chống bấm dồn trong một tiến trình;
+ *  chốt thật là mốc baseSyncedAt <10' trong DB). */
+const signalSyncRunning = new Set<string>();
 import { scanOpsAlerts } from "../services/ops-alerts";
 
 const router = Router();
@@ -364,6 +377,148 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         channelName,
       });
       res.json({ ...data, marginWindowDays: MARGIN_WINDOW_DAYS });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/ads/{sàn}/recommendations?channelId= — ĐỢT D (17/09): GỢI Ý CHẠY ADS
+  // theo sản phẩm (cổng loại → điểm → đề xuất mục tiêu + ngân sách). Thuần đọc DB.
+  router.get(`/${platform}/recommendations`, async (req: AuthRequest, res, next) => {
+    try {
+      const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+      const channel = await prisma.channel.findFirst({
+        where: { id: channelId, userId: req.ownerId!, channelName },
+      });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      res.json(
+        await computeChannelAdsRecommendations({ id: channel.id, userId: req.ownerId!, channelName })
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/shopee/recommendations/sync — nút "Cập nhật số của sàn": chạy LƯỢT NỀN
+  // tín hiệu thị trường ở nền (≈1–2 phút với gian lớn), trả ngay; FE hỏi lại GET tới khi
+  // signalsSyncedAt đổi. Chống spam: đang chạy hoặc vừa chạy <10' thì không chạy lại.
+  router.post(`/${platform}/recommendations/sync`, async (req: AuthRequest, res, next) => {
+    try {
+      if (platform !== "shopee") {
+        res.status(400).json({ error: "Số thị trường mới hỗ trợ Shopee." });
+        return;
+      }
+      const channel = await prisma.channel.findFirst({
+        where: { id: String((req.body as { channelId?: unknown })?.channelId ?? ""), userId: req.ownerId!, channelName, status: "ACTIVE" },
+      });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const link = await getHubsellAdsLinkStatus(channel.id);
+      if (link.required && link.status !== "ACTIVE") {
+        res.status(409).json({ error: "Gian chưa kết nối Hubsell Ads — kết nối trước khi lấy số của sàn." });
+        return;
+      }
+      const last = await prisma.adsItemSignal.findFirst({
+        where: { channelId: channel.id, baseSyncedAt: { not: null } },
+        orderBy: { baseSyncedAt: "desc" },
+        select: { baseSyncedAt: true },
+      });
+      const fresh = last?.baseSyncedAt && Date.now() - last.baseSyncedAt.getTime() < 10 * 60_000;
+      if (signalSyncRunning.has(channel.id) || fresh) {
+        res.json({ started: false, running: signalSyncRunning.has(channel.id) });
+        return;
+      }
+      signalSyncRunning.add(channel.id);
+      void syncShopeeAdsItemSignals(channel)
+        .then((r) =>
+          console.log(
+            `[Ads-signals] "${channel.shopName}" (nút): ${r.extraInfo}/${r.items} SP có lượt xem, ${r.recommended} SP sàn gợi ý, ${r.proposals} ứng viên đủ số${r.errors.length ? ` · lỗi: ${r.errors.slice(0, 3).join(" | ")}` : ""}`
+          )
+        )
+        .catch((err) => console.error(`[Ads-signals] "${channel.shopName}" (nút) lỗi:`, (err as Error).message))
+        .finally(() => signalSyncRunning.delete(channel.id));
+      res.json({ started: true, running: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/shopee/recommendations/refresh-item — 3 call tín hiệu ads cho MỘT SP
+  // (seller mở hộp thoại SP nằm ngoài top ứng viên). Body: { channelId, itemId, safeRoas }.
+  router.post(`/${platform}/recommendations/refresh-item`, async (req: AuthRequest, res) => {
+    try {
+      if (platform !== "shopee") {
+        res.status(400).json({ error: "Số thị trường mới hỗ trợ Shopee." });
+        return;
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const itemId = String(body.itemId ?? "");
+      const channel = await prisma.channel.findFirst({
+        where: { id: String(body.channelId ?? ""), userId: req.ownerId!, channelName, status: "ACTIVE" },
+      });
+      if (!channel || !/^\d+$/.test(itemId)) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label} hoặc sản phẩm` });
+        return;
+      }
+      const safeRoas = Number(body.safeRoas);
+      await syncAdsItemProposal(channel, itemId, Number.isFinite(safeRoas) && safeRoas > 0 ? safeRoas : null);
+      res.json(await computeChannelAdsRecommendations({ id: channel.id, userId: req.ownerId!, channelName }));
+    } catch (err) {
+      res.status(502).json({ error: `Không lấy được số của sàn: ${(err as Error).message}` });
+    }
+  });
+
+  // GET /api/ads/shopee/recommendations/probe?channelId=&itemId= — ĐỌC THUẦN, in nguyên văn
+  // 5 endpoint tín hiệu cho một SP (chốt shape + ngưỡng trên số thật trước khi tin).
+  router.get(`/${platform}/recommendations/probe`, async (req: AuthRequest, res, next) => {
+    try {
+      const channel = await prisma.channel.findFirst({
+        where: { id: String(req.query.channelId ?? ""), userId: req.ownerId!, channelName: ChannelName.SHOPEE },
+      });
+      const itemId = String(req.query.itemId ?? "");
+      if (!channel || !/^\d+$/.test(itemId)) {
+        res.status(404).json({ error: "Cần channelId gian Shopee và itemId số" });
+        return;
+      }
+      res.json(await probeAdsItemSignals(channel, itemId));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/{sàn}/recommendations/create — tạo chiến dịch 1 SP từ gợi ý (lệnh
+  // GHI THẬT lên sàn, chỉ Shopee). Body: { channelId, itemId, roasTarget, dailyBudget, snapshot }.
+  router.post(`/${platform}/recommendations/create`, async (req: AuthRequest, res, next) => {
+    try {
+      if (platform !== "shopee") {
+        res.status(400).json({ error: "Tạo chiến dịch từ Hubsell mới hỗ trợ Shopee." });
+        return;
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const channel = await prisma.channel.findFirst({
+        where: { id: String(body.channelId ?? ""), userId: req.ownerId!, channelName, status: "ACTIVE" },
+      });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const out = await createCampaignFromRecommendation(channel, {
+        itemId: String(body.itemId ?? ""),
+        roasTarget: Number(body.roasTarget),
+        dailyBudget: Number(body.dailyBudget),
+        proposalSnapshot:
+          body.snapshot && typeof body.snapshot === "object" ? (body.snapshot as Record<string, unknown>) : {},
+      });
+      if (!out.ok) {
+        res.status(409).json({ error: out.error ?? `${label} từ chối lệnh tạo chiến dịch` });
+        return;
+      }
+      res.json({ message: "Đã tạo chiến dịch — Trợ lý bắt đầu gác", campaignId: out.campaignId });
     } catch (err) {
       next(err);
     }

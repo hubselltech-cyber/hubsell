@@ -95,7 +95,7 @@ export function pnlRowsForMargin<
   return channelName === ChannelName.LAZADA ? active.filter((r) => r.isSettled) : active;
 }
 
-async function fetchChannelPnlRows(channel: AdsInsightChannel): Promise<PnlRow[]> {
+export async function fetchChannelPnlRows(channel: AdsInsightChannel): Promise<PnlRow[]> {
   const pnlOrders = await fetchPnlOrders(
     { userId: channel.userId, id: channel.id, channelName: channel.channelName },
     { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
@@ -360,10 +360,12 @@ export function deriveLazadaItemSku(sellerSkus: string[]): string | null {
 }
 
 export async function computeChannelProductBreakeven(
-  channel: AdsInsightChannel
+  channel: AdsInsightChannel,
+  /** Tập đơn P&L đã nạp sẵn (Gợi ý chạy ads dùng chung, khỏi kéo 2 lần). */
+  preloadedPnlRows?: PnlRow[]
 ): Promise<ChannelProductBreakeven> {
   const [pnlRows, channelProducts, campaignRows, configRow] = await Promise.all([
-    fetchChannelPnlRows(channel),
+    preloadedPnlRows ?? fetchChannelPnlRows(channel),
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
       select: {

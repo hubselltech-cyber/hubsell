@@ -104,6 +104,19 @@ export const SHOPEE_PATHS = {
    *  ⚠ enum edit_action CHƯA xác minh từ docs — chỉ gọi ở mode live sau khi
    *  probe trên shop thật xác nhận; mọi lệnh đều ghi sổ AdsActionLog. */
   adsEditManualProductAds: "/api/v2/ads/edit_manual_product_ads",
+  /** ĐỢT D — tạo campaign 1 SP (đấu thầu tự động theo ROAS mục tiêu). CHƯA probe sống. */
+  adsCreateManualProductAds: "/api/v2/ads/create_manual_product_ads",
+  // ── ĐỢT D — tín hiệu thị trường cho Gợi ý chạy ads (toàn bộ READ-ONLY) ──
+  /** sale / views / likes / rating_star / comment_count theo item (≤50 id/lần) — Product API, app CHÍNH. */
+  itemExtraInfo: "/api/v2/product/get_item_extra_info",
+  /** SKU sàn gợi ý chạy ads: tag best selling/best ROI/top search + trạng thái + loại ads đang chạy. */
+  adsRecommendedItemList: "/api/v2/ads/get_recommended_item_list",
+  /** Dải ROAS mục tiêu của quảng cáo tương tự (lower p80 / exact p50 / upper p20) theo item. */
+  adsRecommendedRoiTarget: "/api/v2/ads/get_product_recommended_roi_target",
+  /** Ngân sách gợi ý min/recommended/max cho cấu hình định tạo. */
+  adsBudgetSuggestion: "/api/v2/ads/get_create_product_ad_budget_suggestion",
+  /** Từ khóa sàn gợi ý theo item: search_volume 30 ngày, quality_score, suggested_bid. */
+  adsRecommendedKeywordList: "/api/v2/ads/get_recommended_keyword_list",
 
   // ── Trợ lý vận hành (CSKH): chat + đánh giá ──
   // LƯU Ý: module Chat (sellerchat) có thể cần bật quyền riêng trên Shopee

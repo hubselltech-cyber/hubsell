@@ -323,6 +323,88 @@ async function main() {
     }
   }
 
+  // ---- ĐỢT D (17/09/2026): SP CHƯA chạy ads + tín hiệu thị trường cho tab "Gợi ý chạy ads" ----
+  // Mỗi SP một kịch bản của bộ chấm (ads-recommend.ts): nên chạy / thử nhỏ / 4 kiểu chưa nên.
+  if (platform === "SHOPEE") {
+    const rec = [
+      // Nên chạy ngay: biên 33%, dư địa gấp 3, chuyển đổi cao, cầu lớn
+      { itemId: "900011", sku: "DEMO-BALO", name: "Balo laptop chống nước (demo)", price: 320_000, cost: 165_000, orders: 14, stock: 260,
+        sig: { sale: 1850, views: 42_000, rating: 4.9, comments: 612, tags: "best selling,top search", lower: 5.5, exact: 9.2, upper: 14, bMin: 30_000, bRec: 180_000, bMax: 500_000, vol: 86_000, bid: 1100 } },
+      // Nên chạy ngay: biên 29%
+      { itemId: "900012", sku: "DEMO-VIDA", name: "Ví da nam cầm tay (demo)", price: 260_000, cost: 140_000, orders: 11, stock: 180,
+        sig: { sale: 960, views: 26_000, rating: 4.8, comments: 301, tags: "best ROI", lower: 5, exact: 8.4, upper: 13, bMin: 30_000, bRec: 120_000, bMax: 350_000, vol: 31_000, bid: 850 } },
+      // Thử nhỏ: dư địa mỏng, chuyển đổi dưới mặt bằng, cầu vừa
+      { itemId: "900013", sku: "DEMO-BUCKET", name: "Mũ bucket hai mặt (demo)", price: 150_000, cost: 85_000, orders: 8, stock: 140,
+        sig: { sale: 210, views: 19_000, rating: 4.6, comments: 48, tags: "", lower: 4.2, exact: 6, upper: 9.5, bMin: 20_000, bRec: 90_000, bMax: 250_000, vol: 9_000, bid: 700 } },
+      // Chưa nên: hòa vốn an toàn cao hơn cả nhóm khắt khe nhất của sàn
+      { itemId: "900014", sku: "DEMO-DEP", name: "Dép quai ngang đế êm (demo)", price: 120_000, cost: 92_000, orders: 9, stock: 300,
+        sig: { sale: 700, views: 25_000, rating: 4.7, comments: 190, tags: "best selling", lower: 4.5, exact: 7, upper: 11, bMin: 20_000, bRec: 100_000, bMax: 300_000, vol: 40_000, bid: 600 } },
+      // Chưa nên: SP mới, 3 đánh giá
+      { itemId: "900015", sku: "DEMO-AOTHUN", name: "Áo thun oversize mẫu mới (demo)", price: 190_000, cost: 95_000, orders: 6, stock: 120,
+        sig: { sale: 9, views: 640, rating: 5, comments: 3, tags: "", lower: 4.8, exact: 7.5, upper: 12, bMin: 20_000, bRec: 100_000, bMax: 300_000, vol: 55_000, bid: 950 } },
+      // Chưa nên: tồn không đủ 14 ngày
+      { itemId: "900016", sku: "DEMO-TOTE", name: "Túi tote canvas in hình (demo)", price: 140_000, cost: 70_000, orders: 18, stock: 9,
+        sig: { sale: 1400, views: 30_000, rating: 4.8, comments: 420, tags: "best selling", lower: 4.6, exact: 7.8, upper: 12, bMin: 20_000, bRec: 110_000, bMax: 300_000, vol: 47_000, bid: 800 } },
+    ];
+    let recOrderNo = 500;
+    for (const r of rec) {
+      await prisma.channelProduct.create({
+        data: {
+          channelId: channel.id,
+          channelSku: r.sku,
+          productName: r.name,
+          price: r.price,
+          externalId: r.itemId,
+          channelStock: r.stock,
+          status: "ACTIVE",
+        },
+      });
+      for (let i = 0; i < r.orders; i++) {
+        recOrderNo++;
+        await prisma.order.create({
+          data: {
+            channelId: channel.id,
+            orderCode: `DEMO-ADS-${recOrderNo}`,
+            customerName: "Khách demo Ads",
+            totalAmount: r.price,
+            itemCount: 1,
+            createdAt: new Date(Date.now() - (1 + ((i * 29) / r.orders)) * 86_400_000),
+            isSettled: true,
+            fixedFee: Math.round(r.price * 0.06),
+            paymentFee: Math.round(r.price * 0.02),
+            serviceFee: Math.round(r.price * 0.05),
+            taxWithheld: Math.round(r.price * 0.015),
+            items: {
+              create: { channelSku: r.sku, productName: r.name, quantity: 1, price: r.price, costPriceAtSale: r.cost },
+            },
+          },
+        });
+      }
+      await prisma.adsItemSignal.create({
+        data: {
+          channelId: channel.id,
+          itemId: r.itemId,
+          sale: r.sig.sale,
+          views: r.sig.views,
+          ratingStar: r.sig.rating,
+          commentCount: r.sig.comments,
+          shopeeTags: r.sig.tags,
+          roiLower: r.sig.lower,
+          roiExact: r.sig.exact,
+          roiUpper: r.sig.upper,
+          budgetMin: r.sig.bMin,
+          budgetRecommended: r.sig.bRec,
+          budgetMax: r.sig.bMax,
+          kwSearchVolume: r.sig.vol,
+          kwAvgBid: r.sig.bid,
+          kwCount: 12,
+          baseSyncedAt: new Date(),
+          proposalSyncedAt: new Date(),
+        },
+      });
+    }
+  }
+
   console.log(
     `Đã dựng gian "${channel.shopName}" + ${skus.length} SKU + 18 đơn P&L + ${demos.length + extra} campaign demo`
   );
