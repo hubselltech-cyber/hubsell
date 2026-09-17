@@ -54,9 +54,33 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const requestedId = typeof req.query.channelId === "string" ? req.query.channelId : "";
     const selected = channels.find((c) => c.id === requestedId) ?? channels[0] ?? null;
     const days = parseDays(req.query.days);
+    // Bảng "gian ↔ tài khoản quảng cáo": mỗi gian có thể nối một tài khoản khác nhau.
+    const links = await prisma.tiktokAdsStoreLink.findMany({
+      where: { channelId: { in: channels.map((c) => c.id) } },
+      select: { channelId: true, status: true, advertiserName: true, lastSyncError: true, auth: { select: { status: true } } },
+    });
+    const linkOf = new Map(links.map((l) => [l.channelId, l]));
     const base = {
       configured,
-      channels: channels.map((c) => ({ id: c.id, shopName: c.shopName })),
+      channels: channels.map((c) => {
+        const l = linkOf.get(c.id);
+        return {
+          id: c.id,
+          shopName: c.shopName,
+          ads: l
+            ? {
+                status: l.auth.status === "ACTIVE" ? l.status : "REVOKED",
+                advertiserName: l.advertiserName,
+                problem:
+                  l.auth.status !== "ACTIVE"
+                    ? "Tài khoản TikTok đã hủy ủy quyền."
+                    : l.status !== "ACTIVE"
+                      ? l.lastSyncError || "Tài khoản quảng cáo không còn quyền trên gian."
+                      : null,
+              }
+            : null,
+        };
+      }),
       selectedChannelId: selected?.id ?? null,
       days,
     };

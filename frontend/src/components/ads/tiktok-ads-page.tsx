@@ -6,7 +6,8 @@
 // Khác Shopee/Lazada ở gốc: thứ được nối là TÀI KHOẢN QUẢNG CÁO (có thể do
 // người chạy thuê giữ, chạy cho nhiều shop của nhiều seller) — backend tự dò và
 // chỉ nối gian TikTok của chính chủ shop. Trang này:
-//   · chưa nối  → một nút Kết nối (+ link gửi người giữ tài khoản quảng cáo)
+//   · bảng "gian → tài khoản quảng cáo": mỗi gian một dòng, nút Kết nối đứng
+//     ngay sau tên gian (3 gian có thể là 3 tài khoản quảng cáo khác nhau)
 //   · đã nối    → thẻ số + biểu đồ + bảng campaign (ROI thực so ROI mục tiêu),
 //                 bấm một campaign để soi video tiêu tiền không ra đơn.
 // Chưa có ROAS hòa vốn: lợi nhuận đơn TikTok đã trừ phí GMV Max trong quyết
@@ -17,7 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Wallet } from "lucide-react";
+import { ArrowRight, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Wallet } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -30,7 +31,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
-import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   fetchTiktokAdsDashboard,
@@ -176,6 +176,13 @@ export function TiktokAdsPage() {
   const linked = data?.link?.linked === true;
   const linkBroken = linked && data?.link?.status !== "ACTIVE";
 
+  // Gian đang chọn chưa nối mà có gian khác đã nối → nhảy sang gian có số.
+  useEffect(() => {
+    if (!data || linked) return;
+    const firstOk = data.channels.find((c) => c.ads?.status === "ACTIVE");
+    if (firstOk && firstOk.id !== selectedId) setChannelId(firstOk.id);
+  }, [data, linked, selectedId]);
+
   // Worker đang kéo số (vừa nối / số cũ) → tự nạp lại, khỏi bắt chủ shop bấm.
   const waiting = linked && !linkBroken && (data?.adsRefreshing || !data?.adsSyncedAt);
   useEffect(() => {
@@ -189,15 +196,15 @@ export function TiktokAdsPage() {
     [data?.series]
   );
 
-  async function openAuthorize(invite: boolean) {
+  async function openAuthorize(forChannelId: string, invite: boolean) {
     setConnecting(true);
     try {
-      const { url } = await getTiktokAdsAuthUrl(invite);
+      const { url } = await getTiktokAdsAuthUrl(forChannelId, invite);
       if (invite) {
         await navigator.clipboard.writeText(url);
         toast.success("Đã sao chép link. Gửi cho người đang giữ tài khoản quảng cáo — link dùng được trong 7 ngày.");
       } else {
-        window.location.href = url;
+        window.location.assign(url);
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không tạo được link kết nối");
@@ -247,23 +254,8 @@ export function TiktokAdsPage() {
               Số thật từ TikTok: chiến dịch nào đang dưới mục tiêu, video nào tiêu tiền mà không ra đơn.
             </p>
           </div>
-          {data?.configured && (data?.channels.length ?? 0) >= 1 && (
+          {linked && (
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              {/* Ô chọn gian luôn hiện — gian chưa nối vẫn phải đổi sang gian khác được. */}
-              <NativeSelect
-                value={selectedId}
-                onChange={(e) => setChannelId(e.target.value)}
-                aria-label="Chọn gian hàng TikTok"
-                className="w-52"
-              >
-                {data?.channels.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.shopName}
-                  </option>
-                ))}
-              </NativeSelect>
-              {linked && (
-              <>
               <div className="flex overflow-hidden rounded-lg border">
                 {DAY_PRESETS.map((p) => (
                   <button
@@ -282,8 +274,6 @@ export function TiktokAdsPage() {
                 <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
                 Làm mới
               </Button>
-              </>
-              )}
             </div>
           )}
         </div>
@@ -292,8 +282,8 @@ export function TiktokAdsPage() {
           <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">{q.error}</div>
         )}
 
-        {/* ===== CHƯA SẴN SÀNG: chưa bật / chưa có gian / chưa nối ===== */}
-        {data && (!data.configured || noChannel || !linked) && (
+        {/* ===== CHƯA BẬT / CHƯA CÓ GIAN ===== */}
+        {data && (!data.configured || noChannel) && (
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
               <div className="flex size-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
@@ -306,7 +296,7 @@ export function TiktokAdsPage() {
                     Hubsell đang hoàn tất kết nối dữ liệu quảng cáo GMV Max với TikTok.
                   </p>
                 </>
-              ) : noChannel ? (
+              ) : (
                 <>
                   <p className="text-base font-semibold text-slate-900">Chưa có gian TikTok Shop</p>
                   <p className={cn(TEXT_SUB, "max-w-md")}>
@@ -314,44 +304,78 @@ export function TiktokAdsPage() {
                   </p>
                   <Button onClick={() => router.push("/channels")}>Tới trang Kênh bán</Button>
                 </>
-              ) : (
-                <>
-                  <p className="text-base font-semibold text-slate-900">Kết nối quảng cáo TikTok</p>
-                  <p className={cn(TEXT_SUB, "max-w-md")}>
-                    Đăng nhập tài khoản TikTok đang chạy GMV Max cho shop rồi bấm đồng ý. Hubsell chỉ đọc số của
-                    gian hàng anh/chị đã kết nối.
-                  </p>
-                  <Button onClick={() => void openAuthorize(false)} disabled={connecting}>
-                    <Link2 className="size-4" />
-                    Kết nối TikTok Ads
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => void openAuthorize(true)}
-                    disabled={connecting}
-                    className="text-xs text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
-                  >
-                    Người khác giữ tài khoản quảng cáo? Sao chép link gửi họ
-                  </button>
-                </>
               )}
             </CardContent>
           </Card>
         )}
 
-        {linked && linkBroken && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
-            {/* NO_ACCESS: shop đổi tài khoản quảng cáo / người chạy thuê — backend ghi sẵn lý do kèm tên tài khoản mới. */}
-            <span>
-              {data?.link?.status === "NO_ACCESS" && data.link.lastSyncError
-                ? data.link.lastSyncError
-                : "Kết nối quảng cáo của gian đã hết hiệu lực (tài khoản TikTok đã hủy ủy quyền)."}{" "}
-              Số bên dưới dừng ở lần cập nhật cuối.
-            </span>
-            <Button size="sm" variant="outline" onClick={() => void openAuthorize(false)} disabled={connecting}>
-              Kết nối lại
-            </Button>
-          </div>
+        {/* ===== GIAN HÀNG → TÀI KHOẢN QUẢNG CÁO (anh Trung 17/09): mỗi gian có thể
+            chạy ads bằng một tài khoản TikTok khác nhau → mỗi gian MỘT DÒNG, tên
+            gian đứng ngay trước nút để khách biết mình đang nối cho gian nào. ===== */}
+        {data?.configured && !noChannel && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Tài khoản quảng cáo của từng gian</CardTitle>
+              <CardDescription className="mt-1.5">
+                Mỗi gian có thể chạy quảng cáo bằng một tài khoản TikTok riêng. Bấm Kết nối ở đúng dòng của gian, rồi
+                đăng nhập tài khoản TikTok đang chạy GMV Max cho gian đó. Hubsell chỉ đọc số của gian anh/chị đã kết nối.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y divide-slate-200/80 rounded-lg border border-slate-200/80">
+                {data.channels.map((c) => {
+                  const ok = c.ads?.status === "ACTIVE";
+                  const broken = c.ads != null && !ok;
+                  const viewing = ok && c.id === selectedId;
+                  return (
+                    <li
+                      key={c.id}
+                      className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3", viewing && "bg-slate-50")}
+                    >
+                      <span className="w-full truncate text-sm font-semibold text-slate-900 sm:w-56" title={c.shopName}>
+                        {c.shopName}
+                      </span>
+                      <ArrowRight className="hidden size-4 shrink-0 text-slate-400 sm:block" aria-hidden />
+                      {ok ? (
+                        <>
+                          <span className="flex min-w-0 items-center gap-2 text-sm text-slate-900">
+                            <span className="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                            <span className="truncate">{c.ads?.advertiserName || "Đã kết nối"}</span>
+                          </span>
+                          {viewing ? (
+                            <Badge className="bg-slate-100 text-slate-500">Đang xem</Badge>
+                          ) : (
+                            <Button size="sm" variant="outline" onClick={() => setChannelId(c.id)}>
+                              Xem số
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" onClick={() => void openAuthorize(c.id, false)} disabled={connecting}>
+                            <Link2 className="size-4" />
+                            {broken ? "Kết nối lại TikTok Ads" : "Kết nối TikTok Ads"}
+                          </Button>
+                          {/* Dòng phụ thẳng cột với nút: 14rem tên gian + mũi tên + 2 khe 0.75rem. */}
+                          <div className="w-full space-y-1 sm:pl-[16.5rem]">
+                            {broken && <p className="text-xs text-red-500">{c.ads?.problem}</p>}
+                            <button
+                              type="button"
+                              onClick={() => void openAuthorize(c.id, true)}
+                              disabled={connecting}
+                              className="text-left text-xs text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+                            >
+                              Người khác giữ tài khoản quảng cáo? Sao chép link gửi họ
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </CardContent>
+          </Card>
         )}
 
         {linked && (

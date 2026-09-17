@@ -68,7 +68,15 @@ tiktokAdsRouter.get("/auth-url", requireAdmin, async (req: AuthRequest, res, nex
       res.status(409).json({ error: "Hãy kết nối gian TikTok Shop ở trang Kênh bán trước." });
       return;
     }
-    const state = signTiktokAdsState(req.ownerId!, req.query.invite === "1" ? "invite" : "self");
+    // channelId = dòng chủ shop bấm nút (mỗi gian có thể một tài khoản quảng cáo riêng).
+    const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const target = channelId
+      ? await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName: ChannelName.TIKTOK },
+          select: { id: true },
+        })
+      : null;
+    const state = signTiktokAdsState(req.ownerId!, req.query.invite === "1" ? "invite" : "self", target?.id);
     res.json({ url: buildTiktokAdsAuthorizeUrl(state) });
   } catch (err) {
     next(err);
@@ -107,9 +115,10 @@ tiktokAdsPublicRouter.post("/connect", async (req, res) => {
     return;
   }
   try {
-    const r = await connectTiktokAds(st.ownerId, authCode.trim());
+    const r = await connectTiktokAds(st.ownerId, authCode.trim(), st.channelId);
     res.json({
       kind: st.kind,
+      target: r.target,
       linked: r.linked.map((l) => ({ channelId: l.channelId, shopName: l.shopName, advertiserName: l.advertiserName })),
       skipped: r.skipped,
     });

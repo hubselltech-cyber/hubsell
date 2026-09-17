@@ -71,10 +71,13 @@ export default function TiktokAdsCallbackPage() {
       .then((r) => {
         setResult(r);
         setPhase("success");
+        // Kết quả nói về ĐÚNG gian chủ shop bấm nút (mỗi gian có thể một tài khoản quảng cáo riêng).
         setMessage(
-          r.linked.length === 1
-            ? `Đã kết nối quảng cáo cho gian ${r.linked[0].shopName}.`
-            : `Đã kết nối quảng cáo cho ${r.linked.length} gian TikTok.`
+          r.target && !r.target.linked
+            ? `Gian ${r.target.shopName} chưa kết nối được: ${r.target.reason ?? "tài khoản vừa ủy quyền không chạy quảng cáo cho gian này."}`
+            : r.linked.length === 1
+              ? `Đã kết nối quảng cáo cho gian ${r.linked[0].shopName}.`
+              : `Đã kết nối quảng cáo cho ${r.linked.length} gian TikTok.`
         );
       })
       .catch((err) => {
@@ -84,6 +87,7 @@ export default function TiktokAdsCallbackPage() {
   }, []);
 
   const isInvite = result?.kind === "invite";
+  const targetMissed = result?.target != null && !result.target.linked;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -98,10 +102,19 @@ export default function TiktokAdsCallbackPage() {
 
           {phase === "success" && result && (
             <>
-              <CheckCircle2 className="size-12 text-emerald-500" />
+              {targetMissed ? (
+                <XCircle className="size-12 text-amber-500" />
+              ) : (
+                <CheckCircle2 className="size-12 text-emerald-500" />
+              )}
               <div className="space-y-1">
-                <h1 className="text-lg font-semibold text-slate-800">Kết nối thành công</h1>
+                <h1 className="text-lg font-semibold text-slate-800">
+                  {targetMissed ? "Chưa đúng tài khoản quảng cáo của gian" : "Kết nối thành công"}
+                </h1>
                 <p className="text-sm text-slate-600">{message}</p>
+                {targetMissed && (
+                  <p className="text-sm text-slate-500">Tài khoản vừa ủy quyền đã được nối cho gian bên dưới.</p>
+                )}
               </div>
               <ul className="w-full space-y-1 text-left text-sm text-slate-700">
                 {result.linked.map((l) => (
@@ -111,7 +124,9 @@ export default function TiktokAdsCallbackPage() {
                   </li>
                 ))}
               </ul>
-              {result.skipped.length > 0 && (
+              {/* Bấm Kết nối ở dòng của MỘT gian thì chỉ nói về gian đó — các gian khác dùng
+                  tài khoản quảng cáo khác là chuyện bình thường, kể ra chỉ làm rối. */}
+              {!result.target && result.skipped.length > 0 && (
                 <ul className="w-full space-y-1 text-left text-xs text-slate-500">
                   {result.skipped.map((s) => (
                     <li key={s.shopName}>

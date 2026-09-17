@@ -2507,12 +2507,15 @@ export function fetchTiktokAdsStatus(channelId: string) {
 }
 
 /** invite=true: link sống 7 ngày để gửi cho người giữ tài khoản quảng cáo (chạy thuê). */
-export function getTiktokAdsAuthUrl(invite = false) {
-  return apiFetch<{ url: string }>(`/api/tiktok-ads/auth-url${invite ? "?invite=1" : ""}`);
+export function getTiktokAdsAuthUrl(channelId: string, invite = false) {
+  const qs = new URLSearchParams({ channelId, ...(invite ? { invite: "1" } : {}) });
+  return apiFetch<{ url: string }>(`/api/tiktok-ads/auth-url?${qs.toString()}`);
 }
 
 export interface TiktokAdsConnectResult {
   kind: "self" | "invite";
+  /** Gian mà chủ shop bấm nút Kết nối — kết quả nói về đúng gian này. */
+  target: { shopName: string; linked: boolean; reason: string | null } | null;
   linked: { channelId: string; shopName: string; advertiserName: string }[];
   skipped: { shopName: string; reason: string }[];
 }
@@ -2551,7 +2554,12 @@ export interface TiktokAdsCampaignRow {
 
 export interface TiktokAdsDashboard {
   configured: boolean;
-  channels: { id: string; shopName: string }[];
+  channels: {
+    id: string;
+    shopName: string;
+    /** null = gian chưa nối quảng cáo; problem = lý do khi kết nối hỏng. */
+    ads: { status: "ACTIVE" | "NO_ACCESS" | "REVOKED"; advertiserName: string; problem: string | null } | null;
+  }[];
   selectedChannelId: string | null;
   days: number;
   link: Omit<TiktokAdsLinkStatus, "configured"> | null;

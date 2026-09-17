@@ -44,22 +44,30 @@ const SCAN_CONCURRENCY = 4;
 export type TiktokAdsStateKind = "self" | "invite";
 
 /**
- * Ký state mang ownerId. "self" = chủ shop tự bấm (30 phút); "invite" = link
- * gửi cho người giữ tài khoản quảng cáo (7 ngày).
+ * Ký state mang ownerId + GIAN ĐÍCH (dòng mà chủ shop bấm nút Kết nối — mỗi
+ * gian có thể dùng một tài khoản quảng cáo khác nhau nên kết quả phải nói về
+ * đúng gian đó). "self" = chủ shop tự bấm (30 phút); "invite" = link gửi cho
+ * người giữ tài khoản quảng cáo (7 ngày).
  */
-export function signTiktokAdsState(ownerId: string, kind: TiktokAdsStateKind): string {
+export function signTiktokAdsState(ownerId: string, kind: TiktokAdsStateKind, channelId?: string): string {
   return jwt.sign(
-    { ownerId, kind, purpose: STATE_PURPOSE, fe: STATE_FRONTEND_URL },
+    { ownerId, kind, channelId: channelId || undefined, purpose: STATE_PURPOSE, fe: STATE_FRONTEND_URL },
     STATE_SECRET,
     { expiresIn: kind === "invite" ? "7d" : "30m" }
   );
 }
 
-export function verifyTiktokAdsState(token: string): { ownerId: string; kind: TiktokAdsStateKind } | null {
+export function verifyTiktokAdsState(
+  token: string
+): { ownerId: string; kind: TiktokAdsStateKind; channelId: string | null } | null {
   try {
     const p = jwt.verify(token, STATE_SECRET) as jwt.JwtPayload;
     if (p.purpose !== STATE_PURPOSE || !p.ownerId) return null;
-    return { ownerId: String(p.ownerId), kind: p.kind === "invite" ? "invite" : "self" };
+    return {
+      ownerId: String(p.ownerId),
+      kind: p.kind === "invite" ? "invite" : "self",
+      channelId: typeof p.channelId === "string" ? p.channelId : null,
+    };
   } catch {
     return null;
   }
@@ -81,8 +89,14 @@ export interface TiktokAdsLinkedStore {
 
 export interface TiktokAdsConnectResult {
   linked: TiktokAdsLinkedStore[];
-  /** Gian TikTok của chủ shop mà lần ủy quyền này KHÔNG phủ được, kèm lý do nói thẳng. */
+  /**
+   * Gian TikTok CHƯA có kết nối quảng cáo mà lần ủy quyền này cũng không phủ
+   * được, kèm lý do. Gian đang nối khỏe bằng tài khoản quảng cáo khác thì không
+   * nằm ở đây — nhắc tới chỉ làm chủ shop rối.
+   */
   skipped: { shopName: string; reason: string }[];
+  /** Gian đích (dòng chủ shop bấm nút) — null khi link không mang gian đích. */
+  target: { shopName: string; linked: boolean; reason: string | null } | null;
 }
 
 /** Chạy fn trên từng phần tử, tối đa `limit` lượt cùng lúc; `stop()` true thì thôi nhận việc mới. */
@@ -102,7 +116,11 @@ async function scanPool<T>(items: T[], limit: number, stop: () => boolean, fn: (
  * TikTok của chủ shop rồi ghi link. Gian chưa nối app chính thì chặn TRƯỚC khi
  * đổi code (code dùng một lần).
  */
-export async function connectTiktokAds(ownerId: string, authCode: string): Promise<TiktokAdsConnectResult> {
+export async function connectTiktokAds(
+  ownerId: string,
+  authCode: string,
+  targetChannelId: string | null = null
+): Promise<TiktokAdsConnectResult> {
   const channels = await prisma.channel.findMany({
     where: { userId: ownerId, channelName: ChannelName.TIKTOK, externalShopId: { not: null } },
     select: { id: true, shopName: true, externalShopId: true },
@@ -119,7 +137,7 @@ export async function connectTiktokAds(ownerId: string, authCode: string): Promi
     );
   });
   if (!token.access_token) throw new Error("TikTok không trả access_token");
-  return linkTiktokAdsStores(ownerId, channels, token.access_token, token.advertiser_ids ?? []);
+  return linkTiktokAdsStores(ownerId, channels, token.access_token, token.advertiser_ids ?? [], targetChannelId);
 }
 
 /**
@@ -130,7 +148,8 @@ export async function linkTiktokAdsStores(
   ownerId: string,
   channels: { id: string; shopName: string; externalShopId: string | null }[],
   accessToken: string,
-  advertiserIds: string[]
+  advertiserIds: string[],
+  targetChannelId: string | null = null
 ): Promise<TiktokAdsConnectResult> {
   const byStoreId = new Map(channels.map((c) => [c.externalShopId as string, c]));
 
@@ -167,7 +186,7 @@ export async function linkTiktokAdsStores(
   );
 
   const linkable: { channel: (typeof channels)[number]; advertiserId: string; advertiserName: string }[] = [];
-  const skipped: TiktokAdsConnectResult["skipped"] = [];
+  const skipped: { channelId: string; shopName: string; reason: string }[] = [];
   for (const c of channels) {
     const storeId = c.externalShopId as string;
     const ex = exclusiveOf.get(storeId);
@@ -175,25 +194,35 @@ export async function linkTiktokAdsStores(
       linkable.push({ channel: c, advertiserId: ex.advertiserId, advertiserName: nameOf.get(ex.advertiserId) || ex.advertiserName });
     } else if (ex) {
       skipped.push({
+        channelId: c.id,
         shopName: c.shopName,
         reason: `GMV Max của gian đang do tài khoản quảng cáo "${ex.advertiserName || ex.advertiserId}" chạy, nhưng tài khoản TikTok vừa ủy quyền không có quyền trên tài khoản quảng cáo đó.`,
       });
     } else if (seen.has(storeId)) {
-      skipped.push({ shopName: c.shopName, reason: "Gian chưa có tài khoản quảng cáo nào được cấp quyền chạy GMV Max." });
+      skipped.push({ channelId: c.id, shopName: c.shopName, reason: "Gian chưa có tài khoản quảng cáo nào được cấp quyền chạy GMV Max." });
     } else {
-      skipped.push({ shopName: c.shopName, reason: "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này." });
+      skipped.push({ channelId: c.id, shopName: c.shopName, reason: "Tài khoản TikTok vừa ủy quyền không quản lý quảng cáo của gian này." });
     }
   }
 
+  const targetSkip = targetChannelId ? skipped.find((x) => x.channelId === targetChannelId) : undefined;
   if (linkable.length === 0) {
     // Nguyên tắc 2: không phủ gian nào của chủ shop → không giữ token.
+    const only = targetSkip ?? (skipped.length === 1 ? skipped[0] : undefined);
     throw new Error(
-      skipped.length === 1
-        ? `${skipped[0].reason} (gian "${skipped[0].shopName}")`
+      only
+        ? `Gian "${only.shopName}": ${only.reason}`
         : "Tài khoản TikTok vừa ủy quyền không chạy GMV Max cho gian TikTok nào của anh/chị trên Hubsell. " +
             "Hãy ủy quyền bằng đúng tài khoản đang chạy quảng cáo cho shop."
     );
   }
+
+  // Gian đang nối khỏe bằng tài khoản quảng cáo KHÁC → không coi là "bỏ sót".
+  const healthy = await prisma.tiktokAdsStoreLink.findMany({
+    where: { channelId: { in: skipped.map((x) => x.channelId) }, status: "ACTIVE", auth: { status: "ACTIVE" } },
+    select: { channelId: true },
+  });
+  const healthyIds = new Set(healthy.map((h) => h.channelId));
 
   const linked = await prisma.$transaction(async (tx) => {
     const auth = await tx.tiktokAdsAuth.create({
@@ -225,7 +254,16 @@ export async function linkTiktokAdsStores(
   });
 
   await Promise.all(linked.map((l) => markAdsBackfill(l.channelId)));
-  return { linked, skipped };
+  const targetChannel = targetChannelId ? channels.find((c) => c.id === targetChannelId) : undefined;
+  return {
+    linked,
+    skipped: skipped
+      .filter((x) => !healthyIds.has(x.channelId) && x.channelId !== targetChannelId)
+      .map(({ shopName, reason }) => ({ shopName, reason })),
+    target: targetChannel
+      ? { shopName: targetChannel.shopName, linked: !targetSkip, reason: targetSkip?.reason ?? null }
+      : null,
+  };
 }
 
 /** Gỡ kết nối quảng cáo của MỘT gian; token không còn gian nào dùng thì xóa luôn. */
