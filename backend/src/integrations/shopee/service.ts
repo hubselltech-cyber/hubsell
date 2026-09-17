@@ -353,14 +353,22 @@ const ORDER_DETAIL_BATCH = 50; // Shopee cho tối đa 50 order_sn/lần lấy c
 const WINDOW_SEC = 15 * 24 * 60 * 60; // Shopee giới hạn ≤15 ngày mỗi lần get_order_list
 const MAX_PAGES = 100; // chốt chặn phân trang vô tận
 
-/** Ánh xạ trạng thái đơn Shopee → vòng đời của Hubsell. */
-function mapShopeeStatus(status?: string): ShippingStatus {
+/**
+ * Ánh xạ trạng thái đơn Shopee → vòng đời của Hubsell.
+ *
+ * RETRY_SHIP (17/09): shop ĐÃ sắp xếp vận chuyển, sàn đã cấp mã vận đơn nhưng
+ * lượt lấy hàng hỏng (SPX Instant chưa tìm được tài xế, bưu tá lỡ hẹn) nên sàn
+ * xếp lại lượt lấy. Seller Center vẫn để đơn ở "Đã xử lý" — trước đây rơi vào
+ * default thành Chờ xử lý, chủ shop tưởng Hubsell sót đồng bộ.
+ */
+export function mapShopeeStatus(status?: string): ShippingStatus {
   switch (status) {
     case "UNPAID":
     case "READY_TO_SHIP":
     case "INVOICE_PENDING":
       return ShippingStatus.PENDING;
     case "PROCESSED":
+    case "RETRY_SHIP":
       return ShippingStatus.PROCESSED;
     case "SHIPPED":
     case "TO_CONFIRM_RECEIVE":
@@ -662,6 +670,7 @@ function shouldDeductShopeeStock(status?: string): boolean {
   switch (status) {
     case "READY_TO_SHIP":
     case "PROCESSED":
+    case "RETRY_SHIP":
     case "SHIPPED":
     case "TO_CONFIRM_RECEIVE":
     case "COMPLETED":
@@ -800,6 +809,7 @@ export async function processShopeeOrderEvent(
     if (row && !row.trackingCode) {
       const HAS_TRACKING_STATUSES = new Set([
         "PROCESSED",
+        "RETRY_SHIP",
         "SHIPPED",
         "TO_CONFIRM_RECEIVE",
         "COMPLETED",
