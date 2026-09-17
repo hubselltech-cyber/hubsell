@@ -54,6 +54,15 @@ Env đầy đủ (xem `backend/.env.example`): `HUBSELL_ADS_PARTNER_ID`,
 
 ## 3. Việc phải làm trên Shopee Console (sau khi ISV duyệt)
 
+> **17/09/2026 — app Hubsell Ads ĐÃ LIVE** (Go-Live nộp 15/09, Shopee duyệt).
+> Các bước 1–3 dưới đây đã xong; còn bước 4 (đổi env Render sang key Live, bỏ
+> `HUBSELL_ADS_ENV`) và 3 shop nhà ủy quyền lại — checklist chi tiết ở
+> `ADS-SHOPEE-KHAI-THAC-API.md` mục 5. Cùng ngày: thẻ kết nối rút còn MỘT nút
+> (chi tiết trong dấu hỏi), nêu mốc số ads đang đứng; Trung tâm điều hành +
+> chuông có thẻ `ads-app-not-linked` / `ads-app-expired` cho gian Shopee **đang
+> chạy ads** mà chưa nối / hết hạn (`detectHubsellAdsLinkGaps`), deep-link
+> thẳng trang Trợ lý của gian đó; gian chưa từng chạy ads không bị réo.
+
 1. Console → Create App: tên **Hubsell Ads**, loại **Ads Service**, redirect
    domain = domain backend Render (`hubsell-backend-sg.onrender.com`).
 2. Lấy Partner ID / Key **sandbox** → đặt env trên Render với

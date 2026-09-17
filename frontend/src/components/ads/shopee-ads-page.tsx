@@ -586,10 +586,16 @@ export function ShopeeAdsPage({
                 </button>
               ))}
             </div>
-            {data?.adsSyncedAt && (
-              <span className="text-xs text-muted-foreground tabular-nums" title="Lần kéo số quảng cáo từ sàn gần nhất">
-                Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
-              </span>
+            {/* Hubsell Ads (app Ads riêng): MỘT nút cho gian đang chọn — chỉ hiện
+                khi backend đã bật; đã nối thì thành dòng mờ (anh Trung 17/09). */}
+            {platform === "shopee" && channelId && (
+              <HubsellAdsLink
+                channelId={channelId}
+                shopName={selectedShopName}
+                status={adsApp}
+                adsSyncedAt={data?.adsSyncedAt ?? null}
+                onChanged={() => void load(channelId, days)}
+              />
             )}
             <Button
               variant="outline"
@@ -611,16 +617,6 @@ export function ShopeeAdsPage({
           <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
             {error}
           </div>
-        )}
-
-        {/* ===== HUBSELL ADS — ủy quyền app Ads riêng (chỉ hiện khi backend đã bật) ===== */}
-        {platform === "shopee" && channelId && (
-          <HubsellAdsLink
-            channelId={channelId}
-            shopName={selectedShopName}
-            status={adsApp}
-            onChanged={() => void load(channelId, days)}
-          />
         )}
 
         {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}
@@ -657,6 +653,16 @@ export function ShopeeAdsPage({
               </button>
             );
           })}
+          {/* Mốc số ads dời từ thanh công cụ xuống mép phải hàng tab (anh Trung
+              17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ). */}
+          {data?.adsSyncedAt && (
+            <span
+              className="ml-auto self-center pb-1 text-xs text-muted-foreground tabular-nums"
+              title="Lần kéo số quảng cáo từ sàn gần nhất"
+            >
+              Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
+            </span>
+          )}
         </div>
 
         {tab === "overview" && (

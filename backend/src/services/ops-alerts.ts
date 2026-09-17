@@ -15,6 +15,7 @@
 // ============================================================
 
 import {
+  ChannelAppKind,
   ChannelName,
   FeeAuditStatus,
   KocSampleStatus,
@@ -23,6 +24,7 @@ import {
   ShippingStatus,
 } from "@prisma/client";
 import { notify } from "./notifications";
+import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
 import { computePnlRow, fetchPnlOrders } from "../routes/finance";
@@ -293,6 +295,102 @@ async function detectDisconnectedChannels(ownerId: string): Promise<DetectedAler
       "Hết hạn uỷ quyền hoặc đã ngắt kết nối — đơn mới, tồn kho và đối soát KHÔNG được đồng bộ. Kết nối lại để tránh sót đơn.",
     payload: { kind: "navigate", href: "/channels", label: "Kết nối lại gian" },
   }));
+}
+
+// ── HUBSELL ADS: gian Shopee chưa / hết ủy quyền app quảng cáo riêng (17/09/2026) ──
+//
+// App Hubsell Ads (Ads Service) Live → mọi gian Shopee phải ủy quyền THÊM một
+// lần cho app này thì Trợ lý quảng cáo mới đọc được chi phí, chiến dịch, ví và
+// mới tạm dừng được campaign cắn tiền. Gian chưa nối bị worker bỏ qua LẶNG LẼ
+// (đúng ý: không đẻ log lỗi), nên seller không mở trang Trợ lý sẽ không biết
+// số ads đã đứng — thẻ này là đường báo chủ động duy nhất.
+//
+// Chỉ réo gian THẬT SỰ chạy ads (có chi ads hoặc campaign trong 30 ngày):
+// gian chưa từng chạy ads thì thẻ mời trên trang Trợ lý là đủ, không làm phiền.
+// Hết hạn (DISCONNECTED) thì luôn réo — đã từng nối tức là có dùng.
+
+export type HubsellAdsLinkGap = "not_linked" | "expired";
+
+/** Thẻ "cần kết nối / kết nối lại Hubsell Ads" — THUẦN, vitest đánh thẳng. */
+export function buildHubsellAdsLinkAlert(
+  shop: { channelId: string; shopName: string },
+  gap: HubsellAdsLinkGap,
+  lastAdsSyncAt: Date | null
+): DetectedAlert {
+  const href = `/ads/shopee?channelId=${shop.channelId}`;
+  const stale = lastAdsSyncAt
+    ? ` Số liệu quảng cáo đang đứng ở ${vnTimeText(lastAdsSyncAt)}.`
+    : "";
+  const base = { dedupeKey: shop.channelId, tag: "ads" as const, severity: "high" as const };
+  if (gap === "expired") {
+    return {
+      ...base,
+      type: "ads-app-expired",
+      title: `Ủy quyền Hubsell Ads của gian "${shop.shopName}" đã hết hạn`,
+      summary:
+        `Shopee thu hồi phiên của ứng dụng quảng cáo — Trợ lý không còn đọc được chi phí, ` +
+        `chiến dịch, ví ads và KHÔNG tạm dừng được chiến dịch cắn tiền.${stale} ` +
+        `Kết nối lại một lần (~30 giây), đơn hàng và kho không ảnh hưởng.`,
+      payload: { kind: "navigate", href, label: "Kết nối lại Hubsell Ads", source: "Shopee" },
+    };
+  }
+  return {
+    ...base,
+    type: "ads-app-not-linked",
+    title: `Gian "${shop.shopName}" cần kết nối Hubsell Ads để Trợ lý quảng cáo tiếp tục`,
+    summary:
+      `Shopee tách quyền quảng cáo sang ứng dụng riêng "Hubsell Ads". Gian này đang chạy ` +
+      `quảng cáo nhưng chưa ủy quyền cho ứng dụng đó, nên chi phí ads, chiến dịch, ví và ` +
+      `cảnh báo cắn tiền đã ngừng cập nhật.${stale} Kết nối một lần (~30 giây), ` +
+      `đơn hàng, kho và tài chính không ảnh hưởng.`,
+    payload: { kind: "navigate", href, label: "Kết nối Hubsell Ads", source: "Shopee" },
+  };
+}
+
+/** Gian có chi ads hoặc có campaign trong 30 ngày → seller thật sự chạy quảng cáo. */
+async function channelUsesAdsRecently(channelId: string): Promise<boolean> {
+  const [spend, campaigns] = await Promise.all([
+    prisma.adSpend.count({
+      where: { channelId, date: { gte: daysAgo(30) }, amount: { gt: 0 } },
+    }),
+    prisma.adsCampaign.count({
+      where: { channelId, status: { in: ["ongoing", "scheduled", "paused"] } },
+    }),
+  ]);
+  return spend > 0 || campaigns > 0;
+}
+
+/** DETECTOR: gian Shopee đang chạy ads mà chưa nối / hết hạn ủy quyền Hubsell Ads. */
+async function detectHubsellAdsLinkGaps(ownerId: string): Promise<DetectedAlert[]> {
+  if (!isHubsellAdsConfigured()) return [];
+  const channels = await prisma.channel.findMany({
+    where: {
+      userId: ownerId,
+      status: "ACTIVE",
+      channelName: ChannelName.SHOPEE,
+      externalShopId: { not: null },
+    },
+    select: {
+      id: true,
+      shopName: true,
+      lastAdsSyncAt: true,
+      appAuths: { where: { app: ChannelAppKind.HUBSELL_ADS }, select: { status: true } },
+    },
+  });
+  const alerts: DetectedAlert[] = [];
+  for (const c of channels) {
+    const auth = c.appAuths[0];
+    if (auth?.status === "ACTIVE") continue;
+    if (!auth && !(await channelUsesAdsRecently(c.id))) continue;
+    alerts.push(
+      buildHubsellAdsLinkAlert(
+        { channelId: c.id, shopName: c.shopName },
+        auth ? "expired" : "not_linked",
+        c.lastAdsSyncAt
+      )
+    );
+  }
+  return alerts;
 }
 
 /**
@@ -1342,6 +1440,7 @@ export async function scanOpsAlerts(ownerId: string, force = false): Promise<voi
       detectStockouts,
       detectLowStock,
       detectDisconnectedChannels,
+      detectHubsellAdsLinkGaps,
       detectLossOrders,
       detectShippingFeeDiff,
       detectFeeAudit,

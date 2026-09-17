@@ -19,9 +19,10 @@ import {
  * không còn Ads API, nên Trợ lý quảng cáo Shopee chạy trên app "Hubsell Ads"
  * và gian phải ủy quyền THÊM một lần cho app này. Khối này chỉ hiện khi backend
  * đã bật Hubsell Ads (status.required = true):
- *   · NOT_LINKED   → thẻ mời kết nối (chưa có số liệu ads mới cho tới khi nối)
- *   · DISCONNECTED → dải cảnh báo ủy quyền hết hạn, kết nối lại
- *   · ACTIVE       → một dòng xác nhận + nút gỡ
+ *   · NOT_LINKED   → MỘT nút "Kết nối Hubsell Ads" trên thanh công cụ (17/09:
+ *                    bỏ thẻ to — chọn gian nào thì nút nối gian đó, chi tiết tooltip)
+ *   · DISCONNECTED → cùng nút, sắc vàng "Kết nối lại"
+ *   · ACTIVE       → một dòng mờ "Hubsell Ads ✓" + nút Gỡ
  * Chưa bật (required = false) → không render gì, trang chạy như trước.
  *
  * Kết quả ủy quyền quay về chính trang này qua query ?hubsell_ads=connected|
@@ -31,15 +32,26 @@ export function HubsellAdsLink({
   channelId,
   shopName,
   status,
+  adsSyncedAt,
   onChanged,
 }: {
   channelId: string;
   shopName: string;
   status: HubsellAdsLinkStatus | null;
+  /** Mốc số ads hiện có (ISO) — gian chưa nối thì nói rõ số đang đứng từ lúc nào. */
+  adsSyncedAt?: string | null;
   /** Gọi sau khi liên kết/gỡ xong để trang nạp lại dashboard. */
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const staleText = adsSyncedAt
+    ? `Số liệu quảng cáo đang đứng ở ${new Date(adsSyncedAt).toLocaleString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+      })}.`
+    : null;
 
   // Đọc kết quả ủy quyền MỘT lần rồi dọn query — F5 không toast lại.
   useEffect(() => {
@@ -115,75 +127,48 @@ export function HubsellAdsLink({
   }
 
   if (status.status === "ACTIVE") {
+    // Đã nối: một dòng chữ mờ trên thanh công cụ, nút gỡ trốn trong đó.
     return (
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span
+        className="flex items-center gap-1 text-xs text-muted-foreground"
+        title={`Hubsell Ads đã kết nối cho gian ${shopName} · ủy quyền tự gia hạn`}
+      >
         <ShieldCheck className="size-3.5 text-emerald-600" />
-        <span>
-          Hubsell Ads đã kết nối cho gian <b className="font-medium text-foreground">{shopName}</b>
-          {" · "}ủy quyền tự gia hạn.
-        </span>
+        Hubsell Ads
         <button
           type="button"
           onClick={() => void unlink()}
           disabled={busy}
-          className="underline-offset-2 hover:underline disabled:opacity-50"
+          className="ml-1 underline-offset-2 hover:underline disabled:opacity-50"
         >
-          Gỡ liên kết
+          Gỡ
         </button>
-      </p>
+      </span>
     );
   }
 
-  if (status.status === "DISCONNECTED") {
-    return (
-      <div className="flex flex-wrap items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
-        <TriangleAlert className="mt-0.5 size-5 shrink-0 text-amber-600" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">Ủy quyền Hubsell Ads của gian {shopName} đã hết hạn</p>
-          <p className="mt-0.5 text-amber-700">
-            Shopee thu hồi phiên sau 30 ngày không gia hạn được. Số liệu quảng cáo
-            đang đứng ở lần đồng bộ cuối — kết nối lại để Trợ lý tiếp tục theo dõi.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void connect()} disabled={busy}>
-          <Link2 className="size-4" />
-          {busy ? "Đang mở Shopee…" : "Kết nối lại"}
-        </Button>
-      </div>
-    );
-  }
-
-  // NOT_LINKED — thẻ mời kết nối.
+  // CHƯA NỐI / HẾT HẠN — chỉ MỘT nút cạnh nút Làm mới (anh Trung 17/09: thẻ to
+  // chướng mắt; ai muốn nối gian nào thì chọn gian đó rồi bấm). Vì sao phải nối,
+  // số đang đứng từ lúc nào → tooltip.
+  const expired = status.status === "DISCONNECTED";
+  const hint = expired
+    ? `Shopee thu hồi phiên của ứng dụng quảng cáo cho gian ${shopName}. ${staleText ?? ""} Kết nối lại một lần để Trợ lý tiếp tục theo dõi và tạm dừng được chiến dịch cắn tiền.`
+    : `Shopee tách quyền quảng cáo sang ứng dụng riêng Hubsell Ads, gian ${shopName} cần ủy quyền thêm một lần (đăng nhập đúng tài khoản Shopee của gian này rồi chọn Đồng ý). ${staleText ?? "Chưa có số liệu ads cho tới khi kết nối."} Đơn hàng, kho, tài chính không ảnh hưởng.`;
   return (
-    <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-card p-5 shadow-sm">
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-white">
-          <Link2 className="size-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base font-semibold text-foreground">
-            Kết nối Hubsell Ads cho gian {shopName}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Shopee tách quyền quảng cáo sang ứng dụng riêng, nên gian này cần ủy
-            quyền thêm một lần cho <b className="font-medium text-foreground">Hubsell Ads</b>{" "}
-            để Trợ lý đọc chi phí, chiến dịch và ví quảng cáo. Đơn hàng, kho và
-            tài chính không bị ảnh hưởng.
-          </p>
-          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-            <li>1. Bấm nút bên dưới — Shopee mở trang ủy quyền.</li>
-            <li>
-              2. Đăng nhập đúng tài khoản của gian <b className="font-medium text-foreground">{shopName}</b>{" "}
-              và bấm Đồng ý.
-            </li>
-            <li>3. Quay về đây, số liệu ads sẽ tự đồng bộ trong vòng 10 phút.</li>
-          </ul>
-        </div>
-        <Button onClick={() => void connect()} disabled={busy || !channelId} className="self-center">
-          <Link2 className="size-4" />
-          {busy ? "Đang mở Shopee…" : "Kết nối Hubsell Ads"}
-        </Button>
-      </div>
-    </div>
+    <Button
+      size="sm"
+      onClick={() => void connect()}
+      disabled={busy || !channelId}
+      title={hint.trim()}
+      className={
+        expired
+          ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+          : "bg-orange-500 text-white hover:bg-orange-600"
+      }
+      variant={expired ? "outline" : "default"}
+    >
+      {expired ? <TriangleAlert className="size-4" /> : <Link2 className="size-4" />}
+      {busy ? "Đang mở Shopee…" : expired ? "Kết nối lại Hubsell Ads" : "Kết nối Hubsell Ads"}
+    </Button>
   );
 }

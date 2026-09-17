@@ -13,6 +13,7 @@ import {
   type AssistantWindowMetrics,
 } from "../shopee/ads-assistant-rules";
 import {
+  buildHubsellAdsLinkAlert,
   buildShopeeAdsAssistantAlerts,
   estimateAdsWalletHoursLeft,
   groupShopeeAdsScenarios,
@@ -349,5 +350,36 @@ describe("buildAdsActionLogAlert — diễn tập / sàn từ chối / máy bậ
   it("seller bấm Bật lại trong Hubsell (manual) hay pause SUCCESS live → không thêm thẻ (đã có thẻ cờ)", () => {
     expect(buildAdsActionLogAlert(CAMP, { ...base, action: "resume", mode: "manual", status: "SUCCESS" })).toBeNull();
     expect(buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "live", status: "SUCCESS" })).toBeNull();
+  });
+});
+
+// ---------- (6) Hubsell Ads: gian chưa nối / hết hạn ủy quyền app quảng cáo (17/09) ----------
+
+describe("buildHubsellAdsLinkAlert", () => {
+  const SHOP = { channelId: "ch-1", shopName: "ANO Official Store" };
+
+  it("chưa nối → thẻ ads-app-not-linked high, deep-link đúng gian, nêu mốc số đang đứng", () => {
+    const a = buildHubsellAdsLinkAlert(SHOP, "not_linked", new Date("2026-09-17T03:05:00Z"));
+    expect(a.type).toBe("ads-app-not-linked");
+    expect(a.severity).toBe("high");
+    expect(a.tag).toBe("ads");
+    expect(a.dedupeKey).toBe("ch-1");
+    expect(a.payload).toMatchObject({
+      kind: "navigate",
+      href: "/ads/shopee?channelId=ch-1",
+      source: "Shopee",
+    });
+    expect(a.title).toContain("ANO Official Store");
+    expect(a.summary).toContain("đang đứng ở 10:05"); // 03:05Z = 10:05 giờ VN
+    expect(a.summary).toContain("không ảnh hưởng");
+  });
+
+  it("hết hạn → thẻ ads-app-expired, nút Kết nối lại; chưa có mốc số thì không nhắc mốc", () => {
+    const a = buildHubsellAdsLinkAlert(SHOP, "expired", null);
+    expect(a.type).toBe("ads-app-expired");
+    expect(a.severity).toBe("high");
+    expect(a.payload.label).toBe("Kết nối lại Hubsell Ads");
+    expect(a.summary).not.toContain("đang đứng");
+    expect(a.summary).toContain("KHÔNG tạm dừng được");
   });
 });
