@@ -20,6 +20,8 @@ export type RecommendTier = "run_now" | "test_small" | "not_yet" | "running";
 
 export interface RecommendSignal {
   sale: number | null;
+  /** Lượt xem trang SP — probe ANO 17/09: là số THEO KỲ GẦN ĐÂY (SP 870 lượt bán trọn đời mà chỉ
+   *  2.464 lượt xem) chứ không phải trọn đời → tỉ lệ chuyển đổi lấy ĐƠN 30 NGÀY của Hubsell ÷ views. */
   views: number | null;
   ratingStar: number | null;
   commentCount: number | null;
@@ -128,7 +130,7 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
   const breakevenRoas = input.margin != null && input.margin > 0 ? 1 / input.margin : null;
   const safeRoas = breakevenRoas != null ? ceil1(breakevenRoas * factor) : null;
   const headroom = breakevenRoas != null && s?.roiExact ? s.roiExact / breakevenRoas : null;
-  const organicCvr = s?.views && s.views >= 100 && s.sale != null ? s.sale / s.views : null;
+  const organicCvr = organicCvrOf(input.units30d, s?.views ?? null);
   const dailyVelocity = input.units30d / 30;
   const daysOfCover =
     input.stockAvailable != null && dailyVelocity > 0
@@ -245,7 +247,7 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
       const rel = input.shopMedianCvr && input.shopMedianCvr > 0 ? organicCvr / input.shopMedianCvr : null;
       points = rel == null ? 10 : rel >= 1.5 ? 20 : rel >= 1 ? 15 : rel >= 0.6 ? 8 : 3;
       text =
-        `${pct(organicCvr)} lượt xem thành đơn` +
+        `Ước ${pct(organicCvr)} lượt xem thành đơn` +
         (rel != null ? ` — ${rel >= 1 ? "cao" : "thấp"} hơn mặt bằng shop (${pct(input.shopMedianCvr!)}).` : ".");
     }
     factors.push({ key: "cvr", label: "Sức chuyển đổi tự nhiên", points, max: 20, text });
@@ -371,8 +373,9 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
       note += " Mức Thử nhỏ: lấy một nửa.";
     }
     if (s?.budgetMin != null && budget < s.budgetMin) {
+      // Probe ANO 17/09: sàn đòi tối thiểu 100.000₫/ngày — thường CAO hơn mức thử an toàn của SP nhỏ.
+      note += ` Nhưng sàn bắt buộc tối thiểu ${vnd(s.budgetMin)}/ngày, cao hơn mức thử an toàn Hubsell tính (${vnd(roundK(budget))}) — cân nhắc trước khi chạy.`;
       budget = s.budgetMin;
-      note += ` Không thấp hơn mức tối thiểu của sàn ${vnd(s.budgetMin)}.`;
     }
     const dailyBudget = Math.max(roundK(budget), 10_000);
     proposal = {
@@ -400,11 +403,17 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
   };
 }
 
-/** Trung vị sale÷views của shop — chỉ tính SP đủ ≥100 lượt xem (SP mới nhiễu). */
-export function medianOrganicCvr(items: Array<{ sale: number | null; views: number | null }>): number | null {
+/** Tỉ lệ chuyển đổi tự nhiên ƯỚC TÍNH = số bán 30 ngày (Hubsell) ÷ lượt xem của sàn; <100 lượt xem thì bỏ (nhiễu). */
+export function organicCvrOf(units30d: number, views: number | null): number | null {
+  return views != null && views >= 100 ? Math.min(1, units30d / views) : null;
+}
+
+/** Trung vị tỉ lệ chuyển đổi của shop — chỉ tính SP đủ ≥100 lượt xem VÀ có bán (SP không bán kéo trung vị về 0). */
+export function medianOrganicCvr(items: Array<{ units30d: number; views: number | null }>): number | null {
   const list = items
-    .filter((i) => i.views != null && i.views >= 100 && i.sale != null)
-    .map((i) => i.sale! / i.views!)
+    .filter((i) => i.units30d > 0)
+    .map((i) => organicCvrOf(i.units30d, i.views))
+    .filter((v): v is number => v != null)
     .sort((a, b) => a - b);
   if (list.length === 0) return null;
   const mid = Math.floor(list.length / 2);

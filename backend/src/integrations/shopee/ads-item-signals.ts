@@ -120,7 +120,8 @@ export async function syncAdsItemProposal(
       Object.assign(data, {
         budgetMin: Number(b.response?.budget?.min_budget) || null,
         budgetRecommended: Number(b.response?.budget?.recommended_budget) || null,
-        budgetMax: Number(b.response?.budget?.max_budget) || null,
+        // Probe ANO 17/09: sàn trả max_budget = 9999999999 nghĩa là "không giới hạn" → bỏ.
+        budgetMax: ((v) => (v > 0 && v < 1_000_000_000 ? v : null))(Number(b.response?.budget?.max_budget) || 0),
       });
     } catch (err) {
       if (isApiBudgetError(err)) throw err;
@@ -186,7 +187,8 @@ export async function syncShopeeAdsItemSignals(channel: Channel): Promise<AdsIte
     const rec = await getAdsRecommendedItemListRaw({ accessToken: access.accessToken, shopId: access.shopId }, access.cfg);
     for (const it of unwrapRecommendedItems(rec.response)) {
       const itemId = String(it.item_id);
-      const ongoing = (it.ongoing_ad_type_list ?? []).filter((t) => !/no ongoing/i.test(t));
+      // Probe ANO 17/09: giá trị thật là "product_ads" | "no_ongoing_promotion" (gạch dưới).
+      const ongoing = (it.ongoing_ad_type_list ?? []).filter((t) => !/no[_\s]?ongoing/i.test(t));
       if (ongoing.length > 0) runningOnShopee.add(itemId);
       await upsertSignal(channel.id, itemId, {
         shopeeTags: (it.sku_tag_list ?? []).join(","),

@@ -14,7 +14,7 @@ import { isAdBlockedStatus, summarizeKeywords } from "../shopee/ads-item-signals
 
 const SIGNAL: RecommendSignal = {
   sale: 900,
-  views: 30_000, // CVR 3%
+  views: 2_000, // 40 đơn 30 ngày ÷ 2.000 lượt xem = 2%
   ratingStar: 4.8,
   commentCount: 240,
   tags: ["best selling", "top search"],
@@ -132,13 +132,14 @@ describe("recommendAdsForItem — điểm và đề xuất", () => {
 });
 
 describe("medianOrganicCvr", () => {
-  it("bỏ SP dưới 100 lượt xem, lấy trung vị", () => {
+  it("số bán 30 ngày ÷ lượt xem; bỏ SP dưới 100 lượt xem và SP không bán, lấy trung vị", () => {
     expect(
       medianOrganicCvr([
-        { sale: 1, views: 10 }, // bỏ
-        { sale: 10, views: 1000 },
-        { sale: 30, views: 1000 },
-        { sale: 20, views: 1000 },
+        { units30d: 1, views: 10 }, // bỏ — quá ít lượt xem
+        { units30d: 0, views: 5000 }, // bỏ — không bán
+        { units30d: 10, views: 1000 },
+        { units30d: 30, views: 1000 },
+        { units30d: 20, views: 1000 },
       ])
     ).toBeCloseTo(0.02);
     expect(medianOrganicCvr([])).toBeNull();

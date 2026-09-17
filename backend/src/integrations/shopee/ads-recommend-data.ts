@@ -119,17 +119,18 @@ export async function computeChannelAdsRecommendations(
   const itemBySku = new Map<string, string>();
   for (const [itemId, g] of byItem) for (const sku of g.skus) itemBySku.set(sku, itemId);
   const since7 = Date.now() - 7 * 86_400_000;
-  const sales = new Map<string, { units30d: number; units7d: number; missingCost: boolean }>();
+  const sales = new Map<string, { units30d: number; units7d: number; unitsNoCost: number }>();
   for (const row of pnlRows) {
     const recent = new Date(row.createdAt).getTime() >= since7;
     for (const it of row.items) {
       const itemId = itemBySku.get(it.sku);
       if (!itemId) continue;
       let s = sales.get(itemId);
-      if (!s) sales.set(itemId, (s = { units30d: 0, units7d: 0, missingCost: false }));
+      if (!s) sales.set(itemId, (s = { units30d: 0, units7d: 0, unitsNoCost: 0 }));
       s.units30d += it.quantity;
       if (recent) s.units7d += it.quantity;
-      if (row.missingCostPrice) s.missingCost = true;
+      // Thiếu giá vốn xét theo CHÍNH dòng hàng của SP (cờ cấp đơn dính cả SP khác trong đơn).
+      if (!(it.costPriceAtSale > 0)) s.unitsNoCost += it.quantity;
     }
   }
 
@@ -147,7 +148,9 @@ export async function computeChannelAdsRecommendations(
   }
 
   const signalByItem = new Map(signals.map((s) => [s.itemId, s] as const));
-  const shopMedianCvr = medianOrganicCvr(signals.map((s) => ({ sale: s.sale, views: s.views })));
+  const shopMedianCvr = medianOrganicCvr(
+    signals.map((s) => ({ units30d: sales.get(s.itemId)?.units30d ?? 0, views: s.views }))
+  );
 
   const rows: AdsRecommendationRow[] = breakeven.rows.map((b) => {
     const g = byItem.get(b.itemId);
@@ -181,7 +184,8 @@ export async function computeChannelAdsRecommendations(
       price: g?.price ?? 0,
       margin: b.margin,
       marginOrders: b.orders,
-      missingCost: sale?.missingCost ?? false,
+      // Quá 20% lượng bán không có giá vốn thì biên lãi không tin được.
+      missingCost: sale ? sale.unitsNoCost / Math.max(1, sale.units30d) > 0.2 : false,
       revenue30d: b.revenue,
       units30d: sale?.units30d ?? 0,
       units7d: sale?.units7d ?? 0,
