@@ -76,6 +76,12 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   Tầng video buộc 3 chiều ID → **không bao giờ có tên video** qua report.
 - **Khoảng ngày**: có chiều `stat_time_day` ≤ 30 ngày; KHÔNG có chiều thời gian (tầng SP/video) nhận tới 366 ngày.
 - **Không có số theo giờ ở tầng video**, và chi phí video **trễ tới 11 giờ**. ROI gộp cả đơn tự nhiên.
+- **Đủ bộ trạng thái video** (`creative_delivery_status`, probe 18/09 TC054 12–18/09, 1.780 video): DELIVERING 43 ·
+  LEARNING 9 · IN_QUEUE 2 · EXCLUDED 140 ← bốn nhóm Hubsell ĐỌC (194 video, 99,5% tiền); KHÔNG đọc: `NOT_DELIVERYING`
+  (sàn viết sai chính tả thật, 55 video — TikTok tự ngưng rải) · NOT_ACTIVE 818 · UNAVAILABLE 408 · AUTHORIZATION_NEEDED
+  304 (chờ creator cấp quyền) · REJECTED 1 — cả năm nhóm này chỉ tiêu 9.424đ/7 ngày (0,5%), không có gì để loại.
+  Video mới được bồi vào chiến dịch đi IN_QUEUE → LEARNING → DELIVERING nên tự vào bảng (trang đọc SỐNG mỗi lần mở,
+  không lưu DB); bảng chỉ liệt kê video ĐÃ tiêu tiền trong khoảng ngày, video 0 đồng chỉ nằm trong con số "/ N video".
 - **Tầng video NHẬN thêm chiều `stat_time_day`** (probe 18/09: 4 chiều campaign_id + item_group_id + item_id +
   stat_time_day, TC054 7 ngày = 225 dòng / 1 trang, khoảng ≤ 30 ngày) → `fetchGmvMaxCampaignVideoDays`. Hệ quả để
   dành: `buildAutoPlan` đang gọi 1 call cho MỖI ngày ra trường — gộp được về 1 call video×ngày khi cần tiết kiệm.
