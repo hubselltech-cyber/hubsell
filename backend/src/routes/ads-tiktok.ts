@@ -95,6 +95,8 @@ function breakevenForUi(b: TiktokBreakeven | undefined | null) {
     negativeMargin: b.negativeMargin,
     source: b.source,
     orders: b.orders,
+    cancelledOrders: b.cancelledOrders,
+    pendingOrders: b.pendingOrders,
     costCoveragePct: b.costCoveragePct,
     check: b.check,
   };
@@ -174,7 +176,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
       _min: { date: true },
     });
 
-    // ROI HÒA VỐN (30 ngày, không theo bộ lọc): căn cứ thật cho ROI mục tiêu / mức loại. Hỏng thì trang vẫn lên.
+    // ROI HÒA VỐN (đơn ĐÃ ĐỐI SOÁT trong 60 ngày, không theo bộ lọc): căn cứ thật cho ROI mục tiêu / mức loại. Hỏng thì trang vẫn lên.
     const breakeven = await computeTiktokAdsBreakeven({ id: selected.id, userId: req.ownerId! }).catch((err) => {
       console.error("[TikTok Ads] Tính ROI hòa vốn lỗi:", (err as Error).message);
       return null;

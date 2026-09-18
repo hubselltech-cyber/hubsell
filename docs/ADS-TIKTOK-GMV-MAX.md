@@ -202,20 +202,27 @@ video/lệnh của sàn không chạm tới (`maxExcludePerDay` ≤ 100).
 ## 8. ROI HÒA VỐN (code xong 18/09/2026 chiều)
 
 `breakeven.ts` (thuần `tiktokBreakevenBase` + `toTiktokBreakeven`, 8 test · `computeTiktokAdsBreakeven` đọc DB).
-Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, Lãi/Lỗ 30 ngày qua `computePnlRow` (không tự tính phí).
+Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không tự tính phí).
+
+- ★ **CHỈ ĐƠN ĐÃ CÓ KẾT CỤC CUỐI** (anh Trung chốt 18/09 — TikTok đối soát rất lâu, đơn chưa chốt đưa vào là biên lãi
+  ảo): (a) đơn ĐÃ ĐỐI SOÁT THẬT = `Order.isSettled` + bản kê `estimated = false` (giao thành công lẫn hoàn xong);
+  (b) đơn HỦY **cùng lứa** = tạo không muộn hơn đơn đã đối soát mới nhất (`settledCohortCutoff`) — hủy chốt trong vài
+  giờ, đối soát mất hàng tuần, không cắt lứa thì mấy tuần gần nhất chỉ toàn đơn hủy. Đơn đang giao / đã giao chờ đối
+  soát / mới có số ước tính / đang hoàn → để ngoài, đếm `pendingOrders`. Cửa sổ **60 ngày** theo ngày tạo đơn
+  (`TIKTOK_MARGIN_WINDOW_DAYS`, mặc định chọn cho đủ mẫu — KHÔNG phải số của sàn), `fetchPnlOrdersAll` phanh 8.000 đơn.
 
 - **Cộng ngược phí GMV Max**: sàn trừ quảng cáo ngay trong quyết toán đơn (`TiktokOrderSettlement.feeGmvMax`, có dấu,
   âm = bị trừ; mapper dồn vào `order.serviceFee`) → `lãi trước ads = profit − feeGmvMax`.
 - **Mẫu số theo định nghĩa của TikTok**: gross_revenue đếm đơn ĐẶT, không rút đơn hủy/hoàn → đơn HỦY góp doanh thu,
   0 đồng lãi (không lấy "lỗ ảo" bằng giá vốn của dòng P&L). ★ GIẢ ĐỊNH chưa kiểm được bằng số prod: nếu TikTok thật ra
   có rút đơn hủy thì hòa vốn đang bị nâng cao hơn thực (sai về phía dè dặt). Cách kiểm đã cài sẵn: ô căn cứ hiện
-  "Hubsell thấy X · TikTok báo Y" (30 ngày, SKU của chiến dịch) — hai số sát nhau là mẫu số đúng.
-- **Đơn được tính**: có bản kê TikTok (thật / ước tính của sàn) + MỌI dòng hàng có giá vốn. Thiếu giá vốn → loại khỏi
-  cả tử lẫn mẫu, báo `costCoveragePct`. Chưa có bản kê → loại (phí = 0 giả làm biên lãi ảo cao, như Lazada).
+  "Đối chiếu doanh thu đơn đặt dd/mm–dd/mm: Hubsell thấy X · TikTok báo Y" — `placedRevenue` cộng MỌI đơn đặt (kể cả
+  hủy / đang giao) của đúng SKU chiến dịch trên đúng những ngày có số TikTok; hai số sát nhau là mẫu số đúng.
+- **Giá vốn**: đơn đã có kết cục cuối mà thiếu giá vốn ở bất kỳ dòng hàng nào → loại khỏi cả tử lẫn mẫu, báo
+  `costCoveragePct`.
 - **Chiến dịch → SKU**: `AdsCampaign.itemIds` = SPU của chiến dịch (`saveCampaignProductIds`, gọi trong lượt ngày và
   route soi video — không tốn call) ↔ `ChannelProduct.externalId = "productId-skuId"` → `channelSku` ↔ `OrderItem`.
   Chiến dịch < `MIN_ORDERS_FOR_MARGIN` (5) đơn giao thành → mượn biên lãi toàn gian (`source: "shop"`).
 - **Nơi hiện**: cột Hòa vốn (Tổng quan) · đầu trang chiến dịch · popup cấu hình chỉ NHẮC khi ROI mục tiêu / mức loại
   dưới hòa vốn, KHÔNG tự sửa ngưỡng của khách. Luật loại video CHƯA dùng hòa vốn làm ngưỡng — việc để dành: tuỳ chọn
   "mức loại = hòa vốn" thay cho % mục tiêu.
-- Trần `fetchPnlOrders` 2.000 đơn/30 ngày: gian lớn hơn thì biên lãi tính trên 2.000 đơn mới nhất (vẫn đại diện).

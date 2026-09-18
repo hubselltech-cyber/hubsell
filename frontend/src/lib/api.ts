@@ -2555,8 +2555,9 @@ export interface TiktokAdsAutoStatus {
 }
 
 /**
- * ROI HÒA VỐN GMV Max = 1 ÷ biên lãi TRƯỚC quảng cáo (Lãi/Lỗ 30 ngày, đã cộng ngược phí GMV Max
- * TikTok trừ trong đơn; đơn hủy vẫn nằm trong doanh thu như cách TikTok đếm).
+ * ROI HÒA VỐN GMV Max = 1 ÷ biên lãi TRƯỚC quảng cáo, CHỈ trên đơn đã có kết cục cuối (đã đối soát thật:
+ * giao thành công / hoàn xong — 60 ngày gần nhất); đã cộng ngược phí GMV Max TikTok trừ trong đơn; đơn hủy
+ * cùng lứa vẫn nằm trong doanh thu như cách TikTok đếm.
  */
 export interface TiktokAdsBreakeven {
   /** null = chưa tính được, hoặc biên lãi ≤ 0 (xem negativeMargin). */
@@ -2566,11 +2567,16 @@ export interface TiktokAdsBreakeven {
   negativeMargin: boolean;
   /** campaign = biên lãi riêng SKU của chiến dịch; shop = mượn biên lãi toàn gian. */
   source: "campaign" | "shop" | null;
+  /** Đơn ĐÃ ĐỐI SOÁT góp vào phép tính. */
   orders: number;
+  /** Đơn hủy cùng lứa nằm trong mẫu số. */
+  cancelledOrders: number;
+  /** Đơn chưa có kết cục cuối (đang giao / chờ đối soát / đang hoàn) bị để ngoài. */
+  pendingOrders: number;
   /** % doanh thu đã có giá vốn. */
   costCoveragePct: number | null;
-  /** Tự kiểm: doanh thu Hubsell thấy vs TikTok báo (30 ngày, chỉ khi source = campaign). */
-  check: { revenueSeen: number; tiktokGmv: number } | null;
+  /** Tự kiểm mẫu số: doanh thu MỌI đơn đặt Hubsell thấy vs TikTok báo, cùng SKU, cùng khoảng ngày (chỉ khi source = campaign). */
+  check: { revenuePlaced: number; tiktokGmv: number; from: string; to: string } | null;
 }
 
 export const TIKTOK_AUTO_MODE_LABEL: Record<TiktokAdsAutoMode, string> = {

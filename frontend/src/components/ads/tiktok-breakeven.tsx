@@ -3,9 +3,11 @@
 // ============================================================
 // ROI HÒA VỐN của một chiến dịch GMV Max — con số + ô giải thích (trỏ chuột / bấm).
 //
-// Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, tính ở backend từ Lãi/Lỗ 30 ngày
-// (integrations/tiktok-ads/breakeven.ts): đã cộng ngược phí GMV Max mà TikTok
-// trừ trong từng đơn, đơn hủy vẫn nằm trong doanh thu như cách TikTok đếm.
+// Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, tính ở backend (integrations/tiktok-ads/
+// breakeven.ts) CHỈ trên đơn đã có kết cục cuối — đã đối soát thật: giao thành
+// công / hoàn xong (anh Trung 18/09: TikTok đối soát lâu, đơn chưa chốt không
+// được tính). Đã cộng ngược phí GMV Max TikTok trừ trong từng đơn; đơn hủy cùng
+// lứa vẫn nằm trong doanh thu như cách TikTok đếm.
 // Mỗi căn cứ một gạch đầu dòng cho seller dễ đọc (anh Trung 18/09).
 // ============================================================
 
@@ -27,16 +29,30 @@ export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
     out.push(`Biên lãi trước quảng cáo ${pct(b.margin)} → hòa vốn = 1 ÷ ${pct(b.margin)} = ${formatRoi(b.roi)}`);
     out.push(`ROI thực dưới ${formatRoi(b.roi)} là quảng cáo đang ăn vào vốn`);
   } else {
-    out.push("Chưa có đơn nào trong 30 ngày vừa đủ giá vốn vừa có bản kê phí của TikTok");
+    out.push("Chưa có đơn nào trong 60 ngày vừa ĐÃ ĐỐI SOÁT vừa đủ giá vốn");
   }
-  if (b.source === "campaign") out.push(`Tính trên ${formatNumber(b.orders)} đơn 30 ngày của chính các sản phẩm trong chiến dịch`);
-  if (b.source === "shop") out.push(`Chiến dịch chưa đủ 5 đơn có giá vốn nên tạm lấy biên lãi toàn gian (${formatNumber(b.orders)} đơn 30 ngày)`);
-  if (b.source != null) out.push("Đã cộng ngược phí GMV Max TikTok trừ trong từng đơn; đơn hủy vẫn tính vào doanh thu như cách TikTok đếm");
+  if (b.source === "campaign") {
+    out.push(`Chỉ tính ${formatNumber(b.orders)} đơn ĐÃ ĐỐI SOÁT (giao thành công / hoàn xong) trong 60 ngày của chính các sản phẩm trong chiến dịch`);
+  }
+  if (b.source === "shop") {
+    out.push(`Chiến dịch chưa đủ 5 đơn đã đối soát có giá vốn nên tạm lấy biên lãi toàn gian (${formatNumber(b.orders)} đơn đã đối soát, 60 ngày)`);
+  }
+  if (b.pendingOrders > 0) out.push(`${formatNumber(b.pendingOrders)} đơn đang giao / chờ đối soát / đang hoàn chưa được tính — kết cục chưa chốt`);
+  if (b.source != null) {
+    out.push(
+      `Đã cộng ngược phí GMV Max TikTok trừ trong từng đơn${
+        b.cancelledOrders > 0 ? `; ${formatNumber(b.cancelledOrders)} đơn hủy cùng kỳ vẫn tính vào doanh thu như cách TikTok đếm` : ""
+      }`
+    );
+  }
   if (b.costCoveragePct != null && b.costCoveragePct < 100) {
     out.push(`Mới ${b.costCoveragePct}% doanh thu có giá vốn — nhập đủ giá vốn thì số này mới đại diện cả chiến dịch`);
   }
   if (b.check && b.check.tiktokGmv > 0) {
-    out.push(`Đối chiếu 30 ngày: Hubsell thấy ${formatVND(b.check.revenueSeen)} · TikTok báo ${formatVND(b.check.tiktokGmv)}`);
+    const d = (x: string) => `${x.slice(8, 10)}/${x.slice(5, 7)}`;
+    out.push(
+      `Đối chiếu doanh thu đơn đặt ${d(b.check.from)}–${d(b.check.to)}: Hubsell thấy ${formatVND(b.check.revenuePlaced)} · TikTok báo ${formatVND(b.check.tiktokGmv)}`
+    );
   }
   return out;
 }
