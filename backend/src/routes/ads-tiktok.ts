@@ -546,6 +546,17 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
     const mode = AUTO_RULE_MODES.includes(body.mode as AutoRuleMode) ? (body.mode as AutoRuleMode) : "off";
+    // RÀO CỨNG (anh Trung 18/09): phải DIỄN TẬP ít nhất 1 ngày — tức đã có một lượt chấm
+    // hằng ngày thật (lastRunOn) — mới được bật Tự loại thật. Chạy thử tại chỗ KHÔNG tính.
+    // Lý do: khách bật thật ngay, mất tiền rồi đổ cho Hubsell; bắt họ nhìn thấy máy định
+    // loại gì qua một lượt thật trước.
+    if (mode === "live" && !campaign.tiktokAutoRule?.lastRunOn) {
+      res.status(409).json({
+        error:
+          "Chiến dịch chưa diễn tập ngày nào. Hãy để chế độ Diễn tập, đợi lượt chấm sau 12h trưa (chuông sẽ báo video máy định loại), xem thấy đúng rồi mới bật Tự loại thật.",
+      });
+      return;
+    }
     const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
     const base = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
     const cfg = sanitizeAutoRuleConfig(body, base);

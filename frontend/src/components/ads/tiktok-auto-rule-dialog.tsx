@@ -9,9 +9,10 @@
 //   2. "Nâng cao" thu gọn: các ngưỡng còn lại (số mặc định đã hợp lý).
 //   3. Dòng CHẠY THỬ: chấm điểm bằng cấu hình đang nhập trên số thật của TikTok
 //      (không ghi gì) — khách thấy máy sẽ làm gì trước khi Lưu.
-// "Tự loại thật" chỉ bật được khi chiến dịch đã có ít nhất một lượt xét (diễn tập
-// hằng ngày hoặc chạy thử tại chỗ) và phải xác nhận lại tóm tắt lượt đó — chốt an
-// toàn nằm ở việc khách ĐÃ NHÌN THẤY kết quả, không nằm ở số ngày chờ.
+// "Tự loại thật" chỉ bật được khi chiến dịch đã DIỄN TẬP ít nhất 1 ngày (có lượt chấm
+// hằng ngày thật lúc 12h trưa; Chạy thử tại chỗ KHÔNG tính — anh Trung chốt 18/09: khách
+// bật thật ngay, mất tiền rồi đổ oan cho Hubsell) và phải xác nhận lại tóm tắt lượt đó.
+// Backend cũng từ chối bật live khi chưa có lượt nào — nút mờ chỉ là lớp ngoài.
 // Video còn ĐANG HỌC trên TikTok không bao giờ bị xét; đồng hồ luật tính từ ngày
 // TikTok học xong (backend theo dõi hằng ngày).
 // ============================================================
@@ -165,7 +166,8 @@ export function TiktokAutoRuleDialog({
   const toggle = (k: "ruleNoOrderOn" | "ruleLowRoiOn" | "ruleCpaOn" | "graceOn") => (v: boolean) =>
     setForm((f) => (f ? { ...f, [k]: v } : f));
 
-  const hadRun = Boolean(rule?.status?.lastRunOn) || preview != null;
+  // Chỉ lượt chấm hằng ngày thật mới mở được Tự loại thật (Chạy thử không tính).
+  const hadRun = Boolean(rule?.status?.lastRunOn);
   const lastSummary = preview?.summary ?? rule?.status?.lastRunSummary ?? null;
   const hardRoi = cfg ? cfg.roiTarget * (cfg.roiHardPct / 100) : 0;
   const activeRuleSummary: string[] = cfg
@@ -265,7 +267,7 @@ export function TiktokAutoRuleDialog({
                       type="button"
                       disabled={disabled}
                       onClick={() => setMode(m)}
-                      title={disabled ? "Chạy thử hoặc đợi lượt diễn tập đầu tiên rồi mới bật được" : undefined}
+                      title={disabled ? "Phải diễn tập ít nhất 1 ngày (có lượt chấm sau 12h trưa) rồi mới bật được" : undefined}
                       className={cn(
                         "px-3 py-2 text-sm transition-colors not-last:border-r not-last:border-slate-200",
                         mode === m ? "bg-slate-900 font-medium text-white" : "bg-card text-slate-600 hover:bg-muted",
@@ -279,7 +281,7 @@ export function TiktokAutoRuleDialog({
               </div>
               <p className="mt-1.5 text-xs text-slate-500">
                 {modeHint[mode]}
-                {!hadRun && mode !== "live" && " Tự loại thật mở sau khi có ít nhất một lượt chấm (bấm Chạy thử bên dưới)."}
+                {!hadRun && mode !== "live" && " Tự loại thật chỉ mở sau khi đã diễn tập ít nhất 1 ngày — lưu ở chế độ Diễn tập, đợi lượt chấm sau 12h trưa, xem chuông báo đúng rồi mới bật."}
               </p>
             </div>
 

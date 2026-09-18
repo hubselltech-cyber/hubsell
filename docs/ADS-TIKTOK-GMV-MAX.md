@@ -95,7 +95,7 @@ bằng `#<số>` là **căn cứ** của lệnh tự động. Xem `action-log.ts
 **Quyết định của anh Trung 18/09:** cấu hình đặt vào **TỪNG CHIẾN DỊCH** (không có bộ chung theo gian — mỗi chiến
 dịch seller đòi cài khác nhau), mở bằng **popup** trên trang soi video, phải dễ dùng không rối; video TikTok còn
 **Đang học thì không động tới**; đồng hồ luật tính **từ ngày TikTok học xong** video (không đặt số ngày diễn tập
-tối thiểu — API không có khái niệm đó, chốt an toàn là khách phải NHÌN THẤY kết quả trước khi bật thật).
+tối thiểu theo con số tự bịa; sau đó anh chốt lại: mặc định phải DIỄN TẬP 1 NGÀY THẬT rồi mới được bật Tự loại thật).
 
 ### Bản đồ code
 ```
@@ -135,7 +135,8 @@ Chốt cấp chiến dịch: `maxExcludePerDay` (tốn tiền nhất trước, p
 Tầng 1 luôn thấy: Tắt / Diễn tập / Tự loại thật + ROI mục tiêu (mặc định = roasTarget TikTok) + Soi theo N ngày.
 Tầng 2 "Nâng cao" thu gọn: 8 ngưỡng còn lại (mặc định trong `AUTO_RULE_DEFAULTS`). Tầng 3 "Chạy thử với cấu hình
 này": POST preview → "Nếu áp hôm nay: …" + danh sách video sẽ loại kèm căn cứ. **Tự loại thật** chỉ bật được khi đã
-có ≥1 lượt chấm (diễn tập hằng ngày HOẶC chạy thử) và phải xác nhận lại tóm tắt lượt đó. "Sao chép sang chiến dịch
+DIỄN TẬP ≥1 ngày (có `lastRunOn` từ lượt chấm hằng ngày; Chạy thử KHÔNG tính — anh Trung chốt 18/09: "khách mất tiền
+lại đổ oan cho mình"; backend PUT trả 409 nếu chưa có) và phải xác nhận lại tóm tắt lượt đó. "Sao chép sang chiến dịch
 khác" nhân bản cấu hình (live → đích nhận dry_run).
 
 ### Đã kiểm local 18/09 bằng số thật (gian giả nối token nhà, đã xóa)
