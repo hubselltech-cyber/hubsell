@@ -212,3 +212,54 @@ export async function fetchGmvMaxCampaignVideos(
   }
   return out;
 }
+
+/** Trần khoảng ngày của sàn khi báo cáo có chiều stat_time_day. */
+export const GMV_MAX_DAILY_MAX_RANGE_DAYS = 30;
+
+export interface GmvMaxVideoDayRow {
+  spuId: string;
+  videoId: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  deliveryStatus: string;
+  cost: number;
+  orders: number;
+  gmv: number;
+}
+
+/**
+ * Video × NGÀY của một campaign (probe 18/09: tầng video NHẬN thêm chiều stat_time_day —
+ * TC054 7 ngày = 225 dòng, 1 trang). Khoảng ngày ≤ 30 (người gọi tự kẹp). Dùng cho bảng
+ * đối chiếu diễn tập: số của từng video kể từ ngày máy định loại.
+ */
+export async function fetchGmvMaxCampaignVideoDays(
+  s: Scope,
+  campaignId: string,
+  spuIds: string[],
+  statuses: string[] | null = GMV_MAX_LIVE_VIDEO_STATUSES
+): Promise<GmvMaxVideoDayRow[]> {
+  const out: GmvMaxVideoDayRow[] = [];
+  for (let i = 0; i < spuIds.length; i += 100) {
+    const rows = await fetchAllPages(s, {
+      dimensions: ["campaign_id", "item_group_id", "item_id", "stat_time_day"],
+      metrics: ["creative_delivery_status", "cost", "orders", "gross_revenue"],
+      filtering: {
+        campaign_ids: [campaignId],
+        item_group_ids: spuIds.slice(i, i + 100),
+        ...(statuses ? { creative_delivery_statuses: statuses } : {}),
+      },
+    });
+    for (const r of rows) {
+      out.push({
+        spuId: r.dimensions.item_group_id ?? "",
+        videoId: r.dimensions.item_id ?? "",
+        date: (r.dimensions.stat_time_day ?? "").slice(0, 10),
+        deliveryStatus: r.metrics.creative_delivery_status ?? "",
+        cost: num(r.metrics.cost),
+        orders: num(r.metrics.orders),
+        gmv: num(r.metrics.gross_revenue),
+      });
+    }
+  }
+  return out;
+}

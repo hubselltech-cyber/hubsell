@@ -14,6 +14,7 @@
 //   PUT  /campaigns/:id/auto-rule         — lưu cấu hình / đổi chế độ Tắt · Diễn tập · Tự loại thật (chủ shop)
 //   POST /campaigns/:id/auto-rule/preview — CHẠY THỬ cấu hình trên số thật, không ghi gì
 //   POST /campaigns/:id/auto-rule/copy    — sao chép cấu hình sang chiến dịch khác cùng gian
+//   GET  /campaigns/:id/auto-rule/backtest — ĐỐI CHIẾU DIỄN TẬP: video máy định loại, từ đó đến nay chạy ra sao
 //
 // Lệnh ghi (17/09/2026): chỉ THỦ CÔNG theo tay chủ shop, mỗi lệnh một dòng
 // AdsActionLog (action exclude_video | restore_video, mode live, verdict manual).
@@ -55,10 +56,13 @@ import {
 import {
   GMV_MAX_EXCLUDED_STATUS,
   GMV_MAX_LIVE_VIDEO_STATUSES,
+  GMV_MAX_DAILY_MAX_RANGE_DAYS,
   clampGmvMaxRange,
   fetchGmvMaxCampaignProducts,
+  fetchGmvMaxCampaignVideoDays,
   fetchGmvMaxCampaignVideos,
 } from "../integrations/tiktok-ads/report";
+import { backtestStartDate, buildDryRunBacktest, type DryRunPlan } from "../integrations/tiktok-ads/backtest";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
 import {
   AUTO_RULE_MODES,
@@ -67,6 +71,7 @@ import {
   type AutoRuleMode,
 } from "../integrations/tiktok-ads/auto-rules";
 import {
+  VIDEO_VERDICT_AUTO,
   buildAutoPlan,
   defaultAutoRuleFor,
   ruleRowToConfig,
@@ -637,6 +642,68 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest
         protected: plan.assessments.filter((a) => a.verdict === "protected").map(pick),
         tracking: { seen: track.seen, newVideos: track.newVideos, graduated: track.graduated, relearning: track.relearning },
       });
+    } catch (err) {
+      await recordTiktokAdsFailure(scope.linkId, err);
+      res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ĐỐI CHIẾU DIỄN TẬP (anh Trung 18/09 — căn cứ để quyết bật Tự loại thật): những video máy
+// ĐỊNH loại trong các lượt diễn tập, từ hôm sau ngày định loại tới nay tiêu bao nhiêu, ra mấy
+// đơn. Đọc sổ PLANNED (DB) → chưa có lượt nào định loại gì thì trả rỗng, KHÔNG gọi sàn;
+// có thì 2 call (sản phẩm + video×ngày). Luật thuần ở integrations/tiktok-ads/backtest.ts.
+const BACKTEST_MAX_PLANS = 60;
+
+adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await ownedTiktokCampaign(req.ownerId!, String(req.params.id));
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
+    const cfg = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
+    const marks = { roiTarget: cfg.roiTarget, hardRoi: cfg.roiTarget * (cfg.roiHardPct / 100), minSpend: cfg.minSpend };
+    const today = vnDateStr(0);
+
+    const logs = await prisma.adsActionLog.findMany({
+      where: { adsCampaignId: campaign.id, action: VIDEO_ACTION_EXCLUDE, verdict: VIDEO_VERDICT_AUTO, mode: "dry_run", status: "PLANNED" },
+      orderBy: { createdAt: "desc" },
+      take: BACKTEST_MAX_PLANS,
+      select: { referenceId: true, reasons: true, createdAt: true },
+    });
+    const plans: DryRunPlan[] = logs.map((l) => {
+      // referenceId "ttauto-{rowId}-{YYYY-MM-DD}" mang ngày VN của lượt; thiếu thì suy từ giờ ghi sổ.
+      const tail = (l.referenceId ?? "").slice(-10);
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(tail) ? tail : new Date(l.createdAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+      return { date, videos: parseVideoActionReasons(l.reasons).videos };
+    });
+
+    const wanted = backtestStartDate(plans, today);
+    if (!wanted) {
+      res.json({ ...buildDryRunBacktest(plans, [], cfg, today), marks, from: null, to: today, truncated: false, planDays: plans.length });
+      return;
+    }
+    const scope = await getTiktokAdsScope(campaign.channelId);
+    if (!scope) {
+      res.status(409).json({ error: "Gian chưa kết nối quảng cáo TikTok hoặc kết nối đã hết hiệu lực." });
+      return;
+    }
+    // Sàn chỉ cho 30 ngày khi có chiều ngày → diễn tập lâu hơn thì phần đầu bị cắt (FE nói rõ).
+    const floor = clampGmvMaxRange({ fallbackDays: GMV_MAX_DAILY_MAX_RANGE_DAYS }, today).startDate;
+    const from = wanted < floor ? floor : wanted;
+    const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: from, endDate: today };
+    try {
+      const products = await fetchGmvMaxCampaignProducts(range, campaign.campaignId);
+      const spuIds = products.map((p) => p.spuId).filter(Boolean);
+      const dayRows =
+        spuIds.length > 0
+          ? await fetchGmvMaxCampaignVideoDays(range, campaign.campaignId, spuIds, [...GMV_MAX_LIVE_VIDEO_STATUSES, GMV_MAX_EXCLUDED_STATUS])
+          : [];
+      res.json({ ...buildDryRunBacktest(plans, dayRows, cfg, today), marks, from, to: today, truncated: wanted < floor, planDays: plans.length });
     } catch (err) {
       await recordTiktokAdsFailure(scope.linkId, err);
       res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });

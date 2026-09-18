@@ -47,7 +47,8 @@ backend/src/integrations/tiktok-ads/
   config.ts       env, URL ủy quyền (chỉ nhận app_id/state/redirect_uri — KHÔNG ép chọn lại tài khoản được)
   client.ts       gọi API: đổi auth_code, advertiser/get, store/list (GmvMaxStore), report/get, creative/update (GHI)
   oauth.ts        state ký (self 30' / invite 7 ngày, mang GIAN ĐÍCH) · connectTiktokAds · linkTiktokAdsStores (dò gian)
-  report.ts       3 tầng báo cáo thành dòng sạch + clampGmvMaxRange (thuần, có test)
+  report.ts       3 tầng báo cáo thành dòng sạch + video×ngày + clampGmvMaxRange (thuần, có test)
+  backtest.ts     ĐỐI CHIẾU DIỄN TẬP (thuần, có test): video máy định loại, từ D+1 tới nay chạy ra sao
   sync.ts         đồng bộ campaign×ngày vào AdsCampaign/AdsCampaignDailyPerf · verifyTiktokAdsLink · ghi lỗi token chết
   action-log.ts   quy ước ghi/đọc sổ thao tác video trong AdsActionLog.reasons (thuần, có test)
   video-meta.ts   ảnh bìa + @kênh + caption qua oEmbed công khai, nhớ đệm RAM 3h
@@ -74,6 +75,9 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   Tầng video buộc 3 chiều ID → **không bao giờ có tên video** qua report.
 - **Khoảng ngày**: có chiều `stat_time_day` ≤ 30 ngày; KHÔNG có chiều thời gian (tầng SP/video) nhận tới 366 ngày.
 - **Không có số theo giờ ở tầng video**, và chi phí video **trễ tới 11 giờ**. ROI gộp cả đơn tự nhiên.
+- **Tầng video NHẬN thêm chiều `stat_time_day`** (probe 18/09: 4 chiều campaign_id + item_group_id + item_id +
+  stat_time_day, TC054 7 ngày = 225 dòng / 1 trang, khoảng ≤ 30 ngày) → `fetchGmvMaxCampaignVideoDays`. Hệ quả để
+  dành: `buildAutoPlan` đang gọi 1 call cho MỖI ngày ra trường — gộp được về 1 call video×ngày khi cần tiết kiệm.
 - **Tên/ảnh video**: `/gmv_max/video/get/` bắt buộc `identity_list` và chỉ trả video của tài khoản TikTok nhà,
   KHÔNG trả video creator/affiliate (nhóm chiếm đa số, nơi tiền rơi) → dùng **oEmbed công khai**
   `tiktok.com/oembed?url=…/@/video/{id}` (không cần token). Link mở video: `tiktok.com/@{author}/video/{id}`.
@@ -156,7 +160,15 @@ Bối cảnh: anh Trung đã bật **Diễn tập cho TC054 trên prod** 18/09. 
 khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn lần nào**. Rà code thấy còn thiếu:
 
 **A. Phải có trước khi bật thật**
-1. **Bảng đối chiếu diễn tập ("máy nói đúng không?")** — hiện diễn tập chỉ để lại dòng PLANNED + chuông; mỗi ngày lặp
+1. ✅ **XONG 18/09 tối** (`backtest.ts` thuần + 7 test · `GET /campaigns/:id/auto-rule/backtest` · thẻ
+   `tiktok-dry-run-backtest.tsx` trên trang chiến dịch, chỉ hiện khi đang Diễn tập). Mỗi video lấy NGÀY ĐẦU máy định
+   loại (D, đọc từ sổ PLANNED — ngày nằm ở đuôi referenceId), cộng số từ **D+1** tới hôm nay (bỏ ngày D vì lượt chấm
+   chạy sau trưa và không có số theo giờ → tính dè dặt). Kết luận theo đúng mốc khách cài: tiêu thêm < minSpend = Chưa
+   đủ dữ liệu · 0 đơn hoặc ROI < mức loại = Máy đúng · ROI ≥ mục tiêu = Hồi phục · giữa = Lưng chừng. Chân thẻ nói rõ:
+   loại thật thì TikTok DỒN tiền sang video khác — tiền đổi chỗ, không phải bớt chi. Chưa có lượt nào định loại →
+   trả rỗng, KHÔNG gọi sàn; có thì 2 call. Kiểm local số thật (sổ giả định 13/09, đã xóa): 4 video từ 14/09 tiêu
+   674.983đ / 18 đơn / ROI nhóm 6,73 < mức loại 7,5 → 1 Máy đúng (550k, ROI 5,99) · 1 Lưng chừng · 2 Chưa đủ dữ liệu.
+   Mô tả gốc: **Bảng đối chiếu diễn tập ("máy nói đúng không?")** — hiện diễn tập chỉ để lại dòng PLANNED + chuông; mỗi ngày lặp
    lại đúng các video cũ (vì chưa loại thật) nên anh không có gì để PHÁN máy đúng hay sai. Cần: với mỗi video máy
    từng định loại, lấy số TỪ NGÀY ĐÓ tới hôm qua (1 call report/ngày-định-loại) → "nếu đã loại từ dd/mm: đỡ X đồng,
    mất Y đơn / Z doanh thu". Đây là căn cứ duy nhất để quyết bật thật, và là thứ cho khách xem sau này.

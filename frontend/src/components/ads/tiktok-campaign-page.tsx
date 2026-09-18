@@ -37,6 +37,7 @@ import { toast } from "sonner";
 
 import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
+import { TiktokDryRunBacktest } from "@/components/ads/tiktok-dry-run-backtest";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
@@ -402,6 +403,9 @@ export function TiktokCampaignPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ===== ĐỐI CHIẾU DIỄN TẬP — căn cứ để quyết bật Tự loại thật; chỉ hiện khi đang Diễn tập ===== */}
+        <TiktokDryRunBacktest campaignRowId={campaignRowId} enabled={allowed === true && c?.auto?.mode === "dry_run"} />
 
         {/* ===== BẢNG VIDEO ===== */}
         <Card>

@@ -2795,6 +2795,46 @@ export function copyTiktokAdsAutoRule(campaignRowId: string, targetIds: string[]
   );
 }
 
+export type TiktokAdsBacktestVerdict = "insufficient" | "right" | "recovered" | "middle";
+
+export interface TiktokAdsBacktestVideo {
+  videoId: string;
+  spuId: string;
+  /** Ngày ĐẦU TIÊN máy định loại (YYYY-MM-DD) — số bên dưới tính từ hôm sau ngày này. */
+  firstPlannedOn: string;
+  lastPlannedOn: string;
+  plannedDays: number;
+  /** Số liệu + căn cứ máy ghi ở lượt đầu tiên. */
+  noteAtPlan: string;
+  deliveryStatus: string;
+  daysSince: number;
+  cost: number;
+  orders: number;
+  gmv: number;
+  roi: number | null;
+  verdict: TiktokAdsBacktestVerdict;
+}
+
+/** ĐỐI CHIẾU DIỄN TẬP: video máy định loại, từ đó đến nay chạy ra sao (căn cứ để bật Tự loại thật). */
+export interface TiktokAdsBacktest {
+  firstPlanOn: string;
+  videos: TiktokAdsBacktestVideo[];
+  totals: { videos: number; cost: number; orders: number; gmv: number; roi: number | null };
+  counts: Record<TiktokAdsBacktestVerdict, number>;
+  /** Các mốc của chính khách dùng để kết luận. */
+  marks: { roiTarget: number; hardRoi: number; minSpend: number };
+  /** null = chưa có ngày nào để đối chiếu (máy mới định loại hôm nay / chưa định loại gì). */
+  from: string | null;
+  to: string;
+  /** Diễn tập quá 30 ngày → TikTok chỉ cho số theo ngày của 30 ngày gần nhất. */
+  truncated: boolean;
+  planDays: number;
+}
+
+export function fetchTiktokAdsBacktest(campaignRowId: string) {
+  return apiFetch<TiktokAdsBacktest>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/backtest`);
+}
+
 /**
  * Lấy URL trang uỷ quyền Lazada. Callback đăng ký trên App Console là backend
  * RENDER (Lazada bắt https) nên khi chạy LOCAL, người dùng mở URL này ở tab
