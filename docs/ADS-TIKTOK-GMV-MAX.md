@@ -223,6 +223,14 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
 - **Chiến dịch → SKU**: `AdsCampaign.itemIds` = SPU của chiến dịch (`saveCampaignProductIds`, gọi trong lượt ngày và
   route soi video — không tốn call) ↔ `ChannelProduct.externalId = "productId-skuId"` → `channelSku` ↔ `OrderItem`.
   Chiến dịch < `MIN_ORDERS_FOR_MARGIN` (5) đơn giao thành → mượn biên lãi toàn gian (`source: "shop"`).
-- **Nơi hiện**: cột Hòa vốn (Tổng quan) · đầu trang chiến dịch · popup cấu hình chỉ NHẮC khi ROI mục tiêu / mức loại
-  dưới hòa vốn, KHÔNG tự sửa ngưỡng của khách. Luật loại video CHƯA dùng hòa vốn làm ngưỡng — việc để dành: tuỳ chọn
-  "mức loại = hòa vốn" thay cho % mục tiêu.
+- **Nơi hiện**: cột Hòa vốn (Tổng quan) · đầu trang chiến dịch · popup cấu hình NHẮC khi ROI mục tiêu / mức loại dưới
+  hòa vốn, KHÔNG tự sửa ngưỡng của khách.
+- ★ **MỨC LOẠI THEO HÒA VỐN** (anh Trung duyệt 18/09): `AutoRuleConfig.hardBasis` `pct` (mặc định) | `breakeven`.
+  `auto-rules.ts` `resolveHardLevel(cfg, breakeven)` → `{hardRoi, basis, fallbackReason, label}`; `planAutoExclusion`
+  nhận thêm `breakeven`, trả `plan.hard`. Hòa vốn chỉ được dùng khi `breakevenUnusableReason` rỗng: biên lãi RIÊNG của
+  chiến dịch (`source = campaign`), độ phủ giá vốn ≥ `BREAKEVEN_MIN_COVERAGE_PCT` (90 — mặc định chọn, không phải số
+  của sàn), không `negativeMargin` (sản phẩm lỗ sẵn thì loại hết video cũng không cứu — rơi về % và báo). Không đủ tin
+  → lượt chấm TỰ RƠI về % mục tiêu, tóm tắt/chuông ghi lý do. Vùng hòa vốn → mục tiêu: chỉ gắn cờ. Mức loại thực
+  dùng được chốt vào sổ (`lastRunSummary.hardRoi/hardBasis/hardFallback` + dòng căn cứ của AdsActionLog) vì hòa vốn đổi
+  theo ngày. Backtest chấm theo cùng mức loại (`marks.hardBasis`). Lượt ngày chỉ tính hòa vốn khi có chiến dịch chọn
+  breakeven, một lần mỗi gian.

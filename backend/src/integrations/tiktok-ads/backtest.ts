@@ -13,7 +13,7 @@
 //     tính DÈ DẶT (không nhận vơ phần tiền mà lệnh loại thật cũng không kịp chặn).
 //   · Kết luận từng video so với đúng các mốc khách đã cài:
 //       insufficient — tiêu thêm < minSpend ("sàn dữ liệu") → chưa phán
-//       right        — 0 đơn, hoặc ROI < roiTarget × roiHardPct% (mức loại)
+//       right        — 0 đơn, hoặc ROI < MỨC LOẠI (% mục tiêu hoặc hòa vốn, như lượt chấm dùng)
 //       recovered    — ROI ≥ roiTarget
 //       middle       — ở giữa hai mốc
 // ROI tầng video của TikTok gộp cả đơn tự nhiên → kết luận nghiêng về phía "hồi
@@ -84,7 +84,7 @@ export function backtestStartDate(plans: DryRunPlan[], today: string): string | 
 export function buildDryRunBacktest(
   plans: DryRunPlan[],
   dayRows: VideoDayRow[],
-  cfg: { roiTarget: number; roiHardPct: number; minSpend: number },
+  cfg: { roiTarget: number; hardRoi: number; minSpend: number },
   today: string
 ): DryRunBacktest {
   const seen = new Map<string, { first: string; last: string; days: Set<string>; note: string }>();
@@ -99,7 +99,7 @@ export function buildDryRunBacktest(
     }
   }
 
-  const hardRoi = cfg.roiTarget * (cfg.roiHardPct / 100);
+  const hardRoi = cfg.hardRoi; // mức loại thực dùng (% mục tiêu hoặc hòa vốn — route quyết bằng resolveHardLevel)
   const counts: Record<BacktestVerdict, number> = { insufficient: 0, right: 0, recovered: 0, middle: 0 };
   const videos: BacktestVideo[] = [];
   for (const [videoId, s] of seen) {

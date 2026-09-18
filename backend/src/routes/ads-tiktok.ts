@@ -67,6 +67,8 @@ import { computeTiktokAdsBreakeven, saveCampaignProductIds, type TiktokBreakeven
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
 import {
   AUTO_RULE_MODES,
+  breakevenUnusableReason,
+  resolveHardLevel,
   sanitizeAutoRuleConfig,
   summarizeAutoPlan,
   type AutoRuleMode,
@@ -567,6 +569,8 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule", async (req: AuthRequest, res, ne
     }
     const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
     const rule = campaign.tiktokAutoRule;
+    const breakeven =
+      (await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id) ?? null;
     // Chiến dịch khác cùng gian — cho nút "Sao chép sang chiến dịch khác".
     const others = await prisma.adsCampaign.findMany({
       where: { channelId: campaign.channelId, id: { not: campaign.id } },
@@ -580,9 +584,9 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule", async (req: AuthRequest, res, ne
       /** ROI mục tiêu TikTok đang đặt cho campaign (để popup gợi ý). */
       roasTarget,
       /** ROI hòa vốn của chiến dịch — popup nhắc khi ROI mục tiêu / mức loại đặt DƯỚI hòa vốn. */
-      breakeven: breakevenForUi(
-        (await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id)
-      ),
+      breakeven: breakevenForUi(breakeven),
+      /** Rỗng = hòa vốn ĐỦ TIN để làm mức loại; có chữ = lý do lượt chấm sẽ tạm rơi về % mục tiêu. */
+      breakevenUnusable: breakevenUnusableReason(breakeven),
       status: rule ? autoStatusOf(rule) : null,
       lastRun: (rule?.lastRunSummary as Record<string, unknown> | null) ?? null,
       others: others.map((o) => ({ id: o.id, name: o.name, status: o.status, mode: (o.tiktokAutoRule?.mode ?? "off") as AutoRuleMode })),
@@ -648,7 +652,11 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest
     const today = vnDateStr(0);
     try {
       const track = await trackCampaignVideos(scope, campaign, today);
-      const bundle = await buildAutoPlan(scope, campaign, cfg, track, today);
+      const breakeven =
+        cfg.hardBasis === "breakeven"
+          ? ((await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id) ?? null)
+          : null;
+      const bundle = await buildAutoPlan(scope, campaign, cfg, track, today, breakeven);
       const plan = bundle.plan;
       const pick = (a: { videoId: string; spuId: string; cost: number; orders: number; gmv: number; reason: string; verdict: string }) => ({
         videoId: a.videoId,
@@ -665,6 +673,8 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest
         windowFrom: bundle.windowFrom,
         windowTo: bundle.windowTo,
         summary: summarizeAutoPlan(plan, cfg),
+        /** Mức loại ROI lượt chạy thử dùng (theo % hay hòa vốn; fallbackReason ≠ "" = muốn hòa vốn nhưng phải rơi về %). */
+        hard: plan.hard,
         counts: plan.counts,
         excludeSpend: plan.excludeSpend,
         excludeOrders: plan.excludeOrders,
@@ -700,7 +710,14 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
     }
     const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
     const cfg = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
-    const marks = { roiTarget: cfg.roiTarget, hardRoi: cfg.roiTarget * (cfg.roiHardPct / 100), minSpend: cfg.minSpend };
+    // Mốc "Máy đúng" = đúng MỨC LOẠI lượt chấm đang dùng (% mục tiêu hoặc hòa vốn hôm nay).
+    const hard = resolveHardLevel(
+      cfg,
+      cfg.hardBasis === "breakeven"
+        ? ((await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id) ?? null)
+        : null
+    );
+    const marks = { roiTarget: cfg.roiTarget, hardRoi: hard.hardRoi, hardBasis: hard.basis, minSpend: cfg.minSpend };
     const today = vnDateStr(0);
 
     const logs = await prisma.adsActionLog.findMany({
@@ -718,7 +735,7 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
 
     const wanted = backtestStartDate(plans, today);
     if (!wanted) {
-      res.json({ ...buildDryRunBacktest(plans, [], cfg, today), marks, from: null, to: today, truncated: false, planDays: plans.length });
+      res.json({ ...buildDryRunBacktest(plans, [], marks, today), marks, from: null, to: today, truncated: false, planDays: plans.length });
       return;
     }
     const scope = await getTiktokAdsScope(campaign.channelId);
@@ -737,7 +754,7 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
         spuIds.length > 0
           ? await fetchGmvMaxCampaignVideoDays(range, campaign.campaignId, spuIds, [...GMV_MAX_LIVE_VIDEO_STATUSES, GMV_MAX_EXCLUDED_STATUS])
           : [];
-      res.json({ ...buildDryRunBacktest(plans, dayRows, cfg, today), marks, from, to: today, truncated: wanted < floor, planDays: plans.length });
+      res.json({ ...buildDryRunBacktest(plans, dayRows, marks, today), marks, from, to: today, truncated: wanted < floor, planDays: plans.length });
     } catch (err) {
       await recordTiktokAdsFailure(scope.linkId, err);
       res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });

@@ -53,6 +53,7 @@ const WINDOW_OPTIONS = [3, 5, 7, 10, 14, 30];
 interface FormState {
   roiTarget: string;
   windowDays: string;
+  hardBasis: "pct" | "breakeven";
   ruleNoOrderOn: boolean;
   ruleLowRoiOn: boolean;
   ruleCpaOn: boolean;
@@ -71,6 +72,7 @@ function toForm(c: TiktokAdsAutoConfig): FormState {
   return {
     roiTarget: String(c.roiTarget),
     windowDays: String(c.windowDays),
+    hardBasis: c.hardBasis,
     ruleNoOrderOn: c.ruleNoOrderOn,
     ruleLowRoiOn: c.ruleLowRoiOn,
     ruleCpaOn: c.ruleCpaOn,
@@ -94,6 +96,7 @@ function toConfig(f: FormState): TiktokAdsAutoConfig {
   return {
     roiTarget: n(f.roiTarget, 10),
     windowDays: n(f.windowDays, 7),
+    hardBasis: f.hardBasis,
     ruleNoOrderOn: f.ruleNoOrderOn,
     ruleLowRoiOn: f.ruleLowRoiOn,
     ruleCpaOn: f.ruleCpaOn,
@@ -169,9 +172,13 @@ export function TiktokAutoRuleDialog({
   // Chỉ lượt chấm hằng ngày thật mới mở được Tự loại thật (Chạy thử không tính).
   const hadRun = Boolean(rule?.status?.lastRunOn);
   const lastSummary = preview?.summary ?? rule?.status?.lastRunSummary ?? null;
-  const hardRoi = cfg ? cfg.roiTarget * (cfg.roiHardPct / 100) : 0;
-  // ROI hòa vốn (giá vốn + phí sàn thật 30 ngày) — căn cứ để soát hai ngưỡng ROI đang nhập.
+  // ROI hòa vốn (giá vốn + phí sàn thật, đơn đã đối soát) — căn cứ để soát hai ngưỡng ROI đang nhập.
   const breakevenRoi = rule?.breakeven?.roi ?? null;
+  // MỨC LOẠI THỰC DÙNG: khách chọn "theo hòa vốn" VÀ hòa vốn đủ tin thì là hòa vốn; không thì % mục tiêu
+  // (đúng luật resolveHardLevel ở backend — lượt chấm tự rơi về % khi hòa vốn chưa đủ tin).
+  const pctRoi = cfg ? cfg.roiTarget * (cfg.roiHardPct / 100) : 0;
+  const byBreakeven = cfg?.hardBasis === "breakeven" && breakevenRoi != null && rule?.breakevenUnusable === "";
+  const hardRoi = byBreakeven && breakevenRoi != null ? breakevenRoi : pctRoi;
   const breakevenWarnings: string[] = [];
   if (cfg && rule?.breakeven?.negativeMargin) {
     breakevenWarnings.push("Sản phẩm của chiến dịch đang lỗ trước cả quảng cáo — ROI nào cũng lỗ, xem lại giá bán và giá vốn trước");
@@ -357,11 +364,38 @@ export function TiktokAutoRuleDialog({
                     <RuleRow on={form.ruleNoOrderOn} onToggle={toggle("ruleNoOrderOn")} label="Tiêu từ … mà 0 đơn" hint="Tính trong cửa sổ đang soi.">
                       <CurrencyInput value={form.spendNoOrder} onValueChange={set("spendNoOrder")} disabled={!form.ruleNoOrderOn} />
                     </RuleRow>
+                    {/* Công tắc của luật nằm ở DÒNG CHÍNH (chọn cách tính mức loại); dòng % bên dưới chỉ là con số của nó. */}
                     <RuleRow
                       on={form.ruleLowRoiOn}
                       onToggle={toggle("ruleLowRoiOn")}
-                      label="ROI dưới … % mục tiêu"
-                      hint={`= ROI dưới ${formatRoi(hardRoi)}. Giữa mức này và mục tiêu chỉ gắn cờ.`}
+                      label="Có đơn nhưng ROI dưới mức loại — tính theo"
+                      hint={
+                        form.hardBasis === "breakeven"
+                          ? byBreakeven
+                            ? `Hòa vốn hôm nay ${formatRoi(breakevenRoi)} — dưới mức này là lỗ thật. Tự cập nhật mỗi lượt chấm.`
+                            : `Chưa dùng được hòa vốn: ${rule.breakevenUnusable || "chưa tính được"}. Lượt chấm tạm theo % bên dưới.`
+                          : "Hòa vốn = mốc bắt đầu lỗ, tính từ giá vốn và phí sàn thật của chiến dịch."
+                      }
+                    >
+                      <NativeSelect
+                        className="w-full"
+                        value={form.hardBasis}
+                        onChange={(e) => setForm((f) => (f ? { ...f, hardBasis: e.target.value === "breakeven" ? "breakeven" : "pct" } : f))}
+                        disabled={!form.ruleLowRoiOn}
+                        aria-label="Mức loại ROI tính theo"
+                      >
+                        <option value="pct">% của ROI mục tiêu</option>
+                        <option value="breakeven">ROI hòa vốn</option>
+                      </NativeSelect>
+                    </RuleRow>
+                    <RuleRow
+                      dim={!form.ruleLowRoiOn}
+                      label={form.hardBasis === "breakeven" ? "Dự phòng khi chưa có hòa vốn: … % mục tiêu" : "Mức loại = … % mục tiêu"}
+                      hint={
+                        byBreakeven
+                          ? `Đang loại theo hòa vốn ${formatRoi(hardRoi)}. Số % này chỉ dùng khi hòa vốn chưa đủ tin (= ROI dưới ${formatRoi(pctRoi)}).`
+                          : `= ROI dưới ${formatRoi(pctRoi)}. Giữa mức này và mục tiêu chỉ gắn cờ.`
+                      }
                       unit="%"
                     >
                       <Input inputMode="numeric" value={form.roiHardPct} onChange={(e) => set("roiHardPct")(e.target.value)} disabled={!form.ruleLowRoiOn} />

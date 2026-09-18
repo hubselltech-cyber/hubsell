@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   AUTO_RULE_DEFAULTS,
   assessVideo,
+  BREAKEVEN_MIN_COVERAGE_PCT,
   daysBetween,
+  resolveHardLevel,
   planAutoExclusion,
   sanitizeAutoRuleConfig,
   summarizeAutoPlan,
   type AutoRuleConfig,
   type AutoVideoInput,
+  type BreakevenInput,
 } from "../tiktok-ads/auto-rules";
 
 const today = "2026-09-18";
@@ -156,5 +159,74 @@ describe("sanitizeAutoRuleConfig / daysBetween", () => {
   it("daysBetween tính đúng và không vỡ khi sai định dạng", () => {
     expect(daysBetween("2026-09-16", "2026-09-18")).toBe(2);
     expect(daysBetween("", "2026-09-18")).toBe(0);
+  });
+});
+
+// MỨC LOẠI THEO HÒA VỐN (anh Trung duyệt 18/09): dưới hòa vốn là lỗ thật; hòa vốn chưa đủ tin thì tự rơi về % mục tiêu.
+describe("resolveHardLevel — mức loại theo % mục tiêu hay theo hòa vốn", () => {
+  const be = (over: Partial<BreakevenInput> = {}): BreakevenInput => ({
+    breakevenRoi: 6,
+    negativeMargin: false,
+    source: "campaign",
+    orders: 312,
+    costCoveragePct: 100,
+    ...over,
+  });
+  const byBe: AutoRuleConfig = { ...cfg, hardBasis: "breakeven" };
+
+  it("mặc định theo %: 50% của mục tiêu 15 = 7,5, có đưa hòa vốn vào cũng không dùng", () => {
+    expect(resolveHardLevel(cfg, be())).toMatchObject({ hardRoi: 7.5, basis: "pct", fallbackReason: "" });
+  });
+
+  it("khách chọn hòa vốn + hòa vốn đủ tin → mức loại = hòa vốn, nhãn nêu số đơn đã đối soát", () => {
+    const h = resolveHardLevel(byBe, be());
+    expect(h).toMatchObject({ hardRoi: 6, basis: "breakeven", fallbackReason: "" });
+    expect(h.label).toContain("hòa vốn 6");
+    expect(h.label).toContain("312 đơn đã đối soát");
+  });
+
+  it("hòa vốn CHƯA đủ tin → rơi về % và nêu đúng lý do", () => {
+    expect(resolveHardLevel(byBe, null)).toMatchObject({ hardRoi: 7.5, basis: "pct" });
+    expect(resolveHardLevel(byBe, null).fallbackReason).toContain("chưa tính được");
+    expect(resolveHardLevel(byBe, be({ source: "shop" })).fallbackReason).toContain("mượn biên lãi toàn gian");
+    expect(resolveHardLevel(byBe, be({ costCoveragePct: BREAKEVEN_MIN_COVERAGE_PCT - 1 })).fallbackReason).toContain("% doanh thu có giá vốn");
+    expect(resolveHardLevel(byBe, be({ costCoveragePct: BREAKEVEN_MIN_COVERAGE_PCT })).basis).toBe("breakeven");
+    expect(resolveHardLevel(byBe, be({ breakevenRoi: null })).fallbackReason).toContain("chưa có đơn đã đối soát");
+    // Sản phẩm lỗ sẵn: KHÔNG được biến thành "loại mọi video" — rơi về % và báo.
+    const neg = resolveHardLevel(byBe, be({ breakevenRoi: null, negativeMargin: true }));
+    expect(neg.basis).toBe("pct");
+    expect(neg.fallbackReason).toContain("lỗ trước cả quảng cáo");
+  });
+
+  it("video ROI 6,5: theo % (7,5) thì bị loại, theo hòa vốn (6) thì còn lãi → chỉ gắn cờ", () => {
+    const v = video({ cost: 200_000, orders: 4, gmv: 200_000 * 6.5 });
+    expect(assessVideo(v, cfg, today).verdict).toBe("exclude");
+    const a = assessVideo(v, byBe, today, resolveHardLevel(byBe, be()));
+    expect(a.verdict).toBe("flag");
+    expect(a.reason).toContain("chưa tới mức loại (6)");
+  });
+
+  it("hòa vốn 9 CAO hơn mức % 7,5: video ROI 8 đang lỗ → theo hòa vốn thì loại, căn cứ ghi rõ mốc hòa vốn", () => {
+    const v = video({ cost: 200_000, orders: 4, gmv: 200_000 * 8 });
+    expect(assessVideo(v, cfg, today).verdict).toBe("flag");
+    const plan = planAutoExclusion([v], byBe, today, be({ breakevenRoi: 9 }));
+    // Chiến dịch chỉ có 1 video ra đơn → chốt "giữ tối thiểu N video ra đơn" giữ lại; soi KẾT LUẬN chấm.
+    expect(plan.assessments[0].verdict).toBe("exclude");
+    expect(plan.heldByFloor).toHaveLength(1);
+    expect(plan.assessments[0].reason).toContain("hòa vốn 9");
+    expect(plan.assessments[0].reason).toContain("đang lỗ");
+    expect(summarizeAutoPlan(plan, byBe)).toContain("mức loại theo hòa vốn 9");
+  });
+
+  it("tóm tắt lượt nói rõ khi phải rơi về %", () => {
+    const plan = planAutoExclusion([video({ cost: 60_000, orders: 1, gmv: 60_000 * 20 })], byBe, today, be({ source: "shop" }));
+    expect(plan.hard.basis).toBe("pct");
+    expect(summarizeAutoPlan(plan, byBe)).toContain("chưa dùng được hòa vốn làm mức loại");
+  });
+
+  it("sanitize chỉ nhận đúng hai giá trị của hardBasis", () => {
+    expect(sanitizeAutoRuleConfig({ hardBasis: "breakeven" }, cfg).hardBasis).toBe("breakeven");
+    expect(sanitizeAutoRuleConfig({ hardBasis: "bua" }, cfg).hardBasis).toBe("pct");
+    expect(sanitizeAutoRuleConfig({}, byBe).hardBasis).toBe("breakeven");
   });
 });

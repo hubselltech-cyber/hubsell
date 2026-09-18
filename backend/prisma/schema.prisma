@@ -2698,6 +2698,9 @@ model TiktokAdsAutoRule {
   minSpend      Decimal  @default(50000) @db.Decimal(14, 2)
   /// Tiêu ≥ mức này mà 0 đơn → loại.
   spendNoOrder  Decimal  @default(200000) @db.Decimal(14, 2)
+  /// MỨC LOẠI ROI tính theo gì: "pct" = roiTarget × roiHardPct% (mặc định) | "breakeven" = ROI hòa vốn của chiến
+  /// dịch (dưới hòa vốn là lỗ thật); hòa vốn chưa đủ tin thì lượt chấm tự rơi về pct (auto-rules.ts resolveHardLevel).
+  hardBasis     String   @default("pct")
   /// Có đơn nhưng ROI < roiTarget × roiHardPct% → loại; giữa mức đó và mục tiêu → chỉ gắn cờ.
   roiHardPct    Int      @default(50)
   /// Trần chi phí mỗi đơn; NULL = không dùng.

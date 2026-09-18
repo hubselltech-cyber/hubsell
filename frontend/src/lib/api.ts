@@ -2745,6 +2745,8 @@ export function requestTiktokAdsRefresh(channelId: string) {
 export interface TiktokAdsAutoConfig {
   roiTarget: number;
   windowDays: number;
+  /** Mức loại ROI tính theo % của mục tiêu ("pct") hay theo ROI hòa vốn của chiến dịch ("breakeven"). */
+  hardBasis: "pct" | "breakeven";
   /** Công tắc từng luật — tắt là không xét, số bên cạnh giữ nguyên. */
   ruleNoOrderOn: boolean;
   ruleLowRoiOn: boolean;
@@ -2768,6 +2770,8 @@ export interface TiktokAdsAutoRule {
   roasTarget: number | null;
   /** ROI hòa vốn của chiến dịch — popup nhắc khi ngưỡng đặt dưới mốc này. */
   breakeven: TiktokAdsBreakeven | null;
+  /** "" = hòa vốn đủ tin để làm mức loại; có chữ = lý do lượt chấm sẽ tạm rơi về % mục tiêu. */
+  breakevenUnusable: string;
   status: TiktokAdsAutoStatus | null;
   lastRun: Record<string, unknown> | null;
   others: { id: string; name: string; status: string; mode: TiktokAdsAutoMode }[];
@@ -2854,7 +2858,7 @@ export interface TiktokAdsBacktest {
   totals: { videos: number; cost: number; orders: number; gmv: number; roi: number | null };
   counts: Record<TiktokAdsBacktestVerdict, number>;
   /** Các mốc của chính khách dùng để kết luận. */
-  marks: { roiTarget: number; hardRoi: number; minSpend: number };
+  marks: { roiTarget: number; hardRoi: number; hardBasis: "pct" | "breakeven"; minSpend: number };
   /** null = chưa có ngày nào để đối chiếu (máy mới định loại hôm nay / chưa định loại gì). */
   from: string | null;
   to: string;

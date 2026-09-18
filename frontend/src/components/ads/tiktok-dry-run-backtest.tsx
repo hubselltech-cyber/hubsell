@@ -138,7 +138,8 @@ export function TiktokDryRunBacktest({ campaignRowId, enabled }: { campaignRowId
               <span className={cn(TEXT_NUMBER_STRONG, t.roi != null && t.roi < data.marks.roiTarget ? "text-red-500" : "text-slate-900")}>
                 {formatRoi(t.roi)}
               </span>{" "}
-              (mục tiêu {formatRoi(data.marks.roiTarget)}, mức loại {formatRoi(data.marks.hardRoi)}).
+              (mục tiêu {formatRoi(data.marks.roiTarget)}, mức loại {formatRoi(data.marks.hardRoi)}
+              {data.marks.hardBasis === "breakeven" ? " theo hòa vốn" : ""}).
             </p>
           )}
         </div>

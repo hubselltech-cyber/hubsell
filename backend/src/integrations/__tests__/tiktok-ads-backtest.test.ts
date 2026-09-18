@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { backtestStartDate, buildDryRunBacktest, type DryRunPlan, type VideoDayRow } from "../tiktok-ads/backtest";
 
 // ĐỐI CHIẾU DIỄN TẬP — video máy định loại, từ hôm sau ngày định loại tới nay chạy ra sao.
-const cfg = { roiTarget: 15, roiHardPct: 50, minSpend: 50_000 }; // mức loại = ROI 7,5
+const cfg = { roiTarget: 15, hardRoi: 7.5, minSpend: 50_000 }; // mức loại = ROI 7,5
 const today = "2026-09-25";
 
 const day = (videoId: string, date: string, cost: number, orders: number, gmv: number, deliveryStatus = "DELIVERING"): VideoDayRow => ({

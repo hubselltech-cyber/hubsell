@@ -43,6 +43,8 @@ import {
   type AutoRuleConfig,
   type AutoRuleMode,
   type AutoVideoInput,
+  type BreakevenInput,
+  type HardBasis,
 } from "./auto-rules";
 import {
   GMV_MAX_LIVE_VIDEO_STATUSES,
@@ -51,7 +53,7 @@ import {
   type GmvMaxVideoRow,
 } from "./report";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink, type TiktokAdsScope } from "./sync";
-import { saveCampaignProductIds } from "./breakeven";
+import { computeTiktokAdsBreakeven, saveCampaignProductIds } from "./breakeven";
 
 /** verdict ghi vào AdsActionLog cho lệnh loại tự động (khác "manual"). */
 export const VIDEO_VERDICT_AUTO = "auto_exclude";
@@ -72,6 +74,7 @@ export function ruleRowToConfig(r: RuleRow): AutoRuleConfig {
   return {
     roiTarget: Number(r.roiTarget),
     windowDays: r.windowDays,
+    hardBasis: (r.hardBasis === "breakeven" ? "breakeven" : "pct") as HardBasis,
     ruleNoOrderOn: r.ruleNoOrderOn,
     ruleLowRoiOn: r.ruleLowRoiOn,
     ruleCpaOn: r.ruleCpaOn,
@@ -224,7 +227,9 @@ export async function buildAutoPlan(
   campaign: CampaignLite,
   cfg: AutoRuleConfig,
   track: TrackResult,
-  today: string
+  today: string,
+  /** ROI hòa vốn của chiến dịch — chỉ cần khi cfg.hardBasis = "breakeven" (thiếu thì luật tự rơi về % mục tiêu). */
+  breakeven: BreakevenInput | null = null
 ): Promise<AutoPlanBundle> {
   const windowTo = vnDateStr(1);
   const windowFrom = vnDateStr(cfg.windowDays);
@@ -283,7 +288,7 @@ export async function buildAutoPlan(
       watch: w ? { violationSince: w.violationSince, restoredByUserAt: w.restoredByUserAt } : undefined,
     };
   });
-  return { plan: planAutoExclusion(inputs, cfg, today), inputs, windowFrom, windowTo };
+  return { plan: planAutoExclusion(inputs, cfg, today, breakeven), inputs, windowFrom, windowTo };
 }
 
 // ------------------------------------------------------------
@@ -316,6 +321,16 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
   });
   result.campaigns = campaigns.length;
 
+  // Có chiến dịch chọn "mức loại theo hòa vốn" thì tính hòa vốn của gian MỘT LẦN cho cả lượt (đọc DB, không gọi sàn).
+  // Hỏng / chưa đủ tin → luật tự rơi về % mục tiêu và ghi lý do vào tóm tắt lượt.
+  const needsBreakeven = campaigns.some((c) => c.tiktokAutoRule && c.tiktokAutoRule.mode !== "off" && c.tiktokAutoRule.hardBasis === "breakeven");
+  const breakeven = needsBreakeven
+    ? await computeTiktokAdsBreakeven({ id: channel.id, userId: channel.userId }).catch((err) => {
+        console.error(`[TikTok Ads] Tính ROI hòa vốn lỗi "${channel.shopName}":`, (err as Error).message);
+        return null;
+      })
+    : null;
+
   for (const c of campaigns) {
     try {
       const track = await trackCampaignVideos(scope, c, today);
@@ -328,7 +343,7 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
       const rule = c.tiktokAutoRule;
       if (!rule || rule.mode === "off") continue;
       const cfg = ruleRowToConfig(rule);
-      const bundle = await buildAutoPlan(scope, c, cfg, track, today);
+      const bundle = await buildAutoPlan(scope, c, cfg, track, today, breakeven?.byCampaignRowId.get(c.id) ?? null);
       result.evaluated++;
       const outcome = await applyAutoPlan(scope, c, rule.mode as AutoRuleMode, cfg, bundle, today, channel.userId);
       if (outcome === "planned") result.planned++;
@@ -395,6 +410,10 @@ async function applyAutoPlan(
     protected: plan.counts.protected,
     windowFrom: bundle.windowFrom,
     windowTo: bundle.windowTo,
+    // Mức loại ROI thực dùng hôm nay — hòa vốn đổi theo ngày nên phải chốt vào sổ để sau này trả lời được "vì sao loại".
+    hardRoi: Math.round(plan.hard.hardRoi * 100) / 100,
+    hardBasis: plan.hard.basis,
+    hardFallback: plan.hard.fallbackReason || undefined,
     videos: plan.exclude.slice(0, 50).map((a) => ({ videoId: a.videoId, cost: Math.round(a.cost), orders: a.orders, reason: a.reason })),
   };
   const saveRun = (extra: Record<string, unknown> = {}) =>
@@ -426,7 +445,7 @@ async function applyAutoPlan(
   const items = plan.exclude.slice(0, GMV_MAX_CREATIVE_BATCH);
   const reasons = buildVideoActionReasons(
     items.map((a) => ({ videoId: a.videoId, note: `${videoActionNote(a.cost, a.orders)} · ${a.reason}` })),
-    [`Trợ lý tự động (${cfg.windowDays} ngày ${bundle.windowFrom}→${bundle.windowTo}, ROI mục tiêu ${cfg.roiTarget}): ${summary}`]
+    [`Trợ lý tự động (${cfg.windowDays} ngày ${bundle.windowFrom}→${bundle.windowTo}, ROI mục tiêu ${cfg.roiTarget}, mức loại ${plan.hard.label}): ${summary}`]
   );
   const logBase = {
     channelId: campaign.channelId,

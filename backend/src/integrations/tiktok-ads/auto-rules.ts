@@ -18,7 +18,10 @@
 //   1. learning      — sàn còn học → bỏ qua.
 //   2. protected     — chủ shop vừa khôi phục tay (≤30 ngày) → chỉ gắn cờ, máy không loại lại.
 //   3. insufficient  — tiêu dưới sàn dữ liệu → chưa phán.
-//   4. vi phạm CỨNG  — tiêu ≥ ngưỡng mà 0 đơn / ROI < mục tiêu × tỷ lệ cứng / CPA > trần
+//   4. vi phạm CỨNG  — tiêu ≥ ngưỡng mà 0 đơn / ROI < MỨC LOẠI / CPA > trần
+//        MỨC LOẠI (resolveHardLevel) = % mục tiêu (mặc định) HOẶC ROI HÒA VỐN của chiến dịch khi
+//        khách chọn hardBasis "breakeven" và hòa vốn ĐỦ TIN — dưới hòa vốn là lỗ thật, có căn cứ
+//        hơn con số % tự đặt (anh Trung duyệt 18/09). Hòa vốn chưa đủ tin → tự rơi về % và nói rõ.
 //        · video công thần (đủ đơn 30 ngày) → grace cho tới khi vi phạm đủ số ngày liên tục → exclude
 //        · còn lại → exclude
 //   5. flag          — có đơn, ROI dưới mục tiêu nhưng chưa tới mức cứng → chỉ gắn cờ.
@@ -30,9 +33,14 @@
 export type AutoRuleMode = "off" | "dry_run" | "live";
 export const AUTO_RULE_MODES: AutoRuleMode[] = ["off", "dry_run", "live"];
 
+/** Mức loại ROI tính theo gì: % của mục tiêu, hay ROI hòa vốn của chiến dịch. */
+export type HardBasis = "pct" | "breakeven";
+export const HARD_BASES: HardBasis[] = ["pct", "breakeven"];
+
 export interface AutoRuleConfig {
   roiTarget: number;
   windowDays: number;
+  hardBasis: HardBasis;
   /** Công tắc từng luật — tắt là luật đó không xét, số bên cạnh giữ nguyên để bật lại. */
   ruleNoOrderOn: boolean;
   ruleLowRoiOn: boolean;
@@ -53,6 +61,8 @@ export interface AutoRuleConfig {
 export const AUTO_RULE_DEFAULTS: AutoRuleConfig = {
   roiTarget: 10,
   windowDays: 7,
+  // Mặc định giữ kiểu % để không đổi hành vi chiến dịch đang chạy; khách tự chuyển sang hòa vốn.
+  hardBasis: "pct",
   ruleNoOrderOn: true,
   ruleLowRoiOn: true,
   ruleCpaOn: false,
@@ -92,6 +102,7 @@ export function sanitizeAutoRuleConfig(raw: Record<string, unknown>, base: AutoR
   return {
     roiTarget: Math.max(0.1, num("roiTarget", base.roiTarget)),
     windowDays: clamp(num("windowDays", base.windowDays), AUTO_RULE_LIMITS.windowDays),
+    hardBasis: HARD_BASES.includes(raw.hardBasis as HardBasis) ? (raw.hardBasis as HardBasis) : base.hardBasis,
     ruleNoOrderOn: bool("ruleNoOrderOn", base.ruleNoOrderOn),
     ruleLowRoiOn: bool("ruleLowRoiOn", base.ruleLowRoiOn),
     ruleCpaOn: bool("ruleCpaOn", base.ruleCpaOn),
@@ -154,6 +165,60 @@ export interface AutoAssessment {
   graceDaysLeft?: number;
 }
 
+/**
+ * Độ phủ giá vốn tối thiểu để hòa vốn được dùng làm mức loại. Sàn không có số nào cho việc này —
+ * 90 là MẶC ĐỊNH CHỌN (anh Trung duyệt 18/09): đơn thiếu giá vốn đã bị loại khỏi phép tính, nhưng
+ * nếu phần thiếu quá lớn thì biên lãi của phần còn lại không đại diện được cả chiến dịch.
+ */
+export const BREAKEVEN_MIN_COVERAGE_PCT = 90;
+
+/** Phần của kết quả hòa vốn mà luật cần (khớp TiktokBreakeven của breakeven.ts). */
+export interface BreakevenInput {
+  breakevenRoi: number | null;
+  negativeMargin: boolean;
+  source: "campaign" | "shop" | null;
+  orders: number;
+  costCoveragePct: number | null;
+}
+
+export interface HardLevel {
+  /** ROI dưới mức này (khi có đơn) là vi phạm cứng. */
+  hardRoi: number;
+  /** Mức loại THỰC DÙNG lượt này. */
+  basis: HardBasis;
+  /** Khách chọn hòa vốn nhưng lượt này phải rơi về %: lý do (rỗng = không rơi). */
+  fallbackReason: string;
+  /** Nhãn của mức loại để ghi vào căn cứ, vd "hòa vốn 6,1 (312 đơn đã đối soát)". */
+  label: string;
+}
+
+/** Hòa vốn có đủ tin để máy dựa vào mà LOẠI video không? Trả lý do khi không. Thuần. */
+export function breakevenUnusableReason(be: BreakevenInput | null): string {
+  if (!be) return "chưa tính được hòa vốn";
+  if (be.negativeMargin) return "sản phẩm đang lỗ trước cả quảng cáo — loại video không cứu được, cần xem lại giá bán / giá vốn";
+  if (be.breakevenRoi == null) return "chưa có đơn đã đối soát đủ giá vốn";
+  if (be.source !== "campaign") return "chiến dịch chưa đủ đơn đã đối soát nên hòa vốn đang mượn biên lãi toàn gian";
+  if (be.costCoveragePct == null || be.costCoveragePct < BREAKEVEN_MIN_COVERAGE_PCT) {
+    return `mới ${be.costCoveragePct ?? 0}% doanh thu có giá vốn (cần từ ${BREAKEVEN_MIN_COVERAGE_PCT}%)`;
+  }
+  return "";
+}
+
+/** Mức loại ROI của lượt chấm: theo hòa vốn nếu khách chọn VÀ hòa vốn đủ tin; không thì theo % mục tiêu. Thuần. */
+export function resolveHardLevel(cfg: AutoRuleConfig, be: BreakevenInput | null = null): HardLevel {
+  const pctRoi = cfg.roiTarget * (cfg.roiHardPct / 100);
+  const pctLabel = `${roiTxt(pctRoi)} (${cfg.roiHardPct}% của mục tiêu ${roiTxt(cfg.roiTarget)})`;
+  if (cfg.hardBasis !== "breakeven") return { hardRoi: pctRoi, basis: "pct", fallbackReason: "", label: pctLabel };
+  const why = breakevenUnusableReason(be);
+  if (why || !be || be.breakevenRoi == null) return { hardRoi: pctRoi, basis: "pct", fallbackReason: why, label: pctLabel };
+  return {
+    hardRoi: be.breakevenRoi,
+    basis: "breakeven",
+    fallbackReason: "",
+    label: `hòa vốn ${roiTxt(be.breakevenRoi)} (${be.orders.toLocaleString("vi-VN")} đơn đã đối soát)`,
+  };
+}
+
 const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
 const roiTxt = (n: number) => n.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
 
@@ -165,8 +230,8 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((tb - ta) / 86_400_000);
 }
 
-/** Chấm MỘT video theo cấu hình — thuần, `today` là ngày VN "YYYY-MM-DD". */
-export function assessVideo(v: AutoVideoInput, cfg: AutoRuleConfig, today: string): AutoAssessment {
+/** Chấm MỘT video theo cấu hình — thuần, `today` là ngày VN "YYYY-MM-DD". `hard` = mức loại của lượt (mặc định theo %). */
+export function assessVideo(v: AutoVideoInput, cfg: AutoRuleConfig, today: string, hard: HardLevel = resolveHardLevel(cfg)): AutoAssessment {
   const base = { videoId: v.videoId, spuId: v.spuId, cost: v.cost, orders: v.orders, gmv: v.gmv };
   const win = v.windowDaysUsed > 0 ? `${v.windowDaysUsed} ngày` : "cửa sổ";
 
@@ -177,13 +242,16 @@ export function assessVideo(v: AutoVideoInput, cfg: AutoRuleConfig, today: strin
   // ----- Vi phạm luật cứng? -----
   const roi = v.cost > 0 ? v.gmv / v.cost : 0;
   const cpa = v.orders > 0 ? v.cost / v.orders : Infinity;
-  const hardRoi = cfg.roiTarget * (cfg.roiHardPct / 100);
+  const hardRoi = hard.hardRoi;
   let violation = "";
   if (v.cost >= cfg.minSpend) {
     if (cfg.ruleNoOrderOn && v.orders === 0 && v.cost >= cfg.spendNoOrder) {
       violation = `tiêu ${vnd(v.cost)} trong ${win} mà 0 đơn (ngưỡng ${vnd(cfg.spendNoOrder)})`;
     } else if (cfg.ruleLowRoiOn && v.orders > 0 && roi < hardRoi) {
-      violation = `ROI ${roiTxt(roi)} < ${roiTxt(hardRoi)} (${cfg.roiHardPct}% của mục tiêu ${roiTxt(cfg.roiTarget)}) trong ${win}`;
+      violation =
+        hard.basis === "breakeven"
+          ? `ROI ${roiTxt(roi)} < ${hard.label} trong ${win} — đang lỗ`
+          : `ROI ${roiTxt(roi)} < ${hard.label} trong ${win}`;
     } else if (cfg.ruleCpaOn && v.orders > 0 && cfg.maxCpa != null && cpa > cfg.maxCpa) {
       violation = `chi phí/đơn ${vnd(cpa)} > trần ${vnd(cfg.maxCpa)} trong ${win}`;
     }
@@ -258,11 +326,19 @@ export interface AutoExclusionPlan {
   /** Tổng tiền cửa sổ của nhóm sẽ loại — để chuông/tóm tắt nói bằng tiền. */
   excludeSpend: number;
   excludeOrders: number;
+  /** Mức loại ROI thực dùng lượt này (% mục tiêu hay hòa vốn, kèm lý do nếu phải rơi về %). */
+  hard: HardLevel;
 }
 
 /** Chấm cả chiến dịch rồi áp chốt an toàn cấp chiến dịch. */
-export function planAutoExclusion(videos: AutoVideoInput[], cfg: AutoRuleConfig, today: string): AutoExclusionPlan {
-  const assessments = videos.map((v) => assessVideo(v, cfg, today));
+export function planAutoExclusion(
+  videos: AutoVideoInput[],
+  cfg: AutoRuleConfig,
+  today: string,
+  breakeven: BreakevenInput | null = null
+): AutoExclusionPlan {
+  const hard = resolveHardLevel(cfg, breakeven);
+  const assessments = videos.map((v) => assessVideo(v, cfg, today, hard));
   const counts: Record<AutoVerdict, number> = { learning: 0, protected: 0, insufficient: 0, exclude: 0, grace: 0, flag: 0, healthy: 0 };
   for (const a of assessments) counts[a.verdict]++;
 
@@ -297,6 +373,7 @@ export function planAutoExclusion(videos: AutoVideoInput[], cfg: AutoRuleConfig,
     counts,
     excludeSpend: exclude.reduce((s, a) => s + a.cost, 0),
     excludeOrders: exclude.reduce((s, a) => s + a.orders, 0),
+    hard,
   };
 }
 
@@ -315,5 +392,7 @@ export function summarizeAutoPlan(plan: AutoExclusionPlan, cfg: AutoRuleConfig):
   if (plan.heldByCap.length > 0) parts.push(`${plan.heldByCap.length} video vi phạm chờ ngày mai (trần ${cfg.maxExcludePerDay}/ngày)`);
   if (plan.heldByFloor.length > 0) parts.push(`giữ lại ${plan.heldByFloor.length} video để chiến dịch còn video ra đơn`);
   if (plan.counts.learning > 0) parts.push(`bỏ qua ${plan.counts.learning} video đang học`);
+  if (cfg.ruleLowRoiOn && plan.hard.basis === "breakeven") parts.push(`mức loại theo ${plan.hard.label}`);
+  if (cfg.ruleLowRoiOn && plan.hard.fallbackReason) parts.push(`chưa dùng được hòa vốn làm mức loại (${plan.hard.fallbackReason}) nên tạm theo ${cfg.roiHardPct}% mục tiêu`);
   return parts.join(" · ");
 }
