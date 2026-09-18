@@ -5,7 +5,7 @@ import {
   BREAKEVEN_MIN_COVERAGE_PCT,
   compareRunDigest,
   daysBetween,
-  describeUnrehearsedFields,
+  describeConfigChanges,
   parseRehearsedConfig,
   resolveHardLevel,
   runChangeLabel,
@@ -261,13 +261,6 @@ describe("videoDataProblem — tầng video báo 0 trong khi tầng chiến dị
 
 // B6 — cấu hình sắp bật thật có phải cấu hình lượt chấm gần nhất đã dùng không (khác thì popup CẢNH BÁO, khách tự quyết bỏ qua).
 describe("unrehearsedFields — cấu hình đang lưu có phải cấu hình đã diễn tập không", () => {
-  it("dòng ghi sổ khi khách bỏ qua diễn tập lại: mỗi ô một dòng, nêu số cũ → số mới đúng đơn vị", () => {
-    const lines = describeUnrehearsedFields(cfg, { ...cfg, roiHardPct: 90, spendNoOrder: 100_000, graceOn: false });
-    expect(lines).toContain("Mức loại (% ROI mục tiêu): lượt chấm dùng 50% → nay 90%");
-    expect(lines).toContain("Mức tiêu mà 0 đơn: lượt chấm dùng 200.000đ → nay 100.000đ");
-    expect(lines).toContain("Bảo vệ video công thần: lượt chấm dùng bật → nay tắt");
-    expect(describeUnrehearsedFields(null, cfg)).toHaveLength(1);
-  });
   it("chưa có lượt chấm nào (hoặc dòng cũ chưa ghi cấu hình) → coi như chưa diễn tập", () => {
     expect(parseRehearsedConfig(null)).toBeNull();
     expect(parseRehearsedConfig({ summary: "linh tinh" })).toBeNull();
@@ -318,5 +311,33 @@ describe("compareRunDigest — lượt hôm nay có khác lượt trước khôn
   it("đọc được lastRunSummary ghi TRƯỚC khi có excludeIds (dòng đang nằm trên prod): lấy mã từ videos", () => {
     const d = runDigestOf({ mode: "dry_run", exclude: 2, grace: 0, flag: 1, videos: [{ videoId: "a" }, { videoId: "b" }] });
     expect(d).toEqual({ mode: "dry_run", excludeIds: ["a", "b"], grace: 0, flag: 1 });
+  });
+});
+
+// NHẬT KÝ ĐỔI THÔNG SỐ — mỗi lần Lưu có đổi gì thì tab Lịch sử thêm một dòng trung tính.
+describe("describeConfigChanges — nhật ký đổi thông số", () => {
+  it("mỗi ô đổi một dòng số cũ → số mới đúng đơn vị; đổi chế độ đứng đầu", () => {
+    const lines = describeConfigChanges(
+      { mode: "dry_run", config: cfg },
+      { mode: "live", config: { ...cfg, roiHardPct: 90, spendNoOrder: 100_000, graceOn: false } }
+    );
+    expect(lines[0]).toBe("Chế độ: Diễn tập → Tự loại thật");
+    expect(lines).toContain("Mức loại (% ROI mục tiêu): 50% → 90%");
+    expect(lines).toContain("Mức tiêu mà 0 đơn: 200.000đ → 100.000đ");
+    expect(lines).toContain("Bảo vệ video công thần: bật → tắt");
+    expect(lines).toHaveLength(4);
+  });
+  it("lưu lại y nguyên → không có gì để ghi", () => {
+    expect(describeConfigChanges({ mode: "dry_run", config: cfg }, { mode: "dry_run", config: { ...cfg } })).toEqual([]);
+  });
+  it("là nhật ký chứ không phải luật: số nằm cạnh một luật ĐANG TẮT đổi vẫn ghi", () => {
+    const cpaOff = { ...cfg, ruleCpaOn: false };
+    expect(describeConfigChanges({ mode: "live", config: cpaOff }, { mode: "live", config: { ...cpaOff, maxCpa: 10_000 } })).toEqual([
+      "Trần chi phí mỗi đơn: 80.000đ → 10.000đ",
+    ]);
+  });
+  it("chiến dịch bật tự động lần đầu → chỉ ghi dòng chế độ; lần đầu mà để Tắt thì không ghi", () => {
+    expect(describeConfigChanges(null, { mode: "dry_run", config: cfg })).toEqual(["Chế độ: Tắt → Diễn tập"]);
+    expect(describeConfigChanges(null, { mode: "off", config: cfg })).toEqual([]);
   });
 });

@@ -424,8 +424,9 @@ export function summarizeAutoPlan(plan: AutoExclusionPlan, cfg: AutoRuleConfig):
 // B6 — CẤU HÌNH ĐÃ DIỄN TẬP CHƯA? (rà 18/09: rào lastRunOn chỉ biết "đã từng có lượt chấm", không biết lượt đó chạy
 // bằng cấu hình nào → khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được.) Mỗi lượt chấm THẬT chốt lại
 // cấu hình nó dùng (TiktokAdsAutoRule.lastRunConfig). ★ Anh Trung chốt 18/09 khuya: đổi số thì KHÔNG bắt diễn tập lại —
-// chỉ CẢNH BÁO trước khi lưu ("hãy diễn tập lại cho an toàn"), khách không muốn thì tự bấm Bỏ qua; Hubsell ghi sổ việc bỏ
-// qua đó (ai, lúc nào, ô nào đổi từ mấy sang mấy). Em từng đề xuất chặn cứng; anh chọn để khách tự quyết.
+// chỉ CẢNH BÁO trước khi lưu ("hãy diễn tập lại cho an toàn"), khách không muốn thì tự bấm Bỏ qua và máy chạy theo số mới.
+// Em từng đề xuất chặn cứng rồi ghi sổ "đã bỏ qua diễn tập"; anh chọn để khách tự quyết, và chỉ cần NHẬT KÝ ĐỔI THÔNG SỐ
+// trung tính cho mọi lần đổi (describeConfigChanges) — không phân biệt có bỏ qua hay không.
 // ------------------------------------------------------------
 
 /** Số đi kèm một luật ĐANG TẮT không tham gia chấm điểm → không tính là đổi cấu hình. */
@@ -488,12 +489,24 @@ function fieldValueText(k: keyof AutoRuleConfig, v: AutoRuleConfig[keyof AutoRul
   return typeof v === "number" ? roiTxt(v) : String(v);
 }
 
-/** Mỗi ô đã đổi một dòng "Tên ô: lượt chấm dùng X → nay Y" — ghi vào sổ khi khách bỏ qua diễn tập lại. */
-export function describeUnrehearsedFields(rehearsed: AutoRuleConfig | null, next: AutoRuleConfig): string[] {
-  if (!rehearsed) return ["Lượt chấm trước chưa ghi lại cấu hình đã dùng — không so được từng ô."];
-  return unrehearsedFields(rehearsed, next).map(
-    (k) => `${FIELD_LABEL[k]}: lượt chấm dùng ${fieldValueText(k, rehearsed[k])} → nay ${fieldValueText(k, next[k])}`
-  );
+const MODE_LABEL: Record<AutoRuleMode, string> = { off: "Tắt", dry_run: "Diễn tập", live: "Tự loại thật" };
+
+/**
+ * NHẬT KÝ ĐỔI THÔNG SỐ: so cấu hình ĐANG LƯU với cấu hình sắp lưu, mỗi thứ đổi một dòng "Tên ô: X → Y" (đổi chế độ đứng
+ * đầu). So THÔ mọi ô — kể cả số nằm cạnh một luật đang tắt, vì đây là nhật ký chứ không phải luật. [] = không đổi gì,
+ * khỏi ghi. Chiến dịch chưa từng có cấu hình (prev = null) thì chỉ ghi dòng chế độ.
+ */
+export function describeConfigChanges(
+  prev: { mode: AutoRuleMode; config: AutoRuleConfig } | null,
+  next: { mode: AutoRuleMode; config: AutoRuleConfig }
+): string[] {
+  const prevMode = prev?.mode ?? "off";
+  const lines = prevMode !== next.mode ? [`Chế độ: ${MODE_LABEL[prevMode]} → ${MODE_LABEL[next.mode]}`] : [];
+  if (!prev) return lines;
+  for (const k of Object.keys(FIELD_LABEL) as (keyof AutoRuleConfig)[]) {
+    if (prev.config[k] !== next.config[k]) lines.push(`${FIELD_LABEL[k]}: ${fieldValueText(k, prev.config[k])} → ${fieldValueText(k, next.config[k])}`);
+  }
+  return lines;
 }
 
 // ------------------------------------------------------------

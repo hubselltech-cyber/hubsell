@@ -49,7 +49,7 @@ import {
   VIDEO_ACTIONS,
   VIDEO_ACTION_EXCLUDE,
   VIDEO_ACTION_RESTORE,
-  VIDEO_ACTION_SKIP_REHEARSAL,
+  VIDEO_ACTION_CONFIG_CHANGE,
   VIDEO_HISTORY_ACTIONS,
   VIDEO_VERDICT_MANUAL,
   buildVideoActionReasons,
@@ -74,7 +74,7 @@ import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-a
 import {
   AUTO_RULE_MODES,
   breakevenUnusableReason,
-  describeUnrehearsedFields,
+  describeConfigChanges,
   parseRehearsedConfig,
   resolveHardLevel,
   sanitizeAutoRuleConfig,
@@ -675,8 +675,7 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
     // thật mà sửa số). Anh Trung chốt 18/09 khuya: KHÔNG bắt diễn tập lại, chỉ cảnh báo — popup hỏi, khách bấm "Bỏ qua" thì
     // gửi skipRehearsal = true. Thiếu cờ đó (client cũ, gọi API tay) → 409 để không ai lọt qua mà chưa thấy cảnh báo.
     const rehearsed = parseRehearsedConfig(campaign.tiktokAutoRule?.lastRunConfig);
-    const skipping = mode === "live" && unrehearsedFields(rehearsed, cfg).length > 0;
-    if (skipping && body.skipRehearsal !== true) {
+    if (mode === "live" && unrehearsedFields(rehearsed, cfg).length > 0 && body.skipRehearsal !== true) {
       res.status(409).json({
         error:
           "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất. Để an toàn hãy lưu ở chế độ Diễn tập và đợi lượt chấm sau 12h trưa; nếu vẫn muốn bật thật ngay, hãy xác nhận bỏ qua diễn tập lại.",
@@ -691,23 +690,27 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
       update: data,
       create: { adsCampaignId: campaign.id, ...data },
     });
-    if (skipping) {
-      // Bằng chứng khách TỰ quyết bỏ qua diễn tập lại: ai, lúc nào, ô nào đổi từ mấy sang mấy — hiện ở tab Lịch sử.
-      await prisma.adsActionLog.create({
-        data: {
-          channelId: campaign.channelId,
-          adsCampaignId: campaign.id,
-          action: VIDEO_ACTION_SKIP_REHEARSAL,
-          mode: "live",
-          verdict: VIDEO_VERDICT_MANUAL,
-          status: "SUCCESS",
-          referenceId: `ttskip-${campaign.id}-${Date.now()}`,
-          reasons: [
-            `Chủ shop${req.userEmail ? ` (${req.userEmail})` : ""} bật Tự loại thật với cấu hình CHƯA diễn tập và đã chọn bỏ qua diễn tập lại.`,
-            ...describeUnrehearsedFields(rehearsed, cfg),
-          ].join("\n"),
-        },
-      });
+    // NHẬT KÝ ĐỔI THÔNG SỐ (anh Trung 18/09 khuya): lần Lưu nào có đổi chế độ / đổi số thì ghi một dòng trung tính vào sổ —
+    // tab Lịch sử trả lời được "vì sao từ hôm đó máy loại khác đi". Ghi hỏng không được làm hỏng việc lưu cấu hình.
+    const changes = describeConfigChanges(
+      campaign.tiktokAutoRule ? { mode: campaign.tiktokAutoRule.mode as AutoRuleMode, config: base } : null,
+      { mode, config: cfg }
+    );
+    if (changes.length > 0) {
+      await prisma.adsActionLog
+        .create({
+          data: {
+            channelId: campaign.channelId,
+            adsCampaignId: campaign.id,
+            action: VIDEO_ACTION_CONFIG_CHANGE,
+            mode,
+            verdict: VIDEO_VERDICT_MANUAL,
+            status: "SUCCESS",
+            referenceId: `ttcfg-${campaign.id}-${Date.now()}`,
+            reasons: changes.join("\n"),
+          },
+        })
+        .catch((e) => console.error(`[TikTok Ads] Không ghi được nhật ký đổi thông số "${campaign.name}":`, (e as Error).message));
     }
     res.json({ ok: true, mode: rule.mode as AutoRuleMode, config: ruleRowToConfig(rule), status: autoStatusOf(rule) });
   } catch (err) {

@@ -216,10 +216,13 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    gần nhất → bấm Lưu hiện hộp vàng "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất" liệt kê TỪNG Ô số cũ → số mới, 3
    nút: Để em xem lại · **Bỏ qua, bật thật luôn** · **Diễn tập lại** (lưu bộ số mới ở Diễn tập). Hộp tự cuộn vào khung nhìn
    (khối Nâng cao mở thì nó nằm dưới đáy). Backend: PUT live lệch cấu hình mà thiếu `skipRehearsal: true` → 409 `code:
-   "unrehearsed"` (để client cũ / gọi API tay không lọt qua mà chưa thấy cảnh báo); có cờ → lưu và **GHI SỔ** một dòng
-   AdsActionLog `action = skip_rehearsal` (ai bật, giờ, ô nào đổi từ mấy sang mấy — `describeUnrehearsedFields`), tab Lịch sử
-   hiện "Bật Tự loại thật · Bỏ qua diễn tập lại". Đây là bằng chứng khách TỰ quyết — phần em giữ lại từ lập luận "khách mất
-   tiền đổ oan". Lượt chấm KHÔNG tự hạ chế độ nữa. Rào "phải có ≥1 lượt chấm thật (`lastRunOn`)" của anh GIỮ NGUYÊN. Dòng cũ
+   "unrehearsed"` (để client cũ / gọi API tay không lọt qua mà chưa thấy cảnh báo); có cờ → lưu, máy chạy theo số mới.
+   **NHẬT KÝ ĐỔI THÔNG SỐ** (anh chốt tiếp: em định ghi sổ "khách đã bỏ qua diễn tập" làm bằng chứng, anh thấy cấn — "khách
+   đổi thông số thì mình cứ lưu lại lịch sử thời gian đổi thông số thôi"): MỌI lần Lưu có đổi chế độ / đổi số (bất kể chế độ,
+   bất kể có bỏ qua hay không) → một dòng AdsActionLog `action = config_change`, `reasons` = từng dòng "Tên ô: X → Y"
+   (`describeConfigChanges` thuần, so THÔ với cấu hình đang lưu; lưu y nguyên thì không ghi). Tab Lịch sử hiện "Đổi thông số
+   tự động loại" + các dòng đó, chữ trung tính, không nhãn cảnh báo — **đừng viết câu chữ kiểu lập biên bản khách**. Lượt chấm
+   KHÔNG tự hạ chế độ nữa. Rào "phải có ≥1 lượt chấm thật (`lastRunOn`)" của anh GIỮ NGUYÊN. Dòng cũ
    trên prod (TC054) chưa có `lastRunConfig` → bật thật trước lượt chấm kế tiếp sẽ gặp hộp cảnh báo (không so được từng ô).
    Mô tả gốc: **Đổi cấu hình sau diễn tập** — rào `lastRunOn` chỉ biết "đã từng có lượt", không biết lượt đó chạy bằng cấu hình
    nào. Khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được. Hướng: lưu dấu cấu hình của lượt gần nhất,
@@ -243,7 +246,9 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
 PLANNED, 0 lệnh live (bản chặn — đã bỏ theo anh chốt); lệnh loại 3 video (1 đã khôi phục trên Hubsell, 1 còn chạy) → báo
 đúng 1 video, lần soi sau không báo lại. Bản CẢNH BÁO soi bằng số thật TC054 (chỉ đọc): chọn Tự loại thật + đổi ROI 15 → 20 →
 Lưu → hộp vàng nêu "ROI mục tiêu: lượt chấm dùng 15 → nay 20"; bấm Diễn tập lại → lưu ROI 20 ở Diễn tập. Nút Bỏ qua chỉ thử
-trên chiến dịch giả KHÔNG nối TikTok: thiếu cờ → 409 không lưu; có cờ → live + dòng sổ skip_rehearsal đúng chữ. Dữ liệu thử đã xóa.
+trên chiến dịch giả KHÔNG nối TikTok, gọi route PUT thật 4 kiểu: lưu y nguyên → không ghi; đổi 2 số ở Diễn tập → 1 dòng "ROI mục
+tiêu: 15 → 20 / Số video loại tối đa mỗi ngày: 10 → 30"; bật thật thiếu cờ → 409, không lưu, không ghi; bật thật + bỏ qua → 1 dòng
+"Chế độ: Diễn tập → Tự loại thật / Mức loại: 50% → 80%". Dữ liệu thử đã xóa.
 
 **C. Đã rà, không phải lỗi:** lệnh trùng trong ngày (referenceId chặn) · video đã loại không bị xét lại (report chỉ lấy
 trạng thái đang phân phối) · chuyển Diễn tập → Thật cùng ngày không bắn ngay (lượt kế là trưa hôm sau) · trần 400

@@ -15,7 +15,7 @@
 // Backend cũng từ chối bật live khi chưa có lượt nào — nút mờ chỉ là lớp ngoài.
 // Đổi số sau khi diễn tập (anh Trung chốt 18/09 khuya): KHÔNG bắt diễn tập lại. Bật thật bằng cấu hình khác lượt chấm
 // gần nhất thì lúc Lưu hiện cảnh báo nêu từng ô số cũ → số mới, khuyên diễn tập lại; khách không muốn thì tự bấm
-// "Bỏ qua" — backend ghi sổ việc bỏ qua đó (tab Lịch sử).
+// "Bỏ qua" và máy chạy theo số mới. Mọi lần đổi thông số (có bỏ qua hay không) backend ghi một dòng nhật ký ở tab Lịch sử.
 // Video còn ĐANG HỌC trên TikTok không bao giờ bị xét; đồng hồ luật tính từ ngày
 // TikTok học xong (backend theo dõi hằng ngày).
 // ============================================================
@@ -609,7 +609,7 @@ export function TiktokAutoRuleDialog({
                 <p className="text-amber-800">
                   Máy chưa chấm điểm bằng bộ số này lần nào. Để đảm bảo an toàn, anh/chị nên diễn tập lại: lưu ở Diễn tập, sau lượt chấm 12h
                   trưa kế tiếp xem chuông báo đúng ý rồi bật thật. Nếu bỏ qua, từ lượt chấm kế tiếp Trợ lý loại thật theo bộ số mới (tối đa{" "}
-                  {formatNumber(cfg.maxExcludePerDay)} video/ngày) và Lịch sử ghi lại lựa chọn này.
+                  {formatNumber(cfg.maxExcludePerDay)} video/ngày).
                 </p>
                 <div className="flex flex-wrap justify-end gap-2">
                   <Button size="sm" variant="ghost" onClick={() => setConfirmSkip(false)} disabled={saving}>

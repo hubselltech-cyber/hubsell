@@ -2652,8 +2652,8 @@ export type TiktokAdsAutoVerdict = "learning" | "protected" | "insufficient" | "
 
 export interface TiktokAdsVideoActionLog {
   id: string;
-  /** skip_rehearsal KHÔNG phải lệnh video: chủ shop bật Tự loại thật bằng cấu hình chưa diễn tập và tự bấm bỏ qua cảnh báo (chỉ có grounds). */
-  action: "exclude_video" | "restore_video" | "skip_rehearsal";
+  /** config_change KHÔNG phải lệnh video: nhật ký đổi thông số của cấu hình tự động loại — grounds là từng dòng "Tên ô: X → Y". */
+  action: "exclude_video" | "restore_video" | "config_change";
   /** dry_run = lệnh diễn tập của Trợ lý (PLANNED, chưa gọi sàn). */
   mode: "dry_run" | "live";
   /** SENDING = đã ghi sổ + gửi lệnh nhưng chưa xác nhận được kết quả (A3); lượt chấm kế tiếp đối chiếu rồi chốt. */
@@ -2787,7 +2787,7 @@ export function fetchTiktokAdsAutoRule(campaignRowId: string) {
 
 export function saveTiktokAdsAutoRule(
   campaignRowId: string,
-  /** skipRehearsal: khách đã thấy cảnh báo "cấu hình chưa diễn tập" và tự bấm bỏ qua — backend ghi sổ việc đó. */
+  /** skipRehearsal: khách đã thấy cảnh báo "cấu hình chưa diễn tập" và tự bấm bỏ qua → máy chạy theo số mới. */
   body: { mode: TiktokAdsAutoMode; skipRehearsal?: boolean } & TiktokAdsAutoConfig
 ) {
   return apiFetch<{ ok: true; mode: TiktokAdsAutoMode; config: TiktokAdsAutoConfig; status: TiktokAdsAutoStatus }>(
