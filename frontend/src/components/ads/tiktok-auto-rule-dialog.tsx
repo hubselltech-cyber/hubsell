@@ -364,44 +364,45 @@ export function TiktokAutoRuleDialog({
                     <RuleRow on={form.ruleNoOrderOn} onToggle={toggle("ruleNoOrderOn")} label="Tiêu từ … mà 0 đơn" hint="Tính trong cửa sổ đang soi.">
                       <CurrencyInput value={form.spendNoOrder} onValueChange={set("spendNoOrder")} disabled={!form.ruleNoOrderOn} />
                     </RuleRow>
-                    {/* Công tắc của luật nằm ở DÒNG CHÍNH (chọn cách tính mức loại); dòng % bên dưới chỉ là con số của nó. */}
+                    {/* MỘT DÒNG duy nhất cho luật ROI thấp (anh Trung 18/09: chọn gì thì cả cụm nằm trên cùng một dòng): công tắc ·
+                        nhãn · [ô chọn cách tính] [ô % — chỉ khi đang dùng %]. Ô % hiện khi chọn "% mục tiêu", hoặc chọn hòa vốn mà
+                        hòa vốn chưa đủ tin (máy đang tạm theo %); chọn hòa vốn và hòa vốn đủ tin thì chỉ còn ô chọn, rộng đúng
+                        bằng ô số của các dòng khác. Nhãn lựa chọn cố ý NGẮN để không bị cắt chữ trong ô chọn. */}
                     <RuleRow
+                      wide
                       on={form.ruleLowRoiOn}
                       onToggle={toggle("ruleLowRoiOn")}
-                      label="Có đơn nhưng ROI dưới mức loại — tính theo"
+                      label="Có đơn nhưng ROI dưới mức loại"
                       hint={
-                        form.hardBasis === "breakeven"
-                          ? byBreakeven
-                            ? `Hòa vốn hôm nay ${formatRoi(breakevenRoi)} — ROI dưới mức này là lỗ thật, máy loại. Tự cập nhật mỗi lượt chấm.`
-                            : `Chưa dùng được hòa vốn: ${rule.breakevenUnusable || "chưa tính được"}. Lượt chấm tạm theo % bên dưới.`
-                          : "Hòa vốn = mốc bắt đầu lỗ, tính từ giá vốn và phí sàn thật của chiến dịch."
+                        byBreakeven
+                          ? `= ROI dưới ${formatRoi(breakevenRoi)} (hòa vốn hôm nay, lỗ thật). Tự cập nhật mỗi lượt chấm.`
+                          : form.hardBasis === "breakeven"
+                            ? `Chưa dùng được hòa vốn: ${rule.breakevenUnusable || "chưa tính được"}. Tạm loại theo ${form.roiHardPct}% mục tiêu = ROI dưới ${formatRoi(pctRoi)}.`
+                            : `= ROI dưới ${formatRoi(pctRoi)}. Từ mức này tới mục tiêu chỉ gắn cờ.`
                       }
+                      unit={byBreakeven ? undefined : "%"}
                     >
                       <NativeSelect
-                        className="w-full"
+                        className={byBreakeven ? "w-full sm:w-[11rem]" : "w-[8.5rem] shrink-0"}
                         value={form.hardBasis}
                         onChange={(e) => setForm((f) => (f ? { ...f, hardBasis: e.target.value === "breakeven" ? "breakeven" : "pct" } : f))}
                         disabled={!form.ruleLowRoiOn}
                         aria-label="Mức loại ROI tính theo"
                       >
-                        <option value="pct">% của ROI mục tiêu</option>
+                        <option value="pct">% mục tiêu</option>
                         <option value="breakeven">ROI hòa vốn</option>
                       </NativeSelect>
+                      {!byBreakeven && (
+                        <Input
+                          className="w-16 shrink-0"
+                          inputMode="numeric"
+                          value={form.roiHardPct}
+                          onChange={(e) => set("roiHardPct")(e.target.value)}
+                          disabled={!form.ruleLowRoiOn}
+                          aria-label="Mức loại bằng bao nhiêu phần trăm ROI mục tiêu"
+                        />
+                      )}
                     </RuleRow>
-                    {/* Dòng % chỉ hiện khi NÓ ĐANG ĐƯỢC DÙNG (anh Trung 18/09: chọn hòa vốn thì đừng bày ô % ra, trông như thiếu
-                        công tắc): chọn "% mục tiêu", hoặc chọn hòa vốn mà hòa vốn chưa đủ tin nên máy tạm theo %. Là dòng CON
-                        của công tắc phía trên → gutter = nét nối, không phải chỗ trống của một công tắc. */}
-                    {!byBreakeven && (
-                      <RuleRow
-                        gutter="sub"
-                        dim={!form.ruleLowRoiOn}
-                        label={form.hardBasis === "breakeven" ? "Tạm dùng trong lúc chờ hòa vốn: … % mục tiêu" : "Mức loại = … % mục tiêu"}
-                        hint={`= ROI dưới ${formatRoi(pctRoi)}. Giữa mức này và mục tiêu chỉ gắn cờ.`}
-                        unit="%"
-                      >
-                        <Input inputMode="numeric" value={form.roiHardPct} onChange={(e) => set("roiHardPct")(e.target.value)} disabled={!form.ruleLowRoiOn} />
-                      </RuleRow>
-                    )}
                     <RuleRow
                       on={form.ruleCpaOn}
                       onToggle={toggle("ruleCpaOn")}
@@ -619,6 +620,7 @@ function RuleRow({
   on,
   onToggle,
   gutter = "sub",
+  wide,
   dim,
   label,
   hint,
@@ -629,6 +631,8 @@ function RuleRow({
   onToggle?: (v: boolean) => void;
   /** Kiểu cột trái khi dòng KHÔNG có công tắc riêng. */
   gutter?: "sub" | "none";
+  /** Dòng có NHIỀU ô điều khiển trên một hàng: cột phải co theo nội dung (vẫn căn mép phải với các dòng khác). */
+  wide?: boolean;
   /** Làm mờ dòng khi nhóm cha đang tắt. */
   dim?: boolean;
   label: string;
@@ -642,7 +646,11 @@ function RuleRow({
     <div
       className={cn(
         "grid items-center gap-x-3 gap-y-2 px-3 py-2.5",
-        flush ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_11rem]" : "grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_minmax(0,1fr)_11rem]",
+        flush
+          ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_11rem]"
+          : wide
+            ? "grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+            : "grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_minmax(0,1fr)_11rem]",
         off && "opacity-60"
       )}
     >
@@ -658,7 +666,7 @@ function RuleRow({
         {hint && <p className="text-xs text-slate-400">{hint}</p>}
       </div>
       <div className={cn("flex items-center gap-2 sm:col-start-auto", flush ? "col-start-1" : "col-start-2")}>
-        <div className="min-w-0 flex-1">{children}</div>
+        <div className={wide ? "flex min-w-0 items-center gap-2" : "min-w-0 flex-1"}>{children}</div>
         {unit && <span className="w-9 shrink-0 text-xs text-slate-400">{unit}</span>}
       </div>
     </div>
