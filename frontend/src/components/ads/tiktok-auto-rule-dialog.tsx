@@ -372,7 +372,7 @@ export function TiktokAutoRuleDialog({
                       hint={
                         form.hardBasis === "breakeven"
                           ? byBreakeven
-                            ? `Hòa vốn hôm nay ${formatRoi(breakevenRoi)} — dưới mức này là lỗ thật. Tự cập nhật mỗi lượt chấm.`
+                            ? `Hòa vốn hôm nay ${formatRoi(breakevenRoi)} — ROI dưới mức này là lỗ thật, máy loại. Tự cập nhật mỗi lượt chấm.`
                             : `Chưa dùng được hòa vốn: ${rule.breakevenUnusable || "chưa tính được"}. Lượt chấm tạm theo % bên dưới.`
                           : "Hòa vốn = mốc bắt đầu lỗ, tính từ giá vốn và phí sàn thật của chiến dịch."
                       }
@@ -388,18 +388,20 @@ export function TiktokAutoRuleDialog({
                         <option value="breakeven">ROI hòa vốn</option>
                       </NativeSelect>
                     </RuleRow>
-                    <RuleRow
-                      dim={!form.ruleLowRoiOn}
-                      label={form.hardBasis === "breakeven" ? "Dự phòng khi chưa có hòa vốn: … % mục tiêu" : "Mức loại = … % mục tiêu"}
-                      hint={
-                        byBreakeven
-                          ? `Đang loại theo hòa vốn ${formatRoi(hardRoi)}. Số % này chỉ dùng khi hòa vốn chưa đủ tin (= ROI dưới ${formatRoi(pctRoi)}).`
-                          : `= ROI dưới ${formatRoi(pctRoi)}. Giữa mức này và mục tiêu chỉ gắn cờ.`
-                      }
-                      unit="%"
-                    >
-                      <Input inputMode="numeric" value={form.roiHardPct} onChange={(e) => set("roiHardPct")(e.target.value)} disabled={!form.ruleLowRoiOn} />
-                    </RuleRow>
+                    {/* Dòng % chỉ hiện khi NÓ ĐANG ĐƯỢC DÙNG (anh Trung 18/09: chọn hòa vốn thì đừng bày ô % ra, trông như thiếu
+                        công tắc): chọn "% mục tiêu", hoặc chọn hòa vốn mà hòa vốn chưa đủ tin nên máy tạm theo %. Là dòng CON
+                        của công tắc phía trên → gutter = nét nối, không phải chỗ trống của một công tắc. */}
+                    {!byBreakeven && (
+                      <RuleRow
+                        gutter="sub"
+                        dim={!form.ruleLowRoiOn}
+                        label={form.hardBasis === "breakeven" ? "Tạm dùng trong lúc chờ hòa vốn: … % mục tiêu" : "Mức loại = … % mục tiêu"}
+                        hint={`= ROI dưới ${formatRoi(pctRoi)}. Giữa mức này và mục tiêu chỉ gắn cờ.`}
+                        unit="%"
+                      >
+                        <Input inputMode="numeric" value={form.roiHardPct} onChange={(e) => set("roiHardPct")(e.target.value)} disabled={!form.ruleLowRoiOn} />
+                      </RuleRow>
+                    )}
                     <RuleRow
                       on={form.ruleCpaOn}
                       onToggle={toggle("ruleCpaOn")}
@@ -411,7 +413,7 @@ export function TiktokAutoRuleDialog({
                   </RuleGroup>
 
                   <RuleGroup title="Sàn dữ liệu">
-                    <RuleRow label="Chưa xét khi tiêu dưới …" hint="Ít tiền quá thì chưa đủ để phán. Video TikTok còn đang học không bao giờ bị xét.">
+                    <RuleRow gutter="none" label="Chưa xét khi tiêu dưới …" hint="Ít tiền quá thì chưa đủ để phán. Video TikTok còn đang học không bao giờ bị xét.">
                       <CurrencyInput value={form.minSpend} onValueChange={set("minSpend")} />
                     </RuleRow>
                   </RuleGroup>
@@ -422,19 +424,19 @@ export function TiktokAutoRuleDialog({
                     on={form.graceOn}
                     onToggle={toggle("graceOn")}
                   >
-                    <RuleRow label="Công thần = từ … đơn trong 30 ngày" dim={!form.graceOn} unit="đơn">
+                    <RuleRow gutter="sub" label="Công thần = từ … đơn trong 30 ngày" dim={!form.graceOn} unit="đơn">
                       <Input inputMode="numeric" value={form.graceMinOrders} onChange={(e) => set("graceMinOrders")(e.target.value)} disabled={!form.graceOn} />
                     </RuleRow>
-                    <RuleRow label="Ân hạn … ngày vi phạm liên tục rồi mới loại" dim={!form.graceOn} unit="ngày">
+                    <RuleRow gutter="sub" label="Ân hạn … ngày vi phạm liên tục rồi mới loại" dim={!form.graceOn} unit="ngày">
                       <Input inputMode="numeric" value={form.graceDays} onChange={(e) => set("graceDays")(e.target.value)} disabled={!form.graceOn} />
                     </RuleRow>
                   </RuleGroup>
 
                   <RuleGroup title="Chốt an toàn mỗi ngày" hint="Video anh/chị đã khôi phục tay thì máy không loại lại trong 30 ngày.">
-                    <RuleRow label="Loại tối đa … video mỗi ngày" hint="Tốn tiền nhất loại trước, phần còn lại chờ ngày mai." unit="video">
+                    <RuleRow gutter="none" label="Loại tối đa … video mỗi ngày" hint="Tốn tiền nhất loại trước, phần còn lại chờ ngày mai." unit="video">
                       <Input inputMode="numeric" value={form.maxExcludePerDay} onChange={(e) => set("maxExcludePerDay")(e.target.value)} />
                     </RuleRow>
-                    <RuleRow label="Luôn giữ lại ít nhất … video đang ra đơn" hint="0 = không giữ." unit="video">
+                    <RuleRow gutter="none" label="Luôn giữ lại ít nhất … video đang ra đơn" hint="0 = không giữ." unit="video">
                       <Input inputMode="numeric" value={form.minOrderingVideosKeep} onChange={(e) => set("minOrderingVideosKeep")(e.target.value)} />
                     </RuleRow>
                   </RuleGroup>
@@ -607,10 +609,16 @@ function RuleGroup({
   );
 }
 
-/** Một dòng luật: [công tắc] nhãn + gợi ý bên trái, ô số rộng cố định bên phải (điện thoại: ô số xuống dòng dưới nhãn). */
+/**
+ * Một dòng luật: [công tắc] nhãn + gợi ý bên trái, ô số rộng cố định bên phải (điện thoại: ô số xuống dòng dưới nhãn).
+ * Cột trái (gutter) KHÔNG BAO GIỜ để trống — chỗ trống đúng bằng một công tắc làm người xem tưởng dòng đó thiếu nút
+ * bật/tắt (anh Trung 18/09): có onToggle → công tắc; "sub" → nét nối của dòng CON thuộc công tắc phía trên;
+ * "none" → không có cột trái (nhóm luôn áp dụng, không có gì để bật/tắt). Ô số bên phải vẫn thẳng hàng ở mọi kiểu.
+ */
 function RuleRow({
   on,
   onToggle,
+  gutter = "sub",
   dim,
   label,
   hint,
@@ -619,6 +627,8 @@ function RuleRow({
 }: {
   on?: boolean;
   onToggle?: (v: boolean) => void;
+  /** Kiểu cột trái khi dòng KHÔNG có công tắc riêng. */
+  gutter?: "sub" | "none";
   /** Làm mờ dòng khi nhóm cha đang tắt. */
   dim?: boolean;
   label: string;
@@ -627,14 +637,27 @@ function RuleRow({
   children: React.ReactNode;
 }) {
   const off = onToggle ? !on : Boolean(dim);
+  const flush = !onToggle && gutter === "none";
   return (
-    <div className={cn("grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_11rem]", off && "opacity-60")}>
-      {onToggle ? <Switch checked={on} onCheckedChange={(v) => onToggle(v)} aria-label={label} /> : <span className="w-9" aria-hidden="true" />}
+    <div
+      className={cn(
+        "grid items-center gap-x-3 gap-y-2 px-3 py-2.5",
+        flush ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_11rem]" : "grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_minmax(0,1fr)_11rem]",
+        off && "opacity-60"
+      )}
+    >
+      {onToggle ? (
+        <Switch checked={on} onCheckedChange={(v) => onToggle(v)} aria-label={label} />
+      ) : flush ? null : (
+        <span className="flex w-9 justify-end self-start pt-0.5" aria-hidden="true">
+          <span className="h-3 w-3.5 rounded-bl-md border-b border-l border-slate-300" />
+        </span>
+      )}
       <div className="min-w-0">
         <p className="text-sm text-slate-900">{label}</p>
         {hint && <p className="text-xs text-slate-400">{hint}</p>}
       </div>
-      <div className="col-start-2 flex items-center gap-2 sm:col-start-auto">
+      <div className={cn("flex items-center gap-2 sm:col-start-auto", flush ? "col-start-1" : "col-start-2")}>
         <div className="min-w-0 flex-1">{children}</div>
         {unit && <span className="w-9 shrink-0 text-xs text-slate-400">{unit}</span>}
       </div>
