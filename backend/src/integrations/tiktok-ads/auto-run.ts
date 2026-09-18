@@ -55,6 +55,7 @@ import {
 } from "./report";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink, type TiktokAdsScope } from "./sync";
 import { computeTiktokAdsBreakeven, saveCampaignProductIds } from "./breakeven";
+import { reconcileSendingCommands, sendVideoCommand } from "./send-command";
 
 /** verdict ghi vào AdsActionLog cho lệnh loại tự động (khác "manual"). */
 export const VIDEO_VERDICT_AUTO = "auto_exclude";
@@ -356,6 +357,10 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
   for (const c of campaigns) {
     try {
       const track = await trackCampaignVideos(scope, c, today);
+      // A3: dòng sổ còn kẹt "đang gửi" (sự cố giữa lúc gửi lệnh) → chốt theo trạng thái THẬT của video vừa đọc, không đoán.
+      await reconcileSendingCommands(c.id, new Set(track.rows30.map((v) => v.videoId))).catch((err) =>
+        console.error(`[TikTok Ads] Đối chiếu dòng sổ kẹt lỗi "${c.name}":`, (err as Error).message)
+      );
       result.tracked++;
       if (track.graduated > 0 || track.relearning > 0 || track.newVideos > 0) {
         console.log(
@@ -517,16 +522,18 @@ async function applyAutoPlan(
     await saveRun({ skipped: "Chiến dịch không còn bật hoặc kết nối quảng cáo hết hiệu lực — chưa loại." });
     return "skipped";
   }
-  try {
-    await updateGmvMaxCreatives(fresh.accessToken, {
+  // A3 — GHI SỔ TRƯỚC, GỌI SÀN SAU (send-command.ts): dòng sổ mang đủ video + căn cứ tồn tại TRƯỚC khi TikTok nhận lệnh;
+  // referenceId unique của dòng đó cũng chặn gửi lần hai nếu lượt chấm chạy lại trong ngày.
+  const sent = await sendVideoCommand({ ...logBase, mode: "live" }, () =>
+    updateGmvMaxCreatives(fresh.accessToken, {
       advertiserId: fresh.advertiserId,
       campaignId: campaign.campaignId,
       action: "REMOVE",
       items: items.map((a) => ({ itemId: a.videoId, spuIds: [a.spuId] })),
-    });
-  } catch (err) {
-    const message = (err as Error).message.slice(0, 1000);
-    await prisma.adsActionLog.create({ data: { ...logBase, mode: "live", status: "FAILED", error: message } });
+    })
+  );
+  if (!sent.ok) {
+    const message = sent.error;
     await saveRun({ error: message });
     await notify(ownerId, {
       type: "tiktok-ads-auto",
@@ -536,7 +543,6 @@ async function applyAutoPlan(
     });
     return "failed";
   }
-  await prisma.adsActionLog.create({ data: { ...logBase, mode: "live", status: "SUCCESS" } });
   await saveRun({ executedVideoIds: [...excludedIds] });
   await notify(ownerId, {
     type: "tiktok-ads-auto",

@@ -52,6 +52,7 @@ backend/src/integrations/tiktok-ads/
   breakeven.ts    ROI HÒA VỐN (thuần + đọc DB): cộng ngược phí GMV Max, đơn hủy vẫn trong mẫu số — mục 8
   sync.ts         đồng bộ campaign×ngày vào AdsCampaign/AdsCampaignDailyPerf · verifyTiktokAdsLink · ghi lỗi token chết
   action-log.ts   quy ước ghi/đọc sổ thao tác video trong AdsActionLog.reasons (thuần, có test)
+  send-command.ts GHI SỔ TRƯỚC, GỌI SÀN SAU: sendVideoCommand + đối chiếu dòng kẹt SENDING (mọi lệnh ghi phải đi qua đây)
   video-meta.ts   ảnh bìa + @kênh + caption qua oEmbed công khai, nhớ đệm RAM 3h
 backend/src/routes/tiktok-ads.ts   /api/tiktok-ads/auth-url · DELETE /link · POST công khai /api/auth/tiktok-ads/connect
 backend/src/routes/ads-tiktok.ts   /api/ads/tiktok (tổng quan) · /campaigns/:id/videos · /campaigns/:id/videos/action · /video-meta · /refresh
@@ -98,7 +99,7 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
 
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
 
-`action` = `exclude_video` | `restore_video` · `mode` = `live` · `verdict` = `manual` (chủ shop tự bấm; lệnh tự
+`status` = `PLANNED` (diễn tập) | `SENDING` (đã ghi sổ, chưa xác nhận kết quả — A3) | `SUCCESS` | `FAILED` · `action` = `exclude_video` | `restore_video` · `mode` = `live` · `verdict` = `manual` (chủ shop tự bấm; lệnh tự
 động sau này dùng verdict khác) · `reasons`: mỗi dòng `#<videoId> · <số liệu lúc thao tác>`; dòng KHÔNG mở đầu
 bằng `#<số>` là **căn cứ** của lệnh tự động. Xem `action-log.ts` + test `tiktok-ads.test.ts`.
 
@@ -189,7 +190,10 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    (đơn = 0 hàng loạt) thì máy loại oan tới `maxExcludePerDay` video. Căn cứ đối chiếu CÓ SẴN, không phải số tự bịa:
    tổng đơn cửa sổ của chiến dịch trong `AdsCampaignDailyPerf` (đồng bộ riêng) — report video tổng 0 đơn mà tầng
    chiến dịch có đơn → bỏ lượt, chuông báo, không loại.
-3. **Ghi sổ TRƯỚC khi gọi sàn** — hiện gọi `creative/update` xong mới `adsActionLog.create`. DB lỗi đúng lúc đó =
+3. ✅ **XONG 18/09 tối** — `send-command.ts`: `sendVideoCommand` (SENDING → gọi sàn → SUCCESS/FAILED trên chính dòng đó; dùng
+   cho cả lệnh tự động lẫn nút thủ công) + `reconcileSendingCommands` trong lượt ngày chốt dòng kẹt SENDING ≥ 30' theo trạng
+   thái THẬT của video (không đoán). `pendingVideoActions` tính cả SENDING; FE có nhãn "Đang gửi — chưa xác nhận". Mô tả gốc:
+   **Ghi sổ TRƯỚC khi gọi sàn** — hiện gọi `creative/update` xong mới `adsActionLog.create`. DB lỗi đúng lúc đó =
    video đã bị loại mà sổ trống ("khách mất tiền đổ oan cho mình" mà không có bằng chứng). Sửa: tạo dòng trước
    (status SENDING) rồi cập nhật SUCCESS/FAILED. (Render restart giữa chừng thì lượt chạy lại tự vá — đã xét.)
 4. **Khôi phục MỘT CHẠM cả lệnh tự động** ở Lịch sử — hiện phải lọc chip Đã loại rồi tick tay từng video. Máy loại 10

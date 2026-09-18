@@ -888,6 +888,13 @@ export function TiktokCampaignPage() {
                           </Badge>
                         ) : a.status === "SUCCESS" ? (
                           <Badge className="bg-emerald-50 text-emerald-700">Đã gửi lên TikTok</Badge>
+                        ) : a.status === "SENDING" ? (
+                          <Badge
+                            className="bg-amber-50 text-amber-700"
+                            title="Hubsell đã ghi sổ và gửi lệnh nhưng chưa xác nhận được kết quả từ TikTok. Lượt chấm kế tiếp sẽ đối chiếu với trạng thái thật của từng video rồi chốt dòng này."
+                          >
+                            Đang gửi — chưa xác nhận
+                          </Badge>
                         ) : (
                           <Badge className="bg-rose-50 text-red-500">TikTok từ chối</Badge>
                         )}
@@ -920,6 +927,8 @@ export function TiktokCampaignPage() {
                         ))}
                       </ul>
                       {a.status === "FAILED" && a.error && <p className="text-xs text-red-500 sm:pl-[7.75rem]">{a.error}</p>}
+                      {/* Dòng từng kẹt "đang gửi" rồi được đối chiếu lại: ghi chú cách chốt nằm ở cột error dù kết quả là thành công. */}
+                      {a.status === "SUCCESS" && a.error && <p className="text-xs text-slate-500 sm:pl-[7.75rem]">{a.error}</p>}
                     </li>
                   );
                 })}

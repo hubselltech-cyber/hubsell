@@ -2655,7 +2655,8 @@ export interface TiktokAdsVideoActionLog {
   action: "exclude_video" | "restore_video";
   /** dry_run = lệnh diễn tập của Trợ lý (PLANNED, chưa gọi sàn). */
   mode: "dry_run" | "live";
-  status: "SUCCESS" | "FAILED" | "PLANNED";
+  /** SENDING = đã ghi sổ + gửi lệnh nhưng chưa xác nhận được kết quả (A3); lượt chấm kế tiếp đối chiếu rồi chốt. */
+  status: "SUCCESS" | "FAILED" | "PLANNED" | "SENDING";
   error: string | null;
   /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
   source: "manual" | "auto";

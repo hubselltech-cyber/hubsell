@@ -67,6 +67,7 @@ import {
 } from "../integrations/tiktok-ads/report";
 import { backtestStartDate, buildDryRunBacktest, type DryRunPlan } from "../integrations/tiktok-ads/backtest";
 import { computeTiktokAdsBreakeven, saveCampaignProductIds, type TiktokBreakeven } from "../integrations/tiktok-ads/breakeven";
+import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
 import {
   AUTO_RULE_MODES,
@@ -310,7 +311,8 @@ async function pendingVideoActions(adsCampaignId: string): Promise<Map<string, "
     where: {
       adsCampaignId,
       action: { in: VIDEO_ACTIONS },
-      status: "SUCCESS",
+      // SENDING = đã ghi sổ, lệnh có thể đã tới sàn nhưng chưa chốt được kết quả → vẫn coi là đang chờ sàn áp dụng.
+      status: { in: ["SUCCESS", VIDEO_STATUS_SENDING] },
       createdAt: { gte: new Date(Date.now() - PENDING_WINDOW_MS) },
     },
     orderBy: { createdAt: "asc" }, // lệnh sau đè lệnh trước trên cùng video
@@ -528,19 +530,19 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
       ),
       referenceId: `ttv-${campaign.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     };
-    try {
-      await updateGmvMaxCreatives(scope.accessToken, {
+    // A3 — GHI SỔ TRƯỚC, GỌI SÀN SAU: cùng một nguyên tắc với lệnh tự động (send-command.ts).
+    const sent = await sendVideoCommand(logBase, () =>
+      updateGmvMaxCreatives(scope.accessToken, {
         advertiserId: scope.advertiserId,
         campaignId: campaign.campaignId,
         action,
         items,
-      });
-    } catch (err) {
-      await prisma.adsActionLog.create({ data: { ...logBase, status: "FAILED", error: (err as Error).message.slice(0, 1000) } });
-      res.status(502).json({ error: `TikTok từ chối lệnh: ${(err as Error).message}` });
+      })
+    );
+    if (!sent.ok) {
+      res.status(502).json({ error: `TikTok từ chối lệnh: ${sent.error}` });
       return;
     }
-    await prisma.adsActionLog.create({ data: { ...logBase, status: "SUCCESS" } });
     if (action === "ADD") {
       // Khách khôi phục tay → luật tự động chỉ gắn cờ, KHÔNG loại lại video đó trong 30 ngày.
       const now = new Date();

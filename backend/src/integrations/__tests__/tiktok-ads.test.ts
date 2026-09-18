@@ -4,6 +4,7 @@ import {
   parseVideoActionReasons,
   videoActionNote,
 } from "../tiktok-ads/action-log";
+import { reconcileSendingCommand } from "../tiktok-ads/send-command";
 import { GMV_MAX_MAX_RANGE_DAYS, GMV_MAX_OUTSIDE_VIDEO_STATUSES, clampGmvMaxRange, tallyVideoStatuses } from "../tiktok-ads/report";
 
 describe("clampGmvMaxRange — khoảng ngày của trang soi video", () => {
@@ -105,5 +106,32 @@ describe("tallyVideoStatuses — đếm video NGOÀI bảng soi theo trạng th�
       { status: "NOT_ACTIVE", videos: 1, cost: 100 },
       { status: "LA_LUNG", videos: 1, cost: 0 },
     ]);
+  });
+});
+
+// A3 — dòng sổ kẹt "đang gửi" được chốt theo trạng thái THẬT của video trên TikTok, không đoán.
+describe("reconcileSendingCommand — chốt dòng sổ kẹt SENDING", () => {
+  const live = new Set(["a", "b"]); // video sàn đang phân phối / học / chờ thử
+
+  it("lệnh LOẠI: video không còn trong nhóm đang phân phối → đã loại đủ", () => {
+    const r = reconcileSendingCommand("exclude_video", ["x", "y"], live);
+    expect(r.status).toBe("SUCCESS");
+    expect(r.note).toContain("ĐÃ loại đủ 2 video");
+  });
+  it("lệnh LOẠI: mọi video vẫn đang phân phối → chưa loại được, chốt FAILED để lượt sau chấm lại", () => {
+    const r = reconcileSendingCommand("exclude_video", ["a", "b"], live);
+    expect(r.status).toBe("FAILED");
+    expect(r.note).toContain("CHƯA loại video nào");
+  });
+  it("lệnh LOẠI: sàn áp dụng một phần → SUCCESS kèm số đã áp dụng", () => {
+    const r = reconcileSendingCommand("exclude_video", ["a", "x", "y"], live);
+    expect(r.status).toBe("SUCCESS");
+    expect(r.note).toContain("2/3 video");
+  });
+  it("lệnh KHÔI PHỤC thì ngược lại: video CÓ trong nhóm đang phân phối mới là đã khôi phục", () => {
+    expect(reconcileSendingCommand("restore_video", ["a"], live).status).toBe("SUCCESS");
+    const r = reconcileSendingCommand("restore_video", ["x"], live);
+    expect(r.status).toBe("FAILED");
+    expect(r.note).toContain("CHƯA khôi phục");
   });
 });
