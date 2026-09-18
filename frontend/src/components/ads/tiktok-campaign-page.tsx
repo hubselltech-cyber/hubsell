@@ -333,22 +333,6 @@ export function TiktokCampaignPage() {
                 ) : (
                   <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
                 ))}
-              {/* LOẠI VIDEO TỰ ĐỘNG (anh Trung 18/09): cấu hình theo TỪNG chiến dịch, mở bằng popup.
-                  Chip cho biết chế độ; nhân viên chỉ thấy chip, chủ shop bấm được. */}
-              {c && (
-                <button
-                  type="button"
-                  onClick={() => owner && setAutoOpen(true)}
-                  disabled={!owner}
-                  title={owner ? "Cấu hình tự động loại video" : undefined}
-                  className={cn("inline-flex items-center gap-1 rounded-full text-xs", owner && "hover:opacity-80")}
-                >
-                  <Badge className={AUTO_MODE_BADGE[c.auto?.mode ?? "off"]}>
-                    <Sparkles className="size-3" />
-                    Tự động: {TIKTOK_AUTO_MODE_LABEL[c.auto?.mode ?? "off"]}
-                  </Badge>
-                </button>
-              )}
             </h1>
             {c && (
               <p className="text-sm text-muted-foreground">
@@ -362,15 +346,6 @@ export function TiktokCampaignPage() {
                   {formatRoi(campaignRoi)}
                 </span>{" "}
                 · chi {formatVND(c.spend)} · {formatNumber(c.orders)} đơn
-              </p>
-            )}
-            {c?.auto && c.auto.mode !== "off" && (
-              <p className="mt-0.5 text-xs text-slate-500">
-                {c.auto.lastRunOn
-                  ? `Lượt ${c.auto.mode === "live" ? "loại" : "diễn tập"} gần nhất ${c.auto.lastRunOn.slice(8, 10)}/${c.auto.lastRunOn.slice(5, 7)}: ${
-                      c.auto.lastRunError ?? c.auto.lastRunSkipped ?? c.auto.lastRunSummary ?? "—"
-                    }`
-                  : "Trợ lý sẽ chấm điểm lượt đầu sau 12h trưa hôm nay hoặc ngày mai."}
               </p>
             )}
           </div>
@@ -430,6 +405,38 @@ export function TiktokCampaignPage() {
         <Card>
           <CardContent className="space-y-4 py-4">
             <div className="flex flex-wrap items-center gap-2">
+              {/* NÚT LOẠI VIDEO TỰ ĐỘNG — góc phải hàng chip, nổi rõ (anh Trung 18/09: chip nhỏ cạnh tên mờ quá không ai thấy).
+                  Màu theo chế độ: Tắt = viền xám, Diễn tập = tím, Tự loại thật = xanh. Nhân viên chỉ xem. */}
+              {c && (
+                <div className="order-last ml-auto flex flex-col items-end gap-1">
+                  <Button
+                    size="sm"
+                    variant={(c.auto?.mode ?? "off") === "off" ? "outline" : "default"}
+                    disabled={!owner}
+                    onClick={() => setAutoOpen(true)}
+                    title={owner ? "Cấu hình tự động loại video kém hiệu quả" : "Chỉ chủ shop cấu hình được"}
+                    className={cn(
+                      c.auto?.mode === "dry_run" && "bg-violet-600 text-white hover:bg-violet-700",
+                      c.auto?.mode === "live" && "bg-emerald-600 text-white hover:bg-emerald-700"
+                    )}
+                  >
+                    <Sparkles className="size-4" />
+                    Tự động loại video
+                    <span className={cn("rounded-full px-1.5 text-xs", (c.auto?.mode ?? "off") === "off" ? "bg-slate-100 text-slate-600" : "bg-white/20")}>
+                      {TIKTOK_AUTO_MODE_LABEL[c.auto?.mode ?? "off"]}
+                    </span>
+                  </Button>
+                  {c.auto && c.auto.mode !== "off" && (
+                    <p className="max-w-md text-right text-xs text-slate-500">
+                      {c.auto.lastRunOn
+                        ? `Lượt ${c.auto.mode === "live" ? "loại" : "diễn tập"} gần nhất ${c.auto.lastRunOn.slice(8, 10)}/${c.auto.lastRunOn.slice(5, 7)}: ${
+                            c.auto.lastRunError ?? c.auto.lastRunSkipped ?? c.auto.lastRunSummary ?? "—"
+                          }`
+                        : "Lượt chấm đầu tiên sau 12h trưa hôm nay hoặc ngày mai."}
+                    </p>
+                  )}
+                </div>
+              )}
               {chips
                 .filter((x) => !x.hidden)
                 .map((x) => (
