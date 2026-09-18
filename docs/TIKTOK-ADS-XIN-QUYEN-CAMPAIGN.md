@@ -28,6 +28,23 @@ dịch thường là *Read Campaigns* (scope 200).)
 **KHÔNG xin / không dùng:** `exclusive_authorization/create` (đổi tài khoản quảng cáo độc quyền của shop = dừng toàn bộ chiến
 dịch của tài khoản cũ) — Hubsell không bao giờ gọi. Nếu cổng gộp nó chung nhóm thì vẫn tick nhóm đó, nhưng code không gọi.
 
+## 1b. ĐÃ ĐỌC TRONG CỔNG 18/09/2026 (tên quyền chính xác — khỏi dò lại)
+
+Cây quyền của app (App Detail → Authorization → Scope of permission, bấm cây bút để sửa):
+
+- **Ads management → Campaign → Read campaigns**: `/campaign/gmv_max/info/` · `/gmv_max/bid/recommend/` · `/campaign/quota/info/`
+  · `/campaign/spc/quota/get/` · `/smart_plus/campaign/get|review|copy/task/check/` (+ `/campaign/get/` … theo bảng công khai, scope 200).
+- **Ads management → Campaign → Create and update campaigns**: `/campaign/gmv_max/create/` · `/campaign/gmv_max/update/` ·
+  `/business/spark_ad/create/` · `/smart_plus/campaign/create|update|status/update|copy/task/create/` (+ `/campaign/status/update/`
+  theo bảng công khai, scope 201).
+- **Ads management → GMV Max** KHÔNG có mục "Campaign". Các mục con: *Exclusive authorization* (không xin) · *Store management* ✓ ·
+  *Identity and video* ✓ · *Session* (`/campaign/gmv_max/session/*`) · *Custom anchor* · *changelog* (`/gmv_max/campaign/changelog/get/`).
+- `/gmv_max/campaign/get/` KHÔNG xuất hiện trong ô tìm của cây quyền ("No data") → không biết thuộc mục nào; nhiều khả năng đi
+  theo Read campaigns — probe sau khi duyệt.
+- Ô lý do giới hạn **500 ký tự** (đoạn dài ở mục 3 không dán vừa — dùng bản rút gọn 496 ký tự ở mục 3b).
+
+→ Chỉ cần tick ĐÚNG HAI mục: **Read campaigns** + **Create and update campaigns**.
+
 ## 2. Bấm ở đâu
 
 1. Đăng nhập https://business-api.tiktok.com/portal bằng tài khoản developer (KHÔNG phải tài khoản quảng cáo cá nhân — máy anh
@@ -72,6 +89,10 @@ Anh chụp giúp em màn hình danh sách quyền trong cụm GMV Max trước k
 > before every write. We never call the exclusive-authorization endpoints on the seller's behalf. Our traffic stays well within
 > the Basic rate limits: campaign data is synced on a schedule (every 1–6 hours per shop) and recommendation calls are made
 > only when a seller opens a product.
+
+## 3b. Bản rút gọn 496 ký tự (đúng ô "Please state your reason for updating permissions", tối đa 500)
+
+> Hubsell is a commerce management SaaS for Vietnamese TikTok Shop sellers. Our GMV Max integration (store, identity/video, reports) is live. We compute each product's break-even ROI from settled orders. We need Campaign read/create/update to read GMV Max campaign settings and TikTok's recommended ROI and budget, and to let sellers create, edit or pause GMV Max campaigns from Hubsell. Every write is initiated and confirmed by the seller in our UI and audit-logged. No bulk or automatic changes.
 
 ## 4. Đoạn riêng cho từng quyền (nếu cổng hỏi từng mục)
 
