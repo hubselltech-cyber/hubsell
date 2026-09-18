@@ -97,6 +97,12 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
 - **Trang ủy quyền** tự điền tài khoản TikTok for Business đang đăng nhập trên trình duyệt; lần đầu ủy quyền
   advertiser phải nhập mã xác minh gửi về email tài khoản quảng cáo (hiệu lực 48h cho cùng app).
 
+- ★ **Báo cáo video THỈNH THOẢNG TRẢ THIẾU DÒNG** (probe 18/09/2026 đêm, TC054, 12 lần gọi cùng tham số — 6 lần cửa sổ 30 ngày,
+  6 lần 7 ngày: 3 lần thiếu đúng một video `…738631`, các lần khác đủ 54). Không phải phân trang (1 trang), không báo lỗi. Hệ quả
+  với việc CHẤM: vô hại — video vắng mặt hôm đó không bị xét. Nhưng mọi kết luận dựa trên sự VẮNG MẶT ("lệnh loại đã ngấm" B7,
+  chốt dòng kẹt SENDING A3) phải đọc HAI lần rồi lấy hợp (`hasCommandsToCheck` → đọc xác nhận trong `runTiktokAdsDaily`). "Loại
+  ngay" đã tự chịu được: backend so danh sách với cái khách vừa thấy, lệch thì chấm lại.
+
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
 
 `status` = `PLANNED` (diễn tập) | `SENDING` (đã ghi sổ, chưa xác nhận kết quả — A3) | `SUCCESS` | `FAILED` · `action` = `exclude_video` | `restore_video` · `mode` = `live` · `verdict` = `manual` (chủ shop tự bấm; lệnh tự
@@ -363,3 +369,30 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
 - Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.
+
+## 10. HẠ TẦNG RIÊNG CỦA TIKTOK ADS (18/09/2026 đêm — anh Trung: "làm riêng ra, không chung đụng gì nhau")
+
+Anh hỏi: seller chạy cả trăm chiến dịch, mỗi chiến dịch vài nghìn video thì có thành vấn đề không. Soi code ra số thật:
+Hubsell chỉ đọc video ĐANG phân phối / học / chờ thử (TC054: 194 / 1.780 ≈ 11%); lượt chấm 4–6 call / chiến dịch / ngày; bản
+cũ ghi ~3 lệnh DB TUẦN TỰ cho mỗi video mỗi ngày (seller lớn ≈ 90.000 lệnh nối đuôi, giữ một chỗ worker 20–30 phút). Hạn mức call
+của app là CHUNG cho mọi seller (mức Basic: 8/giây · 240/phút · 80.000/ngày). Đã làm 5 việc, tất cả nằm trong `tiktok-ads/`:
+
+1. **Van tốc độ theo app + lùi khi quá tải** (`client.ts throttled`): mọi call (đọc lẫn ghi) qua `acquireApiToken("tiktok-ads")`,
+   mặc định 3 call/giây (env `ADS_TIKTOK_APP_QPS`); sàn trả mã quá tải (docs Return codes: 40016 / 40100 cấp app, 40133 cấp tài
+   khoản quảng cáo) → chờ 2s rồi 6s, gọi lại tối đa 2 lần. Lỗi khác không gọi lại.
+2. **Rải giờ chấm** (`dailyRunOffsetMin`): mỗi gian lệch cố định 0–89 phút suy từ mã gian → vẫn trong khung 12h–14h đã hứa với
+   khách nhưng không dồn vào 12:00. **Van công bằng**: mỗi tiến trình worker chỉ chạy MỘT lượt chấm một lúc (env
+   `ADS_TIKTOK_DAILY_CONCURRENCY`) — không để vài lượt chấm dài chiếm hết chỗ của đồng bộ đơn. Không phải khóa đúng-sai (chống chạy
+   hai lần vẫn là `lastVideoTrackOn` + khóa gian).
+3. **Ghi DB theo lô**: theo dõi video = một `createMany` (video mới) + một `updateMany` (video không đổi gì — đại đa số), chỉ video
+   đổi trạng thái mới ghi riêng; kết luận lượt chấm = MỘT câu `UPDATE … FROM unnest(...)` mỗi 500 video (`saveVerdictsBulk`, giữ
+   nguyên luật `violationSince` / `spendAtViolation`). Kiểm local số thật: 4 chiến dịch / 76 video trọn lượt ≈ 2,3 giây.
+4. **Chỉ theo dõi chiến dịch cần theo dõi**: chiến dịch đã bật luật luôn theo dõi; chiến dịch CHƯA bật luật chỉ lấy tối đa
+   `TRACK_UNRULED_MAX` = 10 cái tiêu nhiều nhất 7 ngày (env `ADS_TIKTOK_TRACK_UNRULED_MAX`). 10 là mặc định theo ngân sách call
+   (10×2 + 24 call đồng bộ giờ ≈ 45 call/ngày/gian → trần 80.000/ngày chịu ~1.700 gian), không phải số của sàn.
+5. **Nhớ đệm hòa vốn 45 giây theo gian + gộp lượt tính trùng** (`memoizeByChannel`): một lần mở trang bắn 2–3 request cùng cần
+   hòa vốn → tính một lần. Chỉ nhớ KẾT QUẢ (nhỏ), không nhớ đơn hàng; lượt tính hỏng không bị nhớ.
+
+Khi khách tăng: xin nâng mức "API rate limiting" trong cổng developer (App Detail → Authorization, có nút sửa) rồi nâng
+`ADS_TIKTOK_APP_QPS`. Van tốc độ đang nằm trong RAM từng tiến trình như Shopee/Lazada — tách nhiều worker thì chuyển sang Redis
+(mốc M3 của HQ Sức khỏe).

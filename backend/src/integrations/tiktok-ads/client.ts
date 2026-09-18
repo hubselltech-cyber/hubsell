@@ -11,6 +11,7 @@
 // Hạn mức Basic: 8 QPS / 240 QPM / 80k QPD mỗi app.
 // ============================================================
 
+import { acquireApiToken } from "../../services/api-budget";
 import { TIKTOK_ADS_API_BASE, getTiktokAdsConfig, type TiktokAdsConfig } from "./config";
 
 interface TiktokAdsEnvelope<T> {
@@ -57,16 +58,50 @@ async function unwrap<T>(path: string, res: Response): Promise<T> {
   return (body.data ?? {}) as T;
 }
 
+// ---------- VAN TỐC ĐỘ THEO APP + LÙI KHI QUÁ TẢI (hạ tầng TikTok Ads, 18/09/2026) ----------
+// Hạn mức của app là CHUNG cho mọi seller (mức Basic: 8 call/giây · 240 call/phút · 80.000 call/ngày). Shopee/Lazada đã đi
+// qua van `acquireApiToken`; TikTok Ads trước đây gọi thẳng → vài seller lớn chấm cùng lúc là chạm trần 240/phút.
+// Mặc định 3 call/giây (= 180/phút, 75% trần phút — chừa chỗ cho tiến trình web khi tách web/worker); chỉnh bằng env
+// ADS_TIKTOK_APP_QPS sau khi TikTok nâng mức. Van nằm trong RAM từng tiến trình như các sàn khác (Redis ở mốc M3).
+// Mã quá tải theo docs "Return codes": 40016 / 40100 = trần cấp app, 40133 = trần cấp tài khoản quảng cáo.
+const TIKTOK_ADS_BUCKET = "tiktok-ads";
+const TIKTOK_ADS_QPS = Math.max(1, Number(process.env.ADS_TIKTOK_APP_QPS) || 3);
+export const TIKTOK_ADS_RATE_LIMIT_CODES = [40016, 40100, 40133];
+const RATE_LIMIT_RETRIES = 2;
+
+export function isTiktokAdsRateLimited(err: unknown): boolean {
+  return err instanceof TiktokAdsApiError && (TIKTOK_ADS_RATE_LIMIT_CODES.includes(err.code) || err.code === 429);
+}
+
+/** Chờ 2s rồi 6s (thuần — test): đủ để cửa sổ giây / phút của sàn trôi qua mà không treo lượt chấm quá lâu. */
+export function rateLimitBackoffMs(attempt: number): number {
+  return attempt <= 0 ? 2000 : 6000;
+}
+
+async function throttled<T>(path: string, doFetch: () => Promise<Response>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    await acquireApiToken(TIKTOK_ADS_BUCKET, TIKTOK_ADS_QPS);
+    try {
+      return await unwrap<T>(path, await doFetch());
+    } catch (err) {
+      if (!isTiktokAdsRateLimited(err) || attempt >= RATE_LIMIT_RETRIES) throw err;
+      console.warn(`[TikTok Ads] ${path} bị sàn báo quá tải (${(err as TiktokAdsApiError).code}) — chờ ${rateLimitBackoffMs(attempt)}ms rồi gọi lại`);
+      await new Promise((r) => setTimeout(r, rateLimitBackoffMs(attempt)));
+    }
+  }
+}
+
 async function adsGet<T>(
   path: string,
   accessToken: string,
   params: Record<string, QueryValue>
 ): Promise<T> {
-  const res = await fetch(`${TIKTOK_ADS_API_BASE}${path}?${toQuery(params)}`, {
-    method: "GET",
-    headers: { "Access-Token": accessToken },
-  });
-  return unwrap<T>(path, res);
+  return throttled<T>(path, () =>
+    fetch(`${TIKTOK_ADS_API_BASE}${path}?${toQuery(params)}`, {
+      method: "GET",
+      headers: { "Access-Token": accessToken },
+    })
+  );
 }
 
 // ---------- Ủy quyền ----------
@@ -205,15 +240,17 @@ export async function updateGmvMaxCreatives(
   }
 ): Promise<void> {
   const path = "/campaign/gmv_max/creative/update/";
-  const res = await fetch(`${TIKTOK_ADS_API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Access-Token": accessToken, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      advertiser_id: input.advertiserId,
-      campaign_id: input.campaignId,
-      action: input.action,
-      item_list: input.items.map((x) => ({ item_id: x.itemId, spu_id_list: x.spuIds })),
-    }),
-  });
-  await unwrap<Record<string, never>>(path, res);
+  // Lệnh GHI cũng qua van; sàn báo quá tải = lệnh CHƯA được nhận nên gọi lại là an toàn (lỗi khác thì không gọi lại).
+  await throttled<Record<string, never>>(path, () =>
+    fetch(`${TIKTOK_ADS_API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Access-Token": accessToken, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        advertiser_id: input.advertiserId,
+        campaign_id: input.campaignId,
+        action: input.action,
+        item_list: input.items.map((x) => ({ item_id: x.itemId, spu_id_list: x.spuIds })),
+      }),
+    })
+  );
 }

@@ -64,7 +64,7 @@ import {
 } from "./report";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink, type TiktokAdsScope } from "./sync";
 import { computeTiktokAdsBreakeven, saveCampaignProductIds } from "./breakeven";
-import { reconcileSendingCommands, sendVideoCommand, soakCheckCommands } from "./send-command";
+import { hasCommandsToCheck, reconcileSendingCommands, sendVideoCommand, soakCheckCommands } from "./send-command";
 
 /** verdict ghi vào AdsActionLog cho lệnh loại tự động (khác "manual"). */
 export const VIDEO_VERDICT_AUTO = "auto_exclude";
@@ -164,25 +164,33 @@ export async function trackCampaignVideos(scope: TiktokAdsScope, campaign: Campa
   const byId = new Map(existing.map((w) => [w.videoId, w]));
   const result: TrackResult = { seen: rows30.length, newVideos: 0, graduated: 0, relearning: 0, watch: new Map(), spuIds, rows30 };
 
+  // GHI THEO LÔ (hạ tầng 18/09/2026): trước đây mỗi video một lệnh ghi tuần tự — chiến dịch 300 video = 300 lượt đi-về DB mỗi
+  // ngày, seller trăm chiến dịch là hàng chục nghìn lệnh nối đuôi, giữ chỗ worker hàng chục phút. Nay: video MỚI → một
+  // createMany; video KHÔNG đổi gì (tuyệt đại đa số) → một updateMany; chỉ video ĐỔI trạng thái / đổi sản phẩm mới ghi riêng.
+  const fresh: Prisma.TiktokAdsVideoWatchCreateManyInput[] = [];
+  const untouchedIds: string[] = [];
   for (const v of rows30) {
     const w = byId.get(v.videoId);
     if (!w) {
-      const created = await prisma.tiktokAdsVideoWatch.create({
-        data: {
-          adsCampaignId: campaign.id,
-          videoId: v.videoId,
-          spuId: v.spuId,
-          status: v.deliveryStatus,
-          statusSince: today,
-          firstSeenOn: today,
-          lastSeenOn: today,
-          // Lần đầu thấy đã DELIVERING → không biết ra trường khi nào ("" = trước khi theo dõi).
-          graduatedOn: "",
-          statusLog: `${today} ${v.deliveryStatus}`,
-        },
+      fresh.push({
+        adsCampaignId: campaign.id,
+        videoId: v.videoId,
+        spuId: v.spuId,
+        status: v.deliveryStatus,
+        statusSince: today,
+        firstSeenOn: today,
+        lastSeenOn: today,
+        // Lần đầu thấy đã DELIVERING → không biết ra trường khi nào ("" = trước khi theo dõi).
+        graduatedOn: "",
+        statusLog: `${today} ${v.deliveryStatus}`,
       });
       result.newVideos++;
-      result.watch.set(v.videoId, { graduatedOn: created.graduatedOn, violationSince: "", restoredByUserAt: null });
+      result.watch.set(v.videoId, { graduatedOn: "", violationSince: "", restoredByUserAt: null });
+      continue;
+    }
+    if (w.status === v.deliveryStatus && w.spuId === v.spuId) {
+      if (w.lastSeenOn !== today) untouchedIds.push(w.id);
+      result.watch.set(v.videoId, { graduatedOn: w.graduatedOn, violationSince: w.violationSince, restoredByUserAt: w.restoredByUserAt });
       continue;
     }
     const data: Prisma.TiktokAdsVideoWatchUpdateInput = { lastSeenOn: today, spuId: v.spuId };
@@ -210,7 +218,40 @@ export async function trackCampaignVideos(scope: TiktokAdsScope, campaign: Campa
       restoredByUserAt: w.restoredByUserAt,
     });
   }
+  if (fresh.length > 0) await prisma.tiktokAdsVideoWatch.createMany({ data: fresh, skipDuplicates: true });
+  for (let i = 0; i < untouchedIds.length; i += WRITE_CHUNK) {
+    await prisma.tiktokAdsVideoWatch.updateMany({ where: { id: { in: untouchedIds.slice(i, i + WRITE_CHUNK) } }, data: { lastSeenOn: today } });
+  }
   return result;
+}
+
+/** Cỡ một lô ghi DB (số dòng mỗi câu lệnh). */
+const WRITE_CHUNK = 500;
+
+/**
+ * Ghi kết luận lượt chấm của MỌI video trong một chiến dịch bằng MỘT câu lệnh mỗi lô (UPDATE … FROM unnest) thay cho
+ * 2 lệnh / video. `violationSince` giữ mốc cũ nếu đang vi phạm liên tục; `spendAtViolation` chỉ ghi ở ngày đầu vi phạm.
+ */
+async function saveVerdictsBulk(adsCampaignId: string, assessments: AutoAssessment[], today: string): Promise<void> {
+  for (let i = 0; i < assessments.length; i += WRITE_CHUNK) {
+    const part = assessments.slice(i, i + WRITE_CHUNK);
+    await prisma.$executeRaw`
+      UPDATE "tiktok_ads_video_watches" AS w
+      SET "lastVerdict" = v.verdict,
+          "lastVerdictOn" = ${today},
+          "lastReason" = v.reason,
+          "violationSince" = CASE WHEN v.violated THEN (CASE WHEN w."violationSince" = '' THEN ${today} ELSE w."violationSince" END) ELSE '' END,
+          "spendAtViolation" = CASE WHEN v.violated AND w."violationSince" = '' THEN v.cost ELSE w."spendAtViolation" END,
+          "updatedAt" = NOW()
+      FROM unnest(
+        ${part.map((a) => a.videoId)}::text[],
+        ${part.map((a) => a.verdict as string)}::text[],
+        ${part.map((a) => a.reason.slice(0, 500))}::text[],
+        ${part.map((a) => a.violated)}::boolean[],
+        ${part.map((a) => Math.round(a.cost * 100) / 100)}::numeric[]
+      ) AS v(video_id, verdict, reason, violated, cost)
+      WHERE w."adsCampaignId" = ${adsCampaignId} AND w."videoId" = v.video_id`;
+  }
 }
 
 function wasLearningStatus(s: string): boolean {
@@ -327,6 +368,18 @@ export async function buildAutoPlan(
 // 3. LƯỢT HẰNG NGÀY CHO MỘT GIAN
 // ------------------------------------------------------------
 
+/**
+ * Trần số chiến dịch CHƯA bật luật được theo dõi mỗi ngày cho một gian. Mặc định chọn theo ngân sách call chứ không phải số
+ * của sàn: 10 chiến dịch × 2 call = 20 call/ngày, cộng 24 call đồng bộ giờ ≈ 45 call/ngày/gian → hạn mức 80.000 call/ngày của
+ * app (mức Basic) chịu được ~1.700 gian. Đổi bằng env ADS_TIKTOK_TRACK_UNRULED_MAX khi TikTok nâng mức.
+ */
+export const TRACK_UNRULED_MAX = Math.max(0, Number(process.env.ADS_TIKTOK_TRACK_UNRULED_MAX) || 10);
+
+/** Chọn chiến dịch chưa bật luật để theo dõi: tiêu nhiều nhất 7 ngày qua đứng trước. Thuần. */
+export function pickUnruledToTrack<T extends { id: string }>(unruled: T[], spendOf: Map<string, number>, max: number): T[] {
+  return [...unruled].sort((a, b) => (spendOf.get(b.id) ?? 0) - (spendOf.get(a.id) ?? 0)).slice(0, max);
+}
+
 export interface AutoRunResult {
   campaigns: number;
   tracked: number;
@@ -336,9 +389,26 @@ export interface AutoRunResult {
   failed: number;
 }
 
-/** Đã tới giờ và hôm nay chưa chạy? */
-export function autoRunDue(lastVideoTrackOn: string, today = vnDateStr(0), hour = vnHourNow()): boolean {
-  return hour >= AUTO_RUN_EARLIEST_HOUR && lastVideoTrackOn !== today;
+/**
+ * RẢI GIỜ CHẤM (hạ tầng 18/09/2026): mọi gian cùng "tới giờ" lúc 12:00 thì call TikTok dồn vào một phút (hạn mức app chung
+ * cho mọi seller) và lượt chấm của các gian giành chỗ nhau. Mỗi gian lệch một khoảng CỐ ĐỊNH 0–89 phút suy từ chính mã gian
+ * → giờ chấm của một gian ngày nào cũng như nhau, và cả hệ thống vẫn xong trong khung 12h–14h đã hứa với khách. Thuần.
+ */
+export const DAILY_RUN_SPREAD_MIN = 90;
+export function dailyRunOffsetMin(channelId: string): number {
+  let h = 0;
+  for (let i = 0; i < channelId.length; i++) h = (h * 31 + channelId.charCodeAt(i)) >>> 0;
+  return h % DAILY_RUN_SPREAD_MIN;
+}
+
+export function vnMinuteOfDayNow(): number {
+  const d = new Date(Date.now() + 7 * 3600_000);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+/** Đã tới giờ (12:00 + độ lệch của gian) và hôm nay chưa chạy? */
+export function autoRunDue(lastVideoTrackOn: string, today = vnDateStr(0), minuteOfDay = vnMinuteOfDayNow(), offsetMin = 0): boolean {
+  return minuteOfDay >= AUTO_RUN_EARLIEST_HOUR * 60 + offsetMin && lastVideoTrackOn !== today;
 }
 
 export async function runTiktokAdsDaily(channel: { id: string; shopName: string; userId: string }): Promise<AutoRunResult | null> {
@@ -347,11 +417,28 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
   const today = vnDateStr(0);
   const result: AutoRunResult = { campaigns: 0, tracked: 0, evaluated: 0, planned: 0, executed: 0, failed: 0 };
 
-  const campaigns = await prisma.adsCampaign.findMany({
+  const ongoing = await prisma.adsCampaign.findMany({
     where: { channelId: channel.id, status: "ongoing" },
     select: { id: true, campaignId: true, name: true, channelId: true, status: true, itemIds: true, tiktokAutoRule: true },
   });
-  result.campaigns = campaigns.length;
+  result.campaigns = ongoing.length;
+  // CHỈ THEO DÕI CHIẾN DỊCH CẦN THEO DÕI (hạ tầng 18/09/2026): mỗi chiến dịch theo dõi = 2 call TikTok + ghi DB mỗi ngày.
+  // Chiến dịch ĐÃ BẬT luật thì luôn theo dõi. Chiến dịch chưa bật luật chỉ theo dõi để tích lũy mốc "học xong" trước khi khách
+  // bật — có ích nhưng không bắt buộc (thiếu mốc thì luật dùng cửa sổ đủ) → lấy tối đa TRACK_UNRULED_MAX chiến dịch TIÊU NHIỀU
+  // NHẤT 7 ngày qua. Seller trăm chiến dịch thường chỉ bật tự động vài cái: tải giảm nhiều lần mà gian nhỏ không mất gì.
+  const ruled = ongoing.filter((c) => c.tiktokAutoRule && c.tiktokAutoRule.mode !== "off");
+  const unruled = ongoing.filter((c) => !c.tiktokAutoRule || c.tiktokAutoRule.mode === "off");
+  let picked = unruled;
+  if (unruled.length > TRACK_UNRULED_MAX) {
+    const spend = await prisma.adsCampaignDailyPerf.groupBy({
+      by: ["adsCampaignId"],
+      where: { adsCampaignId: { in: unruled.map((c) => c.id) }, date: { gte: new Date(`${vnDateStr(7)}T00:00:00Z`) } },
+      _sum: { expense: true },
+    });
+    const spendOf = new Map(spend.map((s) => [s.adsCampaignId, Number(s._sum.expense ?? 0)]));
+    picked = pickUnruledToTrack(unruled, spendOf, TRACK_UNRULED_MAX);
+  }
+  const campaigns = [...ruled, ...picked];
 
   // Có chiến dịch chọn "mức loại theo hòa vốn" thì tính hòa vốn của gian MỘT LẦN cho cả lượt (đọc DB, không gọi sàn).
   // Hỏng / chưa đủ tin → luật tự rơi về % mục tiêu và ghi lý do vào tóm tắt lượt.
@@ -368,6 +455,17 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
       const track = await trackCampaignVideos(scope, c, today);
       // A3: dòng sổ còn kẹt "đang gửi" (sự cố giữa lúc gửi lệnh) → chốt theo trạng thái THẬT của video vừa đọc, không đoán.
       const liveIds = new Set(track.rows30.map((v) => v.videoId));
+      // Hai phép soi bên dưới kết luận dựa trên video VẮNG MẶT, mà TikTok thỉnh thoảng trả thiếu dòng → có gì để soi thì đọc
+      // thêm MỘT lần và lấy HỢP hai lần đọc: video chỉ được coi là "không còn phân phối" khi vắng ở cả hai.
+      if (track.spuIds.length > 0 && (await hasCommandsToCheck(c.id).catch(() => false))) {
+        const again = await fetchGmvMaxCampaignVideos(
+          { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: vnDateStr(GRACE_LOOKBACK_DAYS), endDate: vnDateStr(1) },
+          c.campaignId,
+          track.spuIds,
+          GMV_MAX_LIVE_VIDEO_STATUSES
+        );
+        for (const v of again) if (v.videoId && v.videoId !== "-1") liveIds.add(v.videoId);
+      }
       await reconcileSendingCommands(c.id, liveIds).catch((err) =>
         console.error(`[TikTok Ads] Đối chiếu dòng sổ kẹt lỗi "${c.name}":`, (err as Error).message)
       );
@@ -453,24 +551,8 @@ export async function applyAutoPlan(
     return "skipped";
   }
 
-  // Trạng thái theo dõi: kết luận + chuỗi vi phạm liên tục (ân hạn).
-  for (const a of plan.assessments) {
-    const row = await prisma.tiktokAdsVideoWatch.findUnique({
-      where: { adsCampaignId_videoId: { adsCampaignId: campaign.id, videoId: a.videoId } },
-      select: { id: true, violationSince: true },
-    });
-    if (!row) continue;
-    await prisma.tiktokAdsVideoWatch.update({
-      where: { id: row.id },
-      data: {
-        lastVerdict: a.verdict,
-        lastVerdictOn: today,
-        lastReason: a.reason.slice(0, 500),
-        violationSince: a.violated ? row.violationSince || today : "",
-        ...(a.violated && !row.violationSince ? { spendAtViolation: a.cost } : {}),
-      },
-    });
-  }
+  // Trạng thái theo dõi: kết luận + chuỗi vi phạm liên tục (ân hạn) — ghi theo lô, xem saveVerdictsBulk.
+  await saveVerdictsBulk(campaign.id, plan.assessments, today);
 
   const summary = summarizeAutoPlan(plan, cfg);
   // B8 — so với lượt trước: kết quả y hệt thì không chuông lại (sổ PLANNED + lastRunSummary vẫn ghi đủ mỗi ngày).

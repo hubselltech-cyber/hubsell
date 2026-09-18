@@ -81,6 +81,22 @@ export function reconcileSendingCommand(
   };
 }
 
+/**
+ * Chiến dịch có dòng sổ nào ĐANG CHỜ SOI không (kẹt SENDING đủ tuổi, hoặc lệnh loại SUCCESS chưa soi)? Cả hai phép soi đều kết
+ * luận dựa trên việc video VẮNG MẶT khỏi báo cáo — mà báo cáo video của TikTok thỉnh thoảng trả THIẾU dòng (probe 18/09/2026:
+ * 3/12 lần gọi cùng tham số thiếu cùng một video) → lượt chấm chỉ tốn thêm một lần đọc xác nhận khi thật sự có gì để soi.
+ */
+export async function hasCommandsToCheck(adsCampaignId: string): Promise<boolean> {
+  const n = await prisma.adsActionLog.count({
+    where: {
+      adsCampaignId,
+      createdAt: { lt: new Date(Date.now() - RECONCILE_AFTER_MS) },
+      OR: [{ status: VIDEO_STATUS_SENDING }, { action: VIDEO_ACTION_EXCLUDE, mode: "live", status: "SUCCESS", error: null }],
+    },
+  });
+  return n > 0;
+}
+
 /** Lượt chấm hằng ngày gọi sau khi đọc trạng thái video của chiến dịch: chốt các dòng SENDING đã đủ tuổi. Trả số dòng đã chốt. */
 export async function reconcileSendingCommands(adsCampaignId: string, liveIds: Set<string>): Promise<number> {
   const stuck = await prisma.adsActionLog.findMany({

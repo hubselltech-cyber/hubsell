@@ -5,6 +5,7 @@ import {
   videoActionNote,
 } from "../tiktok-ads/action-log";
 import { reconcileSendingCommand, soakCheckExclude } from "../tiktok-ads/send-command";
+import { TiktokAdsApiError, isTiktokAdsRateLimited, rateLimitBackoffMs } from "../tiktok-ads/client";
 import { GMV_MAX_MAX_RANGE_DAYS, GMV_MAX_OUTSIDE_VIDEO_STATUSES, clampGmvMaxRange, tallyVideoStatuses } from "../tiktok-ads/report";
 
 describe("clampGmvMaxRange — khoảng ngày của trang soi video", () => {
@@ -156,5 +157,20 @@ describe("soakCheckExclude — lệnh loại đã ngấm chưa", () => {
     expect(r.notApplied).toEqual([]);
     expect(r.note).toContain("đủ 1 video");
     expect(r.note).toContain("1 video đã được khôi phục lại trên Hubsell");
+  });
+});
+
+// HẠ TẦNG — hạn mức call là CHUNG cho mọi seller của app: nhận đúng mã quá tải của sàn để lùi lại, lỗi khác thì không gọi lại.
+describe("isTiktokAdsRateLimited — mã quá tải theo docs Return codes của TikTok", () => {
+  it("40016 / 40100 (trần cấp app) và 40133 (trần cấp tài khoản quảng cáo) → lùi rồi gọi lại", () => {
+    for (const code of [40016, 40100, 40133]) expect(isTiktokAdsRateLimited(new TiktokAdsApiError("/x/", code, "Requests made too frequently."))).toBe(true);
+  });
+  it("lỗi khác (hết quyền 40105, tham số sai 40002) và lỗi thường → KHÔNG gọi lại", () => {
+    expect(isTiktokAdsRateLimited(new TiktokAdsApiError("/x/", 40105, "token"))).toBe(false);
+    expect(isTiktokAdsRateLimited(new TiktokAdsApiError("/x/", 40002, "param"))).toBe(false);
+    expect(isTiktokAdsRateLimited(new Error("mạng"))).toBe(false);
+  });
+  it("chờ 2 giây rồi 6 giây", () => {
+    expect([rateLimitBackoffMs(0), rateLimitBackoffMs(1)]).toEqual([2000, 6000]);
   });
 });

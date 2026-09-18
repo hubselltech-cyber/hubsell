@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
 import {
+  memoizeByChannel,
   placedRevenue,
   productBreakevenVerdict,
   salesPaceByGroup,
@@ -231,5 +232,37 @@ describe("salesPaceByGroup — đà bán 7 / 30 ngày của từng sản phẩm"
     expect(p.get("SP-A")).toEqual({ units7d: 3, units30d: 4 });
     expect(p.get("SP-B")).toEqual({ units7d: 1, units30d: 1 });
     expect(p.size).toBe(2);
+  });
+});
+
+// HẠ TẦNG — một lần mở trang bắn 2–3 request cùng cần hòa vốn của gian: tính MỘT lần, nhớ 45 giây.
+describe("memoizeByChannel — nhớ đệm kết quả hòa vốn theo gian", () => {
+  const ch = (id: string) => ({ id, userId: "u" });
+  it("các request song song của cùng một gian dùng chung một lượt tính; gian khác tính riêng", async () => {
+    let calls = 0;
+    const f = memoizeByChannel(async (c) => `${c.id}#${++calls}`);
+    const [a, b, other] = await Promise.all([f(ch("g1")), f(ch("g1")), f(ch("g2"))]);
+    expect(a).toBe(b);
+    expect(other).not.toBe(a);
+    expect(calls).toBe(2);
+  });
+  it("quá 45 giây thì tính lại (giá vốn vừa nhập phải hiện lên)", async () => {
+    let t = 0;
+    let calls = 0;
+    const f = memoizeByChannel(async () => ++calls, () => t);
+    expect(await f(ch("g1"))).toBe(1);
+    t = 44_000;
+    expect(await f(ch("g1"))).toBe(1);
+    t = 46_000;
+    expect(await f(ch("g1"))).toBe(2);
+  });
+  it("lượt tính hỏng không bị nhớ lại", async () => {
+    let calls = 0;
+    const f = memoizeByChannel(async () => {
+      if (++calls === 1) throw new Error("DB chập chờn");
+      return "ok";
+    });
+    await expect(f(ch("g1"))).rejects.toThrow("DB chập chờn");
+    expect(await f(ch("g1"))).toBe("ok");
   });
 });

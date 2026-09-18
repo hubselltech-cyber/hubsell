@@ -92,7 +92,7 @@ import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
 import { vnDateKey } from "../integrations/shopee/ads-insights";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
-import { autoRunDue, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
+import { autoRunDue, dailyRunOffsetMin, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -814,13 +814,26 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
  * tầng lịch sử 6h — trước đây chỉ bám tầng 6h nên lượt chấm rơi bất kỳ lúc nào 12h–18h, khách không biết giờ mà xem
  * chuông. Mốc `lastVideoTrackOn` + khóa gian của worker bảo đảm không chạy hai lần một ngày.
  */
+const TIKTOK_DAILY_RUN_CONCURRENCY = Math.max(1, Math.trunc(envNumber("ADS_TIKTOK_DAILY_CONCURRENCY", 1)));
+let tiktokDailyRunsInFlight = 0;
+
 async function maybeRunTiktokAdsDaily(channel: Channel): Promise<void> {
   const link = await prisma.tiktokAdsStoreLink.findUnique({
     where: { channelId: channel.id },
     select: { lastVideoTrackOn: true },
   });
-  if (!link || !autoRunDue(link.lastVideoTrackOn)) return;
-  const d = await runTiktokAdsDaily(channel);
+  if (!link || !autoRunDue(link.lastVideoTrackOn, undefined, undefined, dailyRunOffsetMin(channel.id))) return;
+  // Mỗi tiến trình worker chỉ chạy MỘT lượt chấm một lúc: lượt chấm của seller lớn kéo dài nhiều phút, không được để vài lượt
+  // như thế chiếm hết các chỗ chạy song song của đồng bộ đơn. Đây là van CÔNG BẰNG chứ không phải khóa đúng-sai (chống chạy
+  // hai lần đã có mốc lastVideoTrackOn + khóa gian) — gian bị nhường sẽ chấm ở nhịp xung kế tiếp.
+  if (tiktokDailyRunsInFlight >= TIKTOK_DAILY_RUN_CONCURRENCY) return;
+  tiktokDailyRunsInFlight++;
+  let d: Awaited<ReturnType<typeof runTiktokAdsDaily>>;
+  try {
+    d = await runTiktokAdsDaily(channel);
+  } finally {
+    tiktokDailyRunsInFlight--;
+  }
   if (d) {
     console.log(
       `[Auto-sync] "${channel.shopName}" ads TikTok lượt ngày: ${d.tracked}/${d.campaigns} chiến dịch theo dõi, ${d.evaluated} xét luật (${d.planned} diễn tập, ${d.executed} loại thật, ${d.failed} lỗi)`

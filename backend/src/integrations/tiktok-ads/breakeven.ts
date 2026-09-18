@@ -307,8 +307,34 @@ async function loadBreakevenInputs(channel: { id: string; userId: string }) {
   return { rows, campaigns, channelProducts, skusByProductId };
 }
 
-/** Hòa vốn toàn gian + từng chiến dịch. Chiến dịch chưa đủ mẫu / chưa biết SKU → mượn biên lãi gian. */
-export async function computeTiktokAdsBreakeven(channel: { id: string; userId: string }): Promise<ChannelTiktokBreakeven> {
+// ---------- NHỚ ĐỆM NGẮN + GỘP LƯỢT TÍNH TRÙNG (hạ tầng 18/09/2026) ----------
+// Phép tính hòa vốn đọc tới 8.000 đơn 60 ngày qua computePnlRow và được gọi ở 7 route; MỘT lần mở trang chiến dịch bắn 2–3
+// request song song, mỗi cái tính lại từ đầu. Nhớ KẾT QUẢ (nhỏ — không nhớ đơn hàng) 45 giây theo gian và cho các request
+// đang chờ dùng chung một lượt tính. 45 giây là mặc định chọn: đủ gộp các request của một lần mở trang, đủ ngắn để giá vốn
+// vừa nhập hiện lên gần như ngay. Nhớ trong RAM từng tiến trình — chỉ là bộ đệm đọc, không phải khóa.
+const RESULT_TTL_MS = 45_000;
+const RESULT_CACHE_MAX = 500;
+
+export function memoizeByChannel<T>(compute: (channel: { id: string; userId: string }) => Promise<T>, now: () => number = Date.now) {
+  const cache = new Map<string, { at: number; value: Promise<T> }>();
+  return (channel: { id: string; userId: string }): Promise<T> => {
+    const hit = cache.get(channel.id);
+    if (hit && now() - hit.at < RESULT_TTL_MS) return hit.value;
+    const value = compute(channel);
+    cache.set(channel.id, { at: now(), value });
+    // Lượt tính hỏng thì không giữ lại (lần gọi sau tính lại ngay).
+    value.catch(() => {
+      if (cache.get(channel.id)?.value === value) cache.delete(channel.id);
+    });
+    if (cache.size > RESULT_CACHE_MAX) cache.delete(cache.keys().next().value as string);
+    return value;
+  };
+}
+
+/** Hòa vốn toàn gian + từng chiến dịch. Chiến dịch chưa đủ mẫu / chưa biết SKU → mượn biên lãi gian. (Có nhớ đệm 45 giây.) */
+export const computeTiktokAdsBreakeven = memoizeByChannel(computeTiktokAdsBreakevenUncached);
+
+async function computeTiktokAdsBreakevenUncached(channel: { id: string; userId: string }): Promise<ChannelTiktokBreakeven> {
   const { rows, campaigns, skusByProductId } = await loadBreakevenInputs(channel);
 
   const shop = toTiktokBreakeven(tiktokBreakevenBase(rows, null), "shop");
@@ -452,8 +478,15 @@ export interface ChannelProductBreakevens {
   products: ProductBreakevenRow[];
 }
 
-/** Hòa vốn từng sản phẩm của một gian TikTok. Chỉ liệt kê sản phẩm CÓ đơn trong cửa sổ (kể cả đơn chưa đối soát). */
-export async function computeTiktokProductBreakevens(channel: { id: string; userId: string }, minCoveragePct: number): Promise<ChannelProductBreakevens> {
+/** Hòa vốn từng sản phẩm của một gian TikTok. Chỉ liệt kê sản phẩm CÓ đơn trong cửa sổ (kể cả đơn chưa đối soát). (Có nhớ đệm 45 giây.) */
+const productBreakevenMemo = new Map<number, ReturnType<typeof memoizeByChannel<ChannelProductBreakevens>>>();
+export function computeTiktokProductBreakevens(channel: { id: string; userId: string }, minCoveragePct: number): Promise<ChannelProductBreakevens> {
+  let memo = productBreakevenMemo.get(minCoveragePct);
+  if (!memo) productBreakevenMemo.set(minCoveragePct, (memo = memoizeByChannel((c) => computeTiktokProductBreakevensUncached(c, minCoveragePct))));
+  return memo(channel);
+}
+
+async function computeTiktokProductBreakevensUncached(channel: { id: string; userId: string }, minCoveragePct: number): Promise<ChannelProductBreakevens> {
   const { rows, campaigns, channelProducts, skusByProductId } = await loadBreakevenInputs(channel);
   const groupOfSku = new Map<string, string>();
   for (const [productId, skus] of skusByProductId) for (const sku of skus) groupOfSku.set(sku, productId);
