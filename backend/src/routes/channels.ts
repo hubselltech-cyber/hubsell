@@ -204,7 +204,8 @@ router.post("/", requireAdmin, async (req: AuthRequest, res, next) => {
 
     // Trần gian hàng của gói: chỉ chặn TẠO MỚI — nhánh kết nối lại ở trên đã
     // return trước khi tới đây (grandfather: gian đang có không bao giờ bị đụng).
-    await assertChannelSlot(req.ownerId!);
+    // Gian OFFLINE không tính vào trần (xem assertChannelSlot).
+    if (name !== ChannelName.OFFLINE) await assertChannelSlot(req.ownerId!);
 
     const channel = await prisma.channel.create({
       data: {

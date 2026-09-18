@@ -119,6 +119,30 @@ function planPriceFor(plan: ServicePlan, cycle: BillingCycle): number {
   }
 }
 
+// ---- Giá sàn đ/đơn cho giá THỎA THUẬN (deal Enterprise) — anh Trung chốt
+// 18/09/2026: 60đ/đơn cam kết, 50đ khi trần > 100.000 đơn/tháng. Căn cứ: hạ tầng
+// ước 8–28đ/đơn (mốc capacity-plan) + hoa hồng giới thiệu 10% + chi phí AI chưa
+// đo; Business kỳ năm (giá đã chốt) đang ≈ 58đ/đơn nên deal lớn không nên rẻ hơn
+// nhiều. CHỈ CẢNH BÁO, không chặn — đổi số tại đây. ----
+const PRICE_FLOOR_PER_ORDER = 60;
+const PRICE_FLOOR_PER_ORDER_BIG = 50;
+const BIG_DEAL_ORDERS = 100_000;
+
+function priceFloorFor(maxOrders: number): number {
+  return maxOrders > BIG_DEAL_ORDERS ? PRICE_FLOOR_PER_ORDER_BIG : PRICE_FLOOR_PER_ORDER;
+}
+
+/** Doanh thu trên mỗi đơn khi khách dùng KỊCH trần — null khi gói không đặt
+ * trần đơn hoặc không có giá (không có mẫu số thì không bịa số). */
+function perOrderAtCap(amount: number, months: number, maxOrders: number | null): number | null {
+  if (!maxOrders || maxOrders <= 0 || amount <= 0 || months <= 0) return null;
+  return amount / months / maxOrders;
+}
+
+function formatPerOrder(v: number): string {
+  return `${v.toLocaleString("vi-VN", { maximumFractionDigits: v < 100 ? 1 : 0 })}đ/đơn`;
+}
+
 /** "22/08/2026" — kỳ hạn chỉ cần ngày, không cần giờ. */
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN");
@@ -269,7 +293,9 @@ function PlanDialog({
 
         <div className="grid grid-cols-3 gap-3">
           <div className="grid gap-2">
-            <Label>Trần gian hàng</Label>
+            <Label title="Chỉ tính gian trên sàn đang hoạt động — gian Offline không tính">
+              Trần gian sàn
+            </Label>
             <Input
               type="number"
               min={1}
@@ -396,6 +422,15 @@ function PaymentDialog({
   const listPrice = selectedPlan ? planPriceFor(selectedPlan, cycle) : 0;
   // Số tiền tự điền theo giá niêm yết — kế toán sửa tay khi thu lệch (khuyến mãi).
   const effectiveAmount = amountTouched ? amount : String(listPrice);
+  // Giá sàn chỉ soi số THỎA THUẬN nhập tay — giá niêm yết là số đã chốt, không nhắc lại.
+  const cycleMonths = CYCLES.find((c) => c.value === cycle)?.months ?? 1;
+  const dealPerOrder =
+    selectedPlan && Number(effectiveAmount) !== listPrice
+      ? perOrderAtCap(Number(effectiveAmount), cycleMonths, selectedPlan.maxOrdersPerMonth)
+      : null;
+  const dealFloor = selectedPlan?.maxOrdersPerMonth
+    ? priceFloorFor(selectedPlan.maxOrdersPerMonth)
+    : PRICE_FLOOR_PER_ORDER;
 
   async function handleSave() {
     if (!selectedPlan) {
@@ -477,7 +512,7 @@ function PaymentDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 items-start gap-3">
           <div className="grid gap-2">
             <Label>Số tiền thực thu (₫)</Label>
             <Input
@@ -493,6 +528,13 @@ function PaymentDialog({
               <p className="text-xs text-amber-600">
                 Lệch giá niêm yết {formatMoney(listPrice)} — chỉ thu lệch khi có
                 khuyến mãi/thỏa thuận.
+              </p>
+            )}
+            {dealPerOrder !== null && dealPerOrder < dealFloor && (
+              <p className="text-xs font-medium text-amber-700">
+                ≈ {formatPerOrder(dealPerOrder)} nếu khách dùng kịch trần{" "}
+                {formatCount(selectedPlan!.maxOrdersPerMonth!)} đơn/tháng — dưới giá sàn{" "}
+                {dealFloor}đ/đơn. Vẫn ghi nhận được.
               </p>
             )}
           </div>
@@ -721,6 +763,26 @@ export default function PlatformPlansPage() {
                       ].join(" · ")}
                       {p.trialDays > 0 && ` · Dùng thử ${p.trialDays} ngày`}
                     </p>
+
+                    {(() => {
+                      const monthly = perOrderAtCap(p.priceMonthly, 1, p.maxOrdersPerMonth);
+                      if (monthly === null) return null;
+                      const yearly = perOrderAtCap(p.priceYearly, 12, p.maxOrdersPerMonth);
+                      const floor = priceFloorFor(p.maxOrdersPerMonth!);
+                      return (
+                        <p
+                          className={cn(
+                            "text-xs",
+                            monthly < floor ? "font-medium text-amber-700" : "text-muted-foreground"
+                          )}
+                          title="Doanh thu trên mỗi đơn khi khách dùng kịch trần đơn của gói"
+                        >
+                          ≈ {formatPerOrder(monthly)} khi kịch trần
+                          {yearly !== null && ` · kỳ 12 tháng ${formatPerOrder(yearly)}`}
+                          {monthly < floor && ` — dưới giá sàn ${floor}đ/đơn`}
+                        </p>
+                      );
+                    })()}
 
                     {featuresLabel(p) && (
                       <p

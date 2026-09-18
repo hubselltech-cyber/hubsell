@@ -325,7 +325,7 @@ export default function SettingsPlanPage() {
                 unit="đơn"
               />
               <UsageBar
-                label="Gian hàng đang hoạt động"
+                label="Gian hàng trên sàn đang hoạt động"
                 used={data.usage.channels}
                 limit={data.plan?.maxChannels ?? null}
                 unit="gian"

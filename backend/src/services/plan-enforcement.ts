@@ -25,6 +25,7 @@
 // ============================================================
 
 import type { NextFunction, Response } from "express";
+import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { notify } from "./notifications";
 import type { AuthRequest } from "../middleware/auth";
@@ -164,8 +165,8 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
         },
       },
     }),
-    // Cùng định nghĩa với assertChannelSlot: trần chỉ tính gian ACTIVE.
-    prisma.channel.count({ where: { userId: ownerId, status: "ACTIVE" } }),
+    // Cùng định nghĩa với assertChannelSlot (countedChannelWhere).
+    prisma.channel.count({ where: countedChannelWhere(ownerId) }),
     prisma.user.count({ where: { ownerId } }),
     prisma.order.count({
       where: { channel: { userId: ownerId }, createdAt: { gte: monthStart } },
@@ -329,6 +330,15 @@ async function computeOwnerPlanState(ownerId: string): Promise<OwnerPlanState> {
 // CHẶN CỨNG trần gian hàng / nhân viên — gọi tại các route tạo MỚI.
 // ============================================================
 
+/** Gian được tính vào trần gói — MỘT định nghĩa cho cả số hiển thị lẫn chốt chặn. */
+function countedChannelWhere(ownerId: string) {
+  return {
+    userId: ownerId,
+    status: "ACTIVE" as const,
+    channelName: { not: ChannelName.OFFLINE },
+  };
+}
+
 export class PlanLimitError extends Error {
   code: "PLAN_LIMIT_CHANNELS" | "PLAN_LIMIT_STAFF";
   limit: number;
@@ -356,18 +366,19 @@ export class PlanLimitError extends Error {
  * xóa gian, "ngắt kết nối" là cách duy nhất khách tự trống chỗ — đếm cả
  * DISCONNECTED thì khách kẹt vĩnh viễn với gian bỏ đi. (Grandfather: hạ gói
  * đang thừa gian so với trần thì giữ nguyên, chỉ không kết nối thêm được.)
+ * Gian OFFLINE (bán tại quầy) KHÔNG tính vào trần và tạo mới không cần gọi hàm
+ * này: nó không đồng bộ, không ăn hạn mức API của sàn — thứ trần gian bảo vệ —
+ * và đếm nó thì "3 gian" trên bảng giá chỉ còn 2 gian sàn (19/09).
  */
 export async function assertChannelSlot(ownerId: string, need = 1): Promise<void> {
   const st = await getOwnerPlanState(ownerId);
   const limit = st.plan?.maxChannels;
   if (limit == null) return;
-  const current = await prisma.channel.count({
-    where: { userId: ownerId, status: "ACTIVE" },
-  });
+  const current = await prisma.channel.count({ where: countedChannelWhere(ownerId) });
   if (current + need > limit) {
     throw new PlanLimitError(
       "PLAN_LIMIT_CHANNELS",
-      `Gói ${st.plan!.name} cho tối đa ${limit} gian hàng đang hoạt động (shop đang có ${current}). ` +
+      `Gói ${st.plan!.name} cho tối đa ${limit} gian hàng trên sàn đang hoạt động (shop đang có ${current}). ` +
         "Nâng gói để kết nối thêm gian, hoặc ngắt kết nối gian không dùng để trống chỗ.",
       limit,
       current,

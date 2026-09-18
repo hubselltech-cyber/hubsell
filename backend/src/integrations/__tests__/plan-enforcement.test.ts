@@ -214,6 +214,27 @@ describe("assertChannelSlot / assertStaffSlot — chặn cứng tạo mới", ()
     await prisma.channel.update({ where: { id: channelId }, data: { status: "ACTIVE" } });
   });
 
+  it("gian OFFLINE không tính vào trần — cả chốt chặn lẫn số hiển thị", async () => {
+    // Trống chỗ gian sàn, thêm 1 gian OFFLINE đang hoạt động.
+    await prisma.channel.update({ where: { id: channelId }, data: { status: "DISCONNECTED" } });
+    const offline = await prisma.channel.create({
+      data: {
+        userId: ownerId,
+        channelName: "OFFLINE",
+        shopName: `TEST planq offline ${STAMP}`,
+        apiToken: `test_planq_off_${STAMP}`,
+        status: "ACTIVE",
+      },
+    });
+    // maxChannels = 1 mà gian OFFLINE không chiếm chỗ → vẫn nối được 1 gian sàn.
+    await expect(assertChannelSlot(ownerId)).resolves.toBeUndefined();
+    expect((await freshState()).usage.channels).toBe(0);
+    await prisma.channel.update({ where: { id: channelId }, data: { status: "ACTIVE" } });
+    expect((await freshState()).usage.channels).toBe(1);
+    await expect(assertChannelSlot(ownerId)).rejects.toBeInstanceOf(PlanLimitError);
+    await prisma.channel.delete({ where: { id: offline.id } });
+  });
+
   it("đủ trần nhân viên thì ném; còn chỗ thì cho qua", async () => {
     invalidatePlanState(ownerId);
     await expect(assertStaffSlot(ownerId)).resolves.toBeUndefined();
