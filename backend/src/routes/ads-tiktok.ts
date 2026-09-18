@@ -77,6 +77,7 @@ import {
   describeConfigChanges,
   parseRehearsedConfig,
   resolveHardLevel,
+  ruleNumbersChanged,
   sanitizeAutoRuleConfig,
   summarizeAutoPlan,
   unrehearsedFields,
@@ -809,12 +810,29 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
     const marks = { roiTarget: cfg.roiTarget, hardRoi: hard.hardRoi, hardBasis: hard.basis, minSpend: cfg.minSpend };
     const today = vnDateStr(0);
 
+    // Khách ĐỔI BỘ SỐ giữa chừng (anh Trung duyệt 18/09 khuya) → chỉ đối chiếu các lượt diễn tập SAU lần đổi gần nhất: lượt cũ
+    // chấm bằng bộ luật khác, cộng chung thì câu kết luận "máy đúng hay sai" lẫn hai bộ luật. Mốc lấy từ nhật ký đổi thông số
+    // (chỉ đổi chế độ thì không tính); lần đổi trước khi có nhật ký thì không biết → tính hết như cũ.
+    const changeLogs = await prisma.adsActionLog.findMany({
+      where: { adsCampaignId: campaign.id, action: VIDEO_ACTION_CONFIG_CHANGE },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { reasons: true, createdAt: true },
+    });
+    const changedAt = changeLogs.find((l) => ruleNumbersChanged(l.reasons))?.createdAt ?? null;
+    const planWhere = { adsCampaignId: campaign.id, action: VIDEO_ACTION_EXCLUDE, verdict: VIDEO_VERDICT_AUTO, mode: "dry_run", status: "PLANNED" };
     const logs = await prisma.adsActionLog.findMany({
-      where: { adsCampaignId: campaign.id, action: VIDEO_ACTION_EXCLUDE, verdict: VIDEO_VERDICT_AUTO, mode: "dry_run", status: "PLANNED" },
+      where: { ...planWhere, ...(changedAt ? { createdAt: { gt: changedAt } } : {}) },
       orderBy: { createdAt: "desc" },
       take: BACKTEST_MAX_PLANS,
       select: { referenceId: true, reasons: true, createdAt: true },
     });
+    const since = {
+      /** Ngày VN khách đổi bộ số gần nhất — bảng chỉ tính lượt diễn tập sau mốc này; null = chưa đổi lần nào (có nhật ký). */
+      configChangedOn: changedAt ? new Date(changedAt.getTime() + 7 * 3600_000).toISOString().slice(0, 10) : null,
+      /** Số lượt diễn tập chạy bằng bộ số CŨ, không đưa vào bảng. */
+      plansBeforeChange: changedAt ? await prisma.adsActionLog.count({ where: { ...planWhere, createdAt: { lte: changedAt } } }) : 0,
+    };
     const plans: DryRunPlan[] = logs.map((l) => {
       // referenceId "ttauto-{rowId}-{YYYY-MM-DD}" mang ngày VN của lượt; thiếu thì suy từ giờ ghi sổ.
       const tail = (l.referenceId ?? "").slice(-10);
@@ -824,7 +842,7 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
 
     const wanted = backtestStartDate(plans, today);
     if (!wanted) {
-      res.json({ ...buildDryRunBacktest(plans, [], marks, today), marks, from: null, to: today, truncated: false, planDays: plans.length });
+      res.json({ ...buildDryRunBacktest(plans, [], marks, today), marks, from: null, to: today, truncated: false, planDays: plans.length, ...since });
       return;
     }
     const scope = await getTiktokAdsScope(campaign.channelId);
@@ -843,7 +861,7 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule/backtest", async (req: AuthRequest
         spuIds.length > 0
           ? await fetchGmvMaxCampaignVideoDays(range, campaign.campaignId, spuIds, [...GMV_MAX_LIVE_VIDEO_STATUSES, GMV_MAX_EXCLUDED_STATUS])
           : [];
-      res.json({ ...buildDryRunBacktest(plans, dayRows, marks, today), marks, from, to: today, truncated: wanted < floor, planDays: plans.length });
+      res.json({ ...buildDryRunBacktest(plans, dayRows, marks, today), marks, from, to: today, truncated: wanted < floor, planDays: plans.length, ...since });
     } catch (err) {
       await recordTiktokAdsFailure(scope.linkId, err);
       res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });

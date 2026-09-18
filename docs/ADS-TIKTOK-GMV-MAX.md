@@ -222,7 +222,10 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    bất kể có bỏ qua hay không) → một dòng AdsActionLog `action = config_change`, `reasons` = từng dòng "Tên ô: X → Y"
    (`describeConfigChanges` thuần, so THÔ với cấu hình đang lưu; lưu y nguyên thì không ghi). Tab Lịch sử hiện "Đổi thông số
    tự động loại" + các dòng đó, chữ trung tính, không nhãn cảnh báo — **đừng viết câu chữ kiểu lập biên bản khách**. Lượt chấm
-   KHÔNG tự hạ chế độ nữa. Rào "phải có ≥1 lượt chấm thật (`lastRunOn`)" của anh GIỮ NGUYÊN. Dòng cũ
+   KHÔNG tự hạ chế độ nữa. **Tab Đối chiếu diễn tập ăn theo nhật ký này** (anh duyệt 18/09 khuya): chỉ tính các lượt PLANNED
+   ghi SAU lần đổi BỘ SỐ gần nhất (`ruleNumbersChanged` — dòng nhật ký chỉ đổi chế độ thì không dịch mốc); route trả thêm
+   `configChangedOn` + `plansBeforeChange`, thẻ ghi rõ "chỉ tính từ khi đổi thông số dd/mm; N lượt trước đó chấm bằng bộ số cũ
+   nên không tính". Lần đổi số TRƯỚC khi có nhật ký (mọi thay đổi trên prod tới 18/09) thì không có mốc → tính hết như cũ. Rào "phải có ≥1 lượt chấm thật (`lastRunOn`)" của anh GIỮ NGUYÊN. Dòng cũ
    trên prod (TC054) chưa có `lastRunConfig` → bật thật trước lượt chấm kế tiếp sẽ gặp hộp cảnh báo (không so được từng ô).
    Mô tả gốc: **Đổi cấu hình sau diễn tập** — rào `lastRunOn` chỉ biết "đã từng có lượt", không biết lượt đó chạy bằng cấu hình
    nào. Khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được. Hướng: lưu dấu cấu hình của lượt gần nhất,

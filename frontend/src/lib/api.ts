@@ -2890,6 +2890,10 @@ export interface TiktokAdsBacktest {
   /** Diễn tập quá 30 ngày → TikTok chỉ cho số theo ngày của 30 ngày gần nhất. */
   truncated: boolean;
   planDays: number;
+  /** Ngày khách đổi bộ số gần nhất — bảng CHỈ tính lượt diễn tập sau mốc này (lượt cũ chấm bằng bộ luật khác). null = chưa đổi. */
+  configChangedOn: string | null;
+  /** Số lượt diễn tập chạy bằng bộ số cũ, không đưa vào bảng. */
+  plansBeforeChange: number;
 }
 
 export function fetchTiktokAdsBacktest(campaignRowId: string) {

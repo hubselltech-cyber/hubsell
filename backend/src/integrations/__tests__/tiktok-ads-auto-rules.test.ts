@@ -8,6 +8,7 @@ import {
   describeConfigChanges,
   parseRehearsedConfig,
   resolveHardLevel,
+  ruleNumbersChanged,
   runChangeLabel,
   runDigestOf,
   unrehearsedFields,
@@ -339,5 +340,19 @@ describe("describeConfigChanges — nhật ký đổi thông số", () => {
   it("chiến dịch bật tự động lần đầu → chỉ ghi dòng chế độ; lần đầu mà để Tắt thì không ghi", () => {
     expect(describeConfigChanges(null, { mode: "dry_run", config: cfg })).toEqual(["Chế độ: Tắt → Diễn tập"]);
     expect(describeConfigChanges(null, { mode: "off", config: cfg })).toEqual([]);
+  });
+});
+
+// Tab Đối chiếu diễn tập chỉ tính lượt SAU lần khách đổi BỘ SỐ gần nhất — chỉ đổi chế độ thì bộ luật vẫn vậy.
+describe("ruleNumbersChanged — dòng nhật ký có đổi bộ số của luật không", () => {
+  it("chỉ đổi chế độ → không", () => {
+    const lines = describeConfigChanges({ mode: "dry_run", config: cfg }, { mode: "off", config: cfg });
+    expect(ruleNumbersChanged(lines.join("\n"))).toBe(false);
+  });
+  it("đổi số (kèm hay không kèm đổi chế độ) → có", () => {
+    const a = describeConfigChanges({ mode: "dry_run", config: cfg }, { mode: "dry_run", config: { ...cfg, roiTarget: 20 } });
+    const b = describeConfigChanges({ mode: "dry_run", config: cfg }, { mode: "live", config: { ...cfg, graceOn: false } });
+    expect(ruleNumbersChanged(a.join("\n"))).toBe(true);
+    expect(ruleNumbersChanged(b.join("\n"))).toBe(true);
   });
 });

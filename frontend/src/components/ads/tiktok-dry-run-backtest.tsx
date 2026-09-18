@@ -122,9 +122,11 @@ export function TiktokDryRunBacktest({ campaignRowId, enabled }: { campaignRowId
           <p className="text-sm font-semibold text-slate-900">Đối chiếu diễn tập — máy định loại có đúng không?</p>
           {t.videos === 0 ? (
             <p className={cn(TEXT_SUB, "mt-1")}>
-              {data.planDays === 0
-                ? "Chưa có lượt diễn tập nào định loại video. Khi máy định loại video nào, bảng này theo dõi video đó chạy tiếp ra sao để anh/chị quyết có bật Tự loại thật hay không."
-                : "Các lượt diễn tập chưa định loại video nào."}
+              {data.planDays > 0
+                ? "Các lượt diễn tập chưa định loại video nào."
+                : data.configChangedOn && data.plansBeforeChange > 0
+                  ? `Từ khi anh/chị đổi thông số ngày ${ddmm(data.configChangedOn)} chưa có lượt diễn tập nào định loại video. ${formatNumber(data.plansBeforeChange)} lượt trước đó chấm bằng bộ số cũ nên không tính vào đây — bảng bắt đầu lại từ lượt chấm 12h trưa kế tiếp.`
+                  : "Chưa có lượt diễn tập nào định loại video. Khi máy định loại video nào, bảng này theo dõi video đó chạy tiếp ra sao để anh/chị quyết có bật Tự loại thật hay không."}
             </p>
           ) : data.from == null ? (
             <p className={cn(TEXT_SUB, "mt-1")}>
@@ -258,6 +260,9 @@ export function TiktokDryRunBacktest({ campaignRowId, enabled }: { campaignRowId
             Số tính từ hôm sau ngày máy định loại tới hôm nay (chi phí video TikTok về trễ tới 11 giờ; ROI gồm cả đơn tự nhiên). Nếu loại thật, TikTok
             dồn khoản tiền này sang video khác của chiến dịch — đây là tiền được đổi chỗ, không phải tiền bớt chi.
             {data.truncated && " Diễn tập đã quá 30 ngày: TikTok chỉ cho số theo ngày của 30 ngày gần nhất."}
+            {data.configChangedOn &&
+              data.plansBeforeChange > 0 &&
+              ` Chỉ tính các lượt diễn tập từ khi anh/chị đổi thông số ngày ${ddmm(data.configChangedOn)}; ${formatNumber(data.plansBeforeChange)} lượt trước đó chấm bằng bộ số cũ nên không tính.`}
           </p>
         )}
       </CardContent>

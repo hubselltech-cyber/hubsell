@@ -490,6 +490,15 @@ function fieldValueText(k: keyof AutoRuleConfig, v: AutoRuleConfig[keyof AutoRul
 }
 
 const MODE_LABEL: Record<AutoRuleMode, string> = { off: "Tắt", dry_run: "Diễn tập", live: "Tự loại thật" };
+const MODE_CHANGE_PREFIX = "Chế độ: ";
+
+/**
+ * Một dòng nhật ký đổi thông số có ĐỔI BỘ SỐ của luật không (khác với chỉ đổi chế độ Tắt / Diễn tập / Tự loại thật — bộ số
+ * giữ nguyên thì các lượt diễn tập cũ vẫn là của cùng một bộ luật). Tab Đối chiếu diễn tập chỉ tính lượt SAU lần đổi bộ số gần nhất.
+ */
+export function ruleNumbersChanged(configChangeReasons: string): boolean {
+  return configChangeReasons.split("\n").some((l) => l.trim() !== "" && !l.startsWith(MODE_CHANGE_PREFIX));
+}
 
 /**
  * NHẬT KÝ ĐỔI THÔNG SỐ: so cấu hình ĐANG LƯU với cấu hình sắp lưu, mỗi thứ đổi một dòng "Tên ô: X → Y" (đổi chế độ đứng
@@ -501,7 +510,7 @@ export function describeConfigChanges(
   next: { mode: AutoRuleMode; config: AutoRuleConfig }
 ): string[] {
   const prevMode = prev?.mode ?? "off";
-  const lines = prevMode !== next.mode ? [`Chế độ: ${MODE_LABEL[prevMode]} → ${MODE_LABEL[next.mode]}`] : [];
+  const lines = prevMode !== next.mode ? [`${MODE_CHANGE_PREFIX}${MODE_LABEL[prevMode]} → ${MODE_LABEL[next.mode]}`] : [];
   if (!prev) return lines;
   for (const k of Object.keys(FIELD_LABEL) as (keyof AutoRuleConfig)[]) {
     if (prev.config[k] !== next.config[k]) lines.push(`${FIELD_LABEL[k]}: ${fieldValueText(k, prev.config[k])} → ${fieldValueText(k, next.config[k])}`);
