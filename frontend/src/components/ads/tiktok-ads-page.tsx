@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { AUTO_MODE_BADGE } from "@/components/ads/tiktok-campaign-page";
+import { TiktokProductBreakevenTab } from "@/components/ads/tiktok-product-breakeven-tab";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { AppShell } from "@/components/shell/app-shell";
@@ -198,7 +199,7 @@ export function TiktokAdsPage() {
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // null = chưa tự chọn tab → mặc định theo tình trạng kết nối (xem `tab` bên dưới).
-  const [tabPick, setTabPick] = useState<"overview" | "connect" | null>(null);
+  const [tabPick, setTabPick] = useState<"overview" | "breakeven" | "connect" | null>(null);
 
   useEffect(() => setAllowed(can(getStoredUser(), "ads.tiktok")), []);
 
@@ -356,6 +357,7 @@ export function TiktokAdsPage() {
             {(
               [
                 { key: "overview", label: "Tổng quan chiến dịch", chip: 0 },
+                { key: "breakeven", label: "Hòa vốn sản phẩm", chip: 0 },
                 { key: "connect", label: "Kết nối tài khoản quảng cáo", chip: pendingCount },
               ] as const
             ).map((t) => {
@@ -458,6 +460,9 @@ export function TiktokAdsPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* ===== HÒA VỐN TỪNG SẢN PHẨM — từ Lãi/Lỗ thực hiện, không cần nối quảng cáo (anh Trung 18/09) ===== */}
+        {data?.configured && !noChannel && tab === "breakeven" && <TiktokProductBreakevenTab initialChannelId={selectedId} />}
 
         {data?.configured && !noChannel && tab === "overview" && !linked && (
           <Card>
@@ -581,7 +586,7 @@ export function TiktokAdsPage() {
                 <CardTitle>Chiến dịch GMV Max</CardTitle>
                 <CardDescription className="mt-1.5">
                   ROI thực <span className="text-red-500">đỏ</span> là đang thấp hơn ROI mục tiêu đã đặt trên TikTok hoặc thấp hơn
-                  hòa vốn (mốc bắt đầu lỗ, tính từ giá vốn và phí sàn thật 30 ngày — trỏ vào số để xem căn cứ). Bấm
+                  hòa vốn (mốc bắt đầu lỗ, tính từ Lãi/Lỗ thực hiện của các đơn đã đối soát — trỏ vào số để xem căn cứ). Bấm
                   một chiến dịch để soi từng video: video nào đang tiêu tiền mà không ra đơn.
                 </CardDescription>
               </CardHeader>

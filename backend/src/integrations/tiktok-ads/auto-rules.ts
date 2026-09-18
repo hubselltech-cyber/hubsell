@@ -176,7 +176,7 @@ export const BREAKEVEN_MIN_COVERAGE_PCT = 90;
 export interface BreakevenInput {
   breakevenRoi: number | null;
   negativeMargin: boolean;
-  source: "campaign" | "shop" | null;
+  source: "campaign" | "shop" | "product" | null;
   orders: number;
   costCoveragePct: number | null;
 }

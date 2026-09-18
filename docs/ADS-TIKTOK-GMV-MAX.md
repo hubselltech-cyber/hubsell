@@ -292,3 +292,34 @@ Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, qua `computePnlRow` (không 
   dùng được chốt vào sổ (`lastRunSummary.hardRoi/hardBasis/hardFallback` + dòng căn cứ của AdsActionLog) vì hòa vốn đổi
   theo ngày. Backtest chấm theo cùng mức loại (`marks.hardBasis`). Lượt ngày chỉ tính hòa vốn khi có chiến dịch chọn
   breakeven, một lần mỗi gian.
+
+## 9. TAB "HÒA VỐN SẢN PHẨM" (code xong 18/09/2026 khuya)
+
+**Anh Trung chốt:** trước mắt chỉ cần MỘT TAB tính ROI hòa vốn của từng sản phẩm, "hoàn toàn dựa vào Lãi/Lỗ thực hiện, chỉ cần
+tuân thủ quy tắc lấy đơn giao thành công và hoàn thành công, không lấy đơn chưa đối soát". Phần gợi ý tạo quảng cáo kiểu
+Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) cần nhóm quyền **Campaign** của TikTok (`/gmv_max/bid/recommend/`,
+`/campaign/gmv_max/create/`) — anh chốt "phần nào phải xin thì làm xong rồi xin" → CHƯA làm, chưa xin.
+
+- **Backend** (`breakeven.ts`): `loadBreakevenInputs` (nạp một lần đơn 60 ngày qua `computePnlRow` + chiến dịch + sản phẩm sàn,
+  dùng chung với hòa vốn chiến dịch) · `tiktokBreakevenBaseByGroup` (thuần — MỘT lượt quét đơn cho mọi sản phẩm; có test giữ kết
+  quả từng nhóm = `tiktokBreakevenBase` trên tập SKU của nhóm → số ở tab mới KHÔNG BAO GIỜ lệch số hòa vốn chiến dịch) ·
+  `productBreakevenVerdict` (thuần) · `computeTiktokProductBreakevens`. Sản phẩm = phần trước dấu "-" của
+  `ChannelProduct.externalId` (= item_group_id của GMV Max — đúng đơn vị TikTok thêm hàng vào chiến dịch). Đúng mọi luật mục 8:
+  chỉ đơn đã đối soát thật + đơn hủy cùng lứa, cộng ngược feeGmvMax, đơn nhiều sản phẩm chia theo tỷ trọng giá trị hàng.
+- **Route** `GET /api/ads/tiktok/product-breakeven?channelId=` — CHỈ ĐỌC DB, không gọi TikTok → gian CHƯA nối quảng cáo vẫn xem
+  được (tab liệt kê mọi gian TikTok, không chỉ gian đã nối).
+- **Nhận định từng dòng** (cột riêng, trỏ chuột / bấm hiện lý do), xét theo thứ tự: `no_cost` (đơn đã đối soát chưa có giá vốn /
+  độ phủ < `BREAKEVEN_MIN_COVERAGE_PCT` 90 — đứng TRƯỚC mọi kết luận khác vì con số chưa tin được) → `no_settled` (chưa có đơn
+  đối soát, nêu số đơn đang chờ) → `loss` (lỗ trước cả quảng cáo) → `low_sample` (< `MIN_ORDERS_FOR_MARGIN` 5 đơn — vẫn hiện số
+  riêng của sản phẩm nhưng tô xám, ghi "tham khảo") → `target_below` (chiến dịch ĐANG CHẠY chứa sản phẩm đặt ROI mục tiêu dưới
+  hòa vốn — đọc `AdsCampaign.itemIds` + `roasTarget` trong DB) → `ok` ("đặt ROI mục tiêu từ X trở lên thì không ăn vào vốn").
+- **FE** `tiktok-product-breakeven-tab.tsx`, tab thứ 2 của `/ads/tiktok` (Tổng quan · Hòa vốn sản phẩm · Kết nối): 3 ô số (hòa vốn
+  toàn gian · số sản phẩm đã có mốc · số thiếu giá vốn + link Nhập giá vốn), chip lọc, ô tìm, bảng hộp cuộn như Lãi/Lỗ + 20/50/100
+  dòng, sắp xếp ở tiêu đề cột, cột tiền trước cột %, mã sản phẩm + nút copy. Doanh thu thiếu giá vốn hiện riêng dòng vàng
+  "+… thiếu giá vốn" và vẫn tính vào thứ tự "bán nhiều đứng trước" (sản phẩm bán chạy chưa nhập giá vốn không chìm xuống đáy).
+  Cột Nhận định đặt ngay sau ROI hòa vốn để màn 1440 thấy kết luận mà không cuộn ngang.
+- **Chưa có** (để cho đợt gợi ý tạo quảng cáo): ROI thực của TỪNG sản phẩm trong chiến dịch (cần 1 call/chiến dịch), tồn kho, đà
+  bán, ROI mục tiêu đề xuất theo số của sàn, nút tạo chiến dịch.
+- Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
+  loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
+  2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.

@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ShippingStatus } from "@prisma/client";
 import {
   placedRevenue,
+  productBreakevenVerdict,
   settledCohortCutoff,
   tiktokBreakevenBase,
+  tiktokBreakevenBaseByGroup,
   toTiktokBreakeven,
   type BreakevenPnlRow,
+  type TiktokBreakeven,
 } from "../tiktok-ads/breakeven";
 
 // ROI HÒA VỐN TIKTOK = 1 ÷ biên lãi TRƯỚC quảng cáo, CHỈ trên đơn đã có kết cục cuối (anh Trung 18/09):
@@ -25,7 +28,7 @@ function row(over: Partial<BreakevenPnlRow> & { sku?: string }): BreakevenPnlRow
     ...over,
   };
 }
-const cancelled = (over: Partial<BreakevenPnlRow> = {}) =>
+const cancelled = (over: Partial<BreakevenPnlRow> & { sku?: string } = {}) =>
   row({ shippingStatus: ShippingStatus.CANCELLED, isSettled: false, profit: -120_000, tiktok: null, ...over });
 
 describe("tiktokBreakevenBase", () => {
@@ -114,5 +117,94 @@ describe("placedRevenue — tự kiểm mẫu số với doanh thu TikTok báo",
       row({ createdAt: day("2026-09-06"), sku: "KHAC" }), // SKU khác
     ];
     expect(placedRevenue(rows, new Set(["TC054"]), "2026-09-06", "2026-09-07")).toBe(750_000);
+  });
+});
+
+// TAB HÒA VỐN SẢN PHẨM — một lượt quét cho mọi sản phẩm, nhưng con số từng sản phẩm PHẢI trùng phép gom gốc.
+describe("tiktokBreakevenBaseByGroup — hòa vốn từng sản phẩm", () => {
+  const rows: BreakevenPnlRow[] = [
+    row({ sku: "A-den" }),
+    row({ sku: "A-trang", profit: -15_000 }),
+    row({ sku: "B", missingCostPrice: true }),
+    row({ sku: "B", shippingStatus: ShippingStatus.SHIPPING, isSettled: false, tiktok: null }),
+    cancelled({ sku: "A-den", createdAt: day("2026-08-30") }),
+    cancelled({ sku: "A-den", createdAt: day("2026-09-10") }), // hủy NGOÀI lứa → chưa tính
+    // Đơn hai sản phẩm: A 250k + B 750k → A nhận 25% doanh thu và lãi của đơn.
+    row({
+      items: [
+        { sku: "A-den", price: 250_000, quantity: 1 },
+        { sku: "B", price: 250_000, quantity: 3 },
+      ],
+      actualRevenue: 1_000_000,
+      profit: 180_000,
+      tiktok: { feeGmvMax: -20_000 },
+    }),
+    row({ sku: "khong-co-trong-bang" }),
+  ];
+  const groupOfSku = new Map([
+    ["A-den", "SP-A"],
+    ["A-trang", "SP-A"],
+    ["B", "SP-B"],
+  ]);
+
+  it("kết quả mỗi sản phẩm = đúng phép gom gốc trên tập SKU của sản phẩm đó (số ở tab mới không lệch số hòa vốn chiến dịch)", () => {
+    const byGroup = tiktokBreakevenBaseByGroup(rows, groupOfSku);
+    expect([...byGroup.keys()].sort()).toEqual(["SP-A", "SP-B"]);
+    for (const [g, skus] of [
+      ["SP-A", ["A-den", "A-trang"]],
+      ["SP-B", ["B"]],
+    ] as const) {
+      const got = byGroup.get(g)!;
+      const want = tiktokBreakevenBase(rows, new Set(skus));
+      for (const k of Object.keys(want) as (keyof typeof want)[]) expect(got[k]).toBeCloseTo(want[k], 6);
+    }
+  });
+
+  it("đơn nhiều sản phẩm chia theo tỷ trọng giá trị hàng; đơn chưa đối soát và đơn thiếu giá vốn để ngoài", () => {
+    const a = tiktokBreakevenBaseByGroup(rows, groupOfSku).get("SP-A")!;
+    // 2 đơn riêng (250k + 250k) + 25% đơn ghép (250k) + 1 đơn hủy cùng lứa (250k)
+    expect(a).toMatchObject({ settledOrders: 3, cancelledOrders: 1, revenue: 1_000_000, pendingOrders: 1 });
+    expect(a.profitBeforeAds).toBeCloseTo(50_000 + 5_000 + 50_000, 6);
+    const b = tiktokBreakevenBaseByGroup(rows, groupOfSku).get("SP-B")!;
+    expect(b).toMatchObject({ settledOrders: 1, missingCostRevenue: 250_000, pendingOrders: 1 });
+  });
+});
+
+describe("productBreakevenVerdict — cột Nhận định của tab Hòa vốn sản phẩm", () => {
+  const be = (over: Partial<TiktokBreakeven>): TiktokBreakeven => ({
+    breakevenRoi: 5,
+    margin: 0.2,
+    negativeMargin: false,
+    source: "product",
+    orders: 12,
+    cancelledOrders: 0,
+    pendingOrders: 0,
+    costCoveragePct: 100,
+    check: null,
+    ...over,
+  });
+  const camp = (roasTarget: number | null, status = "ongoing") => ({ id: "c1", name: "TC054", status, roasTarget });
+
+  it("đủ đơn, đủ giá vốn, mục tiêu trên hòa vốn → ổn, nói luôn mức ROI tối thiểu", () => {
+    const v = productBreakevenVerdict(be({}), [camp(15)], 90);
+    expect(v.verdict).toBe("ok");
+    expect(v.reason).toContain("từ 5 trở lên");
+  });
+  it("chiến dịch ĐANG CHẠY đặt ROI mục tiêu dưới hòa vốn → cảnh báo; chiến dịch tạm dừng thì không", () => {
+    expect(productBreakevenVerdict(be({}), [camp(4)], 90).verdict).toBe("target_below");
+    expect(productBreakevenVerdict(be({}), [camp(4, "paused")], 90).verdict).toBe("ok");
+  });
+  it("thiếu giá vốn đứng trước mọi kết luận khác — con số chưa tin được thì không phán gì thêm", () => {
+    expect(productBreakevenVerdict(be({ orders: 0, breakevenRoi: null, margin: null, costCoveragePct: 0 }), [], 90).verdict).toBe("no_cost");
+    expect(productBreakevenVerdict(be({ costCoveragePct: 60, negativeMargin: true }), [], 90).verdict).toBe("no_cost");
+  });
+  it("chưa có đơn đã đối soát → nói rõ còn bao nhiêu đơn đang chờ", () => {
+    const v = productBreakevenVerdict(be({ orders: 0, breakevenRoi: null, margin: null, costCoveragePct: null, pendingOrders: 7 }), [], 90);
+    expect(v.verdict).toBe("no_settled");
+    expect(v.reason).toContain("7 đơn");
+  });
+  it("lỗ sẵn trước quảng cáo · mới vài đơn đã đối soát", () => {
+    expect(productBreakevenVerdict(be({ negativeMargin: true, breakevenRoi: null, margin: -0.05 }), [], 90).verdict).toBe("loss");
+    expect(productBreakevenVerdict(be({ orders: 3 }), [camp(2)], 90).verdict).toBe("low_sample");
   });
 });

@@ -139,6 +139,57 @@ export function tiktokBreakevenBase(rows: BreakevenPnlRow[], skuSet: Set<string>
   return base;
 }
 
+/**
+ * Cùng phép gom của tiktokBreakevenBase nhưng cho NHIỀU nhóm SKU trong MỘT lượt quét đơn (tab Hòa vốn sản phẩm: mỗi sản
+ * phẩm một nhóm — vài trăm sản phẩm × vài nghìn đơn thì không quét lại từng nhóm). `groupOfSku`: SKU → mã nhóm; SKU không
+ * có trong bảng thì bỏ qua. Kết quả của một nhóm PHẢI bằng tiktokBreakevenBase(rows, tập SKU của nhóm) — có test giữ điều đó,
+ * để con số của một sản phẩm ở tab mới không bao giờ lệch con số hòa vốn của chiến dịch chỉ chứa sản phẩm đó. Thuần.
+ */
+export function tiktokBreakevenBaseByGroup(rows: BreakevenPnlRow[], groupOfSku: Map<string, string>): Map<string, BreakevenBase> {
+  const out = new Map<string, BreakevenBase>();
+  const baseOf = (g: string) => {
+    let b = out.get(g);
+    if (!b) out.set(g, (b = { settledOrders: 0, cancelledOrders: 0, revenue: 0, profitBeforeAds: 0, adFee: 0, missingCostRevenue: 0, pendingOrders: 0 }));
+    return b;
+  };
+  const cutoff = settledCohortCutoff(rows);
+  for (const row of rows) {
+    const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
+    if (itemTotal <= 0) continue;
+    const matchByGroup = new Map<string, number>();
+    for (const it of row.items) {
+      const g = groupOfSku.get(it.sku);
+      if (g != null) matchByGroup.set(g, (matchByGroup.get(g) ?? 0) + it.price * it.quantity);
+    }
+    const cancelled = isCancelled(row);
+    const final = cancelled ? cutoff != null && row.createdAt <= cutoff : isSettledFinal(row);
+    const feeGmvMax = row.tiktok?.feeGmvMax ?? 0;
+    for (const [g, matchTotal] of matchByGroup) {
+      if (matchTotal <= 0) continue;
+      const base = baseOf(g);
+      const ratio = matchTotal / itemTotal;
+      const revenue = row.actualRevenue * ratio;
+      if (!final) {
+        base.pendingOrders++;
+        continue;
+      }
+      if (row.missingCostPrice) {
+        base.missingCostRevenue += revenue;
+        continue;
+      }
+      base.revenue += revenue;
+      if (cancelled) {
+        base.cancelledOrders++;
+        continue;
+      }
+      base.settledOrders++;
+      base.profitBeforeAds += (row.profit - feeGmvMax) * ratio;
+      base.adFee += -feeGmvMax * ratio;
+    }
+  }
+  return out;
+}
+
 export interface TiktokBreakeven {
   /** ROI hòa vốn; null = chưa tính được (thiếu dữ liệu) hoặc biên lãi ≤ 0 (xem negativeMargin). */
   breakevenRoi: number | null;
@@ -146,8 +197,8 @@ export interface TiktokBreakeven {
   margin: number | null;
   /** Bán đã lỗ trước cả quảng cáo → ROI nào cũng lỗ. */
   negativeMargin: boolean;
-  /** campaign = biên lãi riêng các SKU của chiến dịch; shop = mượn biên lãi toàn gian. */
-  source: "campaign" | "shop" | null;
+  /** campaign = biên lãi riêng các SKU của chiến dịch; shop = mượn biên lãi toàn gian; product = riêng một sản phẩm (tab Hòa vốn sản phẩm). */
+  source: "campaign" | "shop" | "product" | null;
   /** Đơn đã đối soát góp vào phép tính. */
   orders: number;
   /** Đơn hủy cùng lứa nằm trong mẫu số. */
@@ -161,7 +212,7 @@ export interface TiktokBreakeven {
 }
 
 /** Từ nguyên liệu → kết quả hòa vốn. Thuần. */
-export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "shop"): TiktokBreakeven {
+export function toTiktokBreakeven(base: BreakevenBase, source: "campaign" | "shop" | "product"): TiktokBreakeven {
   const scoped = base.revenue + base.missingCostRevenue;
   const common = {
     cancelledOrders: base.cancelledOrders,
@@ -202,8 +253,8 @@ export interface ChannelTiktokBreakeven {
   byCampaignRowId: Map<string, TiktokBreakeven>;
 }
 
-/** Hòa vốn toàn gian + từng chiến dịch. Chiến dịch chưa đủ mẫu / chưa biết SKU → mượn biên lãi gian. */
-export async function computeTiktokAdsBreakeven(channel: { id: string; userId: string }): Promise<ChannelTiktokBreakeven> {
+/** Nạp MỘT LẦN mọi thứ phép tính hòa vốn cần (đơn 60 ngày qua computePnlRow, chiến dịch, sản phẩm sàn) — dùng chung cho hòa vốn chiến dịch lẫn tab Hòa vốn sản phẩm. */
+async function loadBreakevenInputs(channel: { id: string; userId: string }) {
   const [{ orders }, campaigns, channelProducts] = await Promise.all([
     fetchPnlOrdersAll(
       { userId: channel.userId, id: channel.id, channelName: ChannelName.TIKTOK },
@@ -214,6 +265,9 @@ export async function computeTiktokAdsBreakeven(channel: { id: string; userId: s
       where: { channelId: channel.id },
       select: {
         id: true,
+        name: true,
+        status: true,
+        roasTarget: true,
         itemIds: true,
         dailyPerf: {
           where: { date: { gte: new Date(`${vnDateKey(TIKTOK_MARGIN_WINDOW_DAYS - 1)}T00:00:00Z`) } },
@@ -223,7 +277,7 @@ export async function computeTiktokAdsBreakeven(channel: { id: string; userId: s
     }),
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
-      select: { channelSku: true, externalId: true },
+      select: { channelSku: true, externalId: true, productName: true, imageUrl: true },
     }),
   ]);
   const rows: BreakevenPnlRow[] = orders.map((o) => {
@@ -250,6 +304,12 @@ export async function computeTiktokAdsBreakeven(channel: { id: string; userId: s
     if (!set) skusByProductId.set(productId, (set = new Set()));
     set.add(cp.channelSku);
   }
+  return { rows, campaigns, channelProducts, skusByProductId };
+}
+
+/** Hòa vốn toàn gian + từng chiến dịch. Chiến dịch chưa đủ mẫu / chưa biết SKU → mượn biên lãi gian. */
+export async function computeTiktokAdsBreakeven(channel: { id: string; userId: string }): Promise<ChannelTiktokBreakeven> {
+  const { rows, campaigns, skusByProductId } = await loadBreakevenInputs(channel);
 
   const shop = toTiktokBreakeven(tiktokBreakevenBase(rows, null), "shop");
   const yesterday = vnDateKey(1);
@@ -284,4 +344,128 @@ export async function saveCampaignProductIds(adsCampaignId: string, current: str
   const next = [...new Set(spuIds.filter(Boolean))].sort().join(",");
   if (!next || next === current) return;
   await prisma.adsCampaign.update({ where: { id: adsCampaignId }, data: { itemIds: next } });
+}
+
+// ============================================================
+// TAB "HÒA VỐN SẢN PHẨM" (anh Trung 18/09 khuya): ROI hòa vốn của TỪNG sản phẩm, hoàn toàn từ Lãi/Lỗ thực hiện, đúng luật
+// ở đầu file (chỉ đơn ĐÃ ĐỐI SOÁT — giao thành công / hoàn xong — + đơn hủy cùng lứa; đơn chưa đối soát để ngoài). Chỉ đọc
+// DB, KHÔNG gọi TikTok. Đây là nền cho phần gợi ý tạo quảng cáo về sau (cần xin thêm quyền Campaign — làm sau).
+// ============================================================
+
+export type ProductBreakevenVerdict = "ok" | "target_below" | "low_sample" | "loss" | "no_cost" | "no_settled";
+
+export interface ProductCampaignRef {
+  id: string;
+  name: string;
+  status: string;
+  roasTarget: number | null;
+}
+
+/** Kết luận một dòng sản phẩm + lý do (cột riêng, trỏ chuột / bấm hiện lý do). Thuần. */
+export function productBreakevenVerdict(
+  be: TiktokBreakeven,
+  campaigns: ProductCampaignRef[],
+  minCoveragePct: number
+): { verdict: ProductBreakevenVerdict; reason: string } {
+  const roi = (n: number) => n.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+  if (be.orders === 0 && (be.costCoveragePct ?? 100) < minCoveragePct) {
+    return { verdict: "no_cost", reason: "Đơn đã đối soát của sản phẩm chưa có giá vốn — nhập giá vốn thì mới tính được hòa vốn." };
+  }
+  if (be.orders === 0) {
+    return {
+      verdict: "no_settled",
+      reason:
+        be.pendingOrders > 0
+          ? `Chưa có đơn nào đã đối soát trong ${TIKTOK_MARGIN_WINDOW_DAYS} ngày (${be.pendingOrders} đơn đang giao / chờ đối soát chưa được tính).`
+          : `Chưa có đơn nào đã đối soát trong ${TIKTOK_MARGIN_WINDOW_DAYS} ngày.`,
+    };
+  }
+  if ((be.costCoveragePct ?? 100) < minCoveragePct) {
+    return { verdict: "no_cost", reason: `Mới ${be.costCoveragePct}% doanh thu đã đối soát có giá vốn — con số chỉ đại diện phần đó, nhập đủ giá vốn để tin được.` };
+  }
+  if (be.negativeMargin) {
+    return { verdict: "loss", reason: "Bán đang lỗ trước cả quảng cáo — ROI nào cũng lỗ. Xem lại giá bán, giá vốn, phí sàn trước khi chạy." };
+  }
+  if (be.orders < MIN_ORDERS_FOR_MARGIN) {
+    return { verdict: "low_sample", reason: `Mới ${be.orders} đơn đã đối soát (cần từ ${MIN_ORDERS_FOR_MARGIN}) — con số còn dao động, xem để tham khảo.` };
+  }
+  const bad = campaigns.find((c) => c.status === "ongoing" && c.roasTarget != null && be.breakevenRoi != null && c.roasTarget < be.breakevenRoi);
+  if (bad && be.breakevenRoi != null) {
+    return {
+      verdict: "target_below",
+      reason: `Chiến dịch "${bad.name}" đang đặt ROI mục tiêu ${roi(bad.roasTarget as number)}, thấp hơn hòa vốn ${roi(be.breakevenRoi)} của sản phẩm — đạt mục tiêu vẫn lỗ.`,
+    };
+  }
+  return { verdict: "ok", reason: be.breakevenRoi != null ? `Đặt ROI mục tiêu từ ${roi(be.breakevenRoi)} trở lên thì quảng cáo không ăn vào vốn.` : "" };
+}
+
+export interface ProductBreakevenRow {
+  productId: string;
+  name: string;
+  imageUrl: string | null;
+  skuCount: number;
+  /** Doanh thu đã có kết cục cuối và có giá vốn (mẫu số của biên lãi). */
+  revenue: number;
+  /** Lãi trước quảng cáo trên phần doanh thu đó (đã cộng ngược phí GMV Max). */
+  profitBeforeAds: number;
+  /** Doanh thu đã có kết cục cuối nhưng THIẾU giá vốn — không vào phép tính, hiện riêng để khách thấy mình đang bỏ sót bao nhiêu. */
+  missingCostRevenue: number;
+  breakeven: TiktokBreakeven;
+  /** Chiến dịch GMV Max đang chứa sản phẩm này (theo danh sách sản phẩm Hubsell đã lưu của từng chiến dịch). */
+  campaigns: ProductCampaignRef[];
+  verdict: ProductBreakevenVerdict;
+  reason: string;
+}
+
+export interface ChannelProductBreakevens {
+  shop: TiktokBreakeven;
+  windowDays: number;
+  products: ProductBreakevenRow[];
+}
+
+/** Hòa vốn từng sản phẩm của một gian TikTok. Chỉ liệt kê sản phẩm CÓ đơn trong cửa sổ (kể cả đơn chưa đối soát). */
+export async function computeTiktokProductBreakevens(channel: { id: string; userId: string }, minCoveragePct: number): Promise<ChannelProductBreakevens> {
+  const { rows, campaigns, channelProducts, skusByProductId } = await loadBreakevenInputs(channel);
+  const groupOfSku = new Map<string, string>();
+  for (const [productId, skus] of skusByProductId) for (const sku of skus) groupOfSku.set(sku, productId);
+  const info = new Map<string, { name: string; imageUrl: string | null }>();
+  for (const cp of channelProducts) {
+    const productId = (cp.externalId ?? "").split("-")[0];
+    if (!productId) continue;
+    const cur = info.get(productId);
+    if (!cur) info.set(productId, { name: cp.productName, imageUrl: cp.imageUrl });
+    else if (!cur.imageUrl && cp.imageUrl) cur.imageUrl = cp.imageUrl;
+  }
+  const campaignsOf = new Map<string, ProductCampaignRef[]>();
+  for (const c of campaigns) {
+    const ref = { id: c.id, name: c.name, status: c.status, roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null };
+    for (const productId of c.itemIds ? c.itemIds.split(",") : []) {
+      const list = campaignsOf.get(productId) ?? [];
+      list.push(ref);
+      campaignsOf.set(productId, list);
+    }
+  }
+
+  const products: ProductBreakevenRow[] = [];
+  for (const [productId, base] of tiktokBreakevenBaseByGroup(rows, groupOfSku)) {
+    const breakeven = toTiktokBreakeven(base, "product");
+    // Chiến dịch đang chạy đứng trước để cột "Đang chạy ở" và kết luận nhìn vào đúng chỗ đang tiêu tiền.
+    const camps = (campaignsOf.get(productId) ?? []).sort((a, b) => Number(b.status === "ongoing") - Number(a.status === "ongoing"));
+    products.push({
+      productId,
+      name: info.get(productId)?.name ?? "",
+      imageUrl: info.get(productId)?.imageUrl ?? null,
+      skuCount: skusByProductId.get(productId)?.size ?? 0,
+      revenue: base.revenue,
+      profitBeforeAds: base.profitBeforeAds,
+      missingCostRevenue: base.missingCostRevenue,
+      breakeven,
+      campaigns: camps,
+      ...productBreakevenVerdict(breakeven, camps, minCoveragePct),
+    });
+  }
+  // Bán nhiều đứng trước — tính cả phần doanh thu thiếu giá vốn, để sản phẩm bán chạy mà chưa nhập giá vốn không chìm xuống đáy.
+  const sold = (p: ProductBreakevenRow) => p.revenue + p.missingCostRevenue;
+  products.sort((a, b) => sold(b) - sold(a) || b.breakeven.pendingOrders - a.breakeven.pendingOrders);
+  return { shop: toTiktokBreakeven(tiktokBreakevenBase(rows, null), "shop"), windowDays: TIKTOK_MARGIN_WINDOW_DAYS, products };
 }

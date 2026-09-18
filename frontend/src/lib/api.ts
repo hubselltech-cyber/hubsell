@@ -2565,8 +2565,8 @@ export interface TiktokAdsBreakeven {
   margin: number | null;
   /** Bán đã lỗ trước cả quảng cáo. */
   negativeMargin: boolean;
-  /** campaign = biên lãi riêng SKU của chiến dịch; shop = mượn biên lãi toàn gian. */
-  source: "campaign" | "shop" | null;
+  /** campaign = biên lãi riêng SKU của chiến dịch; shop = mượn biên lãi toàn gian; product = riêng một sản phẩm (tab Hòa vốn sản phẩm). */
+  source: "campaign" | "shop" | "product" | null;
   /** Đơn ĐÃ ĐỐI SOÁT góp vào phép tính. */
   orders: number;
   /** Đơn hủy cùng lứa nằm trong mẫu số. */
@@ -2740,6 +2740,44 @@ export function requestTiktokAdsRefresh(channelId: string) {
     method: "POST",
     body: JSON.stringify({ channelId }),
   });
+}
+
+// ---------- HÒA VỐN TỪNG SẢN PHẨM (từ Lãi/Lỗ thực hiện, chỉ đơn đã đối soát — không gọi TikTok) ----------
+
+export type TiktokProductBreakevenVerdict = "ok" | "target_below" | "low_sample" | "loss" | "no_cost" | "no_settled";
+
+export interface TiktokProductBreakevenRow {
+  productId: string;
+  name: string;
+  imageUrl: string | null;
+  skuCount: number;
+  /** Doanh thu đã có kết cục cuối và có giá vốn (mẫu số của biên lãi). */
+  revenue: number;
+  /** Lãi trước quảng cáo trên phần doanh thu đó (đã cộng ngược phí GMV Max). */
+  profitBeforeAds: number;
+  /** Doanh thu đã đối soát nhưng THIẾU giá vốn — không vào phép tính. */
+  missingCostRevenue: number;
+  breakeven: TiktokAdsBreakeven;
+  /** Chiến dịch GMV Max đang chứa sản phẩm — chiến dịch đang chạy đứng trước. */
+  campaigns: { id: string; name: string; status: string; roasTarget: number | null }[];
+  verdict: TiktokProductBreakevenVerdict;
+  reason: string;
+}
+
+export interface TiktokProductBreakevenData {
+  channels: { id: string; shopName: string }[];
+  selectedChannelId: string | null;
+  windowDays: number;
+  /** Dưới số đơn đã đối soát này thì con số chỉ để tham khảo. */
+  minOrders: number;
+  minCoveragePct: number;
+  shop: TiktokAdsBreakeven | null;
+  products: TiktokProductBreakevenRow[];
+}
+
+export function fetchTiktokProductBreakeven(channelId?: string) {
+  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  return apiFetch<TiktokProductBreakevenData>(`/api/ads/tiktok/product-breakeven${qs}`);
 }
 
 // ---------- LOẠI VIDEO TỰ ĐỘNG (cấu hình theo từng chiến dịch) ----------

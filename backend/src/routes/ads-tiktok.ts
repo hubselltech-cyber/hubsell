@@ -68,11 +68,19 @@ import {
   tallyVideoStatuses,
 } from "../integrations/tiktok-ads/report";
 import { backtestStartDate, buildDryRunBacktest, type DryRunPlan } from "../integrations/tiktok-ads/backtest";
-import { computeTiktokAdsBreakeven, saveCampaignProductIds, type TiktokBreakeven } from "../integrations/tiktok-ads/breakeven";
+import {
+  TIKTOK_MARGIN_WINDOW_DAYS,
+  computeTiktokAdsBreakeven,
+  computeTiktokProductBreakevens,
+  saveCampaignProductIds,
+  type TiktokBreakeven,
+} from "../integrations/tiktok-ads/breakeven";
+import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
 import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
 import {
   AUTO_RULE_MODES,
+  BREAKEVEN_MIN_COVERAGE_PCT,
   breakevenUnusableReason,
   describeConfigChanges,
   parseRehearsedConfig,
@@ -122,6 +130,34 @@ async function ownedTiktokChannels(ownerId: string) {
     select: { id: true, shopName: true, lastAdsSyncAt: true },
   });
 }
+
+// TAB "HÒA VỐN SẢN PHẨM" (anh Trung 18/09 khuya): ROI hòa vốn của từng sản phẩm, hoàn toàn từ Lãi/Lỗ thực hiện — chỉ đơn ĐÃ
+// ĐỐI SOÁT (giao thành công / hoàn xong). Chỉ đọc DB, không gọi TikTok → gian CHƯA nối quảng cáo vẫn xem được (đúng lúc cần
+// nhất: trước khi quyết định chạy quảng cáo cho sản phẩm nào).
+adsTiktokRouter.get("/product-breakeven", async (req: AuthRequest, res, next) => {
+  try {
+    const channels = await ownedTiktokChannels(req.ownerId!);
+    const requestedId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const selected = channels.find((c) => c.id === requestedId) ?? channels[0] ?? null;
+    const base = { channels: channels.map((c) => ({ id: c.id, shopName: c.shopName })), selectedChannelId: selected?.id ?? null };
+    if (!selected) {
+      res.json({ ...base, windowDays: TIKTOK_MARGIN_WINDOW_DAYS, minOrders: MIN_ORDERS_FOR_MARGIN, minCoveragePct: BREAKEVEN_MIN_COVERAGE_PCT, shop: null, products: [] });
+      return;
+    }
+    const r = await computeTiktokProductBreakevens({ id: selected.id, userId: req.ownerId! }, BREAKEVEN_MIN_COVERAGE_PCT);
+    res.json({
+      ...base,
+      windowDays: r.windowDays,
+      /** Dưới số đơn đã đối soát này thì con số chỉ để tham khảo (cùng mốc với hòa vốn chiến dịch). */
+      minOrders: MIN_ORDERS_FOR_MARGIN,
+      minCoveragePct: BREAKEVEN_MIN_COVERAGE_PCT,
+      shop: breakevenForUi(r.shop),
+      products: r.products.map((p) => ({ ...p, breakeven: breakevenForUi(p.breakeven) })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
   try {

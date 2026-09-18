@@ -34,6 +34,9 @@ export function breakevenPoints(b: TiktokAdsBreakeven): string[] {
   if (b.source === "campaign") {
     out.push(`Chỉ tính ${formatNumber(b.orders)} đơn ĐÃ ĐỐI SOÁT (giao thành công / hoàn xong) trong 60 ngày của chính các sản phẩm trong chiến dịch`);
   }
+  if (b.source === "product") {
+    out.push(`Chỉ tính ${formatNumber(b.orders)} đơn ĐÃ ĐỐI SOÁT (giao thành công / hoàn xong) trong 60 ngày của chính sản phẩm này`);
+  }
   if (b.source === "shop") {
     out.push(`Chiến dịch chưa đủ 5 đơn đã đối soát có giá vốn nên tạm lấy biên lãi toàn gian (${formatNumber(b.orders)} đơn đã đối soát, 60 ngày)`);
   }
