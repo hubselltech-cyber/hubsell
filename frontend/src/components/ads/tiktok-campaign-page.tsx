@@ -221,6 +221,8 @@ export function TiktokCampaignPage() {
   const [owner, setOwner] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // A4 — KHÔI PHỤC MỘT CHẠM cả một lệnh loại (tab Lịch sử): id dòng sổ đang chờ xác nhận.
+  const [undoLogId, setUndoLogId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
@@ -365,6 +367,35 @@ export function TiktokCampaignPage() {
       toast.success(r.message);
       setPicked(new Set());
       setConfirmOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh lên TikTok");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // A4: video của một lệnh loại mà HIỆN VẪN đang bị loại (đã khôi phục rồi / đang chờ sàn thì bỏ qua). Danh sách "Đã loại"
+  // của trang luôn đủ mọi video bị loại kèm mã sản phẩm → không cần backend riêng; lệnh đi qua đúng đường khôi phục thủ
+  // công (ghi sổ trước – A3, và máy không tự loại lại các video này trong 30 ngày).
+  const undoRowsOf = (ids: string[]) => {
+    const want = new Set(ids);
+    return excludedRows.filter((v) => want.has(v.videoId) && v.pending == null);
+  };
+  const undoLog = (data?.actions ?? []).find((a) => a.id === undoLogId) ?? null;
+  const undoRows = undoLog ? undoRowsOf(undoLog.videos.map((x) => x.videoId)) : [];
+
+  async function runUndo() {
+    if (undoRows.length === 0) return;
+    setSending(true);
+    try {
+      const r = await sendTiktokAdsVideoAction(
+        campaignRowId,
+        "ADD",
+        undoRows.map((v) => ({ videoId: v.videoId, spuId: v.spuId, cost: v.cost, orders: v.orders }))
+      );
+      toast.success(r.message);
+      setUndoLogId(null);
       await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh lên TikTok");
@@ -899,6 +930,34 @@ export function TiktokCampaignPage() {
                           <Badge className="bg-rose-50 text-red-500">TikTok từ chối</Badge>
                         )}
                       </div>
+                      {/* A4 — KHÔI PHỤC MỘT CHẠM cả lệnh: máy (hay người) loại nhầm thì hoàn tác ngay tại dòng lệnh, khỏi lọc
+                          "Đã loại" rồi tick từng video. Chỉ với lệnh loại ĐÃ gửi lên sàn; đếm đúng số video còn đang bị loại. */}
+                      {removing &&
+                        a.mode === "live" &&
+                        (a.status === "SUCCESS" || a.status === "SENDING") &&
+                        (() => {
+                          const left = undoRowsOf(a.videos.map((x) => x.videoId)).length;
+                          if (left === 0) {
+                            return <p className="text-xs text-slate-400 sm:pl-[7.75rem]">Các video của lệnh này không còn bị loại.</p>;
+                          }
+                          return (
+                            <div className="sm:pl-[7.75rem]">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!canAct}
+                                title={canAct ? undefined : owner ? "TikTok chỉ cho khôi phục khi chiến dịch đang bật" : "Chỉ chủ shop khôi phục được"}
+                                onClick={() => setUndoLogId(a.id)}
+                              >
+                                <RotateCcw className="size-4" />
+                                Khôi phục cả lệnh
+                                <span className="text-slate-500">
+                                  {left === a.videos.length ? `${formatNumber(left)} video` : `còn ${formatNumber(left)}/${formatNumber(a.videos.length)} video đang bị loại`}
+                                </span>
+                              </Button>
+                            </div>
+                          );
+                        })()}
                       {a.grounds.length > 0 && (
                         <ul className="space-y-0.5 text-xs text-slate-500 sm:pl-[7.75rem]">
                           {a.grounds.map((g, i) => (
@@ -946,6 +1005,29 @@ export function TiktokCampaignPage() {
           campaignName={c.name || `Chiến dịch #${c.campaignId}`}
         />
       )}
+
+      <Dialog open={undoLog != null} onOpenChange={(open) => !sending && !open && setUndoLogId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Khôi phục {formatNumber(undoRows.length)} video của lệnh{" "}
+              {undoLog && new Date(undoLog.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}?
+            </DialogTitle>
+            <DialogDescription>
+              TikTok sẽ đưa các video này trở lại chiến dịch {c?.name} và có thể phân phối tiếp, có hiệu lực sau khoảng 20 phút. Trợ lý tự động
+              sẽ không loại lại các video này trong 30 ngày.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUndoLogId(null)} disabled={sending}>
+              Hủy
+            </Button>
+            <Button onClick={() => void runUndo()} disabled={sending || undoRows.length === 0}>
+              {sending ? "Đang gửi…" : "Khôi phục cả lệnh"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={(open) => !sending && setConfirmOpen(open)}>
         <DialogContent className="sm:max-w-md">

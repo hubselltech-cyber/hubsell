@@ -1,7 +1,7 @@
 # Quảng cáo TikTok — GMV Max (TikTok Marketing API)
 
 > Trạng thái 18/09/2026: **LIVE production** phần chỉ đọc + loại/khôi phục video THỦ CÔNG.
-> 18/09: LOẠI TỰ ĐỘNG đã code xong (cấu hình theo từng chiến dịch, Diễn tập / Tự loại thật) — mục 6.
+> 18/09: LOẠI TỰ ĐỘNG đã code xong (cấu hình theo từng chiến dịch, Diễn tập / Tự loại thật) — mục 6; nhóm A + B5 của mục 7 XONG, chưa bắn live.
 > 18/09 chiều: ROI HÒA VỐN đã có — mục 8. Chưa làm: quảng cáo LIVE GMV Max trong bảng campaign.
 > Nhật ký theo phiên nằm ở `PROGRESS.md`; file này là bản đồ kỹ thuật để làm tiếp.
 
@@ -196,7 +196,9 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    **Ghi sổ TRƯỚC khi gọi sàn** — hiện gọi `creative/update` xong mới `adsActionLog.create`. DB lỗi đúng lúc đó =
    video đã bị loại mà sổ trống ("khách mất tiền đổ oan cho mình" mà không có bằng chứng). Sửa: tạo dòng trước
    (status SENDING) rồi cập nhật SUCCESS/FAILED. (Render restart giữa chừng thì lượt chạy lại tự vá — đã xét.)
-4. **Khôi phục MỘT CHẠM cả lệnh tự động** ở Lịch sử — hiện phải lọc chip Đã loại rồi tick tay từng video. Máy loại 10
+4. ✅ **XONG 18/09 tối** — chỉ FE (`tiktok-campaign-page.tsx` `undoRowsOf / runUndo`): nút "Khôi phục cả lệnh" trên từng dòng lệnh
+   loại đã gửi, gom video của lệnh còn đang EXCLUDED từ danh sách "Đã loại" sẵn có → gọi đường khôi phục thủ công (đi qua
+   `sendVideoCommand`, gắn `restoredByUserAt`). Mô tả gốc: **Khôi phục MỘT CHẠM cả lệnh tự động** ở Lịch sử — hiện phải lọc chip Đã loại rồi tick tay từng video. Máy loại 10
    video/ngày mà khách thấy sai thì phải hoàn tác được ngay (và `restoredByUserAt` tự bảo vệ 30 ngày).
 
 **B. Nên có, không chặn**
