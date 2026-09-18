@@ -2,7 +2,7 @@
 
 > Trạng thái 18/09/2026: **LIVE production** phần chỉ đọc + loại/khôi phục video THỦ CÔNG.
 > 18/09: LOẠI TỰ ĐỘNG đã code xong (cấu hình theo từng chiến dịch, Diễn tập / Tự loại thật) — mục 6.
-> Chưa làm: ROI hòa vốn, quảng cáo LIVE GMV Max trong bảng campaign.
+> 18/09 chiều: ROI HÒA VỐN đã có — mục 8. Chưa làm: quảng cáo LIVE GMV Max trong bảng campaign.
 > Nhật ký theo phiên nằm ở `PROGRESS.md`; file này là bản đồ kỹ thuật để làm tiếp.
 
 ## 1. Vì sao là một hệ riêng
@@ -49,6 +49,7 @@ backend/src/integrations/tiktok-ads/
   oauth.ts        state ký (self 30' / invite 7 ngày, mang GIAN ĐÍCH) · connectTiktokAds · linkTiktokAdsStores (dò gian)
   report.ts       3 tầng báo cáo thành dòng sạch + video×ngày + clampGmvMaxRange (thuần, có test)
   backtest.ts     ĐỐI CHIẾU DIỄN TẬP (thuần, có test): video máy định loại, từ D+1 tới nay chạy ra sao
+  breakeven.ts    ROI HÒA VỐN (thuần + đọc DB): cộng ngược phí GMV Max, đơn hủy vẫn trong mẫu số — mục 8
   sync.ts         đồng bộ campaign×ngày vào AdsCampaign/AdsCampaignDailyPerf · verifyTiktokAdsLink · ghi lỗi token chết
   action-log.ts   quy ước ghi/đọc sổ thao tác video trong AdsActionLog.reasons (thuần, có test)
   video-meta.ts   ảnh bìa + @kênh + caption qua oEmbed công khai, nhớ đệm RAM 3h
@@ -197,3 +198,24 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
 **C. Đã rà, không phải lỗi:** lệnh trùng trong ngày (referenceId chặn) · video đã loại không bị xét lại (report chỉ lấy
 trạng thái đang phân phối) · chuyển Diễn tập → Thật cùng ngày không bắn ngay (lượt kế là trưa hôm sau) · trần 400
 video/lệnh của sàn không chạm tới (`maxExcludePerDay` ≤ 100).
+
+## 8. ROI HÒA VỐN (code xong 18/09/2026 chiều)
+
+`breakeven.ts` (thuần `tiktokBreakevenBase` + `toTiktokBreakeven`, 8 test · `computeTiktokAdsBreakeven` đọc DB).
+Hòa vốn = 1 ÷ biên lãi TRƯỚC quảng cáo, Lãi/Lỗ 30 ngày qua `computePnlRow` (không tự tính phí).
+
+- **Cộng ngược phí GMV Max**: sàn trừ quảng cáo ngay trong quyết toán đơn (`TiktokOrderSettlement.feeGmvMax`, có dấu,
+  âm = bị trừ; mapper dồn vào `order.serviceFee`) → `lãi trước ads = profit − feeGmvMax`.
+- **Mẫu số theo định nghĩa của TikTok**: gross_revenue đếm đơn ĐẶT, không rút đơn hủy/hoàn → đơn HỦY góp doanh thu,
+  0 đồng lãi (không lấy "lỗ ảo" bằng giá vốn của dòng P&L). ★ GIẢ ĐỊNH chưa kiểm được bằng số prod: nếu TikTok thật ra
+  có rút đơn hủy thì hòa vốn đang bị nâng cao hơn thực (sai về phía dè dặt). Cách kiểm đã cài sẵn: ô căn cứ hiện
+  "Hubsell thấy X · TikTok báo Y" (30 ngày, SKU của chiến dịch) — hai số sát nhau là mẫu số đúng.
+- **Đơn được tính**: có bản kê TikTok (thật / ước tính của sàn) + MỌI dòng hàng có giá vốn. Thiếu giá vốn → loại khỏi
+  cả tử lẫn mẫu, báo `costCoveragePct`. Chưa có bản kê → loại (phí = 0 giả làm biên lãi ảo cao, như Lazada).
+- **Chiến dịch → SKU**: `AdsCampaign.itemIds` = SPU của chiến dịch (`saveCampaignProductIds`, gọi trong lượt ngày và
+  route soi video — không tốn call) ↔ `ChannelProduct.externalId = "productId-skuId"` → `channelSku` ↔ `OrderItem`.
+  Chiến dịch < `MIN_ORDERS_FOR_MARGIN` (5) đơn giao thành → mượn biên lãi toàn gian (`source: "shop"`).
+- **Nơi hiện**: cột Hòa vốn (Tổng quan) · đầu trang chiến dịch · popup cấu hình chỉ NHẮC khi ROI mục tiêu / mức loại
+  dưới hòa vốn, KHÔNG tự sửa ngưỡng của khách. Luật loại video CHƯA dùng hòa vốn làm ngưỡng — việc để dành: tuỳ chọn
+  "mức loại = hòa vốn" thay cho % mục tiêu.
+- Trần `fetchPnlOrders` 2.000 đơn/30 ngày: gian lớn hơn thì biên lãi tính trên 2.000 đơn mới nhất (vẫn đại diện).

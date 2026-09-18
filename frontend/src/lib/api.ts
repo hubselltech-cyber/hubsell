@@ -2536,6 +2536,8 @@ export interface TiktokAdsCampaignRow {
   roi: number | null;
   costPerOrder: number | null;
   belowTarget: boolean;
+  /** ROI hòa vốn của chiến dịch (null = backend chưa tính được gì). */
+  breakeven: TiktokAdsBreakeven | null;
   /** Loại video tự động của chiến dịch; null = chưa cấu hình (Tắt). */
   auto: TiktokAdsAutoStatus | null;
 }
@@ -2550,6 +2552,25 @@ export interface TiktokAdsAutoStatus {
   lastRunExclude: number;
   lastRunSkipped: string | null;
   lastRunError: string | null;
+}
+
+/**
+ * ROI HÒA VỐN GMV Max = 1 ÷ biên lãi TRƯỚC quảng cáo (Lãi/Lỗ 30 ngày, đã cộng ngược phí GMV Max
+ * TikTok trừ trong đơn; đơn hủy vẫn nằm trong doanh thu như cách TikTok đếm).
+ */
+export interface TiktokAdsBreakeven {
+  /** null = chưa tính được, hoặc biên lãi ≤ 0 (xem negativeMargin). */
+  roi: number | null;
+  margin: number | null;
+  /** Bán đã lỗ trước cả quảng cáo. */
+  negativeMargin: boolean;
+  /** campaign = biên lãi riêng SKU của chiến dịch; shop = mượn biên lãi toàn gian. */
+  source: "campaign" | "shop" | null;
+  orders: number;
+  /** % doanh thu đã có giá vốn. */
+  costCoveragePct: number | null;
+  /** Tự kiểm: doanh thu Hubsell thấy vs TikTok báo (30 ngày, chỉ khi source = campaign). */
+  check: { revenueSeen: number; tiktokGmv: number } | null;
 }
 
 export const TIKTOK_AUTO_MODE_LABEL: Record<TiktokAdsAutoMode, string> = {
@@ -2573,6 +2594,8 @@ export interface TiktokAdsDashboard {
   to: string;
   /** Ngày sớm nhất Hubsell có số quảng cáo của gian (null = chưa kéo được ngày nào). */
   dataFrom: string | null;
+  /** ROI hòa vốn toàn gian (30 ngày). */
+  breakeven: TiktokAdsBreakeven | null;
   link: TiktokAdsLinkStatus | null;
   summary: {
     spend: number;
@@ -2651,6 +2674,7 @@ export interface TiktokAdsCampaignVideos {
     orders: number;
     gmv: number;
     auto: TiktokAdsAutoStatus | null;
+    breakeven: TiktokAdsBreakeven | null;
   };
   /** Khoảng ngày backend đã dùng (YYYY-MM-DD, đã kẹp ≤ hôm nay). */
   from: string;
@@ -2736,6 +2760,8 @@ export interface TiktokAdsAutoRule {
   mode: TiktokAdsAutoMode;
   config: TiktokAdsAutoConfig;
   roasTarget: number | null;
+  /** ROI hòa vốn của chiến dịch — popup nhắc khi ngưỡng đặt dưới mốc này. */
+  breakeven: TiktokAdsBreakeven | null;
   status: TiktokAdsAutoStatus | null;
   lastRun: Record<string, unknown> | null;
   others: { id: string; name: string; status: string; mode: TiktokAdsAutoMode }[];

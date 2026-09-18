@@ -63,6 +63,7 @@ import {
   fetchGmvMaxCampaignVideos,
 } from "../integrations/tiktok-ads/report";
 import { backtestStartDate, buildDryRunBacktest, type DryRunPlan } from "../integrations/tiktok-ads/backtest";
+import { computeTiktokAdsBreakeven, saveCampaignProductIds, type TiktokBreakeven } from "../integrations/tiktok-ads/breakeven";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
 import {
   AUTO_RULE_MODES,
@@ -83,6 +84,20 @@ export const adsTiktokRouter = Router();
 function parseDays(raw: unknown): number {
   const n = Number(raw);
   return Number.isFinite(n) ? Math.min(30, Math.max(1, Math.trunc(n))) : 7;
+}
+
+/** ROI hòa vốn gửi cho UI (số làm tròn ở FE). null = gian chưa tính được gì. */
+function breakevenForUi(b: TiktokBreakeven | undefined | null) {
+  if (!b) return null;
+  return {
+    roi: b.breakevenRoi,
+    margin: b.margin,
+    negativeMargin: b.negativeMargin,
+    source: b.source,
+    orders: b.orders,
+    costCoveragePct: b.costCoveragePct,
+    check: b.check,
+  };
 }
 
 async function ownedTiktokChannels(ownerId: string) {
@@ -136,7 +151,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
       to: period.endDate,
     };
     if (!selected) {
-      res.json({ ...base, dataFrom: null, link: null, summary: null, campaigns: [], series: [], adsRefreshing: false, adsSyncedAt: null });
+      res.json({ ...base, dataFrom: null, breakeven: null, link: null, summary: null, campaigns: [], series: [], adsRefreshing: false, adsSyncedAt: null });
       return;
     }
 
@@ -157,6 +172,12 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const oldest = await prisma.adsCampaignDailyPerf.aggregate({
       where: { adsCampaign: { channelId: selected.id } },
       _min: { date: true },
+    });
+
+    // ROI HÒA VỐN (30 ngày, không theo bộ lọc): căn cứ thật cho ROI mục tiêu / mức loại. Hỏng thì trang vẫn lên.
+    const breakeven = await computeTiktokAdsBreakeven({ id: selected.id, userId: req.ownerId! }).catch((err) => {
+      console.error("[TikTok Ads] Tính ROI hòa vốn lỗi:", (err as Error).message);
+      return null;
     });
 
     const seriesMap = new Map<string, { spend: number; gmv: number; orders: number }>();
@@ -192,6 +213,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         costPerOrder: orders > 0 ? spend / orders : null,
         /** Đang chạy, có tiêu tiền, mà ROI thực thấp hơn ROI mục tiêu đã đặt. */
         belowTarget: c.status === "ongoing" && roasTarget != null && roi != null && roi < roasTarget,
+        breakeven: breakevenForUi(breakeven?.byCampaignRowId.get(c.id)),
         /** Loại video tự động: chế độ + lượt xét gần nhất (null = chưa cấu hình = Tắt). */
         auto: c.tiktokAutoRule ? autoStatusOf(c.tiktokAutoRule) : null,
       };
@@ -208,6 +230,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     res.json({
       ...base,
       dataFrom: oldest._min.date ? dateKey(oldest._min.date) : null,
+      breakeven: breakevenForUi(breakeven?.shop),
       link,
       summary: {
         spend,
@@ -272,6 +295,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         status: true,
         roasTarget: true,
         biddingMethod: true,
+        itemIds: true,
         channel: { select: { shopName: true } },
         tiktokAutoRule: { select: { mode: true, lastRunOn: true, lastRunSummary: true } },
       },
@@ -299,6 +323,9 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
     try {
       const products = await fetchGmvMaxCampaignProducts(range, campaign.campaignId);
       const spuIds = products.map((p) => p.spuId).filter(Boolean);
+      // Ghi lại sản phẩm của chiến dịch (nguồn nối chiến dịch → SKU) rồi mới tính hòa vốn cho đúng SKU.
+      if (period.endDate === vnDateStr(0)) await saveCampaignProductIds(campaign.id, campaign.itemIds, spuIds).catch(() => {});
+      const breakeven = await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null);
       const videos =
         spuIds.length > 0
           ? await fetchGmvMaxCampaignVideos(range, campaign.campaignId, spuIds, [
@@ -360,6 +387,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           orders: products.reduce((s, x) => s + x.orders, 0),
           gmv: products.reduce((s, x) => s + x.gmv, 0),
           auto: campaign.tiktokAutoRule ? autoStatusOf(campaign.tiktokAutoRule) : null,
+          breakeven: breakevenForUi(breakeven?.byCampaignRowId.get(campaign.id)),
         },
         from: period.startDate,
         to: period.endDate,
@@ -549,6 +577,10 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule", async (req: AuthRequest, res, ne
       config: rule ? ruleRowToConfig(rule) : defaultAutoRuleFor(roasTarget),
       /** ROI mục tiêu TikTok đang đặt cho campaign (để popup gợi ý). */
       roasTarget,
+      /** ROI hòa vốn của chiến dịch — popup nhắc khi ROI mục tiêu / mức loại đặt DƯỚI hòa vốn. */
+      breakeven: breakevenForUi(
+        (await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id)
+      ),
       status: rule ? autoStatusOf(rule) : null,
       lastRun: (rule?.lastRunSummary as Record<string, unknown> | null) ?? null,
       others: others.map((o) => ({ id: o.id, name: o.name, status: o.status, mode: (o.tiktokAutoRule?.mode ?? "off") as AutoRuleMode })),

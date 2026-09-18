@@ -37,6 +37,7 @@ import { toast } from "sonner";
 
 import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
+import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { TiktokDryRunBacktest } from "@/components/ads/tiktok-dry-run-backtest";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
@@ -407,7 +408,8 @@ export function TiktokCampaignPage() {
             </h1>
             {c && (
               <p className="text-sm text-muted-foreground">
-                {target != null ? `ROI mục tiêu ${formatRoi(target)}` : "Phân phối tối đa"} · ROI thực{" "}
+                {target != null ? `ROI mục tiêu ${formatRoi(target)}` : "Phân phối tối đa"} · Hòa vốn{" "}
+                <TiktokBreakevenValue breakeven={c.breakeven} className="font-semibold" /> · ROI thực{" "}
                 <span
                   className={cn(
                     "font-semibold tabular-nums",

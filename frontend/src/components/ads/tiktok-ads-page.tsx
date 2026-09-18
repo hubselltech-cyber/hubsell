@@ -26,6 +26,7 @@ import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { toast } from "sonner";
 
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
+import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { AUTO_MODE_BADGE } from "@/components/ads/tiktok-campaign-page";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
@@ -144,19 +145,37 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
     cell: ({ row }) => <span className="tabular-nums text-slate-500">{formatRoi(row.original.roasTarget)}</span>,
   },
   {
+    id: "breakeven",
+    size: 100,
+    meta: { label: "Hòa vốn", align: "right" },
+    header: "Hòa vốn",
+    cell: ({ row }) => <TiktokBreakevenValue breakeven={row.original.breakeven} />,
+  },
+  {
     id: "roi",
     size: 100,
     meta: { label: "ROI thực", align: "right" },
     header: "ROI thực",
     cell: ({ row }) => {
       const c = row.original;
+      const be = c.breakeven?.roi ?? null;
+      // Dưới HÒA VỐN = đang lỗ thật (nặng hơn "dưới mục tiêu") → cũng tô đỏ, lời nhắc nói rõ mốc nào.
+      const losing = c.roi != null && c.spend > 0 && (c.breakeven?.negativeMargin === true || (be != null && c.roi < be));
       return (
         <span
           className={cn(
             TEXT_NUMBER_STRONG,
-            c.roi == null ? "text-slate-400" : c.belowTarget ? "text-red-500" : "text-slate-900"
+            c.roi == null ? "text-slate-400" : c.belowTarget || losing ? "text-red-500" : "text-slate-900"
           )}
-          title={c.belowTarget ? `Thấp hơn ROI mục tiêu ${formatRoi(c.roasTarget)} đã đặt trên TikTok` : undefined}
+          title={
+            losing
+              ? be != null
+                ? `Dưới ROI hòa vốn ${formatRoi(be)} — quảng cáo đang ăn vào vốn`
+                : "Sản phẩm đang lỗ trước cả quảng cáo"
+              : c.belowTarget
+                ? `Thấp hơn ROI mục tiêu ${formatRoi(c.roasTarget)} đã đặt trên TikTok`
+                : undefined
+          }
         >
           {formatRoi(c.roi)}
         </span>
@@ -561,7 +580,8 @@ export function TiktokAdsPage() {
               <CardHeader>
                 <CardTitle>Chiến dịch GMV Max</CardTitle>
                 <CardDescription className="mt-1.5">
-                  ROI thực <span className="text-red-500">đỏ</span> là đang thấp hơn ROI mục tiêu đã đặt trên TikTok. Bấm
+                  ROI thực <span className="text-red-500">đỏ</span> là đang thấp hơn ROI mục tiêu đã đặt trên TikTok hoặc thấp hơn
+                  hòa vốn (mốc bắt đầu lỗ, tính từ giá vốn và phí sàn thật 30 ngày — trỏ vào số để xem căn cứ). Bấm
                   một chiến dịch để soi từng video: video nào đang tiêu tiền mà không ra đơn.
                 </CardDescription>
               </CardHeader>

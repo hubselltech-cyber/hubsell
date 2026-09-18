@@ -170,6 +170,21 @@ export function TiktokAutoRuleDialog({
   const hadRun = Boolean(rule?.status?.lastRunOn);
   const lastSummary = preview?.summary ?? rule?.status?.lastRunSummary ?? null;
   const hardRoi = cfg ? cfg.roiTarget * (cfg.roiHardPct / 100) : 0;
+  // ROI hòa vốn (giá vốn + phí sàn thật 30 ngày) — căn cứ để soát hai ngưỡng ROI đang nhập.
+  const breakevenRoi = rule?.breakeven?.roi ?? null;
+  const breakevenWarnings: string[] = [];
+  if (cfg && rule?.breakeven?.negativeMargin) {
+    breakevenWarnings.push("Sản phẩm của chiến dịch đang lỗ trước cả quảng cáo — ROI nào cũng lỗ, xem lại giá bán và giá vốn trước");
+  } else if (cfg && breakevenRoi != null) {
+    if (cfg.roiTarget < breakevenRoi) {
+      breakevenWarnings.push(`ROI mục tiêu ${formatRoi(cfg.roiTarget)} đang thấp hơn hòa vốn ${formatRoi(breakevenRoi)} — đạt mục tiêu vẫn lỗ`);
+    }
+    if (cfg.ruleLowRoiOn && hardRoi < breakevenRoi) {
+      breakevenWarnings.push(
+        `Mức loại ${formatRoi(hardRoi)} thấp hơn hòa vốn ${formatRoi(breakevenRoi)} — video có ROI từ ${formatRoi(hardRoi)} đến ${formatRoi(breakevenRoi)} đang lỗ mà máy không loại`
+      );
+    }
+  }
   const activeRuleSummary: string[] = cfg
     ? [
         cfg.ruleNoOrderOn ? `tiêu ≥ ${formatVND(cfg.spendNoOrder)} mà 0 đơn` : "",
@@ -285,6 +300,15 @@ export function TiktokAutoRuleDialog({
               </p>
             </div>
 
+            {/* Ngưỡng đặt DƯỚI hòa vốn = máy để yên video đang lỗ. Chỉ NHẮC, không tự sửa số của khách. */}
+            {breakevenWarnings.length > 0 && (
+              <ul className="list-disc space-y-1 rounded-lg border border-amber-200 bg-amber-50 py-2.5 pr-3 pl-7 text-xs text-amber-800">
+                {breakevenWarnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            )}
+
             {/* ===== TẦNG 1: hai số chính (điện thoại xếp dọc, từ sm hai cột) ===== */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
@@ -292,6 +316,9 @@ export function TiktokAutoRuleDialog({
                 <Input inputMode="decimal" value={form.roiTarget} onChange={(e) => set("roiTarget")(e.target.value)} />
                 {rule.roasTarget != null && (
                   <span className="block text-xs text-slate-400">TikTok đang đặt {formatRoi(rule.roasTarget)} cho chiến dịch này.</span>
+                )}
+                {breakevenRoi != null && (
+                  <span className="block text-xs text-slate-400">Hòa vốn của chiến dịch: {formatRoi(breakevenRoi)}.</span>
                 )}
               </label>
               <label className="space-y-1 text-sm">

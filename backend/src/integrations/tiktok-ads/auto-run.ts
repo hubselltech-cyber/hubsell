@@ -51,6 +51,7 @@ import {
   type GmvMaxVideoRow,
 } from "./report";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink, type TiktokAdsScope } from "./sync";
+import { saveCampaignProductIds } from "./breakeven";
 
 /** verdict ghi vào AdsActionLog cho lệnh loại tự động (khác "manual"). */
 export const VIDEO_VERDICT_AUTO = "auto_exclude";
@@ -92,6 +93,8 @@ interface CampaignLite {
   name: string;
   channelId: string;
   status: string;
+  /** SPU đang lưu của chiến dịch (nguồn nối chiến dịch → SKU cho ROI hòa vốn); thiếu = coi như chưa lưu. */
+  itemIds?: string;
 }
 
 // ------------------------------------------------------------
@@ -132,6 +135,8 @@ export async function trackCampaignVideos(scope: TiktokAdsScope, campaign: Campa
   };
   const products = await fetchGmvMaxCampaignProducts(range30, campaign.campaignId);
   const spuIds = products.map((p) => p.spuId).filter(Boolean);
+  // Tiện lượt: ghi lại sản phẩm của chiến dịch cho phép tính ROI hòa vốn (không tốn call nào thêm).
+  await saveCampaignProductIds(campaign.id, campaign.itemIds ?? "", spuIds).catch(() => {});
   const rows30 =
     spuIds.length > 0
       ? (await fetchGmvMaxCampaignVideos(range30, campaign.campaignId, spuIds, GMV_MAX_LIVE_VIDEO_STATUSES)).filter(
@@ -307,7 +312,7 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
 
   const campaigns = await prisma.adsCampaign.findMany({
     where: { channelId: channel.id, status: "ongoing" },
-    select: { id: true, campaignId: true, name: true, channelId: true, status: true, tiktokAutoRule: true },
+    select: { id: true, campaignId: true, name: true, channelId: true, status: true, itemIds: true, tiktokAutoRule: true },
   });
   result.campaigns = campaigns.length;
 
