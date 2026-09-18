@@ -2505,6 +2505,13 @@ export function getTiktokAdsAuthUrl(channelId: string, invite = false) {
   return apiFetch<{ url: string }>(`/api/tiktok-ads/auth-url?${qs.toString()}`);
 }
 
+/** Gỡ kết nối tài khoản quảng cáo của MỘT gian. Số liệu, cấu hình, sổ lệnh cũ được giữ; chiến dịch đang Tự loại thật về Diễn tập. */
+export function unlinkTiktokAds(channelId: string) {
+  return apiFetch<{ message: string; liveRulesDowngraded: number }>(`/api/tiktok-ads/link?channelId=${encodeURIComponent(channelId)}`, {
+    method: "DELETE",
+  });
+}
+
 export interface TiktokAdsConnectResult {
   kind: "self" | "invite";
   /** Gian mà chủ shop bấm nút Kết nối — kết quả nói về đúng gian này. */

@@ -161,8 +161,13 @@ TC054 7 ngày 11–17/09: sẽ loại 2 video (296.640đ, 4 đơn, ROI 2,76 và 
 xem diễn tập vài hôm.
 
 ### Còn treo
-ROI tầng video gộp đơn tự nhiên (luật nghiêng nhân từ); ROI hòa vốn chờ giá vốn; tách luật video nhà / creator;
-nút Gỡ kết nối; LIVE GMV Max chưa vào bảng campaign. Migration `20260918120000_tiktok_ads_auto_rules` tự áp khi Render boot.
+ROI tầng video gộp đơn tự nhiên (luật nghiêng nhân từ); tách luật video nhà / creator; LIVE GMV Max chưa vào bảng campaign.
+✅ Nút **Gỡ kết nối** (18/09 khuya, tab Kết nối — mỗi dòng gian đã nối / nối hỏng có nút, hộp xác nhận nói rõ cái gì dừng cái gì
+giữ): `unlinkTiktokAds` xóa dòng nối (+ token nếu không còn gian nào dùng) và, vì tài khoản quảng cáo đổi được theo thời gian,
+(a) đưa chiến dịch `ongoing` của gian về `paused` — lượt đồng bộ chỉ cập nhật chiến dịch sàn CÒN trả về, để nguyên thì nối tài
+khoản khác xong chiến dịch cũ thành dòng ma "Đang chạy"; nối lại đúng tài khoản cũ thì đồng bộ tự bật lại; (b) luật **Tự loại
+thật → Diễn tập** + một dòng nhật ký `config_change` — nối lại là máy KHÔNG lặng lẽ loại video thật tiếp. Số liệu, cấu hình,
+lượt diễn tập, sổ lệnh giữ nguyên. Hubsell không gọi gì sang TikTok khi gỡ (không thu hồi ủy quyền phía sàn). Migration `20260918120000_tiktok_ads_auto_rules` tự áp khi Render boot.
 
 ## 7. Giai đoạn kế — BẬT TỰ LOẠI THẬT: việc còn thiếu (rà 18/09/2026 tối, chờ anh Trung chốt thứ tự)
 

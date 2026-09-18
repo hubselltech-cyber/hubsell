@@ -69,11 +69,18 @@ tiktokAdsRouter.get("/auth-url", requireAdmin, async (req: AuthRequest, res, nex
 tiktokAdsRouter.delete("/link", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
-    if (!(await unlinkTiktokAds(req.ownerId!, channelId))) {
+    const r = await unlinkTiktokAds(req.ownerId!, channelId);
+    if (!r) {
       res.status(404).json({ error: "Gian này chưa kết nối quảng cáo TikTok" });
       return;
     }
-    res.json({ message: "Đã gỡ kết nối quảng cáo TikTok" });
+    res.json({
+      message:
+        r.liveRulesDowngraded > 0
+          ? `Đã gỡ kết nối quảng cáo TikTok. ${r.liveRulesDowngraded} chiến dịch đang Tự loại thật đã chuyển về Diễn tập.`
+          : "Đã gỡ kết nối quảng cáo TikTok.",
+      ...r,
+    });
   } catch (err) {
     next(err);
   }

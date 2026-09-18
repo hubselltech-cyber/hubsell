@@ -31,6 +31,7 @@ import {
   getTiktokAdsAdvertisers,
   type TiktokAdsAdvertiser,
 } from "./client";
+import { VIDEO_ACTION_CONFIG_CHANGE, VIDEO_VERDICT_MANUAL } from "./action-log";
 
 const STATE_SECRET = process.env.JWT_SECRET ?? "hubsell_dev_jwt_secret_change_me";
 const STATE_FRONTEND_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000";
@@ -259,16 +260,54 @@ export async function linkTiktokAdsStores(
   };
 }
 
-/** Gỡ kết nối quảng cáo của MỘT gian; token không còn gian nào dùng thì xóa luôn. */
-export async function unlinkTiktokAds(ownerId: string, channelId: string): Promise<boolean> {
+export interface TiktokAdsUnlinkResult {
+  /** Số chiến dịch đang "Tự loại thật" được đưa về Diễn tập. */
+  liveRulesDowngraded: number;
+}
+
+/**
+ * Gỡ kết nối quảng cáo của MỘT gian; token không còn gian nào dùng thì xóa luôn. null = gian chưa nối.
+ *
+ * Tài khoản quảng cáo là thực thể RỜI shop, đổi được theo thời gian (anh Trung 17/09) → gỡ xong khách có thể nối một tài
+ * khoản KHÁC. Vì vậy ngoài việc xóa dòng nối:
+ *   · chiến dịch của gian về "paused": Hubsell không còn đọc được trạng thái thật; để nguyên "ongoing" thì nối tài khoản
+ *     khác xong, chiến dịch của tài khoản cũ thành dòng ma "Đang chạy" mãi (lượt đồng bộ chỉ cập nhật chiến dịch sàn còn trả
+ *     về). Nối lại đúng tài khoản cũ thì lượt đồng bộ tự bật lại chiến dịch còn chạy.
+ *   · luật "Tự loại thật" về Diễn tập: nối lại là máy KHÔNG lặng lẽ loại video thật tiếp — bật thật phải là quyết định mới
+ *     của khách. Cấu hình, lượt diễn tập đã có, sổ lệnh, số liệu cũ đều GIỮ nguyên.
+ */
+export async function unlinkTiktokAds(ownerId: string, channelId: string): Promise<TiktokAdsUnlinkResult | null> {
   const link = await prisma.tiktokAdsStoreLink.findFirst({
     where: { channelId, channel: { userId: ownerId } },
     select: { id: true, authId: true },
   });
-  if (!link) return false;
-  await prisma.tiktokAdsStoreLink.delete({ where: { id: link.id } });
+  if (!link) return null;
+  const liveRules = await prisma.tiktokAdsAutoRule.findMany({
+    where: { mode: "live", adsCampaign: { channelId } },
+    select: { id: true, adsCampaignId: true },
+  });
+  await prisma.$transaction([
+    prisma.tiktokAdsStoreLink.delete({ where: { id: link.id } }),
+    prisma.adsCampaign.updateMany({ where: { channelId, status: "ongoing" }, data: { status: "paused" } }),
+    prisma.tiktokAdsAutoRule.updateMany({ where: { id: { in: liveRules.map((r) => r.id) } }, data: { mode: "dry_run" } }),
+    // Nhật ký đổi thông số (tab Lịch sử của chiến dịch) — để sau này không ai thắc mắc vì sao chế độ tự đổi.
+    ...liveRules.map((r, i) =>
+      prisma.adsActionLog.create({
+        data: {
+          channelId,
+          adsCampaignId: r.adsCampaignId,
+          action: VIDEO_ACTION_CONFIG_CHANGE,
+          mode: "dry_run",
+          verdict: VIDEO_VERDICT_MANUAL,
+          status: "SUCCESS",
+          referenceId: `ttcfg-${r.adsCampaignId}-${Date.now()}-${i}`,
+          reasons: "Chế độ: Tự loại thật → Diễn tập (gỡ kết nối tài khoản quảng cáo của gian)",
+        },
+      })
+    ),
+  ]);
   await prisma.tiktokAdsAuth.deleteMany({ where: { id: link.authId, links: { none: {} } } });
-  return true;
+  return { liveRulesDowngraded: liveRules.length };
 }
 
 export interface TiktokAdsLinkStatus {

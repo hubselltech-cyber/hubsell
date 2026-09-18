@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRight, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Wallet } from "lucide-react";
+import { ArrowRight, Link2, Megaphone, RefreshCw, ShoppingBag, Target, TrendingUp, Unlink, Wallet } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -37,6 +37,7 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import { TIKTOK_AUTO_MODE_LABEL } from "@/lib/api";
@@ -46,6 +47,7 @@ import {
   getStoredUser,
   getTiktokAdsAuthUrl,
   requestTiktokAdsRefresh,
+  unlinkTiktokAds,
   type TiktokAdsCampaignRow,
 } from "@/lib/api";
 import { RANGE_PRESETS, formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
@@ -198,6 +200,9 @@ export function TiktokAdsPage() {
   const rangeLabel = formatRangeLabel(range).toLowerCase();
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Gỡ kết nối: id gian đang chờ xác nhận (null = hộp đóng).
+  const [unlinkId, setUnlinkId] = useState<string | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
   // null = chưa tự chọn tab → mặc định theo tình trạng kết nối (xem `tab` bên dưới).
   const [tabPick, setTabPick] = useState<"overview" | "breakeven" | "connect" | null>(null);
 
@@ -247,6 +252,21 @@ export function TiktokAdsPage() {
       toast.error(err instanceof ApiError ? err.message : "Không tạo được link kết nối");
     } finally {
       setConnecting(false);
+    }
+  }
+
+  async function runUnlink() {
+    if (!unlinkId) return;
+    setUnlinking(true);
+    try {
+      const r = await unlinkTiktokAds(unlinkId);
+      toast.success(r.message);
+      setUnlinkId(null);
+      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads"] });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không gỡ được kết nối");
+    } finally {
+      setUnlinking(false);
     }
   }
 
@@ -432,6 +452,10 @@ export function TiktokAdsPage() {
                           >
                             Xem số
                           </Button>
+                          <Button size="sm" variant="ghost" className="ml-auto text-slate-500 hover:text-red-600" onClick={() => setUnlinkId(c.id)}>
+                            <Unlink className="size-4" />
+                            Gỡ kết nối
+                          </Button>
                         </>
                       ) : (
                         <>
@@ -439,6 +463,12 @@ export function TiktokAdsPage() {
                             <Link2 className="size-4" />
                             {broken ? "Kết nối lại TikTok Ads" : "Kết nối TikTok Ads"}
                           </Button>
+                          {broken && (
+                            <Button size="sm" variant="ghost" className="ml-auto text-slate-500 hover:text-red-600" onClick={() => setUnlinkId(c.id)}>
+                              <Unlink className="size-4" />
+                              Gỡ kết nối
+                            </Button>
+                          )}
                           {/* Dòng phụ thẳng cột với nút: 14rem tên gian + mũi tên + 2 khe 0.75rem. */}
                           <div className="w-full space-y-1 sm:pl-[16.5rem]">
                             {broken && <p className="text-xs text-red-500">{c.ads?.problem}</p>}
@@ -616,6 +646,31 @@ export function TiktokAdsPage() {
         )}
       </div>
 
+      {/* ===== XÁC NHẬN GỠ KẾT NỐI — nói rõ cái gì dừng, cái gì được giữ ===== */}
+      <Dialog open={unlinkId != null} onOpenChange={(open) => !unlinking && !open && setUnlinkId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gỡ tài khoản quảng cáo khỏi gian {data?.channels.find((c) => c.id === unlinkId)?.shopName}?</DialogTitle>
+            <DialogDescription>
+              Hubsell sẽ ngừng đọc số GMV Max và ngừng mọi lượt chấm, loại video tự động của gian này. Quảng cáo trên TikTok vẫn chạy bình thường —
+              Hubsell không tắt hay sửa gì bên TikTok.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-400">
+            <li>Số liệu cũ, cấu hình tự động loại và lịch sử lệnh được giữ nguyên.</li>
+            <li>Chiến dịch đang bật Tự loại thật sẽ chuyển về Diễn tập — kết nối lại thì máy không tự loại video thật cho tới khi anh/chị bật lại.</li>
+            <li>Muốn dùng tài khoản quảng cáo khác cho gian: gỡ xong bấm Kết nối ở đúng dòng này.</li>
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnlinkId(null)} disabled={unlinking}>
+              Hủy
+            </Button>
+            <Button className="bg-red-600 text-white hover:bg-red-700" onClick={() => void runUnlink()} disabled={unlinking}>
+              {unlinking ? "Đang gỡ…" : "Gỡ kết nối"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
