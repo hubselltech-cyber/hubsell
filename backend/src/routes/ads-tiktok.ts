@@ -81,6 +81,7 @@ import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-a
 import {
   AUTO_RULE_MODES,
   BREAKEVEN_MIN_COVERAGE_PCT,
+  autoCommandReferenceId,
   breakevenUnusableReason,
   describeConfigChanges,
   parseRehearsedConfig,
@@ -93,12 +94,15 @@ import {
   type AutoRuleMode,
 } from "../integrations/tiktok-ads/auto-rules";
 import {
+  AUTO_RUN_EARLIEST_HOUR,
   VIDEO_VERDICT_AUTO,
+  applyAutoPlan,
   autoPlanDataProblem,
   buildAutoPlan,
   defaultAutoRuleFor,
   ruleRowToConfig,
   trackCampaignVideos,
+  vnHourNow,
 } from "../integrations/tiktok-ads/auto-run";
 
 export const adsTiktokRouter = Router();
@@ -872,6 +876,81 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest
         flag: plan.assessments.filter((a) => a.verdict === "flag").map(pick),
         protected: plan.assessments.filter((a) => a.verdict === "protected").map(pick),
         tracking: { seen: track.seen, newVideos: track.newVideos, graduated: track.graduated, relearning: track.relearning },
+      });
+    } catch (err) {
+      await recordTiktokAdsFailure(scope.linkId, err);
+      res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// LOẠI NGAY (anh Trung 18/09 đêm: "trước đó đã diễn tập một khoảng thời gian rồi nên thực thi ngay ở lượt đầu khi chuyển sang
+// chế độ loại thật là hợp lý" — bật thật buổi tối mà phải chờ tới trưa hôm sau máy mới làm việc đầu tiên thì quá dài).
+// Khách bật Tự loại thật → popup chấm lại tại chỗ (route preview) và hiện ĐÚNG danh sách sẽ loại → khách bấm "Loại ngay" →
+// route này. Không tin danh sách FE gửi lên: backend CHẤM LẠI, và chỉ gửi lệnh khi danh sách mới TRÙNG KHÍT danh sách khách
+// vừa thấy (`expectedVideoIds`) — thấy gì thì loại đúng cái đó. Lệnh đi qua đúng `applyAutoPlan` của lượt chấm hằng ngày nên
+// giữ nguyên mọi chốt: số liệu sàn hỏng thì bỏ lượt (A2), kiểm quyền TKQC + chiến dịch còn bật, ghi sổ trước khi gọi sàn (A3),
+// trần video/ngày, giữ tối thiểu N video ra đơn, MỘT lệnh loại thật mỗi ngày (mã `…-live`). Chỉ chạy sau 12h trưa — trước
+// giờ đó số hôm qua của TikTok chưa ổn định (chi phí video trễ tới 11 giờ), cùng căn cứ với giờ của lượt chấm hằng ngày.
+adsTiktokRouter.post("/campaigns/:id/auto-rule/run-now", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await ownedTiktokCampaign(req.ownerId!, String(req.params.id));
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const rule = campaign.tiktokAutoRule;
+    if (!rule || rule.mode !== "live") {
+      res.status(409).json({ error: "Chiến dịch chưa bật Tự loại thật." });
+      return;
+    }
+    if (vnHourNow() < AUTO_RUN_EARLIEST_HOUR) {
+      res.status(409).json({
+        error: `Số hôm qua của TikTok chưa ổn định trước ${AUTO_RUN_EARLIEST_HOUR}h trưa. Lượt loại thật đầu tiên sẽ tự chạy trong khoảng ${AUTO_RUN_EARLIEST_HOUR}h–14h hôm nay.`,
+      });
+      return;
+    }
+    const today = vnDateStr(0);
+    if (await prisma.adsActionLog.findUnique({ where: { referenceId: autoCommandReferenceId(campaign.id, today, "live") }, select: { id: true } })) {
+      res.status(409).json({ error: "Hôm nay Trợ lý đã gửi một lệnh loại thật cho chiến dịch này. Lượt kế tiếp là trưa mai." });
+      return;
+    }
+    const scope = await getTiktokAdsScope(campaign.channelId);
+    if (!scope) {
+      res.status(409).json({ error: "Gian chưa kết nối quảng cáo TikTok hoặc kết nối đã hết hiệu lực." });
+      return;
+    }
+    const expected: string[] = (Array.isArray(req.body?.expectedVideoIds) ? req.body.expectedVideoIds : []).map(String).sort();
+    const cfg = ruleRowToConfig(rule);
+    try {
+      const track = await trackCampaignVideos(scope, campaign, today);
+      const breakeven =
+        cfg.hardBasis === "breakeven"
+          ? ((await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null))?.byCampaignRowId.get(campaign.id) ?? null)
+          : null;
+      const bundle = await buildAutoPlan(scope, campaign, cfg, track, today, breakeven);
+      const fresh = bundle.plan.exclude.map((a) => a.videoId).sort();
+      if (fresh.length !== expected.length || fresh.some((id, i) => id !== expected[i])) {
+        res.status(409).json({ error: "Danh sách video sẽ loại vừa thay đổi so với lúc anh/chị xem. Hãy xem lại danh sách mới rồi bấm Loại ngay.", code: "plan_changed" });
+        return;
+      }
+      const outcome = await applyAutoPlan(scope, campaign, rule, cfg, bundle, today, req.ownerId!);
+      const after = await prisma.tiktokAdsAutoRule.findUnique({ where: { adsCampaignId: campaign.id } });
+      const status = after ? autoStatusOf(after) : null;
+      res.json({
+        outcome,
+        excluded: outcome === "executed" ? fresh.length : 0,
+        message:
+          outcome === "executed"
+            ? `Đã gửi lệnh loại ${fresh.length} video lên TikTok. Có hiệu lực sau khoảng 20 phút; khôi phục được ở tab Lịch sử.`
+            : outcome === "nothing"
+              ? "Hiện không có video nào tới mức loại."
+              : outcome === "failed"
+                ? `TikTok từ chối lệnh: ${status?.lastRunError ?? "không rõ lý do"}`
+                : (status?.lastRunSkipped ?? "Lượt này bị bỏ qua, chưa loại video nào."),
+        status,
       });
     } catch (err) {
       await recordTiktokAdsFailure(scope.linkId, err);

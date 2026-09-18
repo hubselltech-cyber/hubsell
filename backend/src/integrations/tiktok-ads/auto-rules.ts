@@ -85,6 +85,12 @@ export const AUTO_RULE_LIMITS = {
   minOrderingVideosKeep: { min: 0, max: 50 },
 } as const;
 
+/** Mã chống gửi trùng của lệnh tự động: mỗi ngày một lệnh diễn tập + một lệnh loại thật cho mỗi chiến dịch. Thuần. */
+export function autoCommandReferenceId(adsCampaignRowId: string, today: string, mode: AutoRuleMode): string {
+  const base = `ttauto-${adsCampaignRowId}-${today}`;
+  return mode === "live" ? `${base}-live` : base;
+}
+
 /** Khách khôi phục tay thì máy không loại lại video đó trong chừng này ngày. */
 export const RESTORE_PROTECT_DAYS = 30;
 

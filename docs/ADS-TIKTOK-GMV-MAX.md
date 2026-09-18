@@ -265,6 +265,24 @@ trên chiến dịch giả KHÔNG nối TikTok, gọi route PUT thật 4 kiểu:
 tiêu: 15 → 20 / Số video loại tối đa mỗi ngày: 10 → 30"; bật thật thiếu cờ → 409, không lưu, không ghi; bật thật + bỏ qua → 1 dòng
 "Chế độ: Diễn tập → Tự loại thật / Mức loại: 50% → 80%". Dữ liệu thử đã xóa.
 
+**D. LOẠI NGAY khi vừa bật Tự loại thật (18/09/2026 đêm).** Anh Trung bật thật TC054 buổi tối, thấy video "Sẽ loại" vẫn chạy →
+hỏi "đặt thời gian vậy có quá dài không?". Nhịp MỘT LƯỢT / NGÀY sau 12h giữ nguyên (chi phí video trễ tới 11h, tầng video không có
+số theo giờ → chấm lại trong ngày ra đúng kết quả cũ), nhưng lúc VỪA BẬT thì chờ tới trưa hôm sau là thừa: số để chấm đã có. Anh
+chốt: "trước đó đã diễn tập một khoảng thời gian rồi nên thực thi ngay ở lượt đầu khi chuyển sang chế độ loại thật là hợp lý".
+- Lưu xong với chế độ vừa CHUYỂN sang live → popup không đóng mà sang **bước Loại ngay**: chấm lại tại chỗ bằng cấu hình đã lưu
+  (route preview — không ghi gì) → hiện ĐÚNG danh sách sẽ loại kèm căn cứ → nút đỏ "Loại ngay N video" / "Để lượt chấm kế tiếp".
+  Không có video tới mức loại / số liệu sàn hỏng (A2) / trước 12h trưa → chỉ thông báo, không có nút loại.
+- `POST /campaigns/:id/auto-rule/run-now` `{ expectedVideoIds }`: backend CHẤM LẠI và chỉ gửi khi danh sách mới TRÙNG KHÍT danh
+  sách khách vừa thấy (lệch → 409 `plan_changed`, popup chấm lại cho khách xem danh sách mới). Lệnh đi qua đúng `applyAutoPlan`
+  của lượt hằng ngày → giữ mọi chốt (A2, kiểm quyền + chiến dịch còn bật, ghi sổ trước A3, trần video/ngày, giữ N video ra đơn).
+  Chỉ chạy khi rule đang live, sau 12h VN, và hôm nay chưa có lệnh loại thật nào.
+- `autoCommandReferenceId` (thuần, test): diễn tập `ttauto-{id}-{ngày}`, loại thật `…-live` → lệnh thật không bị dòng DIỄN TẬP
+  cùng ngày chặn, nhưng vẫn tối đa MỘT lệnh loại thật / chiến dịch / ngày (Loại ngay xong thì lượt 12h hôm đó tự bỏ qua).
+- Trang chiến dịch: đang live mà chưa có lượt live nào → dòng vàng có nút "xem danh sách và loại ngay" mở thẳng bước này
+  (cho chiến dịch đã lỡ bật thật trước khi có tính năng — TC054).
+- ⚠️ Đường GỬI thật của run-now chưa bắn lần nào ở local (token nhà là thật): đã kiểm phần chấm + hiển thị bằng số thật, và kiểm
+  backend từ chối khi danh sách lệch. Lần bắn thật đầu tiên = anh Trung bấm trên prod hoặc lượt chấm trưa 19/09.
+
 **C. Đã rà, không phải lỗi:** lệnh trùng trong ngày (referenceId chặn) · video đã loại không bị xét lại (report chỉ lấy
 trạng thái đang phân phối) · chuyển Diễn tập → Thật cùng ngày không bắn ngay (lượt kế là trưa hôm sau) · trần 400
 video/lệnh của sàn không chạm tới (`maxExcludePerDay` ≤ 100).

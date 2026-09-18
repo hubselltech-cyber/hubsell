@@ -226,6 +226,8 @@ export function TiktokCampaignPage() {
   const [sending, setSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
+  // Mở popup thẳng vào bước "Loại ngay" (chiến dịch đã bật Tự loại thật nhưng chưa có lượt loại thật nào).
+  const [autoRunNow, setAutoRunNow] = useState(false);
   // Trang chỉ bày thứ xem HẰNG NGÀY (bảng video); đối chiếu diễn tập + lịch sử là việc thỉnh thoảng
   // mới xem → tab riêng (anh Trung 18/09: "để hết ra đây rối lắm").
   const [tab, setTab] = useState<"videos" | "backtest" | "history">("videos");
@@ -600,8 +602,19 @@ export function TiktokCampaignPage() {
                   )}
                   {c.auto && c.auto.mode === "live" && c.auto.lastRunMode !== "live" && (
                     <p className="max-w-md text-right text-xs font-medium text-amber-700">
-                      Vừa bật Tự loại thật — chưa có lệnh loại nào được gửi. Lượt loại thật đầu tiên chạy ở lượt chấm kế tiếp (12h–14h trưa), máy chấm lại
-                      bằng số mới nhất rồi mới loại.
+                      Vừa bật Tự loại thật — chưa có lệnh loại nào được gửi. Lượt loại thật đầu tiên chạy ở lượt chấm kế tiếp (12h–14h trưa), hoặc{" "}
+                      <button
+                        type="button"
+                        disabled={!owner}
+                        onClick={() => {
+                          setAutoRunNow(true);
+                          setAutoOpen(true);
+                        }}
+                        className="font-semibold underline underline-offset-2 hover:text-amber-900 disabled:opacity-50"
+                      >
+                        xem danh sách và loại ngay
+                      </button>
+                      .
                     </p>
                   )}
                 </div>
@@ -1039,7 +1052,11 @@ export function TiktokCampaignPage() {
       {c && (
         <TiktokAutoRuleDialog
           open={autoOpen}
-          onOpenChange={setAutoOpen}
+          onOpenChange={(o) => {
+            setAutoOpen(o);
+            if (!o) setAutoRunNow(false);
+          }}
+          startRunNow={autoRunNow}
           campaignRowId={campaignRowId}
           campaignName={c.name || `Chiến dịch #${c.campaignId}`}
         />

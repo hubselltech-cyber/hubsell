@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUTO_RULE_DEFAULTS,
   assessVideo,
+  autoCommandReferenceId,
   BREAKEVEN_MIN_COVERAGE_PCT,
   compareRunDigest,
   daysBetween,
@@ -374,5 +375,20 @@ describe("staleRehearsalDays — lượt diễn tập gần nhất còn dùng đ
   it("cửa sổ soi ngắn thì mốc cũ cũng ngắn theo", () => {
     expect(staleRehearsalDays("2026-09-14", "2026-09-18", 3)).toBe(4);
     expect(staleRehearsalDays("2026-09-14", "2026-09-18", 7)).toBeNull();
+  });
+});
+
+// LOẠI NGAY khi vừa bật Tự loại thật: lệnh thật không được bị dòng diễn tập CÙNG NGÀY chặn, nhưng vẫn chỉ một lệnh thật / ngày.
+describe("autoCommandReferenceId — mã chống gửi trùng của lệnh tự động", () => {
+  it("diễn tập và loại thật cùng ngày mang hai mã khác nhau; cùng chế độ cùng ngày thì trùng mã (unique chặn lần hai)", () => {
+    const dry = autoCommandReferenceId("c1", "2026-09-18", "dry_run");
+    const live = autoCommandReferenceId("c1", "2026-09-18", "live");
+    expect(dry).toBe("ttauto-c1-2026-09-18");
+    expect(live).toBe("ttauto-c1-2026-09-18-live");
+    expect(autoCommandReferenceId("c1", "2026-09-18", "live")).toBe(live);
+    expect(autoCommandReferenceId("c1", "2026-09-19", "live")).not.toBe(live);
+  });
+  it("mã diễn tập vẫn kết thúc bằng ngày — tab Đối chiếu diễn tập đọc ngày của lượt từ 10 ký tự cuối", () => {
+    expect(autoCommandReferenceId("c1", "2026-09-18", "dry_run").slice(-10)).toBe("2026-09-18");
   });
 });

@@ -39,6 +39,7 @@ import {
   copyTiktokAdsAutoRule,
   fetchTiktokAdsAutoRule,
   previewTiktokAdsAutoRule,
+  runTiktokAdsAutoRuleNow,
   saveTiktokAdsAutoRule,
   type TiktokAdsAutoConfig,
   type TiktokAdsAutoMode,
@@ -183,11 +184,14 @@ export function TiktokAutoRuleDialog({
   campaignRowId,
   campaignName,
   onSaved,
+  startRunNow = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   campaignRowId: string;
   campaignName: string;
+  /** Mở thẳng vào bước "Loại ngay" (chiến dịch ĐÃ ở Tự loại thật nhưng chưa có lượt loại thật nào — nút trên trang chiến dịch). */
+  startRunNow?: boolean;
   onSaved?: (status: TiktokAdsAutoStatus, mode: TiktokAdsAutoMode) => void;
 }) {
   const queryClient = useQueryClient();
@@ -208,6 +212,12 @@ export function TiktokAutoRuleDialog({
   const [saving, setSaving] = useState(false);
   const [confirmLive, setConfirmLive] = useState(false);
   const [confirmSkip, setConfirmSkip] = useState(false);
+  // BƯỚC "LOẠI NGAY" (anh Trung 18/09 đêm: đã diễn tập rồi thì bật thật xong thực thi ngay lượt đầu là hợp lý, chờ tới trưa hôm sau
+  // quá dài). null = chưa vào bước này. Máy chấm lại tại chỗ → hiện ĐÚNG danh sách sẽ loại → khách bấm mới gửi lệnh.
+  const [runNow, setRunNow] = useState<{ loading: boolean; preview: TiktokAdsAutoPreview | null; error: string | null } | null>(null);
+  const [runningNow, setRunningNow] = useState(false);
+  // Trước 12h trưa số hôm qua của TikTok chưa ổn định (cùng căn cứ với giờ lượt chấm hằng ngày) → không chấm, chỉ báo giờ.
+  const [vnHourAtOpen] = useState(() => new Date(Date.now() + 7 * 3600_000).getUTCHours());
   // Hộp xác nhận nằm cuối popup — khối Nâng cao đang mở thì nó rơi khỏi khung nhìn, bấm Lưu xong tưởng không có gì xảy ra.
   const confirmRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -223,6 +233,7 @@ export function TiktokAutoRuleDialog({
       setPreview(null);
       setConfirmLive(false);
       setConfirmSkip(false);
+      setRunNow(null);
       setCopyOpen(false);
       setCopyPick(new Set());
       setForm(null);
@@ -300,6 +311,48 @@ export function TiktokAutoRuleDialog({
     }
   }
 
+  /** Vào bước Loại ngay: chấm lại bằng cấu hình ĐÃ LƯU trên số mới nhất (đúng phép tính của Chạy thử, không ghi gì). */
+  async function beginRunNow(saved: TiktokAdsAutoConfig) {
+    if (vnHourAtOpen < 12) {
+      setRunNow({ loading: false, preview: null, error: null });
+      return;
+    }
+    setRunNow({ loading: true, preview: null, error: null });
+    try {
+      setRunNow({ loading: false, preview: await previewTiktokAdsAutoRule(campaignRowId, saved), error: null });
+    } catch (err) {
+      setRunNow({ loading: false, preview: null, error: err instanceof ApiError ? err.message : "Không chấm lại được" });
+    }
+  }
+
+  async function executeRunNow() {
+    const list = runNow?.preview?.exclude ?? [];
+    if (list.length === 0) return;
+    setRunningNow(true);
+    try {
+      const r = await runTiktokAdsAutoRuleNow(campaignRowId, list.map((v) => v.videoId));
+      if (r.outcome === "executed") toast.success(r.message);
+      else toast.message(r.message);
+      if (r.status) onSaved?.(r.status, "live");
+      await queryClient.invalidateQueries({ queryKey: qk.tiktokAdsAutoRule(campaignRowId) });
+      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
+      await queryClient.invalidateQueries({ queryKey: ["tiktok-ads"] });
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không gửi được lệnh loại");
+      // Danh sách vừa đổi (hoặc lỗi khác) → chấm lại để khách thấy danh sách mới trước khi bấm lần nữa.
+      if (cfg) void beginRunNow(rule?.config ?? cfg);
+    } finally {
+      setRunningNow(false);
+    }
+  }
+
+  // Trang chiến dịch mở thẳng vào bước này khi chiến dịch đã ở Tự loại thật mà chưa có lượt loại thật nào.
+  useEffect(() => {
+    if (open && startRunNow && rule && rule.mode === "live" && runNow == null) void beginRunNow(rule.config);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ khởi động một lần khi mở + có dữ liệu
+  }, [open, startRunNow, rule]);
+
   /** rehearseAgain: khách nghe lời khuyên ở hộp cảnh báo → lưu bộ số mới ở chế độ Diễn tập thay vì bật thật. */
   async function save(force = false, rehearseAgain = false) {
     if (!cfg || !rule) return;
@@ -321,13 +374,18 @@ export function TiktokAutoRuleDialog({
           ? "Đã tắt loại video tự động cho chiến dịch này."
           : mode === "dry_run"
             ? "Đã lưu. Mỗi ngày sau 12h trưa, Trợ lý sẽ chấm điểm và báo chuông — chưa loại video nào."
-            : "Đã bật Tự loại thật. Từ lượt xét kế tiếp (sau 12h trưa) Trợ lý sẽ loại video vi phạm."
+            : rule.mode !== "live"
+              ? "Đã bật Tự loại thật."
+              : "Đã lưu. Trợ lý loại video vi phạm ở lượt chấm mỗi ngày (12h–14h)."
       );
       onSaved?.(r.status, r.mode);
+      // Vừa CHUYỂN sang Tự loại thật → không đóng popup: sang bước Loại ngay (chấm lại, hiện danh sách, khách bấm mới gửi).
+      const turnedLive = saveMode === "live" && rule.mode !== "live";
       await queryClient.invalidateQueries({ queryKey: qk.tiktokAdsAutoRule(campaignRowId) });
       await queryClient.invalidateQueries({ queryKey: ["tiktok-ads-videos", campaignRowId] });
       await queryClient.invalidateQueries({ queryKey: ["tiktok-ads"] });
-      onOpenChange(false);
+      if (turnedLive) void beginRunNow(r.config);
+      else onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không lưu được cấu hình");
     } finally {
@@ -360,7 +418,7 @@ export function TiktokAutoRuleDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !saving && !copying && onOpenChange(o)}>
+    <Dialog open={open} onOpenChange={(o) => !saving && !copying && !runningNow && onOpenChange(o)}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Tự động loại video</DialogTitle>
@@ -370,7 +428,69 @@ export function TiktokAutoRuleDialog({
         {q.error && <p className="text-sm text-red-500">{q.error}</p>}
         {!form && !q.error && <p className="py-8 text-center text-sm text-muted-foreground">Đang tải cấu hình…</p>}
 
-        {form && cfg && rule && (
+        {/* ===== BƯỚC LOẠI NGAY — thay cả form: lúc này chỉ còn MỘT quyết định ===== */}
+        {runNow && (
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
+              <Zap className="size-4" /> Chiến dịch đang ở chế độ Tự loại thật
+            </p>
+            {vnHourAtOpen < 12 ? (
+              <p className="text-sm text-slate-700">
+                Số hôm qua của TikTok chưa ổn định trước 12h trưa (chi phí video về trễ tới 11 giờ). Lượt loại thật đầu tiên sẽ tự chạy trong khoảng
+                12h–14h hôm nay, anh/chị không cần làm gì thêm.
+              </p>
+            ) : runNow.loading ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Đang chấm lại bằng số mới nhất của TikTok…</p>
+            ) : runNow.error ? (
+              <p className="text-sm text-red-500">{runNow.error}. Lượt loại thật sẽ tự chạy ở lượt chấm kế tiếp (12h–14h).</p>
+            ) : runNow.preview?.dataProblem ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                Số liệu video của TikTok lúc này không đáng tin: {runNow.preview.dataProblem}. Chưa loại video nào — Trợ lý sẽ chấm lại ở lượt kế tiếp.
+              </p>
+            ) : runNow.preview && runNow.preview.exclude.length === 0 ? (
+              <p className="text-sm text-slate-700">
+                Chấm bằng số mới nhất: hiện không có video nào tới mức loại ({runNow.preview.summary}). Trợ lý sẽ chấm lại mỗi ngày trong khoảng 12h–14h.
+              </p>
+            ) : runNow.preview ? (
+              <>
+                <p className="text-sm text-slate-700">
+                  Anh/chị đã diễn tập trước đó nên có thể cho máy làm ngay lượt đầu tiên, không phải chờ tới trưa mai. Chấm bằng số{" "}
+                  {runNow.preview.windowFrom.slice(8, 10)}/{runNow.preview.windowFrom.slice(5, 7)}–{runNow.preview.windowTo.slice(8, 10)}/
+                  {runNow.preview.windowTo.slice(5, 7)}, máy sẽ loại <span className="font-semibold">{formatNumber(runNow.preview.exclude.length)} video</span> đang
+                  ngốn {formatVND(runNow.preview.excludeSpend)} mà ra {formatNumber(runNow.preview.excludeOrders)} đơn:
+                </p>
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto rounded-lg border border-slate-200 p-3 text-xs">
+                  {runNow.preview.exclude.map((v) => (
+                    <li key={v.videoId}>
+                      <span className="tabular-nums font-medium text-slate-900">{v.videoId}</span>
+                      <span className="text-slate-500">
+                        {" "}
+                        · chi {formatVND(v.cost)} · {formatNumber(v.orders)} đơn · ROI {formatRoi(v.roi)}
+                      </span>
+                      <span className="block text-slate-500">{v.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-slate-500">
+                  Lệnh có hiệu lực trên TikTok sau khoảng 20 phút. Loại nhầm thì vào tab Lịch sử bấm “Khôi phục cả lệnh” — máy sẽ không loại lại các
+                  video đó trong 30 ngày.
+                </p>
+              </>
+            ) : null}
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={runningNow}>
+                {runNow.preview && runNow.preview.exclude.length > 0 && !runNow.preview.dataProblem ? "Để lượt chấm kế tiếp (12h–14h)" : "Đóng"}
+              </Button>
+              {runNow.preview && runNow.preview.exclude.length > 0 && !runNow.preview.dataProblem && (
+                <Button className="bg-red-600 text-white hover:bg-red-700" onClick={() => void executeRunNow()} disabled={runningNow}>
+                  {runningNow ? "Đang gửi lên TikTok…" : `Loại ngay ${formatNumber(runNow.preview.exclude.length)} video`}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!runNow && form && cfg && rule && (
           <div className="space-y-4">
             {/* ===== TẦNG 1: chế độ ===== */}
             <div>
@@ -712,6 +832,7 @@ export function TiktokAutoRuleDialog({
           </div>
         )}
 
+        {!runNow && (
         <DialogFooter className="sm:justify-between">
           {rule?.configured && !copyOpen ? (
             <Button variant="ghost" size="sm" onClick={() => setCopyOpen(true)} disabled={saving}>
@@ -730,6 +851,7 @@ export function TiktokAutoRuleDialog({
             </Button>
           </div>
         </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

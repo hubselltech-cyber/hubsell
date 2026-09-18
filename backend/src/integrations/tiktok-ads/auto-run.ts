@@ -18,7 +18,9 @@
 //        dry_run → ghi AdsActionLog mode dry_run status PLANNED, chuông.
 //        live    → kiểm quyền TKQC + campaign còn bật → gọi creative/update
 //                  REMOVE → AdsActionLog mode live SUCCESS/FAILED, chuông.
-//      referenceId "ttauto-{rowId}-{ngày}" unique → một ngày một lệnh mỗi chiến dịch.
+//      referenceId "ttauto-{rowId}-{ngày}" (diễn tập) / "…-live" (loại thật) unique → mỗi ngày tối đa MỘT lệnh diễn tập
+//      và MỘT lệnh loại thật cho mỗi chiến dịch. Tách hai mã vì khách có thể bật Tự loại thật ngay sau lượt diễn tập trong
+//      ngày rồi bấm "Loại ngay" (route run-now) — lệnh thật không được bị dòng diễn tập cùng ngày chặn.
 //      Mỗi lượt chấm thật chốt cấu hình đã dùng (lastRunConfig — B6: popup cảnh báo khi khách bật thật bằng
 //      cấu hình chưa diễn tập) và chỉ chuông khi kết quả ĐỔI so với lượt trước (B8).
 //   Giữa hai việc: chốt dòng sổ kẹt SENDING (A3) + soi lệnh loại đã SUCCESS xem sàn có áp dụng thật không (B7).
@@ -38,6 +40,7 @@ import {
 } from "./action-log";
 import {
   AUTO_RULE_DEFAULTS,
+  autoCommandReferenceId,
   compareRunDigest,
   daysBetween,
   planAutoExclusion,
@@ -397,7 +400,8 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
   return result;
 }
 
-type ApplyOutcome = "nothing" | "planned" | "executed" | "failed" | "skipped";
+export type ApplyOutcome = "nothing" | "planned" | "executed" | "failed" | "skipped";
+
 
 /** B7 — soi các lệnh loại SUCCESS chưa soi của chiến dịch; có video không ngấm thì chuông (ghi chú đã nằm trên dòng sổ). */
 async function reportCommandsNotApplied(campaign: CampaignLite, liveIds: Set<string>, today: string, ownerId: string): Promise<void> {
@@ -525,7 +529,7 @@ export async function applyAutoPlan(
     return "nothing";
   }
 
-  const referenceId = `ttauto-${campaign.id}-${today}`;
+  const referenceId = autoCommandReferenceId(campaign.id, today, mode);
   if (await prisma.adsActionLog.findUnique({ where: { referenceId }, select: { id: true } })) {
     await saveRun({ skipped: "Hôm nay đã có lệnh cho chiến dịch này." });
     return "skipped";

@@ -2897,6 +2897,17 @@ export interface TiktokAdsAutoPreview {
 }
 
 /** CHẠY THỬ cấu hình trên số thật (3+ call TikTok) — không ghi sổ, không loại. */
+/**
+ * LOẠI NGAY sau khi bật Tự loại thật: backend chấm lại và CHỈ gửi lệnh khi danh sách sẽ loại trùng khít `expectedVideoIds`
+ * (danh sách khách vừa thấy). Lệch → 409 code "plan_changed".
+ */
+export function runTiktokAdsAutoRuleNow(campaignRowId: string, expectedVideoIds: string[]) {
+  return apiFetch<{ outcome: "nothing" | "planned" | "executed" | "failed" | "skipped"; excluded: number; message: string; status: TiktokAdsAutoStatus | null }>(
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/run-now`,
+    { method: "POST", body: JSON.stringify({ expectedVideoIds }) }
+  );
+}
+
 export function previewTiktokAdsAutoRule(campaignRowId: string, config: TiktokAdsAutoConfig) {
   return apiFetch<TiktokAdsAutoPreview>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/preview`, {
     method: "POST",
