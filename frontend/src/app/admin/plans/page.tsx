@@ -135,6 +135,12 @@ function priceFloorFor(maxOrders: number): number {
   return PRICE_FLOORS.find((f) => maxOrders >= f.fromOrders)!.floor;
 }
 
+/** So theo số ĐÃ LÀM TRÒN tới đồng: giá kiểu 1.199.000 / 20.000 đơn = 59,95đ là
+ * "60đ/đơn" trong mắt người đặt giá — không báo động giả vì 5 xu. */
+function isBelowFloor(perOrder: number, floor: number): boolean {
+  return Math.round(perOrder) < floor;
+}
+
 /** Doanh thu trên mỗi đơn khi khách dùng KỊCH trần — null khi gói không đặt
  * trần đơn hoặc không có giá (không có mẫu số thì không bịa số). */
 function perOrderAtCap(amount: number, months: number, maxOrders: number | null): number | null {
@@ -531,7 +537,7 @@ function PaymentDialog({
                 khuyến mãi/thỏa thuận.
               </p>
             )}
-            {dealPerOrder !== null && dealPerOrder < dealFloor && (
+            {dealPerOrder !== null && isBelowFloor(dealPerOrder, dealFloor) && (
               <p className="text-xs font-medium text-amber-700">
                 ≈ {formatPerOrder(dealPerOrder)} nếu khách dùng kịch trần{" "}
                 {formatCount(selectedPlan!.maxOrdersPerMonth!)} đơn/tháng — dưới giá sàn{" "}
@@ -774,13 +780,13 @@ export default function PlatformPlansPage() {
                         <p
                           className={cn(
                             "text-xs",
-                            monthly < floor ? "font-medium text-amber-700" : "text-muted-foreground"
+                            isBelowFloor(monthly, floor) ? "font-medium text-amber-700" : "text-muted-foreground"
                           )}
                           title="Doanh thu trên mỗi đơn khi khách dùng kịch trần đơn của gói"
                         >
                           ≈ {formatPerOrder(monthly)} khi kịch trần
                           {yearly !== null && ` · kỳ 12 tháng ${formatPerOrder(yearly)}`}
-                          {monthly < floor && ` — dưới giá sàn ${floor}đ/đơn`}
+                          {isBelowFloor(monthly, floor) && ` — dưới giá sàn ${floor}đ/đơn`}
                         </p>
                       );
                     })()}
