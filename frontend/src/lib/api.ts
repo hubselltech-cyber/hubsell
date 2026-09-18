@@ -2555,6 +2555,8 @@ export type TiktokAdsAutoMode = "off" | "dry_run" | "live";
 export interface TiktokAdsAutoStatus {
   mode: TiktokAdsAutoMode;
   lastRunOn: string | null;
+  /** Chế độ của CHÍNH lượt chấm gần nhất — khác `mode` khi khách vừa đổi chế độ sau lượt đó. */
+  lastRunMode?: "dry_run" | "live" | null;
   lastRunSummary: string | null;
   lastRunExclude: number;
   lastRunSkipped: string | null;

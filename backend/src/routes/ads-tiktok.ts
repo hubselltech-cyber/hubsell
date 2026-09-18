@@ -676,6 +676,8 @@ function autoStatusOf(rule: { mode: string; lastRunOn: string; lastRunSummary: u
   return {
     mode: rule.mode as AutoRuleMode,
     lastRunOn: rule.lastRunOn || null,
+    /** Chế độ của CHÍNH lượt chấm gần nhất (khác `mode` khi khách vừa đổi chế độ sau lượt đó) — UI phải gọi tên lượt theo cái này. */
+    lastRunMode: s && (s.mode === "live" || s.mode === "dry_run") ? (s.mode as AutoRuleMode) : null,
     lastRunSummary: s && typeof s.summary === "string" ? s.summary : null,
     lastRunExclude: s && typeof s.exclude === "number" ? s.exclude : 0,
     lastRunSkipped: s && typeof s.skipped === "string" ? s.skipped : null,

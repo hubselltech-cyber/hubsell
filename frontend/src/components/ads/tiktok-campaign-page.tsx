@@ -140,7 +140,7 @@ function AutoVerdictCell({ v, live }: { v: TiktokAdsVideoRow; live: boolean }) {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
         <p className="font-semibold text-slate-900">
-          {a.verdict === "exclude" ? (live ? "Máy sẽ loại video này" : "Diễn tập: máy sẽ loại video này") : b.label}
+          {a.verdict === "exclude" ? (live ? "Máy sẽ loại video này ở lượt chấm kế tiếp (12h–14h), nếu lúc đó video còn vi phạm" : "Diễn tập: máy sẽ loại video này") : b.label}
         </p>
         <ul className="list-disc space-y-1 pl-4 text-slate-700 marker:text-slate-400">
           {(a.reason ? reasonPoints(a.reason) : ["Video đang đạt các mốc anh/chị đã cài"]).map((x, i) => (
@@ -588,11 +588,20 @@ export function TiktokCampaignPage() {
                   </Button>
                   {c.auto && c.auto.mode !== "off" && (
                     <p className="max-w-md text-right text-xs text-slate-500">
+                      {/* Gọi tên lượt theo chế độ của CHÍNH lượt đó, không theo chế độ đang đặt: anh Trung 18/09 tối chuyển TC054 sang Tự
+                          loại thật sau lượt diễn tập 14:18, trang ghi "Lượt LOẠI gần nhất: loại 2 video" trong khi video vẫn chạy → tưởng
+                          máy treo. Lệnh loại thật chỉ gửi ở lượt chấm kế tiếp — phải nói rõ điều đó. */}
                       {c.auto.lastRunOn
-                        ? `Lượt ${c.auto.mode === "live" ? "loại" : "diễn tập"} gần nhất ${c.auto.lastRunOn.slice(8, 10)}/${c.auto.lastRunOn.slice(5, 7)}: ${
+                        ? `Lượt ${(c.auto.lastRunMode ?? c.auto.mode) === "live" ? "loại" : "diễn tập"} gần nhất ${c.auto.lastRunOn.slice(8, 10)}/${c.auto.lastRunOn.slice(5, 7)}: ${
                             c.auto.lastRunError ?? c.auto.lastRunSkipped ?? c.auto.lastRunSummary ?? "—"
                           }`
                         : "Lượt chấm chạy mỗi ngày trong khoảng 12h–14h trưa (bật sau giờ đó thì từ trưa mai)."}
+                    </p>
+                  )}
+                  {c.auto && c.auto.mode === "live" && c.auto.lastRunMode !== "live" && (
+                    <p className="max-w-md text-right text-xs font-medium text-amber-700">
+                      Vừa bật Tự loại thật — chưa có lệnh loại nào được gửi. Lượt loại thật đầu tiên chạy ở lượt chấm kế tiếp (12h–14h trưa), máy chấm lại
+                      bằng số mới nhất rồi mới loại.
                     </p>
                   )}
                 </div>
