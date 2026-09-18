@@ -28,6 +28,10 @@ dịch thường là *Read Campaigns* (scope 200).)
 **KHÔNG xin / không dùng:** `exclusive_authorization/create` (đổi tài khoản quảng cáo độc quyền của shop = dừng toàn bộ chiến
 dịch của tài khoản cũ) — Hubsell không bao giờ gọi. Nếu cổng gộp nó chung nhóm thì vẫn tick nhóm đó, nhưng code không gọi.
 
+## 0. TRẠNG THÁI
+
+✅ **ĐÃ NỘP 18/09/2026 tối** (Claude điền trong Chrome của anh Trung, anh xác nhận rồi mới bấm Submit): tick *Read campaigns* + *Create and update campaigns*, lý do = bản 496 ký tự ở mục 3b. Trang My Apps hiện: **Approved · Scope of Permissions Change Pending**. App vẫn Online, quyền cũ vẫn chạy trong lúc chờ. Lần xin đầu duyệt trong 1 ngày. ⏳ Chờ kết quả → làm mục 6.
+
 ## 1b. ĐÃ ĐỌC TRONG CỔNG 18/09/2026 (tên quyền chính xác — khỏi dò lại)
 
 Cây quyền của app (App Detail → Authorization → Scope of permission, bấm cây bút để sửa):
