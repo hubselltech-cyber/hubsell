@@ -33,9 +33,15 @@ export const AUTO_RULE_MODES: AutoRuleMode[] = ["off", "dry_run", "live"];
 export interface AutoRuleConfig {
   roiTarget: number;
   windowDays: number;
+  /** Công tắc từng luật — tắt là luật đó không xét, số bên cạnh giữ nguyên để bật lại. */
+  ruleNoOrderOn: boolean;
+  ruleLowRoiOn: boolean;
+  ruleCpaOn: boolean;
+  graceOn: boolean;
   minSpend: number;
   spendNoOrder: number;
   roiHardPct: number;
+  /** Trần chi phí/đơn; null = chưa đặt số (luật CPA coi như tắt). */
   maxCpa: number | null;
   graceMinOrders: number;
   graceDays: number;
@@ -47,6 +53,10 @@ export interface AutoRuleConfig {
 export const AUTO_RULE_DEFAULTS: AutoRuleConfig = {
   roiTarget: 10,
   windowDays: 7,
+  ruleNoOrderOn: true,
+  ruleLowRoiOn: true,
+  ruleCpaOn: false,
+  graceOn: true,
   minSpend: 50_000,
   spendNoOrder: 200_000,
   roiHardPct: 50,
@@ -78,9 +88,14 @@ export function sanitizeAutoRuleConfig(raw: Record<string, unknown>, base: AutoR
   const maxCpaRaw = raw.maxCpa;
   const maxCpa =
     maxCpaRaw == null || maxCpaRaw === "" ? null : Number.isFinite(Number(maxCpaRaw)) && Number(maxCpaRaw) > 0 ? Number(maxCpaRaw) : base.maxCpa;
+  const bool = (k: keyof AutoRuleConfig, fallback: boolean): boolean => (typeof raw[k] === "boolean" ? (raw[k] as boolean) : fallback);
   return {
     roiTarget: Math.max(0.1, num("roiTarget", base.roiTarget)),
     windowDays: clamp(num("windowDays", base.windowDays), AUTO_RULE_LIMITS.windowDays),
+    ruleNoOrderOn: bool("ruleNoOrderOn", base.ruleNoOrderOn),
+    ruleLowRoiOn: bool("ruleLowRoiOn", base.ruleLowRoiOn),
+    ruleCpaOn: bool("ruleCpaOn", base.ruleCpaOn),
+    graceOn: bool("graceOn", base.graceOn),
     minSpend: Math.round(num("minSpend", base.minSpend)),
     spendNoOrder: Math.round(num("spendNoOrder", base.spendNoOrder)),
     roiHardPct: clamp(num("roiHardPct", base.roiHardPct), AUTO_RULE_LIMITS.roiHardPct),
@@ -165,11 +180,11 @@ export function assessVideo(v: AutoVideoInput, cfg: AutoRuleConfig, today: strin
   const hardRoi = cfg.roiTarget * (cfg.roiHardPct / 100);
   let violation = "";
   if (v.cost >= cfg.minSpend) {
-    if (v.orders === 0 && v.cost >= cfg.spendNoOrder) {
+    if (cfg.ruleNoOrderOn && v.orders === 0 && v.cost >= cfg.spendNoOrder) {
       violation = `tiêu ${vnd(v.cost)} trong ${win} mà 0 đơn (ngưỡng ${vnd(cfg.spendNoOrder)})`;
-    } else if (v.orders > 0 && roi < hardRoi) {
+    } else if (cfg.ruleLowRoiOn && v.orders > 0 && roi < hardRoi) {
       violation = `ROI ${roiTxt(roi)} < ${roiTxt(hardRoi)} (${cfg.roiHardPct}% của mục tiêu ${roiTxt(cfg.roiTarget)}) trong ${win}`;
-    } else if (v.orders > 0 && cfg.maxCpa != null && cpa > cfg.maxCpa) {
+    } else if (cfg.ruleCpaOn && v.orders > 0 && cfg.maxCpa != null && cpa > cfg.maxCpa) {
       violation = `chi phí/đơn ${vnd(cpa)} > trần ${vnd(cfg.maxCpa)} trong ${win}`;
     }
   }
@@ -198,7 +213,7 @@ export function assessVideo(v: AutoVideoInput, cfg: AutoRuleConfig, today: strin
 
   if (violation) {
     // Công thần: đủ đơn 30 ngày → phải vi phạm liên tục đủ graceDays ngày mới loại.
-    if (cfg.graceMinOrders > 0 && v.orders30d >= cfg.graceMinOrders) {
+    if (cfg.graceOn && cfg.graceMinOrders > 0 && v.orders30d >= cfg.graceMinOrders) {
       const since = v.watch?.violationSince || today;
       const elapsed = daysBetween(since, today);
       if (elapsed < cfg.graceDays) {

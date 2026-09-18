@@ -71,6 +71,10 @@ export function ruleRowToConfig(r: RuleRow): AutoRuleConfig {
   return {
     roiTarget: Number(r.roiTarget),
     windowDays: r.windowDays,
+    ruleNoOrderOn: r.ruleNoOrderOn,
+    ruleLowRoiOn: r.ruleLowRoiOn,
+    ruleCpaOn: r.ruleCpaOn,
+    graceOn: r.graceOn,
     minSpend: Number(r.minSpend),
     spendNoOrder: Number(r.spendNoOrder),
     roiHardPct: r.roiHardPct,

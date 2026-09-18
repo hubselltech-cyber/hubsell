@@ -11,7 +11,7 @@ import {
 } from "../tiktok-ads/auto-rules";
 
 const today = "2026-09-18";
-const cfg: AutoRuleConfig = { ...AUTO_RULE_DEFAULTS, roiTarget: 15, maxCpa: 80_000 };
+const cfg: AutoRuleConfig = { ...AUTO_RULE_DEFAULTS, roiTarget: 15, maxCpa: 80_000, ruleCpaOn: true };
 
 function video(over: Partial<AutoVideoInput> & { videoId?: string }): AutoVideoInput {
   return {
@@ -61,8 +61,18 @@ describe("assessVideo — chấm một video GMV Max", () => {
     const a = assessVideo(video({ cost: 200_000, orders: 1, gmv: 4_000_000 }), cfg, today);
     expect(a.verdict).toBe("exclude");
     expect(a.reason).toContain("chi phí/đơn");
-    // Không đặt trần CPA thì video này ổn.
+    // Không đặt trần CPA / tắt luật CPA thì video này ổn.
     expect(assessVideo(video({ cost: 200_000, orders: 1, gmv: 4_000_000 }), { ...cfg, maxCpa: null }, today).verdict).toBe("healthy");
+    expect(assessVideo(video({ cost: 200_000, orders: 1, gmv: 4_000_000 }), { ...cfg, ruleCpaOn: false }, today).verdict).toBe("healthy");
+  });
+
+  it("công tắc từng luật: tắt luật nào thì luật đó không xét, kể cả khi số bên cạnh là 0", () => {
+    const off = { ...cfg, ruleNoOrderOn: false, spendNoOrder: 0 };
+    expect(assessVideo(video({ cost: 900_000, orders: 0 }), off, today).verdict).toBe("healthy");
+    const noRoi = { ...cfg, ruleLowRoiOn: false, ruleCpaOn: false }; // CPA 90k > 80k nên phải tắt cả CPA mới còn mỗi cờ
+    expect(assessVideo(video({ cost: 815_000, orders: 9, gmv: 815_000 * 3.74 }), noRoi, today).verdict).toBe("flag");
+    const noGrace = { ...cfg, graceOn: false };
+    expect(assessVideo(video({ cost: 500_000, orders: 4, gmv: 500_000 * 2, orders30d: 55 }), noGrace, today).verdict).toBe("exclude");
   });
 
   it("công thần (≥20 đơn/30 ngày) vi phạm lần đầu → ân hạn, đủ ngày liên tục mới loại", () => {
@@ -134,7 +144,9 @@ describe("planAutoExclusion — chốt an toàn cấp chiến dịch", () => {
 
 describe("sanitizeAutoRuleConfig / daysBetween", () => {
   it("kẹp số vào biên, sai kiểu thì giữ số cũ, maxCpa rỗng = không dùng", () => {
-    const c = sanitizeAutoRuleConfig({ windowDays: 99, roiHardPct: "abc", maxCpa: "", graceDays: 0, roiTarget: "12.5" }, cfg);
+    const c = sanitizeAutoRuleConfig({ windowDays: 99, roiHardPct: "abc", maxCpa: "", graceDays: 0, roiTarget: "12.5", ruleNoOrderOn: false, ruleCpaOn: "yes" }, cfg);
+    expect(c.ruleNoOrderOn).toBe(false);
+    expect(c.ruleCpaOn).toBe(true); // "yes" không phải boolean → giữ số cũ (cfg bật)
     expect(c.windowDays).toBe(30);
     expect(c.roiHardPct).toBe(50);
     expect(c.maxCpa).toBeNull();

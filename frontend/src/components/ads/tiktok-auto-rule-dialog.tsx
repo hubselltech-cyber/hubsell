@@ -28,6 +28,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Switch } from "@/components/ui/switch";
 import {
   ApiError,
   TIKTOK_AUTO_MODE_LABEL,
@@ -51,6 +52,10 @@ const WINDOW_OPTIONS = [3, 5, 7, 10, 14, 30];
 interface FormState {
   roiTarget: string;
   windowDays: string;
+  ruleNoOrderOn: boolean;
+  ruleLowRoiOn: boolean;
+  ruleCpaOn: boolean;
+  graceOn: boolean;
   minSpend: string;
   spendNoOrder: string;
   roiHardPct: string;
@@ -65,6 +70,10 @@ function toForm(c: TiktokAdsAutoConfig): FormState {
   return {
     roiTarget: String(c.roiTarget),
     windowDays: String(c.windowDays),
+    ruleNoOrderOn: c.ruleNoOrderOn,
+    ruleLowRoiOn: c.ruleLowRoiOn,
+    ruleCpaOn: c.ruleCpaOn,
+    graceOn: c.graceOn,
     minSpend: String(Math.round(c.minSpend)),
     spendNoOrder: String(Math.round(c.spendNoOrder)),
     roiHardPct: String(c.roiHardPct),
@@ -84,6 +93,10 @@ function toConfig(f: FormState): TiktokAdsAutoConfig {
   return {
     roiTarget: n(f.roiTarget, 10),
     windowDays: n(f.windowDays, 7),
+    ruleNoOrderOn: f.ruleNoOrderOn,
+    ruleLowRoiOn: f.ruleLowRoiOn,
+    ruleCpaOn: f.ruleCpaOn,
+    graceOn: f.graceOn,
     minSpend: n(f.minSpend, 50_000),
     spendNoOrder: n(f.spendNoOrder, 200_000),
     roiHardPct: n(f.roiHardPct, 50),
@@ -149,10 +162,19 @@ export function TiktokAutoRuleDialog({
 
   const cfg = useMemo(() => (form ? toConfig(form) : null), [form]);
   const set = (k: keyof FormState) => (v: string) => setForm((f) => (f ? { ...f, [k]: v } : f));
+  const toggle = (k: "ruleNoOrderOn" | "ruleLowRoiOn" | "ruleCpaOn" | "graceOn") => (v: boolean) =>
+    setForm((f) => (f ? { ...f, [k]: v } : f));
 
   const hadRun = Boolean(rule?.status?.lastRunOn) || preview != null;
   const lastSummary = preview?.summary ?? rule?.status?.lastRunSummary ?? null;
   const hardRoi = cfg ? cfg.roiTarget * (cfg.roiHardPct / 100) : 0;
+  const activeRuleSummary: string[] = cfg
+    ? [
+        cfg.ruleNoOrderOn ? `tiêu ≥ ${formatVND(cfg.spendNoOrder)} mà 0 đơn` : "",
+        cfg.ruleLowRoiOn ? `ROI < ${formatRoi(hardRoi)}` : "",
+        cfg.ruleCpaOn && cfg.maxCpa != null ? `chi phí/đơn > ${formatVND(cfg.maxCpa)}` : "",
+      ].filter(Boolean)
+    : [];
 
   async function runPreview() {
     if (!cfg) return;
@@ -294,49 +316,65 @@ export function TiktokAutoRuleDialog({
                 <span className="whitespace-nowrap">Nâng cao</span>
                 {!advanced && (
                   <span className="basis-full pl-5 text-xs text-slate-400 sm:basis-auto sm:pl-0">
-                    · loại khi tiêu ≥ {formatVND(cfg.spendNoOrder)} mà 0 đơn, hoặc ROI &lt; {formatRoi(hardRoi)}
-                    {cfg.maxCpa != null && `, hoặc chi phí/đơn > ${formatVND(cfg.maxCpa)}`}
+                    {activeRuleSummary.length > 0 ? `· loại khi ${activeRuleSummary.join(", hoặc ")}` : "· chưa bật luật loại nào — máy chỉ gắn cờ"}
                   </span>
                 )}
               </button>
               {advanced && (
-                <div className="mt-3 grid grid-cols-1 gap-x-3 gap-y-3 text-sm sm:grid-cols-2">
-                  <label className="space-y-1">
-                    <span className="text-slate-600">Tiêu từ … mà 0 đơn thì loại</span>
-                    <CurrencyInput value={form.spendNoOrder} onValueChange={set("spendNoOrder")} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">ROI dưới … % mục tiêu thì loại</span>
-                    <Input inputMode="numeric" value={form.roiHardPct} onChange={(e) => set("roiHardPct")(e.target.value)} />
-                    <span className="block text-xs text-slate-400">= ROI dưới {formatRoi(hardRoi)}; giữa mức này và mục tiêu chỉ gắn cờ.</span>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">Trần chi phí / đơn (để trống = không dùng)</span>
-                    <CurrencyInput value={form.maxCpa} onValueChange={set("maxCpa")} placeholder="Không dùng" />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">Chưa xét khi tiêu dưới</span>
-                    <CurrencyInput value={form.minSpend} onValueChange={set("minSpend")} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">Video công thần: từ … đơn / 30 ngày</span>
-                    <Input inputMode="numeric" value={form.graceMinOrders} onChange={(e) => set("graceMinOrders")(e.target.value)} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">… được ân hạn (ngày vi phạm liên tục)</span>
-                    <Input inputMode="numeric" value={form.graceDays} onChange={(e) => set("graceDays")(e.target.value)} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">Loại tối đa mỗi ngày (video)</span>
-                    <Input inputMode="numeric" value={form.maxExcludePerDay} onChange={(e) => set("maxExcludePerDay")(e.target.value)} />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-slate-600">Luôn giữ lại ít nhất … video đang ra đơn</span>
-                    <Input inputMode="numeric" value={form.minOrderingVideosKeep} onChange={(e) => set("minOrderingVideosKeep")(e.target.value)} />
-                  </label>
-                  <p className="text-xs text-slate-400 sm:col-span-2">
-                    Video TikTok còn đang học không bao giờ bị xét. Video anh/chị đã khôi phục tay thì máy không loại lại trong 30 ngày.
-                  </p>
+                <div className="mt-3 space-y-3">
+                  {/* Mỗi nhóm một khung; mỗi dòng = công tắc + nhãn bên trái, ô số cố định bên phải → luôn thẳng hàng
+                      dù nhãn dài ngắn khác nhau (anh Trung 18/09: "thẳng hàng, đỡ phẳng"; luật nào không dùng thì tắt). */}
+                  <RuleGroup title="Loại thẳng tay" hint="Video vi phạm một trong các luật đang bật sẽ bị loại.">
+                    <RuleRow on={form.ruleNoOrderOn} onToggle={toggle("ruleNoOrderOn")} label="Tiêu từ … mà 0 đơn" hint="Tính trong cửa sổ đang soi.">
+                      <CurrencyInput value={form.spendNoOrder} onValueChange={set("spendNoOrder")} disabled={!form.ruleNoOrderOn} />
+                    </RuleRow>
+                    <RuleRow
+                      on={form.ruleLowRoiOn}
+                      onToggle={toggle("ruleLowRoiOn")}
+                      label="ROI dưới … % mục tiêu"
+                      hint={`= ROI dưới ${formatRoi(hardRoi)}. Giữa mức này và mục tiêu chỉ gắn cờ.`}
+                      unit="%"
+                    >
+                      <Input inputMode="numeric" value={form.roiHardPct} onChange={(e) => set("roiHardPct")(e.target.value)} disabled={!form.ruleLowRoiOn} />
+                    </RuleRow>
+                    <RuleRow
+                      on={form.ruleCpaOn}
+                      onToggle={toggle("ruleCpaOn")}
+                      label="Chi phí mỗi đơn vượt …"
+                      hint={form.ruleCpaOn && form.maxCpa.trim() === "" ? "Nhập trần chi phí/đơn để luật có hiệu lực." : "Đặt theo biên lãi của sản phẩm."}
+                    >
+                      <CurrencyInput value={form.maxCpa} onValueChange={set("maxCpa")} placeholder="80.000" disabled={!form.ruleCpaOn} />
+                    </RuleRow>
+                  </RuleGroup>
+
+                  <RuleGroup title="Sàn dữ liệu">
+                    <RuleRow label="Chưa xét khi tiêu dưới …" hint="Ít tiền quá thì chưa đủ để phán. Video TikTok còn đang học không bao giờ bị xét.">
+                      <CurrencyInput value={form.minSpend} onValueChange={set("minSpend")} />
+                    </RuleRow>
+                  </RuleGroup>
+
+                  <RuleGroup
+                    title="Bảo vệ video công thần"
+                    hint="Video từng bán tốt mà vi phạm thì được theo dõi thêm, không loại ngay."
+                    on={form.graceOn}
+                    onToggle={toggle("graceOn")}
+                  >
+                    <RuleRow label="Công thần = từ … đơn trong 30 ngày" dim={!form.graceOn} unit="đơn">
+                      <Input inputMode="numeric" value={form.graceMinOrders} onChange={(e) => set("graceMinOrders")(e.target.value)} disabled={!form.graceOn} />
+                    </RuleRow>
+                    <RuleRow label="Ân hạn … ngày vi phạm liên tục rồi mới loại" dim={!form.graceOn} unit="ngày">
+                      <Input inputMode="numeric" value={form.graceDays} onChange={(e) => set("graceDays")(e.target.value)} disabled={!form.graceOn} />
+                    </RuleRow>
+                  </RuleGroup>
+
+                  <RuleGroup title="Chốt an toàn mỗi ngày" hint="Video anh/chị đã khôi phục tay thì máy không loại lại trong 30 ngày.">
+                    <RuleRow label="Loại tối đa … video mỗi ngày" hint="Tốn tiền nhất loại trước, phần còn lại chờ ngày mai." unit="video">
+                      <Input inputMode="numeric" value={form.maxExcludePerDay} onChange={(e) => set("maxExcludePerDay")(e.target.value)} />
+                    </RuleRow>
+                    <RuleRow label="Luôn giữ lại ít nhất … video đang ra đơn" hint="0 = không giữ." unit="video">
+                      <Input inputMode="numeric" value={form.minOrderingVideosKeep} onChange={(e) => set("minOrderingVideosKeep")(e.target.value)} />
+                    </RuleRow>
+                  </RuleGroup>
                 </div>
               )}
             </div>
@@ -475,5 +513,68 @@ export function TiktokAutoRuleDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Một khung nhóm luật: tiêu đề (có thể kèm công tắc cả nhóm) + các dòng luật. */
+function RuleGroup({
+  title,
+  hint,
+  on,
+  onToggle,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  on?: boolean;
+  onToggle?: (v: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200">
+      <header className="flex items-start gap-3 bg-slate-50 px-3 py-2">
+        {onToggle && <Switch checked={on} onCheckedChange={(v) => onToggle(v)} aria-label={title} className="mt-0.5" />}
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-900">{title}</p>
+          {hint && <p className="text-xs text-slate-500">{hint}</p>}
+        </div>
+      </header>
+      <div className="divide-y divide-slate-200/80">{children}</div>
+    </section>
+  );
+}
+
+/** Một dòng luật: [công tắc] nhãn + gợi ý bên trái, ô số rộng cố định bên phải (điện thoại: ô số xuống dòng dưới nhãn). */
+function RuleRow({
+  on,
+  onToggle,
+  dim,
+  label,
+  hint,
+  unit,
+  children,
+}: {
+  on?: boolean;
+  onToggle?: (v: boolean) => void;
+  /** Làm mờ dòng khi nhóm cha đang tắt. */
+  dim?: boolean;
+  label: string;
+  hint?: string;
+  unit?: string;
+  children: React.ReactNode;
+}) {
+  const off = onToggle ? !on : Boolean(dim);
+  return (
+    <div className={cn("grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_11rem]", off && "opacity-60")}>
+      {onToggle ? <Switch checked={on} onCheckedChange={(v) => onToggle(v)} aria-label={label} /> : <span className="w-9" aria-hidden="true" />}
+      <div className="min-w-0">
+        <p className="text-sm text-slate-900">{label}</p>
+        {hint && <p className="text-xs text-slate-400">{hint}</p>}
+      </div>
+      <div className="col-start-2 flex items-center gap-2 sm:col-start-auto">
+        <div className="min-w-0 flex-1">{children}</div>
+        {unit && <span className="w-9 shrink-0 text-xs text-slate-400">{unit}</span>}
+      </div>
+    </div>
   );
 }

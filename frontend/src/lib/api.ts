@@ -2712,6 +2712,11 @@ export function requestTiktokAdsRefresh(channelId: string) {
 export interface TiktokAdsAutoConfig {
   roiTarget: number;
   windowDays: number;
+  /** Công tắc từng luật — tắt là không xét, số bên cạnh giữ nguyên. */
+  ruleNoOrderOn: boolean;
+  ruleLowRoiOn: boolean;
+  ruleCpaOn: boolean;
+  graceOn: boolean;
   minSpend: number;
   spendNoOrder: number;
   roiHardPct: number;

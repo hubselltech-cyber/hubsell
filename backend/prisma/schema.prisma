@@ -2689,6 +2689,11 @@ model TiktokAdsAutoRule {
   roiTarget     Decimal  @db.Decimal(8, 2)
   /// Cửa sổ ngày để soi (kết thúc HÔM QUA — chi phí video trễ tới 11h); 3–30.
   windowDays    Int      @default(7)
+  /// Công tắc từng luật (anh Trung 18/09: khách không muốn dùng luật nào thì tắt luật đó, không dùng số 0 để "tắt").
+  ruleNoOrderOn Boolean  @default(true)
+  ruleLowRoiOn  Boolean  @default(true)
+  ruleCpaOn     Boolean  @default(false)
+  graceOn       Boolean  @default(true)
   /// Sàn dữ liệu: tiêu dưới mức này trong cửa sổ → chưa xét.
   minSpend      Decimal  @default(50000) @db.Decimal(14, 2)
   /// Tiêu ≥ mức này mà 0 đơn → loại.
