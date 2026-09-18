@@ -895,6 +895,25 @@ export function TiktokCampaignPage() {
               <ul className="divide-y divide-slate-200/80 text-sm">
                 {data?.actions.map((a) => {
                   const removing = a.action === "exclude_video";
+                  // B6: không phải lệnh video — chủ shop bật Tự loại thật bằng cấu hình chưa diễn tập và tự bấm bỏ qua cảnh báo.
+                  if (a.action === "skip_rehearsal") {
+                    return (
+                      <li key={a.id} className="space-y-1.5 py-3">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="w-28 shrink-0 tabular-nums text-slate-500">
+                            {new Date(a.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
+                          </span>
+                          <span className="font-medium text-slate-900">Bật Tự loại thật</span>
+                          <Badge className="bg-amber-50 text-amber-700">Bỏ qua diễn tập lại</Badge>
+                        </div>
+                        <ul className="space-y-0.5 text-xs text-slate-500 sm:pl-[7.75rem]">
+                          {a.grounds.map((g, i) => (
+                            <li key={i}>{g}</li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  }
                   return (
                     <li key={a.id} className="space-y-1.5 py-3">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

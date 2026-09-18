@@ -2652,7 +2652,8 @@ export type TiktokAdsAutoVerdict = "learning" | "protected" | "insufficient" | "
 
 export interface TiktokAdsVideoActionLog {
   id: string;
-  action: "exclude_video" | "restore_video";
+  /** skip_rehearsal KHÔNG phải lệnh video: chủ shop bật Tự loại thật bằng cấu hình chưa diễn tập và tự bấm bỏ qua cảnh báo (chỉ có grounds). */
+  action: "exclude_video" | "restore_video" | "skip_rehearsal";
   /** dry_run = lệnh diễn tập của Trợ lý (PLANNED, chưa gọi sàn). */
   mode: "dry_run" | "live";
   /** SENDING = đã ghi sổ + gửi lệnh nhưng chưa xác nhận được kết quả (A3); lượt chấm kế tiếp đối chiếu rồi chốt. */
@@ -2784,7 +2785,11 @@ export function fetchTiktokAdsAutoRule(campaignRowId: string) {
   return apiFetch<TiktokAdsAutoRule>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`);
 }
 
-export function saveTiktokAdsAutoRule(campaignRowId: string, body: { mode: TiktokAdsAutoMode } & TiktokAdsAutoConfig) {
+export function saveTiktokAdsAutoRule(
+  campaignRowId: string,
+  /** skipRehearsal: khách đã thấy cảnh báo "cấu hình chưa diễn tập" và tự bấm bỏ qua — backend ghi sổ việc đó. */
+  body: { mode: TiktokAdsAutoMode; skipRehearsal?: boolean } & TiktokAdsAutoConfig
+) {
   return apiFetch<{ ok: true; mode: TiktokAdsAutoMode; config: TiktokAdsAutoConfig; status: TiktokAdsAutoStatus }>(
     `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`,
     { method: "PUT", body: JSON.stringify(body) }

@@ -423,7 +423,9 @@ export function summarizeAutoPlan(plan: AutoExclusionPlan, cfg: AutoRuleConfig):
 // ------------------------------------------------------------
 // B6 — CẤU HÌNH ĐÃ DIỄN TẬP CHƯA? (rà 18/09: rào lastRunOn chỉ biết "đã từng có lượt chấm", không biết lượt đó chạy
 // bằng cấu hình nào → khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được.) Mỗi lượt chấm THẬT chốt lại
-// cấu hình nó dùng (TiktokAdsAutoRule.lastRunConfig); Tự loại thật chỉ chạy với đúng cấu hình đó.
+// cấu hình nó dùng (TiktokAdsAutoRule.lastRunConfig). ★ Anh Trung chốt 18/09 khuya: đổi số thì KHÔNG bắt diễn tập lại —
+// chỉ CẢNH BÁO trước khi lưu ("hãy diễn tập lại cho an toàn"), khách không muốn thì tự bấm Bỏ qua; Hubsell ghi sổ việc bỏ
+// qua đó (ai, lúc nào, ô nào đổi từ mấy sang mấy). Em từng đề xuất chặn cứng; anh chọn để khách tự quyết.
 // ------------------------------------------------------------
 
 /** Số đi kèm một luật ĐANG TẮT không tham gia chấm điểm → không tính là đổi cấu hình. */
@@ -457,6 +459,41 @@ export function unrehearsedFields(rehearsed: AutoRuleConfig | null, next: AutoRu
   const a = effectiveConfig(rehearsed);
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof AutoRuleConfig>;
   return [...keys].filter((k) => a[k] !== b[k]);
+}
+
+const FIELD_LABEL: Record<keyof AutoRuleConfig, string> = {
+  roiTarget: "ROI mục tiêu",
+  windowDays: "Soi theo số ngày",
+  hardBasis: "Mức loại ROI tính theo",
+  ruleNoOrderOn: "Luật tiêu tiền mà 0 đơn",
+  ruleLowRoiOn: "Luật ROI dưới mức loại",
+  ruleCpaOn: "Luật chi phí mỗi đơn",
+  graceOn: "Bảo vệ video công thần",
+  minSpend: "Mức tiêu tối thiểu để xét",
+  spendNoOrder: "Mức tiêu mà 0 đơn",
+  roiHardPct: "Mức loại (% ROI mục tiêu)",
+  maxCpa: "Trần chi phí mỗi đơn",
+  graceMinOrders: "Số đơn công thần",
+  graceDays: "Số ngày ân hạn",
+  maxExcludePerDay: "Số video loại tối đa mỗi ngày",
+  minOrderingVideosKeep: "Số video ra đơn giữ lại",
+};
+
+function fieldValueText(k: keyof AutoRuleConfig, v: AutoRuleConfig[keyof AutoRuleConfig] | undefined): string {
+  if (v == null) return "chưa đặt";
+  if (typeof v === "boolean") return v ? "bật" : "tắt";
+  if (k === "hardBasis") return v === "breakeven" ? "ROI hòa vốn" : "% mục tiêu";
+  if (k === "minSpend" || k === "spendNoOrder" || k === "maxCpa") return vnd(Number(v));
+  if (k === "roiHardPct") return `${v}%`;
+  return typeof v === "number" ? roiTxt(v) : String(v);
+}
+
+/** Mỗi ô đã đổi một dòng "Tên ô: lượt chấm dùng X → nay Y" — ghi vào sổ khi khách bỏ qua diễn tập lại. */
+export function describeUnrehearsedFields(rehearsed: AutoRuleConfig | null, next: AutoRuleConfig): string[] {
+  if (!rehearsed) return ["Lượt chấm trước chưa ghi lại cấu hình đã dùng — không so được từng ô."];
+  return unrehearsedFields(rehearsed, next).map(
+    (k) => `${FIELD_LABEL[k]}: lượt chấm dùng ${fieldValueText(k, rehearsed[k])} → nay ${fieldValueText(k, next[k])}`
+  );
 }
 
 // ------------------------------------------------------------

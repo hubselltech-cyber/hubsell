@@ -5,6 +5,7 @@ import {
   BREAKEVEN_MIN_COVERAGE_PCT,
   compareRunDigest,
   daysBetween,
+  describeUnrehearsedFields,
   parseRehearsedConfig,
   resolveHardLevel,
   runChangeLabel,
@@ -258,8 +259,15 @@ describe("videoDataProblem — tầng video báo 0 trong khi tầng chiến dị
   });
 });
 
-// B6 — Tự loại thật chỉ chạy với ĐÚNG cấu hình đã qua một lượt chấm thật.
+// B6 — cấu hình sắp bật thật có phải cấu hình lượt chấm gần nhất đã dùng không (khác thì popup CẢNH BÁO, khách tự quyết bỏ qua).
 describe("unrehearsedFields — cấu hình đang lưu có phải cấu hình đã diễn tập không", () => {
+  it("dòng ghi sổ khi khách bỏ qua diễn tập lại: mỗi ô một dòng, nêu số cũ → số mới đúng đơn vị", () => {
+    const lines = describeUnrehearsedFields(cfg, { ...cfg, roiHardPct: 90, spendNoOrder: 100_000, graceOn: false });
+    expect(lines).toContain("Mức loại (% ROI mục tiêu): lượt chấm dùng 50% → nay 90%");
+    expect(lines).toContain("Mức tiêu mà 0 đơn: lượt chấm dùng 200.000đ → nay 100.000đ");
+    expect(lines).toContain("Bảo vệ video công thần: lượt chấm dùng bật → nay tắt");
+    expect(describeUnrehearsedFields(null, cfg)).toHaveLength(1);
+  });
   it("chưa có lượt chấm nào (hoặc dòng cũ chưa ghi cấu hình) → coi như chưa diễn tập", () => {
     expect(parseRehearsedConfig(null)).toBeNull();
     expect(parseRehearsedConfig({ summary: "linh tinh" })).toBeNull();

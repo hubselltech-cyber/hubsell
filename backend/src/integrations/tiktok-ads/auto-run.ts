@@ -19,8 +19,8 @@
 //        live    → kiểm quyền TKQC + campaign còn bật → gọi creative/update
 //                  REMOVE → AdsActionLog mode live SUCCESS/FAILED, chuông.
 //      referenceId "ttauto-{rowId}-{ngày}" unique → một ngày một lệnh mỗi chiến dịch.
-//      Mỗi lượt chấm thật chốt cấu hình đã dùng (lastRunConfig — B6: Tự loại thật chỉ chạy với cấu hình đã
-//      diễn tập) và chỉ chuông khi kết quả ĐỔI so với lượt trước (B8).
+//      Mỗi lượt chấm thật chốt cấu hình đã dùng (lastRunConfig — B6: popup cảnh báo khi khách bật thật bằng
+//      cấu hình chưa diễn tập) và chỉ chuông khi kết quả ĐỔI so với lượt trước (B8).
 //   Giữa hai việc: chốt dòng sổ kẹt SENDING (A3) + soi lệnh loại đã SUCCESS xem sàn có áp dụng thật không (B7).
 //
 // Không ném lỗi ra ngoài: lỗi một chiến dịch ghi log rồi đi tiếp chiến dịch khác.
@@ -40,12 +40,10 @@ import {
   AUTO_RULE_DEFAULTS,
   compareRunDigest,
   daysBetween,
-  parseRehearsedConfig,
   planAutoExclusion,
   runChangeLabel,
   runDigestOf,
   summarizeAutoPlan,
-  unrehearsedFields,
   videoDataProblem,
   type AutoAssessment,
   type AutoExclusionPlan,
@@ -423,20 +421,16 @@ async function reportCommandsNotApplied(campaign: CampaignLite, liveIds: Set<str
 export async function applyAutoPlan(
   scope: TiktokAdsScope,
   campaign: CampaignLite,
-  rule: Pick<RuleRow, "mode" | "lastRunSummary" | "lastRunConfig">,
+  rule: Pick<RuleRow, "mode" | "lastRunSummary">,
   cfg: AutoRuleConfig,
   bundle: AutoPlanBundle,
   today: string,
   ownerId: string
 ): Promise<ApplyOutcome> {
   const { plan } = bundle;
-  // B6 — Tự loại thật CHỈ chạy với cấu hình đã qua một lượt chấm thật. Route PUT đã chặn từ lúc lưu; đây là lớp thứ hai
-  // (dòng cũ chưa có lastRunConfig, dữ liệu sửa tay): lượt này chạy như DIỄN TẬP, chốt cấu hình, lượt sau mới loại thật.
-  const unrehearsed = rule.mode === "live" && unrehearsedFields(parseRehearsedConfig(rule.lastRunConfig), cfg).length > 0;
-  const mode: AutoRuleMode = unrehearsed ? "dry_run" : (rule.mode as AutoRuleMode);
-  const rehearsalNote = unrehearsed
-    ? "Cấu hình hiện tại chưa qua lượt diễn tập nào nên hôm nay Trợ lý chỉ DIỄN TẬP, chưa loại video; từ lượt chấm kế tiếp mới loại thật."
-    : undefined;
+  // B6: cấu hình live có thể CHƯA diễn tập — khách đã được cảnh báo lúc lưu và tự bấm bỏ qua (route PUT ghi sổ việc đó,
+  // anh Trung chốt 18/09 khuya) → lượt chấm cứ chạy theo chế độ khách chọn, không tự hạ về diễn tập.
+  const mode = rule.mode as AutoRuleMode;
   const excludedIds = new Set(plan.exclude.map((a) => a.videoId));
   const link = `/ads/tiktok/campaign?id=${campaign.id}`;
 
@@ -486,7 +480,6 @@ export async function applyAutoPlan(
   const runSummary = {
     mode,
     summary,
-    rehearsalNote,
     unchanged: change.changed ? undefined : true,
     excludeIds: plan.exclude.map((a) => a.videoId),
     exclude: plan.exclude.length,
@@ -555,11 +548,11 @@ export async function applyAutoPlan(
   if (mode === "dry_run") {
     await prisma.adsActionLog.create({ data: { ...logBase, mode: "dry_run", status: "PLANNED" } });
     await saveRun();
-    if (change.changed || rehearsalNote) {
+    if (change.changed) {
       await notify(ownerId, {
         type: "tiktok-ads-auto",
         title: `Diễn tập ${campaign.name}: sẽ loại ${items.length} video${runChangeLabel(prevDigest, change)}`,
-        body: rehearsalNote ? `${rehearsalNote} ${summary}` : summary,
+        body: summary,
         link,
       });
     }

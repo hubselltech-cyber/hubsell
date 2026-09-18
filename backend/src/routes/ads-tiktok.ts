@@ -49,6 +49,8 @@ import {
   VIDEO_ACTIONS,
   VIDEO_ACTION_EXCLUDE,
   VIDEO_ACTION_RESTORE,
+  VIDEO_ACTION_SKIP_REHEARSAL,
+  VIDEO_HISTORY_ACTIONS,
   VIDEO_VERDICT_MANUAL,
   buildVideoActionReasons,
   parseVideoActionReasons,
@@ -72,6 +74,7 @@ import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-a
 import {
   AUTO_RULE_MODES,
   breakevenUnusableReason,
+  describeUnrehearsedFields,
   parseRehearsedConfig,
   resolveHardLevel,
   sanitizeAutoRuleConfig,
@@ -393,7 +396,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       const watchOf = new Map(watches.map((w) => [w.videoId, w]));
       // Sổ thao tác video của chiến dịch (10 lệnh gần nhất) — hiện ngay dưới bảng.
       const logs = await prisma.adsActionLog.findMany({
-        where: { adsCampaignId: campaign.id, action: { in: VIDEO_ACTIONS } },
+        where: { adsCampaignId: campaign.id, action: { in: VIDEO_HISTORY_ACTIONS } },
         orderBy: { createdAt: "desc" },
         take: 10,
         select: { id: true, action: true, mode: true, verdict: true, status: true, error: true, reasons: true, createdAt: true },
@@ -668,18 +671,19 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
     const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
     const base = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
     const cfg = sanitizeAutoRuleConfig(body, base);
-    // B6 — cùng lý do với rào trên: lượt diễn tập phải chạy bằng ĐÚNG cấu hình sắp loại thật. Diễn tập bằng số nhẹ rồi sửa
-    // số nặng và bật thật (hoặc đang chạy thật mà sửa số) → chặn, lưu ở Diễn tập và đợi một lượt chấm với cấu hình mới.
-    if (mode === "live") {
-      const changed = unrehearsedFields(parseRehearsedConfig(campaign.tiktokAutoRule?.lastRunConfig), cfg);
-      if (changed.length > 0) {
-        res.status(409).json({
-          error:
-            "Cấu hình này chưa diễn tập: lượt chấm gần nhất chạy bằng số khác. Hãy lưu ở chế độ Diễn tập, đợi lượt chấm sau 12h trưa với cấu hình mới, xem chuông báo đúng rồi mới bật Tự loại thật.",
-          unrehearsedFields: changed,
-        });
-        return;
-      }
+    // B6 — bật thật bằng cấu hình KHÁC cấu hình lượt chấm gần nhất đã dùng (diễn tập số nhẹ rồi sửa số nặng, hoặc đang chạy
+    // thật mà sửa số). Anh Trung chốt 18/09 khuya: KHÔNG bắt diễn tập lại, chỉ cảnh báo — popup hỏi, khách bấm "Bỏ qua" thì
+    // gửi skipRehearsal = true. Thiếu cờ đó (client cũ, gọi API tay) → 409 để không ai lọt qua mà chưa thấy cảnh báo.
+    const rehearsed = parseRehearsedConfig(campaign.tiktokAutoRule?.lastRunConfig);
+    const skipping = mode === "live" && unrehearsedFields(rehearsed, cfg).length > 0;
+    if (skipping && body.skipRehearsal !== true) {
+      res.status(409).json({
+        error:
+          "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất. Để an toàn hãy lưu ở chế độ Diễn tập và đợi lượt chấm sau 12h trưa; nếu vẫn muốn bật thật ngay, hãy xác nhận bỏ qua diễn tập lại.",
+        code: "unrehearsed",
+        unrehearsedFields: unrehearsedFields(rehearsed, cfg),
+      });
+      return;
     }
     const data = { mode, ...cfg };
     const rule = await prisma.tiktokAdsAutoRule.upsert({
@@ -687,6 +691,24 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
       update: data,
       create: { adsCampaignId: campaign.id, ...data },
     });
+    if (skipping) {
+      // Bằng chứng khách TỰ quyết bỏ qua diễn tập lại: ai, lúc nào, ô nào đổi từ mấy sang mấy — hiện ở tab Lịch sử.
+      await prisma.adsActionLog.create({
+        data: {
+          channelId: campaign.channelId,
+          adsCampaignId: campaign.id,
+          action: VIDEO_ACTION_SKIP_REHEARSAL,
+          mode: "live",
+          verdict: VIDEO_VERDICT_MANUAL,
+          status: "SUCCESS",
+          referenceId: `ttskip-${campaign.id}-${Date.now()}`,
+          reasons: [
+            `Chủ shop${req.userEmail ? ` (${req.userEmail})` : ""} bật Tự loại thật với cấu hình CHƯA diễn tập và đã chọn bỏ qua diễn tập lại.`,
+            ...describeUnrehearsedFields(rehearsed, cfg),
+          ].join("\n"),
+        },
+      });
+    }
     res.json({ ok: true, mode: rule.mode as AutoRuleMode, config: ruleRowToConfig(rule), status: autoStatusOf(rule) });
   } catch (err) {
     next(err);

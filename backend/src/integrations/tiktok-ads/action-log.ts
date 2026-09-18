@@ -14,6 +14,13 @@
 export const VIDEO_ACTION_EXCLUDE = "exclude_video";
 export const VIDEO_ACTION_RESTORE = "restore_video";
 export const VIDEO_ACTIONS = [VIDEO_ACTION_EXCLUDE, VIDEO_ACTION_RESTORE];
+/**
+ * KHÔNG phải lệnh video: chủ shop bật Tự loại thật với cấu hình CHƯA diễn tập và tự bấm "bỏ qua diễn tập lại" (B6). Ghi vào
+ * cùng sổ để tab Lịch sử kể lại được ai quyết, lúc nào, đổi ô nào từ mấy sang mấy. `reasons` chỉ có dòng căn cứ, không có video.
+ */
+export const VIDEO_ACTION_SKIP_REHEARSAL = "skip_rehearsal";
+/** Những gì tab Lịch sử của trang chiến dịch hiện. */
+export const VIDEO_HISTORY_ACTIONS = [...VIDEO_ACTIONS, VIDEO_ACTION_SKIP_REHEARSAL];
 /** verdict của lệnh do chủ shop tự bấm. */
 export const VIDEO_VERDICT_MANUAL = "manual";
 

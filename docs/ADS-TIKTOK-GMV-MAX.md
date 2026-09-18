@@ -207,15 +207,21 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
 5. ✅ **XONG 18/09** — `maybeRunTiktokAdsDaily`: tầng xung 60'/120' cũng kiểm `autoRunDue`, tầng 6h chỉ còn là lưới đỡ → lượt
    chấm rơi trong 12h–14h. Mô tả gốc: **Giờ chạy thất thường** — lượt ngày bám tầng lịch sử 6h nên rơi bất kỳ lúc nào 12h–18h. Cho tầng xung 60' cũng
    kiểm `autoRunDue` → luôn chạy trong ~1h sau 12h trưa; khách biết giờ mà xem chuông.
-6. ✅ **XONG 18/09 khuya** — cột mới `TiktokAdsAutoRule.lastRunConfig` (Json, migration `20260918230000_…rehearsed_config`,
-   IF NOT EXISTS): mỗi lượt chấm THẬT chốt lại cấu hình nó dùng (lượt bị bỏ A2 không ghi). `auto-rules.ts unrehearsedFields`
-   (thuần, 4 test) so cấu hình sắp lưu với cấu hình đó — số đi kèm một luật ĐANG TẮT không tính. Em chọn **CHẶN** (không chỉ
-   cảnh báo) cho khớp rào "diễn tập 1 ngày thật" anh đã chốt: PUT `mode=live` mà còn ô khác → 409 kèm `unrehearsedFields`;
-   popup khóa thẻ Tự loại thật ("Cấu hình chưa diễn tập") + dòng vàng nêu TÊN Ô đã đổi, sửa lại đúng số cũ thì thẻ mở lại;
-   đang chạy thật mà sửa số thì form tự lùi về Diễn tập và nói rõ. Lớp hai trong `applyAutoPlan`: dòng live mà cấu hình
-   chưa diễn tập → lượt đó chạy như diễn tập (`rehearsalNote`), lượt sau mới loại thật. Dòng cũ trên prod (TC054) chưa có
-   `lastRunConfig` → thẻ khóa tới lượt chấm kế tiếp. CHƯA làm: diễn tập quá cũ (Tắt lâu ngày rồi bật thật) — chưa có mốc
-   ngày nào có căn cứ nên chưa đặt. Mô tả gốc: **Đổi cấu hình sau diễn tập** — rào `lastRunOn` chỉ biết "đã từng có lượt", không biết lượt đó chạy bằng cấu hình
+6. ✅ **XONG 18/09 khuya — ★ ANH TRUNG CHỐT: CHỈ CẢNH BÁO, KHÔNG CHẶN.** Cột mới `TiktokAdsAutoRule.lastRunConfig` (Json,
+   migration `20260918230000_…rehearsed_config`, IF NOT EXISTS): mỗi lượt chấm THẬT chốt lại cấu hình nó dùng (lượt bị bỏ A2
+   không ghi). `auto-rules.ts unrehearsedFields` (thuần) so cấu hình sắp lưu với cấu hình đó — số đi kèm một luật ĐANG TẮT
+   không tính; gõ lại đúng số cũ thì hết khác. Bản đầu em làm CHẶN cứng (409 + khóa thẻ + lượt chấm tự hạ về diễn tập); anh
+   chốt ngược: "đổi số thì không cần diễn tập lại, chỉ hiện thông báo trước khi lưu… họ không muốn diễn tập thì trực tiếp ấn
+   nút bỏ qua" → **đừng dựng lại rào chặn**. Hiện tại: bật thật (hoặc đang chạy thật mà sửa số) bằng cấu hình khác lượt chấm
+   gần nhất → bấm Lưu hiện hộp vàng "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất" liệt kê TỪNG Ô số cũ → số mới, 3
+   nút: Để em xem lại · **Bỏ qua, bật thật luôn** · **Diễn tập lại** (lưu bộ số mới ở Diễn tập). Hộp tự cuộn vào khung nhìn
+   (khối Nâng cao mở thì nó nằm dưới đáy). Backend: PUT live lệch cấu hình mà thiếu `skipRehearsal: true` → 409 `code:
+   "unrehearsed"` (để client cũ / gọi API tay không lọt qua mà chưa thấy cảnh báo); có cờ → lưu và **GHI SỔ** một dòng
+   AdsActionLog `action = skip_rehearsal` (ai bật, giờ, ô nào đổi từ mấy sang mấy — `describeUnrehearsedFields`), tab Lịch sử
+   hiện "Bật Tự loại thật · Bỏ qua diễn tập lại". Đây là bằng chứng khách TỰ quyết — phần em giữ lại từ lập luận "khách mất
+   tiền đổ oan". Lượt chấm KHÔNG tự hạ chế độ nữa. Rào "phải có ≥1 lượt chấm thật (`lastRunOn`)" của anh GIỮ NGUYÊN. Dòng cũ
+   trên prod (TC054) chưa có `lastRunConfig` → bật thật trước lượt chấm kế tiếp sẽ gặp hộp cảnh báo (không so được từng ô).
+   Mô tả gốc: **Đổi cấu hình sau diễn tập** — rào `lastRunOn` chỉ biết "đã từng có lượt", không biết lượt đó chạy bằng cấu hình
    nào. Khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được. Hướng: lưu dấu cấu hình của lượt gần nhất,
    khác thì popup báo "cấu hình này chưa diễn tập" (chặn hay chỉ cảnh báo — anh chốt).
 7. ✅ **XONG 18/09 khuya** — `send-command.ts soakCheckExclude` (thuần, 3 test) + `soakCheckCommands`: lượt chấm hằng ngày,
@@ -234,9 +240,10 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
 
 **→ Nhóm A + B (5–8) XONG. Kiểm local 18/09 khuya KHÔNG gọi TikTok** (gian giả không kết nối, gọi thẳng `applyAutoPlan` /
 `soakCheckCommands`): 3 ngày diễn tập liên tiếp chuông 1 · 0 · 1 (thêm 1 video); dòng live cấu hình chưa diễn tập → chỉ ghi
-PLANNED, 0 lệnh live; lệnh loại 3 video (1 đã khôi phục trên Hubsell, 1 còn chạy) → báo đúng 1 video, lần soi sau không báo
-lại. Popup soi bằng số thật TC054 (chỉ đọc): đổi ROI 15 → 20 thẻ khóa + nêu "ROI mục tiêu", gõ lại 15 thẻ mở; PUT live với
-số đã đổi trả 409 và không lưu gì. Dữ liệu thử đã xóa.
+PLANNED, 0 lệnh live (bản chặn — đã bỏ theo anh chốt); lệnh loại 3 video (1 đã khôi phục trên Hubsell, 1 còn chạy) → báo
+đúng 1 video, lần soi sau không báo lại. Bản CẢNH BÁO soi bằng số thật TC054 (chỉ đọc): chọn Tự loại thật + đổi ROI 15 → 20 →
+Lưu → hộp vàng nêu "ROI mục tiêu: lượt chấm dùng 15 → nay 20"; bấm Diễn tập lại → lưu ROI 20 ở Diễn tập. Nút Bỏ qua chỉ thử
+trên chiến dịch giả KHÔNG nối TikTok: thiếu cờ → 409 không lưu; có cờ → live + dòng sổ skip_rehearsal đúng chữ. Dữ liệu thử đã xóa.
 
 **C. Đã rà, không phải lỗi:** lệnh trùng trong ngày (referenceId chặn) · video đã loại không bị xét lại (report chỉ lấy
 trạng thái đang phân phối) · chuyển Diễn tập → Thật cùng ngày không bắn ngay (lượt kế là trưa hôm sau) · trần 400
