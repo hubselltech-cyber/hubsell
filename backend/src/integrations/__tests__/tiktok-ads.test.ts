@@ -4,7 +4,7 @@ import {
   parseVideoActionReasons,
   videoActionNote,
 } from "../tiktok-ads/action-log";
-import { GMV_MAX_MAX_RANGE_DAYS, clampGmvMaxRange } from "../tiktok-ads/report";
+import { GMV_MAX_MAX_RANGE_DAYS, GMV_MAX_OUTSIDE_VIDEO_STATUSES, clampGmvMaxRange, tallyVideoStatuses } from "../tiktok-ads/report";
 
 describe("clampGmvMaxRange — khoảng ngày của trang soi video", () => {
   const today = "2026-09-17";
@@ -85,6 +85,25 @@ describe("sổ thao tác video — ghi rồi đọc lại phải tròn", () => {
   it("đọc được dòng kiểu cũ đã ghi trên prod (#id · ghi chú) và bỏ qua dòng trống", () => {
     expect(parseVideoActionReasons("#7678267749268933895 · chi 90.377đ · 0 đơn\n\n").videos).toEqual([
       { videoId: "7678267749268933895", note: "chi 90.377đ · 0 đơn" },
+    ]);
+  });
+});
+
+describe("tallyVideoStatuses — đếm video NGOÀI bảng soi theo trạng thái sàn", () => {
+  it("gom theo trạng thái, bỏ thẻ sản phẩm (-1), giữ thứ tự ưu tiên; trạng thái lạ xếp cuối", () => {
+    const rows = [
+      { videoId: "1", deliveryStatus: "NOT_ACTIVE", cost: 100 },
+      { videoId: "2", deliveryStatus: "NOT_DELIVERYING", cost: 6_000 },
+      { videoId: "3", deliveryStatus: "NOT_DELIVERYING", cost: 179 },
+      { videoId: "-1", deliveryStatus: "NOT_ACTIVE", cost: 999 },
+      { videoId: "4", deliveryStatus: "AUTHORIZATION_NEEDED", cost: 0 },
+      { videoId: "5", deliveryStatus: "LA_LUNG", cost: 0 },
+    ];
+    expect(tallyVideoStatuses(rows, GMV_MAX_OUTSIDE_VIDEO_STATUSES)).toEqual([
+      { status: "NOT_DELIVERYING", videos: 2, cost: 6_179 },
+      { status: "AUTHORIZATION_NEEDED", videos: 1, cost: 0 },
+      { status: "NOT_ACTIVE", videos: 1, cost: 100 },
+      { status: "LA_LUNG", videos: 1, cost: 0 },
     ]);
   });
 });

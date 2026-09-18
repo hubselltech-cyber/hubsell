@@ -7,6 +7,7 @@
 //
 //   GET  /                       — tổng quan: campaign + số theo ngày (đọc DB, worker kéo)
 //   GET  /campaigns/:id/videos   — soi SỐNG sản phẩm → video của một campaign
+//   GET  /campaigns/:id/videos/outside — đếm video NGOÀI bảng soi theo trạng thái sàn (FE gọi sau, không chặn bảng)
 //   POST /campaigns/:id/videos/action — LOẠI / KHÔI PHỤC video (lệnh ghi duy nhất, chỉ chủ shop)
 //   GET  /video-meta?ids=        — ảnh bìa + kênh + caption (oEmbed công khai, có nhớ đệm)
 //   POST /refresh                — nút Làm mới (kéo hạn xung về ngay)
@@ -57,10 +58,12 @@ import {
   GMV_MAX_EXCLUDED_STATUS,
   GMV_MAX_LIVE_VIDEO_STATUSES,
   GMV_MAX_DAILY_MAX_RANGE_DAYS,
+  GMV_MAX_OUTSIDE_VIDEO_STATUSES,
   clampGmvMaxRange,
   fetchGmvMaxCampaignProducts,
   fetchGmvMaxCampaignVideoDays,
   fetchGmvMaxCampaignVideos,
+  tallyVideoStatuses,
 } from "../integrations/tiktok-ads/report";
 import { backtestStartDate, buildDryRunBacktest, type DryRunPlan } from "../integrations/tiktok-ads/backtest";
 import { computeTiktokAdsBreakeven, saveCampaignProductIds, type TiktokBreakeven } from "../integrations/tiktok-ads/breakeven";
@@ -253,6 +256,45 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
       adsRefreshing: link.linked && link.status === "ACTIVE" ? await nudgeAdsSyncIfStale(selected.id) : false,
       adsSyncedAt: selected.lastAdsSyncAt?.toISOString() ?? null,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// VIDEO NGOÀI BẢNG SOI (anh Trung 18/09: chiến dịch được bồi video liên tục — cho thấy đủ bức tranh mà không làm rối
+// bảng): đếm theo trạng thái những nhóm Hubsell không đưa vào bảng (TikTok tự ngưng rải, chờ creator cấp quyền, không
+// hoạt động…). Tách endpoint riêng để trang gọi SAU khi bảng đã lên — nhóm này của TC054 là ~1.600 dòng (2 trang report).
+adsTiktokRouter.get("/campaigns/:id/videos/outside", async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await prisma.adsCampaign.findFirst({
+      where: { id: String(req.params.id), channel: { userId: req.ownerId!, channelName: ChannelName.TIKTOK } },
+      select: { id: true, campaignId: true, channelId: true, itemIds: true },
+    });
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const scope = await getTiktokAdsScope(campaign.channelId);
+    if (!scope) {
+      res.status(409).json({ error: "Gian chưa kết nối quảng cáo TikTok hoặc kết nối đã hết hiệu lực." });
+      return;
+    }
+    const period = clampGmvMaxRange(
+      { from: req.query.from, to: req.query.to, fallbackDays: parseDays(req.query.days) },
+      vnDateStr(0)
+    );
+    const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, ...period };
+    try {
+      // Sản phẩm của chiến dịch đã được lượt ngày / trang soi video lưu sẵn → khỏi tốn thêm một call.
+      const spuIds = campaign.itemIds
+        ? campaign.itemIds.split(",")
+        : (await fetchGmvMaxCampaignProducts(range, campaign.campaignId)).map((p) => p.spuId).filter(Boolean);
+      const rows = spuIds.length > 0 ? await fetchGmvMaxCampaignVideos(range, campaign.campaignId, spuIds, GMV_MAX_OUTSIDE_VIDEO_STATUSES) : [];
+      res.json({ from: period.startDate, to: period.endDate, groups: tallyVideoStatuses(rows, GMV_MAX_OUTSIDE_VIDEO_STATUSES) });
+    } catch (err) {
+      await recordTiktokAdsFailure(scope.linkId, err);
+      res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });
+    }
   } catch (err) {
     next(err);
   }

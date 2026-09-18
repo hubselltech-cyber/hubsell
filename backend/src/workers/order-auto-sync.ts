@@ -808,11 +808,35 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
 // ví, không executor, không ghi AdSpend (phí GMV Max đã trừ trong quyết toán
 // đơn — xem integrations/tiktok-ads/sync.ts).
 // ============================================================
+/**
+ * LƯỢT HẰNG NGÀY (theo dõi video + xét luật loại tự động): một lần/ngày cho mỗi gian, ở lượt ads ĐẦU TIÊN sau 12h trưa
+ * VN (chi phí video TikTok về trễ tới 11h). B5 (18/09): gọi từ CẢ tầng xung (60' khi đang tiêu tiền, 120' khi im) lẫn
+ * tầng lịch sử 6h — trước đây chỉ bám tầng 6h nên lượt chấm rơi bất kỳ lúc nào 12h–18h, khách không biết giờ mà xem
+ * chuông. Mốc `lastVideoTrackOn` + khóa gian của worker bảo đảm không chạy hai lần một ngày.
+ */
+async function maybeRunTiktokAdsDaily(channel: Channel): Promise<void> {
+  const link = await prisma.tiktokAdsStoreLink.findUnique({
+    where: { channelId: channel.id },
+    select: { lastVideoTrackOn: true },
+  });
+  if (!link || !autoRunDue(link.lastVideoTrackOn)) return;
+  const d = await runTiktokAdsDaily(channel);
+  if (d) {
+    console.log(
+      `[Auto-sync] "${channel.shopName}" ads TikTok lượt ngày: ${d.tracked}/${d.campaigns} chiến dịch theo dõi, ${d.evaluated} xét luật (${d.planned} diễn tập, ${d.executed} loại thật, ${d.failed} lỗi)`
+    );
+  }
+}
+
 async function runTiktokAdsPulse(channel: Channel): Promise<{ delayMin: number; synced: boolean }> {
   if (!isTiktokAdsConfigured()) return { delayMin: TIKTOK_NO_ADS_MIN, synced: false };
   try {
     const r = await syncTiktokAdsCampaigns(channel, { daysBack: 2 });
     if (!r.linked) return { delayMin: TIKTOK_NO_ADS_MIN, synced: false };
+    // Lượt ngày hỏng không được làm hỏng xung (xung còn lo lịch nhịp kế).
+    await maybeRunTiktokAdsDaily(channel).catch((err) =>
+      console.error(`[Auto-sync] Lượt ngày ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message)
+    );
     const delayMin =
       r.liveCampaigns === 0
         ? ADS_CADENCE.PULSE_NO_CAMPAIGN_MIN
@@ -844,22 +868,8 @@ async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
         `[Auto-sync] "${channel.shopName}" ads TikTok: ${r.campaignsUpserted} campaign GMV Max, ${r.perfDaysUpserted} dòng ngày`
       );
     }
-    // LƯỢT HẰNG NGÀY (theo dõi video + xét luật loại tự động): một lần/ngày, ở
-    // lượt lịch sử đầu tiên sau 12h trưa VN — chi phí video TikTok trễ tới 11h.
-    if (r.linked) {
-      const link = await prisma.tiktokAdsStoreLink.findUnique({
-        where: { channelId: channel.id },
-        select: { lastVideoTrackOn: true },
-      });
-      if (link && autoRunDue(link.lastVideoTrackOn)) {
-        const d = await runTiktokAdsDaily(channel);
-        if (d) {
-          console.log(
-            `[Auto-sync] "${channel.shopName}" ads TikTok lượt ngày: ${d.tracked}/${d.campaigns} chiến dịch theo dõi, ${d.evaluated} xét luật (${d.planned} diễn tập, ${d.executed} loại thật, ${d.failed} lỗi)`
-          );
-        }
-      }
-    }
+    // Lưới đỡ: xung thường đã chạy lượt ngày rồi (mốc lastVideoTrackOn chặn chạy lại).
+    if (r.linked) await maybeRunTiktokAdsDaily(channel);
     return r.linked;
   } catch (err) {
     console.error(`[Auto-sync] Ads TikTok lỗi gian "${channel.shopName}":`, (err as Error).message);

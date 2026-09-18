@@ -54,6 +54,7 @@ import {
   ApiError,
   TIKTOK_AUTO_MODE_LABEL,
   fetchTiktokAdsCampaignVideos,
+  fetchTiktokAdsOutsideVideos,
   fetchTiktokVideoMeta,
   getStoredUser,
   sendTiktokAdsVideoAction,
@@ -73,6 +74,15 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   DELIVERING: { label: "Đang phân phối", className: "bg-emerald-50 text-emerald-700" },
   LEARNING: { label: "Đang học", className: "bg-sky-50 text-sky-700" },
   IN_QUEUE: { label: "Chờ thử", className: "bg-slate-100 text-slate-500" },
+};
+
+/** Trạng thái sàn của nhóm video Hubsell không đưa vào bảng soi → chữ cho dòng "Ngoài bảng". */
+const OUTSIDE_STATUS_LABEL: Record<string, string> = {
+  NOT_DELIVERYING: "TikTok tự ngưng phân phối",
+  AUTHORIZATION_NEEDED: "chờ creator cấp quyền quảng cáo",
+  NOT_ACTIVE: "không hoạt động",
+  UNAVAILABLE: "không khả dụng",
+  REJECTED: "bị TikTok từ chối",
 };
 
 type QuickFilter = "all" | "noOrder" | "belowTarget" | "willExclude" | "needsReview" | "learning" | "excluded";
@@ -244,6 +254,14 @@ export function TiktokCampaignPage() {
   const c = data?.campaign;
   const target = c?.roasTarget ?? null;
 
+  // VIDEO NGOÀI BẢNG (đếm theo trạng thái sàn): gọi SAU khi bảng đã lên, hỏng thì chỉ thiếu dòng chữ nhỏ dưới bảng.
+  const outsideQ = useApiQuery({
+    queryKey: qk.tiktokAdsOutsideVideos(campaignRowId, fromKey, toKey),
+    queryFn: () => fetchTiktokAdsOutsideVideos(campaignRowId, { from: fromKey, to: toKey }),
+    enabled: allowed === true && campaignRowId !== "" && data != null,
+    staleTime: 10 * 60_000,
+  });
+
   // Chỉ video CÓ tiêu tiền mới đáng soi; phần còn lại sàn chưa phân phối đồng nào.
   const spending = useMemo(() => (data?.videos ?? []).filter((v) => v.cost > 0 && !v.excluded), [data?.videos]);
   // Video đã loại: hiện TẤT CẢ (kể cả không còn chi phí trong khoảng ngày) để còn khôi phục được.
@@ -367,6 +385,16 @@ export function TiktokCampaignPage() {
   const wastePct = t && t.videoSpend > 0 ? Math.round((t.noOrderSpend / t.videoSpend) * 100) : 0;
   const campaignRoi = c && c.spend > 0 ? c.gmv / c.spend : null;
   const backHref = c ? `/ads/tiktok?channelId=${c.channelId}` : "/ads/tiktok";
+
+  // "Ngoài bảng": video đang phân phối / chờ thử mà CHƯA tiêu đồng nào (số từ chính bảng) + các nhóm Hubsell không soi.
+  const idleCount = t ? Math.max(0, t.videoCount - t.spendingCount) : 0;
+  const outsideParts = [
+    ...(idleCount > 0 ? [`${formatNumber(idleCount)} video đã vào chiến dịch nhưng chưa tiêu tiền`] : []),
+    ...(outsideQ.data?.groups ?? []).map(
+      (g) => `${formatNumber(g.videos)} video ${OUTSIDE_STATUS_LABEL[g.status] ?? g.status.toLowerCase()}${g.cost > 0 ? ` (${formatVND(g.cost)})` : ""}`
+    ),
+  ];
+  const outsideLine = outsideParts.length > 0 ? `Ngoài bảng: ${outsideParts.join(" · ")}.` : "";
 
   const autoOn = c?.auto != null && c.auto.mode !== "off";
   const tabs: { key: "videos" | "backtest" | "history"; label: string; count?: number }[] = [
@@ -533,7 +561,7 @@ export function TiktokCampaignPage() {
                         ? `Lượt ${c.auto.mode === "live" ? "loại" : "diễn tập"} gần nhất ${c.auto.lastRunOn.slice(8, 10)}/${c.auto.lastRunOn.slice(5, 7)}: ${
                             c.auto.lastRunError ?? c.auto.lastRunSkipped ?? c.auto.lastRunSummary ?? "—"
                           }`
-                        : "Lượt chấm đầu tiên sau 12h trưa hôm nay hoặc ngày mai."}
+                        : "Lượt chấm chạy mỗi ngày trong khoảng 12h–14h trưa (bật sau giờ đó thì từ trưa mai)."}
                     </p>
                   )}
                 </div>
@@ -817,6 +845,9 @@ export function TiktokCampaignPage() {
             {rows.length > 0 && (
               <p className={TEXT_SUB}>Chi phí từng video TikTok cập nhật trễ tới 11 giờ; ROI gồm cả đơn tự nhiên.</p>
             )}
+            {/* Chiến dịch được bồi video liên tục (anh Trung 18/09): bảng chỉ liệt kê video ĐÃ tiêu tiền; phần còn lại nói
+                gọn ở đây để thấy đủ bức tranh mà không làm rối bảng. */}
+            {outsideLine && <p className={TEXT_SUB}>{outsideLine}</p>}
             {owner && c && c.status !== "ongoing" && (
               <p className={TEXT_SUB}>Chiến dịch đang tạm dừng — TikTok chỉ cho loại hoặc khôi phục video khi chiến dịch đang bật.</p>
             )}

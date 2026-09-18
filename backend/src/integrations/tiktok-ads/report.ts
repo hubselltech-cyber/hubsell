@@ -263,3 +263,29 @@ export async function fetchGmvMaxCampaignVideoDays(
   }
   return out;
 }
+
+/**
+ * Trạng thái video Hubsell KHÔNG đưa vào bảng soi (probe 18/09 TC054: 1.586/1.780 video nhưng chỉ 0,5% tiền — không có
+ * gì để loại). `NOT_DELIVERYING` là chính tả THẬT của sàn. Chỉ đếm để chủ shop thấy đủ bức tranh.
+ */
+export const GMV_MAX_OUTSIDE_VIDEO_STATUSES = ["NOT_DELIVERYING", "AUTHORIZATION_NEEDED", "NOT_ACTIVE", "UNAVAILABLE", "REJECTED"];
+
+export interface GmvMaxVideoStatusCount {
+  status: string;
+  videos: number;
+  cost: number;
+}
+
+/** Gom dòng video thành số đếm theo trạng thái (bỏ thẻ sản phẩm item_id -1), giữ thứ tự của `order`. Thuần. */
+export function tallyVideoStatuses(rows: { videoId: string; deliveryStatus: string; cost: number }[], order: string[]): GmvMaxVideoStatusCount[] {
+  const by = new Map<string, GmvMaxVideoStatusCount>();
+  for (const r of rows) {
+    if (!r.videoId || r.videoId === "-1") continue;
+    const cur = by.get(r.deliveryStatus) ?? { status: r.deliveryStatus, videos: 0, cost: 0 };
+    cur.videos++;
+    cur.cost += r.cost;
+    by.set(r.deliveryStatus, cur);
+  }
+  const rank = (st: string) => (order.indexOf(st) === -1 ? order.length : order.indexOf(st));
+  return [...by.values()].sort((a, b) => rank(a.status) - rank(b.status) || b.videos - a.videos);
+}

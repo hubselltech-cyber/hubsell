@@ -82,6 +82,7 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   304 (chờ creator cấp quyền) · REJECTED 1 — cả năm nhóm này chỉ tiêu 9.424đ/7 ngày (0,5%), không có gì để loại.
   Video mới được bồi vào chiến dịch đi IN_QUEUE → LEARNING → DELIVERING nên tự vào bảng (trang đọc SỐNG mỗi lần mở,
   không lưu DB); bảng chỉ liệt kê video ĐÃ tiêu tiền trong khoảng ngày, video 0 đồng chỉ nằm trong con số "/ N video".
+  Năm nhóm không đọc được ĐẾM ở dòng "Ngoài bảng" dưới bảng: `GET …/videos/outside` + `tallyVideoStatuses` (FE gọi sau khi bảng lên).
 - **Tầng video NHẬN thêm chiều `stat_time_day`** (probe 18/09: 4 chiều campaign_id + item_group_id + item_id +
   stat_time_day, TC054 7 ngày = 225 dòng / 1 trang, khoảng ≤ 30 ngày) → `fetchGmvMaxCampaignVideoDays`. Hệ quả để
   dành: `buildAutoPlan` đang gọi 1 call cho MỖI ngày ra trường — gộp được về 1 call video×ngày khi cần tiết kiệm.
@@ -192,7 +193,8 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    video/ngày mà khách thấy sai thì phải hoàn tác được ngay (và `restoredByUserAt` tự bảo vệ 30 ngày).
 
 **B. Nên có, không chặn**
-5. **Giờ chạy thất thường** — lượt ngày bám tầng lịch sử 6h nên rơi bất kỳ lúc nào 12h–18h. Cho tầng xung 60' cũng
+5. ✅ **XONG 18/09** — `maybeRunTiktokAdsDaily`: tầng xung 60'/120' cũng kiểm `autoRunDue`, tầng 6h chỉ còn là lưới đỡ → lượt
+   chấm rơi trong 12h–14h. Mô tả gốc: **Giờ chạy thất thường** — lượt ngày bám tầng lịch sử 6h nên rơi bất kỳ lúc nào 12h–18h. Cho tầng xung 60' cũng
    kiểm `autoRunDue` → luôn chạy trong ~1h sau 12h trưa; khách biết giờ mà xem chuông.
 6. **Đổi cấu hình sau diễn tập** — rào `lastRunOn` chỉ biết "đã từng có lượt", không biết lượt đó chạy bằng cấu hình
    nào. Khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được. Hướng: lưu dấu cấu hình của lượt gần nhất,

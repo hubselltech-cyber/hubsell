@@ -2831,6 +2831,19 @@ export function copyTiktokAdsAutoRule(campaignRowId: string, targetIds: string[]
   );
 }
 
+/** Video NGOÀI bảng soi, đếm theo trạng thái sàn (TikTok tự ngưng rải, chờ creator cấp quyền, không hoạt động…). */
+export interface TiktokAdsOutsideVideos {
+  from: string;
+  to: string;
+  groups: { status: string; videos: number; cost: number }[];
+}
+
+export function fetchTiktokAdsOutsideVideos(campaignRowId: string, range: { from: string; to: string }) {
+  return apiFetch<TiktokAdsOutsideVideos>(
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/outside?from=${range.from}&to=${range.to}`
+  );
+}
+
 export type TiktokAdsBacktestVerdict = "insufficient" | "right" | "recovered" | "middle";
 
 export interface TiktokAdsBacktestVideo {
