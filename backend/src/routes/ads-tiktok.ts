@@ -34,7 +34,7 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
-import { dateKey, startOfDaysAgo } from "../integrations/shopee/ads-insights";
+import { dateKey } from "../integrations/shopee/ads-insights";
 import { vnDateStr } from "../integrations/lazada/ads-campaigns";
 import {
   GMV_MAX_CREATIVE_BATCH,
@@ -94,7 +94,11 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const channels = await ownedTiktokChannels(req.ownerId!);
     const requestedId = typeof req.query.channelId === "string" ? req.query.channelId : "";
     const selected = channels.find((c) => c.id === requestedId) ?? channels[0] ?? null;
-    const days = parseDays(req.query.days);
+    // Khoảng ngày theo lịch VN (?from=&to= của bộ lọc chuẩn; ?days= là đường cũ).
+    const period = clampGmvMaxRange(
+      { from: req.query.from, to: req.query.to, fallbackDays: parseDays(req.query.days) },
+      vnDateStr(0)
+    );
     // Bảng "gian ↔ tài khoản quảng cáo": mỗi gian có thể nối một tài khoản khác nhau.
     const links = await prisma.tiktokAdsStoreLink.findMany({
       where: { channelId: { in: channels.map((c) => c.id) } },
@@ -123,10 +127,11 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         };
       }),
       selectedChannelId: selected?.id ?? null,
-      days,
+      from: period.startDate,
+      to: period.endDate,
     };
     if (!selected) {
-      res.json({ ...base, link: null, summary: null, campaigns: [], series: [], adsRefreshing: false, adsSyncedAt: null });
+      res.json({ ...base, dataFrom: null, link: null, summary: null, campaigns: [], series: [], adsRefreshing: false, adsSyncedAt: null });
       return;
     }
 
@@ -134,9 +139,19 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const rows = await prisma.adsCampaign.findMany({
       where: { channelId: selected.id },
       include: {
-        dailyPerf: { where: { date: { gte: startOfDaysAgo(days) } } },
+        // Cột @db.Date lưu 00:00 UTC của ngày SÀN (giờ VN) → so bằng mốc UTC của chính ngày đó.
+        dailyPerf: {
+          where: {
+            date: { gte: new Date(`${period.startDate}T00:00:00Z`), lte: new Date(`${period.endDate}T00:00:00Z`) },
+          },
+        },
         tiktokAutoRule: { select: { mode: true, lastRunOn: true, lastRunSummary: true } },
       },
+    });
+    // Ngày sớm nhất Hubsell có số của gian (lần nối đầu chỉ kéo lùi 30 ngày) — FE báo khi khoảng xem vượt quá.
+    const oldest = await prisma.adsCampaignDailyPerf.aggregate({
+      where: { adsCampaign: { channelId: selected.id } },
+      _min: { date: true },
     });
 
     const seriesMap = new Map<string, { spend: number; gmv: number; orders: number }>();
@@ -187,6 +202,7 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
 
     res.json({
       ...base,
+      dataFrom: oldest._min.date ? dateKey(oldest._min.date) : null,
       link,
       summary: {
         spend,

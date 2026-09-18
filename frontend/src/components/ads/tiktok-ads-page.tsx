@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
 import { AUTO_MODE_BADGE } from "@/components/ads/tiktok-campaign-page";
 import { AccessDenied } from "@/components/shared/access-denied";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -45,21 +46,13 @@ import {
   requestTiktokAdsRefresh,
   type TiktokAdsCampaignRow,
 } from "@/lib/api";
+import { RANGE_PRESETS, formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
 import { TEXT_NUMBER_STRONG, TEXT_SUB } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
-
-const DAY_PRESETS: { label: string; value: number }[] = [
-  { label: "Hôm nay", value: 1 },
-  { label: "7 ngày", value: 7 },
-  { label: "14 ngày", value: 14 },
-  { label: "30 ngày", value: 30 },
-];
-
-const daysLabel = (days: number) => (days === 1 ? "hôm nay" : `${days} ngày`);
 
 const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
   {
@@ -178,7 +171,11 @@ export function TiktokAdsPage() {
   const queryClient = useQueryClient();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [channelId, setChannelId] = useState(searchParams.get("channelId") ?? "");
-  const [days, setDays] = useState(7);
+  // Bộ lọc thời gian CHUẨN của app (phím nhanh + lịch chọn tay), mở trang ở 7 ngày qua.
+  const [range, setRange] = useState<DateRange>(() => RANGE_PRESETS.find((p) => p.key === "last7")!.resolve());
+  const fromKey = toDateKey(range.from);
+  const toKey = toDateKey(range.to);
+  const rangeLabel = formatRangeLabel(range).toLowerCase();
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // null = chưa tự chọn tab → mặc định theo tình trạng kết nối (xem `tab` bên dưới).
@@ -187,8 +184,8 @@ export function TiktokAdsPage() {
   useEffect(() => setAllowed(can(getStoredUser(), "ads.tiktok")), []);
 
   const q = useApiQuery({
-    queryKey: qk.tiktokAds({ channelId, days }),
-    queryFn: () => fetchTiktokAdsDashboard({ channelId: channelId || undefined, days }),
+    queryKey: qk.tiktokAds({ channelId, from: fromKey, to: toKey }),
+    queryFn: () => fetchTiktokAdsDashboard({ channelId: channelId || undefined, from: fromKey, to: toKey }),
     enabled: allowed === true,
   });
   const data = q.data;
@@ -295,20 +292,7 @@ export function TiktokAdsPage() {
                   </option>
                 ))}
               </NativeSelect>
-              <div className="flex overflow-hidden rounded-lg border">
-                {DAY_PRESETS.map((p) => (
-                  <button
-                    key={p.value}
-                    onClick={() => setDays(p.value)}
-                    className={cn(
-                      "px-3 py-1.5 text-sm font-medium transition-colors",
-                      days === p.value ? "bg-primary text-primary-foreground" : "bg-card text-slate-600 hover:bg-muted"
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+              <DateRangePicker value={range} onChange={setRange} />
               <Button variant="outline" size="sm" onClick={() => void runRefresh()} disabled={refreshing || linkBroken}>
                 <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
                 Làm mới
@@ -487,6 +471,13 @@ export function TiktokAdsPage() {
                 </Button>
               </div>
             )}
+            {/* Lần nối đầu Hubsell chỉ kéo lùi được 30 ngày → khoảng xem sớm hơn ngày có số thì nói rõ, đừng để khách tưởng tháng đó không tiêu tiền. */}
+            {data?.dataFrom && fromKey < data.dataFrom && (
+              <p className={TEXT_SUB}>
+                Hubsell có số quảng cáo của gian từ {data.dataFrom.slice(8, 10)}/{data.dataFrom.slice(5, 7)}/{data.dataFrom.slice(0, 4)}.
+                Các ngày trước đó không nằm trong tổng bên dưới.
+              </p>
+            )}
             {waiting && campaigns.length === 0 && (
               <p className="text-sm text-muted-foreground">Đang kéo số 30 ngày từ TikTok, bảng sẽ tự hiện sau ít giây…</p>
             )}
@@ -498,7 +489,7 @@ export function TiktokAdsPage() {
                 icon={Wallet}
                 tone="negative"
                 colorValue
-                subtitle={`${daysLabel(days)} · ${formatNumber(summary?.liveCampaigns ?? 0)} chiến dịch đang chạy`}
+                subtitle={`${rangeLabel} · ${formatNumber(summary?.liveCampaigns ?? 0)} chiến dịch đang chạy`}
               />
               <StatCard
                 label="Doanh thu GMV Max"
@@ -533,7 +524,7 @@ export function TiktokAdsPage() {
             {series.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Chi phí và doanh thu GMV Max ({daysLabel(days)})</CardTitle>
+                  <CardTitle>Chi phí và doanh thu GMV Max ({rangeLabel})</CardTitle>
                   <CardDescription>Số theo ngày của TikTok, gộp mọi chiến dịch của gian đang chọn.</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -586,7 +577,7 @@ export function TiktokAdsPage() {
                       columns={CAMPAIGN_COLUMNS}
                       data={campaigns}
                       getRowId={(c) => c.id}
-                      onRowClick={(c) => router.push(`/ads/tiktok/campaign?id=${c.id}&days=${days}`)}
+                      onRowClick={(c) => router.push(`/ads/tiktok/campaign?id=${c.id}&from=${fromKey}&to=${toKey}`)}
                       striped={false}
                       headerEmphasis
                       stickyHeader

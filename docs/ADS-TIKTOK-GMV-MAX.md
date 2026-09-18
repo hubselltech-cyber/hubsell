@@ -56,9 +56,9 @@ backend/src/routes/ads-tiktok.ts   /api/ads/tiktok (tổng quan) · /campaigns/:
 backend/src/workers/order-auto-sync.ts   runTiktokAdsPulse (60', 2 ngày) · runTiktokAdsTier (6h, 7/30 ngày) — không executor
 backend/scripts/tiktok-ads-probe.ts      dụng cụ probe chỉ đọc (auth-url | exchange | run)
 
-frontend/src/app/ads/tiktok/            page.tsx (2 tab) · campaign/page.tsx (?id=&days=) · callback/page.tsx
+frontend/src/app/ads/tiktok/            page.tsx (2 tab) · campaign/page.tsx (?id=&from=&to=) · callback/page.tsx
 frontend/src/components/ads/
-  tiktok-ads-page.tsx        tab Tổng quan chiến dịch + tab Kết nối (mỗi gian một dòng → nút Kết nối)
+  tiktok-ads-page.tsx        tab Tổng quan chiến dịch (DateRangePicker chuẩn, ?from=&to=) + tab Kết nối (mỗi gian một dòng → nút Kết nối)
   tiktok-campaign-page.tsx   soi video: lọc nhanh, sắp xếp ở tiêu đề cột, hộp cuộn, tick → Loại/Khôi phục, lịch sử
   tiktok-ads-format.ts       formatRoi / formatPct
 ```
@@ -148,3 +148,38 @@ xem diễn tập vài hôm.
 ### Còn treo
 ROI tầng video gộp đơn tự nhiên (luật nghiêng nhân từ); ROI hòa vốn chờ giá vốn; tách luật video nhà / creator;
 nút Gỡ kết nối; LIVE GMV Max chưa vào bảng campaign. Migration `20260918120000_tiktok_ads_auto_rules` tự áp khi Render boot.
+
+## 7. Giai đoạn kế — BẬT TỰ LOẠI THẬT: việc còn thiếu (rà 18/09/2026 tối, chờ anh Trung chốt thứ tự)
+
+Bối cảnh: anh Trung đã bật **Diễn tập cho TC054 trên prod** 18/09. Đường `live` trong `auto-run.ts` đã có đủ khung
+(kiểm quyền TKQC + campaign còn bật ngay trước lệnh, referenceId một lệnh/ngày, sổ SUCCESS/FAILED + chuông, khách
+khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn lần nào**. Rà code thấy còn thiếu:
+
+**A. Phải có trước khi bật thật**
+1. **Bảng đối chiếu diễn tập ("máy nói đúng không?")** — hiện diễn tập chỉ để lại dòng PLANNED + chuông; mỗi ngày lặp
+   lại đúng các video cũ (vì chưa loại thật) nên anh không có gì để PHÁN máy đúng hay sai. Cần: với mỗi video máy
+   từng định loại, lấy số TỪ NGÀY ĐÓ tới hôm qua (1 call report/ngày-định-loại) → "nếu đã loại từ dd/mm: đỡ X đồng,
+   mất Y đơn / Z doanh thu". Đây là căn cứ duy nhất để quyết bật thật, và là thứ cho khách xem sau này.
+2. **Chốt chặn số liệu sàn hỏng** — luật "0 đơn" tin tuyệt đối cột đơn của report video. Nếu một hôm sàn trả thiếu
+   (đơn = 0 hàng loạt) thì máy loại oan tới `maxExcludePerDay` video. Căn cứ đối chiếu CÓ SẴN, không phải số tự bịa:
+   tổng đơn cửa sổ của chiến dịch trong `AdsCampaignDailyPerf` (đồng bộ riêng) — report video tổng 0 đơn mà tầng
+   chiến dịch có đơn → bỏ lượt, chuông báo, không loại.
+3. **Ghi sổ TRƯỚC khi gọi sàn** — hiện gọi `creative/update` xong mới `adsActionLog.create`. DB lỗi đúng lúc đó =
+   video đã bị loại mà sổ trống ("khách mất tiền đổ oan cho mình" mà không có bằng chứng). Sửa: tạo dòng trước
+   (status SENDING) rồi cập nhật SUCCESS/FAILED. (Render restart giữa chừng thì lượt chạy lại tự vá — đã xét.)
+4. **Khôi phục MỘT CHẠM cả lệnh tự động** ở Lịch sử — hiện phải lọc chip Đã loại rồi tick tay từng video. Máy loại 10
+   video/ngày mà khách thấy sai thì phải hoàn tác được ngay (và `restoredByUserAt` tự bảo vệ 30 ngày).
+
+**B. Nên có, không chặn**
+5. **Giờ chạy thất thường** — lượt ngày bám tầng lịch sử 6h nên rơi bất kỳ lúc nào 12h–18h. Cho tầng xung 60' cũng
+   kiểm `autoRunDue` → luôn chạy trong ~1h sau 12h trưa; khách biết giờ mà xem chuông.
+6. **Đổi cấu hình sau diễn tập** — rào `lastRunOn` chỉ biết "đã từng có lượt", không biết lượt đó chạy bằng cấu hình
+   nào. Khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được. Hướng: lưu dấu cấu hình của lượt gần nhất,
+   khác thì popup báo "cấu hình này chưa diễn tập" (chặn hay chỉ cảnh báo — anh chốt).
+7. **Kiểm lệnh đã ngấm** — sàn không trả kết quả từng video. Lượt hôm sau: video trong `executedVideoIds` còn trạng
+   thái đang phân phối → hiện sẽ tự bị loại lại (tự vá) nhưng IM LẶNG; nên ghi log/chuông để biết sàn từ chối ngầm.
+8. Chuông diễn tập lặp y nguyên mỗi ngày (cùng video) → chỉ chuông khi danh sách ĐỔI so với hôm trước.
+
+**C. Đã rà, không phải lỗi:** lệnh trùng trong ngày (referenceId chặn) · video đã loại không bị xét lại (report chỉ lấy
+trạng thái đang phân phối) · chuyển Diễn tập → Thật cùng ngày không bắn ngay (lượt kế là trưa hôm sau) · trần 400
+video/lệnh của sàn không chạm tới (`maxExcludePerDay` ≤ 100).

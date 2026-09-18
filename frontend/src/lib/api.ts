@@ -2568,7 +2568,11 @@ export interface TiktokAdsDashboard {
     ads: { status: "ACTIVE" | "NO_ACCESS" | "REVOKED"; advertiserName: string; problem: string | null } | null;
   }[];
   selectedChannelId: string | null;
-  days: number;
+  /** Khoảng ngày backend thực sự dùng (YYYY-MM-DD, lịch VN). */
+  from: string;
+  to: string;
+  /** Ngày sớm nhất Hubsell có số quảng cáo của gian (null = chưa kéo được ngày nào). */
+  dataFrom: string | null;
   link: TiktokAdsLinkStatus | null;
   summary: {
     spend: number;
@@ -2585,10 +2589,9 @@ export interface TiktokAdsDashboard {
   adsSyncedAt: string | null;
 }
 
-export function fetchTiktokAdsDashboard(params: { channelId?: string; days?: number }) {
-  const qs = new URLSearchParams();
+export function fetchTiktokAdsDashboard(params: { channelId?: string; from: string; to: string }) {
+  const qs = new URLSearchParams({ from: params.from, to: params.to });
   if (params.channelId) qs.set("channelId", params.channelId);
-  if (params.days) qs.set("days", String(params.days));
   const q = qs.toString();
   return apiFetch<TiktokAdsDashboard>(`/api/ads/tiktok${q ? `?${q}` : ""}`);
 }

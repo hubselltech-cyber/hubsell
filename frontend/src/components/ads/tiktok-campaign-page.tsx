@@ -1,8 +1,8 @@
 "use client";
 
 // ============================================================
-// TRANG SOI VIDEO CỦA MỘT CHIẾN DỊCH GMV MAX — /ads/tiktok/campaign?id=…&days=…
-// (days chỉ là khoảng KHỞI ĐẦU mang từ trang Tổng quan sang; trong trang dùng bộ
+// TRANG SOI VIDEO CỦA MỘT CHIẾN DỊCH GMV MAX — /ads/tiktok/campaign?id=…&from=…&to=…
+// (from/to chỉ là khoảng KHỞI ĐẦU mang từ trang Tổng quan sang; trong trang dùng bộ
 // lọc thời gian CHUẨN của app — DateRangePicker: phím nhanh + lịch chọn tay.)
 //
 // Màn làm việc chính của Quảng cáo TikTok: tìm video tiêu tiền mà không hiệu
@@ -57,7 +57,7 @@ import {
   type TiktokAdsAutoMode,
   type TiktokAdsVideoRow,
 } from "@/lib/api";
-import { formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
+import { RANGE_PRESETS, formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
 import { formatNumber, formatVND } from "@/lib/format";
 import { can, isAdmin } from "@/lib/permissions";
 import { qk } from "@/lib/query-keys";
@@ -133,13 +133,15 @@ export function TiktokCampaignPage() {
   const campaignRowId = searchParams.get("id") ?? "";
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [range, setRange] = useState<DateRange>(() => {
-    const d = Number(searchParams.get("days"));
-    const days = [1, 7, 14, 30].includes(d) ? d : 7;
-    const to = new Date();
-    to.setHours(0, 0, 0, 0);
-    const from = new Date(to);
-    from.setDate(from.getDate() - (days - 1));
-    return { from, to };
+    // Khoảng đang xem ở Tổng quan mang sang; link thiếu/sai thì về 7 ngày qua.
+    const parse = (raw: string | null) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw ?? "");
+      return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+    };
+    const from = parse(searchParams.get("from"));
+    const to = parse(searchParams.get("to"));
+    if (from && to && from <= to) return { from, to };
+    return RANGE_PRESETS.find((p) => p.key === "last7")!.resolve();
   });
   const fromKey = toDateKey(range.from);
   const toKey = toDateKey(range.to);
