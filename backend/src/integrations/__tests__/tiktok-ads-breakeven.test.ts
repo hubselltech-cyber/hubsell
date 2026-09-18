@@ -3,6 +3,7 @@ import { ShippingStatus } from "@prisma/client";
 import {
   placedRevenue,
   productBreakevenVerdict,
+  salesPaceByGroup,
   settledCohortCutoff,
   tiktokBreakevenBase,
   tiktokBreakevenBaseByGroup,
@@ -206,5 +207,29 @@ describe("productBreakevenVerdict — cột Nhận định của tab Hòa vốn 
   it("lỗ sẵn trước quảng cáo · mới vài đơn đã đối soát", () => {
     expect(productBreakevenVerdict(be({ negativeMargin: true, breakevenRoi: null, margin: -0.05 }), [], 90).verdict).toBe("loss");
     expect(productBreakevenVerdict(be({ orders: 3 }), [camp(2)], 90).verdict).toBe("low_sample");
+  });
+});
+
+describe("salesPaceByGroup — đà bán 7 / 30 ngày của từng sản phẩm", () => {
+  const now = new Date("2026-09-18T10:00:00Z");
+  const ago = (d: number) => new Date(now.getTime() - d * 86400_000);
+  const g = new Map([
+    ["A1", "SP-A"],
+    ["A2", "SP-A"],
+    ["B", "SP-B"],
+  ]);
+  it("đếm SỐ SẢN PHẨM của mọi đơn đặt (kể cả chưa đối soát), bỏ đơn hủy và đơn ngoài 30 ngày", () => {
+    const rows: BreakevenPnlRow[] = [
+      row({ sku: "A1", createdAt: ago(2), isSettled: false, tiktok: null, items: [{ sku: "A1", price: 100, quantity: 3 }] }),
+      row({ sku: "A2", createdAt: ago(10) }),
+      row({ sku: "A1", createdAt: ago(40) }),
+      cancelled({ sku: "A1", createdAt: ago(1) }),
+      row({ sku: "B", createdAt: ago(6.5) }),
+      row({ sku: "la", createdAt: ago(1) }),
+    ];
+    const p = salesPaceByGroup(rows, g, now);
+    expect(p.get("SP-A")).toEqual({ units7d: 3, units30d: 4 });
+    expect(p.get("SP-B")).toEqual({ units7d: 1, units30d: 1 });
+    expect(p.size).toBe(2);
   });
 });

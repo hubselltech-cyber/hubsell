@@ -2764,6 +2764,11 @@ export interface TiktokProductBreakevenRow {
   profitBeforeAds: number;
   /** Doanh thu đã đối soát nhưng THIẾU giá vốn — không vào phép tính. */
   missingCostRevenue: number;
+  /** Đà bán: số sản phẩm bán ra (mọi đơn đặt trừ hủy) 7 và 30 ngày gần nhất. */
+  units7d: number;
+  units30d: number;
+  /** Tồn trên sàn cộng các phân loại; null = Hubsell chưa đọc được tồn. */
+  stock: number | null;
   breakeven: TiktokAdsBreakeven;
   /** Chiến dịch GMV Max đang chứa sản phẩm — chiến dịch đang chạy đứng trước. */
   campaigns: { id: string; name: string; status: string; roasTarget: number | null }[];
@@ -2780,6 +2785,22 @@ export interface TiktokProductBreakevenData {
   minCoveragePct: number;
   shop: TiktokAdsBreakeven | null;
   products: TiktokProductBreakevenRow[];
+}
+
+/** ROI quảng cáo THẬT của từng sản phẩm (30 ngày, cộng các chiến dịch đang chạy) — gọi TikTok nên tách khỏi bảng hòa vốn. */
+export interface TiktokProductAdsData {
+  /** false = gian chưa nối tài khoản quảng cáo → không có số. */
+  linked: boolean;
+  from: string;
+  to: string;
+  campaigns: number;
+  /** productId → số quảng cáo. Doanh thu GMV Max gồm cả đơn tự nhiên của sản phẩm. */
+  products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null }>;
+}
+
+export function fetchTiktokProductAds(channelId?: string) {
+  const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
+  return apiFetch<TiktokProductAdsData>(`/api/ads/tiktok/product-breakeven/ads${qs}`);
 }
 
 export function fetchTiktokProductBreakeven(channelId?: string) {

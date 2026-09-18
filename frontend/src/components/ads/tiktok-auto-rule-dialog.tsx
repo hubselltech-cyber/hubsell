@@ -246,6 +246,17 @@ export function TiktokAutoRuleDialog({
   // B6: cấu hình đang nhập có KHÁC cấu hình lượt chấm gần nhất đã dùng không — khác mà bật thật thì cảnh báo lúc Lưu.
   const changedFields = useMemo(() => (cfg && rule ? unrehearsedFields(rule.rehearsedConfig, cfg) : []), [cfg, rule]);
   const unrehearsed = hadRun && mode === "live" && changedFields.length > 0;
+  // DIỄN TẬP QUÁ CŨ (anh Trung 18/09 khuya — chỉ thông báo, khách tự chọn bỏ qua): BẬT thật mà lượt diễn tập gần nhất cách hôm
+  // nay lâu hơn chính cửa sổ "Soi theo" → số liệu lượt đó không còn trùng ngày nào với cửa sổ hiện tại. Chép luật backend
+  // (auto-rules.ts staleRehearsalDays); ngày tính theo giờ VN như backend.
+  const [todayVn] = useState(() => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10));
+  const staleDays = useMemo(() => {
+    const last = rule?.status?.lastRunOn;
+    if (!cfg || !last || mode !== "live" || rule?.mode === "live") return null;
+    const days = Math.round((Date.parse(`${todayVn}T00:00:00Z`) - Date.parse(`${last}T00:00:00Z`)) / 86400_000);
+    return days > cfg.windowDays ? days : null;
+  }, [cfg, mode, rule?.status?.lastRunOn, rule?.mode, todayVn]);
+  const needsSkipAck = unrehearsed || staleDays != null;
   const lastSummary = preview?.summary ?? rule?.status?.lastRunSummary ?? null;
   // ROI hòa vốn (giá vốn + phí sàn thật, đơn đã đối soát) — căn cứ để soát hai ngưỡng ROI đang nhập.
   const breakevenRoi = rule?.breakeven?.roi ?? null;
@@ -293,7 +304,7 @@ export function TiktokAutoRuleDialog({
   async function save(force = false, rehearseAgain = false) {
     if (!cfg || !rule) return;
     const saveMode: TiktokAdsAutoMode = rehearseAgain ? "dry_run" : mode;
-    if (unrehearsed && !force && !rehearseAgain) {
+    if (needsSkipAck && !force && !rehearseAgain) {
       setConfirmSkip(true);
       return;
     }
@@ -303,7 +314,7 @@ export function TiktokAutoRuleDialog({
     }
     setSaving(true);
     try {
-      const r = await saveTiktokAdsAutoRule(campaignRowId, { mode: saveMode, ...cfg, ...(unrehearsed && saveMode === "live" ? { skipRehearsal: true } : {}) });
+      const r = await saveTiktokAdsAutoRule(campaignRowId, { mode: saveMode, ...cfg, ...(needsSkipAck && saveMode === "live" ? { skipRehearsal: true } : {}) });
       const mode = saveMode;
       toast.success(
         mode === "off"
@@ -593,8 +604,18 @@ export function TiktokAutoRuleDialog({
             {/* ===== B6 — CẢNH BÁO ĐỔI SỐ SAU DIỄN TẬP (anh Trung 18/09 khuya: chỉ cảnh báo, khách tự bấm bỏ qua) ===== */}
             {confirmSkip && (
               <div ref={confirmRef} className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-                <p className="font-medium text-amber-800">Anh/chị đã đổi thông số so với lượt diễn tập gần nhất</p>
-                {rule.rehearsedConfig ? (
+                <p className="font-medium text-amber-800">
+                  {staleDays != null && !unrehearsed
+                    ? `Lượt diễn tập gần nhất đã cách đây ${formatNumber(staleDays)} ngày`
+                    : "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất"}
+                </p>
+                {staleDays != null && (
+                  <p className="text-xs text-amber-800">
+                    {unrehearsed ? `Lượt diễn tập gần nhất cũng đã cách đây ${formatNumber(staleDays)} ngày — ` : "Đã "}lâu hơn cửa sổ soi{" "}
+                    {formatNumber(cfg.windowDays)} ngày, nên kết quả lượt đó không còn nói về các video đang chạy hôm nay.
+                  </p>
+                )}
+                {!unrehearsed ? null : rule.rehearsedConfig ? (
                   <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-800">
                     {changedFields.map((k) => (
                       <li key={k}>
@@ -607,8 +628,8 @@ export function TiktokAutoRuleDialog({
                   <p className="text-xs text-amber-800">Lượt chấm trước chưa ghi lại cấu hình đã dùng nên chưa so được từng ô.</p>
                 )}
                 <p className="text-amber-800">
-                  Máy chưa chấm điểm bằng bộ số này lần nào. Để đảm bảo an toàn, anh/chị nên diễn tập lại: lưu ở Diễn tập, sau lượt chấm 12h
-                  trưa kế tiếp xem chuông báo đúng ý rồi bật thật. Nếu bỏ qua, từ lượt chấm kế tiếp Trợ lý loại thật theo bộ số mới (tối đa{" "}
+                  {unrehearsed ? "Máy chưa chấm điểm bằng bộ số này lần nào. " : ""}Để có kết quả chuẩn xác, anh/chị nên diễn tập lại: lưu ở Diễn tập, sau lượt chấm 12h
+                  trưa kế tiếp xem chuông báo đúng ý rồi bật thật. Nếu bỏ qua, từ lượt chấm kế tiếp Trợ lý loại thật theo {unrehearsed ? "bộ số mới" : "bộ số đang lưu"} (tối đa{" "}
                   {formatNumber(cfg.maxExcludePerDay)} video/ngày).
                 </p>
                 <div className="flex flex-wrap justify-end gap-2">

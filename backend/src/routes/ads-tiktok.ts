@@ -86,6 +86,7 @@ import {
   parseRehearsedConfig,
   resolveHardLevel,
   ruleNumbersChanged,
+  staleRehearsalDays,
   sanitizeAutoRuleConfig,
   summarizeAutoPlan,
   unrehearsedFields,
@@ -154,6 +155,56 @@ adsTiktokRouter.get("/product-breakeven", async (req: AuthRequest, res, next) =>
       shop: breakevenForUi(r.shop),
       products: r.products.map((p) => ({ ...p, breakeven: breakevenForUi(p.breakeven) })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ROI QUẢNG CÁO THẬT CỦA TỪNG SẢN PHẨM cho tab Hòa vốn sản phẩm — tách riêng vì phải gọi TikTok (1 call / chiến dịch ĐANG
+// CHẠY, 30 ngày) còn bảng hòa vốn chỉ đọc DB: FE gọi endpoint này SAU khi bảng đã lên. Gian chưa nối quảng cáo → linked false.
+// Lưu ý đọc số: doanh thu GMV Max của sản phẩm gồm cả đơn tự nhiên → ROI thật của riêng quảng cáo chỉ có thể THẤP hơn số này.
+const PRODUCT_ADS_DAYS = 30;
+const PRODUCT_ADS_MAX_CAMPAIGNS = 20;
+
+adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next) => {
+  try {
+    const channels = await ownedTiktokChannels(req.ownerId!);
+    const requestedId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+    const selected = channels.find((c) => c.id === requestedId) ?? channels[0] ?? null;
+    const scope = selected ? await getTiktokAdsScope(selected.id) : null;
+    const from = vnDateStr(PRODUCT_ADS_DAYS - 1);
+    const to = vnDateStr(0);
+    if (!selected || !scope) {
+      res.json({ linked: false, from, to, campaigns: 0, products: {} });
+      return;
+    }
+    const campaigns = await prisma.adsCampaign.findMany({
+      where: { channelId: selected.id, status: "ongoing" },
+      orderBy: { lastSyncedAt: "desc" },
+      take: PRODUCT_ADS_MAX_CAMPAIGNS,
+      select: { id: true, campaignId: true, itemIds: true },
+    });
+    const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: from, endDate: to };
+    const products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null }> = {};
+    try {
+      for (const c of campaigns) {
+        const rows = await fetchGmvMaxCampaignProducts(range, c.campaignId);
+        await saveCampaignProductIds(c.id, c.itemIds, rows.map((r) => r.spuId)).catch(() => {});
+        for (const r of rows) {
+          if (!r.spuId) continue;
+          const cur = (products[r.spuId] ??= { cost: 0, orders: 0, gmv: 0, roi: null });
+          cur.cost += r.cost;
+          cur.orders += r.orders;
+          cur.gmv += r.gmv;
+        }
+      }
+    } catch (err) {
+      await recordTiktokAdsFailure(scope.linkId, err);
+      res.status(502).json({ error: `Không đọc được số quảng cáo từ TikTok: ${(err as Error).message}` });
+      return;
+    }
+    for (const p of Object.values(products)) p.roi = p.cost > 0 ? p.gmv / p.cost : null;
+    res.json({ linked: true, from, to, campaigns: campaigns.length, products });
   } catch (err) {
     next(err);
   }
@@ -712,12 +763,20 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
     // thật mà sửa số). Anh Trung chốt 18/09 khuya: KHÔNG bắt diễn tập lại, chỉ cảnh báo — popup hỏi, khách bấm "Bỏ qua" thì
     // gửi skipRehearsal = true. Thiếu cờ đó (client cũ, gọi API tay) → 409 để không ai lọt qua mà chưa thấy cảnh báo.
     const rehearsed = parseRehearsedConfig(campaign.tiktokAutoRule?.lastRunConfig);
-    if (mode === "live" && unrehearsedFields(rehearsed, cfg).length > 0 && body.skipRehearsal !== true) {
+    // Cùng khuôn "chỉ cảnh báo": BẬT thật (đang không chạy thật) mà lượt diễn tập gần nhất đã quá cũ so với cửa sổ soi.
+    const staleDays =
+      mode === "live" && campaign.tiktokAutoRule?.mode !== "live"
+        ? staleRehearsalDays(campaign.tiktokAutoRule?.lastRunOn ?? "", vnDateStr(0), cfg.windowDays)
+        : null;
+    if (mode === "live" && (unrehearsedFields(rehearsed, cfg).length > 0 || staleDays != null) && body.skipRehearsal !== true) {
       res.status(409).json({
         error:
-          "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất. Để an toàn hãy lưu ở chế độ Diễn tập và đợi lượt chấm sau 12h trưa; nếu vẫn muốn bật thật ngay, hãy xác nhận bỏ qua diễn tập lại.",
-        code: "unrehearsed",
+          staleDays != null
+            ? `Lượt diễn tập gần nhất đã cách đây ${staleDays} ngày. Để có kết quả chuẩn xác hãy lưu ở chế độ Diễn tập và đợi lượt chấm sau 12h trưa; nếu vẫn muốn bật thật ngay, hãy xác nhận bỏ qua diễn tập lại.`
+            : "Anh/chị đã đổi thông số so với lượt diễn tập gần nhất. Để an toàn hãy lưu ở chế độ Diễn tập và đợi lượt chấm sau 12h trưa; nếu vẫn muốn bật thật ngay, hãy xác nhận bỏ qua diễn tập lại.",
+        code: staleDays != null ? "stale_rehearsal" : "unrehearsed",
         unrehearsedFields: unrehearsedFields(rehearsed, cfg),
+        staleDays,
       });
       return;
     }

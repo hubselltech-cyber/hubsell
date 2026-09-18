@@ -462,6 +462,20 @@ export function unrehearsedFields(rehearsed: AutoRuleConfig | null, next: AutoRu
   return [...keys].filter((k) => a[k] !== b[k]);
 }
 
+/**
+ * DIỄN TẬP QUÁ CŨ (anh Trung 18/09 khuya: "ra một thông báo là cũ, yêu cầu diễn tập lại để có kết quả chuẩn xác, hoặc chọn
+ * thẳng bỏ qua — nhiều sản phẩm họ biết mức nào hợp lý rồi, việc của mình là thông báo thôi"). Chỉ xảy ra khi chiến dịch để
+ * Tắt một thời gian rồi bật thẳng Tự loại thật (đang Diễn tập / đang chạy thật thì ngày nào cũng có lượt chấm).
+ * Mốc "cũ" KHÔNG phải số tự đặt: lượt chấm soi `windowDays` ngày kết thúc hôm trước ngày chấm → lượt gần nhất cách hôm nay
+ * LÂU HƠN windowDays ngày thì cửa sổ số liệu của nó không còn trùng ngày nào với cửa sổ hiện tại — kết quả đó không còn nói
+ * gì về các video đang chạy. Trả số ngày đã trôi qua khi quá cũ; null = còn dùng được / chưa có lượt nào (rào khác lo). Thuần.
+ */
+export function staleRehearsalDays(lastRunOn: string, today: string, windowDays: number): number | null {
+  if (!lastRunOn) return null;
+  const days = daysBetween(lastRunOn, today);
+  return days > windowDays ? days : null;
+}
+
 const FIELD_LABEL: Record<keyof AutoRuleConfig, string> = {
   roiTarget: "ROI mục tiêu",
   windowDays: "Soi theo số ngày",

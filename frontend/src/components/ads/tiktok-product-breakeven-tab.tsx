@@ -27,8 +27,14 @@ import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { fetchTiktokProductBreakeven, type TiktokProductBreakevenRow, type TiktokProductBreakevenVerdict } from "@/lib/api";
-import { formatNumber } from "@/lib/format";
+import {
+  fetchTiktokProductAds,
+  fetchTiktokProductBreakeven,
+  type TiktokProductAdsData,
+  type TiktokProductBreakevenRow,
+  type TiktokProductBreakevenVerdict,
+} from "@/lib/api";
+import { formatNumber, formatVND } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
 import { TEXT_SUB, TEXT_TABLE_HEAD } from "@/lib/typography";
 import { useApiQuery } from "@/lib/use-api-query";
@@ -37,7 +43,19 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZES = [20, 50, 100];
 const TH = "whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2 font-medium";
 
-const VERDICT: Record<TiktokProductBreakevenVerdict, { label: string; className: string }> = {
+/** "ads_losing" chỉ có ở FE: ghép số quảng cáo thật (endpoint riêng, gọi TikTok) với mốc hòa vốn của sản phẩm. */
+type RowVerdict = TiktokProductBreakevenVerdict | "ads_losing";
+type AdsOf = TiktokProductAdsData["products"][string] | undefined;
+
+/** Quảng cáo ĐANG LỖ: 30 ngày qua có tiêu tiền và ROI thật thấp hơn hòa vốn ĐÃ TIN ĐƯỢC của sản phẩm. Đứng trên mọi nhận định "ổn". */
+function rowVerdict(p: TiktokProductBreakevenRow, ads: AdsOf): RowVerdict {
+  const trusted = p.verdict === "ok" || p.verdict === "target_below";
+  if (trusted && ads && ads.cost > 0 && ads.roi != null && p.breakeven.roi != null && ads.roi < p.breakeven.roi) return "ads_losing";
+  return p.verdict;
+}
+
+const VERDICT: Record<RowVerdict, { label: string; className: string }> = {
+  ads_losing: { label: "Quảng cáo đang lỗ", className: "bg-rose-50 text-red-500" },
   ok: { label: "Đã có mốc hòa vốn", className: "bg-emerald-50 text-emerald-700" },
   target_below: { label: "Mục tiêu dưới hòa vốn", className: "bg-rose-50 text-red-500" },
   loss: { label: "Lỗ trước quảng cáo", className: "bg-rose-50 text-red-500" },
@@ -47,10 +65,10 @@ const VERDICT: Record<TiktokProductBreakevenVerdict, { label: string; className:
 };
 
 type QuickKey = "all" | "ok" | "attention" | "no_cost" | "waiting";
-const inQuick = (k: QuickKey, v: TiktokProductBreakevenVerdict) =>
+const inQuick = (k: QuickKey, v: RowVerdict) =>
   k === "all" ||
   (k === "ok" && v === "ok") ||
-  (k === "attention" && (v === "target_below" || v === "loss")) ||
+  (k === "attention" && (v === "ads_losing" || v === "target_below" || v === "loss")) ||
   (k === "no_cost" && v === "no_cost") ||
   (k === "waiting" && (v === "low_sample" || v === "no_settled"));
 
@@ -91,20 +109,33 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
   });
   const data = q.data;
   const products = useMemo(() => data?.products ?? [], [data?.products]);
+  // Số quảng cáo thật gọi TikTok (1 call / chiến dịch đang chạy) → chỉ gọi SAU khi bảng hòa vốn đã lên, lỗi thì bảng vẫn dùng được.
+  const adsQ = useApiQuery({
+    queryKey: qk.tiktokProductAds(data?.selectedChannelId ?? ""),
+    queryFn: () => fetchTiktokProductAds(data?.selectedChannelId ?? undefined),
+    enabled: !!data?.selectedChannelId,
+    staleTime: 10 * 60_000,
+  });
+  const ads = adsQ.data;
+  const verdictOf = useMemo(() => {
+    const m = new Map<string, RowVerdict>();
+    for (const p of products) m.set(p.productId, rowVerdict(p, ads?.products[p.productId]));
+    return m;
+  }, [products, ads]);
 
   useEffect(() => setPage(0), [quick, search, sort, channelId]);
 
   const counts = useMemo(() => {
     const c: Record<QuickKey, number> = { all: products.length, ok: 0, attention: 0, no_cost: 0, waiting: 0 };
-    for (const p of products) for (const k of ["ok", "attention", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, p.verdict)) c[k]++;
+    for (const p of products) for (const k of ["ok", "attention", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, verdictOf.get(p.productId) ?? p.verdict)) c[k]++;
     return c;
-  }, [products]);
+  }, [products, verdictOf]);
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const sign = sort.dir === "desc" ? -1 : 1;
     return products
-      .filter((p) => inQuick(quick, p.verdict) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
+      .filter((p) => inQuick(quick, verdictOf.get(p.productId) ?? p.verdict) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
       .sort((a, b) => {
         const x = sortValue(a, sort.key);
         const y = sortValue(b, sort.key);
@@ -113,7 +144,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
         if (x == null || y == null) return x == null && y == null ? sold(b) - sold(a) : x == null ? 1 : -1;
         return sign * (x - y) || sold(b) - sold(a);
       });
-  }, [products, quick, search, sort]);
+  }, [products, quick, search, sort, verdictOf]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -227,7 +258,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
             </p>
           ) : (
             <div className={cn("min-w-0 rounded-lg border", PNL_TABLE_SCROLLER)}>
-              <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-sm">
+              <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-sm">
                 <thead className={PNL_STICKY_HEAD}>
                   <tr className={cn(TEXT_TABLE_HEAD, "text-left")}>
                     <th className={TH}>Sản phẩm</th>
@@ -248,8 +279,19 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                       );
                     })}
                     <th className={TH}>Nhận định</th>
-                    <th className={cn(TH, "text-right")} title="Phần doanh thu đã đối soát của sản phẩm đã có giá vốn.">
-                      Có giá vốn
+                    {ads?.linked && (
+                      <th
+                        className={cn(TH, "text-right")}
+                        title="ROI thật của sản phẩm trong các chiến dịch GMV Max đang chạy, 30 ngày gần nhất (số của TikTok). Doanh thu GMV Max gồm cả đơn tự nhiên nên ROI riêng của quảng cáo chỉ có thể thấp hơn số này."
+                      >
+                        ROI quảng cáo 30 ngày
+                      </th>
+                    )}
+                    <th className={cn(TH, "text-right")} title="Số sản phẩm bán ra 7 ngày và 30 ngày gần nhất (mọi đơn đặt, trừ đơn hủy). Mũi tên: nhịp 7 ngày so với nhịp trung bình 30 ngày.">
+                      Bán 7 / 30 ngày
+                    </th>
+                    <th className={cn(TH, "text-right")} title="Tồn trên sàn cộng các phân loại, và số ngày còn đủ bán theo nhịp 30 ngày.">
+                      Tồn trên sàn
                     </th>
                     <th className={TH}>Chiến dịch đang chứa</th>
                   </tr>
@@ -257,8 +299,18 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                 <tbody>
                   {pageRows.map((p) => {
                     const has = p.breakeven.orders > 0;
-                    const vd = VERDICT[p.verdict];
+                    const a = ads?.products[p.productId];
+                    const v = verdictOf.get(p.productId) ?? p.verdict;
+                    const vd = VERDICT[v];
                     const camp = p.campaigns[0];
+                    const reason =
+                      v === "ads_losing" && a && a.roi != null && p.breakeven.roi != null
+                        ? `30 ngày qua quảng cáo của sản phẩm tiêu ${formatVND(a.cost)}, ROI ${formatRoi(a.roi)} — thấp hơn hòa vốn ${formatRoi(p.breakeven.roi)}: đang ăn vào vốn. Doanh thu GMV Max gồm cả đơn tự nhiên nên thực tế còn thấp hơn.`
+                        : p.reason;
+                    // Nhịp 7 ngày so với nhịp trung bình 30 ngày (quy về /ngày). Mốc 1,2 / 0,8 và "tồn dưới 14 ngày" dùng ĐÚNG số của bộ
+                    // chấm gợi ý Shopee (ads-recommend.ts: momentum, minCoverDays) — cùng một khái niệm thì cùng một ngưỡng.
+                    const pace = p.units30d > 0 ? p.units7d / 7 / (p.units30d / 30) : null;
+                    const coverDays = p.stock != null && p.units30d > 0 ? Math.floor(p.stock / (p.units30d / 30)) : null;
                     return (
                       <tr key={p.productId} className="[&>td]:border-b [&>td]:border-slate-200/80">
                         <td className="px-3 py-2">
@@ -320,12 +372,37 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                             </PopoverTrigger>
                             <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
                               <p className="font-semibold text-slate-900">{vd.label}</p>
-                              <p className="text-slate-700">{p.reason}</p>
+                              <p className="text-slate-700">{reason}</p>
                             </PopoverContent>
                           </Popover>
                         </td>
-                        <td className={cn("px-3 py-2 text-right tabular-nums", (p.breakeven.costCoveragePct ?? 100) < data.minCoveragePct ? "text-amber-600" : "text-slate-500")}>
-                          {p.breakeven.costCoveragePct != null ? `${p.breakeven.costCoveragePct}%` : <span className="text-slate-400">—</span>}
+                        {ads?.linked && (
+                          <td className="px-3 py-2 text-right">
+                            {a && a.cost > 0 ? (
+                              <>
+                                <span className={cn("font-semibold tabular-nums", v === "ads_losing" ? "text-red-500" : "text-slate-900")}>{formatRoi(a.roi)}</span>
+                                <span className="block text-xs text-slate-500">
+                                  tiêu <Money value={a.cost} /> · {formatNumber(a.orders)} đơn
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        )}
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                          {formatNumber(p.units7d)} / {formatNumber(p.units30d)}
+                          {pace != null && (
+                            <span className={cn("block text-xs", pace >= 1.2 ? "text-emerald-600" : pace <= 0.8 ? "text-red-500" : "text-slate-400")}>
+                              {pace >= 1.2 ? "▲ đang lên" : pace <= 0.8 ? "▼ đang chậm lại" : "ổn định"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                          {p.stock != null ? formatNumber(p.stock) : <span className="text-slate-400">—</span>}
+                          {coverDays != null && (
+                            <span className={cn("block text-xs", coverDays < 14 ? "text-amber-600" : "text-slate-400")}>đủ bán ~{formatNumber(coverDays)} ngày</span>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           {camp ? (
@@ -381,6 +458,8 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
           <p className={TEXT_SUB}>
             Chỉ liệt kê sản phẩm có đơn trong {data.windowDays} ngày. Đơn nhiều sản phẩm chia doanh thu và lãi theo tỷ trọng giá trị hàng. Cột “Chiến dịch đang chứa”
             theo danh sách sản phẩm của từng chiến dịch GMV Max mà Hubsell đã đọc được.
+            {adsQ.error && ` Chưa lấy được ROI quảng cáo từ TikTok: ${adsQ.error}`}
+            {ads && !ads.linked && " Gian chưa kết nối tài khoản quảng cáo nên chưa có cột ROI quảng cáo."}
           </p>
         </CardContent>
       </Card>

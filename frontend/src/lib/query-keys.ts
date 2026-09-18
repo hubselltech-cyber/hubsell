@@ -36,6 +36,7 @@ export const qk = {
   tiktokAdsAutoRule: (campaignRowId: string) => ["tiktok-ads-auto-rule", campaignRowId] as const,
   tiktokAdsBacktest: (campaignRowId: string) => ["tiktok-ads-backtest", campaignRowId] as const,
   tiktokProductBreakeven: (channelId: string) => ["tiktok-product-breakeven", channelId] as const,
+  tiktokProductAds: (channelId: string) => ["tiktok-product-ads", channelId] as const,
 
   // ----- Tài chính -----
   financeAnalytics: (range?: DateRange, channel?: ChannelFilterQuery) =>

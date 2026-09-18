@@ -243,6 +243,13 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    vừa khôi phục có thể bị TikTok tự ngừng phân phối — nhóm Hubsell không đọc → dễ báo nhầm). Khôi phục từ Seller Center thì
    Hubsell không biết → câu chữ nói rõ cả hai khả năng. Mô tả gốc: **Kiểm lệnh đã ngấm** — sàn không trả kết quả từng video. Lượt hôm sau: video trong `executedVideoIds` còn trạng
    thái đang phân phối → hiện sẽ tự bị loại lại (tự vá) nhưng IM LẶNG; nên ghi log/chuông để biết sàn từ chối ngầm.
+9. ✅ **XONG 18/09 khuya — DIỄN TẬP QUÁ CŨ** (anh Trung: "ra một thông báo là cũ, yêu cầu diễn tập lại để có kết quả chuẩn xác,
+   hoặc chọn thẳng bỏ qua — nhiều sản phẩm họ biết mức nào hợp lý rồi… việc của mình là thông báo thôi"). `staleRehearsalDays`
+   (thuần, 4 test): chỉ xét khi BẬT thật từ trạng thái không chạy thật (đang Diễn tập / đang chạy thật thì ngày nào cũng có lượt
+   chấm). Mốc "cũ" không phải số tự đặt: lượt gần nhất cách hôm nay LÂU HƠN `windowDays` (cửa sổ "Soi theo" của chính khách) →
+   cửa sổ số liệu của lượt đó không còn trùng ngày nào với cửa sổ hiện tại. Dùng chung khuôn B6: hộp vàng lúc Lưu (tiêu đề "Lượt
+   diễn tập gần nhất đã cách đây N ngày") + 3 nút Để em xem lại · Bỏ qua, bật thật luôn · Diễn tập lại; backend thiếu
+   `skipRehearsal` → 409 `code: "stale_rehearsal"` kèm `staleDays`. Vừa cũ vừa đổi số thì một hộp nói cả hai.
 8. ✅ **XONG 18/09 khuya** — `auto-rules.ts runDigestOf / compareRunDigest / runChangeLabel` (thuần, 6 test): so lượt hôm nay
    với `lastRunSummary` lượt trước (nay có `excludeIds`; dòng cũ đọc từ `videos`). Danh sách y hệt → KHÔNG chuông, sổ PLANNED +
    tóm tắt vẫn ghi đủ (`unchanged: true`); đổi → tiêu đề thêm "(thêm 2, bớt 1 so với lượt trước)". Lượt không loại gì chỉ
@@ -323,8 +330,18 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   dòng, sắp xếp ở tiêu đề cột, cột tiền trước cột %, mã sản phẩm + nút copy. Doanh thu thiếu giá vốn hiện riêng dòng vàng
   "+… thiếu giá vốn" và vẫn tính vào thứ tự "bán nhiều đứng trước" (sản phẩm bán chạy chưa nhập giá vốn không chìm xuống đáy).
   Cột Nhận định đặt ngay sau ROI hòa vốn để màn 1440 thấy kết luận mà không cuộn ngang.
-- **Chưa có** (để cho đợt gợi ý tạo quảng cáo): ROI thực của TỪNG sản phẩm trong chiến dịch (cần 1 call/chiến dịch), tồn kho, đà
-  bán, ROI mục tiêu đề xuất theo số của sàn, nút tạo chiến dịch.
+- ✅ **Bổ sung 18/09 khuya (anh Trung: "phần 3 làm được gì thì làm"):**
+  · **ROI quảng cáo 30 ngày của TỪNG sản phẩm** — endpoint riêng `GET /product-breakeven/ads` (1 call `fetchGmvMaxCampaignProducts`
+    cho mỗi chiến dịch ĐANG CHẠY, tối đa 20, cộng theo item_group_id; tiện lượt lưu luôn `itemIds`). FE gọi SAU khi bảng hòa vốn
+    đã lên; lỗi / gian chưa nối thì bảng vẫn dùng được (cột ẩn, chân bảng nói lý do). Doanh thu GMV Max gồm cả đơn tự nhiên → ROI
+    riêng của quảng cáo chỉ có thể THẤP hơn — ghi ở tiêu đề cột và trong ô lý do.
+  · Nhận định thứ 7 **"Quảng cáo đang lỗ"** (chỉ ở FE, `rowVerdict`): 30 ngày có tiêu tiền và ROI thật < hòa vốn ĐÃ TIN ĐƯỢC (dòng
+    đang `ok` / `target_below`); đứng trên "Mục tiêu dưới hòa vốn"; vào chip "Cần xem ngay".
+  · **Bán 7 / 30 ngày** (`salesPaceByGroup` thuần + test: mọi đơn đặt trừ hủy — là nhịp bán, không cần chờ đối soát) kèm ▲ đang lên
+    / ổn định / ▼ đang chậm lại; **Tồn trên sàn** (cộng `ChannelProduct.channelStock` các phân loại) + "đủ bán ~N ngày", dưới 14
+    ngày tô vàng. Ngưỡng 1,2 / 0,8 và 14 ngày lấy ĐÚNG của bộ chấm gợi ý Shopee (`ads-recommend.ts` momentum / `minCoverDays`) —
+    cùng khái niệm thì cùng ngưỡng, không đặt số mới. Bỏ cột "% có giá vốn" (đã có trong ô căn cứ + dòng vàng thiếu giá vốn).
+- **Chưa có** (chờ quyền Campaign): ROI mục tiêu đề xuất theo số của sàn, nút tạo / sửa chiến dịch.
 - Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.

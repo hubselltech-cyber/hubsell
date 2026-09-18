@@ -277,7 +277,7 @@ async function loadBreakevenInputs(channel: { id: string; userId: string }) {
     }),
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
-      select: { channelSku: true, externalId: true, productName: true, imageUrl: true },
+      select: { channelSku: true, externalId: true, productName: true, imageUrl: true, channelStock: true },
     }),
   ]);
   const rows: BreakevenPnlRow[] = orders.map((o) => {
@@ -352,6 +352,30 @@ export async function saveCampaignProductIds(adsCampaignId: string, current: str
 // DB, KHÔNG gọi TikTok. Đây là nền cho phần gợi ý tạo quảng cáo về sau (cần xin thêm quyền Campaign — làm sau).
 // ============================================================
 
+/**
+ * ĐÀ BÁN từng nhóm SKU: số sản phẩm bán ra 7 ngày và 30 ngày gần nhất, tính trên MỌI đơn đặt trừ đơn hủy (đây là nhịp bán,
+ * không phải lãi — không cần chờ đối soát). Thuần.
+ */
+export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfSku: Map<string, string>, now: Date): Map<string, { units7d: number; units30d: number }> {
+  const out = new Map<string, { units7d: number; units30d: number }>();
+  const t7 = now.getTime() - 7 * 86400_000;
+  const t30 = now.getTime() - 30 * 86400_000;
+  for (const row of rows) {
+    if (isCancelled(row)) continue;
+    const t = row.createdAt.getTime();
+    if (t < t30 || t > now.getTime()) continue;
+    for (const it of row.items) {
+      const g = groupOfSku.get(it.sku);
+      if (g == null) continue;
+      let cur = out.get(g);
+      if (!cur) out.set(g, (cur = { units7d: 0, units30d: 0 }));
+      cur.units30d += it.quantity;
+      if (t >= t7) cur.units7d += it.quantity;
+    }
+  }
+  return out;
+}
+
 export type ProductBreakevenVerdict = "ok" | "target_below" | "low_sample" | "loss" | "no_cost" | "no_settled";
 
 export interface ProductCampaignRef {
@@ -410,6 +434,11 @@ export interface ProductBreakevenRow {
   profitBeforeAds: number;
   /** Doanh thu đã có kết cục cuối nhưng THIẾU giá vốn — không vào phép tính, hiện riêng để khách thấy mình đang bỏ sót bao nhiêu. */
   missingCostRevenue: number;
+  /** Đà bán: số sản phẩm bán ra (mọi đơn đặt trừ hủy) 7 và 30 ngày gần nhất. */
+  units7d: number;
+  units30d: number;
+  /** Tồn TRÊN SÀN cộng các phân loại (ChannelProduct.channelStock); null = Hubsell chưa đọc được tồn của sản phẩm này. */
+  stock: number | null;
   breakeven: TiktokBreakeven;
   /** Chiến dịch GMV Max đang chứa sản phẩm này (theo danh sách sản phẩm Hubsell đã lưu của từng chiến dịch). */
   campaigns: ProductCampaignRef[];
@@ -436,6 +465,12 @@ export async function computeTiktokProductBreakevens(channel: { id: string; user
     if (!cur) info.set(productId, { name: cp.productName, imageUrl: cp.imageUrl });
     else if (!cur.imageUrl && cp.imageUrl) cur.imageUrl = cp.imageUrl;
   }
+  const stockOf = new Map<string, number>();
+  for (const cp of channelProducts) {
+    const productId = (cp.externalId ?? "").split("-")[0];
+    if (productId && cp.channelStock != null) stockOf.set(productId, (stockOf.get(productId) ?? 0) + cp.channelStock);
+  }
+  const pace = salesPaceByGroup(rows, groupOfSku, new Date());
   const campaignsOf = new Map<string, ProductCampaignRef[]>();
   for (const c of campaigns) {
     const ref = { id: c.id, name: c.name, status: c.status, roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null };
@@ -459,6 +494,9 @@ export async function computeTiktokProductBreakevens(channel: { id: string; user
       revenue: base.revenue,
       profitBeforeAds: base.profitBeforeAds,
       missingCostRevenue: base.missingCostRevenue,
+      units7d: pace.get(productId)?.units7d ?? 0,
+      units30d: pace.get(productId)?.units30d ?? 0,
+      stock: stockOf.get(productId) ?? null,
       breakeven,
       campaigns: camps,
       ...productBreakevenVerdict(breakeven, camps, minCoveragePct),

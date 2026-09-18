@@ -5,8 +5,7 @@
  * hệ thống bốc NGẪU NHIÊN một mẫu rồi thay biến — sàn quét trùng nội dung sẽ
  * không phạt vì các câu trả lời khác nhau.
  *
- * LƯU Ở ĐÂU: localStorage (per trình duyệt) — cùng cách TikTok assistant lưu
- * cấu hình (tiktok-assistant.ts). Khi module có bảng cấu hình user ở DB thì
+ * LƯU Ở ĐÂU: localStorage (per trình duyệt). Khi module có bảng cấu hình user ở DB thì
  * chuyển load/save sang API, chữ ký hàm giữ nguyên.
  *
  * BIẾN trong mẫu (thay bằng replaceAll CHUỖI THƯỜNG, không phải regex — nên

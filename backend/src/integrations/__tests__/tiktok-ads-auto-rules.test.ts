@@ -11,6 +11,7 @@ import {
   ruleNumbersChanged,
   runChangeLabel,
   runDigestOf,
+  staleRehearsalDays,
   unrehearsedFields,
   videoDataProblem,
   planAutoExclusion,
@@ -354,5 +355,24 @@ describe("ruleNumbersChanged — dòng nhật ký có đổi bộ số của lu�
     const b = describeConfigChanges({ mode: "dry_run", config: cfg }, { mode: "live", config: { ...cfg, graceOn: false } });
     expect(ruleNumbersChanged(a.join("\n"))).toBe(true);
     expect(ruleNumbersChanged(b.join("\n"))).toBe(true);
+  });
+});
+
+// DIỄN TẬP QUÁ CŨ — chỉ để CẢNH BÁO lúc bật thật; mốc cũ = lâu hơn chính cửa sổ soi của khách.
+describe("staleRehearsalDays — lượt diễn tập gần nhất còn dùng được không", () => {
+  it("chưa có lượt nào → null (rào 'phải diễn tập 1 ngày' lo việc đó)", () => {
+    expect(staleRehearsalDays("", "2026-09-18", 7)).toBeNull();
+  });
+  it("trong phạm vi cửa sổ soi (kể cả đúng bằng) → còn dùng được", () => {
+    expect(staleRehearsalDays("2026-09-18", "2026-09-18", 7)).toBeNull();
+    expect(staleRehearsalDays("2026-09-11", "2026-09-18", 7)).toBeNull();
+  });
+  it("lâu hơn cửa sổ soi → cũ, trả số ngày để nói với khách", () => {
+    expect(staleRehearsalDays("2026-09-10", "2026-09-18", 7)).toBe(8);
+    expect(staleRehearsalDays("2026-08-01", "2026-09-18", 30)).toBe(48);
+  });
+  it("cửa sổ soi ngắn thì mốc cũ cũng ngắn theo", () => {
+    expect(staleRehearsalDays("2026-09-14", "2026-09-18", 3)).toBe(4);
+    expect(staleRehearsalDays("2026-09-14", "2026-09-18", 7)).toBeNull();
   });
 });
