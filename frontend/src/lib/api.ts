@@ -2536,7 +2536,27 @@ export interface TiktokAdsCampaignRow {
   roi: number | null;
   costPerOrder: number | null;
   belowTarget: boolean;
+  /** Loại video tự động của chiến dịch; null = chưa cấu hình (Tắt). */
+  auto: TiktokAdsAutoStatus | null;
 }
+
+export type TiktokAdsAutoMode = "off" | "dry_run" | "live";
+
+/** Trạng thái tự động của một chiến dịch: chế độ + lượt xét gần nhất. */
+export interface TiktokAdsAutoStatus {
+  mode: TiktokAdsAutoMode;
+  lastRunOn: string | null;
+  lastRunSummary: string | null;
+  lastRunExclude: number;
+  lastRunSkipped: string | null;
+  lastRunError: string | null;
+}
+
+export const TIKTOK_AUTO_MODE_LABEL: Record<TiktokAdsAutoMode, string> = {
+  off: "Tắt",
+  dry_run: "Diễn tập",
+  live: "Tự loại thật",
+};
 
 export interface TiktokAdsDashboard {
   /** false = backend chưa đặt TIKTOK_ADS_* → trang hiện "sắp ra mắt". */
@@ -2592,12 +2612,18 @@ export interface TiktokAdsVideoRow {
   excluded: boolean;
   /** Lệnh vừa gửi, TikTok chưa áp dụng xong (~20 phút). */
   pending: "REMOVE" | "ADD" | null;
+  /** Kết luận lượt xét tự động gần nhất (null = chưa xét). */
+  auto: { verdict: TiktokAdsAutoVerdict; reason: string; on: string; graduatedOn: string } | null;
 }
+
+export type TiktokAdsAutoVerdict = "learning" | "protected" | "insufficient" | "exclude" | "grace" | "flag" | "healthy";
 
 export interface TiktokAdsVideoActionLog {
   id: string;
   action: "exclude_video" | "restore_video";
-  status: "SUCCESS" | "FAILED";
+  /** dry_run = lệnh diễn tập của Trợ lý (PLANNED, chưa gọi sàn). */
+  mode: "dry_run" | "live";
+  status: "SUCCESS" | "FAILED" | "PLANNED";
   error: string | null;
   /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
   source: "manual" | "auto";
@@ -2621,6 +2647,7 @@ export interface TiktokAdsCampaignVideos {
     spend: number;
     orders: number;
     gmv: number;
+    auto: TiktokAdsAutoStatus | null;
   };
   /** Khoảng ngày backend đã dùng (YYYY-MM-DD, đã kẹp ≤ hôm nay). */
   from: string;
@@ -2678,6 +2705,86 @@ export function requestTiktokAdsRefresh(channelId: string) {
     method: "POST",
     body: JSON.stringify({ channelId }),
   });
+}
+
+// ---------- LOẠI VIDEO TỰ ĐỘNG (cấu hình theo từng chiến dịch) ----------
+
+export interface TiktokAdsAutoConfig {
+  roiTarget: number;
+  windowDays: number;
+  minSpend: number;
+  spendNoOrder: number;
+  roiHardPct: number;
+  maxCpa: number | null;
+  graceMinOrders: number;
+  graceDays: number;
+  maxExcludePerDay: number;
+  minOrderingVideosKeep: number;
+}
+
+export interface TiktokAdsAutoRule {
+  /** false = chiến dịch chưa có dòng cấu hình → config là mặc định gợi ý. */
+  configured: boolean;
+  mode: TiktokAdsAutoMode;
+  config: TiktokAdsAutoConfig;
+  roasTarget: number | null;
+  status: TiktokAdsAutoStatus | null;
+  lastRun: Record<string, unknown> | null;
+  others: { id: string; name: string; status: string; mode: TiktokAdsAutoMode }[];
+}
+
+export function fetchTiktokAdsAutoRule(campaignRowId: string) {
+  return apiFetch<TiktokAdsAutoRule>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`);
+}
+
+export function saveTiktokAdsAutoRule(campaignRowId: string, body: { mode: TiktokAdsAutoMode } & TiktokAdsAutoConfig) {
+  return apiFetch<{ ok: true; mode: TiktokAdsAutoMode; config: TiktokAdsAutoConfig; status: TiktokAdsAutoStatus }>(
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`,
+    { method: "PUT", body: JSON.stringify(body) }
+  );
+}
+
+export interface TiktokAdsAutoPreviewVideo {
+  videoId: string;
+  spuId: string;
+  cost: number;
+  orders: number;
+  gmv: number;
+  roi: number | null;
+  verdict: TiktokAdsAutoVerdict;
+  reason: string;
+}
+
+export interface TiktokAdsAutoPreview {
+  config: TiktokAdsAutoConfig;
+  windowFrom: string;
+  windowTo: string;
+  summary: string;
+  counts: Record<TiktokAdsAutoVerdict, number>;
+  excludeSpend: number;
+  excludeOrders: number;
+  exclude: TiktokAdsAutoPreviewVideo[];
+  heldByCap: TiktokAdsAutoPreviewVideo[];
+  heldByFloor: TiktokAdsAutoPreviewVideo[];
+  grace: TiktokAdsAutoPreviewVideo[];
+  flag: TiktokAdsAutoPreviewVideo[];
+  protected: TiktokAdsAutoPreviewVideo[];
+  tracking: { seen: number; newVideos: number; graduated: number; relearning: number };
+}
+
+/** CHẠY THỬ cấu hình trên số thật (3+ call TikTok) — không ghi sổ, không loại. */
+export function previewTiktokAdsAutoRule(campaignRowId: string, config: TiktokAdsAutoConfig) {
+  return apiFetch<TiktokAdsAutoPreview>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/preview`, {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export function copyTiktokAdsAutoRule(campaignRowId: string, targetIds: string[]) {
+  return apiFetch<{ ok: true; copied: number; message: string }>(
+    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/copy`,
+    { method: "POST", body: JSON.stringify({ targetIds }) }
+  );
 }
 
 /**

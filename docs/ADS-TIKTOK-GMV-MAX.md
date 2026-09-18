@@ -1,7 +1,8 @@
 # Quảng cáo TikTok — GMV Max (TikTok Marketing API)
 
-> Trạng thái 17/09/2026: **LIVE production** phần chỉ đọc + loại/khôi phục video THỦ CÔNG.
-> Chưa làm: loại TỰ ĐỘNG (cấu hình luật), ROI hòa vốn, quảng cáo LIVE GMV Max trong bảng campaign.
+> Trạng thái 18/09/2026: **LIVE production** phần chỉ đọc + loại/khôi phục video THỦ CÔNG.
+> 18/09: LOẠI TỰ ĐỘNG đã code xong (cấu hình theo từng chiến dịch, Diễn tập / Tự loại thật) — mục 6.
+> Chưa làm: ROI hòa vốn, quảng cáo LIVE GMV Max trong bảng campaign.
 > Nhật ký theo phiên nằm ở `PROGRESS.md`; file này là bản đồ kỹ thuật để làm tiếp.
 
 ## 1. Vì sao là một hệ riêng
@@ -89,21 +90,60 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
 động sau này dùng verdict khác) · `reasons`: mỗi dòng `#<videoId> · <số liệu lúc thao tác>`; dòng KHÔNG mở đầu
 bằng `#<số>` là **căn cứ** của lệnh tự động. Xem `action-log.ts` + test `tiktok-ads.test.ts`.
 
-## 6. Việc kế tiếp: cấu hình LOẠI TỰ ĐỘNG (chưa chốt — cần nghiên cứu, phản biện trước)
+## 6. LOẠI VIDEO TỰ ĐỘNG (code xong 18/09/2026 — anh Trung chốt thiết kế trong phiên)
 
-Khung đã trình anh Trung 17/09: ba mức **Tắt / Diễn tập / Tự loại thật**; luật kế thừa bộ 2 lớp tháng 7
-(chưa đủ dữ liệu thì không phán · tiêu tiền 0 đơn · ROI thấp so với ROI MỤC TIÊU khách tự đặt · CPA vượt trần ·
-có đơn đều nhưng CPA cao thì chỉ gắn cờ · ân hạn cho video chủ lực), cấu hình chung theo gian + đè theo chiến dịch.
+**Quyết định của anh Trung 18/09:** cấu hình đặt vào **TỪNG CHIẾN DỊCH** (không có bộ chung theo gian — mỗi chiến
+dịch seller đòi cài khác nhau), mở bằng **popup** trên trang soi video, phải dễ dùng không rối; video TikTok còn
+**Đang học thì không động tới**; đồng hồ luật tính **từ ngày TikTok học xong** video (không đặt số ngày diễn tập
+tối thiểu — API không có khái niệm đó, chốt an toàn là khách phải NHÌN THẤY kết quả trước khi bật thật).
 
-Ràng buộc từ API thật buộc phải tính tới:
-1. Không có "số giờ video đã chạy" → sàn dữ liệu = mức tiêu + trạng thái `LEARNING` của chính TikTok.
-2. Không có số theo giờ + chi phí trễ 11h → luật "đột biến trong 2 giờ" bất khả thi.
-3. Ân hạn chỉ tính được theo ngày / số tiền tiêu thêm.
-4. Số thật cho thấy phải soi theo CỬA SỔ THỜI GIAN: `@micastore92` tháng 8 chi 1,97tr ra 55 đơn (tốt) nhưng
-   7 ngày gần nhất chi 815k, ROI 3,74 so mục tiêu 15 — nhìn số tổng thì lọt lưới. Nhóm "có đơn nhưng ROI/CPA
-   kém" ngốn tiền gấp ~5 lần nhóm "0 đơn".
-5. Chưa có giá vốn (and.not.or còn 283 SKU chưa nối) → luật chỉ so với ROI mục tiêu / CPA trần khách tự đặt.
+### Bản đồ code
+```
+backend/src/integrations/tiktok-ads/
+  auto-rules.ts   LUẬT THUẦN (có test tiktok-ads-auto-rules.test.ts, 13 ca): assessVideo → planAutoExclusion → summarizeAutoPlan
+  auto-run.ts     LƯỢT HẰNG NGÀY: trackCampaignVideos (theo dõi trạng thái) · buildAutoPlan (gom số theo cửa sổ hiệu lực)
+                  · runTiktokAdsDaily (ghi sổ / gọi sàn / chuông) · autoRunDue (sau 12h VN, ngày chưa chạy)
+backend/src/workers/order-auto-sync.ts   runTiktokAdsTier gọi runTiktokAdsDaily khi autoRunDue (mốc TiktokAdsStoreLink.lastVideoTrackOn)
+backend/src/routes/ads-tiktok.ts         GET/PUT /campaigns/:id/auto-rule · POST …/preview (chạy thử, không ghi) · POST …/copy
+prisma: TiktokAdsAutoRule (1 dòng / chiến dịch, không có = Tắt) · TiktokAdsVideoWatch (1 dòng / video / chiến dịch)
+frontend/src/components/ads/tiktok-auto-rule-dialog.tsx   popup 3 tầng; chip + nút ở trang chiến dịch; cột "Tự động" ở Tổng quan
+```
 
-Chốt an toàn dự kiến (bài học sự cố executor Shopee 14/09): diễn tập trước khi thật · trần số video loại mỗi
-ngày/chiến dịch · không loại video cuối còn ra đơn · khách khôi phục thì máy không loại lại · chuông kèm căn cứ ·
-kiểm quyền tài khoản quảng cáo trước mỗi lệnh.
+### Luật (auto-rules.ts) — mọi số tính trên CỬA SỔ NGÀY kết thúc HÔM QUA
+Thứ tự chấm một video: `learning` (LEARNING/IN_QUEUE → bỏ qua) → `protected` (khách khôi phục tay ≤30 ngày → chỉ gắn
+cờ) → `insufficient` (tiêu < minSpend) → vi phạm cứng [tiêu ≥ spendNoOrder mà 0 đơn · ROI < roiTarget×roiHardPct% ·
+CPA > maxCpa (tùy chọn)] → công thần (≥ graceMinOrders đơn/30 ngày) thì `grace` tới khi vi phạm liên tục ≥ graceDays
+ngày mới `exclude`; còn lại `exclude` → `flag` (có đơn, ROI dưới mục tiêu nhưng trên mức cứng) → `healthy`.
+Chốt cấp chiến dịch: `maxExcludePerDay` (tốn tiền nhất trước, phần dư `heldByCap`) và `minOrderingVideosKeep`
+(không loại tới video cuối còn ra đơn, `heldByFloor`). **Không có luật đột biến theo giờ** (tầng video không có số giờ).
+
+### Lượt hằng ngày (auto-run.ts)
+- Chạy ở lượt lịch sử 6h ĐẦU TIÊN sau **12h trưa VN** (chi phí video trễ 11h) — mỗi gian một lần/ngày.
+- **Theo dõi** MỌI chiến dịch đang bật (không cần cấu hình, 2 call/chiến dịch: SP + video 30 ngày): ghi
+  `TiktokAdsVideoWatch` — lần đầu thấy, chuỗi trạng thái, `statusLog`, và **`graduatedOn`** = ngày đầu thấy
+  DELIVERING sau khi đã thấy LEARNING ("" = ra trường trước khi Hubsell theo dõi → dùng cửa sổ đủ). Nếu DELIVERING
+  quay lại LEARNING thì log `học lại` + đặt lại đồng hồ khi ra trường lần nữa. ★ Đang THEO DÕI xem sàn có làm vậy không.
+- **Xét luật** chiến dịch có rule ≠ off: 1 call cửa sổ windowDays + 1 call cho mỗi ngày-ra-trường nằm trong cửa sổ
+  (video mới ra trường chỉ tính từ ngày đó, `windowDaysUsed` nhỏ hơn). Kết luận từng video ghi lại vào watch
+  (`lastVerdict/lastReason/violationSince`).
+  · `dry_run`: AdsActionLog mode dry_run status **PLANNED** + chuông "Diễn tập X: sẽ loại N video" (KHÔNG gọi sàn).
+  · `live`: verifyTiktokAdsLink + campaign còn ongoing → `creative/update REMOVE` → SUCCESS/FAILED + chuông.
+  · referenceId `ttauto-{rowId}-{YYYY-MM-DD}` unique → mỗi chiến dịch một lệnh/ngày. `lastRunSummary` (Json) giữ tóm tắt.
+- Khách khôi phục tay (route action ADD) → upsert watch `restoredByUserAt` → máy không loại lại 30 ngày.
+
+### Popup (3 tầng, anh duyệt phác thảo 18/09)
+Tầng 1 luôn thấy: Tắt / Diễn tập / Tự loại thật + ROI mục tiêu (mặc định = roasTarget TikTok) + Soi theo N ngày.
+Tầng 2 "Nâng cao" thu gọn: 8 ngưỡng còn lại (mặc định trong `AUTO_RULE_DEFAULTS`). Tầng 3 "Chạy thử với cấu hình
+này": POST preview → "Nếu áp hôm nay: …" + danh sách video sẽ loại kèm căn cứ. **Tự loại thật** chỉ bật được khi đã
+có ≥1 lượt chấm (diễn tập hằng ngày HOẶC chạy thử) và phải xác nhận lại tóm tắt lượt đó. "Sao chép sang chiến dịch
+khác" nhân bản cấu hình (live → đích nhận dry_run).
+
+### Đã kiểm local 18/09 bằng số thật (gian giả nối token nhà, đã xóa)
+TC054 7 ngày 11–17/09: sẽ loại 2 video (296.640đ, 4 đơn, ROI 2,76 và 4,17 so mức cứng 7,5), 2 ân hạn (công thần
+55 đơn/30 ngày), 1 cần xem, 9 đang học bỏ qua, 38 chưa đủ dữ liệu. Lượt diễn tập chạy tay: 4 chiến dịch theo dõi
+(75 video), 1 xét luật, sổ PLANNED + chuông đúng. **Chưa bắn `live` thật lần nào** — bật trên prod sau khi anh
+xem diễn tập vài hôm.
+
+### Còn treo
+ROI tầng video gộp đơn tự nhiên (luật nghiêng nhân từ); ROI hòa vốn chờ giá vốn; tách luật video nhà / creator;
+nút Gỡ kết nối; LIVE GMV Max chưa vào bảng campaign. Migration `20260918120000_tiktok_ads_auto_rules` tự áp khi Render boot.

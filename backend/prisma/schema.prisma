@@ -533,6 +533,8 @@ model AdsCampaign {
   channel    Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
   dailyPerf  AdsCampaignDailyPerf[]
   actionLogs AdsActionLog[]
+  tiktokAutoRule     TiktokAdsAutoRule? // cấu hình LOẠI VIDEO TỰ ĐỘNG (GMV Max) — theo từng chiến dịch
+  tiktokVideoWatches TiktokAdsVideoWatch[]
 
   @@unique([channelId, campaignId])
   @@index([channelId])
@@ -2661,6 +2663,8 @@ model TiktokAdsStoreLink {
   status         String    @default("ACTIVE")
   lastSyncedAt   DateTime?
   lastSyncError  String    @default("")
+  /// "YYYY-MM-DD" (VN) lượt THEO DÕI VIDEO + xét luật tự động gần nhất — mỗi ngày một lượt, sau 12h trưa.
+  lastVideoTrackOn String  @default("")
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -2670,6 +2674,85 @@ model TiktokAdsStoreLink {
   @@index([authId])
   @@index([status, lastSyncedAt])
   @@map("tiktok_ads_store_links")
+}
+
+/// LOẠI VIDEO TỰ ĐỘNG cho một chiến dịch GMV Max — cấu hình THEO TỪNG CHIẾN DỊCH
+/// (anh Trung 18/09/2026: không có cấu hình chung theo gian, mỗi chiến dịch một
+/// bộ số; nhân bản sang chiến dịch khác bằng nút Sao chép). Chiến dịch không có
+/// dòng = Tắt. Luật thuần ở integrations/tiktok-ads/auto-rules.ts.
+model TiktokAdsAutoRule {
+  id            String   @id @default(cuid())
+  adsCampaignId String   @unique
+  /// off | dry_run (DIỄN TẬP: chấm điểm, ghi sổ, báo chuông, KHÔNG gọi sàn) | live
+  mode          String   @default("off")
+  /// ROI mục tiêu dùng cho luật (mặc định = roasTarget của campaign nếu có).
+  roiTarget     Decimal  @db.Decimal(8, 2)
+  /// Cửa sổ ngày để soi (kết thúc HÔM QUA — chi phí video trễ tới 11h); 3–30.
+  windowDays    Int      @default(7)
+  /// Sàn dữ liệu: tiêu dưới mức này trong cửa sổ → chưa xét.
+  minSpend      Decimal  @default(50000) @db.Decimal(14, 2)
+  /// Tiêu ≥ mức này mà 0 đơn → loại.
+  spendNoOrder  Decimal  @default(200000) @db.Decimal(14, 2)
+  /// Có đơn nhưng ROI < roiTarget × roiHardPct% → loại; giữa mức đó và mục tiêu → chỉ gắn cờ.
+  roiHardPct    Int      @default(50)
+  /// Trần chi phí mỗi đơn; NULL = không dùng.
+  maxCpa        Decimal? @db.Decimal(14, 2)
+  /// Công thần: video ≥ graceMinOrders đơn trong 30 ngày thì vi phạm phải KÉO DÀI graceDays ngày mới loại.
+  graceMinOrders Int     @default(20)
+  graceDays      Int     @default(2)
+  /// Trần số video loại mỗi ngày cho chiến dịch (ưu tiên video tốn tiền nhất).
+  maxExcludePerDay Int   @default(10)
+  /// Sau khi loại vẫn phải còn ít nhất N video đang ra đơn — không loại tới video cuối.
+  minOrderingVideosKeep Int @default(3)
+  /// Lượt xét gần nhất: ngày VN + tóm tắt (số loại / gắn cờ / bỏ qua…) để UI kể lại.
+  lastRunOn      String   @default("")
+  lastRunAt      DateTime?
+  lastRunSummary Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
+
+  @@index([mode])
+  @@map("tiktok_ads_auto_rules")
+}
+
+/// THEO DÕI TỪNG VIDEO trong chiến dịch GMV Max — ghi mỗi ngày (lượt theo dõi
+/// 1 lần/ngày sau 12h). Việc chính: bắt mốc TikTok HỌC XONG video (LEARNING →
+/// DELIVERING) để đồng hồ luật chỉ tính từ đó; ghi nhật ký đổi trạng thái để
+/// biết sàn có đưa video quay lại LEARNING không; nhớ ân hạn + lần khách khôi
+/// phục tay (máy không loại lại trong 30 ngày).
+model TiktokAdsVideoWatch {
+  id            String   @id @default(cuid())
+  adsCampaignId String
+  videoId       String
+  spuId         String   @default("")
+  /// Trạng thái sàn lần thấy gần nhất + ngày bắt đầu chuỗi trạng thái đó.
+  status        String   @default("")
+  statusSince   String   @default("")
+  firstSeenOn   String
+  lastSeenOn    String   @default("")
+  /// Ngày đầu thấy DELIVERING sau khi ĐÃ thấy LEARNING = "ra trường"; "" = ra trường trước khi Hubsell theo dõi.
+  graduatedOn   String   @default("")
+  /// Nhật ký đổi trạng thái, mỗi dòng "YYYY-MM-DD A→B" (giữ ~20 dòng cuối).
+  statusLog     String   @default("")
+  /// Ân hạn công thần: ngày vi phạm liên tục đầu tiên ("" = không vi phạm) + chi tiêu lúc đó.
+  violationSince   String  @default("")
+  spendAtViolation Decimal @default(0) @db.Decimal(14, 2)
+  /// Khách khôi phục tay lần gần nhất → máy chỉ gắn cờ, không loại lại trong 30 ngày.
+  restoredByUserAt DateTime?
+  /// Kết luận gần nhất của luật: learning | insufficient | healthy | flag | grace | protected | exclude
+  lastVerdict   String   @default("")
+  lastVerdictOn String   @default("")
+  lastReason    String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
+
+  @@unique([adsCampaignId, videoId])
+  @@index([adsCampaignId, lastVerdictOn])
+  @@map("tiktok_ads_video_watches")
 }
 
 model DeliveryTrackingTask {

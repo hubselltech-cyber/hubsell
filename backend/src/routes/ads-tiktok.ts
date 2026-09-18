@@ -10,6 +10,10 @@
 //   POST /campaigns/:id/videos/action — LOẠI / KHÔI PHỤC video (lệnh ghi duy nhất, chỉ chủ shop)
 //   GET  /video-meta?ids=        — ảnh bìa + kênh + caption (oEmbed công khai, có nhớ đệm)
 //   POST /refresh                — nút Làm mới (kéo hạn xung về ngay)
+//   GET  /campaigns/:id/auto-rule         — cấu hình LOẠI TỰ ĐỘNG của chiến dịch (+ mặc định gợi ý)
+//   PUT  /campaigns/:id/auto-rule         — lưu cấu hình / đổi chế độ Tắt · Diễn tập · Tự loại thật (chủ shop)
+//   POST /campaigns/:id/auto-rule/preview — CHẠY THỬ cấu hình trên số thật, không ghi gì
+//   POST /campaigns/:id/auto-rule/copy    — sao chép cấu hình sang chiến dịch khác cùng gian
 //
 // Lệnh ghi (17/09/2026): chỉ THỦ CÔNG theo tay chủ shop, mỗi lệnh một dòng
 // AdsActionLog (action exclude_video | restore_video, mode live, verdict manual).
@@ -56,6 +60,18 @@ import {
   fetchGmvMaxCampaignVideos,
 } from "../integrations/tiktok-ads/report";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
+import {
+  AUTO_RULE_MODES,
+  sanitizeAutoRuleConfig,
+  summarizeAutoPlan,
+  type AutoRuleMode,
+} from "../integrations/tiktok-ads/auto-rules";
+import {
+  buildAutoPlan,
+  defaultAutoRuleFor,
+  ruleRowToConfig,
+  trackCampaignVideos,
+} from "../integrations/tiktok-ads/auto-run";
 
 export const adsTiktokRouter = Router();
 
@@ -117,7 +133,10 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
     const link = await getTiktokAdsLinkStatus(selected.id);
     const rows = await prisma.adsCampaign.findMany({
       where: { channelId: selected.id },
-      include: { dailyPerf: { where: { date: { gte: startOfDaysAgo(days) } } } },
+      include: {
+        dailyPerf: { where: { date: { gte: startOfDaysAgo(days) } } },
+        tiktokAutoRule: { select: { mode: true, lastRunOn: true, lastRunSummary: true } },
+      },
     });
 
     const seriesMap = new Map<string, { spend: number; gmv: number; orders: number }>();
@@ -153,6 +172,8 @@ adsTiktokRouter.get("/", async (req: AuthRequest, res, next) => {
         costPerOrder: orders > 0 ? spend / orders : null,
         /** Đang chạy, có tiêu tiền, mà ROI thực thấp hơn ROI mục tiêu đã đặt. */
         belowTarget: c.status === "ongoing" && roasTarget != null && roi != null && roi < roasTarget,
+        /** Loại video tự động: chế độ + lượt xét gần nhất (null = chưa cấu hình = Tắt). */
+        auto: c.tiktokAutoRule ? autoStatusOf(c.tiktokAutoRule) : null,
       };
     });
     // Đang chạy + tốn tiền nhất lên đầu; campaign tắt không số xuống cuối.
@@ -231,6 +252,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         roasTarget: true,
         biddingMethod: true,
         channel: { select: { shopName: true } },
+        tiktokAutoRule: { select: { mode: true, lastRunOn: true, lastRunSummary: true } },
       },
     });
     if (!campaign) {
@@ -264,12 +286,18 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             ])
           : [];
       const pending = await pendingVideoActions(campaign.id);
+      // Kết luận gần nhất của luật tự động cho từng video (bảng theo dõi) — chip "Máy sẽ loại" / "Cần xem".
+      const watches = await prisma.tiktokAdsVideoWatch.findMany({
+        where: { adsCampaignId: campaign.id, lastVerdict: { not: "" } },
+        select: { videoId: true, lastVerdict: true, lastReason: true, lastVerdictOn: true, graduatedOn: true },
+      });
+      const watchOf = new Map(watches.map((w) => [w.videoId, w]));
       // Sổ thao tác video của chiến dịch (10 lệnh gần nhất) — hiện ngay dưới bảng.
       const logs = await prisma.adsActionLog.findMany({
         where: { adsCampaignId: campaign.id, action: { in: VIDEO_ACTIONS } },
         orderBy: { createdAt: "desc" },
         take: 10,
-        select: { id: true, action: true, verdict: true, status: true, error: true, reasons: true, createdAt: true },
+        select: { id: true, action: true, mode: true, verdict: true, status: true, error: true, reasons: true, createdAt: true },
       });
       // Thẻ sản phẩm (item_id -1) không phải video — không loại được, bỏ khỏi bảng soi.
       const rows = videos
@@ -285,6 +313,11 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
             excluded,
             /** Lệnh vừa gửi mà report chưa đổi trạng thái (sàn áp dụng sau ~20 phút). */
             pending: wait === "REMOVE" && !excluded ? "REMOVE" : wait === "ADD" && excluded ? "ADD" : null,
+            /** Kết luận lượt xét tự động gần nhất (null = chưa xét / chiến dịch chưa bật tự động). */
+            auto: (() => {
+              const w = watchOf.get(v.videoId);
+              return w ? { verdict: w.lastVerdict, reason: w.lastReason, on: w.lastVerdictOn, graduatedOn: w.graduatedOn } : null;
+            })(),
           };
         })
         .sort((a, b) => Number(b.noOrder) - Number(a.noOrder) || b.cost - a.cost);
@@ -305,6 +338,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           spend: products.reduce((s, x) => s + x.cost, 0),
           orders: products.reduce((s, x) => s + x.orders, 0),
           gmv: products.reduce((s, x) => s + x.gmv, 0),
+          auto: campaign.tiktokAutoRule ? autoStatusOf(campaign.tiktokAutoRule) : null,
         },
         from: period.startDate,
         to: period.endDate,
@@ -313,6 +347,8 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         actions: logs.map((l) => ({
           id: l.id,
           action: l.action,
+          /** dry_run = lệnh DIỄN TẬP (status PLANNED, chưa gọi sàn); live = đã gửi lên TikTok. */
+          mode: l.mode,
           status: l.status,
           error: l.error,
           /** manual = chủ shop tự bấm; auto = Trợ lý tự động (căn cứ ở grounds). */
@@ -409,6 +445,23 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
       return;
     }
     await prisma.adsActionLog.create({ data: { ...logBase, status: "SUCCESS" } });
+    if (action === "ADD") {
+      // Khách khôi phục tay → luật tự động chỉ gắn cờ, KHÔNG loại lại video đó trong 30 ngày.
+      const now = new Date();
+      for (const [videoId, v] of bySpu) {
+        await prisma.tiktokAdsVideoWatch.upsert({
+          where: { adsCampaignId_videoId: { adsCampaignId: campaign.id, videoId } },
+          update: { restoredByUserAt: now, violationSince: "" },
+          create: {
+            adsCampaignId: campaign.id,
+            videoId,
+            spuId: [...v.spuIds][0] ?? "",
+            firstSeenOn: vnDateStr(0),
+            restoredByUserAt: now,
+          },
+        });
+      }
+    }
     res.json({
       ok: true,
       count: items.length,
@@ -416,6 +469,187 @@ adsTiktokRouter.post("/campaigns/:id/videos/action", requireAdmin, async (req: A
         action === "REMOVE"
           ? `Đã gửi lệnh loại ${items.length} video. TikTok áp dụng sau khoảng 20 phút.`
           : `Đã gửi lệnh khôi phục ${items.length} video. TikTok áp dụng sau khoảng 20 phút.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================
+// LOẠI VIDEO TỰ ĐỘNG — cấu hình THEO TỪNG CHIẾN DỊCH (anh Trung 18/09/2026)
+// ============================================================
+
+/** Tóm tắt trạng thái tự động của một chiến dịch cho UI (chip + dòng lượt gần nhất). */
+function autoStatusOf(rule: { mode: string; lastRunOn: string; lastRunSummary: unknown }) {
+  const s = (rule.lastRunSummary ?? null) as Record<string, unknown> | null;
+  return {
+    mode: rule.mode as AutoRuleMode,
+    lastRunOn: rule.lastRunOn || null,
+    lastRunSummary: s && typeof s.summary === "string" ? s.summary : null,
+    lastRunExclude: s && typeof s.exclude === "number" ? s.exclude : 0,
+    lastRunSkipped: s && typeof s.skipped === "string" ? s.skipped : null,
+    lastRunError: s && typeof s.error === "string" ? s.error : null,
+  };
+}
+
+async function ownedTiktokCampaign(ownerId: string, id: string) {
+  return prisma.adsCampaign.findFirst({
+    where: { id, channel: { userId: ownerId, channelName: ChannelName.TIKTOK } },
+    select: {
+      id: true,
+      campaignId: true,
+      name: true,
+      channelId: true,
+      status: true,
+      roasTarget: true,
+      tiktokAutoRule: true,
+    },
+  });
+}
+
+adsTiktokRouter.get("/campaigns/:id/auto-rule", async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await ownedTiktokCampaign(req.ownerId!, String(req.params.id));
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
+    const rule = campaign.tiktokAutoRule;
+    // Chiến dịch khác cùng gian — cho nút "Sao chép sang chiến dịch khác".
+    const others = await prisma.adsCampaign.findMany({
+      where: { channelId: campaign.channelId, id: { not: campaign.id } },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, status: true, tiktokAutoRule: { select: { mode: true } } },
+    });
+    res.json({
+      configured: rule != null,
+      mode: (rule?.mode ?? "off") as AutoRuleMode,
+      config: rule ? ruleRowToConfig(rule) : defaultAutoRuleFor(roasTarget),
+      /** ROI mục tiêu TikTok đang đặt cho campaign (để popup gợi ý). */
+      roasTarget,
+      status: rule ? autoStatusOf(rule) : null,
+      lastRun: (rule?.lastRunSummary as Record<string, unknown> | null) ?? null,
+      others: others.map((o) => ({ id: o.id, name: o.name, status: o.status, mode: (o.tiktokAutoRule?.mode ?? "off") as AutoRuleMode })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await ownedTiktokCampaign(req.ownerId!, String(req.params.id));
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const mode = AUTO_RULE_MODES.includes(body.mode as AutoRuleMode) ? (body.mode as AutoRuleMode) : "off";
+    const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
+    const base = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
+    const cfg = sanitizeAutoRuleConfig(body, base);
+    const data = { mode, ...cfg };
+    const rule = await prisma.tiktokAdsAutoRule.upsert({
+      where: { adsCampaignId: campaign.id },
+      update: data,
+      create: { adsCampaignId: campaign.id, ...data },
+    });
+    res.json({ ok: true, mode: rule.mode as AutoRuleMode, config: ruleRowToConfig(rule), status: autoStatusOf(rule) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// CHẠY THỬ: chấm điểm bằng cấu hình trong body trên số thật của TikTok, KHÔNG ghi sổ,
+// không gọi lệnh loại. Bảng theo dõi video vẫn được cập nhật trạng thái (đó là việc
+// theo dõi thường ngày, vô hại). 3+ call sàn nên chỉ chạy khi người dùng bấm.
+adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await ownedTiktokCampaign(req.ownerId!, String(req.params.id));
+    if (!campaign) {
+      res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+      return;
+    }
+    const scope = await getTiktokAdsScope(campaign.channelId);
+    if (!scope) {
+      res.status(409).json({ error: "Gian chưa kết nối quảng cáo TikTok hoặc kết nối đã hết hiệu lực." });
+      return;
+    }
+    const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
+    const base = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
+    const cfg = sanitizeAutoRuleConfig((req.body ?? {}) as Record<string, unknown>, base);
+    const today = vnDateStr(0);
+    try {
+      const track = await trackCampaignVideos(scope, campaign, today);
+      const bundle = await buildAutoPlan(scope, campaign, cfg, track, today);
+      const plan = bundle.plan;
+      const pick = (a: { videoId: string; spuId: string; cost: number; orders: number; gmv: number; reason: string; verdict: string }) => ({
+        videoId: a.videoId,
+        spuId: a.spuId,
+        cost: a.cost,
+        orders: a.orders,
+        gmv: a.gmv,
+        roi: a.cost > 0 ? a.gmv / a.cost : null,
+        verdict: a.verdict,
+        reason: a.reason,
+      });
+      res.json({
+        config: cfg,
+        windowFrom: bundle.windowFrom,
+        windowTo: bundle.windowTo,
+        summary: summarizeAutoPlan(plan, cfg),
+        counts: plan.counts,
+        excludeSpend: plan.excludeSpend,
+        excludeOrders: plan.excludeOrders,
+        exclude: plan.exclude.map(pick),
+        heldByCap: plan.heldByCap.map(pick),
+        heldByFloor: plan.heldByFloor.map(pick),
+        grace: plan.assessments.filter((a) => a.verdict === "grace").map(pick),
+        flag: plan.assessments.filter((a) => a.verdict === "flag").map(pick),
+        protected: plan.assessments.filter((a) => a.verdict === "protected").map(pick),
+        tracking: { seen: track.seen, newVideos: track.newVideos, graduated: track.graduated, relearning: track.relearning },
+      });
+    } catch (err) {
+      await recordTiktokAdsFailure(scope.linkId, err);
+      res.status(502).json({ error: `Không đọc được số từ TikTok: ${(err as Error).message}` });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// SAO CHÉP cấu hình sang chiến dịch khác cùng gian. Chế độ "live" KHÔNG sao chép
+// (đích nhận "dry_run") — bật thật phải là quyết định riêng cho từng chiến dịch.
+adsTiktokRouter.post("/campaigns/:id/auto-rule/copy", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const campaign = await ownedTiktokCampaign(req.ownerId!, String(req.params.id));
+    if (!campaign?.tiktokAutoRule) {
+      res.status(404).json({ error: "Chiến dịch chưa có cấu hình để sao chép" });
+      return;
+    }
+    const targetIds = (Array.isArray(req.body?.targetIds) ? req.body.targetIds : []).map(String).filter((x: string) => x && x !== campaign.id);
+    const targets = await prisma.adsCampaign.findMany({
+      where: { id: { in: targetIds }, channelId: campaign.channelId },
+      select: { id: true, name: true },
+    });
+    const src = campaign.tiktokAutoRule;
+    const mode: AutoRuleMode = src.mode === "live" ? "dry_run" : (src.mode as AutoRuleMode);
+    const data = { mode, ...ruleRowToConfig(src) };
+    for (const t of targets) {
+      await prisma.tiktokAdsAutoRule.upsert({
+        where: { adsCampaignId: t.id },
+        update: data,
+        create: { adsCampaignId: t.id, ...data },
+      });
+    }
+    res.json({
+      ok: true,
+      copied: targets.length,
+      message:
+        targets.length === 0
+          ? "Không có chiến dịch nào được chọn."
+          : `Đã sao chép sang ${targets.length} chiến dịch${src.mode === "live" ? " (ở chế độ Diễn tập — bật Tự loại thật riêng cho từng chiến dịch)" : ""}.`,
     });
   } catch (err) {
     next(err);

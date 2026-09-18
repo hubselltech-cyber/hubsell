@@ -92,6 +92,7 @@ import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
 import { vnDateKey } from "../integrations/shopee/ads-insights";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
+import { autoRunDue, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";
 
 // ---------- Cấu hình nhịp ----------
 
@@ -842,6 +843,22 @@ async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
       console.log(
         `[Auto-sync] "${channel.shopName}" ads TikTok: ${r.campaignsUpserted} campaign GMV Max, ${r.perfDaysUpserted} dòng ngày`
       );
+    }
+    // LƯỢT HẰNG NGÀY (theo dõi video + xét luật loại tự động): một lần/ngày, ở
+    // lượt lịch sử đầu tiên sau 12h trưa VN — chi phí video TikTok trễ tới 11h.
+    if (r.linked) {
+      const link = await prisma.tiktokAdsStoreLink.findUnique({
+        where: { channelId: channel.id },
+        select: { lastVideoTrackOn: true },
+      });
+      if (link && autoRunDue(link.lastVideoTrackOn)) {
+        const d = await runTiktokAdsDaily(channel);
+        if (d) {
+          console.log(
+            `[Auto-sync] "${channel.shopName}" ads TikTok lượt ngày: ${d.tracked}/${d.campaigns} chiến dịch theo dõi, ${d.evaluated} xét luật (${d.planned} diễn tập, ${d.executed} loại thật, ${d.failed} lỗi)`
+          );
+        }
+      }
     }
     return r.linked;
   } catch (err) {

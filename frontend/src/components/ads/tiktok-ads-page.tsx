@@ -26,6 +26,7 @@ import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { toast } from "sonner";
 
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
+import { AUTO_MODE_BADGE } from "@/components/ads/tiktok-campaign-page";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
@@ -35,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
+import { TIKTOK_AUTO_MODE_LABEL } from "@/lib/api";
 import {
   ApiError,
   fetchTiktokAdsDashboard,
@@ -89,6 +91,24 @@ const CAMPAIGN_COLUMNS: ColumnDef<TiktokAdsCampaignRow>[] = [
       ) : (
         <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
       ),
+  },
+  {
+    id: "auto",
+    size: 120,
+    meta: { label: "Tự động" },
+    header: "Tự động",
+    cell: ({ row }) => {
+      const a = row.original.auto;
+      const mode = a?.mode ?? "off";
+      return (
+        <Badge
+          className={AUTO_MODE_BADGE[mode]}
+          title={a?.lastRunOn ? `Lượt gần nhất ${a.lastRunOn.slice(8, 10)}/${a.lastRunOn.slice(5, 7)}: ${a.lastRunError ?? a.lastRunSkipped ?? a.lastRunSummary ?? ""}` : "Mở chiến dịch để cấu hình tự động loại video"}
+        >
+          {TIKTOK_AUTO_MODE_LABEL[mode]}
+        </Badge>
+      );
+    },
   },
   {
     id: "spend",

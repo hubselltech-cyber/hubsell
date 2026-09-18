@@ -32,10 +32,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
+import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
@@ -48,10 +49,12 @@ import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
+  TIKTOK_AUTO_MODE_LABEL,
   fetchTiktokAdsCampaignVideos,
   fetchTiktokVideoMeta,
   getStoredUser,
   sendTiktokAdsVideoAction,
+  type TiktokAdsAutoMode,
   type TiktokAdsVideoRow,
 } from "@/lib/api";
 import { formatRangeLabel, toDateKey, type DateRange } from "@/lib/date-range";
@@ -69,7 +72,22 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   IN_QUEUE: { label: "Chờ thử", className: "bg-slate-100 text-slate-500" },
 };
 
-type QuickFilter = "all" | "noOrder" | "belowTarget" | "learning" | "excluded";
+type QuickFilter = "all" | "noOrder" | "belowTarget" | "willExclude" | "needsReview" | "learning" | "excluded";
+
+/** Chip chế độ tự động — dùng ở đầu trang chiến dịch và bảng Tổng quan. */
+export const AUTO_MODE_BADGE: Record<TiktokAdsAutoMode, string> = {
+  off: "bg-slate-100 text-slate-500",
+  dry_run: "bg-violet-50 text-violet-700",
+  live: "bg-emerald-50 text-emerald-700",
+};
+/** Kết luận máy → nhãn ngắn trên dòng video (chỉ nhóm cần chú ý). */
+const AUTO_VERDICT_BADGE: Record<string, { label: string; className: string }> = {
+  exclude: { label: "Máy sẽ loại", className: "bg-rose-50 text-red-500" },
+  grace: { label: "Ân hạn", className: "bg-amber-50 text-amber-700" },
+  flag: { label: "Cần xem", className: "bg-amber-50 text-amber-700" },
+  protected: { label: "Đã khôi phục tay", className: "bg-slate-100 text-slate-500" },
+};
+const needsReview = (v: TiktokAdsVideoRow) => v.auto != null && ["flag", "grace", "protected"].includes(v.auto.verdict);
 
 const rowKey = (v: TiktokAdsVideoRow) => `${v.spuId}-${v.videoId}`;
 // SẮP XẾP NGAY TẠI TIÊU ĐỀ CỘT (anh Trung 17/09, thay ô chọn ở lề phải): bấm một
@@ -135,6 +153,7 @@ export function TiktokCampaignPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [autoOpen, setAutoOpen] = useState(false);
 
   async function copyVideoId(id: string) {
     try {
@@ -171,6 +190,8 @@ export function TiktokCampaignPage() {
     all: spending.length,
     noOrder: spending.filter((v) => v.noOrder).length,
     belowTarget: spending.filter(isBelowTarget).length,
+    willExclude: spending.filter((v) => v.auto?.verdict === "exclude").length,
+    needsReview: spending.filter(needsReview).length,
     learning: spending.filter((v) => v.deliveryStatus === "LEARNING").length,
     excluded: excludedRows.length,
   };
@@ -180,6 +201,8 @@ export function TiktokCampaignPage() {
       if (quick === "excluded") return true;
       if (quick === "noOrder") return v.noOrder;
       if (quick === "belowTarget") return target != null && v.orders > 0 && v.roi != null && v.roi < target;
+      if (quick === "willExclude") return v.auto?.verdict === "exclude";
+      if (quick === "needsReview") return needsReview(v);
       if (quick === "learning") return v.deliveryStatus === "LEARNING";
       return true;
     });
@@ -286,6 +309,8 @@ export function TiktokCampaignPage() {
     { key: "all", label: "Tất cả", count: counts.all },
     { key: "noOrder", label: "Chưa ra đơn", count: counts.noOrder },
     { key: "belowTarget", label: "Có đơn, ROI dưới mục tiêu", count: counts.belowTarget, hidden: target == null },
+    { key: "willExclude", label: "Máy sẽ loại", count: counts.willExclude, hidden: counts.willExclude === 0 },
+    { key: "needsReview", label: "Cần xem", count: counts.needsReview, hidden: counts.needsReview === 0 },
     { key: "learning", label: "Đang học", count: counts.learning },
     { key: "excluded", label: "Đã loại", count: counts.excluded, hidden: counts.excluded === 0 },
   ];
@@ -308,6 +333,22 @@ export function TiktokCampaignPage() {
                 ) : (
                   <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
                 ))}
+              {/* LOẠI VIDEO TỰ ĐỘNG (anh Trung 18/09): cấu hình theo TỪNG chiến dịch, mở bằng popup.
+                  Chip cho biết chế độ; nhân viên chỉ thấy chip, chủ shop bấm được. */}
+              {c && (
+                <button
+                  type="button"
+                  onClick={() => owner && setAutoOpen(true)}
+                  disabled={!owner}
+                  title={owner ? "Cấu hình tự động loại video" : undefined}
+                  className={cn("inline-flex items-center gap-1 rounded-full text-xs", owner && "hover:opacity-80")}
+                >
+                  <Badge className={AUTO_MODE_BADGE[c.auto?.mode ?? "off"]}>
+                    <Sparkles className="size-3" />
+                    Tự động: {TIKTOK_AUTO_MODE_LABEL[c.auto?.mode ?? "off"]}
+                  </Badge>
+                </button>
+              )}
             </h1>
             {c && (
               <p className="text-sm text-muted-foreground">
@@ -321,6 +362,15 @@ export function TiktokCampaignPage() {
                   {formatRoi(campaignRoi)}
                 </span>{" "}
                 · chi {formatVND(c.spend)} · {formatNumber(c.orders)} đơn
+              </p>
+            )}
+            {c?.auto && c.auto.mode !== "off" && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                {c.auto.lastRunOn
+                  ? `Lượt ${c.auto.mode === "live" ? "loại" : "diễn tập"} gần nhất ${c.auto.lastRunOn.slice(8, 10)}/${c.auto.lastRunOn.slice(5, 7)}: ${
+                      c.auto.lastRunError ?? c.auto.lastRunSkipped ?? c.auto.lastRunSummary ?? "—"
+                    }`
+                  : "Trợ lý sẽ chấm điểm lượt đầu sau 12h trưa hôm nay hoặc ngày mai."}
               </p>
             )}
           </div>
@@ -581,6 +631,14 @@ export function TiktokCampaignPage() {
                             ) : (
                               <Badge className={st?.className ?? "bg-slate-100 text-slate-500"}>{st?.label ?? v.deliveryStatus}</Badge>
                             )}
+                            {!v.excluded && !v.pending && v.auto && AUTO_VERDICT_BADGE[v.auto.verdict] && (
+                              <Badge
+                                className={cn("mt-1 block w-fit", AUTO_VERDICT_BADGE[v.auto.verdict].className)}
+                                title={`${v.auto.reason} (lượt xét ${v.auto.on.slice(8, 10)}/${v.auto.on.slice(5, 7)})`}
+                              >
+                                {AUTO_VERDICT_BADGE[v.auto.verdict].label}
+                              </Badge>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-right">
                             <Money value={v.cost} className="text-slate-900" />
@@ -671,7 +729,7 @@ export function TiktokCampaignPage() {
                           {new Date(a.createdAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
                         </span>
                         <span className="font-medium text-slate-900">
-                          {removing ? "Loại" : "Khôi phục"} {formatNumber(a.videos.length)} video
+                          {a.status === "PLANNED" ? "Sẽ loại" : removing ? "Loại" : "Khôi phục"} {formatNumber(a.videos.length)} video
                         </span>
                         <Badge className={a.source === "manual" ? "bg-slate-100 text-slate-500" : "bg-violet-50 text-violet-700"}>
                           {a.source === "manual"
@@ -682,7 +740,11 @@ export function TiktokCampaignPage() {
                               ? "Trợ lý tự động loại"
                               : "Trợ lý tự động khôi phục"}
                         </Badge>
-                        {a.status === "SUCCESS" ? (
+                        {a.status === "PLANNED" ? (
+                          <Badge className="bg-amber-50 text-amber-700" title="Chế độ Diễn tập: Trợ lý chỉ ghi sổ video sẽ loại, chưa gửi lệnh lên TikTok.">
+                            Diễn tập — chưa loại
+                          </Badge>
+                        ) : a.status === "SUCCESS" ? (
                           <Badge className="bg-emerald-50 text-emerald-700">Đã gửi lên TikTok</Badge>
                         ) : (
                           <Badge className="bg-rose-50 text-red-500">TikTok từ chối</Badge>
@@ -724,6 +786,15 @@ export function TiktokCampaignPage() {
           </Card>
         )}
       </div>
+
+      {c && (
+        <TiktokAutoRuleDialog
+          open={autoOpen}
+          onOpenChange={setAutoOpen}
+          campaignRowId={campaignRowId}
+          campaignName={c.name || `Chiến dịch #${c.campaignId}`}
+        />
+      )}
 
       <Dialog open={confirmOpen} onOpenChange={(open) => !sending && setConfirmOpen(open)}>
         <DialogContent className="sm:max-w-md">

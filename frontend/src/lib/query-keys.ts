@@ -31,6 +31,7 @@ export const qk = {
   tiktokAdsVideos: (campaignRowId: string, from: string, to: string) =>
     ["tiktok-ads-videos", campaignRowId, from, to] as const,
   tiktokVideoMeta: (ids: string[]) => ["tiktok-video-meta", ids.join(",")] as const,
+  tiktokAdsAutoRule: (campaignRowId: string) => ["tiktok-ads-auto-rule", campaignRowId] as const,
 
   // ----- Tài chính -----
   financeAnalytics: (range?: DateRange, channel?: ChannelFilterQuery) =>
