@@ -243,6 +243,11 @@ export default function SettingsPlanPage() {
   const sub = data?.subscription ?? null;
   const pending = data?.pendingUpgradeRequest ?? null;
   const wallet = data?.walletBalance ?? 0;
+  // Trần đơn của gói tự mua lớn nhất (upgradePlans luôn chứa bậc cao nhất) —
+  // Enterprise dành cho shop vượt mức này; lấy từ bảng giá thật, không ghi cứng.
+  const topSelfServeOrders = (data?.upgradePlans ?? []).some((p) => p.maxOrdersPerMonth == null)
+    ? 0 // có gói tự mua không trần đơn thì không có mốc "vượt mức" nào để nói
+    : Math.max(0, ...(data?.upgradePlans ?? []).map((p) => p.maxOrdersPerMonth ?? 0));
   const gateway = data?.gateway ?? null;
   const openCheckout = data?.openCheckout ?? null;
   const statusBadge =
@@ -426,7 +431,9 @@ export default function SettingsPlanPage() {
             </ul>
           </div>
 
-          <div className="grid gap-4 pt-2 md:grid-cols-2 xl:grid-cols-4">
+          {/* 19/09: thêm bậc Scale → 5 gói tự mua + Enterprise = 6 thẻ, xếp 2 hàng × 3
+              (anh Trung chốt cùng bố cục với landing). */}
+          <div className="grid gap-4 pt-2 md:grid-cols-2 xl:grid-cols-3">
             {data.upgradePlans.map((p) => {
               const isCurrent = p.id === data.plan?.id;
               // Bậc 3 = gói "Bán chạy nhất" (anh Trung chốt 22/08) — theo tier
@@ -581,7 +588,9 @@ export default function SettingsPlanPage() {
               <div className="relative flex flex-col rounded-2xl border border-slate-300 bg-card p-5 shadow-sm dark:border-slate-700">
                 <p className="text-lg font-bold">{data.enterprisePlan.name}</p>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  Cho shop quy mô lớn / nhiều thương hiệu
+                  {topSelfServeOrders > 0
+                    ? `Cho shop trên ${nf.format(topSelfServeOrders)} đơn/tháng`
+                    : "Cho shop quy mô lớn / nhiều thương hiệu"}
                 </p>
                 <p className="mt-4 text-3xl font-extrabold tracking-tight">
                   Báo giá riêng
@@ -592,7 +601,7 @@ export default function SettingsPlanPage() {
                 <ul className="mt-4 space-y-2.5 border-t pt-4">
                   {[
                     "Trần đơn hàng theo thỏa thuận",
-                    "Không giới hạn gian hàng",
+                    "Số gian hàng theo thỏa thuận",
                     "Không giới hạn nhân viên",
                     "Đầy đủ tính năng + hỗ trợ triển khai riêng",
                   ].map((row) => (

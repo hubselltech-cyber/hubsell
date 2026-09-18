@@ -4,7 +4,10 @@
 //   Starter 300 đơn/99k (mặc định, dùng thử 14 ngày; năm TẶNG 1 tháng)
 //   Growth 1.000/199k (năm TẶNG 1 tháng) · Pro 3.000/399k · Business
 //   10.000/699k (Pro/Business chiết khấu −6%/−11%/năm TẶNG 2 tháng)
+//   Scale 20.000/1.199k (thêm 19/09/2026 — anh Trung chốt 60đ/đơn sau khảo sát
+//   giá đối thủ khúc trên 10.000 đơn; kỳ dài cùng nhịp Pro/Business)
 //   Enterprise: NHÁP isActive=false — báo giá riêng khi có khách Mall/brand.
+//   Trần gian sàn (19/09): 3 / 5 / 10 / 20 / 40 — gian Offline không tính.
 //
 // NGUYÊN TẮC VÀNG: DB là nguồn chân lý sau lần seed đầu — script CHỈ TẠO GÓI
 // CÒN THIẾU, gói đã có (kể cả STARTER) giữ nguyên để không đè lên chỉnh sửa
@@ -44,6 +47,7 @@ const PLANS = [
     priceSemiannual: 594_000,
     priceYearly: 1_089_000,
     maxOrdersPerMonth: 300,
+    maxChannels: 3,
     trialDays: TRIAL_DAYS,
     isActive: true,
     isDefault: true,
@@ -61,6 +65,7 @@ const PLANS = [
     priceSemiannual: 1_194_000,
     priceYearly: 2_189_000,
     maxOrdersPerMonth: 1_000,
+    maxChannels: 5,
     isActive: true,
     features: { modules: "all" },
   },
@@ -75,6 +80,7 @@ const PLANS = [
     priceSemiannual: 2_129_000,
     priceYearly: 3_990_000,
     maxOrdersPerMonth: 3_000,
+    maxChannels: 10,
     isActive: true,
     features: { modules: "all" },
   },
@@ -89,6 +95,22 @@ const PLANS = [
     priceSemiannual: 3_729_000,
     priceYearly: 6_990_000,
     maxOrdersPerMonth: 10_000,
+    maxChannels: 20,
+    isActive: true,
+    features: { modules: "all" },
+  },
+  {
+    code: "SCALE",
+    name: "Scale",
+    description:
+      "Đầy đủ tính năng Hubsell cho shop tới 20.000 đơn/tháng. Mua 12 tháng tặng 2 tháng.",
+    tier: 5,
+    priceMonthly: 1_199_000,
+    priceQuarterly: 3_399_000,
+    priceSemiannual: 6_399_000,
+    priceYearly: 11_990_000,
+    maxOrdersPerMonth: 20_000,
+    maxChannels: 40,
     isActive: true,
     features: { modules: "all" },
   },
@@ -96,8 +118,8 @@ const PLANS = [
     // Nháp khách không thấy — bật "Đang bán" + điền giá khi có khách thỏa thuận.
     code: "ENTERPRISE",
     name: "Enterprise",
-    description: "Trên 10.000 đơn/tháng — báo giá và SLA riêng. Liên hệ Hubsell.",
-    tier: 5,
+    description: "Trên 20.000 đơn/tháng — báo giá và SLA riêng. Liên hệ Hubsell.",
+    tier: 6,
     isActive: false,
     features: { modules: "all" },
   },

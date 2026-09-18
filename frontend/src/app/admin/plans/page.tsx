@@ -119,17 +119,20 @@ function planPriceFor(plan: ServicePlan, cycle: BillingCycle): number {
   }
 }
 
-// ---- Giá sàn đ/đơn cho giá THỎA THUẬN (deal Enterprise) — anh Trung chốt
-// 18/09/2026: 60đ/đơn cam kết, 50đ khi trần > 100.000 đơn/tháng. Căn cứ: hạ tầng
-// ước 8–28đ/đơn (mốc capacity-plan) + hoa hồng giới thiệu 10% + chi phí AI chưa
-// đo; Business kỳ năm (giá đã chốt) đang ≈ 58đ/đơn nên deal lớn không nên rẻ hơn
-// nhiều. CHỈ CẢNH BÁO, không chặn — đổi số tại đây. ----
-const PRICE_FLOOR_PER_ORDER = 60;
-const PRICE_FLOOR_PER_ORDER_BIG = 50;
-const BIG_DEAL_ORDERS = 100_000;
+// ---- Giá sàn đ/đơn cho giá THỎA THUẬN (deal Enterprise) — GIẢM DẦN theo trần
+// đơn cam kết. 60đ = đơn giá bậc Scale 20.000 đơn anh Trung chốt 19/09/2026 (deal
+// nhỏ không được rẻ hơn gói niêm yết); các nấc trên bám mặt bằng khảo sát 19/09
+// (BigSeller ≈ 53đ ở 50.000 đơn, ≈ 33đ ở 100.000; Ginee ≈ 42đ ở 50.000 — giữ 60đ
+// lên tới đó là tự loại khỏi deal lớn). Phía dưới còn hạ tầng ước 8–28đ/đơn +
+// hoa hồng giới thiệu 10%. CHỈ CẢNH BÁO, không chặn — đổi số tại đây. ----
+const PRICE_FLOORS: { fromOrders: number; floor: number }[] = [
+  { fromOrders: 100_000, floor: 33 },
+  { fromOrders: 50_000, floor: 45 },
+  { fromOrders: 0, floor: 60 },
+];
 
 function priceFloorFor(maxOrders: number): number {
-  return maxOrders > BIG_DEAL_ORDERS ? PRICE_FLOOR_PER_ORDER_BIG : PRICE_FLOOR_PER_ORDER;
+  return PRICE_FLOORS.find((f) => maxOrders >= f.fromOrders)!.floor;
 }
 
 /** Doanh thu trên mỗi đơn khi khách dùng KỊCH trần — null khi gói không đặt
@@ -428,9 +431,7 @@ function PaymentDialog({
     selectedPlan && Number(effectiveAmount) !== listPrice
       ? perOrderAtCap(Number(effectiveAmount), cycleMonths, selectedPlan.maxOrdersPerMonth)
       : null;
-  const dealFloor = selectedPlan?.maxOrdersPerMonth
-    ? priceFloorFor(selectedPlan.maxOrdersPerMonth)
-    : PRICE_FLOOR_PER_ORDER;
+  const dealFloor = priceFloorFor(selectedPlan?.maxOrdersPerMonth ?? 0);
 
   async function handleSave() {
     if (!selectedPlan) {
