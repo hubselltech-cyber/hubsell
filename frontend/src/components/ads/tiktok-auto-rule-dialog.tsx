@@ -19,7 +19,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Copy, FlaskConical } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Eye, FlaskConical, Lock, PowerOff, Zap, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatRoi } from "@/components/ads/tiktok-ads-format";
@@ -48,6 +48,17 @@ import { useApiQuery } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
 const WINDOW_OPTIONS = [3, 5, 7, 10, 14, 30];
+
+/**
+ * Ba THẺ CHỌN chế độ (anh Trung 18/09: dải ba nút liền nhau "phẳng quá"): biểu tượng + tên đậm + một dòng chú thích,
+ * thẻ đang chọn tô ĐÚNG MÀU của chế độ — trùng màu nút "Tự động loại video" ngoài trang chiến dịch (Tắt xám · Diễn tập
+ * tím · Tự loại thật xanh) để khách nhìn màu là biết đang ở chế độ nào.
+ */
+const MODE_CARD: Record<TiktokAdsAutoMode, { icon: LucideIcon; caption: string; active: string; iconIdle: string }> = {
+  off: { icon: PowerOff, caption: "Máy không làm gì", active: "border-slate-700 bg-slate-700 text-white shadow-sm", iconIdle: "text-slate-400" },
+  dry_run: { icon: Eye, caption: "Chỉ ghi sổ, báo chuông", active: "border-violet-600 bg-violet-600 text-white shadow-sm", iconIdle: "text-violet-500" },
+  live: { icon: Zap, caption: "Loại thật trên TikTok", active: "border-emerald-600 bg-emerald-600 text-white shadow-sm", iconIdle: "text-emerald-600" },
+};
 
 /** Form giữ tiền dạng CHUỖI CHỮ SỐ cho CurrencyInput; số khác giữ chuỗi để gõ thoải mái. */
 interface FormState {
@@ -280,23 +291,32 @@ export function TiktokAutoRuleDialog({
           <div className="space-y-4">
             {/* ===== TẦNG 1: chế độ ===== */}
             <div>
-              <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200">
+              <div role="radiogroup" aria-label="Chế độ tự động loại video" className="grid grid-cols-3 gap-2">
                 {(["off", "dry_run", "live"] as TiktokAdsAutoMode[]).map((m) => {
                   const disabled = m === "live" && !hadRun;
+                  const active = mode === m;
+                  const card = MODE_CARD[m];
+                  const Icon = disabled ? Lock : card.icon;
                   return (
                     <button
                       key={m}
                       type="button"
+                      role="radio"
+                      aria-checked={active}
                       disabled={disabled}
                       onClick={() => setMode(m)}
                       title={disabled ? "Phải diễn tập ít nhất 1 ngày (có lượt chấm sau 12h trưa) rồi mới bật được" : undefined}
                       className={cn(
-                        "px-3 py-2 text-sm transition-colors not-last:border-r not-last:border-slate-200",
-                        mode === m ? "bg-slate-900 font-medium text-white" : "bg-card text-slate-600 hover:bg-muted",
-                        disabled && "cursor-not-allowed text-slate-300 hover:bg-card"
+                        "flex min-w-0 flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-center transition-colors",
+                        active ? card.active : "border-slate-200 bg-card text-slate-900 hover:border-slate-300 hover:bg-muted",
+                        disabled && "cursor-not-allowed border-dashed bg-slate-50 text-slate-400 hover:border-slate-200 hover:bg-slate-50"
                       )}
                     >
-                      {TIKTOK_AUTO_MODE_LABEL[m]}
+                      <Icon className={cn("size-5", active ? "text-white" : disabled ? "text-slate-300" : card.iconIdle)} aria-hidden="true" />
+                      <span className="text-sm leading-tight font-semibold">{TIKTOK_AUTO_MODE_LABEL[m]}</span>
+                      <span className={cn("text-xs leading-tight", active ? "text-white/85" : disabled ? "text-slate-400" : "text-slate-500")}>
+                        {disabled ? "Cần diễn tập 1 ngày" : card.caption}
+                      </span>
                     </button>
                   );
                 })}
@@ -460,6 +480,11 @@ export function TiktokAutoRuleDialog({
               </div>
               {preview && (
                 <div className="mt-2 space-y-1.5">
+                  {preview.dataProblem && (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                      Số liệu video của TikTok hôm nay không đáng tin: {preview.dataProblem}. Lượt chấm thật sẽ bỏ lượt, không loại video nào.
+                    </p>
+                  )}
                   <p className="text-slate-900">
                     <span className="font-medium">Nếu áp hôm nay</span> ({preview.windowFrom.slice(8, 10)}/{preview.windowFrom.slice(5, 7)}–
                     {preview.windowTo.slice(8, 10)}/{preview.windowTo.slice(5, 7)}): {preview.summary}.

@@ -2814,6 +2814,10 @@ export interface TiktokAdsAutoPreview {
   flag: TiktokAdsAutoPreviewVideo[];
   protected: TiktokAdsAutoPreviewVideo[];
   tracking: { seen: number; newVideos: number; graduated: number; relearning: number };
+  /** "" = số liệu video của sàn ổn; có chữ = lượt chấm thật sẽ BỎ LƯỢT (báo cáo video đang thiếu so với tầng chiến dịch). */
+  dataProblem: string;
+  /** Mức loại ROI lượt chạy thử dùng. */
+  hard: { hardRoi: number; basis: "pct" | "breakeven"; fallbackReason: string; label: string };
 }
 
 /** CHẠY THỬ cấu hình trên số thật (3+ call TikTok) — không ghi sổ, không loại. */

@@ -230,6 +230,29 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((tb - ta) / 86_400_000);
 }
 
+/**
+ * A2 — CHỐT CHẶN SỐ LIỆU SÀN HỎNG. Luật "0 đơn" tin tuyệt đối cột đơn của báo cáo tầng video; hôm nào TikTok trả
+ * thiếu (đơn = 0 hàng loạt) thì máy sẽ loại oan tới maxExcludePerDay video. Đối chiếu với TẦNG CHIẾN DỊCH của cùng
+ * cửa sổ — Hubsell đồng bộ riêng vào AdsCampaignDailyPerf, một đường báo cáo khác của sàn. KHÔNG dùng ngưỡng tự đặt:
+ * chỉ chặn khi có bằng chứng dương tính rõ ràng — tầng video (mọi video + thẻ sản phẩm) báo 0 trong khi tầng chiến
+ * dịch có số. Hai tầng không bao giờ bằng nhau tuyệt đối (video đã loại / sàn tự ngưng không nằm trong tầng video ta
+ * đọc) nên KHÔNG so lệch bao nhiêu phần trăm. Không có số tầng chiến dịch (null / toàn 0) → không kết luận được → cho qua.
+ * Trả "" = ổn; có chữ = lý do bỏ lượt. Thuần.
+ */
+export function videoDataProblem(
+  videoTier: { cost: number; orders: number },
+  campaignTier: { spend: number; orders: number } | null
+): string {
+  if (!campaignTier) return "";
+  if (campaignTier.orders > 0 && videoTier.orders === 0) {
+    return `báo cáo video của TikTok trả 0 đơn cho MỌI video trong khi chiến dịch ghi ${campaignTier.orders.toLocaleString("vi-VN")} đơn cùng kỳ — số liệu video đang thiếu`;
+  }
+  if (campaignTier.spend > 0 && videoTier.cost === 0) {
+    return `báo cáo video của TikTok trả 0 đồng chi phí trong khi chiến dịch tiêu ${vnd(campaignTier.spend)} cùng kỳ — số liệu video đang thiếu`;
+  }
+  return "";
+}
+
 /** Chấm MỘT video theo cấu hình — thuần, `today` là ngày VN "YYYY-MM-DD". `hard` = mức loại của lượt (mặc định theo %). */
 export function assessVideo(v: AutoVideoInput, cfg: AutoRuleConfig, today: string, hard: HardLevel = resolveHardLevel(cfg)): AutoAssessment {
   const base = { videoId: v.videoId, spuId: v.spuId, cost: v.cost, orders: v.orders, gmv: v.gmv };

@@ -5,6 +5,7 @@ import {
   BREAKEVEN_MIN_COVERAGE_PCT,
   daysBetween,
   resolveHardLevel,
+  videoDataProblem,
   planAutoExclusion,
   sanitizeAutoRuleConfig,
   summarizeAutoPlan,
@@ -228,5 +229,26 @@ describe("resolveHardLevel — mức loại theo % mục tiêu hay theo hòa v�
     expect(sanitizeAutoRuleConfig({ hardBasis: "breakeven" }, cfg).hardBasis).toBe("breakeven");
     expect(sanitizeAutoRuleConfig({ hardBasis: "bua" }, cfg).hardBasis).toBe("pct");
     expect(sanitizeAutoRuleConfig({}, byBe).hardBasis).toBe("breakeven");
+  });
+});
+
+// A2 — CHỐT CHẶN SỐ LIỆU SÀN HỎNG: chỉ chặn khi có bằng chứng dương tính, không so lệch phần trăm.
+describe("videoDataProblem — tầng video báo 0 trong khi tầng chiến dịch có số", () => {
+  it("bình thường: hai tầng đều có số (lệch nhau là chuyện thường) → cho qua", () => {
+    expect(videoDataProblem({ cost: 1_600_000, orders: 45 }, { spend: 2_100_000, orders: 82 })).toBe("");
+  });
+  it("tầng video 0 đơn mà chiến dịch có đơn → bỏ lượt, lý do nêu số đơn của chiến dịch", () => {
+    const why = videoDataProblem({ cost: 1_600_000, orders: 0 }, { spend: 2_100_000, orders: 82 });
+    expect(why).toContain("0 đơn cho MỌI video");
+    expect(why).toContain("82 đơn");
+  });
+  it("tầng video 0 đồng chi phí mà chiến dịch có tiêu tiền → bỏ lượt", () => {
+    expect(videoDataProblem({ cost: 0, orders: 0 }, { spend: 500_000, orders: 0 })).toContain("0 đồng chi phí");
+  });
+  it("chiến dịch thật sự không ra đơn nào → 0 đơn ở tầng video là ĐÚNG, không chặn", () => {
+    expect(videoDataProblem({ cost: 300_000, orders: 0 }, { spend: 320_000, orders: 0 })).toBe("");
+  });
+  it("Hubsell không có số tầng chiến dịch của khoảng đó → không kết luận được → cho qua", () => {
+    expect(videoDataProblem({ cost: 300_000, orders: 0 }, null)).toBe("");
   });
 });

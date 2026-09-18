@@ -182,7 +182,10 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
    lại đúng các video cũ (vì chưa loại thật) nên anh không có gì để PHÁN máy đúng hay sai. Cần: với mỗi video máy
    từng định loại, lấy số TỪ NGÀY ĐÓ tới hôm qua (1 call report/ngày-định-loại) → "nếu đã loại từ dd/mm: đỡ X đồng,
    mất Y đơn / Z doanh thu". Đây là căn cứ duy nhất để quyết bật thật, và là thứ cho khách xem sau này.
-2. **Chốt chặn số liệu sàn hỏng** — luật "0 đơn" tin tuyệt đối cột đơn của report video. Nếu một hôm sàn trả thiếu
+2. ✅ **XONG 18/09 tối** — `auto-rules.ts videoDataProblem` (thuần) + `auto-run.ts campaignTierTotals / autoPlanDataProblem`;
+   `applyAutoPlan` kiểm TRƯỚC mọi thứ: tầng video (`bundle.videoTier` = mọi video đang phân phối + thẻ sản phẩm -1) báo 0 đơn /
+   0 đồng mà tầng chiến dịch trong DB có số cùng cửa sổ → bỏ lượt (kể cả mode live), chuông, `lastRunSummary.skipped`, KHÔNG
+   đụng `lastRunOn`. Không so lệch % (hai tầng vốn không bằng nhau). Route preview trả `dataProblem`. Mô tả gốc: **Chốt chặn số liệu sàn hỏng** — luật "0 đơn" tin tuyệt đối cột đơn của report video. Nếu một hôm sàn trả thiếu
    (đơn = 0 hàng loạt) thì máy loại oan tới `maxExcludePerDay` video. Căn cứ đối chiếu CÓ SẴN, không phải số tự bịa:
    tổng đơn cửa sổ của chiến dịch trong `AdsCampaignDailyPerf` (đồng bộ riêng) — report video tổng 0 đơn mà tầng
    chiến dịch có đơn → bỏ lượt, chuông báo, không loại.

@@ -78,6 +78,7 @@ import {
 } from "../integrations/tiktok-ads/auto-rules";
 import {
   VIDEO_VERDICT_AUTO,
+  autoPlanDataProblem,
   buildAutoPlan,
   defaultAutoRuleFor,
   ruleRowToConfig,
@@ -715,6 +716,8 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/preview", async (req: AuthRequest
         windowFrom: bundle.windowFrom,
         windowTo: bundle.windowTo,
         summary: summarizeAutoPlan(plan, cfg),
+        /** A2: "" = số liệu video ổn; có chữ = lượt chấm thật sẽ BỎ LƯỢT vì báo cáo video của sàn đang thiếu. */
+        dataProblem: await autoPlanDataProblem(campaign.id, bundle),
         /** Mức loại ROI lượt chạy thử dùng (theo % hay hòa vốn; fallbackReason ≠ "" = muốn hòa vốn nhưng phải rơi về %). */
         hard: plan.hard,
         counts: plan.counts,

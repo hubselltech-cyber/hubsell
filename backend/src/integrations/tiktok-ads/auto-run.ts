@@ -38,6 +38,7 @@ import {
   daysBetween,
   planAutoExclusion,
   summarizeAutoPlan,
+  videoDataProblem,
   type AutoAssessment,
   type AutoExclusionPlan,
   type AutoRuleConfig,
@@ -215,6 +216,23 @@ export interface AutoPlanBundle {
   inputs: AutoVideoInput[];
   windowFrom: string;
   windowTo: string;
+  /** Tổng tầng video của cửa sổ (mọi video đang phân phối + thẻ sản phẩm) — đầu vào của chốt chặn số liệu hỏng (A2). */
+  videoTier: { cost: number; orders: number };
+}
+
+/** Tổng TẦNG CHIẾN DỊCH của cửa sổ, đọc từ DB (đồng bộ riêng với tầng video). null = Hubsell không có dòng nào của khoảng đó. */
+export async function campaignTierTotals(adsCampaignId: string, from: string, to: string): Promise<{ spend: number; orders: number } | null> {
+  const rows = await prisma.adsCampaignDailyPerf.findMany({
+    where: { adsCampaignId, date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } },
+    select: { expense: true, broadOrder: true },
+  });
+  if (rows.length === 0) return null;
+  return { spend: rows.reduce((s, r) => s + Number(r.expense), 0), orders: rows.reduce((s, r) => s + r.broadOrder, 0) };
+}
+
+/** A2: số liệu tầng video của cửa sổ có đáng tin không? "" = ổn; có chữ = lý do phải bỏ lượt. */
+export async function autoPlanDataProblem(adsCampaignId: string, bundle: AutoPlanBundle): Promise<string> {
+  return videoDataProblem(bundle.videoTier, await campaignTierTotals(adsCampaignId, bundle.windowFrom, bundle.windowTo));
 }
 
 /**
@@ -245,7 +263,11 @@ export async function buildAutoPlan(
         )
       : [];
   const numbers = new Map<string, { cost: number; orders: number; gmv: number; days: number }>();
+  const videoTier = { cost: 0, orders: 0 };
   for (const v of rowsWindow) {
+    // Thẻ sản phẩm (-1) không phải video nhưng VẪN là một phần số của tầng này → tính vào tổng đối chiếu.
+    videoTier.cost += v.cost;
+    videoTier.orders += v.orders;
     if (!v.videoId || v.videoId === "-1") continue;
     numbers.set(v.videoId, { cost: v.cost, orders: v.orders, gmv: v.gmv, days: cfg.windowDays });
   }
@@ -288,7 +310,7 @@ export async function buildAutoPlan(
       watch: w ? { violationSince: w.violationSince, restoredByUserAt: w.restoredByUserAt } : undefined,
     };
   });
-  return { plan: planAutoExclusion(inputs, cfg, today, breakeven), inputs, windowFrom, windowTo };
+  return { plan: planAutoExclusion(inputs, cfg, today, breakeven), inputs, windowFrom, windowTo, videoTier };
 }
 
 // ------------------------------------------------------------
@@ -373,6 +395,22 @@ async function applyAutoPlan(
 ): Promise<ApplyOutcome> {
   const { plan } = bundle;
   const excludedIds = new Set(plan.exclude.map((a) => a.videoId));
+  const link = `/ads/tiktok/campaign?id=${campaign.id}`;
+
+  // A2 — CHỐT CHẶN SỐ LIỆU HỎNG: tầng video báo 0 trong khi tầng chiến dịch có số → BỎ LƯỢT, không ghi kết luận từng
+  // video, không loại gì. Cố ý KHÔNG đụng lastRunOn: lượt bị bỏ không được tính là "đã diễn tập 1 ngày" (khách chưa thấy
+  // máy định loại gì) — ngày bỏ lượt nằm ngay trong câu lý do.
+  const dataProblem = await autoPlanDataProblem(campaign.id, bundle);
+  if (dataProblem) {
+    const skipped = `${today.slice(8, 10)}/${today.slice(5, 7)}: bỏ lượt, KHÔNG loại video nào — ${dataProblem}. Máy sẽ chấm lại vào ngày mai.`;
+    await prisma.tiktokAdsAutoRule.update({
+      where: { adsCampaignId: campaign.id },
+      data: { lastRunAt: new Date(), lastRunSummary: { mode, summary: skipped, skipped, exclude: 0, windowFrom: bundle.windowFrom, windowTo: bundle.windowTo } },
+    });
+    await notify(ownerId, { type: "tiktok-ads-auto", title: `${campaign.name}: Trợ lý bỏ lượt chấm hôm nay`, body: skipped, link });
+    console.warn(`[TikTok Ads] "${campaign.name}" bỏ lượt chấm: ${dataProblem}`);
+    return "skipped";
+  }
 
   // Trạng thái theo dõi: kết luận + chuỗi vi phạm liên tục (ân hạn).
   for (const a of plan.assessments) {
@@ -422,7 +460,6 @@ async function applyAutoPlan(
       data: { lastRunOn: today, lastRunAt: new Date(), lastRunSummary: { ...runSummary, ...extra } },
     });
 
-  const link = `/ads/tiktok/campaign?id=${campaign.id}`;
   if (plan.exclude.length === 0) {
     await saveRun();
     if (plan.counts.flag > 0 || plan.counts.grace > 0) {
