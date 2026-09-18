@@ -94,6 +94,18 @@ const AUTO_VERDICT_BADGE: Record<string, { label: string; className: string }> =
 };
 const ddmm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
+/**
+ * Câu căn cứ của backend nối các ý bằng " — " (vi phạm gì — vì sao ân hạn — còn mấy ngày). Seller đọc
+ * một câu dài rất mệt (anh Trung 18/09) → tách mỗi ý một gạch đầu dòng, viết hoa chữ đầu, bỏ dấu chấm cuối.
+ */
+function reasonPoints(reason: string): string[] {
+  return reason
+    .split(" — ")
+    .map((x) => x.trim().replace(/\.$/, ""))
+    .filter(Boolean)
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1));
+}
+
 /** Ô cột "Tự động": nhãn kết luận của lượt chấm gần nhất; trỏ chuột hoặc bấm → lý do + ngày chấm. */
 function AutoVerdictCell({ v, live }: { v: TiktokAdsVideoRow; live: boolean }) {
   if (v.excluded || v.pending) return <span className="text-slate-400">—</span>;
@@ -119,11 +131,15 @@ function AutoVerdictCell({ v, live }: { v: TiktokAdsVideoRow; live: boolean }) {
         <p className="font-semibold text-slate-900">
           {a.verdict === "exclude" ? (live ? "Máy sẽ loại video này" : "Diễn tập: máy sẽ loại video này") : b.label}
         </p>
-        <p className="text-slate-700">{a.reason || "Video đang đạt các mốc anh/chị đã cài."}</p>
-        <p className="text-xs text-slate-500">
-          Lượt chấm {ddmm(a.on)}
-          {a.graduatedOn ? ` · TikTok học xong video ngày ${ddmm(a.graduatedOn)}, số tính từ ngày đó` : ""}
-        </p>
+        <ul className="list-disc space-y-1 pl-4 text-slate-700 marker:text-slate-400">
+          {(a.reason ? reasonPoints(a.reason) : ["Video đang đạt các mốc anh/chị đã cài"]).map((x, i) => (
+            <li key={i}>{x}</li>
+          ))}
+        </ul>
+        <ul className="list-disc space-y-0.5 border-t border-slate-200/80 pt-1.5 pl-4 text-xs text-slate-500 marker:text-slate-300">
+          <li>Lượt chấm ngày {ddmm(a.on)}</li>
+          {a.graduatedOn && <li>TikTok học xong video ngày {ddmm(a.graduatedOn)}, số tính từ ngày đó</li>}
+        </ul>
       </PopoverContent>
     </Popover>
   );
