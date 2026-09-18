@@ -956,7 +956,16 @@ export function TiktokCampaignPage() {
                         (() => {
                           const left = undoRowsOf(a.videos.map((x) => x.videoId)).length;
                           if (left === 0) {
-                            return <p className="text-xs text-slate-400 sm:pl-[7.75rem]">Các video của lệnh này không còn bị loại.</p>;
+                            // Lệnh vừa gửi: TikTok cần ~20 phút mới đổi trạng thái video → lúc này video CHƯA nằm trong danh sách Đã loại.
+                            // Nói "không còn bị loại" là sai (anh Trung 18/09 vừa loại 3 video đã thấy ngay câu đó) — phải nói đang chờ sàn.
+                            const waiting = Date.now() - new Date(a.createdAt).getTime() < 30 * 60_000;
+                            return (
+                              <p className={cn("text-xs sm:pl-[7.75rem]", waiting ? "text-amber-700" : "text-slate-400")}>
+                                {waiting
+                                  ? "TikTok đang áp dụng lệnh (khoảng 20 phút). Xong thì nút Khôi phục cả lệnh hiện tại đây."
+                                  : "Các video của lệnh này không còn bị loại."}
+                              </p>
+                            );
                           }
                           return (
                             <div className="sm:pl-[7.75rem]">
