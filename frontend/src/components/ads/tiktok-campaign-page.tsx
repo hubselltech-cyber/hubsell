@@ -48,6 +48,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ApiError,
   TIKTOK_AUTO_MODE_LABEL,
@@ -81,13 +82,52 @@ export const AUTO_MODE_BADGE: Record<TiktokAdsAutoMode, string> = {
   dry_run: "bg-violet-50 text-violet-700",
   live: "bg-emerald-50 text-emerald-700",
 };
-/** Kết luận máy → nhãn ngắn trên dòng video (chỉ nhóm cần chú ý). */
+/** Kết luận máy → nhãn trong CỘT "Tự động" (anh Trung 18/09: tách cột riêng, trỏ chuột / bấm vào hiện lý do). */
 const AUTO_VERDICT_BADGE: Record<string, { label: string; className: string }> = {
-  exclude: { label: "Máy sẽ loại", className: "bg-rose-50 text-red-500" },
+  exclude: { label: "Sẽ loại", className: "bg-rose-50 text-red-500" },
   grace: { label: "Ân hạn", className: "bg-amber-50 text-amber-700" },
   flag: { label: "Cần xem", className: "bg-amber-50 text-amber-700" },
   protected: { label: "Đã khôi phục tay", className: "bg-slate-100 text-slate-500" },
+  healthy: { label: "Ổn", className: "bg-emerald-50 text-emerald-700" },
+  insufficient: { label: "Chưa đủ dữ liệu", className: "bg-slate-100 text-slate-500" },
+  learning: { label: "Chờ học xong", className: "bg-sky-50 text-sky-700" },
 };
+const ddmm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+/** Ô cột "Tự động": nhãn kết luận của lượt chấm gần nhất; trỏ chuột hoặc bấm → lý do + ngày chấm. */
+function AutoVerdictCell({ v, live }: { v: TiktokAdsVideoRow; live: boolean }) {
+  if (v.excluded || v.pending) return <span className="text-slate-400">—</span>;
+  const b = v.auto ? AUTO_VERDICT_BADGE[v.auto.verdict] : undefined;
+  if (!v.auto || !b) {
+    return (
+      <span className="text-xs text-slate-400" title="Video chưa qua lượt chấm nào (lượt chấm chạy mỗi ngày sau 12h trưa).">
+        Chưa chấm
+      </span>
+    );
+  }
+  const a = v.auto;
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={80}
+        render={<button type="button" className="cursor-pointer rounded-full" aria-label={`Lý do: ${b.label}`} />}
+      >
+        <Badge className={cn(b.className, "underline decoration-dotted underline-offset-2")}>{b.label}</Badge>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
+        <p className="font-semibold text-slate-900">
+          {a.verdict === "exclude" ? (live ? "Máy sẽ loại video này" : "Diễn tập: máy sẽ loại video này") : b.label}
+        </p>
+        <p className="text-slate-700">{a.reason || "Video đang đạt các mốc anh/chị đã cài."}</p>
+        <p className="text-xs text-slate-500">
+          Lượt chấm {ddmm(a.on)}
+          {a.graduatedOn ? ` · TikTok học xong video ngày ${ddmm(a.graduatedOn)}, số tính từ ngày đó` : ""}
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
 const needsReview = (v: TiktokAdsVideoRow) => v.auto != null && ["flag", "grace", "protected"].includes(v.auto.verdict);
 
 const rowKey = (v: TiktokAdsVideoRow) => `${v.spuId}-${v.videoId}`;
@@ -157,6 +197,9 @@ export function TiktokCampaignPage() {
   const [sending, setSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
+  // Trang chỉ bày thứ xem HẰNG NGÀY (bảng video); đối chiếu diễn tập + lịch sử là việc thỉnh thoảng
+  // mới xem → tab riêng (anh Trung 18/09: "để hết ra đây rối lắm").
+  const [tab, setTab] = useState<"videos" | "backtest" | "history">("videos");
 
   async function copyVideoId(id: string) {
     try {
@@ -308,6 +351,15 @@ export function TiktokCampaignPage() {
   const campaignRoi = c && c.spend > 0 ? c.gmv / c.spend : null;
   const backHref = c ? `/ads/tiktok?channelId=${c.channelId}` : "/ads/tiktok";
 
+  const autoOn = c?.auto != null && c.auto.mode !== "off";
+  const tabs: { key: "videos" | "backtest" | "history"; label: string; count?: number }[] = [
+    { key: "videos", label: "Video" },
+    ...(c?.auto?.mode === "dry_run" ? [{ key: "backtest" as const, label: "Đối chiếu diễn tập" }] : []),
+    ...((data?.actions.length ?? 0) > 0 ? [{ key: "history" as const, label: "Lịch sử loại / khôi phục", count: data?.actions.length }] : []),
+  ];
+  // Tab đang chọn biến mất (vd đổi chế độ khỏi Diễn tập) → về bảng video.
+  const activeTab = tabs.some((x) => x.key === tab) ? tab : "videos";
+
   const chips: { key: QuickFilter; label: string; count: number; hidden?: boolean }[] = [
     { key: "all", label: "Tất cả", count: counts.all },
     { key: "noOrder", label: "Chưa ra đơn", count: counts.noOrder },
@@ -404,10 +456,35 @@ export function TiktokCampaignPage() {
           </Card>
         </div>
 
-        {/* ===== ĐỐI CHIẾU DIỄN TẬP — căn cứ để quyết bật Tự loại thật; chỉ hiện khi đang Diễn tập ===== */}
-        <TiktokDryRunBacktest campaignRowId={campaignRowId} enabled={allowed === true && c?.auto?.mode === "dry_run"} />
+        {/* ===== TAB: Video (hằng ngày) · Đối chiếu diễn tập (chỉ khi đang Diễn tập) · Lịch sử ===== */}
+        {tabs.length > 1 && (
+          <div role="tablist" className="flex flex-wrap gap-1 border-b">
+            {tabs.map((x) => {
+              const active = activeTab === x.key;
+              return (
+                <button
+                  key={x.key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTab(x.key)}
+                  className={cn(
+                    "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                    active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                  )}
+                >
+                  {x.label}
+                  {x.count != null && <span className="text-xs tabular-nums text-slate-400">{formatNumber(x.count)}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Chỉ gọi TikTok lấy số đối chiếu khi mở đúng tab này. */}
+        {activeTab === "backtest" && <TiktokDryRunBacktest campaignRowId={campaignRowId} enabled={allowed === true} />}
 
         {/* ===== BẢNG VIDEO ===== */}
+        {activeTab === "videos" && (
         <Card>
           <CardContent className="space-y-4 py-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -505,7 +582,7 @@ export function TiktokCampaignPage() {
 
             {pageRows.length > 0 && (
               <div className={cn("min-w-0 rounded-lg border", PNL_TABLE_SCROLLER)}>
-                <table className="w-full min-w-[980px] border-separate border-spacing-0 text-sm">
+                <table className={cn("w-full border-separate border-spacing-0 text-sm", autoOn ? "min-w-[1100px]" : "min-w-[980px]")}>
                   <thead className={PNL_STICKY_HEAD}>
                     <tr className={cn(TEXT_TABLE_HEAD, "text-left")}>
                       {canAct && (
@@ -521,6 +598,11 @@ export function TiktokCampaignPage() {
                       )}
                       <th className={cn(TH, "border-b border-slate-200")}>Video</th>
                       <th className={cn(TH, "border-b border-slate-200")}>Trạng thái</th>
+                      {autoOn && (
+                        <th className={cn(TH, "border-b border-slate-200")} title="Kết luận của lượt chấm tự động gần nhất. Trỏ chuột hoặc bấm vào nhãn để xem lý do.">
+                          Tự động
+                        </th>
+                      )}
                       {SORT_COLUMNS.map((col) => {
                         const active = sort.key === col.key;
                         const Icon = !active ? ArrowUpDown : sort.dir === "desc" ? ArrowDown : ArrowUp;
@@ -644,15 +726,12 @@ export function TiktokCampaignPage() {
                             ) : (
                               <Badge className={st?.className ?? "bg-slate-100 text-slate-500"}>{st?.label ?? v.deliveryStatus}</Badge>
                             )}
-                            {!v.excluded && !v.pending && v.auto && AUTO_VERDICT_BADGE[v.auto.verdict] && (
-                              <Badge
-                                className={cn("mt-1 block w-fit", AUTO_VERDICT_BADGE[v.auto.verdict].className)}
-                                title={`${v.auto.reason} (lượt xét ${v.auto.on.slice(8, 10)}/${v.auto.on.slice(5, 7)})`}
-                              >
-                                {AUTO_VERDICT_BADGE[v.auto.verdict].label}
-                              </Badge>
-                            )}
                           </td>
+                          {autoOn && (
+                            <td className="px-3 py-2">
+                              <AutoVerdictCell v={v} live={c?.auto?.mode === "live"} />
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-right">
                             <Money value={v.cost} className="text-slate-900" />
                           </td>
@@ -725,10 +804,11 @@ export function TiktokCampaignPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* ===== LỊCH SỬ THAO TÁC VIDEO — từng lệnh: giờ, lý do (thủ công / tự động + căn cứ),
             kết quả sàn, và MÃ từng video kèm số liệu lúc thao tác (anh Trung 17/09). ===== */}
-        {(data?.actions.length ?? 0) > 0 && (
+        {activeTab === "history" && (data?.actions.length ?? 0) > 0 && (
           <Card>
             <CardContent className="space-y-2 py-4">
               <p className="text-sm font-semibold text-slate-900">Lịch sử loại / khôi phục video</p>

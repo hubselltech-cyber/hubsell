@@ -161,7 +161,9 @@ khôi phục tay thì máy không loại lại 30 ngày) nhưng **chưa bắn l�
 
 **A. Phải có trước khi bật thật**
 1. ✅ **XONG 18/09 tối** (`backtest.ts` thuần + 7 test · `GET /campaigns/:id/auto-rule/backtest` · thẻ
-   `tiktok-dry-run-backtest.tsx` trên trang chiến dịch, chỉ hiện khi đang Diễn tập). Mỗi video lấy NGÀY ĐẦU máy định
+   `tiktok-dry-run-backtest.tsx` — nằm ở TAB RIÊNG "Đối chiếu diễn tập" của trang chiến dịch, chỉ có khi đang Diễn
+   tập và chỉ gọi TikTok khi mở tab; anh Trung chê bản đầu chèn thẻ lên trên bảng video là rối → trang nay gồm 3 ô số
+   + 3 tab Video · Đối chiếu diễn tập · Lịch sử, và kết luận từng video nằm ở CỘT "Tự động" (trỏ chuột/bấm → lý do)). Mỗi video lấy NGÀY ĐẦU máy định
    loại (D, đọc từ sổ PLANNED — ngày nằm ở đuôi referenceId), cộng số từ **D+1** tới hôm nay (bỏ ngày D vì lượt chấm
    chạy sau trưa và không có số theo giờ → tính dè dặt). Kết luận theo đúng mốc khách cài: tiêu thêm < minSpend = Chưa
    đủ dữ liệu · 0 đơn hoặc ROI < mức loại = Máy đúng · ROI ≥ mục tiêu = Hồi phục · giữa = Lưng chừng. Chân thẻ nói rõ:
