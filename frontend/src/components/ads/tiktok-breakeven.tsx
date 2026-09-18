@@ -70,7 +70,8 @@ export function TiktokBreakevenValue({ breakeven, className }: { breakeven: Tikt
         <span
           className={cn(
             "tabular-nums underline decoration-dotted underline-offset-2",
-            breakeven.negativeMargin ? "text-red-500" : breakeven.roi == null ? "text-slate-400" : "text-slate-700",
+            // Mốc hòa vốn là con số để SO — xanh đậm cho nổi giữa dòng chữ xám (anh Trung 18/09); lỗ sẵn đỏ, chưa có số thì xám.
+            breakeven.negativeMargin ? "text-red-500" : breakeven.roi == null ? "text-slate-400" : "text-emerald-700",
             className
           )}
         >
