@@ -4,7 +4,7 @@ import {
   parseVideoActionReasons,
   videoActionNote,
 } from "../tiktok-ads/action-log";
-import { reconcileSendingCommand } from "../tiktok-ads/send-command";
+import { reconcileSendingCommand, soakCheckExclude } from "../tiktok-ads/send-command";
 import { GMV_MAX_MAX_RANGE_DAYS, GMV_MAX_OUTSIDE_VIDEO_STATUSES, clampGmvMaxRange, tallyVideoStatuses } from "../tiktok-ads/report";
 
 describe("clampGmvMaxRange — khoảng ngày của trang soi video", () => {
@@ -133,5 +133,28 @@ describe("reconcileSendingCommand — chốt dòng sổ kẹt SENDING", () => {
     const r = reconcileSendingCommand("restore_video", ["x"], live);
     expect(r.status).toBe("FAILED");
     expect(r.note).toContain("CHƯA khôi phục");
+  });
+});
+
+// B7 — sàn trả OK cho cả lệnh chứ không trả từng video → lượt chấm hôm sau soi lại lệnh loại đã SUCCESS.
+describe("soakCheckExclude — lệnh loại đã ngấm chưa", () => {
+  const live = new Set(["a", "b"]);
+  it("mọi video của lệnh đã rời nhóm đang phân phối → ngấm đủ, không báo gì", () => {
+    const r = soakCheckExclude(["x", "y"], live, new Set(), "2026-09-19");
+    expect(r.notApplied).toEqual([]);
+    expect(r.note).toContain("Kiểm lại 19/09");
+    expect(r.note).toContain("đủ 2 video");
+  });
+  it("video vẫn đang phân phối → nêu đúng mã video không ngấm", () => {
+    const r = soakCheckExclude(["a", "x", "b"], live, new Set(), "2026-09-19");
+    expect(r.notApplied).toEqual(["a", "b"]);
+    expect(r.note).toContain("2/3 video VẪN đang được TikTok phân phối");
+    expect(r.note).toContain("#a #b");
+  });
+  it("video chủ shop đã khôi phục lại trên Hubsell sau lệnh → đang phân phối là ĐÚNG, không báo nhầm", () => {
+    const r = soakCheckExclude(["a", "x"], live, new Set(["a"]), "2026-09-19");
+    expect(r.notApplied).toEqual([]);
+    expect(r.note).toContain("đủ 1 video");
+    expect(r.note).toContain("1 video đã được khôi phục lại trên Hubsell");
   });
 });

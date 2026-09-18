@@ -419,3 +419,91 @@ export function summarizeAutoPlan(plan: AutoExclusionPlan, cfg: AutoRuleConfig):
   if (cfg.ruleLowRoiOn && plan.hard.fallbackReason) parts.push(`chưa dùng được hòa vốn làm mức loại (${plan.hard.fallbackReason}) nên tạm theo ${cfg.roiHardPct}% mục tiêu`);
   return parts.join(" · ");
 }
+
+// ------------------------------------------------------------
+// B6 — CẤU HÌNH ĐÃ DIỄN TẬP CHƯA? (rà 18/09: rào lastRunOn chỉ biết "đã từng có lượt chấm", không biết lượt đó chạy
+// bằng cấu hình nào → khách diễn tập bằng số nhẹ, sửa số nặng rồi bật thật luôn được.) Mỗi lượt chấm THẬT chốt lại
+// cấu hình nó dùng (TiktokAdsAutoRule.lastRunConfig); Tự loại thật chỉ chạy với đúng cấu hình đó.
+// ------------------------------------------------------------
+
+/** Số đi kèm một luật ĐANG TẮT không tham gia chấm điểm → không tính là đổi cấu hình. */
+function effectiveConfig(c: AutoRuleConfig): Partial<AutoRuleConfig> {
+  const e: Partial<AutoRuleConfig> = { ...c };
+  if (!c.ruleNoOrderOn) delete e.spendNoOrder;
+  if (!c.ruleLowRoiOn) {
+    delete e.hardBasis;
+    delete e.roiHardPct;
+  }
+  if (!c.ruleCpaOn) delete e.maxCpa;
+  if (!c.graceOn) {
+    delete e.graceMinOrders;
+    delete e.graceDays;
+  }
+  return e;
+}
+
+/** Đọc lại cấu hình lượt chấm đã chốt trong DB (Json). Thiếu / sai kiểu → null = coi như chưa diễn tập. */
+export function parseRehearsedConfig(raw: unknown): AutoRuleConfig | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.roiTarget !== "number" || typeof r.windowDays !== "number") return null;
+  return sanitizeAutoRuleConfig(r);
+}
+
+/** Những ô của `next` KHÁC cấu hình đã diễn tập. [] = đúng cấu hình đã diễn tập; chưa có lượt nào thì mọi ô đều "khác". */
+export function unrehearsedFields(rehearsed: AutoRuleConfig | null, next: AutoRuleConfig): (keyof AutoRuleConfig)[] {
+  const b = effectiveConfig(next);
+  if (!rehearsed) return Object.keys(b) as (keyof AutoRuleConfig)[];
+  const a = effectiveConfig(rehearsed);
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof AutoRuleConfig>;
+  return [...keys].filter((k) => a[k] !== b[k]);
+}
+
+// ------------------------------------------------------------
+// B8 — CHUÔNG CHỈ KHI KẾT QUẢ ĐỔI. Diễn tập không loại thật nên hôm sau máy lại định loại ĐÚNG các video hôm trước;
+// chuông y nguyên mỗi ngày thì khách tắt chuông. So lượt hôm nay với lượt trước (lastRunSummary), giống hệt thì im.
+// ------------------------------------------------------------
+
+export interface RunDigest {
+  mode: string;
+  excludeIds: string[];
+  grace: number;
+  flag: number;
+}
+
+/** Rút gọn lastRunSummary của lượt TRƯỚC. Lượt bị bỏ (A2) / lệnh bị sàn từ chối / chưa có lượt nào → null = không có gì để so. */
+export function runDigestOf(summary: unknown): RunDigest | null {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) return null;
+  const s = summary as Record<string, unknown>;
+  if (typeof s.mode !== "string" || typeof s.skipped === "string" || typeof s.error === "string") return null;
+  // Dòng ghi trước B8 chưa có excludeIds → lấy từ `videos` (tối đa 50, đủ cho trần mặc định 10 video/ngày).
+  const videos = Array.isArray(s.videos) ? s.videos : [];
+  const excludeIds = Array.isArray(s.excludeIds)
+    ? s.excludeIds.map(String)
+    : videos.map((v) => String((v as Record<string, unknown>)?.videoId ?? "")).filter(Boolean);
+  return { mode: s.mode, excludeIds, grace: Number(s.grace) || 0, flag: Number(s.flag) || 0 };
+}
+
+export interface RunChange {
+  changed: boolean;
+  added: number;
+  removed: number;
+}
+
+/** Lượt hôm nay có gì KHÁC lượt trước không. Không loại video nào thì so số video ân hạn / cần xem. */
+export function compareRunDigest(prev: RunDigest | null, now: RunDigest): RunChange {
+  if (!prev || prev.mode !== now.mode) return { changed: true, added: now.excludeIds.length, removed: 0 };
+  const before = new Set(prev.excludeIds);
+  const after = new Set(now.excludeIds);
+  const added = now.excludeIds.filter((id) => !before.has(id)).length;
+  const removed = prev.excludeIds.filter((id) => !after.has(id)).length;
+  const quietChanged = now.excludeIds.length === 0 && (prev.grace !== now.grace || prev.flag !== now.flag);
+  return { changed: added > 0 || removed > 0 || quietChanged, added, removed };
+}
+
+/** Đuôi tiêu đề chuông: "thêm 2, bớt 1 so với lượt trước". Lượt đầu / danh sách mới hoàn toàn thì không cần đuôi. */
+export function runChangeLabel(prev: RunDigest | null, change: RunChange): string {
+  if (!prev || prev.excludeIds.length === 0) return "";
+  const parts = [change.added > 0 ? `thêm ${change.added}` : "", change.removed > 0 ? `bớt ${change.removed}` : ""].filter(Boolean);
+  return parts.length > 0 ? ` (${parts.join(", ")} so với lượt trước)` : "";
+}

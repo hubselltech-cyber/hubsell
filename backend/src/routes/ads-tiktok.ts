@@ -72,9 +72,11 @@ import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-a
 import {
   AUTO_RULE_MODES,
   breakevenUnusableReason,
+  parseRehearsedConfig,
   resolveHardLevel,
   sanitizeAutoRuleConfig,
   summarizeAutoPlan,
+  unrehearsedFields,
   type AutoRuleMode,
 } from "../integrations/tiktok-ads/auto-rules";
 import {
@@ -634,6 +636,8 @@ adsTiktokRouter.get("/campaigns/:id/auto-rule", async (req: AuthRequest, res, ne
       breakevenUnusable: breakevenUnusableReason(breakeven),
       status: rule ? autoStatusOf(rule) : null,
       lastRun: (rule?.lastRunSummary as Record<string, unknown> | null) ?? null,
+      /** B6: cấu hình mà lượt chấm thật gần nhất đã dùng — popup so với số đang nhập để biết "cấu hình này đã diễn tập chưa". */
+      rehearsedConfig: parseRehearsedConfig(rule?.lastRunConfig),
       others: others.map((o) => ({ id: o.id, name: o.name, status: o.status, mode: (o.tiktokAutoRule?.mode ?? "off") as AutoRuleMode })),
     });
   } catch (err) {
@@ -664,6 +668,19 @@ adsTiktokRouter.put("/campaigns/:id/auto-rule", requireAdmin, async (req: AuthRe
     const roasTarget = campaign.roasTarget != null ? Number(campaign.roasTarget) : null;
     const base = campaign.tiktokAutoRule ? ruleRowToConfig(campaign.tiktokAutoRule) : defaultAutoRuleFor(roasTarget);
     const cfg = sanitizeAutoRuleConfig(body, base);
+    // B6 — cùng lý do với rào trên: lượt diễn tập phải chạy bằng ĐÚNG cấu hình sắp loại thật. Diễn tập bằng số nhẹ rồi sửa
+    // số nặng và bật thật (hoặc đang chạy thật mà sửa số) → chặn, lưu ở Diễn tập và đợi một lượt chấm với cấu hình mới.
+    if (mode === "live") {
+      const changed = unrehearsedFields(parseRehearsedConfig(campaign.tiktokAutoRule?.lastRunConfig), cfg);
+      if (changed.length > 0) {
+        res.status(409).json({
+          error:
+            "Cấu hình này chưa diễn tập: lượt chấm gần nhất chạy bằng số khác. Hãy lưu ở chế độ Diễn tập, đợi lượt chấm sau 12h trưa với cấu hình mới, xem chuông báo đúng rồi mới bật Tự loại thật.",
+          unrehearsedFields: changed,
+        });
+        return;
+      }
+    }
     const data = { mode, ...cfg };
     const rule = await prisma.tiktokAdsAutoRule.upsert({
       where: { adsCampaignId: campaign.id },

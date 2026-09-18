@@ -16,7 +16,7 @@
 // ============================================================
 
 import { prisma } from "../../lib/prisma";
-import { VIDEO_ACTION_EXCLUDE, parseVideoActionReasons } from "./action-log";
+import { VIDEO_ACTION_EXCLUDE, VIDEO_ACTION_RESTORE, VIDEO_VERDICT_MANUAL, parseVideoActionReasons } from "./action-log";
 
 /** Lệnh đã ghi sổ, đang / đã gửi lên TikTok nhưng CHƯA xác nhận được kết quả. */
 export const VIDEO_STATUS_SENDING = "SENDING";
@@ -94,4 +94,71 @@ export async function reconcileSendingCommands(adsCampaignId: string, liveIds: S
     console.warn(`[TikTok Ads] Chốt dòng sổ kẹt SENDING ${l.id}: ${r.status} — ${r.note}`);
   }
   return stuck.length;
+}
+
+// ------------------------------------------------------------
+// B7 — KIỂM LỆNH ĐÃ NGẤM CHƯA. creative/update trả "OK" cho CẢ lệnh, không trả kết quả từng video → sàn từ chối ngầm
+// một video thì sổ vẫn SUCCESS. Lượt chấm hằng ngày soi lại mỗi lệnh LOẠI đã SUCCESS đúng MỘT lần (ghi chú vào cột
+// error của chính dòng đó = dấu đã soi; dòng được chốt từ SENDING đã đối chiếu rồi nên cũng có ghi chú, không soi lại).
+// Tuổi tối thiểu dùng chung mốc RECONCILE_AFTER_MS. Lệnh KHÔI PHỤC không soi: video vừa khôi phục có thể bị TikTok tự
+// ngừng phân phối (nhóm Hubsell không đọc) → dễ báo nhầm.
+// ------------------------------------------------------------
+
+export interface SoakCheck {
+  /** Video của lệnh mà sàn VẪN đang phân phối, và không phải do chủ shop khôi phục lại trên Hubsell. */
+  notApplied: string[];
+  note: string;
+}
+
+/** Thuần. `restoredIds` = video chủ shop đã khôi phục trên Hubsell SAU lệnh này (đang phân phối là đúng, không tính). */
+export function soakCheckExclude(videoIds: string[], liveIds: Set<string>, restoredIds: Set<string>, checkedOn: string): SoakCheck {
+  const day = `${checkedOn.slice(8, 10)}/${checkedOn.slice(5, 7)}`;
+  const restored = videoIds.filter((id) => liveIds.has(id) && restoredIds.has(id)).length;
+  const notApplied = videoIds.filter((id) => liveIds.has(id) && !restoredIds.has(id));
+  const restoredTxt = restored > 0 ? ` (${restored} video đã được khôi phục lại trên Hubsell)` : "";
+  if (notApplied.length === 0) {
+    return { notApplied, note: `Kiểm lại ${day}: TikTok đã ngừng phân phối đủ ${videoIds.length - restored} video của lệnh${restoredTxt}.` };
+  }
+  return {
+    notApplied,
+    note:
+      `Kiểm lại ${day}: ${notApplied.length}/${videoIds.length} video VẪN đang được TikTok phân phối — sàn không áp dụng lệnh cho các video này, ` +
+      `hoặc video đã được khôi phục từ nơi khác (Seller Center / TikTok Ads Manager): ${notApplied.map((id) => `#${id}`).join(" ")}${restoredTxt}.`,
+  };
+}
+
+export interface SoakCheckResult {
+  logId: string;
+  auto: boolean;
+  notApplied: string[];
+}
+
+/** Lượt chấm hằng ngày gọi sau khi đọc trạng thái video: soi các lệnh loại SUCCESS chưa soi. Trả các lệnh CÓ video không ngấm. */
+export async function soakCheckCommands(adsCampaignId: string, liveIds: Set<string>, today: string): Promise<SoakCheckResult[]> {
+  const rows = await prisma.adsActionLog.findMany({
+    where: {
+      adsCampaignId,
+      action: VIDEO_ACTION_EXCLUDE,
+      mode: "live",
+      status: "SUCCESS",
+      error: null,
+      createdAt: { lt: new Date(Date.now() - RECONCILE_AFTER_MS) },
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, verdict: true, reasons: true, createdAt: true },
+  });
+  const out: SoakCheckResult[] = [];
+  for (const l of rows) {
+    const ids = parseVideoActionReasons(l.reasons).videos.map((v) => v.videoId);
+    // Chủ shop khôi phục lại trên Hubsell sau lệnh này: đọc từ CHÍNH sổ lệnh (đủ cả lệnh cũ trước khi có mốc restoredByUserAt).
+    const restores = await prisma.adsActionLog.findMany({
+      where: { adsCampaignId, action: VIDEO_ACTION_RESTORE, status: { in: ["SUCCESS", VIDEO_STATUS_SENDING] }, createdAt: { gt: l.createdAt } },
+      select: { reasons: true },
+    });
+    const restoredIds = new Set(restores.flatMap((x) => parseVideoActionReasons(x.reasons).videos.map((v) => v.videoId)));
+    const r = soakCheckExclude(ids, liveIds, restoredIds, today);
+    await prisma.adsActionLog.update({ where: { id: l.id }, data: { error: r.note.slice(0, 1000) } });
+    if (r.notApplied.length > 0) out.push({ logId: l.id, auto: l.verdict !== VIDEO_VERDICT_MANUAL, notApplied: r.notApplied });
+  }
+  return out;
 }

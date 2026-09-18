@@ -19,6 +19,9 @@
 //        live    → kiểm quyền TKQC + campaign còn bật → gọi creative/update
 //                  REMOVE → AdsActionLog mode live SUCCESS/FAILED, chuông.
 //      referenceId "ttauto-{rowId}-{ngày}" unique → một ngày một lệnh mỗi chiến dịch.
+//      Mỗi lượt chấm thật chốt cấu hình đã dùng (lastRunConfig — B6: Tự loại thật chỉ chạy với cấu hình đã
+//      diễn tập) và chỉ chuông khi kết quả ĐỔI so với lượt trước (B8).
+//   Giữa hai việc: chốt dòng sổ kẹt SENDING (A3) + soi lệnh loại đã SUCCESS xem sàn có áp dụng thật không (B7).
 //
 // Không ném lỗi ra ngoài: lỗi một chiến dịch ghi log rồi đi tiếp chiến dịch khác.
 // ============================================================
@@ -35,9 +38,14 @@ import {
 } from "./action-log";
 import {
   AUTO_RULE_DEFAULTS,
+  compareRunDigest,
   daysBetween,
+  parseRehearsedConfig,
   planAutoExclusion,
+  runChangeLabel,
+  runDigestOf,
   summarizeAutoPlan,
+  unrehearsedFields,
   videoDataProblem,
   type AutoAssessment,
   type AutoExclusionPlan,
@@ -55,7 +63,7 @@ import {
 } from "./report";
 import { getTiktokAdsScope, recordTiktokAdsFailure, verifyTiktokAdsLink, type TiktokAdsScope } from "./sync";
 import { computeTiktokAdsBreakeven, saveCampaignProductIds } from "./breakeven";
-import { reconcileSendingCommands, sendVideoCommand } from "./send-command";
+import { reconcileSendingCommands, sendVideoCommand, soakCheckCommands } from "./send-command";
 
 /** verdict ghi vào AdsActionLog cho lệnh loại tự động (khác "manual"). */
 export const VIDEO_VERDICT_AUTO = "auto_exclude";
@@ -358,8 +366,13 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
     try {
       const track = await trackCampaignVideos(scope, c, today);
       // A3: dòng sổ còn kẹt "đang gửi" (sự cố giữa lúc gửi lệnh) → chốt theo trạng thái THẬT của video vừa đọc, không đoán.
-      await reconcileSendingCommands(c.id, new Set(track.rows30.map((v) => v.videoId))).catch((err) =>
+      const liveIds = new Set(track.rows30.map((v) => v.videoId));
+      await reconcileSendingCommands(c.id, liveIds).catch((err) =>
         console.error(`[TikTok Ads] Đối chiếu dòng sổ kẹt lỗi "${c.name}":`, (err as Error).message)
+      );
+      // B7: lệnh LOẠI đã báo thành công (tự động lẫn thủ công) mà video vẫn đang phân phối → sàn từ chối ngầm, phải cho khách biết.
+      await reportCommandsNotApplied(c, liveIds, today, channel.userId).catch((err) =>
+        console.error(`[TikTok Ads] Kiểm lệnh đã ngấm lỗi "${c.name}":`, (err as Error).message)
       );
       result.tracked++;
       if (track.graduated > 0 || track.relearning > 0 || track.newVideos > 0) {
@@ -372,7 +385,7 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
       const cfg = ruleRowToConfig(rule);
       const bundle = await buildAutoPlan(scope, c, cfg, track, today, breakeven?.byCampaignRowId.get(c.id) ?? null);
       result.evaluated++;
-      const outcome = await applyAutoPlan(scope, c, rule.mode as AutoRuleMode, cfg, bundle, today, channel.userId);
+      const outcome = await applyAutoPlan(scope, c, rule, cfg, bundle, today, channel.userId);
       if (outcome === "planned") result.planned++;
       else if (outcome === "executed") result.executed++;
       else if (outcome === "failed") result.failed++;
@@ -388,17 +401,42 @@ export async function runTiktokAdsDaily(channel: { id: string; shopName: string;
 
 type ApplyOutcome = "nothing" | "planned" | "executed" | "failed" | "skipped";
 
+/** B7 — soi các lệnh loại SUCCESS chưa soi của chiến dịch; có video không ngấm thì chuông (ghi chú đã nằm trên dòng sổ). */
+async function reportCommandsNotApplied(campaign: CampaignLite, liveIds: Set<string>, today: string, ownerId: string): Promise<void> {
+  const bad = await soakCheckCommands(campaign.id, liveIds, today);
+  if (bad.length === 0) return;
+  const videos = bad.reduce((n, b) => n + b.notApplied.length, 0);
+  const anyAuto = bad.some((b) => b.auto);
+  console.warn(`[TikTok Ads] "${campaign.name}": ${videos} video của ${bad.length} lệnh loại vẫn đang phân phối (lệnh không ngấm).`);
+  await notify(ownerId, {
+    type: "tiktok-ads-auto",
+    title: `${campaign.name}: ${videos} video đã ra lệnh loại nhưng TikTok vẫn đang phân phối`,
+    body:
+      `TikTok báo đã nhận lệnh nhưng ${videos} video vẫn chạy — sàn không áp dụng lệnh cho các video này, hoặc video đã được khôi phục từ Seller Center / TikTok Ads Manager. ` +
+      `Mã video nằm ở tab Lịch sử, ngay trên dòng lệnh.` +
+      (anyAuto ? " Nếu video còn vi phạm, Trợ lý sẽ xét lại trong lượt chấm hôm nay." : ""),
+    link: `/ads/tiktok/campaign?id=${campaign.id}`,
+  });
+}
+
 /** Ghi kết luận từng video + ân hạn vào bảng theo dõi, ghi sổ lệnh, gọi sàn nếu live. */
-async function applyAutoPlan(
+export async function applyAutoPlan(
   scope: TiktokAdsScope,
   campaign: CampaignLite,
-  mode: AutoRuleMode,
+  rule: Pick<RuleRow, "mode" | "lastRunSummary" | "lastRunConfig">,
   cfg: AutoRuleConfig,
   bundle: AutoPlanBundle,
   today: string,
   ownerId: string
 ): Promise<ApplyOutcome> {
   const { plan } = bundle;
+  // B6 — Tự loại thật CHỈ chạy với cấu hình đã qua một lượt chấm thật. Route PUT đã chặn từ lúc lưu; đây là lớp thứ hai
+  // (dòng cũ chưa có lastRunConfig, dữ liệu sửa tay): lượt này chạy như DIỄN TẬP, chốt cấu hình, lượt sau mới loại thật.
+  const unrehearsed = rule.mode === "live" && unrehearsedFields(parseRehearsedConfig(rule.lastRunConfig), cfg).length > 0;
+  const mode: AutoRuleMode = unrehearsed ? "dry_run" : (rule.mode as AutoRuleMode);
+  const rehearsalNote = unrehearsed
+    ? "Cấu hình hiện tại chưa qua lượt diễn tập nào nên hôm nay Trợ lý chỉ DIỄN TẬP, chưa loại video; từ lượt chấm kế tiếp mới loại thật."
+    : undefined;
   const excludedIds = new Set(plan.exclude.map((a) => a.videoId));
   const link = `/ads/tiktok/campaign?id=${campaign.id}`;
 
@@ -437,9 +475,20 @@ async function applyAutoPlan(
   }
 
   const summary = summarizeAutoPlan(plan, cfg);
+  // B8 — so với lượt trước: kết quả y hệt thì không chuông lại (sổ PLANNED + lastRunSummary vẫn ghi đủ mỗi ngày).
+  const prevDigest = runDigestOf(rule.lastRunSummary);
+  const change = compareRunDigest(prevDigest, {
+    mode,
+    excludeIds: plan.exclude.map((a) => a.videoId),
+    grace: plan.counts.grace,
+    flag: plan.counts.flag,
+  });
   const runSummary = {
     mode,
     summary,
+    rehearsalNote,
+    unchanged: change.changed ? undefined : true,
+    excludeIds: plan.exclude.map((a) => a.videoId),
     exclude: plan.exclude.length,
     excludeSpend: Math.round(plan.excludeSpend),
     excludeOrders: plan.excludeOrders,
@@ -462,12 +511,17 @@ async function applyAutoPlan(
   const saveRun = (extra: Record<string, unknown> = {}) =>
     prisma.tiktokAdsAutoRule.update({
       where: { adsCampaignId: campaign.id },
-      data: { lastRunOn: today, lastRunAt: new Date(), lastRunSummary: { ...runSummary, ...extra } },
+      data: {
+        lastRunOn: today,
+        lastRunAt: new Date(),
+        lastRunSummary: { ...runSummary, ...extra },
+        lastRunConfig: { ...cfg } as Prisma.InputJsonObject,
+      },
     });
 
   if (plan.exclude.length === 0) {
     await saveRun();
-    if (plan.counts.flag > 0 || plan.counts.grace > 0) {
+    if (change.changed && (plan.counts.flag > 0 || plan.counts.grace > 0 || change.removed > 0)) {
       await notify(ownerId, {
         type: "tiktok-ads-auto",
         title: `${campaign.name}: ${mode === "live" ? "Trợ lý" : "Diễn tập"} hôm nay không loại video nào`,
@@ -501,12 +555,14 @@ async function applyAutoPlan(
   if (mode === "dry_run") {
     await prisma.adsActionLog.create({ data: { ...logBase, mode: "dry_run", status: "PLANNED" } });
     await saveRun();
-    await notify(ownerId, {
-      type: "tiktok-ads-auto",
-      title: `Diễn tập ${campaign.name}: sẽ loại ${items.length} video`,
-      body: summary,
-      link,
-    });
+    if (change.changed || rehearsalNote) {
+      await notify(ownerId, {
+        type: "tiktok-ads-auto",
+        title: `Diễn tập ${campaign.name}: sẽ loại ${items.length} video${runChangeLabel(prevDigest, change)}`,
+        body: rehearsalNote ? `${rehearsalNote} ${summary}` : summary,
+        link,
+      });
+    }
     return "planned";
   }
 

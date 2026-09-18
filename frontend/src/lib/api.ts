@@ -2775,6 +2775,8 @@ export interface TiktokAdsAutoRule {
   breakevenUnusable: string;
   status: TiktokAdsAutoStatus | null;
   lastRun: Record<string, unknown> | null;
+  /** Cấu hình mà lượt chấm thật gần nhất đã dùng; null = chưa có lượt nào ghi lại. Tự loại thật chỉ bật được với đúng cấu hình này. */
+  rehearsedConfig: TiktokAdsAutoConfig | null;
   others: { id: string; name: string; status: string; mode: TiktokAdsAutoMode }[];
 }
 

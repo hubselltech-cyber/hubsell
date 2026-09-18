@@ -2716,6 +2716,9 @@ model TiktokAdsAutoRule {
   lastRunOn      String   @default("")
   lastRunAt      DateTime?
   lastRunSummary Json?
+  /// B6: cấu hình mà lượt chấm THẬT gần nhất đã dùng (AutoRuleConfig). Tự loại thật chỉ bật / chạy được với đúng
+  /// cấu hình này — đổi số là phải diễn tập lại một lượt (auto-rules.ts unrehearsedFields). Lượt bị bỏ (A2) không ghi.
+  lastRunConfig  Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

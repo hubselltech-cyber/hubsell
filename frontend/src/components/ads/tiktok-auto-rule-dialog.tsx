@@ -13,6 +13,8 @@
 // hằng ngày thật lúc 12h trưa; Chạy thử tại chỗ KHÔNG tính — anh Trung chốt 18/09: khách
 // bật thật ngay, mất tiền rồi đổ oan cho Hubsell) và phải xác nhận lại tóm tắt lượt đó.
 // Backend cũng từ chối bật live khi chưa có lượt nào — nút mờ chỉ là lớp ngoài.
+// Lượt diễn tập phải chạy bằng ĐÚNG cấu hình sắp loại thật: đổi bất kỳ số nào đang tham gia chấm điểm thì thẻ
+// "Tự loại thật" khóa lại tới khi có một lượt chấm với cấu hình mới (backend trả 409 nếu cố lưu).
 // Video còn ĐANG HỌC trên TikTok không bao giờ bị xét; đồng hồ luật tính từ ngày
 // TikTok học xong (backend theo dõi hằng ngày).
 // ============================================================
@@ -123,6 +125,48 @@ function toConfig(f: FormState): TiktokAdsAutoConfig {
   };
 }
 
+/** Tên từng ô như khách thấy trong popup — để nói rõ "anh/chị vừa đổi ô nào". */
+const FIELD_LABEL: Record<keyof TiktokAdsAutoConfig, string> = {
+  roiTarget: "ROI mục tiêu",
+  windowDays: "Soi theo số ngày",
+  hardBasis: "Mức loại ROI tính theo",
+  ruleNoOrderOn: "Luật tiêu tiền mà 0 đơn",
+  ruleLowRoiOn: "Luật ROI dưới mức loại",
+  ruleCpaOn: "Luật chi phí mỗi đơn",
+  graceOn: "Bảo vệ video công thần",
+  minSpend: "Mức tiêu tối thiểu để xét",
+  spendNoOrder: "Mức tiêu mà 0 đơn",
+  roiHardPct: "Mức loại (% ROI mục tiêu)",
+  maxCpa: "Trần chi phí mỗi đơn",
+  graceMinOrders: "Số đơn công thần",
+  graceDays: "Số ngày ân hạn",
+  maxExcludePerDay: "Số video loại tối đa mỗi ngày",
+  minOrderingVideosKeep: "Số video ra đơn giữ lại",
+};
+
+/** Chép tay luật backend (auto-rules.ts unrehearsedFields): số đi kèm một luật ĐANG TẮT không tính là đổi cấu hình. */
+function unrehearsedFields(rehearsed: TiktokAdsAutoConfig | null, next: TiktokAdsAutoConfig): (keyof TiktokAdsAutoConfig)[] {
+  const effective = (c: TiktokAdsAutoConfig) => {
+    const e: Partial<TiktokAdsAutoConfig> = { ...c };
+    if (!c.ruleNoOrderOn) delete e.spendNoOrder;
+    if (!c.ruleLowRoiOn) {
+      delete e.hardBasis;
+      delete e.roiHardPct;
+    }
+    if (!c.ruleCpaOn) delete e.maxCpa;
+    if (!c.graceOn) {
+      delete e.graceMinOrders;
+      delete e.graceDays;
+    }
+    return e;
+  };
+  const b = effective(next);
+  if (!rehearsed) return Object.keys(b) as (keyof TiktokAdsAutoConfig)[];
+  const a = effective(rehearsed);
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof TiktokAdsAutoConfig>;
+  return [...keys].filter((k) => a[k] !== b[k]);
+}
+
 export function TiktokAutoRuleDialog({
   open,
   onOpenChange,
@@ -182,6 +226,13 @@ export function TiktokAutoRuleDialog({
 
   // Chỉ lượt chấm hằng ngày thật mới mở được Tự loại thật (Chạy thử không tính).
   const hadRun = Boolean(rule?.status?.lastRunOn);
+  // …và lượt đó phải chạy bằng ĐÚNG cấu hình đang nhập (B6). Ô nào khác thì nêu tên ô cho khách.
+  const changedFields = useMemo(() => (cfg && rule ? unrehearsedFields(rule.rehearsedConfig, cfg) : []), [cfg, rule]);
+  const canGoLive = hadRun && changedFields.length === 0;
+  // Đang chọn Tự loại thật mà sửa số → tự lùi về Diễn tập (dòng vàng bên dưới nói rõ vì sao); sửa lại đúng số cũ thì thẻ mở lại.
+  useEffect(() => {
+    if (form && mode === "live" && !canGoLive) setMode("dry_run");
+  }, [form, mode, canGoLive]);
   const lastSummary = preview?.summary ?? rule?.status?.lastRunSummary ?? null;
   // ROI hòa vốn (giá vốn + phí sàn thật, đơn đã đối soát) — căn cứ để soát hai ngưỡng ROI đang nhập.
   const breakevenRoi = rule?.breakeven?.roi ?? null;
@@ -293,7 +344,7 @@ export function TiktokAutoRuleDialog({
             <div>
               <div role="radiogroup" aria-label="Chế độ tự động loại video" className="grid grid-cols-3 gap-2">
                 {(["off", "dry_run", "live"] as TiktokAdsAutoMode[]).map((m) => {
-                  const disabled = m === "live" && !hadRun;
+                  const disabled = m === "live" && !canGoLive;
                   const active = mode === m;
                   const card = MODE_CARD[m];
                   const Icon = disabled ? Lock : card.icon;
@@ -305,7 +356,13 @@ export function TiktokAutoRuleDialog({
                       aria-checked={active}
                       disabled={disabled}
                       onClick={() => setMode(m)}
-                      title={disabled ? "Phải diễn tập ít nhất 1 ngày (có lượt chấm sau 12h trưa) rồi mới bật được" : undefined}
+                      title={
+                        !disabled
+                          ? undefined
+                          : hadRun
+                            ? "Cấu hình đang nhập chưa qua lượt diễn tập nào — lưu ở Diễn tập, đợi lượt chấm sau 12h trưa rồi mới bật được"
+                            : "Phải diễn tập ít nhất 1 ngày (có lượt chấm sau 12h trưa) rồi mới bật được"
+                      }
                       className={cn(
                         "flex min-w-0 flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-center transition-colors",
                         active ? card.active : "border-slate-200 bg-card text-slate-900 hover:border-slate-300 hover:bg-muted",
@@ -315,7 +372,7 @@ export function TiktokAutoRuleDialog({
                       <Icon className={cn("size-5", active ? "text-white" : disabled ? "text-slate-300" : card.iconIdle)} aria-hidden="true" />
                       <span className="text-sm leading-tight font-semibold">{TIKTOK_AUTO_MODE_LABEL[m]}</span>
                       <span className={cn("text-xs leading-tight", active ? "text-white/85" : disabled ? "text-slate-400" : "text-slate-500")}>
-                        {disabled ? "Cần diễn tập 1 ngày" : card.caption}
+                        {disabled ? (hadRun ? "Cấu hình chưa diễn tập" : "Cần diễn tập 1 ngày") : card.caption}
                       </span>
                     </button>
                   );
@@ -326,6 +383,22 @@ export function TiktokAutoRuleDialog({
                 {!hadRun && mode !== "live" && " Tự loại thật chỉ mở sau khi đã diễn tập ít nhất 1 ngày — lưu ở chế độ Diễn tập, đợi lượt chấm sau 12h trưa, xem chuông báo đúng rồi mới bật."}
               </p>
             </div>
+
+            {/* B6: đã có lượt chấm nhưng KHÔNG phải bằng cấu hình đang nhập → nói rõ ô nào khác và phải làm gì. */}
+            {hadRun && !canGoLive && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+                {rule.rehearsedConfig ? (
+                  <>
+                    Cấu hình đang nhập khác lượt chấm gần nhất ở: <span className="font-medium">{changedFields.map((k) => FIELD_LABEL[k]).join(" · ")}</span>.{" "}
+                  </>
+                ) : (
+                  "Lượt chấm trước chưa ghi lại cấu hình đã dùng. "
+                )}
+                Tự loại thật chỉ chạy với đúng cấu hình đã diễn tập
+                {rule.mode === "live" ? " — lưu bây giờ sẽ đưa chiến dịch về Diễn tập" : ""}; sau lượt chấm 12h trưa kế tiếp, xem chuông báo đúng rồi bật
+                lại.
+              </p>
+            )}
 
             {/* Ngưỡng đặt DƯỚI hòa vốn = máy để yên video đang lỗ. Chỉ NHẮC, không tự sửa số của khách. */}
             {breakevenWarnings.length > 0 && (

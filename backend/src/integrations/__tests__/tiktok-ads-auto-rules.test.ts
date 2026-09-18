@@ -3,8 +3,13 @@ import {
   AUTO_RULE_DEFAULTS,
   assessVideo,
   BREAKEVEN_MIN_COVERAGE_PCT,
+  compareRunDigest,
   daysBetween,
+  parseRehearsedConfig,
   resolveHardLevel,
+  runChangeLabel,
+  runDigestOf,
+  unrehearsedFields,
   videoDataProblem,
   planAutoExclusion,
   sanitizeAutoRuleConfig,
@@ -250,5 +255,60 @@ describe("videoDataProblem — tầng video báo 0 trong khi tầng chiến dị
   });
   it("Hubsell không có số tầng chiến dịch của khoảng đó → không kết luận được → cho qua", () => {
     expect(videoDataProblem({ cost: 300_000, orders: 0 }, null)).toBe("");
+  });
+});
+
+// B6 — Tự loại thật chỉ chạy với ĐÚNG cấu hình đã qua một lượt chấm thật.
+describe("unrehearsedFields — cấu hình đang lưu có phải cấu hình đã diễn tập không", () => {
+  it("chưa có lượt chấm nào (hoặc dòng cũ chưa ghi cấu hình) → coi như chưa diễn tập", () => {
+    expect(parseRehearsedConfig(null)).toBeNull();
+    expect(parseRehearsedConfig({ summary: "linh tinh" })).toBeNull();
+    expect(unrehearsedFields(null, cfg).length).toBeGreaterThan(0);
+  });
+  it("ghi ra Json rồi đọc lại phải tròn: đúng cấu hình đã diễn tập → không ô nào khác", () => {
+    const stored = JSON.parse(JSON.stringify(cfg));
+    expect(unrehearsedFields(parseRehearsedConfig(stored), cfg)).toEqual([]);
+  });
+  it("diễn tập bằng số nhẹ rồi sửa số nặng → chỉ đúng các ô đã đổi", () => {
+    const heavier = { ...cfg, roiHardPct: 90, maxExcludePerDay: 50 };
+    expect(unrehearsedFields(cfg, heavier).sort()).toEqual(["maxExcludePerDay", "roiHardPct"]);
+  });
+  it("số đi kèm một luật ĐANG TẮT không tham gia chấm điểm → sửa nó không tính là đổi cấu hình", () => {
+    const cpaOff = { ...cfg, ruleCpaOn: false };
+    expect(unrehearsedFields(cpaOff, { ...cpaOff, maxCpa: 10_000 })).toEqual([]);
+    // Bật luật đó lên thì vừa công tắc vừa con số đều là mới.
+    expect(unrehearsedFields(cpaOff, { ...cpaOff, ruleCpaOn: true, maxCpa: 10_000 }).sort()).toEqual(["maxCpa", "ruleCpaOn"]);
+  });
+});
+
+// B8 — chuông chỉ khi kết quả lượt chấm ĐỔI so với lượt trước.
+describe("compareRunDigest — lượt hôm nay có khác lượt trước không", () => {
+  const prev = { mode: "dry_run", excludeIds: ["a", "b"], grace: 1, flag: 2 };
+  it("chưa có lượt trước / lượt trước bị bỏ (A2) / lệnh bị sàn từ chối → luôn chuông", () => {
+    expect(runDigestOf(null)).toBeNull();
+    expect(runDigestOf({ mode: "dry_run", skipped: "bỏ lượt", exclude: 0 })).toBeNull();
+    expect(runDigestOf({ mode: "live", error: "TikTok từ chối", excludeIds: ["a"] })).toBeNull();
+    expect(compareRunDigest(null, prev).changed).toBe(true);
+  });
+  it("đúng các video hôm trước → không chuông lại (thứ tự khác nhau không tính)", () => {
+    expect(compareRunDigest(prev, { ...prev, excludeIds: ["b", "a"], flag: 5 })).toEqual({ changed: false, added: 0, removed: 0 });
+  });
+  it("danh sách đổi → chuông, tiêu đề nói thêm / bớt mấy video", () => {
+    const c = compareRunDigest(prev, { ...prev, excludeIds: ["b", "c", "d"] });
+    expect(c).toEqual({ changed: true, added: 2, removed: 1 });
+    expect(runChangeLabel(prev, c)).toBe(" (thêm 2, bớt 1 so với lượt trước)");
+    expect(runChangeLabel(null, c)).toBe("");
+  });
+  it("đổi chế độ (Diễn tập → Tự loại thật) thì lượt đầu của chế độ mới luôn chuông", () => {
+    expect(compareRunDigest(prev, { ...prev, mode: "live" }).changed).toBe(true);
+  });
+  it("không loại video nào: chỉ chuông khi số video ân hạn / cần xem đổi", () => {
+    const quiet = { mode: "dry_run", excludeIds: [], grace: 1, flag: 2 };
+    expect(compareRunDigest(quiet, { ...quiet }).changed).toBe(false);
+    expect(compareRunDigest(quiet, { ...quiet, flag: 3 }).changed).toBe(true);
+  });
+  it("đọc được lastRunSummary ghi TRƯỚC khi có excludeIds (dòng đang nằm trên prod): lấy mã từ videos", () => {
+    const d = runDigestOf({ mode: "dry_run", exclude: 2, grace: 0, flag: 1, videos: [{ videoId: "a" }, { videoId: "b" }] });
+    expect(d).toEqual({ mode: "dry_run", excludeIds: ["a", "b"], grace: 0, flag: 1 });
   });
 });

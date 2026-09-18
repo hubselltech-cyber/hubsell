@@ -987,7 +987,10 @@ export function TiktokCampaignPage() {
                       </ul>
                       {a.status === "FAILED" && a.error && <p className="text-xs text-red-500 sm:pl-[7.75rem]">{a.error}</p>}
                       {/* Dòng từng kẹt "đang gửi" rồi được đối chiếu lại: ghi chú cách chốt nằm ở cột error dù kết quả là thành công. */}
-                      {a.status === "SUCCESS" && a.error && <p className="text-xs text-slate-500 sm:pl-[7.75rem]">{a.error}</p>}
+                      {/* Lượt chấm hôm sau soi lại lệnh loại (B7): video VẪN đang phân phối = sàn không áp dụng lệnh → tô vàng cho nổi. */}
+                      {a.status === "SUCCESS" && a.error && (
+                        <p className={cn("text-xs sm:pl-[7.75rem]", a.error.includes("VẪN đang") ? "text-amber-700" : "text-slate-500")}>{a.error}</p>
+                      )}
                     </li>
                   );
                 })}
