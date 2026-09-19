@@ -20,7 +20,7 @@ import { prisma } from "../../lib/prisma";
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
-import type { InvoiceLine } from "./types";
+import type { InvoiceLine, InvoiceResult } from "./types";
 
 export interface IssueOrderResult {
   ok: boolean;
@@ -106,6 +106,18 @@ export function resolveInvoiceBuyer(order: {
     };
   }
   return { buyerName: "Bán cho người tiêu dùng" };
+}
+
+/**
+ * MST / số định danh NGƯỜI MUA do khách tự gõ trên sàn — chuẩn hóa (bỏ khoảng
+ * trắng, dấu chấm) rồi kiểm dạng TRƯỚC khi gửi NCC: 10 số (DN) · 10-3 / 13 số
+ * (đơn vị phụ thuộc) · 12 số (hộ KD, căn cước). Sai dạng thì NCC hoặc CQT sẽ từ
+ * chối sau khi đã đốt một số hóa đơn, nên chặn sớm với lời nhắn rõ.
+ * Trả chuỗi đã chuẩn hóa, hoặc null khi không hợp lệ.
+ */
+export function normalizeBuyerTaxCode(raw: string): string | null {
+  const v = raw.replace(/[\s.]/g, "");
+  return /^\d{10}(-?\d{3})?$|^\d{12}$/.test(v) ? v : null;
 }
 
 /** Đầu vào tối thiểu để dựng một dòng hóa đơn từ OrderItem. */
@@ -209,6 +221,9 @@ export function buildInvoiceLines(
       name: it.name,
       sku: it.sku,
       ...(unitName ? { unitName } : {}),
+      // Giá bán 0đ = quà tặng kèm đơn (xét giá GỐC của dòng, không xét sau khi
+      // trừ voucher — dòng bị voucher ăn hết vẫn là hàng bán, không phải quà).
+      ...(grosses[i] === 0 && it.quantity > 0 ? { promotion: true } : {}),
       quantity: it.quantity,
       unitPrice,
       vatRate,
@@ -319,6 +334,14 @@ export async function issueInvoiceForOrder(
   const vatTotal = lines.reduce((s, l) => s + l.vatAmount, 0);
   const totalAmount = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
   const buyer = resolveInvoiceBuyer(order);
+  let buyerTaxCodeError: string | null = null;
+  if (buyer.buyerTaxCode) {
+    const normalized = normalizeBuyerTaxCode(buyer.buyerTaxCode);
+    if (normalized) buyer.buyerTaxCode = normalized;
+    else {
+      buyerTaxCodeError = `Mã số thuế / số định danh người mua "${buyer.buyerTaxCode}" không đúng định dạng (khách điền sai trên sàn) — liên hệ khách lấy số đúng rồi lập hóa đơn cho đơn này trực tiếp trên meInvoice.`;
+    }
+  }
 
   const log = await prisma.invoiceLog.create({
     data: {
@@ -340,12 +363,22 @@ export async function issueInvoiceForOrder(
     },
   });
 
-  const result = await provider.createInvoice({
-    orderCode,
-    ...buyer,
-    lines,
-    totalAmount,
-  });
+  // MST người mua sai dạng → KHÔNG gọi NCC (khỏi đốt số hóa đơn cho một tờ chắc
+  // chắn bị từ chối) nhưng vẫn ghi sổ FAILED: seller thấy lý do ở Lịch sử, và
+  // worker tự động chỉ thử lại 1 lần/ngày thay vì mỗi 15 phút.
+  const result: InvoiceResult = buyerTaxCodeError
+    ? {
+        status: InvoiceLogStatus.FAILED,
+        errorMessage: buyerTaxCodeError,
+        errorCode: "HUBSELL_BUYER_TAXCODE_INVALID",
+        errorScope: "ORDER",
+      }
+    : await provider.createInvoice({
+        orderCode,
+        ...buyer,
+        lines,
+        totalAmount,
+      });
 
   const issued = result.status === InvoiceLogStatus.ISSUED;
   const [updated] = await prisma.$transaction([

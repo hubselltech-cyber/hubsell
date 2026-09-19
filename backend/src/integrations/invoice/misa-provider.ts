@@ -73,18 +73,51 @@ export class MisaInvoiceProvider implements InvoiceProvider {
         vatAmount,
       };
     } catch (err) {
+      const recovered = await this.recoverDuplicate(input, err);
+      if (recovered) return recovered;
       // Dịch mã lỗi NCC ra VIỆC CẦN LÀM + phân tầm ảnh hưởng (invoice-errors.ts)
       // — worker tự động dựa vào errorScope để ngắt mạch thay vì đốt cả lô.
       const explained = explainInvoiceError(err);
       // Token bị MISA thu hồi trước hạn (đổi mật khẩu…) → bỏ cache để lượt sau
       // đăng nhập lại thay vì cầm token chết tới hết 14 ngày.
-      if (explained.code === "TokenExpiredCode") clearMisaTokenCache();
+      if (explained.code === "TokenExpiredCode" || explained.code === "InvalidTokenCode") {
+        clearMisaTokenCache();
+      }
       return {
         status: InvoiceLogStatus.FAILED,
         errorMessage: explained.message,
         errorCode: explained.code ?? undefined,
         errorScope: explained.scope,
       };
+    }
+  }
+
+  /**
+   * MISA báo TRÙNG mã đơn = hóa đơn ĐÃ phát hành ở lần trước nhưng Hubsell không
+   * nhận được kết quả (đứt mạng / server restart giữa chừng) → log kẹt FAILED,
+   * ngày nào worker cũng thử lại và ngày nào cũng trùng, còn seller không thấy số
+   * hóa đơn nên dễ lập tay thêm một tờ. Tra ngược theo RefID: tờ đó còn sống thì
+   * NỐI LẠI vào log như một lần phát hành thành công; đã bị xóa/hủy bên MISA hoặc
+   * tra không ra thì để nguyên lỗi cho seller tự quyết.
+   */
+  private async recoverDuplicate(
+    input: CreateInvoiceInput,
+    err: unknown
+  ): Promise<InvoiceResult | null> {
+    const code = explainInvoiceError(err).code;
+    if (code !== "InvoiceDuplicated" && code !== "DuplicateInvoiceRefID") return null;
+    try {
+      const [found] = await getInvoiceStatuses([input.orderCode], this.cfg, "refId");
+      if (!found || found.isDeleted || found.publishStatus !== 1) return null;
+      if (!found.transactionId || !found.invoiceNo) return null;
+      return {
+        status: InvoiceLogStatus.ISSUED,
+        invoiceNo: found.invoiceNo,
+        transactionId: found.transactionId,
+        vatAmount: input.lines.reduce((s, l) => s + l.vatAmount, 0),
+      };
+    } catch {
+      return null; // tra không được thì rơi về thông điệp lỗi trùng như cũ
     }
   }
 

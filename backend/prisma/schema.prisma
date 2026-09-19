@@ -916,6 +916,10 @@ model InvoiceConfig {
   /// sàn đối soát xong (hành vi trước 19/09 — ít hóa đơn điều chỉnh hơn nhưng
   /// trễ vài ngày so với mốc luật).
   autoIssueTrigger String @default("DELIVERED")
+  /// Lúc chủ shop BẬT công tắc (19/09): worker chỉ xuất đơn giao từ 0h (giờ VN)
+  /// của ngày này — đơn cũ hơn có thể đã được lập hóa đơn tay bên NCC trước khi
+  /// dùng Hubsell, tự xuất là TRÙNG. NULL = bật từ trước 19/09, không mốc chặn.
+  autoIssueEnabledAt DateTime?
   /// NGẮT MẠCH tự động phát hành: worker gặp lỗi cấp TÀI KHOẢN (sai mật khẩu
   /// meInvoice, hết số hóa đơn, chứng thư hết hạn…) thì ghi mốc + lý do ở đây
   /// và ngừng quét shop này tới khi chủ shop lưu lại cấu hình / bấm chạy lại.

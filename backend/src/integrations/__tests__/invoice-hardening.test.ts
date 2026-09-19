@@ -5,7 +5,7 @@ import {
   InvoiceProviderError,
   providerErrorFromBody,
 } from "../invoice/invoice-errors";
-import { buildInvoiceLines } from "../invoice/issue-order";
+import { buildInvoiceLines, normalizeBuyerTaxCode } from "../invoice/issue-order";
 import {
   buildStandardInvoicePayload,
   isSalesInvoiceSeries,
@@ -14,6 +14,7 @@ import {
 import {
   decideAfterFailure,
   normalizeAutoIssueTrigger,
+  vnStartOfDay,
 } from "../../workers/invoice-auto-issue";
 
 // ============================================================
@@ -189,5 +190,93 @@ describe("Ngắt mạch worker tự động phát hành", () => {
     expect(normalizeAutoIssueTrigger("DELIVERED")).toBe("DELIVERED");
     expect(normalizeAutoIssueTrigger(undefined)).toBe("DELIVERED");
     expect(normalizeAutoIssueTrigger("abc")).toBe("DELIVERED");
+  });
+});
+
+describe("Hết số hóa đơn / chứng thư số (mã chính thức doc.meinvoice.vn)", () => {
+  it.each(["LicenseInfo_OutOfInvoice", "LicenseInfo_NotBuy", "LicenseInfo_Expired"])(
+    "%s → tầm TÀI KHOẢN + chỉ chỗ mua thêm",
+    (code) => {
+      const e = explainInvoiceError(new InvoiceProviderError("x", { code }));
+      expect(e.scope).toBe("ACCOUNT");
+      expect(e.message).toContain("Quản lý tài nguyên");
+    }
+  );
+  it("chứng thư số bị thu hồi / hết hạn → tầm TÀI KHOẢN", () => {
+    for (const code of ["CertRevocation", "SigningTimeNotInRegistration", "InvalidCertByRegistration"]) {
+      expect(explainInvoiceError(new InvoiceProviderError("x", { code })).scope).toBe("ACCOUNT");
+    }
+  });
+  it("mã báo thiếu trường kiểu InvoiceDetail_/RequireError_ → nêu tên trường", () => {
+    expect(
+      explainInvoiceError(new InvoiceProviderError("x", { code: "InvoiceDetail_UnitName" })).message
+    ).toContain('"UnitName"');
+  });
+});
+
+describe("Quà tặng 0đ", () => {
+  it("dòng giá 0 → promotion, payload ItemType 2; dòng thường vẫn 1", () => {
+    const lines = buildInvoiceLines(
+      [
+        { name: "Áo", sku: "A1", quantity: 1, price: 89_000, vatRate: null },
+        { name: "Quà", sku: "G1", quantity: 1, price: 0, vatRate: null },
+      ],
+      0
+    );
+    expect(lines.map((l) => l.promotion ?? false)).toEqual([false, true]);
+    const payload = buildStandardInvoicePayload(
+      { orderCode: "DH1", buyerName: "Bán cho người tiêu dùng", lines, totalAmount: 89_000 },
+      CFG
+    );
+    expect(payload.InvoiceData[0].OriginalInvoiceDetail.map((d) => d.ItemType)).toEqual([1, 2]);
+  });
+
+  it("dòng bị voucher người bán ăn hết KHÔNG phải quà tặng", () => {
+    const [l] = buildInvoiceLines(
+      [{ name: "Áo", sku: "A1", quantity: 1, price: 10_000, vatRate: null }],
+      0,
+      10_000
+    );
+    expect(l.amountWithoutVat).toBe(0);
+    expect(l.promotion).toBeUndefined();
+  });
+
+  it("hóa đơn điều chỉnh giữ ItemType 1 cho mọi dòng", () => {
+    const payload = buildStandardInvoicePayload(
+      {
+        orderCode: "DH1-DC1",
+        buyerName: "x",
+        lines: [
+          { name: "Quà", sku: "G1", promotion: true, quantity: -1, unitPrice: 0, vatRate: 0, amountWithoutVat: 0, vatAmount: 0 },
+        ],
+        totalAmount: 0,
+        adjustment: { orgInvNo: "00000001", orgInvSeries: "2C26TAA", orgInvDate: "2026-09-19", reason: "Khách trả hàng" },
+      },
+      CFG
+    );
+    expect(payload.InvoiceData[0].OriginalInvoiceDetail[0].ItemType).toBe(1);
+  });
+});
+
+describe("MST / số định danh người mua", () => {
+  it("chuẩn hóa khoảng trắng, dấu chấm; nhận 10 / 10-3 / 13 / 12 số", () => {
+    expect(normalizeBuyerTaxCode(" 0101 243 150 ")).toBe("0101243150");
+    expect(normalizeBuyerTaxCode("0101243150-001")).toBe("0101243150-001");
+    expect(normalizeBuyerTaxCode("0101243150001")).toBe("0101243150001");
+    expect(normalizeBuyerTaxCode("026.093.012.010")).toBe("026093012010");
+  });
+  it("sai dạng → null (chặn trước khi gọi NCC)", () => {
+    expect(normalizeBuyerTaxCode("12345")).toBeNull();
+    expect(normalizeBuyerTaxCode("A**b")).toBeNull();
+    expect(normalizeBuyerTaxCode("01012431501")).toBeNull();
+  });
+});
+
+describe("Mốc ngày bật tự động", () => {
+  it("0h giờ VN của ngày bật — bật 23:30 VN ngày 19 thì mốc là 00:00 VN ngày 19", () => {
+    // 19/09 23:30 VN = 19/09 16:30 UTC → 0h VN ngày 19 = 18/09 17:00 UTC
+    expect(vnStartOfDay(new Date("2026-09-19T16:30:00Z")).toISOString()).toBe("2026-09-18T17:00:00.000Z");
+    // 20/09 00:10 VN = 19/09 17:10 UTC → 0h VN ngày 20 = 19/09 17:00 UTC
+    expect(vnStartOfDay(new Date("2026-09-19T17:10:00Z")).toISOString()).toBe("2026-09-19T17:00:00.000Z");
   });
 });

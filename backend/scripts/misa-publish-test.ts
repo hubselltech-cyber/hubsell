@@ -59,6 +59,10 @@ const cfg: StandardInvoiceConfig = {
       const lines = buildInvoiceLines(
         [
           { name: "Sản phẩm test tích hợp Hubsell", sku: "HUBSELL-SKU-TEST", quantity: 2, price: 55000, vatRate: null },
+          // publish … gift → thêm một dòng quà tặng 0đ (tính chất "khuyến mại").
+          ...(process.argv.includes("gift")
+            ? [{ name: "Quà tặng kèm đơn (test)", sku: "HUBSELL-GIFT-TEST", quantity: 1, price: 0, vatRate: null }]
+            : []),
         ],
         Number(arg3 ?? 10),
         0,

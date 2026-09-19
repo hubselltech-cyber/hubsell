@@ -188,8 +188,8 @@ export function InvoiceIssueCard({
       !r.autoIssueEnabled
         ? "Đã tắt tự động phát hành."
         : r.autoIssueTrigger === "SETTLED"
-          ? "Đã BẬT tự động phát hành — đơn đã giao & đã đối soát sẽ được xuất mỗi 15 phút."
-          : "Đã BẬT tự động phát hành — đơn giao thành công sẽ được xuất mỗi 15 phút."
+          ? "Đã BẬT tự động phát hành — đơn giao từ hôm nay, sau khi sàn đối soát, sẽ được xuất mỗi 15 phút. Đơn cũ hơn xuất tay ở hàng chờ."
+          : "Đã BẬT tự động phát hành — đơn giao thành công từ hôm nay sẽ được xuất mỗi 15 phút. Đơn cũ hơn xuất tay ở hàng chờ."
     );
 
   const handleChangeTrigger = (trigger: InvoiceAutoIssueTrigger) =>
@@ -364,7 +364,9 @@ export function InvoiceIssueCard({
                         công</b> là mốc đúng luật. <b>Chờ sàn đối soát</b> thường
                         trễ thêm vài ngày; đổi lại đơn bị hoàn sớm chưa kịp xuất
                         nên ít phải lập hóa đơn điều chỉnh. Số tiền trên hóa đơn
-                        là tiền hàng, hai mốc cho ra cùng một con số.
+                        là tiền hàng, hai mốc cho ra cùng một con số. Tự động chỉ
+                        áp cho đơn giao <b>từ ngày bật</b> — đơn cũ hơn có thể đã
+                        được lập hóa đơn ở nơi khác nên để bạn xuất tay ở hàng chờ.
                       </>
                     }
                   />

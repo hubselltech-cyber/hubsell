@@ -242,7 +242,9 @@ export function buildStandardInvoicePayload(
     // KHÔNG nhân lại unitPrice × quantity kẻo lệch làm tròn.
     const amount = l.amountWithoutVat;
     return {
-      ItemType: 1, // hàng hóa thường
+      // Tính chất dòng (tài liệu: 1 HHDV · 2 khuyến mại · 3 chiết khấu · 4 ghi
+      // chú). Quà tặng 0đ → 2; hóa đơn ĐIỀU CHỈNH giữ 1 cho mọi dòng (dòng âm).
+      ItemType: l.promotion && !input.adjustment ? 2 : 1,
       SortOrder: i + 1,
       LineNumber: i + 1,
       ItemCode: l.sku,
@@ -588,16 +590,23 @@ export interface MisaInvoiceStatusItem {
 /**
  * Tra trạng thái theo danh sách TransactionID (mã tra cứu meInvoice trả khi
  * phát hành). Body là MẢNG TRẦN các mã — không bọc object (spec 23/08).
+ * by = "refId" (19/09, dò sandbox: inputType=2) tra theo RefID = MÃ ĐƠN Hubsell
+ * gửi lúc phát hành — dùng khi MISA báo trùng mà Hubsell chưa kịp nhận kết quả.
  */
 export async function getInvoiceStatuses(
   transactionIds: string[],
-  cfg?: StandardInvoiceConfig
+  cfg?: StandardInvoiceConfig,
+  by: "transactionId" | "refId" = "transactionId"
 ): Promise<MisaInvoiceStatusItem[]> {
   // Ký hiệu ký tự 2 = C → hóa đơn CÓ MÃ CQT (đổi cách đọc SendTaxStatus).
   const withCode = cfg?.invoiceSeries?.charAt(1) === "C";
   const raw = await misaPost(
     ENDPOINTS.status,
-    { inputType: "1", invoiceWithCode: String(withCode), invoiceCalcu: "false" },
+    {
+      inputType: by === "refId" ? "2" : "1",
+      invoiceWithCode: String(withCode),
+      invoiceCalcu: "false",
+    },
     transactionIds,
     cfg
   );

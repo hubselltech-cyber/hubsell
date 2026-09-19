@@ -11,12 +11,16 @@
  *        TRANSIENT — sự cố tạm (mạng, NCC bận, số đang cấp dở) — lượt sau thử lại.
  *
  * NGUỒN MÃ LỖI (đừng thêm mã đoán mò — ghi rõ nguồn khi bổ sung):
- *   [doc]  bảng mã lỗi trang "Tạo, ký và phát hành hóa đơn" doc.meinvoice.vn/api
+ *   [doc]  bảng "Mã lỗi thường gặp" doc.meinvoice.vn/api/Document/ErrorCode.html
+ *          + bảng mã lỗi trang "Phát hành hóa đơn" (đọc 19/09/2026)
  *   [live] bắt được bằng request thật vào sandbox (ngày ghi kèm)
  * Mã lạ không có trong bảng → giữ nguyên mã + mô tả tiếng Việt của chính MISA
  * (DescriptionErrorCode), scope ORDER; lưới "cùng mã lặp liên tiếp" ở worker sẽ
- * bắt trường hợp mã lạ thực chất là lỗi tài khoản (VD hết số hóa đơn đã mua —
- * chưa bắt được mã thật vì sandbox không giới hạn số).
+ * bắt trường hợp mã lạ thực chất là lỗi tài khoản.
+ *
+ * HẾT SỐ HÓA ĐƠN: meInvoice KHÔNG có API trả số hóa đơn còn lại (soát mục lục 3
+ * bộ tài liệu + dò cổng sandbox 19/09) — dấu hiệu duy nhất qua API là 3 mã
+ * LicenseInfo_* lúc phát hành. Vì thế 3 mã này phải nói thật rõ "mua thêm ở đâu".
  */
 
 export type InvoiceErrorScope = "ACCOUNT" | "ORDER" | "TRANSIENT";
@@ -85,6 +89,10 @@ interface Rule {
 }
 
 const CONFIG_PAGE = "Kết nối & Xuất hóa đơn → Cấu hình kết nối";
+const BUY_MORE =
+  "Mua thêm trên meInvoice (Hệ thống → Quản lý tài nguyên) rồi bấm Chạy lại — các đơn đang chờ sẽ được xuất bù.";
+const CERT_HELP =
+  "Kiểm tra chứng thư số tại meInvoice (Hệ thống → Chữ ký số) và tờ khai đăng ký sử dụng hóa đơn với Cơ quan Thuế.";
 
 /** Mã con của UnAuthorize — [live 19/09/2026] gọi /invoice/token với từng thông tin sai. */
 const AUTH_SUB_RULES: Record<string, string> = {
@@ -119,7 +127,79 @@ const RULES: Record<string, Rule> = {
     scope: "ACCOUNT",
     text: "Trên meInvoice đã có hóa đơn cùng ký hiệu mang ngày MUỘN HƠN hôm nay (thường do lập tay với ngày tương lai) nên mọi hóa đơn mới đều bị từ chối — xử lý hóa đơn đó trên meInvoice, hoặc chờ qua ngày đó.", // [doc]
   },
+  // Tài nguyên (số hóa đơn đã mua) — [doc]
+  LicenseInfo_OutOfInvoice: {
+    scope: "ACCOUNT",
+    text: `ĐÃ HẾT số hóa đơn đã mua trên meInvoice. ${BUY_MORE}`,
+  },
+  LicenseInfo_NotBuy: {
+    scope: "ACCOUNT",
+    text: `Tài khoản meInvoice của shop CHƯA MUA gói hóa đơn nào. ${BUY_MORE}`,
+  },
+  LicenseInfo_Expired: {
+    scope: "ACCOUNT",
+    text: `Gói hóa đơn trên meInvoice đã HẾT HẠN hoặc chưa thanh toán. ${BUY_MORE}`,
+  },
+  // Chứng thư số / tờ khai đăng ký với CQT — [doc]
+  CertRevocation: { scope: "ACCOUNT", text: `Chứng thư số của shop đã bị thu hồi. ${CERT_HELP}` },
+  InvalidCertByRegistration: {
+    scope: "ACCOUNT",
+    text: `Chứng thư số đang ký không có trong tờ khai đã đăng ký với Cơ quan Thuế. ${CERT_HELP}`,
+  },
+  HasRegistrationStopUseCert: {
+    scope: "ACCOUNT",
+    text: `Shop đã có tờ khai NGỪNG sử dụng chứng thư số này. ${CERT_HELP}`,
+  },
+  SigningTimeNotInRegistration: {
+    scope: "ACCOUNT",
+    text: `Chứng thư số đã hết hạn (hoặc chưa tới ngày hiệu lực) so với đăng ký ở Cơ quan Thuế. ${CERT_HELP}`,
+  },
+  X509Certificate: { scope: "ACCOUNT", text: `meInvoice không tìm thấy chứng thư số để ký. ${CERT_HELP}` },
+  DeclarationNotExist: {
+    scope: "ACCOUNT",
+    text: "Shop chưa có tờ khai đăng ký sử dụng hóa đơn điện tử trên meInvoice — lập và gửi tờ khai (mẫu 01/ĐKTĐ-HĐĐT) trước khi phát hành.",
+  },
+  InvalidDeclaration: {
+    scope: "ACCOUNT",
+    text: "Tờ khai đăng ký sử dụng hóa đơn điện tử chưa được Cơ quan Thuế chấp nhận — theo dõi trên meInvoice, được chấp nhận rồi bấm Chạy lại.",
+  },
+  ExistDeclarationNotReceive: {
+    scope: "ACCOUNT",
+    text: "Đang có tờ khai thay đổi thông tin chờ Cơ quan Thuế xử lý nên meInvoice tạm khóa phát hành — chờ CQT chấp nhận rồi bấm Chạy lại.",
+  },
+  InvoiceTemplateNotValidInDeclaration: {
+    scope: "ACCOUNT",
+    text: `Tờ khai đăng ký với Cơ quan Thuế không có LOẠI hóa đơn của ký hiệu đang chọn — chọn lại ký hiệu tại ${CONFIG_PAGE} hoặc bổ sung tờ khai.`,
+  },
+  InvoiceTemplateNotExist: {
+    scope: "ACCOUNT",
+    text: `Ký hiệu hóa đơn đang chọn không còn trên meInvoice — bấm "Tải ký hiệu" chọn lại tại ${CONFIG_PAGE}.`,
+  },
+  ExistsInvoiceNextYear: {
+    scope: "ACCOUNT",
+    text: "Trên meInvoice đã có hóa đơn của NĂM SAU cùng ký hiệu nên không phát hành tiếp được cho năm nay — xử lý hóa đơn đó trên meInvoice.",
+  },
+  InvalidInvoiceDate: {
+    scope: "ACCOUNT",
+    text: "Trên meInvoice đã có hóa đơn cùng ký hiệu mang ngày MUỘN HƠN hôm nay (thường do lập tay với ngày tương lai) nên mọi hóa đơn mới đều bị từ chối — xử lý hóa đơn đó trên meInvoice, hoặc chờ qua ngày đó.",
+  },
   // ---- Riêng đơn này ----
+  TaxRateInfo_VATRateName: {
+    scope: "ORDER",
+    text: `Thuế suất không được meInvoice chấp nhận — kiểm tra thuế suất mặc định tại ${CONFIG_PAGE} và thuế suất khai riêng ở sản phẩm.`,
+  },
+  TaxReductionDateInValid: {
+    scope: "ORDER",
+    text: `Mức thuế suất được giảm (8%) không còn hiệu lực ở ngày lập hóa đơn — đổi thuế suất tại ${CONFIG_PAGE}.`,
+  },
+  XMLTooLong: {
+    scope: "ORDER",
+    text: "Hóa đơn của đơn này quá dài (quá nhiều dòng hàng) — lập hóa đơn cho đơn này trực tiếp trên meInvoice.",
+  },
+  InvoiceCannotAdjust: {
+    scope: "ORDER",
+    text: "Hóa đơn gốc đã bị hủy hoặc thay thế trên meInvoice nên không lập điều chỉnh được nữa.",
+  },
   InvoiceIssuedDate: {
     scope: "ORDER",
     text: "meInvoice báo ngày hóa đơn không hợp lệ — thử xuất lại; còn lặp thì báo Hubsell.", // [doc]
@@ -157,11 +237,25 @@ const RULES: Record<string, Rule> = {
     scope: "TRANSIENT",
     text: "Phiên đăng nhập meInvoice hết hạn — hệ thống tự đăng nhập lại ở lượt sau.", // [doc]
   },
+  InvalidTokenCode: {
+    scope: "TRANSIENT",
+    text: "Phiên đăng nhập meInvoice không còn hợp lệ — hệ thống tự đăng nhập lại ở lượt sau.", // [doc]
+  },
+  Exception: {
+    scope: "TRANSIENT",
+    text: "meInvoice gặp sự cố phía máy chủ MISA — hệ thống sẽ tự thử lại.", // [doc] "Không rõ nguyên nhân"
+  },
+  CreateInvoiceDataError: {
+    scope: "TRANSIENT",
+    text: "meInvoice tạo hóa đơn bị lỗi không xác định phía MISA — hệ thống sẽ tự thử lại.", // [doc]
+  },
 };
 
 /** "RequireInfo_BuyerAddress", "Invalid_[Invoice.TotalSaleAmount]" → tên trường. */
 function fieldOf(code: string): string | null {
-  const m = /^RequireInfo_(.+)$/.exec(code) ?? /^Invalid_\[?([^\]]+)\]?$/.exec(code);
+  const m =
+    /^(?:RequireInfo|RequireError|InvoiceDetail)_(.+)$/.exec(code) ??
+    /^Invalid_\[?([^\]]+)\]?$/.exec(code);
   return m ? m[1] : null;
 }
 

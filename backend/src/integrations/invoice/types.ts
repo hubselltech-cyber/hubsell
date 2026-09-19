@@ -33,6 +33,12 @@ export interface InvoiceLine {
    * shop. Vắng mặt ở snapshot InvoiceLog.lines đời trước 19/09.
    */
   unitName?: string;
+  /**
+   * Dòng QUÀ TẶNG / hàng khuyến mại không thu tiền (giá bán 0đ trên đơn sàn) —
+   * vẫn phải có mặt trên hóa đơn nhưng ghi đúng tính chất "khuyến mại" thay vì
+   * một dòng hàng bán giá 0. Adapter map sang tính chất dòng của NCC.
+   */
+  promotion?: boolean;
   quantity: number;
   /** Đơn giá CHƯA thuế (bóc từ giá bán — có thể lẻ 2 số thập phân khi SL>1). */
   unitPrice: number;

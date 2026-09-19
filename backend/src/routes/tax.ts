@@ -727,12 +727,16 @@ router.put("/auto-issue", async (req: AuthRequest, res, next) => {
     }
     const enabled = typeof body.enabled === "boolean" ? body.enabled : existing.autoIssueEnabled;
     const clearPause = body.resume === true || body.enabled === true;
+    // Chuyển TẮT → BẬT: ghi mốc để worker chỉ xuất đơn giao từ ngày này (đơn cũ
+    // có thể đã được lập hóa đơn tay bên NCC — xem worker invoice-auto-issue).
+    const turningOn = body.enabled === true && !existing.autoIssueEnabled;
     const saved = await prisma.invoiceConfig.update({
       where: { id: existing.id },
       data: {
         autoIssueEnabled: enabled,
         ...(body.trigger !== undefined ? { autoIssueTrigger: body.trigger as string } : {}),
         ...(clearPause ? { autoIssuePausedAt: null, autoIssuePauseReason: null } : {}),
+        ...(turningOn ? { autoIssueEnabledAt: new Date() } : {}),
       },
       select: {
         autoIssueEnabled: true,

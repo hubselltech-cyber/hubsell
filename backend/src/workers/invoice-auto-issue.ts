@@ -13,6 +13,10 @@
 //       SETTLED   — chờ thêm isSettled = true (luật cũ trước 19/09): ít hóa đơn
 //                   điều chỉnh hơn vì đơn hoàn sớm chưa kịp xuất, đổi lại trễ
 //                   vài ngày so với mốc luật.
+//   • CHỈ đơn giao từ 0h (giờ VN) của NGÀY BẬT công tắc (autoIssueEnabledAt —
+//     19/09): đơn cũ hơn có thể đã được chủ shop lập hóa đơn tay trên meInvoice
+//     trước khi dùng Hubsell → tự xuất là trùng, mà hóa đơn đã gửi CQT thì
+//     không xóa được. Đơn cũ vẫn nằm ở hàng chờ để xuất tay có chủ đích.
 //   • Chưa có hóa đơn PENDING/ISSUED, và KHÔNG có bản ghi hóa đơn nào trong
 //     24h gần nhất — đơn vừa FAILED sẽ được thử lại tối đa 1 lần/ngày thay vì
 //     spam NCC mỗi 15 phút.
@@ -60,6 +64,13 @@ export function normalizeAutoIssueTrigger(v: unknown): AutoIssueTrigger {
   return v === "SETTLED" ? "SETTLED" : "DELIVERED";
 }
 
+/** 0h giờ VN (UTC+7) của ngày chứa mốc `at` — trả về dạng Date UTC. */
+export function vnStartOfDay(at: Date): Date {
+  const VN = 7 * 3600 * 1000;
+  const vn = new Date(at.getTime() + VN);
+  return new Date(Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - VN);
+}
+
 export type FailureDecision = "CONTINUE" | "STOP_RUN" | "PAUSE";
 
 /**
@@ -104,6 +115,7 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
         meinvoiceUsername: true,
         meinvoicePassword: true,
         autoIssueTrigger: true,
+        autoIssueEnabledAt: true,
         owner: { select: { email: true } },
       },
     });
@@ -123,6 +135,9 @@ export async function runInvoiceAutoIssueOnce(): Promise<void> {
           channel: { userId: cfg.ownerId },
           shippingStatus: ShippingStatus.DELIVERED,
           ...(trigger === "SETTLED" ? { isSettled: true } : {}),
+          ...(cfg.autoIssueEnabledAt
+            ? { deliveredAt: { gte: vnStartOfDay(cfg.autoIssueEnabledAt) } }
+            : {}),
           items: { some: {} },
           invoiceLogs: {
             none: {
