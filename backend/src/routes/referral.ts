@@ -27,10 +27,10 @@ import { invalidatePlanState } from "../services/plan-enforcement";
 
 const router = Router();
 
-// Link chia sẻ trỏ về LANDING (hubsell.tech) — trang đăng ký landing dẫn tiếp
-// sang app kèm ?ref=. Dev local chưa chạy landing thì đổi qua env cho tiện test.
+// Link chia sẻ trỏ về LANDING (hubsell.vn từ 19/09/2026; hubsell.tech vẫn chạy
+// song song) — landing chuyển hướng /register sang app /login kèm ?ref=. Dev local chưa chạy landing thì đổi qua env cho tiện test.
 const REFERRAL_LINK_BASE =
-  process.env.REFERRAL_LINK_BASE ?? "https://hubsell.tech/register";
+  process.env.REFERRAL_LINK_BASE ?? "https://hubsell.vn/register";
 
 /**
  * GÓI GIA HẠN — từ 22/08 đọc BẢNG GIÁ THẬT (ServicePlan, admin quản trên
