@@ -132,7 +132,7 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   tin của từng sản phẩm. ĐỪNG dựng cột "Sàn gợi ý" theo từng sản phẩm (cả bảng sẽ cùng một số, khách tưởng là phân tích riêng). Chỉ
   dùng làm số tham khảo phụ trong hộp tạo / chỉnh chiến dịch, ghi rõ "mức sàn gợi ý chung". Hòa vốn của Hubsell mới là số theo sản phẩm.
 - ⛔ **`POST /campaign/gmv_max/update/` BỊ SÀN TỪ CHỐI trên gian nhà (probe 19/09/2026, anh Trung tự chạy script
-  `scripts/out/tiktok-ads-write-probe.ts` — Claude Code chặn Claude tự bắn lệnh ghi lên tài khoản quảng cáo thật):** TC076 (đang
+  một script tạm trong `scripts/out/` (đã xóa sau khi thử; lệnh: đọc info → POST update budget +1.000 → đọc lại → trả về) — Claude Code chặn Claude tự bắn lệnh ghi lên tài khoản quảng cáo thật):** TC076 (đang
   tắt), chỉ đổi `budget` 2.000.000 → 2.001.000 → `40002 Shop must belong to a Business Center account.` 3/3 lần, kể cả khi gửi
   kèm `store_id` + `store_authorized_bc_id` của chính chiến dịch. Không có gì đổi trên sàn. request_id:
   `2026091909433524649A5FA30B9C677F29` · `2026091909434990F655C80F26AF6A412B` · `202609190946523DA1E3DE25002581E223`.

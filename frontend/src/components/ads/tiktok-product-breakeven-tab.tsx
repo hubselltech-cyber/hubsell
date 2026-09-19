@@ -44,16 +44,8 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZES = [20, 50, 100];
 const TH = "whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2 font-medium";
 
-/** "ads_losing" chỉ có ở FE: ghép số quảng cáo thật (endpoint riêng, gọi TikTok) với mốc hòa vốn của sản phẩm. */
-type RowVerdict = TiktokProductBreakevenVerdict | "ads_losing";
+type RowVerdict = TiktokProductBreakevenVerdict;
 type AdsOf = TiktokProductAdsData["products"][string] | undefined;
-
-/** Quảng cáo ĐANG LỖ: 30 ngày qua có tiêu tiền và ROI thật thấp hơn hòa vốn ĐÃ TIN ĐƯỢC của sản phẩm. Đứng trên mọi nhận định "ổn". */
-function rowVerdict(p: TiktokProductBreakevenRow, ads: AdsOf): RowVerdict {
-  const trusted = p.verdict === "ok" || p.verdict === "target_below";
-  if (trusted && ads && ads.cost > 0 && ads.roi != null && p.breakeven.roi != null && ads.roi < p.breakeven.roi) return "ads_losing";
-  return p.verdict;
-}
 
 /** Màu nhãn chẩn đoán — cùng bảng màu với nhãn kết luận của trang chiến dịch. */
 const ADVICE_TONE: Record<"warn" | "info" | "ok" | "muted", string> = {
@@ -70,7 +62,6 @@ function decidedAdvice(ads: AdsOf) {
 }
 
 const VERDICT: Record<RowVerdict, { label: string; className: string }> = {
-  ads_losing: { label: "Quảng cáo đang lỗ", className: "bg-rose-50 text-red-500" },
   ok: { label: "Đã có mốc hòa vốn", className: "bg-emerald-50 text-emerald-700" },
   target_below: { label: "Mục tiêu dưới hòa vốn", className: "bg-rose-50 text-red-500" },
   loss: { label: "Lỗ trước quảng cáo", className: "bg-rose-50 text-red-500" },
@@ -84,11 +75,11 @@ type QuickKey = "all" | "attention" | "running" | "no_cost" | "waiting";
 const isRunning = (p: TiktokProductBreakevenRow) => p.campaigns.some((c) => c.status === "ongoing");
 const inQuick = (k: QuickKey, v: RowVerdict, p: TiktokProductBreakevenRow, ads: AdsOf) =>
   k === "all" ||
-  (k === "attention" && (v === "ads_losing" || v === "target_below" || v === "loss" || decidedAdvice(ads)?.tone === "warn")) ||
+  (k === "attention" && (v === "target_below" || v === "loss" || decidedAdvice(ads)?.tone === "warn")) ||
   (k === "running" && isRunning(p)) ||
   (k === "no_cost" && v === "no_cost") ||
   (k === "waiting" && (v === "low_sample" || v === "no_settled"));
-const hasBreakeven = (v: RowVerdict) => v === "ok" || v === "ads_losing" || v === "target_below";
+const hasBreakeven = (v: RowVerdict) => v === "ok" || v === "target_below";
 
 type SortKey = "revenue" | "margin" | "roi" | "adCost";
 const SORT_COLUMNS: { key: SortKey; label: string; title?: string }[] = [
@@ -131,26 +122,21 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
     staleTime: 10 * 60_000,
   });
   const ads = adsQ.data;
-  const verdictOf = useMemo(() => {
-    const m = new Map<string, RowVerdict>();
-    for (const p of products) m.set(p.productId, rowVerdict(p, ads?.products[p.productId]));
-    return m;
-  }, [products, ads]);
 
   useEffect(() => setPage(0), [quick, search, sort, channelId]);
 
   const counts = useMemo(() => {
     const c: Record<QuickKey, number> = { all: products.length, attention: 0, running: 0, no_cost: 0, waiting: 0 };
-    for (const p of products) for (const k of ["attention", "running", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, verdictOf.get(p.productId) ?? p.verdict, p, ads?.products[p.productId])) c[k]++;
+    for (const p of products) for (const k of ["attention", "running", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, p.verdict, p, ads?.products[p.productId])) c[k]++;
     return c;
-  }, [products, verdictOf, ads]);
-  const withBreakeven = useMemo(() => products.filter((p) => hasBreakeven(verdictOf.get(p.productId) ?? p.verdict)).length, [products, verdictOf]);
+  }, [products, ads]);
+  const withBreakeven = useMemo(() => products.filter((p) => hasBreakeven(p.verdict)).length, [products]);
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const sign = sort.dir === "desc" ? -1 : 1;
     return products
-      .filter((p) => inQuick(quick, verdictOf.get(p.productId) ?? p.verdict, p, ads?.products[p.productId]) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
+      .filter((p) => inQuick(quick, p.verdict, p, ads?.products[p.productId]) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
       .sort((a, b) => {
         const x = sortValue(a, sort.key, ads?.products[a.productId]);
         const y = sortValue(b, sort.key, ads?.products[b.productId]);
@@ -159,7 +145,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
         if (x == null || y == null) return x == null && y == null ? sold(b) - sold(a) : x == null ? 1 : -1;
         return sign * (x - y) || sold(b) - sold(a);
       });
-  }, [products, quick, search, sort, verdictOf, ads]);
+  }, [products, quick, search, sort, ads]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -328,17 +314,12 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                   {pageRows.map((p) => {
                     const has = p.breakeven.orders > 0;
                     const a = ads?.products[p.productId];
-                    const v = verdictOf.get(p.productId) ?? p.verdict;
+                    const v = p.verdict;
                     // Sản phẩm ĐANG CHẠY quảng cáo: nhãn + lý do = đúng chẩn đoán của trang chiến dịch (hai trang nói cùng một câu — anh Trung 19/09).
                     const adv = decidedAdvice(a);
                     const vd = adv ? { label: adv.label, className: ADVICE_TONE[adv.tone] } : VERDICT[v];
                     const camp = p.campaigns[0];
                     const runningCamp = p.campaigns.find((c) => c.status === "ongoing" && c.roasTarget != null);
-                    const reason = adv
-                      ? adv.text
-                      : v === "ads_losing" && a && a.roi != null && p.breakeven.roi != null
-                        ? `30 ngày qua quảng cáo của sản phẩm tiêu ${formatVND(a.cost)}, ROI ${formatRoi(a.roi)} — thấp hơn hòa vốn ${formatRoi(p.breakeven.roi)}: đang ăn vào vốn. Doanh thu GMV Max gồm cả đơn tự nhiên nên thực tế còn thấp hơn.`
-                        : p.reason;
                     // Nhịp 7 ngày so với nhịp trung bình 30 ngày (quy về /ngày). Mốc 1,2 / 0,8 và "tồn dưới 14 ngày" dùng ĐÚNG số của bộ
                     // chấm gợi ý Shopee (ads-recommend.ts: momentum, minCoverDays) — cùng một khái niệm thì cùng một ngưỡng.
                     const pace = p.units30d > 0 ? p.units7d / 7 / (p.units30d / 30) : null;
@@ -425,7 +406,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                                 {a && a.cost > 0 && (
                                   <>
                                     {" · thực "}
-                                    <span className={cn("font-medium tabular-nums", v === "ads_losing" ? "text-red-500" : "text-slate-700")}>{formatRoi(a.roi)}</span>
+                                    <span className={cn("font-medium tabular-nums", adv?.kind === "losing" ? "text-red-500" : "text-slate-700")}>{formatRoi(a.roi)}</span>
                                   </>
                                 )}
                                 {p.campaigns.length > 1 && ` · +${p.campaigns.length - 1}`}
@@ -442,7 +423,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                             </PopoverTrigger>
                             <PopoverContent align="end" className="w-96 gap-1.5 p-3 text-sm">
                               <p className="font-semibold text-slate-900">{vd.label}</p>
-                              {adv ? <TiktokAdviceBody advice={adv} /> : <p className="text-slate-700">{reason}</p>}
+                              {adv ? <TiktokAdviceBody advice={adv} /> : <p className="text-slate-700">{p.reason}</p>}
                               <p className="text-xs text-slate-500">
                                 {formatNumber(p.breakeven.orders)} đơn đã đối soát
                                 {p.breakeven.pendingOrders > 0 && ` · +${formatNumber(p.breakeven.pendingOrders)} đang giao / chờ đối soát (chưa tính)`}
@@ -455,7 +436,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                               {/* Sản phẩm đang nằm trong chiến dịch CHẠY: ROI mục tiêu chỉ sửa được trong Seller Center (chiến dịch tạo ở đó
                                   không sửa được qua API — probe 19/09/2026) → đưa khách tới đúng nơi, kèm tên chiến dịch cần tìm. */}
                               {adv && a?.adviceCampaign && <p className="text-xs text-slate-500">Theo chiến dịch {a.adviceCampaign} · số quảng cáo 30 ngày gần nhất.</p>}
-                              {runningCamp && (adv ? adv.editInSellerCenter : v === "target_below" || v === "ads_losing" || v === "ok") && (
+                              {runningCamp && (adv ? adv.editInSellerCenter : v === "target_below" || v === "ok") && (
                                 <a
                                   href={TIKTOK_SELLER_CENTER_ADS_URL}
                                   target="_blank"
