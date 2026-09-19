@@ -141,8 +141,10 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   `is_owner_bc: false`, `store_role: AD_PROMOTION`, `store_authorized_bc_id` = `7239164658173722625` (BC "TIKTOK_ADS_1"); nhưng
   `/campaign/gmv_max/info/` của TC054 lẫn TC076 lại mang `store_authorized_bc_id` = `7147263165355589633` (một BC KHÁC). Lệnh loại /
   khôi phục video (`creative/update`) thì vẫn chạy với đúng tài khoản này. ★ Cùng ngày anh Trung SỬA TAY ngân sách TC076 trên SELLER CENTER (tư cách chủ shop) thì ĐƯỢC
-  (API đọc lại ra 2.001.000) — nhưng Seller Center ≠ tài khoản quảng cáo, nên CHƯA chứng minh TKQC sửa được; còn thiếu phép thử sửa
-  trong Ads Manager bằng đúng TKQC. Chưa biết điều kiện chính xác — đừng đoán; ticket hỏi
+  (API đọc lại ra 2.001.000) — nhưng Seller Center ≠ tài khoản quảng cáo, nên không chứng minh TKQC sửa được. ★ Phép thử chốt 19/09: Ads Manager của đúng
+  TKQC KHÔNG liệt kê chiến dịch TC nào (chỉ trang chào "Create campaign") ⇒ **chiến dịch GMV Max tạo từ SELLER CENTER: API đọc được,
+  loại / khôi phục video được, nhưng KHÔNG sửa được từ phía tài khoản quảng cáo.** Đa số seller nhỏ tạo GMV Max ngay trong Seller
+  Center → nút sửa / tạo chiến dịch qua API chỉ phục vụ được nhóm khách chạy qua Ads Manager + shop thuộc BC của họ. Chưa biết điều kiện chính xác — đừng đoán; ticket hỏi
   TikTok soạn sẵn ở `docs/TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md` mục 7. Trước khi có trả lời: KHÔNG code nút sửa / tạo chiến dịch.
 - CHƯA probe: `/campaign/gmv_max/create/`, `/campaign/status/update/`.
 
