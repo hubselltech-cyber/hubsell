@@ -17,6 +17,7 @@
 import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
+import { SecretBoxError } from "../../lib/secret-box";
 import { getInvoiceProvider } from "./index";
 import type { InvoiceErrorScope } from "./invoice-errors";
 import { isSalesInvoiceSeries } from "./misa-einvoice";
@@ -234,6 +235,26 @@ export function buildInvoiceLines(
 }
 
 /**
+ * Bí mật NCC đã lưu KHÔNG GIẢI MÃ ĐƯỢC (khóa máy chủ bị đổi/mất, hoặc dữ liệu bị
+ * can thiệp) → kết quả chặn dùng chung cho phát hành lẫn điều chỉnh. Đơn nào
+ * cũng sẽ lỗi y hệt nên xếp tầm TÀI KHOẢN (worker tự ngắt mạch); chặn TRƯỚC khi
+ * ghi sổ, không gọi NCC. Chi tiết kỹ thuật chỉ vào log máy chủ — câu trả cho
+ * chủ shop chỉ nói việc cần làm. Trả null nếu `err` không phải lỗi giải mã.
+ */
+export function secretUnreadableResult(ownerId: string, err: unknown): IssueOrderResult | null {
+  if (!(err instanceof SecretBoxError)) return null;
+  console.error(`[SecretBox] Shop ${ownerId}: ${err.code} — ${err.message}`);
+  return {
+    ok: false,
+    httpStatus: 500,
+    error:
+      "Hubsell không đọc được mật khẩu nhà cung cấp hóa đơn đã lưu — nhập lại mật khẩu tại Kết nối & Xuất hóa đơn → Cấu hình kết nối rồi Lưu. Nếu vẫn lỗi, báo Hubsell.",
+    errorCode: "HUBSELL_SECRET_UNREADABLE",
+    errorScope: "ACCOUNT",
+  };
+}
+
+/**
  * @param channelWhere Phạm vi gian hàng của người gọi — route truyền
  *        channelScope(req) (đã gồm giới hạn nhân viên), worker truyền
  *        {userId: ownerId} (toàn shop).
@@ -288,7 +309,14 @@ export async function issueInvoiceForOrder(
     };
   }
 
-  const provider = await getInvoiceProvider(ownerId, order.channelId);
+  let provider: Awaited<ReturnType<typeof getInvoiceProvider>>;
+  try {
+    provider = await getInvoiceProvider(ownerId, order.channelId);
+  } catch (err) {
+    const blocked = secretUnreadableResult(ownerId, err);
+    if (!blocked) throw err;
+    return blocked;
+  }
   if (!provider) {
     return {
       ok: false,

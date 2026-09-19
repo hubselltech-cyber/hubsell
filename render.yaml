@@ -63,8 +63,14 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true # Render tự sinh chuỗi ngẫu nhiên bí mật
-      - key: MISA_API_BASE
-        value: https://testapi.meinvoice.vn/api/v3
+      # MISA_API_BASE: KHÔNG khai — code mặc định đúng cổng developer.misa.vn. (Dòng
+      # cũ trỏ testapi.meinvoice.vn là host CHẾT, đã gỡ tay trên Render 24/08; gỡ
+      # nốt ở đây 19/09 để đồng bộ blueprint không cài lại.)
+      # ---- Mã hóa bí mật NCC hóa đơn trong DB (backend/src/lib/secret-box.ts) ----
+      # Dạng "k1:<base64 32 byte>"; cách tạo + CẤT DỰ PHÒNG + xoay khóa:
+      # docs/BAO-MAT-MA-HOA-BI-MAT.md. MẤT KHÓA = khách phải nhập lại mật khẩu.
+      - key: SECRET_ENC_KEYS
+        sync: false
       - key: MISA_CLIENT_ID
         sync: false
       - key: MISA_CLIENT_SECRET

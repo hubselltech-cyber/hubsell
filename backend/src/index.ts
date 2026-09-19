@@ -3,6 +3,8 @@ import fs from "fs";
 import http from "http";
 import https from "https";
 import { createApp } from "./app";
+import { backfillInvoiceSecrets } from "./integrations/invoice/config-secrets";
+import { checkSecretBoxAtBoot, secretBoxEnabled } from "./lib/secret-box";
 import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
 
@@ -17,6 +19,26 @@ const PORT = Number(process.env.PORT) || 4000;
 // ============================================================
 const role = resolveHubsellRole();
 console.log(`[Role] Tiến trình chạy vai "${role}"`);
+
+// ============================================================
+// MÃ HÓA BÍ MẬT TRONG DB (19/09/2026 — lib/secret-box.ts). Kiểm NGAY lúc khởi
+// động, TRƯỚC khi mở cổng / chạy worker: SECRET_ENC_KEYS sai định dạng (hoặc
+// SECRET_ENC_REQUIRED=1 mà thiếu khóa) thì ném lỗi cho tiến trình DỪNG — Render
+// giữ bản đang chạy; thà không lên còn hơn lên mà ghi mật khẩu khách ra chữ thường.
+// Có khóa → chuyển đổi dữ liệu cũ ở nền (lặp lại vô hại, an toàn khi nhiều tiến
+// trình cùng chạy — xem backfillInvoiceSecrets). Log chỉ in SỐ ĐẾM.
+// ============================================================
+console.log(checkSecretBoxAtBoot());
+if (secretBoxEnabled()) {
+  void backfillInvoiceSecrets()
+    .then((r) =>
+      console.log(
+        `[SecretBox] Chuyển đổi bí mật NCC hóa đơn: quét ${r.scanned} ô, mã hóa ${r.encrypted}, lỗi ${r.failed}` +
+          (r.failed > 0 ? " ⚠️ có ô không xử lý được (thiếu khóa cũ trong SECRET_ENC_KEYS?) — ĐÃ GIỮ NGUYÊN, không ghi đè" : "")
+      )
+    )
+    .catch((err) => console.error(`[SecretBox] Chuyển đổi lỗi: ${(err as Error).message}`));
+}
 
 if (role === "worker" || role === "all") {
   startAllWorkers();

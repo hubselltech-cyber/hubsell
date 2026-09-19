@@ -179,6 +179,8 @@ export function InvoiceConfigSection({
   const [hasMeinvoicePassword, setHasMeinvoicePassword] = useState(false);
   const [meinvoicePasswordMasked, setMeinvoicePasswordMasked] = useState<string | null>(null);
   const [meinvoicePasswordInput, setMeinvoicePasswordInput] = useState("");
+  /** Máy chủ báo bản mật khẩu đã lưu (mã hóa trong DB) không giải mã được. */
+  const [passwordUnreadable, setPasswordUnreadable] = useState(false);
 
   // (3) Bộ khóa eSign — UI ĐÃ ẨN (HSM không cần eSign), state chỉ để round-trip
   // giá trị cũ khi lưu, không mất dữ liệu shop nào đã lỡ nhập.
@@ -228,6 +230,9 @@ export function InvoiceConfigSection({
         setMeinvoiceUsername(r.config.meinvoiceUsername);
         setHasMeinvoicePassword(r.config.hasMeinvoicePassword);
         setMeinvoicePasswordMasked(r.config.meinvoicePasswordMasked);
+        setPasswordUnreadable(
+          r.config.unreadableSecrets?.includes("meinvoicePassword") ?? false
+        );
         setEsignClientId(r.config.esignClientId);
         setEsignUsername(r.config.esignUsername);
         setCertSerial(r.config.certSerial);
@@ -323,6 +328,9 @@ export function InvoiceConfigSection({
       setSecretInput("");
       setHasMeinvoicePassword(r.config.hasMeinvoicePassword);
       setMeinvoicePasswordMasked(r.config.meinvoicePasswordMasked);
+      setPasswordUnreadable(
+        r.config.unreadableSecrets?.includes("meinvoicePassword") ?? false
+      );
       setMeinvoicePasswordInput("");
       setHasEsignSecret(r.config.hasEsignSecretKey);
       setEsignSecretMasked(r.config.esignSecretKeyMasked);
@@ -526,18 +534,30 @@ export function InvoiceConfigSection({
                           // Hai secret khác cột: mật khẩu meInvoice của shop
                           // và Client Secret của NCC — mỗi ô một luồng che riêng.
                           f.key === "meinvoicePassword" ? (
-                            <Input
-                              id={`cred-${f.key}`}
-                              type="password"
-                              disabled={vendor.soon}
-                              placeholder={secretPlaceholder(
-                                hasMeinvoicePassword,
-                                meinvoicePasswordMasked,
-                              )}
-                              value={meinvoicePasswordInput}
-                              onChange={(e) => setMeinvoicePasswordInput(e.target.value)}
-                              className={INPUT_FOCUS}
-                            />
+                            <>
+                              <Input
+                                id={`cred-${f.key}`}
+                                type="password"
+                                autoComplete="new-password"
+                                disabled={vendor.soon}
+                                placeholder={secretPlaceholder(
+                                  hasMeinvoicePassword,
+                                  meinvoicePasswordMasked,
+                                )}
+                                value={meinvoicePasswordInput}
+                                onChange={(e) => setMeinvoicePasswordInput(e.target.value)}
+                                className={cn(INPUT_FOCUS, passwordUnreadable && "border-red-400")}
+                              />
+                              {/* Mật khẩu lưu trong DB ở dạng mã hóa; máy chủ không
+                                  giải mã được bản đang lưu → nói rõ việc cần làm. */}
+                              <FieldError
+                                msg={
+                                  passwordUnreadable
+                                    ? "Hubsell không đọc được mật khẩu đã lưu — nhập lại mật khẩu rồi bấm Lưu cấu hình."
+                                    : undefined
+                                }
+                              />
+                            </>
                           ) : (
                             <Input
                               id={`cred-${f.key}`}

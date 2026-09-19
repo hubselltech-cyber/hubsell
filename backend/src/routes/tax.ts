@@ -17,6 +17,7 @@ import {
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
 import { normalizeAutoIssueTrigger } from "../integrations/invoice/auto-issue-policy";
+import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import {
   downloadInvoiceFiles,
@@ -958,9 +959,11 @@ router.get("/invoices/:id/pdf", async (req: AuthRequest, res, next) => {
       return;
     }
 
-    const cfg = await prisma.invoiceConfig.findFirst({
+    const cfgRow = await prisma.invoiceConfig.findFirst({
       where: { ownerId, channelId: null },
     });
+    // Mật khẩu meInvoice nằm trong DB dạng đã mã hóa — giải mã trước khi dùng.
+    const cfg = cfgRow ? decryptInvoiceConfig(cfgRow) : null;
     const [file] = await downloadInvoiceFiles(
       [log.transactionId],
       "Pdf",

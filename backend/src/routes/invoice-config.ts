@@ -1,6 +1,13 @@
 import { Router, type NextFunction, type Response } from "express";
 import { prisma } from "../lib/prisma";
+import { SecretBoxError } from "../lib/secret-box";
 import type { AuthRequest } from "../middleware/auth";
+import {
+  decryptInvoiceConfig,
+  decryptInvoiceConfigLenient,
+  encryptInvoiceSecret,
+  type InvoiceConfigSecretField,
+} from "../integrations/invoice/config-secrets";
 import {
   clearMisaTokenCache,
   getMisaAccessToken,
@@ -36,6 +43,8 @@ import {
  *   (3) MISA eSign       : signMethod USB_TOKEN | ESIGN_CLOUD + bộ khóa ký nền
  *       (esignClientId/esignSecretKey, esignUsername/esignPassword, certSerial).
  *
+ * LƯU TRỮ: mọi cột bí mật được MÃ HÓA trước khi ghi DB (AES-256-GCM, khóa ở env
+ * máy chủ — lib/secret-box.ts + integrations/invoice/config-secrets.ts).
  * Trường nhạy cảm (secretKey, apiKey, esignSecretKey, esignPassword) KHÔNG bao
  * giờ trả về nguyên văn — chỉ trả bản CHE (••••1234) + cờ đã-đặt. Khi lưu, để
  * trống nghĩa là GIỮ NGUYÊN giá trị cũ, tránh vô tình xoá khóa.
@@ -56,25 +65,58 @@ const COMING_SOON_PROVIDERS = ["EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "
 const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
 
+/**
+ * Câu lỗi trả ra cho chủ shop ở các nút Kiểm tra kết nối / Tải ký hiệu. Lỗi của
+ * hộp bí mật (không giải mã được thứ đã lưu) mang chi tiết hạ tầng — tên biến
+ * môi trường, mã khóa — nên chỉ ghi vào log máy chủ; ra ngoài là việc cần làm.
+ */
+function publicErrorMessage(err: unknown): string {
+  if (err instanceof SecretBoxError) {
+    console.error(`[SecretBox] invoice-config: ${err.code} — ${err.message}`);
+    return "Hubsell không đọc được mật khẩu / khóa đã lưu — nhập lại rồi bấm Lưu cấu hình. Nếu vẫn lỗi, báo Hubsell.";
+  }
+  return (err as Error).message;
+}
+
 /** Khớp @default của InvoiceConfig.defaultUnitName — mặc định tùy ý cho hàng bán lẻ. */
 const DEFAULT_UNIT_NAME = "Cái";
 /** Ô ĐVT trên mẫu hóa đơn meInvoice hẹp — quá 20 ký tự là tràn dòng. */
 const UNIT_NAME_MAX = 20;
 
-/** Che chuỗi bí mật, chỉ lộ 4 ký tự cuối. */
+/** Che KHÓA API (chuỗi ngẫu nhiên dài): lộ 4 ký tự cuối để chủ shop nhận ra đang dùng khóa nào. */
 function mask(v: string | null | undefined): string | null {
   if (!v) return null;
   return v.length <= 4 ? "••••" : "••••" + v.slice(-4);
+}
+
+/**
+ * Che MẬT KHẨU: không lộ ký tự nào, cũng không lộ độ dài (19/09 — trước đó trả
+ * 4 ký tự cuối như khóa API; với mật khẩu người tự đặt, 4 ký tự cuối là gợi ý
+ * đoán rất mạnh và hay trùng mật khẩu khách dùng nơi khác).
+ */
+function maskPassword(v: string | null | undefined): string | null {
+  return v ? "••••••••" : null;
 }
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 }
 
-/** Chỉ nhận secret mới khi client GỬI chuỗi khác rỗng; ngược lại giữ giá trị cũ. */
-function nextSecret(incoming: unknown, current: string | null): string | null {
+/**
+ * Giá trị GHI XUỐNG DB cho một cột bí mật: client gửi chuỗi khác rỗng → MÃ HÓA
+ * giá trị mới; để trống → giữ NGUYÊN VĂN thứ đang nằm trong DB (`storedRaw` —
+ * bản mã, không giải mã rồi mã hóa lại). Nhờ vậy lưu cấu hình không bao giờ
+ * phải giải mã, và một bí mật tạm thời không đọc được (cấu hình khóa máy chủ
+ * trục trặc) không bị ghi đè mất chỉ vì chủ shop bấm Lưu.
+ */
+function nextSecret(
+  ownerId: string,
+  field: InvoiceConfigSecretField,
+  incoming: unknown,
+  storedRaw: string | null
+): string | null {
   const s = str(incoming);
-  return s === null ? current : s;
+  return s === null ? storedRaw : encryptInvoiceSecret(ownerId, field, s);
 }
 
 type ShopConfig = {
@@ -125,7 +167,7 @@ function serializeConfig(c: ShopConfig | null) {
     // Tài khoản meInvoice CỦA SHOP (multi-tenant 23/08) — mật khẩu chỉ trả che.
     meinvoiceUsername: c?.meinvoiceUsername ?? "",
     hasMeinvoicePassword: Boolean(c?.meinvoicePassword),
-    meinvoicePasswordMasked: mask(c?.meinvoicePassword),
+    meinvoicePasswordMasked: maskPassword(c?.meinvoicePassword),
     // (3) Chữ ký số eSign
     signMethod: c?.signMethod ?? "USB_TOKEN",
     esignClientId: c?.esignClientId ?? "",
@@ -134,7 +176,7 @@ function serializeConfig(c: ShopConfig | null) {
     hasEsignSecretKey: Boolean(c?.esignSecretKey),
     esignSecretKeyMasked: mask(c?.esignSecretKey),
     hasEsignPassword: Boolean(c?.esignPassword),
-    esignPasswordMasked: mask(c?.esignPassword),
+    esignPasswordMasked: maskPassword(c?.esignPassword),
     // (4) Máy tính tiền (POS)
     posProvider: c?.posProvider ?? "MISA",
     posClientId: c?.posClientId ?? "",
@@ -151,8 +193,25 @@ function serializeConfig(c: ShopConfig | null) {
   };
 }
 
-function findShopConfig(ownerId: string) {
+/** Hàng THÔ từ DB — các cột bí mật còn ở dạng đã mã hóa. Chỉ dùng cho luồng GHI. */
+function findShopConfigRaw(ownerId: string) {
   return prisma.invoiceConfig.findFirst({ where: { ownerId, channelId: null } });
+}
+
+/** Hàng đã GIẢI MÃ — cho các nút Kiểm tra kết nối / Tải ký hiệu (gọi NCC thật). */
+async function findShopConfig(ownerId: string) {
+  const row = await findShopConfigRaw(ownerId);
+  return row ? decryptInvoiceConfig(row) : null;
+}
+
+/**
+ * Dữ liệu cho FORM: giải mã KHOAN DUNG — ô không đọc được coi như chưa đặt, để
+ * trang luôn mở được và chủ shop nhập lại mật khẩu (xem config-secrets.ts).
+ */
+function serializeStoredConfig(stored: Parameters<typeof decryptInvoiceConfigLenient>[0] | null) {
+  if (!stored) return { ...serializeConfig(null), unreadableSecrets: [] as string[] };
+  const { row, unreadable } = decryptInvoiceConfigLenient(stored);
+  return { ...serializeConfig(row as unknown as ShopConfig), unreadableSecrets: unreadable as string[] };
 }
 
 // GET /api/invoice-config — cấu hình cấp shop + api_key theo từng gian hàng.
@@ -160,7 +219,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
     const [shopConfig, channels, channelConfigs] = await Promise.all([
-      findShopConfig(ownerId),
+      findShopConfigRaw(ownerId),
       prisma.channel.findMany({
         where: { userId: ownerId },
         orderBy: [{ channelName: "asc" }, { shopName: "asc" }],
@@ -172,12 +231,16 @@ router.get("/", async (req: AuthRequest, res, next) => {
       }),
     ]);
 
+    // api_key theo gian: giải mã khoan dung (ô hỏng coi như chưa đặt) chỉ để che 4 ký tự cuối.
     const keyByChannel = new Map(
-      channelConfigs.map((c) => [c.channelId, c.apiKey])
+      channelConfigs.map((c) => [
+        c.channelId,
+        decryptInvoiceConfigLenient({ ownerId, apiKey: c.apiKey }).row.apiKey ?? null,
+      ])
     );
 
     res.json({
-      config: serializeConfig(shopConfig),
+      config: serializeStoredConfig(shopConfig),
       channelKeys: channels.map((ch) => {
         const apiKey = keyByChannel.get(ch.id) ?? null;
         return {
@@ -318,7 +381,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       return;
     }
 
-    const existing = await findShopConfig(ownerId);
+    const existing = await findShopConfigRaw(ownerId);
 
     const data = {
       // (1) Pháp nhân & Thuế
@@ -333,24 +396,29 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       customApiUrl: provider === "CUSTOM" ? str(customApiUrl) : null,
       invoicePattern: patternVal,
       invoiceSeries: seriesVal,
-      secretKey: nextSecret(secretKey, existing?.secretKey ?? null),
+      secretKey: nextSecret(ownerId, "secretKey", secretKey, existing?.secretKey ?? null),
       // Tài khoản meInvoice của shop — mật khẩu theo luồng che/giữ-nguyên.
       meinvoiceUsername: str(meinvoiceUsername),
-      meinvoicePassword: nextSecret(meinvoicePassword, existing?.meinvoicePassword ?? null),
+      meinvoicePassword: nextSecret(
+        ownerId,
+        "meinvoicePassword",
+        meinvoicePassword,
+        existing?.meinvoicePassword ?? null
+      ),
       // (3) eSign
       signMethod,
       esignClientId: str(esignClientId),
       esignUsername: str(esignUsername),
       certSerial: str(certSerial),
-      esignSecretKey: nextSecret(esignSecretKey, existing?.esignSecretKey ?? null),
-      esignPassword: nextSecret(esignPassword, existing?.esignPassword ?? null),
+      esignSecretKey: nextSecret(ownerId, "esignSecretKey", esignSecretKey, existing?.esignSecretKey ?? null),
+      esignPassword: nextSecret(ownerId, "esignPassword", esignPassword, existing?.esignPassword ?? null),
       // (4) Máy tính tiền
       ...(typeof posProvider === "string" ? { posProvider } : {}),
       posClientId: str(posClientId),
       posCodePrefix: str(posCodePrefix),
       posMachineId: str(posMachineId),
       posSeries: posSeriesVal,
-      posSecretKey: nextSecret(posSecretKey, existing?.posSecretKey ?? null),
+      posSecretKey: nextSecret(ownerId, "posSecretKey", posSecretKey, existing?.posSecretKey ?? null),
       ...(typeof defaultInvoiceType === "string"
         ? { defaultInvoiceType: defaultInvoiceType as "STANDARD" | "POS" }
         : {}),
@@ -367,7 +435,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       ? await prisma.invoiceConfig.update({ where: { id: existing.id }, data })
       : await prisma.invoiceConfig.create({ data: { ownerId, ...data } });
 
-    res.json({ config: serializeConfig(saved) });
+    res.json({ config: serializeStoredConfig(saved) });
   } catch (err) {
     next(err);
   }
@@ -424,7 +492,7 @@ router.post("/test-meinvoice", async (req: AuthRequest, res) => {
         : `Kết nối meInvoice OK (đang dùng tài khoản sandbox hệ thống — nhập tài khoản meInvoice của shop để phát hành thật).`,
     });
   } catch (err) {
-    res.status(502).json({ ok: false, error: (err as Error).message });
+    res.status(502).json({ ok: false, error: publicErrorMessage(err) });
   }
 });
 
@@ -448,7 +516,7 @@ router.get("/templates", async (req: AuthRequest, res) => {
     );
     res.json({ templates, source: usingShopAccount ? "shop-config" : "env-sandbox" });
   } catch (err) {
-    res.status(502).json({ error: (err as Error).message });
+    res.status(502).json({ error: publicErrorMessage(err) });
   }
 });
 
@@ -472,7 +540,7 @@ router.post("/test-esign", async (req: AuthRequest, res) => {
       message: "Kết nối MISA eSign OK — đăng nhập lấy token thành công.",
     });
   } catch (err) {
-    res.status(502).json({ ok: false, error: (err as Error).message });
+    res.status(502).json({ ok: false, error: publicErrorMessage(err) });
   }
 });
 
@@ -510,7 +578,7 @@ router.post("/test-pos", async (req: AuthRequest, res) => {
       ...(machines && machines.length > 0 ? { machines } : {}),
     });
   } catch (err) {
-    res.status(502).json({ ok: false, error: (err as Error).message });
+    res.status(502).json({ ok: false, error: publicErrorMessage(err) });
   }
 });
 
@@ -534,7 +602,7 @@ router.put("/channels/:channelId", async (req: AuthRequest, res, next) => {
     const existing = await prisma.invoiceConfig.findFirst({
       where: { ownerId, channelId },
     });
-    const nextApiKey = nextSecret(apiKey, existing?.apiKey ?? null);
+    const nextApiKey = nextSecret(ownerId, "apiKey", apiKey, existing?.apiKey ?? null);
 
     const saved = existing
       ? await prisma.invoiceConfig.update({
@@ -548,7 +616,7 @@ router.put("/channels/:channelId", async (req: AuthRequest, res, next) => {
     res.json({
       channelId,
       hasApiKey: Boolean(saved.apiKey),
-      apiKeyMasked: mask(saved.apiKey),
+      apiKeyMasked: mask(decryptInvoiceConfigLenient({ ownerId, apiKey: saved.apiKey }).row.apiKey),
     });
   } catch (err) {
     next(err);

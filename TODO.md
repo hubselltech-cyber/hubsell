@@ -25,6 +25,9 @@
   - Đã kiểm chứng end-to-end: lưu → **F5 vẫn giữ** provider/partnerCode/secret che; api_key riêng theo từng gian.
 - [ ] **Còn phải làm (nghiệp vụ thật):** tính VAT đầu ra động theo `vatRate` từng SKU; hiện thực adapter gọi API thật cho từng NCC; luồng đối soát Thuế & hoa hồng đại lý theo `partnerCode`/`apiKey`; cân nhắc mã hoá khóa bí mật khi lưu (hiện lưu thô cho môi trường dev). *(Ghi chú 19/09/2026: dòng này viết từ 07/2026 — adapter MISA + VAT động đã LIVE từ 23–24/08, xem PROGRESS; còn lại thật sự: mã hóa secret meInvoice at-rest.)*
 - [x] **19/09/2026 — Gia cố luồng xuất hóa đơn trước khi khách xuất số lượng lớn** (chi tiết ở PROGRESS phiên 19/09 khuya): đơn vị tính (mặc định shop + theo SKU), hóa đơn bán hàng ký hiệu đầu 2 bỏ thuế suất, mốc xuất tự động DELIVERED / SETTLED + chỉ đơn giao từ ngày bật, dịch mã lỗi NCC ra việc cần làm + ngắt mạch worker (`integrations/invoice/invoice-errors.ts` + `auto-issue-policy.ts`), tự nối lại khi MISA báo trùng mã đơn, kiểm MST người mua, quà tặng 0đ, khối Tự động dạng thẻ chọn.
+- [x] **19/09/2026 — Mã hóa bí mật NCC hóa đơn trong DB** (AES-256-GCM, AAD theo chủ shop, xoay khóa, chuyển đổi tự động lúc khởi động) — thiết kế + sổ tay ở `docs/BAO-MAT-MA-HOA-BI-MAT.md`.
+- [ ] **⏳ ANH TRUNG: bật mã hóa trên production** — tạo khóa, CẤT DỰ PHÒNG, đặt `SECRET_ENC_KEYS` trên Render, kiểm 2 dòng log `[SecretBox]` + nút Test kết nối (mục 4 của docs); vài ngày sau thêm `SECRET_ENC_REQUIRED=1`. Chưa làm bước này thì mật khẩu khách vẫn nằm chữ thường.
+- [ ] Mã hóa token các sàn (Shopee / Lazada / TikTok) bằng chính `lib/secret-box.ts` — đợt riêng, rủi ro thấp hơn mật khẩu meInvoice.
 - [ ] **⏳ Chờ MISA trả lời ticket 19/09** (`docs/MISA-TICKET-TAI-NGUYEN-HOA-DON.md`): có API lấy số hóa đơn còn lại của khách không → có thì làm "còn N hóa đơn" + nhắc mua thêm trước khi hết; không có thì cân nhắc cho khách tự nhập số đã mua để đếm lùi.
 
 ## ✅ Đã hoàn thành (Done)

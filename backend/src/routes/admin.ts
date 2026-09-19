@@ -25,6 +25,10 @@ import {
   testStandardConnection,
 } from "../integrations/invoice/misa-einvoice";
 import {
+  encryptPlatformInvoiceSecret,
+  type PlatformInvoiceSecretField,
+} from "../integrations/invoice/config-secrets";
+import {
   buildHqInvoiceInput,
   hqStandardConfig,
   isHqVatMode,
@@ -1760,8 +1764,11 @@ router.put(
       }
 
       const row = await hqInvoiceConfigRow();
-      const secret = (v: unknown) =>
-        typeof v === "string" && v.trim() ? v.trim() : undefined;
+      // Để trống = giữ nguyên (undefined); có nhập = MÃ HÓA trước khi ghi DB.
+      const secret = (field: PlatformInvoiceSecretField, v: unknown) =>
+        typeof v === "string" && v.trim()
+          ? (encryptPlatformInvoiceSecret(field, v.trim()) ?? undefined)
+          : undefined;
       const updated = await prisma.platformInvoiceConfig.update({
         where: { id: row.id },
         data: {
@@ -1771,12 +1778,12 @@ router.put(
           invoicePattern,
           invoiceSeries,
           meinvoiceUsername: text(b.meinvoiceUsername),
-          meinvoicePassword: secret(b.meinvoicePassword),
+          meinvoicePassword: secret("meinvoicePassword", b.meinvoicePassword),
           signMethod: b.signMethod,
           esignClientId: text(b.esignClientId),
-          esignSecretKey: secret(b.esignSecretKey),
+          esignSecretKey: secret("esignSecretKey", b.esignSecretKey),
           esignUsername: text(b.esignUsername),
-          esignPassword: secret(b.esignPassword),
+          esignPassword: secret("esignPassword", b.esignPassword),
           certSerial: text(b.certSerial),
           vatMode: b.vatMode,
         },

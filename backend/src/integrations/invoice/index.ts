@@ -10,6 +10,7 @@ import type { InvoiceConfig } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
 import { BkavInvoiceProvider } from "./bkav-provider";
+import { decryptInvoiceConfig } from "./config-secrets";
 import { MisaInvoiceProvider } from "./misa-provider";
 import type { InvoiceProvider, ProviderCredentials } from "./types";
 
@@ -39,13 +40,18 @@ export async function getInvoiceProvider(
   ownerId: string,
   channelId?: string
 ): Promise<InvoiceProvider | null> {
-  const [shopConfig, channelConfig] = await Promise.all([
+  const [shopRow, channelRow] = await Promise.all([
     prisma.invoiceConfig.findFirst({ where: { ownerId, channelId: null } }),
     channelId
       ? prisma.invoiceConfig.findFirst({ where: { ownerId, channelId } })
       : Promise.resolve(null),
   ]);
-  if (!shopConfig) return null;
+  if (!shopRow) return null;
+  // Bí mật nằm trong DB ở dạng ĐÃ MÃ HÓA (config-secrets.ts) — giải mã tại đây,
+  // điểm vào duy nhất của luồng phát hành, để adapter phía sau chỉ thấy chữ
+  // thường. Ném SecretBoxError khi không giải mã được (nơi gọi tự xử lý).
+  const shopConfig = decryptInvoiceConfig(shopRow);
+  const channelConfig = channelRow ? decryptInvoiceConfig(channelRow) : null;
 
   const factory = PROVIDER_FACTORIES[shopConfig.provider];
   if (!factory) return null;

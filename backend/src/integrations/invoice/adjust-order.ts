@@ -28,6 +28,7 @@ import { getInvoiceProvider } from "./index";
 import {
   allocateOrderDiscount,
   resolveInvoiceBuyer,
+  secretUnreadableResult,
   type IssueOrderResult,
   type ResolvedInvoiceBuyer,
 } from "./issue-order";
@@ -221,7 +222,14 @@ export async function issueAdjustmentForOrder(
     return { ok: false, httpStatus: 400, error: "Không xác định được ký hiệu hóa đơn gốc." };
   }
 
-  const provider = await getInvoiceProvider(ownerId, original.order?.channelId ?? undefined);
+  let provider: Awaited<ReturnType<typeof getInvoiceProvider>>;
+  try {
+    provider = await getInvoiceProvider(ownerId, original.order?.channelId ?? undefined);
+  } catch (err) {
+    const blocked = secretUnreadableResult(ownerId, err);
+    if (!blocked) throw err;
+    return blocked;
+  }
   if (!provider) {
     return {
       ok: false,

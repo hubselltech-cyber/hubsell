@@ -3422,6 +3422,11 @@ export interface InvoiceConfigDTO {
   defaultVatRate: number;
   /** Đơn vị tính mặc định in trên hóa đơn (sàn không trả ĐVT qua API). */
   defaultUnitName: string;
+  /**
+   * Tên các cột bí mật mà máy chủ KHÔNG giải mã được (bí mật lưu mã hóa trong
+   * DB) — form coi như chưa đặt và nhắc chủ shop nhập lại.
+   */
+  unreadableSecrets?: string[];
 }
 
 /** api_key riêng của một gian hàng (phục vụ đối soát hoa hồng theo shop). */

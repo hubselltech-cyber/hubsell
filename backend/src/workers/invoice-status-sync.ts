@@ -40,6 +40,7 @@ import {
   type MisaInvoiceStatusItem,
   type StandardInvoiceConfig,
 } from "../integrations/invoice/misa-einvoice";
+import { decryptInvoiceConfig } from "../integrations/invoice/config-secrets";
 import { prisma } from "../lib/prisma";
 import { notify } from "../services/notifications";
 
@@ -227,7 +228,16 @@ export async function runInvoiceStatusSyncOnce(): Promise<void> {
       },
     });
 
-    for (const cfg of configs) {
+    for (const cfgRow of configs) {
+      // Mật khẩu meInvoice nằm trong DB dạng đã mã hóa — giải mã cho riêng shop
+      // này; không giải mã được thì bỏ qua shop (không làm hỏng lượt của shop khác).
+      let cfg: InvoiceConfig;
+      try {
+        cfg = decryptInvoiceConfig(cfgRow);
+      } catch (err) {
+        console.error(`[CQT-sync] Shop ${cfgRow.ownerId}: không giải mã được bí mật NCC — ${(err as Error).message}`);
+        continue;
+      }
       const now = new Date();
       const t = now.getTime();
       let logs: CandidateLog[];

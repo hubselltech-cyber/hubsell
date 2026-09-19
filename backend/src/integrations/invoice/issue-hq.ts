@@ -12,6 +12,7 @@
 
 import type { PlatformInvoiceConfig } from "@prisma/client";
 
+import { decryptPlatformInvoiceConfig } from "./config-secrets";
 import type { StandardInvoiceConfig } from "./misa-einvoice";
 import type { CreateInvoiceInput, InvoiceLine } from "./types";
 
@@ -27,7 +28,12 @@ function hqVatRate(mode: HqVatMode): number {
   return mode === "KCT" ? -1 : Number(mode);
 }
 
-export function hqStandardConfig(row: PlatformInvoiceConfig): StandardInvoiceConfig {
+/**
+ * Nhận hàng ĐỌC THẲNG TỪ DB (bí mật còn mã hóa) và giải mã ngay tại đây — đây
+ * là cửa duy nhất hàng PlatformInvoiceConfig đi tới client meInvoice.
+ */
+export function hqStandardConfig(stored: PlatformInvoiceConfig): StandardInvoiceConfig {
+  const row = decryptPlatformInvoiceConfig(stored);
   return {
     taxCode: row.taxCode,
     companyName: row.companyName,
