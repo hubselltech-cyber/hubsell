@@ -454,9 +454,20 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   (kết luận + việc nên làm); `text` = nối lại cho chỗ chỉ cần một chuỗi. FE dùng CHUNG `tiktok-advice-body.tsx` cho nhãn kết luận ở trang
   chiến dịch lẫn cột Nhận định của tab Hòa vốn (gạch đầu dòng + khối "Kết luận" dưới vạch kẻ); chịu được backend cũ chưa có `points`.
   Quy ước cho MỌI ô lý do mới: dữ kiện xuống dòng từng ý, kết luận sau cùng.
-- **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột; nhận
-  định "Nên chạy / Chạy thử / Chưa nên" cho sản phẩm CHƯA chạy (anh Trung gật hướng 19/09, làm sau trang chiến dịch — căn cứ: hòa vốn tin
-  được + tồn ≥14 ngày + đà bán 1,2 / 0,8 như Shopee; ROI mục tiêu đề xuất = hòa vốn × hệ số an toàn của cấu hình Trợ lý).
+- ✅ **19/09/2026 chiều — NHẬN ĐỊNH "NÊN CHẠY / CHẠY THỬ / CHƯA NÊN" cho sản phẩm CHƯA chạy** (anh Trung xem prod: "Đã có mốc hòa vốn" chưa
+  phải là gợi ý như Shopee). Bộ chấm thuần `product-run-advice.ts` + test; chỉ chấm dòng `ok` (hòa vốn đã tin được) KHÔNG nằm trong chiến
+  dịch đang chạy → `runAdvice` trên từng dòng của `/product-breakeven` (chỉ đọc DB). TikTok không có tín hiệu thị trường theo sản phẩm nên
+  KHÔNG chấm điểm 0–100 như Shopee, chỉ xét ba thứ có số thật:
+  1. **Tồn:** tồn trên sàn ÷ (nhịp 30 ngày × 1,5) < 14 ngày, hoặc tồn 0 → Chưa nên (1,5 và 14 = `RECOMMEND_THRESHOLDS` của Shopee).
+  2. **Khả thi:** ROI quảng cáo THẬT của cả gian 30 ngày (`AdsCampaignDailyPerf`: broadGmv ÷ expense, tiêu từ 100.000đ) thấp hơn hòa vốn
+     của sản phẩm → Chưa nên; trên hòa vốn nhưng dưới mức an toàn → Chạy thử; gian chưa có số → cho qua, ghi rõ.
+  3. **Đà bán:** nhịp 7 ngày ÷ nhịp 30 ngày ≤ 0,8 hoặc 30 ngày không có đơn → Chạy thử.
+  ROI mục tiêu đề xuất = hòa vốn × 1,1 làm tròn LÊN 0,1 — 1,1 là MẶC ĐỊNH (cùng hệ số vùng an toàn của Trợ lý Shopee), không phải số của
+  TikTok; ô lý do in kèm "đạt đúng mục tiêu thì mỗi 100đ còn lãi Xđ" để khách tự cân. FE: nhãn + ô lý do chung khuôn `TiktokAdviceBody`, chip
+  "Nên chạy quảng cáo", đường "Tạo chiến dịch trong Seller Center". Ô LÝ DO (anh Trung: phải rõ căn cứ tại sao nên, tại sao chưa nên):
+  `checks[]` — mỗi điều kiện một dòng có dấu Đạt / Cần dè chừng / Không đạt / Chưa có số + số thật + mốc so sánh (`TiktokRunAdviceBody`),
+  kết luận gọi đúng tên điều kiện làm nên kết luận đó. ⚠️ Chưa soi UI bằng số thật ở local (DB local không có đơn TikTok).
+- **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột.
 - Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.

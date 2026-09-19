@@ -2775,6 +2775,19 @@ export function requestTiktokAdsRefresh(channelId: string) {
 
 export type TiktokProductBreakevenVerdict = "ok" | "target_below" | "low_sample" | "loss" | "no_cost" | "no_settled";
 
+export interface TiktokProductRunAdvice {
+  tier: "run" | "test" | "not_yet";
+  label: string;
+  tone: "warn" | "info" | "ok";
+  /** Dữ kiện nền: biên lãi, hòa vốn, ROI mục tiêu đề xuất. */
+  points: string[];
+  /** Căn cứ của kết luận: từng điều kiện đạt hay không, kèm số thật + mốc so sánh. Vắng = backend cũ. */
+  checks?: { key: "feasible" | "pace" | "stock"; title: string; status: "pass" | "caution" | "block" | "unknown"; text: string }[];
+  conclusion: string;
+  text: string;
+  suggestedRoi: number;
+}
+
 export interface TiktokProductBreakevenRow {
   productId: string;
   name: string;
@@ -2796,6 +2809,8 @@ export interface TiktokProductBreakevenRow {
   campaigns: { id: string; name: string; status: string; roasTarget: number | null }[];
   verdict: TiktokProductBreakevenVerdict;
   reason: string;
+  /** Sản phẩm CHƯA chạy quảng cáo + hòa vốn đã tin được → Nên chạy / Chạy thử / Chưa nên (backend product-run-advice.ts). Vắng = backend cũ. */
+  runAdvice?: TiktokProductRunAdvice | null;
 }
 
 export interface TiktokProductBreakevenData {

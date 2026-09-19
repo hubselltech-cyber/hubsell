@@ -45,6 +45,7 @@ import { ChannelName, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { computePnlRow, fetchPnlOrdersAll } from "../../routes/finance";
 import { MIN_ORDERS_FOR_MARGIN, dateKey, startOfDaysAgo, vnDateKey } from "../shopee/ads-insights";
+import { productRunAdvice, type ProductRunAdvice } from "./product-run-advice";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */
 export const TIKTOK_MARGIN_WINDOW_DAYS = 60;
@@ -271,7 +272,7 @@ async function loadBreakevenInputs(channel: { id: string; userId: string }) {
         itemIds: true,
         dailyPerf: {
           where: { date: { gte: new Date(`${vnDateKey(TIKTOK_MARGIN_WINDOW_DAYS - 1)}T00:00:00Z`) } },
-          select: { date: true, broadGmv: true },
+          select: { date: true, broadGmv: true, expense: true },
         },
       },
     }),
@@ -402,6 +403,9 @@ export function salesPaceByGroup(rows: BreakevenPnlRow[], groupOfSku: Map<string
   return out;
 }
 
+/** Cửa sổ "ROI quảng cáo gian thực tế đạt được" của nhận định Nên chạy — cùng 30 ngày với cột Chi quảng cáo của tab. */
+const RUN_ADVICE_ADS_DAYS = 30;
+
 export type ProductBreakevenVerdict = "ok" | "target_below" | "low_sample" | "loss" | "no_cost" | "no_settled";
 
 export interface ProductCampaignRef {
@@ -502,6 +506,8 @@ export interface ProductBreakevenRow {
   campaigns: ProductCampaignRef[];
   verdict: ProductBreakevenVerdict;
   reason: string;
+  /** Sản phẩm CHƯA nằm trong chiến dịch đang chạy + hòa vốn đã tin được → Nên chạy / Chạy thử / Chưa nên (product-run-advice.ts); còn lại null. */
+  runAdvice: ProductRunAdvice | null;
 }
 
 export interface ChannelProductBreakevens {
@@ -546,11 +552,23 @@ async function computeTiktokProductBreakevensUncached(channel: { id: string; use
     }
   }
 
+  // Quảng cáo GMV Max của CẢ GIAN 30 ngày gần nhất (số TikTok báo, đã lưu DB) — mốc "ROI gian thực tế đạt được" của nhận định Nên chạy.
+  const adsFrom = vnDateKey(RUN_ADVICE_ADS_DAYS - 1);
+  let shopAdsSpend30d = 0;
+  let shopAdsGmv30d = 0;
+  for (const c of campaigns)
+    for (const d of c.dailyPerf) {
+      if (dateKey(d.date) < adsFrom) continue;
+      shopAdsSpend30d += Number(d.expense);
+      shopAdsGmv30d += Number(d.broadGmv);
+    }
+
   const products: ProductBreakevenRow[] = [];
   for (const [productId, base] of tiktokBreakevenBaseByGroup(rows, groupOfSku)) {
     const breakeven = toTiktokBreakeven(base, "product");
     // Chiến dịch đang chạy đứng trước để cột "Đang chạy ở" và kết luận nhìn vào đúng chỗ đang tiêu tiền.
     const camps = (campaignsOf.get(productId) ?? []).sort((a, b) => Number(b.status === "ongoing") - Number(a.status === "ongoing"));
+    const v = productBreakevenVerdict(breakeven, camps, minCoveragePct);
     products.push({
       productId,
       name: info.get(productId)?.name ?? "",
@@ -564,7 +582,19 @@ async function computeTiktokProductBreakevensUncached(channel: { id: string; use
       stock: stockOf.get(productId) ?? null,
       breakeven,
       campaigns: camps,
-      ...productBreakevenVerdict(breakeven, camps, minCoveragePct),
+      ...v,
+      runAdvice:
+        v.verdict === "ok" && breakeven.margin != null && breakeven.breakevenRoi != null && !camps.some((c) => c.status === "ongoing")
+          ? productRunAdvice({
+              margin: breakeven.margin,
+              breakevenRoi: breakeven.breakevenRoi,
+              units7d: pace.get(productId)?.units7d ?? 0,
+              units30d: pace.get(productId)?.units30d ?? 0,
+              stock: stockOf.get(productId) ?? null,
+              shopAdsSpend30d,
+              shopAdsGmv30d,
+            })
+          : null,
     });
   }
   // Bán nhiều đứng trước — tính cả phần doanh thu thiếu giá vốn, để sản phẩm bán chạy mà chưa nhập giá vốn không chìm xuống đáy.
