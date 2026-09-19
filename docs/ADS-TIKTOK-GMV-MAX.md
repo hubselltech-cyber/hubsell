@@ -410,7 +410,14 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
     / ổn định / ▼ đang chậm lại; **Tồn trên sàn** (cộng `ChannelProduct.channelStock` các phân loại) + "đủ bán ~N ngày", dưới 14
     ngày tô vàng. Ngưỡng 1,2 / 0,8 và 14 ngày lấy ĐÚNG của bộ chấm gợi ý Shopee (`ads-recommend.ts` momentum / `minCoverDays`) —
     cùng khái niệm thì cùng ngưỡng, không đặt số mới. Bỏ cột "% có giá vốn" (đã có trong ô căn cứ + dòng vàng thiếu giá vốn).
-- **Chưa có** (chờ quyền Campaign): ROI mục tiêu đề xuất theo số của sàn, nút tạo / sửa chiến dịch.
+- ✅ **19/09/2026 — GỢI Ý ROI MỤC TIÊU + đường tới Seller Center** (chiến dịch tạo từ Seller Center không sửa được qua API — mục 4; ticket
+  #4455484): `profitPer100AtRoi` (thuần) = biên lãi trước quảng cáo − 1/ROI trên mỗi 100đ doanh thu. Sản phẩm đang trong chiến dịch CHẠY
+  với mục tiêu trên hòa vốn → ô lý do nói đạt đúng mục tiêu thì còn lãi bao nhiêu + "đừng đặt dưới hòa vốn"; KHÔNG phán "nên hạ" theo bội
+  số tự đặt. Mục tiêu dưới hòa vốn → thêm số lỗ / 100đ + mức phải nâng. Ô lý do có link "Sửa ROI mục tiêu trong Seller Center" (hằng số
+  `TIKTOK_SELLER_CENTER_ADS_URL` ở `tiktok-ads-format.ts` — mới là trang chủ Seller Center VN, chờ đường dẫn thẳng).
+  · Anh Trung xem prod 19/09: BỎ dòng vàng "+… thiếu giá vốn" ở cột Doanh thu (cột Nhận định đã nói). Sản phẩm chưa có giá vốn cho đơn
+  nào vẫn hiện doanh thu màu XÁM (để thứ tự bán-nhiều-đứng-trước không thành hàng gạch ngang); số tiền thiếu giá vốn chuyển vào ô lý do.
+- **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột.
 - Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.

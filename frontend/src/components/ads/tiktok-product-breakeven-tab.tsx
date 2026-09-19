@@ -350,11 +350,16 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                           )}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          {p.revenue > 0 ? <Money value={p.revenue} className="text-slate-700" /> : p.missingCostRevenue > 0 ? null : <span className="text-slate-400">—</span>}
-                          {p.missingCostRevenue > 0 && (
-                            <span className="block text-xs text-amber-600" title="Doanh thu đã đối soát nhưng chưa có giá vốn — chưa vào phép tính hòa vốn">
-                              +<Money value={p.missingCostRevenue} /> thiếu giá vốn
+                          {/* Anh Trung 19/09: bỏ dòng vàng "+… thiếu giá vốn" — cột Nhận định đã nói. Sản phẩm CHƯA có giá vốn cho đơn nào vẫn
+                              hiện doanh thu (xám — chưa vào phép tính) để thứ tự "bán nhiều đứng trước" không thành một hàng gạch ngang. */}
+                          {p.revenue > 0 ? (
+                            <Money value={p.revenue} className="text-slate-700" />
+                          ) : p.missingCostRevenue > 0 ? (
+                            <span title="Doanh thu đã đối soát nhưng chưa có giá vốn — chưa vào phép tính hòa vốn">
+                              <Money value={p.missingCostRevenue} className="text-slate-400" />
                             </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-right">
@@ -374,6 +379,11 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                             <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
                               <p className="font-semibold text-slate-900">{vd.label}</p>
                               <p className="text-slate-700">{reason}</p>
+                              {p.missingCostRevenue > 0 && (
+                                <p className="text-amber-600">
+                                  <Money value={p.missingCostRevenue} /> doanh thu đã đối soát chưa có giá vốn — chưa vào phép tính.
+                                </p>
+                              )}
                               {/* Sản phẩm đang nằm trong chiến dịch CHẠY: ROI mục tiêu chỉ sửa được trong Seller Center (chiến dịch tạo ở đó
                                   không sửa được qua API — probe 19/09/2026) → đưa khách tới đúng nơi, kèm tên chiến dịch cần tìm. */}
                               {runningCamp && (v === "target_below" || v === "ads_losing" || v === "ok") && (
