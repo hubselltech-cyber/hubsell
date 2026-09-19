@@ -80,10 +80,14 @@ export function PageTabs<K extends string>({
               <span
                 title={t.countTitle}
                 className={cn(
-                  "rounded-full px-1.5 py-0.5 text-xs tabular-nums",
+                  // Viên đếm của tab đang chọn = đen đặc như bản cũ (anh Trung
+                  // 19/09 xem prod: viên xám dịu làm mất điểm nhấn — giữ như cũ).
+                  "rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums",
                   t.countTone === "attention"
-                    ? "bg-amber-500 font-semibold text-white"
-                    : cn("bg-muted", active ? "text-foreground" : "text-muted-foreground")
+                    ? "bg-amber-500 text-white"
+                    : active
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
                 )}
               >
                 {formatNumber(t.count)}
