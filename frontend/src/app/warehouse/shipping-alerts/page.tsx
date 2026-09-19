@@ -203,7 +203,7 @@ export default function ShippingAlertsPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Các đơn bị sàn trừ phí vận chuyển cao hơn mức đã báo — xuất danh sách để
             khiếu nại đòi lại tiền.
           </p>

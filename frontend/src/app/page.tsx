@@ -467,7 +467,7 @@ export default function DashboardPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Bảng điều khiển tổng quan hoạt động kinh doanh của bạn.
           </p>
           <div className="flex flex-wrap items-center gap-2">

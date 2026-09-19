@@ -362,7 +362,7 @@ export default function WarehouseReturnsPage() {
     <AppShell>
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Hai công đoạn: <b>quét mã để nhận hàng</b> về tay, rồi bấm{" "}
             <b>Nhập kho tất cả</b> để cộng tồn kho một lượt. Đơn sàn báo hoàn{" "}
             <b>tự đổ về</b> (danh sách tự làm mới mỗi 30 giây) — nút bên chỉ để

@@ -66,9 +66,10 @@ export function PageTabs<K extends string>({
             aria-selected={active}
             onClick={() => onChange(t.key)}
             className={cn(
-              // Cỡ chữ tab luôn HƠN ô nhập một bậc: Input / NativeSelect là
-              // 14px ở laptop và nở 16px từ 2xl — tab đứng yên thì ở màn PC lớn
-              // chữ trong ô tìm kiếm to hơn tiêu đề tab, tab bị lép (anh Trung 19/09).
+              // Tab là TIÊU ĐỀ của vùng bên dưới nên phải lớn hơn chữ trong ô nhập
+              // (14px): 15px ở laptop, 17px từ 2xl — cỡ anh Trung đã duyệt trên màn
+              // PC lớn 19/09. (Lúc đó ô nhập còn nở 16px ở 2xl nên tab 14px bị lép;
+              // quy tắc nở của ô nhập đã bỏ cùng ngày, cỡ tab giữ nguyên.)
               "group relative -mb-px flex h-12 shrink-0 items-center whitespace-nowrap gap-2 text-[15px] font-medium transition-colors 2xl:text-[17px]",
               active
                 ? "text-foreground"

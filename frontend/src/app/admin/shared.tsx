@@ -69,7 +69,7 @@ export function AdminPageHeader(props: {
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <p className="text-muted-foreground">{props.description}</p>
+      <p className="text-sm text-muted-foreground">{props.description}</p>
       <Button variant="outline" onClick={props.onReload} disabled={props.loading}>
         {props.loading ? (
           <Loader2 className="size-4 animate-spin" />

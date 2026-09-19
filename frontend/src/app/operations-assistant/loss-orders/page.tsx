@@ -144,7 +144,7 @@ export default function LossOrdersPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Soát hiệu quả từng mã hàng và từng đơn trên {formatNumber(analyzedCount)}{" "}
             đơn <b>Đã giao</b> để biết mã nào đang gánh lỗ và vì sao.
           </p>

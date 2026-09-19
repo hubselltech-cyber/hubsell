@@ -195,7 +195,7 @@ export default function GuidePage() {
   return (
     <AppShell>
       <div className="space-y-4">
-        <p className="text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Chọn phần cần xem — mỗi mục là một video hướng dẫn ngắn trên giao
           diện thật, có giọng đọc thuyết minh từng bước.
         </p>

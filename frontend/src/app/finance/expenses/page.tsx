@@ -143,7 +143,7 @@ export default function FinanceExpensesPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Thu &amp; chi vận hành của shop ({shown.length} khoản).
           </p>
           <div className="flex flex-wrap items-center gap-2">

@@ -300,7 +300,7 @@ export function LinkManager({ initialSearch, onChanged }: LinkManagerProps) {
       {/* Chừa đáy cho thanh liên kết nổi */}
       <div className="space-y-5 pb-28">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Sản phẩm thô kéo từ các gian hàng về. Nối chúng về SKU gốc trong kho
             để đơn từ bất kỳ shop nào cũng trừ đúng tồn kho.
           </p>

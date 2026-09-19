@@ -734,7 +734,7 @@ export default function StaffPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {hqMode
               ? "Tạo tài khoản nhân viên điều hành Hubsell (không cần email) và phân quyền từng khu vực trong Hệ thống."
               : "Tạo tài khoản nhân viên (không cần email) và phân quyền từng tính năng, từng gian hàng."}

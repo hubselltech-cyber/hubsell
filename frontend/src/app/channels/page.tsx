@@ -481,7 +481,7 @@ function MockOrderDialog({
           </p>
         ) : items.length === 0 ? (
           <div className="space-y-3 py-2 text-sm">
-            <p className="text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Sàn này chưa có sản phẩm nào được liên kết với kho gốc, nên chưa thể
               nhận đơn.
             </p>
@@ -920,7 +920,7 @@ export default function ChannelsPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Kết nối gian hàng trên các sàn để đồng bộ đơn hàng về Hubsell.
           </p>
           <Button onClick={() => setConnectOpen(true)}>
