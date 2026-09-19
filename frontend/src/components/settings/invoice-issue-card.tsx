@@ -37,7 +37,6 @@ import {
   X,
 } from "lucide-react";
 
-import { HintIcon } from "@/components/finance/hint-icon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -68,6 +67,26 @@ import {
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { TABLE_HEAD_EMPHASIS, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
+
+/** Hai mốc tự động phát hành — mỗi mốc mang sẵn câu giải thích (thay tooltip). */
+const AUTO_ISSUE_TRIGGER_OPTIONS: Array<{
+  value: InvoiceAutoIssueTrigger;
+  title: string;
+  badge?: string;
+  desc: string;
+}> = [
+  {
+    value: "DELIVERED",
+    title: "Ngay khi giao thành công",
+    badge: "Đúng quy định",
+    desc: "Hóa đơn ra cùng ngày giao hàng — đúng thời điểm pháp luật yêu cầu lập hóa đơn.",
+  },
+  {
+    value: "SETTLED",
+    title: "Sau khi sàn đối soát xong",
+    desc: "Ra trễ vài ngày so với quy định. Bù lại, đơn bị hoàn sớm chưa kịp xuất nên ít phải lập hóa đơn điều chỉnh.",
+  },
+];
 
 /** "2026-08-23T..." → "23/08" gọn cho cột ngày đặt. */
 function shortDate(iso: string): string {
@@ -331,75 +350,127 @@ export function InvoiceIssueCard({
               tick chọn rồi xuất, hoặc bật tự động.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2">
-              <div className="mr-1">
-                <Label htmlFor="auto-issue-toggle" className="cursor-pointer text-xs font-semibold">
+        </div>
+
+        {/* ---- KHỐI TỰ ĐỘNG (làm lại 19/09 khuya — anh Trung: cụm quan trọng mà mờ
+            nhạt, mốc xuất phải BÀY CẢ HAI ra cho khách bấm chọn, tooltip lộn xộn
+            không đọc nổi). Mỗi mốc là một thẻ chọn mang sẵn câu giải thích của nó
+            nên không còn tooltip. MỐC XUẤT: luật tính từ lúc GIAO THÀNH CÔNG (Điều
+            9 NĐ 254/2026); chờ đối soát là lựa chọn của shop muốn bớt hóa đơn điều
+            chỉnh, chấp nhận xuất trễ vài ngày. ---- */}
+        <div className="mt-4 grid gap-3 xl:grid-cols-[3fr_2fr]">
+          <div
+            className={cn(
+              "rounded-xl border p-4 transition-colors",
+              queue?.autoIssueEnabled
+                ? "border-emerald-200 bg-emerald-50/40"
+                : "border-slate-200"
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Label htmlFor="auto-issue-toggle" className="cursor-pointer text-sm font-semibold">
                   Tự động phát hành
                 </Label>
-                {/* MỐC XUẤT (19/09): luật tính từ lúc GIAO THÀNH CÔNG (Điều 9
-                    NĐ 254/2026); chờ đối soát là lựa chọn của shop muốn bớt hóa
-                    đơn điều chỉnh, chấp nhận xuất trễ vài ngày. */}
-                <span className="flex items-center gap-1">
-                  {/* <select> trần thay vì NativeSelect: đây là dòng chữ phụ 11px
-                      dưới nhãn công tắc, ô chọn chuẩn cao 36px sẽ làm lệch hai
-                      khối công tắc nằm cạnh nhau. */}
-                  <select
-                    aria-label="Mốc tự động phát hành"
-                    className="cursor-pointer rounded border-0 bg-transparent p-0 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
-                    value={queue?.autoIssueTrigger ?? "DELIVERED"}
-                    onChange={(e) =>
-                      void handleChangeTrigger(e.target.value as InvoiceAutoIssueTrigger)
-                    }
-                    disabled={queue === null || savingAuto}
-                  >
-                    <option value="DELIVERED">Ngay khi giao thành công</option>
-                    <option value="SETTLED">Chờ sàn đối soát xong</option>
-                  </select>
-                  <HintIcon
-                    hint={
-                      <>
-                        Theo quy định, hóa đơn bán hàng hóa lập tại thời điểm
-                        giao hàng cho người mua — nên mốc <b>Ngay khi giao thành
-                        công</b> là mốc đúng luật. <b>Chờ sàn đối soát</b> thường
-                        trễ thêm vài ngày; đổi lại đơn bị hoàn sớm chưa kịp xuất
-                        nên ít phải lập hóa đơn điều chỉnh. Số tiền trên hóa đơn
-                        là tiền hàng, hai mốc cho ra cùng một con số. Tự động chỉ
-                        áp cho đơn giao <b>từ ngày bật</b> — đơn cũ hơn có thể đã
-                        được lập hóa đơn ở nơi khác nên để bạn xuất tay ở hàng chờ.
-                      </>
-                    }
-                  />
-                </span>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Hệ thống tự xuất hóa đơn mỗi 15 phút cho đơn giao <b>từ ngày bật</b>.
+                  Đơn cũ hơn bạn xuất tay ở hàng chờ bên dưới.
+                </p>
               </div>
               {savingAuto ? (
-                <Loader2 className="size-4 animate-spin text-slate-400" />
+                <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-slate-400" />
               ) : (
                 <Switch
                   id="auto-issue-toggle"
+                  className="mt-0.5 shrink-0"
                   checked={queue?.autoIssueEnabled ?? false}
                   onCheckedChange={(v) => void handleToggleAuto(v)}
                   disabled={queue === null}
                 />
               )}
             </div>
-            {/* Tự động ĐIỀU CHỈNH khi khách trả hàng (TT 91/2026): mốc THUẦN
-                THEO SÀN xác nhận hoàn (25/08 anh Trung chốt 2 lần — kho vật lý
-                chỉ kiểm soát nội bộ, KHÔNG dính luồng hóa đơn). */}
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200/80 px-3 py-2">
-              <div className="mr-1">
-                <Label htmlFor="auto-adjust-toggle" className="cursor-pointer text-xs font-semibold">
+            <p id="auto-issue-trigger-label" className="mt-3 text-xs font-medium text-slate-700">
+              Xuất hóa đơn vào lúc nào?
+            </p>
+            <div
+              role="radiogroup"
+              aria-labelledby="auto-issue-trigger-label"
+              className="mt-1.5 grid gap-2 sm:grid-cols-2"
+            >
+              {AUTO_ISSUE_TRIGGER_OPTIONS.map((opt) => {
+                const selected = (queue?.autoIssueTrigger ?? "DELIVERED") === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={queue === null || savingAuto}
+                    onClick={() => {
+                      if (!selected) void handleChangeTrigger(opt.value);
+                    }}
+                    className={cn(
+                      "flex items-start gap-2.5 rounded-lg border bg-white px-3 py-2.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed",
+                      selected
+                        ? "border-slate-900 shadow-sm"
+                        : "border-slate-200 hover:border-slate-300"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                        selected ? "border-slate-900" : "border-slate-300"
+                      )}
+                    >
+                      {selected && <span className="size-2 rounded-full bg-slate-900" />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-medium text-slate-900">{opt.title}</span>
+                        {opt.badge && (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[11px] font-medium text-emerald-700">
+                            {opt.badge}
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {opt.desc}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Tự động ĐIỀU CHỈNH khi khách trả hàng (TT 91/2026): mốc THUẦN THEO
+              SÀN xác nhận hoàn (25/08 anh Trung chốt 2 lần — kho vật lý chỉ kiểm
+              soát nội bộ, KHÔNG dính luồng hóa đơn). */}
+          <div
+            className={cn(
+              "rounded-xl border p-4 transition-colors",
+              queue?.autoAdjustEnabled
+                ? "border-emerald-200 bg-emerald-50/40"
+                : "border-slate-200"
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Label htmlFor="auto-adjust-toggle" className="cursor-pointer text-sm font-semibold">
                   Tự động điều chỉnh khi hoàn
                 </Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Sàn xác nhận hoàn → HĐ điều chỉnh giảm
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Khi sàn xác nhận khách trả hàng hoặc hoàn tiền, hệ thống tự lập{" "}
+                  <b>hóa đơn điều chỉnh giảm</b> đúng theo số sàn báo (một phần hay
+                  toàn bộ).
                 </p>
               </div>
               {savingAutoAdjust ? (
-                <Loader2 className="size-4 animate-spin text-slate-400" />
+                <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-slate-400" />
               ) : (
                 <Switch
                   id="auto-adjust-toggle"
+                  className="mt-0.5 shrink-0"
                   checked={queue?.autoAdjustEnabled ?? false}
                   onCheckedChange={(v) => void handleToggleAutoAdjust(v)}
                   disabled={queue === null}
