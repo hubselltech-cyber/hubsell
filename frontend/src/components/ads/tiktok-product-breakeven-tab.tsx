@@ -14,10 +14,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, ImageOff, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, Search } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatRoi } from "@/components/ads/tiktok-ads-format";
+import { TIKTOK_SELLER_CENTER_ADS_URL, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { Badge } from "@/components/ui/badge";
@@ -303,6 +303,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                     const v = verdictOf.get(p.productId) ?? p.verdict;
                     const vd = VERDICT[v];
                     const camp = p.campaigns[0];
+                    const runningCamp = p.campaigns.find((c) => c.status === "ongoing" && c.roasTarget != null);
                     const reason =
                       v === "ads_losing" && a && a.roi != null && p.breakeven.roi != null
                         ? `30 ngày qua quảng cáo của sản phẩm tiêu ${formatVND(a.cost)}, ROI ${formatRoi(a.roi)} — thấp hơn hòa vốn ${formatRoi(p.breakeven.roi)}: đang ăn vào vốn. Doanh thu GMV Max gồm cả đơn tự nhiên nên thực tế còn thấp hơn.`
@@ -373,6 +374,20 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                             <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
                               <p className="font-semibold text-slate-900">{vd.label}</p>
                               <p className="text-slate-700">{reason}</p>
+                              {/* Sản phẩm đang nằm trong chiến dịch CHẠY: ROI mục tiêu chỉ sửa được trong Seller Center (chiến dịch tạo ở đó
+                                  không sửa được qua API — probe 19/09/2026) → đưa khách tới đúng nơi, kèm tên chiến dịch cần tìm. */}
+                              {runningCamp && (v === "target_below" || v === "ads_losing" || v === "ok") && (
+                                <a
+                                  href={TIKTOK_SELLER_CENTER_ADS_URL}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-1 inline-flex items-center gap-1.5 font-medium text-slate-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                  title={`Seller Center → Quảng cáo cửa hàng → chiến dịch "${runningCamp.name}"`}
+                                >
+                                  <ExternalLink className="size-3.5" />
+                                  Sửa ROI mục tiêu trong Seller Center
+                                </a>
+                              )}
                             </PopoverContent>
                           </Popover>
                         </td>

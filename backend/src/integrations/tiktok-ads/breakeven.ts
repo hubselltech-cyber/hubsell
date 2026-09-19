@@ -411,6 +411,23 @@ export interface ProductCampaignRef {
   roasTarget: number | null;
 }
 
+/**
+ * Lãi SAU quảng cáo trên mỗi 100đ doanh thu nếu chiến dịch đạt ĐÚNG một mức ROI. Thuần — chỉ là số học trên hai số đã có:
+ * biên lãi trước quảng cáo (đơn đã đối soát) − phần doanh thu trả cho quảng cáo (1 / ROI). Âm = mức ROI đó ăn vào vốn.
+ * Cùng hệ quy chiếu với ROI hòa vốn: doanh thu GMV Max tính MỌI đơn của sản phẩm, biên lãi cũng tính trên mọi đơn đã đối soát.
+ */
+export function profitPer100AtRoi(margin: number, roi: number): number | null {
+  if (!(roi > 0) || !Number.isFinite(margin)) return null;
+  return Math.round((margin - 1 / roi) * 1000) / 10;
+}
+
+/** " (mỗi 100đ doanh thu lỗ khoảng Xđ)" cho câu cảnh báo mục tiêu dưới hòa vốn; rỗng khi không tính được. */
+function lossAt(margin: number | null, roasTarget: number): string {
+  const p = margin != null ? profitPer100AtRoi(margin, roasTarget) : null;
+  if (p == null || p >= 0) return "";
+  return ` (mỗi 100đ doanh thu lỗ khoảng ${Math.abs(p).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}đ)`;
+}
+
 /** Kết luận một dòng sản phẩm + lý do (cột riêng, trỏ chuột / bấm hiện lý do). Thuần. */
 export function productBreakevenVerdict(
   be: TiktokBreakeven,
@@ -443,10 +460,25 @@ export function productBreakevenVerdict(
   if (bad && be.breakevenRoi != null) {
     return {
       verdict: "target_below",
-      reason: `Chiến dịch "${bad.name}" đang đặt ROI mục tiêu ${roi(bad.roasTarget as number)}, thấp hơn hòa vốn ${roi(be.breakevenRoi)} của sản phẩm — đạt mục tiêu vẫn lỗ.`,
+      reason:
+        `Chiến dịch "${bad.name}" đang đặt ROI mục tiêu ${roi(bad.roasTarget as number)}, thấp hơn hòa vốn ${roi(be.breakevenRoi)} của sản phẩm — đạt mục tiêu vẫn lỗ` +
+        `${lossAt(be.margin, bad.roasTarget as number)}. Nâng ROI mục tiêu lên ít nhất ${roi(be.breakevenRoi)}.`,
     };
   }
-  return { verdict: "ok", reason: be.breakevenRoi != null ? `Đặt ROI mục tiêu từ ${roi(be.breakevenRoi)} trở lên thì quảng cáo không ăn vào vốn.` : "" };
+  if (be.breakevenRoi == null) return { verdict: "ok", reason: "" };
+  // Đang chạy với mục tiêu TRÊN hòa vốn: nói luôn đạt mục tiêu thì còn lãi bao nhiêu — con số để khách tự cân giữa lãi mỗi đơn và
+  // độ rộng phân phối. Không phán "nên hạ" theo một bội số tự đặt (không có căn cứ nào cho bội số đó).
+  const running = campaigns.find((c) => c.status === "ongoing" && c.roasTarget != null);
+  const keep = running && be.margin != null ? profitPer100AtRoi(be.margin, running.roasTarget as number) : null;
+  if (running && keep != null) {
+    return {
+      verdict: "ok",
+      reason:
+        `Chiến dịch "${running.name}" đang đặt ROI mục tiêu ${roi(running.roasTarget as number)}, trên hòa vốn ${roi(be.breakevenRoi)}: đạt đúng mục tiêu thì mỗi 100đ doanh thu còn lãi khoảng ${roi(keep)}đ sau quảng cáo. ` +
+        `Hạ mục tiêu thì TikTok phân phối rộng hơn nhưng lãi mỗi đơn mỏng đi — đừng đặt dưới ${roi(be.breakevenRoi)}.`,
+    };
+  }
+  return { verdict: "ok", reason: `Đặt ROI mục tiêu từ ${roi(be.breakevenRoi)} trở lên thì quảng cáo không ăn vào vốn.` };
 }
 
 export interface ProductBreakevenRow {

@@ -4,6 +4,7 @@ import {
   memoizeByChannel,
   placedRevenue,
   productBreakevenVerdict,
+  profitPer100AtRoi,
   salesPaceByGroup,
   settledCohortCutoff,
   tiktokBreakevenBase,
@@ -187,14 +188,30 @@ describe("productBreakevenVerdict — cột Nhận định của tab Hòa vốn 
   });
   const camp = (roasTarget: number | null, status = "ongoing") => ({ id: "c1", name: "TC054", status, roasTarget });
 
-  it("đủ đơn, đủ giá vốn, mục tiêu trên hòa vốn → ổn, nói luôn mức ROI tối thiểu", () => {
-    const v = productBreakevenVerdict(be({}), [camp(15)], 90);
+  it("đủ đơn, đủ giá vốn, chưa chạy chiến dịch nào → ổn, nói luôn mức ROI tối thiểu", () => {
+    const v = productBreakevenVerdict(be({}), [], 90);
     expect(v.verdict).toBe("ok");
     expect(v.reason).toContain("từ 5 trở lên");
   });
-  it("chiến dịch ĐANG CHẠY đặt ROI mục tiêu dưới hòa vốn → cảnh báo; chiến dịch tạm dừng thì không", () => {
-    expect(productBreakevenVerdict(be({}), [camp(4)], 90).verdict).toBe("target_below");
+  it("đang chạy với mục tiêu TRÊN hòa vốn → ổn, nói đạt mục tiêu thì mỗi 100đ doanh thu còn lãi bao nhiêu", () => {
+    // Biên lãi 20% − 1/15 (6,67%) = 13,3đ trên mỗi 100đ doanh thu.
+    const v = productBreakevenVerdict(be({}), [camp(15)], 90);
+    expect(v.verdict).toBe("ok");
+    expect(v.reason).toContain("13,3đ");
+    expect(v.reason).toContain("đừng đặt dưới 5");
+  });
+  it("chiến dịch ĐANG CHẠY đặt ROI mục tiêu dưới hòa vốn → cảnh báo kèm số lỗ + mức phải nâng; chiến dịch tạm dừng thì không", () => {
+    // Biên lãi 20% − 1/4 (25%) = lỗ 5đ trên mỗi 100đ doanh thu.
+    const v = productBreakevenVerdict(be({}), [camp(4)], 90);
+    expect(v.verdict).toBe("target_below");
+    expect(v.reason).toContain("lỗ khoảng 5đ");
+    expect(v.reason).toContain("ít nhất 5");
     expect(productBreakevenVerdict(be({}), [camp(4, "paused")], 90).verdict).toBe("ok");
+  });
+  it("profitPer100AtRoi: đúng tại hòa vốn = 0, ROI không hợp lệ → null", () => {
+    expect(profitPer100AtRoi(0.2, 5)).toBe(0);
+    expect(profitPer100AtRoi(0.169, 15)).toBe(10.2); // TC054 thật: hòa vốn 5,92, đang đặt 15
+    expect(profitPer100AtRoi(0.2, 0)).toBeNull();
   });
   it("thiếu giá vốn đứng trước mọi kết luận khác — con số chưa tin được thì không phán gì thêm", () => {
     expect(productBreakevenVerdict(be({ orders: 0, breakevenRoi: null, margin: null, costCoveragePct: 0 }), [], 90).verdict).toBe("no_cost");
