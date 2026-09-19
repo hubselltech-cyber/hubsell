@@ -67,6 +67,15 @@ describe("campaignAdvice", () => {
     expect(campaignAdvice(input({ breakeven: null })).kind).toBe("no_breakeven");
   });
 
+  it("tab Hòa vốn sản phẩm: hòa vốn nguồn 'product' + breakevenProblem do dòng sản phẩm quyết → cùng kết luận với trang chiến dịch", () => {
+    // Rỗng = dòng sản phẩm đã tin được (đủ đơn, đủ giá vốn) → không bị luật 'phải là nguồn campaign' chặn.
+    expect(campaignAdvice(input({ breakeven: be({ source: "product" }), breakevenProblem: "" })).kind).toBe("target_binding");
+    // Dòng sản phẩm chưa tin được → đem đúng lý do của dòng đó ra, không kết luận lãi lỗ.
+    const a = campaignAdvice(input({ breakeven: be({ source: "product" }), breakevenProblem: "Mới 3 đơn đã đối soát" }));
+    expect(a.kind).toBe("no_breakeven");
+    expect(a.text).toContain("Mới 3 đơn đã đối soát");
+  });
+
   it("chiến dịch tắt / chưa tiêu tiền → không chẩn đoán; không có ngày trọn nào thì không có % ngân sách", () => {
     expect(campaignAdvice(input({ status: "paused" })).kind).toBe("paused");
     expect(campaignAdvice(input({ spend: 0, gmv: 0 })).kind).toBe("no_spend");

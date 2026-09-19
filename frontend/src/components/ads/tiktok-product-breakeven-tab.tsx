@@ -54,6 +54,20 @@ function rowVerdict(p: TiktokProductBreakevenRow, ads: AdsOf): RowVerdict {
   return p.verdict;
 }
 
+/** Màu nhãn chẩn đoán — cùng bảng màu với nhãn kết luận của trang chiến dịch. */
+const ADVICE_TONE: Record<"warn" | "info" | "ok" | "muted", string> = {
+  warn: "bg-rose-50 text-red-500",
+  info: "bg-amber-50 text-amber-700",
+  ok: "bg-emerald-50 text-emerald-700",
+  muted: "bg-slate-100 text-slate-600",
+};
+/** Chẩn đoán ĐÃ kết luận được lãi / lỗ (các loại còn lại để nhận định của dòng sản phẩm nói — vd "Thiếu giá vốn" rõ hơn "Chưa kết luận được"). */
+const DECIDED_ADVICE = new Set(["losing", "target_below", "budget_capped", "target_binding", "healthy"]);
+function decidedAdvice(ads: AdsOf) {
+  const a = ads?.advice;
+  return a && DECIDED_ADVICE.has(a.kind) ? a : null;
+}
+
 const VERDICT: Record<RowVerdict, { label: string; className: string }> = {
   ads_losing: { label: "Quảng cáo đang lỗ", className: "bg-rose-50 text-red-500" },
   ok: { label: "Đã có mốc hòa vốn", className: "bg-emerald-50 text-emerald-700" },
@@ -67,9 +81,9 @@ const VERDICT: Record<RowVerdict, { label: string; className: string }> = {
 // Chip lọc theo VIỆC CẦN LÀM (anh Trung 19/09: bảng cũ 11 cột rối, không biết nhìn đâu) — "Cần xem ngay" trống = không có gì phải lo.
 type QuickKey = "all" | "attention" | "running" | "no_cost" | "waiting";
 const isRunning = (p: TiktokProductBreakevenRow) => p.campaigns.some((c) => c.status === "ongoing");
-const inQuick = (k: QuickKey, v: RowVerdict, p: TiktokProductBreakevenRow) =>
+const inQuick = (k: QuickKey, v: RowVerdict, p: TiktokProductBreakevenRow, ads: AdsOf) =>
   k === "all" ||
-  (k === "attention" && (v === "ads_losing" || v === "target_below" || v === "loss")) ||
+  (k === "attention" && (v === "ads_losing" || v === "target_below" || v === "loss" || decidedAdvice(ads)?.tone === "warn")) ||
   (k === "running" && isRunning(p)) ||
   (k === "no_cost" && v === "no_cost") ||
   (k === "waiting" && (v === "low_sample" || v === "no_settled"));
@@ -126,16 +140,16 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
 
   const counts = useMemo(() => {
     const c: Record<QuickKey, number> = { all: products.length, attention: 0, running: 0, no_cost: 0, waiting: 0 };
-    for (const p of products) for (const k of ["attention", "running", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, verdictOf.get(p.productId) ?? p.verdict, p)) c[k]++;
+    for (const p of products) for (const k of ["attention", "running", "no_cost", "waiting"] as QuickKey[]) if (inQuick(k, verdictOf.get(p.productId) ?? p.verdict, p, ads?.products[p.productId])) c[k]++;
     return c;
-  }, [products, verdictOf]);
+  }, [products, verdictOf, ads]);
   const withBreakeven = useMemo(() => products.filter((p) => hasBreakeven(verdictOf.get(p.productId) ?? p.verdict)).length, [products, verdictOf]);
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const sign = sort.dir === "desc" ? -1 : 1;
     return products
-      .filter((p) => inQuick(quick, verdictOf.get(p.productId) ?? p.verdict, p) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
+      .filter((p) => inQuick(quick, verdictOf.get(p.productId) ?? p.verdict, p, ads?.products[p.productId]) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
       .sort((a, b) => {
         const x = sortValue(a, sort.key, ads?.products[a.productId]);
         const y = sortValue(b, sort.key, ads?.products[b.productId]);
@@ -314,11 +328,14 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                     const has = p.breakeven.orders > 0;
                     const a = ads?.products[p.productId];
                     const v = verdictOf.get(p.productId) ?? p.verdict;
-                    const vd = VERDICT[v];
+                    // Sản phẩm ĐANG CHẠY quảng cáo: nhãn + lý do = đúng chẩn đoán của trang chiến dịch (hai trang nói cùng một câu — anh Trung 19/09).
+                    const adv = decidedAdvice(a);
+                    const vd = adv ? { label: adv.label, className: ADVICE_TONE[adv.tone] } : VERDICT[v];
                     const camp = p.campaigns[0];
                     const runningCamp = p.campaigns.find((c) => c.status === "ongoing" && c.roasTarget != null);
-                    const reason =
-                      v === "ads_losing" && a && a.roi != null && p.breakeven.roi != null
+                    const reason = adv
+                      ? adv.text
+                      : v === "ads_losing" && a && a.roi != null && p.breakeven.roi != null
                         ? `30 ngày qua quảng cáo của sản phẩm tiêu ${formatVND(a.cost)}, ROI ${formatRoi(a.roi)} — thấp hơn hòa vốn ${formatRoi(p.breakeven.roi)}: đang ăn vào vốn. Doanh thu GMV Max gồm cả đơn tự nhiên nên thực tế còn thấp hơn.`
                         : p.reason;
                     // Nhịp 7 ngày so với nhịp trung bình 30 ngày (quy về /ngày). Mốc 1,2 / 0,8 và "tồn dưới 14 ngày" dùng ĐÚNG số của bộ
@@ -436,7 +453,8 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                               )}
                               {/* Sản phẩm đang nằm trong chiến dịch CHẠY: ROI mục tiêu chỉ sửa được trong Seller Center (chiến dịch tạo ở đó
                                   không sửa được qua API — probe 19/09/2026) → đưa khách tới đúng nơi, kèm tên chiến dịch cần tìm. */}
-                              {runningCamp && (v === "target_below" || v === "ads_losing" || v === "ok") && (
+                              {adv && a?.adviceCampaign && <p className="text-xs text-slate-500">Theo chiến dịch {a.adviceCampaign} · số quảng cáo 30 ngày gần nhất.</p>}
+                              {runningCamp && (adv ? adv.editInSellerCenter : v === "target_below" || v === "ads_losing" || v === "ok") && (
                                 <a
                                   href={TIKTOK_SELLER_CENTER_ADS_URL}
                                   target="_blank"
@@ -445,7 +463,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                                   title={`Seller Center → Quảng cáo cửa hàng → chiến dịch "${runningCamp.name}"`}
                                 >
                                   <ExternalLink className="size-3.5" />
-                                  Sửa ROI mục tiêu trong Seller Center
+                                  Sửa chiến dịch trong Seller Center
                                 </a>
                               )}
                             </PopoverContent>

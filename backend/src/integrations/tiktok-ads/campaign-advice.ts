@@ -34,6 +34,11 @@ export interface CampaignAdviceInput {
   /** Ngân sách ngày; 0 = không rõ / không giới hạn. */
   budget: number;
   breakeven: TiktokBreakeven | null;
+  /**
+   * Vì sao hòa vốn CHƯA tin được ("" = tin được). Bỏ trống → xét theo luật của hòa vốn CHIẾN DỊCH (breakevenUnusableReason). Tab Hòa
+   * vốn sản phẩm truyền vào kết luận của chính dòng sản phẩm (hòa vốn nguồn "product" có bộ điều kiện riêng: đủ đơn, đủ giá vốn).
+   */
+  breakevenProblem?: string;
   /** Chi tiêu + doanh thu sàn báo trong khoảng xem. */
   spend: number;
   gmv: number;
@@ -66,7 +71,7 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
   if (i.status !== "ongoing") return { ...base, kind: "paused", label: "Đang tạm dừng", tone: "muted", text: "Chiến dịch đang tắt nên không có gì để chẩn đoán." };
   if (!(i.spend > 0)) return { ...base, kind: "no_spend", label: "Chưa tiêu tiền", tone: "muted", text: "Chiến dịch chưa tiêu tiền trong khoảng ngày đang xem." };
 
-  const why = breakevenUnusableReason(i.breakeven);
+  const why = i.breakevenProblem ?? breakevenUnusableReason(i.breakeven);
   const be = i.breakeven;
   if (why || !be || be.breakevenRoi == null || be.margin == null) {
     return {
@@ -92,7 +97,7 @@ export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
       label: "Quảng cáo đang lỗ",
       tone: "warn",
       editInSellerCenter: true,
-      text: `ROI thực ${num(roi)} thấp hơn hòa vốn ${num(beRoi)}: ${keepTxt}.${raise} Xem các video tiêu tiền mà ROI thấp ở bảng dưới và loại bớt (hoặc bật tự động loại).`,
+      text: `ROI thực ${num(roi)} thấp hơn hòa vốn ${num(beRoi)}: ${keepTxt}.${raise} Loại bớt video tiêu tiền mà ROI thấp trong bảng video của chiến dịch (hoặc bật tự động loại).`,
     };
   }
   if (i.roasTarget != null && i.roasTarget < beRoi) {

@@ -2813,7 +2813,19 @@ export interface TiktokProductAdsData {
   to: string;
   campaigns: number;
   /** productId → số quảng cáo. Doanh thu GMV Max gồm cả đơn tự nhiên của sản phẩm. */
-  products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null }>;
+  products: Record<
+    string,
+    {
+      cost: number;
+      orders: number;
+      gmv: number;
+      roi: number | null;
+      /** Chẩn đoán của sản phẩm ĐANG CHẠY — cùng bộ với trang chiến dịch (backend campaign-advice.ts). Vắng = backend cũ / chưa tính được. */
+      advice?: TiktokAdsCampaignAdvice | null;
+      /** Chiến dịch tiêu nhiều nhất cho sản phẩm (mục tiêu + ngân sách của nó được đem ra chẩn đoán). */
+      adviceCampaign?: string;
+    }
+  >;
 }
 
 export function fetchTiktokProductAds(channelId?: string) {

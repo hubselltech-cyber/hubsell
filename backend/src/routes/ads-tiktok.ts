@@ -75,7 +75,7 @@ import {
   saveCampaignProductIds,
   type TiktokBreakeven,
 } from "../integrations/tiktok-ads/breakeven";
-import { avgDailySpendOf, campaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
+import { avgDailySpendOf, campaignAdvice, type CampaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
 import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
 import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
@@ -187,20 +187,24 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       where: { channelId: selected.id, status: "ongoing" },
       orderBy: { lastSyncedAt: "desc" },
       take: PRODUCT_ADS_MAX_CAMPAIGNS,
-      select: { id: true, campaignId: true, itemIds: true },
+      select: { id: true, campaignId: true, itemIds: true, name: true, roasTarget: true, budget: true },
     });
     const range = { accessToken: scope.accessToken, advertiserId: scope.advertiserId, storeId: scope.storeId, startDate: from, endDate: to };
-    const products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null }> = {};
+    const products: Record<string, { cost: number; orders: number; gmv: number; roi: number | null; advice: CampaignAdvice | null; adviceCampaign: string }> = {};
+    /** Chiến dịch tiêu nhiều nhất cho từng sản phẩm — mục tiêu + ngân sách của nó là thứ đem ra chẩn đoán. */
+    const mainCampaignOf = new Map<string, { campaign: (typeof campaigns)[number]; cost: number }>();
     try {
       for (const c of campaigns) {
         const rows = await fetchGmvMaxCampaignProducts(range, c.campaignId);
         await saveCampaignProductIds(c.id, c.itemIds, rows.map((r) => r.spuId)).catch(() => {});
         for (const r of rows) {
           if (!r.spuId) continue;
-          const cur = (products[r.spuId] ??= { cost: 0, orders: 0, gmv: 0, roi: null });
+          const cur = (products[r.spuId] ??= { cost: 0, orders: 0, gmv: 0, roi: null, advice: null, adviceCampaign: "" });
           cur.cost += r.cost;
           cur.orders += r.orders;
           cur.gmv += r.gmv;
+          const main = mainCampaignOf.get(r.spuId);
+          if (!main || r.cost > main.cost) mainCampaignOf.set(r.spuId, { campaign: c, cost: r.cost });
         }
       }
     } catch (err) {
@@ -209,6 +213,37 @@ adsTiktokRouter.get("/product-breakeven/ads", async (req: AuthRequest, res, next
       return;
     }
     for (const p of Object.values(products)) p.roi = p.cost > 0 ? p.gmv / p.cost : null;
+
+    // NHẬN ĐỊNH CỦA SẢN PHẨM ĐANG CHẠY = đúng bộ chẩn đoán của trang chiến dịch (campaign-advice.ts) — hai trang phải nói cùng một câu
+    // (anh Trung 19/09). Hòa vốn lấy của CHÍNH sản phẩm; mục tiêu + ngân sách + % ngân sách lấy của chiến dịch tiêu nhiều nhất cho nó.
+    const perf = await prisma.adsCampaignDailyPerf.findMany({
+      where: { adsCampaignId: { in: campaigns.map((c) => c.id) }, date: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) } },
+      select: { adsCampaignId: true, date: true, expense: true },
+    });
+    const daysOf = new Map<string, { date: string; expense: number }[]>();
+    for (const d of perf) {
+      const list = daysOf.get(d.adsCampaignId) ?? [];
+      list.push({ date: dateKey(d.date), expense: Number(d.expense) });
+      daysOf.set(d.adsCampaignId, list);
+    }
+    const be = await computeTiktokProductBreakevens({ id: selected.id, userId: req.ownerId! }, BREAKEVEN_MIN_COVERAGE_PCT).catch(() => null);
+    const rowOf = new Map((be?.products ?? []).map((r) => [r.productId, r] as const));
+    for (const [spuId, p] of Object.entries(products)) {
+      const main = mainCampaignOf.get(spuId)?.campaign;
+      const row = rowOf.get(spuId);
+      if (!main || !row) continue;
+      p.adviceCampaign = main.name;
+      p.advice = campaignAdvice({
+        status: "ongoing",
+        roasTarget: main.roasTarget != null ? Number(main.roasTarget) : null,
+        budget: Number(main.budget),
+        breakeven: row.breakeven,
+        breakevenProblem: row.verdict === "ok" || row.verdict === "target_below" ? "" : row.reason,
+        spend: p.cost,
+        gmv: p.gmv,
+        avgDailySpend: avgDailySpendOf(daysOf.get(main.id) ?? [], to),
+      });
+    }
     res.json({ linked: true, from, to, campaigns: campaigns.length, products });
   } catch (err) {
     next(err);

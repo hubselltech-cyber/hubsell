@@ -437,6 +437,15 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   cáo · Thiếu giá vốn · Chưa đủ đơn đối soát ("Cần xem ngay" trống = không có gì phải lo). Bảng hẹp lại min 940px.
   · Anh xem bảng mới: muốn GIỮ cột chi phí → thêm lại cột **Chi quảng cáo 30 ngày** (tiền + số đơn, sắp xếp được, đứng trước cột Quảng cáo;
   chỉ hiện khi gian đã nối quảng cáo) → bảng 7 cột, min 1040px.
+- ✅ **19/09/2026 — HAI TRANG NÓI CÙNG MỘT CÂU** (anh Trung chốt: KHÔNG thêm cột Kết luận ở tab Tổng quan — sẽ là lần thứ ba nói cùng một điều,
+  Tổng quan đã tô đỏ ROI lỗ; thay vào đó thống nhất nhận định). Trước: sản phẩm của TC054 ở tab Hòa vốn ghi "Đã có mốc hòa vốn" trong khi
+  trang chiến dịch ghi "Mục tiêu đang bó phân phối". Nay `GET /product-breakeven/ads` trả thêm `advice` + `adviceCampaign` cho từng sản phẩm
+  đang chạy: gọi đúng `campaignAdvice` với hòa vốn của CHÍNH sản phẩm (`breakevenProblem` = "" khi dòng sản phẩm đang ok / target_below,
+  ngược lại = lý do của dòng) + mục tiêu / ngân sách / % ngân sách của chiến dịch TIÊU NHIỀU NHẤT cho sản phẩm đó, số quảng cáo 30 ngày. FE:
+  chẩn đoán đã kết luận được lãi / lỗ (losing · target_below · budget_capped · target_binding · healthy) thì thay nhãn + lý do của cột Nhận
+  định; chưa kết luận được thì để nhận định của dòng nói ("Thiếu giá vốn" rõ hơn "Chưa kết luận được"). Chip "Cần xem ngay" tính cả chẩn
+  đoán mức cảnh báo. Lưu ý: tab dùng cửa sổ 30 ngày cố định, trang chiến dịch dùng khoảng ngày khách chọn → đổi khoảng ngày thì nhãn hai
+  nơi có thể khác nhau một cách chính đáng.
 - **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột; nhận
   định "Nên chạy / Chạy thử / Chưa nên" cho sản phẩm CHƯA chạy (anh Trung gật hướng 19/09, làm sau trang chiến dịch — căn cứ: hòa vốn tin
   được + tồn ≥14 ngày + đà bán 1,2 / 0,8 như Shopee; ROI mục tiêu đề xuất = hòa vốn × hệ số an toàn của cấu hình Trợ lý).
