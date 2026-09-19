@@ -30,6 +30,18 @@ dịch của tài khoản cũ) — Hubsell không bao giờ gọi. Nếu cổng 
 
 ## 0. TRẠNG THÁI
 
+✅✅ **ĐÃ DUYỆT 19/09/2026** (nộp 18/09 tối → duyệt trong chưa đầy 1 ngày, không bị hỏi thêm, không đòi minh họa). Cổng hiện
+"Your scope of permission changes have been approved"; cây quyền: Ad account management 1 · Ads management 4 · Reporting 1.
+→ Làm mục 6.
+
+**Đã kiểm 19/09 (mục 6.1):** token nhà cấp 17/09 (trước khi duyệt) gọi `/gmv_max/campaign/get/`, `/campaign/gmv_max/info/`,
+`/gmv_max/bid/recommend/` đều trả `40001 advertiser does not grant you <path>:GET permission` → token cũ KHÔNG tự có quyền mới,
+mọi gian phải ủy quyền lại. Token cũ vẫn sống song song sau khi có token mới hơn (token probe 17/09 vẫn gọi được hôm nay dù prod
+ủy quyền sau nó) → ủy quyền lại không làm chết token đang chạy. Script: `backend/scripts/tiktok-ads-campaign-probe.ts` (chỉ GET).
+⚠️ ID scope trong `/oauth2/access_token/` là số 19 chữ số, `JSON.parse` làm tròn mất đuôi → ĐỪNG nhận diện quyền bằng ID scope;
+nhận diện bằng cách gọi thử một endpoint đọc rồi lưu cờ có / không có quyền Campaign.
+⏳ Chờ anh ủy quyền lại bằng link probe (`tiktok-ads-probe.ts auth-url` → `exchange`) để probe shape thật (mục 6.2).
+
 ✅ **ĐÃ NỘP 18/09/2026 tối** (Claude điền trong Chrome của anh Trung, anh xác nhận rồi mới bấm Submit): tick *Read campaigns* + *Create and update campaigns*, lý do = bản 496 ký tự ở mục 3b. Trang My Apps hiện: **Approved · Scope of Permissions Change Pending**. App vẫn Online, quyền cũ vẫn chạy trong lúc chờ. Lần xin đầu duyệt trong 1 ngày. ⏳ Chờ kết quả → làm mục 6.
 
 ## 1b. ĐÃ ĐỌC TRONG CỔNG 18/09/2026 (tên quyền chính xác — khỏi dò lại)
