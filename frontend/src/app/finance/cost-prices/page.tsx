@@ -25,10 +25,10 @@ import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
-import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   ApiError,
   fetchSkuProducts,

@@ -33,7 +33,6 @@ import { HintIcon } from "@/components/finance/hint-icon";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   Card,
   CardContent,
@@ -44,6 +43,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Switch } from "@/components/ui/switch";
 import {
   decideShopeeAdsCampaign,
@@ -561,124 +561,124 @@ export function ShopeeAdsPage({
       <div className="space-y-5 pb-10">
         {/* ===== DẢI ĐẦU TRANG: thanh điều khiển + ghi chú / lỗi + hàng tab ===== */}
         <PageHeaderBand className="space-y-3">
-        {/* ===== THANH ĐIỀU KHIỂN: chọn gian + cửa sổ + đồng bộ ===== */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-              Trợ lý quảng cáo {meta.label}
-              <span
-                className={cn(
-                  "rounded-md border px-1.5 py-0.5 text-[11px] font-semibold",
-                  meta.badgeClass
-                )}
-                title={`Đang thao tác trên sàn ${meta.label}`}
-              >
-                {meta.label}
-              </span>
-            </h1>
-            <p className="text-sm text-muted-foreground">{meta.description}</p>
-          </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            {/* Luôn hiện ô chọn gian (kể cả tài khoản một gian) — seller phải thấy mình đang
-                xem gian nào; mọi tab bên dưới, gồm Gợi ý chạy ads, ăn theo ô này (anh Trung 17/09). */}
-            {(data?.channels.length ?? 0) >= 1 && (
-              <NativeSelect
-                value={channelId}
-                onChange={(e) => changeChannel(e.target.value)}
-                aria-label={`Chọn gian hàng ${meta.label}`}
-                className="w-52"
-              >
-                {data?.channels.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.shopName}
-                  </option>
-                ))}
-              </NativeSelect>
-            )}
-            <div className="flex overflow-hidden rounded-lg border">
-              {DAY_PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  onClick={() => changeDays(p.value)}
+          {/* ===== THANH ĐIỀU KHIỂN: chọn gian + cửa sổ + đồng bộ ===== */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                Trợ lý quảng cáo {meta.label}
+                <span
                   className={cn(
-                    "px-3 py-1.5 text-sm font-medium transition-colors",
-                    days === p.value
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-card text-slate-600 hover:bg-muted"
+                    "rounded-md border px-1.5 py-0.5 text-[11px] font-semibold",
+                    meta.badgeClass
                   )}
+                  title={`Đang thao tác trên sàn ${meta.label}`}
                 >
-                  {p.label}
-                </button>
-              ))}
+                  {meta.label}
+                </span>
+              </h1>
+              <p className="text-sm text-muted-foreground">{meta.description}</p>
             </div>
-            {/* Hubsell Ads (app Ads riêng): MỘT nút cho gian đang chọn — chỉ hiện
-                khi backend đã bật; đã nối thì thành dòng mờ (anh Trung 17/09). */}
-            {platform === "shopee" && channelId && (
-              <HubsellAdsLink
-                channelId={channelId}
-                shopName={selectedShopName}
-                status={adsApp}
-                adsSyncedAt={data?.adsSyncedAt ?? null}
-                onChanged={() => void load(channelId, days)}
-              />
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void runSync()}
-              disabled={syncing || !channelId || !adsLinked}
-              title={adsLinked ? "Kéo số chi phí + chiến dịch mới nhất từ sàn" : "Kết nối Hubsell Ads trước khi làm mới"}
-            >
-              <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
-              {syncing ? "Đang làm mới…" : "Làm mới"}
-            </Button>
-          </div>
-        </div>
-
-        {syncNote && (
-          <p className="text-sm text-muted-foreground">{syncNote}</p>
-        )}
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}
-        <PageTabs
-          ariaLabel={`Khu vực quảng cáo ${meta.label}`}
-          className="border-b-0"
-          tabs={
-            [
-              { key: "overview", label: "Tổng quan chiến dịch" },
-              // Đợt D (17/09): gợi ý SP nên chạy ads + tạo chiến dịch một nút — chỉ Shopee.
-              ...(platform === "shopee"
-                ? ([{ key: "recommend", label: "Gợi ý chạy ads" }] as const)
-                : []),
-              { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
-              {
-                key: "config",
-                label: "Cấu hình Trợ lý Tự động",
-                count: assistant?.needsAction ?? 0,
-                countTone: "attention",
-              },
-            ] as const
-          }
-          value={tab}
-          onChange={setTab}
-          // Mốc số ads dời từ thanh công cụ xuống mép phải hàng tab (anh Trung
-          // 17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ).
-          trailing={
-            data?.adsSyncedAt && (
-              <span
-                className="text-xs text-muted-foreground tabular-nums"
-                title="Lần kéo số quảng cáo từ sàn gần nhất"
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {/* Luôn hiện ô chọn gian (kể cả tài khoản một gian) — seller phải thấy mình đang
+                  xem gian nào; mọi tab bên dưới, gồm Gợi ý chạy ads, ăn theo ô này (anh Trung 17/09). */}
+              {(data?.channels.length ?? 0) >= 1 && (
+                <NativeSelect
+                  value={channelId}
+                  onChange={(e) => changeChannel(e.target.value)}
+                  aria-label={`Chọn gian hàng ${meta.label}`}
+                  className="w-52"
+                >
+                  {data?.channels.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.shopName}
+                    </option>
+                  ))}
+                </NativeSelect>
+              )}
+              <div className="flex overflow-hidden rounded-lg border">
+                {DAY_PRESETS.map((p) => (
+                  <button
+                    key={p.value}
+                    onClick={() => changeDays(p.value)}
+                    className={cn(
+                      "px-3 py-1.5 text-sm font-medium transition-colors",
+                      days === p.value
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-card text-slate-600 hover:bg-muted"
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {/* Hubsell Ads (app Ads riêng): MỘT nút cho gian đang chọn — chỉ hiện
+                  khi backend đã bật; đã nối thì thành dòng mờ (anh Trung 17/09). */}
+              {platform === "shopee" && channelId && (
+                <HubsellAdsLink
+                  channelId={channelId}
+                  shopName={selectedShopName}
+                  status={adsApp}
+                  adsSyncedAt={data?.adsSyncedAt ?? null}
+                  onChanged={() => void load(channelId, days)}
+                />
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void runSync()}
+                disabled={syncing || !channelId || !adsLinked}
+                title={adsLinked ? "Kéo số chi phí + chiến dịch mới nhất từ sàn" : "Kết nối Hubsell Ads trước khi làm mới"}
               >
-                Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
-              </span>
-            )
-          }
-        />
+                <RefreshCw className={cn("size-4", syncing && "animate-spin")} />
+                {syncing ? "Đang làm mới…" : "Làm mới"}
+              </Button>
+            </div>
+          </div>
+
+          {syncNote && (
+            <p className="text-sm text-muted-foreground">{syncNote}</p>
+          )}
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}
+          <PageTabs
+            ariaLabel={`Khu vực quảng cáo ${meta.label}`}
+            className="border-b-0"
+            tabs={
+              [
+                { key: "overview", label: "Tổng quan chiến dịch" },
+                // Đợt D (17/09): gợi ý SP nên chạy ads + tạo chiến dịch một nút — chỉ Shopee.
+                ...(platform === "shopee"
+                  ? ([{ key: "recommend", label: "Gợi ý chạy ads" }] as const)
+                  : []),
+                { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
+                {
+                  key: "config",
+                  label: "Cấu hình Trợ lý Tự động",
+                  count: assistant?.needsAction ?? 0,
+                  countTone: "attention",
+                },
+              ] as const
+            }
+            value={tab}
+            onChange={setTab}
+            // Mốc số ads dời từ thanh công cụ xuống mép phải hàng tab (anh Trung
+            // 17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ).
+            trailing={
+              data?.adsSyncedAt && (
+                <span
+                  className="text-xs text-muted-foreground tabular-nums"
+                  title="Lần kéo số quảng cáo từ sàn gần nhất"
+                >
+                  Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
+                </span>
+              )
+            }
+          />
         </PageHeaderBand>
 
         {tab === "overview" && (

@@ -46,11 +46,11 @@ import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realiz
 import { AppShell } from "@/components/shell/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ApiError,
@@ -466,79 +466,79 @@ export function TiktokCampaignPage() {
         {/* ===== ĐẦU TRANG — dải trắng dính header. Hàng tab KHÔNG nằm trong dải: nó
             thuộc khối bảng bên dưới ba con số kết luận, không phải tab cấp trang. ===== */}
         <PageHeaderBand className="pb-4">
-        <div className="flex flex-wrap items-start gap-3">
-          <div className="min-w-0">
-            <Link href={backHref} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
-              <ArrowLeft className="size-4" />
-              Quảng cáo TikTok{c ? ` · ${c.shopName}` : ""}
-            </Link>
-            <h1 className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-slate-900">
-              <span className="min-w-0 truncate">{c?.name || (q.loading ? "Đang tải…" : "Chiến dịch")}</span>
-              {c &&
-                (c.status === "ongoing" ? (
-                  <Badge className="bg-emerald-500 text-white">Đang chạy</Badge>
-                ) : (
-                  <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
-                ))}
-            </h1>
-            {c && (
-              <p className="text-sm text-muted-foreground">
-                {target != null ? `ROI mục tiêu ${formatRoi(target)}` : "Phân phối tối đa"} · Hòa vốn{" "}
-                <TiktokBreakevenValue breakeven={c.breakeven} className="font-semibold" /> · ROI thực{" "}
-                <span
-                  className={cn(
-                    "font-semibold tabular-nums",
-                    target != null && campaignRoi != null && campaignRoi < target ? "text-red-500" : "text-slate-900"
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-0">
+              <Link href={backHref} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
+                <ArrowLeft className="size-4" />
+                Quảng cáo TikTok{c ? ` · ${c.shopName}` : ""}
+              </Link>
+              <h1 className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-slate-900">
+                <span className="min-w-0 truncate">{c?.name || (q.loading ? "Đang tải…" : "Chiến dịch")}</span>
+                {c &&
+                  (c.status === "ongoing" ? (
+                    <Badge className="bg-emerald-500 text-white">Đang chạy</Badge>
+                  ) : (
+                    <Badge className="bg-amber-100 text-amber-700">Tạm dừng</Badge>
+                  ))}
+              </h1>
+              {c && (
+                <p className="text-sm text-muted-foreground">
+                  {target != null ? `ROI mục tiêu ${formatRoi(target)}` : "Phân phối tối đa"} · Hòa vốn{" "}
+                  <TiktokBreakevenValue breakeven={c.breakeven} className="font-semibold" /> · ROI thực{" "}
+                  <span
+                    className={cn(
+                      "font-semibold tabular-nums",
+                      target != null && campaignRoi != null && campaignRoi < target ? "text-red-500" : "text-slate-900"
+                    )}
+                  >
+                    {formatRoi(campaignRoi)}
+                  </span>{" "}
+                  · chi {formatVND(c.spend)} · {formatNumber(c.orders)} đơn
+                  {advice?.budgetUsedPct != null && (
+                    <span title="Chi tiêu trung bình của những ngày trọn có tiêu tiền trong khoảng xem ÷ ngân sách ngày">
+                      {" "}
+                      · dùng ~{formatNumber(advice.budgetUsedPct)}% ngân sách ngày ({formatVND(c.budget)})
+                    </span>
                   )}
-                >
-                  {formatRoi(campaignRoi)}
-                </span>{" "}
-                · chi {formatVND(c.spend)} · {formatNumber(c.orders)} đơn
-                {advice?.budgetUsedPct != null && (
-                  <span title="Chi tiêu trung bình của những ngày trọn có tiêu tiền trong khoảng xem ÷ ngân sách ngày">
-                    {" "}
-                    · dùng ~{formatNumber(advice.budgetUsedPct)}% ngân sách ngày ({formatVND(c.budget)})
-                  </span>
-                )}
-              </p>
-            )}
-            {/* KẾT LUẬN CỦA CHIẾN DỊCH: một nhãn, trỏ chuột / bấm hiện lý do + việc nên làm (không chèn khối lên trên bảng). Chiến dịch
-                tạo từ Seller Center không sửa được qua API (probe 19/09/2026) → kết luận nào kéo theo việc sửa thì đưa đường tới đó. */}
-            {c && advice && advice.kind !== "paused" && advice.kind !== "no_spend" && (
-              <Popover>
-                <PopoverTrigger openOnHover delay={80} render={<button type="button" className="mt-1.5 cursor-pointer rounded-full" aria-label={`Kết luận: ${advice.label}`} />}>
-                  <Badge className={cn(ADVICE_TONE[advice.tone], "underline decoration-dotted underline-offset-2")}>{advice.label}</Badge>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-96 gap-1.5 p-3 text-sm">
-                  <p className="font-semibold text-slate-900">{advice.label}</p>
-                  <TiktokAdviceBody advice={advice} />
-                  {advice.editInSellerCenter && (
-                    <a
-                      href={TIKTOK_SELLER_CENTER_ADS_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center gap-1.5 font-medium text-slate-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                      title={`Seller Center → Quảng cáo cửa hàng → chiến dịch "${c.name}"`}
-                    >
-                      <ExternalLink className="size-3.5" />
-                      Sửa chiến dịch trong Seller Center
-                    </a>
-                  )}
-                </PopoverContent>
-              </Popover>
-            )}
+                </p>
+              )}
+              {/* KẾT LUẬN CỦA CHIẾN DỊCH: một nhãn, trỏ chuột / bấm hiện lý do + việc nên làm (không chèn khối lên trên bảng). Chiến dịch
+                  tạo từ Seller Center không sửa được qua API (probe 19/09/2026) → kết luận nào kéo theo việc sửa thì đưa đường tới đó. */}
+              {c && advice && advice.kind !== "paused" && advice.kind !== "no_spend" && (
+                <Popover>
+                  <PopoverTrigger openOnHover delay={80} render={<button type="button" className="mt-1.5 cursor-pointer rounded-full" aria-label={`Kết luận: ${advice.label}`} />}>
+                    <Badge className={cn(ADVICE_TONE[advice.tone], "underline decoration-dotted underline-offset-2")}>{advice.label}</Badge>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-96 gap-1.5 p-3 text-sm">
+                    <p className="font-semibold text-slate-900">{advice.label}</p>
+                    <TiktokAdviceBody advice={advice} />
+                    {advice.editInSellerCenter && (
+                      <a
+                        href={TIKTOK_SELLER_CENTER_ADS_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex items-center gap-1.5 font-medium text-slate-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                        title={`Seller Center → Quảng cáo cửa hàng → chiến dịch "${c.name}"`}
+                      >
+                        <ExternalLink className="size-3.5" />
+                        Sửa chiến dịch trong Seller Center
+                      </a>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+            <div className="ml-auto">
+              <DateRangePicker
+                value={range}
+                onChange={(r) => {
+                  setRange(r);
+                  setPage(0);
+                  setPicked(new Set());
+                }}
+              />
+            </div>
           </div>
-          <div className="ml-auto">
-            <DateRangePicker
-              value={range}
-              onChange={(r) => {
-                setRange(r);
-                setPage(0);
-                setPicked(new Set());
-              }}
-            />
-          </div>
-        </div>
         </PageHeaderBand>
 
         {!campaignRowId && (

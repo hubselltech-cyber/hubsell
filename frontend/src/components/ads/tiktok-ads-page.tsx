@@ -36,11 +36,11 @@ import { DataTable } from "@/components/data-table/data-table";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { TIKTOK_AUTO_MODE_LABEL } from "@/lib/api";
 import {
   ApiError,
@@ -309,67 +309,67 @@ export function TiktokAdsPage() {
         {/* ===== DẢI ĐẦU TRANG: thanh điều khiển + lỗi + hàng tab. Chưa bật / chưa có
             gian thì không có hàng tab → dải tự thêm đệm đáy. ===== */}
         <PageHeaderBand className={cn("space-y-3", !(data?.configured && !noChannel) && "pb-4")}>
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-              Trợ lý quảng cáo TikTok
-              <span className="rounded-md border border-slate-300 bg-slate-900 px-1.5 py-0.5 text-[11px] font-semibold text-white dark:bg-slate-200 dark:text-slate-900">
-                GMV Max
-              </span>
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Số thật từ TikTok: chiến dịch nào đang dưới mục tiêu, video nào tiêu tiền mà không ra đơn.
-            </p>
-          </div>
-          {tab === "overview" && linked && (
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              {/* Chỉ liệt kê gian ĐÃ nối quảng cáo — gian chưa nối nằm ở tab Kết nối. */}
-              <NativeSelect
-                value={selectedId}
-                onChange={(e) => setChannelId(e.target.value)}
-                aria-label="Chọn gian hàng TikTok"
-                className="w-52"
-              >
-                {adsChannels.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.shopName}
-                  </option>
-                ))}
-              </NativeSelect>
-              <DateRangePicker value={range} onChange={setRange} />
-              <Button variant="outline" size="sm" onClick={() => void runRefresh()} disabled={refreshing || linkBroken}>
-                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-                Làm mới
-              </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                Trợ lý quảng cáo TikTok
+                <span className="rounded-md border border-slate-300 bg-slate-900 px-1.5 py-0.5 text-[11px] font-semibold text-white dark:bg-slate-200 dark:text-slate-900">
+                  GMV Max
+                </span>
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Số thật từ TikTok: chiến dịch nào đang dưới mục tiêu, video nào tiêu tiền mà không ra đơn.
+              </p>
             </div>
+            {tab === "overview" && linked && (
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {/* Chỉ liệt kê gian ĐÃ nối quảng cáo — gian chưa nối nằm ở tab Kết nối. */}
+                <NativeSelect
+                  value={selectedId}
+                  onChange={(e) => setChannelId(e.target.value)}
+                  aria-label="Chọn gian hàng TikTok"
+                  className="w-52"
+                >
+                  {adsChannels.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.shopName}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <DateRangePicker value={range} onChange={setRange} />
+                <Button variant="outline" size="sm" onClick={() => void runRefresh()} disabled={refreshing || linkBroken}>
+                  <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+                  Làm mới
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {q.error && !q.denied && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">{q.error}</div>
           )}
-        </div>
 
-        {q.error && !q.denied && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">{q.error}</div>
-        )}
-
-        {data?.configured && !noChannel && (
-          <PageTabs
-            ariaLabel="Khu vực quảng cáo TikTok"
-            className="border-b-0"
-            tabs={
-              [
-                { key: "overview", label: "Tổng quan chiến dịch" },
-                { key: "breakeven", label: "Hòa vốn sản phẩm" },
-                {
-                  key: "connect",
-                  label: "Kết nối tài khoản quảng cáo",
-                  count: pendingCount,
-                  countTone: "attention",
-                  countTitle: "Số gian chưa kết nối quảng cáo hoặc cần kết nối lại",
-                },
-              ] as const
-            }
-            value={tab}
-            onChange={setTabPick}
-          />
-        )}
+          {data?.configured && !noChannel && (
+            <PageTabs
+              ariaLabel="Khu vực quảng cáo TikTok"
+              className="border-b-0"
+              tabs={
+                [
+                  { key: "overview", label: "Tổng quan chiến dịch" },
+                  { key: "breakeven", label: "Hòa vốn sản phẩm" },
+                  {
+                    key: "connect",
+                    label: "Kết nối tài khoản quảng cáo",
+                    count: pendingCount,
+                    countTone: "attention",
+                    countTitle: "Số gian chưa kết nối quảng cáo hoặc cần kết nối lại",
+                  },
+                ] as const
+              }
+              value={tab}
+              onChange={setTabPick}
+            />
+          )}
         </PageHeaderBand>
 
         {/* ===== CHƯA BẬT / CHƯA CÓ GIAN ===== */}

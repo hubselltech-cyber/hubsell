@@ -29,7 +29,6 @@ import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +39,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   ApiError,
   channelFilterToQuery,

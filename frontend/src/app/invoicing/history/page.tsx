@@ -20,7 +20,6 @@ import { TaxDeclarationCard } from "@/components/invoicing/tax-declaration-card"
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Button } from "@/components/ui/button";
-import { PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -32,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
+import { PageTabs } from "@/components/ui/page-tabs";
 import {
   Table,
   TableBody,
