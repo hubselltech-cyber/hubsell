@@ -363,7 +363,7 @@ export function InvoiceIssueCard({
             className={cn(
               "rounded-xl border p-4 transition-colors",
               queue?.autoIssueEnabled
-                ? "border-emerald-200 bg-emerald-50/40"
+                ? "border-emerald-300 bg-emerald-50/70"
                 : "border-slate-200"
             )}
           >
@@ -450,7 +450,7 @@ export function InvoiceIssueCard({
             className={cn(
               "rounded-xl border p-4 transition-colors",
               queue?.autoAdjustEnabled
-                ? "border-emerald-200 bg-emerald-50/40"
+                ? "border-emerald-300 bg-emerald-50/70"
                 : "border-slate-200"
             )}
           >
@@ -526,23 +526,11 @@ export function InvoiceIssueCard({
           </div>
         )}
 
-        {/* ---- Cảnh báo đơn QUÁ HẠN lập hóa đơn (03/09) ---- */}
-        {queue !== null && queue.overdueTotal > 0 && (
-          <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <span>
-              {/* Chuỗi template để Turbopack không nuốt khoảng trắng sau {số} ("48giờ"). */}
-              <b>{`${queue.overdueTotal} đơn`}</b>
-              {` đã giao quá ${queue.overdueHours} giờ mà chưa có hóa đơn — theo quy định, hóa đơn lập tại thời điểm giao hàng cho người mua (Điều 9 NĐ 254/2026). Xuất ngay hoặc bật tự động.`}
-            </span>
-          </div>
-        )}
-
         {/* ---- Tab lọc theo đối soát ---- */}
         <div
           role="tablist"
           aria-label="Lọc hàng chờ theo trạng thái đối soát"
-          className="mt-4 flex flex-wrap gap-1 border-b"
+          className="mt-6 flex flex-wrap gap-1 border-b"
         >
           {TABS.map((t) => {
             const active = filter === t.key;
@@ -577,6 +565,21 @@ export function InvoiceIssueCard({
             );
           })}
         </div>
+
+        {/* ---- Cảnh báo đơn QUÁ HẠN lập hóa đơn (03/09). 19/09 khuya dời từ ngay
+            dưới khối Tự động xuống DƯỚI hàng tab: dải đỏ nói về danh sách đơn nên
+            nằm cùng danh sách, và không còn mảng màu mạnh tranh chú ý với khối
+            Tự động phía trên. ---- */}
+        {queue !== null && queue.overdueTotal > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              {/* Chuỗi template để Turbopack không nuốt khoảng trắng sau {số} ("48giờ"). */}
+              <b>{`${queue.overdueTotal} đơn`}</b>
+              {` đã giao quá ${queue.overdueHours} giờ mà chưa có hóa đơn — theo quy định, hóa đơn lập tại thời điểm giao hàng cho người mua (Điều 9 NĐ 254/2026). Xuất ngay hoặc bật tự động.`}
+            </span>
+          </div>
+        )}
 
         {/* ---- Thanh công cụ: tìm mã đơn + làm mới ---- */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
