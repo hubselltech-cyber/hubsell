@@ -66,4 +66,5 @@ Email: dev@hubsell.tech · ĐT: 0965863292
 
 ## Nhật ký
 
-- 19/09/2026 — soạn ticket (anh Trung yêu cầu gửi). ⏳ CHƯA GỬI: cổng developer.misa.vn trong Chrome đang đăng xuất, Claude không tự nhập mật khẩu — chờ anh đăng nhập (Claude điền + gửi) hoặc anh tự dán gửi.
+- 19/09/2026 — soạn ticket (anh Trung yêu cầu gửi).
+- 19/09/2026 ~23:10 — ✅ **ĐÃ GỬI** qua developer.misa.vn (anh Trung đăng nhập, Claude điền + bấm gửi): ứng dụng Hubsell → sản phẩm **Hóa đơn điện tử**, trạng thái "Chờ xử lý / Chưa phản hồi". ĐỪNG gửi lại — xem phản hồi ở Quản lý ứng dụng → Quản lý danh sách yêu cầu hỗ trợ. Có câu trả lời (kể cả "không có") thì ghi ngay vào đây + memory.

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  decideAfterFailure,
+  normalizeAutoIssueTrigger,
+  vnStartOfDay,
+} from "../invoice/auto-issue-policy";
+import {
   explainInvoiceError,
   InvoiceProviderError,
   providerErrorFromBody,
@@ -11,11 +16,6 @@ import {
   isSalesInvoiceSeries,
   type StandardInvoiceConfig,
 } from "../invoice/misa-einvoice";
-import {
-  decideAfterFailure,
-  normalizeAutoIssueTrigger,
-  vnStartOfDay,
-} from "../../workers/invoice-auto-issue";
 
 // ============================================================
 // VÁ 4 LỖ HỔNG XUẤT HÓA ĐƠN (19/09/2026 — anh Trung: "đừng để lúc xảy ra vấn

@@ -5,14 +5,9 @@
 // hóa đơn), tự phát hành hóa đơn cho đơn đủ điều kiện:
 //
 //   • shippingStatus = DELIVERED (đã giao thành công). MỐC XUẤT theo shop chọn
-//     (InvoiceConfig.autoIssueTrigger — 19/09):
-//       DELIVERED — xuất ngay khi giao xong. Đúng Điều 9 NĐ 254/2026 (lập hóa
-//                   đơn tại thời điểm chuyển giao quyền sở hữu); số tiền hóa đơn
-//                   là TIỀN HÀNG, không phụ thuộc đối soát (đối soát chỉ chốt
-//                   phí sàn). Mặc định cho shop bật mới.
-//       SETTLED   — chờ thêm isSettled = true (luật cũ trước 19/09): ít hóa đơn
-//                   điều chỉnh hơn vì đơn hoàn sớm chưa kịp xuất, đổi lại trễ
-//                   vài ngày so với mốc luật.
+//     (InvoiceConfig.autoIssueTrigger — 19/09): DELIVERED = xuất ngay, SETTLED =
+//     chờ thêm isSettled. Căn cứ + đánh đổi của hai mốc: xem AutoIssueTrigger ở
+//     integrations/invoice/auto-issue-policy.ts.
 //   • CHỈ đơn giao từ 0h (giờ VN) của NGÀY BẬT công tắc (autoIssueEnabledAt —
 //     19/09): đơn cũ hơn có thể đã được chủ shop lập hóa đơn tay trên meInvoice
 //     trước khi dùng Hubsell → tự xuất là trùng, mà hóa đơn đã gửi CQT thì
@@ -30,14 +25,20 @@
 //     shop cấu hình MST sandbox mà không phải tài khoản nội bộ → bỏ qua.
 //   • Trần 20 hóa đơn/shop/lượt — sự cố cấu hình không thể xả trăm hóa đơn.
 //   • Xử lý TUẦN TỰ từng đơn (MISA cấp số liên tục theo ký hiệu).
-//   • NGẮT MẠCH (19/09) — xem decideAfterFailure bên dưới.
+//   • NGẮT MẠCH (19/09) — luật ở integrations/invoice/auto-issue-policy.ts
+//     (decideAfterFailure): worker này chỉ quét + gọi, mọi quyết định là hàm
+//     thuần có test ở đó.
 //
 // Cấu hình: INVOICE_AUTO_ISSUE_MINUTES (mặc định 15; "0" = tắt worker).
 // ============================================================
 
 import { InvoiceLogStatus, ShippingStatus } from "@prisma/client";
 
-import type { InvoiceErrorScope } from "../integrations/invoice/invoice-errors";
+import {
+  decideAfterFailure,
+  normalizeAutoIssueTrigger,
+  vnStartOfDay,
+} from "../integrations/invoice/auto-issue-policy";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import { notify } from "../services/notifications";
@@ -49,47 +50,6 @@ const DEFAULT_INTERVAL_MINUTES = 15;
 const MAX_PER_OWNER_PER_RUN = 20;
 /** Đơn có bản ghi hóa đơn (kể cả FAILED) mới hơn cửa sổ này thì chưa thử lại. */
 const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
-/**
- * Cùng MỘT mã lỗi lặp liên tiếp chừng này đơn trong một lượt → coi là lỗi hệ
- * thống đội lốt lỗi đơn lẻ (mã NCC chưa có trong bảng invoice-errors, VD hết
- * số hóa đơn đã mua) và ngắt mạch. Con số 3 là MẶC ĐỊNH TÙY Ý, không có nguồn:
- * đủ nhỏ để không đốt cả lô 20 đơn, đủ lớn để 2 đơn bẩn dữ liệu nằm cạnh nhau
- * không làm ngừng cả shop.
- */
-const SAME_ERROR_STREAK_TO_PAUSE = 3;
-
-export type AutoIssueTrigger = "DELIVERED" | "SETTLED";
-
-export function normalizeAutoIssueTrigger(v: unknown): AutoIssueTrigger {
-  return v === "SETTLED" ? "SETTLED" : "DELIVERED";
-}
-
-/** 0h giờ VN (UTC+7) của ngày chứa mốc `at` — trả về dạng Date UTC. */
-export function vnStartOfDay(at: Date): Date {
-  const VN = 7 * 3600 * 1000;
-  const vn = new Date(at.getTime() + VN);
-  return new Date(Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate()) - VN);
-}
-
-export type FailureDecision = "CONTINUE" | "STOP_RUN" | "PAUSE";
-
-/**
- * NGẮT MẠCH — quyết định sau MỖI đơn lỗi (hàm thuần, có test):
- *   · ACCOUNT   → PAUSE ngay: sai mật khẩu meInvoice / ký hiệu ngừng dùng / chứng
- *                 thư hết hạn thì đơn nào cũng lỗi y hệt; thử tiếp chỉ đẻ FAILED
- *                 rác và khóa các đơn đó 24h. Ngừng tới khi chủ shop sửa.
- *   · TRANSIENT → STOP_RUN: NCC bận / mạng chập chờn — bỏ phần còn lại của lượt,
- *                 15 phút sau quét lại (không đánh dấu tạm ngừng).
- *   · ORDER     → CONTINUE, trừ khi cùng mã lặp đủ SAME_ERROR_STREAK_TO_PAUSE.
- */
-export function decideAfterFailure(
-  scope: InvoiceErrorScope | undefined,
-  sameCodeStreak: number
-): FailureDecision {
-  if (scope === "ACCOUNT") return "PAUSE";
-  if (scope === "TRANSIENT") return "STOP_RUN";
-  return sameCodeStreak >= SAME_ERROR_STREAK_TO_PAUSE ? "PAUSE" : "CONTINUE";
-}
 
 let running = false;
 

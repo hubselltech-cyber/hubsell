@@ -23,7 +23,9 @@
   - Bảng `InvoiceConfig` (migration `20260723023105_invoice_config_multi_vendor`): `provider/signMethod/partnerCode/clientId/secretKey/apiKey/customApiUrl`, khóa theo `(ownerId, channelId)`. **`partnerCode`** = mã đại lý Hubsell (đối soát hoa hồng); **`apiKey` RIÊNG cho từng gian hàng** (channelId != null).
   - Đóng gói độc lập: backend `routes/invoice-config.ts` (`GET/PUT /` + `PUT /channels/:id`), frontend `components/settings/invoice-config-section.tsx`. Trường bí mật (secretKey/apiKey) chỉ trả về dạng **che (••••1234)**; để trống khi lưu = giữ khóa cũ.
   - Đã kiểm chứng end-to-end: lưu → **F5 vẫn giữ** provider/partnerCode/secret che; api_key riêng theo từng gian.
-- [ ] **Còn phải làm (nghiệp vụ thật):** tính VAT đầu ra động theo `vatRate` từng SKU; hiện thực adapter gọi API thật cho từng NCC; luồng đối soát Thuế & hoa hồng đại lý theo `partnerCode`/`apiKey`; cân nhắc mã hoá khóa bí mật khi lưu (hiện lưu thô cho môi trường dev).
+- [ ] **Còn phải làm (nghiệp vụ thật):** tính VAT đầu ra động theo `vatRate` từng SKU; hiện thực adapter gọi API thật cho từng NCC; luồng đối soát Thuế & hoa hồng đại lý theo `partnerCode`/`apiKey`; cân nhắc mã hoá khóa bí mật khi lưu (hiện lưu thô cho môi trường dev). *(Ghi chú 19/09/2026: dòng này viết từ 07/2026 — adapter MISA + VAT động đã LIVE từ 23–24/08, xem PROGRESS; còn lại thật sự: mã hóa secret meInvoice at-rest.)*
+- [x] **19/09/2026 — Gia cố luồng xuất hóa đơn trước khi khách xuất số lượng lớn** (chi tiết ở PROGRESS phiên 19/09 khuya): đơn vị tính (mặc định shop + theo SKU), hóa đơn bán hàng ký hiệu đầu 2 bỏ thuế suất, mốc xuất tự động DELIVERED / SETTLED + chỉ đơn giao từ ngày bật, dịch mã lỗi NCC ra việc cần làm + ngắt mạch worker (`integrations/invoice/invoice-errors.ts` + `auto-issue-policy.ts`), tự nối lại khi MISA báo trùng mã đơn, kiểm MST người mua, quà tặng 0đ, khối Tự động dạng thẻ chọn.
+- [ ] **⏳ Chờ MISA trả lời ticket 19/09** (`docs/MISA-TICKET-TAI-NGUYEN-HOA-DON.md`): có API lấy số hóa đơn còn lại của khách không → có thì làm "còn N hóa đơn" + nhắc mua thêm trước khi hết; không có thì cân nhắc cho khách tự nhập số đã mua để đếm lùi.
 
 ## ✅ Đã hoàn thành (Done)
 

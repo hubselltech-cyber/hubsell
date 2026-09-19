@@ -5,7 +5,14 @@
 
 ---
 
-## Phiên 19/09/2026 (khuya) — Hóa đơn điện tử: vá 4 lỗ hổng trước khi khách xuất số lượng lớn (CHƯA PUSH — chờ anh gật)
+## Phiên 19/09/2026 (khuya) — Hóa đơn điện tử: vá 4 lỗ hổng trước khi khách xuất số lượng lớn (ĐÃ PUSH 1c1bada → 94bf5d9 + commit dọn dẹp; ticket MISA ĐÃ GỬI, ⏳ chờ trả lời)
+
+- **ĐỢT 3 (sau khi anh xem prod):**
+  - **Đơn vị tính:** anh muốn có gợi ý sẵn (chiếc, pcs, bộ, kiện…) → `frontend/src/lib/invoice-units.ts` = nguồn duy nhất 11 đơn vị; bản đầu là hàng nút bấm-để-điền, anh hỏi "dropdown hay liệt kê" → chốt **MỘT ô chọn + mục "Đơn vị khác…" mở ô gõ bên cạnh** (hàng nút chiếm 2 dòng, và ô gõ + nút là hai chỗ cùng quyết định một giá trị). Cố ý không gợi ý pcs / set / box (chữ trên hóa đơn phải tiếng Việt). Khảo sát: MISA eShop KHÔNG có đơn vị mặc định — khách chọn từ danh mục hoặc Thêm mới khi khai từng hàng hóa.
+  - **Khối Tự động của thẻ Xuất hóa đơn dựng lại:** anh chê cụm quan trọng mà mờ nhạt (nhãn 12px, mốc xuất là select trần 11px, tooltip một đoạn 8 dòng "không đọc nổi") → khối riêng tràn ngang dưới tiêu đề, nhãn 14px đậm, **hai THẺ CHỌN mốc xuất** (Ngay khi giao thành công — nhãn "Đúng quy định" / Sau khi sàn đối soát xong), mỗi thẻ mang sẵn một câu giải thích nên BỎ tooltip; hai khối xếp chồng tới 1280px. Anh hỏi có cần bóng mờ không → **giữ phẳng** (bóng = tầng nổi của Card gốc; khối nằm TRONG Card mà thêm bóng là thẻ nổi trong thẻ nổi), thay bằng: khối đang BẬT nền xanh đậm hơn một bậc, khoảng thở 24px trước hàng chờ, dải đỏ "đơn quá hạn" dời xuống DƯỚI hàng tab.
+  - **★ Quy ước rút ra cho trang sau:** cài đặt quan trọng có 2–3 lựa chọn → bày thành thẻ chọn, mỗi thẻ một câu giải thích, không nhét vào select nhỏ + tooltip dài.
+  - **Ticket MISA ĐÃ GỬI ~23:10** (anh đăng nhập developer.misa.vn, Claude điền + gửi; trạng thái "Chờ xử lý"): hỏi API số hóa đơn còn lại + xác nhận 3 mã `LicenseInfo_*` về qua cổng itg + xác nhận `inputType=2` tra theo RefID là chính thức. Nội dung + nhật ký ở `docs/MISA-TICKET-TAI-NGUYEN-HOA-DON.md` — ĐỪNG gửi lại.
+  - **Dọn dẹp cấu trúc:** các hàm THUẦN của tự động phát hành (`normalizeAutoIssueTrigger`, `vnStartOfDay`, `decideAfterFailure`) tách từ `workers/invoice-auto-issue.ts` sang `integrations/invoice/auto-issue-policy.ts` — `routes/tax.ts` hết phải import ngược từ tầng worker; worker chỉ còn quét + gọi. TODO.md: ghi chú dòng "còn phải làm" viết từ 07/2026 đã lỗi thời + thêm mục chờ ticket. vitest 623/623, tsc BE + FE sạch.
 
 - **Anh Trung hỏi:** có quy định phải xuất ngay khi bán không, MISA đang xuất thế nào cho đơn sàn, lỗi thường gặp (nghe nói "không đúng đơn vị") và phương án đối ứng → soi code + sandbox ra 4 lỗ hổng, anh bảo **làm luôn**.
 - **Căn cứ thời điểm (soát lại):** Điều 9 NĐ 254/2026 — bán hàng hóa lập hóa đơn **tại thời điểm giao hàng**, không có hạn ân cho bán nội địa; "chậm nhất ngày làm việc tiếp theo" chỉ áp hàng **xuất khẩu** (ghi chú 03/09 viện nhầm → đã sửa chú thích `INVOICE_OVERDUE_MS` + 2 câu trên UI; 48h là ngưỡng nhắc nội bộ). MISA eShop cho chọn: tự động theo trạng thái (giao thành công / bàn giao vận chuyển) · hàng loạt · hẹn giờ.

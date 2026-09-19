@@ -16,8 +16,8 @@ import {
   PLATFORM_RETURN_DONE_STATUSES,
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
+import { normalizeAutoIssueTrigger } from "../integrations/invoice/auto-issue-policy";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
-import { normalizeAutoIssueTrigger } from "../workers/invoice-auto-issue";
 import {
   downloadInvoiceFiles,
   type StandardInvoiceConfig,
