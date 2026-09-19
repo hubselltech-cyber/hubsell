@@ -132,6 +132,9 @@ function FieldError({ msg }: { msg?: string }) {
   return <p className="text-xs text-red-500">{msg}</p>;
 }
 
+/** Giá trị <option> "Đơn vị khác…" — không bao giờ là một đơn vị thật (có dấu gạch dưới đôi). */
+const UNIT_OTHER = "__other__";
+
 export function InvoiceConfigSection({
   /** Chế độ Beta/xem trước: khóa các nút Lưu để không ghi cấu hình khi module tắt. */
   readOnlyPreview = false,
@@ -156,6 +159,16 @@ export function InvoiceConfigSection({
   const [defaultVatRate, setDefaultVatRate] = useState(0);
   /** Đơn vị tính mặc định in trên hóa đơn — sàn không trả ĐVT qua API. */
   const [defaultUnitName, setDefaultUnitName] = useState("Cái");
+  /** Đang ở nhánh "Đơn vị khác…" (giá trị ngoài danh sách gợi ý) — cờ riêng chứ
+   *  không suy từ giá trị, kẻo gõ dở trúng một gợi ý là ô gõ biến mất. */
+  const [unitOther, setUnitOther] = useState(false);
+  /** Nạp đơn vị từ server: khớp gợi ý (không kể hoa thường) → về đúng chữ chuẩn. */
+  function applyUnitName(raw: string | null | undefined) {
+    const v = (raw ?? "").trim() || "Cái";
+    const known = INVOICE_UNIT_SUGGESTIONS.find((u) => u.toLowerCase() === v.toLowerCase());
+    setUnitOther(!known);
+    setDefaultUnitName(known ?? v);
+  }
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [hasSecretKey, setHasSecretKey] = useState(false);
   const [secretMasked, setSecretMasked] = useState<string | null>(null);
@@ -209,7 +222,7 @@ export function InvoiceConfigSection({
         setCustomApiUrl(r.config.customApiUrl);
         setInvoiceSeries(r.config.invoiceSeries);
         setDefaultVatRate(r.config.defaultVatRate ?? 0);
-        setDefaultUnitName(r.config.defaultUnitName ?? "Cái");
+        applyUnitName(r.config.defaultUnitName);
         setHasSecretKey(r.config.hasSecretKey);
         setSecretMasked(r.config.secretKeyMasked);
         setMeinvoiceUsername(r.config.meinvoiceUsername);
@@ -303,7 +316,7 @@ export function InvoiceConfigSection({
         defaultInvoiceType: "STANDARD",
       });
       setInvoiceSeries(r.config.invoiceSeries);
-      setDefaultUnitName(r.config.defaultUnitName ?? "Cái");
+      applyUnitName(r.config.defaultUnitName);
       setPosSeries(r.config.posSeries);
       setHasSecretKey(r.config.hasSecretKey);
       setSecretMasked(r.config.secretKeyMasked);
@@ -786,40 +799,40 @@ export function InvoiceConfigSection({
                         }
                       />
                     </span>
-                    <Input
-                      id="inv-default-unit"
-                      disabled={vendor.soon}
-                      className="max-w-40"
-                      maxLength={20}
-                      placeholder="Cái"
-                      value={defaultUnitName}
-                      onChange={(e) => setDefaultUnitName(e.target.value)}
-                    />
-                    {/* Gợi ý bấm-để-điền; ô phía trên vẫn gõ tự do đơn vị khác. */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {INVOICE_UNIT_SUGGESTIONS.map((u) => {
-                        const active = defaultUnitName.trim().toLowerCase() === u.toLowerCase();
-                        return (
-                          <button
-                            key={u}
-                            type="button"
-                            disabled={vendor.soon}
-                            aria-pressed={active}
-                            onClick={() => setDefaultUnitName(u)}
-                            className={cn(
-                              "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
-                              active
-                                ? "border-slate-900 bg-slate-900 text-white"
-                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
-                            )}
-                          >
+                    {/* MỘT ô chọn (anh Trung 19/09 xem bản hàng nút gợi ý: rối, hai
+                        chỗ cùng quyết định một giá trị) — đơn vị ngoài danh sách
+                        thì chọn "Đơn vị khác…" và ô gõ mới hiện ra bên cạnh. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <NativeSelect
+                        id="inv-default-unit"
+                        disabled={vendor.soon}
+                        className="w-44"
+                        value={unitOther ? UNIT_OTHER : defaultUnitName}
+                        onChange={(e) => {
+                          const other = e.target.value === UNIT_OTHER;
+                          setUnitOther(other);
+                          setDefaultUnitName(other ? "" : e.target.value);
+                        }}
+                      >
+                        {INVOICE_UNIT_SUGGESTIONS.map((u) => (
+                          <option key={u} value={u}>
                             {u}
-                          </button>
-                        );
-                      })}
-                      <span className="text-xs text-muted-foreground">
-                        hoặc gõ đơn vị khác vào ô trên
-                      </span>
+                          </option>
+                        ))}
+                        <option value={UNIT_OTHER}>Đơn vị khác…</option>
+                      </NativeSelect>
+                      {unitOther && (
+                        <Input
+                          aria-label="Đơn vị tính khác"
+                          autoFocus
+                          disabled={vendor.soon}
+                          className="w-44"
+                          maxLength={20}
+                          placeholder="VD: Thùng, Lọ, Mét"
+                          value={defaultUnitName}
+                          onChange={(e) => setDefaultUnitName(e.target.value)}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
