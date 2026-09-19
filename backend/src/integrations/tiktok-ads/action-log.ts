@@ -6,7 +6,7 @@
 // `reasons`, mỗi dòng một ý:
 //   "#<videoId> · <ghi chú số liệu lúc thao tác>"   ← một video của lệnh
 //   dòng KHÔNG mở đầu bằng "#<số>"                   ← CĂN CỨ của lệnh tự động
-// verdict = "manual" là chủ shop tự bấm; khác "manual" là Trợ lý tự động.
+// verdict = "manual" là chủ shop tự bấm (kể cả nút "Loại ngay": máy chấm danh sách, người bấm gửi); khác "manual" là Trợ lý tự động.
 // Route đọc lại đúng quy ước này để: hiện lịch sử (mã video + lý do) và đánh
 // dấu video "đang chờ TikTok áp dụng" (sàn không trả kết quả từng video).
 // ============================================================

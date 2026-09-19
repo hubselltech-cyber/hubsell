@@ -327,6 +327,9 @@ chốt: "trước đó đã diễn tập một khoảng thời gian rồi nên t
   sách khách vừa thấy (lệch → 409 `plan_changed`, popup chấm lại cho khách xem danh sách mới). Lệnh đi qua đúng `applyAutoPlan`
   của lượt hằng ngày → giữ mọi chốt (A2, kiểm quyền + chiến dịch còn bật, ghi sổ trước A3, trần video/ngày, giữ N video ra đơn).
   Chỉ chạy khi rule đang live, sau 12h VN, và hôm nay chưa có lệnh loại thật nào.
+- ★ 19/09 (anh Trung xem prod, lệnh 22:01 18/09 hiện nhãn "Trợ lý tự động loại"): lệnh Loại ngay do CHỦ SHOP xem danh sách rồi
+  tự bấm → sổ ghi `verdict = manual` (nhãn "Loại thủ công"), dòng căn cứ mở đầu "Chủ shop bấm Loại ngay theo danh sách Trợ lý
+  chấm (…)", không chuông "Trợ lý đã loại". `applyAutoPlan(…, confirmedByOwner = true)`. Mã `…-live` giữ nguyên.
 - `autoCommandReferenceId` (thuần, test): diễn tập `ttauto-{id}-{ngày}`, loại thật `…-live` → lệnh thật không bị dòng DIỄN TẬP
   cùng ngày chặn, nhưng vẫn tối đa MỘT lệnh loại thật / chiến dịch / ngày (Loại ngay xong thì lượt 12h hôm đó tự bỏ qua).
 - Trang chiến dịch: đang live mà chưa có lượt live nào → dòng vàng có nút "xem danh sách và loại ngay" mở thẳng bước này

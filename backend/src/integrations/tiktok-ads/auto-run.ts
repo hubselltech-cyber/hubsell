@@ -36,6 +36,7 @@ import { GMV_MAX_CREATIVE_BATCH, updateGmvMaxCreatives } from "./client";
 import {
   buildVideoActionReasons,
   VIDEO_ACTION_EXCLUDE,
+  VIDEO_VERDICT_MANUAL,
   videoActionNote,
 } from "./action-log";
 import {
@@ -527,7 +528,13 @@ export async function applyAutoPlan(
   cfg: AutoRuleConfig,
   bundle: AutoPlanBundle,
   today: string,
-  ownerId: string
+  ownerId: string,
+  /**
+   * Nút "Loại ngay" (route run-now): máy chấm ra danh sách nhưng CHỦ SHOP xem rồi tự bấm gửi → sổ ghi là lệnh THỦ CÔNG
+   * (anh Trung 19/09: "chỗ này phải tính là loại thủ công" — nhãn "Trợ lý tự động loại" lúc 22h làm tưởng máy tự chạy ngoài
+   * khung 12h–14h). Căn cứ vẫn nêu rõ danh sách do Trợ lý chấm. Mã `…-live` giữ nguyên: vẫn chỉ MỘT lệnh loại thật / ngày.
+   */
+  confirmedByOwner = false
 ): Promise<ApplyOutcome> {
   const { plan } = bundle;
   // B6: cấu hình live có thể CHƯA diễn tập — khách đã được cảnh báo lúc lưu và tự bấm bỏ qua (route PUT ghi sổ việc đó,
@@ -620,13 +627,13 @@ export async function applyAutoPlan(
   const items = plan.exclude.slice(0, GMV_MAX_CREATIVE_BATCH);
   const reasons = buildVideoActionReasons(
     items.map((a) => ({ videoId: a.videoId, note: `${videoActionNote(a.cost, a.orders)} · ${a.reason}` })),
-    [`Trợ lý tự động (${cfg.windowDays} ngày ${bundle.windowFrom}→${bundle.windowTo}, ROI mục tiêu ${cfg.roiTarget}, mức loại ${plan.hard.label}): ${summary}`]
+    [`${confirmedByOwner ? "Chủ shop bấm Loại ngay theo danh sách Trợ lý chấm" : "Trợ lý tự động"} (${cfg.windowDays} ngày ${bundle.windowFrom}→${bundle.windowTo}, ROI mục tiêu ${cfg.roiTarget}, mức loại ${plan.hard.label}): ${summary}`]
   );
   const logBase = {
     channelId: campaign.channelId,
     adsCampaignId: campaign.id,
     action: VIDEO_ACTION_EXCLUDE,
-    verdict: VIDEO_VERDICT_AUTO,
+    verdict: confirmedByOwner ? VIDEO_VERDICT_MANUAL : VIDEO_VERDICT_AUTO,
     reasons,
     referenceId,
   };
@@ -679,6 +686,8 @@ export async function applyAutoPlan(
     return "failed";
   }
   await saveRun({ executedVideoIds: [...excludedIds] });
+  // Chủ shop vừa tự bấm và đã thấy kết quả ngay trên màn hình → không chuông "Trợ lý đã loại".
+  if (confirmedByOwner) return "executed";
   await notify(ownerId, {
     type: "tiktok-ads-auto",
     title: `${campaign.name}: Trợ lý đã loại ${items.length} video`,

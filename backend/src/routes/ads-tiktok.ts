@@ -996,7 +996,7 @@ adsTiktokRouter.post("/campaigns/:id/auto-rule/run-now", requireAdmin, async (re
         res.status(409).json({ error: "Danh sách video sẽ loại vừa thay đổi so với lúc anh/chị xem. Hãy xem lại danh sách mới rồi bấm Loại ngay.", code: "plan_changed" });
         return;
       }
-      const outcome = await applyAutoPlan(scope, campaign, rule, cfg, bundle, today, req.ownerId!);
+      const outcome = await applyAutoPlan(scope, campaign, rule, cfg, bundle, today, req.ownerId!, true);
       const after = await prisma.tiktokAdsAutoRule.findUnique({ where: { adsCampaignId: campaign.id } });
       const status = after ? autoStatusOf(after) : null;
       res.json({
