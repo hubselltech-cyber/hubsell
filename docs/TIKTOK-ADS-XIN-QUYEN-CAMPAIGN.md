@@ -143,7 +143,7 @@ diện → nếu họ đòi, em dựng màn hình thật (nút bị khóa vì ch
    chiến dịch mới có đụng chiến dịch đang chạy không.
 4. Ghi kết quả ticket (ngày nộp, ngày duyệt / lý do từ chối, tên quyền chính xác) vào memory `hubsell-tiktok-gmv-max-api`.
 
-## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối qua API, sửa tay trên SELLER CENTER thì được (soạn 19/09/2026, ⏳ CHƯA GỬI)
+## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối qua API, sửa tay trên SELLER CENTER thì được (✅ ĐÃ GỬI 19/09/2026 — ticket **#4455484**, ⏳ chờ trả lời)
 
 **Dữ kiện (19/09/2026, gian nhà and.not.or):** `POST /campaign/gmv_max/update/` đổi `budget` của TC076 (đang tắt) → `40002 Shop must
 belong to a Business Center account.` 3/3 lần. Cùng ngày anh Trung SỬA TAY ngân sách TC076 2.000.000 → 2.001.000 trên **SELLER CENTER**
@@ -157,6 +157,11 @@ sales with GMV Max — Create campaign", KHÔNG liệt kê chiến dịch TC nà
 CENTER không quản lý được từ phía tài khoản quảng cáo: API ĐỌC được (report, info, campaign/get), loại / khôi phục video được, nhưng
 SỬA chiến dịch thì không. Ticket vẫn nên gửi để TikTok xác nhận bằng văn bản + hỏi lệnh tạo / bật-tắt.
 Loại / khôi phục video qua API (`/campaign/gmv_max/creative/update/`) vẫn chạy với đúng tài khoản + token này.
+
+**Trạng thái:** anh Trung tự điền + bấm Submit 19/09/2026 (Claude điền hộ thì trình soạn thảo của cổng ticket làm treo tab — lần sau đưa
+nội dung cho anh dán). Nhóm: Marketing API → General API Inquiry → Campaign Management. Mã ticket **#4455484**. Xem trả lời ở
+business-api.tiktok.com/portal → Support → Ticket Platform → All tickets. Ô "Full request and response payload" bỏ trống (tùy chọn).
+Phần mô tả gửi đi dùng "Fact 1–4 / Question A–D" (trình soạn thảo tự biến "1." / "a)" thành danh sách lồng nhau).
 
 **Gửi ở đâu:** https://business-api.tiktok.com/portal → Support → Submit a ticket (đăng nhập tài khoản developer dev@hubsell.tech).
 
