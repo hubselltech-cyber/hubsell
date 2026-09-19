@@ -29,6 +29,7 @@ import { Refreshing } from "@/components/shared/refreshing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   Dialog,
   DialogContent,
@@ -635,66 +636,39 @@ export default function OrdersPage() {
     <AppShell>
       {/* Chừa chỗ dưới đáy để thanh xử lý hàng loạt không che mất dòng cuối bảng */}
       <div className="space-y-5 pb-28">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-muted-foreground">
-            Gom đơn từ tất cả các sàn về một chỗ để lọc, duyệt và in phiếu hàng
-            loạt.
-          </p>
-          <Button variant="outline" onClick={handleExport} disabled={exporting}>
-            {exporting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Download className="size-4" />
-            )}
-            Xuất Excel Đơn Hàng
-          </Button>
-        </div>
-
-        {/* ===== TAB THEO VÒNG ĐỜI ĐƠN ===== */}
-        <div
-          role="tablist"
-          aria-label="Lọc theo trạng thái đơn hàng"
-          className="flex flex-wrap gap-1 border-b"
-        >
-          {TABS.map((t) => {
-            const active = tab === t.key;
-            const count = counts[t.countKey];
-            return (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={active}
-                onClick={() => {
-                  setTab(t.key);
-                  setPrintedFilter("");
-    setReturnFilter(""); // rời tab Đã xử lý thì bỏ lọc con
-                  setReturnFilter("");
-                  setPage(1);
-                }}
-                className={cn(
-                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                )}
-              >
-                {t.label}
-                {count !== undefined && count > 0 && (
-                  <span
-                    className={cn(
-                      "rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums",
-                      active
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {formatNumber(count)}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        {/* ===== DẢI ĐẦU TRANG: mô tả + xuất Excel + TAB THEO VÒNG ĐỜI ĐƠN ===== */}
+        <PageHeaderBand>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              Gom đơn từ tất cả các sàn về một chỗ để lọc, duyệt và in phiếu
+              hàng loạt.
+            </p>
+            <Button variant="outline" onClick={handleExport} disabled={exporting}>
+              {exporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              Xuất Excel Đơn Hàng
+            </Button>
+          </div>
+          <PageTabs
+            ariaLabel="Lọc theo trạng thái đơn hàng"
+            className="mt-2 border-b-0"
+            tabs={TABS.map((t) => ({
+              key: t.key,
+              label: t.label,
+              count: counts[t.countKey],
+            }))}
+            value={tab}
+            onChange={(key) => {
+              setTab(key);
+              setPrintedFilter(""); // rời tab Đã xử lý thì bỏ lọc con
+              setReturnFilter("");
+              setPage(1);
+            }}
+          />
+        </PageHeaderBand>
 
         {/* ===== BỘ LỌC CON — chỉ có nghĩa trong tab "Đã xử lý" =====
             Đây là chốt chặn in trùng: nhân viên lọc "Chưa in" để gom in một

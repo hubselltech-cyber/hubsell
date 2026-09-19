@@ -6,6 +6,7 @@ import { CircleAlert, FlaskConical } from "lucide-react";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { InvoiceConfigSection } from "@/components/settings/invoice-config-section";
 import { InvoiceIssueCard } from "@/components/settings/invoice-issue-card";
+import { PageTabs } from "@/components/ui/page-tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -101,36 +102,17 @@ export default function InvoicingConnectPage() {
       )}
 
       {/* ---- Tab: Xuất hóa đơn (thao tác hằng ngày) / Cấu hình kết nối ---- */}
-      <div
-        role="tablist"
-        aria-label="Khu vực Hóa đơn điện tử"
-        className="flex flex-wrap gap-1 border-b"
-      >
-        {(
+      <PageTabs
+        ariaLabel="Khu vực Hóa đơn điện tử"
+        tabs={
           [
             { key: "issue", label: "Xuất hóa đơn" },
             { key: "config", label: "Cấu hình kết nối" },
           ] as const
-        ).map((t) => {
-          const active = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                active
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-              )}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+        }
+        value={tab}
+        onChange={setTab}
+      />
 
       {/* Hộp XUẤT hóa đơn nằm ngay trang này (anh Trung chốt 23/08) — cấu hình
           xong là phát hành được tại chỗ; Lịch sử chỉ để tra + tải PDF. */}

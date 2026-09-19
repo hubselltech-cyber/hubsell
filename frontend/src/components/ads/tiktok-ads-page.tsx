@@ -36,6 +36,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
@@ -373,41 +374,24 @@ export function TiktokAdsPage() {
         )}
 
         {data?.configured && !noChannel && (
-          <div role="tablist" className="flex flex-wrap gap-1 border-b">
-            {(
+          <PageTabs
+            ariaLabel="Khu vực quảng cáo TikTok"
+            tabs={
               [
-                { key: "overview", label: "Tổng quan chiến dịch", chip: 0 },
-                { key: "breakeven", label: "Hòa vốn sản phẩm", chip: 0 },
-                { key: "connect", label: "Kết nối tài khoản quảng cáo", chip: pendingCount },
+                { key: "overview", label: "Tổng quan chiến dịch" },
+                { key: "breakeven", label: "Hòa vốn sản phẩm" },
+                {
+                  key: "connect",
+                  label: "Kết nối tài khoản quảng cáo",
+                  count: pendingCount,
+                  countTone: "attention",
+                  countTitle: "Số gian chưa kết nối quảng cáo hoặc cần kết nối lại",
+                },
               ] as const
-            ).map((t) => {
-              const active = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setTabPick(t.key)}
-                  className={cn(
-                    "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                    active
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                  )}
-                >
-                  {t.label}
-                  {t.chip > 0 && (
-                    <span
-                      className="rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-semibold text-white tabular-nums"
-                      title="Số gian chưa kết nối quảng cáo hoặc cần kết nối lại"
-                    >
-                      {formatNumber(t.chip)}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+            }
+            value={tab}
+            onChange={setTabPick}
+          />
         )}
 
         {/* ===== GIAN HÀNG → TÀI KHOẢN QUẢNG CÁO (anh Trung 17/09): mỗi gian có thể

@@ -33,6 +33,7 @@ import { HintIcon } from "@/components/finance/hint-icon";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/ui/page-tabs";
 import {
   Card,
   CardContent,
@@ -642,8 +643,9 @@ export function ShopeeAdsPage({
         )}
 
         {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}
-        <div role="tablist" className="flex flex-wrap gap-1 border-b">
-          {(
+        <PageTabs
+          ariaLabel={`Khu vực quảng cáo ${meta.label}`}
+          tabs={
             [
               { key: "overview", label: "Tổng quan chiến dịch" },
               // Đợt D (17/09): gợi ý SP nên chạy ads + tạo chiến dịch một nút — chỉ Shopee.
@@ -651,45 +653,29 @@ export function ShopeeAdsPage({
                 ? ([{ key: "recommend", label: "Gợi ý chạy ads" }] as const)
                 : []),
               { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
-              { key: "config", label: "Cấu hình Trợ lý Tự động" },
+              {
+                key: "config",
+                label: "Cấu hình Trợ lý Tự động",
+                count: assistant?.needsAction ?? 0,
+                countTone: "attention",
+              },
             ] as const
-          ).map((t) => {
-            const active = tab === t.key;
-            const chip =
-              t.key === "config" && assistant ? assistant.needsAction : 0;
-            return (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                )}
+          }
+          value={tab}
+          onChange={setTab}
+          // Mốc số ads dời từ thanh công cụ xuống mép phải hàng tab (anh Trung
+          // 17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ).
+          trailing={
+            data?.adsSyncedAt && (
+              <span
+                className="text-xs text-muted-foreground tabular-nums"
+                title="Lần kéo số quảng cáo từ sàn gần nhất"
               >
-                {t.label}
-                {chip > 0 && (
-                  <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-semibold text-white tabular-nums">
-                    {formatNumber(chip)}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          {/* Mốc số ads dời từ thanh công cụ xuống mép phải hàng tab (anh Trung
-              17/09: thanh công cụ chật, dòng này chỉ là thông tin phụ). */}
-          {data?.adsSyncedAt && (
-            <span
-              className="ml-auto self-center pb-1 text-xs text-muted-foreground tabular-nums"
-              title="Lần kéo số quảng cáo từ sàn gần nhất"
-            >
-              Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
-            </span>
-          )}
-        </div>
+                Cập nhật lúc {formatSyncTime(data.adsSyncedAt)}
+              </span>
+            )
+          }
+        />
 
         {tab === "overview" && (
           <>

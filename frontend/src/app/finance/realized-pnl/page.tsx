@@ -19,6 +19,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { OverviewDashboard } from "@/components/finance/realized-pnl/OverviewDashboard";
@@ -234,39 +235,24 @@ export default function RealizedPnlPage() {
   return (
     <AppShell>
       <div className="space-y-5 pb-10">
-        <p className="text-muted-foreground">
-          Đối soát lãi/lỗ thực hiện của từng đơn, chi tiết hóa toàn bộ chi phí sàn
-          theo cấu trúc dữ liệu thực tế của mỗi kênh.
-        </p>
-
-        {/* ===== TAB LỚN THEO SÀN ===== */}
-        <div role="tablist" className="flex flex-wrap gap-1 border-b">
-          {TABS.map((t) => {
-            const active = tab === t.key;
-            const count = summary && active ? summary.count : undefined;
-            return (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={active}
-                onClick={() => changeTab(t.key)}
-                className={cn(
-                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                )}
-              >
-                {t.label}
-                {count !== undefined && count > 0 && (
-                  <span className="rounded-full bg-primary px-1.5 py-0.5 text-xs font-semibold text-primary-foreground tabular-nums">
-                    {formatNumber(count)}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <PageHeaderBand>
+          <p className="text-sm text-muted-foreground">
+            Đối soát lãi/lỗ thực hiện của từng đơn, chi tiết hóa toàn bộ chi phí
+            sàn theo cấu trúc dữ liệu thực tế của mỗi kênh.
+          </p>
+          {/* ===== TAB LỚN THEO SÀN ===== */}
+          <PageTabs
+            ariaLabel="Lãi/Lỗ thực hiện theo sàn"
+            className="mt-2 border-b-0"
+            tabs={TABS.map((t) => ({
+              key: t.key,
+              label: t.label,
+              count: summary && tab === t.key ? summary.count : undefined,
+            }))}
+            value={tab}
+            onChange={changeTab}
+          />
+        </PageHeaderBand>
 
         {/* ===== FILTER BAR + XUẤT EXCEL =====
             Bộ lọc ngày nằm BÊN PHẢI (yêu cầu chủ shop 05/08 — dễ nhìn hơn);

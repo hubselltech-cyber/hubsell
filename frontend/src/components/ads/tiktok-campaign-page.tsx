@@ -46,6 +46,7 @@ import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realiz
 import { AppShell } from "@/components/shell/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
@@ -579,26 +580,12 @@ export function TiktokCampaignPage() {
 
         {/* ===== TAB: Video (hằng ngày) · Đối chiếu diễn tập (chỉ khi đang Diễn tập) · Lịch sử ===== */}
         {tabs.length > 1 && (
-          <div role="tablist" className="flex flex-wrap gap-1 border-b">
-            {tabs.map((x) => {
-              const active = activeTab === x.key;
-              return (
-                <button
-                  key={x.key}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setTab(x.key)}
-                  className={cn(
-                    "-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                    active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                  )}
-                >
-                  {x.label}
-                  {x.count != null && <span className="text-xs tabular-nums text-slate-400">{formatNumber(x.count)}</span>}
-                </button>
-              );
-            })}
-          </div>
+          <PageTabs
+            ariaLabel="Khu vực chiến dịch"
+            tabs={tabs.map((x) => ({ key: x.key, label: x.label, count: x.count ?? undefined }))}
+            value={activeTab}
+            onChange={setTab}
+          />
         )}
 
         {/* Chỉ gọi TikTok lấy số đối chiếu khi mở đúng tab này. */}

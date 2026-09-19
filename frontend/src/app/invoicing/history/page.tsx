@@ -20,6 +20,7 @@ import { TaxDeclarationCard } from "@/components/invoicing/tax-declaration-card"
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { Button } from "@/components/ui/button";
+import { PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -302,36 +303,17 @@ export default function TaxHistoryPage() {
       description="Số liệu kê khai theo quý và nhật ký hóa đơn điện tử — mỗi việc một tab."
     >
       <div className="space-y-6">
-        <div
-          role="tablist"
-          aria-label="Báo cáo thuế"
-          className="flex flex-wrap gap-1 border-b"
-        >
-          {(
+        <PageTabs
+          ariaLabel="Báo cáo thuế"
+          tabs={
             [
               { key: "declaration", label: "Kê khai thuế" },
               { key: "invoices", label: "Lịch sử hóa đơn" },
             ] as const
-          ).map((t) => {
-            const active = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                )}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+          }
+          value={tab}
+          onChange={setTab}
+        />
 
         {/* ===== TAB KÊ KHAI THUẾ (07/09): doanh thu tính thuế + sàn đã khấu
             trừ theo từng sàn, chọn quý riêng, hạn nộp, ngưỡng 1 tỷ. ===== */}

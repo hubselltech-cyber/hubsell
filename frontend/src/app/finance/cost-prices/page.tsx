@@ -25,6 +25,7 @@ import { ImportCostDialog } from "@/components/finance/import-cost-dialog";
 import { SyncChannelProductsButton } from "@/components/channels/sync-channel-products-button";
 import { Refreshing } from "@/components/shared/refreshing";
 import { Button } from "@/components/ui/button";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -277,33 +278,19 @@ export default function CostPricesPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <p className="text-muted-foreground">
-          Nhập giá vốn gốc cho từng SKU đã đồng bộ từ sàn. Giá vốn này dùng để tính
-          lợi nhuận và cảnh báo đơn lỗ.
-        </p>
-
-        {/* ===== HAI TAB CỦA TRANG (khuôn tablist giống Trợ lý quảng cáo) ===== */}
-        <div role="tablist" className="flex flex-wrap gap-1 border-b">
-          {PAGE_TABS.map((t) => {
-            const active = pageTab === t.key;
-            return (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setPageTab(t.key)}
-                className={cn(
-                  "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
-                )}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        <PageHeaderBand>
+          <p className="text-sm text-muted-foreground">
+            Nhập giá vốn gốc cho từng SKU đã đồng bộ từ sàn. Giá vốn này dùng để
+            tính lợi nhuận và cảnh báo đơn lỗ.
+          </p>
+          <PageTabs
+            ariaLabel="Khu vực giá vốn"
+            className="mt-2 border-b-0"
+            tabs={PAGE_TABS}
+            value={pageTab}
+            onChange={setPageTab}
+          />
+        </PageHeaderBand>
 
         {pageTab === "mapping" && <CostMappingTab onApplied={load} />}
 
