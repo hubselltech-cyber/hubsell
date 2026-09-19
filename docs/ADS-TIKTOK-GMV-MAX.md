@@ -427,6 +427,14 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   SỐ CỦA TIKTOK (điều kiện tự tăng ngân sách trong docs "Update a GMV Max Campaign": "reached at least 90% of your ROI target and at
   least 80% of your budget has been used"); KHÔNG có mốc "mục tiêu gấp N lần hòa vốn" — chỉ nêu lãi / 100đ doanh thu. FE chịu được
   backend cũ chưa trả `advice` (Vercel lên trước Render).
+- ✅ **19/09/2026 — GỌT BẢNG 11 → 6 CỘT** (anh Trung xem prod: "nhìn đang hơi bị rối", duyệt phác thảo, dặn GIỮ ẢNH sản phẩm). Bảng cũ trả lời ba
+  câu hỏi cùng lúc (hòa vốn bao nhiêu · quảng cáo ra sao · có nên chạy không), ô nào cũng 2–3 dòng phụ, cột Nhận định kẹt giữa. Bảng mới:
+  **Sản phẩm** (ảnh + tên + mã copy + dòng phụ "bán 7 / 30 · tồn đủ ~N ngày", CHỈ tô màu khi có vấn đề: ▲ / ▼ theo mốc 1,2 / 0,8, tồn < 14
+  ngày) · **Doanh thu** · **Biên lãi** (trỏ chuột hiện số tiền lãi trước quảng cáo — bỏ cột Lãi trước QC) · **ROI hòa vốn** · **Quảng cáo**
+  (gộp "Chiến dịch đang chứa" + "ROI quảng cáo 30 ngày": tên chiến dịch, dòng dưới "mục tiêu 15 · thực 11,57", trỏ chuột hiện tiêu + đơn)
+  · **Nhận định** (cột CUỐI — mắt đi trái sang phải rồi dừng ở kết luận; ô lý do nhận thêm số đơn đã đối soát / chờ đối soát thay cho cột
+  Đơn đối soát). Sắp xếp còn 3 cột (doanh thu · biên lãi · hòa vốn). Chip lọc theo VIỆC CẦN LÀM: Tất cả · Cần xem ngay · Đang chạy quảng
+  cáo · Thiếu giá vốn · Chưa đủ đơn đối soát ("Cần xem ngay" trống = không có gì phải lo). Bảng hẹp lại min 940px.
 - **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột; nhận
   định "Nên chạy / Chạy thử / Chưa nên" cho sản phẩm CHƯA chạy (anh Trung gật hướng 19/09, làm sau trang chiến dịch — căn cứ: hòa vốn tin
   được + tồn ≥14 ngày + đà bán 1,2 / 0,8 như Shopee; ROI mục tiêu đề xuất = hòa vốn × hệ số an toàn của cấu hình Trợ lý).
