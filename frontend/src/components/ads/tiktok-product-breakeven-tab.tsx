@@ -75,14 +75,22 @@ const inQuick = (k: QuickKey, v: RowVerdict, p: TiktokProductBreakevenRow) =>
   (k === "waiting" && (v === "low_sample" || v === "no_settled"));
 const hasBreakeven = (v: RowVerdict) => v === "ok" || v === "ads_losing" || v === "target_below";
 
-type SortKey = "revenue" | "margin" | "roi";
+type SortKey = "revenue" | "margin" | "roi" | "adCost";
 const SORT_COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: "revenue", label: "Doanh thu", title: "Doanh thu của các đơn đã đối soát có giá vốn, cộng đơn hủy cùng kỳ (TikTok vẫn đếm đơn hủy vào doanh thu quảng cáo)." },
   { key: "margin", label: "Biên lãi", title: "Lãi trước quảng cáo ÷ doanh thu (lợi nhuận trên Lãi/Lỗ thực hiện, đã cộng ngược phí GMV Max TikTok trừ trong từng đơn). Trỏ chuột vào từng ô để xem số tiền lãi." },
   { key: "roi", label: "ROI hòa vốn", title: "= 1 ÷ biên lãi trước quảng cáo. ROI quảng cáo của sản phẩm thấp hơn mức này là quảng cáo đang ăn vào vốn." },
 ];
-const sortValue = (p: TiktokProductBreakevenRow, k: SortKey): number | null =>
-  k === "revenue" ? p.revenue + p.missingCostRevenue : k === "margin" ? p.breakeven.margin : p.breakeven.roi;
+const sortValue = (p: TiktokProductBreakevenRow, k: SortKey, ads: AdsOf): number | null =>
+  k === "revenue"
+    ? p.revenue + p.missingCostRevenue
+    : k === "margin"
+      ? p.breakeven.margin
+      : k === "adCost"
+        ? ads && ads.cost > 0
+          ? ads.cost
+          : null
+        : p.breakeven.roi;
 
 export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannelId: string }) {
   const [channelId, setChannelId] = useState(initialChannelId);
@@ -129,14 +137,14 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
     return products
       .filter((p) => inQuick(quick, verdictOf.get(p.productId) ?? p.verdict, p) && (!needle || p.name.toLowerCase().includes(needle) || p.productId.includes(needle)))
       .sort((a, b) => {
-        const x = sortValue(a, sort.key);
-        const y = sortValue(b, sort.key);
+        const x = sortValue(a, sort.key, ads?.products[a.productId]);
+        const y = sortValue(b, sort.key, ads?.products[b.productId]);
         // Dòng chưa có số luôn xếp cuối, bất kể chiều sắp xếp.
         const sold = (p: TiktokProductBreakevenRow) => p.revenue + p.missingCostRevenue;
         if (x == null || y == null) return x == null && y == null ? sold(b) - sold(a) : x == null ? 1 : -1;
         return sign * (x - y) || sold(b) - sold(a);
       });
-  }, [products, quick, search, sort, verdictOf]);
+  }, [products, quick, search, sort, verdictOf, ads]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -250,7 +258,7 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
             </p>
           ) : (
             <div className={cn("min-w-0 rounded-lg border", PNL_TABLE_SCROLLER)}>
-              <table className="w-full min-w-[940px] border-separate border-spacing-0 text-sm">
+              <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
                 <thead className={PNL_STICKY_HEAD}>
                   <tr className={cn(TEXT_TABLE_HEAD, "text-left")}>
                     <th className={TH}>Sản phẩm</th>
@@ -270,6 +278,28 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                         </th>
                       );
                     })}
+                    {ads?.linked && (
+                      <th
+                        className={cn(TH, "text-right")}
+                        title="Tiền quảng cáo GMV Max của sản phẩm trong các chiến dịch đang chạy, 30 ngày gần nhất (số của TikTok), kèm số đơn."
+                        aria-sort={sort.key === "adCost" ? (sort.dir === "desc" ? "descending" : "ascending") : "none"}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSort(sort.key === "adCost" ? { key: "adCost", dir: sort.dir === "desc" ? "asc" : "desc" } : { key: "adCost", dir: "desc" })}
+                          className={cn("inline-flex items-center gap-1 font-medium hover:text-slate-900", sort.key === "adCost" && "text-slate-900")}
+                        >
+                          Chi quảng cáo 30 ngày
+                          {sort.key !== "adCost" ? (
+                            <ArrowUpDown className="size-3.5 text-slate-400" />
+                          ) : sort.dir === "desc" ? (
+                            <ArrowDown className="size-3.5 text-slate-900" />
+                          ) : (
+                            <ArrowUp className="size-3.5 text-slate-900" />
+                          )}
+                        </button>
+                      </th>
+                    )}
                     <th
                       className={TH}
                       title="Chiến dịch GMV Max đang chứa sản phẩm: ROI mục tiêu đang đặt và ROI thật 30 ngày gần nhất (số của TikTok). Doanh thu GMV Max gồm cả đơn tự nhiên nên ROI riêng của quảng cáo chỉ có thể thấp hơn."
@@ -353,13 +383,25 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                         <td className="px-3 py-2 text-right">
                           <TiktokBreakevenValue breakeven={p.breakeven} className={cn("font-semibold", p.verdict === "low_sample" && "text-slate-400")} />
                         </td>
+                        {ads?.linked && (
+                          <td className="px-3 py-2 text-right">
+                            {a && a.cost > 0 ? (
+                              <>
+                                <Money value={a.cost} className="text-slate-700" />
+                                <span className="block text-xs text-slate-400">{formatNumber(a.orders)} đơn</span>
+                              </>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-3 py-2">
                           {camp ? (
                             <>
                               <Link href={`/ads/tiktok/campaign?id=${camp.id}`} className="block max-w-44 truncate text-slate-900 underline decoration-dotted underline-offset-2" title={camp.name}>
                                 {camp.name || "Chiến dịch"}
                               </Link>
-                              <span className="block text-xs text-slate-500" title={a && a.cost > 0 ? `30 ngày: tiêu ${formatVND(a.cost)} · ${formatNumber(a.orders)} đơn` : undefined}>
+                              <span className="block text-xs text-slate-500">
                                 {camp.status !== "ongoing" && "Tạm dừng"}
                                 {camp.status === "ongoing" && (camp.roasTarget != null ? `mục tiêu ${formatRoi(camp.roasTarget)}` : "phân phối tối đa")}
                                 {a && a.cost > 0 && (

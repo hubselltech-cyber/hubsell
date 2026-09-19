@@ -435,6 +435,8 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   · **Nhận định** (cột CUỐI — mắt đi trái sang phải rồi dừng ở kết luận; ô lý do nhận thêm số đơn đã đối soát / chờ đối soát thay cho cột
   Đơn đối soát). Sắp xếp còn 3 cột (doanh thu · biên lãi · hòa vốn). Chip lọc theo VIỆC CẦN LÀM: Tất cả · Cần xem ngay · Đang chạy quảng
   cáo · Thiếu giá vốn · Chưa đủ đơn đối soát ("Cần xem ngay" trống = không có gì phải lo). Bảng hẹp lại min 940px.
+  · Anh xem bảng mới: muốn GIỮ cột chi phí → thêm lại cột **Chi quảng cáo 30 ngày** (tiền + số đơn, sắp xếp được, đứng trước cột Quảng cáo;
+  chỉ hiện khi gian đã nối quảng cáo) → bảng 7 cột, min 1040px.
 - **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột; nhận
   định "Nên chạy / Chạy thử / Chưa nên" cho sản phẩm CHƯA chạy (anh Trung gật hướng 19/09, làm sau trang chiến dịch — căn cứ: hòa vốn tin
   được + tồn ≥14 ngày + đà bán 1,2 / 0,8 như Shopee; ROI mục tiêu đề xuất = hòa vốn × hệ số an toàn của cấu hình Trợ lý).
