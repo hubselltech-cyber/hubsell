@@ -27,19 +27,56 @@ function getTransport() {
   });
 }
 
+/**
+ * VAI NGƯỜI GỬI (anh Trung duyệt 19/09/2026) — khách nhìn địa chỉ gửi là biết
+ * thư thuộc việc gì, và bấm Trả lời là về đúng hộp có người đọc:
+ *   · noreply — thư tự động về tài khoản / bảo mật (chào khách mới, quên / đổi
+ *     mật khẩu). Gửi từ MAIL_FROM_NOREPLY, Trả lời về MAIL_REPLY_TO_SUPPORT.
+ *   · billing — mọi thư dính tới tiền (kích hoạt gói, nhắc gia hạn). Gửi từ
+ *     MAIL_FROM_BILLING, Trả lời về chính địa chỉ đó (khách hay hỏi hóa đơn).
+ *   · vắng mặt — thư nội bộ báo HQ, giữ MAIL_FROM như cũ.
+ * Env vai chưa đặt → rơi về MAIL_FROM → `Hubsell <SMTP_USER>`: deploy code
+ * trước, đổi SMTP sang Zoho sau, không có khoảng hở. Máy chủ SMTP phải cho tài
+ * khoản đăng nhập gửi bằng các địa chỉ này (Zoho: bí danh của cùng hộp thư;
+ * Gmail sẽ tự thay From bằng tài khoản đăng nhập — Reply-To vẫn giữ).
+ */
+export type MailRole = "noreply" | "billing";
+
+const DEFAULT_SUPPORT_REPLY_TO = "support@hubsell.vn";
+const DEFAULT_BILLING_REPLY_TO = "billing@hubsell.vn";
+
+/** Người gửi + địa chỉ trả lời theo vai — hàm thuần (đọc env) để test. */
+export function resolveSender(role?: MailRole): { from: string; replyTo?: string } {
+  const fallback = process.env.MAIL_FROM ?? `Hubsell <${process.env.SMTP_USER}>`;
+  if (role === "noreply") {
+    return {
+      from: process.env.MAIL_FROM_NOREPLY ?? fallback,
+      replyTo: process.env.MAIL_REPLY_TO_SUPPORT ?? DEFAULT_SUPPORT_REPLY_TO,
+    };
+  }
+  if (role === "billing") {
+    return {
+      from: process.env.MAIL_FROM_BILLING ?? fallback,
+      replyTo: process.env.MAIL_REPLY_TO_BILLING ?? DEFAULT_BILLING_REPLY_TO,
+    };
+  }
+  return { from: fallback };
+}
+
 /** Gửi một email HTML. Ném lỗi để tầng route quyết định cách phản hồi. */
 export async function sendMail(opts: {
   to: string;
   subject: string;
   html: string;
+  role?: MailRole;
 }): Promise<void> {
   if (!isMailerConfigured()) {
     throw new Error(
       "Chưa cấu hình SMTP (SMTP_HOST/SMTP_USER/SMTP_PASS) — không gửi được email"
     );
   }
-  const from = process.env.MAIL_FROM ?? `Hubsell <${process.env.SMTP_USER}>`;
-  await getTransport().sendMail({ from, ...opts });
+  const { role, ...message } = opts;
+  await getTransport().sendMail({ ...resolveSender(role), ...message });
 }
 
 /** Email đặt lại mật khẩu — nội dung tối giản, nút bấm + link dự phòng. */

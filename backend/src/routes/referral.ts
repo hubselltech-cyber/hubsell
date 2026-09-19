@@ -19,6 +19,7 @@ import {
 } from "../services/referral-wallet";
 import {
   CYCLE_LABEL,
+  mailPlanActivated,
   planPriceFor,
   recordPackagePaymentTx,
 } from "../services/subscription-service";
@@ -318,6 +319,7 @@ router.post("/renew", async (req: AuthRequest, res, next) => {
 
     // Nâng gói/gia hạn bằng Ví phải mở khóa trần ngay — đừng chờ TTL cache.
     invalidatePlanState(userId);
+    mailPlanActivated(result);
 
     // Gia hạn = thanh toán thành công → chảy tiếp 10% cho người giới thiệu tôi.
     await creditReferralCommission(userId, price);

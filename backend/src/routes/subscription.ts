@@ -24,6 +24,10 @@ import {
 
 const router = Router();
 
+// Link về app trong email báo HQ — theo env để đổi tên miền (.tech → .vn) chỉ
+// cần sửa APP_FRONTEND_URL trên Render.
+const FRONTEND_URL = (process.env.APP_FRONTEND_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+
 /**
  * Số tài khoản nhận tiền nâng gói (đường CHUYỂN KHOẢN TAY, song song cổng payOS):
  * đủ 3 biến env thì popup nâng gói hiện hướng dẫn chuyển khoản, chưa đặt thì
@@ -73,7 +77,7 @@ async function notifyHqUpgradeRequest(input: {
       <p style="color:#444;margin:4px 0"><b>SĐT liên hệ:</b> ${input.contactPhone}</p>
       <p style="color:#444;margin:4px 0"><b>Gói:</b> ${input.planName}${isConsult ? " — báo giá riêng" : ` — ${input.cycleLabel}, giá niêm yết ${input.listedPrice.toLocaleString("vi-VN")}₫`}</p>
       <p style="text-align:center;margin:24px 0">
-        <a href="https://app.hubsell.tech/admin/plans"
+        <a href="${FRONTEND_URL}/admin/plans"
            style="background:#18181b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block">
           Mở hàng chờ xử lý
         </a>

@@ -520,6 +520,9 @@ export default function LoginPage() {
       return;
     }
     setRefCode(sessionStorage.getItem("hubsell_ref"));
+    // Thư "Mật khẩu vừa được đổi" dẫn về /login?mode=forgot — mở thẳng form
+    // Quên mật khẩu cho người không tự đổi.
+    if (params.get("mode") === "forgot") setMode("forgot");
   }, []);
 
   function goToDashboard(user: AuthUser) {

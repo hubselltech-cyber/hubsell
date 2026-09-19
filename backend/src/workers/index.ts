@@ -30,6 +30,7 @@ import { startWeeklyReportWorker } from "./weekly-report";
 import { startAdsDailySummaryWorker } from "./ads-daily-summary";
 import { startTaxDeadlineReminderWorker } from "./tax-deadline-reminder";
 import { startLazadaRenewalReminderWorker } from "./lazada-renewal-reminder";
+import { startSubscriptionReminderWorker } from "./subscription-reminder";
 import { startReviewerDemoTopupWorker } from "./reviewer-demo-topup";
 import { startShopeeWebhookWorker } from "../integrations/shopee/webhook-queue";
 import { startTiktokWebhookWorker } from "../integrations/tiktok/webhook-queue";
@@ -82,6 +83,8 @@ export function startAllWorkers(): void {
   startTaxDeadlineReminderWorker();
   // Nhắc gia hạn kỳ dịch vụ Lazada (app ISV: token sống theo kỳ đăng ký 6 tháng).
   startLazadaRenewalReminderWorker();
+  // Nhắc hạn gói Hubsell (thư billing@ + chuông) 7 ngày / 1 ngày trước hạn.
+  startSubscriptionReminderWorker();
   // Bồi đơn tài khoản trial reviewer (Xét duyệt app TikTok 16/09, 10-12 ngày) —
   // tắt bằng REVIEWER_DEMO_TOPUP_MINUTES=0 khi có kết quả.
   startReviewerDemoTopupWorker();

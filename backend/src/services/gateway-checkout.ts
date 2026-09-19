@@ -16,7 +16,7 @@
 
 import { BillingCycle, GatewayOrderStatus, PackagePaymentMethod, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
-import { isMailerConfigured, sendMail } from "../lib/mailer";
+import { mailHq } from "./hq-mail";
 import {
   bankNameFromBin,
   buildPayosDescription,
@@ -405,7 +405,7 @@ export async function settleGatewayOrder(input: SettleInput): Promise<OrderRow> 
   });
   void mailHq({
     subject: `[Hubsell] 💰 payOS: +${input.paidAmount.toLocaleString("vi-VN")}₫ — gói ${row.planName} (${CYCLE_LABEL[row.cycle]})`,
-    html: `<p>Tiền về qua payOS, gói đã tự kích hoạt và ghi sổ quỹ.</p><p>Khách: ${row.userId}<br/>Đơn: ${row.orderCode} — mã GD: ${input.reference}</p><p><a href="https://app.hubsell.tech/admin/plans">Xem chứng từ ở HQ</a></p>`,
+    html: `<p>Tiền về qua payOS, gói đã tự kích hoạt và ghi sổ quỹ.</p><p>Khách: ${row.userId}<br/>Đơn: ${row.orderCode} — mã GD: ${input.reference}</p><p><a href="${FRONTEND_URL}/admin/plans">Xem chứng từ ở HQ</a></p>`,
   });
   return settled;
 }
@@ -442,25 +442,4 @@ export function parsePayosTime(s: string | null | undefined): Date {
   }
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? new Date() : d;
-}
-
-async function mailHq(input: { subject: string; html: string }): Promise<void> {
-  try {
-    if (!isMailerConfigured()) return;
-    const admins = await prisma.user.findMany({
-      where: { isPlatformAdmin: true, email: { not: null } },
-      select: { email: true },
-    });
-    await Promise.allSettled(
-      admins.map((a) =>
-        sendMail({
-          to: a.email!,
-          subject: input.subject,
-          html: `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">${input.html}</div>`,
-        })
-      )
-    );
-  } catch (err) {
-    console.error("[payOS] Mail HQ lỗi:", (err as Error).message);
-  }
 }

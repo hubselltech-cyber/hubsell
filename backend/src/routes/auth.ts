@@ -23,7 +23,8 @@ import {
   verifyOauthState as verifyLazadaOauthState,
 } from "../integrations/lazada/service";
 import { findReferrerByCode } from "../services/referral-wallet";
-import { ensureDefaultSubscription } from "../services/subscription-service";
+import { ensureDefaultSubscription, getDefaultTrialDays } from "../services/subscription-service";
+import { sendPasswordChangedMail, sendWelcomeMail } from "../services/customer-mails";
 import { generateUsername, normalizeUsername } from "../lib/username";
 import { PRIVACY_VERSION, TERMS_VERSION, type TermsAcceptanceSource } from "../lib/legal";
 
@@ -250,6 +251,10 @@ router.post("/register", async (req, res, next) => {
 
     // Gán gói mặc định (Starter — dùng thử 14 ngày) — fire-and-forget, không chặn luồng đăng ký.
     void ensureDefaultSubscription(user.id);
+    // Thư chào (no-reply@) + báo HQ có khách mới — fire-and-forget.
+    void getDefaultTrialDays().then((trialDays) =>
+      sendWelcomeMail({ id: user.id, email: user.email, fullName: user.fullName, source: "form", trialDays })
+    );
 
     // Tài khoản vừa đăng ký luôn là chủ shop thường — không thuộc khu điều hành.
     res.status(201).json({
@@ -421,6 +426,8 @@ router.post("/change-password", requireAuth, async (req: AuthRequest, res, next)
       where: { id: user.id },
       data: { passwordHash: await bcrypt.hash(newPassword, 10) },
     });
+    // Báo cho chủ tài khoản (no-reply@) — người bị đổi trộm còn kịp đặt lại.
+    sendPasswordChangedMail(user);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -522,6 +529,7 @@ router.post("/forgot-password", async (req, res, next) => {
       to: user.email,
       subject: "Hubsell — Đặt lại mật khẩu",
       html: resetPasswordEmailHtml(user.fullName, resetUrl),
+      role: "noreply",
     });
     res.json(generic);
   } catch (err) {
@@ -561,6 +569,7 @@ router.post("/reset-password", async (req, res, next) => {
         resetTokenExpiresAt: null,
       },
     });
+    sendPasswordChangedMail(user);
     res.json({ ok: true, message: "Đã đổi mật khẩu. Hãy đăng nhập bằng mật khẩu mới." });
   } catch (err) {
     next(err);
@@ -647,6 +656,10 @@ router.get("/google/callback", async (req, res) => {
         });
         // Chủ shop mới qua Google cũng nhận gói mặc định (Starter — dùng thử 14 ngày).
         void ensureDefaultSubscription(user.id);
+        const created = user;
+        void getDefaultTrialDays().then((trialDays) =>
+          sendWelcomeMail({ id: created.id, email: created.email, fullName: created.fullName, source: "google", trialDays })
+        );
       }
     }
 

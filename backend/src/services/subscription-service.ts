@@ -24,6 +24,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { invalidatePlanState } from "./plan-enforcement";
 import { creditReferralCommission } from "./referral-wallet";
+import { sendPlanActivatedMail } from "./customer-mails";
 
 type Tx = Prisma.TransactionClient;
 
@@ -117,6 +118,19 @@ export async function ensureDefaultSubscription(userId: string): Promise<void> {
   } catch (err) {
     // Không được làm gãy luồng đăng ký vì chuyện gán gói.
     console.error(`[Subscription] Gán gói mặc định cho ${userId} lỗi:`, err);
+  }
+}
+
+/** Số ngày dùng thử của gói mặc định (thư chào khách mới) — null khi không có / lỗi. */
+export async function getDefaultTrialDays(): Promise<number | null> {
+  try {
+    const plan = await prisma.servicePlan.findFirst({
+      where: { isDefault: true, isActive: true },
+      select: { trialDays: true },
+    });
+    return plan && plan.trialDays > 0 ? plan.trialDays : null;
+  } catch {
+    return null;
   }
 }
 
@@ -239,6 +253,40 @@ export async function recordPackagePaymentTx(tx: Tx, input: RecordPaymentInput) 
   return { payment, subscription, plan };
 }
 
+const METHOD_LABEL: Record<PackagePaymentMethod, string> = {
+  BANK_TRANSFER: "Chuyển khoản",
+  WALLET: "Ví Hubsell",
+  GATEWAY: "Cổng thanh toán payOS",
+};
+
+/**
+ * Thư xác nhận gửi KHÁCH (billing@) sau khi khoản thanh toán ĐÃ CHỐT — gọi
+ * NGOÀI transaction, fire-and-forget. Đường Ví (routes/referral.ts) dùng
+ * recordPackagePaymentTx trực tiếp nên tự gọi hàm này sau khi commit.
+ */
+export function mailPlanActivated(
+  result: Awaited<ReturnType<typeof recordPackagePaymentTx>>
+): void {
+  const { payment } = result;
+  void prisma.user
+    .findUnique({ where: { id: payment.userId }, select: { email: true, fullName: true } })
+    .then((user) => {
+      if (!user) return;
+      sendPlanActivatedMail(user.email, {
+        fullName: user.fullName,
+        planName: payment.planName,
+        cycleLabel: CYCLE_LABEL[payment.cycle],
+        amount: Number(payment.amount),
+        periodStart: payment.periodStart,
+        periodEnd: payment.periodEnd,
+        paymentId: payment.id,
+        externalRef: payment.externalRef,
+        methodLabel: METHOD_LABEL[payment.method],
+      });
+    })
+    .catch((err) => console.error("[Subscription] Thư kích hoạt gói lỗi:", (err as Error).message));
+}
+
 /**
  * Bản đầy đủ: tự mở transaction + cộng hoa hồng giới thiệu 10% sau khi chốt
  * (mọi lượt thanh toán thành công đều tính — "hoa hồng vĩnh viễn").
@@ -260,6 +308,7 @@ export async function recordPackagePayment(
   // Nâng gói/gia hạn phải MỞ KHÓA ngay ở request kế tiếp — đừng bắt khách vừa
   // trả tiền chờ hết TTL cache trạng thái trần (GĐ2 cưỡng chế).
   invalidatePlanState(input.userId);
+  mailPlanActivated(result);
   const amount = Number(result.payment.amount);
   if (amount > 0) {
     await creditReferralCommission(

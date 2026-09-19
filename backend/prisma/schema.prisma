@@ -2335,10 +2335,33 @@ model Subscription {
 
   user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan     ServicePlan      @relation(fields: [planId], references: [id])
-  payments PackagePayment[]
+  payments  PackagePayment[]
+  reminders SubscriptionReminder[]
 
   @@index([currentPeriodEnd])
   @@map("subscriptions")
+}
+
+/// VÉ CHỐNG TRÙNG thư nhắc hạn gói (workers/subscription-reminder.ts, 19/09/2026).
+/// Mỗi (thuê bao, mốc nhắc, kỳ hạn) chỉ có MỘT dòng — worker chèn cả lô bằng
+/// createMany skipDuplicates kèm batchId của lượt mình rồi đọc lại theo batchId:
+/// dòng nào mang batchId của mình là mình giành được, hai worker chạy song song
+/// không bao giờ gửi đôi. Gửi hỏng thì xóa vé để lượt sau thử lại.
+model SubscriptionReminder {
+  id             String @id @default(cuid())
+  subscriptionId String
+  /// renew-7 | renew-1 (thư khách) | expired-hq (bản tổng hợp báo HQ)
+  kind      String
+  /// Kỳ hạn mà lời nhắc này thuộc về — gia hạn xong kỳ mới nhắc lại từ đầu.
+  periodEnd DateTime
+  batchId   String
+  createdAt DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, kind, periodEnd])
+  @@index([batchId])
+  @@map("subscription_reminders")
 }
 
 enum PlanUpgradeRequestStatus {
