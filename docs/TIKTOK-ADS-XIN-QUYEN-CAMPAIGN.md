@@ -142,3 +142,35 @@ diện → nếu họ đòi, em dựng màn hình thật (nút bị khóa vì ch
    bản đầu. Trước khi viết lệnh tạo phải đọc kỹ ràng buộc "một sản phẩm chỉ nằm trong một chiến dịch Product GMV Max" và việc tạo
    chiến dịch mới có đụng chiến dịch đang chạy không.
 4. Ghi kết quả ticket (ngày nộp, ngày duyệt / lý do từ chối, tên quyền chính xác) vào memory `hubsell-tiktok-gmv-max-api`.
+
+## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối dù sửa tay được (soạn 19/09/2026, ⏳ CHƯA GỬI)
+
+**Dữ kiện (19/09/2026, gian nhà and.not.or):** `POST /campaign/gmv_max/update/` đổi `budget` của TC076 (đang tắt) → `40002 Shop must
+belong to a Business Center account.` 3/3 lần. Cùng ngày anh Trung SỬA TAY ngân sách TC076 2.000.000 → 2.001.000 trên giao diện
+TikTok thì ĐƯỢC (API đọc lại ra 2.001.000, `modify_time` 2026-09-19 01:52:29 UTC) → tài khoản có quyền sửa, chỉ đường API bị chặn.
+Loại / khôi phục video qua API (`/campaign/gmv_max/creative/update/`) vẫn chạy với đúng tài khoản + token này.
+
+**Gửi ở đâu:** https://business-api.tiktok.com/portal → Support → Submit a ticket (đăng nhập tài khoản developer dev@hubsell.tech).
+
+**Nội dung (tiếng Anh, dán nguyên văn):**
+
+> Subject: /campaign/gmv_max/update/ returns 40002 "Shop must belong to a Business Center account" although the same ad account can edit the campaign in the UI
+>
+> App: Hubsell (App ID 7686282112950747157). Scopes approved on 2026-09-19 include Ads management > Campaign > Read campaigns and Create and update campaigns. The access token was re-authorized after the approval; the read endpoints /gmv_max/campaign/get/, /campaign/gmv_max/info/ and /gmv_max/bid/recommend/ all return code 0.
+>
+> Problem: POST /open_api/v1.3/campaign/gmv_max/update/ with body {"advertiser_id":"7230813704726609922","campaign_id":"1865537277522002","budget":2001000} returns
+> {"code":40002,"message":"Shop must belong to a Business Center account."}
+> request_id: 2026091909433524649A5FA30B9C677F29, 2026091909434990F655C80F26AF6A412B, 202609190946523DA1E3DE25002581E223
+>
+> Facts:
+> 1. The ad account 7230813704726609922 holds the exclusive GMV Max authorization for the TikTok Shop 7494569560744626612 (/gmv_max/store/list/ returns exclusive_authorized_advertiser_info.advertiser_id = 7230813704726609922, is_gmv_max_available = true).
+> 2. /gmv_max/store/list/ returns for this shop: is_owner_bc = false, store_role = AD_PROMOTION, store_authorized_bc_id = 7239164658173722625. /campaign/gmv_max/info/ for the campaign returns store_authorized_bc_id = 7147263165355589633.
+> 3. The same user can change the daily budget of this campaign manually in the TikTok UI (done on 2026-09-19, modify_time 2026-09-19 01:52:29), and /campaign/gmv_max/creative/update/ works for this campaign's shop with the same token.
+>
+> Questions:
+> a) What exactly does "Shop must belong to a Business Center account" require for /campaign/gmv_max/update/ — must the TikTok Shop be owned by (is_owner_bc = true) the Business Center that owns the ad account, or is partner access (AD_PROMOTION + exclusive GMV Max authorization) sufficient?
+> b) Does the same requirement apply to /campaign/gmv_max/create/ and /campaign/status/update/?
+> c) Can campaigns created in Seller Center be updated through the API at all?
+> d) How can a developer detect in advance (from /gmv_max/store/list/ or another endpoint) whether update/create will be allowed for a given advertiser + shop, so we can explain it to the seller instead of failing?
+
+**Sau khi có trả lời:** ghi NGUYÊN VĂN câu trả lời (kể cả "không được") vào mục này + memory `hubsell-tiktok-gmv-max-api`.

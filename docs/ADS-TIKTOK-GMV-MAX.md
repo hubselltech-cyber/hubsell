@@ -140,8 +140,9 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   `/campaign/status/update/`) → tham số của mình đúng, vướng ở PHÍA TÀI KHOẢN. Dữ kiện đã có: `/gmv_max/store/list/` báo and.not.or
   `is_owner_bc: false`, `store_role: AD_PROMOTION`, `store_authorized_bc_id` = `7239164658173722625` (BC "TIKTOK_ADS_1"); nhưng
   `/campaign/gmv_max/info/` của TC054 lẫn TC076 lại mang `store_authorized_bc_id` = `7147263165355589633` (một BC KHÁC). Lệnh loại /
-  khôi phục video (`creative/update`) thì vẫn chạy với đúng tài khoản này. CHƯA biết điều kiện chính xác của sàn — đừng đoán; cần
-  anh Trung đối chiếu trong Business Center / Ads Manager hoặc hỏi TikTok (kèm request_id trên).
+  khôi phục video (`creative/update`) thì vẫn chạy với đúng tài khoản này. ★ Cùng ngày anh Trung SỬA TAY ngân sách TC076 trên giao diện TikTok thì ĐƯỢC
+  (API đọc lại ra 2.001.000) → tài khoản có quyền, CHỈ đường API bị chặn. Chưa biết điều kiện chính xác — đừng đoán; ticket hỏi
+  TikTok soạn sẵn ở `docs/TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md` mục 7. Trước khi có trả lời: KHÔNG code nút sửa / tạo chiến dịch.
 - CHƯA probe: `/campaign/gmv_max/create/`, `/campaign/status/update/`.
 
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
