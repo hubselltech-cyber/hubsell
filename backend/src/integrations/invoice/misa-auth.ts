@@ -17,6 +17,8 @@
  * tài liệu tích hợp kèm hợp đồng và chỉ cần sửa MỘT chỗ buildAuthBody() dưới.
  */
 
+import { InvoiceProviderError, providerErrorFromBody } from "./invoice-errors";
+
 const TOKEN_SAFETY_MS = 60 * 1000; // làm mới sớm 60s trước khi token hết hạn
 const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1000; // MISA không trả expires_in thì coi như 30 phút
 
@@ -131,16 +133,17 @@ export async function getMisaAccessToken(
       body: JSON.stringify(buildAuthBody(effective)),
     });
   } catch (err) {
-    throw new Error(
-      `Không gọi được endpoint auth của MISA (${url}): ${(err as Error).message}`
+    throw new InvoiceProviderError(
+      `Không gọi được endpoint auth của MISA (${url}): ${(err as Error).message}`,
+      { network: true }
     );
   }
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(
-      `MISA từ chối cấp token (HTTP ${res.status}): ${text.slice(0, 300)}`
-    );
+    // Sai mật khẩu/MST/tài khoản đều về HTTP 400 + ErrorCode=UnAuthorize, mã con
+    // trong Errors[] (MisaIdError / TaxCodeNotExist / UserNotExist — dò 19/09).
+    throw providerErrorFromBody("MISA từ chối cấp token", text, res.status);
   }
 
   // meInvoice bọc kết quả `{ Success, ErrorCode, Data }` (PascalCase — đã xác
@@ -158,7 +161,7 @@ export async function getMisaAccessToken(
       data?: unknown;
     };
     if (json.Success === false || json.success === false) {
-      throw new Error(`MISA từ chối: ErrorCode=${json.ErrorCode ?? json.errorcode ?? "?"}`);
+      throw providerErrorFromBody("MISA từ chối cấp token", text);
     }
     const data = (json.Data ?? json.data) as
       | string
@@ -171,6 +174,7 @@ export async function getMisaAccessToken(
       if (data.expires_in) ttlMs = data.expires_in * 1000;
     }
   } catch (err) {
+    if (err instanceof InvoiceProviderError) throw err;
     throw new Error(
       `Đăng nhập MISA thất bại: ${(err as Error).message} — body: ${text.slice(0, 300)}`
     );

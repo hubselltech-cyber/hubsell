@@ -54,6 +54,12 @@ function parseVatRate(value: unknown): number | null {
   return VAT_RATES.includes(n) ? n : null;
 }
 
+/** Đơn vị tính in hóa đơn của SKU — rỗng/null = dùng mặc định của shop; cắt 20
+ *  ký tự (ô ĐVT trên mẫu hóa đơn hẹp, cùng trần với InvoiceConfig.defaultUnitName). */
+function parseUnitName(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 20) : null;
+}
+
 /**
  * Kiểm tra bảng size cho Trợ lý vận hành: mảng {size, heightCm:[min,max],
  * weightKg:[min,max]}. Trả về mảng đã làm sạch, hoặc null nếu sai cấu trúc —
@@ -388,6 +394,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
       initialQuantity,
       taxName,
       vatRate,
+      unitName,
     } = req.body ?? {};
 
     if (typeof skuCode !== "string" || skuCode.trim().length === 0) {
@@ -418,6 +425,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
     const invoiceTaxName =
       typeof taxName === "string" && taxName.trim() ? taxName.trim() : null;
     const invoiceVatRate = parseVatRate(vatRate) ?? 0;
+    const invoiceUnitName = parseUnitName(unitName);
 
     const sku = skuCode.trim().toUpperCase();
 
@@ -441,6 +449,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
           quantityInStock: initQty,
           taxName: invoiceTaxName,
           vatRate: invoiceVatRate,
+          unitName: invoiceUnitName,
         },
       });
 
@@ -483,6 +492,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       sellingPrice,
       taxName,
       vatRate,
+      unitName,
       material,
       careInstructions,
       sizeChart,
@@ -548,6 +558,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       }
       data.vatRate = rate;
     }
+    if (unitName !== undefined) data.unitName = parseUnitName(unitName);
 
     // ── Thông số cho Trợ lý vận hành (AI CSKH) — chuỗi rỗng/null là XOÁ ──
     if (material !== undefined) {

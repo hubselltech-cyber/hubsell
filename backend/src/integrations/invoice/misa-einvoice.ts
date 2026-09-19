@@ -26,6 +26,7 @@ import {
   type MisaAuthCredentials,
 } from "./misa-auth";
 import { esignLogin } from "./misa-esign";
+import { InvoiceProviderError, providerErrorFromBody } from "./invoice-errors";
 import { pick } from "./misa-inbot"; // helper đọc JSON PascalCase "mềm" dùng chung
 import { assertPublishAllowed } from "./misa-safety";
 import type { CreateInvoiceInput } from "./types";
@@ -97,6 +98,16 @@ export const INVOICE_SERIES_RE = /^[1256][CK]\d{2}T[A-Z0-9]{2}$/;
 /** KÝ HIỆU hóa đơn MÁY TÍNH TIỀN: ký tự thứ 5 BẮT BUỘC là M, VD "1C26MAA". */
 export const POS_SERIES_RE = /^[1256][CK]\d{2}M[A-Z0-9]{2}$/;
 
+/**
+ * Ký hiệu đầu 2 = HÓA ĐƠN BÁN HÀNG — loại của hộ/cá nhân KD và DN nộp thuế
+ * theo phương pháp trực tiếp: KHÔNG có dòng thuế suất, KHÔNG có tiền thuế GTGT,
+ * thành tiền = đúng giá bán (không bóc ngược). Đa số khách Hubsell là hộ KD nên
+ * đây là nhánh CHÍNH chứ không phải ngoại lệ.
+ */
+export function isSalesInvoiceSeries(series: string | null | undefined): boolean {
+  return (series ?? "").trim().charAt(0) === "2";
+}
+
 // ============================================================
 
 /** Lát cắt InvoiceConfig cần cho luồng kê khai (truyền thẳng row Prisma). */
@@ -121,6 +132,9 @@ export interface StandardInvoiceConfig {
   meinvoicePassword: string | null;
   invoicePattern: string | null;
   invoiceSeries: string | null;
+  /** Đơn vị tính mặc định của shop — lưới đỡ cho dòng hàng không mang unitName
+   *  (snapshot hóa đơn gốc đời trước 19/09 khi lập hóa đơn điều chỉnh). */
+  defaultUnitName?: string | null;
   signMethod: string;
   esignClientId: string | null;
   esignSecretKey: string | null;
@@ -194,6 +208,11 @@ export async function testStandardConnection(cfg: StandardInvoiceConfig): Promis
   return { meinvoiceTokenLength: token.length, esignChecked };
 }
 
+/** ĐVT của dòng: khai riêng → mặc định shop → không gửi (chuỗi rỗng coi như không có). */
+function unitNameOf(line: string | undefined, fallback: string | null | undefined): string {
+  return line?.trim() || fallback?.trim() || "";
+}
+
 /** Ngày phát hành theo giờ VN (UTC+7), định dạng yyyy-MM-dd MISA yêu cầu. */
 function vnToday(): string {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
@@ -228,6 +247,12 @@ export function buildStandardInvoicePayload(
       LineNumber: i + 1,
       ItemCode: l.sku,
       ItemName: l.name,
+      // Đơn vị tính — tài liệu meInvoice ghi "không bắt buộc" nên sandbox vẫn
+      // nhận khi thiếu, nhưng ô ĐVT in TRỐNG trên chứng từ (soi PDF HĐ bán hàng
+      // 00000005 ngày 19/09) trong khi luật coi là nội dung bắt buộc với hàng hóa.
+      ...(unitNameOf(l.unitName, cfg.defaultUnitName)
+        ? { UnitName: unitNameOf(l.unitName, cfg.defaultUnitName) }
+        : {}),
       Quantity: l.quantity,
       UnitPrice: l.unitPrice, // đơn giá CHƯA thuế (chỉ để in — số pháp lý là amount/VAT)
       // Tiền VND, ExchangeRate = 1 → cột "quy đổi" (không hậu tố OC) bằng đúng
@@ -373,11 +398,13 @@ export async function publishStandardInvoice(
       body: JSON.stringify(buildStandardInvoicePayload(input, cfg)),
     });
   } catch (err) {
-    throw new Error(`Không gọi được ${url}: ${(err as Error).message}`);
+    throw new InvoiceProviderError(`Không gọi được ${url}: ${(err as Error).message}`, {
+      network: true,
+    });
   }
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`meInvoice từ chối phát hành (HTTP ${res.status}): ${text.slice(0, 300)}`);
+    throw providerErrorFromBody("meInvoice từ chối phát hành", text, res.status);
   }
 
   let raw: unknown;
@@ -387,8 +414,7 @@ export async function publishStandardInvoice(
     raw = text;
   }
   if (pick(raw, "Success", "success") === false) {
-    const code = pick(raw, "ErrorCode", "errorCode") ?? "?";
-    throw new Error(`meInvoice từ chối phát hành: ErrorCode=${String(code)}`);
+    throw providerErrorFromBody("meInvoice từ chối phát hành", text);
   }
 
   // Kết quả nằm ở publishInvoiceResult[] — MỖI hóa đơn một phần tử, thành công
@@ -406,8 +432,13 @@ export async function publishStandardInvoice(
   const first = Array.isArray(results) ? results[0] : results;
   const perInvoiceError = pick(first, "ErrorCode", "errorCode");
   if (perInvoiceError != null && perInvoiceError !== "") {
-    throw new Error(
-      `meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=${String(perInvoiceError)}`
+    const desc = pick(first, "DescriptionErrorCode", "descriptionErrorCode");
+    throw new InvoiceProviderError(
+      `meInvoice từ chối phát hành hóa đơn (publishInvoiceResult): ErrorCode=${String(perInvoiceError)}`,
+      {
+        code: String(perInvoiceError),
+        description: typeof desc === "string" ? desc : null,
+      }
     );
   }
   const invoiceNo = pick(first, "InvNo", "InvoiceNo", "InvoiceNumber");

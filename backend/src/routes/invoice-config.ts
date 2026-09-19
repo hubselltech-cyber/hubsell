@@ -56,6 +56,11 @@ const COMING_SOON_PROVIDERS = ["EASYINVOICE", "MINVOICE", "MATBAO", "VIETTEL", "
 const SIGN_METHODS = ["USB_TOKEN", "ESIGN_CLOUD"];
 const INVOICE_TYPES = ["STANDARD", "POS"];
 
+/** Khớp @default của InvoiceConfig.defaultUnitName — mặc định tùy ý cho hàng bán lẻ. */
+const DEFAULT_UNIT_NAME = "Cái";
+/** Ô ĐVT trên mẫu hóa đơn meInvoice hẹp — quá 20 ký tự là tràn dòng. */
+const UNIT_NAME_MAX = 20;
+
 /** Che chuỗi bí mật, chỉ lộ 4 ký tự cuối. */
 function mask(v: string | null | undefined): string | null {
   if (!v) return null;
@@ -99,6 +104,7 @@ type ShopConfig = {
   posSeries: string | null;
   defaultInvoiceType: string;
   defaultVatRate: number;
+  defaultUnitName: string;
 };
 
 function serializeConfig(c: ShopConfig | null) {
@@ -140,6 +146,8 @@ function serializeConfig(c: ShopConfig | null) {
     defaultInvoiceType: c?.defaultInvoiceType ?? "STANDARD",
     // % thuế suất GTGT mặc định cho dòng hàng chưa khai riêng ở SKU (24/08).
     defaultVatRate: c?.defaultVatRate ?? 0,
+    // Đơn vị tính mặc định in trên hóa đơn (19/09) — sàn không trả ĐVT qua API.
+    defaultUnitName: c?.defaultUnitName ?? DEFAULT_UNIT_NAME,
   };
 }
 
@@ -218,6 +226,7 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       posSeries,
       defaultInvoiceType,
       defaultVatRate,
+      defaultUnitName,
     } = req.body ?? {};
 
     if (typeof provider !== "string" || !PROVIDERS.includes(provider)) {
@@ -267,6 +276,15 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
       (!Number.isInteger(vatRateVal) || vatRateVal < 0 || vatRateVal > 100)
     ) {
       res.status(400).json({ error: "Thuế suất mặc định không hợp lệ — số nguyên 0-100 (%)" });
+      return;
+    }
+
+    // Đơn vị tính mặc định — tuỳ chọn (client cũ không gửi). Gửi rỗng = về "Cái":
+    // hóa đơn KHÔNG được để trống ĐVT nên không có trạng thái "không có mặc định".
+    const unitNameVal =
+      defaultUnitName === undefined ? undefined : (str(defaultUnitName) ?? DEFAULT_UNIT_NAME);
+    if (unitNameVal !== undefined && unitNameVal.length > UNIT_NAME_MAX) {
+      res.status(400).json({ error: `Đơn vị tính tối đa ${UNIT_NAME_MAX} ký tự` });
       return;
     }
 
@@ -337,6 +355,12 @@ async function saveShopConfig(req: AuthRequest, res: Response, next: NextFunctio
         ? { defaultInvoiceType: defaultInvoiceType as "STANDARD" | "POS" }
         : {}),
       ...(vatRateVal !== undefined ? { defaultVatRate: vatRateVal } : {}),
+      ...(unitNameVal !== undefined ? { defaultUnitName: unitNameVal } : {}),
+      // Chủ shop vừa lưu lại cấu hình (sửa mật khẩu / chọn lại ký hiệu…) → gỡ
+      // ngắt mạch tự động phát hành; còn lỗi thì worker tự ngắt lại ngay lượt sau,
+      // chỉ tốn đúng 1 đơn thử.
+      autoIssuePausedAt: null,
+      autoIssuePauseReason: null,
     };
 
     const saved = existing

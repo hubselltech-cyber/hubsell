@@ -17,6 +17,7 @@ import {
   type AdjustmentScope,
 } from "../integrations/invoice/adjust-order";
 import { issueInvoiceForOrder } from "../integrations/invoice/issue-order";
+import { normalizeAutoIssueTrigger } from "../workers/invoice-auto-issue";
 import {
   downloadInvoiceFiles,
   type StandardInvoiceConfig,
@@ -50,10 +51,14 @@ import {
 const router = Router();
 
 /**
- * ĐƠN QUÁ HẠN LẬP HÓA ĐƠN (03/09): NĐ 254/2026 — hóa đơn bán hàng qua sàn lập
- * chậm nhất NGÀY LÀM VIỆC TIẾP THEO sau khi giao thành công. Lấy 48h cho
- * rộng (cuối tuần/ngày lễ không xét), đơn giao xong quá mốc này mà chưa có
- * hóa đơn thì cắm cờ đỏ ở hàng chờ + đếm vào thẻ "Sót/Quá hạn" của báo cáo.
+ * ĐƠN QUÁ HẠN LẬP HÓA ĐƠN (03/09): đơn giao xong quá mốc này mà chưa có hóa
+ * đơn thì cắm cờ đỏ ở hàng chờ + đếm vào thẻ "Sót/Quá hạn" của báo cáo.
+ * CĂN CỨ (soát lại 19/09): Điều 9 NĐ 254/2026 — bán hàng hóa lập hóa đơn TẠI
+ * thời điểm chuyển giao quyền sở hữu (= giao thành công), KHÔNG có hạn ân cho
+ * bán nội địa; "chậm nhất ngày làm việc tiếp theo" chỉ áp cho hàng XUẤT KHẨU
+ * (ghi chú 03/09 viện nhầm). 48h vì thế là NGƯỠNG NHẮC NỘI BỘ tùy ý — đủ rộng
+ * để trạng thái giao của sàn kịp về và worker 15 phút kịp chạy vài lượt — chứ
+ * không phải hạn luật cho phép.
  */
 export const INVOICE_OVERDUE_MS = 48 * 60 * 60 * 1000;
 
@@ -303,7 +308,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       invoicedCount: deliveredCount - missingCount,
       /** Chưa có hóa đơn — còn nằm ở hàng chờ. */
       missingCount,
-      /** Chưa có hóa đơn VÀ đã giao quá 48h — vi phạm mốc "ngày làm việc tiếp theo". */
+      /** Chưa có hóa đơn VÀ đã giao quá 48h (ngưỡng nhắc nội bộ — xem INVOICE_OVERDUE_MS). */
       overdueCount,
       overdueHours: INVOICE_OVERDUE_MS / 3_600_000,
     };
@@ -631,6 +636,9 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
         where: { ownerId, channelId: null },
         select: {
           autoIssueEnabled: true,
+          autoIssueTrigger: true,
+          autoIssuePausedAt: true,
+          autoIssuePauseReason: true,
           autoAdjustEnabled: true,
           invoiceSeries: true,
           meinvoiceUsername: true,
@@ -639,6 +647,11 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
     ]);
     res.json({
       autoIssueEnabled: cfg?.autoIssueEnabled ?? false,
+      // Mốc xuất tự động + trạng thái NGẮT MẠCH (19/09) — UI vẽ ô chọn mốc và
+      // dải đỏ "đã tạm ngừng vì … / Chạy lại".
+      autoIssueTrigger: normalizeAutoIssueTrigger(cfg?.autoIssueTrigger),
+      autoIssuePausedAt: cfg?.autoIssuePausedAt ?? null,
+      autoIssuePauseReason: cfg?.autoIssuePauseReason ?? null,
       autoAdjustEnabled: cfg?.autoAdjustEnabled ?? false,
       // Đủ điều kiện phát hành tối thiểu: đã chọn ký hiệu + có tài khoản meInvoice.
       configured: Boolean(cfg?.invoiceSeries && cfg?.meinvoiceUsername),
@@ -689,14 +702,18 @@ router.get("/invoice-queue", async (req: AuthRequest, res, next) => {
 
 // PUT /api/tax/auto-issue — bật/tắt TỰ ĐỘNG PHÁT HÀNH. Endpoint riêng thay vì
 // đi qua PUT /invoice-config (route đó ghi đè TOÀN BỘ form — gọi thiếu trường
-// là mất dữ liệu). Body: { enabled: boolean }.
+// là mất dữ liệu). Body (19/09 — mọi trường tuỳ chọn, gửi gì đổi nấy):
+//   · enabled: boolean          — công tắc
+//   · trigger: DELIVERED|SETTLED — mốc xuất (xem worker invoice-auto-issue)
+//   · resume: true              — gỡ NGẮT MẠCH ("Chạy lại") sau khi đã sửa lỗi
+// Bật lại công tắc cũng gỡ ngắt mạch — chủ shop tắt đi bật lại là ý "thử lại".
 router.put("/auto-issue", async (req: AuthRequest, res, next) => {
   try {
     const ownerId = req.ownerId!;
-    const enabled = req.body?.enabled === true;
+    const body = (req.body ?? {}) as { enabled?: unknown; trigger?: unknown; resume?: unknown };
     const existing = await prisma.invoiceConfig.findFirst({
       where: { ownerId, channelId: null },
-      select: { id: true },
+      select: { id: true, autoIssueEnabled: true },
     });
     if (!existing) {
       res.status(400).json({
@@ -704,11 +721,32 @@ router.put("/auto-issue", async (req: AuthRequest, res, next) => {
       });
       return;
     }
-    await prisma.invoiceConfig.update({
+    if (body.trigger !== undefined && body.trigger !== "DELIVERED" && body.trigger !== "SETTLED") {
+      res.status(400).json({ error: "Mốc xuất không hợp lệ (DELIVERED | SETTLED)" });
+      return;
+    }
+    const enabled = typeof body.enabled === "boolean" ? body.enabled : existing.autoIssueEnabled;
+    const clearPause = body.resume === true || body.enabled === true;
+    const saved = await prisma.invoiceConfig.update({
       where: { id: existing.id },
-      data: { autoIssueEnabled: enabled },
+      data: {
+        autoIssueEnabled: enabled,
+        ...(body.trigger !== undefined ? { autoIssueTrigger: body.trigger as string } : {}),
+        ...(clearPause ? { autoIssuePausedAt: null, autoIssuePauseReason: null } : {}),
+      },
+      select: {
+        autoIssueEnabled: true,
+        autoIssueTrigger: true,
+        autoIssuePausedAt: true,
+        autoIssuePauseReason: true,
+      },
     });
-    res.json({ autoIssueEnabled: enabled });
+    res.json({
+      autoIssueEnabled: saved.autoIssueEnabled,
+      autoIssueTrigger: normalizeAutoIssueTrigger(saved.autoIssueTrigger),
+      autoIssuePausedAt: saved.autoIssuePausedAt,
+      autoIssuePauseReason: saved.autoIssuePauseReason,
+    });
   } catch (err) {
     next(err);
   }

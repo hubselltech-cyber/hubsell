@@ -27,6 +27,12 @@ export interface InvoiceLine {
   /** Tên hàng hóa IN TRÊN HÓA ĐƠN — ưu tiên Product.taxName, fallback tên bán. */
   name: string;
   sku: string;
+  /**
+   * ĐƠN VỊ TÍNH in trên hóa đơn (19/09) — nội dung bắt buộc của hóa đơn mà sàn
+   * không trả qua API: Product.unitName khai riêng, fallback defaultUnitName của
+   * shop. Vắng mặt ở snapshot InvoiceLog.lines đời trước 19/09.
+   */
+  unitName?: string;
   quantity: number;
   /** Đơn giá CHƯA thuế (bóc từ giá bán — có thể lẻ 2 số thập phân khi SL>1). */
   unitPrice: number;
@@ -86,8 +92,16 @@ export interface InvoiceResult {
   transactionId?: string;
   /** Tiền thuế GTGT đầu ra NCC tính. */
   vatAmount?: number;
-  /** Thông điệp lỗi khi status = FAILED. */
+  /** Thông điệp lỗi khi status = FAILED — ĐÃ dịch ra việc cần làm (invoice-errors.ts). */
   errorMessage?: string;
+  /** Mã lỗi nguyên văn của NCC (nếu bóc được) — cho worker gom lỗi lặp. */
+  errorCode?: string;
+  /**
+   * Tầm ảnh hưởng của lỗi: ACCOUNT = hỏng ở tài khoản/cấu hình (đơn nào cũng sẽ
+   * lỗi y hệt → worker tự động NGẮT MẠCH); ORDER = riêng đơn này; TRANSIENT =
+   * sự cố tạm (mạng, NCC bận) — lượt sau thử lại.
+   */
+  errorScope?: "ACCOUNT" | "ORDER" | "TRANSIENT";
 }
 
 /** Thông tin kết nối đọc từ bảng InvoiceConfig của shop. */

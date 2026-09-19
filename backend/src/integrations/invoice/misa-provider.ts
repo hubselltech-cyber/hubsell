@@ -12,6 +12,8 @@
  */
 
 import { InvoiceLogStatus } from "@prisma/client";
+import { explainInvoiceError } from "./invoice-errors";
+import { clearMisaTokenCache } from "./misa-auth";
 import {
   downloadInvoiceFiles,
   getInvoiceStatuses,
@@ -42,6 +44,8 @@ export class MisaInvoiceProvider implements InvoiceProvider {
     if (this.cfg.defaultInvoiceType === "POS") {
       return {
         status: InvoiceLogStatus.FAILED,
+        errorScope: "ACCOUNT",
+        errorCode: "HUBSELL_POS_NOT_SUPPORTED",
         errorMessage:
           "Luồng hóa đơn máy tính tiền (POS) chưa được nối API — tạm chọn luồng Kê khai ở trang Kết nối & Xuất hóa đơn.",
       };
@@ -50,12 +54,14 @@ export class MisaInvoiceProvider implements InvoiceProvider {
     if (missing.length > 0) {
       return {
         status: InvoiceLogStatus.FAILED,
+        errorScope: "ACCOUNT",
+        errorCode: "HUBSELL_CONFIG_MISSING",
         errorMessage: `Chưa đủ cấu hình phát hành — thiếu: ${missing.join(", ")}. Vào Kết nối & Xuất hóa đơn để bổ sung.`,
       };
     }
 
     try {
-      const result = await publishStandardInvoice(input, this.cfg);
+      const result = await this.publishWithRetry(input);
       // Tiền thuế lấy THẲNG từ InvoiceLine.vatAmount (đã bóc ngược, đúng số
       // in trên hóa đơn) — KHÔNG nhân lại unitPrice × SL × % (lệch 1đ làm tròn
       // so với chứng từ, đã dính ở HĐ 00000060: log 14.298 vs PDF 14.299).
@@ -67,10 +73,35 @@ export class MisaInvoiceProvider implements InvoiceProvider {
         vatAmount,
       };
     } catch (err) {
+      // Dịch mã lỗi NCC ra VIỆC CẦN LÀM + phân tầm ảnh hưởng (invoice-errors.ts)
+      // — worker tự động dựa vào errorScope để ngắt mạch thay vì đốt cả lô.
+      const explained = explainInvoiceError(err);
+      // Token bị MISA thu hồi trước hạn (đổi mật khẩu…) → bỏ cache để lượt sau
+      // đăng nhập lại thay vì cầm token chết tới hết 14 ngày.
+      if (explained.code === "TokenExpiredCode") clearMisaTokenCache();
       return {
         status: InvoiceLogStatus.FAILED,
-        errorMessage: (err as Error).message,
+        errorMessage: explained.message,
+        errorCode: explained.code ?? undefined,
+        errorScope: explained.scope,
       };
+    }
+  }
+
+  /**
+   * Tài liệu meInvoice ("Lưu ý khi bắt đầu") yêu cầu RETRY với lỗi cấp số
+   * InvoiceNumberNotCotinuous: MISA cấp số liên tục theo ký hiệu, một hóa đơn
+   * khác (seller lập tay trên meInvoice, hoặc instance khác) đang giữ số là bị
+   * từ chối. Thử lại ĐÚNG 1 lần sau 2 giây — RefID chống trùng phía MISA nên
+   * retry không thể sinh 2 hóa đơn; còn lỗi nữa thì trả về để lượt sau xử lý.
+   */
+  private async publishWithRetry(input: CreateInvoiceInput) {
+    try {
+      return await publishStandardInvoice(input, this.cfg);
+    } catch (err) {
+      if (explainInvoiceError(err).code !== "InvoiceNumberNotCotinuous") throw err;
+      await new Promise((r) => setTimeout(r, 2000));
+      return publishStandardInvoice(input, this.cfg);
     }
   }
 

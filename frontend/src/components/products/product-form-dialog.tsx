@@ -53,6 +53,7 @@ const productSchema = z.object({
   ),
   // Thuế & Hóa đơn (giữ chỗ) — đều tuỳ chọn.
   taxName: z.string().trim().max(255, "Tối đa 255 ký tự").optional(),
+  unitName: z.string().trim().max(20, "Tối đa 20 ký tự").optional(),
   vatRate: z.enum(VAT_RATE_OPTIONS),
 });
 
@@ -74,6 +75,7 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
       sellingPrice: "",
       initialQuantity: "0",
       taxName: "",
+      unitName: "",
       vatRate: "0",
     },
   });
@@ -88,6 +90,7 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
         sellingPrice: Number(values.sellingPrice),
         initialQuantity: Number(values.initialQuantity),
         taxName: values.taxName?.trim() || undefined,
+        unitName: values.unitName?.trim() || undefined,
         vatRate: Number(values.vatRate),
       });
       toast.success(`Đã thêm sản phẩm "${created.productName}"`);
@@ -215,6 +218,24 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
                     </FormControl>
                     <FormDescription>
                       Bỏ trống thì dùng tên sản phẩm mặc định khi xuất hóa đơn.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="unitName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Đơn vị tính trên hóa đơn</FormLabel>
+                    <FormControl>
+                      <Input placeholder="VD: Bộ, Hộp, Đôi" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Bỏ trống thì dùng đơn vị tính mặc định của shop (Cấu hình
+                      kết nối hóa đơn).
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

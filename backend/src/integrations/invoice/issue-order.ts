@@ -18,6 +18,8 @@ import { InvoiceLogStatus, Prisma, ShippingStatus } from "@prisma/client";
 
 import { prisma } from "../../lib/prisma";
 import { getInvoiceProvider } from "./index";
+import type { InvoiceErrorScope } from "./invoice-errors";
+import { isSalesInvoiceSeries } from "./misa-einvoice";
 import type { InvoiceLine } from "./types";
 
 export interface IssueOrderResult {
@@ -25,6 +27,9 @@ export interface IssueOrderResult {
   /** Mã HTTP gợi ý cho route: 201/400/404/409/502. */
   httpStatus: number;
   error?: string;
+  /** Mã lỗi NCC + tầm ảnh hưởng (invoice-errors.ts) — worker tự động dùng để ngắt mạch. */
+  errorCode?: string;
+  errorScope?: InvoiceErrorScope;
   /** Row InvoiceLog sau cùng (đã cập nhật kết quả) — null khi chặn trước khi ghi sổ. */
   log?: {
     id: string;
@@ -112,6 +117,20 @@ export interface InvoiceLineSource {
   price: number;
   /** Thuế suất khai riêng ở SKU kho — null/0 = dùng defaultVatRate của shop. */
   vatRate: number | null;
+  /** Đơn vị tính khai riêng ở SKU kho — null/rỗng = dùng defaultUnitName của shop. */
+  unitName?: string | null;
+}
+
+export interface InvoiceLineOptions {
+  /** Đơn vị tính mặc định của shop (InvoiceConfig.defaultUnitName). */
+  defaultUnitName?: string | null;
+  /**
+   * HÓA ĐƠN BÁN HÀNG (ký hiệu đầu 2 — hộ/cá nhân KD): KHÔNG có thuế suất, thành
+   * tiền = đúng giá bán. Bật cờ này thì MỌI thuế suất (mặc định shop lẫn khai ở
+   * SKU) bị bỏ qua — shop lỡ để 8% mà xuất mẫu 2 sẽ không bị bóc ngược ra một
+   * khoản "thuế" vô nghĩa làm thành tiền in trên hóa đơn thấp hơn giá bán.
+   */
+  salesInvoice?: boolean;
 }
 
 /**
@@ -170,12 +189,15 @@ export function allocateOrderDiscount(
 export function buildInvoiceLines(
   items: InvoiceLineSource[],
   defaultVatRate: number,
-  orderDiscount = 0
+  orderDiscount = 0,
+  opts: InvoiceLineOptions = {}
 ): InvoiceLine[] {
   const grosses = items.map((it) => Math.round(it.price * it.quantity));
   const cuts = allocateOrderDiscount(grosses, orderDiscount);
+  const defaultUnit = opts.defaultUnitName?.trim() ?? "";
   return items.map((it, i) => {
-    const vatRate = it.vatRate ? it.vatRate : defaultVatRate;
+    const vatRate = opts.salesInvoice ? 0 : it.vatRate ? it.vatRate : defaultVatRate;
+    const unitName = it.unitName?.trim() || defaultUnit;
     const gross = grosses[i] - cuts[i];
     const amountWithoutVat = Math.round((gross * 100) / (100 + vatRate));
     const vatAmount = gross - amountWithoutVat;
@@ -186,6 +208,7 @@ export function buildInvoiceLines(
     return {
       name: it.name,
       sku: it.sku,
+      ...(unitName ? { unitName } : {}),
       quantity: it.quantity,
       unitPrice,
       vatRate,
@@ -210,7 +233,7 @@ export async function issueInvoiceForOrder(
     include: {
       items: {
         include: {
-          product: { select: { skuCode: true, taxName: true, vatRate: true } },
+          product: { select: { skuCode: true, taxName: true, vatRate: true, unitName: true } },
         },
       },
     },
@@ -265,7 +288,7 @@ export async function issueInvoiceForOrder(
   // còn lại (chưa liên kết, hoặc liên kết nhưng chưa khai) dùng mức mặc định.
   const cfg = await prisma.invoiceConfig.findFirst({
     where: { ownerId, channelId: null },
-    select: { defaultVatRate: true, invoiceSeries: true },
+    select: { defaultVatRate: true, defaultUnitName: true, invoiceSeries: true },
   });
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
 
@@ -283,10 +306,15 @@ export async function issueInvoiceForOrder(
         quantity: it.quantity,
         price: Number(it.price),
         vatRate: it.product?.vatRate ?? null,
+        unitName: it.product?.unitName ?? null,
       };
     }),
     defaultVatRate,
-    Number(order.sellerDiscountVoucher)
+    Number(order.sellerDiscountVoucher),
+    {
+      defaultUnitName: cfg?.defaultUnitName,
+      salesInvoice: isSalesInvoiceSeries(cfg?.invoiceSeries),
+    }
   );
   const vatTotal = lines.reduce((s, l) => s + l.vatAmount, 0);
   const totalAmount = lines.reduce((s, l) => s + l.amountWithoutVat + l.vatAmount, 0);
@@ -354,6 +382,8 @@ export async function issueInvoiceForOrder(
     ok: issued,
     httpStatus: issued ? 201 : 502,
     error: issued ? undefined : (result.errorMessage ?? "NCC từ chối phát hành"),
+    errorCode: issued ? undefined : result.errorCode,
+    errorScope: issued ? undefined : (result.errorScope ?? "ORDER"),
     log: {
       ...updated,
       totalAmount: Number(updated.totalAmount),

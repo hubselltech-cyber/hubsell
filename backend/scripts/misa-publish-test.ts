@@ -15,9 +15,11 @@
 import "dotenv/config";
 import { writeFileSync } from "node:fs";
 
+import { buildInvoiceLines } from "../src/integrations/invoice/issue-order";
 import {
   downloadInvoiceFiles,
   getInvoiceStatuses,
+  isSalesInvoiceSeries,
   publishStandardInvoice,
   type StandardInvoiceConfig,
 } from "../src/integrations/invoice/misa-einvoice";
@@ -33,6 +35,7 @@ const cfg: StandardInvoiceConfig = {
   meinvoicePassword: process.env.MISA_PASSWORD ?? null,
   invoicePattern: "1",
   invoiceSeries: "1K26TYY",
+  defaultUnitName: "Cái",
   signMethod: "ESIGN_CLOUD", // SignType 2 — HSM, meInvoice ký nền
   esignClientId: null,
   esignSecretKey: null,
@@ -46,18 +49,27 @@ const cfg: StandardInvoiceConfig = {
 
   switch (cmd) {
     case "publish": {
+      // publish <hậu-tố> [ký-hiệu] [thuế-suất] — ký hiệu đầu 2 = hóa đơn BÁN HÀNG
+      // (hộ KD, không có thuế suất); dòng hàng dựng bằng CHÍNH buildInvoiceLines
+      // của luồng thật để test đúng thứ sẽ chạy.
+      if (arg2) {
+        cfg.invoiceSeries = arg2;
+        cfg.invoicePattern = arg2.charAt(0);
+      }
+      const lines = buildInvoiceLines(
+        [
+          { name: "Sản phẩm test tích hợp Hubsell", sku: "HUBSELL-SKU-TEST", quantity: 2, price: 55000, vatRate: null },
+        ],
+        Number(arg3 ?? 10),
+        0,
+        // Cùng bộ tùy chọn với issueInvoiceForOrder: ĐVT mặc định + hóa đơn bán
+        // hàng thì bỏ thuế suất (dù arg3 có truyền gì).
+        { defaultUnitName: cfg.defaultUnitName, salesInvoice: isSalesInvoiceSeries(cfg.invoiceSeries) }
+      );
       const input: CreateInvoiceInput = {
         orderCode: `HUBSELL-TEST-${arg1 ?? "001"}`,
         buyerName: "Khách lẻ không lấy hóa đơn (test tích hợp Hubsell)",
-        lines: [
-          {
-            name: "Sản phẩm test tích hợp Hubsell",
-            sku: "HUBSELL-SKU-TEST",
-            quantity: 1,
-            unitPrice: 100000,
-            vatRate: 10,
-          },
-        ],
+        lines,
         totalAmount: 110000,
       };
       console.log(`Phát hành thử: RefID=${input.orderCode}, ký hiệu=${cfg.invoiceSeries}`);

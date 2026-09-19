@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 
+import { HintIcon } from "@/components/finance/hint-icon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -59,6 +60,7 @@ import {
   issueInvoicesBulk,
   setInvoiceAutoAdjust,
   setInvoiceAutoIssue,
+  type InvoiceAutoIssueTrigger,
   type InvoiceQueueFilter,
   type InvoiceQueuePageSize,
   type InvoiceQueueResponse,
@@ -97,11 +99,14 @@ function InvoiceRequestBadge({
   );
 }
 
-/** Badge "Quá hạn" — giao xong quá 48h chưa có hóa đơn (NĐ 254: chậm nhất ngày làm việc tiếp theo). */
+/** Badge "Quá hạn" — giao xong quá 48h chưa có hóa đơn. Luật (Điều 9 NĐ 254/2026)
+ *  tính từ THỜI ĐIỂM GIAO HÀNG, không cho hạn ân nào với bán nội địa — 48h là
+ *  ngưỡng nhắc nội bộ của Hubsell (19/09 sửa câu "ngày làm việc tiếp theo": mốc
+ *  đó chỉ có cho hàng xuất khẩu). */
 function OverdueBadge({ hours }: { hours: number }) {
   return (
     <span
-      title={`Đã giao quá ${hours} giờ mà chưa lập hóa đơn — quá mốc "ngày làm việc tiếp theo" (NĐ 254/2026)`}
+      title={`Đã giao quá ${hours} giờ mà chưa lập hóa đơn — theo Điều 9 NĐ 254/2026, hóa đơn lập tại thời điểm giao hàng`}
       className="inline-flex shrink-0 items-center rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
     >
       Quá hạn
@@ -159,16 +164,16 @@ export function InvoiceIssueCard({
     void loadQueue(filter, page, pageSize);
   }, [loadQueue, filter, page, pageSize]);
 
-  async function handleToggleAuto(enabled: boolean) {
+  /** Công tắc / mốc xuất / "Chạy lại" đi chung một endpoint — gửi gì đổi nấy. */
+  async function saveAutoIssue(
+    patch: Parameters<typeof setInvoiceAutoIssue>[0],
+    okMessage: (r: Awaited<ReturnType<typeof setInvoiceAutoIssue>>) => string
+  ) {
     setSavingAuto(true);
     try {
-      const r = await setInvoiceAutoIssue(enabled);
-      setQueue((q) => (q ? { ...q, autoIssueEnabled: r.autoIssueEnabled } : q));
-      toast.success(
-        r.autoIssueEnabled
-          ? "Đã BẬT tự động phát hành — đơn đã giao & đã đối soát sẽ được xuất mỗi 15 phút."
-          : "Đã tắt tự động phát hành."
-      );
+      const r = await setInvoiceAutoIssue(patch);
+      setQueue((q) => (q ? { ...q, ...r } : q));
+      toast.success(okMessage(r));
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "Không lưu được cài đặt tự động"
@@ -177,6 +182,25 @@ export function InvoiceIssueCard({
       setSavingAuto(false);
     }
   }
+
+  const handleToggleAuto = (enabled: boolean) =>
+    saveAutoIssue({ enabled }, (r) =>
+      !r.autoIssueEnabled
+        ? "Đã tắt tự động phát hành."
+        : r.autoIssueTrigger === "SETTLED"
+          ? "Đã BẬT tự động phát hành — đơn đã giao & đã đối soát sẽ được xuất mỗi 15 phút."
+          : "Đã BẬT tự động phát hành — đơn giao thành công sẽ được xuất mỗi 15 phút."
+    );
+
+  const handleChangeTrigger = (trigger: InvoiceAutoIssueTrigger) =>
+    saveAutoIssue({ trigger }, () =>
+      trigger === "SETTLED"
+        ? "Đã đổi mốc: chờ sàn đối soát xong mới xuất."
+        : "Đã đổi mốc: xuất ngay khi đơn giao thành công."
+    );
+
+  const handleResumeAuto = () =>
+    saveAutoIssue({ resume: true }, () => "Đã chạy lại tự động phát hành — lượt quét kế trong 15 phút.");
 
   async function handleToggleAutoAdjust(enabled: boolean) {
     setSavingAutoAdjust(true);
@@ -313,9 +337,38 @@ export function InvoiceIssueCard({
                 <Label htmlFor="auto-issue-toggle" className="cursor-pointer text-xs font-semibold">
                   Tự động phát hành
                 </Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Khi đơn đã giao &amp; sàn đã đối soát
-                </p>
+                {/* MỐC XUẤT (19/09): luật tính từ lúc GIAO THÀNH CÔNG (Điều 9
+                    NĐ 254/2026); chờ đối soát là lựa chọn của shop muốn bớt hóa
+                    đơn điều chỉnh, chấp nhận xuất trễ vài ngày. */}
+                <span className="flex items-center gap-1">
+                  {/* <select> trần thay vì NativeSelect: đây là dòng chữ phụ 11px
+                      dưới nhãn công tắc, ô chọn chuẩn cao 36px sẽ làm lệch hai
+                      khối công tắc nằm cạnh nhau. */}
+                  <select
+                    aria-label="Mốc tự động phát hành"
+                    className="cursor-pointer rounded border-0 bg-transparent p-0 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed"
+                    value={queue?.autoIssueTrigger ?? "DELIVERED"}
+                    onChange={(e) =>
+                      void handleChangeTrigger(e.target.value as InvoiceAutoIssueTrigger)
+                    }
+                    disabled={queue === null || savingAuto}
+                  >
+                    <option value="DELIVERED">Ngay khi giao thành công</option>
+                    <option value="SETTLED">Chờ sàn đối soát xong</option>
+                  </select>
+                  <HintIcon
+                    hint={
+                      <>
+                        Theo quy định, hóa đơn bán hàng hóa lập tại thời điểm
+                        giao hàng cho người mua — nên mốc <b>Ngay khi giao thành
+                        công</b> là mốc đúng luật. <b>Chờ sàn đối soát</b> thường
+                        trễ thêm vài ngày; đổi lại đơn bị hoàn sớm chưa kịp xuất
+                        nên ít phải lập hóa đơn điều chỉnh. Số tiền trên hóa đơn
+                        là tiền hàng, hai mốc cho ra cùng một con số.
+                      </>
+                    }
+                  />
+                </span>
               </div>
               {savingAuto ? (
                 <Loader2 className="size-4 animate-spin text-slate-400" />
@@ -354,6 +407,36 @@ export function InvoiceIssueCard({
           </div>
         </div>
 
+        {/* ---- NGẮT MẠCH tự động phát hành (19/09): worker gặp lỗi cấp tài
+            khoản thì tự ngừng + ghi lý do đã dịch ra việc cần làm. ---- */}
+        {queue !== null && queue.autoIssueEnabled && queue.autoIssuePausedAt && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <span className="flex min-w-0 flex-1 items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                <b>Tự động phát hành đang tạm ngừng.</b>{" "}
+                {queue.autoIssuePauseReason ?? "Nhà cung cấp hóa đơn từ chối phát hành."}
+              </span>
+            </span>
+            <span className="flex shrink-0 gap-2">
+              {onOpenConfig && (
+                <Button size="sm" variant="outline" onClick={onOpenConfig}>
+                  <Settings2 className="size-3.5" />
+                  Mở Cấu hình kết nối
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleResumeAuto()}
+                disabled={savingAuto}
+              >
+                Chạy lại
+              </Button>
+            </span>
+          </div>
+        )}
+
         {/* ---- Nhắc cấu hình khi chưa đủ điều kiện phát hành ---- */}
         {queue !== null && !queue.configured && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
@@ -372,12 +455,12 @@ export function InvoiceIssueCard({
 
         {/* ---- Cảnh báo đơn QUÁ HẠN lập hóa đơn (03/09) ---- */}
         {queue !== null && queue.overdueTotal > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
-            <AlertTriangle className="size-4 shrink-0" />
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <span>
               {/* Chuỗi template để Turbopack không nuốt khoảng trắng sau {số} ("48giờ"). */}
               <b>{`${queue.overdueTotal} đơn`}</b>
-              {` đã giao quá ${queue.overdueHours} giờ mà chưa có hóa đơn — quá mốc "ngày làm việc tiếp theo" của NĐ 254/2026. Xuất ngay hoặc bật tự động.`}
+              {` đã giao quá ${queue.overdueHours} giờ mà chưa có hóa đơn — theo quy định, hóa đơn lập tại thời điểm giao hàng cho người mua (Điều 9 NĐ 254/2026). Xuất ngay hoặc bật tự động.`}
             </span>
           </div>
         )}

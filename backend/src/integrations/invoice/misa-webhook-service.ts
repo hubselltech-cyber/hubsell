@@ -25,6 +25,7 @@
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { buildInvoiceLines } from "./issue-order";
+import { isSalesInvoiceSeries } from "./misa-einvoice";
 import {
   misaEventStatus,
   type MisaWebhookItem,
@@ -324,7 +325,7 @@ async function reconcileTax(
   const cfg = order
     ? await prisma.invoiceConfig.findFirst({
         where: { ownerId: order.channel.userId, channelId: null },
-        select: { defaultVatRate: true },
+        select: { defaultVatRate: true, invoiceSeries: true },
       })
     : null;
   const defaultVatRate = cfg?.defaultVatRate ?? 0;
@@ -341,7 +342,9 @@ async function reconcileTax(
       vatRate: it.product?.vatRate ?? null,
     })),
     defaultVatRate,
-    Number(order?.sellerDiscountVoucher ?? 0)
+    Number(order?.sellerDiscountVoucher ?? 0),
+    // Hóa đơn bán hàng (ký hiệu đầu 2) không có thuế — cùng luật với lúc phát hành.
+    { salesInvoice: isSalesInvoiceSeries(cfg?.invoiceSeries) }
   );
   let hubsellTotal = 0;
   const bySku = new Map<string, { expectedTax: number; vatRate: number }>();

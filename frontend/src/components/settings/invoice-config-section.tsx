@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   Building2,
   CircleHelp,
   DownloadCloud,
@@ -152,6 +153,8 @@ export function InvoiceConfigSection({
   const [templates, setTemplates] = useState<InvoiceTemplateDTO[]>([]);
   /** % thuế suất GTGT mặc định — áp cho dòng hàng chưa khai riêng ở SKU kho. */
   const [defaultVatRate, setDefaultVatRate] = useState(0);
+  /** Đơn vị tính mặc định in trên hóa đơn — sàn không trả ĐVT qua API. */
+  const [defaultUnitName, setDefaultUnitName] = useState("Cái");
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [hasSecretKey, setHasSecretKey] = useState(false);
   const [secretMasked, setSecretMasked] = useState<string | null>(null);
@@ -205,6 +208,7 @@ export function InvoiceConfigSection({
         setCustomApiUrl(r.config.customApiUrl);
         setInvoiceSeries(r.config.invoiceSeries);
         setDefaultVatRate(r.config.defaultVatRate ?? 0);
+        setDefaultUnitName(r.config.defaultUnitName ?? "Cái");
         setHasSecretKey(r.config.hasSecretKey);
         setSecretMasked(r.config.secretKeyMasked);
         setMeinvoiceUsername(r.config.meinvoiceUsername);
@@ -235,6 +239,11 @@ export function InvoiceConfigSection({
 
   /** Meta NCC đang chọn — quyết định bộ trường credential (Dynamic Form). */
   const vendor = vendorMeta(provider);
+  // Ký tự đầu của ký hiệu = loại hóa đơn (TT 78): 1 = GTGT (doanh nghiệp khấu
+  // trừ) · 2 = bán hàng (hộ/cá nhân KD — không có thuế suất).
+  const seriesKind = invoiceSeries.trim().charAt(0);
+  const isSalesInvoice = seriesKind === "2";
+  const isVatInvoice = seriesKind === "1";
 
   /** Validate TT 78 các trường ĐÃ nhập — trả map lỗi (rỗng = hợp lệ). */
   function validateFields(): Record<string, string> {
@@ -277,6 +286,7 @@ export function InvoiceConfigSection({
         invoicePattern: invoiceSeries.trim().charAt(0),
         invoiceSeries: invoiceSeries.trim().toUpperCase(),
         defaultVatRate,
+        defaultUnitName: defaultUnitName.trim(),
         esignClientId: esignClientId.trim(),
         esignSecretKey: esignSecretInput.trim() || undefined,
         esignUsername: esignUsername.trim(),
@@ -292,6 +302,7 @@ export function InvoiceConfigSection({
         defaultInvoiceType: "STANDARD",
       });
       setInvoiceSeries(r.config.invoiceSeries);
+      setDefaultUnitName(r.config.defaultUnitName ?? "Cái");
       setPosSeries(r.config.posSeries);
       setHasSecretKey(r.config.hasSecretKey);
       setSecretMasked(r.config.secretKeyMasked);
@@ -683,7 +694,10 @@ export function InvoiceConfigSection({
                       với DN khấu trừ. Dòng hàng chưa khai riêng ở SKU kho lên
                       hóa đơn với mức này. */}
                   {/* Khối NỔI BẬT riêng (anh yêu cầu 24/08 tối) — box emerald
-                      tách khỏi các ô thường, chú thích dài chuyển vào tooltip. */}
+                      tách khỏi các ô thường, chú thích dài chuyển vào tooltip.
+                      19/09: ký hiệu đầu 2 = HÓA ĐƠN BÁN HÀNG (hộ KD) — loại này
+                      KHÔNG có thuế suất, backend bỏ qua mọi mức đã chọn → thay ô
+                      chọn bằng một dòng nói rõ, khỏi để khách tưởng đang áp 8%. */}
                   <div
                     className={cn(
                       "flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3",
@@ -693,37 +707,93 @@ export function InvoiceConfigSection({
                     <span className="rounded-xl bg-emerald-100 p-2.5 text-emerald-600">
                       <Percent className="size-4" />
                     </span>
-                    <div className="grid gap-1.5">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Label htmlFor="inv-default-vat">
-                          Thuế suất GTGT mặc định
-                        </Label>
-                        <HintIcon
-                          hint={
-                            <>
-                              Giá bán trên sàn <b>đã gồm thuế</b> — hệ thống tự
-                              tách VAT ra, tổng hóa đơn luôn bằng đúng{" "}
-                              <b>tổng giá trị sản phẩm</b> của đơn (tiền hàng,
-                              không gồm phí ship thu hộ). Hộ/cá nhân kinh doanh
-                              giữ 0%; doanh nghiệp chọn đúng thuế suất hàng mình
-                              bán.
-                            </>
-                          }
-                        />
-                      </span>
-                      <NativeSelect
-                        id="inv-default-vat"
-                        disabled={vendor.soon}
-                        className="max-w-72"
-                        value={String(defaultVatRate)}
-                        onChange={(e) => setDefaultVatRate(Number(e.target.value))}
-                      >
-                        <option value="0">0% — hộ/cá nhân kinh doanh</option>
-                        <option value="5">5% — doanh nghiệp (hàng thiết yếu)</option>
-                        <option value="8">8% — doanh nghiệp (mức được giảm)</option>
-                        <option value="10">10% — doanh nghiệp (mức phổ thông)</option>
-                      </NativeSelect>
-                    </div>
+                    {isSalesInvoice ? (
+                      <div className="grid gap-1">
+                        <Label>Thuế suất GTGT</Label>
+                        <p className="max-w-xl text-sm text-slate-600">
+                          Ký hiệu <b>{invoiceSeries}</b> là <b>hóa đơn bán hàng</b>{" "}
+                          (hộ, cá nhân kinh doanh) — loại này không ghi thuế suất,
+                          thành tiền bằng đúng giá bán.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-1.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Label htmlFor="inv-default-vat">
+                            Thuế suất GTGT mặc định
+                          </Label>
+                          <HintIcon
+                            hint={
+                              <>
+                                Giá bán trên sàn <b>đã gồm thuế</b> — hệ thống tự
+                                tách VAT ra, tổng hóa đơn luôn bằng đúng{" "}
+                                <b>tổng giá trị sản phẩm</b> của đơn (tiền hàng,
+                                không gồm phí ship thu hộ). Hộ/cá nhân kinh doanh
+                                giữ 0%; doanh nghiệp chọn đúng thuế suất hàng mình
+                                bán.
+                              </>
+                            }
+                          />
+                        </span>
+                        <NativeSelect
+                          id="inv-default-vat"
+                          disabled={vendor.soon}
+                          className="max-w-72"
+                          value={String(defaultVatRate)}
+                          onChange={(e) => setDefaultVatRate(Number(e.target.value))}
+                        >
+                          <option value="0">0% — hộ/cá nhân kinh doanh</option>
+                          <option value="5">5% — doanh nghiệp (hàng thiết yếu)</option>
+                          <option value="8">8% — doanh nghiệp (mức được giảm)</option>
+                          <option value="10">10% — doanh nghiệp (mức phổ thông)</option>
+                        </NativeSelect>
+                        {/* Cảnh báo, không khóa: hóa đơn GTGT mà để 0% — theo luật
+                            0% chỉ dành cho hàng xuất khẩu; vẫn cho lưu vì có shop
+                            bán hàng không chịu thuế tự biết việc mình làm. */}
+                        {isVatInvoice && defaultVatRate === 0 && (
+                          <p className="flex max-w-xl items-start gap-1.5 text-xs text-amber-700">
+                            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                            <span>
+                              Ký hiệu <b>{invoiceSeries}</b> là hóa đơn GTGT của doanh
+                              nghiệp — mức 0% theo luật chỉ dành cho hàng xuất khẩu.
+                              Hãy chọn đúng thuế suất hàng mình bán (5, 8 hoặc 10%).
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ĐƠN VỊ TÍNH mặc định (19/09): nội dung bắt buộc của hóa
+                      đơn nhưng sàn không trả qua API — trước đó ô ĐVT in trống. */}
+                  <div
+                    className={cn(
+                      "grid gap-1.5",
+                      vendor.soon && "pointer-events-none opacity-50",
+                    )}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Label htmlFor="inv-default-unit">Đơn vị tính mặc định</Label>
+                      <HintIcon
+                        hint={
+                          <>
+                            Hóa đơn bắt buộc ghi đơn vị tính cho từng dòng hàng,
+                            nhưng sàn không gửi thông tin này. Hệ thống in đơn vị
+                            ở đây cho mọi sản phẩm; sản phẩm nào khác (Bộ, Hộp,
+                            Đôi…) thì khai riêng ở sản phẩm đó.
+                          </>
+                        }
+                      />
+                    </span>
+                    <Input
+                      id="inv-default-unit"
+                      disabled={vendor.soon}
+                      className="max-w-40"
+                      maxLength={20}
+                      placeholder="Cái"
+                      value={defaultUnitName}
+                      onChange={(e) => setDefaultUnitName(e.target.value)}
+                    />
                   </div>
                 </div>
               )}

@@ -227,6 +227,8 @@ export interface Product {
   taxName?: string | null;
   /** % thuế suất GTGT đầu ra: 0 / 5 / 8 / 10. */
   vatRate?: number;
+  /** Đơn vị tính in hóa đơn của SKU — null = dùng mặc định của shop. */
+  unitName?: string | null;
   /** Tồn an toàn riêng của SKU — null/vắng = dùng mặc định toàn shop. */
   safetyStock?: number | null;
   createdAt: string;
@@ -1360,6 +1362,7 @@ export function createProduct(data: {
   /** Thuế & Hóa đơn (giữ chỗ) — tuỳ chọn. */
   taxName?: string;
   vatRate?: number;
+  unitName?: string;
 }) {
   return apiFetch<Product>("/api/products", {
     method: "POST",
@@ -3417,6 +3420,8 @@ export interface InvoiceConfigDTO {
   defaultInvoiceType: string; // STANDARD | POS
   /** % thuế suất GTGT mặc định cho dòng hàng chưa khai riêng ở SKU kho. */
   defaultVatRate: number;
+  /** Đơn vị tính mặc định in trên hóa đơn (sàn không trả ĐVT qua API). */
+  defaultUnitName: string;
 }
 
 /** api_key riêng của một gian hàng (phục vụ đối soát hoa hồng theo shop). */
@@ -3479,6 +3484,7 @@ export function saveInvoiceConfig(input: {
   posSeries?: string;
   defaultInvoiceType?: string;
   defaultVatRate?: number;
+  defaultUnitName?: string;
 }) {
   return apiFetch<{ config: InvoiceConfigDTO }>("/api/invoice-config", {
     method: "PUT",
@@ -3786,7 +3792,7 @@ export interface InvoiceQueueRowDTO {
   totalAmount: number;
   orderedAt: string;
   deliveredAt: string | null;
-  /** Đã giao quá 48h mà chưa có hóa đơn — quá mốc "ngày làm việc tiếp theo". */
+  /** Đã giao quá 48h mà chưa có hóa đơn (ngưỡng nhắc nội bộ — luật tính từ lúc giao hàng). */
   overdue: boolean;
   /** Sàn đã đối soát chưa — trigger của luồng tự động xuất. */
   isSettled: boolean;
@@ -3802,8 +3808,19 @@ export type InvoiceQueueFilter = "all" | "yes" | "no";
 /** Cỡ trang hàng chờ backend chấp nhận — 20 là mặc định. */
 export type InvoiceQueuePageSize = 20 | 50 | 100;
 
-export interface InvoiceQueueResponse {
+/** Mốc tự động phát hành: ngay khi giao thành công (đúng mốc luật) | chờ sàn đối soát. */
+export type InvoiceAutoIssueTrigger = "DELIVERED" | "SETTLED";
+
+/** Trạng thái công tắc tự động phát hành — queue GET và PUT /auto-issue cùng trả. */
+export interface InvoiceAutoIssueState {
   autoIssueEnabled: boolean;
+  autoIssueTrigger: InvoiceAutoIssueTrigger;
+  /** Khác null = worker đã NGẮT MẠCH vì lỗi cấp tài khoản — kèm lý do đã dịch. */
+  autoIssuePausedAt: string | null;
+  autoIssuePauseReason: string | null;
+}
+
+export interface InvoiceQueueResponse extends InvoiceAutoIssueState {
   /** Tự động lập hóa đơn ĐIỀU CHỈNH giảm khi đơn hoàn nhập kho. */
   autoAdjustEnabled: boolean;
   /** Đã đủ cấu hình tối thiểu để phát hành (ký hiệu + tài khoản meInvoice). */
@@ -3843,11 +3860,16 @@ export function issueInvoicesBulk(orderCodes: string[]) {
   });
 }
 
-/** Bật/tắt tự động phát hành (worker quét đơn đã giao + đã đối soát). */
-export function setInvoiceAutoIssue(enabled: boolean) {
-  return apiFetch<{ autoIssueEnabled: boolean }>("/api/tax/auto-issue", {
+/** Công tắc tự động phát hành — gửi gì đổi nấy: bật/tắt, đổi mốc xuất, hoặc
+ *  resume = gỡ ngắt mạch ("Chạy lại") sau khi đã sửa lỗi tài khoản. */
+export function setInvoiceAutoIssue(patch: {
+  enabled?: boolean;
+  trigger?: InvoiceAutoIssueTrigger;
+  resume?: boolean;
+}) {
+  return apiFetch<InvoiceAutoIssueState>("/api/tax/auto-issue", {
     method: "PUT",
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(patch),
   });
 }
 

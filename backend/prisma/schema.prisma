@@ -906,6 +906,22 @@ model InvoiceConfig {
   /// Product.vatRate riêng sẽ dùng mức này khi lên hóa đơn: 0 / 5 / 8 / 10.
   defaultVatRate Int @default(0)
 
+  /// ĐƠN VỊ TÍNH mặc định in trên hóa đơn (19/09): nội dung BẮT BUỘC của hóa đơn
+  /// nhưng sàn không trả qua API — dòng hàng không có Product.unitName riêng dùng
+  /// mức này. "Cái" là mặc định tùy ý cho hàng bán lẻ, khách sửa được.
+  defaultUnitName String @default("Cái")
+
+  /// MỐC tự động phát hành (19/09): DELIVERED = ngay khi giao thành công (đúng
+  /// Điều 9 NĐ 254/2026 — thời điểm chuyển giao quyền sở hữu) | SETTLED = chờ
+  /// sàn đối soát xong (hành vi trước 19/09 — ít hóa đơn điều chỉnh hơn nhưng
+  /// trễ vài ngày so với mốc luật).
+  autoIssueTrigger String @default("DELIVERED")
+  /// NGẮT MẠCH tự động phát hành: worker gặp lỗi cấp TÀI KHOẢN (sai mật khẩu
+  /// meInvoice, hết số hóa đơn, chứng thư hết hạn…) thì ghi mốc + lý do ở đây
+  /// và ngừng quét shop này tới khi chủ shop lưu lại cấu hình / bấm chạy lại.
+  autoIssuePausedAt    DateTime?
+  autoIssuePauseReason String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1087,6 +1103,9 @@ model Product {
   // % thuế suất GTGT đầu ra của SKU: 0 / 5 / 8 / 10. Lưu tĩnh khi user cấu hình,
   // module hóa đơn/đối soát thuế sau này sẽ đọc để tính VAT đầu ra.
   vatRate Int @default(0)
+  // Đơn vị tính in trên hóa đơn (Cái / Bộ / Hộp…) — NULL = dùng
+  // InvoiceConfig.defaultUnitName của shop.
+  unitName String?
 
   // ── Thông số vật lý cho Trợ lý vận hành (AI CSKH) ──
   // Đặt ở Product (kho vật lý) chứ KHÔNG phải ChannelProduct: chất liệu/size là
