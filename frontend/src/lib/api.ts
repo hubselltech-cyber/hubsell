@@ -2676,6 +2676,18 @@ export interface TiktokAdsVideoActionLog {
   createdAt: string;
 }
 
+export interface TiktokAdsCampaignAdvice {
+  kind: "paused" | "no_spend" | "no_breakeven" | "losing" | "target_below" | "budget_capped" | "target_binding" | "healthy";
+  label: string;
+  text: string;
+  tone: "warn" | "info" | "ok" | "muted";
+  /** % ngân sách ngày đang dùng (trung bình những ngày trọn có tiêu tiền); null = không tính được. */
+  budgetUsedPct: number | null;
+  /** Lãi sau quảng cáo trên mỗi 100đ doanh thu ở ROI thực; null = chưa có hòa vốn tin được. */
+  keepPer100: number | null;
+  editInSellerCenter: boolean;
+}
+
 export interface TiktokAdsCampaignVideos {
   campaign: {
     id: string;
@@ -2692,6 +2704,10 @@ export interface TiktokAdsCampaignVideos {
     gmv: number;
     auto: TiktokAdsAutoStatus | null;
     breakeven: TiktokAdsBreakeven | null;
+    /** Ngân sách ngày; 0 = không rõ / không giới hạn. */
+    budget: number;
+    /** Chẩn đoán + việc nên làm (backend campaign-advice.ts). Khách tự sửa trong Seller Center — API không sửa được chiến dịch. */
+    advice: TiktokAdsCampaignAdvice;
   };
   /** Khoảng ngày backend đã dùng (YYYY-MM-DD, đã kẹp ≤ hôm nay). */
   from: string;

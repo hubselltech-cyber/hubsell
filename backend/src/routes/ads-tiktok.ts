@@ -75,6 +75,7 @@ import {
   saveCampaignProductIds,
   type TiktokBreakeven,
 } from "../integrations/tiktok-ads/breakeven";
+import { avgDailySpendOf, campaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
 import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
 import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";
 import { VIDEO_META_MAX_IDS, getTiktokVideoMeta } from "../integrations/tiktok-ads/video-meta";
@@ -440,6 +441,7 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
         channelId: true,
         status: true,
         roasTarget: true,
+        budget: true,
         biddingMethod: true,
         itemIds: true,
         channel: { select: { shopName: true } },
@@ -472,6 +474,15 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
       // Ghi lại sản phẩm của chiến dịch (nguồn nối chiến dịch → SKU) rồi mới tính hòa vốn cho đúng SKU.
       if (period.endDate === vnDateStr(0)) await saveCampaignProductIds(campaign.id, campaign.itemIds, spuIds).catch(() => {});
       const breakeven = await computeTiktokAdsBreakeven({ id: campaign.channelId, userId: req.ownerId! }).catch(() => null);
+      const campaignBreakeven = breakeven?.byCampaignRowId.get(campaign.id);
+      // Chi tiêu từng ngày của chiến dịch trong khoảng xem (đã có trong DB từ lượt đồng bộ) → % ngân sách ngày đang dùng.
+      const perfDays = await prisma.adsCampaignDailyPerf.findMany({
+        where: {
+          adsCampaignId: campaign.id,
+          date: { gte: new Date(`${period.startDate}T00:00:00Z`), lte: new Date(`${period.endDate}T00:00:00Z`) },
+        },
+        select: { date: true, expense: true },
+      });
       const videos =
         spuIds.length > 0
           ? await fetchGmvMaxCampaignVideos(range, campaign.campaignId, spuIds, [
@@ -533,7 +544,21 @@ adsTiktokRouter.get("/campaigns/:id/videos", async (req: AuthRequest, res, next)
           orders: products.reduce((s, x) => s + x.orders, 0),
           gmv: products.reduce((s, x) => s + x.gmv, 0),
           auto: campaign.tiktokAutoRule ? autoStatusOf(campaign.tiktokAutoRule) : null,
-          breakeven: breakevenForUi(breakeven?.byCampaignRowId.get(campaign.id)),
+          breakeven: breakevenForUi(campaignBreakeven),
+          budget: Number(campaign.budget),
+          /** Chẩn đoán + việc nên làm (campaign-advice.ts) — khách tự sửa trong Seller Center, Hubsell không sửa được qua API. */
+          advice: campaignAdvice({
+            status: campaign.status,
+            roasTarget: campaign.roasTarget != null ? Number(campaign.roasTarget) : null,
+            budget: Number(campaign.budget),
+            breakeven: campaignBreakeven ?? null,
+            spend: products.reduce((s, x) => s + x.cost, 0),
+            gmv: products.reduce((s, x) => s + x.gmv, 0),
+            avgDailySpend: avgDailySpendOf(
+              perfDays.map((p) => ({ date: dateKey(p.date), expense: Number(p.expense) })),
+              vnDateStr(0)
+            ),
+          }),
         },
         from: period.startDate,
         to: period.endDate,

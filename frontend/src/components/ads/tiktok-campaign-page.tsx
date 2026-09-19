@@ -35,7 +35,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
+import { TIKTOK_SELLER_CENTER_ADS_URL, formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { TiktokDryRunBacktest } from "@/components/ads/tiktok-dry-run-backtest";
@@ -187,6 +187,14 @@ const SORT_VALUE: Record<SortKey, (v: TiktokAdsVideoRow) => number | null> = {
   ctr: (v) => v.ctr,
   cvr: (v) => v.cvr,
   roi: (v) => v.roi ?? 0,
+};
+
+/** Màu nhãn kết luận của chiến dịch — cùng bảng màu với cột Nhận định của tab Hòa vốn sản phẩm. */
+const ADVICE_TONE: Record<"warn" | "info" | "ok" | "muted", string> = {
+  warn: "bg-rose-50 text-red-500",
+  info: "bg-amber-50 text-amber-700",
+  ok: "bg-emerald-50 text-emerald-700",
+  muted: "bg-slate-100 text-slate-600",
 };
 
 const PAGE_SIZES = [20, 50, 100];
@@ -417,6 +425,8 @@ export function TiktokCampaignPage() {
   const t = data?.totals;
   const wastePct = t && t.videoSpend > 0 ? Math.round((t.noOrderSpend / t.videoSpend) * 100) : 0;
   const campaignRoi = c && c.spend > 0 ? c.gmv / c.spend : null;
+  // Backend cũ (frontend lên trước backend trong lúc deploy) chưa trả `advice` → coi như chưa có kết luận, trang vẫn lên.
+  const advice = c?.advice ?? null;
   const backHref = c ? `/ads/tiktok?channelId=${c.channelId}` : "/ads/tiktok";
 
   // "Ngoài bảng": video đang phân phối / chờ thử mà CHƯA tiêu đồng nào (số từ chính bảng) + các nhóm Hubsell không soi.
@@ -480,7 +490,38 @@ export function TiktokCampaignPage() {
                   {formatRoi(campaignRoi)}
                 </span>{" "}
                 · chi {formatVND(c.spend)} · {formatNumber(c.orders)} đơn
+                {advice?.budgetUsedPct != null && (
+                  <span title="Chi tiêu trung bình của những ngày trọn có tiêu tiền trong khoảng xem ÷ ngân sách ngày">
+                    {" "}
+                    · dùng ~{formatNumber(advice.budgetUsedPct)}% ngân sách ngày ({formatVND(c.budget)})
+                  </span>
+                )}
               </p>
+            )}
+            {/* KẾT LUẬN CỦA CHIẾN DỊCH: một nhãn, trỏ chuột / bấm hiện lý do + việc nên làm (không chèn khối lên trên bảng). Chiến dịch
+                tạo từ Seller Center không sửa được qua API (probe 19/09/2026) → kết luận nào kéo theo việc sửa thì đưa đường tới đó. */}
+            {c && advice && advice.kind !== "paused" && advice.kind !== "no_spend" && (
+              <Popover>
+                <PopoverTrigger openOnHover delay={80} render={<button type="button" className="mt-1.5 cursor-pointer rounded-full" aria-label={`Kết luận: ${advice.label}`} />}>
+                  <Badge className={cn(ADVICE_TONE[advice.tone], "underline decoration-dotted underline-offset-2")}>{advice.label}</Badge>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-96 gap-1.5 p-3 text-sm">
+                  <p className="font-semibold text-slate-900">{advice.label}</p>
+                  <p className="text-slate-700">{advice.text}</p>
+                  {advice.editInSellerCenter && (
+                    <a
+                      href={TIKTOK_SELLER_CENTER_ADS_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center gap-1.5 font-medium text-slate-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                      title={`Seller Center → Quảng cáo cửa hàng → chiến dịch "${c.name}"`}
+                    >
+                      <ExternalLink className="size-3.5" />
+                      Sửa chiến dịch trong Seller Center
+                    </a>
+                  )}
+                </PopoverContent>
+              </Popover>
             )}
           </div>
           <div className="ml-auto">

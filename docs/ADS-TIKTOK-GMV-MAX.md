@@ -417,7 +417,19 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   `TIKTOK_SELLER_CENTER_ADS_URL` ở `tiktok-ads-format.ts` — mới là trang chủ Seller Center VN, chờ đường dẫn thẳng).
   · Anh Trung xem prod 19/09: BỎ dòng vàng "+… thiếu giá vốn" ở cột Doanh thu (cột Nhận định đã nói). Sản phẩm chưa có giá vốn cho đơn
   nào vẫn hiện doanh thu màu XÁM (để thứ tự bán-nhiều-đứng-trước không thành hàng gạch ngang); số tiền thiếu giá vốn chuyển vào ô lý do.
-- **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột.
+- ✅ **19/09/2026 — CHẨN ĐOÁN TRÊN TRANG CHIẾN DỊCH** (`campaign-advice.ts`, thuần + 8 test; route `/campaigns/:id/videos` trả thêm `budget` +
+  `advice`). Đầu trang: dòng phụ thêm "dùng ~N% ngân sách ngày" (= chi tiêu trung bình những NGÀY TRỌN có tiêu tiền trong khoảng xem ÷
+  ngân sách ngày, đọc `AdsCampaignDailyPerf`, bỏ hôm nay) + MỘT nhãn kết luận, trỏ chuột / bấm hiện lý do + link "Sửa chiến dịch trong
+  Seller Center" (không chèn khối lên trên bảng). Thứ tự xét: tạm dừng / chưa tiêu tiền (không hiện nhãn) → **Chưa kết luận được** (hòa
+  vốn chưa tin — dùng đúng `breakevenUnusableReason` của luật tự loại) → **Quảng cáo đang lỗ** (ROI thực < hòa vốn) → **Mục tiêu dưới hòa
+  vốn** → **Ngân sách đang chặn** (đạt ≥90% mục tiêu VÀ tiêu ≥80% ngân sách) → **Mục tiêu đang bó phân phối** (lãi, chưa đạt mục tiêu,
+  tiêu <80% ngân sách — TC054 thật: mục tiêu 15, ROI thực ~11,6, hòa vốn ~5,9, dùng ~14% ngân sách) → **Đang lãi**. Hai mốc 80% / 90% là
+  SỐ CỦA TIKTOK (điều kiện tự tăng ngân sách trong docs "Update a GMV Max Campaign": "reached at least 90% of your ROI target and at
+  least 80% of your budget has been used"); KHÔNG có mốc "mục tiêu gấp N lần hòa vốn" — chỉ nêu lãi / 100đ doanh thu. FE chịu được
+  backend cũ chưa trả `advice` (Vercel lên trước Render).
+- **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột; nhận
+  định "Nên chạy / Chạy thử / Chưa nên" cho sản phẩm CHƯA chạy (anh Trung gật hướng 19/09, làm sau trang chiến dịch — căn cứ: hòa vốn tin
+  được + tồn ≥14 ngày + đà bán 1,2 / 0,8 như Shopee; ROI mục tiêu đề xuất = hòa vốn × hệ số an toàn của cấu hình Trợ lý).
 - Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.
