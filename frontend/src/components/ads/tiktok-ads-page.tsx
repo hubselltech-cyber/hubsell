@@ -452,7 +452,20 @@ export function TiktokAdsPage() {
                           >
                             Xem số
                           </Button>
-                          <Button size="sm" variant="ghost" className="ml-auto text-slate-500 hover:text-red-600" onClick={() => setUnlinkId(c.id)}>
+                          {/* Ủy quyền lại khi gian đang nối khỏe (vd. app được TikTok cấp thêm quyền — token cũ không tự có quyền
+                              mới). Backend chỉ thay token trên dòng nối: cấu hình tự loại, sổ lệnh, số liệu GIỮ nguyên — khác Gỡ kết nối. */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="ml-auto text-slate-500"
+                            title="Ủy quyền lại tài khoản quảng cáo. Cấu hình tự động loại, lịch sử và số liệu giữ nguyên."
+                            onClick={() => void openAuthorize(c.id, false)}
+                            disabled={connecting}
+                          >
+                            <RefreshCw className="size-4" />
+                            Kết nối lại
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-slate-500 hover:text-red-600" onClick={() => setUnlinkId(c.id)}>
                             <Unlink className="size-4" />
                             Gỡ kết nối
                           </Button>
