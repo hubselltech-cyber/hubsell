@@ -143,11 +143,14 @@ diện → nếu họ đòi, em dựng màn hình thật (nút bị khóa vì ch
    chiến dịch mới có đụng chiến dịch đang chạy không.
 4. Ghi kết quả ticket (ngày nộp, ngày duyệt / lý do từ chối, tên quyền chính xác) vào memory `hubsell-tiktok-gmv-max-api`.
 
-## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối dù sửa tay được (soạn 19/09/2026, ⏳ CHƯA GỬI)
+## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối qua API, sửa tay trên SELLER CENTER thì được (soạn 19/09/2026, ⏳ CHƯA GỬI)
 
 **Dữ kiện (19/09/2026, gian nhà and.not.or):** `POST /campaign/gmv_max/update/` đổi `budget` của TC076 (đang tắt) → `40002 Shop must
-belong to a Business Center account.` 3/3 lần. Cùng ngày anh Trung SỬA TAY ngân sách TC076 2.000.000 → 2.001.000 trên giao diện
-TikTok thì ĐƯỢC (API đọc lại ra 2.001.000, `modify_time` 2026-09-19 01:52:29 UTC) → tài khoản có quyền sửa, chỉ đường API bị chặn.
+belong to a Business Center account.` 3/3 lần. Cùng ngày anh Trung SỬA TAY ngân sách TC076 2.000.000 → 2.001.000 trên **SELLER CENTER**
+(tư cách CHỦ SHOP) thì ĐƯỢC (API đọc lại ra 2.001.000, `modify_time` 2026-09-19 01:52:29 UTC). ⚠️ Seller Center ≠ tài khoản quảng cáo: API
+của Hubsell đi bằng TÀI KHOẢN QUẢNG CÁO (tương đương Ads Manager) → lần sửa tay này CHƯA chứng minh tài khoản quảng cáo sửa được.
+Phép thử còn thiếu: sửa ngân sách TC076 trong ADS MANAGER (ads.tiktok.com) bằng đúng TKQC 7230813704726609922 — Ads Manager cũng
+không cho ⇒ chiến dịch tạo từ Seller Center không sửa được từ phía tài khoản quảng cáo (API chỉ phản chiếu điều đó); cho ⇒ giới hạn riêng của API.
 Loại / khôi phục video qua API (`/campaign/gmv_max/creative/update/`) vẫn chạy với đúng tài khoản + token này.
 
 **Gửi ở đâu:** https://business-api.tiktok.com/portal → Support → Submit a ticket (đăng nhập tài khoản developer dev@hubsell.tech).
@@ -165,7 +168,7 @@ Loại / khôi phục video qua API (`/campaign/gmv_max/creative/update/`) vẫn
 > Facts:
 > 1. The ad account 7230813704726609922 holds the exclusive GMV Max authorization for the TikTok Shop 7494569560744626612 (/gmv_max/store/list/ returns exclusive_authorized_advertiser_info.advertiser_id = 7230813704726609922, is_gmv_max_available = true).
 > 2. /gmv_max/store/list/ returns for this shop: is_owner_bc = false, store_role = AD_PROMOTION, store_authorized_bc_id = 7239164658173722625. /campaign/gmv_max/info/ for the campaign returns store_authorized_bc_id = 7147263165355589633.
-> 3. The same user can change the daily budget of this campaign manually in the TikTok UI (done on 2026-09-19, modify_time 2026-09-19 01:52:29), and /campaign/gmv_max/creative/update/ works for this campaign's shop with the same token.
+> 3. The shop owner can change the daily budget of this campaign manually in TikTok Shop Seller Center (done on 2026-09-19, modify_time 2026-09-19 01:52:29; the campaigns of this shop were created in Seller Center), and /campaign/gmv_max/creative/update/ works for this campaign's shop with the same token.
 >
 > Questions:
 > a) What exactly does "Shop must belong to a Business Center account" require for /campaign/gmv_max/update/ — must the TikTok Shop be owned by (is_owner_bc = true) the Business Center that owns the ad account, or is partner access (AD_PROMOTION + exclusive GMV Max authorization) sufficient?
