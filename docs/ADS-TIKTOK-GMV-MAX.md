@@ -126,7 +126,11 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
 - **`GET /gmv_max/bid/recommend/`** (`advertiser_id`, `store_id`, `shopping_ads_type=PRODUCT`, `optimization_goal=VALUE`,
   `item_group_ids`) — trả đúng HAI số: `roas_bid` + `budget`. SPU của TC054: sàn gợi ý ROI **7,2** · ngân sách **6.000.000**; chiến
   dịch đang đặt ROI 15 · ngân sách 1.500.000; hòa vốn Hubsell tính = 5,92. Gọi được cả khi SPU đang nằm trong chiến dịch đang chạy.
-  Chưa thử: nhiều SPU một lượt, SPU chưa từng chạy quảng cáo.
+  ★ **SỐ GỢI Ý KHÔNG THEO SẢN PHẨM** (probe tiếp 19/09, gian nhà): 3 SPU thật khác nhau (TC054, TC040 NEW, TC025 NEW) gọi riêng đều ra
+  ĐÚNG 7,2 · 6.000.000; một SPU KHÔNG TỒN TẠI (`1700000000000000000`) cũng ra 7,2 · 6.000.000; 2 SPU một lượt → ROI 4; không gửi
+  `item_group_ids` → ROI 5; ngân sách luôn 6.000.000. → con số có vẻ là mặc định theo gian / theo SỐ LƯỢNG sản phẩm, không mang thông
+  tin của từng sản phẩm. ĐỪNG dựng cột "Sàn gợi ý" theo từng sản phẩm (cả bảng sẽ cùng một số, khách tưởng là phân tích riêng). Chỉ
+  dùng làm số tham khảo phụ trong hộp tạo / chỉnh chiến dịch, ghi rõ "mức sàn gợi ý chung". Hòa vốn của Hubsell mới là số theo sản phẩm.
 - CHƯA probe: 3 lệnh GHI (`/campaign/gmv_max/create|update/`, `/campaign/status/update/`) — chỉ thử khi anh Trung đồng ý, trên
   chiến dịch anh chỉ định.
 
