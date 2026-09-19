@@ -103,6 +103,33 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   chốt dòng kẹt SENDING A3) phải đọc HAI lần rồi lấy hợp (`hasCommandsToCheck` → đọc xác nhận trong `runTiktokAdsDaily`). "Loại
   ngay" đã tự chịu được: backend so danh sách với cái khách vừa thấy, lệch thì chấm lại.
 
+### Nhóm quyền CAMPAIGN (TikTok duyệt 19/09/2026 — probe cùng ngày bằng token nhà ủy quyền lại, script `tiktok-ads-campaign-probe.ts`)
+
+- **Token cấp trước khi duyệt KHÔNG tự có quyền mới** → `40001 advertiser does not grant you <path>:GET permission`. Ủy quyền lại
+  thì được; token cũ vẫn sống song song. Token mới có thêm scope `20` (token cũ chỉ có `10` + 3 ID dài). Các ID scope dài 19 chữ
+  số bị `JSON.parse` làm tròn → đừng so ID dài; nhận diện quyền Campaign bằng gọi thử một endpoint đọc.
+- **`GET /gmv_max/campaign/get/`** — CHẠY ĐƯỢC với quyền Read campaigns (cây quyền trong cổng không liệt kê nó). Bắt buộc
+  `filtering.gmv_max_promotion_types`: `["PRODUCT_GMV_MAX"]` hoặc `["LIVE_GMV_MAX"]`; lọc thêm `store_ids`. Mỗi dòng CHỈ có:
+  `campaign_id · campaign_name · operation_status (ENABLE/DISABLE) · secondary_status · create_time · modify_time ·
+  objective_type · roi_protection_compensation_status` — KHÔNG có ROI mục tiêu / ngân sách / sản phẩm → phải gọi info từng chiến
+  dịch. `secondary_status` đã gặp: `CAMPAIGN_STATUS_ENABLE` · `CAMPAIGN_STATUS_DISABLE` ·
+  `CAMPAIGN_STATUS_PRODUCT_USED_BY_PRODUCT_GMV_MAX` (sản phẩm đã nằm trong chiến dịch Product GMV Max khác — chính là ràng buộc
+  "một sản phẩm một chiến dịch" lộ ra ở đây). Gian nhà: 20 chiến dịch Product (4 đang bật: TC040 NEW, TC025 NEW, TC079, TC054) +
+  2 chiến dịch LIVE (MR.BAGS, LIVE MAX — đều tắt). Khác báo cáo: liệt kê cả chiến dịch KHÔNG có chi tiêu trong kỳ.
+- **`GET /campaign/gmv_max/info/`** (`advertiser_id`, `campaign_id`) — TC054 trả: `roas_bid` 15 · `budget` 1.500.000 ·
+  `item_group_ids` [SPU] · `product_specific_type` CUSTOMIZED_PRODUCTS · `product_video_specific_type` AUTO_SELECTION ·
+  `custom_anchor_video_list` · `identity_list` (identity_id, identity_type BC_AUTH_TT, identity_authorized_bc_id) ·
+  `store_id` · `store_authorized_bc_id` · `shopping_ads_type` PRODUCT · `optimization_goal` VALUE · `deep_bid_type` VO_MIN_ROAS ·
+  `roi_protection_enabled` · `affiliate_posts_enabled` · `accelerate_testing_for_new_videos` · `schedule_type / start / end` ·
+  `promotion_days` · `age_groups` · `location_ids` · `placements` · `billing_event`. → Đây là nguồn CHÍNH XÁC cho "sản phẩm nào
+  thuộc chiến dịch nào" (thay cho suy từ báo cáo) và là khuôn tham số cho lệnh tạo.
+- **`GET /gmv_max/bid/recommend/`** (`advertiser_id`, `store_id`, `shopping_ads_type=PRODUCT`, `optimization_goal=VALUE`,
+  `item_group_ids`) — trả đúng HAI số: `roas_bid` + `budget`. SPU của TC054: sàn gợi ý ROI **7,2** · ngân sách **6.000.000**; chiến
+  dịch đang đặt ROI 15 · ngân sách 1.500.000; hòa vốn Hubsell tính = 5,92. Gọi được cả khi SPU đang nằm trong chiến dịch đang chạy.
+  Chưa thử: nhiều SPU một lượt, SPU chưa từng chạy quảng cáo.
+- CHƯA probe: 3 lệnh GHI (`/campaign/gmv_max/create|update/`, `/campaign/status/update/`) — chỉ thử khi anh Trung đồng ý, trên
+  chiến dịch anh chỉ định.
+
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
 
 `status` = `PLANNED` (diễn tập) | `SENDING` (đã ghi sổ, chưa xác nhận kết quả — A3) | `SUCCESS` | `FAILED` · `action` = `exclude_video` | `restore_video` · `mode` = `live` · `verdict` = `manual` (chủ shop tự bấm; lệnh tự

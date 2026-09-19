@@ -40,7 +40,7 @@ mọi gian phải ủy quyền lại. Token cũ vẫn sống song song sau khi c
 ủy quyền sau nó) → ủy quyền lại không làm chết token đang chạy. Script: `backend/scripts/tiktok-ads-campaign-probe.ts` (chỉ GET).
 ⚠️ ID scope trong `/oauth2/access_token/` là số 19 chữ số, `JSON.parse` làm tròn mất đuôi → ĐỪNG nhận diện quyền bằng ID scope;
 nhận diện bằng cách gọi thử một endpoint đọc rồi lưu cờ có / không có quyền Campaign.
-⏳ Chờ anh ủy quyền lại bằng link probe (`tiktok-ads-probe.ts auth-url` → `exchange`) để probe shape thật (mục 6.2).
+✅ 19/09 anh đã ủy quyền lại link probe → cả 3 endpoint ĐỌC chạy được (token mới có thêm scope `20`); shape thật ghi ở `docs/ADS-TIKTOK-GMV-MAX.md` mục 4 "Nhóm quyền CAMPAIGN". Mục 6.1 + 6.2 XONG. Còn: gian prod ủy quyền lại (khi có tính năng dùng tới), thiết kế gợi ý tạo chiến dịch, probe 3 lệnh GHI (chờ anh đồng ý).
 
 ✅ **ĐÃ NỘP 18/09/2026 tối** (Claude điền trong Chrome của anh Trung, anh xác nhận rồi mới bấm Submit): tick *Read campaigns* + *Create and update campaigns*, lý do = bản 496 ký tự ở mục 3b. Trang My Apps hiện: **Approved · Scope of Permissions Change Pending**. App vẫn Online, quyền cũ vẫn chạy trong lúc chờ. Lần xin đầu duyệt trong 1 ngày. ⏳ Chờ kết quả → làm mục 6.
 
