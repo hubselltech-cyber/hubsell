@@ -31,6 +31,7 @@ import {
   testMeinvoiceConnection,
   type InvoiceTemplateDTO,
 } from "@/lib/api";
+import { INVOICE_UNIT_SUGGESTIONS } from "@/lib/invoice-units";
 import {
   HUBSELL_PARTNER_CODE,
   INVOICE_FIELD_HINTS,
@@ -794,6 +795,32 @@ export function InvoiceConfigSection({
                       value={defaultUnitName}
                       onChange={(e) => setDefaultUnitName(e.target.value)}
                     />
+                    {/* Gợi ý bấm-để-điền; ô phía trên vẫn gõ tự do đơn vị khác. */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {INVOICE_UNIT_SUGGESTIONS.map((u) => {
+                        const active = defaultUnitName.trim().toLowerCase() === u.toLowerCase();
+                        return (
+                          <button
+                            key={u}
+                            type="button"
+                            disabled={vendor.soon}
+                            aria-pressed={active}
+                            onClick={() => setDefaultUnitName(u)}
+                            className={cn(
+                              "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                              active
+                                ? "border-slate-900 bg-slate-900 text-white"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+                            )}
+                          >
+                            {u}
+                          </button>
+                        );
+                      })}
+                      <span className="text-xs text-muted-foreground">
+                        hoặc gõ đơn vị khác vào ô trên
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

@@ -28,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { createProduct, getStoredUser, ApiError } from "@/lib/api";
+import { INVOICE_UNIT_SUGGESTIONS } from "@/lib/invoice-units";
 import { canSeeFinancials } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -231,8 +232,17 @@ export function ProductFormDialog({ onCreated }: { onCreated: () => void }) {
                   <FormItem>
                     <FormLabel>Đơn vị tính trên hóa đơn</FormLabel>
                     <FormControl>
-                      <Input placeholder="VD: Bộ, Hộp, Đôi" {...field} />
+                      <Input
+                        placeholder="VD: Bộ, Hộp, Đôi"
+                        list="invoice-unit-suggestions"
+                        {...field}
+                      />
                     </FormControl>
+                    <datalist id="invoice-unit-suggestions">
+                      {INVOICE_UNIT_SUGGESTIONS.map((u) => (
+                        <option key={u} value={u} />
+                      ))}
+                    </datalist>
                     <FormDescription>
                       Bỏ trống thì dùng đơn vị tính mặc định của shop (Cấu hình
                       kết nối hóa đơn).
