@@ -131,8 +131,18 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   `item_group_ids` → ROI 5; ngân sách luôn 6.000.000. → con số có vẻ là mặc định theo gian / theo SỐ LƯỢNG sản phẩm, không mang thông
   tin của từng sản phẩm. ĐỪNG dựng cột "Sàn gợi ý" theo từng sản phẩm (cả bảng sẽ cùng một số, khách tưởng là phân tích riêng). Chỉ
   dùng làm số tham khảo phụ trong hộp tạo / chỉnh chiến dịch, ghi rõ "mức sàn gợi ý chung". Hòa vốn của Hubsell mới là số theo sản phẩm.
-- CHƯA probe: 3 lệnh GHI (`/campaign/gmv_max/create|update/`, `/campaign/status/update/`) — chỉ thử khi anh Trung đồng ý, trên
-  chiến dịch anh chỉ định.
+- ⛔ **`POST /campaign/gmv_max/update/` BỊ SÀN TỪ CHỐI trên gian nhà (probe 19/09/2026, anh Trung tự chạy script
+  `scripts/out/tiktok-ads-write-probe.ts` — Claude Code chặn Claude tự bắn lệnh ghi lên tài khoản quảng cáo thật):** TC076 (đang
+  tắt), chỉ đổi `budget` 2.000.000 → 2.001.000 → `40002 Shop must belong to a Business Center account.` 3/3 lần, kể cả khi gửi
+  kèm `store_id` + `store_authorized_bc_id` của chính chiến dịch. Không có gì đổi trên sàn. request_id:
+  `2026091909433524649A5FA30B9C677F29` · `2026091909434990F655C80F26AF6A412B` · `202609190946523DA1E3DE25002581E223`.
+  Docs TikTok (đọc 19/09): lệnh sửa CHỈ cần `advertiser_id` + `campaign_id` + trường muốn đổi (cập nhật từng phần; bật / tắt phải đi
+  `/campaign/status/update/`) → tham số của mình đúng, vướng ở PHÍA TÀI KHOẢN. Dữ kiện đã có: `/gmv_max/store/list/` báo and.not.or
+  `is_owner_bc: false`, `store_role: AD_PROMOTION`, `store_authorized_bc_id` = `7239164658173722625` (BC "TIKTOK_ADS_1"); nhưng
+  `/campaign/gmv_max/info/` của TC054 lẫn TC076 lại mang `store_authorized_bc_id` = `7147263165355589633` (một BC KHÁC). Lệnh loại /
+  khôi phục video (`creative/update`) thì vẫn chạy với đúng tài khoản này. CHƯA biết điều kiện chính xác của sàn — đừng đoán; cần
+  anh Trung đối chiếu trong Business Center / Ads Manager hoặc hỏi TikTok (kèm request_id trên).
+- CHƯA probe: `/campaign/gmv_max/create/`, `/campaign/status/update/`.
 
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
 
