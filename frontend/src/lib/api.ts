@@ -2679,6 +2679,10 @@ export interface TiktokAdsVideoActionLog {
 export interface TiktokAdsCampaignAdvice {
   kind: "paused" | "no_spend" | "no_breakeven" | "losing" | "target_below" | "budget_capped" | "target_binding" | "healthy";
   label: string;
+  /** Dữ kiện, mỗi ý một dòng. Vắng = backend cũ (chỉ có `text`). */
+  points?: string[];
+  /** Kết luận + việc nên làm, in riêng sau các dữ kiện. Vắng = backend cũ. */
+  conclusion?: string;
   text: string;
   tone: "warn" | "info" | "ok" | "muted";
   /** % ngân sách ngày đang dùng (trung bình những ngày trọn có tiêu tiền); null = không tính được. */

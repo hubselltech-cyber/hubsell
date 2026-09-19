@@ -50,7 +50,14 @@ export interface CampaignAdvice {
   kind: CampaignAdviceKind;
   /** Nhãn ngắn của kết luận. */
   label: string;
-  /** Lý do + việc nên làm, có số. */
+  /**
+   * DỮ KIỆN, mỗi ý một dòng (anh Trung 19/09: viết dồn một đoạn trong ô lý do rất khó đọc — xuống dòng từng nhận định rồi mới kết luận).
+   * FE in mỗi phần tử một dòng.
+   */
+  points: string[];
+  /** KẾT LUẬN + việc nên làm — in riêng, sau các dữ kiện. */
+  conclusion: string;
+  /** points + conclusion nối lại (cho chỗ chỉ cần một chuỗi). */
   text: string;
   /** warn = đang mất tiền / sắp mất tiền; info = có việc đáng cân nhắc; ok = ổn; muted = chưa kết luận được. */
   tone: "warn" | "info" | "ok" | "muted";
@@ -64,81 +71,99 @@ export interface CampaignAdvice {
 
 const num = (n: number, d = 2) => n.toLocaleString("vi-VN", { maximumFractionDigits: d });
 
+const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")}đ`;
+
 export function campaignAdvice(i: CampaignAdviceInput): CampaignAdvice {
   const budgetUsedPct = i.avgDailySpend != null && i.budget > 0 ? Math.round((i.avgDailySpend / i.budget) * 100) : null;
-  const base = { budgetUsedPct, keepPer100: null as number | null, editInSellerCenter: false };
+  const make = (
+    kind: CampaignAdviceKind,
+    label: string,
+    tone: CampaignAdvice["tone"],
+    points: string[],
+    conclusion: string,
+    extra: { keepPer100?: number | null; editInSellerCenter?: boolean } = {}
+  ): CampaignAdvice => ({
+    kind,
+    label,
+    tone,
+    points,
+    conclusion,
+    text: [...points, conclusion].filter(Boolean).join(" "),
+    budgetUsedPct,
+    keepPer100: extra.keepPer100 ?? null,
+    editInSellerCenter: extra.editInSellerCenter ?? false,
+  });
 
-  if (i.status !== "ongoing") return { ...base, kind: "paused", label: "Đang tạm dừng", tone: "muted", text: "Chiến dịch đang tắt nên không có gì để chẩn đoán." };
-  if (!(i.spend > 0)) return { ...base, kind: "no_spend", label: "Chưa tiêu tiền", tone: "muted", text: "Chiến dịch chưa tiêu tiền trong khoảng ngày đang xem." };
+  if (i.status !== "ongoing") return make("paused", "Đang tạm dừng", "muted", [], "Chiến dịch đang tắt nên không có gì để chẩn đoán.");
+  if (!(i.spend > 0)) return make("no_spend", "Chưa tiêu tiền", "muted", [], "Chiến dịch chưa tiêu tiền trong khoảng ngày đang xem.");
+
+  const roi = i.gmv / i.spend;
+  const budgetPoint = budgetUsedPct != null ? `Mỗi ngày tiêu khoảng ${budgetUsedPct}% ngân sách (${vnd(i.budget)}).` : "";
+  const targetPoint = (reached: boolean) =>
+    i.roasTarget != null ? `ROI mục tiêu đang đặt ${num(i.roasTarget)} — ${reached ? "đã đạt" : "chưa đạt"}.` : "Chiến dịch chạy phân phối tối đa (không đặt ROI mục tiêu).";
 
   const why = i.breakevenProblem ?? breakevenUnusableReason(i.breakeven);
   const be = i.breakeven;
   if (why || !be || be.breakevenRoi == null || be.margin == null) {
-    return {
-      ...base,
-      kind: "no_breakeven",
-      label: "Chưa kết luận được",
-      tone: "muted",
-      text: `Chưa có mốc hòa vốn đủ tin (${why || "chưa tính được hòa vốn"}) nên chưa nói được chiến dịch đang lãi hay lỗ. Nhập đủ giá vốn cho sản phẩm của chiến dịch là có kết luận.`,
-    };
+    return make(
+      "no_breakeven",
+      "Chưa kết luận được",
+      "muted",
+      [`ROI thực ${num(roi)}.`, `Chưa có mốc hòa vốn đủ tin: ${why || "chưa tính được hòa vốn"}.`],
+      "Chưa nói được chiến dịch đang lãi hay lỗ. Nhập đủ giá vốn cho sản phẩm của chiến dịch là có kết luận."
+    );
   }
 
-  const roi = i.gmv / i.spend;
   const beRoi = be.breakevenRoi;
   const keep = profitPer100AtRoi(be.margin, roi);
-  const out = { ...base, keepPer100: keep };
-  const keepTxt = keep != null ? `mỗi 100đ doanh thu ${keep >= 0 ? "còn lãi" : "lỗ"} khoảng ${num(Math.abs(keep), 1)}đ sau quảng cáo` : "";
+  const roiPoint = `ROI thực ${num(roi)} · hòa vốn ${num(beRoi)}.`;
+  const keepPoint = keep != null ? `Mỗi 100đ doanh thu ${keep >= 0 ? "còn lãi" : "lỗ"} khoảng ${num(Math.abs(keep), 1)}đ sau quảng cáo.` : "";
+  const reached = i.roasTarget == null || roi >= (i.roasTarget * TARGET_REACHED_PCT) / 100;
+  const facts = (...more: string[]) => [roiPoint, keepPoint, ...more].filter(Boolean);
 
   if (roi < beRoi) {
-    const raise = i.roasTarget != null && i.roasTarget < beRoi ? ` ROI mục tiêu đang đặt ${num(i.roasTarget)} — nâng lên ít nhất ${num(beRoi)}.` : "";
-    return {
-      ...out,
-      kind: "losing",
-      label: "Quảng cáo đang lỗ",
-      tone: "warn",
-      editInSellerCenter: true,
-      text: `ROI thực ${num(roi)} thấp hơn hòa vốn ${num(beRoi)}: ${keepTxt}.${raise} Loại bớt video tiêu tiền mà ROI thấp trong bảng video của chiến dịch (hoặc bật tự động loại).`,
-    };
+    const raise = i.roasTarget != null && i.roasTarget < beRoi ? `Nâng ROI mục tiêu lên ít nhất ${num(beRoi)}. ` : "";
+    return make(
+      "losing",
+      "Quảng cáo đang lỗ",
+      "warn",
+      // Mục tiêu đặt DƯỚI hòa vốn thì "đã đạt mục tiêu" là câu vô nghĩa (đạt mà vẫn lỗ) → nói thẳng nó thấp hơn hòa vốn.
+      facts(i.roasTarget != null && i.roasTarget < beRoi ? `ROI mục tiêu đang đặt ${num(i.roasTarget)} — thấp hơn hòa vốn.` : targetPoint(reached)),
+      `Quảng cáo đang ăn vào vốn. ${raise}Loại bớt video tiêu tiền mà ROI thấp trong bảng video của chiến dịch (hoặc bật tự động loại).`,
+      { keepPer100: keep, editInSellerCenter: true }
+    );
   }
   if (i.roasTarget != null && i.roasTarget < beRoi) {
-    return {
-      ...out,
-      kind: "target_below",
-      label: "Mục tiêu dưới hòa vốn",
-      tone: "warn",
-      editInSellerCenter: true,
-      text: `Hiện ROI thực ${num(roi)} vẫn trên hòa vốn ${num(beRoi)}, nhưng ROI mục tiêu đang đặt ${num(i.roasTarget)} — TikTok được phép kéo ROI xuống tới mức đó, tức là xuống vùng lỗ. Nâng ROI mục tiêu lên ít nhất ${num(beRoi)}.`,
-    };
+    return make(
+      "target_below",
+      "Mục tiêu dưới hòa vốn",
+      "warn",
+      facts(`ROI mục tiêu đang đặt ${num(i.roasTarget)} — thấp hơn hòa vốn.`),
+      `Hiện vẫn lãi, nhưng TikTok được phép kéo ROI xuống tới mức mục tiêu, tức là xuống vùng lỗ. Nâng ROI mục tiêu lên ít nhất ${num(beRoi)}.`,
+      { keepPer100: keep, editInSellerCenter: true }
+    );
   }
-
-  const reached = i.roasTarget == null || roi >= (i.roasTarget * TARGET_REACHED_PCT) / 100;
   if (budgetUsedPct != null && budgetUsedPct >= BUDGET_USED_PCT && reached) {
-    return {
-      ...out,
-      kind: "budget_capped",
-      label: "Ngân sách đang chặn",
-      tone: "info",
-      editInSellerCenter: true,
-      text: `Chiến dịch đang lãi (ROI thực ${num(roi)}, hòa vốn ${num(beRoi)}: ${keepTxt}) và mỗi ngày tiêu khoảng ${budgetUsedPct}% ngân sách — ngân sách đang là thứ chặn đơn. Tăng ngân sách ngày thì có thêm đơn ở cùng mức lãi.`,
-    };
+    return make(
+      "budget_capped",
+      "Ngân sách đang chặn",
+      "info",
+      facts(targetPoint(true), budgetPoint),
+      "Chiến dịch đang lãi và gần tiêu hết ngân sách — ngân sách đang là thứ chặn đơn. Tăng ngân sách ngày thì có thêm đơn ở cùng mức lãi.",
+      { keepPer100: keep, editInSellerCenter: true }
+    );
   }
   if (i.roasTarget != null && !reached && budgetUsedPct != null && budgetUsedPct < BUDGET_USED_PCT) {
-    return {
-      ...out,
-      kind: "target_binding",
-      label: "Mục tiêu đang bó phân phối",
-      tone: "info",
-      editInSellerCenter: true,
-      text: `Chiến dịch đang lãi (ROI thực ${num(roi)}, hòa vốn ${num(beRoi)}: ${keepTxt}) nhưng chưa đạt ROI mục tiêu ${num(i.roasTarget)} và mỗi ngày mới tiêu khoảng ${budgetUsedPct}% ngân sách — nhiều khả năng mục tiêu cao đang làm TikTok phân phối dè dặt. Hạ ROI mục tiêu thì thêm đơn nhưng lãi mỗi đơn mỏng đi; đừng đặt dưới ${num(beRoi)}.`,
-    };
+    return make(
+      "target_binding",
+      "Mục tiêu đang bó phân phối",
+      "info",
+      facts(targetPoint(false), budgetPoint),
+      `Đang lãi nhưng tiêu ít: nhiều khả năng mục tiêu cao đang làm TikTok phân phối dè dặt. Hạ ROI mục tiêu thì thêm đơn nhưng lãi mỗi đơn mỏng đi — đừng đặt dưới ${num(beRoi)}.`,
+      { keepPer100: keep, editInSellerCenter: true }
+    );
   }
-  return {
-    ...out,
-    kind: "healthy",
-    label: "Đang lãi",
-    tone: "ok",
-    text: `ROI thực ${num(roi)} trên hòa vốn ${num(beRoi)}: ${keepTxt}.${budgetUsedPct != null ? ` Mỗi ngày tiêu khoảng ${budgetUsedPct}% ngân sách.` : ""}`,
-  };
+  return make("healthy", "Đang lãi", "ok", facts(targetPoint(reached), budgetPoint), "Quảng cáo đang có lãi, chưa thấy gì cần sửa.", { keepPer100: keep });
 }
 
 /** Chi tiêu trung bình của những ngày TRỌN có tiêu tiền (bỏ hôm nay — ngày chưa hết). Thuần. */

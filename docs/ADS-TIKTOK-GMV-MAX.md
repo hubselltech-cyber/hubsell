@@ -446,6 +446,11 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   định; chưa kết luận được thì để nhận định của dòng nói ("Thiếu giá vốn" rõ hơn "Chưa kết luận được"). Chip "Cần xem ngay" tính cả chẩn
   đoán mức cảnh báo. Lưu ý: tab dùng cửa sổ 30 ngày cố định, trang chiến dịch dùng khoảng ngày khách chọn → đổi khoảng ngày thì nhãn hai
   nơi có thể khác nhau một cách chính đáng.
+- ✅ **19/09/2026 — Ô LÝ DO: DỮ KIỆN TỪNG DÒNG, KẾT LUẬN ĐỂ RIÊNG** (anh Trung xem prod: viết dồn một đoạn trong ô nhỏ khó đọc). `campaignAdvice` trả
+  `points[]` (mỗi dữ kiện một dòng: ROI thực · hòa vốn / lãi trên 100đ / ROI mục tiêu đạt hay chưa / % ngân sách kèm số tiền) + `conclusion`
+  (kết luận + việc nên làm); `text` = nối lại cho chỗ chỉ cần một chuỗi. FE dùng CHUNG `tiktok-advice-body.tsx` cho nhãn kết luận ở trang
+  chiến dịch lẫn cột Nhận định của tab Hòa vốn (gạch đầu dòng + khối "Kết luận" dưới vạch kẻ); chịu được backend cũ chưa có `points`.
+  Quy ước cho MỌI ô lý do mới: dữ kiện xuống dòng từng ý, kết luận sau cùng.
 - **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột; nhận
   định "Nên chạy / Chạy thử / Chưa nên" cho sản phẩm CHƯA chạy (anh Trung gật hướng 19/09, làm sau trang chiến dịch — căn cứ: hòa vốn tin
   được + tồn ≥14 ngày + đà bán 1,2 / 0,8 như Shopee; ROI mục tiêu đề xuất = hòa vốn × hệ số an toàn của cấu hình Trợ lý).

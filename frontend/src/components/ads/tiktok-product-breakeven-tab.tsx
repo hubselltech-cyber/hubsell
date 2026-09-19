@@ -18,6 +18,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Check, Copy, ExternalLink, ImageOff, S
 import { toast } from "sonner";
 
 import { TIKTOK_SELLER_CENTER_ADS_URL, formatRoi } from "@/components/ads/tiktok-ads-format";
+import { TiktokAdviceBody } from "@/components/ads/tiktok-advice-body";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realized-pnl/cells";
 import { Badge } from "@/components/ui/badge";
@@ -439,9 +440,9 @@ export function TiktokProductBreakevenTab({ initialChannelId }: { initialChannel
                             <PopoverTrigger openOnHover delay={80} render={<button type="button" className="cursor-pointer rounded-full" aria-label={`Lý do: ${vd.label}`} />}>
                               <Badge className={cn(vd.className, "underline decoration-dotted underline-offset-2")}>{vd.label}</Badge>
                             </PopoverTrigger>
-                            <PopoverContent align="start" className="w-80 gap-1.5 p-3 text-sm">
+                            <PopoverContent align="end" className="w-96 gap-1.5 p-3 text-sm">
                               <p className="font-semibold text-slate-900">{vd.label}</p>
-                              <p className="text-slate-700">{reason}</p>
+                              {adv ? <TiktokAdviceBody advice={adv} /> : <p className="text-slate-700">{reason}</p>}
                               <p className="text-xs text-slate-500">
                                 {formatNumber(p.breakeven.orders)} đơn đã đối soát
                                 {p.breakeven.pendingOrders > 0 && ` · +${formatNumber(p.breakeven.pendingOrders)} đang giao / chờ đối soát (chưa tính)`}

@@ -37,6 +37,7 @@ import { toast } from "sonner";
 
 import { TIKTOK_SELLER_CENTER_ADS_URL, formatPct, formatRoi } from "@/components/ads/tiktok-ads-format";
 import { TiktokAutoRuleDialog } from "@/components/ads/tiktok-auto-rule-dialog";
+import { TiktokAdviceBody } from "@/components/ads/tiktok-advice-body";
 import { TiktokBreakevenValue } from "@/components/ads/tiktok-breakeven";
 import { TiktokDryRunBacktest } from "@/components/ads/tiktok-dry-run-backtest";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -507,7 +508,7 @@ export function TiktokCampaignPage() {
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-96 gap-1.5 p-3 text-sm">
                   <p className="font-semibold text-slate-900">{advice.label}</p>
-                  <p className="text-slate-700">{advice.text}</p>
+                  <TiktokAdviceBody advice={advice} />
                   {advice.editInSellerCenter && (
                     <a
                       href={TIKTOK_SELLER_CENTER_ADS_URL}

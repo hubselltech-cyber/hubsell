@@ -41,7 +41,20 @@ describe("campaignAdvice", () => {
     expect(a.kind).toBe("losing");
     expect(a.tone).toBe("warn");
     expect(a.keepPer100).toBe(-5);
-    expect(a.text).toContain("nâng lên ít nhất 5");
+    expect(a.conclusion).toContain("Nâng ROI mục tiêu lên ít nhất 5");
+    expect(a.points).toContain("ROI mục tiêu đang đặt 4 — thấp hơn hòa vốn.");
+  });
+
+  it("ô lý do đọc được: DỮ KIỆN mỗi ý một dòng, KẾT LUẬN để riêng (anh Trung 19/09)", () => {
+    const a = campaignAdvice(input());
+    expect(a.points).toEqual([
+      "ROI thực 11,5 · hòa vốn 5.",
+      "Mỗi 100đ doanh thu còn lãi khoảng 11,3đ sau quảng cáo.",
+      "ROI mục tiêu đang đặt 15 — chưa đạt.",
+      "Mỗi ngày tiêu khoảng 14% ngân sách (1.500.000đ).",
+    ]);
+    expect(a.conclusion).toContain("đừng đặt dưới 5");
+    expect(a.text).toBe([...a.points, a.conclusion].join(" "));
   });
 
   it("đang lãi nhưng mục tiêu đặt dưới hòa vốn → cảnh báo trước khi TikTok kéo ROI xuống", () => {
