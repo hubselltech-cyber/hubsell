@@ -46,7 +46,7 @@ import { PNL_STICKY_HEAD, PNL_TABLE_SCROLLER } from "@/components/finance/realiz
 import { AppShell } from "@/components/shell/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageTabs } from "@/components/ui/page-tabs";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
@@ -463,7 +463,9 @@ export function TiktokCampaignPage() {
   return (
     <AppShell>
       <div className="space-y-5 pb-10">
-        {/* ===== ĐẦU TRANG ===== */}
+        {/* ===== ĐẦU TRANG — dải trắng dính header. Hàng tab KHÔNG nằm trong dải: nó
+            thuộc khối bảng bên dưới ba con số kết luận, không phải tab cấp trang. ===== */}
+        <PageHeaderBand className="pb-4">
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0">
             <Link href={backHref} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
@@ -537,6 +539,7 @@ export function TiktokCampaignPage() {
             />
           </div>
         </div>
+        </PageHeaderBand>
 
         {!campaignRowId && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">

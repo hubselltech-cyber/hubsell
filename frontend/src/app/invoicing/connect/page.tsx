@@ -74,6 +74,21 @@ export default function InvoicingConnectPage() {
         </span>
       }
       description="Xuất hóa đơn cho đơn đã giao ngay tại đây — kết nối nhà cung cấp hóa đơn thiết lập một lần ở tab Cấu hình."
+      // Tab: Xuất hóa đơn (thao tác hằng ngày) / Cấu hình kết nối — nằm trong dải đầu trang
+      tabs={
+        <PageTabs
+          ariaLabel="Khu vực Hóa đơn điện tử"
+          className="border-b-0"
+          tabs={
+            [
+              { key: "issue", label: "Xuất hóa đơn" },
+              { key: "config", label: "Cấu hình kết nối" },
+            ] as const
+          }
+          value={tab}
+          onChange={setTab}
+        />
+      }
     >
       {enabled ? (
         <div className="flex max-w-2xl items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
@@ -101,18 +116,6 @@ export default function InvoicingConnectPage() {
         </div>
       )}
 
-      {/* ---- Tab: Xuất hóa đơn (thao tác hằng ngày) / Cấu hình kết nối ---- */}
-      <PageTabs
-        ariaLabel="Khu vực Hóa đơn điện tử"
-        tabs={
-          [
-            { key: "issue", label: "Xuất hóa đơn" },
-            { key: "config", label: "Cấu hình kết nối" },
-          ] as const
-        }
-        value={tab}
-        onChange={setTab}
-      />
 
       {/* Hộp XUẤT hóa đơn nằm ngay trang này (anh Trung chốt 23/08) — cấu hình
           xong là phát hành được tại chỗ; Lịch sử chỉ để tra + tải PDF. */}

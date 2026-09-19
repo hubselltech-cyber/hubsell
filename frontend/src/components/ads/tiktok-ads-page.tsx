@@ -36,7 +36,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageTabs } from "@/components/ui/page-tabs";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Money } from "@/components/ui/money";
@@ -306,6 +306,9 @@ export function TiktokAdsPage() {
   return (
     <AppShell>
       <div className="space-y-5 pb-10">
+        {/* ===== DẢI ĐẦU TRANG: thanh điều khiển + lỗi + hàng tab. Chưa bật / chưa có
+            gian thì không có hàng tab → dải tự thêm đệm đáy. ===== */}
+        <PageHeaderBand className={cn("space-y-3", !(data?.configured && !noChannel) && "pb-4")}>
         <div className="flex flex-wrap items-center gap-3">
           <div>
             <h1 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -346,6 +349,29 @@ export function TiktokAdsPage() {
           <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">{q.error}</div>
         )}
 
+        {data?.configured && !noChannel && (
+          <PageTabs
+            ariaLabel="Khu vực quảng cáo TikTok"
+            className="border-b-0"
+            tabs={
+              [
+                { key: "overview", label: "Tổng quan chiến dịch" },
+                { key: "breakeven", label: "Hòa vốn sản phẩm" },
+                {
+                  key: "connect",
+                  label: "Kết nối tài khoản quảng cáo",
+                  count: pendingCount,
+                  countTone: "attention",
+                  countTitle: "Số gian chưa kết nối quảng cáo hoặc cần kết nối lại",
+                },
+              ] as const
+            }
+            value={tab}
+            onChange={setTabPick}
+          />
+        )}
+        </PageHeaderBand>
+
         {/* ===== CHƯA BẬT / CHƯA CÓ GIAN ===== */}
         {data && (!data.configured || noChannel) && (
           <Card>
@@ -371,27 +397,6 @@ export function TiktokAdsPage() {
               )}
             </CardContent>
           </Card>
-        )}
-
-        {data?.configured && !noChannel && (
-          <PageTabs
-            ariaLabel="Khu vực quảng cáo TikTok"
-            tabs={
-              [
-                { key: "overview", label: "Tổng quan chiến dịch" },
-                { key: "breakeven", label: "Hòa vốn sản phẩm" },
-                {
-                  key: "connect",
-                  label: "Kết nối tài khoản quảng cáo",
-                  count: pendingCount,
-                  countTone: "attention",
-                  countTitle: "Số gian chưa kết nối quảng cáo hoặc cần kết nối lại",
-                },
-              ] as const
-            }
-            value={tab}
-            onChange={setTabPick}
-          />
         )}
 
         {/* ===== GIAN HÀNG → TÀI KHOẢN QUẢNG CÁO (anh Trung 17/09): mỗi gian có thể

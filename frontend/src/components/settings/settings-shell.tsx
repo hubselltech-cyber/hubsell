@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
+import { PageHeaderBand } from "@/components/ui/page-tabs";
 import { getStoredUser, getToken } from "@/lib/api";
 import { canManageShop } from "@/lib/permissions";
 
@@ -16,11 +17,17 @@ import { canManageShop } from "@/lib/permissions";
 export function SettingsShell({
   title,
   description,
+  tabs,
   children,
 }: {
   /** Cho phép ReactNode để trang con gắn thêm icon/tooltip cạnh tiêu đề. */
   title: React.ReactNode;
   description?: string;
+  /**
+   * Hàng <PageTabs className="border-b-0" /> của trang — nằm cuối dải trắng đầu
+   * trang, dùng chung đường kẻ đáy của dải. Không có tab thì dải tự đệm đáy.
+   */
+  tabs?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -47,7 +54,7 @@ export function SettingsShell({
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
+        <PageHeaderBand className={tabs ? undefined : "pb-4"}>
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
             {title}
           </h2>
@@ -56,7 +63,8 @@ export function SettingsShell({
               {description}
             </p>
           )}
-        </div>
+          {tabs && <div className="mt-2">{tabs}</div>}
+        </PageHeaderBand>
         {children}
       </div>
     </AppShell>

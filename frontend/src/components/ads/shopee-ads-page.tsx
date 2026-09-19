@@ -33,7 +33,7 @@ import { HintIcon } from "@/components/finance/hint-icon";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageTabs } from "@/components/ui/page-tabs";
+import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   Card,
   CardContent,
@@ -559,6 +559,8 @@ export function ShopeeAdsPage({
   return (
     <AppShell>
       <div className="space-y-5 pb-10">
+        {/* ===== DẢI ĐẦU TRANG: thanh điều khiển + ghi chú / lỗi + hàng tab ===== */}
+        <PageHeaderBand className="space-y-3">
         {/* ===== THANH ĐIỀU KHIỂN: chọn gian + cửa sổ + đồng bộ ===== */}
         <div className="flex flex-wrap items-center gap-3">
           <div>
@@ -645,6 +647,7 @@ export function ShopeeAdsPage({
         {/* ===== TABLIST (khuôn giống trang TikTok) ===== */}
         <PageTabs
           ariaLabel={`Khu vực quảng cáo ${meta.label}`}
+          className="border-b-0"
           tabs={
             [
               { key: "overview", label: "Tổng quan chiến dịch" },
@@ -676,6 +679,7 @@ export function ShopeeAdsPage({
             )
           }
         />
+        </PageHeaderBand>
 
         {tab === "overview" && (
           <>

@@ -301,10 +301,10 @@ export default function TaxHistoryPage() {
     <SettingsShell
       title="Lịch sử & Báo cáo thuế"
       description="Số liệu kê khai theo quý và nhật ký hóa đơn điện tử — mỗi việc một tab."
-    >
-      <div className="space-y-6">
+      tabs={
         <PageTabs
           ariaLabel="Báo cáo thuế"
+          className="border-b-0"
           tabs={
             [
               { key: "declaration", label: "Kê khai thuế" },
@@ -314,7 +314,9 @@ export default function TaxHistoryPage() {
           value={tab}
           onChange={setTab}
         />
-
+      }
+    >
+      <div className="space-y-6">
         {/* ===== TAB KÊ KHAI THUẾ (07/09): doanh thu tính thuế + sàn đã khấu
             trừ theo từng sàn, chọn quý riêng, hạn nộp, ngưỡng 1 tỷ. ===== */}
         <div className={cn(tab !== "declaration" && "hidden")}>
