@@ -600,7 +600,27 @@ export default function DashboardPage() {
             // Rổ ĐƠN PHÁT SINH (loại hủy & hoàn/trả) — khớp caption "tính trên
             // N đơn" của khối; tổng kèm hủy đã có phễu vận hành bên dưới lo
             // (anh Trung 26/08: thẻ 20 đơn cạnh caption 19 đơn là tự mâu thuẫn).
-            value={analytics ? formatNumber(analytics.activeOrderCount) : "—"}
+            // Số món bán ra nằm CẠNH số đơn (chữ xám nhỏ) — thẻ không cao lên,
+            // 4 thẻ hàng này vẫn bằng nhau. flex-wrap: thẻ hẹp + số dài thì cụm
+            // phụ rớt NGUYÊN xuống dòng dưới thay vì bị cắt im lặng (inline
+            // liền nhau không có điểm ngắt dòng).
+            value={
+              analytics ? (
+                <span className="flex flex-wrap items-baseline gap-x-1.5">
+                  {formatNumber(analytics.activeOrderCount)}
+                  {analytics.itemQuantity > 0 && (
+                    <span
+                      className="whitespace-nowrap text-xs font-normal text-muted-foreground"
+                      title="Tổng số lượng món hàng trong các đơn phát sinh của kỳ (không tính đơn hủy & hoàn/trả). Combo trên sàn tính là 1 món."
+                    >
+                      · {formatNumber(analytics.itemQuantity)} sản phẩm
+                    </span>
+                  )}
+                </span>
+              ) : (
+                "—"
+              )
+            }
             icon={ShoppingCart}
             valueClassName={HERO_SIZE}
             sparkline={

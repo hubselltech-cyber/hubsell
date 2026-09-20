@@ -880,6 +880,8 @@ export function createWithdrawal(data: {
 export interface AnalyticsResponse {
   /** Số đơn phát sinh trong kỳ đang tính doanh thu (không gồm đơn hủy). */
   activeOrderCount: number;
+  /** Số MÓN bán ra = Σ quantity dòng hàng trên cùng rổ activeOrderCount. */
+  itemQuantity: number;
   totalRevenue: number;
   totalCost: number;
   /**

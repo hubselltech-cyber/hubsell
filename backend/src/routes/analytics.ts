@@ -116,6 +116,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // thẻ "Tổng giá trị sản phẩm" của Báo cáo dòng tiền cùng kỳ lọc.
     const totalRevenue = activeRows.reduce((sum, r) => sum + r.revenueGross, 0);
 
+    // Số MÓN bán ra = Σ quantity các dòng hàng trên CÙNG rổ đơn phát sinh —
+    // dòng phụ cạnh số đơn ở thẻ Đơn hàng (anh Trung 20/09). Đếm theo dòng sàn
+    // ghi: combo = 1 món, quà tặng 0đ vẫn đếm; đơn cũ chưa có OrderItem góp 0.
+    const itemQuantity = activeRows.reduce(
+      (sum, r) => sum + r.items.reduce((s, it) => s + it.quantity, 0),
+      0
+    );
+
     /*
      * SÀN KHẤU TRỪ — TOÀN BỘ khoản sàn giữ lại trên mỗi đơn = Giá trị đơn −
      * "Tổng tiền" sàn báo (phí + thuế + voucher/xu + chênh lệch VC + nạp ví −
@@ -475,6 +483,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     if (!seesFinancials) {
       res.json({
         activeOrderCount: activeRows.length,
+      itemQuantity,
         totalRevenue,
         // Bỏ trường cost khỏi từng điểm — SALES chỉ được thấy đường doanh thu
         revenueByDay: revenueByDay.map(({ date, label, revenue, orders }) => ({
@@ -500,6 +509,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
 
     res.json({
       activeOrderCount: activeRows.length,
+      itemQuantity,
       totalRevenue,
       totalCost,
       totalPlatformFee,
