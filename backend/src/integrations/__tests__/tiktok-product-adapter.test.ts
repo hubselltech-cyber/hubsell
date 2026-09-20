@@ -9,6 +9,7 @@
 // ============================================================
 import { describe, expect, it } from "vitest";
 import {
+  missingImageProductIds,
   pickDetailTargets,
   tiktokChannelSku,
   tiktokStatusToNorm,
@@ -105,5 +106,18 @@ describe("tiktok-adapter pickDetailTargets", () => {
   it("trần nhỏ hơn số chưa có ảnh → chỉ lấy phần chưa có, không đụng phần đã có", () => {
     const products = [P("1"), P("2"), P("3")];
     expect(pickDetailTargets(products, new Set(["1"]), 1).map((p) => p.id)).toEqual(["2"]);
+  });
+});
+
+describe("tiktok-adapter missingImageProductIds", () => {
+  it("bóc product_id từ externalId, dòng không SKU lấy từ khoá TTK-, không lặp", () => {
+    expect(
+      missingImageProductIds([
+        { externalId: "100-1", channelSku: "AO-DEN" },
+        { externalId: "100-2", channelSku: "AO-TRANG" },
+        { externalId: null, channelSku: "TTK-200" },
+        { externalId: null, channelSku: "MA-LA" },
+      ])
+    ).toEqual(["100", "200"]);
   });
 });

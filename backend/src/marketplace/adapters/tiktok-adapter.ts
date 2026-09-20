@@ -148,8 +148,118 @@ function mergeSkuAttributes(
   });
 }
 
+/**
+ * CHẠY NỀN NỐT PHẦN THIẾU ẢNH (20/09 — khách Hi.Bé báo nhiều sản phẩm trắng
+ * ảnh): fetchProducts chỉ bổ sung DETAIL_PER_RUN sản phẩm mỗi lượt mà lượt đồng
+ * bộ chỉ chạy khi chủ shop BẤM NÚT → gian vài trăm sản phẩm bấm một lần là phần
+ * còn lại trắng ảnh mãi. Hàm này đọc thẳng DB (dòng imageUrl = null), gọi chi
+ * tiết từng sản phẩm cùng nhịp DETAIL_PACE_MS rồi ghi ảnh + tên phân loại.
+ *
+ * Hai chốt chặn dưới đây là mặc định AN TOÀN tự đặt, không phải số của TikTok
+ * (sàn không công bố trần cho GET products/{id}; nhịp 120ms đã chạy thật từ
+ * 16/09 không bị chặn):
+ *   - ENRICH_MAX_PER_RUN: trần một lượt nền, còn thiếu thì lượt bấm sau chạy tiếp.
+ *   - ENRICH_MAX_FAIL_STREAK: lỗi liên tiếp = token hỏng / bị giới hạn → dừng hẳn.
+ * Mỗi sản phẩm chỉ thử MỘT lần mỗi lượt nên sản phẩm lỗi vĩnh viễn (đã xoá trên
+ * sàn, không có ảnh) không chiếm chỗ của sản phẩm khác.
+ */
+const ENRICH_MAX_PER_RUN = 3000;
+const ENRICH_MAX_FAIL_STREAK = 5;
+// Chỉ để khỏi chạy trùng việc trong cùng tiến trình — ghi DB vốn idempotent nên
+// hai tiến trình lỡ chạy song song cũng chỉ tốn call, không sai dữ liệu.
+const enrichInFlight = new Set<string>();
+
+/** product_id của các dòng còn thiếu ảnh (khoá dòng xem loadEnrichedProductIds). Hàm thuần để test. */
+export function missingImageProductIds(
+  rows: { externalId: string | null; channelSku: string }[]
+): string[] {
+  const ids = new Set<string>();
+  for (const r of rows) {
+    if (r.externalId) ids.add(r.externalId.split("-")[0]);
+    else if (r.channelSku.startsWith("TTK-")) ids.add(r.channelSku.slice(4));
+  }
+  return [...ids];
+}
+
+async function writeProductDetail(channelId: string, d: TikTokProduct, productId: string): Promise<number> {
+  const skus = d.skus ?? [];
+  // seller_sku dùng chung cho nhiều biến thể = dòng GỘP, variantName cố ý để null.
+  const keyCount = new Map<string, number>();
+  for (const s of skus) {
+    const k = tiktokChannelSku(s);
+    keyCount.set(k, (keyCount.get(k) ?? 0) + 1);
+  }
+  let written = 0;
+  for (const s of skus) {
+    const imageUrl = firstImage(d, s);
+    if (!imageUrl || !s.id) continue;
+    const variantName = (keyCount.get(tiktokChannelSku(s)) ?? 0) > 1 ? null : variantNameOf(s);
+    const base = { channelId, externalId: `${productId}-${s.id}`, imageUrl: null };
+    if (variantName) {
+      await prisma.channelProduct.updateMany({
+        where: { ...base, variantName: null },
+        data: { variantName },
+      });
+    }
+    const r = await prisma.channelProduct.updateMany({ where: base, data: { imageUrl } });
+    written += r.count;
+  }
+  const mainImage = pickUrl(d.main_images?.[0]);
+  if (mainImage) {
+    const r = await prisma.channelProduct.updateMany({
+      where: { channelId, channelSku: `TTK-${productId}`, imageUrl: null },
+      data: { imageUrl: mainImage },
+    });
+    written += r.count;
+  }
+  return written;
+}
+
+async function enrichMissingImages(channel: Channel): Promise<void> {
+  if (enrichInFlight.has(channel.id)) return;
+  enrichInFlight.add(channel.id);
+  try {
+    const rows = await prisma.channelProduct.findMany({
+      where: { channelId: channel.id, imageUrl: null },
+      select: { externalId: true, channelSku: true },
+    });
+    const productIds = missingImageProductIds(rows).slice(0, ENRICH_MAX_PER_RUN);
+    if (productIds.length === 0) return;
+
+    const { accessToken, shopCipher } = await getValidAccessToken(channel);
+    let ok = 0;
+    let failed = 0;
+    let failStreak = 0;
+    let written = 0;
+    let firstErr = "";
+    for (const productId of productIds) {
+      if (ok + failed > 0) await sleep(DETAIL_PACE_MS);
+      try {
+        const d = await getProduct({ accessToken, shopCipher, productId });
+        written += await writeProductDetail(channel.id, d, productId);
+        ok++;
+        failStreak = 0;
+      } catch (err) {
+        failed++;
+        if (!firstErr) firstErr = (err as Error).message;
+        if (++failStreak >= ENRICH_MAX_FAIL_STREAK) break;
+      }
+    }
+    console.log(
+      `[TikTok] Chạy nền bổ sung ảnh gian ${channel.shopName}: ${productIds.length} SP thiếu ảnh, ` +
+        `${ok} ok, ${failed} lỗi${firstErr ? ` (lỗi đầu: ${firstErr})` : ""}, ghi ảnh ${written} dòng SKU` +
+        `${failStreak >= ENRICH_MAX_FAIL_STREAK ? " — DỪNG SỚM vì lỗi liên tiếp" : ""}`
+    );
+  } catch (err) {
+    console.error(`[TikTok] Chạy nền bổ sung ảnh gian ${channel.shopName} lỗi:`, err);
+  } finally {
+    enrichInFlight.delete(channel.id);
+  }
+}
+
 export const tiktokProductAdapter: MarketplaceProductAdapter = {
   name: "tiktok",
+  enrichMissing: enrichMissingImages,
 
   async fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<NormalizedChannelProduct[]> {
     const { accessToken, shopCipher } = await getValidAccessToken(channel);

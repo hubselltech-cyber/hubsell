@@ -51,6 +51,13 @@ export interface MarketplaceProductAdapter {
    * về danh sách đã chuẩn hoá. Ném lỗi nếu gọi API thất bại.
    */
   fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<NormalizedChannelProduct[]>;
+  /**
+   * Tuỳ chọn — sàn mà `fetchProducts` chỉ bổ sung được ảnh/phân loại cho MỘT
+   * PHẦN danh mục mỗi lượt (TikTok: 1 call/sản phẩm, có trần) thì cài hàm này
+   * để chạy NỀN nốt phần còn thiếu sau khi lượt đồng bộ đã trả kết quả. Tự ghi
+   * DB, tự nuốt lỗi — không bao giờ ném.
+   */
+  enrichMissing?(channel: Channel): Promise<void>;
 }
 
 export interface FetchProductsOptions {

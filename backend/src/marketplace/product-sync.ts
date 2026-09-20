@@ -98,6 +98,10 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
     console.error(`[product-sync] tự điền giá vốn lỗi (gian ${channel.id}):`, err);
   }
 
+  // Sàn chỉ bổ sung được ảnh cho một phần danh mục mỗi lượt (TikTok) → chạy nền
+  // nốt phần còn thiếu, KHÔNG bắt chủ shop chờ. Hàm tự nuốt lỗi.
+  void adapter.enrichMissing?.(channel);
+
   return {
     scanned: products.length,
     created,
