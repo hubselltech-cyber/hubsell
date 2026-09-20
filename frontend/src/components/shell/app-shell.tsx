@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 import {
   ChevronDown,
   Coins,
+  Lock,
   Menu,
   Loader2,
   Moon,
@@ -77,6 +78,11 @@ interface NavChild {
    * (vd "Đồng bộ tồn kho" trong Quản lý Kho) — nhân viên không bao giờ thấy.
    */
   adminOnly?: boolean;
+  /**
+   * Trang CHƯA MỞ cho khách: mục vẫn hiện (xám + ổ khóa) nhưng KHÔNG bấm được;
+   * tầng 2 là chính trang đó tự hiện thẻ "chưa mở" khi ai gõ thẳng URL.
+   */
+  locked?: boolean;
 }
 export interface NavItem {
   href?: string;
@@ -186,7 +192,10 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/koc-marketing/overview", label: "Tổng quan Net-ROI Đa kênh" },
       { href: "/koc-marketing/shopee", label: "Shopee Affiliate (AMS)" },
       { href: "/koc-marketing/lazada", label: "Lazada Affiliate" },
-      { href: "/koc-marketing/tiktok", label: "TikTok Affiliate & MCN" },
+      // KHÓA 20/09 (anh Trung): phần TikTok chưa làm lại — chờ khảo sát lại toàn
+      // bộ + xin hạng mục app (docs/KOC-TIKTOK-AFFILIATE-API.md). Mở lại: bỏ cờ
+      // locked ở đây VÀ trả KocChannelPage về app/koc-marketing/tiktok/page.tsx.
+      { href: "/koc-marketing/tiktok", label: "TikTok Affiliate & MCN", locked: true },
       { href: "/koc-marketing/samples", label: "Hàng mẫu & Seeding" },
       { href: "/koc-marketing/expenses", label: "Chi phí Booking & Hợp đồng" },
     ],
@@ -598,6 +607,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="mt-1.5 space-y-1 border-l pl-4 ml-5">
               {item.children.map((child) => {
                 const childActive = pathname.startsWith(child.href);
+                if (child.locked) {
+                  return (
+                    <span
+                      key={child.href}
+                      aria-disabled
+                      title="Tính năng đang hoàn thiện — chưa mở"
+                      className="flex cursor-not-allowed items-center gap-2 rounded-lg px-3 py-2 text-sm font-normal text-muted-foreground/60"
+                    >
+                      <span className="min-w-0 flex-1">{child.label}</span>
+                      <Lock className="size-3.5 shrink-0" />
+                    </span>
+                  );
+                }
                 return (
                   <Link
                     key={child.href}
