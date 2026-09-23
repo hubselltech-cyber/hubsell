@@ -83,7 +83,7 @@ import {
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { syncLazadaReturns } from "../integrations/lazada/returns-sync";
-import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK } from "../services/sync-schedule";
+import { ADS_BACKFILL_DAYS, ADS_SYNC_DAYS_BACK, HISTORY_BACKFILL_DAYS } from "../services/sync-schedule";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { isApiBudgetError } from "../services/api-budget";
 import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
@@ -322,7 +322,16 @@ async function tick(): Promise<void> {
 async function processChannel(channel: Channel): Promise<void> {
   const startedAt = Date.now();
   const tiers = dueTiers(channel, startedAt);
+  // Gian VỪA NỐI API (historyBackfillPending, đặt lúc tạo Channel): lượt đầu kéo
+  // trọn HISTORY_BACKFILL_DAYS ngày đơn + đối soát phí thật — ép tầng giờ chạy
+  // ngay, không đợi hạn. Hạ cờ CHỈ khi cả hai lượt xong không lỗi (token hỏng,
+  // sàn chập chờn → lượt sau thử lại). Sự cố 23/09: ANO Official nối xong, đơn
+  // T7 sàn đã trả nhưng bản kê chỉ quét 7 ngày → Kiểm toán báo oan 44 đơn.
+  const backfill = channel.historyBackfillPending;
+  if (backfill) tiers.hourly = true;
   let changed = false;
+  let ordersOk = false;
+  let settlementsOk = false;
   let adsSynced = false;
   let pulse: { delayMin: number; synced: boolean } | null = null;
 
@@ -334,12 +343,14 @@ async function processChannel(channel: Channel): Promise<void> {
 
     // Tầng nhanh chạy MỌI lượt (rẻ, idempotent) — gian được nhặt vì tầng giờ/ads
     // đến hạn thì tiện vét luôn; cửa sổ sâu khi trùng nhịp giờ.
-    changed = await runFastTier(channel, { deep: tiers.hourly });
+    const fast = await runFastTier(channel, { deep: tiers.hourly, backfill });
+    changed = fast.changed;
+    ordersOk = fast.ordersOk;
     // XUNG ads trước tầng giờ: cảnh báo tiền là thứ cần sớm nhất trong lượt.
     if (tiers.pulse) {
       pulse = isTiktok ? await runTiktokAdsPulse(channel) : await runAdsPulseTier(channel);
     }
-    if (tiers.hourly) await runHourlyTier(channel);
+    if (tiers.hourly) settlementsOk = await runHourlyTier(channel, { backfill });
     if (tiers.ads) adsSynced = isTiktok ? await runTiktokAdsTier(channel) : await runAdsTier(channel);
   } catch (err) {
     console.error(`[Auto-sync] Lỗi xử lý gian "${channel.shopName}":`, (err as Error).message);
@@ -347,6 +358,12 @@ async function processChannel(channel: Channel): Promise<void> {
     const now = Date.now();
     const fast = nextFastSchedule(channel.syncBackoffLevel, changed, cadence);
     const adsFresh = adsSynced || pulse?.synced === true;
+    const backfillDone = backfill && ordersOk && settlementsOk;
+    if (backfillDone) {
+      console.log(
+        `[Auto-sync] Gian mới "${channel.shopName}": đã kéo trọn ${HISTORY_BACKFILL_DAYS} ngày đơn + đối soát, hạ cờ backfill`
+      );
+    }
     await prisma.channel
       .update({
         where: { id: channel.id },
@@ -365,6 +382,7 @@ async function processChannel(channel: Channel): Promise<void> {
             : {}),
           ...(adsFresh ? { lastAdsSyncAt: new Date(now) } : {}),
           ...(adsSynced ? { adsBackfillPending: false } : {}),
+          ...(backfillDone ? { historyBackfillPending: false } : {}),
         },
       })
       .catch((err) =>
@@ -377,16 +395,24 @@ async function processChannel(channel: Channel): Promise<void> {
 // TẦNG NHANH — đơn, phí ước tính, đơn hoàn, vận đơn, hóa đơn, cứu đơn.
 // Trả về true nếu lượt quét đơn thấy biến động (để tính bậc giãn nhịp).
 // ============================================================
-async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<boolean> {
+async function runFastTier(
+  channel: Channel,
+  opts: { deep: boolean; backfill?: boolean }
+): Promise<{ changed: boolean; ordersOk: boolean }> {
   let changed = false;
+  let ordersOk = false;
 
   // --- Đơn hàng ---
+  // Lượt backfill gian mới: trục create_time, cửa sổ HISTORY_BACKFILL_DAYS — đúng
+  // tham số nút "Đồng bộ đơn" tay đã chạy thật (cắt lát 15 ngày bên trong service).
   try {
     if (channel.channelName === ChannelName.SHOPEE) {
-      const r = await syncShopeeOrders(channel, {
-        daysBack: ORDERS_DAYS_BACK,
-        timeRangeField: "update_time",
-      });
+      const r = opts.backfill
+        ? await syncShopeeOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS })
+        : await syncShopeeOrders(channel, {
+            daysBack: ORDERS_DAYS_BACK,
+            timeRangeField: "update_time",
+          });
       changed = r.created > 0 || r.updated > 0;
       if (r.created > 0) {
         console.log(
@@ -396,10 +422,12 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
     } else if (channel.channelName === ChannelName.TIKTOK) {
       // Trục update_time như hai sàn kia — bắt cả đơn cũ vừa hủy/hoàn. Đồng bộ
       // lô KHÔNG trừ kho (webhook lo); chỉ upsert trạng thái/tiền/vận đơn.
-      const r = await syncTiktokOrders(channel, {
-        daysBack: ORDERS_DAYS_BACK,
-        byUpdateTime: true,
-      });
+      const r = opts.backfill
+        ? await syncTiktokOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS })
+        : await syncTiktokOrders(channel, {
+            daysBack: ORDERS_DAYS_BACK,
+            byUpdateTime: true,
+          });
       changed = r.created > 0 || r.updated > 0;
       if (r.created > 0) {
         console.log(
@@ -407,10 +435,12 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
         );
       }
     } else {
-      const r = await syncLazadaOrders(channel, {
-        daysBack: ORDERS_DAYS_BACK,
-        byUpdateTime: true,
-      });
+      const r = opts.backfill
+        ? await syncLazadaOrders(channel, { daysBack: HISTORY_BACKFILL_DAYS })
+        : await syncLazadaOrders(channel, {
+            daysBack: ORDERS_DAYS_BACK,
+            byUpdateTime: true,
+          });
       changed = r.created > 0 || r.updated > 0;
       if (r.created > 0) {
         console.log(
@@ -426,6 +456,7 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
         data: { lastSyncAt: new Date(), lastSyncError: null, syncFailCount: 0 },
       })
       .catch(() => {});
+    ordersOk = true;
   } catch (err) {
     // Lỗi một gian (token hết hạn, sàn chập chờn) không được chặn gian khác.
     const message = (err as Error).message;
@@ -472,7 +503,7 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
     }
     // Các khối dưới (phí ước tính escrow, tracking backfill, hóa đơn người mua)
     // là API riêng của Shopee — TikTok dừng ở đây.
-    return changed;
+    return { changed, ordersOk };
   }
 
   if (channel.channelName === ChannelName.LAZADA) {
@@ -493,7 +524,7 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
         (err as Error).message
       );
     }
-    return changed;
+    return { changed, ordersOk };
   }
 
   // ---------- Shopee ----------
@@ -503,7 +534,7 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
   // isSettled vẫn false — giữ nhãn "chờ đối soát".
   try {
     const est = await syncShopeePendingEscrowEstimates(channel, {
-      daysBack: opts.deep ? SETTLE_DAYS_BACK : ORDERS_DAYS_BACK,
+      daysBack: opts.backfill ? HISTORY_BACKFILL_DAYS : opts.deep ? SETTLE_DAYS_BACK : ORDERS_DAYS_BACK,
     });
     if (est.updated > 0) {
       console.log(
@@ -578,17 +609,25 @@ async function runFastTier(channel: Channel, opts: { deep: boolean }): Promise<b
       (err as Error).message
     );
   }
-  return changed;
+  return { changed, ordersOk };
 }
 
 // ============================================================
 // TẦNG NHỊP GIỜ — đối soát phí thật, payout/rút ví, cảnh báo điều hành.
 // ============================================================
-async function runHourlyTier(channel: Channel): Promise<void> {
+async function runHourlyTier(
+  channel: Channel,
+  opts: { backfill?: boolean } = {}
+): Promise<boolean> {
+  // Cửa sổ đối soát: gian mới = HISTORY_BACKFILL_DAYS, nhịp thường = SETTLE_DAYS_BACK.
+  // Trả true khi lượt đối soát phí thật KHÔNG lỗi (processChannel dùng để hạ cờ backfill).
+  const settleDays = opts.backfill ? HISTORY_BACKFILL_DAYS : SETTLE_DAYS_BACK;
+  let settlementsOk = false;
   if (channel.channelName === ChannelName.LAZADA) {
     // Bọc try riêng (25/08): đối soát lỗi không được nuốt payout đứng sau.
     try {
-      const s = await syncLazadaSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      const s = await syncLazadaSettlements(channel, { daysBack: settleDays });
+      settlementsOk = true;
       if (s.ordersUpdated > 0) {
         console.log(
           `[Auto-sync] Đối soát Lazada "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng sao kê)`
@@ -611,7 +650,13 @@ async function runHourlyTier(channel: Channel): Promise<void> {
   } else if (channel.channelName === ChannelName.TIKTOK) {
     // Bản kê giải ngân TikTok 7 ngày gần nhất → số phí/tiền về thật cho từng đơn.
     try {
-      const s = await syncTiktokSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      // Backfill: chế độ since → cắt lát 30 ngày như nút tay (?full), không dồn 90 ngày một cửa sổ.
+      const s = opts.backfill
+        ? await syncTiktokSettlements(channel, {
+            since: new Date(Date.now() - HISTORY_BACKFILL_DAYS * 86_400_000),
+          })
+        : await syncTiktokSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      settlementsOk = true;
       if (s.ordersUpdated > 0) {
         console.log(
           `[Auto-sync] Đối soát TikTok "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} dòng bản kê)`
@@ -623,7 +668,9 @@ async function runHourlyTier(channel: Channel): Promise<void> {
     // Số ƯỚC TÍNH CỦA SÀN cho đơn chưa quyết toán (Get Unsettled Transactions
     // 202507) → P&L real-time không bịa % (cùng vai trò escrow ước tính Shopee).
     try {
-      const u = await syncTiktokUnsettledEstimates(channel, { daysBack: UNSETTLED_DAYS_BACK });
+      const u = await syncTiktokUnsettledEstimates(channel, {
+        daysBack: opts.backfill ? HISTORY_BACKFILL_DAYS : UNSETTLED_DAYS_BACK,
+      });
       if (u.ordersUpdated > 0) {
         console.log(
           `[Auto-sync] Ước tính TikTok "${channel.shopName}": ${u.ordersUpdated} đơn chờ đối soát nhận số sàn ước tính (${u.transactions} dòng, ${u.ordersNotFound} chưa có đơn)`
@@ -646,7 +693,8 @@ async function runHourlyTier(channel: Channel): Promise<void> {
   } else if (channel.channelName === ChannelName.SHOPEE) {
     // Bọc try riêng (25/08): đối soát ném lỗi không được nuốt rút ví + cảnh báo.
     try {
-      const s = await syncShopeeSettlements(channel, { daysBack: SETTLE_DAYS_BACK });
+      const s = await syncShopeeSettlements(channel, { daysBack: settleDays });
+      settlementsOk = true;
       if (s.ordersUpdated > 0) {
         console.log(
           `[Auto-sync] Đối soát Shopee "${channel.shopName}": ${s.ordersUpdated} đơn nhận số phí thật (${s.transactions} đơn giải ngân)`
@@ -675,6 +723,7 @@ async function runHourlyTier(channel: Channel): Promise<void> {
   // cần chạy cả khi không ai mở Dashboard thì chuông mới chủ động. scanOpsAlerts
   // tự throttle 10'/chủ shop + notify chống trùng 24h; hàm không bao giờ ném lỗi.
   await scanOpsAlerts(channel.userId);
+  return settlementsOk;
 }
 
 // ============================================================

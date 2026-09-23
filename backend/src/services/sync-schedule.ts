@@ -23,6 +23,19 @@ export const ADS_STALE_MS = ADS_CADENCE.STALE_NUDGE_MIN * 60 * 1000;
 export const ADS_REFRESH_MIN_GAP_MS = ADS_CADENCE.REFRESH_GAP_MIN * 60 * 1000;
 
 /**
+ * Cửa sổ LỊCH SỬ kéo về khi gian VỪA NỐI API (ngày): đơn (trục create_time, đúng
+ * tham số nút "Đồng bộ đơn" tay) + đối soát phí thật (bản kê / escrow / sao kê).
+ * 90 ngày = trùng cửa sổ Kiểm toán phí sàn (PENDING_MAX_AGE_DAYS) và đủ vòng đời
+ * giao – trả – quyết toán của cả 3 sàn. Đơn cũ hơn KHÔNG kéo về — anh Trung 23/09:
+ * đã chốt kéo 3 tháng thì phải NÓI RÕ với khách (HISTORY_BACKFILL_NOTICE; FE chép
+ * tay cùng nội dung ở app/channels/page.tsx — đổi một nơi phải đổi cả hai).
+ * Cờ Channel.historyBackfillPending đặt lúc TẠO gian, worker hạ khi xong cả hai lượt.
+ */
+export const HISTORY_BACKFILL_DAYS = 90;
+export const HISTORY_BACKFILL_NOTICE =
+  "Hubsell đang kéo đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
+
+/**
  * Gian vừa nối (lại) Hubsell Ads: lượt lịch sử kế tiếp kéo lùi 30 ngày và
  * đến hạn ngay, xung cũng đến hạn ngay. Best-effort — không ném lỗi ra OAuth.
  */

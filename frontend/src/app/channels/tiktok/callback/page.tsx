@@ -74,8 +74,9 @@ export default function TiktokCallbackPage() {
       .then((res) => {
         setChannels(res.channels);
         setPhase("success");
+        // BE kèm câu nói rõ chỉ kéo 3 tháng gần nhất (anh Trung 23/09).
         setMessage(
-          `Đã kết nối ${res.connected} gian hàng TikTok Shop vào Hubsell.`
+          `Đã kết nối ${res.connected} gian hàng TikTok Shop vào Hubsell.${res.message ? ` ${res.message}` : ""}`
         );
       })
       .catch((err) => {

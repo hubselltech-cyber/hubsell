@@ -76,6 +76,9 @@ const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 // Khoá sessionStorage nhớ GIAN ĐÍCH của luồng "Kết nối lại" khi code uỷ quyền
 // phải đi vòng về máy dev (?shopee=code / ?lazada=code) — backend đối chiếu
 // shop_id/seller_id với gian này để không ghi token nhầm gian khác.
+/** Chép tay từ backend services/sync-schedule.ts HISTORY_BACKFILL_NOTICE — đổi phải đổi cả hai. */
+const HISTORY_BACKFILL_NOTICE =
+  "Hubsell đang kéo đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
 const RECONNECT_SHOPEE_KEY = "shopee_reconnect_channel_id";
 const RECONNECT_LAZADA_KEY = "lazada_reconnect_channel_id";
 
@@ -224,7 +227,12 @@ function ConnectDialog({
         const reconnectId = sessionStorage.getItem(RECONNECT_LAZADA_KEY) ?? undefined;
         const r = await connectLazadaCode(code, reconnectId);
         sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
-        toast.success(`Đã kết nối Lazada: ${r.channel.shopName}`);
+        toast.success(
+          reconnectId
+            ? `Đã kết nối lại Lazada: ${r.channel.shopName}`
+            : `Đã kết nối Lazada: ${r.channel.shopName}. ${HISTORY_BACKFILL_NOTICE}`,
+          { duration: 12_000 }
+        );
         onOpenChange(false);
         onDone();
         return;
@@ -730,8 +738,14 @@ export default function ChannelsPage() {
     const lazada = params.get("lazada");
     if (!shopee && !lazada) return;
     if (shopee === "connected") {
+      const wasReconnect = sessionStorage.getItem(RECONNECT_SHOPEE_KEY) !== null;
       sessionStorage.removeItem(RECONNECT_SHOPEE_KEY); // luồng deploy đã xong qua state
-      toast.success(`Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}`);
+      toast.success(
+        wasReconnect
+          ? `Đã kết nối lại Shopee: ${params.get("shop") || "gian hàng"}`
+          : `Đã kết nối Shopee: ${params.get("shop") || "gian hàng"}. ${HISTORY_BACKFILL_NOTICE}`,
+        { duration: 12_000 }
+      );
     } else if (shopee === "error") {
       sessionStorage.removeItem(RECONNECT_SHOPEE_KEY);
       toast.error(`Kết nối Shopee thất bại: ${params.get("msg") || "lỗi không rõ"}`);
@@ -744,7 +758,9 @@ export default function ChannelsPage() {
       toast.info("Đã nhận code uỷ quyền Shopee — đang đổi token…");
       connectShopeeCode(params.get("code")!, params.get("shop_id")!, reconnectId)
         .then(async (r) => {
-          toast.success(r.message);
+          toast.success(reconnectId ? r.message : `${r.message}. ${HISTORY_BACKFILL_NOTICE}`, {
+            duration: 12_000,
+          });
           setChannels(await fetchChannels());
         })
         .catch((err) =>
@@ -754,8 +770,14 @@ export default function ChannelsPage() {
         );
     }
     if (lazada === "connected") {
+      const wasReconnect = sessionStorage.getItem(RECONNECT_LAZADA_KEY) !== null;
       sessionStorage.removeItem(RECONNECT_LAZADA_KEY); // luồng deploy đã xong qua state
-      toast.success(`Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}`);
+      toast.success(
+        wasReconnect
+          ? `Đã kết nối lại Lazada: ${params.get("shop") || "gian hàng"}`
+          : `Đã kết nối Lazada: ${params.get("shop") || "gian hàng"}. ${HISTORY_BACKFILL_NOTICE}`,
+        { duration: 12_000 }
+      );
     } else if (lazada === "error") {
       sessionStorage.removeItem(RECONNECT_LAZADA_KEY);
       toast.error(`Kết nối Lazada thất bại: ${params.get("msg") || "lỗi không rõ"}`, {
@@ -1011,6 +1033,16 @@ export default function ChannelsPage() {
                                 />
                                 {active ? "Đang hoạt động" : "Đã ngắt kết nối"}
                               </span>
+                              {/* Gian vừa nối: worker đang kéo trọn 3 tháng (BE hạ cờ khi xong) */}
+                              {c.historyBackfillPending && (
+                                <span
+                                  className="inline-flex shrink-0 items-center gap-1.5 text-xs font-normal text-amber-600"
+                                  title={HISTORY_BACKFILL_NOTICE}
+                                >
+                                  <Loader2 className="size-3 animate-spin" />
+                                  Đang kéo đơn 3 tháng gần nhất
+                                </span>
+                              )}
                             </p>
                             <p
                               className={cn(

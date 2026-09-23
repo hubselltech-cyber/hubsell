@@ -603,7 +603,7 @@ export default function FeeAuditPage() {
             title={
               <span className="inline-flex items-center gap-1">
                 Chờ sàn trả tiền
-                <HintIcon hint="Đơn giao thành công (không hoàn) đã quá hạn mà sàn chưa giải ngân đồng nào — tiền của anh đang nằm bên sàn. Chỉ tính Shopee/Lazada/TikTok Shop (sàn Hubsell đã đối soát thật)." />
+                <HintIcon hint="Đơn giao thành công (không hoàn) đã quá hạn mà sàn chưa giải ngân đồng nào — tiền của anh đang nằm bên sàn. Chỉ tính Shopee/Lazada/TikTok Shop (sàn Hubsell đã đối soát thật) và chỉ soi đơn đặt trong 90 ngày gần nhất — cũng là cửa sổ Hubsell kéo đơn về khi nối gian." />
               </span>
             }
             value={<Money value={summary?.pending.totalWaiting ?? 0} />}

@@ -2345,6 +2345,8 @@ export interface Channel {
   _count?: { orders: number; channelProducts: number };
   /** Số sản phẩm sàn đã khớp mã SKU về kho gốc (productId != null). */
   matchedProductCount?: number;
+  /** true = gian vừa nối, worker đang kéo trọn 3 tháng đơn + đối soát (BE hạ cờ khi xong). */
+  historyBackfillPending?: boolean;
 }
 
 /** TẦNG 2 — một sản phẩm thô kéo từ gian hàng về. */
@@ -3091,7 +3093,7 @@ export interface TiktokConnectedChannel {
  * lấy shop_cipher và lưu gian hàng. state đã được FE đối chiếu trước khi gọi.
  */
 export function tiktokCallback(code: string, reconnectChannelId?: string) {
-  return apiFetch<{ connected: number; channels: TiktokConnectedChannel[] }>(
+  return apiFetch<{ message?: string; connected: number; channels: TiktokConnectedChannel[] }>(
     "/api/channels/tiktok/callback",
     { method: "POST", body: JSON.stringify({ code, channelId: reconnectChannelId }) }
   );

@@ -324,6 +324,7 @@ export async function handleShopeeCallback(
       shopName,
       externalShopId: shopId,
       feeRate: PLATFORM_FEE_RATE[ChannelName.SHOPEE],
+      historyBackfillPending: true, // gian mới: worker kéo trọn 90 ngày (services/sync-schedule.ts)
       ...tokenData,
     },
   });

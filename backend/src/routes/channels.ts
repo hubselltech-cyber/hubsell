@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import crypto from "crypto";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { HISTORY_BACKFILL_NOTICE } from "../services/sync-schedule";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import {
   CHANNEL_LABEL,
@@ -381,6 +382,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
             shopName,
             externalShopId: shop.id,
             feeRate: PLATFORM_FEE_RATE[ChannelName.TIKTOK],
+            historyBackfillPending: true, // gian mới: worker kéo trọn 90 ngày (services/sync-schedule.ts)
             ...tokenData,
           },
         })
@@ -391,6 +393,8 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
 
     // Không lộ token ra response — chỉ trả thông tin nhận diện gian.
     res.status(201).json({
+      // Nói rõ với khách Hubsell chỉ kéo 3 tháng gần nhất (anh Trung 23/09); nối lại thì không kéo lại.
+      message: newShopCount > 0 ? HISTORY_BACKFILL_NOTICE : "Đã cập nhật ủy quyền cho gian đã có.",
       connected: saved.length,
       channels: saved.map((c) => ({
         id: c.id,

@@ -442,6 +442,10 @@ model Channel {
   lastAdsSyncAt    DateTime?
   /// Nối Hubsell Ads (hoặc lần đầu) → lượt ads kế tiếp kéo lùi 30 ngày thay vì 7.
   adsBackfillPending Boolean @default(false)
+  /// Gian VỪA NỐI API (TikTok/Shopee/Lazada): lượt worker đầu kéo trọn HISTORY_BACKFILL_DAYS
+  /// ngày đơn + đối soát phí thật thay vì 2 ngày / 7 ngày, xong cả hai mới hạ cờ (23/09/2026:
+  /// ANO Official nối xong, 44 đơn T7 sàn đã trả nhưng Kiểm toán báo oan vì bản kê chỉ quét 7 ngày).
+  historyBackfillPending Boolean @default(false)
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
   syncBackoffLevel Int      @default(0)
   /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.
