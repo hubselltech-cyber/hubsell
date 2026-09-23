@@ -43,7 +43,7 @@
 
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { computePnlRow, fetchPnlOrdersAll } from "../../routes/finance";
+import { computePnlRow, forEachPnlOrderPage } from "../../routes/finance";
 import { MIN_ORDERS_FOR_MARGIN, dateKey, startOfDaysAgo, vnDateKey } from "../shopee/ads-insights";
 import { productRunAdvice, type ProductRunAdvice } from "./product-run-advice";
 
@@ -256,11 +256,32 @@ export interface ChannelTiktokBreakeven {
 
 /** Nạp MỘT LẦN mọi thứ phép tính hòa vốn cần (đơn 60 ngày qua computePnlRow, chiến dịch, sản phẩm sàn) — dùng chung cho hòa vốn chiến dịch lẫn tab Hòa vốn sản phẩm. */
 async function loadBreakevenInputs(channel: { id: string; userId: string }) {
-  const [{ orders }, campaigns, channelProducts] = await Promise.all([
-    fetchPnlOrdersAll(
+  // Đơn 60 ngày đọc THEO TRANG rồi rút ngay thành dòng gọn (22/09/2026 — trang
+  // Quảng cáo TikTok gọi hàm này MỖI lần mở; gian ~185 đơn/ngày = ~11.000 đơn
+  // kèm include nặng, giữ nguyên cả mảng từng làm Render hết heap).
+  const rows: BreakevenPnlRow[] = [];
+  const [, campaigns, channelProducts] = await Promise.all([
+    forEachPnlOrderPage(
       { userId: channel.userId, id: channel.id, channelName: ChannelName.TIKTOK },
       { gte: startOfDaysAgo(TIKTOK_MARGIN_WINDOW_DAYS), lte: new Date() },
-      { max: MAX_ORDERS }
+      { max: MAX_ORDERS },
+      (page) => {
+        for (const o of page) {
+          const r = computePnlRow(o);
+          rows.push({
+            createdAt: r.createdAt,
+            shippingStatus: r.shippingStatus,
+            // Chỉ bản kê THẬT mới là "đã đối soát"; số ước tính của sàn (estimated) thì chưa.
+            isSettled: r.isSettled && r.tiktok != null && (r.tiktok as { estimated?: boolean }).estimated !== true,
+            // Chỉ giữ 3 trường phép tính cần — bỏ tham chiếu tới object sản phẩm của trang.
+            items: r.items.map((it) => ({ sku: it.sku, price: it.price, quantity: it.quantity })),
+            actualRevenue: r.actualRevenue,
+            profit: r.profit,
+            missingCostPrice: r.missingCostPrice,
+            tiktok: r.tiktok ? { feeGmvMax: Number((r.tiktok as Record<string, unknown>).feeGmvMax) || 0 } : null,
+          });
+        }
+      }
     ),
     prisma.adsCampaign.findMany({
       where: { channelId: channel.id },
@@ -281,21 +302,6 @@ async function loadBreakevenInputs(channel: { id: string; userId: string }) {
       select: { channelSku: true, externalId: true, productName: true, imageUrl: true, channelStock: true },
     }),
   ]);
-  const rows: BreakevenPnlRow[] = orders.map((o) => {
-    const r = computePnlRow(o);
-    return {
-      createdAt: r.createdAt,
-      shippingStatus: r.shippingStatus,
-      // Chỉ bản kê THẬT mới là "đã đối soát"; số ước tính của sàn (estimated) thì chưa.
-      isSettled: r.isSettled && r.tiktok != null && (r.tiktok as { estimated?: boolean }).estimated !== true,
-      items: r.items,
-      actualRevenue: r.actualRevenue,
-      profit: r.profit,
-      missingCostPrice: r.missingCostPrice,
-      tiktok: r.tiktok ? { feeGmvMax: Number((r.tiktok as Record<string, unknown>).feeGmvMax) || 0 } : null,
-    };
-  });
-
   // externalId TikTok = "productId-skuId" (tiktok-adapter) — productId chính là item_group_id của report GMV Max.
   const skusByProductId = new Map<string, Set<string>>();
   for (const cp of channelProducts) {

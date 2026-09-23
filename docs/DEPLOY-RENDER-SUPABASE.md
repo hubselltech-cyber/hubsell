@@ -101,6 +101,50 @@ Biến chỉnh nhịp worker quét sàn (workers/order-auto-sync.ts):
 Local: PowerShell `$env:HUBSELL_ROLE="worker"; npm run dev` chạy riêng worker;
 không đặt gì = `all` như trước.
 
+**22/09/2026 — anh Trung chốt LÀM bước này** (sau sự cố OOM bên dưới): việc
+cần tay anh trên Dashboard là mục 1–2 (tạo Background Worker, gói Starter,
+copy env); mục 3–4 kiểm tra log rồi đổi `HUBSELL_ROLE=web` trên service web.
+Cờ heap trong `npm start` áp cho cả hai service vì dùng chung script.
+
+## Bước 2c — Bộ nhớ tiến trình (sự cố OOM 19–22/09/2026)
+
+**Chuyện đã xảy ra:** Render ghi "Instance failed: exited with status 134"
+5 lần trong 4 ngày (19/09 21:45, 21:47, 22:34; 20/09 21:16; 22/09 10:10), log
+cùng giây `FATAL ERROR: Reached heap limit … JavaScript heap out of memory`.
+Biểu đồ RAM container chỉ 40–55% của 512 MB lúc chết → V8 tự đặt heap limit
+theo "RAM máy / 4", thấp hơn nhiều RAM gói. Khách mở app đúng lúc khởi động
+lại (10–20 giây) thấy câu lỗi dev "backend đang chạy ở cổng 4000".
+
+**Đã sửa (commit 22/09):**
+
+1. `backend/package.json` → `start` chạy
+   `node --max-old-space-size=320 --max-semi-space-size=16 dist/index.js`.
+   Căn cứ số: gói Starter 512 MB; RSS ngoài heap quan sát ~100–150 MB (engine
+   Prisma, mã, buffer); young gen chốt 16 MB × 3 = 48 MB → 320 + 48 + 150 ≈ 518
+   là trần xấu nhất, bình thường thấp hơn nhiều. Nâng gói RAM thì sửa số này
+   (KHÔNG đặt NODE_OPTIONS trên Dashboard — cờ dòng lệnh đè NODE_OPTIONS).
+2. `lib/memory-watch.ts`: log lúc boot `[Bộ nhớ] Khởi động: heap X/Y MB, RSS Z MB`
+   (Y phải ≈ 368 = 320 + 48 — nếu không, cờ chưa ăn); lấy mẫu 5 giây, vượt 70%
+   / 85% heap ghi một dòng cảnh báo kèm RSS (chỉ ghi lại sau khi hạ dưới 60%);
+   mốc nền mỗi 30 phút. Đọc log theo mốc thời gian để dò việc nào gây đỉnh.
+   Env: `MEMORY_WATCH_SECONDS=0` tắt, `MEMORY_WATCH_WARN_PCT` / `_CRIT_PCT` đổi ngưỡng.
+3. Ba chỗ từng giữ hàng nghìn/chục nghìn đơn kèm include nặng trong một mảng
+   chuyển sang đọc theo trang 1.000 đơn rồi rút ngay thành dòng gọn
+   (`forEachPnlOrderPage` trong routes/finance.ts): hòa vốn Ads TikTok
+   (integrations/tiktok-ads/breakeven.ts — chạy MỖI lần mở trang Quảng cáo
+   TikTok, 60 ngày, trần 8.000 đơn), tờ khai thuế (services/tax-declaration.ts —
+   cả năm toàn shop, trần 20.000), và backfill bản kê TikTok
+   (integrations/tiktok/service.ts — ghi theo từng cửa sổ 30 ngày, đơn gặp lại
+   ở cửa sổ sau thì kéo lại bản kê đã ghi để cộng chung, số y hệt cách gom cũ).
+4. Frontend: câu lỗi mất kết nối viết cho khách + tự gọi lại mỗi 8 giây
+   (lib/use-api-query.ts), React Query thử lại 3 lần giãn 1s → 2s → 4s cho lỗi
+   mạng / 5xx (components/shell/query-provider.tsx).
+
+**Khi thấy lại status 134:** Logs → tìm `heap` (dòng FATAL) rồi `[Bộ nhớ]`
+(dòng cảnh báo ngay trước đó nói heap đang bao nhiêu và RSS) → đối chiếu việc
+đang chạy cùng phút. Không có dòng `[Bộ nhớ]` nào trước FATAL nghĩa là tăng vọt
+trong < 5 giây — nghi một request đơn lẻ (báo cáo khoảng rộng, export).
+
 ## Bước 3 — Khai URL webhook vào trang quản trị MISA Sandbox
 
 1. Đăng nhập trang quản trị meInvoice Sandbox (tài khoản MISA cấp kèm kit).

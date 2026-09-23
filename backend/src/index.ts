@@ -4,6 +4,7 @@ import http from "http";
 import https from "https";
 import { createApp } from "./app";
 import { backfillInvoiceSecrets } from "./integrations/invoice/config-secrets";
+import { startMemoryWatch } from "./lib/memory-watch";
 import { checkSecretBoxAtBoot, secretBoxEnabled } from "./lib/secret-box";
 import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
@@ -19,6 +20,8 @@ const PORT = Number(process.env.PORT) || 4000;
 // ============================================================
 const role = resolveHubsellRole();
 console.log(`[Role] Tiến trình chạy vai "${role}"`);
+// Heap limit + canh đỉnh RAM (lib/memory-watch.ts) — sự cố OOM 19–22/09/2026.
+startMemoryWatch();
 
 // ============================================================
 // MÃ HÓA BÍ MẬT TRONG DB (19/09/2026 — lib/secret-box.ts). Kiểm NGAY lúc khởi

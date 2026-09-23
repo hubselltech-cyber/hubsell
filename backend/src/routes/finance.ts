@@ -323,7 +323,7 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 // ============================================================
 
 /** Đơn kèm đủ dữ liệu quan hệ để bóc số Lãi/Lỗ. */
-type PnlOrder = Prisma.OrderGetPayload<{
+export type PnlOrder = Prisma.OrderGetPayload<{
   include: {
     channel: { select: { channelName: true; shopName: true } };
     // Kèm SKU kho gốc + ảnh để /sku-pnl gom nhóm — cùng tập đơn SSOT.
@@ -379,9 +379,30 @@ export async function fetchPnlOrdersAll(
   range: DateRangeFilter,
   opts: { pageSize?: number; max?: number } = {}
 ): Promise<{ orders: PnlOrder[]; truncated: boolean }> {
+  const orders: PnlOrder[] = [];
+  const { truncated } = await forEachPnlOrderPage(scope, range, opts, (page) => {
+    orders.push(...page);
+  });
+  return { orders, truncated };
+}
+
+/**
+ * Bản STREAMING của fetchPnlOrdersAll (22/09/2026 — sự cố Render hết heap):
+ * mỗi đơn kèm PNL_INCLUDE nặng vài chục KB, 20.000 đơn giữ nguyên trong một
+ * mảng là vài trăm MB — đủ giết tiến trình 512 MB. Nơi gọi chỉ cần SỐ (tổng
+ * kê khai, hòa vốn) thì nhận từng trang, rút ngay thành dòng gọn rồi bỏ trang;
+ * RAM chỉ còn một trang + kết quả gọn. Cùng WHERE / include / trần với bản
+ * gom, nên số ra y hệt. `truncated` = chạm `max` (mặc định 20.000).
+ */
+export async function forEachPnlOrderPage(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  opts: { pageSize?: number; max?: number },
+  onPage: (page: PnlOrder[]) => void | Promise<void>
+): Promise<{ count: number; truncated: boolean }> {
   const pageSize = opts.pageSize ?? 1000;
   const max = opts.max ?? 20_000;
-  const orders: PnlOrder[] = [];
+  let count = 0;
   let cursor: string | undefined;
   for (;;) {
     const page = await prisma.order.findMany({
@@ -391,9 +412,10 @@ export async function fetchPnlOrdersAll(
       take: pageSize,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
-    orders.push(...page);
-    if (page.length < pageSize) return { orders, truncated: false };
-    if (orders.length >= max) return { orders, truncated: true };
+    count += page.length;
+    await onPage(page);
+    if (page.length < pageSize) return { count, truncated: false };
+    if (count >= max) return { count, truncated: true };
     cursor = page[page.length - 1].id;
   }
 }

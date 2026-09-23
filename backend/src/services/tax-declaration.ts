@@ -32,7 +32,7 @@ import {
 import { BUSINESS_TZ_OFFSET_MS, type DateRangeFilter } from "../lib/date-range";
 import type { ChannelScope } from "../lib/channel-filter";
 import { prisma } from "../lib/prisma";
-import { computePnlRow, fetchPnlOrdersAll } from "../routes/finance";
+import { computePnlRow, forEachPnlOrderPage } from "../routes/finance";
 
 // ---------------------------------------------------------------- KỲ
 
@@ -297,6 +297,34 @@ export interface TaxDeclarationResult {
   truncated: boolean;
 }
 
+/**
+ * Đọc đơn của kỳ THEO TRANG và rút ngay mỗi đơn thành 7 số bộ gom cần
+ * (22/09/2026 — cả năm của shop lớn là hàng chục nghìn đơn kèm include nặng,
+ * giữ nguyên mảng từng làm Render hết heap; dòng gọn 20.000 đơn chỉ vài MB).
+ * Cùng WHERE/trần với fetchPnlOrdersAll nên số kê khai không đổi.
+ */
+async function loadDeclarationInputs(
+  scope: ChannelScope,
+  range: DateRangeFilter
+): Promise<{ rows: DeclarationInput[]; truncated: boolean }> {
+  const rows: DeclarationInput[] = [];
+  const { truncated } = await forEachPnlOrderPage(scope, range, {}, (page) => {
+    for (const o of page) {
+      const r = computePnlRow(o);
+      rows.push({
+        channelName: r.channelName,
+        shippingStatus: r.shippingStatus,
+        isSettled: r.isSettled,
+        revenueGross: r.revenueGross,
+        sellerVoucher: r.sellerVoucher,
+        refundedAmount: r.refundedAmount,
+        platformTax: r.platformTax,
+      });
+    }
+  });
+  return { rows, truncated };
+}
+
 /** Doanh thu tính thuế của một tập đơn đã bóc số (dùng cho lũy kế năm). */
 function taxableOf(rows: DeclarationInput[]): number {
   return sumRows(aggregateDeclaration(rows)).taxableRevenue;
@@ -313,8 +341,8 @@ export async function buildTaxDeclaration(
   now: Date = new Date()
 ): Promise<TaxDeclarationResult> {
   const range = periodRange(period);
-  const { orders, truncated } = await fetchPnlOrdersAll(scope, range);
-  const rows = aggregateDeclaration(orders.map(computePnlRow));
+  const { rows: inputs, truncated } = await loadDeclarationInputs(scope, range);
+  const rows = aggregateDeclaration(inputs);
   const total = sumRows(rows);
 
   // Lũy kế năm: toàn shop (ngưỡng tính theo pháp nhân, không theo gian đang
@@ -328,8 +356,8 @@ export async function buildTaxDeclaration(
     annualTaxable = total.taxableRevenue;
     annualTruncated = truncated;
   } else {
-    const y = await fetchPnlOrdersAll({ userId: ownerId }, yearRange);
-    annualTaxable = taxableOf(y.orders.map(computePnlRow));
+    const y = await loadDeclarationInputs({ userId: ownerId }, yearRange);
+    annualTaxable = taxableOf(y.rows);
     annualTruncated = y.truncated;
   }
 

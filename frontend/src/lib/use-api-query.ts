@@ -26,8 +26,18 @@ import {
 
 import { ApiError } from "./api";
 
+/**
+ * Câu báo khi fetch KHÔNG nhận được phản hồi HTTP (máy chủ đang khởi động lại,
+ * mất mạng…). Viết cho KHÁCH đọc — 22/09/2026 khách Hi.Bé chụp màn hình câu cũ
+ * "backend đang chạy ở cổng 4000" đúng lúc Render khởi động lại sau OOM.
+ * Chi tiết kỹ thuật đã có trong console; ngoài màn chỉ nói việc gì đang xảy ra
+ * và Hubsell tự thử lại (xem SERVER_DOWN_RETRY_MS).
+ */
 export const SERVER_DOWN_MESSAGE =
-  "Chưa kết nối được máy chủ (backend). Hãy chắc chắn backend đang chạy ở cổng 4000.";
+  "Máy chủ đang bận hoặc đang khởi động lại. Hubsell sẽ tự kết nối lại sau vài giây, anh/chị không cần tải lại trang.";
+
+/** Nhịp tự gọi lại khi đang mất kết nối — Render khởi động lại mất ~10–20 giây. */
+export const SERVER_DOWN_RETRY_MS = 8_000;
 
 export function useApiQuery<T>(options: {
   queryKey: QueryKey;
@@ -64,9 +74,30 @@ export function useApiQuery<T>(options: {
     if (unauthorized) router.replace("/login");
   }, [unauthorized, router]);
 
+  // Mất kết nối (không có phản hồi HTTP) → tự gọi lại theo nhịp cho tới khi
+  // máy chủ trả lời; khách chỉ thấy câu SERVER_DOWN_MESSAGE rồi số tự hiện.
+  // Ghi nhớ bằng state chứ không đọc thẳng query.error: React Query v5 khi
+  // query CHƯA có dữ liệu mà gọi lại thì xóa error + quay về "pending" trong
+  // suốt các lượt thử lại (~7s) → câu báo sẽ nhấp nháy ẩn/hiện. Chỉ hạ cờ khi
+  // đã nhận được phản hồi (thành công hoặc lỗi HTTP có mã).
+  const networkError = !!err && !(err instanceof ApiError);
+  const [serverDown, setServerDown] = React.useState(false);
+  React.useEffect(() => {
+    if (networkError) setServerDown(true);
+    else if (query.isSuccess || err instanceof ApiError) setServerDown(false);
+  }, [networkError, query.isSuccess, err]);
+  const refetch = query.refetch;
+  React.useEffect(() => {
+    if (!serverDown) return;
+    const t = setInterval(() => void refetch(), SERVER_DOWN_RETRY_MS);
+    return () => clearInterval(t);
+  }, [serverDown, refetch]);
+
   return {
     data: query.data,
-    loading: query.isPending && options.enabled !== false,
+    // Đang mất kết nối thì KHÔNG coi là "tải lần đầu" — giữ câu báo trên màn
+    // thay vì skeleton trắng trong lúc thử lại.
+    loading: query.isPending && !serverDown && options.enabled !== false,
     refreshing: query.isFetching,
     /**
      * Đang hiện SỐ CŨ của bộ lọc trước trong lúc tải bộ lọc mới
@@ -75,8 +106,9 @@ export function useApiQuery<T>(options: {
      */
     placeholder: query.isPlaceholderData,
     denied,
-    error:
-      err && !unauthorized && !denied && !noChannel
+    error: serverDown
+      ? SERVER_DOWN_MESSAGE
+      : err && !unauthorized && !denied && !noChannel
         ? err instanceof ApiError
           ? err.message
           : SERVER_DOWN_MESSAGE

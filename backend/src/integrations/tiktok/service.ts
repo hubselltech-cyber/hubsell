@@ -533,13 +533,25 @@ export async function syncTiktokSettlements(
     pages: 0,
   };
 
-  // Gom MỌI dòng theo đơn trong toàn bộ lượt chạy (ORDER + REFUND + điều chỉnh
-  // gắn đơn cộng lại; đơn có dòng ở 2 bản kê khác ngày vẫn về một chỗ).
-  const byOrder = new Map<string, { lines: TikTokTxBreakdown[]; time?: number; statementId?: string }>();
+  // Gom mọi dòng của cùng đơn TRONG MỘT CỬA SỔ (ORDER + REFUND + điều chỉnh
+  // gắn đơn cộng lại; hai bản kê khác ngày trong cùng cửa sổ vẫn về một chỗ)
+  // rồi GHI hết sau mỗi cửa sổ — KHÔNG giữ cả lượt backfill 9+ cửa sổ trong RAM
+  // (22/09/2026: gian ~185 đơn/ngày × từ 01/2025 là hàng chục nghìn đơn kèm
+  // breakdown, đủ làm Render hết heap). Đơn có thêm dòng ở cửa sổ SAU (hoàn /
+  // điều chỉnh muộn hơn 30 ngày) → kéo lại đúng những bản kê đã ghi cho đơn đó
+  // trong lượt này (writtenIn) rồi cộng chung, nên kết quả y hệt cách gom toàn
+  // lượt; chạy lại vẫn ra đúng một kết quả.
+  const writtenIn = new Map<string, Set<string>>(); // orderId → bản kê đã ghi trong lượt này
+  const notFound = new Set<string>();
+  let merged = 0;
   // Cửa sổ nới mốc cuối 2 ngày nên có thể chồng lấn → mỗi bản kê chỉ bóc MỘT lần.
   const seenStatements = new Set<string>();
 
   for (const w of windows) {
+    const byOrder = new Map<
+      string,
+      { lines: TikTokTxBreakdown[]; time?: number; statementId?: string; statementIds: Set<string> }
+    >();
     let stPageToken: string | undefined;
     let stPages = 0;
     do {
@@ -593,11 +605,12 @@ export async function syncTiktokSettlements(
           result.unlinked += unlinked;
           for (const [orderId, ls] of grouped) {
             result.transactions += ls.length;
-            const acc = byOrder.get(orderId) ?? { lines: [] };
+            const acc = byOrder.get(orderId) ?? { lines: [], statementIds: new Set<string>() };
             acc.lines.push(...ls);
             // Mốc QUYẾT TOÁN = thời điểm bản kê (statement_time), không phải ngày tạo đơn.
             acc.time = st.statement_time ?? st.payment_time ?? acc.time;
             acc.statementId = st.id;
+            acc.statementIds.add(st.id);
             byOrder.set(orderId, acc);
           }
           txPageToken = txData.next_page_token || undefined;
@@ -606,34 +619,90 @@ export async function syncTiktokSettlements(
 
       stPageToken = list.next_page_token || undefined;
     } while (stPageToken && stPages < maxPages);
-  }
 
-  // Áp số quyết toán vào từng Order đã đồng bộ về trước đó.
-  for (const [orderId, acc] of byOrder) {
-    const order = await prisma.order.findUnique({
-      where: { channelId_orderCode: { channelId: channel.id, orderCode: orderId } },
-      select: { id: true, shippingDisputeStatus: true },
-    });
-    if (!order) {
-      result.ordersNotFound++;
-      continue;
+    // Áp số quyết toán của CỬA SỔ NÀY vào từng Order đã đồng bộ về trước đó.
+    for (const [orderId, acc] of byOrder) {
+      const order = await prisma.order.findUnique({
+        where: { channelId_orderCode: { channelId: channel.id, orderCode: orderId } },
+        select: { id: true, shippingDisputeStatus: true },
+      });
+      if (!order) {
+        notFound.add(orderId);
+        continue;
+      }
+      let lines = acc.lines;
+      const earlier = writtenIn.get(orderId);
+      if (earlier) {
+        // Đã ghi ở cửa sổ trước trong lượt này → ghi đè bằng TỔNG mọi dòng: kéo
+        // lại dòng của đơn ở các bản kê cũ (thường 1 bản kê, vài trang) + dòng mới.
+        const prevStatements = [...earlier].filter((id) => !acc.statementIds.has(id));
+        if (prevStatements.length > 0) {
+          const prevLines = await fetchOrderLinesFromStatements(
+            { accessToken, shopCipher },
+            prevStatements,
+            orderId,
+            maxPages
+          );
+          lines = [...prevLines, ...lines];
+          merged++;
+        }
+      }
+      const settledAt = acc.time ? new Date(acc.time * 1000) : new Date();
+      await writeTiktokSettlement(order, lines, {
+        estimated: false,
+        settledAt,
+        statementId: acc.statementId,
+      });
+      if (!earlier) result.ordersUpdated++;
+      const written = earlier ?? new Set<string>();
+      for (const id of acc.statementIds) written.add(id);
+      writtenIn.set(orderId, written);
     }
-    const settledAt = acc.time ? new Date(acc.time * 1000) : new Date();
-    await writeTiktokSettlement(order, acc.lines, {
-      estimated: false,
-      settledAt,
-      statementId: acc.statementId,
-    });
-    result.ordersUpdated++;
+    byOrder.clear();
   }
+  result.ordersNotFound = notFound.size;
 
-  if (result.ordersNotFound > 0 || result.unlinked > 0) {
+  if (result.ordersNotFound > 0 || result.unlinked > 0 || merged > 0) {
     console.log(
-      `[TikTok] Đối soát "${channel.shopName}": ${result.ordersUpdated} đơn ghi số thật, ${result.ordersNotFound} mã đơn trên bản kê chưa có trong Hubsell, ${result.unlinked} dòng cấp shop không gắn đơn (${result.statements} bản kê / ${result.windows} cửa sổ)`
+      `[TikTok] Đối soát "${channel.shopName}": ${result.ordersUpdated} đơn ghi số thật, ${result.ordersNotFound} mã đơn trên bản kê chưa có trong Hubsell, ${result.unlinked} dòng cấp shop không gắn đơn (${result.statements} bản kê / ${result.windows} cửa sổ` +
+        `${merged > 0 ? `, ${merged} đơn cộng thêm dòng từ cửa sổ trước` : ""})`
     );
   }
 
   return result;
+}
+
+/**
+ * Dòng giao dịch của MỘT đơn nằm trong các bản kê cho trước — dùng khi backfill
+ * nhiều cửa sổ gặp lại đơn đã ghi ở cửa sổ trước (xem syncTiktokSettlements).
+ * Đọc lại bản kê qua API thay vì giữ dòng cũ trong RAM: trường hợp này hiếm
+ * (hoàn / điều chỉnh muộn hơn 30 ngày) nên tốn vài call, còn RAM thì bằng 0.
+ */
+async function fetchOrderLinesFromStatements(
+  auth: { accessToken: string; shopCipher: string },
+  statementIds: string[],
+  orderId: string,
+  maxPages: number
+): Promise<TikTokTxBreakdown[]> {
+  const out: TikTokTxBreakdown[] = [];
+  for (const statementId of statementIds) {
+    let pageToken: string | undefined;
+    let pages = 0;
+    do {
+      const data = await fetchStatementTransactionsV2({
+        ...auth,
+        statementId,
+        pageSize: 100,
+        pageToken,
+      });
+      pages++;
+      for (const t of data.transactions ?? []) {
+        if ((t.order_id || t.adjustment_order_id) === orderId) out.push(t);
+      }
+      pageToken = data.next_page_token || undefined;
+    } while (pageToken && pages < maxPages);
+  }
+  return out;
 }
 
 /**

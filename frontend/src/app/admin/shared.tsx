@@ -14,6 +14,7 @@ import {
   type ConsultLeadStatus,
   type PlatformCareStatus,
 } from "@/lib/api";
+import { SERVER_DOWN_MESSAGE } from "@/lib/use-api-query";
 
 /**
  * Hook nạp dữ liệu chuẩn của một trang /admin/*: gọi `fetcher` (bọc useCallback
@@ -44,11 +45,7 @@ export function useAdminPage<T>(fetcher: () => Promise<T>) {
         setDenied(true);
         return;
       }
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Chưa kết nối được máy chủ (backend). Hãy chắc chắn backend đang chạy ở cổng 4000."
-      );
+      setError(err instanceof ApiError ? err.message : SERVER_DOWN_MESSAGE);
     } finally {
       setLoading(false);
     }

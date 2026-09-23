@@ -31,11 +31,14 @@ function makeQueryClient() {
         gcTime: 30 * 60_000,
         placeholderData: keepPreviousData,
         // 4xx là lỗi "có chủ đích" của backend (401 hết phiên, 403 không quyền,
-        // 409 chưa có kênh…) — retry chỉ tổ trễ thêm; lỗi mạng thì thử lại 1 lần.
+        // 409 chưa có kênh…) — retry chỉ tổ trễ thêm. Lỗi mạng / 5xx thử lại 3
+        // lần giãn 1s → 2s → 4s (≈7s, đủ che một nhịp Render khởi động lại ngắn;
+        // lâu hơn thì useApiQuery tự gọi lại mỗi 8s — 22/09/2026 sau sự cố OOM).
         retry: (failureCount, error) => {
           if (error instanceof ApiError && error.status < 500) return false;
-          return failureCount < 1;
+          return failureCount < 3;
         },
+        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
         // Các trang đều có nút "Làm mới" / polling riêng khi cần số nóng —
         // tự refetch lúc đổi cửa sổ dễ gây nhảy số bất ngờ giữa lúc đang đọc.
         refetchOnWindowFocus: false,

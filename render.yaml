@@ -43,7 +43,7 @@ services:
   - type: web
     name: hubsell-backend-sg
     runtime: node
-    plan: free
+    plan: starter # 512 MB — cờ heap trong `npm start` (backend/package.json) tính theo gói này; nâng gói thì sửa cờ (docs/DEPLOY-RENDER-SUPABASE.md bước 2c)
     region: singapore
     rootDir: backend
     # prisma generate chạy trong build (Render cache node_modules — client phải
