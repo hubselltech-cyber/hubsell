@@ -368,31 +368,13 @@ export function fetchPnlOrders(
 }
 
 /**
- * Bản PHÂN TRANG của fetchPnlOrders cho báo cáo theo KỲ KÊ KHAI (quý/năm —
- * 07/09): cùng WHERE + include SSOT nhưng cuộn cursor theo id, không dính
- * trần 2.000 đơn (một quý của shop 1.000 đơn/tháng đã vượt trần, số kê khai
- * mà thiếu đơn là sai nghĩa vụ). `max` là phanh an toàn cuối cùng — chạm
- * thì trả `truncated` để UI bảo thu hẹp kỳ, không im lặng cắt.
- */
-export async function fetchPnlOrdersAll(
-  scope: ChannelScope,
-  range: DateRangeFilter,
-  opts: { pageSize?: number; max?: number } = {}
-): Promise<{ orders: PnlOrder[]; truncated: boolean }> {
-  const orders: PnlOrder[] = [];
-  const { truncated } = await forEachPnlOrderPage(scope, range, opts, (page) => {
-    orders.push(...page);
-  });
-  return { orders, truncated };
-}
-
-/**
- * Bản STREAMING của fetchPnlOrdersAll (22/09/2026 — sự cố Render hết heap):
- * mỗi đơn kèm PNL_INCLUDE nặng vài chục KB, 20.000 đơn giữ nguyên trong một
- * mảng là vài trăm MB — đủ giết tiến trình 512 MB. Nơi gọi chỉ cần SỐ (tổng
- * kê khai, hòa vốn) thì nhận từng trang, rút ngay thành dòng gọn rồi bỏ trang;
- * RAM chỉ còn một trang + kết quả gọn. Cùng WHERE / include / trần với bản
- * gom, nên số ra y hệt. `truncated` = chạm `max` (mặc định 20.000).
+ * Bản PHÂN TRANG của fetchPnlOrders cho báo cáo phải quét NHIỀU đơn (kỳ kê
+ * khai quý/năm, hòa vốn Ads 60 ngày): cùng WHERE + include SSOT nhưng cuộn
+ * cursor theo id, không dính trần 2.000 đơn. Trả từng trang 1.000 đơn qua
+ * `onPage` để nơi gọi rút ngay thành dòng gọn rồi bỏ trang — 22/09/2026 bản gom
+ * cả 20.000 đơn kèm include nặng vào một mảng từng làm Render hết heap. `max`
+ * (mặc định 20.000) là phanh an toàn cuối — chạm thì trả `truncated` để UI bảo
+ * thu hẹp kỳ, không im lặng cắt.
  */
 export async function forEachPnlOrderPage(
   scope: ChannelScope,

@@ -21,7 +21,7 @@ import v8 from "v8";
 
 const MB = 1024 * 1024;
 
-export function heapLimitMb(): number {
+function heapLimitMb(): number {
   return Math.round(v8.getHeapStatistics().heap_size_limit / MB);
 }
 
@@ -30,7 +30,7 @@ function pctEnv(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 && n < 100 ? n : fallback;
 }
 
-export function describeMemory(): string {
+function describeMemory(): string {
   const m = process.memoryUsage();
   return (
     `heap ${Math.round(m.heapUsed / MB)}/${heapLimitMb()} MB, ` +

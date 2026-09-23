@@ -10,7 +10,7 @@
 // dẫn giữa MISA/Shopee còn mâu thuẫn — gán sai là khách bị phạt).
 //
 // Nguồn số: computePnlRow (SSOT tài chính) trên tập đơn phân trang
-// fetchPnlOrdersAll — cùng công thức với Báo cáo dòng tiền / Lãi-Lỗ, seller
+// forEachPnlOrderPage — cùng công thức với Báo cáo dòng tiền / Lãi-Lỗ, seller
 // đối chiếu hai trang là khớp. Kỳ cắt theo NGÀY TẠO ĐƠN giờ VN như mọi báo
 // cáo khác (báo cáo thuế của sàn cắt theo ngày hoàn thành — lệch ở mép quý,
 // UI nói rõ).
@@ -301,7 +301,7 @@ export interface TaxDeclarationResult {
  * Đọc đơn của kỳ THEO TRANG và rút ngay mỗi đơn thành 7 số bộ gom cần
  * (22/09/2026 — cả năm của shop lớn là hàng chục nghìn đơn kèm include nặng,
  * giữ nguyên mảng từng làm Render hết heap; dòng gọn 20.000 đơn chỉ vài MB).
- * Cùng WHERE/trần với fetchPnlOrdersAll nên số kê khai không đổi.
+ * Cùng WHERE/trần với bản gom cũ nên số kê khai không đổi.
  */
 async function loadDeclarationInputs(
   scope: ChannelScope,
