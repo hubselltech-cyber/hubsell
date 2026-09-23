@@ -51,10 +51,10 @@ Mọi thông tin nộp cho Apple và Google về sau phải **khớp từng ch�
 | Hướng dẫn **xóa tài khoản** `hubsell.vn/xoa-tai-khoan` | ✅ đã code 23/09 (chờ push landing) | Google khai vào Data safety → account deletion URL; Apple 5.1.1(v). Trang nêu ai được gửi, gửi email theo mẫu tới support@hubsell.vn, xác minh 2 ngày, xóa xong trong 30 ngày (khớp /privacy), dữ liệu giữ lại theo luật kế toán. Chưa có API xóa tự động, xử lý tay qua email. |
 
 ### 2.3 Tài khoản demo cho người duyệt (cực kỳ quan trọng)
-Cả hai kho đều bắt cung cấp tài khoản đăng nhập vì app không dùng được khi chưa đăng nhập. Tài khoản **phải có dữ liệu thật để xem**: shop đã nối sàn, có đơn hàng, có tồn kho, có hội thoại. Tài khoản trống là bị từ chối 2.1 "không thể xác minh chức năng". Chuẩn bị:
-- 1 tài khoản **chủ shop** (vai admin: Tổng quan, Đơn, Tin nhắn, Cài đặt).
-- 1 tài khoản **nhân viên kho** (vai warehouse: quét mã hoàn).
-- Vài mã vận đơn thật để reviewer quét thử nếu muốn.
+Cả hai kho đều bắt cung cấp tài khoản đăng nhập vì app không dùng được khi chưa đăng nhập. Tài khoản **phải có dữ liệu thật để xem**: shop đã nối sàn, có đơn hàng, có tồn kho, có hội thoại. Tài khoản trống là bị từ chối 2.1 "không thể xác minh chức năng". ✅ Đã có sẵn trên production (23/09):
+- **Chủ shop**: `reviewer@hubsell.vn` (tài khoản seed ISV, gói Business, 3 gian Shopee/Lazada/TikTok "Hubsell Demo Store", >4.000 đơn; mật khẩu anh Trung giữ, xem hồ sơ TikTok). Worker `reviewer-demo-topup` bồi đơn mỗi 30 phút — **giữ bật tới khi cả 2 kho duyệt xong**.
+- **Nhân viên kho**: `reviewer/reviewer_kho` / `Hubsell2026kho` (tạo qua UI /staff 23/09, quyền Đơn hàng + Quản lý Kho, cả 3 gian) → app mở thẳng màn Quét đơn hoàn. Dự phòng: `backend/scripts/seed-reviewer-staff.ts`.
+- Vài mã vận đơn thật để reviewer quét thử nếu muốn (lấy từ đơn hoàn của tài khoản reviewer).
 - Ghi chú tiếng Anh cho reviewer: app B2B cho chủ shop Shopee/Lazada/TikTok tại Việt Nam, tài khoản demo đã nối sẵn gian hàng mẫu, gói dịch vụ mua trên web không bán trong app.
 
 ### 2.4 Nội dung listing (viết một lần dùng cho cả 2 kho)
@@ -150,7 +150,7 @@ Availability: chỉ Việt Nam đợt đầu (tránh khai trader EU).
 | Bước | Thời gian | Ai làm |
 |---|---|---|
 | Xin D-U-N-S | ✅ đã submit 23/09, chờ 1–4 tuần, kết quả về support@hubsell.vn | Anh |
-| Chuẩn bị trang hỗ trợ, trang xóa tài khoản, ảnh, tài khoản demo | song song | Anh + Claude |
+| Trang hỗ trợ, trang xóa tài khoản, tài khoản demo ✅ 23/09; còn ảnh listing | song song | Claude |
 | Đăng ký Google Play tổ chức + xác minh | 1–7 ngày sau khi có D-U-N-S | Anh |
 | Đăng ký Apple tổ chức | 2–7 ngày sau khi có D-U-N-S | Anh |
 | Sửa code + build + nộp | 1–2 ngày | Claude |
