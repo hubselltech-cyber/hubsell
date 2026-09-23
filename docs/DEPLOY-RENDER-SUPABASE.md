@@ -118,11 +118,16 @@ lại (10–20 giây) thấy câu lỗi dev "backend đang chạy ở cổng 400
 **Đã sửa (commit 22/09):**
 
 1. `backend/package.json` → `start` chạy
-   `node --max-old-space-size=320 --max-semi-space-size=16 dist/index.js`.
-   Căn cứ số: gói Starter 512 MB; RSS ngoài heap quan sát ~100–150 MB (engine
-   Prisma, mã, buffer); young gen chốt 16 MB × 3 = 48 MB → 320 + 48 + 150 ≈ 518
-   là trần xấu nhất, bình thường thấp hơn nhiều. Nâng gói RAM thì sửa số này
-   (KHÔNG đặt NODE_OPTIONS trên Dashboard — cờ dòng lệnh đè NODE_OPTIONS).
+   `node --max-old-space-size=${NODE_HEAP_MB:-320} --max-semi-space-size=16 dist/index.js`.
+   Căn cứ số: gói Starter 512 MB; RSS ngoài heap đo trên Render 23/09 ≈ 90 MB
+   (engine Prisma, mã, buffer); young gen chốt 16 MB × 3 = 48 MB → 320 + 48 + 90
+   ≈ 460 là trần xấu nhất. **Nâng gói RAM thì chỉ đặt env `NODE_HEAP_MB`** trên
+   Dashboard (Standard 2 GB → 1536), không sửa code. KHÔNG đặt NODE_OPTIONS —
+   cờ dòng lệnh đè NODE_OPTIONS.
+
+   **23/09 anh Trung chốt: CHƯA tách worker, CHƯA nâng gói** — đợi nhiều khách
+   rồi nâng gói (Standard 2 GB, 25 USD) trước, tách worker sau khi tải thật tăng.
+   Service hubsell-worker-sg tạo thử 23/09 đã XÓA để khỏi tính tiền.
 2. `lib/memory-watch.ts`: log lúc boot `[Bộ nhớ] Khởi động: heap X/Y MB, RSS Z MB`
    (Y phải ≈ 368 = 320 + 48 — nếu không, cờ chưa ăn); lấy mẫu 5 giây, vượt 70%
    / 85% heap ghi một dòng cảnh báo kèm RSS (chỉ ghi lại sau khi hạ dưới 60%);
