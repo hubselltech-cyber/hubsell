@@ -39,6 +39,7 @@ const MOVE_MS = 1000;
 const CLICK_MS = 700;
 const MIN_ZOOM_MS = 2300;
 const TAIL_MS = 2500; // nán ở màn kết thúc
+const VOICE_GAP_TOL_MS = 150; // hai giọng chồng dưới mức này coi như không đè
 
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 << 20 });
 const durationSec = (file) =>
@@ -101,7 +102,10 @@ const durationSec = (file) =>
   const webm = fs.readdirSync(tmp).map((f) => path.join(tmp, f)).find((f) => f.endsWith(".webm"));
   if (!webm) throw new Error("Không thấy file video trong " + tmp);
   if (stepTimes.length !== mp3s.length)
-    console.warn(`⚠ số mốc bước (${stepTimes.length}) khác số MP3 (${mp3s.length})`);
+    throw new Error(
+      `Số mốc bước (${stepTimes.length}) khác số MP3 (${mp3s.length}) — mốc đo được không đáng tin, ` +
+        "dừng để không xuất ra video đè tiếng. Chạy lại với dev server vừa khởi động."
+    );
 
   // 3) Mốc 0: khung hình đầu tiên hết trắng (YAVG < 200). Dùng ffmpeg +
   // metadata=print ra stderr — bộ lọc movie= của ffprobe không ăn đường dẫn
@@ -128,11 +132,38 @@ const durationSec = (file) =>
 
   // 4) Ghép âm: mỗi MP3 đặt tại mốc bước tương ứng (so với bước 1)
   const offsets = stepTimes.map((t) => Math.max(0, Math.round(t - stepTimes[0])));
+  // Mốc đặt giọng (ms) + mốc kết thúc từng câu — soi nhanh khi tiếng lệch/mất câu.
+  console.log(
+    "Moc dat giong (s):",
+    offsets.map((o, i) => `${i + 1}:${(o / 1000).toFixed(1)}->${((o + durs[i] * 1000) / 1000).toFixed(1)}`).join("  ")
+  );
+  // CHẶN ĐÈ TIẾNG — sự cố 14/09: mốc bước 2 bị ghi trùng mốc bước 1 nên lời
+  // bước 2 rơi về giây 0 đọc chồng lên lời bước 1, cả dàn dồn lên một nấc và
+  // lời bước cuối rớt ra ngoài video. Mắt không thấy, chỉ nghe mới biết — nên
+  // thà dừng hẳn còn hơn xuất ra file hỏng. Dung sai 150ms: đuôi MP3 thường đã
+  // là khoảng lặng, chồng dưới mức này không nghe ra.
+  const va = [];
+  for (let i = 0; i + 1 < offsets.length; i++) {
+    const thua = Math.round(offsets[i] + durs[i] * 1000 - offsets[i + 1]);
+    if (thua > VOICE_GAP_TOL_MS)
+      va.push(
+        `  bước ${i + 1} (${(offsets[i] / 1000).toFixed(1)}s, dài ${durs[i].toFixed(1)}s) chồng ` +
+          `${(thua / 1000).toFixed(1)}s sang bước ${i + 2} (${(offsets[i + 1] / 1000).toFixed(1)}s)`
+      );
+  }
+  if (va.length)
+    throw new Error(
+      "Mốc giọng bị đè tiếng, KHÔNG xuất video:\n" +
+        va.join("\n") +
+        "\nMốc bước đo từ trang render sai. Chạy lại với dev server vừa khởi động " +
+        "(mount lại giữa chừng do HMR/StrictMode là nguyên nhân đã gặp)."
+    );
+
   const inputs = [];
   const filters = [];
   mp3s.forEach((f, i) => {
     inputs.push("-i", f);
-    filters.push(`[${i + 1}:a]aresample=48000,adelay=${offsets[i] ?? 0}|${offsets[i] ?? 0}[a${i}]`);
+    filters.push(`[${i + 1}:a]aresample=48000,adelay=${offsets[i]}|${offsets[i]}[a${i}]`);
   });
   filters.push(
     `${mp3s.map((_, i) => `[a${i}]`).join("")}amix=inputs=${mp3s.length}:normalize=0:dropout_transition=0,apad[aout]`
