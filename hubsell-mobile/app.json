@@ -4,16 +4,29 @@
     "slug": "hubsell-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo-hubsell.png",
+    "icon": "./assets/images/icon-1024.png",
     "scheme": "hubsellmobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/logo-hubsell.png"
+      "bundleIdentifier": "vn.hubsell.app",
+      "supportsTablet": false,
+      "icon": "./assets/images/icon-1024.png",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "CFBundleDisplayName": "Hubsell",
+        "CFBundleLocalizations": [
+          "vi"
+        ],
+        "CFBundleDevelopmentRegion": "vi"
+      }
     },
     "android": {
+      "package": "vn.hubsell.app",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
-        "foregroundImage": "./assets/images/logo-hubsell.png"
+        "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
