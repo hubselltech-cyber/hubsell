@@ -146,6 +146,13 @@ cấu hình, dữ liệu giả) — **chưa nối vào đâu**, giữ làm tư l
   loại / khôi phục video được, nhưng KHÔNG sửa được từ phía tài khoản quảng cáo.** Đa số seller nhỏ tạo GMV Max ngay trong Seller
   Center → nút sửa / tạo chiến dịch qua API chỉ phục vụ được nhóm khách chạy qua Ads Manager + shop thuộc BC của họ. Chưa biết điều kiện chính xác — đừng đoán; ticket hỏi
   TikTok soạn sẵn ở `docs/TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md` mục 7. Trước khi có trả lời: KHÔNG code nút sửa / tạo chiến dịch.
+  ★★ **TIKTOK TRẢ LỜI 22/09/2026 (ticket #4455484, nguyên văn ở `docs/TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md` mục 7b): 40002 là do LỆCH
+  BUSINESS CENTER — chiến dịch đứng dưới BC 7147263165355589633, còn shop đang ủy quyền cho TKQC dưới BC 7239164658173722625; KHÔNG
+  phải scope / token / vì tạo trong Seller Center** → kết luận in đậm phía trên ("tạo từ Seller Center thì không sửa được") SAI NGUYÊN
+  NHÂN, giữ lại làm sử. Cách biết trước (lời TikTok): so `store_authorized_bc_id` của `/campaign/gmv_max/info/` với của `/gmv_max/store/list/`,
+  lệch = không sửa được qua API. Probe đọc 23/09: 22/22 chiến dịch gian nhà (cả TC076 mới nhất, cả 2 LIVE) đều mang BC 7147… ⇒ chưa có
+  chiến dịch nào sửa được; `/bc/get/` 40001 (chưa có scope BC) nên phải tra tay anh Trung có quyền ở BC 7147… không. Việc kế + đề xuất
+  sản phẩm (cờ "sửa được qua API" theo chiến dịch; vẫn chưa code nút sửa cho tới khi chứng minh trên gian nhà) ở mục 7b file kia.
 - CHƯA probe: `/campaign/gmv_max/create/`, `/campaign/status/update/`.
 
 ## 5. Quy ước sổ hành động (AdsActionLog) cho video
@@ -467,7 +474,7 @@ Shopee (dải ROI + ngân sách sàn gợi ý, tạo chiến dịch một nút) 
   "Nên chạy quảng cáo", đường "Tạo chiến dịch trong Seller Center". Ô LÝ DO (anh Trung: phải rõ căn cứ tại sao nên, tại sao chưa nên):
   `checks[]` — mỗi điều kiện một dòng có dấu Đạt / Cần dè chừng / Không đạt / Chưa có số + số thật + mốc so sánh (`TiktokRunAdviceBody`),
   kết luận gọi đúng tên điều kiện làm nên kết luận đó. ⚠️ Chưa soi UI bằng số thật ở local (DB local không có đơn TikTok).
-- **Chưa có:** nút tạo / sửa chiến dịch qua API (chờ trả lời ticket #4455484); số sàn gợi ý không theo sản phẩm nên không dựng cột.
+- **Chưa có:** nút tạo / sửa chiến dịch qua API (ticket #4455484 đã trả lời 22/09: lỗi do lệch Business Center, xem mục 4 + `docs/TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md` 7b; chưa chứng minh sửa được trên gian nhà nên chưa code); số sàn gợi ý không theo sản phẩm nên không dựng cột.
 - Kiểm local 18/09 khuya (DB local không có đơn TikTok → dựng gian giả + 51 đơn thử đi qua đúng `computePnlRow`, đã xóa): đủ 6
   loại nhận định; TC054 thử 15 đơn đã đối soát (có 1 đơn ghép chia 250/409) + 3 hủy cùng lứa → 1.912.757 / 4.500.000 = 42,5% →
   2,35 khớp tính tay; 5 đơn đang giao bị để ngoài. Soi 1440 + 375 (không tràn ngang), ô lý do mở được.
@@ -498,3 +505,32 @@ của app là CHUNG cho mọi seller (mức Basic: 8/giây · 240/phút · 80.00
 Khi khách tăng: xin nâng mức "API rate limiting" trong cổng developer (App Detail → Authorization, có nút sửa) rồi nâng
 `ADS_TIKTOK_APP_QPS`. Van tốc độ đang nằm trong RAM từng tiến trình như Shopee/Lazada — tách nhiều worker thì chuyển sang Redis
 (mốc M3 của HQ Sức khỏe).
+
+
+## 11. TĂNG CƯỜNG VIDEO (Creative Boost) + MAX DELIVERY — khảo sát API 23/09/2026 (anh Trung thấy nút "Tăng cường" ở Seller Center, chưa dùng)
+
+**Nó là gì (docs TikTok, nguyên văn):** "Creative Boost is a functionality within Product GMV Max that allows sellers to manually promote
+specific videos by allocating extra daily budget." Ngân sách tăng cường TÁCH RIÊNG khỏi ngân sách chiến dịch, rải đều theo lịch, và
+"isn't included in calculations for your campaign's ROI protection" (Seller Center cũng ghi câu này ở chân trang). Không có ROI mục tiêu
+cho phần tiền này — TikTok ép phân phối video đó, ROI "not guaranteed" (help LIVE creative boost). Anh em nó là **Max delivery** (theo
+SẢN PHẨM, không theo video): tiêu trọn ngân sách phụ để tối đa doanh thu, ROI dao động; help "Best practices for Max delivery
+optimization": SP mới chạy 3–5 ngày, ngân sách ≥ 10 × AOV; tăng dần ~30%/ngày; trần 1–5 lần chi tiêu thực ở chế độ Target ROI.
+
+**API có đủ 5 lệnh, nhóm `/campaign/gmv_max/session/*`** (đọc trực tiếp docs bằng trình duyệt 23/09 — trang docs render JS, WebFetch không đọc được):
+- `POST /campaign/gmv_max/session/create/` — body `advertiser_id`, `campaign_id`, `store_id`, `session{ bid_type: CREATIVE_NO_BID (boost video) | NO_BID (max delivery SP),
+  product_list[{spu_id}] (đúng 1), item_id (video, chỉ boost), budget (≥ 10 USD/ngày — Seller Center VN hiện "50000 trở lên"), schedule_type SCHEDULE_FROM_NOW | SCHEDULE_START_END, schedule_end_time (UTC+0) }` → trả `session_id`.
+- `POST .../session/update/`, `POST .../session/delete/` (chưa đọc chi tiết).
+- `GET .../session/list/?advertiser_id&campaign_id` — chỉ phiên ĐANG CHẠY; `GET .../session/get/?advertiser_id&session_ids=[..≤20]` — kể cả phiên đã hết.
+  Cả hai chỉ trả CẤU HÌNH (bid_type, budget, spu_id, item_id, lịch) — KHÔNG có chi tiêu / kết quả của phiên; kết quả phải đọc từ report tầng video (không tách được phần tiền boost — chưa xác minh).
+- Điều kiện tạo boost (docs): chiến dịch Product GMV Max đang STATUS_DELIVERY_OK; SP của video KHÔNG đang có max delivery (NO_BID); ≤ 100 video boost / chiến dịch;
+  mỗi video chỉ 1 phiên boost tại một thời điểm; `creative_delivery_status` của video không thuộc AUTHORIZATION_NEEDED / EXCLUDED / REJECTED / UNAVAILABLE.
+  Max delivery cần chiến dịch ở chế độ Target ROI (report `bid_type` = CUSTOM). Bộ lọc loại trừ hàng loạt sẽ TẮT boost của video bị loại và không tự bật lại.
+
+**Hubsell hiện KHÔNG gọi được:** probe 23/09 `session/list/` + `session/get/` → 40001 "advertiser does not grant you ... permission" (endpoint thật; app chưa
+tick mục **Ads management → GMV Max → Session** khi xin quyền 18/09 — mục 1b file TIKTOK-ADS-XIN-QUYEN-CAMPAIGN.md). `session/info/` = 404 (không tồn tại).
+Muốn ĐỌC phiên boost phải xin thêm scope này + khách ủy quyền lại. Lệnh GHI (create) trên gian nhà nhiều khả năng vướng cùng rào lệch BC như update
+(mục 4) — chưa thử, và anh đã chốt 23/09 KHÔNG làm lệnh ghi, chỉ gợi ý.
+
+**Nhận định (Claude 23/09, chờ anh chốt):** boost = "mua thêm lượt hiển thị cho video mình chọn, không được ROI bảo vệ" → hợp với video ĐÃ chứng minh ROI cao
+mà đang bị chiến dịch phân phối ít (hoặc video mới muốn thử nhanh). Với hướng "chỉ gợi ý": có thể thêm gợi ý "Video X đáng tăng cường" (ROI thực ≥ hòa vốn,
+tỷ trọng chi tiêu thấp so với ROI) + ghi rõ tiền boost không được ROI bảo vệ, khách tự bấm ở Seller Center. Chưa code — đợi anh chốt có làm không; nếu làm, xin thêm scope Session để hiển thị video đang được boost (tránh gợi ý boost video đã boost).

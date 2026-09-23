@@ -143,7 +143,7 @@ diện → nếu họ đòi, em dựng màn hình thật (nút bị khóa vì ch
    chiến dịch mới có đụng chiến dịch đang chạy không.
 4. Ghi kết quả ticket (ngày nộp, ngày duyệt / lý do từ chối, tên quyền chính xác) vào memory `hubsell-tiktok-gmv-max-api`.
 
-## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối qua API, sửa tay trên SELLER CENTER thì được (✅ ĐÃ GỬI 19/09/2026 — ticket **#4455484**, ⏳ chờ trả lời)
+## 7. TICKET HỎI TIKTOK — lệnh sửa chiến dịch bị từ chối qua API, sửa tay trên SELLER CENTER thì được (✅ ĐÃ GỬI 19/09/2026 — ticket **#4455484**, ✅ TIKTOK TRẢ LỜI 22/09/2026 — xem mục 7b)
 
 **Dữ kiện (19/09/2026, gian nhà and.not.or):** `POST /campaign/gmv_max/update/` đổi `budget` của TC076 (đang tắt) → `40002 Shop must
 belong to a Business Center account.` 3/3 lần. Cùng ngày anh Trung SỬA TAY ngân sách TC076 2.000.000 → 2.001.000 trên **SELLER CENTER**
@@ -188,3 +188,62 @@ Phần mô tả gửi đi dùng "Fact 1–4 / Question A–D" (trình soạn th�
 > d) How can a developer detect in advance (from /gmv_max/store/list/ or another endpoint) whether update/create will be allowed for a given advertiser + shop, so we can explain it to the seller instead of failing?
 
 **Sau khi có trả lời:** ghi NGUYÊN VĂN câu trả lời (kể cả "không được") vào mục này + memory `hubsell-tiktok-gmv-max-api`.
+
+## 7b. TRẢ LỜI CỦA TIKTOK (ticket #4455484, 2026-09-22 08:22:21, Dag A. — Technical Product Specialist, MPO, North America and LATAM) — NGUYÊN VĂN
+
+> Hello Nguyen
+>
+> Thank you for reaching out to TikTok for Developers Support. I will be happy to assist you with this issue you reported.
+>
+> We checked the three request IDs and confirmed that the requests are reaching the GMV Max backend successfully. The failure is caused by a Business Center authorization mismatch.
+>
+> The existing campaign is associated with Business Center 7147263165355589633, while /gmv_max/store/list/ shows the shop's current authorized Business Center as 7239164658173722625. The backend authorization check for the campaign's Business Center returns false, resulting in error 40002.
+>
+> This is not caused by the app scopes, access token, or the campaign having been created in Seller Center. To update this campaign through the API, the user and advertiser must have the required authorization under Business Center 7147263165355589633. Otherwise, the campaign may need to be recreated under the shop's currently authorized Business Center.
+>
+> For existing campaigns, we recommend comparing store_authorized_bc_id from /campaign/gmv_max/info/ with the value returned by /gmv_max/store/list/. A mismatch indicates that the campaign may not be editable through the API.
+>
+> If you have any other questions or require further clarification on this topic, you may reach back at any time and reopen the ticket if it has been closed.
+
+(Ảnh chụp cổng ticket còn dòng tự động "Thanks for submitting your query. Our technical team is currently working on it and will get back to you soon." bên dưới — là dòng hệ thống của lần gửi, không phải thư thứ hai.)
+
+**Đọc trả lời — trả lời được câu nào trong 4 câu đã hỏi:**
+- (a) Điều kiện thật của 40002 = **BC của chiến dịch phải trùng BC mà shop đang ủy quyền cho tài khoản quảng cáo**. KHÔNG phải scope, KHÔNG phải token, KHÔNG phải vì tạo trong Seller Center → kết luận 19/09 "chiến dịch tạo từ Seller Center không sửa được qua API" là SAI NGUYÊN NHÂN, phải bỏ.
+- (b) Lệnh create / status/update: TikTok KHÔNG trả lời thẳng; suy ra cùng một phép kiểm BC (chưa được xác nhận bằng văn bản).
+- (c) Chiến dịch tạo từ Seller Center: sửa được qua API NẾU BC trùng (câu "not caused by ... created in Seller Center").
+- (d) Cách biết trước: so `store_authorized_bc_id` của `/campaign/gmv_max/info/` với `store_authorized_bc_id` của `/gmv_max/store/list/`. Lệch ⇒ chiến dịch đó không sửa được qua API. Đây là phép kiểm rẻ, dùng được ngay.
+
+**Probe CHỈ ĐỌC 23/09/2026 (Claude chạy, gian nhà and.not.or, token cấp 19/09 vẫn sống):**
+- `/gmv_max/store/list/`: and.not.or `is_owner_bc false` · `store_role AD_PROMOTION` · `store_authorized_bc_id 7239164658173722625` (TIKTOK_ADS_1), độc quyền GMV Max = TKQC 7230813704726609922; DARKMAN STORE cũng ủy quyền BC 7239… nhưng `is_gmv_max_available false`.
+- **22/22 chiến dịch** (20 PRODUCT_GMV_MAX + 2 LIVE_GMV_MAX, kể cả TC076 mới nhất) đều mang `store_authorized_bc_id 7147263165355589633` ⇒ mọi chiến dịch tạo trong Seller Center của gian này đều đứng dưới BC 7147…, không có cái nào dưới BC 7239….
+- `/bc/get/` → 40001 "advertiser does not grant you /bc/get/:GET permission" (app chưa xin scope Business Center) → không tra được qua API anh Trung là thành viên BC 7147… hay không; phải xem tay ở business.tiktok.com.
+- `/advertiser/info/` không trả `owner_bc_id` cho TKQC 7230… (chỉ tên, role ROLE_ADVERTISER, công ty PRECISE).
+- Mã BC 7147… (sinh ~2022) CŨ hơn BC TIKTOK_ADS_1 7239… (~2023) và cũ hơn cả shop 7494… (~2025) ⇒ nhiều khả năng là một BC cũ của anh / công ty mà shop and.not.or đang là tài sản (owner), còn TIKTOK_ADS_1 chỉ được shop chia sẻ quyền chạy quảng cáo (AD_PROMOTION). Chưa xác nhận.
+
+**Việc phải làm tay (anh Trung), trước khi code gì thêm:**
+1. Vào business.tiktok.com, xem danh sách Business Center mà tài khoản anh là thành viên → có BC mã 7147263165355589633 không, tên gì, anh là Admin hay chỉ thành viên. Trong BC đó xem Assets → TikTok Shop: and.not.or có nằm đó không (và ở BC TIKTOK_ADS_1 shop này hiện dưới dạng "được chia sẻ").
+2. Nếu anh là Admin BC 7147…: phương án rẻ nhất là cho TKQC 7230… có quyền dưới BC 7147… (chia sẻ tài khoản quảng cáo giữa 2 BC, hoặc ủy quyền lại GMV Max của shop cho một TKQC thuộc BC 7147…) rồi ủy quyền lại Hubsell → probe lại `update` budget +1.000 trên TC076 (đang tắt). Không tự làm khi chưa rõ: đổi BC độc quyền GMV Max có thể ảnh hưởng chiến dịch đang chạy (TC054, TC040 NEW, TC025 NEW, TC079).
+3. KHÔNG tạo lại 4 chiến dịch đang bật dưới BC 7239… chỉ để API sửa được — mất lịch sử học của chiến dịch, đổi lấy một nút bấm.
+
+**Hệ quả cho sản phẩm (đề xuất của Claude 23/09, chờ anh chốt):**
+- Giữ hướng đã LIVE: Hubsell GỢI Ý bằng số thật, khách tự sửa trong Seller Center. Nút sửa / tạo qua API vẫn CHƯA code cho tới khi chứng minh được trên gian nhà (sau bước 2).
+- Nên làm ngay vì rẻ và đúng lời TikTok: lưu `store_authorized_bc_id` của từng chiến dịch khi sync + so với BC của shop → cờ "sửa được qua API" theo từng chiến dịch; khi sau này có nút sửa thì chiến dịch lệch BC hiện đúng câu "Chiến dịch này thuộc Business Center khác, chỉ sửa được trong Seller Center" thay vì lỗi 40002.
+- Ticket còn mở được ("reach back at any time"). Nếu sau bước 1 anh KHÔNG có quyền ở BC 7147…, hỏi tiếp một câu: vì sao Seller Center tạo chiến dịch dưới BC 7147… trong khi shop đang ủy quyền BC 7239…, và seller đổi cách nào. Chưa gửi.
+
+
+## 8. XIN THÊM QUYỀN "GMV Max → Session" (anh Trung chốt 23/09/2026: xin để dành, CHƯA code tăng cường video)
+
+**Vì sao:** nhóm `/campaign/gmv_max/session/*` (max delivery theo sản phẩm + creative boost theo video — `docs/ADS-TIKTOK-GMV-MAX.md` mục 11)
+trả 40001 vì 18/09 chưa tick mục này. Anh chốt: xin sẵn, khi khách yêu cầu hoặc đối thủ có tính năng thì mới làm; chưa code gì.
+
+**Bấm ở đâu:** như mục 2 (portal → My Apps → Hubsell → App Detail → Authorization → Scope of permission → sửa). Tick thêm đúng MỘT mục:
+**Ads management → GMV Max → Session** (ô tìm: gõ `session`; endpoint hiện dưới tên `/campaign/gmv_max/session/*`). Giữ nguyên các mục đang có.
+KHÔNG tick *Exclusive authorization*, *Custom anchor*. Anh tự điền + Submit (Claude điền hộ làm treo tab).
+
+**Lý do (ô tối đa 500 ký tự — bản dưới 483 ký tự, dán nguyên văn):**
+
+> Hubsell is a commerce management SaaS for Vietnamese TikTok Shop sellers; our GMV Max integration (store, video, campaign read, reports) is live. We request GMV Max Session access to read the max delivery and creative boost sessions of a seller's Product GMV Max campaigns, so our campaign overview shows which videos and products are already boosted and does not suggest a duplicate boost. Read-only first; any future write is seller-initiated, confirmed in our UI and audit-logged.
+
+**Sau khi duyệt:** token cũ KHÔNG tự có quyền mới (mục 6.1) → khi nào bắt đầu code mới cần gian ủy quyền lại (tab Kết nối → Kết nối lại);
+probe đọc `session/list/` trên TC054 bằng token nhà để ghi shape thật; ghi ngày duyệt vào memory `hubsell-tiktok-gmv-max-api`.
+**Trạng thái: ✅ ĐÃ NỘP 23/09/2026 tối** (Claude điền trong Chrome của anh Trung sau khi anh đăng nhập; form scope KHÔNG treo tab như trình soạn ticket). Cây quyền sau khi tick: Ads management 5 (Campaign ✓ · GMV Max: Store management ✓ · Identity and video ✓ · Session ✓); 5 endpoint hiện thêm: `/campaign/gmv_max/session/create|update|delete|list|get/`. Cổng hiện "Your scope of permission changes are currently under review"; My Apps: **Approved · Scope of Permissions Change Pending**. App vẫn Online. Lần trước duyệt trong 1 ngày. ⏳ Có kết quả → ghi vào đây + memory.
