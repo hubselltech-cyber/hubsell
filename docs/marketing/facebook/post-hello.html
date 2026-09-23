@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>Hubsell — ảnh bài chào Facebook</title>
+<!-- Ảnh kèm bài viết đầu tiên — 1080×1350 (4:5, khổ chiếm nhiều màn hình nhất trên bảng tin điện thoại). Xuất PNG: node render.mjs -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1080px; height: 1350px; overflow: hidden; }
+  .post { position: relative; width: 1080px; height: 1350px; overflow: hidden; background: #fff; color: #0b1220;
+    font-family: "Be Vietnam Pro", system-ui, sans-serif; padding: 84px 84px 0; }
+  .post::before { content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(15,23,42,.045) 1.6px, transparent 1.6px); background-size: 28px 28px;
+    mask-image: linear-gradient(180deg, #000 0%, transparent 55%); -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 55%); }
+  .glow { position: absolute; border-radius: 50%; filter: blur(100px); }
+  .glow.a { width: 900px; height: 900px; right: -260px; bottom: -260px; background: rgba(16,185,129,.24); }
+  .glow.b { width: 520px; height: 520px; left: -220px; bottom: 120px; background: rgba(251,146,60,.14); }
+  .in { position: relative; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .brand img { width: 72px; height: 72px; border-radius: 18px; background: #fff;
+    box-shadow: 0 0 0 1px rgba(15,23,42,.1), 0 8px 20px -8px rgba(15,23,42,.25); }
+  .brand b { font-size: 42px; font-weight: 800; letter-spacing: -.02em; }
+  .hello { margin-top: 64px; font-size: 30px; font-weight: 600; color: #0d9488; }
+  h1 { margin-top: 14px; font-size: 76px; line-height: 1.12; font-weight: 800; letter-spacing: -.03em; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, #10b981, #0d9488);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  ul { margin-top: 40px; list-style: none; display: grid; gap: 16px; }
+  li { display: flex; align-items: center; gap: 16px; font-size: 30px; color: #334155; }
+  li i { flex: none; width: 34px; height: 34px; border-radius: 50%; background: #d1fae5; position: relative; }
+  li i::after { content: ""; position: absolute; left: 12px; top: 7px; width: 8px; height: 15px;
+    border: solid #059669; border-width: 0 3.5px 3.5px 0; transform: rotate(45deg); }
+  .device { position: absolute; left: 84px; right: 84px; top: 800px; }
+  .bezel { border-radius: 26px; background: #0f172a; padding: 13px; border: 1px solid rgba(100,116,139,.5);
+    box-shadow: 0 60px 100px -30px rgba(15,23,42,.55); }
+  .screen { height: 560px; border-radius: 14px 14px 0 0; overflow: hidden; background: #f8fafc; position: relative; }
+  .screen img { position: absolute; width: 1100px; left: -140px; top: -146px; }
+  .card { position: absolute; right: 40px; top: 730px; width: 400px; padding: 24px 26px; background: #fff; border-radius: 24px;
+    border: 1px solid rgba(15,23,42,.08); box-shadow: 0 30px 56px -18px rgba(15,23,42,.42); font-variant-numeric: tabular-nums; }
+  .card .lbl { font-size: 21px; color: #64748b; font-weight: 500; display: flex; align-items: center; gap: 10px; }
+  .card .lbl i { width: 12px; height: 12px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 6px rgba(16,185,129,.18); }
+  .card .num { margin-top: 8px; font-size: 44px; font-weight: 800; letter-spacing: -.02em; color: #10b981; }
+  .card .num small { font-size: 26px; font-weight: 600; color: #94a3b8; margin-left: 4px; }
+  .card .foot { margin-top: 5px; font-size: 19px; color: #64748b; }
+</style>
+</head>
+<body>
+<div class="post">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="in">
+    <div class="brand"><img src="../../../hubsell-landing/public/logo-hubsell.png" alt="" /><b>Hubsell</b></div>
+    <p class="hello">Xin chào các nhà bán hàng 👋</p>
+    <h1>Bán đa sàn, biết rõ<br />từng đơn <em>lời hay lỗ</em></h1>
+    <ul>
+      <li><i></i>Đơn Shopee, TikTok Shop, Lazada về một màn hình</li>
+      <li><i></i>Một kho chung, tồn tự đồng bộ lên các sàn</li>
+      <li><i></i>Lãi lỗ thật sau phí sàn, giá vốn, quảng cáo</li>
+    </ul>
+  </div>
+  <div class="device"><div class="bezel"><div class="screen">
+    <img src="../../../hubsell-landing/public/screens/dashboard-7d.webp" alt="" />
+  </div></div></div>
+  <div class="card">
+    <div class="lbl"><i></i>Lãi ròng 7 ngày qua</div>
+    <div class="num">+74.665.422<small>₫</small></div>
+    <div class="foot">Sau phí sàn, giá vốn, quảng cáo</div>
+  </div>
+</div>
+</body>
+</html>

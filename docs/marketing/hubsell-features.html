@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hubsell — Tính năng chính</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #04100d;
+    --em: #34e6a0;
+    --em2: #10b981;
+    --cy: #5eead4;
+    --ink: #ecfdf5;
+    --mute: #8fb5a8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; }
+  body {
+    font-family: "Be Vietnam Pro", "Segoe UI", sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(620px 520px at 50% 54%, rgba(16,185,129,.30), transparent 70%),
+      radial-gradient(700px 500px at 8% 0%, rgba(45,212,191,.16), transparent 70%),
+      radial-gradient(700px 520px at 100% 100%, rgba(52,230,160,.14), transparent 70%),
+      var(--bg);
+    position: relative;
+    overflow: hidden;
+  }
+  /* lưới mờ kiểu bảng mạch */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(94,234,212,.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(94,234,212,.07) 1px, transparent 1px);
+    background-size: 54px 54px;
+    -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 52%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(ellipse 75% 65% at 50% 52%, #000 30%, transparent 100%);
+  }
+  .stars { position: absolute; inset: 0; }
+  .stars i {
+    position: absolute; width: 3px; height: 3px; border-radius: 50%;
+    background: var(--em); box-shadow: 0 0 10px 2px rgba(52,230,160,.8);
+  }
+
+  header { position: absolute; top: 58px; left: 0; right: 0; text-align: center; }
+  .brand { display: inline-flex; align-items: center; gap: 14px; }
+  .brand .tile {
+    width: 54px; height: 54px; border-radius: 15px; background: #fff;
+    display: grid; place-items: center;
+    box-shadow: 0 0 28px rgba(52,230,160,.55);
+  }
+  .brand .tile img { width: 46px; height: 46px; object-fit: contain; }
+  .brand b { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
+  .eyebrow {
+    margin: 22px auto 0; display: inline-flex; align-items: center; gap: 10px;
+    padding: 8px 18px; border-radius: 999px; font-size: 15px; font-weight: 600;
+    letter-spacing: 2.2px; color: var(--cy);
+    border: 1px solid rgba(94,234,212,.35); background: rgba(94,234,212,.07);
+  }
+  .eyebrow::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--em); box-shadow: 0 0 12px 3px rgba(52,230,160,.9);
+  }
+  h1 {
+    margin-top: 20px; font-size: 62px; line-height: 1.12; font-weight: 800; letter-spacing: -1.6px;
+  }
+  h1 span {
+    background: linear-gradient(92deg, #a7f3d0 0%, var(--em) 45%, var(--cy) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { margin-top: 14px; font-size: 22px; color: var(--mute); font-weight: 400; }
+
+  /* đường nối + lõi */
+  svg.wires { position: absolute; inset: 0; width: 1080px; height: 1350px; }
+  .core {
+    position: absolute; left: 540px; top: 739px; width: 0; height: 0;
+  }
+  .ring {
+    position: absolute; border-radius: 50%; border: 1px solid rgba(94,234,212,.28);
+    left: 50%; top: 50%; transform: translate(-50%,-50%);
+  }
+  .ring.r1 { width: 222px; height: 222px; border-style: dashed; border-color: rgba(94,234,212,.45); }
+  .ring.r2 { width: 264px; height: 264px; }
+  .ring.r3 { width: 190px; height: 190px; border: 2px solid rgba(52,230,160,.75);
+             box-shadow: 0 0 40px rgba(52,230,160,.55), inset 0 0 30px rgba(52,230,160,.35); }
+  .disc {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 156px; height: 156px; border-radius: 50%;
+    background: #fff; overflow: hidden;
+    display: grid; place-items: center;
+    box-shadow: 0 0 70px 18px rgba(16,185,129,.55), 0 0 160px 60px rgba(16,185,129,.22);
+  }
+  .disc img { width: 152px; height: 152px; object-fit: contain; mix-blend-mode: multiply; }
+  .core .tag {
+    position: absolute; top: 150px; left: 50%; transform: translateX(-50%);
+    white-space: nowrap; font-size: 12px; font-weight: 600; letter-spacing: 2px; color: var(--cy);
+  }
+
+  /* thẻ tính năng */
+  .card {
+    position: absolute; width: 322px; height: 150px; padding: 20px 20px 18px;
+    border-radius: 22px; border: 1px solid transparent;
+    background:
+      linear-gradient(160deg, rgba(10,38,31,.92), rgba(5,20,17,.92)) padding-box,
+      linear-gradient(140deg, rgba(52,230,160,.75), rgba(94,234,212,.10) 45%, rgba(52,230,160,.35)) border-box;
+    box-shadow: 0 18px 50px rgba(0,0,0,.45), 0 0 34px rgba(16,185,129,.12);
+  }
+  .card.l { left: 30px; }
+  .card.r { left: 728px; }
+  .card .top { display: flex; align-items: center; gap: 13px; }
+  .ico {
+    flex: none; width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+    background: linear-gradient(145deg, rgba(52,230,160,.28), rgba(94,234,212,.08));
+    border: 1px solid rgba(52,230,160,.45);
+    box-shadow: 0 0 18px rgba(52,230,160,.30);
+  }
+  .ico svg { width: 24px; height: 24px; stroke: var(--em); fill: none; stroke-width: 2;
+             stroke-linecap: round; stroke-linejoin: round; }
+  .card h3 { font-size: 19.5px; white-space: nowrap; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
+  .card p { margin-top: 12px; font-size: 16px; line-height: 1.45; color: #b6d4c9; }
+  .card p em { font-style: normal; color: var(--em); font-weight: 600; }
+  .num {
+    position: absolute; bottom: 14px; right: 18px; font-size: 12px; font-weight: 700;
+    letter-spacing: 1.5px; color: rgba(94,234,212,.55);
+  }
+
+  footer { position: absolute; left: 0; right: 0; bottom: 56px; text-align: center; }
+  .chips { display: inline-flex; gap: 12px; align-items: center; }
+  .chips span.lbl { font-size: 17px; color: var(--mute); margin-right: 4px; }
+  .chip {
+    padding: 10px 20px; border-radius: 999px; font-size: 17px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05);
+  }
+  .chip i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; }
+  .foot { margin-top: 20px; font-size: 19px; color: #cfe9df; }
+  .foot b { color: var(--em); font-weight: 700; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="stars" id="stars"></div>
+
+  <header>
+    <div class="brand">
+      <div class="tile"><img src="file:///D:/Claude%20Code/Hubsell/frontend/public/logo-hubsell.png" alt=""></div>
+      <b>Hubsell</b>
+    </div>
+    <br>
+    <div class="eyebrow">NỀN TẢNG QUẢN LÝ BÁN HÀNG ĐA SÀN</div>
+    <h1>Bán đa sàn, <span>giữ trọn từng đồng</span></h1>
+    <div class="sub">8 tính năng giúp chủ shop bớt việc và không mất tiền oan</div>
+  </header>
+
+  <svg class="wires" id="wires" viewBox="0 0 1080 1350">
+    <defs>
+      <linearGradient id="gl" x1="0" x2="1"><stop offset="0" stop-color="#34e6a0" stop-opacity=".15"/><stop offset="1" stop-color="#34e6a0" stop-opacity=".95"/></linearGradient>
+      <linearGradient id="gr" x1="1" x2="0"><stop offset="0" stop-color="#34e6a0" stop-opacity=".15"/><stop offset="1" stop-color="#34e6a0" stop-opacity=".95"/></linearGradient>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+  </svg>
+
+  <div class="core">
+    <div class="ring r2"></div><div class="ring r1"></div><div class="ring r3"></div>
+    <div class="disc"><img src="file:///D:/Claude%20Code/Hubsell/frontend/public/logo-hubsell.png" alt="Hubsell"></div>
+    <div class="tag">MỘT NỀN TẢNG · MỌI GIAN HÀNG</div>
+  </div>
+
+  <div id="cards"></div>
+
+  <footer>
+    <div class="chips">
+      <span class="lbl">Kết nối</span>
+      <span class="chip"><i style="background:#EE4D2D"></i>Shopee</span>
+      <span class="chip"><i style="background:#fff"></i>TikTok Shop</span>
+      <span class="chip"><i style="background:#5b6bff"></i>Lazada</span>
+    </div>
+    <div class="foot">Dùng trọn bộ tính năng chỉ từ <b>99.000đ / tháng</b></div>
+  </footer>
+
+<script>
+  const ICON = {
+    ret: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    pnl: '<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>',
+    wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+    layers: '<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
+    sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+    doc: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+    dash: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  };
+  const LEFT = [
+    ['ret', 'Đối soát đơn hoàn', 'Ship báo hoàn mà hàng không về là <em>biết ngay</em>'],
+    ['pnl', 'Lãi lỗ thực từng đơn', 'Trừ hết phí sàn, giá vốn, thuế — biết đơn nào <em>lời thật</em>'],
+    ['wallet', 'Đối soát tiền ví sàn', 'Sàn trừ sai, trả thiếu là thấy <em>từng đồng</em>'],
+    ['phone', 'Cứu đơn giao thất bại', 'Báo ngay để gọi khách <em>trước khi hàng quay đầu</em>'],
+  ];
+  const RIGHT = [
+    ['layers', 'Xử lý đơn tập trung', 'Đơn 3 sàn về một màn hình, <em>in vận đơn hàng loạt</em>'],
+    ['sync', 'Đồng bộ tồn kho', 'Bán sàn này, sàn kia tự trừ — <em>hết bán lố</em>'],
+    ['doc', 'Hóa đơn tự động', 'Đơn giao xong là xuất hóa đơn điện tử, <em>không gõ tay</em>'],
+    ['dash', 'Báo cáo tổng quan', 'Mở lên là biết hôm nay <em>lời hay lỗ</em>'],
+  ];
+  const TOP = 400, H = 150, GAP = 26, CX = 540, CY = 739, R = 132;
+  const cards = document.getElementById('cards');
+  const wires = document.getElementById('wires');
+  const NS = 'http://www.w3.org/2000/svg';
+  const angles = [-33, -11, 11, 33];
+
+  function draw(list, side) {
+    list.forEach(([ic, title, desc], i) => {
+      const y = TOP + i * (H + GAP);
+      const n = String((side === 'l' ? 0 : 4) + i + 1).padStart(2, '0');
+      const el = document.createElement('div');
+      el.className = 'card ' + side;
+      el.style.top = y + 'px';
+      el.innerHTML =
+        '<div class="num">' + n + '</div>' +
+        '<div class="top"><div class="ico"><svg viewBox="0 0 24 24">' + ICON[ic] + '</svg></div><h3>' + title + '</h3></div>' +
+        '<p>' + desc + '</p>';
+      cards.appendChild(el);
+
+      const cy = y + H / 2;
+      const a = angles[i] * Math.PI / 180;
+      const sx = side === 'l' ? 352 : 728;
+      const ex = side === 'l' ? CX - R * Math.cos(a) : CX + R * Math.cos(a);
+      const ey = CY + R * Math.sin(a);
+      const mx = (sx + (side === 'l' ? CX - R * Math.cos(a) : CX + R * Math.cos(a))) / 2;
+      const p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', 'M' + sx + ',' + cy + ' C' + mx + ',' + cy + ' ' + mx + ',' + ey + ' ' + ex + ',' + ey);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', 'url(#' + (side === 'l' ? 'gl' : 'gr') + ')');
+      p.setAttribute('stroke-width', '2');
+      p.setAttribute('filter', 'url(#glow)');
+      wires.appendChild(p);
+      [[sx, cy, 4], [ex, ey, 5]].forEach(([x, yy, r]) => {
+        const c = document.createElementNS(NS, 'circle');
+        c.setAttribute('cx', x); c.setAttribute('cy', yy); c.setAttribute('r', r);
+        c.setAttribute('fill', '#34e6a0'); c.setAttribute('filter', 'url(#glow)');
+        wires.appendChild(c);
+      });
+    });
+  }
+  draw(LEFT, 'l'); draw(RIGHT, 'r');
+
+  // hạt sáng cố định (không random để ảnh ra giống nhau mỗi lần)
+  const pts = [[92,330],[180,1210],[300,372],[468,402],[640,396],[820,352],[990,320],[1010,1190],
+               [880,1236],[540,1150],[430,1196],[660,1216],[60,760],[1024,742],[540,420]];
+  const st = document.getElementById('stars');
+  pts.forEach(([x, y], i) => {
+    const d = document.createElement('i');
+    d.style.left = x + 'px'; d.style.top = y + 'px';
+    d.style.opacity = (0.35 + (i % 4) * 0.18).toFixed(2);
+    st.appendChild(d);
+  });
+</script>
+</body>
+</html>
