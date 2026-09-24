@@ -28,6 +28,7 @@ import {
   setRoasTargetByOwner,
 } from "../integrations/shopee/ads-auto-execute";
 import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
+import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
 import {
   computeChannelAdsRecommendations,
   createCampaignFromRecommendation,
@@ -229,6 +230,8 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
                 reasons: pauseReasons.get(c.hubsellPauseLogId ?? "") ?? [],
               }
             : null,
+          // ĐỢT C: từ khóa + vị trí Khám phá campaign thủ công (chỉ cấu hình, không hiệu suất).
+          keywords: platform === "shopee" ? parseManualBidding(c.manualBidding) : null,
           // ĐỢT B: Trợ lý đã hạ ngân sách ngày (còn giữ số gốc) — nhãn + nút "Trả lại ngân sách".
           hubsellBudgetCut:
             c.hubsellBudgetCutAt && c.hubsellBudgetBefore != null
@@ -703,6 +706,33 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       next(err);
     }
   });
+
+  // GET /api/ads/shopee/campaigns/:id/keyword-suggestions — ĐỢT C (24/09): từ khóa Shopee
+  // gợi ý cho SP của campaign (cache 24h, tối đa 2 call khi bấm) đối chiếu với từ khóa
+  // đang chọn: chưa có trong campaign / đang trả giá hớ. CHỈ ĐỌC — người sửa trên Seller Center.
+  if (platform === "shopee") {
+    router.get(`/${platform}/campaigns/:id/keyword-suggestions`, async (req: AuthRequest, res, next) => {
+      try {
+        const campaign = await prisma.adsCampaign.findFirst({
+          where: { id: req.params.id, channel: { userId: req.ownerId!, channelName } },
+          select: { id: true, channelId: true, itemIds: true, manualBidding: true },
+        });
+        if (!campaign) {
+          res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+          return;
+        }
+        const channel = await prisma.channel.findUnique({ where: { id: campaign.channelId } });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        const out = await getCampaignKeywordSuggestions(channel, campaign);
+        res.json({ ...out, syncedAt: out.syncedAt?.toISOString() ?? null });
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
 
   // POST /api/ads/{sàn}/campaigns/:id/restore-budget — ĐỢT B (24/09): chủ shop TRẢ
   // LẠI ngân sách gốc cho campaign Trợ lý đã hạ (campaign vẫn chạy). Lệnh GHI THẬT

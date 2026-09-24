@@ -1595,9 +1595,31 @@ export interface ShopeeAdsCampaignCommonInfo {
   item_id_list?: number[];
 }
 
+/** ĐỢT C — info_type 2 (docs đọc 24/09): từ khóa đã chọn + vị trí Khám phá của campaign đấu thầu thủ công. */
+export interface ShopeeAdsManualBiddingInfo {
+  enhanced_cpc?: boolean;
+  selected_keywords?: Array<{
+    keyword?: string;
+    /** deleted | normal | reserved | blacklist */
+    status?: string;
+    /** exact | broad */
+    match_type?: string;
+    bid_price_per_click?: number;
+  }>;
+  discovery_ads_locations?: Array<{
+    /** daily_discover | you_may_also_like */
+    location?: string;
+    /** active | inactive */
+    status?: string;
+    bid_price?: number;
+  }>;
+}
+
 export interface ShopeeAdsCampaignSettingEntry {
   campaign_id?: number;
   common_info?: ShopeeAdsCampaignCommonInfo;
+  /** info_type 2 — chỉ có khi hỏi "2" trong info_type_list. */
+  manual_bidding_info?: ShopeeAdsManualBiddingInfo;
   auto_bidding_info?: { roas_target?: number };
 }
 
@@ -1867,14 +1889,24 @@ export interface ShopeeSuggestedKeyword {
 }
 
 export async function getAdsRecommendedKeywordListRaw(
-  params: { accessToken: string; shopId: string; itemId: string | number },
+  params: {
+    accessToken: string;
+    shopId: string;
+    itemId: string | number;
+    /** Docs: "keyword seller typed in the manually add keyword window" — không kèm thì sàn chỉ trả
+     *  nhóm "highly recommended" (probe ANO 17/09 trả rỗng); đợt C gọi lại kèm chữ đầu tên SP. */
+    inputKeyword?: string;
+  },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeEnvelope & { response?: { suggested_keywords?: ShopeeSuggestedKeyword[] } }> {
   return callShopGet(
     SHOPEE_PATHS.adsRecommendedKeywordList,
     params.accessToken,
     params.shopId,
-    [["item_id", String(params.itemId)]],
+    [
+      ["item_id", String(params.itemId)],
+      ...(params.inputKeyword ? ([["input_keyword", params.inputKeyword]] as Array<[string, string]>) : []),
+    ],
     "get_recommended_keyword_list",
     cfg
   );

@@ -18,7 +18,7 @@
 // trong worker — không được chặn các luồng sync khác, cùng luật với ads-spend).
 // ============================================================
 
-import type { Channel } from "@prisma/client";
+import { Prisma, type Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import {
   getAdsCampaignDailyPerformance,
@@ -112,7 +112,9 @@ export async function upsertShopeeCampaignSettings(
         accessToken,
         shopId,
         campaignIds: batch,
-        infoTypeList: "1,3", // 1 = common info, 3 = auto bidding (roas_target)
+        // 1 = common info, 2 = manual bidding (từ khóa đã chọn + vị trí Khám phá — đợt C 24/09,
+        // cùng call nên 0 call thêm), 3 = auto bidding (roas_target)
+        infoTypeList: "1,2,3",
       },
       cfg
     );
@@ -123,7 +125,14 @@ export async function upsertShopeeCampaignSettings(
       const startTime = common?.campaign_duration?.start_time;
       const endTime = common?.campaign_duration?.end_time;
       const roas = entry.auto_bidding_info?.roas_target;
+      // Đợt C: giữ nguyên văn khối manual_bidding_info (JSON) — chỉ campaign thủ công có; trống → null.
+      const mb = entry.manual_bidding_info;
+      const manualBidding =
+        mb && ((mb.selected_keywords?.length ?? 0) > 0 || (mb.discovery_ads_locations?.length ?? 0) > 0)
+          ? (mb as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
       const data = {
+        manualBidding,
         adType: common?.ad_type ?? idToAdType.get(campaignId) ?? "",
         name: common?.ad_name ?? "",
         status: common?.campaign_status ?? "",

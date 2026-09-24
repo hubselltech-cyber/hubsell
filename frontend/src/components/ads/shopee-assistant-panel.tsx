@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   fetchLazadaCampaignLiveDetail,
   fetchShopeeAdsActionLog,
+  fetchShopeeKeywordSuggestions,
   type AdsAssistantScorecard,
   type AdsScorecardRow,
   type DeliveryCheck,
@@ -35,6 +36,7 @@ import {
   type ShopeeAssistantConfig,
   type ShopeeAssistantDecision,
   type ShopeeAssistantVerdict,
+  type ShopeeKeywordSuggestionsResponse,
 } from "@/lib/api";
 import { capitalizePhrase, formatRangePhrase, type DateRange } from "@/lib/date-range";
 import { formatNumber, formatVND } from "@/lib/format";
@@ -197,6 +199,27 @@ export function ShopeeAssistantModal({
   /** Khoảng ngày đang xem trên trang — phần soi sống Lazada dùng cùng khoảng. */
   range: DateRange;
 }) {
+  // ---- ĐỢT C: từ khóa Shopee gợi ý (gọi khi bấm nút, backend cache 24h) ----
+  const [kw, setKw] = useState<ShopeeKeywordSuggestionsResponse | null>(null);
+  const [kwLoading, setKwLoading] = useState(false);
+  const [kwError, setKwError] = useState<string | null>(null);
+  useEffect(() => {
+    setKw(null);
+    setKwError(null);
+  }, [campaign?.id]);
+  async function loadKeywordSuggestions() {
+    if (!campaign || kwLoading) return;
+    setKwLoading(true);
+    setKwError(null);
+    try {
+      setKw(await fetchShopeeKeywordSuggestions(campaign.id));
+    } catch (err) {
+      setKwError(`Không hỏi được từ khóa gợi ý: ${(err as Error).message}`);
+    } finally {
+      setKwLoading(false);
+    }
+  }
+
   // ---- Soi sống SP & từ khóa (CHỈ Lazada — Shopee không có API keyword) ----
   const [live, setLive] = useState<LazadaCampaignLiveDetail | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
@@ -384,6 +407,183 @@ export function ShopeeAssistantModal({
                     <Target className="size-4" />
                     Nâng lên {liveRoasText(campaign.roasTargetCheck.safeTarget)}
                   </Button>
+                )}
+              </div>
+            )}
+
+            {/* ĐỢT C: từ khóa Shopee — chỉ cấu hình (sàn không cấp hiệu suất từng từ khóa qua API) +
+                nút hỏi từ khóa Shopee gợi ý để đối chiếu: chưa có trong campaign / đang trả giá hớ. */}
+            {platform === "shopee" && (campaign.keywords || campaign.biddingMethod === "manual") && (
+              <div className="space-y-3 border-t pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-900">
+                    Từ khóa trong chiến dịch
+                    {campaign.keywords && (
+                      <span className="ml-1 font-normal text-muted-foreground">
+                        ({formatNumber(campaign.keywords.selected.filter((k) => k.status !== "deleted").length)} từ khóa
+                        {campaign.keywords.enhancedCpc ? " · Enhanced CPC" : ""})
+                      </span>
+                    )}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={kwLoading || !campaign.keywords}
+                    onClick={() => void loadKeywordSuggestions()}
+                    title="Hỏi Shopee từ khóa gợi ý cho sản phẩm của chiến dịch (lượt tìm 30 ngày, điểm chất lượng, giá thầu gợi ý) rồi đối chiếu với từ khóa đang chọn. Cache 24 giờ."
+                  >
+                    {kwLoading ? "Đang hỏi Shopee…" : kw ? "Hỏi lại Shopee" : "Từ khóa Shopee gợi ý"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Shopee KHÔNG cấp hiệu suất (chi phí, click, đơn) từng từ khóa qua API — bảng này chỉ là cấu hình
+                  đang đặt trên sàn. Muốn xem từ khóa nào ra đơn, mở Seller Center. Sửa từ khóa/giá thầu cũng làm trên
+                  Seller Center.
+                </p>
+                {!campaign.keywords && (
+                  <p className="text-sm text-muted-foreground">
+                    Chưa có cấu hình từ khóa từ sàn — xung kế tiếp sẽ kéo (30 phút), hoặc bấm Làm mới.
+                  </p>
+                )}
+                {campaign.keywords && campaign.keywords.selected.length > 0 && (
+                  <div className="min-w-0 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">Từ khóa</th>
+                          <th className="py-1.5 pr-3 font-medium">Khớp</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Giá thầu</th>
+                          {kw && <th className="py-1.5 pr-3 text-right font-medium">Shopee gợi ý</th>}
+                          <th className="py-1.5 text-right font-medium">Trạng thái</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {campaign.keywords.selected
+                          .filter((k) => k.status !== "deleted")
+                          .slice(0, 30)
+                          .map((k, i) => {
+                            const sug = kw?.rows.find((r) => r.keyword.toLowerCase() === k.keyword.toLowerCase()) ?? null;
+                            return (
+                              <tr
+                                key={`${k.keyword}-${i}`}
+                                className={cn("border-b last:border-0", sug?.overpaid && "bg-amber-50/70")}
+                              >
+                                <td className="max-w-56 py-1.5 pr-3">
+                                  <span className="block truncate text-slate-900">{k.keyword}</span>
+                                </td>
+                                <td className="py-1.5 pr-3 text-xs text-slate-600">
+                                  {k.matchType === "exact" ? "Chính xác" : k.matchType === "broad" ? "Mở rộng" : k.matchType || "—"}
+                                </td>
+                                <td className={cn("py-1.5 pr-3 text-right tabular-nums", sug?.overpaid && "font-semibold text-amber-700")}>
+                                  {formatVND(k.bid)}
+                                </td>
+                                {kw && (
+                                  <td className="py-1.5 pr-3 text-right tabular-nums text-slate-600">
+                                    {sug?.suggestedBid != null ? formatVND(sug.suggestedBid) : "—"}
+                                    {sug?.overpaid && (
+                                      <span className="ml-1 text-xs text-amber-700">
+                                        (hớ {Math.round(((k.bid - sug.suggestedBid!) / sug.suggestedBid!) * 100)}%)
+                                      </span>
+                                    )}
+                                  </td>
+                                )}
+                                <td className="py-1.5 text-right text-xs text-slate-500">
+                                  {k.status === "normal" ? "Đang chạy" : k.status === "reserved" ? "Chờ duyệt" : k.status === "blacklist" ? "Sàn chặn" : k.status || "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                    {campaign.keywords.selected.filter((k) => k.status !== "deleted").length > 30 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        +{formatNumber(campaign.keywords.selected.filter((k) => k.status !== "deleted").length - 30)} từ khóa khác — xem đủ trên Seller Center.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {campaign.keywords && campaign.keywords.discovery.length > 0 && (
+                  <p className="text-xs text-slate-600">
+                    Vị trí Khám phá:{" "}
+                    {campaign.keywords.discovery
+                      .map(
+                        (d) =>
+                          `${d.location === "daily_discover" ? "Khám phá hằng ngày" : d.location === "you_may_also_like" ? "Có thể bạn cũng thích" : d.location} ${d.active ? "bật" : "tắt"} · bid ${formatVND(d.bid)}`
+                      )
+                      .join(" — ")}
+                  </p>
+                )}
+                {kwError && <p className="text-sm text-amber-700">{kwError}</p>}
+                {kw && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Shopee gợi ý cho sản phẩm này{kw.inputKeyword ? ` (hỏi theo "${kw.inputKeyword}")` : ""} —{" "}
+                      {kw.fromCache ? "số đã hỏi trong 24 giờ" : "vừa hỏi sàn"}. Vàng = đang trả giá cao hơn gợi ý quá{" "}
+                      {Math.round((kw.overpayFactor - 1) * 100)}%; xanh = chưa có trong chiến dịch.
+                    </p>
+                    {kw.rows.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Shopee không trả từ khóa gợi ý nào cho sản phẩm này (kể cả khi hỏi theo tên sản phẩm).
+                      </p>
+                    ) : (
+                      <div className="min-w-0 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                              <th className="py-1.5 pr-3 font-medium">Từ khóa gợi ý</th>
+                              <th className="py-1.5 pr-3 text-right font-medium">Lượt tìm 30 ngày</th>
+                              <th className="py-1.5 pr-3 text-right font-medium">Điểm CL</th>
+                              <th className="py-1.5 pr-3 text-right font-medium">Bid gợi ý</th>
+                              <th className="py-1.5 text-right font-medium">Trong chiến dịch</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {kw.rows.slice(0, 20).map((r) => (
+                              <tr
+                                key={r.keyword}
+                                className={cn(
+                                  "border-b last:border-0",
+                                  r.overpaid ? "bg-amber-50/70" : !r.inCampaign ? "bg-emerald-50/50" : ""
+                                )}
+                              >
+                                <td className="max-w-56 py-1.5 pr-3">
+                                  <span className="block truncate text-slate-900">{r.keyword}</span>
+                                </td>
+                                <td className="py-1.5 pr-3 text-right tabular-nums">
+                                  {r.searchVolume != null ? formatNumber(r.searchVolume) : "—"}
+                                </td>
+                                <td className="py-1.5 pr-3 text-right tabular-nums">{r.qualityScore ?? "—"}</td>
+                                <td className="py-1.5 pr-3 text-right tabular-nums">
+                                  {r.suggestedBid != null ? formatVND(r.suggestedBid) : "—"}
+                                </td>
+                                <td className="py-1.5 text-right text-xs">
+                                  {r.inCampaign ? (
+                                    <span className={r.overpaid ? "font-semibold text-amber-700" : "text-slate-600"}>
+                                      Có · bid {formatVND(r.currentBid ?? 0)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-emerald-700">Chưa có</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {kw.rows.length > 20 && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            +{formatNumber(kw.rows.length - 20)} từ khóa gợi ý khác.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {kw.selectedWithoutSuggestion.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {formatNumber(kw.selectedWithoutSuggestion.length)} từ khóa đang chạy Shopee không gợi ý (không có số để so):{" "}
+                        {kw.selectedWithoutSuggestion.slice(0, 8).map((k) => k.keyword).join(", ")}
+                        {kw.selectedWithoutSuggestion.length > 8 ? "…" : ""}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

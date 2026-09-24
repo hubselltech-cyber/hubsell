@@ -311,7 +311,7 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
    hạ mức. Cắt cảnh báo ví cạn giả.
 
 ### Đợt C — chưa code
-10. **Bảng từ khóa đã chọn trong modal campaign thủ công** (`setting_info` info_type 2, 0 call thêm) — chỉ
+10. ✅ ĐÃ CODE 24/09 (mục 11) — **Bảng từ khóa đã chọn trong modal campaign thủ công** (`setting_info` info_type 2, 0 call thêm) — chỉ
     đọc, ghi rõ Shopee không cấp hiệu suất từng từ khóa.
 11. **Sửa từ khóa/giá thầu** (`edit_manual_product_ad_keywords`) — chỉ làm khi có seller thật dùng bảng đọc.
 
@@ -456,3 +456,41 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
 - 626 test backend pass (+13 mới), tsc + eslint sạch.
 - **CHƯA BẮN SỐNG** `change_budget` trên shop thật: lần đầu ở mode live trên ANO/DarkMan là lần xác minh (lỗi sàn
   ghi nguyên văn). ANO/DarkMan hiện dry_run → sổ sẽ hiện "Diễn tập hạ ngân sách" trước khi anh chuyển live.
+
+
+## 11. ĐỢT C ĐÃ CODE (24/09/2026 đêm, anh Trung: "Làm tiếp đợt C đi em") — từ khóa: đọc được gì thì hiện, gợi ý có số
+
+### 11.1 Căn cứ docs Shopee (đọc lại bằng Chrome anh 24/09)
+- `get_product_level_campaign_setting_info` info_type **2** = `manual_bidding_info`: `enhanced_cpc`, `selected_keywords[]`
+  (keyword, status ∈ deleted|normal|reserved|blacklist, match_type ∈ exact|broad, bid_price_per_click),
+  `discovery_ads_locations[]` (location ∈ daily_discover|you_may_also_like, status active/inactive, bid_price).
+  Cùng call với info_type 1,3 → hỏi "1,2,3" trong xung = **0 call thêm**.
+- `get_recommended_keyword_list`: item_id (bắt buộc) + `input_keyword` (tùy chọn, "keyword seller typed in the manually
+  add keyword window"); trả `suggested_keywords[]` (keyword, quality_score, search_volume 30 ngày, suggested_bid);
+  docs ghi "only return the highly recommended keywords" → không kèm input_keyword có thể rỗng (probe ANO 17/09).
+- **Không tồn tại** hiệu suất từng từ khóa qua API (Lazada có) → máy không có căn cứ tự sửa từ khóa; đợt C CHỈ ĐỌC + đối chiếu.
+
+### 11.2 Code
+- Xung: `upsertShopeeCampaignSettings` hỏi info_type "1,2,3", lưu nguyên văn `AdsCampaign.manualBidding` (JSON, null khi
+  auto/trống). Migration `20260925000000_ads_keywords` (+ `ads_item_signals.kwSuggestions/kwSuggestionsAt`).
+- `ads-keywords.ts` (thuần + service, test `ads-keywords.test.ts` 8 ca):
+  `parseManualBidding` → khối gọn; `mergeKeywordSignals(selected, suggestions)` → gợi ý ∩ đang chọn = `inCampaign`,
+  bid đang đặt > suggested_bid × **KEYWORD_OVERPAY_FACTOR 1,3** = `overpaid` (MẶC ĐỊNH TỰ ĐẶT, docs mục 3 "> 30%"),
+  xếp hớ trước → gợi ý chưa có theo lượt tìm → đang có; từ khóa đã xóa/blacklist không tính; từ khóa đang chạy mà
+  Shopee không gợi ý liệt kê riêng (không có số để so). `getCampaignKeywordSuggestions`: cache 24h
+  (`SIGNAL_FRESH_HOURS`), hết hạn → gọi sàn không kèm input_keyword, rỗng → gọi lại kèm 2–3 chữ đầu tên SP
+  (`inputKeywordFromName`), giữ tối đa 60 từ; tối đa 2 call/lượt bấm.
+- Route `GET /api/ads/shopee/campaigns/:id/keyword-suggestions` (chỉ Shopee). Payload dashboard thêm `campaigns[].keywords`.
+- Modal: khối "Từ khóa trong chiến dịch" (campaign thủ công): bảng từ khóa đang chọn (khớp, giá thầu, trạng thái) + dòng
+  vị trí Khám phá + câu nói thật "Shopee KHÔNG cấp hiệu suất từng từ khóa qua API"; nút **Từ khóa Shopee gợi ý** → thêm cột
+  "Shopee gợi ý" (hớ N%) vào bảng đang chọn + bảng gợi ý (lượt tìm, điểm CL, bid gợi ý, Có/Chưa có). Vàng = hớ, xanh = chưa có.
+
+### 11.3 Kiểm chứng
+- Soi local (DB dev, gian demo, manualBidding + cache gợi ý đặt tay): bảng 3 từ khóa đang chạy (deleted ẩn), hớ 43%
+  (2.000₫ vs 1.400₫), gợi ý "ví da"/"balo nam" chưa có, "túi riêng" không có số để so; route fromCache=true.
+- 633 test backend pass (+8), tsc + eslint sạch (backend + frontend).
+- **CHƯA bắn sống** get_recommended_keyword_list kèm input_keyword trên shop thật — lần bấm đầu trên ANO là lần xác minh
+  (rỗng cả hai lần thì UI nói rõ). manual_bidding_info sẽ về ở xung kế tiếp sau deploy (30').
+
+### 11.4 Còn treo
+- Ghi từ khóa (`edit_manual_product_ad_keywords`: add/delete/change_bid) — chỉ làm khi có seller thật dùng bảng đọc.

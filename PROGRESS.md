@@ -5,6 +5,18 @@
 
 ---
 
+## Phiên 24/09/2026 (đêm, 4) — Ads Shopee ĐỢT C: TỪ KHÓA đọc được gì thì hiện, gợi ý có số (anh Trung: "Làm tiếp đợt C đi em")
+
+Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 11. Tóm tắt:
+- **Docs**: info_type 2 = manual_bidding_info (từ khóa đã chọn + vị trí Khám phá) cùng call → 0 call thêm; get_recommended_keyword_list
+  có `input_keyword` tùy chọn (rỗng thì hỏi lại theo tên SP). Shopee KHÔNG cấp hiệu suất từng từ khóa → chỉ đọc + đối chiếu.
+- **Code**: xung lưu `AdsCampaign.manualBidding`; `ads-keywords.ts` (parseManualBidding, mergeKeywordSignals, cache 24h ở
+  ads_item_signals.kwSuggestions); route keyword-suggestions; modal: bảng từ khóa đang chọn + nút "Từ khóa Shopee gợi ý" (hớ >30%
+  = mặc định tự đặt, vàng; chưa có trong campaign = xanh). Migration `20260925000000_ads_keywords`.
+- Soi local đủ (hớ 43%, chưa có, không có số để so); 633 test pass (+8); tsc + eslint sạch. CHƯA bắn sống kèm input_keyword trên shop thật.
+
+---
+
 ## Phiên 24/09/2026 (đêm, 3) — Ads Shopee ĐỢT B: HẠ NGÂN SÁCH TRƯỚC, TẮT SAU + cờ ví tự nạp (anh Trung: "Em làm đợt B đi")
 
 Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 10. Tóm tắt:

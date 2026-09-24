@@ -6593,6 +6593,58 @@ export interface ShopeeAdsCampaignRow {
   /** Đợt B: Trợ lý đã hạ ngân sách ngày (before = số gốc, 0 = không giới hạn; cut = mức đã đặt) —
    *  null = không hạ / người đã tự đổi trên sàn / đã trả lại. */
   hubsellBudgetCut?: { at: string; before: number; cut: number } | null;
+  /** Đợt C: từ khóa + vị trí Khám phá campaign đấu thầu thủ công (đọc từ sàn mỗi xung, CHỈ cấu hình —
+   *  Shopee không cấp hiệu suất từng từ khóa qua API). null = auto bidding / Lazada / chưa có. */
+  keywords?: ShopeeCampaignKeywords | null;
+}
+
+export interface ShopeeSelectedKeyword {
+  keyword: string;
+  /** exact | broad */
+  matchType: string;
+  bid: number;
+  /** normal | reserved | deleted | blacklist */
+  status: string;
+}
+
+export interface ShopeeCampaignKeywords {
+  enhancedCpc: boolean;
+  selected: ShopeeSelectedKeyword[];
+  discovery: { location: string; active: boolean; bid: number }[];
+}
+
+/** Một từ khóa Shopee gợi ý cho SP của campaign, đã đối chiếu với từ khóa đang chọn. */
+export interface ShopeeKeywordSuggestionRow {
+  keyword: string;
+  qualityScore: number | null;
+  searchVolume: number | null;
+  suggestedBid: number | null;
+  /** Từ khóa này đã có trong campaign (status normal/reserved). */
+  inCampaign: boolean;
+  /** Bid đang đặt trong campaign (khi inCampaign). */
+  currentBid: number | null;
+  /** currentBid cao hơn suggestedBid quá hệ số cho phép — đang trả giá hớ. */
+  overpaid: boolean;
+}
+
+export interface ShopeeKeywordSuggestionsResponse {
+  itemId: string;
+  /** Lấy từ cache 24h hay vừa hỏi sàn. */
+  fromCache: boolean;
+  syncedAt: string | null;
+  /** input_keyword đã dùng khi sàn trả rỗng lần đầu ("" = không cần). */
+  inputKeyword: string;
+  /** Hệ số "trả giá hớ" (bid đang đặt > gợi ý × hệ số) — mặc định tự đặt, docs ghi rõ. */
+  overpayFactor: number;
+  rows: ShopeeKeywordSuggestionRow[];
+  /** Từ khóa đang chọn trong campaign mà Shopee KHÔNG gợi ý (không có số để so). */
+  selectedWithoutSuggestion: ShopeeSelectedKeyword[];
+}
+
+export function fetchShopeeKeywordSuggestions(campaignRowId: string) {
+  return apiFetch<ShopeeKeywordSuggestionsResponse>(
+    `/api/ads/shopee/campaigns/${campaignRowId}/keyword-suggestions`
+  );
 }
 
 export interface ShopeeAdsSummary {
