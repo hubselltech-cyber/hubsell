@@ -23,10 +23,12 @@ export function ProductHistoryDialog({
   product,
   open,
   onOpenChange,
+  showLocation = false,
 }: {
   product: Product;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  showLocation?: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -43,7 +45,7 @@ export function ProductHistoryDialog({
             </span>
           </DialogDescription>
         </DialogHeader>
-        <InventoryLogTable productId={product.id} compact />
+        <InventoryLogTable productId={product.id} compact showLocation={showLocation} />
       </DialogContent>
     </Dialog>
   );

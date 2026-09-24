@@ -73,26 +73,27 @@ enum Carrier {
 enum InventoryLogType {
   IMPORT // Nhập kho
   EXPORT // Xuất kho
-  SYNC   // Đồng bộ với sàn / đơn hàng trừ - hoàn kho tự động
+  SYNC // Đồng bộ với sàn / đơn hàng trừ - hoàn kho tự động
   ADJUST // Điều chỉnh: sửa số trực tiếp trên bảng, kiểm kê, nhập Excel đè số (24/09)
+  TRANSFER // Chuyển vị trí trong kho — tổng không đổi, mỗi đầu một dòng (đợt B)
 }
 
 enum ExpenseCategory {
-  RENT      // Tiền mặt bằng
-  SALARY    // Tiền nhân viên
+  RENT // Tiền mặt bằng
+  SALARY // Tiền nhân viên
   PACKAGING // Tiền đóng gói
-  ADS       // Tiền quảng cáo sàn
-  OTHER     // Chi phí khác
+  ADS // Tiền quảng cáo sàn
+  OTHER // Chi phí khác
 }
 
 enum ExpenseType {
-  FIXED    // Chi phí cố định (mặt bằng, lương...)
+  FIXED // Chi phí cố định (mặt bằng, lương...)
   VARIABLE // Chi phí biến đổi (quảng cáo, đóng gói...)
 }
 
 /// Chiều của một giao dịch vận hành: THU (tiền vào) hay CHI (tiền ra).
 enum TransactionDirection {
-  INCOME  // khoản THU vận hành (tiền vào)
+  INCOME // khoản THU vận hành (tiền vào)
   EXPENSE // khoản CHI vận hành (tiền ra)
 }
 
@@ -107,17 +108,17 @@ enum FundSourceType {
 
 /// Trạng thái khiếu nại chênh lệch phí vận chuyển với sàn
 enum ShippingDisputeStatus {
-  CHO_KHIEU_NAI  // phát hiện lệch, chưa gửi khiếu nại
+  CHO_KHIEU_NAI // phát hiện lệch, chưa gửi khiếu nại
   DANG_KHIEU_NAI // đã gửi khiếu nại, đang chờ sàn xử lý
-  DA_DOI_SOAT    // sàn đã đối soát/hoàn tiền xong
+  DA_DOI_SOAT // sàn đã đối soát/hoàn tiền xong
 }
 
 /// Trạng thái xử lý một khoản "sàn trả THIẾU" (rổ #2 trang Kiểm toán phí sàn)
 enum FeeAuditStatus {
-  CHO_XU_LY      // phát hiện lệch, chưa ai đụng
+  CHO_XU_LY // phát hiện lệch, chưa ai đụng
   DANG_KHIEU_NAI // đã gửi khiếu nại sàn, chờ phản hồi
-  DA_XU_LY       // sàn đã bù tiền / giải thích thỏa đáng
-  BO_QUA         // chủ shop xác nhận không đòi (số nhỏ, có lý do...)
+  DA_XU_LY // sàn đã bù tiền / giải thích thỏa đáng
+  BO_QUA // chủ shop xác nhận không đòi (số nhỏ, có lý do...)
 }
 
 /// Cơ sở tính của % thuế bổ sung — chủ shop chọn thẳng trên trang Thuế bổ
@@ -131,9 +132,9 @@ enum TaxCalculationBase {
 
 /// Kỳ áp dụng của % thuế bổ sung khi lên báo cáo (khớp bộ lọc thời gian).
 enum TaxFilterPeriod {
-  MONTH   // theo tháng
+  MONTH // theo tháng
   QUARTER // theo quý
-  YEAR    // theo năm
+  YEAR // theo năm
 }
 
 /// Hai luồng phát hành HĐĐT theo NĐ 123/2020 — quyết định tab cấu hình và bộ
@@ -149,23 +150,23 @@ enum InvoiceType {
 
 /// Vòng đời một yêu cầu phát hành hóa đơn điện tử gửi sang NCC.
 enum InvoiceLogStatus {
-  PENDING   // đã gửi yêu cầu, chờ NCC phát hành
-  ISSUED    // NCC đã phát hành thành công (có số hóa đơn)
+  PENDING // đã gửi yêu cầu, chờ NCC phát hành
+  ISSUED // NCC đã phát hành thành công (có số hóa đơn)
   CANCELLED // đã hủy hóa đơn
-  FAILED    // NCC từ chối / lỗi — xem errorMessage
+  FAILED // NCC từ chối / lỗi — xem errorMessage
 }
 
 /// Vòng đời một job trong hàng đợi bền (shopee_webhook_logs) — dùng chung cho
 /// sự kiện webhook Shopee VÀ job đối soát tồn kho (Double-Check).
 enum WebhookJobStatus {
-  PENDING    // chờ worker xử lý (hoặc chờ đến giờ retry — xem nextRetryAt)
+  PENDING // chờ worker xử lý (hoặc chờ đến giờ retry — xem nextRetryAt)
   PROCESSING // worker đang cầm job này
   /// Đã đẩy tồn lên sàn thành công NHƯNG chưa tin — update_stock của Shopee có
   /// thể trả 200 mà dữ liệu trên sàn ghi trễ. Job nằm ở trạng thái này chờ đến
   /// giờ (nextRetryAt) để worker gọi API đọc lại tồn thực tế và so khớp.
   VERIFYING
-  SUCCESS    // xử lý xong (job đối soát: tồn sàn ĐÃ khớp với Hubsell)
-  FAILED     // đã retry đủ số lần vẫn lỗi — cần người xem (đã bắn cảnh báo)
+  SUCCESS // xử lý xong (job đối soát: tồn sàn ĐÃ khớp với Hubsell)
+  FAILED // đã retry đủ số lần vẫn lỗi — cần người xem (đã bắn cảnh báo)
 }
 
 /// Kết quả MỘT lượt đẩy tồn kho lên sàn (bảng đối soát InventorySyncLog).
@@ -176,8 +177,8 @@ enum StockSyncStatus {
 
 /// Vai trò tài khoản — quyết định thấy gì và làm được gì.
 enum Role {
-  ADMIN     // Chủ shop: toàn quyền, thấy mọi gian hàng và mọi chỉ số tài chính
-  SALES     // Nhân viên vận hành: CHỈ các gian hàng được phân công, không thấy giá vốn/lợi nhuận
+  ADMIN // Chủ shop: toàn quyền, thấy mọi gian hàng và mọi chỉ số tài chính
+  SALES // Nhân viên vận hành: CHỈ các gian hàng được phân công, không thấy giá vốn/lợi nhuận
   WAREHOUSE // Nhân viên kho: thấy đơn của MỌI gian hàng để nhặt/đóng, không thấy tài chính
 }
 
@@ -185,37 +186,37 @@ enum Role {
 
 /// Người dùng của hệ thống (chủ shop / nhân viên)
 model User {
-  id           String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   /// Nullable từ 10/08: TÀI KHOẢN NHÂN VIÊN kiểu "chủ/nhânviên" không cần email
   /// (chủ shop cấp/reset mật khẩu hộ). Chủ shop luôn có email.
-  email        String?  @unique
+  email               String?   @unique
   /// Tên đăng nhập (thay thế được email ở ô login). LƯU LOWERCASE, 3-30 ký tự
   /// [a-z0-9._], CẤM "@" — ô đăng nhập chung phân biệt: có @ = email, không @ =
   /// username. Nullable: user cũ/staff chưa đặt vẫn đăng nhập bằng email.
-  username     String?  @unique
-  passwordHash String
-  fullName     String
+  username            String?   @unique
+  passwordHash        String
+  fullName            String
   /// Quốc gia ISO 3166-1 alpha-2 (mặc định VN) — nền cho i18n/tiền tệ sau này.
-  country      String   @default("VN")
+  country             String    @default("VN")
   /// SĐT chuẩn E.164 (vd "+84912345678") — src/phone.ts chuẩn hoá khi đăng ký;
   /// nền cho OTP SMS/WhatsApp sau này. Nullable: user cũ/Google chưa có SĐT.
-  phone        String?
+  phone               String?
   /// Ảnh đại diện dạng data URL base64 (image/jpeg|png|webp, FE đã thu nhỏ
   /// ~256px nên chỉ vài chục KB) — lưu thẳng trong DB, khỏi dựng object storage
   /// riêng cho một tấm ảnh nhỏ. Null = chưa đặt, FE hiện icon mặc định.
-  avatar       String?
+  avatar              String?
   /// `sub` Google trả về khi đăng nhập Google — khoá liên kết tài khoản OAuth.
-  googleId     String?  @unique
+  googleId            String?   @unique
   /// Quên mật khẩu: chỉ lưu SHA-256 CỦA token (lộ DB không lộ link reset),
   /// hạn 30 phút, dùng một lần (reset xong xoá cả hai cột).
   resetTokenHash      String?
   resetTokenExpiresAt DateTime?
-  role         Role     @default(SALES)
+  role                Role      @default(SALES)
   /// Quản trị NỀN TẢNG Hubsell (khác ADMIN của shop): mở khóa khu /admin —
   /// thống kê người dùng đăng ký, nhật ký webhook toàn hệ thống. Không nằm
   /// trong enum Role để khỏi đụng ma trận quyền shop; gán bằng script
   /// scripts/grant-platform-admin.ts, KHÔNG có API nào tự bật được cờ này.
-  isPlatformAdmin Boolean @default(false)
+  isPlatformAdmin     Boolean   @default(false)
 
   // ── Affiliate Tiếp Thị (referral của CHÍNH Hubsell — khác module /koc-marketing) ──
   /// Số thứ tự người dùng TỰ TĂNG — xương sống của mã giới thiệu có cấu trúc
@@ -229,7 +230,7 @@ model User {
   referredBy   User?   @relation("ReferralTree", fields: [referredById], references: [id], onDelete: SetNull)
   referrals    User[]  @relation("ReferralTree")
 
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
   /// Lần cuối tài khoản CÓ HOẠT ĐỘNG (request kèm token hợp lệ) — requireAuth
   /// chạm cột này tối đa 1 lần/6 giờ (fire-and-forget, không chặn request).
   /// Nền của chỉ số MAU/WAU trong Báo cáo nhà đầu tư; null = chưa ghi nhận
@@ -256,7 +257,8 @@ model User {
 
   channels          Channel[]
   products          Product[]
-  inventoryLogsMade InventoryLog[] @relation("InventoryLogActor")
+  inventoryLogsMade InventoryLog[]     @relation("InventoryLogActor")
+  stockLocations    StockLocation[]    @relation("StockLocations")
   operatingExpenses OperatingExpense[]
 
   // Phân quyền theo gian hàng — CHỈ có ý nghĩa với vai trò SALES.
@@ -309,7 +311,7 @@ model User {
   termsAcceptances TermsAcceptance[]
 
   // Bảng giá vốn tự nhập (tab Mapping giá vốn).
-  costPriceRules CostPriceRule[]
+  costPriceRules         CostPriceRule[]
   costConflictDismissals CostConflictDismissal[]
   tiktokAdsAuths         TiktokAdsAuth[]
 
@@ -325,20 +327,20 @@ model User {
 /// nhận. Phiên bản lấy từ src/lib/legal.ts (= ngày "Cập nhật lần cuối" trên
 /// hubsell.tech/terms và /privacy).
 model TermsAcceptance {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Bản Điều khoản dịch vụ đã đồng ý (vd "2026-09-10").
   termsVersion   String
   /// Bản Chính sách bảo mật đã đồng ý.
   privacyVersion String
   /// register_form | google_register | google_login — xem TermsAcceptanceSource.
-  source String
+  source         String
   /// IP đầu tiên trong x-forwarded-for (Render đứng sau proxy) — null nếu không có.
-  ip        String?
+  ip             String?
   /// User-Agent trình duyệt lúc đồng ý — cắt 512 ký tự.
-  userAgent String?
-  acceptedAt DateTime @default(now())
+  userAgent      String?
+  acceptedAt     DateTime @default(now())
 
   @@index([userId, acceptedAt])
 }
@@ -348,31 +350,31 @@ model TermsAcceptance {
 /// Một chủ shop có thể có NHIỀU gian hàng trên CÙNG một sàn (Shopee - Shop A,
 /// Shopee - Shop B). `channelName` là SÀN, `shopName` mới là gian hàng.
 model Channel {
-  id          String      @id @default(cuid())
-  userId      String
-  channelName ChannelName // sàn: SHOPEE / LAZADA / TIKTOK / OFFLINE
+  id                   String      @id @default(cuid())
+  userId               String
+  channelName          ChannelName // sàn: SHOPEE / LAZADA / TIKTOK / OFFLINE
   /// Tên gian hàng do chủ shop đặt — thứ phân biệt hai shop trên cùng một sàn.
   /// Mọi báo cáo phải hiển thị tên này, đừng gom theo channelName không thôi.
-  shopName    String
+  shopName             String
   /// Id gian hàng bên phía sàn, để dành cho khi có tích hợp API thật
-  externalShopId String?
+  externalShopId       String?
   /// Tên gian hàng phía sàn trả về (khác shopName do chủ shop tự đặt để hiển thị)
-  externalShopName String?
+  externalShopName     String?
   /// access_token của sàn (TikTok Shop) — dùng để gọi API. Giai đoạn giả lập là token ảo.
-  apiToken    String?
+  apiToken             String?
   /// refresh_token để làm mới access_token khi hết hạn (OAuth2 của sàn)
-  refreshToken String?
+  refreshToken         String?
   /// Thời điểm access_token hết hạn — trước khi gọi API phải kiểm tra & refresh nếu cần
   accessTokenExpireAt  DateTime?
   /// Thời điểm refresh_token hết hạn — quá hạn thì buộc chủ shop uỷ quyền lại
   refreshTokenExpireAt DateTime?
   /// shop_cipher của TikTok Shop — BẮT BUỘC gửi kèm mọi request API 202309 trở đi
-  shopCipher  String?
-  status      String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
+  shopCipher           String?
+  status               String      @default("ACTIVE") // ví dụ: ACTIVE, DISCONNECTED
   /// Thời điểm chuyển sang DISCONNECTED (ngắt tay / hết hạn ủy quyền / sàn thu
   /// hồi) — null khi ACTIVE. Bảng Phân bổ dòng tiền ẨN gian đã ngắt quá 30 ngày
   /// (giữ 30 ngày cho tiền đang giao/chờ đối soát về nốt).
-  disconnectedAt DateTime?
+  disconnectedAt       DateTime?
 
   // ── Bookkeeping của worker order-auto-sync (nguồn cho cảnh báo "sàn trễ
   // đồng bộ" trên Trung tâm điều hành) ──
@@ -381,7 +383,7 @@ model Channel {
   /// Lỗi của lần đồng bộ đơn gần nhất (null = lần gần nhất thành công).
   lastSyncError String?
   /// Số NHỊP đồng bộ đơn lỗi LIÊN TIẾP — thành công là reset về 0.
-  syncFailCount Int         @default(0)
+  syncFailCount Int       @default(0)
 
   // ── Số dư VÍ SÀN THẬT (bảng Phân bổ dòng tiền) ──
   /// Số dư ví hiện tại sàn báo (Shopee: current_balance của giao dịch ví mới
@@ -392,7 +394,7 @@ model Channel {
 
   // % phí sàn mặc định dùng để TẠM TÍNH lợi nhuận khi đơn chưa được quyết toán.
   // VD: 0.12 = 12%. Có thể chỉnh riêng cho từng gian hàng.
-  feeRate     Decimal     @default(0) @db.Decimal(5, 4)
+  feeRate Decimal @default(0) @db.Decimal(5, 4)
 
   /// Lựa chọn SẮP XẾP VẬN CHUYỂN mặc định của gian (04/09): phương thức
   /// pickup/dropoff + address_id + branch_id lần gần nhất seller chọn khi bấm
@@ -405,58 +407,58 @@ model Channel {
   /// "có thể bán" lên gian + worker đối soát định kỳ tự sửa lệch. TẮT (mặc
   /// định) = chỉ nút [Sync ngay toàn bộ] mới đẩy. Bật qua màn so sánh trước
   /// (Cài đặt đồng bộ) — không backfill, không bật hộ.
-  stockSyncEnabled   Boolean   @default(false)
-  stockSyncEnabledAt DateTime?
+  stockSyncEnabled           Boolean   @default(false)
+  stockSyncEnabledAt         DateTime?
   /// Bookkeeping worker đối soát tồn (stock-reconcile): lần chạy gần nhất +
   /// số SKU phát hiện lệch phải đẩy lại (0 = khớp hết). null = chưa chạy.
   lastStockReconcileAt       DateTime?
   lastStockReconcileMismatch Int?
-  createdAt   DateTime    @default(now())
+  createdAt                  DateTime  @default(now())
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders          Order[]
-  channelProducts ChannelProduct[]
-  staffAccess     StaffChannel[]
-  invoiceConfigs  InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
-  walletWithdrawals WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
-  operatingTxns   OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
-  adSpends        AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
-  adsCampaigns    AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
-  adsItemSignals  AdsItemSignal[] // tín hiệu thị trường theo SP cho Gợi ý chạy ads (đợt D)
-  adsAssistantConfig AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
-  adsActionLogs   AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
-  inventorySyncLogs   InventorySyncLog[]   // nhật ký từng lượt đẩy tồn lên sàn
-  inventorySyncAlerts InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
-  stockPushJobs       StockPushJob[]       // hàng đợi đẩy tồn khả dụng lên gian này
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders                Order[]
+  channelProducts       ChannelProduct[]
+  staffAccess           StaffChannel[]
+  invoiceConfigs        InvoiceConfig[] // api_key hóa đơn riêng của gian hàng này
+  walletWithdrawals     WalletWithdrawal[] // lệnh rút tiền ví sàn → ngân hàng
+  operatingTxns         OperatingExpense[] // khoản thu/chi vận hành gắn nguồn tiền vào gian này
+  adSpends              AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
+  adsCampaigns          AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
+  adsItemSignals        AdsItemSignal[] // tín hiệu thị trường theo SP cho Gợi ý chạy ads (đợt D)
+  adsAssistantConfig    AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
+  adsActionLogs         AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
+  inventorySyncLogs     InventorySyncLog[] // nhật ký từng lượt đẩy tồn lên sàn
+  inventorySyncAlerts   InventorySyncAlert[] // cảnh báo lệch tồn chưa xử lý
+  stockPushJobs         StockPushJob[] // hàng đợi đẩy tồn khả dụng lên gian này
   deliveryTrackingTasks DeliveryTrackingTask[] // hàng đợi hỏi tracking cứu đơn giao thất bại
-  appAuths        ChannelAppAuth[] // ủy quyền cho app phụ của Hubsell trên cùng gian (Hubsell Ads)
-  tiktokAdsStoreLink TiktokAdsStoreLink? // TKQC TikTok (Marketing API) đang chạy GMV Max cho gian này
+  appAuths              ChannelAppAuth[] // ủy quyền cho app phụ của Hubsell trên cùng gian (Hubsell Ads)
+  tiktokAdsStoreLink    TiktokAdsStoreLink? // TKQC TikTok (Marketing API) đang chạy GMV Max cho gian này
 
   // ── LỊCH QUÉT THEO TỪNG GIAN của worker auto-sync (12/09/2026, thay vòng
   // for tuần tự qua mọi gian — chịu tải hàng chục ngàn gian, nhiều worker) ──
   /// Hạn quét NHANH kế tiếp (đơn, hoàn, cứu đơn). null = đến hạn ngay (gian mới/boot).
-  nextFastSyncAt   DateTime?
+  nextFastSyncAt         DateTime?
   /// Hạn quét NHỊP GIỜ kế tiếp (đối soát phí, payout, rút ví, cảnh báo điều hành).
-  nextHourlySyncAt DateTime?
+  nextHourlySyncAt       DateTime?
   /// Hạn quét ADS kế tiếp (chi phí ngày + campaign + Trợ lý tự thực thi) — mặc định 24h.
-  nextAdsSyncAt    DateTime?
+  nextAdsSyncAt          DateTime?
   /// Lần sync ads xong gần nhất — trang Trợ lý quảng cáo mở mà cũ >30' thì nudge worker.
-  lastAdsSyncAt    DateTime?
+  lastAdsSyncAt          DateTime?
   /// Nối Hubsell Ads (hoặc lần đầu) → lượt ads kế tiếp kéo lùi 30 ngày thay vì 7.
-  adsBackfillPending Boolean @default(false)
+  adsBackfillPending     Boolean   @default(false)
   /// Gian VỪA NỐI API (TikTok/Shopee/Lazada): lượt worker đầu kéo trọn HISTORY_BACKFILL_DAYS
   /// ngày đơn + đối soát phí thật thay vì 2 ngày / 7 ngày, xong cả hai mới hạ cờ (23/09/2026:
   /// ANO Official nối xong, 44 đơn T7 sàn đã trả nhưng Kiểm toán báo oan vì bản kê chỉ quét 7 ngày).
-  historyBackfillPending Boolean @default(false)
+  historyBackfillPending Boolean   @default(false)
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
-  syncBackoffLevel Int      @default(0)
+  syncBackoffLevel       Int       @default(0)
   /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.
-  nextAdsPulseAt   DateTime?
+  nextAdsPulseAt         DateTime?
   /// Số dư ví ads sàn báo ở xung gần nhất (Shopee: total_balance; Lazada: 0 = cờ hết tiền, null = không rõ).
-  adsWalletBalance   Decimal?  @db.Decimal(14, 2)
-  adsWalletSyncedAt  DateTime?
+  adsWalletBalance       Decimal?  @db.Decimal(14, 2)
+  adsWalletSyncedAt      DateTime?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
-  syncLockedAt     DateTime?
+  syncLockedAt           DateTime?
 
   @@unique([userId, channelName, shopName]) // không trùng tên gian trong cùng sàn
   /// KHÓA CHỐNG TRÙNG SHOP: một user chỉ có MỘT bản ghi cho mỗi shop_id trên mỗi
@@ -533,12 +535,12 @@ model AdsCampaign {
   createdByHubsellAt DateTime?
   hubsellProposal    Json?
 
-  lastSyncedAt  DateTime  @updatedAt
-  createdAt     DateTime  @default(now())
+  lastSyncedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
 
-  channel    Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  dailyPerf  AdsCampaignDailyPerf[]
-  actionLogs AdsActionLog[]
+  channel            Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  dailyPerf          AdsCampaignDailyPerf[]
+  actionLogs         AdsActionLog[]
   tiktokAutoRule     TiktokAdsAutoRule? // cấu hình LOẠI VIDEO TỰ ĐỘNG (GMV Max) — theo từng chiến dịch
   tiktokVideoWatches TiktokAdsVideoWatch[]
 
@@ -690,7 +692,7 @@ model WalletWithdrawal {
 
 enum WithdrawalSource {
   MANUAL // kế toán tự xác nhận
-  SYNC   // đọc từ API ví của sàn
+  SYNC // đọc từ API ví của sàn
 }
 
 /// Phân quyền gian hàng cho nhân viên: nhân viên (staffId) được gán vào kênh
@@ -779,7 +781,7 @@ model OpsActivity {
 /// đang tồn tại chỉ có MỘT bản ghi (khoá ownerId × type × dedupeKey); detector
 /// upsert theo khoá đó và TỰ ĐÓNG (AUTO_CLOSED) khi điều kiện biến mất.
 model OpsAlert {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   ownerId   String
   /// Loại detector: stockout | channel-disconnected | loss-orders |
   /// shipping-fee-diff | channel-sync-stalled | ads-spike
@@ -845,18 +847,18 @@ model InvoiceConfig {
   companyAddress String? // địa chỉ trụ sở theo ĐKKD
 
   // ---- (2) Kết nối NCC hóa đơn (meInvoice khi provider = MISA)
-  provider     String  @default("MISA") // MISA | VIETTEL | BKAV | CUSTOM
-  partnerCode  String? // Mã đại lý ISV của Hubsell với NCC (isvCode) — đối soát hoa hồng
-  clientId     String? // Mã định danh (Client ID) do NCC cấp
-  secretKey    String? // Khóa bảo mật — nhạy cảm, chỉ trả về dạng che khi đọc
-  apiKey       String? // API key RIÊNG cho từng gian hàng — nhạy cảm, trả về che
-  customApiUrl String? // Endpoint khi provider = CUSTOM
+  provider          String  @default("MISA") // MISA | VIETTEL | BKAV | CUSTOM
+  partnerCode       String? // Mã đại lý ISV của Hubsell với NCC (isvCode) — đối soát hoa hồng
+  clientId          String? // Mã định danh (Client ID) do NCC cấp
+  secretKey         String? // Khóa bảo mật — nhạy cảm, chỉ trả về dạng che khi đọc
+  apiKey            String? // API key RIÊNG cho từng gian hàng — nhạy cảm, trả về che
+  customApiUrl      String? // Endpoint khi provider = CUSTOM
   /// MẪU SỐ hóa đơn theo TT 78/2021 (VD "1" = HĐ GTGT) — phải khớp mẫu đã
   /// đăng ký với CQT trên meInvoice, sai là NCC từ chối phát hành.
-  invoicePattern String?
+  invoicePattern    String?
   /// KÝ HIỆU hóa đơn theo TT 78/2021 (VD "C26TAA") — meInvoice tra đúng ký
   /// hiệu này để cấp số; không có/không khớp là lỗi "ký hiệu không tồn tại".
-  invoiceSeries String?
+  invoiceSeries     String?
   /// TÀI KHOẢN meInvoice CỦA SHOP (23/08 — kiến trúc multi-tenant): đăng nhập
   /// lấy token bằng bộ {MST + username + password} của CHÍNH shop, nên hóa đơn
   /// phát hành mang pháp nhân của shop. Client ID/Secret là khóa app Hubsell
@@ -866,16 +868,16 @@ model InvoiceConfig {
 
   // ---- (3) Chữ ký số — USB_TOKEN (thủ công) | ESIGN_CLOUD (MISA eSign từ xa,
   //      ký nền tự động không cần cắm USB)
-  signMethod String @default("USB_TOKEN")
+  signMethod     String  @default("USB_TOKEN")
   /// Bộ khóa tích hợp MISA eSign của shop (header x-clientId / x-clientKey).
   esignClientId  String?
   esignSecretKey String? // nhạy cảm — chỉ trả dạng che
   /// Tài khoản eSign để login-api lấy token ký nền.
-  esignUsername String?
-  esignPassword String? // nhạy cảm — chỉ trả dạng che
+  esignUsername  String?
+  esignPassword  String? // nhạy cảm — chỉ trả dạng che
   /// SERIAL CHỨNG THƯ SỐ dùng ký (chọn đúng cert khi tài khoản có nhiều) —
   /// map certAlias trong yêu cầu ký Signing/hash.
-  certSerial String?
+  certSerial     String?
 
   // ---- (4) meInvoice POS — HÓA ĐƠN TỪ MÁY TÍNH TIỀN (HKD/bán lẻ).
   //      CQT cấp DẢI MÃ trước cho máy đã đăng ký → phát hành tức thì tại máy,
@@ -883,16 +885,16 @@ model InvoiceConfig {
   //      chuyển CQT theo bảng tổng hợp). Bộ khóa API RIÊNG với meInvoice chuẩn.
   /// NCC luồng máy tính tiền — CHỌN RIÊNG với provider kê khai (shop có thể
   /// kê khai qua MISA nhưng POS qua NCC khác). Cùng bộ giá trị MISA|VIETTEL|VNPT|BKAV.
-  posProvider  String  @default("MISA")
-  posClientId  String?
-  posSecretKey String? // nhạy cảm — chỉ trả dạng che
+  posProvider   String  @default("MISA")
+  posClientId   String?
+  posSecretKey  String? // nhạy cảm — chỉ trả dạng che
   /// Dải mã CQT cấp sẵn cho máy tính tiền.
   posCodePrefix String?
   /// Mã máy tính tiền đã đăng ký với CQT.
-  posMachineId String?
+  posMachineId  String?
   /// Ký hiệu HĐ máy tính tiền theo TT 78/2021 — ký tự thứ 4 BẮT BUỘC là M
   /// (VD "C26MAA"); khác ký hiệu kê khai (invoiceSeries).
-  posSeries String?
+  posSeries     String?
 
   /// Luồng phát hành dùng khi xuất hóa đơn từ đơn hàng (tab đang cấu hình chỉ
   /// là giao diện — cờ này mới quyết định gọi bộ API nào).
@@ -901,7 +903,7 @@ model InvoiceConfig {
   /// TỰ ĐỘNG PHÁT HÀNH (23/08, học theo Salework): worker quét định kỳ, tự
   /// xuất hóa đơn cho đơn ĐÃ GIAO THÀNH CÔNG + ĐÃ ĐỐI SOÁT chưa có hóa đơn.
   /// Mặc định TẮT — chủ shop chủ động bật ở trang Kết nối & Xuất hóa đơn.
-  autoIssueEnabled Boolean @default(false)
+  autoIssueEnabled  Boolean @default(false)
   /// TỰ ĐỘNG ĐIỀU CHỈNH (24/08, TT 91/2026 Đ.10 k.5c): đơn hoàn NHẬP KHO mà đã
   /// có hóa đơn ISSUED → tự lập hóa đơn điều chỉnh GIẢM toàn bộ (số âm).
   /// Mặc định TẮT — bật cạnh công tắc Tự động phát hành.
@@ -921,11 +923,11 @@ model InvoiceConfig {
   /// Điều 9 NĐ 254/2026 — thời điểm chuyển giao quyền sở hữu) | SETTLED = chờ
   /// sàn đối soát xong (hành vi trước 19/09 — ít hóa đơn điều chỉnh hơn nhưng
   /// trễ vài ngày so với mốc luật).
-  autoIssueTrigger String @default("DELIVERED")
+  autoIssueTrigger     String    @default("DELIVERED")
   /// Lúc chủ shop BẬT công tắc (19/09): worker chỉ xuất đơn giao từ 0h (giờ VN)
   /// của ngày này — đơn cũ hơn có thể đã được lập hóa đơn tay bên NCC trước khi
   /// dùng Hubsell, tự xuất là TRÙNG. NULL = bật từ trước 19/09, không mốc chặn.
-  autoIssueEnabledAt DateTime?
+  autoIssueEnabledAt   DateTime?
   /// NGẮT MẠCH tự động phát hành: worker gặp lỗi cấp TÀI KHOẢN (sai mật khẩu
   /// meInvoice, hết số hóa đơn, chứng thư hết hạn…) thì ghi mốc + lý do ở đây
   /// và ngừng quét shop này tới khi chủ shop lưu lại cấu hình / bấm chạy lại.
@@ -976,7 +978,7 @@ model ShopTaxSetting {
 /// (Cascade) nhưng hóa đơn đã phát hành là chứng từ pháp lý — log phải còn
 /// nguyên mã đơn để tra soát với cơ quan thuế.
 model InvoiceLog {
-  id      String @id @default(cuid())
+  id      String  @id @default(cuid())
   ownerId String
   orderId String? // SetNull khi đơn bị xóa — log vẫn giữ nguyên orderCode
 
@@ -984,23 +986,23 @@ model InvoiceLog {
   provider  String // NCC phát hành: MISA | BKAV | VIETTEL | VNPT | CUSTOM
 
   /// Số hóa đơn điện tử NCC cấp (VD "C25TAA-00001234"). NULL khi chưa phát hành xong.
-  invoiceNo String?
+  invoiceNo          String?
   /// Mã giao dịch phía NCC — dùng để checkStatus/cancelInvoice sau này.
-  transactionId String?
+  transactionId      String?
   /// Ký hiệu hóa đơn LÚC PHÁT HÀNH (VD "1K26TYY") — cần để tham chiếu hóa đơn
   /// gốc khi lập hóa đơn điều chỉnh (shop có thể đổi ký hiệu trong config sau).
-  invoiceSeries String?
+  invoiceSeries      String?
   /// Snapshot InvoiceLine[] đã gửi NCC — hóa đơn điều chỉnh ghi ÂM đúng số ĐÃ
   /// XUẤT (không dựng lại từ đơn kẻo lệch khi thuế suất/voucher đổi sau này).
-  lines Json?
+  lines              Json?
   /// Khác NULL = đây là HÓA ĐƠN ĐIỀU CHỈNH cho InvoiceLog gốc có id này
   /// (totalAmount/vatAmount khi đó mang số ÂM — báo cáo cộng dồn tự trừ).
   adjustmentForLogId String?
 
   status InvoiceLogStatus @default(PENDING)
 
-  totalAmount Decimal @default(0) @db.Decimal(12, 2) // tổng tiền trên hóa đơn
-  vatAmount   Decimal @default(0) @db.Decimal(12, 2) // tiền thuế GTGT đầu ra trên hóa đơn
+  totalAmount         Decimal @default(0) @db.Decimal(12, 2) // tổng tiền trên hóa đơn
+  vatAmount           Decimal @default(0) @db.Decimal(12, 2) // tiền thuế GTGT đầu ra trên hóa đơn
   /// Số tiền thuế sàn TMĐT đã TRÍCH HỘ cho đơn này (1.5% doanh thu gốc) —
   /// nguồn số liệu cột "Thuế sàn trích hộ" của báo cáo đối soát.
   platformTaxWithheld Decimal @default(0) @db.Decimal(12, 2)
@@ -1060,13 +1062,13 @@ model InputInvoice {
   sellerTaxCode String? // MST nhà cung cấp xuất hóa đơn
   sellerName    String?
   invoiceDate   DateTime?
-  totalAmount   Decimal @default(0) @db.Decimal(14, 2) // tổng thanh toán trên hóa đơn
-  vatAmount     Decimal @default(0) @db.Decimal(14, 2) // tiền thuế GTGT đầu VÀO
+  totalAmount   Decimal   @default(0) @db.Decimal(14, 2) // tổng thanh toán trên hóa đơn
+  vatAmount     Decimal   @default(0) @db.Decimal(14, 2) // tiền thuế GTGT đầu VÀO
   /// Trạng thái NGUYÊN VĂN MISA trả (chưa chuẩn hoá enum — đợi thấy đủ giá trị
   /// thật từ sandbox rồi mới chốt bộ trạng thái).
-  statusRaw String?
+  statusRaw     String?
   /// JSON nguyên văn (stringify) bản ghi MISA trả về lần đồng bộ gần nhất.
-  rawPayload String
+  rawPayload    String
 
   syncedAt  DateTime @default(now()) // lần đồng bộ gần nhất chạm vào dòng này
   createdAt DateTime @default(now())
@@ -1081,43 +1083,43 @@ model InputInvoice {
 
 /// Sản phẩm trong kho
 model Product {
-  id              String   @id @default(cuid())
+  id              String  @id @default(cuid())
   userId          String
   skuCode         String
   productName     String
-  costPrice       Decimal  @default(0) @db.Decimal(12, 2) // giá vốn (cấu hình ở trang Cấu hình Giá vốn)
-  sellingPrice    Decimal  @default(0) @db.Decimal(12, 2) // giá bán
-  quantityInStock Int      @default(0)
+  costPrice       Decimal @default(0) @db.Decimal(12, 2) // giá vốn (cấu hình ở trang Cấu hình Giá vốn)
+  sellingPrice    Decimal @default(0) @db.Decimal(12, 2) // giá bán
+  quantityInStock Int     @default(0)
 
   /// Số lượng đang bị GIỮ (hold) bởi các đơn sàn chưa chốt — xem Order.stockHeldAt.
   /// Tồn KHẢ DỤNG (đẩy lên sàn / hiển thị) = quantityInStock − holdQuantity.
   /// KHÔNG trừ thẳng quantityInStock vì hàng vẫn nằm trong kho vật lý.
-  holdQuantity    Int      @default(0)
+  holdQuantity Int @default(0)
 
   /// TỒN AN TOÀN riêng của SKU này — số lượng giữ lại KHÔNG bán trên sàn (đệm
   /// chống bán vượt khi nhiều sàn nổ đơn sát nhau). NULL = dùng số mặc định
   /// toàn shop (ShopSyncSetting.safetyStockDefault). Tồn đẩy lên sàn =
   /// max(0, quantityInStock − holdQuantity − safetyStock).
-  safetyStock     Int?
+  safetyStock Int?
 
   /// NGƯỠNG CẢNH BÁO SẮP HẾT HÀNG riêng của SKU (05/09): tồn khả dụng
   /// (quantityInStock − holdQuantity) rơi xuống ≤ ngưỡng → chuông + thẻ
   /// Trung tâm điều hành (OpsAlert "low-stock", tự đóng khi nhập thêm).
   /// NULL = dùng mặc định toàn shop (ShopSyncSetting.lowStockDefault); 0 = tắt.
   lowStockThreshold Int?
-  imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
+  imageUrl          String? // ảnh sản phẩm (tuỳ chọn)
 
   /// NGỪNG KINH DOANH (24/09): false = SKU không còn bán, ẩn khỏi bảng Hàng hóa
   /// mặc định + không cảnh báo sắp hết hàng; tồn/đơn cũ/liên kết sàn GIỮ NGUYÊN
   /// để lịch sử và Lãi/Lỗ không đứt. Xóa cứng chỉ khi SKU chưa có đơn / liên kết.
-  isActive        Boolean  @default(true)
+  isActive Boolean @default(true)
 
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
   // Tên sản phẩm in trên hóa đơn có thể khác tên bán hàng (theo danh mục hàng hóa).
-  taxName String?
+  taxName  String?
   // % thuế suất GTGT đầu ra của SKU: 0 / 5 / 8 / 10. Lưu tĩnh khi user cấu hình,
   // module hóa đơn/đối soát thuế sau này sẽ đọc để tính VAT đầu ra.
-  vatRate Int @default(0)
+  vatRate  Int     @default(0)
   // Đơn vị tính in trên hóa đơn (Cái / Bộ / Hộp…) — NULL = dùng
   // InvoiceConfig.defaultUnitName của shop.
   unitName String?
@@ -1127,20 +1129,23 @@ model Product {
   // thuộc tính của món hàng, dùng chung cho mọi sàn. AI Copilot nạp các trường
   // này vào ngữ cảnh để tư vấn size/chất liệu/bảo quản (xem copilot-engine.ts).
   /// Chất liệu — vd "100% cotton 2 chiều, 250gsm".
-  material String?
+  material         String?
   /// Hướng dẫn bảo quản — vd "Giặt máy nước lạnh, lộn trái khi giặt".
   careInstructions String?
   /// Bảng quy đổi size JSON: [{"size":"M","heightCm":[158,168],"weightKg":[52,62]}].
   /// Sản phẩm không mặc để null/[] — AI tự bỏ qua tư vấn size.
-  sizeChart Json?
+  sizeChart        Json?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inventoryLogs InventoryLog[]
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inventoryLogs   InventoryLog[]
+  /// Tồn theo VỊ TRÍ CHỨA HÀNG (đợt B 24/09). Shop chưa tạo vị trí nào thì rỗng;
+  /// đã có vị trí thì Σ quantity (vị trí sellable) = quantityInStock (bất biến).
+  stockLevels     ProductStockLevel[]
   channelProducts ChannelProduct[]
-  orderItems    OrderItem[]
-  kocSamples    KocSampleShipment[] // phiếu hàng mẫu KOC xuất từ SKU này
+  orderItems      OrderItem[]
+  kocSamples      KocSampleShipment[] // phiếu hàng mẫu KOC xuất từ SKU này
 
   @@unique([userId, skuCode]) // mỗi user không trùng mã SKU
   @@index([userId])
@@ -1148,34 +1153,34 @@ model Product {
 
 /// Đơn hàng thuộc về một kênh bán
 model Order {
-  id             String   @id @default(cuid())
-  channelId      String
-  orderCode      String
-  customerName   String
+  id            String  @id @default(cuid())
+  channelId     String
+  orderCode     String
+  customerName  String
   // Số điện thoại khách — dùng để tra cứu nhanh khi khách gọi hỏi đơn.
   // Cho phép trống vì đơn cũ đồng bộ về trước đây không có trường này.
-  customerPhone  String?
-  totalAmount    Decimal  @default(0) @db.Decimal(12, 2)
+  customerPhone String?
+  totalAmount   Decimal @default(0) @db.Decimal(12, 2)
 
   // ===== VẬN CHUYỂN =====
   // Đơn vị vận chuyển (SPX, GHTK, J&T…) và mã vận đơn để in phiếu giao hàng.
   // Trống = sàn chưa gán đơn vị vận chuyển cho đơn này.
-  carrier      Carrier?
+  carrier             Carrier?
   /// Tên hãng NGUYÊN VĂN sàn trả ("SPX Instant", "AhaMove", "Hỏa Tốc"…) —
   /// nguồn nhận diện đơn HỎA TỐC (enum Carrier đã gộp mất sắc thái này).
   shippingCarrierName String?
-  trackingCode String?
+  trackingCode        String?
   // Đã bấm "Xác nhận chuẩn bị hàng" chưa — mốc giữa lúc đơn về và lúc bàn giao
   // cho shipper, để chủ shop biết đơn nào đã đóng gói xong mà chưa ai đến lấy.
-  packedAt DateTime?
+  packedAt            DateTime?
   // Đã in phiếu giao hàng chưa. Đây là chốt chặn IN TRÙNG: nhiều nhân viên
   // cùng soát đơn thì người sau nhìn vào biết ngay phiếu đã được in, khỏi in
   // lại và gói lại đơn người khác đang làm.
-  labelPrintedAt DateTime?
+  labelPrintedAt      DateTime?
   /// Mã KIỆN phía sàn sau khi sắp xếp vận chuyển (Lazada package_id "FP...",
   /// TikTok package id). Lazada cần mã này để RTS + tải vận đơn; Shopee dùng
   /// order_sn nên để null. Không có = chưa sắp xếp qua Hubsell (sẽ hỏi lại sàn).
-  platformPackageId String?
+  platformPackageId   String?
 
   // Số DÒNG HÀNG của đơn (đếm OrderItem, không phải tổng số lượng).
   // Lưu sẵn ở đây thay vì đếm quan hệ mỗi lần truy vấn, vì Prisma không lọc
@@ -1199,18 +1204,18 @@ model Order {
   /// ---- SỐ CỦA SÀN VỀ YÊU CẦU HOÀN (19/08, chốt anh Trung: "không bịa giá") ----
   /// Giải pháp sàn chốt: hàng về hay khách giữ hàng. Null = chưa có yêu cầu /
   /// sàn chưa nói (đơn cờ cũ trước khi có trường này).
-  returnSolution ReturnSolution?
+  returnSolution       ReturnSolution?
   /// Số tiền hoàn SÀN BÁO trên yêu cầu còn sống (đang treo HOẶC đã ACCEPTED) —
   /// Shopee Returns refund_amount. KHÁC refundedAmount (số THẬT escrow): khi
   /// escrow chưa có, Lãi/Lỗ dùng số này thay vì tạm tính full doanh thu.
-  platformRefundAmount Decimal @default(0) @db.Decimal(12, 2)
+  platformRefundAmount Decimal         @default(0) @db.Decimal(12, 2)
   /// Trạng thái yêu cầu hoàn NGUYÊN VĂN của sàn (Shopee: REQUESTED/PROCESSING/
   /// ACCEPTED/JUDGING/SELLER_DISPUTE…). Null = không có yêu cầu sống.
   platformReturnStatus String?
   /// Sàn xác nhận KIỆN HOÀN ĐÃ VỀ TAY seller (Shopee reverse_logistics_status
   /// = LOGISTICS_DELIVERY_DONE) → Lãi/Lỗ thu hồi giá vốn dù kho chưa quét;
   /// kho đánh DAMAGED/WRITTEN_OFF sau đó thì mới tính mất.
-  returnDeliveredAt DateTime?
+  returnDeliveredAt    DateTime?
 
   /// Số tiền bưu cục/sàn đã đền cho kiện hàng hỏng hoặc mất.
   ///
@@ -1259,8 +1264,8 @@ model Order {
   /// Mốc đã NHẢ hold (khi đơn chốt → chuyển thành trừ thật, hoặc đơn hủy).
   /// Có mốc = holdQuantity đã được trả lại, không nhả lần hai.
   stockHoldReleasedAt DateTime?
-  paymentStatus  String   @default("UNPAID")  // ví dụ: UNPAID, PAID, REFUNDED
-  shippingStatus ShippingStatus @default(PENDING)
+  paymentStatus       String         @default("UNPAID") // ví dụ: UNPAID, PAID, REFUNDED
+  shippingStatus      ShippingStatus @default(PENDING)
 
   /// Trạng thái HÓA ĐƠN ĐIỆN TỬ mới nhất của đơn (denormalize từ InvoiceLog để
   /// danh sách đơn lọc "đã/chưa xuất hóa đơn" không phải join). NULL = chưa từng
@@ -1272,17 +1277,17 @@ model Order {
   /// NULL = khách không yêu cầu (đã hỏi sàn và sàn báo không có, hoặc chưa hỏi
   /// — phân biệt bằng buyerInvoiceFetchedAt). Giữ lại cả sau khi che info để
   /// badge/lịch sử vẫn biết đơn này từng có yêu cầu.
-  invoiceRequestType String?
+  invoiceRequestType    String?
   /// Thông tin xuất hóa đơn khách cung cấp (tên/MST/email/địa chỉ — JSON chuẩn
   /// hóa từ invoice_detail của sàn). Sàn ẨN thông tin sau 30 ngày kể từ đơn
   /// hoàn thành nên phải kéo về sớm; phía Hubsell cron log-cleanup sẽ XÓA
   /// (DbNull) sau khi hóa đơn phát hành 30 ngày hoặc sau 90 ngày không phát
   /// hành — tuân thủ Luật bảo vệ dữ liệu cá nhân, data chỉ "ghé qua".
-  buyerInvoiceInfo Json?
+  buyerInvoiceInfo      Json?
   /// Mốc đã hỏi sàn xong (kể cả kết quả "không yêu cầu") — chống hỏi lặp.
   /// NULL + đơn DELIVERED = worker sẽ hỏi ở lượt quét tới.
   buyerInvoiceFetchedAt DateTime?
-  createdAt      DateTime @default(now())
+  createdAt             DateTime  @default(now())
 
   // ===== PHÍ SÀN 2 GIAI ĐOẠN =====
   // GĐ1 — TẠM TÍNH: khi đơn mới về, lấy % mặc định của kênh để ước tính.
@@ -1290,78 +1295,78 @@ model Order {
 
   // GĐ2 — QUYẾT TOÁN: khi đơn hoàn tất, sàn trả về số liệu tài chính THỰC TẾ.
   // Các trường này ghi đè số tạm tính khi lên báo cáo dòng tiền.
-  isSettled       Boolean   @default(false) // đã được sàn quyết toán/giải ngân chưa
-  settledAt       DateTime? // thời điểm quyết toán
-  fixedFee        Decimal   @default(0) @db.Decimal(12, 2) // phí cố định
-  serviceFee      Decimal   @default(0) @db.Decimal(12, 2) // phí dịch vụ (Freeship/Voucher Xtra)
+  isSettled             Boolean               @default(false) // đã được sàn quyết toán/giải ngân chưa
+  settledAt             DateTime? // thời điểm quyết toán
+  fixedFee              Decimal               @default(0) @db.Decimal(12, 2) // phí cố định
+  serviceFee            Decimal               @default(0) @db.Decimal(12, 2) // phí dịch vụ (Freeship/Voucher Xtra)
   /// Phí "dịch vụ PiShip" (bảo hiểm giao hàng Shopee VN) — Seller Center tách
   /// dòng riêng khỏi Phí Dịch Vụ nên Hubsell cũng tách cột riêng, khỏi nhầm.
-  sellerProtectionFee Decimal @default(0) @db.Decimal(12, 2)
-  paymentFee      Decimal   @default(0) @db.Decimal(12, 2) // phí thanh toán
-  affiliateFee    Decimal   @default(0) @db.Decimal(12, 2) // phí tiếp thị liên kết (Affiliate)
-  sellerVoucher   Decimal   @default(0) @db.Decimal(12, 2) // voucher trợ giá do SHOP tự chịu
+  sellerProtectionFee   Decimal               @default(0) @db.Decimal(12, 2)
+  paymentFee            Decimal               @default(0) @db.Decimal(12, 2) // phí thanh toán
+  affiliateFee          Decimal               @default(0) @db.Decimal(12, 2) // phí tiếp thị liên kết (Affiliate)
+  sellerVoucher         Decimal               @default(0) @db.Decimal(12, 2) // voucher trợ giá do SHOP tự chịu
   /// Riêng phần voucher NGƯỜI BÁN giảm THẲNG vào số khách trả đơn này
   /// (voucher_from_seller Shopee) — KHÔNG gồm xu hoàn (khách vẫn trả đủ, xu
   /// dùng đơn sau). Là số CHIẾT KHẤU trừ vào dòng hàng khi phát hành hóa đơn.
   /// Lazada luôn 0: paid_price từng dòng ĐÃ trừ voucher người bán.
-  sellerDiscountVoucher Decimal @default(0) @db.Decimal(12, 2)
+  sellerDiscountVoucher Decimal               @default(0) @db.Decimal(12, 2)
   // --- Phí vận chuyển & đối soát khiếu nại ---
-  shippingFeeQuoted Decimal @default(0) @db.Decimal(12, 2) // phí ship SÀN BÁO lúc đặt đơn
-  shippingFeeActual Decimal @default(0) @db.Decimal(12, 2) // phí ship THỰC TẾ sàn trừ khi quyết toán
+  shippingFeeQuoted     Decimal               @default(0) @db.Decimal(12, 2) // phí ship SÀN BÁO lúc đặt đơn
+  shippingFeeActual     Decimal               @default(0) @db.Decimal(12, 2) // phí ship THỰC TẾ sàn trừ khi quyết toán
   // Chênh lệch = thực tế − sàn báo. LƯU DƯƠNG = số tiền shop bị trừ thêm (cần đòi lại).
-  shippingFeeDiff   Decimal @default(0) @db.Decimal(12, 2)
+  shippingFeeDiff       Decimal               @default(0) @db.Decimal(12, 2)
   shippingDisputeStatus ShippingDisputeStatus @default(CHO_KHIEU_NAI)
-  platformSubsidy Decimal   @default(0) @db.Decimal(12, 2) // trợ giá từ SÀN (giảm chi phí cho shop)
-  actualPayout    Decimal   @default(0) @db.Decimal(12, 2) // tiền thực nhận về ví
+  platformSubsidy       Decimal               @default(0) @db.Decimal(12, 2) // trợ giá từ SÀN (giảm chi phí cho shop)
+  actualPayout          Decimal               @default(0) @db.Decimal(12, 2) // tiền thực nhận về ví
   // --- KIỂM TOÁN PHÍ SÀN (trang /finance/fee-audit, 30/08) ---
   /// Snapshot số escrow ƯỚC TÍNH CỦA CHÍNH SÀN trước giải ngân (Shopee
   /// get_escrow_detail cho đơn chưa payout — cùng số màn "Doanh thu ước tính"
   /// Seller Center). syncShopeeSettlements KHÔNG ghi đè cột này: giữ làm MẪU SỐ
   /// so với actualPayout lúc quyết toán. NULL = sàn không cấp số ước tính
   /// (Lazada không có API này — đúng triết lý "không bịa số", không soi mò).
-  expectedPayout  Decimal?  @db.Decimal(12, 2)
+  expectedPayout        Decimal?              @db.Decimal(12, 2)
   /// Snapshot NGUYÊN BẢN các trường số của order_income ước tính — chụp cùng
   /// lúc expectedPayout. Cho phép diff TỪNG THÀNH PHẦN lúc quyết toán: phí có
   /// mẫu số mà thu vượt mới buộc tội, khoản chỉ chốt lúc giải ngân (hoa hồng
   /// affiliate AMS, phí sàn đẻ mới...) tự rơi vào rổ "không buộc tội" — hết
   /// báo oan kiểu đơn 26082480K9AARJ (01/09). NULL = đơn ước tính trước bản
   /// nâng cấp → quyết toán chạy chế độ tương thích (chỉ trừ được phí AMS).
-  expectedIncome  Json?
+  expectedIncome        Json?
   /// Kết quả buộc tội "sàn trả thiếu", GHI MỘT LẦN lúc quyết toán: tổng các
   /// thành phần phí CÓ mẫu số ước tính bị thu vượt (computePayoutShortfall),
   /// chặn trần bằng mức tụt escrow thật. Tách cột thay vì tính lúc query vì
   /// Prisma không so được 2 cột trong where.
-  payoutShortfall Decimal   @default(0) @db.Decimal(12, 2)
+  payoutShortfall       Decimal               @default(0) @db.Decimal(12, 2)
   /// Bảng diff từng thành phần (ShortfallDetailItem[]) ghi cùng payoutShortfall
   /// — FE hiện "trả thiếu vì đâu", khoản không buộc tội giữ lại để theo dõi.
   payoutShortfallDetail Json?
-  payoutAuditStatus FeeAuditStatus @default(CHO_XU_LY) // xử lý khoản trả thiếu
+  payoutAuditStatus     FeeAuditStatus        @default(CHO_XU_LY) // xử lý khoản trả thiếu
   /// Mốc GIAO THÀNH CÔNG — ghi khi shippingStatus chuyển sang DELIVERED. Đơn
   /// backfill cũ nhận mốc lúc đồng bộ (muộn hơn thực tế) → phép đếm "quá hạn
   /// chưa trả tiền" chỉ THẬN TRỌNG hơn chứ không báo oan.
-  deliveredAt     DateTime?
+  deliveredAt           DateTime?
   // --- Bóc tách quyết toán CHI TIẾT (chỉ hiển thị ở Lãi/Lỗ Thực Hiện) ---
   // Các khoản này nằm NGOÀI công thức netRevenue dùng chung: trợ giá VC là bóc
   // tách nội bộ của phí ship (đã gói trong shippingFeeDiff), còn ví QC/thuế là
   // khoản sàn khấu trừ lúc GIẢI NGÂN — chúng đã phản ánh trong actualPayout.
-  shipSubsidyPlatform Decimal @default(0) @db.Decimal(12, 2) // trợ giá VC từ SÀN
-  shipSubsidyShop     Decimal @default(0) @db.Decimal(12, 2) // trợ giá VC do SHOP chịu
-  adWalletTopup       Decimal @default(0) @db.Decimal(12, 2) // sàn trừ nạp ví quảng cáo khi giải ngân
-  taxWithheld         Decimal @default(0) @db.Decimal(12, 2) // thuế sàn thu hộ (VD 1.5%)
+  shipSubsidyPlatform   Decimal               @default(0) @db.Decimal(12, 2) // trợ giá VC từ SÀN
+  shipSubsidyShop       Decimal               @default(0) @db.Decimal(12, 2) // trợ giá VC do SHOP chịu
+  adWalletTopup         Decimal               @default(0) @db.Decimal(12, 2) // sàn trừ nạp ví quảng cáo khi giải ngân
+  taxWithheld           Decimal               @default(0) @db.Decimal(12, 2) // thuế sàn thu hộ (VD 1.5%)
   /// TIỀN ĐÃ HOÀN CHO KHÁCH (magnitude dương) — nguồn: Shopee escrow
   /// seller_return_refund; TikTok/Lazada reverse API đổ vào sau. 0 = chưa có
   /// số hoàn thật (đơn hoàn chưa chốt → engine tạm tính thận trọng).
-  refundedAmount      Decimal @default(0) @db.Decimal(12, 2)
+  refundedAmount        Decimal               @default(0) @db.Decimal(12, 2)
 
-  channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  inventoryLogs InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
-  items         OrderItem[] // chi tiết dòng sản phẩm trong đơn
-  invoiceLogs   InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
-  lazadaSettlement LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
-  tiktokSettlement TiktokOrderSettlement? // bản kê chi tiết TikTok (đã quyết toán hoặc ước tính của sàn)
-  deliveryFailNotice DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
+  channel              Channel                @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  inventoryLogs        InventoryLog[] // các lần trừ/hoàn kho gắn với đơn này
+  items                OrderItem[] // chi tiết dòng sản phẩm trong đơn
+  invoiceLogs          InvoiceLog[] // hóa đơn điện tử đã phát hành cho đơn này
+  lazadaSettlement     LazadaOrderSettlement? // sao kê quyết toán chi tiết (chỉ đơn Lazada)
+  tiktokSettlement     TiktokOrderSettlement? // bản kê chi tiết TikTok (đã quyết toán hoặc ước tính của sàn)
+  deliveryFailNotice   DeliveryFailNotice? // cảnh báo "giao 2 lần không thành công" (nếu có)
   deliveryTrackingTask DeliveryTrackingTask? // vé xếp hàng hỏi tracking (cứu đơn giao thất bại)
-  kocAttribution KocOrderAttribution? // đơn affiliate quy cho KOC nào (Sổ KOC)
+  kocAttribution       KocOrderAttribution? // đơn affiliate quy cho KOC nào (Sổ KOC)
 
   // Mã đơn là DUY NHẤT trong một gian hàng — chốt để đồng bộ API sàn idempotent:
   // kéo cùng một đơn nhiều lần thì upsert đúng bản ghi đó, không tạo trùng.
@@ -1379,25 +1384,25 @@ model Order {
 /// costPriceAtSale = GIÁ VỐN GỐC tại thời điểm phát sinh đơn (snapshot) —
 /// dù sau này giá vốn sản phẩm thay đổi, báo cáo lãi/lỗ của đơn cũ vẫn chính xác.
 model OrderItem {
-  id              String  @id @default(cuid())
-  orderId         String
-  productId       String? // sản phẩm gốc (SetNull nếu sản phẩm bị xoá)
-  channelSku      String // SKU trên sàn
-  productName     String // tên sản phẩm tại thời điểm bán
-  quantity        Int
-  price           Decimal @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
-  costPriceAtSale Decimal @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
+  id               String  @id @default(cuid())
+  orderId          String
+  productId        String? // sản phẩm gốc (SetNull nếu sản phẩm bị xoá)
+  channelSku       String // SKU trên sàn
+  productName      String // tên sản phẩm tại thời điểm bán
+  quantity         Int
+  price            Decimal @db.Decimal(12, 2) // giá bán tại thời điểm phát sinh đơn
+  costPriceAtSale  Decimal @default(0) @db.Decimal(12, 2) // giá vốn gốc tại thời điểm phát sinh đơn
   /// Ảnh dòng hàng LẤY TỪ PAYLOAD ĐƠN của sàn lúc đồng bộ (Shopee image_info,
   /// Lazada product_main_image, TikTok sku_image) — 08/09: trước đó ảnh chỉ tra
   /// ChannelProduct (đồng bộ danh mục bằng tay) nên gian chưa đồng bộ danh mục
   /// là cả bảng đơn trống ảnh. Đơn cũ được điền bù mỗi lần đơn được quét lại.
-  imageUrl        String?
+  imageUrl         String?
   /// HOÀN/TRẢ CẤP DÒNG SKU (kịch bản trả 1 vài SP trong đơn nhiều SP):
   /// số lượng bị khách trả của riêng dòng này — 0 = dòng không bị trả.
-  returnedQuantity Int @default(0)
+  returnedQuantity Int     @default(0)
   /// Hàng trả của dòng này ĐÃ nhập lại kho nguyên vẹn → giá vốn phần trả được
   /// thu hồi (không tính vào COGS nữa). false = chưa về kho / hư hỏng.
-  returnRestocked Boolean @default(false)
+  returnRestocked  Boolean @default(false)
 
   order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -1417,12 +1422,12 @@ model OrderItem {
 /// Nhiều dòng ở đây có thể cùng trỏ về một Product — đó chính là cách 3 gian
 /// hàng khác tên map chung một mã gốc.
 model ChannelProduct {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   channelId   String // thuộc gian hàng nào
   channelSku  String // mã SKU trên sàn
   productName String // tên hiển thị trên sàn
   variantName String? // phân loại trên sàn (size/màu)
-  price       Decimal  @default(0) @db.Decimal(12, 2) // giá niêm yết trên sàn
+  price       Decimal @default(0) @db.Decimal(12, 2) // giá niêm yết trên sàn
   imageUrl    String?
   externalId  String? // id sản phẩm bên phía sàn
 
@@ -1433,14 +1438,14 @@ model ChannelProduct {
   /// Tồn kho TRÊN SÀN tại lần đồng bộ sản phẩm gần nhất (Shopee stock_info_v2 /
   /// Lazada quantity). NULL = sàn không trả số / chưa đồng bộ lại từ khi có cột.
   /// Dùng cho "đồng bộ lần đầu lấy tồn theo sàn" khi liên kết SKU kho tồn 0.
-  channelStock Int?
+  channelStock           Int?
   /// location_id kho Shopee (stock_info_v2.seller_stock[].location_id) khi sàn
   /// trả ĐÚNG MỘT địa điểm — update_stock phải gửi kèm để không bị từ chối.
   /// NULL = sàn không khai location (kho mặc định) hoặc Lazada/TikTok.
   channelStockLocationId String?
-  status      ChannelProductStatus @default(ACTIVE)
-  lastSyncedAt DateTime? // lần cuối kéo về từ sàn
-  createdAt   DateTime @default(now())
+  status                 ChannelProductStatus @default(ACTIVE)
+  lastSyncedAt           DateTime? // lần cuối kéo về từ sàn
+  createdAt              DateTime             @default(now())
 
   /// Giá vốn RIÊNG của SKU sàn khi CHƯA liên kết kho gốc — cho khách không
   /// muốn quản tồn kho tập trung vẫn nhập được giá vốn để tính lãi/lỗ.
@@ -1520,31 +1525,85 @@ model InventoryLog {
   /// AI LÀM (24/09): tài khoản đăng nhập thực hiện thao tác tay (chủ shop hoặc
   /// nhân viên). NULL = hệ thống (webhook sàn, worker, đồng bộ).
   actorId        String?
+  /// VỊ TRÍ bị tác động (đợt B): trừ đơn ở kho nào thì hủy đơn trả về đúng kho đó.
+  /// NULL = shop chưa dùng vị trí (hoặc dòng cũ trước khi bật).
+  locationId     String?
+  /// TỒN TỔNG của SKU ngay sau bút toán này — sổ kho đọc được "còn bao nhiêu"
+  /// mà không phải cộng dồn. NULL ở dòng cũ trước 24/09.
+  balanceAfter   Int?
   createdAt      DateTime         @default(now())
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  actor   User?   @relation("InventoryLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  product  Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order    Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  actor    User?          @relation("InventoryLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  location StockLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([orderId])
   @@index([createdAt])
 }
 
+/// VỊ TRÍ CHỨA HÀNG (đợt B 24/09/2026, khung anh Trung chốt 15/09): kho nhỏ, kệ,
+/// ô đều là MỘT thứ — cây cha-con, khách tự đặt tên. Ẩn bằng sự vắng mặt: shop
+/// chưa tạo dòng nào thì giao diện y hệt cũ; vị trí gốc "Kho chính" chỉ sinh khi
+/// khách bấm "Thêm vị trí" lần đầu (toàn bộ tồn hiện có đổ vào gốc).
+model StockLocation {
+  id              String   @id @default(cuid())
+  userId          String
+  parentId        String?
+  name            String
+  /// Mã ngắn in tem / quét (tuỳ chọn), duy nhất trong shop khi có.
+  code            String?
+  /// Thứ tự ƯU TIÊN trừ hàng cho đơn (nhỏ = lấy trước).
+  sortOrder       Int      @default(0)
+  /// Vị trí gốc — nơi nhận hàng khi không chỉ định; mỗi shop đúng một.
+  isDefault       Boolean  @default(false)
+  /// Nơi nhận HÀNG HOÀN mặc định (học BigSeller) — null/false = dùng vị trí gốc.
+  isReturnDefault Boolean  @default(false)
+  /// false = ô hàng lỗi / hàng chờ kiểm — KHÔNG tính vào tồn bán (đợt 2).
+  sellable        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  user     User                @relation("StockLocations", fields: [userId], references: [id], onDelete: Cascade)
+  parent   StockLocation?      @relation("StockLocationTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children StockLocation[]     @relation("StockLocationTree")
+  levels   ProductStockLevel[]
+  logs     InventoryLog[]
+
+  @@unique([userId, code])
+  @@index([userId, sortOrder])
+  @@map("stock_locations")
+}
+
+/// Tồn của MỘT SKU tại MỘT vị trí. Không có dòng = 0.
+model ProductStockLevel {
+  id         String @id @default(cuid())
+  productId  String
+  locationId String
+  quantity   Int    @default(0)
+
+  product  Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+  @@map("product_stock_levels")
+}
+
 /// Chi phí hoạt động của shop (cố định/biến đổi): mặt bằng, lương, đóng gói, quảng cáo sàn...
 /// Dùng để tính Lợi nhuận thuần = Lợi nhuận gộp − Tổng chi phí hoạt động.
 model OperatingExpense {
-  id          String          @id @default(cuid())
-  userId      String // thuộc về chủ shop
-  name        String // tên/mô tả khoản, ví dụ "Thuê mặt bằng tháng 7" / "Hoàn tiền NCC"
+  id         String               @id @default(cuid())
+  userId     String // thuộc về chủ shop
+  name       String // tên/mô tả khoản, ví dụ "Thuê mặt bằng tháng 7" / "Hoàn tiền NCC"
   // CHI phí: category + type có ý nghĩa. THU: bỏ qua (luôn hiển thị nhãn "Thu").
-  direction   TransactionDirection @default(EXPENSE)
-  category    ExpenseCategory @default(OTHER)
-  type        ExpenseType     @default(VARIABLE) // FIXED (cố định) | VARIABLE (biến đổi)
+  direction  TransactionDirection @default(EXPENSE)
+  category   ExpenseCategory      @default(OTHER)
+  type       ExpenseType          @default(VARIABLE) // FIXED (cố định) | VARIABLE (biến đổi)
   // Chi phí VARIABLE có thể gắn trực tiếp vào 1 mã SKU (tiền Ads, book KOC...)
   // để tính Lời/Lỗ riêng cho sản phẩm đó. FIXED thì để trống (trừ vào tổng shop).
-  appliedSku  String?
-  amount      Decimal         @db.Decimal(12, 2) // luôn DƯƠNG; chiều do `direction` quyết định
+  appliedSku String?
+  amount     Decimal              @db.Decimal(12, 2) // luôn DƯƠNG; chiều do `direction` quyết định
 
   // NGUỒN TIỀN ÁP DỤNG — để đồng bộ sang bảng dòng tiền (cộng/trừ đúng cột của
   // đúng gian). Ba mức gắn:
@@ -1560,8 +1619,8 @@ model OperatingExpense {
   fundSource    FundSourceType?
 
   note        String?
-  expenseDate DateTime        @default(now()) // ngày phát sinh
-  createdAt   DateTime        @default(now())
+  expenseDate DateTime @default(now()) // ngày phát sinh
+  createdAt   DateTime @default(now())
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   fundChannel Channel? @relation(fields: [fundChannelId], references: [id], onDelete: SetNull)
@@ -1586,25 +1645,25 @@ model OperatingExpense {
 /// mọi việc nặng (gọi API sàn, transaction kho) do worker nền làm sau. Nhờ nằm
 /// trong DB, sự kiện không mất khi backend restart giữa chừng.
 model ShopeeWebhookLog {
-  id        String           @id @default(cuid())
+  id          String           @id @default(cuid())
   /// Mã sự kiện Shopee (3 logistics / 4 order status / 5 authorization).
-  eventCode Int
-  shopId    String
+  eventCode   Int
+  shopId      String
   /// Mã đơn trong payload (nếu là sự kiện đơn hàng) — để tra soát theo đơn.
-  orderSn   String?
+  orderSn     String?
   /// SHA-256 của RAW body — chốt chống trùng BỀN: Shopee gửi lại y nguyên một
   /// sự kiện (retry mạng) thì insert đụng unique và bị bỏ qua ngay từ route.
-  bodyHash  String           @unique
+  bodyHash    String           @unique
   /// Payload JSON nguyên văn (stringify) — worker đọc lại để xử lý.
-  payload   String
-  status    WebhookJobStatus @default(PENDING)
+  payload     String
+  status      WebhookJobStatus @default(PENDING)
   /// Số lần đã thử xử lý. Quá MAX (3) → FAILED + bắn InventorySyncAlert.
-  attempts  Int              @default(0)
+  attempts    Int              @default(0)
   /// Thời điểm sớm nhất được thử lại (exponential backoff). NULL = xử lý ngay.
   nextRetryAt DateTime?
   lastError   String?
   processedAt DateTime?
-  createdAt   DateTime       @default(now())
+  createdAt   DateTime         @default(now())
 
   @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
   @@index([orderSn])
@@ -1616,27 +1675,27 @@ model ShopeeWebhookLog {
 /// ack 200 (<3s theo yêu cầu MISA); worker nền xử lý sau, lỗi thì retry tối đa
 /// 3 lần cách nhau 5 phút (nextRetryAt) trước khi FAILED.
 model MisaWebhookLog {
-  id        String @id @default(cuid())
+  id            String           @id @default(cuid())
   /// Loại sự kiện MISA gửi: InvoicePublished | InvoiceCancelled | InvoiceReplaced…
-  eventType String
+  eventType     String
   /// Mã giao dịch/mã tra cứu hóa đơn phía MISA — khớp InvoiceLog.transactionId.
   transactionId String?
   /// Số hóa đơn NCC cấp (VD "C26TAA-00001234") — có khi đã phát hành.
-  invoiceNo String?
+  invoiceNo     String?
   /// Mã đơn hàng gốc Hubsell (MISA lưu làm RefID lúc phát hành) — để đối chiếu.
-  orderCode String?
+  orderCode     String?
   /// SHA-256 của RAW body — chống trùng bền khi MISA retry y nguyên một sự kiện.
-  bodyHash String @unique
+  bodyHash      String           @unique
   /// Payload JSON nguyên văn (stringify) — worker đọc lại để xử lý.
-  payload String
-  status  WebhookJobStatus @default(PENDING)
+  payload       String
+  status        WebhookJobStatus @default(PENDING)
   /// Số lần đã thử xử lý. Quá MAX (3) → FAILED, chờ người xem trang Nhật ký.
-  attempts Int @default(0)
+  attempts      Int              @default(0)
   /// Thời điểm sớm nhất được thử lại (cách đều 5 phút). NULL = xử lý ngay.
-  nextRetryAt DateTime?
-  lastError   String?
-  processedAt DateTime?
-  createdAt   DateTime @default(now())
+  nextRetryAt   DateTime?
+  lastError     String?
+  processedAt   DateTime?
+  createdAt     DateTime         @default(now())
 
   @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
   @@index([orderCode])
@@ -1651,24 +1710,24 @@ model MisaWebhookLog {
 /// sự kiện, sàn retry thì trùng — anh Trung chốt 05/09 phải có queue trước khi
 /// nối shop thật.
 model TiktokWebhookLog {
-  id        String @id @default(cuid())
+  id          String           @id @default(cuid())
   /// Loại sự kiện TikTok (trường `type`, bảng Console 16/09): 1 đơn đổi trạng
   /// thái, 2 hoàn lại (bản cũ), 3 đổi địa chỉ, 4 kiện hàng, 6 thu hồi ủy quyền,
   /// 7 ủy quyền hết hạn, 11 hủy đơn, 12 hoàn/trả.
-  eventType Int
-  shopId    String
+  eventType   Int
+  shopId      String
   /// Mã đơn TikTok trong payload (sự kiện đơn hàng) — tra soát + khóa làn theo đơn.
-  orderId   String?
+  orderId     String?
   /// SHA-256 của RAW body — chống trùng bền khi TikTok gửi lại y nguyên.
-  bodyHash  String @unique
+  bodyHash    String           @unique
   /// Payload JSON nguyên văn (stringify) — worker đọc lại để xử lý.
-  payload   String
-  status    WebhookJobStatus @default(PENDING)
-  attempts  Int @default(0)
+  payload     String
+  status      WebhookJobStatus @default(PENDING)
+  attempts    Int              @default(0)
   nextRetryAt DateTime?
   lastError   String?
   processedAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime         @default(now())
 
   @@index([status, nextRetryAt, createdAt]) // worker quét job đến hạn theo FIFO
   @@index([orderId])
@@ -1680,18 +1739,18 @@ model TiktokWebhookLog {
 /// bảng này để chứng minh sự kiện đã chạy đúng thứ tự; về sau là chứng cứ đối
 /// soát với cơ quan thuế nên KHÔNG bao giờ update/xóa, chỉ insert.
 model InvoiceStatusHistory {
-  id           String @id @default(cuid())
+  id           String            @id @default(cuid())
   invoiceLogId String
   /// Bản sao bền của mã đơn — tra soát được cả khi đơn gốc đã xóa theo kênh.
-  orderCode String
+  orderCode    String
   /// NULL = bản ghi đầu tiên (hóa đơn vừa được webhook tạo, chưa có trạng thái cũ).
-  fromStatus InvoiceLogStatus?
-  toStatus   InvoiceLogStatus
+  fromStatus   InvoiceLogStatus?
+  toStatus     InvoiceLogStatus
   /// Nguồn phát sinh thay đổi: MISA_WEBHOOK | HUBSELL (thao tác trong app).
-  source String @default("MISA_WEBHOOK")
+  source       String            @default("MISA_WEBHOOK")
   /// Ghi chú nghiệp vụ: kết quả đối soát thuế, lý do hủy/thay thế…
-  note      String?
-  createdAt DateTime @default(now())
+  note         String?
+  createdAt    DateTime          @default(now())
 
   invoiceLog InvoiceLog @relation(fields: [invoiceLogId], references: [id], onDelete: Cascade)
 
@@ -1702,18 +1761,18 @@ model InvoiceStatusHistory {
 /// Nhật ký MỘT lượt đẩy tồn kho lên sàn cho MỘT SKU sàn — bảng đối soát:
 /// [thời gian] − [SKU] − [số cũ] − [số mới] − [trạng thái].
 model InventorySyncLog {
-  id        String @id @default(cuid())
-  channelId String
+  id          String          @id @default(cuid())
+  channelId   String
   /// SKU trên sàn (ChannelProduct.channelSku) — khoá người vận hành tra được.
-  channelSku String
-  productId  String? // sản phẩm kho gốc (SetNull nếu bị xoá — log giữ nguyên SKU)
+  channelSku  String
+  productId   String? // sản phẩm kho gốc (SetNull nếu bị xoá — log giữ nguyên SKU)
   /// Tồn KHẢ DỤNG trước/sau biến động (quantityInStock − holdQuantity).
   oldQuantity Int
   newQuantity Int
   status      StockSyncStatus
   /// Ngữ cảnh lượt đồng bộ (vd "webhook Shopee đơn XXX") + lỗi nếu thất bại.
   message     String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime        @default(now())
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
@@ -1727,8 +1786,8 @@ model InventorySyncLog {
 model InventorySyncAlert {
   id         String    @id @default(cuid())
   channelId  String
-  channelSku String?  // NULL khi lỗi ở cấp sự kiện (không rõ SKU nào)
-  orderSn    String?  // đơn gây ra biến động (nếu có) — để tra soát
+  channelSku String? // NULL khi lỗi ở cấp sự kiện (không rõ SKU nào)
+  orderSn    String? // đơn gây ra biến động (nếu có) — để tra soát
   message    String
   resolvedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -1857,14 +1916,14 @@ model LazadaOrderSettlement {
   // ===== VOUCHER & THUẾ =====
   /// "Giảm giá từ Cửa hàng" / "Giảm Giá Bằng Xu" — voucher NGƯỜI BÁN chịu.
   sellerVoucher Decimal @default(0) @db.Decimal(12, 2)
-  vatFee       Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT nhà bán hàng
-  incomeTaxFee Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN nhà bán hàng
+  vatFee        Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT nhà bán hàng
+  incomeTaxFee  Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN nhà bán hàng
 
   // ===== KẾT QUẢ =====
   /// TỔNG ĐẠI SỐ mọi dòng sao kê của đơn = tiền THỰC về ví (đúng bất kể phân loại).
-  actualPayout Decimal @default(0) @db.Decimal(12, 2)
+  actualPayout Decimal   @default(0) @db.Decimal(12, 2)
   /// Ngày giao dịch MỚI NHẤT trên sao kê — mốc ghi nhận vào Báo cáo dòng tiền.
-  settledAt DateTime?
+  settledAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1884,11 +1943,11 @@ model TiktokOrderSettlement {
   orderId String @unique
 
   /// true = số ước tính (đơn chưa quyết toán), false = bản kê đã quyết toán.
-  estimated Boolean @default(false)
-  statementId String?
+  estimated             Boolean   @default(false)
+  statementId           String?
   /// Unsettled: mốc quyết toán dự kiến sàn báo (chỉ khi sàn trả unix time).
   estimatedSettlementAt DateTime?
-  unsettledReason String?
+  unsettledReason       String?
 
   // ===== DOANH THU (revenue_breakdown) =====
   grossSales           Decimal @default(0) @db.Decimal(12, 2) /// Giá gốc sản phẩm (subtotal_before_discount)
@@ -1911,29 +1970,29 @@ model TiktokOrderSettlement {
   shippingCost         Decimal @default(0) @db.Decimal(12, 2) /// Phí vận chuyển của nhà bán hàng (ròng)
 
   // ===== PHÍ (fee_tax_breakdown.fee) — tên theo TikTok Shop VN =====
-  feeCommission        Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng nền tảng
-  feeTransaction       Decimal @default(0) @db.Decimal(12, 2) /// Phí giao dịch
-  feeOrderProcessing   Decimal @default(0) @db.Decimal(12, 2) /// Phí xử lý đơn hàng (vn_fix_infrastructure_fee)
-  feeSfp               Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Freeship Xtra (SFP)
-  feeVoucherXtra       Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Voucher Xtra
-  feeFlashSale         Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Flash Sale
-  feeAffiliate         Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng affiliate
-  feeAffiliateAds      Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
-  feeAffiliatePartner  Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng cho đối tác affiliate
-  feeGmvMax            Decimal @default(0) @db.Decimal(12, 2) /// Nạp tiền quảng cáo từ đơn hàng (GMV Max)
-  feeOther             Decimal @default(0) @db.Decimal(12, 2) /// Phí khác của nền tảng (chốt chặn)
-  feeTaxAmount         Decimal @default(0) @db.Decimal(12, 2) /// fee_tax_amount — tổng phí + thuế sàn ghi
+  feeCommission       Decimal @default(0) @db.Decimal(12, 2) /// Phí hoa hồng nền tảng
+  feeTransaction      Decimal @default(0) @db.Decimal(12, 2) /// Phí giao dịch
+  feeOrderProcessing  Decimal @default(0) @db.Decimal(12, 2) /// Phí xử lý đơn hàng (vn_fix_infrastructure_fee)
+  feeSfp              Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Freeship Xtra (SFP)
+  feeVoucherXtra      Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Voucher Xtra
+  feeFlashSale        Decimal @default(0) @db.Decimal(12, 2) /// Phí dịch vụ Flash Sale
+  feeAffiliate        Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng affiliate
+  feeAffiliateAds     Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng quảng cáo affiliate
+  feeAffiliatePartner Decimal @default(0) @db.Decimal(12, 2) /// Hoa hồng cho đối tác affiliate
+  feeGmvMax           Decimal @default(0) @db.Decimal(12, 2) /// Nạp tiền quảng cáo từ đơn hàng (GMV Max)
+  feeOther            Decimal @default(0) @db.Decimal(12, 2) /// Phí khác của nền tảng (chốt chặn)
+  feeTaxAmount        Decimal @default(0) @db.Decimal(12, 2) /// fee_tax_amount — tổng phí + thuế sàn ghi
 
   // ===== THUẾ (fee_tax_breakdown.tax) =====
-  taxVat               Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT khấu trừ
-  taxPit               Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN khấu trừ
-  taxOther             Decimal @default(0) @db.Decimal(12, 2) /// Sắc thuế khác (chốt chặn)
+  taxVat   Decimal @default(0) @db.Decimal(12, 2) /// Thuế GTGT khấu trừ
+  taxPit   Decimal @default(0) @db.Decimal(12, 2) /// Thuế TNCN khấu trừ
+  taxOther Decimal @default(0) @db.Decimal(12, 2) /// Sắc thuế khác (chốt chặn)
 
   // ===== ĐIỀU CHỈNH & KẾT QUẢ =====
-  adjustmentAmount     Decimal @default(0) @db.Decimal(12, 2) /// Khoản điều chỉnh gắn đơn (có dấu)
-  adjustmentTypes      String? /// Loại điều chỉnh TikTok ghi (nối bằng ",")
-  settlementAmount     Decimal @default(0) @db.Decimal(12, 2) /// Số tiền quyết toán (tiền về ví)
-  settledAt            DateTime?
+  adjustmentAmount Decimal   @default(0) @db.Decimal(12, 2) /// Khoản điều chỉnh gắn đơn (có dấu)
+  adjustmentTypes  String? /// Loại điều chỉnh TikTok ghi (nối bằng ",")
+  settlementAmount Decimal   @default(0) @db.Decimal(12, 2) /// Số tiền quyết toán (tiền về ví)
+  settledAt        DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1960,29 +2019,29 @@ model TiktokOrderSettlement {
 /// Trạng thái chăm sóc một CHỦ SHOP trong CRM nội bộ — do Sale/CSKH đặt tay,
 /// bổ trợ cho tín hiệu hoạt động tự suy (đơn hàng gần nhất).
 enum PlatformCareStatus {
-  NEW        // vừa đăng ký, chưa ai liên hệ
-  CONTACTED  // đã liên hệ / đang tư vấn
-  ACTIVE     // đang dùng ổn định
+  NEW // vừa đăng ký, chưa ai liên hệ
+  CONTACTED // đã liên hệ / đang tư vấn
+  ACTIVE // đang dùng ổn định
   CHURN_RISK // có dấu hiệu rời bỏ (lâu không hoạt động, phàn nàn...)
-  CHURNED    // đã rời bỏ
+  CHURNED // đã rời bỏ
 }
 
 /// HỒ SƠ CHĂM SÓC KHÁCH HÀNG (CRM nội bộ Hubsell) — 1-1 với chủ shop, tạo lười
 /// khi nhân viên điều hành lần đầu cập nhật. Ghi chú là bản MỚI NHẤT (lịch sử
 /// thay đổi nằm ở PlatformAuditLog, không nhân bản ở đây).
 model PlatformCustomerCare {
-  id     String             @id @default(cuid())
+  id          String             @id @default(cuid())
   /// Chủ shop được chăm sóc.
-  userId String             @unique
-  status PlatformCareStatus @default(NEW)
+  userId      String             @unique
+  status      PlatformCareStatus @default(NEW)
   /// Nhân viên điều hành phụ trách (User thuộc HQ) — null = chưa phân công.
-  assigneeId String?
+  assigneeId  String?
   /// Ghi chú chăm sóc mới nhất (thay thế mỗi lần lưu).
-  note String?
+  note        String?
   /// Ai cập nhật lần cuối — để hiển thị, chi tiết đầy đủ tra PlatformAuditLog.
   updatedById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   user     User  @relation("CareCustomer", fields: [userId], references: [id], onDelete: Cascade)
   assignee User? @relation("CareAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
@@ -1993,10 +2052,10 @@ model PlatformCustomerCare {
 
 /// Vòng đời một LEAD TƯ VẤN từ landing (form "Đăng ký tư vấn" / dock nổi).
 enum ConsultLeadStatus {
-  NEW       // vừa gửi form, chưa ai gọi
+  NEW // vừa gửi form, chưa ai gọi
   CONTACTED // sale đã gọi / đang tư vấn
   CONVERTED // đã chốt (khách đăng ký tài khoản / mua gói)
-  DROPPED   // không chốt được / lead rác
+  DROPPED // không chốt được / lead rác
 }
 
 /// LEAD TƯ VẤN TỪ LANDING (hubsell.tech) — khách CHƯA có tài khoản để lại
@@ -2005,20 +2064,20 @@ enum ConsultLeadStatus {
 /// nguồn sự thật là PackagePayment lúc kế toán ghi nhận thanh toán; trang HQ
 /// tự match lead ↔ User theo email/SĐT để hiển thị "đã đăng ký → gói nào".
 model ConsultLead {
-  id    String @id @default(cuid())
-  name  String
-  email String
-  phone String
+  id         String            @id @default(cuid())
+  name       String
+  email      String
+  phone      String
   /// Khách bấm từ đâu: "pricing-enterprise" (card Enterprise) | "floating-consult" (dock nổi).
-  source String
-  status ConsultLeadStatus @default(NEW)
+  source     String
+  status     ConsultLeadStatus @default(NEW)
   /// Ghi chú sale (bản mới nhất — lịch sử nằm ở PlatformAuditLog).
-  note String?
+  note       String?
   /// Nhân viên sale phụ trách — null = chưa phân công.
   assigneeId String?
-  assignee   User?   @relation("ConsultLeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  assignee   User?             @relation("ConsultLeadAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
 
   @@index([status, createdAt])
   @@index([email])
@@ -2031,21 +2090,21 @@ model ConsultLead {
 /// rút, tạo/sửa/xoá nhân viên điều hành) — điều kiện bắt buộc trước khi nhân
 /// viên HQ được đụng dữ liệu khách hàng thật. Chỉ CHỦ NỀN TẢNG xem được.
 model PlatformAuditLog {
-  id      String  @id @default(cuid())
+  id           String   @id @default(cuid())
   /// Ai thao tác — SetNull khi tài khoản bị xoá, actorName vẫn giữ vết.
-  actorId   String?
-  actorName String
+  actorId      String?
+  actorName    String
   /// Mã hành động phẳng: "care.update" / "withdrawal.approve" /
   /// "withdrawal.reject" / "staff.create" / "staff.update" / "staff.delete" /
   /// "staff.reset-password".
-  action String
+  action       String
   /// Đối tượng bị tác động (chủ shop / nhân viên) + nhãn snapshot để log còn
   /// đọc được sau khi đối tượng bị xoá.
   targetUserId String?
   targetLabel  String?
   /// Chi tiết tuỳ hành động (giá trị mới, số tiền, lý do...) — hiển thị thô.
-  detail    Json?
-  createdAt DateTime @default(now())
+  detail       Json?
+  createdAt    DateTime @default(now())
 
   actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
 
@@ -2055,15 +2114,15 @@ model PlatformAuditLog {
 
 /// Chiều dòng tiền của một bút toán sổ quỹ nội bộ Hubsell.
 enum LedgerDirection {
-  IN  // tiền VÀO (khách trả phí gói dịch vụ...)
+  IN // tiền VÀO (khách trả phí gói dịch vụ...)
   OUT // tiền RA  (chi trả hoa hồng, chi phí vận hành...)
 }
 
 /// Nguồn phát sinh bút toán — quyết định bút toán tự sinh hay ghi tay.
 enum LedgerSource {
-  SUBSCRIPTION    // thu phí đăng ký/gia hạn gói (ghi tay khi chưa có cổng thanh toán)
+  SUBSCRIPTION // thu phí đăng ký/gia hạn gói (ghi tay khi chưa có cổng thanh toán)
   REFERRAL_PAYOUT // chi trả lệnh rút hoa hồng giới thiệu — TỰ SINH khi duyệt lệnh
-  OTHER           // khoản thu/chi khác (ghi tay)
+  OTHER // khoản thu/chi khác (ghi tay)
 }
 
 /// Nghĩa vụ hóa đơn của bút toán THU: NONE = không cần (khoản chi/nội bộ),
@@ -2080,48 +2139,48 @@ enum LedgerInvoiceStatus {
 /// Bút toán tự sinh (withdrawalRequestId != null) KHÔNG sửa/xoá được số tiền —
 /// nguồn sự thật là lệnh rút; chỉ bút toán ghi tay mới sửa/xoá trọn vẹn.
 model PlatformLedgerEntry {
-  id        String          @id @default(cuid())
-  direction LedgerDirection
-  source    LedgerSource
-  amount    Decimal         @db.Decimal(14, 2)
+  id                    String                    @id @default(cuid())
+  direction             LedgerDirection
+  source                LedgerSource
+  amount                Decimal                   @db.Decimal(14, 2)
   /// Diễn giải hiển thị trên sổ (vd "Thu phí gói Professional 12 tháng").
-  note String?
+  note                  String?
   /// Chủ shop liên quan (người trả phí / người nhận hoa hồng) — SetNull khi xoá.
-  customerId String?
-  customer   User?   @relation("LedgerCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  customerId            String?
+  customer              User?                     @relation("LedgerCustomer", fields: [customerId], references: [id], onDelete: SetNull)
   /// Lệnh rút sinh ra bút toán này (chi hoa hồng) — null với bút toán ghi tay.
-  withdrawalRequestId String? @unique
+  withdrawalRequestId   String?                   @unique
   /// Khoản thanh toán gói sinh ra bút toán này (thu phí gói TỰ SINH khi kế toán
   /// xác nhận đã nhận tiền) — null với bút toán ghi tay.
-  packagePaymentId String?         @unique
-  packagePayment   PackagePayment? @relation(fields: [packagePaymentId], references: [id], onDelete: SetNull)
-  invoiceStatus       LedgerInvoiceStatus @default(NONE)
-  invoiceNo           String?
+  packagePaymentId      String?                   @unique
+  packagePayment        PackagePayment?           @relation(fields: [packagePaymentId], references: [id], onDelete: SetNull)
+  invoiceStatus         LedgerInvoiceStatus       @default(NONE)
+  invoiceNo             String?
   /// Khoản mục CHI — key trong danh mục HQ_EXPENSE_CATEGORIES (RENT/SALARY/
   /// INSURANCE/SOFTWARE...). Chỉ có nghĩa với direction=OUT; null với khoản
   /// chi cũ = hiển thị "Chi khác". Cố ý là String (không enum DB) để thêm
   /// khoản mục sau này không phải migration.
-  expenseCategory String?
+  expenseCategory       String?
   /// Chứng từ ĐẦU VÀO của khoản chi — để kế toán dịch vụ lên bảng kê mua vào:
   /// nhà cung cấp + MST + số hóa đơn đầu vào + hình thức thanh toán (BANK/CASH
   /// — tiền mặt ≥5tr không được khấu trừ thuế nên UI cảnh báo).
-  vendorName     String?
-  vendorTaxCode  String?
-  inputInvoiceNo String?
-  paymentMethod  String?
+  vendorName            String?
+  vendorTaxCode         String?
+  inputInvoiceNo        String?
+  paymentMethod         String?
   /// Khoản chi cố định sinh ra bút toán này (kế toán bấm "Ghi ngay" trên
   /// checklist tháng) — SetNull khi xoá danh mục, dữ liệu đã copy lên bút toán.
-  recurringExpenseId String?
-  recurringExpense   PlatformRecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
+  recurringExpenseId    String?
+  recurringExpense      PlatformRecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
   /// TransactionID meInvoice khi khoản thu này được xuất HĐĐT qua API (tab Sổ
   /// quỹ HQ) — giữ để tải PDF/tra trạng thái; null với hóa đơn đánh dấu tay.
   einvoiceTransactionId String?
   /// Ngày PHÁT SINH nghiệp vụ (kế toán chọn khi ghi tay — khác ngày nhập máy).
-  occurredAt DateTime @default(now())
+  occurredAt            DateTime                  @default(now())
   /// Ai ghi bút toán — snapshot tên để sổ còn đọc được khi tài khoản bị xoá.
-  createdById   String?
-  createdByName String
-  createdAt     DateTime @default(now())
+  createdById           String?
+  createdByName         String
+  createdAt             DateTime                  @default(now())
 
   @@index([occurredAt])
   @@index([recurringExpenseId])
@@ -2133,19 +2192,19 @@ model PlatformLedgerEntry {
 /// bút toán: số tiền thật mỗi tháng phải theo chứng từ, kế toán bấm "Ghi ngay"
 /// để prefill phiếu chi rồi tự sửa số. expectedAmount chỉ để gợi ý.
 model PlatformRecurringExpense {
-  id   String @id @default(cuid())
-  name String
+  id             String   @id @default(cuid())
+  name           String
   /// Khoản mục chi — cùng bộ key với PlatformLedgerEntry.expenseCategory.
-  category   String
-  vendorName String?
+  category       String
+  vendorName     String?
   /// Số tiền DỰ KIẾN hàng tháng — chỉ để prefill phiếu chi.
-  expectedAmount Decimal @db.Decimal(14, 2)
+  expectedAmount Decimal  @db.Decimal(14, 2)
   /// Hạn chi hàng tháng (1–28) — checklist tô "Quá hạn" khi qua ngày này.
-  dayOfMonth Int     @default(5)
-  note       String?
-  active     Boolean @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  dayOfMonth     Int      @default(5)
+  note           String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   entries PlatformLedgerEntry[]
 
@@ -2162,10 +2221,10 @@ model PlatformRecurringExpense {
 /// meInvoice ở đây quyết định pháp nhân Hubsell trên hóa đơn. Trống toàn bộ
 /// cho tới khi công ty có GPKD + hợp đồng meInvoice (chờ 09/2026).
 model PlatformInvoiceConfig {
-  id             String  @id @default(cuid())
-  taxCode        String?
-  companyName    String?
-  companyAddress String?
+  id                String   @id @default(cuid())
+  taxCode           String?
+  companyName       String?
+  companyAddress    String?
   /// Mẫu số (1 = HĐ GTGT) + ký hiệu 7 ký tự (VD "1C26THB") — regex dùng chung
   /// INVOICE_PATTERN_RE/INVOICE_SERIES_RE của misa-einvoice.ts.
   invoicePattern    String?
@@ -2173,17 +2232,17 @@ model PlatformInvoiceConfig {
   meinvoiceUsername String?
   meinvoicePassword String?
   /// USB_TOKEN | ESIGN_CLOUD — mặc định ký nền HSM như tenant đã verify sandbox.
-  signMethod     String  @default("ESIGN_CLOUD")
-  esignClientId  String?
-  esignSecretKey String?
-  esignUsername  String?
-  esignPassword  String?
-  certSerial     String?
+  signMethod        String   @default("ESIGN_CLOUD")
+  esignClientId     String?
+  esignSecretKey    String?
+  esignUsername     String?
+  esignPassword     String?
+  certSerial        String?
   /// Thuế suất GTGT dòng dịch vụ gói: "KCT" | "0" | "5" | "8" | "10".
   /// Mặc định KCT — dịch vụ phần mềm thuộc đối tượng KHÔNG chịu thuế GTGT
   /// (chờ kế toán dịch vụ xác nhận khi thương mại hóa).
-  vatMode   String   @default("KCT")
-  updatedAt DateTime @updatedAt
+  vatMode           String   @default("KCT")
+  updatedAt         DateTime @updatedAt
 
   @@map("platform_invoice_config")
 }
@@ -2199,16 +2258,16 @@ model PlatformTaxCheckItem {
 }
 
 enum WalletTxnType {
-  COMMISSION      // +10% hoa hồng khi người được giới thiệu thanh toán thành công
+  COMMISSION // +10% hoa hồng khi người được giới thiệu thanh toán thành công
   PACKAGE_RENEWAL // − trừ ví để gia hạn gói Hubsell
-  WITHDRAWAL      // − rút về ngân hàng (tạo cùng WithdrawalRequest)
-  ADJUSTMENT      // ± điều chỉnh thủ công (hoàn lại lệnh rút bị từ chối...)
+  WITHDRAWAL // − rút về ngân hàng (tạo cùng WithdrawalRequest)
+  ADJUSTMENT // ± điều chỉnh thủ công (hoàn lại lệnh rút bị từ chối...)
 }
 
 enum WalletTxnStatus {
-  PENDING   // lệnh rút đang chờ duyệt — tiền ĐÃ trừ khỏi balance (giữ chỗ)
+  PENDING // lệnh rút đang chờ duyệt — tiền ĐÃ trừ khỏi balance (giữ chỗ)
   COMPLETED
-  REJECTED  // lệnh rút bị từ chối — đã có bản ghi ADJUSTMENT hoàn tiền đi kèm
+  REJECTED // lệnh rút bị từ chối — đã có bản ghi ADJUSTMENT hoàn tiền đi kèm
 }
 
 enum WithdrawalRequestStatus {
@@ -2235,18 +2294,18 @@ model HubsellWallet {
 /// LỊCH SỬ biến động Ví Hubsell — sổ cái append-only, KHÔNG sửa/xoá bản ghi.
 /// `amount` CÓ DẤU: dương = cộng vào ví, âm = trừ khỏi ví.
 model WalletTransaction {
-  id     String          @id @default(cuid())
-  userId String
-  type   WalletTxnType
-  amount Decimal         @db.Decimal(14, 2)
-  status WalletTxnStatus @default(COMPLETED)
+  id                  String          @id @default(cuid())
+  userId              String
+  type                WalletTxnType
+  amount              Decimal         @db.Decimal(14, 2)
+  status              WalletTxnStatus @default(COMPLETED)
   /// Diễn giải hiển thị thẳng trên UI (vd "Hoa hồng 10% từ abc@gmail.com").
-  note   String?
+  note                String?
   /// Với COMMISSION: user ĐÃ THANH TOÁN làm phát sinh hoa hồng (để đối soát).
-  sourceUserId String?
+  sourceUserId        String?
   /// Với WITHDRAWAL/ADJUSTMENT hoàn tiền: lệnh rút liên quan.
   withdrawalRequestId String?
-  createdAt DateTime @default(now())
+  createdAt           DateTime        @default(now())
 
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   withdrawalRequest WithdrawalRequest? @relation(fields: [withdrawalRequestId], references: [id], onDelete: SetNull)
@@ -2259,17 +2318,17 @@ model WalletTransaction {
 /// đặt lệnh (chống rút trùng); REJECTED thì hoàn lại bằng txn ADJUSTMENT.
 /// Duyệt thủ công (platform admin) — giai đoạn đầu chưa có cổng chi hộ.
 model WithdrawalRequest {
-  id     String                  @id @default(cuid())
-  userId String
-  amount Decimal                 @db.Decimal(14, 2)
+  id                String                  @id @default(cuid())
+  userId            String
+  amount            Decimal                 @db.Decimal(14, 2)
   bankName          String
   bankAccountNumber String
   bankAccountName   String
-  status      WithdrawalRequestStatus @default(PENDING)
+  status            WithdrawalRequestStatus @default(PENDING)
   /// Ghi chú của người duyệt (lý do từ chối / mã giao dịch chuyển khoản).
-  reviewNote  String?
-  processedAt DateTime?
-  createdAt   DateTime @default(now())
+  reviewNote        String?
+  processedAt       DateTime?
+  createdAt         DateTime                @default(now())
 
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
@@ -2308,19 +2367,19 @@ enum PackagePaymentMethod {
 
 /// BẢNG GIÁ GÓI HUBSELL — mỗi dòng một gói (Beta 0đ, Starter, Professional...).
 model ServicePlan {
-  id String @id @default(cuid())
+  id                String   @id @default(cuid())
   /// Mã ngắn duy nhất (BETA/STARTER/PRO...) — bất biến sau khi tạo, dùng làm
   /// snapshot trên PackagePayment nên không bao giờ đổi.
-  code        String  @unique
-  name        String
-  description String?
+  code              String   @unique
+  name              String
+  description       String?
   /// Bậc gói để so nâng/hạ cấp (0 = thấp nhất). Hai gói được phép cùng bậc.
-  tier         Int     @default(0)
+  tier              Int      @default(0)
   /// Giá theo kỳ — 0 = KHÔNG BÁN kỳ đó (khách chỉ thấy các kỳ có giá).
-  priceMonthly    Decimal @default(0) @db.Decimal(14, 2)
-  priceQuarterly  Decimal @default(0) @db.Decimal(14, 2)
-  priceSemiannual Decimal @default(0) @db.Decimal(14, 2)
-  priceYearly     Decimal @default(0) @db.Decimal(14, 2)
+  priceMonthly      Decimal  @default(0) @db.Decimal(14, 2)
+  priceQuarterly    Decimal  @default(0) @db.Decimal(14, 2)
+  priceSemiannual   Decimal  @default(0) @db.Decimal(14, 2)
+  priceYearly       Decimal  @default(0) @db.Decimal(14, 2)
   /// Giới hạn sử dụng — null = không giới hạn. GĐ1 chỉ LƯU và hiển thị;
   /// cưỡng chế (chặn mềm + mời nâng gói) là việc của GĐ2.
   maxChannels       Int?
@@ -2328,19 +2387,19 @@ model ServicePlan {
   maxStaff          Int?
   /// Cờ tính năng của gói, vd {"adsAssistant": true} — code chỉ hỏi theo khóa,
   /// thêm tính năng mới không cần migration.
-  features Json @default("{}")
+  features          Json     @default("{}")
   /// Chỉ gói đang bán mới hiện cho khách chọn; gói tắt vẫn giữ nguyên cho
   /// thuê bao cũ đang chạy (không bao giờ xoá gói đã có người dùng).
-  isActive Boolean @default(false)
+  isActive          Boolean  @default(false)
   /// Gói mặc định gán cho tài khoản chủ shop mới đăng ký — tối đa MỘT gói bật
   /// cờ này (route ghi tự tắt cờ ở các gói khác).
-  isDefault Boolean  @default(false)
+  isDefault         Boolean  @default(false)
   /// Số ngày DÙNG THỬ khi tài khoản mới được gán gói này (anh Trung chốt 22/08:
   /// mọi khách mới đều dùng thử; 14/30 là DATA — đổi một ô số, không sửa code).
   /// 0 = không có dùng thử (gán là tính tiền ngay / vô thời hạn nếu giá 0).
-  trialDays Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  trialDays         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   subscriptions Subscription[]
 
@@ -2349,31 +2408,31 @@ model ServicePlan {
 
 /// THUÊ BAO — mỗi chủ shop đúng MỘT dòng (gói hiện tại + kỳ hạn hiện tại).
 model Subscription {
-  id     String @id @default(cuid())
-  userId String @unique
-  planId String
-  status SubscriptionStatus @default(ACTIVE)
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  planId             String
+  status             SubscriptionStatus @default(ACTIVE)
   /// Đang trong kỳ DÙNG THỬ (chưa từng trả tiền) — thanh toán đầu tiên hạ cờ.
-  isTrial Boolean @default(false)
+  isTrial            Boolean            @default(false)
   /// Kỳ hiện tại. currentPeriodEnd null = vô thời hạn.
-  currentPeriodStart DateTime  @default(now())
+  currentPeriodStart DateTime           @default(now())
   currentPeriodEnd   DateTime?
   /// ---- Theo dõi TRẦN ĐƠN THÁNG (GĐ2 cưỡng chế, plan-enforcement.ts) ----
   /// Tháng dương lịch "yyyy-MM" mà 2 cột dưới thuộc về — sang tháng tự reset
   /// LÚC ĐỌC (không cron). Ghi lười: chỉ update khi trạng thái đổi.
-  quotaMonth String?
+  quotaMonth         String?
   /// Thời điểm ĐẦU TIÊN chạm 100% trần đơn trong tháng — mốc tính ân hạn
   /// 7 ngày trước khi khóa tầng giá trị gia tăng. Tụt dưới 100% (nâng gói/
   /// sang tháng) thì xoá.
-  overQuotaSince DateTime?
+  overQuotaSince     DateTime?
   /// Mốc chuông đã phát trong tháng (0/80/100/120) — chống spam thông báo
   /// bền hơn cửa sổ dedupe 24h của notify().
-  quotaNotifiedLevel Int       @default(0)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  quotaNotifiedLevel Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan     ServicePlan      @relation(fields: [planId], references: [id])
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      ServicePlan            @relation(fields: [planId], references: [id])
   payments  PackagePayment[]
   reminders SubscriptionReminder[]
 
@@ -2387,14 +2446,14 @@ model Subscription {
 /// dòng nào mang batchId của mình là mình giành được, hai worker chạy song song
 /// không bao giờ gửi đôi. Gửi hỏng thì xóa vé để lượt sau thử lại.
 model SubscriptionReminder {
-  id             String @id @default(cuid())
+  id             String   @id @default(cuid())
   subscriptionId String
   /// renew-7 | renew-1 (thư khách) | expired-hq (bản tổng hợp báo HQ)
-  kind      String
+  kind           String
   /// Kỳ hạn mà lời nhắc này thuộc về — gia hạn xong kỳ mới nhắc lại từ đầu.
-  periodEnd DateTime
-  batchId   String
-  createdAt DateTime @default(now())
+  periodEnd      DateTime
+  batchId        String
+  createdAt      DateTime @default(now())
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
@@ -2417,22 +2476,22 @@ enum PlanUpgradeRequestStatus {
 /// planCode/planName/listedPrice là SNAPSHOT lúc gửi — bảng giá đổi sau đó
 /// thì HQ vẫn thấy đúng con số khách đã nhìn khi bấm mua.
 model PlanUpgradeRequest {
-  id       String       @id @default(cuid())
-  userId   String
-  planId   String
-  planCode String
-  planName String
-  cycle    BillingCycle
+  id             String                   @id @default(cuid())
+  userId         String
+  planId         String
+  planCode       String
+  planName       String
+  cycle          BillingCycle
   /// Giá niêm yết của (gói, kỳ) tại thời điểm gửi yêu cầu.
   /// 0 = yêu cầu TƯ VẤN (Enterprise "Liên hệ báo giá") — HQ hiện "Báo giá riêng".
-  listedPrice Decimal                  @db.Decimal(14, 2)
+  listedPrice    Decimal                  @db.Decimal(14, 2)
   /// SĐT khách để lại khi gửi yêu cầu (anh Trung chốt 22/08 khuya: bắt buộc
   /// để HQ gọi lại được) — snapshot riêng, không phụ thuộc khách đổi hồ sơ sau đó.
-  contactPhone String?
-  status      PlanUpgradeRequestStatus @default(PENDING)
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
-  resolvedAt  DateTime?
+  contactPhone   String?
+  status         PlanUpgradeRequestStatus @default(PENDING)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  resolvedAt     DateTime?
   /// Ai đóng yêu cầu — snapshot tên (kế toán ghi nhận / "Khách tự hủy").
   resolvedByName String?
 
@@ -2457,45 +2516,45 @@ enum GatewayOrderStatus {
 /// recordPackagePayment (method GATEWAY, externalRef = mã giao dịch cổng) —
 /// vẫn là MỘT lõi ghi nhận thanh toán, 4 hệ quả tự sinh như chuyển khoản tay.
 model GatewayPaymentOrder {
-  id String @id @default(cuid())
+  id                String             @id @default(cuid())
   /// Nhà cung cấp cổng: PAYOS (adapter mỏng — đổi SePay sau này thêm giá trị mới).
-  provider String @default("PAYOS")
+  provider          String             @default("PAYOS")
   /// orderCode số nguyên gửi sang cổng — unique, ≤ 2^53 (payOS yêu cầu số).
-  orderCode BigInt @unique
-  userId    String
+  orderCode         BigInt             @unique
+  userId            String
   /// Yêu cầu mua đi kèm (nếu có) — recordPackagePaymentTx tự đóng mọi PENDING của khách.
-  requestId String?
-  planId    String
-  planCode  String
-  planName  String
-  cycle     BillingCycle
+  requestId         String?
+  planId            String
+  planCode          String
+  planName          String
+  cycle             BillingCycle
   /// Số tiền PHẢI THU (giá niêm yết snapshot) — webhook lệch số này → MISMATCH.
-  amount Decimal            @db.Decimal(14, 2)
-  status GatewayOrderStatus @default(PENDING)
+  amount            Decimal            @db.Decimal(14, 2)
+  status            GatewayOrderStatus @default(PENDING)
   /// Nội dung chuyển khoản ĐÃ GỬI sang cổng (tiền tố sản phẩm + mã gói [+ đuôi
   /// mã đơn]) — FE bày đúng chuỗi này, không dựng lại (env tiền tố/độ dài có
   /// thể đổi giữa lúc tạo và lúc khách mở lại). Null = đơn cũ trước 11/09/2026.
-  description   String?
+  description       String?
   /// Link/QR do cổng cấp — FE render lại khi khách mở lại trang.
-  paymentLinkId String?
-  checkoutUrl   String?
-  qrCode        String?
-  expiresAt     DateTime?
+  paymentLinkId     String?
+  checkoutUrl       String?
+  qrCode            String?
+  expiresAt         DateTime?
   /// Tài khoản NHẬN TIỀN cổng trả về (bin ngân hàng + STK + chủ TK) — FE bày
   /// khối "chuyển khoản thủ công" kèm nút sao chép cho khách không quét được QR.
   bankBin           String?
   bankAccountNumber String?
   bankAccountName   String?
   /// Khi PAID: mã giao dịch ngân hàng (reference) + số tiền thực nhận + thời điểm.
-  gatewayReference String?
-  paidAmount       Decimal?  @db.Decimal(14, 2)
-  paidAt           DateTime?
+  gatewayReference  String?
+  paidAmount        Decimal?           @db.Decimal(14, 2)
+  paidAt            DateTime?
   /// Chứng từ thanh toán sinh ra (PackagePayment.id) khi PAID.
-  packagePaymentId String?
+  packagePaymentId  String?
   /// Payload webhook thô cuối cùng — chẩn đoán khi khách kêu "đã chuyển mà chưa mở".
-  lastWebhook Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  lastWebhook       Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -2509,28 +2568,28 @@ model GatewayPaymentOrder {
 /// đó không ảnh hưởng. Xác nhận thanh toán TỰ SINH: gia hạn Subscription +
 /// bút toán THU sổ quỹ (trừ WALLET) + hoa hồng giới thiệu 10%.
 model PackagePayment {
-  id             String @id @default(cuid())
-  subscriptionId String
-  userId         String
-  planCode       String
-  planName       String
-  cycle          BillingCycle
+  id              String               @id @default(cuid())
+  subscriptionId  String
+  userId          String
+  planCode        String
+  planName        String
+  cycle           BillingCycle
   /// Số tiền THỰC THU (kế toán sửa được lúc ghi nhận — khuyến mãi/thu lệch giá niêm yết).
-  amount Decimal              @db.Decimal(14, 2)
-  method PackagePaymentMethod
+  amount          Decimal              @db.Decimal(14, 2)
+  method          PackagePaymentMethod
   /// Kỳ hạn được cộng nhờ khoản thanh toán này.
-  periodStart DateTime
-  periodEnd   DateTime
+  periodStart     DateTime
+  periodEnd       DateTime
   /// Ngày THỰC NHẬN tiền (kế toán chọn — khớp sao kê ngân hàng).
-  occurredAt DateTime @default(now())
+  occurredAt      DateTime             @default(now())
   /// Mã giao dịch bên ngoài (webhook cổng thanh toán sau này) — unique chống
   /// ghi trùng khi cổng bắn lặp.
-  externalRef String? @unique
-  note        String?
+  externalRef     String?              @unique
+  note            String?
   /// Ai xác nhận — snapshot tên để chứng từ còn đọc được khi tài khoản bị xoá.
   confirmedById   String?
   confirmedByName String
-  createdAt       DateTime @default(now())
+  createdAt       DateTime             @default(now())
 
   subscription Subscription         @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2547,14 +2606,14 @@ model PackagePayment {
 /// sàn báo hoàn mới… GĐ1 chỉ CHỦ SHOP nhận (type tài chính nhạy cảm); mở rộng
 /// cho nhân viên theo cây quyền là nợ ghi trong memory.
 model Notification {
-  id      String @id @default(cuid())
-  ownerId String
+  id        String    @id @default(cuid())
+  ownerId   String
   /// Nhóm sự kiện: ops-alert | return | system…
-  type    String
-  title   String
-  body    String?
+  type      String
+  title     String
+  body      String?
   /// Deep-link nội bộ frontend (VD /warehouse/returns) — bấm thông báo là tới.
-  link    String?
+  link      String?
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
@@ -2567,17 +2626,17 @@ model Notification {
 /// đọc các câu outcome=miss phổ biến để bồi thành intent luật mới (~15'/intent),
 /// tầng luật tự nở ra thì tỷ lệ phải đi LLM (gói cao, sau này) tự co lại.
 model AssistantQueryLog {
-  id      String @id @default(cuid())
-  ownerId String
+  id         String   @id @default(cuid())
+  ownerId    String
   /// Câu hỏi nguyên văn người dùng gõ (hoặc nhãn chip khi bấm chip hỏi lại).
   question   String
   /// Bản chuẩn hoá không dấu lowercase — gom nhóm câu trùng khi đọc log.
   normalized String
   /// Intent tầng luật đã khớp; null khi miss/analysis (nguyên liệu bồi luật).
-  intent String?
+  intent     String?
   /// answered | clarify | miss | analysis
-  outcome   String
-  createdAt DateTime @default(now())
+  outcome    String
+  createdAt  DateTime @default(now())
 
   @@index([ownerId, createdAt])
   @@index([outcome, createdAt])
@@ -2612,18 +2671,18 @@ enum DeliveryFailOutcome {
 /// Cấu hình "Cứu đơn giao thất bại" — 1 dòng/chủ shop. Không có dòng = mặc
 /// định: cảnh báo BẬT, auto-chat TẮT, template mặc định trong code.
 model DeliveryFailConfig {
-  id      String @id @default(cuid())
-  ownerId String @unique
+  id              String   @id @default(cuid())
+  ownerId         String   @unique
   /// Bật chuông + thẻ Trung tâm điều hành khi phát hiện đơn chạm ngưỡng.
-  alertEnabled Boolean @default(true)
+  alertEnabled    Boolean  @default(true)
   /// Tự nhắn khách qua chat sàn ngay khi phát hiện (cổng chờ nối chat —
   /// mặc định TẮT, chủ shop tin thì bật).
-  autoChatEnabled Boolean @default(false)
+  autoChatEnabled Boolean  @default(false)
   /// Mẫu tin nhắn gửi khách. Rỗng = dùng template mặc định trong code.
   /// Biến: {ten_khach} {ma_don} {ten_san_pham}.
-  chatTemplate String  @default("")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  chatTemplate    String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("delivery_fail_config")
 }
@@ -2657,23 +2716,23 @@ enum ChannelAppKind {
 }
 
 model ChannelAppAuth {
-  id        String         @id @default(cuid())
-  channelId String
-  channel   Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  app       ChannelAppKind
+  id                   String         @id @default(cuid())
+  channelId            String
+  channel              Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  app                  ChannelAppKind
   /// shop_id Shopee trả ở callback — luôn phải trùng Channel.externalShopId
   /// (callback đối chiếu trước khi đổi code, tránh ghi token nhầm gian).
-  externalShopId String
-  accessToken  String
-  refreshToken String
+  externalShopId       String
+  accessToken          String
+  refreshToken         String
   accessTokenExpireAt  DateTime
   /// refresh_token Shopee sống 30 ngày kể từ lần rotate gần nhất.
   refreshTokenExpireAt DateTime
   /// ACTIVE | DISCONNECTED (refresh_token chết / sàn thu hồi → cần ủy quyền lại)
-  status         String    @default("ACTIVE")
-  disconnectedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status               String         @default("ACTIVE")
+  disconnectedAt       DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
   @@unique([channelId, app])
   @@index([app, status, accessTokenExpireAt])
@@ -2691,16 +2750,16 @@ model ChannelAppAuth {
 /// dòng độc lập, KHÔNG unique theo advertiser.
 /// access_token dài hạn: không hết hạn, không refresh; chết khi bị hủy ủy quyền.
 model TiktokAdsAuth {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   userId        String // chủ shop (ownerId)
   accessToken   String
   /// advertiser_id token truy cập được, nối dấu phẩy — chỉ để tra cứu/hiển thị.
-  advertiserIds String   @default("")
+  advertiserIds String    @default("")
   /// ACTIVE | REVOKED (sàn báo token chết → cần ủy quyền lại)
-  status        String   @default("ACTIVE")
+  status        String    @default("ACTIVE")
   revokedAt     DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   links TiktokAdsStoreLink[]
@@ -2714,21 +2773,21 @@ model TiktokAdsAuth {
 /// một gian tối đa một link. Hubsell tự dò cặp này sau khi ủy quyền — chủ shop
 /// không phải chọn gì.
 model TiktokAdsStoreLink {
-  id             String    @id @default(cuid())
-  channelId      String    @unique
-  authId         String
-  advertiserId   String
-  advertiserName String    @default("")
+  id               String    @id @default(cuid())
+  channelId        String    @unique
+  authId           String
+  advertiserId     String
+  advertiserName   String    @default("")
   /// store_id phía Marketing API (= Channel.externalShopId của gian).
-  storeId        String
+  storeId          String
   /// ACTIVE | NO_ACCESS (TKQC mất quyền shop / shop đổi TKQC độc quyền)
-  status         String    @default("ACTIVE")
-  lastSyncedAt   DateTime?
-  lastSyncError  String    @default("")
+  status           String    @default("ACTIVE")
+  lastSyncedAt     DateTime?
+  lastSyncError    String    @default("")
   /// "YYYY-MM-DD" (VN) lượt THEO DÕI VIDEO + xét luật tự động gần nhất — mỗi ngày một lượt, sau 12h trưa.
-  lastVideoTrackOn String  @default("")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  lastVideoTrackOn String    @default("")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   channel Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
   auth    TiktokAdsAuth @relation(fields: [authId], references: [id], onDelete: Cascade)
@@ -2743,46 +2802,46 @@ model TiktokAdsStoreLink {
 /// bộ số; nhân bản sang chiến dịch khác bằng nút Sao chép). Chiến dịch không có
 /// dòng = Tắt. Luật thuần ở integrations/tiktok-ads/auto-rules.ts.
 model TiktokAdsAutoRule {
-  id            String   @id @default(cuid())
-  adsCampaignId String   @unique
+  id                    String    @id @default(cuid())
+  adsCampaignId         String    @unique
   /// off | dry_run (DIỄN TẬP: chấm điểm, ghi sổ, báo chuông, KHÔNG gọi sàn) | live
-  mode          String   @default("off")
+  mode                  String    @default("off")
   /// ROI mục tiêu dùng cho luật (mặc định = roasTarget của campaign nếu có).
-  roiTarget     Decimal  @db.Decimal(8, 2)
+  roiTarget             Decimal   @db.Decimal(8, 2)
   /// Cửa sổ ngày để soi (kết thúc HÔM QUA — chi phí video trễ tới 11h); 3–30.
-  windowDays    Int      @default(7)
+  windowDays            Int       @default(7)
   /// Công tắc từng luật (anh Trung 18/09: khách không muốn dùng luật nào thì tắt luật đó, không dùng số 0 để "tắt").
-  ruleNoOrderOn Boolean  @default(true)
-  ruleLowRoiOn  Boolean  @default(true)
-  ruleCpaOn     Boolean  @default(false)
-  graceOn       Boolean  @default(true)
+  ruleNoOrderOn         Boolean   @default(true)
+  ruleLowRoiOn          Boolean   @default(true)
+  ruleCpaOn             Boolean   @default(false)
+  graceOn               Boolean   @default(true)
   /// Sàn dữ liệu: tiêu dưới mức này trong cửa sổ → chưa xét.
-  minSpend      Decimal  @default(50000) @db.Decimal(14, 2)
+  minSpend              Decimal   @default(50000) @db.Decimal(14, 2)
   /// Tiêu ≥ mức này mà 0 đơn → loại.
-  spendNoOrder  Decimal  @default(200000) @db.Decimal(14, 2)
+  spendNoOrder          Decimal   @default(200000) @db.Decimal(14, 2)
   /// MỨC LOẠI ROI tính theo gì: "pct" = roiTarget × roiHardPct% (mặc định) | "breakeven" = ROI hòa vốn của chiến
   /// dịch (dưới hòa vốn là lỗ thật); hòa vốn chưa đủ tin thì lượt chấm tự rơi về pct (auto-rules.ts resolveHardLevel).
-  hardBasis     String   @default("pct")
+  hardBasis             String    @default("pct")
   /// Có đơn nhưng ROI < roiTarget × roiHardPct% → loại; giữa mức đó và mục tiêu → chỉ gắn cờ.
-  roiHardPct    Int      @default(50)
+  roiHardPct            Int       @default(50)
   /// Trần chi phí mỗi đơn; NULL = không dùng.
-  maxCpa        Decimal? @db.Decimal(14, 2)
+  maxCpa                Decimal?  @db.Decimal(14, 2)
   /// Công thần: video ≥ graceMinOrders đơn trong 30 ngày thì vi phạm phải KÉO DÀI graceDays ngày mới loại.
-  graceMinOrders Int     @default(20)
-  graceDays      Int     @default(2)
+  graceMinOrders        Int       @default(20)
+  graceDays             Int       @default(2)
   /// Trần số video loại mỗi ngày cho chiến dịch (ưu tiên video tốn tiền nhất).
-  maxExcludePerDay Int   @default(10)
+  maxExcludePerDay      Int       @default(10)
   /// Sau khi loại vẫn phải còn ít nhất N video đang ra đơn — không loại tới video cuối.
-  minOrderingVideosKeep Int @default(3)
+  minOrderingVideosKeep Int       @default(3)
   /// Lượt xét gần nhất: ngày VN + tóm tắt (số loại / gắn cờ / bỏ qua…) để UI kể lại.
-  lastRunOn      String   @default("")
-  lastRunAt      DateTime?
-  lastRunSummary Json?
+  lastRunOn             String    @default("")
+  lastRunAt             DateTime?
+  lastRunSummary        Json?
   /// B6: cấu hình mà lượt chấm THẬT gần nhất đã dùng (AutoRuleConfig). Tự loại thật chỉ bật / chạy được với đúng
   /// cấu hình này — đổi số là phải diễn tập lại một lượt (auto-rules.ts unrehearsedFields). Lượt bị bỏ (A2) không ghi.
-  lastRunConfig  Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  lastRunConfig         Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
 
@@ -2796,30 +2855,30 @@ model TiktokAdsAutoRule {
 /// biết sàn có đưa video quay lại LEARNING không; nhớ ân hạn + lần khách khôi
 /// phục tay (máy không loại lại trong 30 ngày).
 model TiktokAdsVideoWatch {
-  id            String   @id @default(cuid())
-  adsCampaignId String
-  videoId       String
-  spuId         String   @default("")
+  id               String    @id @default(cuid())
+  adsCampaignId    String
+  videoId          String
+  spuId            String    @default("")
   /// Trạng thái sàn lần thấy gần nhất + ngày bắt đầu chuỗi trạng thái đó.
-  status        String   @default("")
-  statusSince   String   @default("")
-  firstSeenOn   String
-  lastSeenOn    String   @default("")
+  status           String    @default("")
+  statusSince      String    @default("")
+  firstSeenOn      String
+  lastSeenOn       String    @default("")
   /// Ngày đầu thấy DELIVERING sau khi ĐÃ thấy LEARNING = "ra trường"; "" = ra trường trước khi Hubsell theo dõi.
-  graduatedOn   String   @default("")
+  graduatedOn      String    @default("")
   /// Nhật ký đổi trạng thái, mỗi dòng "YYYY-MM-DD A→B" (giữ ~20 dòng cuối).
-  statusLog     String   @default("")
+  statusLog        String    @default("")
   /// Ân hạn công thần: ngày vi phạm liên tục đầu tiên ("" = không vi phạm) + chi tiêu lúc đó.
-  violationSince   String  @default("")
-  spendAtViolation Decimal @default(0) @db.Decimal(14, 2)
+  violationSince   String    @default("")
+  spendAtViolation Decimal   @default(0) @db.Decimal(14, 2)
   /// Khách khôi phục tay lần gần nhất → máy chỉ gắn cờ, không loại lại trong 30 ngày.
   restoredByUserAt DateTime?
   /// Kết luận gần nhất của luật: learning | insufficient | healthy | flag | grace | protected | exclude
-  lastVerdict   String   @default("")
-  lastVerdictOn String   @default("")
-  lastReason    String   @default("")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  lastVerdict      String    @default("")
+  lastVerdictOn    String    @default("")
+  lastReason       String    @default("")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   adsCampaign AdsCampaign @relation(fields: [adsCampaignId], references: [id], onDelete: Cascade)
 
@@ -2834,13 +2893,13 @@ model DeliveryTrackingTask {
   orderId   String                   @unique
   kind      DeliveryTrackingTaskKind
   /// Hạn được hỏi tracking lần tới — worker chỉ nhặt vé nextRunAt <= now.
-  nextRunAt DateTime  @default(now())
+  nextRunAt DateTime                 @default(now())
   lastRunAt DateTime?
   /// Lỗi LIÊN TIẾP khi hỏi tracking (reset 0 khi thành công) — quá trần thì
   /// bỏ vé (đơn tách kiện cần package_number là lỗi vĩnh viễn).
-  attempts  Int       @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  attempts  Int                      @default(0)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -2852,22 +2911,22 @@ model DeliveryTrackingTask {
 /// Một đơn ĐÃ chạm ngưỡng giao thất bại — orderId unique vừa là chống trùng
 /// (mỗi đơn cảnh báo đúng một lần, không đốt quota hỏi lại) vừa là nhật ký UI.
 model DeliveryFailNotice {
-  id      String @id @default(cuid())
-  ownerId String
-  orderId String @unique
+  id         String   @id @default(cuid())
+  ownerId    String
+  orderId    String   @unique
   /// Số mốc giao thất bại đếm được lúc phát hiện (≥ ngưỡng 2).
   failCount  Int
   detectedAt DateTime @default(now())
 
-  chatStatus DeliveryFailChatStatus @default(NONE)
+  chatStatus  DeliveryFailChatStatus @default(NONE)
   /// Kết quả chốt từ tracking (worker re-check định kỳ); đơn hủy/hoàn theo
   /// trạng thái Order vẫn thắng khi hiển thị (mergeDeliveryFailOutcome).
-  outcome   DeliveryFailOutcome @default(PENDING)
-  outcomeAt DateTime?
+  outcome     DeliveryFailOutcome    @default(PENDING)
+  outcomeAt   DateTime?
   /// Mốc sàn tại thời điểm chốt (audit — vd "LOGISTICS_DELIVERY_DONE").
   outcomeNote String?
   /// Thông điệp lỗi sàn trả khi gửi chat thất bại — hiện trần cho chủ shop.
-  chatError String?
+  chatError   String?
   /// Nguyên văn tin đã gửi (audit — template có thể đổi sau này).
   sentMessage String?
   sentAt      DateTime?
@@ -2892,8 +2951,8 @@ model DeliveryFailNotice {
 
 /// Trạng thái hợp tác với một KOC
 enum KocPartnerStatus {
-  ACTIVE      // đang hợp tác
-  PAUSED      // tạm dừng
+  ACTIVE // đang hợp tác
+  PAUSED // tạm dừng
   BLACKLISTED // bùng mẫu / vi phạm — chặn tạo phiếu mẫu mới
 }
 
@@ -2902,17 +2961,17 @@ enum KocPartnerStatus {
 /// giờ lệch đồng hồ); BURNED là xác nhận CỦA CHỦ SHOP sau khi quá hạn.
 enum KocSampleStatus {
   WAITING // đã gửi mẫu, chờ KOC lên bài
-  POSTED  // đã đăng content (kèm link nếu có)
-  BURNED  // chủ shop xác nhận bùng — mất mẫu
+  POSTED // đã đăng content (kèm link nếu có)
+  BURNED // chủ shop xác nhận bùng — mất mẫu
 }
 
 enum KocExpenseKind {
-  BOOKING      // booking lẻ một KOC
+  BOOKING // booking lẻ một KOC
   MCN_CONTRACT // hợp đồng MCN trọn gói
 }
 
 enum KocExpenseState {
-  PAID    // đã chi
+  PAID // đã chi
   PENDING // chưa chi (dueDate = hạn thanh toán)
 }
 
@@ -2945,29 +3004,29 @@ model KocPartner {
 
 /// Phiếu xuất hàng mẫu cho KOC
 model KocSampleShipment {
-  id          String          @id @default(cuid())
-  ownerId     String
-  kocId       String
+  id             String          @id @default(cuid())
+  ownerId        String
+  kocId          String
   /// SKU kho vật lý nếu chọn từ kho (trừ tồn + ghi InventoryLog EXPORT);
   /// NULL = mẫu ngoài kho (nhập tay tên + giá trị)
-  productId   String?
-  sku         String          @default("")
-  productName String
-  qty         Int
+  productId      String?
+  sku            String          @default("")
+  productName    String
+  qty            Int
   /// Giá vốn/đơn vị TẠI THỜI ĐIỂM XUẤT — chốt cứng, đổi giá vốn sau không làm
   /// lệch chi phí mẫu lịch sử
-  unitCost    Decimal         @default(0) @db.Decimal(12, 2)
-  cost        Decimal         @default(0) @db.Decimal(12, 2)
-  exportedAt  DateTime        @default(now())
+  unitCost       Decimal         @default(0) @db.Decimal(12, 2)
+  cost           Decimal         @default(0) @db.Decimal(12, 2)
+  exportedAt     DateTime        @default(now())
   /// Hạn lên bài — mặc định +14 ngày theo chuẩn Sample Integrity TikTok, cho sửa
   postDeadlineAt DateTime
-  status      KocSampleStatus @default(WAITING)
-  postedAt    DateTime?
+  status         KocSampleStatus @default(WAITING)
+  postedAt       DateTime?
   /// Link content khi POSTED — bằng chứng nghiệm thu seeding
-  contentUrl  String          @default("")
+  contentUrl     String          @default("")
   /// Phiếu này có trừ kho vật lý lúc xuất không (để biết đường hoàn tác)
-  deductedStock Boolean       @default(false)
-  note        String          @default("")
+  deductedStock  Boolean         @default(false)
+  note           String          @default("")
 
   koc     KocPartner @relation(fields: [kocId], references: [id], onDelete: Cascade)
   product Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -3041,17 +3100,17 @@ model ApiThrottleState {
 /// SỨC KHỎE HQ (docs/HQ-SUC-KHOE.md, 12/09/2026): ảnh chụp số liệu mỗi giờ để
 /// vẽ xu hướng 30 ngày + dự báo ngày chạm mốc. Giữ 90 ngày (log-cleanup).
 model PlatformHealthSnapshot {
-  id            String   @id @default(cuid())
-  takenAt       DateTime @default(now())
+  id           String   @id @default(cuid())
+  takenAt      DateTime @default(now())
   /// Vài cột số hay vẽ — đọc nhanh không cần parse JSON.
-  channels      Int      @default(0)
-  owners        Int      @default(0)
-  ordersPerDay  Int      @default(0)
-  dbSizeMb      Int      @default(0)
-  ramMb         Int      @default(0)
-  overdueFast   Int      @default(0)
+  channels     Int      @default(0)
+  owners       Int      @default(0)
+  ordersPerDay Int      @default(0)
+  dbSizeMb     Int      @default(0)
+  ramMb        Int      @default(0)
+  overdueFast  Int      @default(0)
   /// Toàn bộ metrics 3 lớp (growth/worker/infra) — services/platform-health.ts.
-  metrics       Json
+  metrics      Json
 
   @@index([takenAt])
   @@map("platform_health_snapshots")
@@ -3060,14 +3119,14 @@ model PlatformHealthSnapshot {
 /// Trạng thái từng mốc timeline sức chứa (config/capacity-plan.ts): chạm lúc nào,
 /// anh Trung tick "đã làm" lúc nào. Mỗi mốc một dòng, tạo lười khi chạm/tick.
 model PlatformCapacityMilestone {
-  key        String    @id
-  reachedAt  DateTime?
+  key       String    @id
+  reachedAt DateTime?
   /// Đã nhắc "sắp chạm" lần gần nhất (chống nhắc lặp mỗi ngày).
-  warnedAt   DateTime?
-  doneAt     DateTime?
-  doneBy     String?
-  note       String?
-  updatedAt  DateTime  @updatedAt
+  warnedAt  DateTime?
+  doneAt    DateTime?
+  doneBy    String?
+  note      String?
+  updatedAt DateTime  @updatedAt
 
   @@map("platform_capacity_milestones")
 }

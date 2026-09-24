@@ -5,6 +5,25 @@
 
 ---
 
+## Phiên 24/09/2026 (tối) — VỊ TRÍ CHỨA HÀNG đợt B (nhiều kho nhỏ / kệ / ô) — ĐÃ CODE + kiểm local (anh Trung: "cứ code dần phần B")
+
+Khung 15/09 giữ nguyên, áp 4 điều chỉnh của lần rà 24/09 (mục 8.4 docs). Chi tiết đầy đủ `docs/VI-TRI-CHUA-HANG.md` mục 8.7.
+- **Sổ kho một cửa** `services/stock-ledger.ts`: 14 chỗ ghi tồn gom về `applyStockDelta` / `setStockAbsolute` /
+  `setLevelAbsolute` / `transferStockTx`; tổng `quantityInStock` vẫn là số cache (chỗ đọc + đẩy sàn không đổi), level theo
+  vị trí ghi nguyên tử, trừ đơn phân bổ theo ưu tiên (`lib/stock-allocation.ts`), hủy đơn về đúng vị trí, hàng hoàn về
+  "nơi nhận hoàn"; nhật ký thêm `locationId` + `balanceAfter`. Migration `20260924200000_stock_locations`, gốc sinh lazy.
+- **API** `/api/stock-locations` (CRUD + order + transfer + set-level + levels), rào xóa (còn con / còn hàng / đang mặc định),
+  xóa vị trí cuối = tắt tính năng. `adjust`/`adjust-bulk` nhận `locationId`.
+- **UI**: nút Thêm vị trí → hộp quản lý (ưu tiên, mặc định, nhận hoàn), cột Đang ở + popover sửa số / Chuyển vị trí có xem
+  trước, ô chọn vị trí ở Nhập/Xuất + Phiếu nhiều mã (nhớ lần cuối), nhật ký thêm Tồn sau + Vị trí.
+- **Kiểm**: 7 test thuần + 7 test tích hợp mới (bất biến Σ level = tổng sau mỗi bước, bán vượt âm ở vị trí cuối), suite cũ
+  pass; local shop reviewer: bật (gốc nhận 12 SKU · 1.694 chiếc) → chuyển 10 → nhật ký 2 dòng TRANSFER + Tồn sau 210 →
+  DELETE còn hàng 409 → chuyển về → xóa hết → tắt, MU-LUOI-TRAI vẫn 210, stockLevels rỗng. tsc + eslint sạch hai đầu.
+- Script `apply-migration-local.ts` sửa để giữ nguyên khối `DO $$` (FK idempotent). Đợt 2 (in vị trí lên phiếu nhặt, kiểm
+  kê theo vị trí, cờ không bán, mobile) chưa làm.
+
+---
+
 ## Phiên 24/09/2026 (chiều) — HOÀN THIỆN HÀNG HÓA đợt A: nhật ký kho, ngừng kinh doanh SKU, phiếu nhiều mã (ĐÃ CODE + kiểm local, CHƯA COMMIT lúc ghi)
 
 **Bối cảnh:** anh Trung yêu cầu "khảo sát lại một lần nữa để hoàn thiện phần Hàng hóa" (khung Vị trí chứa hàng chốt 15/09 chưa code). Rà lại code + đối thủ trực tiếp còn thiếu (BigSeller, Ginee) → ghi `docs/VI-TRI-CHUA-HANG.md` mục 8. Em đề xuất làm nền (Đợt A) trước vị trí (Đợt B); anh chốt **A → B**: "làm sớm sau này thương mại đỡ phải sửa nhiều, có khách rồi mà sửa nhiều mất uy tín".

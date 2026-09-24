@@ -45,6 +45,7 @@ const TYPE_CHIPS: { key: TypeFilter; label: string }[] = [
   { key: "EXPORT", label: "Xuất kho" },
   { key: "SYNC", label: "Đơn hàng & sàn" },
   { key: "ADJUST", label: "Điều chỉnh" },
+  { key: "TRANSFER", label: "Chuyển vị trí" },
 ];
 
 export const LOG_TYPE_META: Record<InventoryLogType, { label: string; className: string }> = {
@@ -52,6 +53,7 @@ export const LOG_TYPE_META: Record<InventoryLogType, { label: string; className:
   EXPORT: { label: "Xuất kho", className: "border-rose-200 bg-rose-50 text-rose-700" },
   SYNC: { label: "Đơn hàng & sàn", className: "border-slate-200 bg-slate-50 text-slate-700" },
   ADJUST: { label: "Điều chỉnh", className: "border-amber-200 bg-amber-50 text-amber-800" },
+  TRANSFER: { label: "Chuyển vị trí", className: "border-sky-200 bg-sky-50 text-sky-800" },
 };
 
 function dayStartIso(d: Date) {
@@ -69,9 +71,12 @@ export function InventoryLogTable({
   productId,
   /** Hộp lịch sử một SKU: bảng gọn, không ô tìm SKU. */
   compact = false,
+  /** Shop đang dùng vị trí chứa hàng → hiện cột Vị trí. */
+  showLocation = false,
 }: {
   productId?: string;
   compact?: boolean;
+  showLocation?: boolean;
 }) {
   const [range, setRange] = useState<DateRange | null>(null);
   const [type, setType] = useState<TypeFilter>("");
@@ -178,6 +183,10 @@ export function InventoryLogTable({
                     <TableHead className="w-36">Thời gian</TableHead>
                     {!productId && <TableHead>Sản phẩm</TableHead>}
                     <TableHead className="w-24 text-right">Thay đổi</TableHead>
+                    <TableHead className="w-20 text-right" title="Tồn tổng của SKU ngay sau bút toán">
+                      Tồn sau
+                    </TableHead>
+                    {showLocation && <TableHead className="w-32">Vị trí</TableHead>}
                     <TableHead className="w-32">Loại</TableHead>
                     <TableHead>Lý do</TableHead>
                     <TableHead className="w-44">Đơn hàng</TableHead>
@@ -211,6 +220,22 @@ export function InventoryLogTable({
                           {positive ? "+" : "−"}
                           {formatNumber(Math.abs(r.changeQuantity))}
                         </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums text-slate-700">
+                          {r.balanceAfter === null || r.balanceAfter === undefined
+                            ? "—"
+                            : formatNumber(r.balanceAfter)}
+                        </TableCell>
+                        {showLocation && (
+                          <TableCell className="text-sm">
+                            {r.location ? (
+                              <span className="truncate" title={r.location.name}>
+                                {r.location.name}
+                              </span>
+                            ) : (
+                              <span className={TEXT_SUB}>—</span>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <span
                             className={cn(

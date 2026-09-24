@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ChannelName, InventoryLogType, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
+import { setStockAbsolute } from "../services/stock-ledger";
 import { syncChannelProducts } from "../marketplace/product-sync";
 
 const router = Router();
@@ -234,20 +235,14 @@ async function seedInitialStockFromChannel(
         .map((r) => `${r.channel.shopName}: ${r.channelStock ?? 0}`)
         .join(mode === "MAX" ? " | " : " + ");
 
-    await prisma.$transaction([
-      prisma.product.update({
-        where: { id: p.id },
-        data: { quantityInStock: qty },
-      }),
-      prisma.inventoryLog.create({
-        data: {
-          productId: p.id,
-          changeQuantity: qty,
-          type: InventoryLogType.SYNC,
-          reason: `Đồng bộ lần đầu khi liên kết: tồn trên sàn (${detail})`,
-        },
-      }),
-    ]);
+    await prisma.$transaction((tx) =>
+      setStockAbsolute(tx, {
+        productId: p.id,
+        quantity: qty,
+        type: InventoryLogType.SYNC,
+        reason: `Đồng bộ lần đầu khi liên kết: tồn trên sàn (${detail})`,
+      })
+    );
     seeded.set(p.id, qty);
   }
   return seeded;

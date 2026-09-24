@@ -22,6 +22,7 @@ import {
   Link2,
   Link2Off,
   Loader2,
+  MapPin,
   Search,
   Sparkles,
   Warehouse,
@@ -41,6 +42,9 @@ import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { ProductHistoryDialog } from "@/components/products/product-history-dialog";
 import { ProductRowMenu } from "@/components/products/product-row-menu";
+import { StockLevelsCell } from "@/components/products/stock-levels-cell";
+import { StockLocationsDialog } from "@/components/products/stock-locations-dialog";
+import { StockTransferDialog } from "@/components/products/stock-transfer-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
 import {
@@ -65,6 +69,7 @@ import {
   fetchChannels,
   fetchProductChannelLinks,
   fetchProducts,
+  fetchStockLocations,
   fetchSyncSettings,
   getStoredUser,
   getToken,
@@ -73,6 +78,7 @@ import {
   type Product,
   type ProductChannelLink,
   type ProductStatusFilter,
+  type StockLocation,
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
 import { qk } from "@/lib/query-keys";
@@ -128,6 +134,18 @@ export default function ProductsHubPage() {
   // SKU đang mở hộp Lịch sử kho.
   const [history, setHistory] = useState<Product | null>(null);
 
+  // VỊ TRÍ CHỨA HÀNG (đợt B): rỗng = shop chưa dùng, giao diện y hệt cũ (ẩn bằng
+  // sự vắng mặt — không công tắc cài đặt). Cột "Đang ở" + ô chọn vị trí chỉ
+  // xuất hiện khi có ≥ 1 vị trí.
+  const locationsQ = useApiQuery({
+    queryKey: qk.stockLocations(),
+    queryFn: fetchStockLocations,
+  });
+  const locations: StockLocation[] = locationsQ.data?.items ?? [];
+  const locationsEnabled = locations.length > 0;
+  const [locationsOpen, setLocationsOpen] = useState(false);
+  const [transfer, setTransfer] = useState<{ product: Product; fromId?: string } | null>(null);
+
   // Số liệu nuôi khối Thiết lập kho + badge tab (chỉ chủ shop): đếm SP sàn,
   // gian hàng đang hoạt động. `guideReady` = đã tải xong lượt đầu để khối quyết
   // định bung/thu, tránh nháy.
@@ -179,6 +197,7 @@ export default function ProductsHubPage() {
     setLinkDetails({});
     invalidate(["products"]);
     invalidate(["inventory-logs"]);
+    invalidate(["stock-locations"]);
   }, [invalidate]);
 
   /** Đếm SP sàn (all/linked/unlinked) — badge tab + bước 1, 2 của khối thiết lập. */
@@ -427,6 +446,25 @@ export default function ProductsHubPage() {
       }),
       // ===== CỘT MỚI: BÁN TRÊN — trái tim của hub. Gom chip theo sàn + badge
       // lệch tồn; bấm vào là bung chi tiết từng gian ngay dưới dòng. =====
+      // "ĐANG Ở" (đợt B) — chỉ khi shop đã tạo vị trí; xem cột trống là hiểu
+      // "chưa có ở đâu", bấm mở chi tiết sửa số / chuyển.
+      ...(locationsEnabled
+        ? [
+            columnHelper.display({
+              id: "locations",
+              header: "Đang ở",
+              cell: ({ row }) => (
+                <StockLevelsCell
+                  product={row.original}
+                  locations={locations}
+                  editable={true}
+                  onTransfer={(fromId) => setTransfer({ product: row.original, fromId })}
+                  onSaved={load}
+                />
+              ),
+            }),
+          ]
+        : []),
       columnHelper.display({
         id: "channels",
         header: "Bán trên",
@@ -584,7 +622,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, expandedId, linkDetails]
+    [seesCost, isAdmin, expandedId, linkDetails, locations]
   );
 
   const table = useReactTable({
@@ -804,7 +842,7 @@ export default function ProductsHubPage() {
         </PageHeaderBand>
 
         {tab === "logs" ? (
-          <InventoryLogTable />
+          <InventoryLogTable showLocation={locationsEnabled} />
         ) : tab === "links" && isAdmin ? (
           <LinkManager
             key={linkSeed ?? "all"}
@@ -881,6 +919,20 @@ export default function ProductsHubPage() {
                 )}
               </form>
               <div className="flex flex-wrap items-center gap-2">
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setLocationsOpen(true)}
+                    title={
+                      locationsEnabled
+                        ? `${locations.length} vị trí chứa hàng — bấm để quản lý`
+                        : "Thuê thêm kho nhỏ / kệ? Thêm vị trí chứa hàng"
+                    }
+                  >
+                    <MapPin className="size-4" />
+                    {locationsEnabled ? `Vị trí (${locations.length})` : "Thêm vị trí chứa hàng"}
+                  </Button>
+                )}
                 <Button variant="outline" nativeButton={false} render={<Link href="/products/receive" />}>
                   <ClipboardList className="size-4" />
                   Phiếu nhiều mã
@@ -1022,9 +1074,34 @@ export default function ProductsHubPage() {
         <AdjustStockDialog
           product={adjusting.product}
           type={adjusting.type}
+          locations={locations}
           open={true}
           onOpenChange={(open) => {
             if (!open) setAdjusting(null);
+          }}
+          onDone={load}
+        />
+      )}
+
+      {/* Vị trí chứa hàng (chỉ chủ shop) */}
+      {isAdmin && (
+        <StockLocationsDialog
+          open={locationsOpen}
+          onOpenChange={setLocationsOpen}
+          locations={locations}
+          onChanged={() => load()}
+        />
+      )}
+
+      {/* Chuyển vị trí một SKU */}
+      {transfer && (
+        <StockTransferDialog
+          product={transfer.product}
+          locations={locations}
+          defaultFromId={transfer.fromId}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setTransfer(null);
           }}
           onDone={load}
         />
@@ -1034,6 +1111,7 @@ export default function ProductsHubPage() {
       {history && (
         <ProductHistoryDialog
           product={history}
+          showLocation={locationsEnabled}
           open={true}
           onOpenChange={(open) => {
             if (!open) setHistory(null);

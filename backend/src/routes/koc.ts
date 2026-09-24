@@ -12,6 +12,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
+import { applyStockDelta } from "../services/stock-ledger";
 import { channelScope, readChannelName } from "../lib/channel-filter";
 import { parseDateRange } from "../lib/date-range";
 import { computePnlRow } from "./finance";
@@ -958,18 +959,12 @@ router.post("/samples", async (req: AuthRequest, res, next) => {
           },
         });
         if (deductStock) {
-          await tx.product.update({
-            where: { id: product.id },
-            data: { quantityInStock: { decrement: qty } },
-          });
-          await tx.inventoryLog.create({
-            data: {
-              productId: product.id,
-              changeQuantity: -qty,
-              type: "EXPORT",
-              reason: `Xuất hàng mẫu KOC "${koc.name}" (Sổ KOC)`,
-              actorId: req.userId ?? null,
-            },
+          await applyStockDelta(tx, {
+            productId: product.id,
+            delta: -qty,
+            type: "EXPORT",
+            reason: `Xuất hàng mẫu KOC "${koc.name}" (Sổ KOC)`,
+            actorId: req.userId ?? null,
           });
         }
         return shipment;

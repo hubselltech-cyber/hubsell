@@ -233,6 +233,8 @@ export interface Product {
   safetyStock?: number | null;
   /** false = NGỪNG KINH DOANH (24/09): ẩn khỏi bảng mặc định, không cảnh báo hết hàng. */
   isActive?: boolean;
+  /** Tồn theo vị trí (đợt B) — chỉ các vị trí có số ≠ 0; rỗng khi shop chưa dùng vị trí. */
+  stockLevels?: { locationId: string; quantity: number }[];
   createdAt: string;
   /**
    * "CÓ THỂ BÁN" = tồn − đang giữ − tồn an toàn: số Hubsell đẩy lên MỌI gian
@@ -332,7 +334,7 @@ export interface ProductListResponse {
 
 export type ProductStatusFilter = "active" | "inactive" | "all";
 
-export type InventoryLogType = "IMPORT" | "EXPORT" | "SYNC" | "ADJUST";
+export type InventoryLogType = "IMPORT" | "EXPORT" | "SYNC" | "ADJUST" | "TRANSFER";
 
 export interface InventoryLog {
   id: string;
@@ -349,6 +351,10 @@ export interface InventoryLogEntry extends InventoryLog {
   productName: string;
   /** null = hệ thống (webhook sàn, worker, đồng bộ). */
   actor: { id: string; name: string } | null;
+  /** Tồn TỔNG của SKU ngay sau bút toán (null ở dòng cũ trước 24/09). */
+  balanceAfter?: number | null;
+  /** Vị trí bị tác động (đợt B); null khi shop chưa dùng vị trí. */
+  location?: { id: string; name: string } | null;
   order: {
     id: string;
     orderCode: string;
@@ -3318,6 +3324,8 @@ export function adjustInventory(data: {
   type: "IMPORT" | "EXPORT";
   quantity: number;
   reason?: string;
+  /** Vị trí chứa hàng (đợt B) — bỏ trống = gốc (nhập) / theo ưu tiên (xuất). */
+  locationId?: string;
 }) {
   return apiFetch<{ product: Product; log: InventoryLog }>(
     "/api/inventory/adjust",
@@ -3341,6 +3349,7 @@ export function adjustInventoryBulk(data: {
   type: "IMPORT" | "EXPORT";
   items: { productId: string; quantity: number }[];
   reason?: string;
+  locationId?: string;
 }) {
   return apiFetch<{
     type: "IMPORT" | "EXPORT";
@@ -3369,6 +3378,121 @@ export function fetchInventoryLogs(params: {
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   return apiFetch<InventoryLogListResponse>(`/api/inventory/logs?${qs.toString()}`);
+}
+
+// ----- VỊ TRÍ CHỨA HÀNG (đợt B 24/09) — kho nhỏ / kệ / ô, cây cha-con -----
+
+export interface StockLocation {
+  id: string;
+  parentId: string | null;
+  name: string;
+  code: string | null;
+  /** Thứ tự ưu tiên trừ hàng (nhỏ = lấy trước). */
+  sortOrder: number;
+  /** Vị trí gốc — nhận hàng khi không chỉ định; mỗi shop đúng một. */
+  isDefault: boolean;
+  /** Nơi nhận hàng hoàn mặc định; không có thì hoàn về đúng vị trí đã trừ. */
+  isReturnDefault: boolean;
+  sellable: boolean;
+  createdAt: string;
+  /** Số SKU đang có hàng (≠ 0) tại vị trí. */
+  skuCount: number;
+  totalQuantity: number;
+}
+
+export interface StockLocationListResponse {
+  items: StockLocation[];
+  /** false = shop chưa tạo vị trí nào (giao diện y hệt cũ). */
+  enabled: boolean;
+}
+
+export function fetchStockLocations() {
+  return apiFetch<StockLocationListResponse>("/api/stock-locations");
+}
+
+/** Thêm vị trí — lần đầu backend tự sinh gốc "Kho chính" và đổ tồn hiện có vào. */
+export function createStockLocation(data: { name: string; code?: string; parentId?: string | null }) {
+  return apiFetch<
+    StockLocationListResponse & {
+      created: { id: string; name: string };
+      createdRoot: { id: string; name: string } | null;
+    }
+  >("/api/stock-locations", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateStockLocation(
+  id: string,
+  data: {
+    name?: string;
+    code?: string | null;
+    parentId?: string | null;
+    isDefault?: true;
+    isReturnDefault?: boolean;
+    sellable?: boolean;
+  }
+) {
+  return apiFetch<StockLocationListResponse>(`/api/stock-locations/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function reorderStockLocations(ids: string[]) {
+  return apiFetch<StockLocationListResponse>("/api/stock-locations/order", {
+    method: "PUT",
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export function deleteStockLocation(id: string) {
+  return apiFetch<StockLocationListResponse>(`/api/stock-locations/${id}`, { method: "DELETE" });
+}
+
+export interface ProductStockLevelRow {
+  id: string;
+  name: string;
+  code: string | null;
+  isDefault: boolean;
+  sellable: boolean;
+  quantity: number;
+}
+
+/** Tồn theo từng vị trí của MỘT SKU (đủ mọi vị trí, không có dòng = 0). */
+export function fetchProductStockLevels(productId: string) {
+  return apiFetch<{
+    product: { id: string; skuCode: string; productName: string; quantityInStock: number };
+    levels: ProductStockLevelRow[];
+  }>(`/api/stock-locations/levels?productId=${encodeURIComponent(productId)}`);
+}
+
+/** Chuyển hàng giữa hai vị trí — tổng không đổi, không đẩy sàn. */
+export function transferStock(data: {
+  fromLocationId: string;
+  toLocationId: string;
+  items: { productId: string; quantity: number }[];
+  reason?: string;
+}) {
+  return apiFetch<{ moved: number; results: { productId: string; from: number; to: number }[] }>(
+    "/api/stock-locations/transfer",
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+/** Sửa số tại một vị trí (thay kiểm kê ở đợt 1) — tổng đổi theo, đẩy sàn. */
+export function setStockLevel(data: {
+  productId: string;
+  locationId: string;
+  quantity: number;
+  reason?: string;
+}) {
+  return apiFetch<{
+    productId: string;
+    locationId: string;
+    previous: number;
+    quantity: number;
+    delta: number;
+    quantityInStock: number;
+  }>("/api/stock-locations/set-level", { method: "POST", body: JSON.stringify(data) });
 }
 
 // ----- Trung tâm điều hành (Command Center) -----

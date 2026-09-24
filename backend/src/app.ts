@@ -19,6 +19,7 @@ import ordersRouter from "./routes/orders";
 import warehouseRouter from "./routes/warehouse";
 import channelsRouter from "./routes/channels";
 import inventoryRouter from "./routes/inventory";
+import stockLocationsRouter from "./routes/stock-locations";
 import mappingsRouter from "./routes/mappings";
 import webhooksRouter from "./routes/webhooks";
 import publicRouter from "./routes/public";
@@ -205,6 +206,8 @@ export function createApp() {
   app.use("/api/products", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, productsRouter);
   app.use("/api/orders", requireAuth, requirePermission("orders"), requireChannel, ordersRouter);
   app.use("/api/inventory", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, inventoryRouter);
+  // Vị trí chứa hàng (đợt B 24/09) — cùng quyền với Hàng hóa.
+  app.use("/api/stock-locations", requireAuth, requirePermission("warehouse.products", "orders"), requireChannel, stockLocationsRouter);
   app.use("/api/warehouse", requireAuth, requirePermission("warehouse.returns"), requireChannel, warehouseRouter);
   app.use("/api/mappings", requireAuth, adminOnly, requireChannel, mappingsRouter);
 

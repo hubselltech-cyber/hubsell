@@ -66,6 +66,8 @@ export const qk = {
   // ----- Kho -----
   products: (params: Record<string, unknown>) => ["products", params] as const,
   inventoryLogs: (params: Record<string, unknown>) => ["inventory-logs", params] as const,
+  stockLocations: () => ["stock-locations"] as const,
+  productStockLevels: (productId: string) => ["product-stock-levels", productId] as const,
   warehouseReturns: (params: Record<string, unknown>) =>
     ["warehouse-returns", params] as const,
 };

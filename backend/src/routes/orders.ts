@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
+import { applyStockDelta } from "../services/stock-ledger";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
 import { attachItemImages } from "../services/item-images";
@@ -475,25 +476,21 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
       for (const log of deductions) {
         const qty = Math.abs(log.changeQuantity);
-        const updatedProduct = await tx.product.update({
-          where: { id: log.productId },
-          data: { quantityInStock: { increment: qty } },
-        });
-        await tx.inventoryLog.create({
-          data: {
-            productId: log.productId,
-            changeQuantity: qty,
-            type: InventoryLogType.SYNC,
-            reason: `Hoàn kho tự động do hủy đơn ${order.orderCode}`,
-            orderId: order.id,
-            actorId: req.userId ?? null,
-          },
+        // Hủy đơn (chưa giao): trả về ĐÚNG vị trí đã trừ.
+        const written = await applyStockDelta(tx, {
+          productId: log.productId,
+          delta: qty,
+          type: InventoryLogType.SYNC,
+          reason: `Hoàn kho tự động do hủy đơn ${order.orderCode}`,
+          orderId: order.id,
+          actorId: req.userId ?? null,
+          locationId: log.locationId,
         });
         restored.push({
           productId: log.productId,
           productName: log.product.productName,
           restoredQuantity: qty,
-          newQuantity: updatedProduct.quantityInStock,
+          newQuantity: written.quantityInStock,
         });
       }
 
@@ -1305,25 +1302,23 @@ async function restoreReturnStockTx(
   });
   for (const log of deductions) {
     const qty = Math.abs(log.changeQuantity);
-    const updated = await tx.product.update({
-      where: { id: log.productId },
-      data: { quantityInStock: { increment: qty } },
-    });
-    await tx.inventoryLog.create({
-      data: {
-        productId: log.productId,
-        changeQuantity: qty,
-        type: InventoryLogType.SYNC,
-        reason,
-        orderId: order.id,
-        actorId,
-      },
+    // Hàng HOÀN về kho: shop đặt "nơi nhận hoàn" thì về đó, không thì về đúng
+    // vị trí đã trừ (đợt B).
+    const written = await applyStockDelta(tx, {
+      productId: log.productId,
+      delta: qty,
+      type: InventoryLogType.SYNC,
+      reason,
+      orderId: order.id,
+      actorId,
+      locationId: log.locationId,
+      useReturnDefault: true,
     });
     restored.push({
       productId: log.productId,
       productName: log.product.productName,
       restoredQuantity: qty,
-      newQuantity: updated.quantityInStock,
+      newQuantity: written.quantityInStock,
     });
   }
   return restored;

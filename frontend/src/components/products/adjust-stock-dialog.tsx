@@ -14,11 +14,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { adjustInventory, ApiError, type Product } from "@/lib/api";
+import { NativeSelect } from "@/components/ui/native-select";
+import { adjustInventory, ApiError, type Product, type StockLocation } from "@/lib/api";
+import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 
 interface AdjustStockDialogProps {
   product: Product;
   type: "IMPORT" | "EXPORT";
+  /** Vị trí chứa hàng của shop (đợt B) — rỗng = không hiện ô chọn. */
+  locations?: StockLocation[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
@@ -28,6 +32,7 @@ interface AdjustStockDialogProps {
 export function AdjustStockDialog({
   product,
   type,
+  locations = [],
   open,
   onOpenChange,
   onDone,
@@ -35,8 +40,14 @@ export function AdjustStockDialog({
   const [quantity, setQuantity] = useState("1");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Vị trí: nhớ lần chọn cuối (anh Trung 15/09: "nhớ lần chọn cuối"); xuất để
+  // trống = trừ theo thứ tự ưu tiên.
+  const [locationId, setLocationId] = useState(() =>
+    locations.length ? readLastLocation(locations) : ""
+  );
 
   const isImport = type === "IMPORT";
+  const qtyById = new Map((product.stockLevels ?? []).map((l) => [l.locationId, l.quantity]));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,7 +70,9 @@ export function AdjustStockDialog({
         type,
         quantity: qty,
         reason: reason.trim() || undefined,
+        locationId: locationId || undefined,
       });
+      if (locationId) rememberLocation(locationId);
       toast.success(
         `${isImport ? "Nhập" : "Xuất"} kho thành công. Tồn kho mới: ${res.product.quantityInStock}`
       );
@@ -107,6 +120,24 @@ export function AdjustStockDialog({
               autoFocus
             />
           </div>
+          {locations.length > 0 && (
+            <div className="grid gap-2">
+              <Label htmlFor="adjust-location">{isImport ? "Nhập vào" : "Xuất từ"}</Label>
+              <NativeSelect
+                id="adjust-location"
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+              >
+                {!isImport && <option value="">Tự trừ theo thứ tự ưu tiên</option>}
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                    {isImport ? "" : ` (đang có ${qtyById.get(l.id) ?? 0})`}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="adjust-reason">Lý do (không bắt buộc)</Label>
             <Input

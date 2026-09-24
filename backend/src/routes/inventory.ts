@@ -16,6 +16,13 @@ import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { findInsufficient, normalizeBulkItems } from "../lib/inventory-bulk";
+import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
+
+/** Đọc `locationId` tuỳ chọn từ body: chuỗi không rỗng hoặc undefined; kiểu khác → null (lỗi). */
+function readLocationId(v: unknown): string | undefined | null {
+  if (v === undefined || v === null || v === "") return undefined;
+  return typeof v === "string" ? v : null;
+}
 
 const router = Router();
 
@@ -25,6 +32,11 @@ const router = Router();
 router.post("/adjust", async (req: AuthRequest, res, next) => {
   try {
     const { productId, type, quantity, reason } = req.body ?? {};
+    const locationId = readLocationId(req.body?.locationId);
+    if (locationId === null) {
+      res.status(400).json({ error: "Vị trí không hợp lệ" });
+      return;
+    }
 
     if (typeof productId !== "string" || productId.length === 0) {
       res.status(400).json({ error: "Thiếu mã sản phẩm" });
@@ -67,21 +79,17 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
         );
       }
 
-      const updated = await tx.product.update({
-        where: { id: productId },
-        data: { quantityInStock: newQuantity },
+      const written = await applyStockDelta(tx, {
+        productId,
+        delta,
+        type: type === "IMPORT" ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
+        reason: reason?.trim() || (type === "IMPORT" ? "Nhập kho thủ công" : "Xuất kho thủ công"),
+        actorId: req.userId ?? null,
+        locationId,
       });
-
-      const log = await tx.inventoryLog.create({
-        data: {
-          productId,
-          changeQuantity: delta,
-          type: type === "IMPORT" ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
-          reason: reason?.trim() || (type === "IMPORT" ? "Nhập kho thủ công" : "Xuất kho thủ công"),
-          actorId: req.userId ?? null,
-        },
-      });
-
+      const updated = await tx.product.findUniqueOrThrow({ where: { id: productId } });
+      const log = await tx.inventoryLog.findUniqueOrThrow({ where: { id: written.logs[0]!.id } });
+      void newQuantity;
       return { product: updated, log };
     });
 
@@ -135,23 +143,22 @@ router.post("/set", async (req: AuthRequest, res, next) => {
       const delta = target - product.quantityInStock;
       if (delta === 0) return { product, log: null, delta };
 
-      const updated = await tx.product.update({
-        where: { id: productId },
-        data: { quantityInStock: target },
+      // ADJUST (24/09): sửa số trực tiếp là ĐIỀU CHỈNH sổ, không phải nhập/xuất
+      // hàng thật — nhật ký kho phân biệt được để khách tin số. Shop dùng vị trí:
+      // tăng thì vào gốc, giảm thì trừ theo ưu tiên (muốn chọn vị trí → sửa trong "Đang ở").
+      const written = await setStockAbsolute(tx, {
+        productId,
+        quantity: target,
+        type: InventoryLogType.ADJUST,
+        reason:
+          reason?.trim() ||
+          `Sửa tồn trực tiếp trên bảng: ${product.quantityInStock} → ${target}`,
+        actorId: req.userId ?? null,
       });
-      const log = await tx.inventoryLog.create({
-        data: {
-          productId,
-          changeQuantity: delta,
-          // ADJUST (24/09): sửa số trực tiếp là ĐIỀU CHỈNH sổ, không phải nhập/xuất
-          // hàng thật — nhật ký kho phân biệt được để khách tin số.
-          type: InventoryLogType.ADJUST,
-          reason:
-            reason?.trim() ||
-            `Sửa tồn trực tiếp trên bảng: ${product.quantityInStock} → ${target}`,
-          actorId: req.userId ?? null,
-        },
-      });
+      const updated = await tx.product.findUniqueOrThrow({ where: { id: productId } });
+      const log = written.logs[0]
+        ? await tx.inventoryLog.findUniqueOrThrow({ where: { id: written.logs[0].id } })
+        : null;
       return { product: updated, log, delta };
     });
 
@@ -178,6 +185,11 @@ router.post("/set", async (req: AuthRequest, res, next) => {
 router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
   try {
     const { type, items, reason } = req.body ?? {};
+    const locationId = readLocationId(req.body?.locationId);
+    if (locationId === null) {
+      res.status(400).json({ error: "Vị trí không hợp lệ" });
+      return;
+    }
     if (type !== "IMPORT" && type !== "EXPORT") {
       res.status(400).json({ error: "Loại phiếu phải là IMPORT (nhập) hoặc EXPORT (xuất)" });
       return;
@@ -231,21 +243,19 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
       const updated: { productId: string; skuCode: string; quantityInStock: number }[] = [];
       for (const it of parsed.items) {
         const delta = isImport ? it.quantity : -it.quantity;
-        const p = await tx.product.update({
-          where: { id: it.productId },
-          data: { quantityInStock: { increment: delta } },
-          select: { id: true, skuCode: true, quantityInStock: true },
+        const p = await applyStockDelta(tx, {
+          productId: it.productId,
+          delta,
+          type: isImport ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
+          reason: note,
+          actorId: req.userId ?? null,
+          locationId,
         });
-        await tx.inventoryLog.create({
-          data: {
-            productId: it.productId,
-            changeQuantity: delta,
-            type: isImport ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
-            reason: note,
-            actorId: req.userId ?? null,
-          },
+        updated.push({
+          productId: p.productId,
+          skuCode: byId.get(it.productId)!.skuCode,
+          quantityInStock: p.quantityInStock,
         });
-        updated.push({ productId: p.id, skuCode: p.skuCode, quantityInStock: p.quantityInStock });
       }
       return updated;
     });
@@ -339,8 +349,10 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
           type: true,
           reason: true,
           createdAt: true,
+          balanceAfter: true,
           product: { select: { skuCode: true, productName: true } },
           actor: { select: { id: true, fullName: true } },
+          location: { select: { id: true, name: true } },
           order: {
             select: {
               id: true,
@@ -362,6 +374,8 @@ router.get("/logs", async (req: AuthRequest, res, next) => {
         type: r.type,
         reason: r.reason,
         createdAt: r.createdAt,
+        balanceAfter: r.balanceAfter,
+        location: r.location ? { id: r.location.id, name: r.location.name } : null,
         actor: r.actor ? { id: r.actor.id, name: r.actor.fullName } : null,
         order: r.order
           ? {

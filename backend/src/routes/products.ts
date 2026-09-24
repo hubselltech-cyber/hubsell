@@ -11,6 +11,7 @@ import {
   PUSHABLE_CHANNELS,
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
+import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
 
 const router = Router();
 
@@ -153,6 +154,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
               },
             },
           },
+          // Tồn theo vị trí (đợt B) — rỗng khi shop chưa dùng vị trí.
+          stockLevels: { select: { locationId: true, quantity: true } },
         },
       }),
       // Số SKU đã ngừng bán — chip lọc chỉ hiện khi > 0 (ẩn bằng vắng mặt).
@@ -193,7 +196,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const seesFinancials = canSeeFinancials(req);
     res.json({
       items: items.map((p) => {
-        const { channelProducts, ...core } = p;
+        const { channelProducts, stockLevels, ...core } = p;
         // "CÓ THỂ BÁN" = số Hubsell đẩy lên mọi gian — cột chính của hub.
         const availableToSell = availableToPush(p, safetyDefault);
         // Lệch với số sàn đang giữ (theo lần đẩy/đọc gần nhất) ở gian ĐANG BẬT
@@ -209,6 +212,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         );
         return {
           ...hideCost(core, seesFinancials),
+          stockLevels: stockLevels.filter((l) => l.quantity !== 0),
           availableToSell,
           safetyStockEffective: p.safetyStock ?? safetyDefault,
           // Cảnh báo sắp hết hàng: ngưỡng đang áp (riêng ?? shop) + cờ đang dưới ngưỡng.
@@ -459,23 +463,23 @@ router.post("/", async (req: AuthRequest, res, next) => {
           productName: productName.trim(),
           costPrice: cost,
           sellingPrice: selling,
-          quantityInStock: initQty,
+          quantityInStock: 0,
           taxName: invoiceTaxName,
           vatRate: invoiceVatRate,
           unitName: invoiceUnitName,
         },
       });
 
+      // Tồn ban đầu đi qua sổ kho để vào đúng vị trí gốc khi shop dùng vị trí.
       if (initQty > 0) {
-        await tx.inventoryLog.create({
-          data: {
-            productId: created.id,
-            changeQuantity: initQty,
-            type: InventoryLogType.IMPORT,
-            reason: "Nhập kho ban đầu khi tạo sản phẩm",
-            actorId: req.userId ?? null,
-          },
+        await applyStockDelta(tx, {
+          productId: created.id,
+          delta: initQty,
+          type: InventoryLogType.IMPORT,
+          reason: "Nhập kho ban đầu khi tạo sản phẩm",
+          actorId: req.userId ?? null,
         });
+        return { ...created, quantityInStock: initQty };
       }
 
       return created;
@@ -846,30 +850,24 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
       for (const v of valid) {
         const found = existingBySku.get(v.skuCode);
         if (found) {
-          // Cập nhật giá + tồn kho; ghi log phần chênh lệch tồn (nếu có)
-          const delta = v.quantityInStock - found.quantityInStock;
+          // Cập nhật giá; tồn đi qua sổ kho (ADJUST 24/09: Excel ĐÈ tổng — là điều
+          // chỉnh sổ, không phải đồng bộ sàn), tự ghi log phần chênh lệch nếu có.
           await tx.product.update({
             where: { id: found.id },
             data: {
               productName: v.productName,
               costPrice: v.costPrice,
               sellingPrice: v.sellingPrice,
-              quantityInStock: v.quantityInStock,
             },
           });
-          if (delta !== 0) {
-            await tx.inventoryLog.create({
-              data: {
-                productId: found.id,
-                changeQuantity: delta,
-                // ADJUST (24/09): Excel ĐÈ tổng — là điều chỉnh sổ, không phải đồng bộ sàn.
-                type: InventoryLogType.ADJUST,
-                reason: `Nhập Excel đè tồn: ${found.quantityInStock} → ${v.quantityInStock}`,
-                actorId: req.userId ?? null,
-              },
-            });
-            stockChangedIds.push(found.id);
-          }
+          const written = await setStockAbsolute(tx, {
+            productId: found.id,
+            quantity: v.quantityInStock,
+            type: InventoryLogType.ADJUST,
+            reason: `Nhập Excel đè tồn: ${found.quantityInStock} → ${v.quantityInStock}`,
+            actorId: req.userId ?? null,
+          });
+          if (written.delta !== 0) stockChangedIds.push(found.id);
           updated++;
         } else {
           const createdProduct = await tx.product.create({
@@ -879,18 +877,16 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               productName: v.productName,
               costPrice: v.costPrice,
               sellingPrice: v.sellingPrice,
-              quantityInStock: v.quantityInStock,
+              quantityInStock: 0,
             },
           });
           if (v.quantityInStock > 0) {
-            await tx.inventoryLog.create({
-              data: {
-                productId: createdProduct.id,
-                changeQuantity: v.quantityInStock,
-                type: InventoryLogType.IMPORT,
-                reason: "Nhập kho ban đầu từ file Excel",
-                actorId: req.userId ?? null,
-              },
+            await applyStockDelta(tx, {
+              productId: createdProduct.id,
+              delta: v.quantityInStock,
+              type: InventoryLogType.IMPORT,
+              reason: "Nhập kho ban đầu từ file Excel",
+              actorId: req.userId ?? null,
             });
           }
           created++;

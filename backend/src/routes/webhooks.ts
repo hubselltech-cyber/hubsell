@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 import { InventoryLogType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { applyStockDelta } from "../services/stock-ledger";
 import { findMarketplaceProduct, PLATFORM_FEE_RATE } from "../marketplace/mockMarketplace";
 import {
   randomCarrierFor,
@@ -218,19 +219,12 @@ router.post("/mock-order", async (req, res, next) => {
           );
         }
 
-        await tx.product.update({
-          where: { id: product.id },
-          data: { quantityInStock: newQuantity },
-        });
-
-        await tx.inventoryLog.create({
-          data: {
-            productId: product.id,
-            changeQuantity: -it.quantity,
-            type: InventoryLogType.SYNC,
-            reason: `Trừ kho tự động — đơn ${finalOrderCode} từ ${channel.channelName} (SKU sàn: ${it.channelSku})`,
-            orderId: order.id, // gắn với đơn để có thể hoàn kho khi hủy & tính giá vốn
-          },
+        await applyStockDelta(tx, {
+          productId: product.id,
+          delta: -it.quantity,
+          type: InventoryLogType.SYNC,
+          reason: `Trừ kho tự động — đơn ${finalOrderCode} từ ${channel.channelName} (SKU sàn: ${it.channelSku})`,
+          orderId: order.id, // gắn với đơn để có thể hoàn kho khi hủy & tính giá vốn
         });
 
         // Ghi chi tiết dòng sản phẩm + SNAPSHOT giá vốn tại thời điểm bán

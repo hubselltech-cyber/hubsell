@@ -9,6 +9,7 @@
 
 import type { Prisma } from "@prisma/client";
 import { InventoryLogType } from "@prisma/client";
+import { applyStockDelta } from "../services/stock-ledger";
 
 export type StockOutcome =
   | "none"
@@ -175,18 +176,14 @@ export async function deductStockTx(
 
   let deducted = 0;
   for (const it of order.items) {
-    await tx.product.update({
-      where: { id: it.productId! },
-      data: { quantityInStock: { decrement: it.quantity } },
-    });
-    await tx.inventoryLog.create({
-      data: {
-        productId: it.productId!,
-        changeQuantity: -it.quantity,
-        type: InventoryLogType.SYNC,
-        reason: `Trừ kho tự động — ${sourceLabel} đơn ${order.orderCode}`,
-        orderId,
-      },
+    // Đợt B: sổ kho tự phân bổ theo thứ tự ưu tiên vị trí (nếu shop dùng vị trí)
+    // và ghi vị trí vào nhật ký để hủy đơn trả về đúng chỗ.
+    await applyStockDelta(tx, {
+      productId: it.productId!,
+      delta: -it.quantity,
+      type: InventoryLogType.SYNC,
+      reason: `Trừ kho tự động — ${sourceLabel} đơn ${order.orderCode}`,
+      orderId,
     });
     deducted += it.quantity;
     if (!productIds.includes(it.productId!)) productIds.push(it.productId!);
@@ -228,18 +225,14 @@ export async function restoreStockTx(
   const productIds: string[] = [];
   for (const log of deductions) {
     const qty = Math.abs(log.changeQuantity);
-    await tx.product.update({
-      where: { id: log.productId },
-      data: { quantityInStock: { increment: qty } },
-    });
-    await tx.inventoryLog.create({
-      data: {
-        productId: log.productId,
-        changeQuantity: qty,
-        type: InventoryLogType.SYNC,
-        reason: `Hoàn kho tự động — ${sourceLabel} hủy đơn ${order.orderCode}`,
-        orderId,
-      },
+    // Trả về ĐÚNG vị trí đã trừ (log.locationId); dòng cũ chưa có vị trí → gốc.
+    await applyStockDelta(tx, {
+      productId: log.productId,
+      delta: qty,
+      type: InventoryLogType.SYNC,
+      reason: `Hoàn kho tự động — ${sourceLabel} hủy đơn ${order.orderCode}`,
+      orderId,
+      locationId: log.locationId,
     });
     restored += qty;
     if (!productIds.includes(log.productId)) productIds.push(log.productId);

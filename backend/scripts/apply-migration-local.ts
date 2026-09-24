@@ -9,6 +9,21 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+/** Tách file SQL thành câu lệnh; mỗi khối DO $$…END $$; là MỘT câu. */
+function splitSql(sql: string): string[] {
+  const out: string[] = [];
+  const re = /DO \$\$[\s\S]*?END \$\$;/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sql)) !== null) {
+    out.push(...sql.slice(last, m.index).split(/;\s*\r?\n/));
+    out.push(m[0]);
+    last = m.index + m[0].length;
+  }
+  out.push(...sql.slice(last).split(/;\s*\r?\n/));
+  return out;
+}
+
 async function main() {
   const folder = process.argv[2];
   if (!folder) {
@@ -24,8 +39,9 @@ async function main() {
   );
   // Tách theo ';' cuối dòng; chỉ vứt DÒNG chú thích "--" trong từng cụm,
   // KHÔNG vứt cả cụm (mỗi câu lệnh đều mở đầu bằng "-- CreateTable...").
-  const statements = sql
-    .split(/;\s*\r?\n/)
+  // 24/09: khối `DO $$ … END $$;` (FK viết idempotent) có ';' bên trong —
+  // splitSql giữ nguyên cả khối làm MỘT câu lệnh.
+  const statements = splitSql(sql)
     .map((s) =>
       s
         .split(/\r?\n/)

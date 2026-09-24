@@ -17,6 +17,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -30,12 +31,15 @@ import {
   adjustInventoryBulk,
   ApiError,
   fetchProducts,
+  fetchStockLocations,
   getToken,
   type Product,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { qk } from "@/lib/query-keys";
+import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 import { TEXT_SUB } from "@/lib/typography";
-import { useInvalidate } from "@/lib/use-api-query";
+import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
 
 /**
@@ -64,6 +68,16 @@ export default function ReceiveStockPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Vị trí chứa hàng (đợt B): có thì hiện ô chọn, nhớ lần chọn cuối.
+  const locationsQ = useApiQuery({
+    queryKey: qk.stockLocations(),
+    queryFn: fetchStockLocations,
+  });
+  const locations = locationsQ.data?.items ?? [];
+  const [locationId, setLocationId] = useState<string | null>(null);
+  const effectiveLocationId =
+    locationId ?? (locations.length ? readLastLocation(locations) : "");
 
   // Ô tìm / quét mã + gợi ý
   const [query, setQuery] = useState("");
@@ -181,7 +195,9 @@ export default function ReceiveStockPage() {
         type,
         items: lines.map((l) => ({ productId: l.product.id, quantity: Number(l.quantity) })),
         reason: reason.trim() || undefined,
+        locationId: effectiveLocationId || undefined,
       });
+      if (effectiveLocationId) rememberLocation(effectiveLocationId);
       toast.success(
         `${isImport ? "Đã nhập" : "Đã xuất"} ${formatNumber(res.totalQuantity)} chiếc của ${formatNumber(res.count)} mã — Có thể bán mới đang đẩy lên các gian đã nối`
       );
@@ -386,8 +402,25 @@ export default function ReceiveStockPage() {
           )}
         </div>
 
-        {/* ===== LÝ DO + NÚT ===== */}
+        {/* ===== VỊ TRÍ + LÝ DO + NÚT ===== */}
         <div className="flex flex-wrap items-end justify-between gap-3">
+          {locations.length > 0 && (
+            <div className="grid w-56 gap-1.5">
+              <Label htmlFor="bulk-location">{isImport ? "Nhập vào" : "Xuất từ"}</Label>
+              <NativeSelect
+                id="bulk-location"
+                value={effectiveLocationId}
+                onChange={(e) => setLocationId(e.target.value)}
+              >
+                {!isImport && <option value="">Tự trừ theo thứ tự ưu tiên</option>}
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
           <div className="grid w-full max-w-md gap-1.5">
             <Label htmlFor="bulk-reason">Lý do (không bắt buộc)</Label>
             <Input

@@ -1,6 +1,6 @@
 # Vị trí chứa hàng — nhiều kho nhỏ / kệ / ô
 
-Kế hoạch chốt với anh Trung ngày 15/09/2026. Chưa làm, hẹn làm sau.
+Kế hoạch chốt với anh Trung ngày 15/09/2026. **Đợt A (nền) + Đợt B (vị trí, đợt 1) ĐÃ CODE 24/09/2026 — xem mục 8.6 / 8.7.**
 
 ## 1. Bài toán
 
@@ -148,7 +148,7 @@ Nguồn: help.bigseller.com (push rule đa kho 6855, khu vực kho 7727, thêm k
 
 ### 8.5 Thứ tự — anh Trung chốt 24/09: **A → B** ("làm sớm, sau này thương mại đỡ sửa nhiều; có khách rồi mà sửa nhiều mất uy tín")
 - **Đợt A — hoàn thiện nền — ✅ ĐÃ CODE 24/09 (xem 8.6).**
-- **Đợt B — Vị trí chứa hàng đợt 1** theo mục 7 + điều chỉnh 8.4 — kế tiếp.
+- **Đợt B — Vị trí chứa hàng đợt 1 — ✅ ĐÃ CODE 24/09 tối (xem 8.7).**
 - **Đợt C** = đợt 2 mục 7 (in vị trí trên phiếu nhặt, kiểm kê theo vị trí, cờ không bán, mobile quét).
 
 ### 8.6 Đợt A đã làm (24/09/2026, kiểm trên local với shop reviewer@hubsell.vn)
@@ -184,3 +184,46 @@ Nguồn: help.bigseller.com (push rule đa kho 6855, khu vực kho 7727, thêm k
 
 **Chưa làm trong A (để B/C):** `balanceAfter` (tồn sau mỗi dòng nhật ký — sẽ ghi khi gom 14 chỗ ghi vào helper ở B),
 mobile chưa có nhật ký, ảnh tour /guide chưa chụp lại.
+
+### 8.7 Đợt B đã làm (24/09/2026 tối, kiểm local shop reviewer: bật → chuyển → nhật ký → rào xóa → tắt)
+**Schema / migration `20260924200000_stock_locations`** (IF NOT EXISTS + FK trong `DO $$` idempotent; Render tự áp;
+local áp bằng `apply-migration-local.ts` — script đã sửa để giữ nguyên khối `DO $$`):
+`stock_locations` (userId, parentId, name, code unique/shop, sortOrder = ưu tiên, isDefault, isReturnDefault, sellable),
+`product_stock_levels` (productId × locationId unique, quantity), `InventoryLog.locationId` + `balanceAfter`, enum `TRANSFER`.
+**KHÔNG seed gốc bằng migration** — gốc "Kho chính" sinh khi shop bấm Thêm vị trí lần đầu.
+
+**Sổ kho một cửa `services/stock-ledger.ts`** — 14 chỗ ghi cũ (order-stock deduct/restore, inventory adjust/set/bulk,
+koc, mappings seed, orders hủy + hoàn, products tạo/Excel, webhooks) đều đi qua:
+- `applyStockDelta(tx, {productId, delta, type, reason, actorId?, orderId?, locationId?, useReturnDefault?})`: tổng
+  `quantityInStock` increment nguyên tử (mọi chỗ đọc + engine đẩy sàn KHÔNG đổi); shop có vị trí thì cộng/trừ level bằng
+  `INSERT … ON CONFLICT DO UPDATE` (nguyên tử); nhập không chỉ định → gốc; trừ không chỉ định → `SELECT … FOR UPDATE`
+  level rồi `lib/stock-allocation.ts allocateDeduction` (đủ cả dòng lấy trọn ở vị trí ưu tiên trước; không ai đủ trừ
+  lần lượt; thiếu toàn kho dồn âm vào vị trí cuối — phơi bày bán vượt như tổng); mỗi vị trí đụng tới một dòng nhật ký
+  kèm `locationId` + `balanceAfter` (tồn tổng sau bút toán).
+- Hủy đơn (chưa giao) trả về ĐÚNG vị trí đã trừ (đọc `locationId` của log trừ). Hàng HOÀN: shop đặt "Nhận hoàn" thì về đó
+  (kiểm trước khi trộn — học BigSeller), không thì về đúng vị trí đã trừ.
+- `setStockAbsolute` (sửa số trên bảng, Excel đè, gieo tồn từ sàn), `setLevelAbsolute` (sửa số tại vị trí, ADJUST),
+  `transferStockTx` (tổng không đổi, chặn khi nơi đi thiếu, 2 dòng TRANSFER), `createRootLocationTx` (INSERT … SELECT
+  set-based, không lặp SKU).
+- Bất biến: shop có ≥ 1 vị trí ⇒ Σ level = quantityInStock; 0 vị trí ⇒ 0 dòng level. Test tích hợp
+  `stock-locations.test.ts` 7 ca kiểm bất biến sau mỗi bước; `stock-allocation.test.ts` 7 ca thuần.
+
+**API `/api/stock-locations`** (cùng quyền Hàng hóa): `GET /` (kèm skuCount, totalQuantity, `enabled`), `GET /levels?productId`,
+`POST /` (lần đầu tự sinh gốc, khoá dòng User chống 2 gốc), `PATCH /:id` (tên, mã, cha, mặc định / nhận hoàn duy nhất, sellable),
+`PUT /order {ids}`, `DELETE /:id` (chặn còn con / còn hàng / đang mặc định khi còn vị trí khác; xóa vị trí cuối = TẮT tính
+năng, level xóa theo, tổng giữ nguyên), `POST /transfer {from,to,items[],reason}`, `POST /set-level` (tổng đổi → đẩy sàn).
+`/api/inventory/adjust` + `/adjust-bulk` nhận `locationId`; `GET /logs` trả `location` + `balanceAfter`.
+`GET /api/products` trả `stockLevels[]` (chỉ vị trí ≠ 0).
+
+**Frontend** (ẩn bằng sự vắng mặt — chưa có vị trí thì y hệt cũ):
+- Nút "Thêm vị trí chứa hàng" → khi có: "Vị trí (N)" mở `stock-locations-dialog.tsx`: danh sách theo ưu tiên (mũi tên lên/xuống),
+  sửa tên/mã tại chỗ, Đặt mặc định, Nhận hoàn, xóa (xóa vị trí cuối có confirm "tắt tính năng"); lần đầu chỉ một ô tên + một nút.
+- Cột **Đang ở** (`stock-levels-cell.tsx`): `Kho chính 200 · Kho 2 10 (+n)`, bấm mở popover đủ vị trí, sửa số tại vị trí
+  (Enter lưu), nút Chuyển vị trí → `stock-transfer-dialog.tsx` (Từ / Sang / số lượng, XEM TRƯỚC cũ → mới hai đầu, chặn thiếu).
+- Hộp Nhập/Xuất từng SKU + trang Phiếu nhiều mã: ô chọn vị trí (nhập: mặc định; xuất: "Tự trừ theo thứ tự ưu tiên" hoặc chọn),
+  nhớ lần chọn cuối (`lib/stock-location-pref.ts`, localStorage).
+- Nhật ký kho + Lịch sử SKU: cột **Tồn sau** (mọi shop) + cột **Vị trí** (khi có vị trí), chip/loại "Chuyển vị trí".
+
+**Để lại đợt 2 (mục 7):** in "Lấy ở Kho 2" trên phiếu nhặt A6, kiểm kê theo vị trí, cờ không bán gắn luồng hoàn, sinh vị trí
+hàng loạt + tem mã vạch, quét ô trên mobile; cây cha-con đã có ở DB/API (parentId) nhưng UI đợt 1 hiện phẳng.
+
