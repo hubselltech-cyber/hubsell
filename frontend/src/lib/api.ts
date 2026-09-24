@@ -3490,6 +3490,77 @@ export function transferStock(data: {
   );
 }
 
+/** Sinh vị trí hàng loạt theo mẫu "Kệ A[1-5]" / "Kệ [A-C][1-3]" (≤ 200, tên trùng bỏ qua). */
+export function bulkCreateStockLocations(data: { pattern: string; parentId?: string | null }) {
+  return apiFetch<
+    StockLocationListResponse & {
+      created: number;
+      skipped: string[];
+      createdRoot: { id: string; name: string } | null;
+    }
+  >("/api/stock-locations/bulk", { method: "POST", body: JSON.stringify(data) });
+}
+
+/** Tem vị trí (PDF A4, mã vạch theo mã) — bỏ trống ids = in hết. */
+export async function fetchStockLocationLabelsPdf(ids?: string[]): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/api/stock-locations/labels`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ ids: ids ?? [] }),
+  });
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.blob();
+}
+
+// ----- KIỂM KÊ (đợt 2) -----
+
+export interface StocktakeRow {
+  productId: string;
+  skuCode: string;
+  productName: string;
+  isActive: boolean;
+  /** Số sổ (tại vị trí, hoặc tồn bán toàn kho khi chưa dùng vị trí). */
+  book: number;
+}
+
+/** Danh sách mã cần đếm: theo vị trí = chỉ ô có hàng; toàn kho = mọi SKU đang bán. */
+export function fetchStocktakeSheet(locationId?: string) {
+  const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : "";
+  return apiFetch<{
+    location: { id: string; name: string } | null;
+    rows: StocktakeRow[];
+    truncated: boolean;
+  }>(`/api/inventory/stocktake/sheet${qs}`);
+}
+
+/** Chốt kiểm kê: mỗi mã lệch một dòng ADJUST "Kiểm kê …: sổ a → đếm b". */
+export function submitStocktake(data: {
+  locationId?: string;
+  items: { productId: string; counted: number }[];
+  note?: string;
+}) {
+  return apiFetch<{
+    counted: number;
+    adjusted: number;
+    unchanged: number;
+    lines: { productId: string; skuCode: string; before: number; after: number; delta: number }[];
+  }>("/api/inventory/stocktake", { method: "POST", body: JSON.stringify(data) });
+}
+
 /** Sửa số tại một vị trí (thay kiểm kê ở đợt 1) — tổng đổi theo, đẩy sàn. */
 export function setStockLevel(data: {
   productId: string;

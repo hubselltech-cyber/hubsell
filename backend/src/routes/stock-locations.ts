@@ -19,6 +19,8 @@ import {
   setLevelAbsolute,
   transferStockTx,
 } from "../services/stock-ledger";
+import { codeFromName, expandLocationPattern } from "../lib/location-pattern";
+import { buildLocationLabelsPdf } from "../services/fulfillment/location-labels-pdf";
 
 const router = Router();
 
@@ -251,7 +253,29 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         res.status(400).json({ error: "Cờ bán được phải là true/false" });
         return;
       }
+      if (b.sellable !== loc.sellable) {
+        // Đổi cờ khi còn hàng sẽ làm tổng bán lệch âm thầm → bắt chuyển hàng đi trước
+        // (cùng cách với xóa). Vị trí mặc định luôn phải bán được.
+        const stocked = await prisma.productStockLevel.count({
+          where: { locationId: loc.id, quantity: { not: 0 } },
+        });
+        if (stocked > 0) {
+          res.status(409).json({
+            error: `"${loc.name}" còn ${stocked} SKU có hàng — chuyển hàng đi trước rồi mới đổi cờ bán được`,
+            code: "LOCATION_HAS_STOCK",
+          });
+          return;
+        }
+        if (!b.sellable && (loc.isDefault || b.isDefault === true)) {
+          res.status(400).json({ error: "Vị trí mặc định phải bán được — chọn vị trí khác làm ô không bán" });
+          return;
+        }
+      }
       data.sellable = b.sellable;
+    }
+    if (b.isDefault === true && !loc.sellable && b.sellable !== true) {
+      res.status(400).json({ error: "Ô không bán không thể làm vị trí mặc định" });
+      return;
     }
 
     await prisma.$transaction(async (tx) => {
@@ -419,7 +443,7 @@ router.post("/transfer", async (req: AuthRequest, res, next) => {
     }
 
     const results = await prisma.$transaction(async (tx) => {
-      const out: { productId: string; from: number; to: number }[] = [];
+      const out: { productId: string; from: number; to: number; totalChanged: boolean }[] = [];
       for (const it of items as { productId: string; quantity: unknown }[]) {
         const r = await transferStockTx(tx, {
           productId: it.productId,
@@ -429,10 +453,15 @@ router.post("/transfer", async (req: AuthRequest, res, next) => {
           reason: note,
           actorId: req.userId ?? null,
         });
-        out.push({ productId: it.productId, from: r.from, to: r.to });
+        out.push({ productId: it.productId, from: r.from, to: r.to, totalChanged: r.totalChanged });
       }
       return out;
     });
+    // Qua / ra khỏi ô "không bán" thì tồn bán đổi → đẩy Có thể bán mới lên sàn.
+    const changed = results.filter((r) => r.totalChanged).map((r) => r.productId);
+    if (changed.length) {
+      await enqueueStockPush(changed, { source: `chuyển vị trí ${from.name} → ${to.name}` });
+    }
     res.json({ moved: results.length, results });
   } catch (err) {
     const e = err as Error & { statusCode?: number };
@@ -440,6 +469,97 @@ router.post("/transfer", async (req: AuthRequest, res, next) => {
       res.status(e.statusCode).json({ error: e.message });
       return;
     }
+    next(err);
+  }
+});
+
+// POST /api/stock-locations/bulk — SINH VỊ TRÍ HÀNG LOẠT (đợt 2, học Nhanh.vn):
+// Body: { pattern: "Kệ A[1-5]" | "Kệ [A-C][1-3]", parentId? }. Tên đã có trong shop
+// thì bỏ qua; mã tự sinh từ tên (không dấu, in hoa), trùng thì để trống.
+router.post("/bulk", async (req: AuthRequest, res, next) => {
+  try {
+    if (req.userRole !== Role.ADMIN) {
+      res.status(403).json({ error: "Chỉ chủ shop mới được thêm vị trí chứa hàng" });
+      return;
+    }
+    const pattern = typeof req.body?.pattern === "string" ? req.body.pattern.trim() : "";
+    const parsed = expandLocationPattern(pattern);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    const parentId =
+      typeof req.body?.parentId === "string" && req.body.parentId ? req.body.parentId : null;
+    const ownerId = req.ownerId!;
+
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${ownerId} FOR UPDATE`;
+      const existing = await tx.stockLocation.findMany({
+        where: { userId: ownerId },
+        select: { name: true, code: true, sortOrder: true },
+      });
+      let createdRoot: { id: string; name: string } | null = null;
+      if (existing.length === 0) createdRoot = await createRootLocationTx(tx, ownerId);
+      if (parentId) {
+        const parent = await tx.stockLocation.findFirst({
+          where: { id: parentId, userId: ownerId },
+          select: { id: true },
+        });
+        if (!parent) throw Object.assign(new Error("Vị trí cha không tồn tại"), { statusCode: 400 });
+      }
+      const names = new Set(existing.map((e) => e.name.toLowerCase()));
+      const codes = new Set(existing.map((e) => e.code).filter(Boolean) as string[]);
+      if (createdRoot) names.add(createdRoot.name.toLowerCase());
+      // Gốc vừa sinh trong cùng transaction chưa nằm trong `existing` (sortOrder 0) → xếp sau nó.
+      let sortOrder = Math.max(createdRoot ? 0 : -1, ...existing.map((e) => e.sortOrder)) + 1;
+      const rows: { userId: string; name: string; code: string | null; parentId: string | null; sortOrder: number }[] = [];
+      const skipped: string[] = [];
+      for (const name of parsed.names) {
+        if (names.has(name.toLowerCase())) {
+          skipped.push(name);
+          continue;
+        }
+        let code: string | null = codeFromName(name);
+        if (!code || codes.has(code)) code = null;
+        if (code) codes.add(code);
+        names.add(name.toLowerCase());
+        rows.push({ userId: ownerId, name, code, parentId, sortOrder: sortOrder++ });
+      }
+      if (rows.length) await tx.stockLocation.createMany({ data: rows });
+      return { created: rows.length, skipped, createdRoot };
+    });
+
+    const items = await listWithTotals(ownerId);
+    res.status(201).json({ ...result, items, enabled: true });
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// POST /api/stock-locations/labels — TEM VỊ TRÍ (PDF A4, mã vạch Code 128 theo mã).
+// Body: { ids?: string[] } — bỏ trống = in hết. Vị trí không có mã thì tem chỉ có tên.
+router.post("/labels", async (req: AuthRequest, res, next) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? (req.body.ids as unknown[]).filter((x) => typeof x === "string") : null;
+    const locations = await prisma.stockLocation.findMany({
+      where: { userId: req.ownerId!, ...(ids && ids.length ? { id: { in: ids as string[] } } : {}) },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { name: true, code: true },
+    });
+    if (locations.length === 0) {
+      res.status(404).json({ error: "Không có vị trí nào để in" });
+      return;
+    }
+    const bytes = await buildLocationLabelsPdf(locations);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="tem-vi-tri.pdf"');
+    res.send(Buffer.from(bytes));
+  } catch (err) {
     next(err);
   }
 });

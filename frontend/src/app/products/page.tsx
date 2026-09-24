@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   ClipboardList,
   Download,
   Link2,
@@ -997,6 +998,15 @@ export default function ProductsHubPage() {
                 <Button variant="outline" nativeButton={false} render={<Link href="/products/receive" />}>
                   <ClipboardList className="size-4" />
                   Phiếu nhiều mã
+                </Button>
+                <Button
+                  variant="outline"
+                  nativeButton={false}
+                  render={<Link href="/products/stocktake" />}
+                  title="Đếm thực tế rồi chốt — mỗi mã lệch một dòng nhật ký"
+                >
+                  <ClipboardCheck className="size-4" />
+                  Kiểm kê
                 </Button>
                 <ImportExcelDialog onImported={load} />
                 <Button variant="outline" onClick={handleExport} disabled={exporting}>

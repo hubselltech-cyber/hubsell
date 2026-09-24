@@ -81,7 +81,10 @@ export function StockLevelsCell({
           <span className="flex flex-col tabular-nums">
             {summary.map((l) => (
               <span key={l.id} className="flex items-baseline justify-between gap-3">
-                <span className="truncate text-muted-foreground" title={l.name}>
+                <span
+                  className={cn("truncate text-muted-foreground", !l.sellable && "italic")}
+                  title={l.sellable ? l.name : `${l.name} — không tính vào tồn bán`}
+                >
                   {l.name}
                 </span>
                 <span className={cn("font-medium", (qtyById.get(l.id) ?? 0) < 0 && "text-rose-700")}>
@@ -95,7 +98,20 @@ export function StockLevelsCell({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">
         <p className={cn(TEXT_SUB, "px-1 pb-1")}>
-          Đang ở · tổng <b className="text-foreground">{formatNumber(product.quantityInStock)}</b>
+          Đang ở · tồn bán <b className="text-foreground">{formatNumber(product.quantityInStock)}</b>
+          {locations.some((l) => !l.sellable && (qtyById.get(l.id) ?? 0) !== 0) && (
+            <>
+              {" "}
+              · chờ kiểm{" "}
+              <b className="text-foreground">
+                {formatNumber(
+                  locations
+                    .filter((l) => !l.sellable)
+                    .reduce((s, l) => s + (qtyById.get(l.id) ?? 0), 0)
+                )}
+              </b>
+            </>
+          )}
         </p>
         <div className="divide-y">
           {locations.map((l) => {
@@ -103,9 +119,14 @@ export function StockLevelsCell({
             const editing = editingId === l.id;
             return (
               <div key={l.id} className="flex items-center gap-2 px-1 py-1.5 text-sm">
-                <span className="min-w-0 flex-1 truncate">
+                <span className={cn("min-w-0 flex-1 truncate", !l.sellable && "text-slate-500")}>
                   {l.name}
                   {l.isDefault && <span className={cn(TEXT_SUB, "ml-1")}>(mặc định)</span>}
+                  {!l.sellable && (
+                    <span className={cn(TEXT_SUB, "ml-1")} title="Không tính vào tồn bán">
+                      (không bán)
+                    </span>
+                  )}
                 </span>
                 {editing ? (
                   <>

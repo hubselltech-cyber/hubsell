@@ -16,7 +16,7 @@ import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
 import { findInsufficient, normalizeBulkItems } from "../lib/inventory-bulk";
-import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
+import { applyStockDelta, setLevelAbsolute, setStockAbsolute } from "../services/stock-ledger";
 
 /** Đọc `locationId` tuỳ chọn từ body: chuỗi không rỗng hoặc undefined; kiểu khác → null (lỗi). */
 function readLocationId(v: unknown): string | undefined | null {
@@ -270,6 +270,180 @@ router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
       totalQuantity: parsed.items.reduce((a, it) => a + it.quantity, 0),
       products: result,
     });
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// ============================================================
+// KIỂM KÊ (đợt 2, 24/09/2026): đếm thực tế rồi chốt — mỗi mã lệch một dòng ADJUST
+// "Kiểm kê …: sổ a → đếm b". Theo VỊ TRÍ khi shop dùng vị trí (chỉ đếm ô có hàng —
+// tránh bẫy Zoho bắt điền 0 cho mọi ô), toàn kho khi chưa dùng.
+// ============================================================
+const STOCKTAKE_MAX = 500;
+const STOCKTAKE_SHEET_MAX = 2000;
+
+// GET /api/inventory/stocktake/sheet?locationId= — danh sách mã cần đếm + số sổ.
+router.get("/stocktake/sheet", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const locationId = typeof req.query.locationId === "string" ? req.query.locationId : "";
+    if (locationId) {
+      const loc = await prisma.stockLocation.findFirst({
+        where: { id: locationId, userId: ownerId },
+        select: { id: true, name: true },
+      });
+      if (!loc) {
+        res.status(404).json({ error: "Không tìm thấy vị trí" });
+        return;
+      }
+      const levels = await prisma.productStockLevel.findMany({
+        where: { locationId, quantity: { not: 0 }, product: { userId: ownerId } },
+        orderBy: { product: { skuCode: "asc" } },
+        take: STOCKTAKE_SHEET_MAX,
+        select: {
+          quantity: true,
+          product: { select: { id: true, skuCode: true, productName: true, isActive: true } },
+        },
+      });
+      res.json({
+        location: loc,
+        rows: levels.map((l) => ({
+          productId: l.product.id,
+          skuCode: l.product.skuCode,
+          productName: l.product.productName,
+          isActive: l.product.isActive,
+          book: l.quantity,
+        })),
+        truncated: levels.length >= STOCKTAKE_SHEET_MAX,
+      });
+      return;
+    }
+    const products = await prisma.product.findMany({
+      where: { userId: ownerId, isActive: true },
+      orderBy: { skuCode: "asc" },
+      take: STOCKTAKE_SHEET_MAX,
+      select: { id: true, skuCode: true, productName: true, quantityInStock: true },
+    });
+    res.json({
+      location: null,
+      rows: products.map((p) => ({
+        productId: p.id,
+        skuCode: p.skuCode,
+        productName: p.productName,
+        isActive: true,
+        book: p.quantityInStock,
+      })),
+      truncated: products.length >= STOCKTAKE_SHEET_MAX,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/inventory/stocktake — CHỐT KIỂM KÊ. Body: { locationId?, items: [{productId, counted}], note? }
+router.post("/stocktake", async (req: AuthRequest, res, next) => {
+  try {
+    const ownerId = req.ownerId!;
+    const { items, note } = req.body ?? {};
+    const locationId = readLocationId(req.body?.locationId);
+    if (locationId === null) {
+      res.status(400).json({ error: "Vị trí không hợp lệ" });
+      return;
+    }
+    if (!Array.isArray(items) || items.length === 0 || items.length > STOCKTAKE_MAX) {
+      res.status(400).json({ error: `Phiếu kiểm kê cần 1–${STOCKTAKE_MAX} mã` });
+      return;
+    }
+    const parsed: { productId: string; counted: number }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] as { productId?: unknown; counted?: unknown };
+      const counted = Number(it.counted);
+      if (typeof it.productId !== "string" || !it.productId || !Number.isInteger(counted) || counted < 0) {
+        res.status(400).json({ error: `Dòng ${i + 1}: thiếu mã hoặc số đếm không hợp lệ` });
+        return;
+      }
+      parsed.push({ productId: it.productId, counted });
+    }
+    const ids = [...new Set(parsed.map((p) => p.productId))];
+    const products = await prisma.product.findMany({
+      where: { userId: ownerId, id: { in: ids } },
+      select: { id: true, skuCode: true },
+    });
+    if (products.length !== ids.length) {
+      res.status(404).json({ error: "Có mã không còn trong kho — tải lại phiếu" });
+      return;
+    }
+    const skuById = new Map(products.map((p) => [p.id, p.skuCode]));
+    let locName: string | null = null;
+    if (locationId) {
+      const loc = await prisma.stockLocation.findFirst({
+        where: { id: locationId, userId: ownerId },
+        select: { name: true },
+      });
+      if (!loc) {
+        res.status(404).json({ error: "Không tìm thấy vị trí" });
+        return;
+      }
+      locName = loc.name;
+    }
+    const stamp = new Intl.DateTimeFormat("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date());
+    const suffix = typeof note === "string" && note.trim() ? ` · ${note.trim()}` : "";
+
+    const lines = await prisma.$transaction(async (tx) => {
+      const out: { productId: string; skuCode: string; before: number; after: number; delta: number }[] = [];
+      for (const it of parsed) {
+        const head = `Kiểm kê ${stamp}${locName ? ` tại ${locName}` : ""}`;
+        if (locationId) {
+          // Đọc số sổ trước để ghi vào lý do; setLevelAbsolute tự khoá + tính lại.
+          const cur = await tx.productStockLevel.findUnique({
+            where: { productId_locationId: { productId: it.productId, locationId } },
+            select: { quantity: true },
+          });
+          const before = cur?.quantity ?? 0;
+          if (before === it.counted) continue;
+          const r = await setLevelAbsolute(tx, {
+            productId: it.productId,
+            locationId,
+            quantity: it.counted,
+            reason: `${head}: sổ ${before} → đếm ${it.counted}${suffix}`,
+            actorId: req.userId ?? null,
+          });
+          out.push({ productId: it.productId, skuCode: skuById.get(it.productId)!, before: r.previous, after: it.counted, delta: r.delta });
+        } else {
+          const cur = await tx.product.findUniqueOrThrow({
+            where: { id: it.productId },
+            select: { quantityInStock: true },
+          });
+          if (cur.quantityInStock === it.counted) continue;
+          const r = await setStockAbsolute(tx, {
+            productId: it.productId,
+            quantity: it.counted,
+            type: InventoryLogType.ADJUST,
+            reason: `${head}: sổ ${cur.quantityInStock} → đếm ${it.counted}${suffix}`,
+            actorId: req.userId ?? null,
+          });
+          out.push({ productId: it.productId, skuCode: skuById.get(it.productId)!, before: r.previous, after: it.counted, delta: r.delta });
+        }
+      }
+      return out;
+    });
+
+    const changed = lines.filter((l) => l.delta !== 0).map((l) => l.productId);
+    if (changed.length) {
+      await enqueueStockPush(changed, { source: locName ? `kiểm kê tại ${locName}` : "kiểm kê" });
+    }
+    res.json({ counted: parsed.length, adjusted: lines.length, unchanged: parsed.length - lines.length, lines });
   } catch (err) {
     const e = err as Error & { statusCode?: number };
     if (e.statusCode) {

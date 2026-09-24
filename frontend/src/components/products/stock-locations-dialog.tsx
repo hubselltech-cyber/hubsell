@@ -5,11 +5,14 @@ import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
+  Ban,
   Check,
   Loader2,
   MapPin,
   Pencil,
   Plus,
+  Printer,
+  Sparkles,
   Trash2,
   Undo2,
   X,
@@ -26,13 +29,16 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   ApiError,
+  bulkCreateStockLocations,
   createStockLocation,
   deleteStockLocation,
+  fetchStockLocationLabelsPdf,
   reorderStockLocations,
   updateStockLocation,
   type StockLocation,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { printPdfBlob } from "@/lib/print-labels";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +64,9 @@ export function StockLocationsDialog({
 }) {
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
+  // Sinh hàng loạt (đợt 2): "Kệ A[1-5]" — ẩn sau một nút, khách một kho không thấy.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [pattern, setPattern] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -119,6 +128,40 @@ export function StockLocationsDialog({
     if (j < 0 || j >= ids.length) return;
     [ids[index], ids[j]] = [ids[j], ids[index]];
     await run("order", () => reorderStockLocations(ids));
+  }
+
+  async function handleBulk(e: React.FormEvent) {
+    e.preventDefault();
+    const p = pattern.trim();
+    if (!p) return;
+    const res = await run("bulk", () => bulkCreateStockLocations({ pattern: p }));
+    if (res) {
+      setPattern("");
+      toast.success(
+        `Đã sinh ${formatNumber(res.created)} vị trí` +
+          (res.skipped.length ? ` · bỏ qua ${res.skipped.length} tên đã có` : "") +
+          (res.createdRoot ? ` · tồn hiện có nằm ở "${res.createdRoot.name}"` : "")
+      );
+    }
+  }
+
+  async function printLabels() {
+    setBusy("print");
+    try {
+      const blob = await fetchStockLocationLabelsPdf();
+      if (!printPdfBlob(blob)) {
+        toast.error("Trình duyệt đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi bấm lại.");
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không kết nối được máy chủ");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleSellable(l: StockLocation) {
+    // Ô không bán = hàng lỗi / hàng hoàn chờ kiểm — không tính vào tồn bán, đơn không trừ ở đó.
+    await run(`sell-${l.id}`, () => updateStockLocation(l.id, { sellable: !l.sellable }));
   }
 
   async function remove(l: StockLocation) {
@@ -215,9 +258,17 @@ export function StockLocationsDialog({
                   ) : (
                     <>
                       <span className="min-w-0 flex-1">
-                        <span className="font-medium">{l.name}</span>
+                        <span className={cn("font-medium", !l.sellable && "text-slate-500")}>{l.name}</span>
                         {l.code && (
                           <span className={cn(TEXT_SUB, "ml-2 font-mono")}>{l.code}</span>
+                        )}
+                        {!l.sellable && (
+                          <span
+                            className="ml-2 rounded-full border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"
+                            title="Hàng ở đây không tính vào tồn bán, đơn không trừ ở đây"
+                          >
+                            không bán
+                          </span>
                         )}
                         <span className={cn(TEXT_SUB, "ml-2 tabular-nums")}>
                           {formatNumber(l.skuCount)} SKU · {formatNumber(l.totalQuantity)} chiếc
@@ -259,6 +310,26 @@ export function StockLocationsDialog({
                             onClick={() => run(`ret-${l.id}`, () => updateStockLocation(l.id, { isReturnDefault: true }))}
                           >
                             Nhận hoàn
+                          </button>
+                        )}
+                        {!l.isDefault && (
+                          <button
+                            type="button"
+                            className={cn(
+                              TEXT_SUB,
+                              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-muted",
+                              !l.sellable && "border-slate-400 text-slate-700"
+                            )}
+                            title={
+                              l.sellable
+                                ? "Đánh dấu ô KHÔNG BÁN (hàng lỗi / hàng hoàn chờ kiểm): hàng ở đây không tính vào tồn bán"
+                                : "Cho bán lại: hàng ở đây tính vào tồn bán"
+                            }
+                            disabled={busy !== null}
+                            onClick={() => toggleSellable(l)}
+                          >
+                            <Ban className="size-3" />
+                            {l.sellable ? "Không bán" : "Cho bán"}
                           </button>
                         )}
                         <Button
@@ -330,6 +401,54 @@ export function StockLocationsDialog({
             Không giới hạn số vị trí ở mọi gói. Mapping SKU sàn ↔ SKU kho không đổi, sàn không
             biết hàng nằm ở đâu.
           </p>
+        )}
+
+        {/* ===== SINH HÀNG LOẠT + IN TEM (đợt 2) — kho rộng dùng, shop nhỏ không thấy vướng ===== */}
+        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+          <button
+            type="button"
+            className={cn(TEXT_SUB, "inline-flex items-center gap-1 hover:text-foreground")}
+            onClick={() => setBulkOpen((v) => !v)}
+          >
+            <Sparkles className="size-3.5" />
+            {bulkOpen ? "Ẩn sinh hàng loạt" : "Sinh nhiều kệ / ô một lượt"}
+          </button>
+          {enabled && (
+            <button
+              type="button"
+              className={cn(TEXT_SUB, "ml-auto inline-flex items-center gap-1 hover:text-foreground")}
+              disabled={busy !== null}
+              onClick={printLabels}
+              title="PDF A4, mỗi vị trí một tem có mã vạch theo mã — dán lên kệ / cửa kho"
+            >
+              {busy === "print" ? <Loader2 className="size-3.5 animate-spin" /> : <Printer className="size-3.5" />}
+              In tem vị trí
+            </button>
+          )}
+        </div>
+        {bulkOpen && (
+          <form onSubmit={handleBulk} className="flex flex-wrap items-end gap-2">
+            <div className="grid flex-1 gap-1.5">
+              <label htmlFor="loc-pattern" className="text-sm font-medium">
+                Mẫu tên
+              </label>
+              <Input
+                id="loc-pattern"
+                placeholder="VD: Kệ A[1-5]  ·  Kệ [A-C][1-3]  ·  Ô [01-12]"
+                value={pattern}
+                onChange={(e) => setPattern(e.target.value)}
+                maxLength={80}
+              />
+              <p className={TEXT_SUB}>
+                [1-5] chạy số, [A-C] chạy chữ, [01-12] giữ số 0 đầu; nhiều dải ghép với nhau.
+                Mã tem tự sinh từ tên (KE-A1). Tối đa 200 vị trí một lượt.
+              </p>
+            </div>
+            <Button type="submit" variant="secondary" disabled={!pattern.trim() || busy !== null}>
+              {busy === "bulk" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              Sinh
+            </Button>
+          </form>
         )}
       </DialogContent>
     </Dialog>

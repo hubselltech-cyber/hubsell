@@ -10,6 +10,7 @@ import {
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { applyStockDelta } from "../services/stock-ledger";
+import { pickLocationTextForOrders } from "../services/fulfillment/pick-location";
 import { mockSettlement } from "../marketplace/mockMarketplace";
 import { channelScope } from "../lib/channel-filter";
 import { attachItemImages } from "../services/item-images";
@@ -978,13 +979,23 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
       where: { id: { in: orderIds }, channel: channelScope(req) },
       include: {
         channel: true,
-        items: { select: { productName: true, channelSku: true, quantity: true } },
+        items: { select: { productName: true, channelSku: true, quantity: true, productId: true } },
       },
     });
     if (rows.length === 0) {
       res.status(404).json({ error: "Không tìm thấy đơn hàng nào" });
       return;
     }
+    // Vị trí lấy hàng cho phiếu nhặt (đợt 2): chỉ khi shop dùng vị trí.
+    const locationText = wantPickList
+      ? await pickLocationTextForOrders(
+          req.ownerId!,
+          rows.map((r) => ({
+            id: r.id,
+            productIds: r.items.map((i) => i.productId).filter((x): x is string => Boolean(x)),
+          }))
+        )
+      : new Map<string, Map<string, string>>();
     // Giữ đúng thứ tự seller chọn trên bảng
     const byId = new Map(rows.map((r) => [r.id, r]));
     const orders = orderIds.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
@@ -1048,7 +1059,12 @@ router.post("/bulk/labels", async (req: AuthRequest, res, next) => {
             carrierLabel: o.carrier ? CARRIER_LABEL[o.carrier] : o.shippingCarrierName || "Chưa gán",
             isExpress: isExpressShipping(o.shippingCarrierName),
             createdAt: o.createdAt,
-            items: o.items.map((i) => ({ sku: i.channelSku, name: i.productName, quantity: i.quantity })),
+            items: o.items.map((i) => ({
+              sku: i.channelSku,
+              name: i.productName,
+              quantity: i.quantity,
+              location: i.productId ? (locationText.get(o.id)?.get(i.productId) ?? null) : null,
+            })),
           })
         : null;
       if (label || pickList) parts.push({ label, pickList });

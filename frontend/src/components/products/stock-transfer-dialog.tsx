@@ -77,6 +77,10 @@ export function StockTransferDialog({
   const valid =
     Boolean(fromId && toId) && fromId !== toId && Number.isInteger(n) && n > 0 && n <= fromQty;
   const nameOf = (id: string) => locations.find((l) => l.id === id)?.name ?? "—";
+  const sellableOf = (id: string) => locations.find((l) => l.id === id)?.sellable !== false;
+  // Qua lại giữa kho bán và ô không bán thì tồn bán đổi → nói rõ trước khi chuyển.
+  const saleDelta =
+    fromId && toId && sellableOf(fromId) !== sellableOf(toId) ? (sellableOf(toId) ? n : -n) : 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -111,7 +115,7 @@ export function StockTransferDialog({
             <span className="font-semibold text-foreground">
               {formatNumber(product.quantityInStock)}
             </span>{" "}
-            không đổi sau khi chuyển.
+            {saleDelta === 0 ? "không đổi sau khi chuyển." : "đổi theo khi qua ô không bán."}
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +127,7 @@ export function StockTransferDialog({
                 <option value="">— chọn —</option>
                 {locations.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name} ({formatNumber(qtyById.get(l.id) ?? 0)})
+                    {l.name} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
                   </option>
                 ))}
               </NativeSelect>
@@ -137,7 +141,7 @@ export function StockTransferDialog({
                   .filter((l) => l.id !== fromId)
                   .map((l) => (
                     <option key={l.id} value={l.id}>
-                      {l.name} ({formatNumber(qtyById.get(l.id) ?? 0)})
+                      {l.name} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
                     </option>
                   ))}
               </NativeSelect>
@@ -181,6 +185,13 @@ export function StockTransferDialog({
               {n > fromQty && (
                 <p className="col-span-2 text-xs text-rose-700">
                   {nameOf(fromId)} chỉ còn {formatNumber(fromQty)}, không đủ để chuyển.
+                </p>
+              )}
+              {saleDelta !== 0 && n <= fromQty && (
+                <p className="col-span-2 text-xs text-amber-700">
+                  {saleDelta < 0
+                    ? `${nameOf(toId)} là ô không bán: tồn bán giảm ${formatNumber(n)} (${formatNumber(product.quantityInStock)} → ${formatNumber(product.quantityInStock + saleDelta)}), sàn nhận số mới.`
+                    : `Đưa về kho bán: tồn bán tăng ${formatNumber(n)} (${formatNumber(product.quantityInStock)} → ${formatNumber(product.quantityInStock + saleDelta)}), sàn nhận số mới.`}
                 </p>
               )}
             </div>

@@ -5,6 +5,22 @@
 
 ---
 
+## Phiên 24/09/2026 (khuya) — VỊ TRÍ CHỨA HÀNG đợt 2: ô không bán gắn hàng hoàn, phiếu nhặt in vị trí, kiểm kê theo vị trí, sinh kệ hàng loạt + tem — ĐÃ CODE + test đủ (anh Trung: "phải test đủ vị trí")
+
+Chi tiết `docs/VI-TRI-CHUA-HANG.md` mục 8.8. Tóm tắt:
+- **Ô không bán** (`sellable=false`): tổng `quantityInStock` = Σ vị trí bán được; chuyển vào/ra ô không bán đổi tồn bán và đẩy
+  sàn; hàng hoàn về ô "Nhận hoàn" không bán thì chưa tính tồn bán cho tới khi kiểm xong chuyển sang kho bán; đơn không trừ ở đó;
+  đổi cờ khi còn hàng bị chặn 409; mặc định luôn bán được.
+- **Phiếu nhặt A6**: dòng đậm "Lấy ở: Kho 2" / "Lấy ở: Kho chính 1 · Kho 2 4" từ log trừ, "Đang ở: …" khi chưa trừ.
+- **Kiểm kê** `/products/stocktake`: chỉ mã có hàng tại vị trí, quét mã cộng 1, chỉ hiện lệch, nháp localStorage, chốt →
+  mỗi mã lệch một dòng ADJUST "Kiểm kê dd/mm tại X: sổ a → đếm b".
+- **Sinh hàng loạt** "Kệ [A-C][1-3]" (≤ 200, mã KE-A1 tự sinh) + **tem PDF A4** 3×7 mã vạch Code 128.
+- Test: +12 ca (7 tích hợp ô không bán + phiếu nhặt, 5 mẫu tên); suite pass; E2E local đủ vòng bật → chuyển → kiểm kê →
+  tem → phiếu nhặt → rào → tắt (kết quả từng bước trong docs). Bug bắt được: sinh hàng loạt lần đầu trùng sortOrder gốc → sửa.
+- Chưa làm: quét ô trên mobile (app mobile chưa có màn tồn kho); UI cây cha-con phẳng.
+
+---
+
 ## Phiên 24/09/2026 (tối) — VỊ TRÍ CHỨA HÀNG đợt B (nhiều kho nhỏ / kệ / ô) — ĐÃ CODE + kiểm local (anh Trung: "cứ code dần phần B")
 
 Khung 15/09 giữ nguyên, áp 4 điều chỉnh của lần rà 24/09 (mục 8.4 docs). Chi tiết đầy đủ `docs/VI-TRI-CHUA-HANG.md` mục 8.7.

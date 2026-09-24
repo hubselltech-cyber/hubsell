@@ -149,7 +149,7 @@ Nguồn: help.bigseller.com (push rule đa kho 6855, khu vực kho 7727, thêm k
 ### 8.5 Thứ tự — anh Trung chốt 24/09: **A → B** ("làm sớm, sau này thương mại đỡ sửa nhiều; có khách rồi mà sửa nhiều mất uy tín")
 - **Đợt A — hoàn thiện nền — ✅ ĐÃ CODE 24/09 (xem 8.6).**
 - **Đợt B — Vị trí chứa hàng đợt 1 — ✅ ĐÃ CODE 24/09 tối (xem 8.7).**
-- **Đợt C** = đợt 2 mục 7 (in vị trí trên phiếu nhặt, kiểm kê theo vị trí, cờ không bán, mobile quét).
+- **Đợt C (= đợt 2 mục 7) — ✅ ĐÃ CODE 24/09 khuya (xem 8.8), trừ mobile quét ô.
 
 ### 8.6 Đợt A đã làm (24/09/2026, kiểm trên local với shop reviewer@hubsell.vn)
 **Schema / migration `20260924150000_product_inactive_inventory_actor`** (IF NOT EXISTS, Render tự áp; local đã áp tay):
@@ -226,4 +226,43 @@ năng, level xóa theo, tổng giữ nguyên), `POST /transfer {from,to,items[],
 
 **Để lại đợt 2 (mục 7):** in "Lấy ở Kho 2" trên phiếu nhặt A6, kiểm kê theo vị trí, cờ không bán gắn luồng hoàn, sinh vị trí
 hàng loạt + tem mã vạch, quét ô trên mobile; cây cha-con đã có ở DB/API (parentId) nhưng UI đợt 1 hiện phẳng.
+
+### 8.8 Đợt 2 đã làm (24/09/2026 khuya — anh Trung: "Làm tiếp đợt 2. Mà em phải test đủ vị trí đó nhé")
+**Ô "không bán" gắn luồng hoàn** (`sellable=false`, ví dụ "Hàng hoàn chờ kiểm", "Hàng lỗi"):
+- Bất biến đổi thành **`quantityInStock` = Σ level của vị trí BÁN ĐƯỢC** — mọi chỗ đọc + đẩy sàn vẫn không đổi.
+  `applyStockDelta` chỉ cộng/trừ tổng phần rơi vào vị trí bán được; `transferStockTx` qua/ra ô không bán đổi tổng
+  (`totalChanged` → route đẩy sàn); phân bổ trừ đơn bỏ qua ô không bán (bán vượt thì gốc âm, hàng chờ kiểm không bị đụng).
+- Đặt ô không bán làm **Nhận hoàn** → hàng hoàn về đó, tồn bán KHÔNG tăng cho tới khi kiểm xong "Chuyển vị trí" sang kho bán.
+- Rào: đổi cờ khi vị trí còn hàng → 409 "chuyển hàng đi trước"; vị trí mặc định luôn phải bán được.
+- UI: nhãn "không bán" + nút Không bán / Cho bán trong hộp vị trí; ô Đang ở in nghiêng + header "tồn bán X · chờ kiểm Y";
+  hộp Chuyển vị trí báo trước "tồn bán giảm/tăng N, sàn nhận số mới".
+
+**Phiếu nhặt A6 in vị trí** (`services/fulfillment/pick-location.ts`): đơn đã trừ → "Lấy ở: Kho 2" hoặc "Lấy ở: Kho chính 1 ·
+Kho 2 4" (đọc đúng log trừ kèm locationId, 3 truy vấn cho cả lô); chưa trừ → "Đang ở: Kho chính 40 · Kệ A1 4" (2 vị trí có hàng
+theo ưu tiên); shop không dùng vị trí → phiếu y hệt cũ. Dòng in đậm ngay dưới SKU (`PickListItem.location`).
+
+**Kiểm kê theo vị trí** — trang riêng `/products/stocktake` (nút "Kiểm kê" trên thanh công cụ):
+- `GET /api/inventory/stocktake/sheet?locationId=` chỉ liệt kê mã ĐANG CÓ HÀNG ở vị trí (tránh bẫy Zoho điền 0 mọi ô);
+  không vị trí → mọi SKU đang bán (trần 2.000).
+- Gõ số thực đếm (Enter nhảy ô kế), ô quét mã cộng 1 / thêm dòng sổ 0 cho mã thực tế có ở đó, chip "Chỉ hiện lệch" để đếm
+  lại riêng mã lệch, bản nháp nhớ localStorage theo vị trí, một nút Chốt.
+- `POST /api/inventory/stocktake {locationId?, items[{productId, counted}], note?}` → mỗi mã lệch một dòng ADJUST
+  "Kiểm kê dd/mm/yyyy tại X: sổ a → đếm b · ghi chú" (setLevelAbsolute / setStockAbsolute), mã khớp bỏ qua, đẩy sàn mã đổi.
+  Chưa có bảng phiếu kiểm riêng / gộp nhiều phiếu (nhật ký + lý do đã đủ truy vết).
+
+**Sinh vị trí hàng loạt + tem** (`lib/location-pattern.ts`): mẫu "Kệ A[1-5]", "Kệ [A-C][1-3]", "Ô [01-12]" (tích Descartes,
+≤ 200, tên trùng bỏ qua, mã tự sinh không dấu "KE-A1"); `POST /api/stock-locations/bulk`. Tem: `POST /api/stock-locations/labels`
+→ PDF A4 lưới 3×7 (`location-labels-pdf.ts`, font + Code 128 dùng chung phiếu nhặt), vị trí không có mã thì tem chỉ tên.
+
+**Chưa làm:** quét ô trên app mobile khi nhập / nhặt (app mobile hiện 0 màn tồn kho — là việc riêng của app, làm khi có yêu cầu);
+UI cây cha-con vẫn phẳng.
+
+**Test đợt 2:** `stock-locations-sellable.test.ts` 7 ca tích hợp (chuyển vào/ra ô không bán đổi tổng, hoàn về ô không bán không
+tăng tồn bán, đơn bỏ qua ô không bán, sửa số tại ô không bán, pickLocationText, tra theo đơn thật, PDF có dòng vị trí),
+`location-pattern.test.ts` 5 ca; suite toàn bộ pass. **E2E local shop reviewer** (cổng 4001): sinh "Kệ [A-B][1-2]" lần đầu →
+gốc + 4 kệ có mã KE-A1…; thêm "Hàng hoàn chờ kiểm" → Không bán + Nhận hoàn; chuyển 10 → Kệ A1 (tổng giữ 210), chuyển 5 →
+ô không bán (tổng 205, log balanceAfter 205); đổi cờ khi còn hàng → 409; tem PDF 200 (15 KB); phiếu nhập 3 vào Kệ A2 (208);
+phiếu nhặt PDF 200; ô Đang ở 3 dòng + "+1 vị trí khác"; Kiểm kê Kệ A1 sổ 10 → đếm 8 → chốt → tổng 206, log ADJUST đúng
+người + vị trí; chuyển hết về gốc (tổng 211 = 210 + 3 − 2, ô không bán trả 5 về kho bán) → xóa 5 vị trí → xóa gốc → tắt,
+stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt lần đầu trùng sortOrder 0 với gốc → đã sửa.
 

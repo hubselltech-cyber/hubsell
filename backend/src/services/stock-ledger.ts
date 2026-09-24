@@ -9,6 +9,9 @@
 //
 // Bất biến: shop có ≥ 1 vị trí ⇒ Σ level(sellable) = quantityInStock. Shop chưa
 // tạo vị trí ⇒ không có dòng level nào (ẩn bằng vắng mặt tới tận DB).
+// Ô "KHÔNG BÁN" (sellable=false, đợt 2: hàng lỗi / hàng hoàn chờ kiểm): hàng nằm
+// đó KHÔNG cộng vào tồn bán — nhập/hoàn vào đó tổng không tăng, chuyển từ đó
+// sang kho bán tổng mới tăng; đơn không bao giờ trừ ở đó.
 //
 // Không khoá dòng Product ở đây: tổng dùng increment/decrement nguyên tử; level
 // dùng INSERT … ON CONFLICT … + (nguyên tử). Chỉ khi phải PHÂN BỔ trừ hàng (không
@@ -92,17 +95,21 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
     return { productId: w.productId, quantityInStock: p.quantityInStock, logs: [] };
   }
 
-  const product = await tx.product.update({
+  const product = await tx.product.findUniqueOrThrow({
     where: { id: w.productId },
-    data: { quantityInStock: { increment: w.delta } },
     select: { id: true, userId: true, quantityInStock: true },
   });
-  const balanceAfter = product.quantityInStock;
 
   const locs = await listLocations(tx, product.userId);
   const logs: StockWriteResult["logs"] = [];
 
   if (locs.length === 0) {
+    const updated = await tx.product.update({
+      where: { id: w.productId },
+      data: { quantityInStock: { increment: w.delta } },
+      select: { quantityInStock: true },
+    });
+    const balanceAfter = updated.quantityInStock;
     const log = await tx.inventoryLog.create({
       data: {
         productId: w.productId,
@@ -145,6 +152,21 @@ export async function applyStockDelta(tx: Tx, w: StockWrite): Promise<StockWrite
       -w.delta,
       root.id
     );
+  }
+
+  // Tổng = Σ vị trí BÁN ĐƯỢC: phần rơi vào ô "không bán" không cộng/trừ vào tồn bán.
+  const sellableDelta = allocations.reduce((sum, a) => {
+    const sellable = byId.get(a.locationId)?.sellable !== false;
+    return sum + (sellable ? (w.delta > 0 ? a.quantity : -a.quantity) : 0);
+  }, 0);
+  let balanceAfter = product.quantityInStock;
+  if (sellableDelta !== 0) {
+    const updated = await tx.product.update({
+      where: { id: w.productId },
+      data: { quantityInStock: { increment: sellableDelta } },
+      select: { quantityInStock: true },
+    });
+    balanceAfter = updated.quantityInStock;
   }
 
   for (const a of allocations) {
@@ -212,7 +234,9 @@ export async function setLevelAbsolute(
 }
 
 /**
- * CHUYỂN VỊ TRÍ: tổng KHÔNG đổi, hai dòng TRANSFER (− ở nơi đi, + ở nơi đến).
+ * CHUYỂN VỊ TRÍ: hai dòng TRANSFER (− ở nơi đi, + ở nơi đến). Tổng KHÔNG đổi,
+ * TRỪ khi chuyển giữa kho bán và ô "không bán": vào ô không bán thì tồn bán giảm,
+ * từ ô không bán ra kho bán thì tồn bán tăng (`totalChanged` = true → nơi gọi đẩy sàn).
  * Chặn khi nơi đi không đủ hàng (chuyển là việc chủ động, khác đơn sàn).
  */
 export async function transferStockTx(
@@ -225,7 +249,7 @@ export async function transferStockTx(
     reason: string;
     actorId?: string | null;
   }
-): Promise<{ from: number; to: number; quantityInStock: number }> {
+): Promise<{ from: number; to: number; quantityInStock: number; totalChanged: boolean }> {
   if (w.fromLocationId === w.toLocationId) {
     throw Object.assign(new Error("Nơi đi và nơi đến phải khác nhau"), { statusCode: 400 });
   }
@@ -240,12 +264,23 @@ export async function transferStockTx(
       { statusCode: 400 }
     );
   }
-  const product = await tx.product.findUniqueOrThrow({
+  let product = await tx.product.findUniqueOrThrow({
     where: { id: w.productId },
-    select: { quantityInStock: true },
+    select: { userId: true, quantityInStock: true },
   });
+  const locs = await listLocations(tx, product.userId);
+  const fromSellable = locs.find((l) => l.id === w.fromLocationId)?.sellable !== false;
+  const toSellable = locs.find((l) => l.id === w.toLocationId)?.sellable !== false;
+  const totalDelta = fromSellable === toSellable ? 0 : toSellable ? w.quantity : -w.quantity;
   await bumpLevel(tx, w.productId, w.fromLocationId, -w.quantity);
   await bumpLevel(tx, w.productId, w.toLocationId, w.quantity);
+  if (totalDelta !== 0) {
+    product = await tx.product.update({
+      where: { id: w.productId },
+      data: { quantityInStock: { increment: totalDelta } },
+      select: { userId: true, quantityInStock: true },
+    });
+  }
   const base = {
     productId: w.productId,
     type: InventoryLogType.TRANSFER,
@@ -264,6 +299,7 @@ export async function transferStockTx(
     from: fromQty - w.quantity,
     to: toQty + w.quantity,
     quantityInStock: product.quantityInStock,
+    totalChanged: totalDelta !== 0,
   };
 }
 

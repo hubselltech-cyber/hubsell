@@ -30,6 +30,11 @@ export interface PickListItem {
   sku: string;
   name: string;
   quantity: number;
+  /**
+   * Vị trí lấy hàng (đợt 2 vị trí chứa hàng): "Lấy ở: Kho 2" hoặc "Lấy ở: Kho chính 1 · Kho 2 4"
+   * khi đơn đã trừ kho; "Đang ở: …" khi chưa trừ. Null/undefined = shop không dùng vị trí.
+   */
+  location?: string | null;
 }
 
 export interface PickListOrder {
@@ -47,8 +52,8 @@ export interface PickListOrder {
 
 let fontCache: { regular: Uint8Array; bold: Uint8Array } | null = null;
 
-/** Đọc font một lần cho cả tiến trình (mỗi file ~170KB). */
-function loadFonts(): { regular: Uint8Array; bold: Uint8Array } {
+/** Đọc font một lần cho cả tiến trình (mỗi file ~170KB). Dùng chung với tem vị trí. */
+export function loadFonts(): { regular: Uint8Array; bold: Uint8Array } {
   if (fontCache) return fontCache;
   const regular = fs.readFileSync(
     require.resolve("@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf")
@@ -108,7 +113,7 @@ function fmtDateTime(d: Date): string {
 }
 
 /** Vẽ mã vạch Code 128 căn giữa theo chiều ngang; trả về chiều cao đã dùng. */
-function drawBarcode(page: PDFPage, text: string, x: number, topY: number, maxWidth: number, height: number) {
+export function drawBarcode(page: PDFPage, text: string, x: number, topY: number, maxWidth: number, height: number) {
   const bars = encodeCode128B(text);
   const modules = code128TotalModules(bars);
   // Mô-đun ≥ 0.9pt (~0.32mm) để máy quét cầm tay đọc chắc; hẹp hơn là mờ.
@@ -302,7 +307,15 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
   const rows = order.items.map((it) => {
     const nameLines = wrapText(it.name || "(không tên)", regular, ROW_SIZE, CONTENT_W).slice(0, 2);
     const skuLine = wrapText(it.sku || "—", bold, ROW_SIZE, nameW)[0] ?? "—";
-    return { skuLine, nameLines, qty: it.quantity, height: LINE_H * (1 + nameLines.length) + 3 };
+    // Dòng vị trí lấy hàng (đợt 2) — in đậm để người nhặt thấy trước tên hàng dài.
+    const locLine = it.location ? (wrapText(it.location, bold, ROW_SIZE, CONTENT_W)[0] ?? null) : null;
+    return {
+      skuLine,
+      nameLines,
+      locLine,
+      qty: it.quantity,
+      height: LINE_H * (1 + nameLines.length + (locLine ? 1 : 0)) + 3,
+    };
   });
 
   // Phân trang trước để header in "trang x/y"
@@ -342,6 +355,10 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
         color: INK,
       });
       y -= LINE_H;
+      if (r.locLine) {
+        page.drawText(r.locLine, { x: MARGIN, y: y - ROW_SIZE, size: ROW_SIZE, font: bold, color: INK });
+        y -= LINE_H;
+      }
       for (const line of r.nameLines) {
         page.drawText(line, { x: MARGIN, y: y - ROW_SIZE, size: ROW_SIZE, font: regular, color: INK });
         y -= LINE_H;
