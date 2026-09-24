@@ -4,7 +4,7 @@
 > sách ticket hỗ trợ** → tạo ticket mới, dán nội dung bên dưới.
 > Kênh dự phòng: hotline **19008677** hoặc email **integration@misa.com.vn**.
 >
-> **Trạng thái:** soạn 19/09/2026 — xem mục "Nhật ký" cuối file.
+> **Trạng thái:** ⛔ ĐÃ ĐÓNG 24/09/2026 — MISA trả lời 21/09: CHƯA có API số hóa đơn còn lại (sẽ ghi nhận). Xem "Nhật ký" cuối file.
 > **Trước khi hỏi đã tự kiểm:** mục lục 3 bộ tài liệu doc.meinvoice.vn (itg / api /
 > webapi) không có API tài nguyên; dò cổng sandbox `/company`, `/invoice/license`,
 > `/invoice/licenseinfo`, `/invoice/resource`, `/license` đều 404.
@@ -68,3 +68,8 @@ Email: dev@hubsell.tech · ĐT: 0965863292
 
 - 19/09/2026 — soạn ticket (anh Trung yêu cầu gửi).
 - 19/09/2026 ~23:10 — ✅ **ĐÃ GỬI** qua developer.misa.vn (anh Trung đăng nhập, Claude điền + bấm gửi): ứng dụng Hubsell → sản phẩm **Hóa đơn điện tử**, trạng thái "Chờ xử lý / Chưa phản hồi". ĐỪNG gửi lại — xem phản hồi ở Quản lý ứng dụng → Quản lý danh sách yêu cầu hỗ trợ. Có câu trả lời (kể cả "không có") thì ghi ngay vào đây + memory.
+- 21/09/2026 09:39 — 📩 **MISA TRẢ LỜI** (Phòng Tích hợp hệ thống, chuyên viên hỗ trợ; anh Trung chụp màn hình đưa Claude 24/09), chép nguyên văn:
+  > 1. API LẤY SỐ HÓA ĐƠN CÒN LẠI ⇒ Hiện tại MISA chưa hỗ trợ lấy ra số lượng tài nguyên còn lại trên hệ thống, MISA sẽ ghi nhận yêu cầu về API này, nếu có kế hoạch sẽ truyền thông trên các kênh/bổ sung vào tài liệu.
+  > 3. XÁC NHẬN TRA CỨU THEO RefID ⇒ ở API môi trường product có gì, thì test sẽ có những chức năng đó, bên cạnh đó test còn có những chức năng mà dự án đang bổ sung thêm TT/NĐ mới của CQT.
+  (Mục 2 MISA không trả lời riêng.)
+- 24/09/2026 — ⛔ **ANH TRUNG CHỐT TẠM ĐÓNG**: MISA không có thứ Hubsell cần. Kết luận giữ nguyên hiện trạng: Hubsell KHÔNG đếm số hóa đơn còn lại, chỉ bắt 3 mã lỗi `LicenseInfo_OutOfInvoice/_NotBuy/_Expired` rồi ngắt mạch + chuông chỉ khách sang meInvoice → Hệ thống → Quản lý tài nguyên mua thêm, mua xong bấm Chạy lại. Tra cứu theo RefID (`/invoice/status?inputType=2`, dùng cho `recoverDuplicate`) được MISA xác nhận sandbox = production → giữ nguyên. Không mở lại ticket này trừ khi MISA tự thông báo có API mới.
