@@ -343,9 +343,13 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
   // ---------- Tầng 3: đề xuất ----------
   let proposal: RecommendProposal | null = null;
   if ((tier === "run_now" || tier === "test_small") && safeRoas != null && input.margin != null) {
+    // "Đẩy số" = mức an toàn (hòa vốn × hệ số), KHÔNG kẹp theo mốc thấp nhất Shopee gợi ý — anh Trung
+    // cân nhắc rồi bỏ 24/09 22:50 ("mình có lưu ý lãi mỏng / lỗ nhẹ rồi"): seller được chọn mức thấp nhất
+    // còn lãi, câu cảnh báo trên thẻ đã nói rõ lãi mỗi đơn mỏng nhất.
+    const push = safeRoas;
     const exact = s?.roiExact ?? null;
-    const keep = exact != null && exact > safeRoas ? round1(exact) : safeRoas;
-    const balanced = keep > safeRoas ? round1((safeRoas + keep) / 2) : safeRoas;
+    const keep = exact != null && exact > push ? round1(exact) : push;
+    const balanced = keep > push ? round1((push + keep) / 2) : push;
     const profit30d = Math.max(0, input.revenue30d * input.margin);
     const caps: Array<{ value: number; why: string }> = [];
     if (profit30d > 0) {
@@ -379,7 +383,7 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
     }
     const dailyBudget = Math.max(roundK(budget), 10_000);
     proposal = {
-      targets: { push: safeRoas, balanced, keep },
+      targets: { push, balanced, keep },
       recommended: tier === "test_small" ? "keep" : "balanced",
       dailyBudget,
       budgetNote: note,

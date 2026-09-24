@@ -57,6 +57,7 @@ describe("recommendAdsForItem — cổng loại", () => {
     expect(r.breakevenRoas).toBeCloseTo(4);
     expect(r.safeRoas).toBe(4.4);
     expect(r.headroom).toBeCloseTo(2);
+    // Đẩy số = mức an toàn (anh Trung 24/09 cân nhắc rồi KHÔNG kẹp theo roiLower của sàn).
     expect(r.proposal?.targets).toEqual({ push: 4.4, balanced: 6.2, keep: 8 });
     expect(r.proposal?.recommended).toBe("balanced");
   });
