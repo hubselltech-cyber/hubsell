@@ -41,13 +41,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -238,7 +231,7 @@ export function ShopeeAdsPage({
   );
   // Tab trong trang (khuôn giống trang TikTok): dashboard / bảng hòa vốn SP /
   // cấu hình Trợ lý.
-  const [tab, setTab] = useState<"overview" | "recommend" | "breakeven" | "config">("overview");
+  const [tab, setTab] = useState<"overview" | "recommend" | "breakeven" | "gms" | "config">("overview");
   // Bảng ROAS hòa vốn theo SP — nạp lười khi mở tab, cache theo gian đang chọn.
   const [breakeven, setBreakeven] = useState<{
     channelId: string;
@@ -440,25 +433,32 @@ export function ShopeeAdsPage({
   const rangePhrase = formatRangePhrase(range);
   const rangeIn = /^(từ|ngày) /.test(rangePhrase) ? rangePhrase : `trong ${rangePhrase}`;
 
-  // GMS = GMV Max cấp shop (24/09): khối riêng, không thuộc bảng chiến dịch; từng SP nạp khi bấm.
+  // GMS = GMV Max cấp shop (24/09): TAB riêng (chỉ khi gian đang chạy GMS); từng SP nạp khi mở tab,
+  // cache theo gian — không gọi API ở Tổng quan.
   const gms = data?.gms ?? null;
-  const [gmsOpen, setGmsOpen] = useState(false);
-  const [gmsItems, setGmsItems] = useState<ShopeeGmsItemsResponse | null>(null);
+  const [gmsItems, setGmsItems] = useState<{ channelId: string; data: ShopeeGmsItemsResponse } | null>(null);
   const [gmsLoading, setGmsLoading] = useState(false);
   const [gmsError, setGmsError] = useState<string | null>(null);
-  async function openGmsItems() {
-    if (!channelId || gmsLoading) return;
+  useEffect(() => {
+    if (tab !== "gms" || !channelId) return;
+    if (gmsItems?.channelId === channelId) return;
+    let cancelled = false;
     setGmsLoading(true);
     setGmsError(null);
-    try {
-      setGmsItems(await fetchShopeeGmsItems(channelId));
-      setGmsOpen(true);
-    } catch (err) {
-      setGmsError(`Không tải được từng sản phẩm GMV Max: ${(err as Error).message}`);
-    } finally {
-      setGmsLoading(false);
-    }
-  }
+    fetchShopeeGmsItems(channelId)
+      .then((res) => {
+        if (!cancelled) setGmsItems({ channelId, data: res });
+      })
+      .catch((err) => {
+        if (!cancelled) setGmsError(`Không tải được từng sản phẩm GMV Max: ${(err as Error).message}`);
+      })
+      .finally(() => {
+        if (!cancelled) setGmsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, channelId, gmsItems]);
 
   const series = useMemo(
     () =>
@@ -711,6 +711,10 @@ export function ShopeeAdsPage({
                   ? ([{ key: "recommend", label: "Gợi ý chạy ads" }] as const)
                   : []),
                 { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
+                // GMS (24/09): tab riêng, chỉ khi gian đang chạy GMV Max cấp shop — không chen vào Tổng quan.
+                ...(platform === "shopee" && gms?.status === "active"
+                  ? ([{ key: "gms", label: "GMV Max cấp shop" }] as const)
+                  : []),
                 {
                   key: "config",
                   label: "Cấu hình Trợ lý Tự động",
@@ -941,138 +945,6 @@ export function ShopeeAdsPage({
           </Card>
         )}
 
-        {/* ===== GMS = GMV MAX CẤP SHOP (24/09) — chi tiêu KHÔNG nằm trong bảng chiến dịch ===== */}
-        {gms && gms.status === "active" && gms.reports.length > 0 && (
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <CardTitle>GMV Max cấp shop (GMS)</CardTitle>
-                  <CardDescription className="mt-1.5">
-                    Gian đang chạy GMV Max cấp shop. Khoản này Shopee KHÔNG xếp vào chiến dịch sản phẩm — chỉ
-                    nằm trong tổng chi cấp shop, và sàn chỉ trả số theo cửa sổ ngày trọn (không có số từng
-                    ngày), nên không đi vào bảng và biểu đồ bên dưới. ROAS tô màu theo hòa vốn cấp shop.
-                    Hubsell chỉ đọc — sửa GMV Max trên Seller Center.
-                  </CardDescription>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => void openGmsItems()} disabled={gmsLoading}>
-                  {gmsLoading ? "Đang tải…" : "Xem từng sản phẩm"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {gms.reports.map((r) => {
-                  const be = gms.shopBreakevenRoas;
-                  return (
-                    <div key={r.windowKey} className="rounded-lg border p-3.5">
-                      <p className="text-xs text-muted-foreground">
-                        {r.windowKey === "7d" ? "7 ngày trọn" : "30 ngày trọn"} ·{" "}
-                        {formatDayVN(new Date(`${r.startKey}T00:00:00`))} – {formatDayVN(new Date(`${r.endKey}T00:00:00`))}
-                      </p>
-                      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Chi phí</p>
-                          <p className="font-semibold tabular-nums text-red-600">{formatVND(r.expense)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">GMV</p>
-                          <p className="font-semibold tabular-nums text-emerald-600">{formatVND(r.broadGmv)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Đơn</p>
-                          <p className="font-semibold tabular-nums">{formatNumber(r.broadOrder)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">ROAS · hòa vốn shop</p>
-                          <p className={cn("font-semibold tabular-nums", roasToneClass(r.roasBroad, be))}>
-                            {formatRoas(r.roasBroad)}
-                            <span className="ml-1 font-normal text-slate-500">· {formatRoas(be)}</span>
-                          </p>
-                        </div>
-                      </div>
-                      {r.roasBroad != null && be != null && r.roasBroad < be && (
-                        <p className="mt-2 text-xs text-red-600">
-                          GMV Max cấp shop đang lỗ trong cửa sổ này — xem từng sản phẩm để biết SP nào kéo xuống.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {gmsError && <p className="mt-2 text-sm text-amber-700">{gmsError}</p>}
-            </CardContent>
-          </Card>
-        )}
-        {/* Gian đủ điều kiện nhưng chưa chạy GMS — một dòng mờ, không rao (probe ANO 24/09: eligible, chưa có campaign). */}
-        {gms && gms.status === "eligible" && (
-          <p className="text-xs text-muted-foreground">
-            Gian đủ điều kiện chạy GMV Max cấp shop (GMS) nhưng chưa có chiến dịch GMS nào. Bật trên Seller Center thì số
-            sẽ hiện ở đây sau lượt kéo lịch sử kế tiếp (tối đa 6 giờ).
-          </p>
-        )}
-        <Dialog open={gmsOpen} onOpenChange={(o) => !o && setGmsOpen(false)}>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>Từng sản phẩm trong GMV Max cấp shop</DialogTitle>
-              <DialogDescription>
-                {gmsItems?.startKey && gmsItems.endKey
-                  ? `7 ngày trọn ${formatDayVN(new Date(`${gmsItems.startKey}T00:00:00`))} – ${formatDayVN(new Date(`${gmsItems.endKey}T00:00:00`))}, chỉ SP có số. `
-                  : ""}
-                ROAS đỏ = dưới hòa vốn của chính sản phẩm (từ giá vốn + phí thật). SP lỗ thì loại khỏi GMV Max trên
-                Seller Center — Hubsell chưa có lệnh ghi cho GMS.
-              </DialogDescription>
-            </DialogHeader>
-            {gmsItems && gmsItems.rows.length === 0 && (
-              <p className="text-sm text-muted-foreground">Chưa có sản phẩm nào có số trong cửa sổ này.</p>
-            )}
-            {gmsItems && gmsItems.rows.length > 0 && (
-              <div className="min-w-0 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                      <th className="py-1.5 pr-3 font-medium">Sản phẩm</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">Chi phí</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">Đơn</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">GMV</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">ROAS</th>
-                      <th className="py-1.5 text-right font-medium">Hòa vốn SP</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gmsItems.rows.slice(0, 50).map((it) => {
-                      const losing = it.roasBroad != null && it.breakevenRoas != null && it.roasBroad < it.breakevenRoas;
-                      return (
-                        <tr key={it.itemId} className={cn("border-b last:border-0", losing && "bg-red-50/60")}>
-                          <td className="max-w-64 py-1.5 pr-3">
-                            <span className="block truncate text-slate-900">{it.name || `#${it.itemId}`}</span>
-                            <span className="text-xs text-slate-500">
-                              #{it.itemId}
-                              {it.lossBeforeAds && <span className="text-red-600"> · lỗ trước ads</span>}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{formatVND(it.expense)}</td>
-                          <td className={cn("py-1.5 pr-3 text-right tabular-nums", it.expense > 0 && it.broadOrder === 0 && "font-semibold text-red-600")}>
-                            {formatNumber(it.broadOrder)}
-                          </td>
-                          <td className="py-1.5 pr-3 text-right tabular-nums">{formatVND(it.broadGmv)}</td>
-                          <td className={cn("py-1.5 pr-3 text-right font-semibold tabular-nums", roasToneClass(it.roasBroad, it.breakevenRoas))}>
-                            {formatRoas(it.roasBroad)}
-                          </td>
-                          <td className="py-1.5 text-right tabular-nums text-slate-600">{formatRoas(it.breakevenRoas)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {gmsItems.rows.length > 50 && (
-                  <p className="mt-1 text-xs text-muted-foreground">+{formatNumber(gmsItems.rows.length - 50)} sản phẩm khác.</p>
-                )}
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
         {/* ===== BẢNG CHIẾN DỊCH ===== */}
         <Card>
           <CardHeader>
@@ -1249,6 +1121,120 @@ export function ShopeeAdsPage({
               void load(channelId, range);
             }}
           />
+        )}
+
+        {/* ===== TAB GMV MAX CẤP SHOP (GMS, 24/09) — tab riêng, chỉ hiện khi gian đang chạy GMS
+            (khẩu vị anh Trung điểm 10: không chèn khối phụ lên trên bảng chính; số theo cửa sổ,
+            không có số ngày nên không đi vào bảng/biểu đồ Tổng quan). ===== */}
+        {tab === "gms" && gms && gms.status === "active" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>GMV Max cấp shop (GMS)</CardTitle>
+              <CardDescription className="mt-1.5">
+                Khoản này Shopee KHÔNG xếp vào chiến dịch sản phẩm — chỉ nằm trong tổng chi cấp shop, và sàn chỉ
+                trả số theo cửa sổ ngày trọn (không có số từng ngày). ROAS cửa sổ tô màu theo hòa vốn cấp shop;
+                từng sản phẩm tô theo hòa vốn của chính nó. Hubsell chỉ đọc — sửa GMV Max trên Seller Center.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {gms.reports.map((r) => {
+                  const be = gms.shopBreakevenRoas;
+                  return (
+                    <div key={r.windowKey} className="rounded-lg border p-3.5">
+                      <p className="text-xs text-muted-foreground">
+                        {r.windowKey === "7d" ? "7 ngày trọn" : "30 ngày trọn"} ·{" "}
+                        {formatDayVN(new Date(`${r.startKey}T00:00:00`))} – {formatDayVN(new Date(`${r.endKey}T00:00:00`))}
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Chi phí</p>
+                          <p className="font-semibold tabular-nums text-red-600">{formatVND(r.expense)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">GMV</p>
+                          <p className="font-semibold tabular-nums text-emerald-600">{formatVND(r.broadGmv)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Đơn</p>
+                          <p className="font-semibold tabular-nums">{formatNumber(r.broadOrder)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">ROAS · hòa vốn shop</p>
+                          <p className={cn("font-semibold tabular-nums", roasToneClass(r.roasBroad, be))}>
+                            {formatRoas(r.roasBroad)}
+                            <span className="ml-1 font-normal text-slate-500">· {formatRoas(be)}</span>
+                          </p>
+                        </div>
+                      </div>
+                      {r.roasBroad != null && be != null && r.roasBroad < be && (
+                        <p className="mt-2 text-xs text-red-600">
+                          Đang lỗ trong cửa sổ này — xem bảng sản phẩm bên dưới để biết SP nào kéo xuống.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Từng sản phẩm trong GMV Max</p>
+                <p className="text-xs text-muted-foreground">
+                  {gmsItems?.data.startKey && gmsItems.data.endKey
+                    ? `7 ngày trọn ${formatDayVN(new Date(`${gmsItems.data.startKey}T00:00:00`))} – ${formatDayVN(new Date(`${gmsItems.data.endKey}T00:00:00`))}, chỉ SP có số. `
+                    : ""}
+                  ROAS đỏ = dưới hòa vốn của chính sản phẩm. SP lỗ thì loại khỏi GMV Max trên Seller Center — Hubsell
+                  chưa có lệnh ghi cho GMS.
+                </p>
+                {gmsLoading && <p className="mt-2 text-sm text-muted-foreground">Đang tải…</p>}
+                {gmsError && <p className="mt-2 text-sm text-amber-700">{gmsError}</p>}
+                {gmsItems && gmsItems.data.rows.length === 0 && (
+                  <p className="mt-2 text-sm text-muted-foreground">Chưa có sản phẩm nào có số trong cửa sổ này.</p>
+                )}
+                {gmsItems && gmsItems.data.rows.length > 0 && (
+                  <div className="mt-2 min-w-0 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">Sản phẩm</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Chi phí</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Đơn</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">GMV</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">ROAS</th>
+                          <th className="py-1.5 text-right font-medium">Hòa vốn SP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gmsItems.data.rows.slice(0, 100).map((it) => {
+                          const losing = it.roasBroad != null && it.breakevenRoas != null && it.roasBroad < it.breakevenRoas;
+                          return (
+                            <tr key={it.itemId} className={cn("border-b last:border-0", losing && "bg-red-50/60")}>
+                              <td className="max-w-72 py-1.5 pr-3">
+                                <span className="block truncate text-slate-900">{it.name || `#${it.itemId}`}</span>
+                                <span className="text-xs text-slate-500">
+                                  #{it.itemId}
+                                  {it.lossBeforeAds && <span className="text-red-600"> · lỗ trước ads</span>}
+                                </span>
+                              </td>
+                              <td className="py-1.5 pr-3 text-right tabular-nums">{formatVND(it.expense)}</td>
+                              <td className={cn("py-1.5 pr-3 text-right tabular-nums", it.expense > 0 && it.broadOrder === 0 && "font-semibold text-red-600")}>
+                                {formatNumber(it.broadOrder)}
+                              </td>
+                              <td className="py-1.5 pr-3 text-right tabular-nums">{formatVND(it.broadGmv)}</td>
+                              <td className={cn("py-1.5 pr-3 text-right font-semibold tabular-nums", roasToneClass(it.roasBroad, it.breakevenRoas))}>
+                                {formatRoas(it.roasBroad)}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums text-slate-600">{formatRoas(it.breakevenRoas)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {tab === "breakeven" && (

@@ -5,6 +5,13 @@
 
 ---
 
+## Phiên 24/09/2026 (đêm, 6) — XÁC MINH SỐNG 3 lệnh ghi Ads Shopee + GMS dời ra TAB riêng (anh Trung: "Em cứ xác minh đi. GMS đặt ở đâu? Tính kỹ không rối")
+
+- **Xác minh sống trên ANO (chỉ đọc Sổ + bắn lệnh nhỏ đảo lại):** tạo chiến dịch = chính anh bấm 21:58 (campaign 201358573 chạy thật, sổ SUCCESS); change_roas_target 12,2 → 12,3 → 12,2 OK; change_budget 100.000 → 101.000 → 100.000 OK trên campaign đang chạy, campaign đã tạm dừng cũ trả error_server (chỉ đổi ngân sách campaign đang chạy — khớp executor). write-probe nhận thêm budget/roasTarget.
+- **GMS**: bỏ khối trên bảng chính, chuyển thành TAB "GMV Max cấp shop" chỉ hiện khi gian đang chạy GMS; từng SP nạp khi mở tab; bỏ dòng mờ eligible. Docs mục 7 việc 1/6/8 + mục 12.3.
+
+---
+
 ## Phiên 24/09/2026 (đêm, 5) — Ads Shopee GMS = GMV MAX CẤP SHOP, chỉ đọc (anh Trung: "Làm nốt GMS đi em")
 
 Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 12. Tóm tắt:

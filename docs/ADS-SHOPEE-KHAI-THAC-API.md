@@ -286,7 +286,7 @@ rồi mới chốt ngưỡng cổng và trọng số.
 Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên khi mở lại.
 
 ### Từ đợt D (Gợi ý chạy ads) — đã live, còn treo
-1. **Lệnh tạo chiến dịch chưa bắn sống.** `createCampaignFromRecommendation` →
+1. ✅ ĐÃ BẮN SỐNG 24/09 21:58 (anh Trung bấm Tạo chiến dịch từ Gợi ý: Túi đeo ngực ANO, 100.000₫/ngày, ROAS 6,7x → campaign 201358573 chạy thật, sổ SUCCESS) — ~~Lệnh tạo chiến dịch chưa bắn sống.~~ `createCampaignFromRecommendation` →
    `create_manual_product_ads` viết theo docs. Bước đầu: nhập giá vốn cho 1 SP ANO bán chạy để qua cổng →
    bấm "Tạo chiến dịch" với ngân sách tối thiểu 100k → soi Sổ hành động + Seller Center → dừng campaign test.
 2. **Từ khóa gợi ý trả rỗng** cho mọi SP ANO (gọi không kèm `input_keyword`) → yếu tố Cầu + Giá click đang
@@ -304,7 +304,7 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
 7. **Máy tự nâng mục tiêu** (executor) chưa làm — chỉ làm sau khi việc 6 xác minh OK và anh chốt luật.
 
 ### Đợt B — chưa code
-8. ✅ ĐÃ CODE 24/09 (mục 10) — **Hạ ngân sách trước, tắt sau** (`change_budget`, nấc `cut_budget` trong executor; campaign không giới hạn
+8. ✅ ĐÃ CODE 24/09 (mục 10) + ✅ change_budget ĐÃ BẮN SỐNG 22:25 qua write-probe trên campaign ĐANG CHẠY 201358573 (100.000 → 101.000 → 100.000, sàn nhận; trên campaign ĐÃ TẠM DỪNG cũ 55242573 sàn trả error_server → chỉ đổi ngân sách campaign đang chạy, executor vốn chỉ hạ campaign ongoing) — **Hạ ngân sách trước, tắt sau** (`change_budget`, nấc `cut_budget` trong executor; campaign không giới hạn
    ngân sách mà lỗ thì đặt trần trước). Cần probe `change_budget` + mở rộng cờ Hubsell ghi ngân sách gốc
    (campaign tạo từ Hubsell đã có số gốc trong `hubsellProposal`).
 9. ✅ ĐÃ CODE 24/09 (mục 10) — **Cờ ví tự nạp** (`get_shop_toggle_info`, +1 call/xung): ví cạn mà không tự nạp → báo đỏ; đã bật tự nạp →
@@ -523,12 +523,12 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
   hòa vốn đúng rổ ads của GMV Max.
 - CHỈ ĐỌC: không hành động tự động, không nút ghi (edit_gms_product_campaign chưa bắn sống, chưa nối executor).
 
-### 12.3 UI
-- Khối "GMV Max cấp shop (GMS)" trên bảng chiến dịch khi status = active: 2 ô cửa sổ (chi, GMV, đơn, ROAS · hòa vốn
+### 12.3 UI (sửa 22:30 sau khi anh hỏi "đặt ở đâu, tính kỹ không rối" — điểm 10 khẩu vị: không chèn khối phụ lên trên bảng chính)
+- TAB RIÊNG "GMV Max cấp shop" chỉ hiện khi status = active (không chen vào Tổng quan; từng SP gọi API khi mở tab): 2 ô cửa sổ (chi, GMV, đơn, ROAS · hòa vốn
   shop), câu nói thật "Shopee không xếp khoản này vào chiến dịch sản phẩm, chỉ có trong tổng chi cấp shop, không có số
   từng ngày"; dòng đỏ khi ROAS < hòa vốn; nút **Xem từng sản phẩm** → dialog bảng SP (chi, đơn, GMV, ROAS, hòa vốn SP,
   đỏ khi lỗ) + câu "SP lỗ thì loại khỏi GMV Max trên Seller Center — Hubsell chưa có lệnh ghi cho GMS".
-- status = eligible: một dòng mờ "đủ điều kiện nhưng chưa có chiến dịch GMS".
+- status = eligible: KHÔNG hiện gì (bỏ dòng mờ để Tổng quan sạch).
 
 ### 12.4 Kiểm chứng
 - Soi local (gian demo, đặt tay status active + 2 báo cáo + 3 SP): khối hiện đúng, 7d ROAS 2,88x < hòa vốn shop 3,52x
