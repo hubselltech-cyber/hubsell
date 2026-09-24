@@ -666,6 +666,89 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
   }
 });
 
+const DELETE_GUARD_SELECT = {
+  id: true,
+  skuCode: true,
+  quantityInStock: true,
+  _count: { select: { orderItems: true, channelProducts: true, kocSamples: true } },
+} as const;
+
+type DeleteGuardRow = {
+  id: string;
+  skuCode: string;
+  quantityInStock: number;
+  _count: { orderItems: number; channelProducts: number; kocSamples: number };
+};
+
+/**
+ * Lý do KHÔNG xóa được một SKU (null = xóa được): đã có dòng đơn, đang nối SKU sàn,
+ * đã xuất hàng mẫu KOC, hoặc còn tồn. Dùng chung cho xóa lẻ và xóa hàng loạt.
+ */
+function deleteBlockReason(p: DeleteGuardRow): { code: string; reason: string } | null {
+  const blockers: string[] = [];
+  if (p._count.orderItems > 0) blockers.push(`đã có ${p._count.orderItems} dòng đơn hàng`);
+  if (p._count.channelProducts > 0) {
+    blockers.push(`đang nối ${p._count.channelProducts} SKU sàn (gỡ nối trước)`);
+  }
+  if (p._count.kocSamples > 0) blockers.push(`đã xuất ${p._count.kocSamples} phiếu hàng mẫu KOC`);
+  if (blockers.length) return { code: "PRODUCT_IN_USE", reason: blockers.join(", ") };
+  if (p.quantityInStock !== 0) {
+    return { code: "PRODUCT_HAS_STOCK", reason: `còn tồn ${p.quantityInStock}` };
+  }
+  return null;
+}
+
+// POST /api/products/bulk — HÀNG LOẠT (anh Trung 24/09: ô tích đầu dòng để ngừng /
+// xóa hàng loạt). Body: { action: "deactivate" | "activate" | "delete", ids[] } ≤ 500.
+// Ngừng/bán lại: một updateMany. Xóa: xoá SKU đủ điều kiện, SKU dính đơn / liên kết /
+// còn tồn thì bỏ qua và trả lý do từng mã (không vỡ cả lô).
+router.post("/bulk", async (req: AuthRequest, res, next) => {
+  try {
+    if (req.userRole !== Role.ADMIN) {
+      res.status(403).json({ error: "Chỉ chủ shop mới được xử lý hàng loạt SKU" });
+      return;
+    }
+    const { action, ids } = req.body ?? {};
+    if (action !== "deactivate" && action !== "activate" && action !== "delete") {
+      res.status(400).json({ error: "Hành động không hợp lệ" });
+      return;
+    }
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || !ids.every((x) => typeof x === "string")) {
+      res.status(400).json({ error: "Chọn 1–500 SKU" });
+      return;
+    }
+    const ownerId = req.ownerId!;
+    const idList = [...new Set(ids as string[])];
+
+    if (action !== "delete") {
+      const r = await prisma.product.updateMany({
+        where: { userId: ownerId, id: { in: idList }, isActive: action === "activate" ? false : true },
+        data: { isActive: action === "activate" },
+      });
+      res.json({ action, affected: r.count, skipped: [] });
+      return;
+    }
+
+    const rows = await prisma.product.findMany({
+      where: { userId: ownerId, id: { in: idList } },
+      select: DELETE_GUARD_SELECT,
+    });
+    const skipped: { id: string; skuCode: string; reason: string }[] = [];
+    const deletable: string[] = [];
+    for (const p of rows) {
+      const block = deleteBlockReason(p);
+      if (block) skipped.push({ id: p.id, skuCode: p.skuCode, reason: block.reason });
+      else deletable.push(p.id);
+    }
+    const r = deletable.length
+      ? await prisma.product.deleteMany({ where: { userId: ownerId, id: { in: deletable } } })
+      : { count: 0 };
+    res.json({ action, affected: r.count, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/products/:id — XÓA CỨNG một SKU (24/09), chỉ chủ shop và CHỈ khi
 // SKU chưa dính vào đâu: chưa có dòng đơn, chưa nối SKU sàn, chưa xuất hàng mẫu
 // KOC. Đã dính thì trả 409 kèm lý do và chỉ sang "Ngừng kinh doanh" — xóa mất
@@ -679,38 +762,20 @@ router.delete("/:id", async (req: AuthRequest, res, next) => {
     const { id } = req.params;
     const product = await prisma.product.findFirst({
       where: { id, userId: req.ownerId! },
-      select: {
-        id: true,
-        skuCode: true,
-        quantityInStock: true,
-        _count: { select: { orderItems: true, channelProducts: true, kocSamples: true } },
-      },
+      select: DELETE_GUARD_SELECT,
     });
     if (!product) {
       res.status(404).json({ error: "Không tìm thấy sản phẩm" });
       return;
     }
-    const blockers: string[] = [];
-    if (product._count.orderItems > 0) {
-      blockers.push(`đã có ${product._count.orderItems} dòng đơn hàng`);
-    }
-    if (product._count.channelProducts > 0) {
-      blockers.push(`đang nối ${product._count.channelProducts} SKU sàn (gỡ nối trước)`);
-    }
-    if (product._count.kocSamples > 0) {
-      blockers.push(`đã xuất ${product._count.kocSamples} phiếu hàng mẫu KOC`);
-    }
-    if (blockers.length) {
+    const block = deleteBlockReason(product);
+    if (block) {
       res.status(409).json({
-        error: `Không xóa được ${product.skuCode}: ${blockers.join(", ")}. Dùng "Ngừng kinh doanh" để ẩn khỏi bảng mà vẫn giữ lịch sử.`,
-        code: "PRODUCT_IN_USE",
-      });
-      return;
-    }
-    if (product.quantityInStock !== 0) {
-      res.status(409).json({
-        error: `${product.skuCode} còn tồn ${product.quantityInStock} — xuất hết hoặc sửa tồn về 0 rồi mới xóa, để nhật ký kho không mất dấu hàng.`,
-        code: "PRODUCT_HAS_STOCK",
+        error:
+          block.code === "PRODUCT_HAS_STOCK"
+            ? `${product.skuCode} ${block.reason} — xuất hết hoặc sửa tồn về 0 rồi mới xóa, để nhật ký kho không mất dấu hàng.`
+            : `Không xóa được ${product.skuCode}: ${block.reason}. Dùng "Ngừng kinh doanh" để ẩn khỏi bảng mà vẫn giữ lịch sử.`,
+        code: block.code,
       });
       return;
     }

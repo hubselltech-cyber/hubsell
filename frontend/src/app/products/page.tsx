@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -40,6 +40,7 @@ import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog"
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
+import { ProductBulkBar } from "@/components/products/product-bulk-bar";
 import { ProductHistoryDialog } from "@/components/products/product-history-dialog";
 import { ProductRowMenu } from "@/components/products/product-row-menu";
 import { StockLevelsCell } from "@/components/products/stock-levels-cell";
@@ -134,6 +135,12 @@ export default function ProductsHubPage() {
   // SKU đang mở hộp Lịch sử kho.
   const [history, setHistory] = useState<Product | null>(null);
 
+  // Ô TÍCH đầu dòng (anh Trung 24/09): chọn nhiều để ngừng / bán lại / xóa hàng
+  // loạt. Giữ cả object để thanh xử lý biết SKU nào đang bán / ngừng; đổi
+  // trang, bộ lọc, tìm kiếm thì xóa lựa chọn (tránh xóa nhầm dòng không còn thấy).
+  const [selected, setSelected] = useState<Map<string, Product>>(new Map());
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
   // VỊ TRÍ CHỨA HÀNG (đợt B): rỗng = shop chưa dùng, giao diện y hệt cũ (ẩn bằng
   // sự vắng mặt — không công tắc cài đặt). Cột "Đang ở" + ô chọn vị trí chỉ
   // xuất hiện khi có ≥ 1 vị trí.
@@ -182,12 +189,40 @@ export default function ProductsHubPage() {
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
   const invalidate = useInvalidate();
-  const items = productsQ.data?.items ?? [];
+  const items = useMemo(() => productsQ.data?.items ?? [], [productsQ.data]);
   const total = productsQ.data?.total ?? 0;
   const pageCount = productsQ.data?.pageCount ?? 0;
   // Khối Kho trung tâm đếm SKU ĐANG BÁN toàn shop — không đổi theo chip lọc /
   // ô tìm (backend cũ chưa trả activeCount thì rơi về total như trước).
   const activeTotal = productsQ.data?.activeCount ?? total;
+
+  useEffect(() => {
+    setSelected(new Map());
+  }, [page, search, status, tab]);
+  const pageIds = items.map((p) => p.id);
+  const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;
+  const allOnPage = items.length > 0 && selectedOnPage === items.length;
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedOnPage > 0 && !allOnPage;
+    }
+  }, [selectedOnPage, allOnPage]);
+  const toggleOne = useCallback((p: Product) => {
+    setSelected((cur) => {
+      const next = new Map(cur);
+      if (next.has(p.id)) next.delete(p.id);
+      else next.set(p.id, p);
+      return next;
+    });
+  }, []);
+  const toggleAllOnPage = useCallback(() => {
+    setSelected((cur) => {
+      const next = new Map(cur);
+      if (items.every((p) => next.has(p.id))) items.forEach((p) => next.delete(p.id));
+      else items.forEach((p) => next.set(p.id, p));
+      return next;
+    });
+  }, [items]);
   const loading = productsQ.refreshing;
   const error = productsQ.error;
 
@@ -345,6 +380,32 @@ export default function ProductsHubPage() {
 
   const columns = useMemo(
     () => [
+      ...(isAdmin
+        ? [
+            columnHelper.display({
+              id: "select",
+              header: () => (
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  aria-label="Chọn tất cả SKU trên trang"
+                  checked={allOnPage}
+                  onChange={toggleAllOnPage}
+                  className="size-4 cursor-pointer align-middle accent-primary"
+                />
+              ),
+              cell: ({ row }) => (
+                <input
+                  type="checkbox"
+                  aria-label={`Chọn ${row.original.skuCode}`}
+                  checked={selected.has(row.original.id)}
+                  onChange={() => toggleOne(row.original)}
+                  className="size-4 cursor-pointer align-middle accent-primary"
+                />
+              ),
+            }),
+          ]
+        : []),
       // Cả khối làm việc phải nằm gọn một màn hình (anh Trung 05/09): SKU và
       // tên CẮT NGẮN, rê chuột hiện đầy đủ — không kéo thanh trượt đi kéo lại.
       columnHelper.accessor("skuCode", {
@@ -622,7 +683,7 @@ export default function ProductsHubPage() {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [seesCost, isAdmin, expandedId, linkDetails, locations]
+    [seesCost, isAdmin, expandedId, linkDetails, locations, selected, allOnPage, toggleAllOnPage, toggleOne]
   );
 
   const table = useReactTable({
@@ -1068,6 +1129,15 @@ export default function ProductsHubPage() {
           </>
         )}
       </div>
+
+      {/* Thanh xử lý hàng loạt — nổi đáy màn hình khi có SKU được tích */}
+      {isAdmin && (
+        <ProductBulkBar
+          selected={[...selected.values()]}
+          onClear={() => setSelected(new Map())}
+          onDone={load}
+        />
+      )}
 
       {/* Hộp thoại nhập/xuất kho */}
       {adjusting && (

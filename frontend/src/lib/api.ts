@@ -1409,6 +1409,18 @@ export function setProductActive(productId: string, isActive: boolean) {
  * Xóa cứng SKU — backend chỉ cho khi chưa có đơn / liên kết sàn / hàng mẫu và
  * tồn = 0; ngược lại 409 kèm lý do (ApiError.message) để chỉ sang Ngừng kinh doanh.
  */
+/** Hàng loạt: ngừng kinh doanh / bán lại / xóa (xóa bỏ qua SKU đã dính, trả lý do). */
+export function bulkProducts(data: {
+  action: "deactivate" | "activate" | "delete";
+  ids: string[];
+}) {
+  return apiFetch<{
+    action: string;
+    affected: number;
+    skipped: { id: string; skuCode: string; reason: string }[];
+  }>("/api/products/bulk", { method: "POST", body: JSON.stringify(data) });
+}
+
 export function deleteProduct(productId: string) {
   return apiFetch<{ ok: true; id: string; skuCode: string }>(`/api/products/${productId}`, {
     method: "DELETE",
