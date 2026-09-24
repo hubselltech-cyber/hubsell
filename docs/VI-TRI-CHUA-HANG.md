@@ -289,3 +289,12 @@ stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt l�
 - E2E local: Kho 2 + 4 kệ tầng; quét KE-A1-T1 → MU-LUOI-TRAI ×2 (quét 2 lần cộng dồn) → quét KE-A2-T1 → AO-LEN-M → Cất:
   MU-LUOI-TRAI Kho chính 209 · Kệ A1 T1 2, AO-LEN-M 120 · 1, 4 dòng TRANSFER đúng lý do; cất ngược về gốc rồi xóa hết → tắt.
 
+### 8.11 Soát lại phiếu xuất hàng A6 theo mô hình cây (24/09 khuya, anh Trung: "kiểm tra lại phiếu xuất hàng đã chuẩn chưa")
+- Dựng luồng thật trên DB dev: Kho chính + Kho Bình Tân › Kệ A1 › T1/T2, chuyển hàng, 4 đơn trừ kho (đủ ở một tầng / gom hai tầng
+  + bán vượt / chưa trừ), sinh PDF, render bằng pdf.js xem tận mắt. Font Roboto in được "›".
+- Sửa sau khi soát: (1) đường dẫn cây dài nên NHIỀU VỊ TRÍ = MỖI VỊ TRÍ MỘT DÒNG (kèm ×số), dòng dài tự xuống dòng tối đa 2 —
+  trước gộp một dòng bị cắt; (2) nhãn đổi "Lấy ở" → **"Vị trí"** (anh chốt: nghe chuyên nghiệp hơn), đơn chưa trừ in
+  "Vị trí: … (còn N)"; (3) sổ tại tầng đang ÂM (bán vượt) → nối " — sổ âm, kiểm lại" để người nhặt không đi tìm hàng không có.
+- Kết quả in: `Vị trí: Kho Bình Tân › Kệ A1 › T1 ×1` / `Vị trí: Kho Bình Tân › Kệ A1 › T2 ×29 — sổ âm, kiểm lại`; đơn chưa trừ:
+  `Vị trí: Kho chính (còn 2)` / `Vị trí: Kho Bình Tân › Kệ A1 › T1 (còn 2)`. 12 test liên quan pass.
+

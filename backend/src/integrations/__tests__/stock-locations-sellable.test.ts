@@ -5,7 +5,7 @@
 //   · đơn không bao giờ trừ ở ô không bán (phân bổ bỏ qua)
 //   · sửa số tại ô không bán không đổi tồn bán
 // Bất biến: Σ level(sellable) = Product.quantityInStock sau mỗi bước.
-// Kèm: phiếu nhặt in "Lấy ở: …" từ log trừ, "Đang ở: …" khi chưa trừ.
+// Kèm: phiếu nhặt in "Vị trí: …" từ log trừ (×số, nhắc sổ âm), "Vị trí: … (còn N)" khi chưa trừ.
 // ============================================================
 import "./load-env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -136,8 +136,8 @@ describe("Ô không bán", () => {
 });
 
 describe("Phiếu nhặt in vị trí", () => {
-  it("pickLocationText: đã trừ → Lấy ở (gộp cùng vị trí), chưa trừ → Đang ở theo ưu tiên", () => {
-    expect(pickLocationText([{ locationName: "Kho 2", quantity: 3 }], [])).toBe("Lấy ở: Kho 2");
+  it("pickLocationText: đã trừ → Vị trí (gộp cùng vị trí, ×số), chưa trừ → Vị trí (còn N) theo ưu tiên", () => {
+    expect(pickLocationText([{ locationName: "Kho 2", quantity: 3 }], [])).toBe("Vị trí: Kho 2");
     expect(
       pickLocationText(
         [
@@ -147,7 +147,7 @@ describe("Phiếu nhặt in vị trí", () => {
         ],
         []
       )
-    ).toBe("Lấy ở: Kho chính 1 · Kho 2 5");
+    ).toBe("Vị trí: Kho chính ×1\nVị trí: Kho 2 ×5");
     expect(
       pickLocationText(
         [],
@@ -157,11 +157,11 @@ describe("Phiếu nhặt in vị trí", () => {
           { locationName: "Kệ rỗng", quantity: 0, sortOrder: 2 },
         ]
       )
-    ).toBe("Đang ở: Kho chính 40 · Kho 2 4");
+    ).toBe("Vị trí: Kho chính (còn 40)\nVị trí: Kho 2 (còn 4)");
     expect(pickLocationText([], [])).toBeNull();
   });
 
-  it("tra theo đơn thật: đơn đã trừ ở gốc → Lấy ở: Kho chính; đơn chưa trừ → Đang ở", async () => {
+  it("tra theo đơn thật: đơn đã trừ ở gốc → Vị trí: Kho chính; đơn chưa trừ → Vị trí (còn N)", async () => {
     const o1 = await fx.createOrder(productId, 2);
     await prisma.$transaction((tx) => deductStockTx(tx, o1, "test"));
     const o2 = await fx.createOrder(productId, 1);
@@ -169,8 +169,8 @@ describe("Phiếu nhặt in vị trí", () => {
       { id: o1, productIds: [productId] },
       { id: o2, productIds: [productId] },
     ]);
-    expect(map.get(o1)?.get(productId)).toBe("Lấy ở: Kho chính");
-    expect(map.get(o2)?.get(productId)).toMatch(/^Đang ở: Kho chính 15/);
+    expect(map.get(o1)?.get(productId)).toBe("Vị trí: Kho chính");
+    expect(map.get(o2)?.get(productId)).toMatch(/^Vị trí: Kho chính \(còn 15\)/);
   });
 
   it("PDF phiếu nhặt vẫn dựng được khi có dòng vị trí", async () => {
@@ -183,7 +183,7 @@ describe("Phiếu nhặt in vị trí", () => {
       isExpress: false,
       createdAt: new Date(),
       items: [
-        { sku: "A1", name: "Áo test", quantity: 2, location: "Lấy ở: Kho chính 1 · Kho 2 1" },
+        { sku: "A1", name: "Áo test", quantity: 2, location: "Vị trí: Kho chính ×1\nVị trí: Kho 2 ×1" },
         { sku: "B2", name: "Quần test", quantity: 1, location: null },
       ],
     });

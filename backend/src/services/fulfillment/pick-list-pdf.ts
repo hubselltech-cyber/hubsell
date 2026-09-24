@@ -31,8 +31,8 @@ export interface PickListItem {
   name: string;
   quantity: number;
   /**
-   * Vị trí lấy hàng (đợt 2 vị trí chứa hàng): "Lấy ở: Kho 2" hoặc "Lấy ở: Kho chính 1 · Kho 2 4"
-   * khi đơn đã trừ kho; "Đang ở: …" khi chưa trừ. Null/undefined = shop không dùng vị trí.
+   * Vị trí lấy hàng (đợt 2 vị trí chứa hàng): "Vị trí: Kho 2 › Kệ A1" (nhiều chỗ = nhiều dòng "\n" kèm ×số)
+   * khi đơn đã trừ kho; "Vị trí: … (còn N)" khi chưa trừ. Null/undefined = shop không dùng vị trí.
    */
   location?: string | null;
 }
@@ -308,13 +308,19 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
     const nameLines = wrapText(it.name || "(không tên)", regular, ROW_SIZE, CONTENT_W).slice(0, 2);
     const skuLine = wrapText(it.sku || "—", bold, ROW_SIZE, nameW)[0] ?? "—";
     // Dòng vị trí lấy hàng (đợt 2) — in đậm để người nhặt thấy trước tên hàng dài.
-    const locLine = it.location ? (wrapText(it.location, bold, ROW_SIZE, CONTENT_W)[0] ?? null) : null;
+    // Nhiều vị trí = nhiều dòng ("\n"); mỗi dòng dài quá khổ thì xuống dòng tối đa 2.
+    const locLines = it.location
+      ? it.location
+          .split("\n")
+          .filter(Boolean)
+          .flatMap((line) => wrapText(line, bold, ROW_SIZE, CONTENT_W).slice(0, 2))
+      : [];
     return {
       skuLine,
       nameLines,
-      locLine,
+      locLines,
       qty: it.quantity,
-      height: LINE_H * (1 + nameLines.length + (locLine ? 1 : 0)) + 3,
+      height: LINE_H * (1 + nameLines.length + locLines.length) + 3,
     };
   });
 
@@ -355,8 +361,8 @@ export async function buildPickListPdf(order: PickListOrder): Promise<Uint8Array
         color: INK,
       });
       y -= LINE_H;
-      if (r.locLine) {
-        page.drawText(r.locLine, { x: MARGIN, y: y - ROW_SIZE, size: ROW_SIZE, font: bold, color: INK });
+      for (const line of r.locLines) {
+        page.drawText(line, { x: MARGIN, y: y - ROW_SIZE, size: ROW_SIZE, font: bold, color: INK });
         y -= LINE_H;
       }
       for (const line of r.nameLines) {

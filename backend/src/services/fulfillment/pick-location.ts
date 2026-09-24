@@ -1,9 +1,9 @@
 // ============================================================
 // VỊ TRÍ LẤY HÀNG trên phiếu nhặt (đợt 2 vị trí chứa hàng, 24/09/2026)
 //
-// Đơn ĐÃ trừ kho: đọc chính các dòng nhật ký trừ (kèm locationId) → "Lấy ở: Kho 2"
-// hoặc "Lấy ở: Kho chính 1 · Kho 2 4" khi phải gom từ nhiều chỗ. Đơn CHƯA trừ
-// (đang giữ chỗ / chưa chốt): chỉ gợi ý theo tồn hiện có "Đang ở: Kho chính 40".
+// Đơn ĐÃ trừ kho: đọc chính các dòng nhật ký trừ (kèm locationId) → "Vị trí: Kho 2 › Kệ A1"
+// (nhiều chỗ thì mỗi chỗ một dòng kèm ×số). Đơn CHƯA trừ (đang giữ chỗ / chưa chốt):
+// gợi ý theo tồn hiện có "Vị trí: Kho chính (còn 40)".
 // Shop không dùng vị trí → không in gì (phiếu y hệt cũ).
 // ============================================================
 import { prisma } from "../../lib/prisma";
@@ -11,6 +11,8 @@ import { prisma } from "../../lib/prisma";
 export interface DeductionLine {
   locationName: string;
   quantity: number;
+  /** Sổ tại vị trí đang ÂM (bán vượt) — phiếu nhắc người nhặt kiểm lại thay vì tìm hàng không có. */
+  negative?: boolean;
 }
 export interface LevelLine {
   locationName: string;
@@ -18,21 +20,32 @@ export interface LevelLine {
   sortOrder: number;
 }
 
-/** Phần thuần: ghép câu vị trí cho MỘT dòng hàng. */
+/**
+ * Phần thuần: ghép câu vị trí cho MỘT dòng hàng. Nhiều vị trí → MỖI VỊ TRÍ MỘT DÒNG
+ * (ngăn bằng "\n") vì đường dẫn cây "Kho Bình Tân › Kệ A1 › T2" dài, gộp một dòng
+ * trên khổ A6 sẽ bị cắt (kiểm 24/09 với mô hình cây).
+ *   Vị trí: Kho Bình Tân › Kệ A1 › T1 ×1
+ *   Vị trí: Kho Bình Tân › Kệ A1 › T2 ×29
+ * (anh Trung 24/09: "Vị trí" nghe chuyên nghiệp hơn "Lấy ở"; đơn chưa trừ thêm "(còn N)")
+ */
 export function pickLocationText(deductions: DeductionLine[], levels: LevelLine[]): string | null {
   if (deductions.length > 0) {
-    const byName = new Map<string, number>();
-    for (const d of deductions) byName.set(d.locationName, (byName.get(d.locationName) ?? 0) + d.quantity);
+    const byName = new Map<string, { q: number; neg: boolean }>();
+    for (const d of deductions) {
+      const cur = byName.get(d.locationName) ?? { q: 0, neg: false };
+      byName.set(d.locationName, { q: cur.q + d.quantity, neg: cur.neg || Boolean(d.negative) });
+    }
     const parts = [...byName.entries()];
-    if (parts.length === 1) return `Lấy ở: ${parts[0][0]}`;
-    return `Lấy ở: ${parts.map(([n, q]) => `${n} ${q}`).join(" · ")}`;
+    const warn = (neg: boolean) => (neg ? " — sổ âm, kiểm lại" : "");
+    if (parts.length === 1) return `Vị trí: ${parts[0][0]}${warn(parts[0][1].neg)}`;
+    return parts.map(([n, { q, neg }]) => `Vị trí: ${n} ×${q}${warn(neg)}`).join("\n");
   }
   const stocked = levels
     .filter((l) => l.quantity > 0)
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .slice(0, 2);
   if (stocked.length === 0) return null;
-  return `Đang ở: ${stocked.map((l) => `${l.locationName} ${l.quantity}`).join(" · ")}`;
+  return stocked.map((l) => `Vị trí: ${l.locationName} (còn ${l.quantity})`).join("\n");
 }
 
 /**
@@ -57,7 +70,7 @@ export async function pickLocationTextForOrders(
       select: { orderId: true, productId: true, changeQuantity: true, locationId: true },
     }),
     prisma.productStockLevel.findMany({
-      where: { productId: { in: productIds }, quantity: { gt: 0 } },
+      where: { productId: { in: productIds }, quantity: { not: 0 } },
       select: { productId: true, quantity: true, locationId: true, location: { select: { sortOrder: true } } },
     }),
     prisma.stockLocation.findMany({
@@ -79,16 +92,23 @@ export async function pickLocationTextForOrders(
     return p;
   };
 
+  // Vị trí đang ÂM cho SKU (bán vượt) → nhắc trên phiếu.
+  const negative = new Set(levels.filter((lv) => lv.quantity < 0).map((lv) => `${lv.productId}:${lv.locationId}`));
   const dedByOrderProduct = new Map<string, DeductionLine[]>();
   for (const l of logs) {
     if (!l.orderId || !l.locationId) continue;
     const key = `${l.orderId}:${l.productId}`;
     const arr = dedByOrderProduct.get(key) ?? [];
-    arr.push({ locationName: pathOf(l.locationId), quantity: -l.changeQuantity });
+    arr.push({
+      locationName: pathOf(l.locationId),
+      quantity: -l.changeQuantity,
+      negative: negative.has(`${l.productId}:${l.locationId}`),
+    });
     dedByOrderProduct.set(key, arr);
   }
   const levelsByProduct = new Map<string, LevelLine[]>();
   for (const lv of levels) {
+    if (lv.quantity <= 0) continue;
     const arr = levelsByProduct.get(lv.productId) ?? [];
     arr.push({ locationName: pathOf(lv.locationId), quantity: lv.quantity, sortOrder: lv.location.sortOrder });
     levelsByProduct.set(lv.productId, arr);
