@@ -3564,6 +3564,18 @@ export function submitStocktake(data: {
   }>("/api/inventory/stocktake", { method: "POST", body: JSON.stringify(data) });
 }
 
+/** CẤT HÀNG LÊN KỆ: nhiều dòng, mỗi dòng nơi đi/đến riêng, một transaction. */
+export function putawayStock(data: {
+  lines: { productId: string; fromLocationId: string; toLocationId: string; quantity: number }[];
+  reason?: string;
+}) {
+  return apiFetch<{
+    moved: number;
+    totalQuantity: number;
+    results: { productId: string; toLocationId: string; from: number; to: number; totalChanged: boolean }[];
+  }>("/api/stock-locations/putaway", { method: "POST", body: JSON.stringify(data) });
+}
+
 /** Sửa số tại một vị trí (thay kiểm kê ở đợt 1) — tổng đổi theo, đẩy sàn. */
 export function setStockLevel(data: {
   productId: string;

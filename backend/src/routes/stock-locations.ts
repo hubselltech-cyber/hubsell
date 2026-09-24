@@ -640,6 +640,82 @@ router.post("/labels", async (req: AuthRequest, res, next) => {
   }
 });
 
+// POST /api/stock-locations/putaway — CẤT HÀNG LÊN KỆ (anh Trung 24/09): một phiếu nhiều dòng,
+// mỗi dòng tự chọn nơi đi / nơi đến (quét tem kệ → quét SKU). Body: { lines: [{productId,
+// fromLocationId, toLocationId, quantity}], reason? } ≤ 200 dòng, MỘT transaction — một dòng
+// thiếu hàng là cả phiếu không ghi. Qua/ra ô không bán thì đẩy sàn.
+router.post("/putaway", async (req: AuthRequest, res, next) => {
+  try {
+    const { lines, reason } = req.body ?? {};
+    if (!Array.isArray(lines) || lines.length === 0 || lines.length > 200) {
+      res.status(400).json({ error: "Phiếu cất hàng cần 1–200 dòng" });
+      return;
+    }
+    const ownerId = req.ownerId!;
+    const parsed: { productId: string; fromLocationId: string; toLocationId: string; quantity: number }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i] as Record<string, unknown>;
+      const q = Number(l.quantity);
+      if (
+        typeof l.productId !== "string" || !l.productId ||
+        typeof l.fromLocationId !== "string" || !l.fromLocationId ||
+        typeof l.toLocationId !== "string" || !l.toLocationId ||
+        !Number.isInteger(q) || q <= 0
+      ) {
+        res.status(400).json({ error: `Dòng ${i + 1}: thiếu mã, vị trí hoặc số lượng không hợp lệ` });
+        return;
+      }
+      if (l.fromLocationId === l.toLocationId) {
+        res.status(400).json({ error: `Dòng ${i + 1}: nơi đi và nơi đến trùng nhau` });
+        return;
+      }
+      parsed.push({ productId: l.productId, fromLocationId: l.fromLocationId, toLocationId: l.toLocationId, quantity: q });
+    }
+    const locIds = [...new Set(parsed.flatMap((p) => [p.fromLocationId, p.toLocationId]))];
+    const productIds = [...new Set(parsed.map((p) => p.productId))];
+    const [locs, owned] = await Promise.all([
+      prisma.stockLocation.findMany({ where: { userId: ownerId, id: { in: locIds } }, select: { id: true, name: true } }),
+      prisma.product.count({ where: { userId: ownerId, id: { in: productIds } } }),
+    ]);
+    if (locs.length !== locIds.length) {
+      res.status(400).json({ error: "Có vị trí không thuộc shop" });
+      return;
+    }
+    if (owned !== productIds.length) {
+      res.status(404).json({ error: "Có mã không còn trong kho — tải lại phiếu" });
+      return;
+    }
+    const nameOf = new Map(locs.map((l) => [l.id, l.name]));
+    const note = typeof reason === "string" && reason.trim() ? reason.trim() : "Cất hàng lên kệ";
+
+    const results = await prisma.$transaction(async (tx) => {
+      const out: { productId: string; toLocationId: string; from: number; to: number; totalChanged: boolean }[] = [];
+      for (const l of parsed) {
+        const r = await transferStockTx(tx, {
+          productId: l.productId,
+          fromLocationId: l.fromLocationId,
+          toLocationId: l.toLocationId,
+          quantity: l.quantity,
+          reason: `${note}: ${nameOf.get(l.fromLocationId)} → ${nameOf.get(l.toLocationId)}`,
+          actorId: req.userId ?? null,
+        });
+        out.push({ productId: l.productId, toLocationId: l.toLocationId, from: r.from, to: r.to, totalChanged: r.totalChanged });
+      }
+      return out;
+    });
+    const changed = [...new Set(results.filter((r) => r.totalChanged).map((r) => r.productId))];
+    if (changed.length) await enqueueStockPush(changed, { source: "cất hàng lên kệ (qua ô không bán)" });
+    res.json({ moved: results.length, totalQuantity: parsed.reduce((a, p) => a + p.quantity, 0), results });
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
+    next(err);
+  }
+});
+
 // POST /api/stock-locations/set-level — sửa số tại MỘT vị trí (thay kiểm kê ở đợt 1).
 // Body: { productId, locationId, quantity, reason? }. Tổng đổi theo → đẩy sàn.
 router.post("/set-level", async (req: AuthRequest, res, next) => {

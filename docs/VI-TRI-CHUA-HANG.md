@@ -276,5 +276,16 @@ stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt l�
 - Rào: đổi cha thành con/cháu của chính nó → 400 (đi ngược lên tới gốc); xóa kho còn kệ con → 409 (đã có).
 - E2E local: tạo Kho 2 → sinh "Kệ A[1-2] T[1-2]" thuộc Kho 2 → tạo Kho 3 → thứ tự 0..6 đúng cây, mã KE-A1-T1…; PATCH Kho 3 vào
   Kho 2 → tự xếp "Kho 2 › Kho 3" cuối nhánh; Kho 2 vào Kho 3 → 400 vòng lặp; xóa Kho 2 còn 5 con → 409; xóa hết → tắt.
-- Chưa làm (chờ anh chốt sau khi xem): trang "Cất hàng lên kệ" quét tem, chip lọc bảng theo vị trí.
+- Chưa làm (chờ anh chốt sau khi xem): chip lọc bảng theo vị trí. Trang "Cất hàng lên kệ" → 8.10.
+
+### 8.10 Cất hàng lên kệ (24/09 khuya, anh Trung: "trong thời gian này em code luôn phần cất hàng")
+- Trang riêng `/products/putaway` (nút "Cất lên kệ" trên thanh công cụ, chỉ khi shop có vị trí). MỘT ô quét: quét TEM KỆ (mã
+  in trên tem KE-A1-T1, hoặc tên/đường dẫn) → đổi "Cất vào" (toast xác nhận); quét SKU → thêm dòng vào kệ đang chọn, quét
+  trùng cộng 1; "Lấy từ" mặc định = vị trí mặc định (Kho chính), đổi được; cột "Còn ở nơi lấy" + chặn khi tổng các dòng cùng
+  SKU vượt số còn; ghi chú; một nút "Cất lên kệ". Ô chọn thụt lề theo cây.
+- `POST /api/stock-locations/putaway {lines[{productId, fromLocationId, toLocationId, quantity}], reason?}` ≤ 200 dòng, MỘT
+  transaction qua `transferStockTx` (một dòng thiếu hàng là cả phiếu không ghi), lý do "Cất hàng lên kệ: Kho chính → Kệ A1 T1",
+  qua/ra ô không bán thì đẩy sàn.
+- E2E local: Kho 2 + 4 kệ tầng; quét KE-A1-T1 → MU-LUOI-TRAI ×2 (quét 2 lần cộng dồn) → quét KE-A2-T1 → AO-LEN-M → Cất:
+  MU-LUOI-TRAI Kho chính 209 · Kệ A1 T1 2, AO-LEN-M 120 · 1, 4 dòng TRANSFER đúng lý do; cất ngược về gốc rồi xóa hết → tắt.
 

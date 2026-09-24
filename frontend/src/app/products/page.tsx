@@ -24,6 +24,7 @@ import {
   Link2Off,
   Loader2,
   MapPin,
+  PackageOpen,
   Search,
   Sparkles,
   Warehouse,
@@ -1008,6 +1009,17 @@ export default function ProductsHubPage() {
                   <ClipboardCheck className="size-4" />
                   Kiểm kê
                 </Button>
+                {locationsEnabled && (
+                  <Button
+                    variant="outline"
+                    nativeButton={false}
+                    render={<Link href="/products/putaway" />}
+                    title="Quét tem kệ → quét SKU → chuyển hàng loạt từ Kho chính lên kệ"
+                  >
+                    <PackageOpen className="size-4" />
+                    Cất lên kệ
+                  </Button>
+                )}
                 <ImportExcelDialog onImported={load} />
                 <Button variant="outline" onClick={handleExport} disabled={exporting}>
                   {exporting ? (
