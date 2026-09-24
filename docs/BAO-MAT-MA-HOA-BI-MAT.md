@@ -73,7 +73,8 @@ dòng cảnh báo `[SecretBox] ⚠️ CHƯA BẬT` trong log Render). Để bậ
    meInvoice → phải OK. (Tùy chọn: mở bảng `InvoiceConfig` trên Supabase, cột
    `meinvoicePassword` phải bắt đầu bằng `enc:v1:k1:`.)
 6. Ổn định vài ngày → thêm env `SECRET_ENC_REQUIRED=1`: từ đó thiếu khóa là máy chủ từ
-   chối khởi động thay vì lặng lẽ ghi chữ thường.
+   chối khởi động thay vì lặng lẽ ghi chữ thường. ✅ **ĐÃ BẬT production 24/09/2026 11:11**
+   (5 ngày sau khi đặt khóa; log deploy xác nhận `[SecretBox] BẬT — khóa đang dùng "k1"`).
 
 Khóa sai định dạng (không đủ 32 byte, thiếu `mã:`) → bản deploy mới **không lên**,
 Render giữ bản đang chạy; đọc log sẽ thấy `BAD_KEY_CONFIG`.
