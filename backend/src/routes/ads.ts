@@ -7,12 +7,13 @@ import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
 import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
 import {
+  ADS_RANGE_MAX_DAYS,
   MARGIN_WINDOW_DAYS,
   computeChannelAdsInsights,
   computeChannelProductBreakeven,
   dateKey,
-  startOfDaysAgo,
-  vnDateKey,
+  dateKeyToDbDate,
+  resolveAdsDateRange,
 } from "../integrations/shopee/ads-insights";
 import {
   getAdsAdgroupList,
@@ -116,20 +117,22 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         typeof req.query.channelId === "string" ? req.query.channelId : "";
       const selected =
         channels.find((c) => c.id === requestedId) ?? channels[0];
-      // Cửa sổ hiển thị tự chọn 1–30 ngày (dữ liệu sync tối đa 30 ngày về trước).
-      const daysRaw = Number(req.query.days);
-      const days = Number.isFinite(daysRaw)
-        ? Math.min(30, Math.max(1, Math.trunc(daysRaw)))
-        : 7;
-      const perfStart = startOfDaysAgo(days);
+      // Khoảng ngày của bộ lọc chuẩn (?from=&to= theo ngày sàn; ?days= là đường
+      // cũ). Trần ADS_RANGE_MAX_DAYS, ngày đầu bị kéo lên thì báo rangeClamped.
+      const range = resolveAdsDateRange(req.query);
+      const { fromKey, toKey, days } = range;
+      const inRange = (d: Date) => {
+        const k = dateKey(d);
+        return k >= fromKey && k <= toKey;
+      };
 
       // ---- Lõi tính toán dùng chung với executor GĐ3 (ads-insights.ts):
-      // perf 30 ngày + windows + biên lãi/hòa vốn + verdict rule engine ----
-      const insights = await computeChannelAdsInsights({
-        id: selected.id,
-        userId: req.ownerId!,
-        channelName,
-      });
+      // perf 30 ngày (nạp rộng thêm khi bộ lọc xem xa hơn) + windows + biên
+      // lãi/hòa vốn + verdict rule engine ----
+      const insights = await computeChannelAdsInsights(
+        { id: selected.id, userId: req.ownerId!, channelName },
+        { perfFromKey: fromKey }
+      );
       const assistantConfig = insights.config;
       const shopMargin = insights.shop.margin;
       const shopBreakeven = insights.shop.breakevenRoas;
@@ -149,13 +152,13 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         pauseLogs.map((l) => [l.id, l.reasons.split("\n").filter(Boolean)])
       );
 
-      // ---- Lớp HIỂN THỊ: cắt cửa sổ ?days + trải phẳng cho FE ----
+      // ---- Lớp HIỂN THỊ: cắt khoảng ngày bộ lọc + trải phẳng cho FE ----
       const campaigns = insights.items.map((it) => {
         const c = it.row;
-        // Hiển thị: chỉ cộng các ngày thuộc cửa sổ ?days đang xem.
+        // Hiển thị: chỉ cộng các ngày thuộc khoảng from→to đang xem.
         const perf = c.dailyPerf.reduce(
           (acc, p) => {
-            if (p.date < perfStart) return acc;
+            if (!inRange(p.date)) return acc;
             acc.spend += Number(p.expense);
             acc.impression += p.impression;
             acc.clicks += p.clicks;
@@ -246,7 +249,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       const seriesMap = new Map<string, { spend: number; broadGmv: number; directGmv: number }>();
       for (const it of insights.items) {
         for (const p of it.row.dailyPerf) {
-          if (p.date < perfStart) continue; // chart cũng theo cửa sổ ?days
+          if (!inRange(p.date)) continue; // chart cũng theo khoảng đang xem
           const key = dateKey(p.date);
           const point = seriesMap.get(key) ?? { spend: 0, broadGmv: 0, directGmv: 0 };
           point.spend += Number(p.expense);
@@ -262,9 +265,21 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // ---- Chi tiêu ads TOÀN SHOP từ AdSpend (nguồn đối chiếu — gồm cả loại
       // quảng cáo không nằm trong campaign sản phẩm; hiện chỉ Shopee có nguồn) ----
       const adSpendAgg = await prisma.adSpend.aggregate({
-        where: { channelId: selected.id, date: { gte: perfStart } },
+        where: {
+          channelId: selected.id,
+          date: { gte: dateKeyToDbDate(fromKey), lte: dateKeyToDbDate(toKey) },
+        },
         _sum: { amount: true },
       });
+
+      // Ngày sớm nhất gian có số hiệu suất (mốc bắt đầu kéo) — bộ lọc chọn
+      // trước mốc này thì UI nói rõ "chưa có số" thay vì để bảng trống im lặng.
+      const earliestPerf = await prisma.adsCampaignDailyPerf.findFirst({
+        where: { adsCampaign: { channelId: selected.id } },
+        orderBy: { date: "asc" },
+        select: { date: true },
+      });
+      const perfSince = earliestPerf ? dateKey(earliestPerf.date) : null;
 
       const totals = campaigns.reduce(
         (acc, c) => {
@@ -325,7 +340,14 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       res.json({
         channels,
         selectedChannelId: selected.id,
+        // Khoảng đang xem (ngày sàn) — days = số ngày trong khoảng, FE dùng
+        // để tính chi tiêu trung bình/ngày cho cảnh báo ví sắp cạn.
+        from: fromKey,
+        to: toKey,
         days,
+        rangeClamped: range.clamped,
+        rangeMaxDays: ADS_RANGE_MAX_DAYS,
+        perfSince,
         wallet,
         walletEmpty,
         adsApp,
@@ -598,15 +620,22 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         res.status(404).json({ error: `Không tìm thấy gian ${label}` });
         return;
       }
-      const daysRaw = Number(req.query.days);
-      const days = Number.isFinite(daysRaw) ? Math.min(30, Math.max(1, Math.trunc(daysRaw))) : 7;
+      // Cùng khoảng ngày với bộ lọc trang (?from=&to=, ngày sàn); lệnh ghi sổ
+      // là timestamp nên cắt từ 00:00 ngày đầu tới 23:59:59 ngày cuối giờ VN.
+      const { fromKey, toKey, days } = resolveAdsDateRange(req.query);
       const insights = await computeChannelAdsInsights({
         id: channel.id,
         userId: req.ownerId!,
         channelName,
       });
       const logs = await prisma.adsActionLog.findMany({
-        where: { channelId: channel.id, createdAt: { gte: startOfDaysAgo(days) } },
+        where: {
+          channelId: channel.id,
+          createdAt: {
+            gte: new Date(`${fromKey}T00:00:00+07:00`),
+            lte: new Date(`${toKey}T23:59:59.999+07:00`),
+          },
+        },
         select: {
           id: true,
           adsCampaignId: true,
@@ -807,12 +836,10 @@ router.get(
         res.status(404).json({ error: "Không tìm thấy chiến dịch Lazada" });
         return;
       }
-      const daysRaw = Number(req.query.days);
-      const days = Number.isFinite(daysRaw)
-        ? Math.min(30, Math.max(1, Math.trunc(daysRaw)))
-        : 7;
-      const startDate = vnDateKey(days - 1);
-      const endDate = vnDateKey(0);
+      // Cùng khoảng ngày với bộ lọc trang (?from=&to=; ?days= là đường cũ).
+      // Sàn Lazada chấp nhận khoảng dài bao nhiêu chưa xác minh — lỗi (nếu có)
+      // trả nguyên văn về modal.
+      const { fromKey: startDate, toKey: endDate, days } = resolveAdsDateRange(req.query);
 
       const accessToken = await getValidLazadaAccessToken(campaign.channel);
       const [adgroupPage, keywordPage, breakeven] = await Promise.all([
@@ -894,7 +921,7 @@ router.get(
       keywords.sort((a, b) => b.spend - a.spend);
       adgroups.sort((a, b) => b.spend - a.spend);
 
-      res.json({ days, adgroups, keywords });
+      res.json({ from: startDate, to: endDate, days, adgroups, keywords });
     } catch (err) {
       next(err);
     }

@@ -27,6 +27,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AdsRecommendTab } from "@/components/ads/ads-recommend-tab";
 import { HubsellAdsLink } from "@/components/ads/hubsell-ads-link";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { AppShell } from "@/components/shell/app-shell";
 import { DataTable } from "@/components/data-table/data-table";
 import { HintIcon } from "@/components/finance/hint-icon";
@@ -64,6 +65,13 @@ import {
   type ShopeeProductBreakevenResponse,
   type ShopeeProductBreakevenRow,
 } from "@/lib/api";
+import {
+  RANGE_PRESETS,
+  formatDayVN,
+  formatRangePhrase,
+  rangeDayCount,
+  type DateRange,
+} from "@/lib/date-range";
 import {
   AssistantVerdictBadge,
   ShopeeActionLogCard,
@@ -172,17 +180,10 @@ const PLACEMENT_LABEL: Record<string, string> = {
 /** Hệ số an toàn trên ROAS hòa vốn — dưới hòa vốn×1.1 coi là vùng nguy hiểm. */
 const DANGER_FACTOR = 1.1;
 
-/** Preset cửa sổ thời gian — trần 30 ngày theo cửa sổ sync hiệu suất. */
-const DAY_PRESETS: { label: string; value: number }[] = [
-  { label: "Hôm nay", value: 1 },
-  { label: "7 ngày", value: 7 },
-  { label: "14 ngày", value: 14 },
-  { label: "30 ngày", value: 30 },
-];
-
-/** Nhãn cửa sổ cho tiêu đề/subtitle: "hôm nay" | "N ngày". */
-function daysLabel(days: number): string {
-  return days === 1 ? "hôm nay" : `${days} ngày`;
+/** Khoảng ngày mặc định khi mở trang: 7 ngày qua (bộ lọc chuẩn của app,
+ *  24/09/2026 — thay 4 nút cứng Hôm nay/7/14/30; backend trần 90 ngày). */
+function defaultAdsRange(): DateRange {
+  return RANGE_PRESETS.find((p) => p.key === "last7")!.resolve();
 }
 
 function roasToneClass(
@@ -220,7 +221,7 @@ export function ShopeeAdsPage({
   const [channelId, setChannelId] = useState<string>(
     () => searchParams.get("channelId") ?? ""
   );
-  const [days, setDays] = useState<number>(7);
+  const [range, setRange] = useState<DateRange>(defaultAdsRange);
   // Campaign đích của deep-link — chờ dữ liệu về rồi mở modal đúng một lần.
   const [pendingCampaignId, setPendingCampaignId] = useState<string | null>(
     () => searchParams.get("campaign_id")
@@ -253,7 +254,7 @@ export function ShopeeAdsPage({
       return;
     }
     let alive = true;
-    fetchAdsAssistantScorecard(channelId, days, platform)
+    fetchAdsAssistantScorecard(channelId, range, platform)
       .then((s) => {
         if (alive) setScorecard(s);
       })
@@ -263,7 +264,7 @@ export function ShopeeAdsPage({
     return () => {
       alive = false;
     };
-  }, [channelId, days, platform, adsSyncedAtKey]);
+  }, [channelId, range, platform, adsSyncedAtKey]);
   const [savingConfig, setSavingConfig] = useState(false);
   const [onlyNeedsAction, setOnlyNeedsAction] = useState(
     () => searchParams.get("needs_action") === "1"
@@ -281,7 +282,7 @@ export function ShopeeAdsPage({
     if (!can(getStoredUser(), meta.perm)) setDenied(true);
   }, [router, meta.perm]);
 
-  const load = useCallback(async (cid: string, d: number, opts?: { silent?: boolean }) => {
+  const load = useCallback(async (cid: string, r: DateRange, opts?: { silent?: boolean }) => {
     // silent: nạp lại nền sau khi worker kéo tươi — không nháy spinner, không xóa bảng đang xem.
     if (!opts?.silent) {
       setLoading(true);
@@ -290,7 +291,7 @@ export function ShopeeAdsPage({
     try {
       const res = await fetchShopeeAdsDashboard({
         channelId: cid || undefined,
-        days: d,
+        range: r,
         platform,
       });
       setData(res);
@@ -303,7 +304,7 @@ export function ShopeeAdsPage({
   }, [platform]);
 
   useEffect(() => {
-    void load(channelId, days);
+    void load(channelId, range);
     // channelId đổi qua chính load() (server chọn gian đầu) — chỉ nghe người dùng đổi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -312,9 +313,9 @@ export function ShopeeAdsPage({
   // sau 45s để bảng tự cập nhật mà seller không phải F5. Dừng khi số đã tươi.
   useEffect(() => {
     if (!data?.adsRefreshing) return;
-    const t = setTimeout(() => void load(channelId, days, { silent: true }), 45_000);
+    const t = setTimeout(() => void load(channelId, range, { silent: true }), 45_000);
     return () => clearTimeout(t);
-  }, [data?.adsRefreshing, channelId, days, load]);
+  }, [data?.adsRefreshing, channelId, range, load]);
 
   // Nạp bảng hòa vốn SP khi mở tab (hoặc đổi gian trong lúc đang ở tab).
   useEffect(() => {
@@ -357,13 +358,13 @@ export function ShopeeAdsPage({
   function changeChannel(cid: string) {
     setChannelId(cid);
     setPage(0); // đổi gian là bộ campaign khác — về trang đầu
-    void load(cid, days);
+    void load(cid, range);
   }
 
-  function changeDays(d: number) {
-    setDays(d);
+  function changeRange(r: DateRange) {
+    setRange(r);
     setPage(0);
-    void load(channelId, d);
+    void load(channelId, r);
   }
 
   // LÀM MỚI (12/09): không gọi sàn trong request — backend kéo hạn ads của gian
@@ -379,14 +380,14 @@ export function ShopeeAdsPage({
       const res = await requestAdsRefresh(channelId, platform);
       if (!res.queued) {
         setSyncNote(res.message);
-        await load(channelId, days, { silent: true });
+        await load(channelId, range, { silent: true });
         return;
       }
       setSyncNote("Đang kéo số mới từ sàn, bảng sẽ tự cập nhật trong khoảng một phút…");
       const before = res.adsSyncedAt;
       for (let i = 0; i < REFRESH_POLL_MAX; i++) {
         await new Promise((r) => setTimeout(r, REFRESH_POLL_MS));
-        const fresh = await fetchShopeeAdsDashboard({ channelId, days, platform });
+        const fresh = await fetchShopeeAdsDashboard({ channelId, range, platform });
         if (fresh.adsSyncedAt && fresh.adsSyncedAt !== before) {
           setData(fresh);
           setSyncNote(`Đã cập nhật số quảng cáo lúc ${formatSyncTime(fresh.adsSyncedAt)}.`);
@@ -420,9 +421,14 @@ export function ShopeeAdsPage({
   // Cảnh báo ví ads sắp cạn: dưới 2 ngày chi tiêu trung bình của kỳ đang xem.
   const walletLow = useMemo(() => {
     if (!wallet || !summary || summary.spend <= 0) return false;
-    const avgDaily = summary.spend / days;
+    const avgDaily = summary.spend / rangeDayCount(range);
     return wallet.balance < avgDaily * 2;
-  }, [wallet, summary, days]);
+  }, [wallet, summary, range]);
+
+  // Cụm từ khoảng ngày cho tiêu đề/câu chữ: "7 ngày qua" | "tháng này" |
+  // "ngày 12/09/2026" | "từ … đến …"; rangeIn = bản ghép sau động từ ("trong 7 ngày qua").
+  const rangePhrase = formatRangePhrase(range);
+  const rangeIn = /^(từ|ngày) /.test(rangePhrase) ? rangePhrase : `trong ${rangePhrase}`;
 
   const series = useMemo(
     () =>
@@ -452,7 +458,7 @@ export function ShopeeAdsPage({
         platform
       );
       setDetailId(null);
-      await load(channelId, days);
+      await load(channelId, range);
     } catch (err) {
       setSyncNote(`Ghi nhận quyết định lỗi: ${(err as Error).message}`);
     } finally {
@@ -469,7 +475,7 @@ export function ShopeeAdsPage({
       const r = await setShopeeAdsRoasTarget(campaign.id, target, platform);
       setDetailId(null);
       setSyncNote(`${r.message} — chiến dịch "${campaign.name}".`);
-      await load(channelId, days);
+      await load(channelId, range);
     } catch (err) {
       setSyncNote(`Đổi mục tiêu ROAS lỗi: ${(err as Error).message}`);
     } finally {
@@ -486,7 +492,7 @@ export function ShopeeAdsPage({
       await resumeShopeeAdsCampaign(campaign.id, platform);
       setDetailId(null);
       setSyncNote(`Đã bật lại chiến dịch "${campaign.name}" trên ${meta.label}.`);
-      await load(channelId, days);
+      await load(channelId, range);
     } catch (err) {
       setSyncNote(`Bật lại lỗi: ${(err as Error).message}`);
     } finally {
@@ -499,7 +505,7 @@ export function ShopeeAdsPage({
     setSavingConfig(true);
     try {
       await saveShopeeAssistantConfig(channelId, config, platform);
-      await load(channelId, days);
+      await load(channelId, range);
     } catch (err) {
       setSyncNote(`Lưu cấu hình lỗi: ${(err as Error).message}`);
     } finally {
@@ -595,22 +601,12 @@ export function ShopeeAdsPage({
                   ))}
                 </NativeSelect>
               )}
-              <div className="flex overflow-hidden rounded-lg border">
-                {DAY_PRESETS.map((p) => (
-                  <button
-                    key={p.value}
-                    onClick={() => changeDays(p.value)}
-                    className={cn(
-                      "px-3 py-1.5 text-sm font-medium transition-colors",
-                      days === p.value
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-card text-slate-600 hover:bg-muted"
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+              {/* Bộ lọc khoảng ngày chuẩn của app (Hôm nay / Hôm qua / 7 / 30 ngày /
+                  Tháng này / Tháng trước + lịch chọn tay) — cùng khuôn TikTok Ads
+                  và các trang báo cáo (anh Trung 24/09: 4 nút cũ "cơ bản quá"). */}
+              <DateRangePicker value={range} onChange={changeRange} />
+              {/* Note: DateRangePicker dùng chung — không truyền disabled khi đang tải
+                  để người dùng đổi khoảng liên tiếp không bị khựng. */}
               {/* Hubsell Ads (app Ads riêng): MỘT nút cho gian đang chọn — chỉ hiện
                   khi backend đã bật; đã nối thì thành dòng mờ (anh Trung 17/09). */}
               {platform === "shopee" && channelId && (
@@ -619,7 +615,7 @@ export function ShopeeAdsPage({
                   shopName={selectedShopName}
                   status={adsApp}
                   adsSyncedAt={data?.adsSyncedAt ?? null}
-                  onChanged={() => void load(channelId, days)}
+                  onChanged={() => void load(channelId, range)}
                 />
               )}
               <Button
@@ -637,6 +633,16 @@ export function ShopeeAdsPage({
 
           {syncNote && (
             <p className="text-sm text-muted-foreground">{syncNote}</p>
+          )}
+          {/* Nói thật về giới hạn số: chọn xa hơn ngày gian bắt đầu kéo số hoặc
+              dài hơn trần backend thì bảng thiếu số — ghi rõ thay vì để trống im lặng. */}
+          {data && !loading && (data.rangeClamped || (data.perfSince && data.from < data.perfSince)) && (
+            <p className="text-sm text-amber-700">
+              {data.rangeClamped &&
+                `Chỉ xem được tối đa ${data.rangeMaxDays} ngày một lần — đang hiện từ ${formatDayVN(new Date(`${data.from}T00:00:00`))}. `}
+              {data.perfSince && data.from < data.perfSince &&
+                `Hubsell chỉ có số quảng cáo của gian này từ ${formatDayVN(new Date(`${data.perfSince}T00:00:00`))} (ngày bắt đầu kéo số); trước đó chưa có số.`}
+            </p>
           )}
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
@@ -758,7 +764,7 @@ export function ShopeeAdsPage({
             icon={Wallet}
             tone="negative"
             colorValue
-            subtitle={`${daysLabel(days)} · campaign sản phẩm`}
+            subtitle={`${rangePhrase} · campaign sản phẩm`}
           />
           <StatCard
             label="GMV từ Ads"
@@ -800,7 +806,7 @@ export function ShopeeAdsPage({
         {series.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Chi phí vs GMV từ Ads ({daysLabel(days)})</CardTitle>
+              <CardTitle>Chi phí vs GMV từ Ads ({rangePhrase})</CardTitle>
               <CardDescription>
                 Số thật theo ngày, gộp mọi chiến dịch của gian đang chọn.
               </CardDescription>
@@ -808,7 +814,7 @@ export function ShopeeAdsPage({
             <CardContent>
               {seriesEmpty ? (
                 <div className="flex h-40 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                  Chưa có chi tiêu quảng cáo trong {daysLabel(days)} — bật chiến
+                  Chưa có chi tiêu quảng cáo {rangeIn} — bật chiến
                   dịch trên Shopee rồi bấm Làm mới để xem biểu đồ.
                 </div>
               ) : (
@@ -1039,7 +1045,7 @@ export function ShopeeAdsPage({
             onCreated={(msg) => {
               setSyncNote(msg);
               setTab("overview");
-              void load(channelId, days);
+              void load(channelId, range);
             }}
           />
         )}
@@ -1064,7 +1070,12 @@ export function ShopeeAdsPage({
                 saving={savingConfig}
                 platformLabel={meta.label}
               />
-              <ShopeeActionLogCard channelId={channelId} platform={platform} scorecard={scorecard} />
+              <ShopeeActionLogCard
+                channelId={channelId}
+                platform={platform}
+                scorecard={scorecard}
+                rangePhrase={rangePhrase}
+              />
             </>
           ) : (
             <p className="py-8 text-center text-sm text-muted-foreground">
@@ -1081,7 +1092,7 @@ export function ShopeeAdsPage({
           onClose={() => setDetailId(null)}
           deciding={deciding}
           platform={platform}
-          days={days}
+          range={range}
         />
       </div>
     </AppShell>

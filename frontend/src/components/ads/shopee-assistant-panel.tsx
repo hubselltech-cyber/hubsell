@@ -34,6 +34,7 @@ import {
   type ShopeeAssistantDecision,
   type ShopeeAssistantVerdict,
 } from "@/lib/api";
+import { capitalizePhrase, formatRangePhrase, type DateRange } from "@/lib/date-range";
 import { formatNumber, formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -116,7 +117,7 @@ export function ShopeeAssistantModal({
   onClose,
   deciding,
   platform = "shopee",
-  days = 7,
+  range,
 }: {
   campaign: ShopeeAdsCampaignRow | null;
   onDecide: (decision: ShopeeAssistantDecision) => void;
@@ -127,8 +128,8 @@ export function ShopeeAssistantModal({
   onClose: () => void;
   deciding: boolean;
   platform?: "shopee" | "lazada";
-  /** Cửa sổ ngày đang xem trên trang — phần soi sống Lazada dùng cùng cửa sổ. */
-  days?: number;
+  /** Khoảng ngày đang xem trên trang — phần soi sống Lazada dùng cùng khoảng. */
+  range: DateRange;
 }) {
   // ---- Soi sống SP & từ khóa (CHỈ Lazada — Shopee không có API keyword) ----
   const [live, setLive] = useState<LazadaCampaignLiveDetail | null>(null);
@@ -140,7 +141,7 @@ export function ShopeeAssistantModal({
     if (platform !== "lazada" || !campaign) return;
     let cancelled = false;
     setLiveLoading(true);
-    fetchLazadaCampaignLiveDetail(campaign.id, days)
+    fetchLazadaCampaignLiveDetail(campaign.id, range)
       .then((res) => {
         if (!cancelled) setLive(res);
       })
@@ -153,7 +154,7 @@ export function ShopeeAssistantModal({
     return () => {
       cancelled = true;
     };
-  }, [platform, campaign, days]);
+  }, [platform, campaign, range]);
 
   const a = campaign?.assistant;
   const verdictMeta = a?.verdict ? VERDICT_META[a.verdict] : null;
@@ -286,8 +287,7 @@ export function ShopeeAssistantModal({
             {platform === "lazada" && (
               <div className="space-y-3 border-t pt-4">
                 <p className="text-sm font-semibold text-slate-900">
-                  Soi trong chiến dịch ({days === 1 ? "hôm nay" : `${days} ngày`}
-                  , lấy thẳng từ Lazada)
+                  Soi trong chiến dịch ({formatRangePhrase(range)}, lấy thẳng từ Lazada)
                 </p>
                 {liveLoading && (
                   <p className="text-sm text-muted-foreground">
@@ -829,11 +829,14 @@ export function ShopeeActionLogCard({
   channelId,
   platform = "shopee",
   scorecard = null,
+  rangePhrase,
 }: {
   channelId: string;
   platform?: "shopee" | "lazada";
-  /** Bảng điểm N ngày qua (anh Trung 14/09: gộp vào Sổ hành động, không tách card riêng ở Tổng quan). */
+  /** Bảng điểm theo khoảng đang xem (anh Trung 14/09: gộp vào Sổ hành động, không tách card riêng ở Tổng quan). */
   scorecard?: AdsAssistantScorecard | null;
+  /** Cụm từ khoảng đang xem của trang ("7 ngày qua", "từ … đến …") cho câu bảng điểm. */
+  rangePhrase?: string;
 }) {
   const [logs, setLogs] = useState<ShopeeAdsActionLogRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -894,7 +897,7 @@ export function ShopeeActionLogCard({
           <div className="space-y-3 rounded-lg border bg-slate-50 p-3.5">
             {scorecard.planned.count > 0 && (
               <p className="text-sm text-slate-700">
-                {scorecard.days} ngày qua, nếu bật chế độ Thật thì Hubsell đã tạm dừng{" "}
+                {capitalizePhrase(rangePhrase ?? `${scorecard.days} ngày qua`)}, nếu bật chế độ Thật thì Hubsell đã tạm dừng{" "}
                 <b>{formatNumber(scorecard.planned.count)}</b> chiến dịch. Máy đúng{" "}
                 <b className="text-emerald-600">{formatNumber(scorecard.planned.right)}</b>, sai{" "}
                 <b className="text-amber-600">{formatNumber(scorecard.planned.wrong)}</b>, chưa đủ

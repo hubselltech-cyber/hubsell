@@ -327,3 +327,37 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
 Công cụ sẵn có khi mở lại: route đọc thử `GET /api/ads/shopee/recommendations/probe?channelId=&itemId=`,
 `POST /api/ads/shopee/write-probe`, seed demo `npx tsx scripts/seed-ads-demo.ts [--many] [--clean]` (6 kịch bản
 gợi ý + ca mục tiêu dưới hòa vốn), cách soi UI local ghi trong memory `hubsell-local-test-chrome`.
+
+
+## 8. Bộ lọc khoảng ngày chuẩn cho trang Trợ lý quảng cáo Shopee/Lazada (24/09/2026)
+
+Anh Trung 24/09: "bộ lọc sẵn cơ bản quá" — 4 nút cứng Hôm nay / 7 / 14 / 30 ngày thay bằng
+`DateRangePicker` dùng chung của app (Hôm nay · Hôm qua · 7 ngày qua · 30 ngày qua · Tháng này ·
+Tháng trước + lịch kép chọn tay), cùng khuôn trang Quảng cáo TikTok và các trang báo cáo.
+
+**Backend (`routes/ads.ts`, lõi `ads-insights.ts`):**
+- `resolveAdsDateRange(query)` — nguồn duy nhất đọc `?from=&to=` (ngày sàn, giờ VN) hoặc `?days=`
+  (đường cũ, mobile/khách cũ vẫn chạy): chọn ngược tự đảo, ngày cuối tương lai cắt về hôm nay,
+  dài quá trần thì kéo ngày đầu lên + cờ `clamped`. Test `__tests__/ads-date-range.test.ts` (13 ca).
+- Trần `ADS_RANGE_MAX_DAYS = 90`: MẶC ĐỊNH TỰ ĐẶT theo ngân sách RAM sau sự cố OOM 09/2026 (gian
+  150 campaign × 90 ngày ≈ 13.500 dòng Decimal một lượt mở trang), KHÔNG phải giới hạn của sàn.
+  Số hiệu suất trong DB không bị dọn (xung ads chỉ ghi đè) nên "Tháng trước" có số thật kể từ ngày
+  gian bắt đầu kéo; sync lần đầu chỉ lùi 30 ngày nên trước mốc đó không có gì.
+- `computeChannelAdsInsights(channel, { perfFromKey })` nạp `dailyPerf` rộng hơn 30 ngày khi bộ lọc
+  xem xa hơn; các cửa sổ rule engine (today/3d/7d/30d) so theo mốc ngày nên verdict không đổi;
+  executor / ops-alerts gọi không truyền → y như cũ.
+- Dashboard cắt campaign + chart + AdSpend theo `from→to` (so bằng mốc ngày UTC = cách cột
+  `@db.Date` lưu); payload thêm `from, to, days (số ngày trong khoảng), rangeClamped, rangeMaxDays,
+  perfSince (ngày sớm nhất gian có số)`.
+- Bảng điểm Trợ lý (`assistant-scorecard`) và soi sống Lazada (`live-detail`) nhận cùng `from/to`;
+  soi sống Lazada: sàn chấp nhận khoảng dài bao nhiêu CHƯA xác minh (lỗi nếu có trả nguyên văn về modal).
+
+**Frontend:** `shopee-ads-page.tsx` state `range: DateRange` (mặc định 7 ngày qua), `formatRangePhrase`
+/ `capitalizePhrase` / `rangeDayCount` thêm vào `lib/date-range.ts` cho câu chữ ("7 ngày qua",
+"tháng này", "từ 10/07/2026 đến 20/07/2026"); dòng vàng dưới thanh công cụ khi khoảng bị cắt theo trần
+hoặc chọn trước ngày gian bắt đầu kéo số ("Hubsell chỉ có số quảng cáo của gian này từ dd/mm/yyyy").
+Lazada dùng chung component nên được luôn.
+
+**Kiểm local (DB dev, seed demo + bồi 60 ngày hiệu suất, đã dọn):** request đúng `from/to`; Tháng trước
+→ 01/08–31/08 có số; chọn tay 10/07–20/07 (trước mốc kéo 26/07) → 0đ + dòng vàng nói rõ; API:
+01/06→hôm nay bị cắt 90 ngày (`rangeClamped: true`), tương lai co về hôm nay, `days=14` cũ vẫn chạy.

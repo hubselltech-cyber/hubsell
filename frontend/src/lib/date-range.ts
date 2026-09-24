@@ -152,3 +152,28 @@ export function rangeToQuery(range?: DateRange): Record<string, string> {
   if (!range) return {};
   return { from: toDateKey(range.from), to: toDateKey(range.to) };
 }
+
+/** Số ngày trong khoảng, tính cả hai đầu (1 khi from = to). */
+export function rangeDayCount(range: DateRange): number {
+  const DAY_MS = 86_400_000;
+  return (
+    Math.round((startOfDay(range.to).getTime() - startOfDay(range.from).getTime()) / DAY_MS) + 1
+  );
+}
+
+/**
+ * Cụm từ chỉ khoảng để GHÉP VÀO GIỮA CÂU ("chi phí trong …"): preset thì chữ
+ * thường ("7 ngày qua", "tháng này"), chọn tay thì "ngày 12/09/2026" hoặc
+ * "từ 01/09/2026 đến 15/09/2026". Đầu câu thì viết hoa bằng capitalizePhrase().
+ */
+export function formatRangePhrase(range: DateRange): string {
+  const preset = matchPreset(range);
+  if (preset) return preset.label.charAt(0).toLowerCase() + preset.label.slice(1);
+  if (isSameDay(range.from, range.to)) return `ngày ${formatDayVN(range.from)}`;
+  return `từ ${formatDayVN(range.from)} đến ${formatDayVN(range.to)}`;
+}
+
+/** Viết hoa chữ đầu — dùng khi cụm từ của formatRangePhrase đứng đầu câu. */
+export function capitalizePhrase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

@@ -5,6 +5,19 @@
 
 ---
 
+## Phiên 24/09/2026 (đêm) — Trợ lý quảng cáo Shopee/Lazada: BỘ LỌC KHOẢNG NGÀY CHUẨN thay 4 nút cứng (anh Trung: "bộ lọc sẵn cơ bản quá")
+
+Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 8. Tóm tắt:
+- **UI**: `DateRangePicker` dùng chung (Hôm nay / Hôm qua / 7 ngày / 30 ngày / Tháng này / Tháng trước + lịch chọn tay), cùng khuôn
+  TikTok Ads; câu chữ theo khoảng ("7 ngày qua", "từ … đến …"); dòng vàng khi khoảng bị cắt theo trần hoặc trước ngày gian bắt
+  đầu kéo số. Lazada dùng chung component.
+- **Backend**: `resolveAdsDateRange` (from/to ngày sàn, `days` cũ vẫn chạy), trần 90 ngày = mặc định tự đặt theo RAM sau OOM
+  (không phải giới hạn sàn); lõi insights nạp perf rộng hơn 30 ngày chỉ cho lớp hiển thị, rule engine không đổi; payload thêm
+  `from/to/days/rangeClamped/perfSince`; bảng điểm + soi sống Lazada nhận cùng khoảng (Lazada khoảng dài chưa xác minh với sàn).
+- Test +13 ca (61 ads pass); tsc + eslint sạch; soi local đủ 3 đường (preset, Tháng trước, chọn tay trước mốc kéo số); demo đã dọn.
+
+---
+
 ## Phiên 24/09/2026 (khuya) — VỊ TRÍ CHỨA HÀNG đợt 2: ô không bán gắn hàng hoàn, phiếu nhặt in vị trí, kiểm kê theo vị trí, sinh kệ hàng loạt + tem — ĐÃ CODE + test đủ (anh Trung: "phải test đủ vị trí")
 
 Chi tiết `docs/VI-TRI-CHUA-HANG.md` mục 8.8. Tóm tắt:

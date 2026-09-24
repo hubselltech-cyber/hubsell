@@ -6386,11 +6386,12 @@ export interface AdsAssistantScorecard {
 
 export function fetchAdsAssistantScorecard(
   channelId: string,
-  days: number,
+  range: DateRange,
   platform: "shopee" | "lazada" = "shopee"
 ) {
+  const q = new URLSearchParams({ channelId, ...rangeToQuery(range) });
   return apiFetch<AdsAssistantScorecard>(
-    `/api/ads/${platform}/assistant-scorecard?channelId=${encodeURIComponent(channelId)}&days=${days}`
+    `/api/ads/${platform}/assistant-scorecard?${q.toString()}`
   );
 }
 
@@ -6439,6 +6440,9 @@ export interface LazadaKeywordLiveRow {
 }
 
 export interface LazadaCampaignLiveDetail {
+  /** Khoảng ngày sàn đã hỏi ("yyyy-mm-dd"). */
+  from: string;
+  to: string;
   days: number;
   adgroups: LazadaAdgroupLiveRow[];
   keywords: LazadaKeywordLiveRow[];
@@ -6446,10 +6450,11 @@ export interface LazadaCampaignLiveDetail {
 
 export function fetchLazadaCampaignLiveDetail(
   campaignRowId: string,
-  days: number
+  range: DateRange
 ) {
+  const q = new URLSearchParams(rangeToQuery(range));
   return apiFetch<LazadaCampaignLiveDetail>(
-    `/api/ads/lazada/campaigns/${campaignRowId}/live-detail?days=${days}`
+    `/api/ads/lazada/campaigns/${campaignRowId}/live-detail?${q.toString()}`
   );
 }
 
@@ -6573,7 +6578,16 @@ export interface ShopeeAdsSummary {
 export interface ShopeeAdsDashboard {
   channels: { id: string; shopName: string; externalShopId: string | null }[];
   selectedChannelId: string | null;
+  /** Khoảng ngày sàn đang xem ("yyyy-mm-dd") sau khi backend chuẩn hóa. */
+  from: string;
+  to: string;
+  /** Số ngày trong khoảng (cả hai đầu) — tính chi tiêu trung bình/ngày. */
   days: number;
+  /** true = khoảng chọn dài hơn trần rangeMaxDays, ngày đầu đã bị kéo lên. */
+  rangeClamped: boolean;
+  rangeMaxDays: number;
+  /** Ngày sớm nhất gian có số hiệu suất ("yyyy-mm-dd") — null khi chưa có dòng nào. */
+  perfSince: string | null;
   /** Ví ads đọc từ DB — xung ads ghi mỗi 30 phút (syncedAt = lần đọc gần nhất). Chỉ Shopee có số dư. */
   wallet: { balance: number; syncedAt?: string | null } | null;
   /** Lazada: true = sàn báo ví ads HẾT TIỀN trên campaign đang bật (cờ adAccountBalanceStatus) — quảng cáo đang ngừng hiển thị. */
@@ -6612,14 +6626,13 @@ export type AdsPlatform = "shopee" | "lazada";
 
 export function fetchShopeeAdsDashboard(params: {
   channelId?: string;
-  /** Cửa sổ hiển thị 1–30 ngày (dữ liệu sync tối đa 30 ngày về trước). */
-  days?: number;
+  /** Khoảng ngày của bộ lọc chuẩn (?from=&to=, ngày sàn); backend trần 90 ngày. */
+  range?: DateRange;
   /** Mặc định "shopee" — trang Lazada truyền "lazada" (payload y hệt). */
   platform?: AdsPlatform;
 }) {
-  const q = new URLSearchParams();
+  const q = new URLSearchParams(rangeToQuery(params.range));
   if (params.channelId) q.set("channelId", params.channelId);
-  if (params.days) q.set("days", String(params.days));
   const qs = q.toString();
   return apiFetch<ShopeeAdsDashboard>(
     `/api/ads/${params.platform ?? "shopee"}${qs ? `?${qs}` : ""}`
