@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
+import { LocationSelect } from "@/components/products/location-select";
 import {
   ApiError,
   fetchProductStockLevels,
@@ -31,7 +31,8 @@ import { cn } from "@/lib/utils";
 /**
  * CHUYỂN VỊ TRÍ một SKU (đợt B): từ đâu → sang đâu → bao nhiêu, XEM TRƯỚC số
  * cũ → mới ở hai đầu rồi mới xác nhận. Không có trạng thái "đang chuyển" (kho
- * gần nhau, anh Trung 15/09). Tổng không đổi nên không đẩy sàn.
+ * gần nhau, anh Trung 15/09). Tổng không đổi nên không đẩy sàn — TRỪ khi qua/ra ô
+ * "không bán" (tồn bán đổi, backend tự đẩy; hộp báo trước số).
  */
 export function StockTransferDialog({
   product,
@@ -127,28 +128,27 @@ export function StockTransferDialog({
           <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
             <div className="grid gap-1.5">
               <Label htmlFor="tr-from">Từ</Label>
-              <NativeSelect id="tr-from" value={fromId} onChange={(e) => setFromId(e.target.value)}>
-                <option value="">— chọn —</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {locationLabel(l)} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
-                  </option>
-                ))}
-              </NativeSelect>
+              <LocationSelect
+                id="tr-from"
+                locations={locations}
+                value={fromId}
+                onChange={setFromId}
+                placeholder="— chọn —"
+                suffix={(l) => ` (${formatNumber(qtyById.get(l.id) ?? 0)})`}
+              />
             </div>
             <ArrowRight className="mb-2 size-4 text-muted-foreground" />
             <div className="grid gap-1.5">
               <Label htmlFor="tr-to">Sang</Label>
-              <NativeSelect id="tr-to" value={toId} onChange={(e) => setToId(e.target.value)}>
-                <option value="">— chọn —</option>
-                {locations
-                  .filter((l) => l.id !== fromId)
-                  .map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {locationLabel(l)} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
-                    </option>
-                  ))}
-              </NativeSelect>
+              <LocationSelect
+                id="tr-to"
+                locations={locations}
+                value={toId}
+                onChange={setToId}
+                exclude={fromId}
+                placeholder="— chọn —"
+                suffix={(l) => ` (${formatNumber(qtyById.get(l.id) ?? 0)})`}
+              />
             </div>
           </div>
 

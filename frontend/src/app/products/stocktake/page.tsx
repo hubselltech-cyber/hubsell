@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, ClipboardCheck, Loader2, ScanBarcode } from "lucide-react";
 
+import { LocationSelect } from "@/components/products/location-select";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -237,20 +237,16 @@ export default function StocktakePage() {
             {locationsEnabled && (
               <div className="grid w-64 gap-1.5">
                 <Label htmlFor="st-location">Vị trí kiểm</Label>
-                <NativeSelect
+                <LocationSelect
                   id="st-location"
+                  locations={locations}
                   value={effectiveLocationId}
-                  onChange={(e) => {
-                    setLocationId(e.target.value);
+                  onChange={(v) => {
+                    setLocationId(v);
                     setOnlyDiff(false);
                   }}
-                >
-                  {locations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {locationLabel(l)} · {formatNumber(l.skuCount)} SKU{l.sellable ? "" : " · không bán"}
-                    </option>
-                  ))}
-                </NativeSelect>
+                  suffix={(l) => ` · ${formatNumber(l.skuCount)} SKU`}
+                />
               </div>
             )}
           </div>

@@ -14,8 +14,9 @@ import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
- * Ô "ĐANG Ở" (đợt B): tóm tắt `Kho chính 40 · Kho 2 15` ngay trên bảng, bấm mở
- * chi tiết mọi vị trí — sửa số tại vị trí (thay kiểm kê ở đợt 1) và nút Chuyển.
+ * Ô "ĐANG Ở" (đợt B): mỗi vị trí MỘT DÒNG "Kho 2 › Kệ A1   15" ngay trên bảng
+ * (tối đa 3 + "+n vị trí khác"), bấm mở chi tiết mọi vị trí theo cây — sửa số tại
+ * vị trí và nút Chuyển. Ô "không bán" in nghiêng, không tính vào tồn bán.
  * Cột chỉ hiện khi shop đã tạo vị trí (ẩn bằng sự vắng mặt).
  */
 export function StockLevelsCell({

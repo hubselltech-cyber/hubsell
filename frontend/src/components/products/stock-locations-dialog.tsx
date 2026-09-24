@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 
+import { LocationSelect } from "@/components/products/location-select";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,7 +28,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   bulkCreateStockLocations,
@@ -53,36 +53,6 @@ import { cn } from "@/lib/utils";
  * một cha). Chưa có vị trí nào: một ô tên + một nút — hệ thống tự sinh gốc "Kho chính"
  * giữ toàn bộ tồn hiện có. Xóa hết = tắt tính năng, giao diện về như cũ.
  */
-/** Ô chọn cha dùng chung cho thêm / sinh hàng loạt / sửa (module scope — không tạo component trong render). */
-function ParentSelect({
-  id,
-  value,
-  onChange,
-  locations,
-  excludeId,
-  className,
-}: {
-  id: string;
-  value: string;
-  onChange: (v: string) => void;
-  locations: StockLocation[];
-  excludeId?: string;
-  className?: string;
-}) {
-  return (
-    <NativeSelect id={id} value={value} onChange={(e) => onChange(e.target.value)} className={className}>
-      <option value="">— Ngang cấp kho (không thuộc kho nào) —</option>
-      {locationTree(parentOptions(locations, excludeId)).map(({ loc, depth }) => (
-        <option key={loc.id} value={loc.id}>
-          {"  ".repeat(depth)}
-          {depth > 0 ? "› " : ""}
-          {loc.name}
-        </option>
-      ))}
-    </NativeSelect>
-  );
-}
-
 export function StockLocationsDialog({
   open,
   onOpenChange,
@@ -304,12 +274,12 @@ export function StockLocationsDialog({
                         value={editCode}
                         onChange={(e) => setEditCode(e.target.value)}
                       />
-                      <ParentSelect
+                      <LocationSelect
                         id={`parent-${l.id}`}
+                        locations={parentOptions(locations, l.id)}
                         value={editParent}
                         onChange={setEditParent}
-                        locations={locations}
-                        excludeId={l.id}
+                        placeholder="— Ngang cấp kho (không thuộc kho nào) —"
                         className="h-8 w-48 [&>select]:h-8"
                       />
                       <Button size="sm" className="h-8" onClick={() => saveEdit(l)} disabled={busy !== null}>
@@ -447,7 +417,7 @@ export function StockLocationsDialog({
               <label htmlFor="loc-parent" className={TEXT_SUB}>
                 Thuộc
               </label>
-              <ParentSelect id="loc-parent" value={newParent} onChange={setNewParent} locations={locations} />
+              <LocationSelect id="loc-parent" locations={locations} value={newParent} onChange={setNewParent} placeholder="— Ngang cấp kho (không thuộc kho nào) —" />
             </div>
           )}
           <div className="grid w-28 gap-1.5">
@@ -517,7 +487,7 @@ export function StockLocationsDialog({
                 <label htmlFor="bulk-parent" className={TEXT_SUB}>
                   Thuộc
                 </label>
-                <ParentSelect id="bulk-parent" value={bulkParent} onChange={setBulkParent} locations={locations} />
+                <LocationSelect id="bulk-parent" locations={locations} value={bulkParent} onChange={setBulkParent} placeholder="— Ngang cấp kho (không thuộc kho nào) —" />
               </div>
             )}
             <Button type="submit" variant="secondary" disabled={!pattern.trim() || busy !== null}>

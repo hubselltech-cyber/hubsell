@@ -306,3 +306,14 @@ stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt l�
 - E2E local: Kho 2 › Kệ A1 T1 (MU-LUOI-TRAI 2) → lọc Kho 2 = 1 mã, Kệ A1 T1 = 1, Kệ A2 T1 = 0, Kho chính = 12; UI đổi chip
   ra đúng bảng; dọn về tắt.
 
+### 8.13 Dọn dẹp + chốt (24/09 khuya, anh Trung: "dọn sạch code thừa, đảm bảo theo mô hình tree nhất quán, phần này coi như ổn")
+- **Một cách hiểu cây duy nhất:** backend `lib/location-tree.ts` (`depthFirstIds`, `buildLocationPaths`, `subtreeIds`,
+  `isSelfOrDescendant`) dùng cho route vị trí (đánh số thứ tự, đường dẫn, chặn vòng lặp), lọc bảng Hàng hóa (gom nhánh con)
+  và phiếu nhặt — bỏ ba bản tự viết. Frontend `components/products/location-select.tsx` = MỘT ô chọn vị trí thụt lề theo cây
+  dùng ở Nhập/Xuất, Phiếu nhiều mã, Kiểm kê, Chuyển vị trí, Cất lên kệ, chip lọc, chọn cha trong hộp vị trí — bỏ hai bản riêng
+  (LocSelect, ParentSelect) và các ô chọn phẳng.
+- Bỏ biến thừa (`newQuantity` void ở adjust, destructuring `_q` ở setStockAbsolute, `hasChildren` chưa dùng), cập nhật chú thích
+  cũ (ô Đang ở mỗi vị trí một dòng; chuyển vị trí qua ô không bán có đẩy sàn). tsc + eslint + `--noUnusedLocals` sạch trên các
+  file đã đụng; 44 test liên quan pass; soi lại local: Cất lên kệ + hộp Vị trí + chip lọc đều dùng ô chọn cây.
+- **Anh chốt phần vị trí chứa hàng coi như ổn.** Còn duy nhất: quét ô trên app mobile (khi anh gọi).
+

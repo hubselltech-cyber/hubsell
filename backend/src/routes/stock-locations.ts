@@ -20,6 +20,7 @@ import {
   transferStockTx,
 } from "../services/stock-ledger";
 import { codeFromName, expandLocationPattern } from "../lib/location-pattern";
+import { buildLocationPaths, depthFirstIds, isSelfOrDescendant } from "../lib/location-tree";
 import { buildLocationLabelsPdf } from "../services/fulfillment/location-labels-pdf";
 
 const router = Router();
@@ -44,58 +45,21 @@ type Tx = Prisma.TransactionClient;
 
 /**
  * CÂY KHO › KỆ › TẦNG (anh Trung 24/09: sinh kệ phải nằm TRONG kho, không thành kho khác).
- * Thứ tự ưu tiên trừ hàng = duyệt cây theo chiều sâu: cha rồi tới các con của nó, anh em
- * xếp theo sortOrder. Sau mọi lần tạo / đổi cha / sắp lại, đánh số lại 0..n theo đúng thứ tự
- * đó để `listLocations` (sổ kho) chỉ cần ORDER BY sortOrder là ra cây.
+ * Sau mọi lần tạo / đổi cha / sắp lại, đánh số `sortOrder` = thứ tự duyệt cây (cha rồi
+ * tới con, lib/location-tree) để thứ tự ưu tiên trừ hàng đi theo cây và sổ kho chỉ
+ * cần ORDER BY sortOrder.
  */
 async function normalizeTreeOrderTx(tx: Tx, userId: string) {
   const rows = await tx.stockLocation.findMany({
     where: { userId },
     select: { id: true, parentId: true, sortOrder: true, createdAt: true },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
-  const ids = new Set(rows.map((r) => r.id));
-  const children = new Map<string | null, typeof rows>();
-  for (const r of rows) {
-    const key = r.parentId && ids.has(r.parentId) ? r.parentId : null;
-    const arr = children.get(key) ?? [];
-    arr.push(r);
-    children.set(key, arr);
-  }
-  const ordered: string[] = [];
-  const seen = new Set<string>();
-  const walk = (parent: string | null) => {
-    for (const r of children.get(parent) ?? []) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id);
-      ordered.push(r.id);
-      walk(r.id);
-    }
-  };
-  walk(null);
   const bySort = new Map(rows.map((r) => [r.id, r.sortOrder]));
   await Promise.all(
-    ordered
+    depthFirstIds(rows)
       .map((id, i) => (bySort.get(id) === i ? null : tx.stockLocation.update({ where: { id }, data: { sortOrder: i } })))
       .filter(Boolean)
   );
-}
-
-/** Đường dẫn "Kho 2 › Kệ A1 › T2" cho từng vị trí. */
-function buildPaths(rows: { id: string; parentId: string | null; name: string }[]): Map<string, string> {
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const paths = new Map<string, string>();
-  const pathOf = (id: string, guard = 0): string => {
-    const cached = paths.get(id);
-    if (cached) return cached;
-    const r = byId.get(id)!;
-    const parent = r.parentId && byId.has(r.parentId) && guard < 20 ? pathOf(r.parentId, guard + 1) : null;
-    const p = parent ? `${parent} › ${r.name}` : r.name;
-    paths.set(id, p);
-    return p;
-  };
-  for (const r of rows) pathOf(r.id);
-  return paths;
 }
 
 /** Danh sách vị trí + số SKU có hàng + tổng tồn mỗi vị trí (một câu groupBy), kèm đường dẫn cây. */
@@ -124,7 +88,7 @@ async function listWithTotals(ownerId: string) {
     }),
   ]);
   const byLoc = new Map(totals.map((t) => [t.locationId, t]));
-  const paths = buildPaths(locations);
+  const paths = buildLocationPaths(locations);
   return locations.map((l) => ({
     ...l,
     path: paths.get(l.id) ?? l.name,
@@ -302,20 +266,14 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
           res.status(400).json({ error: "Vị trí cha không tồn tại" });
           return;
         }
-        // Cha mới không được là con/cháu của chính nó (vòng lặp) — đi ngược lên tới gốc.
+        // Cha mới không được là chính nó hay con/cháu của nó (vòng lặp).
         const all = await prisma.stockLocation.findMany({
           where: { userId: ownerId },
           select: { id: true, parentId: true },
         });
-        const up = new Map(all.map((a) => [a.id, a.parentId]));
-        let cur: string | null | undefined = parent.id;
-        let guard = 0;
-        while (cur && guard++ < 50) {
-          if (cur === loc.id) {
-            res.status(400).json({ error: "Không thể đặt con/cháu làm cha (vòng lặp)" });
-            return;
-          }
-          cur = up.get(cur);
+        if (isSelfOrDescendant(all, loc.id, parent.id)) {
+          res.status(400).json({ error: "Không thể đặt con/cháu làm cha (vòng lặp)" });
+          return;
         }
       }
       data.parent = parentId ? { connect: { id: parentId } } : { disconnect: true };

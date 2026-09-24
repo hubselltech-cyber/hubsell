@@ -50,6 +50,7 @@ import { StockLocationsDialog } from "@/components/products/stock-locations-dial
 import { StockTransferDialog } from "@/components/products/stock-transfer-dialog";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
+import { LocationSelect } from "@/components/products/location-select";
 import {
   SyncSettingsDialog,
   type SyncHeaderState,
@@ -57,7 +58,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -88,7 +88,7 @@ import { exportAllProducts } from "@/lib/excel";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
-import { locationLabel, locationTree } from "@/lib/stock-locations";
+import { locationLabel } from "@/lib/stock-locations";
 import { formatNumber } from "@/lib/format";
 import { canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
@@ -958,25 +958,18 @@ export default function ProductsHubPage() {
                 </Button>
                 {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
                 {locationsEnabled && (
-                  <NativeSelect
-                    aria-label="Lọc theo vị trí chứa hàng"
+                  <LocationSelect
+                    ariaLabel="Lọc theo vị trí chứa hàng"
                     className={cn("w-56 [&>select]:rounded-full [&>select]:text-xs", locationFilter && "[&>select]:border-primary [&>select]:font-medium")}
+                    locations={locations}
                     value={locationFilter}
-                    onChange={(e) => {
-                      setLocationFilter(e.target.value);
+                    onChange={(v) => {
+                      setLocationFilter(v);
                       setPage(1);
                     }}
-                  >
-                    <option value="">Tại vị trí: tất cả</option>
-                    {locationTree(locations).map(({ loc, depth }) => (
-                      <option key={loc.id} value={loc.id}>
-                        {"\u00a0\u00a0".repeat(depth)}
-                        {depth > 0 ? "› " : ""}
-                        {loc.name}
-                        {loc.skuCount ? ` · ${loc.skuCount} SKU` : ""}
-                      </option>
-                    ))}
-                  </NativeSelect>
+                    placeholder="Tại vị trí: tất cả"
+                    suffix={(l) => (l.skuCount ? ` · ${l.skuCount} SKU` : "")}
+                  />
                 )}
                 {/* Chip Ngừng bán chỉ hiện khi có SKU ngừng bán (ẩn bằng vắng mặt). */}
                 {(inactiveCount > 0 || status !== "active") && (

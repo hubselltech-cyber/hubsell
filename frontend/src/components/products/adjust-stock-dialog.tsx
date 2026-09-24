@@ -14,9 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
+import { LocationSelect } from "@/components/products/location-select";
 import { adjustInventory, ApiError, type Product, type StockLocation } from "@/lib/api";
-import { locationLabel } from "@/lib/stock-locations";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 
 interface AdjustStockDialogProps {
@@ -124,19 +123,14 @@ export function AdjustStockDialog({
           {locations.length > 0 && (
             <div className="grid gap-2">
               <Label htmlFor="adjust-location">{isImport ? "Nhập vào" : "Xuất từ"}</Label>
-              <NativeSelect
+              <LocationSelect
                 id="adjust-location"
+                locations={locations}
                 value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
-              >
-                {!isImport && <option value="">Tự trừ theo thứ tự ưu tiên</option>}
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {locationLabel(l)}
-                    {isImport ? "" : ` (đang có ${qtyById.get(l.id) ?? 0})`}
-                  </option>
-                ))}
-              </NativeSelect>
+                onChange={setLocationId}
+                placeholder={isImport ? undefined : "Tự trừ theo thứ tự ưu tiên"}
+                suffix={(l) => (isImport ? "" : ` (đang có ${qtyById.get(l.id) ?? 0})`)}
+              />
             </div>
           )}
           <div className="grid gap-2">

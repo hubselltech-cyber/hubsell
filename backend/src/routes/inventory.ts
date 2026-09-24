@@ -68,9 +68,7 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
       }
 
       const delta = type === "IMPORT" ? qty : -qty;
-      const newQuantity = product.quantityInStock + delta;
-
-      if (newQuantity < 0) {
+      if (product.quantityInStock + delta < 0) {
         throw Object.assign(
           new Error(
             `Không đủ hàng để xuất: tồn kho hiện tại ${product.quantityInStock}, muốn xuất ${qty}`
@@ -89,7 +87,6 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
       });
       const updated = await tx.product.findUniqueOrThrow({ where: { id: productId } });
       const log = await tx.inventoryLog.findUniqueOrThrow({ where: { id: written.logs[0]!.id } });
-      void newQuantity;
       return { product: updated, log };
     });
 

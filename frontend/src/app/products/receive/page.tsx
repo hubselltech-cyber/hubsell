@@ -13,11 +13,11 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { LocationSelect } from "@/components/products/location-select";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -37,7 +37,6 @@ import {
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
-import { locationLabel } from "@/lib/stock-locations";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
@@ -408,18 +407,13 @@ export default function ReceiveStockPage() {
           {locations.length > 0 && (
             <div className="grid w-56 gap-1.5">
               <Label htmlFor="bulk-location">{isImport ? "Nhập vào" : "Xuất từ"}</Label>
-              <NativeSelect
+              <LocationSelect
                 id="bulk-location"
+                locations={locations}
                 value={effectiveLocationId}
-                onChange={(e) => setLocationId(e.target.value)}
-              >
-                {!isImport && <option value="">Tự trừ theo thứ tự ưu tiên</option>}
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {locationLabel(l)}
-                  </option>
-                ))}
-              </NativeSelect>
+                onChange={setLocationId}
+                placeholder={isImport ? undefined : "Tự trừ theo thứ tự ưu tiên"}
+              />
             </div>
           )}
           <div className="grid w-full max-w-md gap-1.5">

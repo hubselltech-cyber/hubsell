@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Loader2, MapPin, PackageOpen, ScanBarcode, Trash2 } from "lucide-react";
 
+import { LocationSelect } from "@/components/products/location-select";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -31,7 +31,7 @@ import {
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
-import { locationLabel, locationTree } from "@/lib/stock-locations";
+import { locationLabel } from "@/lib/stock-locations";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
@@ -51,32 +51,6 @@ interface Line {
   fromId: string;
   toId: string;
   quantity: string;
-}
-
-/** Ô chọn vị trí thụt lề theo cây (module scope — không tạo component trong render). */
-function LocSelect(props: {
-  id: string;
-  tree: ReturnType<typeof locationTree>;
-  value: string;
-  onChange: (v: string) => void;
-  exclude?: string;
-  placeholder?: string;
-}) {
-  return (
-    <NativeSelect id={props.id} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
-      {props.placeholder && <option value="">{props.placeholder}</option>}
-      {props.tree
-        .filter(({ loc }) => loc.id !== props.exclude)
-        .map(({ loc, depth }) => (
-          <option key={loc.id} value={loc.id}>
-            {"  ".repeat(depth)}
-            {depth > 0 ? "› " : ""}
-            {loc.name}
-            {loc.sellable ? "" : " · không bán"}
-          </option>
-        ))}
-    </NativeSelect>
-  );
 }
 
 export default function PutawayPage() {
@@ -213,8 +187,6 @@ export default function PutawayPage() {
     }
   }
 
-  const tree = locationTree(locations);
-
   return (
     <AppShell>
       <div className="space-y-5">
@@ -233,12 +205,12 @@ export default function PutawayPage() {
               <div className="flex flex-wrap items-end gap-2">
                 <div className="grid w-52 gap-1.5">
                   <Label htmlFor="pa-from">Lấy từ</Label>
-                  <LocSelect id="pa-from" tree={tree} value={effectiveFrom} onChange={setFromId} />
+                  <LocationSelect id="pa-from" locations={locations} value={effectiveFrom} onChange={setFromId} />
                 </div>
                 <ArrowRight className="mb-2.5 size-4 text-muted-foreground" />
                 <div className="grid w-52 gap-1.5">
                   <Label htmlFor="pa-to">Cất vào</Label>
-                  <LocSelect id="pa-to" tree={tree} value={effectiveTo} onChange={setToId} exclude={effectiveFrom} placeholder="— quét tem kệ hoặc chọn —" />
+                  <LocationSelect id="pa-to" locations={locations} value={effectiveTo} onChange={setToId} exclude={effectiveFrom} placeholder="— quét tem kệ hoặc chọn —" />
                 </div>
               </div>
             )}

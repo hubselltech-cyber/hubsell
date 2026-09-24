@@ -7,6 +7,7 @@
 // Shop không dùng vị trí → không in gì (phiếu y hệt cũ).
 // ============================================================
 import { prisma } from "../../lib/prisma";
+import { buildLocationPaths } from "../../lib/location-tree";
 
 export interface DeductionLine {
   locationName: string;
@@ -79,18 +80,8 @@ export async function pickLocationTextForOrders(
     }),
   ]);
   // Tên in trên phiếu = đường dẫn cây "Kho 2 › Kệ A1" để người nhặt biết đi kho nào, kệ nào.
-  const byId = new Map(allLocs.map((l) => [l.id, l]));
-  const pathCache = new Map<string, string>();
-  const pathOf = (id: string, guard = 0): string => {
-    const c = pathCache.get(id);
-    if (c) return c;
-    const l = byId.get(id);
-    if (!l) return "?";
-    const parent = l.parentId && byId.has(l.parentId) && guard < 20 ? pathOf(l.parentId, guard + 1) : null;
-    const p = parent ? `${parent} › ${l.name}` : l.name;
-    pathCache.set(id, p);
-    return p;
-  };
+  const paths = buildLocationPaths(allLocs);
+  const pathOf = (id: string) => paths.get(id) ?? "?";
 
   // Vị trí đang ÂM cho SKU (bán vượt) → nhắc trên phiếu.
   const negative = new Set(levels.filter((lv) => lv.quantity < 0).map((lv) => `${lv.productId}:${lv.locationId}`));

@@ -12,6 +12,7 @@ import {
 } from "../integrations/inventory-push";
 import { effectiveLowStockThreshold, isLowStock } from "../services/low-stock";
 import { applyStockDelta, setStockAbsolute } from "../services/stock-ledger";
+import { subtreeIds } from "../lib/location-tree";
 
 const router = Router();
 
@@ -132,19 +133,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         res.status(404).json({ error: "Không tìm thấy vị trí" });
         return;
       }
-      const children = new Map<string | null, string[]>();
-      for (const l of locs) {
-        const arr = children.get(l.parentId) ?? [];
-        arr.push(l.id);
-        children.set(l.parentId, arr);
-      }
-      locationIds = [];
-      const stack = [locationId];
-      while (stack.length) {
-        const id = stack.pop()!;
-        locationIds.push(id);
-        for (const c of children.get(id) ?? []) stack.push(c);
-      }
+      locationIds = subtreeIds(locs, locationId);
     }
 
     const where: Prisma.ProductWhereInput = {

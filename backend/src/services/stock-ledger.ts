@@ -202,9 +202,8 @@ export async function setStockAbsolute(
   const rows = await tx.$queryRaw<{ quantityInStock: number }[]>`
     SELECT "quantityInStock" FROM "Product" WHERE "id" = ${w.productId} FOR UPDATE`;
   const previous = rows[0]?.quantityInStock ?? 0;
-  const delta = w.quantity - previous;
-  const { quantity: _q, ...rest } = w;
-  void _q;
+  const { quantity, ...rest } = w;
+  const delta = quantity - previous;
   const res = await applyStockDelta(tx, { ...rest, delta });
   return { ...res, delta, previous };
 }

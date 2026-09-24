@@ -8,8 +8,6 @@ import type { StockLocation } from "@/lib/api";
 export interface LocationNode {
   loc: StockLocation;
   depth: number;
-  /** Vị trí có con (kho chứa kệ) — không cho chọn làm nơi chứa hàng trực tiếp? Vẫn cho: kho vẫn có thể để hàng ở sàn. */
-  hasChildren: boolean;
 }
 
 export function locationTree(locations: StockLocation[]): LocationNode[] {
@@ -27,7 +25,7 @@ export function locationTree(locations: StockLocation[]): LocationNode[] {
     for (const l of children.get(parent) ?? []) {
       if (seen.has(l.id)) continue;
       seen.add(l.id);
-      out.push({ loc: l, depth, hasChildren: (children.get(l.id) ?? []).length > 0 });
+      out.push({ loc: l, depth });
       walk(l.id, depth + 1);
     }
   };
