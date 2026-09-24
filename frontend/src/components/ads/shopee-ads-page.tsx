@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertCircle,
   AlertTriangle,
+  Info,
   Megaphone,
   RefreshCw,
   Scale,
@@ -1128,44 +1130,84 @@ export function ShopeeAdsPage({
         {/* ===== TAB GMV MAX CẤP SHOP (GMS, 24/09) — tab riêng, chỉ hiện khi gian đang chạy GMS
             (khẩu vị anh Trung điểm 10: không chèn khối phụ lên trên bảng chính; số theo cửa sổ,
             không có số ngày nên không đi vào bảng/biểu đồ Tổng quan). ===== */}
-        {tab === "gms" && (!gms || gms.status !== "active") && (
-          <Card>
-            <CardHeader>
-              <CardTitle>GMV Max cấp shop (GMS)</CardTitle>
-              <CardDescription className="mt-1.5">
-                GMV Max cấp shop là chiến dịch tự động toàn gian của Shopee. Chi tiêu của nó KHÔNG nằm trong bảng
-                chiến dịch sản phẩm — chỉ có trong tổng chi cấp shop, và sàn chỉ trả số theo cửa sổ ngày trọn.
-                Hubsell chỉ đọc.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-slate-700">
-                {!gms
-                  ? "Chưa hỏi sàn về GMV Max của gian này — lượt kéo kế tiếp (tối đa 30 phút) sẽ có trạng thái."
-                  : gms.status === "eligible"
-                    ? "Gian đủ điều kiện chạy GMV Max cấp shop nhưng chưa có chiến dịch GMS nào. Bật trên Seller Center thì số sẽ hiện ở đây sau lượt kéo lịch sử kế tiếp (tối đa 6 giờ)."
-                    : gms.status === "not_whitelisted"
-                      ? "Shopee chưa mở GMV Max cấp shop cho gian này (chưa được whitelist)."
-                      : gms.status === "not_have_enough_sku"
-                        ? "Gian chưa đủ sản phẩm hợp lệ để Shopee cho chạy GMV Max cấp shop."
-                        : gms.status === "exclusive_with_other_campaign"
-                          ? "Gian đang thuộc chương trình khác của Shopee (auto boost) nên không chạy được GMV Max cấp shop."
-                          : `Chưa đọc được trạng thái GMV Max từ sàn (${gms.status}).`}
-                {gms?.checkedAt && (
-                  <span className="text-muted-foreground"> Hỏi sàn lúc {formatSyncTime(gms.checkedAt)}.</span>
-                )}
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {/* Trạng thái GMS khi CHƯA chạy — ngắn, có biểu tượng (anh Trung 24/09: "giải thích ngắn gọn dễ hiểu,
+            thêm biểu tượng chấm than đỏ cho seller dễ hiểu"). Mỗi trạng thái một hộp màu, một câu. */}
+        {tab === "gms" && (!gms || gms.status !== "active") && (() => {
+          const st = gms?.status ?? null;
+          const box =
+            st == null
+              ? {
+                  tone: "border-amber-200 bg-amber-50 text-amber-900",
+                  icon: <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />,
+                  title: "Chưa có trạng thái",
+                  text: "Hubsell đang hỏi Shopee xem gian có chạy GMV Max không. Quay lại sau vài phút.",
+                }
+              : st === "eligible"
+                ? {
+                    tone: "border-sky-200 bg-sky-50 text-sky-900",
+                    icon: <Info className="mt-0.5 size-5 shrink-0 text-sky-600" />,
+                    title: "Gian chưa bật GMV Max cấp shop",
+                    text: "Shopee cho phép gian này chạy, nhưng anh/chị chưa bật. Bật trên Seller Center thì số sẽ hiện ở đây.",
+                  }
+                : st === "not_whitelisted"
+                  ? {
+                      tone: "border-slate-200 bg-slate-50 text-slate-800",
+                      icon: <AlertCircle className="mt-0.5 size-5 shrink-0 text-slate-500" />,
+                      title: "Shopee chưa mở cho gian này",
+                      text: "GMV Max cấp shop đang mở theo đợt; gian này chưa nằm trong danh sách được chạy.",
+                    }
+                  : st === "not_have_enough_sku"
+                    ? {
+                        tone: "border-amber-200 bg-amber-50 text-amber-900",
+                        icon: <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />,
+                        title: "Gian chưa đủ sản phẩm",
+                        text: "Shopee yêu cầu gian có đủ sản phẩm hợp lệ mới cho chạy GMV Max cấp shop.",
+                      }
+                    : st === "exclusive_with_other_campaign"
+                      ? {
+                          tone: "border-amber-200 bg-amber-50 text-amber-900",
+                          icon: <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />,
+                          title: "Gian đang ở chương trình khác",
+                          text: "Gian đang tham gia chương trình quảng cáo tự động khác của Shopee nên không chạy GMV Max cấp shop cùng lúc.",
+                        }
+                      : {
+                          tone: "border-red-200 bg-red-50 text-red-800",
+                          icon: <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-600" />,
+                          title: "Không đọc được từ Shopee",
+                          text: `Shopee trả lỗi khi hỏi trạng thái GMV Max (${st}). Hubsell sẽ hỏi lại ở lượt sau.`,
+                        };
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle>GMV Max cấp shop (GMS)</CardTitle>
+                <CardDescription className="mt-1.5">
+                  Shopee tự chạy quảng cáo cho cả gian. Tiền tiêu ở đây không nằm trong bảng chiến dịch ở tab Tổng
+                  quan, chỉ có trong tổng chi cấp shop.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className={cn("flex items-start gap-3 rounded-lg border p-3.5 text-sm", box.tone)}>
+                  {box.icon}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{box.title}</p>
+                    <p className="mt-0.5">{box.text}</p>
+                    {gms?.checkedAt && (
+                      <p className="mt-1 text-xs opacity-70">Hỏi Shopee lúc {formatSyncTime(gms.checkedAt)}.</p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
         {tab === "gms" && gms && gms.status === "active" && (
           <Card>
             <CardHeader>
               <CardTitle>GMV Max cấp shop (GMS)</CardTitle>
               <CardDescription className="mt-1.5">
-                Khoản này Shopee KHÔNG xếp vào chiến dịch sản phẩm — chỉ nằm trong tổng chi cấp shop, và sàn chỉ
-                trả số theo cửa sổ ngày trọn (không có số từng ngày). ROAS cửa sổ tô màu theo hòa vốn cấp shop;
-                từng sản phẩm tô theo hòa vốn của chính nó. Hubsell chỉ đọc — sửa GMV Max trên Seller Center.
+                Shopee tự chạy quảng cáo cho cả gian. Tiền tiêu ở đây không nằm trong bảng chiến dịch ở tab Tổng
+                quan, chỉ có trong tổng chi cấp shop. Shopee chỉ báo số theo cửa sổ 7 và 30 ngày, không có từng
+                ngày. Muốn sửa thì vào Seller Center.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
