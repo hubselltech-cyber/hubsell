@@ -5,6 +5,21 @@
 
 ---
 
+## Phiên 24/09/2026 (đêm, 3) — Ads Shopee ĐỢT B: HẠ NGÂN SÁCH TRƯỚC, TẮT SAU + cờ ví tự nạp (anh Trung: "Em làm đợt B đi")
+
+Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 10. Tóm tắt:
+- **Docs Shopee đọc lại**: change_budget dùng tham số `budget` (ngân sách ngày), sàn tự chặn mức sai
+  (`error_daily_budget_range`) → không đoán tối thiểu; get_shop_toggle_info trả `auto_top_up`.
+- **Executor**: nấc `cut_budget` — pause_now lần đầu trong ván → hạ ngân sách ngày = max(50% ngân sách, 70% chi tiêu TB
+  7 ngày) (mặc định tự đặt), không giới hạn → trần 70% chi tiêu; hạ hôm nay thì thôi; hôm sau vẫn lỗ → tắt; spike vẫn
+  tắt ngay; Lazada tắt như cũ. Cờ số gốc trên AdsCampaign (migration mới), bật lại (máy/người) → `restore_budget`;
+  nút "Trả lại ngân sách"; người đổi ngân sách trên sàn → xóa cờ (OVERRIDDEN). Cờ cấu hình `cutBudgetFirst` mặc định bật.
+- **Ví tự nạp**: xung +1 call → `Channel.adsAutoTopUp`; thẻ ví cạn hạ medium khi đã tự nạp, high + câu rõ khi không.
+- Diễn tập DB dev đúng trình tự (DEMO-3 cut_budget PLANNED 200k → 109k; lượt 2 không lặp); UI nhãn/modal/nút/công tắc
+  soi local. 626 test pass (+13), tsc + eslint sạch. **CHƯA bắn sống change_budget** — lần live đầu trên ANO là lần xác minh.
+
+---
+
 ## Phiên 24/09/2026 (đêm, 2) — Ads Shopee/Lazada ĐỢT E: rổ thứ tư "đang lãi nhưng bị chặn phân phối" (anh Trung: "làm đi em")
 
 Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 9. Tóm tắt:

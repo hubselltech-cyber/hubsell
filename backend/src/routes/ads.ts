@@ -23,6 +23,7 @@ import {
 } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import {
+  restoreBudgetByOwner,
   resumeCampaignByOwner,
   setRoasTargetByOwner,
 } from "../integrations/shopee/ads-auto-execute";
@@ -228,6 +229,15 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
                 reasons: pauseReasons.get(c.hubsellPauseLogId ?? "") ?? [],
               }
             : null,
+          // ĐỢT B: Trợ lý đã hạ ngân sách ngày (còn giữ số gốc) — nhãn + nút "Trả lại ngân sách".
+          hubsellBudgetCut:
+            c.hubsellBudgetCutAt && c.hubsellBudgetBefore != null
+              ? {
+                  at: c.hubsellBudgetCutAt,
+                  before: Number(c.hubsellBudgetBefore),
+                  cut: c.hubsellBudgetCut != null ? Number(c.hubsellBudgetCut) : Number(c.budget),
+                }
+              : null,
         };
       });
       // Trạng thái trước, chi tiêu sau (anh Trung 23/08): "Đang chạy" là thứ
@@ -300,7 +310,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // adAccountBalanceStatus trên searchCampaignList — xung ghi
       // adsWalletBalance = 0 khi hết tiền trên campaign đang bật (null = còn
       // tiền/không rõ) → `walletEmpty` cho dải đỏ trên trang (14/09). ----
-      let wallet: { balance: number; syncedAt: string | null } | null = null;
+      let wallet: { balance: number; syncedAt: string | null; autoTopUp: boolean | null } | null = null;
       let walletEmpty = false;
       // Trạng thái liên kết app Hubsell Ads của gian (null với Lazada) — FE
       // hiện màn mời ủy quyền khi app Ads riêng đã bật mà gian chưa nối.
@@ -309,12 +319,14 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // gọi sống mỗi lần mở trang; mở trang mà cũ >30' đã có nudge xung bên dưới.
       const schedule = await prisma.channel.findUnique({
         where: { id: selected.id },
-        select: { lastAdsSyncAt: true, adsWalletBalance: true, adsWalletSyncedAt: true },
+        select: { lastAdsSyncAt: true, adsWalletBalance: true, adsWalletSyncedAt: true, adsAutoTopUp: true },
       });
       if (platform === "shopee" && schedule?.adsWalletBalance != null) {
         wallet = {
           balance: Number(schedule.adsWalletBalance),
           syncedAt: schedule.adsWalletSyncedAt?.toISOString() ?? null,
+          // ĐỢT B: cờ auto_top_up của sàn (null = chưa đọc được).
+          autoTopUp: schedule.adsAutoTopUp,
         };
       } else if (platform === "lazada" && schedule?.adsWalletBalance != null) {
         walletEmpty = Number(schedule.adsWalletBalance) === 0;
@@ -687,6 +699,35 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // Thẻ "Trợ lý đã tạm dừng" đóng ngay, không đợi lượt quét kế.
       await scanOpsAlerts(req.ownerId!, true);
       res.json({ message: "Đã bật lại chiến dịch", status: out.status });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/ads/{sàn}/campaigns/:id/restore-budget — ĐỢT B (24/09): chủ shop TRẢ
+  // LẠI ngân sách gốc cho campaign Trợ lý đã hạ (campaign vẫn chạy). Lệnh GHI THẬT
+  // (change_budget), ghi sổ mode manual. Chỉ Shopee.
+  router.post(`/${platform}/campaigns/:id/restore-budget`, async (req: AuthRequest, res, next) => {
+    try {
+      const campaign = await prisma.adsCampaign.findFirst({
+        where: { id: req.params.id, channel: { userId: req.ownerId!, channelName } },
+        select: { id: true, channelId: true },
+      });
+      if (!campaign) {
+        res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+        return;
+      }
+      const channel = await prisma.channel.findUnique({ where: { id: campaign.channelId } });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const out = await restoreBudgetByOwner(channel, campaign.id);
+      if (!out.ok) {
+        res.status(409).json({ error: out.error ?? `${label} từ chối lệnh đổi ngân sách` });
+        return;
+      }
+      res.json({ message: "Đã trả lại ngân sách", budget: out.budget });
     } catch (err) {
       next(err);
     }

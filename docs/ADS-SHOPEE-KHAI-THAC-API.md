@@ -304,10 +304,10 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
 7. **Máy tự nâng mục tiêu** (executor) chưa làm — chỉ làm sau khi việc 6 xác minh OK và anh chốt luật.
 
 ### Đợt B — chưa code
-8. **Hạ ngân sách trước, tắt sau** (`change_budget`, nấc `cut_budget` trong executor; campaign không giới hạn
+8. ✅ ĐÃ CODE 24/09 (mục 10) — **Hạ ngân sách trước, tắt sau** (`change_budget`, nấc `cut_budget` trong executor; campaign không giới hạn
    ngân sách mà lỗ thì đặt trần trước). Cần probe `change_budget` + mở rộng cờ Hubsell ghi ngân sách gốc
    (campaign tạo từ Hubsell đã có số gốc trong `hubsellProposal`).
-9. **Cờ ví tự nạp** (`get_shop_toggle_info`, +1 call/xung): ví cạn mà không tự nạp → báo đỏ; đã bật tự nạp →
+9. ✅ ĐÃ CODE 24/09 (mục 10) — **Cờ ví tự nạp** (`get_shop_toggle_info`, +1 call/xung): ví cạn mà không tự nạp → báo đỏ; đã bật tự nạp →
    hạ mức. Cắt cảnh báo ví cạn giả.
 
 ### Đợt C — chưa code
@@ -409,3 +409,50 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
 2. Đợt B (hạ ngân sách trước khi tắt) — nấc người chạy ads chuyên nghiệp đòi đầu tiên.
 3. Xác minh sống `change_roas_target` + `create_manual_product_ads` trên ANO (mục 7 việc 1, 6).
 4. Đợt C từ khóa chỉ đọc; GMS (mục 7 việc 12).
+
+
+## 10. ĐỢT B ĐÃ CODE (24/09/2026 đêm, anh Trung: "Em làm đợt B đi") — hạ ngân sách trước, tắt sau + cờ ví tự nạp
+
+### 10.1 Căn cứ docs Shopee (đọc lại bằng Chrome anh 24/09)
+- `edit_manual_product_ads` với `edit_action = "change_budget"`: tham số **`budget`** (float) = ngân sách NGÀY. Sàn tự
+  chặn mức không hợp lệ bằng `ads.campaign.error_daily_budget_range` → Hubsell KHÔNG đoán mức tối thiểu, lỗi ghi
+  nguyên văn vào Sổ hành động. Enum đầy đủ: start, pause, resume, stop, delete, change_budget, change_duration,
+  change_smart_creative, change_location, change_enhanced_cpc, change_roas_target.
+- `get_shop_toggle_info` (GET, không tham số): `auto_top_up` (bool), `campaign_surge` (bool), `data_timestamp`.
+  App types: Seller In House, Marketing, Ads Service… → app Hubsell Ads gọi được.
+
+### 10.2 Nấc `cut_budget` trong executor (`ads-auto-execute.ts`)
+- `planAutoAction` (thuần, test `ads-budget-cut.test.ts` 13 ca): spike → pause; pause_now + cờ
+  `autoExecute.cutBudgetFirst` (mặc định BẬT) + sàn có lệnh đổi ngân sách (Shopee) → chưa hạ trong ván → `cut_budget`;
+  đã hạ HÔM NAY → không làm gì (một nấc/ngày, đợi đơn về); đã hạ hôm trước → pause. Lazada: tắt như cũ.
+- Mức hạ `planBudgetCut`: max(50% ngân sách, 70% chi tiêu TB ngày 7 ngày trước), làm tròn 1.000; KHÔNG giới hạn →
+  trần = 70% chi tiêu TB (không có chi tiêu → không hạ, tắt như cũ). Hai tỷ lệ = MẶC ĐỊNH TỰ ĐẶT (docs mục 3 đợt B).
+- Trạng thái nấc: live đọc cờ campaign (`hubsellBudgetCutAt/On`), diễn tập đọc SỔ (dòng cut_budget PLANNED cùng ván
+  `-c{cycle}`) → diễn tập cũng đi đúng trình tự hạ → ngày sau tắt.
+- Cờ trên `AdsCampaign` (migration `20260924230000_ads_budget_cut_auto_topup`): `hubsellBudgetCutAt`,
+  `hubsellBudgetBefore` (số gốc, 0 = không giới hạn), `hubsellBudgetCut`, `hubsellBudgetCutLogId`, `hubsellBudgetCutOn`.
+- Trả ngân sách gốc (`restore_budget`): máy tự bật lại (ROAS đạt) → trả ngay sau resume; chủ shop bấm Bật lại trong
+  Hubsell → trả; chủ shop bấm **Trả lại ngân sách** (route `POST /campaigns/:id/restore-budget`, campaign vẫn chạy).
+  Sàn từ chối → giữ cờ, sổ có dòng FAILED.
+- Người tự đổi ngân sách trên Seller Center: sync thấy `budget ≠ hubsellBudgetCut` → `reconcileHubsellBudgetFlags`
+  xóa cờ, dòng hạ thành OVERRIDDEN, nhật ký "↩️ … Trợ lý thôi giữ số gốc". Người luôn thắng máy.
+- Mọi lệnh tính vào quota `maxActionsPerDay`; live ghi nhật ký vận hành "✂️ Trợ lý hạ ngân sách…".
+
+### 10.3 Ví tự nạp
+- Xung Shopee bước 6 (+1 call/gian/xung): `get_shop_toggle_info.auto_top_up` → `Channel.adsAutoTopUp`.
+- Thẻ "ví sắp cạn" (ops-alerts): auto_top_up true → severity **medium** + câu "sàn sẽ tự bù, chỉ cần chắc nguồn tiền
+  nạp"; false → high + "KHÔNG bật tự nạp — hết ví là quảng cáo ngừng hiển thị"; null → như trước. Dải vàng trên trang
+  Trợ lý cùng câu chữ (`wallet.autoTopUp`).
+
+### 10.4 UI
+- Cấu hình Trợ lý: công tắc "Hạ ngân sách trước, tắt sau" (chỉ Shopee) trong khối Tự thực thi.
+- Bảng: nhãn tím "Hubsell đã hạ ngân sách" dưới trạng thái; modal: khối tím số gốc → mức đã đặt + nút "Trả lại ngân
+  sách"; Sổ hành động: "Máy đã hạ ngân sách" / "Diễn tập hạ ngân sách" / "Seller đã đổi ngân sách" / "Máy đã trả ngân sách".
+
+### 10.5 Kiểm chứng
+- Diễn tập trên DB dev (gian demo, mode dry_run): lượt 1 → DEMO-5 pause (spike) + DEMO-3 `cut_budget` PLANNED
+  "200.000₫ → 109.000₫ = 70% chi tiêu TB (155.000₫)"; lượt 2 cùng ngày → không thêm dòng (skippedDone 1). UI: nhãn +
+  khối modal + nút Trả lại (bấm → lỗi thật "Gian chưa ủy quyền Hubsell Ads", đúng vì demo không có token).
+- 626 test backend pass (+13 mới), tsc + eslint sạch.
+- **CHƯA BẮN SỐNG** `change_budget` trên shop thật: lần đầu ở mode live trên ANO/DarkMan là lần xác minh (lỗi sàn
+  ghi nguyên văn). ANO/DarkMan hiện dry_run → sổ sẽ hiện "Diễn tập hạ ngân sách" trước khi anh chuyển live.

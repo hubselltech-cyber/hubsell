@@ -855,7 +855,7 @@ function adsDeepLink(
 export function buildShopeeAdsAssistantAlerts(
   shop: { channelId: string; shopName: string },
   groups: ShopeeAdsScenarioGroups,
-  wallet: { balance: number; hoursLeft: number | null } | null,
+  wallet: { balance: number; hoursLeft: number | null; autoTopUp?: boolean | null } | null,
   platform: AdsAlertPlatform = ADS_ALERT_SHOPEE
 ): DetectedAlert[] {
   const alerts: DetectedAlert[] = [];
@@ -917,12 +917,22 @@ export function buildShopeeAdsAssistantAlerts(
     wallet.hoursLeft != null &&
     wallet.hoursLeft < ADS_WALLET_LOW_HOURS
   ) {
+    // ĐỢT B: cờ auto_top_up của sàn (get_shop_toggle_info) quyết mức báo — đã bật
+    // tự nạp thì sàn tự bù, chỉ cần biết (medium); KHÔNG tự nạp thì cạn là ngừng
+    // hiển thị (high). null = chưa đọc được cờ → như trước.
+    const hours = Math.max(1, Math.round(wallet.hoursLeft));
+    const autoTopUp = wallet.autoTopUp ?? null;
     alerts.push({
       ...base,
       type: "ads-low-balance",
-      severity: "high",
+      severity: autoTopUp === true ? "medium" : "high",
       title: `Ví ${platform.label} Ads gian "${shop.shopName}" sắp cạn — còn ${vnd(wallet.balance)}`,
-      summary: `Với tốc độ đốt hiện tại, ví quảng cáo dự kiến cạn trong ~${Math.max(1, Math.round(wallet.hoursLeft))} giờ nữa — chiến dịch sẽ dừng giữa chừng nếu không nạp thêm.`,
+      summary:
+        autoTopUp === true
+          ? `Với tốc độ đốt hiện tại, ví quảng cáo dự kiến cạn trong ~${hours} giờ nữa. Gian đang BẬT tự nạp trên ${platform.label} nên sàn sẽ tự bù — chỉ cần chắc nguồn tiền nạp còn đủ.`
+          : autoTopUp === false
+            ? `Với tốc độ đốt hiện tại, ví quảng cáo dự kiến cạn trong ~${hours} giờ nữa. Gian KHÔNG bật tự nạp — hết ví là quảng cáo ngừng hiển thị. Nạp thêm hoặc bật tự nạp trên ${platform.label}.`
+            : `Với tốc độ đốt hiện tại, ví quảng cáo dự kiến cạn trong ~${hours} giờ nữa — chiến dịch sẽ dừng giữa chừng nếu không nạp thêm.`,
       payload: {
         kind: "navigate",
         href: `${platform.path}?channelId=${shop.channelId}`,
@@ -1011,11 +1021,11 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
     // ---- Ví ads — ĐỌC TỪ DB (xung ads ghi mỗi 30'/60', docs/ADS-NHIP-CANH-BAO.md).
     // Trước 12/09 là call sống mỗi lượt quét; nay 0 call ở đây, số dư tươi
     // ≤ nhịp xung và cùng độ tươi với spendToday (ước "còn N giờ" hết lệch). ----
-    let wallet: { balance: number; hoursLeft: number | null } | null = null;
+    let wallet: { balance: number; hoursLeft: number | null; autoTopUp: boolean | null } | null = null;
     let lazadaWalletEmpty = false;
     const walletRow = await prisma.channel.findUnique({
       where: { id: ch.id },
-      select: { adsWalletBalance: true, adsWalletSyncedAt: true },
+      select: { adsWalletBalance: true, adsWalletSyncedAt: true, adsAutoTopUp: true },
     });
     const balance = walletRow?.adsWalletBalance != null ? Number(walletRow.adsWalletBalance) : null;
     if (isLazada) {
@@ -1025,6 +1035,7 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
     } else if (balance != null && Number.isFinite(balance)) {
       wallet = {
         balance,
+        autoTopUp: walletRow?.adsAutoTopUp ?? null,
         hoursLeft: estimateAdsWalletHoursLeft({
           balance,
           spendToday: signals.reduce((s, c) => s + c.spendToday, 0),

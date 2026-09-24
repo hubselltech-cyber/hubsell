@@ -457,6 +457,9 @@ model Channel {
   /// Số dư ví ads sàn báo ở xung gần nhất (Shopee: total_balance; Lazada: 0 = cờ hết tiền, null = không rõ).
   adsWalletBalance       Decimal?  @db.Decimal(14, 2)
   adsWalletSyncedAt      DateTime?
+  /// ĐỢT B (24/09/2026): cờ auto_top_up của ví ads Shopee (get_shop_toggle_info) — true = sàn tự nạp,
+  /// cảnh báo ví cạn hạ mức; false = KHÔNG tự nạp, cạn là quảng cáo ngừng; null = chưa đọc / Lazada.
+  adsAutoTopUp           Boolean?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
   syncLockedAt           DateTime?
 
@@ -528,6 +531,15 @@ model AdsCampaign {
   hubsellPauseWindow String    @default("") /// cửa sổ luật đã kích (today|3d|7d|30d) — xét bật lại trên đúng cửa sổ này
   hubsellPauseCycle  Int       @default(0) /// số ván — nằm trong referenceId chống lặp; tăng mỗi lần người/máy bật lại
   hubsellResumedOn   String    @default("") /// "YYYY-MM-DD" (VN) máy tự bật lại gần nhất — hôm đó không tắt lại nữa (1 vòng/ngày)
+
+  /// ĐỢT B (24/09/2026) — HẠ NGÂN SÁCH TRƯỚC, TẮT SAU: Trợ lý hạ ngân sách ngày (change_budget) là
+  /// nấc đầu khi campaign lỗ; ngày sau vẫn lỗ mới tạm dừng. Cờ ghi số gốc để bật lại trả đúng số cũ,
+  /// người tự đổi ngân sách trên sàn (sync thấy budget ≠ hubsellBudgetCut) → xóa cờ, coi là người quyết.
+  hubsellBudgetCutAt    DateTime?
+  hubsellBudgetBefore   Decimal?  @db.Decimal(14, 2) /// ngân sách ngày TRƯỚC khi Hubsell hạ (0 = không giới hạn)
+  hubsellBudgetCut      Decimal?  @db.Decimal(14, 2) /// mức Hubsell đã đặt — so với số sàn trả để phát hiện người đổi
+  hubsellBudgetCutLogId String? /// dòng AdsActionLog của lệnh hạ — tra lý do/giờ
+  hubsellBudgetCutOn    String    @default("") /// "YYYY-MM-DD" (VN) hạ gần nhất trong ván này — hôm đó không tắt tiếp
 
   /// ĐỢT D (17/09/2026): campaign TẠO TỪ HUBSELL (nút "Chạy ads SP này") — ghi
   /// nguồn tạo + ảnh chụp đề xuất lúc tạo (mục tiêu, ngân sách, điểm, lý do) để

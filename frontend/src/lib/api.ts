@@ -6199,7 +6199,12 @@ export interface ShopeeAssistantConfig {
   spike: { enabled: boolean; dayMultiple: number; minTodaySpend: number };
   grace: { enabled: boolean; minOrders7d: number };
   /** GĐ3 — tự thực thi: off | dry_run (diễn tập ghi sổ) | live (gọi sàn thật). */
-  autoExecute: { mode: "off" | "dry_run" | "live"; maxActionsPerDay: number };
+  autoExecute: {
+    mode: "off" | "dry_run" | "live";
+    maxActionsPerDay: number;
+    /** Đợt B: campaign lỗ thì hạ ngân sách ngày trước, ngày sau vẫn lỗ mới tạm dừng (chỉ Shopee). */
+    cutBudgetFirst: boolean;
+  };
 }
 
 /** Một dòng SỔ HÀNH ĐỘNG của Trợ lý (GĐ3). */
@@ -6229,6 +6234,17 @@ export function resumeShopeeAdsCampaign(
 ) {
   return apiFetch<{ message: string; status: string }>(
     `/api/ads/${platform}/campaigns/${campaignRowId}/resume`,
+    { method: "POST" }
+  );
+}
+
+/** Đợt B: chủ shop trả lại ngân sách gốc cho campaign Trợ lý đã hạ (lệnh thật lên sàn, chỉ Shopee). */
+export function restoreShopeeAdsBudget(
+  campaignRowId: string,
+  platform: "shopee" | "lazada" = "shopee"
+) {
+  return apiFetch<{ message: string; budget: number | null }>(
+    `/api/ads/${platform}/campaigns/${campaignRowId}/restore-budget`,
     { method: "POST" }
   );
 }
@@ -6574,6 +6590,9 @@ export interface ShopeeAdsCampaignRow {
   /** Khác null = chính Trợ lý Hubsell đã tạm dừng campaign này (chưa ai bật lại):
    *  nhãn "Hubsell tạm dừng" + nút Bật lại. null = đang chạy, hoặc người/sàn tắt. */
   hubsellPause: { at: string; window: string; reasons: string[] } | null;
+  /** Đợt B: Trợ lý đã hạ ngân sách ngày (before = số gốc, 0 = không giới hạn; cut = mức đã đặt) —
+   *  null = không hạ / người đã tự đổi trên sàn / đã trả lại. */
+  hubsellBudgetCut?: { at: string; before: number; cut: number } | null;
 }
 
 export interface ShopeeAdsSummary {
@@ -6608,7 +6627,7 @@ export interface ShopeeAdsDashboard {
   /** Ngày sớm nhất gian có số hiệu suất ("yyyy-mm-dd") — null khi chưa có dòng nào. */
   perfSince: string | null;
   /** Ví ads đọc từ DB — xung ads ghi mỗi 30 phút (syncedAt = lần đọc gần nhất). Chỉ Shopee có số dư. */
-  wallet: { balance: number; syncedAt?: string | null } | null;
+  wallet: { balance: number; syncedAt?: string | null; autoTopUp?: boolean | null } | null;
   /** Lazada: true = sàn báo ví ads HẾT TIỀN trên campaign đang bật (cờ adAccountBalanceStatus) — quảng cáo đang ngừng hiển thị. */
   walletEmpty?: boolean;
   /** Liên kết app Hubsell Ads của gian đang chọn — null với Lazada / không có gian. */

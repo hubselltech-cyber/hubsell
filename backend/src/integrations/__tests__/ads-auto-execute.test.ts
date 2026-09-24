@@ -92,6 +92,7 @@ describe("normalizeAssistantConfig — khối autoExecute (GĐ3)", () => {
     expect(DEFAULT_SHOPEE_ASSISTANT_CONFIG.autoExecute).toEqual({
       mode: "off",
       maxActionsPerDay: 5,
+      cutBudgetFirst: true, // đợt B 24/09: hạ ngân sách trước, tắt sau
     });
     expect(normalizeAssistantConfig(null).autoExecute.mode).toBe("off");
   });
@@ -105,7 +106,7 @@ describe("normalizeAssistantConfig — khối autoExecute (GĐ3)", () => {
     ).toBe("dry_run");
     expect(
       normalizeAssistantConfig({ hard: { enabled: false } }).autoExecute
-    ).toEqual({ mode: "off", maxActionsPerDay: 5 });
+    ).toEqual({ mode: "off", maxActionsPerDay: 5, cutBudgetFirst: true });
   });
 });
 

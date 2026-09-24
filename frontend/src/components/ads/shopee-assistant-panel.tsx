@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { HintIcon } from "@/components/finance/hint-icon";
 import { Input } from "@/components/ui/input";
 import { Money } from "@/components/ui/money";
 import { Switch } from "@/components/ui/switch";
@@ -175,6 +176,7 @@ export function ShopeeAssistantModal({
   campaign,
   onDecide,
   onResume,
+  onRestoreBudget,
   onSetTarget,
   onClose,
   deciding,
@@ -185,6 +187,8 @@ export function ShopeeAssistantModal({
   onDecide: (decision: ShopeeAssistantDecision) => void;
   /** Bật lại ngay campaign Trợ lý đã tạm dừng (lệnh thật lên sàn). */
   onResume?: () => void;
+  /** Đợt B: trả lại ngân sách gốc cho campaign Trợ lý đã hạ (lệnh thật, chỉ Shopee). */
+  onRestoreBudget?: () => void;
   /** Đợt A: nâng mục tiêu ROAS trên sàn lên `target` (lệnh thật, chỉ Shopee). */
   onSetTarget?: (target: number) => void;
   onClose: () => void;
@@ -303,6 +307,23 @@ export function ShopeeAssistantModal({
                     <li key={i}>{r}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Đợt B: Trợ lý đã hạ ngân sách ngày — nói rõ số gốc và cách trả lại */}
+            {campaign.hubsellBudgetCut && (
+              <div className="flex flex-wrap items-start gap-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+                <SlidersHorizontal className="mt-0.5 size-5 shrink-0 text-violet-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">Trợ lý đã hạ ngân sách ngày</p>
+                  <p className="mt-0.5">
+                    Lúc{" "}
+                    {new Date(campaign.hubsellBudgetCut.at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
+                    : {campaign.hubsellBudgetCut.before > 0 ? formatVND(campaign.hubsellBudgetCut.before) : "không giới hạn"} →{" "}
+                    <b>{formatVND(campaign.hubsellBudgetCut.cut)}</b> vì chiến dịch đang lỗ. Ngày sau vẫn lỗ Trợ lý mới tạm dừng;
+                    bật lại (máy hoặc anh/chị) sẽ trả số cũ. Tự đổi ngân sách trên Seller Center thì Trợ lý thôi giữ số gốc.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -562,6 +583,19 @@ export function ShopeeAssistantModal({
                   Bật lại ngay
                 </Button>
               )}
+              {/* Đợt B: campaign vẫn chạy với ngân sách Trợ lý đã hạ — trả số gốc ngay tại đây. */}
+              {campaign.hubsellBudgetCut && !campaign.hubsellPause && onRestoreBudget && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                  disabled={deciding}
+                  onClick={onRestoreBudget}
+                  title={`Trả ngân sách ngày về ${campaign.hubsellBudgetCut.before > 0 ? formatVND(campaign.hubsellBudgetCut.before) : "không giới hạn"} (số trước khi Trợ lý hạ) — lệnh thật lên sàn.`}
+                >
+                  Trả lại ngân sách
+                </Button>
+              )}
               {actionable && !a.decisionActive && (
                 <>
                   <Button
@@ -773,6 +807,21 @@ export function ShopeeAssistantConfigCard({
                 onChange={(v) => patch("autoExecute", { maxActionsPerDay: v })}
                 disabled={!draft.enabled || draft.autoExecute.mode === "off"}
               />
+              {/* Đợt B (24/09): nấc hạ ngân sách trước khi tắt — chỉ Shopee có lệnh đổi ngân sách. */}
+              {platformLabel === "Shopee" && (
+                <label className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-slate-600">
+                    Hạ ngân sách trước, tắt sau
+                    <HintIcon hint="Chiến dịch lỗ (Đề xuất tạm dừng) thì lần đầu Trợ lý chỉ HẠ ngân sách ngày về max(50% ngân sách, 70% chi tiêu trung bình ngày) để giữ chiến dịch sống, không mất học máy; ngày sau vẫn lỗ mới tạm dừng. Bật lại thì trả ngân sách cũ. Vọt chi vẫn tắt ngay. Tắt cờ này = tắt ngay như trước." />
+                  </span>
+                  <Switch
+                    checked={draft.autoExecute.cutBudgetFirst}
+                    onCheckedChange={(v) => patch("autoExecute", { cutBudgetFirst: v })}
+                    disabled={!draft.enabled || draft.autoExecute.mode === "off"}
+                    aria-label="Hạ ngân sách trước, tắt sau"
+                  />
+                </label>
+              )}
               {draft.autoExecute.mode === "live" && (
                 <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">
                   ⚠ Chế độ THẬT: Trợ lý sẽ gọi lệnh tạm dừng lên {platformLabel}.
@@ -895,6 +944,19 @@ function actionStatusMeta(l: ShopeeAdsActionLogRow): { label: string; className:
         className: "bg-emerald-500 text-white",
       };
     if (l.status === "PLANNED") return { label: "Diễn tập bật lại", className: "bg-sky-100 text-sky-700" };
+  }
+  // Đợt B: hạ / trả ngân sách — cùng status nhưng nghĩa khác lệnh tạm dừng.
+  if (l.action === "cut_budget") {
+    if (l.status === "SUCCESS") return { label: "Máy đã hạ ngân sách", className: "bg-violet-600 text-white" };
+    if (l.status === "PLANNED") return { label: "Diễn tập hạ ngân sách", className: "bg-sky-100 text-sky-700" };
+    if (l.status === "OVERRIDDEN") return { label: "Seller đã đổi ngân sách", className: "bg-violet-100 text-violet-700" };
+  }
+  if (l.action === "restore_budget") {
+    if (l.status === "SUCCESS")
+      return {
+        label: l.mode === "manual" ? "Seller trả ngân sách (Hubsell)" : "Máy đã trả ngân sách",
+        className: "bg-emerald-500 text-white",
+      };
   }
   return ACTION_STATUS_META[l.status] ?? { label: l.status, className: "bg-slate-100 text-slate-500" };
 }

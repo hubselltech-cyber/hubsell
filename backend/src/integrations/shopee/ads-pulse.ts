@@ -23,7 +23,7 @@
 import type { Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { resolveShopeeAdsAccess } from "../hubsell-ads";
-import { getAdsTotalBalance } from "./client";
+import { getAdsShopToggleInfo, getAdsTotalBalance } from "./client";
 import {
   fetchShopeeCampaignRefs,
   upsertShopeeCampaignPerf,
@@ -109,6 +109,27 @@ export async function pulseShopeeAds(
   } catch (err) {
     console.warn(
       `[Ads-pulse] Ví ads Shopee "${channel.shopName}" không đọc được:`,
+      (err as Error).message
+    );
+  }
+
+  // 6. ĐỢT B — cờ ví TỰ NẠP (1 call): ví cạn mà không tự nạp → cảnh báo cao; đã
+  // bật tự nạp → hạ mức (cắt cảnh báo ví cạn giả). Lỗi không chặn gì.
+  try {
+    const tg = await getAdsShopToggleInfo(
+      { accessToken: access.accessToken, shopId: access.shopId },
+      access.cfg
+    );
+    const autoTopUp = tg.response?.auto_top_up;
+    if (typeof autoTopUp === "boolean") {
+      await prisma.channel.update({
+        where: { id: channel.id },
+        data: { adsAutoTopUp: autoTopUp },
+      });
+    }
+  } catch (err) {
+    console.warn(
+      `[Ads-pulse] Cờ ví tự nạp Shopee "${channel.shopName}" không đọc được:`,
       (err as Error).message
     );
   }

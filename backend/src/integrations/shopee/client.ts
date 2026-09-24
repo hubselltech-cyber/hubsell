@@ -1735,6 +1735,9 @@ export async function editManualProductAdsRaw(
     referenceId: string;
     /** Kèm khi editAction = change_roas_target (Shopee lấy 1 số lẻ). */
     roasTarget?: number;
+    /** Kèm khi editAction = change_budget — docs (đọc 24/09): tham số `budget` float =
+     *  ngân sách NGÀY; sàn tự chặn mức không hợp lệ (ads.campaign.error_daily_budget_range). */
+    budget?: number;
   },
   cfg: ShopeeConfig = getShopeeConfig()
 ): Promise<ShopeeEnvelope & { response?: unknown }> {
@@ -1763,6 +1766,7 @@ export async function editManualProductAdsRaw(
       campaign_id: Number(params.campaignId),
       edit_action: params.editAction,
       ...(params.roasTarget != null ? { roas_target: params.roasTarget } : {}),
+      ...(params.budget != null ? { budget: params.budget } : {}),
     }),
   });
   return (await res.json()) as ShopeeEnvelope & { response?: unknown };
@@ -1919,6 +1923,25 @@ export async function createManualProductAdsRaw(
     }),
   });
   return (await res.json()) as ShopeeEnvelope & { response?: unknown };
+}
+
+export interface ShopeeAdsShopToggleData extends ShopeeEnvelope {
+  response?: { data_timestamp?: number; auto_top_up?: boolean; campaign_surge?: boolean };
+}
+
+/** ĐỢT B — cờ cấp shop (docs get_shop_toggle_info, đọc 24/09): ví có TỰ NẠP không. */
+export async function getAdsShopToggleInfo(
+  params: { accessToken: string; shopId: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeAdsShopToggleData> {
+  return callShopGet<ShopeeAdsShopToggleData>(
+    SHOPEE_PATHS.adsShopToggleInfo,
+    params.accessToken,
+    params.shopId,
+    [],
+    "get_shop_toggle_info",
+    cfg
+  );
 }
 
 /** Số dư ví quảng cáo real-time (read-only) — cảnh báo sắp hết tiền ads. */

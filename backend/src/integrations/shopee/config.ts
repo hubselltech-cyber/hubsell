@@ -100,6 +100,8 @@ export const SHOPEE_PATHS = {
   adsCampaignHourlyPerf: "/api/v2/ads/get_product_campaign_hourly_performance",
   /** Số dư ví quảng cáo real-time. */
   adsTotalBalance: "/api/v2/ads/get_total_balance",
+  /** ĐỢT B (24/09) — cờ cấp shop: auto_top_up (ví tự nạp) + campaign_surge. 1 call/gian/xung. */
+  adsShopToggleInfo: "/api/v2/ads/get_shop_toggle_info",
   /** GĐ3 — sửa Manual Product Ads. Enum edit_action đã đọc docs 14/09 (start|pause|resume|stop|
    *  delete|change_budget|change_duration|change_smart_creative|change_location|
    *  change_enhanced_cpc|change_roas_target). Đã bắn SỐNG: pause, resume (14/09). Chưa bắn sống:

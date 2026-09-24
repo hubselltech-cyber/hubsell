@@ -57,7 +57,65 @@ export async function reconcileHubsellPauseFlags(channelId: string): Promise<Rec
       },
     });
   }
+  // ĐỢT B: người tự đổi ngân sách trên sàn sau khi Hubsell hạ → xóa cờ, coi là người quyết.
+  await reconcileHubsellBudgetFlags(channelId);
   return { overridden: resumedByHuman.length };
+}
+
+/**
+ * ĐỢT B (24/09) — campaign còn cờ hạ ngân sách mà số sàn vừa đồng bộ KHÁC mức
+ * Hubsell đã đặt = người đã tự đổi ngân sách trên Seller Center → xóa cờ (không
+ * còn "số gốc" để trả), dòng lệnh hạ thành OVERRIDDEN, ghi nhật ký. Không gọi sàn.
+ */
+export async function reconcileHubsellBudgetFlags(channelId: string): Promise<number> {
+  const rows = await prisma.adsCampaign.findMany({
+    where: { channelId, hubsellBudgetCutAt: { not: null } },
+    select: {
+      id: true,
+      name: true,
+      campaignId: true,
+      budget: true,
+      hubsellBudgetCut: true,
+      hubsellBudgetCutLogId: true,
+      channel: { select: { userId: true, shopName: true } },
+    },
+  });
+  let overridden = 0;
+  for (const row of rows) {
+    const cut = row.hubsellBudgetCut != null ? Number(row.hubsellBudgetCut) : null;
+    if (cut == null || Math.round(Number(row.budget)) === Math.round(cut)) continue;
+    overridden++;
+    await clearHubsellBudgetFlag(row.id);
+    if (row.hubsellBudgetCutLogId) {
+      await prisma.adsActionLog.updateMany({
+        where: { id: row.hubsellBudgetCutLogId, status: "SUCCESS" },
+        data: { status: "OVERRIDDEN" },
+      });
+    }
+    await prisma.opsActivity.create({
+      data: {
+        ownerId: row.channel.userId,
+        tag: "ads",
+        message: `↩️ Ngân sách chiến dịch "${row.name || `#${row.campaignId}`}" (gian "${row.channel.shopName}") đã được đổi trên Seller Center sau khi Trợ lý hạ — Trợ lý thôi giữ số gốc, coi là quyết định của anh/chị.`,
+      },
+    });
+  }
+  return overridden;
+}
+
+/** Xóa cờ hạ ngân sách (người đổi trên sàn, máy/người đã trả lại). */
+export async function clearHubsellBudgetFlag(rowId: string, extra: { budget?: number } = {}): Promise<void> {
+  await prisma.adsCampaign.update({
+    where: { id: rowId },
+    data: {
+      hubsellBudgetCutAt: null,
+      hubsellBudgetBefore: null,
+      hubsellBudgetCut: null,
+      hubsellBudgetCutLogId: null,
+      hubsellBudgetCutOn: "",
+      ...(extra.budget != null ? { budget: extra.budget } : {}),
+    },
+  });
 }
 
 /** Chế độ ghi sổ cho thao tác NGOÀI Hubsell — đối chứng khiếu nại (anh Trung 14/09). */

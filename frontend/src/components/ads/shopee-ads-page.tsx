@@ -55,6 +55,7 @@ import {
   getToken,
   saveShopeeAssistantConfig,
   requestAdsRefresh,
+  restoreShopeeAdsBudget,
   resumeShopeeAdsCampaign,
   setShopeeAdsRoasTarget,
   type AdsAssistantScorecard,
@@ -500,6 +501,25 @@ export function ShopeeAdsPage({
     }
   }
 
+  // Đợt B: trả lại ngân sách gốc cho campaign Trợ lý đã hạ (lệnh thật, chỉ Shopee).
+  async function restoreBudget() {
+    const campaign = data?.campaigns.find((c) => c.id === detailId);
+    if (!campaign || deciding) return;
+    setDeciding(true);
+    try {
+      const r = await restoreShopeeAdsBudget(campaign.id, platform);
+      setDetailId(null);
+      setSyncNote(
+        `Đã trả lại ngân sách chiến dịch "${campaign.name}" về ${r.budget != null && r.budget > 0 ? formatVND(r.budget) : "không giới hạn"}.`
+      );
+      await load(channelId, range);
+    } catch (err) {
+      setSyncNote(`Trả lại ngân sách lỗi: ${(err as Error).message}`);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
   async function saveConfig(config: ShopeeAssistantConfig) {
     if (!channelId || savingConfig) return;
     setSavingConfig(true);
@@ -753,8 +773,12 @@ export function ShopeeAdsPage({
             <Wallet className="mt-0.5 size-5 shrink-0 text-amber-600" />
             <p>
               Ví quảng cáo chỉ còn <b>{formatVND(wallet.balance)}</b> — thấp hơn
-              2 ngày chi tiêu trung bình. Nạp thêm để chiến dịch không bị dừng
-              giữa chừng.
+              2 ngày chi tiêu trung bình.{" "}
+              {wallet.autoTopUp === true
+                ? `Gian đang bật tự nạp trên ${meta.label} nên sàn sẽ tự bù — chỉ cần chắc nguồn tiền nạp còn đủ.`
+                : wallet.autoTopUp === false
+                  ? `Gian KHÔNG bật tự nạp — hết ví là quảng cáo ngừng hiển thị. Nạp thêm hoặc bật tự nạp trên ${meta.label}.`
+                  : "Nạp thêm để chiến dịch không bị dừng giữa chừng."}
             </p>
           </div>
         )}
@@ -1104,6 +1128,7 @@ export function ShopeeAdsPage({
           campaign={detailCampaign}
           onDecide={(d) => void decideCampaign(d)}
           onResume={() => void resumeCampaign()}
+          onRestoreBudget={() => void restoreBudget()}
           onSetTarget={(t) => void setRoasTarget(t)}
           onClose={() => setDetailId(null)}
           deciding={deciding}
@@ -1585,6 +1610,16 @@ function buildCampaignColumns(
             {c.lossBeforeAds && (
               <Badge variant="outline" className="border-rose-300 text-rose-600">
                 SKU lỗ trước ads
+              </Badge>
+            )}
+            {/* Đợt B: Trợ lý đã hạ ngân sách ngày — bấm dòng để xem số gốc / trả lại. */}
+            {c.hubsellBudgetCut && (
+              <Badge
+                variant="outline"
+                className="border-violet-300 text-violet-700"
+                title={`Trợ lý hạ ngân sách ngày ${c.hubsellBudgetCut.before > 0 ? formatVND(c.hubsellBudgetCut.before) : "không giới hạn"} → ${formatVND(c.hubsellBudgetCut.cut)} vì đang lỗ. Bấm vào dòng để trả lại.`}
+              >
+                Hubsell đã hạ ngân sách
               </Badge>
             )}
           </div>

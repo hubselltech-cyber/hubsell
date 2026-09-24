@@ -126,6 +126,10 @@ export interface ShopeeAssistantConfig {
     mode: "off" | "dry_run" | "live";
     /** Trần hành động/ngày/gian — đệm dưới giới hạn sàn ~10 thao tác/item/ngày. */
     maxActionsPerDay: number;
+    /** ĐỢT B (24/09): campaign lỗ (pause_now) thì HẠ NGÂN SÁCH NGÀY trước (change_budget),
+     *  ngày sau vẫn lỗ mới tạm dừng; bật lại thì trả ngân sách cũ. Vọt chi (spike) vẫn
+     *  tắt ngay. Chỉ Shopee có lệnh đổi ngân sách; Lazada luôn tắt như cũ. */
+    cutBudgetFirst: boolean;
   };
 }
 
@@ -136,7 +140,7 @@ export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
   review: { enabled: true, dangerFactor: 1.1 },
   spike: { enabled: true, dayMultiple: 2, minTodaySpend: 100_000 },
   grace: { enabled: true, minOrders7d: 30 },
-  autoExecute: { mode: "off", maxActionsPerDay: 5 },
+  autoExecute: { mode: "off", maxActionsPerDay: 5, cutBudgetFirst: true },
 };
 
 /** Các mode tự thực thi hợp lệ (validate bản lưu/PUT). */
@@ -189,6 +193,7 @@ export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
         sect("autoExecute").maxActionsPerDay,
         d.autoExecute.maxActionsPerDay
       ),
+      cutBudgetFirst: bool(sect("autoExecute").cutBudgetFirst, d.autoExecute.cutBudgetFirst),
     },
   };
 }
@@ -494,4 +499,60 @@ export function assessDelivery(input: {
     return { status: "target_binding", ...base };
   }
   return null;
+}
+
+// ============================================================
+// ĐỢT B (24/09/2026) — HẠ NGÂN SÁCH TRƯỚC, TẮT SAU ("bleed control")
+//
+// Người chạy ads chuyên nghiệp tránh tắt campaign đang lỗ ngay lần đầu: tắt là
+// mất giai đoạn học máy + thứ hạng, bật lại phải học từ đầu. Nấc đầu là khóa
+// trần tiền mất: hạ ngân sách ngày, để campaign sống; ngày sau vẫn lỗ mới tắt.
+// Mức hạ (docs/ADS-SHOPEE-KHAI-THAC-API.md mục 3 đợt B, anh Trung duyệt 17/09):
+//   ngân sách mới = max(CUT_KEEP_RATIO × ngân sách hiện tại, CUT_SPEND_RATIO × chi
+//   tiêu TB ngày 7 ngày trước), làm tròn CUT_ROUND_VND. Hai tỷ lệ là MẶC ĐỊNH TỰ
+//   ĐẶT (không sàn nào công bố): giữ ≥ 50% để campaign còn phân phối, 70% chi
+//   tiêu thật để trần có nghĩa với campaign đang tiêu dưới ngân sách.
+// Ngân sách KHÔNG GIỚI HẠN (0) mà lỗ → đặt trần = 70% chi tiêu TB ngày (không có
+// chi tiêu để làm căn cứ thì không hạ, executor tắt như cũ). Mức tối thiểu của
+// sàn KHÔNG tự đoán: Shopee tự từ chối (ads.campaign.error_daily_budget_range),
+// lỗi ghi nguyên văn vào sổ.
+// ============================================================
+
+export const CUT_KEEP_RATIO = 0.5;
+export const CUT_SPEND_RATIO = 0.7;
+export const CUT_ROUND_VND = 1000;
+
+export interface BudgetCutPlan {
+  /** Ngân sách ngày mới (đồng, bội số CUT_ROUND_VND). */
+  newBudget: number;
+  /** Ngân sách hiện tại (0 = không giới hạn). */
+  budget: number;
+  avgDailySpend7d: number;
+  /** Căn cứ chọn mức — tiếng Việt kèm số, ghi sổ nguyên văn. */
+  basis: string;
+}
+
+export function planBudgetCut(input: { budget: number; avgDailySpend7d: number }): BudgetCutPlan | null {
+  const budget = Number(input.budget) || 0;
+  const avg = Number(input.avgDailySpend7d) || 0;
+  const round = (v: number) => Math.max(CUT_ROUND_VND, Math.round(v / CUT_ROUND_VND) * CUT_ROUND_VND);
+  if (budget <= 0) {
+    if (avg <= 0) return null; // không có chi tiêu làm căn cứ đặt trần
+    const newBudget = round(avg * CUT_SPEND_RATIO);
+    return {
+      newBudget,
+      budget,
+      avgDailySpend7d: avg,
+      basis: `Ngân sách đang KHÔNG giới hạn — đặt trần ${vnd(newBudget)}/ngày = ${Math.round(CUT_SPEND_RATIO * 100)}% chi tiêu trung bình ngày 7 ngày qua (${vnd(avg)}).`,
+    };
+  }
+  const keep = budget * CUT_KEEP_RATIO;
+  const bySpend = avg * CUT_SPEND_RATIO;
+  const newBudget = round(Math.max(keep, bySpend));
+  if (newBudget >= budget) return null; // không còn gì để hạ
+  const basis =
+    bySpend > keep
+      ? `Hạ ngân sách ngày ${vnd(budget)} → ${vnd(newBudget)} = ${Math.round(CUT_SPEND_RATIO * 100)}% chi tiêu trung bình ngày 7 ngày qua (${vnd(avg)}).`
+      : `Hạ ngân sách ngày ${vnd(budget)} → ${vnd(newBudget)} = ${Math.round(CUT_KEEP_RATIO * 100)}% ngân sách hiện tại (chi tiêu trung bình ngày ${vnd(avg)} thấp hơn mức này).`;
+  return { newBudget, budget, avgDailySpend7d: avg, basis };
 }
