@@ -299,7 +299,7 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
 5. **DarkMan chưa nối Hubsell Ads** (việc của anh, 1 phút trên trang Trợ lý quảng cáo).
 
 ### Từ đợt A (Mục tiêu ROAS đang lỗ) — đã live, còn treo
-6. **`change_roas_target` chưa bắn sống.** Nút "Nâng lên X" gọi lệnh thật; lần bấm đầu trên campaign đấu
+6. ✅ ĐÃ BẮN SỐNG 24/09 22:20 (route roas-target trên Túi Đeo Chéo Nam 12,2 → 12,3 → 12,2, sàn nhận cả hai, sổ 2 dòng manual) — ~~`change_roas_target` chưa bắn sống.~~ Nút "Nâng lên X" gọi lệnh thật; lần bấm đầu trên campaign đấu
    thầu tự động của ANO/DarkMan là lần xác minh (lỗi sàn ghi nguyên văn vào Sổ hành động).
 7. **Máy tự nâng mục tiêu** (executor) chưa làm — chỉ làm sau khi việc 6 xác minh OK và anh chốt luật.
 
