@@ -316,7 +316,7 @@ Mỗi việc ghi đủ: làm gì · đã có gì sẵn · bước đầu tiên k
 11. **Sửa từ khóa/giá thầu** (`edit_manual_product_ad_keywords`) — chỉ làm khi có seller thật dùng bảng đọc.
 
 ### Khác
-12. **GMS = GMV Max cấp shop:** chi tiêu GMS hiện KHÔNG vào bảng chiến dịch (chỉ nằm trong tổng chi cấp shop).
+12. ✅ ĐÃ CODE 24/09 (mục 12, chỉ đọc; ANO eligible chưa chạy) — **GMS = GMV Max cấp shop:** chi tiêu GMS hiện KHÔNG vào bảng chiến dịch (chỉ nằm trong tổng chi cấp shop).
     Bước đầu: probe `check_create_gms_product_campaign_eligibility` trên 3 shop nhà. Đây cũng là nơi duy nhất
     tính được hòa vốn theo đúng rổ ads (có `get_gms_item_performance` từng SP).
 13. **Trần gọi API theo app:** ticket Shopee 2098790879624904785 chờ vòng 2; khi qua ~800 gian chạy ads phải
@@ -494,3 +494,48 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
 
 ### 11.4 Còn treo
 - Ghi từ khóa (`edit_manual_product_ad_keywords`: add/delete/change_bid) — chỉ làm khi có seller thật dùng bảng đọc.
+
+
+## 12. GMS = GMV MAX CẤP SHOP — ĐÃ CODE (24/09/2026 đêm, anh Trung: "Làm nốt GMS đi em")
+
+### 12.1 Docs Shopee (đọc lại bằng Chrome anh 24/09) — điều làm thay đổi thiết kế
+- `check_create_gms_product_campaign_eligibility` (GET, không tham số): `is_eligible` + `reason` ∈ active_campaign
+  (shop ĐANG chạy GMS — cách DUY NHẤT biết qua API) | not_whitelisted | not_have_enough_sku | exclusive_with_other_campaign.
+- `get_gms_campaign_performance` / `get_gms_item_performance` (POST): theo KHOẢNG ngày `DD-MM-YYYY`, **start ≠ end**
+  (`error_same_start_end_dates` — KHÔNG có số theo ngày lẻ), ≤ 1 tháng, lùi ≤ 6 tháng; `campaign_id` bỏ trống = GMS
+  hiện có; báo cáo đủ expense/impression/clicks/broad_gmv/broad_order/direct_*/roi/cir/cpc/cr. Item perf phân trang ≤100.
+- `edit_gms_product_campaign` (POST): change_budget (`daily_budget`), change_duration, pause, resume, start,
+  change_roas_target (`roas_target` 0 = Auto Bidding, >0 = Custom ROAS, 1 số lẻ), `reference_id`. **Không có endpoint đọc
+  cấu hình** (ngân sách/mục tiêu/trạng thái) của GMS.
+- Probe prod ANO (route `gms/probe`): is_eligible **true**, reason null → đủ điều kiện nhưng **chưa chạy GMS**
+  (campaign_not_found); DarkMan chưa nối Hubsell Ads; đối chiếu 7 ngày trọn: tổng chi cấp shop = tổng chi campaign =
+  1.716.678đ (gap 0, đúng vì không có GMS). **Cú call GMS thứ 4 liên tiếp dính `ads_rate_limit_shop_api`** → sync giãn
+  1,5 s giữa các call GMS.
+
+### 12.2 Cách lưu (chốt từ docs, không ép vào bảng campaign)
+- Không có số theo ngày → KHÔNG đưa GMS vào `AdsCampaign/DailyPerf` (rule engine cửa sổ today/3d không áp được).
+  Bảng riêng `ads_gms_reports` (cửa sổ 7d / 30d ngày TRỌN, bỏ hôm nay) + `ads_gms_item_reports` (7d, từng SP có số),
+  `Channel.adsGmsStatus/adsGmsCheckedAt`. Migration `20260925010000_ads_gms`.
+- Sync ở lượt LỊCH SỬ ads (6h) `syncShopeeGms`: eligibility (1) → active: campaign 7d (1) + 30d (1) + items 7d (1–3
+  trang) ≈ 4 call/6h, giãn 1,5 s; không còn active → dọn báo cáo cũ. Test thuần `ads-gms.test.ts` (7 ca).
+- Dashboard `gms` (đọc DB): status, 2 cửa sổ, hòa vốn CẤP SHOP để tô màu (GMS phủ mọi SP). Route
+  `GET /api/ads/shopee/gms/items` ghép từng SP với **hòa vốn của chính SP** (bảng hòa vốn SP) — nơi duy nhất tính được
+  hòa vốn đúng rổ ads của GMV Max.
+- CHỈ ĐỌC: không hành động tự động, không nút ghi (edit_gms_product_campaign chưa bắn sống, chưa nối executor).
+
+### 12.3 UI
+- Khối "GMV Max cấp shop (GMS)" trên bảng chiến dịch khi status = active: 2 ô cửa sổ (chi, GMV, đơn, ROAS · hòa vốn
+  shop), câu nói thật "Shopee không xếp khoản này vào chiến dịch sản phẩm, chỉ có trong tổng chi cấp shop, không có số
+  từng ngày"; dòng đỏ khi ROAS < hòa vốn; nút **Xem từng sản phẩm** → dialog bảng SP (chi, đơn, GMV, ROAS, hòa vốn SP,
+  đỏ khi lỗ) + câu "SP lỗ thì loại khỏi GMV Max trên Seller Center — Hubsell chưa có lệnh ghi cho GMS".
+- status = eligible: một dòng mờ "đủ điều kiện nhưng chưa có chiến dịch GMS".
+
+### 12.4 Kiểm chứng
+- Soi local (gian demo, đặt tay status active + 2 báo cáo + 3 SP): khối hiện đúng, 7d ROAS 2,88x < hòa vốn shop 3,52x
+  → dòng đỏ; dialog 3 SP: 4,67x xanh, 1,56x và 0,5x đỏ so hòa vốn SP. tsc + eslint sạch; test backend +7.
+- **CHƯA có shop nhà nào chạy GMS** → đường "active" chưa soi bằng số thật; ANO bật GMV Max cấp shop trên Seller
+  Center thì lượt lịch sử kế tiếp (≤ 6h) sẽ có số, hoặc gọi `gms/probe` để xem ngay.
+
+### 12.5 Còn treo (không tự làm)
+- Ghi lên GMS (pause / change_budget / change_roas_target qua `edit_gms_product_campaign`) — có shop thật chạy GMS
+  mới probe rồi nối executor; loại SP lỗ khỏi GMS (`edit_gms_item_product_campaign`) cùng đợt.

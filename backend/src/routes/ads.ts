@@ -29,7 +29,7 @@ import {
 } from "../integrations/shopee/ads-auto-execute";
 import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
 import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
-import { probeShopeeGms } from "../integrations/shopee/ads-gms";
+import { getShopeeGmsItems, getShopeeGmsOverview, probeShopeeGms } from "../integrations/shopee/ads-gms";
 import {
   computeChannelAdsRecommendations,
   createCampaignFromRecommendation,
@@ -297,6 +297,16 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       });
       const perfSince = earliestPerf ? dateKey(earliestPerf.date) : null;
 
+      // GMS = GMV Max cấp shop (24/09): đọc DB (lượt lịch sử 6h ghi) — null khi chưa hỏi sàn / Lazada.
+      const gmsChannel =
+        platform === "shopee"
+          ? await prisma.channel.findUnique({
+              where: { id: selected.id },
+              select: { id: true, adsGmsStatus: true, adsGmsCheckedAt: true },
+            })
+          : null;
+      const gms = gmsChannel ? await getShopeeGmsOverview(gmsChannel, shopBreakeven) : null;
+
       const totals = campaigns.reduce(
         (acc, c) => {
           acc.spend += c.spend;
@@ -368,6 +378,13 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         rangeClamped: range.clamped,
         rangeMaxDays: ADS_RANGE_MAX_DAYS,
         perfSince,
+        gms: gms
+          ? {
+              ...gms,
+              checkedAt: gms.checkedAt?.toISOString() ?? null,
+              reports: gms.reports.map((r) => ({ ...r, syncedAt: r.syncedAt.toISOString() })),
+            }
+          : null,
         wallet,
         walletEmpty,
         adsApp,
@@ -530,6 +547,25 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           return;
         }
         res.json(await probeShopeeGms(channel));
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // GET /api/ads/shopee/gms/items?channelId= — từng SP trong GMV Max cấp shop (7 ngày trọn, DB)
+    // kèm hòa vốn của chính SP — SP lỗ thì seller loại khỏi GMV Max trên Seller Center (chưa có lệnh ghi).
+    router.get(`/${platform}/gms/items`, async (req: AuthRequest, res, next) => {
+      try {
+        const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+        const channel = await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName },
+        });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        const out = await getShopeeGmsItems(channel);
+        res.json({ ...out, syncedAt: out.syncedAt?.toISOString() ?? null });
       } catch (err) {
         next(err);
       }

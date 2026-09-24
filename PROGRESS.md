@@ -5,6 +5,19 @@
 
 ---
 
+## Phiên 24/09/2026 (đêm, 5) — Ads Shopee GMS = GMV MAX CẤP SHOP, chỉ đọc (anh Trung: "Làm nốt GMS đi em")
+
+Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 12. Tóm tắt:
+- **Docs + probe prod**: eligibility.reason active_campaign = cách duy nhất biết shop đang chạy GMS; báo cáo chỉ theo KHOẢNG ngày
+  (start ≠ end, không có số ngày lẻ); không có endpoint đọc cấu hình. ANO đủ điều kiện nhưng CHƯA chạy GMS; DarkMan chưa nối;
+  4 call GMS liên tiếp dính rate limit cấp shop → giãn 1,5 s.
+- **Code**: bảng riêng ads_gms_reports (7d/30d ngày trọn) + ads_gms_item_reports (7d) + Channel.adsGmsStatus; sync ở lượt lịch
+  sử 6h (~4 call); dashboard `gms` + route gms/items ghép hòa vốn từng SP; khối UI "GMV Max cấp shop" + dialog từng SP; dòng mờ
+  khi eligible. CHỈ ĐỌC, không ghi. Migration `20260925010000_ads_gms`.
+- Soi local bằng số đặt tay đủ ca lãi/lỗ; tsc + eslint sạch; test +7. Đường "active" chưa có số thật (shop nhà chưa chạy GMS).
+
+---
+
 ## Phiên 24/09/2026 (đêm, 4) — Ads Shopee ĐỢT C: TỪ KHÓA đọc được gì thì hiện, gợi ý có số (anh Trung: "Làm tiếp đợt C đi em")
 
 Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 11. Tóm tắt:

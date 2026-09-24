@@ -425,6 +425,8 @@ model Channel {
   adSpends              AdSpend[] // chi phí quảng cáo sàn theo ngày (sync từ Ads API)
   adsCampaigns          AdsCampaign[] // chiến dịch quảng cáo sản phẩm (sync từ Ads API)
   adsItemSignals        AdsItemSignal[] // tín hiệu thị trường theo SP cho Gợi ý chạy ads (đợt D)
+  adsGmsReports         AdsGmsReport[] // GMV Max cấp shop — báo cáo theo cửa sổ (24/09)
+  adsGmsItemReports     AdsGmsItemReport[]
   adsAssistantConfig    AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
   adsActionLogs         AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
   inventorySyncLogs     InventorySyncLog[] // nhật ký từng lượt đẩy tồn lên sàn
@@ -460,6 +462,11 @@ model Channel {
   /// ĐỢT B (24/09/2026): cờ auto_top_up của ví ads Shopee (get_shop_toggle_info) — true = sàn tự nạp,
   /// cảnh báo ví cạn hạ mức; false = KHÔNG tự nạp, cạn là quảng cáo ngừng; null = chưa đọc / Lazada.
   adsAutoTopUp           Boolean?
+  /// GMS = GMV Max CẤP SHOP (24/09/2026): kết quả check_create_gms_product_campaign_eligibility ở lượt lịch sử gần nhất —
+  /// "active" (shop ĐANG chạy GMS, reason active_campaign) | "eligible" | "not_whitelisted" | "not_have_enough_sku" |
+  /// "exclusive_with_other_campaign" | "error:<mã>"; null = chưa hỏi. Chi tiêu GMS KHÔNG nằm trong campaign sản phẩm.
+  adsGmsStatus           String?
+  adsGmsCheckedAt        DateTime?
   /// Worker nào đó đang cầm vé gian này (claim bằng UPDATE có điều kiện); cũ >15' coi như worker chết, gian được nhặt lại.
   syncLockedAt           DateTime?
 
@@ -679,6 +686,54 @@ model AdsItemSignal {
   @@unique([channelId, itemId])
   @@index([channelId])
   @@map("ads_item_signals")
+}
+
+/// GMS = GMV Max CẤP SHOP (24/09/2026) — báo cáo cấp chiến dịch theo CỬA SỔ ngày trọn (sàn không có số
+/// theo ngày lẻ: get_gms_campaign_performance đòi start ≠ end). Lượt lịch sử ads (6h) ghi đè 2 cửa sổ 7d / 30d.
+/// Chi tiêu này KHÔNG nằm trong AdsCampaign/DailyPerf — chỉ có trong AdSpend (tổng chi cấp shop).
+model AdsGmsReport {
+  id         String   @id @default(cuid())
+  channelId  String
+  windowKey  String // "7d" | "30d"
+  campaignId String? // GMS campaign_id sàn trả (không có endpoint đọc cấu hình)
+  startKey   String // "YYYY-MM-DD" ngày VN
+  endKey     String
+  expense    Decimal  @default(0) @db.Decimal(14, 2)
+  impression Int      @default(0)
+  clicks     Int      @default(0)
+  broadOrder Int      @default(0)
+  broadGmv   Decimal  @default(0) @db.Decimal(14, 2)
+  directOrder Int     @default(0)
+  directGmv  Decimal  @default(0) @db.Decimal(14, 2)
+  syncedAt   DateTime
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, windowKey])
+  @@map("ads_gms_reports")
+}
+
+/// Từng SP trong GMS (get_gms_item_performance, chỉ SP có số) — cửa sổ 7d; nơi duy nhất tính được
+/// hòa vốn theo đúng rổ ads của GMV Max (ghép với bảng hòa vốn SP).
+model AdsGmsItemReport {
+  id          String   @id @default(cuid())
+  channelId   String
+  windowKey   String // "7d"
+  itemId      String
+  expense     Decimal  @default(0) @db.Decimal(14, 2)
+  impression  Int      @default(0)
+  clicks      Int      @default(0)
+  broadOrder  Int      @default(0)
+  broadGmv    Decimal  @default(0) @db.Decimal(14, 2)
+  directOrder Int      @default(0)
+  directGmv   Decimal  @default(0) @db.Decimal(14, 2)
+  syncedAt    DateTime
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, windowKey, itemId])
+  @@index([channelId])
+  @@map("ads_gms_item_reports")
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.

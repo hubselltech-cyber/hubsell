@@ -6678,6 +6678,8 @@ export interface ShopeeAdsDashboard {
   rangeMaxDays: number;
   /** Ngày sớm nhất gian có số hiệu suất ("yyyy-mm-dd") — null khi chưa có dòng nào. */
   perfSince: string | null;
+  /** GMS = GMV Max cấp shop (24/09): null = chưa hỏi sàn / Lazada. Chi tiêu GMS KHÔNG nằm trong bảng
+   *  chiến dịch sản phẩm — chỉ có trong tổng chi cấp shop; sàn không có số theo ngày, chỉ theo cửa sổ. */
   /** Ví ads đọc từ DB — xung ads ghi mỗi 30 phút (syncedAt = lần đọc gần nhất). Chỉ Shopee có số dư. */
   wallet: { balance: number; syncedAt?: string | null; autoTopUp?: boolean | null } | null;
   /** Lazada: true = sàn báo ví ads HẾT TIỀN trên campaign đang bật (cờ adAccountBalanceStatus) — quảng cáo đang ngừng hiển thị. */
@@ -6692,6 +6694,61 @@ export interface ShopeeAdsDashboard {
   adsRefreshing?: boolean;
   /** Mốc số ads hiện có (ISO) — nút Làm mới so mốc này để biết lượt kéo mới xong. */
   adsSyncedAt?: string | null;
+  gms?: ShopeeGmsOverview | null;
+}
+
+export interface ShopeeGmsReportRow {
+  windowKey: "7d" | "30d";
+  /** Khoảng ngày sàn đã hỏi ("yyyy-mm-dd", ngày trọn, bỏ hôm nay). */
+  startKey: string;
+  endKey: string;
+  campaignId: string | null;
+  expense: number;
+  impression: number;
+  clicks: number;
+  broadOrder: number;
+  broadGmv: number;
+  directOrder: number;
+  directGmv: number;
+  roasBroad: number | null;
+  syncedAt: string;
+}
+
+export interface ShopeeGmsOverview {
+  /** active | eligible | not_whitelisted | not_have_enough_sku | exclusive_with_other_campaign | error:<mã> */
+  status: string;
+  checkedAt: string | null;
+  reports: ShopeeGmsReportRow[];
+  /** ROAS hòa vốn cấp shop để tô màu (GMS phủ mọi SP của gian). */
+  shopBreakevenRoas: number | null;
+}
+
+export interface ShopeeGmsItemRow {
+  itemId: string;
+  name: string;
+  expense: number;
+  clicks: number;
+  broadOrder: number;
+  broadGmv: number;
+  roasBroad: number | null;
+  /** ROAS hòa vốn của chính SP (bảng hòa vốn SP) — null khi thiếu giá vốn / chưa đủ đơn. */
+  breakevenRoas: number | null;
+  lossBeforeAds: boolean;
+}
+
+export interface ShopeeGmsItemsResponse {
+  windowKey: "7d";
+  startKey: string | null;
+  endKey: string | null;
+  syncedAt: string | null;
+  rows: ShopeeGmsItemRow[];
+}
+
+/** Từng SP trong GMV Max cấp shop (7 ngày trọn) kèm hòa vốn SP — đọc DB, không gọi sàn. */
+export function fetchShopeeGmsItems(channelId: string) {
+  return apiFetch<ShopeeGmsItemsResponse>(
+    `/api/ads/shopee/gms/items?channelId=${encodeURIComponent(channelId)}`
+  );
 }
 
 export interface AdsRefreshResult {

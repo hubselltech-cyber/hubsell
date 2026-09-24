@@ -89,6 +89,7 @@ import { isApiBudgetError } from "../services/api-budget";
 import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
 import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
 import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
+import { syncShopeeGms } from "../integrations/shopee/ads-gms";
 import { vnDateKey } from "../integrations/shopee/ads-insights";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
@@ -1007,6 +1008,22 @@ async function runAdsTier(channel: Channel): Promise<boolean> {
         `[Auto-sync] Lỗi lịch sử campaign Ads gian "${channel.shopName}" (app có thể chưa bật quyền Ads API):`,
         (err as Error).message
       );
+    }
+  }
+  // GMS = GMV Max cấp shop (24/09): eligibility + 2 cửa sổ + từng SP ≈ 4 call/6h, ăn theo lượt
+  // lịch sử. Lỗi ở đây không được làm hỏng lượt ads.
+  if (synced) {
+    try {
+      const g = await syncShopeeGms(channel);
+      if (g.status === "active") {
+        console.log(`[Ads-GMS] "${channel.shopName}": GMV Max cấp shop đang chạy — ${g.reports} cửa sổ, ${g.items} SP có số`);
+      }
+    } catch (err) {
+      if (isApiBudgetError(err)) {
+        console.warn(`[Ads-GMS] "${channel.shopName}" lùi lịch: ${err.message}`);
+      } else {
+        console.error(`[Ads-GMS] Lỗi GMV Max cấp shop gian "${channel.shopName}":`, (err as Error).message);
+      }
     }
   }
   // ĐỢT D: tín hiệu thị trường cho tab Gợi ý chạy ads — 1 lần/ngày/gian, ăn theo lượt
