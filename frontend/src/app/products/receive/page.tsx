@@ -37,6 +37,7 @@ import {
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
+import { locationLabel } from "@/lib/stock-locations";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
@@ -415,7 +416,7 @@ export default function ReceiveStockPage() {
                 {!isImport && <option value="">Tự trừ theo thứ tự ưu tiên</option>}
                 {locations.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name}
+                    {locationLabel(l)}
                   </option>
                 ))}
               </NativeSelect>

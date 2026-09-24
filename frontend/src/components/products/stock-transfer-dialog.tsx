@@ -24,6 +24,7 @@ import {
   type StockLocation,
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { locationLabel } from "@/lib/stock-locations";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +77,10 @@ export function StockTransferDialog({
   const toQty = qtyById.get(toId) ?? 0;
   const valid =
     Boolean(fromId && toId) && fromId !== toId && Number.isInteger(n) && n > 0 && n <= fromQty;
-  const nameOf = (id: string) => locations.find((l) => l.id === id)?.name ?? "—";
+  const nameOf = (id: string) => {
+    const l = locations.find((x) => x.id === id);
+    return l ? locationLabel(l) : "—";
+  };
   const sellableOf = (id: string) => locations.find((l) => l.id === id)?.sellable !== false;
   // Qua lại giữa kho bán và ô không bán thì tồn bán đổi → nói rõ trước khi chuyển.
   const saleDelta =
@@ -127,7 +131,7 @@ export function StockTransferDialog({
                 <option value="">— chọn —</option>
                 {locations.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
+                    {locationLabel(l)} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
                   </option>
                 ))}
               </NativeSelect>
@@ -141,7 +145,7 @@ export function StockTransferDialog({
                   .filter((l) => l.id !== fromId)
                   .map((l) => (
                     <option key={l.id} value={l.id}>
-                      {l.name} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
+                      {locationLabel(l)} ({formatNumber(qtyById.get(l.id) ?? 0)}){l.sellable ? "" : " · không bán"}
                     </option>
                   ))}
               </NativeSelect>

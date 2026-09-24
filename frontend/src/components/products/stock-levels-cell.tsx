@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ApiError, setStockLevel, type Product, type StockLocation } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
+import { locationLabel, locationTree } from "@/lib/stock-locations";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -83,9 +84,9 @@ export function StockLevelsCell({
               <span key={l.id} className="flex items-baseline justify-between gap-3">
                 <span
                   className={cn("truncate text-muted-foreground", !l.sellable && "italic")}
-                  title={l.sellable ? l.name : `${l.name} — không tính vào tồn bán`}
+                  title={l.sellable ? locationLabel(l) : `${locationLabel(l)} — không tính vào tồn bán`}
                 >
-                  {l.name}
+                  {locationLabel(l)}
                 </span>
                 <span className={cn("font-medium", (qtyById.get(l.id) ?? 0) < 0 && "text-rose-700")}>
                   {formatNumber(qtyById.get(l.id) ?? 0)}
@@ -114,12 +115,17 @@ export function StockLevelsCell({
           )}
         </p>
         <div className="divide-y">
-          {locations.map((l) => {
+          {locationTree(locations).map(({ loc: l, depth }) => {
             const q = qtyById.get(l.id) ?? 0;
             const editing = editingId === l.id;
             return (
               <div key={l.id} className="flex items-center gap-2 px-1 py-1.5 text-sm">
-                <span className={cn("min-w-0 flex-1 truncate", !l.sellable && "text-slate-500")}>
+                <span
+                  className={cn("min-w-0 flex-1 truncate", !l.sellable && "text-slate-500")}
+                  style={{ paddingLeft: depth * 12 }}
+                  title={locationLabel(l)}
+                >
+                  {depth > 0 && <span className="text-muted-foreground">› </span>}
                   {l.name}
                   {l.isDefault && <span className={cn(TEXT_SUB, "ml-1")}>(mặc định)</span>}
                   {!l.sellable && (

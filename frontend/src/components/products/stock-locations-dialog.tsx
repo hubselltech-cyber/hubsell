@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   ApiError,
   bulkCreateStockLocations,
@@ -39,18 +40,49 @@ import {
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { printPdfBlob } from "@/lib/print-labels";
+import { locationLabel, locationTree, parentOptions } from "@/lib/stock-locations";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 /**
  * HỘP "VỊ TRÍ CHỨA HÀNG" (đợt B 24/09/2026, khung anh Trung chốt 15/09).
  *
- * Kho nhỏ / kệ / ô đều là một thứ, khách tự đặt tên. Chưa có vị trí nào: chỉ
- * một ô "Tên vị trí" + nút Thêm — bấm là hệ thống tự sinh gốc "Kho chính" giữ
- * toàn bộ tồn hiện có, rồi tạo vị trí vừa nhập. Có rồi: danh sách theo THỨ TỰ
- * ƯU TIÊN trừ hàng (mũi tên lên/xuống), đổi tên, mã, đặt Mặc định / Nhận hoàn,
- * xóa (chặn khi còn hàng). Xóa hết = tắt tính năng, giao diện về như cũ.
+ * Kho nhỏ / kệ / ô đều là một thứ, khách tự đặt tên, xếp thành CÂY Kho › Kệ › Tầng
+ * (anh Trung 24/09 xem prod: kệ sinh ra phải nằm TRONG kho, không thành kho khác →
+ * mọi chỗ tạo có ô "Thuộc", danh sách thụt lề theo cây, mũi tên đổi chỗ trong cùng
+ * một cha). Chưa có vị trí nào: một ô tên + một nút — hệ thống tự sinh gốc "Kho chính"
+ * giữ toàn bộ tồn hiện có. Xóa hết = tắt tính năng, giao diện về như cũ.
  */
+/** Ô chọn cha dùng chung cho thêm / sinh hàng loạt / sửa (module scope — không tạo component trong render). */
+function ParentSelect({
+  id,
+  value,
+  onChange,
+  locations,
+  excludeId,
+  className,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  locations: StockLocation[];
+  excludeId?: string;
+  className?: string;
+}) {
+  return (
+    <NativeSelect id={id} value={value} onChange={(e) => onChange(e.target.value)} className={className}>
+      <option value="">— Ngang cấp kho (không thuộc kho nào) —</option>
+      {locationTree(parentOptions(locations, excludeId)).map(({ loc, depth }) => (
+        <option key={loc.id} value={loc.id}>
+          {"  ".repeat(depth)}
+          {depth > 0 ? "› " : ""}
+          {loc.name}
+        </option>
+      ))}
+    </NativeSelect>
+  );
+}
+
 export function StockLocationsDialog({
   open,
   onOpenChange,
@@ -64,14 +96,17 @@ export function StockLocationsDialog({
 }) {
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
-  // Sinh hàng loạt (đợt 2): "Kệ A[1-5]" — ẩn sau một nút, khách một kho không thấy.
+  const [newParent, setNewParent] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [pattern, setPattern] = useState("");
+  const [bulkParent, setBulkParent] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
+  const [editParent, setEditParent] = useState("");
   const enabled = locations.length > 0;
+  const tree = locationTree(locations);
 
   async function run<T extends { items: StockLocation[] }>(key: string, fn: () => Promise<T>) {
     setBusy(key);
@@ -94,7 +129,7 @@ export function StockLocationsDialog({
     const name = newName.trim();
     if (!name) return;
     const res = await run("add", () =>
-      createStockLocation({ name, code: newCode.trim() || undefined })
+      createStockLocation({ name, code: newCode.trim() || undefined, parentId: newParent || null })
     );
     if (res) {
       setNewName("");
@@ -102,31 +137,54 @@ export function StockLocationsDialog({
       toast.success(
         res.createdRoot
           ? `Đã bật vị trí chứa hàng: toàn bộ tồn hiện có nằm ở "${res.createdRoot.name}", thêm "${res.created.name}"`
-          : `Đã thêm "${res.created.name}"`
+          : `Đã thêm "${res.created.name}"${newParent ? ` trong ${labelOf(newParent)}` : ""}`
       );
     }
+  }
+
+  function labelOf(id: string) {
+    const l = locations.find((x) => x.id === id);
+    return l ? locationLabel(l) : "";
   }
 
   function startEdit(l: StockLocation) {
     setEditingId(l.id);
     setEditName(l.name);
     setEditCode(l.code ?? "");
+    setEditParent(l.parentId ?? "");
   }
 
   async function saveEdit(l: StockLocation) {
     const name = editName.trim();
     if (!name) return;
     const res = await run(`edit-${l.id}`, () =>
-      updateStockLocation(l.id, { name, code: editCode.trim() || null })
+      updateStockLocation(l.id, {
+        name,
+        code: editCode.trim() || null,
+        ...(editParent !== (l.parentId ?? "") ? { parentId: editParent || null } : {}),
+      })
     );
     if (res) setEditingId(null);
   }
 
-  async function move(index: number, dir: -1 | 1) {
-    const ids = locations.map((l) => l.id);
-    const j = index + dir;
-    if (j < 0 || j >= ids.length) return;
-    [ids[index], ids[j]] = [ids[j], ids[index]];
+  /** Đổi chỗ với anh em liền kề (cùng cha), rồi gửi lại toàn bộ thứ tự cây. */
+  async function move(l: StockLocation, dir: -1 | 1) {
+    const siblings = tree.filter((n) => (n.loc.parentId ?? null) === (l.parentId ?? null)).map((n) => n.loc);
+    const i = siblings.findIndex((s) => s.id === l.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= siblings.length) return;
+    const swapped = siblings.slice();
+    [swapped[i], swapped[j]] = [swapped[j], swapped[i]];
+    // Dựng lại thứ tự cây với nhóm anh em đã đổi chỗ.
+    const order = new Map(swapped.map((s, k) => [s.id, k]));
+    const reordered = locations
+      .slice()
+      .sort((a, b) => {
+        const sameGroup = (a.parentId ?? null) === (l.parentId ?? null) && (b.parentId ?? null) === (l.parentId ?? null);
+        if (sameGroup) return (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0);
+        return a.sortOrder - b.sortOrder;
+      });
+    const ids = locationTree(reordered.map((x, k) => ({ ...x, sortOrder: k }))).map((n) => n.loc.id);
     await run("order", () => reorderStockLocations(ids));
   }
 
@@ -134,11 +192,11 @@ export function StockLocationsDialog({
     e.preventDefault();
     const p = pattern.trim();
     if (!p) return;
-    const res = await run("bulk", () => bulkCreateStockLocations({ pattern: p }));
+    const res = await run("bulk", () => bulkCreateStockLocations({ pattern: p, parentId: bulkParent || null }));
     if (res) {
       setPattern("");
       toast.success(
-        `Đã sinh ${formatNumber(res.created)} vị trí` +
+        `Đã sinh ${formatNumber(res.created)} vị trí${bulkParent ? ` trong ${labelOf(bulkParent)}` : ""}` +
           (res.skipped.length ? ` · bỏ qua ${res.skipped.length} tên đã có` : "") +
           (res.createdRoot ? ` · tồn hiện có nằm ở "${res.createdRoot.name}"` : "")
       );
@@ -160,7 +218,6 @@ export function StockLocationsDialog({
   }
 
   async function toggleSellable(l: StockLocation) {
-    // Ô không bán = hàng lỗi / hàng hoàn chờ kiểm — không tính vào tồn bán, đơn không trừ ở đó.
     await run(`sell-${l.id}`, () => updateStockLocation(l.id, { sellable: !l.sellable }));
   }
 
@@ -169,7 +226,7 @@ export function StockLocationsDialog({
     const ok = window.confirm(
       last
         ? `Xóa "${l.name}" — vị trí cuối cùng — sẽ TẮT tính năng vị trí; tồn tổng giữ nguyên, bảng Hàng hóa về như cũ. Tiếp tục?`
-        : `Xóa vị trí "${l.name}"?`
+        : `Xóa vị trí "${locationLabel(l)}"?`
     );
     if (!ok) return;
     const res = await run(`del-${l.id}`, () => deleteStockLocation(l.id));
@@ -186,50 +243,50 @@ export function StockLocationsDialog({
           </DialogTitle>
           <DialogDescription>
             {enabled
-              ? "Đơn bán trừ hàng theo thứ tự ưu tiên từ trên xuống: vị trí nào đủ cả dòng thì lấy ở đó, không thì trừ lần lượt. Sàn chỉ nhận tổng."
+              ? "Kho › Kệ › Tầng xếp thành cây. Đơn bán trừ hàng theo thứ tự từ trên xuống: vị trí nào đủ cả dòng thì lấy ở đó, không thì trừ lần lượt. Sàn chỉ nhận tổng."
               : "Thuê thêm kho nhỏ, hay muốn biết hàng nằm kệ nào? Thêm một vị trí là đủ: tồn hiện có nằm ở “Kho chính”, vị trí mới bắt đầu từ 0."}
           </DialogDescription>
         </DialogHeader>
 
-        {/* ===== DANH SÁCH ===== */}
+        {/* ===== CÂY VỊ TRÍ ===== */}
         {enabled && (
-          <div className="overflow-hidden rounded-lg border">
-            {locations.map((l, i) => {
+          <div className="max-h-[48vh] overflow-auto rounded-lg border">
+            {tree.map(({ loc: l, depth }, i) => {
               const editing = editingId === l.id;
+              const siblings = tree.filter((n) => (n.loc.parentId ?? null) === (l.parentId ?? null));
+              const si = siblings.findIndex((n) => n.loc.id === l.id);
               return (
                 <div
                   key={l.id}
-                  className={cn(
-                    "flex flex-wrap items-center gap-2 px-3 py-2 text-sm",
-                    i > 0 && "border-t"
-                  )}
+                  className={cn("flex flex-wrap items-center gap-2 py-2 pr-3 text-sm", i > 0 && "border-t")}
+                  style={{ paddingLeft: 12 + depth * 22 }}
                 >
                   <div className="flex shrink-0 flex-col">
                     <button
                       type="button"
                       className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
-                      disabled={i === 0 || busy !== null}
+                      disabled={si <= 0 || busy !== null}
                       aria-label="Ưu tiên lên"
-                      onClick={() => move(i, -1)}
+                      onClick={() => move(l, -1)}
                     >
                       <ArrowUp className="size-3.5" />
                     </button>
                     <button
                       type="button"
                       className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
-                      disabled={i === locations.length - 1 || busy !== null}
+                      disabled={si >= siblings.length - 1 || busy !== null}
                       aria-label="Ưu tiên xuống"
-                      onClick={() => move(i, 1)}
+                      onClick={() => move(l, 1)}
                     >
                       <ArrowDown className="size-3.5" />
                     </button>
                   </div>
-                  <span className={cn(TEXT_SUB, "w-5 shrink-0 tabular-nums")}>{i + 1}.</span>
+                  {depth > 0 && <span className="text-muted-foreground">›</span>}
 
                   {editing ? (
                     <>
                       <Input
-                        className="h-8 w-48"
+                        className="h-8 w-40"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         autoFocus
@@ -242,10 +299,18 @@ export function StockLocationsDialog({
                         }}
                       />
                       <Input
-                        className="h-8 w-28 font-mono uppercase"
-                        placeholder="Mã (tuỳ chọn)"
+                        className="h-8 w-24 font-mono uppercase"
+                        placeholder="Mã"
                         value={editCode}
                         onChange={(e) => setEditCode(e.target.value)}
+                      />
+                      <ParentSelect
+                        id={`parent-${l.id}`}
+                        value={editParent}
+                        onChange={setEditParent}
+                        locations={locations}
+                        excludeId={l.id}
+                        className="h-8 w-48 [&>select]:h-8"
                       />
                       <Button size="sm" className="h-8" onClick={() => saveEdit(l)} disabled={busy !== null}>
                         <Check className="size-3.5" />
@@ -259,9 +324,7 @@ export function StockLocationsDialog({
                     <>
                       <span className="min-w-0 flex-1">
                         <span className={cn("font-medium", !l.sellable && "text-slate-500")}>{l.name}</span>
-                        {l.code && (
-                          <span className={cn(TEXT_SUB, "ml-2 font-mono")}>{l.code}</span>
-                        )}
+                        {l.code && <span className={cn(TEXT_SUB, "ml-2 font-mono")}>{l.code}</span>}
                         {!l.sellable && (
                           <span
                             className="ml-2 rounded-full border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"
@@ -337,6 +400,7 @@ export function StockLocationsDialog({
                           size="sm"
                           className="h-7 w-7 p-0 text-muted-foreground"
                           aria-label={`Sửa ${l.name}`}
+                          title="Đổi tên, mã, hoặc chuyển vào kho khác"
                           onClick={() => startEdit(l)}
                         >
                           <Pencil className="size-3.5" />
@@ -364,21 +428,29 @@ export function StockLocationsDialog({
           </div>
         )}
 
-        {/* ===== THÊM ===== */}
+        {/* ===== THÊM MỘT VỊ TRÍ ===== */}
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
-          <div className="grid flex-1 gap-1.5">
+          <div className="grid min-w-[12rem] flex-1 gap-1.5">
             <label htmlFor="loc-name" className="text-sm font-medium">
               {enabled ? "Thêm vị trí" : "Tên vị trí chứa hàng thứ hai"}
             </label>
             <Input
               id="loc-name"
-              placeholder={enabled ? "VD: Kệ A1, Kho Bình Tân…" : "VD: Kho 2"}
+              placeholder={enabled ? "VD: Kho Bình Tân, Kệ A1…" : "VD: Kho 2"}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               maxLength={60}
             />
           </div>
-          <div className="grid w-32 gap-1.5">
+          {enabled && (
+            <div className="grid w-52 gap-1.5">
+              <label htmlFor="loc-parent" className={TEXT_SUB}>
+                Thuộc
+              </label>
+              <ParentSelect id="loc-parent" value={newParent} onChange={setNewParent} locations={locations} />
+            </div>
+          )}
+          <div className="grid w-28 gap-1.5">
             <label htmlFor="loc-code" className={TEXT_SUB}>
               Mã (tuỳ chọn)
             </label>
@@ -403,7 +475,7 @@ export function StockLocationsDialog({
           </p>
         )}
 
-        {/* ===== SINH HÀNG LOẠT + IN TEM (đợt 2) — kho rộng dùng, shop nhỏ không thấy vướng ===== */}
+        {/* ===== SINH HÀNG LOẠT + IN TEM ===== */}
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">
           <button
             type="button"
@@ -411,7 +483,7 @@ export function StockLocationsDialog({
             onClick={() => setBulkOpen((v) => !v)}
           >
             <Sparkles className="size-3.5" />
-            {bulkOpen ? "Ẩn sinh hàng loạt" : "Sinh nhiều kệ / ô một lượt"}
+            {bulkOpen ? "Ẩn sinh hàng loạt" : "Sinh nhiều kệ / tầng một lượt"}
           </button>
           {enabled && (
             <button
@@ -428,26 +500,35 @@ export function StockLocationsDialog({
         </div>
         {bulkOpen && (
           <form onSubmit={handleBulk} className="flex flex-wrap items-end gap-2">
-            <div className="grid flex-1 gap-1.5">
+            <div className="grid min-w-[14rem] flex-1 gap-1.5">
               <label htmlFor="loc-pattern" className="text-sm font-medium">
                 Mẫu tên
               </label>
               <Input
                 id="loc-pattern"
-                placeholder="VD: Kệ A[1-5]  ·  Kệ [A-C][1-3]  ·  Ô [01-12]"
+                placeholder="VD: Kệ A[1-5]  ·  Kệ [A-C][1-3]  ·  Kệ A[1-3] T[1-2]"
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
                 maxLength={80}
               />
-              <p className={TEXT_SUB}>
-                [1-5] chạy số, [A-C] chạy chữ, [01-12] giữ số 0 đầu; nhiều dải ghép với nhau.
-                Mã tem tự sinh từ tên (KE-A1). Tối đa 200 vị trí một lượt.
-              </p>
             </div>
+            {enabled && (
+              <div className="grid w-52 gap-1.5">
+                <label htmlFor="bulk-parent" className={TEXT_SUB}>
+                  Thuộc
+                </label>
+                <ParentSelect id="bulk-parent" value={bulkParent} onChange={setBulkParent} locations={locations} />
+              </div>
+            )}
             <Button type="submit" variant="secondary" disabled={!pattern.trim() || busy !== null}>
               {busy === "bulk" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
               Sinh
             </Button>
+            <p className={cn(TEXT_SUB, "basis-full")}>
+              [1-5] chạy số, [A-C] chạy chữ, [01-12] giữ số 0 đầu; nhiều dải ghép với nhau. Chọn
+              &ldquo;Thuộc&rdquo; = Kho 2 thì kệ sinh ra nằm trong Kho 2. Mã tem tự sinh từ tên
+              (KE-A1). Tối đa 200 vị trí một lượt.
+            </p>
           </form>
         )}
       </DialogContent>

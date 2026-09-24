@@ -40,7 +40,65 @@ function parseCode(v: unknown): string | null | undefined {
   return t.length > 0 && t.length <= CODE_MAX ? t : undefined;
 }
 
-/** Danh sách vị trí + số SKU có hàng + tổng tồn mỗi vị trí (một câu groupBy). */
+type Tx = Prisma.TransactionClient;
+
+/**
+ * CÂY KHO › KỆ › TẦNG (anh Trung 24/09: sinh kệ phải nằm TRONG kho, không thành kho khác).
+ * Thứ tự ưu tiên trừ hàng = duyệt cây theo chiều sâu: cha rồi tới các con của nó, anh em
+ * xếp theo sortOrder. Sau mọi lần tạo / đổi cha / sắp lại, đánh số lại 0..n theo đúng thứ tự
+ * đó để `listLocations` (sổ kho) chỉ cần ORDER BY sortOrder là ra cây.
+ */
+async function normalizeTreeOrderTx(tx: Tx, userId: string) {
+  const rows = await tx.stockLocation.findMany({
+    where: { userId },
+    select: { id: true, parentId: true, sortOrder: true, createdAt: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
+  const ids = new Set(rows.map((r) => r.id));
+  const children = new Map<string | null, typeof rows>();
+  for (const r of rows) {
+    const key = r.parentId && ids.has(r.parentId) ? r.parentId : null;
+    const arr = children.get(key) ?? [];
+    arr.push(r);
+    children.set(key, arr);
+  }
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const walk = (parent: string | null) => {
+    for (const r of children.get(parent) ?? []) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      ordered.push(r.id);
+      walk(r.id);
+    }
+  };
+  walk(null);
+  const bySort = new Map(rows.map((r) => [r.id, r.sortOrder]));
+  await Promise.all(
+    ordered
+      .map((id, i) => (bySort.get(id) === i ? null : tx.stockLocation.update({ where: { id }, data: { sortOrder: i } })))
+      .filter(Boolean)
+  );
+}
+
+/** Đường dẫn "Kho 2 › Kệ A1 › T2" cho từng vị trí. */
+function buildPaths(rows: { id: string; parentId: string | null; name: string }[]): Map<string, string> {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const paths = new Map<string, string>();
+  const pathOf = (id: string, guard = 0): string => {
+    const cached = paths.get(id);
+    if (cached) return cached;
+    const r = byId.get(id)!;
+    const parent = r.parentId && byId.has(r.parentId) && guard < 20 ? pathOf(r.parentId, guard + 1) : null;
+    const p = parent ? `${parent} › ${r.name}` : r.name;
+    paths.set(id, p);
+    return p;
+  };
+  for (const r of rows) pathOf(r.id);
+  return paths;
+}
+
+/** Danh sách vị trí + số SKU có hàng + tổng tồn mỗi vị trí (một câu groupBy), kèm đường dẫn cây. */
 async function listWithTotals(ownerId: string) {
   const [locations, totals] = await Promise.all([
     prisma.stockLocation.findMany({
@@ -66,8 +124,10 @@ async function listWithTotals(ownerId: string) {
     }),
   ]);
   const byLoc = new Map(totals.map((t) => [t.locationId, t]));
+  const paths = buildPaths(locations);
   return locations.map((l) => ({
     ...l,
+    path: paths.get(l.id) ?? l.name,
     skuCount: byLoc.get(l.id)?._count._all ?? 0,
     totalQuantity: byLoc.get(l.id)?._sum.quantity ?? 0,
   }));
@@ -174,6 +234,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
         },
         select: { id: true, name: true },
       });
+      await normalizeTreeOrderTx(tx, ownerId);
       return { created, createdRoot };
     });
 
@@ -241,9 +302,20 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
           res.status(400).json({ error: "Vị trí cha không tồn tại" });
           return;
         }
-        if (parent.parentId === loc.id) {
-          res.status(400).json({ error: "Không thể đặt con làm cha (vòng lặp)" });
-          return;
+        // Cha mới không được là con/cháu của chính nó (vòng lặp) — đi ngược lên tới gốc.
+        const all = await prisma.stockLocation.findMany({
+          where: { userId: ownerId },
+          select: { id: true, parentId: true },
+        });
+        const up = new Map(all.map((a) => [a.id, a.parentId]));
+        let cur: string | null | undefined = parent.id;
+        let guard = 0;
+        while (cur && guard++ < 50) {
+          if (cur === loc.id) {
+            res.status(400).json({ error: "Không thể đặt con/cháu làm cha (vòng lặp)" });
+            return;
+          }
+          cur = up.get(cur);
         }
       }
       data.parent = parentId ? { connect: { id: parentId } } : { disconnect: true };
@@ -297,6 +369,7 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
         data.isReturnDefault = b.isReturnDefault === true;
       }
       await tx.stockLocation.update({ where: { id: loc.id }, data });
+      if (b.parentId !== undefined) await normalizeTreeOrderTx(tx, ownerId);
     });
 
     const items = await listWithTotals(ownerId);
@@ -334,11 +407,13 @@ router.put("/order", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Danh sách phải gồm đúng mọi vị trí của shop" });
       return;
     }
-    await prisma.$transaction(
-      (ids as string[]).map((id, i) =>
-        prisma.stockLocation.update({ where: { id }, data: { sortOrder: i } })
-      )
-    );
+    await prisma.$transaction(async (tx) => {
+      for (let i = 0; i < ids.length; i++) {
+        await tx.stockLocation.update({ where: { id: ids[i] as string }, data: { sortOrder: i } });
+      }
+      // Khách chỉ đổi chỗ anh em; đánh số lại theo cây để con luôn đi sau cha.
+      await normalizeTreeOrderTx(tx, ownerId);
+    });
     const items = await listWithTotals(ownerId);
     res.json({ items, enabled: items.length > 0 });
   } catch (err) {
@@ -526,6 +601,7 @@ router.post("/bulk", async (req: AuthRequest, res, next) => {
         rows.push({ userId: ownerId, name, code, parentId, sortOrder: sortOrder++ });
       }
       if (rows.length) await tx.stockLocation.createMany({ data: rows });
+      await normalizeTreeOrderTx(tx, ownerId);
       return { created: rows.length, skipped, createdRoot };
     });
 

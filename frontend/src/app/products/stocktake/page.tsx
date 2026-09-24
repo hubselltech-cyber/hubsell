@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { qk } from "@/lib/query-keys";
+import { locationLabel } from "@/lib/stock-locations";
 import { TEXT_SUB } from "@/lib/typography";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { cn } from "@/lib/utils";
@@ -214,7 +215,8 @@ export default function StocktakePage() {
     }
   }
 
-  const locName = locations.find((l) => l.id === effectiveLocationId)?.name;
+  const locFound = locations.find((l) => l.id === effectiveLocationId);
+  const locName = locFound ? locationLabel(locFound) : undefined;
 
   return (
     <AppShell>
@@ -245,7 +247,7 @@ export default function StocktakePage() {
                 >
                   {locations.map((l) => (
                     <option key={l.id} value={l.id}>
-                      {l.name} · {formatNumber(l.skuCount)} SKU{l.sellable ? "" : " · không bán"}
+                      {locationLabel(l)} · {formatNumber(l.skuCount)} SKU{l.sellable ? "" : " · không bán"}
                     </option>
                   ))}
                 </NativeSelect>

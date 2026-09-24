@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { adjustInventory, ApiError, type Product, type StockLocation } from "@/lib/api";
+import { locationLabel } from "@/lib/stock-locations";
 import { readLastLocation, rememberLocation } from "@/lib/stock-location-pref";
 
 interface AdjustStockDialogProps {
@@ -131,7 +132,7 @@ export function AdjustStockDialog({
                 {!isImport && <option value="">Tự trừ theo thứ tự ưu tiên</option>}
                 {locations.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name}
+                    {locationLabel(l)}
                     {isImport ? "" : ` (đang có ${qtyById.get(l.id) ?? 0})`}
                   </option>
                 ))}

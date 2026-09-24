@@ -266,3 +266,15 @@ phiếu nhặt PDF 200; ô Đang ở 3 dòng + "+1 vị trí khác"; Kiểm kê 
 người + vị trí; chuyển hết về gốc (tổng 211 = 210 + 3 − 2, ô không bán trả 5 về kho bán) → xóa 5 vị trí → xóa gốc → tắt,
 stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt lần đầu trùng sortOrder 0 với gốc → đã sửa.
 
+### 8.9 Cây Kho › Kệ › Tầng (24/09 khuya, anh Trung thử prod: "sinh nhiều kệ thì các kệ không được gán vào Kho 2, thành kho khác")
+- Mọi chỗ tạo (thêm một, sinh hàng loạt, sửa) có ô **Thuộc** (chọn kho/kệ cha; ô chọn cũng thụt lề theo cây). Hộp vị trí hiện
+  cây thụt lề, mũi tên đổi chỗ chỉ trong cùng một cha. Sửa một vị trí → đổi "Thuộc" là chuyển nó (kèm con) vào kho khác — cách
+  sửa các kệ anh đã lỡ tạo phẳng trên prod.
+- Backend `normalizeTreeOrderTx`: sau mọi lần tạo / đổi cha / sắp lại, đánh số `sortOrder` theo duyệt cây chiều sâu (cha rồi
+  tới con) → thứ tự ưu tiên trừ hàng đi theo cây, sổ kho chỉ cần ORDER BY sortOrder. `path` "Kho 2 › Kệ A1 › T2" trả trong
+  danh sách; mọi ô chọn (Nhập/Xuất, Phiếu nhiều mã, Kiểm kê, Chuyển vị trí), ô Đang ở, và phiếu nhặt in đường dẫn.
+- Rào: đổi cha thành con/cháu của chính nó → 400 (đi ngược lên tới gốc); xóa kho còn kệ con → 409 (đã có).
+- E2E local: tạo Kho 2 → sinh "Kệ A[1-2] T[1-2]" thuộc Kho 2 → tạo Kho 3 → thứ tự 0..6 đúng cây, mã KE-A1-T1…; PATCH Kho 3 vào
+  Kho 2 → tự xếp "Kho 2 › Kho 3" cuối nhánh; Kho 2 vào Kho 3 → 400 vòng lặp; xóa Kho 2 còn 5 con → 409; xóa hết → tắt.
+- Chưa làm (chờ anh chốt sau khi xem): trang "Cất hàng lên kệ" quét tem, chip lọc bảng theo vị trí.
+

@@ -3407,6 +3407,8 @@ export interface StockLocation {
   isReturnDefault: boolean;
   sellable: boolean;
   createdAt: string;
+  /** Đường dẫn cây "Kho 2 › Kệ A1 › T2" (backend tính; vắng = tên). */
+  path?: string;
   /** Số SKU đang có hàng (≠ 0) tại vị trí. */
   skuCount: number;
   totalQuantity: number;
@@ -3492,6 +3494,7 @@ export function transferStock(data: {
 
 /** Sinh vị trí hàng loạt theo mẫu "Kệ A[1-5]" / "Kệ [A-C][1-3]" (≤ 200, tên trùng bỏ qua). */
 export function bulkCreateStockLocations(data: { pattern: string; parentId?: string | null }) {
+  // parentId = kho/kệ cha — kệ sinh ra nằm TRONG kho đó, không thành kho khác.
   return apiFetch<
     StockLocationListResponse & {
       created: number;
