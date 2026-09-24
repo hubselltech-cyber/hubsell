@@ -528,7 +528,13 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
   shop), câu nói thật "Shopee không xếp khoản này vào chiến dịch sản phẩm, chỉ có trong tổng chi cấp shop, không có số
   từng ngày"; dòng đỏ khi ROAS < hòa vốn; nút **Xem từng sản phẩm** → dialog bảng SP (chi, đơn, GMV, ROAS, hòa vốn SP,
   đỏ khi lỗ) + câu "SP lỗ thì loại khỏi GMV Max trên Seller Center — Hubsell chưa có lệnh ghi cho GMS".
-- status = eligible: KHÔNG hiện gì (bỏ dòng mờ để Tổng quan sạch).
+- 22:36 anh "chưa thấy GMS ở đâu / chưa thấy gợi ý từ khóa": tab GMV Max cấp shop LUÔN có với gian đã nối Ads
+  (prod chưa có status vì lượt 6h chưa chạy) — xung 30' hỏi eligibility ngay khi adsGmsStatus null; khối từ khóa mở
+  cho MỌI campaign Shopee có SP (2 campaign ANO đang chạy đều auto bidding nên điều kiện cũ "thủ công" giấu mất).
+- 22:42 anh "giải thích ngắn gọn, thêm chấm than đỏ": khi CHƯA chạy GMS, tab hiện MỘT hộp màu có biểu tượng, một câu:
+  chưa có trạng thái (vàng, đang hỏi Shopee) · chưa bật (xanh, Shopee cho phép nhưng chưa bật) · chưa whitelist (xám) ·
+  thiếu SP (vàng) · chương trình khác (vàng) · lỗi sàn (đỏ). Mô tả khối: "Shopee tự chạy quảng cáo cho cả gian. Tiền
+  tiêu ở đây không nằm trong bảng chiến dịch ở tab Tổng quan, chỉ có trong tổng chi cấp shop."
 
 ### 12.4 Kiểm chứng
 - Soi local (gian demo, đặt tay status active + 2 báo cáo + 3 SP): khối hiện đúng, 7d ROAS 2,88x < hòa vốn shop 3,52x
