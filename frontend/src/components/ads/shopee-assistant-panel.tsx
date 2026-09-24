@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, PlayCircle, ShieldCheck, SlidersHorizontal, Target } from "lucide-react";
+import { ExternalLink, PlayCircle, ShieldCheck, SlidersHorizontal, Target, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   fetchShopeeAdsActionLog,
   type AdsAssistantScorecard,
   type AdsScorecardRow,
+  type DeliveryCheck,
   type LazadaCampaignLiveDetail,
   type ShopeeAdsActionLogRow,
   type ShopeeAdsCampaignRow,
@@ -80,8 +81,64 @@ export function AssistantVerdictBadge({ c }: { c: ShopeeAdsCampaignRow }) {
       </Badge>
     );
   }
+  // Đợt E: đang lãi (healthy) mà bị chặn phân phối → nhãn xanh "có thể thêm đơn"
+  // thay cho "Ổn" — cùng ý với nhãn "Ngân sách đang chặn" của trang TikTok.
+  if (a.verdict === "healthy" && c.delivery) {
+    return (
+      <Badge className={cn("whitespace-nowrap", DELIVERY_META[c.delivery.status].className)}>
+        {DELIVERY_META[c.delivery.status].label}
+      </Badge>
+    );
+  }
   const meta = VERDICT_META[a.verdict];
   return <Badge className={cn("whitespace-nowrap", meta.className)}>{meta.label}</Badge>;
+}
+
+/** Nhãn + lời khuyên cho rổ "đang lãi nhưng bị chặn" (đợt E). */
+export const DELIVERY_META: Record<
+  DeliveryCheck["status"],
+  { label: string; title: string; className: string }
+> = {
+  budget_capped: {
+    label: "Ngân sách đang chặn",
+    title: "Ngân sách đang chặn đơn",
+    className: "bg-sky-50 text-sky-700 border border-sky-200",
+  },
+  target_binding: {
+    label: "Mục tiêu đang bó",
+    title: "Mục tiêu ROAS đang bó phân phối",
+    className: "bg-sky-50 text-sky-700 border border-sky-200",
+  },
+};
+
+/** Câu chữ của khối gợi ý đợt E trong modal — dữ kiện từng dòng rồi mới kết luận (khẩu vị anh Trung 19/09). */
+export function deliveryAdviceText(
+  d: DeliveryCheck,
+  platformLabel: string
+): { points: string[]; conclusion: string } {
+  const x = (v: number) => `${v.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}x`;
+  const points = [
+    `ROAS ${d.fullDays} ngày trọn gần nhất (bỏ hôm nay) ${x(d.roas)} · hòa vốn ${x(d.breakevenRoas)} — đang lãi.`,
+  ];
+  if (d.status === "budget_capped") {
+    points.push(
+      `Mỗi ngày tiêu khoảng ${d.budgetUsedPct}% ngân sách ngày (${formatVND(d.avgDailySpend)} / ${formatVND(d.budget)}).`
+    );
+    return {
+      points,
+      conclusion: `Ngân sách ngày đang là thứ chặn đơn: ${platformLabel} ngừng hiển thị khi tiêu hết ngân sách. Nâng ngân sách ngày trên Seller Center thì có thêm đơn ở cùng mức lãi. Hubsell không tự tăng ngân sách.`,
+    };
+  }
+  points.push(
+    `Mục tiêu ROAS đang đặt ${x(d.roasTarget ?? 0)} — cao hơn ROAS thực, chưa đạt.`,
+    d.budget > 0
+      ? `Ngân sách ngày ${formatVND(d.budget)}, mới dùng khoảng ${d.budgetUsedPct}%.`
+      : "Ngân sách không giới hạn — không phải thứ chặn."
+  );
+  return {
+    points,
+    conclusion: `${platformLabel} chỉ đấu thầu tới mức đạt mục tiêu nên đang phân phối dè dặt. Muốn thêm đơn thì hạ mục tiêu ROAS trên Seller Center, nhưng đừng xuống dưới ${x(d.safeTarget)} (hòa vốn × hệ số an toàn) — lãi mỗi đơn sẽ mỏng đi. Hubsell không tự hạ mục tiêu.`,
+  };
 }
 
 // ---------- Modal chi tiết + quyết định ----------
@@ -89,6 +146,11 @@ export function AssistantVerdictBadge({ c }: { c: ShopeeAdsCampaignRow }) {
 /** Trang quản lý quảng cáo trên Seller Center từng sàn — nút "Mở Seller Center".
  *  Lazada không có URL sâu ổn định công khai cho Sponsored Solutions → về trang
  *  chủ Seller Center, chủ shop vào mục Tiếp thị (đừng đoán deep-link — bài học MISA). */
+const PLATFORM_LABEL: Record<"shopee" | "lazada", string> = {
+  shopee: "Shopee",
+  lazada: "Lazada",
+};
+
 const SELLER_CENTER_ADS_URLS: Record<"shopee" | "lazada", string> = {
   shopee: "https://banhang.shopee.vn/portal/marketing/pas/index",
   lazada: "https://sellercenter.lazada.vn/",
@@ -157,7 +219,13 @@ export function ShopeeAssistantModal({
   }, [platform, campaign, range]);
 
   const a = campaign?.assistant;
-  const verdictMeta = a?.verdict ? VERDICT_META[a.verdict] : null;
+  // Nhãn trên tiêu đề modal khớp nhãn ở bảng: healthy mà bị chặn phân phối → nhãn đợt E.
+  const verdictMeta =
+    a?.verdict === "healthy" && campaign?.delivery
+      ? DELIVERY_META[campaign.delivery.status]
+      : a?.verdict
+        ? VERDICT_META[a.verdict]
+        : null;
   const actionable =
     a?.verdict === "spike" || a?.verdict === "pause_now" || a?.verdict === "review" || a?.verdict === "grace";
 
@@ -235,6 +303,22 @@ export function ShopeeAssistantModal({
                     <li key={i}>{r}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Đợt E: đang lãi nhưng bị ngân sách chặn / mục tiêu bó — chỉ gợi ý */}
+            {campaign.delivery && campaign.assistant.verdict === "healthy" && (
+              <div className="flex flex-wrap items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                <TrendingUp className="mt-0.5 size-5 shrink-0 text-sky-600" />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="font-semibold">{DELIVERY_META[campaign.delivery.status].title}</p>
+                  {deliveryAdviceText(campaign.delivery, PLATFORM_LABEL[platform]).points.map((p, i) => (
+                    <p key={i}>{p}</p>
+                  ))}
+                  <p className="font-medium">
+                    {deliveryAdviceText(campaign.delivery, PLATFORM_LABEL[platform]).conclusion}
+                  </p>
+                </div>
               </div>
             )}
 

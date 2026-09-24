@@ -26,10 +26,12 @@ import { prisma } from "../../lib/prisma";
 import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
 import {
   ASSISTANT_WINDOWS,
+  assessDelivery,
   assessRoasTarget,
   evaluateShopeeCampaign,
   normalizeAssistantConfig,
   type AssistantAssessment,
+  type DeliveryCheck,
   type RoasTargetCheck,
   type AssistantWindowKey,
   type AssistantWindowMetrics,
@@ -219,6 +221,8 @@ export interface CampaignInsight {
   assessment: AssistantAssessment;
   /** Đợt A: mục tiêu ROAS seller đặt trên sàn so với hòa vốn (null = không đặt / chưa có hòa vốn). */
   roasTargetCheck: RoasTargetCheck | null;
+  /** Đợt E: đang lãi nhưng bị ngân sách chặn / mục tiêu bó phân phối (null = không có gì để nới). */
+  deliveryCheck: DeliveryCheck | null;
 }
 
 /**
@@ -313,6 +317,9 @@ export async function computeChannelAdsInsights(
       windows[k] = { spend: 0, clicks: 0, broadOrder: 0, broadGmv: 0 };
     }
     let prev7Spend = 0;
+    // Đợt E: cùng 7 ngày trọn — thêm GMV broad + số ngày có tiêu tiền (cỡ mẫu).
+    let prev7Gmv = 0;
+    let prev7DaysWithSpend = 0;
     for (const p of c.dailyPerf) {
       const key = dateKey(p.date);
       for (const k of ASSISTANT_WINDOWS) {
@@ -323,7 +330,12 @@ export async function computeChannelAdsInsights(
           windows[k].broadGmv += Number(p.broadGmv);
         }
       }
-      if (key >= weekAgoKey && key <= yesterdayKey) prev7Spend += Number(p.expense);
+      if (key >= weekAgoKey && key <= yesterdayKey) {
+        const expense = Number(p.expense);
+        prev7Spend += expense;
+        prev7Gmv += Number(p.broadGmv);
+        if (expense > 0) prev7DaysWithSpend++;
+      }
     }
     const avgDailySpend7d = prev7Spend / 7;
 
@@ -350,6 +362,22 @@ export async function computeChannelAdsInsights(
       { status: c.status, breakevenRoas, windows, avgDailySpend7d },
       config
     );
+    const roasTarget = c.roasTarget != null ? Number(c.roasTarget) : null;
+    const roasTargetCheck = assessRoasTarget({
+      roasTarget,
+      breakevenRoas,
+      dangerFactor: config.review.dangerFactor,
+    });
+    const deliveryCheck = assessDelivery({
+      status: c.status,
+      verdict: assessment.verdict,
+      roasTargetCheck,
+      breakevenRoas,
+      budget: Number(c.budget),
+      roasTarget,
+      prev7: { spend: prev7Spend, gmv: prev7Gmv, daysWithSpend: prev7DaysWithSpend },
+      dangerFactor: config.review.dangerFactor,
+    });
 
     return {
       row: c,
@@ -361,11 +389,8 @@ export async function computeChannelAdsInsights(
       marginOrders: useOwn ? own.orders : shopMarginBase.orders,
       breakevenRoas,
       assessment,
-      roasTargetCheck: assessRoasTarget({
-        roasTarget: c.roasTarget != null ? Number(c.roasTarget) : null,
-        breakevenRoas,
-        dangerFactor: config.review.dangerFactor,
-      }),
+      roasTargetCheck,
+      deliveryCheck,
     };
   });
 

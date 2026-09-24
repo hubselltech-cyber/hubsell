@@ -400,3 +400,98 @@ export function assessRoasTarget(input: {
     target < be ? "below" : target < be * factor ? "tight" : "ok";
   return { status, target, breakevenRoas: be, safeTarget };
 }
+
+// ============================================================
+// ĐỢT E (24/09/2026) — RỔ THỨ TƯ: ĐANG LÃI NHƯNG BỊ CHẶN PHÂN PHỐI
+//
+// Vòng tối ưu của người chạy ads có 4 rổ: lỗ nặng → tắt; lỗ nhẹ → hạ ngân
+// sách / nâng mục tiêu; lãi mỏng → giữ; LÃI TỐT NHƯNG BỊ CHẶN → nới. Ba rổ đầu
+// đã có (Q1–Q4 + đợt A), rổ cuối là rổ kiếm thêm tiền và Hubsell còn thiếu.
+// Hai kiểu chặn Shopee cho sửa được:
+//   budget_capped  = ngày nào cũng tiêu gần hết ngân sách ngày → ngân sách là
+//                    thứ chặn đơn (Shopee ngừng hiển thị khi hết ngân sách ngày).
+//   target_binding = đấu thầu tự động, ROAS thực dưới mục tiêu đang đặt nhưng
+//                    trên hòa vốn → sàn chỉ đấu tới mức đạt mục tiêu nên phân
+//                    phối dè dặt (cơ chế Shopee mô tả ở
+//                    get_product_recommended_roi_target: lower bound = nhiều
+//                    hiển thị hơn, upper bound = ít hơn).
+// Căn cứ số:
+//   - Cửa sổ 7 NGÀY TRỌN, bỏ hôm nay, đòi ≥ DELIVERY_MIN_FULL_DAYS ngày có
+//     tiêu tiền — bài học 14/09 (đơn broad về trễ, hôm nay không được dùng).
+//   - "Đang lãi" = ROAS 7 ngày ≥ hòa vốn × dangerFactor (cùng mốc vùng an toàn
+//     của đợt A) VÀ verdict Trợ lý = healthy VÀ mục tiêu (nếu có) đã ở vùng ok.
+//   - BUDGET_CAP_PCT = 90: MẶC ĐỊNH TỰ ĐẶT — Shopee không công bố mốc; số ngày
+//     thường tiêu sát trần chứ hiếm khi đúng 100%. TikTok dùng 80% cho tính
+//     năng tự tăng ngân sách của GMV Max; Shopee lấy chặt hơn để không réo sớm.
+// CHỈ GỢI Ý — Hubsell không tự tăng ngân sách / hạ mục tiêu (anh Trung chốt
+// "chỉ gợi ý" 23/09 cho TikTok, áp cùng cho Shopee).
+// ============================================================
+
+export const BUDGET_CAP_PCT = 90;
+export const DELIVERY_MIN_FULL_DAYS = 3;
+
+export type DeliveryStatus = "budget_capped" | "target_binding";
+
+export interface DeliveryCheck {
+  status: DeliveryStatus;
+  /** ROAS 7 ngày trọn (bỏ hôm nay). */
+  roas: number;
+  breakevenRoas: number;
+  /** Mốc mục tiêu KHÔNG nên hạ xuống dưới = hòa vốn × dangerFactor, làm tròn lên 0,1. */
+  safeTarget: number;
+  /** Ngân sách ngày trên sàn (0 = không giới hạn). */
+  budget: number;
+  /** Chi tiêu trung bình của những ngày trọn CÓ tiêu tiền. */
+  avgDailySpend: number;
+  /** % ngân sách ngày đang dùng; null khi không giới hạn. */
+  budgetUsedPct: number | null;
+  roasTarget: number | null;
+  /** Số ngày trọn có tiêu tiền trong 7 ngày (cỡ mẫu). */
+  fullDays: number;
+}
+
+export function assessDelivery(input: {
+  status: string;
+  verdict: AssistantVerdict | null;
+  roasTargetCheck: RoasTargetCheck | null;
+  breakevenRoas: number | null | undefined;
+  budget: number;
+  roasTarget: number | null | undefined;
+  /** 7 ngày trọn trước hôm nay: tổng chi, tổng GMV broad, số ngày có tiêu tiền. */
+  prev7: { spend: number; gmv: number; daysWithSpend: number };
+  dangerFactor: number;
+}): DeliveryCheck | null {
+  if (input.status !== "ongoing" || input.verdict !== "healthy") return null;
+  const be = Number(input.breakevenRoas);
+  if (!(be > 0)) return null;
+  const { spend, gmv, daysWithSpend } = input.prev7;
+  if (daysWithSpend < DELIVERY_MIN_FULL_DAYS || !(spend > 0)) return null;
+  const factor = input.dangerFactor > 0 ? input.dangerFactor : 1;
+  const roas = gmv / spend;
+  if (roas < be * factor) return null;
+  if (input.roasTargetCheck && input.roasTargetCheck.status !== "ok") return null;
+
+  const safeTarget = Math.ceil(be * factor * 10 - 1e-9) / 10;
+  const budget = Number(input.budget) || 0;
+  const avgDailySpend = spend / daysWithSpend;
+  const budgetUsedPct = budget > 0 ? Math.round((avgDailySpend / budget) * 100) : null;
+  const roasTarget =
+    input.roasTarget != null && Number(input.roasTarget) > 0 ? Number(input.roasTarget) : null;
+  const base = {
+    roas,
+    breakevenRoas: be,
+    safeTarget,
+    budget,
+    avgDailySpend,
+    budgetUsedPct,
+    roasTarget,
+    fullDays: daysWithSpend,
+  };
+  if (budgetUsedPct != null && budgetUsedPct >= BUDGET_CAP_PCT) {
+    return { status: "budget_capped", ...base };
+  }
+  if (roasTarget != null && roas < roasTarget) {
+    return { status: "target_binding", ...base };
+  }
+  return null;
+}

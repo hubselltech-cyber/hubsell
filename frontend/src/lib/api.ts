@@ -6507,6 +6507,23 @@ export interface ShopeeAssistantSummary {
   needsAction: number;
   /** Đợt A: số campaign đang chạy đặt mục tiêu ROAS dưới hòa vốn. */
   targetBelowCount?: number;
+  /** Đợt E: số campaign đang lãi nhưng bị ngân sách chặn / mục tiêu bó phân phối. */
+  deliveryCount?: number;
+}
+
+/** Đợt E (24/09): campaign đang lãi nhưng bị chặn phân phối — Hubsell chỉ gợi ý,
+ *  chủ shop sửa trên Seller Center. Số tính trên 7 ngày trọn, bỏ hôm nay. */
+export interface DeliveryCheck {
+  status: "budget_capped" | "target_binding";
+  roas: number;
+  breakevenRoas: number;
+  /** Không nên hạ mục tiêu xuống dưới mốc này (hòa vốn × hệ số an toàn). */
+  safeTarget: number;
+  budget: number;
+  avgDailySpend: number;
+  budgetUsedPct: number | null;
+  roasTarget: number | null;
+  fullDays: number;
 }
 
 export interface RoasTargetCheck {
@@ -6549,6 +6566,8 @@ export interface ShopeeAdsCampaignRow {
   /** Đợt A: mục tiêu ROAS seller đặt trên sàn so với hòa vốn. null = không đặt
    *  (đấu thầu thủ công) hoặc chưa có hòa vốn. below = đang lỗ theo thiết kế. */
   roasTargetCheck: RoasTargetCheck | null;
+  /** Đợt E: đang lãi nhưng bị ngân sách chặn / mục tiêu bó (null = không có gì để nới). */
+  delivery?: DeliveryCheck | null;
   /** Lãi/lỗ ước tính trong kỳ = GMV broad × biên lãi − chi phí ads (cùng rổ đơn với ROAS). */
   estProfit: number | null;
   lossBeforeAds: boolean;

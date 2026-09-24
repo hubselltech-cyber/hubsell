@@ -215,6 +215,8 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           breakevenRoas: it.breakevenRoas,
           // Đợt A: mục tiêu ROAS trên sàn so với hòa vốn (below/tight/ok | null).
           roasTargetCheck: it.roasTargetCheck,
+          // Đợt E: đang lãi nhưng bị ngân sách chặn / mục tiêu bó — chỉ gợi ý.
+          delivery: it.deliveryCheck,
           estProfit,
           // margin ≤ 0: SKU này đang LỖ ngay cả trước ads — cảnh báo riêng.
           lossBeforeAds: it.margin != null && it.margin <= 0,
@@ -324,6 +326,8 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       const targetBelowCount = campaigns.filter(
         (c) => c.status === "ongoing" && c.roasTargetCheck?.status === "below"
       ).length;
+      // Đợt E: campaign đang lãi mà bị chặn phân phối — dải xanh "có thể thêm đơn".
+      const deliveryCount = campaigns.filter((c) => c.delivery != null).length;
       for (const c of campaigns) {
         if (c.assistant.decisionActive) continue;
         if (c.assistant.verdict === "spike") counts.spike++;
@@ -358,6 +362,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           counts,
           needsAction: counts.spike + counts.pauseNow + counts.review,
           targetBelowCount,
+          deliveryCount,
         },
         summary: {
           ...totals,

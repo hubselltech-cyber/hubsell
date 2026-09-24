@@ -5,6 +5,21 @@
 
 ---
 
+## Phiên 24/09/2026 (đêm, 2) — Ads Shopee/Lazada ĐỢT E: rổ thứ tư "đang lãi nhưng bị chặn phân phối" (anh Trung: "làm đi em")
+
+Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 9. Tóm tắt:
+- **Bối cảnh**: anh hỏi Shopee đánh giá hiệu quả dựa vào đâu / tối ưu kiểu gì → trình 4 rổ tối ưu, Hubsell thiếu rổ "lãi tốt
+  nhưng bị chặn". Đọc prod (Chrome anh, chỉ đọc): ANO chỉ 1 campaign đang chạy (auto bidding, ngân sách không giới hạn, ROAS
+  9,44x > hòa vốn 6,9x nhưng < mục tiêu 12,2x) — đúng ca "mục tiêu bó"; DarkMan 0 đang chạy, chưa nối.
+- **Luật** `assessDelivery` (thuần, 12 test): chỉ khi ongoing + healthy + có hòa vốn + ≥ 3 ngày trọn có tiêu (bỏ hôm nay) +
+  ROAS 7d ≥ hòa vốn × 1,1 + mục tiêu ok → `budget_capped` (tiêu ≥ 90% ngân sách ngày — mặc định tự đặt, Shopee không công bố)
+  hoặc `target_binding` (ROAS thực < mục tiêu đang đặt). CHỈ GỢI Ý, không tự sửa sàn.
+- **UI**: nhãn xanh dương ở cột Trợ lý thay "Ổn", dải xanh "N chiến dịch đang lãi nhưng bị chặn phân phối — có thể thêm đơn",
+  khối trong modal: dữ kiện từng dòng + kết luận + mốc không nên hạ dưới (`safeTarget`). Lazada dùng chung.
+- Soi local bằng demo (DEMO-1 ngân sách 340k → 95%; DEMO-8 auto mục tiêu 9x → bó); demo đã dọn, env trả lại. tsc + eslint sạch.
+
+---
+
 ## Phiên 24/09/2026 (đêm) — Trợ lý quảng cáo Shopee/Lazada: BỘ LỌC KHOẢNG NGÀY CHUẨN thay 4 nút cứng (anh Trung: "bộ lọc sẵn cơ bản quá")
 
 Chi tiết `docs/ADS-SHOPEE-KHAI-THAC-API.md` mục 8. Tóm tắt:

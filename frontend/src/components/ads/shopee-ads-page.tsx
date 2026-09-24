@@ -732,6 +732,22 @@ export function ShopeeAdsPage({
             </div>
           </div>
         )}
+        {/* ===== ĐỢT E: campaign ĐANG LÃI nhưng bị ngân sách chặn / mục tiêu bó — có thể thêm đơn ===== */}
+        {(assistant?.deliveryCount ?? 0) > 0 && (
+          <div className="flex flex-wrap items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 p-3.5 text-sm text-sky-900">
+            <TrendingUp className="mt-0.5 size-5 shrink-0 text-sky-600" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">
+                {formatNumber(assistant?.deliveryCount ?? 0)} chiến dịch đang lãi nhưng bị chặn phân
+                phối — có thể thêm đơn
+              </p>
+              <p className="mt-0.5 text-sky-800">
+                Ngân sách ngày tiêu gần hết, hoặc mục tiêu ROAS đặt cao hơn mức đang đạt. Xem nhãn xanh
+                ở cột Trợ lý, bấm vào dòng để đọc căn cứ và mức nên đặt; sửa trên Seller Center.
+              </p>
+            </div>
+          </div>
+        )}
         {walletLow && wallet && (
           <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800">
             <Wallet className="mt-0.5 size-5 shrink-0 text-amber-600" />

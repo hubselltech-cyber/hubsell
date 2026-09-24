@@ -361,3 +361,51 @@ Lazada dùng chung component nên được luôn.
 **Kiểm local (DB dev, seed demo + bồi 60 ngày hiệu suất, đã dọn):** request đúng `from/to`; Tháng trước
 → 01/08–31/08 có số; chọn tay 10/07–20/07 (trước mốc kéo 26/07) → 0đ + dòng vàng nói rõ; API:
 01/06→hôm nay bị cắt 90 ngày (`rangeClamped: true`), tương lai co về hôm nay, `days=14` cũ vẫn chạy.
+
+
+## 9. Đợt E — Rổ thứ tư "ĐANG LÃI NHƯNG BỊ CHẶN PHÂN PHỐI" (24/09/2026, anh Trung: "làm đi em")
+
+### 9.1 Vì sao
+Anh hỏi "Shopee dựa vào đâu đánh giá hiệu quả, tối ưu kiểu gì". Câu trả lời đã trình (24/09 đêm):
+- Shopee chỉ có MỘT thước: ROAS = GMV quy cho ads (7 ngày sau click, trực tiếp + gián tiếp) / tiền ads.
+  Shopee không biết giá vốn — với sàn ROAS 3x là "hiệu quả", với SP biên 20% là lỗ. Đấu thầu tự động chỉ
+  tiêu hết ngân sách trong phạm vi ROAS mục tiêu seller đặt.
+- Nút vặn Shopee cho: ngân sách ngày, ROAS mục tiêu (auto bidding), từ khóa + giá thầu (manual), vị trí
+  Khám phá, chọn SP, bật/tắt. KHÔNG có lịch giờ, KHÔNG có hiệu suất từng từ khóa qua API.
+- Định vị Hubsell: "Shopee tối ưu để tiêu hết tiền, Hubsell tối ưu để còn lãi" — không làm bot giá thầu.
+- Vòng tối ưu chuẩn 4 rổ: lỗ nặng → tắt (Q1/Q3 đã có); lỗ nhẹ → hạ ngân sách / nâng mục tiêu (đợt A có
+  nút, đợt B chưa); lãi mỏng → giữ (Q2/Q4 đã có); **lãi tốt nhưng bị chặn → nới (ĐỢT E, mới)**.
+
+### 9.2 Số thật trước khi code (đọc prod qua Chrome anh, 7 ngày trọn 17–23/09)
+- DarkMan: 142 campaign, 0 đang chạy, chưa nối Hubsell Ads.
+- ANO: 71 campaign, **1 đang chạy** "Túi Đeo Chéo Nam" — manual ad, đấu thầu TỰ ĐỘNG, ngân sách KHÔNG giới
+  hạn, chi 1.716.678đ/7 ngày (≈245k/ngày), 63 đơn broad, ROAS 9,44x, hòa vốn 6,9x, mục tiêu đang đặt 12,2x.
+  → rơi đúng ca "mục tiêu bó": lãi, nhưng sàn đấu tới 12,2x không tới nên phân phối dè dặt.
+- Kết luận: mẫu shop nhà quá mỏng để rút ngưỡng từ số; mọi mốc phải lấy từ tài liệu sàn hoặc ghi rõ là
+  mặc định tự đặt.
+
+### 9.3 Luật (`assessDelivery` trong `ads-assistant-rules.ts`, thuần, 12 test `ads-delivery.test.ts`)
+Chỉ xét khi: campaign `ongoing` ∧ verdict Trợ lý = `healthy` ∧ có hòa vốn ∧ **≥ 3 ngày trọn có tiêu tiền
+trong 7 ngày trước hôm nay** (bài học 14/09: bỏ hôm nay, không phán trên mẫu mỏng) ∧ ROAS 7 ngày ≥ hòa vốn ×
+dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) đã ở vùng `ok`.
+- `budget_capped`: ngân sách > 0 ∧ chi tiêu TB của ngày CÓ tiêu ≥ **90%** ngân sách ngày. 90% là MẶC ĐỊNH
+  TỰ ĐẶT (Shopee không công bố; TikTok dùng 80% cho tự tăng ngân sách GMV Max, Shopee lấy chặt hơn).
+- `target_binding`: đấu thầu tự động ∧ ROAS 7 ngày < mục tiêu đang đặt (chưa đạt) — cơ chế Shopee mô tả ở
+  `get_product_recommended_roi_target` (lower bound = nhiều hiển thị hơn). Ngân sách chặn được ưu tiên nếu
+  cả hai cùng xảy ra.
+- Không thì `null` — không có gì để nới, nhãn "Ổn" như cũ.
+- CHỈ GỢI Ý: Hubsell không tự tăng ngân sách / hạ mục tiêu (cùng chốt "chỉ gợi ý" của TikTok 23/09).
+
+### 9.4 Hiển thị
+- Cột Trợ lý: nhãn xanh dương "Ngân sách đang chặn" / "Mục tiêu đang bó" thay "Ổn" (chỉ khi healthy).
+- Dải xanh trên trang: "N chiến dịch đang lãi nhưng bị chặn phân phối — có thể thêm đơn" (`assistant.deliveryCount`).
+- Modal: khối xanh — dữ kiện từng dòng (ROAS 7 ngày trọn · hòa vốn; % ngân sách hoặc mục tiêu đang đặt) rồi
+  kết luận + mốc KHÔNG nên hạ dưới (`safeTarget` = hòa vốn × 1,1 làm tròn lên 0,1) + "sửa trên Seller Center".
+- Payload: `campaigns[].delivery` (DeliveryCheck | null), `assistant.deliveryCount`. Lazada dùng chung.
+
+### 9.5 Còn treo sau đợt E (không tự làm)
+1. `get_product_recommended_roi_target` (+1 call/campaign khi mở modal): ROAS mục tiêu Shopee gợi ý lower/exact/upper
+   cho SP — đặt cạnh `safeTarget` của Hubsell để seller có hai mốc.
+2. Đợt B (hạ ngân sách trước khi tắt) — nấc người chạy ads chuyên nghiệp đòi đầu tiên.
+3. Xác minh sống `change_roas_target` + `create_manual_product_ads` trên ANO (mục 7 việc 1, 6).
+4. Đợt C từ khóa chỉ đọc; GMS (mục 7 việc 12).
