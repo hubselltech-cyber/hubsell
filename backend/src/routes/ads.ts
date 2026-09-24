@@ -1118,11 +1118,14 @@ router.post("/lazada/write-probe", async (req: AuthRequest, res, next) => {
 // test/đã tạm dừng, làm cùng chủ shop.
 router.post("/shopee/write-probe", async (req: AuthRequest, res, next) => {
   try {
-    const { channelId, campaignId, editAction, confirm } = req.body as {
+    const { channelId, campaignId, editAction, confirm, budget, roasTarget } = req.body as {
       channelId?: string;
       campaignId?: string | number;
       editAction?: string;
       confirm?: boolean;
+      /** Kèm khi editAction = change_budget (ngân sách ngày) / change_roas_target — xác minh sống 24/09. */
+      budget?: number;
+      roasTarget?: number;
     };
     if (confirm !== true || !campaignId || !editAction) {
       res.status(400).json({
@@ -1146,10 +1149,12 @@ router.post("/shopee/write-probe", async (req: AuthRequest, res, next) => {
         campaignId,
         editAction,
         referenceId: `probe-${campaignId}-${Date.now()}`,
+        ...(typeof budget === "number" ? { budget } : {}),
+        ...(typeof roasTarget === "number" ? { roasTarget } : {}),
       },
       cfg
     );
-    res.json({ probe: { campaignId, editAction }, shopeeResponse: raw });
+    res.json({ probe: { campaignId, editAction, budget, roasTarget }, shopeeResponse: raw });
   } catch (err) {
     next(err);
   }
