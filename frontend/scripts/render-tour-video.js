@@ -71,6 +71,8 @@ const durationSec = (file) =>
   const page = await ctx.newPage();
   const url = `http://localhost:3000/guide/render?tour=${TOUR}&hold=${hold.join(",")}`;
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  // Ẩn nút "N" của Next dev (nextjs-portal) kẻo lọt vào góc video đăng YouTube
+  await page.addStyleTag({ content: "nextjs-portal{display:none!important}" });
   await page.waitForFunction(() => typeof window.__startTour === "function", null, { timeout: 120000 });
   // Nạp sẵn ảnh để không có khung hình trắng giữa chừng
   await page.evaluate(async () => {
