@@ -868,8 +868,10 @@ function NumberField({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-slate-600">{label}</span>
+    // Nhãn đậm màu chữ chính + hàng có nền nhạt để ô nhập nổi khỏi dòng mô tả (anh Trung 24/09:
+    // "hơi chìm, khó quan sát để nhập liệu").
+    <label className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-sm">
+      <span className="font-medium text-slate-800">{label}</span>
       <span className="relative w-32 shrink-0">
         <Input
           type="number"
@@ -991,8 +993,8 @@ export function ShopeeAssistantConfigCard({
               title="Tự thực thi (GĐ3)"
               hint="Trợ lý TỰ TẠM DỪNG chiến dịch dính 'Đề xuất tạm dừng' / 'Vọt chi'. Diễn tập = chỉ ghi sổ để anh/chị xem Trợ lý ĐỊNH làm gì; Thực thi thật chỉ nên bật sau khi đã tin bản diễn tập."
             >
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-slate-600">Chế độ</span>
+              <label className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-sm">
+                <span className="font-medium text-slate-800">Chế độ</span>
                 <select
                   value={draft.autoExecute.mode}
                   onChange={(e) =>
@@ -1017,8 +1019,8 @@ export function ShopeeAssistantConfigCard({
               />
               {/* Đợt B (24/09): nấc hạ ngân sách trước khi tắt — chỉ Shopee có lệnh đổi ngân sách. */}
               {platformLabel === "Shopee" && (
-                <label className="flex items-center justify-between gap-3 text-sm">
-                  <span className="text-slate-600">
+                <label className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-sm">
+                  <span className="font-medium text-slate-800">
                     Hạ ngân sách trước, tắt sau
                     <HintIcon hint="Chiến dịch lỗ (Đề xuất tạm dừng) thì lần đầu Trợ lý chỉ HẠ ngân sách ngày về max(50% ngân sách, 70% chi tiêu trung bình ngày) để giữ chiến dịch sống, không mất học máy; ngày sau vẫn lỗ mới tạm dừng. Bật lại thì trả ngân sách cũ. Vọt chi vẫn tắt ngay. Tắt cờ này = tắt ngay như trước." />
                   </span>
