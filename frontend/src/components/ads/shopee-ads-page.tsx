@@ -656,8 +656,6 @@ export function ShopeeAdsPage({
                   Tháng này / Tháng trước + lịch chọn tay) — cùng khuôn TikTok Ads
                   và các trang báo cáo (anh Trung 24/09: 4 nút cũ "cơ bản quá"). */}
               <DateRangePicker value={range} onChange={changeRange} />
-              {/* Note: DateRangePicker dùng chung — không truyền disabled khi đang tải
-                  để người dùng đổi khoảng liên tiếp không bị khựng. */}
               {/* Hubsell Ads (app Ads riêng): MỘT nút cho gian đang chọn — chỉ hiện
                   khi backend đã bật; đã nối thì thành dòng mờ (anh Trung 17/09). */}
               {platform === "shopee" && channelId && (
