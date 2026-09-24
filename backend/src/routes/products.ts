@@ -119,10 +119,40 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // xem riêng SKU đã ngừng; ?status=all cho xuất Excel / tra cứu.
     const statusRaw = typeof req.query.status === "string" ? req.query.status : "active";
     const status = statusRaw === "inactive" || statusRaw === "all" ? statusRaw : "active";
+    // LỌC THEO VỊ TRÍ (anh Trung 24/09): chọn một kho = lấy cả hàng ở các kệ / tầng
+    // bên trong nó (cả nhánh con), chỉ SKU đang có hàng (≠ 0) ở đó.
+    const locationId = typeof req.query.locationId === "string" ? req.query.locationId : "";
+    let locationIds: string[] | null = null;
+    if (locationId) {
+      const locs = await prisma.stockLocation.findMany({
+        where: { userId: req.ownerId! },
+        select: { id: true, parentId: true },
+      });
+      if (!locs.some((l) => l.id === locationId)) {
+        res.status(404).json({ error: "Không tìm thấy vị trí" });
+        return;
+      }
+      const children = new Map<string | null, string[]>();
+      for (const l of locs) {
+        const arr = children.get(l.parentId) ?? [];
+        arr.push(l.id);
+        children.set(l.parentId, arr);
+      }
+      locationIds = [];
+      const stack = [locationId];
+      while (stack.length) {
+        const id = stack.pop()!;
+        locationIds.push(id);
+        for (const c of children.get(id) ?? []) stack.push(c);
+      }
+    }
 
     const where: Prisma.ProductWhereInput = {
       userId: req.ownerId!,
       ...(status === "all" ? {} : { isActive: status === "active" }),
+      ...(locationIds
+        ? { stockLevels: { some: { locationId: { in: locationIds }, quantity: { not: 0 } } } }
+        : {}),
       ...(search
         ? {
             OR: [

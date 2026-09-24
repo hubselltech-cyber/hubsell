@@ -57,6 +57,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -87,6 +88,7 @@ import { exportAllProducts } from "@/lib/excel";
 import { qk } from "@/lib/query-keys";
 import { useApiQuery, useInvalidate } from "@/lib/use-api-query";
 import { CHANNEL_META } from "@/lib/channel-meta";
+import { locationLabel, locationTree } from "@/lib/stock-locations";
 import { formatNumber } from "@/lib/format";
 import { canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
@@ -134,6 +136,8 @@ export default function ProductsHubPage() {
   const [exporting, setExporting] = useState(false);
   // Đang bán (mặc định) / Ngừng bán — chip chỉ hiện khi có SKU ngừng bán.
   const [status, setStatus] = useState<ProductStatusFilter>("active");
+  // Lọc theo vị trí chứa hàng (anh Trung 24/09) — "" = mọi vị trí.
+  const [locationFilter, setLocationFilter] = useState("");
   // SKU đang mở hộp Lịch sử kho.
   const [history, setHistory] = useState<Product | null>(null);
 
@@ -186,8 +190,9 @@ export default function ProductsHubPage() {
   // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
   // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
   const productsQ = useApiQuery({
-    queryKey: qk.products({ page, pageSize: PAGE_SIZE, search, status }),
-    queryFn: () => fetchProducts({ page, pageSize: PAGE_SIZE, search, status }),
+    queryKey: qk.products({ page, pageSize: PAGE_SIZE, search, status, locationFilter }),
+    queryFn: () =>
+      fetchProducts({ page, pageSize: PAGE_SIZE, search, status, locationId: locationFilter || undefined }),
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
   const invalidate = useInvalidate();
@@ -200,7 +205,7 @@ export default function ProductsHubPage() {
 
   useEffect(() => {
     setSelected(new Map());
-  }, [page, search, status, tab]);
+  }, [page, search, status, tab, locationFilter]);
   const pageIds = items.map((p) => p.id);
   const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;
   const allOnPage = items.length > 0 && selectedOnPage === items.length;
@@ -951,6 +956,28 @@ export default function ProductsHubPage() {
                 <Button type="submit" variant="secondary">
                   Tìm kiếm
                 </Button>
+                {/* Chip "Tại vị trí" — chỉ khi shop dùng vị trí; chọn kho là gom cả kệ / tầng bên trong. */}
+                {locationsEnabled && (
+                  <NativeSelect
+                    aria-label="Lọc theo vị trí chứa hàng"
+                    className={cn("w-56 [&>select]:rounded-full [&>select]:text-xs", locationFilter && "[&>select]:border-primary [&>select]:font-medium")}
+                    value={locationFilter}
+                    onChange={(e) => {
+                      setLocationFilter(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Tại vị trí: tất cả</option>
+                    {locationTree(locations).map(({ loc, depth }) => (
+                      <option key={loc.id} value={loc.id}>
+                        {"\u00a0\u00a0".repeat(depth)}
+                        {depth > 0 ? "› " : ""}
+                        {loc.name}
+                        {loc.skuCount ? ` · ${loc.skuCount} SKU` : ""}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
                 {/* Chip Ngừng bán chỉ hiện khi có SKU ngừng bán (ẩn bằng vắng mặt). */}
                 {(inactiveCount > 0 || status !== "active") && (
                   <div className="flex items-center gap-1.5">
@@ -1051,6 +1078,14 @@ export default function ProductsHubPage() {
                   <div className="space-y-3 py-10 text-center text-sm text-muted-foreground">
                     {search ? (
                       <p>Không tìm thấy sản phẩm nào khớp với &quot;{search}&quot;.</p>
+                    ) : locationFilter ? (
+                      <p>
+                        Chưa có mã nào có hàng tại{" "}
+                        <b className="text-foreground">
+                          {locationLabel(locations.find((l) => l.id === locationFilter) ?? locations[0])}
+                        </b>
+                        . Dùng &ldquo;Cất lên kệ&rdquo; để đưa hàng vào đây.
+                      </p>
                     ) : status === "inactive" ? (
                       <p>Chưa có SKU nào ngừng kinh doanh.</p>
                     ) : isAdmin && unlinkedCount > 0 ? (

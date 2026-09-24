@@ -276,7 +276,7 @@ stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt l�
 - Rào: đổi cha thành con/cháu của chính nó → 400 (đi ngược lên tới gốc); xóa kho còn kệ con → 409 (đã có).
 - E2E local: tạo Kho 2 → sinh "Kệ A[1-2] T[1-2]" thuộc Kho 2 → tạo Kho 3 → thứ tự 0..6 đúng cây, mã KE-A1-T1…; PATCH Kho 3 vào
   Kho 2 → tự xếp "Kho 2 › Kho 3" cuối nhánh; Kho 2 vào Kho 3 → 400 vòng lặp; xóa Kho 2 còn 5 con → 409; xóa hết → tắt.
-- Chưa làm (chờ anh chốt sau khi xem): chip lọc bảng theo vị trí. Trang "Cất hàng lên kệ" → 8.10.
+- Trang "Cất hàng lên kệ" → 8.10; chip lọc theo vị trí → 8.12.
 
 ### 8.10 Cất hàng lên kệ (24/09 khuya, anh Trung: "trong thời gian này em code luôn phần cất hàng")
 - Trang riêng `/products/putaway` (nút "Cất lên kệ" trên thanh công cụ, chỉ khi shop có vị trí). MỘT ô quét: quét TEM KỆ (mã
@@ -297,4 +297,12 @@ stockLevels rỗng. Bug bắt được khi test: vị trí sinh hàng loạt l�
   "Vị trí: … (còn N)"; (3) sổ tại tầng đang ÂM (bán vượt) → nối " — sổ âm, kiểm lại" để người nhặt không đi tìm hàng không có.
 - Kết quả in: `Vị trí: Kho Bình Tân › Kệ A1 › T1 ×1` / `Vị trí: Kho Bình Tân › Kệ A1 › T2 ×29 — sổ âm, kiểm lại`; đơn chưa trừ:
   `Vị trí: Kho chính (còn 2)` / `Vị trí: Kho Bình Tân › Kệ A1 › T1 (còn 2)`. 12 test liên quan pass.
+
+### 8.12 Chip lọc bảng Hàng hóa theo vị trí (24/09 khuya, anh Trung: "làm tiếp chip lọc")
+- Trên thanh tìm kiếm (chỉ khi shop có vị trí): ô chọn bo tròn "Tại vị trí: tất cả" liệt kê cây thụt lề kèm số SKU có hàng.
+  Chọn một KHO = gom cả hàng ở kệ / tầng bên trong (backend lấy cả nhánh con), chỉ SKU đang có hàng (≠ 0) ở đó.
+- `GET /api/products?locationId=` (404 nếu vị trí không thuộc shop); đổi bộ lọc thì về trang 1 và xóa ô tích.
+- Dòng trống khi lọc: "Chưa có mã nào có hàng tại Kho 2 › Kệ A2 T1. Dùng Cất lên kệ để đưa hàng vào đây."
+- E2E local: Kho 2 › Kệ A1 T1 (MU-LUOI-TRAI 2) → lọc Kho 2 = 1 mã, Kệ A1 T1 = 1, Kệ A2 T1 = 0, Kho chính = 12; UI đổi chip
+  ra đúng bảng; dọn về tắt.
 

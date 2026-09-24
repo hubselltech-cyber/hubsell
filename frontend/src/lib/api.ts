@@ -1388,12 +1388,15 @@ export function fetchProducts(params: {
   search?: string;
   /** Mặc định backend = "active" (chỉ SKU đang bán). */
   status?: ProductStatusFilter;
+  /** Chỉ SKU đang có hàng tại vị trí này (kể cả kệ / tầng bên trong). */
+  locationId?: string;
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.search) qs.set("search", params.search);
   if (params.status) qs.set("status", params.status);
+  if (params.locationId) qs.set("locationId", params.locationId);
   return apiFetch<ProductListResponse>(`/api/products?${qs.toString()}`);
 }
 
