@@ -413,7 +413,9 @@ export function ShopeeAssistantModal({
 
             {/* ĐỢT C: từ khóa Shopee — chỉ cấu hình (sàn không cấp hiệu suất từng từ khóa qua API) +
                 nút hỏi từ khóa Shopee gợi ý để đối chiếu: chưa có trong campaign / đang trả giá hớ. */}
-            {platform === "shopee" && (campaign.keywords || campaign.biddingMethod === "manual") && (
+            {/* Mọi campaign Shopee có SP đều xem được từ khóa Shopee gợi ý (anh Trung 24/09 không thấy
+                nút vì hai campaign ANO đang chạy đều đấu thầu tự động — điều kiện cũ chỉ mở cho thủ công). */}
+            {platform === "shopee" && campaign.itemCount > 0 && (
               <div className="space-y-3 border-t pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-slate-900">
@@ -428,7 +430,7 @@ export function ShopeeAssistantModal({
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={kwLoading || !campaign.keywords}
+                    disabled={kwLoading}
                     onClick={() => void loadKeywordSuggestions()}
                     title="Hỏi Shopee từ khóa gợi ý cho sản phẩm của chiến dịch (lượt tìm 30 ngày, điểm chất lượng, giá thầu gợi ý) rồi đối chiếu với từ khóa đang chọn. Cache 24 giờ."
                   >
@@ -440,7 +442,13 @@ export function ShopeeAssistantModal({
                   đang đặt trên sàn. Muốn xem từ khóa nào ra đơn, mở Seller Center. Sửa từ khóa/giá thầu cũng làm trên
                   Seller Center.
                 </p>
-                {!campaign.keywords && (
+                {!campaign.keywords && campaign.biddingMethod === "auto" && (
+                  <p className="text-sm text-muted-foreground">
+                    Chiến dịch đấu thầu tự động — Shopee tự chọn từ khóa, không có danh sách để xem. Vẫn hỏi được
+                    từ khóa Shopee gợi ý cho sản phẩm này (nút bên trên) để cân nhắc khi lập chiến dịch thủ công.
+                  </p>
+                )}
+                {!campaign.keywords && campaign.biddingMethod !== "auto" && (
                   <p className="text-sm text-muted-foreground">
                     Chưa có cấu hình từ khóa từ sàn — xung kế tiếp sẽ kéo (30 phút), hoặc bấm Làm mới.
                   </p>

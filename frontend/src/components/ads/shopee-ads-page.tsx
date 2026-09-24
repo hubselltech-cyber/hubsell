@@ -712,7 +712,9 @@ export function ShopeeAdsPage({
                   : []),
                 { key: "breakeven", label: "ROAS hòa vốn sản phẩm" },
                 // GMS (24/09): tab riêng, chỉ khi gian đang chạy GMV Max cấp shop — không chen vào Tổng quan.
-                ...(platform === "shopee" && gms?.status === "active"
+                // Tab luôn có với gian Shopee đã nối Ads (anh Trung 24/09 "chưa thấy GMS ở đâu") — nội dung
+                // nói rõ trạng thái: đang chạy / đủ điều kiện chưa chạy / không đủ điều kiện / chưa hỏi sàn.
+                ...(platform === "shopee" && adsLinked && channelId
                   ? ([{ key: "gms", label: "GMV Max cấp shop" }] as const)
                   : []),
                 {
@@ -1126,6 +1128,36 @@ export function ShopeeAdsPage({
         {/* ===== TAB GMV MAX CẤP SHOP (GMS, 24/09) — tab riêng, chỉ hiện khi gian đang chạy GMS
             (khẩu vị anh Trung điểm 10: không chèn khối phụ lên trên bảng chính; số theo cửa sổ,
             không có số ngày nên không đi vào bảng/biểu đồ Tổng quan). ===== */}
+        {tab === "gms" && (!gms || gms.status !== "active") && (
+          <Card>
+            <CardHeader>
+              <CardTitle>GMV Max cấp shop (GMS)</CardTitle>
+              <CardDescription className="mt-1.5">
+                GMV Max cấp shop là chiến dịch tự động toàn gian của Shopee. Chi tiêu của nó KHÔNG nằm trong bảng
+                chiến dịch sản phẩm — chỉ có trong tổng chi cấp shop, và sàn chỉ trả số theo cửa sổ ngày trọn.
+                Hubsell chỉ đọc.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-slate-700">
+                {!gms
+                  ? "Chưa hỏi sàn về GMV Max của gian này — lượt kéo kế tiếp (tối đa 30 phút) sẽ có trạng thái."
+                  : gms.status === "eligible"
+                    ? "Gian đủ điều kiện chạy GMV Max cấp shop nhưng chưa có chiến dịch GMS nào. Bật trên Seller Center thì số sẽ hiện ở đây sau lượt kéo lịch sử kế tiếp (tối đa 6 giờ)."
+                    : gms.status === "not_whitelisted"
+                      ? "Shopee chưa mở GMV Max cấp shop cho gian này (chưa được whitelist)."
+                      : gms.status === "not_have_enough_sku"
+                        ? "Gian chưa đủ sản phẩm hợp lệ để Shopee cho chạy GMV Max cấp shop."
+                        : gms.status === "exclusive_with_other_campaign"
+                          ? "Gian đang thuộc chương trình khác của Shopee (auto boost) nên không chạy được GMV Max cấp shop."
+                          : `Chưa đọc được trạng thái GMV Max từ sàn (${gms.status}).`}
+                {gms?.checkedAt && (
+                  <span className="text-muted-foreground"> Hỏi sàn lúc {formatSyncTime(gms.checkedAt)}.</span>
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        )}
         {tab === "gms" && gms && gms.status === "active" && (
           <Card>
             <CardHeader>

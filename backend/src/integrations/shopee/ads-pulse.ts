@@ -30,6 +30,7 @@ import {
   upsertShopeeCampaignSettings,
 } from "./ads-campaigns";
 import { syncShopeeAdsSpend } from "./ads-spend";
+import { syncShopeeGms } from "./ads-gms";
 
 /** Trạng thái campaign không cần theo dõi nữa. */
 export const ADS_DEAD_STATUSES = ["ended", "deleted", "closed"];
@@ -111,6 +112,17 @@ export async function pulseShopeeAds(
       `[Ads-pulse] Ví ads Shopee "${channel.shopName}" không đọc được:`,
       (err as Error).message
     );
+  }
+
+  // 7. GMS — gian CHƯA hỏi sàn lần nào (adsGmsStatus null, vd vừa deploy / vừa nối) thì hỏi ngay ở
+  // xung (1 call eligibility; chỉ khi đang chạy GMS mới thêm 3–4 call) để tab GMV Max có trạng thái
+  // trong 30' thay vì đợi lượt lịch sử 6h (anh Trung 24/09 "chưa thấy GMS ở đâu"). Lỗi không chặn gì.
+  if (channel.adsGmsStatus == null) {
+    try {
+      await syncShopeeGms(channel, access);
+    } catch (err) {
+      console.warn(`[Ads-pulse] GMS lần đầu "${channel.shopName}" không đọc được:`, (err as Error).message);
+    }
   }
 
   // 6. ĐỢT B — cờ ví TỰ NẠP (1 call): ví cạn mà không tự nạp → cảnh báo cao; đã
