@@ -131,13 +131,17 @@ async function detectStockouts(ownerId: string): Promise<DetectedAlert[]> {
           skuCode: true,
           quantityInStock: true,
           holdQuantity: true,
+          isActive: true,
         },
       },
     },
   });
 
   const stockouts = mappings.filter(
-    (m) => m.product && m.product.quantityInStock - m.product.holdQuantity <= 0
+    (m) =>
+      m.product &&
+      m.product.isActive &&
+      m.product.quantityInStock - m.product.holdQuantity <= 0
   );
   if (stockouts.length === 0) return [];
 
@@ -207,6 +211,8 @@ async function detectLowStock(ownerId: string): Promise<DetectedAlert[]> {
   const products = await prisma.product.findMany({
     where: {
       userId: ownerId,
+      // SKU đã ngừng kinh doanh thì hết hàng là bình thường, không báo (24/09).
+      isActive: true,
       // Không có ngưỡng riêng và shop không đặt mặc định → không gì để quét.
       ...(shopDefault > 0 ? {} : { lowStockThreshold: { gt: 0 } }),
     },

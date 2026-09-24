@@ -486,6 +486,7 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
             type: InventoryLogType.SYNC,
             reason: `Hoàn kho tự động do hủy đơn ${order.orderCode}`,
             orderId: order.id,
+            actorId: req.userId ?? null,
           },
         });
         restored.push({
@@ -1289,7 +1290,8 @@ router.get("/lookup", async (req: AuthRequest, res, next) => {
 async function restoreReturnStockTx(
   tx: Prisma.TransactionClient,
   order: { id: string; orderCode: string },
-  reason: string
+  reason: string,
+  actorId: string | null = null
 ) {
   const restored: {
     productId: string;
@@ -1314,6 +1316,7 @@ async function restoreReturnStockTx(
         type: InventoryLogType.SYNC,
         reason,
         orderId: order.id,
+        actorId,
       },
     });
     restored.push({
@@ -1372,7 +1375,8 @@ router.post("/returns/bulk-inbound", async (req: AuthRequest, res, next) => {
               ? await restoreReturnStockTx(
                   tx,
                   order,
-                  `Nhập kho hàng hoàn (nhập kho tất cả) — đơn ${order.orderCode}`
+                  `Nhập kho hàng hoàn (nhập kho tất cả) — đơn ${order.orderCode}`,
+                  req.userId ?? null
                 )
               : [];
           await tx.order.update({
@@ -1485,7 +1489,8 @@ router.post("/:id/return", async (req: AuthRequest, res, next) => {
         ? await restoreReturnStockTx(
             tx,
             order,
-            `Nhận hàng hoàn nguyên vẹn — đơn ${order.orderCode}`
+            `Nhận hàng hoàn nguyên vẹn — đơn ${order.orderCode}`,
+            req.userId ?? null
           )
         : [];
 

@@ -100,3 +100,87 @@ KiotViet thu thêm theo kho.
 
 **Sau này (Business/Enterprise, khi có khách hỏi):** khu vực, sức chứa, gợi ý cất hàng, bổ sung theo tầng,
 map vị trí ↔ Shopee `location_id` (cột `channelStockLocationId` đã có), nối WMS ngoài.
+
+## 8. Rà lại 24/09/2026 (anh Trung yêu cầu khảo sát lại một lần nữa trước khi làm)
+
+### 8.1 Code từ 15/09 đến nay
+- Các file lõi tồn kho (`order-stock.ts`, `inventory-push.ts`, `routes/inventory.ts`, `routes/products.ts`, schema Product/InventoryLog)
+  **không có commit nào** ngoài TikTok đợt 2 (8eff504, 16/09): worker đẩy tồn TikTok theo `warehouse_id`
+  lưu ở `ChannelProduct.channelStockLocationId` (Shopee dùng `location_id` cùng cột). Khung mục 3 vẫn đúng.
+- Đếm lại chỗ ghi `quantityInStock`: 14 dòng (order-stock 2, inventory adjust/set 2, koc 1, mappings 2, orders 2,
+  products tạo/Excel 4, webhooks 1) — khớp bản 15/09. `holdQuantity` 2 chỗ (order-stock). Mobile vẫn 0 màn tồn kho
+  (chỉ quét hoàn). Test đụng tồn: 6 file.
+- Trang Hàng hóa hôm nay: 2 tab (Tồn kho / Sản phẩm trên sàn), khối Kho trung tâm 3 bước, bảng 8 cột
+  (Mã SKU · Tên · Giá vốn · Giá bán · Tồn kho sửa tại chỗ · Có thể bán · Bán trên · Nhập/Xuất), dòng bung sơ đồ
+  kho ↔ gian, Thêm SP, Nhập Excel (upsert giá + SET tồn, log chênh), Xuất Excel, cài đặt SKU, hộp đồng bộ.
+
+### 8.2 Lỗ hổng phát hiện thêm (ngoài chuyện vị trí)
+1. **Không có lịch sử kho trên giao diện.** Backend có `GET /api/inventory/logs?productId` (50 dòng) nhưng
+   frontend không gọi ở đâu. Khách thấy số tồn đổi mà không biết đơn nào trừ, ai sửa. `InventoryLog` cũng
+   **không ghi ai làm** (không có actorId) và chỉ 3 loại IMPORT / EXPORT / SYNC.
+2. **Không xóa / ngừng kinh doanh được SKU**: routes/products chỉ có GET / POST / PATCH / import; không cờ
+   `isActive`. SKU tạo hàng loạt từ sàn (create-products) nằm mãi trong bảng.
+3. **Nhập hàng từng SKU một popup**; nhập 30 mã từ xưởng = 30 lần bấm. Excel là lối thoát nhưng Excel là
+   SET tổng, không phải cộng thêm → dễ đè nhầm tồn đang có.
+4. **Chưa có kiểm kê**: chỉ sửa số trực tiếp từng ô, lý do cố định "Sửa tồn trực tiếp trên bảng".
+5. Phiếu nhặt hàng A6 (`pick-list-pdf.ts`) chỉ nhận `sku / name / quantity` — chưa có chỗ in vị trí (đợt 2).
+
+### 8.3 Đối thủ trực tiếp bổ sung (bản 15/09 thiếu BigSeller, Ginee)
+| Của ai | Ghi nhận 24/09 | Rút ra cho Hubsell |
+|---|---|---|
+| BigSeller | Mọi tài khoản tự có "Default Warehouse"; đơn không có luật → về **kho gửi mặc định**; tách riêng **kho nhận hoàn mặc định**; push rule "1 store, nhiều kho" chọn nhiều kho nguồn → đẩy **TỔNG** lên kho sàn, công thức ×80% + 0, "sắp hết → đẩy 0"; kho kiểu "1 SKU 1 kệ" vs "1 SKU nhiều kệ"; nhập kệ hàng loạt bằng Excel; wave picking theo khu; kho 3PL là loại kho riêng | Xác nhận hướng "sàn nhận tổng" của mình. **Chép: kho nhận hoàn mặc định** (hàng hoàn về một chỗ để kiểm, không trộn kho bán) — hợp luồng hoàn 2 công đoạn |
+| Ginee | Kho Ginee ↔ kho Shopee **1:1 trong cùng store**, nhiều store dùng chung một kho Ginee; chỉ đẩy tồn kho đã nhập, kho khác đẩy 0; phải bật push từng kho; sửa giá áp mọi kho | Mapping vị trí ↔ kho sàn là việc "sau này" như đã chốt; khi làm thì theo kiểu 1:1 per gian, không bắt khách bật từng kho |
+
+Nguồn: help.bigseller.com (push rule đa kho 6855, khu vực kho 7727, thêm kho 3412), ginee.com/id/help/shopee-multiwarehouse-management.
+
+### 8.4 Điều chỉnh khung so với 15/09
+1. **Không seed vị trí gốc bằng migration.** Vị trí gốc + bảng `ProductStockLevel` chỉ sinh khi khách bấm
+   "Thêm vị trí chứa hàng" lần đầu (một transaction: tạo gốc "Kho chính", đổ toàn bộ tồn vào gốc, tạo vị trí 2).
+   Shop chưa dùng = bảng rỗng, không tốn dòng, không migration dữ liệu trên hàng nghìn SKU × N shop.
+   Bất biến: shop có ≥ 1 vị trí thì `Σ ProductStockLevel.quantity (sellable) = Product.quantityInStock`.
+2. Migration chỉ tạo bảng/cột (viết IF NOT EXISTS) → **Render tự `migrate deploy`**, không ALTER tay Supabase
+   (dòng "ALTER trước khi push" ở mục 3 là bài học cũ 09/08, đã hết hiệu lực từ 06/08 và kiểm chứng lại 23/09 với backfill 90 ngày).
+3. `InventoryLog` thêm **`actorId`** (ai làm) + `locationId` + loại **ADJUST** (kiểm kê / sửa số) và **TRANSFER** — cần cho cả
+   lịch sử kho (8.2.1) lẫn vị trí, làm một lần.
+4. `StockLocation` thêm cờ **`isReturnDefault`** (kho nhận hoàn mặc định, học BigSeller); null → vị trí gốc.
+5. Helper ghi tồn duy nhất `applyStockDelta(tx, {productId, locationId?, delta, type, reason, actorId?, orderId?})`
+   gom 14 chỗ; shop chưa có vị trí thì bỏ qua nhánh level.
+
+### 8.5 Thứ tự — anh Trung chốt 24/09: **A → B** ("làm sớm, sau này thương mại đỡ sửa nhiều; có khách rồi mà sửa nhiều mất uy tín")
+- **Đợt A — hoàn thiện nền — ✅ ĐÃ CODE 24/09 (xem 8.6).**
+- **Đợt B — Vị trí chứa hàng đợt 1** theo mục 7 + điều chỉnh 8.4 — kế tiếp.
+- **Đợt C** = đợt 2 mục 7 (in vị trí trên phiếu nhặt, kiểm kê theo vị trí, cờ không bán, mobile quét).
+
+### 8.6 Đợt A đã làm (24/09/2026, kiểm trên local với shop reviewer@hubsell.vn)
+**Schema / migration `20260924150000_product_inactive_inventory_actor`** (IF NOT EXISTS, Render tự áp; local đã áp tay):
+`Product.isActive` (mặc định true), `InventoryLog.actorId` → User (SET NULL) + index `createdAt`, enum thêm `ADJUST`.
+
+**Backend**
+- `GET /api/inventory/logs` viết lại: sổ toàn shop, lọc `productId / from / to / type / q`, trang 20/50/100; mỗi dòng kèm
+  SKU + tên, `actor {id, name}` (null = hệ thống), `order {orderCode, channelName, shopName}`.
+- `POST /api/inventory/adjust-bulk {type, items[{productId, quantity}], reason}`: phần thuần `lib/inventory-bulk.ts`
+  (gộp mã quét trùng, ≤ 200 mã, báo đích danh mã thiếu hàng) + 5 test; khoá `FOR UPDATE ... ORDER BY id`, một
+  transaction, xong `enqueueStockPush`.
+- Loại nhật ký: sửa tồn trực tiếp (`/set`) và Excel đè số → **ADJUST** (trước ghi IMPORT/EXPORT/SYNC gây hiểu nhầm);
+  mọi thao tác tay ghi `actorId` (adjust / set / bulk / tạo SP / Excel / hủy đơn tay / nhập kho hàng hoàn / hàng mẫu KOC);
+  webhook + worker để null.
+- `GET /api/products?status=active|inactive|all` (mặc định active) + `inactiveCount`, `activeCount`; `PATCH` nhận
+  `isActive` (chỉ ADMIN); `DELETE /:id` chỉ ADMIN và chỉ khi 0 dòng đơn, 0 liên kết sàn, 0 hàng mẫu, tồn = 0 — ngược
+  lại 409 nêu lý do đích danh. `detectLowStock` + cháy hàng bỏ qua SKU ngừng bán.
+
+**Frontend**
+- Hub Hàng hóa: thanh tab chuyển sang `PageTabs` + `PageHeaderBand` (chuẩn 19/09), thêm tab **Nhật ký kho**
+  (`components/products/inventory-log-table.tsx`, chỉ gọi API khi mở tab, chip loại + `DateRangePicker` + tìm SKU,
+  bảng trong hộp cuộn, 20/50/100 dòng); deep-link `?tab=logs`.
+- Mỗi dòng: nút **⋯** (`product-row-menu.tsx`) = Lịch sử kho (hộp `product-history-dialog.tsx` dùng lại bảng trên,
+  ẩn cột SP) · Cảnh báo & tồn an toàn · Ngừng kinh doanh ⇄ Bán lại · Xóa SKU (hộp xác nhận, 409 thì hiện lý do và đóng).
+  Nút chuông riêng đã bỏ (cột Tồn kho vốn ghi "≤ ngưỡng N"; nút thứ tư làm bảng tràn ngang).
+- Chip **Đang bán / Ngừng bán N** chỉ hiện khi có SKU ngừng bán; xem "Ngừng bán" mà bán lại hết thì tự về "Đang bán";
+  dòng ngừng bán gạch tên + nhãn; khối Kho trung tâm đếm `activeCount` không theo bộ lọc; Xuất Excel lấy `status=all`
+  + cột Trạng thái.
+- Trang riêng **/products/receive** "Phiếu nhiều mã": chip Nhập hàng / Xuất hàng, một ô gõ/quét mã (gợi ý 200 ms, Enter
+  đúng mã thêm ngay, quét trùng cộng dồn, ↑↓ chọn), bảng SKU · tên · tồn hiện tại · số · tồn sau · bỏ dòng, lý do chung,
+  một nút; xuất thiếu hàng chặn tại chỗ và báo mã.
+
+**Chưa làm trong A (để B/C):** `balanceAfter` (tồn sau mỗi dòng nhật ký — sẽ ghi khi gom 14 chỗ ghi vào helper ở B),
+mobile chưa có nhật ký, ảnh tour /guide chưa chụp lại.

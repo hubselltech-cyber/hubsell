@@ -121,11 +121,12 @@ export function exportProductsToExcel(
     ...(includeCost ? { "Giá vốn": Number(p.costPrice ?? 0) } : {}),
     "Giá bán": Number(p.sellingPrice),
     "Tồn kho": p.quantityInStock,
+    "Trạng thái": p.isActive === false ? "Ngừng kinh doanh" : "Đang bán",
     "Ngày tạo": toDateTimeText(p.createdAt),
   }));
   downloadSheet(
     rows,
-    includeCost ? [16, 42, 14, 14, 10, 20] : [16, 42, 14, 10, 20],
+    includeCost ? [16, 42, 14, 14, 10, 16, 20] : [16, 42, 14, 10, 16, 20],
     "San pham",
     `hubsell_san_pham_${fileStamp()}.xlsx`
   );
@@ -137,7 +138,8 @@ export async function exportAllProducts(includeCost: boolean) {
   let page = 1;
   // trang tối đa 50/lần theo backend
   for (;;) {
-    const res = await fetchProducts({ page, pageSize: 50 });
+    // Xuất cả SKU đã ngừng bán (cột Trạng thái phân biệt) — file là để đối chiếu.
+    const res = await fetchProducts({ page, pageSize: 50, status: "all" });
     all.push(...res.items);
     if (page >= res.pageCount || res.pageCount === 0) break;
     page++;

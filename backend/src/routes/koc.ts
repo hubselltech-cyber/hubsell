@@ -968,6 +968,7 @@ router.post("/samples", async (req: AuthRequest, res, next) => {
               changeQuantity: -qty,
               type: "EXPORT",
               reason: `Xuất hàng mẫu KOC "${koc.name}" (Sổ KOC)`,
+              actorId: req.userId ?? null,
             },
           });
         }

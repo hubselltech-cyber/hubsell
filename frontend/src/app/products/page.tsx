@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   createColumnHelper,
@@ -12,11 +13,11 @@ import {
   ArrowDownToLine,
   ArrowLeftRight,
   ArrowUpFromLine,
-  BellRing,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Download,
   Link2,
   Link2Off,
@@ -37,6 +38,9 @@ import { SetupGuide, type ChannelProductCounts } from "@/components/products/set
 import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
+import { InventoryLogTable } from "@/components/products/inventory-log-table";
+import { ProductHistoryDialog } from "@/components/products/product-history-dialog";
+import { ProductRowMenu } from "@/components/products/product-row-menu";
 import { SyncAlertBanner } from "@/components/products/sync-alert-banner";
 import { LinkManager } from "@/components/products/link-manager";
 import {
@@ -46,6 +50,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import {
   Table,
   TableBody,
@@ -67,6 +72,7 @@ import {
   type Channel,
   type Product,
   type ProductChannelLink,
+  type ProductStatusFilter,
 } from "@/lib/api";
 import { exportAllProducts } from "@/lib/excel";
 import { qk } from "@/lib/query-keys";
@@ -81,7 +87,7 @@ const PAGE_SIZE = 10;
 
 const columnHelper = createColumnHelper<Product>();
 
-type HubTab = "inventory" | "links";
+type HubTab = "inventory" | "links" | "logs";
 
 /**
  * HUB "HÀNG HÓA" — một trang cho toàn bộ vòng đời hàng hóa của seller, thay ba
@@ -96,6 +102,12 @@ type HubTab = "inventory" | "links";
  *      thêm tại chỗ. Cảnh báo lệch tồn ngay trên bảng, chỉ hiện khi có lỗi.
  *   3. Tab SẢN PHẨM TRÊN SÀN (chỉ chủ shop): tầng đệm ChannelProduct để nối tay
  *      từng dòng / theo lô; cùng một hộp "Tự khớp + tạo SKU" với bước 2.
+ *   4. Tab NHẬT KÝ KHO (24/09): sổ biến động toàn shop — vì sao tồn đổi, ai làm,
+ *      đơn nào trừ. Chỉ gọi API khi mở tab. Từng SKU có "Lịch sử kho" trong menu ⋯.
+ *
+ * 24/09: SKU có thể NGỪNG KINH DOANH (ẩn khỏi bảng, giữ đơn cũ + liên kết) —
+ * chip "Ngừng bán N" chỉ hiện khi N > 0; phiếu nhập/xuất NHIỀU MÃ là trang riêng
+ * /products/receive. Thanh tab chuyển sang PageTabs + PageHeaderBand (chuẩn 19/09).
  *
  * Route cũ /mappings và /warehouse/sync redirect về đây (?tab=links / ?sync=1).
  */
@@ -111,6 +123,10 @@ export default function ProductsHubPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
+  // Đang bán (mặc định) / Ngừng bán — chip chỉ hiện khi có SKU ngừng bán.
+  const [status, setStatus] = useState<ProductStatusFilter>("active");
+  // SKU đang mở hộp Lịch sử kho.
+  const [history, setHistory] = useState<Product | null>(null);
 
   // Số liệu nuôi khối Thiết lập kho + badge tab (chỉ chủ shop): đếm SP sàn,
   // gian hàng đang hoạt động. `guideReady` = đã tải xong lượt đầu để khối quyết
@@ -143,13 +159,17 @@ export default function ProductsHubPage() {
   // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
   // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
   const productsQ = useApiQuery({
-    queryKey: qk.products({ page, pageSize: PAGE_SIZE, search }),
-    queryFn: () => fetchProducts({ page, pageSize: PAGE_SIZE, search }),
+    queryKey: qk.products({ page, pageSize: PAGE_SIZE, search, status }),
+    queryFn: () => fetchProducts({ page, pageSize: PAGE_SIZE, search, status }),
   });
+  const inactiveCount = productsQ.data?.inactiveCount ?? 0;
   const invalidate = useInvalidate();
   const items = productsQ.data?.items ?? [];
   const total = productsQ.data?.total ?? 0;
   const pageCount = productsQ.data?.pageCount ?? 0;
+  // Khối Kho trung tâm đếm SKU ĐANG BÁN toàn shop — không đổi theo chip lọc /
+  // ô tìm (backend cũ chưa trả activeCount thì rơi về total như trước).
+  const activeTotal = productsQ.data?.activeCount ?? total;
   const loading = productsQ.refreshing;
   const error = productsQ.error;
 
@@ -158,6 +178,7 @@ export default function ProductsHubPage() {
   const load = useCallback(() => {
     setLinkDetails({});
     invalidate(["products"]);
+    invalidate(["inventory-logs"]);
   }, [invalidate]);
 
   /** Đếm SP sàn (all/linked/unlinked) — badge tab + bước 1, 2 của khối thiết lập. */
@@ -208,6 +229,7 @@ export default function ProductsHubPage() {
     if (params.get("tab") === "links" && canManageShop(getStoredUser())) {
       setTab("links");
     }
+    if (params.get("tab") === "logs") setTab("logs");
     if (params.get("sync") === "1" && canManageShop(getStoredUser())) {
       setSyncOpen(true);
     }
@@ -219,6 +241,15 @@ export default function ProductsHubPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Đang xem "Ngừng bán" mà bán lại hết → tự về "Đang bán", không để lại
+  // bảng trống với chip 0 (chip cũng tự biến mất vì inactiveCount = 0).
+  useEffect(() => {
+    if (status === "inactive" && productsQ.data && inactiveCount === 0) {
+      setStatus("active");
+      setPage(1);
+    }
+  }, [status, inactiveCount, productsQ.data]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -311,8 +342,21 @@ export default function ProductsHubPage() {
       columnHelper.accessor("productName", {
         header: "Tên sản phẩm",
         cell: (info) => (
-          <span className="block max-w-[13rem] truncate 2xl:max-w-[26rem]" title={info.getValue()}>
-            {info.getValue()}
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              className={cn(
+                "block max-w-[13rem] truncate 2xl:max-w-[26rem]",
+                info.row.original.isActive === false && "text-muted-foreground line-through decoration-slate-300"
+              )}
+              title={info.getValue()}
+            >
+              {info.getValue()}
+            </span>
+            {info.row.original.isActive === false && (
+              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                Ngừng bán
+              </span>
+            )}
           </span>
         ),
       }),
@@ -525,21 +569,16 @@ export default function ProductsHubPage() {
             >
               <ArrowUpFromLine className="size-4" />
             </Button>
-            {isAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "h-8 px-1.5",
-                  row.original.isLowStock ? "text-amber-700" : "text-muted-foreground"
-                )}
-                title="Ngưỡng cảnh báo sắp hết hàng & tồn an toàn của SKU"
-                aria-label={`Cài đặt SKU ${row.original.skuCode}`}
-                onClick={() => setSkuSettings(row.original)}
-              >
-                <BellRing className="size-4" />
-              </Button>
-            )}
+            {/* Việc thỉnh thoảng (lịch sử, cảnh báo, ngừng bán, xóa) gom vào ⋯ (24/09).
+                Nút chuông riêng đã bỏ: cột Tồn kho vốn đã ghi "≤ ngưỡng N" khi
+                sắp hết, thêm nút thứ tư làm bảng tràn ngang ở 1366/1440. */}
+            <ProductRowMenu
+              product={row.original}
+              isAdmin={isAdmin}
+              onHistory={() => setHistory(row.original)}
+              onSettings={() => setSkuSettings(row.original)}
+              onChanged={load}
+            />
           </div>
         ),
       }),
@@ -731,47 +770,42 @@ export default function ProductsHubPage() {
     );
   }
 
-  const tabButton = (key: HubTab, label: string, badge?: number) => (
-    <button
-      type="button"
-      aria-pressed={tab === key}
-      onClick={() => {
-        if (key === "links") setLinkSeed(undefined);
-        setTab(key);
-      }}
-      className={cn(
-        "flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
-        tab === key
-          ? "border-primary bg-primary text-primary-foreground"
-          : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-      )}
-    >
-      {label}
-      {badge !== undefined && badge > 0 && (
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
-            tab === key
-              ? "bg-primary-foreground/20"
-              : "bg-amber-100 text-amber-800"
-          )}
-        >
-          {formatNumber(badge)}
-        </span>
-      )}
-    </button>
-  );
+  const hubTabs: PageTabItem<HubTab>[] = [
+    { key: "inventory", label: "Tồn kho" },
+    ...(isAdmin
+      ? [
+          {
+            key: "links" as const,
+            label: "Sản phẩm trên sàn",
+            count: unlinkedCount,
+            countTone: "attention" as const,
+            countTitle: "Sản phẩm trên sàn chưa nối về SKU kho",
+          },
+        ]
+      : []),
+    { key: "logs", label: "Nhật ký kho" },
+  ];
 
   return (
     <AppShell>
       <div className="space-y-5">
-        {/* ===== THANH TAB ===== */}
-        <div className="flex items-center gap-2">
-          {tabButton("inventory", "Tồn kho")}
-          {isAdmin && tabButton("links", "Sản phẩm trên sàn", unlinkedCount)}
-        </div>
+        {/* ===== DẢI ĐẦU TRANG + THANH TAB (chuẩn PageTabs 19/09) ===== */}
+        <PageHeaderBand>
+          <PageTabs
+            ariaLabel="Khu vực của hub Hàng hóa"
+            className="border-b-0"
+            tabs={hubTabs}
+            value={tab}
+            onChange={(key) => {
+              if (key === "links") setLinkSeed(undefined);
+              setTab(key);
+            }}
+          />
+        </PageHeaderBand>
 
-        {tab === "links" && isAdmin ? (
+        {tab === "logs" ? (
+          <InventoryLogTable />
+        ) : tab === "links" && isAdmin ? (
           <LinkManager
             key={linkSeed ?? "all"}
             initialSearch={linkSeed}
@@ -789,7 +823,7 @@ export default function ProductsHubPage() {
             <div className="pb-2">
               <SetupGuide
                 isAdmin={isAdmin}
-                productTotal={total}
+                productTotal={activeTotal}
                 ready={guideReady && !productsQ.loading}
                 channels={channels}
                 counts={counts}
@@ -816,8 +850,41 @@ export default function ProductsHubPage() {
                 <Button type="submit" variant="secondary">
                   Tìm kiếm
                 </Button>
+                {/* Chip Ngừng bán chỉ hiện khi có SKU ngừng bán (ẩn bằng vắng mặt). */}
+                {(inactiveCount > 0 || status !== "active") && (
+                  <div className="flex items-center gap-1.5">
+                    {(
+                      [
+                        { key: "active", label: "Đang bán" },
+                        { key: "inactive", label: `Ngừng bán ${formatNumber(inactiveCount)}` },
+                      ] as { key: ProductStatusFilter; label: string }[]
+                    ).map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        aria-pressed={status === c.key}
+                        onClick={() => {
+                          setStatus(c.key);
+                          setPage(1);
+                        }}
+                        className={cn(
+                          "whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          status === c.key
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                        )}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </form>
               <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" nativeButton={false} render={<Link href="/products/receive" />}>
+                  <ClipboardList className="size-4" />
+                  Phiếu nhiều mã
+                </Button>
                 <ImportExcelDialog onImported={load} />
                 <Button variant="outline" onClick={handleExport} disabled={exporting}>
                   {exporting ? (
@@ -849,6 +916,8 @@ export default function ProductsHubPage() {
                   <div className="space-y-3 py-10 text-center text-sm text-muted-foreground">
                     {search ? (
                       <p>Không tìm thấy sản phẩm nào khớp với &quot;{search}&quot;.</p>
+                    ) : status === "inactive" ? (
+                      <p>Chưa có SKU nào ngừng kinh doanh.</p>
                     ) : isAdmin && unlinkedCount > 0 ? (
                       <>
                         <p>
@@ -958,6 +1027,17 @@ export default function ProductsHubPage() {
             if (!open) setAdjusting(null);
           }}
           onDone={load}
+        />
+      )}
+
+      {/* Lịch sử kho của một SKU */}
+      {history && (
+        <ProductHistoryDialog
+          product={history}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setHistory(null);
+          }}
         />
       )}
 

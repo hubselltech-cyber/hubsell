@@ -5,6 +5,22 @@
 
 ---
 
+## Phiên 24/09/2026 (chiều) — HOÀN THIỆN HÀNG HÓA đợt A: nhật ký kho, ngừng kinh doanh SKU, phiếu nhiều mã (ĐÃ CODE + kiểm local, CHƯA COMMIT lúc ghi)
+
+**Bối cảnh:** anh Trung yêu cầu "khảo sát lại một lần nữa để hoàn thiện phần Hàng hóa" (khung Vị trí chứa hàng chốt 15/09 chưa code). Rà lại code + đối thủ trực tiếp còn thiếu (BigSeller, Ginee) → ghi `docs/VI-TRI-CHUA-HANG.md` mục 8. Em đề xuất làm nền (Đợt A) trước vị trí (Đợt B); anh chốt **A → B**: "làm sớm sau này thương mại đỡ phải sửa nhiều, có khách rồi mà sửa nhiều mất uy tín".
+
+**Rà lại thấy gì (ngoài chuyện vị trí):** không có lịch sử kho trên UI (route có, FE không gọi, nhật ký không ghi ai làm); không ngừng kinh doanh / xóa SKU; nhập hàng từng SKU một popup; chưa kiểm kê. BigSeller đẩy TỔNG nhiều kho lên sàn (xác nhận hướng mình) + có kho nhận hoàn mặc định riêng (sẽ chép ở B); Ginee bind kho 1:1 theo gian.
+
+**Đã làm (chi tiết đầy đủ ở docs mục 8.6):**
+- Migration `20260924150000_product_inactive_inventory_actor` (IF NOT EXISTS, Render tự áp): `Product.isActive`, `InventoryLog.actorId` → User, enum `ADJUST`. Local đã áp tay (script apply-migration-local không nuốt được khối `DO $$` → FK chạy riêng).
+- Backend: `GET /api/inventory/logs` thành sổ toàn shop (lọc SKU/ngày/loại/tìm, 20/50/100, kèm ai làm + mã đơn + gian); `POST /api/inventory/adjust-bulk` (phần thuần `lib/inventory-bulk.ts` + 5 test); sửa tồn trực tiếp + Excel đè số → ADJUST; mọi thao tác tay ghi `actorId`; `GET /api/products?status=` + `activeCount/inactiveCount`; `PATCH isActive` (ADMIN); `DELETE /:id` chỉ khi 0 đơn / 0 liên kết / 0 hàng mẫu / tồn 0, ngược lại 409 nêu lý do; cảnh báo sắp hết + cháy hàng bỏ SKU ngừng bán.
+- Frontend: hub Hàng hóa sang `PageTabs + PageHeaderBand`, tab **Nhật ký kho** (chỉ gọi API khi mở), nút **⋯** mỗi dòng (Lịch sử kho · Cảnh báo & tồn an toàn · Ngừng kinh doanh ⇄ Bán lại · Xóa SKU) — bỏ nút chuông riêng vì cột Tồn kho đã ghi "≤ ngưỡng N" và nút thứ tư làm bảng tràn ngang; chip Đang bán / Ngừng bán N (ẩn khi 0); trang riêng **/products/receive** "Phiếu nhiều mã" (gõ/quét mã → Enter → cộng dồn → một lý do → một nút; xuất thiếu hàng chặn tại chỗ); Xuất Excel thêm cột Trạng thái.
+- Kiểm local (cổng HTTP phụ 4001, shop reviewer@hubsell.vn): phiếu nhập 2 mã → nhật ký 2 dòng IMPORT ghi tên người làm + lý do; sửa tồn trực tiếp → dòng Điều chỉnh −5; Ngừng kinh doanh → dòng biến mất, chip "Ngừng bán 1", lọc thấy dòng gạch tên, Bán lại → tự về Đang bán; Xóa SKU đang nối sàn → 409 "đã có 544 dòng đơn hàng, đang nối 2 SKU sàn…". tsc + eslint sạch hai đầu; 5 test mới pass; suite tích hợp pass sau khi áp migration local. Env đã trả lại (`SHOPEE_CALLBACK_HTTP_PORT` tắt, `NEXT_PUBLIC_API_URL` về https://localhost:4000).
+
+**Để lại cho Đợt B (vị trí chứa hàng):** helper `applyStockDelta` gom 14 chỗ ghi + `balanceAfter` trên nhật ký; vị trí gốc sinh lazy; `isReturnDefault`; kiểm kê theo vị trí ở Đợt C. Ảnh tour /guide chưa chụp lại theo UI mới; mobile chưa có nhật ký.
+
+---
+
 ## Phiên 19/09/2026 (khuya) — Hóa đơn điện tử: vá 4 lỗ hổng trước khi khách xuất số lượng lớn (ĐÃ PUSH 1c1bada → 94bf5d9 + commit dọn dẹp; ticket MISA ĐÃ GỬI, ⏳ chờ trả lời)
 
 - **ĐỢT 4 — MÃ HÓA BÍ MẬT NCC HÓA ĐƠN TRONG DB (anh: "làm luôn… nghiên cứu thật kỹ như một senior bảo mật"):**

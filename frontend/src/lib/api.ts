@@ -231,6 +231,8 @@ export interface Product {
   unitName?: string | null;
   /** Tồn an toàn riêng của SKU — null/vắng = dùng mặc định toàn shop. */
   safetyStock?: number | null;
+  /** false = NGỪNG KINH DOANH (24/09): ẩn khỏi bảng mặc định, không cảnh báo hết hàng. */
+  isActive?: boolean;
   createdAt: string;
   /**
    * "CÓ THỂ BÁN" = tồn − đang giữ − tồn an toàn: số Hubsell đẩy lên MỌI gian
@@ -321,15 +323,46 @@ export interface ProductListResponse {
   /** Mặc định toàn shop — gợi ý placeholder cho hộp cài đặt riêng từng SKU. */
   safetyStockDefault?: number;
   lowStockDefault?: number;
+  /** Bộ lọc đang áp (active mặc định) + số SKU đã ngừng bán để hiện chip. */
+  status?: ProductStatusFilter;
+  inactiveCount?: number;
+  /** Số SKU đang bán toàn shop, không phụ thuộc bộ lọc — cho khối thiết lập. */
+  activeCount?: number;
 }
+
+export type ProductStatusFilter = "active" | "inactive" | "all";
+
+export type InventoryLogType = "IMPORT" | "EXPORT" | "SYNC" | "ADJUST";
 
 export interface InventoryLog {
   id: string;
   productId: string;
   changeQuantity: number;
-  type: "IMPORT" | "EXPORT" | "SYNC";
+  type: InventoryLogType;
   reason: string | null;
   createdAt: string;
+}
+
+/** Một dòng NHẬT KÝ KHO (sổ toàn shop, 24/09) — kèm SKU, ai làm, đơn gây ra. */
+export interface InventoryLogEntry extends InventoryLog {
+  skuCode: string;
+  productName: string;
+  /** null = hệ thống (webhook sàn, worker, đồng bộ). */
+  actor: { id: string; name: string } | null;
+  order: {
+    id: string;
+    orderCode: string;
+    channelName: ChannelName;
+    shopName: string;
+  } | null;
+}
+
+export interface InventoryLogListResponse {
+  items: InventoryLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
 }
 
 /** Cảnh báo lệch tồn: đẩy tồn lên sàn thất bại sau đủ số lần retry. */
@@ -1347,12 +1380,33 @@ export function fetchProducts(params: {
   page?: number;
   pageSize?: number;
   search?: string;
+  /** Mặc định backend = "active" (chỉ SKU đang bán). */
+  status?: ProductStatusFilter;
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params.search) qs.set("search", params.search);
+  if (params.status) qs.set("status", params.status);
   return apiFetch<ProductListResponse>(`/api/products?${qs.toString()}`);
+}
+
+/** Ngừng kinh doanh / bán lại một SKU (chỉ chủ shop). */
+export function setProductActive(productId: string, isActive: boolean) {
+  return apiFetch<Product>(`/api/products/${productId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isActive }),
+  });
+}
+
+/**
+ * Xóa cứng SKU — backend chỉ cho khi chưa có đơn / liên kết sàn / hàng mẫu và
+ * tồn = 0; ngược lại 409 kèm lý do (ApiError.message) để chỉ sang Ngừng kinh doanh.
+ */
+export function deleteProduct(productId: string) {
+  return apiFetch<{ ok: true; id: string; skuCode: string }>(`/api/products/${productId}`, {
+    method: "DELETE",
+  });
 }
 
 export function createProduct(data: {
@@ -3280,6 +3334,41 @@ export function setInventoryQuantity(productId: string, quantity: number) {
     "/api/inventory/set",
     { method: "POST", body: JSON.stringify({ productId, quantity }) }
   );
+}
+
+/** PHIẾU NHẬP / XUẤT NHIỀU MÃ (24/09): cộng thêm / trừ bớt, một transaction, ≤ 200 mã. */
+export function adjustInventoryBulk(data: {
+  type: "IMPORT" | "EXPORT";
+  items: { productId: string; quantity: number }[];
+  reason?: string;
+}) {
+  return apiFetch<{
+    type: "IMPORT" | "EXPORT";
+    count: number;
+    totalQuantity: number;
+    products: { productId: string; skuCode: string; quantityInStock: number }[];
+  }>("/api/inventory/adjust-bulk", { method: "POST", body: JSON.stringify(data) });
+}
+
+/** NHẬT KÝ KHO — sổ toàn shop hoặc theo một SKU, có lọc + phân trang (24/09). */
+export function fetchInventoryLogs(params: {
+  productId?: string;
+  from?: string;
+  to?: string;
+  type?: InventoryLogType;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params.productId) qs.set("productId", params.productId);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.type) qs.set("type", params.type);
+  if (params.q) qs.set("q", params.q);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+  return apiFetch<InventoryLogListResponse>(`/api/inventory/logs?${qs.toString()}`);
 }
 
 // ----- Trung tâm điều hành (Command Center) -----

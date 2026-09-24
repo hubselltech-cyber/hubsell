@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { InventoryLogType, Role, StockPushStatus } from "@prisma/client";
+import { InventoryLogType, Prisma, Role, StockPushStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { syncShopeeStockForProducts } from "../integrations/shopee/inventory-sync";
@@ -15,6 +15,7 @@ import {
 import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
+import { findInsufficient, normalizeBulkItems } from "../lib/inventory-bulk";
 
 const router = Router();
 
@@ -77,6 +78,7 @@ router.post("/adjust", async (req: AuthRequest, res, next) => {
           changeQuantity: delta,
           type: type === "IMPORT" ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
           reason: reason?.trim() || (type === "IMPORT" ? "Nhập kho thủ công" : "Xuất kho thủ công"),
+          actorId: req.userId ?? null,
         },
       });
 
@@ -141,10 +143,13 @@ router.post("/set", async (req: AuthRequest, res, next) => {
         data: {
           productId,
           changeQuantity: delta,
-          type: delta > 0 ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
+          // ADJUST (24/09): sửa số trực tiếp là ĐIỀU CHỈNH sổ, không phải nhập/xuất
+          // hàng thật — nhật ký kho phân biệt được để khách tin số.
+          type: InventoryLogType.ADJUST,
           reason:
             reason?.trim() ||
             `Sửa tồn trực tiếp trên bảng: ${product.quantityInStock} → ${target}`,
+          actorId: req.userId ?? null,
         },
       });
       return { product: updated, log, delta };
@@ -165,30 +170,213 @@ router.post("/set", async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/inventory/logs?productId=... — Lịch sử xuất nhập kho của một sản phẩm
+// POST /api/inventory/adjust-bulk — PHIẾU NHẬP / XUẤT NHIỀU MÃ (24/09/2026).
+// Body: { type: "IMPORT" | "EXPORT", items: [{ productId, quantity }], reason? }.
+// Cộng thêm / trừ bớt (KHÔNG đè tổng như Excel), tối đa 200 mã, MỘT transaction:
+// khoá đủ các dòng sản phẩm, xuất thiếu hàng thì báo đích danh mã và không ghi
+// gì cả. Mỗi mã một dòng nhật ký cùng lý do, ghi ai làm.
+router.post("/adjust-bulk", async (req: AuthRequest, res, next) => {
+  try {
+    const { type, items, reason } = req.body ?? {};
+    if (type !== "IMPORT" && type !== "EXPORT") {
+      res.status(400).json({ error: "Loại phiếu phải là IMPORT (nhập) hoặc EXPORT (xuất)" });
+      return;
+    }
+    if (reason !== undefined && reason !== null && typeof reason !== "string") {
+      res.status(400).json({ error: "Lý do không hợp lệ" });
+      return;
+    }
+    const parsed = normalizeBulkItems(items);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    const isImport = type === "IMPORT";
+    const note =
+      typeof reason === "string" && reason.trim()
+        ? reason.trim()
+        : isImport
+          ? "Nhập kho theo phiếu nhiều mã"
+          : "Xuất kho theo phiếu nhiều mã";
+    const ids = parsed.items.map((it) => it.productId);
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Khoá theo thứ tự id để hai phiếu chạy song song không deadlock nhau.
+      const rows = await tx.$queryRaw<
+        { id: string; skuCode: string; quantityInStock: number }[]
+      >`SELECT "id", "skuCode", "quantityInStock" FROM "Product" WHERE "userId" = ${req.ownerId!} AND "id" IN (${Prisma.join(ids)}) ORDER BY "id" FOR UPDATE`;
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const missing = ids.filter((id) => !byId.has(id));
+      if (missing.length) {
+        throw Object.assign(
+          new Error(`Có ${missing.length} mã không còn trong kho — tải lại trang rồi lập phiếu lại`),
+          { statusCode: 404 }
+        );
+      }
+      if (!isImport) {
+        const short = findInsufficient(parsed.items, byId);
+        if (short.length) {
+          const lines = short
+            .slice(0, 5)
+            .map((x) => `${x.skuCode} (tồn ${x.quantityInStock}, muốn xuất ${x.wanted})`)
+            .join(", ");
+          throw Object.assign(
+            new Error(
+              `Không đủ hàng để xuất: ${lines}${short.length > 5 ? ` và ${short.length - 5} mã khác` : ""}`
+            ),
+            { statusCode: 400 }
+          );
+        }
+      }
+      const updated: { productId: string; skuCode: string; quantityInStock: number }[] = [];
+      for (const it of parsed.items) {
+        const delta = isImport ? it.quantity : -it.quantity;
+        const p = await tx.product.update({
+          where: { id: it.productId },
+          data: { quantityInStock: { increment: delta } },
+          select: { id: true, skuCode: true, quantityInStock: true },
+        });
+        await tx.inventoryLog.create({
+          data: {
+            productId: it.productId,
+            changeQuantity: delta,
+            type: isImport ? InventoryLogType.IMPORT : InventoryLogType.EXPORT,
+            reason: note,
+            actorId: req.userId ?? null,
+          },
+        });
+        updated.push({ productId: p.id, skuCode: p.skuCode, quantityInStock: p.quantityInStock });
+      }
+      return updated;
+    });
+
+    await enqueueStockPush(ids, {
+      source: isImport ? "phiếu nhập nhiều mã" : "phiếu xuất nhiều mã",
+    });
+
+    res.json({
+      type,
+      count: result.length,
+      totalQuantity: parsed.items.reduce((a, it) => a + it.quantity, 0),
+      products: result,
+    });
+  } catch (err) {
+    const e = err as Error & { statusCode?: number };
+    if (e.statusCode) {
+      res.status(e.statusCode).json({ error: e.message });
+      return;
+    }
+    next(err);
+  }
+});
+
+// GET /api/inventory/logs — NHẬT KÝ KHO (24/09/2026: trước chỉ có theo SKU và
+// frontend không gọi ở đâu; nay là sổ toàn shop có lọc + phân trang).
+// Query: productId? · from? · to? (ISO) · type? (IMPORT | EXPORT | SYNC | ADJUST)
+// · q? (mã/tên SKU) · page · pageSize (20/50/100).
+// Mỗi dòng kèm SKU, ai làm (null = hệ thống), mã đơn + gian nếu do đơn gây ra.
+const LOG_PAGE_SIZES = [20, 50, 100];
+const LOG_TYPES = new Set<string>(Object.values(InventoryLogType));
+
 router.get("/logs", async (req: AuthRequest, res, next) => {
   try {
-    const productId = typeof req.query.productId === "string" ? req.query.productId : "";
-    if (!productId) {
-      res.status(400).json({ error: "Thiếu mã sản phẩm" });
+    const q = req.query;
+    const productId = typeof q.productId === "string" ? q.productId : "";
+    const type =
+      typeof q.type === "string" && LOG_TYPES.has(q.type) ? (q.type as InventoryLogType) : null;
+    const search = typeof q.q === "string" ? q.q.trim() : "";
+    const from = typeof q.from === "string" && q.from ? new Date(q.from) : null;
+    const to = typeof q.to === "string" && q.to ? new Date(q.to) : null;
+    if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+      res.status(400).json({ error: "Khoảng ngày không hợp lệ" });
       return;
     }
+    const page = Math.max(1, Number(q.page) || 1);
+    const sizeRaw = Number(q.pageSize) || 20;
+    const pageSize = LOG_PAGE_SIZES.includes(sizeRaw) ? sizeRaw : 20;
 
-    // Chỉ xem được log sản phẩm của chính mình
-    const product = await prisma.product.findFirst({
-      where: { id: productId, userId: req.ownerId! },
-      select: { id: true },
-    });
-    if (!product) {
-      res.status(404).json({ error: "Không tìm thấy sản phẩm" });
-      return;
+    if (productId) {
+      const product = await prisma.product.findFirst({
+        where: { id: productId, userId: req.ownerId! },
+        select: { id: true },
+      });
+      if (!product) {
+        res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+        return;
+      }
     }
 
-    const logs = await prisma.inventoryLog.findMany({
-      where: { productId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
+    const where: Prisma.InventoryLogWhereInput = {
+      product: {
+        userId: req.ownerId!,
+        ...(search
+          ? {
+              OR: [
+                { skuCode: { contains: search, mode: "insensitive" } },
+                { productName: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      ...(productId ? { productId } : {}),
+      ...(type ? { type } : {}),
+      ...(from || to
+        ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+        : {}),
+    };
+
+    const [total, rows] = await Promise.all([
+      prisma.inventoryLog.count({ where }),
+      prisma.inventoryLog.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          productId: true,
+          changeQuantity: true,
+          type: true,
+          reason: true,
+          createdAt: true,
+          product: { select: { skuCode: true, productName: true } },
+          actor: { select: { id: true, fullName: true } },
+          order: {
+            select: {
+              id: true,
+              orderCode: true,
+              channel: { select: { channelName: true, shopName: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        productId: r.productId,
+        skuCode: r.product.skuCode,
+        productName: r.product.productName,
+        changeQuantity: r.changeQuantity,
+        type: r.type,
+        reason: r.reason,
+        createdAt: r.createdAt,
+        actor: r.actor ? { id: r.actor.id, name: r.actor.fullName } : null,
+        order: r.order
+          ? {
+              id: r.order.id,
+              orderCode: r.order.orderCode,
+              channelName: r.order.channel.channelName,
+              shopName: r.order.channel.shopName,
+            }
+          : null,
+      })),
+      total,
+      page,
+      pageSize,
+      pageCount: Math.ceil(total / pageSize),
     });
-    res.json(logs);
   } catch (err) {
     next(err);
   }

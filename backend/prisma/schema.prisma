@@ -73,7 +73,8 @@ enum Carrier {
 enum InventoryLogType {
   IMPORT // Nhập kho
   EXPORT // Xuất kho
-  SYNC   // Đồng bộ với sàn
+  SYNC   // Đồng bộ với sàn / đơn hàng trừ - hoàn kho tự động
+  ADJUST // Điều chỉnh: sửa số trực tiếp trên bảng, kiểm kê, nhập Excel đè số (24/09)
 }
 
 enum ExpenseCategory {
@@ -255,6 +256,7 @@ model User {
 
   channels          Channel[]
   products          Product[]
+  inventoryLogsMade InventoryLog[] @relation("InventoryLogActor")
   operatingExpenses OperatingExpense[]
 
   // Phân quyền theo gian hàng — CHỈ có ý nghĩa với vai trò SALES.
@@ -1105,6 +1107,11 @@ model Product {
   lowStockThreshold Int?
   imageUrl        String? // ảnh sản phẩm (tuỳ chọn)
 
+  /// NGỪNG KINH DOANH (24/09): false = SKU không còn bán, ẩn khỏi bảng Hàng hóa
+  /// mặc định + không cảnh báo sắp hết hàng; tồn/đơn cũ/liên kết sàn GIỮ NGUYÊN
+  /// để lịch sử và Lãi/Lỗ không đứt. Xóa cứng chỉ khi SKU chưa có đơn / liên kết.
+  isActive        Boolean  @default(true)
+
   // ── Thuế & Hóa đơn điện tử (module đang dựng khung — GIỮ CHỖ) ──
   // Tên sản phẩm in trên hóa đơn có thể khác tên bán hàng (theo danh mục hàng hóa).
   taxName String?
@@ -1510,13 +1517,18 @@ model InventoryLog {
   type           InventoryLogType
   reason         String?
   orderId        String? // đơn hàng gây ra biến động này (nếu có) — dùng để hoàn kho khi huỷ đơn & tính giá vốn
+  /// AI LÀM (24/09): tài khoản đăng nhập thực hiện thao tác tay (chủ shop hoặc
+  /// nhân viên). NULL = hệ thống (webhook sàn, worker, đồng bộ).
+  actorId        String?
   createdAt      DateTime         @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  actor   User?   @relation("InventoryLogActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([productId])
   @@index([orderId])
+  @@index([createdAt])
 }
 
 /// Chi phí hoạt động của shop (cố định/biến đổi): mặt bằng, lương, đóng gói, quảng cáo sàn...

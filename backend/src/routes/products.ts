@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
-import { Prisma, InventoryLogType } from "@prisma/client";
+import { Prisma, InventoryLogType, Role } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
@@ -114,9 +114,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 10));
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    // NGỪNG KINH DOANH (24/09): mặc định chỉ hiện SKU đang bán; ?status=inactive
+    // xem riêng SKU đã ngừng; ?status=all cho xuất Excel / tra cứu.
+    const statusRaw = typeof req.query.status === "string" ? req.query.status : "active";
+    const status = statusRaw === "inactive" || statusRaw === "all" ? statusRaw : "active";
 
     const where: Prisma.ProductWhereInput = {
       userId: req.ownerId!,
+      ...(status === "all" ? {} : { isActive: status === "active" }),
       ...(search
         ? {
             OR: [
@@ -127,7 +132,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         : {}),
     };
 
-    const [total, items] = await Promise.all([
+    const [total, items, inactiveCount, activeCount] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
         where,
@@ -150,6 +155,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
           },
         },
       }),
+      // Số SKU đã ngừng bán — chip lọc chỉ hiện khi > 0 (ẩn bằng vắng mặt).
+      prisma.product.count({ where: { userId: req.ownerId!, isActive: false } }),
+      // Số SKU đang bán toàn shop (không phụ thuộc bộ lọc/tìm kiếm) — khối
+      // Kho trung tâm + bước thiết lập đọc số này, không đọc `total` của trang lọc.
+      prisma.product.count({ where: { userId: req.ownerId!, isActive: true } }),
     ]);
 
     // Cờ "đang lệch tồn với sàn" theo SKU sàn của trang hiện tại — HAI query
@@ -240,6 +250,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       page,
       pageSize,
       pageCount: Math.ceil(total / pageSize),
+      status,
+      inactiveCount,
+      activeCount,
       costPriceHidden: !seesFinancials,
       safetyStockDefault: safetyDefault,
       lowStockDefault,
@@ -460,6 +473,7 @@ router.post("/", async (req: AuthRequest, res, next) => {
             changeQuantity: initQty,
             type: InventoryLogType.IMPORT,
             reason: "Nhập kho ban đầu khi tạo sản phẩm",
+            actorId: req.userId ?? null,
           },
         });
       }
@@ -616,6 +630,21 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
       }
     }
 
+    // ── Ngừng kinh doanh / bán lại (24/09) — chỉ chủ shop; tồn, đơn cũ, liên
+    // kết sàn giữ nguyên. Không đẩy tồn lên sàn vì số Có thể bán không đổi.
+    const { isActive } = req.body ?? {};
+    if (isActive !== undefined) {
+      if (req.userRole !== Role.ADMIN) {
+        res.status(403).json({ error: "Chỉ chủ shop mới được ngừng kinh doanh / bán lại SKU" });
+        return;
+      }
+      if (typeof isActive !== "boolean") {
+        res.status(400).json({ error: "Trạng thái kinh doanh không hợp lệ" });
+        return;
+      }
+      data.isActive = isActive;
+    }
+
     const updated = await prisma.product.update({ where: { id }, data });
 
     // Đổi tồn an toàn làm đổi TỒN KHẢ DỤNG → đẩy số mới lên các sàn đã liên kết.
@@ -628,6 +657,61 @@ router.patch("/:id", async (req: AuthRequest, res, next) => {
     }
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/products/:id — XÓA CỨNG một SKU (24/09), chỉ chủ shop và CHỈ khi
+// SKU chưa dính vào đâu: chưa có dòng đơn, chưa nối SKU sàn, chưa xuất hàng mẫu
+// KOC. Đã dính thì trả 409 kèm lý do và chỉ sang "Ngừng kinh doanh" — xóa mất
+// là Lãi/Lỗ, đơn cũ, đối soát đứt gãy. Nhật ký kho của SKU xóa theo (cascade).
+router.delete("/:id", async (req: AuthRequest, res, next) => {
+  try {
+    if (req.userRole !== Role.ADMIN) {
+      res.status(403).json({ error: "Chỉ chủ shop mới được xóa SKU" });
+      return;
+    }
+    const { id } = req.params;
+    const product = await prisma.product.findFirst({
+      where: { id, userId: req.ownerId! },
+      select: {
+        id: true,
+        skuCode: true,
+        quantityInStock: true,
+        _count: { select: { orderItems: true, channelProducts: true, kocSamples: true } },
+      },
+    });
+    if (!product) {
+      res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+      return;
+    }
+    const blockers: string[] = [];
+    if (product._count.orderItems > 0) {
+      blockers.push(`đã có ${product._count.orderItems} dòng đơn hàng`);
+    }
+    if (product._count.channelProducts > 0) {
+      blockers.push(`đang nối ${product._count.channelProducts} SKU sàn (gỡ nối trước)`);
+    }
+    if (product._count.kocSamples > 0) {
+      blockers.push(`đã xuất ${product._count.kocSamples} phiếu hàng mẫu KOC`);
+    }
+    if (blockers.length) {
+      res.status(409).json({
+        error: `Không xóa được ${product.skuCode}: ${blockers.join(", ")}. Dùng "Ngừng kinh doanh" để ẩn khỏi bảng mà vẫn giữ lịch sử.`,
+        code: "PRODUCT_IN_USE",
+      });
+      return;
+    }
+    if (product.quantityInStock !== 0) {
+      res.status(409).json({
+        error: `${product.skuCode} còn tồn ${product.quantityInStock} — xuất hết hoặc sửa tồn về 0 rồi mới xóa, để nhật ký kho không mất dấu hàng.`,
+        code: "PRODUCT_HAS_STOCK",
+      });
+      return;
+    }
+    await prisma.product.delete({ where: { id } });
+    res.json({ ok: true, id, skuCode: product.skuCode });
   } catch (err) {
     next(err);
   }
@@ -778,8 +862,10 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
               data: {
                 productId: found.id,
                 changeQuantity: delta,
-                type: InventoryLogType.SYNC,
-                reason: "Điều chỉnh tồn kho khi nhập Excel",
+                // ADJUST (24/09): Excel ĐÈ tổng — là điều chỉnh sổ, không phải đồng bộ sàn.
+                type: InventoryLogType.ADJUST,
+                reason: `Nhập Excel đè tồn: ${found.quantityInStock} → ${v.quantityInStock}`,
+                actorId: req.userId ?? null,
               },
             });
             stockChangedIds.push(found.id);
@@ -803,6 +889,7 @@ router.post("/import", upload.single("file"), async (req: AuthRequest, res, next
                 changeQuantity: v.quantityInStock,
                 type: InventoryLogType.IMPORT,
                 reason: "Nhập kho ban đầu từ file Excel",
+                actorId: req.userId ?? null,
               },
             });
           }
