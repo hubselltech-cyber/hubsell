@@ -58,6 +58,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand, PageTabs, type PageTabItem } from "@/components/ui/page-tabs";
 import {
   Table,
@@ -94,7 +95,17 @@ import { canManageShop, canSeeFinancials } from "@/lib/permissions";
 import { TEXT_NUMBER_MUTED, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 10;
+// 20 / 50 / 100 dòng/trang — chuẩn bảng số liệu (anh Trung 24/09); nhớ lựa chọn theo trình duyệt.
+const PAGE_SIZES = [20, 50, 100];
+const PAGE_SIZE_KEY = "hubsell_products_page_size";
+function readPageSize(): number {
+  try {
+    const n = Number(localStorage.getItem(PAGE_SIZE_KEY));
+    return PAGE_SIZES.includes(n) ? n : 20;
+  } catch {
+    return 20;
+  }
+}
 
 const columnHelper = createColumnHelper<Product>();
 
@@ -131,6 +142,10 @@ export default function ProductsHubPage() {
   const [linkSeed, setLinkSeed] = useState<string | undefined>(undefined);
 
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  useEffect(() => {
+    setPageSize(readPageSize());
+  }, []);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -190,9 +205,9 @@ export default function ProductsHubPage() {
   // Danh sách SKU kho nằm trong cache React Query — quay lại hub Hàng hóa là
   // thấy ngay bảng cũ, refetch chạy ngầm (401/403/409 hook tự xử).
   const productsQ = useApiQuery({
-    queryKey: qk.products({ page, pageSize: PAGE_SIZE, search, status, locationFilter }),
+    queryKey: qk.products({ page, pageSize, search, status, locationFilter }),
     queryFn: () =>
-      fetchProducts({ page, pageSize: PAGE_SIZE, search, status, locationId: locationFilter || undefined }),
+      fetchProducts({ page, pageSize, search, status, locationId: locationFilter || undefined }),
   });
   const inactiveCount = productsQ.data?.inactiveCount ?? 0;
   const invalidate = useInvalidate();
@@ -432,7 +447,9 @@ export default function ProductsHubPage() {
           <span className="flex min-w-0 items-center gap-2">
             <span
               className={cn(
-                "block max-w-[13rem] truncate 2xl:max-w-[26rem]",
+                // Cắt ngắn ở MỌI cỡ màn (anh Trung 24/09: đã có SKU + tooltip, tên dài
+                // đẩy các cột sau ra khỏi màn hình) — không nở 26rem ở 2xl nữa.
+                "block max-w-[14rem] truncate 2xl:max-w-[18rem]",
                 info.row.original.isActive === false && "text-muted-foreground line-through decoration-slate-300"
               )}
               title={info.getValue()}
@@ -1148,12 +1165,36 @@ export default function ProductsHubPage() {
               </CardContent>
             </Card>
 
-            {/* Phân trang */}
-            {pageCount > 1 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Trang {page} / {pageCount}
-                </p>
+            {/* Phân trang — chọn 20/50/100 dòng/trang như các bảng khác */}
+            {items.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Hiển thị</span>
+                  <NativeSelect
+                    className="w-20"
+                    aria-label="Số dòng mỗi trang"
+                    value={String(pageSize)}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setPageSize(n);
+                      setPage(1);
+                      try {
+                        localStorage.setItem(PAGE_SIZE_KEY, String(n));
+                      } catch {
+                        // bị chặn — bỏ qua
+                      }
+                    }}
+                  >
+                    {PAGE_SIZES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <span className="text-sm text-muted-foreground">
+                    dòng/trang · {formatNumber(total)} SKU · trang {page}/{Math.max(1, pageCount)}
+                  </span>
+                </div>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"

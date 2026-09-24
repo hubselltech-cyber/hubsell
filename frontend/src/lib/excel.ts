@@ -136,10 +136,10 @@ export function exportProductsToExcel(
 export async function exportAllProducts(includeCost: boolean) {
   const all: Product[] = [];
   let page = 1;
-  // trang tối đa 50/lần theo backend
+  // trang tối đa 100/lần theo backend
   for (;;) {
     // Xuất cả SKU đã ngừng bán (cột Trạng thái phân biệt) — file là để đối chiếu.
-    const res = await fetchProducts({ page, pageSize: 50, status: "all" });
+    const res = await fetchProducts({ page, pageSize: 100, status: "all" });
     all.push(...res.items);
     if (page >= res.pageCount || res.pageCount === 0) break;
     page++;

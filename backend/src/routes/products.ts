@@ -114,7 +114,8 @@ const COLS = {
 router.get("/", async (req: AuthRequest, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 10));
+    // 20/50/100 dòng/trang theo chuẩn bảng (anh Trung 24/09); Xuất Excel gom trang 100.
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
     const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     // NGỪNG KINH DOANH (24/09): mặc định chỉ hiện SKU đang bán; ?status=inactive
     // xem riêng SKU đã ngừng; ?status=all cho xuất Excel / tra cứu.
