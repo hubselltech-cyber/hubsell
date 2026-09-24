@@ -1783,7 +1783,11 @@ function buildCampaignColumns(
         const c = row.original;
         return (
           <>
-            <p className="max-w-64 truncate text-sm text-slate-900">
+            {/* Tên dài bị cắt → tooltip tên đầy đủ + mã (anh Trung 24/09: "chưa có tooltip khá khó xem cho seller"). */}
+            <p
+              className="max-w-64 truncate text-sm text-slate-900"
+              title={`${c.name || "(không tên)"} · mã chiến dịch ${c.campaignId}`}
+            >
               {c.name || `Chiến dịch #${c.campaignId}`}
             </p>
             <p className="text-xs text-slate-500">

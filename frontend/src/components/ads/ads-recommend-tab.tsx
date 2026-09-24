@@ -183,7 +183,9 @@ export function AdsRecommendTab({
         header: "Sản phẩm",
         cell: ({ row }) => (
           <>
-            <p className="max-w-64 truncate text-sm text-slate-900">{row.original.productName}</p>
+            <p className="max-w-64 truncate text-sm text-slate-900" title={row.original.productName}>
+              {row.original.productName}
+            </p>
             <p className="text-xs text-slate-500">
               {row.original.itemSku ?? `#${row.original.itemId}`} · {formatVND(row.original.price)}
             </p>
