@@ -1976,6 +1976,116 @@ export async function getAdsShopToggleInfo(
   );
 }
 
+// ---------- GMS = GMV Max cấp shop (đọc) ----------
+
+export interface ShopeeGmsEligibilityData extends ShopeeEnvelope {
+  response?: {
+    is_eligible?: boolean;
+    /** active_campaign (ĐANG có GMS) | not_whitelisted | not_have_enough_sku | exclusive_with_other_campaign */
+    reason?: string;
+  };
+}
+
+/** Báo cáo GMS (cấp chiến dịch hoặc từng SP) — cùng bộ trường như docs 24/09. */
+export interface ShopeeGmsReport {
+  expense?: number;
+  impression?: number;
+  clicks?: number;
+  broad_gmv?: number;
+  broad_order?: number;
+  broad_order_amount?: number;
+  broad_roi?: number;
+  broad_cir?: number;
+  direct_gmv?: number;
+  direct_order?: number;
+  direct_order_amount?: number;
+  direct_roi?: number;
+  direct_cir?: number;
+  cpc?: number;
+  cpdc?: number;
+  cr?: number;
+  direct_cr?: number;
+}
+
+export interface ShopeeGmsCampaignPerfData extends ShopeeEnvelope {
+  response?: { campaign_id?: number; report?: ShopeeGmsReport };
+}
+
+export interface ShopeeGmsItemPerfData extends ShopeeEnvelope {
+  response?: {
+    campaign_id?: number;
+    result_list?: Array<{ item_id?: number; report?: ShopeeGmsReport }>;
+    total?: number;
+    has_next_page?: boolean;
+  };
+}
+
+/** Shop có được tạo GMS không — reason "active_campaign" = shop ĐANG chạy GMS (cách duy nhất biết qua API). */
+export async function checkGmsEligibility(
+  params: { accessToken: string; shopId: string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeGmsEligibilityData> {
+  return callShopGet<ShopeeGmsEligibilityData>(
+    SHOPEE_PATHS.adsGmsEligibility,
+    params.accessToken,
+    params.shopId,
+    [],
+    "check_create_gms_product_campaign_eligibility",
+    cfg
+  );
+}
+
+/**
+ * Hiệu suất GMS theo KHOẢNG ngày ("DD-MM-YYYY", start ≠ end, ≤ 1 tháng, lùi ≤ 6 tháng).
+ * campaign_id bỏ trống = chiến dịch GMS hiện có của shop (docs: "provide if available").
+ */
+export async function getGmsCampaignPerformance(
+  params: { accessToken: string; shopId: string; startDate: string; endDate: string; campaignId?: number | string },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeGmsCampaignPerfData> {
+  return callShopPost<ShopeeGmsCampaignPerfData>(
+    SHOPEE_PATHS.adsGmsCampaignPerf,
+    params.accessToken,
+    params.shopId,
+    {
+      start_date: params.startDate,
+      end_date: params.endDate,
+      ...(params.campaignId != null ? { campaign_id: Number(params.campaignId) } : {}),
+    },
+    "get_gms_campaign_performance",
+    cfg
+  );
+}
+
+/** Hiệu suất TỪNG SP trong GMS (chỉ SP có số), phân trang ≤100, sắp theo item_id. */
+export async function getGmsItemPerformance(
+  params: {
+    accessToken: string;
+    shopId: string;
+    startDate: string;
+    endDate: string;
+    campaignId?: number | string;
+    offset?: number;
+    limit?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeGmsItemPerfData> {
+  return callShopPost<ShopeeGmsItemPerfData>(
+    SHOPEE_PATHS.adsGmsItemPerf,
+    params.accessToken,
+    params.shopId,
+    {
+      start_date: params.startDate,
+      end_date: params.endDate,
+      offset: params.offset ?? 0,
+      limit: Math.min(100, params.limit ?? 100),
+      ...(params.campaignId != null ? { campaign_id: Number(params.campaignId) } : {}),
+    },
+    "get_gms_item_performance",
+    cfg
+  );
+}
+
 /** Số dư ví quảng cáo real-time (read-only) — cảnh báo sắp hết tiền ads. */
 export async function getAdsTotalBalance(
   params: { accessToken: string; shopId: string },

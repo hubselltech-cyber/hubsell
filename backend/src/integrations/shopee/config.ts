@@ -102,6 +102,13 @@ export const SHOPEE_PATHS = {
   adsTotalBalance: "/api/v2/ads/get_total_balance",
   /** ĐỢT B (24/09) — cờ cấp shop: auto_top_up (ví tự nạp) + campaign_surge. 1 call/gian/xung. */
   adsShopToggleInfo: "/api/v2/ads/get_shop_toggle_info",
+  // ── GMS = GMV Max CẤP SHOP (đợt GMS 24/09, docs đọc lại): không có số theo ngày (khoảng ≥ 2 ngày),
+  //    không có endpoint đọc cấu hình; eligibility.reason = active_campaign nghĩa là shop ĐANG có GMS. ──
+  adsGmsEligibility: "/api/v2/ads/check_create_gms_product_campaign_eligibility",
+  adsGmsCampaignPerf: "/api/v2/ads/get_gms_campaign_performance",
+  adsGmsItemPerf: "/api/v2/ads/get_gms_item_performance",
+  /** GHI — chưa dùng: pause/resume/change_budget/change_roas_target cho GMS. */
+  adsGmsEditCampaign: "/api/v2/ads/edit_gms_product_campaign",
   /** GĐ3 — sửa Manual Product Ads. Enum edit_action đã đọc docs 14/09 (start|pause|resume|stop|
    *  delete|change_budget|change_duration|change_smart_creative|change_location|
    *  change_enhanced_cpc|change_roas_target). Đã bắn SỐNG: pause, resume (14/09). Chưa bắn sống:

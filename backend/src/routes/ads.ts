@@ -29,6 +29,7 @@ import {
 } from "../integrations/shopee/ads-auto-execute";
 import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
 import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
+import { probeShopeeGms } from "../integrations/shopee/ads-gms";
 import {
   computeChannelAdsRecommendations,
   createCampaignFromRecommendation,
@@ -514,6 +515,26 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       res.status(502).json({ error: `Không lấy được số của sàn: ${(err as Error).message}` });
     }
   });
+
+  // GET /api/ads/shopee/gms/probe?channelId= — ĐỌC THUẦN (đợt GMS 24/09): eligibility + báo cáo
+  // GMV Max cấp shop 7 ngày trọn + từng SP + so với tổng chi cấp shop. Chốt cách lưu sau khi soi số thật.
+  if (platform === "shopee") {
+    router.get(`/${platform}/gms/probe`, async (req: AuthRequest, res, next) => {
+      try {
+        const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+        const channel = await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName },
+        });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        res.json(await probeShopeeGms(channel));
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
 
   // GET /api/ads/shopee/recommendations/probe?channelId=&itemId= — ĐỌC THUẦN, in nguyên văn
   // 5 endpoint tín hiệu cho một SP (chốt shape + ngưỡng trên số thật trước khi tin).
