@@ -36,9 +36,11 @@ export function StockLevelsCell({
   const [saving, setSaving] = useState(false);
 
   const qtyById = new Map((product.stockLevels ?? []).map((l) => [l.locationId, l.quantity]));
-  // Tóm tắt: các vị trí có hàng theo thứ tự ưu tiên, tối đa 2 + "+n".
+  // Tóm tắt: các vị trí có hàng theo thứ tự ưu tiên, MỖI VỊ TRÍ MỘT DÒNG (anh
+  // Trung 24/09 xem prod: "mỗi kho 1 dòng vì sau này còn có vị trí kệ, tầng
+  // bên cạnh nữa"), tối đa 3 dòng + "+n khác".
   const stocked = locations.filter((l) => (qtyById.get(l.id) ?? 0) !== 0);
-  const summary = stocked.slice(0, 2);
+  const summary = stocked.slice(0, 3);
   const more = stocked.length - summary.length;
 
   async function save(locationId: string) {
@@ -68,7 +70,7 @@ export function StockLevelsCell({
         render={
           <button
             type="button"
-            className="max-w-[14rem] rounded text-left text-xs leading-5 hover:bg-muted"
+            className="w-[11rem] max-w-[14rem] rounded text-left text-xs leading-5 hover:bg-muted"
             title="Bấm xem tồn theo từng vị trí"
           />
         }
@@ -76,17 +78,18 @@ export function StockLevelsCell({
         {stocked.length === 0 ? (
           <span className={TEXT_SUB}>chưa có ở đâu</span>
         ) : (
-          <span className="tabular-nums">
-            {summary.map((l, i) => (
-              <span key={l.id}>
-                {i > 0 && <span className="text-muted-foreground"> · </span>}
-                <span className="text-muted-foreground">{l.name}</span>{" "}
+          <span className="flex flex-col tabular-nums">
+            {summary.map((l) => (
+              <span key={l.id} className="flex items-baseline justify-between gap-3">
+                <span className="truncate text-muted-foreground" title={l.name}>
+                  {l.name}
+                </span>
                 <span className={cn("font-medium", (qtyById.get(l.id) ?? 0) < 0 && "text-rose-700")}>
                   {formatNumber(qtyById.get(l.id) ?? 0)}
                 </span>
               </span>
             ))}
-            {more > 0 && <span className="text-muted-foreground"> +{more}</span>}
+            {more > 0 && <span className="text-muted-foreground">+{more} vị trí khác</span>}
           </span>
         )}
       </PopoverTrigger>
