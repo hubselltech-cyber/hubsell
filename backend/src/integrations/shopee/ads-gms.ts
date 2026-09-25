@@ -15,8 +15,7 @@
 // → rule engine cửa sổ today/3d không áp được) — bảng riêng theo CỬA SỔ 7d / 30d
 // ngày trọn (bỏ hôm nay, bài học 14/09), ghi đè ở lượt lịch sử ads (6h):
 //   eligibility (1) → active: campaign 7d (1) + 30d (1) + items 7d (1–2) ≈ 4 call/6h.
-// CHỈ ĐỌC: không có hành động tự động nào trên GMS (edit_gms_product_campaign
-// có pause/change_budget/change_roas_target nhưng chưa bắn sống, chưa nối).
+// Lệnh ghi (25/09, cuối file): chỉ CHỦ SHOP bấm — không có hành động tự động nào trên GMS.
 // Đánh giá lãi/lỗ: ROAS cửa sổ so với hòa vốn CẤP SHOP (GMS phủ mọi SP) và
 // từng SP so với hòa vốn của chính SP (bảng hòa vốn SP) — nơi duy nhất tính
 // được hòa vốn đúng rổ ads của GMV Max.
@@ -475,17 +474,23 @@ function envelopeError(raw: { error?: string; message?: string }): string | null
   return null;
 }
 
+/**
+ * Ghi số nhớ + nối sổ. `onlyIfExists`: lệnh thất bại thì chỉ ghi sổ vào bản ghi đã có (không tạo bản ghi
+ * "đang chạy" cho một GMS chưa tồn tại).
+ */
 async function rememberGms(
   channelId: string,
-  patch: Omit<Prisma.AdsGmsCampaignUncheckedCreateInput, "channelId" | "history">,
-  entry: GmsHistoryEntry
+  patch: Partial<Omit<Prisma.AdsGmsCampaignUncheckedCreateInput, "channelId" | "history">>,
+  entry: GmsHistoryEntry,
+  opts?: { onlyIfExists?: boolean }
 ) {
   const cur = await prisma.adsGmsCampaign.findUnique({ where: { channelId } });
+  if (!cur && opts?.onlyIfExists) return null;
   const history = appendGmsHistory(cur?.history, entry) as unknown as Prisma.InputJsonValue;
   return prisma.adsGmsCampaign.upsert({
     where: { channelId },
     update: { ...patch, history },
-    create: { channelId, ...patch, history },
+    create: { channelId, campaignId: "", ...patch, history },
   });
 }
 
@@ -528,24 +533,12 @@ export async function createShopeeGmsCampaign(
   const cid = raw.response?.campaign_id;
   if (err || cid == null) {
     const error = err ?? "Sàn báo thành công nhưng không trả campaign_id.";
-    // Ghi sổ lỗi để học mã lỗi sàn (không tạo bản ghi "đang chạy").
-    const cur = await prisma.adsGmsCampaign.findUnique({ where: { channelId: channel.id } });
-    if (cur) {
-      await prisma.adsGmsCampaign.update({
-        where: { channelId: channel.id },
-        data: {
-          lastError: error,
-          history: appendGmsHistory(cur.history, {
-            at: now.toISOString(),
-            action: "create",
-            payload: plan.payload as unknown as Record<string, unknown>,
-            status: "FAILED",
-            error,
-            referenceId,
-          }) as unknown as Prisma.InputJsonValue,
-        },
-      });
-    }
+    await rememberGms(
+      channel.id,
+      { lastError: error },
+      { at: now.toISOString(), action: "create", payload: plan.payload as unknown as Record<string, unknown>, status: "FAILED", error, referenceId },
+      { onlyIfExists: true }
+    );
     return { ok: false, error, campaignId: null };
   }
   const campaignId = String(cid);
@@ -692,22 +685,18 @@ export async function editShopeeGmsItems(
   } catch (err) {
     error = String((err as Error).message).slice(0, 1000);
   }
-  if (mem) {
-    await rememberGms(
-      channel.id,
-      {
-        campaignId: mem.campaignId,
-        ...(error ? { lastError: error } : { lastAction: `${action}_items`, lastActionAt: now, lastError: null }),
-      },
-      {
-        at: now.toISOString(),
-        action: `${action}_items`,
-        payload: { item_id_list: ids },
-        status: error ? "FAILED" : "SUCCESS",
-        ...(error ? { error } : {}),
-      }
-    );
-  }
+  await rememberGms(
+    channel.id,
+    error ? { lastError: error } : { lastAction: `${action}_items`, lastActionAt: now, lastError: null },
+    {
+      at: now.toISOString(),
+      action: `${action}_items`,
+      payload: { item_id_list: ids },
+      status: error ? "FAILED" : "SUCCESS",
+      ...(error ? { error } : {}),
+    },
+    { onlyIfExists: true }
+  );
   if (done > 0) {
     await prisma.opsActivity.create({
       data: {

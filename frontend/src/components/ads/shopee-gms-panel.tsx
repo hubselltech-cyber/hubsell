@@ -35,7 +35,12 @@ import { formatNumber, formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Trên hòa vốn nhưng chưa quá 10% = vàng (cùng hệ số với bảng chiến dịch). */
-export const DANGER_FACTOR = 1.1;
+const DANGER_FACTOR = 1.1;
+
+/** Mục tiêu an toàn = hòa vốn × 1,1, cắt 1 số lẻ như Shopee. */
+function safeTarget(breakeven: number): number {
+  return Math.floor(breakeven * DANGER_FACTOR * 10) / 10;
+}
 
 export function roasToneClass(roas: number | null, breakeven: number | null): string {
   if (roas == null) return "text-slate-400";
@@ -90,7 +95,7 @@ export function ShopeeGmsPanel({
   const be = gms?.shopBreakevenRoas ?? null;
   // Gợi ý mục tiêu = hòa vốn cấp shop × 1,1 (mức an toàn, cùng hệ số bảng chiến dịch) — chỉ điền sẵn, seller sửa được.
   useEffect(() => {
-    if (!roas && be != null && be > 0) setRoas((Math.floor(be * DANGER_FACTOR * 10) / 10).toString());
+    if (!roas && be != null && be > 0) setRoas(String(safeTarget(be)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [be]);
   const budgetNum = digitsToNumber(budget);
@@ -271,7 +276,7 @@ export function ShopeeGmsPanel({
               <p className="text-xs text-slate-500">
                 {be != null ? (
                   <>
-                    Hòa vốn cấp shop <b>{formatRoas(be)}</b> — mục tiêu nên từ <b>{formatRoas(Math.floor(be * DANGER_FACTOR * 10) / 10)}</b> trở lên
+                    Hòa vốn cấp shop <b>{formatRoas(be)}</b> — mục tiêu nên từ <b>{formatRoas(safeTarget(be))}</b> trở lên
                     để còn lãi.{" "}
                   </>
                 ) : (
