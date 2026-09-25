@@ -134,12 +134,14 @@ router.get("/me", async (req: AuthRequest, res, next) => {
       select: { id: true, name: true },
     });
 
-    // Gói ĐANG BÁN từ bậc hiện tại trở lên (gte, KỂ CẢ gói đang dùng — anh
-    // Trung 22/08: popup phải bày từng gói cho khách so sánh, card gói hiện
-    // tại gắn badge "Đang dùng" làm mốc đối chiếu). Chưa có thuê bao thì chào
-    // cả thang. FE nhận diện gói hiện tại qua id === plan.id.
+    // CẢ THANG gói đang bán (25/09 anh Trung: bỏ luật "chỉ bậc từ gói hiện
+    // tại trở lên" của 22/08 — khách dùng thử gói cao (mặc định nay là Scale)
+    // hết hạn phải mua được gói thấp hơn, khách trả tiền muốn hạ gói lúc gia
+    // hạn cũng vậy). Tên trường giữ upgradePlans để FE không đổi; popup Nâng
+    // gói khi chạm trần tự lọc bậc cao hơn ở FE. FE nhận diện gói hiện tại
+    // qua id === plan.id; hạ gói giữa kỳ đã trả tiền thì FE cảnh báo mất ngày.
     const upgradePlans = await prisma.servicePlan.findMany({
-      where: { isActive: true, ...(state.plan ? { tier: { gte: state.plan.tier } } : {}) },
+      where: { isActive: true },
       orderBy: [{ tier: "asc" }, { priceMonthly: "asc" }],
       select: {
         id: true,

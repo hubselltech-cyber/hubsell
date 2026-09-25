@@ -4931,6 +4931,24 @@ export function fetchPlatformSubscriptions(params?: {
   return apiFetch<PlatformSubscriptionsResponse>(`/api/admin/subscriptions${suffix}`);
 }
 
+/** HQ đổi gói thuê bao GIỮ NGUYÊN kỳ/hạn/cờ dùng thử — không sinh chứng từ. */
+export function changeSubscriptionPlan(userId: string, data: { planId: string; note?: string }) {
+  return apiFetch<{
+    ok: true;
+    subscription: {
+      id: string;
+      planId: string;
+      planName: string;
+      isTrial: boolean;
+      currentPeriodEnd: string | null;
+      status: string;
+    };
+  }>(`/api/admin/subscriptions/${userId}/change-plan`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export function recordSubscriptionPayment(
   userId: string,
   data: {

@@ -12,6 +12,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  ArrowLeftRight,
   BadgeCheck,
   CircleDollarSign,
   Loader2,
@@ -48,6 +49,7 @@ import {
 import {
   ApiError,
   cancelPlatformUpgradeRequest,
+  changeSubscriptionPlan,
   createPlatformPlan,
   deletePlatformPlan,
   fetchPlatformPlans,
@@ -55,6 +57,7 @@ import {
   recordSubscriptionPayment,
   updatePlatformPlan,
   type BillingCycle,
+  type PlatformSubscription,
   type PlatformSubscriptionsResponse,
   type ServicePlan,
 } from "@/lib/api";
@@ -398,6 +401,119 @@ interface PaymentTarget {
   defaultCycle?: BillingCycle;
 }
 
+// Đổi gói GIỮ NGUYÊN kỳ (25/09, anh Trung: khách dùng thử Growth chạm 145%
+// trần → nâng ngay, không chờ trả tiền). Khác Ghi nhận thanh toán: không sinh
+// chứng từ, không đụng sổ quỹ / hoa hồng, hạn và cờ dùng thử giữ nguyên.
+function ChangePlanDialog({
+  target,
+  plans,
+  onClose,
+  onSaved,
+}: {
+  target: PlatformSubscription;
+  plans: ServicePlan[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const selectable = useMemo(
+    () => plans.filter((p) => p.isActive && p.id !== target.plan.id),
+    [plans, target.plan.id]
+  );
+  const [planId, setPlanId] = useState(selectable[0]?.id ?? "");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const selected = selectable.find((p) => p.id === planId) ?? null;
+
+  async function handleSave() {
+    if (!selected) {
+      toast.error("Vui lòng chọn gói");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await changeSubscriptionPlan(target.user.id, {
+        planId: selected.id,
+        note: note.trim() || undefined,
+      });
+      toast.success(
+        `Đã chuyển ${target.user.fullName} sang gói ${res.subscription.planName}` +
+          (res.subscription.currentPeriodEnd
+            ? ` — hạn giữ nguyên ${formatDate(res.subscription.currentPeriodEnd)}`
+            : "")
+      );
+      onClose();
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không đổi được gói");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowLeftRight className="size-5" />
+            Đổi gói, giữ nguyên kỳ
+          </DialogTitle>
+          <DialogDescription>
+            {target.user.fullName} ({target.user.email ?? "—"}) đang ở gói{" "}
+            <span className="font-semibold text-foreground">{target.plan.name}</span>
+            {target.isTrial ? ", kỳ dùng thử" : ""}
+            {target.currentPeriodEnd ? ` đến ${formatDate(target.currentPeriodEnd)}` : ""}.
+            Đổi gói tại đây KHÔNG thu tiền, không sinh chứng từ; hạn và trạng thái dùng thử
+            giữ nguyên. Khách nhận một chuông báo.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-2">
+          <Label>Gói mới</Label>
+          <NativeSelect value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            {selectable.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.maxOrdersPerMonth != null
+                  ? ` — ${formatCount(p.maxOrdersPerMonth)} đơn/tháng`
+                  : " — không giới hạn đơn"}
+              </option>
+            ))}
+          </NativeSelect>
+          {selected && selected.maxOrdersPerMonth != null && (
+            <p className="text-xs text-muted-foreground">
+              Đơn tháng này {formatCount(target.ordersThisMonth)} — trần mới{" "}
+              {formatCount(selected.maxOrdersPerMonth)}
+              {target.ordersThisMonth > selected.maxOrdersPerMonth
+                ? " (vẫn vượt trần, chọn gói lớn hơn)"
+                : ""}
+              .
+            </p>
+          )}
+        </div>
+        <div className="grid gap-2">
+          <Label>Ghi chú (nhật ký HQ)</Label>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="VD: khách dùng thử chạm trần, nâng để trải nghiệm đủ"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Thôi
+          </Button>
+          <Button size="sm" disabled={submitting || !selected} onClick={handleSave}>
+            {submitting && <Loader2 className="size-4 animate-spin" />}
+            Đổi gói
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PaymentDialog({
   target,
   plans,
@@ -605,6 +721,8 @@ export default function PlatformPlansPage() {
     { mode: "create" } | { mode: "edit"; plan: ServicePlan } | null
   >(null);
   const [paymentFor, setPaymentFor] = useState<PaymentTarget | null>(null);
+  // Đổi gói GIỮ KỲ (25/09): khách dùng thử chạm trần / tặng gói theo thỏa thuận.
+  const [changePlanFor, setChangePlanFor] = useState<PlatformSubscription | null>(null);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
 
   // HQ hủy một yêu cầu mua khách gửi (khách đổi ý qua điện thoại) — chốt
@@ -1083,16 +1201,27 @@ export default function PlatformPlansPage() {
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setPaymentFor({ user: s.user, defaultPlanId: s.plan.id })
-                            }
-                          >
-                            <CircleDollarSign className="size-4" />
-                            Ghi nhận thanh toán
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Đổi gói, giữ nguyên hạn và kỳ dùng thử — không sinh chứng từ"
+                              onClick={() => setChangePlanFor(s)}
+                            >
+                              <ArrowLeftRight className="size-4" />
+                              Đổi gói
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setPaymentFor({ user: s.user, defaultPlanId: s.plan.id })
+                              }
+                            >
+                              <CircleDollarSign className="size-4" />
+                              Ghi nhận thanh toán
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1167,6 +1296,14 @@ export default function PlatformPlansPage() {
           <PlanDialog
             plan={planDialog.mode === "edit" ? planDialog.plan : null}
             onClose={() => setPlanDialog(null)}
+            onSaved={reload}
+          />
+        )}
+        {changePlanFor && data && (
+          <ChangePlanDialog
+            target={changePlanFor}
+            plans={data.plans}
+            onClose={() => setChangePlanFor(null)}
             onSaved={reload}
           />
         )}

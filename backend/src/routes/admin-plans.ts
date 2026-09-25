@@ -16,7 +16,8 @@ import {
   type AuthRequest,
 } from "../middleware/auth";
 import { writeAuditLog } from "../services/platform-audit";
-import { vnMonthStart } from "../services/plan-enforcement";
+import { invalidatePlanState, vnMonthStart } from "../services/plan-enforcement";
+import { notify } from "../services/notifications";
 import {
   effectiveSubscriptionStatus,
   recordPackagePayment,
@@ -475,6 +476,89 @@ router.post(
         return;
       }
       res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// POST /api/admin/subscriptions/:userId/change-plan — HQ ĐỔI GÓI GIỮ NGUYÊN
+// KỲ: { planId, note? }. Dùng khi khách dùng thử chạm trần (anh Trung 25/09:
+// Châu Huỳnh Ngọc 1.459/1.000 đơn trên Growth) hay HQ tặng/gỡ gói theo thỏa
+// thuận — KHÔNG sinh chứng từ, không đụng sổ quỹ/hoa hồng, không đổi hạn và
+// cờ dùng thử. Trần đơn tháng tự "lành" ở lần đọc kế (plan-enforcement xóa
+// overQuotaSince khi ratio < 1) nên chỉ cần xóa cache trạng thái gói.
+router.post(
+  "/subscriptions/:userId/change-plan",
+  requirePlatformPermission("hq.finance"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { planId, note } = req.body ?? {};
+      const sub = await prisma.subscription.findUnique({
+        where: { userId: req.params.userId },
+        include: {
+          plan: { select: { id: true, name: true } },
+          user: { select: { id: true, email: true, fullName: true } },
+        },
+      });
+      if (!sub) {
+        res.status(404).json({ error: "Khách này chưa có thuê bao" });
+        return;
+      }
+      const plan = await prisma.servicePlan.findUnique({
+        where: { id: String(planId ?? "") },
+        select: { id: true, name: true, maxOrdersPerMonth: true },
+      });
+      if (!plan) {
+        res.status(400).json({ error: "Gói không hợp lệ" });
+        return;
+      }
+      if (plan.id === sub.planId) {
+        res.status(400).json({ error: `Khách đang ở gói ${plan.name} rồi` });
+        return;
+      }
+      const updated = await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { planId: plan.id },
+        select: { id: true, planId: true, isTrial: true, currentPeriodEnd: true, status: true },
+      });
+      invalidatePlanState(sub.userId);
+
+      await writeAuditLog(req, {
+        action: "subscription.change-plan",
+        targetUserId: sub.userId,
+        targetLabel: sub.user.email ?? sub.user.fullName,
+        detail: {
+          from: sub.plan.name,
+          to: plan.name,
+          isTrial: sub.isTrial,
+          currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
+          note: typeof note === "string" && note.trim() ? note.trim() : null,
+        },
+      });
+      const cap =
+        plan.maxOrdersPerMonth != null
+          ? `${plan.maxOrdersPerMonth.toLocaleString("vi-VN")} đơn/tháng`
+          : "không giới hạn đơn";
+      await notify(sub.userId, {
+        type: "PLAN_CHANGED",
+        title: `Hubsell đã chuyển bạn sang gói ${plan.name}`,
+        body: `Gói ${sub.plan.name} → ${plan.name} (${cap})${
+          sub.isTrial ? ", kỳ dùng thử" : ", kỳ hiện tại"
+        } giữ nguyên hạn${
+          sub.currentPeriodEnd ? ` đến ${sub.currentPeriodEnd.toLocaleDateString("vi-VN")}` : ""
+        }.`,
+        link: "/settings/plan",
+      });
+
+      res.json({
+        ok: true,
+        subscription: {
+          ...updated,
+          currentPeriodEnd: updated.currentPeriodEnd?.toISOString() ?? null,
+          planName: plan.name,
+        },
+      });
     } catch (err) {
       next(err);
     }

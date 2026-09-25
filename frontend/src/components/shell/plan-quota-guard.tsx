@@ -302,7 +302,13 @@ export function UpgradePlanDialog({
   onOpenChange: (open: boolean) => void;
   data: MySubscriptionResponse;
 }) {
-  const { plan, orders, upgradePlans, payment } = data;
+  const { plan, orders, payment } = data;
+  // 25/09: backend trả CẢ THANG gói (khách tự hạ gói ở /settings/plan); popup
+  // này là ngữ cảnh NÂNG khi chạm trần nên chỉ bày từ gói hiện tại trở lên
+  // (gói hiện tại giữ làm mốc "Đang dùng" để so — anh Trung 22/08).
+  const upgradePlans = plan
+    ? data.upgradePlans.filter((p) => p.tier >= plan.tier)
+    : data.upgradePlans;
 
   // "Đề xuất" = gói RẺ NHẤT đủ trần cho mức đơn hiện tại — nhưng CHỈ khi khách
   // thật sự cần đổi gói (chưa có gói / gói hiện tại đã chật / đã hết hạn).

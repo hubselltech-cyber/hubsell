@@ -159,6 +159,15 @@ export default function SettingsPlanPage() {
     isConsult: boolean;
   } | null>(null);
   const [phone, setPhone] = useState("");
+  // 25/09: bảng giá bày CẢ THANG (anh Trung: ẩn gói thấp hơn là không hợp lý).
+  // Đổi sang gói KHÁC khi kỳ đã trả tiền còn ngày → kỳ mới bắt đầu ngay, ngày
+  // còn lại không cộng dồn (subscription-service chỉ nối tiếp khi CÙNG gói).
+  // Cảnh báo nêu số ngày mất + nút "Vẫn tiếp tục", không khóa (nguyên tắc 18/09).
+  const [changeWarn, setChangeWarn] = useState<{
+    plan: MyUpgradePlan;
+    cycle: BillingCycle;
+    proceed: () => void;
+  } | null>(null);
 
   // Hộp thoại thanh toán payOS đang mở (null = đóng). 17/09 khuya: anh Trung thử
   // bản chuyển hẳn sang pay.payos.vn rồi chốt "làm popup là đẹp nhất" → hộp thoại
@@ -250,6 +259,20 @@ export default function SettingsPlanPage() {
     : Math.max(0, ...(data?.upgradePlans ?? []).map((p) => p.maxOrdersPerMonth ?? 0));
   const gateway = data?.gateway ?? null;
   const openCheckout = data?.openCheckout ?? null;
+
+  // Đổi gói giữa kỳ ĐÃ TRẢ TIỀN còn ngày mới cần cảnh báo; dùng thử / hết hạn /
+  // mua đúng gói đang dùng thì đi thẳng.
+  const paidDaysLeft =
+    sub && sub.status === "ACTIVE" && !sub.isTrial && sub.daysLeft !== null && sub.daysLeft > 0
+      ? sub.daysLeft
+      : 0;
+  function guardPlanChange(plan: MyUpgradePlan, cycle: BillingCycle, proceed: () => void) {
+    if (paidDaysLeft > 0 && data?.plan && plan.id !== data.plan.id) {
+      setChangeWarn({ plan, cycle, proceed });
+      return;
+    }
+    proceed();
+  }
   const statusBadge =
     sub === null
       ? null
@@ -436,6 +459,7 @@ export default function SettingsPlanPage() {
           <div className="grid gap-4 pt-2 md:grid-cols-2 xl:grid-cols-3">
             {data.upgradePlans.map((p) => {
               const isCurrent = p.id === data.plan?.id;
+              const isLower = data.plan != null && p.tier < data.plan.tier;
               // Bậc 3 = gói "Bán chạy nhất" (anh Trung chốt 22/08) — theo tier
               // nên đổi thang gói sau này không phải sửa code.
               const isBestSeller = p.tier === 3;
@@ -478,6 +502,11 @@ export default function SettingsPlanPage() {
                   {isCurrent && (
                     <span className="absolute right-4 top-4 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300">
                       Đang dùng
+                    </span>
+                  )}
+                  {isLower && (
+                    <span className="absolute right-4 top-4 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      Thấp hơn gói hiện tại
                     </span>
                   )}
                   <p className="text-lg font-bold">{p.name}</p>
@@ -537,27 +566,35 @@ export default function SettingsPlanPage() {
                         className="w-full"
                         variant={isBestSeller ? "default" : "outline"}
                         disabled={checkoutMutation.isPending}
-                        onClick={() => checkoutMutation.mutate({ planId: p.id, cycle })}
+                        onClick={() =>
+                          guardPlanChange(p, cycle, () =>
+                            checkoutMutation.mutate({ planId: p.id, cycle })
+                          )
+                        }
                       >
                         <QrCode className="size-4" />
                         {checkoutMutation.isPending
                           ? "Đang mở trang thanh toán…"
                           : isCurrent
                             ? "Gia hạn — thanh toán ngay"
-                            : "Thanh toán ngay"}
+                            : isLower
+                              ? "Chuyển sang gói này"
+                              : "Thanh toán ngay"}
                       </Button>
                     )}
                     <Button
                       className={cn("w-full", gateway && "h-auto whitespace-normal py-2 text-muted-foreground")}
                       variant={gateway ? "ghost" : isBestSeller ? "default" : "outline"}
                       onClick={() =>
-                        openBuyDialog({
-                          planId: p.id,
-                          planName: p.name,
-                          cycle,
-                          price,
-                          isConsult: false,
-                        })
+                        guardPlanChange(p, cycle, () =>
+                          openBuyDialog({
+                            planId: p.id,
+                            planName: p.name,
+                            cycle,
+                            price,
+                            isConsult: false,
+                          })
+                        )
                       }
                     >
                       <ShoppingCart className="size-4" />
@@ -571,7 +608,7 @@ export default function SettingsPlanPage() {
                       <Button
                         className="w-full"
                         variant="ghost"
-                        onClick={() => setWalletBuy({ plan: p, cycle })}
+                        onClick={() => guardPlanChange(p, cycle, () => setWalletBuy({ plan: p, cycle }))}
                       >
                         <Wallet className="size-4" />
                         Trả bằng Ví Hubsell
@@ -732,6 +769,42 @@ export default function SettingsPlanPage() {
           checkoutMutation.mutate({ planId, cycle });
         }}
       />
+
+      {/* ===== Cảnh báo đổi gói giữa kỳ đã trả tiền — nêu số ngày mất, không khóa ===== */}
+      <Dialog open={changeWarn !== null} onOpenChange={(o) => !o && setChangeWarn(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Đổi gói giữa kỳ</DialogTitle>
+            {changeWarn && data?.plan && sub && (
+              <DialogDescription>
+                Gói <span className="font-semibold text-foreground">{data.plan.name}</span> của
+                bạn còn{" "}
+                <span className="font-semibold tabular-nums text-foreground">{paidDaysLeft} ngày</span>
+                {sub.currentPeriodEnd ? ` (đến ${fmtDate(sub.currentPeriodEnd)})` : ""}. Mua gói{" "}
+                <span className="font-semibold text-foreground">{changeWarn.plan.name}</span> hôm
+                nay thì kỳ mới bắt đầu ngay và {paidDaysLeft} ngày còn lại{" "}
+                <span className="font-semibold text-foreground">không được cộng dồn</span>. Nếu
+                không gấp, hãy đổi gói khi gần hết hạn.
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setChangeWarn(null)}>
+              Thôi, để gần hết hạn
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                const w = changeWarn;
+                setChangeWarn(null);
+                w?.proceed();
+              }}
+            >
+              Vẫn tiếp tục
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== Xác nhận trừ Ví — trừ tiền không được là một cú click nhầm ===== */}
       <Dialog open={walletBuy !== null} onOpenChange={(o) => !o && setWalletBuy(null)}>
