@@ -619,5 +619,5 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
   dịch** (đỏ) / **Bỏ qua**. Nút **Bật lại ngay** giờ hiện với mọi campaign paused. Lỗi sàn → dòng "Tạm dừng lỗi: …",
   modal giữ nguyên.
 - Kiểm chứng local (campaign demo seed tạm, token giả): hộp xác nhận đúng số; bấm xác nhận → POST pause → sàn trả
-  `error_param shop_id is invalid` → 409 → dòng lỗi hiện; tsc + eslint sạch, 737 test. Chưa bắn sống trên shop nhà
-  (pause đã sống 14/09 cùng hàm, rủi ro thấp).
+  `error_param shop_id is invalid` → 409 → dòng lỗi hiện; tsc + eslint sạch, 737 test.
+- ✅ **Bắn sống 25/09 chiều: anh Trung tự test nút Tạm dừng trên shop nhà — lệnh lên sàn OK, Seller Center đổi trạng thái.**
