@@ -604,3 +604,20 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
 - Xác minh sống edit (pause/resume/change_budget/change_roas_target) + loại SP trên GMS thật sau khi ANO bật.
 - Chưa biết GMS đã pause có còn trả `active_campaign` ở eligibility không (ảnh hưởng: sync 6h có thể dọn báo cáo khi
   paused) — soi khi có shop thật; bản ghi `ads_gms_campaigns` KHÔNG bị xóa khi status ≠ active nên số nhớ còn.
+
+## 14. NÚT TẠM DỪNG CHIẾN DỊCH NGAY TRONG HUBSELL (25/09/2026, anh Trung: "bất tiện khi phải mở Seller Center mới dừng được")
+
+- API: `edit_manual_product_ads` edit_action **pause** (Shopee, đã bắn sống 14/09 qua executor) và
+  `updateAdsCampaignSwitch` 0 (Lazada) — đi qua `makeActor` sẵn có, không thêm endpoint sàn nào.
+- Backend `pauseCampaignByOwner` (ads-auto-execute.ts): chỉ campaign `ongoing`; ghi sổ AdsActionLog action pause,
+  mode **manual**; thành công → status paused + opsActivity. **KHÔNG cắm cờ hubsellPausedAt** — theo máy trạng thái
+  14/09, người dừng thì máy không bao giờ tự bật lại. Route `POST /campaigns/:id/pause` (cả 2 sàn).
+- `resumeCampaignByOwner` nới: bật lại được cả campaign `status = paused` không cờ (người dừng ở Hubsell hoặc Seller
+  Center); bật lại = ván mới (cycle+1) như trước.
+- UI (modal chiến dịch): nút **Tạm dừng** (viền vàng) khi đang chạy → hộp xác nhận trong modal nêu tên + chi phí, đơn,
+  ROAS, hòa vốn của kỳ đang xem + câu "Trợ lý sẽ không tự bật lại chiến dịch do anh/chị dừng" → **Tạm dừng chiến
+  dịch** (đỏ) / **Bỏ qua**. Nút **Bật lại ngay** giờ hiện với mọi campaign paused. Lỗi sàn → dòng "Tạm dừng lỗi: …",
+  modal giữ nguyên.
+- Kiểm chứng local (campaign demo seed tạm, token giả): hộp xác nhận đúng số; bấm xác nhận → POST pause → sàn trả
+  `error_param shop_id is invalid` → 409 → dòng lỗi hiện; tsc + eslint sạch, 737 test. Chưa bắn sống trên shop nhà
+  (pause đã sống 14/09 cùng hàm, rủi ro thấp).

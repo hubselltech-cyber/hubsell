@@ -56,6 +56,7 @@ import {
   saveShopeeAssistantConfig,
   requestAdsRefresh,
   restoreShopeeAdsBudget,
+  pauseShopeeAdsCampaign,
   resumeShopeeAdsCampaign,
   setShopeeAdsRoasTarget,
   type AdsAssistantScorecard,
@@ -467,7 +468,24 @@ export function ShopeeAdsPage({
     }
   }
 
-  /** Bật lại NGAY campaign Trợ lý đã tạm dừng — lệnh thật lên sàn (sự cố 14/09). */
+  /** 25/09: chủ shop TẠM DỪNG campaign đang chạy ngay trong Hubsell — modal đã hỏi xác nhận, lệnh thật lên sàn. */
+  async function pauseCampaign() {
+    const campaign = data?.campaigns.find((c) => c.id === detailId);
+    if (!campaign || deciding) return;
+    setDeciding(true);
+    try {
+      await pauseShopeeAdsCampaign(campaign.id, platform);
+      setDetailId(null);
+      setSyncNote(`Đã tạm dừng chiến dịch "${campaign.name}" trên ${meta.label}.`);
+      await load(channelId, range);
+    } catch (err) {
+      setSyncNote(`Tạm dừng lỗi: ${(err as Error).message}`);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
+  /** Bật lại NGAY campaign đã tạm dừng (Trợ lý hoặc người dừng) — lệnh thật lên sàn (sự cố 14/09). */
   async function resumeCampaign() {
     const campaign = data?.campaigns.find((c) => c.id === detailId);
     if (!campaign || deciding) return;
@@ -1127,6 +1145,7 @@ export function ShopeeAdsPage({
           campaign={detailCampaign}
           onDecide={(d) => void decideCampaign(d)}
           onResume={() => void resumeCampaign()}
+          onPause={() => void pauseCampaign()}
           onRestoreBudget={() => void restoreBudget()}
           onSetTarget={(t) => void setRoasTarget(t)}
           onClose={() => setDetailId(null)}

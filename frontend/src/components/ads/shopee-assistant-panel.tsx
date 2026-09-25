@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, PlayCircle, ShieldCheck, SlidersHorizontal, Target, TrendingUp } from "lucide-react";
+import { ExternalLink, PauseCircle, PlayCircle, ShieldCheck, SlidersHorizontal, Target, TrendingUp } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -178,6 +178,7 @@ export function ShopeeAssistantModal({
   campaign,
   onDecide,
   onResume,
+  onPause,
   onRestoreBudget,
   onSetTarget,
   onClose,
@@ -187,8 +188,10 @@ export function ShopeeAssistantModal({
 }: {
   campaign: ShopeeAdsCampaignRow | null;
   onDecide: (decision: ShopeeAssistantDecision) => void;
-  /** Bật lại ngay campaign Trợ lý đã tạm dừng (lệnh thật lên sàn). */
+  /** Bật lại ngay campaign đã tạm dừng — Trợ lý hoặc người dừng (lệnh thật lên sàn). */
   onResume?: () => void;
+  /** 25/09: chủ shop tạm dừng campaign đang chạy ngay trong Hubsell (lệnh thật, modal hỏi xác nhận trước). */
+  onPause?: () => void;
   /** Đợt B: trả lại ngân sách gốc cho campaign Trợ lý đã hạ (lệnh thật, chỉ Shopee). */
   onRestoreBudget?: () => void;
   /** Đợt A: nâng mục tiêu ROAS trên sàn lên `target` (lệnh thật, chỉ Shopee). */
@@ -203,9 +206,12 @@ export function ShopeeAssistantModal({
   const [kw, setKw] = useState<ShopeeKeywordSuggestionsResponse | null>(null);
   const [kwLoading, setKwLoading] = useState(false);
   const [kwError, setKwError] = useState<string | null>(null);
+  // Tạm dừng: hỏi lại một lần ngay trong modal (nêu tên + số đang chạy) rồi mới gửi lệnh.
+  const [confirmPause, setConfirmPause] = useState(false);
   useEffect(() => {
     setKw(null);
     setKwError(null);
+    setConfirmPause(false);
   }, [campaign?.id]);
   async function loadKeywordSuggestions() {
     if (!campaign || kwLoading) return;
@@ -767,6 +773,29 @@ export function ShopeeAssistantModal({
               </div>
             )}
 
+            {/* Xác nhận tạm dừng (25/09): nêu rõ đang tắt gì, số đang chạy; hai nút Tạm dừng / Bỏ qua. */}
+            {confirmPause && campaign.status === "ongoing" && onPause && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-900">
+                <p className="font-semibold">Tạm dừng chiến dịch này trên {platform === "lazada" ? "Lazada" : "Shopee"}?</p>
+                <p className="mt-1">
+                  “{campaign.name || `#${campaign.campaignId}`}” sẽ ngừng hiển thị ngay. Trong kỳ đang xem chiến dịch tiêu{" "}
+                  <b>{formatVND(campaign.spend)}</b>, ra <b>{formatNumber(campaign.broadOrder)}</b> đơn, ROAS{" "}
+                  <b>{liveRoasText(campaign.roasBroad)}</b>
+                  {campaign.breakevenRoas != null && <> (hòa vốn {liveRoasText(campaign.breakevenRoas)})</>}. Bật lại được
+                  bất cứ lúc nào ngay tại đây; Trợ lý sẽ không tự bật lại chiến dịch do anh/chị dừng.
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  <Button size="sm" variant="destructive" disabled={deciding} onClick={onPause}>
+                    <PauseCircle className="size-4" />
+                    {deciding ? "Đang gửi lên sàn…" : "Tạm dừng chiến dịch"}
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={deciding} onClick={() => setConfirmPause(false)}>
+                    Bỏ qua
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Hành động */}
             <div className="flex flex-wrap items-center gap-2 border-t pt-4">
               <Button
@@ -779,7 +808,20 @@ export function ShopeeAssistantModal({
                 <ExternalLink className="size-4" />
                 Mở Seller Center
               </Button>
-              {campaign.hubsellPause && onResume && (
+              {campaign.status === "ongoing" && onPause && !confirmPause && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-300 text-amber-800 hover:bg-amber-50"
+                  disabled={deciding}
+                  onClick={() => setConfirmPause(true)}
+                  title="Tạm dừng chiến dịch ngay trong Hubsell — sẽ hỏi lại trước khi gửi lệnh lên sàn."
+                >
+                  <PauseCircle className="size-4" />
+                  Tạm dừng
+                </Button>
+              )}
+              {(campaign.hubsellPause || campaign.status === "paused") && onResume && (
                 <Button
                   size="sm"
                   className="bg-violet-600 text-white hover:bg-violet-700"

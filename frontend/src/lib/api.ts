@@ -6251,7 +6251,18 @@ export interface ShopeeAdsActionLogRow {
   createdAt: string;
 }
 
-/** Seller bật lại NGAY từ Hubsell một campaign do Trợ lý tạm dừng (gọi lệnh thật lên sàn). */
+/** Seller TẠM DỪNG ngay từ Hubsell một campaign đang chạy (lệnh thật lên sàn, FE hỏi xác nhận trước). */
+export function pauseShopeeAdsCampaign(
+  campaignRowId: string,
+  platform: "shopee" | "lazada" = "shopee"
+) {
+  return apiFetch<{ message: string; status: string }>(
+    `/api/quang-cao/${platform}/campaigns/${campaignRowId}/pause`,
+    { method: "POST" }
+  );
+}
+
+/** Seller bật lại NGAY từ Hubsell một campaign đã tạm dừng (Trợ lý hoặc người dừng; lệnh thật lên sàn). */
 export function resumeShopeeAdsCampaign(
   campaignRowId: string,
   platform: "shopee" | "lazada" = "shopee"

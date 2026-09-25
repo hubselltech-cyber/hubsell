@@ -23,6 +23,7 @@ import {
 } from "../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../integrations/lazada/service";
 import {
+  pauseCampaignByOwner,
   restoreBudgetByOwner,
   resumeCampaignByOwner,
   setRoasTargetByOwner,
@@ -865,6 +866,35 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       // Thẻ "Trợ lý đã tạm dừng" đóng ngay, không đợi lượt quét kế.
       await scanOpsAlerts(req.ownerId!, true);
       res.json({ message: "Đã bật lại chiến dịch", status: out.status });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/quang-cao/{sàn}/campaigns/:id/pause — chủ shop TẠM DỪNG ngay trong Hubsell
+  // (25/09). FE hỏi xác nhận trước; lệnh GHI THẬT lên sàn, ghi sổ mode manual, KHÔNG cắm cờ
+  // Trợ lý (người dừng → máy không tự bật lại). Cả Shopee lẫn Lazada.
+  router.post(`/${platform}/campaigns/:id/pause`, async (req: AuthRequest, res, next) => {
+    try {
+      const campaign = await prisma.adsCampaign.findFirst({
+        where: { id: req.params.id, channel: { userId: req.ownerId!, channelName } },
+        select: { id: true, channelId: true },
+      });
+      if (!campaign) {
+        res.status(404).json({ error: "Không tìm thấy chiến dịch" });
+        return;
+      }
+      const channel = await prisma.channel.findUnique({ where: { id: campaign.channelId } });
+      if (!channel) {
+        res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+        return;
+      }
+      const out = await pauseCampaignByOwner(channel, campaign.id);
+      if (!out.ok) {
+        res.status(409).json({ error: out.error ?? `${label} từ chối lệnh tạm dừng` });
+        return;
+      }
+      res.json({ message: "Đã tạm dừng chiến dịch", status: out.status });
     } catch (err) {
       next(err);
     }

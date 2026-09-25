@@ -363,9 +363,61 @@ export async function restoreBudgetByOwner(
 }
 
 /**
+ * SELLER BẤM "TẠM DỪNG" TRONG HUBSELL (25/09, anh Trung: "bất tiện khi phải mở Seller Center
+ * mới dừng được"). Lệnh thật ngay, không qua luật, không phụ thuộc mode; ghi sổ mode "manual".
+ * KHÔNG cắm cờ hubsellPausedAt: theo máy trạng thái 14/09, người dừng → máy KHÔNG BAO GIỜ tự bật lại.
+ * Shopee: edit_manual_product_ads pause (đã bắn sống 14/09); Lazada: switch 0.
+ */
+export async function pauseCampaignByOwner(
+  channel: Channel,
+  rowId: string
+): Promise<ActOutcome & { status: string }> {
+  const row = await prisma.adsCampaign.findFirst({ where: { id: rowId, channelId: channel.id } });
+  if (!row) return { ok: false, error: "Không tìm thấy chiến dịch", status: "" };
+  if (row.status !== "ongoing") {
+    return { ok: false, error: "Chiến dịch không đang chạy — không có gì để tạm dừng.", status: row.status };
+  }
+  const referenceId = `pause-${row.id}-manual-${Date.now()}`;
+  const log = await prisma.adsActionLog.create({
+    data: {
+      channelId: channel.id,
+      adsCampaignId: row.id,
+      action: "pause",
+      mode: "manual",
+      verdict: "",
+      reasons: "Chủ shop bấm Tạm dừng trong Hubsell.",
+      referenceId,
+      status: "PENDING",
+    },
+  });
+  let outcome: ActOutcome;
+  try {
+    const actor = await makeActor(channel);
+    outcome = await actor.pause(row.campaignId, referenceId);
+  } catch (err) {
+    outcome = { ok: false, error: String((err as Error).message).slice(0, 1000) };
+  }
+  await prisma.adsActionLog.update({
+    where: { id: log.id },
+    data: { status: outcome.ok ? "SUCCESS" : "FAILED", error: outcome.error?.slice(0, 1000) ?? null },
+  });
+  if (outcome.ok) {
+    await prisma.adsCampaign.update({ where: { id: row.id }, data: { status: "paused" } });
+    await prisma.opsActivity.create({
+      data: {
+        ownerId: channel.userId,
+        tag: "ads",
+        message: `⏸️ Chủ shop tạm dừng chiến dịch "${row.name || `#${row.campaignId}`}" (gian "${channel.shopName}") ngay trong Hubsell.`,
+      },
+    });
+  }
+  return { ...outcome, status: outcome.ok ? "paused" : row.status };
+}
+
+/**
  * SELLER BẤM "BẬT LẠI" TRONG HUBSELL (thẻ Trung tâm điều hành / bảng chiến
- * dịch) cho campaign Trợ lý đã dừng: gọi lệnh thật ngay, không qua luật, không
- * phụ thuộc mode. Ghi sổ mode "manual" để phân biệt với máy.
+ * dịch) cho campaign đã tạm dừng (Trợ lý hoặc người dừng): gọi lệnh thật ngay,
+ * không qua luật, không phụ thuộc mode. Ghi sổ mode "manual" để phân biệt với máy.
  */
 export async function resumeCampaignByOwner(
   channel: Channel,
@@ -375,10 +427,12 @@ export async function resumeCampaignByOwner(
     where: { id: rowId, channelId: channel.id },
   });
   if (!row) return { ok: false, error: "Không tìm thấy chiến dịch", status: "" };
-  if (row.hubsellPausedAt == null) {
+  // 25/09: bật lại được cả campaign do người tạm dừng (nút Tạm dừng trong Hubsell / Seller Center),
+  // không chỉ campaign Trợ lý dừng — API resume của sàn không phân biệt ai đã dừng.
+  if (row.hubsellPausedAt == null && row.status !== "paused") {
     return {
       ok: false,
-      error: "Chiến dịch này không do Trợ lý tạm dừng — bật lại trên Seller Center.",
+      error: "Chiến dịch không ở trạng thái tạm dừng — không có gì để bật lại.",
       status: row.status,
     };
   }
@@ -407,6 +461,7 @@ export async function resumeCampaignByOwner(
     data: { status: outcome.ok ? "SUCCESS" : "FAILED", error: outcome.error?.slice(0, 1000) ?? null },
   });
   if (outcome.ok) {
+    // Người bật lại = ván mới (cycle+1) dù trước đó ai dừng — máy đủ quyền như campaign mới.
     await clearHubsellPauseFlag(row.id, row.hubsellPauseCycle, { status: "ongoing" });
     await prisma.opsActivity.create({
       data: {
