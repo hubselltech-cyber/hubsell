@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowDownToLine,
@@ -19,6 +19,7 @@ import {
 
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
+import { useMyPlan } from "@/components/shell/plan-quota-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,15 +49,17 @@ import {
 } from "@/components/ui/table";
 import {
   ApiError,
+  type BillingCycle,
   createWalletWithdrawalRequest,
   fetchReferralHistory,
   fetchReferralSummary,
   getStoredUser,
   mockReferralPayment,
-  renewPackageWithWallet,
   type ReferralHistory,
   type ReferralSummary,
-  type WalletTxn,
+  type RenewalPackage,
+  renewPackageWithWallet,
+  WalletTxn,
   type WalletTxnType,
   type WithdrawalRequestStatus,
 } from "@/lib/api";
@@ -648,17 +651,57 @@ function RenewDialog({
   summary: ReferralSummary;
   onDone: () => Promise<void>;
 }) {
-  const [selected, setSelected] = useState<string | null>(null);
+  // 25/09 (anh Trung chê danh sách phẳng 24 dòng "gói — kỳ" xấu): tách 2 bước
+  // trong một hộp — chọn GÓI (chip, mặc định gói đang dùng) rồi chọn KỲ HẠN
+  // (4 thẻ 1/3/6/12 tháng, ≈/tháng + tiết kiệm %, thiếu tiền thì mờ + báo
+  // thiếu bao nhiêu). Cùng ngôn ngữ với thẻ gói ở Cấu hình › Gói dịch vụ.
+  const balance = summary.stats.balance;
+  const { data: mine } = useMyPlan(open);
+  const currentPlanId = mine?.plan?.id ?? null;
+
+  // Gom gói theo planId, giữ thứ tự tier backend đã sắp.
+  const plans = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; tier: number; maxOrders: number | null; maxChannels: number | null; options: RenewalPackage[] }>();
+    for (const p of summary.packages) {
+      const entry = map.get(p.planId) ?? {
+        id: p.planId,
+        name: p.planName,
+        tier: p.tier,
+        maxOrders: p.maxOrdersPerMonth,
+        maxChannels: p.maxChannels,
+        options: [],
+      };
+      entry.options.push(p);
+      map.set(p.planId, entry);
+    }
+    return [...map.values()];
+  }, [summary.packages]);
+
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [cycle, setCycle] = useState<BillingCycle>("MONTHLY");
   const [submitting, setSubmitting] = useState(false);
 
+  // Mở hộp: chọn sẵn gói đang dùng (có trong danh sách) — gia hạn là việc
+  // thường gặp nhất; không có thì gói đầu tiên.
+  useEffect(() => {
+    if (!open) return;
+    const preferred = plans.find((p) => p.id === currentPlanId) ?? plans[0];
+    setPlanId(preferred?.id ?? null);
+    setCycle("MONTHLY");
+  }, [open, plans, currentPlanId]);
+
+  const plan = plans.find((p) => p.id === planId) ?? null;
+  const monthly = plan?.options.find((o) => o.cycle === "MONTHLY")?.price ?? 0;
+  const chosen = plan?.options.find((o) => o.cycle === cycle) ?? null;
+  const affordable = chosen !== null && balance >= chosen.price;
+
   async function handleRenew() {
-    if (!selected) return;
+    if (!chosen || !affordable) return;
     setSubmitting(true);
     try {
-      const res = await renewPackageWithWallet(selected);
+      const res = await renewPackageWithWallet(chosen.id);
       toast.success(res.message);
       onOpenChange(false);
-      setSelected(null);
       await onDone();
     } catch (err) {
       toast.error(
@@ -671,57 +714,145 @@ function RenewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Dùng Ví Hubsell gia hạn gói</DialogTitle>
           <DialogDescription>
-            Số dư hiện tại: <Money value={summary.stats.balance} /> — chọn gói
-            để trừ trực tiếp vào ví.
+            Số dư khả dụng:{" "}
+            <span className="font-semibold text-foreground">
+              <Money value={balance} />
+            </span>
+            . Gói có hiệu lực ngay sau khi trừ ví.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          {summary.packages.map((p) => {
-            const affordable = summary.stats.balance >= p.price;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                disabled={!affordable}
-                onClick={() => setSelected(p.id)}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition",
-                  selected === p.id
-                    ? "border-slate-800 bg-slate-50 ring-1 ring-slate-800"
-                    : "border-slate-200 hover:border-slate-400",
-                  !affordable && "cursor-not-allowed opacity-45"
-                )}
-              >
-                <span className="text-sm text-slate-900">
-                  {p.name}
-                </span>
-                <span className="text-sm font-semibold">
-                  <Money value={p.price} />
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <p className={TEXT_SUB}>
-          Bảng giá đang là KHUNG demo (chưa thương mại hóa) — gia hạn tại đây
-          chỉ trừ số dư ví và ghi lịch sử, chưa kích hoạt gói thật.
-        </p>
-        <Button
-          className="w-full"
-          disabled={!selected || submitting}
-          onClick={handleRenew}
-        >
-          {submitting && <Loader2 className="size-4 animate-spin" />}
-          Xác nhận gia hạn
-        </Button>
+
+        {plans.length === 0 ? (
+          <p className={TEXT_SUB}>Hiện chưa có gói nào đang bán.</p>
+        ) : (
+          <div className="space-y-5">
+            {/* Bước 1 — gói */}
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                1. Chọn gói
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {plans.map((p) => {
+                  const active = p.id === planId;
+                  const isCurrent = p.id === currentPlanId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPlanId(p.id)}
+                      className={cn(
+                        "rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                        active
+                          ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                          : "border-border bg-card text-foreground hover:border-slate-400"
+                      )}
+                    >
+                      {p.name}
+                      {isCurrent && (
+                        <span className={cn("ml-1.5 text-xs", active ? "opacity-80" : "text-emerald-600")}>
+                          · đang dùng
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {plan && (plan.maxOrders !== null || plan.maxChannels !== null) && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {[
+                    plan.maxOrders !== null && `${nfRenew.format(plan.maxOrders)} đơn/tháng`,
+                    plan.maxChannels !== null && `${plan.maxChannels} gian hàng`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+            </div>
+
+            {/* Bước 2 — kỳ hạn */}
+            {plan && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  2. Chọn kỳ hạn
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {plan.options.map((o) => {
+                    const active = o.cycle === cycle;
+                    const enough = balance >= o.price;
+                    const perMonth = Math.round(o.price / o.months);
+                    const save =
+                      o.months > 1 && monthly > 0
+                        ? Math.round((1 - o.price / (monthly * o.months)) * 100)
+                        : 0;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => setCycle(o.cycle)}
+                        className={cn(
+                          "flex flex-col items-start rounded-xl border px-3.5 py-3 text-left transition-colors",
+                          active
+                            ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900 dark:border-white dark:bg-slate-800 dark:ring-white"
+                            : "border-border bg-card hover:border-slate-400",
+                          !enough && "opacity-60"
+                        )}
+                      >
+                        <span className="text-sm font-semibold">{o.months} tháng</span>
+                        <span className="mt-1 text-base font-bold tabular-nums tracking-tight">
+                          <Money value={o.price} />
+                        </span>
+                        <span className="mt-0.5 min-h-4 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                          {o.months > 1 ? `≈ ${nfRenew.format(perMonth)}₫/tháng` : ""}
+                        </span>
+                        <span className="mt-0.5 min-h-4 whitespace-nowrap text-xs font-semibold">
+                          {!enough ? (
+                            <span className="text-amber-600">
+                              Thiếu {nfRenew.format(o.price - balance)}₫
+                            </span>
+                          ) : save >= 1 ? (
+                            <span className="text-emerald-600">Tiết kiệm {save}%</span>
+                          ) : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Tóm tắt + xác nhận */}
+            {chosen && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+                <p>
+                  <span className="font-semibold">{plan?.name}</span> · {chosen.months} tháng · trừ Ví{" "}
+                  <span className="font-semibold tabular-nums">
+                    <Money value={chosen.price} />
+                  </span>
+                  {affordable && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · còn lại <Money value={balance - chosen.price} />
+                    </span>
+                  )}
+                </p>
+                <Button disabled={!affordable || submitting} onClick={handleRenew}>
+                  {submitting && <Loader2 className="size-4 animate-spin" />}
+                  {affordable ? "Xác nhận gia hạn" : "Số dư không đủ"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
 }
+
+const nfRenew = new Intl.NumberFormat("vi-VN");
 
 // ---------- Dialog: rút tiền về ngân hàng ----------
 

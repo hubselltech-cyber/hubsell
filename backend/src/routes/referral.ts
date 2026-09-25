@@ -19,6 +19,7 @@ import {
 } from "../services/referral-wallet";
 import {
   CYCLE_LABEL,
+  CYCLE_MONTHS,
   mailPlanActivated,
   planPriceFor,
   recordPackagePaymentTx,
@@ -34,8 +35,10 @@ const REFERRAL_LINK_BASE =
 
 /**
  * GÓI GIA HẠN — từ 22/08 đọc BẢNG GIÁ THẬT (ServicePlan, admin quản trên
- * /admin/plans): mỗi gói đang bán có giá > 0 sinh 2 lựa chọn (tháng/năm).
- * id có cấu trúc "<planId>:<MONTHLY|YEARLY>" — /renew tách ngược lại.
+ * /admin/plans): mỗi gói đang bán sinh một lựa chọn cho MỖI kỳ có giá > 0
+ * (1/3/6/12 tháng). id có cấu trúc "<planId>:<BillingCycle>" — /renew tách
+ * ngược lại. 25/09: trả thêm planId/planName/tier/cycle/months + trần gói để
+ * FE gom theo gói rồi chọn kỳ (anh Trung chê danh sách phẳng 24 dòng xấu).
  */
 async function listRenewalPackages() {
   const plans = await prisma.servicePlan.findMany({
@@ -56,13 +59,29 @@ async function listRenewalPackages() {
       priceQuarterly: true,
       priceSemiannual: true,
       priceYearly: true,
+      tier: true,
+      maxOrdersPerMonth: true,
+      maxChannels: true,
     },
   });
   return plans.flatMap((p) =>
     (Object.values(BillingCycle) as BillingCycle[]).flatMap((cycle) => {
       const price = planPriceFor(p, cycle);
       return price > 0
-        ? [{ id: `${p.id}:${cycle}`, name: `${p.name} — ${CYCLE_LABEL[cycle]}`, price }]
+        ? [
+            {
+              id: `${p.id}:${cycle}`,
+              name: `${p.name} — ${CYCLE_LABEL[cycle]}`,
+              price,
+              planId: p.id,
+              planName: p.name,
+              tier: p.tier,
+              cycle,
+              months: CYCLE_MONTHS[cycle],
+              maxOrdersPerMonth: p.maxOrdersPerMonth,
+              maxChannels: p.maxChannels,
+            },
+          ]
         : [];
     })
   );

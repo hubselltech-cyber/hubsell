@@ -6099,9 +6099,17 @@ export type WalletTxnStatus = "PENDING" | "COMPLETED" | "REJECTED";
 export type WithdrawalRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export interface RenewalPackage {
+  /** "<planId>:<BillingCycle>" — gửi nguyên cho /api/referral/renew. */
   id: string;
   name: string;
   price: number;
+  planId: string;
+  planName: string;
+  tier: number;
+  cycle: BillingCycle;
+  months: number;
+  maxOrdersPerMonth: number | null;
+  maxChannels: number | null;
 }
 
 export interface ReferralSummary {
