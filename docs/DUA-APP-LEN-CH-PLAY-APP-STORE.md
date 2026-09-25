@@ -1,6 +1,6 @@
 # Đưa app Hubsell Mobile lên CH Play (Google Play) và App Store
 
-Cập nhật 23/09/2026. App dựng bằng **Expo SDK 57** (`hubsell-mobile/`), build iOS và Android trên mây bằng **EAS Build**, không cần máy Mac.
+Cập nhật 25/09/2026 (D-U-N-S đã cấp). App dựng bằng **Expo SDK 57** (`hubsell-mobile/`), build iOS và Android trên mây bằng **EAS Build**, không cần máy Mac.
 
 ---
 
@@ -13,11 +13,30 @@ Cập nhật 23/09/2026. App dựng bằng **Expo SDK 57** (`hubsell-mobile/`), 
 | Bán gói | **Không bán trong app, không có nút/link dẫn ra trang thanh toán** | Apple 3.1.1 và chính sách Play Billing đều bắt dùng IAP nếu app bán gói số. App chỉ đăng nhập, gói mua trên web (payOS) → hợp lệ theo Apple 3.1.3(b) "dịch vụ đa nền tảng". Hiện app chưa có lối nào ra thanh toán, giữ nguyên. |
 | Thị trường phát hành | **Chỉ Việt Nam** đợt đầu | Phát hành vào EU phải khai "trader status" theo DSA (địa chỉ, SĐT, email công khai). Mở rộng sau khi cần. |
 
-**Việc chậm nhất là số D-U-N-S** (1–4 tuần ở Việt Nam). Xin ngay hôm nay, những việc khác làm song song.
+~~**Việc chậm nhất là số D-U-N-S** (1–4 tuần ở Việt Nam).~~ ✅ **Đã cấp 25/09/2026, xem mục 1.1.**
 
 ---
 
 ## 1. Xin số D-U-N-S (miễn phí, dùng chung cho cả Apple và Google)
+
+### 1.1 ✅ KẾT QUẢ 25/09/2026: D-U-N-S **32-013-1497**
+
+Thư D&B iResearch 10:35 25/09 (Inquiry 10960566 / Case 11019008, "Verified through a company spokesperson plus outside sources") và thư CRIF D&B Vietnam (Nhat Hoang) 10:34 cùng ngày. Hồ sơ D&B lưu như sau, **mọi thông tin nộp Apple/Google phải chép đúng từng chữ bản này** (không dùng bản tiếng Việt trên GCN):
+
+| Mục | Giá trị D&B lưu |
+|---|---|
+| D-U-N-S | `32-013-1497` (nhập không gạch: `320131497`) |
+| Tên pháp nhân | `HUBSELL TECHNOLOGY CO., LTD.` |
+| Địa chỉ | `5K1, Lane 5, TT75, General Department II, Ministry of National Defence, Kim Chung Residential Group, Hoai Duc Commune, Ha Noi, Vietnam` |
+| Điện thoại | `+84 96 5863292` |
+| Website | `hubsell.vn` (khai website này, không phải hubsell.tech) |
+| Email | `support@hubsell.vn` |
+
+Thời gian đồng bộ: D&B nói 24–48 giờ cho DB địa phương, **2–3 tuần** cho sản phẩm toàn cầu; CRIF nói ít nhất 1 tuần. Apple và Google tra qua DB toàn cầu → **thử từ 29/09**; nếu báo "không tìm thấy D-U-N-S" thì chờ thêm vài ngày rồi thử lại, **tuyệt đối không xin cấp mới lần nữa** (sinh mã trùng, sửa rất lâu).
+
+Quá trình đã đi: submit form Apple 23/09 → CRIF D&B Vietnam (đối tác D&B duy nhất tại VN) gọi + email 24/09 đòi bảng 10 mục + scan GCN → trả lời 24/09 từ `hubselltech@gmail.com` (máy chủ CRIF chặn mail Zoho hubsell.vn, lỗi 550 5.7.1) → cấp 25/09. Tổng 2 ngày.
+
+### 1.2 Cách xin (đã làm, giữ để tham khảo)
 
 D-U-N-S là mã 9 số do Dun & Bradstreet cấp cho pháp nhân. Cả Apple lẫn Google đều bắt buộc với tài khoản tổ chức.
 
@@ -82,7 +101,7 @@ Cả hai kho đều bắt cung cấp tài khoản đăng nhập vì app không d
 ## 3. Google Play Console
 
 1. **https://play.google.com/console/signup** → đăng nhập `hubselltech@gmail.com`.
-2. Chọn **Organization**. Nhập: D-U-N-S, tên tổ chức (khớp D&B), địa chỉ, **SĐT tổ chức** (nhận OTP), **email tổ chức** (nhận mã), website `hubsell.tech`, loại tổ chức Company.
+2. Chọn **Organization**. Nhập: D-U-N-S `320131497`, tên tổ chức `HUBSELL TECHNOLOGY CO., LTD.`, địa chỉ **chép nguyên bảng mục 1.1**, **SĐT tổ chức** `+84 96 5863292` (nhận OTP), **email tổ chức** `support@hubsell.vn` (nhận mã, dev@ nhận thay), website `hubsell.vn`, loại tổ chức Company.
 3. Email nhà phát triển và SĐT sẽ **hiện công khai** trên trang app, cân nhắc dùng email/SĐT công ty chứ không phải số cá nhân.
 4. Trả 25 USD, tạo Google Payments profile loại tổ chức.
 5. **Xác minh danh tính**: chụp CCCD/hộ chiếu người đại diện + có thể yêu cầu GCN ĐKDN. Thường 1–7 ngày, tổ chức mới có thể lâu hơn.
@@ -106,7 +125,7 @@ Cả hai kho đều bắt cung cấp tài khoản đăng nhập vì app không d
 
 1. Trên iPhone, tải app **Apple Developer** (App Store), đăng nhập Apple ID công ty.
 2. Tab Account → **Enroll Now** → xác minh danh tính bằng cách chụp **CCCD/hộ chiếu** và selfie.
-3. Chọn **Organization** (không chọn Individual). Nhập D-U-N-S, tên pháp nhân (khớp D&B), website `hubsell.tech`, chức danh của anh: **Owner / Founder** (người có quyền ký hợp đồng thay công ty).
+3. Chọn **Organization** (không chọn Individual). Nhập D-U-N-S `320131497`, tên pháp nhân `HUBSELL TECHNOLOGY CO., LTD.` (Apple tự kéo từ D&B, chỉ cần đối chiếu), website `hubsell.vn`, chức danh của anh: **Owner / Founder** (người có quyền ký hợp đồng thay công ty).
 4. Apple có thể **gọi điện hoặc email** xác minh, đôi khi yêu cầu thư xác nhận quyền ký. Trả lời trong 1–2 ngày.
 5. Trả 99 USD trong app. Tài khoản kích hoạt sau vài giờ tới vài ngày.
 6. Vào **appstoreconnect.apple.com** → Agreements: đồng ý **Paid Apps Agreement không cần** (app miễn phí), chỉ cần Free Apps.
@@ -149,10 +168,10 @@ Availability: chỉ Việt Nam đợt đầu (tránh khai trader EU).
 
 | Bước | Thời gian | Ai làm |
 |---|---|---|
-| Xin D-U-N-S | ✅ đã submit 23/09, chờ 1–4 tuần, kết quả về support@hubsell.vn | Anh |
+| Xin D-U-N-S | ✅ cấp 25/09 (32-013-1497), 2 ngày kể từ submit | Anh |
 | Trang hỗ trợ, trang xóa tài khoản, tài khoản demo ✅ 23/09; còn ảnh listing | song song | Claude |
-| Đăng ký Google Play tổ chức + xác minh | 1–7 ngày sau khi có D-U-N-S | Anh |
-| Đăng ký Apple tổ chức | 2–7 ngày sau khi có D-U-N-S | Anh |
+| Đăng ký Google Play tổ chức + xác minh | bắt đầu từ 29/09, 1–7 ngày | Anh |
+| Đăng ký Apple tổ chức | bắt đầu từ 29/09, 2–7 ngày | Anh |
 | Sửa code + build + nộp | 1–2 ngày | Claude |
 | Duyệt Google | tới 7 ngày | |
 | Duyệt Apple | 1–3 ngày, có thể trả về 1–2 vòng | |
