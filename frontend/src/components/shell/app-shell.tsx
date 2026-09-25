@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { AssistantWidget } from "@/components/assistant/assistant-widget";
 import { ChannelDisconnectedBanner } from "@/components/shell/channel-disconnected-banner";
+import { MobileAppLaunchNotice } from "@/components/shell/mobile-app-launch-notice";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { NavIcon } from "@/components/shell/nav-icon";
 import { NotificationBell } from "@/components/shell/notification-bell";
@@ -832,6 +833,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Dải cảnh báo trần gói (GĐ2) — cùng triết lý bám trạng thái; chỉ
             chủ shop vì nhân viên không nâng gói được. */}
         {user && isAdmin(user) && !hqWorkspace && <PlanQuotaBanner />}
+
+        {/* Thông báo app điện thoại ra mắt tháng 10/2026 (anh Trung 25/09):
+            khách mới đã đăng ký, cần biết rõ app khi nào có / làm được gì.
+            Mọi tài khoản shop (kho cũng có màn quét), tự tắt bằng ô tích. */}
+        {user && !hqWorkspace && <MobileAppLaunchNotice />}
 
         {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
             tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}
