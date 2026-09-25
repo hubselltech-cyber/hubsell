@@ -5,7 +5,7 @@
 //   · tiktokAdsRouter        — /api/tiktok-ads/* (JWT + ADMIN): xin URL ủy quyền
 //                              theo GIAN ĐÍCH (tự bấm / link gửi người chạy quảng
 //                              cáo), gỡ kết nối. Trạng thái từng gian do
-//                              GET /api/ads/tiktok trả (routes/ads-tiktok.ts).
+//                              GET /api/quang-cao/tiktok trả (routes/ads-tiktok.ts).
 //   · tiktokAdsPublicRouter  — /api/auth/tiktok-ads/connect (CÔNG KHAI): trang
 //                              FE /ads/tiktok/callback gọi sau khi TikTok trả
 //                              auth_code. Công khai vì người bấm ủy quyền có

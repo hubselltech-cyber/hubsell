@@ -93,7 +93,7 @@ import { cn } from "@/lib/utils";
  * TRỢ LÝ QUẢNG CÁO — DASHBOARD DỮ LIỆU THẬT (READ-ONLY) + RULE ENGINE
  *
  * 12/08/2026: trang DÙNG CHUNG cho Shopee lẫn Lazada qua prop `platform`
- * (backend /api/ads/{shopee|lazada} trả payload y hệt — bảng AdsCampaign trung
+ * (backend /api/quang-cao/{shopee|lazada} trả payload y hệt — bảng AdsCampaign trung
  * lập sàn). Tên file/component giữ "Shopee" vì Shopee đặt nền và để không xáo
  * import đang chạy production; PLATFORM_META gom mọi khác biệt nhãn/quyền.
  * Khác biệt chức năng giữa hai sàn (17/09/2026): Shopee có SỐ DƯ ví ads, Lazada chỉ có

@@ -49,14 +49,14 @@ const router = Router();
 
 // Siết quyền theo LÁ: mount app.ts chỉ kiểm "có lá ads.* bất kỳ", từng nhánh
 // sàn bó đúng lá của nó. TikTok (GMV Max) khác bản chất nên có router riêng —
-// routes/ads-tiktok.ts, mount /api/ads/tiktok TRƯỚC router này.
+// routes/ads-tiktok.ts, mount /api/quang-cao/tiktok TRƯỚC router này.
 router.use("/shopee", requirePermission("ads.shopee"));
 router.use("/lazada", requirePermission("ads.lazada"));
 
 // ============================================================
 // TRỢ LÝ QUẢNG CÁO — DASHBOARD DỮ LIỆU THẬT (READ-ONLY) + RULE ENGINE
 //
-// GET /api/ads/{shopee|lazada}?channelId=&days=7|30
+// GET /api/quang-cao/{shopee|lazada}?channelId=&days=7|30
 //
 // HAI SÀN DÙNG CHUNG toàn bộ handler (bảng AdsCampaign/DailyPerf trung lập
 // sàn, lõi ads-insights nhận channelName) — chỉ khác: ví ads (đọc từ DB, xung
@@ -416,7 +416,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // GET /api/ads/{sàn}/product-breakeven?channelId= — BẢNG ROAS HÒA VỐN THEO
+  // GET /api/quang-cao/{sàn}/product-breakeven?channelId= — BẢNG ROAS HÒA VỐN THEO
   // SẢN PHẨM: tra cứu TRƯỚC khi tạo campaign (SP này đặt ROAS mục tiêu bao nhiêu
   // thì không lỗ). Nhóm theo item_id sàn, biên lãi từ P&L 30 ngày cùng SSOT với
   // hòa vốn campaign — hai bảng không bao giờ lệch số.
@@ -442,7 +442,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // GET /api/ads/{sàn}/recommendations?channelId= — ĐỢT D (17/09): GỢI Ý CHẠY ADS
+  // GET /api/quang-cao/{sàn}/recommendations?channelId= — ĐỢT D (17/09): GỢI Ý CHẠY ADS
   // theo sản phẩm (cổng loại → điểm → đề xuất mục tiêu + ngân sách). Thuần đọc DB.
   router.get(`/${platform}/recommendations`, async (req: AuthRequest, res, next) => {
     try {
@@ -462,7 +462,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/shopee/recommendations/sync — nút "Cập nhật số của sàn": chạy LƯỢT NỀN
+  // POST /api/quang-cao/shopee/recommendations/sync — nút "Cập nhật số của sàn": chạy LƯỢT NỀN
   // tín hiệu thị trường ở nền (≈1–2 phút với gian lớn), trả ngay; FE hỏi lại GET tới khi
   // signalsSyncedAt đổi. Chống spam: đang chạy hoặc vừa chạy <10' thì không chạy lại.
   router.post(`/${platform}/recommendations/sync`, async (req: AuthRequest, res, next) => {
@@ -508,7 +508,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/shopee/recommendations/refresh-item — 3 call tín hiệu ads cho MỘT SP
+  // POST /api/quang-cao/shopee/recommendations/refresh-item — 3 call tín hiệu ads cho MỘT SP
   // (seller mở hộp thoại SP nằm ngoài top ứng viên). Body: { channelId, itemId, safeRoas }.
   router.post(`/${platform}/recommendations/refresh-item`, async (req: AuthRequest, res) => {
     try {
@@ -533,7 +533,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // GET /api/ads/shopee/gms/probe?channelId= — ĐỌC THUẦN (đợt GMS 24/09): eligibility + báo cáo
+  // GET /api/quang-cao/shopee/gms/probe?channelId= — ĐỌC THUẦN (đợt GMS 24/09): eligibility + báo cáo
   // GMV Max cấp shop 7 ngày trọn + từng SP + so với tổng chi cấp shop. Chốt cách lưu sau khi soi số thật.
   if (platform === "shopee") {
     router.get(`/${platform}/gms/probe`, async (req: AuthRequest, res, next) => {
@@ -552,7 +552,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
       }
     });
 
-    // GET /api/ads/shopee/gms/items?channelId= — từng SP trong GMV Max cấp shop (7 ngày trọn, DB)
+    // GET /api/quang-cao/shopee/gms/items?channelId= — từng SP trong GMV Max cấp shop (7 ngày trọn, DB)
     // kèm hòa vốn của chính SP — SP lỗ thì seller loại khỏi GMV Max trên Seller Center (chưa có lệnh ghi).
     router.get(`/${platform}/gms/items`, async (req: AuthRequest, res, next) => {
       try {
@@ -572,7 +572,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     });
   }
 
-  // GET /api/ads/shopee/recommendations/probe?channelId=&itemId= — ĐỌC THUẦN, in nguyên văn
+  // GET /api/quang-cao/shopee/recommendations/probe?channelId=&itemId= — ĐỌC THUẦN, in nguyên văn
   // 5 endpoint tín hiệu cho một SP (chốt shape + ngưỡng trên số thật trước khi tin).
   router.get(`/${platform}/recommendations/probe`, async (req: AuthRequest, res, next) => {
     try {
@@ -590,7 +590,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/{sàn}/recommendations/create — tạo chiến dịch 1 SP từ gợi ý (lệnh
+  // POST /api/quang-cao/{sàn}/recommendations/create — tạo chiến dịch 1 SP từ gợi ý (lệnh
   // GHI THẬT lên sàn, chỉ Shopee). Body: { channelId, itemId, roasTarget, dailyBudget, snapshot }.
   router.post(`/${platform}/recommendations/create`, async (req: AuthRequest, res, next) => {
     try {
@@ -623,7 +623,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // PUT /api/ads/{sàn}/assistant-config — lưu luật Trợ lý riêng của một gian.
+  // PUT /api/quang-cao/{sàn}/assistant-config — lưu luật Trợ lý riêng của một gian.
   // Body: { channelId, config } — config được normalize trước khi lưu (giá trị
   // rác/âm tự về default từng trường, schema cũ không vỡ khi thêm luật mới).
   router.put(`/${platform}/assistant-config`, async (req: AuthRequest, res, next) => {
@@ -655,7 +655,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/{sàn}/refresh — nút LÀM MỚI (12/09): seller chủ động kéo số
+  // POST /api/quang-cao/{sàn}/refresh — nút LÀM MỚI (12/09): seller chủ động kéo số
   // ads. KHÔNG gọi sàn trong request — kéo hạn ads của gian về ngay, worker
   // chạy đủ chi phí + campaign + Trợ lý trong ≤1 nhịp; FE so adsSyncedAt để
   // biết xong. Chống spam 2' (services/sync-schedule.ts). Body: { channelId }.
@@ -683,7 +683,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // GET /api/ads/{sàn}/assistant-scorecard?channelId=&days=7 — BẢNG ĐIỂM Trợ lý
+  // GET /api/quang-cao/{sàn}/assistant-scorecard?channelId=&days=7 — BẢNG ĐIỂM Trợ lý
   // (bước 6, 14/09): máy phán đúng/sai trong N ngày qua trên số của chính shop
   // (diễn tập → nhìn tiếp những ngày sau) + đếm hành động thật. Thuần đọc.
   router.get(`/${platform}/assistant-scorecard`, async (req: AuthRequest, res, next) => {
@@ -732,7 +732,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/{sàn}/campaigns/:id/resume — chủ shop BẬT LẠI ngay trong
+  // POST /api/quang-cao/{sàn}/campaigns/:id/resume — chủ shop BẬT LẠI ngay trong
   // Hubsell một campaign Trợ lý đã tạm dừng (nút trên thẻ Trung tâm điều hành
   // và bảng chiến dịch). Lệnh GHI THẬT lên sàn, không qua luật, không phụ
   // thuộc mode; chỉ campaign đang cắm cờ Hubsell (người tắt → bật trên sàn).
@@ -764,7 +764,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // GET /api/ads/shopee/campaigns/:id/keyword-suggestions — ĐỢT C (24/09): từ khóa Shopee
+  // GET /api/quang-cao/shopee/campaigns/:id/keyword-suggestions — ĐỢT C (24/09): từ khóa Shopee
   // gợi ý cho SP của campaign (cache 24h, tối đa 2 call khi bấm) đối chiếu với từ khóa
   // đang chọn: chưa có trong campaign / đang trả giá hớ. CHỈ ĐỌC — người sửa trên Seller Center.
   if (platform === "shopee") {
@@ -791,7 +791,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     });
   }
 
-  // POST /api/ads/{sàn}/campaigns/:id/restore-budget — ĐỢT B (24/09): chủ shop TRẢ
+  // POST /api/quang-cao/{sàn}/campaigns/:id/restore-budget — ĐỢT B (24/09): chủ shop TRẢ
   // LẠI ngân sách gốc cho campaign Trợ lý đã hạ (campaign vẫn chạy). Lệnh GHI THẬT
   // (change_budget), ghi sổ mode manual. Chỉ Shopee.
   router.post(`/${platform}/campaigns/:id/restore-budget`, async (req: AuthRequest, res, next) => {
@@ -820,7 +820,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/{sàn}/campaigns/:id/roas-target — ĐỢT A (17/09): chủ shop nâng
+  // POST /api/quang-cao/{sàn}/campaigns/:id/roas-target — ĐỢT A (17/09): chủ shop nâng
   // mục tiêu ROAS của campaign đấu thầu tự động ngay trong Hubsell. Lệnh GHI THẬT
   // (change_roas_target), ghi sổ mode manual. Body: { roasTarget }. Chỉ Shopee.
   router.post(`/${platform}/campaigns/:id/roas-target`, async (req: AuthRequest, res, next) => {
@@ -854,7 +854,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
     }
   });
 
-  // POST /api/ads/{sàn}/campaigns/:id/decision — chủ shop quyết một cảnh báo.
+  // POST /api/quang-cao/{sàn}/campaigns/:id/decision — chủ shop quyết một cảnh báo.
   // Body: { decision, verdict } — verdict là loại cảnh báo ĐANG hiển thị lúc bấm;
   // lưu kèm để verdict đổi loại thì cảnh báo tự hiện lại ("" = gỡ quyết định).
   router.post(
@@ -896,7 +896,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
   );
 }
 
-// GET /api/ads/{sàn}/action-log?channelId=&limit= — SỔ HÀNH ĐỘNG của Trợ lý
+// GET /api/quang-cao/{sàn}/action-log?channelId=&limit= — SỔ HÀNH ĐỘNG của Trợ lý
 // (GĐ3): mọi lần diễn tập/thực thi, kèm căn cứ + lỗi sàn nguyên văn. Bảng
 // AdsActionLog dùng chung hai sàn — handler đăng ký trong registerAdsPlatform.
 function registerActionLog(platform: AdsPlatformKey) {
@@ -948,7 +948,7 @@ registerAdsPlatform("lazada");
 registerActionLog("shopee");
 registerActionLog("lazada");
 
-// GET /api/ads/lazada/campaigns/:id/live-detail?days= — SOI SỐNG MỘT CHIẾN
+// GET /api/quang-cao/lazada/campaigns/:id/live-detail?days= — SOI SỐNG MỘT CHIẾN
 // DỊCH LAZADA: từng SẢN PHẨM (adgroup) + từng TỪ KHÓA, lấy thẳng từ Sponsored
 // Solutions lúc mở modal (không bảng DB mới — dữ liệu luôn tươi, đỡ SQL tay).
 // Đây là vũ khí riêng của Lazada: Shopee KHÔNG có API hiệu suất keyword.
@@ -1061,7 +1061,7 @@ router.get(
   }
 );
 
-// POST /api/ads/lazada/write-probe — DỤNG CỤ XÁC MINH GĐ3 LAZADA (chỉ ADMIN,
+// POST /api/quang-cao/lazada/write-probe — DỤNG CỤ XÁC MINH GĐ3 LAZADA (chỉ ADMIN,
 // dùng tay). Bắn MỘT lệnh updateCampaign switchStatus lên MỘT campaign chỉ
 // định và trả NGUYÊN VĂN envelope (kể cả lỗi) — xác minh quyền write + hành vi
 // thật của updateCampaign trước khi bật autoExecute live. Khuyến nghị chạy
@@ -1109,7 +1109,7 @@ router.post("/lazada/write-probe", async (req: AuthRequest, res, next) => {
   }
 });
 
-// POST /api/ads/shopee/write-probe — DỤNG CỤ XÁC MINH GĐ3 (chỉ ADMIN, dùng tay).
+// POST /api/quang-cao/shopee/write-probe — DỤNG CỤ XÁC MINH GĐ3 (chỉ ADMIN, dùng tay).
 //
 // Bắn MỘT lệnh edit_manual_product_ads lên MỘT campaign chỉ định và trả về
 // NGUYÊN VĂN envelope của Shopee (kể cả lỗi) — để xác minh enum edit_action +

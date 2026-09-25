@@ -93,17 +93,41 @@ function withRange(
   return `${path}${path.includes("?") ? "&" : "?"}${qs}`;
 }
 
+/**
+ * Mã lỗi khi request KHÔNG RỜI KHỎI TRÌNH DUYỆT (fetch ném TypeError "Failed to
+ * fetch"): mất mạng, hoặc tiện ích chặn quảng cáo hủy request (sự cố 25/09:
+ * EasyList chặn "||onrender.com/api/ads/" → đã đổi sang /api/quang-cao, nhưng
+ * vẫn giữ câu báo này cho các bộ lọc khác). status = 0 vì không có phản hồi HTTP.
+ */
+export const NETWORK_BLOCKED_CODE = "NETWORK_BLOCKED";
+
+function networkErrorMessage(): string {
+  const host = typeof window !== "undefined" ? window.location.host : "";
+  return (
+    `Không kết nối được tới máy chủ Hubsell. Nếu mạng vẫn bình thường, ` +
+    `nhiều khả năng trình duyệt hoặc tiện ích chặn quảng cáo (AdBlock, uBlock, Cốc Cốc, Brave) ` +
+    `đang chặn kết nối — hãy tắt chặn quảng cáo cho trang${host ? ` ${host}` : " này"} rồi tải lại.`
+  );
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    // AbortError là do chính mã gọi hủy (đổi trang / đổi bộ lọc) → giữ nguyên
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, networkErrorMessage(), NETWORK_BLOCKED_CODE);
+  }
 
   if (!res.ok) {
     let message = `Máy chủ trả về lỗi ${res.status}`;
@@ -2713,7 +2737,7 @@ export function fetchTiktokAdsDashboard(params: { channelId?: string; from: stri
   const qs = new URLSearchParams({ from: params.from, to: params.to });
   if (params.channelId) qs.set("channelId", params.channelId);
   const q = qs.toString();
-  return apiFetch<TiktokAdsDashboard>(`/api/ads/tiktok${q ? `?${q}` : ""}`);
+  return apiFetch<TiktokAdsDashboard>(`/api/quang-cao/tiktok${q ? `?${q}` : ""}`);
 }
 
 export interface TiktokAdsVideoRow {
@@ -2814,7 +2838,7 @@ export interface TiktokAdsCampaignVideos {
 /** Soi SỐNG từ TikTok (2–3 call) — không có trong DB, mở hộp mới gọi. */
 export function fetchTiktokAdsCampaignVideos(campaignRowId: string, range: { from: string; to: string }) {
   return apiFetch<TiktokAdsCampaignVideos>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?from=${range.from}&to=${range.to}`
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos?from=${range.from}&to=${range.to}`
   );
 }
 
@@ -2825,7 +2849,7 @@ export function sendTiktokAdsVideoAction(
   items: { videoId: string; spuId: string; cost: number; orders: number }[]
 ) {
   return apiFetch<{ ok: true; count: number; message: string }>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/action`,
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/action`,
     { method: "POST", body: JSON.stringify({ action, items }) }
   );
 }
@@ -2842,12 +2866,12 @@ export interface TiktokVideoMeta {
 /** Ảnh bìa + kênh + caption cho video của trang đang xem (≤24 id). Thiếu id = TikTok không cho. */
 export function fetchTiktokVideoMeta(videoIds: string[]) {
   return apiFetch<{ items: Record<string, TiktokVideoMeta> }>(
-    `/api/ads/tiktok/video-meta?ids=${videoIds.join(",")}`
+    `/api/quang-cao/tiktok/video-meta?ids=${videoIds.join(",")}`
   );
 }
 
 export function requestTiktokAdsRefresh(channelId: string) {
-  return apiFetch<AdsRefreshResult>("/api/ads/tiktok/refresh", {
+  return apiFetch<AdsRefreshResult>("/api/quang-cao/tiktok/refresh", {
     method: "POST",
     body: JSON.stringify({ channelId }),
   });
@@ -2931,12 +2955,12 @@ export interface TiktokProductAdsData {
 
 export function fetchTiktokProductAds(channelId?: string) {
   const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
-  return apiFetch<TiktokProductAdsData>(`/api/ads/tiktok/product-breakeven/ads${qs}`);
+  return apiFetch<TiktokProductAdsData>(`/api/quang-cao/tiktok/product-breakeven/ads${qs}`);
 }
 
 export function fetchTiktokProductBreakeven(channelId?: string) {
   const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : "";
-  return apiFetch<TiktokProductBreakevenData>(`/api/ads/tiktok/product-breakeven${qs}`);
+  return apiFetch<TiktokProductBreakevenData>(`/api/quang-cao/tiktok/product-breakeven${qs}`);
 }
 
 // ---------- LOẠI VIDEO TỰ ĐỘNG (cấu hình theo từng chiến dịch) ----------
@@ -2979,7 +3003,7 @@ export interface TiktokAdsAutoRule {
 }
 
 export function fetchTiktokAdsAutoRule(campaignRowId: string) {
-  return apiFetch<TiktokAdsAutoRule>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`);
+  return apiFetch<TiktokAdsAutoRule>(`/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`);
 }
 
 export function saveTiktokAdsAutoRule(
@@ -2988,7 +3012,7 @@ export function saveTiktokAdsAutoRule(
   body: { mode: TiktokAdsAutoMode; skipRehearsal?: boolean } & TiktokAdsAutoConfig
 ) {
   return apiFetch<{ ok: true; mode: TiktokAdsAutoMode; config: TiktokAdsAutoConfig; status: TiktokAdsAutoStatus }>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`,
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule`,
     { method: "PUT", body: JSON.stringify(body) }
   );
 }
@@ -3032,13 +3056,13 @@ export interface TiktokAdsAutoPreview {
  */
 export function runTiktokAdsAutoRuleNow(campaignRowId: string, expectedVideoIds: string[]) {
   return apiFetch<{ outcome: "nothing" | "planned" | "executed" | "failed" | "skipped"; excluded: number; message: string; status: TiktokAdsAutoStatus | null }>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/run-now`,
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/run-now`,
     { method: "POST", body: JSON.stringify({ expectedVideoIds }) }
   );
 }
 
 export function previewTiktokAdsAutoRule(campaignRowId: string, config: TiktokAdsAutoConfig) {
-  return apiFetch<TiktokAdsAutoPreview>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/preview`, {
+  return apiFetch<TiktokAdsAutoPreview>(`/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/preview`, {
     method: "POST",
     body: JSON.stringify(config),
   });
@@ -3046,7 +3070,7 @@ export function previewTiktokAdsAutoRule(campaignRowId: string, config: TiktokAd
 
 export function copyTiktokAdsAutoRule(campaignRowId: string, targetIds: string[]) {
   return apiFetch<{ ok: true; copied: number; message: string }>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/copy`,
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/copy`,
     { method: "POST", body: JSON.stringify({ targetIds }) }
   );
 }
@@ -3060,7 +3084,7 @@ export interface TiktokAdsOutsideVideos {
 
 export function fetchTiktokAdsOutsideVideos(campaignRowId: string, range: { from: string; to: string }) {
   return apiFetch<TiktokAdsOutsideVideos>(
-    `/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/outside?from=${range.from}&to=${range.to}`
+    `/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/videos/outside?from=${range.from}&to=${range.to}`
   );
 }
 
@@ -3105,7 +3129,7 @@ export interface TiktokAdsBacktest {
 }
 
 export function fetchTiktokAdsBacktest(campaignRowId: string) {
-  return apiFetch<TiktokAdsBacktest>(`/api/ads/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/backtest`);
+  return apiFetch<TiktokAdsBacktest>(`/api/quang-cao/tiktok/campaigns/${encodeURIComponent(campaignRowId)}/auto-rule/backtest`);
 }
 
 /**
@@ -6233,7 +6257,7 @@ export function resumeShopeeAdsCampaign(
   platform: "shopee" | "lazada" = "shopee"
 ) {
   return apiFetch<{ message: string; status: string }>(
-    `/api/ads/${platform}/campaigns/${campaignRowId}/resume`,
+    `/api/quang-cao/${platform}/campaigns/${campaignRowId}/resume`,
     { method: "POST" }
   );
 }
@@ -6244,7 +6268,7 @@ export function restoreShopeeAdsBudget(
   platform: "shopee" | "lazada" = "shopee"
 ) {
   return apiFetch<{ message: string; budget: number | null }>(
-    `/api/ads/${platform}/campaigns/${campaignRowId}/restore-budget`,
+    `/api/quang-cao/${platform}/campaigns/${campaignRowId}/restore-budget`,
     { method: "POST" }
   );
 }
@@ -6256,7 +6280,7 @@ export function setShopeeAdsRoasTarget(
   platform: "shopee" | "lazada" = "shopee"
 ) {
   return apiFetch<{ message: string; roasTarget: number }>(
-    `/api/ads/${platform}/campaigns/${campaignRowId}/roas-target`,
+    `/api/quang-cao/${platform}/campaigns/${campaignRowId}/roas-target`,
     { method: "POST", body: JSON.stringify({ roasTarget }) }
   );
 }
@@ -6334,13 +6358,13 @@ export interface AdsRecommendationsResponse {
 
 export function fetchAdsRecommendations(channelId: string, platform: "shopee" | "lazada" = "shopee") {
   return apiFetch<AdsRecommendationsResponse>(
-    `/api/ads/${platform}/recommendations?channelId=${encodeURIComponent(channelId)}`
+    `/api/quang-cao/${platform}/recommendations?channelId=${encodeURIComponent(channelId)}`
   );
 }
 
 /** Nút "Cập nhật số của sàn": chạy lượt nền tín hiệu thị trường ở backend, trả ngay. */
 export function syncAdsRecommendationSignals(channelId: string) {
-  return apiFetch<{ started: boolean; running: boolean }>(`/api/ads/shopee/recommendations/sync`, {
+  return apiFetch<{ started: boolean; running: boolean }>(`/api/quang-cao/shopee/recommendations/sync`, {
     method: "POST",
     body: JSON.stringify({ channelId }),
   });
@@ -6348,7 +6372,7 @@ export function syncAdsRecommendationSignals(channelId: string) {
 
 /** Lấy số của sàn cho MỘT sản phẩm (3 call) rồi trả lại cả bảng gợi ý đã chấm lại. */
 export function refreshAdsRecommendationItem(channelId: string, itemId: string, safeRoas: number | null) {
-  return apiFetch<AdsRecommendationsResponse>(`/api/ads/shopee/recommendations/refresh-item`, {
+  return apiFetch<AdsRecommendationsResponse>(`/api/quang-cao/shopee/recommendations/refresh-item`, {
     method: "POST",
     body: JSON.stringify({ channelId, itemId, safeRoas }),
   });
@@ -6363,7 +6387,7 @@ export function createAdsCampaignFromRecommendation(input: {
   snapshot: Record<string, unknown>;
 }) {
   return apiFetch<{ message: string; campaignId: string }>(
-    `/api/ads/shopee/recommendations/create`,
+    `/api/quang-cao/shopee/recommendations/create`,
     { method: "POST", body: JSON.stringify(input) }
   );
 }
@@ -6407,7 +6431,7 @@ export function fetchAdsAssistantScorecard(
 ) {
   const q = new URLSearchParams({ channelId, ...rangeToQuery(range) });
   return apiFetch<AdsAssistantScorecard>(
-    `/api/ads/${platform}/assistant-scorecard?${q.toString()}`
+    `/api/quang-cao/${platform}/assistant-scorecard?${q.toString()}`
   );
 }
 
@@ -6417,7 +6441,7 @@ export function fetchShopeeAdsActionLog(
   platform: "shopee" | "lazada" = "shopee"
 ) {
   return apiFetch<{ logs: ShopeeAdsActionLogRow[] }>(
-    `/api/ads/${platform}/action-log?channelId=${encodeURIComponent(channelId)}&limit=${limit}`
+    `/api/quang-cao/${platform}/action-log?channelId=${encodeURIComponent(channelId)}&limit=${limit}`
   );
 }
 
@@ -6470,7 +6494,7 @@ export function fetchLazadaCampaignLiveDetail(
 ) {
   const q = new URLSearchParams(rangeToQuery(range));
   return apiFetch<LazadaCampaignLiveDetail>(
-    `/api/ads/lazada/campaigns/${campaignRowId}/live-detail?${q.toString()}`
+    `/api/quang-cao/lazada/campaigns/${campaignRowId}/live-detail?${q.toString()}`
   );
 }
 
@@ -6512,7 +6536,7 @@ export function fetchShopeeProductBreakeven(
   platform: "shopee" | "lazada" = "shopee"
 ) {
   return apiFetch<ShopeeProductBreakevenResponse>(
-    `/api/ads/${platform}/product-breakeven?channelId=${encodeURIComponent(channelId)}`
+    `/api/quang-cao/${platform}/product-breakeven?channelId=${encodeURIComponent(channelId)}`
   );
 }
 
@@ -6643,7 +6667,7 @@ export interface ShopeeKeywordSuggestionsResponse {
 
 export function fetchShopeeKeywordSuggestions(campaignRowId: string) {
   return apiFetch<ShopeeKeywordSuggestionsResponse>(
-    `/api/ads/shopee/campaigns/${campaignRowId}/keyword-suggestions`
+    `/api/quang-cao/shopee/campaigns/${campaignRowId}/keyword-suggestions`
   );
 }
 
@@ -6747,7 +6771,7 @@ export interface ShopeeGmsItemsResponse {
 /** Từng SP trong GMV Max cấp shop (7 ngày trọn) kèm hòa vốn SP — đọc DB, không gọi sàn. */
 export function fetchShopeeGmsItems(channelId: string) {
   return apiFetch<ShopeeGmsItemsResponse>(
-    `/api/ads/shopee/gms/items?channelId=${encodeURIComponent(channelId)}`
+    `/api/quang-cao/shopee/gms/items?channelId=${encodeURIComponent(channelId)}`
   );
 }
 
@@ -6762,7 +6786,7 @@ export interface AdsRefreshResult {
  * request). Chống spam 2' phía backend → queued=false kèm message.
  */
 export function requestAdsRefresh(channelId: string, platform: AdsPlatform = "shopee") {
-  return apiFetch<AdsRefreshResult>(`/api/ads/${platform}/refresh`, {
+  return apiFetch<AdsRefreshResult>(`/api/quang-cao/${platform}/refresh`, {
     method: "POST",
     body: JSON.stringify({ channelId }),
   });
@@ -6782,7 +6806,7 @@ export function fetchShopeeAdsDashboard(params: {
   if (params.channelId) q.set("channelId", params.channelId);
   const qs = q.toString();
   return apiFetch<ShopeeAdsDashboard>(
-    `/api/ads/${params.platform ?? "shopee"}${qs ? `?${qs}` : ""}`
+    `/api/quang-cao/${params.platform ?? "shopee"}${qs ? `?${qs}` : ""}`
   );
 }
 
@@ -6793,7 +6817,7 @@ export function saveShopeeAssistantConfig(
   platform: AdsPlatform = "shopee"
 ) {
   return apiFetch<{ message: string; config: ShopeeAssistantConfig }>(
-    `/api/ads/${platform}/assistant-config`,
+    `/api/quang-cao/${platform}/assistant-config`,
     { method: "PUT", body: JSON.stringify({ channelId, config }) }
   );
 }
@@ -6806,7 +6830,7 @@ export function decideShopeeAdsCampaign(
   platform: AdsPlatform = "shopee"
 ) {
   return apiFetch<{ message: string }>(
-    `/api/ads/${platform}/campaigns/${campaignRowId}/decision`,
+    `/api/quang-cao/${platform}/campaigns/${campaignRowId}/decision`,
     { method: "POST", body: JSON.stringify({ decision, verdict }) }
   );
 }

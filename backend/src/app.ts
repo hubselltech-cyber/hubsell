@@ -251,10 +251,22 @@ export function createApp() {
   app.use("/api/koc", requireAuth, requirePermission("koc"), requirePlanUnlocked, requireChannel, kocRouter);
 
   // Trợ lý quảng cáo: cửa mount = có lá ads.* bất kỳ; nhánh /shopee bên trong
-  // router siết đúng lá từng sàn (Shopee/Lazada ở đây; TikTok có router riêng ngay trên).
-  // Quảng cáo TikTok (GMV Max — TikTok Marketing API): router riêng, mount TRƯỚC /api/ads.
-  app.use("/api/ads/tiktok", requireAuth, requirePermission("ads.tiktok"), requirePlanUnlocked, requireChannel, adsTiktokRouter);
-  app.use("/api/ads", requireAuth, requirePermission("ads"), requirePlanUnlocked, requireChannel, adsRouter);
+  // router siết đúng lá từng sàn (Shopee/Lazada ở đây; TikTok có router riêng).
+  //
+  // ĐƯỜNG DẪN LÀ /api/quang-cao, KHÔNG PHẢI /api/ads (25/09): EasyList có luật
+  // "||onrender.com/api/ads/" nên mọi trình chặn quảng cáo (uBlock, AdBlock,
+  // AdGuard, Cốc Cốc, Brave) hủy request ngay tại máy khách → trang Quảng cáo
+  // báo "Failed to fetch" + "Chưa có gian nào được kết nối" dù server bình
+  // thường. Slug tiếng Việt không khớp luật nào trong EasyList/EasyPrivacy
+  // (đã grep 138k dòng). Mount /api/ads giữ lại làm alias cho tab cũ / bản
+  // mobile chưa cập nhật; gỡ sau khi app mobile lên store bản mới.
+  // Quảng cáo TikTok (GMV Max — TikTok Marketing API): router riêng, mount TRƯỚC router chung.
+  const adsTiktokChain = [requireAuth, requirePermission("ads.tiktok"), requirePlanUnlocked, requireChannel, adsTiktokRouter] as const;
+  const adsChain = [requireAuth, requirePermission("ads"), requirePlanUnlocked, requireChannel, adsRouter] as const;
+  app.use("/api/quang-cao/tiktok", ...adsTiktokChain);
+  app.use("/api/quang-cao", ...adsChain);
+  app.use("/api/ads/tiktok", ...adsTiktokChain); // alias cũ — bị adblock chặn
+  app.use("/api/ads", ...adsChain); // alias cũ — bị adblock chặn
 
   // Hubsell Ads — ủy quyền app Ads Service riêng cho gian Shopee (chỉ chủ shop;
   // nghiệp vụ ở integrations/hubsell-ads/). Chưa đặt env HUBSELL_ADS_* thì

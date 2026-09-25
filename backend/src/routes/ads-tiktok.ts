@@ -1,7 +1,7 @@
 // ============================================================
 // ROUTES QUẢNG CÁO TIKTOK (GMV Max — TikTok Marketing API) — CHỈ ĐỌC
 //
-// Mount /api/ads/tiktok (JWT + lá ads.tiktok + gói + có gian). Tách khỏi
+// Mount /api/quang-cao/tiktok (JWT + lá ads.tiktok + gói + có gian). Tách khỏi
 // routes/ads.ts vì GMV Max khác bản chất Shopee/Lazada: không ví, không từ
 // khóa, một bộ số (không direct/broad), và thứ chủ shop cần soi là VIDEO.
 //
