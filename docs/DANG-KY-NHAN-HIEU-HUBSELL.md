@@ -90,3 +90,10 @@ Cách tra: truy vấn Solr qua URL `?query=MK:<từ>` (ô tra cứu cơ bản b�
 - Gần về nghĩa/tiền tố: HUBSPOT (phần mềm, 9+42) — hậu tố khác hẳn, ít rủi ro; "HUB" đứng một mình đang giải quyết (nhóm 35–42) — HUB là từ thông dụng, khó độc quyền.
 - Nhãn có "SELL" trong nhóm 9/42 (GoSELL, BigSeller, mSeller, Omisell) đều được cấp/đang xét song song → Cục coi "sell" là yếu tố yếu, không chặn lẫn nhau.
 - Kết luận: nhãn chữ HUBSELL có cơ sở đăng ký được; điểm cần phòng là HUBBELL. Nộp **cả nhãn chữ và nhãn kết hợp (logo)** để có phương án dự phòng nếu bị viện dẫn HUBBELL.
+
+### Chi tiết HUBBELL VN-4-2024-50013 (anh bấm CAPTCHA, đọc 25/09 tối)
+- Bằng 4-0605303-000 cấp 30.03.2026, hết hạn 18.10.2034; chủ Hubbell Incorporated (Shelton, CT, Mỹ); đại diện Công ty Luật T&G; ưu tiên US 98/537,566.
+- Kiểu nhãn: **kết hợp** (chữ HUBBELL + hình địa cầu), bảo hộ tổng thể, không bảo hộ riêng hình.
+- Nhóm 9: bộ nối điện, phích cắm/ổ cắm, hộp công tắc, bộ ngắt mạch, ăng ten, máy biến áp, bộ cấp nguồn, biến tần, bộ nối cáp quang, giá quản lý cáp, chống sét lan truyền, thiết bị đóng cắt truyền tải điện, cảm biến/đồng hồ đo điện, cổng giao tiếp hệ thống tiện ích. **Không có phần mềm.**
+- Nhóm 42: hỗ trợ kỹ thuật, chẩn đoán, giám sát hiệu năng, khắc phục sự cố **thiết bị điện/điện tử, viễn thông, chiếu sáng, điện cao thế, điện hàng hải**. **Không có thiết kế/phát triển phần mềm, không SaaS.**
+- Kết luận: hàng hóa/dịch vụ hoàn toàn khác HUBSELL (phần mềm quản lý bán hàng đa kênh). Rủi ro bị viện dẫn: THẤP. Nếu bị dự định từ chối → trả lời: khác hàng hóa (Điều 74.2.e Luật SHTT chỉ áp khi tương tự cả dấu hiệu lẫn hàng hóa), HUBBELL là nhãn kết hợp có hình, tiền lệ HUBSPOT tồn tại song song trong nhóm 9/42.
