@@ -2086,6 +2086,140 @@ export async function getGmsItemPerformance(
   );
 }
 
+// ---------- GMS = GMV Max cấp shop (GHI, 25/09/2026) ----------
+// Trả NGUYÊN VĂN envelope (kể cả lỗi) như create/editManualProductAdsRaw — caller ghi sổ + đọc mã lỗi sàn
+// (ads.campaign.error_daily_budget_range, ads_error_not_whitelisted_for_product_gms,
+// ads.campaign.invalid_start_date, ads_error_product_gms_campaign_not_found…).
+
+async function postShopRaw(
+  path: string,
+  accessToken: string,
+  shopId: string,
+  body: Record<string, unknown>,
+  cfg: ShopeeConfig
+): Promise<ShopeeEnvelope & { response?: unknown }> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = signShop(cfg.partnerKey, cfg.partnerId, path, timestamp, accessToken, shopId);
+  const qs = new URLSearchParams({
+    partner_id: cfg.partnerId,
+    timestamp: String(timestamp),
+    access_token: accessToken,
+    shop_id: shopId,
+    sign,
+  }).toString();
+  const res = await fetch(`${cfg.apiBase}${path}?${qs}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as ShopeeEnvelope & { response?: unknown };
+}
+
+/** Tạo GMS (mỗi gian tối đa MỘT). Không hẹn ngày tắt thì start_date PHẢI là hôm nay (giờ VN). */
+export async function createGmsProductCampaignRaw(
+  params: {
+    accessToken: string;
+    shopId: string;
+    referenceId: string;
+    /** "DD-MM-YYYY" */
+    startDate: string;
+    endDate?: string;
+    dailyBudget: number;
+    /** undefined/0 = Auto Bidding; >0 = Custom ROAS (sàn lấy 1 số lẻ). */
+    roasTarget?: number;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: { campaign_id?: number } }> {
+  return postShopRaw(
+    SHOPEE_PATHS.adsGmsCreateCampaign,
+    params.accessToken,
+    params.shopId,
+    {
+      reference_id: params.referenceId,
+      start_date: params.startDate,
+      ...(params.endDate ? { end_date: params.endDate } : {}),
+      daily_budget: params.dailyBudget,
+      ...(params.roasTarget != null ? { roas_target: params.roasTarget } : {}),
+    },
+    cfg
+  ) as Promise<ShopeeEnvelope & { response?: { campaign_id?: number } }>;
+}
+
+/** Sửa GMS: pause | resume | start | change_budget (daily_budget) | change_roas_target (roas_target) | change_duration. */
+export async function editGmsProductCampaignRaw(
+  params: {
+    accessToken: string;
+    shopId: string;
+    referenceId: string;
+    campaignId?: number | string | null;
+    editAction: string;
+    dailyBudget?: number;
+    roasTarget?: number;
+    startDate?: string;
+    endDate?: string;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: unknown }> {
+  return postShopRaw(
+    SHOPEE_PATHS.adsGmsEditCampaign,
+    params.accessToken,
+    params.shopId,
+    {
+      reference_id: params.referenceId,
+      ...(params.campaignId != null && params.campaignId !== "" ? { campaign_id: Number(params.campaignId) } : {}),
+      edit_action: params.editAction,
+      ...(params.dailyBudget != null ? { daily_budget: params.dailyBudget } : {}),
+      ...(params.roasTarget != null ? { roas_target: params.roasTarget } : {}),
+      ...(params.startDate ? { start_date: params.startDate } : {}),
+      ...(params.endDate ? { end_date: params.endDate } : {}),
+    },
+    cfg
+  );
+}
+
+/** Loại SP khỏi GMS (remove) / đưa lại (add) — ≤30 item_id một lần. */
+export async function editGmsItemProductCampaignRaw(
+  params: {
+    accessToken: string;
+    shopId: string;
+    campaignId?: number | string | null;
+    editAction: "add" | "remove";
+    itemIds: Array<number | string>;
+  },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeEnvelope & { response?: unknown }> {
+  return postShopRaw(
+    SHOPEE_PATHS.adsGmsEditItems,
+    params.accessToken,
+    params.shopId,
+    {
+      ...(params.campaignId != null && params.campaignId !== "" ? { campaign_id: Number(params.campaignId) } : {}),
+      edit_action: params.editAction,
+      item_id_list: params.itemIds.slice(0, 30).map((id) => Number(id)),
+    },
+    cfg
+  );
+}
+
+export interface ShopeeGmsDeletedItemsData extends ShopeeEnvelope {
+  response?: { campaign_id?: number; item_id_list?: number[]; total?: number; has_next_page?: boolean };
+}
+
+/** SP seller đã LOẠI khỏi GMS (đọc, phân trang ≤100). Ném lỗi khi sàn báo lỗi như các hàm đọc khác. */
+export async function listGmsUserDeletedItems(
+  params: { accessToken: string; shopId: string; offset?: number; limit?: number },
+  cfg: ShopeeConfig = getShopeeConfig()
+): Promise<ShopeeGmsDeletedItemsData> {
+  return callShopPost<ShopeeGmsDeletedItemsData>(
+    SHOPEE_PATHS.adsGmsDeletedItems,
+    params.accessToken,
+    params.shopId,
+    { offset: params.offset ?? 0, limit: Math.min(100, params.limit ?? 100) },
+    "list_gms_user_deleted_item",
+    cfg
+  );
+}
+
 /** Số dư ví quảng cáo real-time (read-only) — cảnh báo sắp hết tiền ads. */
 export async function getAdsTotalBalance(
   params: { accessToken: string; shopId: string },

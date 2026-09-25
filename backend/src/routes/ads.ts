@@ -29,7 +29,15 @@ import {
 } from "../integrations/shopee/ads-auto-execute";
 import { buildAssistantScorecard } from "../integrations/shopee/ads-scorecard";
 import { getCampaignKeywordSuggestions, parseManualBidding } from "../integrations/shopee/ads-keywords";
-import { getShopeeGmsItems, getShopeeGmsOverview, probeShopeeGms } from "../integrations/shopee/ads-gms";
+import {
+  createShopeeGmsCampaign,
+  editShopeeGmsCampaign,
+  editShopeeGmsItems,
+  getShopeeGmsItems,
+  getShopeeGmsOverview,
+  listShopeeGmsExcludedItems,
+  probeShopeeGms,
+} from "../integrations/shopee/ads-gms";
 import {
   computeChannelAdsRecommendations,
   createCampaignFromRecommendation,
@@ -568,6 +576,104 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
         res.json({ ...out, syncedAt: out.syncedAt?.toISOString() ?? null });
       } catch (err) {
         next(err);
+      }
+    });
+
+    // ===== LỆNH GHI GMS (25/09/2026, task Shopee Open Platform "Integrate Shop GMV Max Ads API") =====
+    // Chỉ chủ shop bấm — không executor tự động. Gian phải ACTIVE + đã nối Hubsell Ads.
+    const findActiveChannel = async (req: AuthRequest) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      return prisma.channel.findFirst({
+        where: { id: String(body.channelId ?? ""), userId: req.ownerId!, channelName, status: "ACTIVE" },
+      });
+    };
+
+    // POST /api/quang-cao/shopee/gms/create — BẬT GMV Max cấp shop. Body: { channelId, dailyBudget, roasTarget? }
+    router.post(`/${platform}/gms/create`, async (req: AuthRequest, res, next) => {
+      try {
+        const channel = await findActiveChannel(req);
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        const body = req.body as { dailyBudget?: unknown; roasTarget?: unknown };
+        const out = await createShopeeGmsCampaign(channel, { dailyBudget: body.dailyBudget, roasTarget: body.roasTarget });
+        if (!out.ok) {
+          res.status(409).json({ error: out.error ?? `${label} từ chối lệnh bật GMV Max cấp shop` });
+          return;
+        }
+        res.json({ message: "Đã bật GMV Max cấp shop — Shopee bắt đầu chạy từ hôm nay", campaignId: out.campaignId });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // POST /api/quang-cao/shopee/gms/edit — pause | resume | change_budget | change_roas_target.
+    // Body: { channelId, action, dailyBudget?, roasTarget? }
+    router.post(`/${platform}/gms/edit`, async (req: AuthRequest, res, next) => {
+      try {
+        const channel = await findActiveChannel(req);
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        const body = req.body as { action?: unknown; dailyBudget?: unknown; roasTarget?: unknown };
+        const out = await editShopeeGmsCampaign(channel, { action: body.action, dailyBudget: body.dailyBudget, roasTarget: body.roasTarget });
+        if (!out.ok) {
+          res.status(409).json({ error: out.error ?? `${label} từ chối lệnh sửa GMV Max cấp shop` });
+          return;
+        }
+        const msg =
+          body.action === "pause"
+            ? "Đã tạm dừng GMV Max cấp shop"
+            : body.action === "resume"
+              ? "Đã bật lại GMV Max cấp shop"
+              : body.action === "change_budget"
+                ? "Đã đổi ngân sách GMV Max cấp shop"
+                : "Đã đổi mục tiêu ROAS GMV Max cấp shop";
+        res.json({ message: msg, campaignId: out.campaignId });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // POST /api/quang-cao/shopee/gms/items/edit — loại (remove) / đưa lại (add) SP. Body: { channelId, action, itemIds[] }
+    router.post(`/${platform}/gms/items/edit`, async (req: AuthRequest, res, next) => {
+      try {
+        const channel = await findActiveChannel(req);
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        const body = req.body as { action?: unknown; itemIds?: unknown };
+        const out = await editShopeeGmsItems(channel, { action: body.action, itemIds: body.itemIds });
+        if (!out.ok) {
+          res.status(409).json({ error: out.error ?? `${label} từ chối lệnh sửa sản phẩm GMV Max`, done: out.done });
+          return;
+        }
+        res.json({
+          message: body.action === "remove" ? `Đã loại ${out.done} sản phẩm khỏi GMV Max cấp shop` : `Đã đưa ${out.done} sản phẩm vào lại GMV Max cấp shop`,
+          done: out.done,
+        });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    // GET /api/quang-cao/shopee/gms/excluded?channelId= — SP đã loại khỏi GMS, đọc SỐNG từ sàn (1–3 call).
+    router.get(`/${platform}/gms/excluded`, async (req: AuthRequest, res) => {
+      try {
+        const channelId = typeof req.query.channelId === "string" ? req.query.channelId : "";
+        const channel = await prisma.channel.findFirst({
+          where: { id: channelId, userId: req.ownerId!, channelName },
+        });
+        if (!channel) {
+          res.status(404).json({ error: `Không tìm thấy gian ${label}` });
+          return;
+        }
+        res.json(await listShopeeGmsExcludedItems(channel));
+      } catch (err) {
+        res.status(502).json({ error: `Không đọc được danh sách từ sàn: ${(err as Error).message}` });
       }
     });
   }

@@ -22,14 +22,19 @@
 // được hòa vốn đúng rổ ads của GMV Max.
 // ============================================================
 
-import { ChannelName, type Channel } from "@prisma/client";
+import { ChannelName, type Channel, type Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { isApiBudgetError } from "../../services/api-budget";
+import { requestAdsRefresh } from "../../services/sync-schedule";
 import { resolveShopeeAdsAccess, type ShopeeAdsAccess } from "../hubsell-ads";
 import {
   checkGmsEligibility,
+  createGmsProductCampaignRaw,
+  editGmsItemProductCampaignRaw,
+  editGmsProductCampaignRaw,
   getGmsCampaignPerformance,
   getGmsItemPerformance,
+  listGmsUserDeletedItems,
   type ShopeeGmsReport,
 } from "./client";
 import { toShopeeDate } from "./ads-spend";
@@ -192,6 +197,20 @@ export interface GmsOverview {
     syncedAt: Date;
   } & GmsReportNumbers>;
   shopBreakevenRoas: number | null;
+  /** Cấu hình GMS Hubsell ĐÃ ĐẶT / còn nhớ (25/09) — null khi chưa từng ghi từ Hubsell (sàn không có API đọc). */
+  campaign: GmsCampaignMemory | null;
+}
+
+export interface GmsCampaignMemory {
+  campaignId: string;
+  state: string;
+  dailyBudget: number | null;
+  roasTarget: number | null;
+  createdByHubsellAt: Date | null;
+  lastAction: string | null;
+  lastActionAt: Date | null;
+  lastError: string | null;
+  history: GmsHistoryEntry[];
 }
 
 /** Khối GMS cho dashboard — ĐỌC DB, không gọi sàn. null khi chưa hỏi sàn. */
@@ -203,10 +222,24 @@ export async function getShopeeGmsOverview(
   const rows = (await prisma.adsGmsReport.findMany({ where: { channelId: channel.id } })).sort(
     (a, b) => (GMS_WINDOWS.findIndex((w) => w.key === a.windowKey) - GMS_WINDOWS.findIndex((w) => w.key === b.windowKey))
   );
+  const mem = await prisma.adsGmsCampaign.findUnique({ where: { channelId: channel.id } });
   return {
     status: channel.adsGmsStatus,
     checkedAt: channel.adsGmsCheckedAt ?? null,
     shopBreakevenRoas,
+    campaign: mem
+      ? {
+          campaignId: mem.campaignId,
+          state: mem.state,
+          dailyBudget: mem.dailyBudget != null ? Number(mem.dailyBudget) : null,
+          roasTarget: mem.roasTarget != null ? Number(mem.roasTarget) : null,
+          createdByHubsellAt: mem.createdByHubsellAt,
+          lastAction: mem.lastAction,
+          lastActionAt: mem.lastActionAt,
+          lastError: mem.lastError,
+          history: (Array.isArray(mem.history) ? (mem.history as unknown as GmsHistoryEntry[]) : []).slice(-10),
+        }
+      : null,
     reports: rows.map((r) => {
       const expense = Number(r.expense);
       const broadGmv = Number(r.broadGmv);
@@ -339,4 +372,384 @@ export async function probeShopeeGms(channel: Channel): Promise<Record<string, u
     return { shopSpend, campaignSpend: campSpend, gap: shopSpend - campSpend };
   });
   return out;
+}
+
+// ============================================================
+// LỆNH GHI GMS (25/09/2026) — task Shopee Open Platform "Integrate Shop GMV Max Ads API"
+// (Auto Check: ≥1 call create_gms_product_campaign thành công). Docs đọc 25/09 (config.ts).
+//
+// Nguyên tắc:
+//   · Mọi lệnh là do CHỦ SHOP bấm (không executor tự động) — GMS không có số theo ngày nên rule
+//     engine cửa sổ today/3d không áp được; Trợ lý chỉ gợi ý SP lỗ để loại.
+//   · Shopee KHÔNG có API đọc cấu hình GMS → Hubsell nhớ vào AdsGmsCampaign những gì đã đặt; đặt
+//     trên Seller Center thì số nhớ có thể lệch, UI nói rõ "số Hubsell nhớ".
+//   · Không hẹn ngày tắt → start_date PHẢI là hôm nay (ads.campaign.invalid_start_date).
+//   · roas_target: bỏ/0 = Auto Bidding, >0 = Custom ROAS, sàn LẤY 1 số lẻ (10,19 → 10,1: cắt, không làm tròn).
+//   · Ngân sách: sàn tự chặn mức sai (ads.campaign.error_daily_budget_range) — không đoán tối thiểu.
+// ============================================================
+
+export type GmsEditAction = "pause" | "resume" | "change_budget" | "change_roas_target";
+export const GMS_EDIT_ACTIONS: GmsEditAction[] = ["pause", "resume", "change_budget", "change_roas_target"];
+const GMS_HISTORY_MAX = 50;
+
+export interface GmsHistoryEntry {
+  at: string;
+  action: string;
+  payload: Record<string, unknown>;
+  status: "SUCCESS" | "FAILED";
+  error?: string;
+  referenceId?: string;
+}
+
+/** ROAS mục tiêu theo luật sàn — THUẦN: rỗng/0/âm/NaN → 0 (Auto Bidding); >0 → CẮT còn 1 số lẻ. */
+export function normalizeGmsRoasTarget(v: unknown): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n * 10 + 1e-9) / 10;
+}
+
+/** Ngân sách ngày — THUẦN: số nguyên đồng > 0, sai → null. */
+export function normalizeGmsBudget(v: unknown): number | null {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export interface GmsCreatePayload {
+  start_date: string;
+  daily_budget: number;
+  roas_target?: number;
+}
+
+/**
+ * Payload create — THUẦN. Không hẹn ngày tắt → start_date = hôm nay (giờ VN, "DD-MM-YYYY").
+ * roas 0 (auto) thì KHÔNG gửi trường (docs: no input = Auto Bidding) để tránh lệ thuộc cách sàn hiểu số 0.
+ */
+export function buildGmsCreatePayload(
+  input: { dailyBudget: unknown; roasTarget?: unknown },
+  todayKey: string = vnDateKey(0)
+): { ok: true; payload: GmsCreatePayload; roasTarget: number; dailyBudget: number } | { ok: false; error: string } {
+  const dailyBudget = normalizeGmsBudget(input.dailyBudget);
+  if (dailyBudget == null) return { ok: false, error: "Ngân sách ngày phải là số dương." };
+  const roasTarget = normalizeGmsRoasTarget(input.roasTarget);
+  return {
+    ok: true,
+    dailyBudget,
+    roasTarget,
+    payload: {
+      start_date: toShopeeDay(todayKey),
+      daily_budget: dailyBudget,
+      ...(roasTarget > 0 ? { roas_target: roasTarget } : {}),
+    },
+  };
+}
+
+/** Kế hoạch edit — THUẦN: hành động + trường bắt buộc kèm theo. */
+export function buildGmsEditPlan(
+  action: unknown,
+  input: { dailyBudget?: unknown; roasTarget?: unknown }
+): { ok: true; editAction: GmsEditAction; dailyBudget?: number; roasTarget?: number } | { ok: false; error: string } {
+  if (!GMS_EDIT_ACTIONS.includes(action as GmsEditAction)) return { ok: false, error: "Hành động không hợp lệ." };
+  const editAction = action as GmsEditAction;
+  if (editAction === "change_budget") {
+    const dailyBudget = normalizeGmsBudget(input.dailyBudget);
+    if (dailyBudget == null) return { ok: false, error: "Ngân sách ngày phải là số dương." };
+    return { ok: true, editAction, dailyBudget };
+  }
+  if (editAction === "change_roas_target") {
+    // 0 = chuyển về Auto Bidding — docs cho phép gửi 0 ở change_roas_target ("Input 0 for Auto Bidding").
+    return { ok: true, editAction, roasTarget: normalizeGmsRoasTarget(input.roasTarget) };
+  }
+  return { ok: true, editAction };
+}
+
+/** Nối sổ, giữ ≤ 50 dòng mới nhất — THUẦN. */
+export function appendGmsHistory(history: unknown, entry: GmsHistoryEntry): GmsHistoryEntry[] {
+  const prev = Array.isArray(history) ? (history as GmsHistoryEntry[]) : [];
+  return [...prev, entry].slice(-GMS_HISTORY_MAX);
+}
+
+function envelopeError(raw: { error?: string; message?: string }): string | null {
+  if (raw.error && raw.error !== "" && raw.error !== "-") {
+    return raw.message && raw.message !== "-" ? `${raw.error}: ${raw.message}` : raw.error;
+  }
+  return null;
+}
+
+async function rememberGms(
+  channelId: string,
+  patch: Omit<Prisma.AdsGmsCampaignUncheckedCreateInput, "channelId" | "history">,
+  entry: GmsHistoryEntry
+) {
+  const cur = await prisma.adsGmsCampaign.findUnique({ where: { channelId } });
+  const history = appendGmsHistory(cur?.history, entry) as unknown as Prisma.InputJsonValue;
+  return prisma.adsGmsCampaign.upsert({
+    where: { channelId },
+    update: { ...patch, history },
+    create: { channelId, ...patch, history },
+  });
+}
+
+export interface GmsWriteResult {
+  ok: boolean;
+  error: string | null;
+  campaignId: string | null;
+}
+
+/** Chủ shop BẬT GMV Max cấp shop từ Hubsell — lệnh GHI THẬT (tiền bắt đầu tiêu từ hôm nay). */
+export async function createShopeeGmsCampaign(
+  channel: Channel,
+  input: { dailyBudget: unknown; roasTarget?: unknown }
+): Promise<GmsWriteResult> {
+  if (channel.adsGmsStatus === GMS_STATUS_ACTIVE) {
+    return { ok: false, error: "Gian đang chạy GMV Max cấp shop rồi — mỗi gian chỉ có một.", campaignId: null };
+  }
+  const plan = buildGmsCreatePayload(input);
+  if (!plan.ok) return { ok: false, error: plan.error, campaignId: null };
+  const referenceId = `gms-create-${channel.id}-${Date.now()}`;
+  const now = new Date();
+  let raw;
+  try {
+    const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+    raw = await createGmsProductCampaignRaw(
+      {
+        accessToken,
+        shopId,
+        referenceId,
+        startDate: plan.payload.start_date,
+        dailyBudget: plan.payload.daily_budget,
+        roasTarget: plan.payload.roas_target,
+      },
+      cfg
+    );
+  } catch (err) {
+    return { ok: false, error: String((err as Error).message).slice(0, 1000), campaignId: null };
+  }
+  const err = envelopeError(raw);
+  const cid = raw.response?.campaign_id;
+  if (err || cid == null) {
+    const error = err ?? "Sàn báo thành công nhưng không trả campaign_id.";
+    // Ghi sổ lỗi để học mã lỗi sàn (không tạo bản ghi "đang chạy").
+    const cur = await prisma.adsGmsCampaign.findUnique({ where: { channelId: channel.id } });
+    if (cur) {
+      await prisma.adsGmsCampaign.update({
+        where: { channelId: channel.id },
+        data: {
+          lastError: error,
+          history: appendGmsHistory(cur.history, {
+            at: now.toISOString(),
+            action: "create",
+            payload: plan.payload as unknown as Record<string, unknown>,
+            status: "FAILED",
+            error,
+            referenceId,
+          }) as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+    return { ok: false, error, campaignId: null };
+  }
+  const campaignId = String(cid);
+  await rememberGms(
+    channel.id,
+    {
+      campaignId,
+      state: "ongoing",
+      dailyBudget: plan.dailyBudget,
+      roasTarget: plan.roasTarget,
+      createdByHubsellAt: now,
+      lastAction: "create",
+      lastActionAt: now,
+      lastError: null,
+    },
+    { at: now.toISOString(), action: "create", payload: plan.payload as unknown as Record<string, unknown>, status: "SUCCESS", referenceId }
+  );
+  await prisma.channel.update({
+    where: { id: channel.id },
+    data: { adsGmsStatus: GMS_STATUS_ACTIVE, adsGmsCheckedAt: now },
+  });
+  await prisma.opsActivity.create({
+    data: {
+      ownerId: channel.userId,
+      tag: "ads",
+      message: `🚀 Bật GMV Max cấp shop cho gian "${channel.shopName}" từ Hubsell — ${plan.dailyBudget.toLocaleString("vi-VN")}₫/ngày, ${
+        plan.roasTarget > 0 ? `mục tiêu ROAS ${plan.roasTarget}x` : "Shopee tự đấu thầu"
+      } (campaign ${campaignId}).`,
+    },
+  });
+  await requestAdsRefresh(channel.id).catch(() => undefined);
+  return { ok: true, error: null, campaignId };
+}
+
+/** Chủ shop tạm dừng / bật lại / đổi ngân sách / đổi mục tiêu ROAS của GMS — lệnh GHI THẬT. */
+export async function editShopeeGmsCampaign(
+  channel: Channel,
+  input: { action: unknown; dailyBudget?: unknown; roasTarget?: unknown }
+): Promise<GmsWriteResult> {
+  const plan = buildGmsEditPlan(input.action, input);
+  if (!plan.ok) return { ok: false, error: plan.error, campaignId: null };
+  const mem = await prisma.adsGmsCampaign.findUnique({ where: { channelId: channel.id } });
+  const referenceId = `gms-${plan.editAction}-${channel.id}-${Date.now()}`;
+  const now = new Date();
+  const payload: Record<string, unknown> = {
+    edit_action: plan.editAction,
+    ...(plan.dailyBudget != null ? { daily_budget: plan.dailyBudget } : {}),
+    ...(plan.roasTarget != null ? { roas_target: plan.roasTarget } : {}),
+  };
+  let raw;
+  try {
+    const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+    raw = await editGmsProductCampaignRaw(
+      {
+        accessToken,
+        shopId,
+        referenceId,
+        campaignId: mem?.campaignId ?? null,
+        editAction: plan.editAction,
+        dailyBudget: plan.dailyBudget,
+        roasTarget: plan.roasTarget,
+      },
+      cfg
+    );
+  } catch (err) {
+    return { ok: false, error: String((err as Error).message).slice(0, 1000), campaignId: mem?.campaignId ?? null };
+  }
+  const err = envelopeError(raw);
+  const entry: GmsHistoryEntry = {
+    at: now.toISOString(),
+    action: plan.editAction,
+    payload,
+    status: err ? "FAILED" : "SUCCESS",
+    ...(err ? { error: err } : {}),
+    referenceId,
+  };
+  const campaignId =
+    mem?.campaignId ??
+    (await prisma.adsGmsReport.findFirst({ where: { channelId: channel.id, campaignId: { not: null } }, select: { campaignId: true } }))
+      ?.campaignId ??
+    "";
+  await rememberGms(
+    channel.id,
+    {
+      campaignId,
+      ...(err
+        ? { lastError: err }
+        : {
+            state: plan.editAction === "pause" ? "paused" : plan.editAction === "resume" ? "ongoing" : (mem?.state ?? "ongoing"),
+            ...(plan.dailyBudget != null ? { dailyBudget: plan.dailyBudget } : {}),
+            ...(plan.roasTarget != null ? { roasTarget: plan.roasTarget } : {}),
+            lastAction: plan.editAction,
+            lastActionAt: now,
+            lastError: null,
+          }),
+    },
+    entry
+  );
+  if (err) return { ok: false, error: err, campaignId: campaignId || null };
+  const what =
+    plan.editAction === "pause"
+      ? "tạm dừng GMV Max cấp shop"
+      : plan.editAction === "resume"
+        ? "bật lại GMV Max cấp shop"
+        : plan.editAction === "change_budget"
+          ? `đổi ngân sách GMV Max cấp shop → ${plan.dailyBudget!.toLocaleString("vi-VN")}₫/ngày`
+          : `đổi mục tiêu ROAS GMV Max cấp shop → ${plan.roasTarget! > 0 ? `${plan.roasTarget}x` : "Shopee tự đấu thầu"}`;
+  await prisma.opsActivity.create({
+    data: { ownerId: channel.userId, tag: "ads", message: `Chủ shop ${what} (gian "${channel.shopName}").` },
+  });
+  return { ok: true, error: null, campaignId: campaignId || null };
+}
+
+/** Loại SP khỏi GMS (remove) / đưa lại (add) — theo lô ≤30, lệnh GHI THẬT. */
+export async function editShopeeGmsItems(
+  channel: Channel,
+  input: { action: unknown; itemIds: unknown }
+): Promise<GmsWriteResult & { done: number }> {
+  const action = input.action === "add" ? "add" : input.action === "remove" ? "remove" : null;
+  const ids = Array.isArray(input.itemIds)
+    ? [...new Set(input.itemIds.map((x) => String(x)).filter((x) => /^\d+$/.test(x)))]
+    : [];
+  if (!action || ids.length === 0) return { ok: false, error: "Thiếu hành động hoặc danh sách sản phẩm.", campaignId: null, done: 0 };
+  const mem = await prisma.adsGmsCampaign.findUnique({ where: { channelId: channel.id } });
+  const now = new Date();
+  let done = 0;
+  let error: string | null = null;
+  try {
+    const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+    for (let i = 0; i < ids.length; i += 30) {
+      if (i > 0) await sleep(GMS_CALL_GAP_MS);
+      const chunk = ids.slice(i, i + 30);
+      const raw = await editGmsItemProductCampaignRaw(
+        { accessToken, shopId, campaignId: mem?.campaignId ?? null, editAction: action, itemIds: chunk },
+        cfg
+      );
+      const err = envelopeError(raw);
+      if (err) {
+        error = err;
+        break;
+      }
+      done += chunk.length;
+    }
+  } catch (err) {
+    error = String((err as Error).message).slice(0, 1000);
+  }
+  if (mem) {
+    await rememberGms(
+      channel.id,
+      {
+        campaignId: mem.campaignId,
+        ...(error ? { lastError: error } : { lastAction: `${action}_items`, lastActionAt: now, lastError: null }),
+      },
+      {
+        at: now.toISOString(),
+        action: `${action}_items`,
+        payload: { item_id_list: ids },
+        status: error ? "FAILED" : "SUCCESS",
+        ...(error ? { error } : {}),
+      }
+    );
+  }
+  if (done > 0) {
+    await prisma.opsActivity.create({
+      data: {
+        ownerId: channel.userId,
+        tag: "ads",
+        message: `Chủ shop ${action === "remove" ? "loại" : "đưa lại"} ${done} sản phẩm ${
+          action === "remove" ? "khỏi" : "vào"
+        } GMV Max cấp shop (gian "${channel.shopName}").`,
+      },
+    });
+  }
+  return { ok: !error, error, campaignId: mem?.campaignId ?? null, done };
+}
+
+/** SP đã bị loại khỏi GMS — đọc SỐNG từ sàn (≤3 trang × 100), ghép tên từ bảng SP. */
+export async function listShopeeGmsExcludedItems(channel: Channel): Promise<{
+  campaignId: string | null;
+  total: number;
+  rows: Array<{ itemId: string; name: string }>;
+}> {
+  const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
+  const ids: string[] = [];
+  let total = 0;
+  let campaignId: string | null = null;
+  for (let page = 0; page < 3; page++) {
+    if (page > 0) await sleep(GMS_CALL_GAP_MS);
+    const r = await listGmsUserDeletedItems({ accessToken, shopId, offset: page * 100, limit: 100 }, cfg);
+    for (const id of r.response?.item_id_list ?? []) ids.push(String(id));
+    total = Number(r.response?.total ?? ids.length);
+    if (r.response?.campaign_id != null) campaignId = String(r.response.campaign_id);
+    if (!r.response?.has_next_page) break;
+  }
+  const nameByItem = new Map<string, string>();
+  if (ids.length) {
+    const products = await prisma.channelProduct.findMany({
+      where: { channelId: channel.id, OR: ids.flatMap((id) => [{ externalId: id }, { externalId: { startsWith: `${id}-` } }]) },
+      select: { externalId: true, productName: true },
+    });
+    for (const p of products) {
+      const id = (p.externalId ?? "").split("-")[0];
+      if (id && !nameByItem.has(id)) nameByItem.set(id, p.productName);
+    }
+  }
+  return { campaignId, total, rows: ids.map((itemId) => ({ itemId, name: nameByItem.get(itemId) ?? "" })) };
 }

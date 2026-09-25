@@ -6745,6 +6745,74 @@ export interface ShopeeGmsOverview {
   reports: ShopeeGmsReportRow[];
   /** ROAS hòa vốn cấp shop để tô màu (GMS phủ mọi SP của gian). */
   shopBreakevenRoas: number | null;
+  /** Cấu hình GMS Hubsell đã đặt / còn nhớ (25/09) — null khi chưa ghi gì từ Hubsell (Shopee không có API đọc). */
+  campaign: ShopeeGmsCampaignMemory | null;
+}
+
+export interface ShopeeGmsHistoryEntry {
+  at: string;
+  action: string;
+  payload: Record<string, unknown>;
+  status: "SUCCESS" | "FAILED";
+  error?: string;
+}
+
+export interface ShopeeGmsCampaignMemory {
+  campaignId: string;
+  /** ongoing | paused — theo lệnh cuối Hubsell gửi. */
+  state: string;
+  dailyBudget: number | null;
+  /** 0/null = Shopee tự đấu thầu; >0 = mục tiêu ROAS. */
+  roasTarget: number | null;
+  createdByHubsellAt: string | null;
+  lastAction: string | null;
+  lastActionAt: string | null;
+  lastError: string | null;
+  history: ShopeeGmsHistoryEntry[];
+}
+
+export type ShopeeGmsEditAction = "pause" | "resume" | "change_budget" | "change_roas_target";
+
+/** Bật GMV Max cấp shop — lệnh thật lên sàn, tiền tiêu từ hôm nay (chỉ Shopee). roasTarget 0/bỏ = Shopee tự đấu thầu. */
+export function createShopeeGms(input: { channelId: string; dailyBudget: number; roasTarget?: number }) {
+  return apiFetch<{ message: string; campaignId: string }>(`/api/quang-cao/shopee/gms/create`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Tạm dừng / bật lại / đổi ngân sách / đổi mục tiêu ROAS của GMV Max cấp shop — lệnh thật lên sàn. */
+export function editShopeeGms(input: {
+  channelId: string;
+  action: ShopeeGmsEditAction;
+  dailyBudget?: number;
+  roasTarget?: number;
+}) {
+  return apiFetch<{ message: string; campaignId: string | null }>(`/api/quang-cao/shopee/gms/edit`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Loại SP khỏi GMV Max (remove) / đưa lại (add) — lệnh thật lên sàn, ≤30 SP mỗi lô. */
+export function editShopeeGmsItems(input: { channelId: string; action: "add" | "remove"; itemIds: string[] }) {
+  return apiFetch<{ message: string; done: number }>(`/api/quang-cao/shopee/gms/items/edit`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export interface ShopeeGmsExcludedResponse {
+  campaignId: string | null;
+  total: number;
+  rows: Array<{ itemId: string; name: string }>;
+}
+
+/** SP đã bị loại khỏi GMV Max — đọc SỐNG từ sàn. */
+export function fetchShopeeGmsExcluded(channelId: string) {
+  return apiFetch<ShopeeGmsExcludedResponse>(
+    `/api/quang-cao/shopee/gms/excluded?channelId=${encodeURIComponent(channelId)}`
+  );
 }
 
 export interface ShopeeGmsItemRow {

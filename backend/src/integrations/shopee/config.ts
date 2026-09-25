@@ -107,8 +107,16 @@ export const SHOPEE_PATHS = {
   adsGmsEligibility: "/api/v2/ads/check_create_gms_product_campaign_eligibility",
   adsGmsCampaignPerf: "/api/v2/ads/get_gms_campaign_performance",
   adsGmsItemPerf: "/api/v2/ads/get_gms_item_performance",
-  /** GHI — chưa dùng: pause/resume/change_budget/change_roas_target cho GMS. */
+  // ── GMS LỆNH GHI (25/09, task Shopee Open Platform "Integrate Shop GMV Max Ads API" — Auto Check cần
+  //    ≥1 call create_gms_product_campaign thành công). Docs đọc 25/09: create {start_date (hôm nay khi không
+  //    hẹn ngày tắt), end_date?, daily_budget, roas_target? (bỏ/0 = Auto Bidding, >0 = Custom, 1 số lẻ),
+  //    reference_id?}; edit {campaign_id?, edit_action: change_budget|change_duration|pause|resume|start|
+  //    change_roas_target, daily_budget?, start_date?, end_date?, roas_target?, reference_id?}; item edit
+  //    {campaign_id?, edit_action: add|remove, item_id_list ≤30}; deleted list {offset, limit ≤100}. ──
+  adsGmsCreateCampaign: "/api/v2/ads/create_gms_product_campaign",
   adsGmsEditCampaign: "/api/v2/ads/edit_gms_product_campaign",
+  adsGmsEditItems: "/api/v2/ads/edit_gms_item_product_campaign",
+  adsGmsDeletedItems: "/api/v2/ads/list_gms_user_deleted_item",
   /** GĐ3 — sửa Manual Product Ads. Enum edit_action đã đọc docs 14/09 (start|pause|resume|stop|
    *  delete|change_budget|change_duration|change_smart_creative|change_location|
    *  change_enhanced_cpc|change_roas_target). Đã bắn SỐNG: pause, resume (14/09). Chưa bắn sống:

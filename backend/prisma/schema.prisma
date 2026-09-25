@@ -427,6 +427,7 @@ model Channel {
   adsItemSignals        AdsItemSignal[] // tín hiệu thị trường theo SP cho Gợi ý chạy ads (đợt D)
   adsGmsReports         AdsGmsReport[] // GMV Max cấp shop — báo cáo theo cửa sổ (24/09)
   adsGmsItemReports     AdsGmsItemReport[]
+  adsGmsCampaign        AdsGmsCampaign? // GMV Max cấp shop — cấu hình Hubsell đã đặt/biết (25/09, sàn không có API đọc)
   adsAssistantConfig    AdsAssistantConfig? // luật Trợ lý quảng cáo riêng của gian
   adsActionLogs         AdsActionLog[] // sổ hành động của Trợ lý (GĐ3)
   inventorySyncLogs     InventorySyncLog[] // nhật ký từng lượt đẩy tồn lên sàn
@@ -734,6 +735,32 @@ model AdsGmsItemReport {
   @@unique([channelId, windowKey, itemId])
   @@index([channelId])
   @@map("ads_gms_item_reports")
+}
+
+/// GMV Max CẤP SHOP — LỆNH GHI (25/09/2026, task Shopee Open Platform "Integrate Shop GMV Max Ads API").
+/// Shopee KHÔNG có endpoint đọc cấu hình GMS (ngân sách / mục tiêu ROAS / đang chạy hay tạm dừng) nên Hubsell
+/// phải tự nhớ những gì đã đặt qua create_gms_product_campaign / edit_gms_product_campaign. Mỗi gian tối đa
+/// MỘT GMS. Đặt trên Seller Center thì các số ở đây có thể lệch — UI nói rõ "số Hubsell nhớ".
+model AdsGmsCampaign {
+  id                 String    @id @default(cuid())
+  channelId          String    @unique
+  campaignId         String // GMS campaign_id sàn trả khi tạo (hoặc từ báo cáo)
+  state              String    @default("ongoing") // ongoing | paused — theo lệnh cuối Hubsell gửi
+  dailyBudget        Decimal?  @db.Decimal(14, 2) // ngân sách NGÀY đã đặt
+  roasTarget         Decimal?  @db.Decimal(8, 1) // 0/null = Auto Bidding; >0 = Custom ROAS (sàn lấy 1 số lẻ)
+  createdByHubsellAt DateTime? // null = GMS bật trên Seller Center, Hubsell chỉ điều khiển
+  lastAction         String? // create | pause | resume | change_budget | change_roas_target | remove_items | add_items
+  lastActionAt       DateTime?
+  lastError          String?
+  /// Sổ lệnh (≤ 50 dòng gần nhất): { at, action, payload, status, error, referenceId } — GMS không nằm trong
+  /// AdsCampaign nên không dùng được AdsActionLog (FK bắt buộc).
+  history            Json      @default("[]")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("ads_gms_campaigns")
 }
 
 /// LỆNH RÚT TIỀN từ VÍ SÀN về NGÂN HÀNG.

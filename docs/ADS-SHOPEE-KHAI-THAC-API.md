@@ -543,5 +543,64 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
   Center thì lượt lịch sử kế tiếp (≤ 6h) sẽ có số, hoặc gọi `gms/probe` để xem ngay.
 
 ### 12.5 Còn treo (không tự làm)
-- Ghi lên GMS (pause / change_budget / change_roas_target qua `edit_gms_product_campaign`) — có shop thật chạy GMS
-  mới probe rồi nối executor; loại SP lỗ khỏi GMS (`edit_gms_item_product_campaign`) cùng đợt.
+- ~~Ghi lên GMS~~ → ĐÃ CODE 25/09 theo task Shopee Open Platform, xem mục 13 (chủ shop bấm, không executor).
+
+## 13. GMS LỆNH GHI — task Shopee Open Platform "Integrate Shop GMV Max Ads API" (25/09/2026, anh Trung: "kiểm tra và làm luôn")
+
+### 13.1 Task Shopee giao (đọc Task Center qua Chrome anh 25/09 13:00)
+- Task #3, scene API Integration & Migration, **Recommended** (không Mandatory, cột Penalty trống), Complete Method
+  **Auto Check**: app phải gọi thành công **≥ 1 lần `v2.ads.create_gms_product_campaign`**; "required for developers who
+  already support Basic Ads API". Period 25/09/2026 → 06/03/2026 (ngày kết thúc SỚM HƠN ngày bắt đầu — lỗi dữ liệu phía
+  Shopee, coi như không có hạn cứng). Docs dẫn: Shopee On-Platform Ads API Guide.
+- Docs 4 endpoint (đọc 25/09):
+  - `create_gms_product_campaign` POST: `start_date` (DD-MM-YYYY, **không hẹn ngày tắt thì PHẢI là hôm nay** —
+    `ads.campaign.invalid_start_date`), `end_date?`, `daily_budget` float, `roas_target?` (bỏ/0 = GMV Max Auto Bidding,
+    >0 = Custom ROAS, **sàn CẮT còn 1 số lẻ**: 10,199999 → 10,1), `reference_id?`. Trả `campaign_id`. Lỗi: 
+    `ads.campaign.error_daily_budget_range`, `ads_error_not_whitelisted_for_product_gms`, `ads_invalid_roas_target`,
+    `ads.shop.in_holiday_mode`, rate limit 4 loại. Quyền: Seller In House / Ads Service / Ads Service App (Hubsell Ads = Ads Service ✓).
+  - `edit_gms_product_campaign` POST: `campaign_id?` ("provide if available"), `edit_action` ∈ change_budget (`daily_budget`)
+    | change_duration (`start_date`/`end_date`) | pause | resume | start | change_roas_target (`roas_target`, 0 = về Auto),
+    `reference_id?` (trùng → fail).
+  - `edit_gms_item_product_campaign` POST: `campaign_id?`, `edit_action` ∈ add | remove, `item_id_list` 1–30 id.
+    Lỗi thêm: `ads_error_product_gms_campaign_not_found`.
+  - `list_gms_user_deleted_item` POST: `offset`, `limit` ≤100 → `campaign_id`, `item_id_list`, `total`, `has_next_page`.
+
+### 13.2 Thiết kế (kế thừa mục 12: GMS không có số theo ngày, không có API đọc cấu hình)
+- **Chủ shop bấm, không executor** — rule engine cửa sổ today/3d không áp cho GMS; Trợ lý chỉ tô đỏ SP dưới hòa vốn SP
+  để seller bấm Loại.
+- **Bảng `ads_gms_campaigns`** (migration `20260925120000_ads_gms_write`, 1 dòng/gian): campaignId, state
+  ongoing|paused (theo lệnh cuối Hubsell gửi), dailyBudget, roasTarget (0/null = Auto), createdByHubsellAt (null = bật
+  trên Seller Center), lastAction/At/Error, `history` JSON ≤50 dòng {at, action, payload, status, error, referenceId}.
+  Lý do bảng riêng: `AdsActionLog` bắt buộc FK `AdsCampaign` mà GMS không nằm trong bảng campaign. UI luôn nói "số
+  Hubsell nhớ từ lệnh gửi gần nhất" vì Shopee không có API đọc lại.
+- `ads-gms.ts` (thuần, 11 test mới): `normalizeGmsRoasTarget` (cắt 1 số lẻ, ≤0 → 0), `normalizeGmsBudget`,
+  `buildGmsCreatePayload` (start_date = hôm nay VN; roas 0 thì KHÔNG gửi trường), `buildGmsEditPlan` (chỉ mở 4 lệnh
+  pause/resume/change_budget/change_roas_target — không mở delete/stop/change_duration), `appendGmsHistory`.
+  Service: `createShopeeGmsCampaign` (từ chối nếu status đang active; thành công → nhớ + Channel.adsGmsStatus=active +
+  opsActivity + requestAdsRefresh), `editShopeeGmsCampaign` (gửi campaign_id nếu nhớ, không thì bỏ trống),
+  `editShopeeGmsItems` (lô ≤30, giãn 1,5 s), `listShopeeGmsExcludedItems` (đọc sống ≤3 trang, ghép tên SP).
+- `client.ts`: `postShopRaw` dùng chung + `createGmsProductCampaignRaw` / `editGmsProductCampaignRaw` /
+  `editGmsItemProductCampaignRaw` (trả nguyên envelope kể cả lỗi, như manual ads) + `listGmsUserDeletedItems`.
+- Route (chỉ shopee, gian ACTIVE): `POST gms/create {channelId, dailyBudget, roasTarget?}`, `POST gms/edit {channelId,
+  action, dailyBudget?, roasTarget?}`, `POST gms/items/edit {channelId, action add|remove, itemIds[]}`,
+  `GET gms/excluded?channelId=`. Dashboard `gms.campaign` = số nhớ.
+- UI: tab GMV Max cấp shop tách ra `shopee-gms-panel.tsx` (trang Ads bớt ~220 dòng; `formatRoas`/`roasToneClass`
+  export từ đây). Đủ điều kiện → khối "Bật GMV Max cấp shop từ Hubsell": ngân sách/ngày + Cách đấu thầu (Theo mục tiêu
+  ROAS / Shopee tự đấu thầu) + ô ROAS điền sẵn hòa vốn shop × 1,1, dòng đỏ CẢNH BÁO (không khóa) khi mục tiêu < hòa vốn,
+  MỘT nút Bật. Đang chạy → dòng số nhớ + nút Tạm dừng/Bật lại + Đổi ngân sách + Đổi mục tiêu; bảng SP thêm cột Hành động
+  (Loại — đỏ khi SP lỗ / Đưa lại), nút Xem SP đã loại (đọc sống), `<details>` sổ lệnh đã gửi.
+
+### 13.3 Kiểm chứng
+- tsc + eslint FE sạch; backend `npm run build` sạch; vitest 737/737 (69 file).
+- Soi local (gian demo, status đặt tay eligible → active, token Hubsell Ads GIẢ): khối Bật hiện đúng với hòa vốn shop
+  2,61x → gợi ý 2,8x; trạng thái active hiện số nhớ 150.000₫/ngày · 7,5x, 2 cửa sổ, 3 SP (2 đỏ dưới hòa vốn SP, nút Loại
+  đỏ). Bấm Tạm dừng với token giả → Shopee trả `error_not_found` → route 409 → dòng "Tạm dừng lỗi: error_not_found"
+  (đường lỗi chạy trọn; câu lỗi đã bỏ dấu hai chấm thừa khi sàn không kèm message).
+- **CHƯA BẮN SỐNG create trên shop nhà** — tạo GMS là tiêu tiền thật cả gian, để anh Trung bấm trên ANO (eligible, chưa
+  chạy GMS) với ngân sách anh chọn; đó cũng là cú call để Shopee Auto Check tick task. Muốn tốn ít nhất: bật với ngân sách
+  nhỏ rồi bấm Tạm dừng ngay (pause đã có nút). DarkMan chưa nối Hubsell Ads.
+
+### 13.4 Còn treo
+- Xác minh sống edit (pause/resume/change_budget/change_roas_target) + loại SP trên GMS thật sau khi ANO bật.
+- Chưa biết GMS đã pause có còn trả `active_campaign` ở eligibility không (ảnh hưởng: sync 6h có thể dọn báo cáo khi
+  paused) — soi khi có shop thật; bản ghi `ads_gms_campaigns` KHÔNG bị xóa khi status ≠ active nên số nhớ còn.
