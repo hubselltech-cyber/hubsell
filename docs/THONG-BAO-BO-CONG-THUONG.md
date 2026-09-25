@@ -39,7 +39,7 @@ Soạn 25/09/2026 theo quy trình chính thức trên online.gov.vn (bài "Quy T
 | Ô trên cổng | Giá trị |
 |---|---|
 | Tên thương nhân / tổ chức | CÔNG TY TNHH CÔNG NGHỆ HUBSELL |
-| Tên tiếng Anh | HUBSELL TECHNOLOGY COMPANY LIMITED |
+| Tên tiếng Anh | HUBSELL TECHNOLOGY CO., LTD. (GCN không đăng ký tên nước ngoài; đây là bản dịch, chép đúng tên D&B để khớp Apple/Google) |
 | Loại hình | Công ty TNHH một thành viên |
 | Mã số doanh nghiệp (= mã số thuế) | 0111626360 |
 | Cơ quan cấp / ngày cấp | Phòng Đăng ký kinh doanh và Tài chính doanh nghiệp – Sở Tài chính TP Hà Nội, 09/09/2026 |
