@@ -62,6 +62,25 @@ describe("recommendAdsForItem — cổng loại", () => {
     expect(r.proposal?.recommended).toBe("balanced");
   });
 
+  it("câu cổng khả thi đổi theo vị trí mức an toàn so với dải sàn: dưới / trong / trên (anh Trung 25/09)", () => {
+    const feasible = (r: ReturnType<typeof recommendAdsForItem>) => r.gates.find((g) => g.key === "feasible")!;
+    // Dưới đáy dải: an toàn 4,4x < lower 5x → KHÔNG được in "nằm trong dải" (câu cũ gây mâu thuẫn).
+    const below = feasible(recommendAdsForItem(mk()));
+    expect(below.ok).toBe(true);
+    expect(below.text).toContain("thấp hơn cả mức các shop tương tự đang đặt (5x–12x)");
+    expect(below.text).not.toContain("nằm trong");
+    // Trong dải: hòa vốn 6,25x → an toàn 6,9x, nằm giữa 5x–12x.
+    const inside = feasible(recommendAdsForItem(mk({ margin: 0.16 })));
+    expect(inside.ok).toBe(true);
+    expect(inside.text).toContain("nằm trong dải các shop tương tự đang đặt (5x–12x)");
+    // Trên đỉnh dải: hòa vốn 20x → trượt cổng, câu cũ giữ nguyên.
+    const above = feasible(recommendAdsForItem(mk({ margin: 0.05 })));
+    expect(above.ok).toBe(false);
+    expect(above.text).toContain("nhóm khắt khe nhất trên sàn chỉ đặt 12x");
+    // Sàn chỉ trả upper, không có lower → dải in "12x–12x", an toàn 4,4x vẫn là "thấp hơn".
+    expect(feasible(recommendAdsForItem(mk({}, { roiLower: null }))).text).toContain("thấp hơn");
+  });
+
   it("mức an toàn cao hơn cả nhóm khắt khe nhất của sàn → Chưa nên, việc làm trước là hạ hòa vốn", () => {
     const r = recommendAdsForItem(mk({ margin: 0.05 })); // hòa vốn 20x > upper 12x
     expect(r.tier).toBe("not_yet");

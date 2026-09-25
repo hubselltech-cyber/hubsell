@@ -174,13 +174,21 @@ export function recommendAdsForItem(input: RecommendInput): RecommendResult {
   }
 
   if (safeRoas != null && s?.roiUpper != null) {
+    // Dải lower–upper = ROAS mục tiêu các quảng cáo SP tương tự trên sàn đang đặt (API
+    // get_product_recommended_roi_target). Khả thi khi mức an toàn của mình ≤ nhóm khắt khe nhất.
+    // Anh Trung 25/09: mức an toàn thường nằm DƯỚI đáy dải (hàng biên lãi tốt) mà câu cũ in
+    // "nằm trong dải" → seller đọc thấy mâu thuẫn. Nay tách 3 câu theo vị trí: dưới / trong / trên.
     const ok = safeRoas <= s.roiUpper;
+    const lower = s.roiLower ?? s.roiUpper;
+    const range = `${x(lower)}–${x(s.roiUpper)}`;
     gates.push({
       key: "feasible",
       ok,
-      text: ok
-        ? `Mức an toàn ${x(safeRoas)} nằm trong dải ROAS của sàn (${x(s.roiLower ?? s.roiUpper)}–${x(s.roiUpper)}).`
-        : `Cần ROAS ≥ ${x(safeRoas)} mới có lãi, trong khi nhóm khắt khe nhất trên sàn chỉ đặt ${x(s.roiUpper)}.`,
+      text: !ok
+        ? `Cần ROAS ≥ ${x(safeRoas)} mới có lãi, trong khi nhóm khắt khe nhất trên sàn chỉ đặt ${x(s.roiUpper)}.`
+        : safeRoas < lower
+          ? `Mức an toàn ${x(safeRoas)} thấp hơn cả mức các shop tương tự đang đặt (${range}) — dễ đạt.`
+          : `Mức an toàn ${x(safeRoas)} nằm trong dải các shop tương tự đang đặt (${range}).`,
       todo: ok ? undefined : "Tăng giá bán hoặc giảm giá vốn để hạ hòa vốn trước khi chạy ads.",
     });
   } else if (safeRoas != null) {
