@@ -86,6 +86,12 @@ interface NavChild {
   locked?: boolean;
 }
 export interface NavItem {
+  /**
+   * ẨN HẲN khỏi sidebar + Ctrl+K (không xám, không ổ khóa) — cho mục chưa
+   * hoàn thiện, ra mắt sau. Route vẫn sống, gõ thẳng URL vẫn vào; quyền
+   * trong cây phân quyền giữ nguyên để khi mở lại không phải cấp lại.
+   */
+  hidden?: boolean;
   href?: string;
   label: string;
   /**
@@ -189,6 +195,9 @@ const NAV_ITEMS: NavItem[] = [
     // "handshake" thay "diversity_3": hợp tác/booking KOC (anh Trung 08/08).
     icon: "handshake",
     perm: "koc",
+    // ẨN HẲN 25/09 (anh Trung): module chưa hoàn thiện (hồ sơ KOC còn mock,
+    // TikTok chờ khảo sát lại) — làm xong mới ra mắt. Mở lại: bỏ cờ hidden.
+    hidden: true,
     children: [
       { href: "/koc-marketing/overview", label: "Tổng quan Net-ROI Đa kênh" },
       { href: "/koc-marketing/shopee", label: "Shopee Affiliate (AMS)" },
@@ -503,6 +512,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // "Báo cáo dòng tiền" sẽ thấy nhóm Tài chính đúng MỘT mục con.
   const visible = (i: NavItem) =>
     user !== null &&
+    !i.hidden &&
     (!i.adminOnly || isAdmin(user)) &&
     (!i.platformOnly || user.isPlatformAdmin === true) &&
     (!i.perm || can(user, i.perm));
