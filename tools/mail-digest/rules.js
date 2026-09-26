@@ -49,6 +49,9 @@ export function classify(m) {
     return { level: 'P3', group: 'Hệ thống Hubsell' };
   }
 
+  // Ten mien hubsell.cloud: anh Trung chot 26/09/2026 KHONG DUNG, de tu het han -> chi dem
+  if (subject.includes('hubsell.cloud')) return { level: 'P4', group: 'Khác (hubsell.cloud không dùng)' };
+
   // Thong bao van hanh cua san (khach noi app, ticket tu dong dong) -> P3, khong phai chinh sach
   if (subject.includes('new subscription on tiktok partner center')) return { level: 'P3', group: 'Sàn: khách nối app (TikTok Partner Center)' };
 
