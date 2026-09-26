@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeAdsSpend, type AdSpendRow } from "../ads-spend";
+import { adSpendDateRange, summarizeAdsSpend, type AdSpendRow } from "../ads-spend";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 const key = (x: Date) => x.toISOString().slice(0, 10);
@@ -47,5 +47,26 @@ describe("summarizeAdsSpend", () => {
     });
     expect(s.total).toBe(100_000);
     expect(s.notes).toEqual(["TikTok cần kết nối tài khoản quảng cáo"]);
+  });
+});
+
+describe("adSpendDateRange — khoảng giờ VN → khoảng NGÀY cho cột @db.Date", () => {
+  it("Hôm nay 26/09 (00:00 → 23:59:59 VN) chỉ lấy đúng ngày 26/09, không kéo 25/09", () => {
+    // parseDateRange("2026-09-26") = 25/09 17:00Z → 26/09 16:59:59.999Z
+    const r = adSpendDateRange({
+      gte: new Date("2026-09-25T17:00:00.000Z"),
+      lte: new Date("2026-09-26T16:59:59.999Z"),
+    });
+    expect(r.gte.toISOString()).toBe("2026-09-26T00:00:00.000Z");
+    expect(r.lte.toISOString()).toBe("2026-09-26T00:00:00.000Z");
+  });
+
+  it("30 ngày qua giữ đúng hai mốc đầu/cuối theo ngày VN", () => {
+    const r = adSpendDateRange({
+      gte: new Date("2026-08-27T17:00:00.000Z"),
+      lte: new Date("2026-09-26T16:59:59.999Z"),
+    });
+    expect(r.gte.toISOString()).toBe("2026-08-28T00:00:00.000Z");
+    expect(r.lte.toISOString()).toBe("2026-09-26T00:00:00.000Z");
   });
 });

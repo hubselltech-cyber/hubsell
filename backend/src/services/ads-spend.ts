@@ -14,6 +14,8 @@
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
+import { dateKeyToDbDate } from "../integrations/shopee/ads-insights";
+import { toBusinessDateKey } from "../lib/date-range";
 import { prisma } from "../lib/prisma";
 
 export interface AdSpendRow {
@@ -73,13 +75,26 @@ export function summarizeAdsSpend(input: {
   return summary;
 }
 
+/**
+ * Khoảng lọc cho cột AdSpend.date (@db.Date, 00:00 UTC theo ngày sàn) từ khoảng
+ * GIỜ VN của bộ lọc trang. Không đưa thẳng mốc giờ vào: so với cột DATE thì giờ
+ * bị cắt, "hôm nay" 00:00 VN (= 17:00 UTC hôm qua) kéo luôn cả ngày hôm qua
+ * (26/09/2026: dòng tiền "Hôm nay" = AdSpend 25 + 26/09). Thuần, có test.
+ */
+export function adSpendDateRange(range: { gte: Date; lte: Date }): { gte: Date; lte: Date } {
+  return {
+    gte: dateKeyToDbDate(toBusinessDateKey(range.gte)),
+    lte: dateKeyToDbDate(toBusinessDateKey(range.lte)),
+  };
+}
+
 /** Dòng AdSpend trong phạm vi gian + khoảng ngày (undefined = toàn bộ). */
 export async function loadAdSpendRows(
   scope: Prisma.ChannelWhereInput,
   range?: { gte: Date; lte: Date }
 ): Promise<AdSpendRow[]> {
   const rows = await prisma.adSpend.findMany({
-    where: { channel: scope, ...(range ? { date: range } : {}) },
+    where: { channel: scope, ...(range ? { date: adSpendDateRange(range) } : {}) },
     select: {
       channelId: true,
       date: true,
