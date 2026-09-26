@@ -27,6 +27,7 @@ const ONLY = opt('--account');
 const BODY_CHARS = Number(process.env.BODY_CHARS || 400);
 const FIRST_LOOKBACK = Number(process.env.FIRST_RUN_LOOKBACK_DAYS || 3);
 const MAX_SOURCE_BYTES = 60_000;
+const PENDING_MAX = Number(process.env.PENDING_MAX || 20);
 
 const clean = (s) => (s || '').replace(/\s+/g, '').replace(/^["']|["']$/g, '');
 const split = (s) => (s || '').split('|').map((x) => x.trim()).filter(Boolean);
@@ -68,7 +69,7 @@ function fmtDate(d) {
 }
 
 async function readAccount(acc, state) {
-  const out = { account: acc.key, label: acc.label, mails: [], counts: {}, errors: [] };
+  const out = { account: acc.key, label: acc.label, mails: [], counts: {}, errors: [], pending: [], pendingTotal: 0 };
   if (!acc.user || !acc.pass) { out.errors.push(`Chưa cấu hình ${acc.key.toUpperCase()}_IMAP_USER / _PASS trong .env`); return out; }
 
   const client = new ImapFlow({ host: acc.host, port: 993, secure: true, auth: { user: acc.user, pass: acc.pass }, logger: false });
@@ -141,6 +142,23 @@ async function readAccount(acc, state) {
         if (!DRY && !SINCE_DAYS) st[key] = { uidValidity: String(mb.uidValidity), lastUid: maxUid || (mb.uidNext ? mb.uidNext - 1 : 0) };
       } finally { lock.release(); }
     }
+    // Thu con GAN CO trong Hop thu den = viec chua xong -> nhac lai moi ngay toi khi anh bo co / luu tru
+    try {
+      const lock = await client.getMailboxLock('INBOX');
+      try {
+        const uids = await client.search({ flagged: true }, { uid: true });
+        const take = uids.slice(-PENDING_MAX);
+        if (take.length) {
+          for await (const msg of client.fetch(take, { uid: true, envelope: true }, { uid: true })) {
+            const env = msg.envelope || {};
+            const rec = { account: acc.key, folder: 'INBOX', uid: msg.uid, date: env.date, from: addr(env.from), subject: env.subject || '(không tiêu đề)' };
+            Object.assign(rec, classify(rec));
+            out.pending.push(rec);
+          }
+        }
+        out.pendingTotal = uids.length;
+      } finally { lock.release(); }
+    } catch (e) { out.errors.push(`Không đọc được thư gắn cờ: ${e.message}`); }
   } finally {
     await client.logout().catch(() => {});
   }
@@ -160,6 +178,17 @@ function render(results) {
     for (const e of r.errors) lines.push(`  - ⚠️ ${e}`);
   }
   lines.push('');
+
+  const pending = results.flatMap((r) => r.pending).sort((a, b) => new Date(a.date) - new Date(b.date));
+  if (pending.length) {
+    lines.push(`## ⏳ Còn treo · thư gắn cờ trong Hộp thư đến (${pending.length})`);
+    lines.push('_Nhắc lại mỗi ngày tới khi anh xử lý xong rồi lưu trữ hoặc bỏ cờ._');
+    for (const m of pending) {
+      const age = Math.max(0, Math.floor((Date.now() - new Date(m.date)) / 86400e3));
+      lines.push(`- **${m.subject}** — ${m.from} · ${fmtDate(m.date)} (${age} ngày) · ${m.account}`);
+    }
+    lines.push('');
+  }
 
   for (const lv of LEVEL_ORDER) {
     const ms = all.filter((m) => m.level === lv).sort((a, b) => a.group.localeCompare(b.group, 'vi') || (new Date(b.date) - new Date(a.date)));

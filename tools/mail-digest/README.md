@@ -19,6 +19,10 @@ Tác vụ định kỳ `mail-digest-hang-ngay` trong Claude Code chạy script n
 
 Mật khẩu ứng dụng chỉ nằm trong `.env` (đã nằm trong `.gitignore`). **Không dán vào chat.** Muốn thu hồi thì xóa mật khẩu ứng dụng trên Zoho/Google, script hết đọc được ngay.
 
+## Việc còn treo (nhắc lại mỗi ngày)
+
+Rule Zoho "Cần xử lý" gắn cờ đỏ cho cảnh báo hạ tầng và giữ chúng ở Hộp thư đến. Script coi **mọi thư đang gắn cờ trong Hộp thư đến** (cả Zoho lẫn Gmail) là việc chưa xong và in ở mục "⏳ Còn treo" đầu báo cáo, kèm số ngày treo, dù thư đã cũ. Xử lý xong thì **lưu trữ hoặc bỏ cờ** thư đó, hôm sau sẽ không nhắc nữa. Muốn tự thêm việc vào danh sách nhắc: gắn cờ thư đó trong Hộp thư đến. Trần 20 thư (`PENDING_MAX` trong `.env`).
+
 ## Cách chạy
 
 | Lệnh | Tác dụng |
