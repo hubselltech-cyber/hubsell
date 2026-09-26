@@ -277,6 +277,9 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
           country: true,
           phone: true,
           createdAt: true,
+          // Đăng nhập gần nhất: middleware auth chạm tối đa 1 lần/6 giờ khi
+          // khách gọi API (xem middleware/auth.ts) — độ chính xác "trong 6 giờ".
+          lastActiveAt: true,
           // googleId là dữ liệu liên kết OAuth — chỉ trả CÓ/KHÔNG, không trả giá trị.
           googleId: true,
           _count: {
@@ -329,10 +332,8 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
       by: ["channelId"],
       where: { channelId: { in: channels.map((c) => c.id) } },
       _count: { _all: true },
-      _max: { createdAt: true },
     });
     const ordersByUser = new Map<string, number>();
-    const lastOrderByUser = new Map<string, Date>();
     for (const o of orderCounts) {
       const ownerId = channelOwner.get(o.channelId);
       if (!ownerId) continue;
@@ -340,10 +341,6 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
         ownerId,
         (ordersByUser.get(ownerId) ?? 0) + o._count._all
       );
-      const last = o._max.createdAt;
-      if (last && (lastOrderByUser.get(ownerId) ?? new Date(0)) < last) {
-        lastOrderByUser.set(ownerId, last);
-      }
     }
 
     res.json({
@@ -358,12 +355,12 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
         country: u.country,
         phone: u.phone,
         createdAt: u.createdAt,
+        lastActiveAt: u.lastActiveAt,
         hasGoogle: u.googleId !== null,
         staffCount: u._count.staff,
         channelCount: u._count.channels,
         productCount: u._count.products,
         orderCount: ordersByUser.get(u.id) ?? 0,
-        lastOrderAt: lastOrderByUser.get(u.id) ?? null,
         care: u.careProfile,
         plan: u.subscription
           ? {

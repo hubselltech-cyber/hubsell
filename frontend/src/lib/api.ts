@@ -4328,7 +4328,8 @@ export interface PlatformUserRow {
   productCount: number;
   orderCount: number;
   /** Đơn gần nhất trên mọi gian của shop — tín hiệu "còn hoạt động". */
-  lastOrderAt: string | null;
+  /** Đăng nhập gần nhất — auth chạm tối đa 1 lần/6 giờ; null = chưa ghi nhận (tích lũy từ 13/08/2026). */
+  lastActiveAt: string | null;
   care: PlatformCareInfo | null;
   /** Gói hiện tại — nhảy theo mỗi lần kế toán ghi nhận thanh toán bên /admin/plans. */
   plan: {

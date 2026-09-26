@@ -218,7 +218,7 @@ export default function PlatformCustomersPage() {
                           <TableHead>Quy mô</TableHead>
                           <TableHead>Gói</TableHead>
                           <TableHead>Đã thu</TableHead>
-                          <TableHead>Hoạt động gần nhất</TableHead>
+                          <TableHead title="Lần gần nhất khách gọi app (ghi nhận tối đa 1 lần / 6 giờ, tích lũy từ 13/08/2026)">Đăng nhập gần nhất</TableHead>
                           <TableHead>Trạng thái</TableHead>
                           <TableHead>Phụ trách</TableHead>
                           <TableHead className="text-right">CSKH</TableHead>
@@ -309,7 +309,7 @@ export default function PlatformCustomersPage() {
                                 )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                                {u.lastOrderAt ? formatDateTime(u.lastOrderAt) : "—"}
+                                {u.lastActiveAt ? formatDateTime(u.lastActiveAt) : "—"}
                               </TableCell>
                               <TableCell>
                                 <span
