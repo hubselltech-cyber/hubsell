@@ -34,7 +34,8 @@ export function HintIcon({
       >
         <HelpCircle className="size-3.5" />
       </TooltipTrigger>
-      <TooltipContent className="max-w-72 text-xs leading-relaxed">
+      {/* whitespace-pre-line: hint từ API có thể xuống dòng gạch đầu dòng */}
+      <TooltipContent className="max-w-72 whitespace-pre-line text-xs leading-relaxed">
         {hint}
       </TooltipContent>
     </Tooltip>
@@ -72,7 +73,8 @@ export function HintText({
       >
         {children}
       </TooltipTrigger>
-      <TooltipContent className="max-w-72 text-xs leading-relaxed">
+      {/* whitespace-pre-line: hint từ API có thể xuống dòng gạch đầu dòng */}
+      <TooltipContent className="max-w-72 whitespace-pre-line text-xs leading-relaxed">
         {hint}
       </TooltipContent>
     </Tooltip>

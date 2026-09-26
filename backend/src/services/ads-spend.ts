@@ -9,7 +9,8 @@
 // Chốt chặn tính chồng: gian TikTok nào trong kỳ có phí GMV Max ≠ 0 trên bản kê
 // (TikTok thu theo đơn — khoản đó đã nằm trong "Phí nền tảng" cột Khấu trừ) thì
 // AdSpend của gian đó CHỈ hiện tham chiếu, không cộng vào tổng.
-// Gian TikTok chưa nối quảng cáo: nói rõ "chưa nối" thay vì im lặng thiếu số.
+// Gian TikTok chưa nối quảng cáo: một gạch đầu dòng ngắn trong tooltip dòng Ads
+// (anh Trung 26/09: không nhắc nhở dài trong thẻ, seller tự hiểu).
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
@@ -37,11 +38,9 @@ export interface AdsSpendSummary {
   byDay: Map<string, number>;
   /** Theo sàn (channelName) — bóc chi tiết dòng Ads. */
   byChannel: Map<string, number>;
-  /** Ghi chú hiện dưới dòng Ads: gian tham chiếu / gian chưa nối. */
+  /** Gạch đầu dòng ngắn nối vào tooltip dòng Ads (gian chưa nối / khoản chỉ tham chiếu). */
   notes: string[];
 }
-
-const vnd = (n: number) => `${Math.round(n).toLocaleString("vi-VN")} ₫`;
 
 /**
  * Gom AdSpend cho dòng "Chi phí quảng cáo sàn (Ads)" — thuần, có test.
@@ -58,30 +57,19 @@ export function summarizeAdsSpend(input: {
   const referenceOnly = new Set(
     [...input.gmvMaxChargedByChannel].filter(([, fee]) => fee !== 0).map(([id]) => id)
   );
-  const referenceAmount = new Map<string, number>();
 
   for (const r of input.rows) {
-    if (referenceOnly.has(r.channelId)) {
-      referenceAmount.set(r.channelId, (referenceAmount.get(r.channelId) ?? 0) + r.amount);
-      continue;
-    }
+    if (referenceOnly.has(r.channelId)) continue;
     summary.total += r.amount;
     const day = input.dateKey(r.date);
     summary.byDay.set(day, (summary.byDay.get(day) ?? 0) + r.amount);
     summary.byChannel.set(r.channelName, (summary.byChannel.get(r.channelName) ?? 0) + r.amount);
   }
 
-  for (const ch of input.tiktokChannels) {
-    if (referenceOnly.has(ch.id)) {
-      const charged = Math.abs(input.gmvMaxChargedByChannel.get(ch.id) ?? 0);
-      summary.notes.push(
-        `TikTok ${ch.shopName}: sàn đã trừ ${vnd(charged)} phí GMV Max trong đơn (nằm ở Phí nền tảng)` +
-          ` — ${vnd(referenceAmount.get(ch.id) ?? 0)} theo báo cáo chiến dịch chỉ để đối chiếu, không cộng.`
-      );
-    } else if (!ch.adsLinked) {
-      summary.notes.push(`TikTok ${ch.shopName}: chưa nối quảng cáo TikTok nên chưa có tiền ads.`);
-    }
-  }
+  const hasReference = input.tiktokChannels.some((ch) => referenceOnly.has(ch.id));
+  const hasUnlinked = input.tiktokChannels.some((ch) => !referenceOnly.has(ch.id) && !ch.adsLinked);
+  if (hasReference) summary.notes.push("TikTok đã trừ tiền quảng cáo trong đơn, không cộng lại ở đây");
+  if (hasUnlinked) summary.notes.push("TikTok cần kết nối tài khoản quảng cáo");
   return summary;
 }
 

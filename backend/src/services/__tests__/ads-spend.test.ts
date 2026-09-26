@@ -35,10 +35,7 @@ describe("summarizeAdsSpend", () => {
     expect(s.total).toBe(100_000);
     expect(s.byChannel.has("TIKTOK")).toBe(false);
     expect(s.byDay.get("2026-09-26")).toBeUndefined();
-    expect(s.notes).toHaveLength(1);
-    expect(s.notes[0]).toContain("120.000 ₫");
-    expect(s.notes[0]).toContain("843.529 ₫");
-    expect(s.notes[0]).toContain("không cộng");
+    expect(s.notes).toEqual(["TikTok đã trừ tiền quảng cáo trong đơn, không cộng lại ở đây"]);
   });
 
   it("gian TikTok chưa nối quảng cáo → ghi chú rõ, không im lặng", () => {
@@ -49,6 +46,6 @@ describe("summarizeAdsSpend", () => {
       dateKey: key,
     });
     expect(s.total).toBe(100_000);
-    expect(s.notes).toEqual(["TikTok ANO: chưa nối quảng cáo TikTok nên chưa có tiền ads."]);
+    expect(s.notes).toEqual(["TikTok cần kết nối tài khoản quảng cáo"]);
   });
 });

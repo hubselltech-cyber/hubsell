@@ -3037,11 +3037,15 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "adsSpend",
               label: "Chi phí quảng cáo sàn (Ads)",
-              hint: "Tiền quảng cáo đã tiêu trên sàn theo ngày, hệ thống tự lấy về, không cần nhập tay. Shopee/Lazada: Ads API. TikTok: tổng chi phí các chiến dịch GMV Max, khớp bảng Quảng cáo cửa hàng trên Seller Center.",
+              // Ghi chú phụ (gian TikTok chưa nối…) = gạch đầu dòng ngắn trong tooltip,
+              // không nhắc trong thẻ (anh Trung 26/09).
+              hint: [
+                "Tiền quảng cáo đã tiêu trên sàn theo ngày, hệ thống tự lấy về, không cần nhập tay.",
+                ...adsSpend.notes.map((n) => `• ${n}`),
+              ].join("\n"),
               amount: adsSpendTotal,
               percent: pct(adsSpendTotal, totalCostColumn),
               items: breakdownOf(adsByChannel, channelLabelOf, adsSpendTotal),
-              ...(adsSpend.notes.length > 0 ? { note: adsSpend.notes.join(" ") } : {}),
             },
             {
               key: "variable",

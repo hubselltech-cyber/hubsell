@@ -1900,7 +1900,6 @@ export interface BreakdownItem {
   amount: number;
   percent: number;
   count?: number; // số đơn (nếu có)
-  note?: string; // ghi chú phụ dưới dòng (vd gian TikTok chưa nối quảng cáo)
 }
 
 export interface FinanceBreakdown {

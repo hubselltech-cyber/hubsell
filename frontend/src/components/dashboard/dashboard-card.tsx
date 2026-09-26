@@ -96,8 +96,6 @@ export interface DashboardCardItem {
   value: React.ReactNode;
   /** Dòng chú thích nhỏ bên dưới giá trị — thường là "12.5% · 8 đơn" */
   note?: React.ReactNode;
-  /** Ghi chú chạy suốt chiều ngang DƯỚI dòng (vd "gian chưa nối quảng cáo") — không chen vào cột số. */
-  footnote?: React.ReactNode;
   /** Sắc thái của riêng dòng này — mặc định kế thừa tone của thẻ */
   tone?: CardTone;
 }
@@ -206,33 +204,28 @@ export function DashboardCard({
                 key={item.key}
                 // Kẻ mảnh giữa các dòng để mắt lần theo từng khoản; dòng cuối
                 // bỏ kẻ vì đã có viền thẻ đỡ bên dưới
-                className="border-b border-slate-100 py-2.5 last:border-b-0 last:pb-0"
+                className="flex items-start justify-between gap-3 border-b border-slate-100 py-2.5 last:border-b-0 last:pb-0"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}>
-                    {item.label}
-                  </span>
-                  <span className="shrink-0 text-right">
-                    <span
-                      className={cn(
-                        "block text-sm",
-                        // Dòng mang sắc thái lãi–lỗ mới được tô màu và in đậm;
-                        // còn lại là số đối chiếu, để chữ thường xám đen
-                        VALUE_COLOR[item.tone ?? tone] === "text-foreground"
-                          ? "text-slate-900"
-                          : cn("font-semibold", VALUE_COLOR[item.tone ?? tone])
-                      )}
-                    >
-                      {item.value}
-                    </span>
-                    {item.note && (
-                      <span className={cn(TEXT_SUB, "block")}>{item.note}</span>
+                <span className={cn(TEXT_SUB, "flex min-w-0 items-center gap-1")}>
+                  {item.label}
+                </span>
+                <span className="shrink-0 text-right">
+                  <span
+                    className={cn(
+                      "block text-sm",
+                      // Dòng mang sắc thái lãi–lỗ mới được tô màu và in đậm;
+                      // còn lại là số đối chiếu, để chữ thường xám đen
+                      VALUE_COLOR[item.tone ?? tone] === "text-foreground"
+                        ? "text-slate-900"
+                        : cn("font-semibold", VALUE_COLOR[item.tone ?? tone])
                     )}
+                  >
+                    {item.value}
                   </span>
-                </div>
-                {item.footnote && (
-                  <p className={cn(TEXT_SUB, "mt-1 leading-snug")}>{item.footnote}</p>
-                )}
+                  {item.note && (
+                    <span className={cn(TEXT_SUB, "block")}>{item.note}</span>
+                  )}
+                </span>
               </div>
             ))}
           </div>

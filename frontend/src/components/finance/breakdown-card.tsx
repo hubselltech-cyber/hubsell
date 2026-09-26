@@ -161,9 +161,6 @@ export function BreakdownCard({
       note: `${item.percent}%${
         item.count !== undefined ? ` · ${formatNumber(item.count)} đơn` : ""
       }`,
-      // Ghi chú phụ của API (gian chưa nối quảng cáo, khoản chỉ tham chiếu…)
-      // chạy suốt chiều ngang dưới dòng — không chen vào cột số làm bẹp nhãn.
-      footnote: item.note,
       tone: rowTone,
     };
   });
