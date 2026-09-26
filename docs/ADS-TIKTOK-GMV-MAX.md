@@ -36,9 +36,13 @@ lệnh loại video) · Reporting › GMV Max reports. **Chưa xin nhóm Campaig
    lệnh ghi: shop đổi tài khoản quảng cáo → tự chuyển link nếu token cũng thấy tài khoản mới, không thì
    `NO_ACCESS` kèm lý do nêu tên tài khoản mới.
 5. **Không Ads-only.** Quảng cáo chỉ gắn lên gian đã nối app chính.
-6. **Không ghi `AdSpend` cho TikTok.** Phí GMV Max đã bị sàn trừ trong quyết toán từng đơn
-   (`tiktok/settlements.ts`: `gmv_max_ad_fee_amount` → `order.serviceFee`). Ghi nữa là Lãi/Lỗ trừ hai lần.
-   Hệ quả: lợi nhuận đơn TikTok ĐÃ trừ ads → ROI hòa vốn phải bóc riêng phí này (chưa làm).
+6. **CÓ ghi `AdSpend` cho TikTok = Σ cost chiến dịch GMV Max theo ngày** (sửa 26/09/2026 sau khi KIỂM SỐ THẬT:
+   692 đơn ANO, `gmv_max_ad_fee_amount` = 0 ở mọi đơn — TikTok KHÔNG trừ GMV Max trong đơn, tiền ads trả bằng số dư
+   tài khoản quảng cáo; giả định cũ "sàn trừ trong đơn" là SAI với ANO). Báo cáo dòng tiền cộng dòng Ads TikTok như
+   Shopee/Lazada (`services/ads-spend.ts`), khớp bảng Quảng cáo cửa hàng của Seller Center theo ngày. Chốt chặn: gian
+   nào trong kỳ có `TiktokOrderSettlement.feeGmvMax` ≠ 0 (sàn thu theo đơn — đã nằm trong Phí nền tảng) thì AdSpend
+   của gian đó chỉ hiện tham chiếu, KHÔNG cộng. Lãi/Lỗ thực hiện giữ nguyên số sàn trả (anh Trung chốt). Mapper
+   `gmv_max_ad_fee_amount` → `serviceFee` vẫn giữ cho trường hợp sàn có trừ.
 
 ## 3. Bản đồ code
 

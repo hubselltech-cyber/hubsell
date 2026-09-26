@@ -10,9 +10,12 @@
 //     không tách direct/broad như Shopee nên ghi trùng hai cặp).
 //   impression / clicks             → 0 (tầng campaign của GMV Max không có).
 //
-// ⚠️ KHÔNG ghi AdSpend: phí GMV Max đã bị sàn trừ ngay trong quyết toán từng
-// đơn (tiktok/settlements.ts: gmv_max_ad_fee_amount → order.serviceFee). Ghi
-// thêm AdSpend thì Lãi/Lỗ trừ tiền quảng cáo HAI LẦN.
+// AdSpend (chi phí ads cấp gian theo NGÀY, cùng bảng với Shopee/Lazada) = Σ cost
+// của mọi chiến dịch GMV Max trong ngày. Kiểm số thật 26/09/2026 (gian ANO, 692
+// đơn): sàn KHÔNG trừ GMV Max trong đơn (gmv_max_ad_fee_amount = 0), tiền ads trả
+// bằng số dư tài khoản quảng cáo → không ghi AdSpend thì dòng tiền THIẾU hẳn ads
+// TikTok. Gian nào sàn thu theo đơn (feeGmvMax ≠ 0) → services/ads-spend.ts chỉ
+// hiện tham chiếu, không cộng — tránh trừ hai lần.
 //
 // Một lượt = 1 call (campaign × ngày, ≤1000 dòng/trang). Tầng sản phẩm/video
 // không lưu DB — soi sống khi chủ shop mở campaign (routes/ads-tiktok.ts).
@@ -149,6 +152,8 @@ export interface SyncTiktokAdsResult {
   linked: boolean;
   campaignsUpserted: number;
   perfDaysUpserted: number;
+  /** Số ngày ghi AdSpend (Σ cost chiến dịch theo ngày). */
+  adSpendDaysUpserted: number;
   liveCampaigns: number;
   /** Có chi tiêu trong 2 ngày gần nhất — quyết nhịp xung. */
   spentRecently: boolean;
@@ -162,6 +167,7 @@ export async function syncTiktokAdsCampaigns(
     linked: false,
     campaignsUpserted: 0,
     perfDaysUpserted: 0,
+    adSpendDaysUpserted: 0,
     liveCampaigns: 0,
     spentRecently: false,
   };
@@ -169,7 +175,10 @@ export async function syncTiktokAdsCampaigns(
   if (!scope) return result;
   result.linked = true;
 
-  const daysBack = Math.min(30, Math.max(1, opts.daysBack ?? 7));
+  // Gian chưa có dòng AdSpend nào (nối lần đầu / vừa thêm tính năng) → kéo trọn
+  // 30 ngày một lần để dòng tiền không thủng lịch sử; các lượt sau theo nhịp thường.
+  const firstFill = (await prisma.adSpend.count({ where: { channelId: channel.id } })) === 0;
+  const daysBack = firstFill ? 30 : Math.min(30, Math.max(1, opts.daysBack ?? 7));
   let rows;
   try {
     rows = await fetchGmvMaxCampaignDaily({
@@ -234,9 +243,30 @@ export async function syncTiktokAdsCampaigns(
     if (r.cost > 0 && r.date >= recentFrom) result.spentRecently = true;
   }
 
+  // Chi phí ads cấp gian theo ngày — ghi đè cùng bộ số mỗi lượt (sàn cập nhật
+  // lại cost trong ngày), ngày không có dòng nào thì để nguyên.
+  for (const [date, amount] of gmvMaxDailyTotals(rows)) {
+    await prisma.adSpend.upsert({
+      where: { channelId_date: { channelId: channel.id, date: dateFromStr(date) } },
+      update: { amount },
+      create: { channelId: channel.id, date: dateFromStr(date), amount },
+    });
+    result.adSpendDaysUpserted++;
+  }
+
   await prisma.tiktokAdsStoreLink.update({
     where: { id: scope.linkId },
     data: { lastSyncedAt: new Date(), lastSyncError: "" },
   });
   return result;
+}
+
+/** Σ cost theo ngày của mọi chiến dịch (thuần — có test). Ngày tăng dần, bỏ dòng thiếu ngày. */
+export function gmvMaxDailyTotals(rows: { date: string; cost: number }[]): Map<string, number> {
+  const byDay = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.date) continue;
+    byDay.set(r.date, (byDay.get(r.date) ?? 0) + (Number.isFinite(r.cost) ? r.cost : 0));
+  }
+  return new Map([...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }

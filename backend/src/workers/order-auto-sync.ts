@@ -928,7 +928,7 @@ async function runTiktokAdsTier(channel: Channel): Promise<boolean> {
     });
     if (r.linked && r.campaignsUpserted > 0) {
       console.log(
-        `[Auto-sync] "${channel.shopName}" ads TikTok: ${r.campaignsUpserted} campaign GMV Max, ${r.perfDaysUpserted} dòng ngày`
+        `[Auto-sync] "${channel.shopName}" ads TikTok: ${r.campaignsUpserted} campaign GMV Max, ${r.perfDaysUpserted} dòng ngày, ${r.adSpendDaysUpserted} ngày AdSpend`
       );
     }
     // Lưới đỡ: xung thường đã chạy lượt ngày rồi (mốc lastVideoTrackOn chặn chạy lại).

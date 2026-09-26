@@ -41,6 +41,7 @@ import {
 import { syncShopeeWithdrawals } from "../integrations/shopee/wallet";
 import { syncLazadaPayouts } from "../integrations/lazada/payouts";
 import { syncTiktokPayouts } from "../integrations/tiktok/payouts";
+import { loadAdSpendRows, loadTiktokAdsChannels, summarizeAdsSpend } from "../services/ads-spend";
 
 const router = Router();
 
@@ -641,6 +642,9 @@ export function computePnlRow(o: PnlOrder) {
     feeFixedPayment,
     feeService,
     feeSellerProtection, // phí "dịch vụ PiShip" (bảo hiểm giao hàng)
+    // Phí GMV Max TikTok sàn trừ TRONG ĐƠN (số có dấu, đã nằm trong feeService).
+    // ≠ 0 ⇒ sàn thu ads theo đơn → Báo cáo dòng tiền không cộng AdSpend gian đó nữa.
+    feeGmvMax: tt ? Number(tt.feeGmvMax) : 0,
     feeAffiliate,
     // Khấu trừ lúc giải ngân — bóc tách hiển thị, đã nằm trong actualPayout
     adWalletTopup: Number(o.adWalletTopup),
@@ -2687,7 +2691,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           }
         : {};
 
-    const [pnlOrders, expenses, operatingIncomeAgg, adSpendRows, taxCfg] = await Promise.all([
+    const [pnlOrders, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, taxCfg] = await Promise.all([
       // NGUỒN SỐ GỐC: CÙNG tập đơn + CÙNG công thức với trang Lãi/Lỗ Thực Hiện
       // (không lọc trạng thái = tab "Tất cả" bên Lãi/Lỗ; cùng WHERE, cùng trần).
       fetchPnlOrders(scope, range),
@@ -2716,28 +2720,15 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           ...manualTxnScope,
         },
       }),
-      // CHI PHÍ QUẢNG CÁO SÀN theo ngày (bảng AdSpend, sync từ Ads API) —
-      // lấy TỪNG DÒNG (date, amount) thay vì aggregate: tổng cộng cho cột Chi
-      // phí, còn từng ngày đổ vào chuỗi 14 ngày cho khớp định nghĩa cột.
-      prisma.adSpend.findMany({
-        where: { channel: scope, ...(range ? { date: range } : {}) },
-        select: {
-          date: true,
-          amount: true,
-          // Tên sàn để bóc chi tiết "Ads theo sàn" trong Cơ cấu chi phí
-          channel: { select: { channelName: true } },
-        },
-      }),
+      // CHI PHÍ QUẢNG CÁO SÀN theo ngày (bảng AdSpend — ba sàn cùng ghi, xem
+      // services/ads-spend.ts): TỪNG DÒNG (date, amount) để vừa cộng cột Chi
+      // phí vừa đổ vào chuỗi 14 ngày; gian TikTok để biết chưa nối / tham chiếu.
+      loadAdSpendRows(scope, range),
+      loadTiktokAdsChannels(scope),
       // Cấu hình thuế của shop (trang "Thuế bổ sung") — dùng ở khối THUẾ dưới cùng.
       getShopTaxConfig(ownerId),
     ]);
     const operatingIncomeTotal = Number(operatingIncomeAgg._sum.amount ?? 0);
-    const adsSpendTotal = adSpendRows.reduce((s, a) => s + Number(a.amount), 0);
-    const adsByDay = new Map<string, number>();
-    for (const a of adSpendRows) {
-      const key = toBusinessDateKey(a.date);
-      adsByDay.set(key, (adsByDay.get(key) ?? 0) + Number(a.amount));
-    }
 
     // ============================================================
     // VIEW TỔNG HỢP TỪ NGUỒN SỐ GỐC — mọi con số bên dưới CHỈ là SUM() các
@@ -2795,7 +2786,22 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const fixedExpenseTotal = expenses
       .filter((e) => e.type === ExpenseType.FIXED)
       .reduce((s, e) => s + Number(e.amount), 0);
-    // + Chi phí quảng cáo sàn (AdSpend — sync tự động, tách khỏi khoản nhập tay).
+    // + Chi phí quảng cáo sàn (AdSpend — sync tự động, tách khỏi khoản nhập
+    // tay). Gian TikTok bị sàn thu GMV Max theo đơn (feeGmvMax ≠ 0 — khoản đó
+    // đã nằm trong Phí nền tảng) thì chỉ tham chiếu, không cộng — không trừ hai lần.
+    const gmvMaxChargedByChannel = new Map<string, number>();
+    for (const r of activeRows) {
+      const fee = r.feeGmvMax;
+      if (fee !== 0) gmvMaxChargedByChannel.set(r.channelId, (gmvMaxChargedByChannel.get(r.channelId) ?? 0) + fee);
+    }
+    const adsSpend = summarizeAdsSpend({
+      rows: adSpendRows,
+      gmvMaxChargedByChannel,
+      tiktokChannels: tiktokAdsChannels,
+      dateKey: toBusinessDateKey,
+    });
+    const adsSpendTotal = adsSpend.total;
+    const adsByDay = adsSpend.byDay;
     const totalCostColumn =
       cogsAll + variableExpenseTotal + fixedExpenseTotal + adsSpendTotal;
 
@@ -2833,9 +2839,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         }));
     const cogsByChannel = new Map<string, number>();
     for (const r of activeRows) sumInto(cogsByChannel, r.channelName, r.costSnapshot);
-    const adsByChannel = new Map<string, number>();
-    for (const a of adSpendRows)
-      sumInto(adsByChannel, a.channel.channelName, Number(a.amount));
+    const adsByChannel = adsSpend.byChannel;
     const variableByCategory = new Map<string, number>();
     const fixedByCategory = new Map<string, number>();
     for (const e of expenses) {
@@ -3033,10 +3037,11 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
             {
               key: "adsSpend",
               label: "Chi phí quảng cáo sàn (Ads)",
-              hint: "Tiền quảng cáo đã tiêu trên sàn — hệ thống tự lấy về mỗi ngày, không cần nhập tay.",
+              hint: "Tiền quảng cáo đã tiêu trên sàn theo ngày, hệ thống tự lấy về, không cần nhập tay. Shopee/Lazada: Ads API. TikTok: tổng chi phí các chiến dịch GMV Max, khớp bảng Quảng cáo cửa hàng trên Seller Center.",
               amount: adsSpendTotal,
               percent: pct(adsSpendTotal, totalCostColumn),
               items: breakdownOf(adsByChannel, channelLabelOf, adsSpendTotal),
+              ...(adsSpend.notes.length > 0 ? { note: adsSpend.notes.join(" ") } : {}),
             },
             {
               key: "variable",
