@@ -1,0 +1,16 @@
+{
+  "name": "hubsell-mail-digest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tom tat thu moi tu Zoho (dev@hubsell.vn) + Gmail (hubselltech@gmail.com) theo muc uu tien, doc qua IMAP, khong tai thu ve may.",
+  "type": "module",
+  "scripts": {
+    "digest": "node digest.js",
+    "dry": "node digest.js --dry"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1"
+  }
+}
