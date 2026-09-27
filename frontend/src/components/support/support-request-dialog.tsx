@@ -12,6 +12,7 @@
 // ============================================================
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LifeBuoy, Loader2 } from "lucide-react";
 
@@ -35,6 +36,7 @@ import {
   type SupportRequestStatus,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
+import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 
 const STATUS_META: Record<SupportRequestStatus, { label: string; className: string }> = {
@@ -46,10 +48,14 @@ const STATUS_META: Record<SupportRequestStatus, { label: string; className: stri
 export function SupportRequestDialog({
   open,
   onOpenChange,
+  initialContent,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  /** Điền sẵn ô nội dung khi mở (vd: câu khách vừa hỏi trợ lý AI). */
+  initialContent?: string;
 }) {
+  const queryClient = useQueryClient();
   const user = getStoredUser();
   const needPhone = !user?.phone;
   const [content, setContent] = useState("");
@@ -60,10 +66,14 @@ export function SupportRequestDialog({
 
   useEffect(() => {
     if (!open) return;
+    if (initialContent) setContent(initialContent);
     let alive = true;
     fetchMySupportRequests()
       .then((r) => {
-        if (alive) setHistory(r.requests);
+        if (!alive) return;
+        setHistory(r.requests);
+        // Backend vừa đóng dấu "đã xem" → tắt chấm đỏ trên avatar ngay.
+        void queryClient.invalidateQueries({ queryKey: qk.supportUnread() });
       })
       .catch(() => {
         if (alive) setHistory([]);
@@ -71,7 +81,7 @@ export function SupportRequestDialog({
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, initialContent, queryClient]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

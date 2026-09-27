@@ -4506,8 +4506,14 @@ export function createSupportRequest(data: {
   );
 }
 
+/** Mở hộp = đã xem: backend đóng dấu customerSeenAt, chấm đỏ tắt. */
 export function fetchMySupportRequests() {
   return apiFetch<{ requests: MySupportRequest[] }>("/api/support-requests/mine");
+}
+
+/** Số yêu cầu có trả lời mới chưa xem — nuôi chấm đỏ trên avatar. */
+export function fetchMySupportUnreadCount() {
+  return apiFetch<{ count: number }>("/api/support-requests/mine/unread-count");
 }
 
 /** Bản HQ (hq.customers): kèm tài khoản, người phụ trách, ghi chú nội bộ. */

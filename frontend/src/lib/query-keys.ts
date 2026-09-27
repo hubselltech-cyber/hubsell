@@ -17,6 +17,8 @@ export const qk = {
   // ----- Dùng chung -----
   channels: () => ["channels"] as const,
   mySubscription: () => ["my-subscription"] as const,
+  /** Chấm đỏ "trả lời mới" của Yêu cầu hỗ trợ (menu avatar). */
+  supportUnread: () => ["support-unread"] as const,
 
   // ----- Tổng quan -----
   dashboardSummary: () => ["dashboard-summary"] as const,

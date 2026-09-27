@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Camera, LifeBuoy, Loader2, LogOut, Settings2, UserRound } from "lucide-react";
 
@@ -12,8 +13,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ApiError, ROLE_META, updateAvatar, type AuthUser } from "@/lib/api";
-import { isAdmin } from "@/lib/permissions";
+import {
+  ApiError,
+  ROLE_META,
+  fetchMySupportUnreadCount,
+  updateAvatar,
+  type AuthUser,
+} from "@/lib/api";
+import { isAdmin, isPlatformWorkspace } from "@/lib/permissions";
+import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 
 /** Cạnh dài nhất của avatar sau khi thu nhỏ — 256px là dư cho vòng tròn 32px
@@ -110,6 +118,17 @@ export function UserAvatarMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
 
+  // Chấm đỏ "trả lời mới" (anh Trung 27/09): HQ trả lời mà khách không biết
+  // là nghĩ bị bỏ rơi. Hỏi 5' một lần, rất nhẹ; khu HQ không có yêu cầu.
+  const { data: unread } = useQuery({
+    queryKey: qk.supportUnread(),
+    queryFn: fetchMySupportUnreadCount,
+    enabled: !isPlatformWorkspace(user),
+    refetchInterval: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
+  });
+  const unreadCount = unread?.count ?? 0;
+
   async function save(avatar: string | null) {
     setSaving(true);
     try {
@@ -148,7 +167,15 @@ export function UserAvatarMenu({
         className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-muted sm:pr-2"
         aria-label="Mở menu tài khoản"
       >
-        <UserAvatarCircle user={user} className="size-8" iconClassName="size-4" />
+        <span className="relative shrink-0">
+          <UserAvatarCircle user={user} className="size-8" iconClassName="size-4" />
+          {unreadCount > 0 && (
+            <span
+              className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-background bg-red-500"
+              aria-label={`${unreadCount} trả lời hỗ trợ mới`}
+            />
+          )}
+        </span>
         <span className="hidden text-sm sm:inline">
           {user.fullName}
         </span>
@@ -230,7 +257,16 @@ export function UserAvatarMenu({
             }}
           >
             <LifeBuoy className="size-4" />
-            Gửi yêu cầu hỗ trợ
+            {unreadCount > 0 ? (
+              <>
+                Yêu cầu hỗ trợ
+                <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[11px] font-bold leading-none text-red-700">
+                  {unreadCount} trả lời mới
+                </span>
+              </>
+            ) : (
+              "Gửi yêu cầu hỗ trợ"
+            )}
           </Button>
         </div>
         <div className="mt-3 border-t pt-3">

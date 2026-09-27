@@ -73,6 +73,51 @@ async function notifyHqSupportRequest(input: {
   }
 }
 
+/**
+ * Báo KHÁCH (email chủ shop) khi HQ trả lời hoặc đóng yêu cầu — anh Trung
+ * 27/09: khách gửi xong mà không ai báo lại là nghĩ bị bỏ rơi, lần sau không
+ * gửi nữa. Gọi từ admin.ts sau PATCH; lỗi gửi mail không chạm response.
+ */
+export async function notifyCustomerSupportUpdate(input: {
+  customerEmail: string | null;
+  customerName: string;
+  content: string;
+  reply: string | null;
+  done: boolean;
+}): Promise<void> {
+  try {
+    if (!input.customerEmail || !isMailerConfigured()) return;
+    const escape = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const subject = input.done
+      ? "[Hubsell] Yêu cầu hỗ trợ của bạn đã được xử lý xong"
+      : "[Hubsell] Hubsell đã trả lời yêu cầu hỗ trợ của bạn";
+    const html = `
+    <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <h2 style="margin:0 0 8px">${input.done ? "Đã xử lý xong" : "Hubsell đã trả lời"}</h2>
+      <p style="color:#444;margin:4px 0">Chào ${escape(input.customerName)},</p>
+      <p style="color:#666;margin:12px 0 4px;font-size:13px">Yêu cầu của bạn:</p>
+      <div style="white-space:pre-wrap;border-left:3px solid #ddd;padding:8px 12px;color:#444">${escape(input.content)}</div>
+      ${
+        input.reply
+          ? `<p style="color:#666;margin:12px 0 4px;font-size:13px">Trả lời từ Hubsell:</p>
+      <div style="white-space:pre-wrap;border-left:3px solid #10b981;padding:8px 12px;color:#222">${escape(input.reply)}</div>`
+          : ""
+      }
+      <p style="text-align:center;margin:24px 0">
+        <a href="${FRONTEND_BASE_URL}/guide"
+           style="background:#18181b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block">
+          Mở Hubsell
+        </a>
+      </p>
+      <p style="color:#888;font-size:13px">Vẫn chưa ổn? Bấm avatar góc phải → Gửi yêu cầu hỗ trợ để gửi tiếp.</p>
+    </div>`;
+    await sendMail({ to: input.customerEmail, subject, html });
+  } catch (err) {
+    console.error("[support] Báo khách trả lời lỗi:", (err as Error).message);
+  }
+}
+
 // POST /api/support-requests — khách gửi yêu cầu. Chủ shop lẫn nhân viên đều
 // gửi được (nhân viên kho vướng quét mã cũng cần hỏi); gom về shop (ownerId).
 router.post("/", async (req: AuthRequest, res, next) => {
@@ -156,7 +201,19 @@ router.post("/", async (req: AuthRequest, res, next) => {
   }
 });
 
+// "Trả lời mới" = đã có reply hoặc DONE, và HQ sửa SAU lần khách xem. So sánh
+// hai cột trong JS (danh sách mỗi shop chỉ vài dòng) — khỏi phụ thuộc field
+// reference của Prisma.
+async function countUnread(ownerId: string): Promise<number> {
+  const rows = await prisma.supportRequest.findMany({
+    where: { userId: ownerId, OR: [{ reply: { not: null } }, { status: "DONE" }] },
+    select: { updatedAt: true, customerSeenAt: true },
+  });
+  return rows.filter((r) => !r.customerSeenAt || r.updatedAt > r.customerSeenAt).length;
+}
+
 // GET /api/support-requests/mine — yêu cầu của SHOP, mới nhất trước, tối đa 20.
+// Mở hộp = đã xem → đóng dấu customerSeenAt, chấm đỏ trên avatar tắt.
 router.get("/mine", async (req: AuthRequest, res, next) => {
   try {
     const requests = await prisma.supportRequest.findMany({
@@ -165,7 +222,21 @@ router.get("/mine", async (req: AuthRequest, res, next) => {
       take: 20,
       select: PUBLIC_SELECT,
     });
+    await prisma.supportRequest.updateMany({
+      where: { userId: req.ownerId! },
+      data: { customerSeenAt: new Date() },
+    });
     res.json({ requests });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/support-requests/mine/unread-count — số yêu cầu có trả lời mới
+// (nuôi chấm đỏ trên avatar; shell hỏi 5' một lần, rất nhẹ).
+router.get("/mine/unread-count", async (req: AuthRequest, res, next) => {
+  try {
+    res.json({ count: await countUnread(req.ownerId!) });
   } catch (err) {
     next(err);
   }

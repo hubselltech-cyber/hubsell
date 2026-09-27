@@ -16,6 +16,7 @@ import {
   type AuthRequest,
 } from "../middleware/auth";
 import { writeAuditLog } from "../services/platform-audit";
+import { notifyCustomerSupportUpdate } from "./support";
 import {
   INVOICE_PATTERN_RE,
   INVOICE_SERIES_RE,
@@ -802,6 +803,19 @@ router.patch(
         },
         include: { assignee: { select: { id: true, fullName: true } } },
       });
+
+      // Báo khách khi có câu trả lời MỚI (khác câu cũ) hoặc vừa chuyển DONE.
+      const replyChanged = typeof replyValue === "string" && replyValue !== request.reply;
+      const justDone = status === "DONE" && request.status !== "DONE";
+      if (replyChanged || justDone) {
+        void notifyCustomerSupportUpdate({
+          customerEmail: request.user.email,
+          customerName: request.user.fullName || "bạn",
+          content: request.content,
+          reply: replyValue ?? request.reply,
+          done: status === "DONE",
+        });
+      }
 
       await writeAuditLog(req, {
         action: "support.update",

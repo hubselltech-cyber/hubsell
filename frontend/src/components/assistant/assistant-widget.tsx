@@ -19,7 +19,9 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Mic, Send, X } from "lucide-react";
+import { ArrowRight, LifeBuoy, Mic, Send, X } from "lucide-react";
+
+import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 
 import {
   askAssistant,
@@ -213,6 +215,10 @@ export function AssistantWidget() {
   const [msgs, setMsgs] = React.useState<Msg[]>(() => loadStored().msgs);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  // Lối ra sang NGƯỜI THẬT (anh Trung 27/09): AI trả lời không trúng thì khách
+  // gửi yêu cầu hỗ trợ ngay tại đây, câu vừa hỏi điền sẵn — khỏi lục menu.
+  const [supportOpen, setSupportOpen] = React.useState(false);
+  const [supportDraft, setSupportDraft] = React.useState("");
 
   // ── Giọng nói: bấm mic → nghe (transcript hiện live trong ô input), nói
   // xong (hoặc bấm mic lần nữa) → tự gửi câu hỏi. Hỗ trợ tính ở effect vì
@@ -577,6 +583,28 @@ export function AssistantWidget() {
           </div>
         )}
       </div>
+
+      {/* ── Sang người thật ── */}
+      <div className="flex items-center justify-between gap-2 border-t px-3 py-1.5 text-[11px] text-slate-500">
+        <span>Cần người thật hỗ trợ?</span>
+        <button
+          type="button"
+          onClick={() => {
+            const lastAsk = [...msgs].reverse().find((m) => m.role === "user")?.text ?? "";
+            setSupportDraft(lastAsk || input.trim());
+            setSupportOpen(true);
+          }}
+          className="inline-flex items-center gap-1 font-medium text-emerald-700 hover:underline"
+        >
+          <LifeBuoy className="size-3.5" />
+          Gửi yêu cầu hỗ trợ
+        </button>
+      </div>
+      <SupportRequestDialog
+        open={supportOpen}
+        onOpenChange={setSupportOpen}
+        initialContent={supportDraft}
+      />
 
       {/* ── Ô hỏi ── */}
       <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t p-3">
