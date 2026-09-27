@@ -2204,7 +2204,12 @@ export interface CostSiblings {
 
 /** Áp một giá vốn cho nhiều SKU cùng lúc (nút "áp dụng cho mọi phân loại"). */
 export function updateSkuCostPriceBulk(skuIds: string[], costPrice: number) {
-  return apiFetch<{ updated: number; costPrice: string; siblings?: CostSiblings | null }>(
+  return apiFetch<{
+    updated: number;
+    costPrice: string;
+    backfilledOrderLines: number;
+    siblings?: CostSiblings | null;
+  }>(
     "/api/finance/update-cost-bulk",
     {
       method: "PATCH",
@@ -2219,7 +2224,13 @@ export function updateSkuCostPriceBulk(skuIds: string[], costPrice: number) {
  * của đơn cũ tính lại theo).
  */
 export function backfillCostPricesToOrders() {
-  return apiFetch<{ backfilledOrderLines: number }>(
+  return apiFetch<{
+    backfilledOrderLines: number;
+    /** Dòng vẫn = 0 sau lượt này (mọi đơn). */
+    remainingZeroLines: number;
+    /** Trong đó: dòng không khớp SKU sàn nào của gian (mã trên đơn đã khác). */
+    unmatchedZeroLines: number;
+  }>(
     "/api/finance/cost-prices/backfill-orders",
     { method: "POST" }
   );

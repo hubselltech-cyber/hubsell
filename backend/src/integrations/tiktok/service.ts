@@ -142,7 +142,9 @@ function aggregateLineItems(order: TikTokOrder) {
     { channelSku: string; productName: string; price: number; quantity: number; imageUrl: string | null }
   >();
   for (const li of order.line_items ?? []) {
-    const sku = li.seller_sku || li.sku_id || li.id;
+    // trim như tiktokChannelSku ở adapter sản phẩm — seller gõ thừa dấu cách
+    // là đơn không khớp SKU sàn, giá vốn không tra được (28/09).
+    const sku = li.seller_sku?.trim() || li.sku_id || li.id;
     const qty = li.quantity ?? 1;
     const imageUrl = li.sku_image?.trim() || null;
     // "Tên sản phẩm - Tên phân loại" như Shopee (item_name - model_name).

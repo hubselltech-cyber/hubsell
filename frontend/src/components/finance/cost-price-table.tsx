@@ -347,7 +347,10 @@ function QuickFill({
         cost
       );
       toast.success(
-        `${group.name}: đã đặt giá vốn ${formatVND(cost)} cho ${res.updated} phân loại`
+        `${group.name}: đã đặt giá vốn ${formatVND(cost)} cho ${res.updated} phân loại` +
+          (res.backfilledOrderLines > 0
+            ? ` · tính lại ${formatNumber(res.backfilledOrderLines)} dòng đơn cũ`
+            : "")
       );
       setDigits("");
       setConfirming(false);

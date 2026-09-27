@@ -42,6 +42,7 @@
 // ============================================================
 
 import { ChannelName, ShippingStatus } from "@prisma/client";
+import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import { prisma } from "../../lib/prisma";
 import { computePnlRow, forEachPnlOrderPage } from "../../routes/finance";
 import { MIN_ORDERS_FOR_MARGIN, dateKey, startOfDaysAgo, vnDateKey } from "../shopee/ads-insights";
@@ -322,8 +323,15 @@ async function loadBreakevenInputs(channel: { id: string; userId: string }) {
 const RESULT_TTL_MS = 45_000;
 const RESULT_CACHE_MAX = 500;
 
+/** Mọi bộ đệm memoizeByChannel đang sống — để xóa theo gian khi giá vốn đổi. */
+const memoCaches = new Set<Map<string, { at: number; value: Promise<unknown> }>>();
+registerCostCacheInvalidator((ids) => {
+  for (const cache of memoCaches) for (const id of ids) cache.delete(id);
+});
+
 export function memoizeByChannel<T>(compute: (channel: { id: string; userId: string }) => Promise<T>, now: () => number = Date.now) {
   const cache = new Map<string, { at: number; value: Promise<T> }>();
+  memoCaches.add(cache as Map<string, { at: number; value: Promise<unknown> }>);
   return (channel: { id: string; userId: string }): Promise<T> => {
     const hit = cache.get(channel.id);
     if (hit && now() - hit.at < RESULT_TTL_MS) return hit.value;

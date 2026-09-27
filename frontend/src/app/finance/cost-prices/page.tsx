@@ -334,7 +334,12 @@ export default function CostPricesPage() {
     setSavingId(item.skuId);
     try {
       const res = await updateSkuCostPrice(item.skuId, value);
-      toast.success(`Đã cập nhật giá vốn — ${item.sku}: ${formatVND(value)}`);
+      toast.success(
+        `Đã cập nhật giá vốn — ${item.sku}: ${formatVND(value)}` +
+          (res.backfilledOrderLines > 0
+            ? ` · tính lại ${formatNumber(res.backfilledOrderLines)} dòng đơn cũ`
+            : "")
+      );
       offerSiblings(res.siblings, `Mã ${item.sku}`);
       setSavedId(item.skuId);
       setTimeout(() => setSavedId(null), 2000);
@@ -358,12 +363,23 @@ export default function CostPricesPage() {
     setBackfilling(true);
     try {
       const r = await backfillCostPricesToOrders();
+      // Nói rõ phần còn lại để khách không tưởng nút không chạy (anh Trung 28/09):
+      // còn X dòng vì SKU chưa nhập giá; Y dòng vì mã trên đơn đã khác mọi mã sàn.
+      const leftover: string[] = [];
+      const noCost = r.remainingZeroLines - r.unmatchedZeroLines;
+      if (noCost > 0) leftover.push(`${formatNumber(noCost)} dòng thuộc SKU chưa nhập giá vốn`);
+      if (r.unmatchedZeroLines > 0)
+        leftover.push(`${formatNumber(r.unmatchedZeroLines)} dòng có mã không khớp SKU nào trên sàn`);
+      const tail = leftover.length ? ` Còn lại: ${leftover.join("; ")}.` : "";
       if (r.backfilledOrderLines > 0) {
         toast.success(
-          `Đã áp giá vốn cho ${formatNumber(r.backfilledOrderLines)} dòng hàng của đơn cũ — báo cáo lãi/lỗ, dòng tiền và ROAS hòa vốn sẽ tính lại theo.`
+          `Đã áp giá vốn cho ${formatNumber(r.backfilledOrderLines)} dòng hàng của đơn cũ (mọi đơn, không giới hạn ngày).${tail}`,
+          { duration: 12000 }
         );
-      } else {
+      } else if (r.remainingZeroLines === 0) {
         toast("Mọi đơn cũ đã có giá vốn — không có dòng nào cần tính lại.");
+      } else {
+        toast.warning(`Không có dòng nào áp được.${tail}`, { duration: 12000 });
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không áp được giá vốn cho đơn cũ");

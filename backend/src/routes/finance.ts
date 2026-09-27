@@ -23,6 +23,7 @@ import {
   applyCostPrice,
   applyCostPriceIn,
   backfillOwnerCostPrices,
+  invalidateOwnerCostCaches,
 } from "../lib/cost-price";
 import { findCostSiblings } from "../lib/cost-mapping";
 import costMappingRouter from "./cost-mapping";
@@ -2377,8 +2378,9 @@ router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
 // nhưng giá nhập TRƯỚC khi có vá theo mã SKU sàn thì cần lượt này.
 router.post("/cost-prices/backfill-orders", async (req: AuthRequest, res, next) => {
   try {
-    const backfilledOrderLines = await backfillOwnerCostPrices(req.ownerId!);
-    res.json({ backfilledOrderLines });
+    // { backfilledOrderLines, remainingZeroLines, unmatchedZeroLines } — mọi đơn,
+    // không giới hạn ngày; kèm chẩn đoán để khách biết vì sao còn dòng = 0.
+    res.json(await backfillOwnerCostPrices(req.ownerId!));
   } catch (err) {
     next(err);
   }
@@ -2562,6 +2564,7 @@ router.post(
         },
         { timeout: 120_000, maxWait: 10_000 }
       );
+      await invalidateOwnerCostCaches(ownerId);
 
       res.json({
         updated: result.updated,

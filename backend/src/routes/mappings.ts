@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
 import { setStockAbsolute } from "../services/stock-ledger";
 import { syncChannelProducts } from "../marketplace/product-sync";
-import { backfillOrderLinesByProducts } from "../lib/cost-price";
+import { backfillOrderLinesByProducts, invalidateOwnerCostCaches } from "../lib/cost-price";
 
 const router = Router();
 
@@ -165,6 +165,7 @@ router.post("/link", async (req: AuthRequest, res, next) => {
     // Đơn về TRƯỚC khi nối (dòng chưa mang productId, giá vốn = 0) nay tra được
     // giá vốn sản phẩm gốc theo (gian, mã SKU sàn) → vá luôn cho báo cáo cũ đúng.
     await backfillOrderLinesByProducts(prisma, [product.id], req.ownerId!);
+    await invalidateOwnerCostCaches(req.ownerId!);
 
     // Sản phẩm tồn 0 vừa nối SKU sàn → nhận tồn ban đầu theo số trên sàn.
     const seeded = await seedInitialStockFromChannel([product.id], req.ownerId!);
@@ -330,6 +331,7 @@ async function autoMatchChannelProducts(
 
   await inheritChannelCostPrice([...idsByProduct.keys()], ownerId);
   await backfillOrderLinesByProducts(prisma, [...idsByProduct.keys()], ownerId);
+  await invalidateOwnerCostCaches(ownerId);
 
   // Các sản phẩm tồn 0 vừa được tự khớp → nhận tồn ban đầu theo số trên sàn.
   const seeded = await seedInitialStockFromChannel([...idsByProduct.keys()], ownerId);
@@ -427,6 +429,7 @@ async function createProductsFromChannelProducts(
 
   // SKU kho dùng lại đã có giá vốn → vá đơn cũ của các SKU sàn vừa nối.
   await backfillOrderLinesByProducts(prisma, touchedProductIds, ownerId);
+  await invalidateOwnerCostCaches(ownerId);
 
   // SKU kho tạo mới (tồn 0) và SKU dùng lại còn tồn 0 → nhận tồn theo sàn.
   const seeded = await seedInitialStockFromChannel(touchedProductIds, ownerId);

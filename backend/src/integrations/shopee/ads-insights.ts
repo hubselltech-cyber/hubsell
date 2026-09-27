@@ -23,6 +23,7 @@ import {
   type AdsCampaignDailyPerf,
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
 import {
   ASSISTANT_WINDOWS,
@@ -215,6 +216,9 @@ export async function fetchChannelPnlRows(
 export function invalidateChannelPnlRows(channelId: string): void {
   pnlRowsCache.delete(channelId);
 }
+// Nhập giá vốn / áp cho đơn cũ → biên lãi đổi → xóa cache của các gian đó ngay
+// (28/09: giữ 30' làm bảng ROAS hòa vốn báo "chưa có giá vốn" dù đã vá xong).
+registerCostCacheInvalidator((ids) => ids.forEach(invalidateChannelPnlRows));
 
 /**
  * Biên lãi ròng (chưa trừ ads) trên một tập SKU — null = tính toàn shop.

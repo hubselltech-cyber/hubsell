@@ -17,12 +17,36 @@
 //   phẩm — đúng khoá mà đồng bộ đơn dùng để tra giá vốn lúc tạo dòng.
 //   Kèm backfillOwnerCostPrices: tính lại MỘT LẦN cho cả shop (nút "Áp giá vốn
 //   cho đơn cũ" trên trang Cấu hình Giá vốn) cho các giá vốn đã nhập trước đó.
+//
+// ★ 28/09 (đợt 2, anh Trung: BLT001 nhập giá mà đơn cũ không đổi):
+//   - KHỚP MÃ CÓ DỰ PHÒNG (SKU_MATCH): ngoài mã SKU hiện tại, khớp cả khoá mà
+//     đồng bộ đơn dùng KHI SELLER CHƯA ĐẶT MÃ — TikTok/Lazada dùng sku_id
+//     (= phần sau dấu "-" của externalId), Shopee dùng "SPE-item-model"
+//     (= "SPE-" + externalId). Seller đặt mã SKU sau khi đã có đơn thì đơn cũ
+//     mang khoá cũ, không có dự phòng là không bao giờ vá được.
+//   - KHÔNG GIỚI HẠN NGÀY: mọi đơn từ trước tới nay.
+//   - XÓA BỘ ĐỆM Trợ lý quảng cáo sau khi vá (invalidateOwnerCostCaches) — bộ
+//     đệm biên lãi 30 phút làm số đứng im dù đã vá xong.
 // ============================================================
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
+import { invalidateCostCaches } from "./cost-cache-invalidation";
 
 type Db = Prisma.TransactionClient;
+
+/**
+ * Điều kiện khớp dòng đơn `oi` với SKU sàn `cp` (cùng gian, kiểm ở ngoài):
+ *   1. mã SKU hiện tại của SKU sàn;
+ *   2. TikTok/Lazada: sku_id — khoá đồng bộ đơn dùng khi seller_sku trống;
+ *   3. Shopee: "SPE-" + externalId — khoá khi model_sku/item_sku trống.
+ * Cần index OrderItem(channelSku) (migration 28/09) để ba nhánh đều đi index.
+ */
+const SKU_MATCH = Prisma.sql`(
+  oi."channelSku" = cp."channelSku"
+  OR (cp."externalId" IS NOT NULL AND oi."channelSku" = split_part(cp."externalId", '-', 2))
+  OR (cp."externalId" IS NOT NULL AND oi."channelSku" = 'SPE-' || cp."externalId")
+)`;
 
 /**
  * Vá giá vốn cho dòng hàng đã bán của các SẢN PHẨM GỐC cho trước: dòng đang
@@ -61,7 +85,7 @@ export async function backfillOrderLinesByProducts(
           SELECT 1 FROM "ChannelProduct" AS cp
           WHERE cp."productId" = p."id"
             AND cp."channelId" = o."channelId"
-            AND cp."channelSku" = oi."channelSku"
+            AND ${SKU_MATCH}
         )
       )`;
 }
@@ -85,8 +109,24 @@ export async function backfillOrderLinesByChannelProducts(
       AND cp."productId" IS NULL
       AND cp."costPrice" > 0
       AND o."channelId" = cp."channelId"
-      AND oi."channelSku" = cp."channelSku"
+      AND ${SKU_MATCH}
       AND oi."costPriceAtSale" = 0`;
+}
+
+/**
+ * Xóa bộ đệm Trợ lý quảng cáo (biên lãi 30', hòa vốn TikTok 45") của mọi gian
+ * thuộc chủ shop — gọi SAU khi ghi giá vốn / vá đơn cũ xong, ngoài transaction.
+ */
+export async function invalidateOwnerCostCaches(ownerId: string): Promise<void> {
+  try {
+    const channels = await prisma.channel.findMany({
+      where: { userId: ownerId },
+      select: { id: true },
+    });
+    invalidateCostCaches(channels.map((c) => c.id));
+  } catch {
+    // chỉ là bộ đệm — không để lỗi ở đây làm hỏng lượt ghi giá vốn
+  }
 }
 
 /** Lõi của applyCostPrice — chạy trong transaction do bên gọi mở. */
@@ -113,7 +153,9 @@ export async function applyCostPrice(
   cost: number,
   ownerId: string
 ): Promise<{ products: number; backfilledOrderLines: number }> {
-  return prisma.$transaction((tx) => applyCostPriceIn(tx, productIds, cost, ownerId));
+  const r = await prisma.$transaction((tx) => applyCostPriceIn(tx, productIds, cost, ownerId));
+  await invalidateOwnerCostCaches(ownerId);
+  return r;
 }
 
 /** Lõi của applyChannelCostPrice — chạy trong transaction do bên gọi mở. */
@@ -166,9 +208,24 @@ export async function applyChannelCostPrice(
   backfilledOrderLines: number;
   sample: { productName: string } | null;
 }> {
-  return prisma.$transaction((tx) =>
+  const r = await prisma.$transaction((tx) =>
     applyChannelCostPriceIn(tx, channelProductIds, cost, ownerId)
   );
+  await invalidateOwnerCostCaches(ownerId);
+  return r;
+}
+
+export interface OwnerCostBackfillResult {
+  /** Số dòng hàng đã bán vừa nhận giá vốn. */
+  backfilledOrderLines: number;
+  /** Số dòng vẫn = 0 sau lượt này (mọi đơn, không giới hạn ngày). */
+  remainingZeroLines: number;
+  /**
+   * Trong số còn lại: dòng KHÔNG khớp SKU sàn nào của gian (mã trên đơn khác
+   * mọi mã đang có — SKU đã đổi mã / bị xóa hẳn khỏi sàn trước khi đồng bộ
+   * danh mục). Phần còn lại = SKU khớp nhưng chưa nhập giá vốn.
+   */
+  unmatchedZeroLines: number;
 }
 
 /**
@@ -176,9 +233,10 @@ export async function applyChannelCostPrice(
  * phẩm gốc / SKU sàn tương ứng NAY đã có giá vốn → nhận giá vốn hiện tại.
  * Dành cho giá vốn đã nhập TRƯỚC khi có vá theo mã SKU sàn (28/09/2026), hoặc
  * khách nhập giá vốn ở nơi khác rồi muốn báo cáo cũ tính lại. Hai câu lệnh,
- * không lặp theo SKU — shop vài nghìn mã vẫn một lượt.
+ * không lặp theo SKU — shop vài nghìn mã vẫn một lượt. KHÔNG giới hạn ngày.
+ * Trả kèm chẩn đoán để giao diện nói rõ vì sao còn dòng chưa có giá vốn.
  */
-export async function backfillOwnerCostPrices(ownerId: string): Promise<number> {
+export async function backfillOwnerCostPrices(ownerId: string): Promise<OwnerCostBackfillResult> {
   // 1) Dòng đã mang productId → giá vốn sản phẩm gốc.
   const byProduct = await prisma.$executeRaw`
     UPDATE "OrderItem" AS oi
@@ -189,8 +247,8 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<number> 
       AND p."costPrice" > 0
       AND oi."costPriceAtSale" = 0`;
 
-  // 2) Dòng khớp (gian, mã SKU sàn): SKU đã nối kho lấy giá sản phẩm gốc, chưa
-  //    nối lấy giá trên chính SKU sàn.
+  // 2) Dòng khớp (gian, mã SKU sàn — có dự phòng sku_id / SPE-): SKU đã nối kho
+  //    lấy giá sản phẩm gốc, chưa nối lấy giá trên chính SKU sàn.
   const bySku = await prisma.$executeRaw`
     UPDATE "OrderItem" AS oi
     SET "costPriceAtSale" = COALESCE(NULLIF(p."costPrice", 0), cp."costPrice")
@@ -200,9 +258,31 @@ export async function backfillOwnerCostPrices(ownerId: string): Promise<number> 
       LEFT JOIN "Product" AS p ON p."id" = cp."productId"
     WHERE oi."orderId" = o."id"
       AND c."userId" = ${ownerId}
-      AND cp."channelSku" = oi."channelSku"
+      AND ${SKU_MATCH}
       AND oi."costPriceAtSale" = 0
       AND COALESCE(NULLIF(p."costPrice", 0), cp."costPrice", 0) > 0`;
 
-  return byProduct + bySku;
+  await invalidateOwnerCostCaches(ownerId);
+
+  // 3) Chẩn đoán phần còn lại.
+  const [diag] = await prisma.$queryRaw<{ remaining: bigint; unmatched: bigint }[]>`
+    SELECT
+      COUNT(*)::bigint AS remaining,
+      COUNT(*) FILTER (
+        WHERE NOT EXISTS (
+          SELECT 1 FROM "ChannelProduct" AS cp
+          WHERE cp."channelId" = o."channelId" AND ${SKU_MATCH}
+        )
+      )::bigint AS unmatched
+    FROM "OrderItem" AS oi
+    JOIN "Order" AS o ON o."id" = oi."orderId"
+    JOIN "Channel" AS c ON c."id" = o."channelId"
+    WHERE c."userId" = ${ownerId}
+      AND oi."costPriceAtSale" = 0`;
+
+  return {
+    backfilledOrderLines: byProduct + bySku,
+    remainingZeroLines: Number(diag?.remaining ?? 0),
+    unmatchedZeroLines: Number(diag?.unmatched ?? 0),
+  };
 }
