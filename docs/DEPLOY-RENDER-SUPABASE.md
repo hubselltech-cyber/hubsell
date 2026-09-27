@@ -106,6 +106,16 @@ cần tay anh trên Dashboard là mục 1–2 (tạo Background Worker, gói Sta
 copy env); mục 3–4 kiểm tra log rồi đổi `HUBSELL_ROLE=web` trên service web.
 Cờ heap trong `npm start` áp cho cả hai service vì dùng chung script.
 
+**27/09/2026 — M1, anh chốt làm nốt.** Giới hạn pool kết nối KHÔNG cần sửa tay
+chuỗi `DATABASE_URL` nữa: `lib/db-url.ts` tự ghép `connection_limit=5&pool_timeout=30`
+lúc khởi động (đổi bằng env `DB_CONNECTION_LIMIT` / `DB_POOL_TIMEOUT`; chuỗi đã
+có sẵn tham số thì giữ nguyên). Căn cứ: Session pooler Supabase compute Micro có
+pool_size 15 về Postgres; Prisma mặc định mở theo số CPU máy chủ (17+ trên Render)
+→ web 5 + worker 5 = 10 còn chỗ cho Dashboard/migrate. Mẹo copy env ở mục 2: tab
+Environment của service web có nút **Copy** cạnh từng biến, hoặc "Add from .env"
+trên worker để dán một lượt; đừng quên `SECRET_ENC_KEYS` (thiếu là worker không
+đọc được mật khẩu meInvoice của khách) và bỏ `PORT` nếu có.
+
 ## Bước 2c — Bộ nhớ tiến trình (sự cố OOM 19–22/09/2026)
 
 **Chuyện đã xảy ra:** Render ghi "Instance failed: exited with status 134"
@@ -181,6 +191,19 @@ bật, backup 7 ngày). Render **giữ Hobby**, trả tiền vượt (gói Pro 2
 đều đếm `updated` nên gian có đơn 2 ngày gần đây kẹt nhịp 10' mãi), trang Lãi/Lỗ
 + dòng tiền nạp 2.000 đơn thay vì aggregate, prefetch khi rê chuột sidebar bắn
 analytics + finance.
+
+**Backup + restore thử (M1):** gói Pro tự backup hằng ngày, giữ 7 ngày (Database →
+Backups). Lịch **restore thử mỗi quý**, lần đầu tuần 06/10/2026 (khi đã có ≥ 3
+bản): tải bản backup mới nhất về máy anh Trung → khôi phục vào Postgres local
+(`createdb hubsell_restore && psql hubsell_restore < backup.sql`, hoặc
+`pg_restore -d hubsell_restore backup.dump` nếu là dạng custom) → đếm đối chiếu
+`SELECT count(*) FROM "Order"`, `"Channel"`, `"User"` với số trên HQ cùng ngày
+→ ghi kết quả (ngày, kích thước, thời gian khôi phục, chênh lệch) vào bảng dưới.
+KHÔNG restore đè lên project production để thử.
+
+| Ngày thử | Bản backup | Kích thước | Thời gian khôi phục | Kết quả |
+|---|---|---|---|---|
+| (chưa) | | | | |
 
 **Cách theo dõi:** Supabase → Organization → Usage → Egress (rê chuột từng ngày để
 xem theo dịch vụ); Render → Billing → Bandwidth. Mục tiêu sau sửa: < 500 MB/ngày ở
