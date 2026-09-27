@@ -516,7 +516,9 @@ export default function CostPricesPage() {
             </div>
           )}
 
-          <Card>
+          {/* overflow-visible để tiêu đề bảng bám dính khi cuộn (Card mặc định
+              overflow-hidden sẽ chặn position: sticky) */}
+          <Card className="overflow-visible">
             <CardContent className="p-0">
               {/* Chỉ thay bảng bằng chữ "đang tải" ở LẦN ĐẦU. Mỗi lần lưu giá vốn
                   đều gọi load() lại; nếu tháo bảng ra thì component mất trạng thái

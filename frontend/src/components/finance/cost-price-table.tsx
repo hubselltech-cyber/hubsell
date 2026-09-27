@@ -35,7 +35,7 @@ import {
 } from "@/lib/api";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatVND, formatNumber } from "@/lib/format";
-import { TEXT_SUB } from "@/lib/typography";
+import { TABLE_HEAD_EMPHASIS, TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { variantLabel } from "@/lib/variant-group";
 
@@ -109,8 +109,14 @@ export function CostPriceTable({
     // tràn ngang, đẩy cột Giá vốn (cột thao tác chính) khuất sau mép cuộn.
     // Giá vốn đứng TRƯỚC Giá bán: người dùng vào trang này để nhập giá vốn,
     // cột đó phải luôn nhìn thấy; Giá bán chỉ để tham khảo nên ra rìa.
-    <Table className="table-fixed">
-      <TableHeader>
+    // containerClassName overflow-visible: khung cuộn ngang mặc định sẽ chặn
+    // tiêu đề bám dính; bảng table-fixed theo % nên không cần cuộn ngang.
+    <Table className="table-fixed" containerClassName="overflow-visible">
+      {/* Tiêu đề đậm, chữ 14px, BÁM DÍNH dưới thanh đầu app (h-16) khi khách cuộn
+          (anh Trung 28/09) */}
+      <TableHeader
+        className={cn(TABLE_HEAD_EMPHASIS, "sticky top-16 z-20 [&_th]:text-sm")}
+      >
         <TableRow>
           <TableHead className="w-[38%]">Sản phẩm</TableHead>
           {/* Mã phân loại trên sàn đứng dưới mã SKU — seller quen quản theo mã sàn */}
@@ -584,22 +590,8 @@ function ShopName({ item }: { item: SkuProduct }) {
   );
 }
 
-/**
- * SKU sàn chưa nối kho gốc: giá vốn nhập ở đây lưu ngay trên SKU sàn — vẫn
- * tính lãi/lỗ đầy đủ, chỉ là không quản tồn kho tập trung. Nhãn để người dùng
- * hiểu vì sao dòng này không có tồn kho, KHÔNG phải lời nhắc bắt buộc phải nối.
- */
-function UnlinkedHint({ linked }: { linked: boolean }) {
-  if (linked) return null;
-  return (
-    <span
-      title="Giá vốn lưu trên SKU sàn — muốn quản tồn kho tập trung thì liên kết ở trang Liên kết sản phẩm"
-      className="inline-flex items-center rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[11px] text-muted-foreground"
-    >
-      Chưa nối kho vật lý
-    </span>
-  );
-}
+// Nhãn "Chưa nối kho vật lý" đã bỏ 28/09 (anh Trung: rối; ai quản kho tự hiểu ở
+// phần Kho). Giá vốn SKU chưa nối kho vẫn nhập được — không đổi hành vi.
 
 /**
  * Sàn đã gỡ/ẩn/xóa SKU này (đồng bộ giữ dòng để đơn cũ còn tra được giá vốn).
@@ -648,7 +640,6 @@ function ChildRow(props: RowProps) {
         {/* Cho các nhãn XUỐNG DÒNG khi hẹp — ô bảng cắt chữ (…) làm "Đã gỡ trên sàn" cụt mất nghĩa. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <ShopName item={item} />
-          <UnlinkedHint linked={item.linked} />
           <DelistedBadge status={item.status} />
         </div>
       </TableCell>
@@ -699,7 +690,6 @@ function SingleRow(props: RowProps) {
         {/* Cho các nhãn XUỐNG DÒNG khi hẹp — ô bảng cắt chữ (…) làm "Đã gỡ trên sàn" cụt mất nghĩa. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <ShopName item={item} />
-          <UnlinkedHint linked={item.linked} />
           <DelistedBadge status={item.status} />
         </div>
       </TableCell>
