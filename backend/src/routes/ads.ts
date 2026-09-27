@@ -416,6 +416,7 @@ function registerAdsPlatform(platform: AdsPlatformKey) {
           marginWindowDays: MARGIN_WINDOW_DAYS,
           pnlOrders: insights.shop.pnlOrders,
           missingCostOrders: insights.shop.missingCostOrders,
+          costCoveragePct: insights.shop.costCoveragePct,
         },
         campaigns,
         series,

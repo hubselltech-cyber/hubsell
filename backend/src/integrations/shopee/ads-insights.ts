@@ -140,7 +140,7 @@ export function dateKeyToDbDate(key: string): Date {
 
 export type CampaignWithPerf = AdsCampaign & { dailyPerf: AdsCampaignDailyPerf[] };
 
-type PnlRow = ReturnType<typeof computePnlRow>;
+export type PnlRow = ReturnType<typeof computePnlRow>;
 
 /** Nền P&L 30 ngày của một gian (chưa trừ ads) — nguyên liệu tính biên lãi. */
 /** Định danh gian truyền vào lõi — channelName quyết định nhánh P&L của sàn. */
@@ -224,14 +224,44 @@ registerCostCacheInvalidator((ids) => ids.forEach(invalidateChannelPnlRows));
  * Biên lãi ròng (chưa trừ ads) trên một tập SKU — null = tính toàn shop.
  * Đơn nhiều SKU phân bổ doanh thu/lãi theo tỷ trọng giá trị hàng của SKU khớp.
  */
-function marginOverRows(
-  pnlRows: PnlRow[],
-  skuSet: Set<string> | null
-): { orders: number; revenue: number; profit: number; missingCostOrders: number } {
+/**
+ * Ngưỡng độ phủ giá vốn để TIN biên lãi: ≥ 90% doanh thu (đã lọc theo SKU) phải
+ * có giá vốn — cùng số với TikTok (BREAKEVEN_MIN_COVERAGE_PCT ở tiktok-ads/
+ * auto-rules; không import chéo vì breakeven TikTok đã import file này).
+ * 90 là mặc định chọn: dưới đó biên lãi chỉ đại diện một phần doanh thu.
+ */
+export const MARGIN_MIN_COST_COVERAGE_PCT = 90;
+
+export interface MarginBase {
+  /** Số đơn CÓ giá vốn được tính vào biên lãi. */
+  orders: number;
+  revenue: number;
+  profit: number;
+  /** Đơn thiếu giá vốn — BỊ LOẠI khỏi biên lãi (28/09/2026, anh Trung). */
+  missingCostOrders: number;
+  /** Doanh thu (đã phân bổ theo SKU) của các đơn thiếu giá vốn — để tính độ phủ. */
+  missingCostRevenue: number;
+  /** % doanh thu có giá vốn; null = chưa có đơn nào. */
+  costCoveragePct: number | null;
+}
+
+/**
+ * Biên lãi trên một tập SKU (null = toàn shop). Đơn nhiều SKU phân bổ doanh
+ * thu/lãi theo tỷ trọng giá trị hàng của SKU khớp.
+ *
+ * ★ 28/09/2026 — ĐƠN THIẾU GIÁ VỐN BỊ LOẠI khỏi cả tử lẫn mẫu (giống TikTok).
+ *   Trước đó chúng vẫn được cộng vào: lợi nhuận của đơn giá vốn 0 = doanh thu −
+ *   phí sàn, chưa trừ tiền hàng → biên lãi thổi cao → ROAS hòa vốn THẤP hơn
+ *   thật, seller tưởng ROAS 3 đã lãi mà thực ra phải 4 mới hòa. Nay doanh thu
+ *   của chúng dồn vào missingCostRevenue để báo độ phủ; dưới ngưỡng thì không
+ *   kết luận (marginOf trả null).
+ */
+export function marginOverRows(pnlRows: PnlRow[], skuSet: Set<string> | null): MarginBase {
   let orders = 0;
   let revenue = 0;
   let profit = 0;
   let missingCostOrders = 0;
+  let missingCostRevenue = 0;
   for (const row of pnlRows) {
     const itemTotal = row.items.reduce((s, it) => s + it.price * it.quantity, 0);
     if (itemTotal <= 0) continue;
@@ -242,12 +272,36 @@ function marginOverRows(
       : itemTotal;
     if (matchTotal <= 0) continue;
     const ratio = matchTotal / itemTotal;
+    if (row.missingCostPrice) {
+      missingCostOrders++;
+      missingCostRevenue += row.actualRevenue * ratio;
+      continue;
+    }
     orders++;
     revenue += row.actualRevenue * ratio;
     profit += row.profit * ratio;
-    if (row.missingCostPrice) missingCostOrders++;
   }
-  return { orders, revenue, profit, missingCostOrders };
+  const scoped = revenue + missingCostRevenue;
+  return {
+    orders,
+    revenue,
+    profit,
+    missingCostOrders,
+    missingCostRevenue,
+    costCoveragePct: scoped > 0 ? Math.round((revenue / scoped) * 100) : null,
+  };
+}
+
+/** Biên lãi từ MarginBase — null khi chưa có đơn có giá vốn hoặc độ phủ dưới ngưỡng. */
+export function marginOf(base: MarginBase): number | null {
+  if (base.orders === 0 || base.revenue <= 0) return null;
+  if ((base.costCoveragePct ?? 0) < MARGIN_MIN_COST_COVERAGE_PCT) return null;
+  return base.profit / base.revenue;
+}
+
+/** Độ phủ dưới ngưỡng → biên lãi bị giữ lại (để giao diện nói "chưa đủ giá vốn"). */
+export function lowCostCoverage(base: MarginBase): boolean {
+  return base.costCoveragePct != null && base.costCoveragePct < MARGIN_MIN_COST_COVERAGE_PCT;
 }
 
 export interface CampaignInsight {
@@ -288,6 +342,8 @@ export interface ChannelAdsInsights {
     breakevenRoas: number | null;
     pnlOrders: number;
     missingCostOrders: number;
+    /** % doanh thu 30 ngày có giá vốn (đơn thiếu đã bị loại khỏi biên lãi). */
+    costCoveragePct: number | null;
   };
 }
 
@@ -347,8 +403,8 @@ export async function computeChannelAdsInsights(
   const marginOver = (skuSet: Set<string> | null) => marginOverRows(pnlRows, skuSet);
 
   const shopMarginBase = marginOver(null);
-  const shopMargin =
-    shopMarginBase.revenue > 0 ? shopMarginBase.profit / shopMarginBase.revenue : null;
+  // null khi độ phủ giá vốn dưới ngưỡng — thà không kết luận còn hơn số lạc quan.
+  const shopMargin = marginOf(shopMarginBase);
   const shopBreakeven = shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null;
 
   const items: CampaignInsight[] = campaignRows.map((c) => {
@@ -386,12 +442,10 @@ export async function computeChannelAdsInsights(
     for (const itemId of itemIds) {
       for (const sku of skusByItemId.get(itemId) ?? []) skuSet.add(sku);
     }
-    const own =
-      skuSet.size > 0
-        ? marginOver(skuSet)
-        : { orders: 0, revenue: 0, profit: 0, missingCostOrders: 0 };
-    const useOwn = own.orders >= MIN_ORDERS_FOR_MARGIN && own.revenue > 0;
-    const margin = useOwn ? own.profit / own.revenue : shopMargin;
+    const own = skuSet.size > 0 ? marginOver(skuSet) : marginOverRows([], null);
+    const ownMargin = marginOf(own);
+    const useOwn = own.orders >= MIN_ORDERS_FOR_MARGIN && ownMargin != null;
+    const margin = useOwn ? ownMargin : shopMargin;
     const marginSource: "campaign" | "shop" | null = useOwn
       ? "campaign"
       : shopMargin != null
@@ -443,6 +497,7 @@ export async function computeChannelAdsInsights(
       breakevenRoas: shopBreakeven,
       pnlOrders: shopMarginBase.orders,
       missingCostOrders: shopMarginBase.missingCostOrders,
+      costCoveragePct: shopMarginBase.costCoveragePct,
     },
   };
 }
@@ -469,12 +524,18 @@ export interface ProductBreakevenRow {
   orders: number;
   /** Doanh thu thực nhận phân bổ cho sản phẩm trong 30 ngày. */
   revenue: number;
-  /** Biên lãi ròng (chưa trừ ads); null = chưa có đơn P&L nào khớp. */
+  /** Biên lãi ròng (chưa trừ ads); null = chưa có đơn có giá vốn hoặc độ phủ giá vốn dưới ngưỡng. */
   margin: number | null;
-  /** 1/biên lãi; null khi chưa đủ dữ liệu hoặc biên ≤ 0 (lỗ trước ads). */
+  /** 1/biên lãi; null khi chưa đủ dữ liệu, độ phủ thấp, hoặc biên ≤ 0 (lỗ trước ads). */
   breakevenRoas: number | null;
   /** Biên ≤ 0: bán đã lỗ chưa tính ads — cấm chỉ định chạy ads. */
   lossBeforeAds: boolean;
+  /** % doanh thu 30 ngày của sản phẩm có giá vốn; null = chưa có đơn. */
+  costCoveragePct: number | null;
+  /** Độ phủ dưới ngưỡng MARGIN_MIN_COST_COVERAGE_PCT → chưa kết luận hòa vốn. */
+  lowCostCoverage: boolean;
+  /** Số đơn thiếu giá vốn đã bị loại khỏi biên lãi của sản phẩm. */
+  missingCostOrders: number;
   /** Sản phẩm đang nằm trong ít nhất một campaign đang chạy. */
   runningAds: boolean;
   /** Đợt A: mục tiêu ROAS thấp nhất đang đặt trên campaign chạy có SP này so với hòa vốn. */
@@ -488,7 +549,10 @@ export interface ChannelProductBreakeven {
     breakevenRoas: number | null;
     pnlOrders: number;
     missingCostOrders: number;
+    costCoveragePct: number | null;
   };
+  /** Ngưỡng độ phủ giá vốn (%) đang áp — FE ghi trong tooltip. */
+  minCoveragePct: number;
   /** Hệ số vùng an toàn từ config Trợ lý (Q2 dangerFactor) — FE gợi ý ROAS mục tiêu. */
   safeRoasFactor: number;
 }
@@ -567,11 +631,12 @@ export async function computeChannelProductBreakeven(
   }
 
   const shopBase = marginOverRows(pnlRows, null);
-  const shopMargin = shopBase.revenue > 0 ? shopBase.profit / shopBase.revenue : null;
+  const shopMargin = marginOf(shopBase);
 
   const rows: ProductBreakevenRow[] = [...groups.entries()].map(([itemId, g]) => {
     const base = marginOverRows(pnlRows, g.skus);
-    const margin = base.orders > 0 && base.revenue > 0 ? base.profit / base.revenue : null;
+    // Đơn thiếu giá vốn đã bị loại; độ phủ dưới ngưỡng → null (không kết luận).
+    const margin = marginOf(base);
     // SKU người bán tự đặt — bỏ khóa tổng hợp sinh khi SKU trống: Shopee
     // `SPE-{item}`/`SPE-{item}-{model}`, Lazada `LZD-{item}-{sku}` — khách
     // không nhận ra các mã máy tự đặt đó.
@@ -601,6 +666,9 @@ export async function computeChannelProductBreakeven(
       margin,
       breakevenRoas: margin != null && margin > 0 ? 1 / margin : null,
       lossBeforeAds: margin != null && margin <= 0,
+      costCoveragePct: base.costCoveragePct,
+      lowCostCoverage: lowCostCoverage(base),
+      missingCostOrders: base.missingCostOrders,
       runningAds: ongoingItemIds.has(itemId),
       roasTargetCheck: assessRoasTarget({
         roasTarget: targetByItemId.get(itemId) ?? null,
@@ -619,7 +687,9 @@ export async function computeChannelProductBreakeven(
       breakevenRoas: shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null,
       pnlOrders: shopBase.orders,
       missingCostOrders: shopBase.missingCostOrders,
+      costCoveragePct: shopBase.costCoveragePct,
     },
+    minCoveragePct: MARGIN_MIN_COST_COVERAGE_PCT,
     safeRoasFactor: config.review.dangerFactor,
   };
 }

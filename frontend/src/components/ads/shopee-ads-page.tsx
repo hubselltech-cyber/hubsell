@@ -1071,8 +1071,12 @@ export function ShopeeAdsPage({
             {summary.missingCostOrders > 0 && (
               <span className="text-amber-600">
                 {" "}
-                ⚠ {formatNumber(summary.missingCostOrders)} đơn còn SKU thiếu giá
-                vốn — nhập đủ giá vốn để ROAS hòa vốn chính xác hơn.
+                ⚠ {formatNumber(summary.missingCostOrders)} đơn thiếu giá vốn đã bị
+                loại khỏi biên lãi
+                {summary.costCoveragePct != null
+                  ? ` (${summary.costCoveragePct}% doanh thu có giá vốn)`
+                  : ""}{" "}
+                — nhập đủ giá vốn để ROAS hòa vốn tính trên đủ đơn.
               </span>
             )}{" "}
             {meta.adSpendLabel}: {formatVND(summary.adSpendTotal)}.
@@ -1364,6 +1368,14 @@ function ProductBreakevenTab({
             >
               Lỗ trước ads
             </span>
+          ) : row.original.lowCostCoverage ? (
+            // Đơn thiếu giá vốn đã bị loại; phần còn lại quá ít để tin → không đưa số.
+            <span
+              className="text-xs font-medium text-amber-700"
+              title={`Mới ${row.original.costCoveragePct ?? 0}% doanh thu của sản phẩm có giá vốn (cần từ ${data?.minCoveragePct ?? 90}%) — ${formatNumber(row.original.missingCostOrders)} đơn thiếu giá vốn đã bị loại. Nhập giá vốn cho các SKU còn thiếu để có ROAS hòa vốn.`}
+            >
+              Chưa đủ giá vốn ({row.original.costCoveragePct ?? 0}%)
+            </span>
           ) : (
             <span className={TEXT_NUMBER_STRONG}>
               {formatRoas(row.original.breakevenRoas)}
@@ -1434,7 +1446,7 @@ function ProductBreakevenTab({
           ) : null,
       },
     ],
-    [platform, meta, safeFactor]
+    [platform, meta, safeFactor, data?.minCoveragePct]
   );
 
   if (noChannel) {
@@ -1540,9 +1552,13 @@ function ProductBreakevenTab({
             )}
             {data.shop.missingCostOrders > 0 && (
               <p className="mt-3 text-xs text-amber-600">
-                ⚠ {formatNumber(data.shop.missingCostOrders)} đơn trong mẫu còn
-                SKU thiếu giá vốn — biên lãi các sản phẩm liên quan đang lạc
-                quan hơn thật, nhập đủ giá vốn để số hòa vốn chính xác.
+                ⚠ {formatNumber(data.shop.missingCostOrders)} đơn thiếu giá vốn đã
+                bị loại khỏi biên lãi
+                {data.shop.costCoveragePct != null
+                  ? ` (${data.shop.costCoveragePct}% doanh thu có giá vốn)`
+                  : ""}
+                . Sản phẩm có dưới {data.minCoveragePct}% doanh thu có giá vốn thì
+                chưa kết luận hòa vốn — nhập giá vốn cho các SKU còn thiếu.
               </p>
             )}
             <p className="mt-2 text-xs text-muted-foreground">

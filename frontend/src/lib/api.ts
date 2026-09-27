@@ -6740,12 +6740,18 @@ export interface ShopeeProductBreakevenRow {
   itemSku: string | null;
   /** SKU phân loại người bán tự đặt (đã lọc khóa tổng hợp SPE-…) — tìm kiếm/tooltip. */
   sellerSkus: string[];
-  /** Số đơn P&L 30 ngày khớp SKU của sản phẩm (cỡ mẫu của biên lãi). */
+  /** Số đơn P&L 30 ngày CÓ GIÁ VỐN khớp SKU của sản phẩm (cỡ mẫu của biên lãi). */
   orders: number;
   revenue: number;
   margin: number | null;
   breakevenRoas: number | null;
   lossBeforeAds: boolean;
+  /** % doanh thu 30 ngày có giá vốn; null = chưa có đơn. */
+  costCoveragePct: number | null;
+  /** Độ phủ dưới ngưỡng → chưa kết luận hòa vốn (đơn thiếu giá vốn đã bị loại). */
+  lowCostCoverage: boolean;
+  /** Số đơn thiếu giá vốn đã bị loại khỏi biên lãi của sản phẩm. */
+  missingCostOrders: number;
   runningAds: boolean;
   /** Đợt A: mục tiêu ROAS thấp nhất đang đặt trên campaign chạy có SP này. */
   roasTargetCheck: RoasTargetCheck | null;
@@ -6758,7 +6764,10 @@ export interface ShopeeProductBreakevenResponse {
     breakevenRoas: number | null;
     pnlOrders: number;
     missingCostOrders: number;
+    costCoveragePct: number | null;
   };
+  /** Ngưỡng % doanh thu có giá vốn để tin biên lãi (90). */
+  minCoveragePct: number;
   /** Hệ số vùng an toàn (Q2 dangerFactor) — gợi ý ROAS mục tiêu = hòa vốn × hệ số. */
   safeRoasFactor: number;
   marginWindowDays: number;
@@ -6920,6 +6929,8 @@ export interface ShopeeAdsSummary {
   marginWindowDays: number;
   pnlOrders: number;
   missingCostOrders: number;
+  /** % doanh thu có giá vốn trong mẫu biên lãi; đơn thiếu đã bị loại. */
+  costCoveragePct: number | null;
 }
 
 export interface ShopeeAdsDashboard {
