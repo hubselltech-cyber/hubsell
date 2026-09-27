@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   History,
   Loader2,
@@ -78,6 +80,11 @@ type PageTab = (typeof PAGE_TABS)[number]["key"];
 
 /** Khoá localStorage nhớ đã tắt dải cảnh báo thiếu giá vốn (nối thêm userId). */
 const BANNER_HIDE_KEY = "hubsell_cost_missing_banner_hidden";
+
+// Phân trang theo SẢN PHẨM (nhóm cha), KHÔNG theo dòng — anh Trung 28/09: một
+// mẫu 25 phân loại không bị ngắt giữa hai trang. 20 mặc định, tối đa 50.
+const PAGE_SIZES = [20, 50] as const;
+const PAGE_SIZE_KEY = "hubsell_cost_prices_page_size";
 
 // Các tab lọc theo sàn
 const TABS: { key: SkuChannelFilter; label: string }[] = [
@@ -192,6 +199,35 @@ export default function CostPricesPage() {
     }
     return [...map.values()];
   }, [filteredItems]);
+
+  // ----- Phân trang theo sản phẩm -----
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
+      if ((PAGE_SIZES as readonly number[]).includes(saved)) setPageSize(saved);
+    } catch {
+      // không đọc được thì giữ mặc định
+    }
+  }, []);
+  // Đổi kênh / tìm kiếm / bộ lọc → về trang 1 để không đứng ở trang trống.
+  useEffect(() => {
+    setPage(1);
+  }, [channel, search, statusFilter, listing]);
+  const pageCount = Math.max(1, Math.ceil(groups.length / pageSize));
+  // Đổi bộ lọc / tìm kiếm / kênh làm số trang co lại → kéo về trang cuối còn dữ liệu.
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  const pagedGroups = useMemo(
+    () => groups.slice((page - 1) * pageSize, page * pageSize),
+    [groups, page, pageSize]
+  );
+  const pageSkuCount = useMemo(
+    () => pagedGroups.reduce((n, g) => n + g.variants.length, 0),
+    [pagedGroups]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -564,7 +600,7 @@ export default function CostPricesPage() {
               ) : (
                 <Refreshing active={loading}>
                   <CostPriceTable
-                    groups={groups}
+                    groups={pagedGroups}
                     drafts={drafts}
                     onDraftChange={(skuId, digits) =>
                       setDrafts((d) => ({ ...d, [skuId]: digits }))
@@ -581,6 +617,60 @@ export default function CostPricesPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Phân trang theo SẢN PHẨM — mỗi trang trọn vẹn 20/50 mẫu kèm mọi phân loại */}
+          {groups.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Hiển thị</span>
+                <NativeSelect
+                  className="w-20"
+                  aria-label="Số sản phẩm mỗi trang"
+                  value={String(pageSize)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setPageSize(n);
+                    setPage(1);
+                    try {
+                      localStorage.setItem(PAGE_SIZE_KEY, String(n));
+                    } catch {
+                      // bị chặn — bỏ qua
+                    }
+                  }}
+                >
+                  {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </NativeSelect>
+                <span className="text-sm text-muted-foreground">
+                  sản phẩm/trang · trang này {formatNumber(pageSkuCount)} SKU ·{" "}
+                  {formatNumber(groups.length)} sản phẩm · trang {page}/{pageCount}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  <ChevronLeft className="size-4" />
+                  Trang trước
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Trang sau
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+          )}
 
           <p className="text-center text-xs text-muted-foreground">
             Hubsell Finance · Cấu hình Giá vốn — nhập xong bấm ra ngoài ô là tự động lưu
