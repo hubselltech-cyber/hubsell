@@ -4490,6 +4490,10 @@ export interface MySupportRequest {
   status: SupportRequestStatus;
   /** Câu trả lời của Hubsell — null khi chưa trả lời. */
   reply: string | null;
+  /** Số ảnh đang còn trong kho (0 sau khi dọn 7 ngày). */
+  attachmentCount: number;
+  /** Đã dọn ảnh theo chính sách 7 ngày sau khi xong. */
+  attachmentsPurgedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -4508,7 +4512,23 @@ export function createSupportRequest(data: {
 
 /** Mở hộp = đã xem: backend đóng dấu customerSeenAt, chấm đỏ tắt. */
 export function fetchMySupportRequests() {
-  return apiFetch<{ requests: MySupportRequest[] }>("/api/support-requests/mine");
+  return apiFetch<{
+    requests: MySupportRequest[];
+    /** false khi máy chủ chưa nối Supabase Storage → FE ẩn ô chọn ảnh. */
+    attachmentsEnabled: boolean;
+    attachmentMax: number;
+  }>("/api/support-requests/mine");
+}
+
+/**
+ * Tải một ảnh (đã nén trên trình duyệt) đính kèm yêu cầu vừa gửi. Thân request
+ * là ảnh thô, Content-Type = kiểu ảnh (backend express.raw).
+ */
+export function uploadSupportAttachment(requestId: string, image: Blob) {
+  return apiFetch<{ attachmentCount: number }>(
+    `/api/support-requests/${requestId}/attachments`,
+    { method: "POST", headers: { "Content-Type": image.type }, body: image }
+  );
 }
 
 /** Số yêu cầu có trả lời mới chưa xem — nuôi chấm đỏ trên avatar. */
@@ -4527,6 +4547,8 @@ export interface AdminSupportRequestRow {
   reply: string | null;
   note: string | null;
   assignee: { id: string; fullName: string } | null;
+  attachmentCount: number;
+  attachmentsPurgedAt: string | null;
   createdAt: string;
   updatedAt: string;
   account: {
@@ -4561,6 +4583,13 @@ export function fetchAdminSupportRequests(params?: {
   if (params?.status) qs.set("status", params.status);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<AdminSupportRequestsResponse>(`/api/admin/support-requests${suffix}`);
+}
+
+/** Link xem ảnh đính kèm (ký, hết hạn 10 phút) — chỉ gọi khi mở hộp xử lý. */
+export function fetchAdminSupportAttachmentUrls(id: string) {
+  return apiFetch<{ urls: string[]; purgedAt: string | null }>(
+    `/api/admin/support-requests/${id}/attachment-urls`
+  );
 }
 
 export function updateAdminSupportRequest(

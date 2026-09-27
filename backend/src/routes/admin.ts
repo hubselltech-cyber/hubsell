@@ -17,6 +17,7 @@ import {
 } from "../middleware/auth";
 import { writeAuditLog } from "../services/platform-audit";
 import { notifyCustomerSupportUpdate } from "./support";
+import { createSignedUrls } from "../lib/supabase-storage";
 import {
   INVOICE_PATTERN_RE,
   INVOICE_SERIES_RE,
@@ -721,6 +722,8 @@ router.get(
           reply: r.reply,
           note: r.note,
           assignee: r.assignee,
+          attachmentCount: r.attachments.length,
+          attachmentsPurgedAt: r.attachmentsPurgedAt,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,
           account: {
@@ -735,6 +738,30 @@ router.get(
           },
         })),
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /api/admin/support-requests/:id/attachment-urls — link xem ảnh đính kèm
+// (bucket private → link ký, hết hạn 10 phút; chỉ tải khi HQ mở hộp xử lý,
+// không kéo kèm bảng để khỏi tốn egress).
+router.get(
+  "/support-requests/:id/attachment-urls",
+  requirePlatformPermission("hq.customers"),
+  async (req, res, next) => {
+    try {
+      const request = await prisma.supportRequest.findUnique({
+        where: { id: req.params.id },
+        select: { attachments: true, attachmentsPurgedAt: true },
+      });
+      if (!request) {
+        res.status(404).json({ error: "Không tìm thấy yêu cầu này" });
+        return;
+      }
+      const urls = (await createSignedUrls(request.attachments, 10 * 60)).filter(Boolean);
+      res.json({ urls, purgedAt: request.attachmentsPurgedAt });
     } catch (err) {
       next(err);
     }

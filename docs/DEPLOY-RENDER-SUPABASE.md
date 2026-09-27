@@ -31,6 +31,7 @@ ngrok/tunnel gì ở local.
    | `MISA_CLIENT_ID` / `MISA_CLIENT_SECRET` | cặp khóa MISA cấp |
    | `MISA_WEBHOOK_SECRET` | secret ký webhook MISA cấp — **bắt buộc**, thiếu là endpoint trả 503 (xem lưu ý dưới) |
    | `APP_FRONTEND_URL` | `https://localhost:3000` (frontend vẫn chạy local) |
+   | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | (27/09/2026, tùy chọn) bật **ảnh đính kèm yêu cầu hỗ trợ** qua Supabase Storage. Lấy ở Supabase → Project Settings → API: *Project URL* và khóa **service_role** (KHÔNG phải anon). Thiếu là ô chọn ảnh tự ẩn, mọi thứ khác chạy bình thường. Bucket `support-attachments` (private) tự tạo lần đầu; cron log-cleanup xóa ảnh của yêu cầu Đã xong quá 7 ngày. Đặt trên CẢ web lẫn worker. |
 3. Bấm **Apply** — Render build (`npm ci` + `prisma generate` + `tsc`), chạy
    migration lên Supabase rồi start. Log thấy
    `✅ Hubsell backend đang chạy tại http://localhost:<port>` là xong (Render

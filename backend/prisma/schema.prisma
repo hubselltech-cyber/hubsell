@@ -2220,6 +2220,11 @@ model SupportRequest {
   /// Lần cuối khách mở hộp Yêu cầu hỗ trợ — updatedAt > mốc này (và đã có
   /// reply / DONE) = "trả lời mới", hiện chấm đỏ trên avatar.
   customerSeenAt DateTime?
+  /// Đường dẫn ảnh trong Supabase Storage (bucket private) — tối đa 3, khách
+  /// nén trên trình duyệt. Cron dọn xóa ảnh của yêu cầu DONE quá 7 ngày.
+  attachments         String[]  @default([])
+  /// Đã xóa ảnh theo chính sách 7 ngày (giữ chữ) — FE hiện "ảnh đã xóa".
+  attachmentsPurgedAt DateTime?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 

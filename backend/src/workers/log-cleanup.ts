@@ -23,6 +23,7 @@
 
 import { InvoiceLogStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { deleteObjects, isStorageConfigured } from "../lib/supabase-storage";
 
 const DEFAULT_INTERVAL_HOURS = 24;
 /** Thông tin xuất hóa đơn của khách: xóa sau khi HĐ phát hành ngần này ngày. */
@@ -38,6 +39,9 @@ const RETENTION_MAX_DAYS = 30;
 const OPS_LOG_DAYS = 90;
 /** Cảnh báo vận hành đã đóng (RESOLVED/AUTO_CLOSED) giữ N ngày. */
 const OPS_CLOSED_ALERT_DAYS = 30;
+/** Ảnh đính kèm yêu cầu hỗ trợ: xóa khỏi Supabase Storage sau khi DONE N ngày
+ *  (anh Trung 27/09: giữ chữ, bỏ ảnh để không tốn kho). */
+const SUPPORT_ATTACHMENT_DAYS = 7;
 const BATCH_SIZE = 500;
 /** Nghỉ giữa hai nhát xóa liên tiếp. */
 const BATCH_PAUSE_MS = 200;
@@ -244,6 +248,38 @@ export async function runOnce(): Promise<void> {
       console.log(
         `[Log-cleanup] Thông tin xuất hóa đơn của khách: đã xóa ${buyerInfoCleared} đơn (HĐ phát hành ≥${BUYER_INFO_AFTER_ISSUED_DAYS} ngày hoặc quá ${BUYER_INFO_MAX_DAYS} ngày không dùng)`
       );
+    }
+
+    // Ảnh đính kèm yêu cầu hỗ trợ đã DONE quá 7 ngày: xóa tệp trong kho, giữ
+    // chữ, ghi mốc để FE báo "ảnh đã xóa". Không cấu hình kho thì không có ảnh.
+    if (isStorageConfigured()) {
+      const rows = await prisma.supportRequest.findMany({
+        where: {
+          status: "DONE",
+          updatedAt: { lt: daysAgo(SUPPORT_ATTACHMENT_DAYS) },
+          attachments: { isEmpty: false },
+        },
+        select: { id: true, attachments: true },
+        take: 100,
+      });
+      let purged = 0;
+      for (const r of rows) {
+        try {
+          await deleteObjects(r.attachments);
+          await prisma.supportRequest.update({
+            where: { id: r.id },
+            data: { attachments: [], attachmentsPurgedAt: new Date() },
+          });
+          purged += r.attachments.length;
+        } catch (err) {
+          console.error(`[Log-cleanup] Xóa ảnh yêu cầu ${r.id} lỗi:`, (err as Error).message);
+        }
+      }
+      if (purged > 0) {
+        console.log(
+          `[Log-cleanup] Ảnh đính kèm hỗ trợ: đã xóa ${purged} ảnh của ${rows.length} yêu cầu DONE quá ${SUPPORT_ATTACHMENT_DAYS} ngày`
+        );
+      }
     }
   } catch (err) {
     console.error("[Log-cleanup] Lỗi vòng dọn:", err);

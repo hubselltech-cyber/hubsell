@@ -12,10 +12,12 @@
 //   GET  /api/support-requests/mine   danh sách của SHOP (chủ + nhân viên cùng thấy)
 // ============================================================
 
-import { Router } from "express";
+import { randomUUID } from "node:crypto";
+import express, { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { formatE164 } from "../lib/phone";
 import { isMailerConfigured, sendMail } from "../lib/mailer";
+import { isStorageConfigured, uploadObject } from "../lib/supabase-storage";
 import { type AuthRequest } from "../middleware/auth";
 
 const router = Router();
@@ -24,6 +26,14 @@ const FRONTEND_BASE_URL = process.env.APP_FRONTEND_URL ?? "http://localhost:3000
 const CONTENT_MAX = 2000;
 /** Chống spam nhẹ: mỗi shop tối đa 5 yêu cầu đang mở (NEW/IN_PROGRESS). */
 const OPEN_MAX = 5;
+/** Ảnh đính kèm: tối đa 3 ảnh, chỉ trong 15 phút sau khi gửi (FE tải ngay sau Gửi). */
+export const ATTACHMENT_MAX = 3;
+const ATTACHMENT_WINDOW_MS = 15 * 60 * 1000;
+const ATTACHMENT_MIME_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 
 const PUBLIC_SELECT = {
   id: true,
@@ -31,9 +41,27 @@ const PUBLIC_SELECT = {
   content: true,
   status: true,
   reply: true,
+  attachments: true,
+  attachmentsPurgedAt: true,
   createdAt: true,
   updatedAt: true,
 } as const;
+
+/** Bản khách thấy: không lộ đường dẫn kho, chỉ số ảnh + cờ đã dọn. */
+function toPublic(r: {
+  id: string;
+  requesterName: string;
+  content: string;
+  status: string;
+  reply: string | null;
+  attachments: string[];
+  attachmentsPurgedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  const { attachments, ...rest } = r;
+  return { ...rest, attachmentCount: attachments.length };
+}
 
 async function notifyHqSupportRequest(input: {
   requestId: string;
@@ -195,11 +223,66 @@ router.post("/", async (req: AuthRequest, res, next) => {
       content: text,
     });
 
-    res.status(201).json({ request: created, phoneSaved: phone });
+    res.status(201).json({ request: toPublic(created), phoneSaved: phone });
   } catch (err) {
     next(err);
   }
 });
+
+// POST /api/support-requests/:id/attachments — thân request là ẢNH THÔ
+// (Content-Type image/jpeg|png|webp, FE đã nén ≤ ~400 KB). Chỉ shop chủ yêu
+// cầu, chỉ khi còn NEW và trong 15 phút sau khi gửi, tối đa 3 ảnh. Ảnh vào
+// Supabase Storage, DB chỉ giữ đường dẫn.
+router.post(
+  "/:id/attachments",
+  express.raw({ type: Object.keys(ATTACHMENT_MIME_EXT), limit: "600kb" }),
+  async (req: AuthRequest, res, next) => {
+    try {
+      if (!isStorageConfigured()) {
+        res.status(503).json({ error: "Đính kèm ảnh chưa được bật trên máy chủ" });
+        return;
+      }
+      const contentType = String(req.headers["content-type"] ?? "").split(";")[0].trim();
+      const ext = ATTACHMENT_MIME_EXT[contentType];
+      const body = req.body as unknown;
+      if (!ext || !Buffer.isBuffer(body) || body.length === 0) {
+        res.status(400).json({ error: "Chỉ nhận ảnh JPG, PNG hoặc WebP" });
+        return;
+      }
+
+      const request = await prisma.supportRequest.findFirst({
+        where: { id: req.params.id, userId: req.ownerId! },
+        select: { id: true, status: true, createdAt: true, attachments: true },
+      });
+      if (!request) {
+        res.status(404).json({ error: "Không tìm thấy yêu cầu" });
+        return;
+      }
+      if (
+        request.status !== "NEW" ||
+        Date.now() - request.createdAt.getTime() > ATTACHMENT_WINDOW_MS
+      ) {
+        res.status(400).json({ error: "Yêu cầu này không còn nhận thêm ảnh" });
+        return;
+      }
+      if (request.attachments.length >= ATTACHMENT_MAX) {
+        res.status(400).json({ error: `Tối đa ${ATTACHMENT_MAX} ảnh mỗi yêu cầu` });
+        return;
+      }
+
+      const path = `${req.ownerId}/${request.id}/${request.attachments.length + 1}-${randomUUID()}.${ext}`;
+      await uploadObject(path, body, contentType);
+      const updated = await prisma.supportRequest.update({
+        where: { id: request.id },
+        data: { attachments: { push: path } },
+        select: { attachments: true },
+      });
+      res.status(201).json({ attachmentCount: updated.attachments.length });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // "Trả lời mới" = đã có reply hoặc DONE, và HQ sửa SAU lần khách xem. So sánh
 // hai cột trong JS (danh sách mỗi shop chỉ vài dòng) — khỏi phụ thuộc field
@@ -226,7 +309,12 @@ router.get("/mine", async (req: AuthRequest, res, next) => {
       where: { userId: req.ownerId! },
       data: { customerSeenAt: new Date() },
     });
-    res.json({ requests });
+    res.json({
+      requests: requests.map(toPublic),
+      // FE chỉ bày ô chọn ảnh khi máy chủ đã nối Supabase Storage.
+      attachmentsEnabled: isStorageConfigured(),
+      attachmentMax: ATTACHMENT_MAX,
+    });
   } catch (err) {
     next(err);
   }
