@@ -382,6 +382,7 @@ async function upsertOrderTx(
   if (existing) {
     await tx.order.update({
       where: { id: existing.id },
+      select: { id: true },
       data: {
         shippingStatus,
         paymentStatus,
@@ -421,6 +422,7 @@ async function upsertOrderTx(
   const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
 
   const created = await tx.order.create({
+    select: { id: true },
     data: {
       channelId: channel.id,
       orderCode,
@@ -444,6 +446,7 @@ async function upsertOrderTx(
   for (const line of lines) {
     const mp = mapBySku.get(line.channelSku);
     await tx.orderItem.create({
+      select: { id: true },
       data: {
         orderId: created.id,
         productId: mp?.productId ?? null,
@@ -733,11 +736,13 @@ async function writeTiktokSettlement(
   };
   await prisma.tiktokOrderSettlement.upsert({
     where: { orderId: order.id },
+    select: { orderId: true },
     create: { orderId: order.id, ...detailData },
     update: detailData,
   });
   await prisma.order.update({
     where: { id: order.id },
+    select: { id: true },
     data: {
       ...cols,
       ...(meta.estimated

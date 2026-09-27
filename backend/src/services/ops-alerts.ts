@@ -32,7 +32,10 @@ import {
   assistantDecisionActive,
   computeChannelAdsInsights,
 } from "../integrations/shopee/ads-insights";
-import type { AssistantTrigger } from "../integrations/shopee/ads-assistant-rules";
+import {
+  normalizeAssistantConfig,
+  type AssistantTrigger,
+} from "../integrations/shopee/ads-assistant-rules";
 import {
   DELIVERY_FAIL_TAB_HREF,
   effectiveDeliveryFailConfig,
@@ -46,8 +49,13 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Giãn cách tối thiểu giữa hai lượt quét của CÙNG một chủ shop. */
-const SCAN_INTERVAL_MS = 10 * 60 * 1000;
+/** Giãn cách tối thiểu giữa hai lượt quét của CÙNG một chủ shop.
+ * Mặc định 30' (env OPS_SCAN_INTERVAL_MIN) — 27/09/2026 nâng từ 10': mỗi lượt
+ * quét kéo P&L 7 ngày toàn shop + insights từng gian ads (2.000 đơn/gian), 6
+ * lượt/giờ là nguồn egress Supabase lớn thứ hai. Máy vừa tự thực thi ads thì
+ * order-auto-sync vẫn ép quét ngay (force=true) nên chuông không trễ. */
+const SCAN_INTERVAL_MS =
+  Math.max(1, Number(process.env.OPS_SCAN_INTERVAL_MIN ?? 30) || 30) * 60 * 1000;
 /** Cửa sổ quét đơn lỗ (đơn Đã giao tạo trong N ngày gần nhất). */
 const LOSS_WINDOW_DAYS = 7;
 /** Cửa sổ quét chênh phí ship chờ khiếu nại. */
@@ -997,6 +1005,14 @@ async function detectShopeeAdsAssistant(ownerId: string): Promise<DetectedAlert[
       where: { channelId: ch.id },
     });
     if (campaignCount === 0) continue; // chưa sync campaign — detectAdsSpike lo
+
+    // Chủ shop tắt Trợ lý gian này → bỏ qua TRƯỚC khi tính insights (kéo P&L
+    // 30 ngày) — đọc một dòng config rẻ hơn nhiều (egress 09/2026).
+    const preConfigRow = await prisma.adsAssistantConfig.findUnique({
+      where: { channelId: ch.id },
+      select: { config: true },
+    });
+    if (!normalizeAssistantConfig(preConfigRow?.config).enabled) continue;
 
     const insights = await computeChannelAdsInsights({
       id: ch.id,

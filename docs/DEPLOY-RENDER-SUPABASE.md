@@ -150,6 +150,42 @@ lại (10–20 giây) thấy câu lỗi dev "backend đang chạy ở cổng 400
 đang chạy cùng phút. Không có dòng `[Bộ nhớ]` nào trước FATAL nghĩa là tăng vọt
 trong < 5 giây — nghi một request đơn lẻ (báo cáo khoảng rộng, export).
 
+## Bước 2d — Egress Supabase / băng thông Render (sự cố 09/2026)
+
+**Chuyện đã xảy ra:** 17/09 Supabase báo org vượt egress 14,39 GB / 5,5 GB gói Free;
+20/09 áp hạn chế (20,71 GB), tốc độ ≈ 2 GB/ngày dù toàn hệ chưa tới 500 đơn/ngày.
+Cùng ngày Render báo hết 5 GB băng thông kèm workspace Hobby (vượt tự tính
+0,15 USD/GB, không chặn). Hubsell không dùng SDK Supabase — toàn bộ egress là
+Postgres → Render, tức do CÁCH TRUY VẤN của mình, không phải do số đơn.
+
+**Đã chốt 27/09/2026:** Supabase nâng **Pro** (25 USD/tháng, 250 GB egress, spend cap
+bật, backup 7 ngày). Render **giữ Hobby**, trả tiền vượt (gói Pro 25 USD chỉ kèm
+25 GB nên không đáng nâng vì băng thông).
+
+**Nguồn egress đã sửa (commit cùng ngày):**
+- Trợ lý quảng cáo: `runAdsAutoExecute` đọc config trước, mode off / Trợ lý tắt thì
+  dừng ngay (trước đây tính trọn insights = kéo P&L 30 ngày tới 2.000 đơn mỗi pulse
+  30'/60'). Nền P&L 30 ngày theo gian nay CACHE trong RAM (`ADS_PNL_CACHE_MIN`,
+  mặc định 30'), pulse / quét cảnh báo / trang Ads dùng chung một bản.
+- Quét cảnh báo vận hành: 10' → 30' mỗi chủ shop (`OPS_SCAN_INTERVAL_MIN`); máy vừa
+  tự thực thi ads vẫn ép quét ngay. Detector Trợ lý kiểm `enabled` trước khi tính.
+- Đồng bộ đơn / đối soát: mọi lệnh ghi (order update/create, orderItem, settlement
+  upsert, escrow ước tính) thêm `select: { id }` — Prisma mặc định trả NGUYÊN dòng
+  ~70 cột sau mỗi update.
+- Express bật nén gzip/brotli (`responseCompression()` trong app.ts), trừ luồng
+  SSE chuông thông báo.
+- `/api/command-center/state` trả tối đa 300 chat + 200 hoạt động; log-cleanup dọn
+  OpsActivity / OpsChatMessage > 90 ngày, OpsAlert đã đóng > 30 ngày.
+
+**Còn treo (đụng lõi, làm sau khi trình):** bug backoff auto-sync (mọi đơn kéo lại
+đều đếm `updated` nên gian có đơn 2 ngày gần đây kẹt nhịp 10' mãi), trang Lãi/Lỗ
++ dòng tiền nạp 2.000 đơn thay vì aggregate, prefetch khi rê chuột sidebar bắn
+analytics + finance.
+
+**Cách theo dõi:** Supabase → Organization → Usage → Egress (rê chuột từng ngày để
+xem theo dịch vụ); Render → Billing → Bandwidth. Mục tiêu sau sửa: < 500 MB/ngày ở
+quy mô hiện tại.
+
 ## Bước 3 — Khai URL webhook vào trang quản trị MISA Sandbox
 
 1. Đăng nhập trang quản trị meInvoice Sandbox (tài khoản MISA cấp kèm kit).

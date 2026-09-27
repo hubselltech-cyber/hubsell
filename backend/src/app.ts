@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 
 import { Role } from "@prisma/client";
 import {
@@ -82,6 +83,17 @@ export function isLocalHost(hostname: string | undefined): boolean {
   );
 }
 
+/** Middleware nén phản hồi dùng chung (export để test riêng bộ lọc SSE). */
+export function responseCompression() {
+  return compression({
+    filter: (req, res) => {
+      const contentType = String(res.getHeader("Content-Type") ?? "");
+      if (contentType.startsWith("text/event-stream")) return false;
+      return compression.filter(req, res);
+    },
+  });
+}
+
 export function createApp() {
   const app = express();
 
@@ -119,6 +131,10 @@ export function createApp() {
       exposedHeaders: ["X-Hubsell-Labels", "Content-Disposition"],
     })
   );
+  // NÉN GZIP/BROTLI mọi phản hồi (JSON dashboard/tài chính nặng vài trăm KB; Render
+  // workspace Hobby chỉ kèm 5 GB băng thông/tháng, 20/09/2026 vượt trần). Trừ
+  // luồng SSE của chuông thông báo: nén sẽ đệm sự kiện, client không nhận ": ping".
+  app.use(responseCompression());
   // Giữ lại THÂN REQUEST THÔ (req.rawBody) khi parse JSON — webhook TikTok phải
   // ký/kiểm chữ ký trên đúng nguyên văn body, serialize lại là sai chữ ký.
   app.use(

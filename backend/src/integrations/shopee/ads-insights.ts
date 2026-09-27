@@ -171,12 +171,49 @@ export function pnlRowsForMargin<
   return channelName === ChannelName.LAZADA ? active.filter((r) => r.isSettled) : active;
 }
 
-export async function fetchChannelPnlRows(channel: AdsInsightChannel): Promise<PnlRow[]> {
-  const pnlOrders = await fetchPnlOrders(
-    { userId: channel.userId, id: channel.id, channelName: channel.channelName },
-    { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
-  );
-  return pnlRowsForMargin(pnlOrders.map(computePnlRow), channel.channelName);
+/**
+ * CACHE nền P&L 30 ngày theo gian (RAM tiến trình, TTL `ADS_PNL_CACHE_MIN`, mặc
+ * định 30'). Đây là truy vấn nặng nhất của Trợ lý (tới 2.000 đơn kèm items, kho,
+ * bản kê): trước 27/09/2026 pulse ads 30'/60', quét cảnh báo 6 lần/giờ và trang
+ * Ads mỗi nơi kéo lại một bản từ DB → egress Supabase ~2 GB/ngày (vượt 4× gói
+ * Free). Biên lãi 30 ngày đổi rất chậm nên trễ ≤30' không đổi quyết định nào;
+ * số campaign/perf vẫn đọc tươi ở computeChannelAdsInsights. Bản trả về là
+ * bản sao nông để caller lọc/sắp xếp không làm bẩn cache.
+ */
+const PNL_CACHE_TTL_MS =
+  Math.max(0, Number(process.env.ADS_PNL_CACHE_MIN ?? 30) || 0) * 60_000;
+const PNL_CACHE_MAX_CHANNELS = 200;
+const pnlRowsCache = new Map<string, { at: number; rows: Promise<PnlRow[]> }>();
+
+export async function fetchChannelPnlRows(
+  channel: AdsInsightChannel,
+  opts: { fresh?: boolean } = {}
+): Promise<PnlRow[]> {
+  const hit = pnlRowsCache.get(channel.id);
+  if (!opts.fresh && hit && Date.now() - hit.at < PNL_CACHE_TTL_MS) {
+    return (await hit.rows).slice();
+  }
+  const rows = (async () => {
+    const pnlOrders = await fetchPnlOrders(
+      { userId: channel.userId, id: channel.id, channelName: channel.channelName },
+      { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
+    );
+    return pnlRowsForMargin(pnlOrders.map(computePnlRow), channel.channelName);
+  })();
+  if (PNL_CACHE_TTL_MS > 0) {
+    if (pnlRowsCache.size >= PNL_CACHE_MAX_CHANNELS) {
+      const oldest = pnlRowsCache.keys().next().value;
+      if (oldest !== undefined) pnlRowsCache.delete(oldest);
+    }
+    pnlRowsCache.set(channel.id, { at: Date.now(), rows });
+    rows.catch(() => pnlRowsCache.delete(channel.id)); // lỗi thì không giữ bản hỏng
+  }
+  return (await rows).slice();
+}
+
+/** Xóa cache P&L của một gian (gọi khi cần số tươi ngay, VD sau đối soát tay). */
+export function invalidateChannelPnlRows(channelId: string): void {
+  pnlRowsCache.delete(channelId);
 }
 
 /**

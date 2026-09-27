@@ -684,6 +684,7 @@ export async function upsertLazadaOrderTx(
     };
     await tx.lazadaOrderSettlement.upsert({
       where: { orderId },
+      select: { orderId: true },
       create: { orderId, ...ship },
       update: ship,
     });
@@ -710,6 +711,7 @@ export async function upsertLazadaOrderTx(
   if (existing) {
     await tx.order.update({
       where: { id: existing.id },
+      select: { id: true },
       data: {
         shippingStatus,
         paymentStatus,
@@ -763,6 +765,7 @@ export async function upsertLazadaOrderTx(
   const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
 
   const created = await tx.order.create({
+    select: { id: true },
     data: {
       channelId: channel.id,
       orderCode,
@@ -788,6 +791,7 @@ export async function upsertLazadaOrderTx(
   for (const line of lines) {
     const mp = mapBySku.get(line.channelSku);
     await tx.orderItem.create({
+      select: { id: true },
       data: {
         orderId: created.id,
         productId: mp?.productId ?? null,
@@ -1149,6 +1153,7 @@ export async function syncLazadaSettlements(
     };
     await prisma.lazadaOrderSettlement.upsert({
       where: { orderId: order.id },
+      select: { orderId: true },
       create: { orderId: order.id, ...detail, ...shipFromStatement },
       update: { ...detail, ...shipFromStatement },
     });
@@ -1178,6 +1183,7 @@ export async function syncLazadaSettlements(
 
     await prisma.order.update({
       where: { id: order.id },
+      select: { id: true },
       data: {
         isSettled: true,
         settledAt,

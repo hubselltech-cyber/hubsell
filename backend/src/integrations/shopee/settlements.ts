@@ -501,6 +501,7 @@ export async function syncShopeeSettlements(
 
       await prisma.order.update({
         where: { id: order.id },
+        select: { id: true },
         data: {
           ...mapShopeeEscrowToOrder(income, releasedAt),
           payoutShortfall: audit.shortfall,
@@ -586,6 +587,7 @@ export async function syncShopeePendingEscrowEstimates(
 
       await prisma.order.update({
         where: { id: order.id },
+        select: { id: true },
         data: {
           ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
           // Snapshot MẪU SỐ cho Kiểm toán phí sàn: số escrow ước tính mới nhất
@@ -634,6 +636,7 @@ export async function syncShopeeEscrowEstimateForOrder(
 
   await prisma.order.update({
     where: { id: order.id },
+    select: { id: true },
     data: {
       ...mapShopeeEscrowFields(income), // KHÔNG đụng isSettled/settledAt
       // Snapshot mẫu số Kiểm toán phí sàn — cùng lý do với vòng quét ước tính.

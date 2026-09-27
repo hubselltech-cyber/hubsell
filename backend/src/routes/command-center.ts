@@ -121,6 +121,10 @@ function serializeOpsAlert(a: {
   };
 }
 
+/** Trần dòng trả về ở /state — bảng chat + nhật ký hoạt động không có phân trang. */
+const STATE_CHAT_TAKE = 300;
+const STATE_ACTIVITY_TAKE = 200;
+
 // GET /api/command-center/state — toàn bộ trạng thái đã lưu của shop.
 router.get("/state", async (req: AuthRequest, res, next) => {
   try {
@@ -134,13 +138,19 @@ router.get("/state", async (req: AuthRequest, res, next) => {
         where: { ownerId },
         select: { alertId: true },
       }),
-      prisma.opsChatMessage.findMany({
-        where: { ownerId },
-        orderBy: { createdAt: "asc" },
-      }),
+      // Hai bảng này chỉ lớn dần theo thời gian (log-cleanup giữ 90 ngày) — trả
+      // TRẦN N dòng mới nhất, không kéo cả lịch sử mỗi lần mở Tổng quan.
+      prisma.opsChatMessage
+        .findMany({
+          where: { ownerId },
+          orderBy: { createdAt: "desc" },
+          take: STATE_CHAT_TAKE,
+        })
+        .then((rows) => rows.reverse()), // giao diện đọc theo thứ tự cũ → mới
       prisma.opsActivity.findMany({
         where: { ownerId },
         orderBy: { createdAt: "desc" },
+        take: STATE_ACTIVITY_TAKE,
       }),
       prisma.opsAlert.findMany({
         where: { ownerId, status: "OPEN" },

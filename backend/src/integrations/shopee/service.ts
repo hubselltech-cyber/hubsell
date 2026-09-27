@@ -546,6 +546,7 @@ export async function upsertShopeeOrderTx(
   if (existing) {
     await tx.order.update({
       where: { id: existing.id },
+      select: { id: true },
       data: {
         shippingStatus,
         paymentStatus,
@@ -597,6 +598,7 @@ export async function upsertShopeeOrderTx(
   const mapBySku = new Map(mappings.map((m) => [m.channelSku, m]));
 
   const created = await tx.order.create({
+    select: { id: true },
     data: {
       channelId: channel.id,
       orderCode,
@@ -622,6 +624,7 @@ export async function upsertShopeeOrderTx(
   for (const line of lines) {
     const mp = mapBySku.get(line.channelSku);
     await tx.orderItem.create({
+      select: { id: true },
       data: {
         orderId: created.id,
         productId: mp?.productId ?? null,
@@ -825,6 +828,7 @@ export async function processShopeeOrderEvent(
       if (tracking) {
         await prisma.order.update({
           where: { id: row.id },
+          select: { id: true },
           data: { trackingCode: tracking },
         });
       }

@@ -57,6 +57,7 @@ import {
 } from "./ads-insights";
 import {
   WINDOW_LABEL,
+  normalizeAssistantConfig,
   planBudgetCut,
   type AssistantWindowKey,
   type BudgetCutPlan,
@@ -493,15 +494,19 @@ export async function resumeCampaignByOwner(
 export async function runAdsAutoExecute(
   channel: Channel
 ): Promise<AutoExecuteResult> {
-  const insights = await computeChannelAdsInsights({
-    id: channel.id,
-    userId: channel.userId,
-    channelName: channel.channelName,
+  // Đọc CẤU HÌNH trước (một dòng JSON) — mode off hoặc Trợ lý tắt thì dừng ngay.
+  // Trước 27/09/2026 hàm này tính trọn insights (kéo P&L 30 ngày tới 2.000 đơn)
+  // rồi mới kiểm mode → mỗi pulse 30'/60' đốt egress Supabase dù tự thực thi
+  // đang OFF ở mọi gian (mặc định). Khi mode ≠ off, insights bên dưới vẫn đọc
+  // lại config như cũ nên hành vi không đổi.
+  const preConfigRow = await prisma.adsAssistantConfig.findUnique({
+    where: { channelId: channel.id },
+    select: { config: true },
   });
-  const auto: ShopeeAssistantConfig["autoExecute"] = insights.config.autoExecute;
+  const preConfig = normalizeAssistantConfig(preConfigRow?.config);
 
   const result: AutoExecuteResult = {
-    mode: auto.mode,
+    mode: preConfig.autoExecute.mode,
     candidates: 0,
     planned: 0,
     executed: 0,
@@ -514,6 +519,15 @@ export async function runAdsAutoExecute(
     budgetCutFailed: 0,
     budgetRestored: 0,
   };
+  if (preConfig.autoExecute.mode === "off" || !preConfig.enabled) return result;
+
+  const insights = await computeChannelAdsInsights({
+    id: channel.id,
+    userId: channel.userId,
+    channelName: channel.channelName,
+  });
+  const auto: ShopeeAssistantConfig["autoExecute"] = insights.config.autoExecute;
+  result.mode = auto.mode;
   if (auto.mode === "off" || !insights.config.enabled) return result;
 
   const todayKey = vnDateKey(0);

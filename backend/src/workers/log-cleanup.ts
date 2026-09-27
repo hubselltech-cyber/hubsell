@@ -34,6 +34,10 @@ const RETENTION_DONE_DAYS = 7;
 /** Mọi dòng (kể cả FAILED/kẹt) quá ngần này ngày thì xóa hẳn. */
 const RETENTION_MAX_DAYS = 30;
 /** Số dòng xóa mỗi nhát — nhỏ để không chiếm pool/khóa bảng lâu. */
+/** Trung tâm điều hành: nhật ký hoạt động + chat giữ N ngày. */
+const OPS_LOG_DAYS = 90;
+/** Cảnh báo vận hành đã đóng (RESOLVED/AUTO_CLOSED) giữ N ngày. */
+const OPS_CLOSED_ALERT_DAYS = 30;
 const BATCH_SIZE = 500;
 /** Nghỉ giữa hai nhát xóa liên tiếp. */
 const BATCH_PAUSE_MS = 200;
@@ -158,6 +162,44 @@ export async function runOnce(): Promise<void> {
           take,
         }),
       (ids) => prisma.platformHealthSnapshot.deleteMany({ where: { id: { in: ids } } })
+    );
+
+    // Trung tâm điều hành: nhật ký hoạt động + chat theo cảnh báo giữ 90 ngày;
+    // cảnh báo đã đóng (RESOLVED / AUTO_CLOSED) giữ 30 ngày — detector tái phát
+    // sẽ tạo bản mới, không cần bản cũ để đối chiếu. Ba bảng này trước đây không
+    // dọn và /state đọc trọn nên lớn dần theo tuổi shop (egress 09/2026).
+    await deleteInBatches(
+      "OpsActivity",
+      (take) =>
+        prisma.opsActivity.findMany({
+          where: { createdAt: { lt: daysAgo(OPS_LOG_DAYS) } },
+          select: { id: true },
+          take,
+        }),
+      (ids) => prisma.opsActivity.deleteMany({ where: { id: { in: ids } } })
+    );
+    await deleteInBatches(
+      "OpsChatMessage",
+      (take) =>
+        prisma.opsChatMessage.findMany({
+          where: { createdAt: { lt: daysAgo(OPS_LOG_DAYS) } },
+          select: { id: true },
+          take,
+        }),
+      (ids) => prisma.opsChatMessage.deleteMany({ where: { id: { in: ids } } })
+    );
+    await deleteInBatches(
+      "OpsAlert đã đóng",
+      (take) =>
+        prisma.opsAlert.findMany({
+          where: {
+            status: { in: ["RESOLVED", "AUTO_CLOSED"] },
+            updatedAt: { lt: daysAgo(OPS_CLOSED_ALERT_DAYS) },
+          },
+          select: { id: true },
+          take,
+        }),
+      (ids) => prisma.opsAlert.deleteMany({ where: { id: { in: ids } } })
     );
 
     // THÔNG TIN XUẤT HÓA ĐƠN của khách (Order.buyerInvoiceInfo — dữ liệu cá
