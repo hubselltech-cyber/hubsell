@@ -8,7 +8,12 @@ import {
   INVOICE_TOUR,
   LAZADA_TOUR,
   ORDERS_TOUR,
+  TIKTOK_TOUR,
   WAREHOUSE_TOUR,
+  FINANCE_TOUR,
+  MONEY_GUARD_TOUR,
+  ADS_TOUR,
+  STAFF_PLAN_TOUR,
   type GuideTour,
 } from "@/lib/guide-tours";
 
@@ -28,10 +33,15 @@ import {
 
 const TOURS: Record<string, { tour: GuideTour; title: string }> = {
   lazada: { tour: LAZADA_TOUR, title: "Kết nối gian hàng Lazada" },
+  tiktok: { tour: TIKTOK_TOUR, title: "Kết nối gian hàng TikTok Shop" },
   channels: { tour: CHANNELS_TOUR, title: "Kết nối gian hàng Shopee" },
   kho: { tour: WAREHOUSE_TOUR, title: "Quản lý kho & liên kết sản phẩm" },
   donhang: { tour: ORDERS_TOUR, title: "Đơn hàng & đối soát dòng tiền" },
   hoadon: { tour: INVOICE_TOUR, title: "Kết nối & xuất hóa đơn điện tử" },
+  taichinh: { tour: FINANCE_TOUR, title: "Báo cáo tài chính & lãi/lỗ thật" },
+  giutien: { tour: MONEY_GUARD_TOUR, title: "Giữ tiền: đơn hoàn, phí ship, giao thất bại" },
+  ads: { tour: ADS_TOUR, title: "Trợ lý quảng cáo Shopee" },
+  nhansu: { tour: STAFF_PLAN_TOUR, title: "Nhân viên, gói dịch vụ & cấu hình" },
 };
 
 type RenderWindow = Window & {

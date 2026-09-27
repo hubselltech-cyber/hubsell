@@ -4,11 +4,15 @@ import { useState } from "react";
 import {
   ChevronDown,
   ExternalLink,
+  BarChart3,
   LifeBuoy,
+  Megaphone,
   Package,
   PlaySquare,
   ReceiptText,
+  ShieldCheck,
   Store,
+  Users,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -23,7 +27,12 @@ import {
   INVOICE_TOUR,
   LAZADA_TOUR,
   ORDERS_TOUR,
+  TIKTOK_TOUR,
   WAREHOUSE_TOUR,
+  FINANCE_TOUR,
+  MONEY_GUARD_TOUR,
+  ADS_TOUR,
+  STAFF_PLAN_TOUR,
   type GuideTour,
 } from "@/lib/guide-tours";
 import { TEXT_SUB } from "@/lib/typography";
@@ -70,6 +79,14 @@ const SECTIONS: GuideSection[] = [
     tour: LAZADA_TOUR,
   },
   {
+    key: "tiktok",
+    icon: Store,
+    title: "Kết nối gian hàng TikTok Shop",
+    description:
+      "12 bước đầy đủ: đăng nhập Trung tâm nhà bán hàng, 2 bước Cài đặt → Ủy quyền trên TikTok, rồi TikTok tự đưa về Hubsell; kèm cách xử lý khi gặp màn “Bắt đầu bán”.",
+    tour: TIKTOK_TOUR,
+  },
+  {
     key: "warehouse",
     icon: Package,
     title: "Quản lý kho & liên kết sản phẩm",
@@ -95,6 +112,38 @@ const SECTIONS: GuideSection[] = [
       "Nối tài khoản meInvoice của shop một lần — đơn đã giao tick là ra hóa đơn gửi Cơ quan Thuế, hoặc bật tự động phát hành & tự điều chỉnh khi hoàn.",
     tour: INVOICE_TOUR,
     deckSrc: "/huong-dan-xuat-hoa-don.html",
+  },
+  {
+    key: "finance-reports",
+    icon: BarChart3,
+    title: "Báo cáo tài chính & lãi/lỗ thật",
+    description:
+      "Tổng quan, Lãi/Lỗ Thực Hiện theo từng sàn, Báo cáo dòng tiền, thu chi vận hành, thuế bổ sung và P&L theo sản phẩm — biết lãi thật sau khi sàn trừ phí.",
+    tour: FINANCE_TOUR,
+  },
+  {
+    key: "money-guard",
+    icon: ShieldCheck,
+    title: "Giữ tiền: đơn hoàn, phí ship, giao thất bại",
+    description:
+      "Quét nhận hàng hoàn, khiếu nại kiện quá hạn, đòi lại phí ship sàn trừ thêm, kiểm toán phí sàn và tự nhắn khách khi shipper giao hỏng.",
+    tour: MONEY_GUARD_TOUR,
+  },
+  {
+    key: "ads",
+    icon: Megaphone,
+    title: "Trợ lý quảng cáo Shopee",
+    description:
+      "ROAS hòa vốn từ lãi thật của shop, chiến dịch nào đang lỗ dù sàn báo dương, nên chạy sản phẩm nào, và cấu hình Trợ lý tự hạ ngân sách / tạm dừng.",
+    tour: ADS_TOUR,
+  },
+  {
+    key: "staff-plan",
+    icon: Users,
+    title: "Nhân viên, gói dịch vụ & cấu hình",
+    description:
+      "Tạo tài khoản nhân viên không cần email, phân quyền từng tính năng × gian hàng, xem mức dùng so với trần gói, mua gói qua QR và đổi giao diện.",
+    tour: STAFF_PLAN_TOUR,
   },
 ];
 

@@ -103,6 +103,12 @@ async function captureHubsell(browser, targets) {
     }
     return json({});
   });
+  // Ẩn nút "N" của Next dev (nextjs-portal) kẻo lọt vào góc ảnh tour.
+  await ctx.addInitScript(() => {
+    const st = document.createElement("style");
+    st.textContent = "nextjs-portal{display:none!important}";
+    document.addEventListener("DOMContentLoaded", () => document.head.appendChild(st));
+  });
   await ctx.addInitScript(([u]) => {
     localStorage.setItem("hubsell_token", "demo-token");
     localStorage.setItem("hubsell_user", JSON.stringify(u));

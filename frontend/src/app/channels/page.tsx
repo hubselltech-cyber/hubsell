@@ -69,7 +69,7 @@ import { formatNumber, formatVND } from "@/lib/format";
 import { TEXT_SUB } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { TourDialog } from "@/components/tour/tour-dialog";
-import { CHANNELS_TOUR, LAZADA_TOUR, type GuideTour } from "@/lib/guide-tours";
+import { CHANNELS_TOUR, LAZADA_TOUR, TIKTOK_TOUR, type GuideTour } from "@/lib/guide-tours";
 
 const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 
@@ -100,6 +100,12 @@ const PLATFORM_TOUR: Partial<
     title: "Hướng dẫn kết nối gian hàng Lazada",
     description:
       "15 bước đầy đủ: ủy quyền trên Lazada, đăng ký gói Hubsell Miễn phí (0đ) theo yêu cầu của Lazada, rồi quay về Hubsell.",
+  },
+  TIKTOK: {
+    tour: TIKTOK_TOUR,
+    title: "Hướng dẫn kết nối gian hàng TikTok Shop",
+    description:
+      "12 bước đầy đủ: đăng nhập Trung tâm nhà bán hàng, 2 bước Cài đặt → Ủy quyền trên TikTok, rồi TikTok tự đưa về Hubsell.",
   },
 };
 const RECONNECT_TIKTOK_KEY = "tiktok_reconnect_channel_id";
