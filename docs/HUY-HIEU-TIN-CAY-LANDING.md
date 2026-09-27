@@ -7,8 +7,8 @@ Soạn 27/09/2026. Anh Trung xem footer Sapo có 5 huy hiệu (ISO 27001, ISO 90
 | Huy hiệu | Cơ quan | Phí | Làm? | Tình trạng |
 |---|---|---|---|---|
 | Đã thông báo Bộ Công Thương | UBND TP Hà Nội qua online.gov.vn | 0 ₫ | CÓ | ⏳ chờ duyệt tài khoản DVC (đăng ký 25/09) → nộp theo `THONG-BAO-BO-CONG-THUONG.md` |
-| Tín nhiệm mạng – **Tổ chức** | Trung tâm An ninh mạng quốc gia (NCA), Cục An ninh mạng, Bộ Công an | 0 ₫ (nguồn thứ 3: mikotech.vn; trang NCA không ghi phí) | CÓ | chưa nộp |
-| Tín nhiệm mạng – **Website** mức Cơ bản | NCA | trang NCA để trống giá, chỉ ghi "mỗi website/năm"; nguồn thứ 3 nói ≈100.000 ₫/năm | CÓ (nếu đúng ≈100k thì vẫn rẻ) | chưa nộp, hỏi giá khi NCA gọi lại |
+| Tín nhiệm mạng – **Tổ chức** | Trung tâm An ninh mạng quốc gia (NCA), Cục An ninh mạng, Bộ Công an | 0 ₫ (nguồn thứ 3: mikotech.vn; trang NCA không ghi phí) | CÓ | ✅ ĐÃ GỬI 27/09 tối, chờ NCA 7–14 ngày |
+| Tín nhiệm mạng – **Website** mức Cơ bản | NCA | trang NCA để trống giá, chỉ ghi "mỗi website/năm"; nguồn thứ 3 nói ≈100.000 ₫/năm | CÓ (nếu đúng ≈100k thì vẫn rẻ) | ✅ ĐÃ GỬI 27/09 tối (1 website hubsell.vn, Gói cơ bản); chờ bộ tiêu chí trong 3 ngày về support@, hỏi giá khi NCA liên hệ |
 | Nói không với hàng giả – BCT | Cục TMĐT & KTS | 0 ₫ | KHÔNG | không có kênh đăng ký mở (xem mục 3) |
 | ISO 27001 / 9001 | tổ chức chứng nhận độc lập | vài chục → vài trăm triệu | HOÃN | kích hoạt khi khách Business/Enterprise đòi |
 | Tín nhiệm mạng – **Hệ thống** / Thiết bị | NCA | có phí theo quy mô hệ thống (trang NCA không công bố); Cơ bản 35 ngày, Nâng cao 66 ngày + đánh giá bên thứ 3 | KHÔNG | anh hỏi 27/09; chứng nhận cả hạ tầng (mình thuê Vercel/Render/Supabase, không sở hữu), bản chất = ISO 27001 kiểu VN → gộp vào điều kiện hoãn ISO; Thiết bị dành cho nhà sản xuất phần cứng |
