@@ -175,6 +175,14 @@ export function CostPriceTable({
 
 /* ─────────────────────────── Dòng sản phẩm cha ─────────────────────────── */
 
+/**
+ * Vạch xanh 3px bên trái ô đầu của dòng cha ĐANG MỞ và mọi dòng con — ôm cả
+ * cụm thành một khối. Vẽ bằng inset shadow trên td (border trên tr không ổn
+ * định với border-collapse).
+ */
+const OPEN_GROUP_ACCENT =
+  "[&>td:first-child]:shadow-[inset_3px_0_0_var(--color-sky-500)]";
+
 /** Mã SẢN PHẨM trên sàn của cả mẫu — chỉ khi mọi phân loại chung một mã (một gian). */
 function singleItemId(group: ProductGroup): string | null {
   const ids = new Set(group.variants.map((v) => v.itemId).filter(Boolean));
@@ -210,10 +218,11 @@ function ParentRow({
     <TableRow
       className={cn(
         "cursor-pointer bg-muted/25 hover:bg-muted/50",
-        // Đang mở: tô đậm nền hơn hẳn để cả cụm cha + con nổi thành một khối.
-        // Cần dấu ! vì TableRow gốc có has-aria-expanded:bg-slate-50/80 (nhạt hơn)
-        // nằm sau trong stylesheet nên sẽ đè mất màu này nếu không ép ưu tiên.
-        open && "bg-muted/60! hover:bg-muted/70!"
+        // Đang mở: cả cụm cha + con thành MỘT KHỐI rõ để seller tập trung (anh
+        // Trung 28/09 "phải đậm hơn"): nền slate đậm hơn hẳn + vạch xanh bên
+        // trái chạy suốt cha lẫn con (OPEN_GROUP_ACCENT). Cần dấu ! vì TableRow
+        // gốc có has-aria-expanded:bg-slate-50/80 nằm sau trong stylesheet.
+        open && cn("bg-slate-200/70! hover:bg-slate-200/90!", OPEN_GROUP_ACCENT)
       )}
       onClick={onToggle}
     >
@@ -615,7 +624,7 @@ function ChildRow(props: RowProps) {
   return (
     // Nền xám nhạt cùng tông với dòng cha đang mở để cả cụm gom thành một khối,
     // không còn tuột về nền trắng lẫn vào các mẫu hàng khác
-    <TableRow className="bg-muted/40 hover:bg-muted/50">
+    <TableRow className={cn("bg-slate-100 hover:bg-slate-200/60", OPEN_GROUP_ACCENT)}>
       <TableCell>
         {/* Thụt lề + vạch dọc để mắt thấy ngay đây là con của dòng phía trên */}
         <div className="flex min-w-0 items-center gap-2.5 pl-3">
