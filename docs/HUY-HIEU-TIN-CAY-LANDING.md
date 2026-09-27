@@ -11,6 +11,7 @@ Soạn 27/09/2026. Anh Trung xem footer Sapo có 5 huy hiệu (ISO 27001, ISO 90
 | Tín nhiệm mạng – **Website** mức Cơ bản | NCA | trang NCA để trống giá, chỉ ghi "mỗi website/năm"; nguồn thứ 3 nói ≈100.000 ₫/năm | CÓ (nếu đúng ≈100k thì vẫn rẻ) | chưa nộp, hỏi giá khi NCA gọi lại |
 | Nói không với hàng giả – BCT | Cục TMĐT & KTS | 0 ₫ | KHÔNG | không có kênh đăng ký mở (xem mục 3) |
 | ISO 27001 / 9001 | tổ chức chứng nhận độc lập | vài chục → vài trăm triệu | HOÃN | kích hoạt khi khách Business/Enterprise đòi |
+| Tín nhiệm mạng – **Hệ thống** / Thiết bị | NCA | có phí theo quy mô hệ thống (trang NCA không công bố); Cơ bản 35 ngày, Nâng cao 66 ngày + đánh giá bên thứ 3 | KHÔNG | anh hỏi 27/09; chứng nhận cả hạ tầng (mình thuê Vercel/Render/Supabase, không sở hữu), bản chất = ISO 27001 kiểu VN → gộp vào điều kiện hoãn ISO; Thiết bị dành cho nhà sản xuất phần cứng |
 
 Ghi chú: huy hiệu NCSC trên Sapo là mẫu cũ (Cục An toàn thông tin, Bộ TT&TT). Từ khi chương trình chuyển về NCA – Bộ Công an, huy hiệu mới mang chữ **NCA**; Hubsell sẽ nhận mẫu mới.
 
@@ -30,7 +31,7 @@ Cách gắn: chép **số ở cuối link WebDetails** vào `TRUST_BADGES.bctWeb
 
 ### 2.1 Việc anh làm (em không được tạo tài khoản / gửi form thay)
 
-1. Vào https://tinnhiemmang.vn → **Đăng ký ngay** → chọn **Tín nhiệm Tổ chức** trước (miễn phí, 7–14 ngày). Form đầu chỉ hỏi họ tên, email, SĐT, loại chứng nhận; NCA gọi/email lại để lấy thông tin chi tiết.
+1. Vào https://tinnhiemmang.vn → **Đăng ký ngay**. Form đầu (27/09 anh đã mở): tick **Tín nhiệm Tổ chức** + **Tín nhiệm Website** (không tick Thiết bị / Hệ thống); Họ tên = **Nguyễn Trung Hiếu** (người liên hệ, không phải tên công ty), SĐT 0965863292, Email **support@hubsell.vn** (khớp hồ sơ BCT, thư xác minh về hộp công ty). Chọn **Tín nhiệm Tổ chức** trước (miễn phí, 7–14 ngày). Form đầu chỉ hỏi họ tên, email, SĐT, loại chứng nhận; NCA gọi/email lại để lấy thông tin chi tiết.
 2. Làm tiếp **Tín nhiệm Website** → gói **Basic** cho `hubsell.vn`. Sau khi đăng ký, trong 3 ngày NCA gửi bộ tiêu chí; mình trả lời trong 7–10 ngày; NCA xét 7 ngày.
 3. Khi NCA gửi mã nhúng chứng nhận, chuyển em: cần **đuôi URL trang chứng nhận** (`tinnhiemmang.vn/danh-ba-tin-nhiem/<slug>`) để điền `TRUST_BADGES.tinNhiemMangSlug`.
 
