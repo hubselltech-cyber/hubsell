@@ -3,6 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import {
   ChannelName,
+  ChannelProductStatus,
   ExpenseType,
   FeeAuditStatus,
   Prisma,
@@ -16,7 +17,13 @@ import {
 import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
-import { applyChannelCostPrice, applyCostPrice } from "../lib/cost-price";
+import {
+  applyChannelCostPrice,
+  applyChannelCostPriceIn,
+  applyCostPrice,
+  applyCostPriceIn,
+  backfillOwnerCostPrices,
+} from "../lib/cost-price";
 import { findCostSiblings } from "../lib/cost-mapping";
 import costMappingRouter from "./cost-mapping";
 import {
@@ -1353,6 +1360,20 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
       costPrice: string;
       /** false = SKU sàn chưa nối kho gốc — giá vốn lưu ở cấp SKU sàn. */
       linked: boolean;
+      /**
+       * ACTIVE = đang bán trên sàn; DELISTED = sàn đã gỡ/ẩn/xóa (đồng bộ giữ
+       * dòng để đơn cũ còn tra được giá vốn). Bộ lọc "Đang bán / Đã gỡ" của
+       * trang dùng cột này (khách 28/09: không lọc được mặt hàng đang hoạt động).
+       */
+      status: ChannelProductStatus;
+      /**
+       * MÃ SẢN PHẨM trên sàn (Shopee item_id, TikTok product_id, Lazada item_id)
+       * và MÃ PHÂN LOẠI (model_id / sku_id) — bóc từ externalId "item-model".
+       * Anh Trung 28/09 (học Salework): nhiều seller quản theo mã sàn hơn tên.
+       * null = hàng kho nội bộ / sàn không trả.
+       */
+      itemId: string | null;
+      modelId: string | null;
     }[] = [];
 
     // 1) SKU trên sàn — CẢ đã lẫn CHƯA liên kết kho gốc.
@@ -1378,6 +1399,7 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
 
       for (const cp of channelProducts) {
         const linked = Boolean(cp.productId && cp.product);
+        const [itemId, modelId] = (cp.externalId ?? "").split("-");
         rows.push({
           skuId: cp.id,
           productId: cp.productId ?? "",
@@ -1390,6 +1412,9 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           sellingPrice: String(linked ? cp.product!.sellingPrice : cp.price),
           costPrice: String((linked ? cp.product!.costPrice : cp.costPrice) ?? 0),
           linked,
+          status: cp.status,
+          itemId: itemId || null,
+          modelId: modelId || null,
         });
       }
     }
@@ -1413,6 +1438,9 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
           sellingPrice: String(p.sellingPrice),
           costPrice: String(p.costPrice),
           linked: true, // sản phẩm kho gốc — giá vốn nằm ngay trên nó
+          status: ChannelProductStatus.ACTIVE,
+          itemId: null,
+          modelId: null,
         });
       }
     }
@@ -1420,7 +1448,11 @@ router.get("/sku-products", async (req: AuthRequest, res, next) => {
     res.json({
       channel,
       total: rows.length,
-      missingCostCount: rows.filter((r) => Number(r.costPrice) <= 0).length,
+      // Chỉ đếm SKU ĐANG BÁN: hàng sàn đã gỡ không cần giá vốn, đếm vào chỉ
+      // làm con số "còn thiếu" phình lên vô nghĩa (khách 2.231 mã, 28/09).
+      missingCostCount: rows.filter(
+        (r) => r.status === ChannelProductStatus.ACTIVE && Number(r.costPrice) <= 0
+      ).length,
       items: rows,
     });
   } catch (err) {
@@ -2338,6 +2370,20 @@ router.patch("/update-cost-bulk", async (req: AuthRequest, res, next) => {
   }
 });
 
+// POST /api/finance/cost-prices/backfill-orders — nút "Áp giá vốn cho đơn cũ".
+// Mọi dòng hàng đã bán còn giá vốn = 0 mà SKU nay đã có giá vốn → nhận giá vốn
+// hiện tại. Khách 28/09: "sau khi cập nhật giá vốn không có cách nào tính lại
+// cho các đơn cũ, báo cáo dòng tiền 30 ngày sai" — đường nhập tay vốn tự vá,
+// nhưng giá nhập TRƯỚC khi có vá theo mã SKU sàn thì cần lượt này.
+router.post("/cost-prices/backfill-orders", async (req: AuthRequest, res, next) => {
+  try {
+    const backfilledOrderLines = await backfillOwnerCostPrices(req.ownerId!);
+    res.json({ backfilledOrderLines });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/finance/cost-prices/import — nhập giá vốn hàng loạt từ Excel.
 // Cột chuẩn: [Mã SKU, Giá vốn]. Khớp theo Product.skuCode hoặc
 // ChannelProduct.channelSku. SKU không tìm thấy → báo lỗi theo dòng, không chặn
@@ -2488,49 +2534,34 @@ router.post(
 
       // Trọn gói: hoặc cập nhật hết, hoặc không đổi gì.
       // Vá luôn giá vốn của các dòng hàng đã bán mà lúc bán chưa biết giá vốn,
-      // giống hệt đường nhập tay — xem chú thích ở applyCostPrice.
-      const result = await prisma.$transaction(async (tx) => {
-        const touched = new Set<string>();
-        let backfilled = 0;
-        for (const [cost, ids] of byCost) {
-          await tx.product.updateMany({
-            where: { id: { in: ids }, userId: ownerId },
-            data: { costPrice: cost },
-          });
-          const patched = await tx.orderItem.updateMany({
-            where: {
-              productId: { in: ids },
-              costPriceAtSale: 0,
-              order: { channel: { userId: ownerId } },
-            },
-            data: { costPriceAtSale: cost },
-          });
-          backfilled += patched.count;
-          for (const id of ids) touched.add(id);
-        }
-        // SKU sàn chưa liên kết: giá vốn lưu trên ChannelProduct + vá đơn cũ
-        // theo (gian, mã SKU) — cùng nguyên tắc "chỉ vá dòng đang 0".
-        for (const [cost, cps] of byCostUnlinked) {
-          await tx.channelProduct.updateMany({
-            where: { id: { in: cps.map((c) => c.id) } },
-            data: { costPrice: cost },
-          });
-          for (const cp of cps) {
-            const patched = await tx.orderItem.updateMany({
-              where: {
-                channelSku: cp.channelSku,
-                costPriceAtSale: 0,
-                productId: null,
-                order: { channelId: cp.channelId },
-              },
-              data: { costPriceAtSale: cost },
-            });
-            backfilled += patched.count;
+      // qua ĐÚNG hai đường ghi của lib/cost-price.ts (đường nhập tay cũng vậy)
+      // — trước 28/09 chỗ này chép tay logic vá nên thiếu vá theo mã SKU sàn.
+      // File vài nghìn mã, mỗi giá vốn một lượt ghi → nới thời gian transaction.
+      const result = await prisma.$transaction(
+        async (tx) => {
+          const touched = new Set<string>();
+          let backfilled = 0;
+          for (const [cost, ids] of byCost) {
+            const r = await applyCostPriceIn(tx, ids, cost, ownerId);
+            backfilled += r.backfilledOrderLines;
+            for (const id of ids) touched.add(id);
           }
-          for (const cp of cps) touched.add(cp.id);
-        }
-        return { updated: touched.size, backfilled };
-      });
+          // SKU sàn chưa liên kết: giá vốn lưu trên ChannelProduct + vá đơn cũ
+          // theo (gian, mã SKU) — cùng nguyên tắc "chỉ vá dòng đang 0".
+          for (const [cost, cps] of byCostUnlinked) {
+            const r = await applyChannelCostPriceIn(
+              tx,
+              cps.map((c) => c.id),
+              cost,
+              ownerId
+            );
+            backfilled += r.backfilledOrderLines;
+            for (const cp of cps) touched.add(cp.id);
+          }
+          return { updated: touched.size, backfilled };
+        },
+        { timeout: 120_000, maxWait: 10_000 }
+      );
 
       res.json({
         updated: result.updated,

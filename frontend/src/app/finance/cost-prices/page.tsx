@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  History,
+  Loader2,
   PackageSearch,
   Search,
   SearchX,
@@ -31,6 +33,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { PageHeaderBand, PageTabs } from "@/components/ui/page-tabs";
 import {
   ApiError,
+  backfillCostPricesToOrders,
   fetchSkuProducts,
   fillSuggestedCosts,
   getStoredUser,
@@ -55,12 +58,26 @@ const STATUS_OPTIONS: { value: CostStatusFilter; label: string }[] = [
   { value: "filled", label: "Đã nhập giá vốn" },
 ];
 
+// Trạng thái TRÊN SÀN: mặc định chỉ hiện hàng đang bán — SKU sàn đã gỡ/ẩn/xóa
+// vẫn được giữ (để đơn cũ tra giá vốn) nhưng không cần khách nhập giá vốn nữa.
+// Khách 28/09: "không có filter theo các mặt hàng đang hoạt động".
+type ListingFilter = "active" | "delisted" | "all";
+
+const LISTING_OPTIONS: { value: ListingFilter; label: string }[] = [
+  { value: "active", label: "Đang bán trên sàn" },
+  { value: "delisted", label: "Đã gỡ trên sàn" },
+  { value: "all", label: "Tất cả, kể cả đã gỡ" },
+];
+
 // Hai tab của trang: nhập từng SKU, hoặc mapping một lần cho mọi gian
 const PAGE_TABS = [
   { key: "entry", label: "Nhập giá vốn" },
   { key: "mapping", label: "Mapping giá vốn" },
 ] as const;
 type PageTab = (typeof PAGE_TABS)[number]["key"];
+
+/** Khoá localStorage nhớ đã tắt dải cảnh báo thiếu giá vốn (nối thêm userId). */
+const BANNER_HIDE_KEY = "hubsell_cost_missing_banner_hidden";
 
 // Các tab lọc theo sàn
 const TABS: { key: SkuChannelFilter; label: string }[] = [
@@ -89,11 +106,47 @@ export default function CostPricesPage() {
   // ----- Bộ lọc nâng cao -----
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CostStatusFilter>("all");
+  const [listing, setListing] = useState<ListingFilter>("active");
+  // Đang chạy "Áp giá vốn cho đơn cũ"
+  const [backfilling, setBackfilling] = useState(false);
+  // Dải "còn X SKU chưa nhập giá vốn": người đã biết bấm X là không hiện lại
+  // (nhớ theo tài khoản trong localStorage — anh Trung 28/09 "đỡ ngứa mắt").
+  const [bannerHidden, setBannerHidden] = useState(true);
+  useEffect(() => {
+    try {
+      const uid = getStoredUser()?.id ?? "";
+      setBannerHidden(localStorage.getItem(`${BANNER_HIDE_KEY}:${uid}`) === "1");
+    } catch {
+      setBannerHidden(false);
+    }
+  }, []);
+  function hideBanner() {
+    setBannerHidden(true);
+    try {
+      const uid = getStoredUser()?.id ?? "";
+      localStorage.setItem(`${BANNER_HIDE_KEY}:${uid}`, "1");
+    } catch {
+      // không lưu được thì chỉ ẩn trong phiên này
+    }
+  }
+
+  // Tập nền theo trạng thái trên sàn — các bộ lọc khác và "Hiển thị X/Y" tính trên tập này.
+  const listedItems = useMemo(
+    () =>
+      listing === "all"
+        ? items
+        : items.filter((i) => (listing === "active") === (i.status === "ACTIVE")),
+    [items, listing]
+  );
+  const delistedCount = useMemo(
+    () => items.filter((i) => i.status === "DELISTED").length,
+    [items]
+  );
 
   // Lọc ngay tại màn hình → kết quả cập nhật tức thì khi gõ, không cần chờ API
   const filteredItems = useMemo(() => {
     const keyword = normalizeText(search.trim());
-    return items.filter((item) => {
+    return listedItems.filter((item) => {
       // Lọc theo trạng thái giá vốn
       const cost = Number(item.costPrice);
       if (statusFilter === "missing" && cost > 0) return false;
@@ -104,10 +157,13 @@ export default function CostPricesPage() {
       return (
         normalizeText(item.productName).includes(keyword) ||
         normalizeText(item.sku).includes(keyword) ||
-        normalizeText(item.variantName ?? "").includes(keyword)
+        normalizeText(item.variantName ?? "").includes(keyword) ||
+        // Mã sản phẩm / mã phân loại trên sàn — seller quen tra theo mã sàn
+        (item.itemId ?? "").includes(keyword) ||
+        (item.modelId ?? "").includes(keyword)
       );
     });
-  }, [items, search, statusFilter]);
+  }, [listedItems, search, statusFilter]);
 
   const isFiltering = search.trim() !== "" || statusFilter !== "all";
 
@@ -256,6 +312,30 @@ export default function CostPricesPage() {
     }
   }
 
+  /**
+   * Đơn về khi SKU chưa có giá vốn lưu ảnh chụp = 0. Nhập giá vốn ở trang này
+   * vốn tự vá đơn cũ; nút này dành cho giá vốn đã nhập từ trước / nhập ở nơi
+   * khác — quét lại cả shop một lượt để báo cáo lãi/lỗ, dòng tiền và ROAS hòa
+   * vốn của Trợ lý quảng cáo tính lại theo giá vốn hiện tại.
+   */
+  async function handleBackfill() {
+    setBackfilling(true);
+    try {
+      const r = await backfillCostPricesToOrders();
+      if (r.backfilledOrderLines > 0) {
+        toast.success(
+          `Đã áp giá vốn cho ${formatNumber(r.backfilledOrderLines)} dòng hàng của đơn cũ — báo cáo lãi/lỗ, dòng tiền và ROAS hòa vốn sẽ tính lại theo.`
+        );
+      } else {
+        toast("Mọi đơn cũ đã có giá vốn — không có dòng nào cần tính lại.");
+      }
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Không áp được giá vốn cho đơn cũ");
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   // Xuất đúng những dòng đang hiển thị theo bộ lọc — lọc "chưa nhập giá vốn"
   // rồi xuất ra là có ngay file chỉ chứa các mã còn thiếu để điền hàng loạt.
   function handleExport() {
@@ -329,23 +409,44 @@ export default function CostPricesPage() {
 
               <ImportCostDialog onImported={load} />
 
+              <Button
+                variant="outline"
+                onClick={handleBackfill}
+                disabled={loading || backfilling}
+                title="Đơn về trước khi nhập giá vốn được tính lại theo giá vốn hiện tại — báo cáo lãi/lỗ, dòng tiền 30 ngày và ROAS hòa vốn cập nhật theo"
+              >
+                {backfilling ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <History className="size-4" />
+                )}
+                Áp giá vốn cho đơn cũ
+              </Button>
+
               {/* Giữ nút ở đây để đang duyệt tài chính mà thiếu SKU thì đồng
                   bộ tại chỗ. Dùng chung component với trang Sản phẩm. */}
               <SyncChannelProductsButton onSynced={load} />
             </div>
           </div>
 
-          {/* Cảnh báo còn SKU chưa nhập giá vốn */}
-          {!loading && missingCount > 0 && (
-            <Card className="border-amber-300 bg-amber-50/70">
-              <CardContent className="flex items-center gap-3 p-4 text-sm">
-                <AlertTriangle className="size-5 shrink-0 text-amber-600" />
-                <p className="text-amber-800">
-                  Còn <b>{formatNumber(missingCount)}</b> SKU chưa nhập giá vốn — báo
-                  cáo lợi nhuận của các đơn chứa SKU này sẽ chưa chính xác.
-                </p>
-              </CardContent>
-            </Card>
+          {/* Dải nhắc còn SKU chưa nhập giá vốn — gọn một dòng, X = không hiện lại */}
+          {!loading && missingCount > 0 && !bannerHidden && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-800">
+              <AlertTriangle className="size-3.5 shrink-0 text-amber-600" />
+              <p className="min-w-0 flex-1">
+                Còn <b>{formatNumber(missingCount)}</b> SKU đang bán chưa nhập giá vốn — lợi
+                nhuận của đơn chứa các SKU này chưa chính xác.
+              </p>
+              <button
+                type="button"
+                onClick={hideBanner}
+                aria-label="Không hiện lại dải nhắc này"
+                title="Không hiện lại"
+                className="flex size-5 shrink-0 items-center justify-center rounded-full text-amber-700 transition-colors hover:bg-amber-100 hover:text-amber-900"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
           )}
 
           {/* ===== THANH BỘ LỌC NÂNG CAO ===== */}
@@ -372,6 +473,23 @@ export default function CostPricesPage() {
                 )}
               </div>
 
+              {/* Lọc theo trạng thái TRÊN SÀN (đang bán / đã gỡ) */}
+              <NativeSelect
+                className="w-52"
+                aria-label="Lọc theo trạng thái trên sàn"
+                value={listing}
+                onChange={(e) => setListing(e.target.value as ListingFilter)}
+              >
+                {LISTING_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                    {o.value === "delisted" && delistedCount > 0
+                      ? ` (${formatNumber(delistedCount)})`
+                      : ""}
+                  </option>
+                ))}
+              </NativeSelect>
+
               {/* Lọc theo trạng thái giá vốn */}
               <NativeSelect
                 className="w-52"
@@ -392,7 +510,7 @@ export default function CostPricesPage() {
               {isFiltering && (
                 <p className="text-sm text-muted-foreground">
                   Hiển thị <b>{formatNumber(filteredItems.length)}</b>/
-                  {formatNumber(items.length)} SKU
+                  {formatNumber(listedItems.length)} SKU
                 </p>
               )}
             </div>
@@ -414,7 +532,12 @@ export default function CostPricesPage() {
                   Không có SKU nào ở kênh này. Hãy liên kết sản phẩm ở trang “Liên kết
                   SP” trước, hoặc bấm “Đồng bộ từ sàn”.
                 </div>
-              ) : filteredItems.length === 0 && statusFilter === "missing" ? (
+              ) : listedItems.length === 0 && listing === "delisted" ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  <PackageSearch className="mx-auto mb-2 size-8" />
+                  Không có SKU nào bị sàn gỡ ở kênh này.
+                </div>
+              ) : filteredItems.length === 0 && statusFilter === "missing" && !search.trim() ? (
                 // Empty state đặc biệt: đã nhập đủ giá vốn cho tất cả sản phẩm
                 <div className="py-16 text-center">
                   <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-teal-100">
@@ -433,7 +556,7 @@ export default function CostPricesPage() {
                   <SearchX className="mx-auto mb-3 size-9 text-muted-foreground" />
                   <p>Không tìm thấy SKU nào phù hợp</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Thử đổi từ khoá tìm kiếm hoặc chọn lại trạng thái giá vốn.
+                    Thử đổi từ khoá, trạng thái giá vốn hoặc chọn “Tất cả, kể cả đã gỡ”.
                   </p>
                 </div>
               ) : (

@@ -538,12 +538,15 @@ export function exportCostPricesToExcel(items: SkuProduct[]) {
     "Tên sản phẩm": i.productName,
     "Phân loại": i.variantName ?? "",
     "Kênh bán": CHANNEL_LABEL[i.channelName] ?? i.channelName,
+    "Mã SP sàn": i.itemId ?? "",
+    "Mã phân loại": i.modelId ?? "",
+    "Trạng thái": i.status === "DELISTED" ? "Đã gỡ trên sàn" : "Đang bán",
     "Giá bán": Number(i.sellingPrice),
     "Giá vốn": Number(i.costPrice),
   }));
   downloadSheet(
     rows,
-    [18, 40, 26, 12, 14, 14],
+    [18, 40, 26, 12, 16, 16, 16, 14, 14],
     "Gia von",
     `hubsell_gia_von_${fileStamp()}.xlsx`
   );

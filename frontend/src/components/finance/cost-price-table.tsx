@@ -111,8 +111,9 @@ export function CostPriceTable({
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[40%]">Sản phẩm</TableHead>
-          <TableHead className="w-[13%]">Mã SKU</TableHead>
+          <TableHead className="w-[34%]">Sản phẩm</TableHead>
+          {/* Mã sàn (mã SP / mã phân loại) đứng dưới mã SKU — seller quen quản theo mã sàn */}
+          <TableHead className="w-[19%]">Mã SKU · Mã sàn</TableHead>
           <TableHead className="w-[19%]">Kênh bán</TableHead>
           <TableHead className={COST_HEAD}>Giá vốn (VNĐ)</TableHead>
           <TableHead className="text-right">Giá bán</TableHead>
@@ -179,6 +180,8 @@ function ParentRow({
   onBulkApplied: (siblings?: CostSiblings | null) => void;
 }) {
   const missing = group.variants.filter((v) => Number(v.costPrice) <= 0).length;
+  const itemIds = new Set(group.variants.map((v) => v.itemId).filter(Boolean));
+  const itemId = itemIds.size === 1 ? [...itemIds][0] : null;
   // Khoảng GIÁ BÁN của các phân loại — hiển thị đúng dưới cột Giá bán
   // (trước đây lỡ tính khoảng giá vốn rồi đặt nhầm cột này)
   const sells = group.variants
@@ -232,13 +235,18 @@ function ParentRow({
           )}
 
           <div className="min-w-0">
-            {/* Đang mở thì tên cha đậm hẳn lên làm điểm neo cho mắt */}
-            <p className={cn("truncate", open ? "font-bold" : "font-medium")}>
+            {/* Tên cắt ngắn (tối đa ~26rem) + tooltip đủ tên; đang mở thì đậm hẳn làm điểm neo */}
+            <p
+              className={cn("max-w-[26rem] truncate", open ? "font-bold" : "font-medium")}
+              title={group.name}
+            >
               {group.name}
             </p>
-            <p className={cn(TEXT_SUB, "flex items-center gap-1")}>
-              <Layers className="size-3 shrink-0" />
-              {formatNumber(group.variants.length)} phân loại
+            <p className="flex items-center gap-1 text-xs">
+              <Layers className="size-3.5 shrink-0 text-foreground" />
+              <span className="font-semibold text-foreground">
+                {formatNumber(group.variants.length)} phân loại
+              </span>
               {missing > 0 && (
                 <span className="font-medium text-amber-700">
                   · {formatNumber(missing)} chưa có giá vốn
@@ -249,8 +257,11 @@ function ParentRow({
         </div>
       </TableCell>
 
-      {/* Mã SKU / kênh để trống ở dòng cha — chi tiết nằm ở dòng con */}
-      <TableCell className={TEXT_SUB}>—</TableCell>
+      {/* Dòng cha: mã SẢN PHẨM trên sàn nếu mọi phân loại chung một mã (một gian);
+          nhiều gian/nhiều mã thì để trống — chi tiết nằm ở dòng con */}
+      <TableCell className={TEXT_SUB}>
+        {itemId ? <MarketplaceCode label="Mã SP" code={itemId} /> : "—"}
+      </TableCell>
       <TableCell className={TEXT_SUB}>—</TableCell>
 
       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -453,6 +464,39 @@ function CostCell({
   );
 }
 
+/** "Mã SP 22287974081" / "PL 204802569542" — mã sàn, chữ mono nhỏ, bấm đúp là chọn được. */
+function MarketplaceCode({ label, code }: { label: string; code: string }) {
+  return (
+    <span
+      className="inline-flex items-baseline gap-1 font-mono text-[11px] text-muted-foreground"
+      title={`${label === "PL" ? "Mã phân loại" : "Mã sản phẩm"} trên sàn: ${code}`}
+    >
+      <span className="font-sans text-[10px] uppercase tracking-wide">{label}</span>
+      <span className="select-all">{code}</span>
+    </span>
+  );
+}
+
+/**
+ * Ô Mã SKU: mã người bán đặt (dòng chính) + mã sàn ở dòng dưới — mã PHÂN LOẠI
+ * nếu sàn tách phân loại, không thì mã SẢN PHẨM. Học Salework: nhiều seller
+ * quản theo mã sàn hơn tên (anh Trung 28/09).
+ */
+function SkuCell({ item }: { item: SkuProduct }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate font-mono" title={item.sku}>
+        {item.sku}
+      </p>
+      {item.modelId ? (
+        <MarketplaceCode label="PL" code={item.modelId} />
+      ) : item.itemId ? (
+        <MarketplaceCode label="Mã SP" code={item.itemId} />
+      ) : null}
+    </div>
+  );
+}
+
 function ChannelBadge({ name }: { name: string }) {
   const meta = CHANNEL_META[name as ChannelName];
   return (
@@ -474,9 +518,25 @@ function UnlinkedHint({ linked }: { linked: boolean }) {
   return (
     <span
       title="Giá vốn lưu trên SKU sàn — muốn quản tồn kho tập trung thì liên kết ở trang Liên kết sản phẩm"
-      className="ml-1.5 inline-flex items-center rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+      className="inline-flex items-center rounded-full border border-dashed border-muted-foreground/40 px-2 py-0.5 text-[11px] text-muted-foreground"
     >
       Chưa nối kho vật lý
+    </span>
+  );
+}
+
+/**
+ * Sàn đã gỡ/ẩn/xóa SKU này (đồng bộ giữ dòng để đơn cũ còn tra được giá vốn).
+ * Mặc định trang ẩn các dòng này; chỉ thấy khi khách chọn "Đã gỡ" / "Tất cả".
+ */
+function DelistedBadge({ status }: { status: SkuProduct["status"] }) {
+  if (status !== "DELISTED") return null;
+  return (
+    <span
+      title="Sàn đã gỡ / ẩn / xóa SKU này — giữ lại để đơn cũ vẫn tra được giá vốn"
+      className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] text-rose-700"
+    >
+      Đã gỡ trên sàn
     </span>
   );
 }
@@ -505,12 +565,16 @@ function ChildRow(props: RowProps) {
           </span>
         </div>
       </TableCell>
-      <TableCell className="truncate font-mono" title={item.sku}>
-        {item.sku}
+      <TableCell>
+        <SkuCell item={item} />
       </TableCell>
       <TableCell>
-        <ChannelBadge name={item.channelName} />
-        <UnlinkedHint linked={item.linked} />
+        {/* Cho các nhãn XUỐNG DÒNG khi hẹp — ô bảng cắt chữ (…) làm "Đã gỡ trên sàn" cụt mất nghĩa. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ChannelBadge name={item.channelName} />
+          <UnlinkedHint linked={item.linked} />
+          <DelistedBadge status={item.status} />
+        </div>
       </TableCell>
       <TableCell>
         <CostCell {...props} />
@@ -544,17 +608,21 @@ function SingleRow(props: RowProps) {
               <ImageIcon className="size-4" />
             </div>
           )}
-          <p className="min-w-0 truncate" title={item.productName}>
+          <p className="min-w-0 max-w-[26rem] truncate" title={item.productName}>
             {item.productName}
           </p>
         </div>
       </TableCell>
-      <TableCell className="truncate font-mono" title={item.sku}>
-        {item.sku}
+      <TableCell>
+        <SkuCell item={item} />
       </TableCell>
       <TableCell>
-        <ChannelBadge name={item.channelName} />
-        <UnlinkedHint linked={item.linked} />
+        {/* Cho các nhãn XUỐNG DÒNG khi hẹp — ô bảng cắt chữ (…) làm "Đã gỡ trên sàn" cụt mất nghĩa. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ChannelBadge name={item.channelName} />
+          <UnlinkedHint linked={item.linked} />
+          <DelistedBadge status={item.status} />
+        </div>
       </TableCell>
       <TableCell>
         <CostCell {...props} />

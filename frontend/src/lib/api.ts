@@ -2139,6 +2139,12 @@ export interface SkuProduct {
   costPrice: string;
   /** false = SKU sàn chưa nối kho gốc — giá vốn lưu ở cấp SKU sàn, vẫn nhập được. */
   linked: boolean;
+  /** ACTIVE = đang bán trên sàn; DELISTED = sàn đã gỡ/ẩn/xóa (giữ để đơn cũ tra giá vốn). */
+  status: "ACTIVE" | "DELISTED";
+  /** Mã SẢN PHẨM trên sàn (item_id / product_id) — null với hàng kho nội bộ. */
+  itemId: string | null;
+  /** Mã PHÂN LOẠI trên sàn (model_id / sku_id) — null nếu sàn không tách phân loại. */
+  modelId: string | null;
 }
 
 export function fetchSkuProducts(channel: SkuChannelFilter = "all") {
@@ -2202,6 +2208,18 @@ export function updateSkuCostPriceBulk(skuIds: string[], costPrice: number) {
       method: "PATCH",
       body: JSON.stringify({ sku_ids: skuIds, cost_price: costPrice }),
     }
+  );
+}
+
+/**
+ * Nút "Áp giá vốn cho đơn cũ": dòng hàng đã bán còn giá vốn = 0 mà SKU nay đã
+ * có giá vốn → nhận giá vốn hiện tại (báo cáo lãi/lỗ, dòng tiền, ROAS hòa vốn
+ * của đơn cũ tính lại theo).
+ */
+export function backfillCostPricesToOrders() {
+  return apiFetch<{ backfilledOrderLines: number }>(
+    "/api/finance/cost-prices/backfill-orders",
+    { method: "POST" }
   );
 }
 
