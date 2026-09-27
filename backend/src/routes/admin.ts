@@ -820,6 +820,11 @@ router.patch(
       const replyValue = clean(reply);
       const noteValue = clean(note);
 
+      // Câu trả lời MỚI (khác câu cũ) hoặc vừa chuyển DONE → báo khách + xóa
+      // mốc "đã xem" để chấm đỏ trên avatar khách bật lại (cờ, không so giờ).
+      const replyChanged = typeof replyValue === "string" && replyValue !== request.reply;
+      const justDone = status === "DONE" && request.status !== "DONE";
+
       const updated = await prisma.supportRequest.update({
         where: { id: request.id },
         data: {
@@ -827,13 +832,11 @@ router.patch(
           ...(assigneeId !== undefined ? { assigneeId: assigneeId as string | null } : {}),
           ...(replyValue !== undefined ? { reply: replyValue } : {}),
           ...(noteValue !== undefined ? { note: noteValue } : {}),
+          ...(replyChanged || justDone ? { customerSeenAt: null } : {}),
         },
         include: { assignee: { select: { id: true, fullName: true } } },
       });
 
-      // Báo khách khi có câu trả lời MỚI (khác câu cũ) hoặc vừa chuyển DONE.
-      const replyChanged = typeof replyValue === "string" && replyValue !== request.reply;
-      const justDone = status === "DONE" && request.status !== "DONE";
       if (replyChanged || justDone) {
         void notifyCustomerSupportUpdate({
           customerEmail: request.user.email,

@@ -284,19 +284,22 @@ router.post(
   }
 );
 
-// "Trả lời mới" = đã có reply hoặc DONE, và HQ sửa SAU lần khách xem. So sánh
-// hai cột trong JS (danh sách mỗi shop chỉ vài dòng) — khỏi phụ thuộc field
-// reference của Prisma.
-async function countUnread(ownerId: string): Promise<number> {
-  const rows = await prisma.supportRequest.findMany({
-    where: { userId: ownerId, OR: [{ reply: { not: null } }, { status: "DONE" }] },
-    select: { updatedAt: true, customerSeenAt: true },
+// "Trả lời mới" = đã có reply hoặc DONE và customerSeenAt = null. Dùng CỜ chứ
+// không so sánh thời gian (bài học 27/09: updateMany đóng dấu "đã xem" cũng
+// bơm @updatedAt lên vài ms SAU mốc đã xem → chấm đỏ không bao giờ tắt).
+// HQ trả lời / chuyển DONE thì admin.ts xóa customerSeenAt về null.
+function countUnread(ownerId: string): Promise<number> {
+  return prisma.supportRequest.count({
+    where: {
+      userId: ownerId,
+      customerSeenAt: null,
+      OR: [{ reply: { not: null } }, { status: "DONE" }],
+    },
   });
-  return rows.filter((r) => !r.customerSeenAt || r.updatedAt > r.customerSeenAt).length;
 }
 
 // GET /api/support-requests/mine — yêu cầu của SHOP, mới nhất trước, tối đa 20.
-// Mở hộp = đã xem → đóng dấu customerSeenAt, chấm đỏ trên avatar tắt.
+// Mở hộp = đã xem → đóng dấu customerSeenAt (cờ), chấm đỏ trên avatar tắt.
 router.get("/mine", async (req: AuthRequest, res, next) => {
   try {
     const requests = await prisma.supportRequest.findMany({
