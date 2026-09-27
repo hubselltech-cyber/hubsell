@@ -482,12 +482,48 @@ router.put("/me/avatar", requireAuth, async (req: AuthRequest, res, next) => {
 // không gọi được; đây là chỗ khách tự bổ sung (thẻ "Thông tin liên hệ" ở
 // /settings/general + dải nhắc dưới header). Không cho xoá số về rỗng: đã có
 // số thì chỉ được đổi sang số khác.
+// Báo HQ (email tới mọi platform admin) khi CHỦ SHOP vừa để lại SĐT lần đầu —
+// anh Trung 27/09: khách để lại số thường là lúc đang cần hỗ trợ, sale gọi
+// ngay. Chỉ lần ĐẦU (phone trống → có), đổi số sau không báo; cùng cơ chế với
+// email yêu cầu mua gói (subscription.ts). Lỗi gửi mail không chạm response.
+async function notifyHqPhoneAdded(input: {
+  customerName: string;
+  customerEmail: string | null;
+  phone: string;
+}): Promise<void> {
+  try {
+    if (!isMailerConfigured()) return;
+    const admins = await prisma.user.findMany({
+      where: { isPlatformAdmin: true, email: { not: null } },
+      select: { email: true },
+    });
+    if (admins.length === 0) return;
+    const subject = `[Hubsell] Khách vừa để lại SĐT: ${input.customerName}`;
+    const html = `
+    <div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <h2 style="margin:0 0 8px">Khách vừa để lại số điện thoại</h2>
+      <p style="color:#444;margin:4px 0"><b>Khách:</b> ${input.customerName} (${input.customerEmail ?? "—"})</p>
+      <p style="color:#444;margin:4px 0"><b>SĐT:</b> ${input.phone}</p>
+      <p style="text-align:center;margin:24px 0">
+        <a href="${FRONTEND_BASE_URL}/admin/customers"
+           style="background:#18181b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block">
+          Mở trang Khách hàng
+        </a>
+      </p>
+      <p style="color:#888;font-size:13px">Khách để lại số thường là lúc đang cần hỗ trợ — gọi sớm.</p>
+    </div>`;
+    await Promise.allSettled(admins.map((a) => sendMail({ to: a.email!, subject, html })));
+  } catch (err) {
+    console.error("[auth] Báo HQ khách để lại SĐT lỗi:", (err as Error).message);
+  }
+}
+
 router.put("/me/contact", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { country, phoneNumber } = req.body ?? {};
     const current = await prisma.user.findUnique({
       where: { id: req.userId! },
-      select: { country: true },
+      select: { country: true, phone: true, ownerId: true, fullName: true, email: true },
     });
     if (!current) {
       res.status(404).json({ error: "Không tìm thấy tài khoản" });
@@ -508,6 +544,15 @@ router.put("/me/contact", requireAuth, async (req: AuthRequest, res, next) => {
       data: { country: normalizedCountry, phone: parsed.value! },
       select: PUBLIC_USER_SELECT,
     });
+    // Chủ shop (ownerId null) để lại số LẦN ĐẦU → báo sale. Nhân viên có số
+    // hay chủ đổi số thì không.
+    if (!current.phone && current.ownerId === null) {
+      void notifyHqPhoneAdded({
+        customerName: current.fullName || "Khách Hubsell",
+        customerEmail: current.email,
+        phone: parsed.value!,
+      });
+    }
     // Kèm platformWorkspace như /me — FE setStoredUser nguyên object này.
     res.json({
       user: { ...user, platformWorkspace: await isPlatformWorkspace(user) },
