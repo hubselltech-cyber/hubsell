@@ -114,7 +114,8 @@ export function CostPriceTable({
           <TableHead className="w-[38%]">Sản phẩm</TableHead>
           {/* Mã phân loại trên sàn đứng dưới mã SKU — seller quen quản theo mã sàn */}
           <TableHead className="w-[16%]">Mã SKU · Mã sàn</TableHead>
-          <TableHead className="w-[18%]">Kênh bán</TableHead>
+          {/* Cửa hàng (tên gian) thay cho Kênh bán — kênh đã có bộ lọc phía trên (anh Trung 28/09) */}
+          <TableHead className="w-[18%]">Cửa hàng</TableHead>
           <TableHead className={COST_HEAD}>Giá vốn (VNĐ)</TableHead>
           <TableHead className="text-right">Giá bán</TableHead>
         </TableRow>
@@ -188,6 +189,8 @@ function ParentRow({
 }) {
   const missing = group.variants.filter((v) => Number(v.costPrice) <= 0).length;
   const itemId = singleItemId(group);
+  const shops = new Set(group.variants.map((v) => v.shopName));
+  const shopName = shops.size === 1 ? group.variants[0].shopName : null;
   // Khoảng GIÁ BÁN của các phân loại — hiển thị đúng dưới cột Giá bán
   // (trước đây lỡ tính khoảng giá vốn rồi đặt nhầm cột này)
   const sells = group.variants
@@ -248,17 +251,15 @@ function ParentRow({
             >
               {group.name}
             </p>
+            {/* Mã SẢN PHẨM trên sàn ngay dưới tên cha — chỉ khi mọi phân loại chung
+                một mã; nhiều gian thì từng dòng con tự mang */}
+            {itemId && (
+              <p className="leading-tight">
+                <MarketplaceCode label="Mã SP" code={itemId} />
+              </p>
+            )}
+            {/* "x phân loại" dòng riêng dưới mã SP, màu xanh (anh Trung 28/09) */}
             <p className="flex flex-wrap items-center gap-x-1 text-xs">
-              {/* Mã SẢN PHẨM trên sàn đứng đầu dòng phụ, ngay dưới tên cha (anh Trung
-                  28/09) — chỉ khi mọi phân loại chung một mã; nhiều gian thì từng dòng
-                  con tự mang */}
-              {itemId && (
-                <>
-                  <MarketplaceCode label="Mã SP" code={itemId} />
-                  <span className="text-muted-foreground">·</span>
-                </>
-              )}
-              {/* Màu xanh cho "x phân loại" nổi khỏi tên (anh Trung 28/09) */}
               <Layers className="size-3.5 shrink-0 text-sky-600" />
               <span className="font-semibold text-sky-700">
                 {formatNumber(group.variants.length)} phân loại
@@ -273,9 +274,11 @@ function ParentRow({
         </div>
       </TableCell>
 
-      {/* Mã SKU / kênh để trống ở dòng cha — chi tiết nằm ở dòng con */}
+      {/* Mã SKU để trống ở dòng cha — chi tiết nằm ở dòng con; cửa hàng hiện khi cả mẫu chung một gian */}
       <TableCell className={TEXT_SUB}>—</TableCell>
-      <TableCell className={TEXT_SUB}>—</TableCell>
+      <TableCell className={cn(TEXT_SUB, "truncate")} title={shopName ?? undefined}>
+        {shopName ?? "—"}
+      </TableCell>
 
       <TableCell onClick={(e) => e.stopPropagation()}>
         <QuickFill group={group} onExpand={onExpand} onApplied={onBulkApplied} />
@@ -509,13 +512,29 @@ function SkuCell({ item }: { item: SkuProduct }) {
   );
 }
 
-function ChannelBadge({ name }: { name: string }) {
-  const meta = CHANNEL_META[name as ChannelName];
+/**
+ * Tên gian hàng kèm chấm màu kênh (tooltip = tên kênh) — thay huy hiệu kênh vì
+ * kênh đã có bộ lọc phía trên; tên gian mới phân biệt được 2 shop cùng sàn.
+ */
+const CHANNEL_DOT: Record<string, string> = {
+  SHOPEE: "bg-orange-500",
+  LAZADA: "bg-blue-600",
+  TIKTOK: "bg-zinc-900",
+  OFFLINE: "bg-zinc-400",
+};
+
+function ShopName({ item }: { item: SkuProduct }) {
+  const meta = CHANNEL_META[item.channelName as ChannelName];
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.className}`}
+      className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm"
+      title={`${item.shopName} · ${meta?.label ?? item.channelName}`}
     >
-      {meta.label}
+      <span
+        aria-hidden
+        className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[item.channelName] ?? "bg-zinc-400")}
+      />
+      <span className="truncate">{item.shopName}</span>
     </span>
   );
 }
@@ -583,7 +602,7 @@ function ChildRow(props: RowProps) {
       <TableCell>
         {/* Cho các nhãn XUỐNG DÒNG khi hẹp — ô bảng cắt chữ (…) làm "Đã gỡ trên sàn" cụt mất nghĩa. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <ChannelBadge name={item.channelName} />
+          <ShopName item={item} />
           <UnlinkedHint linked={item.linked} />
           <DelistedBadge status={item.status} />
         </div>
@@ -634,7 +653,7 @@ function SingleRow(props: RowProps) {
       <TableCell>
         {/* Cho các nhãn XUỐNG DÒNG khi hẹp — ô bảng cắt chữ (…) làm "Đã gỡ trên sàn" cụt mất nghĩa. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <ChannelBadge name={item.channelName} />
+          <ShopName item={item} />
           <UnlinkedHint linked={item.linked} />
           <DelistedBadge status={item.status} />
         </div>

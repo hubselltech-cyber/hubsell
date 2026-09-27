@@ -2134,6 +2134,8 @@ export interface SkuProduct {
   productName: string;
   variantName: string | null; // phân loại (màu/size) theo tên trên sàn
   channelName: ChannelName;
+  /** Tên gian hàng cụ thể ("Kho nội bộ" với hàng offline) — cột Cửa hàng của bảng. */
+  shopName: string;
   imageUrl: string | null;
   sellingPrice: string;
   costPrice: string;
