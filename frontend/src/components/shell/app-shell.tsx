@@ -22,6 +22,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AssistantWidget } from "@/components/assistant/assistant-widget";
 import { ChannelDisconnectedBanner } from "@/components/shell/channel-disconnected-banner";
 import { MobileAppLaunchNotice } from "@/components/shell/mobile-app-launch-notice";
+import { PhoneNudgeBand, type PhoneNudgeState } from "@/components/shell/phone-nudge-band";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { NavIcon } from "@/components/shell/nav-icon";
 import { NotificationBell } from "@/components/shell/notification-bell";
@@ -492,6 +493,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("hubsell:permission-denied", onDenied);
   }, [checkStatus]);
 
+  // Trang con đổi user (thẻ Thông tin liên hệ lưu SĐT…) báo lên qua
+  // notifyUserChanged → shell cập nhật state để header/dải nhắc đổi ngay.
+  useEffect(() => {
+    const onUserChanged = (e: Event) => {
+      const u = (e as CustomEvent<AuthUser>).detail;
+      if (u) setUser(u);
+    };
+    window.addEventListener("hubsell:user-changed", onUserChanged);
+    return () => window.removeEventListener("hubsell:user-changed", onUserChanged);
+  }, []);
+
+  // Dải mời bổ sung SĐT đang hiện thì dải app di động nhường (không xếp chồng).
+  const [phoneNudge, setPhoneNudge] = useState<PhoneNudgeState>("hidden");
+
   // Chuyển trang xong thì tự đóng drawer — người dùng bấm menu là muốn đi,
   // không muốn phải đóng tay
   useEffect(() => {
@@ -844,10 +859,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             chủ shop vì nhân viên không nâng gói được. */}
         {user && isAdmin(user) && !hqWorkspace && <PlanQuotaBanner />}
 
+        {/* Dải mời bổ sung SĐT (anh Trung 27/09): chủ shop vào bằng Google
+            chưa có số → mời nhập ngay trên dải; lưu hoặc X là hết. CHỈ hiện
+            trong khu Cấu hình / Gói / Kiếm Tiền Cùng Hubsell (nơi khách đi tìm
+            hỗ trợ), tự ẩn ở /settings/general và khu HQ. */}
+        {user && (
+          <PhoneNudgeBand
+            user={user}
+            hqWorkspace={hqWorkspace}
+            onUserChange={(u) => {
+              setStoredUser(u);
+              setUser(u);
+            }}
+            onStateChange={setPhoneNudge}
+          />
+        )}
+
         {/* Thông báo app điện thoại ra mắt tháng 10/2026 (anh Trung 25/09):
             khách mới đã đăng ký, cần biết rõ app khi nào có / làm được gì.
-            Mọi tài khoản shop (kho cũng có màn quét), tự tắt bằng ô tích. */}
-        {user && !hqWorkspace && <MobileAppLaunchNotice />}
+            Mọi tài khoản shop (kho cũng có màn quét), tự tắt bằng ô tích.
+            Nhường chỗ khi dải SĐT đang hiện. */}
+        {user && !hqWorkspace && phoneNudge === "hidden" && <MobileAppLaunchNotice />}
 
         {/* Bung rộng theo màn hình (không khoá max-width) để các bảng dữ liệu
             tận dụng tối đa không gian — chuẩn layout ERP như Salework. */}

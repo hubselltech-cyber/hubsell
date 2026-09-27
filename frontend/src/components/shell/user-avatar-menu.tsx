@@ -1,16 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { ImageUp, Loader2, LogOut, Trash2, UserRound } from "lucide-react";
+import { Camera, Loader2, LogOut, Settings2, UserRound } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ApiError, ROLE_META, updateAvatar, type AuthUser } from "@/lib/api";
+import { isAdmin } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 /** Cạnh dài nhất của avatar sau khi thu nhỏ — 256px là dư cho vòng tròn 32px
@@ -155,49 +157,61 @@ export function UserAvatarMenu({
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-4">
         <div className="flex items-center gap-3">
-          <UserAvatarCircle
-            user={user}
-            className="size-14"
-            iconClassName="size-6"
-          />
+          {/* Bấm thẳng vào hình tròn để đổi ảnh (anh Trung 27/09: không cần
+              nút + câu giải thích, khách tự hiểu). Huy hiệu máy ảnh nhỏ ở góc
+              là dấu hiệu "bấm được"; đang lưu thì xoay. */}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => fileInputRef.current?.click()}
+            title={user.avatar ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên"}
+            aria-label={user.avatar ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên"}
+            className="group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+          >
+            <UserAvatarCircle
+              user={user}
+              className="size-14 transition-opacity group-hover:opacity-80"
+              iconClassName="size-6"
+            />
+            <span className="absolute -bottom-0.5 -right-0.5 flex size-6 items-center justify-center rounded-full border-2 border-popover bg-foreground text-background">
+              {saving ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Camera className="size-3" />
+              )}
+            </span>
+          </button>
           <div className="min-w-0">
             <p className="truncate text-sm">{user.fullName}</p>
             <p className="truncate text-xs text-muted-foreground">
               {user.email ?? user.staffUsername ?? user.username}
             </p>
+            {user.avatar && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => save(null)}
+                className="mt-1 text-xs text-muted-foreground underline-offset-2 hover:text-red-600 hover:underline"
+              >
+                Gỡ ảnh
+              </button>
+            )}
           </div>
         </div>
-        <div className="mt-4 space-y-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={saving}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {saving ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ImageUp className="size-4" />
-            )}
-            {user.avatar ? "Đổi ảnh đại diện" : "Tải ảnh đại diện lên"}
-          </Button>
-          {user.avatar && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full text-red-600 hover:text-red-600"
-              disabled={saving}
-              onClick={() => save(null)}
+        {/* Lối tắt tới SĐT liên hệ + đổi mật khẩu (anh Trung 27/09): không
+            thêm mục sidebar, khách tìm tài khoản của mình ở đây. Chỉ chủ shop
+            vì nhóm Cấu hình là adminOnly. */}
+        {isAdmin(user) && (
+          <div className="mt-3 border-t pt-3">
+            <Link
+              href="/settings/general"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
             >
-              <Trash2 className="size-4" />
-              Gỡ ảnh đại diện
-            </Button>
-          )}
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Ảnh được cắt vuông và thu nhỏ tự động — chọn ảnh nào cũng được.
-        </p>
+              <Settings2 className="size-4" />
+              {user.phone ? "Tài khoản & liên hệ" : "Thêm số điện thoại liên hệ"}
+            </Link>
+          </div>
+        )}
         <div className="mt-3 border-t pt-3">
           <Button
             variant="outline"

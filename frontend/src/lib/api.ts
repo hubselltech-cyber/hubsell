@@ -1125,6 +1125,29 @@ export function updateAvatar(avatar: string | null) {
 }
 
 /**
+ * Cập nhật SĐT liên hệ của CHÍNH người đang đăng nhập. `phoneNumber` là số
+ * trong nước (chỉ chữ số), backend ghép mã vùng theo `country` và lưu E.164.
+ * Trả về user mới để cập nhật localStorage + state ngay, khỏi gọi lại /me.
+ */
+export function updateContact(data: { country: string; phoneNumber: string }) {
+  return apiFetch<{ user: AuthUser }>("/api/auth/me/contact", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Báo cho AppShell biết user vừa đổi (SĐT, ảnh…) từ một trang con — shell giữ
+ * state `user` riêng nên chỉ setStoredUser thì header/dải nhắc chưa cập nhật.
+ */
+export function notifyUserChanged(user: AuthUser) {
+  setStoredUser(user);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent<AuthUser>("hubsell:user-changed", { detail: user }));
+  }
+}
+
+/**
  * Tên đăng nhập chủ shop còn trống không? (endpoint công khai — form đăng ký
  * báo "đã có người sử dụng" ngay khi gõ, không đợi submit dính 409.)
  */

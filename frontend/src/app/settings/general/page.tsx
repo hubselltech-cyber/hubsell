@@ -5,6 +5,7 @@ import { Building2, Globe, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppearanceSection } from "@/components/settings/appearance-section";
 import { ChangePasswordSection } from "@/components/settings/change-password-section";
+import { ContactInfoSection } from "@/components/settings/contact-info-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { TEXT_SUB } from "@/lib/typography";
 
@@ -39,6 +40,10 @@ export default function SettingsGeneralPage() {
       <AppearanceSection />
 
       <ChangePasswordSection />
+
+      {/* SĐT liên hệ của chủ tài khoản — tài khoản Google không có số, đây là
+          chỗ bổ sung (anh Trung 27/09). */}
+      <ContactInfoSection />
 
       <Card className="max-w-2xl shadow-sm">
         <CardHeader className="border-b pb-3">

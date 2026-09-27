@@ -475,6 +475,48 @@ router.put("/me/avatar", requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+// PUT /api/auth/me/contact — cập nhật SĐT liên hệ của CHÍNH MÌNH.
+// Body: { country?: ISO alpha-2, phoneNumber: số trong nước } — cùng cặp trường
+// với /register, chuẩn hoá E.164 qua formatE164 rồi mới lưu.
+// Vì sao có (anh Trung 27/09): tài khoản vào bằng Google không có SĐT, sale
+// không gọi được; đây là chỗ khách tự bổ sung (thẻ "Thông tin liên hệ" ở
+// /settings/general + dải nhắc dưới header). Không cho xoá số về rỗng: đã có
+// số thì chỉ được đổi sang số khác.
+router.put("/me/contact", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { country, phoneNumber } = req.body ?? {};
+    const current = await prisma.user.findUnique({
+      where: { id: req.userId! },
+      select: { country: true },
+    });
+    if (!current) {
+      res.status(404).json({ error: "Không tìm thấy tài khoản" });
+      return;
+    }
+    const normalizedCountry =
+      typeof country === "string" && COUNTRY_REGEX.test(country.trim().toUpperCase())
+        ? country.trim().toUpperCase()
+        : current.country;
+    const parsed = formatE164(normalizedCountry, phoneNumber);
+    if (parsed.error) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.userId! },
+      data: { country: normalizedCountry, phone: parsed.value! },
+      select: PUBLIC_USER_SELECT,
+    });
+    // Kèm platformWorkspace như /me — FE setStoredUser nguyên object này.
+    res.json({
+      user: { ...user, platformWorkspace: await isPlatformWorkspace(user) },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ============================================================
 // QUÊN MẬT KHẨU — reset bằng TOKEN LINK gửi qua email (không OTP: 1 click là
 // tới màn đặt lại, không cần UI nhập mã + chống brute-force mã 6 số).
