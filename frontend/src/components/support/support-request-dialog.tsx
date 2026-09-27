@@ -231,7 +231,7 @@ export function SupportRequestDialog({
             Gửi yêu cầu hỗ trợ
           </DialogTitle>
           <DialogDescription>
-            Hubsell đã có thông tin tài khoản của bạn, chỉ cần mô tả điều bạn cần.
+            Mô tả ngắn gọn và đính kèm ảnh nếu có.
           </DialogDescription>
         </DialogHeader>
 
