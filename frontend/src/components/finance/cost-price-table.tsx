@@ -111,10 +111,10 @@ export function CostPriceTable({
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[34%]">Sản phẩm</TableHead>
-          {/* Mã sàn (mã SP / mã phân loại) đứng dưới mã SKU — seller quen quản theo mã sàn */}
-          <TableHead className="w-[19%]">Mã SKU · Mã sàn</TableHead>
-          <TableHead className="w-[19%]">Kênh bán</TableHead>
+          <TableHead className="w-[38%]">Sản phẩm</TableHead>
+          {/* Mã phân loại trên sàn đứng dưới mã SKU — seller quen quản theo mã sàn */}
+          <TableHead className="w-[16%]">Mã SKU · Mã sàn</TableHead>
+          <TableHead className="w-[18%]">Kênh bán</TableHead>
           <TableHead className={COST_HEAD}>Giá vốn (VNĐ)</TableHead>
           <TableHead className="text-right">Giá bán</TableHead>
         </TableRow>
@@ -149,6 +149,7 @@ export function CostPriceTable({
                   <ChildRow
                     key={v.skuId}
                     item={v}
+                    showItemId={!singleItemId(group)}
                     drafts={drafts}
                     onDraftChange={onDraftChange}
                     onVariantBlur={onVariantBlur}
@@ -166,6 +167,12 @@ export function CostPriceTable({
 
 /* ─────────────────────────── Dòng sản phẩm cha ─────────────────────────── */
 
+/** Mã SẢN PHẨM trên sàn của cả mẫu — chỉ khi mọi phân loại chung một mã (một gian). */
+function singleItemId(group: ProductGroup): string | null {
+  const ids = new Set(group.variants.map((v) => v.itemId).filter(Boolean));
+  return ids.size === 1 ? ([...ids][0] as string) : null;
+}
+
 function ParentRow({
   group,
   open,
@@ -180,8 +187,7 @@ function ParentRow({
   onBulkApplied: (siblings?: CostSiblings | null) => void;
 }) {
   const missing = group.variants.filter((v) => Number(v.costPrice) <= 0).length;
-  const itemIds = new Set(group.variants.map((v) => v.itemId).filter(Boolean));
-  const itemId = itemIds.size === 1 ? [...itemIds][0] : null;
+  const itemId = singleItemId(group);
   // Khoảng GIÁ BÁN của các phân loại — hiển thị đúng dưới cột Giá bán
   // (trước đây lỡ tính khoảng giá vốn rồi đặt nhầm cột này)
   const sells = group.variants
@@ -242,9 +248,19 @@ function ParentRow({
             >
               {group.name}
             </p>
-            <p className="flex items-center gap-1 text-xs">
-              <Layers className="size-3.5 shrink-0 text-foreground" />
-              <span className="font-semibold text-foreground">
+            <p className="flex flex-wrap items-center gap-x-1 text-xs">
+              {/* Mã SẢN PHẨM trên sàn đứng đầu dòng phụ, ngay dưới tên cha (anh Trung
+                  28/09) — chỉ khi mọi phân loại chung một mã; nhiều gian thì từng dòng
+                  con tự mang */}
+              {itemId && (
+                <>
+                  <MarketplaceCode label="Mã SP" code={itemId} />
+                  <span className="text-muted-foreground">·</span>
+                </>
+              )}
+              {/* Màu xanh cho "x phân loại" nổi khỏi tên (anh Trung 28/09) */}
+              <Layers className="size-3.5 shrink-0 text-sky-600" />
+              <span className="font-semibold text-sky-700">
                 {formatNumber(group.variants.length)} phân loại
               </span>
               {missing > 0 && (
@@ -257,11 +273,8 @@ function ParentRow({
         </div>
       </TableCell>
 
-      {/* Dòng cha: mã SẢN PHẨM trên sàn nếu mọi phân loại chung một mã (một gian);
-          nhiều gian/nhiều mã thì để trống — chi tiết nằm ở dòng con */}
-      <TableCell className={TEXT_SUB}>
-        {itemId ? <MarketplaceCode label="Mã SP" code={itemId} /> : "—"}
-      </TableCell>
+      {/* Mã SKU / kênh để trống ở dòng cha — chi tiết nằm ở dòng con */}
+      <TableCell className={TEXT_SUB}>—</TableCell>
       <TableCell className={TEXT_SUB}>—</TableCell>
 
       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -424,6 +437,8 @@ function QuickFill({
 
 interface RowProps {
   item: SkuProduct;
+  /** Dòng con tự mang mã SẢN PHẨM khi dòng cha gộp nhiều gian / nhiều mã. */
+  showItemId?: boolean;
   drafts: Record<string, string>;
   onDraftChange: (skuId: string, digits: string) => void;
   onVariantBlur: (item: SkuProduct) => void;
@@ -467,20 +482,21 @@ function CostCell({
 /** "Mã SP 22287974081" / "PL 204802569542" — mã sàn, chữ mono nhỏ, bấm đúp là chọn được. */
 function MarketplaceCode({ label, code }: { label: string; code: string }) {
   return (
+    // max-w-full + truncate để mã dài không tràn sang cột bên khi màn hẹp
     <span
-      className="inline-flex items-baseline gap-1 font-mono text-[11px] text-muted-foreground"
+      className="inline-flex max-w-full items-baseline gap-1 font-mono text-[11px] text-muted-foreground"
       title={`${label === "PL" ? "Mã phân loại" : "Mã sản phẩm"} trên sàn: ${code}`}
     >
-      <span className="font-sans text-[10px] uppercase tracking-wide">{label}</span>
-      <span className="select-all">{code}</span>
+      <span className="shrink-0 font-sans text-[10px] uppercase tracking-wide">{label}</span>
+      <span className="min-w-0 select-all truncate">{code}</span>
     </span>
   );
 }
 
 /**
- * Ô Mã SKU: mã người bán đặt (dòng chính) + mã sàn ở dòng dưới — mã PHÂN LOẠI
- * nếu sàn tách phân loại, không thì mã SẢN PHẨM. Học Salework: nhiều seller
- * quản theo mã sàn hơn tên (anh Trung 28/09).
+ * Ô Mã SKU: mã người bán đặt (dòng chính) + mã PHÂN LOẠI trên sàn ở dòng dưới.
+ * Mã SẢN PHẨM luôn nằm dưới TÊN sản phẩm (dòng cha / dòng đơn lẻ), không ở đây
+ * — anh Trung 28/09. Học Salework: nhiều seller quản theo mã sàn hơn tên.
  */
 function SkuCell({ item }: { item: SkuProduct }) {
   return (
@@ -488,11 +504,7 @@ function SkuCell({ item }: { item: SkuProduct }) {
       <p className="truncate font-mono" title={item.sku}>
         {item.sku}
       </p>
-      {item.modelId ? (
-        <MarketplaceCode label="PL" code={item.modelId} />
-      ) : item.itemId ? (
-        <MarketplaceCode label="Mã SP" code={item.itemId} />
-      ) : null}
+      {item.modelId && <MarketplaceCode label="PL" code={item.modelId} />}
     </div>
   );
 }
@@ -542,7 +554,7 @@ function DelistedBadge({ status }: { status: SkuProduct["status"] }) {
 }
 
 function ChildRow(props: RowProps) {
-  const { item } = props;
+  const { item, showItemId } = props;
   const label = variantLabel(item.productName);
   return (
     // Nền xám nhạt cùng tông với dòng cha đang mở để cả cụm gom thành một khối,
@@ -557,12 +569,12 @@ function ChildRow(props: RowProps) {
           />
           <span className="shrink-0 text-muted-foreground">└</span>
           {/* Truncate để tên phân loại dài không kéo tràn ngang cả bảng */}
-          <span
-            className="min-w-0 truncate"
-            title={label ?? item.variantName ?? item.sku}
-          >
-            {label ?? item.variantName ?? item.sku}
-          </span>
+          <div className="min-w-0">
+            <p className="truncate" title={label ?? item.variantName ?? item.sku}>
+              {label ?? item.variantName ?? item.sku}
+            </p>
+            {showItemId && item.itemId && <MarketplaceCode label="Mã SP" code={item.itemId} />}
+          </div>
         </div>
       </TableCell>
       <TableCell>
@@ -608,9 +620,12 @@ function SingleRow(props: RowProps) {
               <ImageIcon className="size-4" />
             </div>
           )}
-          <p className="min-w-0 max-w-[26rem] truncate" title={item.productName}>
-            {item.productName}
-          </p>
+          <div className="min-w-0">
+            <p className="max-w-[26rem] truncate" title={item.productName}>
+              {item.productName}
+            </p>
+            {item.itemId && <MarketplaceCode label="Mã SP" code={item.itemId} />}
+          </div>
         </div>
       </TableCell>
       <TableCell>
