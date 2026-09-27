@@ -53,10 +53,11 @@ export function HubStoryStrip() {
             <span className="truncate">{name}</span>
             <span className="ml-auto font-mono text-[11px] text-muted-foreground">AO-DEN-M</span>
             <span className="w-8 text-right font-semibold tabular-nums">{qty}</span>
+            {/* 27/09 anh Trung: nhấn rõ chi tiết đổi — −1 đỏ, đậm, to hơn. */}
             <span
               className={cn(
-                "w-7 text-right text-[11px] font-medium tabular-nums",
-                after ? "text-emerald-700" : "text-transparent"
+                "w-8 text-right text-sm font-bold tabular-nums",
+                after ? "text-red-600" : "text-transparent"
               )}
             >
               −1
@@ -81,11 +82,11 @@ export function HubStoryStrip() {
             <ShoppingBag className="size-3.5" />
             Shop A bán 1 đơn
           </span>
-          <ArrowRight className="size-5 text-muted-foreground" />
+          <ArrowRight className="size-7 text-red-600" strokeWidth={2.75} />
           <span className={cn(TEXT_SUB, "leading-snug")}>
             kho và Shop B, C
             <br />
-            tự trừ 1 theo
+            <b className="font-bold text-red-600">tự trừ 1</b> theo
           </span>
         </div>
         {snapshot(99, true)}
