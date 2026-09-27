@@ -238,11 +238,17 @@ router.get("/users", requirePlatformPermission("hq.customers"), async (req, res,
     // Tìm nhanh theo tên / email / SĐT / username — thương mại hóa vài trăm
     // khách thì sale không thể lật trang tay tìm người.
     const q = String(req.query.q ?? "").trim();
+    // Chip "Chưa có SĐT" (anh Trung 27/09): khách vào bằng Google không có số,
+    // sale lọc riêng nhóm này để chăm qua email/chat thay vì gọi. Ghép được
+    // với lọc chăm sóc + tìm nhanh.
+    const noPhone = req.query.noPhone === "1";
     const where: Prisma.UserWhereInput = {
       ownerId: null,
+      ...(noPhone ? { OR: [{ phone: null }, { phone: "" }] } : {}),
+      // NEW dùng OR riêng, gói trong AND để không đè OR của noPhone.
       ...(careStatus
         ? careStatus === PlatformCareStatus.NEW
-          ? { OR: [{ careProfile: null }, { careProfile: { status: careStatus } }] }
+          ? { AND: [{ OR: [{ careProfile: null }, { careProfile: { status: careStatus } }] }] }
           : { careProfile: { status: careStatus } }
         : {}),
       ...(q

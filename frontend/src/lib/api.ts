@@ -4380,12 +4380,15 @@ export function fetchPlatformUsers(params?: {
   careStatus?: PlatformCareStatus;
   /** Tìm nhanh theo tên / email / SĐT / username. */
   q?: string;
+  /** Chỉ khách CHƯA có SĐT (vào bằng Google chưa bổ sung). */
+  noPhone?: boolean;
 }) {
   const qs = new URLSearchParams();
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params?.careStatus) qs.set("careStatus", params.careStatus);
   if (params?.q) qs.set("q", params.q);
+  if (params?.noPhone) qs.set("noPhone", "1");
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<PlatformUsersResponse>(`/api/admin/users${suffix}`);
 }

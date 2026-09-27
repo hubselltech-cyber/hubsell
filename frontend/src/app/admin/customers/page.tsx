@@ -10,7 +10,7 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { HeartHandshake, PhoneCall, Search } from "lucide-react";
+import { HeartHandshake, PhoneCall, PhoneOff, Search } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -65,6 +65,8 @@ export default function PlatformCustomersPage() {
   const [tab, setTab] = useState<ViewTab>("customers");
   const [page, setPage] = useState(1);
   const [careFilter, setCareFilter] = useState<"" | PlatformCareStatus>("");
+  // Chip "Chưa có SĐT" — bật/tắt độc lập, ghép với lọc chăm sóc + tìm nhanh.
+  const [noPhone, setNoPhone] = useState(false);
   const [careFor, setCareFor] = useState<PlatformUserRow | null>(null);
   // Ô tìm nhanh: gõ xong 400ms mới gọi API (debounce), đổi từ khóa về trang 1.
   const [qInput, setQInput] = useState("");
@@ -89,6 +91,7 @@ export default function PlatformCustomersPage() {
         pageSize: 20,
         careStatus: careFilter || undefined,
         q: q || undefined,
+        noPhone: noPhone || undefined,
       }),
       fetchConsultLeads({
         page: leadPage,
@@ -98,7 +101,7 @@ export default function PlatformCustomersPage() {
       fetchHqStaff(),
     ]);
     return { users, leads, members: staff.members };
-  }, [page, careFilter, q, leadPage, leadFilter]);
+  }, [page, careFilter, noPhone, q, leadPage, leadFilter]);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
 
   if (denied) {
@@ -185,6 +188,26 @@ export default function PlatformCustomersPage() {
                       {label}
                     </button>
                   ))}
+                <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden />
+                {/* Chip bật/tắt "Chưa có SĐT" (anh Trung 27/09): khách Google
+                    chưa bổ sung số — sale chăm qua email/chat thay vì gọi. */}
+                <button
+                  type="button"
+                  aria-pressed={noPhone}
+                  onClick={() => {
+                    setNoPhone((v) => !v);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    noPhone
+                      ? "bg-amber-100 text-amber-900 shadow-sm"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  )}
+                >
+                  <PhoneOff className="size-3.5" />
+                  Chưa có SĐT
+                </button>
               </div>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
