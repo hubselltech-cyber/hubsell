@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   Check,
   ChevronRight,
+  Copy,
   ImageIcon,
   Layers,
   Loader2,
@@ -482,16 +483,60 @@ function CostCell({
   );
 }
 
-/** "Mã SP 22287974081" / "PL 204802569542" — mã sàn, chữ mono nhỏ, bấm đúp là chọn được. */
+/**
+ * Mã sàn (mã sản phẩm / mã phân loại): chữ mono nhỏ + nút copy nhanh ngay cạnh.
+ * Không in nhãn "Mã SP" / "PL" (anh Trung 28/09: thừa) — nghĩa nằm ở tooltip.
+ * `label` giữ để tooltip nói đúng đây là mã gì.
+ */
 function MarketplaceCode({ label, code }: { label: string; code: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const what = label === "PL" ? "Mã phân loại" : "Mã sản phẩm";
+
+  async function copy(e: React.MouseEvent) {
+    e.stopPropagation(); // dòng cha bấm là xổ/thu nhóm — copy không được kéo theo
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      // Trình duyệt/nhúng chặn Clipboard API → cách cũ: ô ẩn + execCommand
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = code;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (!ok) throw new Error("execCommand copy failed");
+      } catch {
+        toast.error("Trình duyệt không cho sao chép. Hãy bôi đen mã rồi Ctrl+C.");
+        return;
+      }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
   return (
     // max-w-full + truncate để mã dài không tràn sang cột bên khi màn hẹp
     <span
-      className="inline-flex max-w-full items-baseline gap-1 font-mono text-[11px] text-muted-foreground"
-      title={`${label === "PL" ? "Mã phân loại" : "Mã sản phẩm"} trên sàn: ${code}`}
+      className="group/code inline-flex max-w-full items-center gap-1 font-mono text-[11px] text-muted-foreground"
+      title={`${what} trên sàn: ${code}`}
     >
-      <span className="shrink-0 font-sans text-[10px] uppercase tracking-wide">{label}</span>
       <span className="min-w-0 select-all truncate">{code}</span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={`Sao chép ${what.toLowerCase()} ${code}`}
+        title={copied ? "Đã sao chép" : "Sao chép mã"}
+        className={cn(
+          "flex size-4 shrink-0 items-center justify-center rounded transition-colors hover:bg-muted hover:text-foreground",
+          copied ? "text-emerald-600" : "text-muted-foreground/60"
+        )}
+      >
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </button>
     </span>
   );
 }
