@@ -39,6 +39,7 @@ import { tiktokAdsPublicRouter, tiktokAdsRouter } from "./routes/tiktok-ads";
 import { adsTiktokRouter } from "./routes/ads-tiktok";
 import assistantRouter from "./routes/assistant";
 import subscriptionRouter from "./routes/subscription";
+import supportRouter from "./routes/support";
 import { requirePlanUnlocked } from "./services/plan-enforcement";
 import { notificationsRouter, notificationStream } from "./services/notifications";
 
@@ -236,6 +237,9 @@ export function createApp() {
 
   // Quản lý nhân viên + phân quyền gian hàng — chỉ Admin
   app.use("/api/staff", requireAuth, adminOnly, staffRouter);
+  // Yêu cầu hỗ trợ: mọi tài khoản đã đăng nhập (chủ + nhân viên), không cần
+  // gian hàng hay gói — khách bí ngay lúc chưa nối gian cũng phải gửi được.
+  app.use("/api/support-requests", requireAuth, supportRouter);
 
   // Trung tâm điều hành — khối demo trên Dashboard, chỉ Admin thấy nên gác adminOnly.
   // KHÔNG gác requireChannel: trạng thái (đã xử lý/chat/nhật ký) không phụ thuộc kênh.

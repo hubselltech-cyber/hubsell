@@ -13,6 +13,7 @@ import {
   getToken,
   type ConsultLeadStatus,
   type PlatformCareStatus,
+  type SupportRequestStatus,
 } from "@/lib/api";
 import { SERVER_DOWN_MESSAGE } from "@/lib/use-api-query";
 
@@ -169,6 +170,27 @@ export const LEAD_STATUS_META: Record<
 };
 
 export const LEAD_STATUSES = Object.keys(LEAD_STATUS_META) as ConsultLeadStatus[];
+
+/** Bảng màu trạng thái yêu cầu hỗ trợ — dùng chung HQ và hộp phía khách. */
+export const SUPPORT_STATUS_META: Record<
+  SupportRequestStatus,
+  { label: string; className: string }
+> = {
+  NEW: {
+    label: "Chưa xử lý",
+    className: "border-orange-200 bg-orange-50 text-orange-700",
+  },
+  IN_PROGRESS: {
+    label: "Đang xử lý",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+  },
+  DONE: {
+    label: "Đã xong",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+};
+
+export const SUPPORT_STATUSES = Object.keys(SUPPORT_STATUS_META) as SupportRequestStatus[];
 
 /** Nhãn nguồn lead — khách bấm nút nào trên landing. */
 export const LEAD_SOURCE_LABEL: Record<string, string> = {

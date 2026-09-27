@@ -4477,6 +4477,101 @@ export function updateConsultLead(
   });
 }
 
+// ---------- Yêu cầu hỗ trợ (khách đã đăng nhập) ----------
+
+/** Vòng đời yêu cầu hỗ trợ — khớp enum SupportRequestStatus backend. */
+export type SupportRequestStatus = "NEW" | "IN_PROGRESS" | "DONE";
+
+/** Bản khách thấy: không có ghi chú nội bộ / người phụ trách. */
+export interface MySupportRequest {
+  id: string;
+  requesterName: string;
+  content: string;
+  status: SupportRequestStatus;
+  /** Câu trả lời của Hubsell — null khi chưa trả lời. */
+  reply: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Gửi yêu cầu hỗ trợ. `phoneNumber` chỉ gửi khi tài khoản chưa có SĐT. */
+export function createSupportRequest(data: {
+  content: string;
+  phoneNumber?: string;
+  country?: string;
+}) {
+  return apiFetch<{ request: MySupportRequest; phoneSaved: string | null }>(
+    "/api/support-requests",
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+export function fetchMySupportRequests() {
+  return apiFetch<{ requests: MySupportRequest[] }>("/api/support-requests/mine");
+}
+
+/** Bản HQ (hq.customers): kèm tài khoản, người phụ trách, ghi chú nội bộ. */
+export interface AdminSupportRequestRow {
+  id: string;
+  requesterName: string;
+  content: string;
+  /** SĐT snapshot lúc gửi (E.164) — null = khách chưa để lại số. */
+  phone: string | null;
+  status: SupportRequestStatus;
+  reply: string | null;
+  note: string | null;
+  assignee: { id: string; fullName: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  account: {
+    userId: string;
+    fullName: string;
+    email: string | null;
+    phone: string | null;
+    planCode: string | null;
+    planName: string | null;
+    isTrial: boolean;
+    channelCount: number;
+  };
+}
+
+export interface AdminSupportRequestsResponse {
+  total: number;
+  /** Tổng yêu cầu đang NEW toàn hệ (không theo bộ lọc) — badge tab. */
+  newCount: number;
+  page: number;
+  pageSize: number;
+  requests: AdminSupportRequestRow[];
+}
+
+export function fetchAdminSupportRequests(params?: {
+  page?: number;
+  pageSize?: number;
+  status?: SupportRequestStatus;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.status) qs.set("status", params.status);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<AdminSupportRequestsResponse>(`/api/admin/support-requests${suffix}`);
+}
+
+export function updateAdminSupportRequest(
+  id: string,
+  data: {
+    status?: SupportRequestStatus;
+    assigneeId?: string | null;
+    reply?: string;
+    note?: string;
+  }
+) {
+  return apiFetch<{ request: AdminSupportRequestRow }>(`/api/admin/support-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 // ---------- Kế toán nội bộ (hq.finance) ----------
 
 export interface PlatformWithdrawalRow {

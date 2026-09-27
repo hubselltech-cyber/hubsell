@@ -3,8 +3,9 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Camera, Loader2, LogOut, Settings2, UserRound } from "lucide-react";
+import { Camera, LifeBuoy, Loader2, LogOut, Settings2, UserRound } from "lucide-react";
 
+import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Popover,
@@ -105,6 +106,9 @@ export function UserAvatarMenu({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+  // Popover điều khiển được để đóng menu khi mở hộp Yêu cầu hỗ trợ.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
 
   async function save(avatar: string | null) {
     setSaving(true);
@@ -135,7 +139,9 @@ export function UserAvatarMenu({
   }
 
   return (
-    <Popover>
+    <>
+    <SupportRequestDialog open={supportOpen} onOpenChange={setSupportOpen} />
+    <Popover open={menuOpen} onOpenChange={setMenuOpen}>
       {/* Mobile vẫn PHẢI thấy khối này (Đăng xuất nằm trong đây) — chỉ thu
           gọn: giấu tên + nhãn vai trò, giữ vòng tròn avatar */}
       <PopoverTrigger
@@ -201,17 +207,32 @@ export function UserAvatarMenu({
         {/* Lối tắt tới SĐT liên hệ + đổi mật khẩu (anh Trung 27/09): không
             thêm mục sidebar, khách tìm tài khoản của mình ở đây. Chỉ chủ shop
             vì nhóm Cấu hình là adminOnly. */}
-        {isAdmin(user) && (
-          <div className="mt-3 border-t pt-3">
+        <div className="mt-3 space-y-2 border-t pt-3">
+          {isAdmin(user) && (
             <Link
               href="/settings/general"
+              onClick={() => setMenuOpen(false)}
               className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
             >
               <Settings2 className="size-4" />
               {user.phone ? "Tài khoản & liên hệ" : "Thêm số điện thoại liên hệ"}
             </Link>
-          </div>
-        )}
+          )}
+          {/* Gửi yêu cầu hỗ trợ (anh Trung 27/09): mọi tài khoản, kể cả nhân
+              viên — một ô nội dung, hệ thống tự đính kèm tài khoản. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => {
+              setMenuOpen(false);
+              setSupportOpen(true);
+            }}
+          >
+            <LifeBuoy className="size-4" />
+            Gửi yêu cầu hỗ trợ
+          </Button>
+        </div>
         <div className="mt-3 border-t pt-3">
           <Button
             variant="outline"
@@ -236,5 +257,6 @@ export function UserAvatarMenu({
         />
       </PopoverContent>
     </Popover>
+    </>
   );
 }

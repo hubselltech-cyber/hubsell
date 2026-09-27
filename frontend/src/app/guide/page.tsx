@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   ChevronDown,
   ExternalLink,
+  LifeBuoy,
   Package,
   PlaySquare,
   ReceiptText,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
+import { SupportRequestDialog } from "@/components/support/support-request-dialog";
 import { TourPlayer } from "@/components/tour/guide-tour-player";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -191,14 +193,24 @@ function GuideAccordionItem({
 export default function GuidePage() {
   // Mỗi lúc chỉ mở một mục — mở mục mới thì mục cũ tự cụp (accordion).
   const [openKey, setOpenKey] = useState<string | null>(SECTIONS[0].key);
+  const [supportOpen, setSupportOpen] = useState(false);
 
   return (
     <AppShell>
+      <SupportRequestDialog open={supportOpen} onOpenChange={setSupportOpen} />
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Chọn phần cần xem — mỗi mục là một video hướng dẫn ngắn trên giao
-          diện thật, có giọng đọc thuyết minh từng bước.
-        </p>
+        {/* Khách bí là vào đây trước → đặt nút gửi yêu cầu hỗ trợ ngay đầu
+            trang (anh Trung 27/09), không phải lục menu. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Chọn phần cần xem — mỗi mục là một video hướng dẫn ngắn trên giao
+            diện thật, có giọng đọc thuyết minh từng bước.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setSupportOpen(true)}>
+            <LifeBuoy className="size-4" />
+            Gửi yêu cầu hỗ trợ
+          </Button>
+        </div>
         {SECTIONS.map((s) => (
           <GuideAccordionItem
             key={s.key}

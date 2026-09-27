@@ -10,7 +10,7 @@
 // ============================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { HeartHandshake, PhoneCall, PhoneOff, Search } from "lucide-react";
+import { HeartHandshake, LifeBuoy, PhoneCall, PhoneOff, Search } from "lucide-react";
 
 import { AppShell } from "@/components/shell/app-shell";
 import { AccessDenied } from "@/components/shared/access-denied";
@@ -25,9 +25,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  fetchAdminSupportRequests,
   fetchConsultLeads,
   fetchHqStaff,
   fetchPlatformUsers,
+  type AdminSupportRequestRow,
+  type AdminSupportRequestsResponse,
+  type SupportRequestStatus,
   type ConsultLeadRow,
   type ConsultLeadStatus,
   type ConsultLeadsResponse,
@@ -40,6 +44,7 @@ import { formatDateTime, formatVND } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CareDialog } from "../care-dialog";
 import { LeadDialog } from "../lead-dialog";
+import { SupportDialog } from "../support-dialog";
 import {
   AdminError,
   AdminPageHeader,
@@ -48,6 +53,8 @@ import {
   LEAD_SOURCE_LABEL,
   LEAD_STATUS_META,
   LEAD_STATUSES,
+  SUPPORT_STATUS_META,
+  SUPPORT_STATUSES,
   formatCount,
   pageCount,
   useAdminPage,
@@ -56,13 +63,22 @@ import {
 interface CustomersData {
   users: PlatformUsersResponse;
   leads: ConsultLeadsResponse;
+  support: AdminSupportRequestsResponse;
   members: HqMember[];
 }
 
-type ViewTab = "customers" | "leads";
+type ViewTab = "customers" | "leads" | "support";
+
+/** Email báo HQ trỏ ?tab=support — mở thẳng tab Yêu cầu hỗ trợ. Đọc từ
+ *  window để khỏi bọc Suspense của useSearchParams. */
+function initialTab(): ViewTab {
+  if (typeof window === "undefined") return "customers";
+  const t = new URLSearchParams(window.location.search).get("tab");
+  return t === "support" || t === "leads" ? t : "customers";
+}
 
 export default function PlatformCustomersPage() {
-  const [tab, setTab] = useState<ViewTab>("customers");
+  const [tab, setTab] = useState<ViewTab>(initialTab);
   const [page, setPage] = useState(1);
   const [careFilter, setCareFilter] = useState<"" | PlatformCareStatus>("");
   // Chip "Chưa có SĐT" — bật/tắt độc lập, ghép với lọc chăm sóc + tìm nhanh.
@@ -81,11 +97,15 @@ export default function PlatformCustomersPage() {
   const [leadPage, setLeadPage] = useState(1);
   const [leadFilter, setLeadFilter] = useState<"" | ConsultLeadStatus>("");
   const [leadFor, setLeadFor] = useState<ConsultLeadRow | null>(null);
+  // Tab Yêu cầu hỗ trợ (anh Trung 27/09) — khách đã đăng nhập gửi từ app.
+  const [supportPage, setSupportPage] = useState(1);
+  const [supportFilter, setSupportFilter] = useState<"" | SupportRequestStatus>("");
+  const [supportFor, setSupportFor] = useState<AdminSupportRequestRow | null>(null);
 
   // Nạp cả 2 tab một lượt — bảng còn nhỏ, đổi tab là thấy ngay không chờ,
   // và badge "n chưa gọi" luôn đúng kể cả đang đứng ở tab khách hàng.
   const fetcher = useCallback(async (): Promise<CustomersData> => {
-    const [users, leads, staff] = await Promise.all([
+    const [users, leads, support, staff] = await Promise.all([
       fetchPlatformUsers({
         page,
         pageSize: 20,
@@ -98,10 +118,15 @@ export default function PlatformCustomersPage() {
         pageSize: 20,
         status: leadFilter || undefined,
       }),
+      fetchAdminSupportRequests({
+        page: supportPage,
+        pageSize: 20,
+        status: supportFilter || undefined,
+      }),
       fetchHqStaff(),
     ]);
-    return { users, leads, members: staff.members };
-  }, [page, careFilter, noPhone, q, leadPage, leadFilter]);
+    return { users, leads, support, members: staff.members };
+  }, [page, careFilter, noPhone, q, leadPage, leadFilter, supportPage, supportFilter]);
   const { data, loading, denied, error, reload } = useAdminPage(fetcher);
 
   if (denied) {
@@ -114,6 +139,7 @@ export default function PlatformCustomersPage() {
 
   const users = data?.users;
   const leads = data?.leads;
+  const support = data?.support;
 
   return (
     <AppShell>
@@ -132,6 +158,7 @@ export default function PlatformCustomersPage() {
             [
               ["customers", "Khách đã đăng ký", HeartHandshake],
               ["leads", "Lead tư vấn", PhoneCall],
+              ["support", "Yêu cầu hỗ trợ", LifeBuoy],
             ] as const
           ).map(([value, label, Icon]) => (
             <button
@@ -157,6 +184,18 @@ export default function PlatformCustomersPage() {
                   )}
                 >
                   {formatCount(leads!.newCount)} chưa gọi
+                </span>
+              )}
+              {value === "support" && (support?.newCount ?? 0) > 0 && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none",
+                    tab === "support"
+                      ? "bg-white/20 text-white"
+                      : "bg-orange-100 text-orange-700"
+                  )}
+                >
+                  {formatCount(support!.newCount)} chưa xử lý
                 </span>
               )}
             </button>
@@ -403,7 +442,7 @@ export default function PlatformCustomersPage() {
               </CardContent>
             </Card>
           </>
-        ) : (
+        ) : tab === "leads" ? (
           <>
             {/* Lọc theo trạng thái lead */}
             <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
@@ -564,9 +603,193 @@ export default function PlatformCustomersPage() {
               </CardContent>
             </Card>
           </>
+        ) : (
+          <>
+            {/* Yêu cầu hỗ trợ từ khách đã đăng nhập — lọc theo trạng thái */}
+            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200/80 bg-card p-1">
+              {([["", "Tất cả"]] as [string, string][])
+                .concat(SUPPORT_STATUSES.map((s) => [s, SUPPORT_STATUS_META[s].label]))
+                .map(([value, label]) => (
+                  <button
+                    key={value || "all"}
+                    type="button"
+                    onClick={() => {
+                      setSupportFilter(value as "" | SupportRequestStatus);
+                      setSupportPage(1);
+                    }}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                      supportFilter === value
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                {loading && !support ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    Đang tải dữ liệu…
+                  </p>
+                ) : support && support.requests.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    Chưa có yêu cầu nào khớp bộ lọc — khách bấm &quot;Gửi yêu cầu hỗ
+                    trợ&quot; trong app sẽ đổ về đây.
+                  </p>
+                ) : support ? (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Gửi lúc</TableHead>
+                          <TableHead>Shop</TableHead>
+                          <TableHead>Nội dung</TableHead>
+                          <TableHead>Liên hệ</TableHead>
+                          <TableHead>Gói</TableHead>
+                          <TableHead>Trạng thái</TableHead>
+                          <TableHead>Phụ trách</TableHead>
+                          <TableHead className="text-right">Xử lý</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {support.requests.map((r) => {
+                          const meta = SUPPORT_STATUS_META[r.status];
+                          return (
+                            <TableRow key={r.id}>
+                              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                                {formatDateTime(r.createdAt)}
+                              </TableCell>
+                              <TableCell>
+                                <p className="text-sm">{r.account.fullName}</p>
+                                {r.requesterName !== r.account.fullName && (
+                                  <p className="text-xs text-muted-foreground">
+                                    gửi bởi {r.requesterName}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <p
+                                  className="max-w-[320px] truncate text-sm"
+                                  title={r.content}
+                                >
+                                  {r.content}
+                                </p>
+                                {r.reply && (
+                                  <p
+                                    className="mt-0.5 max-w-[320px] truncate text-xs text-emerald-700"
+                                    title={r.reply}
+                                  >
+                                    ↩ {r.reply}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {r.account.email ?? "—"}
+                                <p className="font-mono text-xs text-muted-foreground">
+                                  {r.phone ?? r.account.phone ?? "chưa có SĐT"}
+                                </p>
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm">
+                                {r.account.planName ? (
+                                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                                    {r.account.planName}
+                                    {r.account.isTrial ? " (dùng thử)" : ""}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {formatCount(r.account.channelCount)} gian
+                                </p>
+                              </TableCell>
+                              <TableCell>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                    meta.className
+                                  )}
+                                >
+                                  {meta.label}
+                                </span>
+                                {r.note && (
+                                  <p
+                                    className="mt-1 max-w-[180px] truncate text-xs text-muted-foreground"
+                                    title={r.note}
+                                  >
+                                    {r.note}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm">
+                                {r.assignee?.fullName ?? (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setSupportFor(r)}
+                                >
+                                  <LifeBuoy className="size-4" />
+                                  Xử lý
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                    <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
+                      <span>
+                        {formatCount(support.total)} yêu cầu · trang {support.page}/
+                        {pageCount(support.total, support.pageSize)}
+                      </span>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={supportPage <= 1 || loading}
+                          onClick={() => setSupportPage((p) => p - 1)}
+                        >
+                          Trước
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            supportPage >= pageCount(support.total, support.pageSize) ||
+                            loading
+                          }
+                          onClick={() => setSupportPage((p) => p + 1)}
+                        >
+                          Sau
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
+          </>
         )}
       </div>
 
+      {supportFor && (
+        <SupportDialog
+          request={supportFor}
+          members={data?.members ?? []}
+          open={true}
+          onOpenChange={(o) => {
+            if (!o) setSupportFor(null);
+          }}
+          onSaved={reload}
+        />
+      )}
       {careFor && (
         <CareDialog
           customer={careFor}

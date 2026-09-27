@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   ConsultLeadStatus,
+  SupportRequestStatus,
   LedgerDirection,
   LedgerInvoiceStatus,
   LedgerSource,
@@ -653,6 +654,169 @@ router.patch(
       });
 
       res.json({ lead: updated });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// ============================================================
+// YÊU CẦU HỖ TRỢ từ khách ĐÃ ĐĂNG NHẬP (lá hq.customers, anh Trung 27/09):
+// khách gõ nội dung ở app, tự đính kèm tài khoản. HQ đổi trạng thái, phân
+// công, ghi câu trả lời (khách thấy) + ghi chú nội bộ (khách không thấy).
+// ============================================================
+
+// GET /api/admin/support-requests?status=&page=&pageSize=
+router.get(
+  "/support-requests",
+  requirePlatformPermission("hq.customers"),
+  async (req, res, next) => {
+    try {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+      const statusRaw = String(req.query.status ?? "");
+      const status = (Object.values(SupportRequestStatus) as string[]).includes(statusRaw)
+        ? (statusRaw as SupportRequestStatus)
+        : undefined;
+      const where = status ? { status } : {};
+
+      const [total, newCount, rows] = await Promise.all([
+        prisma.supportRequest.count({ where }),
+        prisma.supportRequest.count({ where: { status: SupportRequestStatus.NEW } }),
+        prisma.supportRequest.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            assignee: { select: { id: true, fullName: true } },
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+                subscription: {
+                  select: { isTrial: true, plan: { select: { code: true, name: true } } },
+                },
+                _count: { select: { channels: true } },
+              },
+            },
+          },
+        }),
+      ]);
+
+      res.json({
+        total,
+        newCount,
+        page,
+        pageSize,
+        requests: rows.map((r) => ({
+          id: r.id,
+          requesterName: r.requesterName,
+          content: r.content,
+          phone: r.phone,
+          status: r.status,
+          reply: r.reply,
+          note: r.note,
+          assignee: r.assignee,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          account: {
+            userId: r.user.id,
+            fullName: r.user.fullName,
+            email: r.user.email,
+            phone: r.user.phone,
+            planCode: r.user.subscription?.plan.code ?? null,
+            planName: r.user.subscription?.plan.name ?? null,
+            isTrial: r.user.subscription?.isTrial ?? false,
+            channelCount: r.user._count.channels,
+          },
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// PATCH /api/admin/support-requests/:id — { status?, assigneeId?, reply?, note? }
+// (trường vắng mặt giữ nguyên; assigneeId null = bỏ phân công). Ghi audit log.
+router.patch(
+  "/support-requests/:id",
+  requirePlatformPermission("hq.customers"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { status, assigneeId, reply, note } = req.body ?? {};
+
+      const request = await prisma.supportRequest.findUnique({
+        where: { id: req.params.id },
+        include: { user: { select: { fullName: true, email: true } } },
+      });
+      if (!request) {
+        res.status(404).json({ error: "Không tìm thấy yêu cầu này" });
+        return;
+      }
+      if (
+        status !== undefined &&
+        !(Object.values(SupportRequestStatus) as string[]).includes(status)
+      ) {
+        res.status(400).json({ error: "Trạng thái không hợp lệ" });
+        return;
+      }
+      for (const [label, v] of [
+        ["Câu trả lời", reply],
+        ["Ghi chú", note],
+      ] as const) {
+        if (v !== undefined && v !== null && typeof v !== "string") {
+          res.status(400).json({ error: `${label} không hợp lệ` });
+          return;
+        }
+      }
+      if (assigneeId !== undefined && assigneeId !== null) {
+        const assignee = await prisma.user.findFirst({
+          where: {
+            id: String(assigneeId),
+            OR: [{ id: req.ownerId! }, { ownerId: req.ownerId! }],
+          },
+          select: { id: true },
+        });
+        if (!assignee) {
+          res.status(400).json({ error: "Người phụ trách không thuộc đội điều hành" });
+          return;
+        }
+      }
+
+      const clean = (v: unknown) =>
+        v === undefined ? undefined : v === null || String(v).trim() === "" ? null : String(v).trim();
+      const replyValue = clean(reply);
+      const noteValue = clean(note);
+
+      const updated = await prisma.supportRequest.update({
+        where: { id: request.id },
+        data: {
+          ...(status !== undefined ? { status: status as SupportRequestStatus } : {}),
+          ...(assigneeId !== undefined ? { assigneeId: assigneeId as string | null } : {}),
+          ...(replyValue !== undefined ? { reply: replyValue } : {}),
+          ...(noteValue !== undefined ? { note: noteValue } : {}),
+        },
+        include: { assignee: { select: { id: true, fullName: true } } },
+      });
+
+      await writeAuditLog(req, {
+        action: "support.update",
+        targetUserId: request.userId,
+        targetLabel: `${request.user.fullName} (${request.user.email ?? "—"})`,
+        detail: {
+          requestId: request.id,
+          ...(status !== undefined ? { status } : {}),
+          ...(assigneeId !== undefined ? { assigneeId } : {}),
+          ...(replyValue !== undefined ? { reply: replyValue } : {}),
+          ...(noteValue !== undefined ? { note: noteValue } : {}),
+        },
+      });
+
+      res.json({ request: updated });
     } catch (err) {
       next(err);
     }
