@@ -3286,6 +3286,14 @@ export function disconnectChannel(id: string) {
   return apiFetch<Channel>(`/api/channels/${id}/disconnect`, { method: "POST" });
 }
 
+/** Xóa hẳn gian ĐÃ NGẮT kết nối (cascade đơn, SP sàn, đối soát… của gian đó). */
+export function deleteChannel(id: string) {
+  return apiFetch<{
+    ok: true;
+    deleted: { id: string; shopName: string; orders: number; channelProducts: number };
+  }>(`/api/channels/${id}`, { method: "DELETE" });
+}
+
 /** Danh sách sản phẩm sàn ở tầng đệm, kèm trạng thái liên kết. */
 export function fetchChannelProducts(params: {
   /** Lọc theo SÀN (Shopee/Lazada/…). Kết hợp được với channelId. */

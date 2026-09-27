@@ -896,5 +896,43 @@ router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next)
   }
 });
 
+// DELETE /api/channels/:id — XÓA HẲN gian hàng (27/09/2026, anh Trung: gian
+// Hi.Bé đã ngắt nhưng vẫn nằm mãi trong danh sách). Chỉ xóa được gian ĐÃ NGẮT
+// KẾT NỐI — gian đang hoạt động phải Ngắt trước (tránh một cú bấm nhầm xóa
+// sạch gian đang bán). Prisma cascade dọn mọi thứ treo vào gian: đơn, SP sàn,
+// đối soát, chi phí ads, nhật ký tồn… (schema đều onDelete: Cascade; khoản
+// thu/chi vận hành gắn nguồn tiền vào gian chỉ SetNull — tiền vẫn còn). Sau
+// khi xóa, ủy quyền lại trên sàn sẽ tạo gian MỚI (khóa unique externalShopId).
+router.delete("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
+  try {
+    const channel = await prisma.channel.findFirst({
+      where: { id: req.params.id, userId: req.ownerId! },
+      include: { _count: { select: { orders: true, channelProducts: true } } },
+    });
+    if (!channel) {
+      res.status(404).json({ error: "Không tìm thấy kênh" });
+      return;
+    }
+    if (channel.status === "ACTIVE") {
+      res.status(409).json({
+        error: "Gian đang hoạt động — hãy Ngắt kết nối trước rồi mới xóa.",
+      });
+      return;
+    }
+    await prisma.channel.delete({ where: { id: channel.id } });
+    invalidatePlanState(req.ownerId!);
+    res.json({
+      ok: true,
+      deleted: {
+        id: channel.id,
+        shopName: channel.shopName,
+        orders: channel._count.orders,
+        channelProducts: channel._count.channelProducts,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

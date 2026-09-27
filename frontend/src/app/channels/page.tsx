@@ -17,6 +17,7 @@ import {
   RefreshCw,
   ShoppingCart,
   Store,
+  Trash2,
   Unplug,
   Wallet,
   Zap,
@@ -46,6 +47,7 @@ import {
   connectChannel,
   connectLazadaCode,
   connectShopeeCode,
+  deleteChannel,
   disconnectChannel,
   fetchChannelProducts,
   fetchChannels,
@@ -675,6 +677,9 @@ export default function ChannelsPage() {
   // sandbox) — khách thường không bao giờ thấy nút "giả lập" trên production.
   const [platformAdmin, setPlatformAdmin] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
+  // Gian ĐÃ NGẮT đang chờ xác nhận xóa hẳn (hộp cảnh báo nêu số đơn/SP sẽ mất).
+  const [deleting, setDeleting] = useState<Channel | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [denied, setDenied] = useState(false);
   // Khoá nút khi đang đồng bộ — giá trị dạng `${channelId}:orders|settlements`.
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -833,6 +838,23 @@ export default function ChannelsPage() {
       load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    }
+  }
+
+  // Xóa hẳn gian đã ngắt: backend từ chối gian ACTIVE (409) nên nút chỉ hiện ở
+  // dòng đã ngắt; dữ liệu treo vào gian (đơn, SP sàn, đối soát…) mất theo.
+  async function handleDelete() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      const r = await deleteChannel(deleting.id);
+      toast.success(`Đã xóa gian ${r.deleted.shopName}`);
+      setDeleting(null);
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Lỗi máy chủ");
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -1191,14 +1213,25 @@ export default function ChannelsPage() {
                                 </Button>
                               </>
                             ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleReconnect(c)}
-                              >
-                                <PlugZap className="size-3.5" />
-                                Kết nối lại
-                              </Button>
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleReconnect(c)}
+                                >
+                                  <PlugZap className="size-3.5" />
+                                  Kết nối lại
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-rose-700"
+                                  onClick={() => setDeleting(c)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Xóa gian
+                                </Button>
+                              </>
                             )}
                           </div>
 
@@ -1268,6 +1301,49 @@ export default function ChannelsPage() {
           onDone={load}
         />
       )}
+
+      <Dialog
+        open={deleting !== null}
+        onOpenChange={(o) => {
+          if (!o && !deleteBusy) setDeleting(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xóa gian {deleting?.shopName}?</DialogTitle>
+            <DialogDescription>
+              Gian sẽ biến mất khỏi tài khoản này cùng{" "}
+              <b>{formatNumber(deleting?._count?.orders ?? 0)} đơn</b> và{" "}
+              <b>{formatNumber(deleting?._count?.channelProducts ?? 0)} sản phẩm sàn</b>{" "}
+              đã đồng bộ. Không khôi phục được. Muốn bán lại trên gian này, anh/chị
+              ủy quyền lại trên sàn là được.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleteBusy}
+              onClick={() => setDeleting(null)}
+            >
+              Để lại
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteBusy}
+              onClick={handleDelete}
+            >
+              {deleteBusy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              Xóa hẳn
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
