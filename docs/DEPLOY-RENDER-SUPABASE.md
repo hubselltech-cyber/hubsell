@@ -106,6 +106,14 @@ cần tay anh trên Dashboard là mục 1–2 (tạo Background Worker, gói Sta
 copy env); mục 3–4 kiểm tra log rồi đổi `HUBSELL_ROLE=web` trên service web.
 Cờ heap trong `npm start` áp cho cả hai service vì dùng chung script.
 
+**✅ 27/09/2026 10:50 — ĐÃ TÁCH XONG.** Background Worker `hubsell-worker-sg`
+(srv-das91md9fdbs73cd7n20, Starter, Singapore, 46 env = 44 của web + HUBSELL_ROLE=worker
++ BACKEND_URL) lên lúc 10:44, log `[Role] worker` + `[Auto-sync] BẬT` + quét TikTok
+223 đơn ngay nhịp đầu; web thêm `HUBSELL_ROLE=web` lúc 10:50, log `[Role] web`,
+không còn Auto-sync, /health 200 suốt lúc chuyển. Cách làm: anh Trung điền form
+trên Dashboard (Export .env của web → Add from .env trên worker), Claude soát form
+qua Chrome trước khi bấm Deploy. Quay lui: web đặt HUBSELL_ROLE=all, worker Suspend.
+
 **27/09/2026 — M1, anh chốt làm nốt.** Giới hạn pool kết nối KHÔNG cần sửa tay
 chuỗi `DATABASE_URL` nữa: `lib/db-url.ts` tự ghép `connection_limit=5&pool_timeout=30`
 lúc khởi động (đổi bằng env `DB_CONNECTION_LIMIT` / `DB_POOL_TIMEOUT`; chuỗi đã

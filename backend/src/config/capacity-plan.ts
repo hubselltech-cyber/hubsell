@@ -27,18 +27,18 @@ export interface InfraPlan {
   monthlyUsd: number;
 }
 
-// 27/09/2026: Render web đã là Starter trả phí từ 05/08 (không ngủ); Supabase
-// nâng Pro sáng 27/09 sau sự cố egress (docs/DEPLOY-RENDER-SUPABASE.md bước 2d).
-// Worker vẫn chạy chung tiến trình web (anh Trung chốt 23/09 chưa tách).
+// 27/09/2026 — M1 HOÀN TẤT: Render web Starter (HUBSELL_ROLE=web) + Background
+// Worker Starter riêng hubsell-worker-sg (HUBSELL_ROLE=worker, tách 10:50 27/09)
+// + Supabase Pro (nâng sáng 27/09 sau sự cố egress, docs/DEPLOY-RENDER-SUPABASE.md 2d).
 export const CURRENT_INFRA: InfraPlan = {
-  webPlan: "Render Starter (512MB, 0.5 CPU, không ngủ)",
-  workerPlan: "Chưa tách (HUBSELL_ROLE=all)",
+  webPlan: "Render Starter (512MB, 0.5 CPU, không ngủ, HUBSELL_ROLE=web)",
+  workerPlan: "Render Background Worker Starter (512MB, hubsell-worker-sg)",
   dbPlan: "Supabase Pro (8GB, compute Micro)",
   webRamMb: 512,
-  workerRamMb: 0,
+  workerRamMb: 512,
   dbSizeMb: 8192,
   dbMaxConnections: 60,
-  monthlyUsd: 32,
+  monthlyUsd: 39,
 };
 
 // ---------- 2. Ngưỡng dấu hiệu (WORKER + INFRA) ----------
