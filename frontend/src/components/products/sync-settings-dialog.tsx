@@ -368,9 +368,11 @@ export function SyncSettingsDialog({
     setSyncingAll(true);
     try {
       const r = await syncAllStock();
-      if (r.queued === 0) {
+      if (r.enabledChannels === 0) {
+        toast.info("Chưa bật đồng bộ cho gian nào — bật công tắc gian ở trên rồi bấm lại.");
+      } else if (r.queued === 0) {
         toast.info(
-          "Chưa có SKU sàn nào liên kết với kho — sang tab Sản phẩm trên sàn để nối trước."
+          "Gian đang bật chưa có SKU sàn nào liên kết với kho — sang tab Sản phẩm trên sàn để nối trước."
         );
       } else {
         const pend = pending + r.queued;
@@ -611,8 +613,9 @@ export function SyncSettingsDialog({
               <div className="rounded-lg border p-3">
                 <p className="text-sm">Đẩy lại toàn bộ ngay</p>
                 <p className={cn(TEXT_SUB, "mt-0.5")}>
-                  Ghi đè Có thể bán lên MỌI SKU đã nối của MỌI gian (kể cả gian
-                  đang tắt) — dùng sau kiểm kho hoặc khi nghi tồn sàn lệch.
+                  Ghi đè Có thể bán lên MỌI SKU đã nối của các gian đang BẬT —
+                  dùng sau kiểm kho hoặc khi nghi tồn sàn lệch. Gian đang tắt
+                  không bị đụng.
                 </p>
                 <div className="mt-2 flex items-center gap-3">
                   <Button size="sm" onClick={handleSyncAll} disabled={syncingAll}>

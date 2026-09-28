@@ -93,6 +93,11 @@ export function SyncAlertBanner() {
   if (alerts.length === 0) return null;
 
   const visible = showAll ? alerts : alerts.slice(0, SHOW_LIMIT);
+  // Mọi cảnh báo cùng MỘT lý do (vd 100 SKU cùng gian TikTok thiếu quyền) →
+  // nói lý do một lần ở tiêu đề, từng dòng không lặp; nhiều lý do → mỗi dòng
+  // tự mang nhãn ngắn của mình.
+  const reasons = Array.from(new Set(alerts.map((a) => a.reason).filter(Boolean)));
+  const singleReason = reasons.length === 1 ? reasons[0] : null;
 
   return (
     <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-4">
@@ -104,7 +109,9 @@ export function SyncAlertBanner() {
             : `${formatNumber(alerts.length)} SKU chưa đẩy được tồn lên sàn`}
         </p>
         <span className="text-xs text-rose-700/80">
-          — số trên sàn có thể đang khác Hubsell. Bấm Đẩy lại, hoặc Đã xử lý để bỏ qua.
+          {singleReason
+            ? `— ${singleReason}.`
+            : "— số trên sàn có thể đang khác Hubsell. Bấm Đẩy lại, hoặc Đã xử lý để bỏ qua."}
         </span>
         {alerts.length > 1 && (
           <Button
@@ -130,14 +137,17 @@ export function SyncAlertBanner() {
               className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-rose-100 bg-card p-3"
             >
               <div className="min-w-0 flex-1">
-                {/* Câu giải thích đã nằm ở tiêu đề khối — từng dòng chỉ nêu
-                    SKU nào, gian nào; cảnh báo cấp gian (không có SKU) mới
-                    in nguyên câu của backend. */}
+                {/* Từng dòng chỉ nêu SKU nào, gian nào; lý do ngắn in kèm khi
+                    các cảnh báo KHÁC lý do nhau (cùng lý do thì đã ở tiêu đề);
+                    cảnh báo cấp gian (không có SKU) in nguyên câu của backend. */}
                 <p className="text-sm text-slate-900">
                   {alert.channelSku ? (
                     <>
                       SKU <span className="font-medium">{alert.channelSku}</span> →{" "}
                       {alert.shopName}
+                      {!singleReason && alert.reason && (
+                        <span className="text-rose-700"> · {alert.reason}</span>
+                      )}
                     </>
                   ) : (
                     plain

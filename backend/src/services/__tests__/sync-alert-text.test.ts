@@ -4,6 +4,8 @@ import {
   classifyStockPushFailure,
   describeChannelFailure,
   describeStockPushFailure,
+  shortReasonFromMessage,
+  shortStockPushReason,
 } from "../sync-alert-text";
 
 describe("classifyStockPushFailure", () => {
@@ -18,6 +20,29 @@ describe("classifyStockPushFailure", () => {
     expect(classifyStockPushFailure("stock lower than promotion reserved stock")).toBe("promotion");
     expect(classifyStockPushFailure("error_item_not_found")).toBe("not-found");
     expect(classifyStockPushFailure("something weird")).toBe("unknown");
+  });
+
+  it("TikTok 105005 thiếu scope là 'scope', không phải 'auth' dù câu có chữ access token", () => {
+    const raw =
+      "TikTok API lỗi (code 105005): Access denied. This app has not been granted any access scope required by this endpoint. Add a required scope to the app, reauthorize it, and retry with a new access token.";
+    expect(classifyStockPushFailure(raw)).toBe("scope");
+    const msg = describeStockPushFailure({ raw, shopName: "Hi.Bé", channelSku: "LT082-BE", expected: 1146 });
+    const [line1] = msg.split("\n");
+    expect(line1).toContain("chưa cấp cho Hubsell quyền sửa tồn");
+    expect(line1).toContain("Kết nối lại gian");
+    expect(line1).not.toContain("mất kết nối");
+    expect(line1).not.toContain("105005");
+    expect(shortReasonFromMessage(msg)).toBe(shortStockPushReason("scope"));
+  });
+});
+
+describe("shortReasonFromMessage", () => {
+  it("đọc lỗi thô ở dòng cuối của message đã lưu; message 1 dòng thì dùng chính nó", () => {
+    expect(shortReasonFromMessage("Câu tiếng người\nerror_rate_limit")).toBe(
+      shortStockPushReason("rate-limit")
+    );
+    expect(shortReasonFromMessage("Không lấy được access_token")).toBe(shortStockPushReason("auth"));
+    expect(shortReasonFromMessage("lạ")).toBe(shortStockPushReason("unknown"));
   });
 });
 

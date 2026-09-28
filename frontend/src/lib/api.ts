@@ -406,6 +406,8 @@ export interface InventorySyncAlert {
   orderSn: string | null;
   /** Dòng 1 = chuyện gì + cần làm gì (tiếng người); sau "\n" = chi tiết kỹ thuật. */
   message: string;
+  /** Nhãn ngắn 1 dòng cho seller (backend suy từ lỗi thô): "Sàn chưa cấp quyền…". */
+  reason: string;
   createdAt: string;
   /** Tồn khả dụng HIỆN TẠI của SKU trên Hubsell — số chuẩn nút "Cập nhật tồn" sẽ đè lên sàn. */
   hubsellAvailable: number | null;
@@ -1401,9 +1403,9 @@ export function reconcileChannelSync(channelId: string) {
   }>(`/api/inventory/sync-channels/${channelId}/reconcile`, { method: "POST" });
 }
 
-/** Nút [Sync ngay toàn bộ] — đẩy lại tồn mọi SKU đã liên kết, bất kể switch. */
+/** Nút [Sync ngay toàn bộ] — đẩy lại tồn mọi SKU đã liên kết lên các gian ĐANG BẬT (28/09: gian tắt không đè). */
 export function syncAllStock() {
-  return apiFetch<{ queued: number }>("/api/inventory/sync-all", {
+  return apiFetch<{ queued: number; enabledChannels: number }>("/api/inventory/sync-all", {
     method: "POST",
   });
 }

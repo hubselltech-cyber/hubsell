@@ -5,6 +5,13 @@
 // thôi". Mọi cảnh báo InventorySyncAlert đi qua đây: dòng 1 = chuyện gì + cần
 // làm gì (tiếng người), dòng 2 (sau "\n") = chi tiết kỹ thuật để em tra khi
 // cần — UI hiện dòng 2 nhỏ, mờ, gập lại.
+//
+// 28/09 (khách Hi.Bé gặp TikTok 105005 "not been granted any access scope"):
+// thêm loại "scope" = SÀN CHƯA CẤP QUYỀN cho app Hubsell (khác "auth" = gian
+// mất kết nối). Anh chốt 28/09 bật scope Product Modify trên console TikTok →
+// việc của khách chỉ còn "Kết nối lại gian" để token nhận thêm quyền (TikTok:
+// đổi scope app thì gian phải ủy quyền lại). Kèm NHÃN NGẮN (`shortReason`)
+// ≤ 1 dòng để banner in cạnh từng SKU / trên tiêu đề khi mọi SKU cùng lý do.
 // ============================================================
 
 export interface StockPushFailure {
@@ -19,23 +26,59 @@ export interface StockPushFailure {
 export type FailureKind =
   | "multi-warehouse"
   | "rate-limit"
+  | "scope"
   | "auth"
   | "promotion"
   | "not-found"
   | "unknown";
 
-/** Nhận diện nguyên nhân từ lỗi thô (Shopee/Lazada trả tiếng Anh, mã lỗi). */
+/** Nhận diện nguyên nhân từ lỗi thô (Shopee/Lazada/TikTok trả tiếng Anh, mã lỗi). */
 export function classifyStockPushFailure(raw: string): FailureKind {
   const s = raw.toLowerCase();
   if (/multi warehouse|location id|location_id/.test(s)) return "multi-warehouse";
   if (/rate limit|error_rate_limit|too many requests|retry next second|901/.test(s))
     return "rate-limit";
+  // Thiếu QUYỀN của app (TikTok 105005 "has not been granted any access scope")
+  // phải bắt TRƯỚC "auth": câu lỗi TikTok có chữ "access token" nên rơi vào
+  // auth sẽ khuyên "kết nối lại gian" — sai, kết nối lại không thêm được quyền.
+  if (/105005|access scope|not been granted|scope required|insufficient scope/.test(s))
+    return "scope";
   if (/access_token|refresh_token|invalid_access|error_auth|error_permission|unauthorized|token|uỷ quyền|ủy quyền|permission/.test(s))
     return "auth";
   if (/promotion|campaign|flash sale|reserved|khuyến mãi/.test(s)) return "promotion";
   if (/not found|not exist|item_not_found|invalid item|deleted|unlist|error_item/.test(s))
     return "not-found";
   return "unknown";
+}
+
+/**
+ * NHÃN NGẮN cho seller — một dòng, không tên gian/SKU (banner tự ghép), không
+ * mã lỗi. Dùng cạnh từng SKU hoặc làm tiêu đề khi mọi cảnh báo cùng lý do.
+ */
+export function shortStockPushReason(kind: FailureKind): string {
+  switch (kind) {
+    case "multi-warehouse":
+      return "Gian có nhiều kho — Hubsell tự nhận diện kho và đẩy lại";
+    case "rate-limit":
+      return "Sàn giới hạn lượt gọi — hệ thống tự thử lại, không cần làm gì";
+    case "scope":
+      return "Gian chưa cấp quyền sửa tồn cho Hubsell — vào Kênh bán kết nối lại gian";
+    case "auth":
+      return "Gian mất kết nối — vào Kênh bán kết nối lại gian";
+    case "promotion":
+      return "SKU đang khuyến mãi giữ chỗ — sàn không cho hạ tồn";
+    case "not-found":
+      return "Sàn không còn SKU này (đã xóa/ẩn)";
+    default:
+      return "Sàn từ chối, chưa rõ lý do — bấm Đẩy lại";
+  }
+}
+
+/** Nhãn ngắn suy từ message đã lưu ("dòng 1\nlỗi thô"): đọc lỗi thô ở cuối. */
+export function shortReasonFromMessage(message: string): string {
+  const lines = message.split("\n");
+  const raw = lines.length > 1 ? lines.slice(1).join("\n") : message;
+  return shortStockPushReason(classifyStockPushFailure(raw));
 }
 
 /**
@@ -54,6 +97,9 @@ export function describeStockPushFailure(f: StockPushFailure): string {
       break;
     case "rate-limit":
       line = `Sàn đang giới hạn lượt gọi, chưa đẩy được ${sku} lên "${f.shopName}". Không cần làm gì — hệ thống tự thử lại; còn treo sau 15 phút thì bấm "Đẩy lại".`;
+      break;
+    case "scope":
+      line = `Gian "${f.shopName}" chưa cấp cho Hubsell quyền sửa tồn nên ${sku} chưa đẩy được${num}. Vào Kênh bán → Kết nối lại gian (cấp thêm quyền), rồi bấm "Đẩy lại".`;
       break;
     case "auth":
       line = `Gian "${f.shopName}" mất kết nối nên không đẩy được tồn. Vào Kênh bán → kết nối lại gian, rồi bấm "Đẩy lại".`;
@@ -76,8 +122,10 @@ export function describeChannelFailure(shopName: string, raw: string): string {
   const line =
     kind === "auth"
       ? `Gian "${shopName}" mất kết nối với sàn nên tồn kho và đơn hàng không đồng bộ. Vào Kênh bán → kết nối lại gian.`
-      : kind === "rate-limit"
-        ? `Sàn đang giới hạn lượt gọi với gian "${shopName}". Không cần làm gì — hệ thống tự thử lại.`
-        : `Gian "${shopName}" đang không đồng bộ được với sàn. Thử "Sync ngay toàn bộ" trong Cài đặt đồng bộ; vẫn lỗi thì kết nối lại gian ở Kênh bán.`;
+      : kind === "scope"
+        ? `Gian "${shopName}" chưa cấp cho Hubsell quyền cần thiết. Vào Kênh bán → Kết nối lại gian để cấp thêm quyền.`
+        : kind === "rate-limit"
+          ? `Sàn đang giới hạn lượt gọi với gian "${shopName}". Không cần làm gì — hệ thống tự thử lại.`
+          : `Gian "${shopName}" đang không đồng bộ được với sàn. Thử "Sync ngay toàn bộ" trong Cài đặt đồng bộ; vẫn lỗi thì kết nối lại gian ở Kênh bán.`;
   return `${line}\n${raw}`;
 }

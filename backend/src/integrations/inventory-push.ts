@@ -16,9 +16,10 @@
 //
 // Cờ BẬT/TẮT theo TỪNG GIAN (Channel.stockSyncEnabled, mặc định TẮT) gác ngay
 // ở cửa enqueue: gian tắt thì biến động tự động không sinh job cho gian đó —
-// chỉ thao tác chủ động của người dùng (force = true: nút [Sync ngay toàn bộ],
-// bật gian lần đầu, force-sync theo cảnh báo) mới đi qua. Gian chưa qua màn
-// so sánh/bật sẽ không bao giờ bị ghi đè tồn.
+// chỉ thao tác chủ động trên CHÍNH gian đó (force = true: bật gian lần đầu,
+// force-sync theo cảnh báo) mới đi qua. Nút [Sync ngay toàn bộ] từ 28/09 (anh
+// Trung chốt) cũng CHỈ đẩy gian đang bật. Gian chưa qua màn so sánh/bật sẽ
+// không bao giờ bị ghi đè tồn.
 // ============================================================
 
 import { ChannelName, StockPushStatus } from "@prisma/client";
@@ -185,9 +186,9 @@ export async function enqueueStockPush(
 }
 
 /**
- * [Sync ngay toàn bộ] — ghi job cho MỌI SKU sàn đã liên kết của một chủ shop
- * (mọi gian Shopee/Lazada ACTIVE). Mặc định FORCE (bỏ qua cờ gian); truyền
- * force: false để chỉ đẩy tới các gian đang BẬT (vd đổi tồn an toàn mặc định).
+ * Ghi job cho MỌI SKU sàn đã liên kết của một chủ shop. force: false (nút
+ * [Sync ngay toàn bộ] từ 28/09, đổi tồn an toàn mặc định) = chỉ gian đang BẬT;
+ * force: true = bỏ qua cờ gian — chỉ còn dùng cho việc nội bộ, đừng gắn vào nút.
  * Trả số job đã xếp hàng để UI hiển thị tiến độ.
  */
 export async function enqueueStockPushForOwner(

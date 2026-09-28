@@ -15,6 +15,7 @@ import {
 import { refreshLinkedChannelStock } from "../marketplace/stock-refresh";
 import { reconcileChannelStock } from "../workers/stock-reconcile";
 import { scanOpsAlerts } from "../services/ops-alerts";
+import { shortReasonFromMessage } from "../services/sync-alert-text";
 import { findInsufficient, normalizeBulkItems } from "../lib/inventory-bulk";
 import { applyStockDelta, setLevelAbsolute, setStockAbsolute } from "../services/stock-ledger";
 
@@ -633,6 +634,8 @@ router.get("/sync-alerts", async (req: AuthRequest, res, next) => {
         channelSku: a.channelSku,
         orderSn: a.orderSn,
         message: a.message,
+        // Nhãn ngắn suy từ lỗi thô lúc ĐỌC (không lưu DB) — cảnh báo cũ cũng có.
+        reason: shortReasonFromMessage(a.message),
         createdAt: a.createdAt,
         hubsellAvailable: a.channelSku
           ? (availableByKey.get(`${a.channelId}:${a.channelSku}`) ?? null)
@@ -1189,12 +1192,26 @@ router.post("/sync-channels/:id/reconcile", async (req: AuthRequest, res, next) 
 });
 
 // POST /api/inventory/sync-all — nút [Sync ngay toàn bộ]: đẩy lại tồn khả dụng
-// của MỌI SKU đã liên kết lên mọi gian Shopee/Lazada, bất kể switch autoSync.
+// của MỌI SKU đã liên kết lên các gian ĐANG BẬT đồng bộ. Anh Trung chốt 28/09:
+// gian TẮT (chưa qua màn so sánh) không bao giờ bị ghi đè, kể cả sync tay —
+// trước đó nút này force cả gian tắt, khách để hết TẮT rồi bấm vẫn bị đè tồn.
 router.post("/sync-all", async (req: AuthRequest, res, next) => {
   try {
     if (!requireShopOwner(req, res)) return;
-    const r = await enqueueStockPushForOwner(req.ownerId!, "sync tay toàn bộ");
-    res.json({ queued: r.queued });
+    const enabledChannels = await prisma.channel.count({
+      where: {
+        userId: req.ownerId!,
+        status: "ACTIVE",
+        refreshToken: { not: null },
+        channelName: { in: PUSHABLE_CHANNELS },
+        stockSyncEnabled: true,
+      },
+    });
+    const r =
+      enabledChannels > 0
+        ? await enqueueStockPushForOwner(req.ownerId!, "sync tay toàn bộ", { force: false })
+        : { queued: 0 };
+    res.json({ queued: r.queued, enabledChannels });
   } catch (err) {
     next(err);
   }
