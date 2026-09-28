@@ -115,9 +115,16 @@ ngày), Lazada ~7 call report + adgroup. Không có gì seller "cần tức thì
    trần call/giây cấu hình được (`ADS_APP_QPS`, mặc định thận trọng **3/s** tới khi
    Shopee trả lời ticket). Mọi call ads đi qua bucket.
 2. **Cầu dao chung trong DB** (`ApiThrottleState{app, pausedUntil, reason}`): gặp
-   `exceed_partner_api` / HTTP 429 → **không retry**, đặt `pausedUntil = now + 5'`
-   (nhân đôi tới 60'); mọi worker đọc trước khi gọi. Gặp `exceed_shop_api` → chỉ
-   gian đó lùi xung 15'.
+   `exceed_partner_api` / `exceed_api` → **không retry**, đặt `pausedUntil = now + 5'`
+   (nhân đôi tới 60'); mọi worker đọc trước khi gọi. Gặp `exceed_shop_api` **hoặc
+   HTTP 429 trần (không mã)** → chỉ gian đó lùi xung 15'.
+   **★ Sửa 28/09/2026 (sự cố thật):** thiết kế cũ coi mọi HTTP 429 là tầng app →
+   Hubsell Ads (2044679) gọi 1 call/gian/30' vẫn dính 429 lẻ trên từng gian
+   (7 lần/ngày, 7 gian khác nhau) → cầu dao đóng cả app, bậc nhân đôi tới 40',
+   Trợ lý quảng cáo mọi khách đứng số. Nay client đọc THÂN 429 (mã + request_id,
+   đúng "call log" Shopee đòi ở ticket quota) và chỉ mã partner mới đóng cầu dao;
+   `api-budget.ts` đếm **bão 429**: ≥ 3 lần tầng shop trong 10' (`RATE_LIMIT_STORM`)
+   → coi là trần app, đóng cầu dao như cũ.
 3. **Sửa retry của client**: `client.ts` hiện retry 3 lần 1.5s→6s cho mọi
    "rate limit" — đúng cho lỗi thoáng, **sai** cho vượt trần theo app (FAQ: đừng
    retry). Tách: partner-level → ném `ApiBudgetError`; shop-level → 1 retry sau 3s.
@@ -246,9 +253,10 @@ Mỗi bước một commit, không gộp.
   `sync-schedule.ts` nudge/Làm mới → xung, ví đọc DB ở `ops-alerts.ts` + `routes/ads.ts`.
 - Cột Channel mới: `nextAdsPulseAt`, `adsWalletBalance`, `adsWalletSyncedAt`
   (migration 20260912233000); bảng `api_throttle_states` (20260912230000).
-- Client: mã `ads.rate_limit.exceed_partner_api` / `exceed_api` / HTTP 429 → đóng
-  cầu dao, KHÔNG retry; `exceed_shop_api` → lùi gian 15'. Retry cũ (3 lần) chỉ
-  còn cho `error_rate_limit` của API đơn/kho.
+- Client: mã `ads.rate_limit.exceed_partner_api` / `exceed_api` → đóng cầu dao,
+  KHÔNG retry; `exceed_shop_api` / HTTP 429 trần → lùi gian 15' (28/09, xem Tầng C
+  mục 2; bão ≥3 gian/10' mới đóng cầu dao). Retry cũ (3 lần) chỉ còn cho
+  `error_rate_limit` của API đơn/kho.
 - 14/09: Lazada thêm `AdSpend` theo ngày từ tổng perf chiến dịch (`lazada/ads-spend.ts`,
   0 call sàn, chặn tính đúp gian trả tiền ads qua doanh thu — xem HUBSELL-ADS.md) và
   dải đỏ "ví hết số dư" trên trang Trợ lý Lazada (`walletEmpty` từ cờ sàn).

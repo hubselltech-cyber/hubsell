@@ -122,10 +122,52 @@ export async function tripAppBreaker(app: string, reason: string): Promise<numbe
   return pauseMs;
 }
 
+// ---------- 3. Bão 429 theo shop → mới đóng cầu dao chung ----------
+//
+// ★ 28/09/2026: HTTP 429 trần (không mã exceed_partner_api) giờ là tầng SHOP
+// (client.ts) — một gian dính không kéo cả app nghỉ. Nhưng nếu NHIỀU gian cùng
+// dính trong thời gian ngắn thì đó là dấu hiệu trần theo app thật (hoặc sàn
+// đang siết) → vẫn phải đóng cầu dao, không được để hàng loạt gian tiếp tục
+// đập vào. Ngưỡng mặc định: ≥ 3 lần 429 tầng shop trong 10' (mỗi gian chỉ
+// xung 1 call/30' nên 3 lần/10' gần như chắc là 3 gian khác nhau). Đếm trong
+// RAM từng tiến trình — worker đang là 1 instance; nhiều instance thì mỗi bên
+// tự đếm, vẫn an toàn (chỉ nhạy hơn, không lỏng hơn).
+export const RATE_LIMIT_STORM = {
+  /** Số lần 429 tầng shop trong cửa sổ → coi là vượt trần theo app. */
+  trips: 3,
+  windowMs: 10 * 60 * 1000,
+} as const;
+const shopRateLimitHits = new Map<string, number[]>();
+
+/** Hàm thuần (test): ghi thêm mốc `now`, trả true nếu đủ `trips` mốc trong `windowMs`. */
+export function isRateLimitStorm(
+  hits: number[],
+  now: number,
+  trips: number = RATE_LIMIT_STORM.trips,
+  windowMs: number = RATE_LIMIT_STORM.windowMs
+): boolean {
+  hits.push(now);
+  const cutoff = now - windowMs;
+  while (hits.length && hits[0] < cutoff) hits.shift();
+  return hits.length >= trips;
+}
+
+function noteShopRateLimit(app: string): boolean {
+  let hits = shopRateLimitHits.get(app);
+  if (!hits) {
+    hits = [];
+    shopRateLimitHits.set(app, hits);
+  }
+  const storm = isRateLimitStorm(hits, Date.now());
+  if (storm) hits.length = 0; // đã đóng cầu dao → đếm lại từ đầu sau khi mở
+  return storm;
+}
+
 /**
  * Bọc MỘT call Ads API: chờ cầu dao mở → lấy token → gọi. `classify` đọc lỗi
- * sàn trả về: "partner" → đóng cầu dao + ném; "shop" → ném để caller lùi gian;
- * null → ném nguyên lỗi.
+ * sàn trả về: "partner" → đóng cầu dao + ném; "shop" → ném để caller lùi gian
+ * (nhiều gian cùng dính trong 10' → coi như partner, đóng cầu dao); null → ném
+ * nguyên lỗi.
  */
 export async function withApiBudget<T>(
   app: string,
@@ -138,12 +180,21 @@ export async function withApiBudget<T>(
     return await fn();
   } catch (err) {
     const scope = classify(err);
+    const message = (err as Error).message;
     if (scope === "partner") {
-      await tripAppBreaker(app, (err as Error).message.slice(0, 300));
-      throw new ApiBudgetError(app, "partner_rate_limit", (err as Error).message);
+      await tripAppBreaker(app, message.slice(0, 300));
+      throw new ApiBudgetError(app, "partner_rate_limit", message);
     }
     if (scope === "shop") {
-      throw new ApiBudgetError(app, "shop_rate_limit", (err as Error).message);
+      if (noteShopRateLimit(app)) {
+        await tripAppBreaker(
+          app,
+          `Bão 429: ≥${RATE_LIMIT_STORM.trips} gian vượt trần trong ${RATE_LIMIT_STORM.windowMs / 60000}' — ${message}`.slice(0, 300)
+        );
+        throw new ApiBudgetError(app, "partner_rate_limit", message);
+      }
+      console.warn(`[ApiBudget] 429 tầng shop app "${app}" (chỉ lùi gian): ${message}`);
+      throw new ApiBudgetError(app, "shop_rate_limit", message);
     }
     throw err;
   }

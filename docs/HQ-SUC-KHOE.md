@@ -83,6 +83,16 @@ nhất. Ít hơn 7 điểm dữ liệu → "chưa đủ dữ liệu".
 | Hạ tầng | mỗi giờ | DB ≥ 80% gói, RAM ≥ 85%, kết nối ≥ 80% | chuông + email (dedupe 24h) |
 | Token/ủy quyền | mỗi giờ | gian DISCONNECTED tăng ≥ 3 trong 24h | chuông |
 
+**Chỉnh ngưỡng 28/09/2026 (anh Trung: "sao nhanh vượt ngưỡng vậy", kiểm log prod):**
+- Dấu hiệu *Gian rớt kết nối* trước đếm TỔNG gian DISCONNECTED (4 gian rớt lâu
+  ngày khách chưa nối lại) → vàng mãi. Nay đếm gian MỚI rớt trong 24h
+  (`disconnectedAt`) theo đúng `disconnectedDelta24h = 3`; gian ACTIVE lỗi ≥3
+  nhịp vẫn vàng (việc thật, VD KYC Shopee).
+- Dấu hiệu *Cầu dao*: đỏ khi đang đóng (giữ); vàng khi đóng liên tiếp ≥
+  `breakerTripsWarn24h = 3` (trước: >0 — một lần 429 lẻ của sàn cũng vàng).
+- Gốc của dải đỏ 28/09 không phải ngưỡng mà là cầu dao Ads coi HTTP 429 lẻ trên
+  1 gian là trần app → sửa ở docs/ADS-NHIP-CANH-BAO.md Tầng C mục 2.
+
 Chuông dùng `notify()` sẵn có (type `platform-health`, dedupe 24h theo title);
 email qua `lib/mailer.ts` tới email của mọi user `isPlatformAdmin` (+ env
 `HQ_ALERT_EMAILS` nếu muốn thêm).

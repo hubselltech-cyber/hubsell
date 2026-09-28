@@ -5645,6 +5645,8 @@ export interface PlatformHealthResponse {
       channelsByPlatform: Record<string, number>;
       channelsAds: number;
       channelsDisconnected: number;
+      /** Gian MỚI rớt trong 24h (28/09) — dấu hiệu token/ủy quyền; tổng ở trên chỉ để biết. */
+      channelsDisconnected24h?: number;
       ordersTotal: number;
       ordersPerDay7d: number;
       ordersPeakDay30d: number;

@@ -144,8 +144,11 @@ function isLazadaAdsPath(path: string): boolean {
  */
 export function classifyLazadaAdsRateLimit(err: unknown): "partner" | "shop" | null {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/ApiCallLimit|CallLimit|call limit|rate limit|too many|HTTP 429/i.test(msg)) return "partner";
-  if (/(^|[^0-9])901([^0-9]|$)/.test(msg)) return "shop";
+  // ApiCallLimit = hạn mức gọi của APP (LazOP) → cầu dao. 28/09: HTTP 429 /
+  // "too many" trần không có mã app → tầng SHOP (như Shopee), api-budget đếm
+  // bão nhiều gian mới đóng cầu dao chung.
+  if (/ApiCallLimit|CallLimit|call limit/i.test(msg)) return "partner";
+  if (/rate limit|too many|HTTP 429|(^|[^0-9])901([^0-9]|$)/i.test(msg)) return "shop";
   return null;
 }
 

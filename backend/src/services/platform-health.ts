@@ -52,7 +52,8 @@ export interface GrowthLayer {
   channelsActive: number; // Shopee+Lazada+TikTok ACTIVE
   channelsByPlatform: Record<string, number>;
   channelsAds: number; // gian có campaign ongoing
-  channelsDisconnected: number;
+  channelsDisconnected: number; // tổng gian DISCONNECTED (kể cả rớt lâu ngày)
+  channelsDisconnected24h: number; // gian MỚI rớt trong 24h — dấu hiệu token/ủy quyền
   ordersTotal: number;
   ordersPerDay7d: number;
   ordersPeakDay30d: number;
@@ -113,7 +114,8 @@ export async function collectGrowth(): Promise<GrowthLayer> {
   const now = Date.now();
   const d7 = new Date(now - 7 * DAY_MS);
   const d30 = new Date(now - 30 * DAY_MS);
-  const [ownersTotal, ownersNew7d, channelsRows, disconnected, ordersTotal, orders7d, adsChannels, webhooks7d, activeOwnerRows, peak] =
+  const d1 = new Date(now - DAY_MS);
+  const [ownersTotal, ownersNew7d, channelsRows, disconnected, disconnected24h, ordersTotal, orders7d, adsChannels, webhooks7d, activeOwnerRows, peak] =
     await Promise.all([
       safe("user.count", prisma.user.count({ where: { ownerId: null, isPlatformAdmin: false } }), 0),
       safe("user.count", prisma.user.count({ where: { ownerId: null, isPlatformAdmin: false, createdAt: { gte: d7 } } }), 0),
@@ -123,6 +125,7 @@ export async function collectGrowth(): Promise<GrowthLayer> {
         _count: { _all: true },
       }), []),
       safe("channel.count", prisma.channel.count({ where: { status: "DISCONNECTED" } }), 0),
+      safe("channel.count", prisma.channel.count({ where: { status: "DISCONNECTED", disconnectedAt: { gte: d1 } } }), 0),
       safe("order.count", prisma.order.count(), 0),
       safe("order.count", prisma.order.count({ where: { createdAt: { gte: d7 } } }), 0),
       safe("adsCampaign.findMany", prisma.adsCampaign.findMany({
@@ -163,6 +166,7 @@ export async function collectGrowth(): Promise<GrowthLayer> {
     channelsByPlatform,
     channelsAds: adsChannels.length,
     channelsDisconnected: disconnected,
+    channelsDisconnected24h: disconnected24h,
     ordersTotal,
     ordersPerDay7d: Math.round(orders7d / 7),
     ordersPeakDay30d: Number(peak[0]?.n ?? 0),
@@ -405,9 +409,11 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "worker.breaker",
     "Cầu dao API sàn",
-    w.breakersPaused.length ? `ĐÓNG: ${w.breakersPaused.join(", ")}` : `mở (${w.breakerTrips24h} lần đóng/24h)`,
-    w.breakersPaused.length ? "crit" : w.breakerTrips24h > 0 ? "warn" : "ok",
-    "Sàn báo vượt trần theo app — hạ ADS_APP_QPS hoặc xin nâng quota"
+    w.breakersPaused.length
+      ? `ĐÓNG: ${w.breakersPaused.join(", ")}`
+      : `mở (đóng ${w.breakerTrips24h} lần liên tiếp gần nhất, 24h)`,
+    w.breakersPaused.length ? "crit" : w.breakerTrips24h >= T.breakerTripsWarn24h ? "warn" : "ok",
+    "Nhiều gian cùng vượt trần theo app — xem log [ApiBudget] trên worker, hạ ADS_APP_QPS hoặc xin nâng quota"
   );
   push(
     "worker.queues",
@@ -418,9 +424,11 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "channel.token",
     "Gian rớt kết nối / sàn trễ đồng bộ",
-    `${m.growth.channelsDisconnected} rớt, ${w.syncStalled} lỗi ≥3 lượt, ${w.adsAuthDisconnected} Hubsell Ads rớt`,
-    m.growth.channelsDisconnected + w.syncStalled > 0 ? "warn" : "ok",
-    "Seller phải ủy quyền lại — kiểm tra banner mất kết nối"
+    `${m.growth.channelsDisconnected24h} mới rớt 24h (tổng ${m.growth.channelsDisconnected}), ${w.syncStalled} lỗi ≥3 lượt, ${w.adsAuthDisconnected} Hubsell Ads rớt`,
+    // Rớt lâu ngày (khách chưa nối lại) không tính; rớt DỒN trong 24h hoặc gian đang
+    // ACTIVE mà 3 nhịp không kéo được đơn mới là dấu hiệu.
+    m.growth.channelsDisconnected24h >= T.disconnectedDelta24h || w.syncStalled > 0 ? "warn" : "ok",
+    "Rớt dồn = token/ủy quyền hỏng hàng loạt; lỗi ≥3 lượt = xem lastSyncError gian đó (KYC, quyền app…)"
   );
   push(
     "infra.db",

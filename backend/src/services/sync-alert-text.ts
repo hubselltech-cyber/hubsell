@@ -76,6 +76,28 @@ export function shortStockPushReason(kind: FailureKind): string {
   }
 }
 
+/**
+ * LỖI ĐỒNG BỘ ĐƠN (Channel.lastSyncError) → câu cho chủ shop, hoặc null nếu chưa
+ * nhận diện được (bên gọi in lỗi thô). 28/09: gian "Shopee 321947895" 3 nhịp
+ * lỗi `error_kyc_auth` liên tiếp — thẻ Trung tâm điều hành in nguyên câu tiếng
+ * Anh của Shopee, khách không biết phải làm gì.
+ */
+export function humanizeOrderSyncError(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.toLowerCase();
+  if (/error_kyc_auth|seller registration/.test(s))
+    return "Shopee chưa cho ứng dụng đọc đơn vì gian chưa hoàn tất đăng ký người bán (KYC) trên Seller Center. Hoàn tất đăng ký rồi vào Kênh bán → kết nối lại gian.";
+  if (/105005|access scope|not been granted|scope required|insufficient scope/.test(s))
+    return "Sàn chưa cấp cho Hubsell quyền cần thiết (đang chờ sàn duyệt) — không cần làm gì, Hubsell sẽ nhắc kết nối lại gian khi có quyền.";
+  if (/invalid_access_token|invalid_token|token expired|refresh_token|error_auth|unauthorized|105002|IllegalAccessToken/i.test(raw))
+    return "Gian mất kết nối với sàn — vào Kênh bán kết nối lại gian.";
+  if (/rate limit|error_rate_limit|too many requests|http 429|901/.test(s))
+    return "Sàn đang giới hạn lượt gọi — hệ thống tự thử lại ở nhịp sau, không cần làm gì.";
+  if (/error_internal|system busy|internal error|36009003|timeout|econnreset|fetch failed/.test(s))
+    return "Sàn đang chập chờn — hệ thống tự thử lại ở nhịp sau, không cần làm gì.";
+  return null;
+}
+
 /** Nhãn ngắn suy từ message đã lưu ("dòng 1\nlỗi thô"): đọc lỗi thô ở cuối. */
 export function shortReasonFromMessage(message: string): string {
   const lines = message.split("\n");

@@ -149,12 +149,46 @@ function adsAppKey(cfg: ShopeeConfig): string {
  * Phân loại lỗi rate limit của Ads API theo tầng (docs Shopee, xem
  * memory hubsell-api-quota-san): partner/global → đóng cầu dao, KHÔNG retry
  * (FAQ 570: retry dồn dập = khóa app); shop → chỉ gian đó lùi lịch.
+ *
+ * ★ 28/09/2026 — HTTP 429 TRẦN (không kèm mã exceed_partner_api) = tầng SHOP.
+ * Sự cố thật: Hubsell Ads (partner 2044679) gọi get_all_cpc_ads_daily_performance
+ * MỖI gian 1 call/30' (7 gian ≈ 336 call/ngày, xa trần app) mà vẫn lẻ tẻ dính
+ * 429 trên TỪNG gian khác nhau (ANO 00:50 · 04:06 · 20:28, The White Active
+ * 13:18, Thanh Thuỷ 18:45, Gia Hân 20:48 · 21:32). Coi là vượt trần theo APP thì
+ * MỘT gian dính 429 → cầu dao đóng cả 7 gian, bậc nhân đôi tới 40' → Trợ lý
+ * quảng cáo của mọi khách đứng số. Nay: 429 trần → lùi riêng gian đó 15';
+ * services/api-budget.ts đếm "bão 429" (≥3 gian/10') mới đóng cầu dao chung.
  */
 export function classifyShopeeAdsRateLimit(err: unknown): "partner" | "shop" | null {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/exceed_partner_api|exceed_api[^_a-z]|exceed_api$|HTTP 429/i.test(msg)) return "partner";
-  if (/exceed_shop_api/i.test(msg)) return "shop";
+  if (/exceed_partner_api|exceed_api[^_a-z]|exceed_api$/i.test(msg)) return "partner";
+  if (/exceed_shop_api|HTTP 429/i.test(msg)) return "shop";
   return null;
+}
+
+/**
+ * Lỗi HTTP 429 kèm THÂN phản hồi (mã error / message / request_id) — Shopee đòi
+ * "complete and specific API call logs" khi hỏi trần (ticket 15/09), và mã
+ * `ads.rate_limit.exceed_*` trong thân là thứ phân biệt tầng app/shop.
+ */
+async function rateLimitError(ctx: string, res: Response): Promise<Error> {
+  let detail = "";
+  try {
+    const text = await res.text();
+    try {
+      const j = JSON.parse(text) as ShopeeEnvelope;
+      detail = [j.error, j.message, j.request_id ? `request_id=${j.request_id}` : ""]
+        .filter(Boolean)
+        .join(" ");
+    } catch {
+      detail = text.slice(0, 200);
+    }
+  } catch {
+    /* không đọc được thân — vẫn ném 429 */
+  }
+  return new Error(
+    `Shopee ${ctx} lỗi: HTTP 429 — vượt trần gọi API${detail ? ` (${detail})` : ""}`
+  );
 }
 /** Chờ trước retry đầu; các lần sau nhân đôi (1.5s → 3s → 6s). */
 const RATE_LIMIT_BASE_DELAY_MS = 1500;
@@ -269,7 +303,7 @@ async function callShopGet<T extends ShopeeEnvelope>(
   const call = () =>
     withRateLimitRetry(ctx, async () => {
       const res = await fetch(`${cfg.apiBase}${path}?${qs}`, { method: "GET" });
-      if (res.status === 429) throw new Error(`Shopee ${ctx} lỗi: HTTP 429 — vượt trần gọi API`);
+      if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
   return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit) : call();
@@ -303,7 +337,7 @@ async function callShopPost<T extends ShopeeEnvelope>(
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.status === 429) throw new Error(`Shopee ${ctx} lỗi: HTTP 429 — vượt trần gọi API`);
+      if (res.status === 429) throw await rateLimitError(ctx, res);
       return ensureOk((await res.json()) as T, ctx);
     });
   return isAdsPath(path) ? withApiBudget(adsAppKey(cfg), call, classifyShopeeAdsRateLimit) : call();

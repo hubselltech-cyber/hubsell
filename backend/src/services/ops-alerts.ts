@@ -24,6 +24,7 @@ import {
   ShippingStatus,
 } from "@prisma/client";
 import { notify } from "./notifications";
+import { humanizeOrderSyncError } from "./sync-alert-text";
 import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
@@ -644,7 +645,7 @@ async function detectSyncStalled(ownerId: string): Promise<DetectedAlert[]> {
       tag: "channel" as const,
       severity: "high" as const,
       title: `Gian "${c.shopName}" (${CHANNEL_LABEL[c.channelName] ?? c.channelName}) trễ đồng bộ đơn — ${c.syncFailCount} nhịp lỗi liên tiếp`,
-      summary: `Đơn mới đang KHÔNG kéo về được Hubsell. Lỗi gần nhất: ${c.lastSyncError ?? "không rõ"}. ${lastOk} Kiểm tra kết nối/uỷ quyền gian hàng.`,
+      summary: `Đơn mới đang KHÔNG kéo về được Hubsell. ${humanizeOrderSyncError(c.lastSyncError) ?? `Lỗi gần nhất: ${c.lastSyncError ?? "không rõ"}. Kiểm tra kết nối/uỷ quyền gian hàng.`} ${lastOk}`,
       payload: { kind: "navigate" as const, href: "/channels", label: "Kiểm tra gian hàng" },
     };
   });

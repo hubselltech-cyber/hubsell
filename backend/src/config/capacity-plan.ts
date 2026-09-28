@@ -59,8 +59,20 @@ export const HEALTH_THRESHOLDS = {
   ramPctCrit: 85,
   connPctWarn: 60,
   connPctCrit: 80,
-  /** Gian DISCONNECTED tăng ≥ N trong 24h → cảnh báo token/ủy quyền. */
+  /**
+   * Gian MỚI rớt kết nối (disconnectedAt) trong 24h ≥ N → cảnh báo token/ủy quyền.
+   * Đếm theo 24h, KHÔNG đếm tổng: gian rớt lâu ngày chủ shop chưa nối lại (Hi.Bé
+   * 27/09…) là việc của khách, không phải dấu hiệu nền tảng — trước 28/09 dấu
+   * hiệu này vàng mãi vì đếm tổng 4 gian cũ.
+   */
   disconnectedDelta24h: 3,
+  /**
+   * Cầu dao Ads đóng LIÊN TIẾP ≥ N lần (bậc hiện tại, trong 24h) → vàng. Mặc định
+   * cho admin sửa: sàn thỉnh thoảng trả 429 lẻ là nhiễu (28/09: 7 lần/ngày rải
+   * rác trên 7 gian), 1–2 lần chưa nói lên điều gì; ≥3 lần dồn trong 2h (bậc
+   * nhân đôi) mới đáng xem lại nhịp gọi.
+   */
+  breakerTripsWarn24h: 3,
   /** Dự báo chạm mốc trong ≤ N ngày → nhắc trước. */
   etaWarnDays: 14,
 } as const;

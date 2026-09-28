@@ -70,11 +70,16 @@ export async function backfillOrderLinesByProducts(
   ownerId: string
 ): Promise<number> {
   if (productIds.length === 0) return 0;
+  // Khoanh đơn theo GIAN của chủ shop trước (Order(channelId) có index): không có
+  // dòng này planner quét toàn bộ OrderItem×Order của MỌI khách rồi mới thử
+  // EXISTS — prod 28/09 15:00 mất ~8s → transaction 5s hết hạn (P2028), khách
+  // nhập giá vốn nhận "Lỗi máy chủ nội bộ" 13 lần.
   return db.$executeRaw`
     UPDATE "OrderItem" AS oi
     SET "costPriceAtSale" = p."costPrice"
     FROM "Product" AS p, "Order" AS o
     WHERE oi."orderId" = o."id"
+      AND o."channelId" IN (SELECT ch."id" FROM "Channel" AS ch WHERE ch."userId" = ${ownerId})
       AND p."id" = ANY(${productIds}::text[])
       AND p."userId" = ${ownerId}
       AND p."costPrice" > 0
@@ -153,10 +158,20 @@ export async function applyCostPrice(
   cost: number,
   ownerId: string
 ): Promise<{ products: number; backfilledOrderLines: number }> {
-  const r = await prisma.$transaction((tx) => applyCostPriceIn(tx, productIds, cost, ownerId));
+  const r = await prisma.$transaction(
+    (tx) => applyCostPriceIn(tx, productIds, cost, ownerId),
+    COST_TX_OPTIONS
+  );
   await invalidateOwnerCostCaches(ownerId);
   return r;
 }
+
+/**
+ * Transaction ghi giá vốn kèm vá đơn cũ: mặc định Prisma 5s là quá ngắn cho
+ * shop nhiều đơn (prod 28/09: 8s → P2028). Vá đơn cũ là UPDATE một câu, không
+ * lặp, nên 60s là trần rộng chứ không phải kỳ vọng.
+ */
+const COST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
 
 /** Lõi của applyChannelCostPrice — chạy trong transaction do bên gọi mở. */
 export async function applyChannelCostPriceIn(
@@ -208,8 +223,9 @@ export async function applyChannelCostPrice(
   backfilledOrderLines: number;
   sample: { productName: string } | null;
 }> {
-  const r = await prisma.$transaction((tx) =>
-    applyChannelCostPriceIn(tx, channelProductIds, cost, ownerId)
+  const r = await prisma.$transaction(
+    (tx) => applyChannelCostPriceIn(tx, channelProductIds, cost, ownerId),
+    COST_TX_OPTIONS
   );
   await invalidateOwnerCostCaches(ownerId);
   return r;
