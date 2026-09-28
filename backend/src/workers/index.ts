@@ -36,6 +36,7 @@ import { startShopeeWebhookWorker } from "../integrations/shopee/webhook-queue";
 import { startTiktokWebhookWorker } from "../integrations/tiktok/webhook-queue";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
 import { startHealthWatchWorker } from "./health-watch";
+import { startProductCatalogSyncWorker } from "./product-catalog-sync";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -90,4 +91,6 @@ export function startAllWorkers(): void {
   startReviewerDemoTopupWorker();
   // Radar sức chứa HQ: snapshot + kiểm mốc 2 lần/ngày (chỉ ghi DB, trang HQ tự đỏ).
   startHealthWatchWorker();
+  // Danh mục sản phẩm: gian vừa nối kéo ngay, làm mới mỗi đêm (anh Trung 28/09).
+  startProductCatalogSyncWorker();
 }

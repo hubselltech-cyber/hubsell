@@ -17,6 +17,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { requirePermission, type AuthRequest } from "../middleware/auth";
 import { syncChannelProducts } from "../marketplace/product-sync";
+import { scheduleAfterProductSync } from "../workers/product-catalog-sync";
 import {
   applyChannelCostPrice,
   applyChannelCostPriceIn,
@@ -2115,6 +2116,8 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
       // gian để chủ shop biết sửa đúng chỗ.
       try {
         const r = await syncChannelProducts(channel);
+        // Ghi lịch để worker product-catalog-sync không kéo lại ngay sau nút bấm.
+        await scheduleAfterProductSync(channel.id, true);
         created += r.created;
         updated += r.updated;
         costAutoFilled += r.costAutoFilled;
@@ -2130,6 +2133,8 @@ router.post("/sync-products", async (req: AuthRequest, res, next) => {
           `[Sync Products] Gian "${channel.shopName}" (${channel.channelName}) lỗi:`,
           err
         );
+        // Sàn bận (28/09: Shopee product.error_internal) → worker tự thử lại sau 30'.
+        await scheduleAfterProductSync(channel.id, false, (err as Error).message);
         perChannel.push({
           channelId: channel.id,
           channelName: channel.channelName,

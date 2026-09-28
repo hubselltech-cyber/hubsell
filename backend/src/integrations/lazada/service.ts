@@ -308,6 +308,7 @@ export async function handleLazadaCallback(
       shopName,
       externalShopId: shopId,
       historyBackfillPending: true, // gian mới: worker kéo trọn 90 ngày (services/sync-schedule.ts)
+      nextProductSyncAt: new Date(), // gian mới: worker kéo danh mục SP ngay (workers/product-catalog-sync.ts)
       ...tokenData,
     },
   });

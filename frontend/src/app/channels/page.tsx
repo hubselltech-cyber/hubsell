@@ -80,7 +80,7 @@ const CONNECTABLE: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
 // shop_id/seller_id với gian này để không ghi token nhầm gian khác.
 /** Chép tay từ backend services/sync-schedule.ts HISTORY_BACKFILL_NOTICE — đổi phải đổi cả hai. */
 const HISTORY_BACKFILL_NOTICE =
-  "Hubsell đang kéo đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
+  "Hubsell đang kéo danh mục sản phẩm, đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
 const RECONNECT_SHOPEE_KEY = "shopee_reconnect_channel_id";
 const RECONNECT_LAZADA_KEY = "lazada_reconnect_channel_id";
 

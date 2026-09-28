@@ -455,6 +455,14 @@ model Channel {
   /// ngày đơn + đối soát phí thật thay vì 2 ngày / 7 ngày, xong cả hai mới hạ cờ (23/09/2026:
   /// ANO Official nối xong, 44 đơn T7 sàn đã trả nhưng Kiểm toán báo oan vì bản kê chỉ quét 7 ngày).
   historyBackfillPending Boolean   @default(false)
+  /// DANH MỤC SẢN PHẨM TỰ KÉO (anh Trung 28/09/2026: nối gian xong vào Giá vốn trống, phải bấm
+  /// "Đồng bộ từ sàn"): gian vừa nối đặt = now → worker product-catalog-sync kéo ngay; xong → đêm
+  /// sau (03:00–05:00 VN, rải ngẫu nhiên); lỗi → +30'. null = không tự kéo (gian Offline/mock).
+  nextProductSyncAt      DateTime?
+  /// Lần kéo danh mục XONG gần nhất (worker hoặc nút "Đồng bộ từ sàn").
+  lastProductSyncAt      DateTime?
+  /// Lỗi lần kéo danh mục gần nhất (null = lần gần nhất OK).
+  productSyncError       String?
   /// Bậc giãn nhịp quét nhanh: 0 = nhịp gốc (10'), mỗi lượt không có biến động +1, trần 60'.
   syncBackoffLevel       Int       @default(0)
   /// XUNG ads (tầng A, docs/ADS-NHIP-CANH-BAO.md): hạn xung kế tiếp — cấu hình campaign + số hôm nay + ví.
@@ -482,6 +490,7 @@ model Channel {
   @@index([userId])
   @@index([status, nextFastSyncAt])
   @@index([status, nextAdsPulseAt])
+  @@index([status, nextProductSyncAt])
 }
 
 /// CHI PHÍ QUẢNG CÁO SÀN theo NGÀY của một gian hàng — sync READ-ONLY từ Ads

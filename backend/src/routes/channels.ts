@@ -383,6 +383,7 @@ router.post("/tiktok/callback", requireAdmin, async (req: AuthRequest, res, next
             externalShopId: shop.id,
             feeRate: PLATFORM_FEE_RATE[ChannelName.TIKTOK],
             historyBackfillPending: true, // gian mới: worker kéo trọn 90 ngày (services/sync-schedule.ts)
+            nextProductSyncAt: new Date(), // gian mới: worker kéo danh mục SP ngay (workers/product-catalog-sync.ts)
             ...tokenData,
           },
         })

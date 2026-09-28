@@ -33,7 +33,7 @@ export const ADS_REFRESH_MIN_GAP_MS = ADS_CADENCE.REFRESH_GAP_MIN * 60 * 1000;
  */
 export const HISTORY_BACKFILL_DAYS = 90;
 export const HISTORY_BACKFILL_NOTICE =
-  "Hubsell đang kéo đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
+  "Hubsell đang kéo danh mục sản phẩm, đơn hàng và số đối soát của 3 tháng gần nhất (90 ngày) về, thường xong trong vài phút. Đơn cũ hơn 3 tháng không được kéo về.";
 
 /**
  * Gian vừa nối (lại) Hubsell Ads: lượt lịch sử kế tiếp kéo lùi 30 ngày và
