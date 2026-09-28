@@ -212,8 +212,10 @@ const OUTPUT_SCHEMA = {
     vatRate: { type: ["string", "null"] },
     vatAmount: { type: "number" },
     total: { type: "number" },
-    paymentMethod: { type: ["string", "null"], enum: ["BANK", "CASH", null] },
-    expenseCategory: { type: ["string", "null"], enum: [...EXPENSE_KEYS, null] },
+    // enum + kiểu ["string","null"] bị API từ chối (400 "Enum value 'BANK' does
+    // not match declared type") → tách anyOf string-enum | null.
+    paymentMethod: { anyOf: [{ type: "string", enum: ["BANK", "CASH"] }, { type: "null" }] },
+    expenseCategory: { anyOf: [{ type: "string", enum: [...EXPENSE_KEYS] }, { type: "null" }] },
     note: { type: ["string", "null"] },
   },
   required: [
