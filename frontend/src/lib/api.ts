@@ -278,6 +278,9 @@ export interface Product {
     channelSku: string;
     channelName: ChannelName;
     shopName: string;
+    /** Mã sản phẩm / mã phân loại trên sàn (tách từ externalId như bảng Giá vốn). */
+    itemId?: string | null;
+    modelId?: string | null;
     stockSyncEnabled?: boolean;
     /** Số sàn đang hiện (lần đẩy/đọc gần nhất) — chip "DarkMan 479". */
     channelStock?: number | null;

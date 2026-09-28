@@ -257,10 +257,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
                       : c.channelStock === availableToSell
                         ? "match"
                         : "mismatch";
+            // Mã sản phẩm / mã phân loại trên sàn — cùng cách tách với bảng
+            // Giá vốn (externalId = "item" hoặc "item-model") để hai nơi khớp nhau.
+            const [itemId, modelId] = (c.externalId ?? "").split("-");
             return {
               channelSku: c.channelSku,
               channelName: c.channel.channelName,
               shopName: c.channel.shopName,
+              itemId: itemId || null,
+              modelId: modelId || null,
               stockSyncEnabled: c.channel.stockSyncEnabled,
               channelStock: c.channelStock,
               state,

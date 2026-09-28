@@ -40,6 +40,7 @@ import { SkuSettingsDialog } from "@/components/products/sku-settings-dialog";
 import { SetupGuide, type ChannelProductCounts } from "@/components/products/setup-guide";
 import { OneClickLinkDialog } from "@/components/products/one-click-link-dialog";
 import { InlineStockEditor } from "@/components/products/inline-stock-editor";
+import { MarketplaceCodes } from "@/components/products/marketplace-codes";
 import { ImportExcelDialog } from "@/components/products/import-excel-dialog";
 import { InventoryLogTable } from "@/components/products/inventory-log-table";
 import { ProductBulkBar } from "@/components/products/product-bulk-bar";
@@ -430,31 +431,37 @@ export default function ProductsHubPage() {
         : []),
       // Cả khối làm việc phải nằm gọn một màn hình (anh Trung 05/09): SKU và
       // tên CẮT NGẮN, rê chuột hiện đầy đủ — không kéo thanh trượt đi kéo lại.
+      // 28/09 (anh Trung): dưới mã SKU kho hiện MÃ PHÂN LOẠI trên sàn, dưới tên
+      // hiện MÃ SẢN PHẨM trên sàn — dãy số dài + nút sao chép một chạm, giống
+      // bảng Giá vốn (nhiều seller tra cứu theo mã sàn hơn tên).
       columnHelper.accessor("skuCode", {
         header: "Mã SKU",
-        cell: (info) => (
-          <span
-            className="block max-w-[8rem] truncate font-mono text-sm font-medium 2xl:max-w-[14rem]"
-            title={info.getValue()}
-          >
-            {info.getValue()}
-          </span>
+        cell: ({ row }) => (
+          <div className="min-w-0 max-w-[8rem] 2xl:max-w-[14rem]">
+            <span className="block truncate font-mono text-sm font-medium" title={row.original.skuCode}>
+              {row.original.skuCode}
+            </span>
+            <MarketplaceCodes links={row.original.channelLinks} kind="model" />
+          </div>
         ),
       }),
       columnHelper.accessor("productName", {
         header: "Tên sản phẩm",
         cell: (info) => (
           <span className="flex min-w-0 items-center gap-2">
-            <span
-              className={cn(
-                // Cắt ngắn ở MỌI cỡ màn (anh Trung 24/09: đã có SKU + tooltip, tên dài
-                // đẩy các cột sau ra khỏi màn hình) — không nở 26rem ở 2xl nữa.
-                "block max-w-[14rem] truncate 2xl:max-w-[18rem]",
-                info.row.original.isActive === false && "text-muted-foreground line-through decoration-slate-300"
-              )}
-              title={info.getValue()}
-            >
-              {info.getValue()}
+            <span className="min-w-0 max-w-[14rem] 2xl:max-w-[18rem]">
+              <span
+                className={cn(
+                  // Cắt ngắn ở MỌI cỡ màn (anh Trung 24/09: đã có SKU + tooltip, tên dài
+                  // đẩy các cột sau ra khỏi màn hình) — không nở 26rem ở 2xl nữa.
+                  "block truncate",
+                  info.row.original.isActive === false && "text-muted-foreground line-through decoration-slate-300"
+                )}
+                title={info.getValue()}
+              >
+                {info.getValue()}
+              </span>
+              <MarketplaceCodes links={info.row.original.channelLinks} kind="item" />
             </span>
             {info.row.original.isActive === false && (
               <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
