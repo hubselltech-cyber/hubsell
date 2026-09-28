@@ -5,7 +5,8 @@
 // công ty Hubsell, ba tab:
 //  1. SỔ QUỸ (GĐ5)      — tiền vào/ra theo tháng + nghĩa vụ hóa đơn + xuất Excel
 //  2. VÍ & LỆNH RÚT (GĐ3) — tổng quan Ví Hubsell + duyệt/từ chối lệnh rút
-//  3. LỊCH THUẾ          — lịch khai/nộp thuế + báo cáo 2026–2027 (dữ liệu tĩnh)
+//  3. HÓA ĐƠN ĐẦU VÀO   — thả tệp → máy đọc → sổ quỹ; xuất bộ chứng từ + tích đã khai
+//  4. LỊCH THUẾ          — lịch khai/nộp thuế + báo cáo 2026–2027 (dữ liệu tĩnh)
 // Duyệt lệnh rút TỰ ghi bút toán CHI vào sổ quỹ — kế toán không nhập tay lại.
 // ============================================================
 
@@ -21,6 +22,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { FinanceTab } from "../finance-tab";
+import { InputInvoicesSection } from "../input-invoices-section";
 import { LedgerSection } from "../ledger-section";
 import { TaxCalendarSection } from "../tax-calendar-section";
 import { AdminError, AdminPageHeader, useAdminPage } from "../shared";
@@ -35,7 +37,7 @@ function currentMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-type Tab = "ledger" | "wallet" | "taxcal";
+type Tab = "ledger" | "invoices" | "wallet" | "taxcal";
 
 export default function PlatformFinancePage() {
   const [tab, setTab] = useState<Tab>("ledger");
@@ -73,6 +75,7 @@ export default function PlatformFinancePage() {
           {(
             [
               ["ledger", "Sổ quỹ"],
+              ["invoices", "Hóa đơn đầu vào"],
               ["wallet", "Ví & lệnh rút"],
               ["taxcal", "Lịch thuế 2026–2027"],
             ] as [Tab, string][]
@@ -104,6 +107,8 @@ export default function PlatformFinancePage() {
             onChanged={reload}
           />
         )}
+
+        {tab === "invoices" && <InputInvoicesSection />}
 
         {tab === "wallet" && (
           <div>

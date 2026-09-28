@@ -40,6 +40,7 @@ import {
 import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import adminPlansRouter from "./admin-plans";
 import adminHealthRouter from "./admin-health";
+import adminInputInvoicesRouter from "./admin-input-invoices";
 import { getValidAccessToken as getTiktokAccessToken } from "../integrations/tiktok/service";
 import { getOrderStatementTransactionsV2 } from "../integrations/tiktok/client";
 
@@ -2453,6 +2454,8 @@ router.get("/audit-logs", requirePlatformAdmin, async (req, res, next) => {
 router.use(adminPlansRouter);
 // Sức khỏe nền tảng (radar sức chứa + timeline nâng cấp) — cùng cửa /api/admin.
 router.use(adminHealthRouter);
+// Hóa đơn đầu vào của công ty (nạp tệp → máy đọc → sổ quỹ → xuất khai thuế).
+router.use(adminInputInvoicesRouter);
 
 // ============================================================
 // TRA BẢN KÊ TIKTOK THÔ THEO ĐƠN (16/09/2026) — công cụ đối chiếu mapping:

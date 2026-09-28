@@ -4828,6 +4828,178 @@ export function deleteLedgerEntry(id: string) {
   });
 }
 
+// ---------- Hóa đơn đầu vào của công ty (hq.finance) ----------
+
+export interface HqInputInvoiceFile {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  kind: "XML" | "PDF" | "IMAGE";
+  createdAt: string;
+}
+
+export interface HqInputInvoice {
+  id: string;
+  invoiceNo: string | null;
+  invoiceSerial: string | null;
+  /** "yyyy-mm-dd" — null khi máy chưa đọc được ngày. */
+  invoiceDate: string | null;
+  sellerName: string | null;
+  sellerTaxCode: string | null;
+  /** NCC nước ngoài → bảng kê thuế nhà thầu, không vào bảng kê GTGT. */
+  isForeign: boolean;
+  description: string | null;
+  /** Số VND (đã quy đổi nếu ngoại tệ). */
+  subtotal: number;
+  vatRate: string | null;
+  vatAmount: number;
+  total: number;
+  currency: string | null;
+  amountOriginal: number | null;
+  fxRate: number | null;
+  paymentMethod: HqPaymentMethod | null;
+  expenseCategory: string | null;
+  /** XML = parser chuẩn TCTN; AI = Claude đọc; MANUAL = nhập tay/chưa đọc. */
+  source: "XML" | "AI" | "MANUAL";
+  reviewStatus: "PENDING" | "APPROVED";
+  readerNote: string | null;
+  /** Kỳ đã khai (VD "2026-Q3") — null = chưa khai thuế. */
+  declaredPeriod: string | null;
+  declaredAt: string | null;
+  declaredByName: string | null;
+  ledgerEntryId: string | null;
+  createdByName: string;
+  createdAt: string;
+  files: HqInputInvoiceFile[];
+}
+
+export interface HqInputInvoiceListResponse {
+  items: HqInputInvoice[];
+  totals: {
+    count: number;
+    total: number;
+    vat: number;
+    pending: number;
+    undeclared: number;
+    foreign: number;
+  };
+  storageReady: boolean;
+  aiReady: boolean;
+}
+
+export function fetchHqInputInvoices(params: {
+  from?: string;
+  to?: string;
+  declared?: "all" | "no" | "yes";
+}) {
+  const q = new URLSearchParams();
+  if (params.from) q.set("from", params.from);
+  if (params.to) q.set("to", params.to);
+  if (params.declared && params.declared !== "all") q.set("declared", params.declared);
+  const suffix = q.toString() ? `?${q}` : "";
+  return apiFetch<HqInputInvoiceListResponse>(`/api/admin/finance/input-invoices${suffix}`);
+}
+
+export interface HqInputInvoiceUploadResult {
+  fileName: string;
+  status: "created" | "merged" | "error";
+  invoiceId?: string;
+  message?: string;
+}
+
+/** Nạp nhiều tệp hóa đơn (multipart — không qua apiFetch vì Content-Type JSON). */
+export async function uploadHqInputInvoices(files: File[]) {
+  const token = getToken();
+  const form = new FormData();
+  for (const f of files) form.append("files", f, f.name);
+  const res = await fetch(`${API_URL}/api/admin/finance/input-invoices/upload`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return (await res.json()) as { results: HqInputInvoiceUploadResult[] };
+}
+
+export function updateHqInputInvoice(
+  id: string,
+  data: Partial<{
+    invoiceNo: string | null;
+    invoiceSerial: string | null;
+    invoiceDate: string | null;
+    sellerName: string | null;
+    sellerTaxCode: string | null;
+    isForeign: boolean;
+    description: string | null;
+    subtotal: number;
+    vatRate: string | null;
+    vatAmount: number;
+    total: number;
+    paymentMethod: HqPaymentMethod | null;
+    expenseCategory: string | null;
+    approve: true;
+    declaredPeriod: string | null;
+  }>
+) {
+  return apiFetch<{ invoice: HqInputInvoice }>(`/api/admin/finance/input-invoices/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function declareHqInputInvoices(ids: string[], period: string | null) {
+  return apiFetch<{ count: number }>("/api/admin/finance/input-invoices/declare", {
+    method: "POST",
+    body: JSON.stringify({ ids, period }),
+  });
+}
+
+export function deleteHqInputInvoice(id: string) {
+  return apiFetch<{ ok: true }>(`/api/admin/finance/input-invoices/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchHqInputInvoiceFileUrl(invoiceId: string, fileId: string) {
+  return apiFetch<{ url: string }>(
+    `/api/admin/finance/input-invoices/${invoiceId}/files/${fileId}/url`
+  );
+}
+
+/** Tải zip bộ chứng từ (tệp gốc + bảng kê CSV) — trả Blob để FE tự lưu. */
+export async function exportHqInputInvoices(ids: string[], label: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/api/admin/finance/input-invoices/export`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ ids, label }),
+  });
+  if (!res.ok) {
+    let message = `Máy chủ trả về lỗi ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      // giữ thông báo mặc định
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.blob();
+}
+
 // ---------- Chi phí cố định hàng tháng (hq.finance) ----------
 
 export function fetchRecurringExpenses() {

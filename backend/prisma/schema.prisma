@@ -671,9 +671,9 @@ model AdsItemSignal {
   budgetRecommended Decimal? @db.Decimal(14, 2)
   budgetMax         Decimal? @db.Decimal(14, 2)
 
-  kwSearchVolume Int? // tổng lượt tìm 30 ngày của các từ khóa Shopee gợi ý
-  kwAvgBid       Decimal? @db.Decimal(12, 2) // giá thầu gợi ý trung bình (có trọng số lượt tìm)
-  kwCount        Int?
+  kwSearchVolume  Int? // tổng lượt tìm 30 ngày của các từ khóa Shopee gợi ý
+  kwAvgBid        Decimal?  @db.Decimal(12, 2) // giá thầu gợi ý trung bình (có trọng số lượt tìm)
+  kwCount         Int?
   /// ĐỢT C: danh sách từ khóa Shopee gợi ý (keyword, quality_score, search_volume, suggested_bid) —
   /// cache 24h cho nút "Từ khóa Shopee gợi ý" trong modal campaign (1–2 call khi bấm).
   kwSuggestions   Json?
@@ -695,20 +695,20 @@ model AdsItemSignal {
 /// theo ngày lẻ: get_gms_campaign_performance đòi start ≠ end). Lượt lịch sử ads (6h) ghi đè 2 cửa sổ 7d / 30d.
 /// Chi tiêu này KHÔNG nằm trong AdsCampaign/DailyPerf — chỉ có trong AdSpend (tổng chi cấp shop).
 model AdsGmsReport {
-  id         String   @id @default(cuid())
-  channelId  String
-  windowKey  String // "7d" | "30d"
-  campaignId String? // GMS campaign_id sàn trả (không có endpoint đọc cấu hình)
-  startKey   String // "YYYY-MM-DD" ngày VN
-  endKey     String
-  expense    Decimal  @default(0) @db.Decimal(14, 2)
-  impression Int      @default(0)
-  clicks     Int      @default(0)
-  broadOrder Int      @default(0)
-  broadGmv   Decimal  @default(0) @db.Decimal(14, 2)
-  directOrder Int     @default(0)
-  directGmv  Decimal  @default(0) @db.Decimal(14, 2)
-  syncedAt   DateTime
+  id          String   @id @default(cuid())
+  channelId   String
+  windowKey   String // "7d" | "30d"
+  campaignId  String? // GMS campaign_id sàn trả (không có endpoint đọc cấu hình)
+  startKey    String // "YYYY-MM-DD" ngày VN
+  endKey      String
+  expense     Decimal  @default(0) @db.Decimal(14, 2)
+  impression  Int      @default(0)
+  clicks      Int      @default(0)
+  broadOrder  Int      @default(0)
+  broadGmv    Decimal  @default(0) @db.Decimal(14, 2)
+  directOrder Int      @default(0)
+  directGmv   Decimal  @default(0) @db.Decimal(14, 2)
+  syncedAt    DateTime
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
@@ -2204,31 +2204,31 @@ enum SupportRequestStatus {
 /// landing). userId = CHỦ SHOP (ownerId) để nhân viên gửi cũng gom về shop;
 /// requesterName là snapshot người gõ. `reply` khách thấy, `note` nội bộ.
 model SupportRequest {
-  id            String               @id @default(cuid())
-  userId        String
-  user          User                 @relation("SupportRequestOwner", fields: [userId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(cuid())
+  userId              String
+  user                User                 @relation("SupportRequestOwner", fields: [userId], references: [id], onDelete: Cascade)
   /// Tên người gõ yêu cầu (chủ shop hoặc nhân viên) — snapshot.
-  requesterName String
-  content       String
+  requesterName       String
+  content             String
   /// SĐT tại thời điểm gửi (E.164) — snapshot để HQ gọi ngay cả khi khách đổi số sau.
-  phone         String?
-  status        SupportRequestStatus @default(NEW)
+  phone               String?
+  status              SupportRequestStatus @default(NEW)
   /// Câu trả lời HQ gửi khách — khách thấy trong hộp Yêu cầu hỗ trợ.
-  reply         String?
+  reply               String?
   /// Ghi chú nội bộ của HQ — khách KHÔNG thấy.
-  note          String?
-  assigneeId    String?
-  assignee      User?                @relation("SupportRequestAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  note                String?
+  assigneeId          String?
+  assignee            User?                @relation("SupportRequestAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   /// Lần cuối khách mở hộp Yêu cầu hỗ trợ — updatedAt > mốc này (và đã có
   /// reply / DONE) = "trả lời mới", hiện chấm đỏ trên avatar.
-  customerSeenAt DateTime?
+  customerSeenAt      DateTime?
   /// Đường dẫn ảnh trong Supabase Storage (bucket private) — tối đa 3, khách
   /// nén trên trình duyệt. Cron dọn xóa ảnh của yêu cầu DONE quá 7 ngày.
-  attachments         String[]  @default([])
+  attachments         String[]             @default([])
   /// Đã xóa ảnh theo chính sách 7 ngày (giữ chữ) — FE hiện "ảnh đã xóa".
   attachmentsPurgedAt DateTime?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@index([status, createdAt])
   @@index([userId, createdAt])
@@ -2331,6 +2331,8 @@ model PlatformLedgerEntry {
   createdById           String?
   createdByName         String
   createdAt             DateTime                  @default(now())
+  /// Hóa đơn đầu vào sinh ra phiếu chi này (tab Hóa đơn đầu vào) — null với phiếu ghi tay.
+  inputInvoice          PlatformInputInvoice?
 
   @@index([occurredAt])
   @@index([recurringExpenseId])
@@ -2405,6 +2407,94 @@ model PlatformTaxCheckItem {
   doneByName String
 
   @@map("platform_tax_check_items")
+}
+
+/// HÓA ĐƠN ĐẦU VÀO của CHÍNH công ty Hubsell (tab "Hóa đơn đầu vào" /admin/finance,
+/// anh Trung 28/09/2026): mỗi dòng = MỘT tờ hóa đơn nhà cung cấp xuất cho
+/// Hubsell (chữ ký số, Supabase, Render, Zoho…). Tệp gốc (XML/PDF/ảnh) lưu
+/// VĨNH VIỄN ở Supabase Storage bucket hq-documents (100 GB gói Pro) — KHÔNG
+/// dính cron xóa 7 ngày của ảnh hỗ trợ. Số liệu do máy đọc (XML parser cho
+/// HĐĐT VN chuẩn TCTN — chính xác; Claude cho PDF/ảnh — cần duyệt) hoặc nhập tay.
+///
+/// KHAI THUẾ: kế toán xuất bộ chứng từ theo khoảng ngày và TÍCH "đã khai kỳ X"
+/// → declaredPeriod/declaredAt khác null; lần xuất sau mặc định loại các tờ đã
+/// khai và cảnh báo (không khóa cứng). Mỗi tờ khai NGUYÊN SỐ một lần — không
+/// chia phân bổ theo tháng (anh chốt 28/09: "hóa đơn nào khai hóa đơn đó").
+model PlatformInputInvoice {
+  id String @id @default(cuid())
+
+  invoiceNo     String?
+  invoiceSerial String? // ký hiệu (VD "1C26TAA")
+  /// Ngày trên hóa đơn — cột DATE: lọc bằng ngày (khóa "yyyy-mm-dd"), không parseDateRange.
+  invoiceDate   DateTime? @db.Date
+  sellerName    String?
+  sellerTaxCode String?
+  /// Nhà cung cấp NƯỚC NGOÀI (Supabase, Render…) → không vào bảng kê GTGT mà
+  /// vào tờ khai thuế nhà thầu 01/NTNN — bảng kê xuất tách riêng.
+  isForeign     Boolean   @default(false)
+  description   String? // nội dung hàng hóa/dịch vụ (dòng đầu hoặc AI tóm tắt)
+
+  /// Số tiền QUY ĐỔI VND — dùng cho sổ quỹ + bảng kê. Ngoại tệ: = amountOriginal ×
+  /// fxRate (tham khảo) cho tới khi kế toán sửa theo sao kê ngân hàng.
+  subtotal       Decimal  @default(0) @db.Decimal(14, 2) // giá chưa thuế
+  vatRate        String? // "KCT" | "0" | "5" | "8" | "10" — nguyên văn hóa đơn
+  vatAmount      Decimal  @default(0) @db.Decimal(14, 2)
+  total          Decimal  @default(0) @db.Decimal(14, 2)
+  /// Ngoại tệ: mã tiền + số gốc + tỷ giá đã dùng. null với hóa đơn VND.
+  currency       String?
+  amountOriginal Decimal? @db.Decimal(14, 2)
+  fxRate         Decimal? @db.Decimal(14, 4)
+
+  paymentMethod   String? // BANK | CASH
+  expenseCategory String? // key HQ_EXPENSE_CATEGORIES
+
+  /// XML = parser HĐĐT chuẩn TCTN; AI = Claude đọc PDF/ảnh; MANUAL = nhập tay.
+  source       String
+  /// PENDING = máy đọc chưa ai duyệt; APPROVED = đã có người xác nhận số.
+  reviewStatus String  @default("PENDING")
+  /// Ghi chú máy đọc (độ tin cậy thấp, trường thiếu…) — hiện trong ô lý do.
+  readerNote   String?
+
+  /// Kỳ khai thuế ĐÃ tích (VD "2026-Q3") — null = chưa khai. Tích khi xuất bộ
+  /// chứng từ hoặc tay trên dòng; bỏ tích ghi audit log.
+  declaredPeriod String?
+  declaredAt     DateTime?
+  declaredByName String?
+
+  /// Phiếu chi tương ứng trong sổ quỹ (tự sinh khi nạp) — SetNull khi xóa bút toán.
+  ledgerEntryId String?              @unique
+  ledgerEntry   PlatformLedgerEntry? @relation(fields: [ledgerEntryId], references: [id], onDelete: SetNull)
+
+  createdById   String?
+  createdByName String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  files PlatformInputInvoiceFile[]
+
+  @@index([invoiceDate])
+  @@index([sellerTaxCode, invoiceNo])
+  @@map("platform_input_invoices")
+}
+
+/// Tệp gốc của một hóa đơn đầu vào — một tờ có thể có cả XML lẫn PDF (cùng
+/// số + MST thì gộp về một dòng). storagePath trong bucket hq-documents.
+model PlatformInputInvoiceFile {
+  id          String               @id @default(cuid())
+  invoiceId   String
+  invoice     PlatformInputInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  storagePath String
+  fileName    String
+  mimeType    String
+  size        Int
+  /// XML | PDF | IMAGE
+  kind        String
+  /// JSON kết quả máy đọc từ tệp này (nguyên văn) — đối chiếu khi số bị sửa.
+  extracted   String?
+  createdAt   DateTime             @default(now())
+
+  @@index([invoiceId])
+  @@map("platform_input_invoice_files")
 }
 
 enum WalletTxnType {
