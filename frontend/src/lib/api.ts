@@ -1943,6 +1943,8 @@ export interface FinanceBreakdown {
 }
 
 export interface FinanceAnalytics {
+  /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
+  truncated?: boolean;
   deliveredOrderCount: number;
   totalRevenue: number;
   totalCost: number;

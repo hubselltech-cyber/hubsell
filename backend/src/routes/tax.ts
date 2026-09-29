@@ -27,7 +27,7 @@ import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
 import { buildTaxDeclaration, parseDeclarationPeriod } from "../services/tax-declaration";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
-import { computePnlRow, fetchPnlOrders } from "./finance";
+import { fetchPnlRows } from "./finance";
 import {
   additionalTaxOn,
   getShopTaxConfig,
@@ -160,11 +160,11 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    const [cfg, pnlOrders, logs, invoiceCfg] = await Promise.all([
+    const [cfg, { rows: pnlRows }, logs, invoiceCfg] = await Promise.all([
       getShopTaxConfig(ownerId),
       // Đơn trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính (đơn hủy
-      // lọc ở vòng dưới; cùng trần an toàn 2000 đơn của fetchPnlOrders).
-      fetchPnlOrders(scope, range),
+      // lọc ở vòng dưới; đọc đủ kỳ theo trang).
+      fetchPnlRows(scope, range, { lean: true }),
       prisma.invoiceLog.findMany({
         where: { ownerId, ...logPeriodWhere(range) },
         orderBy: { createdAt: "desc" },
@@ -384,9 +384,7 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     // Đơn ĐÃ quyết toán: dùng số THỰC sàn đã khấu trừ (platformTax của dòng).
     // Đơn CHƯA quyết toán: ước tính % luật trên doanh thu thực tế (sau
     // voucher) — riêng trang thuế được ước vì bản chất là DỰ PHÒNG nghĩa vụ.
-    const rows = pnlOrders
-      .map(computePnlRow)
-      .filter((r) => r.shippingStatus !== ShippingStatus.CANCELLED);
+    const rows = pnlRows.filter((r) => r.shippingStatus !== ShippingStatus.CANCELLED);
 
     let grossRevenue = 0;
     let profit = 0; // lợi nhuận ước tính của kỳ — cơ sở thuế bổ sung cho DN

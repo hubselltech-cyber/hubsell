@@ -13,7 +13,7 @@ import { channelScope, hasChannelFilter } from "../lib/channel-filter";
 // trường computePnlRow — không tự tính totalAmount/InventoryLog riêng nữa
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
 // sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
-import { computePnlRow, fetchPnlOrders } from "./finance";
+import { fetchPnlRows } from "./finance";
 
 const router = Router();
 
@@ -104,9 +104,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // vốn/chuỗi ngày (thống nhất với ô "Hoàn/Trả" ở phễu bên dưới).
     // NGUỒN SỐ: computePnlRow — cùng tập đơn + cùng công thức với Lãi/Lỗ
     // Thực Hiện và Báo cáo dòng tiền.
-    const activeRows = (await fetchPnlOrders(scope, range))
-      .map(computePnlRow)
-      .filter(
+    const { rows: periodRows, truncated } = await fetchPnlRows(scope, range, { lean: true });
+    const activeRows = periodRows.filter(
         (r) =>
           r.shippingStatus !== ShippingStatus.CANCELLED &&
           !RETURNING_SET.has(r.returnStatus)
@@ -328,8 +327,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
         gte: trendStart,
         lte: new Date(chartEnd.getTime() + DAY_MS - 1),
       };
-      const [trendRows, trendExpenses, trendOrders] = await Promise.all([
-        fetchPnlOrders(scope, trendRange),
+      const [{ rows: trendRows }, trendExpenses, trendOrders] = await Promise.all([
+        fetchPnlRows(scope, trendRange, { lean: true }),
         seesFinancials
           ? prisma.operatingExpense.findMany({
               where: {
@@ -346,7 +345,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       const tCost = new Map<string, number>();
       const bump = (m: Map<string, number>, k: string, v: number) =>
         m.set(k, (m.get(k) ?? 0) + v);
-      for (const r of trendRows.map(computePnlRow)) {
+      for (const r of trendRows) {
         if (
           r.shippingStatus === ShippingStatus.CANCELLED ||
           RETURNING_SET.has(r.returnStatus)
@@ -422,15 +421,13 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? await (async () => {
           // Cùng công thức doanh thu với kỳ hiện tại (Σ revenueGross qua
           // computePnlRow) — so sánh mới cùng thước đo, hết lệch giả.
-          const [prevRows, cnt] = await Promise.all([
-            fetchPnlOrders(scope, prevRange),
+          const [{ rows: prevRows }, cnt] = await Promise.all([
+            fetchPnlRows(scope, prevRange, { lean: true }),
             prisma.order.count({
               where: { channel: scope, createdAt: prevRange },
             }),
           ]);
-          const prevActive = prevRows
-            .map(computePnlRow)
-            .filter(
+          const prevActive = prevRows.filter(
               (r) =>
                 r.shippingStatus !== ShippingStatus.CANCELLED &&
                 !RETURNING_SET.has(r.returnStatus)
@@ -508,6 +505,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
+      truncated, // kỳ vượt 20.000 đơn — số là cận dưới
       activeOrderCount: activeRows.length,
       itemQuantity,
       totalRevenue,

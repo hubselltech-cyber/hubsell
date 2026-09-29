@@ -249,14 +249,13 @@ function pct(amount: number, total: number): number {
 // Đơn chứa SKU chưa cấu hình giá vốn ⇒ kèm warning để chủ shop đi nhập giá vốn.
 router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   try {
-    const delivered = await fetchPnlOrders(
+    const { rows: delivered } = await fetchPnlRows(
       channelScope(req),
       parseDateRange(req.query),
-      ShippingStatus.DELIVERED
+      { shippingStatus: ShippingStatus.DELIVERED, lean: true }
     );
 
-    const analyzed = delivered.map((o) => {
-      const r = computePnlRow(o);
+    const analyzed = delivered.map((r) => {
       const revenue = r.revenueGross;
       const platformFee = r.revenueGross - r.platformRevenue; // toàn bộ sàn khấu trừ
       const cost = r.costSnapshot;
@@ -319,7 +318,7 @@ const RECON_STATUS: Record<string, ShippingStatus> = {
 //
 // "Lãi/Lỗ Thực Hiện" là nguồn số gốc. Mọi con số tài chính của MỘT đơn
 // (doanh thu gốc, từng bucket phí, giá vốn, thuế, lợi nhuận) sinh ra từ đúng
-// MỘT hàm computePnlRow() trên đúng MỘT tập đơn fetchPnlOrders():
+// MỘT hàm computePnlRow() trên đúng MỘT tập đơn fetchPnlRows():
 //   - /realized-pnl : hiển thị từng dòng computePnlRow (chi tiết + phân trang).
 //   - /analytics    : Báo cáo dòng tiền — chỉ là VIEW tổng hợp, CHỈ được
 //     SUM() các trường của những dòng này theo nhóm; TUYỆT ĐỐI không tự
@@ -358,38 +357,29 @@ const PNL_INCLUDE = {
   tiktokSettlement: true,
 } satisfies Prisma.OrderInclude;
 
-/** TẬP ĐƠN ĐẦU VÀO dùng chung: cùng WHERE, cùng include, cùng trần an toàn.
- * EXPORT cho Tổng quan (/api/analytics) + cash-flow dùng chung SSOT. */
-export function fetchPnlOrders(
-  scope: ChannelScope,
-  range?: DateRangeFilter,
-  shippingStatus?: ShippingStatus
-): Promise<PnlOrder[]> {
-  return prisma.order.findMany({
-    where: {
-      channel: scope,
-      createdAt: range,
-      ...(shippingStatus ? { shippingStatus } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    include: PNL_INCLUDE,
-    take: 2000, // trần an toàn — báo cáo theo khoảng ngày thường nằm dưới mức này
-  });
+/** Lọc thêm trên tập đơn SSOT (ngoài gian + kỳ) — dùng chung cho mọi bản đọc. */
+export interface PnlOrderFilter {
+  shippingStatus?: ShippingStatus;
+  /** Điều kiện Order bổ sung (VD cash-flow chỉ cần đơn chưa quyết toán). */
+  where?: Prisma.OrderWhereInput;
 }
 
 /**
- * Bản PHÂN TRANG của fetchPnlOrders cho báo cáo phải quét NHIỀU đơn (kỳ kê
- * khai quý/năm, hòa vốn Ads 60 ngày): cùng WHERE + include SSOT nhưng cuộn
- * cursor theo id, không dính trần 2.000 đơn. Trả từng trang 1.000 đơn qua
+ * TẬP ĐƠN ĐẦU VÀO dùng chung của mọi báo cáo tài chính: cùng WHERE + include
+ * SSOT, đọc THEO TRANG (cuộn cursor theo id). Trả từng trang 1.000 đơn qua
  * `onPage` để nơi gọi rút ngay thành dòng gọn rồi bỏ trang — 22/09/2026 bản gom
  * cả 20.000 đơn kèm include nặng vào một mảng từng làm Render hết heap. `max`
  * (mặc định 20.000) là phanh an toàn cuối — chạm thì trả `truncated` để UI bảo
  * thu hẹp kỳ, không im lặng cắt.
+ *
+ * 29/09/2026: bản cũ `fetchPnlOrders` (take 2.000, mới nhất trước) ĐÃ BỎ — shop
+ * 2.661 đơn/tháng bị cắt mất 661 đơn đầu tháng trong khi chi phí cố định vẫn
+ * trừ đủ, Báo cáo dòng tiền ra lãi 13,19 triệu thay vì 34,29 triệu.
  */
 export async function forEachPnlOrderPage(
   scope: ChannelScope,
-  range: DateRangeFilter,
-  opts: { pageSize?: number; max?: number },
+  range: DateRangeFilter | undefined,
+  opts: { pageSize?: number; max?: number } & PnlOrderFilter,
   onPage: (page: PnlOrder[]) => void | Promise<void>
 ): Promise<{ count: number; truncated: boolean }> {
   const pageSize = opts.pageSize ?? 1000;
@@ -398,7 +388,12 @@ export async function forEachPnlOrderPage(
   let cursor: string | undefined;
   for (;;) {
     const page = await prisma.order.findMany({
-      where: { channel: scope, createdAt: range },
+      where: {
+        ...opts.where,
+        channel: scope,
+        createdAt: range,
+        ...(opts.shippingStatus ? { shippingStatus: opts.shippingStatus } : {}),
+      },
       orderBy: { id: "asc" },
       include: PNL_INCLUDE,
       take: pageSize,
@@ -413,7 +408,29 @@ export async function forEachPnlOrderPage(
 }
 
 /** Dòng Lãi/Lỗ đã bóc số của một đơn — đơn vị số liệu gốc của mọi báo cáo. */
-type PnlRow = ReturnType<typeof computePnlRow>;
+export type PnlRow = ReturnType<typeof computePnlRow>;
+
+/**
+ * TOÀN BỘ dòng Lãi/Lỗ của kỳ (mới nhất trước) — đọc theo trang, bóc số ngay rồi
+ * bỏ đơn thô. `lean` bỏ bản kê chi tiết Lazada/TikTok của từng dòng cho báo cáo
+ * chỉ cộng tổng (mỗi bản kê ~30 số, 20.000 dòng là đáng kể). `truncated` = kỳ
+ * vượt phanh 20.000 đơn, số là cận dưới — nơi gọi phải báo ra, không giấu.
+ */
+export async function fetchPnlRows(
+  scope: ChannelScope,
+  range?: DateRangeFilter,
+  opts: { lean?: boolean; max?: number } & PnlOrderFilter = {}
+): Promise<{ rows: PnlRow[]; truncated: boolean }> {
+  const rows: PnlRow[] = [];
+  const { truncated } = await forEachPnlOrderPage(scope, range, opts, (page) => {
+    for (const o of page) {
+      const r = computePnlRow(o);
+      rows.push(opts.lean ? { ...r, lazada: null, tiktok: null } : r);
+    }
+  });
+  rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return { rows, truncated };
+}
 
 // Bóc toàn bộ số liệu tài chính của MỘT đơn — công thức gốc duy nhất.
 // EXPORT cho Tổng quan (/api/analytics) dùng chung SSOT, không tự tính riêng.
@@ -888,12 +905,11 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
 
     // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức với mọi báo cáo tài chính.
     const dateRange = parseDateRange(req.query);
-    const orders = await fetchPnlOrders(
+    const { rows: computedRows, truncated } = await fetchPnlRows(
       channelScope(req),
       dateRange,
-      shippingStatus
+      { shippingStatus }
     );
-    const computedRows = orders.map(computePnlRow);
 
     // Trục lọc "Hoàn/Trả" — đơn hoàn nằm trên trục returnStatus ĐỘC LẬP với
     // shippingStatus (đơn "vừa DELIVERED vừa đang hoàn" là chuyện thường) nên
@@ -978,6 +994,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       pageSize,
       total,
       pageCount: Math.max(1, Math.ceil(total / pageSize)),
+      truncated, // kỳ vượt 20.000 đơn — số là cận dưới
       summary: {
         count: total,
         settledCount: filtered.filter((r) => r.isSettled).length,
@@ -1040,7 +1057,7 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
   try {
     const scope = channelScope(req);
     const since30d = new Date(Date.now() - 30 * 86_400_000);
-    const [channels, pnlOrders, pendingPayouts, recentWithdrawals] =
+    const [channels, { rows: pnlRows }, pendingPayouts, recentWithdrawals] =
       await Promise.all([
         prisma.channel.findMany({
           // Gian đã NGẮT KẾT NỐI quá 30 ngày → ẨN khỏi bảng (tiền đang giao/chờ
@@ -1070,8 +1087,16 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
           },
         }),
         // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức computePnlRow với mọi
-        // báo cáo (chốt SSOT) — không tự tính totalAmount − phí riêng.
-        fetchPnlOrders(scope),
+        // báo cáo (chốt SSOT) — không tự tính totalAmount − phí riêng. Không
+        // lọc kỳ nên CHỈ đọc đơn bảng này dùng: chưa quyết toán, đang giao /
+        // đã giao (đọc mọi đơn từ trước tới nay là chạm trần ở shop lớn).
+        fetchPnlRows(scope, undefined, {
+          lean: true,
+          where: {
+            isSettled: false,
+            shippingStatus: { in: [ShippingStatus.SHIPPING, ShippingStatus.DELIVERED] },
+          },
+        }),
         // "Ví sàn" Lazada: kỳ sao kê đã chốt nhưng sàn CHƯA chi (paid=0 từ
         // /finance/payout/status/get, sync ghi status=PENDING) — số thật.
         prisma.walletWithdrawal.groupBy({
@@ -1103,7 +1128,7 @@ router.get("/cash-flow", async (req: AuthRequest, res, next) => {
     // của nó đã nằm trong số dư ví thật/sổ bank.
     const inTransitByChannel = new Map<string, number>();
     const pendingSettleByChannel = new Map<string, number>();
-    for (const r of pnlOrders.map(computePnlRow)) {
+    for (const r of pnlRows) {
       if (r.isSettled) continue;
       if (r.shippingStatus === ShippingStatus.SHIPPING) {
         inTransitByChannel.set(
@@ -1479,22 +1504,6 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
     const ownerId = req.ownerId!;
     const range = parseDateRange(req.query);
 
-    const [orders, variableExpenses] = await Promise.all([
-      // NGUỒN SỐ GỐC: cùng tập đơn SSOT (đơn không có dòng hàng thì vòng phân
-      // bổ bên dưới tự bỏ qua — không cần filter riêng).
-      fetchPnlOrders(channelScope(req), range, ShippingStatus.DELIVERED),
-      prisma.operatingExpense.findMany({
-        where: {
-          userId: ownerId,
-          direction: TransactionDirection.EXPENSE,
-          type: ExpenseType.VARIABLE,
-          appliedSku: { not: null },
-          expenseDate: range,
-        },
-        select: { appliedSku: true, amount: true },
-      }),
-    ]);
-
     interface SkuRow {
       sku: string;
       productName: string;
@@ -1507,7 +1516,8 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
     }
     const bySku = new Map<string, SkuRow>();
 
-    for (const order of orders) {
+    // Gom MỘT đơn vào bySku — gọi ngay trong từng trang đọc, không giữ đơn thô.
+    const addOrder = (order: PnlOrder) => {
       // Sàn khấu trừ của đơn = Giá trị đơn − Doanh thu thực tế (SSOT) — gồm
       // đủ phí + thuế + voucher/xu; đơn chưa đối soát chỉ gồm voucher đã biết.
       const r = computePnlRow(order);
@@ -1543,7 +1553,28 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
         if (!row.imageUrl && item.product?.imageUrl) row.imageUrl = item.product.imageUrl;
         bySku.set(sku, row);
       }
-    }
+    };
+
+    const [{ truncated }, variableExpenses] = await Promise.all([
+      // NGUỒN SỐ GỐC: cùng tập đơn SSOT (đơn không có dòng hàng thì vòng phân
+      // bổ tự bỏ qua — không cần filter riêng).
+      forEachPnlOrderPage(
+        channelScope(req),
+        range,
+        { shippingStatus: ShippingStatus.DELIVERED },
+        (page) => page.forEach(addOrder)
+      ),
+      prisma.operatingExpense.findMany({
+        where: {
+          userId: ownerId,
+          direction: TransactionDirection.EXPENSE,
+          type: ExpenseType.VARIABLE,
+          appliedSku: { not: null },
+          expenseDate: range,
+        },
+        select: { appliedSku: true, amount: true },
+      }),
+    ]);
 
     // Cộng chi phí biến đổi (Ads/KOC) vào đúng SKU được gắn
     for (const e of variableExpenses) {
@@ -1651,6 +1682,7 @@ router.get("/sku-pnl", async (req: AuthRequest, res, next) => {
 
     res.json({
       items,
+      truncated, // kỳ vượt 20.000 đơn — số là cận dưới
       summary: {
         skuCount: items.length,
         skuProfitTotal, // tổng lợi nhuận cộng dồn từ các SKU
@@ -2730,10 +2762,10 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
           }
         : {};
 
-    const [pnlOrders, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, taxCfg] = await Promise.all([
+    const [{ rows: pnlRows, truncated }, expenses, operatingIncomeAgg, adSpendRows, tiktokAdsChannels, taxCfg] = await Promise.all([
       // NGUỒN SỐ GỐC: CÙNG tập đơn + CÙNG công thức với trang Lãi/Lỗ Thực Hiện
-      // (không lọc trạng thái = tab "Tất cả" bên Lãi/Lỗ; cùng WHERE, cùng trần).
-      fetchPnlOrders(scope, range),
+      // (không lọc trạng thái = tab "Tất cả" bên Lãi/Lỗ; cùng WHERE, đọc ĐỦ kỳ).
+      fetchPnlRows(scope, range, { lean: true }),
       prisma.operatingExpense.findMany({
         where: {
           userId: ownerId,
@@ -2774,8 +2806,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // trường của dòng computePnlRow: trang Lãi/Lỗ có đơn nào thì đây có đơn
     // đó, Lãi/Lỗ hiển thị số nào thì đây cộng đúng số đó. Không tính lại.
     // ============================================================
-    const pnlRows = pnlOrders.map(computePnlRow);
-    const sumBy = (rows: PnlRow[], pick: (r: PnlRow) => number) =>
+    const sumBy =(rows: PnlRow[], pick: (r: PnlRow) => number) =>
       rows.reduce((s, r) => s + pick(r), 0);
 
     // Phân nhóm theo trạng thái — cùng trục với tab lọc bên Lãi/Lỗ.
@@ -3003,6 +3034,7 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
+      truncated, // kỳ vượt 20.000 đơn — số là cận dưới, UI nhắc thu hẹp kỳ
       deliveredOrderCount: deliveredRows.length,
       totalRevenue,
       totalCost,

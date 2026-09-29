@@ -34,7 +34,7 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-import { computePnlRow, fetchPnlOrders } from "./finance";
+import { computePnlRow, fetchPnlRows } from "./finance";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -211,7 +211,7 @@ async function loadPnlRows(
   scope: ChannelScope,
   range?: DateRangeFilter
 ): Promise<PnlRow[]> {
-  return (await fetchPnlOrders(scope, range)).map(computePnlRow);
+  return (await fetchPnlRows(scope, range, { lean: true })).rows;
 }
 
 function activeRows(rows: PnlRow[]): PnlRow[] {

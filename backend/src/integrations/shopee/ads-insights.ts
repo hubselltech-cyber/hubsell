@@ -24,7 +24,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
-import { computePnlRow, fetchPnlOrders } from "../../routes/finance";
+import { computePnlRow, fetchPnlRows } from "../../routes/finance";
 import {
   ASSISTANT_WINDOWS,
   assessDelivery,
@@ -195,11 +195,11 @@ export async function fetchChannelPnlRows(
     return (await hit.rows).slice();
   }
   const rows = (async () => {
-    const pnlOrders = await fetchPnlOrders(
+    const { rows } = await fetchPnlRows(
       { userId: channel.userId, id: channel.id, channelName: channel.channelName },
       { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
     );
-    return pnlRowsForMargin(pnlOrders.map(computePnlRow), channel.channelName);
+    return pnlRowsForMargin(rows, channel.channelName);
   })();
   if (PNL_CACHE_TTL_MS > 0) {
     if (pnlRowsCache.size >= PNL_CACHE_MAX_CHANNELS) {

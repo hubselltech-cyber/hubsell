@@ -223,6 +223,13 @@ export default function FinanceAnalyticsPage() {
             );
           })()}
 
+        {data?.truncated && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+            Kỳ này vượt 20.000 đơn nên số liệu chưa đủ. Anh/chị chọn kỳ ngắn hơn
+            hoặc lọc theo từng gian để xem số chính xác.
+          </p>
+        )}
+
         {/* Ghi chú cách đọc số liệu */}
         {data && (
           <p className="text-xs text-muted-foreground">
