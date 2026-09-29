@@ -93,6 +93,18 @@ nhất. Ít hơn 7 điểm dữ liệu → "chưa đủ dữ liệu".
 - Gốc của dải đỏ 28/09 không phải ngưỡng mà là cầu dao Ads coi HTTP 429 lẻ trên
   1 gian là trần app → sửa ở docs/ADS-NHIP-CANH-BAO.md Tầng C mục 2.
 
+**Chỉnh dấu hiệu RAM 29/09/2026 (anh Trung: "RAM có vẻ hơi tốn, mới có vài người dùng"):**
+- Đo prod 14:56–15:00: RSS 375 → 320 MB trong 2 phút, heap đang dùng chỉ 64/368 MB.
+  RSS là mức đỉnh hệ điều hành còn giữ sau request nặng, không tăng theo số khách.
+- Dấu hiệu *RAM tiến trình* nay vàng/đỏ theo **% heap** (`heapPctWarn = 70`,
+  `heapPctCrit = 85`, mặc định tự chọn, cùng số với lib/memory-watch.ts); RSS chỉ
+  kéo lên **đỏ** khi ≥ `ramPctCrit = 85` % gói (sát trần thì Render khởi động lại).
+  Bỏ mức vàng theo RSS (`ramPctWarn`). Hàm `ramLevel()` có test.
+- Thẻ KPI hiện heap đang dùng làm số chính, RSS + % gói ở dòng phụ.
+- Điều kiện mốc M2 "RAM ≥ 80%" GIỮ theo RSS (chưa đổi).
+- Kèm: anh đặt env `MALLOC_ARENA_MAX=2` trên Render web để giảm phân mảnh; so RSS
+  sau ~1 ngày chạy với mức 320–375 MB.
+
 Chuông dùng `notify()` sẵn có (type `platform-health`, dedupe 24h theo title);
 email qua `lib/mailer.ts` tới email của mọi user `isPlatformAdmin` (+ env
 `HQ_ALERT_EMAILS` nếu muốn thêm).

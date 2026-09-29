@@ -52,10 +52,22 @@ export const HEALTH_THRESHOLDS = {
   /** Hàng đợi webhook: số job chờ / tuổi job cũ nhất (phút). */
   webhookPending: 200,
   webhookOldestMin: 30,
-  /** % gói DB / RAM / kết nối → vàng, đỏ. */
+  /** % gói DB / kết nối → vàng, đỏ. */
   dbPctWarn: 60,
   dbPctCrit: 80,
-  ramPctWarn: 70,
+  /**
+   * RAM xét theo HEAP đang dùng / trần heap V8 (29/09/2026, đo prod: RSS 320–375 MB
+   * trong khi heap chỉ 64/368 MB — RSS là mức đỉnh hệ điều hành còn giữ sau một
+   * request nặng, không phải mức đang dùng, nên xét vàng theo RSS là báo giả).
+   * 70/85 là MẶC ĐỊNH TỰ CHỌN, cùng số với lib/memory-watch.ts (V8 GC dồn dập
+   * từ ~90%).
+   */
+  heapPctWarn: 70,
+  heapPctCrit: 85,
+  /**
+   * RSS / RAM gói chỉ còn mức ĐỎ: sát trần gói thì Render khởi động lại tiến
+   * trình bất kể heap. Giữ số 85 có từ 12/09 (mặc định tự chọn).
+   */
   ramPctCrit: 85,
   connPctWarn: 60,
   connPctCrit: 80,
@@ -338,4 +350,14 @@ export function levelFor(value: number, warn: number, crit: number): SignalLevel
   if (value >= crit) return "crit";
   if (value >= warn) return "warn";
   return "ok";
+}
+
+/**
+ * Mức của dấu hiệu RAM: vàng/đỏ theo % heap đang dùng; RSS chỉ kéo lên ĐỎ khi
+ * sát trần gói. heapPct null (không đọc được trần heap) → chỉ xét RSS.
+ */
+export function ramLevel(heapPct: number | null, rssPct: number): SignalLevel {
+  if (rssPct >= HEALTH_THRESHOLDS.ramPctCrit) return "crit";
+  if (heapPct == null) return "ok";
+  return levelFor(heapPct, HEALTH_THRESHOLDS.heapPctWarn, HEALTH_THRESHOLDS.heapPctCrit);
 }

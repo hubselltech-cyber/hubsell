@@ -140,9 +140,9 @@ export default function AdminHealthPage() {
                 hint={m.infra.dbPct != null ? `${m.infra.dbPct}% gói ${m.infra.plan.dbPlan}` : "không đọc được dung lượng"}
               />
               <StatCard
-                label="RAM tiến trình"
-                value={`${m.infra.ramMb} MB`}
-                hint={`${m.infra.ramPct}% gói · uptime ${fmtUptime(m.infra.uptimeSec)} · vai ${m.infra.role}${m.infra.gitSha ? ` · ${m.infra.gitSha}` : ""}`}
+                label="RAM đang dùng"
+                value={`${m.infra.heapMb} MB`}
+                hint={`${m.infra.heapPct != null ? `${m.infra.heapPct}% trần heap · ` : ""}hệ điều hành giữ ${m.infra.ramMb} MB (${m.infra.ramPct}% gói) · uptime ${fmtUptime(m.infra.uptimeSec)} · vai ${m.infra.role}${m.infra.gitSha ? ` · ${m.infra.gitSha}` : ""}`}
               />
             </div>
 

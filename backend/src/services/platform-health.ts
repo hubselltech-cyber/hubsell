@@ -7,6 +7,7 @@
 // cảnh báo; route /api/admin/health gọi để vẽ trang.
 // ============================================================
 
+import v8 from "v8";
 import { ChannelName, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import {
@@ -15,6 +16,7 @@ import {
   HEALTH_THRESHOLDS as T,
   METRIC_LABEL,
   levelFor,
+  ramLevel,
   isMilestoneReachedOrPassed,
   locateOnTimeline,
   milestoneEta,
@@ -81,8 +83,10 @@ export interface InfraLayer {
   dbTopTables: { table: string; mb: number }[];
   dbConnections: number | null;
   dbMaxConnections: number | null;
-  ramMb: number;
-  heapMb: number;
+  ramMb: number; // RSS — mức hệ điều hành đang giữ cho tiến trình
+  heapMb: number; // heap đang dùng thật
+  heapLimitMb: number | null; // trần heap V8 (cờ --max-old-space-size trong npm start)
+  heapPct: number | null;
   uptimeSec: number;
   role: string;
   nodeVersion: string;
@@ -260,6 +264,8 @@ export async function collectInfra(): Promise<InfraLayer> {
   }
   const mem = process.memoryUsage();
   const ramMb = Math.round(mem.rss / 1048576);
+  const heapMb = Math.round(mem.heapUsed / 1048576);
+  const heapLimitMb = Math.round(v8.getHeapStatistics().heap_size_limit / 1048576) || null;
   const plan = CURRENT_INFRA;
   const ramCap = plan.workerRamMb > 0 && (process.env.HUBSELL_ROLE ?? "all") === "worker" ? plan.workerRamMb : plan.webRamMb;
   const connCap = plan.dbMaxConnections || dbMaxConnections;
@@ -269,7 +275,9 @@ export async function collectInfra(): Promise<InfraLayer> {
     dbConnections,
     dbMaxConnections,
     ramMb,
-    heapMb: Math.round(mem.heapUsed / 1048576),
+    heapMb,
+    heapLimitMb,
+    heapPct: heapLimitMb ? Math.round((heapMb / heapLimitMb) * 100) : null,
     uptimeSec: Math.round(process.uptime()),
     role: process.env.HUBSELL_ROLE ?? "all",
     nodeVersion: process.version,
@@ -440,9 +448,11 @@ export function evaluateSignals(m: HealthMetrics): HealthSignal[] {
   push(
     "infra.ram",
     "RAM tiến trình",
-    `${i.ramMb} MB (${i.ramPct}% gói ${i.plan.webPlan})`,
-    levelFor(i.ramPct, T.ramPctWarn, T.ramPctCrit),
-    "Nâng gói Render hoặc tách worker"
+    `đang dùng ${i.heapMb}${i.heapLimitMb ? `/${i.heapLimitMb}` : ""} MB heap${i.heapPct != null ? ` (${i.heapPct}%)` : ""} · hệ điều hành giữ ${i.ramMb} MB (${i.ramPct}% gói ${i.plan.webPlan})`,
+    ramLevel(i.heapPct ?? null, i.ramPct),
+    i.ramPct >= T.ramPctCrit
+      ? "Sát trần RAM gói — Render sẽ khởi động lại tiến trình: nâng gói Render"
+      : "Heap cao = có request nạp quá nhiều dữ liệu — xem log [Bộ nhớ] trên Render dò việc đang chạy lúc đó"
   );
   push(
     "infra.conn",

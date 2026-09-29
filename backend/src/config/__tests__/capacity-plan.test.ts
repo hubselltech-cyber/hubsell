@@ -7,6 +7,7 @@ import {
   levelFor,
   locateOnTimeline,
   milestoneEta,
+  ramLevel,
   slopePerDay,
   type GrowthMetrics,
 } from "../capacity-plan";
@@ -86,5 +87,22 @@ describe("levelFor", () => {
     expect(levelFor(10, 60, 80)).toBe("ok");
     expect(levelFor(65, 60, 80)).toBe("warn");
     expect(levelFor(80, 60, 80)).toBe("crit");
+  });
+});
+
+describe("ramLevel", () => {
+  it("RSS cao nhưng heap thấp → ổn (số prod 29/09: heap 64/368, RSS 375/512)", () => {
+    expect(ramLevel(17, 73)).toBe("ok");
+  });
+  it("vàng/đỏ theo heap", () => {
+    expect(ramLevel(70, 50)).toBe("warn");
+    expect(ramLevel(85, 50)).toBe("crit");
+  });
+  it("RSS sát trần gói → đỏ dù heap thấp", () => {
+    expect(ramLevel(17, 85)).toBe("crit");
+  });
+  it("không đọc được trần heap → chỉ xét RSS", () => {
+    expect(ramLevel(null, 73)).toBe("ok");
+    expect(ramLevel(null, 90)).toBe("crit");
   });
 });

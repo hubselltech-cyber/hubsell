@@ -5674,6 +5674,8 @@ export interface PlatformHealthResponse {
       dbMaxConnections: number | null;
       ramMb: number;
       heapMb: number;
+      heapLimitMb?: number | null;
+      heapPct?: number | null;
       uptimeSec: number;
       role: string;
       nodeVersion: string;
