@@ -33,7 +33,7 @@ async function countSuspects(channelId: string): Promise<number> {
     WHERE "channelId" = ${channelId}
       AND "shippingStatus"::text = ${ShippingStatus.DELIVERED}
       AND "deliveredAt" IS NOT NULL
-      AND "deliveredAt" - "createdAt" > make_interval(days => ${SUSPECT_DAYS})`;
+      AND "deliveredAt" - "createdAt" > (${SUSPECT_DAYS}::int * interval '1 day')`;
   return Number(rows[0]?.n ?? 0);
 }
 
