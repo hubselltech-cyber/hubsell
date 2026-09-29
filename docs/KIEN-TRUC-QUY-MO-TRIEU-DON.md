@@ -1,6 +1,20 @@
 # Kiến trúc Hubsell cho quy mô 50.000 khách, 1 triệu đơn/ngày
 
-Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **CHỜ ANH TRUNG DUYỆT**, chưa có dòng code nào của thiết kế này được viết.
+Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh Trung đã duyệt hướng 30/09/2026**; giai đoạn 0 đã xong và đang chạy trên prod, giai đoạn 1 chưa bắt đầu.
+
+## 0. Tiến độ (cập nhật 30/09/2026)
+
+| Giai đoạn | Tình trạng |
+|---|---|
+| 0. Cầm máu | Xong phần đã chốt, đã lên prod (bản `ce65553`) |
+| 1. Sổ cái đơn | Chưa bắt đầu. Bước đầu: soạn cấu trúc bảng + SQL, trình duyệt trước khi đụng database |
+| 2. Hàng đợi và webhook | Chưa bắt đầu. Cần thử pg-boss với bộ gộp kết nối Supabase trước |
+| 3. Đồng bộ và các worker còn lại | Chưa bắt đầu |
+| 4. Vòng đời dữ liệu và quan sát | Chưa bắt đầu (riêng chỉ mục `Order(channelId, deliveredAt)` đã tạo) |
+
+Đã làm ở giai đoạn 0: bỏ trần 2.000 đơn của báo cáo; chặn đánh dấu "đã gỡ" nhầm khi danh mục chưa kéo đủ; gỡ lệnh đẩy tồn bị kẹt; bỏ quyết toán giả lập với gian sàn; đồng bộ đơn báo khi bị cắt; số cảnh báo tồn hiện tổng thật; dải nhắc kỳ vượt 20.000 đơn; các định nghĩa tài chính ở mục 9a; tờ khai theo ngày giao; Tổng quan trừ quảng cáo sàn.
+
+Còn treo của giai đoạn 0: nhóm quảng cáo ở mục 3.2 (A7, A8, A9), trình từng thay đổi trước khi sửa vì Trợ lý quảng cáo đang ở chế độ diễn tập.
 
 Xuất phát: sự cố 29/09 (Báo cáo dòng tiền tháng 8 ra lãi 13,19 triệu thay vì 34,29 triệu do trần 2.000 đơn). Anh Trung yêu cầu: không vá từng lỗi, thiết kế theo giả thuyết 50.000 khách, shop có hàng trăm nghìn đơn, hệ thống xử lý trên 1 triệu đơn/ngày.
 
