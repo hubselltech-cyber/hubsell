@@ -230,7 +230,7 @@ export default function FinanceAnalyticsPage() {
         {data && (
           <p className="text-xs text-muted-foreground">
             Phạm vi tính: {formatNumber(data.breakdown.gross.orderCount)} đơn Đã giao
-            và Đang giao (không tính đơn đã hủy). Phí &amp; thuế sàn CHỈ ghi số
+            và Đang giao (không tính đơn đã hủy và đơn đang hoàn/trả). Phí &amp; thuế sàn CHỈ ghi số
             <b> thực tế</b> từ đối soát; đơn chưa quyết toán <b>chờ đối soát</b> —
             không ước phí %, nên lợi nhuận dự kiến là mức trần lạc quan.
           </p>

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ReturnStatus, ShippingStatus, TransactionDirection } from "@prisma/client";
+import { ShippingStatus, TransactionDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
@@ -14,6 +14,7 @@ import { channelScope, hasChannelFilter } from "../lib/channel-filter";
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
 // sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
 import { fetchPnlRows } from "./finance";
+import { countsAsRevenue, RETURNING_STATUSES } from "../lib/finance-definitions";
 
 const router = Router();
 
@@ -23,10 +24,8 @@ const router = Router();
 // trừ nhau: Σ(ô trạng thái) + Hoàn/Trả = tổng đơn (hết cảnh đếm trùng).
 // RECEIVED (đã quét nhận, chưa nhập kho) vẫn là hoàn CHƯA xử lý xong — chỉ khi
 // nhập kho (RECEIVED_INTACT) hoặc chốt khiếu nại thì đơn mới rời nhóm này.
-const RETURNING_IN = {
-  in: [ReturnStatus.AWAITING, ReturnStatus.RECEIVED, ReturnStatus.DAMAGED],
-};
-const RETURNING_SET = new Set<ReturnStatus>(RETURNING_IN.in);
+// Định nghĩa nằm ở lib/finance-definitions.ts — dùng chung với Báo cáo dòng tiền.
+const RETURNING_IN = { in: RETURNING_STATUSES };
 
 // Bucket theo NGÀY GIỜ VN — toBusinessDateKey/businessDayStart/dateKeyLabel
 // import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
@@ -105,11 +104,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // NGUỒN SỐ: computePnlRow — cùng tập đơn + cùng công thức với Lãi/Lỗ
     // Thực Hiện và Báo cáo dòng tiền.
     const { rows: periodRows, truncated } = await fetchPnlRows(scope, range, { lean: true });
-    const activeRows = periodRows.filter(
-        (r) =>
-          r.shippingStatus !== ShippingStatus.CANCELLED &&
-          !RETURNING_SET.has(r.returnStatus)
-      );
+    const activeRows = periodRows.filter(countsAsRevenue);
 
     // Doanh thu GMV phát sinh = Σ "Giá trị đơn hàng" (doanh thu gốc) — khớp
     // thẻ "Tổng giá trị sản phẩm" của Báo cáo dòng tiền cùng kỳ lọc.
@@ -346,11 +341,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       const bump = (m: Map<string, number>, k: string, v: number) =>
         m.set(k, (m.get(k) ?? 0) + v);
       for (const r of trendRows) {
-        if (
-          r.shippingStatus === ShippingStatus.CANCELLED ||
-          RETURNING_SET.has(r.returnStatus)
-        )
-          continue;
+        if (!countsAsRevenue(r)) continue;
         const key = toBusinessDateKey(r.createdAt);
         bump(tRevenue, key, r.revenueGross);
         if (seesFinancials) {
@@ -427,11 +418,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
               where: { channel: scope, createdAt: prevRange },
             }),
           ]);
-          const prevActive = prevRows.filter(
-              (r) =>
-                r.shippingStatus !== ShippingStatus.CANCELLED &&
-                !RETURNING_SET.has(r.returnStatus)
-            );
+          const prevActive = prevRows.filter(countsAsRevenue);
           const prevRevenue = prevActive.reduce((s, r) => s + r.revenueGross, 0);
           // activeOrderCount = rổ đơn phát sinh (khớp thẻ Đơn hàng); orderCount
           // mọi trạng thái giữ lại cho ai cần so tổng phễu.

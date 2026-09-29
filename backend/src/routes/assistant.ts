@@ -36,6 +36,7 @@ import {
   type DateRangeFilter,
 } from "../lib/date-range";
 import { computePnlRow, fetchPnlRows } from "./finance";
+import { countsAsRevenue } from "../lib/finance-definitions";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -198,14 +199,6 @@ function pctDelta(current: number, previous: number): string | null {
 
 // ─────────────────────────── Nguyên liệu P&L dùng chung ───────────────────────────
 
-/** Đơn "đang tính doanh thu" — cùng hệ quy chiếu trang Tổng quan (analytics.ts):
- *  loại đơn hủy + đơn đang trong vòng hoàn chưa xử lý xong. */
-const RETURNING_SET = new Set<ReturnStatus>([
-  ReturnStatus.AWAITING,
-  ReturnStatus.RECEIVED,
-  ReturnStatus.DAMAGED,
-]);
-
 type PnlRow = ReturnType<typeof computePnlRow>;
 
 async function loadPnlRows(
@@ -217,11 +210,7 @@ async function loadPnlRows(
 }
 
 function activeRows(rows: PnlRow[]): PnlRow[] {
-  return rows.filter(
-    (r) =>
-      r.shippingStatus !== ShippingStatus.CANCELLED &&
-      !RETURNING_SET.has(r.returnStatus as ReturnStatus)
-  );
+  return rows.filter(countsAsRevenue);
 }
 
 // ─────────────────────────── BÁO CÁO KỲ (tuần/tháng) ───────────────────────────

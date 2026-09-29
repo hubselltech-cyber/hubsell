@@ -11,6 +11,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
@@ -552,6 +553,10 @@ export async function upsertShopeeOrderTx(
 
   // Hãng vận chuyển từ tên chữ sàn trả ("SPX Express"...) — cho bộ lọc kho.
   const carrier = carrierFromName(order.shipping_carrier);
+  // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
+  const deliveredAt = deliveredAtFromPlatform(
+    order.update_time ? new Date(order.update_time * 1000) : null
+  );
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
@@ -569,7 +574,7 @@ export async function upsertShopeeOrderTx(
         // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
         // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
         ...(shippingStatus === ShippingStatus.DELIVERED && !existing.deliveredAt
-          ? { deliveredAt: new Date() }
+          ? { deliveredAt }
           : {}),
         // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
         ...(carrier && !existing.carrier ? { carrier } : {}),
@@ -623,9 +628,9 @@ export async function upsertShopeeOrderTx(
       platformFee: Math.round(totalAmount * feeRate), // GĐ1 — tạm tính
       paymentStatus,
       shippingStatus,
-      // Đơn backfill về đã DELIVERED sẵn: mốc giao = lúc đồng bộ (muộn hơn
-      // thực tế → phép đếm quá hạn chỉ thận trọng hơn, không báo oan).
-      ...(shippingStatus === ShippingStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+      // Đơn nạp lịch sử về đã DELIVERED sẵn: mốc giao theo thời điểm sàn cập
+      // nhật đơn, không phải lúc nạp.
+      ...(shippingStatus === ShippingStatus.DELIVERED ? { deliveredAt } : {}),
       ...(carrier ? { carrier } : {}),
       ...(order.shipping_carrier
         ? { shippingCarrierName: order.shipping_carrier }

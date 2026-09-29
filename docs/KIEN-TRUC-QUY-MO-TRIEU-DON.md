@@ -252,7 +252,27 @@ Hạ tầng (số worker, cỡ database) nâng theo mốc trong `capacity-plan.t
 
 ---
 
-## 9. Việc cần anh Trung chốt
+## 9a. Anh Trung đã chốt (30/09/2026)
+
+| # | Quyết định | Tình trạng |
+|---|---|---|
+| 1 | Duyệt hướng 4 trụ. Hạ tầng nâng dần theo mốc trong HQ; code làm chuẩn cho quy mô lớn ngay | Đang làm |
+| 2 | Đơn lỗ: "đơn có lợi nhuận < giá vốn" | **Chờ xác nhận cách hiểu** (xem dưới) |
+| 3 | Đơn ĐANG hoàn không tính vào doanh thu | Đã code: `lib/finance-definitions.ts`, áp cho Tổng quan, Báo cáo dòng tiền, Trợ lý |
+| 4 | Quyết toán giả lập bỏ hẳn với gian sàn | Đã code: chỉ còn gian Offline |
+| 5 | Tờ khai thuế tính theo ngày giao thành công | Mới sửa nguồn mốc giao cho đơn mới; chưa đổi tờ khai (xem dưới) |
+
+**Về quyết định 2.** Hiểu theo nghĩa đen, đơn lãi 30.000 ₫ trên giá vốn 100.000 ₫ cũng thành "đơn lỗ", tức gần như mọi đơn. Em hiểu ý anh là **tiền về nhỏ hơn giá vốn**, tương đương lợi nhuận nhỏ hơn 0. Chưa code cho tới khi anh xác nhận.
+
+**Về quyết định 3.** "Đang hoàn" là đơn có hàng hoàn chưa xử lý xong: đang chờ về kho, đã quét nhận chưa nhập kho, hoặc hỏng/mất đang chờ khiếu nại. Hoàn đã xong (nhập kho, khiếu nại thắng hoặc thua) thì đơn quay lại báo cáo, tiền hoàn nằm ở dòng "Tiền hoàn trả khách". Thẻ Doanh thu có thêm dòng tham khảo "Đang hoàn/trả".
+
+**Về quyết định 5.** Ba việc phải xong trước khi đổi tờ khai:
+
+1. *Nguồn mốc giao.* Shopee và Lazada không trả trường "thời điểm giao" riêng; trước đây Hubsell ghi bằng giờ đồng bộ, nên đơn nạp lịch sử mang ngày nạp. Từ 30/09 đơn mới lấy thời điểm sàn cập nhật đơn. Đây là xấp xỉ.
+2. *Định nghĩa "giao thành công" của Shopee.* Hubsell đang coi đơn Shopee là "Đã giao" khi sàn báo **Hoàn thành** (khách bấm nhận hoặc sàn tự chốt sau vài ngày), không phải lúc shipper giao tới tay. Cần anh và kế toán chốt lấy mốc nào.
+3. *Đơn cũ.* Các đơn đã có trong hệ thống vẫn mang mốc giao cũ. Cần một lượt cập nhật lại từ sàn, chạy theo lô.
+
+## 9. Việc cần anh Trung chốt (danh sách gốc 29/09)
 
 1. Duyệt hướng 4 trụ và thứ tự 5 giai đoạn.
 2. Cho làm giai đoạn 0 ngay.

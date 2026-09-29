@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import { CHANNEL_LABEL } from "../../marketplace/mockMarketplace";
@@ -659,6 +660,10 @@ export async function upsertLazadaOrderTx(
     .trim();
   const customerName = shipName || buyerName || "Khách Lazada";
   const customerPhone = order.address_shipping?.phone?.trim() || null;
+  // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
+  const deliveredAt = deliveredAtFromPlatform(
+    order.updated_at ? new Date(order.updated_at) : null
+  );
 
   // ---- CHI TIẾT PHÍ VẬN CHUYỂN từ Order API (Seller-Center mirror) ----
   // Khoản ship KHÔNG chảy qua ví người bán nên sao kê Finance không có dòng
@@ -727,7 +732,7 @@ export async function upsertLazadaOrderTx(
         // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
         // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
         ...(shippingStatus === ShippingStatus.DELIVERED && !existing.deliveredAt
-          ? { deliveredAt: new Date() }
+          ? { deliveredAt }
           : {}),
         // Điền vận chuyển khi có dữ liệu mới — sàn cấp vận đơn SAU khi tạo đơn
         // nên bản ghi cũ thường trống; không ghi đè bằng giá trị rỗng.
@@ -784,9 +789,9 @@ export async function upsertLazadaOrderTx(
       // ghi khi sàn trả số thật qua syncLazadaSettlements.
       paymentStatus,
       shippingStatus,
-      // Đơn backfill về đã DELIVERED sẵn: mốc giao = lúc đồng bộ (muộn hơn
-      // thực tế → phép đếm quá hạn chỉ thận trọng hơn, không báo oan).
-      ...(shippingStatus === ShippingStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+      // Đơn nạp lịch sử về đã DELIVERED sẵn: mốc giao theo thời điểm sàn cập
+      // nhật đơn, không phải lúc nạp.
+      ...(shippingStatus === ShippingStatus.DELIVERED ? { deliveredAt } : {}),
       ...(trackingCode ? { trackingCode } : {}),
       ...(carrier ? { carrier } : {}),
       ...(rawProvider ? { shippingCarrierName: rawProvider } : {}),

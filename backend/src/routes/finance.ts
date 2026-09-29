@@ -35,6 +35,7 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
+import { countsAsRevenue, isReturning } from "../lib/finance-definitions";
 import {
   channelScope,
   readChannelId,
@@ -2814,9 +2815,13 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const cancelledRows = pnlRows.filter(
       (r) => r.shippingStatus === ShippingStatus.CANCELLED
     );
-    const activeRows = pnlRows.filter(
-      (r) => r.shippingStatus !== ShippingStatus.CANCELLED
+    // Đơn ĐANG hoàn/trả KHÔNG tính doanh thu (anh Trung chốt 30/09/2026 — cùng
+    // định nghĩa với Tổng quan, lib/finance-definitions.ts); hiện riêng một
+    // dòng tham khảo ở thẻ Doanh thu như đơn hủy.
+    const returningRows = pnlRows.filter(
+      (r) => r.shippingStatus !== ShippingStatus.CANCELLED && isReturning(r)
     );
+    const activeRows = pnlRows.filter(countsAsRevenue);
     const settledRows = activeRows.filter((r) => r.isSettled);
     // "Chờ quyết toán" = sàn chưa giải ngân: đang đi đường HOẶC đã giao nhưng
     // chưa đối soát (nhóm đã-giao-chưa-quyết-toán trước đây bị bỏ sót khỏi cả
@@ -2843,6 +2848,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     const pendingActualRevenue = sumBy(pendingRows, (r) => r.platformRevenue);
     const cancelledValue = sumBy(cancelledRows, (r) => r.revenueGross);
     const cancelRate = pct(cancelledRows.length, pnlRows.length);
+    const returningValue = sumBy(returningRows, (r) => r.revenueGross);
+    const returningRate = pct(returningRows.length, pnlRows.length);
 
     // --- CỘT 3: CHI PHÍ (giá vốn + chi phí vận hành nhập tay + thuế bổ sung).
     // KHÔNG còn dòng Phí sàn/Thuế sàn (đã cấn trừ trong Doanh thu, giữ lại là
@@ -3085,6 +3092,14 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
               amount: cancelledValue,
               percent: cancelRate,
               count: cancelledRows.length,
+            },
+            {
+              key: "returning",
+              label: "Đang hoàn/trả",
+              hint: "Tổng giá trị đơn đang hoàn/trả chưa xử lý xong — không tính vào doanh thu. Xử lý xong (nhập kho hoặc chốt khiếu nại) đơn mới quay lại báo cáo, tiền hoàn nằm ở dòng Tiền hoàn trả khách.",
+              amount: returningValue,
+              percent: returningRate,
+              count: returningRows.length,
             },
             // (Khoản THU vận hành nhập tay đã dời về cột Lợi nhuận — dòng thứ
             // 3, CỘNG vào tổng lợi nhuận tạm tính; chốt chủ shop 31/07 chiều.)
