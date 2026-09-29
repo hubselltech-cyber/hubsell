@@ -116,6 +116,18 @@ function PnlBreakdown({ analytics }: { analytics: AnalyticsResponse }) {
     { key: "tax", label: "Thuế sàn TMĐT (GTGT + TNCN thu hộ)", short: "Thuế sàn", amount: analytics.totalPlatformTax, hue: "rose" },
     { key: "ads", label: "Chi phí quảng cáo", short: "Ads", amount: adsExpense, hue: "amber" },
     { key: "ops", label: "Chi phí vận hành (cố định + biến đổi)", short: "Vận hành", amount: operatingExpense, hue: "amber" },
+    // Đơn chưa có giá vốn không tính vào lợi nhuận (anh Trung 30/09/2026): phần
+    // "lãi" của chúng thực chất là nguyên tiền về → xén thêm một bậc để thác vẫn
+    // đóng. Kỳ không có đơn nào thiếu giá vốn thì không có bậc này.
+    ...(analytics.missingCost && analytics.missingCost.orderCount > 0
+      ? [{
+          key: "missingCost",
+          label: `${formatNumber(analytics.missingCost.orderCount)} đơn chưa có giá vốn — không tính vào lợi nhuận`,
+          short: "Thiếu vốn",
+          amount: analytics.missingCost.excludedProfit,
+          hue: "amber" as const,
+        }]
+      : []),
   ];
 
   return (
@@ -680,9 +692,11 @@ export default function DashboardPage() {
                         : undefined
                     }
                     subtitle={
-                      margin !== undefined
-                        ? `Biên lợi nhuận ${margin}%`
-                        : "Sau giá vốn, phí sàn & chi phí"
+                      analytics?.missingCost && analytics.missingCost.orderCount > 0
+                        ? `${formatNumber(analytics.missingCost.orderCount)} đơn chưa có giá vốn nên không được tính vào lợi nhuận`
+                        : margin !== undefined
+                          ? `Biên lợi nhuận ${margin}%`
+                          : "Sau giá vốn, phí sàn & chi phí"
                     }
                   />
                 );

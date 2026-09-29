@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/card";
 import { Money } from "@/components/ui/money";
 import { HintIcon } from "@/components/finance/hint-icon";
+import { MissingCostNote } from "@/components/finance/missing-cost-note";
 import { CHANNEL_META } from "@/lib/channel-meta";
 import { formatNumber, formatVND } from "@/lib/format";
 import type { ChannelName, RealizedPnlSummary } from "@/lib/api";
@@ -177,6 +178,10 @@ export function OverviewDashboard({ summary }: { summary: RealizedPnlSummary }) 
               {formatNumber(summary.count)} đơn ·{" "}
               {formatNumber(summary.settledCount)} đã đối soát
             </p>
+            <MissingCostNote
+              summary={summary.missingCost}
+              className={cn(TEXT_SUB, "mt-1 block text-amber-600")}
+            />
           </CardContent>
         </Card>
 

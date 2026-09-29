@@ -26,6 +26,35 @@ export function isReturning(r: { returnStatus: ReturnStatus }): boolean {
 }
 
 /**
+ * ĐƠN LỖ: tiền sàn trả về ví NHỎ HƠN giá vốn (lợi nhuận < 0). Bằng 0 không phải
+ * lỗ. Đơn thiếu giá vốn mà vẫn âm thì VẪN là đơn lỗ: bổ sung giá vốn chỉ làm số
+ * âm thêm, không thể thành lãi.
+ */
+export function isLossOrder(r: { profitAfterTax: number }): boolean {
+  return r.profitAfterTax < 0;
+}
+
+/**
+ * ĐƠN CHƯA CÓ GIÁ VỐN bị loại khỏi LỢI NHUẬN nhưng vẫn nằm trong DOANH THU (anh
+ * Trung chốt 30/09/2026): thiếu giá vốn thì "lợi nhuận" của đơn thực chất là
+ * nguyên tiền về, cộng vào làm lãi phình. Trả số đơn + phần lợi nhuận bị loại
+ * để báo cáo nói rõ "X đơn chưa có giá vốn nên không được tính vào lợi nhuận"
+ * và để đẳng thức đóng: Doanh thu − Chi phí − excludedProfit = Lợi nhuận.
+ */
+export function summarizeMissingCost(
+  rows: { missingCostPrice: boolean; profitAfterTax: number }[]
+): { orderCount: number; excludedProfit: number } {
+  let orderCount = 0;
+  let excludedProfit = 0;
+  for (const r of rows) {
+    if (!r.missingCostPrice) continue;
+    orderCount += 1;
+    excludedProfit += r.profitAfterTax;
+  }
+  return { orderCount, excludedProfit };
+}
+
+/**
  * ĐƠN TÍNH DOANH THU (anh Trung chốt 30/09/2026): không hủy VÀ không đang
  * hoàn/trả. Áp cho Tổng quan, Báo cáo dòng tiền, Trợ lý hỏi đáp, báo cáo tuần.
  */

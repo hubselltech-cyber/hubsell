@@ -6,7 +6,38 @@
 
 import { describe, expect, it } from "vitest";
 import { ReturnStatus, ShippingStatus } from "@prisma/client";
-import { countsAsRevenue, isReturning } from "../../lib/finance-definitions";
+import {
+  countsAsRevenue,
+  isLossOrder,
+  isReturning,
+  summarizeMissingCost,
+} from "../../lib/finance-definitions";
+
+describe("isLossOrder — đơn lỗ là đơn có lãi < 0 (anh Trung chốt 30/09/2026)", () => {
+  it("lãi âm → lỗ; lãi bằng 0 và lãi dương → không lỗ", () => {
+    expect(isLossOrder({ profitAfterTax: -1 })).toBe(true);
+    expect(isLossOrder({ profitAfterTax: 0 })).toBe(false);
+    expect(isLossOrder({ profitAfterTax: 45000 })).toBe(false);
+  });
+});
+
+describe("summarizeMissingCost — đơn chưa có giá vốn bị loại khỏi lợi nhuận", () => {
+  it("đếm đúng số đơn và cộng đúng phần lợi nhuận bị loại", () => {
+    const s = summarizeMissingCost([
+      { missingCostPrice: false, profitAfterTax: 45000 },
+      { missingCostPrice: true, profitAfterTax: 176081 },
+      { missingCostPrice: true, profitAfterTax: -2700 },
+    ]);
+    expect(s).toEqual({ orderCount: 2, excludedProfit: 176081 - 2700 });
+  });
+
+  it("kỳ không có đơn thiếu giá vốn → 0 đơn, 0 đồng", () => {
+    expect(summarizeMissingCost([{ missingCostPrice: false, profitAfterTax: 1 }])).toEqual({
+      orderCount: 0,
+      excludedProfit: 0,
+    });
+  });
+});
 import { deliveredAtFromPlatform } from "../../lib/delivered-at";
 
 describe("deliveredAtFromPlatform — mốc giao theo số của sàn", () => {

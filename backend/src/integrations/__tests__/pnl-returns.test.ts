@@ -465,6 +465,67 @@ describe("computePnlRow — đơn hủy giao thất bại quay về (ca thật 2
   });
 });
 
+describe("computePnlRow — đơn hủy doanh thu bằng 0 (anh Trung chốt 30/09/2026)", () => {
+  it("đơn hủy, sàn CHƯA báo số hoàn, chưa có tiền về: doanh thu 0, lợi nhuận 0 — không còn lãi ảo bằng nguyên giá bán", () => {
+    const r = computePnlRow(
+      mkOrder({
+        shippingStatus: ShippingStatus.CANCELLED,
+        isSettled: false,
+        actualPayout: D(0),
+        fixedFee: D(0),
+        serviceFee: D(0),
+        sellerProtectionFee: D(0),
+        taxWithheld: D(0),
+      })
+    );
+    expect(r.refundedAmount).toBe(269000);
+    expect(r.platformRevenue).toBe(0);
+    expect(r.costSnapshot).toBe(0); // hàng chưa xuất / đã quay về
+    expect(r.profitAfterTax).toBe(0);
+    expect(r.returnType).toBeNull();
+  });
+
+  it("đơn hủy còn số tiền về DƯƠNG (ước tính sàn tính trước khi hủy): kẹp về 0", () => {
+    const r = computePnlRow(
+      mkOrder({ shippingStatus: ShippingStatus.CANCELLED, isSettled: false, actualPayout: D(38435) })
+    );
+    expect(r.platformRevenue).toBe(0);
+    expect(r.profitAfterTax).toBe(0);
+  });
+
+  it("đơn hủy bị sàn trừ phí (tiền về ÂM): giữ nguyên số âm — thiệt hại thật", () => {
+    const r = computePnlRow(
+      mkOrder({ shippingStatus: ShippingStatus.CANCELLED, isSettled: false, actualPayout: D(-2700) })
+    );
+    expect(r.platformRevenue).toBe(-2700);
+    expect(r.profitAfterTax).toBe(-2700);
+  });
+});
+
+describe("summarizePnlRows — đơn chưa có giá vốn không tính vào lợi nhuận (anh Trung chốt 30/09/2026)", () => {
+  const costed = computePnlRow(mkOrder({ id: "a", orderCode: "A" })); // lãi 176.081 − 131.000
+  const noCost = computePnlRow(
+    mkOrder({ id: "b", orderCode: "B", items: [{ costPriceAtSale: D(0) }] })
+  ); // thiếu giá vốn: "lãi" = nguyên 176.081 tiền về
+
+  it("lợi nhuận chỉ cộng đơn đã có giá vốn; doanh thu vẫn tính cả hai", () => {
+    const sm = summarizePnlRows([costed, noCost], DEFAULT_TAX_CONFIG);
+    expect(noCost.missingCostPrice).toBe(true);
+    expect(sm.totalProfit).toBe(176081 - 131000);
+    expect(sm.totalGrossRevenue).toBe(269000 * 2);
+    expect(sm.missingCost).toEqual({ orderCount: 1, excludedProfit: 176081 });
+  });
+
+  it("ba trục vẫn khớp nhau: Σ ngày = Σ sàn = tổng kỳ", () => {
+    const sm = summarizePnlRows([costed, noCost], DEFAULT_TAX_CONFIG);
+    const dailySum = [...sm.dayAgg.values()].reduce((s, d) => s + d.profit, 0);
+    const platformSum = Object.values(sm.byPlatform).reduce((s, b) => s + b.profit, 0);
+    expect(dailySum).toBeCloseTo(sm.totalProfit, 6);
+    expect(platformSum).toBeCloseTo(sm.totalProfit, 6);
+    expect(sm.byPlatform.SHOPEE.count).toBe(2); // đơn thiếu giá vốn vẫn được đếm
+  });
+});
+
 describe("computePnlRow — Lazada sau khi nối Reverse Order API (20/08)", () => {
   it("có dữ liệu Reverse: refund = số sàn báo, KHÔNG còn tạm tính full", () => {
     const r = computePnlRow(

@@ -29,6 +29,7 @@ import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
 import { fetchPnlRows } from "../routes/finance";
+import { isLossOrder } from "../lib/finance-definitions";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -409,7 +410,7 @@ async function detectHubsellAdsLinkGaps(ownerId: string): Promise<DetectedAlert[
 }
 
 /**
- * ĐƠN LỖ: đơn Đã giao trong 7 ngày có lợi nhuận ≤ 0 (số từ computePnlRow —
+ * ĐƠN LỖ: đơn Đã giao trong 7 ngày có lợi nhuận < 0 (số từ computePnlRow —
  * cùng nguồn với trang Đơn lỗ). Một thẻ tổng hợp, bấm vào xem từng đơn.
  */
 async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
@@ -420,10 +421,11 @@ async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
   );
   if (orders.length === 0) return [];
 
-  // CÙNG LUẬT với trang Đơn lỗ (orders-analysis): lợi nhuận ≤ 0 là LỖ, KHÔNG
-  // loại đơn thiếu giá vốn — thiếu giá vốn mà vẫn âm nghĩa là phí sàn đã ăn
-  // hết doanh thu, càng phải báo. Thẻ nói N đơn thì trang mở ra cũng đúng N.
-  const losses = orders.filter((r) => r.profitAfterTax <= 0);
+  // CÙNG LUẬT với trang Đơn lỗ (orders-analysis): lãi < 0 là LỖ (anh Trung chốt
+  // 30/09/2026), KHÔNG loại đơn thiếu giá vốn — thiếu giá vốn mà vẫn âm nghĩa
+  // là phí sàn đã ăn hết doanh thu, càng phải báo. Thẻ nói N đơn thì trang mở
+  // ra cũng đúng N.
+  const losses = orders.filter(isLossOrder);
   if (losses.length === 0) return [];
 
   const totalLoss = losses.reduce((s, r) => s + Math.abs(r.profitAfterTax), 0);

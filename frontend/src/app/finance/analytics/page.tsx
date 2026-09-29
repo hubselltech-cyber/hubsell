@@ -38,6 +38,7 @@ import {
 } from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { CashFlowTable } from "@/components/finance/cash-flow-table";
+import { MissingCostNote } from "@/components/finance/missing-cost-note";
 import { TruncatedNotice } from "@/components/finance/truncated-notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -206,7 +207,7 @@ export default function FinanceAnalyticsPage() {
 
                 <BreakdownCard
                   title="Lợi nhuận ròng tạm tính"
-                  titleHint="Tiền lãi thực còn lại = Doanh thu − Chi phí + Thu khác − Thuế để dành."
+                  titleHint="Tiền lãi thực còn lại = Doanh thu − Chi phí + Thu khác − Thuế để dành. Không tính đơn chưa cập nhật giá vốn."
                   total={b.profit.total}
                   share={{
                     percent: share(b.profit.total, b.revenue.total),
@@ -218,7 +219,15 @@ export default function FinanceAnalyticsPage() {
                   items={b.profit.items}
                   colorBySign
                   featured /* ← Card Ngôi Sao: chỉ số cốt lõi của trang này */
-                  footer={<span>% là biên lợi nhuận trên dòng tiền tương ứng</span>}
+                  footer={
+                    <span>
+                      % là biên lợi nhuận trên dòng tiền tương ứng
+                      <MissingCostNote
+                        summary={b.profit.missingCost}
+                        className="mt-1 block text-amber-600 dark:text-amber-400"
+                      />
+                    </span>
+                  }
                 />
               </Refreshing>
             );

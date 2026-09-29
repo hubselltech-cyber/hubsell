@@ -848,6 +848,8 @@ export interface RealizedPnlResponse {
     /** Thuế bổ sung ước tính của kỳ theo cấu hình trang "Thuế bổ sung". */
     additionalTax: number;
     totalProfitAfterTax: number;
+    /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+    missingCost?: MissingCostSummary;
     taxSettings: {
       calculationBase: TaxCalculationBase;
       platformTaxPercent: number;
@@ -987,6 +989,8 @@ export interface AnalyticsResponse {
   /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương, phần mềm…). */
   operatingFixedExpense: number;
   netProfit: number;
+  /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+  missingCost?: MissingCostSummary;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];
   /** `cost` (giá vốn + chi phí vận hành trong ngày) vắng mặt với SALES. */
   revenueByDay: {
@@ -1950,7 +1954,21 @@ export interface FinanceBreakdown {
   };
   revenue: { total: number; items: BreakdownItem[] };
   costs: { total: number; items: BreakdownItem[] };
-  profit: { total: number; items: BreakdownItem[] };
+  profit: {
+    total: number;
+    items: BreakdownItem[];
+    /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
+    missingCost?: MissingCostSummary;
+  };
+}
+
+/**
+ * Đơn chưa có giá vốn của kỳ: số đơn + phần lợi nhuận bị loại (anh Trung chốt
+ * 30/09/2026). Đẳng thức: Doanh thu − Chi phí − excludedProfit = Lợi nhuận.
+ */
+export interface MissingCostSummary {
+  orderCount: number;
+  excludedProfit: number;
 }
 
 export interface FinanceAnalytics {

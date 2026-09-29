@@ -35,7 +35,12 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-import { countsAsRevenue, isReturning } from "../lib/finance-definitions";
+import {
+  countsAsRevenue,
+  isLossOrder,
+  isReturning,
+  summarizeMissingCost,
+} from "../lib/finance-definitions";
 import {
   channelScope,
   readChannelId,
@@ -246,7 +251,7 @@ function pct(amount: number, total: number): number {
 // GET /api/finance/orders-analysis — quét đơn Đã giao tìm ĐƠN LỖ.
 // NGUỒN SỐ: computePnlRow (SSOT) — Lợi nhuận đơn = Doanh thu thực tế
 // (platformRevenue, "Tổng tiền" sàn báo) − Giá vốn; Sàn khấu trừ = Giá trị
-// đơn − Doanh thu thực tế. ≤ 0 ⇒ ĐƠN LỖ.
+// đơn − Doanh thu thực tế. < 0 ⇒ ĐƠN LỖ (lib/finance-definitions.ts).
 // Đơn chứa SKU chưa cấu hình giá vốn ⇒ kèm warning để chủ shop đi nhập giá vốn.
 router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
   try {
@@ -261,7 +266,7 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
       const platformFee = r.revenueGross - r.platformRevenue; // toàn bộ sàn khấu trừ
       const cost = r.costSnapshot;
       const profit = r.profitAfterTax; // = Doanh thu thực tế − giá vốn
-      const isLoss = profit <= 0;
+      const isLoss = isLossOrder(r); // lãi < 0 (anh Trung chốt 30/09/2026)
 
       // BÓC TÁCH LÝ DO LỖ:
       // - COST: bán dưới giá vốn (lỗ ngay từ khâu nhập hàng/định giá)
@@ -282,7 +287,7 @@ router.get("/orders-analysis", async (req: AuthRequest, res, next) => {
         platformFee,
         isSettled: r.isSettled, // khấu trừ đã là số quyết toán hay còn chờ đối soát
         cost,
-        profit, // âm hoặc 0 = lỗ
+        profit, // âm = lỗ
         isLoss,
         lossReason,
         ...(r.missingCostPrice ? { warning: "Chưa nhập giá vốn" } : {}),
@@ -540,12 +545,17 @@ export function computePnlRow(o: PnlOrder) {
     o.returnSolution === null &&
     refundRecorded <= 0 &&
     refundPlatform <= 0;
+  // ĐƠN HỦY = DOANH THU 0 (anh Trung chốt 30/09/2026). Đơn hủy mà sàn chưa báo
+  // số hoàn (chưa có escrow / yêu cầu hoàn) trước đây rơi về nguyên giá bán,
+  // giá vốn lại đã thu hồi → cả đơn thành "lãi" ảo (tháng 8 tài khoản demo: 99
+  // đơn, thừa 26,2 triệu ở tab Tất cả của Lãi/Lỗ). Coi như hoàn đủ cho khách.
+  const cancelledNoRefund = isCancelled && refundRecorded <= 0 && refundPlatform <= 0;
   const refundedAmount =
     refundRecorded > 0
       ? refundRecorded
       : refundPlatform > 0
         ? Math.min(refundPlatform, Math.max(actualRevenue, 0))
-        : lazadaLegacyEstimate
+        : lazadaLegacyEstimate || cancelledNoRefund
           ? Math.max(actualRevenue, 0)
           : 0;
 
@@ -622,10 +632,14 @@ export function computePnlRow(o: PnlOrder) {
   // ƯỚC TÍNH của sàn nếu đã sync được, không thì rơi về số từ API đơn hàng
   // TRỪ tiền hoàn — đơn hoàn chưa quyết toán KHÔNG còn rơi về nguyên giá bán
   // (trước đây gây lãi dương ảo bằng full doanh thu). UI phân biệt qua isSettled.
-  const platformRevenue =
+  const platformRevenueRaw =
     Number(o.actualPayout) !== 0
       ? Number(o.actualPayout)
       : Math.max(actualRevenue - refundedAmount, 0);
+  // Đơn hủy: tối đa 0. Số ÂM giữ nguyên — đó là phí sàn vẫn trừ dù đơn hủy
+  // (PiShip, cước chiều về…), thiệt hại thật. Số DƯƠNG là ước tính sàn tính
+  // trước khi đơn bị hủy, không còn giá trị.
+  const platformRevenue = isCancelled ? Math.min(platformRevenueRaw, 0) : platformRevenueRaw;
 
   // LÃI SAU THUẾ = MỘT công thức duy nhất chủ shop chốt (31/07):
   // Doanh thu thực tế − Giá vốn. Đơn đã đối soát: payout đã net hết
@@ -817,7 +831,8 @@ export function computeReturnLoss(r: PnlRow) {
  *   - additionalTax      = thuế bổ sung theo cấu hình shop (trên doanh thu
  *                          hoặc lợi nhuận) — khoản ngoài sàn nên trừ riêng.
  *   - totalProfitAfterTax = totalProfit − additionalTax.
- * Bất biến: Σ daily.profit = Σ byPlatform.profit = totalProfit.
+ * Bất biến: Σ daily.profit = Σ byPlatform.profit = totalProfit = Σ cột Lợi
+ * nhuận của các dòng ĐÃ CÓ GIÁ VỐN (đơn chưa có giá vốn bị loại, 30/09/2026).
  */
 export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
   const byPlatform: Record<
@@ -832,8 +847,11 @@ export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
   let totalProfit = 0;
   let totalGrossRevenue = 0;
   let totalPlatformTax = 0;
+  // Đơn chưa có giá vốn: vẫn đếm đơn, doanh thu, thuế, hoàn — nhưng lợi nhuận
+  // của nó KHÔNG cộng vào trục nào (anh Trung chốt 30/09/2026).
+  const missingCost = summarizeMissingCost(rows);
   for (const r of rows) {
-    const profit = r.profitAfterTax;
+    const profit = r.missingCostPrice ? 0 : r.profitAfterTax;
     totalProfit += profit;
     totalGrossRevenue += r.revenueGross;
     totalPlatformTax += r.platformTax;
@@ -877,6 +895,7 @@ export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
     totalPlatformTax,
     additionalTax,
     totalProfitAfterTax: totalProfit - additionalTax,
+    missingCost,
   };
 }
 
@@ -926,9 +945,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     // & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
     const lossOnly =
       req.query.lossOnly === "true" || req.query.lossOnly === "1";
-    const lossFiltered = lossOnly
-      ? allRows.filter((r) => r.profitAfterTax < 0)
-      : allRows;
+    const lossFiltered = lossOnly ? allRows.filter(isLossOrder) : allRows;
 
     // Tìm kiếm theo MÃ ĐƠN (contains, không phân biệt hoa thường) — áp trước
     // phân trang & tóm tắt để mọi con số khớp đúng những gì bảng hiển thị.
@@ -945,7 +962,7 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     // summarizePnlRows, mọi trục cùng MỘT cột lợi nhuận với bảng.
     const {
       byPlatform, returnLoss, dayAgg,
-      totalProfit, totalPlatformTax, additionalTax, totalProfitAfterTax,
+      totalProfit, totalPlatformTax, additionalTax, totalProfitAfterTax, missingCost,
     } = summarizePnlRows(filtered, taxCfg);
 
     // Trục ngày liền mạch (lấp ngày trống = 0) cho biểu đồ Lãi/Lỗ & Tỷ lệ hoàn.
@@ -1015,6 +1032,8 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         totalPlatformTax,
         additionalTax,
         totalProfitAfterTax,
+        // Đơn chưa có giá vốn: bị loại khỏi lợi nhuận — UI ghi rõ số đơn.
+        missingCost,
         taxSettings: {
           calculationBase: taxCfg.calculationBase,
           platformTaxPercent: PLATFORM_TAX_RATE * 100,
@@ -2934,15 +2953,20 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
     // Thực tế = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn ĐÃ QUYẾT TOÁN
     // trên Lãi/Lỗ − chi phí vận hành nhập tay. KHÔNG gồm THU vận hành (tách
     // dòng riêng), không trừ phí sàn lần nữa (netRevenue đã trừ).
+    // ĐƠN CHƯA CÓ GIÁ VỐN không tính vào lợi nhuận (anh Trung chốt 30/09/2026) —
+    // vẫn nằm trong Doanh thu. Đẳng thức: Doanh thu − Chi phí − phần lợi nhuận
+    // bị loại (missingCost.excludedProfit) + Thu khác − Thuế dự phòng = LN ròng.
+    const hasCost = (r: PnlRow) => !r.missingCostPrice;
+    const missingCost = summarizeMissingCost(activeRows);
     const actualProfit =
-      sumBy(settledRows, (r) => r.profitAfterTax) -
+      sumBy(settledRows.filter(hasCost), (r) => r.profitAfterTax) -
       variableExpenseTotal -
       fixedExpenseTotal -
       adsSpendTotal;
     // Dự kiến = Σ cột "Lãi sau thuế" (profitAfterTax) của đơn chờ quyết toán.
     // Nhóm này CHƯA bị trừ phí/thuế nào (bucket = 0, chờ đối soát) — cột Chi
     // phí cũng không chứa khoản ước tính nào của nhóm.
-    const expectedProfit = sumBy(pendingRows, (r) => r.profitAfterTax);
+    const expectedProfit = sumBy(pendingRows.filter(hasCost), (r) => r.profitAfterTax);
     // TỔNG LỢI NHUẬN TẠM TÍNH = Thực tế + Dự kiến + THU vận hành khác (chốt
     // chủ shop 31/07 chiều: khoản thu nhập tay PHẢI cộng vào tổng lợi nhuận —
     // dời từ cuối cột Doanh thu về lại cột Lợi nhuận làm dòng thứ 3). Đẳng
@@ -3163,6 +3187,8 @@ router.get("/analytics", async (req: AuthRequest, res, next) => {
         // thác nước: Doanh thu − Chi phí + Thu khác − Thuế dự phòng = LN ròng.
         profit: {
           total: netProfitAfterTax,
+          // Đơn chưa có giá vốn: bị loại khỏi lợi nhuận — UI ghi rõ số đơn.
+          missingCost,
           items: [
             // % ở đây là BIÊN LỢI NHUẬN (lãi / dòng tiền tương ứng),
             // không phải tỷ trọng — vì tổng lợi nhuận có thể âm.

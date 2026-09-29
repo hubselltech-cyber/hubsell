@@ -257,12 +257,16 @@ Hạ tầng (số worker, cỡ database) nâng theo mốc trong `capacity-plan.t
 | # | Quyết định | Tình trạng |
 |---|---|---|
 | 1 | Duyệt hướng 4 trụ. Hạ tầng nâng dần theo mốc trong HQ; code làm chuẩn cho quy mô lớn ngay | Đang làm |
-| 2 | Đơn lỗ: "đơn có lợi nhuận < giá vốn" | **Chờ xác nhận cách hiểu** (xem dưới) |
+| 2 | Đơn lỗ là đơn có lãi < 0 (anh xác nhận lại 30/09) | Đã code: `isLossOrder`, áp cho trang Đơn lỗ, lọc Lợi nhuận âm, chuông cảnh báo, Trợ lý |
+| 6 | Đơn hủy coi như doanh thu bằng 0 | Đã code trong công thức gốc; tiền về âm (phí sàn vẫn trừ) giữ nguyên |
+| 7 | Đơn chưa có giá vốn loại khỏi lợi nhuận, vẫn tính doanh thu, ghi rõ "X đơn chưa có giá vốn…" | Đã code: Báo cáo dòng tiền, Lãi/Lỗ, Tổng quan, Trợ lý |
 | 3 | Đơn ĐANG hoàn không tính vào doanh thu | Đã code: `lib/finance-definitions.ts`, áp cho Tổng quan, Báo cáo dòng tiền, Trợ lý |
 | 4 | Quyết toán giả lập bỏ hẳn với gian sàn | Đã code: chỉ còn gian Offline |
 | 5 | Tờ khai thuế tính theo ngày giao thành công | Mới sửa nguồn mốc giao cho đơn mới; chưa đổi tờ khai (xem dưới) |
 
-**Về quyết định 2.** Hiểu theo nghĩa đen, đơn lãi 30.000 ₫ trên giá vốn 100.000 ₫ cũng thành "đơn lỗ", tức gần như mọi đơn. Em hiểu ý anh là **tiền về nhỏ hơn giá vốn**, tương đương lợi nhuận nhỏ hơn 0. Chưa code cho tới khi anh xác nhận.
+**Về quyết định 2.** Đơn thiếu giá vốn mà lãi vẫn âm thì vẫn là đơn lỗ: bổ sung giá vốn chỉ làm số âm thêm. Lãi bằng 0 không phải lỗ.
+
+**Về quyết định 7.** Đẳng thức mới của mọi trang: Doanh thu − Chi phí − phần lợi nhuận của đơn chưa có giá vốn = Lợi nhuận. Báo cáo thuế (`/tax/report`) chưa áp quy tắc này: loại đơn thiếu giá vốn sẽ làm giảm số dự phòng thuế bổ sung, cần anh chốt riêng.
 
 **Về quyết định 3.** "Đang hoàn" là đơn có hàng hoàn chưa xử lý xong: đang chờ về kho, đã quét nhận chưa nhập kho, hoặc hỏng/mất đang chờ khiếu nại. Hoàn đã xong (nhập kho, khiếu nại thắng hoặc thua) thì đơn quay lại báo cáo, tiền hoàn nằm ở dòng "Tiền hoàn trả khách". Thẻ Doanh thu có thêm dòng tham khảo "Đang hoàn/trả".
 

@@ -36,7 +36,7 @@ import {
   type DateRangeFilter,
 } from "../lib/date-range";
 import { computePnlRow, fetchPnlRows } from "./finance";
-import { countsAsRevenue } from "../lib/finance-definitions";
+import { countsAsRevenue, isLossOrder, summarizeMissingCost } from "../lib/finance-definitions";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -273,7 +273,9 @@ export async function buildPeriodReport(
     const revenue = act.reduce((s, r) => s + r.revenueGross, 0);
     const cost = act.reduce((s, r) => s + r.costSnapshot, 0);
     const fee = act.reduce((s, r) => s + (r.revenueGross - r.platformRevenue), 0);
-    return { orders: act.length, revenue, net: revenue - cost - fee - opex };
+    // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
+    const excluded = summarizeMissingCost(act).excludedProfit;
+    return { orders: act.length, revenue, net: revenue - cost - fee - excluded - opex };
   };
   const cur = sumOf(allRows, Number(opexAgg._sum.amount ?? 0));
   const prev = sumOf(prevAllRows, Number(prevOpexAgg._sum.amount ?? 0));
@@ -330,7 +332,7 @@ export async function buildPeriodReport(
     cur.orders === 0
       ? `${label} chưa có đơn phát sinh nào.`
       : `📊 Báo cáo ${label.toLowerCase()}: doanh thu ${fmtMoney(cur.revenue)}${revDelta ? ` (${revDelta} so kỳ trước)` : ""}, ${cur.net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(cur.net))}.`;
-  if (missing > 0) text += ` ⚠️ ${missing} đơn chưa có giá vốn.`;
+  if (missing > 0) text += ` ⚠️ ${missing} đơn chưa có giá vốn nên không được tính vào lợi nhuận.`;
 
   return {
     outcome: "answered",
@@ -424,15 +426,16 @@ const INTENTS: IntentDef[] = [
           })
         )._sum.amount ?? 0
       );
-      const net = revenue - cost - fee - opex;
-      const missing = rows.filter((r) => r.missingCostPrice).length;
+      // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
+      const { orderCount: missing, excludedProfit } = summarizeMissingCost(rows);
+      const net = revenue - cost - fee - excludedProfit - opex;
 
       let text =
         rows.length === 0
           ? `${period.label} chưa có đơn phát sinh nào nên chưa có lãi/lỗ để tính.`
           : `${period.label} shop ${net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(net))} trên ${rows.length} đơn phát sinh.`;
       if (missing > 0) {
-        text += ` ⚠️ ${missing} đơn chưa có giá vốn nên số lãi chưa trọn vẹn.`;
+        text += ` ⚠️ ${missing} đơn chưa có giá vốn nên không được tính vào lợi nhuận.`;
       }
       return {
         outcome: "answered",
@@ -445,6 +448,9 @@ const INTENTS: IntentDef[] = [
                 { label: "Giá vốn", value: fmtMoney(cost) },
                 { label: "Sàn khấu trừ (phí + thuế + voucher)", value: fmtMoney(fee) },
                 { label: "Chi phí vận hành", value: fmtMoney(opex) },
+                ...(missing > 0
+                  ? [{ label: `Không tính ${missing} đơn chưa có giá vốn`, value: fmtMoney(excludedProfit) }]
+                  : []),
                 {
                   label: "Lợi nhuận ròng",
                   value: fmtMoney(net),
@@ -858,15 +864,17 @@ const INTENTS: IntentDef[] = [
     async resolve({ scope, period }) {
       const p = widenToMonth(period);
       const rows = activeRows(await loadPnlRows(scope, p.range));
+      // Cùng định nghĩa với trang Đơn lỗ + chuông cảnh báo (lãi < 0, kể cả đơn
+      // thiếu giá vốn mà vẫn âm) — trước đây ba nơi ba cách tính.
       const losses = rows
-        .filter((r) => !r.missingCostPrice && r.profitAfterTax < 0)
+        .filter(isLossOrder)
         .sort((a, b) => a.profitAfterTax - b.profitAfterTax);
       const totalLoss = losses.reduce((s, r) => s + r.profitAfterTax, 0);
       return {
         outcome: "answered",
         text:
           losses.length === 0
-            ? `${p.label} không có đơn nào bán lỗ (trong số đơn đã đủ giá vốn). 👍`
+            ? `${p.label} không có đơn nào bán lỗ. 👍`
             : `${p.label} có ${losses.length} đơn bán lỗ, tổng lỗ ${fmtMoney(Math.abs(totalLoss))}. Nặng nhất:`,
         rows: losses.slice(0, 3).map((r) => ({
           label: `${r.orderCode} — ${r.shopName}`,

@@ -14,7 +14,11 @@ import { channelScope, hasChannelFilter } from "../lib/channel-filter";
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
 // sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
 import { fetchPnlRows } from "./finance";
-import { countsAsRevenue, RETURNING_STATUSES } from "../lib/finance-definitions";
+import {
+  countsAsRevenue,
+  RETURNING_STATUSES,
+  summarizeMissingCost,
+} from "../lib/finance-definitions";
 
 const router = Router();
 
@@ -221,8 +225,16 @@ router.get("/", async (req: AuthRequest, res, next) => {
       else operatingVariableExpense += Number(e.amount);
     }
 
-    // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động
-    const netProfit = grossProfit - totalPlatformFee - totalOperatingExpense;
+    // ĐƠN CHƯA CÓ GIÁ VỐN không tính vào lợi nhuận (anh Trung chốt 30/09/2026),
+    // vẫn nằm trong doanh thu / phí sàn. Thác nước thêm một bậc để vẫn đóng.
+    const missingCost = seesFinancials
+      ? summarizeMissingCost(activeRows)
+      : { orderCount: 0, excludedProfit: 0 };
+
+    // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động − phần lợi
+    // nhuận của đơn chưa có giá vốn
+    const netProfit =
+      grossProfit - totalPlatformFee - totalOperatingExpense - missingCost.excludedProfit;
 
     // 3) Doanh thu theo ngày (kể cả ngày không có đơn để đường biểu đồ liền mạch)
     //    Khung thời gian bám đúng bộ lọc người dùng chọn; không lọc thì lấy 14
@@ -505,6 +517,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       operatingVariableExpense,
       operatingFixedExpense,
       netProfit,
+      missingCost, // đơn chưa có giá vốn — bị loại khỏi lợi nhuận, UI ghi rõ số đơn
       expensesByCategory,
       revenueByDay,
       trend,
