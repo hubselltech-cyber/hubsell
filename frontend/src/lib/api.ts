@@ -4079,6 +4079,8 @@ export interface TaxReportResponse {
     platformTaxEstimateSkipped?: boolean;
     additionalTax: number;
     additionalTaxBase: number; // cơ sở tính (doanh thu hoặc lợi nhuận)
+    /** Đơn chưa có giá vốn bị loại khỏi thuế bổ sung (chỉ khi tính trên lợi nhuận). */
+    additionalTaxMissingCost?: MissingCostSummary;
   };
   /** Thống kê HÓA ĐƠN của kỳ — aggregate toàn kỳ, không phải cộng từ 200 dòng. */
   invoiceSummary: {
@@ -4202,6 +4204,10 @@ export interface TaxDeclarationResponse {
     truncated: boolean;
   };
   truncated: boolean;
+  /** Số đơn đã giao chưa có mốc giao từ sàn — tạm xếp kỳ theo ngày tạo đơn. */
+  missingDeliveredAt?: number;
+  /** Cơ sở cắt kỳ: ngày sàn báo giao thành công / ngày tạo đơn (bản cũ không trả = ngày tạo). */
+  basis?: "delivered" | "created";
 }
 
 /** Số liệu kê khai của một kỳ: quarter bỏ trống = cả năm. */

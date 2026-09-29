@@ -28,6 +28,7 @@ import { buildTaxDeclaration, parseDeclarationPeriod } from "../services/tax-dec
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
 // bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
 import { fetchPnlRows } from "./finance";
+import { summarizeMissingCost } from "../lib/finance-definitions";
 import {
   additionalTaxOn,
   getShopTaxConfig,
@@ -391,11 +392,15 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     let platformTaxActual = 0;
     let estimateBase = 0; // doanh thu của phần đơn chưa quyết toán
     let settledCount = 0;
+    // Đơn chưa có giá vốn KHÔNG vào lợi nhuận tính thuế bổ sung (anh Trung chốt
+    // 30/09/2026) — "lợi nhuận" của chúng là nguyên tiền về, tính thuế trên đó
+    // là trích lố. UI phải cảnh báo số đơn bị loại.
+    const missingCost = summarizeMissingCost(rows);
 
     for (const r of rows) {
       grossRevenue += r.revenueGross;
       // Lợi nhuận cùng công thức chốt: Doanh thu thực tế − giá vốn.
-      profit += r.profitAfterTax;
+      if (!r.missingCostPrice) profit += r.profitAfterTax;
       if (r.isSettled) {
         platformTaxActual += r.platformTax;
         settledCount += 1;
@@ -427,6 +432,12 @@ router.get("/report", async (req: AuthRequest, res, next) => {
           cfg.calculationBase === TaxCalculationBase.REVENUE
             ? grossRevenue
             : Math.max(0, profit),
+        // Đơn chưa có giá vốn bị loại khỏi thuế bổ sung. Chỉ có nghĩa khi thuế
+        // tính trên LỢI NHUẬN; tính trên doanh thu thì giá vốn không ảnh hưởng.
+        additionalTaxMissingCost:
+          cfg.calculationBase === TaxCalculationBase.REVENUE
+            ? { orderCount: 0, excludedProfit: 0 }
+            : missingCost,
       },
       logs: logs
         .map((l) => {

@@ -11,7 +11,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { deliveredAtFromPlatform } from "../../lib/delivered-at";
+import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
 import { CHANNEL_LABEL, PLATFORM_FEE_RATE } from "../../marketplace/mockMarketplace";
 import { assertChannelSlot } from "../../services/plan-enforcement";
@@ -554,9 +554,9 @@ export async function upsertShopeeOrderTx(
   // Hãng vận chuyển từ tên chữ sàn trả ("SPX Express"...) — cho bộ lọc kho.
   const carrier = carrierFromName(order.shipping_carrier);
   // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
-  const deliveredAt = deliveredAtFromPlatform(
-    order.update_time ? new Date(order.update_time * 1000) : null
-  );
+  const platformUpdatedAt = order.update_time ? new Date(order.update_time * 1000) : null;
+  const deliveredAt = deliveredAtFromPlatform(platformUpdatedAt);
+  const fixedDeliveredAt = (stored: Date | null) => correctedDeliveredAt(stored, platformUpdatedAt);
 
   const existing = await tx.order.findUnique({
     where: { channelId_orderCode: { channelId: channel.id, orderCode } },
@@ -573,8 +573,8 @@ export async function upsertShopeeOrderTx(
         totalAmount,
         // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
         // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
-        ...(shippingStatus === ShippingStatus.DELIVERED && !existing.deliveredAt
-          ? { deliveredAt }
+        ...(shippingStatus === ShippingStatus.DELIVERED && fixedDeliveredAt(existing.deliveredAt)
+          ? { deliveredAt: fixedDeliveredAt(existing.deliveredAt)! }
           : {}),
         // Chỉ điền hãng khi đang trống — không ghi đè lựa chọn tay của kho.
         ...(carrier && !existing.carrier ? { carrier } : {}),

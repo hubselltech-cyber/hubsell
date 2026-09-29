@@ -14,7 +14,7 @@ import jwt from "jsonwebtoken";
 import type { Channel, Prisma } from "@prisma/client";
 import { ChannelName, ReturnStatus, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { deliveredAtFromPlatform } from "../../lib/delivered-at";
+import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";
 import { withDbLock } from "../../lib/db-lock";
 import { backfillOrderItemImagesTx } from "../order-item-images";
 import { CHANNEL_LABEL } from "../../marketplace/mockMarketplace";
@@ -661,9 +661,9 @@ export async function upsertLazadaOrderTx(
   const customerName = shipName || buyerName || "Khách Lazada";
   const customerPhone = order.address_shipping?.phone?.trim() || null;
   // Mốc giao = thời điểm sàn cập nhật đơn (lib/delivered-at.ts), không phải giờ đồng bộ.
-  const deliveredAt = deliveredAtFromPlatform(
-    order.updated_at ? new Date(order.updated_at) : null
-  );
+  const platformUpdatedAt = order.updated_at ? new Date(order.updated_at) : null;
+  const deliveredAt = deliveredAtFromPlatform(platformUpdatedAt);
+  const fixedDeliveredAt = (stored: Date | null) => correctedDeliveredAt(stored, platformUpdatedAt);
 
   // ---- CHI TIẾT PHÍ VẬN CHUYỂN từ Order API (Seller-Center mirror) ----
   // Khoản ship KHÔNG chảy qua ví người bán nên sao kê Finance không có dòng
@@ -731,8 +731,8 @@ export async function upsertLazadaOrderTx(
         totalAmount,
         // Mốc GIAO THÀNH CÔNG — ghi MỘT lần khi thấy DELIVERED (Kiểm toán phí
         // sàn rổ #3 đếm "quá hạn sàn chưa trả tiền" từ mốc này).
-        ...(shippingStatus === ShippingStatus.DELIVERED && !existing.deliveredAt
-          ? { deliveredAt }
+        ...(shippingStatus === ShippingStatus.DELIVERED && fixedDeliveredAt(existing.deliveredAt)
+          ? { deliveredAt: fixedDeliveredAt(existing.deliveredAt)! }
           : {}),
         // Điền vận chuyển khi có dữ liệu mới — sàn cấp vận đơn SAU khi tạo đơn
         // nên bản ghi cũ thường trống; không ghi đè bằng giá trị rỗng.

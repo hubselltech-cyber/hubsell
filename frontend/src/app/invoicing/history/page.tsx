@@ -57,6 +57,7 @@ import {
   type DateRange,
 } from "@/lib/date-range";
 import { exportInvoiceRegisterToExcel } from "@/lib/excel";
+import { formatNumber } from "@/lib/format";
 import {
   TABLE_HEAD_EMPHASIS,
   TEXT_CARD_TITLE,
@@ -586,6 +587,13 @@ export default function TaxHistoryPage() {
                 </>
               )}
             </p>
+            {(s?.additionalTaxMissingCost?.orderCount ?? 0) > 0 && (
+              <p className={cn(TEXT_SUB, "flex items-center gap-1 px-1 text-amber-700")}>
+                <AlertTriangle className="size-3.5 shrink-0" />
+                {formatNumber(s?.additionalTaxMissingCost?.orderCount ?? 0)} đơn chưa có giá vốn
+                nên chưa tính vào thuế bổ sung.
+              </p>
+            )}
 
             {/* ===== NHẬT KÝ HÓA ĐƠN ĐIỆN TỬ ===== */}
             <Card className="shadow-sm">

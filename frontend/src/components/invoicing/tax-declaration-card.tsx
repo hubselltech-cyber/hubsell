@@ -24,6 +24,7 @@ import {
   type TaxDeclarationRowDTO,
 } from "@/lib/api";
 import { exportTaxDeclarationToExcel } from "@/lib/excel";
+import { formatNumber } from "@/lib/format";
 import {
   TABLE_HEAD_EMPHASIS,
   TEXT_CARD_TITLE,
@@ -369,11 +370,27 @@ export function TaxDeclarationCard() {
             ) : null}
 
             <p className={cn(TEXT_SUB, "mt-3")}>
-              Kỳ cắt theo <b>ngày tạo đơn</b> giờ Việt Nam, cùng nguồn số với Báo cáo dòng tiền (báo cáo thuế
-              của sàn cắt theo ngày hoàn thành nên có thể lệch vài đơn ở mép kỳ). Số sàn khấu trừ thật chỉ có ở
-              đơn đã đối soát — kê khai sát hạn để đơn cuối kỳ kịp quyết toán. Nộp tờ khai trên eTax Mobile hoặc
-              thuedientu.gdt.gov.vn.
+              {data.basis === "delivered" ? (
+                <>
+                  Kỳ cắt theo <b>ngày sàn báo giao thành công</b> giờ Việt Nam, giống báo cáo thuế của các sàn.
+                  Chỉ đơn đã giao thành công mới vào bảng; đơn tạo cuối kỳ nhưng giao sang kỳ sau thì tính vào kỳ
+                  sau.
+                </>
+              ) : (
+                <>
+                  Kỳ cắt theo <b>ngày tạo đơn</b> giờ Việt Nam, cùng nguồn số với Báo cáo dòng tiền (báo cáo thuế
+                  của sàn cắt theo ngày hoàn thành nên có thể lệch vài đơn ở mép kỳ).
+                </>
+              )}{" "}
+              Số sàn khấu trừ thật chỉ có ở đơn đã đối soát — kê khai sát hạn để đơn cuối kỳ kịp quyết toán. Nộp
+              tờ khai trên eTax Mobile hoặc thuedientu.gdt.gov.vn.
             </p>
+            {data.missingDeliveredAt ? (
+              <p className={cn(TEXT_SUB, "mt-1 flex items-center gap-1 text-amber-700")}>
+                <AlertTriangle className="size-3.5" />
+                {formatNumber(data.missingDeliveredAt)} đơn chưa có ngày giao từ sàn nên tạm xếp kỳ theo ngày tạo đơn.
+              </p>
+            ) : null}
           </>
         ) : null}
       </CardContent>

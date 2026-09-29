@@ -683,7 +683,7 @@ export function exportTaxDeclarationToExcel(d: TaxDeclarationResponse) {
   const rows = d.rows.map((r) => toRow(CHANNEL_LABEL[r.channelName] ?? r.channelName, r));
   rows.push(toRow("TỔNG", d.total));
   rows.push({
-    "Sàn": `Ghi chú: kỳ ${d.period.label}, cắt theo ngày tạo đơn giờ VN; doanh thu tính thuế = tiền hàng − giảm giá người bán − hoàn (không trừ phí sàn/ship). Số khấu trừ thật chỉ có ở đơn đã đối soát; tách GTGT/TNCN theo tỷ lệ 1% : 0,5% (ước chia) — chứng từ khấu trừ sàn cấp là số chính thức. Hạn nộp: ${d.period.deadline.label}.`,
+    "Sàn": `Ghi chú: kỳ ${d.period.label}, ${d.basis === "delivered" ? "cắt theo ngày sàn báo giao thành công giờ VN, chỉ gồm đơn đã giao" : "cắt theo ngày tạo đơn giờ VN"}; doanh thu tính thuế = tiền hàng − giảm giá người bán − hoàn (không trừ phí sàn/ship). Số khấu trừ thật chỉ có ở đơn đã đối soát; tách GTGT/TNCN theo tỷ lệ 1% : 0,5% (ước chia) — chứng từ khấu trừ sàn cấp là số chính thức. Hạn nộp: ${d.period.deadline.label}.`,
     "Số đơn": "",
     "Đã đối soát": "",
     "Chưa đối soát": "",

@@ -262,7 +262,8 @@ Hạ tầng (số worker, cỡ database) nâng theo mốc trong `capacity-plan.t
 | 7 | Đơn chưa có giá vốn loại khỏi lợi nhuận, vẫn tính doanh thu, ghi rõ "X đơn chưa có giá vốn…" | Đã code: Báo cáo dòng tiền, Lãi/Lỗ, Tổng quan, Trợ lý |
 | 3 | Đơn ĐANG hoàn không tính vào doanh thu | Đã code: `lib/finance-definitions.ts`, áp cho Tổng quan, Báo cáo dòng tiền, Trợ lý |
 | 4 | Quyết toán giả lập bỏ hẳn với gian sàn | Đã code: chỉ còn gian Offline |
-| 5 | Tờ khai thuế tính theo ngày giao thành công | Mới sửa nguồn mốc giao cho đơn mới; chưa đổi tờ khai (xem dưới) |
+| 5 | Tờ khai thuế tính theo ngày sàn báo giao thành công, giống báo cáo thuế của các sàn | Đã code, nằm sau công tắc `TAX_DECLARATION_BY_DELIVERED=1`; bật sau khi sửa mốc giao đơn cũ (xem dưới) |
+| 8 | Báo cáo thuế: đơn chưa có giá vốn loại khỏi thuế bổ sung, có cảnh báo "X đơn chưa có giá vốn nên chưa tính vào thuế bổ sung" | Đã code. Chỉ áp khi thuế bổ sung tính trên lợi nhuận; tính trên doanh thu thì giá vốn không ảnh hưởng nên không loại |
 
 **Về quyết định 2.** Đơn thiếu giá vốn mà lãi vẫn âm thì vẫn là đơn lỗ: bổ sung giá vốn chỉ làm số âm thêm. Lãi bằng 0 không phải lỗ.
 
@@ -270,11 +271,16 @@ Hạ tầng (số worker, cỡ database) nâng theo mốc trong `capacity-plan.t
 
 **Về quyết định 3.** "Đang hoàn" là đơn có hàng hoàn chưa xử lý xong: đang chờ về kho, đã quét nhận chưa nhập kho, hoặc hỏng/mất đang chờ khiếu nại. Hoàn đã xong (nhập kho, khiếu nại thắng hoặc thua) thì đơn quay lại báo cáo, tiền hoàn nằm ở dòng "Tiền hoàn trả khách". Thẻ Doanh thu có thêm dòng tham khảo "Đang hoàn/trả".
 
-**Về quyết định 5.** Ba việc phải xong trước khi đổi tờ khai:
+**Về quyết định 5.** Mốc là lúc sàn báo đơn giao thành công (Shopee: Hoàn thành). Trình tự bật:
 
-1. *Nguồn mốc giao.* Shopee và Lazada không trả trường "thời điểm giao" riêng; trước đây Hubsell ghi bằng giờ đồng bộ, nên đơn nạp lịch sử mang ngày nạp. Từ 30/09 đơn mới lấy thời điểm sàn cập nhật đơn. Đây là xấp xỉ.
-2. *Định nghĩa "giao thành công" của Shopee.* Hubsell đang coi đơn Shopee là "Đã giao" khi sàn báo **Hoàn thành** (khách bấm nhận hoặc sàn tự chốt sau vài ngày), không phải lúc shipper giao tới tay. Cần anh và kế toán chốt lấy mốc nào.
-3. *Đơn cũ.* Các đơn đã có trong hệ thống vẫn mang mốc giao cũ. Cần một lượt cập nhật lại từ sàn, chạy theo lô.
+1. Deploy bản có `lib/delivered-at.ts`: đơn mới lấy thời điểm sàn cập nhật đơn; đơn cũ tự sửa mỗi khi được đồng bộ lại.
+2. Chạy SQL tạo chỉ mục `Order(channelId, deliveredAt)` trên Supabase (`prisma/migrations/20260930090000_order_delivered_at_index`).
+3. Chạy một lần `npx tsx scripts/fix-delivered-at.ts` trên Render Shell của worker để sửa mốc giao đơn cũ Shopee và Lazada (mặc định 200 ngày). TikTok không cần, đã dùng mốc của sàn từ đầu.
+4. Đặt `TAX_DECLARATION_BY_DELIVERED=1` trên Render (web). Trước bước này tờ khai vẫn cắt theo ngày tạo đơn như cũ.
+
+Lý do phải có công tắc: trước 30/09 mốc giao ghi bằng giờ đồng bộ, đơn nạp lịch sử lúc nối gian mang ngày nạp. Bật tờ khai mới khi chưa sửa thì đơn của quý trước bị xếp nhầm sang quý nối gian.
+
+Giới hạn còn lại: mốc lấy từ "thời điểm sàn cập nhật đơn lần cuối" là xấp xỉ. Đơn đã giao rồi mới phát sinh thay đổi (ví dụ hoàn hàng) mà Hubsell chỉ thấy lần đầu sau thay đổi đó thì mốc sẽ muộn hơn thực tế.
 
 ## 9. Việc cần anh Trung chốt (danh sách gốc 29/09)
 

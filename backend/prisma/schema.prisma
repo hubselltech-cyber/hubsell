@@ -1492,6 +1492,9 @@ model Order {
   // Kiểm toán phí sàn rổ #3 ("giao xong quá hạn sàn chưa trả") + cột
   // pendingSettle của Báo cáo dòng tiền cùng lọc theo cặp này.
   @@index([channelId, isSettled])
+  // Tờ khai thuế cắt kỳ theo ngày sàn báo giao thành công (30/09/2026); cũng
+  // phục vụ tự xuất hóa đơn + Kiểm toán phí sàn đang lọc theo deliveredAt.
+  @@index([channelId, deliveredAt])
 }
 
 /// Chi tiết dòng sản phẩm của một đơn hàng.

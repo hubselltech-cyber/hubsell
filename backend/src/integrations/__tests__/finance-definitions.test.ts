@@ -38,7 +38,32 @@ describe("summarizeMissingCost — đơn chưa có giá vốn bị loại khỏi
     });
   });
 });
-import { deliveredAtFromPlatform } from "../../lib/delivered-at";
+import { correctedDeliveredAt, deliveredAtFromPlatform } from "../../lib/delivered-at";
+
+describe("correctedDeliveredAt — đồng bộ lại là đơn cũ tự sửa mốc giao", () => {
+  const now = new Date("2026-09-30T10:00:00+07:00");
+  const platform = new Date("2026-06-20T14:00:00+07:00");
+
+  it("chưa có mốc → ghi mốc của sàn", () => {
+    expect(correctedDeliveredAt(null, platform, now)).toEqual(platform);
+  });
+
+  it("mốc cũ ghi bằng giờ nạp lịch sử (muộn hơn sàn báo) → kéo về mốc sàn", () => {
+    const syncedAt = new Date("2026-08-15T09:00:00+07:00");
+    expect(correctedDeliveredAt(syncedAt, platform, now)).toEqual(platform);
+  });
+
+  it("mốc cũ đã SỚM hơn hoặc bằng mốc sàn vừa báo → giữ nguyên (sàn cập nhật đơn sau khi giao)", () => {
+    const earlier = new Date("2026-06-18T08:00:00+07:00");
+    expect(correctedDeliveredAt(earlier, platform, now)).toBeNull();
+    expect(correctedDeliveredAt(platform, platform, now)).toBeNull();
+  });
+
+  it("sàn không trả thời điểm → không kéo mốc cũ về giờ hiện tại", () => {
+    const stored = new Date("2026-08-15T09:00:00+07:00");
+    expect(correctedDeliveredAt(stored, null, now)).toBeNull();
+  });
+});
 
 describe("deliveredAtFromPlatform — mốc giao theo số của sàn", () => {
   const now = new Date("2026-09-30T10:00:00+07:00");

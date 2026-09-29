@@ -10,10 +10,18 @@
 // dẫn giữa MISA/Shopee còn mâu thuẫn — gán sai là khách bị phạt).
 //
 // Nguồn số: computePnlRow (SSOT tài chính) trên tập đơn phân trang
-// forEachPnlOrderPage — cùng công thức với Báo cáo dòng tiền / Lãi-Lỗ, seller
-// đối chiếu hai trang là khớp. Kỳ cắt theo NGÀY TẠO ĐƠN giờ VN như mọi báo
-// cáo khác (báo cáo thuế của sàn cắt theo ngày hoàn thành — lệch ở mép quý,
-// UI nói rõ).
+// forEachPnlOrderPage — cùng công thức với Báo cáo dòng tiền / Lãi-Lỗ.
+//
+// KỲ CẮT THEO NGÀY SÀN BÁO GIAO THÀNH CÔNG (anh Trung chốt 30/09/2026 — "học
+// theo các bên khác cho đồng bộ": báo cáo thuế của chính các sàn cũng cắt theo
+// ngày hoàn thành). Hệ quả:
+//   - CHỈ đơn đã giao thành công mới vào tờ khai; đơn đang giao chưa phát sinh
+//     nghĩa vụ. Trước đó cắt theo ngày TẠO đơn và gồm cả đơn chưa giao.
+//   - Đơn tạo cuối quý, giao đầu quý sau → thuộc quý SAU.
+//   - Đơn cũ chưa có mốc giao (deliveredAt trống) tạm cắt theo ngày tạo và được
+//     đếm riêng (missingDeliveredAt) để UI nói rõ.
+// Số của trang này vì vậy KHÔNG còn khớp từng đồng với Báo cáo dòng tiền cùng
+// kỳ (trang kia cắt theo ngày tạo đơn) — cố ý.
 //
 // Công thức doanh thu tính thuế (theo hướng dẫn chính thức Shopee bài 24233
 // + TikTok Academy): tiền hàng − giảm giá NGƯỜI BÁN − hoàn trả khách;
@@ -295,6 +303,10 @@ export interface TaxDeclarationResult {
   };
   /** Kỳ nhiều đơn hơn phanh an toàn — bảng trên là cận dưới, thu hẹp kỳ để lấy đủ. */
   truncated: boolean;
+  /** Số đơn đã giao CHƯA có mốc giao — tạm xếp kỳ theo ngày tạo đơn. */
+  missingDeliveredAt: number;
+  /** Cơ sở cắt kỳ đang dùng: ngày sàn báo giao thành công / ngày tạo đơn. */
+  basis: "delivered" | "created";
 }
 
 /**
@@ -303,13 +315,42 @@ export interface TaxDeclarationResult {
  * giữ nguyên mảng từng làm Render hết heap; dòng gọn 20.000 đơn chỉ vài MB).
  * Cùng WHERE/trần với bản gom cũ nên số kê khai không đổi.
  */
+/**
+ * CÔNG TẮC chuyển cơ sở cắt kỳ. Mặc định vẫn là ngày TẠO đơn cho tới khi đơn cũ
+ * được sửa mốc giao (scripts/fix-delivered-at.ts) — bật sớm thì đơn nạp lịch sử
+ * (mốc giao = ngày nạp) bị xếp nhầm quý. Sửa xong: đặt
+ * TAX_DECLARATION_BY_DELIVERED=1 trên Render (web).
+ */
+export function declarationBasis(): "delivered" | "created" {
+  return process.env.TAX_DECLARATION_BY_DELIVERED === "1" ? "delivered" : "created";
+}
+
 async function loadDeclarationInputs(
   scope: ChannelScope,
   range: DateRangeFilter
-): Promise<{ rows: DeclarationInput[]; truncated: boolean }> {
+): Promise<{ rows: DeclarationInput[]; truncated: boolean; missingDeliveredAt: number }> {
   const rows: DeclarationInput[] = [];
-  const { truncated } = await forEachPnlOrderPage(scope, range, {}, (page) => {
+  let missingDeliveredAt = 0;
+  const byDelivered = declarationBasis() === "delivered";
+  const { truncated } = await forEachPnlOrderPage(
+    scope,
+    // Theo mốc giao thì KHÔNG cắt theo ngày tạo — cắt ở điều kiện dưới.
+    byDelivered ? undefined : range,
+    byDelivered
+      ? {
+          shippingStatus: ShippingStatus.DELIVERED,
+          where: {
+            OR: [
+              { deliveredAt: range },
+              // Đơn cũ chưa có mốc giao: tạm theo ngày tạo, đếm riêng.
+              { deliveredAt: null, createdAt: range },
+            ],
+          },
+        }
+      : {},
+    (page) => {
     for (const o of page) {
+      if (byDelivered && o.deliveredAt === null) missingDeliveredAt += 1;
       const r = computePnlRow(o);
       rows.push({
         channelName: r.channelName,
@@ -321,8 +362,9 @@ async function loadDeclarationInputs(
         platformTax: r.platformTax,
       });
     }
-  });
-  return { rows, truncated };
+    }
+  );
+  return { rows, truncated, missingDeliveredAt };
 }
 
 /** Doanh thu tính thuế của một tập đơn đã bóc số (dùng cho lũy kế năm). */
@@ -341,7 +383,7 @@ export async function buildTaxDeclaration(
   now: Date = new Date()
 ): Promise<TaxDeclarationResult> {
   const range = periodRange(period);
-  const { rows: inputs, truncated } = await loadDeclarationInputs(scope, range);
+  const { rows: inputs, truncated, missingDeliveredAt } = await loadDeclarationInputs(scope, range);
   const rows = aggregateDeclaration(inputs);
   const total = sumRows(rows);
 
@@ -388,6 +430,8 @@ export async function buildTaxDeclaration(
       truncated: annualTruncated,
     },
     truncated,
+    missingDeliveredAt,
+    basis: declarationBasis(),
   };
 }
 
