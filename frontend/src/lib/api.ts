@@ -989,6 +989,8 @@ export interface AnalyticsResponse {
   /** Chi phí vận hành CỐ ĐỊNH ngoài quảng cáo (thuê kho, lương, phần mềm…). */
   operatingFixedExpense: number;
   netProfit: number;
+  /** Quảng cáo sàn tự đồng bộ — ĐÃ nằm trong totalOperatingExpense và nhóm ADS. */
+  platformAdsSpend?: number;
   /** Đơn chưa có giá vốn — bị loại khỏi lợi nhuận, vẫn tính doanh thu. */
   missingCost?: MissingCostSummary;
   expensesByCategory: { category: ExpenseCategory | string; amount: number }[];

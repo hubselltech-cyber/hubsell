@@ -14,6 +14,7 @@ import { channelScope, hasChannelFilter } from "../lib/channel-filter";
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
 // sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
 import { fetchPnlRows } from "./finance";
+import { platformAdsSpend } from "../services/ads-spend";
 import {
   countsAsRevenue,
   RETURNING_STATUSES,
@@ -199,11 +200,20 @@ router.get("/", async (req: AuthRequest, res, next) => {
           select: { category: true, type: true, amount: true, expenseDate: true },
         })
       : [];
-    const totalOperatingExpense = expenses.reduce(
-      (sum, e) => sum + Number(e.amount),
-      0
-    );
+    // QUẢNG CÁO SÀN tự đồng bộ (bảng AdSpend) — cùng hàm, cùng luật "sàn đã trừ
+    // trong đơn thì chỉ tham chiếu" với Báo cáo dòng tiền. Trước 30/09/2026 Tổng
+    // quan KHÔNG trừ khoản này nên lợi nhuận cao hơn Báo cáo dòng tiền đúng bằng
+    // tiền quảng cáo sàn (tháng 8 tài khoản demo lệch 617.858 ₫). Gộp vào nhóm
+    // ADS của chi phí hoạt động để thác nước, donut và thẻ Tổng Chi phí cùng đổi.
+    const platformAds = seesFinancials
+      ? await platformAdsSpend(scope, range, activeRows)
+      : null;
+    const platformAdsTotal = platformAds?.total ?? 0;
+
+    const totalOperatingExpense =
+      expenses.reduce((sum, e) => sum + Number(e.amount), 0) + platformAdsTotal;
     const expenseByCategoryMap = new Map<string, number>();
+    if (platformAdsTotal > 0) expenseByCategoryMap.set("ADS", platformAdsTotal);
     for (const e of expenses) {
       expenseByCategoryMap.set(
         e.category,
@@ -262,6 +272,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         if (dayCost) addCost(toBusinessDateKey(r.createdAt), dayCost);
       }
     }
+    for (const [day, amount] of platformAds?.byDay ?? []) addCost(day, amount);
     for (const e of expenses) {
       addCost(toBusinessDateKey(e.expenseDate), Number(e.amount));
     }
@@ -334,7 +345,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
         gte: trendStart,
         lte: new Date(chartEnd.getTime() + DAY_MS - 1),
       };
-      const [{ rows: trendRows }, trendExpenses, trendOrders] = await Promise.all([
+      const [{ rows: trendAllRows }, trendExpenses, trendOrders] = await Promise.all([
         fetchPnlRows(scope, trendRange, { lean: true }),
         seesFinancials
           ? prisma.operatingExpense.findMany({
@@ -352,8 +363,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
       const tCost = new Map<string, number>();
       const bump = (m: Map<string, number>, k: string, v: number) =>
         m.set(k, (m.get(k) ?? 0) + v);
+      const trendRows = trendAllRows.filter(countsAsRevenue);
+      if (seesFinancials) {
+        const trendAds = await platformAdsSpend(scope, trendRange, trendRows);
+        for (const [day, amount] of trendAds.byDay) bump(tCost, day, amount);
+      }
       for (const r of trendRows) {
-        if (!countsAsRevenue(r)) continue;
         const key = toBusinessDateKey(r.createdAt);
         bump(tRevenue, key, r.revenueGross);
         if (seesFinancials) {
@@ -517,6 +532,8 @@ router.get("/", async (req: AuthRequest, res, next) => {
       operatingVariableExpense,
       operatingFixedExpense,
       netProfit,
+      // Phần quảng cáo sàn tự đồng bộ ĐÃ nằm trong totalOperatingExpense + nhóm ADS.
+      platformAdsSpend: platformAdsTotal,
       missingCost, // đơn chưa có giá vốn — bị loại khỏi lợi nhuận, UI ghi rõ số đơn
       expensesByCategory,
       revenueByDay,

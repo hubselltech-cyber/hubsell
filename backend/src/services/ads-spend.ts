@@ -111,6 +111,36 @@ export async function loadAdSpendRows(
   }));
 }
 
+/**
+ * Tiền quảng cáo sàn của kỳ trên ĐÚNG tập đơn tính doanh thu — MỘT cách gom cho
+ * Tổng quan và Trợ lý hỏi đáp, cùng luật với Báo cáo dòng tiền: gian bị sàn thu
+ * GMV Max ngay trong đơn thì khoản đó đã nằm trong phí sàn, không cộng lần nữa.
+ */
+export async function platformAdsSpend(
+  scope: Prisma.ChannelWhereInput,
+  range: { gte: Date; lte: Date } | undefined,
+  revenueRows: { channelId: string; feeGmvMax: number }[]
+): Promise<AdsSpendSummary> {
+  const [rows, tiktokChannels] = await Promise.all([
+    loadAdSpendRows(scope, range),
+    loadTiktokAdsChannels(scope),
+  ]);
+  const gmvMaxChargedByChannel = new Map<string, number>();
+  for (const r of revenueRows) {
+    if (r.feeGmvMax === 0) continue;
+    gmvMaxChargedByChannel.set(
+      r.channelId,
+      (gmvMaxChargedByChannel.get(r.channelId) ?? 0) + r.feeGmvMax
+    );
+  }
+  return summarizeAdsSpend({
+    rows,
+    gmvMaxChargedByChannel,
+    tiktokChannels,
+    dateKey: toBusinessDateKey,
+  });
+}
+
 /** Gian TikTok trong phạm vi + đã nối quảng cáo hay chưa. */
 export async function loadTiktokAdsChannels(scope: Prisma.ChannelWhereInput): Promise<TiktokAdsChannel[]> {
   const rows = await prisma.channel.findMany({

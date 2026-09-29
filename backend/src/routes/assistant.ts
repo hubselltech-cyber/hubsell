@@ -37,6 +37,7 @@ import {
 } from "../lib/date-range";
 import { computePnlRow, fetchPnlRows } from "./finance";
 import { countsAsRevenue, isLossOrder, summarizeMissingCost } from "../lib/finance-definitions";
+import { platformAdsSpend } from "../services/ads-spend";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -268,20 +269,28 @@ export async function buildPeriodReport(
       }),
     ]);
 
-  const sumOf = (rows: PnlRow[], opex: number) => {
+  // Quảng cáo sàn TRỪ vào lợi nhuận — cùng luật với Tổng quan và Báo cáo dòng
+  // tiền (anh Trung chốt 30/09/2026), áp cho cả kỳ trước để % so sánh cùng thước.
+  const [curAds, prevAds] = await Promise.all([
+    platformAdsSpend(scope, range, activeRows(allRows)),
+    platformAdsSpend(scope, prevRange, activeRows(prevAllRows)),
+  ]);
+
+  const sumOf = (rows: PnlRow[], opex: number, ads: number) => {
     const act = activeRows(rows);
     const revenue = act.reduce((s, r) => s + r.revenueGross, 0);
     const cost = act.reduce((s, r) => s + r.costSnapshot, 0);
     const fee = act.reduce((s, r) => s + (r.revenueGross - r.platformRevenue), 0);
     // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
     const excluded = summarizeMissingCost(act).excludedProfit;
-    return { orders: act.length, revenue, net: revenue - cost - fee - excluded - opex };
+    return { orders: act.length, revenue, net: revenue - cost - fee - excluded - opex - ads };
   };
-  const cur = sumOf(allRows, Number(opexAgg._sum.amount ?? 0));
-  const prev = sumOf(prevAllRows, Number(prevOpexAgg._sum.amount ?? 0));
+  const cur = sumOf(allRows, Number(opexAgg._sum.amount ?? 0), curAds.total);
+  const prev = sumOf(prevAllRows, Number(prevOpexAgg._sum.amount ?? 0), prevAds.total);
   const cancelled = allRows.filter(
     (r) => r.shippingStatus === ShippingStatus.CANCELLED
   ).length;
+  // Dòng "Chi quảng cáo" giữ số sàn báo đầy đủ (kể cả khoản sàn đã trừ trong đơn).
   const adSpend = Number(adAgg._sum.amount ?? 0);
 
   // Doanh thu theo NGÀY (giờ VN) cho biểu đồ cột — ngày trống vẫn vẽ cột 0.
@@ -428,7 +437,9 @@ const INTENTS: IntentDef[] = [
       );
       // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
       const { orderCount: missing, excludedProfit } = summarizeMissingCost(rows);
-      const net = revenue - cost - fee - excludedProfit - opex;
+      // Quảng cáo sàn trừ vào lợi nhuận — cùng luật Tổng quan / Báo cáo dòng tiền.
+      const ads = (await platformAdsSpend(scope, period.range, rows)).total;
+      const net = revenue - cost - fee - excludedProfit - opex - ads;
 
       let text =
         rows.length === 0
@@ -448,6 +459,7 @@ const INTENTS: IntentDef[] = [
                 { label: "Giá vốn", value: fmtMoney(cost) },
                 { label: "Sàn khấu trừ (phí + thuế + voucher)", value: fmtMoney(fee) },
                 { label: "Chi phí vận hành", value: fmtMoney(opex) },
+                ...(ads > 0 ? [{ label: "Quảng cáo sàn", value: fmtMoney(ads) }] : []),
                 ...(missing > 0
                   ? [{ label: `Không tính ${missing} đơn chưa có giá vốn`, value: fmtMoney(excludedProfit) }]
                   : []),
