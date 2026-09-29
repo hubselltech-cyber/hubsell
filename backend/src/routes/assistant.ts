@@ -20,6 +20,7 @@
 import { Router } from "express";
 import {
   ChannelName,
+  type Prisma,
   ReturnStatus,
   ShippingStatus,
   TransactionDirection,
@@ -209,9 +210,10 @@ type PnlRow = ReturnType<typeof computePnlRow>;
 
 async function loadPnlRows(
   scope: ChannelScope,
-  range?: DateRangeFilter
+  range?: DateRangeFilter,
+  where?: Prisma.OrderWhereInput
 ): Promise<PnlRow[]> {
-  return (await fetchPnlRows(scope, range, { lean: true })).rows;
+  return (await fetchPnlRows(scope, range, { lean: true, where })).rows;
 }
 
 function activeRows(rows: PnlRow[]): PnlRow[] {
@@ -801,7 +803,14 @@ const INTENTS: IntentDef[] = [
       { p: "tien", w: 1 },
     ],
     async resolve({ scope }) {
-      const rows = activeRows(await loadPnlRows(scope));
+      // Không lọc kỳ → CHỈ đọc đơn câu trả lời dùng (chưa quyết toán, đang giao
+      // / đã giao) — cùng điều kiện với bảng Phân bổ dòng tiền theo gian.
+      const rows = activeRows(
+        await loadPnlRows(scope, undefined, {
+          isSettled: false,
+          shippingStatus: { in: [ShippingStatus.SHIPPING, ShippingStatus.DELIVERED] },
+        })
+      );
       let inTransit = 0;
       let inTransitCount = 0;
       let pendingSettle = 0;

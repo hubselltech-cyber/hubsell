@@ -366,7 +366,7 @@ export interface PnlOrderFilter {
 
 /**
  * TẬP ĐƠN ĐẦU VÀO dùng chung của mọi báo cáo tài chính: cùng WHERE + include
- * SSOT, đọc THEO TRANG (cuộn cursor theo id). Trả từng trang 1.000 đơn qua
+ * SSOT, đọc THEO TRANG (cuộn cursor, mới nhất trước). Trả từng trang 1.000 đơn qua
  * `onPage` để nơi gọi rút ngay thành dòng gọn rồi bỏ trang — 22/09/2026 bản gom
  * cả 20.000 đơn kèm include nặng vào một mảng từng làm Render hết heap. `max`
  * (mặc định 20.000) là phanh an toàn cuối — chạm thì trả `truncated` để UI bảo
@@ -394,7 +394,9 @@ export async function forEachPnlOrderPage(
         createdAt: range,
         ...(opts.shippingStatus ? { shippingStatus: opts.shippingStatus } : {}),
       },
-      orderBy: { id: "asc" },
+      // MỚI NHẤT TRƯỚC (id phá thế hòa cho cursor ổn định): nếu chạm phanh thì
+      // phần bị bỏ là đơn CŨ nhất của kỳ, không phải đơn vừa phát sinh.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       include: PNL_INCLUDE,
       take: pageSize,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -428,7 +430,6 @@ export async function fetchPnlRows(
       rows.push(opts.lean ? { ...r, lazada: null, tiktok: null } : r);
     }
   });
-  rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   return { rows, truncated };
 }
 
