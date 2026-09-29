@@ -577,6 +577,8 @@ export interface SkuPnlRow {
 }
 
 export interface SkuPnlResponse {
+  /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
+  truncated?: boolean;
   items: SkuPnlRow[];
   summary: {
     skuCount: number;
@@ -820,6 +822,8 @@ export interface PnlDailyPoint {
 }
 
 export interface RealizedPnlResponse {
+  /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
+  truncated?: boolean;
   rows: PnlDetailRow[];
   page: number;
   pageSize: number;
@@ -946,6 +950,8 @@ export function createWithdrawal(data: {
 }
 
 export interface AnalyticsResponse {
+  /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
+  truncated?: boolean;
   /** Số đơn phát sinh trong kỳ đang tính doanh thu (không gồm đơn hủy). */
   activeOrderCount: number;
   /** Số MÓN bán ra = Σ quantity dòng hàng trên cùng rổ activeOrderCount. */
@@ -1250,6 +1256,11 @@ export function fetchDashboardSummary() {
 /** Cảnh báo lệch tồn CHƯA xử lý (mới nhất trước). */
 export function fetchSyncAlerts() {
   return apiFetch<InventorySyncAlert[]>("/api/inventory/sync-alerts");
+}
+
+/** TỔNG số cảnh báo lệch tồn chưa xử lý — danh sách chỉ trả 100 dòng mới nhất. */
+export function fetchSyncAlertCount() {
+  return apiFetch<{ total: number }>("/api/inventory/sync-alerts/count");
 }
 
 /** Đánh dấu một cảnh báo lệch tồn là đã xử lý tay xong. */

@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   ApiError,
+  fetchSyncAlertCount,
   fetchSyncAlerts,
   forceSyncStockAlert,
   resolveAllSyncAlerts,
@@ -31,6 +32,8 @@ const SHOW_LIMIT = 8;
 
 export function SyncAlertBanner() {
   const [alerts, setAlerts] = useState<InventorySyncAlert[]>([]);
+  // Tổng thật từ backend — danh sách chỉ có 100 dòng mới nhất.
+  const [total, setTotal] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [resolvingAll, setResolvingAll] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -38,7 +41,9 @@ export function SyncAlertBanner() {
 
   const load = useCallback(async () => {
     try {
-      setAlerts(await fetchSyncAlerts());
+      const [list, count] = await Promise.all([fetchSyncAlerts(), fetchSyncAlertCount()]);
+      setAlerts(list);
+      setTotal(Math.max(count.total, list.length));
     } catch (err) {
       // Trang Kho vẫn phải dùng được khi API cảnh báo lỗi — chỉ im lặng bỏ qua
       // (401/409 đã có overlay/redirect của trang xử lý).
@@ -50,11 +55,19 @@ export function SyncAlertBanner() {
     load();
   }, [load]);
 
+  /** Bỏ một dòng khỏi danh sách; hết dòng đang hiện mà backend còn thì nạp tiếp. */
+  function dropAlert(id: string) {
+    const rest = alerts.filter((a) => a.id !== id);
+    setAlerts(rest);
+    setTotal((t) => Math.max(t - 1, rest.length));
+    if (rest.length === 0 && total > 1) void load();
+  }
+
   async function handleResolve(alert: InventorySyncAlert) {
     setBusy(alert.id);
     try {
       await resolveSyncAlert(alert.id);
-      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+      dropAlert(alert.id);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không cập nhật được cảnh báo");
     } finally {
@@ -66,7 +79,7 @@ export function SyncAlertBanner() {
     setBusy(alert.id);
     try {
       const r = await forceSyncStockAlert(alert.id);
-      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+      dropAlert(alert.id);
       toast.success(
         `Đã đẩy ${formatNumber(r.applied)} lên sàn cho SKU ${alert.channelSku ?? ""} — cảnh báo tự đóng.`
       );
@@ -82,6 +95,7 @@ export function SyncAlertBanner() {
     try {
       const r = await resolveAllSyncAlerts();
       setAlerts([]);
+      setTotal(0);
       toast.success(`Đã bỏ qua ${formatNumber(r.resolved)} cảnh báo.`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Không cập nhật được cảnh báo");
@@ -104,9 +118,9 @@ export function SyncAlertBanner() {
       <div className="flex flex-wrap items-center gap-2 text-rose-800">
         <AlertTriangle className="size-4 shrink-0" />
         <p className="text-sm font-semibold">
-          {alerts.length === 1
+          {total === 1
             ? "1 SKU chưa đẩy được tồn lên sàn"
-            : `${formatNumber(alerts.length)} SKU chưa đẩy được tồn lên sàn`}
+            : `${formatNumber(total)} SKU chưa đẩy được tồn lên sàn`}
         </p>
         <span className="text-xs text-rose-700/80">
           {singleReason
@@ -216,6 +230,12 @@ export function SyncAlertBanner() {
         >
           {showAll ? "Thu gọn" : `Xem thêm ${formatNumber(alerts.length - SHOW_LIMIT)} cảnh báo`}
         </button>
+      )}
+      {total > alerts.length && (
+        <p className="mt-2 text-xs text-rose-700/80">
+          Đang hiện {formatNumber(alerts.length)} cảnh báo mới nhất trên tổng{" "}
+          {formatNumber(total)}. Xử lý xong sẽ tự nạp tiếp.
+        </p>
       )}
     </div>
   );

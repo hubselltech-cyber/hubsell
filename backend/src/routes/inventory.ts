@@ -586,6 +586,20 @@ function syncChannelScope(req: AuthRequest) {
   };
 }
 
+// GET /api/inventory/sync-alerts/count — TỔNG số cảnh báo lệch tồn chưa xử lý.
+// Danh sách bên dưới chỉ trả 100 dòng mới nhất; con số trên banner/huy hiệu
+// phải lấy ở đây, đếm từ danh sách là sai khi có hơn 100 cảnh báo.
+router.get("/sync-alerts/count", async (req: AuthRequest, res, next) => {
+  try {
+    const total = await prisma.inventorySyncAlert.count({
+      where: { resolvedAt: null, channel: syncChannelScope(req) },
+    });
+    res.json({ total });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/inventory/sync-alerts — cảnh báo lệch tồn CHƯA xử lý (mới nhất trước)
 router.get("/sync-alerts", async (req: AuthRequest, res, next) => {
   try {

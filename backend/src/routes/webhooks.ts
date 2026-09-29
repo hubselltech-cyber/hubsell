@@ -106,6 +106,12 @@ router.post("/mock-order", async (req, res, next) => {
       res.status(401).json({ error: "Kênh không tồn tại hoặc webhookToken sai" });
       return;
     }
+    // Gian ĐÃ NỐI API sàn: đơn chỉ được đến từ sàn (webhook thật / đồng bộ). Đơn
+    // giả lập tạo ở đây sẽ trừ kho thật và đi vào báo cáo (rà soát 29/09/2026).
+    if (channel.refreshToken !== null) {
+      res.status(409).json({ error: "Gian đã kết nối sàn — không tạo đơn thử trên gian này" });
+      return;
+    }
     if (channel.status !== "ACTIVE") {
       res.status(409).json({ error: "Kênh này đã ngắt kết nối" });
       return;

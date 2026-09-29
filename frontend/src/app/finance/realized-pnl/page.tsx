@@ -26,6 +26,7 @@ import { OverviewDashboard } from "@/components/finance/realized-pnl/OverviewDas
 import { LazadaProfitTable } from "@/components/finance/realized-pnl/LazadaProfitTable";
 import { ShopeeProfitTable } from "@/components/finance/realized-pnl/ShopeeProfitTable";
 import { TiktokProfitTable } from "@/components/finance/realized-pnl/TiktokProfitTable";
+import { TruncatedNotice } from "@/components/finance/truncated-notice";
 import {
   fetchRealizedPnl,
   getStoredUser,
@@ -253,6 +254,8 @@ export default function RealizedPnlPage() {
             onChange={changeTab}
           />
         </PageHeaderBand>
+
+        <TruncatedNotice show={data?.truncated} />
 
         {/* ===== FILTER BAR + XUẤT EXCEL =====
             Bộ lọc ngày nằm BÊN PHẢI (yêu cầu chủ shop 05/08 — dễ nhìn hơn);

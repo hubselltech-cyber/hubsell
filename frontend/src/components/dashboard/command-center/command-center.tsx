@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import {
   fetchCommandCenterState,
+  fetchSyncAlertCount,
   fetchSyncAlerts,
   postCommandCenterChat,
   postCommandCenterSeen,
@@ -175,6 +176,8 @@ export function CommandCenter() {
   const [openAlertId, setOpenAlertId] = useState<string | null>(null);
   // Cảnh báo đang mở pop-up xử lý nhanh
   const [actionAlertId, setActionAlertId] = useState<string | null>(null);
+  // Cảnh báo lệch tồn nằm NGOÀI 100 dòng backend trả — vẫn phải vào con số tổng.
+  const [syncAlertsHidden, setSyncAlertsHidden] = useState(0);
 
   // Nạp trạng thái đã lưu (đã xử lý / chat / nhật ký / cảnh báo OpsAlert).
   // Cũng dùng để hoà giải lại khi một thao tác ghi backend thất bại.
@@ -193,8 +196,9 @@ export function CommandCenter() {
 
   const loadSyncAlerts = useCallback(async () => {
     try {
-      const list = await fetchSyncAlerts();
+      const [list, count] = await Promise.all([fetchSyncAlerts(), fetchSyncAlertCount()]);
       setSyncAlerts(list.map(syncAlertToOps));
+      setSyncAlertsHidden(Math.max(count.total - list.length, 0));
     } catch {
       // Lỗi tải cảnh báo tồn không được làm vỡ khối — giữ danh sách cũ.
     }
@@ -410,7 +414,11 @@ export function CommandCenter() {
     }
   }
 
-  const unresolvedCount = alerts.filter((a) => !resolved.has(a.id)).length;
+  // Phần ẩn chỉ cộng khi vai trò này được xem cảnh báo tồn (có dòng nào lọt lọc).
+  const seesSyncAlerts = syncAlerts.some((s) => alerts.includes(s));
+  const unresolvedCount =
+    alerts.filter((a) => !resolved.has(a.id)).length +
+    (seesSyncAlerts ? syncAlertsHidden : 0);
 
   return (
     <section className="space-y-3">

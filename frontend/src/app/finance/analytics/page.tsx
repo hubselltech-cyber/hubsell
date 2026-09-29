@@ -38,6 +38,7 @@ import {
 } from "@/lib/date-range";
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { CashFlowTable } from "@/components/finance/cash-flow-table";
+import { TruncatedNotice } from "@/components/finance/truncated-notice";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -223,12 +224,7 @@ export default function FinanceAnalyticsPage() {
             );
           })()}
 
-        {data?.truncated && (
-          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
-            Kỳ này vượt 20.000 đơn nên số liệu chưa đủ. Anh/chị chọn kỳ ngắn hơn
-            hoặc lọc theo từng gian để xem số chính xác.
-          </p>
-        )}
+        <TruncatedNotice show={data?.truncated} />
 
         {/* Ghi chú cách đọc số liệu */}
         {data && (

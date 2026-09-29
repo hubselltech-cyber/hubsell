@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import { TruncatedNotice } from "@/components/finance/truncated-notice";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { AppShell } from "@/components/shell/app-shell";
 import { Money } from "@/components/ui/money";
@@ -502,6 +503,8 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
+
+        <TruncatedNotice show={analytics?.truncated} />
 
         {/* THANH TRẠNG THÁI — số liệu tích luỹ toàn thời gian, KHÔNG đổi theo bộ
             lọc ngày. Trước đây chiếm 4 thẻ lớn ngang màn hình; chúng chỉ là số
