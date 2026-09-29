@@ -16,7 +16,11 @@ import {
   type LazadaProductSku,
 } from "../../integrations/lazada/client";
 import { getValidLazadaAccessToken } from "../../integrations/lazada/service";
-import type { MarketplaceProductAdapter, NormalizedChannelProduct } from "../types";
+import type {
+  FetchedProducts,
+  MarketplaceProductAdapter,
+  NormalizedChannelProduct,
+} from "../types";
 
 const PRODUCTS_PAGE = 50; // Lazada cho tối đa 50 sản phẩm/lần products/get
 const MAX_PAGES = 200; // chốt chặn phân trang vô tận
@@ -63,7 +67,7 @@ function transformSku(p: LazadaProduct, s: LazadaProductSku): NormalizedChannelP
 export const lazadaProductAdapter: MarketplaceProductAdapter = {
   name: "lazada",
 
-  async fetchProducts(channel: Channel): Promise<NormalizedChannelProduct[]> {
+  async fetchProducts(channel: Channel): Promise<FetchedProducts> {
     // (1) Tự refresh token trước khi gọi — token mới được lưu xuống DB.
     const accessToken = await getValidLazadaAccessToken(channel);
 
@@ -71,11 +75,16 @@ export const lazadaProductAdapter: MarketplaceProductAdapter = {
     const products: LazadaProduct[] = [];
     let offset = 0;
     let page = 0;
+    let complete = true;
     for (;;) {
       const r = await getProducts(accessToken, offset, PRODUCTS_PAGE);
       products.push(...r.products);
       page++;
-      if (r.products.length < PRODUCTS_PAGE || page >= MAX_PAGES) break;
+      if (r.products.length < PRODUCTS_PAGE) break;
+      if (page >= MAX_PAGES) {
+        complete = false; // còn trang mà chạm chốt chặn — danh mục CHƯA đủ
+        break;
+      }
       offset += r.products.length;
     }
 
@@ -104,6 +113,6 @@ export const lazadaProductAdapter: MarketplaceProductAdapter = {
         }
       } else bySku.set(p.channelSku, p);
     }
-    return [...bySku.values()];
+    return { products: [...bySku.values()], complete };
   },
 };

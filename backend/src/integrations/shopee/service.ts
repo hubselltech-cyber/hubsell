@@ -443,11 +443,16 @@ export interface SyncShopeeOrdersResult {
   updated: number;
   itemsCreated: number;
   pages: number;
+  /** true = dừng vì chạm chốt chặn số trang, còn đơn CHƯA đọc (phần cũ nhất của kỳ). */
+  truncated: boolean;
 }
 
 /**
  * Kéo đơn hàng thật từ Shopee và upsert vào DB (idempotent theo (channelId,
  * order_sn)). Shopee giới hạn get_order_list ≤15 ngày/lần nên phải chia cửa sổ.
+ * Cửa sổ chạy MỚI NHẤT TRƯỚC: chốt chặn số trang dùng chung cho cả lượt, nên nếu
+ * chạm chốt thì phần bị bỏ là đơn cũ nhất (trước 29/09/2026 chạy cũ nhất trước —
+ * shop lớn nạp lịch sử 90 ngày mất đúng các cửa sổ gần đây nhất).
  */
 export async function syncShopeeOrders(
   channel: Channel,
@@ -471,11 +476,16 @@ export async function syncShopeeOrders(
     updated: 0,
     itemsCreated: 0,
     pages: 0,
+    truncated: false,
   };
 
-  // Chia [startFrom, now] thành các cửa sổ ≤15 ngày.
-  for (let winFrom = startFrom; winFrom < nowSec && result.pages < maxPages; winFrom += WINDOW_SEC) {
-    const winTo = Math.min(winFrom + WINDOW_SEC, nowSec);
+  // Chia [startFrom, now] thành các cửa sổ ≤15 ngày, đi lùi từ hiện tại.
+  for (let winTo = nowSec; winTo > startFrom; winTo -= WINDOW_SEC) {
+    if (result.pages >= maxPages) {
+      result.truncated = true; // còn cửa sổ chưa đụng tới
+      break;
+    }
+    const winFrom = Math.max(winTo - WINDOW_SEC, startFrom);
     let cursor: string | undefined;
 
     do {
@@ -511,6 +521,10 @@ export async function syncShopeeOrders(
 
       cursor = list.response?.more ? list.response?.next_cursor || undefined : undefined;
     } while (cursor && result.pages < maxPages);
+    if (cursor) {
+      result.truncated = true; // cửa sổ này còn trang chưa đọc
+      break;
+    }
   }
 
   return result;

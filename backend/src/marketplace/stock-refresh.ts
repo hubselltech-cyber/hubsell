@@ -56,7 +56,7 @@ export async function refreshLinkedChannelStock(channel: Channel): Promise<Stock
   // Lazada (và sàn khác có adapter): kéo danh mục rồi chỉ ghi các dòng đã nối.
   const adapter = getProductAdapter(channel);
   // Chỉ cần tồn — bỏ bước bổ sung ảnh/phân loại (TikTok tốn 1 call/sản phẩm).
-  const products = await adapter.fetchProducts(channel, { details: false });
+  const { products } = await adapter.fetchProducts(channel, { details: false });
   const bySku = new Map(products.map((p) => [p.channelSku, p]));
   const now = new Date();
   let refreshed = 0;

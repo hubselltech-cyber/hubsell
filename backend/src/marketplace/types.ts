@@ -38,6 +38,17 @@ export interface NormalizedChannelProduct {
 }
 
 /**
+ * Kết quả kéo danh mục KÈM CAM KẾT ĐẦY ĐỦ (29/09/2026, docs/KIEN-TRUC-QUY-MO-
+ * TRIEU-DON.md nguyên tắc 2). `complete = false` nghĩa là adapter dừng vì chạm
+ * chốt chặn phân trang — danh sách CHƯA phải toàn bộ danh mục. Nơi gọi TUYỆT ĐỐI
+ * không được coi SKU vắng mặt trong một kết quả chưa đầy đủ là "đã gỡ khỏi sàn".
+ */
+export interface FetchedProducts {
+  products: NormalizedChannelProduct[];
+  complete: boolean;
+}
+
+/**
  * Adapter của một sàn: biết cách gọi API sàn đó và TRẢ VỀ dữ liệu đã chuẩn hoá.
  * Đây là chỗ DUY NHẤT chứa kiến thức riêng của sàn (endpoint, phân trang, tên
  * trường, đổi token…). Tầng trên chỉ gọi `fetchProducts` mà không quan tâm bên
@@ -48,9 +59,9 @@ export interface MarketplaceProductAdapter {
   readonly name: string;
   /**
    * Kéo TOÀN BỘ sản phẩm của gian (đã tự phân trang + tự refresh token) và trả
-   * về danh sách đã chuẩn hoá. Ném lỗi nếu gọi API thất bại.
+   * về danh sách đã chuẩn hoá kèm cờ `complete`. Ném lỗi nếu gọi API thất bại.
    */
-  fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<NormalizedChannelProduct[]>;
+  fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<FetchedProducts>;
   /**
    * Tuỳ chọn — sàn mà `fetchProducts` chỉ bổ sung được ảnh/phân loại cho MỘT
    * PHẦN danh mục mỗi lượt (TikTok: 1 call/sản phẩm, có trần) thì cài hàm này

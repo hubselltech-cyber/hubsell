@@ -487,6 +487,8 @@ export interface SyncLazadaOrdersResult {
   updated: number;
   itemsCreated: number;
   pages: number;
+  /** true = dừng vì chạm chốt chặn số trang, còn đơn CHƯA đọc. */
+  truncated: boolean;
   /**
    * MẪU dữ liệu THÔ (đơn + dòng hàng đầu tiên) — FE in console để soi tên
    * trường thật Lazada trả về (tránh vòng đoán tên như bài học fee_name).
@@ -515,6 +517,7 @@ export async function syncLazadaOrders(
     updated: 0,
     itemsCreated: 0,
     pages: 0,
+    truncated: false,
   };
 
   // (1) Gom toàn bộ đơn qua phân trang offset.
@@ -525,7 +528,11 @@ export async function syncLazadaOrders(
     result.pages++;
     orders.push(...page.orders);
     offset += page.orders.length;
-    if (page.orders.length < ORDER_LIST_PAGE_SIZE || result.pages >= maxPages) break;
+    if (page.orders.length < ORDER_LIST_PAGE_SIZE) break;
+    if (result.pages >= maxPages) {
+      result.truncated = true;
+      break;
+    }
   }
 
   // (2) Lấy dòng hàng theo lô ≤50 order_id rồi upsert từng đơn.

@@ -392,6 +392,22 @@ async function processChannel(channel: Channel): Promise<void> {
   }
 }
 
+/**
+ * Lượt kéo đơn chạm chốt chặn số trang = còn đơn CHƯA đọc. Trước 29/09/2026 việc
+ * này hoàn toàn im lặng. Hiện mới ghi log; nạp tiếp phần còn thiếu cần con trỏ
+ * tiến độ theo gian (giai đoạn 3, docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md mục 6.3).
+ */
+function warnIfTruncated(
+  channel: Channel,
+  r: { truncated: boolean; fetched: number; pages: number },
+  backfill?: boolean
+): void {
+  if (!r.truncated) return;
+  console.warn(
+    `[Auto-sync] ${channel.channelName} "${channel.shopName}" (${channel.id}): lượt ${backfill ? "nạp lịch sử" : "quét biến động"} CHƯA ĐỦ — dừng ở ${r.pages} trang, ${r.fetched} đơn; phần cũ hơn chưa đọc`
+  );
+}
+
 // ============================================================
 // TẦNG NHANH — đơn, phí ước tính, đơn hoàn, vận đơn, hóa đơn, cứu đơn.
 // Trả về true nếu lượt quét đơn thấy biến động (để tính bậc giãn nhịp).
@@ -415,6 +431,7 @@ async function runFastTier(
             timeRangeField: "update_time",
           });
       changed = r.created > 0 || r.updated > 0;
+      warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Shopee "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
@@ -430,6 +447,7 @@ async function runFastTier(
             byUpdateTime: true,
           });
       changed = r.created > 0 || r.updated > 0;
+      warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] TikTok "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`
@@ -443,6 +461,7 @@ async function runFastTier(
             byUpdateTime: true,
           });
       changed = r.created > 0 || r.updated > 0;
+      warnIfTruncated(channel, r, opts.backfill);
       if (r.created > 0) {
         console.log(
           `[Auto-sync] Lazada "${channel.shopName}": +${r.created} đơn mới (${r.updated} cập nhật)`

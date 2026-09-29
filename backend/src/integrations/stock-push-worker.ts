@@ -53,6 +53,13 @@ const BASE_RETRY_MS = 30_000;
 const PACE_MS = 400;
 /** Trễ nhỏ sau kick để nhiều enqueue liên tiếp (một đơn nhiều SKU) gộp một lượt. */
 const KICK_DELAY_MS = 300;
+/**
+ * Job RUNNING quá ngưỡng này = tiến trình cầm nó đã chết (deploy/sập giữa lô) →
+ * trả về PENDING. MẶC ĐỊNH TỰ CHỌN 15 phút: một lô 30 job bình thường xong trong
+ * 1–2 phút (giãn 400ms + một call sàn mỗi job), 15 phút chừa chỗ cho sàn treo.
+ * Nhặt nhầm job còn sống cũng vô hại: đẩy tồn luôn đọc số mới nhất lúc đẩy.
+ */
+const RUNNING_STALE_MS = 15 * 60_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -82,6 +89,7 @@ async function drain(): Promise<void> {
   if (draining) return;
   draining = true;
   try {
+    await recoverStaleRunning();
     for (;;) {
       const due = await prisma.stockPushJob.findMany({
         where: {
@@ -108,6 +116,25 @@ async function drain(): Promise<void> {
     console.error("[Stock-push] Lỗi vòng xử lý hàng đợi:", err);
   } finally {
     draining = false;
+  }
+}
+
+/**
+ * Gỡ job mồ côi: bị đánh RUNNING rồi tiến trình chết trước khi xử lý. Không gỡ
+ * thì SKU đó kẹt vĩnh viễn — hàng đợi chỉ nhặt PENDING, còn đối soát tồn bỏ qua
+ * mọi SKU đang có job (rà soát 29/09/2026). Giữ nguyên attempts để job hỏng thật
+ * vẫn đi hết số lượt rồi ra cảnh báo.
+ */
+async function recoverStaleRunning(): Promise<void> {
+  const r = await prisma.stockPushJob.updateMany({
+    where: {
+      status: StockPushStatus.RUNNING,
+      updatedAt: { lt: new Date(Date.now() - RUNNING_STALE_MS) },
+    },
+    data: { status: StockPushStatus.PENDING, nextRetryAt: new Date() },
+  });
+  if (r.count > 0) {
+    console.warn(`[Stock-push] Gỡ ${r.count} job kẹt RUNNING quá ${RUNNING_STALE_MS / 60_000} phút về hàng chờ`);
   }
 }
 

@@ -22,6 +22,7 @@ import {
 import { getValidAccessToken } from "../../integrations/tiktok/service";
 import { prisma } from "../../lib/prisma";
 import type {
+  FetchedProducts,
   FetchProductsOptions,
   MarketplaceProductAdapter,
   NormalizedChannelProduct,
@@ -261,7 +262,7 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
   name: "tiktok",
   enrichMissing: enrichMissingImages,
 
-  async fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<NormalizedChannelProduct[]> {
+  async fetchProducts(channel: Channel, opts?: FetchProductsOptions): Promise<FetchedProducts> {
     const { accessToken, shopCipher } = await getValidAccessToken(channel);
 
     const products: TikTokProduct[] = [];
@@ -282,6 +283,8 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
       }
       pageToken = r.next_page_token || undefined;
     } while (pageToken && page < MAX_PAGES);
+    // Còn page_token mà đã chạm chốt chặn — danh mục CHƯA đủ.
+    const complete = !pageToken;
 
     // Bổ sung chi tiết (ảnh + phân loại): cache RAM trước, rồi gọi API cho
     // sản phẩm CHƯA có ảnh trong DB (ưu tiên), trần DETAIL_PER_RUN mỗi lượt.
@@ -354,6 +357,6 @@ export const tiktokProductAdapter: MarketplaceProductAdapter = {
         }
       } else bySku.set(p.channelSku, p);
     }
-    return [...bySku.values()];
+    return { products: [...bySku.values()], complete };
   },
 };

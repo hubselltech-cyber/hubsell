@@ -403,12 +403,16 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, channel: { userId: req.ownerId! } },
-      include: { channel: { select: { channelName: true, shopName: true } } },
+      include: {
+        channel: { select: { channelName: true, shopName: true, refreshToken: true } },
+      },
     });
     if (!order) {
       res.status(404).json({ error: "Không tìm thấy đơn hàng" });
       return;
     }
+    // Gian ĐÃ NỐI API sàn (có refresh_token): số quyết toán chỉ được đến từ sàn.
+    const linkedToPlatform = order.channel.refreshToken !== null;
     // Nhân viên bị giới hạn kênh không được xử lý đơn của kênh ngoài phạm vi
     if (req.allowedChannelIds && !req.allowedChannelIds.includes(order.channelId)) {
       res.status(403).json({ error: "Bạn không có quyền xử lý đơn của kênh này" });
@@ -425,11 +429,12 @@ router.patch("/:id/status", async (req: AuthRequest, res, next) => {
 
     // Trường hợp thường: chỉ đổi trạng thái
     if (newStatus !== "CANCELLED") {
-      // GĐ2 — QUYẾT TOÁN: đơn chuyển sang "Đã giao" ⇒ bóc tách số liệu tài chính
-      // THỰC TẾ do sàn trả về (phí cố định, phí dịch vụ, phí thanh toán, trợ giá)
-      // và ghi đè số tạm tính. Báo cáo dòng tiền dùng số này.
+      // Quyết toán GIẢ LẬP khi đổi tay sang "Đã giao" — CHỈ cho gian Offline và
+      // gian mock cũ chưa nối API. Gian đã nối sàn thì KHÔNG: trước 29/09/2026
+      // nhánh này ghi phí + tiền về bịa (mockSettlement) và isSettled=true vào
+      // đơn thật, số đó đi thẳng vào Lãi/Lỗ và chặn luôn lượt đối soát thật.
       let settlementData: Prisma.OrderUpdateInput = {};
-      if (newStatus === "DELIVERED" && !order.isSettled) {
+      if (newStatus === "DELIVERED" && !order.isSettled && !linkedToPlatform) {
         const s = mockSettlement(
           order.channel.channelName,
           Number(order.totalAmount),

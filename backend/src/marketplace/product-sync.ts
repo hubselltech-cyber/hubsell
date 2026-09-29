@@ -24,6 +24,8 @@ export interface ProductSyncResult {
   updated: number; // số ChannelProduct cập nhật
   delisted: number; // số SKU cũ không còn → đánh DELISTED
   costAutoFilled: number; // số SKU mới được tự điền giá vốn theo mã
+  /** false = adapter chạm chốt chặn phân trang, danh mục CHƯA đủ — đã BỎ QUA bước đánh DELISTED. */
+  complete: boolean;
 }
 
 /**
@@ -32,7 +34,7 @@ export interface ProductSyncResult {
  */
 export async function syncChannelProducts(channel: Channel): Promise<ProductSyncResult> {
   const adapter = getProductAdapter(channel);
-  const products = await adapter.fetchProducts(channel);
+  const { products, complete } = await adapter.fetchProducts(channel);
   const now = new Date();
 
   let created = 0;
@@ -80,15 +82,17 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
   }
 
   // SKU cũ không còn trong danh mục sàn → đánh DELISTED (không xoá để giữ liên kết).
-  const seen = products.map((p) => p.channelSku);
-  const delistedResult = await prisma.channelProduct.updateMany({
-    where: {
-      channelId: channel.id,
-      status: ChannelProductStatus.ACTIVE,
-      channelSku: { notIn: seen.length > 0 ? seen : ["__none__"] },
-    },
-    data: { status: ChannelProductStatus.DELISTED },
-  });
+  // CHỈ làm khi lượt kéo ĐẦY ĐỦ: danh mục bị cắt ở chốt chặn phân trang thì SKU
+  // vắng mặt chưa chắc đã gỡ — đánh DELISTED nhầm là gian đó ngừng được đẩy tồn
+  // (enqueueStockPush chỉ nhặt ACTIVE) → bán vượt tồn (rà soát 29/09/2026).
+  let delisted = 0;
+  if (complete) {
+    delisted = await delistUnseen(channel.id, new Set(products.map((p) => p.channelSku)));
+  } else {
+    console.warn(
+      `[product-sync] gian ${channel.shopName} (${channel.id}): danh mục CHƯA đủ (chạm chốt chặn phân trang, đọc được ${products.length} SKU) — bỏ qua bước đánh DELISTED`
+    );
+  }
 
   // Tự điền giá vốn là tiện ích — hỏng thì danh mục vẫn phải đồng bộ xong.
   let costAutoFilled = 0;
@@ -106,7 +110,36 @@ export async function syncChannelProducts(channel: Channel): Promise<ProductSync
     scanned: products.length,
     created,
     updated,
-    delisted: delistedResult.count,
+    delisted,
     costAutoFilled,
+    complete,
   };
+}
+
+/** Lô id mỗi lệnh UPDATE — dưới xa trần 32.767 tham số của Postgres. */
+const DELIST_BATCH = 1000;
+
+/**
+ * Đánh DELISTED các SKU đang ACTIVE của gian mà KHÔNG có trong `seen`. So khớp
+ * trong bộ nhớ rồi cập nhật theo lô id: `channelSku notIn [hàng chục nghìn mã]`
+ * vượt trần tham số của Postgres ở gian danh mục lớn.
+ */
+async function delistUnseen(channelId: string, seen: Set<string>): Promise<number> {
+  const active = await prisma.channelProduct.findMany({
+    where: { channelId, status: ChannelProductStatus.ACTIVE },
+    select: { id: true, channelSku: true },
+  });
+  const goneIds = active.filter((r) => !seen.has(r.channelSku)).map((r) => r.id);
+  let count = 0;
+  for (let i = 0; i < goneIds.length; i += DELIST_BATCH) {
+    const r = await prisma.channelProduct.updateMany({
+      where: {
+        id: { in: goneIds.slice(i, i + DELIST_BATCH) },
+        status: ChannelProductStatus.ACTIVE,
+      },
+      data: { status: ChannelProductStatus.DELISTED },
+    });
+    count += r.count;
+  }
+  return count;
 }

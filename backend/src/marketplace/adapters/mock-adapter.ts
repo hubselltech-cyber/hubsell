@@ -8,13 +8,13 @@
 
 import type { Channel } from "@prisma/client";
 import { MOCK_CATALOG, mockImageFor } from "../mockMarketplace";
-import type { MarketplaceProductAdapter, NormalizedChannelProduct } from "../types";
+import type { FetchedProducts, MarketplaceProductAdapter } from "../types";
 
 export const mockProductAdapter: MarketplaceProductAdapter = {
   name: "mock",
-  async fetchProducts(channel: Channel): Promise<NormalizedChannelProduct[]> {
+  async fetchProducts(channel: Channel): Promise<FetchedProducts> {
     const catalog = MOCK_CATALOG[channel.channelName] ?? [];
-    return catalog.map((item) => ({
+    const products = catalog.map((item) => ({
       channelSku: item.channelSku,
       productName: item.name,
       variantName: null,
@@ -26,5 +26,6 @@ export const mockProductAdapter: MarketplaceProductAdapter = {
       channelStockLocationId: null,
       status: "ACTIVE" as const,
     }));
+    return { products, complete: true };
   },
 };

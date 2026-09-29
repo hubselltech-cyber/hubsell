@@ -21,7 +21,11 @@ import {
   type ShopeeModel,
 } from "../../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../../integrations/shopee/service";
-import type { MarketplaceProductAdapter, NormalizedChannelProduct } from "../types";
+import type {
+  FetchedProducts,
+  MarketplaceProductAdapter,
+  NormalizedChannelProduct,
+} from "../types";
 
 const ITEM_LIST_PAGE = 100; // Shopee cho tối đa 100 item/lần get_item_list
 const BASE_INFO_BATCH = 50; // tối đa 50 item_id/lần get_item_base_info
@@ -86,7 +90,7 @@ function transformModel(
 export const shopeeProductAdapter: MarketplaceProductAdapter = {
   name: "shopee",
 
-  async fetchProducts(channel: Channel): Promise<NormalizedChannelProduct[]> {
+  async fetchProducts(channel: Channel): Promise<FetchedProducts> {
     // (4) Tự refresh token trước khi gọi — nếu access_token sắp/đã hết hạn,
     // hàm này gọi refresh_token và lưu token mới xuống DB.
     const { accessToken, shopId } = await getValidShopeeAccessToken(channel);
@@ -95,6 +99,7 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
     const itemIds: number[] = [];
     let offset = 0;
     let page = 0;
+    let complete = true;
     for (;;) {
       const list = await getItemList({
         accessToken,
@@ -107,7 +112,11 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
 
       page++;
       const hasNext = list.response?.has_next_page && batch.length > 0;
-      if (!hasNext || page >= MAX_PAGES) break;
+      if (!hasNext) break;
+      if (page >= MAX_PAGES) {
+        complete = false; // còn trang mà chạm chốt chặn — danh mục CHƯA đủ
+        break;
+      }
       // Shopee đưa next_offset để lấy trang tiếp; fallback cộng dồn nếu thiếu.
       offset = list.response?.next_offset ?? offset + batch.length;
     }
@@ -115,7 +124,7 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
     // Khử trùng item_id (get_item_list đôi khi trả trùng qua các trang) để không
     // gọi chi tiết/model thừa và không thổi phồng số liệu.
     const uniqueIds = Array.from(new Set(itemIds));
-    if (uniqueIds.length === 0) return [];
+    if (uniqueIds.length === 0) return { products: [], complete };
 
     // (3) Lấy chi tiết theo lô ≤50 + model → chuẩn hoá. Giãn nhịp giữa các
     // call (shop 300-400 SKU = hàng trăm get_model_list) để né error_rate_limit;
@@ -154,6 +163,6 @@ export const shopeeProductAdapter: MarketplaceProductAdapter = {
         }
       } else bySku.set(p.channelSku, p);
     }
-    return [...bySku.values()];
+    return { products: [...bySku.values()], complete };
   },
 };

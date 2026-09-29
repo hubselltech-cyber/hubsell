@@ -212,6 +212,8 @@ export interface SyncOrdersResult {
   updated: number; // số Order cập nhật trạng thái
   itemsCreated: number; // số OrderItem tạo mới
   pages: number;
+  /** true = có lát chạm chốt chặn số trang, còn đơn CHƯA đọc. */
+  truncated: boolean;
 }
 
 /**
@@ -264,6 +266,7 @@ export async function syncTiktokOrders(
     updated: 0,
     itemsCreated: 0,
     pages: 0,
+    truncated: false,
   };
 
   for (const slice of slices) {
@@ -307,6 +310,7 @@ export async function syncTiktokOrders(
 
     pageToken = data.next_page_token || undefined;
   } while (pageToken && slicePages < maxPages);
+  if (pageToken) result.truncated = true; // lát này còn trang chưa đọc
   }
 
   // KIỂM CỬA SỔ (16/09): lượt quét update_time 2 ngày trả về 261/262 đơn — nghi
