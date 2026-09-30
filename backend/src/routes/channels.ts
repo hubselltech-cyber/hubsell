@@ -53,6 +53,7 @@ import {
   syncShopeePendingEscrowEstimates,
   syncShopeeSettlements,
 } from "../integrations/shopee/settlements";
+import { deleteChannelWithin } from "../services/channel-delete";
 import { syncShopeeAdsSpend } from "../integrations/shopee/ads-spend";
 import { getEscrowDetail } from "../integrations/shopee/client";
 import { getValidShopeeAccessToken } from "../integrations/shopee/service";
@@ -904,6 +905,10 @@ router.post("/:id/disconnect", requireAdmin, async (req: AuthRequest, res, next)
 // đối soát, chi phí ads, nhật ký tồn… (schema đều onDelete: Cascade; khoản
 // thu/chi vận hành gắn nguồn tiền vào gian chỉ SetNull — tiền vẫn còn). Sau
 // khi xóa, ủy quyền lại trên sàn sẽ tạo gian MỚI (khóa unique externalShopId).
+// 30/09/2026: xóa theo LÔ (services/channel-delete.ts) thay cho một câu lệnh xóa
+// cả gian. Gian nhỏ xong ngay trong lượt bấm; gian lớn quá thời gian chờ thì trả
+// 202 `pending: true` và xóa nốt ở nền — gian còn nằm trong danh sách (đã ngắt)
+// tới khi xong; tiến trình tắt giữa chừng thì bấm Xóa lại là chạy tiếp.
 router.delete("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
   try {
     const channel = await prisma.channel.findFirst({
@@ -920,17 +925,37 @@ router.delete("/:id", requireAdmin, async (req: AuthRequest, res, next) => {
       });
       return;
     }
-    await prisma.channel.delete({ where: { id: channel.id } });
-    invalidatePlanState(req.ownerId!);
-    res.json({
-      ok: true,
-      deleted: {
-        id: channel.id,
-        shopName: channel.shopName,
-        orders: channel._count.orders,
-        channelProducts: channel._count.channelProducts,
-      },
-    });
+    const ownerId = req.ownerId!;
+    const deleted = {
+      id: channel.id,
+      shopName: channel.shopName,
+      orders: channel._count.orders,
+      channelProducts: channel._count.channelProducts,
+    };
+    const result = await deleteChannelWithin(channel.id);
+    if (result.pending) {
+      // Xóa nốt ở nền; xong thì làm mới trần gói, lỗi thì ghi log (gian vẫn ở trạng thái đã ngắt).
+      result.job
+        .then((outcome) => {
+          invalidatePlanState(ownerId);
+          console.log(
+            `[Channel-delete] Gian "${channel.shopName}" (${channel.id}): ${outcome.status}, đã xóa ${outcome.deletedOrders} đơn ở lượt nền`
+          );
+        })
+        .catch((err) => {
+          console.error(`[Channel-delete] Gian "${channel.shopName}" (${channel.id}) xóa nền LỖI — bấm Xóa lại để chạy tiếp:`, err);
+        });
+      res.status(202).json({ ok: true, pending: true, deleted });
+      return;
+    }
+    if (result.outcome.status === "reconnected") {
+      res.status(409).json({
+        error: "Gian vừa được kết nối lại nên không xóa nữa. Muốn xóa, hãy Ngắt kết nối trước.",
+      });
+      return;
+    }
+    invalidatePlanState(ownerId);
+    res.json({ ok: true, pending: false, deleted });
   } catch (err) {
     next(err);
   }

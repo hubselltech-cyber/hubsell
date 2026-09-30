@@ -184,10 +184,10 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 1. ✅ Push ở chế độ `rows` (commit `d23d807`, web + worker live 18:54–18:55).
 2. ✅ So trên prod: `npx tsx scripts/ledger-backfill.ts ads-compare --platform SHOPEE` rồi `--platform LAZADA` trên Render Shell của worker — kết quả ở mục 11.7.
 3. ✅ Đổi mặc định sang `sql` trong code; `ADS_MARGIN_SOURCE=rows` là đường lui, gỡ cùng đợt ~07/10 (kèm `marginsFromRows`, bộ đệm mảng đơn, `MARGIN_MAX_ORDERS`; giữ `marginOverRows` làm chuẩn đối chiếu trong test).
-4. ⏳ Anh chốt mục 5 điểm 5 (câu SQL lỗi thì lượt đó tự lui về đường `rows` + ghi log): chưa làm vì chưa có ý anh. Hiện tại câu gom lỗi thì trang Quảng cáo báo lỗi như mọi lỗi database khác; lui tay bằng env `ADS_MARGIN_SOURCE=rows` trên CẢ web và worker.
+4. ✅ Lưới đỡ (anh chốt 30/09 tối, mục 11.8): câu gom lỗi thì lượt đó tự tính bằng đường `rows`, ghi log `[Ads-margin]`, gian đó nghỉ câu gom 5 phút rồi tự thử lại. Lui tay hẳn vẫn là env `ADS_MARGIN_SOURCE=rows` trên CẢ web và worker.
 5. ⏳ Theo dõi một tuần: log lỗi của web/worker, CPU database ở trang Supabase.
 
-### 11.6 Hai phát hiện ngoài phạm vi, CHƯA sửa, cần anh quyết
+### 11.6 Hai phát hiện ngoài phạm vi — anh chốt 30/09 tối "cả ba việc phải làm cho xong", ĐÃ SỬA (mục 11.8)
 
 1. **Mọi báo cáo trên sổ cái đang đổi kiểu mốc thời gian ở từng dòng quét** (cùng nguyên nhân với mục 11.2 điểm 2, vì dùng chung `ledgerScopeSql`). Ở số đơn hiện tại không ai thấy; ở kỳ có vài trăm nghìn dòng thì mỗi báo cáo mất thêm cỡ giây. Cách sửa đã có sẵn (bật `constParams`), nhưng đụng tới mọi báo cáo đã so khớp prod nên phải làm thành một việc riêng và so lại prod.
 2. **Xóa gian lớn sẽ rất chậm.** Khóa ngoại `order_line_ledger.orderItemId` không có chỉ mục bắt đầu bằng cột đó, nên mỗi dòng hàng bị xóa kéo theo một lượt dò cả sổ dòng hàng. Đo trên DB dev khi mảnh tháng có 410.000 dòng: 59 mili giây mỗi lượt dò, có chỉ mục thì 0,4 mili giây; xóa gian thử 300.000 đơn chạy hơn 12 phút chưa xong, thêm chỉ mục tạm thì xong trong 247 giây. Ảnh hưởng tới nút Xóa gian (27/09) kể từ khi có sổ cái. Hai cách sửa: thêm chỉ mục, hoặc bỏ khóa ngoại đó (khóa ngoại theo `orderId` đã lo việc xóa theo đơn). Cần migration nên em trình riêng.
@@ -198,3 +198,28 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 - Gian nhiều nhóm nhất: 1.112 nhóm. Gian nhiều đơn nhất: 1.220 đơn trong 30 ngày. Lệch tiền lớn nhất trong mọi nhóm của mọi gian: 0,0424 đồng.
 - Thời gian mỗi gian: đường `sql` 8 đến 150 mili giây (gồm cả câu kiểm sổ sạch), đường `rows` 9 đến 173 mili giây. Ở số đơn hiện tại hai đường nhanh ngang nhau; khác biệt là đường `sql` không còn phanh và không giữ đơn trong RAM.
 - Kế hoạch chạy thật của gian 1.220 đơn (1.631 dòng hàng): chỉ đọc mảnh tháng 09/2026, lập kế hoạch 0,76 mili giây, chạy 13,0 mili giây, sắp xếp trong RAM 329 kB.
+
+### 11.8 Ba việc làm thêm tối 30/09/2026 (anh Trung: "làm cho xong khi còn ít người dùng")
+
+**1. Lưới đỡ khi câu gom lỗi** (`fetchChannelMargins`, commit `664fba0`)
+
+- Nguồn theo env: câu gom trong database lỗi → lượt đó tính bằng đường `rows`, khách vẫn thấy số; một dòng log `[Ads-margin]` kèm mã gian và lỗi gốc. Gian đó đi thẳng đường `rows` trong 5 phút (mặc định tự chọn: không dội lại câu đang lỗi ở mỗi lượt mở trang, đủ ngắn để tự hồi) rồi thử lại câu gom.
+- Nguồn chỉ định tường minh (công cụ đối chiếu, test): lỗi ném ra nguyên vẹn, để lưới đỡ không che mất lệch.
+- Lưới đỡ sống cùng đường `rows`, gỡ ~07/10. Test: `integrations/__tests__/ads-margin-fallback-db.test.ts`.
+
+**2. Mốc kỳ dạng hằng cho MỌI câu đọc sổ cái** (`services/order-ledger.ts`)
+
+- `ledgerScopeSql`, mốc `byDaySince` của ba bảng bóc theo ngày, con trỏ danh sách Lãi/Lỗ, `markLedgerScope` và câu gom quảng cáo đều viết mốc qua `tsParam` / `dayParam`. Mặc định dạng hằng; env `LEDGER_SCOPE_PARAMS=text` lui về cách cũ (giữ tới ~07/10).
+- Công cụ đối chiếu `services/order-ledger-params-compare.ts` + lệnh `npx tsx scripts/ledger-backfill.ts params-compare`: chạy 18 câu đọc (tổng theo nhóm 3 trục ngày, dòng tiền, tổng quan, Lãi/Lỗ tổng kết + danh sách + con trỏ, thuế đối soát + kê khai 2 cơ sở, đơn lỗ, SKU, dòng gọn quảng cáo, câu gom) ở cả hai cách cho từng chủ shop × 6 kỳ và từng gian × 2 kỳ; kết quả phải giống hệt từng trường.
+- DB dev: 540 lượt so, 0 lệch. Gian thử 300.000 đơn: 132 lượt so, 0 lệch; thời gian trung bình mỗi lượt gọi (cách cũ → dạng hằng): đối soát thuế 0,62 → 0,13 giây; tổng kết Lãi/Lỗ 1,04 → 0,20; dòng tiền 0,85 → 0,19; tổng quan 0,83 → 0,16; kê khai theo ngày tạo 0,64 → 0,16; tổng theo nhóm 1,26 → 0,76; Lãi/Lỗ theo SKU 1,34 → 0,69. Ở shop nhỏ phần lợi chính là lập kế hoạch: cách cũ Postgres phải lập kế hoạch cho cả 84 mảnh tháng ở mỗi câu, dạng hằng thì chỉ mảnh của kỳ.
+- Các câu theo ngày GIAO (`summary.delivered`, `freshness.delivered`) gần như không nhanh hơn: sổ chia mảnh theo ngày TẠO nên câu theo ngày giao vẫn phải mở mọi mảnh. Đây là giới hạn đã biết của cách chia mảnh, không phải lỗi.
+- Test: `services/__tests__/order-ledger-scope.test.ts`, `integrations/__tests__/order-ledger-params-db.test.ts`.
+
+**3. Xóa gian lớn** (migration `20260930270000_order_line_ledger_drop_item_fk` + `services/channel-delete.ts`)
+
+- Bỏ khóa ngoại `order_line_ledger.orderItemId → OrderItem` (chọn bỏ thay vì thêm chỉ mục: xóa đơn vẫn dọn sổ qua khóa ngoại `orderId`; xóa riêng một dòng hàng thì trigger đánh dấu đơn và worker ghi lại dòng sổ; thêm chỉ mục thì mỗi lượt worker ghi sổ phải cập nhật thêm một chỉ mục ở mọi mảnh). Migration lấy khóa `OrderItem` trước, sổ dòng hàng sau, có thử lại — giao dịch ghi đơn của app không thể nằm trong vòng khóa chéo.
+- Route `DELETE /api/channels/:id` xóa đơn theo lô 1.000 (mỗi lô một câu lệnh ngắn, nghỉ 100 mili giây), xong mới xóa dòng gian. Chờ tối đa 20 giây; gian lớn hơn thì trả 202 `pending: true`, xóa nốt ở nền, giao diện báo "đang được xóa dần". Tiến trình tắt giữa chừng thì gian vẫn ở trạng thái đã ngắt, bấm Xóa lại là chạy tiếp. Gian được nối lại giữa chừng thì dừng, không xóa gian đang hoạt động.
+- Số đo DB dev, gian thử 300.000 đơn / 405.000 dòng hàng: xóa 200 đơn 12,7 giây → 0,28 giây; cả gian (286.600 đơn còn lại) xóa theo lô xong trong 201 giây, không có giao dịch nào dài quá một giây. Trước khi sửa, cùng việc đó ước khoảng 5 giờ trong MỘT giao dịch.
+- Ba ngưỡng (lô 1.000, nghỉ 100 mili giây, chờ 20 giây) là mặc định em tự chọn theo số đo trên, đổi được ở đầu `services/channel-delete.ts`.
+- Test: `integrations/__tests__/channel-delete-db.test.ts` (nhiều lô, gian đang hoạt động, nối lại giữa chừng, bấm hai lần, quá thời gian chờ, xóa riêng một dòng hàng sau khi bỏ khóa ngoại).
+- Chưa làm: phần treo vào gian ngoài đơn (sản phẩm sàn, nhật ký đồng bộ tồn, số liệu quảng cáo) vẫn đi trong câu xóa dòng gian cuối cùng. Các bảng đó có giới hạn lưu giữ nên nhỏ hơn đơn nhiều, em chưa đo ở quy mô lớn.

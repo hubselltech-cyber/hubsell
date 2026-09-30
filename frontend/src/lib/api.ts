@@ -3406,9 +3406,14 @@ export function disconnectChannel(id: string) {
 }
 
 /** Xóa hẳn gian ĐÃ NGẮT kết nối (cascade đơn, SP sàn, đối soát… của gian đó). */
+/**
+ * Xóa hẳn gian đã ngắt. `pending: true` = gian nhiều đơn, máy chủ đang xóa nốt ở
+ * nền: gian còn nằm trong danh sách (đã ngắt) tới khi xong.
+ */
 export function deleteChannel(id: string) {
   return apiFetch<{
     ok: true;
+    pending?: boolean;
     deleted: { id: string; shopName: string; orders: number; channelProducts: number };
   }>(`/api/channels/${id}`, { method: "DELETE" });
 }

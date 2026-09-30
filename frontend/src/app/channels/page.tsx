@@ -848,7 +848,15 @@ export default function ChannelsPage() {
     setDeleteBusy(true);
     try {
       const r = await deleteChannel(deleting.id);
-      toast.success(`Đã xóa gian ${r.deleted.shopName}`);
+      if (r.pending) {
+        // Gian nhiều đơn: máy chủ xóa nốt ở nền, gian còn trong danh sách tới khi xong.
+        toast.info(
+          `Gian ${r.deleted.shopName} có ${r.deleted.orders.toLocaleString("vi-VN")} đơn nên đang được xóa dần. Vài phút nữa tải lại trang, gian sẽ biến mất khỏi danh sách.`,
+          { duration: 10_000 }
+        );
+      } else {
+        toast.success(`Đã xóa gian ${r.deleted.shopName}`);
+      }
       setDeleting(null);
       load();
     } catch (err) {
