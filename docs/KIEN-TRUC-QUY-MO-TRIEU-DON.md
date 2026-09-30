@@ -1,13 +1,13 @@
 # Kiến trúc Hubsell cho quy mô 50.000 khách, 1 triệu đơn/ngày
 
-Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh Trung đã duyệt hướng 30/09/2026**; giai đoạn 0 đã xong và đang chạy trên prod, giai đoạn 1 chưa bắt đầu.
+Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh Trung đã duyệt hướng 30/09/2026**; giai đoạn 0 đã xong và đang chạy trên prod, giai đoạn 1 bắt đầu 30/09/2026 (thiết kế chi tiết: `docs/SO-CAI-DON.md`).
 
-## 0. Tiến độ (cập nhật 30/09/2026)
+## 0. Tiến độ (cập nhật 30/09/2026 tối)
 
 | Giai đoạn | Tình trạng |
 |---|---|
 | 0. Cầm máu | Xong phần đã chốt, đã lên prod (bản `ce65553`) |
-| 1. Sổ cái đơn | Chưa bắt đầu. Bước đầu: soạn cấu trúc bảng + SQL, trình duyệt trước khi đụng database |
+| 1. Sổ cái đơn | **Đang làm.** Bước 1 (30/09) đã viết xong tại máy, CHƯA push: bảng phân mảnh theo tháng + trigger đánh dấu + worker tính lại + đối soát đêm + công cụ so khớp trên HQ; công thức Lãi/Lỗ tách sang `lib/pnl-formula.ts`. Chưa báo cáo nào đọc từ sổ. Việc kế: anh chạy thử local, push để migrate lên prod, so khớp trên dữ liệu thật, rồi chuyển từng báo cáo. Chi tiết `docs/SO-CAI-DON.md` |
 | 2. Hàng đợi và webhook | Chưa bắt đầu. Cần thử pg-boss với bộ gộp kết nối Supabase trước |
 | 3. Đồng bộ và các worker còn lại | Chưa bắt đầu |
 | 4. Vòng đời dữ liệu và quan sát | Chưa bắt đầu (riêng chỉ mục `Order(channelId, deliveredAt)` đã tạo) |

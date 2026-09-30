@@ -2121,6 +2121,178 @@ model TiktokOrderSettlement {
   @@map("tiktok_order_settlements")
 }
 
+// ============================================================
+// SỔ CÁI ĐƠN (giai đoạn 1 kiến trúc quy mô triệu đơn — docs/SO-CAI-DON.md)
+//
+// Kết quả của computePnlRow (lib/pnl-formula.ts) ghi xuống database MỘT LẦN
+// mỗi đơn để báo cáo cộng bằng SQL. Hai bảng này là bảng PHÂN MẢNH THEO THÁNG
+// (PARTITION BY RANGE createdDate) tạo bằng SQL trong migration
+// 20260930230000_order_ledger — Prisma không mô tả được phân mảnh nên:
+//   · khóa chính buộc phải chứa khóa phân mảnh → @@id([createdDate, orderId]);
+//   · KHÔNG khai báo quan hệ về Order/OrderItem ở đây (FK ON DELETE CASCADE
+//     có thật trong DB) để không phải thêm trường ngược vào Order;
+//   · ghi/tính lại đi qua services/order-ledger.ts (SQL thô theo lô); model
+//     này dùng để ĐỌC có kiểu (trang HQ, test) và tra cứu từng dòng.
+// Cột dirtyAt ≠ NULL = trigger đã đánh dấu cần tính lại; formulaVersion khớp
+// LEDGER_FORMULA_VERSION (lib/order-ledger.ts) mới là số dùng được.
+// ============================================================
+
+/// Hình thức hoàn/trả của đơn — cùng bộ giá trị với returnType của computePnlRow.
+enum LedgerReturnType {
+  REFUND_ONLY
+  PARTIAL_REFUND
+  PARTIAL_RETURN
+  FULL_RETURN
+}
+
+model OrderLedger {
+  orderId     String
+  /// Ngày tạo đơn theo giờ VN — khóa phân mảnh (tháng).
+  createdDate DateTime    @db.Date
+  channelId   String
+  /// Chủ shop (Channel.userId) — cột trực tiếp để lọc không vòng qua bảng gian.
+  ownerId     String
+  channelName ChannelName
+  orderCode   String
+
+  createdAt     DateTime
+  deliveredAt   DateTime?
+  deliveredDate DateTime? @db.Date
+  settledAt     DateTime?
+  settledDate   DateTime? @db.Date
+
+  shippingStatus   ShippingStatus
+  returnStatus     ReturnStatus
+  isSettled        Boolean           @default(false)
+  returnType       LedgerReturnType?
+  countsAsRevenue  Boolean           @default(false)
+  isReturning      Boolean           @default(false)
+  isLoss           Boolean           @default(false)
+  missingCostPrice Boolean           @default(false)
+  itemCount        Int               @default(0)
+  totalQuantity    Int               @default(0)
+  returnedQuantity Int               @default(0)
+
+  revenueGross        Decimal @default(0) @db.Decimal(14, 2)
+  sellerVoucher       Decimal @default(0) @db.Decimal(14, 2)
+  actualRevenue       Decimal @default(0) @db.Decimal(14, 2)
+  platformSubsidy     Decimal @default(0) @db.Decimal(14, 2)
+  shippingFeeQuoted   Decimal @default(0) @db.Decimal(14, 2)
+  shippingFeeActual   Decimal @default(0) @db.Decimal(14, 2)
+  shippingFeeDiff     Decimal @default(0) @db.Decimal(14, 2)
+  shipSubsidyPlatform Decimal @default(0) @db.Decimal(14, 2)
+  shipSubsidyShop     Decimal @default(0) @db.Decimal(14, 2)
+  feeFixedPayment     Decimal @default(0) @db.Decimal(14, 2)
+  feeService          Decimal @default(0) @db.Decimal(14, 2)
+  feeSellerProtection Decimal @default(0) @db.Decimal(14, 2)
+  feeGmvMax           Decimal @default(0) @db.Decimal(14, 2)
+  feeAffiliate        Decimal @default(0) @db.Decimal(14, 2)
+  adWalletTopup       Decimal @default(0) @db.Decimal(14, 2)
+  platformTax         Decimal @default(0) @db.Decimal(14, 2)
+  refundedAmount      Decimal @default(0) @db.Decimal(14, 2)
+  refundEstimated     Boolean @default(false)
+  refundSource        String?
+  returnedCostAtSale  Decimal @default(0) @db.Decimal(14, 2)
+  recoveredCost       Decimal @default(0) @db.Decimal(14, 2)
+  costSnapshot        Decimal @default(0) @db.Decimal(14, 2)
+  netRevenue          Decimal @default(0) @db.Decimal(14, 2)
+  actualPayout        Decimal @default(0) @db.Decimal(14, 2)
+  platformRevenue     Decimal @default(0) @db.Decimal(14, 2)
+  /// = revenueGross − platformRevenue ("sàn khấu trừ").
+  platformDeduction   Decimal @default(0) @db.Decimal(14, 2)
+  profit              Decimal @default(0) @db.Decimal(14, 2)
+  profitAfterTax      Decimal @default(0) @db.Decimal(14, 2)
+
+  returnLossCost         Decimal @default(0) @db.Decimal(14, 2)
+  returnLossPlatformKept Decimal @default(0) @db.Decimal(14, 2)
+  returnLossRefund       Decimal @default(0) @db.Decimal(14, 2)
+
+  /// 0 = dòng nháp do trigger tạo, chưa tính.
+  formulaVersion Int       @default(0)
+  computedAt     DateTime? @db.Timestamptz(3)
+  /// ≠ NULL = cần tính lại (trigger đặt, worker xóa sau khi ghi). Mili giây
+  /// (3) để khớp Date của JS khi worker so mốc bẩn lúc nhặt với mốc trên dòng.
+  dirtyAt        DateTime? @db.Timestamptz(3)
+  dirtyReason    String?
+  claimedAt      DateTime? @db.Timestamptz(3)
+
+  @@id([createdDate, orderId])
+  @@index([ownerId, createdDate])
+  @@index([channelId, createdDate])
+  @@index([channelId, deliveredDate])
+  @@index([channelId, settledDate])
+  @@index([orderId])
+  @@map("order_ledger")
+}
+
+model OrderLineLedger {
+  orderItemId String
+  createdDate DateTime    @db.Date
+  orderId     String
+  channelId   String
+  ownerId     String
+  channelName ChannelName
+  /// SKU kho gốc (NULL = chưa nối) — mã SKU/ảnh đọc từ Product lúc truy vấn.
+  productId   String?
+  channelSku  String
+  productName String
+
+  createdAt     DateTime
+  deliveredDate DateTime? @db.Date
+  settledDate   DateTime? @db.Date
+
+  shippingStatus   ShippingStatus
+  returnStatus     ReturnStatus
+  isSettled        Boolean        @default(false)
+  countsAsRevenue  Boolean        @default(false)
+  missingCostPrice Boolean        @default(false)
+
+  quantity          Int     @default(0)
+  returnedQuantity  Int     @default(0)
+  recoveredQuantity Int     @default(0)
+  price             Decimal @default(0) @db.Decimal(14, 2)
+  costPriceAtSale   Decimal @default(0) @db.Decimal(14, 2)
+  lineGross         Decimal @default(0) @db.Decimal(14, 2)
+  lineCost          Decimal @default(0) @db.Decimal(14, 2)
+  costSnapshot      Decimal @default(0) @db.Decimal(14, 2)
+  recoveredCost     Decimal @default(0) @db.Decimal(14, 2)
+  /// Tỷ trọng phân bổ tiền của đơn xuống dòng (Σ dòng của một đơn = 1).
+  share             Decimal @default(0) @db.Decimal(12, 10)
+  revenueGross      Decimal @default(0) @db.Decimal(14, 2)
+  actualRevenue     Decimal @default(0) @db.Decimal(14, 2)
+  platformRevenue   Decimal @default(0) @db.Decimal(14, 2)
+  platformDeduction Decimal @default(0) @db.Decimal(14, 2)
+  refundedAmount    Decimal @default(0) @db.Decimal(14, 2)
+  feeGmvMax         Decimal @default(0) @db.Decimal(14, 2)
+  profit            Decimal @default(0) @db.Decimal(14, 2)
+  profitAfterTax    Decimal @default(0) @db.Decimal(14, 2)
+  formulaVersion    Int     @default(0)
+
+  @@id([createdDate, orderItemId])
+  @@index([ownerId, createdDate])
+  @@index([channelId, createdDate])
+  @@index([orderId])
+  @@index([productId])
+  @@index([channelId, channelSku])
+  @@map("order_line_ledger")
+}
+
+/// Kết quả một lượt đối soát đêm sổ ↔ đơn gốc (services/order-ledger.ts auditLedger).
+model OrderLedgerAudit {
+  id           BigInt   @id @default(autoincrement())
+  ranAt        DateTime @default(now()) @db.Timestamptz(3)
+  durationMs   Int      @default(0)
+  sampled      Int      @default(0)
+  mismatched   Int      @default(0)
+  dirtyBacklog Int      @default(0)
+  staleDirty   Int      @default(0)
+  defaultRows  Int      @default(0)
+  details      Json?
+
+  @@index([ranAt])
+  @@map("order_ledger_audit")
+}
+
 // ---------- AFFILIATE TIẾP THỊ & VÍ HUBSELL ----------
 //
 // Chương trình referral của CHÍNH nền tảng Hubsell (KHÁC module /koc-marketing

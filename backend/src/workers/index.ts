@@ -37,6 +37,7 @@ import { startTiktokWebhookWorker } from "../integrations/tiktok/webhook-queue";
 import { startMisaWebhookWorker } from "../integrations/invoice/misa-webhook-queue";
 import { startHealthWatchWorker } from "./health-watch";
 import { startProductCatalogSyncWorker } from "./product-catalog-sync";
+import { startOrderLedgerWorker } from "./order-ledger";
 
 export type HubsellRole = "all" | "web" | "worker";
 
@@ -93,4 +94,7 @@ export function startAllWorkers(): void {
   startHealthWatchWorker();
   // Danh mục sản phẩm: gian vừa nối kéo ngay, làm mới mỗi đêm (anh Trung 28/09).
   startProductCatalogSyncWorker();
+  // Sổ cái đơn (giai đoạn 1 kiến trúc quy mô): tính lại dòng trigger đánh dấu,
+  // tạo phân mảnh tháng, đối soát đêm sổ ↔ đơn gốc.
+  startOrderLedgerWorker();
 }

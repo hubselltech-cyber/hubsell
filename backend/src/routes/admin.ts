@@ -41,6 +41,7 @@ import { isPublishAllowed } from "../integrations/invoice/misa-safety";
 import adminPlansRouter from "./admin-plans";
 import adminHealthRouter from "./admin-health";
 import adminInputInvoicesRouter from "./admin-input-invoices";
+import adminLedgerRouter from "./admin-ledger";
 import { getValidAccessToken as getTiktokAccessToken } from "../integrations/tiktok/service";
 import { getOrderStatementTransactionsV2 } from "../integrations/tiktok/client";
 
@@ -2456,6 +2457,8 @@ router.use(adminPlansRouter);
 router.use(adminHealthRouter);
 // Hóa đơn đầu vào của công ty (nạp tệp → máy đọc → sổ quỹ → xuất khai thuế).
 router.use(adminInputInvoicesRouter);
+// Sổ cái đơn (giai đoạn 1 kiến trúc quy mô): trạng thái + đối soát sổ ↔ đơn gốc.
+router.use(adminLedgerRouter);
 
 // ============================================================
 // TRA BẢN KÊ TIKTOK THÔ THEO ĐƠN (16/09/2026) — công cụ đối chiếu mapping:
