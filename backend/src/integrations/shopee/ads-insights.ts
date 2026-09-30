@@ -379,16 +379,17 @@ export function lowCostCoverage(base: MarginBase): boolean {
 export type AdsMarginSource = "rows" | "sql";
 
 /**
- * Công tắc env ADS_MARGIN_SOURCE: `sql` = gom trong database; còn lại = `rows`
- * (đường lui, giữ một tuần sau khi đổi mặc định). Khi báo cáo đã lui về đơn gốc
- * (LEDGER_REPORTS_SOURCE=orders) thì sổ cái không còn là nguồn số → luôn `rows`.
+ * Mặc định `sql` (gom trong database) từ 30/09/2026 tối, sau khi 20/20 gian
+ * Shopee/Lazada trên prod khớp ở cả hai tầng so. Env ADS_MARGIN_SOURCE=rows lui
+ * về đường duyệt mảng đơn — giữ một tuần (gỡ ~07/10). Khi báo cáo đã lui về đơn
+ * gốc (LEDGER_REPORTS_SOURCE=orders) thì sổ cái không còn là nguồn số → luôn `rows`.
  */
 export function resolveAdsMarginSource(
   env: string | undefined = process.env.ADS_MARGIN_SOURCE,
   reportsEnv: string | undefined = process.env.LEDGER_REPORTS_SOURCE
 ): AdsMarginSource {
   if (resolveReportSource(undefined, reportsEnv) === "orders") return "rows";
-  return env?.trim().toLowerCase() === "sql" ? "sql" : "rows";
+  return env?.trim().toLowerCase() === "rows" ? "rows" : "sql";
 }
 
 /** Nhóm "mọi dòng hàng của gian". */

@@ -99,17 +99,19 @@ describe("marginOverRows — loại đơn thiếu giá vốn", () => {
 // ------------------------------------------------------------
 
 describe("resolveAdsMarginSource — công tắc ADS_MARGIN_SOURCE", () => {
-  it("mặc định và giá trị lạ → rows; chỉ `sql` mới bật đường gom trong database", () => {
-    expect(resolveAdsMarginSource(undefined, undefined)).toBe("rows");
-    expect(resolveAdsMarginSource("", undefined)).toBe("rows");
-    expect(resolveAdsMarginSource("ledger", undefined)).toBe("rows");
+  it("mặc định và giá trị lạ → sql (gom trong database); chỉ `rows` mới lui về đường duyệt mảng đơn", () => {
+    expect(resolveAdsMarginSource(undefined, undefined)).toBe("sql");
+    expect(resolveAdsMarginSource("", undefined)).toBe("sql");
+    expect(resolveAdsMarginSource("ledger", undefined)).toBe("sql");
     expect(resolveAdsMarginSource("sql", undefined)).toBe("sql");
-    expect(resolveAdsMarginSource(" SQL ", undefined)).toBe("sql");
+    expect(resolveAdsMarginSource("rows", undefined)).toBe("rows");
+    expect(resolveAdsMarginSource(" ROWS ", undefined)).toBe("rows");
   });
 
-  it("báo cáo đã lui về đơn gốc (LEDGER_REPORTS_SOURCE=orders) → luôn rows dù bật sql", () => {
+  it("báo cáo đã lui về đơn gốc (LEDGER_REPORTS_SOURCE=orders) → luôn rows", () => {
+    expect(resolveAdsMarginSource(undefined, "orders")).toBe("rows");
     expect(resolveAdsMarginSource("sql", "orders")).toBe("rows");
-    expect(resolveAdsMarginSource("sql", "ledger")).toBe("sql");
+    expect(resolveAdsMarginSource(undefined, "ledger")).toBe("sql");
   });
 });
 

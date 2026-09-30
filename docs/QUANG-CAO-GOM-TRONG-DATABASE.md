@@ -1,7 +1,7 @@
 # Phương án: gom biên lãi / hòa vốn quảng cáo TRONG DATABASE
 
 Trạng thái: **ANH TRUNG ĐÃ DUYỆT 30/09/2026 chiều**; tối 30/09 anh đổi điểm 1 ở mục 9: **tách TikTok thành đợt riêng**, Shopee + Lazada làm chung đợt 1. Ba điểm còn lại giữ theo đề xuất.
-**Đợt 1 (Shopee + Lazada): code + test xong tối 30/09, mặc định vẫn là đường cũ `rows`** — chi tiết, số đo và việc còn lại ở mục 11. Đợt 2 (TikTok): chưa làm, chờ anh gọi.
+**Đợt 1 (Shopee + Lazada): XONG tối 30/09 — prod 20/20 gian khớp, mặc định đã đổi sang `sql`** (đường lui `ADS_MARGIN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 11. Đợt 2 (TikTok): chưa làm, chờ anh gọi.
 Thuộc giai đoạn 1 của `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, tiếp nối `docs/SO-CAI-DON.md` mục 9.7.
 
 ## 1. Mục tiêu và ranh giới
@@ -141,7 +141,7 @@ Các hàm thuần hiện có (`marginOverRows`, `tiktokBreakevenBase`, `…ByGro
   - `explainLedgerMarginByGroup`: in kế hoạch chạy thật của câu gom.
   - `timestampConst` / `dateConst` và tùy chọn `constParams` của `ledgerScopeSql` (mục 11.2 điểm 2). Tùy chọn mặc định TẮT: mọi báo cáo khác nhận đúng câu SQL cũ (đã so từng ký tự với bản trước khi sửa, có test khóa lại).
 - `integrations/shopee/ads-insights.ts`
-  - Công tắc `ADS_MARGIN_SOURCE` (`rows` | `sql`). **Mặc định `rows`.** Khi `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`.
+  - Công tắc `ADS_MARGIN_SOURCE` (`rows` | `sql`). Lên prod lần đầu ở `rows` (commit `d23d807`); **mặc định `sql` từ 30/09 tối sau khi so prod khớp** (mục 11.7). Khi `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`.
   - Bộ nhóm của gian (`groupSkusByItemId`, `buildAdsGroupSets`, `adsGroupMappingOf`): mỗi sản phẩm sàn một nhóm `p:<item_id>`, mỗi chiến dịch một nhóm `c:<id>`, nhóm toàn gian `shop`.
   - Mặt tiền `ChannelMargins` với hai bản: `marginsFromRows` (duyệt mảng đơn, dùng lại nguyên `marginOverRows`) và `marginsFromGroups` (tra kết quả đã gom). Ba nơi dùng (`computeChannelAdsInsights`, `computeChannelProductBreakeven`, `computeChannelAdsRecommendations`) gọi qua mặt tiền; phần phía sau (`marginOf`, ngưỡng 5 đơn, độ phủ 90%, bộ luật đánh giá chiến dịch, bộ chấm gợi ý) không đổi một dòng.
   - Bộ đệm đường `sql`: nhớ KẾT QUẢ gom theo gian, cùng thời hạn 30 phút và cùng lệnh xóa khi nhập giá vốn. Ba nơi dùng dựng cùng một bộ nhóm nên dùng chung một lượt gom. Bộ nhóm đổi (thêm sản phẩm, chiến dịch đổi danh sách sản phẩm) thì gom lại ngay.
@@ -181,12 +181,20 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 
 ### 11.5 Việc còn lại của đợt 1
 
-1. Push ở chế độ `rows` (khách chưa thấy gì đổi).
-2. Trên Render Shell của worker: `npx tsx scripts/ledger-backfill.ts ads-compare --platform SHOPEE` rồi `--platform LAZADA`. Mỗi gian in thêm `GOM khop|LECH`, số nhóm, lệch tiền lớn nhất, thời gian hai đường. Phải `TAT CA KHOP`.
-3. Khớp thì đổi mặc định sang `sql` trong code, giữ `ADS_MARGIN_SOURCE=rows` làm đường lui một tuần.
-4. Anh chốt mục 5 điểm 5 (câu SQL lỗi thì lượt đó tự lui về đường `rows` + ghi log): chưa làm vì chưa có ý anh.
+1. ✅ Push ở chế độ `rows` (commit `d23d807`, web + worker live 18:54–18:55).
+2. ✅ So trên prod: `npx tsx scripts/ledger-backfill.ts ads-compare --platform SHOPEE` rồi `--platform LAZADA` trên Render Shell của worker — kết quả ở mục 11.7.
+3. ✅ Đổi mặc định sang `sql` trong code; `ADS_MARGIN_SOURCE=rows` là đường lui, gỡ cùng đợt ~07/10 (kèm `marginsFromRows`, bộ đệm mảng đơn, `MARGIN_MAX_ORDERS`; giữ `marginOverRows` làm chuẩn đối chiếu trong test).
+4. ⏳ Anh chốt mục 5 điểm 5 (câu SQL lỗi thì lượt đó tự lui về đường `rows` + ghi log): chưa làm vì chưa có ý anh. Hiện tại câu gom lỗi thì trang Quảng cáo báo lỗi như mọi lỗi database khác; lui tay bằng env `ADS_MARGIN_SOURCE=rows` trên CẢ web và worker.
+5. ⏳ Theo dõi một tuần: log lỗi của web/worker, CPU database ở trang Supabase.
 
 ### 11.6 Hai phát hiện ngoài phạm vi, CHƯA sửa, cần anh quyết
 
 1. **Mọi báo cáo trên sổ cái đang đổi kiểu mốc thời gian ở từng dòng quét** (cùng nguyên nhân với mục 11.2 điểm 2, vì dùng chung `ledgerScopeSql`). Ở số đơn hiện tại không ai thấy; ở kỳ có vài trăm nghìn dòng thì mỗi báo cáo mất thêm cỡ giây. Cách sửa đã có sẵn (bật `constParams`), nhưng đụng tới mọi báo cáo đã so khớp prod nên phải làm thành một việc riêng và so lại prod.
 2. **Xóa gian lớn sẽ rất chậm.** Khóa ngoại `order_line_ledger.orderItemId` không có chỉ mục bắt đầu bằng cột đó, nên mỗi dòng hàng bị xóa kéo theo một lượt dò cả sổ dòng hàng. Đo trên DB dev khi mảnh tháng có 410.000 dòng: 59 mili giây mỗi lượt dò, có chỉ mục thì 0,4 mili giây; xóa gian thử 300.000 đơn chạy hơn 12 phút chưa xong, thêm chỉ mục tạm thì xong trong 247 giây. Ảnh hưởng tới nút Xóa gian (27/09) kể từ khi có sổ cái. Hai cách sửa: thêm chỉ mục, hoặc bỏ khóa ngoại đó (khóa ngoại theo `orderId` đã lo việc xóa theo đơn). Cần migration nên em trình riêng.
+
+### 11.7 Kết quả so trên PROD 30/09/2026 khoảng 19:00 (bản `d23d807`, Render Shell worker)
+
+- **Shopee: TAT CA KHOP (16 gian). Lazada: TAT CA KHOP (4 gian).** Ở cả 20 gian: lệch số gốc 0 nhóm, lệch nhịp bán 0 sản phẩm, lệch kết quả cuối 0 trường (kết luận của Trợ lý, nguồn biên lãi, ROAS hòa vốn, bảng hòa vốn sản phẩm, mức và điểm gợi ý).
+- Gian nhiều nhóm nhất: 1.112 nhóm. Gian nhiều đơn nhất: 1.220 đơn trong 30 ngày. Lệch tiền lớn nhất trong mọi nhóm của mọi gian: 0,0424 đồng.
+- Thời gian mỗi gian: đường `sql` 8 đến 150 mili giây (gồm cả câu kiểm sổ sạch), đường `rows` 9 đến 173 mili giây. Ở số đơn hiện tại hai đường nhanh ngang nhau; khác biệt là đường `sql` không còn phanh và không giữ đơn trong RAM.
+- Kế hoạch chạy thật của gian 1.220 đơn (1.631 dòng hàng): chỉ đọc mảnh tháng 09/2026, lập kế hoạch 0,76 mili giây, chạy 13,0 mili giây, sắp xếp trong RAM 329 kB.
