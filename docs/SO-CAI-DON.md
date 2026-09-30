@@ -138,6 +138,13 @@ Render tự chạy `prisma migrate deploy` lúc khởi động (render.yaml), n�
 2. ✅ `vitest run src/integrations/__tests__/order-ledger-db.test.ts src/lib/__tests__/order-ledger.test.ts`: 12 + 14 test qua.
 3. ✅ `npx tsx scripts/ledger-backfill.ts drain`: 7.570 đơn trong 8 giây (~960 đơn/giây, gồm 9.936 dòng hàng). `status`: dirty 0, staleVersion 0, defaultRows 0. `audit --sample 1000 --min-age 0`: lệch 0. `compare --all`: 3 chủ shop KHỚP từng đồng, cộng từ sổ 16–60 ms so với tính lại 183–1.061 ms (1.011 → 5.319 đơn).
 
+**Sự cố khi lên prod 30/09/2026 (10:08–10:35, đã ghi memory `hubsell-su-co-so-cai-nano-2026-09-30`):**
+
+- Lần deploy đầu: migration **deadlock 40P01** với instance cũ đang ghi đơn (`DROP TRIGGER` cần khóa độc quyền trên `Order`) → Prisma ghi FAILED, mọi lần khởi động sau P3009. Sửa: khối lấy khóa 6 bảng theo thứ tự cố định có thử lại + `CREATE OR REPLACE TRIGGER` (`34b48a4`); anh Trung chạy `update _prisma_migrations set rolled_back_at = now() …`; worker áp lại thành công 10:08:05 UTC.
+- Ngay sau đó worker dựng sổ 42.251 đơn với lô 500/2 giây không nghỉ, mỗi lô có DELETE/UPDATE theo `orderId` quét chỉ mục của cả 84 mảnh → **Supabase compute NANO (t3a.nano) quá tải**: pool 5 kết nối của worker cạn (webhook TikTok, đẩy tồn, auto-sync timeout), rồi `P1001 Can't reach database server`, project Unhealthy ~12 phút. Em bấm Restart project trên Supabase lúc 10:30.
+- Sửa (`0baaa2b`, đã deploy worker): mọi câu ghi kèm `createdDate` để cắt mảnh; bỏ bước "kéo dòng về mảnh" khỏi đường nóng (đối soát đêm đếm và tự sửa `duplicateOrders`); lô 100 (`LEDGER_BATCH`) + nghỉ 500 ms giữa lô (`LEDGER_CHUNK_PAUSE_MS`); tắt hẳn bằng `LEDGER_WORKER_OFF=1`.
+- **Kết luận thiết kế:** (1) compute Nano không đủ cho bất kỳ việc nền nào quét hàng chục nghìn dòng — đề nghị nâng compute (gói Pro có tín dụng cho Micro); (2) với bảng phân mảnh, câu lệnh thiếu khóa phân mảnh trong WHERE đắt gấp số mảnh; (3) công tắc khẩn (env) phải đặt sẵn trước khi bật tính năng nặng, vì sửa env qua giao diện lúc sự cố không kịp.
+
 **Còn lại, anh Trung làm:**
 
 4. **Push.** Render deploy web + worker; migration tạo bảng, trigger, dòng nháp cho toàn bộ đơn prod trong một transaction (vài giây với vài chục nghìn đơn). Worker bắt đầu tính ngay, 500 đơn/2 giây (local đo ~960 đơn/giây, prod qua pooler Supabase sẽ chậm hơn).
