@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ShippingStatus, TransactionDirection } from "@prisma/client";
+import { TransactionDirection } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { canSeeFinancials, type AuthRequest } from "../middleware/auth";
 import {
@@ -7,19 +7,31 @@ import {
   dateKeyLabel,
   parseDateRange,
   toBusinessDateKey,
+  type DateRangeFilter,
 } from "../lib/date-range";
-import { channelScope, hasChannelFilter } from "../lib/channel-filter";
+import { channelScope, hasChannelFilter, type ChannelScope } from "../lib/channel-filter";
 // NGUỒN SỐ GỐC dùng chung (SSOT): mọi con số tiền của Tổng quan là SUM các
 // trường computePnlRow — không tự tính totalAmount/InventoryLog riêng nữa
 // (Lazada: totalAmount là giá GỐC chưa trừ voucher, InventoryLog không có vì
 // sync không trừ kho → hai nguồn cũ đều cho số sai với Lazada).
+// Từ 30/09/2026 các SUM đó đọc từ SỔ CÁI ĐƠN (kết quả computePnlRow đã ghi
+// xuống database — docs/SO-CAI-DON.md); fetchPnlRows chỉ còn là đường cũ sau
+// công tắc OVERVIEW_SOURCE=orders.
 import { fetchPnlRows } from "./finance";
 import { platformAdsSpend } from "../services/ads-spend";
+import { RETURNING_STATUSES } from "../lib/finance-definitions";
 import {
-  countsAsRevenue,
-  RETURNING_STATUSES,
-  summarizeMissingCost,
-} from "../lib/finance-definitions";
+  gmvMaxRowsOf,
+  overviewTotalsFromLedger,
+  overviewTotalsFromRows,
+  type OverviewTotals,
+} from "../lib/overview-totals";
+import { resolveReportSource, type ReportSource } from "../lib/report-source";
+import {
+  ensureLedgerFresh,
+  ledgerOverviewBreakdown,
+  ledgerSummary,
+} from "../services/order-ledger";
 
 const router = Router();
 
@@ -36,31 +48,41 @@ const RETURNING_IN = { in: RETURNING_STATUSES };
 // import từ date-range.ts (ghim UTC+7, không lệ thuộc giờ máy chủ Render=UTC).
 
 /**
- * Đếm số đơn PHÁT SINH (loại đơn hủy & đang hoàn/trả — CÙNG rổ với doanh thu,
- * anh Trung 26/08: thẻ Đơn hàng 20 mà caption "tính trên 19 đơn" là tự mâu
- * thuẫn trong một khối) theo NGÀY GIỜ VN trong [gte, lte]. Chỉ kéo cột
- * createdAt, cửa sổ luôn bị chặn ≤ 90 ngày bởi nơi gọi nên không lo phình.
+ * Bộ tổng ĐƠN TÍNH DOANH THU của một phạm vi (lib/overview-totals.ts) theo nguồn:
+ *   - "ledger" (mặc định từ 30/09/2026): SUM + GROUP BY trong database trên sổ
+ *     cái đơn — RAM không kéo đơn, không có phanh 20.000. `fresh` = tính nốt
+ *     dòng bẩn của khoảng đó trước (tối đa 500 đơn), còn dư → ledgerPending.
+ *   - "orders" (đường cũ, giữ 1 tuần sau công tắc OVERVIEW_SOURCE=orders):
+ *     fetchPnlRows kéo đơn theo trang, cộng bằng JS, có phanh (truncated).
+ * `byDaySince`: chuỗi ngày chỉ cần từ mốc này (trục biểu đồ); `summaryOnly`:
+ * chỉ cần tổng (kỳ trước) — bỏ hai bảng bóc.
  */
-async function countOrdersByDay(
-  scope: ReturnType<typeof channelScope>,
-  gte: Date,
-  lte: Date
-): Promise<Map<string, number>> {
-  const rows = await prisma.order.findMany({
-    where: {
-      channel: scope,
-      createdAt: { gte, lte },
-      shippingStatus: { not: ShippingStatus.CANCELLED },
-      returnStatus: { notIn: RETURNING_IN.in },
-    },
-    select: { createdAt: true },
-  });
-  const map = new Map<string, number>();
-  for (const r of rows) {
-    const key = toBusinessDateKey(r.createdAt);
-    map.set(key, (map.get(key) ?? 0) + 1);
+export async function loadOverviewTotals(
+  source: ReportSource,
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  opts: {
+    byDaySince?: string;
+    summaryOnly?: boolean;
+    fresh?: { range: DateRangeFilter | undefined };
+  } = {}
+): Promise<{ totals: OverviewTotals; truncated: boolean; ledgerPending: number }> {
+  if (source === "orders") {
+    const { rows, truncated } = await fetchPnlRows(scope, range, { lean: true });
+    return { totals: overviewTotalsFromRows(rows), truncated, ledgerPending: 0 };
   }
-  return map;
+  let ledgerPending = 0;
+  if (opts.fresh) {
+    const fresh = await ensureLedgerFresh(scope, opts.fresh.range, { maxInline: 500 });
+    ledgerPending = fresh.dirty + fresh.staleVersion;
+  }
+  const [summary, breakdown] = await Promise.all([
+    ledgerSummary(scope, range),
+    opts.summaryOnly
+      ? Promise.resolve({ byChannelId: new Map(), byDay: new Map() })
+      : ledgerOverviewBreakdown(scope, range, { byDaySince: opts.byDaySince }),
+  ]);
+  return { totals: overviewTotalsFromLedger(summary, breakdown), truncated: false, ledgerPending };
 }
 
 // GET /api/analytics — Báo cáo kinh doanh REALTIME cho trang Tổng quan.
@@ -86,6 +108,11 @@ router.get("/", async (req: AuthRequest, res, next) => {
     const scope = channelScope(req);
     const filteredByChannel = hasChannelFilter(req);
     const seesFinancials = canSeeFinancials(req);
+    // Nguồn số: sổ cái đơn (mặc định) hay đường cũ kéo đơn (?source=orders /
+    // OVERVIEW_SOURCE=orders) — hai đường cho cùng kết quả.
+    const source = resolveReportSource(req.query.source, process.env.OVERVIEW_SOURCE);
+    /** Người không được xem tài chính giữ 0 để không rò số. */
+    const fin = (v: number) => (seesFinancials ? v : 0);
 
     /*
      * KỲ TRƯỚC LIỀN KỀ — để tính mức tăng/giảm.
@@ -103,25 +130,51 @@ router.get("/", async (req: AuthRequest, res, next) => {
         })()
       : undefined;
 
+    // KHUNG TRỤC NGÀY của biểu đồ — tính trước để chỉ xin chuỗi ngày trong
+    // đúng khung đó. Bám bộ lọc người dùng chọn; không lọc thì lấy 14 ngày gần
+    // nhất. Trần 90 điểm để khoảng dài (cả năm) không làm vỡ trục X. Mốc
+    // đầu/cuối đều là 00:00 GIỜ VN (businessDayStart) — không dùng setHours
+    // theo giờ máy chủ.
+    const MAX_POINTS = 90;
+    const TREND_DAYS = 14;
+    const DAY_MS = 86_400_000;
+    const chartEnd = businessDayStart(range ? range.lte : new Date());
+    let chartStart = range
+      ? businessDayStart(range.gte)
+      : new Date(chartEnd.getTime() - 13 * DAY_MS);
+    const spanDays =
+      Math.round((chartEnd.getTime() - chartStart.getTime()) / DAY_MS) + 1;
+    if (spanDays > MAX_POINTS) {
+      chartStart = new Date(chartEnd.getTime() - (MAX_POINTS - 1) * DAY_MS);
+    }
+    const trendStart = new Date(chartEnd.getTime() - (TREND_DAYS - 1) * DAY_MS);
+
     // 1) Toàn bộ đơn PHÁT SINH trong kỳ, TRỪ đơn hủy VÀ đơn đang hoàn/trả.
     // Đơn hoàn không được coi là bán thành công → không tính vào doanh thu/giá
     // vốn/chuỗi ngày (thống nhất với ô "Hoàn/Trả" ở phễu bên dưới).
     // NGUỒN SỐ: computePnlRow — cùng tập đơn + cùng công thức với Lãi/Lỗ
-    // Thực Hiện và Báo cáo dòng tiền.
-    const { rows: periodRows, truncated } = await fetchPnlRows(scope, range, { lean: true });
-    const activeRows = periodRows.filter(countsAsRevenue);
+    // Thực Hiện và Báo cáo dòng tiền. Sổ cái: làm tươi một lần cho cả khoảng
+    // mà trang này đọc (kỳ trước + cửa sổ trend + kỳ hiện tại).
+    const freshRange = range
+      ? {
+          gte: new Date(Math.min(prevRange!.gte.getTime(), trendStart.getTime())),
+          lte: range.lte,
+        }
+      : undefined;
+    const { totals, truncated, ledgerPending } = await loadOverviewTotals(source, scope, range, {
+      byDaySince: toBusinessDateKey(chartStart),
+      fresh: { range: freshRange },
+    });
+    const active = totals.active;
 
     // Doanh thu GMV phát sinh = Σ "Giá trị đơn hàng" (doanh thu gốc) — khớp
     // thẻ "Tổng giá trị sản phẩm" của Báo cáo dòng tiền cùng kỳ lọc.
-    const totalRevenue = activeRows.reduce((sum, r) => sum + r.revenueGross, 0);
+    const totalRevenue = active.revenueGross;
 
     // Số MÓN bán ra = Σ quantity các dòng hàng trên CÙNG rổ đơn phát sinh —
     // dòng phụ cạnh số đơn ở thẻ Đơn hàng (anh Trung 20/09). Đếm theo dòng sàn
     // ghi: combo = 1 món, quà tặng 0đ vẫn đếm; đơn cũ chưa có OrderItem góp 0.
-    const itemQuantity = activeRows.reduce(
-      (sum, r) => sum + r.items.reduce((s, it) => s + it.quantity, 0),
-      0
-    );
+    const itemQuantity = active.totalQuantity;
 
     /*
      * SÀN KHẤU TRỪ — TOÀN BỘ khoản sàn giữ lại trên mỗi đơn = Giá trị đơn −
@@ -129,16 +182,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
      * trợ giá; đơn chưa quyết toán chỉ gồm voucher đã biết — không ước %).
      * Nhờ vậy chuỗi trừ dọc của Tổng quan khớp thác nước Báo cáo dòng tiền.
      */
-    const totalPlatformFee = seesFinancials
-      ? activeRows.reduce((sum, r) => sum + (r.revenueGross - r.platformRevenue), 0)
-      : 0;
+    const totalPlatformFee = fin(active.platformDeduction);
 
     // Bóc riêng THUẾ SÀN (TNCN + VAT thu hộ) khỏi con số khấu trừ gộp — donut
     // Cơ cấu Chi phí cần tách "Phí dịch vụ sàn" và "Thuế sàn" thành 2 khoản
     // theo chuẩn P&L. Phí dịch vụ = totalPlatformFee − totalPlatformTax.
-    const totalPlatformTax = seesFinancials
-      ? activeRows.reduce((sum, r) => sum + r.platformTax, 0)
-      : 0;
+    const totalPlatformTax = fin(active.platformTax);
 
     /*
      * BÓC TÁCH SÀN KHẤU TRỪ theo ĐÚNG các dòng của thẻ "Tổng giá trị sản phẩm"
@@ -147,21 +196,19 @@ router.get("/", async (req: AuthRequest, res, next) => {
      * bucket nào (lệch đối soát/khoản sàn chưa bóc cột, đã cấn trợ giá sàn) để
      * Σ các mảnh donut = đúng totalPlatformFee, không rơi rớt đồng nào.
      */
-    const sumRows = (pick: (r: (typeof activeRows)[number]) => number) =>
-      seesFinancials ? activeRows.reduce((s, r) => s + pick(r), 0) : 0;
-    const feeService = sumRows(
-      (r) => r.feeFixedPayment + r.feeService + r.feeSellerProtection
+    const feeService = fin(
+      active.feeFixedPayment + active.feeService + active.feeSellerProtection
     );
-    const feeAffiliate = sumRows((r) => r.feeAffiliate);
-    const feeVoucher = sumRows((r) => r.sellerVoucher);
-    const feeShippingDiff = sumRows((r) => r.shippingFeeDiff);
-    const feeAdWallet = sumRows((r) => r.adWalletTopup);
-    const feeSubsidy = sumRows((r) => r.platformSubsidy);
+    const feeAffiliate = fin(active.feeAffiliate);
+    const feeVoucher = fin(active.sellerVoucher);
+    const feeShippingDiff = fin(active.shippingFeeDiff);
+    const feeAdWallet = fin(active.adWalletTopup);
+    const feeSubsidy = fin(active.platformSubsidy);
     // TIỀN HOÀN TRẢ KHÁCH của đơn còn tính doanh thu (hoàn tiền 100%/1 phần
     // khách giữ hàng, trả 1 vài SKU) — engine hoàn tiền đã trừ khoản này khỏi
     // platformRevenue nên nó NẰM TRONG totalPlatformFee; tách bucket riêng để
     // donut không nhét nhầm vào "Khấu trừ khác của sàn" (sai bản chất).
-    const feeRefund = sumRows((r) => r.refundedAmount);
+    const feeRefund = fin(active.refundedAmount);
     const feeOther =
       totalPlatformFee -
       (feeService +
@@ -186,9 +233,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // 2) Giá vốn = Σ costSnapshot (OrderItem.costPriceAtSale, fallback log trừ
     // kho) — cùng công thức orderCost với mọi báo cáo tài chính. Người không
     // được xem tài chính giữ 0 để không rò số.
-    const totalCost = seesFinancials
-      ? activeRows.reduce((sum, r) => sum + r.costSnapshot, 0)
-      : 0;
+    const totalCost = fin(active.costSnapshot);
 
     const grossProfit = totalRevenue - totalCost;
 
@@ -206,7 +251,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // tiền quảng cáo sàn (tháng 8 tài khoản demo lệch 617.858 ₫). Gộp vào nhóm
     // ADS của chi phí hoạt động để thác nước, donut và thẻ Tổng Chi phí cùng đổi.
     const platformAds = seesFinancials
-      ? await platformAdsSpend(scope, range, activeRows)
+      ? await platformAdsSpend(scope, range, gmvMaxRowsOf(totals))
       : null;
     const platformAdsTotal = platformAds?.total ?? 0;
 
@@ -238,7 +283,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // ĐƠN CHƯA CÓ GIÁ VỐN không tính vào lợi nhuận (anh Trung chốt 30/09/2026),
     // vẫn nằm trong doanh thu / phí sàn. Thác nước thêm một bậc để vẫn đóng.
     const missingCost = seesFinancials
-      ? summarizeMissingCost(activeRows)
+      ? { orderCount: active.missingCostCount, excludedProfit: active.missingCostExcludedProfit }
       : { orderCount: 0, excludedProfit: 0 };
 
     // Lợi nhuận thuần = Lợi nhuận gộp − Phí sàn − Chi phí hoạt động − phần lợi
@@ -247,15 +292,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
       grossProfit - totalPlatformFee - totalOperatingExpense - missingCost.excludedProfit;
 
     // 3) Doanh thu theo ngày (kể cả ngày không có đơn để đường biểu đồ liền mạch)
-    //    Khung thời gian bám đúng bộ lọc người dùng chọn; không lọc thì lấy 14
-    //    ngày gần nhất. Trần 90 điểm để khoảng dài (cả năm) không làm vỡ trục X.
-    const MAX_POINTS = 90;
-    const revenueMap = new Map<string, number>();
-    for (const r of activeRows) {
-      const key = toBusinessDateKey(r.createdAt);
-      revenueMap.set(key, (revenueMap.get(key) ?? 0) + r.revenueGross);
-    }
-
+    //    trên khung trục ngày đã tính ở đầu hàm.
     /*
      * CHI PHÍ THEO NGÀY = giá vốn + SÀN KHẤU TRỪ của đơn phát sinh trong ngày
      * + chi phí vận hành ghi nhận trong ngày. Đủ cả ba khoản để Σ cột chi phí
@@ -267,9 +304,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       costMap.set(key, (costMap.get(key) ?? 0) + amount);
 
     if (seesFinancials) {
-      for (const r of activeRows) {
-        const dayCost = r.costSnapshot + (r.revenueGross - r.platformRevenue);
-        if (dayCost) addCost(toBusinessDateKey(r.createdAt), dayCost);
+      for (const [day, d] of totals.byDay) {
+        const dayCost = d.costSnapshot + d.platformDeduction;
+        if (dayCost) addCost(day, dayCost);
       }
     }
     for (const [day, amount] of platformAds?.byDay ?? []) addCost(day, amount);
@@ -277,29 +314,9 @@ router.get("/", async (req: AuthRequest, res, next) => {
       addCost(toBusinessDateKey(e.expenseDate), Number(e.amount));
     }
 
-    // Mốc đầu/cuối trục ngày đều là 00:00 GIỜ VN (businessDayStart) — không
-    // dùng setHours theo giờ máy chủ.
-    const DAY_MS = 86_400_000;
-    const chartEnd = businessDayStart(range ? range.lte : new Date());
-    let chartStart = range
-      ? businessDayStart(range.gte)
-      : new Date(chartEnd.getTime() - 13 * DAY_MS);
-    const spanDays =
-      Math.round((chartEnd.getTime() - chartStart.getTime()) / DAY_MS) + 1;
-    if (spanDays > MAX_POINTS) {
-      chartStart = new Date(chartEnd.getTime() - (MAX_POINTS - 1) * DAY_MS);
-    }
-
-    // SỐ ĐƠN THEO NGÀY — rổ ĐƠN PHÁT SINH (loại hủy & hoàn/trả) cho khớp thẻ
-    // "Đơn hàng" + caption "tính trên N đơn phát sinh"; tổng MỌI trạng thái đã
-    // có phễu vận hành lo. Chỉ kéo createdAt trong đúng khung trục X (≤ 90
-    // ngày) nên nhẹ, không phụ thuộc "xem toàn bộ".
-    const ordersMap = await countOrdersByDay(
-      scope,
-      chartStart,
-      new Date(chartEnd.getTime() + DAY_MS - 1)
-    );
-
+    // SỐ ĐƠN THEO NGÀY — rổ ĐƠN PHÁT SINH (loại hủy & hoàn/trả — CÙNG rổ với
+    // doanh thu, anh Trung 26/08: thẻ Đơn hàng 20 mà caption "tính trên 19 đơn"
+    // là tự mâu thuẫn trong một khối); tổng MỌI trạng thái đã có phễu vận hành lo.
     const revenueByDay: {
       date: string;
       label: string;
@@ -309,11 +326,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }[] = [];
     for (let t = chartStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
       const key = toBusinessDateKey(new Date(t));
+      const d = totals.byDay.get(key);
       revenueByDay.push({
         date: key,
         label: dateKeyLabel(key),
-        revenue: revenueMap.get(key) ?? 0,
-        orders: ordersMap.get(key) ?? 0,
+        revenue: d?.revenueGross ?? 0,
+        orders: d?.count ?? 0,
         cost: costMap.get(key) ?? 0,
       });
     }
@@ -322,11 +340,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
      * 3a) TREND 14 NGÀY cho sparkline chìm dưới 4 thẻ KPI — luôn là 14 ngày
      * liền trước tính đến NGÀY CUỐI kỳ lọc, để xem "Hôm nay" (1 điểm) thẻ vẫn
      * có đường sóng. Kỳ lọc đã ≥ 14 ngày thì cắt đuôi revenueByDay (cùng
-     * bucket, cùng computePnlRow → số y hệt); ngắn hơn thì chạy MỘT truy vấn
-     * RIÊNG trên cửa sổ 14 ngày — tuyệt đối không đụng tập activeRows nên mọi
+     * bucket, cùng computePnlRow → số y hệt); ngắn hơn thì chạy MỘT lượt đọc
+     * RIÊNG trên cửa sổ 14 ngày — tuyệt đối không đụng bộ tổng của kỳ nên mọi
      * tổng số phía trên giữ nguyên 100%.
      */
-    const TREND_DAYS = 14;
     type TrendPoint = {
       date: string;
       label: string;
@@ -338,15 +355,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
     if (revenueByDay.length >= TREND_DAYS) {
       trend = revenueByDay.slice(-TREND_DAYS);
     } else {
-      const trendStart = new Date(
-        chartEnd.getTime() - (TREND_DAYS - 1) * DAY_MS
-      );
       const trendRange = {
         gte: trendStart,
         lte: new Date(chartEnd.getTime() + DAY_MS - 1),
       };
-      const [{ rows: trendAllRows }, trendExpenses, trendOrders] = await Promise.all([
-        fetchPnlRows(scope, trendRange, { lean: true }),
+      const [{ totals: trendTotals }, trendExpenses] = await Promise.all([
+        loadOverviewTotals(source, scope, trendRange, {
+          byDaySince: toBusinessDateKey(trendStart),
+        }),
         seesFinancials
           ? prisma.operatingExpense.findMany({
               where: {
@@ -357,24 +373,15 @@ router.get("/", async (req: AuthRequest, res, next) => {
               select: { amount: true, expenseDate: true },
             })
           : Promise.resolve([]),
-        countOrdersByDay(scope, trendRange.gte, trendRange.lte),
       ]);
-      const tRevenue = new Map<string, number>();
       const tCost = new Map<string, number>();
       const bump = (m: Map<string, number>, k: string, v: number) =>
         m.set(k, (m.get(k) ?? 0) + v);
-      const trendRows = trendAllRows.filter(countsAsRevenue);
       if (seesFinancials) {
-        const trendAds = await platformAdsSpend(scope, trendRange, trendRows);
+        const trendAds = await platformAdsSpend(scope, trendRange, gmvMaxRowsOf(trendTotals));
         for (const [day, amount] of trendAds.byDay) bump(tCost, day, amount);
-      }
-      for (const r of trendRows) {
-        const key = toBusinessDateKey(r.createdAt);
-        bump(tRevenue, key, r.revenueGross);
-        if (seesFinancials) {
-          // Cùng công thức chi phí/ngày với costMap phía trên
-          bump(tCost, key, r.costSnapshot + (r.revenueGross - r.platformRevenue));
-        }
+        // Cùng công thức chi phí/ngày với costMap phía trên
+        for (const [day, d] of trendTotals.byDay) bump(tCost, day, d.costSnapshot + d.platformDeduction);
       }
       for (const e of trendExpenses) {
         bump(tCost, toBusinessDateKey(e.expenseDate), Number(e.amount));
@@ -382,11 +389,12 @@ router.get("/", async (req: AuthRequest, res, next) => {
       trend = [];
       for (let t = trendStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
         const key = toBusinessDateKey(new Date(t));
+        const d = trendTotals.byDay.get(key);
         trend.push({
           date: key,
           label: dateKeyLabel(key),
-          revenue: tRevenue.get(key) ?? 0,
-          orders: trendOrders.get(key) ?? 0,
+          revenue: d?.revenueGross ?? 0,
+          orders: d?.count ?? 0,
           cost: tCost.get(key) ?? 0,
         });
       }
@@ -439,20 +447,18 @@ router.get("/", async (req: AuthRequest, res, next) => {
       ? await (async () => {
           // Cùng công thức doanh thu với kỳ hiện tại (Σ revenueGross qua
           // computePnlRow) — so sánh mới cùng thước đo, hết lệch giả.
-          const [{ rows: prevRows }, cnt] = await Promise.all([
-            fetchPnlRows(scope, prevRange, { lean: true }),
+          const [{ totals: prev }, cnt] = await Promise.all([
+            loadOverviewTotals(source, scope, prevRange, { summaryOnly: true }),
             prisma.order.count({
               where: { channel: scope, createdAt: prevRange },
             }),
           ]);
-          const prevActive = prevRows.filter(countsAsRevenue);
-          const prevRevenue = prevActive.reduce((s, r) => s + r.revenueGross, 0);
           // activeOrderCount = rổ đơn phát sinh (khớp thẻ Đơn hàng); orderCount
           // mọi trạng thái giữ lại cho ai cần so tổng phễu.
           return {
-            totalRevenue: prevRevenue,
+            totalRevenue: prev.active.revenueGross,
             orderCount: cnt,
-            activeOrderCount: prevActive.length,
+            activeOrderCount: prev.active.count,
           };
         })()
       : null;
@@ -460,21 +466,14 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // 4) Đóng góp của TỪNG GIAN HÀNG (không tính đơn đã hủy).
     //    Gom theo channelId chứ không theo tên sàn: hai gian cùng nằm trên
     //    Shopee phải là hai dòng riêng thì chủ shop mới biết gian nào đang gánh
-    //    doanh thu, gian nào đang lỗ. Gom từ activeRows (SSOT) — cùng công
+    //    doanh thu, gian nào đang lỗ. Gom từ CÙNG bộ tổng (SSOT) — cùng công
     //    thức doanh thu với ô tổng phía trên, không groupBy totalAmount riêng.
-    const byChannelAgg = new Map<string, { count: number; revenue: number }>();
-    for (const r of activeRows) {
-      const b = byChannelAgg.get(r.channelId) ?? { count: 0, revenue: 0 };
-      b.count += 1;
-      b.revenue += r.revenueGross;
-      byChannelAgg.set(r.channelId, b);
-    }
     const channels = await prisma.channel.findMany({
       where: { userId: ownerId },
       select: { id: true, channelName: true, shopName: true },
     });
     const channelById = new Map(channels.map((c) => [c.id, c]));
-    const ordersByChannel = [...byChannelAgg.entries()]
+    const ordersByChannel = [...totals.byChannelId.entries()]
       .map(([channelId, g]) => {
         const c = channelById.get(channelId);
         return {
@@ -482,7 +481,7 @@ router.get("/", async (req: AuthRequest, res, next) => {
           channelName: c?.channelName ?? "KHÁC",
           shopName: c?.shopName ?? "Gian hàng đã xoá",
           count: g.count,
-          revenue: g.revenue,
+          revenue: g.revenueGross,
         };
       })
       .sort((a, b) => b.count - a.count);
@@ -493,8 +492,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
     // tab Network là đọc được nguyên số liệu.
     if (!seesFinancials) {
       res.json({
-        activeOrderCount: activeRows.length,
-      itemQuantity,
+        source,
+        ledgerPending,
+        activeOrderCount: active.count,
+        itemQuantity,
         totalRevenue,
         // Bỏ trường cost khỏi từng điểm — SALES chỉ được thấy đường doanh thu
         revenueByDay: revenueByDay.map(({ date, label, revenue, orders }) => ({
@@ -519,8 +520,10 @@ router.get("/", async (req: AuthRequest, res, next) => {
     }
 
     res.json({
-      truncated, // kỳ vượt 20.000 đơn — số là cận dưới
-      activeOrderCount: activeRows.length,
+      truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
+      source, // "ledger" | "orders"
+      ledgerPending, // đơn trong khoảng trang đọc còn chờ sổ cái tính lại (0 khi đọc đường cũ)
+      activeOrderCount: active.count,
       itemQuantity,
       totalRevenue,
       totalCost,
