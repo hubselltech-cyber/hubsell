@@ -18,6 +18,9 @@
 // Quy ước SQL thô: mọi tham số đều ép kiểu tường minh (::numeric, ::date,
 // ::"ShippingStatus"...) vì Prisma gửi chuỗi dưới dạng text; VALUES nhiều dòng
 // ghi theo lô ≤ 100 đơn/câu để dưới trần 65.535 tham số của Postgres.
+// NGOẠI LỆ cho câu ĐỌC: mốc thời gian / mốc ngày đem so với cột KHÔNG ép kiểu
+// từ chuỗi (Postgres đổi kiểu lại ở từng dòng quét) mà viết dạng hằng qua
+// tsParam / dayParam — xem timestampConst.
 // ============================================================
 
 import { Prisma, type ShippingStatus } from "@prisma/client";
@@ -109,21 +112,48 @@ export const dateConst = (dateKey: string): Prisma.Sql =>
   Prisma.sql`(DATE '1970-01-01' + ${Math.round(Date.parse(`${dateKey}T00:00:00Z`) / 86_400_000)}::int)`;
 
 /**
+ * Cách viết mốc kỳ trong MỌI câu đọc sổ cái:
+ *   "const" (mặc định từ 30/09/2026 tối): dạng hằng — timestampConst / dateConst;
+ *   "text" : cách cũ, chuỗi ép `::timestamp` / `::date`.
+ * Hai cách cho cùng giá trị nên cùng kết quả; khác nhau ở tốc độ và kế hoạch
+ * chạy. Env LEDGER_SCOPE_PARAMS=text là đường lui (giữ tới ~07/10) phòng khi một
+ * báo cáo trên prod chạy chậm đi vì Postgres đổi kế hoạch.
+ */
+export type LedgerParamStyle = "const" | "text";
+let paramStyle: LedgerParamStyle = process.env.LEDGER_SCOPE_PARAMS?.trim().toLowerCase() === "text" ? "text" : "const";
+
+/**
+ * Chạy `fn` với một cách viết mốc kỳ cụ thể rồi trả lại cách đang dùng. CHỈ cho
+ * công cụ đối chiếu và test (chạy tuần tự): đây là biến chung của tiến trình,
+ * mọi câu đọc sổ dựng trong lúc `fn` chạy đều theo nó.
+ */
+export async function withLedgerParamStyle<T>(style: LedgerParamStyle, fn: () => Promise<T>): Promise<T> {
+  const previous = paramStyle;
+  paramStyle = style;
+  try {
+    return await fn();
+  } finally {
+    paramStyle = previous;
+  }
+}
+
+/** Mốc thời gian / mốc ngày ("yyyy-mm-dd") của một câu đọc sổ, theo cách viết đang dùng. */
+const tsParam = (d: Date): Prisma.Sql =>
+  paramStyle === "const" ? timestampConst(d) : Prisma.sql`${d.toISOString()}::timestamp`;
+const dayParam = (dateKey: string): Prisma.Sql =>
+  paramStyle === "const" ? dateConst(dateKey) : Prisma.sql`${dateKey}::date`;
+
+/**
  * WHERE cho phạm vi gian (cùng nghĩa với `channel: scope` của Prisma) + kỳ.
  * Kỳ lọc trên cột thời gian (đúng biên giờ VN) VÀ cột ngày (để Postgres cắt
  * phân mảnh theo tháng). `alias` = tên bảng/bí danh đứng trước cột.
- * `constParams`: mốc kỳ viết dạng hằng (xem timestampConst) — cho câu quét
- * nhiều dòng; cùng điều kiện, cùng kết quả.
  */
 export function ledgerScopeSql(
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
-  opts: { axis?: LedgerDateAxis; alias?: string; constParams?: boolean } = {}
+  opts: { axis?: LedgerDateAxis; alias?: string } = {}
 ): Prisma.Sql {
   const a = opts.alias ? Prisma.raw(`${opts.alias}.`) : Prisma.empty;
-  const ts = (d: Date) => (opts.constParams ? timestampConst(d) : Prisma.sql`${d.toISOString()}::timestamp`);
-  const day = (d: Date) =>
-    opts.constParams ? dateConst(toBusinessDateKey(d)) : Prisma.sql`${toBusinessDateKey(d)}::date`;
   const parts: Prisma.Sql[] = [Prisma.sql`${a}"ownerId" = ${scope.userId}`];
   if (typeof scope.id === "string") {
     parts.push(Prisma.sql`${a}"channelId" = ${scope.id}`);
@@ -137,10 +167,10 @@ export function ledgerScopeSql(
   if (range) {
     const col = AXIS_COLUMNS[opts.axis ?? "created"];
     parts.push(
-      Prisma.sql`${a}${Prisma.raw(col.ts)} >= ${ts(range.gte)} AND ${a}${Prisma.raw(col.ts)} <= ${ts(range.lte)}`
+      Prisma.sql`${a}${Prisma.raw(col.ts)} >= ${tsParam(range.gte)} AND ${a}${Prisma.raw(col.ts)} <= ${tsParam(range.lte)}`
     );
     parts.push(
-      Prisma.sql`${a}${Prisma.raw(col.date)} >= ${day(range.gte)} AND ${a}${Prisma.raw(col.date)} <= ${day(range.lte)}`
+      Prisma.sql`${a}${Prisma.raw(col.date)} >= ${dayParam(toBusinessDateKey(range.gte))} AND ${a}${Prisma.raw(col.date)} <= ${dayParam(toBusinessDateKey(range.lte))}`
     );
   }
   return Prisma.join(parts, " AND ");
@@ -510,7 +540,7 @@ export async function markLedgerScope(
       ${typeof scope.id === "string" ? Prisma.sql`AND c."id" = ${scope.id}` : Prisma.empty}
       ${scope.id && typeof scope.id !== "string" ? (scope.id.in.length ? Prisma.sql`AND c."id" IN (${Prisma.join(scope.id.in)})` : Prisma.sql`AND FALSE`) : Prisma.empty}
       ${scope.channelName ? Prisma.sql`AND c."channelName" = ${scope.channelName}::"ChannelName"` : Prisma.empty}
-      ${range ? Prisma.sql`AND o."createdAt" >= ${range.gte.toISOString()}::timestamp AND o."createdAt" <= ${range.lte.toISOString()}::timestamp` : Prisma.empty}
+      ${range ? Prisma.sql`AND o."createdAt" >= ${tsParam(range.gte)} AND o."createdAt" <= ${tsParam(range.lte)}` : Prisma.empty}
       AND NOT EXISTS (SELECT 1 FROM "order_ledger" l WHERE l."orderId" = o."id")
     ON CONFLICT ("createdDate", "orderId") DO NOTHING
   `);
@@ -842,7 +872,7 @@ export async function ledgerCashFlowBreakdown(
     prisma.$queryRaw<{ key: Date; rev: unknown; cogs: unknown }[]>(Prisma.sql`
       SELECT "createdDate" AS key, COALESCE(sum("platformRevenue"), 0) AS rev, COALESCE(sum("costSnapshot"), 0) AS cogs
       FROM "order_ledger" WHERE ${where}
-      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${opts.byDaySince}::date` : Prisma.empty}
+      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${dayParam(opts.byDaySince)}` : Prisma.empty}
       GROUP BY "createdDate"
     `),
   ]);
@@ -888,7 +918,7 @@ export async function ledgerOverviewBreakdown(
              COALESCE(sum("revenueGross"), 0) AS rev, COALESCE(sum("costSnapshot"), 0) AS cogs,
              COALESCE(sum("platformDeduction"), 0) AS ded
       FROM "order_ledger" WHERE ${where}
-      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${opts.byDaySince}::date` : Prisma.empty}
+      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${dayParam(opts.byDaySince)}` : Prisma.empty}
       GROUP BY "createdDate"
     `),
   ]);
@@ -954,7 +984,7 @@ export async function ledgerPnlList(
     FROM "order_ledger"
     WHERE ${ledgerPnlWhere(scope, range, filter)}
       ${page.cursor
-        ? Prisma.sql`AND ("createdAt", "orderId") < (${page.cursor.createdAt.toISOString()}::timestamp, ${page.cursor.orderId})`
+        ? Prisma.sql`AND ("createdAt", "orderId") < (${tsParam(page.cursor.createdAt)}, ${page.cursor.orderId})`
         : Prisma.empty}
     ORDER BY "createdAt" DESC, "orderId" DESC
     LIMIT ${limit}::int OFFSET ${offset}::int
@@ -1003,7 +1033,7 @@ export async function ledgerPnlSummary(
     prisma.$queryRaw<{ key: Date; n: unknown; profit: unknown; rc: unknown; rl: unknown }[]>(Prisma.sql`
       SELECT "createdDate" AS key, count(*) AS n, ${profit} AS profit, ${returnCount} AS rc, ${returnLoss} AS rl
       FROM "order_ledger" WHERE ${where}
-      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${opts.byDaySince}::date` : Prisma.empty}
+      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${dayParam(opts.byDaySince)}` : Prisma.empty}
       GROUP BY "createdDate"
     `),
   ]);
@@ -1537,10 +1567,10 @@ function marginByGroupQuery(
       SELECT l."orderId", l."channelSku", l."quantity", l."actualRevenue", l."profit",
              l."missingCostPrice" AS "missing",
              (l."lineGross" > 0) AS "paid",
-             (l."createdAt" >= ${timestampConst(opts.recentSince)}) AS "recent",
+             (l."createdAt" >= ${tsParam(opts.recentSince)}) AS "recent",
              (l."costPriceAtSale" <= 0) AS "noCost"
       FROM "order_line_ledger" l
-      WHERE ${ledgerScopeSql(scope, range, { alias: "l", constParams: true })}
+      WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
         AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
         AND l."shippingStatus" <> 'CANCELLED'
         ${opts.settledOnly ? Prisma.sql`AND l."isSettled"` : Prisma.empty}

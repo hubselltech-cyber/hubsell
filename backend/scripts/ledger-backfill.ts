@@ -19,6 +19,9 @@
 //       docs/QUANG-CAO-GOM-TRONG-DATABASE.md): từng nhóm, nhịp bán, ba kết quả cuối. Phải
 //       "TAT CA KHOP" trước khi bật ADS_MARGIN_SOURCE=sql. --explain (kèm --channel): in kế
 //       hoạch chạy thật của câu gom.
+//   npx tsx scripts/ledger-backfill.ts params-compare [--owner <userId>]
+//       so MỌI câu đọc sổ ở hai cách viết mốc kỳ (chuỗi ép kiểu ↔ dạng hằng, xem LedgerParamStyle):
+//       từng chủ shop × 6 kỳ, từng gian × 2 kỳ; kết quả phải giống hệt, in kèm tổng thời gian mỗi cách.
 //
 // Chạy trên Render Shell của WORKER (đừng redeploy khi đang chạy). Chỉ đọc
 // đơn theo lô ≤ 500 nên không dồn tải; `drain` tự dừng khi hết dòng bẩn.
@@ -46,6 +49,7 @@ import {
 } from "../src/integrations/shopee/ads-insights";
 import { compareMarginSources } from "../src/integrations/shopee/ads-margin-compare";
 import { explainLedgerMarginByGroup } from "../src/services/order-ledger";
+import { compareLedgerParamStyles, defaultCompareRanges } from "../src/services/order-ledger-params-compare";
 import {
   loadBreakevenRows,
   tiktokBreakevenBase,
@@ -193,6 +197,54 @@ async function main() {
       console.log(`${ok ? "KHOP" : "LECH"} ${ch.channelName} ${ch.id} ${line}`);
     }
     console.log(allMatch ? `TAT CA KHOP (${channels.length} gian)` : "CO LECH - xem tren");
+    if (!allMatch) process.exitCode = 2;
+    return;
+  }
+  if (cmd === "params-compare") {
+    const onlyOwner = arg("owner");
+    const channels = await prisma.channel.findMany({
+      where: onlyOwner ? { userId: onlyOwner } : {},
+      select: { id: true, userId: true, channelName: true },
+      orderBy: [{ userId: "asc" }, { id: "asc" }],
+    });
+    const ranges = defaultCompareRanges();
+    const channelRanges = ranges.filter((r) => r.label === "thangnay" || r.label === "400ngay");
+    const total = new Map<string, { text: number; const: number }>();
+    let allMatch = true;
+    let probes = 0;
+    const add = (label: string, r: Awaited<ReturnType<typeof compareLedgerParamStyles>>) => {
+      allMatch &&= r.ok;
+      probes += r.probes;
+      let text = 0;
+      let konst = 0;
+      for (const [name, t] of r.timing) {
+        const sum = total.get(name) ?? { text: 0, const: 0 };
+        sum.text += t.text;
+        sum.const += t.const;
+        total.set(name, sum);
+        text += t.text;
+        konst += t.const;
+      }
+      console.log(`${r.ok ? "KHOP" : "LECH"} ${label} luot=${r.probes} text=${Math.round(text)}ms const=${Math.round(konst)}ms`);
+      for (const m of r.mismatches.slice(0, 5)) console.log(`   ${m.slice(0, 400)}`);
+    };
+    for (const userId of [...new Set(channels.map((c) => c.userId))]) {
+      add(`owner ${userId}`, await compareLedgerParamStyles({ userId }, ranges, { label: userId }));
+    }
+    for (const ch of channels) {
+      add(
+        `gian ${ch.channelName} ${ch.id}`,
+        await compareLedgerParamStyles({ userId: ch.userId, id: ch.id, channelName: ch.channelName }, channelRanges, {
+          channel: ch,
+          label: ch.id,
+        })
+      );
+    }
+    console.log("--- tong thoi gian theo cau doc (ms): text / const");
+    for (const [name, t] of [...total].sort((a, b) => b[1].text - a[1].text)) {
+      console.log(`${name.padEnd(22)} ${String(Math.round(t.text)).padStart(7)} / ${String(Math.round(t.const)).padStart(7)}`);
+    }
+    console.log(allMatch ? `TAT CA KHOP (${probes} luot so)` : "CO LECH - xem tren");
     if (!allMatch) process.exitCode = 2;
     return;
   }
