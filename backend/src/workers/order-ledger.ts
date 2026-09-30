@@ -46,8 +46,15 @@ let consecutiveErrors = 0;
 export function startOrderLedgerWorker(): void {
   if (started) return;
   started = true;
-  if (process.env.LEDGER_WORKER_OFF === "1") {
-    console.log("[Ledger] TẮT (LEDGER_WORKER_OFF=1) — sổ vẫn được đánh dấu, báo cáo tự tính nốt phần cần");
+  // MẶC ĐỊNH TẮT (30/09/2026): dựng sổ 42.000 đơn trên Supabase compute NANO
+  // làm database Unhealthy hai lần trong một giờ, kể cả sau khi hạ lô 100 +
+  // nghỉ 500ms. Chỉ bật khi đặt LEDGER_WORKER_ON=1 (sau khi nâng compute hoặc
+  // chạy lúc vắng khách). Trigger vẫn đánh dấu dòng bẩn; báo cáo dùng sổ tự
+  // tính nốt phần của kỳ mình cần (ensureLedgerFresh); script drain chạy tay.
+  if (process.env.LEDGER_WORKER_ON !== "1" || process.env.LEDGER_WORKER_OFF === "1") {
+    console.log(
+      "[Ledger] TẮT (mặc định; bật bằng LEDGER_WORKER_ON=1) — sổ vẫn được đánh dấu, báo cáo tự tính nốt phần cần"
+    );
     return;
   }
   console.log(`[Ledger] BẬT — tính lại sổ cái đơn: lô ${BATCH}, nhịp ${POLL_MS}ms; bảo trì đêm ${NIGHTLY_HOUR_VN}h VN`);
