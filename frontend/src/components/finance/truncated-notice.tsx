@@ -12,3 +12,17 @@ export function TruncatedNotice({ show }: { show?: boolean }) {
     </p>
   );
 }
+
+/**
+ * Báo cáo đọc từ sổ cái đơn: vài đơn vừa đổi còn chờ worker tính lại. Không
+ * phải số thiếu (đơn vẫn được cộng theo số cũ của nó) — chỉ nhắc tải lại sau.
+ */
+export function LedgerPendingNotice({ count }: { count?: number }) {
+  if (!count || count <= 0) return null;
+  return (
+    <p className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-700 dark:text-sky-300">
+      {count.toLocaleString("vi-VN")} đơn vừa thay đổi đang được cập nhật vào báo cáo. Số có thể lệch nhỏ,
+      anh/chị tải lại sau ít phút.
+    </p>
+  );
+}

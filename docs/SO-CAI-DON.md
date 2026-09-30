@@ -170,7 +170,12 @@ Render tự chạy `prisma migrate deploy` lúc khởi động (render.yaml), n�
 
 Chuyển từng nơi đọc sang sổ, mỗi nơi một commit, giữ đường cũ sau công tắc env trong 1 tuần:
 
-1. `/api/finance/analytics` (Báo cáo dòng tiền) — nơi xuất phát sự cố, dùng `ledgerSummary` nhóm active/settled/pending/cancelled/returning.
+1. ✅ **30/09 13:20** `/api/finance/analytics` (Báo cáo dòng tiền) — nơi xuất phát sự cố. Cách làm:
+   - `lib/cash-flow-totals.ts`: bộ tổng `CashFlowTotals` (đếm + Σ cột theo 6 nhóm + ba bảng bóc giá vốn theo sàn / GMV Max theo gian / doanh thu-giá vốn theo ngày) với HAI nguồn: `cashFlowTotalsFromRows(pnlRows)` (đường cũ, logic nguyên văn) và `cashFlowTotalsFromLedger(ledgerSummary, ledgerCashFlowBreakdown)` (SUM trong database). `computeGrossDeductions` dời sang đây, thêm `computeGrossDeductionsFromTotals` (thác nước từ Σ, không cần dòng); finance.ts re-export.
+   - `services/order-ledger.ts`: `ledgerCashFlowBreakdown` = 3 câu GROUP BY (channelName / channelId với feeGmvMax ≠ 0 / createdDate từ mốc 14 ngày) trên nhóm active, cùng `formulaVersion` với `ledgerSummary`.
+   - Route: `loadCashFlowTotals(source, scope, range)` — `ledger`: `ensureLedgerFresh(maxInline 500)` → `ledgerSummary` + breakdown; `orders`: `fetchPnlRows` như cũ. Phần còn lại của handler (chi phí nhập tay, AdSpend, thuế, thác nước, series 14 ngày, JSON) chỉ đọc từ bộ tổng — không đổi công thức nào.
+   - **Công tắc:** mặc định `ledger`; env `CASH_FLOW_SOURCE=orders` lui về đường cũ (giữ 1 tuần, tới ~07/10); `?source=orders|ledger` trên request thắng env — dùng để so hai đường trên prod. Trả thêm `source` và `ledgerPending` (đơn trong kỳ còn bẩn sau khi tính nốt 500); FE hiện dải xanh "N đơn vừa thay đổi đang được cập nhật" (`LedgerPendingNotice`), `truncated` chỉ còn ý nghĩa ở đường cũ.
+   - Test: `lib/__tests__/cash-flow-totals.test.ts` (9 đơn phủ đủ nhóm: hai đường bằng nhau từng cột, thác nước đóng, chọn nguồn) + `integrations/__tests__/cash-flow-ledger-db.test.ts` (DB dev: mọi chủ shop, cả kỳ + 60 ngày, sổ = đơn, tự bỏ qua khi chưa có bảng). Cả hai qua 30/09 13:18.
 2. `/api/analytics` (Tổng quan) — cùng nhóm active + chuỗi ngày `GROUP BY createdDate`.
 3. `/api/finance/realized-pnl` — danh sách phân trang ở database (`ORDER BY createdAt DESC LIMIT/OFFSET` trên sổ, join bảng đơn lấy trường hiển thị), tổng kết bằng SUM.
 4. Thuế (`/api/tax/report`, `/tax/declaration`) — trục ngày giao (`axis: "delivered"`), hết 10–15 giây/lượt.

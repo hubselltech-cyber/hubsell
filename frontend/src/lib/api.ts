@@ -1976,6 +1976,10 @@ export interface MissingCostSummary {
 export interface FinanceAnalytics {
   /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
   truncated?: boolean;
+  /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
+  source?: "ledger" | "orders";
+  /** Số đơn trong kỳ đang chờ sổ cái tính lại — số trên trang có thể lệch nhỏ vài phút. */
+  ledgerPending?: number;
   deliveredOrderCount: number;
   totalRevenue: number;
   totalCost: number;

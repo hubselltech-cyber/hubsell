@@ -38,6 +38,7 @@ import {
   type OrderLineLedgerRow,
 } from "../lib/order-ledger";
 import type { ChannelScope } from "../lib/channel-filter";
+import type { LedgerCashFlowBreakdown } from "../lib/cash-flow-totals";
 import { toBusinessDateKey, type DateRangeFilter } from "../lib/date-range";
 
 /** Dòng đang được worker cầm quá mốc này coi như worker đã chết → nhặt lại. */
@@ -753,5 +754,54 @@ export async function ledgerStatus(): Promise<LedgerStatus> {
           defaultRows: lastAudit.defaultRows,
         }
       : null,
+  };
+}
+
+// ------------------------------------------------------------
+// Báo cáo dòng tiền: ba bảng bóc GROUP BY trong database (lib/cash-flow-totals.ts)
+// ------------------------------------------------------------
+
+/**
+ * Bóc theo chiều cho nhóm ĐƠN TÍNH DOANH THU của phạm vi — một câu SELECT mỗi
+ * chiều, chỉ cộng dòng đã tính bằng phiên bản công thức hiện tại (như
+ * ledgerSummary). `byDaySince` = chỉ lấy chuỗi ngày từ mốc này (biểu đồ 14
+ * ngày) để không trả về cả năm khi kỳ dài.
+ */
+export async function ledgerCashFlowBreakdown(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  opts: { byDaySince?: string } = {}
+): Promise<LedgerCashFlowBreakdown> {
+  const where = Prisma.sql`${ledgerScopeSql(scope, range)}
+      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND "countsAsRevenue"`;
+  const [cogs, gmv, days] = await Promise.all([
+    prisma.$queryRaw<{ key: string; v: unknown }[]>(Prisma.sql`
+      SELECT "channelName"::text AS key, COALESCE(sum("costSnapshot"), 0) AS v
+      FROM "order_ledger" WHERE ${where}
+      GROUP BY "channelName"
+    `),
+    prisma.$queryRaw<{ key: string; v: unknown }[]>(Prisma.sql`
+      SELECT "channelId" AS key, COALESCE(sum("feeGmvMax"), 0) AS v
+      FROM "order_ledger" WHERE ${where} AND "feeGmvMax" <> 0
+      GROUP BY "channelId"
+    `),
+    prisma.$queryRaw<{ key: Date; rev: unknown; cogs: unknown }[]>(Prisma.sql`
+      SELECT "createdDate" AS key, COALESCE(sum("platformRevenue"), 0) AS rev, COALESCE(sum("costSnapshot"), 0) AS cogs
+      FROM "order_ledger" WHERE ${where}
+      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${opts.byDaySince}::date` : Prisma.empty}
+      GROUP BY "createdDate"
+    `),
+  ]);
+  const byDay = new Map<string, { platformRevenue: number; costSnapshot: number }>();
+  for (const d of days) {
+    // Cột DATE về dạng Date lúc 00:00 UTC → lấy đúng chuỗi yyyy-mm-dd, không đổi giờ VN.
+    const key = d.key instanceof Date ? d.key.toISOString().slice(0, 10) : String(d.key).slice(0, 10);
+    byDay.set(key, { platformRevenue: Number(d.rev), costSnapshot: Number(d.cogs) });
+  }
+  return {
+    cogsByChannelName: new Map(cogs.map((r) => [r.key, Number(r.v)])),
+    gmvMaxByChannelId: new Map(gmv.map((r) => [r.key, Number(r.v)])),
+    byDay,
   };
 }

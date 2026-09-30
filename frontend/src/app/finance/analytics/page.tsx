@@ -39,7 +39,7 @@ import {
 import { BreakdownCard } from "@/components/finance/breakdown-card";
 import { CashFlowTable } from "@/components/finance/cash-flow-table";
 import { MissingCostNote } from "@/components/finance/missing-cost-note";
-import { TruncatedNotice } from "@/components/finance/truncated-notice";
+import { LedgerPendingNotice, TruncatedNotice } from "@/components/finance/truncated-notice";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -234,6 +234,7 @@ export default function FinanceAnalyticsPage() {
           })()}
 
         <TruncatedNotice show={data?.truncated} />
+        <LedgerPendingNotice count={data?.ledgerPending} />
 
         {/* Ghi chú cách đọc số liệu */}
         {data && (
