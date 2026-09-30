@@ -97,3 +97,11 @@ Cách tra: truy vấn Solr qua URL `?query=MK:<từ>` (ô tra cứu cơ bản b�
 - Nhóm 9: bộ nối điện, phích cắm/ổ cắm, hộp công tắc, bộ ngắt mạch, ăng ten, máy biến áp, bộ cấp nguồn, biến tần, bộ nối cáp quang, giá quản lý cáp, chống sét lan truyền, thiết bị đóng cắt truyền tải điện, cảm biến/đồng hồ đo điện, cổng giao tiếp hệ thống tiện ích. **Không có phần mềm.**
 - Nhóm 42: hỗ trợ kỹ thuật, chẩn đoán, giám sát hiệu năng, khắc phục sự cố **thiết bị điện/điện tử, viễn thông, chiếu sáng, điện cao thế, điện hàng hải**. **Không có thiết kế/phát triển phần mềm, không SaaS.**
 - Kết luận: hàng hóa/dịch vụ hoàn toàn khác HUBSELL (phần mềm quản lý bán hàng đa kênh). Rủi ro bị viện dẫn: THẤP. Nếu bị dự định từ chối → trả lời: khác hàng hóa (Điều 74.2.e Luật SHTT chỉ áp khi tương tự cả dấu hiệu lẫn hàng hóa), HUBBELL là nhãn kết hợp có hình, tiền lệ HUBSPOT tồn tại song song trong nhóm 9/42.
+
+## 7. Nhật ký nộp đơn
+
+- **26/09/2026**: anh in, ký tờ khai (3 trang scan `Hồ sơ nhãn hiệu.pdf`); đăng ký tài khoản tổ chức trên cổng → Cục duyệt trước 28/09.
+- **28/09/2026 (em điền qua Claude in Chrome)**: khai đơn trên cổng xong 4 bước: (1) tờ khai — nhãn chữ HUBSELL, đen trắng, mô tả, chủ đơn + người đại diện theo pháp luật Nguyễn Trung Hiếu, quốc gia/quốc tịch Viet Nam, tỉnh Hà Nội; (2) tự phân loại nhóm 42 + nhóm 09, mỗi nhóm 6 mục; (3) tài liệu: thêm dòng "Tờ khai đăng ký nhãn hiệu có chữ ký của người đại diện theo pháp luật (bản scan)" đính PDF 3 trang, tiếng Việt; (4) phí cổng tính **1.655.000 đ** (lệ phí nộp đơn 75.000 = giảm 50%, KHÔNG được miễn VNeID; công bố 120.000; tra cứu 2×180.000; thẩm định 2×550.000). Lưu → **Mã tiếp nhận E202601989021**, trạng thái *Chờ ký số*.
+- Lưu ý kỹ thuật: cổng chỉ nhận tệp từ thư mục phiên làm việc của Claude → đã copy PNG + PDF vào scratchpad để upload; ô Quốc gia phải gõ "Viet" (không dấu) mới ra "Viet Nam".
+- **Việc còn lại (anh làm)**: Cấu hình chữ ký → Đăng ký chữ ký số doanh nghiệp (USB token / ký số từ xa) → về Hồ sơ của tôi › Chờ xử lý → **Ký số** → **Nộp đơn** → thanh toán 1.655.000 đ → có **số đơn 4-2026-xxxxx** thì ghi vào đây + memory.
+
