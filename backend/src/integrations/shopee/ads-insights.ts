@@ -613,14 +613,48 @@ async function fetchChannelMarginGroups(
   return groups;
 }
 
-/** Biên lãi + nhịp bán của mọi nhóm của gian theo đường cộng đang bật (có nhớ đệm). */
+/**
+ * Sau một lượt câu gom lỗi, gian đó đi thẳng đường "rows" trong bấy lâu rồi mới
+ * thử lại câu gom. 5 phút là mặc định tự chọn: đủ để không dội lại một câu đang
+ * lỗi (hoặc đang quá thời gian) ở mỗi lượt mở trang, đủ ngắn để tự hồi khi
+ * database hết sự cố.
+ */
+export const MARGIN_SQL_FAILURE_COOLDOWN_MS = 5 * 60_000;
+const marginSqlFailedAt = new Map<string, number>();
+
+/**
+ * Biên lãi + nhịp bán của mọi nhóm của gian (có nhớ đệm).
+ *
+ * `source` bỏ trống = theo env, và có LƯỚI ĐỠ (anh Trung chốt 30/09/2026): câu
+ * gom trong database lỗi thì lượt đó tính bằng đường "rows" để khách vẫn thấy
+ * số, lỗi ghi ra log với nhãn [Ads-margin]. Lưới đỡ sống cùng đường "rows" (gỡ
+ * ~07/10). `source` truyền tường minh (công cụ đối chiếu, test) = đúng đường đó,
+ * lỗi ném ra nguyên vẹn — không để lưới đỡ che mất lệch.
+ */
 export async function fetchChannelMargins(
   channel: AdsInsightChannel,
   sets: AdsGroupSets,
-  source: AdsMarginSource = resolveAdsMarginSource()
+  source?: AdsMarginSource
 ): Promise<ChannelMargins> {
-  if (source === "sql") {
+  const resolved = source ?? resolveAdsMarginSource();
+  if (resolved === "rows") return marginsFromRows(await fetchChannelPnlRows(channel), sets);
+  if (source !== undefined) {
     return marginsFromGroups(await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets)));
+  }
+  const failedAt = marginSqlFailedAt.get(channel.id);
+  if (failedAt === undefined || Date.now() - failedAt >= MARGIN_SQL_FAILURE_COOLDOWN_MS) {
+    try {
+      const groups = await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets));
+      marginSqlFailedAt.delete(channel.id);
+      return marginsFromGroups(groups);
+    } catch (err) {
+      marginSqlFailedAt.set(channel.id, Date.now());
+      console.error(
+        `[Ads-margin] Câu gom biên lãi trong database LỖI ở gian ${channel.id} (${channel.channelName}) — ` +
+          `lượt này và ${MARGIN_SQL_FAILURE_COOLDOWN_MS / 60_000} phút tới tính bằng đường "rows":`,
+        err
+      );
+    }
   }
   return marginsFromRows(await fetchChannelPnlRows(channel), sets);
 }
