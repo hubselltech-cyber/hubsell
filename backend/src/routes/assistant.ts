@@ -280,7 +280,9 @@ export async function buildPeriodReport(
           order: { channel: scope, createdAt: range, shippingStatus: { not: ShippingStatus.CANCELLED } },
         },
         _sum: { quantity: true },
-        orderBy: { _sum: { quantity: "desc" } },
+        // Bằng số lượng thì xếp theo mã SKU: không có thứ tự phụ, Postgres trả các dòng hòa theo thứ tự tùy lượt chạy
+        // và Top 3 đổi chỗ giữa hai lần mở báo cáo.
+        orderBy: [{ _sum: { quantity: "desc" } }, { channelSku: "asc" }, { productName: "asc" }],
         take: 3,
       }),
     ]);
