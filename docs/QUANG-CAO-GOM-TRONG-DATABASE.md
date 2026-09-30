@@ -223,3 +223,10 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 - Ba ngưỡng (lô 1.000, nghỉ 100 mili giây, chờ 20 giây) là mặc định em tự chọn theo số đo trên, đổi được ở đầu `services/channel-delete.ts`.
 - Test: `integrations/__tests__/channel-delete-db.test.ts` (nhiều lô, gian đang hoạt động, nối lại giữa chừng, bấm hai lần, quá thời gian chờ, xóa riêng một dòng hàng sau khi bỏ khóa ngoại).
 - Chưa làm: phần treo vào gian ngoài đơn (sản phẩm sàn, nhật ký đồng bộ tồn, số liệu quảng cáo) vẫn đi trong câu xóa dòng gian cuối cùng. Các bảng đó có giới hạn lưu giữ nên nhỏ hơn đơn nhiều, em chưa đo ở quy mô lớn.
+
+### 11.9 Ba việc trên PROD 30/09/2026 khoảng 19:50–20:00 (bản `d0598f5`)
+
+- Web + worker live 19:50; migration `20260930270000` áp xong ngay lần khởi động đầu (worker áp, web báo không còn migration chờ). Kiểm trong database prod: khóa ngoại `order_line_ledger_orderItemId_fkey` không còn, `order_line_ledger_orderId_fkey` còn nguyên. Webhook đơn Shopee tiếp tục ghi đơn bình thường sau deploy.
+- `params-compare` trên Render Shell worker: **TAT CA KHOP — 2.976 lượt so (mọi chủ shop × 6 kỳ, mọi gian × 2 kỳ, 18 câu đọc), 0 lệch.** Tổng thời gian cách cũ / dạng hằng (mili giây): Lãi/Lỗ theo SKU 3.825 / 2.241; kiểm sổ sạch 1.885 / 1.268; tổng quan 1.974 / 1.402; dòng tiền 2.210 / 1.716; đối soát thuế 1.360 / 1.087; tổng theo nhóm 4.388 / 4.035. Riêng dòng gọn quảng cáo 2.263 / 2.753 (chậm hơn khoảng 6 mili giây mỗi lượt gọi, em chưa tìm nguyên nhân; đường này chỉ còn dùng cho đường lui `rows`). Ở số đơn hiện tại mức lợi trên prod nhỏ hơn trên máy vì phần lớn thời gian mỗi câu là đường truyền tới Supabase.
+- Trang Tổng quan của tài khoản Chủ Shop Hubsell mở bình thường sau khi bật. Log web sau deploy không có lỗi.
+- Chưa kiểm được trên prod: xóa một gian thật (không có gian nào để xóa thử) và nhánh "đang được xóa dần" trên giao diện (cần gian trên khoảng 25.000 đơn). Hai phần này mới được kiểm bằng test trên DB dev và gian thử 300.000 đơn.
