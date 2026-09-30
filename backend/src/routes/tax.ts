@@ -8,8 +8,11 @@ import {
 
 import { prisma } from "../lib/prisma";
 import type { AuthRequest } from "../middleware/auth";
-import { channelScope } from "../lib/channel-filter";
-import { parseDateRange } from "../lib/date-range";
+import { channelScope, type ChannelScope } from "../lib/channel-filter";
+import { parseDateRange, type DateRangeFilter } from "../lib/date-range";
+import type { ReportSource } from "../lib/report-source";
+import { taxReportTotalsFromRows, type TaxReportTotals } from "../lib/tax-totals";
+import { ensureLedgerFresh, ledgerTaxReportTotals } from "../services/order-ledger";
 import {
   decideScopeFromPlatformReturn,
   issueAdjustmentForOrder,
@@ -24,11 +27,11 @@ import {
   type StandardInvoiceConfig,
 } from "../integrations/invoice/misa-einvoice";
 import { isTaxPilotUser, MISA_SANDBOX_TAX_CODE } from "../services/tax-pilot";
-import { buildTaxDeclaration, parseDeclarationPeriod } from "../services/tax-declaration";
+import { buildTaxDeclaration, parseDeclarationPeriod, taxSource } from "../services/tax-declaration";
 // NGUỒN SỐ GỐC dùng chung (SSOT) — doanh thu/khấu trừ/giá vốn của đơn đều
-// bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa.
+// bóc qua computePnlRow, không tự cộng totalAmount − phí riêng nữa. Từ
+// 30/09/2026 đọc kết quả đó từ SỔ CÁI ĐƠN; fetchPnlRows chỉ còn là đường cũ.
 import { fetchPnlRows } from "./finance";
-import { summarizeMissingCost } from "../lib/finance-definitions";
 import {
   additionalTaxOn,
   getShopTaxConfig,
@@ -154,6 +157,28 @@ router.put("/settings", async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * Tổng các đơn không hủy của kỳ cho khối thuế (lib/tax-totals.ts) theo nguồn:
+ * sổ cái đơn — một câu SELECT trong database, tính nốt dòng bẩn của kỳ trước —
+ * hoặc đường cũ kéo đơn (giữ 1 tuần sau công tắc TAX_SOURCE=orders).
+ */
+export async function loadTaxReportTotals(
+  source: ReportSource,
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined
+): Promise<{ totals: TaxReportTotals; truncated: boolean; ledgerPending: number }> {
+  if (source === "orders") {
+    const { rows, truncated } = await fetchPnlRows(scope, range, { lean: true });
+    return { totals: taxReportTotalsFromRows(rows), truncated, ledgerPending: 0 };
+  }
+  const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
+  return {
+    totals: await ledgerTaxReportTotals(scope, range),
+    truncated: false,
+    ledgerPending: fresh.dirty + fresh.staleVersion,
+  };
+}
+
 // GET /api/tax/report?from&to — báo cáo đối soát thuế của kỳ đang lọc.
 router.get("/report", async (req: AuthRequest, res, next) => {
   try {
@@ -161,11 +186,13 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     const range = parseDateRange(req.query);
     const scope = channelScope(req);
 
-    const [cfg, { rows: pnlRows }, logs, invoiceCfg] = await Promise.all([
+    // Nguồn số của khối thuế sàn / thuế bổ sung: sổ cái đơn (mặc định) hay đường
+    // cũ kéo đơn (?source=orders / TAX_SOURCE=orders) — hai đường cùng kết quả.
+    const source = taxSource(req.query.source);
+    const [cfg, taxData, logs, invoiceCfg] = await Promise.all([
       getShopTaxConfig(ownerId),
-      // Đơn trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính (đơn hủy
-      // lọc ở vòng dưới; đọc đủ kỳ theo trang).
-      fetchPnlRows(scope, range, { lean: true }),
+      // Đơn KHÔNG HỦY trong kỳ — cùng tập đơn SSOT với mọi báo cáo tài chính.
+      loadTaxReportTotals(source, scope, range),
       prisma.invoiceLog.findMany({
         where: { ownerId, ...logPeriodWhere(range) },
         orderBy: { createdAt: "desc" },
@@ -385,29 +412,20 @@ router.get("/report", async (req: AuthRequest, res, next) => {
     // Đơn ĐÃ quyết toán: dùng số THỰC sàn đã khấu trừ (platformTax của dòng).
     // Đơn CHƯA quyết toán: ước tính % luật trên doanh thu thực tế (sau
     // voucher) — riêng trang thuế được ước vì bản chất là DỰ PHÒNG nghĩa vụ.
-    const rows = pnlRows.filter((r) => r.shippingStatus !== ShippingStatus.CANCELLED);
-
-    let grossRevenue = 0;
-    let profit = 0; // lợi nhuận ước tính của kỳ — cơ sở thuế bổ sung cho DN
-    let platformTaxActual = 0;
-    let estimateBase = 0; // doanh thu của phần đơn chưa quyết toán
-    let settledCount = 0;
-    // Đơn chưa có giá vốn KHÔNG vào lợi nhuận tính thuế bổ sung (anh Trung chốt
-    // 30/09/2026) — "lợi nhuận" của chúng là nguyên tiền về, tính thuế trên đó
-    // là trích lố. UI phải cảnh báo số đơn bị loại.
-    const missingCost = summarizeMissingCost(rows);
-
-    for (const r of rows) {
-      grossRevenue += r.revenueGross;
-      // Lợi nhuận cùng công thức chốt: Doanh thu thực tế − giá vốn.
-      if (!r.missingCostPrice) profit += r.profitAfterTax;
-      if (r.isSettled) {
-        platformTaxActual += r.platformTax;
-        settledCount += 1;
-      } else {
-        estimateBase += r.platformRevenue; // doanh thu thực tế (sau voucher)
-      }
-    }
+    const t = taxData.totals;
+    const grossRevenue = t.grossRevenue;
+    // Lợi nhuận ước tính của kỳ — cơ sở thuế bổ sung cho DN; cùng công thức
+    // chốt: Doanh thu thực tế − giá vốn. Đơn chưa có giá vốn KHÔNG vào lợi nhuận
+    // tính thuế bổ sung (anh Trung chốt 30/09/2026) — "lợi nhuận" của chúng là
+    // nguyên tiền về, tính thuế trên đó là trích lố. UI phải cảnh báo số đơn bị loại.
+    const profit = t.profitWithCost;
+    const platformTaxActual = t.platformTaxActual;
+    const estimateBase = t.unsettledPlatformRevenue; // doanh thu thực tế (sau voucher) của đơn chưa quyết toán
+    const settledCount = t.settledCount;
+    const missingCost = {
+      orderCount: t.missingCostCount,
+      excludedProfit: t.missingCostExcludedProfit,
+    };
     // 07/09: shop doanh nghiệp không bị sàn khấu trừ → ước tính = 0 (số thật
     // của đơn đã đối soát vẫn giữ — nếu sàn có trừ nhầm thì seller thấy để đi sửa hồ sơ thuế).
     const platformTaxEstimated = businessShop ? 0 : platformTaxOn(estimateBase);
@@ -417,8 +435,11 @@ router.get("/report", async (req: AuthRequest, res, next) => {
       settings: serializeSettings(cfg),
       invoiceSummary,
       coverage,
+      truncated: taxData.truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
+      source, // "ledger" | "orders"
+      ledgerPending: taxData.ledgerPending, // đơn trong kỳ còn chờ sổ cái tính lại
       summary: {
-        orderCount: rows.length,
+        orderCount: t.orderCount,
         settledCount,
         grossRevenue,
         platformTaxActual, // sàn ĐÃ trích (số quyết toán thật)
@@ -493,7 +514,15 @@ router.get("/declaration", async (req: AuthRequest, res, next) => {
       res.status(400).json({ error: "Kỳ không hợp lệ — year=YYYY, quarter=1..4 hoặc bỏ trống (cả năm)" });
       return;
     }
-    res.json(await buildTaxDeclaration(req.ownerId!, channelScope(req), period));
+    res.json(
+      await buildTaxDeclaration(
+        req.ownerId!,
+        channelScope(req),
+        period,
+        new Date(),
+        taxSource(req.query.source)
+      )
+    );
   } catch (err) {
     next(err);
   }

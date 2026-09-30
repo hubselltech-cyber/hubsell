@@ -2226,6 +2226,10 @@ model OrderLedger {
   // Cùng migration còn có chỉ mục GIN trigram "order_ledger_orderCode_trgm_idx" trên orderCode
   // (tìm mã đơn kiểu chứa chuỗi) — Prisma không khai được lớp toán tử của extension nên chỉ nằm trong SQL.
   @@index([ownerId, createdAt(sort: Desc), orderId(sort: Desc)], map: "order_ledger_ownerId_createdAt_idx")
+  // Thuế đọc từ sổ (migration 20260930250000_order_ledger_tax_indexes): tờ khai theo ngày giao toàn shop;
+  // kiểm dòng công thức cũ ở mỗi lượt xem báo cáo.
+  @@index([ownerId, deliveredDate])
+  @@index([formulaVersion])
   @@map("order_ledger")
 }
 

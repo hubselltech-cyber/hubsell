@@ -40,7 +40,10 @@ import {
 import { BUSINESS_TZ_OFFSET_MS, type DateRangeFilter } from "../lib/date-range";
 import type { ChannelScope } from "../lib/channel-filter";
 import { prisma } from "../lib/prisma";
+import { resolveReportSource, type ReportSource } from "../lib/report-source";
+import type { DeclarationRawRow } from "../lib/tax-totals";
 import { computePnlRow, forEachPnlOrderPage } from "../routes/finance";
+import { ensureLedgerFresh, ledgerDeclarationByChannel } from "./order-ledger";
 
 // ---------------------------------------------------------------- KỲ
 
@@ -235,9 +238,26 @@ export function aggregateDeclaration(rows: DeclarationInput[]): DeclarationChann
     }
     map.set(r.channelName, row);
   }
-  // Thứ tự cố định để bảng không nhảy dòng giữa hai lần tải.
+  return orderAndRound(map);
+}
+
+/** Thứ tự sàn cố định (bảng không nhảy dòng giữa hai lần tải) + làm tròn đồng. */
+function orderAndRound(map: Map<ChannelName, DeclarationChannelRow>): DeclarationChannelRow[] {
   const order: ChannelName[] = ["SHOPEE", "LAZADA", "TIKTOK", "OFFLINE"];
   return order.filter((c) => map.has(c)).map((c) => round(map.get(c)!));
+}
+
+/**
+ * Σ theo sàn đọc từ SỔ CÁI (services/order-ledger.ts ledgerDeclarationByChannel)
+ * → cùng hình dạng, cùng thứ tự, cùng cách làm tròn với aggregateDeclaration.
+ */
+export function declarationRowsFromLedger(raw: DeclarationRawRow[]): DeclarationChannelRow[] {
+  const map = new Map<ChannelName, DeclarationChannelRow>();
+  for (const r of raw) {
+    if (r.orderCount === 0) continue;
+    map.set(r.channelName as ChannelName, { ...r, channelName: r.channelName as ChannelName });
+  }
+  return orderAndRound(map);
 }
 
 function round(row: DeclarationChannelRow): DeclarationChannelRow {
@@ -307,6 +327,10 @@ export interface TaxDeclarationResult {
   missingDeliveredAt: number;
   /** Cơ sở cắt kỳ đang dùng: ngày sàn báo giao thành công / ngày tạo đơn. */
   basis: "delivered" | "created";
+  /** Nguồn số: sổ cái đơn (mặc định) / kéo đơn (đường cũ). */
+  source: ReportSource;
+  /** Đơn của shop còn chờ sổ cái tính lại (0 khi đọc đường cũ) — số kê khai có thể chưa đủ. */
+  ledgerPending: number;
 }
 
 /**
@@ -367,9 +391,29 @@ async function loadDeclarationInputs(
   return { rows, truncated, missingDeliveredAt };
 }
 
-/** Doanh thu tính thuế của một tập đơn đã bóc số (dùng cho lũy kế năm). */
-function taxableOf(rows: DeclarationInput[]): number {
-  return sumRows(aggregateDeclaration(rows)).taxableRevenue;
+/** Nguồn số của module Thuế: sổ cái đơn (mặc định từ 30/09/2026) hay đường cũ (TAX_SOURCE=orders / ?source=). */
+export function taxSource(query?: unknown): ReportSource {
+  return resolveReportSource(query, process.env.TAX_SOURCE);
+}
+
+/**
+ * Bảng theo sàn của một khoảng kỳ theo nguồn số (docs/SO-CAI-DON.md mục 9.4):
+ *   - "ledger": một câu GROUP BY trong database trên sổ cái — không kéo đơn,
+ *     không có phanh 20.000;
+ *   - "orders": đường cũ đọc đơn theo trang rồi gom bằng JS (có `truncated`).
+ * Cả hai áp cùng cơ sở cắt kỳ (declarationBasis) và cùng cách làm tròn.
+ */
+export async function loadDeclarationRows(
+  source: ReportSource,
+  scope: ChannelScope,
+  range: DateRangeFilter
+): Promise<{ rows: DeclarationChannelRow[]; truncated: boolean; missingDeliveredAt: number }> {
+  if (source === "orders") {
+    const x = await loadDeclarationInputs(scope, range);
+    return { rows: aggregateDeclaration(x.rows), truncated: x.truncated, missingDeliveredAt: x.missingDeliveredAt };
+  }
+  const x = await ledgerDeclarationByChannel(scope, range, declarationBasis());
+  return { rows: declarationRowsFromLedger(x.rows), truncated: false, missingDeliveredAt: x.missingDeliveredAt };
 }
 
 /**
@@ -380,11 +424,19 @@ export async function buildTaxDeclaration(
   ownerId: string,
   scope: ChannelScope,
   period: DeclarationPeriod,
-  now: Date = new Date()
+  now: Date = new Date(),
+  source: ReportSource = taxSource()
 ): Promise<TaxDeclarationResult> {
   const range = periodRange(period);
-  const { rows: inputs, truncated, missingDeliveredAt } = await loadDeclarationInputs(scope, range);
-  const rows = aggregateDeclaration(inputs);
+  // Sổ cái: tính nốt dòng bẩn của TOÀN SHOP trước (tờ khai cắt theo ngày giao
+  // nên đơn của kỳ có thể được tạo từ kỳ trước; lũy kế năm cũng là toàn shop).
+  // Còn dư → ledgerPending để UI nhắc số có thể chưa đủ.
+  let ledgerPending = 0;
+  if (source === "ledger") {
+    const fresh = await ensureLedgerFresh({ userId: ownerId }, undefined, { maxInline: 500 });
+    ledgerPending = fresh.dirty + fresh.staleVersion;
+  }
+  const { rows, truncated, missingDeliveredAt } = await loadDeclarationRows(source, scope, range);
   const total = sumRows(rows);
 
   // Lũy kế năm: toàn shop (ngưỡng tính theo pháp nhân, không theo gian đang
@@ -398,8 +450,8 @@ export async function buildTaxDeclaration(
     annualTaxable = total.taxableRevenue;
     annualTruncated = truncated;
   } else {
-    const y = await loadDeclarationInputs({ userId: ownerId }, yearRange);
-    annualTaxable = taxableOf(y.rows);
+    const y = await loadDeclarationRows(source, { userId: ownerId }, yearRange);
+    annualTaxable = sumRows(y.rows).taxableRevenue;
     annualTruncated = y.truncated;
   }
 
@@ -432,6 +484,8 @@ export async function buildTaxDeclaration(
     truncated,
     missingDeliveredAt,
     basis: declarationBasis(),
+    source,
+    ledgerPending,
   };
 }
 

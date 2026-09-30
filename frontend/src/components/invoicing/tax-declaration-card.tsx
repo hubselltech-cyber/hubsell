@@ -311,6 +311,13 @@ export function TaxDeclarationCard() {
                 Kỳ này vượt 20.000 đơn — số trên là cận dưới, chọn từng quý để lấy đủ.
               </p>
             ) : null}
+            {data.ledgerPending ? (
+              <p className={cn(TEXT_SUB, "mt-2 flex items-center gap-1 text-amber-700")}>
+                <AlertTriangle className="size-3.5" />
+                {formatNumber(data.ledgerPending)} đơn vừa thay đổi đang được cập nhật vào số liệu. Anh/chị tải lại
+                sau ít phút trước khi dùng số này để kê khai.
+              </p>
+            ) : null}
 
             {/* ===== Ngưỡng 1 tỷ — lũy kế năm toàn shop ===== */}
             {annual ? (

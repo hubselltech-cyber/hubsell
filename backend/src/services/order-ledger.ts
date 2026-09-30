@@ -47,6 +47,7 @@ import {
   type PnlListCursor,
   type PnlSummaryTotals,
 } from "../lib/realized-pnl-totals";
+import type { DeclarationRawRow, TaxReportTotals } from "../lib/tax-totals";
 import { toBusinessDateKey, type DateRangeFilter } from "../lib/date-range";
 
 /** Dòng đang được worker cầm quá mốc này coi như worker đã chết → nhặt lại. */
@@ -340,11 +341,18 @@ export async function ledgerFreshness(
   range?: DateRangeFilter,
   axis: LedgerDateAxis = "created"
 ): Promise<LedgerFreshness> {
+  // Hai câu đếm RIÊNG để mỗi câu đi đúng chỉ mục nhỏ thay vì quét cả phạm vi ở
+  // mỗi lượt xem báo cáo (shop vài trăm nghìn đơn): dòng bẩn qua chỉ mục cục bộ
+  // "order_ledger_dirty_idx"; dòng công thức cũ qua "order_ledger_formulaVersion_idx"
+  // — viết (< hiện tại OR > hiện tại) thay cho <> để B-tree dùng được, và vẫn bắt
+  // được dòng do bản MỚI hơn ghi khi vừa lùi bản.
+  const where = ledgerScopeSql(scope, range, { axis });
+  const v = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
   const rows = await prisma.$queryRaw<{ dirty: bigint; stale: bigint }[]>(Prisma.sql`
-    SELECT count(*) FILTER (WHERE "dirtyAt" IS NOT NULL) AS dirty,
-           count(*) FILTER (WHERE "dirtyAt" IS NULL AND "formulaVersion" <> ${LEDGER_FORMULA_VERSION}::int) AS stale
-    FROM "order_ledger"
-    WHERE ${ledgerScopeSql(scope, range, { axis })}
+    SELECT
+      (SELECT count(*) FROM "order_ledger" WHERE ${where} AND "dirtyAt" IS NOT NULL) AS dirty,
+      (SELECT count(*) FROM "order_ledger"
+        WHERE ${where} AND "dirtyAt" IS NULL AND ("formulaVersion" < ${v} OR "formulaVersion" > ${v})) AS stale
   `);
   return { dirty: Number(rows[0]?.dirty ?? 0), staleVersion: Number(rows[0]?.stale ?? 0) };
 }
@@ -999,4 +1007,112 @@ export async function ledgerPnlSummary(
     });
   }
   return out;
+}
+
+// ------------------------------------------------------------
+// Thuế: đối soát kỳ + số liệu kê khai theo sàn (lib/tax-totals.ts,
+// docs/SO-CAI-DON.md mục 9.4)
+// ------------------------------------------------------------
+
+/** Tổng các đơn KHÔNG HỦY của kỳ (theo ngày tạo) cho /api/tax/report — một câu SELECT. */
+export async function ledgerTaxReportTotals(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined
+): Promise<TaxReportTotals> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT count(*) AS "orderCount",
+           count(*) FILTER (WHERE "isSettled") AS "settledCount",
+           COALESCE(sum("revenueGross"), 0) AS "grossRevenue",
+           COALESCE(sum("profitAfterTax") FILTER (WHERE NOT "missingCostPrice"), 0) AS "profitWithCost",
+           COALESCE(sum("platformTax") FILTER (WHERE "isSettled"), 0) AS "platformTaxActual",
+           COALESCE(sum("platformRevenue") FILTER (WHERE NOT "isSettled"), 0) AS "unsettledPlatformRevenue",
+           count(*) FILTER (WHERE "missingCostPrice") AS "missingCostCount",
+           COALESCE(sum("profitAfterTax") FILTER (WHERE "missingCostPrice"), 0) AS "missingCostExcludedProfit"
+    FROM "order_ledger"
+    WHERE ${ledgerScopeSql(scope, range)}
+      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND "shippingStatus" <> 'CANCELLED'
+  `);
+  const r = rows[0] ?? {};
+  const num = (k: string) => Number(r[k] ?? 0);
+  return {
+    orderCount: num("orderCount"),
+    settledCount: num("settledCount"),
+    grossRevenue: num("grossRevenue"),
+    profitWithCost: num("profitWithCost"),
+    platformTaxActual: num("platformTaxActual"),
+    unsettledPlatformRevenue: num("unsettledPlatformRevenue"),
+    missingCostCount: num("missingCostCount"),
+    missingCostExcludedProfit: num("missingCostExcludedProfit"),
+  };
+}
+
+/**
+ * Σ THEO SÀN cho bảng số liệu kê khai của một kỳ.
+ *   - basis "delivered" (tờ khai cắt theo ngày SÀN BÁO GIAO, chốt 30/09/2026):
+ *     chỉ đơn Đã giao có mốc giao trong kỳ, CỘNG đơn Đã giao chưa có mốc giao
+ *     mà ngày tạo trong kỳ (tạm xếp theo ngày tạo, đếm riêng missingDeliveredAt).
+ *     Nhánh theo ngày giao đi bằng chỉ mục (ownerId|channelId, deliveredDate).
+ *   - basis "created": mọi đơn không hủy có ngày tạo trong kỳ.
+ * Doanh thu tính thuế = Σ max(0, tiền hàng − voucher người bán − hoàn) TỪNG ĐƠN.
+ */
+export async function ledgerDeclarationByChannel(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  basis: "delivered" | "created"
+): Promise<{ rows: DeclarationRawRow[]; missingDeliveredAt: number }> {
+  const fv = Prisma.sql`"formulaVersion" = ${LEDGER_FORMULA_VERSION}::int`;
+  const cols = Prisma.raw(
+    `"channelName", "isSettled", "revenueGross", "sellerVoucher", "refundedAmount", "platformTax"`
+  );
+  const src =
+    basis === "delivered"
+      ? Prisma.sql`
+          SELECT ${cols}, FALSE AS "missing" FROM "order_ledger"
+          WHERE ${ledgerScopeSql(scope, range, { axis: "delivered" })}
+            AND ${fv} AND "shippingStatus" = 'DELIVERED'
+          UNION ALL
+          SELECT ${cols}, TRUE AS "missing" FROM "order_ledger"
+          WHERE ${ledgerScopeSql(scope, range)}
+            AND ${fv} AND "shippingStatus" = 'DELIVERED' AND "deliveredAt" IS NULL`
+      : Prisma.sql`
+          SELECT ${cols}, FALSE AS "missing" FROM "order_ledger"
+          WHERE ${ledgerScopeSql(scope, range)}
+            AND ${fv} AND "shippingStatus" <> 'CANCELLED'`;
+  const taxable = Prisma.raw(`GREATEST(0, "revenueGross" - "sellerVoucher" - "refundedAmount")`);
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    WITH src AS (${src})
+    SELECT "channelName"::text AS "channelName",
+           count(*) AS "orderCount",
+           count(*) FILTER (WHERE "isSettled") AS "settledCount",
+           count(*) FILTER (WHERE NOT "isSettled") AS "unsettledCount",
+           count(*) FILTER (WHERE "missing") AS "missing",
+           COALESCE(sum("revenueGross"), 0) AS "grossRevenue",
+           COALESCE(sum("sellerVoucher"), 0) AS "sellerVoucher",
+           COALESCE(sum("refundedAmount"), 0) AS "refundedAmount",
+           COALESCE(sum(${taxable}), 0) AS "taxableRevenue",
+           COALESCE(sum(${taxable}) FILTER (WHERE NOT "isSettled"), 0) AS "unsettledTaxableRevenue",
+           COALESCE(sum("platformTax") FILTER (WHERE "isSettled"), 0) AS "taxWithheldActual",
+           COALESCE(sum("platformTax") FILTER (WHERE NOT "isSettled"), 0) AS "taxWithheldEstimated"
+    FROM src
+    GROUP BY "channelName"
+  `);
+  let missingDeliveredAt = 0;
+  const out: DeclarationRawRow[] = rows.map((r) => {
+    missingDeliveredAt += Number(r.missing ?? 0);
+    return {
+      channelName: String(r.channelName),
+      orderCount: Number(r.orderCount),
+      settledCount: Number(r.settledCount),
+      unsettledCount: Number(r.unsettledCount),
+      grossRevenue: Number(r.grossRevenue),
+      sellerVoucher: Number(r.sellerVoucher),
+      refundedAmount: Number(r.refundedAmount),
+      taxableRevenue: Number(r.taxableRevenue),
+      unsettledTaxableRevenue: Number(r.unsettledTaxableRevenue),
+      taxWithheldActual: Number(r.taxWithheldActual),
+      taxWithheldEstimated: Number(r.taxWithheldEstimated),
+    };
+  });
+  return { rows: out, missingDeliveredAt };
 }

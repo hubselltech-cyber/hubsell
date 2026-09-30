@@ -4111,6 +4111,12 @@ export interface InvoiceLogDTO {
 
 export interface TaxReportResponse {
   settings: TaxSettingsDTO;
+  /** Chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới. */
+  truncated?: boolean;
+  /** Nguồn số của khối thuế: sổ cái đơn / kéo đơn. */
+  source?: "ledger" | "orders";
+  /** Số đơn trong kỳ đang chờ sổ cái tính lại. */
+  ledgerPending?: number;
   summary: {
     orderCount: number;
     settledCount: number;
@@ -4251,6 +4257,10 @@ export interface TaxDeclarationResponse {
   missingDeliveredAt?: number;
   /** Cơ sở cắt kỳ: ngày sàn báo giao thành công / ngày tạo đơn (bản cũ không trả = ngày tạo). */
   basis?: "delivered" | "created";
+  /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
+  source?: "ledger" | "orders";
+  /** Số đơn của shop đang chờ sổ cái tính lại — số kê khai có thể chưa đủ trong vài phút. */
+  ledgerPending?: number;
 }
 
 /** Số liệu kê khai của một kỳ: quarter bỏ trống = cả năm. */
