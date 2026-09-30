@@ -69,12 +69,11 @@ import {
 } from "../integrations/tiktok-ads/report";
 import { backtestStartDate, buildDryRunBacktest, type DryRunPlan } from "../integrations/tiktok-ads/backtest";
 import {
-  TIKTOK_MARGIN_WINDOW_DAYS,
   computeTiktokAdsBreakeven,
   computeTiktokProductBreakevens,
   saveCampaignProductIds,
-  type TiktokBreakeven,
 } from "../integrations/tiktok-ads/breakeven";
+import { TIKTOK_MARGIN_WINDOW_DAYS, type TiktokBreakeven } from "../lib/tiktok-breakeven";
 import { avgDailySpendOf, campaignAdvice, type CampaignAdvice } from "../integrations/tiktok-ads/campaign-advice";
 import { MIN_ORDERS_FOR_MARGIN } from "../integrations/shopee/ads-insights";
 import { VIDEO_STATUS_SENDING, sendVideoCommand } from "../integrations/tiktok-ads/send-command";

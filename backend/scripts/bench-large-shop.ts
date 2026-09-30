@@ -6,8 +6,12 @@
 // đơn, dòng hàng, sổ đơn và sổ dòng hàng (ghi thẳng số giả lập, không qua
 // worker), sản phẩm sàn, chiến dịch quảng cáo. Dùng để đo câu đọc sổ cái, câu
 // gom biên lãi quảng cáo và việc xóa gian ở quy mô mà dữ liệu dev không có.
+// --platform TIKTOK: gian TikTok, đơn rải 59 ngày (cửa sổ hòa vốn 60 ngày), kèm
+// bản kê TikTok — đơn tạo trước 14 ngày đã đối soát thật, đơn 7–14 ngày mới có
+// số ước tính của sàn, đơn mới hơn chưa có bản kê — phí GMV Max 5% giá trị dòng
+// và số quảng cáo theo ngày của từng chiến dịch (để có khoảng tự kiểm mẫu số).
 //
-//   npx tsx scripts/bench-large-shop.ts build [--orders 300000] [--products 2000] [--campaigns 100]
+//   npx tsx scripts/bench-large-shop.ts build [--orders 300000] [--products 2000] [--campaigns 100] [--platform SHOPEE|TIKTOK]
 //   npx tsx scripts/bench-large-shop.ts status
 //   npx tsx scripts/bench-large-shop.ts cleanup
 //
@@ -38,6 +42,13 @@ function numberArg(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+function platformArg(): ChannelName {
+  const i = process.argv.indexOf("--platform");
+  const v = i >= 0 ? String(process.argv[i + 1]).toUpperCase() : "SHOPEE";
+  if (v !== "SHOPEE" && v !== "TIKTOK") throw new Error(`--platform chỉ nhận SHOPEE hoặc TIKTOK (đang là "${v}")`);
+  return v as ChannelName;
+}
+
 function assertLocalDatabase(): void {
   let host = "";
   try {
@@ -54,58 +65,90 @@ async function build(): Promise<void> {
   const orders = numberArg("orders", 300_000);
   const products = numberArg("products", 2_000);
   const campaigns = numberArg("campaigns", 100);
+  const platform = platformArg();
+  const tiktok = platform === ChannelName.TIKTOK;
+  /** Số ngày rải đơn: nằm trọn trong cửa sổ của sàn (biên lãi 30 ngày, hòa vốn TikTok 60 ngày). */
+  const spreadDays = tiktok ? 59 : 29;
+  // Đã đối soát: Shopee mọi đơn; TikTok chỉ đơn không hủy tạo trước 14 ngày (đối soát TikTok mất hàng tuần).
+  const settledSql = tiktok
+    ? Prisma.sql`(o."shippingStatus" <> 'CANCELLED' AND o."createdAt" < (now() AT TIME ZONE 'UTC') - INTERVAL '14 days')`
+    : Prisma.sql`true`;
+  // Phí GMV Max sàn trừ trong đơn (số có dấu, âm = bị trừ): TikTok 5% giá trị dòng, sàn khác không có.
+  const gmvMaxRate = tiktok ? -0.05 : 0;
   const stamp = Date.now();
   const user = await prisma.user.create({
     data: { email: `${EMAIL_PREFIX}${stamp}@hubsell.test`, passwordHash: "x", fullName: `TEST scale ${stamp}`, role: "ADMIN" },
   });
   const channel = await prisma.channel.create({
-    data: { userId: user.id, channelName: ChannelName.SHOPEE, shopName: `TEST-scale-${stamp}`, status: "DISCONNECTED" },
+    data: { userId: user.id, channelName: platform, shopName: `TEST-scale-${stamp}`, status: "DISCONNECTED" },
   });
   const pre = `T${stamp}`;
   const t0 = Date.now();
   await prisma.$transaction(
     async (tx) => {
-      // 5% đơn hủy; ngày tạo rải đều 29 ngày gần nhất.
+      // 5% đơn hủy; ngày tạo rải đều `spreadDays` ngày gần nhất.
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "Order" ("id", "channelId", "orderCode", "customerName", "createdAt", "deliveredAt", "shippingStatus", "itemCount")
         SELECT ${pre} || '-o' || g, ${channel.id}, ${pre} || '-' || g, 'Khach test',
                t.at, t.at + INTERVAL '2 days',
                (CASE WHEN g % 20 = 0 THEN 'CANCELLED' ELSE 'DELIVERED' END)::"ShippingStatus", 1
         FROM generate_series(1, ${orders}::int) g
-        CROSS JOIN LATERAL (SELECT (now() AT TIME ZONE 'UTC') - (random() * INTERVAL '29 days') - (g * INTERVAL '0 second') AS at) t
+        CROSS JOIN LATERAL (SELECT (now() AT TIME ZONE 'UTC') - (random() * ${spreadDays}::int * INTERVAL '1 day') - (g * INTERVAL '0 second') AS at) t
       `);
       // Dòng 1 cho mọi đơn, dòng 2 cho 30% đơn, dòng 3 cho 5% đơn; SKU lệch về nhóm bán chạy; 3% dòng chưa có giá vốn.
+      // Giá vốn = 20% giá bán ở MỌI dòng: lợi nhuận của đơn đủ giá vốn nhờ vậy tỷ lệ thuận với giá trị dòng, nên số ghi ở
+      // sổ dòng hàng bên dưới đúng bằng phần sổ thật sẽ phân bổ — hai đường cộng quảng cáo so được với nhau trên gian thử.
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "OrderItem" ("id", "orderId", "channelSku", "productName", "quantity", "price", "costPriceAtSale")
         SELECT ${pre} || '-i' || g || '-' || k, ${pre} || '-o' || g,
                ${pre} || '-S' || (1 + floor(power(random(), 2) * ${products * VARIANTS}::int))::int,
-               'Dong hang test', 1 + floor(random() * 3)::int, (20 + floor(random() * 480)::int) * 1000,
-               CASE WHEN random() < 0.03 THEN 0 ELSE 10000 END
+               'Dong hang test', 1 + floor(random() * 3)::int, p.price,
+               CASE WHEN random() < 0.03 THEN 0 ELSE p.price * 0.2 END
         FROM generate_series(1, ${orders}::int) g
         CROSS JOIN generate_series(1, 3) k
+        CROSS JOIN LATERAL (SELECT (20 + floor(random() * 480)::int) * 1000 + (g + k) * 0 AS price) p
         WHERE k = 1 OR (k = 2 AND g % 10 < 3) OR (k = 3 AND g % 20 = 1)
       `);
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO "order_line_ledger" (
           "orderItemId", "createdDate", "orderId", "channelId", "ownerId", "channelName", "channelSku", "productName",
           "createdAt", "shippingStatus", "returnStatus", "isSettled", "countsAsRevenue", "missingCostPrice",
-          "quantity", "price", "costPriceAtSale", "lineGross", "lineCost", "share", "revenueGross", "actualRevenue", "profit", "formulaVersion"
+          "quantity", "price", "costPriceAtSale", "lineGross", "lineCost", "share", "revenueGross", "actualRevenue", "profit", "feeGmvMax", "formulaVersion"
         )
-        SELECT i."id", (o."createdAt" + INTERVAL '7 hours')::date, o."id", o."channelId", ${user.id}, 'SHOPEE'::"ChannelName", i."channelSku", i."productName",
-               o."createdAt", o."shippingStatus", 'NONE'::"ReturnStatus", true, o."shippingStatus" <> 'CANCELLED',
+        SELECT i."id", (o."createdAt" + INTERVAL '7 hours')::date, o."id", o."channelId", ${user.id}, ${platform}::"ChannelName", i."channelSku", i."productName",
+               o."createdAt", o."shippingStatus", 'NONE'::"ReturnStatus", ${settledSql}, o."shippingStatus" <> 'CANCELLED',
                bool_or(i."costPriceAtSale" <= 0) OVER (PARTITION BY o."id"),
-               i."quantity", i."price", i."costPriceAtSale", i."quantity" * i."price", i."quantity" * i."costPriceAtSale", 0,
-               i."quantity" * i."price", round(i."quantity" * i."price" * 0.97, 2), round(i."quantity" * i."price" * 0.18, 2), ${LEDGER_FORMULA_VERSION}::int
+               i."quantity", i."price", i."costPriceAtSale", i."quantity" * i."price", i."quantity" * i."costPriceAtSale",
+               round(i."quantity" * i."price" / sum(i."quantity" * i."price") OVER (PARTITION BY o."id"), 10),
+               i."quantity" * i."price", round(i."quantity" * i."price" * 0.97, 2),
+               round(i."quantity" * i."price" * 0.85, 2) - i."quantity" * i."costPriceAtSale",
+               CASE WHEN ${settledSql} THEN round(i."quantity" * i."price" * ${gmvMaxRate}::numeric, 2) ELSE 0 END, ${LEDGER_FORMULA_VERSION}::int
         FROM "OrderItem" i JOIN "Order" o ON o."id" = i."orderId"
         WHERE o."channelId" = ${channel.id}
       `);
+      if (tiktok) {
+        // Bản kê TikTok. Trigger của bảng bản kê đánh dấu sổ đơn bẩn cho TỪNG dòng — vô ích ở đây (câu UPDATE bên dưới ghi
+        // đè cả sổ đơn) và tốn vài phút với nửa triệu bản kê → tắt trigger đó trong giao dịch này rồi bật lại; giao dịch
+        // hỏng thì Postgres tự trả trigger về trạng thái bật.
+        await tx.$executeRawUnsafe(`ALTER TABLE "tiktok_order_settlements" DISABLE TRIGGER "order_ledger_on_tiktok_settlement"`);
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO "tiktok_order_settlements" ("id", "orderId", "estimated", "feeGmvMax", "updatedAt")
+          SELECT o."id" || '-st', o."id", NOT ${settledSql}, round(sum(i."quantity" * i."price") * ${gmvMaxRate}::numeric, 2), now()
+          FROM "Order" o JOIN "OrderItem" i ON i."orderId" = o."id"
+          WHERE o."channelId" = ${channel.id} AND o."shippingStatus" <> 'CANCELLED'
+            AND o."createdAt" < (now() AT TIME ZONE 'UTC') - INTERVAL '7 days'
+          GROUP BY o."id"
+        `);
+        await tx.$executeRawUnsafe(`ALTER TABLE "tiktok_order_settlements" ENABLE TRIGGER "order_ledger_on_tiktok_settlement"`);
+      }
       // Sổ đơn: trigger đã tạo dòng nháp bẩn khi ghi đơn → điền số giả lập + đánh dấu đã tính.
       await tx.$executeRaw(Prisma.sql`
         UPDATE "order_ledger" l SET
           "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int, "dirtyAt" = NULL, "dirtyReason" = NULL, "computedAt" = now(),
           "deliveredAt" = l."createdAt" + INTERVAL '2 days', "deliveredDate" = (l."createdAt" + INTERVAL '2 days 7 hours')::date,
           "settledAt" = l."createdAt" + INTERVAL '5 days', "settledDate" = (l."createdAt" + INTERVAL '5 days 7 hours')::date,
-          "isSettled" = true, "countsAsRevenue" = (l."shippingStatus" <> 'CANCELLED'), "isLoss" = (s.g < 60000),
+          "isSettled" = s.settled, "feeGmvMax" = CASE WHEN s.settled THEN round(s.g * ${gmvMaxRate}::numeric, 2) ELSE 0 END,
+          "countsAsRevenue" = (l."shippingStatus" <> 'CANCELLED'), "isLoss" = (s.g < 60000),
           "missingCostPrice" = s.missing, "itemCount" = s.n, "totalQuantity" = s.q,
           "revenueGross" = s.g, "actualRevenue" = round(s.g * 0.97, 2), "platformRevenue" = round(s.g * 0.85, 2),
           "platformDeduction" = round(s.g * 0.15, 2), "netRevenue" = round(s.g * 0.85, 2), "actualPayout" = round(s.g * 0.85, 2),
@@ -113,7 +156,8 @@ async function build(): Promise<void> {
           "platformTax" = round(s.g * 0.015, 2), "feeService" = round(s.g * 0.06, 2), "feeFixedPayment" = round(s.g * 0.09, 2)
         FROM (
           SELECT i."orderId", sum(i."quantity" * i."price") AS g, sum(i."quantity" * i."costPriceAtSale") AS c,
-                 count(*)::int AS n, sum(i."quantity")::int AS q, bool_or(i."costPriceAtSale" <= 0) AS missing
+                 count(*)::int AS n, sum(i."quantity")::int AS q, bool_or(i."costPriceAtSale" <= 0) AS missing,
+                 bool_and(${settledSql}) AS settled
           FROM "OrderItem" i JOIN "Order" o ON o."id" = i."orderId"
           WHERE o."channelId" = ${channel.id}
           GROUP BY i."orderId"
@@ -133,6 +177,16 @@ async function build(): Promise<void> {
                now()
         FROM generate_series(1, ${campaigns}::int) c
       `);
+      if (tiktok) {
+        // Số quảng cáo theo ngày của từng chiến dịch, đủ cửa sổ — để mỗi chiến dịch có khoảng ngày tự kiểm mẫu số.
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO "AdsCampaignDailyPerf" ("id", "adsCampaignId", "date", "expense", "broadGmv", "updatedAt")
+          SELECT ${pre} || '-c' || c || '-d' || d, ${pre} || '-c' || c, ((now() AT TIME ZONE 'UTC') + INTERVAL '7 hours')::date - d,
+                 100000, 1000000, now()
+          FROM generate_series(1, ${campaigns}::int) c
+          CROSS JOIN generate_series(0, ${spreadDays}::int) d
+        `);
+      }
     },
     { timeout: 1_800_000, maxWait: 30_000 }
   );
@@ -185,7 +239,11 @@ async function cleanup(): Promise<void> {
 
 /** Dọn dòng chết + cập nhật thống kê để Postgres lập kế hoạch đúng sau khi thêm / xóa hàng trăm nghìn dòng. */
 async function refreshStatistics(): Promise<void> {
-  for (const table of ['"Order"', '"OrderItem"', '"order_ledger"', '"order_line_ledger"', '"ChannelProduct"', '"AdsCampaign"']) {
+  const tables = [
+    '"Order"', '"OrderItem"', '"order_ledger"', '"order_line_ledger"', '"ChannelProduct"',
+    '"AdsCampaign"', '"AdsCampaignDailyPerf"', '"tiktok_order_settlements"',
+  ];
+  for (const table of tables) {
     await prisma.$executeRawUnsafe(`VACUUM (ANALYZE) ${table}`);
   }
 }

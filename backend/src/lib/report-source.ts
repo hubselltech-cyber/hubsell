@@ -36,3 +36,28 @@ export function resolveAdsMarginSource(
   if (resolveReportSource(undefined, reportsEnv) === "orders") return "rows";
   return env?.trim().toLowerCase() === "rows" ? "rows" : "sql";
 }
+
+// ------------------------------------------------------------
+// Hòa vốn quảng cáo TikTok (docs/QUANG-CAO-GOM-TRONG-DATABASE.md mục 12) —
+// công tắc RIÊNG với Shopee/Lazada để lỗi hoặc lui đường của khối này không kéo
+// theo khối kia:
+//   "rows": giữ đơn 60 ngày của gian trong RAM rồi duyệt (mặc định HIỆN TẠI),
+//   "sql" : GROUP BY trên sổ dòng hàng trong database.
+// ------------------------------------------------------------
+
+/** Nơi cộng nguyên liệu hòa vốn của Trợ lý quảng cáo TikTok. */
+export type TiktokBreakevenSource = "rows" | "sql";
+
+/**
+ * Mặc định `rows` cho tới khi mọi gian TikTok trên prod khớp ở lệnh
+ * `ads-compare --platform TIKTOK`; env TIKTOK_BREAKEVEN_SOURCE=sql bật đường gom
+ * trong database. Khi báo cáo đã lui về đơn gốc (LEDGER_REPORTS_SOURCE=orders)
+ * thì sổ cái không còn là nguồn số → luôn `rows`.
+ */
+export function resolveTiktokBreakevenSource(
+  env: string | undefined = process.env.TIKTOK_BREAKEVEN_SOURCE,
+  reportsEnv: string | undefined = process.env.LEDGER_REPORTS_SOURCE
+): TiktokBreakevenSource {
+  if (resolveReportSource(undefined, reportsEnv) === "orders") return "rows";
+  return env?.trim().toLowerCase() === "sql" ? "sql" : "rows";
+}

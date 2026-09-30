@@ -46,6 +46,13 @@ import {
   type LedgerMarginMapping,
   type LedgerMarginOptions,
 } from "../lib/ads-margin";
+import {
+  TIKTOK_PACE_RECENT_MS,
+  TIKTOK_PACE_WINDOW_MS,
+  type LedgerTiktokBreakevenGroup,
+  type LedgerTiktokBreakevenMapping,
+  type LedgerTiktokBreakevenOptions,
+} from "../lib/tiktok-breakeven";
 import type { ChannelScope } from "../lib/channel-filter";
 import type { LedgerCashFlowBreakdown } from "../lib/cash-flow-totals";
 import type { LedgerOverviewBreakdown } from "../lib/overview-totals";
@@ -1571,6 +1578,233 @@ function marginByGroupQuery(
            COALESCE(sum("quantity") FILTER (WHERE "recent"), 0) AS "unitsRecent",
            COALESCE(sum("quantity") FILTER (WHERE "noCost"), 0) AS "unitsNoCost"
     FROM "tagged"
+    GROUP BY "grp"
+  `;
+  return { sql, groupNames };
+}
+
+// ------------------------------------------------------------
+// Quảng cáo TikTok: GOM nguyên liệu hòa vốn + tự kiểm mẫu số + đà bán theo NHÓM
+// SKU trong database (docs/QUANG-CAO-GOM-TRONG-DATABASE.md mục 12) — không kéo
+// đơn lên RAM, không phanh số đơn: RAM chỉ nhận một dòng kết quả cho mỗi nhóm.
+// ------------------------------------------------------------
+
+/**
+ * Gom theo nhóm SKU trên sổ dòng hàng của MỘT gian TikTok trong cửa sổ ngày tạo.
+ *
+ * Nhóm SHOP_GROUP (mọi dòng) tự có, không nằm trong `mapping`.
+ * Nhóm không có dòng hàng nào trong cửa sổ thì KHÔNG có trong kết quả.
+ *
+ * Cùng luật với tiktokBreakevenBase / placedRevenue / salesPaceByGroup
+ * (lib/tiktok-breakeven.ts):
+ *   · "đã đối soát THẬT" = sổ đơn ghi isSettled VÀ đơn không hủy VÀ có bản kê
+ *     TikTok không phải số ước tính — CTE "settled", nối bảng bản kê ở cấp ĐƠN;
+ *   · mốc cùng lứa = ngày tạo của đơn đã đối soát thật mới nhất của gian trong
+ *     cửa sổ (tính trên sổ ĐƠN, nên đơn không có dòng hàng vẫn tham gia như ở
+ *     hàm thuần);
+ *   · đơn có kết cục cuối = đã đối soát thật, hoặc đơn hủy tạo không muộn hơn
+ *     mốc cùng lứa; còn lại đếm vào pendingOrders;
+ *   · trong đơn có kết cục cuối: thiếu giá vốn (cờ cấp đơn) → doanh thu dồn vào
+ *     missingCostRevenue; còn lại cộng doanh thu; đơn không hủy cộng thêm lãi
+ *     trước quảng cáo (profit − feeGmvMax) và phí quảng cáo (−feeGmvMax);
+ *   · tự kiểm mẫu số: doanh thu MỌI đơn đặt của nhóm (kể cả hủy / chưa đối soát)
+ *     có ngày tạo (giờ VN) trong [checkFrom của nhóm, checkTo];
+ *   · đà bán: số lượng của mọi dòng (kể cả dòng giá 0) của đơn không hủy, tạo từ
+ *     mốc 30 ngày / 7 ngày lùi từ `paceNow`.
+ * Như ledgerMarginByGroup, tiền cộng thẳng phần sổ ĐÃ phân bổ về từng dòng, chỉ
+ * lấy dòng có giá trị > 0 ("paid"); số đơn = số MÃ ĐƠN PHÂN BIỆT có ít nhất một
+ * dòng có giá thuộc nhóm. Chỉ dòng tính bằng phiên bản công thức hiện tại.
+ *
+ * Cách cộng (khác ledgerMarginByGroup, vì cửa sổ 60 ngày + đệm ngắn nên câu này
+ * chạy dày hơn): một dòng hàng thuộc nhóm toàn gian, nhóm sản phẩm và các nhóm
+ * chiến dịch, nên cộng thẳng theo (nhóm, dòng) phải nhân bản và sắp xếp gấp ba số
+ * dòng. Ở đây chỉ phần BẮT BUỘC mới nhân bản:
+ *   · tiền, số lượng và số đơn của các đơn chỉ có MỘT dòng có giá ("sole": tỷ
+ *     trọng dòng share = 1) cộng dồn được qua SKU → cộng trước theo SKU ("bySku",
+ *     vài nghìn dòng) rồi mới nối với bộ nhóm;
+ *   · đơn có từ hai dòng có giá thì hai dòng có thể rơi vào cùng một nhóm → phải
+ *     đếm mã đơn phân biệt theo nhóm ("multi"), nhưng chỉ trên các dòng của
+ *     những đơn đó và chỉ mang theo mã đơn;
+ *   · tự kiểm mẫu số có ngày đầu riêng từng chiến dịch → cộng riêng ("checks").
+ * `share` của một dòng chỉ làm tròn thành 1 khi các dòng có giá còn lại của đơn
+ * cộng lại chưa tới 0,5 phần mười tỷ giá trị đơn — tức đơn trên 20 tỷ đồng kèm
+ * một dòng 1 đồng; ngoài ca đó "share = 1" đúng bằng "dòng có giá duy nhất".
+ */
+export async function ledgerTiktokBreakevenByGroup(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerTiktokBreakevenMapping,
+  opts: LedgerTiktokBreakevenOptions
+): Promise<Map<string, LedgerTiktokBreakevenGroup>> {
+  const { sql, groupNames } = tiktokBreakevenByGroupQuery(scope, range, mapping, opts);
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(sql);
+  const out = new Map<string, LedgerTiktokBreakevenGroup>();
+  for (const r of rows) {
+    const index = Number(r.grp);
+    out.set(index === 0 ? SHOP_GROUP : groupNames[index - 1], {
+      hasPaid: Boolean(r.hasPaid),
+      settledOrders: Number(r.settledOrders),
+      cancelledOrders: Number(r.cancelledOrders),
+      revenue: Number(r.revenue),
+      profitBeforeAds: Number(r.profitBeforeAds),
+      adFee: Number(r.adFee),
+      missingCostRevenue: Number(r.missingCostRevenue),
+      pendingOrders: Number(r.pendingOrders),
+      units30d: Number(r.units30d),
+      units7d: Number(r.units7d),
+      placedRevenue: Number(r.placedRevenue),
+    });
+  }
+  return out;
+}
+
+/** Kế hoạch chạy THẬT của câu gom hòa vốn TikTok (EXPLAIN ANALYZE) — cho công cụ đối chiếu. */
+export async function explainLedgerTiktokBreakevenByGroup(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerTiktokBreakevenMapping,
+  opts: LedgerTiktokBreakevenOptions
+): Promise<string[]> {
+  const { sql } = tiktokBreakevenByGroupQuery(scope, range, mapping, opts);
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`EXPLAIN (ANALYZE, BUFFERS) ${sql}`);
+  return rows.map((r) => String(r["QUERY PLAN"]));
+}
+
+function tiktokBreakevenByGroupQuery(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerTiktokBreakevenMapping,
+  opts: LedgerTiktokBreakevenOptions
+): { sql: Prisma.Sql; groupNames: string[] } {
+  if (mapping.groups.length !== mapping.skus.length || mapping.groups.length !== mapping.checkFrom.length) {
+    throw new Error(
+      `ledgerTiktokBreakevenByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.skus.length} SKU, ${mapping.checkFrom.length} ngày tự kiểm)`
+    );
+  }
+  if (mapping.groups.includes(SHOP_GROUP)) {
+    throw new Error(`ledgerTiktokBreakevenByGroup: "${SHOP_GROUP}" là khóa dành riêng cho nhóm toàn gian`);
+  }
+  // Nhóm đi vào câu SQL bằng SỐ THỨ TỰ (0 = toàn gian, i = groupNames[i − 1]) — như ledgerMarginByGroup.
+  const groupNames: string[] = [];
+  const indexOfName = new Map<string, number>();
+  const groupIndexes = mapping.groups.map((name) => {
+    let index = indexOfName.get(name);
+    if (index === undefined) {
+      groupNames.push(name);
+      indexOfName.set(name, (index = groupNames.length));
+    }
+    return index;
+  });
+  const since30 = tsParam(new Date(opts.paceNow.getTime() - TIKTOK_PACE_WINDOW_MS));
+  const since7 = tsParam(new Date(opts.paceNow.getTime() - TIKTOK_PACE_RECENT_MS));
+  const version = Prisma.sql`${LEDGER_FORMULA_VERSION}::int`;
+  const sql = Prisma.sql`
+    WITH "settled" AS (
+      SELECT o."orderId", o."createdAt"
+      FROM "order_ledger" o
+      JOIN "tiktok_order_settlements" s ON s."orderId" = o."orderId" AND NOT s."estimated"
+      WHERE ${ledgerScopeSql(scope, range, { alias: "o" })}
+        AND o."formulaVersion" = ${version}
+        AND o."isSettled"
+        AND o."shippingStatus" <> 'CANCELLED'
+    ),
+    "cutoff" AS (
+      SELECT max("createdAt") AS "at" FROM "settled"
+    ),
+    "lines" AS (
+      -- "cls" = kết cục của ĐƠN: 0 chưa có kết cục cuối, 1 có kết cục nhưng thiếu giá vốn, 2 đơn hủy cùng lứa, 3 đã đối soát thật.
+      SELECT l."orderId", l."channelSku" AS "sku", l."quantity", l."actualRevenue", l."createdDate",
+             (l."profit" - l."feeGmvMax") AS "profitBeforeAds",
+             (-l."feeGmvMax") AS "adFee",
+             (l."lineGross" > 0) AS "paid",
+             (l."share" = 1) AS "sole",
+             (CASE WHEN NOT (CASE WHEN l."shippingStatus" = 'CANCELLED'
+                                  THEN COALESCE(l."createdAt" <= (SELECT "at" FROM "cutoff"), FALSE)
+                                  ELSE st."orderId" IS NOT NULL END) THEN 0
+                   WHEN l."missingCostPrice" THEN 1
+                   WHEN l."shippingStatus" = 'CANCELLED' THEN 2
+                   ELSE 3 END) AS "cls",
+             (l."shippingStatus" <> 'CANCELLED' AND l."createdAt" >= ${since30}) AS "pace30",
+             (l."shippingStatus" <> 'CANCELLED' AND l."createdAt" >= ${since7}) AS "pace7"
+      FROM "order_line_ledger" l
+      LEFT JOIN "settled" st ON st."orderId" = l."orderId"
+      WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
+        AND l."formulaVersion" = ${version}
+    ),
+    "map" AS (
+      SELECT DISTINCT m."grp", m."sku", NULLIF(m."checkFrom", '')::date AS "checkFrom"
+      FROM unnest(${groupIndexes}::int[], ${[...mapping.skus]}::text[], ${[...mapping.checkFrom]}::text[]) AS m("grp", "sku", "checkFrom")
+    ),
+    "bySku" AS (
+      SELECT "sku",
+             bool_or("paid") AS "hasPaid",
+             count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 3) AS "settledOrders",
+             count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 2) AS "cancelledOrders",
+             count(*) FILTER (WHERE "paid" AND "sole" AND "cls" = 0) AS "pendingOrders",
+             COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" >= 2), 0) AS "revenue",
+             COALESCE(sum("profitBeforeAds") FILTER (WHERE "paid" AND "cls" = 3), 0) AS "profitBeforeAds",
+             COALESCE(sum("adFee") FILTER (WHERE "paid" AND "cls" = 3), 0) AS "adFee",
+             COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "cls" = 1), 0) AS "missingCostRevenue",
+             COALESCE(sum("quantity") FILTER (WHERE "pace30"), 0) AS "units30d",
+             COALESCE(sum("quantity") FILTER (WHERE "pace7"), 0) AS "units7d"
+      FROM "lines"
+      GROUP BY "sku"
+    ),
+    "multi" AS (
+      SELECT t."grp",
+             count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 3) AS "settledOrders",
+             count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 2) AS "cancelledOrders",
+             count(DISTINCT t."orderId" COLLATE "C") FILTER (WHERE t."cls" = 0) AS "pendingOrders"
+      FROM (
+        SELECT 0 AS "grp", x."orderId", x."cls"
+        FROM "lines" x
+        WHERE x."paid" AND NOT x."sole"
+        UNION ALL
+        SELECT m."grp", x."orderId", x."cls"
+        FROM "lines" x
+        JOIN "map" m ON m."sku" = x."sku"
+        WHERE x."paid" AND NOT x."sole"
+      ) t
+      GROUP BY t."grp"
+    ),
+    "checks" AS (
+      SELECT m."grp", sum(x."actualRevenue") AS "placedRevenue"
+      FROM "lines" x
+      JOIN (SELECT "grp", "sku", "checkFrom" FROM "map" WHERE "checkFrom" IS NOT NULL) m ON m."sku" = x."sku"
+      WHERE x."paid" AND x."createdDate" >= m."checkFrom" AND x."createdDate" <= ${dayParam(mapping.checkTo)}
+      GROUP BY m."grp"
+    ),
+    -- Ghép ba phần về từng nhóm bằng UNION ALL + GROUP BY (mỗi phần tối đa một dòng cho mỗi nhóm; "multi" và "checks"
+    -- chỉ có nhóm đã có trong hai phần đầu vì cùng đi từ "lines").
+    "parts" AS (
+      SELECT 0 AS "grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
+             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", 0::numeric AS "placedRevenue"
+      FROM "bySku" a
+      UNION ALL
+      SELECT m."grp", a."hasPaid", a."settledOrders", a."cancelledOrders", a."pendingOrders", a."revenue",
+             a."profitBeforeAds", a."adFee", a."missingCostRevenue", a."units30d", a."units7d", 0::numeric
+      FROM "map" m
+      JOIN "bySku" a ON a."sku" = m."sku"
+      UNION ALL
+      SELECT mu."grp", FALSE, mu."settledOrders", mu."cancelledOrders", mu."pendingOrders", 0, 0, 0, 0, 0, 0, 0::numeric
+      FROM "multi" mu
+      UNION ALL
+      SELECT c."grp", FALSE, 0, 0, 0, 0, 0, 0, 0, 0, 0, c."placedRevenue"
+      FROM "checks" c
+    )
+    SELECT "grp",
+           bool_or("hasPaid") AS "hasPaid",
+           sum("settledOrders") AS "settledOrders",
+           sum("cancelledOrders") AS "cancelledOrders",
+           sum("pendingOrders") AS "pendingOrders",
+           sum("revenue") AS "revenue",
+           sum("profitBeforeAds") AS "profitBeforeAds",
+           sum("adFee") AS "adFee",
+           sum("missingCostRevenue") AS "missingCostRevenue",
+           sum("units30d") AS "units30d",
+           sum("units7d") AS "units7d",
+           sum("placedRevenue") AS "placedRevenue"
+    FROM "parts"
     GROUP BY "grp"
   `;
   return { sql, groupNames };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { avgDailySpendOf, campaignAdvice, type CampaignAdviceInput } from "../tiktok-ads/campaign-advice";
-import type { TiktokBreakeven } from "../tiktok-ads/breakeven";
+import type { TiktokBreakeven } from "../../lib/tiktok-breakeven";
 
 // CHẨN ĐOÁN CHIẾN DỊCH GMV MAX — mọi kết luận ghép từ số đã có; hai mốc 80% ngân sách / 90% mục tiêu là số của TikTok.
 const be = (over: Partial<TiktokBreakeven> = {}): TiktokBreakeven => ({

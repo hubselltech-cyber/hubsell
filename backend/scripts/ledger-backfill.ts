@@ -14,9 +14,10 @@
 //   npx tsx scripts/ledger-backfill.ts partitions
 //   npx tsx scripts/ledger-backfill.ts ads-compare [--platform TIKTOK|SHOPEE|LAZADA] [--channel <id>] [--explain]
 //       so dòng gọn của đơn (nguyên liệu biên lãi / hòa vốn quảng cáo) đọc từ sổ với dòng dựng
-//       từ đơn gốc, từng gian. Shopee/Lazada so thêm HAI ĐƯỜNG CỘNG biên lãi (duyệt mảng đơn ↔
-//       gom trong database, docs/QUANG-CAO-GOM-TRONG-DATABASE.md): từng nhóm, nhịp bán, ba kết
-//       quả cuối. --explain (kèm --channel): in kế hoạch chạy thật của câu gom.
+//       từ đơn gốc, từng gian, rồi so HAI ĐƯỜNG CỘNG (duyệt mảng đơn ↔ gom trong database,
+//       docs/QUANG-CAO-GOM-TRONG-DATABASE.md): Shopee/Lazada biên lãi từng nhóm, nhịp bán, ba
+//       kết quả cuối; TikTok hòa vốn từng nhóm, tự kiểm mẫu số, đà bán, hai kết quả cuối.
+//       --explain (kèm --channel): in kế hoạch chạy thật của câu gom.
 //   npx tsx scripts/ledger-backfill.ts params-compare [--owner <userId>]
 //       so MỌI câu đọc sổ ở hai cách viết mốc kỳ (chuỗi ép kiểu ↔ dạng hằng, xem LedgerParamStyle):
 //       từng chủ shop × 6 kỳ, từng gian × 2 kỳ; kết quả phải giống hệt, in kèm tổng thời gian mỗi cách.
@@ -30,11 +31,8 @@
 import { ChannelName } from "@prisma/client";
 import { compareMarginSources } from "../src/integrations/shopee/ads-margin-compare";
 import { loadAdsGroupSets, loadMarginRows, marginGroupOptions } from "../src/integrations/shopee/ads-margin-source";
-import {
-  loadBreakevenRows,
-  tiktokBreakevenBase,
-  tiktokBreakevenBaseByGroup,
-} from "../src/integrations/tiktok-ads/breakeven";
+import { compareBreakevenSources } from "../src/integrations/tiktok-ads/breakeven-compare";
+import { loadBreakevenInputs, loadBreakevenRows } from "../src/integrations/tiktok-ads/breakeven-source";
 import {
   adsGroupMappingOf,
   marginOverRows,
@@ -43,6 +41,12 @@ import {
   type AdsInsightChannel,
 } from "../src/lib/ads-margin";
 import { parseDateRange } from "../src/lib/date-range";
+import {
+  tiktokBreakevenBase,
+  tiktokBreakevenBaseByGroup,
+  tiktokGroupMappingOf,
+  tiktokMarginWindowRange,
+} from "../src/lib/tiktok-breakeven";
 import { prisma } from "../src/lib/prisma";
 import {
   auditLedger,
@@ -50,6 +54,7 @@ import {
   drainLedgerOnce,
   ensureLedgerPartitions,
   explainLedgerMarginByGroup,
+  explainLedgerTiktokBreakevenByGroup,
   ledgerStatus,
   markLedgerScope,
 } from "../src/services/order-ledger";
@@ -184,7 +189,7 @@ function diffCompactRows(a: CompactRow[], b: CompactRow[]): { mismatched: number
   return { mismatched, first };
 }
 
-/** TikTok: dòng gọn từ sổ ↔ từ đơn gốc + nguyên liệu hòa vốn theo gian và theo từng SKU. */
+/** TikTok: dòng gọn từ sổ ↔ từ đơn gốc + nguyên liệu hòa vốn theo gian và theo từng SKU, rồi hai đường cộng hòa vốn (mảng đơn ↔ gom trong database). */
 async function compareTiktokRows(ch: AdsInsightChannel): Promise<{ ok: boolean; line: string }> {
   const t0 = Date.now();
   const ledger = await loadBreakevenRows(ch, "ledger");
@@ -203,7 +208,7 @@ async function compareTiktokRows(ch: AdsInsightChannel): Promise<{ ok: boolean; 
     const bx = gx.get(g);
     if (!bx || bx.settledOrders !== by.settledOrders || bx.pendingOrders !== by.pendingOrders || !close(bx.revenue, by.revenue) || !close(bx.profitBeforeAds, by.profitBeforeAds)) groupDiff += 1;
   }
-  const ok =
+  const rowsOk =
     d.mismatched === 0 && groupDiff === 0 &&
     x.settledOrders === y.settledOrders && x.cancelledOrders === y.cancelledOrders && x.pendingOrders === y.pendingOrders &&
     close(x.revenue, y.revenue) && close(x.profitBeforeAds, y.profitBeforeAds) && close(x.adFee, y.adFee) && close(x.missingCostRevenue, y.missingCostRevenue);
@@ -212,7 +217,16 @@ async function compareTiktokRows(ch: AdsInsightChannel): Promise<{ ok: boolean; 
     `settled=${x.settledOrders}/${y.settledOrders} cancelled=${x.cancelledOrders}/${y.cancelledOrders} pending=${x.pendingOrders}/${y.pendingOrders} ` +
     `revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profitBeforeAds=${Math.round(x.profitBeforeAds)}/${Math.round(y.profitBeforeAds)} adFee=${Math.round(x.adFee)}/${Math.round(y.adFee)} ` +
     `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
-  return { ok, line };
+
+  const m = await compareBreakevenSources(ch);
+  const lech = [...m.baseMismatches, ...m.checkMismatches, ...m.paceMismatches, ...m.endToEndMismatches];
+  const gom =
+    ` | GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
+    `soGoc=${m.baseMismatches.length} tuKiem=${m.checkMismatches.length} daBan=${m.paceMismatches.length} ketQuaCuoi=${m.endToEndMismatches.length} ` +
+    `(rows ${m.timing.rowsMs}ms, sql ${m.timing.sqlMs}ms)` +
+    (m.capped ? " CHAM PHANH 8000 DON - duong rows chi dai dien don moi nhat, khong ket luan duoc" : "") +
+    (lech.length ? ` LECH DAU: ${lech.slice(0, 5).join(" ; ")}` : "");
+  return { ok: rowsOk && m.ok, line: line + gom };
 }
 
 /** Shopee/Lazada: dòng gọn từ sổ ↔ từ đơn gốc, rồi hai đường cộng biên lãi (mảng đơn ↔ gom trong database). */
@@ -243,15 +257,25 @@ async function compareMarginRows(ch: AdsInsightChannel): Promise<{ ok: boolean; 
   return { ok: rowsOk && m.ok, line };
 }
 
-/** Kế hoạch chạy thật của câu gom biên lãi cho một gian, bỏ các mảnh tháng không chạy tới. */
-async function explainMarginQuery(ch: AdsInsightChannel): Promise<string> {
-  const range = marginWindowRange();
-  const plan = await explainLedgerMarginByGroup(
-    { userId: ch.userId, id: ch.id, channelName: ch.channelName },
-    range,
-    adsGroupMappingOf(await loadAdsGroupSets(ch.id)),
-    marginGroupOptions(ch.channelName, range)
-  );
+/** Kế hoạch chạy thật của câu gom (biên lãi Shopee/Lazada, hòa vốn TikTok) cho một gian, bỏ các mảnh tháng không chạy tới. */
+async function explainGroupQuery(ch: AdsInsightChannel): Promise<string> {
+  const scope = { userId: ch.userId, id: ch.id, channelName: ch.channelName };
+  let plan: string[];
+  if (ch.channelName === ChannelName.TIKTOK) {
+    const range = tiktokMarginWindowRange();
+    const inputs = await loadBreakevenInputs(ch.id);
+    plan = await explainLedgerTiktokBreakevenByGroup(scope, range, tiktokGroupMappingOf(inputs.sets, inputs.checks), {
+      paceNow: range.lte,
+    });
+  } else {
+    const range = marginWindowRange();
+    plan = await explainLedgerMarginByGroup(
+      scope,
+      range,
+      adsGroupMappingOf(await loadAdsGroupSets(ch.id)),
+      marginGroupOptions(ch.channelName, range)
+    );
+  }
   const kept: string[] = [];
   let skip = false;
   for (const l of plan) {
@@ -281,7 +305,7 @@ async function adsCompare(): Promise<void> {
     const { ok, line } = isTiktok ? await compareTiktokRows(ch) : await compareMarginRows(ch);
     allMatch &&= ok;
     console.log(`${ok ? "KHOP" : "LECH"} ${ch.channelName} ${ch.id} ${line}`);
-    if (!isTiktok && channelId && flag("explain")) console.log(await explainMarginQuery(ch));
+    if (channelId && flag("explain")) console.log(await explainGroupQuery(ch));
   }
   console.log(allMatch ? `TAT CA KHOP (${channels.length} gian)` : "CO LECH - xem tren");
   if (!allMatch) process.exitCode = 2;

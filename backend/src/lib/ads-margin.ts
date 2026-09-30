@@ -170,7 +170,8 @@ export function lowCostCoverage(base: MarginBase): boolean {
 export const SHOP_GROUP = "shop";
 
 const CAMPAIGN_GROUP_PREFIX = "c:";
-const PRODUCT_GROUP_PREFIX = "p:";
+/** Tiền tố khóa nhóm sản phẩm — phần sau tiền tố là item_id / product id của sàn. */
+export const PRODUCT_GROUP_PREFIX = "p:";
 
 /** Nhóm của một chiến dịch (AdsCampaign.id) = mọi SKU của các sản phẩm nằm trong chiến dịch. */
 export const campaignGroupKey = (campaignRowId: string): string => `${CAMPAIGN_GROUP_PREFIX}${campaignRowId}`;

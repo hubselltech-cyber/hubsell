@@ -13,7 +13,8 @@
 // ============================================================
 
 import { breakevenUnusableReason } from "./auto-rules";
-import { profitPer100AtRoi, type TiktokBreakeven } from "./breakeven";
+import type { TiktokBreakeven } from "../../lib/tiktok-breakeven";
+import { profitPer100AtRoi } from "./breakeven";
 
 export const BUDGET_USED_PCT = 80;
 export const TARGET_REACHED_PCT = 90;

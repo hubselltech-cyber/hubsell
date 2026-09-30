@@ -1,7 +1,8 @@
 # Phương án: gom biên lãi / hòa vốn quảng cáo TRONG DATABASE
 
 Trạng thái: **ANH TRUNG ĐÃ DUYỆT 30/09/2026 chiều**; tối 30/09 anh đổi điểm 1 ở mục 9: **tách TikTok thành đợt riêng**, Shopee + Lazada làm chung đợt 1. Ba điểm còn lại giữ theo đề xuất.
-**Đợt 1 (Shopee + Lazada): XONG tối 30/09 — prod 20/20 gian khớp, mặc định đã đổi sang `sql`** (đường lui `ADS_MARGIN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 11. Đợt 2 (TikTok): chưa làm, chờ anh gọi.
+**Đợt 1 (Shopee + Lazada): XONG tối 30/09 — prod 20/20 gian khớp, mặc định đã đổi sang `sql`** (đường lui `ADS_MARGIN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 11.
+**Đợt 2 (TikTok): code + test + số đo XONG tối 30/09, lên prod ở chế độ `rows`** (công tắc `TIKTOK_BREAKEVEN_SOURCE`, chưa đổi gì với khách) — chi tiết ở mục 12; còn bước so trên prod rồi đổi mặc định sang `sql` (mục 12.7).
 Thuộc giai đoạn 1 của `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, tiếp nối `docs/SO-CAI-DON.md` mục 9.7.
 
 ## 1. Mục tiêu và ranh giới
@@ -240,3 +241,83 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 - `params-compare` trên Render Shell worker: **TAT CA KHOP — 2.976 lượt so (mọi chủ shop × 6 kỳ, mọi gian × 2 kỳ, 18 câu đọc), 0 lệch.** Tổng thời gian cách cũ / dạng hằng (mili giây): Lãi/Lỗ theo SKU 3.825 / 2.241; kiểm sổ sạch 1.885 / 1.268; tổng quan 1.974 / 1.402; dòng tiền 2.210 / 1.716; đối soát thuế 1.360 / 1.087; tổng theo nhóm 4.388 / 4.035. Riêng dòng gọn quảng cáo (`ledgerCompactOrders`) 2.263 / 2.753: chậm hơn khoảng 8 mili giây mỗi lượt gọi, em CHƯA tìm nguyên nhân (trên máy, kể cả gian thử 300.000 đơn, câu này lại nhanh hơn ở dạng hằng). Câu này đang phục vụ hòa vốn TikTok và đường lui `rows` của Shopee/Lazada; xem lại khi làm đợt 2 TikTok. Ở số đơn hiện tại mức lợi trên prod nhỏ hơn trên máy vì phần lớn thời gian mỗi câu là đường truyền tới Supabase.
 - Trang Tổng quan của tài khoản Chủ Shop Hubsell mở bình thường sau khi bật. Log web sau deploy không có lỗi.
 - Chưa kiểm được trên prod: xóa một gian thật (không có gian nào để xóa thử) và nhánh "đang được xóa dần" trên giao diện (cần gian trên khoảng 25.000 đơn). Hai phần này mới được kiểm bằng test trên DB dev và gian thử 300.000 đơn.
+
+## 12. Đợt 2 (TikTok): đã làm tối 30/09/2026
+
+Trạng thái: code, test và số đo xong; **lên prod ở chế độ `rows`** (mặc định của `TIKTOK_BREAKEVEN_SOURCE`), tức chưa đổi gì với khách. Còn bước so trên prod rồi đổi mặc định (mục 12.7).
+
+### 12.1 Bản đồ mã nguồn
+
+Cùng khuôn với đợt 1: luật thuần ở `lib/`, câu SQL ở `services/order-ledger.ts`, phần nạp + bộ đệm + ghép ở `integrations/tiktok-ads/`.
+
+| Tệp (dưới `backend/`) | Giữ gì |
+|---|---|
+| `src/lib/tiktok-breakeven.ts` | THUẦN. Luật hòa vốn TikTok chuyển nguyên văn từ `breakeven.ts` (`tiktokBreakevenBase`, `…ByGroup`, `settledCohortCutoff`, `toTiktokBreakeven`, `placedRevenue`, `salesPaceByGroup`), cửa sổ 60 ngày, khoảng tự kiểm của từng chiến dịch (`tiktokCampaignCheckOf`), bộ nhóm gửi vào câu SQL kèm dấu vân tay (`tiktokGroupMappingOf`), mặt tiền `ChannelBreakevens` với hai bản `breakevensFromRows` / `breakevensFromGroups`, kiểu dữ liệu của câu gom. Bộ nhóm dùng lại của đợt 1 (`buildAdsGroupSets`: `shop`, `c:<AdsCampaign.id>`, `p:<product id>`). |
+| `src/lib/report-source.ts` | Thêm `resolveTiktokBreakevenSource` (env `TIKTOK_BREAKEVEN_SOURCE`: mặc định `rows`, `sql` = gom trong database; `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`). |
+| `src/services/order-ledger.ts` | `ledgerTiktokBreakevenByGroup` (một câu cho mọi nhóm: đơn đã đối soát / hủy cùng lứa / chờ kết cục, doanh thu, lãi trước quảng cáo, phí quảng cáo, doanh thu thiếu giá vốn, đà bán 30 / 7 ngày, số tự kiểm mẫu số, cờ "nhóm có dòng có giá"), `explainLedgerTiktokBreakevenByGroup`. |
+| `src/integrations/tiktok-ads/breakeven-source.ts` | Nạp từ database + bộ đệm: `loadBreakevenInputs` (chiến dịch + sản phẩm sàn → bộ nhóm, khoảng tự kiểm), `loadBreakevenRows`, `loadBreakevenGroups`, `fetchChannelBreakevens` (chọn đường cộng, lưới đỡ khi câu gom lỗi). |
+| `src/integrations/tiktok-ads/breakeven.ts` | Ghép số thành kết luận: `computeTiktokAdsBreakeven` (gian + từng chiến dịch kèm tự kiểm), `computeTiktokProductBreakevens` (tab Hòa vốn sản phẩm, kết luận từng dòng, nhận định Nên chạy), bộ đệm kết quả 45 giây. Ngưỡng 5 đơn và mọi câu chữ kết luận không đổi. |
+| `src/integrations/tiktok-ads/breakeven-compare.ts` | Công cụ so hai đường cộng ở hai tầng (số gốc từng nhóm + tự kiểm + đà bán + danh sách sản phẩm; hai kết quả cuối). Gỡ cùng đường lui. |
+| `src/lib/json-diff.ts` | So hai kết quả dạng JSON — tách từ công cụ so của đợt 1 để hai công cụ dùng chung. |
+| `scripts/ledger-backfill.ts` | `ads-compare --platform TIKTOK` so thêm hai đường cộng hòa vốn; `--explain` in kế hoạch chạy thật của câu gom TikTok. |
+| `scripts/bench-large-shop.ts` | Thêm `--platform TIKTOK` (đơn rải 59 ngày, bản kê thật / ước tính, phí GMV Max, số quảng cáo theo ngày). Sửa cho MỌI sàn: giá vốn = 20% giá bán và ghi đúng tỷ trọng dòng (`share`), để sổ dòng hàng của gian thử khớp phần sổ thật sẽ phân bổ — hai đường cộng so được với nhau trên gian thử. |
+
+Test: thuần ở `src/lib/__tests__/tiktok-breakeven.test.ts` (luật cũ chuyển sang + công tắc, bộ nhóm, mặt tiền); `src/integrations/__tests__/tiktok-ads-breakeven.test.ts` còn kết luận sản phẩm + bộ đệm kết quả; trên DB dev: `tiktok-breakeven-sql-db`, `tiktok-breakeven-fallback-db`.
+
+### 12.2 Câu gom viết thế nào (khác mục 3.4 ở cách cộng, luật không đổi)
+
+1. **Cờ "đã đối soát THẬT" lấy ở cấp đơn**: nối sổ đơn (`isSettled`, không hủy) với bảng bản kê TikTok (không phải số ước tính). Mốc cùng lứa = ngày tạo lớn nhất trong tập này, nên đơn đã đối soát không có dòng hàng vẫn làm mốc như ở hàm thuần.
+2. **Không nhân bản dòng hàng theo nhóm cho phần cộng tiền.** Một dòng hàng thuộc nhóm toàn gian, nhóm sản phẩm và các nhóm chiến dịch. Bản đầu viết theo khuôn đợt 1 (nhân bản rồi gom một tầng) phải sắp xếp 2,4 triệu dòng ở gian thử. Bản đang dùng chia ba phần:
+   - tiền, số lượng và số đơn của các đơn chỉ có MỘT dòng có giá (tỷ trọng dòng `share = 1`) cộng dồn được qua SKU → cộng trước theo SKU (vài nghìn dòng) rồi mới nối với bộ nhóm;
+   - đơn có từ hai dòng có giá: hai dòng có thể rơi vào cùng một nhóm, nên đếm mã đơn phân biệt theo nhóm, nhưng chỉ trên các dòng của những đơn đó và chỉ mang theo mã đơn;
+   - tự kiểm mẫu số có ngày đầu riêng từng chiến dịch → cộng riêng, ngày đầu gửi kèm bộ nhóm như mảng song song thứ ba.
+3. **Giả định duy nhất thêm vào:** `share = 1` nghĩa là "dòng có giá duy nhất của đơn". Sổ làm tròn `share` tới 10 số lẻ, nên điều này chỉ sai khi một đơn có hai dòng có giá chênh nhau trên 20 tỷ lần (đơn trên 20 tỷ đồng kèm một dòng 1 đồng).
+4. Đà bán và cờ "sản phẩm có dòng có giá" (danh sách của tab Hòa vốn sản phẩm) đi chung câu gom. Mốc thời gian viết dạng hằng như đợt 1.
+
+Hai bản của câu gom cho kết quả giống nhau từng byte ở cả 2.101 nhóm của gian thử 600.000 đơn.
+
+### 12.3 Bộ đệm và lưới đỡ
+
+- **Kết quả gom nhớ 30 phút theo gian** (anh Trung chốt 30/09/2026 tối; cùng env `ADS_PNL_CACHE_MIN` với Shopee/Lazada), kèm dấu vân tay bộ nhóm + khoảng tự kiểm; nhập giá vốn xóa đệm ngay. Lý do: câu gom ở shop lớn mất cỡ giây (mục 12.4), chạy lại mỗi 45 giây khi khách mở trang là quá dày; mức 45 giây cũ đặt ra để giá vốn vừa nhập hiện ngay, việc đó nay do lệnh xóa đệm lo. Hệ quả: ở đường `sql`, đơn / bản kê mới về vào hòa vốn chậm tối đa 30 phút.
+- Bộ đệm KẾT QUẢ 45 giây (`memoizeByChannel`) giữ nguyên: chiến dịch và số quảng cáo theo ngày vẫn đọc lại mỗi 45 giây. Đường `rows` không đổi gì.
+- Hòa vốn chiến dịch và tab Hòa vốn sản phẩm dùng chung một lượt gom.
+- **Lưới đỡ** như đợt 1: nguồn theo env mà câu gom lỗi → lượt đó tính bằng `rows`, log `[Tiktok-breakeven]` kèm mã gian, gian đó nghỉ câu gom 5 phút rồi tự thử lại. Nguồn chỉ định tường minh thì lỗi ném ra nguyên vẹn.
+
+### 12.4 Số đo (DB dev trên máy, Postgres 17, chưa đo trên Supabase)
+
+Gian thử TikTok: 600.000 đơn, 810.000 dòng hàng trong 59 ngày (tương đương shop 300.000 đơn mỗi tháng), 2.000 sản phẩm × 3 phân loại, 100 chiến dịch × 20 sản phẩm (12.000 cặp ánh xạ, 2.101 nhóm), khoảng 435.000 đơn đã đối soát thật.
+
+| Cách cộng | Thời gian một lượt | Ghi tệp tạm |
+|---|---|---|
+| Bản đầu: nhân bản dòng theo nhóm rồi gom một tầng (khuôn đợt 1) | 7,7 – 8,2 giây | 618 MB |
+| **Bản đang dùng (mục 12.2)** | **5,2 – 5,5 giây** | 362 MB |
+| Đường `rows` có phanh 8.000 đơn | 0,3 – 0,4 giây | — |
+| Đường `rows` nếu bỏ phanh | 12,4 giây, RAM Node 1,56 GB | — |
+
+- Đường `rows` ở gian này nhanh nhưng SAI: 8.000 đơn mới nhất chưa đầy một ngày bán, chưa đơn nào đối soát, nên không ra được hòa vốn. Đây chính là lỗ hổng mà đợt 2 đóng.
+- Phần thời gian của bản đang dùng (theo kế hoạch chạy thật): tìm đơn đã đối soát thật khoảng 1 giây; đọc dòng hàng + gắn kết cục đơn 1,7 giây; cộng theo SKU 0,9 giây; đếm đơn nhiều dòng 1,5 giây; tự kiểm 0,6 giây.
+- Gian thử 6.000 đơn / 221 nhóm: đường `sql` khoảng 90 mili giây, đường `rows` khoảng 200 mili giây (gồm cả câu kiểm sổ sạch).
+- Muốn nhanh hơn nữa ở shop rất lớn: bảng cộng sẵn theo ngày × SKU (giai đoạn 4), như đã ghi ở mục 7.
+
+### 12.5 Kiểm thử
+
+- `tiktok-breakeven-sql-db` dựng một gian TikTok 30 đơn trên DB dev, mỗi đơn một ca của luật: bản kê thật, bản kê ước tính, cờ đối soát không có bản kê, bản kê thật nhưng cờ chưa bật, đơn đã đối soát không có dòng hàng làm mốc cùng lứa, đơn hủy trước / đúng / sau mốc, đơn hủy mang bản kê thật, thiếu giá vốn, quà giá 0 (riêng và kèm hàng), đơn hai dòng cùng sản phẩm ở cả ba kết cục, phần phân bổ bị làm tròn, đơn ngoài cửa sổ / ngoài 30 ngày / ngoài 7 ngày, đơn tạo đúng ngày đầu và ngày cuối của khoảng tự kiểm. Số kỳ vọng suy từ cách dựng; ngoài ra hai đường cộng phải bằng nhau ở mọi nhóm và ở hai kết quả cuối.
+- `tiktok-breakeven-fallback-db`: lưới đỡ, nghỉ 5 phút, hai phép tính chung một lượt gom, đệm 30 phút, nhập giá vốn xóa đệm, nguồn tường minh không đỡ.
+- **Thử đột biến 53 chỗ trong câu gom** (bỏ từng điều kiện, đổi dấu, lệch mốc, đếm dòng thay vì đếm đơn, bỏ từng phần ghép…): cả 53 lần bộ test đều đỏ. Các lượt đầu lọt 6 chỗ, em đã thêm đơn mẫu cho đủ.
+- **Đường `rows` không đổi:** chạy bản `breakeven.ts` trước khi sửa và bản mới ở chế độ `rows` trên gian thử 6.000 đơn với cùng một mốc thời gian — kết quả hòa vốn chiến dịch (6 kB) và tab sản phẩm (132 kB) giống nhau từng byte.
+- Gian thử 6.000 đơn và 3.000 đơn: hai đường cộng khớp, 0 lệch ở số gốc, tự kiểm, đà bán, kết quả cuối.
+- Cả bộ 919 test qua (100 tệp), `tsc --noEmit` sạch.
+
+### 12.6 Việc làm thêm / phát hiện bên lề
+
+- **Lỗi hiệu năng của sổ cái, ảnh hưởng prod — đã sửa bằng migration `20260930280000_order_ledger_mark_collation`.** Khi dựng gian thử TikTok, bước chèn 480.000 bản kê chạy hơn 20 phút chưa xong. Nguyên nhân: trigger của hai bảng bản kê (Lazada, TikTok) gọi hàm đánh dấu sổ `order_ledger_mark` với lý do ghép từ `TG_TABLE_NAME`. Biến đó có kiểu `name`, mang luật so chuỗi "C"; PL/pgSQL áp luật của lời gọi cho mọi tham số chuỗi, nên câu tra bảng `Order` theo mã đơn bên trong hàm không dùng được chỉ mục khóa chính và **dò cả bảng `Order` cho mỗi dòng bản kê được ghi, sửa hoặc xóa**. Đo trên DB dev khi `Order` có 600.000 dòng: 55 mili giây mỗi dòng bản kê; sau khi sửa 0,4 đến 0,5 mili giây. Chi phí tăng theo tổng số đơn của mọi shop, nên trên prod hôm nay (khoảng 42.000 đơn) mỗi dòng bản kê tốn ít hơn nhiều nhưng vẫn là một lượt dò cả bảng — em CHƯA đo trên prod. Các trigger khác (đơn, dòng hàng, sổ kho, giá vốn) truyền lý do kiểu text nên không dính. Cách sửa: trong hàm, mã đơn đi qua một biến khai báo luật so chuỗi mặc định; migration chỉ `CREATE OR REPLACE FUNCTION`, không khóa bảng. Test: `integrations/__tests__/order-ledger-mark-db.test.ts` (đỏ với hàm cũ, xanh với hàm mới).
+- Sửa `bench-large-shop.ts` (mục 12.1); script tắt trigger bản kê trong giao dịch dựng rồi bật lại vì câu UPDATE cuối ghi đè cả sổ đơn (dựng 600.000 đơn TikTok mất 11 phút).
+- Ghi chú ở mục 11.9 về `ledgerCompactOrders` chậm hơn ~8 mili giây mỗi lượt trên prod: khi TikTok chuyển sang `sql`, câu đó chỉ còn phục vụ hai đường lui và sẽ gỡ cùng chúng, nên em không điều tra thêm.
+- Còn để ngỏ: phần tìm đơn đã đối soát thật đọc sổ ĐƠN (dòng rộng) chỉ để lấy mã đơn + ngày tạo, chiếm khoảng 1 trong 5,3 giây ở gian thử. Bỏ được nếu chấp nhận "đơn không có dòng hàng không làm mốc cùng lứa" — là đổi luật ở một ca dữ liệu hỏng, nên em giữ nguyên luật.
+
+### 12.7 Việc còn lại của đợt 2
+
+1. ⏳ Push ở chế độ `rows`.
+2. ⏳ So trên prod: `npx tsx scripts/ledger-backfill.ts ads-compare --platform TIKTOK` trên Render Shell của worker (thêm `--channel <id> --explain` cho gian nhiều đơn nhất để xem kế hoạch chạy thật và thời gian câu gom trên Supabase).
+3. ⏳ Khớp hết thì đổi mặc định của `resolveTiktokBreakevenSource` sang `sql`; `TIKTOK_BREAKEVEN_SOURCE=rows` (trên CẢ web và worker) là đường lui, giữ một tuần kể từ ngày bật rồi gỡ: `loadBreakevenRows`, `breakevensFromRows`, lưới đỡ, `breakeven-compare.ts`, phần TikTok của lệnh `ads-compare`, `TIKTOK_BREAKEVEN_MAX_ORDERS` (GIỮ các hàm thuần làm chuẩn đối chiếu trong test).
+4. ⏳ Theo dõi một tuần: log `[Tiktok-breakeven]` của web/worker, CPU database ở trang Supabase.

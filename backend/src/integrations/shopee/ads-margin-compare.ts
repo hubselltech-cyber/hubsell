@@ -31,6 +31,7 @@ import {
   type AdsInsightChannel,
   type MarginBase,
 } from "../../lib/ads-margin";
+import { diffJson, keyBy, type JsonDiffOptions } from "../../lib/json-diff";
 import type { AdsMarginSource } from "../../lib/report-source";
 import { computeChannelAdsInsights, computeChannelProductBreakeven } from "./ads-insights";
 import { loadAdsGroupSets, loadMarginGroups, loadMarginRows } from "./ads-margin-source";
@@ -75,44 +76,12 @@ function diffBase(key: string, a: MarginBase, b: MarginBase, out: string[]): num
   return maxDiff;
 }
 
-/** Trường tiền ở kết quả cuối — so theo lệch tuyệt đối; các số còn lại so tương đối. */
-const END_TO_END_MONEY_KEYS = new Set(["revenue", "revenue30d"]);
-const END_TO_END_RELATIVE_TOLERANCE = 1e-4;
-
-/** So đệ quy hai giá trị JSON. Số nguyên ở cả hai bên phải bằng tuyệt đối (số đơn, điểm, số lượng). */
-function diffDeep(a: unknown, b: unknown, path: string, key: string, out: string[]): void {
-  if (out.length >= 20) return;
-  if (typeof a === "number" && typeof b === "number") {
-    const d = Math.abs(a - b);
-    const ok = END_TO_END_MONEY_KEYS.has(key)
-      ? d <= MARGIN_COMPARE_MONEY_TOLERANCE
-      : Number.isInteger(a) && Number.isInteger(b)
-        ? d === 0
-        : d <= END_TO_END_RELATIVE_TOLERANCE * Math.max(Math.abs(a), Math.abs(b));
-    if (!ok) out.push(`${path}: ${a}/${b}`);
-    return;
-  }
-  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
-    if (a !== b) out.push(`${path}: ${JSON.stringify(a)}/${JSON.stringify(b)}`);
-    return;
-  }
-  if (Array.isArray(a) !== Array.isArray(b)) {
-    out.push(`${path}: mang/doi tuong`);
-    return;
-  }
-  const ka = Object.keys(a as object);
-  const kb = Object.keys(b as object);
-  for (const k of new Set([...ka, ...kb])) {
-    diffDeep((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${path}.${k}`, k, out);
-  }
-}
-
-/** Mảng → đối tượng theo khóa, để thứ tự sắp xếp (theo doanh thu, điểm) không gây lệch giả. */
-function keyed<T>(list: T[], idOf: (x: T) => string): Record<string, T> {
-  const out: Record<string, T> = {};
-  for (const x of list) out[idOf(x)] = x;
-  return out;
-}
+/** Kết quả cuối: trường tiền so theo lệch tuyệt đối, các số không nguyên còn lại so tương đối. */
+const END_TO_END_DIFF: JsonDiffOptions = {
+  moneyKeys: new Set(["revenue", "revenue30d"]),
+  moneyTolerance: MARGIN_COMPARE_MONEY_TOLERANCE,
+  relativeTolerance: 1e-4,
+};
 
 async function endToEndSnapshot(channel: AdsInsightChannel, marginSource: AdsMarginSource) {
   const [insights, breakeven, recommendations] = await Promise.all([
@@ -127,15 +96,15 @@ async function endToEndSnapshot(channel: AdsInsightChannel, marginSource: AdsMar
     insights: {
       shop: insights.shop,
       // `row` là dòng database (giống nhau ở hai đường) — chỉ giữ phần do biên lãi quyết định.
-      campaigns: keyed(
+      campaigns: keyBy(
         insights.items.map(({ row, ...rest }) => ({ id: row.id, ...rest })),
         (c) => c.id
       ),
     },
-    breakeven: { ...breakeven, rows: keyed(breakeven.rows, (r) => r.itemId) },
+    breakeven: { ...breakeven, rows: keyBy(breakeven.rows, (r) => r.itemId) },
     recommendations: recommendations && {
       ...recommendations,
-      rows: keyed(recommendations.rows, (r) => r.itemId),
+      rows: keyBy(recommendations.rows, (r) => r.itemId),
     },
   };
 }
@@ -197,7 +166,7 @@ export async function compareMarginSources(
       endToEndSnapshot(channel, "rows"),
       endToEndSnapshot(channel, "sql"),
     ]);
-    diffDeep(viaRows, viaSql, "ketqua", "", endToEndMismatches);
+    diffJson(viaRows, viaSql, "ketqua", endToEndMismatches, END_TO_END_DIFF);
   }
 
   const capped = ledgerRows.length >= MARGIN_MAX_ORDERS;
