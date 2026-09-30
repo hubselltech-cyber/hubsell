@@ -328,4 +328,5 @@ Việc còn lại:
 1. ✅ Push ở chế độ `rows` (`d37a9b0`, worker live 22:45).
 2. ✅ So trên prod (kết quả ở trên).
 3. ✅ Đổi mặc định của `resolveTiktokBreakevenSource` sang `sql`. `TIKTOK_BREAKEVEN_SOURCE=rows` (trên CẢ web và worker) là đường lui, gỡ cùng đợt ~07/10: `loadBreakevenRows`, `breakevensFromRows`, lưới đỡ, `breakeven-compare.ts`, phần TikTok của lệnh `ads-compare`, `TIKTOK_BREAKEVEN_MAX_ORDERS` (GIỮ các hàm thuần làm chuẩn đối chiếu trong test).
-4. ⏳ Theo dõi một tuần: log `[Tiktok-breakeven]` của web/worker, CPU database ở trang Supabase.
+4. ✅ Sau khi bật (bản `cb79880`, web + worker live 23:03): `prisma migrate status` báo database đã đủ migration (gồm `20260930280000`); chạy lại `ads-compare --platform TIKTOK` 11/11 gian khớp; tab Hòa vốn sản phẩm của gian and.not.or (tài khoản Chủ Shop Hubsell) mở bình thường: hòa vốn toàn gian 6,31, 22 / 58 sản phẩm có mốc riêng.
+5. ⏳ Theo dõi một tuần: log `[Tiktok-breakeven]` của web/worker, CPU database ở trang Supabase.
