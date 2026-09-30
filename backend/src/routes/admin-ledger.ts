@@ -8,7 +8,6 @@
 
 import { Router } from "express";
 import { ChannelName } from "@prisma/client";
-import { prisma } from "../lib/prisma";
 import {
   requirePlatformAdmin,
   requirePlatformPermission,
@@ -18,21 +17,9 @@ import { writeAuditLog } from "../services/platform-audit";
 import type { ChannelScope } from "../lib/channel-filter";
 import { parseDateRange, type DateRangeFilter } from "../lib/date-range";
 import {
-  buildLedgerRows,
-  LEDGER_GROUP_KEYS,
-  LEDGER_INCLUDE,
-  ORDER_LEDGER_MONEY_COLUMNS,
-  summarizeLedgerRowsInMemory,
-  type LedgerOrder,
-  type LedgerSummary,
-  type OrderLedgerRow,
-} from "../lib/order-ledger";
-import {
   auditLedger,
-  ensureLedgerFresh,
-  ledgerFreshness,
+  compareLedger,
   ledgerStatus,
-  ledgerSummary,
   markLedgerScope,
 } from "../services/order-ledger";
 import { runNightlyMaintenance } from "../workers/order-ledger";
@@ -60,44 +47,6 @@ function readScope(req: AuthRequest): { scope: ChannelScope; range?: DateRangeFi
   return { scope, range: parseDateRange(req.query) };
 }
 
-/** Đọc TOÀN BỘ đơn của phạm vi theo trang, dựng dòng sổ trong RAM (đường đối soát, không phải đường báo cáo). */
-async function buildRowsInMemory(
-  scope: ChannelScope,
-  range: DateRangeFilter | undefined,
-  max: number
-): Promise<{ rows: OrderLedgerRow[]; truncated: boolean }> {
-  const rows: OrderLedgerRow[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const page: LedgerOrder[] = await prisma.order.findMany({
-      where: { channel: scope, createdAt: range },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: LEDGER_INCLUDE,
-      take: 1000,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
-    for (const o of page) rows.push(buildLedgerRows(o).order);
-    if (page.length < 1000) return { rows, truncated: false };
-    if (rows.length >= max) return { rows, truncated: true };
-    cursor = page[page.length - 1].id;
-  }
-}
-
-/** Chênh lệch từng nhóm × cột giữa hai bản tổng; bỏ qua lệch dưới 0,5 đồng. */
-function diffSummaries(sql: LedgerSummary, mem: LedgerSummary) {
-  const out: { group: string; metric: string; ledger: number; recomputed: number; diff: number }[] = [];
-  for (const g of LEDGER_GROUP_KEYS) {
-    const a = sql[g];
-    const b = mem[g];
-    const metrics = ["count", "missingCostCount", "missingCostExcludedProfit", "lossCount", "returnCount", "totalQuantity", ...ORDER_LEDGER_MONEY_COLUMNS] as const;
-    for (const m of metrics) {
-      const diff = a[m] - b[m];
-      if (Math.abs(diff) > 0.5) out.push({ group: g, metric: m, ledger: a[m], recomputed: b[m], diff });
-    }
-  }
-  return out;
-}
-
 /**
  * GET /api/admin/ledger/compare?ownerId=&from=&to=&channelId=&channelName=&fresh=1
  * Hai bản tổng cho cùng phạm vi: (1) SUM trong DB trên sổ; (2) đọc đơn gốc, tính
@@ -113,28 +62,16 @@ router.get("/ledger/compare", requirePlatformPermission("hq.health"), async (req
     }
     const { scope, range } = parsed;
     const wantFresh = req.query.fresh === "1" || req.query.fresh === "true";
-    const freshness = wantFresh
-      ? await ensureLedgerFresh(scope, range, { maxInline: 5000 })
-      : { ...(await ledgerFreshness(scope, range)), recomputed: 0 };
-
-    const t1 = Date.now();
-    const ledger = await ledgerSummary(scope, range);
-    const ledgerMs = Date.now() - t1;
-
-    const t2 = Date.now();
-    const { rows, truncated } = await buildRowsInMemory(scope, range, 50_000);
-    const recomputed = summarizeLedgerRowsInMemory(rows);
-    const recomputeMs = Date.now() - t2;
-
-    const diffs = diffSummaries(ledger, recomputed);
+    const result = await compareLedger(scope, range, { fresh: wantFresh });
     res.json({
-      scope: { ownerId: scope.userId, channelId: scope.id ?? null, channelName: scope.channelName ?? null, from: range?.gte ?? null, to: range?.lte ?? null },
-      freshness,
-      timing: { ledgerMs, recomputeMs, recomputedOrders: rows.length, recomputeTruncated: truncated },
-      match: diffs.length === 0 && !truncated,
-      diffs,
-      ledger,
-      recomputed,
+      scope: {
+        ownerId: scope.userId,
+        channelId: scope.id ?? null,
+        channelName: scope.channelName ?? null,
+        from: range?.gte ?? null,
+        to: range?.lte ?? null,
+      },
+      ...result,
     });
   } catch (err) {
     next(err);
@@ -145,7 +82,9 @@ router.get("/ledger/compare", requirePlatformPermission("hq.health"), async (req
 router.post("/ledger/audit", requirePlatformAdmin, async (req: AuthRequest, res, next) => {
   try {
     const sample = Math.min(2000, Math.max(20, Number(req.body?.sample ?? 200) || 200));
-    const result = await auditLedger(sample);
+    // minAgeMs: 0 = lấy cả dòng vừa tính (dùng ngay sau khi dựng sổ).
+    const minAgeMs = Math.max(0, Number(req.body?.minAgeMs ?? 3_600_000) || 0);
+    const result = await auditLedger(sample, { minAgeMs });
     await writeAuditLog(req, {
       action: "ledger.audit",
       targetLabel: "order_ledger",

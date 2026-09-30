@@ -31,6 +31,7 @@ import {
   LEDGER_GROUPS,
   LEDGER_INCLUDE,
   ORDER_LEDGER_MONEY_COLUMNS,
+  summarizeLedgerRowsInMemory,
   type LedgerOrder,
   type LedgerSummary,
   type OrderLedgerRow,
@@ -476,8 +477,14 @@ export interface LedgerAuditResult {
  * cho trang HQ; lệch > 0 là dấu hiệu trigger/worker có lỗ hổng, phải điều tra
  * chứ không chỉ sửa số.
  */
-export async function auditLedger(sampleSize = 200): Promise<LedgerAuditResult> {
+export async function auditLedger(
+  sampleSize = 200,
+  opts: { minAgeMs?: number } = {}
+): Promise<LedgerAuditResult> {
   const t0 = Date.now();
+  // Mặc định chỉ lấy dòng tính xong ≥ 1 giờ (đêm): dòng vừa ghi vài giây trước
+  // mà đơn còn đang được đồng bộ thì so sánh vô nghĩa. Script/HQ có thể đặt 0.
+  const minAgeMs = Math.max(0, opts.minAgeMs ?? 3_600_000);
   // Sổ nhỏ: ORDER BY random(); sổ lớn (ước lượng từ pg_class): TABLESAMPLE để
   // không quét toàn bảng mỗi đêm.
   const est = await prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`
@@ -486,7 +493,7 @@ export async function auditLedger(sampleSize = 200): Promise<LedgerAuditResult> 
     WHERE i.inhparent = '"order_ledger"'::regclass
   `);
   const estimated = Number(est[0]?.n ?? 0);
-  const eligible = Prisma.sql`"dirtyAt" IS NULL AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int AND "computedAt" < now() - INTERVAL '1 hour'`;
+  const eligible = Prisma.sql`"dirtyAt" IS NULL AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int AND "computedAt" <= now() - (${minAgeMs}::int * INTERVAL '1 millisecond')`;
   let sample: { orderId: string }[];
   if (estimated < 200_000) {
     sample = await prisma.$queryRaw<{ orderId: string }[]>(Prisma.sql`
@@ -550,6 +557,97 @@ export async function auditLedger(sampleSize = 200): Promise<LedgerAuditResult> 
     },
   });
   return result;
+}
+
+// ------------------------------------------------------------
+// So khớp: SUM trong DB trên sổ ↔ tính lại trong RAM từ đơn gốc
+// (công cụ nghiệm thu giai đoạn 1; dùng bởi route HQ và script)
+// ------------------------------------------------------------
+
+/** Đọc TOÀN BỘ đơn của phạm vi theo trang, dựng dòng sổ trong RAM — đường đối soát, KHÔNG phải đường báo cáo. */
+export async function buildLedgerRowsInMemory(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  max: number
+): Promise<{ rows: OrderLedgerRow[]; truncated: boolean }> {
+  const rows: OrderLedgerRow[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page: LedgerOrder[] = await prisma.order.findMany({
+      where: { channel: scope, createdAt: range },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      include: LEDGER_INCLUDE,
+      take: 1000,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    for (const o of page) rows.push(buildLedgerRows(o).order);
+    if (page.length < 1000) return { rows, truncated: false };
+    if (rows.length >= max) return { rows, truncated: true };
+    cursor = page[page.length - 1].id;
+  }
+}
+
+export interface LedgerCompareDiff {
+  group: string;
+  metric: string;
+  ledger: number;
+  recomputed: number;
+  diff: number;
+}
+
+/** Chênh lệch từng nhóm × cột giữa hai bản tổng; bỏ qua lệch dưới 0,5 đồng. */
+export function diffLedgerSummaries(sql: LedgerSummary, mem: LedgerSummary): LedgerCompareDiff[] {
+  const out: LedgerCompareDiff[] = [];
+  const metrics = [
+    "count", "missingCostCount", "missingCostExcludedProfit", "lossCount", "returnCount", "totalQuantity",
+    ...ORDER_LEDGER_MONEY_COLUMNS,
+  ] as const;
+  for (const g of LEDGER_GROUP_KEYS) {
+    for (const m of metrics) {
+      const diff = sql[g][m] - mem[g][m];
+      if (Math.abs(diff) > 0.5) out.push({ group: g, metric: m, ledger: sql[g][m], recomputed: mem[g][m], diff });
+    }
+  }
+  return out;
+}
+
+export interface LedgerCompareResult {
+  freshness: LedgerFreshness & { recomputed: number };
+  timing: { ledgerMs: number; recomputeMs: number; recomputedOrders: number; recomputeTruncated: boolean };
+  match: boolean;
+  diffs: LedgerCompareDiff[];
+  ledger: LedgerSummary;
+  recomputed: LedgerSummary;
+}
+
+/**
+ * Hai bản tổng cho cùng phạm vi: (1) SUM trong DB trên sổ; (2) đọc đơn gốc,
+ * tính lại trong RAM rồi cộng. `fresh` → tính nốt dòng bẩn của kỳ trước khi so.
+ */
+export async function compareLedger(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  opts: { fresh?: boolean; maxInline?: number; maxOrders?: number } = {}
+): Promise<LedgerCompareResult> {
+  const freshness = opts.fresh
+    ? await ensureLedgerFresh(scope, range, { maxInline: opts.maxInline ?? 5000 })
+    : { ...(await ledgerFreshness(scope, range)), recomputed: 0 };
+  const t1 = Date.now();
+  const ledger = await ledgerSummary(scope, range);
+  const ledgerMs = Date.now() - t1;
+  const t2 = Date.now();
+  const { rows, truncated } = await buildLedgerRowsInMemory(scope, range, opts.maxOrders ?? 50_000);
+  const recomputed = summarizeLedgerRowsInMemory(rows);
+  const recomputeMs = Date.now() - t2;
+  const diffs = diffLedgerSummaries(ledger, recomputed);
+  return {
+    freshness,
+    timing: { ledgerMs, recomputeMs, recomputedOrders: rows.length, recomputeTruncated: truncated },
+    match: diffs.length === 0 && !truncated,
+    diffs,
+    ledger,
+    recomputed,
+  };
 }
 
 // ------------------------------------------------------------

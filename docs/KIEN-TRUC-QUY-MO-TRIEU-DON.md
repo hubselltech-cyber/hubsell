@@ -7,7 +7,7 @@ Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh
 | Giai đoạn | Tình trạng |
 |---|---|
 | 0. Cầm máu | Xong phần đã chốt, đã lên prod (bản `ce65553`) |
-| 1. Sổ cái đơn | **Đang làm.** Bước 1 (30/09) đã viết xong tại máy, CHƯA push: bảng phân mảnh theo tháng + trigger đánh dấu + worker tính lại + đối soát đêm + công cụ so khớp trên HQ; công thức Lãi/Lỗ tách sang `lib/pnl-formula.ts`. Chưa báo cáo nào đọc từ sổ. Việc kế: anh chạy thử local, push để migrate lên prod, so khớp trên dữ liệu thật, rồi chuyển từng báo cáo. Chi tiết `docs/SO-CAI-DON.md` |
+| 1. Sổ cái đơn | **Đang làm.** Bước 1 (30/09) đã viết xong và chạy thử đạt trên DB local (7.570 đơn khớp từng đồng, ~960 đơn/giây), CHƯA push: bảng phân mảnh theo tháng + trigger đánh dấu + worker tính lại + đối soát đêm + công cụ so khớp trên HQ; công thức Lãi/Lỗ tách sang `lib/pnl-formula.ts`. Chưa báo cáo nào đọc từ sổ. Việc kế: push để migrate lên prod, so khớp trên dữ liệu thật, rồi chuyển từng báo cáo. Chi tiết `docs/SO-CAI-DON.md` |
 | 2. Hàng đợi và webhook | Chưa bắt đầu. Cần thử pg-boss với bộ gộp kết nối Supabase trước |
 | 3. Đồng bộ và các worker còn lại | Chưa bắt đầu |
 | 4. Vòng đời dữ liệu và quan sát | Chưa bắt đầu (riêng chỉ mục `Order(channelId, deliveredAt)` đã tạo) |

@@ -9,7 +9,8 @@
 //   npx tsx scripts/ledger-backfill.ts status
 //   npx tsx scripts/ledger-backfill.ts drain [--batch 500] [--max 100000]
 //   npx tsx scripts/ledger-backfill.ts mark --owner <userId> [--channel <id>] [--from yyyy-mm-dd --to yyyy-mm-dd]
-//   npx tsx scripts/ledger-backfill.ts audit [--sample 500]
+//   npx tsx scripts/ledger-backfill.ts audit [--sample 500] [--min-age 0]
+//   npx tsx scripts/ledger-backfill.ts compare (--all | --owner <userId>) [--channel <id>] [--from --to] [--fresh]
 //   npx tsx scripts/ledger-backfill.ts partitions
 //
 // Chạy trên Render Shell của WORKER (đừng redeploy khi đang chạy). Chỉ đọc
@@ -19,6 +20,7 @@
 import { parseDateRange } from "../src/lib/date-range";
 import {
   auditLedger,
+  compareLedger,
   drainLedgerOnce,
   ensureLedgerPartitions,
   ledgerStatus,
@@ -72,8 +74,42 @@ async function main() {
     return;
   }
   if (cmd === "audit") {
-    const r = await auditLedger(Number(arg("sample") ?? 200) || 200);
+    // --min-age <phút>: 0 = lấy cả dòng vừa tính (mặc định 60 như job đêm).
+    const minAgeMs = Math.max(0, Number(arg("min-age") ?? 60) || 0) * 60_000;
+    const r = await auditLedger(Number(arg("sample") ?? 200) || 200, { minAgeMs });
     console.log(JSON.stringify({ ...r, mismatches: r.mismatches.slice(0, 10) }, null, 2));
+    return;
+  }
+  if (cmd === "compare") {
+    // So khớp SUM trong DB ↔ tính lại trong RAM: --owner <userId> hoặc --all
+    // (mọi chủ shop có gian), tùy chọn --channel, --from/--to, --fresh.
+    const range = parseDateRange({ from: arg("from"), to: arg("to") });
+    const channel = arg("channel");
+    const owners = process.argv.includes("--all")
+      ? (await prisma.channel.findMany({ distinct: ["userId"], select: { userId: true } })).map((c) => c.userId)
+      : arg("owner")
+        ? [arg("owner")!]
+        : [];
+    if (owners.length === 0) throw new Error("Cần --owner <userId> hoặc --all");
+    let allMatch = true;
+    for (const userId of owners) {
+      const r = await compareLedger(
+        { userId, ...(channel ? { id: channel } : {}) },
+        range,
+        { fresh: process.argv.includes("--fresh") }
+      );
+      allMatch &&= r.match;
+      const a = r.ledger.all;
+      console.log(
+        `${r.match ? "KHỚP " : "LỆCH "} owner=${userId} đơn=${a.count} (sổ ${r.timing.ledgerMs}ms, tính lại ${r.timing.recomputeMs}ms) ` +
+          `DT=${a.revenueGross} DTsàn=${a.platformRevenue} LN=${a.profitAfterTax} bẩn=${r.freshness.dirty}`
+      );
+      for (const d of r.diffs.slice(0, 20)) {
+        console.log(`   ${d.group}.${d.metric}: sổ ${d.ledger} ≠ tính lại ${d.recomputed} (lệch ${d.diff})`);
+      }
+    }
+    console.log(allMatch ? "TẤT CẢ KHỚP" : "CÓ LỆCH — xem trên");
+    if (!allMatch) process.exitCode = 2;
     return;
   }
   throw new Error(`Lệnh lạ: ${cmd}`);
