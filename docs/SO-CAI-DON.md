@@ -148,17 +148,19 @@ Render tự chạy `prisma migrate deploy` lúc khởi động (render.yaml), n�
 **Trạng thái sau sự cố (30/09 ~11:00):** migration đã áp trên prod (bảng, 8 trigger, 42.251 dòng); worker sổ cái **TẮT** (bản `1d41137`, chỉ chạy khi `LEDGER_WORKER_ON=1`); 27.300 dòng đã tính, ~15.000 dòng bẩn chờ; trigger vẫn đánh dấu đơn mới nên sổ không lỗi thời về phạm vi, chỉ chưa tính. Chưa báo cáo nào đọc từ sổ nên khách không bị ảnh hưởng gì về số liệu.
 
 **Điều kiện để tiếp tục giai đoạn 1 (anh Trung quyết):**
-1. Nâng compute Supabase từ Nano lên ít nhất **Micro** (gói Pro có tín dụng compute; Small an toàn hơn). Không nâng thì em không đề nghị bật lại worker sổ cái: tải nền đã hai lần làm DB Unhealthy.
-2. Sau khi nâng: chạy `npx tsx scripts/ledger-backfill.ts drain` trên Render Shell worker lúc vắng khách (đêm), theo dõi `status`; xong thì đặt `LEDGER_WORKER_ON=1` trên worker để giữ sổ tươi (lô 100, nghỉ 500 ms).
-3. Rồi mới `compare --all` và chuyển báo cáo (mục 9).
+1. ✅ 30/09 11:15 anh chốt nâng compute Supabase Nano → **Micro** (1 GB; 9,68 USD/tháng nằm trong tín dụng gói Pro, +0 USD).
+2. ✅ 30/09 12:03–12:23 (anh nhắn "chạy đi" lúc nghỉ trưa): `LEDGER_CHUNK_PAUSE_MS=9000 npx tsx scripts/ledger-backfill.ts drain --batch 500` trên Render Shell worker → **15.725 đơn trong 1.188 giây (13 đơn/giây), 0 lỗi**. Suốt lúc chạy: CPU Supabase 7–8 %, RAM 933 MB/1 GB không đổi, log worker không có P2024/P1001, webhook TikTok + auto-sync + đẩy tồn chạy bình thường. `status` sau đó: 42.343 dòng, 42.305 đã tính, 38 bẩn (đơn mới phát sinh trong lúc chạy, chờ worker), claimed 0, staleVersion 0, defaultRows 0, 57.187 dòng hàng.
+3. ✅ `compare --all --fresh`: **20/20 chủ shop KHỚP từng đồng** (7 nhóm × 29 cột). Chủ shop lớn nhất 15.395 đơn: cộng từ sổ 204 ms so với tính lại 10.382 ms (nhanh ~50 lần); các chủ shop 4.000–5.500 đơn: 61–76 ms so với 2.400–5.700 ms. `compare --all --from 2026-08-01 --to 2026-08-31 --fresh`: 20/20 KHỚP. `audit --sample 1000 --min-age 0`: sampled 1.000, mismatched 0, duplicateOrders 0, 1,75 giây.
+4. ✅ **Đối chiếu số tham chiếu tháng 8** (chủ shop demo `cms4dqhw…`): nhóm `active` = 2.052 đơn, `platformRevenue` = 332.474.760 (đúng số "Doanh thu" Báo cáo dòng tiền), `profitAfterTax` = 90.143.760. Báo cáo dòng tiền ghi lợi nhuận 32.978.902 vì trừ tiếp hai khoản NGOÀI sổ: chi phí vận hành cố định nhập tay 56.547.000 + quảng cáo Shopee (bảng AdSpend) 617.858 → 90.143.760 − 56.547.000 − 617.858 = **32.978.902, đúng từng đồng**. Kết luận: sổ cái chỉ ghi số theo đơn; chi phí nhập tay, AdSpend, thu khác, thuế bổ sung vẫn cộng ở tầng báo cáo như cũ (khi chuyển báo cáo sang sổ, giữ nguyên các phép trừ này).
+5. ⏳ **Việc còn lại trước khi chuyển báo cáo:** đặt `LEDGER_WORKER_ON=1` trên dịch vụ worker Render (Environment → Add → Save; worker tự redeploy) để worker giữ sổ tươi (lô 100, nghỉ 500 ms). Claude không được sửa env Render (lớp kiểm quyền chặn), anh Trung làm tay. Chưa bật thì dòng bẩn dồn dần (38 dòng lúc 12:25); báo cáo đọc sổ vẫn tự tính nốt phần bẩn trong phạm vi (`ensureLedgerFresh`) nên không sai số, chỉ chậm hơn.
 
 **Các bước cũ (đã làm hoặc thay bằng phần trên):**
 
 4. **Push.** Render deploy web + worker; migration tạo bảng, trigger, dòng nháp cho toàn bộ đơn prod trong một transaction (vài giây với vài chục nghìn đơn). Worker bắt đầu tính ngay, 500 đơn/2 giây (local đo ~960 đơn/giây, prod qua pooler Supabase sẽ chậm hơn).
 5. **Theo dõi trên prod**: `GET /api/admin/ledger/status` (đăng nhập dev@hubsell.tech) tới khi `dirty = 0`; hoặc Render Shell worker: `npx tsx scripts/ledger-backfill.ts status`.
 6. **Đo chi phí trigger**: so thời gian một lượt đồng bộ đơn trước/sau trên log worker (`[AutoSync]`). Kỳ vọng thêm dưới 1 ms/đơn.
-7. **So khớp trên dữ liệu thật**: Render Shell worker `npx tsx scripts/ledger-backfill.ts compare --all` (mọi chủ shop) rồi kỳ đã có số đối chiếu (tháng 8 tài khoản demo: 2.052 đơn tính doanh thu, doanh thu 332.474.760, lợi nhuận 32.978.902): `compare --owner <id> --from 2026-08-01 --to 2026-08-31 --fresh`, hoặc `GET /api/admin/ledger/compare?ownerId=…&from=…&to=…&fresh=1` → `match: true`. Thử thêm lọc theo sàn và theo gian.
-8. Khớp rồi mới sang bước 2 của giai đoạn 1 (mục 9).
+7. ✅ **So khớp trên dữ liệu thật** (30/09 12:25, xem mục 3–4 ở trên): `compare --all` 20/20 KHỚP; tháng 8 demo khớp 2.052 đơn / 332.474.760 / (90.143.760 − chi phí nhập tay − AdSpend = 32.978.902). Lưu ý khi so với Báo cáo dòng tiền: số "lợi nhuận" của trang đó = Σ `profitAfterTax` đơn đã quyết toán có giá vốn − chi phí nhập tay − AdSpend, hai khoản sau không nằm trong sổ. Chưa thử lọc theo sàn/gian trên prod (script `compare --channel <id>` có sẵn).
+8. ✅ Khớp → sang bước 2 của giai đoạn 1 (mục 9), bắt đầu từ Báo cáo dòng tiền.
 
 Đường lui: chưa báo cáo nào đọc từ sổ nên tắt worker (`LEDGER_WORKER_OFF=1`) là hệ thống như cũ; gỡ hẳn thì `DROP TRIGGER` 7 trigger và `DROP TABLE` 3 bảng (em soạn SQL khi cần). Migration đã áp không cần hoàn tác để deploy tiếp.
 
