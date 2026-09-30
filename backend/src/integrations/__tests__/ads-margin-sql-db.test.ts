@@ -12,22 +12,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { createStockFixture, type StockFixture } from "./fixtures";
-import { ensureLedgerFresh, ledgerMarginByGroup, LEDGER_MARGIN_SHOP_GROUP } from "../../services/order-ledger";
+import { ensureLedgerFresh, ledgerMarginByGroup } from "../../services/order-ledger";
 import {
   SALES_PACE_RECENT_MS,
   SHOP_GROUP,
   adsGroupMappingOf,
   campaignGroupKey,
-  loadAdsGroupSets,
-  loadMarginGroups,
-  loadMarginRows,
   marginOverRows,
   marginWindowRange,
   marginsFromRows,
   pnlRowsForMargin,
   productGroupKey,
   type AdsGroupSets,
-} from "../shopee/ads-insights";
+} from "../../lib/ads-margin";
+import { loadAdsGroupSets, loadMarginGroups, loadMarginRows } from "../shopee/ads-margin-source";
 import { compareMarginSources } from "../shopee/ads-margin-compare";
 
 const ledgerReady: boolean = await (async () => {
@@ -126,7 +124,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
         { groups: [...skus, ...skus].map(() => "t:all"), skus: [...skus, ...skus] },
         opts
       );
-      const shop = doubled.get(LEDGER_MARGIN_SHOP_GROUP)!;
+      const shop = doubled.get(SHOP_GROUP)!;
       expect(doubled.get("t:all"), `${tag} nhóm mọi SKU`).toEqual(shop);
       // Đếm theo ĐƠN chứ không theo dòng.
       const pure = marginOverRows(rows, null);
@@ -146,7 +144,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo Shopee/Lazada — gom trong database
     const opts = { settledOnly: false, recentSince: new Date() };
     await expect(ledgerMarginByGroup(scope, range, { groups: ["p:1"], skus: [] }, opts)).rejects.toThrow(/lệch độ dài/);
     await expect(
-      ledgerMarginByGroup(scope, range, { groups: [LEDGER_MARGIN_SHOP_GROUP], skus: ["A"] }, opts)
+      ledgerMarginByGroup(scope, range, { groups: [SHOP_GROUP], skus: ["A"] }, opts)
     ).rejects.toThrow(/dành riêng/);
   });
 });

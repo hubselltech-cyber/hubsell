@@ -6,14 +6,11 @@ import { editManualProductAdsRaw } from "../integrations/shopee/client";
 import { getHubsellAdsLinkStatus, resolveShopeeAdsAccess } from "../integrations/hubsell-ads";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
 import { normalizeAssistantConfig } from "../integrations/shopee/ads-assistant-rules";
+import { ADS_RANGE_MAX_DAYS, dateKey, dateKeyToDbDate, resolveAdsDateRange } from "../lib/ads-dates";
+import { MARGIN_WINDOW_DAYS } from "../lib/ads-margin";
 import {
-  ADS_RANGE_MAX_DAYS,
-  MARGIN_WINDOW_DAYS,
   computeChannelAdsInsights,
   computeChannelProductBreakeven,
-  dateKey,
-  dateKeyToDbDate,
-  resolveAdsDateRange,
 } from "../integrations/shopee/ads-insights";
 import {
   getAdsAdgroupList,

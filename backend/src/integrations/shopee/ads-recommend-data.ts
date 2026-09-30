@@ -18,11 +18,9 @@ import { requestAdsRefresh } from "../../services/sync-schedule";
 import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { createManualProductAdsRaw } from "./client";
 import { toShopeeDate } from "./ads-spend";
-import {
-  computeProductBreakevenWithMargins,
-  type AdsInsightChannel,
-  type AdsMarginSource,
-} from "./ads-insights";
+import type { AdsInsightChannel } from "../../lib/ads-margin";
+import type { AdsMarginSource } from "../../lib/report-source";
+import { computeProductBreakevenWithMargins } from "./ads-insights";
 import {
   medianOrganicCvr,
   recommendAdsForItem,

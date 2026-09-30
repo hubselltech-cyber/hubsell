@@ -14,7 +14,7 @@
 // ============================================================
 
 import type { Prisma } from "@prisma/client";
-import { dateKeyToDbDate } from "../integrations/shopee/ads-insights";
+import { dateKeyToDbDate } from "../lib/ads-dates";
 import { toBusinessDateKey } from "../lib/date-range";
 import { prisma } from "../lib/prisma";
 

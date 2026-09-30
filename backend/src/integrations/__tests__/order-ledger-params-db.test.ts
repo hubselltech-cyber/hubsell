@@ -7,8 +7,9 @@
 
 import "./load-env";
 import { describe, expect, it } from "vitest";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { ensureLedgerFresh } from "../../services/order-ledger";
+import { dateConst, ensureLedgerFresh, timestampConst } from "../../services/order-ledger";
 import { compareLedgerParamStyles, defaultCompareRanges } from "../../services/order-ledger-params-compare";
 
 const ledgerReady: boolean = await (async () => {
@@ -24,6 +25,29 @@ if (!ledgerReady) {
 }
 
 describe.skipIf(!ledgerReady)("Sổ cái đơn — mốc kỳ dạng hằng = mốc ép kiểu từ chuỗi, trên DB dev", () => {
+  it("mốc dạng hằng bằng mốc ép kiểu từ chuỗi, tới từng mili giây", async () => {
+    const moments = [
+      new Date("2026-09-30T10:15:30.123Z"),
+      new Date("2026-08-31T17:00:00.000Z"), // 00:00 ngày 01/09 giờ VN
+      new Date("2024-02-29T16:59:59.999Z"), // năm nhuận, sát nửa đêm giờ VN
+      new Date("1999-12-31T23:59:59.001Z"),
+      new Date("1969-12-31T23:59:59.999Z"), // trước mốc 1970
+      new Date("2038-01-19T03:14:08.000Z"),
+    ];
+    for (const d of moments) {
+      const r = await prisma.$queryRaw<{ same: boolean }[]>(
+        Prisma.sql`SELECT ${timestampConst(d)} = ${d.toISOString()}::timestamp AS same`
+      );
+      expect(r[0].same, d.toISOString()).toBe(true);
+    }
+    for (const key of ["2026-09-01", "2026-09-30", "2024-02-29", "1970-01-01", "1969-12-31", "2038-01-19"]) {
+      const r = await prisma.$queryRaw<{ same: boolean }[]>(
+        Prisma.sql`SELECT ${dateConst(key)} = ${key}::date AS same`
+      );
+      expect(r[0].same, key).toBe(true);
+    }
+  });
+
   it("mọi chủ shop × 6 kỳ và mọi gian × 2 kỳ: từng câu đọc trả kết quả giống hệt", { timeout: 600_000 }, async () => {
     const channels = await prisma.channel.findMany({
       select: { id: true, userId: true, channelName: true, shopName: true },

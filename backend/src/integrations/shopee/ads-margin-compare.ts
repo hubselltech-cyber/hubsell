@@ -12,9 +12,9 @@
 //   2. Tầng kết quả cuối — chạy ba phép tính khách nhìn thấy (chiến dịch + kết
 //      luận của Trợ lý, bảng hòa vốn sản phẩm, gợi ý chạy quảng cáo) ở cả hai
 //      đường rồi so từng trường.
-// Dùng bởi lệnh `scripts/ledger-backfill.ts ads-compare` (prod, trước khi bật
-// ADS_MARGIN_SOURCE=sql) và test tích hợp trên DB dev. Chuỗi mô tả lệch viết
-// KHÔNG DẤU để đọc được trên Render Shell.
+// Dùng bởi lệnh `scripts/ledger-backfill.ts ads-compare` (prod) và test tích hợp
+// trên DB dev. Sống cùng đường "rows": gỡ khi gỡ đường lui (~07/10). Chuỗi mô tả
+// lệch viết KHÔNG DẤU để đọc được trên Render Shell.
 // ============================================================
 
 import { ChannelName } from "@prisma/client";
@@ -22,11 +22,6 @@ import {
   MARGIN_MAX_ORDERS,
   SHOP_GROUP,
   adsGroupMappingOf,
-  computeChannelAdsInsights,
-  computeChannelProductBreakeven,
-  loadAdsGroupSets,
-  loadMarginGroups,
-  loadMarginRows,
   marginOf,
   marginWindowRange,
   marginsFromGroups,
@@ -34,9 +29,11 @@ import {
   pnlRowsForMargin,
   type AdsGroupSets,
   type AdsInsightChannel,
-  type AdsMarginSource,
   type MarginBase,
-} from "./ads-insights";
+} from "../../lib/ads-margin";
+import type { AdsMarginSource } from "../../lib/report-source";
+import { computeChannelAdsInsights, computeChannelProductBreakeven } from "./ads-insights";
+import { loadAdsGroupSets, loadMarginGroups, loadMarginRows } from "./ads-margin-source";
 import { computeChannelAdsRecommendations } from "./ads-recommend-data";
 
 /** Lệch tiền tối đa được chấp nhận ở tổng theo nhóm (anh Trung chốt 30/09/2026). */

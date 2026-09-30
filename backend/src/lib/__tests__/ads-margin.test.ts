@@ -1,5 +1,10 @@
-// Biên lãi Shopee/Lazada: đơn THIẾU GIÁ VỐN bị loại khỏi phép tính (28/09/2026,
-// anh Trung: "không được sai giá vốn trong lãi lỗ kéo theo ROAS hòa vốn").
+// ============================================================
+// BIÊN LÃI QUẢNG CÁO Shopee/Lazada — logic thuần của lib/ads-margin.ts, KHÔNG DB:
+//   · đơn THIẾU GIÁ VỐN bị loại khỏi phép tính (28/09/2026, anh Trung: "không
+//     được sai giá vốn trong lãi lỗ kéo theo ROAS hòa vốn");
+//   · công tắc ADS_MARGIN_SOURCE, bộ nhóm SKU của gian, mặt tiền hai đường cộng.
+// ============================================================
+
 import { describe, expect, it } from "vitest";
 import {
   MARGIN_MIN_COST_COVERAGE_PCT,
@@ -15,17 +20,17 @@ import {
   marginsFromGroups,
   marginsFromRows,
   productGroupKey,
-  resolveAdsMarginSource,
-  type PnlRow,
-} from "./ads-insights";
+  type MarginRow,
+} from "../ads-margin";
+import { resolveAdsMarginSource } from "../report-source";
 
-function row(p: { sku: string; price: number; qty?: number; revenue: number; profit: number; missing?: boolean }): PnlRow {
+function row(p: { sku: string; price: number; qty?: number; revenue: number; profit: number; missing?: boolean }): MarginRow {
   return {
     items: [{ sku: p.sku, price: p.price, quantity: p.qty ?? 1 }],
     actualRevenue: p.revenue,
     profit: p.profit,
     missingCostPrice: p.missing ?? false,
-  } as unknown as PnlRow;
+  } as unknown as MarginRow;
 }
 
 describe("marginOverRows — loại đơn thiếu giá vốn", () => {
@@ -75,7 +80,7 @@ describe("marginOverRows — loại đơn thiếu giá vốn", () => {
       actualRevenue: 400,
       profit: 100,
       missingCostPrice: false,
-    } as unknown as PnlRow;
+    } as unknown as MarginRow;
     const missingA = row({ sku: "A", price: 100, revenue: 100, profit: 90, missing: true });
     const base = marginOverRows([multi, missingA], new Set(["A"]));
     expect(base.orders).toBe(1);
@@ -187,14 +192,14 @@ describe("ChannelMargins — mặt tiền chung của hai đường cộng", () 
     profit: number;
     missing?: boolean;
     items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
-  }): PnlRow =>
+  }): MarginRow =>
     ({
       createdAt: p.at,
       actualRevenue: p.revenue,
       profit: p.profit,
       missingCostPrice: p.missing ?? false,
       items: p.items,
-    }) as unknown as PnlRow;
+    }) as unknown as MarginRow;
 
   const sets = buildAdsGroupSets(
     groupSkusByItemId([

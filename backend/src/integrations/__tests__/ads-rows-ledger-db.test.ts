@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
 import { ChannelName } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ensureLedgerFresh } from "../../services/order-ledger";
-import { loadMarginRows, marginOverRows, pnlRowsForMargin, type PnlRow } from "../shopee/ads-insights";
+import { marginOverRows, pnlRowsForMargin, type MarginRow } from "../../lib/ads-margin";
+import { loadMarginRows } from "../shopee/ads-margin-source";
 import {
   loadBreakevenRows,
   salesPaceByGroup,
@@ -58,7 +59,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo — dòng gọn từ sổ cái = dò
       expect(ledger.length, `${tag} số đơn`).toBe(orders.length);
       for (let i = 0; i < orders.length; i++) {
         const a = ledger[i];
-        const b = orders[i] as PnlRow;
+        const b = orders[i] as MarginRow;
         expect(a.createdAt.getTime(), `${tag} #${i} createdAt`).toBe(b.createdAt.getTime());
         expect(a.shippingStatus, `${tag} #${i} trạng thái`).toBe(b.shippingStatus);
         expect(a.isSettled, `${tag} #${i} quyết toán`).toBe(b.isSettled);

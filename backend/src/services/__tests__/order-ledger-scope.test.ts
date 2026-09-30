@@ -1,14 +1,15 @@
-// ledgerScopeSql — mảnh WHERE dùng chung của mọi câu đọc sổ cái.
+// ============================================================
+// ledgerScopeSql — mảnh WHERE dùng chung của mọi câu đọc sổ cái. Logic thuần, KHÔNG DB.
 //   · Mặc định (từ 30/09/2026 tối): mốc kỳ viết dạng hằng trên tham số số
 //     nguyên, không còn ép kiểu từ chuỗi ở từng dòng quét.
 //   · Cách cũ ("text", đường lui env LEDGER_SCOPE_PARAMS=text): câu chữ + tham số
 //     GIỮ NGUYÊN như bản đã so khớp prod.
-//   · Trên database thật hai cách phải ra ĐÚNG cùng giá trị.
-import "../../integrations/__tests__/load-env";
+// Hai cách ra cùng giá trị trên database thật: integrations/__tests__/order-ledger-params-db.test.ts.
+// ============================================================
+
 import { describe, expect, it } from "vitest";
-import { ChannelName, Prisma } from "@prisma/client";
-import { prisma } from "../../lib/prisma";
-import { dateConst, ledgerScopeSql, timestampConst, withLedgerParamStyle } from "../order-ledger";
+import { ChannelName } from "@prisma/client";
+import { ledgerScopeSql, withLedgerParamStyle } from "../order-ledger";
 
 const range = { gte: new Date("2026-08-31T17:00:00.000Z"), lte: new Date("2026-09-30T10:15:30.123Z") };
 const asText = <T>(fn: () => T) => withLedgerParamStyle("text", async () => fn());
@@ -74,28 +75,5 @@ describe("ledgerScopeSql", () => {
   it("không kỳ / không gian: không phụ thuộc cách viết mốc", () => {
     expect(ledgerScopeSql({ userId: "u1", id: { in: [] } }, undefined).sql).toBe(`"ownerId" = ? AND FALSE`);
     expect(ledgerScopeSql({ userId: "u1" }, undefined).sql).toBe(`"ownerId" = ?`);
-  });
-
-  it("trên database: mốc dạng hằng bằng mốc ép kiểu từ chuỗi, tới từng mili giây", async () => {
-    const moments = [
-      new Date("2026-09-30T10:15:30.123Z"),
-      new Date("2026-08-31T17:00:00.000Z"), // 00:00 ngày 01/09 giờ VN
-      new Date("2024-02-29T16:59:59.999Z"), // năm nhuận, sát nửa đêm giờ VN
-      new Date("1999-12-31T23:59:59.001Z"),
-      new Date("1969-12-31T23:59:59.999Z"), // trước mốc 1970
-      new Date("2038-01-19T03:14:08.000Z"),
-    ];
-    for (const d of moments) {
-      const r = await prisma.$queryRaw<{ same: boolean }[]>(
-        Prisma.sql`SELECT ${timestampConst(d)} = ${d.toISOString()}::timestamp AS same`
-      );
-      expect(r[0].same, d.toISOString()).toBe(true);
-    }
-    for (const key of ["2026-09-01", "2026-09-30", "2024-02-29", "1970-01-01", "1969-12-31", "2038-01-19"]) {
-      const r = await prisma.$queryRaw<{ same: boolean }[]>(
-        Prisma.sql`SELECT ${dateConst(key)} = ${key}::date AS same`
-      );
-      expect(r[0].same, key).toBe(true);
-    }
   });
 });

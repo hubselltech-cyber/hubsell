@@ -40,6 +40,12 @@ import {
   type OrderLedgerRow,
   type OrderLineLedgerRow,
 } from "../lib/order-ledger";
+import {
+  SHOP_GROUP,
+  type LedgerMarginGroup,
+  type LedgerMarginMapping,
+  type LedgerMarginOptions,
+} from "../lib/ads-margin";
 import type { ChannelScope } from "../lib/channel-filter";
 import type { LedgerCashFlowBreakdown } from "../lib/cash-flow-totals";
 import type { LedgerOverviewBreakdown } from "../lib/overview-totals";
@@ -1440,45 +1446,13 @@ export async function ledgerCompactOrders(
 // phanh số đơn: RAM chỉ nhận một dòng kết quả cho mỗi nhóm.
 // ------------------------------------------------------------
 
-/** Khóa của nhóm "mọi dòng hàng của gian" — luôn có trong kết quả, không đi qua bảng ánh xạ. */
-export const LEDGER_MARGIN_SHOP_GROUP = "shop";
-
-/** Tổng của MỘT nhóm SKU trong cửa sổ (số thô — nơi gọi tự suy ra biên lãi / độ phủ giá vốn). */
-export interface LedgerMarginGroup {
-  /** Số đơn CÓ giá vốn có dòng hàng thuộc nhóm (một đơn nhiều dòng cùng nhóm đếm một lần). */
-  orders: number;
-  /** Doanh thu thực tế / lợi nhuận của các đơn đó, phần phân bổ về dòng thuộc nhóm. */
-  revenue: number;
-  profit: number;
-  /** Đơn thiếu giá vốn (cờ cấp đơn) — đứng ngoài biên lãi, chỉ để tính độ phủ. */
-  missingCostOrders: number;
-  missingCostRevenue: number;
-  /** Số lượng bán của nhóm: cả cửa sổ / từ mốc `recentSince` / các dòng giá vốn dòng = 0. */
-  units: number;
-  unitsRecent: number;
-  unitsNoCost: number;
-}
-
-/** Hai mảng song song (nhóm, mã SKU sàn); một SKU được thuộc nhiều nhóm. */
-export interface LedgerMarginMapping {
-  groups: readonly string[];
-  skus: readonly string[];
-}
-
-export interface LedgerMarginOptions {
-  /** Chỉ đơn đã đối soát (Lazada: đơn chưa có sao kê mang phí = 0). */
-  settledOnly: boolean;
-  /** Mốc "gần đây" của nhịp bán (unitsRecent). */
-  recentSince: Date;
-}
-
 /**
  * Gom theo nhóm SKU trên sổ dòng hàng của MỘT gian trong cửa sổ ngày tạo.
  *
- * Nhóm LEDGER_MARGIN_SHOP_GROUP (mọi dòng) tự có, không nằm trong `mapping`.
+ * Nhóm SHOP_GROUP (mọi dòng) tự có, không nằm trong `mapping`.
  * Nhóm không có dòng hàng nào trong cửa sổ thì KHÔNG có trong kết quả.
  *
- * Cùng luật với marginOverRows (integrations/shopee/ads-insights.ts): bỏ đơn
+ * Cùng luật với marginOverRows (lib/ads-margin.ts): bỏ đơn
  * hủy; `settledOnly` → chỉ đơn đã đối soát (Lazada); đơn thiếu giá vốn đứng
  * riêng. Hàm thuần tính "số của đơn × giá trị dòng khớp ÷ giá trị cả đơn" và bỏ
  * cặp (nhóm, đơn) có giá trị dòng khớp ≤ 0. Ở đây cộng thẳng phần sổ ĐÃ phân bổ
@@ -1509,7 +1483,7 @@ export async function ledgerMarginByGroup(
   const out = new Map<string, LedgerMarginGroup>();
   for (const r of rows) {
     const index = Number(r.grp);
-    out.set(index === 0 ? LEDGER_MARGIN_SHOP_GROUP : groupNames[index - 1], {
+    out.set(index === 0 ? SHOP_GROUP : groupNames[index - 1], {
       orders: Number(r.orders),
       revenue: Number(r.revenue),
       profit: Number(r.profit),
@@ -1547,8 +1521,8 @@ function marginByGroupQuery(
   if (mapping.groups.length !== mapping.skus.length) {
     throw new Error(`ledgerMarginByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.skus.length} SKU)`);
   }
-  if (mapping.groups.includes(LEDGER_MARGIN_SHOP_GROUP)) {
-    throw new Error(`ledgerMarginByGroup: "${LEDGER_MARGIN_SHOP_GROUP}" là khóa dành riêng cho nhóm toàn gian`);
+  if (mapping.groups.includes(SHOP_GROUP)) {
+    throw new Error(`ledgerMarginByGroup: "${SHOP_GROUP}" là khóa dành riêng cho nhóm toàn gian`);
   }
   // Nhóm đi vào câu SQL bằng SỐ THỨ TỰ (0 = toàn gian, i = groupNames[i − 1]):
   // khóa gom 4 byte thay cho chuỗi tên nhóm ở ~3 bản sao của mỗi dòng hàng.

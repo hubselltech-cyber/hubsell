@@ -49,10 +49,10 @@ import {
   updateAdsCampaignSwitchRaw,
 } from "../lazada/client";
 import { getValidLazadaAccessToken } from "../lazada/service";
+import { vnDateKey } from "../../lib/ads-dates";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
-  vnDateKey,
   type CampaignInsight,
 } from "./ads-insights";
 import {

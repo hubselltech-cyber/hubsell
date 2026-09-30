@@ -36,7 +36,7 @@ import { ChannelName } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { requireAdmin, type AuthRequest } from "../middleware/auth";
 import { nudgeAdsSyncIfStale, requestAdsRefresh } from "../services/sync-schedule";
-import { dateKey } from "../integrations/shopee/ads-insights";
+import { dateKey } from "../lib/ads-dates";
 import { vnDateStr } from "../integrations/lazada/ads-campaigns";
 import {
   GMV_MAX_CREATIVE_BATCH,

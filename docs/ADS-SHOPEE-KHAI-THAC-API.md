@@ -338,7 +338,7 @@ Tháng trước + lịch kép chọn tay), cùng khuôn trang Quảng cáo TikTo
 **Backend (`routes/ads.ts`, lõi `ads-insights.ts`):**
 - `resolveAdsDateRange(query)` — nguồn duy nhất đọc `?from=&to=` (ngày sàn, giờ VN) hoặc `?days=`
   (đường cũ, mobile/khách cũ vẫn chạy): chọn ngược tự đảo, ngày cuối tương lai cắt về hôm nay,
-  dài quá trần thì kéo ngày đầu lên + cờ `clamped`. Test `__tests__/ads-date-range.test.ts` (13 ca).
+  dài quá trần thì kéo ngày đầu lên + cờ `clamped`. Test `lib/__tests__/ads-dates.test.ts` (13 ca).
 - Trần `ADS_RANGE_MAX_DAYS = 90`: MẶC ĐỊNH TỰ ĐẶT theo ngân sách RAM sau sự cố OOM 09/2026 (gian
   150 campaign × 90 ngày ≈ 13.500 dòng Decimal một lượt mở trang), KHÔNG phải giới hạn của sàn.
   Số hiệu suất trong DB không bị dọn (xung ads chỉ ghi đè) nên "Tháng trước" có số thật kể từ ngày

@@ -90,7 +90,7 @@ import { pulseShopeeAds } from "../integrations/shopee/ads-pulse";
 import { pulseLazadaAds } from "../integrations/lazada/ads-pulse";
 import { syncShopeeAdsPerfWindow } from "../integrations/shopee/ads-campaigns";
 import { syncShopeeGms } from "../integrations/shopee/ads-gms";
-import { vnDateKey } from "../integrations/shopee/ads-insights";
+import { vnDateKey } from "../lib/ads-dates";
 import { isTiktokAdsConfigured } from "../integrations/tiktok-ads/config";
 import { syncTiktokAdsCampaigns, verifyTiktokAdsLink } from "../integrations/tiktok-ads/sync";
 import { autoRunDue, dailyRunOffsetMin, runTiktokAdsDaily } from "../integrations/tiktok-ads/auto-run";

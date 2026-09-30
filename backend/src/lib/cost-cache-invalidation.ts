@@ -1,13 +1,13 @@
 // ============================================================
 // XÓA BỘ ĐỆM PHỤ THUỘC GIÁ VỐN (28/09/2026)
 //
-// Trợ lý quảng cáo nhớ biên lãi 30 ngày theo gian tới 30 phút (ads-insights,
+// Trợ lý quảng cáo nhớ biên lãi 30 ngày theo gian tới 30 phút (ads-margin-source,
 // chống egress) và hòa vốn TikTok 45 giây. Nhập giá vốn / áp cho đơn cũ xong
 // mà không xóa các bộ đệm này thì bảng ROAS hòa vốn vẫn báo "chưa có giá vốn"
 // tới nửa tiếng — anh Trung 28/09 tưởng nút không chạy.
 //
 // Sổ đăng ký đơn giản để lib/cost-price.ts không import ngược vào module ads
-// (ads-insights → routes/finance → cost-price → ads-insights là vòng lặp).
+// (ads-margin-source → routes/finance → cost-price → ads-margin-source là vòng lặp).
 // ============================================================
 
 type Invalidator = (channelIds: string[]) => void;

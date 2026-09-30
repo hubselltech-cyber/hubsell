@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
 import { lazAdsNum, lazAdsWriteOk } from "../lazada/client";
 import { deriveStatus } from "../lazada/ads-campaigns";
 import { lazadaAdSpendByDay } from "../lazada/ads-spend";
-import { deriveLazadaItemSku, pnlRowsForMargin } from "../shopee/ads-insights";
+import { pnlRowsForMargin } from "../../lib/ads-margin";
+import { deriveLazadaItemSku } from "../shopee/ads-insights";
 import { ChannelName, ShippingStatus } from "@prisma/client";
 import {
   buildLazadaAdsWalletEmptyAlert,

@@ -7,12 +7,7 @@
 // ============================================================
 
 import { describe, expect, it } from "vitest";
-import {
-  ADS_RANGE_MAX_DAYS,
-  dateKeyToDbDate,
-  resolveAdsDateRange,
-  shiftDateKey,
-} from "../shopee/ads-insights";
+import { ADS_RANGE_MAX_DAYS, dateKeyToDbDate, resolveAdsDateRange, shiftDateKey } from "../ads-dates";
 
 const TODAY = "2026-09-24";
 

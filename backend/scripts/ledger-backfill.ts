@@ -14,54 +14,148 @@
 //   npx tsx scripts/ledger-backfill.ts partitions
 //   npx tsx scripts/ledger-backfill.ts ads-compare [--platform TIKTOK|SHOPEE|LAZADA] [--channel <id>] [--explain]
 //       so dòng gọn của đơn (nguyên liệu biên lãi / hòa vốn quảng cáo) đọc từ sổ với dòng dựng
-//       từ đơn gốc, từng gian — in chữ KHÔNG DẤU để đọc được trên Render Shell.
-//       Shopee/Lazada so thêm HAI ĐƯỜNG CỘNG biên lãi (duyệt mảng đơn ↔ gom trong database,
-//       docs/QUANG-CAO-GOM-TRONG-DATABASE.md): từng nhóm, nhịp bán, ba kết quả cuối. Phải
-//       "TAT CA KHOP" trước khi bật ADS_MARGIN_SOURCE=sql. --explain (kèm --channel): in kế
-//       hoạch chạy thật của câu gom.
+//       từ đơn gốc, từng gian. Shopee/Lazada so thêm HAI ĐƯỜNG CỘNG biên lãi (duyệt mảng đơn ↔
+//       gom trong database, docs/QUANG-CAO-GOM-TRONG-DATABASE.md): từng nhóm, nhịp bán, ba kết
+//       quả cuối. --explain (kèm --channel): in kế hoạch chạy thật của câu gom.
 //   npx tsx scripts/ledger-backfill.ts params-compare [--owner <userId>]
 //       so MỌI câu đọc sổ ở hai cách viết mốc kỳ (chuỗi ép kiểu ↔ dạng hằng, xem LedgerParamStyle):
 //       từng chủ shop × 6 kỳ, từng gian × 2 kỳ; kết quả phải giống hệt, in kèm tổng thời gian mỗi cách.
 //
 // Chạy trên Render Shell của WORKER (đừng redeploy khi đang chạy). Chỉ đọc
 // đơn theo lô ≤ 500 nên không dồn tải; `drain` tự dừng khi hết dòng bẩn.
+// Hai lệnh so (ads-compare, params-compare) in chữ KHÔNG DẤU để đọc được trên
+// Render Shell.
 // ============================================================
 
-import { parseDateRange } from "../src/lib/date-range";
-import {
-  auditLedger,
-  compareLedger,
-  drainLedgerOnce,
-  ensureLedgerPartitions,
-  ledgerStatus,
-  markLedgerScope,
-} from "../src/services/order-ledger";
-import { prisma } from "../src/lib/prisma";
 import { ChannelName } from "@prisma/client";
-import {
-  adsGroupMappingOf,
-  loadAdsGroupSets,
-  loadMarginRows,
-  marginGroupOptions,
-  marginOverRows,
-  marginWindowRange,
-  pnlRowsForMargin,
-} from "../src/integrations/shopee/ads-insights";
 import { compareMarginSources } from "../src/integrations/shopee/ads-margin-compare";
-import { explainLedgerMarginByGroup } from "../src/services/order-ledger";
-import { compareLedgerParamStyles, defaultCompareRanges } from "../src/services/order-ledger-params-compare";
+import { loadAdsGroupSets, loadMarginRows, marginGroupOptions } from "../src/integrations/shopee/ads-margin-source";
 import {
   loadBreakevenRows,
   tiktokBreakevenBase,
   tiktokBreakevenBaseByGroup,
 } from "../src/integrations/tiktok-ads/breakeven";
+import {
+  adsGroupMappingOf,
+  marginOverRows,
+  marginWindowRange,
+  pnlRowsForMargin,
+  type AdsInsightChannel,
+} from "../src/lib/ads-margin";
+import { parseDateRange } from "../src/lib/date-range";
+import { prisma } from "../src/lib/prisma";
+import {
+  auditLedger,
+  compareLedger,
+  drainLedgerOnce,
+  ensureLedgerPartitions,
+  explainLedgerMarginByGroup,
+  ledgerStatus,
+  markLedgerScope,
+} from "../src/services/order-ledger";
+import { compareLedgerParamStyles, defaultCompareRanges } from "../src/services/order-ledger-params-compare";
+
+function arg(name: string): string | undefined {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+const flag = (name: string): boolean => process.argv.includes(`--${name}`);
+
+// ------------------------------------------------------------
+// status / partitions / drain / mark / audit / compare
+// ------------------------------------------------------------
+
+async function status(): Promise<void> {
+  console.log(JSON.stringify(await ledgerStatus(), null, 2));
+}
+
+async function partitions(): Promise<void> {
+  const n = await ensureLedgerPartitions(Number(arg("ahead") ?? 3) || 3);
+  console.log(`Tạo ${n} phân mảnh mới`);
+}
+
+async function drain(): Promise<void> {
+  const batch = Math.min(2000, Math.max(50, Number(arg("batch") ?? 500) || 500));
+  const max = Number(arg("max") ?? 1_000_000) || 1_000_000;
+  let total = 0;
+  const t0 = Date.now();
+  for (;;) {
+    const r = await drainLedgerOnce(batch);
+    total += r.claimed;
+    if (r.claimed === 0 || total >= max) break;
+    const rate = Math.round((total / Math.max(1, Date.now() - t0)) * 1000);
+    console.log(`đã tính ${total} đơn (${rate} đơn/giây)`);
+  }
+  console.log(`XONG: ${total} đơn, ${Math.round((Date.now() - t0) / 1000)}s`);
+}
+
+async function mark(): Promise<void> {
+  const owner = arg("owner");
+  if (!owner) throw new Error("Thiếu --owner <userId>");
+  const channel = arg("channel");
+  const range = parseDateRange({ from: arg("from"), to: arg("to") });
+  const r = await markLedgerScope(
+    { userId: owner, ...(channel ? { id: channel } : {}) },
+    range,
+    `script:${arg("reason") ?? "mark"}`
+  );
+  console.log(`Đánh dấu ${r.marked} dòng, tạo nháp ${r.stubbed} đơn chưa có trong sổ`);
+}
+
+async function audit(): Promise<void> {
+  // --min-age <phút>: 0 = lấy cả dòng vừa tính (mặc định 60 như job đêm).
+  const minAgeMs = Math.max(0, Number(arg("min-age") ?? 60) || 0) * 60_000;
+  const r = await auditLedger(Number(arg("sample") ?? 200) || 200, { minAgeMs });
+  console.log(JSON.stringify({ ...r, mismatches: r.mismatches.slice(0, 10) }, null, 2));
+}
+
+/** So khớp SUM trong DB ↔ tính lại trong RAM: --owner <userId> hoặc --all (mọi chủ shop có gian). */
+async function compare(): Promise<void> {
+  const range = parseDateRange({ from: arg("from"), to: arg("to") });
+  const channel = arg("channel");
+  const owners = flag("all")
+    ? (await prisma.channel.findMany({ distinct: ["userId"], select: { userId: true } })).map((c) => c.userId)
+    : arg("owner")
+      ? [arg("owner")!]
+      : [];
+  if (owners.length === 0) throw new Error("Cần --owner <userId> hoặc --all");
+  let allMatch = true;
+  for (const userId of owners) {
+    const r = await compareLedger({ userId, ...(channel ? { id: channel } : {}) }, range, { fresh: flag("fresh") });
+    allMatch &&= r.match;
+    const a = r.ledger.all;
+    console.log(
+      `${r.match ? "KHỚP " : "LỆCH "} owner=${userId} đơn=${a.count} (sổ ${r.timing.ledgerMs}ms, tính lại ${r.timing.recomputeMs}ms) ` +
+        `DT=${a.revenueGross} DTsàn=${a.platformRevenue} LN=${a.profitAfterTax} bẩn=${r.freshness.dirty}`
+    );
+    for (const d of r.diffs.slice(0, 20)) {
+      console.log(`   ${d.group}.${d.metric}: sổ ${d.ledger} ≠ tính lại ${d.recomputed} (lệch ${d.diff})`);
+    }
+  }
+  console.log(allMatch ? "TẤT CẢ KHỚP" : "CÓ LỆCH — xem trên");
+  if (!allMatch) process.exitCode = 2;
+}
+
+// ------------------------------------------------------------
+// ads-compare
+// ------------------------------------------------------------
+
+interface CompactRow {
+  createdAt: Date;
+  shippingStatus: string;
+  isSettled: boolean;
+  actualRevenue: number;
+  profit: number;
+  missingCostPrice: boolean;
+  items: { sku: string; price: number; quantity: number }[];
+  tiktok?: { feeGmvMax: number } | null;
+}
+
+const close = (x: number, y: number) => Math.abs(x - y) <= 1;
 
 /** So hai mảng dòng gọn theo thứ tự (mới nhất trước) — trả số dòng lệch + mô tả dòng lệch đầu tiên. */
-function diffCompactRows(
-  a: { createdAt: Date; shippingStatus: string; isSettled: boolean; actualRevenue: number; profit: number; missingCostPrice: boolean; items: { sku: string; price: number; quantity: number }[]; tiktok?: { feeGmvMax: number } | null }[],
-  b: typeof a
-): { mismatched: number; first: string | null } {
-  const key = (items: { sku: string; price: number; quantity: number }[]) =>
+function diffCompactRows(a: CompactRow[], b: CompactRow[]): { mismatched: number; first: string | null } {
+  const key = (items: CompactRow["items"]) =>
     items.map((i) => `${i.sku}|${Math.round(i.price)}|${i.quantity}`).sort().join(";");
   let mismatched = 0;
   let first: string | null = null;
@@ -90,237 +184,179 @@ function diffCompactRows(
   return { mismatched, first };
 }
 
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+/** TikTok: dòng gọn từ sổ ↔ từ đơn gốc + nguyên liệu hòa vốn theo gian và theo từng SKU. */
+async function compareTiktokRows(ch: AdsInsightChannel): Promise<{ ok: boolean; line: string }> {
+  const t0 = Date.now();
+  const ledger = await loadBreakevenRows(ch, "ledger");
+  const t1 = Date.now();
+  const orders = await loadBreakevenRows(ch, "orders");
+  const t2 = Date.now();
+  const d = diffCompactRows(ledger, orders);
+  const x = tiktokBreakevenBase(ledger, null);
+  const y = tiktokBreakevenBase(orders, null);
+  const groupOfSku = new Map<string, string>();
+  for (const r of orders) for (const it of r.items) groupOfSku.set(it.sku, it.sku);
+  const gx = tiktokBreakevenBaseByGroup(ledger, groupOfSku);
+  const gy = tiktokBreakevenBaseByGroup(orders, groupOfSku);
+  let groupDiff = 0;
+  for (const [g, by] of gy) {
+    const bx = gx.get(g);
+    if (!bx || bx.settledOrders !== by.settledOrders || bx.pendingOrders !== by.pendingOrders || !close(bx.revenue, by.revenue) || !close(bx.profitBeforeAds, by.profitBeforeAds)) groupDiff += 1;
+  }
+  const ok =
+    d.mismatched === 0 && groupDiff === 0 &&
+    x.settledOrders === y.settledOrders && x.cancelledOrders === y.cancelledOrders && x.pendingOrders === y.pendingOrders &&
+    close(x.revenue, y.revenue) && close(x.profitBeforeAds, y.profitBeforeAds) && close(x.adFee, y.adFee) && close(x.missingCostRevenue, y.missingCostRevenue);
+  const line =
+    `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} skuGroups=${gy.size} groupDiff=${groupDiff} ` +
+    `settled=${x.settledOrders}/${y.settledOrders} cancelled=${x.cancelledOrders}/${y.cancelledOrders} pending=${x.pendingOrders}/${y.pendingOrders} ` +
+    `revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profitBeforeAds=${Math.round(x.profitBeforeAds)}/${Math.round(y.profitBeforeAds)} adFee=${Math.round(x.adFee)}/${Math.round(y.adFee)} ` +
+    `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
+  return { ok, line };
 }
 
-async function main() {
-  const cmd = process.argv[2] ?? "status";
-  if (cmd === "status") {
-    const s = await ledgerStatus();
-    console.log(JSON.stringify(s, null, 2));
-    return;
-  }
-  if (cmd === "ads-compare") {
-    const platform = arg("platform")?.toUpperCase();
-    const channelId = arg("channel");
-    const channels = await prisma.channel.findMany({
-      where: {
-        ...(channelId ? { id: channelId } : {}),
-        channelName: platform
-          ? (platform as ChannelName)
-          : { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
-      },
-      select: { id: true, userId: true, channelName: true },
-      orderBy: [{ channelName: "asc" }, { id: "asc" }],
-    });
-    const close = (x: number, y: number) => Math.abs(x - y) <= 1;
-    let allMatch = true;
-    for (const ch of channels) {
-      const t0 = Date.now();
-      let line: string;
-      let ok: boolean;
-      if (ch.channelName === ChannelName.TIKTOK) {
-        const ledger = await loadBreakevenRows(ch, "ledger");
-        const t1 = Date.now();
-        const orders = await loadBreakevenRows(ch, "orders");
-        const t2 = Date.now();
-        const d = diffCompactRows(ledger, orders);
-        const x = tiktokBreakevenBase(ledger, null);
-        const y = tiktokBreakevenBase(orders, null);
-        const groupOfSku = new Map<string, string>();
-        for (const r of orders) for (const it of r.items) groupOfSku.set(it.sku, it.sku);
-        const gx = tiktokBreakevenBaseByGroup(ledger, groupOfSku);
-        const gy = tiktokBreakevenBaseByGroup(orders, groupOfSku);
-        let groupDiff = 0;
-        for (const [g, by] of gy) {
-          const bx = gx.get(g);
-          if (!bx || bx.settledOrders !== by.settledOrders || bx.pendingOrders !== by.pendingOrders || !close(bx.revenue, by.revenue) || !close(bx.profitBeforeAds, by.profitBeforeAds)) groupDiff += 1;
-        }
-        ok =
-          d.mismatched === 0 && groupDiff === 0 &&
-          x.settledOrders === y.settledOrders && x.cancelledOrders === y.cancelledOrders && x.pendingOrders === y.pendingOrders &&
-          close(x.revenue, y.revenue) && close(x.profitBeforeAds, y.profitBeforeAds) && close(x.adFee, y.adFee) && close(x.missingCostRevenue, y.missingCostRevenue);
-        line =
-          `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} skuGroups=${gy.size} groupDiff=${groupDiff} ` +
-          `settled=${x.settledOrders}/${y.settledOrders} cancelled=${x.cancelledOrders}/${y.cancelledOrders} pending=${x.pendingOrders}/${y.pendingOrders} ` +
-          `revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profitBeforeAds=${Math.round(x.profitBeforeAds)}/${Math.round(y.profitBeforeAds)} adFee=${Math.round(x.adFee)}/${Math.round(y.adFee)} ` +
-          `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
-      } else {
-        const ledger = await loadMarginRows(ch, "ledger");
-        const t1 = Date.now();
-        const orders = await loadMarginRows(ch, "orders");
-        const t2 = Date.now();
-        const d = diffCompactRows(ledger, orders);
-        const x = marginOverRows(pnlRowsForMargin(ledger, ch.channelName), null);
-        const y = marginOverRows(pnlRowsForMargin(orders, ch.channelName), null);
-        ok =
-          d.mismatched === 0 && x.orders === y.orders && x.missingCostOrders === y.missingCostOrders &&
-          x.costCoveragePct === y.costCoveragePct && close(x.revenue, y.revenue) && close(x.profit, y.profit);
-        line =
-          `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} orders=${x.orders}/${y.orders} missingCost=${x.missingCostOrders}/${y.missingCostOrders} ` +
-          `coverage=${x.costCoveragePct}/${y.costCoveragePct} revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profit=${Math.round(x.profit)}/${Math.round(y.profit)} ` +
-          `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
+/** Shopee/Lazada: dòng gọn từ sổ ↔ từ đơn gốc, rồi hai đường cộng biên lãi (mảng đơn ↔ gom trong database). */
+async function compareMarginRows(ch: AdsInsightChannel): Promise<{ ok: boolean; line: string }> {
+  const t0 = Date.now();
+  const ledger = await loadMarginRows(ch, "ledger");
+  const t1 = Date.now();
+  const orders = await loadMarginRows(ch, "orders");
+  const t2 = Date.now();
+  const d = diffCompactRows(ledger, orders);
+  const x = marginOverRows(pnlRowsForMargin(ledger, ch.channelName), null);
+  const y = marginOverRows(pnlRowsForMargin(orders, ch.channelName), null);
+  const rowsOk =
+    d.mismatched === 0 && x.orders === y.orders && x.missingCostOrders === y.missingCostOrders &&
+    x.costCoveragePct === y.costCoveragePct && close(x.revenue, y.revenue) && close(x.profit, y.profit);
 
-        // Hai đường cộng biên lãi: duyệt mảng đơn trong RAM ↔ gom trong database.
-        const m = await compareMarginSources(ch);
-        ok &&= m.ok;
-        const lech = [...m.baseMismatches, ...m.paceMismatches, ...m.endToEndMismatches];
-        line +=
-          ` | GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
-          `soGoc=${m.baseMismatches.length} nhipBan=${m.paceMismatches.length} ketQuaCuoi=${m.endToEndMismatches.length} ` +
-          `(rows ${m.timing.rowsMs}ms, sql ${m.timing.sqlMs}ms)` +
-          (m.capped ? " CHAM PHANH 20000 DON - duong rows chi dai dien don moi nhat, khong ket luan duoc" : "") +
-          (lech.length ? ` LECH DAU: ${lech.slice(0, 5).join(" ; ")}` : "");
+  const m = await compareMarginSources(ch);
+  const lech = [...m.baseMismatches, ...m.paceMismatches, ...m.endToEndMismatches];
+  const line =
+    `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} orders=${x.orders}/${y.orders} missingCost=${x.missingCostOrders}/${y.missingCostOrders} ` +
+    `coverage=${x.costCoveragePct}/${y.costCoveragePct} revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profit=${Math.round(x.profit)}/${Math.round(y.profit)} ` +
+    `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "") +
+    ` | GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
+    `soGoc=${m.baseMismatches.length} nhipBan=${m.paceMismatches.length} ketQuaCuoi=${m.endToEndMismatches.length} ` +
+    `(rows ${m.timing.rowsMs}ms, sql ${m.timing.sqlMs}ms)` +
+    (m.capped ? " CHAM PHANH 20000 DON - duong rows chi dai dien don moi nhat, khong ket luan duoc" : "") +
+    (lech.length ? ` LECH DAU: ${lech.slice(0, 5).join(" ; ")}` : "");
+  return { ok: rowsOk && m.ok, line };
+}
 
-        if (process.argv.includes("--explain") && channelId) {
-          const range = marginWindowRange();
-          const plan = await explainLedgerMarginByGroup(
-            { userId: ch.userId, id: ch.id, channelName: ch.channelName },
-            range,
-            adsGroupMappingOf(await loadAdsGroupSets(ch.id)),
-            marginGroupOptions(ch.channelName, range)
-          );
-          // Bỏ các mảnh tháng không chạy tới cho gọn.
-          const kept: string[] = [];
-          let skip = false;
-          for (const l of plan) {
-            const isNode = l.includes("->") || !l.startsWith(" ");
-            if (isNode) skip = l.includes("(never executed)");
-            if (!skip) kept.push(l);
-          }
-          line += `\n${kept.join("\n")}`;
-        }
-      }
-      allMatch &&= ok;
-      console.log(`${ok ? "KHOP" : "LECH"} ${ch.channelName} ${ch.id} ${line}`);
-    }
-    console.log(allMatch ? `TAT CA KHOP (${channels.length} gian)` : "CO LECH - xem tren");
-    if (!allMatch) process.exitCode = 2;
-    return;
+/** Kế hoạch chạy thật của câu gom biên lãi cho một gian, bỏ các mảnh tháng không chạy tới. */
+async function explainMarginQuery(ch: AdsInsightChannel): Promise<string> {
+  const range = marginWindowRange();
+  const plan = await explainLedgerMarginByGroup(
+    { userId: ch.userId, id: ch.id, channelName: ch.channelName },
+    range,
+    adsGroupMappingOf(await loadAdsGroupSets(ch.id)),
+    marginGroupOptions(ch.channelName, range)
+  );
+  const kept: string[] = [];
+  let skip = false;
+  for (const l of plan) {
+    const isNode = l.includes("->") || !l.startsWith(" ");
+    if (isNode) skip = l.includes("(never executed)");
+    if (!skip) kept.push(l);
   }
-  if (cmd === "params-compare") {
-    const onlyOwner = arg("owner");
-    const channels = await prisma.channel.findMany({
-      where: onlyOwner ? { userId: onlyOwner } : {},
-      select: { id: true, userId: true, channelName: true },
-      orderBy: [{ userId: "asc" }, { id: "asc" }],
-    });
-    const ranges = defaultCompareRanges();
-    const channelRanges = ranges.filter((r) => r.label === "thangnay" || r.label === "400ngay");
-    const total = new Map<string, { text: number; const: number }>();
-    let allMatch = true;
-    let probes = 0;
-    const add = (label: string, r: Awaited<ReturnType<typeof compareLedgerParamStyles>>) => {
-      allMatch &&= r.ok;
-      probes += r.probes;
-      let text = 0;
-      let konst = 0;
-      for (const [name, t] of r.timing) {
-        const sum = total.get(name) ?? { text: 0, const: 0 };
-        sum.text += t.text;
-        sum.const += t.const;
-        total.set(name, sum);
-        text += t.text;
-        konst += t.const;
-      }
-      console.log(`${r.ok ? "KHOP" : "LECH"} ${label} luot=${r.probes} text=${Math.round(text)}ms const=${Math.round(konst)}ms`);
-      for (const m of r.mismatches.slice(0, 5)) console.log(`   ${m.slice(0, 400)}`);
-    };
-    for (const userId of [...new Set(channels.map((c) => c.userId))]) {
-      add(`owner ${userId}`, await compareLedgerParamStyles({ userId }, ranges, { label: userId }));
-    }
-    for (const ch of channels) {
-      add(
-        `gian ${ch.channelName} ${ch.id}`,
-        await compareLedgerParamStyles({ userId: ch.userId, id: ch.id, channelName: ch.channelName }, channelRanges, {
-          channel: ch,
-          label: ch.id,
-        })
-      );
-    }
-    console.log("--- tong thoi gian theo cau doc (ms): text / const");
-    for (const [name, t] of [...total].sort((a, b) => b[1].text - a[1].text)) {
-      console.log(`${name.padEnd(22)} ${String(Math.round(t.text)).padStart(7)} / ${String(Math.round(t.const)).padStart(7)}`);
-    }
-    console.log(allMatch ? `TAT CA KHOP (${probes} luot so)` : "CO LECH - xem tren");
-    if (!allMatch) process.exitCode = 2;
-    return;
+  return kept.join("\n");
+}
+
+async function adsCompare(): Promise<void> {
+  const platform = arg("platform")?.toUpperCase();
+  const channelId = arg("channel");
+  const channels: AdsInsightChannel[] = await prisma.channel.findMany({
+    where: {
+      ...(channelId ? { id: channelId } : {}),
+      channelName: platform
+        ? (platform as ChannelName)
+        : { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
+    },
+    select: { id: true, userId: true, channelName: true },
+    orderBy: [{ channelName: "asc" }, { id: "asc" }],
+  });
+  let allMatch = true;
+  for (const ch of channels) {
+    const isTiktok = ch.channelName === ChannelName.TIKTOK;
+    const { ok, line } = isTiktok ? await compareTiktokRows(ch) : await compareMarginRows(ch);
+    allMatch &&= ok;
+    console.log(`${ok ? "KHOP" : "LECH"} ${ch.channelName} ${ch.id} ${line}`);
+    if (!isTiktok && channelId && flag("explain")) console.log(await explainMarginQuery(ch));
   }
-  if (cmd === "partitions") {
-    const n = await ensureLedgerPartitions(Number(arg("ahead") ?? 3) || 3);
-    console.log(`Tạo ${n} phân mảnh mới`);
-    return;
-  }
-  if (cmd === "drain") {
-    const batch = Math.min(2000, Math.max(50, Number(arg("batch") ?? 500) || 500));
-    const max = Number(arg("max") ?? 1_000_000) || 1_000_000;
-    let total = 0;
-    const t0 = Date.now();
-    for (;;) {
-      const r = await drainLedgerOnce(batch);
-      total += r.claimed;
-      if (r.claimed === 0 || total >= max) break;
-      const rate = Math.round((total / Math.max(1, Date.now() - t0)) * 1000);
-      console.log(`đã tính ${total} đơn (${rate} đơn/giây)`);
+  console.log(allMatch ? `TAT CA KHOP (${channels.length} gian)` : "CO LECH - xem tren");
+  if (!allMatch) process.exitCode = 2;
+}
+
+// ------------------------------------------------------------
+// params-compare
+// ------------------------------------------------------------
+
+async function paramsCompare(): Promise<void> {
+  const onlyOwner = arg("owner");
+  const channels = await prisma.channel.findMany({
+    where: onlyOwner ? { userId: onlyOwner } : {},
+    select: { id: true, userId: true, channelName: true },
+    orderBy: [{ userId: "asc" }, { id: "asc" }],
+  });
+  const ranges = defaultCompareRanges();
+  const channelRanges = ranges.filter((r) => r.label === "thangnay" || r.label === "400ngay");
+  const total = new Map<string, { text: number; const: number }>();
+  let allMatch = true;
+  let probes = 0;
+  const add = (label: string, r: Awaited<ReturnType<typeof compareLedgerParamStyles>>) => {
+    allMatch &&= r.ok;
+    probes += r.probes;
+    let text = 0;
+    let konst = 0;
+    for (const [name, t] of r.timing) {
+      const sum = total.get(name) ?? { text: 0, const: 0 };
+      sum.text += t.text;
+      sum.const += t.const;
+      total.set(name, sum);
+      text += t.text;
+      konst += t.const;
     }
-    console.log(`XONG: ${total} đơn, ${Math.round((Date.now() - t0) / 1000)}s`);
-    return;
+    console.log(`${r.ok ? "KHOP" : "LECH"} ${label} luot=${r.probes} text=${Math.round(text)}ms const=${Math.round(konst)}ms`);
+    for (const m of r.mismatches.slice(0, 5)) console.log(`   ${m.slice(0, 400)}`);
+  };
+  for (const userId of [...new Set(channels.map((c) => c.userId))]) {
+    add(`owner ${userId}`, await compareLedgerParamStyles({ userId }, ranges, { label: userId }));
   }
-  if (cmd === "mark") {
-    const owner = arg("owner");
-    if (!owner) throw new Error("Thiếu --owner <userId>");
-    const channel = arg("channel");
-    const range = parseDateRange({ from: arg("from"), to: arg("to") });
-    const r = await markLedgerScope(
-      { userId: owner, ...(channel ? { id: channel } : {}) },
-      range,
-      `script:${arg("reason") ?? "mark"}`
+  for (const ch of channels) {
+    add(
+      `gian ${ch.channelName} ${ch.id}`,
+      await compareLedgerParamStyles({ userId: ch.userId, id: ch.id, channelName: ch.channelName }, channelRanges, {
+        channel: ch,
+        label: ch.id,
+      })
     );
-    console.log(`Đánh dấu ${r.marked} dòng, tạo nháp ${r.stubbed} đơn chưa có trong sổ`);
-    return;
   }
-  if (cmd === "audit") {
-    // --min-age <phút>: 0 = lấy cả dòng vừa tính (mặc định 60 như job đêm).
-    const minAgeMs = Math.max(0, Number(arg("min-age") ?? 60) || 0) * 60_000;
-    const r = await auditLedger(Number(arg("sample") ?? 200) || 200, { minAgeMs });
-    console.log(JSON.stringify({ ...r, mismatches: r.mismatches.slice(0, 10) }, null, 2));
-    return;
+  console.log("--- tong thoi gian theo cau doc (ms): text / const");
+  for (const [name, t] of [...total].sort((a, b) => b[1].text - a[1].text)) {
+    console.log(`${name.padEnd(22)} ${String(Math.round(t.text)).padStart(7)} / ${String(Math.round(t.const)).padStart(7)}`);
   }
-  if (cmd === "compare") {
-    // So khớp SUM trong DB ↔ tính lại trong RAM: --owner <userId> hoặc --all
-    // (mọi chủ shop có gian), tùy chọn --channel, --from/--to, --fresh.
-    const range = parseDateRange({ from: arg("from"), to: arg("to") });
-    const channel = arg("channel");
-    const owners = process.argv.includes("--all")
-      ? (await prisma.channel.findMany({ distinct: ["userId"], select: { userId: true } })).map((c) => c.userId)
-      : arg("owner")
-        ? [arg("owner")!]
-        : [];
-    if (owners.length === 0) throw new Error("Cần --owner <userId> hoặc --all");
-    let allMatch = true;
-    for (const userId of owners) {
-      const r = await compareLedger(
-        { userId, ...(channel ? { id: channel } : {}) },
-        range,
-        { fresh: process.argv.includes("--fresh") }
-      );
-      allMatch &&= r.match;
-      const a = r.ledger.all;
-      console.log(
-        `${r.match ? "KHỚP " : "LỆCH "} owner=${userId} đơn=${a.count} (sổ ${r.timing.ledgerMs}ms, tính lại ${r.timing.recomputeMs}ms) ` +
-          `DT=${a.revenueGross} DTsàn=${a.platformRevenue} LN=${a.profitAfterTax} bẩn=${r.freshness.dirty}`
-      );
-      for (const d of r.diffs.slice(0, 20)) {
-        console.log(`   ${d.group}.${d.metric}: sổ ${d.ledger} ≠ tính lại ${d.recomputed} (lệch ${d.diff})`);
-      }
-    }
-    console.log(allMatch ? "TẤT CẢ KHỚP" : "CÓ LỆCH — xem trên");
-    if (!allMatch) process.exitCode = 2;
-    return;
-  }
-  throw new Error(`Lệnh lạ: ${cmd}`);
+  console.log(allMatch ? `TAT CA KHOP (${probes} luot so)` : "CO LECH - xem tren");
+  if (!allMatch) process.exitCode = 2;
+}
+
+// ------------------------------------------------------------
+
+const COMMANDS: Record<string, () => Promise<void>> = {
+  status,
+  partitions,
+  drain,
+  mark,
+  audit,
+  compare,
+  "ads-compare": adsCompare,
+  "params-compare": paramsCompare,
+};
+
+async function main(): Promise<void> {
+  const cmd = process.argv[2] ?? "status";
+  const run = COMMANDS[cmd];
+  if (!run) throw new Error(`Lệnh lạ: ${cmd}`);
+  await run();
 }
 
 main()

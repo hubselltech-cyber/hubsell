@@ -47,7 +47,8 @@ import { prisma } from "../../lib/prisma";
 import { computePnlRow, forEachPnlOrderPage } from "../../routes/finance";
 import { resolveReportSource, type ReportSource } from "../../lib/report-source";
 import { ensureLedgerFresh, ledgerCompactOrders } from "../../services/order-ledger";
-import { MIN_ORDERS_FOR_MARGIN, dateKey, startOfDaysAgo, vnDateKey } from "../shopee/ads-insights";
+import { dateKey, startOfDaysAgo, vnDateKey } from "../../lib/ads-dates";
+import { MIN_ORDERS_FOR_MARGIN } from "../shopee/ads-insights";
 import { productRunAdvice, type ProductRunAdvice } from "./product-run-advice";
 
 /** Cửa sổ lấy đơn (theo ngày tạo) — dài hơn Shopee vì chỉ đơn ĐÃ ĐỐI SOÁT mới được tính. Mặc định chọn, không phải số của sàn. */

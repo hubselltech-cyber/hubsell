@@ -37,7 +37,8 @@ import {
   type ShopeeGmsReport,
 } from "./client";
 import { toShopeeDate } from "./ads-spend";
-import { computeChannelProductBreakeven, dateKeyToDbDate, shiftDateKey, vnDateKey } from "./ads-insights";
+import { dateKeyToDbDate, shiftDateKey, vnDateKey } from "../../lib/ads-dates";
+import { computeChannelProductBreakeven } from "./ads-insights";
 
 export type GmsWindowKey = "7d" | "30d";
 export const GMS_WINDOWS: Array<{ key: GmsWindowKey; days: number }> = [

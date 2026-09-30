@@ -26,11 +26,8 @@ vi.mock("../../services/order-ledger", async (importOriginal) => {
 });
 
 import { ensureLedgerFresh } from "../../services/order-ledger";
-import {
-  MARGIN_SQL_FAILURE_COOLDOWN_MS,
-  computeChannelAdsInsights,
-  computeChannelProductBreakeven,
-} from "../shopee/ads-insights";
+import { computeChannelAdsInsights, computeChannelProductBreakeven } from "../shopee/ads-insights";
+import { MARGIN_SQL_FAILURE_COOLDOWN_MS } from "../shopee/ads-margin-source";
 import { computeChannelAdsRecommendations } from "../shopee/ads-recommend-data";
 
 const ledgerReady: boolean = await (async () => {

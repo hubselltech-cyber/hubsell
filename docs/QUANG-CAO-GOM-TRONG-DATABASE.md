@@ -134,18 +134,28 @@ Các hàm thuần hiện có (`marginOverRows`, `tiktokBreakevenBase`, `…ByGro
 
 ## 11. Đợt 1 (Shopee + Lazada): đã làm tối 30/09/2026
 
-### 11.1 Những gì có trong code
+### 11.1 Bản đồ mã nguồn (sau khi dọn dẹp 30/09/2026 tối)
 
-- `services/order-ledger.ts`
-  - `ledgerMarginByGroup`: MỘT câu SQL trả về cho mọi nhóm của gian (toàn gian, từng chiến dịch, từng sản phẩm) số đơn có giá vốn, doanh thu, lợi nhuận, số đơn và doanh thu thiếu giá vốn, lượng bán 30 ngày / 7 ngày, lượng bán mà dòng hàng chưa có giá vốn. Không phanh số đơn; RAM chỉ nhận một dòng cho mỗi nhóm.
-  - `explainLedgerMarginByGroup`: in kế hoạch chạy thật của câu gom.
-  - `timestampConst` / `dateConst` và tùy chọn `constParams` của `ledgerScopeSql` (mục 11.2 điểm 2). Tùy chọn mặc định TẮT: mọi báo cáo khác nhận đúng câu SQL cũ (đã so từng ký tự với bản trước khi sửa, có test khóa lại).
-- `integrations/shopee/ads-insights.ts`
-  - Công tắc `ADS_MARGIN_SOURCE` (`rows` | `sql`). Lên prod lần đầu ở `rows` (commit `d23d807`); **mặc định `sql` từ 30/09 tối sau khi so prod khớp** (mục 11.7). Khi `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`.
-  - Bộ nhóm của gian (`groupSkusByItemId`, `buildAdsGroupSets`, `adsGroupMappingOf`): mỗi sản phẩm sàn một nhóm `p:<item_id>`, mỗi chiến dịch một nhóm `c:<id>`, nhóm toàn gian `shop`.
-  - Mặt tiền `ChannelMargins` với hai bản: `marginsFromRows` (duyệt mảng đơn, dùng lại nguyên `marginOverRows`) và `marginsFromGroups` (tra kết quả đã gom). Ba nơi dùng (`computeChannelAdsInsights`, `computeChannelProductBreakeven`, `computeChannelAdsRecommendations`) gọi qua mặt tiền; phần phía sau (`marginOf`, ngưỡng 5 đơn, độ phủ 90%, bộ luật đánh giá chiến dịch, bộ chấm gợi ý) không đổi một dòng.
-  - Bộ đệm đường `sql`: nhớ KẾT QUẢ gom theo gian, cùng thời hạn 30 phút và cùng lệnh xóa khi nhập giá vốn. Ba nơi dùng dựng cùng một bộ nhóm nên dùng chung một lượt gom. Bộ nhóm đổi (thêm sản phẩm, chiến dịch đổi danh sách sản phẩm) thì gom lại ngay.
-- `integrations/shopee/ads-margin-compare.ts` + lệnh `scripts/ledger-backfill.ts ads-compare`: so hai đường cho từng gian ở hai tầng. Tầng số gốc: từng nhóm, số đơn bằng tuyệt đối, tiền lệch không quá 1 đồng, độ phủ bằng nhau, nhịp bán bằng tuyệt đối. Tầng kết quả cuối: chạy ba phép tính khách nhìn thấy ở cả hai đường rồi so từng trường (kết luận của Trợ lý, nguồn biên lãi, ROAS hòa vốn, bảng hòa vốn sản phẩm, mức và điểm gợi ý).
+Cùng khuôn với các báo cáo khác của sổ cái: luật thuần ở `lib/`, câu SQL ở `services/order-ledger.ts`, phần nạp + ghép ở `integrations/`.
+
+| Tệp (dưới `backend/`) | Giữ gì |
+|---|---|
+| `src/lib/ads-margin.ts` | THUẦN. Luật biên lãi (`marginOverRows`, `marginOf`, ngưỡng độ phủ 90%, `pnlRowsForMargin`), cửa sổ 30 ngày, bộ nhóm SKU của gian (`buildAdsGroupSets`: nhóm toàn gian `shop`, mỗi chiến dịch `c:<id>`, mỗi sản phẩm sàn `p:<item_id>`; `adsGroupMappingOf` kèm dấu vân tay), nhịp bán, mặt tiền `ChannelMargins` với hai bản `marginsFromRows` / `marginsFromGroups`, kiểu dữ liệu của câu gom. |
+| `src/lib/ads-dates.ts` | THUẦN. Các hàm ngày của quảng cáo dùng chung ba sàn (ngày sàn, bộ lọc `?from=&to=`). |
+| `src/lib/report-source.ts` | Công tắc nguồn số: `resolveReportSource` (sổ cái ↔ đơn gốc) và `resolveAdsMarginSource` (env `ADS_MARGIN_SOURCE`: mặc định `sql`, `rows` = đường lui; `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`). |
+| `src/services/order-ledger.ts` | Câu SQL: `ledgerMarginByGroup` (một câu cho mọi nhóm: số đơn có giá vốn, doanh thu, lợi nhuận, đơn và doanh thu thiếu giá vốn, lượng bán 30 ngày / 7 ngày, lượng bán chưa có giá vốn dòng), `explainLedgerMarginByGroup`, `ledgerCompactOrders` (dòng gọn cho đường `rows` và TikTok); cách viết mốc kỳ `tsParam` / `dayParam` (env `LEDGER_SCOPE_PARAMS`). |
+| `src/integrations/shopee/ads-margin-source.ts` | Nạp từ database + bộ đệm: `loadMarginRows`, `loadMarginGroups`, `fetchChannelMargins` (chọn đường cộng, lưới đỡ khi câu gom lỗi), `loadAdsGroupSets`. Bộ đệm 30 phút theo gian ở cả hai đường, xóa khi nhập giá vốn; đường `sql` nhớ KẾT QUẢ gom kèm dấu vân tay bộ nhóm. |
+| `src/integrations/shopee/ads-insights.ts` | Ghép số thành kết luận: `computeChannelAdsInsights` (chiến dịch + kết luận của Trợ lý), `computeChannelProductBreakeven` (bảng hòa vốn sản phẩm). Ngưỡng 5 đơn, bộ luật đánh giá chiến dịch không đổi. |
+| `src/integrations/shopee/ads-recommend-data.ts` | `computeChannelAdsRecommendations` (gợi ý chạy quảng cáo) — lấy biên lãi và nhịp bán từ cùng bộ `ChannelMargins` của bảng hòa vốn. |
+| `src/integrations/shopee/ads-margin-compare.ts` | Công cụ so hai đường cộng ở hai tầng (số gốc từng nhóm + ba kết quả cuối). Gỡ cùng đường lui ~07/10. |
+| `src/services/order-ledger-params-compare.ts` | Công cụ so hai cách viết mốc kỳ cho mọi câu đọc sổ. Gỡ cùng `LEDGER_SCOPE_PARAMS` ~07/10. |
+| `src/services/channel-delete.ts` | Xóa gian theo lô (mục 11.8 việc 3). |
+| `scripts/ledger-backfill.ts` | Lệnh `ads-compare`, `params-compare` (chạy trên Render Shell của worker) cùng các lệnh bảo trì sổ. |
+| `scripts/bench-large-shop.ts` | Dựng / xem / dọn gian thử cỡ shop lớn trên database máy mình để đo tải (từ chối chạy nếu `DATABASE_URL` không trỏ localhost). |
+
+Test: thuần ở `src/lib/__tests__/ads-margin.test.ts`, `ads-dates.test.ts` và `src/services/__tests__/order-ledger-scope.test.ts`; trên DB dev ở `src/integrations/__tests__/`: `ads-margin-sql-db`, `ads-margin-fallback-db`, `ads-rows-ledger-db`, `order-ledger-params-db`, `channel-delete-db`.
+
+Việc gỡ ~07/10 (một đợt): đường `rows` (`loadMarginRows` cho Shopee/Lazada, `marginsFromRows`, bộ đệm mảng đơn, `MARGIN_MAX_ORDERS`, lưới đỡ, `ads-margin-compare.ts`, lệnh `ads-compare` phần Shopee/Lazada) và cách viết mốc kỳ cũ (nhánh `text`, `order-ledger-params-compare.ts`, lệnh `params-compare`). GIỮ `marginOverRows` làm chuẩn đối chiếu trong test.
 
 ### 11.2 Ba chỗ làm khác bản thiết kế ở mục 3 (luật không đổi)
 
@@ -171,7 +181,7 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 
 ### 11.4 Kiểm thử
 
-- `integrations/shopee/ads-insights-margin.test.ts`: công tắc, bộ nhóm, dấu vân tay, hai bản của mặt tiền, nhịp bán.
+- `lib/__tests__/ads-margin.test.ts`: công tắc, bộ nhóm, dấu vân tay, hai bản của mặt tiền, nhịp bán.
 - `integrations/__tests__/ads-margin-sql-db.test.ts` trên DB dev:
   - dữ liệu thật của mọi gian Shopee/Lazada: bộ nhóm thật + nhóm thử (từng SKU, ba SKU gộp, mọi SKU phải bằng nhóm toàn gian), hai tầng so đều 0 lệch, lệch tiền lớn nhất dưới 0,1 đồng;
   - bộ đơn tự dựng cho ca dữ liệu dev không có: đơn chỉ có quà giá 0, quà trong đơn có hàng, đơn hủy, đơn thiếu giá vốn (có quà, có hai dòng cùng SKU), đơn ngoài cửa sổ, đơn ngoài 7 ngày, phần phân bổ bị làm tròn; số kỳ vọng suy từ cách dựng.
