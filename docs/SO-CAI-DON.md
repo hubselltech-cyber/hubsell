@@ -145,7 +145,14 @@ Render tự chạy `prisma migrate deploy` lúc khởi động (render.yaml), n�
 - Sửa (`0baaa2b`, đã deploy worker): mọi câu ghi kèm `createdDate` để cắt mảnh; bỏ bước "kéo dòng về mảnh" khỏi đường nóng (đối soát đêm đếm và tự sửa `duplicateOrders`); lô 100 (`LEDGER_BATCH`) + nghỉ 500 ms giữa lô (`LEDGER_CHUNK_PAUSE_MS`); tắt hẳn bằng `LEDGER_WORKER_OFF=1`.
 - **Kết luận thiết kế:** (1) compute Nano không đủ cho bất kỳ việc nền nào quét hàng chục nghìn dòng — đề nghị nâng compute (gói Pro có tín dụng cho Micro); (2) với bảng phân mảnh, câu lệnh thiếu khóa phân mảnh trong WHERE đắt gấp số mảnh; (3) công tắc khẩn (env) phải đặt sẵn trước khi bật tính năng nặng, vì sửa env qua giao diện lúc sự cố không kịp.
 
-**Còn lại, anh Trung làm:**
+**Trạng thái sau sự cố (30/09 ~11:00):** migration đã áp trên prod (bảng, 8 trigger, 42.251 dòng); worker sổ cái **TẮT** (bản `1d41137`, chỉ chạy khi `LEDGER_WORKER_ON=1`); 27.300 dòng đã tính, ~15.000 dòng bẩn chờ; trigger vẫn đánh dấu đơn mới nên sổ không lỗi thời về phạm vi, chỉ chưa tính. Chưa báo cáo nào đọc từ sổ nên khách không bị ảnh hưởng gì về số liệu.
+
+**Điều kiện để tiếp tục giai đoạn 1 (anh Trung quyết):**
+1. Nâng compute Supabase từ Nano lên ít nhất **Micro** (gói Pro có tín dụng compute; Small an toàn hơn). Không nâng thì em không đề nghị bật lại worker sổ cái: tải nền đã hai lần làm DB Unhealthy.
+2. Sau khi nâng: chạy `npx tsx scripts/ledger-backfill.ts drain` trên Render Shell worker lúc vắng khách (đêm), theo dõi `status`; xong thì đặt `LEDGER_WORKER_ON=1` trên worker để giữ sổ tươi (lô 100, nghỉ 500 ms).
+3. Rồi mới `compare --all` và chuyển báo cáo (mục 9).
+
+**Các bước cũ (đã làm hoặc thay bằng phần trên):**
 
 4. **Push.** Render deploy web + worker; migration tạo bảng, trigger, dòng nháp cho toàn bộ đơn prod trong một transaction (vài giây với vài chục nghìn đơn). Worker bắt đầu tính ngay, 500 đơn/2 giây (local đo ~960 đơn/giây, prod qua pooler Supabase sẽ chậm hơn).
 5. **Theo dõi trên prod**: `GET /api/admin/ledger/status` (đăng nhập dev@hubsell.tech) tới khi `dirty = 0`; hoặc Render Shell worker: `npx tsx scripts/ledger-backfill.ts status`.
