@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { HintText } from "@/components/finance/hint-icon";
-import { TruncatedNotice } from "@/components/finance/truncated-notice";
+import { LedgerPendingNotice, TruncatedNotice } from "@/components/finance/truncated-notice";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -305,6 +305,7 @@ export function SkuPnlTable({
           ))}
         </div>
         <TruncatedNotice show={data?.truncated} />
+        <LedgerPendingNotice count={data?.ledgerPending} />
       </CardHeader>
       <CardContent className="p-0">
         {/* Chỉ hiện chữ "đang tính" ở lần tải đầu; đổi bộ lọc thì giữ bảng cũ

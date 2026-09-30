@@ -45,6 +45,8 @@ import { ChannelName, ShippingStatus } from "@prisma/client";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
 import { prisma } from "../../lib/prisma";
 import { computePnlRow, forEachPnlOrderPage } from "../../routes/finance";
+import { resolveReportSource, type ReportSource } from "../../lib/report-source";
+import { ensureLedgerFresh, ledgerCompactOrders } from "../../services/order-ledger";
 import { MIN_ORDERS_FOR_MARGIN, dateKey, startOfDaysAgo, vnDateKey } from "../shopee/ads-insights";
 import { productRunAdvice, type ProductRunAdvice } from "./product-run-advice";
 
@@ -255,35 +257,65 @@ export interface ChannelTiktokBreakeven {
   byCampaignRowId: Map<string, TiktokBreakeven>;
 }
 
-/** Nạp MỘT LẦN mọi thứ phép tính hòa vốn cần (đơn 60 ngày qua computePnlRow, chiến dịch, sản phẩm sàn) — dùng chung cho hòa vốn chiến dịch lẫn tab Hòa vốn sản phẩm. */
+/**
+ * Đơn 60 ngày của gian ở dạng gọn (tối đa MAX_ORDERS đơn mới nhất) theo nguồn số (docs/SO-CAI-DON.md mục 9.7):
+ *   - "ledger" (mặc định từ 30/09/2026): hai câu SELECT trên sổ cái đơn + bảng bản kê TikTok (chỉ lấy cờ "ước tính") —
+ *     không đọc bảng đơn kèm dòng hàng / kho / bản kê đầy đủ, không tính lại computePnlRow ở mỗi lượt mở trang.
+ *   - "orders" (LEDGER_REPORTS_SOURCE=orders): đường cũ đọc đơn theo trang qua computePnlRow.
+ * Hai đường cho cùng dòng BreakevenPnlRow (có test trên DB dev).
+ */
+export async function loadBreakevenRows(
+  channel: { id: string; userId: string },
+  source: ReportSource = resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE)
+): Promise<BreakevenPnlRow[]> {
+  const scope = { userId: channel.userId, id: channel.id, channelName: ChannelName.TIKTOK };
+  const range = { gte: startOfDaysAgo(TIKTOK_MARGIN_WINDOW_DAYS), lte: new Date() };
+  const rows: BreakevenPnlRow[] = [];
+  if (source === "orders") {
+    await forEachPnlOrderPage(scope, range, { max: MAX_ORDERS }, (page) => {
+      for (const o of page) {
+        const r = computePnlRow(o);
+        rows.push({
+          createdAt: r.createdAt,
+          shippingStatus: r.shippingStatus,
+          // Chỉ bản kê THẬT mới là "đã đối soát"; số ước tính của sàn (estimated) thì chưa.
+          isSettled: r.isSettled && r.tiktok != null && (r.tiktok as { estimated?: boolean }).estimated !== true,
+          // Chỉ giữ 3 trường phép tính cần — bỏ tham chiếu tới object sản phẩm của trang.
+          items: r.items.map((it) => ({ sku: it.sku, price: it.price, quantity: it.quantity })),
+          actualRevenue: r.actualRevenue,
+          profit: r.profit,
+          missingCostPrice: r.missingCostPrice,
+          tiktok: r.tiktok ? { feeGmvMax: Number((r.tiktok as Record<string, unknown>).feeGmvMax) || 0 } : null,
+        });
+      }
+    });
+    return rows;
+  }
+  // Giá vốn vừa nhập phải vào hòa vốn ngay → tính nốt dòng bẩn của cửa sổ trước khi đọc.
+  await ensureLedgerFresh(scope, range, { maxInline: 1000 });
+  const { orders } = await ledgerCompactOrders(scope, range, MAX_ORDERS, { withTiktokSettlement: true });
+  for (const o of orders) {
+    rows.push({
+      createdAt: o.createdAt,
+      shippingStatus: o.shippingStatus,
+      isSettled: o.isSettled && o.tiktok != null && !o.tiktok.estimated,
+      items: o.items.map((it) => ({ sku: it.sku, price: it.price, quantity: it.quantity })),
+      actualRevenue: o.actualRevenue,
+      profit: o.profit,
+      missingCostPrice: o.missingCostPrice,
+      tiktok: o.tiktok ? { feeGmvMax: o.feeGmvMax } : null,
+    });
+  }
+  return rows;
+}
+
+/** Nạp MỘT LẦN mọi thứ phép tính hòa vốn cần (đơn 60 ngày dạng gọn, chiến dịch, sản phẩm sàn) — dùng chung cho hòa vốn chiến dịch lẫn tab Hòa vốn sản phẩm. */
 async function loadBreakevenInputs(channel: { id: string; userId: string }) {
   // Đơn 60 ngày đọc THEO TRANG rồi rút ngay thành dòng gọn (22/09/2026 — trang
   // Quảng cáo TikTok gọi hàm này MỖI lần mở; gian ~185 đơn/ngày = ~11.000 đơn
   // kèm include nặng, giữ nguyên cả mảng từng làm Render hết heap).
-  const rows: BreakevenPnlRow[] = [];
-  const [, campaigns, channelProducts] = await Promise.all([
-    forEachPnlOrderPage(
-      { userId: channel.userId, id: channel.id, channelName: ChannelName.TIKTOK },
-      { gte: startOfDaysAgo(TIKTOK_MARGIN_WINDOW_DAYS), lte: new Date() },
-      { max: MAX_ORDERS },
-      (page) => {
-        for (const o of page) {
-          const r = computePnlRow(o);
-          rows.push({
-            createdAt: r.createdAt,
-            shippingStatus: r.shippingStatus,
-            // Chỉ bản kê THẬT mới là "đã đối soát"; số ước tính của sàn (estimated) thì chưa.
-            isSettled: r.isSettled && r.tiktok != null && (r.tiktok as { estimated?: boolean }).estimated !== true,
-            // Chỉ giữ 3 trường phép tính cần — bỏ tham chiếu tới object sản phẩm của trang.
-            items: r.items.map((it) => ({ sku: it.sku, price: it.price, quantity: it.quantity })),
-            actualRevenue: r.actualRevenue,
-            profit: r.profit,
-            missingCostPrice: r.missingCostPrice,
-            tiktok: r.tiktok ? { feeGmvMax: Number((r.tiktok as Record<string, unknown>).feeGmvMax) || 0 } : null,
-          });
-        }
-      }
-    ),
+  const [rows, campaigns, channelProducts] = await Promise.all([
+    loadBreakevenRows(channel),
     prisma.adsCampaign.findMany({
       where: { channelId: channel.id },
       select: {

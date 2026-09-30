@@ -2230,6 +2230,9 @@ model OrderLedger {
   // kiểm dòng công thức cũ ở mỗi lượt xem báo cáo.
   @@index([ownerId, deliveredDate])
   @@index([formulaVersion])
+  // Bảng phân bổ dòng tiền theo gian (migration 20260930260000_order_ledger_open_cash_index): chỉ mục CỤC BỘ
+  // "order_ledger_open_cash_idx" (ownerId, channelId) WHERE NOT isSettled AND shippingStatus IN (SHIPPING, DELIVERED)
+  // — Prisma không khai được điều kiện WHERE của chỉ mục nên chỉ nằm trong SQL.
   @@map("order_ledger")
 }
 

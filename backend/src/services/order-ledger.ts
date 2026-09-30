@@ -20,7 +20,7 @@
 // ghi theo lô ≤ 100 đơn/câu để dưới trần 65.535 tham số của Postgres.
 // ============================================================
 
-import { Prisma } from "@prisma/client";
+import { Prisma, type ShippingStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import {
   buildLedgerRows,
@@ -48,6 +48,13 @@ import {
   type PnlSummaryTotals,
 } from "../lib/realized-pnl-totals";
 import type { DeclarationRawRow, TaxReportTotals } from "../lib/tax-totals";
+import type {
+  LossOrderBasis,
+  LossOrdersData,
+  OpenCashByChannel,
+  OpenCashTotals,
+  SkuAgg,
+} from "../lib/finance-views";
 import { toBusinessDateKey, type DateRangeFilter } from "../lib/date-range";
 
 /** Dòng đang được worker cầm quá mốc này coi như worker đã chết → nhặt lại. */
@@ -1115,4 +1122,259 @@ export async function ledgerDeclarationByChannel(
     };
   });
   return { rows: out, missingDeliveredAt };
+}
+
+// ------------------------------------------------------------
+// Đơn lỗ, dòng tiền theo gian, Lãi/Lỗ theo SKU (lib/finance-views.ts,
+// docs/SO-CAI-DON.md mục 9.5)
+// ------------------------------------------------------------
+
+/**
+ * ĐƠN LỖ của kỳ trên các đơn ĐÃ GIAO: số đếm cả kỳ (một câu SELECT) + danh sách
+ * lỗ nặng nhất trước, tối đa `limit` dòng (nối bảng đơn lấy tên khách, bảng gian
+ * lấy tên gian). `limit = 0` → chỉ lấy số đếm (cảnh báo Trung tâm điều hành).
+ */
+export async function ledgerLossOrders(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  limit: number,
+  basis: LossOrderBasis = "delivered"
+): Promise<LossOrdersData> {
+  const fv = Prisma.sql`"formulaVersion" = ${LEDGER_FORMULA_VERSION}::int`;
+  // Tập đơn được soát: Đã giao (trang Đơn lỗ) hoặc đơn tính doanh thu (Trợ lý hỏi đáp).
+  const inBasis = Prisma.raw(basis === "active" ? `"countsAsRevenue"` : `"shippingStatus" = 'DELIVERED'`);
+  const inBasisL = Prisma.raw(basis === "active" ? `l."countsAsRevenue"` : `l."shippingStatus" = 'DELIVERED'`);
+  const [stats, list] = await Promise.all([
+    prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+      SELECT count(*) AS "analyzed",
+             count(*) FILTER (WHERE "isLoss") AS "loss",
+             count(*) FILTER (WHERE "missingCostPrice") AS "warning",
+             count(*) FILTER (WHERE "isLoss" OR "missingCostPrice") AS "listed",
+             COALESCE(sum(-"profitAfterTax") FILTER (WHERE "isLoss"), 0) AS "totalLoss"
+      FROM "order_ledger"
+      WHERE ${ledgerScopeSql(scope, range)} AND ${fv} AND ${inBasis}
+    `),
+    limit > 0
+      ? prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+          SELECT l."orderId" AS "id", l."orderCode", o."customerName", l."channelName"::text AS "channelName",
+                 c."shopName", l."createdAt", l."revenueGross", l."platformDeduction", l."isSettled",
+                 l."costSnapshot", l."profitAfterTax", l."missingCostPrice"
+          FROM "order_ledger" l
+          JOIN "Order" o ON o."id" = l."orderId"
+          JOIN "Channel" c ON c."id" = l."channelId"
+          WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
+            AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+            AND ${inBasisL}
+            AND (l."isLoss" OR l."missingCostPrice")
+          ORDER BY l."profitAfterTax" ASC, l."createdAt" DESC, l."orderId" DESC
+          LIMIT ${Math.floor(limit)}::int
+        `)
+      : Promise.resolve([]),
+  ]);
+  const s = stats[0] ?? {};
+  return {
+    analyzedCount: Number(s.analyzed ?? 0),
+    lossCount: Number(s.loss ?? 0),
+    warningCount: Number(s.warning ?? 0),
+    listTotal: Number(s.listed ?? 0),
+    totalLoss: Number(s.totalLoss ?? 0),
+    items: list.map((r) => ({
+      id: String(r.id),
+      orderCode: String(r.orderCode),
+      customerName: (r.customerName as string | null) ?? null,
+      channelName: String(r.channelName),
+      shopName: (r.shopName as string | null) ?? null,
+      createdAt: r.createdAt as Date,
+      revenueGross: Number(r.revenueGross),
+      platformDeduction: Number(r.platformDeduction),
+      isSettled: Boolean(r.isSettled),
+      costSnapshot: Number(r.costSnapshot),
+      profitAfterTax: Number(r.profitAfterTax),
+      missingCostPrice: Boolean(r.missingCostPrice),
+    })),
+  };
+}
+
+/**
+ * Σ "Tổng tiền" sàn báo của MỌI đơn chưa quyết toán đang giao / đã giao, theo
+ * gian — không lọc kỳ. Điều kiện viết đúng như chỉ mục cục bộ
+ * "order_ledger_open_cash_idx" để chỉ chạm các đơn còn treo.
+ */
+export async function ledgerOpenCashByChannel(scope: ChannelScope): Promise<OpenCashByChannel> {
+  const rows = await prisma.$queryRaw<{ key: string; status: string; v: unknown }[]>(Prisma.sql`
+    SELECT "channelId" AS key, "shippingStatus"::text AS status, COALESCE(sum("platformRevenue"), 0) AS v
+    FROM "order_ledger"
+    WHERE ${ledgerScopeSql(scope, undefined)}
+      AND NOT "isSettled" AND "shippingStatus" IN ('SHIPPING', 'DELIVERED')
+      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+    GROUP BY "channelId", "shippingStatus"
+  `);
+  const out: OpenCashByChannel = { inTransit: new Map(), pendingSettle: new Map() };
+  for (const r of rows) {
+    (r.status === "SHIPPING" ? out.inTransit : out.pendingSettle).set(r.key, Number(r.v));
+  }
+  return out;
+}
+
+/**
+ * Tổng + số đơn chưa quyết toán đang giao / đã giao của ĐƠN TÍNH DOANH THU, cả
+ * phạm vi (không lọc kỳ) — câu "tiền đang ở đâu" của Trợ lý hỏi đáp. Cùng điều
+ * kiện chỉ mục cục bộ với ledgerOpenCashByChannel.
+ */
+export async function ledgerOpenCashTotals(scope: ChannelScope): Promise<OpenCashTotals> {
+  const rows = await prisma.$queryRaw<{ status: string; n: unknown; v: unknown }[]>(Prisma.sql`
+    SELECT "shippingStatus"::text AS status, count(*) AS n, COALESCE(sum("platformRevenue"), 0) AS v
+    FROM "order_ledger"
+    WHERE ${ledgerScopeSql(scope, undefined)}
+      AND NOT "isSettled" AND "shippingStatus" IN ('SHIPPING', 'DELIVERED')
+      AND "countsAsRevenue"
+      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+    GROUP BY "shippingStatus"
+  `);
+  const t: OpenCashTotals = { inTransit: 0, inTransitCount: 0, pendingSettle: 0, pendingCount: 0 };
+  for (const r of rows) {
+    if (r.status === "SHIPPING") {
+      t.inTransit = Number(r.v);
+      t.inTransitCount = Number(r.n);
+    } else {
+      t.pendingSettle = Number(r.v);
+      t.pendingCount = Number(r.n);
+    }
+  }
+  return t;
+}
+
+/**
+ * LÃI/LỖ THEO SKU của đơn ĐÃ GIAO trong kỳ — GROUP BY trên sổ DÒNG HÀNG:
+ *   · mã = mã kho (Product.skuCode) nếu dòng đã liên kết sản phẩm, không thì mã sàn;
+ *   · doanh thu = Σ giá × SL; giá vốn = Σ giá vốn lúc bán × SL;
+ *   · phí phân bổ = Σ phần sàn khấu trừ của đơn chia theo tỷ trọng giá trị dòng
+ *     (đơn mà mọi dòng giá 0 thì không phân bổ — đúng luật cũ).
+ */
+export async function ledgerSkuAgg(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined
+): Promise<Map<string, SkuAgg>> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT COALESCE(p."skuCode", l."channelSku") AS "sku",
+           (array_agg(l."productName" ORDER BY l."createdAt" DESC, l."orderId" DESC, l."orderItemId"))[1] AS "productName",
+           max(p."imageUrl") AS "imageUrl",
+           COALESCE(sum(l."quantity"), 0) AS "quantitySold",
+           COALESCE(sum(l."lineGross"), 0) AS "revenue",
+           COALESCE(sum(l."lineCost"), 0) AS "cogs",
+           COALESCE(sum(CASE WHEN l."lineGross" > 0 THEN l."platformDeduction" ELSE 0 END), 0) AS "allocatedFee"
+    FROM "order_line_ledger" l
+    LEFT JOIN "Product" p ON p."id" = l."productId"
+    WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
+      AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+      AND l."shippingStatus" = 'DELIVERED'
+    GROUP BY 1
+  `);
+  const out = new Map<string, SkuAgg>();
+  for (const r of rows) {
+    const sku = String(r.sku);
+    out.set(sku, {
+      sku,
+      productName: String(r.productName ?? sku),
+      imageUrl: (r.imageUrl as string | null) ?? null,
+      quantitySold: Number(r.quantitySold),
+      revenue: Number(r.revenue),
+      cogs: Number(r.cogs),
+      allocatedFee: Number(r.allocatedFee),
+    });
+  }
+  return out;
+}
+
+// ------------------------------------------------------------
+// Quảng cáo (biên lãi Shopee/Lazada, hòa vốn TikTok): dòng GỌN của từng đơn
+// trong cửa sổ của MỘT gian, đọc thẳng từ sổ (docs/SO-CAI-DON.md mục 9.7)
+// ------------------------------------------------------------
+
+/** Phần của một đơn mà các phép tính quảng cáo cần — số đã tính sẵn trong sổ, kèm dòng hàng. */
+export interface LedgerCompactOrder {
+  orderId: string;
+  createdAt: Date;
+  shippingStatus: ShippingStatus;
+  isSettled: boolean;
+  actualRevenue: number;
+  profit: number;
+  missingCostPrice: boolean;
+  /** Phí GMV Max TikTok sàn trừ trong đơn (số có dấu, âm = bị trừ). */
+  feeGmvMax: number;
+  /** Bản kê TikTok của đơn (null = chưa có); estimated = mới là số ước tính của sàn. Chỉ nạp khi withTiktokSettlement. */
+  tiktok: { estimated: boolean } | null;
+  items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
+}
+
+/**
+ * Tối đa `max` đơn MỚI NHẤT của phạm vi (một gian, một cửa sổ ngày) ở dạng gọn,
+ * kèm dòng hàng — hai câu SELECT trên sổ, KHÔNG đọc bảng đơn kèm quan hệ, KHÔNG
+ * tính lại computePnlRow. `truncated` = cửa sổ có nhiều đơn hơn `max` (phép tính
+ * chỉ đại diện các đơn mới nhất — nơi gọi quyết định báo ra).
+ */
+export async function ledgerCompactOrders(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  max: number,
+  opts: { withTiktokSettlement?: boolean } = {}
+): Promise<{ orders: LedgerCompactOrder[]; truncated: boolean }> {
+  const limit = Math.max(1, Math.floor(max));
+  const heads = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT l."orderId", l."createdAt", l."shippingStatus"::text AS "shippingStatus", l."isSettled",
+           l."actualRevenue", l."profit", l."missingCostPrice", l."feeGmvMax"
+           ${opts.withTiktokSettlement
+             ? Prisma.sql`, (s."orderId" IS NOT NULL) AS "hasTiktok", COALESCE(s."estimated", FALSE) AS "estimated"`
+             : Prisma.empty}
+    FROM "order_ledger" l
+    ${opts.withTiktokSettlement
+      ? Prisma.sql`LEFT JOIN "tiktok_order_settlements" s ON s."orderId" = l."orderId"`
+      : Prisma.empty}
+    WHERE ${ledgerScopeSql(scope, range, { alias: "l" })}
+      AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+    ORDER BY l."createdAt" DESC, l."orderId" DESC
+    LIMIT ${limit + 1}::int
+  `);
+  const truncated = heads.length > limit;
+  const kept = truncated ? heads.slice(0, limit) : heads;
+  const byId = new Map<string, LedgerCompactOrder>();
+  const orders: LedgerCompactOrder[] = kept.map((r) => {
+    const o: LedgerCompactOrder = {
+      orderId: String(r.orderId),
+      createdAt: r.createdAt as Date,
+      shippingStatus: r.shippingStatus as ShippingStatus,
+      isSettled: Boolean(r.isSettled),
+      actualRevenue: Number(r.actualRevenue),
+      profit: Number(r.profit),
+      missingCostPrice: Boolean(r.missingCostPrice),
+      feeGmvMax: Number(r.feeGmvMax),
+      tiktok: opts.withTiktokSettlement && r.hasTiktok ? { estimated: Boolean(r.estimated) } : null,
+      items: [],
+    };
+    byId.set(o.orderId, o);
+    return o;
+  });
+  if (orders.length === 0) return { orders, truncated };
+
+  // Dòng hàng của đúng các đơn đã chọn: khi bị cắt thì chỉ đọc từ mốc đơn cũ nhất còn giữ.
+  const oldest = orders[orders.length - 1].createdAt;
+  const lineRange: DateRangeFilter = truncated ? { gte: oldest, lte: range.lte } : range;
+  const lines = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+    SELECT "orderId", "channelSku", "price", "quantity", "costPriceAtSale"
+    FROM "order_line_ledger"
+    WHERE ${ledgerScopeSql(scope, lineRange)}
+      AND "formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+    ORDER BY "orderItemId"
+  `);
+  for (const ln of lines) {
+    const o = byId.get(String(ln.orderId));
+    if (!o) continue;
+    o.items.push({
+      sku: String(ln.channelSku),
+      price: Number(ln.price),
+      quantity: Number(ln.quantity),
+      costPriceAtSale: Number(ln.costPriceAtSale),
+    });
+  }
+  return { orders, truncated };
 }

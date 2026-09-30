@@ -12,6 +12,9 @@
 //   npx tsx scripts/ledger-backfill.ts audit [--sample 500] [--min-age 0]
 //   npx tsx scripts/ledger-backfill.ts compare (--all | --owner <userId>) [--channel <id>] [--from --to] [--fresh]
 //   npx tsx scripts/ledger-backfill.ts partitions
+//   npx tsx scripts/ledger-backfill.ts ads-compare [--platform TIKTOK|SHOPEE|LAZADA] [--channel <id>]
+//       so dòng gọn của đơn (nguyên liệu biên lãi / hòa vốn quảng cáo) đọc từ sổ với dòng dựng
+//       từ đơn gốc, từng gian — in chữ KHÔNG DẤU để đọc được trên Render Shell.
 //
 // Chạy trên Render Shell của WORKER (đừng redeploy khi đang chạy). Chỉ đọc
 // đơn theo lô ≤ 500 nên không dồn tải; `drain` tự dừng khi hết dòng bẩn.
@@ -27,6 +30,47 @@ import {
   markLedgerScope,
 } from "../src/services/order-ledger";
 import { prisma } from "../src/lib/prisma";
+import { ChannelName } from "@prisma/client";
+import { loadMarginRows, marginOverRows, pnlRowsForMargin } from "../src/integrations/shopee/ads-insights";
+import {
+  loadBreakevenRows,
+  tiktokBreakevenBase,
+  tiktokBreakevenBaseByGroup,
+} from "../src/integrations/tiktok-ads/breakeven";
+
+/** So hai mảng dòng gọn theo thứ tự (mới nhất trước) — trả số dòng lệch + mô tả dòng lệch đầu tiên. */
+function diffCompactRows(
+  a: { createdAt: Date; shippingStatus: string; isSettled: boolean; actualRevenue: number; profit: number; missingCostPrice: boolean; items: { sku: string; price: number; quantity: number }[]; tiktok?: { feeGmvMax: number } | null }[],
+  b: typeof a
+): { mismatched: number; first: string | null } {
+  const key = (items: { sku: string; price: number; quantity: number }[]) =>
+    items.map((i) => `${i.sku}|${Math.round(i.price)}|${i.quantity}`).sort().join(";");
+  let mismatched = 0;
+  let first: string | null = null;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i];
+    const y = b[i];
+    const why: string[] = [];
+    if (!x || !y) why.push("thieu dong");
+    else {
+      if (x.createdAt.getTime() !== y.createdAt.getTime()) why.push("createdAt");
+      if (x.shippingStatus !== y.shippingStatus) why.push(`status ${x.shippingStatus}/${y.shippingStatus}`);
+      if (x.isSettled !== y.isSettled) why.push(`isSettled ${x.isSettled}/${y.isSettled}`);
+      if (x.missingCostPrice !== y.missingCostPrice) why.push("missingCost");
+      if (Math.abs(x.actualRevenue - y.actualRevenue) > 0.5) why.push(`revenue ${x.actualRevenue}/${y.actualRevenue}`);
+      if (Math.abs(x.profit - y.profit) > 0.5) why.push(`profit ${x.profit}/${y.profit}`);
+      if (key(x.items) !== key(y.items)) why.push("items");
+      if ((x.tiktok == null) !== (y.tiktok == null)) why.push("tiktok null");
+      if (Math.abs((x.tiktok?.feeGmvMax ?? 0) - (y.tiktok?.feeGmvMax ?? 0)) > 0.5) why.push("feeGmvMax");
+    }
+    if (why.length) {
+      mismatched += 1;
+      if (!first) first = `#${i} ${x?.createdAt?.toISOString() ?? "-"}: ${why.join(", ")}`;
+    }
+  }
+  return { mismatched, first };
+}
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -38,6 +82,74 @@ async function main() {
   if (cmd === "status") {
     const s = await ledgerStatus();
     console.log(JSON.stringify(s, null, 2));
+    return;
+  }
+  if (cmd === "ads-compare") {
+    const platform = arg("platform")?.toUpperCase();
+    const channelId = arg("channel");
+    const channels = await prisma.channel.findMany({
+      where: {
+        ...(channelId ? { id: channelId } : {}),
+        channelName: platform
+          ? (platform as ChannelName)
+          : { in: [ChannelName.SHOPEE, ChannelName.LAZADA, ChannelName.TIKTOK] },
+      },
+      select: { id: true, userId: true, channelName: true },
+      orderBy: [{ channelName: "asc" }, { id: "asc" }],
+    });
+    const close = (x: number, y: number) => Math.abs(x - y) <= 1;
+    let allMatch = true;
+    for (const ch of channels) {
+      const t0 = Date.now();
+      let line: string;
+      let ok: boolean;
+      if (ch.channelName === ChannelName.TIKTOK) {
+        const ledger = await loadBreakevenRows(ch, "ledger");
+        const t1 = Date.now();
+        const orders = await loadBreakevenRows(ch, "orders");
+        const t2 = Date.now();
+        const d = diffCompactRows(ledger, orders);
+        const x = tiktokBreakevenBase(ledger, null);
+        const y = tiktokBreakevenBase(orders, null);
+        const groupOfSku = new Map<string, string>();
+        for (const r of orders) for (const it of r.items) groupOfSku.set(it.sku, it.sku);
+        const gx = tiktokBreakevenBaseByGroup(ledger, groupOfSku);
+        const gy = tiktokBreakevenBaseByGroup(orders, groupOfSku);
+        let groupDiff = 0;
+        for (const [g, by] of gy) {
+          const bx = gx.get(g);
+          if (!bx || bx.settledOrders !== by.settledOrders || bx.pendingOrders !== by.pendingOrders || !close(bx.revenue, by.revenue) || !close(bx.profitBeforeAds, by.profitBeforeAds)) groupDiff += 1;
+        }
+        ok =
+          d.mismatched === 0 && groupDiff === 0 &&
+          x.settledOrders === y.settledOrders && x.cancelledOrders === y.cancelledOrders && x.pendingOrders === y.pendingOrders &&
+          close(x.revenue, y.revenue) && close(x.profitBeforeAds, y.profitBeforeAds) && close(x.adFee, y.adFee) && close(x.missingCostRevenue, y.missingCostRevenue);
+        line =
+          `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} skuGroups=${gy.size} groupDiff=${groupDiff} ` +
+          `settled=${x.settledOrders}/${y.settledOrders} cancelled=${x.cancelledOrders}/${y.cancelledOrders} pending=${x.pendingOrders}/${y.pendingOrders} ` +
+          `revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profitBeforeAds=${Math.round(x.profitBeforeAds)}/${Math.round(y.profitBeforeAds)} adFee=${Math.round(x.adFee)}/${Math.round(y.adFee)} ` +
+          `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
+      } else {
+        const ledger = await loadMarginRows(ch, "ledger");
+        const t1 = Date.now();
+        const orders = await loadMarginRows(ch, "orders");
+        const t2 = Date.now();
+        const d = diffCompactRows(ledger, orders);
+        const x = marginOverRows(pnlRowsForMargin(ledger, ch.channelName), null);
+        const y = marginOverRows(pnlRowsForMargin(orders, ch.channelName), null);
+        ok =
+          d.mismatched === 0 && x.orders === y.orders && x.missingCostOrders === y.missingCostOrders &&
+          x.costCoveragePct === y.costCoveragePct && close(x.revenue, y.revenue) && close(x.profit, y.profit);
+        line =
+          `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} orders=${x.orders}/${y.orders} missingCost=${x.missingCostOrders}/${y.missingCostOrders} ` +
+          `coverage=${x.costCoveragePct}/${y.costCoveragePct} revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profit=${Math.round(x.profit)}/${Math.round(y.profit)} ` +
+          `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
+      }
+      allMatch &&= ok;
+      console.log(`${ok ? "KHOP" : "LECH"} ${ch.channelName} ${ch.id} ${line}`);
+    }
+    console.log(allMatch ? `TAT CA KHOP (${channels.length} gian)` : "CO LECH - xem tren");
+    if (!allMatch) process.exitCode = 2;
     return;
   }
   if (cmd === "partitions") {

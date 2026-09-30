@@ -579,6 +579,8 @@ export interface SkuPnlRow {
 export interface SkuPnlResponse {
   /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
   truncated?: boolean;
+  /** Số đơn trong kỳ đang chờ sổ cái tính lại — số có thể lệch nhỏ vài phút. */
+  ledgerPending?: number;
   items: SkuPnlRow[];
   summary: {
     skuCount: number;
@@ -955,6 +957,8 @@ export interface CashFlowRow {
 
 export interface CashFlowResponse {
   rows: CashFlowRow[];
+  /** Số đơn của shop đang chờ sổ cái tính lại. */
+  ledgerPending?: number;
 }
 
 export function fetchCashFlow() {
@@ -2548,6 +2552,11 @@ export function fetchLossOrders(range?: DateRange, channel?: ChannelFilterQuery)
     analyzedCount: number;
     lossCount: number;
     warningCount: number;
+    /** Tổng số dòng lỗ + thiếu giá vốn của kỳ; lớn hơn orders.length khi danh sách chạm trần listLimit. */
+    listTotal?: number;
+    listLimit?: number;
+    /** Số đơn trong kỳ đang chờ sổ cái tính lại. */
+    ledgerPending?: number;
     orders: LossOrder[];
     lossOrders: LossOrder[];
   }>(withRange("/api/finance/orders-analysis", range, channel));

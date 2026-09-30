@@ -24,7 +24,9 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
-import { computePnlRow, fetchPnlRows } from "../../routes/finance";
+import { fetchPnlRows } from "../../routes/finance";
+import { resolveReportSource, type ReportSource } from "../../lib/report-source";
+import { ensureLedgerFresh, ledgerCompactOrders } from "../../services/order-ledger";
 import {
   ASSISTANT_WINDOWS,
   assessDelivery,
@@ -140,7 +142,47 @@ export function dateKeyToDbDate(key: string): Date {
 
 export type CampaignWithPerf = AdsCampaign & { dailyPerf: AdsCampaignDailyPerf[] };
 
-export type PnlRow = ReturnType<typeof computePnlRow>;
+/**
+ * Phần của một dòng Lãi/Lỗ mà các phép tính quảng cáo cần (biên lãi theo tập
+ * SKU, nhịp bán, cờ thiếu giá vốn theo dòng hàng). Dòng computePnlRow đầy đủ
+ * gán vào được; từ 30/09/2026 mặc định dựng từ SỔ CÁI ĐƠN (loadMarginRows).
+ */
+export interface PnlRow {
+  createdAt: Date;
+  shippingStatus: ShippingStatus;
+  isSettled: boolean;
+  /** Doanh thu thực tế của đơn = Giá trị đơn − voucher/xu shop. */
+  actualRevenue: number;
+  /** Lợi nhuận đơn (chưa trừ quảng cáo). */
+  profit: number;
+  missingCostPrice: boolean;
+  items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
+}
+
+/** Phanh số đơn của cửa sổ biên lãi một gian — cùng mức với đường cũ (fetchPnlRows). */
+export const MARGIN_MAX_ORDERS = 20_000;
+
+/**
+ * Đơn của MỘT gian trong cửa sổ, dạng gọn, mới nhất trước — theo nguồn số
+ * (docs/SO-CAI-DON.md mục 9.7):
+ *   - "ledger" (mặc định): hai câu SELECT trên sổ cái — không đọc bảng đơn kèm
+ *     dòng hàng / kho / bản kê, không tính lại computePnlRow ở mỗi lượt. Tính
+ *     nốt dòng bẩn của cửa sổ trước (giá vốn vừa nhập phải vào biên lãi ngay).
+ *   - "orders" (LEDGER_REPORTS_SOURCE=orders): đường cũ fetchPnlRows.
+ */
+export async function loadMarginRows(
+  channel: AdsInsightChannel,
+  source: ReportSource = resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE)
+): Promise<PnlRow[]> {
+  const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
+  const range = { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() };
+  if (source === "orders") {
+    return (await fetchPnlRows(scope, range, { max: MARGIN_MAX_ORDERS })).rows;
+  }
+  await ensureLedgerFresh(scope, range, { maxInline: 1000 });
+  const { orders } = await ledgerCompactOrders(scope, range, MARGIN_MAX_ORDERS);
+  return orders;
+}
 
 /** Nền P&L 30 ngày của một gian (chưa trừ ads) — nguyên liệu tính biên lãi. */
 /** Định danh gian truyền vào lõi — channelName quyết định nhánh P&L của sàn. */
@@ -194,13 +236,8 @@ export async function fetchChannelPnlRows(
   if (!opts.fresh && hit && Date.now() - hit.at < PNL_CACHE_TTL_MS) {
     return (await hit.rows).slice();
   }
-  const rows = (async () => {
-    const { rows } = await fetchPnlRows(
-      { userId: channel.userId, id: channel.id, channelName: channel.channelName },
-      { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() }
-    );
-    return pnlRowsForMargin(rows, channel.channelName);
-  })();
+  const rows = (async () =>
+    pnlRowsForMargin(await loadMarginRows(channel), channel.channelName))();
   if (PNL_CACHE_TTL_MS > 0) {
     if (pnlRowsCache.size >= PNL_CACHE_MAX_CHANNELS) {
       const oldest = pnlRowsCache.keys().next().value;

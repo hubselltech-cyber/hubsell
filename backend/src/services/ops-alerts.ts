@@ -28,8 +28,8 @@ import { humanizeOrderSyncError } from "./sync-alert-text";
 import { isHubsellAdsConfigured } from "../integrations/hubsell-ads";
 import { ADS_CADENCE } from "../config/ads-cadence";
 import { prisma } from "../lib/prisma";
-import { fetchPnlRows } from "../routes/finance";
-import { isLossOrder } from "../lib/finance-definitions";
+import { loadLossOrders } from "../routes/finance";
+import { resolveReportSource } from "../lib/report-source";
 import {
   assistantDecisionActive,
   computeChannelAdsInsights,
@@ -414,29 +414,30 @@ async function detectHubsellAdsLinkGaps(ownerId: string): Promise<DetectedAlert[
  * cùng nguồn với trang Đơn lỗ). Một thẻ tổng hợp, bấm vào xem từng đơn.
  */
 async function detectLossOrders(ownerId: string): Promise<DetectedAlert[]> {
-  const { rows: orders } = await fetchPnlRows(
+  // CÙNG NGUỒN + CÙNG LUẬT với trang Đơn lỗ (orders-analysis): lãi < 0 là LỖ
+  // (anh Trung chốt 30/09/2026), KHÔNG loại đơn thiếu giá vốn — thiếu giá vốn mà
+  // vẫn âm nghĩa là phí sàn đã ăn hết doanh thu, càng phải báo. Thẻ nói N đơn
+  // thì trang mở ra cũng đúng N. Chỉ cần số đếm (limit 0): từ 30/09/2026 đọc
+  // bằng một câu SELECT trên sổ cái đơn thay vì kéo đơn 7 ngày của mọi chủ shop
+  // lên RAM ở mỗi lượt quét (LEDGER_REPORTS_SOURCE=orders lui về đường cũ).
+  const stats = await loadLossOrders(
+    resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE),
     { userId: ownerId },
     { gte: daysAgo(LOSS_WINDOW_DAYS), lte: new Date() },
-    { shippingStatus: ShippingStatus.DELIVERED, lean: true }
+    0
   );
-  if (orders.length === 0) return [];
+  if (stats.lossCount === 0) return [];
 
-  // CÙNG LUẬT với trang Đơn lỗ (orders-analysis): lãi < 0 là LỖ (anh Trung chốt
-  // 30/09/2026), KHÔNG loại đơn thiếu giá vốn — thiếu giá vốn mà vẫn âm nghĩa
-  // là phí sàn đã ăn hết doanh thu, càng phải báo. Thẻ nói N đơn thì trang mở
-  // ra cũng đúng N.
-  const losses = orders.filter(isLossOrder);
-  if (losses.length === 0) return [];
-
-  const totalLoss = losses.reduce((s, r) => s + Math.abs(r.profitAfterTax), 0);
+  const lossCount = stats.lossCount;
+  const totalLoss = stats.totalLoss;
   return [
     {
       type: "loss-orders",
       dedupeKey: "rolling-7d",
       tag: "finance",
       severity: totalLoss >= HIGH_MONEY_THRESHOLD ? "high" : "medium",
-      title: `${losses.length} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
-      summary: `Trong ${LOSS_WINDOW_DAYS} ngày qua có ${losses.length} đơn Đã giao lợi nhuận âm (phí thật từ sao kê sàn). Bấm xem từng đơn lỗ do giá vốn hay do phí sàn để điều chỉnh giá bán.`,
+      title: `${lossCount} đơn giao gần đây bị LỖ — tổng ${vnd(totalLoss)}`,
+      summary: `Trong ${LOSS_WINDOW_DAYS} ngày qua có ${lossCount} đơn Đã giao lợi nhuận âm (phí thật từ sao kê sàn). Bấm xem từng đơn lỗ do giá vốn hay do phí sàn để điều chỉnh giá bán.`,
       // Route mới sau điều chuyển menu 08/08; /finance/loss-orders cũ vẫn redirect
       payload: {
         kind: "navigate",

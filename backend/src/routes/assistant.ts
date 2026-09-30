@@ -20,7 +20,6 @@
 import { Router } from "express";
 import {
   ChannelName,
-  type Prisma,
   ReturnStatus,
   ShippingStatus,
   TransactionDirection,
@@ -35,8 +34,13 @@ import {
   toBusinessDateKey,
   type DateRangeFilter,
 } from "../lib/date-range";
-import { computePnlRow, fetchPnlRows } from "./finance";
-import { countsAsRevenue, isLossOrder, summarizeMissingCost } from "../lib/finance-definitions";
+// NGUỒN SỐ: các bộ nạp hai nguồn dùng chung với Tổng quan / trang Đơn lỗ / bảng
+// dòng tiền — từ 30/09/2026 đọc SỔ CÁI ĐƠN (SUM trong database) thay vì kéo đơn
+// lên RAM; LEDGER_REPORTS_SOURCE=orders lui về đường cũ (docs/SO-CAI-DON.md 9.6).
+import { loadLossOrders, loadOpenCashTotals } from "./finance";
+import { loadOverviewTotals } from "./analytics";
+import { gmvMaxRowsOf, type OverviewTotals } from "../lib/overview-totals";
+import { resolveReportSource, type ReportSource } from "../lib/report-source";
 import { platformAdsSpend } from "../services/ads-spend";
 import {
   assistantDecisionActive,
@@ -200,18 +204,24 @@ function pctDelta(current: number, previous: number): string | null {
 
 // ─────────────────────────── Nguyên liệu P&L dùng chung ───────────────────────────
 
-type PnlRow = ReturnType<typeof computePnlRow>;
-
-async function loadPnlRows(
-  scope: ChannelScope,
-  range?: DateRangeFilter,
-  where?: Prisma.OrderWhereInput
-): Promise<PnlRow[]> {
-  return (await fetchPnlRows(scope, range, { lean: true, where })).rows;
+/** Nguồn số mặc định của Trợ lý (body.source của /ask thắng — để so hai đường trên prod). */
+export function assistantSource(query?: unknown): ReportSource {
+  return resolveReportSource(query, process.env.LEDGER_REPORTS_SOURCE);
 }
 
-function activeRows(rows: PnlRow[]): PnlRow[] {
-  return rows.filter(countsAsRevenue);
+/**
+ * Lãi ròng của một kỳ từ bộ tổng đơn tính doanh thu: Doanh thu − giá vốn − sàn
+ * khấu trừ − phần lợi nhuận của đơn chưa có giá vốn (không tính vào lợi nhuận,
+ * vẫn tính doanh thu) − chi phí vận hành − quảng cáo sàn.
+ */
+function netOf(t: OverviewTotals, opex: number, ads: number) {
+  const a = t.active;
+  return {
+    orders: a.count,
+    revenue: a.revenueGross,
+    net:
+      a.revenueGross - a.costSnapshot - a.platformDeduction - a.missingCostExcludedProfit - opex - ads,
+  };
 }
 
 // ─────────────────────────── BÁO CÁO KỲ (tuần/tháng) ───────────────────────────
@@ -227,7 +237,8 @@ export async function buildPeriodReport(
   ownerId: string,
   scope: ChannelScope,
   range: DateRangeFilter,
-  label: string
+  label: string,
+  source: ReportSource = assistantSource()
 ): Promise<AssistantReply> {
   const lengthMs = range.lte.getTime() - range.gte.getTime() + 1;
   const prevRange: DateRangeFilter = {
@@ -239,10 +250,15 @@ export async function buildPeriodReport(
   // mốc UTC-midnight của ngày VN, không so thẳng mốc giờ VN được.
   const adDate = (d: Date) => new Date(toBusinessDateKey(d));
 
-  const [allRows, prevAllRows, opexAgg, prevOpexAgg, newReturns, adAgg, topItems] =
+  const [curData, prevData, opexAgg, prevOpexAgg, newReturns, adAgg, topItems] =
     await Promise.all([
-      loadPnlRows(scope, range),
-      loadPnlRows(scope, prevRange),
+      // Bộ tổng đơn tính doanh thu của kỳ (kèm chuỗi ngày) và của kỳ trước; sổ
+      // cái làm tươi một lần cho cả hai kỳ.
+      loadOverviewTotals(source, scope, range, {
+        byDaySince: toBusinessDateKey(range.gte),
+        fresh: { range: { gte: prevRange.gte, lte: range.lte } },
+      }),
+      loadOverviewTotals(source, scope, prevRange),
       prisma.operatingExpense.aggregate({
         where: { userId: ownerId, direction: TransactionDirection.EXPENSE, expenseDate: range },
         _sum: { amount: true },
@@ -271,25 +287,16 @@ export async function buildPeriodReport(
 
   // Quảng cáo sàn TRỪ vào lợi nhuận — cùng luật với Tổng quan và Báo cáo dòng
   // tiền (anh Trung chốt 30/09/2026), áp cho cả kỳ trước để % so sánh cùng thước.
+  const curTotals = curData.totals;
+  const prevTotals = prevData.totals;
   const [curAds, prevAds] = await Promise.all([
-    platformAdsSpend(scope, range, activeRows(allRows)),
-    platformAdsSpend(scope, prevRange, activeRows(prevAllRows)),
+    platformAdsSpend(scope, range, gmvMaxRowsOf(curTotals)),
+    platformAdsSpend(scope, prevRange, gmvMaxRowsOf(prevTotals)),
   ]);
 
-  const sumOf = (rows: PnlRow[], opex: number, ads: number) => {
-    const act = activeRows(rows);
-    const revenue = act.reduce((s, r) => s + r.revenueGross, 0);
-    const cost = act.reduce((s, r) => s + r.costSnapshot, 0);
-    const fee = act.reduce((s, r) => s + (r.revenueGross - r.platformRevenue), 0);
-    // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
-    const excluded = summarizeMissingCost(act).excludedProfit;
-    return { orders: act.length, revenue, net: revenue - cost - fee - excluded - opex - ads };
-  };
-  const cur = sumOf(allRows, Number(opexAgg._sum.amount ?? 0), curAds.total);
-  const prev = sumOf(prevAllRows, Number(prevOpexAgg._sum.amount ?? 0), prevAds.total);
-  const cancelled = allRows.filter(
-    (r) => r.shippingStatus === ShippingStatus.CANCELLED
-  ).length;
+  const cur = netOf(curTotals, Number(opexAgg._sum.amount ?? 0), curAds.total);
+  const prev = netOf(prevTotals, Number(prevOpexAgg._sum.amount ?? 0), prevAds.total);
+  const cancelled = curTotals.cancelledCount;
   // Dòng "Chi quảng cáo" giữ số sàn báo đầy đủ (kể cả khoản sàn đã trừ trong đơn).
   const adSpend = Number(adAgg._sum.amount ?? 0);
 
@@ -298,9 +305,8 @@ export async function buildPeriodReport(
   for (let t = range.gte.getTime(); t <= range.lte.getTime(); t += DAY_MS) {
     byDay.set(toBusinessDateKey(new Date(t)), 0);
   }
-  for (const r of activeRows(allRows)) {
-    const key = toBusinessDateKey(r.createdAt);
-    if (byDay.has(key)) byDay.set(key, (byDay.get(key) ?? 0) + r.revenueGross);
+  for (const [key, d] of curTotals.byDay) {
+    if (byDay.has(key)) byDay.set(key, d.revenueGross);
   }
   const points = [...byDay.entries()].map(([key, value]) => ({
     label: `${key.slice(8, 10)}/${key.slice(5, 7)}`,
@@ -336,7 +342,7 @@ export async function buildPeriodReport(
     })),
   ];
 
-  const missing = activeRows(allRows).filter((r) => r.missingCostPrice).length;
+  const missing = curTotals.active.missingCostCount;
   let text =
     cur.orders === 0
       ? `${label} chưa có đơn phát sinh nào.`
@@ -361,6 +367,8 @@ interface ResolveCtx {
   ownerId: string;
   scope: ChannelScope;
   period: Period;
+  /** Nguồn số của các câu trả lời cộng từ đơn: sổ cái đơn / đường cũ kéo đơn. */
+  source: ReportSource;
 }
 
 interface IntentDef {
@@ -387,7 +395,7 @@ const INTENTS: IntentDef[] = [
       { p: "kinh doanh the nao", w: 3 },
       { p: "buon ban the nao", w: 3 },
     ],
-    async resolve({ ownerId, scope, period }) {
+    async resolve({ ownerId, scope, period, source }) {
       // "Báo cáo" trần không kèm mốc → mặc định 7 ngày gần nhất (1 ngày quá
       // mỏng để gọi là báo cáo, biểu đồ cũng chỉ có 1 cột).
       let p = period;
@@ -402,7 +410,7 @@ const INTENTS: IntentDef[] = [
           explicit: false,
         };
       }
-      return buildPeriodReport(ownerId, scope, p.range, p.label);
+      return buildPeriodReport(ownerId, scope, p.range, p.label, source);
     },
   },
   {
@@ -418,11 +426,14 @@ const INTENTS: IntentDef[] = [
       { p: "kiem duoc", w: 2 },
       { p: "lai bao nhieu", w: 3 },
     ],
-    async resolve({ ownerId, scope, period }) {
-      const rows = activeRows(await loadPnlRows(scope, period.range));
-      const revenue = rows.reduce((s, r) => s + r.revenueGross, 0);
-      const cost = rows.reduce((s, r) => s + r.costSnapshot, 0);
-      const fee = rows.reduce((s, r) => s + (r.revenueGross - r.platformRevenue), 0);
+    async resolve({ ownerId, scope, period, source }) {
+      const { totals } = await loadOverviewTotals(source, scope, period.range, {
+        fresh: { range: period.range },
+      });
+      const orderCount = totals.active.count;
+      const revenue = totals.active.revenueGross;
+      const cost = totals.active.costSnapshot;
+      const fee = totals.active.platformDeduction;
       const opex = Number(
         (
           await prisma.operatingExpense.aggregate({
@@ -436,15 +447,16 @@ const INTENTS: IntentDef[] = [
         )._sum.amount ?? 0
       );
       // Đơn chưa có giá vốn không tính vào lợi nhuận (vẫn tính doanh thu).
-      const { orderCount: missing, excludedProfit } = summarizeMissingCost(rows);
+      const missing = totals.active.missingCostCount;
+      const excludedProfit = totals.active.missingCostExcludedProfit;
       // Quảng cáo sàn trừ vào lợi nhuận — cùng luật Tổng quan / Báo cáo dòng tiền.
-      const ads = (await platformAdsSpend(scope, period.range, rows)).total;
+      const ads = (await platformAdsSpend(scope, period.range, gmvMaxRowsOf(totals))).total;
       const net = revenue - cost - fee - excludedProfit - opex - ads;
 
       let text =
-        rows.length === 0
+        orderCount === 0
           ? `${period.label} chưa có đơn phát sinh nào nên chưa có lãi/lỗ để tính.`
-          : `${period.label} shop ${net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(net))} trên ${rows.length} đơn phát sinh.`;
+          : `${period.label} shop ${net >= 0 ? "lãi ròng" : "lỗ"} ${fmtMoney(Math.abs(net))} trên ${orderCount} đơn phát sinh.`;
       if (missing > 0) {
         text += ` ⚠️ ${missing} đơn chưa có giá vốn nên không được tính vào lợi nhuận.`;
       }
@@ -452,7 +464,7 @@ const INTENTS: IntentDef[] = [
         outcome: "answered",
         text,
         rows:
-          rows.length === 0
+          orderCount === 0
             ? undefined
             : [
                 { label: "Doanh thu (GMV phát sinh)", value: fmtMoney(revenue) },
@@ -484,21 +496,31 @@ const INTENTS: IntentDef[] = [
       { p: "ban duoc bao nhieu", w: 3 },
       { p: "thu ve", w: 2 },
     ],
-    async resolve({ scope, period }) {
-      const rows = activeRows(await loadPnlRows(scope, period.range));
-      const revenue = rows.reduce((s, r) => s + r.revenueGross, 0);
+    async resolve({ scope, period, source }) {
+      const { totals } = await loadOverviewTotals(source, scope, period.range, {
+        fresh: { range: period.range },
+      });
+      const orderCount = totals.active.count;
+      const revenue = totals.active.revenueGross;
+      // Doanh thu theo gian — gộp theo nhãn "tên gian (sàn)" như trước.
+      const chans = await prisma.channel.findMany({
+        where: { id: { in: [...totals.byChannelId.keys()] } },
+        select: { id: true, shopName: true, channelName: true },
+      });
+      const labelOf = new Map(chans.map((c) => [c.id, `${c.shopName} (${c.channelName})`]));
       const byShop = new Map<string, number>();
-      for (const r of rows) {
-        const key = `${r.shopName} (${r.channelName})`;
-        byShop.set(key, (byShop.get(key) ?? 0) + r.revenueGross);
+      for (const [channelId, g] of totals.byChannelId) {
+        const key = labelOf.get(channelId);
+        if (!key) continue;
+        byShop.set(key, (byShop.get(key) ?? 0) + g.revenueGross);
       }
       const top = [...byShop.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
       return {
         outcome: "answered",
         text:
-          rows.length === 0
+          orderCount === 0
             ? `${period.label} chưa có đơn phát sinh nào.`
-            : `${period.label} shop đạt doanh thu ${fmtMoney(revenue)} từ ${rows.length} đơn.`,
+            : `${period.label} shop đạt doanh thu ${fmtMoney(revenue)} từ ${orderCount} đơn.`,
         rows: top.map(([label, v]) => ({ label, value: fmtMoney(v) })),
         link: { href: "/", label: "Mở Tổng quan" },
       };
@@ -809,29 +831,14 @@ const INTENTS: IntentDef[] = [
       { p: "rut tien", w: 2 },
       { p: "tien", w: 1 },
     ],
-    async resolve({ scope }) {
-      // Không lọc kỳ → CHỈ đọc đơn câu trả lời dùng (chưa quyết toán, đang giao
-      // / đã giao) — cùng điều kiện với bảng Phân bổ dòng tiền theo gian.
-      const rows = activeRows(
-        await loadPnlRows(scope, undefined, {
-          isSettled: false,
-          shippingStatus: { in: [ShippingStatus.SHIPPING, ShippingStatus.DELIVERED] },
-        })
+    async resolve({ scope, source }) {
+      // Không lọc kỳ → CHỈ cộng đơn câu trả lời dùng (đơn tính doanh thu, chưa
+      // quyết toán, đang giao / đã giao) — cùng điều kiện với bảng Phân bổ dòng
+      // tiền theo gian. Đơn đã quyết toán không cộng: tiền đã nằm trong ví sàn.
+      const { inTransit, inTransitCount, pendingSettle, pendingCount } = await loadOpenCashTotals(
+        source,
+        scope
       );
-      let inTransit = 0;
-      let inTransitCount = 0;
-      let pendingSettle = 0;
-      let pendingCount = 0;
-      for (const r of rows) {
-        if (r.isSettled) continue; // tiền đã nằm trong ví sàn — cộng nữa là đếm đôi
-        if (r.shippingStatus === ShippingStatus.SHIPPING) {
-          inTransit += r.platformRevenue;
-          inTransitCount++;
-        } else if (r.shippingStatus === ShippingStatus.DELIVERED) {
-          pendingSettle += r.platformRevenue;
-          pendingCount++;
-        }
-      }
       const chans = await prisma.channel.findMany({
         where: scope,
         select: { walletBalance: true },
@@ -873,21 +880,19 @@ const INTENTS: IntentDef[] = [
       { p: "lo bao nhieu", w: 3 },
       { p: "sku lo", w: 3 },
     ],
-    async resolve({ scope, period }) {
+    async resolve({ scope, period, source }) {
       const p = widenToMonth(period);
-      const rows = activeRows(await loadPnlRows(scope, p.range));
       // Cùng định nghĩa với trang Đơn lỗ + chuông cảnh báo (lãi < 0, kể cả đơn
-      // thiếu giá vốn mà vẫn âm) — trước đây ba nơi ba cách tính.
-      const losses = rows
-        .filter(isLossOrder)
-        .sort((a, b) => a.profitAfterTax - b.profitAfterTax);
-      const totalLoss = losses.reduce((s, r) => s + r.profitAfterTax, 0);
+      // thiếu giá vốn mà vẫn âm) — trước đây ba nơi ba cách tính. Tập soát ở
+      // đây là ĐƠN TÍNH DOANH THU của kỳ; chỉ lấy số đếm + 3 đơn lỗ nặng nhất.
+      const data = await loadLossOrders(source, scope, p.range, 3, "active");
+      const losses = data.items.filter((r) => r.profitAfterTax < 0);
       return {
         outcome: "answered",
         text:
-          losses.length === 0
+          data.lossCount === 0
             ? `${p.label} không có đơn nào bán lỗ. 👍`
-            : `${p.label} có ${losses.length} đơn bán lỗ, tổng lỗ ${fmtMoney(Math.abs(totalLoss))}. Nặng nhất:`,
+            : `${p.label} có ${data.lossCount} đơn bán lỗ, tổng lỗ ${fmtMoney(data.totalLoss)}. Nặng nhất:`,
         rows: losses.slice(0, 3).map((r) => ({
           label: `${r.orderCode} — ${r.shopName}`,
           value: fmtMoney(r.profitAfterTax),
@@ -1052,7 +1057,7 @@ router.post("/ask", async (req: AuthRequest, res, next) => {
 
     const norm = normalize(rawQuestion);
     const period = detectPeriod(norm);
-    const ctx: ResolveCtx = { ownerId, scope, period };
+    const ctx: ResolveCtx = { ownerId, scope, period, source: assistantSource(req.body?.source) };
 
     // Bấm CHIP hỏi lại → đi thẳng intent, khỏi chấm điểm lại.
     if (directIntent) {

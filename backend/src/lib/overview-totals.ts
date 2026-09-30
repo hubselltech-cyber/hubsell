@@ -12,6 +12,7 @@
 // ============================================================
 
 import { toBusinessDateKey } from "./date-range";
+import { ShippingStatus } from "@prisma/client";
 import { countsAsRevenue } from "./finance-definitions";
 import type { LedgerSummary } from "./order-ledger";
 import type { PnlRow } from "./pnl-formula";
@@ -35,6 +36,8 @@ export const OVERVIEW_SUM_COLUMNS = [
 type SumColumn = (typeof OVERVIEW_SUM_COLUMNS)[number];
 
 export interface OverviewTotals {
+  /** Số đơn HỦY của kỳ (tham khảo cạnh số đơn phát sinh — báo cáo kỳ của Trợ lý). */
+  cancelledCount: number;
   /** Đơn tính doanh thu của kỳ. */
   active: Record<SumColumn, number> & {
     count: number;
@@ -69,7 +72,9 @@ export function overviewTotalsFromRows(pnlRows: PnlRow[]): OverviewTotals {
   const active = emptyActive();
   const byChannelId: OverviewTotals["byChannelId"] = new Map();
   const byDay: OverviewTotals["byDay"] = new Map();
+  let cancelledCount = 0;
   for (const r of pnlRows) {
+    if (r.shippingStatus === ShippingStatus.CANCELLED) cancelledCount += 1;
     if (!countsAsRevenue(r)) continue;
     const deduction = r.revenueGross - r.platformRevenue;
     active.count += 1;
@@ -93,7 +98,7 @@ export function overviewTotalsFromRows(pnlRows: PnlRow[]): OverviewTotals {
     d.platformDeduction += deduction;
     byDay.set(key, d);
   }
-  return { active, byChannelId, byDay };
+  return { cancelledCount, active, byChannelId, byDay };
 }
 
 /** Hai bảng bóc GROUP BY trong database của nhóm đơn tính doanh thu (services/order-ledger.ts). */
@@ -114,7 +119,12 @@ export function overviewTotalsFromLedger(
   active.missingCostCount = s.active.missingCostCount;
   active.missingCostExcludedProfit = s.active.missingCostExcludedProfit;
   for (const c of OVERVIEW_SUM_COLUMNS) active[c] = s.active[c];
-  return { active, byChannelId: new Map(b.byChannelId), byDay: new Map(b.byDay) };
+  return {
+    cancelledCount: s.cancelled.count,
+    active,
+    byChannelId: new Map(b.byChannelId),
+    byDay: new Map(b.byDay),
+  };
 }
 
 /**

@@ -65,6 +65,8 @@ export default function LossOrdersPage() {
   const [analyzedCount, setAnalyzedCount] = useState(0);
   const [lossCount, setLossCount] = useState(0);
   const [warningCount, setWarningCount] = useState(0);
+  // Danh sách trả tối đa một số dòng lỗ nặng nhất; tổng thật để nói rõ khi bị cắt.
+  const [listTotal, setListTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [range, setRange] = useState<DateRange>(defaultRange);
@@ -88,6 +90,7 @@ export default function LossOrdersPage() {
       setAnalyzedCount(res.analyzedCount);
       setLossCount(res.lossCount);
       setWarningCount(res.warningCount);
+      setListTotal(res.listTotal ?? res.orders.length);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         router.replace("/login");
@@ -172,6 +175,13 @@ export default function LossOrdersPage() {
             Từng đơn có Doanh thu ≤ Giá vốn + Phí sàn, để đối soát lại với sàn.
           </p>
         </div>
+
+        {loadedOnce && listTotal > orders.length && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+            Kỳ này có {formatNumber(listTotal)} đơn cần xem. Bảng dưới hiện {formatNumber(orders.length)} đơn lỗ
+            nặng nhất. Anh/chị chọn kỳ ngắn hơn hoặc lọc theo gian để xem hết.
+          </p>
+        )}
 
         {/* Thẻ cảnh báo tổng */}
         {loadedOnce && (lossCount > 0 || warningCount > 0) && (
