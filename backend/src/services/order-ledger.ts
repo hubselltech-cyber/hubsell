@@ -44,6 +44,14 @@ import { toBusinessDateKey, type DateRangeFilter } from "../lib/date-range";
 export const LEDGER_CLAIM_STALE_MS = 10 * 60_000;
 /** Số đơn mỗi câu INSERT (≈ 50 tham số/dòng đơn, ≈ 40/dòng hàng). */
 const WRITE_CHUNK = 100;
+/**
+ * Nghỉ giữa hai lô ghi (ms) — nhường CPU/kết nối database cho luồng đơn của
+ * seller khi dựng sổ hàng chục nghìn đơn. Mặc định tự chọn 250ms: lô 100 đơn
+ * ≈ 300–600ms trên Supabase → sổ cái chiếm dưới 2/3 thời gian một kết nối.
+ * LEDGER_CHUNK_PAUSE_MS=0 để tắt (chạy script drain lúc vắng khách).
+ */
+const CHUNK_PAUSE_MS = Math.max(0, Number(process.env.LEDGER_CHUNK_PAUSE_MS ?? 500) || 0);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface LedgerClaim {
   orderId: string;
@@ -238,13 +246,16 @@ export async function recomputeLedgerOrders(
       await prisma
         .$executeRaw(Prisma.sql`
           UPDATE "order_ledger" SET "claimedAt" = NULL
-          WHERE "orderId" IN (${Prisma.join(chunkIds)}) AND "claimedAt" IS NOT NULL
+          WHERE ("createdDate", "orderId") IN (${Prisma.join(
+            built.map((b) => Prisma.sql`(${b.order.createdDate}::date, ${b.order.orderId})`)
+          )}) AND "claimedAt" IS NOT NULL
         `)
         .catch(() => undefined);
       throw err;
     }
     written += built.length;
     lines += built.reduce((s, b) => s + b.lines.length, 0);
+    if (CHUNK_PAUSE_MS > 0 && i + WRITE_CHUNK < ids.length) await sleep(CHUNK_PAUSE_MS);
   }
   return { written, missing: ids.length - seen.size, lines };
 }
@@ -253,9 +264,12 @@ async function writeLedgerChunk(
   built: ReturnType<typeof buildLedgerRows>[],
   claimedAt: Map<string, Date | null>
 ): Promise<void> {
-  const orderIds = built.map((b) => b.order.orderId);
-  const moveBack = Prisma.join(
-    built.map((b) => Prisma.sql`(${b.order.orderId}, ${b.order.createdDate}::date)`)
+  // Mọi điều kiện đều kèm "createdDate" để Postgres CẮT MẢNH: chỉ chạm 1–2 mảnh
+  // tháng thay vì quét chỉ mục của cả 84 mảnh mỗi câu (30/09/2026 trên prod:
+  // lô dựng sổ 42.000 đơn làm database chậm, pool 5 kết nối của worker cạn,
+  // hàng đợi webhook TikTok và đẩy tồn báo timeout).
+  const keys = Prisma.join(
+    built.map((b) => Prisma.sql`(${b.order.createdDate}::date, ${b.order.orderId})`)
   );
   const orderRows = Prisma.join(
     built.map((b) => orderValues(b.order, claimedAt.get(b.order.orderId) ?? null))
@@ -263,13 +277,10 @@ async function writeLedgerChunk(
   const lineRows = built.flatMap((b) => b.lines.map(lineValues));
 
   await prisma.$transaction(async (tx) => {
-    // Dòng sổ đang nằm ở mảnh khác (đơn đổi ngày tạo giữa hai lần ghi) → kéo về
-    // mảnh đúng trước để ON CONFLICT trúng, không sinh dòng đôi.
-    await tx.$executeRaw(Prisma.sql`
-      UPDATE "order_ledger" l SET "createdDate" = v."createdDate"
-      FROM (VALUES ${moveBack}) AS v("orderId", "createdDate")
-      WHERE l."orderId" = v."orderId" AND l."createdDate" <> v."createdDate"
-    `);
+    // Đơn đổi ngày tạo sang tháng khác: trigger order_ledger_mark đã dời dòng
+    // sang mảnh đúng nên ON CONFLICT trúng. Trường hợp hiếm lọt (đổi ngày đúng
+    // lúc worker ghi) sinh dòng đôi → job đối soát đêm đếm và tự sửa
+    // (auditLedger.duplicateOrders), không trả giá quét 84 mảnh ở đường nóng.
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO "order_ledger" (${quoteList(ORDER_COLUMNS)})
       VALUES ${orderRows}
@@ -279,10 +290,10 @@ async function writeLedgerChunk(
     // Dòng vừa INSERT mới (không có dòng nháp) mang claimedAt = mốc nhặt → xóa.
     await tx.$executeRaw(Prisma.sql`
       UPDATE "order_ledger" SET "claimedAt" = NULL
-      WHERE "orderId" IN (${Prisma.join(orderIds)}) AND "claimedAt" IS NOT NULL AND "dirtyAt" IS NULL
+      WHERE ("createdDate", "orderId") IN (${keys}) AND "claimedAt" IS NOT NULL AND "dirtyAt" IS NULL
     `);
     await tx.$executeRaw(Prisma.sql`
-      DELETE FROM "order_line_ledger" WHERE "orderId" IN (${Prisma.join(orderIds)})
+      DELETE FROM "order_line_ledger" WHERE ("createdDate", "orderId") IN (${keys})
     `);
     if (lineRows.length > 0) {
       await tx.$executeRaw(Prisma.sql`
@@ -463,6 +474,8 @@ export async function markLedgerScope(
 export interface LedgerAuditResult {
   sampled: number;
   mismatched: number;
+  /** Đơn có dòng ở hai mảnh (đã xóa dòng lạc + đánh bẩn). Phải luôn 0. */
+  duplicateOrders: number;
   dirtyBacklog: number;
   staleDirty: number;
   defaultRows: number;
@@ -529,6 +542,32 @@ export async function auditLedger(
     }
   }
 
+  // DÒNG ĐÔI: một đơn nằm ở hai mảnh (đổi ngày tạo đúng lúc worker ghi — đường
+  // nóng không còn bước "kéo về mảnh" để khỏi quét 84 mảnh). Giữ dòng có
+  // createdDate khớp đơn hiện tại, xóa dòng lạc, đánh bẩn để tính lại.
+  const duplicates = await prisma.$queryRaw<{ orderId: string }[]>(Prisma.sql`
+    SELECT "orderId" FROM "order_ledger" GROUP BY "orderId" HAVING count(*) > 1 LIMIT 1000
+  `);
+  if (duplicates.length > 0) {
+    const dupIds = duplicates.map((d) => d.orderId);
+    await prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "order_ledger" l
+      USING "Order" o
+      WHERE l."orderId" = o."id" AND l."orderId" IN (${Prisma.join(dupIds)})
+        AND l."createdDate" <> (o."createdAt" + INTERVAL '7 hours')::date
+    `);
+    await prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "order_line_ledger" l
+      USING "Order" o
+      WHERE l."orderId" = o."id" AND l."orderId" IN (${Prisma.join(dupIds)})
+        AND l."createdDate" <> (o."createdAt" + INTERVAL '7 hours')::date
+    `);
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "order_ledger" SET "dirtyAt" = clock_timestamp(), "dirtyReason" = 'audit:duplicate'
+      WHERE "orderId" IN (${Prisma.join(dupIds)})
+    `);
+  }
+
   const counters = await prisma.$queryRaw<{ dirty: bigint; stale: bigint; def: bigint }[]>(Prisma.sql`
     SELECT
       (SELECT count(*) FROM "order_ledger" WHERE "dirtyAt" IS NOT NULL) AS dirty,
@@ -539,6 +578,7 @@ export async function auditLedger(
   const result: LedgerAuditResult = {
     sampled: sample.length,
     mismatched: mismatches.length,
+    duplicateOrders: duplicates.length,
     dirtyBacklog: Number(c?.dirty ?? 0),
     staleDirty: Number(c?.stale ?? 0),
     defaultRows: Number(c?.def ?? 0),
@@ -553,7 +593,7 @@ export async function auditLedger(
       dirtyBacklog: result.dirtyBacklog,
       staleDirty: result.staleDirty,
       defaultRows: result.defaultRows,
-      details: result.mismatches as unknown as Prisma.InputJsonValue,
+      details: { duplicateOrders: result.duplicateOrders, mismatches: result.mismatches } as unknown as Prisma.InputJsonValue,
     },
   });
   return result;

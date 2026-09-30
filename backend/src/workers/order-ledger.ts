@@ -24,7 +24,13 @@ import {
 } from "../services/order-ledger";
 
 const POLL_MS = Math.max(500, Number(process.env.LEDGER_POLL_MS ?? 2000) || 2000);
-const BATCH = Math.min(2000, Math.max(50, Number(process.env.LEDGER_BATCH ?? 500) || 500));
+/**
+ * Số dòng nhặt mỗi lượt. Mặc định 200 (hạ từ 500 sau 30/09/2026: dựng sổ
+ * 42.000 đơn prod làm pool 5 kết nối của worker cạn, hàng đợi webhook và đẩy
+ * tồn timeout). Cùng với nghỉ 250ms giữa lô 100 (services/order-ledger.ts),
+ * sổ cái nhường database cho luồng đơn của seller; backlog vẫn tiêu hết dần.
+ */
+const BATCH = Math.min(2000, Math.max(50, Number(process.env.LEDGER_BATCH ?? 100) || 100));
 /** Một lượt drain chạy tối đa chừng này rồi nhả cho vòng poll sau (tránh ôm event loop). */
 const DRAIN_BUDGET_MS = 20_000;
 /** Giờ VN chạy bảo trì đêm. */
@@ -127,9 +133,10 @@ export async function runNightlyMaintenance(): Promise<void> {
     if (created > 0) console.log(`[Ledger] Tạo ${created} phân mảnh tháng mới`);
     await sweepFormulaVersion();
     const a = await auditLedger(Number(process.env.LEDGER_AUDIT_SAMPLE ?? 200) || 200);
-    const level = a.mismatched > 0 || a.defaultRows > 0 || a.staleDirty > 0 ? "warn" : "log";
+    const level =
+      a.mismatched > 0 || a.defaultRows > 0 || a.staleDirty > 0 || a.duplicateOrders > 0 ? "warn" : "log";
     console[level](
-      `[Ledger] Đối soát đêm: mẫu ${a.sampled}, lệch ${a.mismatched}, bẩn tồn ${a.dirtyBacklog} (quá hạn ${a.staleDirty}), mảnh DEFAULT ${a.defaultRows} dòng, ${a.durationMs}ms`
+      `[Ledger] Đối soát đêm: mẫu ${a.sampled}, lệch ${a.mismatched}, dòng đôi ${a.duplicateOrders}, bẩn tồn ${a.dirtyBacklog} (quá hạn ${a.staleDirty}), mảnh DEFAULT ${a.defaultRows} dòng, ${a.durationMs}ms`
     );
   } catch (err) {
     console.error("[Ledger] Lỗi bảo trì đêm:", (err as Error).message);
