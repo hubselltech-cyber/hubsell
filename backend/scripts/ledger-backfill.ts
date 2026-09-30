@@ -12,9 +12,13 @@
 //   npx tsx scripts/ledger-backfill.ts audit [--sample 500] [--min-age 0]
 //   npx tsx scripts/ledger-backfill.ts compare (--all | --owner <userId>) [--channel <id>] [--from --to] [--fresh]
 //   npx tsx scripts/ledger-backfill.ts partitions
-//   npx tsx scripts/ledger-backfill.ts ads-compare [--platform TIKTOK|SHOPEE|LAZADA] [--channel <id>]
+//   npx tsx scripts/ledger-backfill.ts ads-compare [--platform TIKTOK|SHOPEE|LAZADA] [--channel <id>] [--explain]
 //       so dòng gọn của đơn (nguyên liệu biên lãi / hòa vốn quảng cáo) đọc từ sổ với dòng dựng
 //       từ đơn gốc, từng gian — in chữ KHÔNG DẤU để đọc được trên Render Shell.
+//       Shopee/Lazada so thêm HAI ĐƯỜNG CỘNG biên lãi (duyệt mảng đơn ↔ gom trong database,
+//       docs/QUANG-CAO-GOM-TRONG-DATABASE.md): từng nhóm, nhịp bán, ba kết quả cuối. Phải
+//       "TAT CA KHOP" trước khi bật ADS_MARGIN_SOURCE=sql. --explain (kèm --channel): in kế
+//       hoạch chạy thật của câu gom.
 //
 // Chạy trên Render Shell của WORKER (đừng redeploy khi đang chạy). Chỉ đọc
 // đơn theo lô ≤ 500 nên không dồn tải; `drain` tự dừng khi hết dòng bẩn.
@@ -31,7 +35,17 @@ import {
 } from "../src/services/order-ledger";
 import { prisma } from "../src/lib/prisma";
 import { ChannelName } from "@prisma/client";
-import { loadMarginRows, marginOverRows, pnlRowsForMargin } from "../src/integrations/shopee/ads-insights";
+import {
+  adsGroupMappingOf,
+  loadAdsGroupSets,
+  loadMarginRows,
+  marginGroupOptions,
+  marginOverRows,
+  marginWindowRange,
+  pnlRowsForMargin,
+} from "../src/integrations/shopee/ads-insights";
+import { compareMarginSources } from "../src/integrations/shopee/ads-margin-compare";
+import { explainLedgerMarginByGroup } from "../src/services/order-ledger";
 import {
   loadBreakevenRows,
   tiktokBreakevenBase,
@@ -144,6 +158,36 @@ async function main() {
           `rows=${ledger.length}/${orders.length} rowDiff=${d.mismatched} orders=${x.orders}/${y.orders} missingCost=${x.missingCostOrders}/${y.missingCostOrders} ` +
           `coverage=${x.costCoveragePct}/${y.costCoveragePct} revenue=${Math.round(x.revenue)}/${Math.round(y.revenue)} profit=${Math.round(x.profit)}/${Math.round(y.profit)} ` +
           `(so ${t1 - t0}ms, don goc ${t2 - t1}ms)` + (d.first ? ` FIRST: ${d.first}` : "");
+
+        // Hai đường cộng biên lãi: duyệt mảng đơn trong RAM ↔ gom trong database.
+        const m = await compareMarginSources(ch);
+        ok &&= m.ok;
+        const lech = [...m.baseMismatches, ...m.paceMismatches, ...m.endToEndMismatches];
+        line +=
+          ` | GOM ${m.ok ? "khop" : "LECH"}: nhom=${m.groups} don=${m.rowsOrders} lechTienMax=${m.maxMoneyDiff.toFixed(4)} ` +
+          `soGoc=${m.baseMismatches.length} nhipBan=${m.paceMismatches.length} ketQuaCuoi=${m.endToEndMismatches.length} ` +
+          `(rows ${m.timing.rowsMs}ms, sql ${m.timing.sqlMs}ms)` +
+          (m.capped ? " CHAM PHANH 20000 DON - duong rows chi dai dien don moi nhat, khong ket luan duoc" : "") +
+          (lech.length ? ` LECH DAU: ${lech.slice(0, 5).join(" ; ")}` : "");
+
+        if (process.argv.includes("--explain") && channelId) {
+          const range = marginWindowRange();
+          const plan = await explainLedgerMarginByGroup(
+            { userId: ch.userId, id: ch.id, channelName: ch.channelName },
+            range,
+            adsGroupMappingOf(await loadAdsGroupSets(ch.id)),
+            marginGroupOptions(ch.channelName, range)
+          );
+          // Bỏ các mảnh tháng không chạy tới cho gọn.
+          const kept: string[] = [];
+          let skip = false;
+          for (const l of plan) {
+            const isNode = l.includes("->") || !l.startsWith(" ");
+            if (isNode) skip = l.includes("(never executed)");
+            if (!skip) kept.push(l);
+          }
+          line += `\n${kept.join("\n")}`;
+        }
       }
       allMatch &&= ok;
       console.log(`${ok ? "KHOP" : "LECH"} ${ch.channelName} ${ch.id} ${line}`);

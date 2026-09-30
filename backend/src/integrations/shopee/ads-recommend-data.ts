@@ -19,9 +19,9 @@ import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { createManualProductAdsRaw } from "./client";
 import { toShopeeDate } from "./ads-spend";
 import {
-  computeChannelProductBreakeven,
-  fetchChannelPnlRows,
+  computeProductBreakevenWithMargins,
   type AdsInsightChannel,
+  type AdsMarginSource,
 } from "./ads-insights";
 import {
   medianOrganicCvr,
@@ -67,17 +67,17 @@ const TIER_RANK: Record<RecommendTier, number> = { run_now: 0, test_small: 1, no
 const num = (v: Prisma.Decimal | number | null | undefined): number | null =>
   v == null ? null : Number(v);
 
+/** `opts.marginSource`: ép đường cộng biên lãi (công cụ đối chiếu); bỏ trống = theo env. */
 export async function computeChannelAdsRecommendations(
-  channel: AdsInsightChannel
+  channel: AdsInsightChannel,
+  opts: { marginSource?: AdsMarginSource } = {}
 ): Promise<ChannelAdsRecommendations> {
-  const pnlRows = await fetchChannelPnlRows(channel);
   const since30 = new Date(Date.now() - 30 * 86_400_000);
-  const [breakeven, channelProducts, signals, singleCampaigns] = await Promise.all([
-    computeChannelProductBreakeven(channel, pnlRows),
+  const [{ breakeven, margins }, channelProducts, signals, singleCampaigns] = await Promise.all([
+    computeProductBreakevenWithMargins(channel, opts),
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
       select: {
-        channelSku: true,
         externalId: true,
         price: true,
         imageUrl: true,
@@ -96,17 +96,16 @@ export async function computeChannelAdsRecommendations(
     }),
   ]);
 
-  // ---- Gom theo item: SKU, giá, ảnh, tồn ----
+  // ---- Gom theo item: giá, ảnh, tồn ----
   const byItem = new Map<
     string,
-    { skus: Set<string>; price: number; imageUrl: string | null; linkedStock: Map<string, number>; channelStock: number | null }
+    { price: number; imageUrl: string | null; linkedStock: Map<string, number>; channelStock: number | null }
   >();
   for (const cp of channelProducts) {
     const itemId = (cp.externalId ?? "").split("-")[0];
     if (!itemId) continue;
     let g = byItem.get(itemId);
-    if (!g) byItem.set(itemId, (g = { skus: new Set(), price: 0, imageUrl: null, linkedStock: new Map(), channelStock: null }));
-    g.skus.add(cp.channelSku);
+    if (!g) byItem.set(itemId, (g = { price: 0, imageUrl: null, linkedStock: new Map(), channelStock: null }));
     const price = Number(cp.price);
     if (price > 0 && (g.price === 0 || price < g.price)) g.price = price; // giá thấp nhất = giá khách thấy
     if (!g.imageUrl && cp.imageUrl) g.imageUrl = cp.imageUrl;
@@ -117,24 +116,8 @@ export async function computeChannelAdsRecommendations(
     }
   }
 
-  // ---- Nhịp bán + cờ thiếu giá vốn theo item (từ chính tập đơn P&L) ----
-  const itemBySku = new Map<string, string>();
-  for (const [itemId, g] of byItem) for (const sku of g.skus) itemBySku.set(sku, itemId);
-  const since7 = Date.now() - 7 * 86_400_000;
-  const sales = new Map<string, { units30d: number; units7d: number; unitsNoCost: number }>();
-  for (const row of pnlRows) {
-    const recent = new Date(row.createdAt).getTime() >= since7;
-    for (const it of row.items) {
-      const itemId = itemBySku.get(it.sku);
-      if (!itemId) continue;
-      let s = sales.get(itemId);
-      if (!s) sales.set(itemId, (s = { units30d: 0, units7d: 0, unitsNoCost: 0 }));
-      s.units30d += it.quantity;
-      if (recent) s.units7d += it.quantity;
-      // Thiếu giá vốn xét theo CHÍNH dòng hàng của SP (cờ cấp đơn dính cả SP khác trong đơn).
-      if (!(it.costPriceAtSale > 0)) s.unitsNoCost += it.quantity;
-    }
-  }
+  // ---- Nhịp bán + lượng thiếu giá vốn theo item — từ chính bộ biên lãi của bảng hòa vốn ----
+  const sales = margins.productPace();
 
   // ---- Lịch sử ads: chỉ campaign ĐÚNG 1 SP mới quy được về SP ----
   const history = new Map<string, { spend: number; gmv: number }>();

@@ -89,16 +89,41 @@ const AXIS_COLUMNS: Record<LedgerDateAxis, { ts: string; date: string }> = {
 };
 
 /**
+ * Mốc thời gian / mốc ngày ở dạng BIỂU THỨC BẤT BIẾN trên tham số số nguyên.
+ *
+ * Prisma gửi chuỗi dưới dạng text, nên `$n::timestamp` / `$n::date` là phép đổi
+ * chuỗi → kiểu: Postgres xếp loại "ổn định" chứ không "bất biến", không gộp
+ * thành hằng và chạy lại ở TỪNG dòng quét. Đo trên DB dev 30/09/2026: mỗi mốc
+ * thời gian thêm khoảng 1,9 micro giây mỗi dòng, mỗi mốc ngày khoảng 1,1 — câu
+ * quét 405.000 dòng hàng mất thêm khoảng 2 giây chỉ để đổi kiểu. Viết thành
+ * "mốc 1970 + số" thì Postgres gộp thành hằng lúc lập kế hoạch: không tốn gì ở
+ * từng dòng, ước lượng số dòng đúng, cắt mảnh tháng ngay lúc lập kế hoạch.
+ * Cùng giá trị với `${d.toISOString()}::timestamp` (giờ UTC, không phụ thuộc
+ * TimeZone của phiên).
+ */
+export const timestampConst = (d: Date): Prisma.Sql =>
+  Prisma.sql`(TIMESTAMP '1970-01-01 00:00:00' + ${BigInt(d.getTime())} * INTERVAL '1 millisecond')`;
+
+/** "yyyy-mm-dd" → mốc ngày dạng hằng (xem timestampConst). */
+export const dateConst = (dateKey: string): Prisma.Sql =>
+  Prisma.sql`(DATE '1970-01-01' + ${Math.round(Date.parse(`${dateKey}T00:00:00Z`) / 86_400_000)}::int)`;
+
+/**
  * WHERE cho phạm vi gian (cùng nghĩa với `channel: scope` của Prisma) + kỳ.
  * Kỳ lọc trên cột thời gian (đúng biên giờ VN) VÀ cột ngày (để Postgres cắt
  * phân mảnh theo tháng). `alias` = tên bảng/bí danh đứng trước cột.
+ * `constParams`: mốc kỳ viết dạng hằng (xem timestampConst) — cho câu quét
+ * nhiều dòng; cùng điều kiện, cùng kết quả.
  */
 export function ledgerScopeSql(
   scope: ChannelScope,
   range: DateRangeFilter | undefined,
-  opts: { axis?: LedgerDateAxis; alias?: string } = {}
+  opts: { axis?: LedgerDateAxis; alias?: string; constParams?: boolean } = {}
 ): Prisma.Sql {
   const a = opts.alias ? Prisma.raw(`${opts.alias}.`) : Prisma.empty;
+  const ts = (d: Date) => (opts.constParams ? timestampConst(d) : Prisma.sql`${d.toISOString()}::timestamp`);
+  const day = (d: Date) =>
+    opts.constParams ? dateConst(toBusinessDateKey(d)) : Prisma.sql`${toBusinessDateKey(d)}::date`;
   const parts: Prisma.Sql[] = [Prisma.sql`${a}"ownerId" = ${scope.userId}`];
   if (typeof scope.id === "string") {
     parts.push(Prisma.sql`${a}"channelId" = ${scope.id}`);
@@ -112,10 +137,10 @@ export function ledgerScopeSql(
   if (range) {
     const col = AXIS_COLUMNS[opts.axis ?? "created"];
     parts.push(
-      Prisma.sql`${a}${Prisma.raw(col.ts)} >= ${range.gte.toISOString()}::timestamp AND ${a}${Prisma.raw(col.ts)} <= ${range.lte.toISOString()}::timestamp`
+      Prisma.sql`${a}${Prisma.raw(col.ts)} >= ${ts(range.gte)} AND ${a}${Prisma.raw(col.ts)} <= ${ts(range.lte)}`
     );
     parts.push(
-      Prisma.sql`${a}${Prisma.raw(col.date)} >= ${toBusinessDateKey(range.gte)}::date AND ${a}${Prisma.raw(col.date)} <= ${toBusinessDateKey(range.lte)}::date`
+      Prisma.sql`${a}${Prisma.raw(col.date)} >= ${day(range.gte)} AND ${a}${Prisma.raw(col.date)} <= ${day(range.lte)}`
     );
   }
   return Prisma.join(parts, " AND ");
@@ -1377,4 +1402,172 @@ export async function ledgerCompactOrders(
     });
   }
   return { orders, truncated };
+}
+
+// ------------------------------------------------------------
+// Quảng cáo Shopee/Lazada: GOM biên lãi + nhịp bán theo NHÓM SKU trong database
+// (docs/QUANG-CAO-GOM-TRONG-DATABASE.md mục 3) — không kéo đơn lên RAM, không
+// phanh số đơn: RAM chỉ nhận một dòng kết quả cho mỗi nhóm.
+// ------------------------------------------------------------
+
+/** Khóa của nhóm "mọi dòng hàng của gian" — luôn có trong kết quả, không đi qua bảng ánh xạ. */
+export const LEDGER_MARGIN_SHOP_GROUP = "shop";
+
+/** Tổng của MỘT nhóm SKU trong cửa sổ (số thô — nơi gọi tự suy ra biên lãi / độ phủ giá vốn). */
+export interface LedgerMarginGroup {
+  /** Số đơn CÓ giá vốn có dòng hàng thuộc nhóm (một đơn nhiều dòng cùng nhóm đếm một lần). */
+  orders: number;
+  /** Doanh thu thực tế / lợi nhuận của các đơn đó, phần phân bổ về dòng thuộc nhóm. */
+  revenue: number;
+  profit: number;
+  /** Đơn thiếu giá vốn (cờ cấp đơn) — đứng ngoài biên lãi, chỉ để tính độ phủ. */
+  missingCostOrders: number;
+  missingCostRevenue: number;
+  /** Số lượng bán của nhóm: cả cửa sổ / từ mốc `recentSince` / các dòng giá vốn dòng = 0. */
+  units: number;
+  unitsRecent: number;
+  unitsNoCost: number;
+}
+
+/** Hai mảng song song (nhóm, mã SKU sàn); một SKU được thuộc nhiều nhóm. */
+export interface LedgerMarginMapping {
+  groups: readonly string[];
+  skus: readonly string[];
+}
+
+export interface LedgerMarginOptions {
+  /** Chỉ đơn đã đối soát (Lazada: đơn chưa có sao kê mang phí = 0). */
+  settledOnly: boolean;
+  /** Mốc "gần đây" của nhịp bán (unitsRecent). */
+  recentSince: Date;
+}
+
+/**
+ * Gom theo nhóm SKU trên sổ dòng hàng của MỘT gian trong cửa sổ ngày tạo.
+ *
+ * Nhóm LEDGER_MARGIN_SHOP_GROUP (mọi dòng) tự có, không nằm trong `mapping`.
+ * Nhóm không có dòng hàng nào trong cửa sổ thì KHÔNG có trong kết quả.
+ *
+ * Cùng luật với marginOverRows (integrations/shopee/ads-insights.ts): bỏ đơn
+ * hủy; `settledOnly` → chỉ đơn đã đối soát (Lazada); đơn thiếu giá vốn đứng
+ * riêng. Hàm thuần tính "số của đơn × giá trị dòng khớp ÷ giá trị cả đơn" và bỏ
+ * cặp (nhóm, đơn) có giá trị dòng khớp ≤ 0. Ở đây cộng thẳng phần sổ ĐÃ phân bổ
+ * về từng dòng, chỉ lấy dòng có giá trị > 0 ("paid"), không cần gom theo đơn:
+ *   · đơn có dòng có giá: sổ phân bổ theo tỷ trọng giá trị dòng, dòng giá 0
+ *     nhận đúng 0 và phần dư làm tròn dồn về dòng giá trị lớn nhất → Σ các dòng
+ *     có giá của nhóm = phần của nhóm, lệch tối đa phần làm tròn 2 số lẻ;
+ *   · đơn mà mọi dòng giá 0 (chỉ có quà tặng): sổ chia đều nên dòng vẫn mang
+ *     tiền, nhưng hàm thuần bỏ cả đơn — lọc "paid" bỏ đúng các dòng đó;
+ *   · số đơn = số MÃ ĐƠN PHÂN BIỆT có ít nhất một dòng có giá thuộc nhóm (một
+ *     đơn nhiều dòng cùng nhóm đếm một lần).
+ * Nhịp bán cộng MỌI dòng của nhóm, kể cả dòng giá 0.
+ * Chỉ dòng tính bằng phiên bản công thức hiện tại (như mọi báo cáo trên sổ).
+ *
+ * Đo trên DB dev 30/09/2026, gian 300.000 đơn / 405.000 dòng hàng trong 30 ngày,
+ * 2.000 sản phẩm + 100 chiến dịch (12.000 cặp ánh xạ): khoảng 1,6 giây. Phần lớn
+ * thời gian là đếm mã đơn phân biệt trên ~1,1 triệu cặp (nhóm, dòng); đếm theo
+ * thứ tự byte (COLLATE "C") vì so chuỗi theo bảng chữ của database chậm gấp ba.
+ */
+export async function ledgerMarginByGroup(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerMarginMapping,
+  opts: LedgerMarginOptions
+): Promise<Map<string, LedgerMarginGroup>> {
+  const { sql, groupNames } = marginByGroupQuery(scope, range, mapping, opts);
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(sql);
+  const out = new Map<string, LedgerMarginGroup>();
+  for (const r of rows) {
+    const index = Number(r.grp);
+    out.set(index === 0 ? LEDGER_MARGIN_SHOP_GROUP : groupNames[index - 1], {
+      orders: Number(r.orders),
+      revenue: Number(r.revenue),
+      profit: Number(r.profit),
+      missingCostOrders: Number(r.missingCostOrders),
+      missingCostRevenue: Number(r.missingCostRevenue),
+      units: Number(r.units),
+      unitsRecent: Number(r.unitsRecent),
+      unitsNoCost: Number(r.unitsNoCost),
+    });
+  }
+  return out;
+}
+
+/**
+ * Kế hoạch chạy THẬT của câu gom (EXPLAIN ANALYZE) — công cụ đối chiếu dùng để
+ * xác nhận câu chỉ chạm mảnh tháng của cửa sổ và xem thời gian từng bước.
+ */
+export async function explainLedgerMarginByGroup(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerMarginMapping,
+  opts: LedgerMarginOptions
+): Promise<string[]> {
+  const { sql } = marginByGroupQuery(scope, range, mapping, opts);
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`EXPLAIN (ANALYZE, BUFFERS) ${sql}`);
+  return rows.map((r) => String(r["QUERY PLAN"]));
+}
+
+function marginByGroupQuery(
+  scope: ChannelScope,
+  range: DateRangeFilter,
+  mapping: LedgerMarginMapping,
+  opts: LedgerMarginOptions
+): { sql: Prisma.Sql; groupNames: string[] } {
+  if (mapping.groups.length !== mapping.skus.length) {
+    throw new Error(`ledgerMarginByGroup: ánh xạ lệch độ dài (${mapping.groups.length} nhóm, ${mapping.skus.length} SKU)`);
+  }
+  if (mapping.groups.includes(LEDGER_MARGIN_SHOP_GROUP)) {
+    throw new Error(`ledgerMarginByGroup: "${LEDGER_MARGIN_SHOP_GROUP}" là khóa dành riêng cho nhóm toàn gian`);
+  }
+  // Nhóm đi vào câu SQL bằng SỐ THỨ TỰ (0 = toàn gian, i = groupNames[i − 1]):
+  // khóa gom 4 byte thay cho chuỗi tên nhóm ở ~3 bản sao của mỗi dòng hàng.
+  const groupNames: string[] = [];
+  const indexOfName = new Map<string, number>();
+  const groupIndexes = mapping.groups.map((name) => {
+    let index = indexOfName.get(name);
+    if (index === undefined) {
+      groupNames.push(name);
+      indexOfName.set(name, (index = groupNames.length));
+    }
+    return index;
+  });
+  const sql = Prisma.sql`
+    WITH "lines" AS (
+      SELECT l."orderId", l."channelSku", l."quantity", l."actualRevenue", l."profit",
+             l."missingCostPrice" AS "missing",
+             (l."lineGross" > 0) AS "paid",
+             (l."createdAt" >= ${timestampConst(opts.recentSince)}) AS "recent",
+             (l."costPriceAtSale" <= 0) AS "noCost"
+      FROM "order_line_ledger" l
+      WHERE ${ledgerScopeSql(scope, range, { alias: "l", constParams: true })}
+        AND l."formulaVersion" = ${LEDGER_FORMULA_VERSION}::int
+        AND l."shippingStatus" <> 'CANCELLED'
+        ${opts.settledOnly ? Prisma.sql`AND l."isSettled"` : Prisma.empty}
+    ),
+    "map" AS (
+      SELECT DISTINCT m."grp", m."sku"
+      FROM unnest(${groupIndexes}::int[], ${[...mapping.skus]}::text[]) AS m("grp", "sku")
+    ),
+    "tagged" AS (
+      SELECT 0 AS "grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
+      FROM "lines" x
+      UNION ALL
+      SELECT m."grp", x."orderId", x."quantity", x."actualRevenue", x."profit", x."missing", x."paid", x."recent", x."noCost"
+      FROM "lines" x
+      JOIN "map" m ON m."sku" = x."channelSku"
+    )
+    SELECT "grp",
+           count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND NOT "missing") AS "orders",
+           COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND NOT "missing"), 0) AS "revenue",
+           COALESCE(sum("profit") FILTER (WHERE "paid" AND NOT "missing"), 0) AS "profit",
+           count(DISTINCT "orderId" COLLATE "C") FILTER (WHERE "paid" AND "missing") AS "missingCostOrders",
+           COALESCE(sum("actualRevenue") FILTER (WHERE "paid" AND "missing"), 0) AS "missingCostRevenue",
+           COALESCE(sum("quantity"), 0) AS "units",
+           COALESCE(sum("quantity") FILTER (WHERE "recent"), 0) AS "unitsRecent",
+           COALESCE(sum("quantity") FILTER (WHERE "noCost"), 0) AS "unitsNoCost"
+    FROM "tagged"
+    GROUP BY "grp"
+  `;
+  return { sql, groupNames };
 }

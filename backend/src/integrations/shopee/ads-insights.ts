@@ -16,6 +16,7 @@
 // integrations/shopee/ vì Shopee đặt nền + đỡ xáo import đang chạy production.
 // ============================================================
 
+import { createHash } from "crypto";
 import {
   ChannelName,
   ShippingStatus,
@@ -24,9 +25,16 @@ import {
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { registerCostCacheInvalidator } from "../../lib/cost-cache-invalidation";
+import type { DateRangeFilter } from "../../lib/date-range";
 import { fetchPnlRows } from "../../routes/finance";
 import { resolveReportSource, type ReportSource } from "../../lib/report-source";
-import { ensureLedgerFresh, ledgerCompactOrders } from "../../services/order-ledger";
+import {
+  ensureLedgerFresh,
+  ledgerCompactOrders,
+  ledgerMarginByGroup,
+  LEDGER_MARGIN_SHOP_GROUP,
+  type LedgerMarginOptions,
+} from "../../services/order-ledger";
 import {
   ASSISTANT_WINDOWS,
   assessDelivery,
@@ -159,8 +167,13 @@ export interface PnlRow {
   items: { sku: string; price: number; quantity: number; costPriceAtSale: number }[];
 }
 
-/** Phanh số đơn của cửa sổ biên lãi một gian — cùng mức với đường cũ (fetchPnlRows). */
+/** Phanh số đơn của cửa sổ biên lãi một gian — cùng mức với đường cũ (fetchPnlRows). Chỉ đường "rows" còn dùng. */
 export const MARGIN_MAX_ORDERS = 20_000;
+
+/** Cửa sổ biên lãi tính tới lúc gọi: MARGIN_WINDOW_DAYS ngày, theo ngày tạo đơn. */
+export function marginWindowRange(): DateRangeFilter {
+  return { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() };
+}
 
 /**
  * Đơn của MỘT gian trong cửa sổ, dạng gọn, mới nhất trước — theo nguồn số
@@ -169,13 +182,14 @@ export const MARGIN_MAX_ORDERS = 20_000;
  *     dòng hàng / kho / bản kê, không tính lại computePnlRow ở mỗi lượt. Tính
  *     nốt dòng bẩn của cửa sổ trước (giá vốn vừa nhập phải vào biên lãi ngay).
  *   - "orders" (LEDGER_REPORTS_SOURCE=orders): đường cũ fetchPnlRows.
+ * `range`: công cụ đối chiếu truyền CÙNG một cửa sổ cho hai đường cộng.
  */
 export async function loadMarginRows(
   channel: AdsInsightChannel,
-  source: ReportSource = resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE)
+  source: ReportSource = resolveReportSource(undefined, process.env.LEDGER_REPORTS_SOURCE),
+  range: DateRangeFilter = marginWindowRange()
 ): Promise<PnlRow[]> {
   const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
-  const range = { gte: startOfDaysAgo(MARGIN_WINDOW_DAYS), lte: new Date() };
   if (source === "orders") {
     return (await fetchPnlRows(scope, range, { max: MARGIN_MAX_ORDERS })).rows;
   }
@@ -249,9 +263,10 @@ export async function fetchChannelPnlRows(
   return (await rows).slice();
 }
 
-/** Xóa cache P&L của một gian (gọi khi cần số tươi ngay, VD sau đối soát tay). */
+/** Xóa cache biên lãi của một gian ở CẢ hai đường cộng (gọi khi cần số tươi ngay, VD sau đối soát tay). */
 export function invalidateChannelPnlRows(channelId: string): void {
   pnlRowsCache.delete(channelId);
+  marginGroupsCache.delete(channelId);
 }
 // Nhập giá vốn / áp cho đơn cũ → biên lãi đổi → xóa cache của các gian đó ngay
 // (28/09: giữ 30' làm bảng ROAS hòa vốn báo "chưa có giá vốn" dù đã vá xong).
@@ -318,14 +333,19 @@ export function marginOverRows(pnlRows: PnlRow[], skuSet: Set<string> | null): M
     revenue += row.actualRevenue * ratio;
     profit += row.profit * ratio;
   }
-  const scoped = revenue + missingCostRevenue;
+  return marginBaseFromSums({ orders, revenue, profit, missingCostOrders, missingCostRevenue });
+}
+
+/** Năm tổng của một nhóm → MarginBase (thêm độ phủ giá vốn). Dùng chung cho cả hai đường cộng. */
+export function marginBaseFromSums(sums: Omit<MarginBase, "costCoveragePct">): MarginBase {
+  const scoped = sums.revenue + sums.missingCostRevenue;
   return {
-    orders,
-    revenue,
-    profit,
-    missingCostOrders,
-    missingCostRevenue,
-    costCoveragePct: scoped > 0 ? Math.round((revenue / scoped) * 100) : null,
+    orders: sums.orders,
+    revenue: sums.revenue,
+    profit: sums.profit,
+    missingCostOrders: sums.missingCostOrders,
+    missingCostRevenue: sums.missingCostRevenue,
+    costCoveragePct: scoped > 0 ? Math.round((sums.revenue / scoped) * 100) : null,
   };
 }
 
@@ -339,6 +359,281 @@ export function marginOf(base: MarginBase): number | null {
 /** Độ phủ dưới ngưỡng → biên lãi bị giữ lại (để giao diện nói "chưa đủ giá vốn"). */
 export function lowCostCoverage(base: MarginBase): boolean {
   return base.costCoveragePct != null && base.costCoveragePct < MARGIN_MIN_COST_COVERAGE_PCT;
+}
+
+// ============================================================
+// BIÊN LÃI THEO NHÓM SKU — HAI ĐƯỜNG CỘNG, MỘT KẾT QUẢ
+// (docs/QUANG-CAO-GOM-TRONG-DATABASE.md)
+//
+//   "rows": giữ dòng gọn của cả cửa sổ trong RAM rồi duyệt (marginOverRows). Có
+//           phanh MARGIN_MAX_ORDERS — chạm phanh thì chỉ đại diện đơn mới nhất.
+//   "sql" : GROUP BY trên sổ dòng hàng trong database (ledgerMarginByGroup) —
+//           đủ mọi đơn, RAM chỉ giữ một dòng kết quả cho mỗi nhóm.
+// Luật giống nhau ở cả hai đường: bỏ đơn hủy, Lazada chỉ đơn đã đối soát, đơn
+// thiếu giá vốn đứng ngoài biên lãi, đơn nhiều SKU phân bổ theo giá trị dòng.
+// Ba nơi dùng (chiến dịch, bảng hòa vốn sản phẩm, gợi ý chạy quảng cáo) cùng
+// dựng MỘT bộ nhóm nên cùng một lượt gom trong database.
+// ============================================================
+
+/** Nơi cộng biên lãi của Trợ lý quảng cáo Shopee/Lazada. */
+export type AdsMarginSource = "rows" | "sql";
+
+/**
+ * Công tắc env ADS_MARGIN_SOURCE: `sql` = gom trong database; còn lại = `rows`
+ * (đường lui, giữ một tuần sau khi đổi mặc định). Khi báo cáo đã lui về đơn gốc
+ * (LEDGER_REPORTS_SOURCE=orders) thì sổ cái không còn là nguồn số → luôn `rows`.
+ */
+export function resolveAdsMarginSource(
+  env: string | undefined = process.env.ADS_MARGIN_SOURCE,
+  reportsEnv: string | undefined = process.env.LEDGER_REPORTS_SOURCE
+): AdsMarginSource {
+  if (resolveReportSource(undefined, reportsEnv) === "orders") return "rows";
+  return env?.trim().toLowerCase() === "sql" ? "sql" : "rows";
+}
+
+/** Nhóm "mọi dòng hàng của gian". */
+export const SHOP_GROUP = LEDGER_MARGIN_SHOP_GROUP;
+const CAMPAIGN_GROUP_PREFIX = "c:";
+const PRODUCT_GROUP_PREFIX = "p:";
+/** Nhóm của một chiến dịch (AdsCampaign.id) = mọi SKU của các sản phẩm nằm trong chiến dịch. */
+export const campaignGroupKey = (campaignRowId: string): string => `${CAMPAIGN_GROUP_PREFIX}${campaignRowId}`;
+/** Nhóm của một sản phẩm sàn (item_id) = mọi SKU phân loại của sản phẩm. */
+export const productGroupKey = (itemId: string): string => `${PRODUCT_GROUP_PREFIX}${itemId}`;
+
+/** Khóa nhóm → tập mã SKU sàn của nhóm. Không chứa SHOP_GROUP (nhóm đó là mọi dòng). */
+export type AdsGroupSets = Map<string, Set<string>>;
+
+/** SKU sàn gom theo item_id — phần trước dấu "-" của externalId ("item" | "item-model"). */
+export function groupSkusByItemId(
+  channelProducts: { channelSku: string; externalId: string | null }[]
+): Map<string, Set<string>> {
+  const skusByItemId = new Map<string, Set<string>>();
+  for (const cp of channelProducts) {
+    const itemId = (cp.externalId ?? "").split("-")[0];
+    if (!itemId) continue;
+    let set = skusByItemId.get(itemId);
+    if (!set) skusByItemId.set(itemId, (set = new Set()));
+    set.add(cp.channelSku);
+  }
+  return skusByItemId;
+}
+
+/**
+ * Bộ nhóm của một gian: mỗi sản phẩm sàn một nhóm, mỗi chiến dịch một nhóm (hợp
+ * SKU của các item trong itemIds; chiến dịch chưa biết SKU → tập rỗng). Thuần.
+ */
+export function buildAdsGroupSets(
+  skusByItemId: ReadonlyMap<string, Set<string>>,
+  campaigns: Iterable<{ id: string; itemIds: string }>
+): AdsGroupSets {
+  const sets: AdsGroupSets = new Map();
+  for (const [itemId, skus] of skusByItemId) sets.set(productGroupKey(itemId), skus);
+  for (const c of campaigns) {
+    const skuSet = new Set<string>();
+    for (const itemId of c.itemIds ? c.itemIds.split(",") : []) {
+      for (const sku of skusByItemId.get(itemId) ?? []) skuSet.add(sku);
+    }
+    sets.set(campaignGroupKey(c.id), skuSet);
+  }
+  return sets;
+}
+
+/** Bộ nhóm ở dạng gửi được vào câu SQL: hai mảng song song + dấu vân tay để nhận biết bộ nhóm đổi. */
+export interface AdsGroupMapping {
+  groups: string[];
+  skus: string[];
+  digest: string;
+}
+
+/** Trải bộ nhóm thành các cặp (nhóm, SKU) xếp thứ tự cố định — cùng bộ nhóm luôn ra cùng `digest`. */
+export function adsGroupMappingOf(sets: AdsGroupSets): AdsGroupMapping {
+  const pairs: [string, string][] = [];
+  for (const [group, skus] of sets) for (const sku of skus) pairs.push([group, sku]);
+  pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  const hash = createHash("sha1");
+  for (const [group, sku] of pairs) hash.update(`${group}\u0000${sku}\u0001`);
+  return { groups: pairs.map((p) => p[0]), skus: pairs.map((p) => p[1]), digest: hash.digest("hex") };
+}
+
+/** Nhịp bán của một sản phẩm trong cửa sổ biên lãi + lượng bán mà dòng hàng chưa có giá vốn. */
+export interface GroupSalesPace {
+  units30d: number;
+  units7d: number;
+  unitsNoCost: number;
+}
+
+/** "Gần đây" của nhịp bán: 7 ngày lùi từ lúc tính. */
+export const SALES_PACE_RECENT_MS = 7 * 86_400_000;
+
+/**
+ * Nhịp bán theo item từ mảng đơn (đường "rows"). Thiếu giá vốn xét theo CHÍNH
+ * dòng hàng của sản phẩm — cờ cấp đơn dính cả sản phẩm khác trong đơn. Thuần.
+ */
+export function salesPaceByItem(
+  pnlRows: PnlRow[],
+  itemBySku: ReadonlyMap<string, string>,
+  nowMs: number = Date.now()
+): Map<string, GroupSalesPace> {
+  const since7 = nowMs - SALES_PACE_RECENT_MS;
+  const sales = new Map<string, GroupSalesPace>();
+  for (const row of pnlRows) {
+    const recent = new Date(row.createdAt).getTime() >= since7;
+    for (const it of row.items) {
+      const itemId = itemBySku.get(it.sku);
+      if (!itemId) continue;
+      let s = sales.get(itemId);
+      if (!s) sales.set(itemId, (s = { units30d: 0, units7d: 0, unitsNoCost: 0 }));
+      s.units30d += it.quantity;
+      if (recent) s.units7d += it.quantity;
+      if (!(it.costPriceAtSale > 0)) s.unitsNoCost += it.quantity;
+    }
+  }
+  return sales;
+}
+
+/** Biên lãi + nhịp bán của mọi nhóm của một gian — cùng mặt tiền cho hai đường cộng. */
+export interface ChannelMargins {
+  /** SHOP_GROUP, campaignGroupKey(...) hoặc productGroupKey(...). Nhóm không có đơn → toàn 0, độ phủ null. */
+  base(groupKey: string): MarginBase;
+  /** Theo item_id; chỉ có item có dòng hàng trong cửa sổ. */
+  productPace(): Map<string, GroupSalesPace>;
+}
+
+const EMPTY_MARGIN_BASE: MarginBase = Object.freeze(marginOverRows([], null));
+
+/** Đường "rows": cộng trên mảng đơn đã lọc theo sàn (pnlRowsForMargin). `nowMs` = mốc "bây giờ" của nhịp bán. */
+export function marginsFromRows(pnlRows: PnlRow[], sets: AdsGroupSets, nowMs?: number): ChannelMargins {
+  return {
+    base(groupKey) {
+      if (groupKey === SHOP_GROUP) return marginOverRows(pnlRows, null);
+      const skus = sets.get(groupKey);
+      return skus && skus.size > 0 ? marginOverRows(pnlRows, skus) : EMPTY_MARGIN_BASE;
+    },
+    productPace() {
+      // Một SKU sàn chỉ thuộc một sản phẩm (ChannelProduct unique theo gian + SKU).
+      const itemBySku = new Map<string, string>();
+      for (const [groupKey, skus] of sets) {
+        if (!groupKey.startsWith(PRODUCT_GROUP_PREFIX)) continue;
+        const itemId = groupKey.slice(PRODUCT_GROUP_PREFIX.length);
+        for (const sku of skus) itemBySku.set(sku, itemId);
+      }
+      return salesPaceByItem(pnlRows, itemBySku, nowMs);
+    },
+  };
+}
+
+/** Kết quả gom của một nhóm ở đường "sql". */
+export interface MarginGroupStats {
+  base: MarginBase;
+  pace: GroupSalesPace;
+}
+
+/** Đường "sql": tra trong kết quả đã gom sẵn. */
+export function marginsFromGroups(groups: ReadonlyMap<string, MarginGroupStats>): ChannelMargins {
+  return {
+    base: (groupKey) => groups.get(groupKey)?.base ?? EMPTY_MARGIN_BASE,
+    productPace() {
+      const sales = new Map<string, GroupSalesPace>();
+      for (const [groupKey, stats] of groups) {
+        if (groupKey.startsWith(PRODUCT_GROUP_PREFIX)) {
+          sales.set(groupKey.slice(PRODUCT_GROUP_PREFIX.length), stats.pace);
+        }
+      }
+      return sales;
+    },
+  };
+}
+
+/**
+ * Tùy chọn của câu gom cho một sàn — phần luật của pnlRowsForMargin nói bằng SQL
+ * (Lazada chỉ đơn đã đối soát; đơn hủy thì câu gom luôn bỏ) + mốc nhịp bán.
+ */
+export function marginGroupOptions(channelName: ChannelName, range: DateRangeFilter): LedgerMarginOptions {
+  return {
+    settledOnly: channelName === ChannelName.LAZADA,
+    recentSince: new Date(range.lte.getTime() - SALES_PACE_RECENT_MS),
+  };
+}
+
+/**
+ * Gom trong database cho MỌI nhóm của gian — một câu SQL, không nhớ đệm. Tính
+ * nốt dòng bẩn của cửa sổ trước (giá vốn vừa nhập phải vào biên lãi ngay), như
+ * loadMarginRows. Mốc "7 ngày gần đây" của nhịp bán lùi từ `range.lte`.
+ */
+export async function loadMarginGroups(
+  channel: AdsInsightChannel,
+  mapping: Pick<AdsGroupMapping, "groups" | "skus">,
+  range: DateRangeFilter = marginWindowRange()
+): Promise<Map<string, MarginGroupStats>> {
+  const scope = { userId: channel.userId, id: channel.id, channelName: channel.channelName };
+  await ensureLedgerFresh(scope, range, { maxInline: 1000 });
+  const raw = await ledgerMarginByGroup(scope, range, mapping, marginGroupOptions(channel.channelName, range));
+  const groups = new Map<string, MarginGroupStats>();
+  for (const [groupKey, g] of raw) {
+    groups.set(groupKey, {
+      base: marginBaseFromSums(g),
+      pace: { units30d: g.units, units7d: g.unitsRecent, unitsNoCost: g.unitsNoCost },
+    });
+  }
+  return groups;
+}
+
+/**
+ * Nhớ KẾT QUẢ gom theo gian (không nhớ đơn) — cùng thời hạn ADS_PNL_CACHE_MIN
+ * và cùng lệnh xóa khi nhập giá vốn với bộ đệm đường "rows". Bộ nhóm đổi (thêm
+ * sản phẩm, chiến dịch đổi danh sách item) → `digest` khác → gom lại ngay. Các
+ * lượt gọi đang chờ dùng chung một lượt gom.
+ */
+const marginGroupsCache = new Map<
+  string,
+  { at: number; digest: string; groups: Promise<Map<string, MarginGroupStats>> }
+>();
+
+async function fetchChannelMarginGroups(
+  channel: AdsInsightChannel,
+  mapping: AdsGroupMapping
+): Promise<Map<string, MarginGroupStats>> {
+  const hit = marginGroupsCache.get(channel.id);
+  if (hit && hit.digest === mapping.digest && Date.now() - hit.at < PNL_CACHE_TTL_MS) {
+    return hit.groups;
+  }
+  const groups = loadMarginGroups(channel, mapping);
+  if (PNL_CACHE_TTL_MS > 0) {
+    if (!hit && marginGroupsCache.size >= PNL_CACHE_MAX_CHANNELS) {
+      const oldest = marginGroupsCache.keys().next().value;
+      if (oldest !== undefined) marginGroupsCache.delete(oldest);
+    }
+    marginGroupsCache.set(channel.id, { at: Date.now(), digest: mapping.digest, groups });
+    groups.catch(() => {
+      // lỗi thì không giữ bản hỏng (chỉ gỡ nếu chưa bị lượt gom mới hơn thay)
+      if (marginGroupsCache.get(channel.id)?.groups === groups) marginGroupsCache.delete(channel.id);
+    });
+  }
+  return groups;
+}
+
+/** Biên lãi + nhịp bán của mọi nhóm của gian theo đường cộng đang bật (có nhớ đệm). */
+export async function fetchChannelMargins(
+  channel: AdsInsightChannel,
+  sets: AdsGroupSets,
+  source: AdsMarginSource = resolveAdsMarginSource()
+): Promise<ChannelMargins> {
+  if (source === "sql") {
+    return marginsFromGroups(await fetchChannelMarginGroups(channel, adsGroupMappingOf(sets)));
+  }
+  return marginsFromRows(await fetchChannelPnlRows(channel), sets);
+}
+
+/** Bộ nhóm của một gian đọc thẳng từ database — cho công cụ đối chiếu và test. */
+export async function loadAdsGroupSets(channelId: string): Promise<AdsGroupSets> {
+  const [channelProducts, campaigns] = await Promise.all([
+    prisma.channelProduct.findMany({
+      where: { channelId, externalId: { not: null } },
+      select: { channelSku: true, externalId: true },
+    }),
+    prisma.adsCampaign.findMany({ where: { channelId }, select: { id: true, itemIds: true } }),
+  ]);
+  return buildAdsGroupSets(groupSkusByItemId(channelProducts), campaigns);
 }
 
 export interface CampaignInsight {
@@ -390,10 +685,11 @@ export interface ChannelAdsInsights {
  * `opts.perfFromKey`: bộ lọc trang xem xa hơn 30 ngày thì nạp thêm số cũ cho
  * lớp hiển thị; các cửa sổ rule engine (today/3d/7d/30d) so theo mốc ngày nên
  * không đổi kết quả dù nạp rộng hơn.
+ * `opts.marginSource`: ép đường cộng biên lãi (công cụ đối chiếu); bỏ trống = theo env.
  */
 export async function computeChannelAdsInsights(
   channel: AdsInsightChannel,
-  opts: { perfFromKey?: string } = {}
+  opts: { perfFromKey?: string; marginSource?: AdsMarginSource } = {}
 ): Promise<ChannelAdsInsights> {
   let perfFloor = startOfDaysAgo(30);
   if (opts.perfFromKey) {
@@ -420,26 +716,20 @@ export async function computeChannelAdsInsights(
   const yesterdayKey = vnDateKey(1);
   const weekAgoKey = vnDateKey(7);
 
-  // ---- Nền P&L 30 ngày để tính biên lãi (chưa trừ ads) ----
-  const pnlRows = await fetchChannelPnlRows(channel);
-
   // Map SKU sàn → campaign qua externalId của ChannelProduct ("item" | "item-model").
   const channelProducts = await prisma.channelProduct.findMany({
     where: { channelId: channel.id, externalId: { not: null } },
     select: { channelSku: true, externalId: true },
   });
-  const skusByItemId = new Map<string, Set<string>>();
-  for (const cp of channelProducts) {
-    const itemId = (cp.externalId ?? "").split("-")[0];
-    if (!itemId) continue;
-    let set = skusByItemId.get(itemId);
-    if (!set) skusByItemId.set(itemId, (set = new Set()));
-    set.add(cp.channelSku);
-  }
 
-  const marginOver = (skuSet: Set<string> | null) => marginOverRows(pnlRows, skuSet);
+  // ---- Biên lãi 30 ngày (chưa trừ ads): toàn gian + riêng từng chiến dịch ----
+  const margins = await fetchChannelMargins(
+    channel,
+    buildAdsGroupSets(groupSkusByItemId(channelProducts), campaignRows),
+    opts.marginSource
+  );
 
-  const shopMarginBase = marginOver(null);
+  const shopMarginBase = margins.base(SHOP_GROUP);
   // null khi độ phủ giá vốn dưới ngưỡng — thà không kết luận còn hơn số lạc quan.
   const shopMargin = marginOf(shopMarginBase);
   const shopBreakeven = shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null;
@@ -473,13 +763,9 @@ export async function computeChannelAdsInsights(
     }
     const avgDailySpend7d = prev7Spend / 7;
 
-    // Biên lãi riêng của campaign từ P&L các SKU trong campaign.
+    // Biên lãi riêng của campaign từ P&L các SKU trong campaign (chưa biết SKU → toàn 0).
     const itemIds = c.itemIds ? c.itemIds.split(",") : [];
-    const skuSet = new Set<string>();
-    for (const itemId of itemIds) {
-      for (const sku of skusByItemId.get(itemId) ?? []) skuSet.add(sku);
-    }
-    const own = skuSet.size > 0 ? marginOver(skuSet) : marginOverRows([], null);
+    const own = margins.base(campaignGroupKey(c.id));
     const ownMargin = marginOf(own);
     const useOwn = own.orders >= MIN_ORDERS_FOR_MARGIN && ownMargin != null;
     const margin = useOwn ? ownMargin : shopMargin;
@@ -611,11 +897,21 @@ export function deriveLazadaItemSku(sellerSkus: string[]): string | null {
 
 export async function computeChannelProductBreakeven(
   channel: AdsInsightChannel,
-  /** Tập đơn P&L đã nạp sẵn (Gợi ý chạy ads dùng chung, khỏi kéo 2 lần). */
-  preloadedPnlRows?: PnlRow[]
+  opts: { marginSource?: AdsMarginSource } = {}
 ): Promise<ChannelProductBreakeven> {
-  const [pnlRows, channelProducts, campaignRows, configRow] = await Promise.all([
-    preloadedPnlRows ?? fetchChannelPnlRows(channel),
+  return (await computeProductBreakevenWithMargins(channel, opts)).breakeven;
+}
+
+/**
+ * Bảng hòa vốn sản phẩm kèm bộ biên lãi đã dùng để tính — Gợi ý chạy ads lấy
+ * nhịp bán từ chính bộ đó, khỏi gom lần hai.
+ * `opts.marginSource`: ép đường cộng biên lãi (công cụ đối chiếu); bỏ trống = theo env.
+ */
+export async function computeProductBreakevenWithMargins(
+  channel: AdsInsightChannel,
+  opts: { marginSource?: AdsMarginSource } = {}
+): Promise<{ breakeven: ChannelProductBreakeven; margins: ChannelMargins }> {
+  const [channelProducts, campaignRows, configRow] = await Promise.all([
     prisma.channelProduct.findMany({
       where: { channelId: channel.id, externalId: { not: null } },
       select: {
@@ -627,11 +923,17 @@ export async function computeChannelProductBreakeven(
     }),
     prisma.adsCampaign.findMany({
       where: { channelId: channel.id },
-      select: { status: true, itemIds: true, roasTarget: true },
+      select: { id: true, status: true, itemIds: true, roasTarget: true },
     }),
     prisma.adsAssistantConfig.findUnique({ where: { channelId: channel.id } }),
   ]);
   const config = normalizeAssistantConfig(configRow?.config);
+  // Cùng bộ nhóm với computeChannelAdsInsights → đường "sql" dùng chung một lượt gom.
+  const margins = await fetchChannelMargins(
+    channel,
+    buildAdsGroupSets(groupSkusByItemId(channelProducts), campaignRows),
+    opts.marginSource
+  );
 
   const ongoingItemIds = new Set<string>();
   // Đợt A: mục tiêu ROAS THẤP NHẤT đang đặt trên campaign chạy có chứa SP.
@@ -667,11 +969,11 @@ export async function computeChannelProductBreakeven(
     g.skus.add(cp.channelSku);
   }
 
-  const shopBase = marginOverRows(pnlRows, null);
+  const shopBase = margins.base(SHOP_GROUP);
   const shopMargin = marginOf(shopBase);
 
   const rows: ProductBreakevenRow[] = [...groups.entries()].map(([itemId, g]) => {
-    const base = marginOverRows(pnlRows, g.skus);
+    const base = margins.base(productGroupKey(itemId));
     // Đơn thiếu giá vốn đã bị loại; độ phủ dưới ngưỡng → null (không kết luận).
     const margin = marginOf(base);
     // SKU người bán tự đặt — bỏ khóa tổng hợp sinh khi SKU trống: Shopee
@@ -718,15 +1020,18 @@ export async function computeChannelProductBreakeven(
   rows.sort((a, b) => b.revenue - a.revenue);
 
   return {
-    rows,
-    shop: {
-      margin: shopMargin,
-      breakevenRoas: shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null,
-      pnlOrders: shopBase.orders,
-      missingCostOrders: shopBase.missingCostOrders,
-      costCoveragePct: shopBase.costCoveragePct,
+    breakeven: {
+      rows,
+      shop: {
+        margin: shopMargin,
+        breakevenRoas: shopMargin != null && shopMargin > 0 ? 1 / shopMargin : null,
+        pnlOrders: shopBase.orders,
+        missingCostOrders: shopBase.missingCostOrders,
+        costCoveragePct: shopBase.costCoveragePct,
+      },
+      minCoveragePct: MARGIN_MIN_COST_COVERAGE_PCT,
+      safeRoasFactor: config.review.dangerFactor,
     },
-    minCoveragePct: MARGIN_MIN_COST_COVERAGE_PCT,
-    safeRoasFactor: config.review.dangerFactor,
+    margins,
   };
 }
