@@ -48,7 +48,7 @@ describe.skipIf(!ledgerReady)("Quảng cáo TikTok — lưới đỡ và bộ đ
   const channel = () => ({ id: fx.channelId, userId: fx.userId });
 
   beforeAll(async () => {
-    vi.stubEnv("TIKTOK_BREAKEVEN_SOURCE", "sql");
+    vi.stubEnv("TIKTOK_BREAKEVEN_SOURCE", "");
     vi.stubEnv("LEDGER_REPORTS_SOURCE", "");
     expect(process.env.ADS_PNL_CACHE_MIN ?? "30", "test giả định thời hạn đệm mặc định 30 phút").toBe("30");
     fx = await createStockFixture("ttfallback");

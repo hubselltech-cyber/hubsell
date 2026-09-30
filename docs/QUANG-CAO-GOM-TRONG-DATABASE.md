@@ -2,7 +2,7 @@
 
 Trạng thái: **ANH TRUNG ĐÃ DUYỆT 30/09/2026 chiều**; tối 30/09 anh đổi điểm 1 ở mục 9: **tách TikTok thành đợt riêng**, Shopee + Lazada làm chung đợt 1. Ba điểm còn lại giữ theo đề xuất.
 **Đợt 1 (Shopee + Lazada): XONG tối 30/09 — prod 20/20 gian khớp, mặc định đã đổi sang `sql`** (đường lui `ADS_MARGIN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 11.
-**Đợt 2 (TikTok): code + test + số đo XONG tối 30/09, lên prod ở chế độ `rows`** (công tắc `TIKTOK_BREAKEVEN_SOURCE`, chưa đổi gì với khách) — chi tiết ở mục 12; còn bước so trên prod rồi đổi mặc định sang `sql` (mục 12.7).
+**Đợt 2 (TikTok): XONG đêm 30/09 — prod 11/11 gian khớp, mặc định đã đổi sang `sql`** (đường lui `TIKTOK_BREAKEVEN_SOURCE=rows` giữ tới ~07/10) — chi tiết và số đo ở mục 12.
 Thuộc giai đoạn 1 của `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, tiếp nối `docs/SO-CAI-DON.md` mục 9.7.
 
 ## 1. Mục tiêu và ranh giới
@@ -244,7 +244,7 @@ Gian thử dựng riêng: 300.000 đơn, 405.000 dòng hàng trong 30 ngày, 2.0
 
 ## 12. Đợt 2 (TikTok): đã làm tối 30/09/2026
 
-Trạng thái: code, test và số đo xong; **lên prod ở chế độ `rows`** (mặc định của `TIKTOK_BREAKEVEN_SOURCE`), tức chưa đổi gì với khách. Còn bước so trên prod rồi đổi mặc định (mục 12.7).
+Trạng thái: lên prod ở chế độ `rows` (commit `d37a9b0`, 22:45), so trên prod 11/11 gian TikTok khớp, rồi đổi mặc định sang `sql` (mục 12.7). Đường lui: env `TIKTOK_BREAKEVEN_SOURCE=rows` trên CẢ web và worker.
 
 ### 12.1 Bản đồ mã nguồn
 
@@ -253,7 +253,7 @@ Cùng khuôn với đợt 1: luật thuần ở `lib/`, câu SQL ở `services/o
 | Tệp (dưới `backend/`) | Giữ gì |
 |---|---|
 | `src/lib/tiktok-breakeven.ts` | THUẦN. Luật hòa vốn TikTok chuyển nguyên văn từ `breakeven.ts` (`tiktokBreakevenBase`, `…ByGroup`, `settledCohortCutoff`, `toTiktokBreakeven`, `placedRevenue`, `salesPaceByGroup`), cửa sổ 60 ngày, khoảng tự kiểm của từng chiến dịch (`tiktokCampaignCheckOf`), bộ nhóm gửi vào câu SQL kèm dấu vân tay (`tiktokGroupMappingOf`), mặt tiền `ChannelBreakevens` với hai bản `breakevensFromRows` / `breakevensFromGroups`, kiểu dữ liệu của câu gom. Bộ nhóm dùng lại của đợt 1 (`buildAdsGroupSets`: `shop`, `c:<AdsCampaign.id>`, `p:<product id>`). |
-| `src/lib/report-source.ts` | Thêm `resolveTiktokBreakevenSource` (env `TIKTOK_BREAKEVEN_SOURCE`: mặc định `rows`, `sql` = gom trong database; `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`). |
+| `src/lib/report-source.ts` | Thêm `resolveTiktokBreakevenSource` (env `TIKTOK_BREAKEVEN_SOURCE`: mặc định `sql`, `rows` = đường lui; `LEDGER_REPORTS_SOURCE=orders` thì luôn `rows`). |
 | `src/services/order-ledger.ts` | `ledgerTiktokBreakevenByGroup` (một câu cho mọi nhóm: đơn đã đối soát / hủy cùng lứa / chờ kết cục, doanh thu, lãi trước quảng cáo, phí quảng cáo, doanh thu thiếu giá vốn, đà bán 30 / 7 ngày, số tự kiểm mẫu số, cờ "nhóm có dòng có giá"), `explainLedgerTiktokBreakevenByGroup`. |
 | `src/integrations/tiktok-ads/breakeven-source.ts` | Nạp từ database + bộ đệm: `loadBreakevenInputs` (chiến dịch + sản phẩm sàn → bộ nhóm, khoảng tự kiểm), `loadBreakevenRows`, `loadBreakevenGroups`, `fetchChannelBreakevens` (chọn đường cộng, lưới đỡ khi câu gom lỗi). |
 | `src/integrations/tiktok-ads/breakeven.ts` | Ghép số thành kết luận: `computeTiktokAdsBreakeven` (gian + từng chiến dịch kèm tự kiểm), `computeTiktokProductBreakevens` (tab Hòa vốn sản phẩm, kết luận từng dòng, nhận định Nên chạy), bộ đệm kết quả 45 giây. Ngưỡng 5 đơn và mọi câu chữ kết luận không đổi. |
@@ -315,9 +315,17 @@ Gian thử TikTok: 600.000 đơn, 810.000 dòng hàng trong 59 ngày (tương đ
 - Ghi chú ở mục 11.9 về `ledgerCompactOrders` chậm hơn ~8 mili giây mỗi lượt trên prod: khi TikTok chuyển sang `sql`, câu đó chỉ còn phục vụ hai đường lui và sẽ gỡ cùng chúng, nên em không điều tra thêm.
 - Còn để ngỏ: phần tìm đơn đã đối soát thật đọc sổ ĐƠN (dòng rộng) chỉ để lấy mã đơn + ngày tạo, chiếm khoảng 1 trong 5,3 giây ở gian thử. Bỏ được nếu chấp nhận "đơn không có dòng hàng không làm mốc cùng lứa" — là đổi luật ở một ca dữ liệu hỏng, nên em giữ nguyên luật.
 
-### 12.7 Việc còn lại của đợt 2
+### 12.7 Kết quả so trên PROD 30/09/2026 khoảng 22:50 (bản `d37a9b0`, Render Shell worker) và việc còn lại
 
-1. ⏳ Push ở chế độ `rows`.
-2. ⏳ So trên prod: `npx tsx scripts/ledger-backfill.ts ads-compare --platform TIKTOK` trên Render Shell của worker (thêm `--channel <id> --explain` cho gian nhiều đơn nhất để xem kế hoạch chạy thật và thời gian câu gom trên Supabase).
-3. ⏳ Khớp hết thì đổi mặc định của `resolveTiktokBreakevenSource` sang `sql`; `TIKTOK_BREAKEVEN_SOURCE=rows` (trên CẢ web và worker) là đường lui, giữ một tuần kể từ ngày bật rồi gỡ: `loadBreakevenRows`, `breakevensFromRows`, lưới đỡ, `breakeven-compare.ts`, phần TikTok của lệnh `ads-compare`, `TIKTOK_BREAKEVEN_MAX_ORDERS` (GIỮ các hàm thuần làm chuẩn đối chiếu trong test).
+- **TAT CA KHOP (11 gian TikTok).** Ở cả 11 gian: lệch số gốc 0 nhóm, lệch tự kiểm 0 chiến dịch, lệch đà bán 0 sản phẩm, lệch kết quả cuối 0 trường (hòa vốn gian + từng chiến dịch, tab Hòa vốn sản phẩm). Dòng gọn đọc từ sổ cũng khớp dòng dựng từ đơn gốc ở cả 11 gian.
+- Gian nhiều đơn nhất: 3.223 đơn trong 60 ngày (132 nhóm); gian nhiều nhóm nhất: 504 nhóm (1.033 đơn). Lệch tiền lớn nhất trong mọi nhóm của mọi gian: 0,0124 đồng.
+- Thời gian mỗi gian (gồm cả câu kiểm sổ sạch): đường `sql` 12 đến 208 mili giây, đường `rows` 13 đến 213 mili giây. Gian 3.223 đơn: `sql` 92, `rows` 213. Gian 504 nhóm: `sql` 208, `rows` 179.
+- Kế hoạch chạy thật của gian 1.988 đơn (2.000 dòng hàng, 1.472 đơn đã đối soát thật): chỉ đọc mảnh tháng 08 và 09/2026, lập kế hoạch 5,7 mili giây, chạy 27,3 mili giây.
+- Không gian nào chạm phanh 8.000 đơn của đường `rows`.
+
+Việc còn lại:
+
+1. ✅ Push ở chế độ `rows` (`d37a9b0`, worker live 22:45).
+2. ✅ So trên prod (kết quả ở trên).
+3. ✅ Đổi mặc định của `resolveTiktokBreakevenSource` sang `sql`. `TIKTOK_BREAKEVEN_SOURCE=rows` (trên CẢ web và worker) là đường lui, gỡ cùng đợt ~07/10: `loadBreakevenRows`, `breakevensFromRows`, lưới đỡ, `breakeven-compare.ts`, phần TikTok của lệnh `ads-compare`, `TIKTOK_BREAKEVEN_MAX_ORDERS` (GIỮ các hàm thuần làm chuẩn đối chiếu trong test).
 4. ⏳ Theo dõi một tuần: log `[Tiktok-breakeven]` của web/worker, CPU database ở trang Supabase.

@@ -3,11 +3,10 @@
 // (docs/QUANG-CAO-GOM-TRONG-DATABASE.md mục 12)
 //
 // Hai đường cộng cho cùng một kết quả (luật ở lib/tiktok-breakeven.ts):
-//   "rows" (mặc định hiện tại): giữ dòng gọn của đơn 60 ngày trong RAM rồi
-//          duyệt; có phanh TIKTOK_BREAKEVEN_MAX_ORDERS.
-//   "sql"  (TIKTOK_BREAKEVEN_SOURCE=sql): GROUP BY trên sổ dòng hàng
-//          (ledgerTiktokBreakevenByGroup) — đủ mọi đơn, RAM chỉ giữ một dòng kết
-//          quả cho mỗi nhóm.
+//   "sql"  (mặc định): GROUP BY trên sổ dòng hàng (ledgerTiktokBreakevenByGroup)
+//          — đủ mọi đơn, RAM chỉ giữ một dòng kết quả cho mỗi nhóm.
+//   "rows" (đường lui TIKTOK_BREAKEVEN_SOURCE=rows, gỡ ~07/10): giữ dòng gọn của
+//          đơn 60 ngày trong RAM rồi duyệt; có phanh TIKTOK_BREAKEVEN_MAX_ORDERS.
 // Hai nơi dùng (hòa vốn chiến dịch, tab Hòa vốn sản phẩm) cùng dựng MỘT bộ nhóm
 // nên ở đường "sql" dùng chung một lượt gom.
 // ============================================================

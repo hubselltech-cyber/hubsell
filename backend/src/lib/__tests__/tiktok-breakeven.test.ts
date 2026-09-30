@@ -210,12 +210,13 @@ describe("salesPaceByGroup — đà bán 7 / 30 ngày của từng sản phẩm"
 });
 
 describe("resolveTiktokBreakevenSource — công tắc TIKTOK_BREAKEVEN_SOURCE", () => {
-  it("mặc định rows; chỉ `sql` mới bật gom trong database; báo cáo đã lui về đơn gốc thì luôn rows", () => {
-    expect(resolveTiktokBreakevenSource(undefined, undefined)).toBe("rows");
-    expect(resolveTiktokBreakevenSource("", undefined)).toBe("rows");
-    expect(resolveTiktokBreakevenSource("rows", undefined)).toBe("rows");
-    expect(resolveTiktokBreakevenSource(" SQL ", undefined)).toBe("sql");
-    expect(resolveTiktokBreakevenSource("sql", "ledger")).toBe("sql");
+  it("mặc định sql (gom trong database); `rows` là đường lui; báo cáo đã lui về đơn gốc thì luôn rows", () => {
+    expect(resolveTiktokBreakevenSource(undefined, undefined)).toBe("sql");
+    expect(resolveTiktokBreakevenSource("", undefined)).toBe("sql");
+    expect(resolveTiktokBreakevenSource("sql", undefined)).toBe("sql");
+    expect(resolveTiktokBreakevenSource(" ROWS ", undefined)).toBe("rows");
+    expect(resolveTiktokBreakevenSource("rows", "ledger")).toBe("rows");
+    expect(resolveTiktokBreakevenSource(undefined, "orders")).toBe("rows");
     expect(resolveTiktokBreakevenSource("sql", "orders")).toBe("rows");
   });
 });
