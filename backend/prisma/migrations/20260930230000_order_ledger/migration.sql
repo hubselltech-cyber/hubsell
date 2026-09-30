@@ -22,6 +22,42 @@
 -- lại không lỗi. KHÔNG dùng CONCURRENTLY (không chạy được trong transaction).
 -- ============================================================
 
+-- ---------- 0. Lấy khóa TRƯỚC, theo thứ tự cố định, có thử lại ----------
+-- Lần áp đầu (30/09/2026 02:51 UTC) bị DEADLOCK 40P01: migration xin khóa trên
+-- "Order" (DROP TRIGGER cần ACCESS EXCLUSIVE) trong khi instance cũ đang ghi
+-- đơn và giữ khóa bảng khác migration cần sau đó → Postgres giết migration,
+-- Prisma ghi FAILED, mọi lần khởi động sau bị P3009. Cách chữa tận gốc:
+--   · mọi DDL bên dưới chỉ cần SHARE ROW EXCLUSIVE (CREATE OR REPLACE TRIGGER,
+--     FK REFERENCES) — không còn DROP TRIGGER;
+--   · lấy ĐỦ khóa của 6 bảng ngay từ đầu, một lệnh, thứ tự cố định → về sau
+--     không phải chờ khóa nào nữa, không thể deadlock giữa chừng;
+--   · lệnh LOCK có lock_timeout 5s và thử lại tối đa 40 lần (≈ 3 phút) khi
+--     đụng khóa hoặc deadlock (bắt lỗi trong khối con, transaction ngoài sống).
+-- Ghi đơn của app chờ tối đa vài giây trong lúc migration chạy (42.000 đơn
+-- prod: dựng dòng nháp ≈ 2–4 giây), không mất dữ liệu.
+DO $$
+DECLARE
+  attempt INTEGER := 0;
+BEGIN
+  LOOP
+    BEGIN
+      SET LOCAL lock_timeout = '5s';
+      LOCK TABLE "Order", "OrderItem", "InventoryLog", "Product", "lazada_order_settlements", "tiktok_order_settlements"
+        IN SHARE ROW EXCLUSIVE MODE;
+      EXIT;
+    EXCEPTION
+      WHEN lock_not_available OR deadlock_detected THEN
+        attempt := attempt + 1;
+        IF attempt >= 40 THEN
+          RAISE;
+        END IF;
+        RAISE NOTICE 'order_ledger: chưa lấy được khóa (lần %), thử lại sau 3s', attempt;
+        PERFORM pg_sleep(3);
+    END;
+  END LOOP;
+  SET LOCAL lock_timeout = 0;
+END $$;
+
 -- ---------- 1. Kiểu dữ liệu ----------
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LedgerReturnType') THEN
@@ -308,13 +344,11 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS "order_ledger_on_order_insert" ON "Order";
-CREATE TRIGGER "order_ledger_on_order_insert"
+CREATE OR REPLACE TRIGGER "order_ledger_on_order_insert"
   AFTER INSERT ON "Order"
   FOR EACH ROW EXECUTE FUNCTION "order_ledger_trg_order"();
 
-DROP TRIGGER IF EXISTS "order_ledger_on_order_update" ON "Order";
-CREATE TRIGGER "order_ledger_on_order_update"
+CREATE OR REPLACE TRIGGER "order_ledger_on_order_update"
   AFTER UPDATE ON "Order"
   FOR EACH ROW
   WHEN (
@@ -351,13 +385,11 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS "order_ledger_on_order_item_ins_del" ON "OrderItem";
-CREATE TRIGGER "order_ledger_on_order_item_ins_del"
+CREATE OR REPLACE TRIGGER "order_ledger_on_order_item_ins_del"
   AFTER INSERT OR DELETE ON "OrderItem"
   FOR EACH ROW EXECUTE FUNCTION "order_ledger_trg_order_item"();
 
-DROP TRIGGER IF EXISTS "order_ledger_on_order_item_update" ON "OrderItem";
-CREATE TRIGGER "order_ledger_on_order_item_update"
+CREATE OR REPLACE TRIGGER "order_ledger_on_order_item_update"
   AFTER UPDATE ON "OrderItem"
   FOR EACH ROW
   WHEN (
@@ -384,13 +416,11 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS "order_ledger_on_lazada_settlement" ON "lazada_order_settlements";
-CREATE TRIGGER "order_ledger_on_lazada_settlement"
+CREATE OR REPLACE TRIGGER "order_ledger_on_lazada_settlement"
   AFTER INSERT OR UPDATE OR DELETE ON "lazada_order_settlements"
   FOR EACH ROW EXECUTE FUNCTION "order_ledger_trg_settlement"();
 
-DROP TRIGGER IF EXISTS "order_ledger_on_tiktok_settlement" ON "tiktok_order_settlements";
-CREATE TRIGGER "order_ledger_on_tiktok_settlement"
+CREATE OR REPLACE TRIGGER "order_ledger_on_tiktok_settlement"
   AFTER INSERT OR UPDATE OR DELETE ON "tiktok_order_settlements"
   FOR EACH ROW EXECUTE FUNCTION "order_ledger_trg_settlement"();
 
@@ -409,8 +439,7 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS "order_ledger_on_inventory_log" ON "InventoryLog";
-CREATE TRIGGER "order_ledger_on_inventory_log"
+CREATE OR REPLACE TRIGGER "order_ledger_on_inventory_log"
   AFTER INSERT OR UPDATE OR DELETE ON "InventoryLog"
   FOR EACH ROW EXECUTE FUNCTION "order_ledger_trg_inventory_log"();
 
@@ -437,8 +466,7 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS "order_ledger_on_product_cost" ON "Product";
-CREATE TRIGGER "order_ledger_on_product_cost"
+CREATE OR REPLACE TRIGGER "order_ledger_on_product_cost"
   AFTER UPDATE OF "costPrice" ON "Product"
   FOR EACH ROW
   WHEN (OLD."costPrice" IS DISTINCT FROM NEW."costPrice")
