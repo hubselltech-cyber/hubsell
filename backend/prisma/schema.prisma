@@ -2222,6 +2222,10 @@ model OrderLedger {
   @@index([channelId, deliveredDate])
   @@index([channelId, settledDate])
   @@index([orderId])
+  // Danh sách Lãi/Lỗ mới nhất trước + con trỏ (migration 20260930240000_order_ledger_list_indexes).
+  // Cùng migration còn có chỉ mục GIN trigram "order_ledger_orderCode_trgm_idx" trên orderCode
+  // (tìm mã đơn kiểu chứa chuỗi) — Prisma không khai được lớp toán tử của extension nên chỉ nằm trong SQL.
+  @@index([ownerId, createdAt(sort: Desc), orderId(sort: Desc)], map: "order_ledger_ownerId_createdAt_idx")
   @@map("order_ledger")
 }
 

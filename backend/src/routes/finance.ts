@@ -68,7 +68,23 @@ import {
   resolveCashFlowSource,
   type CashFlowTotals,
 } from "../lib/cash-flow-totals";
-import { ensureLedgerFresh, ledgerCashFlowBreakdown, ledgerSummary } from "../services/order-ledger";
+import {
+  encodePnlCursor,
+  matchesPnlFilter,
+  parsePnlCursor,
+  pnlSummaryTotalsFromRows,
+  type LedgerPnlFilter,
+  type PnlListCursor,
+  type PnlSummaryTotals,
+} from "../lib/realized-pnl-totals";
+import { resolveReportSource, type ReportSource } from "../lib/report-source";
+import {
+  ensureLedgerFresh,
+  ledgerCashFlowBreakdown,
+  ledgerPnlList,
+  ledgerPnlSummary,
+  ledgerSummary,
+} from "../services/order-ledger";
 
 const router = Router();
 
@@ -395,6 +411,100 @@ export function summarizePnlRows(rows: PnlRow[], taxCfg: ShopTaxConfig) {
 
 const PNL_PAGE_SIZES = [20, 50, 100];
 
+/**
+ * Dữ liệu của bảng Lãi/Lỗ theo nguồn số (docs/SO-CAI-DON.md mục 9.3):
+ *   - "ledger" (mặc định từ 30/09/2026): lọc + sắp xếp + cắt trang TRÊN SỔ,
+ *     chỉ lấy mã của ≤ 100 đơn của trang, rồi đọc đúng các đơn đó và dựng dòng
+ *     chi tiết bằng computePnlRow (dòng hàng, bản kê Lazada/TikTok như cũ).
+ *     Tổng kết = ba câu cộng trong database với cùng điều kiện lọc.
+ *   - "orders" (đường cũ, giữ 1 tuần sau công tắc REALIZED_PNL_SOURCE=orders):
+ *     kéo cả kỳ lên RAM, lọc và cắt trang bằng JS, có phanh 20.000.
+ * `cursor` = đọc tiếp sau dòng đó (xuất Excel); `rowsOnly` = bỏ tổng kết.
+ */
+export async function loadRealizedPnl(
+  source: ReportSource,
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter,
+  opts: {
+    page: number;
+    pageSize: number;
+    cursor?: PnlListCursor | null;
+    rowsOnly?: boolean;
+    byDaySince?: string;
+  }
+): Promise<{
+  rows: PnlRow[];
+  nextCursor: string | null;
+  totals: PnlSummaryTotals | null;
+  truncated: boolean;
+  ledgerPending: number;
+}> {
+  if (source === "orders") {
+    const { rows: all, truncated } = await fetchPnlRows(scope, range, {
+      shippingStatus: filter.shippingStatus,
+    });
+    const filtered = all.filter((r) => matchesPnlFilter(r, filter));
+    let start = (opts.page - 1) * opts.pageSize;
+    if (opts.cursor) {
+      const c = opts.cursor;
+      const at = filtered.findIndex((r) => r.id === c.orderId);
+      start =
+        at >= 0
+          ? at + 1
+          : filtered.findIndex((r) => r.createdAt.getTime() < c.createdAt.getTime());
+      if (start < 0) start = filtered.length;
+    }
+    const rows = filtered.slice(start, start + opts.pageSize);
+    const last = rows[rows.length - 1];
+    return {
+      rows,
+      nextCursor:
+        last && start + opts.pageSize < filtered.length
+          ? encodePnlCursor({ createdAt: last.createdAt, orderId: last.id })
+          : null,
+      totals: opts.rowsOnly ? null : pnlSummaryTotalsFromRows(filtered),
+      truncated,
+      ledgerPending: 0,
+    };
+  }
+
+  const fresh = await ensureLedgerFresh(scope, range, { maxInline: 500 });
+  const [ids, totals] = await Promise.all([
+    // Xin dư một dòng để biết còn trang sau hay không (con trỏ của xuất Excel).
+    ledgerPnlList(scope, range, filter, {
+      limit: opts.pageSize + 1,
+      offset: (opts.page - 1) * opts.pageSize,
+      cursor: opts.cursor,
+    }),
+    opts.rowsOnly
+      ? Promise.resolve(null)
+      : ledgerPnlSummary(scope, range, filter, { byDaySince: opts.byDaySince }),
+  ]);
+  const pageIds = ids.slice(0, opts.pageSize);
+  const orders = pageIds.length
+    ? await prisma.order.findMany({
+        // Kèm phạm vi gian lần nữa: mã lấy từ sổ đã đúng chủ, đây là chốt chặn thứ hai.
+        where: { id: { in: pageIds.map((i) => i.orderId) }, channel: scope },
+        include: PNL_INCLUDE,
+      })
+    : [];
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  const rows: PnlRow[] = [];
+  for (const i of pageIds) {
+    const o = byId.get(i.orderId);
+    if (o) rows.push(computePnlRow(o));
+  }
+  const lastId = pageIds[pageIds.length - 1];
+  return {
+    rows,
+    nextCursor: lastId && ids.length > opts.pageSize ? encodePnlCursor(lastId) : null,
+    totals,
+    truncated: false,
+    ledgerPending: fresh.dirty + fresh.staleVersion,
+  };
+}
+
 // GET /api/finance/realized-pnl — bảng lãi/lỗ thực hiện chi tiết theo sàn
 router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
   try {
@@ -412,46 +522,36 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     // bổ sung của kỳ, cùng công thức với /analytics và /api/tax/report.
     const taxCfg = await getShopTaxConfig(req.ownerId!);
 
-    // NGUỒN SỐ GỐC: cùng tập đơn + cùng công thức với mọi báo cáo tài chính.
+    const scope = channelScope(req);
     const dateRange = parseDateRange(req.query);
-    const { rows: computedRows, truncated } = await fetchPnlRows(
-      channelScope(req),
-      dateRange,
-      { shippingStatus }
-    );
 
-    // Trục lọc "Hoàn/Trả" — đơn hoàn nằm trên trục returnStatus ĐỘC LẬP với
-    // shippingStatus (đơn "vừa DELIVERED vừa đang hoàn" là chuyện thường) nên
-    // lọc sau khi bóc số, không map được vào RECON_STATUS.
-    const allRows =
-      statusKey === "returning"
-        ? computedRows.filter((r) => r.returnType !== null)
-        : computedRows;
-
-    // Bộ lọc nhanh "Lợi nhuận âm": chỉ giữ đơn LỖ theo ĐÚNG cột lợi nhuận bảng
-    // hiển thị (profitAfterTax = tiền về ví − giá vốn). Áp trước khi phân trang
-    // & tóm tắt để số liệu khớp đúng những gì bảng đang hiển thị.
+    // BỘ LỌC CỦA BẢNG — áp cho cả danh sách lẫn tóm tắt để mọi con số khớp đúng
+    // những gì bảng hiển thị:
+    //   · tab trạng thái giao (shippingStatus); tab "Hoàn/Trả" nằm trên trục
+    //     returnStatus ĐỘC LẬP với shippingStatus (đơn "vừa DELIVERED vừa đang
+    //     hoàn" là chuyện thường) nên lọc theo returnType, không map RECON_STATUS;
+    //   · "Lợi nhuận âm": đơn LỖ theo ĐÚNG cột lợi nhuận bảng hiển thị
+    //     (profitAfterTax = tiền về ví − giá vốn);
+    //   · tìm theo MÃ ĐƠN (chứa chuỗi, không phân biệt hoa thường).
     const lossOnly =
       req.query.lossOnly === "true" || req.query.lossOnly === "1";
-    const lossFiltered = lossOnly ? allRows.filter(isLossOrder) : allRows;
-
-    // Tìm kiếm theo MÃ ĐƠN (contains, không phân biệt hoa thường) — áp trước
-    // phân trang & tóm tắt để mọi con số khớp đúng những gì bảng hiển thị.
     const search =
       typeof req.query.search === "string"
         ? req.query.search.trim().toLowerCase()
         : "";
-    const filtered = search
-      ? lossFiltered.filter((r) => r.orderCode.toLowerCase().includes(search))
-      : lossFiltered;
+    const filter: LedgerPnlFilter = {
+      ...(shippingStatus ? { shippingStatus } : {}),
+      ...(statusKey === "returning" ? { returnsOnly: true } : {}),
+      ...(lossOnly ? { lossOnly: true } : {}),
+      ...(search ? { search } : {}),
+    };
 
-    // ===== TÓM TẮT THEO SÀN + THẤT THU ĐƠN HOÀN + CHUỖI NGÀY + TỔNG KỲ =====
-    // (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại) — hàm thuần
-    // summarizePnlRows, mọi trục cùng MỘT cột lợi nhuận với bảng.
-    const {
-      byPlatform, returnLoss, dayAgg,
-      totalProfit, totalPlatformTax, additionalTax, totalProfitAfterTax, missingCost,
-    } = summarizePnlRows(filtered, taxCfg);
+    // Nguồn số: sổ cái đơn (mặc định) hay đường cũ kéo đơn (?source=orders /
+    // REALIZED_PNL_SOURCE=orders). Xuất Excel gọi rowsOnly=1 + cursor: chỉ lấy
+    // dòng, đọc tiếp theo con trỏ, không tính lại tóm tắt ở mỗi trang.
+    const source = resolveReportSource(req.query.source, process.env.REALIZED_PNL_SOURCE);
+    const rowsOnly = req.query.rowsOnly === "true" || req.query.rowsOnly === "1";
+    const cursor = parsePnlCursor(req.query.cursor);
 
     // Trục ngày liền mạch (lấp ngày trống = 0) cho biểu đồ Lãi/Lỗ & Tỷ lệ hoàn.
     // Mốc đầu/cuối là 00:00 GIỜ VN (businessDayStart); không lọc ngày → 30
@@ -467,6 +567,41 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
     if (spanDays > PNL_MAX_POINTS) {
       chartStart = new Date(chartEnd.getTime() - (PNL_MAX_POINTS - 1) * DAY_MS);
     }
+
+    const data = await loadRealizedPnl(source, scope, dateRange, filter, {
+      page,
+      pageSize,
+      cursor,
+      rowsOnly,
+      byDaySince: toBusinessDateKey(chartStart),
+    });
+
+    if (rowsOnly || !data.totals) {
+      res.json({
+        rows: data.rows,
+        nextCursor: data.nextCursor,
+        truncated: data.truncated,
+        source,
+        ledgerPending: data.ledgerPending,
+      });
+      return;
+    }
+
+    // ===== TÓM TẮT THEO SÀN + THẤT THU ĐƠN HOÀN + CHUỖI NGÀY + TỔNG KỲ =====
+    // (trên TOÀN BỘ đơn khớp lọc, không chỉ trang hiện tại) — mọi trục cùng MỘT
+    // cột lợi nhuận với bảng (profitAfterTax của đơn đã có giá vốn).
+    const t = data.totals;
+    const totalProfit = t.profitWithCost;
+    const additionalTax = additionalTaxOn(
+      { grossRevenue: t.revenueGross, profit: totalProfit },
+      taxCfg
+    );
+    const returnLoss = {
+      total: t.returnLoss.costLoss + t.returnLoss.platformKept + t.returnLoss.refundLoss,
+      costLoss: t.returnLoss.costLoss,
+      platformKept: t.returnLoss.platformKept,
+      refundLoss: t.returnLoss.refundLoss,
+    };
     const daily: {
       date: string;
       label: string;
@@ -476,9 +611,9 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       returnCount: number;
       returnRatePercent: number;
     }[] = [];
-    for (let t = chartStart.getTime(); t <= chartEnd.getTime(); t += DAY_MS) {
-      const key = toBusinessDateKey(new Date(t));
-      const d = dayAgg.get(key);
+    for (let ts = chartStart.getTime(); ts <= chartEnd.getTime(); ts += DAY_MS) {
+      const key = toBusinessDateKey(new Date(ts));
+      const d = t.byDay.get(key);
       daily.push({
         date: key,
         label: dateKeyLabel(key),
@@ -491,25 +626,26 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
       });
     }
 
-    const total = filtered.length;
-    const start = (page - 1) * pageSize;
-    const rows = filtered.slice(start, start + pageSize);
+    const total = t.count;
 
     res.json({
-      rows,
+      rows: data.rows,
       page,
       pageSize,
       total,
       pageCount: Math.max(1, Math.ceil(total / pageSize)),
-      truncated, // kỳ vượt 20.000 đơn — số là cận dưới
+      nextCursor: data.nextCursor,
+      truncated: data.truncated, // chỉ đường cũ: kỳ vượt 20.000 đơn — số là cận dưới
+      source, // "ledger" | "orders"
+      ledgerPending: data.ledgerPending, // đơn trong kỳ còn chờ sổ cái tính lại
       summary: {
         count: total,
-        settledCount: filtered.filter((r) => r.isSettled).length,
+        settledCount: t.settledCount,
         // Doanh thu thực nhận = Σ netRevenue — ĐÃ trừ tiền hoàn trả khách
-        totalNetRevenue: filtered.reduce((s, r) => s + r.netRevenue, 0),
+        totalNetRevenue: t.netRevenue,
         // Bức tranh hoàn/trả của kỳ: số đơn hoàn + tổng tiền đã/tạm tính hoàn
-        returnCount: filtered.filter((r) => r.returnType !== null).length,
-        totalRefunded: filtered.reduce((s, r) => s + r.refundedAmount, 0),
+        returnCount: t.returnCount,
+        totalRefunded: t.refundedAmount,
         // Thất thu do đơn hoàn (3 khoản, xem computeReturnLoss) + chuỗi ngày
         // — nuôi dashboard "Tổng quan Lợi nhuận" phía frontend.
         returnLoss,
@@ -517,17 +653,20 @@ router.get("/realized-pnl", async (req: AuthRequest, res, next) => {
         // Lợi nhuận = Σ profitAfterTax (tiền về ví − giá vốn) — ĐÃ net phí &
         // thuế sàn trong payout; totalPlatformTax chỉ để hiển thị "trong đó".
         totalProfit,
-        totalPlatformTax,
+        totalPlatformTax: t.platformTax,
         additionalTax,
-        totalProfitAfterTax,
+        totalProfitAfterTax: totalProfit - additionalTax,
         // Đơn chưa có giá vốn: bị loại khỏi lợi nhuận — UI ghi rõ số đơn.
-        missingCost,
+        missingCost: {
+          orderCount: t.missingCostCount,
+          excludedProfit: t.missingCostExcludedProfit,
+        },
         taxSettings: {
           calculationBase: taxCfg.calculationBase,
           platformTaxPercent: PLATFORM_TAX_RATE * 100,
           customTaxPercent: taxCfg.customTaxRate * 100,
         },
-        byPlatform,
+        byPlatform: Object.fromEntries(t.byPlatform),
       },
     });
   } catch (err) {

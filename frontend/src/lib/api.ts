@@ -824,6 +824,12 @@ export interface PnlDailyPoint {
 export interface RealizedPnlResponse {
   /** Kỳ vượt 20.000 đơn — backend dừng đọc, số là cận dưới. */
   truncated?: boolean;
+  /** Nguồn số: "ledger" = sổ cái đơn (mặc định từ 30/09/2026), "orders" = kéo đơn (đường cũ). */
+  source?: "ledger" | "orders";
+  /** Số đơn trong kỳ đang chờ sổ cái tính lại — số có thể lệch nhỏ vài phút. */
+  ledgerPending?: number;
+  /** Con trỏ đọc tiếp sau dòng cuối trang (null = hết) — dùng cho xuất Excel. */
+  nextCursor?: string | null;
   rows: PnlDetailRow[];
   page: number;
   pageSize: number;
@@ -865,6 +871,33 @@ export interface RealizedPnlResponse {
 
 /** Kiểu phần summary của Lãi/Lỗ Thực Hiện — dashboard Tổng quan nhận nguyên khối. */
 export type RealizedPnlSummary = RealizedPnlResponse["summary"];
+
+/**
+ * Đọc DÒNG Lãi/Lỗ theo CON TRỎ (mới nhất trước), không kèm tóm tắt — cho xuất
+ * Excel: mỗi lượt 100 dòng, lượt nào cũng nhẹ như lượt đầu dù kỳ có bao nhiêu đơn.
+ */
+export function fetchRealizedPnlRows(params: {
+  range?: DateRange;
+  channel?: ChannelFilterQuery;
+  status?: ReconciliationStatus;
+  lossOnly?: boolean;
+  search?: string;
+  cursor?: string | null;
+}) {
+  const qs = new URLSearchParams({
+    ...rangeToQuery(params.range),
+    ...channelFilterToQuery(params.channel),
+    ...(params.status && params.status !== "all" ? { status: params.status } : {}),
+    ...(params.lossOnly ? { lossOnly: "true" } : {}),
+    ...(params.search ? { search: params.search } : {}),
+    ...(params.cursor ? { cursor: params.cursor } : {}),
+    rowsOnly: "1",
+    pageSize: "100",
+  }).toString();
+  return apiFetch<{ rows: PnlDetailRow[]; nextCursor: string | null; truncated?: boolean }>(
+    `/api/finance/realized-pnl?${qs}`
+  );
+}
 
 export function fetchRealizedPnl(params: {
   range?: DateRange;

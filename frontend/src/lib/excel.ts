@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import {
   fetchOrders,
   fetchProducts,
-  fetchRealizedPnl,
+  fetchRealizedPnlRows,
   fetchShippingDiscrepancies,
   type ChannelFilterQuery,
   type ChannelName,
@@ -316,20 +316,21 @@ export async function exportRealizedPnl(filter: {
   const channel: ChannelFilterQuery | undefined =
     filter.platform === "ALL" ? undefined : { channelName: filter.platform };
 
+  // Đọc theo CON TRỎ (100 dòng/lượt, không kèm tóm tắt): lượt nào cũng nhẹ như
+  // lượt đầu — trước 30/09/2026 mỗi trang backend đọc lại cả kỳ.
   const all: PnlDetailRow[] = [];
-  let page = 1;
+  let cursor: string | null = null;
   for (;;) {
-    const res = await fetchRealizedPnl({
+    const res = await fetchRealizedPnlRows({
       range: filter.range,
       channel,
       status: filter.status,
       lossOnly: filter.lossOnly,
-      page,
-      pageSize: 100,
+      cursor,
     });
     all.push(...res.rows);
-    if (page >= res.pageCount || res.pageCount === 0) break;
-    page++;
+    if (!res.nextCursor || res.rows.length === 0) break;
+    cursor = res.nextCursor;
   }
   if (all.length === 0) return 0;
   if (filter.platform === "TIKTOK") exportTiktokPnlToExcel(all);

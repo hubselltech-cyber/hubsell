@@ -40,6 +40,13 @@ import {
 import type { ChannelScope } from "../lib/channel-filter";
 import type { LedgerCashFlowBreakdown } from "../lib/cash-flow-totals";
 import type { LedgerOverviewBreakdown } from "../lib/overview-totals";
+import {
+  emptyPnlSummaryTotals,
+  escapeLike,
+  type LedgerPnlFilter,
+  type PnlListCursor,
+  type PnlSummaryTotals,
+} from "../lib/realized-pnl-totals";
 import { toBusinessDateKey, type DateRangeFilter } from "../lib/date-range";
 
 /** Dòng đang được worker cầm quá mốc này coi như worker đã chết → nhặt lại. */
@@ -346,12 +353,17 @@ export async function ledgerFreshness(
  * Báo cáo gọi TRƯỚC khi cộng: tính nốt các dòng bẩn của phạm vi (tối đa
  * `maxInline` đơn — mặc định 2.000, chừng 3–6 giây). Trả số còn lại để nơi gọi
  * báo "X đơn đang chờ cập nhật" thay vì cộng thiếu trong im lặng.
+ * ĐẾM TRƯỚC: sổ đang sạch (trường hợp thường gặp khi worker chạy) thì trả về
+ * ngay sau một câu đếm, không chạy câu nhặt việc (UPDATE … SKIP LOCKED) ở mỗi
+ * lượt xem báo cáo.
  */
 export async function ensureLedgerFresh(
   scope: ChannelScope,
   range?: DateRangeFilter,
   opts: { maxInline?: number; axis?: LedgerDateAxis } = {}
 ): Promise<LedgerFreshness & { recomputed: number }> {
+  const before = await ledgerFreshness(scope, range, opts.axis);
+  if (before.dirty === 0) return { ...before, recomputed: 0 };
   const max = opts.maxInline ?? 2000;
   let recomputed = 0;
   while (recomputed < max) {
@@ -857,4 +869,134 @@ export async function ledgerOverviewBreakdown(
     ),
     byDay,
   };
+}
+
+// ------------------------------------------------------------
+// Lãi/Lỗ thực hiện: danh sách phân trang + tổng kết theo bộ lọc của bảng
+// (lib/realized-pnl-totals.ts, docs/SO-CAI-DON.md mục 9.3)
+// ------------------------------------------------------------
+
+/** WHERE của bảng Lãi/Lỗ trên sổ: phạm vi gian + kỳ + bộ lọc; chỉ dòng đã tính bằng công thức hiện tại. */
+function ledgerPnlWhere(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  f: LedgerPnlFilter
+): Prisma.Sql {
+  const parts: Prisma.Sql[] = [
+    ledgerScopeSql(scope, range),
+    Prisma.sql`"formulaVersion" = ${LEDGER_FORMULA_VERSION}::int`,
+  ];
+  if (f.shippingStatus) parts.push(Prisma.sql`"shippingStatus" = ${f.shippingStatus}::"ShippingStatus"`);
+  if (f.returnsOnly) parts.push(Prisma.sql`"returnType" IS NOT NULL`);
+  if (f.lossOnly) parts.push(Prisma.sql`"isLoss"`);
+  // Chứa chuỗi, không phân biệt hoa thường — chỉ mục GIN trigram
+  // "order_ledger_orderCode_trgm_idx" phục vụ mẫu từ 3 ký tự trở lên.
+  if (f.search) parts.push(Prisma.sql`"orderCode" ILIKE ${`%${escapeLike(f.search)}%`}`);
+  return Prisma.join(parts, " AND ");
+}
+
+/**
+ * MỘT TRANG mã đơn của bảng Lãi/Lỗ, mới nhất trước (createdAt, orderId giảm
+ * dần — cùng thứ tự với đường cũ). `cursor` = đọc tiếp SAU dòng đó (xuất Excel:
+ * trang nào cũng rẻ như trang đầu nhờ chỉ mục ownerId + createdAt + orderId);
+ * không có cursor thì dùng `offset` (lật trang trên giao diện).
+ */
+export async function ledgerPnlList(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter,
+  page: { limit: number; offset?: number; cursor?: PnlListCursor | null }
+): Promise<{ orderId: string; createdAt: Date }[]> {
+  const limit = Math.max(1, Math.floor(page.limit));
+  const offset = page.cursor ? 0 : Math.max(0, Math.floor(page.offset ?? 0));
+  return prisma.$queryRaw<{ orderId: string; createdAt: Date }[]>(Prisma.sql`
+    SELECT "orderId", "createdAt"
+    FROM "order_ledger"
+    WHERE ${ledgerPnlWhere(scope, range, filter)}
+      ${page.cursor
+        ? Prisma.sql`AND ("createdAt", "orderId") < (${page.cursor.createdAt.toISOString()}::timestamp, ${page.cursor.orderId})`
+        : Prisma.empty}
+    ORDER BY "createdAt" DESC, "orderId" DESC
+    LIMIT ${limit}::int OFFSET ${offset}::int
+  `);
+}
+
+/**
+ * TỔNG KẾT của toàn bộ đơn khớp lọc — ba câu cộng trong database: tổng, theo
+ * sàn, theo ngày phát sinh (từ `byDaySince` — đầu trục biểu đồ). Cùng phép cộng
+ * với pnlSummaryTotalsFromLedgerRows (test khóa hai bên bằng nhau).
+ */
+export async function ledgerPnlSummary(
+  scope: ChannelScope,
+  range: DateRangeFilter | undefined,
+  filter: LedgerPnlFilter,
+  opts: { byDaySince?: string } = {}
+): Promise<PnlSummaryTotals> {
+  const where = ledgerPnlWhere(scope, range, filter);
+  const profit = Prisma.raw(`COALESCE(sum("profitAfterTax") FILTER (WHERE NOT "missingCostPrice"), 0)`);
+  const returnCount = Prisma.raw(`count(*) FILTER (WHERE "returnType" IS NOT NULL)`);
+  const returnLoss = Prisma.raw(
+    `COALESCE(sum("returnLossCost" + "returnLossPlatformKept" + "returnLossRefund") FILTER (WHERE "returnType" IS NOT NULL), 0)`
+  );
+  const [totals, platforms, days] = await Promise.all([
+    prisma.$queryRaw<Record<string, unknown>[]>(Prisma.sql`
+      SELECT count(*) AS "count",
+             count(*) FILTER (WHERE "isSettled") AS "settledCount",
+             COALESCE(sum("netRevenue"), 0) AS "netRevenue",
+             ${returnCount} AS "returnCount",
+             COALESCE(sum("refundedAmount"), 0) AS "refundedAmount",
+             COALESCE(sum("revenueGross"), 0) AS "revenueGross",
+             COALESCE(sum("platformTax"), 0) AS "platformTax",
+             ${profit} AS "profitWithCost",
+             count(*) FILTER (WHERE "missingCostPrice") AS "missingCostCount",
+             COALESCE(sum("profitAfterTax") FILTER (WHERE "missingCostPrice"), 0) AS "missingCostExcludedProfit",
+             COALESCE(sum("returnLossCost") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlCost",
+             COALESCE(sum("returnLossPlatformKept") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlKept",
+             COALESCE(sum("returnLossRefund") FILTER (WHERE "returnType" IS NOT NULL), 0) AS "rlRefund"
+      FROM "order_ledger" WHERE ${where}
+    `),
+    prisma.$queryRaw<{ key: string; n: unknown; profit: unknown; rc: unknown; rl: unknown }[]>(Prisma.sql`
+      SELECT "channelName"::text AS key, count(*) AS n, ${profit} AS profit, ${returnCount} AS rc, ${returnLoss} AS rl
+      FROM "order_ledger" WHERE ${where}
+      GROUP BY "channelName"
+    `),
+    prisma.$queryRaw<{ key: Date; n: unknown; profit: unknown; rc: unknown; rl: unknown }[]>(Prisma.sql`
+      SELECT "createdDate" AS key, count(*) AS n, ${profit} AS profit, ${returnCount} AS rc, ${returnLoss} AS rl
+      FROM "order_ledger" WHERE ${where}
+      ${opts.byDaySince ? Prisma.sql`AND "createdDate" >= ${opts.byDaySince}::date` : Prisma.empty}
+      GROUP BY "createdDate"
+    `),
+  ]);
+  const r = totals[0] ?? {};
+  const num = (k: string) => Number(r[k] ?? 0);
+  const out = emptyPnlSummaryTotals();
+  out.count = num("count");
+  out.settledCount = num("settledCount");
+  out.netRevenue = num("netRevenue");
+  out.returnCount = num("returnCount");
+  out.refundedAmount = num("refundedAmount");
+  out.revenueGross = num("revenueGross");
+  out.platformTax = num("platformTax");
+  out.profitWithCost = num("profitWithCost");
+  out.missingCostCount = num("missingCostCount");
+  out.missingCostExcludedProfit = num("missingCostExcludedProfit");
+  out.returnLoss = { costLoss: num("rlCost"), platformKept: num("rlKept"), refundLoss: num("rlRefund") };
+  for (const p of platforms) {
+    out.byPlatform.set(p.key, {
+      count: Number(p.n),
+      profit: Number(p.profit),
+      returnCount: Number(p.rc),
+      returnLoss: Number(p.rl),
+    });
+  }
+  for (const d of days) {
+    const key = d.key instanceof Date ? d.key.toISOString().slice(0, 10) : String(d.key).slice(0, 10);
+    out.byDay.set(key, {
+      profit: Number(d.profit),
+      returnLoss: Number(d.rl),
+      orderCount: Number(d.n),
+      returnCount: Number(d.rc),
+    });
+  }
+  return out;
 }
