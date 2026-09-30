@@ -1,6 +1,6 @@
 # Phương án: gom biên lãi / hòa vốn quảng cáo TRONG DATABASE
 
-Trạng thái: **CHỜ ANH TRUNG CHỐT** (trình 30/09/2026 chiều, dự kiến làm tối 30/09).
+Trạng thái: **ANH TRUNG ĐÃ DUYỆT 30/09/2026 chiều** — cả 4 điểm ở mục 9 chốt theo đề xuất. CHƯA làm: chờ anh nhắn "làm đi" (hẹn tối 30/09) mới bắt đầu viết code.
 Thuộc giai đoạn 1 của `docs/KIEN-TRUC-QUY-MO-TRIEU-DON.md`, tiếp nối `docs/SO-CAI-DON.md` mục 9.7.
 
 ## 1. Mục tiêu và ranh giới
@@ -93,9 +93,9 @@ Các hàm thuần hiện có (`marginOverRows`, `tiktokBreakevenBase`, `…ByGro
 - Ba việc đang treo của nhóm quảng cáo (lệch ngày 00:00–07:00 của `toShopeeDate`, bảng điểm 90 ngày chỉ nạp 30 ngày chi tiêu, trần 5 lệnh dừng mỗi ngày và thứ tự lệnh). Chúng đổi HÀNH VI của Trợ lý nên phải trình riêng từng việc.
 - Đổi ngưỡng, đổi cửa sổ 30/60 ngày, bật live.
 
-## 9. Bốn điểm cần anh chốt
+## 9. Bốn điểm đã chốt (anh Trung 30/09/2026: "4 phương án em đề xuất hợp lý rồi")
 
-| # | Câu hỏi | Em đề xuất |
+| # | Câu hỏi | Đã chốt |
 |---|---|---|
 | 1 | Làm cả ba sàn trong một đợt hay tách? | Một đợt. Hai câu SQL gần như cùng khuôn, tách ra thì phải so prod hai lần. |
 | 2 | Lên prod ở chế độ tắt rồi so xong mới bật, hay bật ngay? | Tắt trước, so 30 gian khớp mới bật. Đây là đầu vào của quyết định dừng và bật chiến dịch. |
