@@ -40,4 +40,23 @@ describe("withPoolParams", () => {
     );
     expect(resolveDatabaseUrl({})).toBeUndefined();
   });
+
+  it("DB_STATEMENT_CACHE_SIZE: không đặt → không ghép; đặt số ≥ 0 (kể cả 0) → ghép; sai → bỏ qua", () => {
+    expect(resolveDatabaseUrl({ DATABASE_URL: BASE })).not.toContain("statement_cache_size");
+    expect(resolveDatabaseUrl({ DATABASE_URL: BASE, DB_STATEMENT_CACHE_SIZE: "20" })).toContain(
+      "statement_cache_size=20"
+    );
+    expect(resolveDatabaseUrl({ DATABASE_URL: BASE, DB_STATEMENT_CACHE_SIZE: "0" })).toContain(
+      "statement_cache_size=0"
+    );
+    for (const bad of ["", " ", "abc", "-1", "2.5"]) {
+      expect(resolveDatabaseUrl({ DATABASE_URL: BASE, DB_STATEMENT_CACHE_SIZE: bad })).not.toContain(
+        "statement_cache_size"
+      );
+    }
+    // Đặt tay trong chuỗi thắng env
+    expect(
+      resolveDatabaseUrl({ DATABASE_URL: `${BASE}&statement_cache_size=7`, DB_STATEMENT_CACHE_SIZE: "20" })
+    ).toContain("statement_cache_size=7");
+  });
 });

@@ -166,6 +166,33 @@ Render tự chạy `prisma migrate deploy` lúc khởi động (render.yaml), n�
 
 ---
 
+## 8a. Database hết bộ nhớ 30/09 13:04 và cách ghi một tham số JSON (01/10/2026)
+
+**Sự việc (giờ VN, đọc từ nhật ký Postgres + Observability → Database của Supabase):** 11:05 đổi compute Nano → Micro (tắt sạch; vùng đệm 224 MB → 256 MB). 12:05–12:20 swap leo tới đầy 1 GB, bộ nhớ cam kết 1,25 → 2,2 GB, giữ nguyên tới 13:04:53 thì Postgres khởi động lại không có dòng tắt máy ("was not properly shut down; automatic recovery"), gián đoạn khoảng một phút. Không phải lần đổi gói.
+
+**Nguyên nhân (tái hiện trên DB dev 01/10, `scripts/ledger-memory-probe.ts`):** câu ghi sổ mỗi lô 100 đơn là `INSERT … VALUES` ghép từng giá trị thành tham số riêng: 4.000–5.000 tham số một câu, chữ câu lệnh đổi gần như mỗi lô (số dòng hàng khác nhau, giá trị NULL viết thành `NULL::date` thay cho tham số). Prisma giữ lại tới 100 câu đã chuẩn bị cho TỪNG kết nối, Postgres giữ bộ nhớ của từng câu tới khi kết nối đóng.
+
+| Đo trên DB dev (1 kết nối, 7.500 đơn, lô 100) | Bộ nhớ kết nối | Câu đang giữ | Chữ câu lệnh | Thời gian |
+|---|---|---|---|---|
+| Cách cũ `values` | 5 MB → 350 MB (đứng yên khi chạm 100 câu, sau 40 lô) | 101 | 7.045 KB | 11 giây |
+| Cách mới `json` | 5 MB → 18 MB | 22 | 21 KB | 7 giây |
+| Cách cũ + `DB_STATEMENT_CACHE_SIZE=10` | 5 MB → 25 MB | 11 | 172 KB | 10 giây |
+| Cách cũ + `DB_STATEMENT_CACHE_SIZE=0` | 5 MB → 17 MB | 2 | 0 | 10 giây |
+
+Đường ghi này chạy ở ba nơi: worker nền (3 kết nối), báo cáo tự tính nốt đơn bẩn qua `ensureLedgerFresh` (kết nối của web), script `ledger-backfill drain`. Trên prod chỉ đo được gián tiếp (không có quyền `pg_log_backend_memory_contexts`): một câu `PREPARE` 4.500 tham số tốn ~2,4 MB; chạm cả hai bảng sổ chỉ tốn ~2,4 MB nên số mảnh không phải thủ phạm.
+
+**Sửa (`services/order-ledger.ts`, `LedgerWriteStyle`):**
+
+- Cả lô đi trong MỘT tham số JSON; database tách dòng bằng `jsonb_to_recordset`, kiểu từng cột khai một lần (`ORDER_JSON_TYPES`, `LINE_JSON_TYPES`). Thêm cột vào `ORDER_COLUMNS` / `LINE_COLUMNS` mà quên khai kiểu thì hỏng ngay lúc nạp tệp.
+- Câu xóa dòng hàng / nhả `claimedAt` nối với gói khóa `(createdDate, orderId)` và kèm biên ngày nhỏ nhất – lớn nhất của lô ở dạng hằng (`dateConst`) để vẫn cắt mảnh tháng.
+- `SET LOCAL plan_cache_mode = force_custom_plan` đầu giao dịch ghi: chữ câu lệnh nay cố định nên Postgres có thể chuyển sang kế hoạch chung; kế hoạch ấy quét cả khoảng ngày của lô rồi mới nối với khóa (vẫn cắt mảnh lúc chạy: "Subplans Removed: 42", nhưng lô trải nhiều tháng của shop lớn sẽ đọc thừa). Ép lập kế hoạch theo giá trị thật, như cách cũ vẫn chạy.
+- Đường lui: env `LEDGER_WRITE_STYLE=values` (giữ tới ~08/10 rồi gỡ cùng `orderValues` / `lineValues`).
+- Công tắc khẩn cho mọi câu lệnh của app: env `DB_STATEMENT_CACHE_SIZE` (`lib/db-url.ts`). Không đặt → Prisma dùng mặc định 100. Chưa có số đo để chọn ngưỡng nên KHÔNG đổi mặc định; khi bộ nhớ database phình lại thì đặt 10–20 (hoặc 0) rồi khởi động lại dịch vụ.
+
+**Kiểm chứng trên DB dev 01/10:** ghi lại toàn bộ 7.570 đơn bằng cách cũ rồi cách mới, băm mọi cột (trừ `computedAt`) của `order_ledger` và 9.936 dòng `order_line_ledger`: hai mã băm trùng nhau. Test `order-ledger-write-style-db.test.ts` so từng cột trên nhóm đơn có đơn hủy, đang hoàn, đã giao + đã quyết toán, dòng hàng chưa nối SKU kho với tên chứa nháy / gạch chéo / emoji / tiền lẻ, và lô trải hai mảnh tháng. Toàn bộ 924 test qua.
+
+**Chưa kiểm:** kế hoạch chạy trên mảnh tháng lớn (DB dev mảnh lớn nhất ~3.000 dòng; mảnh nhỏ Postgres chọn quét tuần tự cho câu nhả `claimedAt`, mảnh lớn dự kiến đi chỉ mục khóa chính — xem lại bằng `scripts/bench-large-shop.ts` trước khi có shop trăm nghìn đơn/tháng). Các chỗ `createMany` khác (11 chỗ, lô nhỏ theo bản chất nghiệp vụ) chưa đo từng chỗ.
+
 ## 9. Việc kế tiếp của giai đoạn 1 (sau khi so khớp prod đạt)
 
 Chuyển từng nơi đọc sang sổ, mỗi nơi một commit, giữ đường cũ sau công tắc env trong 1 tuần:
