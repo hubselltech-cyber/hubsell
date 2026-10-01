@@ -87,6 +87,70 @@ export async function recordOrderEvent(input: RecordOrderEventInput): Promise<Re
   });
 }
 
+// ---------- Sự kiện ủy quyền / thu hồi ủy quyền gian ----------
+// Không gộp theo khóa (hiếm, và mỗi sự kiện phải được xử lý): mỗi sự kiện một
+// dòng + một việc evt.auth trỏ đúng dòng đó bằng mã dòng.
+
+/** Dữ liệu của một việc evt.auth. */
+export interface AuthEventJob {
+  source: OrderEventSource;
+  shopId: string;
+  /** Mã dòng webhook_events của sự kiện này. */
+  eventId: string;
+}
+
+export interface RecordAuthEventInput {
+  source: OrderEventSource;
+  eventType: string;
+  shopId: string;
+  rawBody: Buffer | string;
+  payload: unknown;
+}
+
+/** Ghi một sự kiện ủy quyền ĐÃ QUA kiểm chữ ký + xếp việc evt.auth, trong một giao dịch. */
+export async function recordAuthEvent(input: RecordAuthEventInput): Promise<RecordOrderEventResult> {
+  const bodyHash = crypto.createHash("sha256").update(input.rawBody).digest("hex");
+  const eventId = crypto.randomUUID();
+  return prisma.$transaction(async (tx) => {
+    const inserted = await tx.webhookEvent.createMany({
+      data: [
+        {
+          id: eventId,
+          source: input.source,
+          eventType: input.eventType,
+          shopId: input.shopId,
+          entityId: null,
+          bodyHash,
+          payload: JSON.stringify(input.payload),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    if (inserted.count === 0) return { duplicate: true, queued: false };
+    const job: AuthEventJob = { source: input.source, shopId: input.shopId, eventId };
+    const sent = await enqueue(QUEUES.evtAuth, job, { tx });
+    return { duplicate: false, queued: sent.queued };
+  });
+}
+
+/** Đánh dấu MỘT dòng sự kiện theo mã dòng (sự kiện ủy quyền). */
+export async function markEventById(
+  eventId: string,
+  status: WebhookJobStatus,
+  attempts: number,
+  note: string | null
+): Promise<void> {
+  await prisma.webhookEvent.updateMany({
+    where: { id: eventId },
+    data: {
+      status,
+      attempts,
+      lastError: note ? note.slice(0, 2000) : null,
+      ...(status === WebhookJobStatus.SUCCESS ? { processedAt: new Date() } : {}),
+    },
+  });
+}
+
 // Ba hàm đánh dấu dùng SQL có chữ 'PENDING' viết thẳng để đi theo chỉ mục riêng
 // phần webhook_events_pending_entity_idx (truyền trạng thái bằng tham số thì kế
 // hoạch chung không dùng được chỉ mục riêng phần).

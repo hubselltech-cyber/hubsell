@@ -42,7 +42,7 @@ import { enqueueMisaWebhook } from "../integrations/invoice/misa-webhook-queue";
 import { getPayosConfig, verifyPayosWebhook } from "../integrations/payos/client";
 import { handlePayosWebhook } from "../services/gateway-checkout";
 import { isQueueReady } from "../lib/queue";
-import { recordOrderEvent } from "../services/webhook-inbox";
+import { recordAuthEvent, recordOrderEvent } from "../services/webhook-inbox";
 
 const router = Router();
 
@@ -50,6 +50,14 @@ const router = Router();
  * Đường xử lý webhook Lazada: "queue" (mặc định từ giai đoạn 2) = ghi hộp thư
  * đến + hàng đợi bền; "inline" = đường cũ, ack rồi xử lý trong RAM của web.
  */
+/**
+ * Đường xử lý webhook TikTok: "queue" (mặc định từ giai đoạn 2 bước 2) = hộp thư
+ * đến + hàng đợi bền pg-boss; "legacy" = hàng đợi cũ trên bảng tiktok_webhook_logs.
+ */
+function tiktokWebhookMode(): "queue" | "legacy" {
+  return (process.env.TIKTOK_WEBHOOK_MODE ?? "").trim().toLowerCase() === "legacy" ? "legacy" : "queue";
+}
+
 function lazadaWebhookMode(): "queue" | "inline" {
   return (process.env.LAZADA_WEBHOOK_MODE ?? "").trim().toLowerCase() === "inline" ? "inline" : "queue";
 }
@@ -323,9 +331,43 @@ router.post("/tiktok", async (req: Request & { rawBody?: Buffer }, res) => {
     return;
   }
 
-  // 3) Ghi vào hàng đợi bền rồi ack 200; worker nền xử lý sau. Dedup bền theo
-  //    hash raw body chặn bản gửi lại y nguyên; sự kiện lọt lưới vẫn an toàn
-  //    nhờ mỗi job kéo lại trạng thái mới nhất từ sàn + upsert idempotent.
+  // 3) ĐƯỜNG HÀNG ĐỢI BỀN pg-boss (giai đoạn 2 bước 2, 01/10/2026 —
+  //    docs/HANG-DOI-BEN.md): ghi webhook_events + xếp việc trong một giao dịch
+  //    rồi ack. Sự kiện đơn vào evt.order (gộp theo khóa sàn:shop:đơn — khóa
+  //    theo đơn giờ đúng trên nhiều tiến trình, trước là Set trong RAM); sự kiện
+  //    ủy quyền vào evt.auth. Ghi lỗi → 500 để TikTok gửi lại.
+  //    Hàng đợi chưa sẵn sàng, hoặc TIKTOK_WEBHOOK_MODE=legacy → hàng đợi cũ
+  //    (tiktok_webhook_logs) bên dưới; worker cũ vẫn chạy để vét bảng cũ.
+  if (tiktokWebhookMode() === "queue" && isQueueReady()) {
+    try {
+      const r =
+        kind === "order"
+          ? await recordOrderEvent({
+              source: "TIKTOK",
+              eventType: String(payload.type),
+              shopId,
+              orderId: tiktokPayloadOrderId(payload),
+              rawBody: raw,
+              payload,
+            })
+          : await recordAuthEvent({
+              source: "TIKTOK",
+              eventType: String(payload.type),
+              shopId,
+              rawBody: raw,
+              payload,
+            });
+      res.status(200).json({ ok: true, type: payload.type, queued: r.queued, duplicate: r.duplicate });
+    } catch (err) {
+      console.error("[Webhook TikTok] Không ghi được vào hàng đợi bền:", err);
+      res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
+    }
+    return;
+  }
+
+  // 3') HÀNG ĐỢI CŨ: ghi tiktok_webhook_logs rồi ack 200; worker cũ xử lý sau.
+  //    Dedup bền theo hash raw body chặn bản gửi lại y nguyên; sự kiện lọt lưới
+  //    vẫn an toàn nhờ mỗi job kéo lại trạng thái mới nhất từ sàn + upsert idempotent.
   try {
     const { queued, duplicate } = await enqueueTiktokWebhook(raw, payload);
     res.status(200).json({ ok: true, type: payload.type, queued, duplicate });

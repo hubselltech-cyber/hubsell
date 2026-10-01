@@ -148,7 +148,11 @@ export async function collectGrowth(): Promise<GrowthLayer> {
       safe("webhookLog.count", Promise.all([
         prisma.shopeeWebhookLog.count({ where: { createdAt: { gte: d7 } } }),
         prisma.tiktokWebhookLog.count({ where: { createdAt: { gte: d7 } } }),
-      ]).then(([a, b]) => a + b), 0),
+        // Hộp thư đến chung của giai đoạn 2 — sàn nào chuyển sang rồi thì sự kiện mới nằm ở đây.
+        prisma.webhookEvent.count({
+          where: { source: { in: ["SHOPEE", "LAZADA", "TIKTOK"] }, createdAt: { gte: d7 } },
+        }),
+      ]).then((counts) => counts.reduce((s, n) => s + n, 0)), 0),
       // Chủ shop hoạt động = có đơn 30 ngày (qua gian).
       safe("channel.findMany", prisma.channel.findMany({
         where: { orders: { some: { createdAt: { gte: d30 } } } },

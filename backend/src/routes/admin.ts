@@ -95,6 +95,17 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
       prisma.misaWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
       prisma.tiktokWebhookLog.groupBy({ by: ["status"], _count: { _all: true } }),
     ]);
+    // Từ giai đoạn 2 bước 2 (01/10/2026) sự kiện TikTok mới nằm ở webhook_events;
+    // bảng cũ chỉ còn lịch sử tới khi dọn. Cộng hai nguồn để số trên HQ không tụt.
+    const tiktokInboxByStatus = await prisma.webhookEvent.groupBy({
+      by: ["status"],
+      where: { source: "TIKTOK" },
+      _count: { _all: true },
+    });
+    const tiktokCounts = new Map<string, number>();
+    for (const s of [...tiktokWebhookByStatus, ...tiktokInboxByStatus]) {
+      tiktokCounts.set(s.status, (tiktokCounts.get(s.status) ?? 0) + s._count._all);
+    }
 
     res.json({
       users: {
@@ -113,10 +124,7 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
           status: s.status,
           count: s._count._all,
         })),
-        tiktok: tiktokWebhookByStatus.map((s) => ({
-          status: s.status,
-          count: s._count._all,
-        })),
+        tiktok: [...tiktokCounts].map(([status, count]) => ({ status, count })),
         misa: misaWebhookByStatus.map((s) => ({
           status: s.status,
           count: s._count._all,
@@ -913,34 +921,73 @@ router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req
     }
 
     if (source === "tiktok") {
+      // Hai nguồn nối đuôi nhau: sự kiện MỚI ở webhook_events (từ giai đoạn 2 bước
+      // 2, 01/10/2026) rồi tới lịch sử ở tiktok_webhook_logs. Dòng ở bảng mới luôn
+      // mới hơn dòng ở bảng cũ (trừ vài giây lúc chuyển), nên phân trang là: hết
+      // bảng mới mới sang bảng cũ — mỗi bảng vẫn đọc theo chỉ mục của nó.
       const where = status ? { status } : {};
-      const [total, logs] = await Promise.all([
+      const inboxWhere = { source: "TIKTOK", ...(status ? { status } : {}) };
+      const skip = (page - 1) * pageSize;
+      const [inboxTotal, legacyTotal] = await Promise.all([
+        prisma.webhookEvent.count({ where: inboxWhere }),
         prisma.tiktokWebhookLog.count({ where }),
-        prisma.tiktokWebhookLog.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          select: {
-            id: true,
-            eventType: true,
-            shopId: true,
-            orderId: true,
-            status: true,
-            attempts: true,
-            lastError: true,
-            processedAt: true,
-            createdAt: true,
-          },
-        }),
       ]);
+      const inboxRows =
+        skip < inboxTotal
+          ? await prisma.webhookEvent.findMany({
+              where: inboxWhere,
+              orderBy: { createdAt: "desc" },
+              skip,
+              take: pageSize,
+              select: {
+                id: true,
+                eventType: true,
+                shopId: true,
+                entityId: true,
+                status: true,
+                attempts: true,
+                lastError: true,
+                processedAt: true,
+                createdAt: true,
+              },
+            })
+          : [];
+      const legacyRows =
+        inboxRows.length < pageSize
+          ? await prisma.tiktokWebhookLog.findMany({
+              where,
+              orderBy: { createdAt: "desc" },
+              skip: Math.max(0, skip - inboxTotal),
+              take: pageSize - inboxRows.length,
+              select: {
+                id: true,
+                eventType: true,
+                shopId: true,
+                orderId: true,
+                status: true,
+                attempts: true,
+                lastError: true,
+                processedAt: true,
+                createdAt: true,
+              },
+            })
+          : [];
       // Cùng hình dạng dòng Shopee (eventCode/orderSn) để FE HQ vẽ chung một bảng.
       res.json({
         source,
-        total,
+        total: inboxTotal + legacyTotal,
         page,
         pageSize,
-        logs: logs.map((l) => ({ ...l, eventCode: l.eventType, orderSn: l.orderId })),
+        logs: [
+          ...inboxRows.map(({ entityId, ...l }) => ({
+            ...l,
+            eventType: Number(l.eventType) || 0,
+            orderId: entityId,
+            eventCode: Number(l.eventType) || 0,
+            orderSn: entityId,
+          })),
+          ...legacyRows.map((l) => ({ ...l, eventCode: l.eventType, orderSn: l.orderId })),
+        ],
       });
       return;
     }

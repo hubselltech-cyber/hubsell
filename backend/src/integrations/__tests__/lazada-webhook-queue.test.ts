@@ -22,7 +22,7 @@ import { ChannelName, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
 import { startQueue, stopQueue } from "../../lib/queue";
-import { registerEventQueueWorkers, runDeadOrderEventJob } from "../../workers/event-queue";
+import { registerEventQueueWorkers, runDeadEventJob } from "../../workers/event-queue";
 import { createStockFixture, type StockFixture } from "./fixtures";
 import { getMultipleOrderItems, getOrder } from "../lazada/client";
 
@@ -231,14 +231,14 @@ describe("Webhook Lazada — hộp thư đến + hàng đợi bền", () => {
     expect(job.state).toBe("retry"); // pg-boss tự hẹn lượt thử lại, không FAILED ngay
 
     // Hết lượt thử: pg-boss chép việc sang evt.dead — gọi thẳng hàm xử lý của hàng đợi lỗi.
-    await runDeadOrderEventJob({ source: "LAZADA", shopId: SELLER_ID, orderId });
+    await runDeadEventJob({ source: "LAZADA", shopId: SELLER_ID, orderId });
     const [failed] = await eventsOf(orderId);
     expect(failed.status).toBe(WebhookJobStatus.FAILED);
     const alert = await prisma.inventorySyncAlert.findFirst({ where: { channelId, orderSn: orderId } });
     expect(alert?.message).toContain(`sự kiện Lazada đơn ${orderId} xử lý thất bại sau 3 lần`);
 
     // Việc lỗi của một đơn đã được việc khác xử lý xong thì không báo nữa.
-    await runDeadOrderEventJob({ source: "LAZADA", shopId: SELLER_ID, orderId: "900003" });
+    await runDeadEventJob({ source: "LAZADA", shopId: SELLER_ID, orderId: "900003" });
     expect(await prisma.inventorySyncAlert.count({ where: { channelId, orderSn: "900003" } })).toBe(0);
   });
 

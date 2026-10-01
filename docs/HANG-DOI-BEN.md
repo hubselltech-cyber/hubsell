@@ -300,6 +300,30 @@ Một điều học được khi tự kiểm: một tiến trình đăng ký HAI
 
 Dấu vết trên prod: worker hỏi việc mỗi 0,5 giây trên `evt.order` (2 vòng) và mỗi 2 giây trên `evt.dead` (2 vòng), tức khoảng 5 câu hỏi nhỏ mỗi giây kể cả khi không có việc.
 
+### 4.3. Bước 2 (webhook TikTok) — đã làm 01/10/2026
+
+Anh Trung chốt đi tiếp TikTok mà không chờ sự kiện Lazada thật đầu tiên.
+
+| Việc | Tệp |
+|---|---|
+| Route TikTok: sự kiện đơn → `recordOrderEvent` (hàng đợi `evt.order`), sự kiện ủy quyền → `recordAuthEvent` (hàng đợi `evt.auth`) | `backend/src/routes/webhooks.ts` |
+| Hộp thư đến thêm sự kiện ủy quyền: mỗi sự kiện một dòng + một việc trỏ đúng dòng | `backend/src/services/webhook-inbox.ts` |
+| Tách phần lõi xử lý TikTok thành hàm dùng chung cho hàng đợi cũ và mới (`handleTiktokOrderJob`, `handleTiktokAuthJob`, `alertTiktokJobFailed`) | `backend/src/integrations/tiktok/webhook-queue.ts` |
+| Worker: thêm TikTok vào bảng handler; thêm worker `evt.auth`; `evt.dead` xử lý cả việc đơn lẫn việc ủy quyền | `backend/src/workers/event-queue.ts` |
+| HQ: trang nhật ký webhook TikTok nối hai nguồn (sự kiện mới ở `webhook_events`, lịch sử ở bảng cũ); số đếm theo trạng thái và số webhook/ngày cộng cả hai | `backend/src/routes/admin.ts`, `backend/src/services/platform-health.ts` |
+
+Khác với trước:
+
+- Khóa "không xử lý chồng một đơn" trước là một `Set` trong RAM của từng tiến trình; nay là khóa của hàng đợi, đúng trên nhiều tiến trình và lúc deploy.
+- Nhiều sự kiện dồn dập của một đơn (đổi trạng thái, kiện hàng, hoàn...) gộp thành một lượt kéo đơn.
+- Không còn bước "trả việc đang làm về hàng chờ lúc khởi động" với sự kiện mới.
+
+Đường lui: `TIKTOK_WEBHOOK_MODE=legacy` (về bảng `tiktok_webhook_logs`). Hàng đợi bền chưa sẵn sàng thì route cũng tự về bảng cũ. Worker cũ của bảng `tiktok_webhook_logs` vẫn chạy tới bước dọn để vét các dòng cũ và các dòng đi đường lui.
+
+Lúc chuyển có thể có một đơn vừa có việc ở bảng cũ vừa có việc ở hàng đợi mới, hai nơi xử lý cùng lúc. Trường hợp đó một bên gặp lỗi trùng đơn và tự thử lại; chỉ xảy ra trong vài phút quanh lúc deploy.
+
+Đã kiểm: `tiktok-webhook-inbox.test.ts` (5 tình huống trên đường mới), `tiktok-webhook-queue.test.ts` giữ nguyên và vẫn đạt (kiểm đường cũ).
+
 ## 5. Rủi ro và điều em không cam kết
 
 - **pg-boss do một người duy trì**, ra bản rất dày (35 bản nhỏ của dòng 12). Ghim đúng bản, lên bản là một việc có chủ đích kèm migration riêng. Mã nghiệp vụ đứng sau `lib/queue`.

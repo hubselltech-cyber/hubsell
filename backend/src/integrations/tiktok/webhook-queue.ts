@@ -278,35 +278,71 @@ export async function dispatchTiktokWebhookEvent(
   if (!shopId) return "thiếu shop_id";
   const kind = classifyTiktokEvent(payload);
 
-  if (kind === "auth") {
-    const r = await processTiktokAuthorizationEvent(shopId);
-    console.log(`[Webhook TikTok] Ủy quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
-    return r ? null : "shop chưa kết nối Hubsell";
-  }
+  if (kind === "auth") return handleTiktokAuthJob(shopId);
 
   if (kind === "order") {
     const orderId = tiktokPayloadOrderId(payload);
     if (!orderId) return "thiếu order_id";
-    const channel = await findTiktokChannelByShopId(shopId);
-    if (!channel) return "shop chưa kết nối Hubsell";
-
-    const result = await processTiktokOrderEvent(channel, orderId);
-    console.log(
-      `[Webhook TikTok] type=${payload.type} đơn ${orderId} (shop ${shopId}) →`,
-      JSON.stringify({ ...result, productIds: result.productIds?.length })
-    );
-    if (!result.found) return "sàn không trả chi tiết đơn";
-
-    // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
-    // + kiểm tra ngưỡng sắp hết hàng. Chạy SAU khi transaction đơn đã commit —
-    // lỗi đẩy sàn có retry + cảnh báo riêng, không kéo job đơn chạy lại.
-    if (result.productIds?.length) {
-      await enqueueStockPush(result.productIds, { source: `webhook TikTok đơn ${orderId}` });
-    }
-    return null;
+    return handleTiktokOrderJob(shopId, orderId, payload.type);
   }
 
   return `bỏ qua type=${payload.type}`;
+}
+
+// ---------- Phần lõi dùng chung cho hàng đợi cũ (tiktok_webhook_logs) và hàng
+// ---------- đợi bền pg-boss (giai đoạn 2 — workers/event-queue.ts) ----------
+
+/**
+ * Kéo lại MỘT đơn từ sàn rồi upsert + tác động kho. Ném lỗi = hỏng lượt này
+ * (hàng đợi tự thử lại); trả ghi chú khi không có gì để làm, null khi trọn vẹn.
+ */
+export async function handleTiktokOrderJob(
+  shopId: string,
+  orderId: string,
+  eventType?: number | string
+): Promise<string | null> {
+  const channel = await findTiktokChannelByShopId(shopId);
+  if (!channel) return "shop chưa kết nối Hubsell";
+
+  const result = await processTiktokOrderEvent(channel, orderId);
+  console.log(
+    `[Webhook TikTok] ${eventType != null ? `type=${eventType} ` : ""}đơn ${orderId} (shop ${shopId}) →`,
+    JSON.stringify({ ...result, productIds: result.productIds?.length })
+  );
+  if (!result.found) return "sàn không trả chi tiết đơn";
+
+  // Kho biến động → đẩy "có thể bán" mới lên các gian khác đã nối cùng SKU
+  // + kiểm tra ngưỡng sắp hết hàng. Chạy SAU khi transaction đơn đã commit —
+  // lỗi đẩy sàn có retry + cảnh báo riêng, không kéo job đơn chạy lại.
+  if (result.productIds?.length) {
+    await enqueueStockPush(result.productIds, { source: `webhook TikTok đơn ${orderId}` });
+  }
+  return null;
+}
+
+/** Sự kiện thu hồi / hết hạn ủy quyền của một shop. */
+export async function handleTiktokAuthJob(shopId: string): Promise<string | null> {
+  const r = await processTiktokAuthorizationEvent(shopId);
+  console.log(`[Webhook TikTok] Ủy quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
+  return r ? null : "shop chưa kết nối Hubsell";
+}
+
+/** Việc của hàng đợi bền hỏng hẳn sau khi hết lượt thử — cảnh báo lên UI như hàng đợi cũ. */
+export async function alertTiktokJobFailed(
+  shopId: string,
+  orderId: string | null,
+  attempts: number,
+  message: string
+): Promise<void> {
+  const channel = await findTiktokChannelByShopId(shopId).catch(() => null);
+  if (!channel) return;
+  await createSyncAlert(channel.id, {
+    orderSn: orderId ?? undefined,
+    message: describeChannelFailure(
+      channel.shopName,
+      `sự kiện TikTok${orderId ? ` đơn ${orderId}` : ""} xử lý thất bại sau ${attempts} lần: ${message}`
+    ),
+  });
 }
 
 /** Job hỏng hẳn sau MAX_ATTEMPTS lần — bắn cảnh báo lên UI cho chủ shop xử lý tay. */
