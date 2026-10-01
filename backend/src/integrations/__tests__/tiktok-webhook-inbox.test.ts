@@ -197,6 +197,14 @@ describe("Webhook TikTok — hộp thư đến + hàng đợi bền pg-boss", ()
     expect(row.status).toBe(WebhookJobStatus.PENDING);
     expect(row.lastError).toContain("TikTok 5xx giả lập");
 
+    // Việc còn đang chờ thử lại → hàng đợi lỗi chưa được kết luận.
+    await runDeadEventJob({ source: "TIKTOK", shopId: SHOP_ID, orderId });
+    expect((await eventsOf({ shopId: SHOP_ID, entityId: orderId }))[0].status).toBe(WebhookJobStatus.PENDING);
+    // Việc hết lượt (giả lập bằng cách gỡ khỏi hàng đợi) → FAILED + cảnh báo.
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`,
+      `TIKTOK:${SHOP_ID}:${orderId}`
+    );
     await runDeadEventJob({ source: "TIKTOK", shopId: SHOP_ID, orderId });
     expect((await eventsOf({ shopId: SHOP_ID, entityId: orderId }))[0].status).toBe(WebhookJobStatus.FAILED);
     const alert = await prisma.inventorySyncAlert.findFirst({ where: { channelId, orderSn: orderId } });

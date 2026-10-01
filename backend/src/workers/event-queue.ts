@@ -28,7 +28,7 @@ import {
   handleTiktokAuthJob,
   handleTiktokOrderJob,
 } from "../integrations/tiktok/webhook-queue";
-import { QUEUES, registerWorker } from "../lib/queue";
+import { enqueue, hasLiveJob, QUEUES, registerWorker } from "../lib/queue";
 import { EVT_ORDER_MAX_ATTEMPTS, evtOrderConcurrency } from "../lib/queue-config";
 import { prisma } from "../lib/prisma";
 import {
@@ -36,6 +36,7 @@ import {
   markOrderEventsDone,
   markOrderEventsError,
   markOrderEventsFailed,
+  orderEventKey,
   type AuthEventJob,
   type OrderEventJob,
   type OrderEventSource,
@@ -65,10 +66,25 @@ const FAILURE_ALERTS: Partial<Record<OrderEventSource, FailureAlert>> = {
 
 const errorMessage = (err: unknown): string => String((err as Error)?.message ?? err);
 
+/**
+ * Worker này CHƯA BIẾT sàn của việc vừa nhận. Xảy ra lúc deploy: web bản mới đã
+ * gửi việc của một sàn mới trong khi worker bản cũ còn sống vài phút (gặp thật
+ * 01/10/2026 khi chuyển TikTok). Không coi là lỗi — tính lỗi sẽ đốt lượt thử và
+ * đẩy việc sang hàng đợi lỗi oan. Xếp lại chính việc đó, hẹn sau một lúc, cho
+ * worker bản mới nhận.
+ */
+const UNKNOWN_SOURCE_DEFER_SECONDS = 30;
+
 /** Xử lý một việc evt.order. Tách khỏi phần đăng ký để test gọi thẳng. */
 export async function runOrderEventJob(job: OrderEventJob, retryCount: number): Promise<void> {
   const handler = ORDER_HANDLERS[job.source];
-  if (!handler) throw new Error(`Chưa có hàm xử lý sự kiện đơn cho sàn ${job.source}`);
+  if (!handler) {
+    console.warn(
+      `[Event-queue] Worker bản này chưa có hàm xử lý sự kiện đơn cho sàn ${job.source} — hẹn lại ${UNKNOWN_SOURCE_DEFER_SECONDS} giây cho worker bản mới (đơn ${job.orderId})`
+    );
+    await enqueue(QUEUES.evtOrder, job, { key: orderEventKey(job), startAfterSeconds: UNKNOWN_SOURCE_DEFER_SECONDS });
+    return;
+  }
   const attempt = retryCount + 1;
   try {
     const note = await handler(job);
@@ -85,7 +101,13 @@ export async function runOrderEventJob(job: OrderEventJob, retryCount: number): 
 /** Xử lý một việc evt.auth. */
 export async function runAuthEventJob(job: AuthEventJob, retryCount: number): Promise<void> {
   const handler = AUTH_HANDLERS[job.source];
-  if (!handler) throw new Error(`Chưa có hàm xử lý sự kiện ủy quyền cho sàn ${job.source}`);
+  if (!handler) {
+    console.warn(
+      `[Event-queue] Worker bản này chưa có hàm xử lý sự kiện ủy quyền cho sàn ${job.source} — hẹn lại ${UNKNOWN_SOURCE_DEFER_SECONDS} giây cho worker bản mới`
+    );
+    await enqueue(QUEUES.evtAuth, job, { startAfterSeconds: UNKNOWN_SOURCE_DEFER_SECONDS });
+    return;
+  }
   const attempt = retryCount + 1;
   try {
     const note = await handler(job);
@@ -114,6 +136,16 @@ export async function runDeadEventJob(job: OrderEventJob | AuthEventJob): Promis
     await markEventById(job.eventId, WebhookJobStatus.FAILED, EVT_ORDER_MAX_ATTEMPTS, message);
     console.error(`[Event-queue] ${job.source} sự kiện ủy quyền shop ${job.shopId} hỏng sau ${EVT_ORDER_MAX_ATTEMPTS} lần: ${message}`);
     await FAILURE_ALERTS[job.source]?.(job.shopId, null, EVT_ORDER_MAX_ATTEMPTS, message);
+    return;
+  }
+  // Hàng đợi "gộp theo khóa" chỉ có một chỗ chờ thử lại cho mỗi đơn: việc này có
+  // thể bị đẩy sang đây ngay lượt hỏng đầu tiên vì một việc KHÁC của cùng đơn đang
+  // giữ chỗ đó và vẫn còn lượt. Còn việc sống thì chưa kết luận gì: việc sống xong
+  // sẽ đánh dấu các dòng; nó cũng hết lượt thì chính nó sẽ sang đây và báo.
+  if (await hasLiveJob(QUEUES.evtOrder, orderEventKey(job))) {
+    console.warn(
+      `[Event-queue] ${job.source} đơn ${job.orderId}: một việc bị chuyển sang hàng đợi lỗi nhưng còn việc khác của cùng đơn đang chờ / thử lại — chưa đánh dấu hỏng`
+    );
     return;
   }
   const { failed, lastError } = await markOrderEventsFailed(job);

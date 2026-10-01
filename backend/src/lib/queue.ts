@@ -180,6 +180,21 @@ export async function upsertQueued<T extends object>(
   await boss.upsert(name, data, { singletonKey: key, db: fromPrisma(tx ?? prisma) });
 }
 
+/**
+ * Còn việc nào của khóa này đang chờ / chờ thử lại / đang chạy không.
+ *
+ * Cần cho hàng đợi "gộp theo khóa": mỗi khóa chỉ có MỘT chỗ "chờ thử lại". Việc
+ * A đang chờ thử lại mà việc B (cùng khóa, do sự kiện đến sau tạo ra) cũng hỏng
+ * thì B không còn chỗ chờ thử lại và bị chuyển thẳng sang hàng đợi lỗi — trong
+ * khi A vẫn còn lượt. Nơi xử lý hàng đợi lỗi hỏi hàm này để không báo hỏng sớm.
+ * (Gặp thật trên prod 01/10/2026, đơn TikTok lúc chuyển bản.)
+ */
+export async function hasLiveJob(name: QueueName, key: string): Promise<boolean> {
+  if (!boss || !ready) throw new QueueUnavailableError(lastStartError ?? "chưa khởi động");
+  const jobs = await boss.findJobs(name, { key });
+  return jobs.some((j) => j.state === "created" || j.state === "retry" || j.state === "active");
+}
+
 export interface QueueJob<T> {
   id: string;
   data: T;

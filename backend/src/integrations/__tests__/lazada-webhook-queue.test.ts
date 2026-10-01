@@ -22,7 +22,7 @@ import { ChannelName, WebhookJobStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { createApp } from "../../app";
 import { startQueue, stopQueue } from "../../lib/queue";
-import { registerEventQueueWorkers, runDeadEventJob } from "../../workers/event-queue";
+import { registerEventQueueWorkers, runDeadEventJob, runOrderEventJob } from "../../workers/event-queue";
 import { createStockFixture, type StockFixture } from "./fixtures";
 import { getMultipleOrderItems, getOrder } from "../lazada/client";
 
@@ -224,22 +224,65 @@ describe("Webhook Lazada — hộp thư đến + hàng đợi bền", () => {
     const [row] = await waitForEvents(orderId, (rows) => rows.length === 1 && rows[0].attempts === 1);
     expect(row.status).toBe(WebhookJobStatus.PENDING);
     expect(row.lastError).toContain("Lazada 5xx giả lập");
-    const [job] = await prisma.$queryRawUnsafe<{ state: string }[]>(
-      `SELECT state::text AS state FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`,
+    // pg-boss tự hẹn lượt thử lại, không FAILED ngay. Dòng sự kiện được ghi lỗi
+    // trước khi việc đổi trạng thái nên phải chờ một nhịp.
+    let jobState = "";
+    for (let i = 0; i < 40 && jobState !== "retry"; i++) {
+      const [job] = await prisma.$queryRawUnsafe<{ state: string }[]>(
+        `SELECT state::text AS state FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`,
+        `LAZADA:${SELLER_ID}:${orderId}`
+      );
+      jobState = job?.state ?? "";
+      if (jobState !== "retry") await sleep(100);
+    }
+    expect(jobState).toBe("retry");
+
+    // Sự kiện THỨ HAI của cùng đơn đến khi việc đầu đang chờ thử lại: việc mới cũng
+    // hỏng, không còn chỗ chờ thử lại (mỗi khóa một chỗ) nên pg-boss đẩy thẳng sang
+    // hàng đợi lỗi. Việc đầu vẫn còn lượt → CHƯA được đánh dấu hỏng, chưa cảnh báo.
+    // (Gặp thật trên prod 01/10/2026.)
+    await postWebhook(orderEvent(orderId, "pending", 1_700_000_200_001));
+    await waitForEvents(orderId, (rows) => rows.length === 2);
+    const deadline = Date.now() + 8000;
+    for (;;) {
+      const dead = await prisma.$queryRawUnsafe<{ state: string }[]>(
+        `SELECT state::text AS state FROM pgboss.job WHERE name = 'evt.dead' AND data->>'orderId' = $1`,
+        orderId
+      );
+      if (dead.length === 1 && dead[0].state === "completed") break;
+      if (Date.now() > deadline) throw new Error(`việc thứ hai chưa qua hàng đợi lỗi: ${JSON.stringify(dead)}`);
+      await sleep(150);
+    }
+    expect((await eventsOf(orderId)).map((r) => r.status)).toEqual([WebhookJobStatus.PENDING, WebhookJobStatus.PENDING]);
+    expect(await prisma.inventorySyncAlert.count({ where: { channelId, orderSn: orderId } })).toBe(0);
+
+    // Việc đầu cũng hết lượt (giả lập bằng cách gỡ nó khỏi hàng đợi) → lúc này mới FAILED + cảnh báo.
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`,
       `LAZADA:${SELLER_ID}:${orderId}`
     );
-    expect(job.state).toBe("retry"); // pg-boss tự hẹn lượt thử lại, không FAILED ngay
-
-    // Hết lượt thử: pg-boss chép việc sang evt.dead — gọi thẳng hàm xử lý của hàng đợi lỗi.
     await runDeadEventJob({ source: "LAZADA", shopId: SELLER_ID, orderId });
-    const [failed] = await eventsOf(orderId);
-    expect(failed.status).toBe(WebhookJobStatus.FAILED);
+    expect((await eventsOf(orderId)).map((r) => r.status)).toEqual([WebhookJobStatus.FAILED, WebhookJobStatus.FAILED]);
     const alert = await prisma.inventorySyncAlert.findFirst({ where: { channelId, orderSn: orderId } });
     expect(alert?.message).toContain(`sự kiện Lazada đơn ${orderId} xử lý thất bại sau 3 lần`);
 
     // Việc lỗi của một đơn đã được việc khác xử lý xong thì không báo nữa.
     await runDeadEventJob({ source: "LAZADA", shopId: SELLER_ID, orderId: "900003" });
     expect(await prisma.inventorySyncAlert.count({ where: { channelId, orderSn: "900003" } })).toBe(0);
+  });
+
+  it("worker chưa biết sàn của việc (web bản mới, worker bản cũ lúc deploy) → hẹn lại, không tính là lỗi", async () => {
+    const job = { source: "SAN_LA" as never, shopId: SELLER_ID, orderId: "900008" };
+    await expect(runOrderEventJob(job, 0)).resolves.toBeUndefined();
+    const rows = await prisma.$queryRawUnsafe<{ state: string; due: number }[]>(
+      `SELECT state::text AS state, round(extract(epoch FROM (start_after - now())))::int AS due
+       FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`,
+      `SAN_LA:${SELLER_ID}:900008`
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].state).toBe("created");
+    expect(rows[0].due).toBeGreaterThan(20); // hẹn ~30 giây sau
+    await prisma.$executeRawUnsafe(`DELETE FROM pgboss.job WHERE name = 'evt.order' AND singleton_key = $1`, `SAN_LA:${SELLER_ID}:900008`);
   });
 
   it("LAZADA_WEBHOOK_MODE=inline hoặc hàng đợi chưa sẵn sàng → đường cũ, không ghi hộp thư đến", async () => {

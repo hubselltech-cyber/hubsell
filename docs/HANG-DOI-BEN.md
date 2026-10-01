@@ -324,6 +324,26 @@ Lúc chuyển có thể có một đơn vừa có việc ở bảng cũ vừa c�
 
 Đã kiểm: `tiktok-webhook-inbox.test.ts` (5 tình huống trên đường mới), `tiktok-webhook-queue.test.ts` giữ nguyên và vẫn đạt (kiểm đường cũ).
 
+**Sự việc lúc chuyển bản (01/10/2026, 21:18) và hai chỗ sửa**
+
+Sự kiện TikTok thật đầu tiên đi đường mới rơi đúng vào mấy phút web bản mới và worker bản cũ cùng sống. Đơn `586356987698710236` có hai sự kiện cách nhau 2 giây:
+
+1. Sự kiện 1 tạo việc A. Worker bản CŨ nhận, chưa có hàm xử lý TikTok nên báo lỗi; A chờ thử lại.
+2. Sự kiện 2 tạo việc B (A đang chờ thử lại nên chỗ "chờ" trống). Worker bản cũ lại nhận, lại lỗi. Hàng đợi gộp theo khóa chỉ có MỘT chỗ chờ thử lại cho mỗi đơn, A đang giữ, nên B bị chuyển thẳng sang hàng đợi lỗi dù mới hỏng một lượt.
+3. Hàng đợi lỗi đánh dấu cả hai dòng sự kiện là hỏng.
+4. 32 giây sau A thử lại, lần này worker bản MỚI nhận và xử lý xong. Đơn được ghi đúng. Nhưng hai dòng đã bị đánh dấu hỏng nên không được chuyển về "xong".
+
+Hậu quả: dữ liệu đơn đúng; hai dòng nhật ký mang trạng thái hỏng sai; không có cảnh báo nào gửi tới chủ shop (bản cũ chưa có hàm cảnh báo TikTok). Các sự kiện sau đó chạy bình thường (10 dòng xong, trễ 0,3–0,7 giây).
+
+Hai lỗ hổng, đều là của thiết kế, không phải riêng lần deploy này:
+
+| Lỗ hổng | Sửa |
+|---|---|
+| Việc bị chuyển sang hàng đợi lỗi trong khi một việc KHÁC của cùng đơn vẫn còn lượt thử. Không cần deploy cũng xảy ra: sàn lỗi vài chục giây mà một đơn có hai sự kiện liền nhau là đủ, và khi đó chủ shop nhận cảnh báo "hỏng sau 3 lần" oan | Hàng đợi lỗi hỏi "đơn này còn việc nào đang chờ / thử lại / chạy không" (`hasLiveJob`). Còn thì chưa kết luận. Việc còn sống xong sẽ đánh dấu các dòng; nó cũng hết lượt thì chính nó sang hàng đợi lỗi và lúc đó mới báo |
+| Worker bản cũ nhận việc của một sàn nó chưa biết | Không tính là lỗi: xếp lại chính việc đó, hẹn 30 giây sau, cho worker bản mới nhận |
+
+**Quy tắc cho các bước sau (Shopee, đẩy tồn, hóa đơn):** đưa lên theo hai lần. Lần một chỉ có worker biết xử lý loại việc mới, web vẫn đi đường cũ (công tắc mặc định TẮT). Thấy worker bản mới chạy rồi mới bật công tắc ở web. Bước TikTok em đẩy cả hai trong một lần, đó là nguyên nhân trực tiếp của sự việc trên.
+
 ## 5. Rủi ro và điều em không cam kết
 
 - **pg-boss do một người duy trì**, ra bản rất dày (35 bản nhỏ của dòng 12). Ghim đúng bản, lên bản là một việc có chủ đích kèm migration riêng. Mã nghiệp vụ đứng sau `lib/queue`.
