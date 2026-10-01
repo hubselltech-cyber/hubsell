@@ -24,7 +24,7 @@ import crypto from "crypto";
 import { WebhookJobStatus } from "@prisma/client";
 
 import { prisma } from "../lib/prisma";
-import { enqueue, QUEUES } from "../lib/queue";
+import { enqueue, QUEUES, upsertQueued } from "../lib/queue";
 
 /** Sàn có sự kiện đơn đi qua hộp thư đến. Thêm sàn = thêm handler ở workers/event-queue.ts. */
 export type OrderEventSource = "SHOPEE" | "LAZADA" | "TIKTOK";
@@ -36,6 +36,11 @@ export interface OrderEventJob {
   shopId: string;
   /** Mã đơn phía sàn. */
   orderId: string;
+  /**
+   * Mã vận đơn sự kiện mang sẵn (Shopee push code 4) — có thì handler khỏi tốn
+   * một lệnh gọi sàn để hỏi lại. KHÔNG nằm trong khóa gộp.
+   */
+  trackingNo?: string;
 }
 
 /** Khóa gộp việc: một đơn của một shop trên một sàn. */
@@ -44,6 +49,7 @@ export function orderEventKey(job: OrderEventJob): string {
 }
 
 export interface RecordOrderEventInput extends OrderEventJob {
+  // trackingNo (nếu có) kế thừa từ OrderEventJob.
   /** Loại sự kiện theo cách gọi của sàn — chỉ để tra soát. */
   eventType: string;
   /** Thân thô đã qua kiểm chữ ký — băm để chặn sàn gửi lại y nguyên. */
@@ -64,7 +70,12 @@ export interface RecordOrderEventResult {
  */
 export async function recordOrderEvent(input: RecordOrderEventInput): Promise<RecordOrderEventResult> {
   const bodyHash = crypto.createHash("sha256").update(input.rawBody).digest("hex");
-  const job: OrderEventJob = { source: input.source, shopId: input.shopId, orderId: input.orderId };
+  const job: OrderEventJob = {
+    source: input.source,
+    shopId: input.shopId,
+    orderId: input.orderId,
+    ...(input.trackingNo ? { trackingNo: input.trackingNo } : {}),
+  };
   return prisma.$transaction(async (tx) => {
     // createMany + skipDuplicates thay cho create + bắt P2002: lỗi trùng khóa
     // bên trong giao dịch sẽ làm hỏng cả giao dịch.
@@ -83,6 +94,11 @@ export async function recordOrderEvent(input: RecordOrderEventInput): Promise<Re
     });
     if (inserted.count === 0) return { duplicate: true, queued: false };
     const sent = await enqueue(QUEUES.evtOrder, job, { key: orderEventKey(job), tx });
+    // Bị gộp vào việc đang chờ mà sự kiện này mang mã vận đơn → ghi mã đó vào
+    // việc đang chờ (việc ấy có thể do một sự kiện không có mã vận đơn tạo ra).
+    if (!sent.queued && job.trackingNo) {
+      await upsertQueued(QUEUES.evtOrder, job, orderEventKey(job), tx);
+    }
     return { duplicate: false, queued: sent.queued };
   });
 }

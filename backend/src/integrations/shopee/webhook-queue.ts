@@ -23,6 +23,8 @@ import { SHOPEE_PUSH_CODE, type ShopeePushPayload } from "./webhook";
 import {
   dispatchShopeeWebhookEvent,
   findShopeeChannelByShopId,
+  processShopeeAuthorizationEvent,
+  processShopeeOrderEvent,
 } from "./service";
 import { syncShopeeEscrowEstimateForOrder } from "./settlements";
 import {
@@ -73,7 +75,13 @@ export async function enqueueShopeeWebhook(
     }
     throw err; // lỗi DB thật — để route trả 500 cho Shopee gửi lại sau
   }
-  void drain(); // đánh thức worker, không chờ (route phải ack ngay)
+  // Đánh thức worker trong cùng tiến trình (vai all / worker). Tiến trình vai
+  // "web" chỉ ghi — worker riêng tự nhặt theo nhịp POLL_INTERVAL_MS. (Trước
+  // 01/10/2026 dòng này gọi drain() ở MỌI vai nên web tự xử lý webhook Shopee,
+  // trái với việc tách web / worker.)
+  if ((process.env.HUBSELL_ROLE ?? "all").trim().toLowerCase() !== "web") {
+    void drain();
+  }
   return { queued: true, duplicate: false };
 }
 
@@ -332,6 +340,73 @@ async function alertJobFailed(
     message: describeChannelFailure(
       channel.shopName,
       `sự kiện Shopee${orderSn ? ` đơn ${orderSn}` : ""} xử lý thất bại sau ${MAX_ATTEMPTS} lần: ${message}`
+    ),
+  });
+}
+
+// ---------- Phần lõi cho hàng đợi bền pg-boss (giai đoạn 2 bước 3 —
+// ---------- workers/event-queue.ts, docs/HANG-DOI-BEN.md) ----------
+
+/**
+ * Kéo lại MỘT đơn Shopee rồi upsert + tác động kho, xếp việc đẩy tồn, kéo phí
+ * tạm tính — đúng các bước của hàng đợi cũ ở drain(). Ném lỗi = hỏng lượt này
+ * (hàng đợi tự thử lại); trả ghi chú khi không có gì để làm, null khi trọn vẹn.
+ */
+export async function handleShopeeOrderJob(
+  shopId: string,
+  orderSn: string,
+  trackingNo?: string
+): Promise<string | null> {
+  const channel = await findShopeeChannelByShopId(shopId);
+  if (!channel) return "shop chưa kết nối Hubsell";
+
+  const result = await processShopeeOrderEvent(channel, orderSn, { trackingNo: trackingNo || undefined });
+  console.log(
+    `[Webhook Shopee] đơn ${orderSn} (shop ${shopId}) →`,
+    JSON.stringify({ ...result, stockSync: result.stockSync ? result.stockSync.productIds.length : undefined })
+  );
+
+  if (result.stockSync) {
+    await enqueueStockPush(result.stockSync.productIds, {
+      source: result.stockSync.orderSn ? `webhook Shopee đơn ${result.stockSync.orderSn}` : "webhook Shopee",
+      oldAvailable: result.stockSync.oldAvailable,
+    });
+  }
+
+  // PHÍ TẠM TÍNH REAL-TIME — best-effort như hàng đợi cũ: lỗi chỉ ghi log, vòng
+  // quét ước tính sẽ vét lại, KHÔNG làm hỏng việc đã xử lý xong đơn.
+  try {
+    await syncShopeeEscrowEstimateForOrder(channel, orderSn);
+  } catch (err) {
+    console.warn(
+      `[Webhook Shopee] Chưa lấy được phí ước tính đơn ${orderSn} (vòng quét sẽ vét lại):`,
+      (err as Error).message
+    );
+  }
+  return result.found ? null : "sàn không trả chi tiết đơn";
+}
+
+/** Sự kiện ủy quyền / thu hồi ủy quyền của một shop. */
+export async function handleShopeeAuthJob(shopId: string): Promise<string | null> {
+  const r = await processShopeeAuthorizationEvent(shopId);
+  console.log(`[Webhook Shopee] Uỷ quyền shop ${shopId} →`, r?.status ?? "shop chưa nối");
+  return r ? null : "shop chưa kết nối Hubsell";
+}
+
+/** Việc của hàng đợi bền hỏng hẳn sau khi hết lượt thử — cảnh báo lên UI như hàng đợi cũ. */
+export async function alertShopeeJobFailed(
+  shopId: string,
+  orderSn: string | null,
+  attempts: number,
+  message: string
+): Promise<void> {
+  const channel = await findShopeeChannelByShopId(shopId).catch(() => null);
+  if (!channel) return; // shop chưa nối Hubsell — không có chỗ treo cảnh báo
+  await createSyncAlert(channel.id, {
+    orderSn: orderSn ?? undefined,
+    message: describeChannelFailure(
+      channel.shopName,
+      `sự kiện Shopee${orderSn ? ` đơn ${orderSn}` : ""} xử lý thất bại sau ${attempts} lần: ${message}`
     ),
   });
 }

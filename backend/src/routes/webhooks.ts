@@ -58,6 +58,16 @@ function tiktokWebhookMode(): "queue" | "legacy" {
   return (process.env.TIKTOK_WEBHOOK_MODE ?? "").trim().toLowerCase() === "legacy" ? "legacy" : "queue";
 }
 
+/**
+ * Đường xử lý webhook Shopee. ĐƯA LÊN HAI LẦN (bài học lúc chuyển TikTok, docs
+ * mục 4.3): bản này worker đã biết xử lý việc Shopee nhưng web MẶC ĐỊNH vẫn đi
+ * hàng đợi cũ; chỉ khi SHOPEE_WEBHOOK_MODE=queue mới đi hàng đợi bền pg-boss.
+ * Lần hai đổi mặc định sang "queue" sau khi worker bản này đã chạy trên prod.
+ */
+function shopeeWebhookMode(): "queue" | "legacy" {
+  return (process.env.SHOPEE_WEBHOOK_MODE ?? "").trim().toLowerCase() === "queue" ? "queue" : "legacy";
+}
+
 function lazadaWebhookMode(): "queue" | "inline" {
   return (process.env.LAZADA_WEBHOOK_MODE ?? "").trim().toLowerCase() === "inline" ? "inline" : "queue";
 }
@@ -433,9 +443,48 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
     return;
   }
 
-  // 3) Ghi vào HÀNG ĐỢI BỀN (một INSERT — vẫn trong hạn ack 3s) rồi ack 200;
-  //    worker nền xử lý sau. Dedup bền theo hash raw body chặn bản retry y
-  //    nguyên; sự kiện lọt lưới vẫn an toàn nhờ upsert + mốc kho idempotent.
+  // 3) ĐƯỜNG HÀNG ĐỢI BỀN pg-boss (giai đoạn 2 bước 3, 01/10/2026 —
+  //    docs/HANG-DOI-BEN.md): ghi webhook_events + xếp việc trong một giao dịch
+  //    (~10 ms, hạn ack của Shopee là 3 giây) rồi ack. Sự kiện đơn (code 3, 4)
+  //    vào evt.order — gộp theo khóa sàn:shop:đơn, nhiều việc chạy song song
+  //    (hàng đợi cũ chỉ 1 luồng); mã vận đơn của push code 4 đi kèm việc. Sự kiện
+  //    ủy quyền (code 1, 2) vào evt.auth. Ghi lỗi → 500 để Shopee gửi lại.
+  //    Hàng đợi chưa sẵn sàng, hoặc SHOPEE_WEBHOOK_MODE khác "queue" → hàng đợi
+  //    cũ (shopee_webhook_logs) bên dưới; worker cũ vẫn chạy để vét bảng cũ và
+  //    xử lý việc đối soát tồn.
+  if (shopeeWebhookMode() === "queue" && isQueueReady()) {
+    const shopId = payload.shop_id != null ? String(payload.shop_id) : "";
+    const isOrderEvent = code === SHOPEE_PUSH_CODE.ORDER_STATUS || code === SHOPEE_PUSH_CODE.TRACKING_NO;
+    const orderSn = String(payload.data?.ordersn ?? payload.data?.order_sn ?? "").trim();
+    // Thiếu định danh thì không có gì để làm (hàng đợi cũ cũng bỏ qua êm) → ack luôn.
+    if (!shopId || (isOrderEvent && !orderSn)) {
+      res.status(200).json({ ok: true, ignored: true, code });
+      return;
+    }
+    try {
+      const trackingNo = String(payload.data?.trackingno ?? payload.data?.tracking_no ?? "").trim();
+      const r = isOrderEvent
+        ? await recordOrderEvent({
+            source: "SHOPEE",
+            eventType: String(code),
+            shopId,
+            orderId: orderSn,
+            ...(trackingNo ? { trackingNo } : {}),
+            rawBody: raw,
+            payload,
+          })
+        : await recordAuthEvent({ source: "SHOPEE", eventType: String(code), shopId, rawBody: raw, payload });
+      res.status(200).json({ ok: true, code, queued: r.queued, duplicate: r.duplicate });
+    } catch (err) {
+      console.error("[Webhook Shopee] Không ghi được vào hàng đợi bền:", err);
+      res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
+    }
+    return;
+  }
+
+  // 3') HÀNG ĐỢI CŨ: ghi shopee_webhook_logs (một INSERT) rồi ack 200; worker cũ
+  //    xử lý sau. Dedup bền theo hash raw body chặn bản retry y nguyên; sự kiện
+  //    lọt lưới vẫn an toàn nhờ upsert + mốc kho idempotent.
   try {
     const { queued, duplicate } = await enqueueShopeeWebhook(raw, payload);
     res.status(200).json({ ok: true, code, queued, duplicate });

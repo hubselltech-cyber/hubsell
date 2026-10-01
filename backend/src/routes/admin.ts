@@ -97,15 +97,18 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
     ]);
     // Từ giai đoạn 2 bước 2 (01/10/2026) sự kiện TikTok mới nằm ở webhook_events;
     // bảng cũ chỉ còn lịch sử tới khi dọn. Cộng hai nguồn để số trên HQ không tụt.
-    const tiktokInboxByStatus = await prisma.webhookEvent.groupBy({
-      by: ["status"],
-      where: { source: "TIKTOK" },
+    const inboxByStatus = await prisma.webhookEvent.groupBy({
+      by: ["source", "status"],
+      where: { source: { in: ["TIKTOK", "SHOPEE"] } },
       _count: { _all: true },
     });
-    const tiktokCounts = new Map<string, number>();
-    for (const s of [...tiktokWebhookByStatus, ...tiktokInboxByStatus]) {
-      tiktokCounts.set(s.status, (tiktokCounts.get(s.status) ?? 0) + s._count._all);
-    }
+    const mergeCounts = (source: string, legacy: { status: string; _count: { _all: number } }[]) => {
+      const counts = new Map<string, number>();
+      for (const s of [...legacy, ...inboxByStatus.filter((x) => x.source === source)]) {
+        counts.set(s.status, (counts.get(s.status) ?? 0) + s._count._all);
+      }
+      return [...counts].map(([status, count]) => ({ status, count }));
+    };
 
     res.json({
       users: {
@@ -120,11 +123,8 @@ router.get("/stats", requirePlatformPermission("hq.overview"), async (_req, res,
       })),
       orders: { total: totalOrders, last24h: orders24h },
       webhooks: {
-        shopee: shopeeWebhookByStatus.map((s) => ({
-          status: s.status,
-          count: s._count._all,
-        })),
-        tiktok: [...tiktokCounts].map(([status, count]) => ({ status, count })),
+        shopee: mergeCounts("SHOPEE", shopeeWebhookByStatus),
+        tiktok: mergeCounts("TIKTOK", tiktokWebhookByStatus),
         misa: misaWebhookByStatus.map((s) => ({
           status: s.status,
           count: s._count._all,
@@ -881,6 +881,48 @@ router.patch(
 // Nhật ký webhook toàn hệ thống (mới nhất trước). Lazada xử lý trực tiếp
 // không ghi bảng log nên chưa có ở đây. Không trả payload (nặng) — chỉ metadata
 // đủ để tra soát; cần soi payload thì tra DB theo id.
+/**
+ * Một trang dòng sự kiện của hộp thư đến chung (webhook_events) cho một sàn,
+ * mới nhất trước, đã đưa về hình dạng dòng của bảng nhật ký cũ (eventCode /
+ * orderSn) để FE HQ vẽ chung một bảng. `skip` vượt quá tổng thì trả mảng rỗng
+ * (nơi gọi đọc tiếp sang bảng cũ).
+ */
+async function loadInboxPage(
+  source: "TIKTOK" | "SHOPEE",
+  status: WebhookJobStatus | undefined,
+  skip: number,
+  take: number
+) {
+  const where = { source, ...(status ? { status } : {}) };
+  const total = await prisma.webhookEvent.count({ where });
+  const found =
+    skip < total
+      ? await prisma.webhookEvent.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take,
+          select: {
+            id: true,
+            eventType: true,
+            shopId: true,
+            entityId: true,
+            status: true,
+            attempts: true,
+            lastError: true,
+            processedAt: true,
+            createdAt: true,
+          },
+        })
+      : [];
+  const rows = found.map(({ eventType, entityId, ...l }) => ({
+    ...l,
+    eventCode: Number(eventType) || 0,
+    orderSn: entityId,
+  }));
+  return { total, rows };
+}
+
 router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req, res, next) => {
   try {
     const source =
@@ -926,32 +968,11 @@ router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req
       // mới hơn dòng ở bảng cũ (trừ vài giây lúc chuyển), nên phân trang là: hết
       // bảng mới mới sang bảng cũ — mỗi bảng vẫn đọc theo chỉ mục của nó.
       const where = status ? { status } : {};
-      const inboxWhere = { source: "TIKTOK", ...(status ? { status } : {}) };
       const skip = (page - 1) * pageSize;
-      const [inboxTotal, legacyTotal] = await Promise.all([
-        prisma.webhookEvent.count({ where: inboxWhere }),
+      const [{ total: inboxTotal, rows: inboxRows }, legacyTotal] = await Promise.all([
+        loadInboxPage("TIKTOK", status, skip, pageSize),
         prisma.tiktokWebhookLog.count({ where }),
       ]);
-      const inboxRows =
-        skip < inboxTotal
-          ? await prisma.webhookEvent.findMany({
-              where: inboxWhere,
-              orderBy: { createdAt: "desc" },
-              skip,
-              take: pageSize,
-              select: {
-                id: true,
-                eventType: true,
-                shopId: true,
-                entityId: true,
-                status: true,
-                attempts: true,
-                lastError: true,
-                processedAt: true,
-                createdAt: true,
-              },
-            })
-          : [];
       const legacyRows =
         inboxRows.length < pageSize
           ? await prisma.tiktokWebhookLog.findMany({
@@ -979,41 +1000,41 @@ router.get("/webhook-logs", requirePlatformPermission("hq.webhooks"), async (req
         page,
         pageSize,
         logs: [
-          ...inboxRows.map(({ entityId, ...l }) => ({
-            ...l,
-            eventType: Number(l.eventType) || 0,
-            orderId: entityId,
-            eventCode: Number(l.eventType) || 0,
-            orderSn: entityId,
-          })),
+          ...inboxRows.map((l) => ({ ...l, eventType: l.eventCode, orderId: l.orderSn })),
           ...legacyRows.map((l) => ({ ...l, eventCode: l.eventType, orderSn: l.orderId })),
         ],
       });
       return;
     }
 
+    // Shopee: cùng cách nối hai nguồn như TikTok (giai đoạn 2 bước 3).
     const where = status ? { status } : {};
-    const [total, logs] = await Promise.all([
+    const skip = (page - 1) * pageSize;
+    const [{ total: inboxTotal, rows: inboxRows }, legacyTotal] = await Promise.all([
+      loadInboxPage("SHOPEE", status, skip, pageSize),
       prisma.shopeeWebhookLog.count({ where }),
-      prisma.shopeeWebhookLog.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        select: {
-          id: true,
-          eventCode: true,
-          shopId: true,
-          orderSn: true,
-          status: true,
-          attempts: true,
-          lastError: true,
-          processedAt: true,
-          createdAt: true,
-        },
-      }),
     ]);
-    res.json({ source, total, page, pageSize, logs });
+    const legacyRows =
+      inboxRows.length < pageSize
+        ? await prisma.shopeeWebhookLog.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip: Math.max(0, skip - inboxTotal),
+            take: pageSize - inboxRows.length,
+            select: {
+              id: true,
+              eventCode: true,
+              shopId: true,
+              orderSn: true,
+              status: true,
+              attempts: true,
+              lastError: true,
+              processedAt: true,
+              createdAt: true,
+            },
+          })
+        : [];
+    res.json({ source, total: inboxTotal + legacyTotal, page, pageSize, logs: [...inboxRows, ...legacyRows] });
   } catch (err) {
     next(err);
   }

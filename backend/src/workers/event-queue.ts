@@ -15,7 +15,9 @@
 // đơn trên nhiều tiến trình đều do pg-boss lo (evt.order là hàng đợi "gộp theo khóa").
 //
 // Sàn chuyển sang đường này lần lượt: Lazada (bước 1) → TikTok (bước 2) →
-// Shopee. Thêm một sàn = thêm một dòng vào mỗi bảng dưới đây.
+// Shopee (bước 3). Thêm một sàn = thêm một dòng vào mỗi bảng dưới đây, và ĐƯA
+// LÊN HAI LẦN: lần một chỉ có worker biết sàn mới (web vẫn đi đường cũ), thấy
+// worker bản mới chạy rồi mới bật ở web — xem sự việc 01/10/2026 ở docs mục 4.3.
 // MỖI HÀNG ĐỢI CHỈ ĐĂNG KÝ MỘT LẦN, ở tệp này: hai hàm xử lý cùng nhận một
 // hàng đợi thì việc rơi vào hàm nào cũng được.
 // ============================================================
@@ -23,6 +25,11 @@
 import { WebhookJobStatus } from "@prisma/client";
 
 import { alertLazadaOrderJobFailed, handleLazadaOrderJob } from "../integrations/lazada/webhook";
+import {
+  alertShopeeJobFailed,
+  handleShopeeAuthJob,
+  handleShopeeOrderJob,
+} from "../integrations/shopee/webhook-queue";
 import {
   alertTiktokJobFailed,
   handleTiktokAuthJob,
@@ -51,10 +58,12 @@ type FailureAlert = (shopId: string, orderId: string | null, attempts: number, m
 const ORDER_HANDLERS: Partial<Record<OrderEventSource, OrderHandler>> = {
   LAZADA: (job) => handleLazadaOrderJob(job.shopId, job.orderId),
   TIKTOK: (job) => handleTiktokOrderJob(job.shopId, job.orderId),
+  SHOPEE: (job) => handleShopeeOrderJob(job.shopId, job.orderId, job.trackingNo),
 };
 
 const AUTH_HANDLERS: Partial<Record<OrderEventSource, AuthHandler>> = {
   TIKTOK: (job) => handleTiktokAuthJob(job.shopId),
+  SHOPEE: (job) => handleShopeeAuthJob(job.shopId),
 };
 
 const FAILURE_ALERTS: Partial<Record<OrderEventSource, FailureAlert>> = {
@@ -62,6 +71,7 @@ const FAILURE_ALERTS: Partial<Record<OrderEventSource, FailureAlert>> = {
   LAZADA: (shopId, orderId, attempts, message) =>
     orderId ? alertLazadaOrderJobFailed(shopId, orderId, attempts, message) : Promise.resolve(),
   TIKTOK: alertTiktokJobFailed,
+  SHOPEE: alertShopeeJobFailed,
 };
 
 const errorMessage = (err: unknown): string => String((err as Error)?.message ?? err);
