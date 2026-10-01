@@ -41,8 +41,18 @@ import {
 import { enqueueMisaWebhook } from "../integrations/invoice/misa-webhook-queue";
 import { getPayosConfig, verifyPayosWebhook } from "../integrations/payos/client";
 import { handlePayosWebhook } from "../services/gateway-checkout";
+import { isQueueReady } from "../lib/queue";
+import { recordOrderEvent } from "../services/webhook-inbox";
 
 const router = Router();
+
+/**
+ * Đường xử lý webhook Lazada: "queue" (mặc định từ giai đoạn 2) = ghi hộp thư
+ * đến + hàng đợi bền; "inline" = đường cũ, ack rồi xử lý trong RAM của web.
+ */
+function lazadaWebhookMode(): "queue" | "inline" {
+  return (process.env.LAZADA_WEBHOOK_MODE ?? "").trim().toLowerCase() === "inline" ? "inline" : "queue";
+}
 
 // Route này CHỈ ENQUEUE vào hàng đợi bền (DB). Worker tiêu thụ hàng đợi
 // (Shopee + TikTok + MISA) khởi động ở workers/index.ts theo vai HUBSELL_ROLE
@@ -399,11 +409,15 @@ router.post("/shopee", async (req: Request & { rawBody?: Buffer }, res) => {
 //
 // Lazada push khi đơn đổi trạng thái (message_type 0 — loại duy nhất đang có).
 // Ràng buộc GẮT NHẤT trong 3 sàn: ack 200 trong 500ms, trượt thì retry mỗi 30
-// phút tối đa 12 lần. Vì vậy route CHỈ verify chữ ký + parse rồi ACK NGAY;
-// tra gian + gọi API + upsert DB chạy nền fire-and-forget sau khi đã trả lời.
-// Sự kiện lỡ (restart giữa chừng) có worker order-auto-sync 10 phút vét lại —
-// đúng mô hình "consume push, pull with low frequency" Lazada khuyến nghị,
-// nên không cần hàng đợi bền như Shopee (tránh thêm bảng + ALTER tay Supabase).
+// phút tối đa 12 lần.
+//
+// Từ 01/10/2026 (giai đoạn 2 kiến trúc quy mô, docs/HANG-DOI-BEN.md): route
+// verify chữ ký, GHI sự kiện vào webhook_events + xếp việc evt.order trong một
+// giao dịch (đo ~10 ms), rồi mới ack; worker (workers/event-queue.ts) gọi API +
+// upsert DB. Trước đó route ack rồi xử lý fire-and-forget trong RAM của web:
+// deploy / sập giữa chừng là mất sự kiện, chỉ còn vòng quét định kỳ vét lại.
+// Đường cũ còn giữ làm đường lui (LAZADA_WEBHOOK_MODE=inline) và khi hàng đợi
+// chưa sẵn sàng.
 //
 // Chữ ký: header `Authorization` = hex HMAC-SHA256(app_secret, app_key + RAW
 // body) — kiểm trên req.rawBody. Sai chữ ký → 401, không xử lý gì.
@@ -433,7 +447,38 @@ router.post("/lazada", async (req: Request & { rawBody?: Buffer }, res) => {
     return;
   }
 
-  // 3) ACK NGAY trong hạn 500ms — mọi việc còn lại chạy nền sau phản hồi.
+  // 3) ĐƯỜNG HÀNG ĐỢI BỀN (giai đoạn 2, 01/10/2026 — docs/HANG-DOI-BEN.md): ghi
+  //    sự kiện + xếp việc trong MỘT giao dịch rồi mới ack; worker xử lý sau.
+  //    Deploy / sập giữa chừng không còn làm mất sự kiện. Đo trên Supabase: ghi
+  //    trong giao dịch ~10 ms, nằm gọn trong hạn 500 ms của Lazada.
+  //    · Hàng đợi chưa sẵn sàng → rơi về đường cũ bên dưới (ack rồi xử lý trong RAM).
+  //    · Hàng đợi sẵn sàng mà ghi lỗi (database sự cố) → 500 để Lazada tự gửi lại
+  //      (mỗi 30 phút, tối đa 12 lần) thay vì ack rồi mất.
+  //    Đường lui: LAZADA_WEBHOOK_MODE=inline (giữ tới khi dọn giai đoạn 2).
+  if (lazadaWebhookMode() === "queue" && isQueueReady()) {
+    const started = Date.now();
+    try {
+      const r = await recordOrderEvent({
+        source: "LAZADA",
+        eventType: String(payload.message_type),
+        shopId: sellerId,
+        orderId,
+        rawBody: raw,
+        payload,
+      });
+      res.status(200).json({ ok: true, orderId, queued: r.queued, duplicate: r.duplicate });
+      console.log(
+        `[Webhook Lazada] đơn ${orderId} (${payload.data?.order_status ?? "?"}) → hàng đợi: ` +
+          `${r.duplicate ? "gửi trùng, bỏ qua" : r.queued ? "việc mới" : "gộp vào việc đang chờ"} (${Date.now() - started} ms)`
+      );
+    } catch (err) {
+      console.error(`[Webhook Lazada] Không ghi được đơn ${orderId} vào hàng đợi:`, err);
+      res.status(500).json({ error: "Không ghi nhận được sự kiện, hãy gửi lại" });
+    }
+    return;
+  }
+
+  // 3') ĐƯỜNG CŨ: ACK NGAY trong hạn 500ms — mọi việc còn lại chạy nền sau phản hồi.
   res.status(200).json({ ok: true, orderId });
 
   setImmediate(async () => {

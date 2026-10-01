@@ -15,8 +15,10 @@
 // hàng đợi đều bền trong DB + claim bằng UPDATE có điều kiện nên chạy 2 worker
 // song song vẫn an toàn (không job nào bị xử lý đôi).
 //
-// Ngoại lệ còn ở web: webhook Lazada xử lý inline sau ack (setImmediate) —
-// không qua hàng đợi, giữ nguyên (memory 05/09: Lazada không cần queue).
+// Webhook Lazada: từ 01/10/2026 đi qua hàng đợi bền pg-boss (web ghi
+// webhook_events + xếp việc, worker xử lý ở workers/event-queue.ts — đăng ký ở
+// index.ts sau khi hàng đợi sẵn sàng). Đường cũ xử lý inline sau ack chỉ còn là
+// đường lui (LAZADA_WEBHOOK_MODE=inline / hàng đợi chưa sẵn sàng).
 // ============================================================
 
 import { startInvoiceAutoIssueWorker } from "./invoice-auto-issue";

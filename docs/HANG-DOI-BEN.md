@@ -274,6 +274,32 @@ Hàng đợi hỏng không làm sập ứng dụng: `startQueue` không ném, ch
 
 Hai chỗ tải tệp vận đơn (`services/fulfillment/tiktok.ts`, `lazada.ts`) chưa đi qua cửa đo: đó là tải tệp PDF, không phải gọi API, em để lại xét ở bước dọn.
 
+### 4.2. Bước 1 (webhook Lazada) — đã làm 01/10/2026
+
+| Việc | Tệp |
+|---|---|
+| Hộp thư đến: ghi `webhook_events` + xếp việc `evt.order` trong một giao dịch; ba hàm đánh dấu dòng (xong / lỗi lượt này / hỏng hẳn) | `backend/src/services/webhook-inbox.ts` |
+| Worker `evt.order` (gọi handler theo sàn, đánh dấu dòng) và `evt.dead` (dòng → FAILED + cảnh báo chủ shop) | `backend/src/workers/event-queue.ts` |
+| Handler Lazada + cảnh báo khi hỏng hẳn (trước đây Lazada hỏng chỉ ghi log) | `backend/src/integrations/lazada/webhook.ts` |
+| Route Lazada: ghi hàng đợi rồi mới trả 200 | `backend/src/routes/webhooks.ts` |
+| Đăng ký worker sau khi hàng đợi sẵn sàng | `backend/src/index.ts` |
+| Dọn `webhook_events` cùng chính sách các bảng webhook cũ (xong 7 ngày, còn lại 30 ngày) | `backend/src/workers/log-cleanup.ts` |
+
+Hành vi của route Lazada:
+
+| Tình huống | Trả cho Lazada | Xử lý |
+|---|---|---|
+| Hàng đợi sẵn sàng, ghi được | 200 | Worker xử lý; deploy giữa chừng không mất |
+| Sàn gửi lại y nguyên | 200 | Bỏ qua (khóa duy nhất nguồn + mã băm thân) |
+| Hàng đợi sẵn sàng nhưng ghi lỗi (database sự cố) | 500 | Lazada tự gửi lại mỗi 30 phút, tối đa 12 lần |
+| Hàng đợi chưa sẵn sàng, hoặc `LAZADA_WEBHOOK_MODE=inline` | 200 | Đường cũ: xử lý trong RAM của web |
+
+Đã kiểm: test tích hợp `lazada-webhook-queue.test.ts` (6 tình huống, chạy route + hàng đợi + worker + trừ kho thật trên database dev, chỉ giả lập lệnh gọi sàn); tự kiểm `scripts/queue-selfcheck.ts` đi trọn đường hỏng đủ 3 lượt → hàng đợi lỗi → dòng FAILED (rút giãn cách xuống 1 giây trên database tạm).
+
+Một điều học được khi tự kiểm: một tiến trình đăng ký HAI hàm xử lý cho cùng một hàng đợi thì việc rơi vào hàm nào cũng được. Mỗi hàng đợi chỉ đăng ký một lần, ở `workers/event-queue.ts`.
+
+Dấu vết trên prod: worker hỏi việc mỗi 0,5 giây trên `evt.order` (2 vòng) và mỗi 2 giây trên `evt.dead` (2 vòng), tức khoảng 5 câu hỏi nhỏ mỗi giây kể cả khi không có việc.
+
 ## 5. Rủi ro và điều em không cam kết
 
 - **pg-boss do một người duy trì**, ra bản rất dày (35 bản nhỏ của dòng 12). Ghim đúng bản, lên bản là một việc có chủ đích kèm migration riêng. Mã nghiệp vụ đứng sau `lib/queue`.

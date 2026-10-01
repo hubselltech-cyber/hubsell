@@ -48,6 +48,26 @@ export const DEFAULT_WORKER_POOL_MAX = 2;
  */
 export const WEB_POOL_MAX = 1;
 
+/**
+ * Số việc evt.order chạy cùng lúc ở MỘT tiến trình worker. MẶC ĐỊNH TỰ CHỌN 4
+ * (anh Trung nhận làm mặc định 01/10/2026): trước giai đoạn 2 Shopee chạy 1
+ * luồng, TikTok 3 làn, và worker có 3 kết nối database. Đổi bằng
+ * QUEUE_EVT_ORDER_CONCURRENCY.
+ */
+export const DEFAULT_EVT_ORDER_CONCURRENCY = 4;
+
+export function evtOrderConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.QUEUE_EVT_ORDER_CONCURRENCY);
+  return Number.isInteger(n) && n >= 1 && n <= 50 ? n : DEFAULT_EVT_ORDER_CONCURRENCY;
+}
+
+/**
+ * Tổng số lượt chạy của một việc evt.order trước khi sang hàng đợi lỗi: 1 lượt
+ * đầu + retryLimit 2 khai ở migration queue_foundation. Chỉ dùng cho câu chữ
+ * cảnh báo; số lượt thật do cấu hình hàng đợi trong database quyết định.
+ */
+export const EVT_ORDER_MAX_ATTEMPTS = 3;
+
 /** Tham số trong chuỗi kết nối chỉ Prisma hiểu — thư viện `pg` nhận vào sẽ hiểu sai hoặc cảnh báo. */
 const PRISMA_ONLY_PARAMS = [
   "schema",

@@ -123,6 +123,13 @@ export async function runOnce(): Promise<void> {
         prisma.tiktokWebhookLog.findMany({ where: webhookWhere, select: { id: true }, take }),
       (ids) => prisma.tiktokWebhookLog.deleteMany({ where: { id: { in: ids } } })
     );
+    // Hộp thư đến chung của giai đoạn 2 (webhook_events) — cùng chính sách.
+    await deleteInBatches(
+      "webhook_events",
+      (take) =>
+        prisma.webhookEvent.findMany({ where: webhookWhere, select: { id: true }, take }),
+      (ids) => prisma.webhookEvent.deleteMany({ where: { id: { in: ids } } })
+    );
     await deleteInBatches(
       "misa_webhook_logs",
       (take) =>

@@ -9,6 +9,7 @@ import { startQueue, stopQueue } from "./lib/queue";
 import { checkSecretBoxAtBoot, secretBoxEnabled } from "./lib/secret-box";
 import { startNotificationSseBridge } from "./services/notifications";
 import { resolveHubsellRole, startAllWorkers } from "./workers";
+import { registerEventQueueWorkers } from "./workers/event-queue";
 
 const PORT = Number(process.env.PORT) || 4000;
 
@@ -50,8 +51,12 @@ if (secretBoxEnabled()) {
 // không ném: hàng đợi hỏng (vd migration chưa áp) chỉ ghi log "[Queue] KHÔNG
 // khởi động được", ứng dụng vẫn lên. Bước nền (01/10/2026) chưa có đường nào
 // gửi hay nhận việc — đây mới là mở kết nối và kiểm đủ hàng đợi.
+// Bước 1 (webhook Lazada): sẵn sàng rồi mới đăng ký worker nhận việc; ở vai web
+// việc đăng ký tự bỏ qua.
 // ============================================================
-void startQueue(role);
+void startQueue(role)
+  .then((ok) => (ok ? registerEventQueueWorkers() : undefined))
+  .catch((err) => console.error("[Queue] Không đăng ký được worker:", (err as Error).message));
 
 if (role === "worker" || role === "all") {
   startAllWorkers();

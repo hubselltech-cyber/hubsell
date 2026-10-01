@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_QUEUES,
   DEAD_QUEUES,
+  DEFAULT_EVT_ORDER_CONCURRENCY,
   DEFAULT_WORKER_POOL_MAX,
+  EVT_ORDER_MAX_ATTEMPTS,
+  evtOrderConcurrency,
   queueOptionsForRole,
   resolveQueueConnection,
 } from "../queue-config";
@@ -70,6 +73,15 @@ describe("queueOptionsForRole", () => {
   });
 });
 
+describe("evtOrderConcurrency", () => {
+  it("đọc QUEUE_EVT_ORDER_CONCURRENCY, sai thì về mặc định", () => {
+    expect(evtOrderConcurrency({})).toBe(DEFAULT_EVT_ORDER_CONCURRENCY);
+    expect(evtOrderConcurrency({ QUEUE_EVT_ORDER_CONCURRENCY: "8" })).toBe(8);
+    expect(evtOrderConcurrency({ QUEUE_EVT_ORDER_CONCURRENCY: "0" })).toBe(DEFAULT_EVT_ORDER_CONCURRENCY);
+    expect(evtOrderConcurrency({ QUEUE_EVT_ORDER_CONCURRENCY: "abc" })).toBe(DEFAULT_EVT_ORDER_CONCURRENCY);
+  });
+});
+
 describe("tên hàng đợi khớp migration", () => {
   // Ứng dụng chạy migrate:false và không tạo hàng đợi lúc chạy: tên khai trong mã
   // mà migration không tạo thì startQueue hỏng trên prod. Chặn ngay ở test.
@@ -83,6 +95,12 @@ describe("tên hàng đợi khớp migration", () => {
 
   it("mọi hàng đợi khai trong mã đều được một migration tạo", () => {
     for (const name of ALL_QUEUES) expect(created, `thiếu create_queue('${name}')`).toContain(name);
+  });
+
+  it("số lượt trong câu cảnh báo khớp retryLimit của evt.order trong migration", () => {
+    const m = sql.match(/create_queue\('evt\.order', '\{[^}]*"retryLimit":(\d+)/);
+    expect(m, "không thấy retryLimit của evt.order").not.toBeNull();
+    expect(EVT_ORDER_MAX_ATTEMPTS).toBe(Number(m![1]) + 1);
   });
 
   it("hàng đợi lỗi mà migration trỏ tới đều được khai là hàng đợi lỗi trong mã", () => {

@@ -21,6 +21,8 @@ import { getMultipleOrderItems, getOrder } from "./client";
 import { getValidLazadaAccessToken, upsertLazadaOrderTx } from "./service";
 import { noticeLazadaDeliveryFail } from "./delivery-fail";
 import { enqueueStockPush } from "../inventory-push";
+import { createSyncAlert } from "../shopee/inventory-sync";
+import { describeChannelFailure } from "../../services/sync-alert-text";
 
 // ---------- 1. Xác thực chữ ký ----------
 
@@ -126,4 +128,46 @@ export async function findLazadaChannelsBySellerId(sellerId: string) {
       refreshToken: { not: null },
     },
   });
+}
+
+// ---------- 4. Việc của hàng đợi bền (giai đoạn 2 — docs/HANG-DOI-BEN.md) ----------
+
+/**
+ * Xử lý một việc evt.order của Lazada: kéo lại đơn cho MỌI gian ứng với seller.
+ * Ném lỗi = việc hỏng lượt này, hàng đợi tự thử lại (xử lý lại gian đã xong là
+ * vô hại — upsert idempotent). Trả ghi chú khi không có gì để làm (thử lại cũng
+ * vô ích), null khi xử lý trọn vẹn.
+ */
+export async function handleLazadaOrderJob(sellerId: string, tradeOrderId: string): Promise<string | null> {
+  const channels = await findLazadaChannelsBySellerId(sellerId);
+  if (channels.length === 0) {
+    console.warn(`[Webhook Lazada] seller ${sellerId} chưa nối gian nào — bỏ qua đơn ${tradeOrderId}`);
+    return "seller chưa kết nối Hubsell";
+  }
+  let skipped: string | null = null;
+  for (const channel of channels) {
+    const result = await processLazadaOrderPush(channel, tradeOrderId);
+    console.log(`[Webhook Lazada] Gian "${channel.shopName}" đơn ${tradeOrderId}:`, JSON.stringify(result));
+    if ("skipped" in result) skipped = result.skipped;
+  }
+  return skipped;
+}
+
+/** Việc hỏng hẳn sau khi hết lượt thử — bắn cảnh báo lên UI cho chủ shop (như Shopee / TikTok). */
+export async function alertLazadaOrderJobFailed(
+  sellerId: string,
+  tradeOrderId: string,
+  attempts: number,
+  message: string
+): Promise<void> {
+  const channels = await findLazadaChannelsBySellerId(sellerId).catch(() => []);
+  for (const channel of channels) {
+    await createSyncAlert(channel.id, {
+      orderSn: tradeOrderId,
+      message: describeChannelFailure(
+        channel.shopName,
+        `sự kiện Lazada đơn ${tradeOrderId} xử lý thất bại sau ${attempts} lần: ${message}`
+      ),
+    });
+  }
 }

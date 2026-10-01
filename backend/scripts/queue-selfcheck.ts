@@ -45,6 +45,9 @@ async function main(): Promise<void> {
 
     // Nạp module SAU khi đặt biến môi trường: pool riêng của pg-boss trỏ vào database tạm.
     process.env.QUEUE_DATABASE_URL = tempUrl;
+    // lib/prisma đọc DATABASE_URL lúc được nạp — trỏ luôn sang database tạm để
+    // các module nghiệp vụ nạp bên dưới (webhook-inbox, event-queue) không chạm database đang dùng.
+    process.env.DATABASE_URL = tempUrl;
     const q = await import("../src/lib/queue");
 
     // 1) Schema chưa cài: không ném, trả false, ứng dụng vẫn sống.
@@ -52,6 +55,9 @@ async function main(): Promise<void> {
     check("schema chưa cài thì startQueue trả false, không ném", before === false, q.queueStartError() ?? "");
 
     execSync(`npx prisma db execute --file ${MIGRATION} --url "${tempUrl}"`, { stdio: "pipe" });
+    // Chỉ ở database tạm: rút giãn cách thử lại của evt.order xuống 1 giây để mục 4
+    // đi hết 3 lượt trong vài giây (cấu hình thật: 30–60 rồi 60–120 giây).
+    await db.$executeRawUnsafe(`UPDATE pgboss.queue SET retry_delay = 1, retry_backoff = false WHERE name = 'evt.order'`);
 
     // 2) Vai web: chỉ gửi.
     check("vai web khởi động", await q.startQueue("web"));
@@ -122,6 +128,54 @@ async function main(): Promise<void> {
       "việc hỏng chờ thử lại, việc cùng lô vẫn xong",
       authStates.length === 2 && authStates[0].state === "completed" && authStates[1].state === "retry",
       authStates
+    );
+
+    // 4) Trọn đường hỏng: hộp thư đến → evt.order hỏng đủ 3 lượt → evt.dead → dòng FAILED.
+    //    Database tạm không có bảng Channel nên handler Lazada ném lỗi ở mọi lượt.
+    const inbox = await import("../src/services/webhook-inbox");
+    const eq = await import("../src/workers/event-queue");
+    // Khởi động lại để gỡ hai hàm xử lý thử của mục 3 (cùng nhận evt.order thì việc hỏng có thể rơi vào hàm thử và "xong").
+    await q.stopQueue(5000);
+    check("khởi động lại vai worker", await q.startQueue("worker"));
+    await eq.registerEventQueueWorkers();
+    const rec = await inbox.recordOrderEvent({
+      source: "LAZADA",
+      eventType: "0",
+      shopId: "SELLER-X",
+      orderId: "ORDER-DEAD",
+      rawBody: "selfcheck-dead",
+      payload: { selfcheck: true },
+    });
+    check("ghi hộp thư đến + xếp việc chung giao dịch", rec.queued && !rec.duplicate, rec);
+    const dup = await inbox.recordOrderEvent({
+      source: "LAZADA",
+      eventType: "0",
+      shopId: "SELLER-X",
+      orderId: "ORDER-DEAD",
+      rawBody: "selfcheck-dead",
+      payload: { selfcheck: true },
+    });
+    check("gửi lại y nguyên bị chặn", dup.duplicate && !dup.queued, dup);
+    type Ev = { status: string; attempts: number; lastError: string | null };
+    let ev: Ev[] = [];
+    for (let i = 0; i < 100; i++) {
+      ev = await db.$queryRawUnsafe<Ev[]>(`SELECT status::text AS status, attempts, "lastError" FROM webhook_events WHERE "entityId" = 'ORDER-DEAD'`);
+      if (ev[0]?.status === "FAILED") break;
+      await sleep(250);
+    }
+    const deadJobs = await db.$queryRawUnsafe<{ state: string }[]>(`SELECT state::text AS state FROM pgboss.job WHERE name = 'evt.dead'`);
+    check(
+      "hỏng đủ 3 lượt → sang hàng đợi lỗi → dòng sự kiện FAILED",
+      ev.length === 1 && ev[0].status === "FAILED" && ev[0].attempts === 3 && deadJobs.length === 1,
+      {
+        event: ev[0] ? { status: ev[0].status, attempts: ev[0].attempts } : null,
+        deadJobs,
+        orderJobs: await db.$queryRawUnsafe(
+          `SELECT state::text AS state, retry_count, retry_limit, retry_delay, retry_backoff,
+                  round(extract(epoch FROM (start_after - now())))::int AS due_in_s
+           FROM pgboss.job WHERE name = 'evt.order' AND singleton_key LIKE 'LAZADA:SELLER-X:%'`
+        ),
+      }
     );
 
     const stats = await q.queueStats();
