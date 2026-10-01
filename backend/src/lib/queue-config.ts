@@ -79,11 +79,12 @@ export type StockPushMode = "queue" | "legacy";
  *     chung giao dịch với biến động kho, các gian chạy song song (mỗi gian một
  *     bộ chạy, không hai tiến trình cùng đẩy một gian), hàng đợi stock.channel
  *     chỉ làm tín hiệu "gian X có dòng mới" (workers/stock-queue.ts).
- * Bước 4 ĐƯA LÊN HAI LẦN: lần một mặc định còn là legacy (worker đã biết xử lý
- * việc mới nhưng chưa ai gửi), lần hai mới đổi mặc định sang queue. Đường lui:
- * STOCK_PUSH_MODE=legacy đặt ở CẢ web lẫn worker.
+ * Bước 4 ĐƯA LÊN HAI LẦN: lần một (e44c58f, 01/10/2026) mặc định còn là legacy
+ * — worker đã biết xử lý việc mới nhưng chưa ai gửi; lần hai (anh Trung gật
+ * 02/10/2026) đổi mặc định sang queue. Đường lui: STOCK_PUSH_MODE=legacy đặt ở
+ * CẢ web lẫn worker.
  */
-export const DEFAULT_STOCK_PUSH_MODE: StockPushMode = "legacy";
+export const DEFAULT_STOCK_PUSH_MODE: StockPushMode = "queue";
 
 export function stockPushMode(env: NodeJS.ProcessEnv = process.env): StockPushMode {
   const raw = (env.STOCK_PUSH_MODE ?? "").trim().toLowerCase();
@@ -92,9 +93,9 @@ export function stockPushMode(env: NodeJS.ProcessEnv = process.env): StockPushMo
 
 /**
  * Số GIAN được đẩy tồn cùng lúc ở MỘT tiến trình worker (trước bước 4: 1 gian
- * một lúc). MẶC ĐỊNH TỰ CHỌN 4, lấy bằng số của evt.order; một việc đẩy tồn
- * phần lớn thời gian là chờ sàn trả lời và nghỉ giãn nhịp, ít dùng kết nối
- * database. Đổi bằng QUEUE_STOCK_CHANNEL_CONCURRENCY.
+ * một lúc). MẶC ĐỊNH TỰ CHỌN 4 (anh Trung nhận làm mặc định 02/10/2026), lấy
+ * bằng số của evt.order; một lượt đẩy tồn phần lớn thời gian là chờ sàn trả lời
+ * và nghỉ giãn nhịp, ít dùng kết nối database. Đổi bằng QUEUE_STOCK_CHANNEL_CONCURRENCY.
  */
 export const DEFAULT_STOCK_CHANNEL_CONCURRENCY = 4;
 
@@ -107,7 +108,7 @@ export function stockChannelConcurrency(env: NodeJS.ProcessEnv = process.env): n
  * Hạn thuê một gian, giây. Tiến trình đang đẩy một gian giữ gian đó bằng chính
  * các dòng stock_push_jobs ở RUNNING của lô nó đã nhận; dòng RUNNING lâu hơn
  * hạn này coi là mồ côi (tiến trình cầm nó đã chết) và được trả về hàng chờ.
- * MẶC ĐỊNH TỰ CHỌN 300 giây: một lô 30 dòng bình thường xong trong 1–2 phút
+ * MẶC ĐỊNH TỰ CHỌN 300 giây (anh Trung nhận làm mặc định 02/10/2026): một lô 30 dòng bình thường xong trong 1–2 phút
  * (giãn 0,4 giây + một lệnh gọi sàn mỗi dòng), và lệnh gọi sàn chưa có thời hạn
  * chờ nên phải chừa chỗ cho sàn treo. Đường cũ dùng 15 phút (cũng tự chọn).
  */

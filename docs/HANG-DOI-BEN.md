@@ -372,12 +372,14 @@ Khác với trước:
 
 Đã kiểm: `shopee-webhook-inbox.test.ts` (5 tình huống: đường lui, đơn trừ kho đúng + gửi trùng, ủy quyền shop chưa nối, sàn lỗi → hỏng hẳn + cảnh báo, mã vận đơn bị gộp vẫn tới handler mà không phải hỏi sàn).
 
-### 4.5. Bước 4 (đẩy tồn) — lần một làm 01/10/2026
+### 4.5. Bước 4 (đẩy tồn) — lần một 01/10/2026, lần hai anh Trung gật 02/10/2026
 
-| Lần | Nội dung |
-|---|---|
-| Một | Worker biết xử lý tín hiệu `stock.channel` và việc `stock.verify`; mọi nơi ghi đơn / sửa kho đã lập "phiếu đẩy tồn" trong giao dịch của mình. Mặc định VẪN là đường cũ (`STOCK_PUSH_MODE` chưa đặt = `legacy`): chưa ai gửi tín hiệu, vòng quét cũ vẫn chạy |
-| Hai | Đổi mặc định sang `queue`, sau khi đã thấy worker bản lần một chạy trên prod |
+| Lần | Bản | Nội dung |
+|---|---|---|
+| Một | `e44c58f`, lên prod 01/10 23:57 | Worker biết xử lý tín hiệu `stock.channel` và việc `stock.verify`; mọi nơi ghi đơn / sửa kho đã lập "phiếu đẩy tồn" trong giao dịch của mình. Mặc định VẪN là đường cũ (`legacy`): chưa ai gửi tín hiệu, vòng quét cũ vẫn chạy |
+| Hai | bản kế | Đổi mặc định sang `queue`. Anh Trung gật 02/10 rạng sáng, kèm nhận hai con số tự chọn (4 gian cùng lúc, hạn thuê 300 giây) làm mặc định; đẩy lên vào ban ngày, lúc có đơn về đều |
+
+Lần một đã thấy chạy thật trên prod: 00:05:53 ngày 02/10 một đơn Shopee giữ 1 sản phẩm, 00:05:54 tồn 69 → 68 đẩy thành công (dòng chờ đẩy ghi bằng câu lệnh cả lô mới); lượt đối soát 00:08 xếp 99 dòng, vòng quét cũ xử lý hết. Worker ghi log đã nhận `stock.channel` (2 vòng × lô 2) và `stock.verify` (1 vòng × lô 1).
 
 **Khác với mục 3.4 ở một điểm chính: việc đẩy KHÔNG chạy bên trong việc của pg-boss.** Lý do là một hạn chế của thư viện, đo được tối 01/10 (xem "Hai điều đo được về hàng đợi gộp theo khóa" bên dưới). Ba điều mục 3.4 hứa vẫn giữ nguyên: dòng chờ đẩy ghi chung giao dịch đơn, các gian đẩy song song, một gian không bao giờ có hai worker cùng đẩy. Không đổi database.
 
@@ -421,9 +423,9 @@ Lưới quét mỗi 5 giây:         gian nào có dòng tới hạn (kể cả 
 
 | Tham số | Giá trị | Căn cứ |
 |---|---|---|
-| Số gian đẩy cùng lúc mỗi worker | 4 (`QUEUE_STOCK_CHANNEL_CONCURRENCY`) | **Em tự chọn**, lấy bằng số của `evt.order`. Trước bước 4 là 1 |
+| Số gian đẩy cùng lúc mỗi worker | 4 (`QUEUE_STOCK_CHANNEL_CONCURRENCY`) | **Em tự chọn**, lấy bằng số của `evt.order`; anh Trung nhận làm mặc định 02/10. Trước bước 4 là 1 |
 | Nhịp lưới quét | 5 giây (`STOCK_SWEEP_SECONDS`) | Bằng nhịp vòng quét của đường cũ |
-| Hạn thuê gian (dòng "đang đẩy" quá lâu thì coi là mồ côi) | 300 giây | **Em tự chọn.** Một lô 30 dòng bình thường xong trong 1–2 phút; lệnh gọi sàn chưa có thời hạn chờ nên phải chừa. Đường cũ dùng 15 phút |
+| Hạn thuê gian (dòng "đang đẩy" quá lâu thì coi là mồ côi) | 300 giây | **Em tự chọn**; anh Trung nhận làm mặc định 02/10. Một lô 30 dòng bình thường xong trong 1–2 phút; lệnh gọi sàn chưa có thời hạn chờ nên phải chừa. Đường cũ dùng 15 phút |
 | Lô 30 dòng, giãn 0,4 giây, 3 lượt thử, 30 rồi 60 giây | giữ nguyên | Số của đường cũ |
 | Đối soát Shopee: hẹn 3 phút, 3 lượt, 1 việc một lúc | giữ nguyên | Số của đường cũ. Giữ 1 việc một lúc vì mỗi việc là một lệnh đọc tồn Shopee, chưa có giãn nhịp theo shop |
 
