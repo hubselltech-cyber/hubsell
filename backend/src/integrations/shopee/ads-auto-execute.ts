@@ -45,6 +45,13 @@
 // THỨ TỰ MỘT LƯỢT: dừng chiến dịch VỌT CHI → hạ ngân sách / dừng chiến dịch LỖ
 // (chi 7 ngày nhiều trước) → BẬT LẠI. Cầm máu trước, mở lại sau.
 //
+// SÀN BÁO GỌI QUÁ NHỊP (ads.rate_limit.* / HTTP 429) giữa lượt (anh Trung duyệt
+// 01/10): không phải "sàn từ chối". Dòng sổ giữ trạng thái DEFERRED, máy DỪNG
+// LƯỢT (không gọi dồn — FAQ 570 Shopee), các chiến dịch còn lại chưa ghi sổ; xung
+// kế thử lại đúng dòng đó. Trước đó lệnh bị quá nhịp ghi FAILED và giữ khóa ngày
+// → chiến dịch vi phạm chạy tiếp tới hôm sau. Thẻ điều hành gom theo gian báo
+// "chưa gửi được, sẽ thử lại" (ops-alerts buildAdsDeferredAlert).
+//
 // Chủ shop đã tự quyết cảnh báo (decisionActive) thì executor KHÔNG đụng vào —
 // người luôn thắng máy. Campaign KHÔNG có cờ Hubsell (người/sàn tắt) thì máy
 // KHÔNG BAO GIỜ bật lại.
@@ -52,9 +59,10 @@
 
 import { ChannelName, Prisma, type Channel } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { editManualProductAdsRaw } from "./client";
+import { classifyShopeeAdsRateLimit, editManualProductAdsRaw } from "./client";
 import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import {
+  classifyLazadaAdsRateLimit,
   lazAdsWriteOk,
   updateAdsCampaignSwitchRaw,
 } from "../lazada/client";
@@ -93,6 +101,7 @@ export interface AutoExecuteResult {
   budgetCut: number; // ĐỢT B live: hạ ngân sách thành công
   budgetCutFailed: number; // ĐỢT B live: hạ ngân sách bị sàn từ chối
   budgetRestored: number; // ĐỢT B live: trả ngân sách gốc khi bật lại
+  deferred: number; // live: sàn báo gọi quá nhịp → dừng lượt, xung kế thử lại (0 hoặc 1 mỗi lượt)
 }
 
 /** ĐỢT B — trạng thái nấc hạ ngân sách của campaign trong VÁN hiện tại. */
@@ -214,8 +223,27 @@ export function shouldAutoResume(
   };
 }
 
-/** Kết quả một cú ghi lên sàn — error là NGUYÊN VĂN để ghi sổ. */
-export type ActOutcome = { ok: boolean; error: string | null };
+/**
+ * Kết quả một cú ghi lên sàn — error là NGUYÊN VĂN để ghi sổ. `rateLimited` =
+ * sàn từ chối vì GỌI QUÁ NHỊP (không phải từ chối nghiệp vụ): executor không
+ * tính là "sàn từ chối", dừng lượt và thử lại ở xung kế.
+ */
+export type ActOutcome = { ok: boolean; error: string | null; rateLimited?: boolean };
+
+/** Trạng thái sổ của lệnh thật bị sàn trả "gọi quá nhịp", đang chờ xung kế thử lại. */
+export const DEFERRED_STATUS = "DEFERRED";
+
+/**
+ * Lỗi ghi lên sàn có phải "gọi quá nhịp" không — THUẦN, vitest đánh thẳng.
+ * Shopee: mọi mã `ads.rate_limit.*` (campaign_level, exceed_shop_api,
+ * exceed_partner_api, exceed_api — danh sách trong docs edit_manual_product_ads)
+ * và HTTP 429. Lazada: cùng bộ nhận diện với luồng đọc (classifyLazadaAdsRateLimit).
+ */
+export function isAdsWriteRateLimited(channelName: ChannelName, error: string | null): boolean {
+  if (!error) return false;
+  if (channelName === ChannelName.LAZADA) return classifyLazadaAdsRateLimit(error) != null;
+  return /rate[_.]limit/i.test(error) || classifyShopeeAdsRateLimit(error) != null;
+}
 
 export interface AdsActor {
   pause: (campaignId: string, referenceId: string) => Promise<ActOutcome>;
@@ -239,13 +267,11 @@ export async function makeActor(channel: Channel): Promise<AdsActor> {
     const call = async (campaignId: string, switchStatus: 0 | 1): Promise<ActOutcome> => {
       const raw = await updateAdsCampaignSwitchRaw({ accessToken, campaignId, switchStatus });
       const ok = lazAdsWriteOk(raw);
-      return {
-        ok,
-        error: ok
-          ? null
-          : `${raw.code ?? ""} ${raw.errorMsg ?? raw.message ?? ""}`.trim() ||
-            "Lazada từ chối, không kèm lý do",
-      };
+      const error = ok
+        ? null
+        : `${raw.code ?? ""} ${raw.errorMsg ?? raw.message ?? ""}`.trim() ||
+          "Lazada từ chối, không kèm lý do";
+      return { ok, error, rateLimited: isAdsWriteRateLimited(ChannelName.LAZADA, error) };
     };
     return {
       pause: (campaignId) => call(campaignId, 0),
@@ -270,7 +296,8 @@ export async function makeActor(channel: Channel): Promise<AdsActor> {
       cfg
     );
     const ok = !raw.error || raw.error === "";
-    return { ok, error: ok ? null : `${raw.error}: ${raw.message ?? ""}` };
+    const error = ok ? null : `${raw.error}: ${raw.message ?? ""}`;
+    return { ok, error, rateLimited: isAdsWriteRateLimited(ChannelName.SHOPEE, error) };
   };
   return {
     pause: (campaignId, ref) => call(campaignId, "pause", ref),
@@ -527,6 +554,7 @@ export async function runAdsAutoExecute(
     budgetCut: 0,
     budgetCutFailed: 0,
     budgetRestored: 0,
+    deferred: 0,
   };
   if (preConfig.autoExecute.mode === "off" || !preConfig.enabled) return result;
 
@@ -598,11 +626,17 @@ export async function runAdsAutoExecute(
     verdict: string;
     reasons: string[];
     referenceId: string;
-  }): Promise<string | null> => {
+  }): Promise<{ id: string; sendRef: string } | null> => {
     const existed = await prisma.adsActionLog.findUnique({
       where: { referenceId: input.referenceId },
-      select: { id: true },
+      select: { id: true, status: true },
     });
+    // Lượt trước sàn trả "gọi quá nhịp" → thử lại trên CHÍNH dòng đó (sổ không
+    // phình). Mã gửi lên sàn đổi đuôi: chưa kiểm được Shopee có giữ reference của
+    // lệnh bị từ chối vì quá nhịp hay không; khóa chống bắn trùng vẫn là dòng sổ.
+    if (existed?.status === DEFERRED_STATUS && auto.mode === "live") {
+      return { id: existed.id, sendRef: `${input.referenceId}-r${Date.now().toString(36)}` };
+    }
     if (existed) return null;
     try {
       const log = await prisma.adsActionLog.create({
@@ -617,7 +651,7 @@ export async function runAdsAutoExecute(
           status: auto.mode === "dry_run" ? "PLANNED" : "PENDING",
         },
       });
-      return log.id;
+      return { id: log.id, sendRef: input.referenceId };
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         return null; // race giữa hai sweep sát nhau — coi như đã làm
@@ -626,14 +660,21 @@ export async function runAdsAutoExecute(
     }
   };
 
-  const closeLog = async (logId: string, outcome: ActOutcome) => {
+  /**
+   * Ghi kết quả vào sổ. Trả true khi sàn báo GỌI QUÁ NHỊP: dòng giữ ở DEFERRED
+   * (không phải "sàn từ chối") và caller phải DỪNG LƯỢT — xung kế thử lại.
+   */
+  const closeLog = async (logId: string, outcome: ActOutcome): Promise<boolean> => {
+    const deferred = !outcome.ok && outcome.rateLimited === true;
     await prisma.adsActionLog.update({
       where: { id: logId },
       data: {
-        status: outcome.ok ? "SUCCESS" : "FAILED",
+        status: outcome.ok ? "SUCCESS" : deferred ? DEFERRED_STATUS : "FAILED",
         error: outcome.ok ? null : (outcome.error ?? "").slice(0, 1000),
       },
     });
+    if (deferred) result.deferred++;
+    return deferred;
   };
 
   // ---- TẠM DỪNG vọt chi → HẠ NGÂN SÁCH (đợt B) / TẠM DỪNG chiến dịch lỗ ----
@@ -653,17 +694,18 @@ export async function runAdsAutoExecute(
             `Đã hạ ngân sách ngày ${it.row.hubsellBudgetCutOn ? `hôm ${it.row.hubsellBudgetCutOn.slice(8, 10)}/${it.row.hubsellBudgetCutOn.slice(5, 7)}` : "trước đó"} mà vẫn lỗ — tạm dừng.`,
           ]
         : it.assessment.reasons;
-    const logId = await openLog({
+    const log = await openLog({
       rowId: it.row.id,
       action: isCut ? "cut_budget" : "pause",
       verdict: it.assessment.verdict ?? "",
       reasons,
       referenceId,
     });
-    if (!logId) {
+    if (!log) {
       result.skippedDone++;
       continue;
     }
+    const logId = log.id;
 
     if (auto.mode === "dry_run") {
       result.planned++;
@@ -674,11 +716,11 @@ export async function runAdsAutoExecute(
     let outcome: ActOutcome;
     if (isCut) {
       try {
-        outcome = await actor!.changeBudget(it.row.campaignId, planned.cut!.newBudget, referenceId);
+        outcome = await actor!.changeBudget(it.row.campaignId, planned.cut!.newBudget, log.sendRef);
       } catch (err) {
         outcome = { ok: false, error: String((err as Error).message) };
       }
-      await closeLog(logId, outcome);
+      if (await closeLog(logId, outcome)) break;
       if (outcome.ok) {
         result.budgetCut++;
         await prisma.adsCampaign.update({
@@ -706,11 +748,11 @@ export async function runAdsAutoExecute(
       continue;
     }
     try {
-      outcome = await actor!.pause(it.row.campaignId, referenceId);
+      outcome = await actor!.pause(it.row.campaignId, log.sendRef);
     } catch (err) {
       outcome = { ok: false, error: String((err as Error).message) };
     }
-    await closeLog(logId, outcome);
+    if (await closeLog(logId, outcome)) break;
     if (outcome.ok) {
       result.executed++;
       // Phản chiếu ngay vào bảng campaign cho UI + CỜ NGUỒN DỪNG — sweep sau
@@ -729,27 +771,28 @@ export async function runAdsAutoExecute(
     }
   }
 
-  // ---- BẬT LẠI — sau cùng: cầm máu xong mới mở lại ----
-  for (const { it, check } of resumeCandidates) {
+  // ---- BẬT LẠI — sau cùng: cầm máu xong mới mở lại. Sàn vừa báo quá nhịp ở
+  // vòng trên thì bỏ cả vòng này (gọi tiếp chỉ thêm lệnh bị từ chối). ----
+  for (const { it, check } of result.deferred > 0 ? [] : resumeCandidates) {
     const referenceId = `resume-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`;
-    const logId = await openLog({
+    const log = await openLog({
       rowId: it.row.id,
       action: "resume",
       verdict: RESUME_VERDICT,
       reasons: [check.reason],
       referenceId,
     });
-    if (!logId) {
+    if (!log) {
       result.skippedDone++;
       continue;
     }
     let outcome: ActOutcome;
     try {
-      outcome = await actor!.resume(it.row.campaignId, referenceId);
+      outcome = await actor!.resume(it.row.campaignId, log.sendRef);
     } catch (err) {
       outcome = { ok: false, error: String((err as Error).message) };
     }
-    await closeLog(logId, outcome);
+    if (await closeLog(log.id, outcome)) break;
     if (outcome.ok) {
       result.resumed++;
       // ĐỢT B: máy tự bật lại → trả ngân sách gốc nếu chính máy đã hạ (cùng ván, trước khi cycle+1).
@@ -779,7 +822,15 @@ export async function runAdsAutoExecute(
 /** Tổng hành động có thật trong một lượt — worker dùng để ép quét cảnh báo ngay. */
 export function autoExecuteTouched(r: AutoExecuteResult): boolean {
   return (
-    r.planned + r.executed + r.failed + r.resumed + r.resumeFailed + r.budgetCut + r.budgetCutFailed + r.budgetRestored >
+    r.planned +
+      r.executed +
+      r.failed +
+      r.resumed +
+      r.resumeFailed +
+      r.budgetCut +
+      r.budgetCutFailed +
+      r.budgetRestored +
+      r.deferred >
     0
   );
 }

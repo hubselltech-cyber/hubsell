@@ -1170,6 +1170,8 @@ const ACTION_STATUS_META: Record<string, { label: string; className: string }> =
   PENDING: { label: "Đang gửi", className: "bg-slate-100 text-slate-500" },
   SUCCESS: { label: "Đã tạm dừng", className: "bg-emerald-500 text-white" },
   FAILED: { label: "Sàn từ chối", className: "bg-red-100 text-red-700" },
+  /** Sàn báo gọi quá nhịp — lệnh chưa gửi được, lượt kiểm tra kế tiếp tự thử lại (01/10). */
+  DEFERRED: { label: "Sàn bận — sẽ thử lại", className: "bg-amber-100 text-amber-700" },
   /** Seller bật lại trên Seller Center sau khi Hubsell dừng → ván mới (14/09). */
   OVERRIDDEN: { label: "Seller đã bật lại", className: "bg-violet-100 text-violet-700" },
 };

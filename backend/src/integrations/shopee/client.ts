@@ -1830,6 +1830,19 @@ export async function editManualProductAdsRaw(
       ...(params.budget != null ? { budget: params.budget } : {}),
     }),
   });
+  // HTTP 429 có thể không kèm thân JSON — trả envelope lỗi để executor nhận ra
+  // "gọi quá nhịp" (thử lại ở xung kế) thay vì vỡ ở res.json(). Thân có mã
+  // ads.rate_limit.* thì giữ nguyên văn mã đó.
+  if (res.status === 429) {
+    const text = await res.text().catch(() => "");
+    try {
+      const j = JSON.parse(text) as ShopeeEnvelope;
+      if (j.error) return j;
+    } catch {
+      /* thân không phải JSON */
+    }
+    return { error: "HTTP 429", message: text.slice(0, 200) };
+  }
   return (await res.json()) as ShopeeEnvelope & { response?: unknown };
 }
 

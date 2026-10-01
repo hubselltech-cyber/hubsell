@@ -254,3 +254,39 @@ describe("marketplaceChangeKind — sổ là dòng thời gian đầy đủ, k�
     expect(marketplaceChangeKind("ongoing", "ended", false)).toBeNull();
   });
 });
+
+// ---------- 01/10/2026: sàn báo gọi quá nhịp ≠ sàn từ chối ----------
+import { ChannelName } from "@prisma/client";
+import { isAdsWriteRateLimited } from "../shopee/ads-auto-execute";
+
+describe("isAdsWriteRateLimited — nhận ra lỗi gọi quá nhịp để thử lại ở xung kế", () => {
+  it("Shopee: mọi mã ads.rate_limit.* trong docs edit_manual_product_ads + HTTP 429", () => {
+    for (const code of [
+      "ads.rate_limit.campaign_level: Too many requests at the moment, please try again later.",
+      "ads.rate_limit.exceed_shop_api: Too many requests for the shop at the moment",
+      "ads.rate_limit.exceed_partner_api: Too many requests, please reduce the request rate",
+      "ads.rate_limit.exceed_api: Too many requests at the moment",
+      "ads_rate_limit_shop_api: ", // dạng gạch dưới từng gặp ở probe GMS 24/09
+      "HTTP 429: ",
+    ]) {
+      expect(isAdsWriteRateLimited(ChannelName.SHOPEE, code)).toBe(true);
+    }
+  });
+
+  it("Shopee: từ chối nghiệp vụ không phải quá nhịp", () => {
+    for (const code of [
+      "ads.edit.invalid_action: Edit Action is invalid as per the current status of the campaign.",
+      "ads.campaign.error_daily_budget_range: The budget set is invalid.",
+      "error_server: Something wrong. Please try later.",
+    ]) {
+      expect(isAdsWriteRateLimited(ChannelName.SHOPEE, code)).toBe(false);
+    }
+    expect(isAdsWriteRateLimited(ChannelName.SHOPEE, null)).toBe(false);
+  });
+
+  it("Lazada: cùng bộ nhận diện với luồng đọc", () => {
+    expect(isAdsWriteRateLimited(ChannelName.LAZADA, "ApiCallLimit App call limit")).toBe(true);
+    expect(isAdsWriteRateLimited(ChannelName.LAZADA, "HTTP 429")).toBe(true);
+    expect(isAdsWriteRateLimited(ChannelName.LAZADA, "E0500 campaign not found")).toBe(false);
+  });
+});

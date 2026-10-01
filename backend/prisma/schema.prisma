@@ -637,7 +637,7 @@ model AdsActionLog {
   verdict       String // verdict kích hoạt: pause_now | spike
   reasons       String   @default("") // căn cứ tại thời điểm hành động, nối "\n"
   referenceId   String   @unique // chống double-fire; mode live gửi kèm lên sàn
-  status        String // PLANNED (dry_run) | SUCCESS | FAILED
+  status        String // PLANNED (dry_run) | SUCCESS | FAILED | DEFERRED (sàn báo quá nhịp, xung kế thử lại)
   error         String? // nguyên văn lỗi sàn — tư liệu học enum edit_action
   createdAt     DateTime @default(now())
 

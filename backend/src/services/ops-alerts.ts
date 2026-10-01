@@ -34,6 +34,7 @@ import {
   assistantDecisionActive,
   computeChannelAdsInsights,
 } from "../integrations/shopee/ads-insights";
+import { DEFERRED_STATUS as ADS_DEFERRED_STATUS } from "../integrations/shopee/ads-auto-execute";
 import {
   normalizeAssistantConfig,
   type AssistantTrigger,
@@ -1240,7 +1241,113 @@ export function buildAdsAutoPausedAlert(
   };
 }
 
-/** Thẻ cho hành động ghi sổ HÔM NAY: diễn tập / sàn từ chối / máy đã bật lại — THUẦN. */
+export interface AdsAutoGroupShop {
+  channelId: string;
+  shopName: string;
+  platform: AdsAlertPlatform;
+}
+
+export interface AdsAutoGroupRow {
+  campaignRowId: string;
+  campaignId: string;
+  campaignName: string;
+  action: string; // pause | cut_budget | resume
+  reasons: string;
+  createdAt: Date;
+}
+
+/** `"A", "B", "C" +2` — tên chiến dịch không trùng, tối đa 3 tên. */
+function adsNameList(rows: AdsAutoGroupRow[]): string {
+  const names = [...new Set(rows.map((r) => r.campaignName || `#${r.campaignId}`))];
+  return names.slice(0, 3).map((n) => `"${n}"`).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "");
+}
+
+/** Một chiến dịch → mở thẳng chiến dịch đó; nhiều → bộ lọc "cần xử lý" của trang quảng cáo. */
+function adsGroupHref(shop: AdsAutoGroupShop, rows: AdsAutoGroupRow[]): string {
+  const ids = [...new Set(rows.map((r) => r.campaignId))];
+  return ids.length === 1
+    ? `${shop.platform.path}?channelId=${shop.channelId}&campaign_id=${encodeURIComponent(ids[0])}`
+    : `${shop.platform.path}?channelId=${shop.channelId}&needs_action=1`;
+}
+
+/**
+ * Thẻ DIỄN TẬP — MỘT thẻ mỗi gian mỗi ngày (anh Trung duyệt 01/10/2026) — THUẦN.
+ * Trước đó mỗi chiến dịch một thẻ + một chuông; trần 5 lệnh/ngày cũ vô tình giữ
+ * số thẻ nhỏ, bỏ trần thì gian có vài chục chiến dịch vi phạm nhận vài chục
+ * chuông một lượt. dedupeKey kèm ngày: hôm sau là thẻ mới (chuông lại một lần),
+ * thẻ hôm trước tự đóng. `rows` = các dòng PLANNED hôm nay của một gian.
+ */
+export function buildAdsPlannedGroupAlert(
+  shop: AdsAutoGroupShop,
+  rows: AdsAutoGroupRow[],
+  dayKey: string
+): DetectedAlert | null {
+  if (rows.length === 0) return null;
+  const campaigns = (action: string) => new Set(rows.filter((r) => r.action === action).map((r) => r.campaignRowId)).size;
+  const paused = campaigns("pause");
+  const cut = campaigns("cut_budget");
+  const total = new Set(rows.map((r) => r.campaignRowId)).size;
+  const tail =
+    "Chế độ diễn tập không gọi sàn — thấy Trợ lý phán đúng thì gạt sang chế độ Thật trong tab Cấu hình để Trợ lý tự làm.";
+  const base = {
+    type: "ads-auto-planned",
+    dedupeKey: `${shop.channelId}|${dayKey}`,
+    tag: "ads" as const,
+    severity: "medium" as const,
+    payload: {
+      kind: "navigate" as const,
+      href: adsGroupHref(shop, rows),
+      label: "Xem căn cứ",
+      source: shop.platform.label,
+    },
+  };
+  if (total === 1) {
+    const first = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+    const name = first.campaignName || `#${first.campaignId}`;
+    const reasons = first.reasons ? first.reasons.split("\n").filter(Boolean).join(" ") : "";
+    return {
+      ...base,
+      title: `Diễn tập: Trợ lý ĐỊNH ${first.action === "cut_budget" ? "hạ ngân sách" : "tạm dừng"} chiến dịch "${name}" — gian "${shop.shopName}"`,
+      summary: `Lúc ${vnTimeText(first.createdAt)}. ${reasons} ${tail}`,
+    };
+  }
+  const parts: string[] = [];
+  if (paused > 0) parts.push(`tạm dừng ${paused} chiến dịch`);
+  if (cut > 0) parts.push(`hạ ngân sách ${cut} chiến dịch`);
+  return {
+    ...base,
+    title: `Diễn tập: Trợ lý ĐỊNH xử lý ${total} chiến dịch — gian "${shop.shopName}"`,
+    summary: `Hôm nay: ${parts.join(", ")} (${adsNameList(rows)}). Căn cứ từng chiến dịch nằm trong Sổ hành động. ${tail}`,
+  };
+}
+
+/**
+ * Thẻ "SÀN ĐANG GIỚI HẠN NHỊP GỌI" — lệnh thật của Trợ lý chưa gửi được, xung kế
+ * thử lại (dòng sổ DEFERRED) — THUẦN. Một thẻ mỗi gian; tự đóng khi lệnh gửi được.
+ * Mức cao: chiến dịch vi phạm vẫn đang chạy, chủ shop có thể thao tác tay ngay.
+ */
+export function buildAdsDeferredAlert(shop: AdsAutoGroupShop, rows: AdsAutoGroupRow[]): DetectedAlert | null {
+  if (rows.length === 0) return null;
+  const total = new Set(rows.map((r) => r.campaignRowId)).size;
+  return {
+    type: "ads-auto-deferred",
+    dedupeKey: shop.channelId,
+    tag: "ads",
+    severity: "high",
+    title: `${shop.platform.label} đang giới hạn nhịp gọi — ${total} lệnh của Trợ lý chưa gửi được — gian "${shop.shopName}"`,
+    summary:
+      `Chiến dịch: ${adsNameList(rows)}. Trợ lý tự thử lại ở lượt kiểm tra kế tiếp; các chiến dịch vi phạm khác của gian cũng được xử lý ở lượt đó. ` +
+      `Cần dừng ngay thì bấm Tạm dừng trong trang Trợ lý quảng cáo.`,
+    payload: {
+      kind: "navigate",
+      href: adsGroupHref(shop, rows),
+      label: "Mở Trợ lý quảng cáo",
+      source: shop.platform.label,
+    },
+  };
+}
+
+/** Thẻ cho hành động ghi sổ HÔM NAY: sàn từ chối / máy đã bật lại — THUẦN. (Diễn tập gom theo gian ở trên.) */
 export function buildAdsActionLogAlert(
   c: AdsAutoActionAlertInput,
   log: { action: string; mode: string; status: string; reasons: string; error: string | null; createdAt: Date }
@@ -1258,15 +1365,6 @@ export function buildAdsActionLogAlert(
       source: c.platform.label,
     },
   };
-  if (log.mode === "dry_run" && log.status === "PLANNED" && log.action === "pause") {
-    return {
-      ...base,
-      type: "ads-auto-planned",
-      severity: "medium",
-      title: `Diễn tập: Trợ lý ĐỊNH tạm dừng chiến dịch "${name}" — gian "${c.shopName}"`,
-      summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons} Chế độ diễn tập không gọi sàn — thấy Trợ lý phán đúng thì gạt sang chế độ Thật trong tab Cấu hình để Trợ lý tự làm.`,
-    };
-  }
   if (log.status === "FAILED" && log.mode !== "manual") {
     return {
       ...base,
@@ -1352,6 +1450,7 @@ async function detectAdsAutoActions(ownerId: string): Promise<DetectedAlert[]> {
       OR: [
         { status: "PLANNED" },
         { status: "FAILED" },
+        { status: ADS_DEFERRED_STATUS },
         { action: "resume", status: "SUCCESS", mode: "live" },
       ],
     },
@@ -1361,8 +1460,46 @@ async function detectAdsAutoActions(ownerId: string): Promise<DetectedAlert[]> {
       channel: { select: { shopName: true, channelName: true } },
     },
   });
+
+  // Diễn tập + lệnh chờ thử lại: GOM theo gian (một thẻ mỗi gian), không theo chiến dịch.
+  const groups = new Map<string, { shop: AdsAutoGroupShop; planned: AdsAutoGroupRow[]; deferred: AdsAutoGroupRow[] }>();
+  for (const l of logsToday) {
+    const isPlanned = l.status === "PLANNED" && l.mode === "dry_run" && (l.action === "pause" || l.action === "cut_budget");
+    const isDeferred = l.status === ADS_DEFERRED_STATUS;
+    if (!isPlanned && !isDeferred) continue;
+    let g = groups.get(l.adsCampaign.channelId);
+    if (!g) {
+      g = {
+        shop: {
+          channelId: l.adsCampaign.channelId,
+          shopName: l.channel.shopName,
+          platform: platformOf(l.channel.channelName),
+        },
+        planned: [],
+        deferred: [],
+      };
+      groups.set(l.adsCampaign.channelId, g);
+    }
+    (isPlanned ? g.planned : g.deferred).push({
+      campaignRowId: l.adsCampaign.id,
+      campaignId: l.adsCampaign.campaignId,
+      campaignName: l.adsCampaign.name,
+      action: l.action,
+      reasons: l.reasons,
+      createdAt: l.createdAt,
+    });
+  }
+  const dayKey = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  for (const g of groups.values()) {
+    const planned = buildAdsPlannedGroupAlert(g.shop, g.planned, dayKey);
+    if (planned) alerts.push(planned);
+    const deferred = buildAdsDeferredAlert(g.shop, g.deferred);
+    if (deferred) alerts.push(deferred);
+  }
+
   const seen = new Set<string>();
   for (const l of logsToday) {
+    if (l.status === "PLANNED" || l.status === ADS_DEFERRED_STATUS) continue; // đã gom theo gian ở trên
     const key = `${l.adsCampaignId}|${l.status}|${l.action}`;
     if (seen.has(key)) continue; // mỗi campaign một thẻ mỗi loại — dòng mới nhất
     seen.add(key);

@@ -154,8 +154,10 @@ lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. 
    tắt lại (`hubsellResumedOn`) — một vòng dừng/bật mỗi campaign mỗi ngày.
 3. **Thông báo:** detector `detectAdsAutoActions` (ops-alerts.ts) sinh thẻ từ CỜ +
    SỔ HÀNH ĐỘNG hôm nay, không từ verdict: `ads-auto-paused` (high, nút **Bật lại**
-   gọi sàn thật, payload kind `ads-resume`), `ads-auto-planned` (diễn tập),
-   `ads-auto-failed` (sàn từ chối, lỗi nguyên văn), `ads-auto-resumed`. Thẻ mới →
+   gọi sàn thật, payload kind `ads-resume`), `ads-auto-planned` (diễn tập — từ 01/10
+   gom MỘT thẻ mỗi gian mỗi ngày), `ads-auto-failed` (sàn từ chối, lỗi nguyên văn),
+   `ads-auto-deferred` (01/10: sàn báo gọi quá nhịp, lệnh chờ xung kế thử lại — một thẻ
+   mỗi gian), `ads-auto-resumed`. Chi tiết: ADS-NHIP-CANH-BAO.md mục 12.4. Thẻ mới →
    chuông + nhật ký qua `applyDetectedAlert`; worker ép `scanOpsAlerts(owner, true)`
    ngay sau lượt máy có hành động. Thẻ tự đóng khi cờ hết / qua ngày.
 4. **Bật lại:** máy (`shouldAutoResume`, live) hoặc seller bấm trong Hubsell

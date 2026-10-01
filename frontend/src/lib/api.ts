@@ -6751,8 +6751,9 @@ export interface ShopeeAdsActionLogRow {
   verdict: string;
   reasons: string[];
   /** OVERRIDDEN = seller đã bật lại trên Seller Center sau khi Hubsell dừng (ván mới);
-   *  OBSERVED = dòng ghi nhận thao tác trên sàn. */
-  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED" | "OVERRIDDEN" | "OBSERVED";
+   *  OBSERVED = dòng ghi nhận thao tác trên sàn; DEFERRED = sàn báo gọi quá nhịp,
+   *  lệnh chưa gửi được, lượt kiểm tra kế tiếp tự thử lại. */
+  status: "PLANNED" | "PENDING" | "SUCCESS" | "FAILED" | "DEFERRED" | "OVERRIDDEN" | "OBSERVED";
   error: string | null;
   createdAt: string;
 }

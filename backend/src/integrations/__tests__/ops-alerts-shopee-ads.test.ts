@@ -331,11 +331,8 @@ describe("buildAdsAutoPausedAlert — thẻ 'Trợ lý đã tạm dừng' sống
 
 describe("buildAdsActionLogAlert — diễn tập / sàn từ chối / máy bật lại", () => {
   const base = { reasons: "Lý do A\nLý do B", error: null, createdAt: new Date() };
-  it("dry_run PLANNED → thẻ diễn tập (medium, deep-link)", () => {
-    const a = buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "dry_run", status: "PLANNED" });
-    expect(a?.type).toBe("ads-auto-planned");
-    expect(a?.payload.kind).toBe("navigate");
-    expect(a?.summary).toContain("Lý do A Lý do B");
+  it("dry_run PLANNED → không còn thẻ riêng từng chiến dịch (đã gom theo gian, 01/10)", () => {
+    expect(buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "dry_run", status: "PLANNED" })).toBeNull();
   });
   it("live FAILED → thẻ sàn từ chối kèm lỗi nguyên văn", () => {
     const a = buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "live", status: "FAILED", error: "ads.edit.invalid_action" });
@@ -350,6 +347,58 @@ describe("buildAdsActionLogAlert — diễn tập / sàn từ chối / máy bậ
   it("seller bấm Bật lại trong Hubsell (manual) hay pause SUCCESS live → không thêm thẻ (đã có thẻ cờ)", () => {
     expect(buildAdsActionLogAlert(CAMP, { ...base, action: "resume", mode: "manual", status: "SUCCESS" })).toBeNull();
     expect(buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "live", status: "SUCCESS" })).toBeNull();
+  });
+});
+
+// ---------- 01/10/2026: bỏ trần lệnh → thẻ diễn tập GOM theo gian; lệnh quá nhịp chờ thử lại ----------
+import { buildAdsDeferredAlert, buildAdsPlannedGroupAlert } from "../../services/ops-alerts";
+
+describe("buildAdsPlannedGroupAlert — một thẻ diễn tập mỗi gian mỗi ngày", () => {
+  const SHOP = { channelId: "ch1", shopName: "ANO Official Store", platform: { label: "Shopee", path: "/ads/shopee" } };
+  const row = (n: number, action = "pause") => ({
+    campaignRowId: `row${n}`,
+    campaignId: `90${n}`,
+    campaignName: `Chiến dịch ${n}`,
+    action,
+    reasons: "Lý do A\nLý do B",
+    createdAt: new Date("2026-10-01T03:00:00Z"),
+  });
+
+  it("một chiến dịch → giữ câu chữ + căn cứ + deep-link thẳng chiến dịch", () => {
+    const a = buildAdsPlannedGroupAlert(SHOP, [row(1)], "2026-10-01");
+    expect(a?.type).toBe("ads-auto-planned");
+    expect(a?.dedupeKey).toBe("ch1|2026-10-01");
+    expect(a?.title).toContain('ĐỊNH tạm dừng chiến dịch "Chiến dịch 1"');
+    expect(a?.summary).toContain("Lý do A Lý do B");
+    expect(a?.payload.href).toContain("campaign_id=901");
+  });
+
+  it("40 chiến dịch → MỘT thẻ: đếm theo loại lệnh, 3 tên đầu + số còn lại, mở bộ lọc cần xử lý", () => {
+    const rows = [
+      ...Array.from({ length: 30 }, (_, i) => row(i + 1)),
+      ...Array.from({ length: 10 }, (_, i) => row(i + 31, "cut_budget")),
+    ];
+    const a = buildAdsPlannedGroupAlert(SHOP, rows, "2026-10-01");
+    expect(a?.title).toBe('Diễn tập: Trợ lý ĐỊNH xử lý 40 chiến dịch — gian "ANO Official Store"');
+    expect(a?.summary).toContain("tạm dừng 30 chiến dịch, hạ ngân sách 10 chiến dịch");
+    expect(a?.summary).toContain("+37");
+    expect(a?.payload.href).toBe("/ads/shopee?channelId=ch1&needs_action=1");
+    expect(a?.severity).toBe("medium");
+  });
+
+  it("hôm sau là thẻ khác (khóa kèm ngày); không có dòng nào → không có thẻ", () => {
+    expect(buildAdsPlannedGroupAlert(SHOP, [row(1)], "2026-10-02")?.dedupeKey).toBe("ch1|2026-10-02");
+    expect(buildAdsPlannedGroupAlert(SHOP, [], "2026-10-01")).toBeNull();
+  });
+
+  it("lệnh thật bị sàn báo quá nhịp → một thẻ mức cao mỗi gian, nói rõ sẽ tự thử lại", () => {
+    const a = buildAdsDeferredAlert(SHOP, [row(1)]);
+    expect(a?.type).toBe("ads-auto-deferred");
+    expect(a?.dedupeKey).toBe("ch1");
+    expect(a?.severity).toBe("high");
+    expect(a?.title).toContain("1 lệnh của Trợ lý chưa gửi được");
+    expect(a?.summary).toContain("tự thử lại");
+    expect(buildAdsDeferredAlert(SHOP, [])).toBeNull();
   });
 });
 

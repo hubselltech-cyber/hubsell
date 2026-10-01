@@ -371,14 +371,49 @@ như một căn cứ.
 - Giới hạn còn lại là theo từng chiến dịch (không đổi): mỗi ván mỗi ngày một lệnh mỗi
   loại, máy bật lại hôm nào thì hôm đó không tắt lại → tối đa 4 lệnh/chiến dịch/ngày.
 
-**Hai điểm rà ra sau khi gỡ trần — CHƯA sửa, chờ anh Trung chốt (chỉ lộ khi một gian có
-nhiều chiến dịch vi phạm cùng lúc; prod 30 ngày qua nhiều nhất 3 dòng sổ/gian/ngày):**
+### 12.4 Hai điểm rà ra sau khi gỡ trần (anh Trung duyệt 01/10, đã làm)
 
-1. *Sàn từ chối vì quá nhịp thì hôm đó không thử lại.* Lệnh thật bị trả mã
-   `ads.rate_limit.*` vẫn ghi sổ FAILED và giữ khóa `{loại}-{chiến dịch}-{ngày}-c{ván}`,
-   lượt sau thấy khóa là bỏ qua tới hôm sau. Đề xuất: lỗi quá nhịp thì dừng lượt, nhả
-   khóa, xung kế (30') thử lại. Chỉ ảnh hưởng chế độ Thật.
-2. *Mỗi chiến dịch một thẻ + một chuông.* `detectAdsAutoActions` sinh thẻ theo từng dòng
-   sổ; trần cũ vô tình giữ số thẻ ≤5/gian/ngày. Gian có vài chục chiến dịch vi phạm sẽ
-   nhận vài chục chuông trong một lượt. Đề xuất: gom thẻ diễn tập thành một thẻ mỗi gian
-   mỗi ngày (kèm số chiến dịch), thẻ lệnh thật giữ riêng vì có nút Bật lại.
+Cả hai chỉ lộ khi một gian có nhiều chiến dịch vi phạm cùng lúc — đúng tình huống mà
+trần cũ che đi.
+
+**a) Sàn báo gọi quá nhịp thì dừng lượt, xung kế thử lại.**
+
+- Trước: lệnh thật bị trả `ads.rate_limit.*` ghi sổ FAILED và giữ khóa
+  `{loại}-{chiến dịch}-{ngày}-c{ván}` → lượt sau thấy khóa là bỏ qua, chiến dịch vi
+  phạm chạy tiếp tới hôm sau, kèm thẻ "sàn từ chối" sai nghĩa.
+- Nay: `isAdsWriteRateLimited` nhận ra lỗi quá nhịp (Shopee: mọi mã `ads.rate_limit.*`
+  + HTTP 429; Lazada: cùng bộ nhận diện với luồng đọc). Dòng sổ chuyển trạng thái
+  **DEFERRED**, máy **dừng lượt** (không gọi tiếp chiến dịch kế, bỏ cả vòng bật lại —
+  FAQ 570 của Shopee: gọi dồn khi đã bị chặn là lý do khóa app). Các chiến dịch còn lại
+  chưa ghi sổ nên xung kế xử lý bình thường.
+- Xung kế (Shopee 30', Lazada 60'): thử lại trên **chính dòng sổ đó**, không sinh dòng
+  mới. Mã `reference_id` gửi lên sàn đổi đuôi `-r…` vì chưa kiểm được Shopee có giữ mã
+  của lệnh bị từ chối vì quá nhịp hay không; khóa chống bắn trùng vẫn là dòng sổ.
+- Từ chối nghiệp vụ (`ads.edit.invalid_action`…) giữ nguyên: FAILED, không thử lại
+  trong ngày, thẻ "sàn từ chối".
+- `editManualProductAdsRaw` (Shopee) và `updateAdsCampaignSwitchRaw` (Lazada) trả
+  envelope lỗi khi gặp HTTP 429 không kèm thân JSON, thay vì vỡ ở `res.json()`.
+- Thẻ điều hành `ads-auto-deferred` (mức cao, một thẻ mỗi gian): "sàn đang giới hạn
+  nhịp gọi — N lệnh chưa gửi được, Trợ lý tự thử lại"; tự đóng khi lệnh gửi được. Sổ
+  hành động hiện nhãn "Sàn bận — sẽ thử lại".
+- Chỉ ảnh hưởng chế độ Thật. Còn một góc CHƯA xử lý: máy bật lại thành công rồi lệnh
+  **trả ngân sách gốc** ngay sau đó bị quá nhịp → dòng `restore_budget` FAILED, cờ ngân
+  sách giữ nguyên, không tự thử lại; chủ shop có nút "Trả lại ngân sách" và thẻ báo.
+
+**b) Thẻ diễn tập gom một thẻ mỗi gian mỗi ngày.**
+
+- Trước: `detectAdsAutoActions` sinh một thẻ + một chuông cho mỗi chiến dịch; trần cũ vô
+  tình giữ ≤5 thẻ/gian/ngày.
+- Nay: `buildAdsPlannedGroupAlert` — type vẫn `ads-auto-planned`, khóa
+  `{channelId}|{ngày VN}`. Một chiến dịch thì giữ câu chữ + căn cứ cũ và mở thẳng chiến
+  dịch; nhiều chiến dịch thì "Trợ lý ĐỊNH xử lý N chiến dịch", đếm theo loại lệnh (tạm
+  dừng / hạ ngân sách — trước đây diễn tập hạ ngân sách không có thẻ), 3 tên đầu + số
+  còn lại, mở bộ lọc "cần xử lý". Trong ngày có thêm chiến dịch thì thẻ cập nhật số,
+  không chuông lại; hôm sau là thẻ mới.
+- Thẻ lệnh thật giữ riêng từng chiến dịch (đã tạm dừng có nút Bật lại, sàn từ chối, đã
+  bật lại). Thẻ diễn tập kiểu cũ theo từng chiến dịch tự đóng ở lượt quét đầu sau deploy.
+
+**Test:** `ads-auto-execute-deferred-db.test.ts` (lệnh thứ 2 quá nhịp → chiến dịch thứ 3
+không gọi; lượt sau thử lại đúng dòng, mã gửi sàn mới; từ chối nghiệp vụ không thử lại),
+`ads-auto-execute.test.ts` (nhận diện mã lỗi), `ops-alerts-shopee-ads.test.ts` (40 chiến
+dịch → một thẻ).

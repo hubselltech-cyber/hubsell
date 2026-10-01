@@ -1232,6 +1232,12 @@ export async function updateAdsCampaignSwitchRaw(
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
   });
+  // HTTP 429 có thể không kèm thân JSON — trả envelope lỗi để executor nhận ra
+  // "gọi quá nhịp" (thử lại ở xung kế) thay vì vỡ ở res.json().
+  if (res.status === 429) {
+    const text = await res.text().catch(() => "");
+    return { code: "HTTP 429", message: text.slice(0, 200), success: false };
+  }
   return (await res.json()) as LazadaEnvelope & {
     result?: unknown;
     success?: boolean | string;
