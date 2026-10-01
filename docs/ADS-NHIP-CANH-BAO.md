@@ -396,9 +396,8 @@ trần cũ che đi.
 - Thẻ điều hành `ads-auto-deferred` (mức cao, một thẻ mỗi gian): "sàn đang giới hạn
   nhịp gọi — N lệnh chưa gửi được, Trợ lý tự thử lại"; tự đóng khi lệnh gửi được. Sổ
   hành động hiện nhãn "Sàn bận — sẽ thử lại".
-- Chỉ ảnh hưởng chế độ Thật. Còn một góc CHƯA xử lý: máy bật lại thành công rồi lệnh
-  **trả ngân sách gốc** ngay sau đó bị quá nhịp → dòng `restore_budget` FAILED, cờ ngân
-  sách giữ nguyên, không tự thử lại; chủ shop có nút "Trả lại ngân sách" và thẻ báo.
+- Chỉ ảnh hưởng chế độ Thật. Lệnh **trả ngân sách gốc** ngay sau khi máy bật lại mà bị
+  quá nhịp: xem mục 12.5 (đã xử lý cùng ngày).
 
 **b) Thẻ diễn tập gom một thẻ mỗi gian mỗi ngày.**
 
@@ -417,3 +416,40 @@ trần cũ che đi.
 không gọi; lượt sau thử lại đúng dòng, mã gửi sàn mới; từ chối nghiệp vụ không thử lại),
 `ads-auto-execute.test.ts` (nhận diện mã lỗi), `ops-alerts-shopee-ads.test.ts` (40 chiến
 dịch → một thẻ).
+
+### 12.5 Máy tự trả ngân sách gốc khi chiến dịch hết lỗ (anh Trung duyệt 01/10)
+
+**Trước:** lệnh trả ngân sách gốc chỉ đi kèm lệnh bật lại (máy bật, chủ shop bấm Bật lại)
+hoặc nút "Trả lại ngân sách". Hai lỗ:
+
+1. Chiến dịch bị hạ ngày 1, ngày 2 tự hồi (không bị dừng) → không có lệnh bật lại nào →
+   ngân sách nằm ở mức đã hạ cho tới khi chủ shop tự bấm. Chiến dịch đang lãi bị bó
+   tiền mà chủ shop không tự tay hạ nên dễ không biết.
+2. Máy bật lại xong, lệnh trả ngay sau bị sàn báo quá nhịp → FAILED, không ai gửi lại.
+
+**Nay** (`shouldAutoRestoreBudget` + vòng "trả ngân sách" cuối mỗi lượt, chỉ chế độ Thật):
+
+- Điều kiện trả: chiến dịch **đang chạy**, còn **cờ hạ của Hubsell** (người tự đổi ngân
+  sách trên sàn thì cờ đã bị xóa lúc đồng bộ → máy không đụng), **không phải hôm vừa hạ**
+  (một nấc mỗi ngày, đợi đơn về), và luật chấm **Ổn thật**: verdict `healthy`, có hòa
+  vốn, không kèm ghi chú "dưới hòa vốn nhưng chưa tiêu đủ ngưỡng". Tức mọi cửa sổ đủ dữ
+  liệu đã qua vùng vàng — cùng mức đòi hỏi với lệnh tự bật lại (hòa vốn × hệ số an
+  toàn). Không thêm con số mới nào.
+- Còn sát hòa vốn / công thần / chưa đủ dữ liệu → giữ mức đã hạ. Vẫn lỗ ngày sau → tạm
+  dừng như cũ.
+- Thứ tự một lượt giờ là: dừng vọt chi → hạ ngân sách / dừng chiến dịch lỗ → bật lại →
+  **trả ngân sách**.
+- Khóa sổ của lệnh trả do máy gửi đổi thành `restore-{chiến dịch}-{ngày}` (bỏ số ván):
+  mỗi ngày tối đa một lệnh trả cho một chiến dịch, và lệnh trả bị quá nhịp ngay sau khi
+  bật lại (ván đã +1) vẫn được xung kế tìm thấy.
+- Sàn báo quá nhịp → dòng `restore_budget` DEFERRED, dừng lượt; xung kế gửi lại **dù lúc
+  đó luật chấm gì** (lệnh đã quyết, chỉ là chưa gửi được). Qua ngày mà vẫn chưa gửi
+  được thì quay về điều kiện "Ổn thật" ở trên.
+- Sàn từ chối nghiệp vụ → FAILED, cờ giữ, thẻ "Trợ lý không trả ngân sách gốc được…"
+  (câu chữ thẻ sàn từ chối giờ nói đúng loại lệnh), hôm sau thử lại; nút tay vẫn còn.
+- Trả thành công ngoài lệnh bật lại → ghi nhật ký vận hành "💰 Trợ lý trả ngân sách
+  ngày … — chiến dịch đã hết lỗ". Sổ hành động: "Máy đã trả ngân sách".
+
+**Test:** `ads-auto-restore-budget-db.test.ts` (tự hồi → trả; ba trường hợp chưa đủ điều
+kiện; lệnh trả quá nhịp → xung kế gửi lại; quá nhịp ngay sau khi máy bật lại; sàn từ
+chối nghiệp vụ), `ads-budget-cut.test.ts` (điều kiện thuần).

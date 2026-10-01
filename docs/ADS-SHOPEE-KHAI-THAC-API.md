@@ -431,6 +431,8 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
   `-c{cycle}`) → diễn tập cũng đi đúng trình tự hạ → ngày sau tắt.
 - Cờ trên `AdsCampaign` (migration `20260924230000_ads_budget_cut_auto_topup`): `hubsellBudgetCutAt`,
   `hubsellBudgetBefore` (số gốc, 0 = không giới hạn), `hubsellBudgetCut`, `hubsellBudgetCutLogId`, `hubsellBudgetCutOn`.
+- **01/10/2026:** chiến dịch bị hạ mà không bị dừng, sau đó luật chấm Ổn → máy tự trả số gốc ở lượt kế (không đợi lệnh
+  bật lại); lệnh trả bị sàn báo quá nhịp thì xung kế gửi lại. Chi tiết: ADS-NHIP-CANH-BAO.md mục 12.5.
 - Trả ngân sách gốc (`restore_budget`): máy tự bật lại (ROAS đạt) → trả ngay sau resume; chủ shop bấm Bật lại trong
   Hubsell → trả; chủ shop bấm **Trả lại ngân sách** (route `POST /campaigns/:id/restore-budget`, campaign vẫn chạy).
   Sàn từ chối → giữ cờ, sổ có dòng FAILED.

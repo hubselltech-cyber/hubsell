@@ -124,3 +124,55 @@ describe("normalizeAssistantConfig — cờ cutBudgetFirst", () => {
     ).toBe(false);
   });
 });
+
+// ---------- 01/10/2026: tự trả ngân sách gốc cho chiến dịch đã hạ mà không bị dừng ----------
+import { shouldAutoRestoreBudget } from "../shopee/ads-auto-execute";
+
+describe("shouldAutoRestoreBudget — chỉ trả khi chiến dịch thật sự hết lỗ", () => {
+  const TODAY = "2026-10-02";
+  function cutCampaign(over: {
+    status?: string;
+    cutOn?: string;
+    flagged?: boolean;
+    verdict?: string | null;
+    reasons?: string[];
+    breakeven?: number | null;
+  }): CampaignInsight {
+    const flagged = over.flagged ?? true;
+    return {
+      row: {
+        id: "r1",
+        status: over.status ?? "ongoing",
+        hubsellBudgetCutAt: flagged ? new Date("2026-10-01T03:00:00Z") : null,
+        hubsellBudgetBefore: flagged ? 500_000 : null,
+        hubsellBudgetCutOn: over.cutOn ?? "2026-10-01",
+      },
+      breakevenRoas: over.breakeven === undefined ? 5 : over.breakeven,
+      assessment: { verdict: over.verdict === undefined ? "healthy" : over.verdict, reasons: over.reasons ?? [] },
+    } as unknown as CampaignInsight;
+  }
+
+  it("hạ hôm qua, hôm nay luật chấm Ổn → trả", () => {
+    expect(shouldAutoRestoreBudget(cutCampaign({}), TODAY)).toBe(true);
+  });
+
+  it("vừa hạ hôm nay → chưa trả (một nấc mỗi ngày, đợi đơn về)", () => {
+    expect(shouldAutoRestoreBudget(cutCampaign({ cutOn: TODAY }), TODAY)).toBe(false);
+  });
+
+  it("còn lỗ / sát hòa vốn / công thần / chưa đủ dữ liệu → giữ mức đã hạ", () => {
+    for (const verdict of ["pause_now", "spike", "review", "grace", "insufficient_data", null]) {
+      expect(shouldAutoRestoreBudget(cutCampaign({ verdict }), TODAY)).toBe(false);
+    }
+  });
+
+  it("chấm Ổn nhưng kèm ghi chú 'dưới hòa vốn, chưa tiêu đủ ngưỡng' hoặc chưa có hòa vốn → chưa trả", () => {
+    expect(shouldAutoRestoreBudget(cutCampaign({ reasons: ["ROAS dưới hòa vốn nhưng mới tiêu 20.000₫"] }), TODAY)).toBe(false);
+    expect(shouldAutoRestoreBudget(cutCampaign({ breakeven: null }), TODAY)).toBe(false);
+  });
+
+  it("không còn cờ hạ của Hubsell (người đã tự đổi ngân sách) hoặc chiến dịch không chạy → máy không đụng", () => {
+    expect(shouldAutoRestoreBudget(cutCampaign({ flagged: false }), TODAY)).toBe(false);
+    expect(shouldAutoRestoreBudget(cutCampaign({ status: "paused" }), TODAY)).toBe(false);
+  });
+});

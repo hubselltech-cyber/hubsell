@@ -837,7 +837,7 @@ async function runAdsPulseTier(channel: Channel): Promise<{ delayMin: number; sy
       const act = await runAdsAutoExecute(channel);
       if (act.mode !== "off" && autoExecuteTouched(act)) {
         console.log(
-          `[Auto-sync] Trợ lý Ads ${isLazada ? "Lazada " : ""}"${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.resumed} bật lại, ${act.failed + act.resumeFailed} lỗi, ${act.skippedDone} đã làm hôm nay${act.deferred > 0 ? ", sàn báo quá nhịp — dừng lượt, xung kế thử lại" : ""}`
+          `[Auto-sync] Trợ lý Ads ${isLazada ? "Lazada " : ""}"${channel.shopName}" (${act.mode}): ${act.planned} diễn tập, ${act.executed} tạm dừng thật, ${act.budgetCut} hạ ngân sách, ${act.resumed} bật lại, ${act.budgetRestored} trả ngân sách, ${act.failed + act.resumeFailed + act.budgetCutFailed + act.budgetRestoreFailed} lỗi, ${act.skippedDone} đã làm hôm nay${act.deferred > 0 ? ", sàn báo quá nhịp — dừng lượt, xung kế thử lại" : ""}`
         );
         // Máy vừa làm gì → ép quét cảnh báo NGAY (bỏ throttle 10') để chuông + thẻ
         // Trung tâm điều hành lên trong cùng nhịp (sự cố 14/09: dừng mà im lặng).

@@ -338,6 +338,14 @@ describe("buildAdsActionLogAlert — diễn tập / sàn từ chối / máy bậ
     const a = buildAdsActionLogAlert(CAMP, { ...base, action: "pause", mode: "live", status: "FAILED", error: "ads.edit.invalid_action" });
     expect(a?.type).toBe("ads-auto-failed");
     expect(a?.summary).toContain("ads.edit.invalid_action");
+    expect(a?.title).toContain("không tạm dừng được");
+  });
+  it("thẻ sàn từ chối nói đúng loại lệnh (hạ / trả ngân sách không còn bị gọi là 'tạm dừng')", () => {
+    const failed = (action: string) =>
+      buildAdsActionLogAlert(CAMP, { ...base, action, mode: "live", status: "FAILED", error: "ads.campaign.error_daily_budget_range" });
+    expect(failed("restore_budget")?.title).toContain("không trả ngân sách gốc được");
+    expect(failed("cut_budget")?.title).toContain("không hạ ngân sách được");
+    expect(failed("resume")?.title).toContain("không bật lại được");
   });
   it("live resume SUCCESS → thẻ đã bật lại (low)", () => {
     const a = buildAdsActionLogAlert(CAMP, { ...base, action: "resume", mode: "live", status: "SUCCESS" });

@@ -1058,7 +1058,7 @@ export function ShopeeAssistantConfigCard({
                 <label className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-sm">
                   <span className="font-medium text-slate-800">
                     Hạ ngân sách trước, tắt sau
-                    <HintIcon hint="Chiến dịch lỗ (Đề xuất tạm dừng) thì lần đầu Trợ lý chỉ HẠ ngân sách ngày về max(50% ngân sách, 70% chi tiêu trung bình ngày) để giữ chiến dịch sống, không mất học máy; ngày sau vẫn lỗ mới tạm dừng. Bật lại thì trả ngân sách cũ. Vọt chi vẫn tắt ngay. Tắt cờ này = tắt ngay như trước." />
+                    <HintIcon hint="Chiến dịch lỗ (Đề xuất tạm dừng) thì lần đầu Trợ lý chỉ HẠ ngân sách ngày về max(50% ngân sách, 70% chi tiêu trung bình ngày) để giữ chiến dịch sống, không mất học máy; ngày sau vẫn lỗ mới tạm dừng. Chiến dịch hết lỗ hoặc được bật lại thì Trợ lý tự trả ngân sách cũ. Vọt chi vẫn tắt ngay. Tắt cờ này = tắt ngay như trước." />
                   </span>
                   <Switch
                     checked={draft.autoExecute.cutBudgetFirst}

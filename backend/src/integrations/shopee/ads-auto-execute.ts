@@ -16,6 +16,11 @@
 //   RESTORE_BUDGET khi máy/người bật lại campaign có cờ hạ ngân sách → trả về
 //          số gốc (hubsellBudgetBefore). Người tự đổi ngân sách trên sàn → xóa
 //          cờ (ads-pause-flag.reconcileHubsellBudgetFlags), máy không trả nữa.
+//          01/10/2026 (anh Trung duyệt): campaign bị hạ mà KHÔNG bị dừng, sau đó
+//          hết lỗ (luật chấm Ổn, không kèm ghi chú "dưới hòa vốn nhưng chưa tiêu
+//          đủ") → máy cũng tự trả số gốc ở lượt kế, không đợi ai bấm. Trước đó
+//          chỉ có lệnh bật lại mới kéo theo lệnh trả, nên campaign tự hồi nằm mãi
+//          ở mức đã hạ. Không trả trong chính ngày vừa hạ (một nấc mỗi ngày).
 // Không đụng bid/keyword.
 //
 // Cú gọi lên sàn (makeActor): Shopee edit_manual_product_ads edit_action
@@ -100,7 +105,8 @@ export interface AutoExecuteResult {
   resumeFailed: number; // live: bật lại bị sàn từ chối
   budgetCut: number; // ĐỢT B live: hạ ngân sách thành công
   budgetCutFailed: number; // ĐỢT B live: hạ ngân sách bị sàn từ chối
-  budgetRestored: number; // ĐỢT B live: trả ngân sách gốc khi bật lại
+  budgetRestored: number; // ĐỢT B live: trả ngân sách gốc (khi bật lại, hoặc campaign đã hết lỗ)
+  budgetRestoreFailed: number; // live: lệnh trả ngân sách gốc bị sàn từ chối (cờ giữ nguyên)
   deferred: number; // live: sàn báo gọi quá nhịp → dừng lượt, xung kế thử lại (0 hoặc 1 mỗi lượt)
 }
 
@@ -221,6 +227,26 @@ export function shouldAutoResume(
       ? `Cửa sổ ${WINDOW_LABEL[window]}: ROAS ${roasTxt(roas)} đã vượt hòa vốn ${roasTxt(breakevenRoas!)} × ${config.review.dangerFactor} = ${roasTxt(threshold)} (đơn từ quảng cáo đã về đủ) — Trợ lý bật lại chiến dịch.`
       : `Cửa sổ ${WINDOW_LABEL[window]}: ROAS ${roasTxt(roas)} chưa vượt ${roasTxt(threshold)} — giữ tạm dừng.`,
   };
+}
+
+/**
+ * Có nên TỰ TRẢ NGÂN SÁCH GỐC cho campaign máy đã hạ mà không bị dừng? — THUẦN.
+ * Đủ cả: đang chạy; còn cờ hạ của Hubsell (người tự đổi ngân sách thì cờ đã bị
+ * xóa lúc đồng bộ); không phải hôm vừa hạ (đợi đơn về, một nấc mỗi ngày); và
+ * luật chấm ỔN thật: verdict healthy, có hòa vốn, KHÔNG kèm ghi chú "dưới hòa
+ * vốn nhưng chưa tiêu đủ ngưỡng" — tức mọi cửa sổ đủ dữ liệu đều đã qua vùng
+ * vàng (cùng mức đòi hỏi với lệnh tự bật lại: hòa vốn × dangerFactor).
+ */
+export function shouldAutoRestoreBudget(it: CampaignInsight, todayKey: string = vnDateKey(0)): boolean {
+  return (
+    it.row.status === "ongoing" &&
+    it.row.hubsellBudgetCutAt != null &&
+    it.row.hubsellBudgetBefore != null &&
+    it.row.hubsellBudgetCutOn !== todayKey &&
+    it.assessment.verdict === "healthy" &&
+    it.assessment.reasons.length === 0 &&
+    it.breakevenRoas != null
+  );
 }
 
 /**
@@ -554,6 +580,7 @@ export async function runAdsAutoExecute(
     budgetCut: 0,
     budgetCutFailed: 0,
     budgetRestored: 0,
+    budgetRestoreFailed: 0,
     deferred: 0,
   };
   if (preConfig.autoExecute.mode === "off" || !preConfig.enabled) return result;
@@ -610,7 +637,29 @@ export async function runAdsAutoExecute(
           .map((it) => ({ it, check: shouldAutoResume(it, insights.config) }))
           .filter((x) => x.check.ok)
       : [];
-  result.candidates = pauseCandidates.length + resumeCandidates.length;
+  // Trả ngân sách gốc cho campaign máy đã hạ, đang chạy (chỉ mode live): hoặc đã hết
+  // lỗ, hoặc lượt trước lệnh trả bị sàn báo quá nhịp (dòng DEFERRED hôm nay — còn nợ).
+  const restoreRefOf = (rowId: string) => `restore-${rowId}-${todayKey}`;
+  const flaggedOngoing =
+    auto.mode === "live" && budgetWriteSupported
+      ? insights.items.filter(
+          (it) => it.row.status === "ongoing" && it.row.hubsellBudgetCutAt != null && it.row.hubsellBudgetBefore != null
+        )
+      : [];
+  const owedRestore = new Set(
+    flaggedOngoing.length > 0
+      ? (
+          await prisma.adsActionLog.findMany({
+            where: { referenceId: { in: flaggedOngoing.map((it) => restoreRefOf(it.row.id)) }, status: DEFERRED_STATUS },
+            select: { adsCampaignId: true },
+          })
+        ).map((l) => l.adsCampaignId)
+      : []
+  );
+  const restoreCandidates = flaggedOngoing.filter(
+    (it) => owedRestore.has(it.row.id) || shouldAutoRestoreBudget(it, todayKey)
+  );
+  result.candidates = pauseCandidates.length + resumeCandidates.length + restoreCandidates.length;
   if (result.candidates === 0) return result;
 
   // Token chỉ cần cho mode live — lấy MỘT lần ngoài vòng lặp (theo sàn).
@@ -622,7 +671,7 @@ export async function runAdsAutoExecute(
   /** Ghi sổ bằng khóa unique — trùng nghĩa là ván này hôm nay đã hành động. */
   const openLog = async (input: {
     rowId: string;
-    action: "pause" | "resume" | "cut_budget";
+    action: "pause" | "resume" | "cut_budget" | "restore_budget";
     verdict: string;
     reasons: string[];
     referenceId: string;
@@ -675,6 +724,51 @@ export async function runAdsAutoExecute(
     });
     if (deferred) result.deferred++;
     return deferred;
+  };
+
+  /**
+   * Trả ngân sách gốc qua sổ có khóa NGÀY (`restore-{chiến dịch}-{ngày}` — mỗi ngày
+   * tối đa một lệnh trả của máy cho một chiến dịch; không kèm số ván để lệnh bị
+   * quá nhịp ngay sau khi bật lại vẫn được xung kế tìm thấy). Trả true = sàn báo
+   * gọi quá nhịp, caller dừng lượt. Sàn từ chối nghiệp vụ → FAILED, cờ giữ nguyên
+   * (hôm sau thử lại, chủ shop vẫn có nút Trả lại ngân sách).
+   */
+  const restoreBudget = async (it: CampaignInsight, reason: string, standalone: boolean): Promise<boolean> => {
+    const before = Number(it.row.hubsellBudgetBefore);
+    const cut = it.row.hubsellBudgetCut != null ? Number(it.row.hubsellBudgetCut) : null;
+    const move = `${cut != null ? vndTxt(cut) : "—"} → ${before > 0 ? vndTxt(before) : "không giới hạn"}`;
+    const log = await openLog({
+      rowId: it.row.id,
+      action: "restore_budget",
+      verdict: "",
+      reasons: [`${reason} Trả ngân sách ngày ${move} (số trước khi Trợ lý hạ).`],
+      referenceId: restoreRefOf(it.row.id),
+    });
+    if (!log) return false;
+    let outcome: ActOutcome;
+    try {
+      // Shopee: ngân sách 0 = không giới hạn theo docs (campaign_budget 0) — gửi đúng số gốc.
+      outcome = await actor!.changeBudget(it.row.campaignId, before, log.sendRef);
+    } catch (err) {
+      outcome = { ok: false, error: String((err as Error).message) };
+    }
+    const stop = await closeLog(log.id, outcome);
+    if (outcome.ok) {
+      result.budgetRestored++;
+      await clearHubsellBudgetFlag(it.row.id, { budget: before });
+      if (standalone) {
+        await prisma.opsActivity.create({
+          data: {
+            ownerId: channel.userId,
+            tag: "ads",
+            message: `💰 Trợ lý trả ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${move} — chiến dịch đã hết lỗ.`,
+          },
+        });
+      }
+    } else if (!stop) {
+      result.budgetRestoreFailed++;
+    }
+    return stop;
   };
 
   // ---- TẠM DỪNG vọt chi → HẠ NGÂN SÁCH (đợt B) / TẠM DỪNG chiến dịch lỗ ----
@@ -739,7 +833,7 @@ export async function runAdsAutoExecute(
           data: {
             ownerId: channel.userId,
             tag: "ads",
-            message: `✂️ Trợ lý hạ ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${Number(it.row.budget) > 0 ? vndTxt(Number(it.row.budget)) : "không giới hạn"} → ${vndTxt(planned.cut!.newBudget)} vì đang lỗ — ngày mai vẫn lỗ mới tạm dừng; bật lại sẽ trả số cũ.`,
+            message: `✂️ Trợ lý hạ ngân sách ngày chiến dịch "${it.row.name || `#${it.row.campaignId}`}" (gian "${channel.shopName}") ${Number(it.row.budget) > 0 ? vndTxt(Number(it.row.budget)) : "không giới hạn"} → ${vndTxt(planned.cut!.newBudget)} vì đang lỗ — ngày mai vẫn lỗ mới tạm dừng; hết lỗ hoặc bật lại thì Trợ lý trả số cũ.`,
           },
         });
       } else {
@@ -795,25 +889,29 @@ export async function runAdsAutoExecute(
     if (await closeLog(log.id, outcome)) break;
     if (outcome.ok) {
       result.resumed++;
-      // ĐỢT B: máy tự bật lại → trả ngân sách gốc nếu chính máy đã hạ (cùng ván, trước khi cycle+1).
-      if (it.row.hubsellBudgetBefore != null) {
-        const restored = await restoreBudgetWithActor({
-          channel,
-          actor: actor!,
-          row: it.row,
-          mode: auto.mode,
-          referenceId: `restore-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`,
-          reason: "Trợ lý bật lại chiến dịch (ROAS đã đạt lại).",
-        });
-        if (restored.ok) result.budgetRestored++;
-      }
+      // ĐỢT B: máy tự bật lại → trả ngân sách gốc nếu chính máy đã hạ. Sàn báo quá
+      // nhịp ở lệnh này → dòng DEFERRED, vòng "trả ngân sách" của xung kế gửi lại.
+      const stop =
+        it.row.hubsellBudgetBefore != null
+          ? await restoreBudget(it, "Trợ lý bật lại chiến dịch (ROAS đã đạt lại).", false)
+          : false;
       await clearHubsellPauseFlag(it.row.id, it.row.hubsellPauseCycle, {
         status: "ongoing",
         hubsellResumedOn: todayKey,
       });
+      if (stop) break;
     } else {
       result.resumeFailed++;
     }
+  }
+
+  // ---- TRẢ NGÂN SÁCH GỐC cho campaign đã hạ mà không bị dừng (01/10) — cuối lượt:
+  // nới tiền sau khi đã cầm máu. Sàn vừa báo quá nhịp thì để xung kế. ----
+  for (const it of result.deferred > 0 ? [] : restoreCandidates) {
+    const reason = shouldAutoRestoreBudget(it, todayKey)
+      ? "Chiến dịch đã hết lỗ (Trợ lý chấm Ổn ở mọi cửa sổ đủ dữ liệu)."
+      : "Gửi lại lệnh trả ngân sách (lượt trước sàn báo gọi quá nhịp).";
+    if (await restoreBudget(it, reason, true)) break;
   }
 
   return result;
@@ -830,6 +928,7 @@ export function autoExecuteTouched(r: AutoExecuteResult): boolean {
       r.budgetCut +
       r.budgetCutFailed +
       r.budgetRestored +
+      r.budgetRestoreFailed +
       r.deferred >
     0
   );

@@ -1347,6 +1347,14 @@ export function buildAdsDeferredAlert(shop: AdsAutoGroupShop, rows: AdsAutoGroup
   };
 }
 
+/** Động từ của từng loại lệnh trong câu "Trợ lý không … được chiến dịch". */
+const ADS_ACTION_VERB: Record<string, string> = {
+  pause: "tạm dừng",
+  resume: "bật lại",
+  cut_budget: "hạ ngân sách",
+  restore_budget: "trả ngân sách gốc",
+};
+
 /** Thẻ cho hành động ghi sổ HÔM NAY: sàn từ chối / máy đã bật lại — THUẦN. (Diễn tập gom theo gian ở trên.) */
 export function buildAdsActionLogAlert(
   c: AdsAutoActionAlertInput,
@@ -1370,7 +1378,7 @@ export function buildAdsActionLogAlert(
       ...base,
       type: "ads-auto-failed",
       severity: "high",
-      title: `Trợ lý không ${log.action === "resume" ? "bật lại" : "tạm dừng"} được chiến dịch "${name}" — ${c.platform.label} từ chối`,
+      title: `Trợ lý không ${ADS_ACTION_VERB[log.action] ?? "tạm dừng"} được chiến dịch "${name}" — ${c.platform.label} từ chối`,
       summary: `Lúc ${vnTimeText(log.createdAt)}. ${reasons} Lỗi sàn: ${log.error ?? "không kèm lý do"}. Kiểm tra trên Seller Center rồi thao tác tay nếu cần.`,
     };
   }
