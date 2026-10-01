@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>Hubsell — ảnh bìa Google Play (feature graphic)</title>
+<!--
+  Feature graphic Google Play — bắt buộc 1024×500, PNG 24-bit KHÔNG alpha hoặc JPEG.
+  Dựng ở khung 1024×500, render.mjs chụp 2x rồi thu về đúng 1024×500 cho nét.
+  Google hay phủ nút Play / cắt mép khi hiển thị → chữ + logo nằm trong vùng
+  giữa, cách mép ≥ 56px; không ghi giá, không ghi "số 1 / tốt nhất", không
+  dùng tên hay logo sàn (nhãn hiệu của bên khác).
+  Hai màn hình là ẢNH THẬT của app (web-sim, data demo Sunny Closet) — cùng
+  nguồn với khối #mobile trên landing.
+  Xuất PNG: node docs/store/render.mjs
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 1024px; height: 500px; overflow: hidden; background: #0a1424; }
+  .g {
+    position: relative; width: 1024px; height: 500px; overflow: hidden;
+    /* cùng nhận diện với thẻ "Kết quả hôm nay" + orb Trợ lý trong app: navy + ánh mint */
+    background: linear-gradient(135deg, #0a1424 0%, #0c1d2a 55%, #0b2a2a 100%);
+    color: #f4f8f7; font-family: "Be Vietnam Pro", system-ui, sans-serif;
+  }
+  .g::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.055) 1.2px, transparent 1.2px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(90deg, #000 0%, transparent 58%);
+    -webkit-mask-image: linear-gradient(90deg, #000 0%, transparent 58%);
+  }
+  .glow { position: absolute; border-radius: 50%; filter: blur(70px); }
+  .glow.a { width: 520px; height: 520px; right: -40px; top: -160px; background: rgba(16, 185, 129, 0.38); }
+  .glow.b { width: 360px; height: 360px; right: 330px; bottom: -250px; background: rgba(13, 148, 136, 0.3); }
+
+  .copy { position: absolute; left: 64px; top: 92px; width: 500px; }
+  .brand { display: flex; align-items: center; gap: 13px; }
+  .brand img { width: 52px; height: 52px; border-radius: 14px; background: #fff;
+    box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.6); }
+  .brand b { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+  h1 { margin-top: 30px; font-size: 44px; line-height: 1.16; font-weight: 800; letter-spacing: -0.028em; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, #34d399, #2dd4bf);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin-top: 18px; font-size: 19px; line-height: 1.5; color: #a9beb9; font-weight: 400; }
+  .row { margin-top: 26px; display: flex; gap: 9px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
+    border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.07); font-size: 15px; font-weight: 600; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: #34d399; }
+
+  /* hai máy — ảnh app thật, máy sau lùi + mờ nhẹ để máy trước là chính */
+  .phone { position: absolute; border-radius: 34px; background: #0f172a; padding: 7px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    box-shadow: 0 40px 70px -24px rgba(0, 0, 0, 0.75); }
+  .phone .scr { border-radius: 28px; overflow: hidden; background: #f8fafc; }
+  .phone img { display: block; width: 100%; }
+  .phone.back { left: 780px; top: 96px; width: 206px; transform: rotate(5deg); opacity: 0.96; }
+  .phone.front { left: 590px; top: 46px; width: 232px; transform: rotate(-4deg); }
+  /* ảnh chụp có ~110px trống trên đầu (chỗ thanh trạng thái) — kéo lên cho màn đầy */
+  .phone.front img { margin-top: -22px; }
+  .phone.back img { margin-top: -20px; }
+</style>
+</head>
+<body>
+<div class="g">
+  <div class="glow a"></div>
+  <div class="glow b"></div>
+
+  <div class="copy">
+    <div class="brand">
+      <img src="../../hubsell-landing/public/logo-hubsell.png" alt="" />
+      <b>Hubsell</b>
+    </div>
+    <h1>Cả gian hàng nằm gọn<br />trong <em>túi áo</em></h1>
+    <p class="sub">Lãi ròng hôm nay, đơn mọi sàn,<br />quét mã nhận hàng hoàn.</p>
+    <div class="row">
+      <span class="chip"><i></i>Chủ shop</span>
+      <span class="chip"><i></i>Nhân viên kho</span>
+    </div>
+  </div>
+
+  <div class="phone back">
+    <div class="scr"><img src="../../hubsell-landing/public/screens/mobile-kho.webp" alt="" /></div>
+  </div>
+  <div class="phone front">
+    <div class="scr"><img src="../../hubsell-landing/public/screens/mobile-home.webp" alt="" /></div>
+  </div>
+</div>
+</body>
+</html>

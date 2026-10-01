@@ -1,6 +1,6 @@
 # Đưa app Hubsell Mobile lên CH Play (Google Play) và App Store
 
-Cập nhật 25/09/2026 (D-U-N-S đã cấp). App dựng bằng **Expo SDK 57** (`hubsell-mobile/`), build iOS và Android trên mây bằng **EAS Build**, không cần máy Mac.
+Cập nhật 01/10/2026 (D-U-N-S đã cấp 25/09; nội dung trang kho, tờ khai dữ liệu, ảnh bìa đã soạn ở [store/LISTING.md](store/LISTING.md)). App dựng bằng **Expo SDK 57** (`hubsell-mobile/`), build iOS và Android trên mây bằng **EAS Build**, không cần máy Mac.
 
 ---
 
@@ -77,6 +77,9 @@ Cả hai kho đều bắt cung cấp tài khoản đăng nhập vì app không d
 - Ghi chú tiếng Anh cho reviewer: app B2B cho chủ shop Shopee/Lazada/TikTok tại Việt Nam, tài khoản demo đã nối sẵn gian hàng mẫu, gói dịch vụ mua trên web không bán trong app.
 
 ### 2.4 Nội dung listing (viết một lần dùng cho cả 2 kho)
+
+> ✅ 01/10: bản chốt ở [store/LISTING.md](store/LISTING.md) mục 1–2, **dùng bản đó**. Bảng gợi ý dưới đây là bản nháp 23/09; phụ đề và từ khóa trong bản nháp có tên sàn, Apple cấm (2.3.7).
+
 | Mục | Giới hạn | Gợi ý |
 |---|---|---|
 | Tên app | 30 ký tự (cả 2 kho) | `Hubsell - Quản lý bán đa sàn` |
@@ -107,12 +110,12 @@ Cả hai kho đều bắt cung cấp tài khoản đăng nhập vì app không d
 5. **Xác minh danh tính**: chụp CCCD/hộ chiếu người đại diện + có thể yêu cầu GCN ĐKDN. Thường 1–7 ngày, tổ chức mới có thể lâu hơn.
 6. Sau khi được duyệt → **Create app**: tên, ngôn ngữ mặc định Tiếng Việt, App, Free.
 7. Mục **App content** phải khai đủ trước khi nộp:
-   - Privacy policy: `https://hubsell.tech/privacy`
+   - Privacy policy: `https://hubsell.vn/privacy`
    - **App access**: chọn "Restricted access", điền tài khoản demo mục 2.3
    - Ads: Không
    - Content rating (IARC): Utility/Productivity → Everyone
    - Target audience: 18+
-   - Data safety: thu thập email + tên (đăng nhập), dữ liệu kinh doanh (đơn hàng, tồn kho) gửi về máy chủ mã hóa HTTPS; **camera chỉ quét mã, không lưu ảnh**; **giọng nói nhận dạng trên máy, không gửi lên**; có URL xóa tài khoản.
+   - Data safety: khai theo bảng ở [store/LISTING.md](store/LISTING.md) mục 5.1 (email, tên, mã tài khoản, tin nhắn, ảnh gửi trong chat, câu hỏi gửi Trợ lý). **Camera chỉ quét mã, không lưu ảnh.** Giọng nói: rà code 01/10 thấy nhận dạng do dịch vụ của hệ điều hành làm và **có thể gửi âm thanh lên Apple/Google**, câu "nhận dạng trên máy" ở bản 23/09 là sai; điều đúng là Hubsell không nhận, không lưu âm thanh.
    - Financial features: Không (app hiển thị doanh thu nhưng không cung cấp dịch vụ tài chính)
    - Government app, Health: Không
 8. **Play App Signing**: để mặc định (Google giữ khóa ký). EAS tự sinh upload keystore, **tải bản sao lưu** bằng `eas credentials` cất nơi an toàn.
@@ -151,6 +154,7 @@ Availability: chỉ Việt Nam đợt đầu (tránh khai trader EU).
 - ✅ `eas.json`: `appVersionSource: remote` + `autoIncrement` ở production (EAS tự tăng versionCode/buildNumber, không sửa tay); profile preview ra APK cài thử; mục submit trỏ `google-play-service-account.json` + `asc-api-key.p8` (đã thêm .gitignore, tạo ở giai đoạn C).
 - ✅ Màn Cài đặt (dùng chung 2 vai, `SettingsScreen.tsx`): khối "Về Hubsell" 4 dòng mở bằng trình duyệt trong app: Trung tâm hỗ trợ, Chính sách bảo mật, Điều khoản, Yêu cầu xóa tài khoản (đỏ); dòng phiên bản đọc từ `expo-constants`.
 - ✅ Rà toàn app: không có chữ nào về giá gói/nâng cấp/thanh toán; chỉ có câu "dùng bản web app.hubsell.tech" ở màn thiếu quyền, giữ được.
+- ✅ 01/10 `app.json`: plugin `expo-image-picker` với dòng xin quyền thư viện ảnh tiếng Việt (trước đó là câu tiếng Anh mặc định); `expo-audio` đặt `enableBackgroundPlayback: false` (mặc định của plugin là bật, kéo theo `UIBackgroundModes: audio` trên iOS và quyền `FOREGROUND_SERVICE_MEDIA_PLAYBACK` trên Android trong khi app chỉ phát tiếng bíp quét); `android.blockedPermissions` chặn `SYSTEM_ALERT_WINDOW`. Soi bằng `npx expo config --type introspect`, chưa kiểm trên bản build thật.
 - ⏳ Còn lại giai đoạn C: `npx eas-cli init` (cần đăng nhập Expo của anh, sinh `extra.eas.projectId`), tạo khóa nộp store, build, ảnh màn hình, feature graphic.
 - Kiểm tra targetSdk 36 (Expo 57 mặc định đạt, Google hạn 31/08/2026).
 - Lệnh:
@@ -169,9 +173,9 @@ Availability: chỉ Việt Nam đợt đầu (tránh khai trader EU).
 | Bước | Thời gian | Ai làm |
 |---|---|---|
 | Xin D-U-N-S | ✅ cấp 25/09 (32-013-1497), 2 ngày kể từ submit | Anh |
-| Trang hỗ trợ, trang xóa tài khoản, tài khoản demo ✅ 23/09; còn ảnh listing | song song | Claude |
-| Đăng ký Google Play tổ chức + xác minh | bắt đầu từ 29/09, 1–7 ngày | Anh |
-| Đăng ký Apple tổ chức | bắt đầu từ 29/09, 2–7 ngày | Anh |
+| Trang hỗ trợ, trang xóa tài khoản, tài khoản demo ✅ 23/09; nội dung listing + tờ khai dữ liệu + ảnh bìa + icon 512 ✅ 01/10; còn ảnh màn hình (chờ bản build) | song song | Claude |
+| Đăng ký Google Play tổ chức + xác minh | bắt đầu từ 29/09, 1–7 ngày (01/10: chưa bắt đầu) | Anh |
+| Đăng ký Apple tổ chức | bắt đầu từ 29/09, 2–7 ngày (01/10: chưa bắt đầu) | Anh |
 | Sửa code + build + nộp | 1–2 ngày | Claude |
 | Duyệt Google | tới 7 ngày | |
 | Duyệt Apple | 1–3 ngày, có thể trả về 1–2 vòng | |

@@ -28,7 +28,10 @@
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/adaptive-icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "output": "static",
@@ -57,7 +60,18 @@
           "cameraPermission": "Hubsell cần Camera để quét mã vận đơn trên kiện hàng hoàn."
         }
       ],
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hubsell cần mở thư viện ảnh để bạn chọn ảnh gửi cho khách trong tin nhắn."
+        }
+      ],
       [
         "expo-speech-recognition",
         {
