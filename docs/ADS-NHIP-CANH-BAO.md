@@ -306,3 +306,35 @@ dòng diễn tập từ 15/08). Nay phần nạp tách ra `ads-scorecard-data.ts
 (`loadAssistantScorecard`), hiệu suất nạp từ đúng ngày đầu khoảng đang xem. Chỉ đổi
 số hiển thị trên bảng điểm; luật và lệnh của Trợ lý không đổi. Test trên DB:
 `ads-scorecard-db.test.ts`.
+
+### 12.2 Ngày gửi lên Shopee Ads tính theo ngày VN (lệch 0h–7h sáng)
+
+**Lỗi:** `toShopeeDate(new Date())` lấy `getDate()` theo giờ máy chủ. Render chạy UTC
+nên từ 0h tới 7h sáng VN, "hôm nay" của máy chủ vẫn là hôm qua của sàn: xung chỉ kéo
+lại dòng hôm qua, `AdsCampaignDailyPerf` và `AdSpend` không có dòng hôm nay suốt 7
+tiếng. Luật vọt chi và cửa sổ Hôm nay (đều đọc `vnDateKey(0)`) mù đúng khung 0h–2h
+ngày sale. Dính: `syncShopeeAdsSpend` (xung, lượt lịch sử, nút tay) và hiệu suất
+chiến dịch (`upsertShopeeCampaignPerf` ở xung, lịch sử, backfill). Không dính: Lazada,
+TikTok, GMS Shopee (vốn đã đi qua `vnDateKey`).
+
+**Sửa:** một nguồn ngày ở `lib/ads-dates.ts`:
+
+- `vnDayWindow(daysBack)` → `{ startKey, endKey }` theo ngày sàn (giờ VN), tính cả hôm nay.
+- `shopeeDateParam("YYYY-MM-DD")` → `"DD-MM-YYYY"` của Shopee Ads API (hàm thuần trên chuỗi,
+  không phụ thuộc múi giờ máy).
+
+`toShopeeDate(Date)` và `perfWindow` đã gỡ hẳn để không ai gọi lại; GMS và lệnh tạo
+chiến dịch từ gợi ý cũng đi qua `shopeeDateParam`. `upsertShopeeCampaignPerf` nhận khoảng
+ngày dạng khóa thay cho hai `Date`.
+
+**Xung vẫn chỉ kéo đúng hôm nay** (ngày VN). Hệ quả có chủ đích: sau 0h VN xung không còn
+cập nhật dòng hôm qua nữa; số hôm qua sàn chỉnh muộn do lượt lịch sử 6 giờ kéo lại (cửa
+sổ 7 ngày). Không thêm call nào lên sàn.
+
+**Test:** `lib/__tests__/ads-dates.test.ts` (mốc 0h30, 6h59, 23h59 VN) và
+`ads-shopee-vn-day.test.ts` (đặt đồng hồ 0h30 sáng 10/10 VN, đọc tham số ngày thật của
+từng call: xung gửi `10-10-2026`, lịch sử 7 ngày gửi `04-10-2026 → 10-10-2026`).
+
+**Kiểm trên prod:** chỉ kiểm được trong khung 0h–7h VN sau khi lên. Đúng thì trong khung
+đó `AdsCampaignDailyPerf` và `AdSpend` của gian đang chạy quảng cáo có dòng mang ngày VN
+hôm đó, `updatedAt` sau 17:00 UTC.

@@ -36,8 +36,7 @@ import {
   listGmsUserDeletedItems,
   type ShopeeGmsReport,
 } from "./client";
-import { toShopeeDate } from "./ads-spend";
-import { dateKeyToDbDate, shiftDateKey, vnDateKey } from "../../lib/ads-dates";
+import { dateKeyToDbDate, shiftDateKey, shopeeDateParam, vnDateKey } from "../../lib/ads-dates";
 import { computeChannelProductBreakeven } from "./ads-insights";
 
 export type GmsWindowKey = "7d" | "30d";
@@ -48,9 +47,7 @@ export const GMS_WINDOWS: Array<{ key: GmsWindowKey; days: number }> = [
 export const GMS_STATUS_ACTIVE = "active";
 
 /** "YYYY-MM-DD" (ngày VN) → "DD-MM-YYYY" của sàn. */
-function toShopeeDay(key: string): string {
-  return toShopeeDate(new Date(`${key}T00:00:00Z`));
-}
+const toShopeeDay = shopeeDateParam;
 
 /** Probe prod ANO 24/09: 4 call GMS liên tiếp → cú thứ 4 dính ads_rate_limit_shop_api → giãn giữa các call. */
 const GMS_CALL_GAP_MS = 1500;

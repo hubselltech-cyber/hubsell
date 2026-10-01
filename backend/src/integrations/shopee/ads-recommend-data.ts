@@ -17,7 +17,7 @@ import { prisma } from "../../lib/prisma";
 import { requestAdsRefresh } from "../../services/sync-schedule";
 import { resolveShopeeAdsAccess } from "../hubsell-ads";
 import { createManualProductAdsRaw } from "./client";
-import { toShopeeDate } from "./ads-spend";
+import { shopeeDateParam, vnDateKey } from "../../lib/ads-dates";
 import type { AdsInsightChannel } from "../../lib/ads-margin";
 import type { AdsMarginSource } from "../../lib/report-source";
 import { computeProductBreakevenWithMargins } from "./ads-insights";
@@ -253,7 +253,7 @@ export async function createCampaignFromRecommendation(
         referenceId,
         itemId: input.itemId,
         budget: dailyBudget,
-        startDate: toShopeeDate(new Date(Date.now() + 7 * 3600_000)), // ngày theo giờ VN
+        startDate: shopeeDateParam(vnDateKey(0)), // hôm nay theo ngày sàn (giờ VN)
         biddingMethod: "auto",
         roasTarget,
       },

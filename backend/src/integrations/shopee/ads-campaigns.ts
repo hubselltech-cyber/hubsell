@@ -28,7 +28,8 @@ import {
   type ShopeeAdsCampaignRef,
 } from "./client";
 import { resolveShopeeAdsAccess, type ShopeeAdsAccess } from "../hubsell-ads";
-import { fromShopeeDate, toShopeeDate } from "./ads-spend";
+import { fromShopeeDate } from "./ads-spend";
+import { shopeeDateParam, vnDayWindow } from "../../lib/ads-dates";
 import { reconcileHubsellPauseFlags, recordMarketplaceStatusChange } from "./ads-pause-flag";
 
 export interface SyncShopeeAdsCampaignsOptions {
@@ -170,11 +171,11 @@ export async function upsertShopeeCampaignSettings(
 
 // ---------- Bước 3: hiệu suất theo ngày → upsert AdsCampaignDailyPerf (1 call / 100) ----------
 
+/** `window`: khoảng NGÀY SÀN "YYYY-MM-DD" (giờ VN) — lấy từ vnDayWindow, không tự tính bằng giờ máy chủ. */
 export async function upsertShopeeCampaignPerf(
   access: ShopeeAdsAccess,
   rowIdByCampaignId: Map<string, string>,
-  start: Date,
-  end: Date
+  window: { startKey: string; endKey: string }
 ): Promise<number> {
   const { accessToken, shopId, cfg } = access;
   let upserted = 0;
@@ -184,8 +185,8 @@ export async function upsertShopeeCampaignPerf(
         accessToken,
         shopId,
         campaignIds: ids,
-        startDate: toShopeeDate(start),
-        endDate: toShopeeDate(end),
+        startDate: shopeeDateParam(window.startKey),
+        endDate: shopeeDateParam(window.endKey),
       },
       cfg
     );
@@ -217,13 +218,6 @@ export async function upsertShopeeCampaignPerf(
   return upserted;
 }
 
-/** Cửa sổ [hôm nay − (daysBack−1), hôm nay]. */
-export function perfWindow(daysBack: number): { start: Date; end: Date } {
-  const end = new Date();
-  const start = new Date(end.getTime() - (daysBack - 1) * 24 * 60 * 60 * 1000);
-  return { start, end };
-}
-
 // ---------- Trọn 3 bước (lần đầu / backfill / nút cũ) ----------
 
 export async function syncShopeeAdsCampaigns(
@@ -246,8 +240,7 @@ export async function syncShopeeAdsCampaigns(
   const rowIdByCampaignId = await upsertShopeeCampaignSettings(channel, access, idToAdType);
   result.campaignsUpserted = rowIdByCampaignId.size;
 
-  const { start, end } = perfWindow(daysBack);
-  result.perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, start, end);
+  result.perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(daysBack));
   return result;
 }
 
@@ -269,7 +262,6 @@ export async function syncShopeeAdsPerfWindow(
   if (rows.length === 0) return { campaigns: 0, perfDaysUpserted: 0 };
   const access = await resolveShopeeAdsAccess(channel);
   const rowIdByCampaignId = new Map(rows.map((r) => [r.campaignId, r.id] as const));
-  const { start, end } = perfWindow(daysBack);
-  const perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, start, end);
+  const perfDaysUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(daysBack));
   return { campaigns: rows.length, perfDaysUpserted };
 }

@@ -31,6 +31,7 @@ import {
 } from "./ads-campaigns";
 import { syncShopeeAdsSpend } from "./ads-spend";
 import { syncShopeeGms } from "./ads-gms";
+import { vnDayWindow } from "../../lib/ads-dates";
 
 /** Trạng thái campaign không cần theo dõi nữa. */
 export const ADS_DEAD_STATUSES = ["ended", "deleted", "closed"];
@@ -84,13 +85,13 @@ export async function pulseShopeeAds(
   );
   result.liveCampaigns = rowIdByCampaignId.size;
 
-  // 3. Hiệu suất HÔM NAY của các campaign đó (1 call/100).
+  // 3. Hiệu suất HÔM NAY (ngày sàn, giờ VN) của các campaign đó (1 call/100). Xung chỉ kéo
+  // đúng hôm nay; số hôm qua sàn chỉnh muộn là việc của tầng lịch sử 6 giờ.
   if (rowIdByCampaignId.size > 0) {
-    const now = new Date();
-    result.perfTodayUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, now, now);
+    result.perfTodayUpserted = await upsertShopeeCampaignPerf(access, rowIdByCampaignId, vnDayWindow(1));
   }
 
-  // 4. Chi tiêu cấp shop hôm nay (1 call).
+  // 4. Chi tiêu cấp shop hôm nay — cùng ngày sàn với bước 3 (1 call).
   await syncShopeeAdsSpend(channel, { daysBack: 1 });
 
   // 5. Ví ads → DB (1 call). Lỗi quyền ví không được chặn 4 bước trên.

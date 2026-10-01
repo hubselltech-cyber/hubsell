@@ -6,8 +6,15 @@
 // lai, kéo ngày đầu lên nếu vượt trần ADS_RANGE_MAX_DAYS (báo clamped).
 // ============================================================
 
-import { describe, expect, it } from "vitest";
-import { ADS_RANGE_MAX_DAYS, dateKeyToDbDate, resolveAdsDateRange, shiftDateKey } from "../ads-dates";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ADS_RANGE_MAX_DAYS,
+  dateKeyToDbDate,
+  resolveAdsDateRange,
+  shiftDateKey,
+  shopeeDateParam,
+  vnDayWindow,
+} from "../ads-dates";
 
 const TODAY = "2026-09-24";
 
@@ -92,5 +99,41 @@ describe("dateKeyToDbDate / shiftDateKey", () => {
   it("dời qua ranh giới tháng/năm", () => {
     expect(shiftDateKey("2026-01-01", -1)).toBe("2025-12-31");
     expect(shiftDateKey("2026-02-28", 1)).toBe("2026-03-01");
+  });
+});
+
+// 01/10/2026: ngày gửi lên Shopee Ads từng tính bằng getDate() của máy chủ (UTC) →
+// 0h–7h sáng VN xung kéo "hôm qua", bảng không có dòng hôm nay suốt 7 tiếng.
+describe("vnDayWindow / shopeeDateParam — ngày sàn theo giờ VN, không theo giờ máy chủ", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("0h30 sáng VN (17:30 UTC hôm trước): hôm nay là ngày VN mới", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-09T17:30:00Z")); // 00:30 ngày 10/10 giờ VN
+    expect(vnDayWindow(1)).toEqual({ startKey: "2026-10-10", endKey: "2026-10-10" });
+    expect(shopeeDateParam(vnDayWindow(1).endKey)).toBe("10-10-2026");
+  });
+
+  it("6h59 sáng VN vẫn là ngày VN đó; 23h59 VN chưa sang ngày", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-09T23:59:00Z")); // 06:59 ngày 10/10 giờ VN
+    expect(vnDayWindow(1).endKey).toBe("2026-10-10");
+    vi.setSystemTime(new Date("2026-10-10T16:59:00Z")); // 23:59 ngày 10/10 giờ VN
+    expect(vnDayWindow(1).endKey).toBe("2026-10-10");
+  });
+
+  it("cửa sổ 7 ngày tính cả hôm nay, qua ranh giới tháng", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-02T17:30:00Z")); // 00:30 ngày 03/10 giờ VN
+    expect(vnDayWindow(7)).toEqual({ startKey: "2026-09-27", endKey: "2026-10-03" });
+    expect(shopeeDateParam("2026-09-27")).toBe("27-09-2026");
+  });
+
+  it("daysBack ≤ 0 coi như 1 ngày (không sinh khoảng ngược)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-09T17:30:00Z"));
+    expect(vnDayWindow(0)).toEqual({ startKey: "2026-10-10", endKey: "2026-10-10" });
   });
 });

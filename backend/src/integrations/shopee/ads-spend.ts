@@ -17,6 +17,7 @@ import {
   type ShopeeAdsDailyPerformance,
 } from "./client";
 import { resolveShopeeAdsAccess } from "../hubsell-ads";
+import { shopeeDateParam, vnDayWindow } from "../../lib/ads-dates";
 
 export interface SyncShopeeAdsSpendOptions {
   /** Lấy chi tiêu N ngày gần nhất. Mặc định 30. */
@@ -26,12 +27,6 @@ export interface SyncShopeeAdsSpendOptions {
 export interface SyncShopeeAdsSpendResult {
   daysReturned: number; // số ngày sàn trả về
   daysUpserted: number; // số ngày ghi được vào DB
-}
-
-/** Đổi Date → "DD-MM-YYYY" theo yêu cầu của Ads API (export cho ads-campaigns). */
-export function toShopeeDate(d: Date): string {
-  const p = (x: number) => String(x).padStart(2, "0");
-  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
 }
 
 /** Parse "DD-MM-YYYY" của sàn → Date (00:00 UTC, cột @db.Date chỉ giữ ngày). */
@@ -48,17 +43,15 @@ export async function syncShopeeAdsSpend(
   // Quyền Ads API đi qua điểm chốt Hubsell Ads (app Ads riêng; fallback app
   // chính khi chưa cấu hình) — cfg quyết định partner nào ký chữ ký.
   const { accessToken, shopId, cfg } = await resolveShopeeAdsAccess(channel);
-  const daysBack = opts.daysBack ?? 30;
-
-  const end = new Date();
-  const start = new Date(end.getTime() - (daysBack - 1) * 24 * 60 * 60 * 1000);
+  // Khoảng ngày theo NGÀY SÀN (giờ VN), không theo giờ máy chủ — xem vnDayWindow.
+  const { startKey, endKey } = vnDayWindow(opts.daysBack ?? 30);
 
   const data = await getAdsDailyPerformance(
     {
       accessToken,
       shopId,
-      startDate: toShopeeDate(start),
-      endDate: toShopeeDate(end),
+      startDate: shopeeDateParam(startKey),
+      endDate: shopeeDateParam(endKey),
     },
     cfg
   );

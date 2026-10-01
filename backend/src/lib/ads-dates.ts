@@ -28,6 +28,21 @@ export function vnDateKey(daysAgo: number): string {
     .slice(0, 10);
 }
 
+/**
+ * Cửa sổ `daysBack` NGÀY SÀN (giờ VN) tính cả hôm nay — khoảng ngày mọi lượt kéo
+ * số quảng cáo gửi lên sàn. Không được tính bằng getDate() của máy chủ: Render
+ * chạy UTC nên từ 0h tới 7h sáng VN "hôm nay" của máy chủ vẫn là hôm qua của sàn
+ * (01/10/2026: xung không có dòng hôm nay suốt 7 tiếng đầu ngày).
+ */
+export function vnDayWindow(daysBack: number): { startKey: string; endKey: string } {
+  return { startKey: vnDateKey(Math.max(1, daysBack) - 1), endKey: vnDateKey(0) };
+}
+
+/** "YYYY-MM-DD" (ngày sàn) → "DD-MM-YYYY" — định dạng ngày của Shopee Ads API. */
+export function shopeeDateParam(key: string): string {
+  return `${key.slice(8, 10)}-${key.slice(5, 7)}-${key.slice(0, 4)}`;
+}
+
 // ---- Khoảng ngày của BỘ LỌC trang Trợ lý quảng cáo (24/09/2026) ----
 //
 // Trang Shopee/Lazada dùng bộ lọc chuẩn của app (?from=&to= theo NGÀY SÀN, giờ
