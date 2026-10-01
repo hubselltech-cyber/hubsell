@@ -66,11 +66,11 @@ function mk(opts: {
 
 const CFG_ON: ShopeeAssistantConfig = {
   ...DEFAULT_SHOPEE_ASSISTANT_CONFIG,
-  autoExecute: { mode: "live", maxActionsPerDay: 5, cutBudgetFirst: true },
+  autoExecute: { mode: "live", cutBudgetFirst: true },
 };
 const CFG_OFF: ShopeeAssistantConfig = {
   ...DEFAULT_SHOPEE_ASSISTANT_CONFIG,
-  autoExecute: { mode: "live", maxActionsPerDay: 5, cutBudgetFirst: false },
+  autoExecute: { mode: "live", cutBudgetFirst: false },
 };
 
 describe("planAutoAction — nấc hạ ngân sách rồi mới tắt", () => {

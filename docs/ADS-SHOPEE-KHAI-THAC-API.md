@@ -161,7 +161,7 @@ Marketing, Ads Service…" — app Hubsell Ads gọi được hết, không cầ
 | Lịch sử 6h | 2 | 2 | |
 | Theo ngày | 0 | 1 (recommended_item_list) | |
 | Khi mở modal | 0 | ≤1 (recommended_keyword_list, cache 24h) | không tính vào nền |
-| Ghi | ≤5/ngày (pause/resume) | ≤5/ngày gộp cả cut_budget / roas_target | trần `maxActionsPerDay` giữ nguyên |
+| Ghi | theo số chiến dịch vi phạm | theo số chiến dịch vi phạm, mỗi chiến dịch ≤4 lệnh/ngày | trần `maxActionsPerDay` (5/gian/ngày) đã gỡ 01/10/2026 — xem ADS-NHIP-CANH-BAO.md mục 12.3 |
 
 Tổng nền ≈ 300 call/gian/ngày → 1.000 gian chạy ads ≈ 3,5 call/s, đúng trần
 token bucket `ADS_APP_QPS = 3` hiện tại → khi qua 800 gian chạy ads phải có số
@@ -436,7 +436,7 @@ dangerFactor (cùng mốc vùng an toàn đợt A) ∧ mục tiêu (nếu có) �
   Sàn từ chối → giữ cờ, sổ có dòng FAILED.
 - Người tự đổi ngân sách trên Seller Center: sync thấy `budget ≠ hubsellBudgetCut` → `reconcileHubsellBudgetFlags`
   xóa cờ, dòng hạ thành OVERRIDDEN, nhật ký "↩️ … Trợ lý thôi giữ số gốc". Người luôn thắng máy.
-- Mọi lệnh tính vào quota `maxActionsPerDay`; live ghi nhật ký vận hành "✂️ Trợ lý hạ ngân sách…".
+- Live ghi nhật ký vận hành "✂️ Trợ lý hạ ngân sách…". (Trước 01/10/2026 mọi lệnh còn tính vào trần `maxActionsPerDay` — đã gỡ.)
 
 ### 10.3 Ví tự nạp
 - Xung Shopee bước 6 (+1 call/gian/xung): `get_shop_toggle_info.auto_top_up` → `Channel.adsAutoTopUp`.

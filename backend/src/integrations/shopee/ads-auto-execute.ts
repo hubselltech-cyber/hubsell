@@ -23,17 +23,27 @@
 // có trong docs chính thức (start/pause/resume/stop/delete…); Lazada
 // updateCampaign switchStatus 0/1 (docs chính thức, chưa bắn thật).
 //
-// BỐN CHỐT AN TOÀN (thứ tự kiểm):
+// BA CHỐT AN TOÀN (thứ tự kiểm):
 //   1. Mode per-gian trong AdsAssistantConfig.autoExecute:
 //      off (mặc định) | dry_run (DIỄN TẬP: ghi sổ, KHÔNG gọi sàn) | live.
 //   2. Idempotency theo VÁN: referenceId "{pause|resume}-{rowId}-{ngày}-c{cycle}"
 //      unique trong AdsActionLog. cycle tăng mỗi lần người/máy bật lại → người
 //      bật lại trên Seller Center là ván mới, máy được xét lại từ đầu (anh Trung
 //      chốt 14/09); trong một ván mỗi ngày tối đa 1 lệnh mỗi loại.
-//   3. Quota maxActionsPerDay per-gian (đệm dưới giới hạn sàn ~10 thao tác/
-//      item/ngày) — ưu tiên campaign ĐANG TIÊU NHIỀU nhất trước.
-//   4. Máy tự bật lại hôm nào thì hôm đó KHÔNG tắt lại nữa (hubsellResumedOn)
+//   3. Máy tự bật lại hôm nào thì hôm đó KHÔNG tắt lại nữa (hubsellResumedOn)
 //      — tối đa một vòng dừng/bật mỗi campaign mỗi ngày, tránh giằng co.
+//
+// KHÔNG CÓ TRẦN LỆNH MỖI NGÀY (anh Trung chốt 30/09/2026, gỡ 01/10): chủ shop đã
+// tự đặt điều kiện, chiến dịch nào vi phạm trong lượt thì máy xử lý HẾT trong lượt
+// đó. Trần cũ maxActionsPerDay (5 lệnh/gian/ngày) để chiến dịch lỗ thứ 6 trở đi
+// chạy tiếp mà không báo gì; căn cứ ghi kèm ("sàn giới hạn ~10 thao tác/sản phẩm/
+// ngày") không có trong tài liệu Shopee Open Platform (đọc lại 01/10: các trang API
+// ghi của nhóm Ads chỉ có mã lỗi ads.rate_limit.campaign_level, không kèm con số).
+// Mỗi chiến dịch máy vẫn làm tối đa 4 lệnh/ngày do chốt 2 + 3 (hạ ngân sách hoặc
+// tạm dừng, bật lại, trả ngân sách).
+//
+// THỨ TỰ MỘT LƯỢT: dừng chiến dịch VỌT CHI → hạ ngân sách / dừng chiến dịch LỖ
+// (chi 7 ngày nhiều trước) → BẬT LẠI. Cầm máu trước, mở lại sau.
 //
 // Chủ shop đã tự quyết cảnh báo (decisionActive) thì executor KHÔNG đụng vào —
 // người luôn thắng máy. Campaign KHÔNG có cờ Hubsell (người/sàn tắt) thì máy
@@ -63,11 +73,7 @@ import {
   type BudgetCutPlan,
   type ShopeeAssistantConfig,
 } from "./ads-assistant-rules";
-import {
-  clearHubsellBudgetFlag,
-  clearHubsellPauseFlag,
-  MARKETPLACE_LOG_MODE,
-} from "./ads-pause-flag";
+import { clearHubsellBudgetFlag, clearHubsellPauseFlag } from "./ads-pause-flag";
 
 /** Verdict nào thì được phép hành động (v1: chỉ hai loại chắc tay nhất). */
 const ACTIONABLE_VERDICTS = new Set(["pause_now", "spike"]);
@@ -81,7 +87,6 @@ export interface AutoExecuteResult {
   planned: number; // dry_run: số hành động đã ghi sổ diễn tập
   executed: number; // live: gọi sàn thành công (pause)
   failed: number; // live: sàn từ chối (lỗi lưu nguyên văn trong sổ)
-  skippedQuota: number; // bỏ qua vì chạm trần hành động/ngày
   skippedDone: number; // bỏ qua vì ván này hôm nay đã hành động rồi (referenceId trùng)
   resumed: number; // live: bật lại thành công
   resumeFailed: number; // live: bật lại bị sàn từ chối
@@ -133,7 +138,8 @@ const roasTxt = (n: number) => `${n.toLocaleString("vi-VN", { maximumFractionDig
  * LỌC + XẾP HÀNG hành động PAUSE — logic thuần tách riêng cho vitest:
  * chỉ campaign ongoing, verdict đáng hành động, chưa bị người quyết, và hôm
  * nay máy CHƯA tự bật lại (một vòng dừng/bật mỗi ngày);
- * xếp theo chi tiêu 7 ngày giảm dần (cắt chỗ chảy máu to trước).
+ * VỌT CHI đứng trước (tiền đang chảy từng phút), rồi tới chiến dịch lỗ; trong
+ * mỗi nhóm xếp theo chi tiêu 7 ngày giảm dần (cắt chỗ chảy máu to trước).
  */
 export function selectAutoActionCandidates(
   items: CampaignInsight[],
@@ -148,7 +154,11 @@ export function selectAutoActionCandidates(
         !assistantDecisionActive(it) &&
         it.row.hubsellResumedOn !== todayKey
     )
-    .sort((a, b) => b.windows["7d"].spend - a.windows["7d"].spend);
+    .sort(
+      (a, b) =>
+        Number(b.assessment.verdict === "spike") - Number(a.assessment.verdict === "spike") ||
+        b.windows["7d"].spend - a.windows["7d"].spend
+    );
 }
 
 export interface ResumeCheck {
@@ -511,7 +521,6 @@ export async function runAdsAutoExecute(
     planned: 0,
     executed: 0,
     failed: 0,
-    skippedQuota: 0,
     skippedDone: 0,
     resumed: 0,
     resumeFailed: 0,
@@ -576,12 +585,6 @@ export async function runAdsAutoExecute(
   result.candidates = pauseCandidates.length + resumeCandidates.length;
   if (result.candidates === 0) return result;
 
-  // Quota: đếm hành động ĐÃ ghi sổ hôm nay (giờ VN) của gian — mọi status đều
-  // tính (FAILED cũng là một lần thao tác về phía sàn ở mode live).
-  let usedToday = await prisma.adsActionLog.count({
-    where: { channelId: channel.id, createdAt: { gte: startOfVnToday }, mode: { not: MARKETPLACE_LOG_MODE } },
-  });
-
   // Token chỉ cần cho mode live — lấy MỘT lần ngoài vòng lặp (theo sàn).
   let actor: AdsActor | null = null;
   if (auto.mode === "live") {
@@ -633,63 +636,10 @@ export async function runAdsAutoExecute(
     });
   };
 
-  // ---- BẬT LẠI TRƯỚC (rẻ, đang mất doanh thu từng giờ) ----
-  for (const { it, check } of resumeCandidates) {
-    if (usedToday >= auto.maxActionsPerDay) {
-      result.skippedQuota++;
-      continue;
-    }
-    const referenceId = `resume-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`;
-    const logId = await openLog({
-      rowId: it.row.id,
-      action: "resume",
-      verdict: RESUME_VERDICT,
-      reasons: [check.reason],
-      referenceId,
-    });
-    if (!logId) {
-      result.skippedDone++;
-      continue;
-    }
-    usedToday++;
-    let outcome: ActOutcome;
-    try {
-      outcome = await actor!.resume(it.row.campaignId, referenceId);
-    } catch (err) {
-      outcome = { ok: false, error: String((err as Error).message) };
-    }
-    await closeLog(logId, outcome);
-    if (outcome.ok) {
-      result.resumed++;
-      // ĐỢT B: máy tự bật lại → trả ngân sách gốc nếu chính máy đã hạ (cùng ván, trước khi cycle+1).
-      if (it.row.hubsellBudgetBefore != null && usedToday < auto.maxActionsPerDay) {
-        usedToday++;
-        const restored = await restoreBudgetWithActor({
-          channel,
-          actor: actor!,
-          row: it.row,
-          mode: auto.mode,
-          referenceId: `restore-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`,
-          reason: "Trợ lý bật lại chiến dịch (ROAS đã đạt lại).",
-        });
-        if (restored.ok) result.budgetRestored++;
-      }
-      await clearHubsellPauseFlag(it.row.id, it.row.hubsellPauseCycle, {
-        status: "ongoing",
-        hubsellResumedOn: todayKey,
-      });
-    } else {
-      result.resumeFailed++;
-    }
-  }
-
-  // ---- HẠ NGÂN SÁCH (đợt B) / TẠM DỪNG ----
+  // ---- TẠM DỪNG vọt chi → HẠ NGÂN SÁCH (đợt B) / TẠM DỪNG chiến dịch lỗ ----
+  // Thứ tự đã xếp sẵn trong selectAutoActionCandidates; không có trần — vi phạm là xử lý hết.
   for (const planned of pauseCandidates) {
     const it = planned.it;
-    if (usedToday >= auto.maxActionsPerDay) {
-      result.skippedQuota++;
-      continue;
-    }
     const isCut = planned.kind === "cut_budget" && planned.cut != null;
     const referenceId = `${isCut ? "cut" : "pause"}-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`;
     const reasons = isCut
@@ -714,7 +664,6 @@ export async function runAdsAutoExecute(
       result.skippedDone++;
       continue;
     }
-    usedToday++;
 
     if (auto.mode === "dry_run") {
       result.planned++;
@@ -777,6 +726,50 @@ export async function runAdsAutoExecute(
       });
     } else {
       result.failed++;
+    }
+  }
+
+  // ---- BẬT LẠI — sau cùng: cầm máu xong mới mở lại ----
+  for (const { it, check } of resumeCandidates) {
+    const referenceId = `resume-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`;
+    const logId = await openLog({
+      rowId: it.row.id,
+      action: "resume",
+      verdict: RESUME_VERDICT,
+      reasons: [check.reason],
+      referenceId,
+    });
+    if (!logId) {
+      result.skippedDone++;
+      continue;
+    }
+    let outcome: ActOutcome;
+    try {
+      outcome = await actor!.resume(it.row.campaignId, referenceId);
+    } catch (err) {
+      outcome = { ok: false, error: String((err as Error).message) };
+    }
+    await closeLog(logId, outcome);
+    if (outcome.ok) {
+      result.resumed++;
+      // ĐỢT B: máy tự bật lại → trả ngân sách gốc nếu chính máy đã hạ (cùng ván, trước khi cycle+1).
+      if (it.row.hubsellBudgetBefore != null) {
+        const restored = await restoreBudgetWithActor({
+          channel,
+          actor: actor!,
+          row: it.row,
+          mode: auto.mode,
+          referenceId: `restore-${it.row.id}-${todayKey}-c${it.row.hubsellPauseCycle}`,
+          reason: "Trợ lý bật lại chiến dịch (ROAS đã đạt lại).",
+        });
+        if (restored.ok) result.budgetRestored++;
+      }
+      await clearHubsellPauseFlag(it.row.id, it.row.hubsellPauseCycle, {
+        status: "ongoing",
+        hubsellResumedOn: todayKey,
+      });
+    } else {
+      result.resumeFailed++;
     }
   }
 

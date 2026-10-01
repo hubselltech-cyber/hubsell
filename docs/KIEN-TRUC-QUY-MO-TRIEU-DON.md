@@ -14,7 +14,7 @@ Ngày lập: 29/09/2026. Người lập: Claude (Lead Dev). Trạng thái: **anh
 
 Đã làm ở giai đoạn 0: bỏ trần 2.000 đơn của báo cáo; chặn đánh dấu "đã gỡ" nhầm khi danh mục chưa kéo đủ; gỡ lệnh đẩy tồn bị kẹt; bỏ quyết toán giả lập với gian sàn; đồng bộ đơn báo khi bị cắt; số cảnh báo tồn hiện tổng thật; dải nhắc kỳ vượt 20.000 đơn; các định nghĩa tài chính ở mục 9a; tờ khai theo ngày giao; Tổng quan trừ quảng cáo sàn.
 
-Còn treo của giai đoạn 0: nhóm quảng cáo ở mục 3.2 (A7, A8, A9), trình từng thay đổi trước khi sửa vì Trợ lý quảng cáo đang ở chế độ diễn tập.
+Nhóm quảng cáo ở mục 3.2 (A7, A8, A9) đã sửa 01/10/2026 — chi tiết ở `docs/ADS-NHIP-CANH-BAO.md` mục 12; A7 còn phải kiểm số thật trên prod trong khung 0h–7h sau khi lên. Trợ lý quảng cáo vẫn ở chế độ diễn tập.
 
 Xuất phát: sự cố 29/09 (Báo cáo dòng tiền tháng 8 ra lãi 13,19 triệu thay vì 34,29 triệu do trần 2.000 đơn). Anh Trung yêu cầu: không vá từng lỗi, thiết kế theo giả thuyết 50.000 khách, shop có hàng trăm nghìn đơn, hệ thống xử lý trên 1 triệu đơn/ngày.
 
@@ -76,9 +76,9 @@ Cột "Đã kiểm" = em tự mở mã xác nhận, không chỉ dựa vào báo
 | A4 | Webhook Lazada xử lý trong RAM, không lưu hàng đợi; deploy là mất | Mất sự kiện đổi trạng thái và trừ kho | Có (theo mũi rà, em đọc lại đoạn mã) |
 | A5 | Một khái niệm có nhiều định nghĩa: "đơn lỗ" 3 cách, "đơn tính doanh thu" 2 cách, lợi nhuận quảng cáo dùng cột khác Lãi/Lỗ | Hai trang ra hai số | Có |
 | A6 | Ngày giao của Shopee và Lazada ghi bằng giờ đồng bộ, không phải giờ sàn báo | Mọi thứ tính theo ngày giao (hạn xuất hóa đơn) bị lệch | Chưa |
-| A7 | Shopee từ 00:00 đến 07:00 lấy số quảng cáo "hôm nay" thành hôm qua do dùng giờ máy chủ | Luật chặn tăng vọt mù 7 tiếng mỗi đêm | Chưa |
-| A8 | Bảng điểm Trợ lý quảng cáo 90 ngày nhưng chỉ nạp 30 ngày chi tiêu | Chấm đúng/sai của máy bị sai với kế hoạch cũ hơn 30 ngày | Chưa |
-| A9 | Tự dừng chiến dịch giới hạn 5 lệnh/ngày, lệnh bật lại được xử lý trước lệnh dừng | Chiến dịch lỗ thứ 6 trở đi vẫn chạy | Chưa |
+| A7 | Shopee từ 00:00 đến 07:00 lấy số quảng cáo "hôm nay" thành hôm qua do dùng giờ máy chủ | Luật chặn tăng vọt mù 7 tiếng mỗi đêm | Có — đã sửa 01/10 |
+| A8 | Bảng điểm Trợ lý quảng cáo 90 ngày nhưng chỉ nạp 30 ngày chi tiêu | Chấm đúng/sai của máy bị sai với kế hoạch cũ hơn 30 ngày | Có — đã sửa 01/10 |
+| A9 | Tự dừng chiến dịch giới hạn 5 lệnh/ngày, lệnh bật lại được xử lý trước lệnh dừng | Chiến dịch lỗ thứ 6 trở đi vẫn chạy | Có — đã sửa 01/10 (bỏ trần) |
 | A10 | Route tạo đơn giả `/mock-order` đang mở trên prod | Rủi ro bảo mật và dữ liệu | Chưa |
 
 ### 3.3. Sẽ sai khi khách lớn lên, và sai trong im lặng

@@ -121,11 +121,11 @@ export interface ShopeeAssistantConfig {
   /** GĐ3 — TỰ THỰC THI (v1 chỉ hành động PAUSE với verdict pause_now/spike):
    *  off = tắt; dry_run = DIỄN TẬP (ghi sổ AdsActionLog, KHÔNG gọi sàn);
    *  live = gọi edit_manual_product_ads thật. Mặc định off — chỉ bật live sau
-   *  khi probe xác minh enum edit_action + quyền write trên shop thật. */
+   *  khi probe xác minh enum edit_action + quyền write trên shop thật.
+   *  Không có trần lệnh mỗi ngày (gỡ 01/10/2026): bản lưu cũ còn trường
+   *  maxActionsPerDay thì normalize bỏ qua. */
   autoExecute: {
     mode: "off" | "dry_run" | "live";
-    /** Trần hành động/ngày/gian — đệm dưới giới hạn sàn ~10 thao tác/item/ngày. */
-    maxActionsPerDay: number;
     /** ĐỢT B (24/09): campaign lỗ (pause_now) thì HẠ NGÂN SÁCH NGÀY trước (change_budget),
      *  ngày sau vẫn lỗ mới tạm dừng; bật lại thì trả ngân sách cũ. Vọt chi (spike) vẫn
      *  tắt ngay. Chỉ Shopee có lệnh đổi ngân sách; Lazada luôn tắt như cũ. */
@@ -140,7 +140,7 @@ export const DEFAULT_SHOPEE_ASSISTANT_CONFIG: ShopeeAssistantConfig = {
   review: { enabled: true, dangerFactor: 1.1 },
   spike: { enabled: true, dayMultiple: 2, minTodaySpend: 100_000 },
   grace: { enabled: true, minOrders7d: 30 },
-  autoExecute: { mode: "off", maxActionsPerDay: 5, cutBudgetFirst: true },
+  autoExecute: { mode: "off", cutBudgetFirst: true },
 };
 
 /** Các mode tự thực thi hợp lệ (validate bản lưu/PUT). */
@@ -189,10 +189,6 @@ export function normalizeAssistantConfig(raw: unknown): ShopeeAssistantConfig {
       )
         ? (String(sect("autoExecute").mode) as "off" | "dry_run" | "live")
         : d.autoExecute.mode,
-      maxActionsPerDay: num(
-        sect("autoExecute").maxActionsPerDay,
-        d.autoExecute.maxActionsPerDay
-      ),
       cutBudgetFirst: bool(sect("autoExecute").cutBudgetFirst, d.autoExecute.cutBudgetFirst),
     },
   };

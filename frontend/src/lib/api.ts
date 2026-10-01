@@ -6732,7 +6732,6 @@ export interface ShopeeAssistantConfig {
   /** GĐ3 — tự thực thi: off | dry_run (diễn tập ghi sổ) | live (gọi sàn thật). */
   autoExecute: {
     mode: "off" | "dry_run" | "live";
-    maxActionsPerDay: number;
     /** Đợt B: campaign lỗ thì hạ ngân sách ngày trước, ngày sau vẫn lỗ mới tạm dừng (chỉ Shopee). */
     cutBudgetFirst: boolean;
   };

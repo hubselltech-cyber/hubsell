@@ -1053,12 +1053,6 @@ export function ShopeeAssistantConfigCard({
                   <option value="live">Thực thi thật</option>
                 </select>
               </label>
-              <NumberField
-                label="Tối đa hành động/ngày"
-                value={draft.autoExecute.maxActionsPerDay}
-                onChange={(v) => patch("autoExecute", { maxActionsPerDay: v })}
-                disabled={!draft.enabled || draft.autoExecute.mode === "off"}
-              />
               {/* Đợt B (24/09): nấc hạ ngân sách trước khi tắt — chỉ Shopee có lệnh đổi ngân sách. */}
               {platformLabel === "Shopee" && (
                 <label className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-2.5 py-1.5 text-sm">

@@ -43,7 +43,7 @@ trang Trợ lý và mỗi lượt `scanOpsAlerts` (1 call/gian/lượt).
 throttle 10'/chủ shop.
 
 **Executor GĐ3**: chạy ngay sau sync ads trong tầng ADS; chỉ PAUSE verdict
-`pause_now`/`spike`; quota `maxActionsPerDay` (5) tính theo ngày VN; idempotent
+`pause_now`/`spike`; quota `maxActionsPerDay` (5) tính theo ngày VN (đã gỡ 01/10/2026 — mục 12.3); idempotent
 `pause-{rowId}-{ngày}`. Mode mặc định `off`.
 
 **Chi phí call mỗi lượt đầy đủ** (gian ≤100 campaign):
@@ -338,3 +338,47 @@ từng call: xung gửi `10-10-2026`, lịch sử 7 ngày gửi `04-10-2026 → 
 **Kiểm trên prod:** chỉ kiểm được trong khung 0h–7h VN sau khi lên. Đúng thì trong khung
 đó `AdsCampaignDailyPerf` và `AdSpend` của gian đang chạy quảng cáo có dòng mang ngày VN
 hôm đó, `updatedAt` sau 17:00 UTC.
+
+### 12.3 Bỏ trần lệnh mỗi ngày + thứ tự lệnh trong một lượt
+
+**Anh Trung chốt 30/09:** chủ shop đã tự đặt điều kiện, chiến dịch vi phạm là xử lý —
+không có trần riêng của máy.
+
+**Trước:** `autoExecute.maxActionsPerDay` (mặc định 5 lệnh/gian/ngày). Chiến dịch lỗ thứ
+6 trở đi chạy tiếp, không thẻ, không chuông (`skippedQuota` chỉ vào log máy chủ). Thao
+tác tay của chủ shop cũng bị tính vào trần. Lệnh bật lại chạy trước lệnh dừng.
+
+**Căn cứ của trần cũ không có nguồn.** Chú thích trong mã ghi "đệm dưới giới hạn sàn ~10
+thao tác/sản phẩm/ngày". Đọc lại tài liệu Shopee Open Platform 01/10/2026 (5 trang API
+ghi của nhóm Ads: `edit_manual_product_ads`, `edit_manual_product_ad_keywords`,
+`create_manual_product_ads`, `edit_gms_product_campaign`, `edit_auto_product_ads`; mục
+FAQ không có nhóm Ads): không trang nào nêu giới hạn số lần sửa theo sản phẩm hay theo
+ngày. Thứ duy nhất liên quan là mã lỗi `ads.rate_limit.campaign_level` ("Too many
+requests at the moment, please try again later") — giới hạn nhịp gọi theo chiến dịch,
+không kèm con số. Ghi chú gốc nằm trong danh sách "chưa xác minh" của lần khảo sát
+10/08 (lần đó đọc qua một bản SDK không chính thức), sau đó được chép vào chú thích mã
+như một căn cứ.
+
+**Nay:**
+
+- Gỡ `maxActionsPerDay` khỏi executor, kiểu cấu hình, `normalizeAssistantConfig` (bản lưu
+  cũ còn trường này thì bỏ qua) và ô "Tối đa hành động/ngày" trên trang cấu hình. Gỡ
+  `skippedQuota` khỏi kết quả + log worker.
+- Một lượt xử lý hết mọi chiến dịch vi phạm; diễn tập ghi sổ đủ mọi chiến dịch.
+- Thứ tự một lượt: **dừng vọt chi → hạ ngân sách / dừng chiến dịch lỗ (chi 7 ngày nhiều
+  trước) → bật lại**. `selectAutoActionCandidates` xếp vọt chi lên đầu.
+- Trả ngân sách gốc sau khi máy bật lại không còn bị trần chặn.
+- Giới hạn còn lại là theo từng chiến dịch (không đổi): mỗi ván mỗi ngày một lệnh mỗi
+  loại, máy bật lại hôm nào thì hôm đó không tắt lại → tối đa 4 lệnh/chiến dịch/ngày.
+
+**Hai điểm rà ra sau khi gỡ trần — CHƯA sửa, chờ anh Trung chốt (chỉ lộ khi một gian có
+nhiều chiến dịch vi phạm cùng lúc; prod 30 ngày qua nhiều nhất 3 dòng sổ/gian/ngày):**
+
+1. *Sàn từ chối vì quá nhịp thì hôm đó không thử lại.* Lệnh thật bị trả mã
+   `ads.rate_limit.*` vẫn ghi sổ FAILED và giữ khóa `{loại}-{chiến dịch}-{ngày}-c{ván}`,
+   lượt sau thấy khóa là bỏ qua tới hôm sau. Đề xuất: lỗi quá nhịp thì dừng lượt, nhả
+   khóa, xung kế (30') thử lại. Chỉ ảnh hưởng chế độ Thật.
+2. *Mỗi chiến dịch một thẻ + một chuông.* `detectAdsAutoActions` sinh thẻ theo từng dòng
+   sổ; trần cũ vô tình giữ số thẻ ≤5/gian/ngày. Gian có vài chục chiến dịch vi phạm sẽ
+   nhận vài chục chuông trong một lượt. Đề xuất: gom thẻ diễn tập thành một thẻ mỗi gian
+   mỗi ngày (kèm số chiến dịch), thẻ lệnh thật giữ riêng vì có nút Bật lại.

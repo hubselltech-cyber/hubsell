@@ -85,13 +85,29 @@ describe("selectAutoActionCandidates — lọc ứng viên hành động", () =>
     ]);
     expect(out.map((x) => x.row.id)).toEqual(["to", "vua", "nho"]);
   });
+
+  it("vọt chi đứng trước chiến dịch lỗ dù chi 7 ngày ít hơn (01/10)", () => {
+    const out = selectAutoActionCandidates([
+      mkInsight({ id: "lo-to", verdict: "pause_now", spend7d: 900_000 }),
+      mkInsight({ id: "vot-nho", verdict: "spike", spend7d: 50_000 }),
+      mkInsight({ id: "lo-nho", verdict: "pause_now", spend7d: 100_000 }),
+      mkInsight({ id: "vot-to", verdict: "spike", spend7d: 300_000 }),
+    ]);
+    expect(out.map((x) => x.row.id)).toEqual(["vot-to", "vot-nho", "lo-to", "lo-nho"]);
+  });
+
+  it("không có trần: 12 chiến dịch vi phạm thì cả 12 vào hàng xử lý", () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      mkInsight({ id: `c${i}`, verdict: "pause_now", spend7d: 100_000 + i })
+    );
+    expect(selectAutoActionCandidates(many)).toHaveLength(12);
+  });
 });
 
 describe("normalizeAssistantConfig — khối autoExecute (GĐ3)", () => {
-  it("mặc định OFF + trần 5 hành động/ngày", () => {
+  it("mặc định OFF, không có trần lệnh mỗi ngày", () => {
     expect(DEFAULT_SHOPEE_ASSISTANT_CONFIG.autoExecute).toEqual({
       mode: "off",
-      maxActionsPerDay: 5,
       cutBudgetFirst: true, // đợt B 24/09: hạ ngân sách trước, tắt sau
     });
     expect(normalizeAssistantConfig(null).autoExecute.mode).toBe("off");
@@ -106,7 +122,14 @@ describe("normalizeAssistantConfig — khối autoExecute (GĐ3)", () => {
     ).toBe("dry_run");
     expect(
       normalizeAssistantConfig({ hard: { enabled: false } }).autoExecute
-    ).toEqual({ mode: "off", maxActionsPerDay: 5, cutBudgetFirst: true });
+    ).toEqual({ mode: "off", cutBudgetFirst: true });
+  });
+
+  it("bản lưu cũ còn maxActionsPerDay → bỏ qua trường đó, phần còn lại giữ nguyên (01/10 gỡ trần)", () => {
+    expect(
+      normalizeAssistantConfig({ autoExecute: { mode: "dry_run", maxActionsPerDay: 10, cutBudgetFirst: false } })
+        .autoExecute
+    ).toEqual({ mode: "dry_run", cutBudgetFirst: false });
   });
 });
 

@@ -186,7 +186,7 @@ lệnh, cả 4 lệnh từ trước đến nay đều từ cửa sổ Hôm nay. 
    mỗi lượt đồng bộ so trạng thái trước/sau; chạy→tạm dừng không do Hubsell → dòng
    **"Tắt trên sàn"**, tạm dừng→chạy → **"Bật trên sàn"** (`recordMarketplaceStatusChange`,
    mode `marketplace`, status `OBSERVED`, ghi rõ "Hubsell KHÔNG can thiệp, ghi nhận lúc
-   đồng bộ"). Không tính quota máy, không lên bảng điểm/chuông. Khách khiếu nại: hỏi tên
+   đồng bộ"). Không lên bảng điểm/chuông. Khách khiếu nại: hỏi tên
    gian + campaign + khoảng giờ, mở sổ là thấy ai tắt; đối chiếu Lịch sử hoạt động
    Seller Center nếu cần. Chưa làm (chờ khiếu nại thật): lưu request_id Shopee,
    write-probe ghi sổ, trang tra cứu bên HQ.
